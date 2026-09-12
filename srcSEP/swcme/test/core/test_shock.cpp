@@ -8,9 +8,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cmath>
 #include <iomanip>
 #include <iostream>
+#include <limits>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -103,6 +106,239 @@ double perpendicular_reference_compression(const Primitive& up,double Vsh){
 
 swcme::shock::JumpResult oblique_fixture_result(){
   return swcme::shock::solve_ideal_mhd_fast_shock(fixture(40.0),{{1,0,0}},1.2e6,GAMMA);
+}
+
+enum class StressStratum { NoShock, WeakLimit, Resolved, Conditioned };
+
+struct StressCase {
+  std::size_t index=0;
+  StressStratum stratum=StressStratum::Resolved;
+  Primitive upstream;
+  Vec3 normal{{1.0,0.0,0.0}};
+  double shock_speed_m_s=0.0;
+  double gamma=GAMMA;
+  double requested_fast_mach=0.0;
+  swcme::shock::JumpResult result;
+};
+
+// Small fixed algorithm used instead of the standard-library distributions.
+// The latter are permitted to map engine bits differently between library
+// implementations, which would make an alleged fixed-seed campaign vary by
+// platform.  SplitMix64 and the explicit 53-bit conversion below make every
+// SHK15 primitive reproducible from the seed printed in the README.
+class ShockStressRandom {
+public:
+  explicit ShockStressRandom(std::uint64_t seed): state_(seed) {}
+  std::uint64_t next_u64(){
+    state_+=0x9e3779b97f4a7c15ULL;
+    std::uint64_t z=state_;
+    z=(z^(z>>30))*0xbf58476d1ce4e5b9ULL;
+    z=(z^(z>>27))*0x94d049bb133111ebULL;
+    return z^(z>>31);
+  }
+  double unit(){
+    return static_cast<double>(next_u64()>>11)*0x1.0p-53;
+  }
+  double uniform(double lower,double upper){
+    return lower+(upper-lower)*unit();
+  }
+  double log_uniform(double lower,double upper){
+    return std::exp(uniform(std::log(lower),std::log(upper)));
+  }
+private:
+  std::uint64_t state_;
+};
+
+Vec3 add(const Vec3& a,const Vec3& b){
+  return {{a[0]+b[0],a[1]+b[1],a[2]+b[2]}};
+}
+
+Vec3 cross(const Vec3& a,const Vec3& b){
+  return {{a[1]*b[2]-a[2]*b[1],
+           a[2]*b[0]-a[0]*b[2],
+           a[0]*b[1]-a[1]*b[0]}};
+}
+
+Vec3 unit_vector(const Vec3& value){
+  const double magnitude=norm(value);
+  return magnitude>0.0?scale(value,1.0/magnitude):Vec3{{1.0,0.0,0.0}};
+}
+
+// Form a deterministic orthonormal frame about an arbitrary random normal.
+// Choosing the least-aligned Cartesian axis avoids a nearly zero cross product
+// and also supports the arbitrary-orientation checks reused by SHK07/SHK08.
+std::array<Vec3,2> tangential_basis(const Vec3& normal){
+  Vec3 axis={{1.0,0.0,0.0}};
+  if(std::abs(normal[1])<=std::abs(normal[0]) &&
+     std::abs(normal[1])<=std::abs(normal[2])) axis={{0.0,1.0,0.0}};
+  else if(std::abs(normal[2])<=std::abs(normal[0]) &&
+          std::abs(normal[2])<=std::abs(normal[1])) axis={{0.0,0.0,1.0}};
+  const Vec3 t1=unit_vector(cross(normal,axis));
+  return {{t1,unit_vector(cross(normal,t1))}};
+}
+
+Vec3 random_unit_vector(ShockStressRandom& random){
+  const double z=random.uniform(-1.0,1.0);
+  const double phi=random.uniform(0.0,2.0*swcme::constants::PI);
+  const double radius=std::sqrt(std::max(0.0,1.0-z*z));
+  return {{radius*std::cos(phi),radius*std::sin(phi),z}};
+}
+
+bool finite_primitive(const Primitive& state){
+  if(!std::isfinite(state.rho_kg_m3) || !std::isfinite(state.pressure_Pa))
+    return false;
+  for(double value:state.velocity_m_s) if(!std::isfinite(value)) return false;
+  for(double value:state.magnetic_T) if(!std::isfinite(value)) return false;
+  return true;
+}
+
+bool finite_jump(const swcme::shock::JumpResult& jump){
+  const std::array<double,20> scalars={{
+      jump.compression,jump.theta_Bn_rad,jump.fast_speed_m_s,jump.fast_mach,
+      jump.shock_normal_speed_m_s,jump.upstream_inflow_normal_m_s,
+      jump.root_bracket_lower_compression,jump.root_bracket_upper_compression,
+      jump.root_bracket_width,jump.minimum_tangential_determinant_relative,
+      jump.closest_tangential_determinant_relative,
+      jump.selected_tangential_determinant_relative,jump.downstream_fast_mach,
+      jump.downstream_normal_alfven_mach,jump.mass_residual,
+      jump.normal_B_residual,jump.electric_residual,jump.momentum_residual,
+      jump.energy_residual,jump.entropy_ratio}};
+  return finite_primitive(jump.upstream) && finite_primitive(jump.downstream) &&
+      std::all_of(scalars.begin(),scalars.end(),
+                  [](double value){return std::isfinite(value);});
+}
+
+const char* stress_stratum_name(StressStratum stratum){
+  switch(stratum){
+    case StressStratum::NoShock: return "no_shock";
+    case StressStratum::WeakLimit: return "weak_limit";
+    case StressStratum::Resolved: return "resolved";
+    case StressStratum::Conditioned: return "conditioned";
+  }
+  return "unknown";
+}
+
+// Build the high-count campaign once per validation process.  Later SHK06-08
+// tests consume these exact serialized results, so the full suite pays the
+// 100,000 nonlinear solves only once while each focused invocation remains
+// independently executable.  The four strata guarantee substantial no-shock,
+// sub-resolution weak, ordinary resolved, and determinant-conditioned cover.
+const std::vector<StressCase>& shock_stress_cases(){
+  static const std::vector<StressCase> cases=[] {
+    constexpr std::size_t count=100000;
+    constexpr std::uint64_t seed=0x53484b31355f7631ULL;
+    ShockStressRandom random(seed);
+    std::vector<StressCase> generated;
+    generated.reserve(count);
+    for(std::size_t index=0;index<count;++index){
+      StressCase item;
+      item.index=index;
+      item.gamma=random.uniform(1.2,5.0/3.0);
+      item.normal=random_unit_vector(random);
+      const auto basis=tangential_basis(item.normal);
+
+      // Density, field strength, and beta span four to five orders of
+      // magnitude logarithmically.  Pressure is derived from beta, while the
+      // independent density range makes the implied temperature another broad
+      // log-distributed physical scale rather than a fixed hidden constant.
+      item.upstream.rho_kg_m3=random.log_uniform(0.01,100.0)*1.0e6*MP;
+      const double field_magnitude=random.log_uniform(0.1,100.0)*1.0e-9;
+      double beta=random.log_uniform(1.0e-3,100.0);
+      double cosine_theta=random.uniform(0.02,0.999);
+      if(random.next_u64()&1ULL) cosine_theta=-cosine_theta;
+      const double sine_theta=std::sqrt(std::max(0.0,1.0-cosine_theta*cosine_theta));
+      const double field_azimuth=random.uniform(0.0,2.0*swcme::constants::PI);
+      const Vec3 field_direction=add(scale(item.normal,cosine_theta),
+          add(scale(basis[0],sine_theta*std::cos(field_azimuth)),
+              scale(basis[1],sine_theta*std::sin(field_azimuth))));
+      item.upstream.magnetic_T=scale(field_direction,field_magnitude);
+      item.upstream.pressure_Pa=beta*field_magnitude*field_magnitude/(2.0*MU0);
+
+      const double normal_flow=random.uniform(2.0e5,8.0e5);
+      const double tangent_scale=random.uniform(-2.0e5,2.0e5);
+      const double tangent_angle=random.uniform(0.0,2.0*swcme::constants::PI);
+      item.upstream.velocity_m_s=add(scale(item.normal,normal_flow),
+          add(scale(basis[0],tangent_scale*std::cos(tangent_angle)),
+              scale(basis[1],tangent_scale*std::sin(tangent_angle))));
+
+      if(index<25000){
+        item.stratum=StressStratum::NoShock;
+        item.requested_fast_mach=random.uniform(0.2,0.999999);
+      } else if(index<50000){
+        item.stratum=StressStratum::WeakLimit;
+        item.requested_fast_mach=1.0+random.log_uniform(1.0e-10,1.0e-6);
+      } else if(index<99900){
+        item.stratum=StressStratum::Resolved;
+        // The resolved stratum deliberately excludes the weak/parallel,
+        // low-beta corner assigned to the adjacent explicit-limit strata.
+        // This makes a generic WRONG_BRANCH outcome a genuine regression
+        // rather than an undocumented expectation for an ill-conditioned
+        // random draw, while the campaign as a whole retains the full ranges.
+        beta=random.log_uniform(0.1,10.0);
+        item.upstream.pressure_Pa=
+            beta*field_magnitude*field_magnitude/(2.0*MU0);
+        double resolved_cosine=random.uniform(0.05,0.95);
+        if(random.next_u64()&1ULL) resolved_cosine=-resolved_cosine;
+        const double resolved_sine=std::sqrt(
+            std::max(0.0,1.0-resolved_cosine*resolved_cosine));
+        const double resolved_azimuth=
+            random.uniform(0.0,2.0*swcme::constants::PI);
+        item.upstream.magnetic_T=scale(add(scale(item.normal,resolved_cosine),
+            add(scale(basis[0],resolved_sine*std::cos(resolved_azimuth)),
+                scale(basis[1],resolved_sine*std::sin(resolved_azimuth)))),
+            field_magnitude);
+        item.requested_fast_mach=1.0+random.log_uniform(1.0,5.0);
+      } else {
+        item.stratum=StressStratum::Conditioned;
+        // Place the determinant zero on a scan node for a low-beta, nearly
+        // parallel state.  Varying the node and polarity across 100 examples
+        // stresses singular segmentation without relying on chance sampling.
+        beta=random.log_uniform(1.0e-3,1.0e-2);
+        const double angle=random.uniform(0.5,3.0)*swcme::constants::PI/180.0;
+        const double polarity=(random.next_u64()&1ULL)?1.0:-1.0;
+        item.upstream.magnetic_T=add(
+            scale(item.normal,polarity*field_magnitude*std::cos(angle)),
+            scale(basis[0],polarity*field_magnitude*std::sin(angle)));
+        item.upstream.pressure_Pa=beta*field_magnitude*field_magnitude/(2.0*MU0);
+        const double scan_index=250.0+static_cast<double>(index%301);
+        const double fraction=scan_index/800.0;
+        const double rmax=(item.gamma+1.0)/(item.gamma-1.0);
+        const double singular_r=1.0+1.0e-9+
+            (rmax-1.0-1.0e-9)*fraction*fraction;
+        const double Bn=dot(item.upstream.magnetic_T,item.normal);
+        const double inflow=std::sqrt(singular_r*Bn*Bn/
+                                      (MU0*item.upstream.rho_kg_m3));
+        item.requested_fast_mach=inflow/
+            reference_fast_speed(item.upstream,item.normal,item.gamma);
+      }
+
+      const double fast=reference_fast_speed(item.upstream,item.normal,item.gamma);
+      item.shock_speed_m_s=dot(item.upstream.velocity_m_s,item.normal)+
+                            item.requested_fast_mach*fast;
+      item.result=swcme::shock::solve_ideal_mhd_fast_shock(
+          item.upstream,item.normal,item.shock_speed_m_s,item.gamma);
+      generated.push_back(item);
+    }
+    return generated;
+  }();
+  return cases;
+}
+
+std::string stress_reproducer(const StressCase& item){
+  std::ostringstream stream;
+  stream<<"index="<<item.index<<" stratum="<<stress_stratum_name(item.stratum)
+        <<" gamma="<<std::setprecision(17)<<item.gamma
+        <<" requested_Mfast="<<item.requested_fast_mach
+        <<" status="<<swcme::shock::solve_status_name(item.result.status)
+        <<" normal=["<<item.normal[0]<<','<<item.normal[1]<<','<<item.normal[2]<<']'
+        <<" rho="<<item.upstream.rho_kg_m3
+        <<" pressure="<<item.upstream.pressure_Pa
+        <<" velocity=["<<item.upstream.velocity_m_s[0]<<','
+        <<item.upstream.velocity_m_s[1]<<','<<item.upstream.velocity_m_s[2]<<']'
+        <<" magnetic=["<<item.upstream.magnetic_T[0]<<','
+        <<item.upstream.magnetic_T[1]<<','<<item.upstream.magnetic_T[2]<<']'
+        <<" shock_speed="<<item.shock_speed_m_s;
+  return stream.str();
 }
 
 } // namespace
@@ -317,9 +553,88 @@ void test_shk05(swcme_test::Context& context){
 
 void test_shk06(swcme_test::Context& context){
   std::cout<<"SHK06 Rankine-Hugoniot mass-flux conservation\n";
-  const auto r=oblique_fixture_result();
-  context.expect_true(r.has_shock&&r.solver_converged,"reference oblique shock converged");
-  expect_abs(context,"mass residual",r.mass_residual,0.0,1e-10);
+  constexpr long double acceptance=1.0e-9L;
+  long double maximum_residual=0.0L;
+  std::size_t solved_count=0;
+  std::size_t weak_count=0;
+  std::size_t high_compression_count=0;
+  std::size_t failures_reported=0;
+
+  // Compute the invariant solely from the serialized upstream/downstream
+  // primitives and public normal/speed inputs.  Long-double accumulation and
+  // a symmetric larger-flux normalization keep this oracle independent of the
+  // production residual field and meaningful for very small physical fluxes.
+  auto check_mass_flux=[&](const Primitive& upstream,
+                           const swcme::shock::JumpResult& result,
+                           const Vec3& normal,double shock_speed,
+                           const std::string& reproducer){
+    if(result.status!=swcme::shock::SolveStatus::Solved) return;
+    long double u1n=0.0L,u2n=0.0L;
+    for(int component=0;component<3;++component){
+      const long double shock_component=
+          static_cast<long double>(shock_speed)*normal[component];
+      u1n+=(static_cast<long double>(upstream.velocity_m_s[component])-
+            shock_component)*normal[component];
+      u2n+=(static_cast<long double>(result.downstream.velocity_m_s[component])-
+            shock_component)*normal[component];
+    }
+    const long double flux1=static_cast<long double>(upstream.rho_kg_m3)*u1n;
+    const long double flux2=
+        static_cast<long double>(result.downstream.rho_kg_m3)*u2n;
+    const long double scale_flux=std::max(
+        {std::abs(flux1),std::abs(flux2),
+         std::numeric_limits<long double>::min()});
+    const long double residual=std::abs(flux1-flux2)/scale_flux;
+    maximum_residual=std::max(maximum_residual,residual);
+    ++solved_count;
+    if(result.compression<1.01) ++weak_count;
+    if(result.compression>4.0) ++high_compression_count;
+    if((!std::isfinite(residual) || residual>acceptance) &&
+       failures_reported<8){
+      std::cerr<<"    SHK06 mass-flux failure residual="
+               <<static_cast<double>(residual)<<' '<<reproducer<<'\n';
+      ++failures_reported;
+    }
+  };
+
+  for(const StressCase& item:shock_stress_cases()){
+    check_mass_flux(item.upstream,item.result,item.normal,
+                    item.shock_speed_m_s,stress_reproducer(item));
+  }
+
+  // Add the independently frozen SHK12 weak branches because the resolved
+  // random stratum intentionally starts at Mach two.  These cases make the
+  // mass-flux gate sensitive near compression one without relaxing SHK15's
+  // requirement that all ordinary random states solve cleanly.
+  for(const auto& expected:swcme_test::shk12_reference_v1::CASES){
+    Primitive upstream;
+    upstream.rho_kg_m3=expected.upstream_rho_kg_m3;
+    upstream.pressure_Pa=expected.upstream_pressure_Pa;
+    for(int component=0;component<3;++component){
+      upstream.velocity_m_s[component]=expected.upstream_velocity_m_s[component];
+      upstream.magnetic_T[component]=expected.upstream_magnetic_T[component];
+    }
+    const Vec3 normal={{1.0,0.0,0.0}};
+    const auto result=swcme::shock::solve_ideal_mhd_fast_shock(
+        upstream,normal,expected.shock_speed_m_s,expected.gamma);
+    check_mass_flux(upstream,result,normal,expected.shock_speed_m_s,
+                    std::string("fixture=")+expected.id);
+  }
+
+  std::cout<<"  independently checked="<<solved_count
+           <<" weak="<<weak_count
+           <<" high_compression="<<high_compression_count
+           <<" max_normalized_residual="<<std::scientific
+           <<static_cast<double>(maximum_residual)<<'\n';
+  context.expect_true(solved_count>=49000,
+                      "SHK06 independently checks the complete solved stress population");
+  context.expect_true(weak_count>=8,
+                      "SHK06 includes weak shocks below compression 1.01");
+  context.expect_true(high_compression_count>=8,
+                      "SHK06 includes high-compression shocks above four");
+  context.expect_true(std::isfinite(maximum_residual) &&
+                          maximum_residual<=acceptance,
+                      "SHK06 independent normalized mass flux meets 1e-9 threshold");
 
   // Integration check: RESOLVED_COMPRESSION reaches the exact RH state at
   // the inner edge of its finite C1 shock layer.  The mathematical shock state
@@ -350,16 +665,252 @@ void test_shk06(swcme_test::Context& context){
 
 void test_shk07(swcme_test::Context& context){
   std::cout<<"SHK07 Rankine-Hugoniot normal magnetic-field continuity\n";
-  const auto r=oblique_fixture_result();
-  context.expect_true(r.has_shock&&r.solver_converged,"reference oblique shock converged");
-  expect_abs(context,"normal-B residual",r.normal_B_residual,0.0,1e-12);
+  constexpr long double acceptance=1.0e-10L;
+  long double maximum_residual=0.0L;
+  std::size_t checked=0;
+  std::size_t positive_polarity=0;
+  std::size_t negative_polarity=0;
+  std::size_t failures_reported=0;
+
+  // Evaluate B.n from the serialized Cartesian vectors using long-double
+  // products.  The scale contains the physical normal field and a tiny total-
+  // field guard, so nearly perpendicular samples remain finite without making
+  // an absolute tesla tolerance part of this dimensionless invariant.
+  auto check_normal_field=[&](const Primitive& upstream,
+                              const swcme::shock::JumpResult& result,
+                              const Vec3& normal,
+                              const std::string& reproducer){
+    if(result.status!=swcme::shock::SolveStatus::Solved) return;
+    long double B1n=0.0L,B2n=0.0L,B1sq=0.0L,B2sq=0.0L;
+    for(int component=0;component<3;++component){
+      const long double B1=upstream.magnetic_T[component];
+      const long double B2=result.downstream.magnetic_T[component];
+      B1n+=B1*normal[component];
+      B2n+=B2*normal[component];
+      B1sq+=B1*B1;
+      B2sq+=B2*B2;
+    }
+    const long double field_scale=std::max(std::sqrt(B1sq),std::sqrt(B2sq));
+    const long double scale_normal=std::max(
+        {std::abs(B1n),std::abs(B2n),1.0e-12L*field_scale,1.0e-300L});
+    const long double residual=std::abs(B1n-B2n)/scale_normal;
+    maximum_residual=std::max(maximum_residual,residual);
+    ++checked;
+    if(B1n>=0.0L) ++positive_polarity; else ++negative_polarity;
+    if((!std::isfinite(residual) || residual>acceptance) &&
+       failures_reported<8){
+      std::cerr<<"    SHK07 normal-B failure residual="
+               <<static_cast<double>(residual)<<' '<<reproducer<<'\n';
+      ++failures_reported;
+    }
+  };
+
+  for(const StressCase& item:shock_stress_cases()){
+    check_normal_field(item.upstream,item.result,item.normal,
+                       stress_reproducer(item));
+  }
+
+  std::size_t covariance_pairs=0;
+  for(const StressCase& item:shock_stress_cases()){
+    if(item.result.status!=swcme::shock::SolveStatus::Solved ||
+       covariance_pairs>=256) continue;
+
+    // Cyclic coordinate permutation is a proper three-dimensional rotation
+    // (determinant +1).  Applying it to normal, velocity, and magnetic field
+    // supplies a direct rotational-covariance pair without transforming any
+    // scalar shock input or expected result through production helpers.
+    auto rotate=[](const Vec3& value){
+      return Vec3{{value[2],value[0],value[1]}};
+    };
+    Primitive rotated=item.upstream;
+    rotated.velocity_m_s=rotate(item.upstream.velocity_m_s);
+    rotated.magnetic_T=rotate(item.upstream.magnetic_T);
+    const Vec3 rotated_normal=rotate(item.normal);
+    const auto rotated_result=swcme::shock::solve_ideal_mhd_fast_shock(
+        rotated,rotated_normal,item.shock_speed_m_s,item.gamma);
+    check_normal_field(rotated,rotated_result,rotated_normal,
+                       "rotated "+stress_reproducer(item));
+    context.expect_true(
+        rotated_result.status==swcme::shock::SolveStatus::Solved &&
+            std::abs(rotated_result.compression-item.result.compression)<=
+                2.0e-10*std::max(1.0,item.result.compression),
+        "SHK07 proper rotation preserves solved compression");
+
+    Primitive reversed=item.upstream;
+    reversed.magnetic_T=scale(reversed.magnetic_T,-1.0);
+    const auto reversed_result=swcme::shock::solve_ideal_mhd_fast_shock(
+        reversed,item.normal,item.shock_speed_m_s,item.gamma);
+    check_normal_field(reversed,reversed_result,item.normal,
+                       "polarity-reversed "+stress_reproducer(item));
+    context.expect_true(
+        reversed_result.status==swcme::shock::SolveStatus::Solved &&
+            std::abs(reversed_result.compression-item.result.compression)<=
+                2.0e-10*std::max(1.0,item.result.compression),
+        "SHK07 magnetic-polarity reversal preserves solved compression");
+    ++covariance_pairs;
+  }
+
+  std::cout<<"  independently checked="<<checked
+           <<" rotation/polarity pairs="<<covariance_pairs
+           <<" positive_Bn="<<positive_polarity
+           <<" negative_Bn="<<negative_polarity
+           <<" max_normalized_residual="<<std::scientific
+           <<static_cast<double>(maximum_residual)<<'\n';
+  context.expect_true(checked>=49000,
+                      "SHK07 independently checks the solved stress population");
+  context.expect_true(covariance_pairs==256,
+                      "SHK07 completes all proper-rotation and polarity pairs");
+  context.expect_true(positive_polarity>10000 && negative_polarity>10000,
+                      "SHK07 covers both normal-field polarities broadly");
+  context.expect_true(std::isfinite(maximum_residual) &&
+                          maximum_residual<=acceptance,
+                      "SHK07 independent normal-B residual meets 1e-10 threshold");
 }
 
 void test_shk08(swcme_test::Context& context){
   std::cout<<"SHK08 Rankine-Hugoniot tangential electric-field conservation\n";
-  const auto r=oblique_fixture_result();
-  context.expect_true(r.has_shock&&r.solver_converged,"reference oblique shock converged");
-  expect_abs(context,"tangential-E residual",r.electric_residual,0.0,1e-9);
+  constexpr long double acceptance=1.0e-8L;
+  long double maximum_component_residual=0.0L;
+  std::size_t checked_states=0;
+  std::size_t checked_components=0;
+  std::size_t deterministic_states=0;
+  std::size_t failures_reported=0;
+
+  // Reconstruct E=-u x B in Cartesian coordinates from public primitives.
+  // Neither the production cross-product helper nor electric_residual enters
+  // this oracle.  Each of two test-owned tangential axes is checked separately
+  // so cancellation between components cannot hide a sign or ordering error.
+  auto check_electric_field=[&](const Primitive& upstream,
+                                const swcme::shock::JumpResult& result,
+                                const Vec3& normal,double shock_speed,
+                                const std::string& reproducer){
+    if(result.status!=swcme::shock::SolveStatus::Solved) return;
+    const auto basis=tangential_basis(normal);
+    std::array<long double,3> u1{{0.0L,0.0L,0.0L}};
+    std::array<long double,3> u2{{0.0L,0.0L,0.0L}};
+    for(int component=0;component<3;++component){
+      const long double shock_component=
+          static_cast<long double>(shock_speed)*normal[component];
+      u1[component]=upstream.velocity_m_s[component]-shock_component;
+      u2[component]=result.downstream.velocity_m_s[component]-shock_component;
+    }
+    auto electric=[](const std::array<long double,3>& velocity,
+                     const Vec3& magnetic){
+      return std::array<long double,3>{{
+          -(velocity[1]*magnetic[2]-velocity[2]*magnetic[1]),
+          -(velocity[2]*magnetic[0]-velocity[0]*magnetic[2]),
+          -(velocity[0]*magnetic[1]-velocity[1]*magnetic[0])}};
+    };
+    const auto E1=electric(u1,upstream.magnetic_T);
+    const auto E2=electric(u2,result.downstream.magnetic_T);
+    long double E1sq=0.0L,E2sq=0.0L;
+    for(int component=0;component<3;++component){
+      E1sq+=E1[component]*E1[component];
+      E2sq+=E2[component]*E2[component];
+    }
+    const long double vector_scale=std::max(std::sqrt(E1sq),std::sqrt(E2sq));
+    for(int tangent=0;tangent<2;++tangent){
+      long double component1=0.0L,component2=0.0L;
+      for(int component=0;component<3;++component){
+        component1+=E1[component]*basis[tangent][component];
+        component2+=E2[component]*basis[tangent][component];
+      }
+      const long double component_scale=std::max(
+          {std::abs(component1),std::abs(component2),
+           1.0e-12L*vector_scale,1.0e-300L});
+      const long double residual=
+          std::abs(component1-component2)/component_scale;
+      maximum_component_residual=std::max(maximum_component_residual,residual);
+      ++checked_components;
+      if((!std::isfinite(residual) || residual>acceptance) &&
+         failures_reported<8){
+        std::cerr<<"    SHK08 tangential component "<<tangent
+                 <<" failure residual="<<static_cast<double>(residual)
+                 <<' '<<reproducer<<'\n';
+        ++failures_reported;
+      }
+    }
+    ++checked_states;
+  };
+
+  for(const StressCase& item:shock_stress_cases()){
+    check_electric_field(item.upstream,item.result,item.normal,
+                         item.shock_speed_m_s,stress_reproducer(item));
+  }
+
+  // The frozen SHK05 matrix supplies deterministic oblique states whose full
+  // downstream primitives originate in an 80-digit independent eight-equation
+  // solve.  Re-solving those inputs here complements random stress with named,
+  // reviewable regression fixtures.
+  for(const auto& expected:swcme_test::shk05_reference_v1::CASES){
+    Primitive upstream;
+    upstream.rho_kg_m3=expected.upstream_rho_kg_m3;
+    upstream.pressure_Pa=expected.upstream_pressure_Pa;
+    for(int component=0;component<3;++component){
+      upstream.velocity_m_s[component]=expected.upstream_velocity_m_s[component];
+      upstream.magnetic_T[component]=expected.upstream_magnetic_T[component];
+    }
+    const Vec3 normal={{1.0,0.0,0.0}};
+    const auto result=swcme::shock::solve_ideal_mhd_fast_shock(
+        upstream,normal,expected.shock_speed_m_s,expected.gamma);
+    check_electric_field(upstream,result,normal,expected.shock_speed_m_s,
+                         std::string("fixture=")+expected.id);
+    if(result.status==swcme::shock::SolveStatus::Solved) ++deterministic_states;
+  }
+
+  std::size_t covariance_pairs=0;
+  for(const StressCase& item:shock_stress_cases()){
+    if(item.result.status!=swcme::shock::SolveStatus::Solved ||
+       covariance_pairs>=256) continue;
+    auto rotate=[](const Vec3& value){
+      return Vec3{{value[2],value[0],value[1]}};
+    };
+    Primitive rotated=item.upstream;
+    rotated.velocity_m_s=rotate(item.upstream.velocity_m_s);
+    rotated.magnetic_T=rotate(item.upstream.magnetic_T);
+    const Vec3 rotated_normal=rotate(item.normal);
+    const auto rotated_result=swcme::shock::solve_ideal_mhd_fast_shock(
+        rotated,rotated_normal,item.shock_speed_m_s,item.gamma);
+    check_electric_field(rotated,rotated_result,rotated_normal,
+                         item.shock_speed_m_s,
+                         "rotated "+stress_reproducer(item));
+    context.expect_true(
+        rotated_result.status==swcme::shock::SolveStatus::Solved &&
+            std::abs(rotated_result.compression-item.result.compression)<=
+                2.0e-10*std::max(1.0,item.result.compression),
+        "SHK08 proper rotation preserves solved compression");
+
+    Primitive reversed=item.upstream;
+    reversed.magnetic_T=scale(reversed.magnetic_T,-1.0);
+    const auto reversed_result=swcme::shock::solve_ideal_mhd_fast_shock(
+        reversed,item.normal,item.shock_speed_m_s,item.gamma);
+    check_electric_field(reversed,reversed_result,item.normal,
+                         item.shock_speed_m_s,
+                         "polarity-reversed "+stress_reproducer(item));
+    context.expect_true(
+        reversed_result.status==swcme::shock::SolveStatus::Solved &&
+            std::abs(reversed_result.compression-item.result.compression)<=
+                2.0e-10*std::max(1.0,item.result.compression),
+        "SHK08 magnetic-polarity reversal preserves solved compression");
+    ++covariance_pairs;
+  }
+
+  std::cout<<"  independently checked states="<<checked_states
+           <<" components="<<checked_components
+           <<" deterministic="<<deterministic_states
+           <<" rotation/polarity pairs="<<covariance_pairs
+           <<" max_component_residual="<<std::scientific
+           <<static_cast<double>(maximum_component_residual)<<'\n';
+  context.expect_true(checked_states>=49000 &&
+                          checked_components==2*checked_states,
+                      "SHK08 checks two tangential components for every solved state");
+  context.expect_true(deterministic_states>=12,
+                      "SHK08 includes all named independent oblique fixtures");
+  context.expect_true(covariance_pairs==256,
+                      "SHK08 completes all proper-rotation and polarity pairs");
+  context.expect_true(std::isfinite(maximum_component_residual) &&
+                          maximum_component_residual<=acceptance,
+                      "SHK08 independent tangential-E components meet 1e-8 threshold");
 }
 
 void test_shk09(swcme_test::Context& context){
@@ -547,6 +1098,163 @@ void test_shk12(swcme_test::Context& context){
             std::isfinite(result.compression) &&
             std::isfinite(result.downstream.rho_kg_m3) &&
             std::isfinite(result.downstream.pressure_Pa),
-        "SHK12 discontinuous near-singular branch is explicitly unresolved");
+        std::string("SHK12 discontinuous near-singular branch is explicitly unresolved; status=")+
+            swcme::shock::solve_status_name(result.status)+
+            " compression="+std::to_string(result.compression));
   }
+}
+
+void test_shk16(swcme_test::Context& context){
+  std::cout<<"SHK16 near-singular tangential system\n";
+  const Vec3 normal={{1.0,0.0,0.0}};
+  Primitive upstream=fixture(5.0,5.0,5.0,2.0e4);
+
+  // Choose the shock-frame inflow from an independently specified singular
+  // compression.  For the tangential 2x2 system, det=0 when
+  // rho*u1n^2/r=Bn^2/mu0.  Selecting one of the production scan abscissae is
+  // deliberate: it proves that a sampled pole splits the residual sequence
+  // instead of allowing a false sign change to bridge the discontinuity.
+  const double rmax=(GAMMA+1.0)/(GAMMA-1.0);
+  const double scan_fraction=0.5;
+  const double singular_compression=1.0+1.0e-9+
+      (rmax-1.0-1.0e-9)*scan_fraction*scan_fraction;
+  const double Bn=dot(upstream.magnetic_T,normal);
+  const double inflow=std::sqrt(singular_compression*Bn*Bn/
+                                (MU0*upstream.rho_kg_m3));
+  const double shock_speed=upstream.velocity_m_s[0]+inflow;
+
+  // Exercise both sides of the pole at logarithmically decreasing offsets.
+  // The expected signed conditioning is calculated here from the analytic
+  // determinant rather than copied from candidate_for_compression().  The two
+  // closest offsets also probe the explicit 1e-12 binary64 safety boundary.
+  for(double offset : {1.0e-3,1.0e-6,1.0e-9,1.0e-13}){
+    for(double side : {-1.0,1.0}){
+      const double compression=singular_compression*(1.0+side*offset);
+      const auto candidate=swcme::shock::detail::candidate_for_compression(
+          upstream,normal,shock_speed,GAMMA,compression);
+      const double inertial=upstream.rho_kg_m3*inflow*inflow/compression;
+      const double magnetic=Bn*Bn/MU0;
+      const double reference_relative=(inertial-magnetic)/
+          std::max({std::abs(inertial),std::abs(magnetic),1.0e-300});
+      const std::string label="SHK16 offset="+std::to_string(offset)+
+                              (side<0.0?" below":" above");
+      expect_abs(context,label+" signed determinant",
+                 candidate.tangential_determinant_relative,
+                 reference_relative,2.0e-15);
+      context.expect_true(
+          (candidate.tangential_determinant_relative>0.0)==(side<0.0),
+          label+" preserves determinant side");
+      context.expect_true(candidate.singular==(offset<=1.0e-12),
+                          label+" has stable singular classification");
+    }
+  }
+
+  // One-ULP perturbations are the most hostile representable changes to the
+  // constructed family.  Every outcome must remain explicitly classified,
+  // finite, and, if a physical root is returned, on the evolutionary fast
+  // branch with a bracket confined to one side of the determinant pole.
+  const std::array<double,3> speeds={{
+      std::nextafter(shock_speed,-std::numeric_limits<double>::infinity()),
+      shock_speed,
+      std::nextafter(shock_speed,std::numeric_limits<double>::infinity())}};
+  swcme::shock::SolveStatus baseline_status=swcme::shock::SolveStatus::InvalidInput;
+  for(std::size_t index=0;index<speeds.size();++index){
+    const auto result=swcme::shock::solve_ideal_mhd_fast_shock(
+        upstream,normal,speeds[index],GAMMA);
+    if(index==0) baseline_status=result.status;
+    context.expect_true(result.status==baseline_status,
+                        "SHK16 one-ULP perturbations retain status");
+    context.expect_true(result.status==swcme::shock::SolveStatus::Solved ||
+                            result.status==swcme::shock::SolveStatus::NumericallySingular,
+                        "SHK16 result is solved or explicitly singular");
+    context.expect_true(result.encountered_tangential_singularity,
+                        "SHK16 sampled pole is retained in diagnostics");
+    context.expect_true(std::isfinite(result.minimum_tangential_determinant_relative) &&
+                            std::isfinite(result.closest_tangential_determinant_relative) &&
+                            std::isfinite(result.root_bracket_lower_compression) &&
+                            std::isfinite(result.root_bracket_upper_compression),
+                        "SHK16 diagnostic payload remains finite");
+    if(result.status==swcme::shock::SolveStatus::Solved){
+      context.expect_true(result.evolutionary_fast_branch,
+                          "SHK16 accepted result is evolutionary fast");
+      context.expect_true(result.root_bracket_upper_compression<singular_compression ||
+                              result.root_bracket_lower_compression>singular_compression,
+                          "SHK16 root bracket never crosses singular pole");
+    }
+  }
+}
+
+void test_shk15(swcme_test::Context& context){
+  std::cout<<"SHK15 high-count deterministic random shock stress\n";
+  const auto& cases=shock_stress_cases();
+  std::array<std::size_t,9> status_counts{{0,0,0,0,0,0,0,0,0}};
+  std::size_t finite_count=0;
+  std::size_t expected_classification_count=0;
+  std::size_t conditioned_count=0;
+  std::size_t reported_failures=0;
+
+  for(const StressCase& item:cases){
+    const auto status_index=static_cast<std::size_t>(item.result.status);
+    if(status_index<status_counts.size()) ++status_counts[status_index];
+    if(finite_jump(item.result)) ++finite_count;
+    if(item.result.encountered_tangential_singularity) ++conditioned_count;
+
+    bool expected=false;
+    if(item.stratum==StressStratum::NoShock){
+      expected=item.result.status==swcme::shock::SolveStatus::NoShock &&
+          !item.result.has_shock && item.result.solver_converged;
+    } else if(item.stratum==StressStratum::WeakLimit){
+      expected=item.result.status==
+          swcme::shock::SolveStatus::NumericallyUnresolvedWeakShock &&
+          item.result.has_shock && !item.result.solver_converged;
+    } else {
+      // Resolved and determinant-conditioned inputs may either produce the
+      // verified evolutionary fast branch or one of the two documented
+      // supported-limit rejections.  Generic bracket, reconstruction,
+      // conservation, and wrong-branch failures remain forbidden.
+      expected=(item.result.status==swcme::shock::SolveStatus::Solved &&
+                    item.result.has_shock && item.result.solver_converged &&
+                    item.result.evolutionary_fast_branch) ||
+          ((item.result.status==swcme::shock::SolveStatus::NumericallySingular ||
+            item.result.status==
+                swcme::shock::SolveStatus::NumericallyUnresolvedWeakShock) &&
+                    item.result.has_shock && !item.result.solver_converged);
+    }
+    if(expected) ++expected_classification_count;
+    else if(reported_failures<8){
+      // A complete, fixed-seed primitive record is a directly reusable
+      // reproducer.  Limiting diagnostics prevents a systemic regression from
+      // flooding CI while preserving the first examples for minimization and
+      // independent high-precision analysis.
+      std::cerr<<"    SHK15 unexpected case: "<<stress_reproducer(item)<<'\n';
+      ++reported_failures;
+    }
+  }
+
+  std::cout<<"  seed=0x53484b31355f7631 cases="<<cases.size()
+           <<" solved="
+           <<status_counts[static_cast<std::size_t>(swcme::shock::SolveStatus::Solved)]
+           <<" no_shock="
+           <<status_counts[static_cast<std::size_t>(swcme::shock::SolveStatus::NoShock)]
+           <<" weak_limit="
+           <<status_counts[static_cast<std::size_t>(
+                  swcme::shock::SolveStatus::NumericallyUnresolvedWeakShock)]
+           <<" singular="
+           <<status_counts[static_cast<std::size_t>(
+                  swcme::shock::SolveStatus::NumericallySingular)]
+           <<" conditioned_trials="<<conditioned_count<<'\n';
+  context.expect_true(cases.size()>=100000,
+                      "SHK15 executes at least 100,000 physical inputs");
+  context.expect_true(finite_count==cases.size(),
+                      "SHK15 emits no NaN or infinite diagnostic/primitive values");
+  context.expect_true(expected_classification_count==cases.size(),
+                      "SHK15 every input has an expected physical or supported-limit status");
+  context.expect_true(conditioned_count>=90,
+                      "SHK15 includes at least 90 sampled singular systems");
+  context.expect_true(
+      status_counts[static_cast<std::size_t>(swcme::shock::SolveStatus::NoPhysicalBracket)]==0 &&
+      status_counts[static_cast<std::size_t>(swcme::shock::SolveStatus::InvalidAcceptedState)]==0 &&
+      status_counts[static_cast<std::size_t>(swcme::shock::SolveStatus::ConservationFailure)]==0 &&
+      status_counts[static_cast<std::size_t>(swcme::shock::SolveStatus::WrongBranch)]==0,
+      "SHK15 has zero unclassified bracket, reconstruction, conservation, or branch failures");
 }

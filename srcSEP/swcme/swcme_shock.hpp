@@ -81,7 +81,9 @@ enum class SolveStatus {
   ConservationFailure,
   // Appended to preserve the numeric values of all previously public status
   // members for callers that serialize the enum rather than its stable name.
-  NumericallyUnresolvedWeakShock
+  NumericallyUnresolvedWeakShock,
+  NumericallySingular,
+  WrongBranch
 };
 
 inline const char* solve_status_name(SolveStatus status) {
@@ -90,6 +92,8 @@ inline const char* solve_status_name(SolveStatus status) {
     case SolveStatus::Solved: return "SOLVED";
     case SolveStatus::NumericallyUnresolvedWeakShock:
       return "NUMERICALLY_UNRESOLVED_WEAK_SHOCK";
+    case SolveStatus::NumericallySingular: return "NUMERICALLY_SINGULAR";
+    case SolveStatus::WrongBranch: return "WRONG_BRANCH";
     case SolveStatus::InvalidInput: return "INVALID_INPUT";
     case SolveStatus::NoPhysicalBracket: return "NO_PHYSICAL_BRACKET";
     case SolveStatus::InvalidAcceptedState: return "INVALID_ACCEPTED_STATE";
@@ -129,6 +133,17 @@ struct JumpResult {
   double root_bracket_lower_compression = 0.0;
   double root_bracket_upper_compression = 0.0;
   double root_bracket_width = 0.0;
+
+  // Conditioning and characteristic diagnostics for the tangential solve and
+  // selected downstream branch.  Values remain finite for every return path;
+  // one denotes "not evaluated" for determinant conditioning.
+  bool encountered_tangential_singularity = false;
+  double minimum_tangential_determinant_relative = 1.0;
+  double closest_tangential_determinant_relative = 1.0;
+  double selected_tangential_determinant_relative = 1.0;
+  double downstream_fast_mach = 0.0;
+  double downstream_normal_alfven_mach = 0.0;
+  bool evolutionary_fast_branch = false;
 
   PrimitiveState upstream;
   PrimitiveState downstream;
@@ -216,6 +231,11 @@ inline double total_energy_flux_normal(const PrimitiveState& state,
 
 struct Candidate {
   bool valid = false;
+  // singular distinguishes an ill-conditioned tangential 2x2 solve from
+  // unrelated invalid candidates such as negative reconstructed pressure.
+  bool singular = false;
+  double tangential_determinant = 0.0;
+  double tangential_determinant_relative = 1.0;
   double energy_residual = 0.0;
   PrimitiveState downstream;
   Vec3 u2{{0.0,0.0,0.0}};
@@ -265,10 +285,16 @@ inline Candidate candidate_for_compression(const PrimitiveState& upstream,
     const double det = u2n*mass_flux - Bn*Bn/mu0;
     const double det_scale = std::max({std::abs(u2n*mass_flux),
                                        std::abs(Bn*Bn/mu0),1.0e-300});
+    out.tangential_determinant=det;
+    out.tangential_determinant_relative=det/det_scale;
     // Near this determinant the ideal-MHD tangential system is singular.  Do
     // not hide the conditioning by replacing it with a large finite number;
-    // the bracket scan simply skips this mathematically singular candidate.
-    if (!std::isfinite(det) || std::abs(det)<=1.0e-12*det_scale) return out;
+    // mark the candidate so the bracket scan can terminate the current valid
+    // segment instead of joining residual signs across the mathematical pole.
+    if (!std::isfinite(det) || std::abs(det)<=1.0e-12*det_scale) {
+      out.singular=true;
+      return out;
+    }
     B2t = scale(add(scale(C,mass_flux),scale(D,Bn)),1.0/det);
     u2t = scale(add(scale(D,u2n),scale(C,Bn/mu0)),1.0/det);
   }
@@ -382,9 +408,9 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
   // binary64 compression bracket can resolve.  Reporting that condition as
   // NoShock would erase the distinction between physical classification and
   // numerical resolution; attempting the ordinary scan can instead latch
-  // onto an unrelated finite-compression branch.  The 1e-8 guard is tied to
-  // the solver's 1e-9 minimum compression offset and the independently
-  // observed cancellation range of the divided energy residual.
+  // onto an unrelated finite-compression branch.  The published 1e-6 guard is
+  // tied to the solver's 1e-9 minimum compression offset and the independently
+  // observed binary64 cancellation range of the divided energy residual.
   // The returned primitive payload remains the finite upstream state, while
   // has_shock=true and the explicit status tell callers why no downstream
   // jump is available.
@@ -407,101 +433,176 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
   // important when M_fast is only slightly above unity.
   bool have_previous = false;
   double r_prev=0.0, q_prev=0.0;
-  bool have_bracket = false;
-  double r_lo=0.0, r_hi=0.0, q_lo=0.0;
+  struct CompressionBracket {
+    double lower=0.0;
+    double upper=0.0;
+    double lower_residual=0.0;
+  };
+  std::array<CompressionBracket,scan_points+1> brackets{};
+  std::size_t bracket_count=0;
+
+  // Route every scalar-candidate evaluation through this wrapper so the
+  // public result retains the closest approach to the tangential-system pole,
+  // including rejected candidates.  Keeping the signed value as well as its
+  // magnitude is important: SHK16 verifies that trials on opposite sides of
+  // the pole remain distinct instead of being silently joined into a root
+  // bracket.  The default value of one remains finite if no oblique candidate
+  // reaches the 2x2 tangential solve.
+  auto evaluate_candidate = [&](double compression) {
+    detail::Candidate candidate=detail::candidate_for_compression(
+        upstream,n,shock_normal_speed_m_s,gamma,compression);
+    if (std::isfinite(candidate.tangential_determinant_relative) &&
+        std::abs(candidate.tangential_determinant_relative)<
+            result.minimum_tangential_determinant_relative) {
+      result.minimum_tangential_determinant_relative=
+          std::abs(candidate.tangential_determinant_relative);
+      result.closest_tangential_determinant_relative=
+          candidate.tangential_determinant_relative;
+    }
+    if (candidate.singular) {
+      result.encountered_tangential_singularity=true;
+    }
+    return candidate;
+  };
 
   for (int i=0;i<=scan_points;++i) {
     const double x=static_cast<double>(i)/static_cast<double>(scan_points);
     const double delta=eps_r + (rmax-1.0-eps_r)*x*x;
     const double r=1.0+delta;
-    const detail::Candidate c=detail::candidate_for_compression(upstream,n,
-                                                                 shock_normal_speed_m_s,
-                                                                 gamma,r);
-    if (!c.valid) continue;
+    const detail::Candidate c=evaluate_candidate(r);
+    if (!c.valid) {
+      // An invalid candidate is a break in the continuous scalar domain, not
+      // a point that may be skipped.  In particular, retaining the previous
+      // residual across a singular determinant can fabricate a sign-changing
+      // bracket whose endpoints lie on different branches of the rational
+      // tangential solution.
+      have_previous=false;
+      continue;
+    }
     const double q=c.energy_residual/(r-1.0);
-    if (!std::isfinite(q)) continue;
+    if (!std::isfinite(q)) {
+      have_previous=false;
+      continue;
+    }
 
-    if (!have_bracket && have_previous &&
+    if (have_previous &&
         (q==0.0 || q_prev==0.0 || (q_prev<0.0)!=(q<0.0))) {
-      // Keep the first nontrivial bracket above r=1.  This is the branch that
-      // is continuous with the linear fast mode and therefore approaches the
-      // identity state as M_fast approaches one.  Retaining the old outermost
-      // sign change selected finite-amplitude switch/intermediate branches in
-      // low-beta, nearly parallel cases and violated the weak-shock limit.
-      have_bracket=true;
-      r_lo=r_prev; q_lo=q_prev;
-      r_hi=r;
+      // Retain every sign change inside a continuous valid segment.  The
+      // lowest-compression root is usually the fast branch near Mach one, but
+      // SHK15 demonstrates that ordinary oblique states can have an earlier
+      // intermediate root.  Each retained bracket is therefore solved and
+      // classified independently below, in ascending compression order.
+      if(bracket_count<brackets.size()) {
+        brackets[bracket_count++]={r_prev,r,q_prev};
+      }
     }
     have_previous=true;
     r_prev=r; q_prev=q;
   }
 
-  if (!have_bracket) {
+  if (bracket_count==0) {
     result.solver_converged=false;
-    result.status=SolveStatus::NoPhysicalBracket;
+    // A detected pole is an actionable numerical classification, whereas
+    // NoPhysicalBracket means the scalar function was regular throughout the
+    // supported compression interval.  This distinction lets callers retry a
+    // singular family with higher precision without treating it as absent
+    // shock physics.
+    result.status=result.encountered_tangential_singularity
+        ? SolveStatus::NumericallySingular
+        : SolveStatus::NoPhysicalBracket;
     return result;
   }
 
   detail::Candidate accepted;
-  double r_mid=0.0;
-  for (int iter=0;iter<120;++iter) {
-    r_mid=0.5*(r_lo+r_hi);
-    const detail::Candidate c=detail::candidate_for_compression(upstream,n,
-                                                                 shock_normal_speed_m_s,
-                                                                 gamma,r_mid);
-    if (!c.valid) {
-      // A singular candidate inside the bracket is uncommon for the selected
-      // fast branch.  Contract toward the side with the smaller interval; if
-      // this persists the post-solve admissibility checks will reject it.
-      r_hi=r_mid;
-      continue;
-    }
-    const double q_mid=c.energy_residual/(r_mid-1.0);
-    accepted=c;
-    result.root_iterations=iter+1;
+  double compression=1.0;
+  bool selected_evolutionary_root=false;
+  bool encountered_valid_root=false;
+  const double mu0=constants::VACUUM_PERMEABILITY_N_A2;
+  const Vec3 shock_velocity=detail::scale(n,shock_normal_speed_m_s);
 
-    if (std::abs(r_hi-r_lo)<=2.0e-13*std::max(1.0,r_mid)) break;
-    if (q_mid==0.0) {
-      // Binary64 cancellation can make the divided energy residual exactly
-      // zero before the interval-width test, especially for weak shocks.
-      // Collapse both endpoints onto that evaluated root so the published
-      // bracket truthfully represents exact scalar convergence.
-      r_lo=r_mid;
-      r_hi=r_mid;
-      break;
+  auto candidate_is_evolutionary_fast=[&](const detail::Candidate& candidate) {
+    const Vec3 u2=detail::subtract(candidate.downstream.velocity_m_s,
+                                   shock_velocity);
+    const double downstream_inflow=std::abs(detail::dot(u2,n));
+    const double downstream_fast=
+        detail::fast_mode_speed(candidate.downstream,n,gamma);
+    const double B2n=std::abs(detail::dot(candidate.downstream.magnetic_T,n));
+    const double downstream_alfven=B2n/std::sqrt(
+        mu0*candidate.downstream.rho_kg_m3);
+    constexpr double characteristic_tolerance=2.0e-10;
+    return downstream_fast>0.0 &&
+        downstream_inflow/downstream_fast<=1.0+characteristic_tolerance &&
+        (downstream_alfven==0.0 ||
+         downstream_inflow/downstream_alfven>=1.0-characteristic_tolerance);
+  };
+
+  for(std::size_t bracket_index=0;
+      bracket_index<bracket_count && !selected_evolutionary_root;
+      ++bracket_index) {
+    double r_lo=brackets[bracket_index].lower;
+    double r_hi=brackets[bracket_index].upper;
+    double q_lo=brackets[bracket_index].lower_residual;
+    bool bracket_invalid=false;
+    int iterations=0;
+    for(int iter=0;iter<120;++iter) {
+      const double r_mid=0.5*(r_lo+r_hi);
+      const detail::Candidate candidate=evaluate_candidate(r_mid);
+      if(!candidate.valid) {
+        // The scan cannot legitimately contain a pole inside one recorded
+        // segment.  Abandon this bracket without guessing which endpoint to
+        // discard, then allow a separate continuous bracket to be considered.
+        bracket_invalid=true;
+        break;
+      }
+      const double q_mid=candidate.energy_residual/(r_mid-1.0);
+      iterations=iter+1;
+      if(std::abs(r_hi-r_lo)<=2.0e-13*std::max(1.0,r_mid)) break;
+      if(q_mid==0.0) {
+        r_lo=r_mid;
+        r_hi=r_mid;
+        break;
+      }
+      if((q_lo<0.0)!=(q_mid<0.0)) r_hi=r_mid;
+      else { r_lo=r_mid; q_lo=q_mid; }
     }
-    if ((q_lo<0.0)!=(q_mid<0.0)) {
-      r_hi=r_mid;
-    } else {
-      r_lo=r_mid; q_lo=q_mid;
-    }
+    if(bracket_invalid) continue;
+
+    const double candidate_compression=0.5*(r_lo+r_hi);
+    const detail::Candidate candidate=evaluate_candidate(candidate_compression);
+    if(!candidate.valid) continue;
+    encountered_valid_root=true;
+    if(!candidate_is_evolutionary_fast(candidate)) continue;
+
+    accepted=candidate;
+    compression=candidate_compression;
+    result.root_iterations=iterations;
+    result.root_bracket_lower_compression=r_lo;
+    result.root_bracket_upper_compression=r_hi;
+    result.root_bracket_width=r_hi-r_lo;
+    selected_evolutionary_root=true;
   }
 
-  const double compression=0.5*(r_lo+r_hi);
-  // Publish the contracted bracket, not merely its midpoint, so tests and
-  // failure reports can verify that convergence was obtained at the stated
-  // precision rather than accepting a fortuitous candidate value.
-  result.root_bracket_lower_compression=r_lo;
-  result.root_bracket_upper_compression=r_hi;
-  result.root_bracket_width=r_hi-r_lo;
-  accepted=detail::candidate_for_compression(upstream,n,shock_normal_speed_m_s,
-                                               gamma,compression);
-  if (!accepted.valid) {
+  if(!selected_evolutionary_root) {
     result.solver_converged=false;
-    result.status=SolveStatus::InvalidAcceptedState;
+    result.status=result.encountered_tangential_singularity
+        ? SolveStatus::NumericallySingular
+        : (relative_fast_excess<=0.2
+               ? SolveStatus::NumericallyUnresolvedWeakShock
+               : (encountered_valid_root ? SolveStatus::WrongBranch
+                                         : SolveStatus::InvalidAcceptedState));
     return result;
   }
 
   result.compression=compression;
   result.downstream=accepted.downstream;
+  result.selected_tangential_determinant_relative=
+      accepted.tangential_determinant_relative;
 
   // ---------------- Independent conservation diagnostics -----------------
   // Recompute every ideal-MHD invariant from the final primitive states rather
   // than reusing candidate_for_compression() intermediates.  This makes these
   // residuals meaningful validation data rather than a restatement of the
   // scalar root function.
-  const double mu0=constants::VACUUM_PERMEABILITY_N_A2;
-  const Vec3 shock_velocity=detail::scale(n,shock_normal_speed_m_s);
   const Vec3 u1=detail::subtract(upstream.velocity_m_s,shock_velocity);
   const Vec3 u2=detail::subtract(result.downstream.velocity_m_s,shock_velocity);
   const double u1n=detail::dot(u1,n), u2n=detail::dot(u2,n);
@@ -542,6 +643,27 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
                   std::pow(result.downstream.rho_kg_m3,gamma);
   result.entropy_ratio=(K1>0.0)? K2/K1 : 0.0;
 
+  // Fast shocks are evolutionary only on the downstream interval between the
+  // normal Alfvén and fast characteristic speeds.  Evaluate this independently
+  // from the scalar energy root so a mathematically conserved intermediate or
+  // switch branch cannot be returned merely because it was the first sign
+  // change in compression space.  Bn=0 has zero normal Alfvén speed; the
+  // finite max-double sentinel preserves the inequality without emitting Inf.
+  const double downstream_fast_speed=
+      detail::fast_mode_speed(result.downstream,n,gamma);
+  const double downstream_inflow_speed=std::abs(u2n);
+  const double downstream_normal_alfven_speed=
+      std::abs(B2n)/std::sqrt(mu0*result.downstream.rho_kg_m3);
+  result.downstream_fast_mach=downstream_fast_speed>0.0
+      ? downstream_inflow_speed/downstream_fast_speed : 0.0;
+  result.downstream_normal_alfven_mach=downstream_normal_alfven_speed>0.0
+      ? downstream_inflow_speed/downstream_normal_alfven_speed
+      : std::numeric_limits<double>::max();
+  constexpr double characteristic_tolerance=2.0e-10;
+  result.evolutionary_fast_branch=
+      result.downstream_fast_mach<=1.0+characteristic_tolerance &&
+      result.downstream_normal_alfven_mach>=1.0-characteristic_tolerance;
+
   // A weak branch connected continuously to r=1 has compression proportional
   // to M_fast-1.  Near the tangential-system singularity, skipped candidates
   // can hide that branch and leave only a distant finite-amplitude root.  The
@@ -557,7 +679,15 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
       result.compression-1.0>
           weak_compression_envelope*relative_fast_excess) {
     result.solver_converged=false;
-    result.status=SolveStatus::NumericallyUnresolvedWeakShock;
+    result.status=result.encountered_tangential_singularity
+        ? SolveStatus::NumericallySingular
+        : SolveStatus::NumericallyUnresolvedWeakShock;
+    return result;
+  }
+
+  if (!result.evolutionary_fast_branch) {
+    result.solver_converged=false;
+    result.status=SolveStatus::WrongBranch;
     return result;
   }
 

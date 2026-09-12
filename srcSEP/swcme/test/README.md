@@ -1840,13 +1840,13 @@ make -j
 ./output/test_swcme --test KIN09
 ```
 
-## SHK01-SHK14: fast-shock existence, Rankine-Hugoniot validation, and shock-surface ownership
+## SHK01-SHK16: fast-shock existence, Rankine-Hugoniot validation, and shock-surface ownership
 
 The `SHK` group validates the shared production shock solver in
 `swcme_shock.hpp` and its integration into both the 1-D and 3-D models.  SHK01-
-SHK12 exercise the shared jump physics and are classified `COMMON`; SHK13-
-SHK14 are 3-D integration guards for the rule that local shock physics belongs
-to the shock surface rather than to an arbitrary Cartesian query point.
+SHK12 and SHK15-SHK16 exercise the shared jump physics and are classified
+`COMMON`; SHK13-SHK14 are 3-D integration guards for the rule that local shock
+physics belongs to the shock surface rather than to an arbitrary query point.
 
 The solver first evaluates the upstream fast-mode speed along the shock normal.
 A geometric front is not automatically a shock.  The physical condition is
@@ -1903,6 +1903,10 @@ The individual tests are:
   mesh nodes.  Every reported radius, normal, compression, and normal speed is
   compared with a fresh `shock_state_direction()` query.  This prevents future
   diagnostic/mesh code from reintroducing a separate shock-strength calculation.
+- `SHK15` — fixed-seed 100,000-case stratified shock stress campaign with
+  finite-output, status-classification, and evolutionary-branch requirements.
+- `SHK16` — determinant-conditioned tangential-system validation on both sides
+  of the pole, including one-ULP perturbations and bracket segmentation.
 
 The independent parallel/perpendicular references and the general-oblique
 `SHK05` reference do not call the production nonlinear shock solver.
@@ -1988,9 +1992,10 @@ SHK05 reference tooling, then solves density, pressure, three velocities, and
 three magnetic components together at 80-digit precision.  Multiple initial
 compressions establish the evolutionary-fast root at `M_fast-1=0.5`, and
 fifteen continuation points follow that same branch to `1e-5`; six points per
-family are frozen.  The production solver must follow the first nontrivial
-compression bracket, publish its contracted endpoints/width and iteration
-count, and remain inside a deliberately broad weak-branch continuity envelope.
+family are frozen.  The production solver retains continuous nontrivial
+compression brackets in ascending order, solves and independently classifies
+them, publishes the accepted bracket endpoints/width and iteration count, and
+remains inside a deliberately broad weak-branch continuity envelope.
 Normal builds never regenerate the fixture.
 
 **What is expected.** Subcritical and exactly critical states return
@@ -2006,6 +2011,161 @@ approach compression one monotonically, and match every frozen downstream
 primitive component within `2e-7` relative error.  Reference residuals remain
 below `1e-50`.  `SHK12` follows `SHK05` in the priority-ordered `SMOKE` profile
 and is included in every `@ALL` profile.
+
+### SHK16 near-singular tangential system
+
+**What is tested.** `SHK16` conditions the oblique ideal-MHD tangential 2x2
+system to a known determinant zero inside the supported compression interval.
+It samples logarithmic offsets on both sides of that pole, including offsets
+inside the documented singularity threshold, and repeats the complete shock
+solve at the nominal shock speed and its two adjacent binary64 values.  The
+test checks the signed determinant, singular classification, public
+conditioning diagnostics, final bracket endpoints, and evolutionary-fast
+branch flag.
+
+**Why it is tested.** The energy residual is rational at the tangential-system
+pole.  Skipping an invalid candidate without ending the current scan segment
+can connect residuals from opposite sides and manufacture a false root.  An
+arbitrary bisection contraction after a singular midpoint can likewise lose
+the sign-bearing endpoint and converge to an unverified branch.
+
+**How it is tested.** The fixture independently sets the singular compression
+from `rho*u1n^2/r=Bn^2/mu0` and calculates every expected relative determinant
+directly from that equation.  The chosen compression is exactly a nominal
+scan abscissa.  Offsets of `1e-3`, `1e-6`, `1e-9`, and `1e-13` are evaluated on
+both sides; one-ULP shock-speed perturbations then exercise the public solver.
+Production records the closest signed and absolute conditioning values, breaks
+the bracket history at every invalid point, and returns a distinct
+`NUMERICALLY_SINGULAR` status when no verified continuous bracket remains.
+
+**What is expected.** Determinant signs agree with the independent formula,
+the `1e-13` candidates are singular while wider offsets remain nonsingular,
+and all diagnostic values are finite.  One-ULP perturbations retain the same
+classification.  Every outcome is either a verified `SOLVED` evolutionary
+fast branch whose final bracket lies wholly on one side of the pole, or an
+explicit `NUMERICALLY_SINGULAR` rejection; no unclassified bracket or wrong
+branch is accepted.  `SHK16` follows `SHK12` in priority and in `SMOKE`.
+
+### SHK15 high-count random shock stress
+
+**What is tested.** `SHK15` executes exactly 100,000 deterministic physically
+valid inputs in four explicit strata: 25,000 sub-fast states, 25,000
+super-fast states within the published weak-shock resolution, 49,900 resolved
+random shocks, and 100 determinant-conditioned shocks.  The matrix spans
+log-uniform density from 0.01 to 100 cm^-3, magnetic strength from 0.1 to
+100 nT, beta from `1e-3` to 100, the resulting temperature range, arbitrary
+three-dimensional normals and tangential flows, both magnetic polarities,
+gamma from 1.2 to 5/3, and broad fast-Mach excesses.
+
+**Why it is tested.** A small benchmark matrix cannot expose rare interactions
+among obliquity, plasma scales, weak roots, and determinant conditioning.
+High-count randomized coverage detects NaN/Inf propagation, intermittent
+bracket loss, unclassified reconstruction or conservation failures, and
+selection of a non-evolutionary branch while remaining exactly reproducible.
+
+**How it is tested.** A local SplitMix64 sequence with seed
+`0x53484b31355f7631` and an explicit 53-bit floating conversion avoids
+implementation-dependent standard-library distributions.  All geometric
+frames are constructed by stable cross products.  Sub-fast and weak-limit
+strata have exact expected statuses; resolved cases may return only `SOLVED`
+or a documented numerical-limit rejection.  Conditioned cases deliberately
+place a determinant zero on a production scan node.  Any unexpected outcome
+prints its full index, stratum, normal, primitives, gamma, requested Mach,
+shock speed, and status as a reusable minimized-fixture starting point.
+
+**What is expected.** Every scalar and primitive component is finite.  All
+100,000 cases return `SOLVED`, `NO_SHOCK`,
+`NUMERICALLY_UNRESOLVED_WEAK_SHOCK`, or `NUMERICALLY_SINGULAR` consistently
+with their stratum.  Solved cases are evolutionary-fast.  At least 90
+conditioned scans observe a singular trial, and there are zero generic
+no-bracket, invalid-reconstruction, conservation, or wrong-branch outcomes.
+The test follows `SHK16` in priority and in `SMOKE`.
+
+### SHK06 independent mass-flux conservation
+
+**What is tested.** `SHK06` independently evaluates normal mass flux for every
+`SOLVED` member of the 100,000-case SHK15 campaign and all 48 frozen SHK12
+weak-shock states.  It explicitly requires substantial weak-shock coverage
+below compression 1.01 and high-compression coverage above four.  The existing
+3-D resolved-compression integration check remains and verifies that fields
+immediately downstream approach the complete Rankine-Hugoniot state.
+
+**Why it is tested.** A stored solver residual can agree with the algebra that
+constructed a downstream state while both are wrong.  Recomputing the flux
+from only the serialized primitive records catches a damaged density or normal
+velocity component, frame-sign mistakes, and scale-dependent cancellation.
+
+**How it is tested.** The test reconstructs each shock-frame velocity as
+`u=V-Vsh*n`, takes its normal projection in long-double arithmetic, and forms
+`rho*u_n` independently on both sides.  Their absolute difference is divided
+by the larger physical flux magnitude, with only the smallest representable
+long-double value as a zero guard.  It does not read `JumpResult.mass_residual`.
+Failures print the fixed-seed stress record or frozen fixture identifier.
+
+**What is expected.** At least 49,000 solved random/frozen states are checked,
+including at least eight weak and eight high-compression examples.  Every
+independent normalized residual is finite and no greater than the production
+acceptance threshold `1e-9`.  The 3-D inner shock-layer sample continues to
+match the exact downstream density, velocity, and magnetic field within its
+existing `2e-7` relative tolerance.  `SHK06` follows `SHK15` in priority and
+in `SMOKE`.
+
+### SHK07 independent normal magnetic-field continuity
+
+**What is tested.** `SHK07` independently projects the upstream and downstream
+magnetic fields onto every arbitrary three-dimensional normal in the solved
+SHK15 population.  It additionally creates 256 proper-rotation pairs and 256
+magnetic-polarity-reversal pairs, requiring unchanged solved compression and
+normal-field continuity for each transformed case.
+
+**Why it is tested.** The ideal-MHD divergence constraint requires
+`B1.n=B2.n`.  A test using only an axis-aligned normal or the production
+residual could miss a component-order bug, a non-unit projection error, an
+orientation-dependent reconstruction, or incorrect handling of negative
+magnetic polarity.
+
+**How it is tested.** Both projections are accumulated directly from the
+serialized Cartesian components in long-double arithmetic.  Their difference
+is normalized by the larger normal-field magnitude, with a `1e-12` fraction of
+the total field as the perpendicular-limit guard.  A cyclic Cartesian
+permutation supplies a determinant-+1 rotation; all vector inputs are rotated
+together.  A separate pair negates the complete upstream field.  No production
+projection or stored `normal_B_residual` is used as the oracle.
+
+**What is expected.** At least 49,000 solved cases pass, both signs of `B.n`
+each appear more than 10,000 times, and all 256 rotation and polarity pairs
+remain solved with compression invariant within `2e-10` relative error.  The
+maximum independent normalized continuity error is finite and no greater than
+`1e-10`.  `SHK07` follows `SHK06` in priority and in `SMOKE`.
+
+### SHK08 independent tangential electric-field conservation
+
+**What is tested.** `SHK08` checks both independent tangential components of
+the ideal-MHD electric field for every solved SHK15 random state, all twelve
+named high-precision SHK05 oblique fixtures, 256 proper-rotation pairs, and 256
+magnetic-polarity-reversal pairs.  It also requires transformed states to
+retain solved compression.
+
+**Why it is tested.** A norm-only or production-residual check can hide a
+component permutation, a cross-product sign error, use of heliocentric rather
+than shock-frame velocity, or cancellation between tangential components.
+Rotation and field reversal make those convention errors observable even when
+one special axis-aligned fixture happens to pass.
+
+**How it is tested.** The test reconstructs `u=V-Vsh*n`, expands
+`E=-u x B` component-by-component in long-double Cartesian arithmetic, builds
+two stable orthonormal tangent axes from each random normal, and projects both
+upstream and downstream fields onto each axis separately.  Each component
+difference is normalized by its larger physical magnitude, with a `1e-12`
+fraction of the full electric magnitude as a near-zero guard.  The calculation
+does not call the production cross helper or read `electric_residual`.
+
+**What is expected.** At least 49,000 solved states and exactly twice as many
+tangential components are checked; all twelve deterministic fixtures and all
+256 transformed pairs participate.  Every transformed state stays solved with
+compression invariant within `2e-10` relative error.  Each independent
+component residual is finite and no greater than the production threshold
+`1e-8`.  `SHK08` follows `SHK07` in priority and in `SMOKE`.
 
 Typical direct use is:
 

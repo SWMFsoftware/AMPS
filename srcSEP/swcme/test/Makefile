@@ -177,10 +177,11 @@ output/test_density.o: core/test_density.cpp core/test_framework.hpp ../swcme_co
 output/test_kinematics.o: core/test_kinematics.cpp core/test_framework.hpp ../swcme_kinematics.hpp ../swcme_constants.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_regions.hpp ../swcme_status.hpp ../swcme_divergence.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-# SHK01-SHK12 exercise the shared production ideal-MHD jump solver and its
+# SHK01-SHK16 exercise the shared production ideal-MHD jump solver and its
 # integration into the 1-D/3-D models.  SHK05 and SHK12 consume frozen v1
-# fixtures from independent 80-digit, complete eight-equation RH solves; the
-# remaining tests provide analytical limiting cases and conservation checks.
+# fixtures from independent 80-digit, complete eight-equation RH solves;
+# SHK15 supplies deterministic high-count stress, SHK16 conditions the
+# tangential determinant, and SHK06-SHK08 recompute invariants independently.
 # The generators are dependencies for audit visibility, but normal builds
 # never execute them or rewrite the reviewed reference headers.
 output/test_shock.o: core/test_shock.cpp core/test_framework.hpp reference/shk05_oblique_v1.hpp reference/generate_shk05_oblique_v1.py reference/shk12_near_mach_v1.hpp reference/generate_shk12_near_mach_v1.py ../swcme_shock.hpp ../swcme_constants.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_regions.hpp ../swcme_status.hpp ../swcme_divergence.hpp | output

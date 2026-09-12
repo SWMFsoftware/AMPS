@@ -47,6 +47,17 @@ inline void add_jump(ConfigurationDigestBuilder& digest,
   digest.add_double(jump.root_bracket_lower_compression);
   digest.add_double(jump.root_bracket_upper_compression);
   digest.add_double(jump.root_bracket_width);
+  // SHK16 exposes singular-conditioning and evolutionary-branch diagnostics.
+  // They are sealed just like the bracket endpoints because changing them
+  // after preparation would falsify the documented reason a shock was
+  // accepted or rejected even when its primitive payload was untouched.
+  digest.add_bool(jump.encountered_tangential_singularity);
+  digest.add_double(jump.minimum_tangential_determinant_relative);
+  digest.add_double(jump.closest_tangential_determinant_relative);
+  digest.add_double(jump.selected_tangential_determinant_relative);
+  digest.add_double(jump.downstream_fast_mach);
+  digest.add_double(jump.downstream_normal_alfven_mach);
+  digest.add_bool(jump.evolutionary_fast_branch);
   add_primitive(digest,jump.upstream);
   add_primitive(digest,jump.downstream);
   digest.add_double(jump.mass_residual);

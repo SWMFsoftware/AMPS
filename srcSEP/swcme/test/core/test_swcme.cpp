@@ -65,6 +65,8 @@ void test_shk09(swcme_test::Context& context);
 void test_shk10(swcme_test::Context& context);
 void test_shk11(swcme_test::Context& context);
 void test_shk12(swcme_test::Context& context);
+void test_shk16(swcme_test::Context& context);
+void test_shk15(swcme_test::Context& context);
 void test_shk13(swcme_test::Context& context);
 void test_shk14(swcme_test::Context& context);
 void test_con01(swcme_test::Context& context);
@@ -147,6 +149,11 @@ const swcme_test::TestCase kTests[] = {
     {"CON10", "3D", "Observer domain classification", test_con10},
     {"SHK05", "COMMON", "Independent oblique-shock benchmark", test_shk05},
     {"SHK12", "COMMON", "Near-Mach-one shock limit", test_shk12},
+    {"SHK16", "COMMON", "Near-singular tangential system", test_shk16},
+    {"SHK15", "COMMON", "High-count random shock stress", test_shk15},
+    {"SHK06", "COMMON", "Rankine-Hugoniot mass-flux conservation", test_shk06},
+    {"SHK07", "COMMON", "Rankine-Hugoniot normal magnetic-field continuity", test_shk07},
+    {"SHK08", "COMMON", "Rankine-Hugoniot tangential electric-field conservation", test_shk08},
     {"CFG01", "COMMON", "Configuration rejection and physical-range validation",
      test_cfg01},
     {"CFG02", "COMMON", "Unit-conversion and dimensional-consistency test",
@@ -191,9 +198,6 @@ const swcme_test::TestCase kTests[] = {
     {"SHK02", "COMMON", "Shock obliquity angle and polarity invariance", test_shk02},
     {"SHK03", "COMMON", "Parallel fast-shock limiting solution", test_shk03},
     {"SHK04", "COMMON", "Perpendicular MHD-shock benchmark", test_shk04},
-    {"SHK06", "COMMON", "Rankine-Hugoniot mass-flux conservation", test_shk06},
-    {"SHK07", "COMMON", "Rankine-Hugoniot normal magnetic-field continuity", test_shk07},
-    {"SHK08", "COMMON", "Rankine-Hugoniot tangential electric-field conservation", test_shk08},
     {"SHK09", "COMMON", "Rankine-Hugoniot momentum-flux conservation", test_shk09},
     {"SHK10", "COMMON", "Rankine-Hugoniot total-energy-flux conservation", test_shk10},
     {"SHK11", "COMMON", "Physical admissibility and entropy increase", test_shk11},

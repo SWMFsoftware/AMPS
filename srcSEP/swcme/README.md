@@ -1507,14 +1507,16 @@ binary64 resolution `WEAK_SHOCK_MACH_RESOLUTION=1e-6` instead returns
 This prevents a physical weak shock from masquerading as an ordinary no-shock
 state and prevents an unresolved jump from entering SEP source calculations.
 
-For resolved shocks the scalar scan now selects the first nontrivial bracket
-above compression one, following the branch connected continuously to the
-linear fast mode.  The previous outermost-root rule could select a
-finite-amplitude switch/intermediate branch in low-beta, nearly parallel cases
-even as `M_fast` approached one.  A broad continuity envelope rejects any
-remaining discontinuous outer root with the explicit unresolved status.  Each
-solved result publishes its final compression-bracket endpoints, bracket width,
-and iteration count for reproducible diagnostics.
+For resolved shocks the scalar scan retains every sign-changing bracket inside
+each continuous valid compression segment.  Candidate roots are solved in
+ascending compression order and independently tested against downstream fast
+and normal-Alfven characteristic inequalities; only an evolutionary fast root
+is accepted.  The previous outermost-root rule could select a finite-amplitude
+switch/intermediate branch near Mach one, while an unconditional first-root
+rule could select an earlier intermediate branch in rare ordinary oblique
+states.  A broad continuity envelope rejects any remaining discontinuous weak
+root explicitly.  Each solved result publishes its accepted bracket endpoints,
+width, iteration count, determinant conditioning, and branch diagnostics.
 
 The frozen fixture `test/reference/shk12_near_mach_v1.hpp` is produced by the
 audit-only `test/reference/generate_shk12_near_mach_v1.py`.  The generator uses
@@ -1526,6 +1528,78 @@ gamma values 1.4 and 5/3.  Production compression and every downstream
 primitive component must agree with the independent reference within `2e-7`.
 An additional two-sided runtime sweep reaches `|M_fast-1|=1e-12` across 32
 beta/angle/gamma families, including near-singular one-degree geometries.
+
+### Near-singular tangential-system contract
+
+Priority test `SHK16` treats the determinant pole in the oblique tangential
+jump equations as a discontinuity in the scalar compression domain.  Invalid
+or singular candidates reset the scan history, so residual signs from opposite
+sides cannot form a root bracket.  A singular midpoint aborts bisection rather
+than discarding an endpoint without its residual sign.  `JumpResult` publishes
+whether a pole was encountered, the closest signed and absolute relative
+determinant, the selected-root determinant, downstream fast and normal-Alfven
+Mach numbers, and an evolutionary-fast branch flag.  A super-fast input for
+which no continuous verified bracket survives is reported as
+`NUMERICALLY_SINGULAR`, never as a successful outer root.
+
+`SHK16` constructs the determinant zero independently, probes both sides at
+logarithmic offsets through the binary64 singularity boundary, and repeats the
+solve at adjacent representable shock speeds.  An accepted result must have a
+bracket wholly on one side of the pole and pass the downstream evolutionary
+characteristic inequalities; otherwise the result is rejected explicitly as
+`NUMERICALLY_SINGULAR` or `WRONG_BRANCH`.
+
+### High-count deterministic shock stress
+
+Priority test `SHK15` runs 100,000 fixed-seed physical inputs across sub-fast,
+sub-resolution weak, ordinary resolved, and deliberately determinant-
+conditioned strata.  Density, magnetic strength, beta, implied temperature,
+field angle and polarity, arbitrary Cartesian orientation, tangential flow,
+gamma, and fast Mach number all vary.  The random bit stream and floating
+mapping are defined in the test, so the campaign is reproducible across C++
+standard-library implementations.
+
+The acceptance contract is deliberately categorical: each input must be a
+verified `SOLVED` evolutionary-fast state, a physical `NO_SHOCK`, or one of the
+documented weak/singular numerical-limit rejections.  Every primitive and
+diagnostic must be finite, and generic no-bracket, invalid-state, conservation,
+or wrong-branch outcomes are forbidden.  An unexpected case prints a complete
+fixed-seed reproducer record suitable for independent high-precision checking
+and reduction.
+
+### Independent mass-flux validation
+
+Priority test `SHK06` no longer relies on the solver's stored mass residual as
+its oracle.  It reconstructs shock-frame velocities from the returned public
+primitive states, projects them on the supplied normal using long-double
+arithmetic, and compares `rho1*u1n` with `rho2*u2n`, normalized by the larger
+physical flux.  The full solved SHK15 population is supplemented by frozen
+SHK12 weak shocks, providing both near-identity and high-compression coverage.
+The required normalized tolerance is `1e-9`.  The existing 3-D field-layer
+check remains part of SHK06 so serialization-level conservation and model
+integration fail together if either representation regresses.
+
+### Independent normal magnetic-field validation
+
+Priority test `SHK07` calculates `B1.n` and `B2.n` directly from serialized
+Cartesian fields for the solved high-count campaign using long-double
+accumulation.  Its scale-aware `1e-10` criterion remains meaningful near the
+perpendicular limit.  Random orthonormal frames provide arbitrary normals and
+both field polarities; 256 explicit proper rotations and 256 complete
+magnetic-field reversals additionally require invariant solved compression.
+This validation does not consume the production `normal_B_residual` value.
+
+### Independent tangential electric-field validation
+
+Priority test `SHK08` independently reconstructs shock-frame
+`E=-u x B` in Cartesian coordinates and projects it onto two test-owned
+tangential axes.  Both components must agree across the discontinuity within
+the normalized `1e-8` threshold; a vector norm cannot let one failed component
+cancel another.  Coverage combines every solved SHK15 random state, all twelve
+named SHK05 high-precision fixtures, 256 proper rotations, and 256 magnetic-
+polarity reversals.  The test neither calls the production cross-product helper
+nor reads the stored electric residual, so frame, sign, and component-order
+defects remain independently observable.
 
 `swcme3d::Model::shock_state_direction()` is the preferred 3-D API for local
 shock diagnostics.  It returns the shock-surface radius and normal, normal shock
