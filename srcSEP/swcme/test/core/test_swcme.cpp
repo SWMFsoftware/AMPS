@@ -75,6 +75,7 @@ void test_con05(swcme_test::Context& context);
 void test_con06(swcme_test::Context& context);
 void test_con07(swcme_test::Context& context);
 void test_con08(swcme_test::Context& context);
+void test_con09(swcme_test::Context& context);
 void test_reg01(swcme_test::Context& context);
 void test_reg02(swcme_test::Context& context);
 void test_reg03(swcme_test::Context& context);
@@ -141,6 +142,7 @@ const swcme_test::TestCase kTests[] = {
     {"CFG03", "COMMON", "Smoothing width policy", test_cfg03},
     {"CFG04", "COMMON", "Configured radius domain", test_cfg04},
     {"KIN09", "COMMON", "Kinematic extrapolation domain", test_kin09},
+    {"CON09", "3D", "Connectivity resolution-limit contract", test_con09},
     {"CFG01", "COMMON", "Configuration rejection and physical-range validation",
      test_cfg01},
     {"CFG02", "COMMON", "Unit-conversion and dimensional-consistency test",

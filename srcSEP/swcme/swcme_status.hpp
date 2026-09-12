@@ -147,7 +147,12 @@ enum class StatusCode {
   // OUT03 distinguishes a fully written temporary product that could not be
   // atomically installed from failures that occurred while writing its bytes.
   // Appending again preserves every pre-existing numeric status value.
-  FileCommitFailure
+  FileCommitFailure,
+  // CON09 propagates a connectivity accuracy request that exceeds the
+  // production scan budget through integration adapters.  This is distinct
+  // from NoConnection: no physical connected/disconnected classification was
+  // attempted because the requested resolution could not be achieved.
+  ResolutionLimit
 };
 
 inline const char* status_code_name(StatusCode code) {
@@ -173,6 +178,7 @@ inline const char* status_code_name(StatusCode code) {
     case StatusCode::FileOpenFailure: return "FILE_OPEN_FAILURE";
     case StatusCode::FileWriteFailure: return "FILE_WRITE_FAILURE";
     case StatusCode::FileCommitFailure: return "FILE_COMMIT_FAILURE";
+    case StatusCode::ResolutionLimit: return "RESOLUTION_LIMIT";
   }
   return "UNKNOWN_STATUS";
 }

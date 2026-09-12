@@ -1144,6 +1144,11 @@ swcme3d::ConnectivityState Model::observer_connectivity(
   swcme::throw_if_error(validate_prepared_state(
       S,"swcme3d::observer_connectivity"));
   ConnectivityState result;
+  // Record the active budget even on early invalid-input returns.  Consumers
+  // can therefore distinguish "no scan was requested" diagnostics from an
+  // absent/unknown budget without consulting build-specific implementation
+  // details.
+  result.scan_interval_budget=CONNECTIVITY_SCAN_INTERVAL_BUDGET;
   if (observer_m) {
     result.observer_position_m[0]=observer_m[0];
     result.observer_position_m[1]=observer_m[1];
@@ -1210,17 +1215,42 @@ swcme3d::ConnectivityState Model::observer_connectivity(
 
   // A minimum angular sampling of 0.5 degree per Parker rotation step prevents
   // tightly wound field lines from crossing a finite cap between sparse radial
-  // samples.  The user value remains a lower bound, and an upper cap prevents
-  // accidental pathological allocations for an invalid/extreme wind speed.
+  // samples.  The caller value remains a lower bound.  CON09 forbids silently
+  // truncating the effective request at the work budget because a capped scan
+  // can miss a narrow connection window and falsely report Disconnected.
   const double total_phase=S.solar_rotation_rate_rad_s*(r_obs-r_min)/S.V_sw_ms;
   const double phase_step=0.5*PI/180.0;
   std::size_t intervals=std::max<std::size_t>(32,options.scan_intervals);
-  if (std::isfinite(total_phase) && total_phase>0.0) {
-    const std::size_t phase_intervals=static_cast<std::size_t>(
-        std::ceil(total_phase/phase_step));
+  if (total_phase>0.0) {
+    const double phase_request=std::ceil(total_phase/phase_step);
+
+    // Extreme but finite parameters can overflow total_phase or request more
+    // intervals than size_t can represent.  Saturating only the diagnostic
+    // count avoids an out-of-range floating-to-integer conversion; SIZE_MAX is
+    // an honest lower-information indication that the finite work budget was
+    // exceeded by an unrepresentable request.
+    std::size_t phase_intervals=0;
+    if (!std::isfinite(phase_request) ||
+        phase_request>=static_cast<double>(
+            std::numeric_limits<std::size_t>::max())) {
+      phase_intervals=std::numeric_limits<std::size_t>::max();
+    } else {
+      phase_intervals=static_cast<std::size_t>(phase_request);
+    }
     intervals=std::max(intervals,phase_intervals);
   }
-  intervals=std::min<std::size_t>(intervals,200000);
+
+  result.requested_scan_intervals=intervals;
+  if (intervals>CONNECTIVITY_SCAN_INTERVAL_BUDGET) {
+    // Reject before allocating or evaluating a single sample.  Reporting zero
+    // achieved intervals is deliberate: returning the capped count here would
+    // imply that a lower-accuracy physical classification had been attempted.
+    result.status=ConnectivityStatus::ResolutionLimit;
+    result.connected=false;
+    result.achieved_scan_intervals=0;
+    return result;
+  }
+  result.achieved_scan_intervals=intervals;
 
   std::vector<Sample> samples(intervals+1);
   for (std::size_t i=0;i<=intervals;++i) {

@@ -1926,9 +1926,9 @@ admissible root is reported with `solver_converged=false` and must not be used
 for SEP source physics.
 
 
-## CON01-CON08: observer-shock magnetic connectivity and cobpoint tracking
+## CON01-CON09: observer-shock magnetic connectivity and cobpoint tracking
 
-`CON01`-`CON08` validate the production 3-D connectivity API implemented by
+`CON01`-`CON09` validate the production 3-D connectivity API implemented by
 `swcme3d::Model::observer_connectivity()`.  The connectivity solver does not
 maintain a second copy of the shock model: candidate points are tested against
 `shape_radius_normal()` and final cobpoints obtain their local plasma/shock
@@ -2004,6 +2004,53 @@ The tests are:
 - `CON08` — analytical Parker path length.  The path length carried by a
   cobpoint is compared with an independent closed-form arc-length reference
   and, away from the pole, must exceed simple radial separation.
+- `CON09` — connectivity resolution-limit contract.  Below-, exact-, and
+  above-budget requests, an automatic Parker-phase overrun, a maximum-size
+  request, a narrow analytic connection window, and the SEP adapter are checked
+  to ensure insufficient resolution cannot masquerade as a physical result.
+
+### CON09 detailed validation procedure
+
+What is tested: the test exercises the public
+`CONNECTIVITY_SCAN_INTERVAL_BUDGET` boundary and all observable resolution
+diagnostics in `ConnectivityState`.  It covers a caller-requested interval
+count below the bound, exactly at the bound, one interval above the bound, and
+`std::numeric_limits<std::size_t>::max()`.  It separately covers an automatic
+Parker-phase sampling requirement that exceeds the bound even though the
+caller's radial request is small.  Finally, it checks the
+`Interface3D::source_at_observer_cobpoint()` integration path.
+
+Why it is tested: a finite SSE cap can intersect a Parker line over a radial
+window narrower than one scan cell.  The former implementation silently
+replaced every effective request above 200,000 with 200,000 and then returned
+ordinary `Connected` or `Disconnected`.  A missed short window could therefore
+be recorded as a scientific conclusion even though the requested numerical
+resolution was never run.  The adapter could compound that ambiguity by
+mapping every non-connected state to `NoConnection`.
+
+How it is tested: below and at the limit, a zero-rotation Sun-centered sphere
+provides an analytic one-root reference and the test runs the actual production
+scans, requiring requested and achieved counts to match.  Above the limit, it
+requires reject-before-scan diagnostics and no roots.  The phase-derived case
+sets the rotation rate so the independently calculated phase request is
+`budget + 0.25` steps, whose ceiling is unambiguously `budget + 1`.  The
+maximum-size case checks overflow-safe preflight.  For the narrow-window case,
+an independent Rodrigues rotation aligns a one-microradian SSE apex with the
+Parker line at an off-grid shock radius and verifies the analytic zero surface
+residual before submitting an over-budget request.  The same request is then
+sent through the SEP adapter.
+
+What is expected: complete below/at-budget scans return the known connected
+answer with `requested_scan_intervals == achieved_scan_intervals` and the
+published budget.  Every over-budget path returns
+`ConnectivityStatus::ResolutionLimit`, `connected == false`, an empty root
+list, zero achieved intervals, and the effective requested count plus budget.
+The adapter returns `StatusCode::ResolutionLimit`, leaves
+`connection_evaluated == false`, and never reports `NoConnection`.  No cap
+exhaustion may be reported as unqualified `Connected` or `Disconnected`.
+
+CON09 follows KIN09 in the priority-ordered `SMOKE` profile.  `ROUTINE`, `FULL`,
+and `EVENT` include it through `@ALL`.
 
 The default connectivity search tolerance is much tighter than the validation
 campaign's `1e-8 AU` root-position target.  Tests deliberately repeat selected
@@ -2018,6 +2065,7 @@ Typical direct use is:
 ./output/test_swcme --test CON04
 ./output/test_swcme --test CON06
 ./output/test_swcme --test CON08
+./output/test_swcme --test CON09
 ./output/test_swcme --all
 ```
 

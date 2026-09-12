@@ -1152,6 +1152,24 @@ outermost root, i.e. the first shock surface encountered when tracing inward
 from the observer.  Retaining all roots makes this choice explicit and keeps
 the infrastructure usable for future non-convex geometries.
 
+Connectivity resolution is an explicit result contract.  The effective scan
+request is the maximum of `ConnectivityOptions::scan_intervals`, the solver's
+32-interval floor, and the interval count needed to limit Parker phase changes
+to 0.5 degree.  `CONNECTIVITY_SCAN_INTERVAL_BUDGET` publishes the production
+work bound (currently 200,000 intervals).  If the effective request exceeds
+that bound, the solver returns `ConnectivityStatus::ResolutionLimit` before
+sampling; it never truncates the request and reports an unqualified
+`Connected` or `Disconnected` result.
+
+Every `ConnectivityState` records `requested_scan_intervals`,
+`achieved_scan_intervals`, and `scan_interval_budget`.  Successful physical
+classifications report requested equal to achieved.  Reject-before-scan limit
+results report zero achieved intervals, retain an empty root list, and preserve
+the effective request and budget for diagnosis.  The SEP adapter propagates the
+condition as `StatusCode::ResolutionLimit` with `connection_evaluated=false`,
+so operational callers cannot mistake insufficient numerical resolution for a
+physical absence of magnetic connection.
+
 The root search is deliberately robust to connection boundaries.  It combines
 radial scanning, bisection of sign-changing roots, local minimization of the
 surface residual to detect tangent roots that do not change sign, and explicit
@@ -1179,9 +1197,11 @@ requested set of times.  Every time step is solved independently from the
 production kinematics, Parker line, geometry, and shock state; the history
 contains no hidden hysteresis.  Consequently connection onset/loss and
 cobpoint motion can be interpreted as model physics rather than state retained
-by the tracker.
+by the tracker.  Each history element retains the same resolution diagnostics
+and may therefore be `ResolutionLimit`; consumers must not coerce that state to
+disconnected.
 
-The deterministic connectivity validation block is `CON01`-`CON08`; see
+The deterministic connectivity validation block is `CON01`-`CON09`; see
 `test/README.md` for the individual fixtures and acceptance checks.
 
 ## Centralized configuration validation and unit handling

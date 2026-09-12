@@ -237,9 +237,10 @@ output/test_geometry.o: 3d/test_geometry.cpp core/test_framework.hpp ../swcme_co
 output/test_mesh.o: 3d/test_mesh.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme3d.hpp ../swcme_status.hpp ../swcme_divergence.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-# CON01-CON08 validate analytical Parker-line mapping and cobpoint behavior
-# against the production swcme3d.o implementation.
-output/test_connectivity.o: 3d/test_connectivity.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme3d.hpp ../swcme_status.hpp ../swcme_divergence.hpp | output
+# CON01-CON09 validate analytical Parker-line mapping, cobpoint behavior, and
+# explicit resolution-budget qualification against the production swcme3d.o
+# implementation and the operational SEP adapter boundary.
+output/test_connectivity.o: 3d/test_connectivity.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme3d.hpp ../swcme_sep_interface.hpp ../swcme_status.hpp ../swcme_divergence.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 # SHK13-SHK14 are 3-D integration guards for the surface-owned shock-state

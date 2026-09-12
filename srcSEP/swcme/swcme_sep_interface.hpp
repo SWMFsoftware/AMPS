@@ -451,6 +451,20 @@ public:
         model_.observer_connectivity(step,observer,options);
     if (connectivity_out) *connectivity_out=connectivity;
 
+    // A budget-limited search has no physical connected/disconnected answer.
+    // Preserve that distinction at the AMPS/SEP boundary instead of allowing
+    // the generic non-connected branch below to collapse it into NoConnection.
+    if (connectivity.status==swcme3d::ConnectivityStatus::ResolutionLimit) {
+      out=SEPSourceState{};
+      out.time_s=step.time_s;
+      out.spectrum=spectrum_;
+      out.connection_evaluated=false;
+      out.connected=false;
+      out.status=ModelStatus::make(StatusCode::ResolutionLimit,
+                                   "SEP observer connectivity scan");
+      return out.status;
+    }
+
     if (!connectivity.connected || connectivity.roots.empty()) {
       out=SEPSourceState{};
       out.time_s=step.time_s;

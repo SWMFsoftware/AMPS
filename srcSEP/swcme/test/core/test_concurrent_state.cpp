@@ -171,6 +171,15 @@ void append_connectivity(Snapshot& out,
   out.add_bool(connectivity.connected);
   for (double value : connectivity.observer_position_m) out.add_double(value);
   out.add_double(connectivity.observer_radius_m);
+  // CON09 diagnostics are observable result state and must remain bitwise
+  // deterministic under concurrent reuse of one prepared state, just like the
+  // physical roots that follow them.
+  out.add_uint64(static_cast<std::uint64_t>(
+      connectivity.requested_scan_intervals));
+  out.add_uint64(static_cast<std::uint64_t>(
+      connectivity.achieved_scan_intervals));
+  out.add_uint64(static_cast<std::uint64_t>(
+      connectivity.scan_interval_budget));
   out.add_uint64(static_cast<std::uint64_t>(connectivity.roots.size()));
   out.add_uint64(static_cast<std::uint64_t>(connectivity.selected_root));
   for (const swcme3d::ConnectivityRoot& root : connectivity.roots) {

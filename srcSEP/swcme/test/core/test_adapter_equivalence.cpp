@@ -376,6 +376,12 @@ void test_pst07(swcme_test::Context& context) {
                           adapter_connection.connected,
                       "direct and adapter observer paths are connected");
   context.expect_true(adapter_connection.status==direct_connection.status &&
+                          adapter_connection.requested_scan_intervals==
+                              direct_connection.requested_scan_intervals &&
+                          adapter_connection.achieved_scan_intervals==
+                              direct_connection.achieved_scan_intervals &&
+                          adapter_connection.scan_interval_budget==
+                              direct_connection.scan_interval_budget &&
                           adapter_connection.selected_root==
                               direct_connection.selected_root &&
                           adapter_connection.roots.size()==

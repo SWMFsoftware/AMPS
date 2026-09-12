@@ -682,8 +682,18 @@ enum class ConnectivityStatus {
   Connected,
   Disconnected,
   InvalidObserver,
-  InvalidConfiguration
+  InvalidConfiguration,
+  // The solver did not classify the observer because satisfying the effective
+  // radial/phase sampling request would exceed its bounded work allocation.
+  // Appending this value preserves the numeric values of all earlier statuses.
+  ResolutionLimit
 };
+
+// Hard production work bound for one observer-connectivity query.  Publishing
+// the value prevents callers and validation code from depending on a hidden
+// implementation literal.  Requests above it are rejected explicitly; they
+// are never truncated to this value and reported as ordinary physical results.
+inline constexpr std::size_t CONNECTIVITY_SCAN_INTERVAL_BUDGET = 200000;
 
 struct ConnectivityOptions {
   // Inner radius of the field-line search.  The default is the lower radial
@@ -697,7 +707,9 @@ struct ConnectivityOptions {
   // Minimum number of radial scan intervals.  The implementation can increase
   // this automatically when a tightly wound Parker line requires finer phase
   // sampling.  The scan finds every sign-changing intersection and seeds
-  // tangent-root searches; final roots are then refined independently.
+  // tangent-root searches; final roots are then refined independently.  If the
+  // effective request exceeds CONNECTIVITY_SCAN_INTERVAL_BUDGET, the solver
+  // returns ResolutionLimit without performing a lower-resolution scan.
   std::size_t scan_intervals = 1024;
 
   // Radial convergence tolerance for an intersection.  1e-9 AU is well below
@@ -737,6 +749,18 @@ struct ConnectivityState {
 
   double observer_position_m[3] = {0.0,0.0,0.0};
   double observer_radius_m = 0.0;
+
+  // CON09 resolution diagnostics make every physical classification auditable.
+  // `requested_scan_intervals` is the effective request: the maximum of the
+  // caller's lower bound, the 32-interval algorithmic floor, and the Parker
+  // phase-sampling requirement.  `achieved_scan_intervals` is the number
+  // actually scanned; it is zero for reject-before-scan ResolutionLimit
+  // results.  `scan_interval_budget` records the production bound used for the
+  // decision so saved results remain interpretable if a later release changes
+  // that bound.
+  std::size_t requested_scan_intervals = 0;
+  std::size_t achieved_scan_intervals = 0;
+  std::size_t scan_interval_budget = CONNECTIVITY_SCAN_INTERVAL_BUDGET;
 
   // All intersections are retained in increasing radial order.  The default
   // physical cobpoint is the outermost root (largest radius), i.e. the first
