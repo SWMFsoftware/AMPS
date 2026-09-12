@@ -237,9 +237,9 @@ output/test_geometry.o: 3d/test_geometry.cpp core/test_framework.hpp ../swcme_co
 output/test_mesh.o: 3d/test_mesh.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme3d.hpp ../swcme_status.hpp ../swcme_divergence.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-# CON01-CON09 validate analytical Parker-line mapping, cobpoint behavior, and
-# explicit resolution-budget qualification against the production swcme3d.o
-# implementation and the operational SEP adapter boundary.
+# CON01-CON10 validate analytical Parker-line mapping, cobpoint behavior,
+# explicit resolution-budget qualification, and observer-domain classification
+# against the production swcme3d.o implementation and operational SEP adapter.
 output/test_connectivity.o: 3d/test_connectivity.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme3d.hpp ../swcme_sep_interface.hpp ../swcme_status.hpp ../swcme_divergence.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 

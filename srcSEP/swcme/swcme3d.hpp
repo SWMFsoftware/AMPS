@@ -700,8 +700,11 @@ struct ConnectivityOptions {
   // limit historically used by the analytical solar-wind model.  Science
   // applications may raise this (for example to a data-driven/DBM handoff
   // radius) without changing the connectivity algorithm.  CFG04 requires the
-  // configured value to be at least the model boundary and strictly below the
-  // observer; an empty or inverted interval is InvalidConfiguration.
+  // configured value to be at least the model boundary and no greater than the
+  // observer.  Equality is a valid one-point boundary query; only an inverted
+  // interval is InvalidConfiguration.  This closed-interval convention lets
+  // CON10 classify an observer exactly at 1.05 R_sun without relabeling a
+  // domain-valid position as a configuration failure.
   double inner_radius_m = 1.05 * swcme::constants::SOLAR_RADIUS_M;
 
   // Minimum number of radial scan intervals.  The implementation can increase
@@ -996,8 +999,9 @@ public:
   // Intersect an observer's Parker field line with the current shock surface.
   // All geometrical roots between options.inner_radius_m and the observer are
   // returned.  Both radii must be inside the r>=1.05-R_sun analytical domain,
-  // and the inner radius must be strictly smaller.  The selected cobpoint is
-  // the outermost root, while each root
+  // and the inner radius must not exceed the observer.  Equality evaluates the
+  // single shared boundary point and returns an ordinary physical status.  The
+  // selected cobpoint is the outermost root, while each root
   // carries the complete production LocalShockState and Parker path length.
   ConnectivityState observer_connectivity(
       const StepState& S, const double observer_m[3],

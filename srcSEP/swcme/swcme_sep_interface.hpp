@@ -465,6 +465,45 @@ public:
       return out.status;
     }
 
+    // CON10 keeps malformed or out-of-domain observer coordinates distinct
+    // from a completed search that found no magnetic connection.  Non-finite
+    // Cartesian coordinates are numerical input errors; finite coordinates
+    // whose heliocentric radius is below the analytical Parker/Leblanc domain
+    // (or cannot be represented as a finite radius) are domain errors.  Both
+    // return before the generic Disconnected branch and explicitly state that
+    // no physical connection evaluation occurred.
+    if (connectivity.status==swcme3d::ConnectivityStatus::InvalidObserver) {
+      out=SEPSourceState{};
+      out.time_s=step.time_s;
+      out.spectrum=spectrum_;
+      out.connection_evaluated=false;
+      out.connected=false;
+      const bool finite_coordinates=
+          std::isfinite(observer_m[0]) && std::isfinite(observer_m[1]) &&
+          std::isfinite(observer_m[2]);
+      out.status=ModelStatus::make(
+          finite_coordinates ? StatusCode::OutsideModelDomain
+                             : StatusCode::NonFiniteInput,
+          "SEP observer position");
+      return out.status;
+    }
+
+    // Invalid search radii or tolerances describe a bad solver request, not an
+    // unconnected observer.  Propagate InvalidConfiguration and leave the
+    // evaluation flag false so an operational caller cannot count the record
+    // as a physical disconnected sample.
+    if (connectivity.status==
+        swcme3d::ConnectivityStatus::InvalidConfiguration) {
+      out=SEPSourceState{};
+      out.time_s=step.time_s;
+      out.spectrum=spectrum_;
+      out.connection_evaluated=false;
+      out.connected=false;
+      out.status=ModelStatus::make(StatusCode::InvalidConfiguration,
+                                   "SEP observer connectivity options");
+      return out.status;
+    }
+
     if (!connectivity.connected || connectivity.roots.empty()) {
       out=SEPSourceState{};
       out.time_s=step.time_s;

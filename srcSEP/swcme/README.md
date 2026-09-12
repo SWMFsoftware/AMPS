@@ -1170,6 +1170,25 @@ condition as `StatusCode::ResolutionLimit` with `connection_evaluated=false`,
 so operational callers cannot mistake insufficient numerical resolution for a
 physical absence of magnetic connection.
 
+Observer-domain classification is likewise explicit.  Cartesian positions
+must contain three finite coordinates and their heliocentric norm must be at
+least the inclusive `1.05 R_sun` analytical-domain boundary.  Null, non-finite,
+origin, and finite sub-domain positions return
+`ConnectivityStatus::InvalidObserver` before scan-resolution calculation or
+any Parker/shock evaluation.  Coordinate signs do not determine validity: a
+rotated observer with negative components is valid when its norm is in range.
+
+The radial search is the closed interval `[inner_radius_m, observer_radius_m]`.
+An inner radius equal to the observer is a one-point query, which permits an
+observer exactly on the lower model boundary to receive an ordinary
+`Connected` or `Disconnected` result and can detect a shock coincident with
+that point.  Only `inner_radius_m > observer_radius_m` is an invalid ordering.
+At the SEP adapter boundary, finite sub-domain observers propagate as
+`OutsideModelDomain`, non-finite coordinates as `NonFiniteInput`, and malformed
+connectivity options as `InvalidConfiguration`; all retain
+`connection_evaluated=false`.  Only a completed, valid disconnected search is
+reported as `NoConnection`.
+
 The root search is deliberately robust to connection boundaries.  It combines
 radial scanning, bisection of sign-changing roots, local minimization of the
 surface residual to detect tangent roots that do not change sign, and explicit
@@ -1201,7 +1220,7 @@ by the tracker.  Each history element retains the same resolution diagnostics
 and may therefore be `ResolutionLimit`; consumers must not coerce that state to
 disconnected.
 
-The deterministic connectivity validation block is `CON01`-`CON09`; see
+The deterministic connectivity validation block is `CON01`-`CON10`; see
 `test/README.md` for the individual fixtures and acceptance checks.
 
 ## Centralized configuration validation and unit handling
@@ -1305,11 +1324,12 @@ The 3-D connectivity source/search radius is
 `ConnectivityOptions::inner_radius_m`. It must satisfy
 
 ```text
-1.05 R_sun <= inner_radius_m < observer_radius_m.
+1.05 R_sun <= inner_radius_m <= observer_radius_m.
 ```
 
-A sub-domain source radius or an empty/inverted interval returns
-`InvalidConfiguration`; a sub-domain observer returns `InvalidObserver`, never
+A sub-domain source radius or an inverted interval returns
+`InvalidConfiguration`; equality evaluates the single point shared by source
+and observer. A sub-domain observer returns `InvalidObserver`, never
 `Disconnected`. The observer-scope APIs use the same inclusive lower boundary.
 The shared `MIN_RADIUS_RS` and derived `MIN_RADIUS_M` constants keep validation
 in public units and SI evaluation on one authoritative domain definition.

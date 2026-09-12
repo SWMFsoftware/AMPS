@@ -1308,11 +1308,11 @@ make -j
 
 Every sub-domain model radius is rejected before preparation with its public
 field or knot index. Exact and above-boundary model configurations prepare
-without clipping. A sub-domain connectivity source radius and any non-strict
-source-observer ordering return `InvalidConfiguration`; a sub-domain observer
-returns `InvalidObserver`; valid boundary inputs are never mislabeled as a
-domain failure. CFG04 follows CFG03 in `SMOKE` and is included in every `@ALL`
-profile.
+without clipping. A sub-domain connectivity source radius and reversed
+source-observer ordering return `InvalidConfiguration`; equal radii form a
+valid one-point closed interval. A sub-domain observer returns
+`InvalidObserver`; valid boundary inputs are never mislabeled as a domain
+failure. CFG04 follows CFG03 in `SMOKE` and is included in every `@ALL` profile.
 
 ## DEF01-DEF04: canonical defaults, scope, and resolved metadata
 
@@ -1926,9 +1926,9 @@ admissible root is reported with `solver_converged=false` and must not be used
 for SEP source physics.
 
 
-## CON01-CON09: observer-shock magnetic connectivity and cobpoint tracking
+## CON01-CON10: observer-shock magnetic connectivity and cobpoint tracking
 
-`CON01`-`CON09` validate the production 3-D connectivity API implemented by
+`CON01`-`CON10` validate the production 3-D connectivity API implemented by
 `swcme3d::Model::observer_connectivity()`.  The connectivity solver does not
 maintain a second copy of the shock model: candidate points are tested against
 `shape_radius_normal()` and final cobpoints obtain their local plasma/shock
@@ -2008,6 +2008,10 @@ The tests are:
   above-budget requests, an automatic Parker-phase overrun, a maximum-size
   request, a narrow analytic connection window, and the SEP adapter are checked
   to ensure insufficient resolution cannot masquerade as a physical result.
+- `CON10` — observer-domain classification.  Null, origin, sub-domain,
+  non-finite, exact-boundary, one-ULP-above, negative-axis, and rotated observer
+  positions are classified before tracing, including history and SEP-adapter
+  paths.
 
 ### CON09 detailed validation procedure
 
@@ -2052,6 +2056,51 @@ exhaustion may be reported as unqualified `Connected` or `Disconnected`.
 CON09 follows KIN09 in the priority-ordered `SMOKE` profile.  `ROUTINE`, `FULL`,
 and `EVENT` include it through `@ALL`.
 
+### CON10 detailed validation procedure
+
+What is tested: CON10 covers the observer-coordinate contract of
+`Model::observer_connectivity()`, the stationary-observer history builder, and
+`Interface3D::source_at_observer_cobpoint()`.  It checks a null pointer, the
+origin, positive- and negative-axis radii one ULP below the lower domain,
+individual NaN and positive/negative infinity coordinates, the exact boundary,
+one ULP above it, and valid vectors containing negative Cartesian components.
+It also exercises equal and reversed source-observer radii.
+
+Why it is tested: an invalid observer must not be scientifically interpreted as
+a Parker line that was traced successfully but did not intersect the shock.
+That distinction is especially important in connectivity-onset histories and
+SEP injection campaigns, where silently counting invalid positions as
+disconnected biases onset/loss statistics.  Cartesian signs must not be used as
+a proxy for heliocentric radius validity, and the inclusive lower boundary must
+not be lost through a separate search-ordering check.
+
+How it is tested: `std::nextafter` constructs the exact one-ULP neighbors of
+the shared `MIN_RADIUS_M` constant.  Invalid cases require
+`InvalidObserver`, zero requested/achieved scan intervals, and no roots; one
+case combines an invalid observer with invalid options to prove observer
+validation occurs first.  A zero-rotation spherical fixture gives an analytic
+ordinary classification for valid rotated positions.  At the exact lower
+boundary, the test evaluates the equal-radius one-point interval twice: first
+with a shock elsewhere, then with a stationary spherical shock exactly at the
+observer to prove the solver can return both Disconnected and Connected rather
+than using a hard-coded boundary result.  Invalid history samples must retain
+the same status without tracing.  Adapter calls independently exercise finite
+sub-domain, non-finite, reversed-interval, and valid-disconnected cases.
+
+What is expected: null, non-finite, origin, and sub-domain observers return
+`ConnectivityStatus::InvalidObserver` before scan or geometry work.  Exact and
+above-boundary observers return ordinary `Connected` or `Disconnected` with
+finite observer and scan diagnostics; a shock coincident with the exact
+boundary produces one zero-path-length root.  Negative coordinate components
+remain valid when the vector norm is valid.  The SEP adapter maps finite
+sub-domain input to `OutsideModelDomain`, non-finite input to `NonFiniteInput`,
+and bad connectivity options to `InvalidConfiguration`, always with
+`connection_evaluated=false`.  Only a completed physical disconnection maps to
+`NoConnection` with `connection_evaluated=true`.
+
+CON10 follows CON09 in the priority-ordered `SMOKE` profile.  `ROUTINE`, `FULL`,
+and `EVENT` include it through `@ALL`.
+
 The default connectivity search tolerance is much tighter than the validation
 campaign's `1e-8 AU` root-position target.  Tests deliberately repeat selected
 cases with different radial scan densities so correctness cannot depend on a
@@ -2066,6 +2115,7 @@ Typical direct use is:
 ./output/test_swcme --test CON06
 ./output/test_swcme --test CON08
 ./output/test_swcme --test CON09
+./output/test_swcme --test CON10
 ./output/test_swcme --all
 ```
 

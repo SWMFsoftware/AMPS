@@ -1182,11 +1182,13 @@ swcme3d::ConnectivityState Model::observer_connectivity(
   }
 
   const double r_min=options.inner_radius_m;
-  // The configured source/search surface must lie strictly inside the
-  // observer.  Equality or reversal defines an empty/inverted search domain,
-  // which is a configuration error rather than physical evidence that the
-  // observer is disconnected from the shock.
-  if (r_min>=r_obs) {
+  // The connectivity search is defined on the closed interval [r_min,r_obs].
+  // Equality is therefore a valid one-point query: it is required to classify
+  // an observer exactly on the inclusive 1.05-R_sun model boundary, and it can
+  // still detect a shock surface located at that same point.  Only a reversed
+  // interval is a configuration error.  The ordinary scan below safely samples
+  // the repeated endpoint and deduplicates any coincident root.
+  if (r_min>r_obs) {
     result.status=ConnectivityStatus::InvalidConfiguration;
     return result;
   }

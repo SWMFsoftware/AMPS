@@ -184,8 +184,9 @@ void test_cfg04(swcme_test::Context& context) {
                       "mixed-invalid PCHIP tables cannot prepare");
 
   // ConnectivityOptions::inner_radius_m is the configured source/search
-  // surface.  Its SI boundary is inclusive, but it must also lie strictly
-  // inside the observer to define a nonempty radial search interval.
+  // surface.  Its SI boundary is inclusive and it must not exceed the observer.
+  // CON10 defines equality as a one-point closed-interval query, leaving only
+  // reversed ordering as an invalid connectivity configuration.
   const swcme3d::Model connectivity_model(swcme3d::Params{});
   const swcme3d::StepState connectivity_state=
       connectivity_model.prepare_step(0.0);
@@ -218,9 +219,9 @@ void test_cfg04(swcme_test::Context& context) {
   options.inner_radius_m=observer[0];
   context.expect_true(
       connectivity_model.observer_connectivity(
-          connectivity_state,observer,options).status==
+          connectivity_state,observer,options).status!=
           swcme3d::ConnectivityStatus::InvalidConfiguration,
-      "source surface equal to observer rejects empty radial domain");
+      "source surface equal to observer permits one-point closed interval");
   options.inner_radius_m=std::nextafter(
       observer[0],std::numeric_limits<double>::infinity());
   context.expect_true(
@@ -230,8 +231,8 @@ void test_cfg04(swcme_test::Context& context) {
       "source surface outside observer rejects inverted radial domain");
 
   // Observer scope and connectivity must agree on the lower model boundary.
-  // Scope accepts exact equality because it tests only domain membership;
-  // connectivity additionally requires the source surface to be interior.
+  // Exact equality is valid for both scope membership and the connectivity
+  // solver's one-point closed interval.
   const swcme1d::Model scope_one;
   const swcme1d::StepState scope_state_one=scope_one.prepare_step(0.0);
   const double observer_below[3]={below_m,0.0,0.0};
@@ -261,9 +262,9 @@ void test_cfg04(swcme_test::Context& context) {
       "sub-domain observer is not reported as disconnected");
   context.expect_true(
       connectivity_model.observer_connectivity(
-          connectivity_state,observer_exact,options).status==
+          connectivity_state,observer_exact,options).status!=
           swcme3d::ConnectivityStatus::InvalidConfiguration,
-      "boundary observer exposes equal-radius ordering conflict");
+      "boundary observer permits exact one-point connectivity query");
   context.expect_true(
       connectivity_model.observer_connectivity(
           connectivity_state,observer_above,options).status!=
