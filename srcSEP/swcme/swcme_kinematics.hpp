@@ -37,6 +37,8 @@
 // heliophysics units and convert once when building KinematicsConfig.
 // ============================================================================
 
+#include "swcme_solarwind.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -58,7 +60,8 @@ enum class ExtrapolationPolicy { OutsideTime = 0, Ballistic = 1 };
 enum class Status {
   Ok = 0,
   InvalidInput,
-  OutsideTime
+  OutsideTime,
+  OutsideDomain
 };
 
 inline const char* status_name(Status s) {
@@ -66,6 +69,7 @@ inline const char* status_name(Status s) {
     case Status::Ok: return "OK";
     case Status::InvalidInput: return "INVALID_INPUT";
     case Status::OutsideTime: return "OUTSIDE_TIME";
+    case Status::OutsideDomain: return "OUTSIDE_DOMAIN";
   }
   return "UNKNOWN";
 }
@@ -79,7 +83,10 @@ struct State {
 struct Config {
   Mode mode = Mode::DBM;
 
-  // BALLISTIC/DBM parameters.
+  // BALLISTIC/DBM parameters.  The reference radius must lie inside the
+  // analytical solar-wind domain, V0 may be zero for a stationary front, and
+  // the ambient wind is strictly outward.  KIN09 applies the same physical
+  // postconditions to every extrapolated state.
   double r0_m = 0.0;
   double V0_m_s = 0.0;
   double Vsw_m_s = 0.0;
@@ -87,16 +94,18 @@ struct Config {
 
   // DATA_DRIVEN height-time knots.  Radius must be nondecreasing and time must
   // be strictly increasing.  A nondecreasing table is sufficient for PCHIP;
-  // flat intervals are allowed and produce zero local propagation speed.
+  // flat intervals are allowed and produce zero local propagation speed.  All
+  // radii must lie at or above solarwind::MIN_RADIUS_M.
   std::vector<double> data_time_s;
   std::vector<double> data_radius_m;
   ExtrapolationPolicy extrapolation = ExtrapolationPolicy::OutsideTime;
 };
 
 // ----------------------------------------------------------------------------
-// Input validation kept local to the common kinematics component.
-// A broader SWCME Config::validate() is still planned, but this layer must not
-// silently clip a negative drag coefficient or malformed observation table.
+// Input validation is retained locally as a defense-in-depth boundary for
+// direct users of this common component.  The public 1-D/3-D validators provide
+// field-specific diagnostics first; this lower layer independently prevents a
+// malformed SI config from being clipped or interpreted as an extrapolation.
 // ----------------------------------------------------------------------------
 inline bool valid_scalar(double x) { return std::isfinite(x); }
 
@@ -105,7 +114,8 @@ inline Status validate(const Config& c) {
       !valid_scalar(c.Vsw_m_s) || !valid_scalar(c.Gamma_m_inv)) {
     return Status::InvalidInput;
   }
-  if (c.r0_m <= 0.0 || c.Gamma_m_inv < 0.0) {
+  if (c.r0_m < swcme::solarwind::MIN_RADIUS_M || c.V0_m_s < 0.0 ||
+      !(c.Vsw_m_s > 0.0) || c.Gamma_m_inv < 0.0) {
     return Status::InvalidInput;
   }
 
@@ -119,7 +129,7 @@ inline Status validate(const Config& c) {
   }
   for (std::size_t i=0; i<c.data_time_s.size(); ++i) {
     if (!valid_scalar(c.data_time_s[i]) || !valid_scalar(c.data_radius_m[i]) ||
-        c.data_radius_m[i] <= 0.0) {
+        c.data_radius_m[i] < swcme::solarwind::MIN_RADIUS_M) {
       return Status::InvalidInput;
     }
     if (i>0) {
@@ -134,19 +144,39 @@ inline Status validate(const Config& c) {
   return Status::Ok;
 }
 
+// Convert a candidate formula result into the public kinematic-state contract.
+// Input validation and physical-domain validation are intentionally distinct:
+// malformed parameters return INVALID_INPUT, whereas a finite-time extension
+// of a valid model that leaves r>=1.05 R_sun, overflows, or reverses sunward
+// returns OUTSIDE_DOMAIN.  Failed states retain NaN payloads so callers cannot
+// accidentally consume a stale/partial radius while ignoring the status.
+inline State domain_checked_state(double radius_m,double speed_m_s) {
+  State out;
+  if (!std::isfinite(radius_m) || !std::isfinite(speed_m_s) ||
+      radius_m<swcme::solarwind::MIN_RADIUS_M || speed_m_s<0.0) {
+    out.status=Status::OutsideDomain;
+    return out;
+  }
+  out.status=Status::Ok;
+  out.radius_m=radius_m;
+  out.speed_m_s=speed_m_s;
+  return out;
+}
+
 // ----------------------------------------------------------------------------
 // Ballistic reference/operating mode.
 // ----------------------------------------------------------------------------
 inline State ballistic_state(const Config& c, double t_s) {
   State out;
-  if (validate(c) != Status::Ok || !std::isfinite(t_s) || t_s < 0.0) {
+  if (validate(c) != Status::Ok || !std::isfinite(t_s)) {
     out.status = Status::InvalidInput;
     return out;
   }
-  out.status = Status::Ok;
-  out.radius_m = c.r0_m + c.V0_m_s*t_s;
-  out.speed_m_s = c.V0_m_s;
-  return out;
+  // Negative time is a legitimate backward extrapolation until the analytical
+  // trajectory crosses the configured radial domain.  fma performs the one
+  // multiplication/addition with a single rounding and makes overflow visible
+  // to the common postcondition instead of returning an unchecked OK state.
+  return domain_checked_state(std::fma(c.V0_m_s,t_s,c.r0_m),c.V0_m_s);
 }
 
 // ----------------------------------------------------------------------------
@@ -172,7 +202,7 @@ inline State ballistic_state(const Config& c, double t_s) {
 // ----------------------------------------------------------------------------
 inline State dbm_state(const Config& c, double t_s) {
   State out;
-  if (validate(c) != Status::Ok || !std::isfinite(t_s) || t_s < 0.0) {
+  if (validate(c) != Status::Ok || !std::isfinite(t_s)) {
     out.status = Status::InvalidInput;
     return out;
   }
@@ -182,15 +212,17 @@ inline State dbm_state(const Config& c, double t_s) {
 
   // No initial speed difference means drag is irrelevant even when Gamma>0.
   if (c.Gamma_m_inv == 0.0 || a == 0.0) {
-    out.status = Status::Ok;
-    out.radius_m = c.r0_m + c.V0_m_s*t_s;
-    out.speed_m_s = c.V0_m_s;
-    return out;
+    return domain_checked_state(
+        std::fma(c.V0_m_s,t_s,c.r0_m),c.V0_m_s);
   }
 
   const double x = c.Gamma_m_inv*a*t_s;
-  if (!std::isfinite(x) || x < 0.0) {
-    out.status = Status::InvalidInput;
+  // Backward DBM continuation exists only while 1+Gamma*|dV0|*t is positive.
+  // At/beyond that pole the closed form is not a physical branch.  Overflow
+  // of x likewise means the requested finite time cannot be represented by a
+  // finite model state, so both cases are explicit domain failures.
+  if (!std::isfinite(x) || !(1.0+x>0.0)) {
+    out.status = Status::OutsideDomain;
     return out;
   }
 
@@ -210,15 +242,9 @@ inline State dbm_state(const Config& c, double t_s) {
     drag_distance = sign*std::log1p(x)/c.Gamma_m_inv;
   }
 
-  out.status = Status::Ok;
-  out.radius_m = c.r0_m + c.Vsw_m_s*t_s + drag_distance;
-  out.speed_m_s = c.Vsw_m_s + dv;
-
-  if (!std::isfinite(out.radius_m) || !std::isfinite(out.speed_m_s) ||
-      out.radius_m <= 0.0) {
-    out.status = Status::InvalidInput;
-  }
-  return out;
+  const double radius_m=std::fma(c.Vsw_m_s,t_s,c.r0_m)+drag_distance;
+  const double speed_m_s=c.Vsw_m_s+dv;
+  return domain_checked_state(radius_m,speed_m_s);
 }
 
 // ----------------------------------------------------------------------------
@@ -299,20 +325,16 @@ inline State data_driven_state(const Config& c, double t_s) {
       out.status=Status::OutsideTime;
       return out;
     }
-    out.status=Status::Ok;
-    out.speed_m_s=m.front();
-    out.radius_m=y.front()+m.front()*(t_s-x.front());
-    return out;
+    return domain_checked_state(
+        std::fma(m.front(),t_s-x.front(),y.front()),m.front());
   }
   if (t_s > x.back()) {
     if (c.extrapolation==ExtrapolationPolicy::OutsideTime) {
       out.status=Status::OutsideTime;
       return out;
     }
-    out.status=Status::Ok;
-    out.speed_m_s=m.back();
-    out.radius_m=y.back()+m.back()*(t_s-x.back());
-    return out;
+    return domain_checked_state(
+        std::fma(m.back(),t_s-x.back(),y.back()),m.back());
   }
 
   // Exact knot queries return the supplied radius exactly, while the speed is
@@ -320,10 +342,7 @@ inline State data_driven_state(const Config& c, double t_s) {
   auto upper=std::lower_bound(x.begin(),x.end(),t_s);
   if (upper!=x.end() && *upper==t_s) {
     const std::size_t k=static_cast<std::size_t>(upper-x.begin());
-    out.status=Status::Ok;
-    out.radius_m=y[k];
-    out.speed_m_s=m[k];
-    return out;
+    return domain_checked_state(y[k],m[k]);
   }
 
   const std::size_t i=static_cast<std::size_t>(upper-x.begin()-1);
@@ -356,8 +375,7 @@ inline State data_driven_state(const Config& c, double t_s) {
     }
   }
 
-  out.status=Status::Ok;
-  return out;
+  return domain_checked_state(out.radius_m,out.speed_m_s);
 }
 
 inline State evaluate(const Config& c, double t_s) {

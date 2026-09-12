@@ -302,3 +302,235 @@ void test_kin08(swcme_test::Context& context){
                       swcme::kinematics::Status::InvalidInput,
                       "decreasing data-driven radius rejected");
 }
+
+void test_kin09(swcme_test::Context& context){
+  std::cout<<"KIN09 kinematic extrapolation domain\n";
+  using swcme::kinematics::Status;
+
+  // BALLISTIC has no algebraic singularity, so negative time is supported
+  // until the trajectory crosses 1.05 R_sun.  Log-spaced offsets on both sides
+  // of the reference epoch are compared with an independently evaluated
+  // long-double line rather than with another production helper.
+  swcme::kinematics::Config ballistic;
+  ballistic.mode=swcme::kinematics::Mode::Ballistic;
+  ballistic.r0_m=20.0*RS;
+  ballistic.V0_m_s=1.0e6;
+  ballistic.Vsw_m_s=4.0e5;
+  ballistic.Gamma_m_inv=0.0;
+  for(double t : {-1.0e4,-1.0e3,-1.0e2,-1.0e1,-1.0,
+                   0.0,1.0,1.0e1,1.0e2,1.0e3,1.0e4}) {
+    const long double expected=
+        static_cast<long double>(ballistic.r0_m)+
+        static_cast<long double>(ballistic.V0_m_s)*
+        static_cast<long double>(t);
+    const swcme::kinematics::State state=
+        swcme::kinematics::evaluate(ballistic,t);
+    context.expect_true(state.status==Status::Ok,
+                        "valid ballistic time has OK status");
+    check_rel(context,"ballistic independent radius",state.radius_m,
+              static_cast<double>(expected),4.0e-15,1.0);
+    check_rel(context,"ballistic independent speed",state.speed_m_s,
+              ballistic.V0_m_s,0.0,1.0);
+  }
+  context.expect_true(
+      swcme::kinematics::evaluate(ballistic,-2.0e4).status==
+          Status::OutsideDomain,
+      "ballistic backward crossing returns OUTSIDE_DOMAIN");
+  context.expect_true(
+      swcme::kinematics::evaluate(
+          ballistic,std::numeric_limits<double>::max()).status==
+          Status::OutsideDomain,
+      "ballistic overflow returns OUTSIDE_DOMAIN");
+
+  // DBM's Gamma=0 branch and equal-speed branch are algebraically ballistic
+  // but remain separate production branches.  Exercise them explicitly so a
+  // future fast path cannot bypass the common radial/overflow postcondition.
+  swcme::kinematics::Config zero_drag=ballistic;
+  zero_drag.mode=swcme::kinematics::Mode::DBM;
+  context.expect_true(
+      swcme::kinematics::evaluate(zero_drag,-2.0e4).status==
+          Status::OutsideDomain,
+      "zero-drag DBM backward crossing returns OUTSIDE_DOMAIN");
+  swcme::kinematics::Config equal_speed=zero_drag;
+  equal_speed.Gamma_m_inv=1.0e-10;
+  equal_speed.V0_m_s=equal_speed.Vsw_m_s;
+  context.expect_true(
+      swcme::kinematics::evaluate(
+          equal_speed,std::numeric_limits<double>::max()).status==
+          Status::OutsideDomain,
+      "equal-speed DBM overflow returns OUTSIDE_DOMAIN");
+  const swcme::kinematics::State failed_ballistic=
+      swcme::kinematics::evaluate(ballistic,-2.0e4);
+  context.expect_true(std::isnan(failed_ballistic.radius_m) &&
+                          std::isnan(failed_ballistic.speed_m_s),
+                      "domain failure exposes no partial ballistic payload");
+  context.expect_true(
+      swcme::kinematics::evaluate(
+          ballistic,std::numeric_limits<double>::quiet_NaN()).status==
+          Status::InvalidInput,
+      "non-finite time remains INVALID_INPUT");
+
+  // Exercise both signs of DBM velocity contrast.  The independent expression
+  // uses long-double log1p and never calls the production DBM implementation;
+  // this detects sign, denominator, and branch-status errors simultaneously.
+  const std::vector<swcme::kinematics::Config> dbm_cases={
+      basic_dbm(1500.0,400.0,8.0e-8),
+      basic_dbm(300.0,400.0,8.0e-8)};
+  for(const swcme::kinematics::Config& dbm : dbm_cases) {
+    for(double t : {-1.0e3,-1.0e2,-1.0e1,-1.0,
+                     0.0,1.0,1.0e1,1.0e2,1.0e3,1.0e4}) {
+      const long double dv0=
+          static_cast<long double>(dbm.V0_m_s)-dbm.Vsw_m_s;
+      const long double a=std::abs(dv0);
+      const long double x=static_cast<long double>(dbm.Gamma_m_inv)*a*t;
+      const long double sign=dv0>0.0L ? 1.0L : -1.0L;
+      const long double expected_speed=
+          static_cast<long double>(dbm.Vsw_m_s)+dv0/(1.0L+x);
+      const long double expected_radius=
+          static_cast<long double>(dbm.r0_m)+
+          static_cast<long double>(dbm.Vsw_m_s)*t+
+          sign*std::log1p(x)/dbm.Gamma_m_inv;
+      const swcme::kinematics::State state=
+          swcme::kinematics::evaluate(dbm,t);
+      context.expect_true(state.status==Status::Ok,
+                          "valid DBM extension has OK status");
+      check_rel(context,"DBM independent extrapolated radius",state.radius_m,
+                static_cast<double>(expected_radius),2.0e-14,1.0);
+      check_rel(context,"DBM independent extrapolated speed",state.speed_m_s,
+                static_cast<double>(expected_speed),2.0e-14,1.0);
+    }
+  }
+
+  // For a slow CME, backward continuation has a finite turning point where
+  // outward speed reaches zero before the DBM denominator pole.  Sample on
+  // both sides: the outward side is valid, while the sunward branch and the
+  // pole are explicit domain failures rather than OK or INVALID_INPUT.
+  swcme::kinematics::Config turning=basic_dbm(100.0,400.0,1.0e-7);
+  turning.r0_m=40.0*RS;
+  const double contrast=std::abs(turning.V0_m_s-turning.Vsw_m_s);
+  const double turning_time=
+      (contrast/turning.Vsw_m_s-1.0)/
+      (turning.Gamma_m_inv*contrast);
+  const double pole_time=-1.0/(turning.Gamma_m_inv*contrast);
+  context.expect_true(
+      swcme::kinematics::evaluate(turning,turning_time+1.0).status==Status::Ok,
+      "DBM outward side of turning point remains valid");
+  context.expect_true(
+      swcme::kinematics::evaluate(turning,turning_time-1.0).status==
+          Status::OutsideDomain,
+      "DBM sunward side of turning point returns OUTSIDE_DOMAIN");
+  context.expect_true(
+      swcme::kinematics::evaluate(turning,pole_time).status==
+          Status::OutsideDomain,
+      "DBM denominator pole returns OUTSIDE_DOMAIN");
+  context.expect_true(
+      swcme::kinematics::evaluate(
+          turning,std::numeric_limits<double>::max()).status==
+          Status::OutsideDomain &&
+      swcme::kinematics::evaluate(
+          turning,-std::numeric_limits<double>::max()).status==
+          Status::OutsideDomain,
+      "DBM overflow-prone extremes return OUTSIDE_DOMAIN");
+
+  // A two-knot table has an independently known endpoint slope.  Explicit
+  // BALLISTIC continuation is accepted at/inside the radial boundary and
+  // rejected immediately beyond it; the default OUTSIDE_TIME policy remains
+  // unchanged and takes precedence before extrapolation is attempted.
+  swcme::kinematics::Config data;
+  data.mode=swcme::kinematics::Mode::DataDriven;
+  data.r0_m=20.0*RS;
+  data.V0_m_s=1.0e6;
+  data.Vsw_m_s=4.0e5;
+  data.Gamma_m_inv=1.0e-10;
+  const double minimum=swcme::solarwind::MIN_RADIUS_M;
+  data.data_time_s={0.0,100.0};
+  data.data_radius_m={2.0*minimum,3.0*minimum};
+  data.extrapolation=swcme::kinematics::ExtrapolationPolicy::Ballistic;
+  const double endpoint_speed=minimum/100.0;
+  for(double t : {-100.0,-50.0,-10.0,-1.0,101.0,110.0,200.0,1100.0}) {
+    const bool before=t<0.0;
+    const double anchor_time=before ? 0.0 : 100.0;
+    const double anchor_radius=before ? 2.0*minimum : 3.0*minimum;
+    const long double expected=
+        static_cast<long double>(anchor_radius)+
+        static_cast<long double>(endpoint_speed)*(t-anchor_time);
+    const swcme::kinematics::State state=
+        swcme::kinematics::evaluate(data,t);
+    context.expect_true(state.status==Status::Ok,
+                        "valid PCHIP ballistic extension has OK status");
+    check_rel(context,"PCHIP independent extrapolated radius",state.radius_m,
+              static_cast<double>(expected),4.0e-15,1.0);
+    check_rel(context,"PCHIP independent endpoint speed",state.speed_m_s,
+              endpoint_speed,2.0e-15,1.0);
+  }
+  context.expect_true(
+      swcme::kinematics::evaluate(data,-101.0).status==Status::OutsideDomain,
+      "pre-PCHIP sub-domain radius returns OUTSIDE_DOMAIN");
+  context.expect_true(
+      swcme::kinematics::evaluate(
+          data,std::numeric_limits<double>::max()).status==
+          Status::OutsideDomain,
+      "post-PCHIP overflow returns OUTSIDE_DOMAIN");
+
+  data.extrapolation=swcme::kinematics::ExtrapolationPolicy::OutsideTime;
+  context.expect_true(
+      swcme::kinematics::evaluate(data,-101.0).status==Status::OutsideTime &&
+      swcme::kinematics::evaluate(data,101.0).status==Status::OutsideTime,
+      "OUTSIDE_TIME policy still refuses both extensions before domain math");
+
+  // Flat PCHIP endpoints are intentionally supported stationary fronts.  Even
+  // a very large finite time cannot overflow a zero-slope continuation, which
+  // distinguishes valid zero speed from the unsupported negative-speed branch.
+  data.data_radius_m={2.0*minimum,2.0*minimum};
+  data.extrapolation=swcme::kinematics::ExtrapolationPolicy::Ballistic;
+  const swcme::kinematics::State stationary=
+      swcme::kinematics::evaluate(data,std::numeric_limits<double>::max());
+  context.expect_true(stationary.status==Status::Ok &&
+                          stationary.radius_m==2.0*minimum &&
+                          stationary.speed_m_s==0.0,
+                      "stationary PCHIP continuation remains in domain");
+
+  // Finally verify status propagation through both public model wrappers.  A
+  // valid configured table whose explicit backward extension crosses the
+  // radial boundary must make prepare_step() fail with OUTSIDE_DOMAIN rather
+  // than exposing an invalid StepState or a generic configuration diagnosis.
+  swcme1d::Params one;
+  swcme3d::Params three;
+  one.kinematics_mode=swcme::kinematics::Mode::DataDriven;
+  one.data_time_s={0.0,100.0};
+  one.data_radius_Rs={2.0,3.0};
+  one.data_extrapolation=swcme::kinematics::ExtrapolationPolicy::Ballistic;
+  three.kinematics_mode=one.kinematics_mode;
+  three.data_time_s=one.data_time_s;
+  three.data_radius_Rs=one.data_radius_Rs;
+  three.data_extrapolation=one.data_extrapolation;
+
+  // A modest backward extension remains inside the supported radial domain
+  // and must reach both dimensional physics paths, proving the wrappers no
+  // longer reject all negative time before consulting common kinematics.
+  const swcme1d::StepState valid_backward_one=
+      swcme1d::Model(one).prepare_step(-10.0);
+  const swcme3d::StepState valid_backward_three=
+      swcme3d::Model(three).prepare_step(-10.0);
+  context.expect_true(valid_backward_one.r_sh_m>
+                          swcme::solarwind::MIN_RADIUS_M &&
+                          valid_backward_three.r_sh_m==
+                          valid_backward_one.r_sh_m,
+                      "1-D/3-D wrappers accept the same valid backward state");
+  bool one_domain=false;
+  bool three_domain=false;
+  try {
+    (void)swcme1d::Model(one).prepare_step(-200.0);
+  } catch (const std::runtime_error& error) {
+    one_domain=std::string(error.what()).find("OUTSIDE_DOMAIN")!=
+               std::string::npos;
+  }
+  try {
+    (void)swcme3d::Model(three).prepare_step(-200.0);
+  } catch (const std::runtime_error& error) {
+    three_domain=std::string(error.what()).find("OUTSIDE_DOMAIN")!=
+                 std::string::npos;
+  }
+  context.expect_true(one_domain && three_domain,
+                      "1-D/3-D preparation propagates OUTSIDE_DOMAIN");
+}

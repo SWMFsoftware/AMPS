@@ -479,8 +479,12 @@ StepState Model::prepare_step(double t_s) const {
   if (!validation.ok()) {
     throw std::invalid_argument(validation.summary("swcme3d"));
   }
-  if (!std::isfinite(t_s) || t_s<0.0) {
-    throw std::invalid_argument("swcme3d: time must be finite and >= 0");
+  // Finite negative time is an explicit backward-extrapolation request.
+  // KIN09 delegates its admissibility to the shared kinematics engine, which
+  // returns OUTSIDE_DOMAIN for a radial crossing, reversal, pole, or overflow.
+  // Only a non-finite coordinate is malformed API input at this layer.
+  if (!std::isfinite(t_s)) {
+    throw std::invalid_argument("swcme3d: time must be finite");
   }
 
   StepState S{};

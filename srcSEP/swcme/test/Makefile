@@ -167,10 +167,11 @@ output/test_units.o: core/test_units.cpp core/test_framework.hpp ../swcme_consta
 output/test_density.o: core/test_density.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_regions.hpp ../swcme_status.hpp ../swcme_divergence.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-# KIN01-KIN08 validate the common apex-kinematics engine directly and through
-# both dimensional wrappers.  The test contains an independent closed-form DBM
-# reference and dense PCHIP monotonicity checks; production kinematics remain in
-# swcme_kinematics.hpp so the 1-D and 3-D implementations cannot diverge.
+# KIN01-KIN09 validate the common apex-kinematics engine directly and through
+# both dimensional wrappers.  The test contains independent closed-form DBM
+# references, dense PCHIP monotonicity checks, and explicit extrapolation-domain
+# stress at radial crossings, turning points, poles, and floating-point limits;
+# production kinematics remain shared so the dimensional models cannot diverge.
 output/test_kinematics.o: core/test_kinematics.cpp core/test_framework.hpp ../swcme_kinematics.hpp ../swcme_constants.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_regions.hpp ../swcme_status.hpp ../swcme_divergence.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 

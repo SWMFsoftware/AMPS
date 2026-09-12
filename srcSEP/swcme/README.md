@@ -1106,7 +1106,7 @@ this simple drag model in the drag-dominated heliosphere rather than at
 there is a documented physical justification; observationally constrained
 `DataDriven` mode is preferred when height-time measurements are available.
 
-The deterministic kinematics validation block is `KIN01`-`KIN08`; see
+The deterministic kinematics validation block is `KIN01`-`KIN09`; see
 `test/README.md` for individual purposes and acceptance criteria.
 
 ## Observer-to-shock magnetic connectivity and cobpoint tracking
@@ -1307,6 +1307,52 @@ the reference radius, every PCHIP knot position, connectivity source radius,
 and observer. It also covers non-finite and mixed-validity tables, repeated
 times, and equal/reversed source-observer ordering. Exact-boundary model and
 PCHIP configurations prepare without clipping or extrapolation.
+
+### Kinematic extrapolation domain (KIN09)
+
+Finite negative times are supported as explicit backward extrapolation for
+ballistic and DBM trajectories. Every candidate kinematic state must satisfy
+
+```text
+radius >= 1.05 R_sun
+speed  >= 0
+radius and speed are finite.
+```
+
+Zero speed remains valid for a stationary shock or flat PCHIP interval. A
+negative speed is an unsupported sunward branch. `swcme::kinematics::Status`
+now includes `OutsideDomain`, reported as `OUTSIDE_DOMAIN`, to distinguish a
+valid configuration extrapolated beyond its physical or numerical domain from
+`INVALID_INPUT` and the data-driven `OUTSIDE_TIME` policy.
+
+All three production paths use the shared `domain_checked_state()`
+postcondition. Ballistic evaluation uses a fused multiply-add. DBM additionally
+requires `1 + Gamma*abs(V0-Vsw)*t > 0`, so backward requests at or beyond the
+closed-form pole fail explicitly. Non-finite products, radii, or speeds and a
+negative propagated speed also return `OUTSIDE_DOMAIN`. Explicit PCHIP
+ballistic continuation applies the identical checks on both endpoints; the
+default `OUTSIDE_TIME` policy still refuses extrapolation before doing domain
+arithmetic.
+
+Both dimensional `prepare_step()` methods accept any finite time coordinate and
+propagate the common kinematic status. Consequently a supported negative-time
+state prepares normally, while a radial crossing, reversal, pole, or overflow
+throws an error containing `OUTSIDE_DOMAIN` and exposes no partial prepared
+state.
+
+Run the focused gate with:
+
+```sh
+cd test
+make -j
+./output/test_swcme --test KIN09
+```
+
+KIN09 compares valid forward and backward ballistic, DBM, and PCHIP results
+with independently evaluated formulas over logarithmically spaced offsets. It
+also tests a slow-DBM turning point, the DBM denominator pole, radial crossings,
+floating-point extremes, stationary continuation, policy precedence, and
+1-D/3-D status propagation. KIN09 follows CFG04 in `SMOKE`.
 
 
 ## Shared common physics core for 1-D and 3-D

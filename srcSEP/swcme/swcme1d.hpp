@@ -957,14 +957,16 @@ public:
   StepState prepare_step(double t_s) const {
     // Configuration errors are rejected before any normalization, boundary
     // construction, or unit conversion can hide the supplied value.  CFG01
-    // covers scalar admissibility and CFG03 covers smoothing/layer conflicts;
-    // invalid input fails once at setup instead of becoming a plausible state.
+    // covers scalar admissibility, CFG03 covers smoothing/layer conflicts, and
+    // CFG04 covers configured radii.  KIN09 permits finite negative times as
+    // explicit backward extrapolation and lets the common kinematics layer
+    // distinguish a supported state from OUTSIDE_DOMAIN.
     const swcme::config::ValidationResult validation=validate();
     if (!validation.ok()) {
       throw std::invalid_argument(validation.summary("swcme1d"));
     }
-    if (!std::isfinite(t_s) || t_s<0.0) {
-      throw std::invalid_argument("swcme1d: time must be finite and >= 0");
+    if (!std::isfinite(t_s)) {
+      throw std::invalid_argument("swcme1d: time must be finite");
     }
 
     StepState S;

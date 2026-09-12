@@ -55,6 +55,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --test OUT08    # strict-writer record semantics
 ./output/test_swcme --test CFG03    # smoothing-width rejection policy
 ./output/test_swcme --test CFG04    # configured-radius domain policy
+./output/test_swcme --test KIN09    # kinematic extrapolation domain
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -1731,7 +1732,7 @@ Cartesian finite-difference operator when the exact analytical result is known.
 
 
 
-## KIN01-KIN08: shared CME/shock-apex kinematics
+## KIN01-KIN09: shared CME/shock-apex kinematics
 
 `swcme_kinematics.hpp` is the production source of apex radius and speed for
 both `swcme1d` and `swcme3d`.  The kinematics tests are classified `COMMON` and
@@ -1777,7 +1778,10 @@ The tests are:
 - `KIN07` — dense-grid monotonicity, nonnegative propagation speed, and absence
   of cubic overshoot between data knots; and
 - `KIN08` — explicit out-of-time status, optional ballistic continuation, and
-  rejection of duplicate-time or decreasing-radius tables.
+  rejection of duplicate-time or decreasing-radius tables; and
+- `KIN09` — forward/backward extrapolation domain, independent formulas,
+  radial crossings, a slow-DBM turning point and denominator pole, overflow
+  extremes, stationary continuation, and 1-D/3-D status propagation.
 
 The DBM analytical comparisons use `1e-12` relative accuracy where specified
 by the validation plan.  PCHIP knot radii are required to be exact to
@@ -1793,6 +1797,48 @@ A data-driven query outside the measurement interval causes `prepare_step()`
 to throw a clear runtime error unless a continuation policy was selected.  This
 is intentional: silent cubic extrapolation is a modeling assumption and is
 not allowed to masquerade as measured/constrained kinematics.
+
+KIN09 adds a separate result contract for an explicitly selected continuation.
+Malformed configuration or a non-finite time is `INVALID_INPUT`; refusal to
+leave a measured PCHIP interval is `OUTSIDE_TIME`; and a valid formula request
+that crosses the radial boundary, enters a negative-speed branch, reaches the
+DBM denominator pole, or overflows is `OUTSIDE_DOMAIN`. Zero speed is accepted
+for the existing stationary-front and flat-knot use cases.
+
+### KIN09 detailed validation procedure
+
+**What is tested.** Ballistic, fast- and slow-CME DBM, and explicit PCHIP
+ballistic continuation are evaluated before and after their reference or data
+epochs. Fixtures include logarithmically spaced offsets, radial crossings, a
+slow-DBM speed turning point, the DBM backward-time pole, maximum finite
+floating-point times, and zero-slope continuation.
+
+**Why it is tested.** An extrapolator that reports `OK` with a non-finite or
+sub-domain radius can contaminate region geometry, shock timing, and every
+downstream field. Treating the same event as generic invalid input loses the
+important distinction between malformed configuration and a valid model
+extended beyond its supported domain.
+
+**How it is tested.** The test recomputes ballistic and endpoint-continuation
+radii in long double and evaluates the sign-aware DBM formula independently
+with long-double `log1p`. Valid results are compared at roundoff-level
+tolerances. Points immediately around the slow-CME turning time and at the DBM
+pole verify branch classification. Extreme finite time values force
+intermediate or result overflow. Finally, valid public data-driven
+configurations are extrapolated beyond the radial domain through both wrappers.
+
+**Expected result.** Every representable state with `r >= 1.05 R_sun` and
+nonnegative finite speed matches the independent formula. Unsupported radial,
+negative-speed, pole, and overflow states return `OUTSIDE_DOMAIN` with NaN
+payload fields; they are never `OK`, clipped, or confused with `OUTSIDE_TIME`.
+Both wrappers propagate the status before returning a prepared state.
+
+Run the focused test with:
+
+```sh
+make -j
+./output/test_swcme --test KIN09
+```
 
 ## SHK01-SHK14: fast-shock existence, Rankine-Hugoniot validation, and shock-surface ownership
 

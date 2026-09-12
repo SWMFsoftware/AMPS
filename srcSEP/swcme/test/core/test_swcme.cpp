@@ -52,6 +52,7 @@ void test_kin05(swcme_test::Context& context);
 void test_kin06(swcme_test::Context& context);
 void test_kin07(swcme_test::Context& context);
 void test_kin08(swcme_test::Context& context);
+void test_kin09(swcme_test::Context& context);
 void test_shk01(swcme_test::Context& context);
 void test_shk02(swcme_test::Context& context);
 void test_shk03(swcme_test::Context& context);
@@ -139,6 +140,7 @@ const swcme_test::TestCase kTests[] = {
     {"OUT08", "OUTPUT", "Strict warning writer build", test_out08},
     {"CFG03", "COMMON", "Smoothing width policy", test_cfg03},
     {"CFG04", "COMMON", "Configured radius domain", test_cfg04},
+    {"KIN09", "COMMON", "Kinematic extrapolation domain", test_kin09},
     {"CFG01", "COMMON", "Configuration rejection and physical-range validation",
      test_cfg01},
     {"CFG02", "COMMON", "Unit-conversion and dimensional-consistency test",
