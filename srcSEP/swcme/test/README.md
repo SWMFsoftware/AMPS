@@ -49,6 +49,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --test OUT06    # mesh and metric output validation
 ./output/test_swcme --test OUT01    # independent Tecplot parsing
 ./output/test_swcme --test OUT07    # build/run/parse all demonstrations
+./output/test_swcme --test PST07    # direct/AMPS adapter equivalence
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -760,6 +761,63 @@ or, after `make` has built all targets:
 
 `OUT07` follows `OUT01` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
 through their `@ALL` expansion.
+
+## PST07: AMPS adapter equivalence
+
+### What is tested
+
+PST07 verifies that `Interface1D` and `Interface3D` return the same physical
+values and status as direct SWCME queries made with the identical model,
+prepared state, time, position, direction, observer, and energy grid.  It checks
+prepared-state model identity and configuration digest; density, proton
+pressure, velocity, magnetic components and magnitude, `div(V)`, and focusing;
+shock/source position, normal, compression, `theta_Bn`, fast Mach number,
+normal speed, upstream density/pressure/field, source weighting, and DSA slope;
+relative and SI-normalized spectra at 1, 3, 10, 100, and 1000 MeV; and the
+selected observer-to-cobpoint Parker path length.
+
+### Why it is tested
+
+The AMPS adapter is the operational path used by particle transport.  A wrapper
+that repeats a unit conversion, default, Parker derivative, connectivity
+integral, or source formula can disagree with standalone SWCME even when both
+components pass isolated tests.  Such drift would make transport results depend
+on the call path rather than the configured physical model.
+
+### How it is tested
+
+The test creates matched fast-shock/source configurations and queries multiple
+upstream radii in both dimensions.  Adapter fields that should be copied are
+required to equal their direct production values exactly.  Pressure, focusing,
+and path length are evaluated by shared production helpers; the 3-D
+connectivity class and adapter both consume that common Parker implementation.
+An unsupported radius must retain the direct `OUTSIDE_MODEL_DOMAIN` status.
+
+For source equivalence, PST07 compares the adapter record field-by-field with
+the direct `ShockAccelerationState` and local 3-D shock state before any CSV
+formatting.  It independently applies the documented relativistic momentum
+power law at a fixed energy grid and compares both relative shape and physical
+SI normalization.  Finally, it performs direct and adapter observer
+connectivity calls, compares root selection and path length, and verifies local
+source focusing at the selected cobpoint.
+
+### Expected result
+
+Every copied status and value is identical, independently ordered spectrum
+calculations agree within `2e-13` relative error, model/configuration provenance
+is unchanged, and invalid-domain classification is preserved.  The adapter
+performs record assembly only: no independent pressure, Parker path, focusing,
+shock, or source-spectrum model is allowed.
+
+Run the gate with:
+
+```sh
+make -j
+./output/test_swcme --test PST07
+```
+
+PST07 follows OUT07 in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it through
+their `@ALL` expansion.
 
 ## Python campaign manager and reproducible run artifacts
 

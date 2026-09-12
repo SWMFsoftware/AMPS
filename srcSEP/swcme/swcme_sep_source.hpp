@@ -197,6 +197,15 @@ struct SEPSourceState {
   double upstream_density_m3 = 0.0;
   double upstream_B_T = 0.0;
 
+  // Transport context attached by the dimensional adapter after the common
+  // shock/source conversion.  Pressure uses the production proton-only
+  // closure, and focusing uses the shared Parker derivative.  Path length is
+  // defined only for an observer-connected cobpoint; directional and surface
+  // sources retain NaN so zero cannot be mistaken for a colocated observer.
+  double upstream_pressure_Pa = 0.0;
+  double focusing_length_m = std::numeric_limits<double>::quiet_NaN();
+  double field_line_path_length_m = std::numeric_limits<double>::quiet_NaN();
+
   double q_phase_space = std::numeric_limits<double>::quiet_NaN();
   double momentum_intensity_index = std::numeric_limits<double>::quiet_NaN();
   double nonrel_energy_intensity_index = std::numeric_limits<double>::quiet_NaN();
@@ -332,7 +341,8 @@ inline const char* source_csv_header() {
   return "status,active,connection_evaluated,connected,acceleration_mode,time_s,source_id,"
          "x_m,y_m,z_m,nx,ny,nz,patch_area_m2,active_surface_area_m2,area_fraction,"
          "relative_source_weight_per_area,relative_patch_weight,compression,theta_Bn_rad,"
-         "fast_mach,Vsh_n_m_s,upstream_density_m3,upstream_B_T,q_phase_space,"
+         "fast_mach,Vsh_n_m_s,upstream_density_m3,upstream_B_T,upstream_pressure_Pa,"
+         "focusing_length_m,field_line_path_length_m,q_phase_space,"
          "momentum_intensity_index,nonrel_energy_intensity_index,normalization,"
          "particle_mass_kg,charge_number,Emin_MeV,Emax_MeV,Eref_MeV,Jref_SI";
 }
@@ -357,11 +367,13 @@ inline std::string serialize_source_csv(const SEPSourceState& s) {
       << s.relative_patch_weight << ','
       << s.compression << ',' << s.theta_Bn_rad << ',' << s.fast_mach << ','
       << s.normal_speed_m_s << ',' << s.upstream_density_m3 << ',' << s.upstream_B_T
-      << ',';
+      << ',' << s.upstream_pressure_Pa << ',';
   auto emit = [&](double value) {
     if (std::isfinite(value)) out << value;
     else out << "NA";
   };
+  emit(s.focusing_length_m); out << ',';
+  emit(s.field_line_path_length_m); out << ',';
   emit(s.q_phase_space); out << ',';
   emit(s.momentum_intensity_index); out << ',';
   emit(s.nonrel_energy_intensity_index); out << ',';

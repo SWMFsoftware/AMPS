@@ -39,6 +39,8 @@ patch_area_m2 / active_surface_area_m2 / area_fraction
 relative_patch_weight
 compression / theta_Bn_rad / fast_mach / normal_speed_m_s
 upstream_density_m3 / upstream_B_T
+upstream_pressure_Pa
+focusing_length_m / field_line_path_length_m
 q_phase_space
 momentum_intensity_index
 nonrel_energy_intensity_index
@@ -56,10 +58,12 @@ configuration and shock-solver errors remain failures.
 
 ```text
 density                  m^-3
+pressure                 Pa
 velocity                 m s^-1
 magnetic field           T
 magnetic-field magnitude T
 div(V)                   s^-1
+focusing length          m
 position                 m
 ```
 
@@ -67,6 +71,12 @@ The 3-D single-point adapter calls the production checked Cartesian evaluator
 with `N=1`.  The 1-D adapter similarly calls the production checked radial
 path.  No new density, Parker, region, or divergence equation exists in the SEP
 adapter.
+
+`BackgroundState` also copies the prepared model identity and configuration
+digest.  Parker path length and focusing are evaluated in the common
+`swcme_solarwind.hpp` production component.  Directional/surface sources carry
+local focusing and an unavailable (`NaN`, serialized `NA`) observer path;
+connected cobpoint sources carry the selected production connectivity length.
 
 ## Spectrum convention
 

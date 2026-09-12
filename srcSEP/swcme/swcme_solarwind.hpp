@@ -11,6 +11,7 @@
 //   * Leblanc density normalization and evaluation,
 //   * Parker radial/azimuthal field components,
 //   * Cartesian Parker-vector construction for an arbitrary rotation axis,
+//   * Parker field-line distance and magnetic focusing length, and
 //   * proton thermal pressure used by the current MHD shock model.
 //
 // Keeping these equations in one production component prevents the historical
@@ -95,6 +96,25 @@ struct ParkerComponents {
   double Bmag_T = 0.0;
 };
 
+// Return sin(theta), where theta is the colatitude relative to the solar
+// rotation axis.  Both inputs are unit vectors at the public call sites.  The
+// clamp protects the exact [0,1] trigonometric range from a few ulps of norm
+// drift without replacing a genuinely invalid vector; model validation owns
+// rejection of zero/non-finite axes and directions before this hot helper.
+inline double parker_sin_colatitude(
+    const std::array<double, 3>& solar_axis_hat,
+    const std::array<double, 3>& radial_hat) {
+  const std::array<double, 3> cross = {{
+      solar_axis_hat[1] * radial_hat[2] - solar_axis_hat[2] * radial_hat[1],
+      solar_axis_hat[2] * radial_hat[0] - solar_axis_hat[0] * radial_hat[2],
+      solar_axis_hat[0] * radial_hat[1] - solar_axis_hat[1] * radial_hat[0]}};
+  const double magnitude=std::sqrt(cross[0] * cross[0] +
+                                   cross[1] * cross[1] +
+                                   cross[2] * cross[2]);
+  return std::isfinite(magnitude) ? std::min(1.0,magnitude)
+                                  : std::numeric_limits<double>::quiet_NaN();
+}
+
 inline PreparedState prepare(const ConfigSI& cfg) {
   PreparedState state;
   state.V_sw_m_s = cfg.V_sw_m_s;
@@ -160,6 +180,59 @@ inline ParkerComponents parker_components(const PreparedState& state,
   return {Br, Bphi, std::sqrt(Br * Br + Bphi * Bphi)};
 }
 
+// Closed-form distance along the same baseline Parker field used by the
+// magnetic evaluator.  With k=Omega*sin(theta)/Vsw, ds/dr=sqrt(1+(kr)^2).
+// Keeping its antiderivative here makes the model connectivity and AMPS
+// adapter consume one production formula.  The explicit small-k branch avoids
+// a removable 0/0 singularity and returns the exact radial-field limit.
+inline double parker_path_length_m(const PreparedState& state,
+                                   double sin_theta_local,
+                                   double radius_a_m,
+                                   double radius_b_m) {
+  if (!std::isfinite(sin_theta_local) || sin_theta_local<0.0 ||
+      sin_theta_local>1.0 || !std::isfinite(radius_a_m) ||
+      !std::isfinite(radius_b_m) || !(radius_a_m>0.0) ||
+      !(radius_b_m>0.0) || !std::isfinite(state.k_AU_equatorial)) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+
+  const double k=state.k_AU_equatorial*sin_theta_local/
+                 swcme::constants::AU_M;
+  if (std::abs(k)<=64.0*std::numeric_limits<double>::epsilon()/
+                         std::max(radius_a_m,radius_b_m)) {
+    return std::abs(radius_b_m-radius_a_m);
+  }
+
+  const auto primitive=[k](double radius_m) {
+    const double kr=k*radius_m;
+    return 0.5*(radius_m*std::sqrt(1.0+kr*kr)+std::asinh(kr)/k);
+  };
+  return std::abs(primitive(radius_b_m)-primitive(radius_a_m));
+}
+
+// Magnetic focusing length for an OUTWARD path coordinate s,
+//
+//   L_B = -1/(d ln|B|/ds)
+//       = r [1+(kr)^2]^(3/2) / [2+(kr)^2].
+//
+// The baseline Parker magnitude decreases outward, hence L_B is positive and
+// approaches r/2 in the radial (k -> 0) limit.  This function is intentionally
+// colocated with parker_components(): an AMPS adapter must never differentiate
+// or reinterpret a second magnetic-field formula to obtain focusing.
+inline double parker_focusing_length_m(const PreparedState& state,
+                                       double radius_m,
+                                       double sin_theta_local) {
+  if (!std::isfinite(radius_m) || !(radius_m>0.0) ||
+      !std::isfinite(sin_theta_local) || sin_theta_local<0.0 ||
+      sin_theta_local>1.0 || !std::isfinite(state.k_AU_equatorial)) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  const double kr=state.k_AU_equatorial*sin_theta_local*
+                  (radius_m/swcme::constants::AU_M);
+  const double one_plus_kr2=1.0+kr*kr;
+  return radius_m*one_plus_kr2*std::sqrt(one_plus_kr2)/(2.0+kr*kr);
+}
+
 // Construct the Cartesian Parker vector for a normalized radial direction and
 // normalized solar-rotation axis.  The azimuthal basis is Omega_hat x e_r.  At
 // the poles the cross product vanishes; because B_phi also vanishes there, the
@@ -174,8 +247,7 @@ inline std::array<double, 3> parker_field_cartesian(
       solar_axis_hat[1] * radial_hat[2] - solar_axis_hat[2] * radial_hat[1],
       solar_axis_hat[2] * radial_hat[0] - solar_axis_hat[0] * radial_hat[2],
       solar_axis_hat[0] * radial_hat[1] - solar_axis_hat[1] * radial_hat[0]}};
-  const double sin_theta = std::sqrt(
-      cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2]);
+  const double sin_theta=parker_sin_colatitude(solar_axis_hat,radial_hat);
 
   const ParkerComponents components =
       parker_components(state, radius_m, sin_theta);

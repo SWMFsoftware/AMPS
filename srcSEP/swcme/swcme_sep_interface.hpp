@@ -22,6 +22,13 @@
 // This separation is intentional: AMPS can cache BackgroundState queries as it
 // already does for fields, while shock/source state is refreshed only when the
 // background step changes.
+//
+// Transport-context contract
+// --------------------------
+// Pressure, Parker path length, and magnetic focusing are obtained from the
+// same swcme_solarwind.hpp helpers used by direct model/connectivity queries.
+// The adapter only packages those SI values and prepared-state provenance;
+// there is no AMPS-specific physical formula or unit convention to drift.
 // ============================================================================
 
 #include "swcme1d.hpp"
@@ -42,12 +49,21 @@ namespace sep {
 
 struct BackgroundState {
   ModelStatus status;
+
+  // Preserve the provenance of the prepared state used for this record.  AMPS
+  // can archive or assert these tokens at its field-update boundary; the
+  // adapter copies them verbatim and never derives a new identity.
+  ModelIdentity owner_model_identity = 0;
+  ConfigurationDigest configuration_digest = 0;
+
   std::array<double,3> position_m{{0.0,0.0,0.0}};
   double density_m3 = 0.0;
+  double pressure_Pa = 0.0;
   std::array<double,3> velocity_m_s{{0.0,0.0,0.0}};
   std::array<double,3> magnetic_T{{0.0,0.0,0.0}};
   double magnetic_magnitude_T = 0.0;
   double div_velocity_s_inv = 0.0;
+  double focusing_length_m = 0.0;
 };
 
 struct SourceSurface {
@@ -63,8 +79,12 @@ struct SourceSurface {
 inline std::string spectrum_configuration_manifest(const SpectrumConfig& c) {
   std::ostringstream out;
   out.setf(std::ios::scientific);
+  // Version 2 adds pressure, focusing, and optional observer path length to
+  // the serialized source contract.  Recording the schema change prevents an
+  // older AMPS campaign reader from silently assigning the shifted columns to
+  // the version-1 meanings.
   out << std::setprecision(17)
-      << "sep_source_contract_version=1\n"
+      << "sep_source_contract_version=2\n"
       << "sep_particle_mass_kg=" << c.particle_mass_kg << '\n'
       << "sep_charge_number=" << c.charge_number << '\n'
       << "sep_energy_min_MeV=" << c.kinetic_energy_min_MeV << '\n'
@@ -78,6 +98,29 @@ inline std::string spectrum_configuration_manifest(const SpectrumConfig& c) {
     out << "NA";
   out << '\n';
   return out.str();
+}
+
+// Attach transport quantities that are not part of the common shock-source
+// algebra.  Both adapters call the same production pressure and Parker
+// focusing functions; this helper performs only record assembly and finite
+// checks, so no physical equation is duplicated in the AMPS-facing layer.
+inline ModelStatus attach_source_transport_context(
+    const solarwind::PreparedState& solar_wind,
+    double radius_m,
+    double sin_theta,
+    SEPSourceState& out) {
+  out.upstream_pressure_Pa=solarwind::proton_pressure_Pa(
+      solar_wind,out.upstream_density_m3);
+  out.focusing_length_m=solarwind::parker_focusing_length_m(
+      solar_wind,radius_m,sin_theta);
+  if (!std::isfinite(out.upstream_pressure_Pa) ||
+      !(out.upstream_pressure_Pa>0.0) ||
+      !std::isfinite(out.focusing_length_m) ||
+      !(out.focusing_length_m>0.0)) {
+    out.status=ModelStatus::make(StatusCode::NonFiniteResult,
+                                 "SEP source transport context");
+  }
+  return out.status;
 }
 
 class Interface1D {
@@ -108,6 +151,8 @@ public:
         step,"SEP Interface1D background");
     if (!ownership.ok()) return ownership;
     out=BackgroundState{};
+    out.owner_model_identity=step.owner_model_identity;
+    out.configuration_digest=step.configuration_digest;
     out.position_m={{radius_m,0.0,0.0}};
     double n=0.0,V=0.0,Br=0.0,Bphi=0.0,Bmag=0.0,divV=0.0;
     const ModelStatus status=model_.evaluate_radii_with_B_div_checked(
@@ -115,6 +160,8 @@ public:
     out.status=status;
     if (status.failure()) return status;
     out.density_m3=n;
+    out.pressure_Pa=solarwind::proton_pressure_Pa(
+        step.common.solar_wind,n);
     out.velocity_m_s={{V,0.0,0.0}};
     // In the +X equatorial reference used by the common 1-D/3-D regression,
     // the Parker azimuthal basis is +Y; signed Bphi therefore maps directly to
@@ -122,7 +169,16 @@ public:
     out.magnetic_T={{Br,Bphi,0.0}};
     out.magnetic_magnitude_T=Bmag;
     out.div_velocity_s_inv=divV;
-    return status;
+    out.focusing_length_m=solarwind::parker_focusing_length_m(
+        step.common.solar_wind,radius_m,
+        step.common.solar_wind.reference_sin_theta);
+    if (!std::isfinite(out.pressure_Pa) || !(out.pressure_Pa>0.0) ||
+        !std::isfinite(out.focusing_length_m) ||
+        !(out.focusing_length_m>0.0)) {
+      out.status=ModelStatus::make(StatusCode::NonFiniteResult,
+                                   "SEP Interface1D transport context");
+    }
+    return out.status;
   }
 
   ModelStatus source_at_shock(const PreparedStep& step,
@@ -133,7 +189,12 @@ public:
     const ModelStatus ownership=
         model_.shock_acceleration_state_checked(step,a);
     if (!ownership.ok()) return ownership;
-    return make_source_state(a,spectrum_,false,false,0,0.0,out);
+    const ModelStatus source_status=
+        make_source_state(a,spectrum_,false,false,0,0.0,out);
+    if (!source_status.ok()) return source_status;
+    return attach_source_transport_context(
+        step.common.solar_wind,a.radius_m,
+        step.common.solar_wind.reference_sin_theta,out);
   }
 
   std::string resolved_manifest() const {
@@ -176,6 +237,8 @@ public:
         step,"SEP Interface3D background");
     if (!ownership.ok()) return ownership;
     out=BackgroundState{};
+    out.owner_model_identity=step.owner_model_identity;
+    out.configuration_digest=step.configuration_digest;
     out.position_m=position_m;
     const double x=position_m[0],y=position_m[1],z=position_m[2];
     double n=0.0,vx=0.0,vy=0.0,vz=0.0,bx=0.0,by=0.0,bz=0.0,divV=0.0;
@@ -184,13 +247,26 @@ public:
     out.status=status;
     if (status.failure()) return status;
     out.density_m3=n;
+    out.pressure_Pa=solarwind::proton_pressure_Pa(
+        step.common.solar_wind,n);
     out.velocity_m_s={{vx,vy,vz}};
     out.magnetic_T={{bx,by,bz}};
     out.magnetic_magnitude_T=std::hypot(bx,std::hypot(by,bz));
     out.div_velocity_s_inv=divV;
-    if (!std::isfinite(out.magnetic_magnitude_T)) {
+    const double radius_m=std::hypot(x,std::hypot(y,z));
+    const std::array<double,3> radial_hat={{x/radius_m,y/radius_m,z/radius_m}};
+    const std::array<double,3> solar_axis_hat={{
+        step.solar_axis_hat[0],step.solar_axis_hat[1],step.solar_axis_hat[2]}};
+    const double sin_theta=solarwind::parker_sin_colatitude(
+        solar_axis_hat,radial_hat);
+    out.focusing_length_m=solarwind::parker_focusing_length_m(
+        step.common.solar_wind,radius_m,sin_theta);
+    if (!std::isfinite(out.magnetic_magnitude_T) ||
+        !std::isfinite(out.pressure_Pa) || !(out.pressure_Pa>0.0) ||
+        !std::isfinite(out.focusing_length_m) ||
+        !(out.focusing_length_m>0.0)) {
       out.status=ModelStatus::make(StatusCode::NonFiniteResult,
-                                   "SEP Interface3D background |B|");
+                                   "SEP Interface3D transport context");
       return out.status;
     }
     return status;
@@ -216,8 +292,28 @@ public:
       out.status=acceleration_status;
       return out.status;
     }
-    return make_source_state(acceleration_state,spectrum_,false,false,
-                             source_id,patch_area_m2,out);
+    const ModelStatus source_status=make_source_state(
+        acceleration_state,spectrum_,false,false,source_id,patch_area_m2,out);
+    if (!source_status.ok()) return source_status;
+
+    // The production acceleration record supplies the physical surface point.
+    // Derive only its normalized direction here, then delegate pressure and
+    // focusing to the common solar-wind core used by direct SWCME queries.
+    const double radius_m=std::hypot(
+        out.position_m[0],std::hypot(out.position_m[1],out.position_m[2]));
+    if (!std::isfinite(radius_m) || !(radius_m>0.0)) {
+      out.status=ModelStatus::make(StatusCode::GeometryFailure,
+                                   "SEP source radius");
+      return out.status;
+    }
+    const std::array<double,3> radial_hat={{
+        out.position_m[0]/radius_m,out.position_m[1]/radius_m,
+        out.position_m[2]/radius_m}};
+    const std::array<double,3> solar_axis_hat={{
+        step.solar_axis_hat[0],step.solar_axis_hat[1],step.solar_axis_hat[2]}};
+    return attach_source_transport_context(
+        step.common.solar_wind,radius_m,
+        solarwind::parker_sin_colatitude(solar_axis_hat,radial_hat),out);
   }
 
   // Build one source record per shock-mesh cell.  Physics is sampled at the
@@ -347,16 +443,20 @@ public:
     }
     u[0]/=norm; u[1]/=norm; u[2]/=norm;
 
-    acceleration::ShockAccelerationState acceleration_state;
-    const double ud[3]={u[0],u[1],u[2]};
-    const ModelStatus acceleration_status=
-        model_.shock_acceleration_state_checked(step,ud,acceleration_state);
-    if (!acceleration_status.ok()) {
-      out=SEPSourceState{};
-      out.status=acceleration_status;
-      return out.status;
+    // Reuse the public directional adapter so pressure, focusing, spectrum,
+    // and shock scalars have one mapping path.  Connectivity contributes only
+    // its observer-specific flags and the already computed Parker arc length.
+    const ModelStatus source_status=source_at_direction(step,u,out);
+    if (!source_status.ok()) return source_status;
+    out.connection_evaluated=true;
+    out.connected=true;
+    out.field_line_path_length_m=root.path_length_m;
+    if (!std::isfinite(out.field_line_path_length_m) ||
+        out.field_line_path_length_m<0.0) {
+      out.status=ModelStatus::make(StatusCode::NonFiniteResult,
+                                   "SEP observer field-line path length");
     }
-    return make_source_state(acceleration_state,spectrum_,true,true,0,0.0,out);
+    return out.status;
   }
 
   std::string resolved_manifest() const {

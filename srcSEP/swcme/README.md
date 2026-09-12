@@ -89,15 +89,18 @@ swcme::sep::BackgroundState bg;
 auto status = sep.evaluate_background(step, position_m, bg);
 ```
 
-`BackgroundState` is entirely SI: density `[m^-3]`, velocity `[m/s]`, magnetic
-field `[T]`, magnetic-field magnitude `[T]`, and `div(V)` `[s^-1]`.  The 3-D
-single-point path delegates to the existing checked batch evaluator with `N=1`
-and stack scalars, so an AMPS hot loop does not require a temporary vector or a
-second status convention.  After setup and `prepare()` complete, a prepared
-step and its owning model may be shared read-only by worker threads.  Each call
-must still own distinct destination objects/arrays; model configuration,
-preparation, and file output remain setup/coordination operations rather than
-concurrent field-query operations.  PST04 below verifies this exact contract.
+`BackgroundState` is entirely SI: density `[m^-3]`, proton pressure `[Pa]`,
+velocity `[m/s]`, magnetic field `[T]`, magnetic-field magnitude `[T]`,
+`div(V)` `[s^-1]`, and Parker focusing length `[m]`.  It also records the exact
+prepared model identity and configuration digest.  The 3-D single-point path
+delegates to the existing checked batch evaluator with `N=1` and stack scalars,
+so an AMPS hot loop does not require a temporary vector or a second status
+convention.  After setup and `prepare()` complete, a prepared step and its
+owning model may be shared read-only by worker threads.  Each call must still
+own distinct destination objects/arrays; model configuration, preparation, and
+file output remain setup/coordination operations rather than concurrent
+field-query operations.  PST04 verifies thread safety, and PST07 verifies
+direct/adapter equivalence for this complete record.
 
 ### Prepared-state immutability (PST01)
 
@@ -638,6 +641,41 @@ or run it after an existing build:
 ./output/test_swcme --test OUT07
 ```
 
+### AMPS adapter equivalence (PST07)
+
+PST07 treats `swcme_sep_interface.hpp` as a transparent integration boundary,
+not a second model.  For representative 1-D and 3-D prepared states it compares
+the adapter with direct checked SWCME calls at identical times, positions, and
+SI units.  The comparison covers success and domain-failure status, prepared
+model/configuration identity, density, proton pressure, velocity, Parker-field
+components and magnitude, `div(V)`, local magnetic focusing length, shock
+position/normal, compression, `theta_Bn`, fast Mach number, shock speed,
+upstream state, source weighting, and a five-node relativistic energy spectrum.
+
+Parker path length and focusing now live beside the production Parker field in
+`swcme_solarwind.hpp`.  The 3-D connectivity solver delegates its arc-length
+calculation to that common helper, while both AMPS adapters use the common
+pressure and focusing helpers.  Thus the adapter assembles records and checks
+status but contains no separate pressure, path, focusing, shock, or spectrum
+physics.  `BackgroundState` records the exact prepared model identity and
+configuration digest.  Observer-connected `SEPSourceState` records the selected
+Parker path length; all source records include upstream pressure and local
+focusing, with unavailable non-observer path lengths represented by `NaN` and
+serialized as `NA` rather than an ambiguous zero.
+The resolved manifest records this expanded layout as SEP source contract
+version 2 so older campaign readers cannot silently interpret shifted columns.
+
+Run the dedicated equivalence gate with:
+
+```sh
+cd test
+make -j
+./output/test_swcme --test PST07
+```
+
+PST07 follows OUT07 in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it through
+their `@ALL` expansion.
+
 ### `SEPSourceState`
 
 `SEPSourceState` is the stable transport-facing source record.  It contains:
@@ -647,7 +685,9 @@ or run it after an existing build:
 - source position `[m]`, outward normal, patch area `[m^2]`, active surface
   area, area fraction, and relative patch weight;
 - compression ratio, `theta_Bn`, fast Mach number and normal shock speed;
-- upstream density and magnetic-field magnitude;
+- upstream density, pressure, and magnetic-field magnitude;
+- local Parker focusing length and, for observer cobpoints, field-line path
+  length;
 - the DSA phase-space slope `q` and derived intensity indices;
 - the complete source-spectrum configuration and normalization convention.
 

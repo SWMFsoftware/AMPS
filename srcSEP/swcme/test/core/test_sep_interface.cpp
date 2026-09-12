@@ -305,7 +305,7 @@ void test_sep06(swcme_test::Context& context) {
   const std::string manifest1=adapter.resolved_manifest();
   const std::string manifest2=adapter.resolved_manifest();
   context.expect_true(manifest1==manifest2,"resolved SEP/model manifest deterministic");
-  context.expect_true(manifest1.find("sep_source_contract_version=1")!=std::string::npos,
+  context.expect_true(manifest1.find("sep_source_contract_version=2")!=std::string::npos,
                       "manifest records SEP source contract version");
   context.expect_true(manifest1.find("shock_acceleration_mode=RESOLVED_COMPRESSION")!=
                       std::string::npos,

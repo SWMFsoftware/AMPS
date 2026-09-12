@@ -1024,18 +1024,11 @@ bool Model::parker_field_line_point(const StepState& S,
          std::isfinite(point_m[2]);
 }
 
-// Closed-form arc length on the same Parker line used above.  With constant
-// colatitude theta,
-//
-//   ds/dr = sqrt(1 + (k r)^2),  k=Omega sin(theta)/V_sw.
-//
-// An antiderivative is
-//
-//   F(r)=0.5 [ r sqrt(1+(kr)^2) + asinh(kr)/k ].
-//
-// The exact k=0 (zero rotation or polar field line) limit is |r_b-r_a|.  This
-// quantity is carried with every cobpoint because SEP timing depends on path
-// length along the field, not merely on radial separation.
+// Closed-form arc length on the same Parker line used above.  Geometry here is
+// limited to finding the observer's invariant colatitude; the actual integral,
+// its stable small-winding limit, and its argument validation live in the
+// shared solar-wind core.  Consequently direct connectivity and the AMPS
+// adapter cannot drift to separate path-length conventions.
 double Model::parker_field_line_length(const StepState& S,
                                        const double observer_m[3],
                                        double radius_a_m,
@@ -1054,24 +1047,14 @@ double Model::parker_field_line_length(const StepState& S,
   if (!std::isfinite(r_obs) || r_obs<=0.0)
     return std::numeric_limits<double>::quiet_NaN();
 
-  const double u[3]={observer_m[0]/r_obs,observer_m[1]/r_obs,observer_m[2]/r_obs};
-  const double cross[3]={
-      S.solar_axis_hat[1]*u[2]-S.solar_axis_hat[2]*u[1],
-      S.solar_axis_hat[2]*u[0]-S.solar_axis_hat[0]*u[2],
-      S.solar_axis_hat[0]*u[1]-S.solar_axis_hat[1]*u[0]};
-  const double sin_theta=norm3(cross);
-  const double k=S.solar_rotation_rate_rad_s*sin_theta/S.V_sw_ms;
-
-  if (std::abs(k)<=64.0*std::numeric_limits<double>::epsilon()/
-                         std::max(radius_a_m,radius_b_m)) {
-    return std::abs(radius_b_m-radius_a_m);
-  }
-
-  const auto primitive=[k](double r) {
-    const double kr=k*r;
-    return 0.5*(r*std::sqrt(1.0+kr*kr)+std::asinh(kr)/k);
-  };
-  return std::abs(primitive(radius_b_m)-primitive(radius_a_m));
+  const std::array<double,3> observer_hat={{
+      observer_m[0]/r_obs,observer_m[1]/r_obs,observer_m[2]/r_obs}};
+  const std::array<double,3> solar_axis_hat={{
+      S.solar_axis_hat[0],S.solar_axis_hat[1],S.solar_axis_hat[2]}};
+  const double sin_theta=swcme::solarwind::parker_sin_colatitude(
+      solar_axis_hat,observer_hat);
+  return swcme::solarwind::parker_path_length_m(
+      S.common.solar_wind,sin_theta,radius_a_m,radius_b_m);
 }
 
 // Intersect one observer-anchored Parker line with the current production
