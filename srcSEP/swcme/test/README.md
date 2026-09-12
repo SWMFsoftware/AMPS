@@ -1878,8 +1878,9 @@ The individual tests are:
   shock solution.
 - `SHK04` — strictly perpendicular ideal-MHD benchmark against an independent
   test-side scalar reduction.
-- `SHK05` — oblique benchmark grid and continuity of the selected compression
-  branch as shock speed/obliquity vary.
+- `SHK05` — independent 80-digit benchmark for the complete eight-equation
+  oblique ideal-MHD jump system across Mach number, `theta_Bn`, plasma beta,
+  gamma, density/temperature, field strength and polarity, and tangential flow.
 - `SHK06` — mass-flux conservation.  It also samples the production 3-D field
   immediately downstream and verifies that density, velocity, and magnetic
   field approach the exact RH downstream state instead of the ambient wind.
@@ -1902,16 +1903,66 @@ The individual tests are:
   compared with a fresh `shock_state_direction()` query.  This prevents future
   diagnostic/mesh code from reintroducing a separate shock-strength calculation.
 
-The independent parallel/perpendicular references do not call the production
-nonlinear shock solver.  Conservation tests recompute the conserved fluxes from
-the returned primitive states.  This prevents a test from passing merely by
-reusing the same internal algebra that produced the result.
+The independent parallel/perpendicular references and the general-oblique
+`SHK05` reference do not call the production nonlinear shock solver.
+Conservation tests recompute the conserved fluxes from the returned primitive
+states.  This prevents a test from passing merely by reusing the same internal
+algebra that produced the result.
+
+### SHK05 independent oblique-shock benchmark
+
+**What is tested.** `SHK05` exercises twelve well-conditioned evolutionary
+fast shocks.  The matrix spans fast Mach number 1.5--6, `theta_Bn` 15--75
+degrees, plasma beta 0.1--5, gamma 1.4--5/3, upstream number density
+1.5--25 cm^-3, magnetic magnitude 2--15 nT, nonzero y/z tangential flow,
+non-coplanar magnetic azimuths, and both field polarities.  Pressure and density
+vary independently, so the upstream temperature range is varied as well.  The
+test compares fast Mach number, compression, downstream density and pressure,
+all three downstream velocity components, all three downstream magnetic-field
+components, entropy ratio, downstream fast Mach number, branch label, and all
+five normalized production conservation residuals.
+
+**Why it is tested.** Earlier oblique coverage derived its expectations from
+the same reduced relations used by production.  Such a test can confirm
+internal consistency while missing a shared algebra error or selection of a
+non-evolutionary nonlinear root.  `SHK05` supplies an external numerical oracle
+for the general oblique case between the independent parallel (`SHK03`) and
+perpendicular (`SHK04`) limits.
+
+**How it is tested.** The reviewed v1 values live in
+`reference/shk05_oblique_v1.hpp`.  The audit-only generator
+`reference/generate_shk05_oblique_v1.py` uses standard-library `Decimal`
+arithmetic at 80-digit precision and solves density, pressure, three velocity
+components, and three magnetic components simultaneously from the complete
+Rankine-Hugoniot system.  It uses a numerically formed full 8x8 Jacobian and
+independent Gaussian elimination, rather than the production compression
+polynomial/reconstruction.  Six starting compressions expose competing roots.
+An eight-step, ten-percent Mach-continuation round trip must return to the same
+root within `1e-45`; compression, entropy, and upstream/downstream fast and
+Alfven characteristics then independently identify the unique evolutionary
+fast branch.  The header records convergence counts, root count, maximum
+high-precision residual, and minimum Newton pivot for diagnostic retention.
+Normal builds depend on but never execute the generator, so production changes
+cannot silently rewrite the oracle.
+
+**What is expected.** All twelve production solves return `Solved`; the stored
+reference residual is below `1e-50`, at least two distinct starting seeds reach
+the physical solution, exactly one admissible root is found, and the recorded
+minimum pivot exceeds `1e-10`.  Production and reference primitive quantities
+must agree within `2e-9` relative error (tighter than the required `1e-7`), the
+independent and production branch classifications must both be evolutionary
+fast, and every normalized conservation residual must meet its production
+acceptance threshold.  A failure retains the fixture case name plus branch,
+conditioning, root-count, and residual diagnostics.  `SHK05` follows `CON10`
+in the priority-ordered `SMOKE` profile and is also included in all `@ALL`
+profiles.
 
 Typical direct use is:
 
 ```sh
 ./output/test_swcme --test SHK01
 ./output/test_swcme --test SHK04
+./output/test_swcme --test SHK05
 ./output/test_swcme --test SHK10
 ./output/test_swcme --test SHK13
 ./output/test_swcme --test SHK14

@@ -39,10 +39,12 @@ conditions reports `solver_converged=false` and is not used as a valid shock.
 ## New validation
 
 `SHK01` through `SHK12` validate shock thresholding, theta_Bn, parallel and
-perpendicular independent limits, oblique branch continuity, mass flux, normal
-B, tangential electric field, momentum, energy, entropy/admissibility, and the
-weak-shock limit. `SHK06` additionally verifies the 3-D production evaluator's
-immediate downstream n/V/B state.
+perpendicular independent limits, the versioned 80-digit full-system oblique
+benchmark, mass flux, normal B, tangential electric field, momentum, energy,
+entropy/admissibility, and the weak-shock limit. `SHK05` compares every
+downstream primitive variable and the evolutionary-fast branch against twelve
+independently generated cases; `SHK06` additionally verifies the 3-D production
+evaluator's immediate downstream n/V/B state.
 
 The complete current suite has one pre-existing unrelated failure, `CFG02`, due
 to the 1-D zero-velocity unit/preparation path converting 0 km/s to 1 m/s. The

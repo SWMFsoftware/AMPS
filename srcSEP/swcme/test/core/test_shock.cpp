@@ -1,4 +1,5 @@
 #include "test_framework.hpp"
+#include "../reference/shk05_oblique_v1.hpp"
 
 #include <swcme1d.hpp>
 #include <swcme3d.hpp>
@@ -60,10 +61,10 @@ Primitive fixture(double theta_deg=40.0,double n_cm3=5.0,double B_nT=5.0,double 
 
 // Independent fast-mode speed used only to construct threshold fixtures.  It
 // intentionally does not call the production helper under test.
-double reference_fast_speed(const Primitive& s,const Vec3& n){
+double reference_fast_speed(const Primitive& s,const Vec3& n,double gamma=GAMMA){
   const double B2=dot(s.magnetic_T,s.magnetic_T);
   const double vA2=B2/(MU0*s.rho_kg_m3);
-  const double cs2=GAMMA*s.pressure_Pa/s.rho_kg_m3;
+  const double cs2=gamma*s.pressure_Pa/s.rho_kg_m3;
   const double cosBn=(B2>0.0)?dot(s.magnetic_T,n)/std::sqrt(B2):0.0;
   const double a=vA2+cs2;
   const double disc=std::max(0.0,a*a-4.0*vA2*cs2*cosBn*cosBn);
@@ -200,16 +201,116 @@ void test_shk04(swcme_test::Context& context){
 }
 
 void test_shk05(swcme_test::Context& context){
-  std::cout<<"SHK05 oblique-MHD benchmark grid and branch continuity\n";
-  for(double theta : {15.0,30.0,45.0,60.0,75.0}){
-    double previous=1.0;
-    for(double Vsh : {5.0e5,6.0e5,8.0e5,1.2e6}){
-      const auto r=swcme::shock::solve_ideal_mhd_fast_shock(fixture(theta),{{1,0,0}},Vsh,GAMMA);
-      context.expect_true(r.has_shock&&r.solver_converged,"oblique benchmark must converge");
-      context.expect_true(r.compression>=previous-1e-10,"compression must vary continuously/monotonically with shock speed");
-      context.expect_true(r.energy_residual<1e-8,"oblique benchmark energy residual");
-      previous=r.compression;
+  std::cout<<"SHK05 independent oblique-MHD benchmark\n";
+  namespace reference=swcme_test::shk05_reference_v1;
+  constexpr std::size_t case_count=sizeof(reference::CASES)/
+                                   sizeof(reference::CASES[0]);
+
+  // These metadata assertions prevent a future edit from quietly replacing
+  // the promised high-precision, versioned campaign with a few hand-entered
+  // doubles.  The generator solves all eight RH equations with Decimal
+  // precision 80 and records how many independent Newton seeds reached the
+  // unique evolutionary fast branch.
+  context.expect_true(reference::FIXTURE_VERSION==1,
+                      "SHK05 fixture schema/version is pinned to v1");
+  context.expect_true(reference::DECIMAL_PRECISION_DIGITS>=50,
+                      "SHK05 reference solve uses at least 50 decimal digits");
+  context.expect_true(case_count>=12,
+                      "SHK05 matrix spans at least twelve oblique states");
+
+  for(const reference::Case& expected : reference::CASES){
+    Primitive upstream;
+    upstream.rho_kg_m3=expected.upstream_rho_kg_m3;
+    upstream.pressure_Pa=expected.upstream_pressure_Pa;
+    for(int component=0;component<3;++component){
+      upstream.velocity_m_s[component]=expected.upstream_velocity_m_s[component];
+      upstream.magnetic_T[component]=expected.upstream_magnetic_T[component];
     }
+    const Vec3 normal={{1.0,0.0,0.0}};
+    const auto actual=swcme::shock::solve_ideal_mhd_fast_shock(
+        upstream,normal,expected.shock_speed_m_s,expected.gamma);
+    const std::string prefix=std::string("SHK05 ")+expected.id+" ";
+
+    // Fixture-generation diagnostics are release data, not merely comments.
+    // Every case must have a unique admissible root reached from multiple
+    // initial guesses, an 80-digit equation residual below 1e-50, and a
+    // nonsingular final Newton path.  A fixture that fails these checks is too
+    // poorly conditioned to distinguish a production defect from reference
+    // uncertainty and must be regenerated as a new version.
+    context.expect_true(std::string(expected.branch)=="EVOLUTIONARY_FAST",
+                        prefix+"reference branch is evolutionary fast");
+    context.expect_true(expected.physical_root_count==1 &&
+                            expected.physical_seed_count>=2 &&
+                            expected.converged_seed_count>=
+                                expected.physical_seed_count,
+                        prefix+"independent seeds select one physical root");
+    context.expect_true(expected.reference_max_residual<1.0e-50 &&
+                            expected.minimum_newton_pivot>1.0e-10,
+                        prefix+"reference residual and conditioning are qualified");
+
+    context.expect_true(actual.has_shock && actual.solver_converged &&
+                            actual.status==swcme::shock::SolveStatus::Solved,
+                        prefix+"production solver selects a solved fast shock");
+    if(!actual.solver_converged) continue;
+
+    // Compare every downstream primitive, not only compression.  The 1e-7
+    // validation-plan requirement is tightened to 2e-9 for these deliberately
+    // well-conditioned fixtures.  Component-specific floors keep a true zero
+    // from being assigned a meaningless relative error while still detecting
+    // spurious cross-plane velocity or magnetic field.
+    expect_rel(context,prefix+"upstream fast Mach",actual.fast_mach,
+               expected.fast_mach,2.0e-10,1.0);
+    expect_rel(context,prefix+"compression",actual.compression,
+               expected.compression,2.0e-9,1.0);
+    expect_rel(context,prefix+"downstream density",
+               actual.downstream.rho_kg_m3,expected.downstream_rho_kg_m3,
+               2.0e-9,1.0e-30);
+    expect_rel(context,prefix+"downstream pressure",
+               actual.downstream.pressure_Pa,expected.downstream_pressure_Pa,
+               2.0e-9,1.0e-30);
+    for(int component=0;component<3;++component){
+      expect_rel(context,prefix+"downstream velocity["+
+                     std::to_string(component)+"]",
+                 actual.downstream.velocity_m_s[component],
+                 expected.downstream_velocity_m_s[component],2.0e-9,1.0);
+      expect_rel(context,prefix+"downstream magnetic["+
+                     std::to_string(component)+"]",
+                 actual.downstream.magnetic_T[component],
+                 expected.downstream_magnetic_T[component],2.0e-9,1.0e-20);
+    }
+    expect_rel(context,prefix+"entropy ratio",actual.entropy_ratio,
+               expected.entropy_ratio,2.0e-9,1.0);
+
+    // Independently classify the returned branch from downstream
+    // characteristics.  A production result is evolutionary fast only if
+    // the upstream normal flow is super-fast, the downstream normal flow is
+    // sub-fast but remains super-Alfvenic, and entropy increases.
+    const double downstream_fast_speed=reference_fast_speed(
+        actual.downstream,normal,expected.gamma);
+    const double downstream_normal_flow=std::abs(
+        actual.downstream.velocity_m_s[0]-expected.shock_speed_m_s);
+    const double downstream_fast_mach=
+        downstream_normal_flow/downstream_fast_speed;
+    const double downstream_normal_alfven=
+        std::abs(actual.downstream.magnetic_T[0])/
+        std::sqrt(MU0*actual.downstream.rho_kg_m3);
+    expect_rel(context,prefix+"downstream fast Mach",downstream_fast_mach,
+               expected.downstream_fast_mach,2.0e-9,1.0);
+    context.expect_true(actual.fast_mach>1.0 && downstream_fast_mach<1.0 &&
+                            downstream_normal_flow>downstream_normal_alfven &&
+                            actual.entropy_ratio>1.0,
+                        prefix+"production branch is evolutionary fast");
+
+    // Production conservation diagnostics are recomputed from the accepted
+    // primitives by swcme_shock.hpp and are deliberately separate from the
+    // frozen reference.  Requiring all five here makes a full-state mismatch
+    // retain useful evidence about which invariant failed.
+    context.expect_true(actual.mass_residual<=1.0e-9 &&
+                            actual.normal_B_residual<=1.0e-10 &&
+                            actual.electric_residual<=1.0e-8 &&
+                            actual.momentum_residual<=1.0e-8 &&
+                            actual.energy_residual<=1.0e-8,
+                        prefix+"all production RH residuals pass");
   }
 }
 
