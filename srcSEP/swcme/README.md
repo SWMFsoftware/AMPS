@@ -176,6 +176,15 @@ The `R^-6` and `R^-4` terms dominate closer to the Sun, while the `R^-2` term
 gives the asymptotic solar-wind behavior. The profile is an ambient model; it is
 not an event-specific density reconstruction.
 
+Observational validation `VP01` compares this implementation with the
+checksummed Helios 1/2 proton-core archive. It estimates a 1-AU observational
+anchor in outer bins while leaving SWCME's configured amplitude
+unchanged, and holds the inner bins back for radial-shape testing.
+This is the Helios component; full multi-mission VP01 release evidence remains
+incomplete pending quiet-window and external-model comparisons.
+See [`test/validation/vp01/README.md`](test/validation/vp01/README.md) for the
+species caveat, data provenance, thresholds, runners, and PNG/EPS figures.
+
 ### Composition, pressure, and sound speed
 
 `ThermodynamicClosure::ProtonOnly` is the compatibility default. It treats the
@@ -916,6 +925,33 @@ To limit compilation concurrency, use `make -jN test`. Focused commands include:
 ./output/test_swcme --test SEP06
 ./output/test_swcme --all
 ```
+
+The observational VP01 density campaign is deliberately opt-in because its
+Helios archive is about 125 MiB and requires network access on first use:
+
+```sh
+make vp01-data        # download and checksum immutable Zenodo inputs
+make vp01-test        # test the independent oracle and strict-build the driver
+make vp01-validation  # run the comparison and create CSV/JSON/PNG/EPS evidence
+```
+
+The scalable observational runner registers VP01-VP16, keeps every case's
+data/reference/runners beneath its own subdirectory, and creates a common
+manifest, summaries, metrics table, report, logs, and artifact hashes:
+
+```sh
+make validation-list                         # inspect implementation state
+make validation-test                         # test campaign orchestration
+make validation-case CASE=VP01               # run an individual case
+make validation-implemented                  # run all available cases
+make validation-campaign                     # assess the full VP01-VP16 scope
+```
+
+The complete campaign currently reports `INCOMPLETE` because VP02-VP16 are
+registered roadmap cases rather than implementations; this is distinct from a
+VP01 component PASS. See
+[`test/validation/README.md`](test/validation/README.md) for the directory and
+case contracts, dependency behavior, status semantics, and extension steps.
 
 The suite covers configuration and units; density and Parker limits; ballistic,
 DBM, and data-driven kinematics; independent oblique MHD shocks and conservation;
