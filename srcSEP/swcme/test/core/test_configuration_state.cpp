@@ -60,7 +60,7 @@ void test_pst03(swcme_test::Context& context) {
   // order, convention tags, or floating-point encoding across compiler runs.
   // Intentional configuration-schema changes must update both the schema tag
   // and this value as an explicit validation-contract revision.
-  context.expect_true(baseline_digest==7638758972340736488ULL,
+  context.expect_true(baseline_digest==13445060466342315912ULL,
                       "baseline configuration digest is reproducible");
   swcme3d::Model producer(baseline);
   const swcme3d::StepState state=producer.prepare_step(0.0);
@@ -92,9 +92,9 @@ void test_pst03(swcme_test::Context& context) {
                       "equal foreign rejection preserves outputs");
 
   // Each variant changes one public field representing a validation-plan
-  // configuration family.  The global Parker polarity and proton closure are
-  // compile-time conventions included in the digest; their runtime inputs are
-  // exercised through B normalization and temperature respectively.
+  // configuration family. Global Parker polarity remains a compile-time
+  // convention; the closure and Parker source radius are now explicit fields
+  // and therefore receive their own one-field provenance cases.
   std::vector<std::pair<std::string,swcme3d::Params>> variants;
   swcme3d::Params gamma=baseline; gamma.gamma_ad=1.55;
   variants.emplace_back("gamma",gamma);
@@ -107,9 +107,19 @@ void test_pst03(swcme_test::Context& context) {
   variants.emplace_back("kinematics",kinematics);
   swcme3d::Params closure=baseline; closure.T_K+=25000.0;
   variants.emplace_back("thermal closure input",closure);
+  swcme3d::Params closure_mode=baseline;
+  closure_mode.thermodynamic_closure=
+      swcme::solarwind::ThermodynamicClosure::MultiSpecies;
+  variants.emplace_back("thermodynamic closure mode",closure_mode);
+  swcme3d::Params alpha_abundance=baseline;
+  alpha_abundance.alpha_to_proton_ratio=0.05;
+  variants.emplace_back("alpha abundance",alpha_abundance);
   swcme3d::Params polarity_normalization=baseline;
   polarity_normalization.B1AU_nT+=1.0;
   variants.emplace_back("Parker polarity normalization",polarity_normalization);
+  swcme3d::Params parker_source=baseline;
+  parker_source.parker_source_radius_Rs=0.75;
+  variants.emplace_back("Parker source radius",parker_source);
   swcme3d::Params region=baseline;
   region.region_mode=swcme::regions::Mode::FullICME;
   variants.emplace_back("region mode",region);

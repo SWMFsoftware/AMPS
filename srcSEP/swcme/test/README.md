@@ -2167,6 +2167,118 @@ compression invariant within `2e-10` relative error.  Each independent
 component residual is finite and no greater than the production threshold
 `1e-8`.  `SHK08` follows `SHK07` in priority and in `SMOKE`.
 
+### SHK09 independent momentum-flux conservation
+
+**What is tested.** `SHK09` reconstructs the normal and two tangential
+components of the full ideal-MHD momentum flux for every solved SHK15 stress
+state and all twelve named SHK05 high-precision oblique fixtures.
+
+**Why it is tested.** Correct mass flux does not guarantee correct momentum
+balance.  Pressure, magnetic pressure/tension, shock-frame velocity, or vector
+component errors can compensate in one scalar diagnostic while violating a
+different tensor component.
+
+**How it is tested.** From serialized primitives the test independently forms
+`rho*u_n*u + n*(p+B^2/(2*mu0)) - B_n*B/mu0` in long-double arithmetic and
+projects it onto a test-owned orthonormal shock basis.  Each component is
+normalized by the larger sum of its dynamic, thermal, and magnetic-stress
+magnitudes on either side, avoiding false agreement caused by cancellation.
+The stored production `momentum_residual` and production vector helpers are not
+used.  A failure reports the component and all three physical term scales with
+the complete reproducible fixture record.
+
+**What is expected.** At least 49,000 random solved states and all twelve
+deterministic reference states participate.  Normal and both tangential
+normalized residuals are finite and individually no greater than `1e-8`.
+`SHK09` follows `SHK08` in priority and in `SMOKE`.
+
+### SHK10 independent total-energy-flux conservation
+
+**What is tested.** `SHK10` independently evaluates total ideal-MHD energy
+flux for every solved SHK15 state and all twelve named SHK05 fixtures, spanning
+the campaign's gamma, beta, Mach-number, obliquity, field, density, and
+tangential-flow ranges.  The frozen fixtures must also retain their recorded
+sub-`1e-50` high-precision reference residuals.
+
+**Why it is tested.** Energy is the most coupled jump condition: pressure
+closure, gamma, all velocity components, magnetic energy, and magnetic work
+enter simultaneously.  A missing or duplicated contribution can remain hidden
+when compression and simpler invariants are inspected separately.
+
+**How it is tested.** From serialized states, long-double test code separately
+forms kinetic transport, enthalpy transport, magnetic-energy advection, and
+magnetic-work terms in the shock frame.  Upstream/downstream totals are
+normalized by the larger sum of absolute physical contributions, preventing
+term cancellation from creating an artificially small denominator.  Neither
+the production energy helper nor `JumpResult.energy_residual` is used for
+acceptance.  Failures report every term scale and the full fixture record.
+
+**What is expected.** At least 49,000 random states and all twelve independent
+fixtures participate, all stored high-precision references remain below
+`1e-50`, and every independently normalized energy-flux residual is finite and
+no greater than `1e-8`.  `SHK10` follows `SHK09` in priority and in `SMOKE`.
+
+### SHK11 comprehensive shock physical admissibility
+
+**What is tested.** `SHK11` independently classifies all 100,000 SHK15
+outcomes and the twelve SHK05 reference solutions.  Solved states are checked
+for positive primitives, compression within the gamma-dependent strong-shock
+bound, entropy increase, upstream super-fast flow, downstream sub-fast but
+super-normal-Alfven flow, and the evolutionary-fast branch identity.  Physical
+no-shock and documented weak/singular numerical-limit states have separate
+contracts.
+
+**Why it is tested.** Small conservation residuals alone do not identify the
+physical fast-shock root.  Intermediate or switch roots can conserve the same
+fluxes, and a rejected numerical root must not be silently clipped or exposed
+as a converged state to SEP source physics.
+
+**How it is tested.** Characteristic speeds are recomputed with the independent
+test-side fast-mode formula; normal flow, normal Alfven speed, entropy proxy,
+and compression bound are reconstructed directly from serialized primitives.
+No-shock results must preserve the upstream record exactly.  Supported-limit
+rejections must retain finite diagnostics while setting `solver_converged`
+false.  SHK05 metadata must report exactly one physical root, multiple
+converged seeds, and the `EVOLUTIONARY_FAST` branch.
+
+**What is expected.** Every stress case satisfies exactly its applicable
+contract, all twelve named references are uniquely evolutionary-fast, and no
+generic no-bracket, invalid-state, conservation, or wrong-branch rejection is
+present.  The population includes at least 49,000 solved states, exactly
+25,000 no-shock states, and at least 25,000 explicit numerical-limit states.
+`SHK11` follows `SHK10` in priority and in `SMOKE`.
+
+### SHK17 shock-reference regeneration
+
+**What is tested.** `SHK17` verifies reproducible generation and production
+independence of the SHK05 and SHK12 high-precision fixtures.  It checks the
+reviewed generator and fixture hashes, byte-for-byte canonical regeneration,
+recorded solver/environment metadata, representative higher-precision repeats,
+and generator dependencies.
+
+**Why it is tested.** A numerical fixture is not independent evidence if a
+production change can silently regenerate it, if its tool environment is
+unknown, or if it imports the same reduced equations or branch selector being
+validated.  Rounded reference values must also remain stable when reference
+precision is increased.
+
+**How it is tested.** `reference/shock_reference_manifest_v1.json` pins the
+standard-library Decimal solver version, Python requirement, canonical 80-digit
+and audit 100-digit precision, generator hashes, fixture hashes, case counts,
+and convergence/branch metadata.  `reference/verify_shock_references.py` runs
+both raw-grid generators in an isolated subprocess, compares captured bytes
+with the checked-in headers, repeats selected strong, polarity, and weak
+families at 100 digits, and requires identical emitted binary64 physics
+literals.  AST/token analysis rejects production shock imports or routine
+calls.  The verifier never overwrites a checked-in fixture.
+
+**What is expected.** Both regenerated headers are byte-identical to their
+canonical SHA-256 values, all selected 100-digit results round to the same
+binary64 physics literals as the 80-digit calculations, and the production-
+dependency guard passes.  Any generator, fixture, environment, branch, or
+conditioning change requires an explicit reviewed manifest/version update.
+`SHK17` follows `SHK11` in priority and in `SMOKE`.
+
 Typical direct use is:
 
 ```sh
@@ -2637,3 +2749,118 @@ absence states.  Conversely, a solver, normalization, domain, or
 non-finite-value failure must remain visible to the caller and must never be
 made green by restoring `finite_or`, radius clipping, or ambient/zero
 substitution.
+
+## DEN04: pressure and sound-speed closure
+
+**What is tested.** The test covers both `PROTON_ONLY` and `MULTI_SPECIES`
+prepared thermodynamics at gamma values 1.2, 1.4, 1.5, and 5/3. Fixtures include
+equal and unequal species temperatures, zero and finite alpha abundance, and a
+cold but positive pressure. It also checks the upstream primitive passed by
+the public 1-D and 3-D shock APIs and rejects unknown closure values, negative
+abundance, non-finite electron temperature, and non-positive alpha temperature.
+
+**Why it is tested.** Pressure and mass density jointly determine sound speed,
+fast-mode Mach number, and the MHD jump. A partially applied composition model
+could make adapters, dimensional models, and the shock solver describe
+different plasma while all individual values remain finite.
+
+**How it is tested.** Test-owned long-double equations use independently
+pinned Boltzmann, proton-mass, and alpha-mass literals. Charge neutrality is
+solved directly, partial pressures are summed independently, and sound speed is
+reconstructed as `sqrt(gamma*p/rho)`. Production values come only from public
+prepared state and shock paths.
+
+**Expected result.** Every density, mass, pressure, and sound-speed residual is
+below `1e-13`; both model APIs use the selected closure exactly; every invalid
+configuration is rejected before preparation. `DEN04` follows `SHK17` in the
+priority registry and `SMOKE` profile.
+
+## DEN02: Leblanc density asymptotic behavior
+
+**What is tested.** `DEN02` checks every individual Leblanc power-law term and
+their sum at 41 logarithmically spaced radii spanning 0.01--100 AU, plus the
+required 0.5, 1, 2, and 5 AU checkpoints. It checks both dimensional public
+evaluators and the far-field `r^2 n(r)` limit.
+
+**Why it is tested.** Exact normalization at 1 AU cannot detect a wrong radial
+power or a compensating coefficient error. The asymptotic test isolates those
+errors and demonstrates where the profile has actually entered its `r^-2`
+regime.
+
+**How it is tested.** A test-owned long-double oracle pins the published A, B,
+and C coefficients and the adopted AU/solar-radius conversions, independently
+derives the normalization, and evaluates all three terms. The observed excess
+of `r^2 n` above its asymptote is compared with `(n4+n6)/n2` and required to
+decrease monotonically.
+
+**Expected result.** Each term and total-density residual is below `1e-12`.
+The scaled density remains above and approaches its asymptote, with its excess
+fully explained by the higher-order terms. `DEN02` follows `DEN04` in priority
+and in `SMOKE`.
+
+## DEN05: default closure compatibility
+
+**What is tested.** A default configuration is compared with an explicitly
+selected `PROTON_ONLY` configuration through 1-D fields, 3-D fields, both shock
+paths, AMPS background pressure/focusing, serialized SEP source records, and
+resolved configuration provenance.
+
+**Why it is tested.** Introducing an optional composition closure must not
+silently change established campaigns or make old default construction select
+new physics.
+
+**How it is tested.** Independent model and adapter instances are prepared at
+the same time. Every floating-point output is compared bit-for-bit (owner IDs
+are correctly excluded), and source CSV records are compared byte-for-byte.
+The test separately opts into `MULTI_SPECIES` and checks its manifest name and
+distinct configuration digest.
+
+**Expected result.** Default and explicit proton-only results are exact; the
+multi-species mode appears only after explicit selection and has distinct
+provenance. `DEN05` follows `DEN02` in priority and in `SMOKE`.
+
+## PAR04: Parker field solenoidality
+
+**What is tested.** Cartesian `div(B)` is measured at 1,024 deterministic
+random positions with random solar axes, wind speeds, rotation rates, Parker
+source radii, normalization latitudes, magnetic strengths, and both global
+polarities. Each point uses four successively halved relative stencil widths.
+
+**Why it is tested.** Component and magnitude benchmarks can pass while the
+assembled 3-D vector violates the Maxwell solenoidal constraint. Axis rotation
+and a finite source radius expose basis and radial-pitch defects hidden by an
+equatorial default fixture.
+
+**How it is tested.** The test computes centered Cartesian derivatives by
+calling the production field at six independently perturbed points per stencil.
+It normalizes `|div B|` by `|B|/r`, selects the truncation/roundoff plateau from
+four widths, checks second-order improvement, and repeats the finest estimate
+after exact global polarity reversal.
+
+**Expected result.** The median plateau residual is below `1e-8`, the maximum
+below `1e-6`, at least 90% of points demonstrate second-order improvement, and
+polarity changes residuals by less than `1e-12`. `PAR04` follows `DEN05` in
+priority and in `SMOKE`.
+
+## PAR05: Parker field-line tangency
+
+**What is tested.** The analytical observer-anchored Parker line, Cartesian
+background field, accumulated connectivity phase, and finite-source-radius
+pitch are compared in 1,024 random observer/radius/configuration cases. Both
+global magnetic polarities are covered.
+
+**Why it is tested.** A field and connectivity map can each look plausible but
+still use different signs, rotation axes, or source-radius offsets. That defect
+would place a cobpoint off the actual field line and corrupt field-aligned SEP
+transport distances.
+
+**How it is tested.** Test-owned Rodrigues rotation and the independently
+integrated `dphi/dr=-Omega(1-rb/r)/V` construct the reference curve. Centered
+radial differentiation produces its tangent; the production magnetic vector is
+queried at that point. The test also projects `Br` and `Bphi` onto independently
+constructed bases and checks their ratio against the analytic pitch.
+
+**Expected result.** Connectivity positions agree within `2e-13` relative,
+pitch differs by less than `2e-13`, and the tangent-field angle is below
+`1e-8` rad—parallel for positive polarity and antiparallel for negative.
+`PAR05` follows `PAR04` in priority and in `SMOKE`.

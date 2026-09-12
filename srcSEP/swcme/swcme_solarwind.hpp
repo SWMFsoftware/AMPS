@@ -12,7 +12,7 @@
 //   * Parker radial/azimuthal field components,
 //   * Cartesian Parker-vector construction for an arbitrary rotation axis,
 //   * Parker field-line distance and magnetic focusing length, and
-//   * proton thermal pressure used by the current MHD shock model.
+//   * configurable proton-only or electron/proton/alpha thermodynamics.
 //
 // Keeping these equations in one production component prevents the historical
 // failure mode in which a correction was applied in 1-D but not in 3-D (or
@@ -52,6 +52,23 @@ constexpr double MIN_RADIUS_RS = 1.05;
 constexpr double MIN_RADIUS_M =
     MIN_RADIUS_RS * swcme::constants::SOLAR_RADIUS_M;
 
+// The legacy closure remains the numeric zero/default so aggregate/default
+// construction preserves every historical result.  MultiSpecies interprets
+// the Leblanc value as electron density and obtains charge-neutral proton and
+// alpha populations from f_alpha=n_alpha/n_proton.
+enum class ThermodynamicClosure {
+  ProtonOnly = 0,
+  MultiSpecies = 1
+};
+
+inline const char* thermodynamic_closure_name(ThermodynamicClosure closure) {
+  switch (closure) {
+    case ThermodynamicClosure::ProtonOnly: return "PROTON_ONLY";
+    case ThermodynamicClosure::MultiSpecies: return "MULTI_SPECIES";
+  }
+  return "UNKNOWN";
+}
+
 // SI input needed to prepare the ambient analytical state.  Unit conversion
 // belongs outside this layer (swcme_units.hpp / swcme_core.hpp); this keeps the
 // actual solar-wind physics independent of public input-unit conventions.
@@ -61,6 +78,11 @@ struct ConfigSI {
   double B1AU_T = 0.0;
   double T_K = 0.0;
   double gamma_ad = 5.0 / 3.0;
+  ThermodynamicClosure thermodynamic_closure =
+      ThermodynamicClosure::ProtonOnly;
+  double alpha_to_proton_ratio = 0.0;
+  double electron_T_K = 0.0;
+  double alpha_T_K = 0.0;
 
   // B1AU_T is interpreted as total |B| at this documented reference latitude.
   // The 3-D local Parker winding still uses the local sin(theta); this field
@@ -71,6 +93,7 @@ struct ConfigSI {
   // connectivity mapping.  1-D normally uses the default model convention.
   double solar_rotation_rate_rad_s =
       swcme::constants::SOLAR_ROTATION_RAD_S;
+  double parker_source_radius_m = 0.0;
 };
 
 // Per-step/per-model immutable ambient cache.  It contains all expensive or
@@ -79,9 +102,15 @@ struct PreparedState {
   double V_sw_m_s = 0.0;
   double T_K = 0.0;
   double gamma_ad = 5.0 / 3.0;
+  ThermodynamicClosure thermodynamic_closure =
+      ThermodynamicClosure::ProtonOnly;
+  double alpha_to_proton_ratio = 0.0;
+  double electron_T_K = 0.0;
+  double alpha_T_K = 0.0;
   double solar_rotation_rate_rad_s =
       swcme::constants::SOLAR_ROTATION_RAD_S;
   double reference_sin_theta = 1.0;
+  double parker_source_radius_m = 0.0;
 
   // Parker cache. k_AU_equatorial = Omega*AU/Vsw; local latitude enters only
   // when the field is evaluated. Br1AU_T is the common radial normalization.
@@ -125,8 +154,13 @@ inline PreparedState prepare(const ConfigSI& cfg) {
   state.V_sw_m_s = cfg.V_sw_m_s;
   state.T_K = cfg.T_K;
   state.gamma_ad = cfg.gamma_ad;
+  state.thermodynamic_closure = cfg.thermodynamic_closure;
+  state.alpha_to_proton_ratio = cfg.alpha_to_proton_ratio;
+  state.electron_T_K = cfg.electron_T_K;
+  state.alpha_T_K = cfg.alpha_T_K;
   state.solar_rotation_rate_rad_s = cfg.solar_rotation_rate_rad_s;
   state.reference_sin_theta = cfg.reference_sin_theta;
+  state.parker_source_radius_m = cfg.parker_source_radius_m;
 
   // Configuration validation guarantees V_sw>0 before this routine is called.
   // Keeping the formula branch-free here makes any future invalid call fail
@@ -134,8 +168,9 @@ inline PreparedState prepare(const ConfigSI& cfg) {
   state.k_AU_equatorial =
       cfg.solar_rotation_rate_rad_s * swcme::constants::AU_M / cfg.V_sw_m_s;
 
-  const double reference_pitch =
-      state.k_AU_equatorial * cfg.reference_sin_theta;
+  const double reference_pitch = state.k_AU_equatorial *
+      (1.0 - cfg.parker_source_radius_m / swcme::constants::AU_M) *
+      cfg.reference_sin_theta;
   state.Br1AU_T = cfg.B1AU_T /
       std::sqrt(1.0 + reference_pitch * reference_pitch);
 
@@ -181,7 +216,10 @@ inline ParkerComponents parker_components(const PreparedState& state,
   const double r = radius_m;
   const double r_AU = r / swcme::constants::AU_M;
   const double Br = state.Br1AU_T / (r_AU * r_AU);
-  const double Bphi = -Br * state.k_AU_equatorial * r_AU * sin_theta_local;
+  const double winding_radius_AU =
+      (r - state.parker_source_radius_m) / swcme::constants::AU_M;
+  const double Bphi =
+      -Br * state.k_AU_equatorial * winding_radius_AU * sin_theta_local;
   return {Br, Bphi, std::sqrt(Br * Br + Bphi * Bphi)};
 }
 
@@ -208,9 +246,10 @@ inline double parker_path_length_m(const PreparedState& state,
     return std::abs(radius_b_m-radius_a_m);
   }
 
-  const auto primitive=[k](double radius_m) {
-    const double kr=k*radius_m;
-    return 0.5*(radius_m*std::sqrt(1.0+kr*kr)+std::asinh(kr)/k);
+  const auto primitive=[k,&state](double radius_m) {
+    const double x=radius_m-state.parker_source_radius_m;
+    const double kx=k*x;
+    return 0.5*(x*std::sqrt(1.0+kx*kx)+std::asinh(kx)/k);
   };
   return std::abs(primitive(radius_b_m)-primitive(radius_a_m));
 }
@@ -232,10 +271,15 @@ inline double parker_focusing_length_m(const PreparedState& state,
       sin_theta_local>1.0 || !std::isfinite(state.k_AU_equatorial)) {
     return std::numeric_limits<double>::quiet_NaN();
   }
-  const double kr=state.k_AU_equatorial*sin_theta_local*
-                  (radius_m/swcme::constants::AU_M);
-  const double one_plus_kr2=1.0+kr*kr;
-  return radius_m*one_plus_kr2*std::sqrt(one_plus_kr2)/(2.0+kr*kr);
+  const double k=state.k_AU_equatorial*sin_theta_local/
+                 swcme::constants::AU_M;
+  const double x=radius_m-state.parker_source_radius_m;
+  const double kx=k*x;
+  const double one_plus_kx2=1.0+kx*kx;
+  // This follows directly from -1/(d ln|B|/ds), with
+  // |B| proportional to r^-2 sqrt(1+k^2(r-rb)^2).
+  const double denominator=2.0*one_plus_kx2-k*k*radius_m*x;
+  return radius_m*one_plus_kx2*std::sqrt(one_plus_kx2)/denominator;
 }
 
 // Construct the Cartesian Parker vector for a normalized radial direction and
@@ -275,13 +319,54 @@ inline std::array<double, 3> parker_field_cartesian(
            components.Br_T * radial_hat[2] + components.Bphi_T * ephi[2]}};
 }
 
-// Current SWCME shock physics uses a proton-only thermal closure.  Centralizing
-// this small relation guarantees that 1-D and 3-D construct identical upstream
-// pressure from the same density and temperature until a richer composition/
-// electron-pressure model is intentionally introduced and validated.
+struct ThermodynamicState {
+  double electron_density_m3 = 0.0;
+  double proton_density_m3 = 0.0;
+  double alpha_density_m3 = 0.0;
+  double mass_density_kg_m3 = 0.0;
+  double pressure_Pa = 0.0;
+  double sound_speed_m_s = 0.0;
+};
+
+// Close the Leblanc electron density into the primitive quantities consumed
+// by the MHD shock.  Charge neutrality gives ne=np+2*na and the configured
+// abundance gives na=f*np.  The proton-only branch is written separately—not
+// as the f=0 multi-species limit—because its historical pressure intentionally
+// excludes electron pressure and DEN05 requires exact default compatibility.
+inline ThermodynamicState thermodynamic_state(
+    const PreparedState& state, double electron_density_m3) {
+  ThermodynamicState out;
+  out.electron_density_m3 = electron_density_m3;
+  if (state.thermodynamic_closure == ThermodynamicClosure::ProtonOnly) {
+    out.proton_density_m3 = electron_density_m3;
+    out.mass_density_kg_m3 =
+        electron_density_m3 * swcme::constants::PROTON_MASS_KG;
+    out.pressure_Pa = electron_density_m3 *
+        swcme::constants::BOLTZMANN_J_K * state.T_K;
+  } else {
+    const double denominator = 1.0 + 2.0 * state.alpha_to_proton_ratio;
+    out.proton_density_m3 = electron_density_m3 / denominator;
+    out.alpha_density_m3 =
+        state.alpha_to_proton_ratio * out.proton_density_m3;
+    out.mass_density_kg_m3 =
+        swcme::constants::PROTON_MASS_KG * out.proton_density_m3 +
+        swcme::constants::ALPHA_PARTICLE_MASS_KG * out.alpha_density_m3;
+    out.pressure_Pa = swcme::constants::BOLTZMANN_J_K *
+        (out.proton_density_m3 * state.T_K +
+         out.electron_density_m3 * state.electron_T_K +
+         out.alpha_density_m3 * state.alpha_T_K);
+  }
+  out.sound_speed_m_s =
+      std::sqrt(state.gamma_ad * out.pressure_Pa / out.mass_density_kg_m3);
+  return out;
+}
+
+// Compatibility name retained for existing integrations.  Its result is now
+// the pressure selected by the prepared closure, so adapter and shock callers
+// cannot accidentally continue using proton-only algebra in MultiSpecies mode.
 inline double proton_pressure_Pa(const PreparedState& state,
-                                 double number_density_m3) {
-  return number_density_m3 * swcme::constants::BOLTZMANN_J_K * state.T_K;
+                                 double electron_density_m3) {
+  return thermodynamic_state(state, electron_density_m3).pressure_Pa;
 }
 
 }  // namespace solarwind

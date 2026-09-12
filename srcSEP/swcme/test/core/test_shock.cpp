@@ -104,10 +104,6 @@ double perpendicular_reference_compression(const Primitive& up,double Vsh){
   return 0.5*(lo+hi);
 }
 
-swcme::shock::JumpResult oblique_fixture_result(){
-  return swcme::shock::solve_ideal_mhd_fast_shock(fixture(40.0),{{1,0,0}},1.2e6,GAMMA);
-}
-
 enum class StressStratum { NoShock, WeakLimit, Resolved, Conditioned };
 
 struct StressCase {
@@ -915,30 +911,379 @@ void test_shk08(swcme_test::Context& context){
 
 void test_shk09(swcme_test::Context& context){
   std::cout<<"SHK09 Rankine-Hugoniot momentum-flux conservation\n";
-  const auto r=oblique_fixture_result();
-  context.expect_true(r.has_shock&&r.solver_converged,"reference oblique shock converged");
-  expect_abs(context,"momentum residual",r.momentum_residual,0.0,1e-9);
+  constexpr long double acceptance=1.0e-8L;
+  std::array<long double,3> maximum_residual{{0.0L,0.0L,0.0L}};
+  std::size_t checked_states=0;
+  std::size_t deterministic_states=0;
+  std::size_t failures_reported=0;
+
+  // Rebuild the complete ideal-MHD momentum flux from serialized primitive
+  // records.  The implementation below deliberately avoids production vector
+  // helpers and the stored momentum_residual.  Long-double accumulation makes
+  // the comparison sensitive to missing pressure or magnetic-stress terms
+  // rather than to ordinary binary64 cancellation in Cartesian projection.
+  auto check_momentum=[&](const Primitive& upstream,
+                          const swcme::shock::JumpResult& result,
+                          const Vec3& normal,double shock_speed,
+                          const std::string& reproducer){
+    if(result.status!=swcme::shock::SolveStatus::Solved) return;
+    const auto tangents=tangential_basis(normal);
+    const std::array<Vec3,3> axes={{normal,tangents[0],tangents[1]}};
+
+    struct FluxTerms {
+      std::array<long double,3> total{{0.0L,0.0L,0.0L}};
+      std::array<long double,3> dynamic_scale{{0.0L,0.0L,0.0L}};
+      std::array<long double,3> thermal_scale{{0.0L,0.0L,0.0L}};
+      std::array<long double,3> magnetic_scale{{0.0L,0.0L,0.0L}};
+    };
+    auto flux=[&](const Primitive& state){
+      FluxTerms value;
+      std::array<long double,3> velocity{{0.0L,0.0L,0.0L}};
+      long double un=0.0L,Bn=0.0L,B2=0.0L;
+      for(int component=0;component<3;++component){
+        velocity[component]=state.velocity_m_s[component]-
+            static_cast<long double>(shock_speed)*normal[component];
+        un+=velocity[component]*normal[component];
+        Bn+=static_cast<long double>(state.magnetic_T[component])*
+            normal[component];
+        B2+=static_cast<long double>(state.magnetic_T[component])*
+            state.magnetic_T[component];
+      }
+      for(int axis_index=0;axis_index<3;++axis_index){
+        long double ua=0.0L,Ba=0.0L,na=0.0L;
+        for(int component=0;component<3;++component){
+          ua+=velocity[component]*axes[axis_index][component];
+          Ba+=static_cast<long double>(state.magnetic_T[component])*
+              axes[axis_index][component];
+          na+=static_cast<long double>(normal[component])*
+              axes[axis_index][component];
+        }
+        const long double dynamic=state.rho_kg_m3*un*ua;
+        const long double thermal=na*state.pressure_Pa;
+        const long double magnetic=na*B2/(2.0L*MU0)-Bn*Ba/MU0;
+        value.total[axis_index]=dynamic+thermal+magnetic;
+        value.dynamic_scale[axis_index]=std::abs(dynamic);
+        value.thermal_scale[axis_index]=std::abs(thermal);
+        value.magnetic_scale[axis_index]=
+            std::abs(na*B2/(2.0L*MU0))+std::abs(Bn*Ba/MU0);
+      }
+      return value;
+    };
+
+    const FluxTerms before=flux(upstream);
+    const FluxTerms after=flux(result.downstream);
+    for(int component=0;component<3;++component){
+      // Sum the dynamic, thermal, and magnetic magnitudes on the more energetic
+      // side.  This documented scale cannot become spuriously small through
+      // cancellation of physical terms in the conserved total itself.
+      const long double before_scale=before.dynamic_scale[component]+
+          before.thermal_scale[component]+before.magnetic_scale[component];
+      const long double after_scale=after.dynamic_scale[component]+
+          after.thermal_scale[component]+after.magnetic_scale[component];
+      const long double physical_scale=std::max(
+          {before_scale,after_scale,std::numeric_limits<long double>::min()});
+      const long double residual=
+          std::abs(before.total[component]-after.total[component])/physical_scale;
+      maximum_residual[component]=std::max(maximum_residual[component],residual);
+      if((!std::isfinite(residual) || residual>acceptance) &&
+         failures_reported<8){
+        std::cerr<<"    SHK09 component="<<component
+                 <<" residual="<<static_cast<double>(residual)
+                 <<" dynamic_scale="
+                 <<static_cast<double>(std::max(before.dynamic_scale[component],
+                                                 after.dynamic_scale[component]))
+                 <<" thermal_scale="
+                 <<static_cast<double>(std::max(before.thermal_scale[component],
+                                                 after.thermal_scale[component]))
+                 <<" magnetic_scale="
+                 <<static_cast<double>(std::max(before.magnetic_scale[component],
+                                                 after.magnetic_scale[component]))
+                 <<' '<<reproducer<<'\n';
+        ++failures_reported;
+      }
+    }
+    ++checked_states;
+  };
+
+  for(const StressCase& item:shock_stress_cases()){
+    check_momentum(item.upstream,item.result,item.normal,item.shock_speed_m_s,
+                   stress_reproducer(item));
+  }
+  for(const auto& expected:swcme_test::shk05_reference_v1::CASES){
+    Primitive upstream;
+    upstream.rho_kg_m3=expected.upstream_rho_kg_m3;
+    upstream.pressure_Pa=expected.upstream_pressure_Pa;
+    for(int component=0;component<3;++component){
+      upstream.velocity_m_s[component]=expected.upstream_velocity_m_s[component];
+      upstream.magnetic_T[component]=expected.upstream_magnetic_T[component];
+    }
+    const Vec3 normal={{1.0,0.0,0.0}};
+    const auto result=swcme::shock::solve_ideal_mhd_fast_shock(
+        upstream,normal,expected.shock_speed_m_s,expected.gamma);
+    check_momentum(upstream,result,normal,expected.shock_speed_m_s,
+                   std::string("fixture=")+expected.id);
+    if(result.status==swcme::shock::SolveStatus::Solved) ++deterministic_states;
+  }
+
+  std::cout<<"  independently checked="<<checked_states
+           <<" deterministic="<<deterministic_states
+           <<" max_normal="<<std::scientific
+           <<static_cast<double>(maximum_residual[0])
+           <<" max_t1="<<static_cast<double>(maximum_residual[1])
+           <<" max_t2="<<static_cast<double>(maximum_residual[2])<<'\n';
+  context.expect_true(checked_states>=49000,
+                      "SHK09 checks the complete solved stress population");
+  context.expect_true(deterministic_states>=12,
+                      "SHK09 checks all named high-precision oblique fixtures");
+  context.expect_true(std::all_of(maximum_residual.begin(),maximum_residual.end(),
+                      [](long double value){
+                        return std::isfinite(value) && value<=acceptance;
+                      }),
+                      "SHK09 all three independent momentum components meet 1e-8");
 }
 
 void test_shk10(swcme_test::Context& context){
   std::cout<<"SHK10 Rankine-Hugoniot total-energy-flux conservation\n";
-  const auto r=oblique_fixture_result();
-  context.expect_true(r.has_shock&&r.solver_converged,"reference oblique shock converged");
-  expect_abs(context,"energy residual",r.energy_residual,0.0,1e-8);
+  constexpr long double acceptance=1.0e-8L;
+  long double maximum_residual=0.0L;
+  double maximum_production_residual=0.0;
+  std::size_t checked_states=0;
+  std::size_t deterministic_states=0;
+  std::size_t failures_reported=0;
+
+  // Keep the four physical contributions separate.  This independent
+  // expression is algebraically equivalent to the ideal-MHD total-energy
+  // flux, but it neither calls total_energy_flux_normal() nor consumes the
+  // stored energy residual.  Long-double products reduce evaluation
+  // cancellation after the binary64 primitive state has been serialized.
+  auto check_energy=[&](const Primitive& upstream,
+                        const swcme::shock::JumpResult& result,
+                        const Vec3& normal,double shock_speed,double gamma,
+                        const std::string& reproducer){
+    if(result.status!=swcme::shock::SolveStatus::Solved) return;
+    struct EnergyTerms {
+      long double kinetic=0.0L;
+      long double enthalpy=0.0L;
+      long double magnetic_advection=0.0L;
+      long double magnetic_work=0.0L;
+      long double total() const {
+        return kinetic+enthalpy+magnetic_advection+magnetic_work;
+      }
+      long double scale() const {
+        return std::abs(kinetic)+std::abs(enthalpy)+
+               std::abs(magnetic_advection)+std::abs(magnetic_work);
+      }
+    };
+    auto terms=[&](const Primitive& state){
+      std::array<long double,3> velocity{{0.0L,0.0L,0.0L}};
+      long double un=0.0L,Bn=0.0L,u2=0.0L,B2=0.0L,u_dot_B=0.0L;
+      for(int component=0;component<3;++component){
+        velocity[component]=state.velocity_m_s[component]-
+            static_cast<long double>(shock_speed)*normal[component];
+        un+=velocity[component]*normal[component];
+        Bn+=static_cast<long double>(state.magnetic_T[component])*
+            normal[component];
+        u2+=velocity[component]*velocity[component];
+        B2+=static_cast<long double>(state.magnetic_T[component])*
+            state.magnetic_T[component];
+        u_dot_B+=velocity[component]*state.magnetic_T[component];
+      }
+      EnergyTerms value;
+      value.kinetic=un*0.5L*state.rho_kg_m3*u2;
+      value.enthalpy=un*(static_cast<long double>(gamma)/(gamma-1.0L))*
+                     state.pressure_Pa;
+      value.magnetic_advection=un*B2/MU0;
+      value.magnetic_work=-Bn*u_dot_B/MU0;
+      return value;
+    };
+
+    const EnergyTerms before=terms(upstream);
+    const EnergyTerms after=terms(result.downstream);
+    const long double physical_scale=std::max(
+        {before.scale(),after.scale(),std::numeric_limits<long double>::min()});
+    const long double residual=
+        std::abs(before.total()-after.total())/physical_scale;
+    maximum_residual=std::max(maximum_residual,residual);
+    maximum_production_residual=
+        std::max(maximum_production_residual,result.energy_residual);
+    ++checked_states;
+    if((!std::isfinite(residual) || residual>acceptance) &&
+       failures_reported<8){
+      std::cerr<<"    SHK10 residual="<<static_cast<double>(residual)
+               <<" kinetic="
+               <<static_cast<double>(std::max(std::abs(before.kinetic),
+                                               std::abs(after.kinetic)))
+               <<" enthalpy="
+               <<static_cast<double>(std::max(std::abs(before.enthalpy),
+                                               std::abs(after.enthalpy)))
+               <<" magnetic_advection="
+               <<static_cast<double>(std::max(
+                    std::abs(before.magnetic_advection),
+                    std::abs(after.magnetic_advection)))
+               <<" magnetic_work="
+               <<static_cast<double>(std::max(std::abs(before.magnetic_work),
+                                               std::abs(after.magnetic_work)))
+               <<' '<<reproducer<<'\n';
+      ++failures_reported;
+    }
+  };
+
+  for(const StressCase& item:shock_stress_cases()){
+    check_energy(item.upstream,item.result,item.normal,item.shock_speed_m_s,
+                 item.gamma,stress_reproducer(item));
+  }
+  for(const auto& expected:swcme_test::shk05_reference_v1::CASES){
+    Primitive upstream;
+    upstream.rho_kg_m3=expected.upstream_rho_kg_m3;
+    upstream.pressure_Pa=expected.upstream_pressure_Pa;
+    for(int component=0;component<3;++component){
+      upstream.velocity_m_s[component]=expected.upstream_velocity_m_s[component];
+      upstream.magnetic_T[component]=expected.upstream_magnetic_T[component];
+    }
+    const Vec3 normal={{1.0,0.0,0.0}};
+    const auto result=swcme::shock::solve_ideal_mhd_fast_shock(
+        upstream,normal,expected.shock_speed_m_s,expected.gamma);
+    check_energy(upstream,result,normal,expected.shock_speed_m_s,
+                 expected.gamma,std::string("fixture=")+expected.id);
+    context.expect_true(expected.reference_max_residual<1.0e-50,
+                        std::string("SHK10 high-precision residual ")+expected.id);
+    if(result.status==swcme::shock::SolveStatus::Solved) ++deterministic_states;
+  }
+
+  std::cout<<"  independently checked="<<checked_states
+           <<" deterministic="<<deterministic_states
+           <<" max_long_double_residual="<<std::scientific
+           <<static_cast<double>(maximum_residual)
+           <<" max_production_residual="<<maximum_production_residual<<'\n';
+  context.expect_true(checked_states>=49000,
+                      "SHK10 checks the complete solved stress population");
+  context.expect_true(deterministic_states>=12,
+                      "SHK10 checks all named high-precision oblique fixtures");
+  context.expect_true(std::isfinite(maximum_residual) &&
+                          maximum_residual<=acceptance,
+                      "SHK10 independent energy flux meets 1e-8 threshold");
 }
 
 void test_shk11(swcme_test::Context& context){
   std::cout<<"SHK11 physical admissibility and entropy increase\n";
-  for(double theta : {0.0,30.0,60.0,90.0}){
-    Primitive up=fixture(theta);
-    if(theta==90.0) up.magnetic_T={{0.0,5e-9,0.0}};
-    const auto r=swcme::shock::solve_ideal_mhd_fast_shock(up,{{1,0,0}},8e5,GAMMA);
-    context.expect_true(r.has_shock&&r.solver_converged,"admissible shock converged");
-    context.expect_true(r.downstream.rho_kg_m3>up.rho_kg_m3,"rho2>rho1");
-    context.expect_true(r.downstream.pressure_Pa>0.0,"p2 positive");
-    context.expect_true(r.compression>1.0&&r.compression<=4.0*(1+1e-12),"compression within gamma=5/3 bound");
-    context.expect_true(r.entropy_ratio>=1.0-1e-10,"entropy proxy increases");
+  std::size_t solved=0,no_shock=0,numerical_limit=0;
+  std::size_t rejected_generic=0,failures_reported=0;
+  double minimum_entropy_ratio=std::numeric_limits<double>::max();
+  double maximum_compression_fraction=0.0;
+
+  // Apply a test-owned branch classification to every campaign outcome.  The
+  // characteristic speeds come from the independent reference_fast_speed()
+  // formula, while entropy and normal Alfven speed are reconstructed directly
+  // from serialized primitives.  This prevents the production status flag
+  // from serving as its own admissibility oracle.
+  auto check_case=[&](const Primitive& upstream,
+                      const swcme::shock::JumpResult& result,
+                      const Vec3& normal,double shock_speed,double gamma,
+                      const std::string& reproducer){
+    bool pass=true;
+    if(result.status==swcme::shock::SolveStatus::Solved){
+      ++solved;
+      const double gamma_bound=(gamma+1.0)/(gamma-1.0);
+      const double upstream_fast=reference_fast_speed(upstream,normal,gamma);
+      const double downstream_fast=
+          reference_fast_speed(result.downstream,normal,gamma);
+      double upstream_un=0.0,downstream_un=0.0,downstream_Bn=0.0;
+      for(int component=0;component<3;++component){
+        const double shock_component=shock_speed*normal[component];
+        upstream_un+=(upstream.velocity_m_s[component]-shock_component)*
+                     normal[component];
+        downstream_un+=(result.downstream.velocity_m_s[component]-shock_component)*
+                       normal[component];
+        downstream_Bn+=result.downstream.magnetic_T[component]*normal[component];
+      }
+      const double downstream_normal_alfven=std::abs(downstream_Bn)/
+          std::sqrt(MU0*result.downstream.rho_kg_m3);
+      const double entropy1=upstream.pressure_Pa/
+          std::pow(upstream.rho_kg_m3,gamma);
+      const double entropy2=result.downstream.pressure_Pa/
+          std::pow(result.downstream.rho_kg_m3,gamma);
+      const double entropy_ratio=entropy2/entropy1;
+      minimum_entropy_ratio=std::min(minimum_entropy_ratio,entropy_ratio);
+      maximum_compression_fraction=std::max(
+          maximum_compression_fraction,result.compression/gamma_bound);
+      pass=result.has_shock && result.solver_converged &&
+          upstream.rho_kg_m3>0.0 && upstream.pressure_Pa>0.0 &&
+          result.downstream.rho_kg_m3>upstream.rho_kg_m3 &&
+          result.downstream.pressure_Pa>0.0 &&
+          result.compression>1.0 &&
+          result.compression<=gamma_bound*(1.0+1.0e-12) &&
+          entropy_ratio>=1.0-1.0e-10 &&
+          std::abs(upstream_un)>upstream_fast &&
+          std::abs(downstream_un)<=downstream_fast*(1.0+2.0e-10) &&
+          (downstream_normal_alfven==0.0 ||
+           std::abs(downstream_un)>=downstream_normal_alfven*(1.0-2.0e-10)) &&
+          result.evolutionary_fast_branch;
+    } else if(result.status==swcme::shock::SolveStatus::NoShock){
+      ++no_shock;
+      pass=!result.has_shock && result.solver_converged &&
+           result.compression==1.0 &&
+           result.downstream.rho_kg_m3==upstream.rho_kg_m3 &&
+           result.downstream.pressure_Pa==upstream.pressure_Pa &&
+           result.downstream.velocity_m_s==upstream.velocity_m_s &&
+           result.downstream.magnetic_T==upstream.magnetic_T;
+    } else if(result.status==
+                  swcme::shock::SolveStatus::NumericallyUnresolvedWeakShock ||
+              result.status==swcme::shock::SolveStatus::NumericallySingular){
+      ++numerical_limit;
+      pass=result.has_shock && !result.solver_converged && finite_jump(result);
+    } else {
+      ++rejected_generic;
+      pass=false;
+    }
+    if(!pass && failures_reported<8){
+      std::cerr<<"    SHK11 admissibility failure "<<reproducer<<'\n';
+      ++failures_reported;
+    }
+    return pass;
+  };
+
+  std::size_t campaign_passed=0;
+  for(const StressCase& item:shock_stress_cases()){
+    if(check_case(item.upstream,item.result,item.normal,item.shock_speed_m_s,
+                  item.gamma,stress_reproducer(item))) ++campaign_passed;
   }
+
+  std::size_t reference_passed=0;
+  for(const auto& expected:swcme_test::shk05_reference_v1::CASES){
+    Primitive upstream;
+    upstream.rho_kg_m3=expected.upstream_rho_kg_m3;
+    upstream.pressure_Pa=expected.upstream_pressure_Pa;
+    for(int component=0;component<3;++component){
+      upstream.velocity_m_s[component]=expected.upstream_velocity_m_s[component];
+      upstream.magnetic_T[component]=expected.upstream_magnetic_T[component];
+    }
+    const Vec3 normal={{1.0,0.0,0.0}};
+    const auto result=swcme::shock::solve_ideal_mhd_fast_shock(
+        upstream,normal,expected.shock_speed_m_s,expected.gamma);
+    const bool metadata=expected.physical_root_count==1 &&
+        expected.physical_seed_count>0 && expected.converged_seed_count>1 &&
+        std::string(expected.branch)=="EVOLUTIONARY_FAST";
+    if(metadata && check_case(upstream,result,normal,expected.shock_speed_m_s,
+                              expected.gamma,
+                              std::string("fixture=")+expected.id)){
+      ++reference_passed;
+    }
+  }
+
+  std::cout<<"  campaign_passed="<<campaign_passed
+           <<" solved="<<solved<<" no_shock="<<no_shock
+           <<" numerical_limit="<<numerical_limit
+           <<" generic_rejection="<<rejected_generic
+           <<" min_entropy_ratio="<<std::scientific<<minimum_entropy_ratio
+           <<" max_compression/bound="<<maximum_compression_fraction<<'\n';
+  context.expect_true(campaign_passed==shock_stress_cases().size(),
+                      "SHK11 every stress outcome satisfies its independent contract");
+  context.expect_true(reference_passed>=12,
+                      "SHK11 all named reference roots are uniquely evolutionary fast");
+  context.expect_true(rejected_generic==0,
+                      "SHK11 has no generic or silently substituted rejected root");
+  context.expect_true(solved>=49000 && no_shock==25000 && numerical_limit>=25000,
+                      "SHK11 exercises solved, no-shock, and explicit numerical limits");
 }
 
 void test_shk12(swcme_test::Context& context){

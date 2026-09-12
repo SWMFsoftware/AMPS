@@ -54,7 +54,7 @@ namespace defaults {
 // Configuration/schema version associated with the conventions documented in
 // README.md and DEFAULTS_SCOPE_FIX_NOTES.md.  The later campaign/AMPS adapter
 // can write this exact value into run manifests.
-constexpr int CONFIG_VERSION = 2;
+constexpr int CONFIG_VERSION = 3;
 constexpr const char* FRAME_NAME = "HCI_like_inertial";
 
 // ---- Canonical ambient solar-wind baseline ---------------------------------
@@ -63,6 +63,11 @@ constexpr double N1AU_CM3 = 5.0;
 constexpr double B1AU_TOTAL_NT = 5.0;
 constexpr double T_K = 1.2e5;
 constexpr double GAMMA_AD = 5.0 / 3.0;
+constexpr swcme::solarwind::ThermodynamicClosure THERMODYNAMIC_CLOSURE =
+    swcme::solarwind::ThermodynamicClosure::ProtonOnly;
+constexpr double ALPHA_TO_PROTON_RATIO = 0.0;
+constexpr double ELECTRON_T_K = T_K;
+constexpr double ALPHA_T_K = T_K;
 
 // The public B1AU value is a POSITIVE total field magnitude at 1 AU at the
 // equatorial reference latitude (sin(colatitude)=1).  The prepared common core
@@ -75,6 +80,9 @@ constexpr const char* PARKER_NORMALIZATION_CONVENTION =
     "TOTAL_B_AT_1AU_REFERENCE_LATITUDE";
 constexpr double SOLAR_ROTATION_RATE_RAD_S =
     swcme::constants::SOLAR_ROTATION_RAD_S;
+// Zero preserves the historical Parker formula exactly. Event configurations
+// may select a finite corotation/source radius explicitly.
+constexpr double PARKER_SOURCE_RADIUS_RS = 0.0;
 
 // ---- Canonical CME/shock-apex kinematics -----------------------------------
 constexpr swcme::kinematics::Mode KINEMATICS_MODE =

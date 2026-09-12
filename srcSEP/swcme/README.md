@@ -204,7 +204,7 @@ Every 1-D and 3-D `StepState` also records a deterministic 64-bit
 declaration order, including inactive and deprecated compatibility fields,
 data-driven table lengths and values, plus resolved conventions that are not
 runtime parameters: configuration-schema version, frame, Parker normalization,
-Parker radial polarity, and the proton-only thermal-pressure closure.  Explicit
+Parker radial polarity, and the selected thermodynamic closure.  Explicit
 default values therefore hash identically to implicit defaults, while any
 physics-relevant configuration difference changes the snapshot.
 
@@ -1402,7 +1402,7 @@ physics through two shared production components:
 
 - `swcme_solarwind.hpp` owns the Leblanc density coefficients and normalization,
   Parker radial-field normalization, Parker scalar components, the Cartesian
-  Parker vector for an arbitrary solar axis, and the current proton thermal
+  Parker vector for an arbitrary solar axis, and the selected thermal
   pressure closure; and
 - `swcme_core.hpp` converts one common public-unit configuration to SI, prepares
   the shared solar-wind cache, and evaluates the shared ballistic/DBM/data-driven
@@ -1600,6 +1600,47 @@ named SHK05 high-precision fixtures, 256 proper rotations, and 256 magnetic-
 polarity reversals.  The test neither calls the production cross-product helper
 nor reads the stored electric residual, so frame, sign, and component-order
 defects remain independently observable.
+
+### Independent momentum-flux validation
+
+Priority test `SHK09` independently rebuilds the ideal-MHD momentum-flux
+vector from returned primitive states and checks its normal and two tangential
+components over the complete solved SHK15 set and the named SHK05 reference
+matrix.  Each residual is normalized by a cancellation-safe physical scale
+containing dynamic, gas-pressure, and magnetic-pressure/tension contributions.
+The required component tolerance is `1e-8`; failure diagnostics identify the
+component and dominant physical term rather than reporting only a vector norm.
+
+### Independent total-energy-flux validation
+
+Priority test `SHK10` reconstructs the shock-frame ideal-MHD energy flux from
+serialized primitives in long-double arithmetic.  Kinetic, enthalpy,
+magnetic-energy-advection, and magnetic-work contributions are retained
+separately for failure diagnosis and normalized by a cancellation-safe total
+physical scale.  The full solved stress set and all twelve high-precision
+oblique fixtures must satisfy `1e-8`; the test does not use the production
+energy helper or stored energy residual as its oracle.
+
+### Comprehensive shock admissibility validation
+
+Priority test `SHK11` applies independent positivity, gamma-dependent
+compression, entropy, upstream super-fast, and downstream evolutionary-fast
+criteria to every SHK15 state and SHK05 reference root.  No-shock results must
+remain exact identity states, while weak/singular numerical-limit outcomes are
+finite but explicitly non-converged.  Reference metadata must identify one
+unique evolutionary-fast physical root reached from multiple seeds.  Generic
+or silently substituted rejected roots are forbidden.
+
+### Reproducible shock-reference generation
+
+Priority test `SHK17` makes the independent SHK05/SHK12 references
+reproducible rather than merely checked in.  A versioned manifest pins the
+standard-library Decimal environment, 80-digit generation precision, 100-digit
+stability check, generator and fixture SHA-256 values, case counts, convergence
+metadata, and branch metadata.  The audit regenerates both headers without
+overwriting them, requires byte identity, verifies selected higher-precision
+solutions retain their binary64 literals, and rejects imports or calls into the
+production shock implementation.
 
 `swcme3d::Model::shock_state_direction()` is the preferred 3-D API for local
 shock diagnostics.  It returns the shock-surface radius and normal, normal shock
@@ -1981,6 +2022,73 @@ The shared ideal-MHD jump result also carries an explicit `SolveStatus`
 `NO_PHYSICAL_BRACKET`, `INVALID_ACCEPTED_STATE`, or `CONSERVATION_FAILURE`).
 A failed or numerically unresolved super-fast RH solve is propagated as
 `SHOCK_SOLVER_FAILURE`; it is not converted to a compression-one ambient state.
+
+### DEN04 pressure and sound-speed closure
+
+`Params::thermodynamic_closure` now selects either the exact legacy
+`PROTON_ONLY` relation or an explicit charge-neutral `MULTI_SPECIES` relation.
+For the latter, the Leblanc electron density satisfies
+`ne=np+2*nalpha`, `nalpha=alpha_to_proton_ratio*np`; mass density includes
+protons and alpha particles, while pressure sums proton, electron, and alpha
+partial pressures at their configured temperatures.  The common prepared
+solar-wind state computes pressure and `sqrt(gamma*p/rho)` once through the
+same closure used by 1-D shocks, 3-D shocks, and SEP adapters.  The default is
+still proton-only and therefore retains legacy results exactly.  Configuration
+version 3 records the closure, abundance, and both additional temperatures;
+unknown closures, negative abundance, and non-positive/non-finite temperatures
+are rejected before preparation.
+
+Priority validation `DEN04` independently recomputes species densities, mass
+density, pressure, and sound speed for four adiabatic indices, equal and
+unequal temperatures, zero/nonzero alpha abundance, and a cold positive limit.
+It requires relative error below `1e-13`, checks both dimensional shock APIs,
+and exercises invalid configuration rejection.
+
+### DEN02 Leblanc density asymptotic behavior
+
+Priority validation `DEN02` decomposes the normalized Leblanc density into its
+independent `r^-2`, `r^-4`, and `r^-6` terms at 41 logarithmically spaced radii
+from 0.01 to 100 AU and at explicit 0.5, 1, 2, and 5 AU checkpoints. Both the
+1-D and 3-D public evaluators must match a test-owned long-double reference to
+`1e-12`. The test also proves that `r^2 n(r)` approaches the positive `r^-2`
+coefficient monotonically and that its finite-radius excess is quantitatively
+explained by the two higher-order terms.
+
+### DEN05 default closure compatibility
+
+`DEN05` locks the default configuration to the historical proton-only closure.
+A default-constructed configuration and one that explicitly selects
+`PROTON_ONLY` must produce bitwise-identical 1-D and 3-D background fields,
+shock upstream primitives/compression, AMPS adapter pressure/focusing, and SEP
+source serialization. The resolved manifest must name `PROTON_ONLY`; selecting
+`MULTI_SPECIES` must be explicit and must change the configuration digest.
+
+### PAR04 Parker field solenoidality
+
+The Parker winding now has an explicit `parker_source_radius_Rs`. Its default
+is zero, preserving the former field exactly; a nonzero value uses
+`Bphi/Br=-Omega(r-rb)sin(theta)/Vsw`, is included in the 1-AU total-field
+normalization, configuration digest, manifest, and prepared-state integrity
+seal. `PAR04` evaluates centered Cartesian divergence at 1,024 deterministic
+random points while varying rotation axes, wind speeds, rotation rates, source
+radii, reference latitudes, field strengths, and both global polarities. Four
+decreasing step sizes establish the second-order regime and roundoff plateau;
+the median normalized divergence must be below `1e-8`, the maximum below
+`1e-6`, and polarity reversal must leave the residual invariant.
+
+### PAR05 Parker field-line tangency
+
+The analytical connectivity map now integrates the same finite-source-radius
+pitch used by the magnetic field:
+`delta_phi=-Omega/V[(r-robs)-rb*ln(r/robs)]`. The path-length and focusing
+helpers use the corresponding `r-rb` winding coordinate, and connectivity scan
+resolution uses the same accumulated phase. `PAR05` runs 1,024 comparisons
+over random observers, radii, wind speeds, rotation rates, source radii, axes,
+and both polarities. A test-owned analytic line is differentiated independently;
+its tangent must be parallel (positive polarity) or antiparallel (negative
+polarity) to the production field within `1e-8` rad. It also directly projects
+the background `Bphi/Br` and requires the same source-radius pitch as the
+connectivity curve.
 
 Mesh and checked Tecplot output paths reject non-finite physics instead of
 writing a sanitized surrogate.  `ERR01`-`ERR05` protect outside-domain behavior,

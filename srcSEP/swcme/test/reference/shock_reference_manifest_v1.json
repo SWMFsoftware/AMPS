@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "solver_version": "swcme-independent-decimal-rh-v1",
+  "environment": {
+    "interpreter": "Python 3 standard library",
+    "minimum_python": "3.9",
+    "arithmetic": "decimal.Decimal",
+    "canonical_precision_digits": 80,
+    "higher_precision_check_digits": 100,
+    "external_packages": []
+  },
+  "references": [
+    {
+      "generator": "generate_shk05_oblique_v1.py",
+      "generator_sha256": "84b2ed7d0d425b297514d0a2c590675f9d77489734ea1359cc5881128e811a39",
+      "fixture": "shk05_oblique_v1.hpp",
+      "fixture_sha256": "d756ed384143a15c57129c4ac1ad4f62c85e3b4b22832e7ea25bc840a83d24a5",
+      "case_count": 12,
+      "branch_metadata": "converged seed count, physical seed count, physical root count, evolutionary-fast label",
+      "conditioning_metadata": "maximum residual and minimum Newton pivot"
+    },
+    {
+      "generator": "generate_shk12_near_mach_v1.py",
+      "generator_sha256": "e54b809257584d4f4e71f7661f376700a5e465608e635ba5fa0bb0923e019d51",
+      "fixture": "shk12_near_mach_v1.hpp",
+      "fixture_sha256": "8ad75cfb0a5b6231796cf5a97a8808be5cfb6313aafbb821707bdd35cf0679a8",
+      "case_count": 48,
+      "branch_metadata": "family root uniqueness and logarithmic continuation history",
+      "conditioning_metadata": "maximum residual, continuation iterations, and minimum Newton pivot"
+    }
+  ]
+}

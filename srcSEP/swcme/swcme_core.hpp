@@ -30,9 +30,15 @@ struct CommonConfig {
   double B1AU_nT = swcme::defaults::B1AU_TOTAL_NT;
   double T_K = swcme::defaults::T_K;
   double gamma_ad = swcme::defaults::GAMMA_AD;
+  swcme::solarwind::ThermodynamicClosure thermodynamic_closure =
+      swcme::defaults::THERMODYNAMIC_CLOSURE;
+  double alpha_to_proton_ratio = swcme::defaults::ALPHA_TO_PROTON_RATIO;
+  double electron_T_K = swcme::defaults::ELECTRON_T_K;
+  double alpha_T_K = swcme::defaults::ALPHA_T_K;
   double parker_reference_sin_theta = swcme::defaults::PARKER_REFERENCE_SIN_THETA;
   double solar_rotation_rate_rad_s =
       swcme::defaults::SOLAR_ROTATION_RATE_RAD_S;
+  double parker_source_radius_Rs = swcme::defaults::PARKER_SOURCE_RADIUS_RS;
 
   // Common apex kinematics public units.
   swcme::kinematics::Mode kinematics_mode = swcme::defaults::KINEMATICS_MODE;
@@ -61,8 +67,14 @@ inline PreparedState prepare(const CommonConfig& cfg, double time_s) {
   ambient.B1AU_T = swcme::units::nT_to_T(cfg.B1AU_nT);
   ambient.T_K = cfg.T_K;
   ambient.gamma_ad = cfg.gamma_ad;
+  ambient.thermodynamic_closure = cfg.thermodynamic_closure;
+  ambient.alpha_to_proton_ratio = cfg.alpha_to_proton_ratio;
+  ambient.electron_T_K = cfg.electron_T_K;
+  ambient.alpha_T_K = cfg.alpha_T_K;
   ambient.reference_sin_theta = cfg.parker_reference_sin_theta;
   ambient.solar_rotation_rate_rad_s = cfg.solar_rotation_rate_rad_s;
+  ambient.parker_source_radius_m =
+      swcme::units::solar_radii_to_m(cfg.parker_source_radius_Rs);
   state.solar_wind = swcme::solarwind::prepare(ambient);
 
   swcme::kinematics::Config kin;

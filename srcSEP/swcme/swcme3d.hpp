@@ -226,6 +226,8 @@ struct Params {
   // geometrically correct local sin(theta).  A future API cleanup may rename
   // this field once backward compatibility is no longer required.
   double sin_theta  = swcme::defaults::PARKER_REFERENCE_SIN_THETA;
+  double parker_source_radius_Rs =
+      swcme::defaults::PARKER_SOURCE_RADIUS_RS; // corotation/source radius [R_sun]
 
   // CME/shock-apex kinematics.  The same shared common implementation is
   // consumed by swcme1d, so identical inputs produce identical apex radius
@@ -253,6 +255,13 @@ struct Params {
   double B1AU_nT  = swcme::defaults::B1AU_TOTAL_NT;                   // |B|(1 AU) [nT] at reference sin_theta above
   double T_K      = swcme::defaults::T_K;                 // proton temperature [K]
   double gamma_ad = swcme::defaults::GAMMA_AD;               // adiabatic index
+  // Explicit thermodynamic closure. The default is intentionally the legacy
+  // proton-only relation; composition fields are still recorded when inactive.
+  swcme::solarwind::ThermodynamicClosure thermodynamic_closure =
+      swcme::defaults::THERMODYNAMIC_CLOSURE;
+  double alpha_to_proton_ratio = swcme::defaults::ALPHA_TO_PROTON_RATIO;
+  double electron_T_K = swcme::defaults::ELECTRON_T_K;
+  double alpha_T_K = swcme::defaults::ALPHA_T_K;
 
   // Region mode.  The canonical science default is SHOCK_ONLY: the
   // Parker/Leblanc background is left unchanged and the shock is used for
@@ -316,6 +325,7 @@ inline std::string resolved_configuration_manifest(const Params& p) {
   for (int i=0; i<3; ++i) out << "solar_rotation_axis[" << i << "]=" << p.solar_rotation_axis[i] << '\n';
   out << "solar_rotation_rate_rad_s=" << p.solar_rotation_rate_rad_s << '\n';
   out << "sin_theta=" << p.sin_theta << '\n';
+  out << "parker_source_radius_Rs=" << p.parker_source_radius_Rs << '\n';
   out << "kinematics_mode=" << swcme::defaults::kinematics_mode_name(p.kinematics_mode) << '\n';
   out << "r0_Rs=" << p.r0_Rs << '\n';
   out << "V0_sh_kms=" << p.V0_sh_kms << '\n';
@@ -333,6 +343,12 @@ inline std::string resolved_configuration_manifest(const Params& p) {
   out << "B1AU_nT=" << p.B1AU_nT << '\n';
   out << "T_K=" << p.T_K << '\n';
   out << "gamma_ad=" << p.gamma_ad << '\n';
+  out << "thermodynamic_closure="
+      << swcme::solarwind::thermodynamic_closure_name(
+             p.thermodynamic_closure) << '\n';
+  out << "alpha_to_proton_ratio=" << p.alpha_to_proton_ratio << '\n';
+  out << "electron_T_K=" << p.electron_T_K << '\n';
+  out << "alpha_T_K=" << p.alpha_T_K << '\n';
   out << "region_mode=" << swcme::defaults::region_mode_name(p.region_mode) << '\n';
   out << "shock_acceleration_mode="
       << swcme::defaults::acceleration_mode_name(p.shock_acceleration_mode) << '\n';
@@ -364,7 +380,6 @@ inline swcme::ConfigurationDigest configuration_digest(
   digest.add_string(swcme::defaults::PARKER_NORMALIZATION_CONVENTION);
   digest.add_uint64(static_cast<std::uint64_t>(
       static_cast<std::int64_t>(swcme::defaults::PARKER_RADIAL_POLARITY)));
-  digest.add_string("PROTON_ONLY_THERMAL_PRESSURE_CLOSURE");
 
   // Hash every public Params field in declaration order, including currently
   // inactive/deprecated compatibility values.  This matches the completeness
@@ -377,6 +392,7 @@ inline swcme::ConfigurationDigest configuration_digest(
   for (double value : p.solar_rotation_axis) digest.add_double(value);
   digest.add_double(p.solar_rotation_rate_rad_s);
   digest.add_double(p.sin_theta);
+  digest.add_double(p.parker_source_radius_Rs);
   digest.add_uint64(static_cast<std::uint64_t>(p.kinematics_mode));
   digest.add_double(p.r0_Rs); digest.add_double(p.V0_sh_kms);
   digest.add_double(p.V_sw_kms); digest.add_double(p.Gamma_kmInv);
@@ -387,6 +403,9 @@ inline swcme::ConfigurationDigest configuration_digest(
   digest.add_uint64(static_cast<std::uint64_t>(p.data_extrapolation));
   digest.add_double(p.n1AU_cm3); digest.add_double(p.B1AU_nT);
   digest.add_double(p.T_K); digest.add_double(p.gamma_ad);
+  digest.add_uint64(static_cast<std::uint64_t>(p.thermodynamic_closure));
+  digest.add_double(p.alpha_to_proton_ratio);
+  digest.add_double(p.electron_T_K); digest.add_double(p.alpha_T_K);
   digest.add_uint64(static_cast<std::uint64_t>(p.region_mode));
   digest.add_uint64(static_cast<std::uint64_t>(p.shock_acceleration_mode));
   digest.add_double(p.relative_source_weight_per_area);
@@ -409,7 +428,11 @@ inline swcme::config::ValidationResult validate_params(const Params& p) {
   swcme::config::CommonConfigView view;
   view.V_sw_kms=p.V_sw_kms; view.n1AU_cm3=p.n1AU_cm3;
   view.B1AU_nT=p.B1AU_nT; view.T_K=p.T_K; view.gamma_ad=p.gamma_ad;
+  view.thermodynamic_closure=p.thermodynamic_closure;
+  view.alpha_to_proton_ratio=p.alpha_to_proton_ratio;
+  view.electron_T_K=p.electron_T_K; view.alpha_T_K=p.alpha_T_K;
   view.sin_theta=p.sin_theta; view.kinematics_mode=p.kinematics_mode;
+  view.parker_source_radius_Rs=p.parker_source_radius_Rs;
   view.r0_Rs=p.r0_Rs; view.V0_sh_kms=p.V0_sh_kms;
   view.Gamma_kmInv=p.Gamma_kmInv; view.data_time_s=&p.data_time_s;
   view.data_radius_Rs=&p.data_radius_Rs;

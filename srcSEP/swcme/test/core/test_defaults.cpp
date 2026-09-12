@@ -205,7 +205,9 @@ void test_def04(swcme_test::Context& context) {
   const std::vector<std::string> common_keys = {
       "swcme_config_version", "model_scope", "frame", "parker_normalization",
       "parker_radial_polarity", "solar_rotation_rate_rad_s", "V_sw_kms", "n1AU_cm3", "B1AU_nT", "T_K",
-      "gamma_ad", "kinematics_mode", "r0_Rs", "V0_sh_kms", "Gamma_kmInv",
+      "gamma_ad", "thermodynamic_closure", "alpha_to_proton_ratio",
+      "electron_T_K", "alpha_T_K", "kinematics_mode", "r0_Rs",
+      "V0_sh_kms", "Gamma_kmInv", "parker_source_radius_Rs",
       "data_extrapolation", "data_time_s.count", "data_radius_Rs.count",
       "region_mode", "shock_acceleration_mode", "relative_source_weight_per_area",
       "sheath_thick_AU_at1AU", "ejecta_thick_AU_at1AU",

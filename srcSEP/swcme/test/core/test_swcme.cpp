@@ -31,6 +31,8 @@ void test_den01(swcme_test::Context& context);
 void test_par01(swcme_test::Context& context);
 void test_par02(swcme_test::Context& context);
 void test_par03(swcme_test::Context& context);
+void test_par04(swcme_test::Context& context);
+void test_par05(swcme_test::Context& context);
 void test_geo01(swcme_test::Context& context);
 void test_geo02(swcme_test::Context& context);
 void test_geo03(swcme_test::Context& context);
@@ -67,6 +69,10 @@ void test_shk11(swcme_test::Context& context);
 void test_shk12(swcme_test::Context& context);
 void test_shk16(swcme_test::Context& context);
 void test_shk15(swcme_test::Context& context);
+void test_shk17(swcme_test::Context& context);
+void test_den04(swcme_test::Context& context);
+void test_den02(swcme_test::Context& context);
+void test_den05(swcme_test::Context& context);
 void test_shk13(swcme_test::Context& context);
 void test_shk14(swcme_test::Context& context);
 void test_con01(swcme_test::Context& context);
@@ -154,6 +160,15 @@ const swcme_test::TestCase kTests[] = {
     {"SHK06", "COMMON", "Rankine-Hugoniot mass-flux conservation", test_shk06},
     {"SHK07", "COMMON", "Rankine-Hugoniot normal magnetic-field continuity", test_shk07},
     {"SHK08", "COMMON", "Rankine-Hugoniot tangential electric-field conservation", test_shk08},
+    {"SHK09", "COMMON", "Rankine-Hugoniot momentum-flux conservation", test_shk09},
+    {"SHK10", "COMMON", "Rankine-Hugoniot total-energy-flux conservation", test_shk10},
+    {"SHK11", "COMMON", "Physical admissibility and entropy increase", test_shk11},
+    {"SHK17", "COMMON", "Shock reference regeneration", test_shk17},
+    {"DEN04", "COMMON", "Pressure and sound-speed closure", test_den04},
+    {"DEN02", "COMMON", "Leblanc density asymptotic behavior", test_den02},
+    {"DEN05", "COMMON", "Default thermodynamic-closure compatibility", test_den05},
+    {"PAR04", "3D", "Parker-field solenoidality", test_par04},
+    {"PAR05", "3D", "Parker field-line tangency", test_par05},
     {"CFG01", "COMMON", "Configuration rejection and physical-range validation",
      test_cfg01},
     {"CFG02", "COMMON", "Unit-conversion and dimensional-consistency test",
@@ -198,9 +213,6 @@ const swcme_test::TestCase kTests[] = {
     {"SHK02", "COMMON", "Shock obliquity angle and polarity invariance", test_shk02},
     {"SHK03", "COMMON", "Parallel fast-shock limiting solution", test_shk03},
     {"SHK04", "COMMON", "Perpendicular MHD-shock benchmark", test_shk04},
-    {"SHK09", "COMMON", "Rankine-Hugoniot momentum-flux conservation", test_shk09},
-    {"SHK10", "COMMON", "Rankine-Hugoniot total-energy-flux conservation", test_shk10},
-    {"SHK11", "COMMON", "Physical admissibility and entropy increase", test_shk11},
     {"SHK13", "3D", "Shock-state independence from arbitrary query radius", test_shk13},
     {"SHK14", "3D", "Canonical shock-state consistency across diagnostics and mesh", test_shk14},
     {"CON01", "3D", "Zero-solar-rotation radial connectivity limit", test_con01},

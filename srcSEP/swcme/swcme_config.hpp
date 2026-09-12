@@ -161,7 +161,13 @@ struct CommonConfigView {
   double B1AU_nT = 0.0;
   double T_K = 0.0;
   double gamma_ad = 0.0;
+  swcme::solarwind::ThermodynamicClosure thermodynamic_closure =
+      swcme::defaults::THERMODYNAMIC_CLOSURE;
+  double alpha_to_proton_ratio = 0.0;
+  double electron_T_K = 0.0;
+  double alpha_T_K = 0.0;
   double sin_theta = 0.0;
+  double parker_source_radius_Rs = 0.0;
 
   swcme::kinematics::Mode kinematics_mode = swcme::defaults::KINEMATICS_MODE;
   double r0_Rs = 0.0;
@@ -197,12 +203,26 @@ inline ValidationResult validate_common(const CommonConfigView& c) {
   require_positive(out, "n1AU_cm3", c.n1AU_cm3);
   require_nonnegative(out, "B1AU_nT", c.B1AU_nT);
   require_positive(out, "T_K", c.T_K);
+  if (c.thermodynamic_closure !=
+          swcme::solarwind::ThermodynamicClosure::ProtonOnly &&
+      c.thermodynamic_closure !=
+          swcme::solarwind::ThermodynamicClosure::MultiSpecies) {
+    out.add("thermodynamic_closure", Code::OutOfRange,
+            static_cast<double>(c.thermodynamic_closure),
+            "must be PROTON_ONLY or MULTI_SPECIES");
+  }
+  require_nonnegative(out, "alpha_to_proton_ratio",
+                      c.alpha_to_proton_ratio);
+  require_positive(out, "electron_T_K", c.electron_T_K);
+  require_positive(out, "alpha_T_K", c.alpha_T_K);
   if (!finite(c.gamma_ad)) {
     out.add("gamma_ad", Code::NonFinite, c.gamma_ad, "must be finite and > 1");
   } else if (!(c.gamma_ad > 1.0)) {
     out.add("gamma_ad", Code::OutOfRange, c.gamma_ad, "must be > 1");
   }
   require_range(out, "sin_theta", c.sin_theta, 0.0, 1.0, true, true);
+  require_nonnegative(out, "parker_source_radius_Rs",
+                      c.parker_source_radius_Rs);
 
   // r0 is not merely a positive mathematical radius: it is the physical
   // handoff/reference point at which the analytical Parker/Leblanc model must

@@ -379,8 +379,6 @@ constexpr double AU        = swcme::constants::AU_M;                    // [m]
 constexpr double Rs        = swcme::constants::SOLAR_RADIUS_M;          // [m]
 constexpr double OMEGA_SUN = swcme::defaults::SOLAR_ROTATION_RATE_RAD_S;    // [rad/s]
 constexpr double MU0       = swcme::constants::VACUUM_PERMEABILITY_N_A2; // [N/A²]
-constexpr double MP        = swcme::constants::PROTON_MASS_KG;          // [kg]
-constexpr double KB        = swcme::constants::BOLTZMANN_J_K;           // [J/K]
 
 // --------------------------------- Helpers -----------------------------------
 inline double clamp01(double x){ return x<0.0?0.0:(x>1.0?1.0:x); }
@@ -408,7 +406,17 @@ struct Params {
   double B1AU_nT     = swcme::defaults::B1AU_TOTAL_NT;    // |B|(1 AU) [nT]
   double T_K         = swcme::defaults::T_K;  // proton temperature [K]
   double gamma_ad    = swcme::defaults::GAMMA_AD;
+  // PROTON_ONLY is the exact historical closure. MULTI_SPECIES treats the
+  // Leblanc density as ne and closes charge-neutral electron/proton/alpha
+  // pressure with the explicitly recorded temperatures and alpha abundance.
+  swcme::solarwind::ThermodynamicClosure thermodynamic_closure =
+      swcme::defaults::THERMODYNAMIC_CLOSURE;
+  double alpha_to_proton_ratio = swcme::defaults::ALPHA_TO_PROTON_RATIO;
+  double electron_T_K = swcme::defaults::ELECTRON_T_K;
+  double alpha_T_K = swcme::defaults::ALPHA_T_K;
   double sin_theta   = swcme::defaults::PARKER_REFERENCE_SIN_THETA; // fixed 1-D ray latitude / Parker normalization
+  double parker_source_radius_Rs =
+      swcme::defaults::PARKER_SOURCE_RADIUS_RS; // corotation/source radius [R_sun]
 
   // CME/shock-apex kinematics.  Both 1-D and 3-D now use the shared
   // swcme::kinematics implementation, so selecting the same mode and inputs
@@ -492,7 +500,14 @@ inline std::string resolved_configuration_manifest(const Params& p) {
   out << "B1AU_nT=" << p.B1AU_nT << '\n';
   out << "T_K=" << p.T_K << '\n';
   out << "gamma_ad=" << p.gamma_ad << '\n';
+  out << "thermodynamic_closure="
+      << swcme::solarwind::thermodynamic_closure_name(
+             p.thermodynamic_closure) << '\n';
+  out << "alpha_to_proton_ratio=" << p.alpha_to_proton_ratio << '\n';
+  out << "electron_T_K=" << p.electron_T_K << '\n';
+  out << "alpha_T_K=" << p.alpha_T_K << '\n';
   out << "sin_theta=" << p.sin_theta << '\n';
+  out << "parker_source_radius_Rs=" << p.parker_source_radius_Rs << '\n';
   out << "kinematics_mode=" << swcme::defaults::kinematics_mode_name(p.kinematics_mode) << '\n';
   out << "r0_Rs=" << p.r0_Rs << '\n';
   out << "V0_sh_kms=" << p.V0_sh_kms << '\n';
@@ -538,7 +553,6 @@ inline swcme::ConfigurationDigest configuration_digest(
   digest.add_string(swcme::defaults::PARKER_NORMALIZATION_CONVENTION);
   digest.add_uint64(static_cast<std::uint64_t>(
       static_cast<std::int64_t>(swcme::defaults::PARKER_RADIAL_POLARITY)));
-  digest.add_string("PROTON_ONLY_THERMAL_PRESSURE_CLOSURE");
   digest.add_double(swcme::defaults::SOLAR_ROTATION_RATE_RAD_S);
 
   // Hash every public Params field in declaration order.  Vector lengths are
@@ -546,7 +560,12 @@ inline swcme::ConfigurationDigest configuration_digest(
   // distinguishable and default-empty equals explicitly-empty configuration.
   digest.add_double(p.V_sw_kms); digest.add_double(p.n1AU_cm3);
   digest.add_double(p.B1AU_nT); digest.add_double(p.T_K);
-  digest.add_double(p.gamma_ad); digest.add_double(p.sin_theta);
+  digest.add_double(p.gamma_ad);
+  digest.add_uint64(static_cast<std::uint64_t>(p.thermodynamic_closure));
+  digest.add_double(p.alpha_to_proton_ratio);
+  digest.add_double(p.electron_T_K); digest.add_double(p.alpha_T_K);
+  digest.add_double(p.sin_theta);
+  digest.add_double(p.parker_source_radius_Rs);
   digest.add_uint64(static_cast<std::uint64_t>(p.kinematics_mode));
   digest.add_double(p.r0_Rs); digest.add_double(p.V0_sh_kms);
   digest.add_double(p.Gamma_kmInv);
@@ -577,7 +596,11 @@ inline swcme::config::ValidationResult validate_params(const Params& p) {
   swcme::config::CommonConfigView view;
   view.V_sw_kms=p.V_sw_kms; view.n1AU_cm3=p.n1AU_cm3;
   view.B1AU_nT=p.B1AU_nT; view.T_K=p.T_K; view.gamma_ad=p.gamma_ad;
+  view.thermodynamic_closure=p.thermodynamic_closure;
+  view.alpha_to_proton_ratio=p.alpha_to_proton_ratio;
+  view.electron_T_K=p.electron_T_K; view.alpha_T_K=p.alpha_T_K;
   view.sin_theta=p.sin_theta; view.kinematics_mode=p.kinematics_mode;
+  view.parker_source_radius_Rs=p.parker_source_radius_Rs;
   view.r0_Rs=p.r0_Rs; view.V0_sh_kms=p.V0_sh_kms;
   view.Gamma_kmInv=p.Gamma_kmInv; view.data_time_s=&p.data_time_s;
   view.data_radius_Rs=&p.data_radius_Rs;
@@ -991,8 +1014,13 @@ public:
     common_cfg.B1AU_nT=P.B1AU_nT;
     common_cfg.T_K=P.T_K;
     common_cfg.gamma_ad=P.gamma_ad;
+    common_cfg.thermodynamic_closure=P.thermodynamic_closure;
+    common_cfg.alpha_to_proton_ratio=P.alpha_to_proton_ratio;
+    common_cfg.electron_T_K=P.electron_T_K;
+    common_cfg.alpha_T_K=P.alpha_T_K;
     common_cfg.parker_reference_sin_theta=P.sin_theta;
     common_cfg.solar_rotation_rate_rad_s=OMEGA_SUN;
+    common_cfg.parker_source_radius_Rs=P.parker_source_radius_Rs;
     common_cfg.kinematics_mode=P.kinematics_mode;
     common_cfg.r0_Rs=P.r0_Rs;
     common_cfg.V0_sh_kms=P.V0_sh_kms;
@@ -1078,9 +1106,11 @@ public:
 
     const double n_up_sh = density_upstream(S, S.r_sh_m);
     swcme::shock::PrimitiveState upstream;
-    upstream.rho_kg_m3 = std::max(0.0,n_up_sh)*MP;
-    upstream.pressure_Pa = swcme::solarwind::proton_pressure_Pa(
-        S.common.solar_wind,std::max(0.0,n_up_sh));
+    const swcme::solarwind::ThermodynamicState upstream_thermodynamics =
+        swcme::solarwind::thermodynamic_state(
+            S.common.solar_wind,std::max(0.0,n_up_sh));
+    upstream.rho_kg_m3 = upstream_thermodynamics.mass_density_kg_m3;
+    upstream.pressure_Pa = upstream_thermodynamics.pressure_Pa;
     upstream.velocity_m_s = {{Vsw,0.0,0.0}};
     upstream.magnetic_T = {{Br_sh,Bphi_sh,0.0}};
 
@@ -1278,7 +1308,9 @@ private:
         if (!S.has_shock) return n_local_up;
         const double w=swcme::regions::sheath_profile_weight(
             rr,b,S.region_config.sheath_ramp_power);
-        const double n2=S.shock_jump.downstream.rho_kg_m3/MP;
+        // Every species is compressed by the same single-fluid RH ratio, so
+        // the public electron density is rc*n_up even when rho is not mp*ne.
+        const double n2=S.rc*S.n_up_shock;
         const double n_le=density_upstream(S,b.R_le_m);
         return swcme::regions::log_lerp_positive(n2,n_le,w);
       };
@@ -1289,7 +1321,7 @@ private:
       double n=n_up;
       if (loc.region==swcme::regions::Region::ShockTransition) {
         if (S.has_shock) {
-          const double n2=S.shock_jump.downstream.rho_kg_m3/MP;
+          const double n2=S.rc*S.n_up_shock;
           n=swcme::regions::lerp(n_up,n2,loc.blend);
         }
       } else if (loc.region==swcme::regions::Region::Sheath) {

@@ -13,6 +13,10 @@ constexpr double SOLAR_RADIUS_M = 6.957e8;    // IAU 2015 nominal radius [m]
 
 // Fundamental physical constants. CODATA 2022 is the SWCME baseline.
 constexpr double PROTON_MASS_KG = 1.67262192595e-27;
+// CODATA 2022 alpha-particle mass.  Multi-species thermodynamic closure uses
+// this value explicitly rather than the 4*m_p approximation so its mass
+// density and sound-speed definitions are unambiguous and reproducible.
+constexpr double ALPHA_PARTICLE_MASS_KG = 6.6446573450e-27;
 constexpr double VACUUM_PERMEABILITY_N_A2 = 1.25663706127e-6;
 constexpr double BOLTZMANN_J_K = 1.380649e-23;
 constexpr double SPEED_OF_LIGHT_M_S = 299792458.0;

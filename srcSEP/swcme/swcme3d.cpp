@@ -306,8 +306,6 @@ static inline bool finite3(const double v[3]){
   return std::isfinite(v[0]) && std::isfinite(v[1]) && std::isfinite(v[2]);
 }
 static constexpr double MU0 = swcme::constants::VACUUM_PERMEABILITY_N_A2; // [H/m]
-static constexpr double MP  = swcme::constants::PROTON_MASS_KG;           // [kg]
-static constexpr double KB  = swcme::constants::BOLTZMANN_J_K;            // [J/K]
 static constexpr double OMEGA_SUN = swcme::constants::SOLAR_ROTATION_RAD_S; // legacy/test-visible model default [rad/s]
 
 static inline double smoothstep01(double x){
@@ -548,8 +546,13 @@ StepState Model::prepare_step(double t_s) const {
   common_cfg.B1AU_nT=P_.B1AU_nT;
   common_cfg.T_K=P_.T_K;
   common_cfg.gamma_ad=P_.gamma_ad;
+  common_cfg.thermodynamic_closure=P_.thermodynamic_closure;
+  common_cfg.alpha_to_proton_ratio=P_.alpha_to_proton_ratio;
+  common_cfg.electron_T_K=P_.electron_T_K;
+  common_cfg.alpha_T_K=P_.alpha_T_K;
   common_cfg.parker_reference_sin_theta=P_.sin_theta;
   common_cfg.solar_rotation_rate_rad_s=P_.solar_rotation_rate_rad_s;
+  common_cfg.parker_source_radius_Rs=P_.parker_source_radius_Rs;
   common_cfg.kinematics_mode=P_.kinematics_mode;
   common_cfg.r0_Rs=P_.r0_Rs;
   common_cfg.V0_sh_kms=P_.V0_sh_kms;
@@ -936,9 +939,10 @@ swcme::ModelStatus Model::shock_state_direction_after_validation(
   }
 
   swcme::shock::PrimitiveState upstream;
-  upstream.rho_kg_m3=n_up_m3*MP;
-  upstream.pressure_Pa=swcme::solarwind::proton_pressure_Pa(
-      S.common.solar_wind,n_up_m3);
+  const swcme::solarwind::ThermodynamicState upstream_thermodynamics=
+      swcme::solarwind::thermodynamic_state(S.common.solar_wind,n_up_m3);
+  upstream.rho_kg_m3=upstream_thermodynamics.mass_density_kg_m3;
+  upstream.pressure_Pa=upstream_thermodynamics.pressure_Pa;
   upstream.velocity_m_s={{S.V_sw_ms*u[0],S.V_sw_ms*u[1],S.V_sw_ms*u[2]}};
   upstream.magnetic_T={{B_up[0],B_up[1],B_up[2]}};
   state.upstream=upstream;
@@ -1074,7 +1078,13 @@ bool Model::parker_field_line_point(const StepState& S,
 
   const double u_obs[3]={observer_m[0]/r_obs,observer_m[1]/r_obs,
                          observer_m[2]/r_obs};
-  const double delta_phi=-S.solar_rotation_rate_rad_s*(radius_m-r_obs)/S.V_sw_ms;
+  // For Bphi/Br=-Omega(r-rb)sin(theta)/V, field-line geometry obeys
+  // dphi/dr=-Omega(1-rb/r)/V.  The logarithmic source-radius term is essential
+  // for tangency when rb is nonzero and reduces exactly to the legacy linear
+  // expression at rb=0.
+  const double rb=S.common.solar_wind.parker_source_radius_m;
+  const double delta_phi=-S.solar_rotation_rate_rad_s/S.V_sw_ms*
+      ((radius_m-r_obs)-rb*std::log(radius_m/r_obs));
   double u[3]={0.0,0.0,0.0};
   rotate_about_unit_axis(u_obs,S.solar_axis_hat,delta_phi,u);
   if (!::normalize_checked(u)) return false; // orthogonal rotation should preserve norm
@@ -1220,7 +1230,9 @@ swcme3d::ConnectivityState Model::observer_connectivity(
   // samples.  The caller value remains a lower bound.  CON09 forbids silently
   // truncating the effective request at the work budget because a capped scan
   // can miss a narrow connection window and falsely report Disconnected.
-  const double total_phase=S.solar_rotation_rate_rad_s*(r_obs-r_min)/S.V_sw_ms;
+  const double rb=S.common.solar_wind.parker_source_radius_m;
+  const double total_phase=std::abs(S.solar_rotation_rate_rad_s/S.V_sw_ms*
+      ((r_obs-r_min)-rb*std::log(r_obs/r_min)));
   const double phase_step=0.5*PI/180.0;
   std::size_t intervals=std::max<std::size_t>(32,options.scan_intervals);
   if (total_phase>0.0) {
