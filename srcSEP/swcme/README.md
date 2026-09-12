@@ -5,6 +5,931 @@ energetic-particle transport studies.  The 3-D model combines a Parker magnetic
 field, Leblanc density profile, analytical CME/shock kinematics, configurable
 shock geometry, and phenomenological sheath/ejecta fields.
 
+This README is both a physics description and a user guide to the implemented
+C++17 API. The examples below use only public interfaces present in this
+directory. Detailed verification and campaign instructions are in
+[`test/README.md`](test/README.md); the `*_FIX_NOTES.md` files retain the design
+history behind individual corrections.
+
+> **Validation scope.** Passing the bundled tests demonstrates consistency with
+> analytical limits, independent numerical references, conservation laws, API
+> contracts, and synthetic campaign fixtures. It does not by itself establish
+> event-by-event observational skill. Observational validation must use archived
+> spacecraft data, documented event associations, uncertainties, and held-out
+> cases.
+
+## Contents
+
+- [Model architecture](#model-architecture)
+- [Build and quick start](#build-and-quick-start)
+- [Physical model](#physical-model)
+- [Configuration](#configuration)
+- [API lifecycle and error handling](#api-lifecycle-and-error-handling)
+- [1-D API](#1-d-api)
+- [3-D API](#3-d-api)
+- [SEP and AMPS-facing API](#sep-and-amps-facing-api)
+- [Use examples](#use-examples)
+- [Output products](#output-products)
+- [Concurrency, ownership, and performance](#concurrency-ownership-and-performance)
+- [Model limitations](#model-limitations)
+- [Tests and demonstrations](#tests-and-demonstrations)
+
+## Model architecture
+
+SWCME separates immutable configuration, time-dependent preparation, and
+high-frequency evaluation:
+
+1. Fill `swcme1d::Params` or `swcme3d::Params`.
+2. Construct a `Model` and inspect `model.validate()`.
+3. Call `prepare_step(t)` once for a field-update time. This builds a
+   self-contained `StepState` with kinematics, Parker/Leblanc constants, region
+   geometry, shock state, and integrity metadata.
+4. Reuse that state for many field, shock, mesh, or connectivity queries.
+5. For particle transport, use `swcme::sep::Interface1D` or `Interface3D` to
+   obtain SI-unit background and source records without duplicating physics.
+
+The principal files are:
+
+| File | Responsibility |
+| --- | --- |
+| `swcme1d.hpp` | Header-only radial model and 1-D output API. |
+| `swcme3d.hpp`, `swcme3d.cpp` | Three-dimensional geometry, fields, shocks, connectivity, meshes, and output. |
+| `swcme_solarwind.hpp` | Shared Leblanc density, Parker field, composition, pressure, sound speed, path length, and focusing. |
+| `swcme_kinematics.hpp` | Shared ballistic, sign-aware DBM, and monotone data-driven apex motion. |
+| `swcme_shock.hpp` | Ideal-MHD fast-shock classification and Rankine-Hugoniot downstream solution. |
+| `swcme_regions.hpp` | Common self-similar sheath/ejecta boundaries and C1 blending. |
+| `swcme_acceleration.hpp` | Exclusive source-surface versus resolved-compression representation. |
+| `swcme_sep_source.hpp` | Transport-facing source spectrum and stable serialization. |
+| `swcme_sep_interface.hpp` | 1-D/3-D adapters intended for AMPS or another SEP solver. |
+| `swcme_config.hpp`, `swcme_status.hpp` | Configuration diagnostics and checked-operation statuses. |
+| `swcme_output.hpp` | Checked, transactional text-file output. |
+| `swcme_defaults.hpp` | Shared defaults and declared model-scope conventions. |
+
+The 1-D and 3-D wrappers deliberately share the dimensionality-independent
+physics. Equivalent radial and Cartesian configurations therefore use the same
+unit conversion, density normalization, Parker normalization, thermodynamic
+closure, apex kinematics, region rules, acceleration record, and MHD shock
+solver.
+
+## Build and quick start
+
+There is no required external numerical library. A C++17 compiler is sufficient.
+The 1-D model is header-only; the 3-D model must link `swcme3d.cpp`.
+
+```sh
+# Header-only 1-D demonstration
+g++ -std=c++17 -O3 -Wall -Wextra -Wpedantic demo1d.cpp -o demo1d
+
+# 3-D demonstrations
+g++ -std=c++17 -O3 -Wall -Wextra -Wpedantic \
+    demo3d_1.cpp swcme3d.cpp -o demo3d_1
+g++ -std=c++17 -O3 -Wall -Wextra -Wpedantic \
+    demo3d_2.cpp swcme3d.cpp -o demo3d_2
+```
+
+The shortest checked 3-D query is:
+
+```cpp
+#include "swcme3d.hpp"
+
+#include <array>
+#include <iostream>
+
+int main() {
+  swcme3d::Params params;
+  swcme3d::Model model(params);
+
+  const auto validation = model.validate();
+  if (!validation.ok()) {
+    std::cerr << validation.summary("SWCME configuration") << '\n';
+    return 1;
+  }
+
+  const auto step = model.prepare_step(6.0 * 3600.0);
+  const std::array<double, 3> position{{swcme3d::AU, 0.0, 0.0}};
+  double n, vx, vy, vz, bx, by, bz, div_v;
+  const auto status = model.evaluate_cartesian_with_B_div_checked(
+      step, &position[0], &position[1], &position[2],
+      &n, &vx, &vy, &vz, &bx, &by, &bz, &div_v, 1);
+  if (!status.ok()) {
+    std::cerr << status.summary() << '\n';
+    return 2;
+  }
+
+  std::cout << "n=" << n << " m^-3, Bx=" << bx
+            << " T, div(V)=" << div_v << " s^-1\n";
+}
+```
+
+Compile it with `swcme3d.cpp` as shown above. `prepare_step()` may throw for an
+invalid configuration, non-finite time, out-of-domain trajectory, or failed
+shock solve; production callers should catch `std::exception` at their model
+update boundary.
+
+## Physical model
+
+### Coordinates, time, and units
+
+The Sun is at the Cartesian origin. The configured CME direction is normalized
+to the local apex basis vector `e1`; `e2` and `e3` form the transverse basis.
+The 3-D Parker azimuthal direction is defined from the configured solar rotation
+axis. The declared frame name in configuration manifests is
+`HCI_like_inertial`; SWCME does not perform SPICE ephemeris or coordinate-frame
+transformations.
+
+Public configuration fields use convenient heliophysics units, whereas query
+coordinates and returned physics use SI:
+
+| Quantity | Configuration input | Evaluation/output |
+| --- | --- | --- |
+| Radius/distance | `r0_Rs`, `*_AU_at1AU`, `parker_source_radius_Rs` | m |
+| Time | s | s |
+| Speed | km/s fields (`*_kms`) | m/s |
+| Number density | `n1AU_cm3` in cm^-3 | m^-3 |
+| Magnetic field | `B1AU_nT` in nT | T |
+| Temperature | K | K |
+| Pressure | derived | Pa |
+| Divergence | derived | s^-1 |
+| Angles | rad | rad |
+
+The analytical background domain is `r >= 1.05 R_sun`. This is a hard domain
+boundary, not a clipping radius. Checked evaluators return
+`OUTSIDE_MODEL_DOMAIN` for smaller radii.
+
+### Ambient density: normalized Leblanc profile
+
+For heliocentric radius `R = r/R_sun`, the unscaled Leblanc, Dulk, and Bougeret
+electron-density profile is
+
+```text
+n_L(R) = 3.3e5 R^-2 + 4.1e6 R^-4 + 8.0e7 R^-6  [cm^-3].
+```
+
+SWCME multiplies all three terms by one common factor so the profile equals
+`Params::n1AU_cm3` exactly at 1 AU. The prepared hot-loop form is
+
+```text
+n(r) = C2/r^2 + C4/r^4 + C6/r^6  [m^-3].
+```
+
+The `R^-6` and `R^-4` terms dominate closer to the Sun, while the `R^-2` term
+gives the asymptotic solar-wind behavior. The profile is an ambient model; it is
+not an event-specific density reconstruction.
+
+### Composition, pressure, and sound speed
+
+`ThermodynamicClosure::ProtonOnly` is the compatibility default. It treats the
+Leblanc value as the proton density and uses
+
+```text
+rho = m_p n,
+P   = n k_B T_p,
+c_s = sqrt(gamma P/rho).
+```
+
+`ThermodynamicClosure::MultiSpecies` interprets the Leblanc value as electron
+density. With `f_alpha = n_alpha/n_proton`, charge neutrality gives
+
+```text
+n_proton = n_e/(1 + 2 f_alpha),
+n_alpha  = f_alpha n_proton,
+rho      = m_p n_proton + m_alpha n_alpha,
+P        = k_B(n_proton T_p + n_e T_e + n_alpha T_alpha),
+c_s      = sqrt(gamma P/rho).
+```
+
+This closure is used consistently by background adapters and the upstream MHD
+shock state. `BackgroundState::density_m3` remains the model's Leblanc number
+density; inspect the documented closure when converting it to species moments.
+
+### Parker magnetic field
+
+`B1AU_nT` is a nonnegative total field magnitude at 1 AU and at the reference
+latitude `sin_theta`. Magnetic polarity is controlled separately by
+`parker_radial_polarity`, which must be `+1` or `-1`. The radial normalization is
+
+```text
+Br(1 AU) = polarity * B1AU /
+           sqrt(1 + [Omega (1 AU - r_b) sin(theta_ref)/V_sw]^2),
+```
+
+where `r_b` is `parker_source_radius_Rs`. At any supported position,
+
+```text
+Br(r)   = Br(1 AU) (1 AU/r)^2,
+Bphi(r) = -Br(r) Omega (r-r_b) sin(theta)/V_sw,
+|B|     = sqrt(Br^2 + Bphi^2).
+```
+
+In 3-D, `sin(theta)` is calculated locally as
+`|Omega_hat x e_r|`, and `e_phi` is parallel to `Omega_hat x e_r`. At a rotation
+pole, the azimuthal field vanishes continuously and the field is purely radial.
+The legacy 3-D `sin_theta` parameter affects only the 1-AU normalization; it does
+not impose one winding angle throughout space.
+
+The same field definition supplies analytical field-line points, arc length,
+and focusing. For constant colatitude, define `k = Omega sin(theta)/V_sw` and
+`x = r-r_b`. Then `ds/dr = sqrt(1+k^2 x^2)`. The implementation integrates this
+expression analytically and evaluates
+
+```text
+L_B = -1/(d ln|B|/ds)
+    = r [1+(kx)^2]^(3/2) /
+      {2[1+(kx)^2] - k^2 r x}.
+```
+
+For `Omega -> 0`, path length becomes the radial separation and `L_B -> r/2`.
+
+### CME and shock-apex kinematics
+
+All dimensional models use `swcme::kinematics` and support:
+
+- `Mode::Ballistic`: `R(t)=R0+V0 t`, `V(t)=V0`.
+- `Mode::DBM`: a constant-background drag-based model.
+- `Mode::DataDriven`: monotone PCHIP through a supplied height-time table.
+
+For DBM, let `DeltaV0=V0-Vsw` and `a=|DeltaV0|`. The solution is
+
+```text
+DeltaV(t) = DeltaV0/[1 + Gamma a t],
+V(t)      = Vsw + DeltaV(t),
+R(t)      = R0 + Vsw t
+            + sign(DeltaV0) log(1 + Gamma a t)/Gamma.
+```
+
+The sign-aware form decelerates fast CMEs and accelerates slow CMEs toward the
+ambient wind. `Gamma=0` uses the exact ballistic limit. Negative times are
+allowed only while the resulting trajectory remains finite, outward-moving,
+and above the model's radial boundary.
+
+Data-driven time knots must be finite and strictly increasing; radius knots
+must be finite, nondecreasing, and at least `1.05 R_sun`. PCHIP preserves those
+knots and returns the derivative of the same interpolant as the apex speed.
+The default `OutsideTime` policy rejects extrapolation. Selecting `Ballistic`
+explicitly continues from an endpoint with that endpoint's PCHIP derivative.
+
+### Three-dimensional front geometry
+
+`swcme3d::ShockShape` provides:
+
+| Shape | Meaning |
+| --- | --- |
+| `Sphere` | Sun-centered sphere, mainly for verification and 1-D/3-D reduction studies. |
+| `Ellipsoid` | Sun-centered self-similar ellipsoid with transverse-to-apex ratios `axis_ratio_y` and `axis_ratio_z`. |
+| `SSE` | Finite self-similar-expansion spherical cap; the default science geometry. |
+
+`ConeSSE` is a source-compatible alias of `SSE`. The deprecated
+`flank_slowdown_m` input is ignored by corrected SSE physics.
+
+For SSE apex distance `R_apex` and half width `lambda`, the generating sphere
+has center distance and radius
+
+```text
+c = R_apex/[1 + sin(lambda)],
+a = c sin(lambda).
+```
+
+A ray separated from the CME axis by `alpha` intersects the outward cap at
+
+```text
+R(alpha) = c cos(alpha) + sqrt[a^2 - c^2 sin^2(alpha)]
+```
+
+only when `alpha <= lambda`. The surface normal is
+
+```text
+n_hat = [R e_r - c e_CME]/a.
+```
+
+For every self-similar shape, the local normal speed is derived from geometry:
+
+```text
+V_sh,n = V_apex (R/R_apex) (e_r dot n_hat).
+```
+
+Thus flank position, normal, and speed are mutually consistent; an independent
+empirical flank-speed factor is not applied.
+
+### Fast-shock classification and Rankine-Hugoniot state
+
+At each physical front point SWCME samples the upstream Parker/Leblanc state at
+the surface itself and transforms to the shock-normal frame. A geometric front
+is a physical fast shock only when its upstream relative normal speed exceeds
+the local oblique fast-mode speed. Surface existence and shock existence are
+therefore separate flags.
+
+`swcme_shock.hpp` solves the ideal-MHD Rankine-Hugoniot system for the
+evolutionary fast-shock branch. The scalar compression solve reconstructs the
+complete downstream density, pressure, velocity vector, and magnetic-field
+vector while enforcing:
+
+- mass-flux conservation;
+- continuity of normal magnetic field;
+- continuity of tangential electric field;
+- normal and tangential momentum-flux conservation; and
+- total-energy-flux conservation.
+
+An accepted solution must be compressive, have positive downstream density and
+pressure, increase the entropy proxy, satisfy the fast-shock characteristic
+ordering, and meet stored normalized residual tolerances. If the disturbance is
+sub-fast, the returned downstream state equals the upstream state and
+`compression=1`. An unresolved super-fast state is a numerical failure, not a
+silent no-shock result.
+
+`swcme3d::LocalShockState` exposes the surface radius and normal, normal shock
+speed, `theta_Bn`, fast speed and Mach number, compression, full upstream and
+downstream primitive states, conservation residuals, and entropy ratio.
+
+### Sheath and ejecta regions
+
+The default `ShockOnly` region mode returns the analytical Parker/Leblanc
+background everywhere. The front remains available for geometry, shock,
+connectivity, and source calculations, but it is not inserted as a compression
+in the transport field.
+
+`FullICME` adds a phenomenological downstream sheath and ejecta. Public widths
+specified as AU at a 1-AU front are interpreted as self-similar fractions. For
+the local front radius `R_sh(u)`,
+
+```text
+R_LE = [1-f_sheath] R_sh,
+R_TE = [1-f_sheath-f_ejecta] R_sh.
+```
+
+The physical RH downstream state anchors the inner side of the resolved shock
+transition. The sheath relaxes toward an ambient leading-edge target; the
+ejecta uses `n_ME=f_ME*n_up` and `V_ME=V_ME_factor*V_sw`. Symmetric cubic
+smoothsteps provide C1 shock, leading-edge, and trailing-edge transitions.
+Widths that overlap or consume their containing layers are rejected rather
+than silently clipped.
+
+The FULL_ICME magnetic field is a reduced model: tangential field is amplified
+in the sheath and relaxes inward, but the ejecta does not contain a fitted flux
+rope. Use this mode for controlled diagnostics, not as a substitute for a
+global MHD ICME solution.
+
+### Velocity divergence
+
+In `ShockOnly`, the canonical radial constant-speed result is exact:
+
+```text
+div(V) = 2 V_sw/r.
+```
+
+In `FullICME`, velocity can be non-radial and angle-dependent. The canonical
+3-D evaluator therefore computes the complete Cartesian trace
+`dVx/dx+dVy/dy+dVz/dz` with centered second-order differences. The optional
+`dr_frac` controls the numerical displacement relative to radius and is checked
+against the model domain. `compute_divV_cartesian_checked()` exposes the same
+full-vector operator for convergence studies even in `ShockOnly`.
+
+### Acceleration representation and source spectrum
+
+SWCME prevents double counting by allowing exactly one representation:
+
+- `Source` requires `ShockOnly`. The shock is an explicit injection surface and
+  is absent from the transport-field compression.
+- `ResolvedCompression` requires `FullICME` and a positive shock smoothing
+  width. Adiabatic compression appears in the resolved flow; explicit source
+  weights and DSA slopes are disabled.
+
+For an active source with compression `r_c`, the test-particle DSA phase-space
+slope is
+
+```text
+f(p) proportional to p^-q,   q = 3 r_c/(r_c-1).
+```
+
+For isotropic differential directional intensity, the implemented relativistic
+shape is
+
+```text
+J(E)/J(E_ref) = [p(E)/p(E_ref)]^(2-q),
+p c = sqrt[K(K+2mc^2)].
+```
+
+`RelativeOnly` normalization carries a dimensionless area weight and makes no
+claim about absolute injection. `ReferenceDifferentialIntensity` requires a
+positive `J(E_ref)` in `particles m^-2 s^-1 sr^-1 J^-1`.
+
+### Parker-line connectivity
+
+The 3-D connectivity solver traces the analytical Parker line from an observer
+inward and intersects it with the same finite front used by the shock solver.
+It returns every refined intersection in increasing radial order and selects
+the outermost root—the first surface encountered when tracing inward—as the
+default cobpoint. Each root contains Cartesian position, surface residual,
+Parker arc length to the observer, and the complete local shock state.
+
+`Disconnected` means a completed physical search found no root.
+`ResolutionLimit` means the phase/radial resolution needed for the request
+would exceed `CONNECTIVITY_SCAN_INTERVAL_BUDGET`; it must not be counted as a
+physical nonconnection. Invalid observer coordinates and invalid solver options
+are reported separately.
+
+## Configuration
+
+`swcme_defaults.hpp` is the common source for 1-D and 3-D defaults. Important
+shared fields are:
+
+| `Params` field | Meaning and input units | Default |
+| --- | --- | ---: |
+| `V_sw_kms` | Radial ambient solar-wind speed [km/s] | 400 |
+| `n1AU_cm3` | Leblanc normalization at 1 AU [cm^-3] | 5 |
+| `B1AU_nT` | Total Parker magnitude at the reference latitude [nT] | 5 |
+| `T_K` | Proton temperature [K] | 1.2e5 |
+| `gamma_ad` | Adiabatic index | 5/3 |
+| `thermodynamic_closure` | `ProtonOnly` or `MultiSpecies` | `ProtonOnly` |
+| `alpha_to_proton_ratio` | `n_alpha/n_proton` for multi-species closure | 0 |
+| `electron_T_K`, `alpha_T_K` | Species temperatures [K] | 1.2e5 |
+| `parker_radial_polarity` | Signed radial polarity, exactly `+1` or `-1` | +1 |
+| `sin_theta` | 1-D ray colatitude sine; 3-D reference normalization sine | 1 |
+| `parker_source_radius_Rs` | Parker corotation/source radius [R_sun] | 0 |
+| `kinematics_mode` | `Ballistic`, `DBM`, or `DataDriven` | `DBM` |
+| `r0_Rs` | Kinematic reference/handoff radius [R_sun] | 20 |
+| `V0_sh_kms` | Reference apex speed [km/s] | 1500 |
+| `Gamma_kmInv` | DBM drag coefficient [km^-1] | 1e-7 |
+| `data_time_s`, `data_radius_Rs` | Data-driven height-time knots [s], [R_sun] | empty |
+| `data_extrapolation` | Outside-table policy | `OutsideTime` |
+| `region_mode` | `ShockOnly` or `FullICME` | `ShockOnly` |
+| `shock_acceleration_mode` | `Source` or `ResolvedCompression` | `Source` |
+| `relative_source_weight_per_area` | Dimensionless source control | 1 |
+| `sheath_thick_AU_at1AU` | Self-similar sheath fraction | 0.10 |
+| `ejecta_thick_AU_at1AU` | Self-similar ejecta fraction | 0.20 |
+| `edge_smooth_shock_AU_at1AU` | Shock transition fraction | 0.01 |
+| `edge_smooth_le_AU_at1AU` | Sheath/ejecta transition fraction | 0.02 |
+| `edge_smooth_te_AU_at1AU` | Ejecta/ambient transition fraction | 0.03 |
+| `V_sheath_LE_factor` | Leading-edge speed divided by `V_sw` | 1.10 |
+| `V_ME_factor` | Ejecta speed divided by `V_sw` | 0.80 |
+| `f_ME` | Ejecta density divided by ambient density | 0.50 |
+| `sheath_ramp_power` | Sheath profile shaping exponent | 2 |
+
+The 3-D pack additionally contains `shape`, `axis_ratio_y`, `axis_ratio_z`,
+`half_width_rad`, `cme_dir[3]`, `solar_rotation_axis[3]`, and
+`solar_rotation_rate_rad_s`. `flank_slowdown_m` and `sheath_comp_floor` are
+retained for source compatibility but do not set corrected SSE speed or
+physical shock compression.
+
+Configuration validation is side-effect free:
+
+```cpp
+swcme3d::Params params;
+params.cme_dir[0] = 0.0;
+params.cme_dir[1] = 1.0;
+params.cme_dir[2] = 0.0;
+
+swcme3d::Model model(params);
+const auto validation = model.validate();
+if (!validation.ok()) {
+  throw std::invalid_argument(validation.summary("event configuration"));
+}
+```
+
+`resolved_configuration_manifest(params)` emits a deterministic, complete
+key/value record, including inactive compatibility fields and data-driven
+tables. Archive this string with every scientific run rather than recording
+only fields that happened to be active.
+
+## API lifecycle and error handling
+
+### Prepared-state lifecycle
+
+`StepState` is an immutable-by-contract snapshot. The first successful
+`prepare_step()` freezes its owning model configuration. A prepared state
+contains:
+
+- a process-local model identity;
+- a deterministic complete configuration digest;
+- an integrity seal over all canonical caches and public compatibility mirrors;
+- common solar-wind and apex-kinematic state; and
+- dimensional geometry, region, shock, and field caches.
+
+Passing a state to a different model returns `STATE_MODEL_MISMATCH`, even when
+both models have equal parameters. Corrupting a public compatibility member is
+detected as `STALE_PREPARED_STATE`. Use a new model for a changed configuration:
+
+```cpp
+swcme1d::Model original;
+const auto old_step = original.prepare_step(0.0);
+
+swcme1d::Params changed = original.GetParams();
+changed.V_sw_kms = 500.0;
+auto replacement = original.reconfigured(changed);
+const auto new_step = replacement.prepare_step(0.0);
+```
+
+The original model and state remain unchanged. A model move transfers its
+logical identity, so already prepared states remain usable with the moved-to
+object. A copy creates a new owner and does not accept the source object's
+states.
+
+### Checked versus compatibility APIs
+
+New integrations should use methods ending in `_checked`. They return
+`swcme::ModelStatus`, preserve detailed diagnostics, and never replace invalid
+physics with zeros or ambient values. Compatibility wrappers return `void`,
+`bool`, or a value and throw `std::runtime_error` for numerical failures.
+
+```cpp
+const swcme::ModelStatus status = /* checked call */;
+if (status.failure()) {
+  std::cerr << status.summary() << '\n';
+  return;
+}
+if (status.no_surface()) {
+  // Valid finite-geometry result: this direction has no front.
+}
+```
+
+`OK`, `NO_SURFACE`, `NO_CONNECTION`, and `SOURCE_INACTIVE` are nonfatal result
+classes. Other codes identify configuration, pointer, finite-value, domain,
+geometry, shock-solver, mesh, state-provenance, resolution, or file-I/O failures.
+`summary()` includes the failing sample, offending value, owner/configuration
+digests, integrity values, or byte offset whenever relevant.
+
+## 1-D API
+
+Include `swcme1d.hpp`. The model is header-only.
+
+| API | Purpose |
+| --- | --- |
+| `Model(params)` | Construct from a complete parameter pack. |
+| `validate()` | Return all configuration issues without preparing physics. |
+| `prepare_step(t_s)` | Build and seal a per-time state. |
+| `evaluate_radii_fast_checked(...)` | Batch density and radial speed. |
+| `evaluate_radii_with_B_div_checked(...)` | Batch density, speed, `Br`, `Bphi`, `|B|`, and `div(V)`. |
+| `shock_acceleration_state_checked(...)` | Obtain the explicit source/resolved-compression record at the radial front. |
+| `observer_scope_status(...)` | Test observer-local validity of the declared model scope. |
+| `write_tecplot_radial_profile_checked(...)` | Transactionally write a supplied radial profile. |
+| `write_tecplot_radial_profile_from_r(...)` | Legacy `bool` convenience wrapper that evaluates and writes a radial grid. |
+| `write_tecplot_shock_vs_time_checked(...)` | Write shock kinematics through time. |
+
+The retained fluent setters are setup-only. They throw `std::logic_error` after
+successful preparation. `MutableParams()` is intentionally deleted because a
+retained reference could bypass the freeze.
+
+## 3-D API
+
+Include `swcme3d.hpp` and link `swcme3d.cpp`.
+
+| API | Purpose |
+| --- | --- |
+| `prepare_step(t_s)` | Build and seal the time-dependent 3-D state. |
+| `shape_radius_normal(...)` | Surface radius and outward normal along a unit direction. |
+| `shock_state_direction_checked(...)` | Complete local MHD shock state at a front direction. |
+| `shock_acceleration_state_checked(...)` | Canonical acceleration record for that direction. |
+| `evaluate_cartesian_fast_checked(...)` | Batch density and velocity. |
+| `evaluate_cartesian_with_B_checked(...)` | Batch density, velocity, and magnetic field. |
+| `evaluate_cartesian_with_B_div_checked(...)` | Batch density, velocity, field, and divergence. |
+| `compute_divV_checked(...)` | Mode-aware canonical divergence. |
+| `compute_divV_cartesian_checked(...)` | Full numerical Cartesian divergence. |
+| `parker_field_line_point(...)` | Cartesian point on an observer-anchored Parker line. |
+| `parker_field_line_length(...)` | Analytical arc length between two radii. |
+| `observer_connectivity(...)` | All front intersections and selected cobpoint. |
+| `observer_connectivity_history(...)` | Independent connectivity calculation at each requested time. |
+| `build_shock_mesh(...)` | Unique-node triangular surface mesh. |
+| `compute_triangle_metrics(...)` | Cell areas, normals, centroids, and mean shock values. |
+| `build_area_sampling_table(...)` | CDF for unbiased area-weighted cell selection. |
+| `sample_triangle_by_area(...)` | Deterministically map a supplied U[0,1) variate to a cell. |
+| `default_apex_box(...)` | Construct a validated apex-centered sampling box. |
+| `write_tecplot_*_checked(...)` | Transactional surface, box-face, or combined products. |
+
+Array evaluators use structure-of-arrays inputs and outputs. Arrays must contain
+at least `N` elements and may not be null when `N>0`. Callers should provide
+distinct input and output storage; overlapping arrays are not part of the API
+contract. The first invalid sample is returned in `ModelStatus::sample_index`.
+
+## SEP and AMPS-facing API
+
+Include `swcme_sep_interface.hpp`. `Interface1D` and `Interface3D` own their
+models and expose the same update/query pattern:
+
+```cpp
+swcme::sep::Interface3D interface(params, spectrum);
+const auto step = interface.prepare(time_s);       // field-update cadence
+
+swcme::sep::BackgroundState background;
+const auto status = interface.evaluate_background(step, position_m, background);
+```
+
+`BackgroundState` contains position, number density, closure pressure, velocity,
+magnetic vector and magnitude, velocity divergence, focusing length, and
+prepared-state provenance. Every physical quantity is SI.
+
+The source API provides:
+
+- `Interface1D::source_at_shock()` for the radial front;
+- `Interface3D::source_at_direction()` for one front direction;
+- `Interface3D::build_shock_surface_source()` for one record per triangle; and
+- `Interface3D::source_at_observer_cobpoint()` for an observer-connected source
+  and optional full connectivity record.
+
+`SourceSurface` retains all patches, including inactive or sub-fast patches.
+Area fractions are normalized over active physical-shock cells only.
+`SEPSourceState` includes source and connection flags, geometry, compression,
+obliquity, Mach number, upstream quantities, pressure, focusing/path length,
+DSA indices, spectrum configuration, and relative area weights.
+
+Use `relative_intensity_shape()` for a normalized spectrum or
+`differential_intensity_SI()` only when physical reference normalization was
+configured. `source_csv_header()` and `serialize_source_csv()` define a stable
+machine-readable handoff record. `Interface*::resolved_manifest()` concatenates
+the model and spectrum configuration records.
+
+## Use examples
+
+### Example 1: batch 1-D background sampling
+
+```cpp
+#include "swcme1d.hpp"
+
+#include <array>
+#include <iostream>
+
+int main() {
+  swcme1d::Params params;
+  swcme1d::Model model(params);
+  const auto step = model.prepare_step(12.0 * 3600.0);
+
+  const std::array<double, 3> r{{
+      0.10 * swcme1d::AU, 0.50 * swcme1d::AU, swcme1d::AU}};
+  std::array<double, 3> n{}, v{}, br{}, bphi{}, bmag{}, div_v{};
+  const auto status = model.evaluate_radii_with_B_div_checked(
+      step, r.data(), n.data(), v.data(), br.data(), bphi.data(),
+      bmag.data(), div_v.data(), r.size());
+  if (!status.ok()) {
+    std::cerr << status.summary() << '\n';
+    return 1;
+  }
+
+  for (std::size_t i = 0; i < r.size(); ++i) {
+    std::cout << r[i] / swcme1d::AU << ',' << n[i] << ',' << v[i]
+              << ',' << br[i] << ',' << bphi[i] << ',' << div_v[i] << '\n';
+  }
+}
+```
+
+### Example 2: data-driven apex motion
+
+```cpp
+swcme3d::Params params;
+params.kinematics_mode = swcme::kinematics::Mode::DataDriven;
+params.data_time_s = {0.0, 1800.0, 3600.0, 7200.0};
+params.data_radius_Rs = {20.0, 23.0, 27.5, 38.0};
+params.data_extrapolation =
+    swcme::kinematics::ExtrapolationPolicy::OutsideTime;
+
+swcme3d::Model model(params);
+const auto step = model.prepare_step(2700.0);  // inside the supplied table
+std::cout << step.r_sh_m / swcme3d::Rs << ' '
+          << step.V_sh_ms / 1000.0 << '\n';
+```
+
+Do not query outside the table unless ballistic continuation is an explicit and
+recorded scientific assumption.
+
+### Example 3: complete local 3-D shock state
+
+```cpp
+swcme3d::Params params;
+params.shape = swcme3d::ShockShape::SSE;
+params.half_width_rad = 40.0 * swcme3d::PI / 180.0;
+params.cme_dir[0] = 1.0;
+params.cme_dir[1] = 0.0;
+params.cme_dir[2] = 0.0;
+
+swcme3d::Model model(params);
+const auto step = model.prepare_step(6.0 * 3600.0);
+const double direction[3] = {1.0, 0.0, 0.0};
+swcme3d::LocalShockState shock;
+const auto status = model.shock_state_direction_checked(step, direction, shock);
+
+if (status.no_surface()) {
+  std::cout << "direction is outside the finite front\n";
+} else if (!status.ok()) {
+  std::cerr << status.summary() << '\n';
+} else if (!shock.has_shock) {
+  std::cout << "front exists but is not locally super-fast\n";
+} else {
+  std::cout << "M_fast=" << shock.fast_mach
+            << " compression=" << shock.compression
+            << " theta_Bn=" << shock.theta_Bn_rad << '\n';
+}
+```
+
+### Example 4: observer connectivity and cobpoint
+
+```cpp
+const std::array<double, 3> observer{{swcme3d::AU, 0.0, 0.0}};
+swcme3d::ConnectivityOptions options;
+options.inner_radius_m = 20.0 * swcme3d::Rs;
+options.scan_intervals = 2048;
+
+const auto connection =
+    model.observer_connectivity(step, observer.data(), options);
+if (connection.status == swcme3d::ConnectivityStatus::ResolutionLimit) {
+  std::cerr << "requested connectivity resolution exceeds the work budget\n";
+} else if (!connection.connected) {
+  std::cout << "no physical Parker-line/front intersection\n";
+} else {
+  const auto& root = connection.roots.at(connection.selected_root);
+  std::cout << "cobpoint radius [AU]=" << root.radius_m / swcme3d::AU
+            << " path [AU]=" << root.path_length_m / swcme3d::AU
+            << " M_fast=" << root.shock.fast_mach << '\n';
+}
+```
+
+The snippet assumes `model` and `step` are from Example 3. A disconnected
+result is scientifically distinct from an invalid request or resolution limit.
+
+### Example 5: AMPS-facing background and source surface
+
+```cpp
+#include "swcme_sep_interface.hpp"
+
+#include <array>
+#include <iostream>
+
+int main() {
+  swcme3d::Params params;
+  params.shape = swcme3d::ShockShape::SSE;
+
+  swcme::sep::SpectrumConfig spectrum;
+  spectrum.kinetic_energy_min_MeV = 1.0;
+  spectrum.kinetic_energy_max_MeV = 1000.0;
+  spectrum.reference_energy_MeV = 10.0;
+  spectrum.normalization = swcme::sep::NormalizationMode::RelativeOnly;
+
+  swcme::sep::Interface3D interface(params, spectrum);
+  const auto step = interface.prepare(6.0 * 3600.0);
+
+  swcme::sep::BackgroundState background;
+  const std::array<double, 3> observer{{swcme3d::AU, 0.0, 0.0}};
+  auto status = interface.evaluate_background(step, observer, background);
+  if (!status.ok()) {
+    std::cerr << status.summary() << '\n';
+    return 1;
+  }
+
+  swcme::sep::SourceSurface surface;
+  status = interface.build_shock_surface_source(step, 24, 48, surface);
+  if (!status.ok()) {
+    std::cerr << status.summary() << '\n';
+    return 2;
+  }
+
+  std::cout << "patches=" << surface.patch_count
+            << " active=" << surface.active_patch_count
+            << " B=" << background.magnetic_magnitude_T << " T\n";
+}
+```
+
+For a calibrated source, set
+`NormalizationMode::ReferenceDifferentialIntensity` and provide
+`reference_differential_intensity_SI`. Do not assign physical units to a
+`RelativeOnly` source.
+
+### Example 6: phenomenological FULL_ICME mode
+
+```cpp
+swcme3d::Params params;
+params.region_mode = swcme::regions::Mode::FullICME;
+params.shock_acceleration_mode =
+    swcme::acceleration::Mode::ResolvedCompression;
+params.edge_smooth_shock_AU_at1AU = 0.01;  // positive and within sheath limit
+
+swcme3d::Model model(params);
+const auto validation = model.validate();
+if (!validation.ok()) {
+  throw std::invalid_argument(validation.summary("FULL_ICME"));
+}
+```
+
+This pairing is mandatory. `Source + FullICME` and
+`ResolvedCompression + ShockOnly` are rejected to prevent duplicate or missing
+shock acceleration.
+
+### Example 7: mesh, area sampling, and transactional Tecplot output
+
+```cpp
+const auto mesh = model.build_shock_mesh(step, 24, 48);
+swcme3d::TriMetrics metrics;
+model.compute_triangle_metrics(mesh, metrics);
+
+const auto area_table = model.build_area_sampling_table(metrics);
+const std::size_t cell = model.sample_triangle_by_area(area_table, 0.25);
+std::cout << "sampled triangle=" << cell << '\n';
+
+const auto box = model.default_apex_box(step, 0.02, 12);
+const auto status = model.write_tecplot_dataset_bundle_checked(
+    mesh, metrics, step, box, "swcme_snapshot.dat");
+if (!status.ok()) {
+  std::cerr << status.summary() << '\n';
+}
+```
+
+The supplied variate must be in `[0,1)`. SWCME intentionally does not own a
+random-number generator, leaving reproducibility and stream partitioning to the
+calling application.
+
+## Output products
+
+The checked writers validate the prepared state, arrays, domain, box, mesh, and
+metrics before opening a file. They write a temporary file beside the requested
+destination, verify formatted writes, flush, stream state, and close, then
+atomically rename the completed product. A failed write or commit leaves an
+existing destination unchanged and removes the staging file.
+
+The 3-D bundle contains four Tecplot zones:
+
+1. `surface_cells`: FETRIANGLE/BLOCK surface with cell metrics;
+2. `surface_nodal`: FEPOINT surface diagnostics;
+3. `volume_box`: structured point sampling of the requested box; and
+4. `box_face_minX`: structured minimum-X face.
+
+The shared 25-variable order includes coordinates; density; velocity; magnetic
+field; `div(V)`; shock compression and normal speed; normals; area; cell means;
+reserved tension direction; and centroids. Names include units. Surface-only
+quantities are zero in volume zones by documented schema, not as a numerical
+fallback.
+
+`demo1d.cpp`, `demo3d_1.cpp`, and `demo3d_2.cpp` show the complete output APIs.
+The validation suite independently parses every declared CSV and Tecplot
+product rather than trusting writer internals.
+
+## Concurrency, ownership, and performance
+
+After setup and successful preparation, one model and one prepared state may be
+shared read-only by multiple threads. Each call must use distinct destination
+objects or arrays. Do not concurrently mutate configuration, prepare new states,
+or write the same file path.
+
+Hot batch evaluators validate the state once and then execute allocation-free
+per-sample kernels. `Interface1D::evaluate_background()` and
+`Interface3D::evaluate_background()` use stack storage for a single-point
+query. Mesh construction, connectivity histories, source-surface generation,
+manifest serialization, and file output are update/diagnostic operations and
+may allocate.
+
+Keep the preparing model alive when consuming a state. The state owns its cache
+values and can survive relocation, but a separately constructed equal model has
+a different identity and correctly rejects it. Model and adapter moves preserve
+the logical owner identity; copies do not.
+
+## Model limitations
+
+- The ambient wind is radial with a prescribed constant speed; SWCME does not
+  solve global MHD or ingest a time-dependent coronal boundary.
+- Leblanc density and Parker magnetic field are analytical background models,
+  not event-specific plasma reconstructions.
+- DBM uses a constant ambient speed and constant drag parameter. Interacting
+  CMEs or structured solar wind generally require data-driven kinematics or a
+  separate heliospheric model.
+- SSE and ellipsoid fronts are idealized, self-similar geometries. They do not
+  model deformation by structured wind unless parameters are externally fit.
+- The ideal-MHD jump is local and planar. Kinetic dissipation, wave generation,
+  shock rippling, and injection efficiency are outside the jump solver.
+- `FullICME` is phenomenological and has no flux-rope magnetic-ejecta model.
+- The DSA spectrum supplies a slope and optional reference normalization; it
+  does not determine injection efficiency from first principles.
+- Parker-line connectivity excludes field-line meandering and perpendicular
+  diffusion. Those effects belong to the downstream transport solver.
+- SWCME does not propagate particles. The SEP interface supplies background and
+  source records to AMPS or another transport implementation.
+
+## Tests and demonstrations
+
+From `swcme/test`, build demonstrations and run the complete registered suite:
+
+```sh
+make -j test
+```
+
+To limit compilation concurrency, use `make -jN test`. Focused commands include:
+
+```sh
+./output/test_swcme --list
+./output/test_swcme --test CFG01
+./output/test_swcme --test CROSS01
+./output/test_swcme --test SHK05
+./output/test_swcme --test PST04
+./output/test_swcme --test SEP06
+./output/test_swcme --all
+```
+
+The suite covers configuration and units; density and Parker limits; ballistic,
+DBM, and data-driven kinematics; independent oblique MHD shocks and conservation;
+geometry, mesh, connectivity, and regions; 1-D/3-D consistency; checked and
+transactional output; prepared-state ownership and concurrency; sanitizers,
+coverage, and performance guardrails; SEP interface contracts; and synthetic
+V1-V6 campaign infrastructure. See [`test/README.md`](test/README.md) for test
+semantics, profiles, sanitizer/coverage targets, and campaign commands.
+
+## Detailed implementation and validation notes
+
+The sections below retain the model's implementation rationale, remediation
+history, and test-specific guarantees in greater detail.
+
 ## Canonical defaults and declared model scope
 
 `swcme_defaults.hpp` is the single source of truth for dimensionality-independent
