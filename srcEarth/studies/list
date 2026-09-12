@@ -6,4 +6,4 @@ srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --stage figure
 
 !calculate and plot global cutoff map 
 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_global_cutoff_maps.py --profile SMOKE --amps ./amps -np 4 -nt 16
-
+srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_global_cutoff_maps.py --profile FULL --amps ./amps -np 4 -nt 16 --postprocess-workers AUTO
