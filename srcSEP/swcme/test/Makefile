@@ -22,8 +22,8 @@ DEMO_TARGETS := output/demo1d output/demo3d_1 output/demo3d_2
 # Every validation remains in one deterministic executable. The common tests
 # use separate translation units so each physical contract has an auditable
 # implementation without introducing another executable or build system.
-SOURCES := core/test_swcme.cpp core/test_state_immutability.cpp core/test_prepared_state.cpp core/test_configuration_state.cpp core/test_state_integrity.cpp core/test_concurrent_state.cpp core/test_output.cpp core/test_output_parsing.cpp core/test_demo_execution.cpp core/test_adapter_equivalence.cpp core/test_state_lifetime.cpp core/test_state_performance.cpp core/test_performance_guardrails.cpp core/test_campaign_governance.cpp core/test_observational_layers.cpp core/test_strict_writer.cpp core/test_smoothing_policy.cpp core/test_radius_domain.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp core/test_kinematics.cpp core/test_shock.cpp core/test_reference_regeneration.cpp core/test_regions.cpp core/test_acceleration.cpp core/test_status.cpp core/test_divergence.cpp core/test_defaults.cpp core/test_sep_interface.cpp core/test_sanitizer.cpp core/test_coverage.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 3d/test_mesh.cpp 3d/test_connectivity.cpp 3d/test_shock_surface.cpp 1d/test_ambient.cpp test_1d3d.cpp
-OBJECTS := output/swcme3d.o output/test_swcme.o output/test_state_immutability.o output/test_prepared_state.o output/test_configuration_state.o output/test_state_integrity.o output/test_concurrent_state.o output/test_output.o output/test_output_parsing.o output/test_demo_execution.o output/test_adapter_equivalence.o output/test_state_lifetime.o output/test_state_performance.o output/test_performance_guardrails.o output/test_campaign_governance.o output/test_observational_layers.o output/test_strict_writer.o output/test_smoothing_policy.o output/test_radius_domain.o output/test_config.o output/test_units.o output/test_density.o output/test_kinematics.o output/test_shock.o output/test_reference_regeneration.o output/test_regions.o output/test_acceleration.o output/test_status.o output/test_divergence.o output/test_defaults.o output/test_sep_interface.o output/test_sanitizer.o output/test_coverage.o output/test_parker.o output/test_geometry.o output/test_mesh.o output/test_connectivity.o output/test_shock_surface.o output/test_ambient.o output/test_1d3d.o
+SOURCES := core/test_swcme.cpp core/test_state_immutability.cpp core/test_prepared_state.cpp core/test_configuration_state.cpp core/test_state_integrity.cpp core/test_concurrent_state.cpp core/test_output.cpp core/test_output_parsing.cpp core/test_demo_execution.cpp core/test_adapter_equivalence.cpp core/test_state_lifetime.cpp core/test_state_performance.cpp core/test_performance_guardrails.cpp core/test_campaign_governance.cpp core/test_observational_layers.cpp core/test_v6_amps_integration.cpp core/test_strict_writer.cpp core/test_smoothing_policy.cpp core/test_radius_domain.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp core/test_kinematics.cpp core/test_shock.cpp core/test_reference_regeneration.cpp core/test_regions.cpp core/test_acceleration.cpp core/test_status.cpp core/test_divergence.cpp core/test_defaults.cpp core/test_sep_interface.cpp core/test_sanitizer.cpp core/test_coverage.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 3d/test_mesh.cpp 3d/test_connectivity.cpp 3d/test_shock_surface.cpp 1d/test_ambient.cpp test_1d3d.cpp
+OBJECTS := output/swcme3d.o output/test_swcme.o output/test_state_immutability.o output/test_prepared_state.o output/test_configuration_state.o output/test_state_integrity.o output/test_concurrent_state.o output/test_output.o output/test_output_parsing.o output/test_demo_execution.o output/test_adapter_equivalence.o output/test_state_lifetime.o output/test_state_performance.o output/test_performance_guardrails.o output/test_campaign_governance.o output/test_observational_layers.o output/test_v6_amps_integration.o output/test_strict_writer.o output/test_smoothing_policy.o output/test_radius_domain.o output/test_config.o output/test_units.o output/test_density.o output/test_kinematics.o output/test_shock.o output/test_reference_regeneration.o output/test_regions.o output/test_acceleration.o output/test_status.o output/test_divergence.o output/test_defaults.o output/test_sep_interface.o output/test_sanitizer.o output/test_coverage.o output/test_parker.o output/test_geometry.o output/test_mesh.o output/test_connectivity.o output/test_shock_surface.o output/test_ambient.o output/test_1d3d.o
 
 # POSIX thread support is isolated behind one overridable variable.  PST04's
 # translation unit needs the compile flag on implementations that expose
@@ -79,7 +79,7 @@ COV01_TESTS := PST01 PST02 PST03 PST06 PST04 THR01 \
 # Campaign governance and science-layer infrastructure exercise only validation
 # code, but are included so their registered orchestration paths remain visible
 # in the same counter run as production coverage.
-COV01_TESTS += REP01 EVT01 V1 V2 V3 V4 V5
+COV01_TESTS += REP01 EVT01 V1 V2 V3 V4 V5 V6
 
 # OUT08 deliberately does not inherit CXXFLAGS: both variants must use the
 # documented CI warning policy even when a caller's normal development build
@@ -199,13 +199,18 @@ output/test_state_performance.o: core/test_state_performance.cpp core/test_frame
 output/test_performance_guardrails.o: core/test_performance_guardrails.cpp core/test_framework.hpp ../swcme_status.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_sep_interface.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(THREAD_FLAGS) -c $< -o $@
 
-# REP01/EVT01 bridge the C++ registry to the real Python manager. V1-V5 keep
+# REP01/EVT01 bridge the C++ registry to the real Python manager. V1-V6 keep
 # threshold calculations close to production model APIs while explicitly
 # identifying their bundled data as synthetic regression fixtures.
 output/test_campaign_governance.o: core/test_campaign_governance.cpp core/test_framework.hpp python/campaign_contract.py python/test_run_tests.py run_tests.py | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 output/test_observational_layers.o: core/test_observational_layers.cpp core/test_framework.hpp ../swcme3d.hpp ../swcme_kinematics.hpp ../swcme_shock.hpp | output
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+# V6 uses only the public serialized source boundary. Its test-owned transport
+# consumer isolates coupling identity/attribution from external AMPS skill.
+output/test_v6_amps_integration.o: core/test_v6_amps_integration.cpp core/test_framework.hpp ../swcme_sep_interface.hpp ../swcme_sep_source.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 # OUT08's registered runtime half exercises literal and formatted record

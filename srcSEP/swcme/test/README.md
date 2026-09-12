@@ -4,6 +4,9 @@ The validation suite is a standalone C++ executable that calls production
 SWCME interfaces. It uses the repository's existing Make-based build approach;
 no second build system or external test dependency is required.
 
+## Run tests
+make test -j 
+
 ## Directory layout
 
 ```text
@@ -3086,19 +3089,22 @@ shifts, alignment faults, or other undefined behavior.
 -fno-omit-frame-pointer`, executes `--all`, and runs each demo in an isolated
 directory. A child marker prevents only recursive SAN01 orchestration.
 
-**Expected result.** Compilation, 126 registered validations, and all demos
+**Expected result.** Compilation, 127 registered validations, and all demos
 finish with no sanitizer-origin diagnostic. Leak enumeration is explicitly
 disabled by default in ptrace/container environments; set
 `SAN01_ASAN_OPTIONS=detect_leaks=1:halt_on_error=1` on a compatible untraced
 host to add LeakSanitizer.
 
-## Priorities 50-59: execution, evidence, and observational campaign gates
+## Priorities 50-60: execution, evidence, and observational campaign gates
 
 The registered `V1`-`V5` cases use clearly labelled `SYNTHETIC_REGRESSION`
-fixtures to test calculations and acceptance logic. They are not a substitute
-for an observational data package. `EVT01` enforces that distinction: a
-`RELEASE_VALIDATION` campaign cannot pass without traceable observational
-provenance and complete evidence for every layer.
+fixtures to test calculations and acceptance logic. V6 is labelled
+`COUPLING_SMOKE_TEST` because it exercises the serialized AMPS boundary and a
+validation-owned transport consumer without claiming external AMPS science
+skill. Neither fixture class substitutes for an observational data package.
+`EVT01` enforces that distinction: a `RELEASE_VALIDATION` campaign cannot pass
+without traceable observational provenance and complete evidence for every
+V1-V6 layer.
 
 ### THR01: thread and scheduler reproducibility
 
@@ -3276,3 +3282,42 @@ stability without event-specific production tuning.
 sampling perturbation. The bundled test remains scientifically INCOMPLETE;
 release PASS requires traceable STA/STB/SOHO observations for the mandatory
 event plus at least two independent observed events and sensitivity evidence.
+
+### V6: SEP-facing AMPS integration
+
+**What is tested.** The complete, serialized SWCME SEP source record is checked
+at both standalone-to-adapter boundaries. A separately parsed source history
+then drives fixed-source and SWCME-dependent 1-D/3-D transport controls, with
+perpendicular diffusion disabled and enabled as distinct attribution cases.
+
+**Why it is tested.** The application depends on a correct SWCME-to-AMPS
+handoff. A unit shift, reordered CSV column, hidden adapter normalization, or
+uncontrolled random/numerical setting can otherwise be misdiagnosed as either
+SWCME physics or AMPS transport skill.
+
+**How it is tested.** `V6` constructs source histories directly from the 1-D
+and 3-D production models and independently through their public SEP adapters.
+It requires complete record bytes and FNV-1a regression fingerprints to match
+for each producer/adapter pair. A validation-owned parser accepts exactly the
+37-column public schema and does not share `SEPSourceState`. Parsed records must
+remain active, super-fast, monotonically propagating, and carry physical
+compression and DSA slope values. A deterministic consumer then holds the
+source normalization fixed, activates SWCME source dependence, compares 1-D
+with 3-D while perpendicular diffusion is off, and repeats 3-D with it on using
+the same `0x56365f414d50535f` seed, 600-second step, and 288-step horizon.
+
+**Expected result.** Both standalone/adapter histories are byte- and
+hash-identical; the independently parsed source history is physically
+plausible; fixed and source-dependent 1-D/3-D no-perpendicular profiles are
+identical; source activation and perpendicular diffusion each produce a
+finite, nonnegative, attributable change. The test logs
+`coupled_flux_skill=NOT_EVALUATED`: the consumer is a coupling smoke harness,
+not the external AMPS solver. A release V6 PASS must additionally archive real
+AMPS build/provenance, transport outputs, convergence and uncertainty evidence;
+it cannot repair a failed SWCME gate.
+
+Run the focused gate with:
+
+```sh
+./output/test_swcme --test V6
+```

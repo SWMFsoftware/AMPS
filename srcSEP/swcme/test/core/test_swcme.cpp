@@ -133,6 +133,7 @@ void test_v2(swcme_test::Context& context);
 void test_v3(swcme_test::Context& context);
 void test_v4(swcme_test::Context& context);
 void test_v5(swcme_test::Context& context);
+void test_v6(swcme_test::Context& context);
 
 namespace {
 
@@ -222,6 +223,7 @@ const swcme_test::TestCase kTests[] = {
     {"V3", "OBSERVATIONAL", "In-situ shock jump validation", test_v3},
     {"V4", "OBSERVATIONAL", "Shock geometry and encounter validation", test_v4},
     {"V5", "OBSERVATIONAL", "Magnetic connectivity benchmark", test_v5},
+    {"V6", "INTEGRATION", "SEP-facing AMPS integration", test_v6},
     {"GEO02", "3D", "True SSE front at the CME apex", test_geo02},
     {"GEO03", "3D", "SSE tangent-flank boundary behavior", test_geo03},
     {"GEO04", "3D", "Strict enforcement of finite SSE angular width", test_geo04},

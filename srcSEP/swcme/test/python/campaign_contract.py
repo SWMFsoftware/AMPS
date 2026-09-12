@@ -12,7 +12,7 @@ import re
 from typing import Any, Dict, List
 
 SCHEMA_VERSION = 2
-LAYER_IDS = ("V1", "V2", "V3", "V4", "V5")
+LAYER_IDS = ("V1", "V2", "V3", "V4", "V5", "V6")
 OUTCOMES = {"PASS", "FAIL", "INCOMPLETE", "NOT_APPLICABLE", "ERROR"}
 PURPOSES = {"RELEASE_VALIDATION", "SCHEMA_SELF_TEST"}
 SOURCE_KINDS = {"OBSERVATION", "SYNTHETIC_REGRESSION"}
@@ -168,7 +168,7 @@ def validate_campaign_config(config: Any) -> Dict[str, Any]:
         if observation_count == 0:
             missing.append("observational provenance for release validation")
         if "NOT_APPLICABLE" in layer_statuses:
-            missing.append("all V1-V5 layers are mandatory for release validation")
+            missing.append("all V1-V6 layers are mandatory for release validation")
         if not _nonempty_list(config.get("comparisons")):
             missing.append("at least one model/observation comparison")
 

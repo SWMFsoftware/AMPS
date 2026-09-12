@@ -989,10 +989,10 @@ and `3` = build failure.  `test/python/test_run_tests.py` regression-tests the
 profile expansion, convergence fitting, sweep engine, CSV comparison/event
 aggregation, manifest/report production, and command-error exit code.
 
-### Campaign assurance priorities 50-59
+### Campaign assurance priorities 50-60
 
 The validation registry now includes `THR01`, `COV01`, `PERF01`, `REP01`,
-`EVT01`, and `V1`-`V5`. THR01 covers deterministic 1/2/4/8-thread static and
+`EVT01`, and `V1`-`V6`. THR01 covers deterministic 1/2/4/8-thread static and
 dynamic scheduling. COV01 provides a fresh source-only GCC line/branch gate.
 PERF01 runs warmed optimized median/p95 workloads and scaling ceilings. REP01
 upgrades campaign manifests to schema v2 with a content-addressed fixture
@@ -1004,9 +1004,15 @@ The bundled V1-V5 fixtures validate metric and production-interface plumbing
 for background Parker/Leblanc behavior, apex kinematics, in-situ jumps,
 geometry/encounters, and magnetic-connectivity histories. They are explicitly
 `SYNTHETIC_REGRESSION` fixtures and log `science_release=INCOMPLETE`.
-Observational release status requires schema-v2 packages with traceable
-observations, uncertainties, convergence evidence, and all five completed
-layers. See `test/README.md` for each acceptance threshold and focused command.
+V6 adds a `COUPLING_SMOKE_TEST`: it independently parses the public source CSV,
+requires byte/hash identity from standalone production records to both AMPS
+adapters, and runs fixed/source-dependent 1-D/3-D controls with and without
+perpendicular diffusion under identical seeds. The repository does not include
+the external AMPS solver, so this gate explicitly reports coupled flux skill as
+not evaluated. Observational release status requires schema-v2 packages with
+traceable observations, uncertainties, convergence evidence, and all six
+completed layers. See `test/README.md` for each acceptance threshold and
+focused command.
 
 ## Current 3-D shock geometries
 

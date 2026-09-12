@@ -16,7 +16,8 @@
     {"id":"V2","status":"PASS","description":"Synthetic apex-kinematics pipeline exercise","evidence":[{"fixture":"analytic trajectory"}],"metrics":[{"name":"pipeline","value":1}],"uncertainties":[{"type":"synthetic","value":0}],"convergence":[{"type":"exact"}],"provenance_ids":["synthetic-example-v1"]},
     {"id":"V3","status":"PASS","description":"Synthetic shock-jump pipeline exercise","evidence":[{"fixture":"Rankine-Hugoniot state"}],"metrics":[{"name":"pipeline","value":1}],"uncertainties":[{"type":"synthetic","value":0}],"convergence":[{"type":"exact"}],"provenance_ids":["synthetic-example-v1"]},
     {"id":"V4","status":"PASS","description":"Synthetic geometry pipeline exercise","evidence":[{"fixture":"analytic hit/miss geometry"}],"metrics":[{"name":"pipeline","value":1}],"uncertainties":[{"type":"synthetic","value":0}],"convergence":[{"type":"exact"}],"provenance_ids":["synthetic-example-v1"]},
-    {"id":"V5","status":"PASS","description":"Synthetic connectivity pipeline exercise","evidence":[{"fixture":"analytic connection history"}],"metrics":[{"name":"pipeline","value":1}],"uncertainties":[{"type":"synthetic","value":0}],"convergence":[{"type":"exact"}],"provenance_ids":["synthetic-example-v1"]}
+    {"id":"V5","status":"PASS","description":"Synthetic connectivity pipeline exercise","evidence":[{"fixture":"analytic connection history"}],"metrics":[{"name":"pipeline","value":1}],"uncertainties":[{"type":"synthetic","value":0}],"convergence":[{"type":"exact"}],"provenance_ids":["synthetic-example-v1"]},
+    {"id":"V6","status":"NOT_APPLICABLE","description":"External AMPS is not part of this schema example","rationale":"The example validates orchestration only; coupled AMPS transport must be supplied by a release campaign."}
   ],
   "sweeps": [{
     "name": "apex_radius_vs_launch_speed", "parameters": {"v0_kms": [1200.0, 1500.0, 1800.0]},
