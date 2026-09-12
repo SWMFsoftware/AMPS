@@ -83,6 +83,7 @@ struct ConfigSI {
   double alpha_to_proton_ratio = 0.0;
   double electron_T_K = 0.0;
   double alpha_T_K = 0.0;
+  int parker_radial_polarity = +1;
 
   // B1AU_T is interpreted as total |B| at this documented reference latitude.
   // The 3-D local Parker winding still uses the local sin(theta); this field
@@ -107,6 +108,7 @@ struct PreparedState {
   double alpha_to_proton_ratio = 0.0;
   double electron_T_K = 0.0;
   double alpha_T_K = 0.0;
+  int parker_radial_polarity = +1;
   double solar_rotation_rate_rad_s =
       swcme::constants::SOLAR_ROTATION_RAD_S;
   double reference_sin_theta = 1.0;
@@ -158,6 +160,7 @@ inline PreparedState prepare(const ConfigSI& cfg) {
   state.alpha_to_proton_ratio = cfg.alpha_to_proton_ratio;
   state.electron_T_K = cfg.electron_T_K;
   state.alpha_T_K = cfg.alpha_T_K;
+  state.parker_radial_polarity = cfg.parker_radial_polarity;
   state.solar_rotation_rate_rad_s = cfg.solar_rotation_rate_rad_s;
   state.reference_sin_theta = cfg.reference_sin_theta;
   state.parker_source_radius_m = cfg.parker_source_radius_m;
@@ -171,7 +174,7 @@ inline PreparedState prepare(const ConfigSI& cfg) {
   const double reference_pitch = state.k_AU_equatorial *
       (1.0 - cfg.parker_source_radius_m / swcme::constants::AU_M) *
       cfg.reference_sin_theta;
-  state.Br1AU_T = cfg.B1AU_T /
+  state.Br1AU_T = static_cast<double>(cfg.parker_radial_polarity) * cfg.B1AU_T /
       std::sqrt(1.0 + reference_pitch * reference_pitch);
 
   // Normalize the Leblanc profile exactly at 1 AU.  The calculation is kept in

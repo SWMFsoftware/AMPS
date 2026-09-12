@@ -262,6 +262,7 @@ struct Params {
   double alpha_to_proton_ratio = swcme::defaults::ALPHA_TO_PROTON_RATIO;
   double electron_T_K = swcme::defaults::ELECTRON_T_K;
   double alpha_T_K = swcme::defaults::ALPHA_T_K;
+  int parker_radial_polarity = swcme::defaults::PARKER_RADIAL_POLARITY;
 
   // Region mode.  The canonical science default is SHOCK_ONLY: the
   // Parker/Leblanc background is left unchanged and the shock is used for
@@ -315,7 +316,7 @@ inline std::string resolved_configuration_manifest(const Params& p) {
       swcme::defaults::model_scope(p.region_mode, p.shock_acceleration_mode)) << '\n';
   out << "parker_normalization="
       << swcme::defaults::PARKER_NORMALIZATION_CONVENTION << '\n';
-  out << "parker_radial_polarity=" << swcme::defaults::PARKER_RADIAL_POLARITY << '\n';
+  out << "parker_radial_polarity=" << p.parker_radial_polarity << '\n';
   out << "shape=" << shock_shape_name(p.shape) << '\n';
   out << "axis_ratio_y=" << p.axis_ratio_y << '\n';
   out << "axis_ratio_z=" << p.axis_ratio_z << '\n';
@@ -378,8 +379,6 @@ inline swcme::ConfigurationDigest configuration_digest(
   digest.add_uint64(static_cast<std::uint64_t>(swcme::defaults::CONFIG_VERSION));
   digest.add_string(swcme::defaults::FRAME_NAME);
   digest.add_string(swcme::defaults::PARKER_NORMALIZATION_CONVENTION);
-  digest.add_uint64(static_cast<std::uint64_t>(
-      static_cast<std::int64_t>(swcme::defaults::PARKER_RADIAL_POLARITY)));
 
   // Hash every public Params field in declaration order, including currently
   // inactive/deprecated compatibility values.  This matches the completeness
@@ -406,6 +405,8 @@ inline swcme::ConfigurationDigest configuration_digest(
   digest.add_uint64(static_cast<std::uint64_t>(p.thermodynamic_closure));
   digest.add_double(p.alpha_to_proton_ratio);
   digest.add_double(p.electron_T_K); digest.add_double(p.alpha_T_K);
+  digest.add_uint64(static_cast<std::uint64_t>(
+      static_cast<std::int64_t>(p.parker_radial_polarity)));
   digest.add_uint64(static_cast<std::uint64_t>(p.region_mode));
   digest.add_uint64(static_cast<std::uint64_t>(p.shock_acceleration_mode));
   digest.add_double(p.relative_source_weight_per_area);
@@ -431,6 +432,7 @@ inline swcme::config::ValidationResult validate_params(const Params& p) {
   view.thermodynamic_closure=p.thermodynamic_closure;
   view.alpha_to_proton_ratio=p.alpha_to_proton_ratio;
   view.electron_T_K=p.electron_T_K; view.alpha_T_K=p.alpha_T_K;
+  view.parker_radial_polarity=p.parker_radial_polarity;
   view.sin_theta=p.sin_theta; view.kinematics_mode=p.kinematics_mode;
   view.parker_source_radius_Rs=p.parker_source_radius_Rs;
   view.r0_Rs=p.r0_Rs; view.V0_sh_kms=p.V0_sh_kms;

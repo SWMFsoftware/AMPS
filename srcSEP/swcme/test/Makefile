@@ -9,6 +9,8 @@ CXXFLAGS += -std=c++17 -Wall -Wextra -Wpedantic
 
 TARGET := output/test_swcme
 PST08_TARGET := output/test_swcme_pst08_performance
+SAN01_TARGET := output/test_swcme_san01
+SAN01_DIR := output/san01
 OUT08_DEBUG_DIR := output/out08-debug
 OUT08_OPTIMIZED_DIR := output/out08-optimized
 SEP_REFERENCE_TARGET := output/sep_reference
@@ -16,8 +18,8 @@ DEMO_TARGETS := output/demo1d output/demo3d_1 output/demo3d_2
 # Every validation remains in one deterministic executable. The common tests
 # use separate translation units so each physical contract has an auditable
 # implementation without introducing another executable or build system.
-SOURCES := core/test_swcme.cpp core/test_state_immutability.cpp core/test_prepared_state.cpp core/test_configuration_state.cpp core/test_state_integrity.cpp core/test_concurrent_state.cpp core/test_output.cpp core/test_output_parsing.cpp core/test_demo_execution.cpp core/test_adapter_equivalence.cpp core/test_state_lifetime.cpp core/test_state_performance.cpp core/test_strict_writer.cpp core/test_smoothing_policy.cpp core/test_radius_domain.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp core/test_kinematics.cpp core/test_shock.cpp core/test_reference_regeneration.cpp core/test_regions.cpp core/test_acceleration.cpp core/test_status.cpp core/test_divergence.cpp core/test_defaults.cpp core/test_sep_interface.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 3d/test_mesh.cpp 3d/test_connectivity.cpp 3d/test_shock_surface.cpp 1d/test_ambient.cpp test_1d3d.cpp
-OBJECTS := output/swcme3d.o output/test_swcme.o output/test_state_immutability.o output/test_prepared_state.o output/test_configuration_state.o output/test_state_integrity.o output/test_concurrent_state.o output/test_output.o output/test_output_parsing.o output/test_demo_execution.o output/test_adapter_equivalence.o output/test_state_lifetime.o output/test_state_performance.o output/test_strict_writer.o output/test_smoothing_policy.o output/test_radius_domain.o output/test_config.o output/test_units.o output/test_density.o output/test_kinematics.o output/test_shock.o output/test_reference_regeneration.o output/test_regions.o output/test_acceleration.o output/test_status.o output/test_divergence.o output/test_defaults.o output/test_sep_interface.o output/test_parker.o output/test_geometry.o output/test_mesh.o output/test_connectivity.o output/test_shock_surface.o output/test_ambient.o output/test_1d3d.o
+SOURCES := core/test_swcme.cpp core/test_state_immutability.cpp core/test_prepared_state.cpp core/test_configuration_state.cpp core/test_state_integrity.cpp core/test_concurrent_state.cpp core/test_output.cpp core/test_output_parsing.cpp core/test_demo_execution.cpp core/test_adapter_equivalence.cpp core/test_state_lifetime.cpp core/test_state_performance.cpp core/test_strict_writer.cpp core/test_smoothing_policy.cpp core/test_radius_domain.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp core/test_kinematics.cpp core/test_shock.cpp core/test_reference_regeneration.cpp core/test_regions.cpp core/test_acceleration.cpp core/test_status.cpp core/test_divergence.cpp core/test_defaults.cpp core/test_sep_interface.cpp core/test_sanitizer.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 3d/test_mesh.cpp 3d/test_connectivity.cpp 3d/test_shock_surface.cpp 1d/test_ambient.cpp test_1d3d.cpp
+OBJECTS := output/swcme3d.o output/test_swcme.o output/test_state_immutability.o output/test_prepared_state.o output/test_configuration_state.o output/test_state_integrity.o output/test_concurrent_state.o output/test_output.o output/test_output_parsing.o output/test_demo_execution.o output/test_adapter_equivalence.o output/test_state_lifetime.o output/test_state_performance.o output/test_strict_writer.o output/test_smoothing_policy.o output/test_radius_domain.o output/test_config.o output/test_units.o output/test_density.o output/test_kinematics.o output/test_shock.o output/test_reference_regeneration.o output/test_regions.o output/test_acceleration.o output/test_status.o output/test_divergence.o output/test_defaults.o output/test_sep_interface.o output/test_sanitizer.o output/test_parker.o output/test_geometry.o output/test_mesh.o output/test_connectivity.o output/test_shock_surface.o output/test_ambient.o output/test_1d3d.o
 
 # POSIX thread support is isolated behind one overridable variable.  PST04's
 # translation unit needs the compile flag on implementations that expose
@@ -30,6 +32,16 @@ THREAD_FLAGS ?= -pthread
 # scanning with `make PST05_ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 ...`.
 PST05_ASAN_OPTIONS ?= detect_leaks=0:halt_on_error=1
 
+# SAN01 applies AddressSanitizer and UndefinedBehaviorSanitizer together to a
+# fresh complete build. Leak detection defaults off because ptrace/container
+# runners cannot support it reliably; an untraced host may override this exact
+# variable without weakening either mandatory sanitizer.
+SAN01_ASAN_OPTIONS ?= detect_leaks=0:halt_on_error=1
+SAN01_UBSAN_OPTIONS ?= halt_on_error=1:print_stacktrace=1
+SAN01_FLAGS := -std=c++17 -O1 -g -Wall -Wextra -Wpedantic \
+	-fsanitize=address,undefined -fno-sanitize-recover=all \
+	-fno-omit-frame-pointer -DSWCME_SAN01_INSTRUMENTED=1
+
 # OUT08 deliberately does not inherit CXXFLAGS: both variants must use the
 # documented CI warning policy even when a caller's normal development build
 # is permissive.  -Werror turns every selected diagnostic into a build failure;
@@ -39,7 +51,7 @@ OUT08_WARNING_FLAGS := -std=c++17 -Wall -Wextra -Wpedantic -Wformat=2 \
 	-Wformat-security -Wconversion -Wsign-conversion -Wshadow \
 	-Werror=format-security -Werror
 
-.PHONY: all test tools demos demo-run campaign-test pst05-sanitize pst08-performance out08-strict clean
+.PHONY: all test tools demos demo-run campaign-test pst05-sanitize pst08-performance out08-strict san01-sanitize clean
 
 all: $(TARGET) demos
 
@@ -232,6 +244,13 @@ output/test_defaults.o: core/test_defaults.cpp core/test_framework.hpp ../swcme_
 output/test_sep_interface.o: core/test_sep_interface.cpp core/test_framework.hpp ../swcme_sep_source.hpp ../swcme_sep_interface.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_status.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
+# SAN01's normal object contains only the orchestration boundary.  The target
+# near the end of this file rebuilds this and every other unit from source with
+# sanitizer flags, so the ordinary object must not itself inherit sanitizer
+# runtime dependencies.
+output/test_sanitizer.o: core/test_sanitizer.cpp core/test_framework.hpp | output
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
 # PAR01-PAR03 exercise the public production 3-D field evaluator linked through
 # swcme3d.o; the test translation unit contains only independent references.
 output/test_parker.o: 3d/test_parker.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme3d.hpp ../swcme_status.hpp ../swcme_divergence.hpp | output
@@ -312,6 +331,24 @@ pst05-sanitize: | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -O1 -g -fsanitize=address -fno-omit-frame-pointer $(THREAD_FLAGS) ../swcme3d.cpp $(SOURCES) -o output/test_swcme_pst05_asan
 	ASAN_OPTIONS=$(PST05_ASAN_OPTIONS) ./output/test_swcme_pst05_asan --test PST05
 
+# Compile every deterministic validation and all three user demonstrations
+# with ASan+UBSan in fresh paths, then execute them fail-fast.  The environment
+# marker prevents only SAN01's orchestration wrapper from recursively invoking
+# this target; no physics, malformed-input, output, or integration test is
+# skipped. Demo runs use isolated directories so generated files cannot satisfy
+# a later manifest check accidentally.
+san01-sanitize: | output
+	mkdir -p $(SAN01_DIR)/run1d $(SAN01_DIR)/run3d1 $(SAN01_DIR)/run3d2
+	$(CXX) $(CPPFLAGS) $(SAN01_FLAGS) $(THREAD_FLAGS) ../swcme3d.cpp $(SOURCES) -o $(SAN01_TARGET)
+	$(CXX) $(CPPFLAGS) $(SAN01_FLAGS) -c ../swcme3d.cpp -o $(SAN01_DIR)/swcme3d.o
+	$(CXX) $(CPPFLAGS) $(SAN01_FLAGS) ../demo1d.cpp -o $(SAN01_DIR)/demo1d
+	$(CXX) $(CPPFLAGS) $(SAN01_FLAGS) ../demo3d_1.cpp $(SAN01_DIR)/swcme3d.o -o $(SAN01_DIR)/demo3d_1
+	$(CXX) $(CPPFLAGS) $(SAN01_FLAGS) ../demo3d_2.cpp $(SAN01_DIR)/swcme3d.o -o $(SAN01_DIR)/demo3d_2
+	SWCME_SAN01_CHILD=1 ASAN_OPTIONS=$(SAN01_ASAN_OPTIONS) UBSAN_OPTIONS=$(SAN01_UBSAN_OPTIONS) ./$(SAN01_TARGET) --all
+	cd $(SAN01_DIR)/run1d && ASAN_OPTIONS=$(SAN01_ASAN_OPTIONS) UBSAN_OPTIONS=$(SAN01_UBSAN_OPTIONS) ../demo1d
+	cd $(SAN01_DIR)/run3d1 && ASAN_OPTIONS=$(SAN01_ASAN_OPTIONS) UBSAN_OPTIONS=$(SAN01_UBSAN_OPTIONS) ../demo3d_1
+	cd $(SAN01_DIR)/run3d2 && ASAN_OPTIONS=$(SAN01_ASAN_OPTIONS) UBSAN_OPTIONS=$(SAN01_UBSAN_OPTIONS) ../demo3d_2
+
 # Rebuild only production 3-D code and PST08 with pinned optimized flags.  This
 # avoids stale normal objects when CXXFLAGS changes and produces a compact,
 # reproducible performance log without compiling unrelated validation tests.
@@ -347,6 +384,7 @@ test: all
 	./$(TARGET)
 
 clean:
-	rm -f $(TARGET) $(SEP_REFERENCE_TARGET) $(DEMO_TARGETS) $(OBJECTS) output/test_swcme_pst05_asan $(PST08_TARGET) output/bench_tmp \
+	rm -f $(TARGET) $(SEP_REFERENCE_TARGET) $(DEMO_TARGETS) $(OBJECTS) output/test_swcme_pst05_asan $(PST08_TARGET) $(SAN01_TARGET) output/bench_tmp \
+		$(SAN01_DIR)/swcme3d.o $(SAN01_DIR)/demo1d $(SAN01_DIR)/demo3d_1 $(SAN01_DIR)/demo3d_2 \
 		$(OUT08_DEBUG_DIR)/swcme3d.o $(OUT08_DEBUG_DIR)/demo1d $(OUT08_DEBUG_DIR)/demo3d_1 $(OUT08_DEBUG_DIR)/demo3d_2 $(OUT08_DEBUG_DIR)/test_out08 \
 		$(OUT08_OPTIMIZED_DIR)/swcme3d.o $(OUT08_OPTIMIZED_DIR)/demo1d $(OUT08_OPTIMIZED_DIR)/demo3d_1 $(OUT08_OPTIMIZED_DIR)/demo3d_2 $(OUT08_OPTIMIZED_DIR)/test_out08

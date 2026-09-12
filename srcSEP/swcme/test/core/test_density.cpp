@@ -613,6 +613,96 @@ void test_den04(swcme_test::Context& context) {
             << max_relative_error << "\n";
 }
 
+void test_den03(swcme_test::Context& context) {
+  std::cout << "DEN03 independent composition and mass-density conversion\n";
+  constexpr long double proton_mass = 1.67262192595e-27L;
+  constexpr long double alpha_mass = 6.6446573450e-27L;
+  const long double abundances[] = {0.0L, 0.04L, 0.10L};
+  const long double electron_densities[] = {
+      1.0e2L, 1.0e5L, 1.0e8L, 1.0e11L, 1.0e14L};
+  double maximum_relative_error = 0.0;
+  std::size_t fixture_count = 0;
+
+  for (long double electron_density : electron_densities) {
+    long double previous_mass_density = -1.0L;
+    for (long double abundance : abundances) {
+      swcme::solarwind::ConfigSI cfg;
+      cfg.V_sw_m_s = 4.0e5;
+      cfg.n1AU_m3 = 5.0e6;
+      cfg.B1AU_T = 5.0e-9;
+      cfg.T_K = 1.2e5;
+      cfg.gamma_ad = 5.0 / 3.0;
+      cfg.reference_sin_theta = 1.0;
+      cfg.thermodynamic_closure =
+          swcme::solarwind::ThermodynamicClosure::MultiSpecies;
+      cfg.alpha_to_proton_ratio = static_cast<double>(abundance);
+      cfg.electron_T_K = 1.2e5;
+      cfg.alpha_T_K = 1.2e5;
+      const auto state = swcme::solarwind::prepare(cfg);
+      const auto actual = swcme::solarwind::thermodynamic_state(
+          state, static_cast<double>(electron_density));
+
+      // The abundance convention is f_alpha=n_alpha/n_proton. Combining it
+      // with charge neutrality ne=np+2*nalpha gives these test-owned formulas.
+      // Keeping the derivation here, with independently pinned masses, makes
+      // a changed convention or accidental mp*ne shortcut immediately visible.
+      const long double proton_density =
+          electron_density / (1.0L + 2.0L * abundance);
+      const long double alpha_density = abundance * proton_density;
+      const long double mass_density = proton_mass * proton_density +
+                                       alpha_mass * alpha_density;
+      const long double charge_residual =
+          (proton_density + 2.0L * alpha_density - electron_density) /
+          electron_density;
+      const double errors[] = {
+          relative_error(actual.electron_density_m3,
+                         static_cast<double>(electron_density)),
+          relative_error(actual.proton_density_m3,
+                         static_cast<double>(proton_density)),
+          relative_error(actual.alpha_density_m3,
+                         static_cast<double>(alpha_density)),
+          relative_error(actual.mass_density_kg_m3,
+                         static_cast<double>(mass_density))};
+      for (double error : errors) {
+        maximum_relative_error = std::max(maximum_relative_error, error);
+        context.expect_true(error < 1.0e-13,
+                            "composition field residual exceeds 1e-13");
+      }
+      context.expect_true(std::abs(static_cast<double>(charge_residual)) <
+                              1.0e-18,
+                          "independent charge-neutrality algebra did not close");
+      context.expect_true(mass_density > previous_mass_density,
+                          "mass density must increase with alpha abundance");
+      previous_mass_density = mass_density;
+      ++fixture_count;
+    }
+  }
+
+  // The compatibility no-alpha branch is also required to reduce exactly to
+  // np=ne and rho=mp*np. This bitwise check protects the common legacy case in
+  // addition to the relative checks above.
+  swcme::solarwind::ConfigSI zero_cfg;
+  zero_cfg.V_sw_m_s=4.0e5; zero_cfg.n1AU_m3=5.0e6;
+  zero_cfg.B1AU_T=5.0e-9; zero_cfg.T_K=1.2e5;
+  zero_cfg.gamma_ad=5.0/3.0; zero_cfg.reference_sin_theta=1.0;
+  zero_cfg.thermodynamic_closure=
+      swcme::solarwind::ThermodynamicClosure::MultiSpecies;
+  zero_cfg.alpha_to_proton_ratio=0.0;
+  zero_cfg.electron_T_K=1.2e5; zero_cfg.alpha_T_K=1.2e5;
+  const double ne=7.25e6;
+  const auto zero=swcme::solarwind::thermodynamic_state(
+      swcme::solarwind::prepare(zero_cfg),ne);
+  context.expect_true(zero.proton_density_m3==ne &&
+                          zero.alpha_density_m3==0.0 &&
+                          zero.mass_density_kg_m3==
+                              swcme::constants::PROTON_MASS_KG*ne,
+                      "zero-alpha composition must reduce exactly to mp*ne");
+  std::cout << "  fixtures=" << fixture_count
+            << " densities=1e2..1e14_m^-3 abundances={0,0.04,0.10}"
+            << " max_relative_error=" << std::scientific
+            << maximum_relative_error << '\n';
+}
+
 void test_den02(swcme_test::Context& context) {
   std::cout << "DEN02 independent Leblanc radial terms and asymptote\n";
   constexpr long double au = 149597870700.0L;

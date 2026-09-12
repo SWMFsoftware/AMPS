@@ -102,7 +102,7 @@ ThreeDState eval3d_x(const swcme3d::Model& m, const swcme3d::StepState& s,
 }  // namespace
 
 void test_reg01(swcme_test::Context& context) {
-  std::cout << "REG01 SHOCK_ONLY upstream-field identity\n";
+  std::cout << "REG01 region boundary and smoothing convergence\n";
 
   swcme1d::Params p1;
   swcme3d::Params p3;
@@ -146,6 +146,164 @@ void test_reg01(swcme_test::Context& context) {
     expect_rel(context,"3D SHOCK_ONLY Bx",b.bx,B3[0],2.0e-13,1.0e-15);
     expect_rel(context,"3D SHOCK_ONLY By",b.by,B3[1],2.0e-13,1.0e-15);
   }
+
+  // Probe both sides of the shock, leading-edge, and trailing-edge boundaries
+  // at logarithmically decreasing offsets.  The independent cubic expression
+  // below prevents the test from merely calling the production smoothstep as
+  // its own oracle.  Zero widths must produce a crisp classification change;
+  // finite widths must retain normalized complementary weights.
+  for (bool smoothed:{false,true}) {
+    swcme::regions::Config cfg;
+    cfg.sheath_fraction=0.13;
+    cfg.ejecta_fraction=0.27;
+    cfg.shock_smooth_fraction=smoothed?0.018:0.0;
+    cfg.leading_smooth_fraction=smoothed?0.024:0.0;
+    cfg.trailing_smooth_fraction=smoothed?0.031:0.0;
+    const double radius=0.83*swcme::constants::AU_M;
+    const auto boundaries=swcme::regions::make_boundaries(radius,cfg);
+    context.expect_near(boundaries.smooth_shock_width_m,
+                        cfg.shock_smooth_fraction*radius,0.0,
+                        "REG01 requested shock width is exact");
+    context.expect_near(boundaries.smooth_le_width_m,
+                        cfg.leading_smooth_fraction*radius,0.0,
+                        "REG01 requested leading width is exact");
+    context.expect_near(boundaries.smooth_te_width_m,
+                        cfg.trailing_smooth_fraction*radius,0.0,
+                        "REG01 requested trailing width is exact");
+    struct Boundary { double center,width; swcme::regions::Region transition; };
+    const std::array<Boundary,3> all={{
+        {boundaries.R_sh_m,boundaries.smooth_shock_width_m,
+         swcme::regions::Region::ShockTransition},
+        {boundaries.R_le_m,boundaries.smooth_le_width_m,
+         swcme::regions::Region::LeadingTransition},
+        {boundaries.R_te_m,boundaries.smooth_te_width_m,
+         swcme::regions::Region::TrailingTransition}}};
+    for (const Boundary& boundary:all) {
+      for (int exponent=1;exponent<=8;++exponent) {
+        const double delta=(smoothed?boundary.width:boundary.center)*
+                           std::pow(10.0,-exponent);
+        const auto outer=swcme::regions::locate(boundary.center+delta,boundaries);
+        const auto inner=swcme::regions::locate(boundary.center-delta,boundaries);
+        if (smoothed) {
+          context.expect_true(outer.region==boundary.transition&&
+                                  inner.region==boundary.transition,
+                              "REG01 finite transition classifies both sides");
+          const double qo=0.5-delta/boundary.width;
+          const double qi=0.5+delta/boundary.width;
+          const double wo=qo*qo*(3.0-2.0*qo);
+          const double wi=qi*qi*(3.0-2.0*qi);
+          context.expect_near(outer.blend,wo,2.0e-12,
+                              "REG01 outer independent blend");
+          context.expect_near(inner.blend,wi,2.0e-12,
+                              "REG01 inner independent blend");
+          context.expect_near(outer.blend+inner.blend,1.0,8.0e-15,
+                              "REG01 symmetric weights normalize");
+          context.expect_near(outer.blend+(1.0-outer.blend),1.0,0.0,
+                              "REG01 component weights sum exactly to one");
+        } else {
+          context.expect_true(outer.region!=inner.region,
+                              "REG01 zero-width boundary changes region");
+          context.expect_true(outer.blend==0.0&&inner.blend==0.0,
+                              "REG01 zero width invents no blend");
+        }
+      }
+
+      if (smoothed) {
+        // Reconstruct d(weight)/dr at an interior point with four halved
+        // centered steps.  The exact derivative follows from the test-owned
+        // cubic and demonstrates the expected second-order spatial regime.
+        constexpr double q=0.37;
+        const double sample=boundary.center+0.5*boundary.width-q*boundary.width;
+        const double exact=-6.0*q*(1.0-q)/boundary.width;
+        double previous=std::numeric_limits<double>::infinity(),finest=0.0;
+        int improved=0;
+        for (double fraction:{0.08,0.04,0.02,0.01}) {
+          const double h=fraction*boundary.width;
+          const double plus=swcme::regions::inward_transition_weight(
+              sample+h,boundary.center,boundary.width).value;
+          const double minus=swcme::regions::inward_transition_weight(
+              sample-h,boundary.center,boundary.width).value;
+          const double derivative=(plus-minus)/(2.0*h);
+          const double error=std::abs(derivative-exact)/std::abs(exact);
+          if (error<0.6*previous) ++improved;
+          previous=error; finest=error;
+        }
+        context.expect_true(improved>=2&&finest<5.0e-4,
+                            "REG01 spatial derivative converges");
+      }
+    }
+  }
+
+  // Confirm local self-similar width resolution over deterministic samples of
+  // both time and position on a finite SSE cap.  The irrational-step sequence
+  // is reproducible but avoids repeated symmetry planes.
+  swcme3d::Params spatial;
+  spatial.shape=swcme3d::ShockShape::SSE;
+  spatial.half_width_rad=58.0*swcme::constants::PI/180.0;
+  spatial.region_mode=swcme::regions::Mode::FullICME;
+  spatial.shock_acceleration_mode=swcme::acceleration::Mode::ResolvedCompression;
+  spatial.sheath_thick_AU_at1AU=0.14;
+  spatial.ejecta_thick_AU_at1AU=0.25;
+  spatial.edge_smooth_shock_AU_at1AU=0.017;
+  spatial.edge_smooth_le_AU_at1AU=0.021;
+  spatial.edge_smooth_te_AU_at1AU=0.029;
+  spatial.V0_sh_kms=1350.0;
+  const swcme3d::Model spatial_model(spatial);
+  for (int sample=0;sample<64;++sample) {
+    const double time_s=(0.25+std::fmod(sample*0.6180339887498949,1.0))*36000.0;
+    const auto state=spatial_model.prepare_step(time_s);
+    const double alpha=(0.05+0.90*std::fmod(sample*0.4142135623730950,1.0))*
+                       spatial.half_width_rad;
+    const double phi=2.0*swcme::constants::PI*
+                     std::fmod(sample*0.7320508075688772,1.0);
+    const double direction[3]={std::cos(alpha),std::sin(alpha)*std::cos(phi),
+                               std::sin(alpha)*std::sin(phi)};
+    swcme3d::LocalShockState shock;
+    context.expect_true(spatial_model.shock_state_direction(state,direction,shock),
+                        "REG01 sampled local surface exists");
+    const auto local=swcme::regions::make_boundaries(shock.Rdir_m,state.region_config);
+    context.expect_near(local.smooth_shock_width_m,
+                        spatial.edge_smooth_shock_AU_at1AU*shock.Rdir_m,0.0,
+                        "REG01 local shock width exact");
+    context.expect_near(local.smooth_le_width_m,
+                        spatial.edge_smooth_le_AU_at1AU*shock.Rdir_m,0.0,
+                        "REG01 local leading width exact");
+    context.expect_near(local.smooth_te_width_m,
+                        spatial.edge_smooth_te_AU_at1AU*shock.Rdir_m,0.0,
+                        "REG01 local trailing width exact");
+  }
+
+  // Boundary positions are fixed fractions of the DBM apex radius.  Halving
+  // the time step therefore must converge to that fraction of V_sh for all
+  // three boundaries, independently testing temporal movement of the regions.
+  swcme1d::Params temporal;
+  temporal.kinematics_mode=swcme::kinematics::Mode::DBM;
+  temporal.r0_Rs=20.0; temporal.V0_sh_kms=1400.0;
+  temporal.V_sw_kms=400.0; temporal.Gamma_kmInv=7.0e-8;
+  temporal.sheath_thick_AU_at1AU=0.12;
+  temporal.ejecta_thick_AU_at1AU=0.24;
+  const swcme1d::Model temporal_model(temporal);
+  constexpr double center_time=5.0*3600.0;
+  const auto center=temporal_model.prepare_step(center_time);
+  for (double factor:{1.0,0.88,0.64}) {
+    const double exact=factor*center.V_sh_ms;
+    double previous=std::numeric_limits<double>::infinity(),finest=0.0;
+    int improved=0;
+    for (double dt:{64.0,32.0,16.0,8.0}) {
+      const auto plus=temporal_model.prepare_step(center_time+dt);
+      const auto minus=temporal_model.prepare_step(center_time-dt);
+      const double derivative=factor*(plus.r_sh_m-minus.r_sh_m)/(2.0*dt);
+      const double error=std::abs(derivative-exact)/std::abs(exact);
+      std::cout << "  temporal factor=" << factor << " dt=" << dt
+                << " error=" << error << '\n';
+      if (error<0.6*previous) ++improved;
+      previous=error; finest=error;
+    }
+    context.expect_true(improved>=2&&finest<2.0e-8,
+                        "REG01 temporal boundary derivative converges");
+  }
+  std::cout << "  logarithmic_probes=48 local_space_time_samples=64"
+            << " temporal_boundaries=3\n";
 }
 
 void test_reg02(swcme_test::Context& context) {

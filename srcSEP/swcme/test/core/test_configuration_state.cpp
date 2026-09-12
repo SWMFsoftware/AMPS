@@ -56,11 +56,12 @@ void test_pst03(swcme_test::Context& context) {
 
   const swcme::ConfigurationDigest baseline_digest=
       swcme3d::configuration_digest(baseline);
+  std::cout << "  reviewed baseline digest=" << baseline_digest << '\n';
   // This reviewed golden value detects accidental changes to serialization
   // order, convention tags, or floating-point encoding across compiler runs.
   // Intentional configuration-schema changes must update both the schema tag
   // and this value as an explicit validation-contract revision.
-  context.expect_true(baseline_digest==13445060466342315912ULL,
+  context.expect_true(baseline_digest==13053231078671775412ULL,
                       "baseline configuration digest is reproducible");
   swcme3d::Model producer(baseline);
   const swcme3d::StepState state=producer.prepare_step(0.0);
@@ -92,9 +93,9 @@ void test_pst03(swcme_test::Context& context) {
                       "equal foreign rejection preserves outputs");
 
   // Each variant changes one public field representing a validation-plan
-  // configuration family. Global Parker polarity remains a compile-time
-  // convention; the closure and Parker source radius are now explicit fields
-  // and therefore receive their own one-field provenance cases.
+  // configuration family. Thermodynamic closure, Parker source radius, and
+  // radial polarity are explicit runtime fields and therefore each receive a
+  // one-field provenance case.
   std::vector<std::pair<std::string,swcme3d::Params>> variants;
   swcme3d::Params gamma=baseline; gamma.gamma_ad=1.55;
   variants.emplace_back("gamma",gamma);
@@ -117,6 +118,9 @@ void test_pst03(swcme_test::Context& context) {
   swcme3d::Params polarity_normalization=baseline;
   polarity_normalization.B1AU_nT+=1.0;
   variants.emplace_back("Parker polarity normalization",polarity_normalization);
+  swcme3d::Params polarity=baseline;
+  polarity.parker_radial_polarity=-baseline.parker_radial_polarity;
+  variants.emplace_back("Parker radial polarity",polarity);
   swcme3d::Params parker_source=baseline;
   parker_source.parker_source_radius_Rs=0.75;
   variants.emplace_back("Parker source radius",parker_source);

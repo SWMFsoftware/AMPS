@@ -78,6 +78,8 @@ inline void add_solar_wind(
   digest.add_double(state.alpha_to_proton_ratio);
   digest.add_double(state.electron_T_K);
   digest.add_double(state.alpha_T_K);
+  digest.add_uint64(static_cast<std::uint64_t>(
+      static_cast<std::int64_t>(state.parker_radial_polarity)));
   digest.add_double(state.solar_rotation_rate_rad_s);
   digest.add_double(state.reference_sin_theta);
   digest.add_double(state.parker_source_radius_m);

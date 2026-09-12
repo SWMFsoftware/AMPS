@@ -35,6 +35,7 @@ struct CommonConfig {
   double alpha_to_proton_ratio = swcme::defaults::ALPHA_TO_PROTON_RATIO;
   double electron_T_K = swcme::defaults::ELECTRON_T_K;
   double alpha_T_K = swcme::defaults::ALPHA_T_K;
+  int parker_radial_polarity = swcme::defaults::PARKER_RADIAL_POLARITY;
   double parker_reference_sin_theta = swcme::defaults::PARKER_REFERENCE_SIN_THETA;
   double solar_rotation_rate_rad_s =
       swcme::defaults::SOLAR_ROTATION_RATE_RAD_S;
@@ -71,6 +72,7 @@ inline PreparedState prepare(const CommonConfig& cfg, double time_s) {
   ambient.alpha_to_proton_ratio = cfg.alpha_to_proton_ratio;
   ambient.electron_T_K = cfg.electron_T_K;
   ambient.alpha_T_K = cfg.alpha_T_K;
+  ambient.parker_radial_polarity = cfg.parker_radial_polarity;
   ambient.reference_sin_theta = cfg.parker_reference_sin_theta;
   ambient.solar_rotation_rate_rad_s = cfg.solar_rotation_rate_rad_s;
   ambient.parker_source_radius_m =

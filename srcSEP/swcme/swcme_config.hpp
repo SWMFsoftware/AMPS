@@ -166,6 +166,7 @@ struct CommonConfigView {
   double alpha_to_proton_ratio = 0.0;
   double electron_T_K = 0.0;
   double alpha_T_K = 0.0;
+  int parker_radial_polarity = +1;
   double sin_theta = 0.0;
   double parker_source_radius_Rs = 0.0;
 
@@ -215,6 +216,11 @@ inline ValidationResult validate_common(const CommonConfigView& c) {
                       c.alpha_to_proton_ratio);
   require_positive(out, "electron_T_K", c.electron_T_K);
   require_positive(out, "alpha_T_K", c.alpha_T_K);
+  if (c.parker_radial_polarity != -1 && c.parker_radial_polarity != +1) {
+    out.add("parker_radial_polarity", Code::OutOfRange,
+            static_cast<double>(c.parker_radial_polarity),
+            "must be exactly -1 or +1");
+  }
   if (!finite(c.gamma_ad)) {
     out.add("gamma_ad", Code::NonFinite, c.gamma_ad, "must be finite and > 1");
   } else if (!(c.gamma_ad > 1.0)) {

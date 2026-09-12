@@ -2775,6 +2775,27 @@ below `1e-13`; both model APIs use the selected closure exactly; every invalid
 configuration is rejected before preparation. `DEN04` follows `SHK17` in the
 priority registry and `SMOKE` profile.
 
+## DEN03: composition and mass density
+
+**What is tested.** `DEN03` verifies electron, proton, and alpha number
+densities, charge neutrality, alpha abundance, and total ion mass density for
+`f_alpha=0`, 0.04, and 0.10 over `n_e=1e2` through `1e14 m^-3`.
+
+**Why it is tested.** Leblanc supplies electron density, whereas Alfven and
+fast-mode speeds require mass density. Treating `n_e` as proton density when
+alpha abundance is nonzero biases shock strength without changing displayed
+electron density.
+
+**How it is tested.** Test-owned long-double algebra uses
+`f_alpha=n_alpha/n_proton`, solves `n_e=n_proton+2*n_alpha`, and combines
+independently pinned proton and alpha masses. It checks all fields, the charge
+balance, abundance monotonicity, and the exact zero-alpha limit.
+
+**Expected result.** All relative errors are below `1e-13`, charge neutrality
+closes, mass density grows with alpha abundance, and the no-alpha result is
+exactly `rho=m_proton*n_e`. `DEN03` precedes `DEN04` in the priority registry
+and `SMOKE` profile.
+
 ## DEN02: Leblanc density asymptotic behavior
 
 **What is tested.** `DEN02` checks every individual Leblanc power-law term and
@@ -2864,3 +2885,209 @@ constructed bases and checks their ratio against the analytic pitch.
 pitch differs by less than `2e-13`, and the tangent-field angle is below
 `1e-8` rad—parallel for positive polarity and antiparallel for negative.
 `PAR05` follows `PAR04` in priority and in `SMOKE`.
+
+## PAR06: Parker path length and focusing
+
+**What is tested.** Closed-form Parker arc length, magnetic focusing length,
+their SI units and signs, finite source radius, and the exact zero-rotation
+limit are exercised in 160 randomized fixtures.
+
+**Why it is tested.** Focused SEP transport uses distance along the field and
+`d ln|B|/ds`; a vector field can pass pointwise checks while these derived
+transport quantities retain a sign, offset, or differentiation defect.
+
+**How it is tested.** A test-owned adaptive Simpson integrator evaluates
+`sqrt(1+k^2(r-rb)^2)`. A five-point, fourth-order stencil independently
+differentiates `ln|B|` along radius, converts it to the outward path coordinate,
+and is checked at two decreasing step sizes before comparison.
+
+**Expected result.** Relative path error is below `1e-9`, focusing error below
+`1e-7`, the zero-rotation length equals the radial interval exactly, and
+baseline outward focusing is finite and positive. `PAR06` follows `PAR05` in
+priority and in `SMOKE`.
+
+### PAR02 expanded random-vector campaign
+
+**What is tested.** The original transparent latitude/axis fixtures are joined
+by 1,024 fixed-seed vectors spanning radius, longitude, latitude, hemisphere,
+solar axis, field polarity, wind speed, rotation rate, source radius, and 1-AU
+normalization latitude.
+
+**Why it is tested.** Equatorial examples do not fully exercise basis
+orientation, hemispheric behavior, source-radius pitch, or rotational
+covariance.
+
+**How it is tested.** The validation constructs `e_r` and `e_phi` independently,
+normalizes signed `Br` at 1 AU, computes the source-aware `Bphi`, and transforms
+to Cartesian. Paired models reverse polarity, while a Rodrigues rotation is
+applied independently to the axis, sample point, and reference vector.
+
+**Expected result.** Vector and rotation-covariance errors are below `1e-12`;
+polarity reverses the complete vector to roundoff without changing magnitude.
+
+### PAR03 expanded polar-limit campaign
+
+**What is tested.** Both Parker poles are approached for four arbitrary axes,
+both radial polarities, a finite source radius, eight longitudes, and six
+logarithmic angular offsets from `1e-2` to `1e-12` rad; exact poles are included.
+
+**Why it is tested.** `Omega_hat cross e_r` vanishes at a pole. Normalizing it
+without a regular limiting branch can amplify roundoff into a finite,
+longitude-dependent transverse field.
+
+**How it is tested.** An independent tangent basis constructs every approach.
+The returned field is projected onto `e_r` and `e_phi`; `Bphi` is compared with
+the source-aware analytic `sin(theta)` scaling, and equal-offset magnitudes are
+compared across longitudes.
+
+**Expected result.** All vectors remain finite, exact poles are radial,
+transverse magnitude vanishes as `O(sin(theta))`, and no longitude-dependent
+limiting residue appears.
+
+### PAR01 expanded equatorial component campaign
+
+**What is tested.** Equatorial radial and azimuthal Parker components, their
+Cartesian orientation, `r^-2` radial scaling, finite-source-radius pitch, and
+both global magnetic polarities are exercised in 96 matrix cases. The original
++X point is retained, and the canonical-axis matrix explicitly includes +X and
++Y along with an arbitrary proper rotation axis.
+
+**Why it is tested.** A vector can have the right magnitude while carrying an
+incorrect azimuthal sign, polarity convention, radial scaling, or source-radius
+offset. Those defects directly reverse field-line transport or move modeled
+magnetic footpoints.
+
+**How it is tested.** Each point is independently decomposed in the equatorial
+`(e_r,e_phi)` basis. A test-owned analytical Parker construction supplies the
+Cartesian reference; separate projections check the sign of `Br` and the
+relation `Bphi/Br=-Omega(r-rb)/Vsw` for two axes, two directions, two
+polarities, three radii, two wind speeds, and two source radii.
+
+**Expected result.** Every Cartesian vector and projected pitch agrees within
+`1e-12`, `Br` has the configured polarity, and the zero-source-radius cases
+remain compatible with the historical winding law.
+
+## CROSS01: one-dimensional and three-dimensional physics consistency
+
+**What is tested.** Equivalent radial 1-D and spherical 3-D configurations are
+compared for density, thermodynamic pressure, velocity, magnetic components and
+magnitude, divergence, Parker path and focusing lengths, shock radius and
+normal speed, compression, `thetaBn`, Mach number, and acceleration-source
+state at both apex and flank directions.
+
+**Why it is tested.** Sharing internal helpers does not prove that two public
+wrappers transfer configuration, interpret geometry, and expose statuses in
+the same way. Cross-model drift can otherwise survive unit-level tests.
+
+**How it is tested.** Four configurations cover two closure policies, two
+polarities, zero/finite source radius, and strong/weak/no-shock behavior. Three
+times and three radii yield 36 field comparisons, while two equatorial sphere
+directions yield 24 shock/source comparisons. Dimension-aware relative errors
+are used for values ranging from Tesla to meters per second.
+
+**Expected result.** All status flags are identical and every finite common
+quantity agrees within `3e-12` (most field quantities within `3e-13`).
+
+## GEO01: geometry rotation and derivative convergence
+
+**What is tested.** Sphere, finite-width SSE, and triaxial ellipsoid positions,
+normals, radii, normal speeds, compression, and local area elements are tested
+under an arbitrary proper rotation. Four centered time steps test normal-speed
+derivative convergence.
+
+**Why it is tested.** Hidden dependence on global Cartesian axes changes a
+nonspherical CME when coordinates are rotated, while a pointwise geometry test
+can miss an incorrect time derivative used in shock fluxes.
+
+**How it is tested.** Test-owned Rodrigues rotation transforms every physical
+vector. Surface results are transformed back or compared as scalar invariants;
+local areas come from independent three-point cross products. Centered temporal
+differences at 16, 8, 4, and 2 seconds reconstruct surface normal speed.
+
+**Expected result.** Position and normal errors remain below `3e-13`, local
+area is invariant within `2e-10`, scalar diagnostics agree within `3e-12`, and
+each shape demonstrates at least two convergent derivative refinements with a
+final relative error below `1e-7`.
+
+## MESH01: mesh and integrated source convergence
+
+**What is tested.** Triangle validity, analytical-normal orientation,
+mean-ratio quality, total surface area, active source-weight normalization, and
+an integrated production source measure are checked for sphere, SSE, and
+ellipsoid meshes.
+
+**Why it is tested.** A mesh may look plausible while carrying inverted or
+poorly conditioned cells, and pointwise source records do not establish that a
+surface-integrated injection converges with resolution.
+
+**How it is tested.** Four nested meshes (8x16 through 64x128) are built for
+each shape. The test computes triangle quality independently and integrates
+`patch_area*Vsh,n*(compression-1)` from actual active SEP source records. The
+first three levels are compared with the separately rebuilt finest mesh.
+
+**Expected result.** All cells are finite, positive, and outward; median quality
+exceeds 0.05; source weights sum to the configured value; area and integrated
+source errors decrease monotonically; final changes are below 0.5% and 1%.
+
+## REG01: region boundary and smoothing convergence
+
+**What is tested.** Classification and weights on both sides of the shock,
+leading edge, and trailing edge; zero and finite smoothing; local requested
+versus resolved widths; and spatial and temporal derivative convergence.
+
+**Why it is tested.** Boundary inequalities, hidden width clipping, or stale
+apex-scaled widths can introduce discontinuities and nonconvergent transport
+sources even when representative interior points are correct.
+
+**How it is tested.** Eight logarithmic offsets bracket every boundary. An
+independent cubic checks weights and normalization. Centered spatial and time
+steps are halved four times, and 64 deterministic SSE position/time samples
+verify exact local self-similar widths.
+
+**Expected result.** Zero widths produce explicit region changes without blend;
+finite weights match the independent smoothstep, sum to one, and converge in
+space. Resolved widths are bit-exact products of the accepted fractions and
+local radii, and all boundary velocities converge to their DBM references.
+
+## CON11: connectivity random stress and transition convergence
+
+**What is tested.** Valid-domain classification, complete scan diagnostics,
+all-root ordering and residuals, deterministic outer-root selection, analytic
+sphere outcomes, onset/loss timing, forward/reverse history equivalence, grid
+refinement, and explicit resolution-cap exhaustion.
+
+**Why it is tested.** Sparse hand-picked cobpoints cannot expose rare tangent,
+multiple-root, orientation, or state-transition failures, while silently
+truncated searches can mislabel an unresolved case as disconnected.
+
+**How it is tested.** A fixed xorshift stream drives 10,000 cases over 100
+configurations and 100 observers. Roughly one third use an independent sphere
+interval oracle. A moving SSE is sampled on 30- and 15-minute forward grids and
+the fine grid in reverse; one request deliberately exceeds the published cap.
+
+**Expected result.** Every ordinary case is Connected or Disconnected with a
+complete scan; all roots are finite, ordered, and residual-qualified; analytic
+sphere outcomes agree; onset and loss converge within one fine interval;
+reverse history is identical; cap exhaustion returns `ResolutionLimit`.
+
+## SAN01: memory and undefined-behavior validation
+
+**What is tested.** The complete deterministic registry, malformed-input paths,
+representative and high-count random campaigns, output handling, integration
+adapters, and all three demonstration executables are exercised under ASan and
+UBSan.
+
+**Why it is tested.** Correct numerical results do not rule out out-of-bounds
+access, use-after-free, invalid lifetime behavior, signed overflow, invalid
+shifts, alignment faults, or other undefined behavior.
+
+**How it is tested.** `make san01-sanitize` compiles fresh sources with
+`-fsanitize=address,undefined -fno-sanitize-recover=all
+-fno-omit-frame-pointer`, executes `--all`, and runs each demo in an isolated
+directory. A child marker prevents only recursive SAN01 orchestration.
+
+**Expected result.** Compilation, 116 registered validations, and all demos
+finish with no sanitizer-origin diagnostic. Leak enumeration is explicitly
+disabled by default in ptrace/container environments; set
+`SAN01_ASAN_OPTIONS=detect_leaks=1:halt_on_error=1` on a compatible untraced
+host to add LeakSanitizer.

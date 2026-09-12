@@ -502,12 +502,28 @@ StepState Model::prepare_step(double t_s) const {
   double e1[3]={P_.cme_dir[0],P_.cme_dir[1],P_.cme_dir[2]};
   if (!::normalize_checked(e1))
     throw std::runtime_error("swcme3d: validated CME direction became degenerate");
-  double tmp[3]={0,0,1}; if (std::fabs(e1[2])>0.9){ tmp[0]=1; tmp[1]=0; tmp[2]=0; }
+  // Use the physical solar-rotation axis to fix the roll of nonspherical CME
+  // geometries.  The former global-Z/global-X Gram-Schmidt seed made an
+  // ellipsoid change orientation when every physical vector was subjected to
+  // the same proper rotation.  A cross product of two configured vectors is
+  // covariant, so rotating cme_dir and solar_rotation_axis now rotates the
+  // complete (e1,e2,e3) frame.  Only the genuinely degenerate parallel-axis
+  // case needs the documented legacy Cartesian fallback because no physical
+  // input then specifies a transverse roll direction.
+  double tmp[3]={P_.solar_rotation_axis[0],P_.solar_rotation_axis[1],
+                 P_.solar_rotation_axis[2]};
   double e2[3]={ e1[1]*tmp[2]-e1[2]*tmp[1],
                  e1[2]*tmp[0]-e1[0]*tmp[2],
                  e1[0]*tmp[1]-e1[1]*tmp[0] };
-  if (!::normalize_checked(e2))
-    throw std::runtime_error("swcme3d: failed to construct CME transverse basis");
+  if (!::normalize_checked(e2)) {
+    tmp[0]=0.0; tmp[1]=0.0; tmp[2]=1.0;
+    if (std::fabs(e1[2])>0.9) { tmp[0]=1.0; tmp[1]=0.0; tmp[2]=0.0; }
+    e2[0]=e1[1]*tmp[2]-e1[2]*tmp[1];
+    e2[1]=e1[2]*tmp[0]-e1[0]*tmp[2];
+    e2[2]=e1[0]*tmp[1]-e1[1]*tmp[0];
+    if (!::normalize_checked(e2))
+      throw std::runtime_error("swcme3d: failed to construct CME transverse basis");
+  }
   double e3[3]={ e1[1]*e2[2]-e1[2]*e2[1],
                  e1[2]*e2[0]-e1[0]*e2[2],
                  e1[0]*e2[1]-e1[1]*e2[0] };
@@ -550,6 +566,7 @@ StepState Model::prepare_step(double t_s) const {
   common_cfg.alpha_to_proton_ratio=P_.alpha_to_proton_ratio;
   common_cfg.electron_T_K=P_.electron_T_K;
   common_cfg.alpha_T_K=P_.alpha_T_K;
+  common_cfg.parker_radial_polarity=P_.parker_radial_polarity;
   common_cfg.parker_reference_sin_theta=P_.sin_theta;
   common_cfg.solar_rotation_rate_rad_s=P_.solar_rotation_rate_rad_s;
   common_cfg.parker_source_radius_Rs=P_.parker_source_radius_Rs;

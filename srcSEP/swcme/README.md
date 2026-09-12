@@ -2038,6 +2038,18 @@ version 3 records the closure, abundance, and both additional temperatures;
 unknown closures, negative abundance, and non-positive/non-finite temperatures
 are rejected before preparation.
 
+### DEN03 composition and mass density
+
+The multi-species abundance convention is explicitly
+`f_alpha=n_alpha/n_proton`. Charge neutrality therefore gives
+`n_proton=n_e/(1+2*f_alpha)` and `n_alpha=f_alpha*n_proton`; mass density is
+`m_proton*n_proton+m_alpha*n_alpha`. Priority validation `DEN03` recomputes
+these relations independently for alpha abundances 0, 0.04, and 0.10 over five
+electron-density decades from `1e2` to `1e14 m^-3`. Every field must agree to
+`1e-13` relative, charge neutrality must close, mass density must increase
+monotonically with abundance at fixed electron density, and the zero-alpha
+limit must reduce exactly to `n_proton=n_e` and `rho=m_proton*n_e`.
+
 Priority validation `DEN04` independently recomputes species densities, mass
 density, pressure, and sound speed for four adiabatic indices, equal and
 unequal temperatures, zero/nonzero alpha abundance, and a cold positive limit.
@@ -2089,6 +2101,128 @@ its tangent must be parallel (positive polarity) or antiparallel (negative
 polarity) to the production field within `1e-8` rad. It also directly projects
 the background `Bphi/Br` and requires the same source-radius pitch as the
 connectivity curve.
+
+### PAR06 Parker path length and focusing
+
+Priority validation `PAR06` compares the source-radius-aware closed-form path
+length with test-owned adaptive Simpson quadrature of
+`ds/dr=sqrt(1+k^2(r-rb)^2)`. It also reconstructs
+`L=-1/(d ln|B|/ds)` with a converged fourth-order numerical derivative at 160
+random latitude, wind-speed, rotation-rate, source-radius, and radial-interval
+fixtures. Path error must remain below `1e-9`, focusing error below `1e-7`, and
+the exact zero-rotation branch must return the radial distance. The documented
+orientation is outward: the baseline field magnitude decreases outward, so
+the returned focusing length is positive and expressed in meters.
+
+### PAR02 random Parker vector construction
+
+`parker_radial_polarity` is now an explicit runtime parameter restricted to
+`+1` or `-1`; it is preserved in configuration manifests, digests, and prepared
+state integrity. The default remains `+1`. Expanded priority validation
+`PAR02` evaluates 1,024 fixed-seed Cartesian points across radii, longitudes,
+latitudes, hemispheres, arbitrary rotation axes, wind and rotation speeds,
+source radii, normalization latitudes, and both polarities. A separate
+spherical-basis construction must agree within `1e-12`; polarity must negate
+the vector without changing magnitude, and arbitrary proper rotations must
+commute with field evaluation.
+
+### PAR03 Parker polar limits
+
+Expanded `PAR03` approaches both rotation poles for four solar-axis
+orientations, two polarities, a finite source radius, eight longitudes, and
+angular offsets from `1e-2` down to `1e-12` rad. It projects the returned field
+onto independently constructed radial and azimuthal bases, verifies the
+expected `O(sin(theta))` transverse component, checks longitude-independent
+limiting magnitude, and evaluates the exact finite radial pole branch. This
+guards against normalizing a vanishing azimuthal basis or introducing an
+arbitrary longitude-dependent transverse field.
+
+### PAR01 equatorial Parker components and polarity
+
+Expanded priority validation `PAR01` retains the transparent +X/+Z-axis
+fixture and adds 96 equatorial cases using two rotation axes, two independent
+equatorial directions (the canonical axis also supplies the requested +X and
++Y points), both radial polarities, three radii, two wind speeds, and zero or
+finite Parker source radius. A test-owned spherical-basis construction checks
+the complete Cartesian vector to `1e-12`, while independent projections verify
+the sign of `Br` and the source-aware relation
+`Bphi/Br=-Omega(r-rb)/Vsw`. This matrix proves that polarity reverses both
+components, `Br` scales as `r^-2`, and the legacy `rb=0` convention remains a
+covered compatibility case.
+
+### CROSS01 one-dimensional and three-dimensional physics consistency
+
+Priority validation `CROSS01` compares equivalent radial 1-D and spherical 3-D
+models through their public evaluators, shock diagnostics, Parker transport
+helpers, and acceleration-source adapters. The campaign spans default and
+multi-species pressure closures, both Parker polarities, zero and finite source
+radii, strong, weak, and no-shock configurations, three times, three radii, and
+both the spherical apex and an orthogonal flank. Density, pressure, velocity,
+magnetic components and magnitude, divergence, path length, focusing length,
+shock radius/speed/compression/`thetaBn`/Mach, source enablement, and source
+scalars must agree within dimension-aware tolerances. Shape-specific 3-D
+effects are intentionally excluded by using the exact spherical reduction.
+
+### GEO01 geometry rotation and derivative convergence
+
+The nonspherical CME frame now derives its transverse roll from the configured
+solar-rotation axis instead of a preferred global Cartesian axis. Consequently
+simultaneous proper rotation of the CME direction, solar axis, and query points
+rotates the complete sphere, SSE, or ellipsoid without changing its physical
+geometry. `GEO01` verifies rotated positions and normals, invariant radii,
+normal speeds, compression, and local triangle areas. It also halves the
+centered time step four times for every shape and requires convergent recovery
+of the analytical normal speed. If the CME and solar axes are parallel and no
+physical roll exists, the documented legacy Cartesian fallback remains.
+
+### MESH01 mesh and integrated source convergence
+
+Priority validation `MESH01` builds sphere, SSE, and ellipsoid shock meshes at
+8x16, 16x32, 32x64, and 64x128 angular resolutions. It requires positive
+finite triangle area, outward winding against analytical normals, usable
+mean-ratio quality, and exact conservation of normalized active source weight.
+The surface area and an area integral constructed from production source
+records, `A*Vsh,n*(compression-1)`, must approach the independently rebuilt
+64x128 reference monotonically over the first three nested levels. The 32x64
+area change must be below 0.5% and the integrated-source change below 1%.
+
+### REG01 region boundary and smoothing convergence
+
+Expanded `REG01` retains the SHOCK_ONLY upstream-identity checks and probes both
+sides of the shock, leading, and trailing boundaries at eight logarithmic
+offsets with zero and finite smoothing. A test-owned cubic verifies blend
+values and normalization; four halved spatial steps verify derivative
+convergence. Sixty-four deterministic SSE position/time samples require the
+resolved widths to equal the requested fractions of each local shock radius
+exactly. Four halved temporal steps then recover the DBM motion of all three
+boundaries, distinguishing a smooth moving interface from a merely continuous
+snapshot.
+
+### CON11 connectivity random stress and transition convergence
+
+Priority validation `CON11` runs 10,000 fixed-seed connectivity cases grouped
+across 100 configurations and 100 observers. It varies shape, observer radius
+and direction, CME and solar axes, polarity, Parker source radius, wind/front
+speed, SSE width, ellipsoid ratios, and time. Every valid case must finish with
+a qualified physical status; connected roots must be finite, ordered,
+within-domain, residual-qualified, and select the outermost root. Sun-centered
+sphere cases receive an independent analytic interval classification. A moving
+SSE campaign resolves both connection onset and loss on refined forward and
+reverse grids, and an over-budget request must return `ResolutionLimit` with no
+partial physical verdict.
+
+### SAN01 memory and undefined-behavior validation
+
+`SAN01` creates a fresh C++17 build with both
+`-fsanitize=address,undefined`, fail-fast recovery disabled, and frame pointers
+retained. It executes all deterministic registered tests—including malformed
+inputs and the high-count campaigns—then builds and runs all three user
+demonstrations under the same sanitizer runtime. The registered test fails on
+any compile error, assertion, demo failure, ASan finding, or UBSan finding.
+LeakSanitizer defaults to `detect_leaks=0` because ptrace/container runners may
+not support it; an untraced host can enable it with
+`SAN01_ASAN_OPTIONS=detect_leaks=1:halt_on_error=1`. This limitation affects
+only leak enumeration, not address or undefined-behavior coverage.
 
 Mesh and checked Tecplot output paths reject non-finite physics instead of
 writing a sanitized surrogate.  `ERR01`-`ERR05` protect outside-domain behavior,

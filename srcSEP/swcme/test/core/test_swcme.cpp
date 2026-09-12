@@ -33,6 +33,7 @@ void test_par02(swcme_test::Context& context);
 void test_par03(swcme_test::Context& context);
 void test_par04(swcme_test::Context& context);
 void test_par05(swcme_test::Context& context);
+void test_par06(swcme_test::Context& context);
 void test_geo01(swcme_test::Context& context);
 void test_geo02(swcme_test::Context& context);
 void test_geo03(swcme_test::Context& context);
@@ -42,6 +43,7 @@ void test_geo06(swcme_test::Context& context);
 void test_geo07(swcme_test::Context& context);
 void test_geo08(swcme_test::Context& context);
 void test_msh01(swcme_test::Context& context);
+void test_mesh01(swcme_test::Context& context);
 void test_msh02(swcme_test::Context& context);
 void test_msh03(swcme_test::Context& context);
 void test_msh04(swcme_test::Context& context);
@@ -73,6 +75,7 @@ void test_shk17(swcme_test::Context& context);
 void test_den04(swcme_test::Context& context);
 void test_den02(swcme_test::Context& context);
 void test_den05(swcme_test::Context& context);
+void test_den03(swcme_test::Context& context);
 void test_shk13(swcme_test::Context& context);
 void test_shk14(swcme_test::Context& context);
 void test_con01(swcme_test::Context& context);
@@ -85,6 +88,7 @@ void test_con07(swcme_test::Context& context);
 void test_con08(swcme_test::Context& context);
 void test_con09(swcme_test::Context& context);
 void test_con10(swcme_test::Context& context);
+void test_con11(swcme_test::Context& context);
 void test_reg01(swcme_test::Context& context);
 void test_reg02(swcme_test::Context& context);
 void test_reg03(swcme_test::Context& context);
@@ -117,6 +121,8 @@ void test_1d_ambient_at_one_au(swcme_test::Context& context);
 void test_1d3d01(swcme_test::Context& context);
 void test_1d3d02(swcme_test::Context& context);
 void test_1d3d03(swcme_test::Context& context);
+void test_cross01(swcme_test::Context& context);
+void test_san01(swcme_test::Context& context);
 
 namespace {
 
@@ -164,11 +170,17 @@ const swcme_test::TestCase kTests[] = {
     {"SHK10", "COMMON", "Rankine-Hugoniot total-energy-flux conservation", test_shk10},
     {"SHK11", "COMMON", "Physical admissibility and entropy increase", test_shk11},
     {"SHK17", "COMMON", "Shock reference regeneration", test_shk17},
+    {"DEN03", "COMMON", "Composition and mass-density conversion", test_den03},
     {"DEN04", "COMMON", "Pressure and sound-speed closure", test_den04},
     {"DEN02", "COMMON", "Leblanc density asymptotic behavior", test_den02},
     {"DEN05", "COMMON", "Default thermodynamic-closure compatibility", test_den05},
     {"PAR04", "3D", "Parker-field solenoidality", test_par04},
     {"PAR05", "3D", "Parker field-line tangency", test_par05},
+    {"PAR06", "COMMON", "Parker path length and focusing", test_par06},
+    {"PAR02", "3D", "Random Parker vector construction", test_par02},
+    {"PAR03", "3D", "Parker polar-limit regularity", test_par03},
+    {"PAR01", "3D", "Equatorial Parker components and polarity", test_par01},
+    {"CROSS01", "1D<->3D", "One- and three-dimensional physics consistency", test_cross01},
     {"CFG01", "COMMON", "Configuration rejection and physical-range validation",
      test_cfg01},
     {"CFG02", "COMMON", "Unit-conversion and dimensional-consistency test",
@@ -185,10 +197,11 @@ const swcme_test::TestCase kTests[] = {
     {"SEP06", "COMMON", "Resolved-compression source-disable contract", test_sep06},
     {"DEN01", "COMMON",
      "Leblanc density normalization at the reference distance", test_den01},
-    {"PAR01", "3D", "Parker-spiral equatorial vector orientation", test_par01},
-    {"PAR02", "3D", "Parker field at arbitrary latitude and rotation axis", test_par02},
-    {"PAR03", "3D", "Parker-field polar-limit regularity", test_par03},
-    {"GEO01", "3D", "Spherical shock geometry reference", test_geo01},
+    {"GEO01", "3D", "Geometry rotation and derivative convergence", test_geo01},
+    {"MESH01", "3D", "Mesh and integrated-source convergence", test_mesh01},
+    {"REG01", "COMMON", "Region boundary and smoothing convergence", test_reg01},
+    {"CON11", "3D", "Connectivity random stress and transition convergence", test_con11},
+    {"SAN01", "SANITIZER", "Memory and undefined-behavior validation", test_san01},
     {"GEO02", "3D", "True SSE front at the CME apex", test_geo02},
     {"GEO03", "3D", "SSE tangent-flank boundary behavior", test_geo03},
     {"GEO04", "3D", "Strict enforcement of finite SSE angular width", test_geo04},
@@ -223,7 +236,6 @@ const swcme_test::TestCase kTests[] = {
     {"CON06", "3D", "Time-continuous cobpoint history", test_con06},
     {"CON07", "3D", "Cobpoint-to-ShockState consistency", test_con07},
     {"CON08", "3D", "Connectivity Parker path-length accuracy", test_con08},
-    {"REG01", "COMMON", "SHOCK_ONLY upstream-field identity", test_reg01},
     {"REG02", "COMMON", "FULL_ICME resolved-shock inner Rankine-Hugoniot boundary", test_reg02},
     {"REG03", "1D", "Magnetic-ejecta density and velocity factors", test_reg03},
     {"REG04", "3D", "Self-similar nested shock/leading/trailing surfaces", test_reg04},
