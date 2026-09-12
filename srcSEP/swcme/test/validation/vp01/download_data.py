@@ -40,10 +40,29 @@ FILES = (
 RECORD_URL = "https://zenodo.org/api/records/1009506"
 
 
+def md5_hasher():
+    """Create an MD5 object on both modern and legacy Python/OpenSSL builds.
+
+    Python builds linked to newer OpenSSL providers accept
+    ``usedforsecurity=False``.  That flag correctly describes this use: MD5 is
+    retained only to compare with the checksum published by Zenodo, while the
+    independently frozen SHA-256 digest is the security-strength content
+    identity.  Older vendor Python builds expose ``openssl_md5`` without that
+    keyword and raise ``TypeError`` before hashing any bytes.  Falling back only
+    for that signature mismatch preserves support for those systems without
+    hiding a real provider or policy error from either call.
+    """
+
+    try:
+        return hashlib.md5(usedforsecurity=False)
+    except TypeError:
+        return hashlib.md5()
+
+
 def digests(path: Path) -> tuple[str, str, int]:
     """Return MD5, SHA-256, and byte count without loading an archive in RAM."""
 
-    md5 = hashlib.md5(usedforsecurity=False)
+    md5 = md5_hasher()
     sha256 = hashlib.sha256()
     size = 0
     with path.open("rb") as stream:

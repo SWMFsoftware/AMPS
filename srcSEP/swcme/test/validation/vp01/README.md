@@ -43,6 +43,10 @@ SHA-256 values, column meanings, and species caveat are frozen in
 `data/PROVENANCE.json`. Raw archives live in `data/raw/` and are ignored by Git.
 `download_data.py` uses an adjacent temporary file, atomically installs a
 complete download, and requires exact byte-count, MD5, and SHA-256 agreement.
+Its MD5 constructor supports both modern FIPS-aware Python builds, where
+`usedforsecurity=False` documents the non-security Zenodo compatibility check,
+and older vendor Python/OpenSSL builds that do not accept that keyword. SHA-256
+remains the independently frozen content identity in both paths.
 
 Download and verify both the observations and author-supplied processing code:
 
@@ -156,7 +160,10 @@ make validation-implemented
 See [`../README.md`](../README.md) for the campaign registry, common artifacts,
 status/exit-code semantics, and the contract used by future VP02-VP16 packages.
 
-The Python runner requires Python 3.10 or later, NumPy, and Matplotlib. It accepts explicit
+The Python runner supports Python 3.9 or later and requires NumPy and
+Matplotlib. Compatibility paths cover vendor Python/OpenSSL builds without the
+`hashlib` `usedforsecurity` keyword and interpreters predating
+`zip(strict=True)`. It accepts explicit
 radius, binning, compiler, archive, and output-directory options; run
 `python3 validation/vp01/run_vp01.py --help` for the full interface. Nonzero
 exit code 1 means a scientific threshold failed. Exit code 2 means setup,
