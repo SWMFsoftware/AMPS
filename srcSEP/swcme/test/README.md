@@ -1165,7 +1165,9 @@ make validation-implemented
 make validation-campaign
 ```
 
-VP01-VP05 are implemented; VP06-VP16 remain registered as planned. Pass
+VP01-VP16 are implemented. VP06-VP11 add shock, geometry, Parker, and
+connectivity comparisons; VP12-VP15 are explicitly scoped AMPS-facing coupling
+benchmarks; VP16 exercises held-out multi-event/baseline scoring. Pass
 acquisition or presentation options with `VALIDATION_ARGS`, for example
 `make validation-case CASE=VP01 VALIDATION_ARGS="--download --no-plots"`.
 Individual and multi-case selections run in canonical priority order. A full

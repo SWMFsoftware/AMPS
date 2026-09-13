@@ -1,0 +1,8 @@
+{
+  "fixture_kind": "COUPLING_BENCHMARK",
+  "network_required": false,
+  "schema_version": 1,
+  "source": "case-owned reference_solution.py and public SWCME production API",
+  "title": "Controlled one-dimensional and three-dimensional AMPS equivalence",
+  "validation_id": "VP13"
+}\n

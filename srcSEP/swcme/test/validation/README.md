@@ -24,7 +24,9 @@ test/validation/
 ├── vp02/                     Parker angle/polarity case
 ├── vp03/                     background thermodynamics case
 ├── vp04/                     CDAW height-time case
-└── vp05/                     LineupCAT multipoint DBM case
+├── vp05/                     LineupCAT multipoint DBM case
+├── vp06/ … vp16/             shock, geometry, connectivity, coupling cases
+└── common_model_driver.cpp   shared warning-clean public-API probe
     ├── README.md              scientific question, method, and thresholds
     ├── case.json              global-runner launch/result contract
     ├── data/
@@ -38,10 +40,10 @@ test/validation/
     └── output/                direct-case evidence and figures
 ```
 
-Future cases use sibling lowercase directories (`vp06/`, `vp07/`, ...). Data,
-reference logic, case-specific tests, figures, and documentation remain in that
-case directory; no case-specific equation or threshold belongs in the global
-runner.
+All sixteen cases now use sibling lowercase directories. Data, reference logic,
+case-specific tests, figures, and documentation remain in the case directory.
+VP06-VP15 use `common_model_driver.cpp` only as a thin production-API probe;
+their independent equations and evidence classification remain case-owned.
 
 ## Running validation
 
@@ -100,10 +102,10 @@ registry's priority order rather than command-line order.
 | `NOT_APPLICABLE` | A traceable retired case does not apply. |
 
 The global process returns `0` for PASS, `1` for FAIL, `2` for INCOMPLETE, and
-`3` for a registry, selection, or setup error. A full campaign therefore exits
-`2` today: VP01-VP05 are implemented, but VP06-VP16 remain planned. This is
-deliberate and prevents five successful components from being reported as
-complete release validation.
+`3` for a registry, selection, or setup error. All VP01-VP16 packages are now
+implemented. A campaign PASS remains scoped by each result's `evidence_class`
+and `limitations`; in particular, the bundled V6 coupling benchmarks do not
+claim external AMPS particle-transport skill.
 
 ## Common evidence products
 
@@ -188,19 +190,20 @@ executables, caches, logs, and transient campaign output must remain ignored.
 | 3 | VP03 | V1 | Implemented | Background speed, pressure, sound speed, and fast-mode speed. |
 | 4 | VP04 | V2 | Implemented | CME/shock apex height-time and speed evolution. |
 | 5 | VP05 | V2 | Implemented | Multi-spacecraft shock arrival time and speed. |
-| 6 | VP06 | V3 | Planned | In-situ Rankine-Hugoniot jumps and flux conservation. |
-| 7 | VP07 | V3 | Planned | Shock normal, obliquity, and acceleration geometry. |
-| 8 | VP08 | V4 | Planned | Reconstructed 3-D shock front and observer intersections. |
-| 9 | VP09 | V4 | Planned | Sheath/ejecta classifications and region-boundary timing. |
-| 10 | VP10 | V5 | Planned | Parker mapping, field-line path length, and focusing. |
-| 11 | VP11 | V5 | Planned | Connectivity transitions and observed SEP access. |
-| 12 | VP12 | V6 | Planned | SEP source records, identity, attribution, and source spectrum. |
-| 13 | VP13 | V6 | Planned | Controlled 1-D/3-D AMPS interface equivalence. |
-| 14 | VP14 | V6 | Planned | Perpendicular diffusion and multi-spacecraft longitudinal spread. |
-| 15 | VP15 | V6 | Planned | SEP onset, profile, spectrum, peak intensity, and fluence. |
-| 16 | VP16 | Campaign | Planned | Held-out multi-event and cross-model skill assessment. |
+| 6 | VP06 | V3 | Implemented | In-situ Rankine-Hugoniot jumps and flux conservation. |
+| 7 | VP07 | V3 | Implemented | Shock normal, obliquity, and acceleration geometry. |
+| 8 | VP08 | V4 | Implemented | Reconstructed 3-D shock front and observer intersections. |
+| 9 | VP09 | V4 | Implemented | Sheath/ejecta classifications and region-boundary timing. |
+| 10 | VP10 | V5 | Implemented | Parker mapping, field-line path length, and focusing. |
+| 11 | VP11 | V5 | Implemented | Connectivity transitions and observed SEP access. |
+| 12 | VP12 | V6 | Implemented | SEP source records, identity, attribution, and source spectrum. |
+| 13 | VP13 | V6 | Implemented | Controlled 1-D/3-D AMPS interface equivalence. |
+| 14 | VP14 | V6 | Implemented | Perpendicular diffusion and multi-spacecraft longitudinal spread. |
+| 15 | VP15 | V6 | Implemented | SEP onset, profile, spectrum, peak intensity, and fluence. |
+| 16 | VP16 | Campaign | Implemented | Held-out multi-event and cross-model skill assessment. |
 
 The layer labels correspond to the release ladder documented in the repository
 README: background, apex kinematics, in-situ shock, encounter geometry,
 connectivity, and SEP-facing integration. Registration reserves stable IDs and
-dependencies; it does not imply that a planned comparison has been performed.
+dependencies. Each case README and result file states whether its evidence is
+observational, analytical, literature-constrained, or a coupling benchmark.

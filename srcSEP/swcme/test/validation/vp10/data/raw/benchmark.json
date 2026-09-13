@@ -1,0 +1,8 @@
+{
+  "fixture_kind": "ANALYTICAL_REFERENCE",
+  "network_required": false,
+  "schema_version": 1,
+  "source": "case-owned reference_solution.py and public SWCME production API",
+  "title": "Parker mapping, field-line path length, and focusing",
+  "validation_id": "VP10"
+}\n

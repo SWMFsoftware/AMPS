@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "VP07",
+  "description": "Global-runner contract for the case-owned VP07 implementation.",
+  "runner": [
+    "{python}",
+    "{case_dir}/run_vp07.py",
+    "--output-dir",
+    "{output_dir}"
+  ],
+  "result_file": "vp07_result.json",
+  "download_argument": "--download",
+  "no_plots_argument": "--no-plots"
+}
+

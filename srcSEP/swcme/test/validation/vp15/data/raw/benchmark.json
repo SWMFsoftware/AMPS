@@ -1,0 +1,8 @@
+{
+  "fixture_kind": "COUPLING_BENCHMARK",
+  "network_required": false,
+  "schema_version": 1,
+  "source": "case-owned reference_solution.py and public SWCME production API",
+  "title": "SEP onset, profile, spectrum, peak intensity, and fluence",
+  "validation_id": "VP15"
+}\n

@@ -29,6 +29,10 @@ VP04_DRIVER := output/vp04_model_driver
 VP05_DIR := validation/vp05
 VP05_DRIVER := output/vp05_model_driver
 VALIDATION_RUNNER := validation/run_validation.py
+VP_EXT_NUMBERS := 06 07 08 09 10 11 12 13 14 15 16
+VP_EXT_DATA_TARGETS := $(addprefix vp,$(addsuffix -data,$(VP_EXT_NUMBERS)))
+VP_EXT_TEST_TARGETS := $(addprefix vp,$(addsuffix -test,$(VP_EXT_NUMBERS)))
+VP_EXT_VALIDATION_TARGETS := $(addprefix vp,$(addsuffix -validation,$(VP_EXT_NUMBERS)))
 # Optional arguments are intentionally separate from CASE so callers can add
 # --download, --no-plots, or an explicit evidence directory without editing a
 # target.  Quoting remains the caller's responsibility at the Make boundary;
@@ -110,7 +114,13 @@ OUT08_WARNING_FLAGS := -std=c++17 -Wall -Wextra -Wpedantic -Wformat=2 \
 	validation-case validation-implemented validation-campaign \
 	vp01-data vp01-test vp01-validation vp02-data vp02-test vp02-validation \
 	vp03-data vp03-test vp03-validation vp04-data vp04-test vp04-validation \
-	vp05-data vp05-test vp05-validation pst05-sanitize pst08-performance \
+	vp05-data vp05-test vp05-validation \
+	vp06-data vp06-test vp06-validation vp07-data vp07-test vp07-validation \
+	vp08-data vp08-test vp08-validation vp09-data vp09-test vp09-validation \
+	vp10-data vp10-test vp10-validation vp11-data vp11-test vp11-validation \
+	vp12-data vp12-test vp12-validation vp13-data vp13-test vp13-validation \
+	vp14-data vp14-test vp14-validation vp15-data vp15-test vp15-validation \
+	vp16-data vp16-test vp16-validation pst05-sanitize pst08-performance \
 	perf01-performance thr01-tsan out08-strict san01-sanitize cov01-coverage clean
 
 all: $(TARGET) demos
@@ -500,6 +510,21 @@ vp05-test: | output
 
 vp05-validation: vp05-test
 	python3 $(VP05_DIR)/run_vp05.py
+
+# VP06-VP16 share one warning-clean public-API probe while retaining separate
+# data manifests, independent reference solutions, focused tests, runners,
+# acceptance criteria, and figures.  Pattern targets keep future maintenance
+# proportional to the common contract rather than duplicating eleven recipes.
+$(VP_EXT_DATA_TARGETS): vp%-data:
+	python3 validation/vp$*/download_data.py
+
+$(VP_EXT_TEST_TARGETS): vp%-test: | output
+	python3 validation/vp$*/test_reference_solution.py
+	$(CXX) $(CPPFLAGS) -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror \
+		validation/common_model_driver.cpp ../swcme3d.cpp -o output/common_validation_model_driver
+
+$(VP_EXT_VALIDATION_TARGETS): vp%-validation: vp%-test
+	python3 validation/vp$*/run_vp$*.py
 
 # Build a separate fully instrumented validation executable so AddressSanitizer
 # never contaminates normal incremental objects.  Running only PST05 keeps the

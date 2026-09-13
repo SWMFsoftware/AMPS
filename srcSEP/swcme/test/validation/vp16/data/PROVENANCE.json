@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "validation_id": "VP16",
+  "title": "Held-out multi-event and cross-model skill assessment",
+  "evidence_class": "CAMPAIGN_BENCHMARK",
+  "source_files": [
+    "reference_solution.py",
+    "data/raw/benchmark.json"
+  ],
+  "license": "Repository validation fixture; external publications remain subject to their publishers' terms.",
+  "retrieval": "python3 download_data.py",
+  "notes": [
+    "This fixture validates held-out scoring mechanics and positive skill against a frozen baseline; release use requires separately curated event and cross-model archives."
+  ]
+}
+

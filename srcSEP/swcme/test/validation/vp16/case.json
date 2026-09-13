@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "VP16",
+  "description": "Global-runner contract for the case-owned VP16 implementation.",
+  "runner": [
+    "{python}",
+    "{case_dir}/run_vp16.py",
+    "--output-dir",
+    "{output_dir}"
+  ],
+  "result_file": "vp16_result.json",
+  "download_argument": "--download",
+  "no_plots_argument": "--no-plots"
+}
+

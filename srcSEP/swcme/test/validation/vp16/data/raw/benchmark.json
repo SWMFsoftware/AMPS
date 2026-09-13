@@ -1,0 +1,8 @@
+{
+  "fixture_kind": "HELD_OUT_CAMPAIGN_FIXTURE",
+  "network_required": false,
+  "schema_version": 1,
+  "source": "case-owned reference_solution.py and public SWCME production API",
+  "title": "Held-out multi-event and cross-model skill assessment",
+  "validation_id": "VP16"
+}\n

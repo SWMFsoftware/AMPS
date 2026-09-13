@@ -1,0 +1,8 @@
+{
+  "fixture_kind": "ANALYTICAL_REFERENCE",
+  "network_required": false,
+  "schema_version": 1,
+  "source": "case-owned reference_solution.py and public SWCME production API",
+  "title": "Reconstructed 3-D shock front and observer intersections",
+  "validation_id": "VP08"
+}\n

@@ -1,0 +1,8 @@
+{
+  "fixture_kind": "LITERATURE_CONSTRAINT",
+  "network_required": false,
+  "schema_version": 1,
+  "source": "case-owned reference_solution.py and public SWCME production API",
+  "title": "Connectivity transitions and observed SEP access",
+  "validation_id": "VP11"
+}\n

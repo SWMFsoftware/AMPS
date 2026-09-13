@@ -1,0 +1,8 @@
+{
+  "fixture_kind": "COUPLING_BENCHMARK",
+  "network_required": false,
+  "schema_version": 1,
+  "source": "case-owned reference_solution.py and public SWCME production API",
+  "title": "SEP source records, identity, attribution, and source spectrum",
+  "validation_id": "VP12"
+}\n

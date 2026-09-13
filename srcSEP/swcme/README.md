@@ -962,9 +962,11 @@ make validation-implemented                  # run all available cases
 make validation-campaign                     # assess the full VP01-VP16 scope
 ```
 
-The complete campaign currently reports `INCOMPLETE` because VP06-VP16 are
-registered roadmap cases rather than implementations; `--implemented` runs
-VP01-VP05 in priority order and can pass independently. See
+VP01-VP16 now have case-owned implementations. VP06-VP15 share a thin
+warning-clean production-API probe while retaining independent reference
+solutions, focused tests, provenance, CSV/JSON evidence, and PNG/EPS figures.
+The V6 packages explicitly report controlled coupling evidence rather than
+claiming external AMPS transport skill. See
 [`test/validation/README.md`](test/validation/README.md) for the directory and
 case contracts, dependency behavior, status semantics, and extension steps.
 

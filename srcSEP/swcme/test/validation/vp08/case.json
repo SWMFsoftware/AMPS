@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "VP08",
+  "description": "Global-runner contract for the case-owned VP08 implementation.",
+  "runner": [
+    "{python}",
+    "{case_dir}/run_vp08.py",
+    "--output-dir",
+    "{output_dir}"
+  ],
+  "result_file": "vp08_result.json",
+  "download_argument": "--download",
+  "no_plots_argument": "--no-plots"
+}
+

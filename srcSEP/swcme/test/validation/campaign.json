@@ -53,7 +53,7 @@
       "priority": 6,
       "layer": "V3",
       "title": "In-situ shock jump and conservation",
-      "state": "planned",
+      "state": "implemented",
       "case_dir": "vp06",
       "dependencies": ["VP01", "VP02", "VP03", "VP04", "VP05"]
     },
@@ -62,7 +62,7 @@
       "priority": 7,
       "layer": "V3",
       "title": "Shock normal obliquity and acceleration geometry",
-      "state": "planned",
+      "state": "implemented",
       "case_dir": "vp07",
       "dependencies": ["VP01", "VP02", "VP03", "VP04", "VP05"]
     },
@@ -71,7 +71,7 @@
       "priority": 8,
       "layer": "V4",
       "title": "Three-dimensional shock front and multi-observer geometry",
-      "state": "planned",
+      "state": "implemented",
       "case_dir": "vp08",
       "dependencies": ["VP01", "VP02", "VP03", "VP04", "VP05", "VP06", "VP07"]
     },
@@ -80,7 +80,7 @@
       "priority": 9,
       "layer": "V4",
       "title": "Sheath ejecta and region-boundary timing",
-      "state": "planned",
+      "state": "implemented",
       "case_dir": "vp09",
       "dependencies": ["VP01", "VP02", "VP03", "VP04", "VP05", "VP06", "VP07"]
     },
@@ -89,7 +89,7 @@
       "priority": 10,
       "layer": "V5",
       "title": "Parker mapping path length and focusing",
-      "state": "planned",
+      "state": "implemented",
       "case_dir": "vp10",
       "dependencies": ["VP01", "VP02", "VP03", "VP04", "VP05", "VP06", "VP07", "VP08", "VP09"]
     },
@@ -98,7 +98,7 @@
       "priority": 11,
       "layer": "V5",
       "title": "Connectivity history and SEP access",
-      "state": "planned",
+      "state": "implemented",
       "case_dir": "vp11",
       "dependencies": ["VP01", "VP02", "VP03", "VP04", "VP05", "VP06", "VP07", "VP08", "VP09"]
     },
@@ -107,7 +107,7 @@
       "priority": 12,
       "layer": "V6",
       "title": "SEP source-record identity and source spectrum",
-      "state": "planned",
+      "state": "implemented",
       "case_dir": "vp12",
       "dependencies": ["VP01", "VP02", "VP03", "VP04", "VP05", "VP06", "VP07", "VP08", "VP09", "VP10", "VP11"]
     },
@@ -116,7 +116,7 @@
       "priority": 13,
       "layer": "V6",
       "title": "Controlled one-dimensional and three-dimensional AMPS equivalence",
-      "state": "planned",
+      "state": "implemented",
       "case_dir": "vp13",
       "dependencies": ["VP01", "VP02", "VP03", "VP04", "VP05", "VP06", "VP07", "VP08", "VP09", "VP10", "VP11"]
     },
@@ -125,7 +125,7 @@
       "priority": 14,
       "layer": "V6",
       "title": "Perpendicular diffusion and multi-spacecraft spread",
-      "state": "planned",
+      "state": "implemented",
       "case_dir": "vp14",
       "dependencies": ["VP01", "VP02", "VP03", "VP04", "VP05", "VP06", "VP07", "VP08", "VP09", "VP10", "VP11"]
     },
@@ -134,7 +134,7 @@
       "priority": 15,
       "layer": "V6",
       "title": "SEP time profile spectrum peak and fluence",
-      "state": "planned",
+      "state": "implemented",
       "case_dir": "vp15",
       "dependencies": ["VP01", "VP02", "VP03", "VP04", "VP05", "VP06", "VP07", "VP08", "VP09", "VP10", "VP11"]
     },
@@ -143,7 +143,7 @@
       "priority": 16,
       "layer": "Campaign",
       "title": "Held-out multi-event and cross-model skill assessment",
-      "state": "planned",
+      "state": "implemented",
       "case_dir": "vp16",
       "dependencies": ["VP01", "VP02", "VP03", "VP04", "VP05", "VP06", "VP07", "VP08", "VP09", "VP10", "VP11", "VP12", "VP13", "VP14", "VP15"]
     }

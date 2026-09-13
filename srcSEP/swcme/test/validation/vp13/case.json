@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "VP13",
+  "description": "Global-runner contract for the case-owned VP13 implementation.",
+  "runner": [
+    "{python}",
+    "{case_dir}/run_vp13.py",
+    "--output-dir",
+    "{output_dir}"
+  ],
+  "result_file": "vp13_result.json",
+  "download_argument": "--download",
+  "no_plots_argument": "--no-plots"
+}
+

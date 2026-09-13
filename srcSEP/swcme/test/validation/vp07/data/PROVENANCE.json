@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "validation_id": "VP07",
+  "title": "Shock normal, obliquity, and acceleration geometry",
+  "evidence_class": "ANALYTICAL_REFERENCE",
+  "source_files": [
+    "reference_solution.py",
+    "data/raw/benchmark.json"
+  ],
+  "license": "Repository validation fixture; external publications remain subject to their publishers' terms.",
+  "retrieval": "python3 download_data.py",
+  "notes": [
+    "The numerical target is analytical. It validates production physics and the comparison path; any observational-release limitation is recorded in the result JSON."
+  ]
+}
+

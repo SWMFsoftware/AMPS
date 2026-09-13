@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "validation_id": "VP11",
+  "title": "Connectivity transitions and observed SEP access",
+  "evidence_class": "LITERATURE_CONSTRAINT",
+  "source_files": [
+    "reference_solution.py",
+    "data/raw/benchmark.json"
+  ],
+  "license": "Repository validation fixture; external publications remain subject to their publishers' terms.",
+  "retrieval": "python3 download_data.py",
+  "notes": [
+    "The STEREO-A/STEREO-B qualitative constraints are frozen from Tao et al. (2025); SOHO is explicitly retained as a pipeline fixture."
+  ]
+}
+

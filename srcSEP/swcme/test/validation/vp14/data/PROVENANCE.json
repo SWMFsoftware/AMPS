@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "validation_id": "VP14",
+  "title": "Perpendicular diffusion and multi-spacecraft longitudinal spread",
+  "evidence_class": "COUPLING_BENCHMARK",
+  "source_files": [
+    "reference_solution.py",
+    "data/raw/benchmark.json"
+  ],
+  "license": "Repository validation fixture; external publications remain subject to their publishers' terms.",
+  "retrieval": "python3 download_data.py",
+  "notes": [
+    "This is a controlled coupling benchmark. It does not claim an external AMPS science result because AMPS is not distributed with SWCME."
+  ]
+}
+
