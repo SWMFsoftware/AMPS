@@ -79,10 +79,16 @@ void SEP::ParticleSource::ShockWave::Tenishev2005::UpdateShockLocation() {
 
   if (InitFlag==false) Init();
 
-  if (simulation_time_last != PIC::SimulationTime::TimeCounter) {
+  // PIC owns the only simulation clock.  Read it through the same srcSEP clock
+  // adapter used by background snapshots and output, rather than accessing the
+  // mutable TimeCounter implementation detail or maintaining another elapsed
+  // clock in this shock model.
+  const double simulation_time = SEP::Background::SimulationTimeSeconds();
+
+  if (simulation_time_last != simulation_time) {
     double speed = GetShockSpeed();
-    rShock += speed * (PIC::SimulationTime::TimeCounter - simulation_time_last);
-    simulation_time_last=PIC::SimulationTime::TimeCounter;
+    rShock += speed * (simulation_time - simulation_time_last);
+    simulation_time_last=simulation_time;
   }
 }
 

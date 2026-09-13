@@ -42,10 +42,6 @@ void amps_time_step();
 enum class CMEScenario { Fast, Slow };
 
 
-//the physical simulation time 
-double SimulationTime=0.0;
-
-
 // Configure the single model for the requested scenario (called only on change)
 static inline void configure_swcme1d(CMEScenario scenario){
   static bool inited = false;
@@ -73,27 +69,30 @@ static inline void configure_swcme1d(CMEScenario scenario){
 }
 
 /**
- * Advance one global step:
- *  - builds the per-time StepState for the selected scenario
- *  - publishes it to the mover through the adapter
- *  - uses a single static Model 'sw' (no multiple instances)
+ * Prepare and publish SWCME at the one authoritative PIC clock epoch.
+ *
+ * The former driver maintained a global elapsed time and a separate static CME
+ * launch-time accumulator in addition to PIC::SimulationTime.  Their update
+ * order made the SWCME cache lag the particle step by one iteration.  This
+ * routine has no clock state of its own: it prepares the physical StepState at
+ * the supplied PIC epoch, publishes immutable background metadata for exactly
+ * the upcoming global interval, and optionally writes the completed-step
+ * diagnostic.
  */
-void advance_sw1d(double dt) { 
-  static double t_since_launch=0.0;
-  static int ncall=0;
-
-  ncall++;
-
-  // Build per-time cache and publish to mover via adapter
-  swcme1d::StepState S = SEP::sw1d.prepare_step(t_since_launch);
+void publish_sw1d_for_particle_step(double epoch_seconds, double dt,
+                                    long int iteration) {
+  // Build the small time-dependent cache before publishing its metadata.  A
+  // mover can therefore never observe a snapshot epoch for which gState has not
+  // already been prepared.
+  swcme1d::StepState S = SEP::sw1d.prepare_step(epoch_seconds);
   SEP::SW1DAdapter::SetModelAndState(&SEP::sw1d, S);
 
-  t_since_launch+=dt;
-
-
+  SEP::Background::PublishModelOwnedSnapshot(
+      SEP::Background::Provider::Swcme, epoch_seconds, epoch_seconds + dt,
+      "standalone SWCME StepState and Parker field-line background");
 
   // One call does everything: n, V, Br, Bphi, |B|, ∇·V → Tecplot POINT file
-  if ((PIC::ThisThread==0)&&(ncall%10==0)) {
+  if ((PIC::ThisThread==0)&&((iteration+1)%10==0)) {
     char fname[200];
 
     const int N = 400;
@@ -104,8 +103,9 @@ void advance_sw1d(double dt) {
       r[i] = rmin*std::pow(rmax/rmin, t);            // log-spacing (nice for r^-2)
     }
 
-    sprintf(fname,"sw_profile_%i.dat",ncall); 
-    SEP::sw1d.write_tecplot_radial_profile_from_r(S, r, N, fname,SimulationTime);
+    sprintf(fname,"sw_profile_%li.dat",iteration+1);
+    SEP::sw1d.write_tecplot_radial_profile_from_r(
+        S, r, N, fname, epoch_seconds);
   }
 }
 
@@ -203,6 +203,14 @@ int main(int argc,char **argv) {
 
   //set up shock wave model 
   configure_swcme1d(CMEScenario::Fast); 
+
+  // Prepare the initial SWCME cache before mesh/field-line initialization can
+  // query shock geometry.  Metadata publication waits until immediately before
+  // the first particle step, after all background-affecting CLI options and
+  // field-line/turbulence initialization have completed.
+  SEP::SW1DAdapter::SetModelAndState(
+      &SEP::sw1d,
+      SEP::sw1d.prepare_step(SEP::Background::SimulationTimeSeconds()));
 
   //output parameters of the sshock 
   // The production shock diagnostic is unrelated to component-test setup and
@@ -525,6 +533,15 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
 
   //time step
   for (long int niter=0;niter<TotalIterations;niter++) {
+    // Freeze the complete background identity for the upcoming particle step.
+    // SWCME state, snapshot epoch, validity interval, and the PIC clock are
+    // published together.  All later turbulence/shock updates occur after the
+    // ParticleReadPhase in amps_time_step() has ended.
+    const double global_dt =
+        PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+    publish_sw1d_for_particle_step(
+        SEP::Background::SimulationTimeSeconds(), global_dt, niter);
+
     if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag &&
         SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode) {
       ResetWaveParticleStreamingAccumulators();
@@ -614,10 +631,6 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
 
 
     amps_time_step();
-    SimulationTime+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0]; 
-
-    //advance the shock+CME model
-   advance_sw1d(PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
 
 
     if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
@@ -919,7 +932,7 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
             SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::SpectralWaveEnergy);
 
         SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::OutputSpectrumTecplot2D(
-            niter+1,SimulationTime);
+            niter+1,SEP::Background::SimulationTimeSeconds());
       }
 
 /*

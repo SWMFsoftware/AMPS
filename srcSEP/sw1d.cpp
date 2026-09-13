@@ -54,6 +54,13 @@ bool               gClampSheath = true;    // optional monotonic clamp flag
 // Publish the model pointer and time cache (call once each global time step)
 // -----------------------------------------------------------------------------
 void SetModelAndState(swcme1d::Model* m, const swcme1d::StepState& S){
+  // gModel/gState are the compact backing storage named by the immutable
+  // background snapshot.  Check the store before modifying either value so a
+  // legacy SWCME hook cannot replace the prepared state while threaded particle
+  // movers are reading it, or while another provider owns the background.
+  SEP::Background::SnapshotStore::Instance().AssertProviderMayWrite(
+      SEP::Background::Provider::Swcme);
+
   gModel = m;
   gState = S;   // copy the small cache (Parker k, Leblanc coeffs, rc, widths, etc.)
 }
@@ -203,4 +210,3 @@ void Hook_SlowCME(double t_now_s)
 
   maybe_write_profile("slow_cme_profile.dat", sw, S);
 }
-

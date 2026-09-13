@@ -7,10 +7,30 @@ providers, SWCME, or an SWMF coupling.  The source also contains the
 self-consistent Alfvén-turbulence subsystem, including integrated and
 wave-number-resolved representations and particle-wave coupling.
 
-This Step 1 snapshot adds a selectable standalone component-test registry.  It
-does **not** remove or change any particle mover, transport coefficient,
-injection model, background provider, SWMF interface, or turbulence evolution
-algorithm.  The later field-line-mover cleanup is outside this change.
+This source now includes the Step 1 selectable standalone component-test
+registry and the Step 2 immutable background/clock boundary. Step 2 does **not**
+remove or change any particle mover, transport coefficient, injection model, or
+turbulence equation. The later field-line-mover cleanup remains outside this
+change.
+
+## Background state and time
+
+PIC owns the single authoritative simulation clock. The standalone global time
+and separate SWCME launch counter have been removed; SWCME state is now prepared
+at the exact PIC epoch before the particle step instead of one iteration late.
+Shock motion and output timestamps read the same clock through
+`SEP::Background::SimulationTimeSeconds()`.
+
+Every call to a configured particle mover occurs inside one immutable background
+read phase. Its const snapshot declares the provider, ownership, epoch, validity
+interval, field-line generation, configuration fingerprint, and provenance.
+Analytic/SWCME updates are model-owned, SWMF imports are read-only, and a
+provider change is rejected unless SWMF data have first been copied and an
+explicit local-evolution handoff is published. Background publication is
+rejected while `PIC::TimeStep()` is moving particles.
+
+See [BACKGROUND_STATE.md](BACKGROUND_STATE.md) for the data contract, update
+order, API, ownership rules, units, tests, and current limitations.
 
 ## Standalone component-test CLI
 
@@ -67,6 +87,7 @@ is `../amps`; override it when necessary:
 
 ```sh
 make test-cli-unit
+make test-state-unit
 make test-list SEP_EXECUTABLE=/path/to/amps
 make test-case CASE=DXX01 SEP_EXECUTABLE=/path/to/amps
 make test-group GROUP=turbulence SEP_EXECUTABLE=/path/to/amps

@@ -765,8 +765,30 @@ void amps_time_step(){
 
 start:
 
-    //make the time advance
-     PIC::TimeStep();
+    // Bind the whole AMPS particle phase to one immutable background snapshot.
+    // PrepareSnapshotForParticleStep() observes a new SWMF coupling epoch only
+    // between steps and publishes it as a new read-only generation.  The RAII
+    // guard then prevents analytic, SWCME, SWMF, or local-evolution writers from
+    // replacing the authoritative state until every mover in PIC::TimeStep()
+    // has returned.  Each mover independently acquires a const handle in the
+    // common SEP::ParticleMover wrapper.
+    try {
+      SEP::Background::PrepareSnapshotForParticleStep();
+      SEP::Background::ParticleReadPhase background_read =
+          SEP::Background::SnapshotStore::Instance().BeginParticleRead(
+              SEP::Background::SimulationTimeSeconds());
+      PIC::TimeStep();
+    }
+    catch (const std::exception& exception) {
+      // A missing/stale snapshot is a model-state error, not a condition under
+      // which particles may safely continue with whichever mutable arrays happen
+      // to be present.  Route the detailed reason through the existing AMPS
+      // fatal-error path so all MPI ranks stop instead of diverging.
+      std::cerr << "ERROR: cannot enter SEP particle step: "
+                << exception.what() << std::endl;
+      exit(__LINE__, __FILE__,
+           "Error: invalid SEP background snapshot state");
+    }
 
 //    PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(50,100); //(SEP::MinParticleLimit,SEP::MaxParticleLimit);
     
@@ -792,6 +814,4 @@ start:
   }
   #endif
 }
-
-
 

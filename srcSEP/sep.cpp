@@ -88,14 +88,14 @@ void SEP::TecplotFileTitle(char* title) {
   if (rShock>0.0) {
     sprintf(title,
             "time=%e; shock model=%s; R_sh=%e m = %e AU = %e R_s",
-            PIC::SimulationTime::Get(),ShockModelName,
+            SEP::Background::SimulationTimeSeconds(),ShockModelName,
             rShock,rShock/_AU_,rShock/_SUN__RADIUS_);
   }
   else {
     // Fallback for initialization phases when a valid shock radius has not yet
     // been published.  This preserves the previous title format rather than
     // putting a nonphysical negative radius into the Tecplot file.
-    sprintf(title,"time=%e",PIC::SimulationTime::Get());
+    sprintf(title,"time=%e",SEP::Background::SimulationTimeSeconds());
   }
 }
 

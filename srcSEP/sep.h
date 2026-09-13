@@ -90,6 +90,7 @@
 #include "turbulence_wave_number_resolved/turbulence_wave_number_resolved.h"
 
 #include "swcme/swcme1d.hpp"
+#include "util/sep_background_runtime.h"
 
 //define which diffution model is used in the simulation
 #define _DIFFUSION_NONE_                 0
@@ -2071,6 +2072,16 @@ end:
   //particle mover
   int inline ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
     int res;
+
+    // Acquire the immutable metadata handle published for the enclosing
+    // PIC::TimeStep() before any mover reads field-line, plasma, IMF, shock, or
+    // turbulence state.  The handle is deliberately retained until this
+    // wrapper returns, so legacy mover early exits cannot outlive the declared
+    // provider epoch/generation.  SnapshotStore also rejects background
+    // publication while the enclosing particle read phase is active.
+    const SEP::Background::BackgroundSnapshot& background_snapshot =
+        SEP::Background::SnapshotStore::Instance().AcquireForMover();
+    (void)background_snapshot;
 
 
     //init drift velocity data if needed 

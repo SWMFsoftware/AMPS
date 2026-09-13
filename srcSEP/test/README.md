@@ -13,6 +13,9 @@ Use the linked executable directly or the Make wrappers:
 # Dependency-light parser/registry contract test; does not need AMPS or MPI.
 make test-cli-unit
 
+# Dependency-light immutable-background and single-clock contract tests.
+make test-state-unit
+
 # Discover the catalog without initializing the model.
 make test-list
 
@@ -41,6 +44,29 @@ Equivalent CLI examples are:
 `make -j test` intentionally sequences shared-state component execution even
 when Make is given `-j`, then runs the embedded SWCME suite using its own native
 parallel target.  Expensive extended tests are not part of `--all-tests`.
+
+## Focused Step 2 state and clock tests
+
+`test/run_step2_tests.sh` builds the exact production
+`util/sep_background_snapshot.cpp` implementation in a disposable directory
+with C++11, `-Wall -Wextra -Werror`, and pthread support. It verifies:
+
+- `BKG01`: required metadata, validity domains, read-only SWMF ownership, and
+  compile-time snapshot non-assignability;
+- `BKG02`: one snapshot per particle read phase, mover acquisition, stale-time
+  rejection, and no publication while particles are active;
+- `BKG03`: cross-provider overwrite rejection and an explicit, provenance-bearing
+  SWMF-to-local handoff with a new field-line generation;
+- `BKG04`: concurrent scheduler threads acquire the identical const generation;
+- `BKG05`: deterministic configuration fingerprints change when background
+  configuration changes;
+- `CLK01`: production code contains no standalone elapsed-time/launch clock and
+  reads `PIC::SimulationTime::Get()` only through the runtime clock adapter.
+
+These checks need neither AMPS nor MPI. The linked native executable is still
+required to prove the snapshot boundary around the real `PIC::TimeStep()` in a
+standalone and SWMF-coupled run. See
+[../BACKGROUND_STATE.md](../BACKGROUND_STATE.md) for the full runtime contract.
 
 ## Registered tests
 
