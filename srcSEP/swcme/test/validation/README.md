@@ -59,18 +59,77 @@ make validation-test
 # Execute one case; CASE may also be a comma-separated list.
 make validation-case CASE=VP01
 
-# Execute all cases that currently have implementations.
+# Execute all cases that currently have implementations, using cached inputs.
 make validation-implemented
 
-# Evaluate the full registered campaign, including planned-case status.
+# Evaluate the complete registered VP01-VP16 campaign, using cached inputs.
 make validation-campaign
 ```
 
 `validation-case`, `validation-implemented`, and `validation-campaign` accept
-extra runner options through `VALIDATION_ARGS`. For example:
+extra runner options through `VALIDATION_ARGS`.
+
+### Run all VP01-VP16 cases without downloading data
+
+Use this mode when every case's required input is already present under its
+`data/raw/` directory. The runner verifies the cached files and their pinned
+checksums before analysis; it does not contact any remote data service:
+
+```sh
+make validation-campaign
+```
+
+The equivalent direct Python command is:
+
+```sh
+python3 validation/run_validation.py --all
+```
+
+This is the preferred command for repeat analyses, offline execution, and CI
+jobs that restore a separately populated validation-data cache. A missing or
+invalid input is reported by the owning case as a setup error, and dependent
+cases are marked `BLOCKED`; the runner never silently replaces missing evidence
+with generated model output.
+
+### Run all VP01-VP16 cases and acquire reference data
+
+On a fresh checkout, pass `--download` through `VALIDATION_ARGS` so the global
+runner invokes every selected case's `download_data.py` before its analysis:
+
+```sh
+make validation-campaign VALIDATION_ARGS="--download"
+```
+
+The equivalent direct Python command is:
+
+```sh
+python3 validation/run_validation.py --all --download
+```
+
+VP01-VP05 acquire or reuse their pinned external observational products and
+verify the recorded checksums. VP06-VP16 do not require bulk network data: their
+acquisition helpers materialize and verify immutable analytical, literature,
+coupling, or held-out benchmark manifests. Existing valid files are reused, so
+`--download` is also safe for a reproducible rerun and does not force an
+unnecessary transfer.
+
+Both commands execute cases in VP01-to-VP16 priority order, enforce registered
+dependencies, generate PNG/EPS figures by default, and create an isolated
+timestamped evidence directory beneath `validation/output/`. Add `--no-plots`
+when only numeric and machine-readable evidence is required:
+
+```sh
+make validation-campaign VALIDATION_ARGS="--download --no-plots"
+```
+
+### Individual and implemented-scope examples
+
+The same option forwarding works for one case, a comma-separated subset, or
+the currently implemented scope:
 
 ```sh
 make validation-case CASE=VP01 VALIDATION_ARGS="--download"
+make validation-case CASE=VP06,VP07 VALIDATION_ARGS="--download"
 make validation-implemented VALIDATION_ARGS="--no-plots --output /tmp/swcme-validation"
 ```
 
@@ -80,7 +139,7 @@ The direct Python equivalents are:
 python3 validation/run_validation.py --case VP01
 python3 validation/run_validation.py --case VP01,VP02 --download
 python3 validation/run_validation.py --implemented
-python3 validation/run_validation.py --all
+python3 validation/run_validation.py --implemented --download
 ```
 
 `--case` runs the named case even when its registered prerequisites were not
