@@ -15,20 +15,6 @@
 #include "util/sep_flux_tube_geometry_core.h"
 #include "util/sep_production_mover.h"
 
-#define _SEP_MOVER_DEFUALT_               0
-#define _SEP_MOVER_BOROVIKOV_2019_ARXIV_  1
-#define _SEP_MOVER_HE_2019_AJL_           2 
-#define _SEP_MOVER_KARTAVYKH_2016_AJ_     3 
-#define _SEP_MOVER_PARKER_MEAN_FREE_PATH_ 4
-
-#ifndef _SEP_MOVER_
-#define _SEP_MOVER_ _SEP_MOVER_DEFUALT_ 
-#endif
-
-#ifndef _SEP_MOVER_DRIFT_ 
-#define _SEP_MOVER_DRIFT_ _PIC_MODE_OFF_
-#endif
-
 #define _DOMAIN_GEOMETRY_PARKER_SPIRAL_ 0
 #define _DOMAIN_GEOMETRY_BOX_    1
 
@@ -49,7 +35,7 @@
 #include "QLT1.h"
 
 #ifndef _DOMAIN_GEOMETRY_
-#define _DOMAIN_GEOMETRY_ _DOMAIN_GEOMETRY_PARKER_SPIRAL_  
+#define _DOMAIN_GEOMETRY_ _DOMAIN_GEOMETRY_PARKER_SPIRAL_
 #endif
 
 #ifndef _DOMAIN_SIZE_
@@ -68,9 +54,9 @@
 #define _MODEL_CASE_GCR_TRANSPORT_ 0
 #define _MODEL_CASE_SEP_TRANSPORT_ 1
 
-#ifndef _MODEL_CASE_ 
+#ifndef _MODEL_CASE_
 #define _MODEL_CASE_ _MODEL_CASE_SEP_TRANSPORT_
-#endif 
+#endif
 
 #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
 #include "SpiceUsr.h"
@@ -79,7 +65,6 @@
 #endif
 
 #include "sep.dfn"
-#include "sample3d.h"
 #include "solar_wind.h"
 #include "parker_streaming_calculator.h"
 #include "wave_particle_coupling_kolmogorov.h"
@@ -89,7 +74,7 @@
 #include "growth_rate_validation_test.h"
 
 #include "kolmogorov_scatter.h"
-#include "turbulence_cascade_kolmogorov.h" 
+#include "turbulence_cascade_kolmogorov.h"
 #include "turbulence_reflection_kolmogorov.h"
 #include "turbulence_wave_number_resolved/turbulence_wave_number_resolved.h"
 
@@ -98,7 +83,7 @@
 
 //define which diffution model is used in the simulation
 #define _DIFFUSION_NONE_                 0
-#define _DIFFUSION_ROUX2004AJ_           1 
+#define _DIFFUSION_ROUX2004AJ_           1
 #define _DIFFUSION_BOROVIKOV_2019_ARXIV_ 2
 #define _DIFFUSION_JOKIPII1966AJ_        3
 #define _DIFFUSION_FLORINSKIY_           4
@@ -106,7 +91,7 @@
 
 #ifndef _SEP_DIFFUSION_MODEL_
 #define _SEP_DIFFUSION_MODEL_  _DIFFUSION_NONE_
-#endif 
+#endif
 
 //the limit of mu (closest mu ot the magnetic field line direction)
 const double muLimit=0.0001;
@@ -154,7 +139,7 @@ public:
 namespace SEP {
   using namespace Exosphere;
 
-  //the model of SW + CME 
+  //the model of SW + CME
   namespace SW1DAdapter {
 // ------------------------
 // Canonical adapter state
@@ -167,32 +152,26 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
     void SetModelAndState(swcme1d::Model* m, const swcme1d::StepState& S);
     void EnableSheathClamp(bool on=true);
     double DlnB_Dr_at_r(double r_m);
-    bool QueryAtRadius(double r_m, double& n_m3, double& V_ms, double& divV_sinv,bool applyClamp=true); 
+    bool QueryAtRadius(double r_m, double& n_m3, double& V_ms, double& divV_sinv,bool applyClamp=true);
   }
 
   extern swcme1d::Model sw1d;
 
-  //selector of the shock wave model 
+  //selector of the shock wave model
   enum class cShockModelType { Analytic1D, SwCme1d };
-  extern cShockModelType ShockModelType; 
+  extern cShockModelType ShockModelType;
 
 
-  //type of the trajectory integration method for calculation of the particle displacement along a magnetic field line
-  extern int ParticleFieldLineDisplacementMethod;
-
-  //account for the perpendicular diffusion when modeling particle transport in 3D
-  extern bool PerpendicularDiffusionMode;
-
-  //functions for self-consistent modeling Alfven turbulence 
+  //functions for self-consistent modeling Alfven turbulence
   namespace AlfvenTurbulence_Kolmogorov {
     extern PIC::Datum::cDatumStored CellIntegratedWaveEnergy,WaveEnergyGrowthRate,WaveEnergyDensity;
     extern PIC::Datum::cDatumStored G_plus_streaming,G_minus_streaming,gamma_plus_array,gamma_minus_array;
 
     //the flag determines whether coupling of the particle and turbumence active
-    //ActiveFlag -- defines whether transport of turbulence is modeled 
-    //ParticleCouplingMode -- defines whether coupling between particle and turbulence is simulated 
-    //need both ActiveFlag==true and ParticleCouplingMode==true to model dynamics of turbulence coupled to the particles  
-    extern bool ActiveFlag; 
+    //ActiveFlag -- defines whether transport of turbulence is modeled
+    //ParticleCouplingMode -- defines whether coupling between particle and turbulence is simulated
+    //need both ActiveFlag==true and ParticleCouplingMode==true to model dynamics of turbulence coupled to the particles
+    extern bool ActiveFlag;
     extern bool ParticleCouplingMode;
 
     namespace ModelInit {
@@ -218,41 +197,41 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
   //set the lower limit of the mean free path being the local Larmor radius of the particle
   extern bool LimitMeanFreePath;
 
-   //limit scattering only with the incoming wave 
-   //(if vParallel>0, then scatter only of the wave movinf with -vAlfven, or if vParallel<0, them scatter on the wave moveing with +vAlfven) 
-   extern bool LimitScatteringUpcomingWave; 
+   //limit scattering only with the incoming wave
+   //(if vParallel>0, then scatter only of the wave movinf with -vAlfven, or if vParallel<0, them scatter on the wave moveing with +vAlfven)
+   extern bool LimitScatteringUpcomingWave;
 
    //set the numerical limit on the number of simulated scattering events
    extern bool NumericalScatteringEventMode;
    extern double NumericalScatteringEventLimiter;
 
-  //the type of the equation that is solved 
+  //the type of the equation that is solved
   const int ModelEquationParker=0,ModelEquationFTE=1;
   extern int ModelEquation;
 
-  //min/max particle number limit per segment of a field line 
+  //min/max particle number limit per segment of a field line
   extern int MinParticleLimit,MaxParticleLimit;
 
-  //in the case the model is run as a part of the SWMF, FreezeTimeSimulationMHD  is the sumulation time starting which the control of the 
+  //in the case the model is run as a part of the SWMF, FreezeTimeSimulationMHD  is the sumulation time starting which the control of the
   //model run is not returned to the SWMF and the sumulation continues with AMPS only and "freezed" MHD solar wind
-  extern double FreezeSolarWindModelTime; 
+  extern double FreezeSolarWindModelTime;
 
   void Init();
 
   //title that will be printed inn Tecplot output file (simuation time)
-  void TecplotFileTitle(char*);  
+  void TecplotFileTitle(char*);
 
   //the limit to switch from solving FTE to the Parker Equation when the D_{\mu\mu} is to high
   extern double TimeStepRatioSwitch_FTE2PE;
-  
+
   //composition table of the GCR composition
   extern cCompositionGroupTable *CompositionGroupTable;
   extern int *CompositionGroupTableIndex;
   extern int nCompositionGroups;
 
-  //Get physical datat from the magnetic field line 
+  //Get physical datat from the magnetic field line
   namespace FieldLineData {
-    inline void GetB(double *B,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) { 
+    inline void GetB(double *B,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
       namespace FL = PIC::FieldLine;
       double *B0,*B1,*W0,*W1,w0,w1,*x0,*x1;
       double PlasmaDensity0,PlasmaDensity1,PlasmaDensity;
@@ -275,13 +254,13 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
       for (idim=0;idim<3;idim++) {
         B[idim]=w0*B0[idim]+w1*B1[idim];
       }
-    } 
+    }
 
 
     inline double GetAbsB(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
       double B[3];
 
-      GetB(B,FieldLineCoord,Segment,iFieldLine); 
+      GetB(B,FieldLineCoord,Segment,iFieldLine);
       return Vector3D::Length(B);
     }
   }
@@ -298,22 +277,22 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
     void InitDomain(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=NULL);
   }
 
-  //scattering path the particles (used witu Parker spiral simulations) 
+  //scattering path the particles (used witu Parker spiral simulations)
   namespace Scattering {
     extern int MeanFreePathMode;
-    const int MeanFreePathMode_QLT=0; 
-    const int MeanFreePathMode_QLT1=1; 
-    const int MeanFreePathMode_Tenishev2005AIAA=2; 
+    const int MeanFreePathMode_QLT=0;
+    const int MeanFreePathMode_QLT1=1;
+    const int MeanFreePathMode_Tenishev2005AIAA=2;
     const int MeanFreePathMode_Chen2024AA=3;
 
     namespace Tenishev2005AIAA {
       extern double alpha,beta,lambda0;
-      
+
       const int _enabled=0;
       const int _disabled=1;
       extern int status;
     }
-  }  
+  }
 
   namespace Diffusion {
    namespace Jokopii1966AJ {
@@ -328,40 +307,22 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
    namespace Chen2024AA {
      inline double GetDxx(double r,double E) {
        return 5.16E14*pow(r/_AU_,1.17)*pow(E*J2KeV,0.71); //Eq 4, Checn-2024-AA
-     } 
+     }
    }
  }
 
-  
-  //functions used to sample and output macroscopic somulated data into the AMPS' output file
-  namespace OutputAMPS {
-    namespace SamplingParticleData {
-      extern int DriftVelocityOffset;
-      extern int absDriftVelocityOffset;
-      extern int NumberDensity_PlusMu,NumberDensity_MinusMu;
-
-      void PrintVariableList(FILE* fout,int DataSetNumber);
-      void PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode);
-      void SampleParticleData(char *ParticleData,double LocalParticleWeight,char  *SamplingBuffer,int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *Node);
-      int RequestSamplingData(int offset);
-
-      void Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double *InterpolationCoeficients,int nInterpolationCoeficients,PIC::Mesh::cDataCenterNode *CenterNode);
-
-      void Init();
-    }
-  }
 
   //parser
   namespace Parser {
     void ReadFile(string fname);
-    void SelectCommand(vector<string>& StringVector); 
+    void SelectCommand(vector<string>& StringVector);
     void Scattering(vector<string>& StringVector);
   }
 
 
-  //functions related to tracing SEPs along field lines 
+  //functions related to tracing SEPs along field lines
   namespace FieldLine {
-    //delete all model particles 
+    //delete all model particles
     long int DeleteAllParticles();
 
     extern PIC::Datum::cDatumStored VertexShockLocationDistanceDatum;
@@ -386,19 +347,19 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
 
       extern int InjectionMomentumModel;
       const int _tenishev2005aiaa=0;
-      const int _sokolov2004aj=1; 
+      const int _sokolov2004aj=1;
       const int _const_energy=2;
       const int _const_speed=3;
-      const int _background_sw_temperature=4; 
+      const int _background_sw_temperature=4;
 
-      //parameters of the analytic shoch wave model 
+      //parameters of the analytic shoch wave model
       extern int UseAnalyticShockModel;
       const int AnalyticShockModel_none=0;
       const int AnalyticShockModel_Tenishev2005=1;
     }
 
 
-    long int InjectParticleFieldLineBeginning(int spec,int iFieldLine);    
+    long int InjectParticleFieldLineBeginning(int spec,int iFieldLine);
     long int InjectParticlesSingleFieldLine(int spec,int iFieldLine);
     long int InjectParticles();
 
@@ -420,27 +381,27 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
       double SweptVolumeM3(PIC::FieldLine::cFieldLineSegment* Segment,int iFieldLine,double fraction,double normal_speed_m_s,double time_s);
     }
 
-    //output field line backgound data 
+    //output field line backgound data
     void OutputBackgroundData(char* fname, int iFieldLine);
 
   }
 
   //the namespace contains the diffution models
   namespace Diffusion {
-    //costant value of the pitch angle diffusion coeffcient 
+    //costant value of the pitch angle diffusion coeffcient
     extern double ConstPitchAngleDiffusionValue;
-    
+
     //when particle's velocity is below the factor times vAlfven, an interaction with two wave branches independently is considered
     extern double AccelerationModelVelocitySwitchFactor;
-    
-    //the types of acceleration of the model particles 
+
+    //the types of acceleration of the model particles
     const int AccelerationTypeDiffusion=0;
     const int AccelerationTypeScattering=1;
     extern int AccelerationType;
-    
+
     //scater particle due to particle interaction with the waves
     void WaveScatteringModel(double vAlfven,double NuPlus, double NuMinus,double& speed,double& mu);
-    
+
     //limit the calculation for rotation of a partilce during a time step
     extern double muTimeStepVariationLimit;
     extern bool muTimeStepVariationLimitFlag;
@@ -449,23 +410,23 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
     const int muTimeStepVariationLimitModeUniform=0;
     const int muTimeStepVariationLimitModeUniformReflect=1;
 
-    //the step in the mu-space used in the numerical differentiation 
+    //the step in the mu-space used in the numerical differentiation
     extern double muNumericalDifferentiationStep;
 
     //calcualte square root of a matrix
     void GetMatrixSquareRoot(double A[2][2], double sqrtA[2][2]);
 
-    //calculate a partial derivative d/dp 
-    double GetDdP(std::function<double (double& speed,double& mu)> f,double speed,double mu,int spec);  
+    //calculate a partial derivative d/dp
+    double GetDdP(std::function<double (double& speed,double& mu)> f,double speed,double mu,int spec);
 
     //calculate a particle derivative d/d_mu
-    double GetDdMu(std::function<double (double& speed,double& mu)> f,double speed,double mu,int spec,double vAlfven); 
+    double GetDdMu(std::function<double (double& speed,double& mu)> f,double speed,double mu,int spec,double vAlfven);
 
 
-    //classes for claculation diffution coeffciients 
+    //classes for claculation diffution coeffciients
     class cDiffusionCoeffcient {
     public:
-      double speed,mu,L,max,W,vAlfven,AbsB,p,xLocation[3];  
+      double speed,mu,L,max,W,vAlfven,AbsB,p,xLocation[3];
       int spec;
       int InputMode;
 
@@ -526,7 +487,7 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
 
       double GetLarmorR() {
         return PIC::MolecularData::GetMass(spec)*speed*sqrt(1.0-mu*mu)/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
-      } 
+      }
 
       virtual double GetDiffusionCoeffcient() {
         if (fGetDiffusionCoeffcient==NULL) exit(__LINE__,__FILE__,"Error: function is not defined");
@@ -538,9 +499,9 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
         exit(__LINE__,__FILE__,"Vrtual function has to be redifiened in the derived diffuciton coeffcient class");
       }
 
-      virtual void Init(int SpecIn) { 
+      virtual void Init(int SpecIn) {
         spec=SpecIn;
-      } 
+      }
 
       virtual void SetVelAlfven(double vAlfvenIn) {
         vAlfven=vAlfvenIn;
@@ -548,10 +509,10 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
 
       virtual void SetAbsB(double AbsBin) {
         AbsB=AbsBin;
-      } 
+      }
 
       double GetPerturbSpeed(double dv) {
-        double res; 
+        double res;
 
         speed+=dv;
         res=GetDiffusionCoeffcient();
@@ -594,12 +555,12 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
 
         t=vParallel-vAlfven;
         return t/sqrt(t*t+vNormal*vNormal);
-      } 
+      }
 
       double GetdDdMuWaveFrame() {
         double dMu, mu_min, mu_max, f_Plus, f_Minus, MuWaveFrame, p0, m0, p1, m1;
 
-        MuWaveFrame=GetMuWaveFrame(); 
+        MuWaveFrame=GetMuWaveFrame();
         if (fabs(MuWaveFrame) < dMu) {
           return 0.0;
         }
@@ -687,19 +648,19 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
 
       void SetRandomMuHalfSphere(double dir) {
         mu=rnd()+((dir>0.0) ? -1.0 : 0.0);
-      } 
+      }
 
       double DistributeMu(double dt) {
         double D,dD_dMu,dMu,res;
 
         D=GetDiffusionCoeffcient();
-        dD_dMu=GetdDdMuSolarFrame();     
+        dD_dMu=GetdDdMuSolarFrame();
         dMu=dD_dMu*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*log(rnd()));
 
         if (SEP::Diffusion::muTimeStepVariationLimitFlag==true) {
           if (fabs(dMu)>SEP::Diffusion::muTimeStepVariationLimit) {
             switch (SEP::Diffusion::muTimeStepVariationLimitMode) {
-            case SEP::Diffusion::muTimeStepVariationLimitModeUniform: 
+            case SEP::Diffusion::muTimeStepVariationLimitModeUniform:
               return DistributeMuUniform();
               break;
             case muTimeStepVariationLimitModeUniformReflect:
@@ -728,7 +689,7 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
 
           for (int i=0;i<nSteps;i++) {
             D=GetDiffusionCoeffcient();
-            dD_dMu=GetdDdMuSolarFrame();     
+            dD_dMu=GetdDdMuSolarFrame();
             dMu=dD_dMu*dt/nSteps+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt/nSteps*log(rnd()));
 
             if (isfinite(dMu)==false) {
@@ -765,14 +726,14 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
 
         D=GetDiffusionCoeffcient();
 
-        dD_dP=GetdDdP();     
+        dD_dP=GetdDdP();
         dP=dD_dP*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*log(rnd()));
 
         Convert2Momentum();
         p+=dP;
 
         return p;
-      }  
+      }
     };
 
     template <int nR,int nK>
@@ -830,7 +791,7 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
       void SetAbsB(double B) {
         AbsB=B;
         AbsB2=B*B;
-      } 
+      }
 
       double GetDiffusionCoeffcient() {
         namespace MD = PIC::MolecularData;
@@ -929,12 +890,12 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
       }
 
       double GetDiffusionCoeffcient() {
-        return speed*(1-mu*mu)*pow(fabs(mu),2.0/3.0)/GetLambda(); 
+        return speed*(1-mu*mu)*pow(fabs(mu),2.0/3.0)/GetLambda();
       }
     };
 
     class cD_SA : public SEP::Diffusion::cDiffusionCoeffcient {
-    public: 
+    public:
       cD_mu_mu_basic D_mu_mu_Minus,D_mu_mu_Plus;
 
       double GetDiffusionCoeffcient() {
@@ -962,12 +923,12 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
 
         double t=vAlfven*PIC::MolecularData::GetMass(spec);
 
-        return 4.0*t*t*Dplus*Dminus/(Dplus+Dminus); 
+        return 4.0*t*t*Dplus*Dminus/(Dplus+Dminus);
       }
 
       void Init() {
         D_mu_mu_Minus.Init();
-        D_mu_mu_Plus.Init();  
+        D_mu_mu_Plus.Init();
       }
 
       void SetW(double *w) {
@@ -1006,7 +967,7 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
 
 
     class cD_mu_mu : public cD_SA {
-    public:     
+    public:
       double GetDiffusionCoeffcient() {
         double Dplus,Dminus;
 
@@ -1030,7 +991,7 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
         Dplus=D_mu_mu_Plus.GetDiffusionCoeffcient();
         Dminus=D_mu_mu_Minus.GetDiffusionCoeffcient();
 
-        return Dplus+Dminus; 
+        return Dplus+Dminus;
       }
     };
 
@@ -1112,9 +1073,9 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
       void SetMomentum(double MomentumIn,double MuIn) {
         p=MomentumIn;
         InputMode=InputModeMomentum;
-      } 
+      }
 
-    private:      
+    private:
       bool Interpolate(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
         namespace FL = PIC::FieldLine;
         double *B0,*B1,*W0,*W1,w0,w1,*x0,*x1;
@@ -1122,7 +1083,7 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
         int idim;
 
         Segment->GetCartesian(xLocation, FieldLineCoord);
-        Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
+        Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord);
         if (Segment==NULL) return false;
 
         FL::cFieldLineVertex* VertexBegin=Segment->GetBegin();
@@ -1192,7 +1153,7 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
         return D;
       }
 
-    public: 
+    public:
       double GetDxx(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
         namespace FL = PIC::FieldLine;
         double D,xmin[]={-1.0+1.1*muLimit},xmax[]={1.0-muLimit};  //that is needed to eliminate the point mu==0 from the integration procedure
@@ -1201,10 +1162,10 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
         Convert2Velocity();
 
         D_mu_mu.SetVelocity(speed,0.0);
-        D_mu_mu.spec=spec;   
+        D_mu_mu.spec=spec;
         D_mu_mu.SetW(W);
         D_mu_mu.SetLocation(xLocation);
-        D_mu_mu.SetVelAlfven(vAlfven);        
+        D_mu_mu.SetVelAlfven(vAlfven);
         D_mu_mu.SetAbsB(AbsB);
 
         if (speed<1.0E6) {
@@ -1215,7 +1176,7 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
         }
         else {
           D=speed*speed/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,6,Integrant,xmin,xmax);
-        }    	
+        }
 
         return D;
       }
@@ -1228,10 +1189,10 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
         Convert2Velocity();
 
         D_mu_mu.SetVelocity(speed,0.0);
-        D_mu_mu.spec=spec;   
+        D_mu_mu.spec=spec;
         D_mu_mu.SetW(W);
         D_mu_mu.SetLocation(xLocation);
-        D_mu_mu.SetVelAlfven(vAlfven);        
+        D_mu_mu.SetVelAlfven(vAlfven);
         D_mu_mu.SetAbsB(AbsB);
 
         if (speed<1.0E6) {
@@ -1242,7 +1203,7 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
         }
         else {
           res=Quadrature::Gauss::Cube::GaussLegendre(1,6,Integrant_MeanD_mu_mu,xmin,xmax);
-        }    	
+        }
 
         return res;
       }
@@ -1303,13 +1264,13 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
         PIC::FieldLine::cFieldLineSegment *SegmentLocal=Segment;
 
         S=max(FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,-dt*speed),0.01);
-        SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S); 
+        SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S);
 
         D0=GetDxx(S,Segment,iFieldLine);
 
-        S=max(FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dt*speed),FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()-0.01); 
-        SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S); 
-        D1=GetDxx(S,SegmentLocal,iFieldLine); 
+        S=max(FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dt*speed),FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()-0.01);
+        SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S);
+        D1=GetDxx(S,SegmentLocal,iFieldLine);
 
         if (fabs(D0-D1)/(D0+D1)>0.2) {
           //the difference is on the diffusion coeffcient at the beginning and the end of the trajectory is too large
@@ -1317,10 +1278,10 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
           Fraction=max(D1/D0,D0/D1);
           nIterations=ceil(Fraction);
           if (nIterations==0) nIterations=1;
-          Fraction=1.0/nIterations; 
-        } 
+          Fraction=1.0/nIterations;
+        }
 
-        S=FieldLineCoord;  
+        S=FieldLineCoord;
         ds=0.0;
         SegmentLocal=Segment;
 
@@ -1335,7 +1296,7 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
 
         S0=(int)S;
         S1=S0+1.0;
-        if (S1==FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()) S1=FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()-0.01; 
+        if (S1==FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()) S1=FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()-0.01;
 
         SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S0);
         D0=GetDxx(S0,SegmentLocal,iFieldLine);
@@ -1345,7 +1306,7 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
         D1=GetDxx(S1,SegmentLocal,iFieldLine);
         dD_dx1=GetdDxx_dx(S1,SegmentLocal,iFieldLine);
 
-        double iSegmentOld;   
+        double iSegmentOld;
 
         for (int i=0;i<nIterations;i++) {
           double w0,w1;
@@ -1354,14 +1315,14 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
           w0=1.0-w1;
 
           D=D0*w0+D1*w1;
-          dD_dx=dD_dx0*w0+dD_dx1*w1; 
+          dD_dx=dD_dx0*w0+dD_dx1*w1;
 
           ds+=dD_dx*dt*Fraction+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*Fraction*log(rnd()));
 
           if (i!=nIterations-1) {
             double iSegmentNew;
 
-            S=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds); 
+            S=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds);
 
             if (S>0.0) {
               std::modf(S,&iSegmentNew);
@@ -1409,12 +1370,12 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
     template<class T> double SEP::Diffusion::cD_x_x<T>::AbsB=0.0;
     template<class T> double SEP::Diffusion::cD_x_x<T>::xLocation[3]={0.0,0.0,0.0};
     template<class T> double SEP::Diffusion::cD_x_x<T>::vAlfven=0.0;
-    template<class T> double SEP::Diffusion::cD_x_x<T>::B[3]={0.0,0.0,0.0};      
+    template<class T> double SEP::Diffusion::cD_x_x<T>::B[3]={0.0,0.0,0.0};
     template<class T> PIC::FieldLine::cFieldLineSegment*  SEP::Diffusion::cD_x_x<T>::Segment=NULL;
     template<class T> T SEP::Diffusion::cD_x_x<T>::D_mu_mu;
 
 
-    //avoid "special" points in the pitch angle diffusion coefficient 
+    //avoid "special" points in the pitch angle diffusion coefficient
     const int LimitSpecialMuPointsModeOff=0;
     const int LimitSpecialMuPointsModeOn=1;
     extern int LimitSpecialMuPointsMode;
@@ -1422,15 +1383,15 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
 
     //types of the differentiation of the pitch angle diffusion coeffcient
     const int PitchAngleDifferentialModeNumerical=0;
-    const int PitchAngleDifferentialModeAnalytical=1; 
+    const int PitchAngleDifferentialModeAnalytical=1;
 
     extern int PitchAngleDifferentialMode;
 
-    typedef void (*fGetPitchAngleDiffusionCoefficient)(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment); 
+    typedef void (*fGetPitchAngleDiffusionCoefficient)(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
     extern fGetPitchAngleDiffusionCoefficient GetPitchAngleDiffusionCoefficient;
 
-    //calculate the parameters of the background IMF 
-    void GetIMF(double& absB,double &dB, double& SummW,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,double& r2); 
+    //calculate the parameters of the background IMF
+    void GetIMF(double& absB,double &dB, double& SummW,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,double& r2);
 
     //calculate Dxx
     void GetDxx(double& D,double &dDxx_dx,double v,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine);
@@ -1441,20 +1402,20 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
       void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
     }
 
-    //Qin-2013-AJ 
+    //Qin-2013-AJ
     namespace Qin2013AJ {
       void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
     }
 
     //LeRoux-2004-AJ
     namespace Roux2004AJ {
-      void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment); 
+      void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
     }
 
     //Borovikov-2019-ARXIV (Eq. 6.11)_
     namespace Borovokov_2019_ARXIV {
       void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
-    }     
+    }
 
     namespace Jokopii1966AJ {
 //      extern double k_ref_min,k_ref_max,k_ref_R;
@@ -1469,7 +1430,7 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
       const double Rmax=10.0*_AU_;
 
       extern double Lambda[nR],A[nR];
-  
+
       void Init();
 
 
@@ -1487,29 +1448,29 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
       const double sigma_c_2D=0.0;
       const double r_A_2D=1.0; //the range is 0.5-1
       const double r_s=0.1; //the range is 0.1-0.2
-  
+
       const double l_parallel=0.03*_AU_;
-      const double l_normal=0.01*_AU_; 
+      const double l_normal=0.01*_AU_;
 
       const double k_0_s=sqrtPi*tgamma(gamma_div_two)/tgamma(gamma_div_two-0.5)/l_parallel;
       const double k_0_2D=sqrtPi*(gamma-1.0)*tgamma(gamma_div_two)/tgamma(gamma_div_two+0.5)/l_normal;
 
 
 
-      
+
       void GetB(double *B,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
       double P_s_plus(double k,double delta_B_s_2);
       double P_s_minus(double k,double delta_B_s_2);
 
-      double GetD_mu_mu(double *x,double *v,int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *Node); 
+      double GetD_mu_mu(double *x,double *v,int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *Node);
       double GetDxx(double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *Node);
 
       void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
 
     }
- 
+
   }
-    
+
   //functions used for the particle samplein
   namespace Sampling {
 
@@ -1521,21 +1482,21 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
 
     /*SamplingHeliocentricDistanceTable can be set in AMPS' input file while SamplingHeliocentricDistanceList is defined in SWMF's PARAM.in. The latter has priority*/
     extern vector<double> SamplingHeliocentricDistanceList;
-    
+
     namespace PitchAngle {
-      extern array_3d<double> PitchAngleRSamplingTable; 
+      extern array_3d<double> PitchAngleRSamplingTable;
 
       extern array_4d<double> PitchAngleREnergySamplingTable;
-      extern array_5d<double> DmumuSamplingTable; 
+      extern array_5d<double> DmumuSamplingTable;
       extern double emin,emax,dLogE;
       extern int nEnergySamplingIntervals;
-      
+
       const int nRadiusIntervals=50;
       const double dR=_AU_/nRadiusIntervals;
 
       const int nMuIntervals=20;
       const double dMu=2.0/nMuIntervals;
-   
+
       void Output();
     }
 
@@ -1560,26 +1521,14 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
       extern bool active_flag;
       extern double MaxSampledMeanFreePath,MinSampledMeanFreePath,dLogMeanFreePath;
       extern int nSampleIntervals;
-    }       
- 
-
-    namespace RadialDisplacement {
-      extern  array_3d<double>  DisplacementSamplingTable;
-      extern array_4d<double> DisplacementEnergySamplingTable;
-
-      const double rDisplacementMax=1.0E11;
-      const int nSampleIntervals=100;
-      const double dLogDisplacement=log(rDisplacementMax)/nSampleIntervals;  
-
-      void OutputDisplacementSamplingTable(int);
-      void OutputDisplacementEnergySamplingTable(int);
     }
+
 
     class cSamplingBuffer {
     public:
       int nEnergyBins,nPitchAngleBins;
       double MinEnergy,MaxEnergy,dLogEnergy;
-     
+
       double *DensitySamplingTable;
       double *FluxSamplingTable,*ReturnFluxSamplingTable;
       int SamplingCounter;
@@ -1593,13 +1542,13 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
       PIC::FieldLine::cFieldLineSegment* GetFieldLineSegment() {
         namespace FL=PIC::FieldLine;
 
-        double xBegin[3],xEnd[3]; 
+        double xBegin[3],xEnd[3];
         double rBegin,rEnd;
-        int iSegment=0; //used for debugging only 
+        int iSegment=0; //used for debugging only
 
         if (iFieldLine>=FL::nFieldLine) exit(__LINE__,__FILE__,"Error: the filed line is out of range");
 
-        FL::cFieldLineSegment* Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment(); 
+        FL::cFieldLineSegment* Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();
 
         while (Segment!=NULL) {
           Segment->GetBegin()->GetX(xBegin);
@@ -1610,8 +1559,8 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
 
           if ( ((rBegin<=HeliocentricDisctance)&&(HeliocentricDisctance<=rEnd)) || ((rBegin>=HeliocentricDisctance)&&(HeliocentricDisctance>=rEnd)) ) {
             break;
-          } 
-        
+          }
+
           iSegment++;
           Segment=Segment->GetNext();
         }
@@ -1622,61 +1571,37 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
       void Sampling () {
         namespace FL=PIC::FieldLine;
         namespace PB=PIC::ParticleBuffer;
-    
+
         FL::cFieldLineSegment* Segment=GetFieldLineSegment();
         if (Segment==NULL) return;
 
         //find cell;
-        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
-        int i,j,k;
-        double xBegin[3],xEnd[3],xMiddle[3];
+        double xBegin[3],xEnd[3];
         long int ptr;
 
         Segment->GetBegin()->GetX(xBegin);
         Segment->GetEnd()->GetX(xEnd);
 
-        for (int idim=0;idim<3;idim++) xMiddle[idim]=0.5*(xBegin[idim]+xEnd[idim]); 
-   
         double dmu=2.0/nPitchAngleBins;
-        double vol=0.0;
+        double vol;
         double xFirstFieldLine[3];
 
-        switch (_PIC_PARTICLE_LIST_ATTACHING_) {
-        case _PIC_PARTICLE_LIST_ATTACHING_NODE_:
-          node=PIC::Mesh::Search::FindBlock(xMiddle);
-	  SamplingTime+=node->block->GetLocalTimeStep(0);
-
-          if (node==NULL) return;
-          if (node->block==NULL) return;
-
-          PIC::Mesh::mesh->FindCellIndex(xMiddle,i,j,k,node);
-          ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
-
-          vol=(node->xmax[0]-node->xmin[0])*(node->xmax[1]-node->xmin[1])*(node->xmax[2]-node->xmin[2])/(_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_);
-
-          break;
-        case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
-          node=NULL;
-
-         if (_SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_) { 
-           SamplingTime+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
-	 }
-	 else {
-           exit(__LINE__,__FILE__,"not implemented");
-	 }
-
-          ptr=Segment->FirstParticleIndex;
-
-          // Sampling must use the same physical control volume as injection,
-          // turbulence energy density, and wave-growth calculations.  The old
-          // r^2*length expression had no area scale and therefore was not m^3.
-          vol=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(Segment,iFieldLine);
-
-          break;
-        default:
-          exit(__LINE__,__FILE__,"Error: the option is unknown");
+        // srcSEP particles are attached exclusively to field-line segments.
+        // The field line is embedded in 3-D, but no AMR-cell particle list is
+        // part of the production representation after Step 5.
+        if (_SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_) {
+          SamplingTime+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
         }
- 
+        else {
+          exit(__LINE__,__FILE__,"not implemented");
+        }
+
+        ptr=Segment->FirstParticleIndex;
+
+        // Sampling uses the same physical control volume as injection,
+        // turbulence energy density, and wave-growth calculations.
+        vol=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(Segment,iFieldLine);
+
         SamplingCounter++;
 
         while (ptr!=-1) {
@@ -1684,7 +1609,7 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
           int spec,ibin,iMuBin;
           PB::byte* ParticleData;
 
-          ParticleData=PB::GetParticleDataPointer(ptr); 
+          ParticleData=PB::GetParticleDataPointer(ptr);
           spec=PB::GetI(ParticleData);
 
           //v=PB::GetV(ParticleData);
@@ -1738,16 +1663,16 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
           if (PB::GetFieldLineId(ParticleData)!=iFieldLine) {
             ptr=PB::GetNext(ParticleData);
             continue;
-          } 
-          
+          }
+
           e=0.0;
 
           switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
-          case _PIC_MODE_OFF_: 
+          case _PIC_MODE_OFF_:
             e=m0*speed2/2.0;
             break;
 
-          case _PIC_MODE_ON_: 
+          case _PIC_MODE_ON_:
             e=Relativistic::Speed2E(speed,m0);
             break;
           }
@@ -1764,50 +1689,40 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
 
 double e_mev=e*J2MeV;
 
-          ibin=(int)(log(e/MinEnergy)/dLogEnergy);  
-          iMuBin=(int)(((mu+1.0)/dmu)); 
+          ibin=(int)(log(e/MinEnergy)/dLogEnergy);
+          iMuBin=(int)(((mu+1.0)/dmu));
 
           if (iMuBin<0) iMuBin=0;
           if (iMuBin>=nPitchAngleBins) iMuBin=nPitchAngleBins-1;
 
 	  #if _SIMULATION_PARTICLE_WEIGHT_MODE_ != _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
           exit(__LINE__,__FILE__,"Error: not implemented for this mode");
-	  #endif 
+	  #endif
 
 
-          double ParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]; 
+          double ParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
           ParticleWeight*=PB::GetIndividualStatWeightCorrection(ParticleData);
 
-//          double x[3],iMu_RSample,iR_RSample;
-//          PB::GetX(x,ParticleData);
-//          iMu_RSample=(int)(((mu+1.0)/SEP::Sampling::PitchAngle::dMu));
-//          iR_RSample=(int)(Vector3D::Length(x)/SEP::Sampling::PitchAngle::dR);
-
-//          if (iMu_RSample>=SEP::Sampling::PitchAngle::nMuIntervals) iMu_RSample=SEP::Sampling::PitchAngle::nMuIntervals-1; 
-//          if (iR_RSample>=SEP::Sampling::PitchAngle::nRadiusIntervals) iR_RSample=SEP::Sampling::PitchAngle::nRadiusIntervals; 
-
-//          SEP::Sampling::PitchAngle::PitchAngleRSamplingTable(iMu_RSample,iR_RSample,iFieldLine)+=ParticleWeight; 
-
-          if ((ibin>=0)&&(ibin<nEnergyBins)) {  
+          if ((ibin>=0)&&(ibin<nEnergyBins)) {
             DensitySamplingTable[ibin]+=ParticleWeight/vol;
-            FluxSamplingTable[ibin]+=ParticleWeight/vol*Vector3D::Length(v); 
+            FluxSamplingTable[ibin]+=ParticleWeight/vol*Vector3D::Length(v);
 
             PitchAngleSamplingTable(iMuBin,ibin)+=ParticleWeight;
 
             if (v[0]<0.0) ReturnFluxSamplingTable[ibin]+=ParticleWeight/vol*Vector3D::Length(v);
-          } 
+          }
 
           ptr=PB::GetNext(ParticleData);
         }
       }
 
       void OutputPitchAngleDistribution() {
-        double dmu=2.0/nPitchAngleBins;  
+        double dmu=2.0/nPitchAngleBins;
         int j,ibin;
 
-	PitchAngleSamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR); 
+	PitchAngleSamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
 
-	if (PIC::ThisThread==0) { 
+	if (PIC::ThisThread==0) {
 
         char fname[200];
         FILE *fout=NULL;
@@ -1815,7 +1730,7 @@ double e_mev=e*J2MeV;
 	sprintf(fname,"mkdir -p %s.pitch_angle_distribution",base_name);
 	system(fname);
 
-        sprintf(fname,"%s.pitch_angle_distribution/field-line=%d.r=%e.t=%e.dat",base_name,iFieldLine,HeliocentricDisctance/_AU_,SamplingTime); 
+        sprintf(fname,"%s.pitch_angle_distribution/field-line=%d.r=%e.t=%e.dat",base_name,iFieldLine,HeliocentricDisctance/_AU_,SamplingTime);
         fout=fopen(fname,"w");
 
         fprintf(fout,"VARIABLES = \"Pitch Angle\"  ");
@@ -1824,13 +1739,13 @@ double e_mev=e*J2MeV;
         for (ibin=0;ibin<nEnergyBins;ibin++) {
           double sum=0.0;
 
-          fprintf(fout,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(ibin*dLogEnergy)*J2MeV,MinEnergy*exp((ibin+1)*dLogEnergy)*J2MeV); 
-        
-          for (j=0;j<nPitchAngleBins;j++) { 
+          fprintf(fout,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(ibin*dLogEnergy)*J2MeV,MinEnergy*exp((ibin+1)*dLogEnergy)*J2MeV);
+
+          for (j=0;j<nPitchAngleBins;j++) {
             sum+=PitchAngleSamplingTable(j,ibin);
           }
 
-          sum*=dmu; 
+          sum*=dmu;
 
           if (sum>0.0) {
             for (j=0;j<nPitchAngleBins;j++) {
@@ -1845,7 +1760,7 @@ double e_mev=e*J2MeV;
         for (j=0;j<nPitchAngleBins;j++) {
           fprintf(fout,"%e  ",(j+0.5)*dmu-1.0);
 
-          for (ibin=0;ibin<nEnergyBins;ibin++) fprintf(fout,"%e  ",PitchAngleSamplingTable(j,ibin)); 
+          for (ibin=0;ibin<nEnergyBins;ibin++) fprintf(fout,"%e  ",PitchAngleSamplingTable(j,ibin));
 
           fprintf(fout,"\n");
         }
@@ -1862,7 +1777,7 @@ double e_mev=e*J2MeV;
         for (int i=0;i<nEnergyBins;i++) {
           DensitySamplingTable[i]=0.0,FluxSamplingTable[i]=0.0,ReturnFluxSamplingTable[i]=0.0;
         }
-        
+
         PitchAngleSamplingTable=0.0;
         SamplingCounter=0;
       }
@@ -1888,8 +1803,8 @@ double e_mev=e*J2MeV;
         if (PIC::ThisThread==0) {
           fprintf(foutDensity,"%e ",SamplingTime);
 
-          for (int i=0;i<nEnergyBins;i++) fprintf(foutDensity,"  %e", DensitySamplingTable[i]/((SamplingCounter!=0) ? SamplingCounter : 1)); 
-        
+          for (int i=0;i<nEnergyBins;i++) fprintf(foutDensity,"  %e", DensitySamplingTable[i]/((SamplingCounter!=0) ? SamplingCounter : 1));
+
           fprintf(foutDensity,"\n");
           fflush(foutDensity);
 
@@ -1911,22 +1826,22 @@ double e_mev=e*J2MeV;
 
         //output the pirch angle distribution
         OutputPitchAngleDistribution();
-      
+
         //clear the sampling buffers
         Clear();
       }
 
 
-      //full name of the output file is saved here for debugging purposes 
+      //full name of the output file is saved here for debugging purposes
       char full_name_density[200],full_name_flux[200],full_name_return_flux[200];
-      char base_name[200];      
+      char base_name[200];
 
       void Init(const char *fname,double e_min,double e_max,int n,double r,int l) {
         nEnergyBins=n;
         MinEnergy=e_min,MaxEnergy=e_max;
-        dLogEnergy=log(MaxEnergy/MinEnergy)/nEnergyBins; 
+        dLogEnergy=log(MaxEnergy/MinEnergy)/nEnergyBins;
         HeliocentricDisctance=r;
-        iFieldLine=l; 
+        iFieldLine=l;
 
         nPitchAngleBins=20;
         PitchAngleSamplingTable.init(nPitchAngleBins,nEnergyBins);
@@ -1937,14 +1852,14 @@ double e_mev=e*J2MeV;
 
 	sprintf(full_name_density,"mkdir -p %s.density",fname);
         system(full_name_density);
- 
+
         sprintf(full_name_density,"%s.density/field-line=%d.r=%e.dat",fname,l,r/_AU_);
-        foutDensity=fopen(full_name_density,"w"); 
-        if (foutDensity==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writting"); 
+        foutDensity=fopen(full_name_density,"w");
+        if (foutDensity==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writting");
 
         fprintf(foutDensity,"VARIABLES=\"time\"");
         for (int i=0;i<nEnergyBins;i++) fprintf(foutDensity,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
-        fprintf(foutDensity,"\n");   
+        fprintf(foutDensity,"\n");
 
 	sprintf(full_name_flux,"mkdir -p %s.flux",fname);
 	system(full_name_flux);
@@ -1975,69 +1890,47 @@ end:
         FluxSamplingTable=new double[nEnergyBins];
         ReturnFluxSamplingTable=new double[nEnergyBins];
 
-        Clear(); 
+        Clear();
       }
     };
 
     extern int SamplingBufferTableLength;
-    extern cSamplingBuffer **SamplingBufferTable; 
+    extern cSamplingBuffer **SamplingBufferTable;
 
-    //Manager is called by AMPS to perform sampling procedure 
+    //Manager is called by AMPS to perform sampling procedure
     void Manager();
 
     //Init the samping module
     void Init();
-    void InitSingleFieldLineSampling(int iFieldLine); 
+    void InitSingleFieldLineSampling(int iFieldLine);
   }
 
-  //sphere describing the inner boundary of the domain 
+  //sphere describing the inner boundary of the domain
   extern cInternalSphericalData* InnerBoundary;
 
   //parameters controlling the model execution
   const int DomainType_ParkerSpiral=0;
-  const int DomainType_MultipleParkerSpirals=1; 
+  const int DomainType_MultipleParkerSpirals=1;
   const int DomainType_FLAMPA_FieldLines=2;
-  const int DomainType_StraitLine=3; 
+  const int DomainType_StraitLine=3;
   extern int DomainType;
   extern int Domain_nTotalParkerSpirals;
 
   //IMF used in the calcualtions: either Parker spiral or background magnetif field
   const int ModeIMF_background=0;
   const int ModeIMF_ParkerSpiral=1;
-  extern int ModeIMF; 
+  extern int ModeIMF;
 
-  const int ParticleTrajectoryCalculation_GuidingCenter=0;
-  const int ParticleTrajectoryCalculation_RelativisticBoris=1;
-  const int ParticleTrajectoryCalculation_IgorFieldLine=2;
-  const int ParticleTrajectoryCalculation_FieldLine=3;
-  const int ParticleTrajectoryCalculation_Parker3D_MeanFreePath=4;
-
-  extern int ParticleTrajectoryCalculation;
-
-  //calcualtion of the drift velocity
-  extern int b_times_grad_absB_offset;
-  extern int CurlB_offset;
-  extern int b_b_Curl_B_offset;
-
-  //offsets of the momentum and cos(pitch angle) in particle state vector
+  // Production particles retain only data used by field-line movers.  Vector
+  // position/momentum state and cross-field displacement belonged to the
+  // transferred Cartesian movers and are intentionally not allocated here.
   namespace Offset {
-    extern int Momentum,CosPitchAngle;
-    extern int p_par,p_norm;
-
-    //offset of the variable containing the radial distance of a particle from the attached magnetic field line 
-    extern int RadialLocation;
-
-    //offset to keep the particle's mean free path for sampling 
-    extern int MeanFreePath; 
+    //offset to keep the particle's mean free path for sampling
+    extern int MeanFreePath;
   }
 
   //request data in the particle state vector
   void RequestParticleData();
-
-  int RequestStaticCellData(int);
-  void GetDriftVelocity(double *v_drift,double *x,double v_parallel,double v_perp,double ElectricCharge,double mass,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node);
-  void GetDriftVelocity(double *v_drift,double *x,double v_parallel,double v_perp,double ElectricCharge,double mass,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
-  void InitDriftVelData();
 
   extern bool AccountTransportCoefficient;
 
@@ -2053,25 +1946,9 @@ end:
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
   }
 
-  void ParticleMoverSet(int ParticleMoverModel);
-
-  const int _HE_2019_AJL_=0;
-  const int _Kartavykh_2016_AJ_=1;
-  const int _BOROVIKOV_2019_ARXIV_=2;
-  const int _Droge_2009_AJ_=3;
-  const int _Droge_2009_AJ1_=4;
-  const int _MeanFreePathScattering_=5;
-  const int _Tenishev_2005_FL_=6;
-  const int _ParkerMeanFreePath_FL_=7;
-
   // Apply adiabatic cooling only if the flag is set
   extern bool AccountAdiabaticCoolingFlag;
 
-  int ParticleMover_HE_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
-  int ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
-  int ParticleMover_default(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
-  int ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
-  int ParticleMover_Kartavykh_2016_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node); 
   int ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 
   int ParticleMover_Tenishev_2005_FL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
@@ -2080,8 +1957,6 @@ end:
   int ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   int ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   int ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
-
-  int ParticleMover_Parker3D_MeanFreePath(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 
   int ParticleMover_FocusedTransport_EventDriven(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 
@@ -2092,150 +1967,16 @@ end:
 
   int ParticleMover_FocusedTransport_WaveScattering(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 
-  //particle mover
+  // Every production callback acquires one immutable background generation and
+  // then enters the validated field-line adapter.  Scattering is implemented
+  // inside the selected canonical mover; there is no Cartesian post-move
+  // scattering pass or mesh-cell interpolation path in srcSEP.
   int inline ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
-    int res;
-
-    // Acquire the immutable metadata handle published for the enclosing
-    // PIC::TimeStep() before any mover reads field-line, plasma, IMF, shock, or
-    // turbulence state.  The handle is deliberately retained until this
-    // wrapper returns, so legacy mover early exits cannot outlive the declared
-    // provider epoch/generation.  SnapshotStore also rejects background
-    // publication while the enclosing particle read phase is active.
     const SEP::Background::BackgroundSnapshot& background_snapshot =
         SEP::Background::SnapshotStore::Instance().AcquireForMover();
     (void)background_snapshot;
 
-
-    //init drift velocity data if needed 
-    if (_SEP_MOVER_DRIFT_==_PIC_MODE_ON_) {
-      static double last_swmf_coupling_time=-10.0;
-
-      if (last_swmf_coupling_time!=PIC::CPLR::SWMF::CouplingTime) {
-        last_swmf_coupling_time=PIC::CPLR::SWMF::CouplingTime; 
-
-        SEP::InitDriftVelData();
-      }
-    } 
-
-
-    res=Mover::DispatchProductionMover(ptr,dtTotal,startNode);
-
-
-    if ((_SEP_DIFFUSION_MODEL_!=_DIFFUSION_NONE_)&&(res==_PARTICLE_MOTION_FINISHED_)) {
-      //simulate scattering of the particles
-      //get interplabetary magnetic field, and plasma velocity
-      double B[3]={0.0,0.0,0.0},Vsw[3]={0.0,0.0,0.0},absVsw,vParallel,speed,vNormal,vNormal2=0.0,vNormalVect[3],l[3];
-      PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
-      double AbsB,*x,*v,omega_minus,omega_plus,mu,dmu;
-      PIC::ParticleBuffer::byte *ParticleData;
-      int idim,spec;
-
-      ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr); 
-      x=PIC::ParticleBuffer::GetX(ParticleData);
-      v=PIC::ParticleBuffer::GetV(ParticleData);
-      spec=PIC::ParticleBuffer::GetI(ParticleData);
-
-      startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
-      PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x,startNode,Stencil);      
-
-      for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
-         double *ptr_b=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset);
-         double *ptr_v=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::BulkVelocityOffset);
-
-         for (idim=0;idim<3;idim++) {
-           B[idim]+=Stencil.Weight[iStencil]*ptr_b[idim];
-           Vsw[idim]+=Stencil.Weight[iStencil]*ptr_v[idim];
-         }
-
-         omega_minus+=(*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::AlfvenWaveI01Offset)))*Stencil.Weight[iStencil];
-         omega_plus+=(*(1+(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::AlfvenWaveI01Offset)))*Stencil.Weight[iStencil];
-      }
-
-
-      memcpy(l,B,3*sizeof(double));
-      AbsB=Vector3D::Normalize(l);
-
-      //get the parallel and normal component of the velocity
-      vParallel=Vector3D::DotProduct(v,l);
-      absVsw=Vector3D::Length(Vsw);
-
-      if (absVsw<1.0E-5) return res;
-
-      for (idim=0;idim<3;idim++) {
-        vNormalVect[idim]=v[idim]-vParallel*l[idim];
-        vNormal2+=vNormalVect[idim]*vNormalVect[idim];
-      }
-
-      vNormal=sqrt(vNormal2);  
-      speed=sqrt(vNormal2+vParallel*vParallel);
-
-      mu=vParallel/speed;
-
-      if (vNormal<1.0E-10) {
-        //the velocity of the particle is alighed with the direction of the magnetic filed->
-        //generate a random diration that will be used as the direction of the normal component of  
-        //velocity later 
-        double e1[3];
-      
-        Vector3D::GetNormFrame(vNormalVect,e1,l);
-      }
-      else Vector3D::Normalize(vNormalVect);
-
-      //move the particle to the frame moving with solar wind plasma
-      vParallel-=absVsw;
-
-      //simulate scattering 
-      double D,dD_dmu,delta;
-      double muInit=mu,dtIncrement=dtTotal,time_counter=0.0;
-
-      while (time_counter<dtTotal) {
-        if (dtIncrement+time_counter>dtTotal) dtIncrement=dtTotal-time_counter;
-     
-        switch (_SEP_DIFFUSION_MODEL_) {
-        case _DIFFUSION_JOKIPII1966AJ_: 
-          SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,AbsB*AbsB,Vector3D::DotProduct(x,x),spec,omega_plus+omega_minus);
-          break;
-        default:
-          exit(__LINE__,__FILE__,"Error: not implemeneted");
-        }
-
-       // delta=sqrt(4.0*D*dtIncrement)/erf(rnd());
-
-        delta=sqrt(2.0*D*dtIncrement)*Vector3D::Distribution::Normal();
-
-        dmu=(rnd()>0.5) ? delta : -delta;
-
-        dmu+=dD_dmu*dtIncrement;
-
-        if (fabs(dmu)>0.2) {
-          mu=muInit,time_counter=0.0;
-          dtIncrement/=2.0;
-          continue;
-        }
-        else time_counter+=dtIncrement;
-
-        mu+=dmu;
-        if (mu<-1.0) mu=-1.0;
-        if (mu>1.0) mu=1.0;
-
-        vParallel=speed*mu;
-      }
-
-      //determine the new value of the parallel and normal components of the particle velocity
-      vParallel=speed*mu;
-      vNormal=speed*sqrt(1.0-mu*mu);
-
-      //move the particle velocity in the simulation frame and get the total particle velocity vector
-      vParallel+=absVsw;
-
-      for (idim=0;idim<3;idim++) {
-        v[idim]=vParallel*l[idim]+vNormal*vNormalVect[idim];
-      }    
-    }
-
-
-    return res;
+    return Mover::DispatchProductionMover(ptr,dtTotal,startNode);
   }
 
   namespace Sampling {
@@ -2243,7 +1984,7 @@ end:
   }
 
   namespace ParticleSource {
-    //prepopolation of the field lines 
+    //prepopolation of the field lines
     void PopulateAllFieldLines();
     void PopulateFieldLine(int iFieldLine);
 
@@ -2251,13 +1992,13 @@ end:
     namespace ShockWaveSphere {
       extern cInternalSphericalData ShockSurface;
 
-      extern double *CompressionRatioTable,*SourceRateTable,InjectionEffcientcy;  
+      extern double *CompressionRatioTable,*SourceRateTable,InjectionEffcientcy;
       extern int nSurfaceElements;
       extern cSingleVariableDiscreteDistribution<int> ShockInjectionDistribution;
-      extern bool InitGenerationSurfaceElement; 
+      extern bool InitGenerationSurfaceElement;
       extern double SphericalShockOpeningAngleLimit;
 
-      //the model for solar wind density 
+      //the model for solar wind density
       const int SolarWindDensityMode_analytic=0;
       const int SolarWindDensityMode_swmf=1;
       extern int SolarWindDensityMode;
@@ -2287,7 +2028,7 @@ end:
       // Function to increment integrated wave energy due to shock passing
       // r0, r1: initial and final heliocentric distances of the shock
       // dt: time needed for shock to move from r0 to r1
-      void ShockTurbulenceEnergyInjection(double r0, double r1, double dt);  
+      void ShockTurbulenceEnergyInjection(double r0, double r1, double dt);
 
       namespace Tenishev2005 {
         extern double rShock,MinFieldLineHeliocentricDistance;
@@ -2319,8 +2060,8 @@ end:
       long int sphereParticleInjection(void *SphereDataPointer);
     }
   }
-  
-  
+
+
   //injection of new particles into the system
     namespace BoundingBoxInjection {
       //Energy limis of the injected particles
@@ -2352,7 +2093,7 @@ end:
         void Init();
 
       }
-      
+
       //model that specifies injectino of SEP
       namespace SEP {
 
@@ -2363,7 +2104,7 @@ end:
         //init the model
         void Init();
       }
-      
+
       //general injection functions
       bool InjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
       long int InjectionProcessor(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
@@ -2398,7 +2139,7 @@ end:
       void ImportFieldLine(list<SEP::cFieldLine> *field_line);
       void PrintFieldLine(list<SEP::cFieldLine> *field_line,const char *fname);
       void LoadFieldLine_flampa(list<SEP::cFieldLine> *field_line,const char *fname);
-      
+
       double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
 
       //magnetic field line data
@@ -2529,7 +2270,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*1.0E3;
     memcpy(x_LOCAL,x,3*sizeof(double));
     memcpy(v_LOCAL,v,3*sizeof(double));
 
-    accl[0]=0.0; accl[1]=0.0;  accl[2]=0.0; 
+    accl[0]=0.0; accl[1]=0.0;  accl[2]=0.0;
 
 #if _FORCE_LORENTZ_MODE_ == _PIC_MODE_ON_
 
@@ -2558,7 +2299,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*1.0E3;
 
     CenterNode=startNode->block->GetCenterNode(nd);
     offset=CenterNode->GetAssociatedDataBufferPointer();
-    
+
     PIC::CPLR::GetBackgroundMagneticField(B,x_LOCAL,nd,startNode);
     PIC::CPLR::GetBackgroundElectricField(E,x_LOCAL,nd,startNode);
 
@@ -2586,7 +2327,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*1.0E3;
 #if _FORCE_FRAMEROTATION_MODE_ == _PIC_MODE_ON_
   // by default rotation period is ~25 days (freq = 4.63E-7 sec^-1)
   // frame angular velocity
-  static const double Omega        = 2.0*Pi*4.63E-7;//rad/sec 
+  static const double Omega        = 2.0*Pi*4.63E-7;//rad/sec
   // frame angular velocity x 2
   static const double TwoOmega     = 2.0*Omega;
   // frame angular velocity squared

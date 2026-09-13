@@ -1,11 +1,6 @@
 
 #include "sep.h"
 
-int SEP::Offset::Momentum=-1;
-int SEP::Offset::CosPitchAngle=-1;
-int SEP::Offset::p_par=-1;
-int SEP::Offset::p_norm=-1;
-int SEP::Offset::RadialLocation=-1;
 int SEP::Offset::MeanFreePath=-1;
 
 //selector of the shock wave model
@@ -22,7 +17,7 @@ int SEP::nCompositionGroups=0;
 
 cInternalSphericalData* SEP::InnerBoundary=NULL;
 
-//the type of the equations that is soleved 
+//the type of the equations that is soleved
 int SEP::ModelEquation=SEP::ModelEquationFTE;
 
 //IMF used in the calcualtions: either Parker spiral or background magnetif field
@@ -30,7 +25,7 @@ int SEP::ModeIMF=SEP::ModeIMF_background;
 
 
 //types of the differentiation of the pitch angle diffusion coeffcient
-int SEP::Diffusion::PitchAngleDifferentialMode=SEP::Diffusion::PitchAngleDifferentialModeAnalytical; 
+int SEP::Diffusion::PitchAngleDifferentialMode=SEP::Diffusion::PitchAngleDifferentialModeAnalytical;
 
 //parameters of the scattering model
 int SEP::Scattering::Tenishev2005AIAA::status=SEP::Scattering::Tenishev2005AIAA::_disabled;
@@ -41,7 +36,7 @@ double SEP::Scattering::Tenishev2005AIAA::lambda0=0.4*_AU_;
 //the limit to switch from solving FTE to the Parker Equation when the D_{\mu\mu} is to high
 double SEP::TimeStepRatioSwitch_FTE2PE=-1.0;
 
-//min/max particle number limit during a run 
+//min/max particle number limit during a run
 int SEP::MinParticleLimit=10,SEP::MaxParticleLimit=20;
 
 //the model for solar wind density
@@ -132,42 +127,23 @@ void SEP::Init() {
       //convert velocity into energy and distribute energy of a new particles
       minE=Relativistic::Speed2E(minV,mass);
       maxE=Relativistic::Speed2E(maxV,mass);
-      
+
       cout << s << "\t" << minV << "\t" << maxV << "\t" << minE*J2eV << "\t" <<  maxE*J2eV << endl;
     }
   }
-  
+
   //init source models of SEP and GCR
   if (_PIC_EARTH_GCR__MODE_==_PIC_MODE_ON_) BoundingBoxInjection::GCR::Init();
-} 
+}
 
 
 void SEP::RequestParticleData() {
   long int offset;
 
-  switch (_SEP_MOVER_) {
-  case _SEP_MOVER_HE_2019_AJL_:
-    PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(double));
-    Offset::Momentum=offset;
-
-    PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(double));
-    Offset::CosPitchAngle=offset;
-    break;
-  case _SEP_MOVER_BOROVIKOV_2019_ARXIV_:
-    PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(double));
-    Offset::p_par=offset;
-
-    PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(double));
-    Offset::p_norm=offset;
-    break;
-  }
-
-
-  //request the memory to store particle's distance from the magnetic field line 
+  // Mean free path is the only srcSEP-specific per-particle scalar shared by
+  // the supported field-line movers and diagnostics.  Step 5 intentionally
+  // removed Cartesian momentum and cross-field displacement extensions so a
+  // production particle cannot silently acquire a second 3-D representation.
   PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(double));
-  Offset::RadialLocation=offset;   
-
-  //request the memory to store particle's mean free path for sample  
-  PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(double));
-  Offset::MeanFreePath=offset; 
+  Offset::MeanFreePath=offset;
 }

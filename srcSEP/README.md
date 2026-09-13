@@ -8,10 +8,34 @@ self-consistent Alfvén-turbulence subsystem, including integrated and
 wave-number-resolved representations and particle-wave coupling.
 
 This source includes the Step 1 selectable standalone component-test registry,
-the Step 2 immutable background/clock boundary, and the Step 3 common SI
-flux-tube geometry and source normalization. Step 3 does not remove the
-self-consistent Alfvén-turbulence subsystem; it makes that subsystem use the
-same physical area and volume as injection and particle sampling.
+the Step 2 immutable background/clock boundary, the Step 3 common SI flux-tube
+geometry/source normalization, the Step 4 production mover API, and the Step 5
+field-line-only scope boundary. Self-consistent Alfvén turbulence remains a
+production subsystem and uses the same physical area and volume as injection
+and particle sampling.
+
+## Field-line-only production scope
+
+`srcSEP` advances particles only by a scalar coordinate on a magnetic field
+line, plus parallel/normal momentum state. The line itself remains embedded in
+three-dimensional space and continues to carry three-component IMF, plasma,
+electric-field, and SWMF/SWCME state. This distinction is enforced at compile
+time: the enclosing AMPS configuration must enable field-line mode and attach
+particles to field-line segments.
+
+Step 5 removed the Parker3D, 2019 He, Kartavykh, Borovikov, drift, and default
+Boris dispatch implementations; their macros, Cartesian particle offsets,
+cell-data derivative support, and mesh-cell particle-list paths are also gone.
+The public mover set remains exactly `parker`, `fte-dmumu`, and `fte-mfp`.
+
+At the user's direction, the spatial-neighborhood sampling module was removed
+now. Field-line observer sampling remains available and reports density, flux,
+return flux, pitch angle, energy, Larmor radius, and mean free path through
+`SEP::Sampling::InitSingleFieldLineSampling`. Outputs that require collecting
+particles in a three-dimensional volume around an arbitrary Cartesian point
+are temporarily unavailable in srcSEP and should be hosted by the separate 3-D
+application. See [STEP5_CHANGE_MANIFEST.md](STEP5_CHANGE_MANIFEST.md) for the
+complete transfer boundary.
 
 ## Flux-tube geometry and source units
 
@@ -119,6 +143,7 @@ make test-cli-unit
 make test-state-unit
 make test-geometry-source-unit
 make test-mover-api-unit
+make test-field-line-scope-unit
 ../amps --list-movers
 make test-list SEP_EXECUTABLE=/path/to/amps
 make test-case CASE=DXX01 SEP_EXECUTABLE=/path/to/amps
@@ -127,11 +152,17 @@ make test-turbulence SEP_EXECUTABLE=/path/to/amps
 make -j test SEP_EXECUTABLE=/path/to/amps
 ```
 
-The first three unit targets are dependency-light strict-warning checks of the
-production parser, immutable background core, and SI geometry/source core. The
-remaining targets intentionally invoke the
-linked production CLI and propagate its status.  See [test/README.md](test/README.md)
-for the catalog, prerequisites, isolation contracts, and extension procedure.
+The five focused unit targets are dependency-light checks of the parser,
+immutable background core, SI geometry/source core, production mover registry,
+and field-line-only source boundary. The remaining targets intentionally invoke
+the linked production CLI and propagate its status.
+
+For the native Step 5 completion gate, build this application in a field-line
+AMPS configuration, then build the receiving Cartesian-transport application
+from its own clean tree. That second application is not included in this
+archive. A source-only run can establish `SCOPE01`–`SCOPE03`, but cannot claim
+either linked build as complete. See [test/README.md](test/README.md) for the
+catalog, prerequisites, isolation contracts, and extension procedure.
 
 ## Current limitations
 

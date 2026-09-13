@@ -1,4 +1,4 @@
-# Current srcSEP CLI contract through Step 4
+# Current srcSEP CLI contract through Step 5
 
 The authoritative parser remains `SEP::Util::CLI::ParseCommandLine` in
 `util/sep_cli.cpp`.  Step 1 is additive.
@@ -43,3 +43,14 @@ The authoritative parser remains `SEP::Util::CLI::ParseCommandLine` in
   initialization.
 - Startup metadata prints the canonical name, capability contract, and active
   coefficient provider.
+
+## Step 5 scope behavior
+
+- The CLI continues to expose only `parker`, `fte-dmumu`, and `fte-mfp`; all
+  transferred Cartesian, Boris, drift, and Parker3D names remain hard errors.
+- The linked application must be compiled with field-line mode and
+  field-line-segment particle attachment. There is no runtime option that can
+  switch srcSEP back to Cartesian particle transport.
+- `--run-test-manager` remains functional, but it no longer needs a runtime
+  fallback for builds without field lines because such builds are rejected at
+  compile time.

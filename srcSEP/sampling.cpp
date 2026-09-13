@@ -11,9 +11,6 @@ array_4d<double>  SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable;
 array_3d<double>  SEP::Sampling::PitchAngle::PitchAngleRSamplingTable;
 array_5d<double>  SEP::Sampling::PitchAngle::DmumuSamplingTable;
 
-array_3d<double>  SEP::Sampling::RadialDisplacement::DisplacementSamplingTable;
-array_4d<double>  SEP::Sampling::RadialDisplacement::DisplacementEnergySamplingTable;
-
 array_3d<double>  SEP::Sampling::Energy::REnergySamplingTable;
 
 array_3d<double>  SEP::Sampling::LarmorRadius::SamplingTable;
@@ -21,7 +18,7 @@ array_3d<double>  SEP::Sampling::LarmorRadius::SamplingTable;
 double SEP::Sampling::PitchAngle::emin=0.01*MeV2J;
 double SEP::Sampling::PitchAngle::emax=3000.0*MeV2J;
 int SEP::Sampling::PitchAngle::nEnergySamplingIntervals=70;
-double SEP::Sampling::PitchAngle::dLogE; 
+double SEP::Sampling::PitchAngle::dLogE;
 double SEP::Sampling::MaxSampleEnergy=3000.0*MeV2J;
 
 //sample particle's mean free path
@@ -29,7 +26,7 @@ double SEP::Sampling::MeanFreePath::MaxSampledMeanFreePath=3.0*_AU_;
 double SEP::Sampling::MeanFreePath::MinSampledMeanFreePath=1.0E-7*_AU_;
 
 int SEP::Sampling::MeanFreePath::nSampleIntervals=100;
-double SEP::Sampling::MeanFreePath::dLogMeanFreePath; 
+double SEP::Sampling::MeanFreePath::dLogMeanFreePath;
 bool SEP::Sampling::MeanFreePath::active_flag=true;
 array_3d<double> SEP::Sampling::MeanFreePath::SamplingTable;
 
@@ -37,7 +34,7 @@ array_3d<double> SEP::Sampling::MeanFreePath::SamplingTable;
 //sample particle's Dxx
 
 
-//sample particle's D\mu\mu 
+//sample particle's D\mu\mu
 
 // ============================================================================
 // Local sampling-safety helpers
@@ -196,19 +193,17 @@ namespace {
 }
 
 void SEP::Sampling::Init() {
-  namespace FL=PIC::FieldLine; 
-
-  SEP::OutputAMPS::SamplingParticleData::Init();
+  namespace FL=PIC::FieldLine;
 
   PIC::IndividualModelSampling::SamplingProcedure.push_back(Manager);
 
-  //init the sampling buffer table 
+  //init the sampling buffer table
   SamplingBufferTable=new cSamplingBuffer* [FL::nFieldLineMax];
 
   for (int i=0;i<FL::nFieldLineMax;i++) SamplingBufferTable[i]=NULL;
 
   if (MeanFreePath::active_flag==true) {
-    MeanFreePath::dLogMeanFreePath=log(MeanFreePath::MaxSampledMeanFreePath/MeanFreePath::MinSampledMeanFreePath)/MeanFreePath::nSampleIntervals; 
+    MeanFreePath::dLogMeanFreePath=log(MeanFreePath::MaxSampledMeanFreePath/MeanFreePath::MinSampledMeanFreePath)/MeanFreePath::nSampleIntervals;
 
     MeanFreePath::SamplingTable.init(MeanFreePath::nSampleIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
     MeanFreePath::SamplingTable=0.0;
@@ -218,7 +213,7 @@ void SEP::Sampling::Init() {
 
   SEP::Sampling::PitchAngle::dLogE=log(SEP::Sampling::PitchAngle::emax/SEP::Sampling::PitchAngle::emin)/SEP::Sampling::PitchAngle::nEnergySamplingIntervals;
   PitchAngle::PitchAngleREnergySamplingTable.init(PitchAngle::nMuIntervals,SEP::Sampling::PitchAngle::nEnergySamplingIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
-  PitchAngle::PitchAngleREnergySamplingTable=0.0; 
+  PitchAngle::PitchAngleREnergySamplingTable=0.0;
 
   PitchAngle::PitchAngleRSamplingTable.init(PitchAngle::nMuIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
   PitchAngle::PitchAngleRSamplingTable=0.0;
@@ -226,30 +221,24 @@ void SEP::Sampling::Init() {
   PitchAngle::DmumuSamplingTable.init(4,PitchAngle::nMuIntervals,SEP::Sampling::PitchAngle::nEnergySamplingIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
   PitchAngle::DmumuSamplingTable=0.0;
 
-  RadialDisplacement::DisplacementSamplingTable.init(RadialDisplacement::nSampleIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax); 
-  RadialDisplacement::DisplacementEnergySamplingTable.init(RadialDisplacement::nSampleIntervals,SEP::Sampling::PitchAngle::nEnergySamplingIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
 
-  RadialDisplacement::DisplacementSamplingTable=0.0;
-  RadialDisplacement::DisplacementEnergySamplingTable=0.0;
-
-   
   Energy::REnergySamplingTable.init(SEP::Sampling::PitchAngle::nEnergySamplingIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
   Energy::REnergySamplingTable=0.0;
 
   SEP::Sampling::LarmorRadius::SamplingTable.init(SEP::Sampling::LarmorRadius::nSampleIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
   SEP::Sampling::LarmorRadius::SamplingTable=0.0;
-}  
+}
 
 void SEP::Sampling::InitSingleFieldLineSampling(int iFieldLine) {
   char fname[200];
 
-  if (SamplingBufferTable[iFieldLine]!=NULL) return; 
+  if (SamplingBufferTable[iFieldLine]!=NULL) return;
 
   if (SamplingHeliocentricDistanceList.size()==0) {
     SamplingBufferTable[iFieldLine]=new cSamplingBuffer [SamplingHeliocentricDistanceTableLength];
 
     for (int i=0;i<SamplingHeliocentricDistanceTableLength;i++) {
-      sprintf(fname,"%s/sample",PIC::OutputDataFileDirectory); 
+      sprintf(fname,"%s/sample",PIC::OutputDataFileDirectory);
 
       SamplingBufferTable[iFieldLine][i].Init(fname,MinSampleEnergy,MaxSampleEnergy,nSampleIntervals,SamplingHeliocentricDistanceTable[i],iFieldLine);
     }
@@ -282,10 +271,10 @@ void SEP::Sampling::Manager() {
       InitSingleFieldLineSampling(iFieldLine);
     }
 
-      //sample pitchaanglesof the partcles for a given field line 
+      //sample pitchaanglesof the partcles for a given field line
       FL::cFieldLineSegment* Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();
       double speed,e,x[3],v[3],mu,FieldLineCoord;
-      long int ptr; 
+      long int ptr;
       int iL,iMu,iR,spec,iE;
       double rLarmor,MiddleX[3],MiddleB;
 
@@ -293,7 +282,7 @@ void SEP::Sampling::Manager() {
         ptr=Segment->FirstParticleIndex;
 
 	Segment->GetCartesian(MiddleX,0.5);
-	MiddleB=QLT1::B(Vector3D::Length(MiddleX)); 
+	MiddleB=QLT1::B(Vector3D::Length(MiddleX));
 
 
         while (ptr!=-1) {
@@ -391,8 +380,8 @@ void SEP::Sampling::Manager() {
 
 	  SEP::Sampling::Energy::REnergySamplingTable(iE,iR,iFieldLine)+=ParticleWeight;
 
-	  //sample particle Larmor radius 
-	  if (isfinite(rLarmor)==true) { 
+	  //sample particle Larmor radius
+	  if (isfinite(rLarmor)==true) {
 	    if (rLarmor<1.0) {
                iL=0;
              }
@@ -402,11 +391,11 @@ void SEP::Sampling::Manager() {
              else {
                iL=(int)(log(rLarmor)/Sampling::LarmorRadius::dLog);
 	     }
-            
-	    SEP::Sampling::LarmorRadius::SamplingTable(iL,iR,iFieldLine)+=ParticleWeight;  
+
+	    SEP::Sampling::LarmorRadius::SamplingTable(iL,iR,iFieldLine)+=ParticleWeight;
 	  }
 
-	  //sample mean free path 
+	  //sample mean free path
 	  if ((SEP::Offset::MeanFreePath!=-1)&&(SEP::Sampling::MeanFreePath::active_flag==true)) {
             double v=*((double*)(ParticleData+SEP::Offset::MeanFreePath));
 	    int i;
@@ -419,34 +408,12 @@ void SEP::Sampling::Manager() {
 	        i=nSampleIntervals-1;
 	      }
 	      else {
-                i=(int)(log(v/SEP::Sampling::MeanFreePath::MinSampledMeanFreePath)/SEP::Sampling::MeanFreePath::dLogMeanFreePath); 
+                i=(int)(log(v/SEP::Sampling::MeanFreePath::MinSampledMeanFreePath)/SEP::Sampling::MeanFreePath::dLogMeanFreePath);
 	      }
 
-	      SEP::Sampling::MeanFreePath::SamplingTable(i,iR,iFieldLine)+=ParticleWeight; 
+	      SEP::Sampling::MeanFreePath::SamplingTable(i,iR,iFieldLine)+=ParticleWeight;
 	    }
-          }   
-
-	  //sample displacement of a particle from the magnetic field line 
-         if (SEP::Offset::RadialLocation!=-1) {
-           double r=*((double*)(ParticleData+SEP::Offset::RadialLocation));
-	   int iD;
-
-	   if (isfinite(r)==true) {
-	     if (r<1.0) {
-               iD=0;
-  	     }
-	     else if (r>=SEP::Sampling::RadialDisplacement::rDisplacementMax) {
-	       iD=SEP::Sampling::RadialDisplacement::nSampleIntervals-1;
-             }
-             else {
-               iD=(int)(log(r)/Sampling::RadialDisplacement::dLogDisplacement); 
-	     }	   
-
-	     Sampling::RadialDisplacement::DisplacementSamplingTable(iD,iR,iFieldLine)+=ParticleWeight;
-	     Sampling::RadialDisplacement::DisplacementEnergySamplingTable(iD,iE,iR,iFieldLine)+=ParticleWeight;
-	   }
-	 }
-
+          }
 
           ptr=PB::GetNext(ptr);
         }
@@ -455,9 +422,9 @@ void SEP::Sampling::Manager() {
 
 
 
-    }  
+    }
 
-    //sample the field line data 
+    //sample the field line data
     int TableSize=SamplingHeliocentricDistanceList.size();
     if (TableSize==0) TableSize=SamplingHeliocentricDistanceTableLength;
 
@@ -473,20 +440,18 @@ void SEP::Sampling::Manager() {
 
 
   if (cnt%20==0) {
-    //output data in a file 
+    //output data in a file
     SEP::Sampling::Energy::Output(cnt);
-    SEP::Sampling::RadialDisplacement::OutputDisplacementSamplingTable(cnt);
-    SEP::Sampling::RadialDisplacement::OutputDisplacementEnergySamplingTable(cnt);
     SEP::Sampling::LarmorRadius::Output(cnt);
     SEP::Sampling::MeanFreePath::Output(cnt);
 
     //output sampled pitch angle distribution
     //1. notmalize the distribution
-    int iMu,iR,iLine; 
+    int iMu,iR,iLine;
     double summ;
 
-    SEP::Sampling::PitchAngle::PitchAngleRSamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR); 
-    SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR); 
+    SEP::Sampling::PitchAngle::PitchAngleRSamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+    SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
     SEP::Sampling::PitchAngle::DmumuSamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
 
     if (PIC::ThisThread!=0) goto end;
@@ -498,7 +463,7 @@ void SEP::Sampling::Manager() {
         summ+=SEP::Sampling::PitchAngle::PitchAngleRSamplingTable(iMu,iR,iLine);
       }
 
-      summ*=SEP::Sampling::PitchAngle::dMu;  
+      summ*=SEP::Sampling::PitchAngle::dMu;
       if (summ==0.0) summ=1.0;
 
       for (iMu=0;iMu<SEP::Sampling::PitchAngle::nMuIntervals;iMu++) {
@@ -523,7 +488,7 @@ void SEP::Sampling::Manager() {
       }
     }
 
-    //output a  file  
+    //output a  file
     FILE *fout;
     char fname[200];
 
@@ -534,12 +499,12 @@ void SEP::Sampling::Manager() {
 
     for (iLine=0;iLine<FL::nFieldLineMax;iLine++) {
       if (FL::FieldLinesAll[iLine].IsInitialized()==true)  {
-        fprintf(fout,", \"f%i\"",iLine); 
+        fprintf(fout,", \"f%i\"",iLine);
 
         for (int iE=0;iE<SEP::Sampling::PitchAngle::nEnergySamplingIntervals;iE++) {
-          fprintf(fout,", \"f%i(%e-%e)Mev\"",iLine, 
+          fprintf(fout,", \"f%i(%e-%e)Mev\"",iLine,
           SEP::Sampling::PitchAngle::emin*exp(iE*SEP::Sampling::PitchAngle::dLogE)*J2MeV,
-          SEP::Sampling::PitchAngle::emin*exp((iE+1)*SEP::Sampling::PitchAngle::dLogE)*J2MeV); 
+          SEP::Sampling::PitchAngle::emin*exp((iE+1)*SEP::Sampling::PitchAngle::dLogE)*J2MeV);
 
           fprintf(fout,", \"D%i(%e-%e)Mev\"",iLine,
           SEP::Sampling::PitchAngle::emin*exp(iE*SEP::Sampling::PitchAngle::dLogE)*J2MeV,
@@ -566,7 +531,7 @@ void SEP::Sampling::Manager() {
         for (iLine=0;iLine<FL::nFieldLineMax;iLine++) if (FL::FieldLinesAll[iLine].IsInitialized()==true) {
           double f=0.0,base=0.0;
           int di,dj,i,j;
- 
+
           for (di=-1;di<=0;di++) for (dj=-1;dj<=0;dj++) {
             i=iR+di;
             j=iMu+dj;
@@ -574,17 +539,17 @@ void SEP::Sampling::Manager() {
             if ((i>=0)&&(i<SEP::Sampling::PitchAngle::nRadiusIntervals)&&(j>=0)&&(j<SEP::Sampling::PitchAngle::nMuIntervals)) {
               f+=SEP::Sampling::PitchAngle::PitchAngleRSamplingTable(j,i,iLine);
               base++;
-            }  
+            }
           }
-      
+
           fprintf(fout,"  %e",f/base);
 
 
           for (int iE=0;iE<SEP::Sampling::PitchAngle::nEnergySamplingIntervals;iE++) {
-            double D=0.0,TotalSampledWeight=0.0;           
+            double D=0.0,TotalSampledWeight=0.0;
             double dPdT=0.0,dMuDt=0.0;
 
-            f=0.0,base=0.0; 
+            f=0.0,base=0.0;
 
             for (di=-1;di<=0;di++) for (dj=-1;dj<=0;dj++) {
               i=iR+di;
@@ -614,7 +579,7 @@ void SEP::Sampling::Manager() {
 
    fclose(fout);
 
-   //output the field line background data 
+   //output the field line background data
    for (iLine=0;iLine<FL::nFieldLineMax;iLine++) if (FL::FieldLinesAll[iLine].IsInitialized()==true) {
      sprintf(fname,"%s/background.fl=%i.cnt=%i.dat",PIC::OutputDataFileDirectory,iLine,cnt);
      SEP::FieldLine::OutputBackgroundData(fname,iLine);
@@ -625,12 +590,9 @@ void SEP::Sampling::Manager() {
 
 end:
    SEP::Sampling::PitchAngle::PitchAngleRSamplingTable=0.0;
-   SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable=0.0; 
+   SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable=0.0;
    SEP::Sampling::PitchAngle::DmumuSamplingTable=0.0;
 
-
-   SEP::Sampling::RadialDisplacement::DisplacementSamplingTable=0.0;
-   SEP::Sampling::RadialDisplacement::DisplacementEnergySamplingTable=0.0;
 
    SEP::Sampling::Energy::REnergySamplingTable=0.0;
    SEP::Sampling::LarmorRadius::SamplingTable=0.0;
@@ -641,6 +603,4 @@ end:
 
 
 }
-
-
 

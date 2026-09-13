@@ -22,6 +22,9 @@ make test-geometry-source-unit
 # Dependency-light three-mover registry and CLI contract tests.
 make test-mover-api-unit
 
+# Source-scope checks for the field-line-only Step 5 boundary.
+make test-field-line-scope-unit
+
 # Discover the catalog without initializing the model.
 make test-list
 
@@ -83,6 +86,25 @@ with C++11 and strict warnings. It verifies:
 The linked native gate remains responsible for passing a real particle through
 each PIC adapter mapping. See
 [../PRODUCTION_MOVER_API.md](../PRODUCTION_MOVER_API.md).
+
+## Focused Step 5 field-line-scope tests
+
+`test/run_step5_tests.sh` verifies the source and build boundary without PIC or
+MPI:
+
+- `SCOPE01`: transferred Parker3D, 2019 He, Kartavykh, Borovikov, drift, Boris,
+  and spatial-neighborhood sampling symbols and object files are absent from
+  production sources;
+- `SCOPE02`: production mover sources cannot write a Cartesian particle
+  position, call a Boris pusher, apply cross-field diffusion, or attach to an
+  AMR-node particle list; the adapter enforces segment attachment;
+- `SCOPE03`: Cartesian field-line embedding, vector magnetic-field access,
+  SI flux-tube geometry, and field-line observer sampling remain present.
+
+The script then runs all `MOVCLI` tests, ensuring the removal leaves exactly the
+three canonical public movers. Native srcSEP and receiving-application builds
+remain required on a complete AMPS checkout. See
+[../STEP5_CHANGE_MANIFEST.md](../STEP5_CHANGE_MANIFEST.md).
 
 ## Focused Step 2 state and clock tests
 

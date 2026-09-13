@@ -7,13 +7,13 @@
 
 double SEP::ParticleSource::ShockWave::Tenishev2005::rShock =1.0E-5*_SUN__RADIUS_;
 bool SEP::ParticleSource::ShockWave::Tenishev2005::InitFlag=false;
-double SEP::ParticleSource::ShockWave::Tenishev2005::MinFieldLineHeliocentricDistance=-1.0;  
+double SEP::ParticleSource::ShockWave::Tenishev2005::MinFieldLineHeliocentricDistance=-1.0;
 
 
 void SEP::ParticleSource::ShockWave::Tenishev2005::Init() {
   InitFlag=true;
 
-  //determine the  initial location of the shock that is the minimum helpocentric distance of the beginning of the simulated field lines  
+  //determine the  initial location of the shock that is the minimum helpocentric distance of the beginning of the simulated field lines
   //loop through all simulated field lines
   for (int i = 0; i < PIC::FieldLine::nFieldLine; i++) {
     double r, *x;
@@ -27,13 +27,8 @@ void SEP::ParticleSource::ShockWave::Tenishev2005::Init() {
 
   rShock=MinFieldLineHeliocentricDistance;
 
-  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-  if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_OFF_) { 
-    rShock=AMPS2SWMF::Heliosphere::rMin;
-  }
-  #endif 
 }
-  
+
 double SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio() {
   double r = rShock / _AU_;
   double res;
@@ -44,7 +39,7 @@ double SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio() {
   else {
     res=2.0+(1.4-2.0)/(0.14-0.04)*(r-0.04);
     if (res<1.0) res=1.0;
-  } 
+  }
 
   return res;
 }
@@ -101,14 +96,14 @@ double SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() {
   double r_sh,density;
   double n_m3, V_ms, divV;
 
-  if (InitFlag==false) Init(); 
+  if (InitFlag==false) Init();
 
   switch (SEP::ShockModelType) {
-  case SEP::cShockModelType::Analytic1D: 
+  case SEP::cShockModelType::Analytic1D:
     density=GetSolarWindDensity();
     break;
   case SEP::cShockModelType::SwCme1d:
-    r_sh=SEP::SW1DAdapter::gState.r_sh_m;  
+    r_sh=SEP::SW1DAdapter::gState.r_sh_m;
 
     if (SEP::SW1DAdapter::QueryAtRadius(r_sh, n_m3, V_ms, divV, /*applyClamp=*/true)) {
       density=n_m3;
@@ -177,7 +172,7 @@ int SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(int iFiel
                    xInjection[i] = x1[i];
                 }
 
-		S=iSegment; 
+		S=iSegment;
                 return iSegment;
             }
 
@@ -191,7 +186,7 @@ int SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(int iFiel
                     xInjection[i] = x1[i] + t1 * d[i];
                 }
 
-		S=t1+iSegment; 
+		S=t1+iSegment;
                 return iSegment;
             }
             else if (t2 >= 0 && t2 <= 1) {  // t2 is in [0,1]
@@ -199,7 +194,7 @@ int SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(int iFiel
                     xInjection[i] = x1[i] + t2 * d[i];
                 }
 
-		S=t2+iSegment; 
+		S=t2+iSegment;
                 return iSegment;
             }
             else if (t1 < 0 && t2 > 1) {  // Solutions bracket the segment
@@ -228,20 +223,20 @@ namespace ShockWave {
 // dt: time needed for shock to move from r0 to r1
 void ShockTurbulenceEnergyInjection(double r0, double r1, double dt) {
     using namespace PIC::FieldLine;
-    
+
     // Validate input parameters
     if (r1 <= r0 || r0 < 0.0 || dt <= 0.0) {
         return; // Invalid shock propagation or time
     }
-    
+
     // Calculate shock velocity from distance and time
     double v = (r1 - r0) / dt; // Shock speed [m/s]
-    
+
     // Physical parameters for turbulence generation
-    const double eta = 0.02;   // Fraction of upstream kinetic-energy flux converted to broad-band Alfvén waves at the shock ramp 
-    const double f=0.5;        // Fraction of the injected power that populates the outward-propagating (+) wave sense; (1−f) goes into the inward (−) sense. 
+    const double eta = 0.02;   // Fraction of upstream kinetic-energy flux converted to broad-band Alfvén waves at the shock ramp
+    const double f=0.5;        // Fraction of the injected power that populates the outward-propagating (+) wave sense; (1−f) goes into the inward (−) sense.
     double shock_velocity_squared = v * v; // Shock velocity²
-    
+
     // Calculate a partial control volume with the shared SI geometry.  This is
     // the same finite-volume rule used by particle sampling and turbulence,
     // preventing the shock source from applying an independent radius model.
@@ -249,82 +244,82 @@ void ShockTurbulenceEnergyInjection(double r0, double r1, double dt) {
         return SEP::FieldLine::FluxTubeGeometry::PartialSegmentVolumeM3(
             segment, iFieldLine, sStart, sEnd);
     };
-    
+
     // Lambda function to get average mass density for a segment portion
     auto getAverageMassDensity = [](cFieldLineSegment* segment, double sStart, double sEnd) -> double {
         // Get plasma number density at segment endpoints
         double densityStart, densityEnd;
         segment->GetPlasmaDensity(sStart, densityStart);  // Number density
         segment->GetPlasmaDensity(sEnd, densityEnd);      // Number density
-        
+
         // Calculate average number density and convert to mass density
         double avgNumberDensity = 0.5 * (densityStart + densityEnd);
         return avgNumberDensity * ProtonMass; // kg/m³
     };
-    
+
     // Loop through all field lines
     for (int iFieldLine = 0; iFieldLine < nFieldLine; iFieldLine++) {
         PIC::FieldLine::cFieldLine* fieldLine = &FieldLinesAll[iFieldLine];
-        
+
         // Get the position of the first vertex to calculate datum vector
         PIC::FieldLine::cFieldLineVertex* firstVertex = fieldLine->GetFirstVertex();
         if (firstVertex == NULL) {
             continue;
         }
-        
+
         double firstVertexPos[3];
         firstVertex->GetX(firstVertexPos);
-        
+
         // Calculate heliocentric distance of the first vertex (datum)
-        double datumDistance = sqrt(firstVertexPos[0]*firstVertexPos[0] + 
-                                   firstVertexPos[1]*firstVertexPos[1] + 
+        double datumDistance = sqrt(firstVertexPos[0]*firstVertexPos[0] +
+                                   firstVertexPos[1]*firstVertexPos[1] +
                                    firstVertexPos[2]*firstVertexPos[2]);
-        
+
         // Convert heliocentric distances to distances along field line
         // by subtracting the datum distance
         double distance0 = r0 - datumDistance;
         double distance1 = r1 - datumDistance;
-        
+
         // Convert distances to field line coordinates using GetS method
         double s0 = fieldLine->GetS(distance0);
         double s1 = fieldLine->GetS(distance1);
-        
+
         // Skip if conversion failed or invalid coordinates
         if (s0 < 0.0 || s1 < 0.0 || s0 >= s1) {
             continue;
         }
-        
+
         // Process segments between s0 and s1
         int startSegment = static_cast<int>(floor(s0));
         int endSegment = static_cast<int>(floor(s1));
-        
-        for (int iSegment = startSegment; iSegment <= endSegment && 
+
+        for (int iSegment = startSegment; iSegment <= endSegment &&
              iSegment < fieldLine->GetTotalSegmentNumber(); iSegment++) {
-            
+
             cFieldLineSegment* segment = fieldLine->GetSegment(iSegment);
             if (segment == NULL) continue;
-            
+
             // Calculate segment boundaries affected by shock
             double segmentStart = max(s0, static_cast<double>(iSegment));
             double segmentEnd = min(s1, static_cast<double>(iSegment + 1));
-            
+
             if (segmentEnd <= segmentStart) continue;
-            
+
             // Convert to local segment coordinates [0,1]
             double sStart = segmentStart - static_cast<double>(iSegment);
             double sEnd = segmentEnd - static_cast<double>(iSegment);
-            
+
             // Calculate tube volume and mass density using lambda functions
             double tubeVolume = calculateTubeVolume(segment, sStart, sEnd, iFieldLine);
             double massDensity = getAverageMassDensity(segment, sStart, sEnd);
-            
+
             // Calculate deposited turbulence energy
             // ΔE± = 0.25η_f± ρu² V_tube (using mass density and provided shock speed v)
-            double deltaE_forward = 0.25 * eta * f * massDensity * 
+            double deltaE_forward = 0.25 * eta * f * massDensity *
                                    shock_velocity_squared * tubeVolume;
-            double deltaE_backward = 0.25 * eta * (1.0-f) * massDensity * 
+            double deltaE_backward = 0.25 * eta * (1.0-f) * massDensity *
                                     shock_velocity_squared * tubeVolume;
-            
+
             // Save energy directly to the segment using datum pointer
             double* wave_data = segment->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
             if (wave_data != NULL) {

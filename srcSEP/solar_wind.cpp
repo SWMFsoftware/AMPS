@@ -13,7 +13,7 @@ namespace SEP {
 
         /**
          * Calculates the solar wind velocity at a given position.
-         * 
+         *
          * @param v Output array for velocity components
          * @param x Position vector
          * @return The magnitude of the solar wind velocity
@@ -21,27 +21,27 @@ namespace SEP {
         double GetSolarWindVelocity(double *v, double *x) {
             // Calculate the length of the position vector
             double length = Vector3D::Length(x);
-            
+
             // Set each component of velocity
             // v[idim] = 400 km/s * x[idim] / |x|
             for (int idim = 0; idim < 3; idim++) {
                 v[idim] = 400E3 * x[idim] / length;
             }
-            
+
             // Return the magnitude of the velocity (which is 400 km/s)
             return 400E3;
         }
 
 	/*
-         * Request data buffer for storing div(Solar Wind Velocity) 
-         * 
+         * Request data buffer for storing div(Solar Wind Velocity)
+         *
          * @param offset The current offset in the data buffer
          * @return The size of allocated buffer in bytes
          */
         int RequestDataBuffer(int offset) {
             DivSolarWindVelocityOffset = offset;
             int TotalDataLength = 1;
-            
+
             return TotalDataLength * sizeof(double);
         }
 
@@ -52,7 +52,7 @@ namespace SEP {
 
      /**
          * Calculates the divergence of the solar wind velocity at a given position
-         * 
+         *
          * @param x Position vector
          * @param node Pointer to the AMR tree node
          * @return The divergence of the solar wind velocity
@@ -63,52 +63,52 @@ namespace SEP {
             cellSize[0] = (node->xmax[0] - node->xmin[0]) / _BLOCK_CELLS_X_;
             cellSize[1] = (node->xmax[1] - node->xmin[1]) / _BLOCK_CELLS_Y_;
             cellSize[2] = (node->xmax[2] - node->xmin[2]) / _BLOCK_CELLS_Z_;
-            
+
             // Define step size as half of the local cell size for each dimension
             double h[3];
             for (int i = 0; i < 3; i++) {
                 h[i] = 0.5 * cellSize[i];
             }
-            
+
             // Calculate the divergence using central differences
             double div = 0.0;
             double vPlus[3], vMinus[3];
             double xPlus[3], xMinus[3];
-            
+
             for (int dim = 0; dim < 3; dim++) {
                 // Copy the original position
                 for (int i = 0; i < 3; i++) {
                     xPlus[i] = x[i];
                     xMinus[i] = x[i];
                 }
-                
+
                 // Shift position forward and backward in current dimension
                 xPlus[dim] += h[dim];
                 xMinus[dim] -= h[dim];
-                
+
                 // Check if points are valid (not outside domain or inside Sun)
                 bool validPlus = IsPointValid(xPlus);
                 bool validMinus = IsPointValid(xMinus);
-                
+
                 if (!validPlus || !validMinus) {
                     // If either point is invalid, skip this dimension
                     continue;
                 }
-                
+
                 // Get velocity at shifted positions
                 GetSolarWindVelocity(vPlus,xPlus);
                 GetSolarWindVelocity(vMinus, xMinus);
-                
+
                 // Calculate partial derivative: dv_i/dx_i using central difference
                 div += (vPlus[dim] - vMinus[dim]) / (2.0 * h[dim]);
             }
-            
+
             return div;
         }
-        
+
         /**
          * Check if a point is valid (not outside domain or inside the Sun)
-         * 
+         *
          * @param x Position vector to check
          * @return true if valid, false otherwise
          */
@@ -116,18 +116,18 @@ namespace SEP {
             if (Vector3D::DotProduct(x,x) < _SUN__RADIUS_*_SUN__RADIUS_) {
                 return false;
             }
-            
+
             // Check if outside domain
             // Use the global domain boundaries defined in PIC
             const double *xmin = PIC::Mesh::mesh->xGlobalMin;
             const double *xmax = PIC::Mesh::mesh->xGlobalMax;
-            
+
             if (x[0] < xmin[0] || x[0] > xmax[0] ||
                 x[1] < xmin[1] || x[1] > xmax[1] ||
                 x[2] < xmin[2] || x[2] > xmax[2]) {
                 return false;
             }
-            
+
             return true;
         }
 
@@ -139,46 +139,46 @@ namespace SEP {
             for (int CellCounter = 0; CellCounter < PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_; CellCounter++) {
                 // Calculate indices for the current cell
                 int nLocalNode, ii = CellCounter, i, j, k;
-                
+
                 // Get the local node index
                 nLocalNode = ii / (_BLOCK_CELLS_Z_ * _BLOCK_CELLS_Y_ * _BLOCK_CELLS_X_);
                 ii -= nLocalNode * _BLOCK_CELLS_Z_ * _BLOCK_CELLS_Y_ * _BLOCK_CELLS_X_;
-                
+
                 // Get the k index (z direction)
                 k = ii / (_BLOCK_CELLS_Y_ * _BLOCK_CELLS_X_);
                 ii -= k * _BLOCK_CELLS_Y_ * _BLOCK_CELLS_X_;
-                
+
                 // Get the j index (y direction)
                 j = ii / _BLOCK_CELLS_X_;
                 ii -= j * _BLOCK_CELLS_X_;
-                
+
                 // Get the i index (x direction)
                 i = ii;
-                
+
                 // Get the node from the block table
                 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node = PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
                 auto block = node->block;
-                
+
                 // Skip if the block is NULL
                 if (block == NULL) continue;
-                
+
                 // Get the cell center node
                 PIC::Mesh::cDataCenterNode *cell = block->GetCenterNode(_getCenterNodeLocalNumber(i, j, k));
-                
+
                 // Skip if the cell is NULL
                 if (cell == NULL) continue;
-                
+
                 // Calculate the physical coordinates of the cell center
                 double x[3];
-                
+
                 // Calculate the cell center coordinates
                 x[0] = node->xmin[0] + (i + 0.5) * (node->xmax[0] - node->xmin[0]) / _BLOCK_CELLS_X_;
                 x[1] = node->xmin[1] + (j + 0.5) * (node->xmax[1] - node->xmin[1]) / _BLOCK_CELLS_Y_;
                 x[2] = node->xmin[2] + (k + 0.5) * (node->xmax[2] - node->xmin[2]) / _BLOCK_CELLS_Z_;
-                
+
                 // Calculate the divergence of the solar wind velocity at the cell center
                 double div = GetDivSolarWindVelocity(x, node);
-                
+
                 // Save the divergence in the state vector of the cell
                 *((double*) (cell->GetAssociatedDataBufferPointer() + DivSolarWindVelocityOffset)) = div;
             }
@@ -186,14 +186,14 @@ namespace SEP {
 
         /**
          * Interpolate the divergence of solar wind velocity to a specific location
-         * 
+         *
          * @param x Position vector
          * @param node Pointer to the AMR tree node
          * @return Interpolated divergence of the solar wind velocity
          */
         double InterpolateDivSolarWindVelocity(double *x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
             double div = 0.0;
-            
+
             // Initialize interpolation stencil
 	    PIC::InterpolationRoutines::CellCentered::cStencil CenterBasedStencil;
 	    PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x,node,CenterBasedStencil);
@@ -203,14 +203,14 @@ namespace SEP {
                 // Get the data pointer and weight for this cell
                 char *AssociatedDataPointer = CenterBasedStencil.cell[icell]->GetAssociatedDataBufferPointer();
                 double weight = CenterBasedStencil.Weight[icell];
-                
+
                 // Get the divergence value for this cell
                 double div_cell = *((double*) (AssociatedDataPointer + DivSolarWindVelocityOffset));
-                
+
                 // Add weighted contribution to interpolated value
                 div += weight * div_cell;
             }
-            
+
 
             #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
             #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
@@ -228,24 +228,24 @@ namespace SEP {
  *  and power‑law indices used in the two routines below:
  *
  *  ── Radial ranges & key sources ───────────────────────────────────────────────────────────────
- *   0.05 – 0.30 AU  (PSP, “young” solar wind)                                                   
+ *   0.05 – 0.30 AU  (PSP, “young” solar wind)
  *        • Halekas et al. 2020, ApJS 246, 22 – n ∝ r⁻²·³,  T ∝ r⁻⁰·⁶                            :contentReference[oaicite:0]{index=0}
  *        • Kasper et al. 2021, Phys. Rev. Lett. 127, 255101 – proton‑core heating close to Sun  :contentReference[oaicite:1]{index=1}
  *
- *   0.30 – 1.0 AU  (Helios re‑analysis)                                                         
- *        • Perrone et al. 2019, MNRAS 483, 3730 – fast‑wind T ∝ r⁻⁰·⁷‑0·⁸, n ∝ r⁻²              
- *        • Hellinger et al. 2013, ApJ 778, 134 – slow‑wind density n ∝ r⁻¹·⁹                    
+ *   0.30 – 1.0 AU  (Helios re‑analysis)
+ *        • Perrone et al. 2019, MNRAS 483, 3730 – fast‑wind T ∝ r⁻⁰·⁷‑0·⁸, n ∝ r⁻²
+ *        • Hellinger et al. 2013, ApJ 778, 134 – slow‑wind density n ∝ r⁻¹·⁹ 
  *
- *   1 – 5 AU  (Ulysses/Voyager, mid‑heliosphere)                                                
+ *   1 – 5 AU  (Ulysses/Voyager, mid‑heliosphere)
  *        • Richardson 2003, GRL 30, 1206 – Voyager 1+2 T ∝ r⁻⁰·⁷                               :contentReference[oaicite:2]{index=2}
- *        • Richardson & Burlaga 2013, SSR 176, 217 – average n ≈ 5 cm⁻³ (r/1 AU)⁻²              
+ *        • Richardson & Burlaga 2013, SSR 176, 217 – average n ≈ 5 cm⁻³ (r/1 AU)⁻²
  *
- *   5 – 30 AU  (pickup‑ion corridor)                                                            
- *        • Elliott et al. 2019, ApJ 886, 73 – Voyager/New Horizons flattening:                  
- *          T ∝ r⁻⁰·⁴, n ∝ r⁻¹·⁵ (mass loading by PUIs)                                         
+ *   5 – 30 AU  (pickup‑ion corridor)
+ *        • Elliott et al. 2019, ApJ 886, 73 – Voyager/New Horizons flattening:
+ *          T ∝ r⁻⁰·⁴, n ∝ r⁻¹·⁵ (mass loading by PUIs)
  *
- *   30 – 90 AU  (heliosheath approach)                                                         
- *        • Richardson et al. 2022, SSR 218, 35 – Voyager 2 trend to T ≈ few × 10³ K;              
+ *   30 – 90 AU  (heliosheath approach)
+ *        • Richardson et al. 2022, SSR 218, 35 – Voyager 2 trend to T ≈ few × 10³ K;
  *          density plateaus at ≃10³ m⁻³ in the distant wind                                    :contentReference[oaicite:3]{index=3}
  *
  *  These observational scalings are stitched together into simple piece‑wise formulas that are
@@ -483,8 +483,8 @@ namespace SEP {
     //   - Automatically handles weight corrections for computational efficiency
     //   - Updates both field line coordinates and Cartesian positions
     //=============================================================================
-    
-    
+
+
     long int InjectSolarWindAtAllFieldLines(int spec, double dt) {
       namespace FL = PIC::FieldLine;
       long int totalInjectedParticles = 0;
@@ -496,7 +496,7 @@ namespace SEP {
 
       return totalInjectedParticles;
     }
-    
+
     //=============================================================================
     // InitializeSolarWindFieldLine
     //=============================================================================
@@ -654,12 +654,6 @@ long int SEP::SolarWind::InitializeSolarWindFieldLine(int spec, int iFieldLine, 
 
             if (newParticle != -1) {
                 nInjectedParticles++;
-
-                // Set initial radial location if tracking is enabled
-                if (SEP::Offset::RadialLocation != -1) {
-                    *((double*)(PIC::ParticleBuffer::GetParticleDataPointer(newParticle) +
-                              SEP::Offset::RadialLocation)) = r_m;
-                }
             }
         }
     }
@@ -770,15 +764,9 @@ long int SEP::SolarWind::InjectSolarWindAtFieldLineBeginning(int spec, int iFiel
             FieldLineCoord = FL::FieldLinesAll[iFieldLine].move(FieldLineCoord, ds, Segment);
             PIC::ParticleBuffer::SetFieldLineCoord(FieldLineCoord, ParticleData);
 
-            // Update Cartesian position to match new field line coordinate
-            double x_new[3];
-            FL::FieldLinesAll[iFieldLine].GetCartesian(x_new, FieldLineCoord);
-            PIC::ParticleBuffer::SetX(x_new, ParticleData);
-
-            // Set initial radial location if tracking is enabled
-            if (SEP::Offset::RadialLocation != -1) {
-                *((double*)(ParticleData + SEP::Offset::RadialLocation)) = r_m;
-            }
+            // The field-line coordinate is the particle position.  Cartesian
+            // coordinates remain a derived view of the embedded line and are
+            // therefore not written into a second particle representation.
         }
     }
 

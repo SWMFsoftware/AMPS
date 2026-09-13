@@ -15,8 +15,10 @@ adapter.
 
 These are one-dimensional transport models along field lines embedded in 3-D
 space. The field geometry remains three-dimensional. Fully 3-D particle
-trajectories, drift/Boris variants, direct-wave experimental movers, and
-historical ambiguous scattering functions are not public production choices.
+trajectories, drift/Boris variants, and their Cartesian particle state are not
+compiled into srcSEP after Step 5. Direct-wave experimental movers and
+historical ambiguous field-line scattering functions remain non-public
+implementation material.
 
 ## Selection and discovery
 
@@ -58,6 +60,11 @@ the selected implementation, the adapter verifies:
 - a valid field-line ID and attached segment;
 - a finite field-line coordinate; and
 - finite parallel and normal particle velocities.
+
+The adapter translation unit additionally requires `_PIC_FIELD_LINE_MODE_` and
+`_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_` at compile time. Supported movers
+commit directly to a field-line segment temporary list; there is no AMR-node
+particle-list branch or Cartesian post-mover scattering pass.
 
 Startup output records the canonical mover, representation requirements,
 turbulence streaming behavior, coefficient contract, and active provider.

@@ -180,16 +180,6 @@ int main(int argc,char **argv) {
       std::cout << '\n';
     }
 
-    if (RequiredInitializationLevel(selectedComponentTests) ==
-            SEP::Testing::InitializationLevel::FieldLineModel &&
-        _PIC_FIELD_LINE_MODE_ != _PIC_MODE_ON_) {
-      if (PIC::ThisThread == 0) {
-        std::cerr << "ERROR: selected component tests require "
-                  << "_PIC_FIELD_LINE_MODE_ to be enabled in this build.\n";
-      }
-      return 1;
-    }
-
     // Initialization-free callbacks are executed immediately.  This makes
     // component tests of pure formulas genuinely lightweight and proves that
     // test-only execution does not require a mesh merely because other catalog
@@ -203,14 +193,14 @@ int main(int argc,char **argv) {
 
   SEP::ShockModelType=SEP::cShockModelType::SwCme1d;
 
-  //read post-compile input file  
+  //read post-compile input file
   if (PIC::PostCompileInputFileName!="") {
      SEP::Parser::ReadFile(PIC::PostCompileInputFileName);
   }
 
 
-  //set up shock wave model 
-  configure_swcme1d(CMEScenario::Fast); 
+  //set up shock wave model
+  configure_swcme1d(CMEScenario::Fast);
 
   // Prepare the initial SWCME cache before mesh/field-line initialization can
   // query shock geometry.  Metadata publication waits until immediately before
@@ -220,7 +210,7 @@ int main(int argc,char **argv) {
       &SEP::sw1d,
       SEP::sw1d.prepare_step(SEP::Background::SimulationTimeSeconds()));
 
-  //output parameters of the sshock 
+  //output parameters of the sshock
   // The production shock diagnostic is unrelated to component-test setup and
   // would create an unrequested shared artifact.  Field-line tests still receive
   // the configured SWCME model, but only a production run writes this file.
@@ -245,9 +235,9 @@ int main(int argc,char **argv) {
     SEP::Mover::PrintRuntimeConfiguration(std::cout);
   }
 
-  //setup datum to store the segment's data for the Alfven turbulence model 
-  if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) { 
-    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy); 
+  //setup datum to store the segment's data for the Alfven turbulence model
+  if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
+    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
     PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity);
 
     // The wave-number-resolved model stores E+(k_j) and E-(k_j) in an
@@ -276,14 +266,14 @@ int main(int argc,char **argv) {
 
   }
 
-  //set up datum to store distance of a field line vertex to the location of the shock 
-  PIC::FieldLine::UserDefinedfDataProcessingManager=SEP::FieldLine::CalculateVertexShockDistances; 
+  //set up datum to store distance of a field line vertex to the location of the shock
+  PIC::FieldLine::UserDefinedfDataProcessingManager=SEP::FieldLine::CalculateVertexShockDistances;
 
   amps_init_mesh();
   amps_init();
 
   //init the Alfven turbulence IC
-  if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) SEP::AlfvenTurbulence_Kolmogorov::ModelInit::Init(); 
+  if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) SEP::AlfvenTurbulence_Kolmogorov::ModelInit::Init();
 
   // Selected component tests own the process after their declared field-line
   // prerequisite is available.  Returning here is the critical test-only
@@ -304,22 +294,16 @@ int main(int argc,char **argv) {
   //   --test-manager on
   //   --testmanager on
   //   --run-test-manager
-  // The compile-time field-line mode check is kept because TestManager() relies
-  // on the field-line infrastructure being present.
+  // Step 5 makes field-line infrastructure a compile-time precondition, so no
+  // runtime fallback can silently skip a requested diagnostic.
   // --------------------------------------------------------------------------
   if (cli_options.runTestManager) {
-    if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) {
-      TestManager();
-    }
-    else if (PIC::ThisThread == 0) {
-      std::cout << "WARNING: --run-test-manager/--test-manager was requested, "
-                << "but _PIC_FIELD_LINE_MODE_ is OFF; TestManager() is skipped.\n";
-    }
+    TestManager();
   }
 
-  int TotalIterations=(_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_) ? PIC::RequiredSampleLength+10 : 100000001;  
+  int TotalIterations=(_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_) ? PIC::RequiredSampleLength+10 : 100000001;
 
-  //init turbulence wave energy 
+  //init turbulence wave energy
   double B0_1AU = 5.0e-9;        // 5 nT magnetic field
   double turbulence_level = 0.2; // 20% turbulence
 
@@ -331,7 +315,7 @@ int main(int argc,char **argv) {
   SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0);
 
   //exchenge the initial wave energy density and output in a file
-  PIC::FieldLine::Parallel::MPIGatherDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0); 
+  PIC::FieldLine::Parallel::MPIGatherDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0);
 
   SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0);
 
@@ -373,7 +357,7 @@ int main(int argc,char **argv) {
   }
 
 
-  //set background plasma density 
+  //set background plasma density
 auto set_background_plasma_density = []() {
     // reference density at 1 AU [m⁻³]
     constexpr double n0 = 5.0e6;
@@ -481,7 +465,7 @@ auto CalculateWaveEnergyDensity = [&]() {
     PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(energy_density);
 
     SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity,0);
-    SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity,2); 
+    SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity,2);
 
     if (PIC::ThisThread == 0) {
         std::cout << "Compact wave energy density calculation completed with MPI operations" << std::endl;
@@ -496,7 +480,7 @@ auto CalculateWaveEnergyDensity = [&]() {
     SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity,2);
 
 
-    //PIC::FieldLine::Output("fl-edge-test.dat",false); 
+    //PIC::FieldLine::Output("fl-edge-test.dat",false);
 
 //hooks for calculating the magnertic tube radius and the volume of the field line segment
 PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
@@ -628,14 +612,13 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
             __FILE__);
       }
     }
-    //SEP::InitDriftVelData();
 
-    static double rsh0=SEP::ParticleSource::ShockWave::Tenishev2005::rShock; 
-    
+    static double rsh0=SEP::ParticleSource::ShockWave::Tenishev2005::rShock;
+
     if (niter==0) {
       switch (SEP::ShockModelType) {
       case SEP::cShockModelType::Analytic1D:
-        rsh0=SEP::ParticleSource::ShockWave::Tenishev2005::rShock; 
+        rsh0=SEP::ParticleSource::ShockWave::Tenishev2005::rShock;
         break;
       case SEP::cShockModelType::SwCme1d:
         rsh0=SEP::SW1DAdapter::gState.r_sh_m;
@@ -712,11 +695,11 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
 //      SEP::AlfvenTurbulence_Kolmogorov::SetDatumAll(0.0,SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming);
 //      SEP::AlfvenTurbulence_Kolmogorov::TestPrintDatumMPI(SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming,"g+",0);
 
-      //couple particles and turbulence  
+      //couple particles and turbulence
 //      SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::UpdateAllSegmentsWaveEnergyWithParticleCoupling(
 //		     SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
 //		    SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S,
-//		   PIC::ParticleWeightTimeStep::GlobalTimeStep[0]); 
+//		   PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
 
       if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
         // New spectral coupling: G±(k_j) modifies the same E±(k_j) bin, and
@@ -826,7 +809,7 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
         }
       }
 
-      //model the effect of wave reflection 
+      //model the effect of wave reflection
       if (SEP::AlfvenTurbulence_Kolmogorov::Reflection::active==true) {
         double C_reflection=0.6;
 
@@ -858,14 +841,14 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
       }
 
       // Configure cascade
-      if (SEP::AlfvenTurbulence_Kolmogorov::Cascade::active==true) { 
+      if (SEP::AlfvenTurbulence_Kolmogorov::Cascade::active==true) {
         SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetCascadeCoefficient(0.8);             // C_nl
         SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetDefaultPerpendicularCorrelationLength(1.0e7); // 10,000 km
         SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetDefaultEffectiveArea(1.0);           // V_cell = Δs
         SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetElectronHeatingFraction(0.3);        // 30% to electrons
         SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableCrossHelicityModulation(false);
         SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableTwoSweepIMEX(false);
-  
+
         // Advance cascade for all field lines (ΔE arrays accumulate changes)
         // Optional: stronger physics
         SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableCrossHelicityModulation(true);
@@ -903,8 +886,8 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
         }
       }
 
-    
-      //scatter wave energy   
+
+      //scatter wave energy
       if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
         PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(
             SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::SpectralWaveEnergy);
@@ -923,7 +906,7 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
       }
 
 
-      //calculate the wave energy density 
+      //calculate the wave energy density
       CalculateWaveEnergyDensity();
 
       // --------------------------------------------------------------------
@@ -953,7 +936,7 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
       }
 
 /*
-      if ((niter+1)%2==0)  {   
+      if ((niter+1)%2==0)  {
          char fname[300];
 	 sprintf(fname,"fl-%i-%e.dat",PIC::ThisThread,rsh0/_AU_);
 
@@ -972,8 +955,8 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
 
     //PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(10,200);
     //
-    //PIC::ParticleSplitting::FledLine::WeightedParticleMerging(20,20,20,500,800); 
-    //PIC::ParticleSplitting::FledLine::WeightedParticleSplitting(20,20,20,500,800);    
+    //PIC::ParticleSplitting::FledLine::WeightedParticleMerging(20,20,20,500,800);
+    //PIC::ParticleSplitting::FledLine::WeightedParticleSplitting(20,20,20,500,800);
   }
 
 

@@ -3,6 +3,17 @@
 #include <cmath>
 #include <ostream>
 
+// srcSEP is the field-line transport application.  Reject an incompatible
+// enclosing AMPS configuration at compile time, before a particle can be
+// attached to an AMR mesh cell and bypass the production adapter contract.
+#if _PIC_FIELD_LINE_MODE_ != _PIC_MODE_ON_
+#error "srcSEP Step 5 requires PIC field-line mode"
+#endif
+
+#if _PIC_PARTICLE_LIST_ATTACHING_ != _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_
+#error "srcSEP Step 5 requires field-line-segment particle attachment"
+#endif
+
 namespace {
 
 SEP::Mover::ProductionMover g_selected_mover =
@@ -80,11 +91,6 @@ int SEP::Mover::DispatchProductionMover(
     long int ptr,
     double dtTotal,
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
-#if _PIC_FIELD_LINE_MODE_ != _PIC_MODE_ON_
-  exit(__LINE__,__FILE__,
-       "production SEP movers require PIC field-line attachment mode");
-#endif
-
   if (ptr < 0 || !std::isfinite(dtTotal) || dtTotal < 0.0) {
     exit(__LINE__,__FILE__,"invalid particle handle or mover time interval");
   }

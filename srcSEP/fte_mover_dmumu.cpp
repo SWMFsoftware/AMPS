@@ -354,7 +354,7 @@ int SEP::ParticleMover_FocusedTransport_WaveScattering(
     //   γ' = sqrt(1 + (p'/mc)^2),  v' = p'/(γ' m)
     //   (scale v_parallel and v_perp proportionally)
     // -----------------------------
-   
+
 // C++11: typed lambda (no generic lambdas yet)
 const auto clamp_scalar = [](double x, double lo, double hi) -> double {
   return x < lo ? lo : (x > hi ? hi : x);
@@ -427,16 +427,13 @@ if (SEP::SW1DAdapter::QueryAtRadius(r_here, n_loc, V_loc, divV_loc, /*applyClamp
         TimeCounter += dt_current;
     }
 
-    // Attach particle to the segment-local list (AMR-friendly)
-    switch (_PIC_PARTICLE_LIST_ATTACHING_) {
-    case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_: {
+    // Attach directly to the segment-local list.  Step 5's compile-time
+    // adapter guard makes every mesh-cell alternative unreachable.
+    {
         long int temp = Segment->tempFirstParticleIndex.exchange(ptr);
         PB::SetNext(temp, ParticleData);
         PB::SetPrev(-1, ParticleData);
         if (temp != -1) PB::SetPrev(ptr, temp);
-    } break;
-    default:
-        exit(__LINE__, __FILE__, "Error: unknown particle attaching mode");
     }
 
     return _PARTICLE_MOTION_FINISHED_;

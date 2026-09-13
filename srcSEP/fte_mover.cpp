@@ -1052,21 +1052,6 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(long int ptr, double dtTotal
       ValidateOrFloorSpeedMu("after component reconstruction speed cap");
     }
 
-    // Update perpendicular scattering if enabled (for field line spreading)
-    if (SEP::Offset::RadialLocation != -1) {
-      double radial_pos = *((double*)(ParticleData + SEP::Offset::RadialLocation));
-      double dr, theta = PiTimes2 * rnd();
-      double sin_theta = sin(theta);
-      double D_perp;
-
-      // Apply perpendicular diffusion
-      D_perp = QLT1::calculatePerpendicularDiffusion(rHelio, Speed, AbsB);
-      dr = sqrt(2.0 * D_perp * dt_event) * Vector3D::Distribution::Normal();
-      radial_pos = sqrt(radial_pos*radial_pos + dr*dr + 2.0*radial_pos*dr*sin_theta);
-
-      *((double*)(ParticleData + SEP::Offset::RadialLocation)) = radial_pos;
-    }
-
     TimeCounter += dt_event;
   }
 
@@ -1111,21 +1096,14 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(long int ptr, double dtTotal
   PB::SetFieldLineCoord(FieldLineCoord, ParticleData);
 
   // Attach the particle to the temporary list
-  switch (_PIC_PARTICLE_LIST_ATTACHING_) {
-  case _PIC_PARTICLE_LIST_ATTACHING_NODE_:
-    exit(__LINE__, __FILE__, "Error: the function was developed for the case _PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
-    break;
-  case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
-    {
-      long int temp = Segment->tempFirstParticleIndex.exchange(ptr);
+  // Step 5 guarantees segment attachment at compile time, so the mover can
+  // commit directly to the destination segment without a mesh-cell branch.
+  {
+    long int temp = Segment->tempFirstParticleIndex.exchange(ptr);
       PIC::ParticleBuffer::SetNext(temp, ParticleData);
       PIC::ParticleBuffer::SetPrev(-1, ParticleData);
 
       if (temp != -1) PIC::ParticleBuffer::SetPrev(ptr, temp);
-    }
-    break;
-  default:
-    exit(__LINE__, __FILE__, "Error: the option is unknown");
   }
 
   return _PARTICLE_MOTION_FINISHED_;

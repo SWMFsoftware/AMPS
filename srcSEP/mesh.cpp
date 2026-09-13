@@ -15,7 +15,6 @@
 double** SEP::Mesh::FieldLineTable=NULL;
 int SEP::Mesh::FieldLineTableLength=0;
 
-int SEP::ParticleTrajectoryCalculation=SEP::ParticleTrajectoryCalculation_RelativisticBoris;
 int SEP::DomainType=DomainType_ParkerSpiral;
 int SEP::Domain_nTotalParkerSpirals=1;
 
@@ -26,7 +25,10 @@ double SEP::Mesh::localSphericalSurfaceResolution(double *x) {
   double SubsolarAngle;
 
   if (_MODEL_CASE_==_MODEL_CASE_SEP_TRANSPORT_) {
-    res=(_PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_) ? 0.1 : 10.0; 
+    // srcSEP no longer carries a Cartesian-particle resolution branch.  The
+    // coarse AMR mesh supports the three-dimensionally embedded field lines;
+    // particle resolution is controlled by their segment discretization.
+    res=10.0;
   }
   else {
     res=2.0;
@@ -36,20 +38,18 @@ double SEP::Mesh::localSphericalSurfaceResolution(double *x) {
 }
 
 double SEP::Mesh::localResolution(double *x) {
-  double res=20.0*_RADIUS_(_SUN_); 
+  double res=20.0*_RADIUS_(_SUN_);
 
-  if (_PIC_FIELD_LINE_MODE_!=_PIC_MODE_OFF_) {
-    if (Vector3D::Length(x)<4.0*_RADIUS_(_SUN_)) return 0.2*_RADIUS_(_SUN_);
-  }
+  if (Vector3D::Length(x)<4.0*_RADIUS_(_SUN_)) return 0.2*_RADIUS_(_SUN_);
 
   if (_DOMAIN_GEOMETRY_==_DOMAIN_GEOMETRY_BOX_) {
     res=max(20.0*_RADIUS_(_SUN_),0.1*Vector3D::Length(x));
-  } 
+  }
 
   if (Vector3D::DotProduct(x,x)<2.0*_RADIUS_(_SUN_)*_RADIUS_(_SUN_)) {
     res=0.1*_RADIUS_(_SUN_);
   }
-  
+
   return res;
 }
 
@@ -59,7 +59,7 @@ void SEP::Mesh::ImportFieldLine(list<SEP::cFieldLine> *field_line) {
   list<SEP::cFieldLine>::iterator it;
   FILE *fLine;
 
-  double **NewFieldLineTable; 
+  double **NewFieldLineTable;
   int NewFieldLineTableLength=FieldLineTableLength+field_line->size();
 
 
@@ -68,7 +68,7 @@ void SEP::Mesh::ImportFieldLine(list<SEP::cFieldLine> *field_line) {
 
   for (i=0;i<NewFieldLineTableLength;i++) NewFieldLineTable[i]=NewFieldLineTable[0]+3*i;
 
-  for (ip=0;ip<FieldLineTableLength;ip++) for (idim=0;idim<3;idim++) NewFieldLineTable[ip][idim]=FieldLineTable[ip][idim]; 
+  for (ip=0;ip<FieldLineTableLength;ip++) for (idim=0;idim<3;idim++) NewFieldLineTable[ip][idim]=FieldLineTable[ip][idim];
 
   for (it=field_line->begin();it!=field_line->end();it++,ip++) {
     for (idim=0;idim<3;idim++) NewFieldLineTable[ip][idim]=it->x[idim];
@@ -152,7 +152,7 @@ bool SEP::Mesh::NodeSplitCriterion(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *start
   if (startNode->RefinmentLevel>=7) return false;
 
 
-  
+
 
   bool field_line_intersect_node=false;
 
@@ -239,7 +239,7 @@ void SEP::Mesh::InitFieldLineAMPS(list<SEP::cFieldLine> *field_line) {
 
     //set the background plasma velocity
     const double speed=400.0E3;
-    double v[3]; 
+    double v[3];
 
     Vertex->GetX(v);
     Vector3D::Normalize(v,speed);
@@ -247,6 +247,6 @@ void SEP::Mesh::InitFieldLineAMPS(list<SEP::cFieldLine> *field_line) {
 
     if (FL::DatumAtVertexPlasmaWaves.offset>=0) Vertex->SetDatum(FL::DatumAtVertexPlasmaWaves,it->Wave);
   }
-  
+
   FL::nFieldLine++;
 }
