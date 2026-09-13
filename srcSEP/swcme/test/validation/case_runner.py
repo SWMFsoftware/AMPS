@@ -169,7 +169,12 @@ def plot_comparison(case_id: str, rows: list[dict[str, Any]], stem: Path) -> Non
         x = list(range(len(rows)))
         axis.plot(x, [float(r["model_error_h"]) for r in rows], "o-", label="SWCME")
         axis.plot(x, [float(r["baseline_error_h"]) for r in rows], "s--", label="baseline")
-        axis.set_xticks(x, labels, rotation=25, ha="right")
+        # Matplotlib before 3.5 does not accept label styling arguments in
+        # Axes.set_xticks().  Set locations and labels separately so VP16's
+        # campaign figure works on the older system Python installations used
+        # by several AMPS hosts while retaining identical modern output.
+        axis.set_xticks(x)
+        axis.set_xticklabels(labels, rotation=25, ha="right")
         axis.set(ylabel="held-out arrival error [h]")
     axis.grid(alpha=0.25)
     axis.legend(fontsize=8)
@@ -361,4 +366,3 @@ def run(case_id: str, case_dir: Path, output_dir: Path, no_plots: bool = False) 
         encoding="utf-8")
     print(f"{case_id} {status}: " + ", ".join(f"{key}={value}" for key, value in metrics.items()))
     return 0 if status == "PASS" else 1
-
