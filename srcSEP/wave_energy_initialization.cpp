@@ -343,7 +343,7 @@ void InitializeWaveEnergyInAllSegments(
             // CALCULATE SEGMENT VOLUME
             // ================================================================
             
-            double V_segment = SEP::FieldLine::GetSegmentVolume(segment, field_line_idx);
+            double V_segment = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment, field_line_idx);
             
             if (V_segment <= 0.0) {
                 std::cerr << "Warning: Invalid segment volume (" << V_segment 
@@ -499,7 +499,7 @@ void InitializeWaveEnergyInAllSegments(
 ///
 ///    - For each segment, we obtain its volume via:
 ///
-///            V_segment = SEP::FieldLine::GetSegmentVolume(segment, iLine),
+///            V_segment = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment, iLine),
 ///
 ///      and store
 ///
@@ -742,7 +742,7 @@ void InitializeWaveEnergyFromPhysicalParameters(
       const double W_minus = 0.5 * W_total;
 
       // ----- Convert to integrated wave energies using the segment volume -----
-      const double V_segment = SEP::FieldLine::GetSegmentVolume(segment, iLine);
+      const double V_segment = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment, iLine);
 
       const double E_plus  = W_plus  * V_segment;
       const double E_minus = W_minus * V_segment;
@@ -855,7 +855,7 @@ void PrintWaveEnergyProfile(
                 double E_minus = wave_data[1];
                 double E_total = E_plus + E_minus;
                 
-                double V_segment = SEP::FieldLine::GetSegmentVolume(segment, field_line_idx);
+                double V_segment = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment, field_line_idx);
                 double energy_density = ConvertIntegratedEnergyToDensity(E_plus, E_minus, V_segment);
                 
                 printf("%8d  %7d  %11.4f  %11.4e  %11.4e  %11.4e  %11.4e\n",
@@ -904,7 +904,7 @@ void PrintWaveEnergyInitializationSummary(PIC::Datum::cDatumStored& WaveEnergy) 
             double E_minus = wave_data[1];
             double E_total = E_plus + E_minus;
             
-            double V_segment = SEP::FieldLine::GetSegmentVolume(segment, field_line_idx);
+            double V_segment = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment, field_line_idx);
             double energy_density = ConvertIntegratedEnergyToDensity(E_plus, E_minus, V_segment);
             
             local_segment_count++;
@@ -1001,7 +1001,7 @@ bool ValidateWaveEnergyInitialization(
             
             // Check r^-2 scaling for segments near 1 AU
             if (r_AU > 0.8 && r_AU < 1.2) {  // Within 20% of 1 AU
-                double V_segment = SEP::FieldLine::GetSegmentVolume(segment, field_line_idx);
+                double V_segment = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment, field_line_idx);
                 double energy_density = ConvertIntegratedEnergyToDensity(E_plus, E_minus, V_segment);
                 
                 // Expected energy density with r^-2 scaling

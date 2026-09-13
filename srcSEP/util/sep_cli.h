@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "sep_production_mover.h"
+
 namespace SEP {
 namespace Util {
 namespace CLI {
@@ -28,24 +30,12 @@ struct Options {
   enum class TurbulenceModel { Integrated, WaveNumberResolved };
   TurbulenceModel turbulenceModel = TurbulenceModel::Integrated;
 
-  // Select the particle mover used by SEP::ParticleMoverPtr.
-  //
-  // The default is the historical focused-transport-equation mover
-  // ParticleMover_FTE.  This mover now also calls
-  // AccumulateParticleFluxForWaveCoupling(), so it can feed the manager-based
-  // particle/turbulence coupling used by the wave-number-resolved model.  The
-  // event-driven FTE mover is still available for tests of event-driven
-  // scattering, but it is no longer the only mover that fills G_+(k),G_-(k).
-  enum class ParticleMover {
-    FTE,
-    FocusedTransportEventDriven,
-    FocusedTransportWaveScattering,
-    ParkerDxx,
-    ParkerMeanFreePath,
-    MeanFreePathScattering,
-    Tenishev2005FieldLine
-  };
-  ParticleMover particleMover = ParticleMover::FTE;
+  // The production registry is deliberately limited to the three supported
+  // field-line transport formulations.  The default preserves the former FTE
+  // Dmumu implementation while assigning it an explicit canonical name.
+  Mover::ProductionMover particleMover =
+      Mover::ProductionMover::FocusedTransportDiffusion;
+  bool listMovers = false;
 
   // Run the standalone SEP TestManager diagnostics.  These diagnostics are
   // useful during development but can be intrusive and expensive in normal

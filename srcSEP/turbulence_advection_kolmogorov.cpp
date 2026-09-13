@@ -74,7 +74,7 @@ Energy Flux Calculation:
 Where:
 - V_A(boundary) = |B(boundary)| / √(μ₀ × n(boundary) × m_proton) [m/s]
 - ρ_energy(source) = E_total(source) / V_segment(source) [J/m³]
-- A(boundary) = π × [MagneticTubeRadius(boundary)]² [m²]
+- A(boundary) = FluxTubeGeometry::AreaAtVertexM2(boundary) [m²]
 - dt = time step [s]
 
 Boundary Energy Injection:
@@ -156,7 +156,7 @@ AMPS Framework Dependencies:
 - PIC::FieldLine structure with segments and vertices
 - SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy datum
 - FL::DatumAtVertexMagneticField and FL::DatumAtVertexPlasmaDensity
-- SEP::FieldLine::GetSegmentVolume() and SEP::FieldLine::MagneticTubeRadius()
+- SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3() and AreaAtVertexM2()
 - MPI environment with PIC::ThisThread identification
 
 Physical Constants:
@@ -406,7 +406,7 @@ void AdvectTurbulenceEnergyAllFieldLines(
             
             double E_plus_i = wave_data_i[0];   // Current E+ energy in segment i [J]
             double E_minus_i = wave_data_i[1];  // Current E- energy in segment i [J]
-            double volume_i = SEP::FieldLine::GetSegmentVolume(segment_i, field_line_idx);  // [m³]
+            double volume_i = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment_i, field_line_idx);  // [m³]
             
             if (volume_i <= 0.0) continue;
             
@@ -422,7 +422,6 @@ void AdvectTurbulenceEnergyAllFieldLines(
             {
                 // Get vertex at right boundary of segment i
                 PIC::FieldLine::cFieldLineVertex* vertex_right = segment_i->GetEnd();
-                double* x_right = vertex_right->GetX();
                 
                 // Calculate Alfvén velocity at right boundary
                 double* B0_right = vertex_right->GetDatum_ptr(FL::DatumAtVertexMagneticField);
@@ -434,8 +433,9 @@ void AdvectTurbulenceEnergyAllFieldLines(
                     double rho_right = n_sw_right * proton_mass;
                     double V_A_right = B_mag_right / std::sqrt(mu0 * rho_right);
                     
-                    double radius_right = SEP::FieldLine::MagneticTubeRadius(x_right, field_line_idx);
-                    double boundary_area = M_PI * radius_right * radius_right;
+                    double boundary_area =
+                        SEP::FieldLine::FluxTubeGeometry::AreaAtVertexM2(
+                            vertex_right, field_line_idx);
                     
                     double energy_density_plus = E_plus_i / volume_i;
                     double flux_rate = V_A_right * energy_density_plus * boundary_area;
@@ -455,7 +455,6 @@ void AdvectTurbulenceEnergyAllFieldLines(
             {
                 // Get vertex at left boundary of segment i
                 PIC::FieldLine::cFieldLineVertex* vertex_left = segment_i->GetBegin();
-                double* x_left = vertex_left->GetX();
                 
                 // Calculate Alfvén velocity at left boundary
                 double* B0_left = vertex_left->GetDatum_ptr(FL::DatumAtVertexMagneticField);
@@ -467,8 +466,9 @@ void AdvectTurbulenceEnergyAllFieldLines(
                     double rho_left = n_sw_left * proton_mass;
                     double V_A_left = B_mag_left / std::sqrt(mu0 * rho_left);
                     
-                    double radius_left = SEP::FieldLine::MagneticTubeRadius(x_left, field_line_idx);
-                    double boundary_area = M_PI * radius_left * radius_left;
+                    double boundary_area =
+                        SEP::FieldLine::FluxTubeGeometry::AreaAtVertexM2(
+                            vertex_left, field_line_idx);
                     
                     double energy_density_minus = E_minus_i / volume_i;
                     double flux_rate = V_A_left * energy_density_minus * boundary_area;
@@ -527,12 +527,11 @@ void AdvectTurbulenceEnergyAllFieldLines(
                     double* wave_data_left = segment_left->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
                     if (wave_data_left) {
                         double E_plus_left = wave_data_left[0];
-                        double volume_left = SEP::FieldLine::GetSegmentVolume(segment_left, field_line_idx);
+                        double volume_left = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment_left, field_line_idx);
                         
                         if (volume_left > 0.0) {
                             // Get vertex at boundary between segments i-1 and i
                             PIC::FieldLine::cFieldLineVertex* vertex_boundary = segment_i->GetBegin();
-                            double* x_boundary = vertex_boundary->GetX();
                             
                             double* B0_boundary = vertex_boundary->GetDatum_ptr(FL::DatumAtVertexMagneticField);
                             double n_sw_boundary;
@@ -543,8 +542,9 @@ void AdvectTurbulenceEnergyAllFieldLines(
                                 double rho_boundary = n_sw_boundary * proton_mass;
                                 double V_A_boundary = B_mag_boundary / std::sqrt(mu0 * rho_boundary);
                                 
-                                double radius_boundary = SEP::FieldLine::MagneticTubeRadius(x_boundary, field_line_idx);
-                                double boundary_area = M_PI * radius_boundary * radius_boundary;
+                                double boundary_area =
+                                    SEP::FieldLine::FluxTubeGeometry::AreaAtVertexM2(
+                                        vertex_boundary, field_line_idx);
                                 
                                 double energy_density_plus_left = E_plus_left / volume_left;
                                 double flux_rate = V_A_boundary * energy_density_plus_left * boundary_area;
@@ -579,12 +579,11 @@ void AdvectTurbulenceEnergyAllFieldLines(
                     double* wave_data_right = segment_right->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
                     if (wave_data_right) {
                         double E_minus_right = wave_data_right[1];
-                        double volume_right = SEP::FieldLine::GetSegmentVolume(segment_right, field_line_idx);
+                        double volume_right = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment_right, field_line_idx);
                         
                         if (volume_right > 0.0) {
                             // Get vertex at boundary between segments i and i+1
                             PIC::FieldLine::cFieldLineVertex* vertex_boundary = segment_i->GetEnd();
-                            double* x_boundary = vertex_boundary->GetX();
                             
                             double* B0_boundary = vertex_boundary->GetDatum_ptr(FL::DatumAtVertexMagneticField);
                             double n_sw_boundary;
@@ -595,8 +594,9 @@ void AdvectTurbulenceEnergyAllFieldLines(
                                 double rho_boundary = n_sw_boundary * proton_mass;
                                 double V_A_boundary = B_mag_boundary / std::sqrt(mu0 * rho_boundary);
                                 
-                                double radius_boundary = SEP::FieldLine::MagneticTubeRadius(x_boundary, field_line_idx);
-                                double boundary_area = M_PI * radius_boundary * radius_boundary;
+                                double boundary_area =
+                                    SEP::FieldLine::FluxTubeGeometry::AreaAtVertexM2(
+                                        vertex_boundary, field_line_idx);
                                 
                                 double energy_density_minus_right = E_minus_right / volume_right;
                                 double flux_rate = V_A_boundary * energy_density_minus_right * boundary_area;
@@ -623,7 +623,6 @@ void AdvectTurbulenceEnergyAllFieldLines(
             // Calculate inward E+ flux from "field line beginning BC"
             PIC::FieldLine::cFieldLineVertex* vertex_beginning = segment_0->GetBegin();
             if (vertex_beginning) {
-                double* x_beginning = vertex_beginning->GetX();
                 
                 double* B0_beginning = vertex_beginning->GetDatum_ptr(FL::DatumAtVertexMagneticField);
                 double n_sw_beginning;
@@ -636,8 +635,9 @@ void AdvectTurbulenceEnergyAllFieldLines(
                     double rho_beginning = n_sw_beginning * proton_mass;
                     double V_A_beginning = B_mag_beginning / std::sqrt(mu0 * rho_beginning);
                     
-                    double radius_beginning = SEP::FieldLine::MagneticTubeRadius(x_beginning, field_line_idx);
-                    double boundary_area = M_PI * radius_beginning * radius_beginning;
+                    double boundary_area =
+                        SEP::FieldLine::FluxTubeGeometry::AreaAtVertexM2(
+                            vertex_beginning, field_line_idx);
                     
                     // Calculate reference energy density from magnetic field energy
                     double reference_energy_density = (B_mag_beginning * B_mag_beginning) / (2.0 * mu0);

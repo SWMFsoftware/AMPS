@@ -13,6 +13,7 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 cxx=${CXX:-c++}
 "$cxx" -std=c++11 -Wall -Wextra -Werror -DSEP_CLI_PARSE_ONLY \
   "$source_root/util/sep_cli.cpp" \
+  "$source_root/util/sep_production_mover.cpp" \
   "$source_root/util/sep_test_registry.cpp" \
   "$script_dir/step1/test_registry_cli.cpp" \
   -o "$build_dir/test_registry_cli"

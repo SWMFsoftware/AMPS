@@ -130,6 +130,14 @@ int main(int argc,char **argv) {
     return 0;
   }
 
+  // Mover discovery is a dependency-free pre-initialization action, parallel
+  // to --list-tests.  The listing comes from the same immutable registry used
+  // by parsing and runtime dispatch, so it cannot advertise stale movers.
+  if (cli_options.listMovers) {
+    if (PIC::ThisThread == 0) SEP::Mover::PrintProductionMovers(std::cout);
+    return 0;
+  }
+
   // Listing and selection resolution are intentionally performed before shock
   // configuration, post-compile input, AMPS mesh allocation, field-line setup,
   // turbulence initialization, or any output writer.  Thus malformed test
@@ -226,8 +234,16 @@ int main(int argc,char **argv) {
   // which segment datums must be allocated.  In particular, the new
   // wave-number-resolved model needs an additional 2*NK spectral-energy datum.
   // --------------------------------------------------------------------------
+  // Establish the default coefficient provider before printing startup
+  // metadata.  A future coefficient CLI can replace this single assignment;
+  // the mover metadata will continue to report the selected provider.
+  SEP::Diffusion::GetPitchAngleDiffusionCoefficient=
+      SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient;
   SEP::Util::CLI::ApplyTurbulenceOptions(cli_options);
-  if (PIC::ThisThread == 0) SEP::Util::CLI::PrintTurbulenceOptions(cli_options, std::cout);
+  if (PIC::ThisThread == 0) {
+    SEP::Util::CLI::PrintTurbulenceOptions(cli_options, std::cout);
+    SEP::Mover::PrintRuntimeConfiguration(std::cout);
+  }
 
   //setup datum to store the segment's data for the Alfven turbulence model 
   if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) { 
@@ -302,8 +318,6 @@ int main(int argc,char **argv) {
   }
 
   int TotalIterations=(_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_) ? PIC::RequiredSampleLength+10 : 100000001;  
-
-  SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient;
 
   //init turbulence wave energy 
   double B0_1AU = 5.0e-9;        // 5 nT magnetic field
@@ -424,8 +438,8 @@ auto CalculateWaveEnergyDensity = [&]() {
                 double* energy_data = segment->GetDatum_ptr(integrated_energy);
                 double* density_data = segment->GetDatum_ptr(energy_density);
 
-                // Use SEP::FieldLine::GetSegmentVolume for volume calculation
-                double volume = SEP::FieldLine::GetSegmentVolume(segment, fl);
+                // Use SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3 for volume calculation
+                double volume = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment, fl);
 
                 if (energy_data && density_data && volume > 0.0) {
                     // CellIntegratedWaveEnergy stores the conservative variables
@@ -485,7 +499,7 @@ auto CalculateWaveEnergyDensity = [&]() {
     //PIC::FieldLine::Output("fl-edge-test.dat",false); 
 
 //hooks for calculating the magnertic tube radius and the volume of the field line segment
-PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
+PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
 
 
 
@@ -674,7 +688,10 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
         SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::ResetSpectralEnergyExchangeRates();
       }
 
-      if (SEP::ParticleMoverPtr!=SEP::ParticleMover_FocusedTransport_WaveScattering) { // in case SEP::ParticleMover_FocusedTransport_WaveScattering(), particle/turbulence coupling is already done 
+      // Dispatch policy is described by capabilities, not by comparing raw
+      // function addresses.  None of the three production movers evolves wave
+      // state directly; movers that accumulate streaming feed this manager.
+      if (!SEP::Mover::CurrentCapabilities().evolvesWaveStateDirectly) {
 
       // Function to increment integrated wave energy due to shock passing
       //reduce S

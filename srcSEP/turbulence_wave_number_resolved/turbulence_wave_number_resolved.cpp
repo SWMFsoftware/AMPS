@@ -178,9 +178,10 @@ bool GetFaceAlfvenSpeedAndArea(
   const double rho = n_sw * kProtonMass;
   V_A = B_mag / std::sqrt(kMu0 * rho);
 
-  double* x = vertex->GetX();
-  const double radius = SEP::FieldLine::MagneticTubeRadius(x, field_line_idx);
-  area = M_PI * radius * radius;
+  // The face flux and cell-integrated energy must share the same SI area/volume
+  // closure.  Computing a separate radius here previously broke conservation.
+  area = SEP::FieldLine::FluxTubeGeometry::AreaAtVertexM2(
+      vertex, field_line_idx);
 
   return std::isfinite(V_A) && std::isfinite(area) && V_A > 0.0 && area > 0.0;
 }
@@ -1153,7 +1154,7 @@ void CaptureRightBoundarySpectrumInitialCondition() {
     double* spectrum = segment_last->GetDatum_ptr(SpectralWaveEnergy);
     if (!spectrum) continue;
 
-    const double volume_last = SEP::FieldLine::GetSegmentVolume(segment_last,field_line_idx);
+    const double volume_last = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment_last,field_line_idx);
     if (volume_last <= 0.0) continue;
 
     for (int j=0; j<NK; ++j) {
@@ -1182,7 +1183,7 @@ void EnforceRightBoundarySpectrumInitialCondition() {
     double* spectrum = segment_last->GetDatum_ptr(SpectralWaveEnergy);
     if (!spectrum) continue;
 
-    const double volume_last = SEP::FieldLine::GetSegmentVolume(segment_last,field_line_idx);
+    const double volume_last = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment_last,field_line_idx);
     if (volume_last <= 0.0) continue;
 
     for (int j=0; j<NK; ++j) {
@@ -1228,7 +1229,7 @@ void AdvectSpectrumAllFieldLines(double dt, double TurbulenceLevelBeginning, dou
       double* spectrum_i = segment_i->GetDatum_ptr(SpectralWaveEnergy);
       if (!spectrum_i) continue;
 
-      const double volume_i = SEP::FieldLine::GetSegmentVolume(segment_i,field_line_idx);
+      const double volume_i = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment_i,field_line_idx);
       if (volume_i <= 0.0) continue;
 
       for (int j=0; j<NK; ++j) {
@@ -1246,7 +1247,7 @@ void AdvectSpectrumAllFieldLines(double dt, double TurbulenceLevelBeginning, dou
           PIC::FieldLine::cFieldLineSegment* segment_left = field_line->GetSegment(i-1);
           if (segment_left) {
             double* spectrum_left = segment_left->GetDatum_ptr(SpectralWaveEnergy);
-            const double volume_left = SEP::FieldLine::GetSegmentVolume(segment_left,field_line_idx);
+            const double volume_left = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment_left,field_line_idx);
             if (spectrum_left && volume_left > 0.0) {
               delta_plus[idx] += ComputeAdvectiveFlux(
                   std::max(0.0,spectrum_left[OffsetPlus(j)]), volume_left,
@@ -1292,7 +1293,7 @@ void AdvectSpectrumAllFieldLines(double dt, double TurbulenceLevelBeginning, dou
             }
             else {
               double* spectrum_right = segment_right->GetDatum_ptr(SpectralWaveEnergy);
-              const double volume_right = SEP::FieldLine::GetSegmentVolume(segment_right,field_line_idx);
+              const double volume_right = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment_right,field_line_idx);
               if (spectrum_right && volume_right > 0.0) {
                 delta_minus[idx] += ComputeAdvectiveFlux(
                     std::max(0.0,spectrum_right[OffsetMinus(j)]), volume_right,
@@ -1457,7 +1458,7 @@ void CascadeSpectrumAllFieldLines(
         double* exchange_rates = segment->GetDatum_ptr(SpectralWaveEnergyExchangeRate);
         if (!spectrum) continue;
 
-        const double volume = SEP::FieldLine::GetSegmentVolume(segment,field_line_idx);
+        const double volume = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment,field_line_idx);
         if (!(volume > 0.0)) continue;
 
         double rho = 0.0;
@@ -1623,7 +1624,7 @@ void OutputSpectrumTecplot2D(long int iteration, double simulation_time) {
       // wave-number bin.  To output a density, divide each bin by exactly the
       // same magnetic-tube segment volume used for the compact W+,W- diagnostics.
       s_center[i] = s_begin + 0.5*segment_length;
-      volume[i] = SEP::FieldLine::GetSegmentVolume(segment,field_line_idx);
+      volume[i] = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment,field_line_idx);
       spectrum_ptr[i] = segment->GetDatum_ptr(SpectralWaveEnergy);
       rate_ptr[i] = segment->GetDatum_ptr(SpectralWaveEnergyExchangeRate);
 

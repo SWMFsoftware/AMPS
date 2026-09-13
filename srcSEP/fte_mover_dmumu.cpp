@@ -81,7 +81,7 @@ int SEP::ParticleMover_FocusedTransport_WaveScattering(
         const double E_minus_total = wave_data[1];
 
         // Segment volume [m^3]
-        const double volume = SEP::FieldLine::GetSegmentVolume(seg, iFieldLine);
+        const double volume = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(seg, iFieldLine);
         if (volume <= 0.0) return false;
 
         W_plus_density  = E_plus_total  / volume; // [J/m^3]

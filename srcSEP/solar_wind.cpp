@@ -518,7 +518,7 @@ namespace SEP {
     //
     // Algorithm:
     //   1. Loop through all segments of the specified field line
-    //   2. Calculate segment volume using SEP::FieldLine::GetSegmentVolume()
+    //   2. Calculate segment volume using SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3()
     //   3. Determine local solar wind conditions at segment midpoint
     //   4. Calculate required number of computational particles
     //   5. Generate particles with Maxwell-Boltzmann thermal distribution
@@ -593,7 +593,7 @@ long int SEP::SolarWind::InitializeSolarWindFieldLine(int spec, int iFieldLine, 
         // In the field line reference frame, solar wind has zero bulk velocity
 
         // Calculate segment volume using SEP framework
-        double segmentVolume = SEP::FieldLine::GetSegmentVolume(Segment, iFieldLine);
+        double segmentVolume = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(Segment, iFieldLine);
 
         // Determine number of computational particles to inject
         double particleWeight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
@@ -691,9 +691,10 @@ long int SEP::SolarWind::InjectSolarWindAtFieldLineBeginning(int spec, int iFiel
     double l[3];
     Segment->GetDir(l);
 
-    // Calculate magnetic tube cross-sectional area at field line beginning
-    double tubeRadius = SEP::FieldLine::MagneticTubeRadius(x, iFieldLine);
-    double injectionArea = Pi * tubeRadius * tubeRadius;
+    // Use the shared SI flux-tube geometry.  This is the same area used by
+    // shock injection, wave-energy transport, growth, and segment sampling.
+    double injectionArea =
+        SEP::FieldLine::FluxTubeGeometry::AreaAtVertexM2(FirstVertex,iFieldLine);
 
     // Get particle weight
     double particleWeight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];

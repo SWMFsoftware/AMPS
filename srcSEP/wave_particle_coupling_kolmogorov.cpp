@@ -1205,7 +1205,7 @@ void AccumulateParticleFluxForWaveCoupling(
         const double pref = (PI*PI)*Omega*Omega/(B0*B0);
         if (!std::isfinite(vA) || !std::isfinite(Omega) || !std::isfinite(pref)) continue;
 
-        const double V_cell = SEP::FieldLine::GetSegmentVolume(segment,field_line_idx);
+        const double V_cell = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment,field_line_idx);
         if (!(V_cell > 0.0) || !std::isfinite(V_cell)) continue;
 
         double* G_plus_data = segment->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming);
@@ -2730,7 +2730,7 @@ void AccumulateParticleFluxForWaveCoupling(
         // a cell-local density/rate, so the Monte-Carlo contribution is normalized
         // by the magnetic-tube segment volume.  Invalid or tiny volumes are skipped
         // rather than allowed to produce unbounded source terms.
-        double V_cell = SEP::FieldLine::GetSegmentVolume(segment, field_line_idx);
+        double V_cell = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment, field_line_idx);
         if (!(V_cell > 0.0) || !std::isfinite(V_cell)) {
             std::cerr << "Warning: Invalid segment volume (" << V_cell 
                       << ") in segment " << seg_idx << std::endl;

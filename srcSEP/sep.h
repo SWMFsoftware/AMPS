@@ -11,6 +11,10 @@
 
 #include <math.h>
 
+#include "util/sep_physical_units.h"
+#include "util/sep_flux_tube_geometry_core.h"
+#include "util/sep_production_mover.h"
+
 #define _SEP_MOVER_DEFUALT_               0
 #define _SEP_MOVER_BOROVIKOV_2019_ARXIV_  1
 #define _SEP_MOVER_HE_2019_AJL_           2 
@@ -371,7 +375,7 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
       extern double PowerIndex,emin,emax;
       extern double InjectionEfficiency;
 
-      extern double ConstEnergyInjectionValue;
+      extern double ConstEnergyInjectionValue; // [MeV], converted at the SI API boundary
       extern double ConstSpeedInjectionValue;
       extern double ConstMuInjectionValue;
 
@@ -398,19 +402,27 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
     long int InjectParticlesSingleFieldLine(int spec,int iFieldLine);
     long int InjectParticles();
 
-    //calcualtion of the magnetic tube volume
-    double GetSegmentVolume(PIC::FieldLine::cFieldLineSegment* Segment,int iFieldLine); 
-    double MagneticTubeRadius(PIC::FieldLine::cFieldLineVertex* Vertex,int iFieldLine);
-    double MagneticTubeRadius(double *x,int iFieldLine);
+    namespace FluxTubeGeometry {
+      // An explicit profile is the required fallback when a field magnitude is
+      // unavailable.  The callback consumes Cartesian position in metres and
+      // returns cross-sectional area in square metres; a radius is never
+      // accepted at this interface.
+      typedef double (*ExplicitAreaProfile)(const double* x_m,int iFieldLine);
+
+      void SetReferenceAreaM2(double reference_area_m2);
+      void SetExplicitAreaProfile(ExplicitAreaProfile profile);
+      void ClearExplicitAreaProfile();
+
+      double AreaAtVertexM2(PIC::FieldLine::cFieldLineVertex* Vertex,int iFieldLine);
+      double AreaAtSegmentFractionM2(PIC::FieldLine::cFieldLineSegment* Segment,int iFieldLine,double fraction);
+      double SegmentVolumeM3(PIC::FieldLine::cFieldLineSegment* Segment,int iFieldLine);
+      double PartialSegmentVolumeM3(PIC::FieldLine::cFieldLineSegment* Segment,int iFieldLine,double begin_fraction,double end_fraction);
+      double SweptVolumeM3(PIC::FieldLine::cFieldLineSegment* Segment,int iFieldLine,double fraction,double normal_speed_m_s,double time_s);
+    }
 
     //output field line backgound data 
     void OutputBackgroundData(char* fname, int iFieldLine);
 
-    //the mode (const or expansing as R^2) of the magnetic tube radius
-    extern int MagneticTubeRadiusMode;
-    
-    const int MagneticTubeRadiusModeR2=0;
-    const int MagneticTubeRadiusModeConst=1; 
   }
 
   //the namespace contains the diffution models
@@ -1655,8 +1667,10 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
 
           ptr=Segment->FirstParticleIndex;
 
-          FL::FieldLinesAll[iFieldLine].GetFirstSegment()->GetBegin()->GetX(xFirstFieldLine);
-          vol=pow(Vector3D::Length(xMiddle)/Vector3D::Length(xFirstFieldLine),2)*Segment->GetLength(); 
+          // Sampling must use the same physical control volume as injection,
+          // turbulence energy density, and wave-growth calculations.  The old
+          // r^2*length expression had no area scale and therefore was not m^3.
+          vol=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(Segment,iFieldLine);
 
           break;
         default:
@@ -2030,6 +2044,15 @@ end:
   typedef int (*fParticleMover) (long int,double,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*);
   extern fParticleMover ParticleMoverPtr;
 
+  namespace Mover {
+    // All PIC callbacks enter through this adapter.  It validates the common
+    // field-line particle representation before invoking the implementation
+    // selected from the three-entry production registry.
+    int DispatchProductionMover(
+        long int ptr,double dtTotal,
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+  }
+
   void ParticleMoverSet(int ParticleMoverModel);
 
   const int _HE_2019_AJL_=0;
@@ -2096,7 +2119,7 @@ end:
     } 
 
 
-    res=ParticleMoverPtr(ptr,dtTotal,startNode);
+    res=Mover::DispatchProductionMover(ptr,dtTotal,startNode);
 
 
     if ((_SEP_DIFFUSION_MODEL_!=_DIFFUSION_NONE_)&&(res==_PARTICLE_MOTION_FINISHED_)) {

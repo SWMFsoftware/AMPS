@@ -95,7 +95,7 @@ void TestWaveEnergyInitialization(PIC::Datum::cDatumStored& WaveEnergy) {
         int thread_id = segment->Thread;
         
         // Get segment volume
-        double V_segment = SEP::FieldLine::GetSegmentVolume(segment, 0); // field_line_idx = 0
+        double V_segment = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment, 0); // field_line_idx = 0
         
         // Try to get wave energy data
         double* wave_data = segment->GetDatum_ptr(WaveEnergy);
@@ -167,7 +167,7 @@ void TestWaveEnergyInitialization(PIC::Datum::cDatumStored& WaveEnergy) {
             double r_helio = CalculateHeliosphericDistance(x_center);
             double r_AU = r_helio / WaveEnergyConstants::ONE_AU;
             
-            double V_segment = SEP::FieldLine::GetSegmentVolume(segment, 0);
+            double V_segment = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment, 0);
             double E_total = wave_data[0] + wave_data[1];
             double energy_density = (V_segment > 0.0) ? E_total / V_segment : 0.0;
             
@@ -292,7 +292,7 @@ void TestPrintEPlusValues(PIC::Datum::cDatumStored& WaveEnergy,
         }
 
         // --- Segment volume and densities ---
-        double V_segment = SEP::FieldLine::GetSegmentVolume(segment, 0); // field_line_idx = 0
+        double V_segment = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment, 0); // field_line_idx = 0
 
         double Eplus_dens  = 0.0;
         double Eminus_dens = 0.0;
@@ -1957,7 +1957,7 @@ double Gamma_minus_total;// Total integrated damping rate Γ-
         
         if (max_segment) {
             // Get segment properties
-            results.segment_volume = SEP::FieldLine::GetSegmentVolume(max_segment, field_line_idx);
+            results.segment_volume = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(max_segment, field_line_idx);
             
             // Get plasma parameters
             double rho;

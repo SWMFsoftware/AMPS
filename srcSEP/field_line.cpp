@@ -70,7 +70,8 @@ long int InjectSolarWindIons(int spec,int iFieldLine) {
   FirstVertex->GetDatum(FL::DatumAtVertexPlasmaDensity,&n_sw);
   FirstVertex->GetPlasmaVelocity(v_sw);
   
-  InjectionArea=Pi*pow(SEP::FieldLine::MagneticTubeRadius(FirstVertex->GetX(),iFieldLine),2); 
+  InjectionArea=SEP::FieldLine::FluxTubeGeometry::AreaAtVertexM2(
+      FirstVertex,iFieldLine);
 
   //inject model partiles 
   return PIC::FieldLine::InjectMaxwellianLineBeginning(spec,n_sw,t_sw,v_sw,InjectionArea,iFieldLine,200);
@@ -81,8 +82,9 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   namespace FL = PIC::FieldLine;
 
   int iShockFieldLine,npart;
-  double xInjection[3]={0.0,0.0,0.0},S,anpart,p[3],ParticleWeightCorrectionFactor;
+  double xInjection[3]={0.0,0.0,0.0},S=0.0,anpart,p[3],ParticleWeightCorrectionFactor;
   int nInjectedParticles=0;
+  bool injection_coordinate_was_set=false;
 
 
   //determine the filed line to inject particles
@@ -109,6 +111,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
       switch (InjectionParameters::UseAnalyticShockModel) {
       case InjectionParameters::AnalyticShockModel_Tenishev2005: 
 	iShockFieldLine=SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(iFieldLine,S,xInjection);
+	injection_coordinate_was_set=(iShockFieldLine>=0);
 	break;
       case InjectionParameters::AnalyticShockModel_none:
         iShockFieldLine=0;
@@ -125,14 +128,26 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     }
   }
 
-  //determine the radiaus of the magnetic tube at the middle of the magnetic tube
+  // Resolve a physical injection coordinate for every configuration branch.
+  // The analytic shock already supplies its precise local intersection.  SWMF,
+  // file-driven, and no-shock branches identify only a segment, so they use its
+  // midpoint; beginning injection uses its beginning.  This prevents an
+  // uninitialized field-line coordinate from being stored in a new particle.
   FL::cFieldLineSegment* Segment=FL::FieldLinesAll[iFieldLine].GetSegment(iShockFieldLine); 
 
   if (Segment==NULL) return 0;
   if (Segment->Thread!=PIC::ThisThread) return 0;
+
+  if (!injection_coordinate_was_set) {
+    const double local_fraction =
+        (InjectionParameters::InjectLocation==
+         InjectionParameters::_InjectBegginingFL) ? 0.0 : 0.5;
+    S=iShockFieldLine+local_fraction;
+    Segment->GetCartesian(xInjection,local_fraction);
+  }
  
   //determine the volume swept by the shock wave during the time step 
-  double xBegin[3],xEnd[3],xMiddle[3],rMiddle,xFirstFieldLine[3];
+  double xBegin[3],xEnd[3],xMiddle[3];
 
   Segment->GetBegin()->GetX(xBegin);
   Segment->GetEnd()->GetX(xEnd);
@@ -140,25 +155,33 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   for (int idim=0;idim<3;idim++) xMiddle[idim]=0.5*(xBegin[idim]+xEnd[idim]);
 
   //velocity of the shock wave
-  double vol;
+  double swept_volume_m3;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::Search::FindBlock(xMiddle);
+  if (node==NULL || node->block==NULL) return 0;
+
+  const double local_fraction=S-iShockFieldLine;
 
   #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
   if (AMPS2SWMF::ShockData[iFieldLine].ShockSpeed>AMPS2SWMF::MinShockSpeed) {
-    vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::ShockData[iFieldLine].ShockSpeed*SEP::FieldLine::MagneticTubeRadius(xMiddle,iFieldLine);
+    swept_volume_m3=SEP::FieldLine::FluxTubeGeometry::SweptVolumeM3(
+        Segment,iFieldLine,local_fraction,
+        AMPS2SWMF::ShockData[iFieldLine].ShockSpeed,
+        node->block->GetLocalTimeStep(spec));
   }
   else {
     if (AMPS2SWMF::MinShockSpeed==0.0) exit(__LINE__,__FILE__,"Error: AMPS2SWMF::MinShockSpeed is not set");
 
-    vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::MinShockSpeed*SEP::FieldLine::MagneticTubeRadius(xMiddle,iFieldLine);
+    swept_volume_m3=SEP::FieldLine::FluxTubeGeometry::SweptVolumeM3(
+        Segment,iFieldLine,local_fraction,AMPS2SWMF::MinShockSpeed,
+        node->block->GetLocalTimeStep(spec));
   }
   #else 
     switch (InjectionParameters::UseAnalyticShockModel) {
     case InjectionParameters::AnalyticShockModel_Tenishev2005:
-      vol=SEP::ParticleSource::ShockWave::Tenishev2005::GetShockSpeed();
+      swept_volume_m3=SEP::ParticleSource::ShockWave::Tenishev2005::GetShockSpeed();
       break;
     case InjectionParameters::AnalyticShockModel_none:
-      vol=1.0;
+      swept_volume_m3=1.0;
       break;
     default:
       exit(__LINE__,__FILE__,"Error: the option is unknown");
@@ -181,15 +204,14 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     }
 
 
-    vol*=LocalTimeStep*SEP::FieldLine::MagneticTubeRadius(xMiddle,iFieldLine);
+    swept_volume_m3=SEP::FieldLine::FluxTubeGeometry::SweptVolumeM3(
+        Segment,iFieldLine,local_fraction,swept_volume_m3,LocalTimeStep);
   #endif
 
 
   //determine the number of particles to inject 
   double t_sw_begin,t_sw_end; //=Segment->GetBegin()->GetDatum(FL::DatumAtVertexPlasmaTemperature); 
   double n_sw_begin,n_sw_end; //=Segment->GetBegin()->GetDatum(FL::DatumAtVertexPlasmaDensity); 
-  double p_inj=sqrt(2.0*_AMU_*1.0E4*ElectronCharge);  
-
   Segment->GetBegin()->GetDatum(FL::DatumAtVertexPlasmaTemperature,&t_sw_begin);
   Segment->GetBegin()->GetDatum(FL::DatumAtVertexPlasmaDensity,&n_sw_begin); 
 
@@ -200,14 +222,19 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
   n_sw_end=AMPS2SWMF::ShockData[iFieldLine].DownStreamDensity;
 
-  anpart=vol*SEP::FieldLine::InjectionParameters::InjectionEfficiency*n_sw_end;
+  const double injected_physical_particles=
+      SEP::FieldLine::FluxTubeGeometryCore::InjectedPhysicalParticleCount(
+          SEP::Units::NumberDensityPerM3(n_sw_end),
+          SEP::Units::VolumeM3(swept_volume_m3),
+          SEP::FieldLine::InjectionParameters::InjectionEfficiency);
+  anpart=injected_physical_particles;
   anpart/=node->block->GetLocalParticleWeight(spec);
 #else 
   n_sw_end=1.0;
 
   switch (InjectionParameters::UseAnalyticShockModel) {
   case InjectionParameters::AnalyticShockModel_Tenishev2005:
-    anpart=vol*SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate()/node->block->GetLocalParticleWeight(spec);
+    anpart=swept_volume_m3*SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate()/node->block->GetLocalParticleWeight(spec);
     cout << "Shock locaiton=" << Vector3D::Length(xInjection)/_AU_ << "[AU], Source Rate=" << SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() << endl << flush; 
     break;
   case InjectionParameters::AnalyticShockModel_none:
@@ -305,10 +332,16 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   }; 
 
   auto GetMomentum_Sokolov2004AJ = [&] (double *pAbsTable,double *WeightCorrectionTable,int nParticles) { 
-    double e,r;
-
-    double p_injection_min=Relativistic::Energy2Momentum(SEP::FieldLine::InjectionParameters::emin,PIC::MolecularData::GetMass(spec));
-    double p_injection_max=Relativistic::Energy2Momentum(SEP::FieldLine::InjectionParameters::emax,PIC::MolecularData::GetMass(spec));
+    // Configuration energies are MeV; relativistic momentum helpers require
+    // joules.  The typed conversion makes this unit boundary explicit.
+    const double energy_min_J=
+        SEP::Units::EnergyFromMeV(SEP::FieldLine::InjectionParameters::emin).Value();
+    const double energy_max_J=
+        SEP::Units::EnergyFromMeV(SEP::FieldLine::InjectionParameters::emax).Value();
+    double p_injection_min=Relativistic::Energy2Momentum(
+        energy_min_J,PIC::MolecularData::GetMass(spec));
+    double p_injection_max=Relativistic::Energy2Momentum(
+        energy_max_J,PIC::MolecularData::GetMass(spec));
 
     double log_p_injection_min=log(p_injection_min);
     double log_p_injection_max=log(p_injection_max);
@@ -341,7 +374,12 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     for (int i=0;i<npart;i++) pAbsTable[i]=p_const,WeightCorrectionTable[i]=1.0;  
     break;
   case InjectionParameters::_const_energy:
-     p_const=Relativistic::Energy2Momentum(SEP::FieldLine::InjectionParameters::ConstEnergyInjectionValue,PIC::MolecularData::GetMass(spec));
+     // ConstEnergyInjectionValue is part of the legacy input contract and is
+     // expressed in MeV, not joules.
+     p_const=Relativistic::Energy2Momentum(
+         SEP::Units::EnergyFromMeV(
+             SEP::FieldLine::InjectionParameters::ConstEnergyInjectionValue).Value(),
+         PIC::MolecularData::GetMass(spec));
 
     for (int i=0;i<npart;i++) pAbsTable[i]=p_const,WeightCorrectionTable[i]=1.0;
     break;

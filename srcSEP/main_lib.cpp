@@ -632,17 +632,11 @@ void amps_init() {
   PIC::ParticleWeightTimeStep::LocalBlockInjectionRate=SEP::ParticleSource::OuterBoundary::BoundingBoxInjectionRate;
   PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_H_PLUS_SPEC_);
 
-  //if the field lises are defined -> redefine the particle weight based on assumed location of the first point, shock speed, solar wind density, and injection efficientcy
-  if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) { 
-    if (PIC::FieldLine::FieldLinesAll!=NULL) {
-      double *x,w; 
-
-      x=PIC::FieldLine::FieldLinesAll[0].GetFirstSegment()->GetBegin()->GetX(); 
-
-      w=5.0E6*pow(_AU_/Vector3D::Length(x),2)*1800.0E3*PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*0.1/SEP::FieldLine::InjectionParameters::nParticlesPerIteration; 
-      PIC::ParticleWeightTimeStep::GlobalParticleWeight[0]=w;
-    }
-  }
+  // Do not overwrite AMPS' configured base particle weight with a second,
+  // hard-coded source model.  Field-line injection now computes the physical
+  // source from the common area, swept volume, density, and configured
+  // InjectionEfficiency, then represents it through the individual statistical
+  // weight correction.  This keeps all background providers normalized alike.
 
   //init magnetic filed
   std::function<void(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)> InitMagneticField; 
@@ -814,4 +808,3 @@ start:
   }
   #endif
 }
-

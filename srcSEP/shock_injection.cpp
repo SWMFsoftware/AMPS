@@ -9,8 +9,6 @@
 int SEP::ParticleSource::ShockWave::ShockStateFlag_offset=-1;
 double SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio=3.0;
 
-int SEP::FieldLine::MagneticTubeRadiusMode=SEP::FieldLine::MagneticTubeRadiusModeR2;
-
 //condition for presence of a shock in a given cell
 bool SEP::ParticleSource::ShockWave::IsShock(PIC::Mesh::cDataCenterNode *CenterNode) {
   double density_current,density_last;
@@ -120,47 +118,10 @@ void SEP::ParticleSource::PopulateFieldLine(int iFieldLine) {
     NumberDensity=0.5*(n_sw_begin+n_sw_end);
     Temperature=0.5*(t_sw_begin+t_sw_end);
 
-    Volume=SEP::FieldLine::GetSegmentVolume(Segment,iFieldLine);  
+    Volume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(Segment,iFieldLine);  
 
     for (int idim=0;idim<3;idim++) v[idim]=0.5*(v_sw_begin[idim]+v_sw_end[idim]);
 
     PIC::FieldLine::PopulateSegment(_H_PLUS_SPEC_,NumberDensity,Temperature,v,Volume,iSegment,iFieldLine,200);
  }
 }
-
-//===================================================================================
-//calcualte volume associated with a segment of the field line 
-double SEP::FieldLine::MagneticTubeRadius(double *x,int iFieldLine) {
-  namespace FL = PIC::FieldLine;
-  double *x0,res;
-
-  //1. the radius of the magnetic tube as the first vertex from the beginnig of the filed line is ONE
-  //2. the radius increases as R^2 
-  x0=FL::FieldLinesAll[iFieldLine].GetFirstSegment()->GetBegin()->GetX(); 
-
-  switch (MagneticTubeRadiusMode) {
-  case MagneticTubeRadiusModeConst:
-    res=Vector3D::Length(x0);
-    break;
-  default: 
-    res=Vector3D::DotProduct(x,x)/Vector3D::DotProduct(x0,x0);
-  }
-
-  return res;
-}
-
-double SEP::FieldLine::MagneticTubeRadius(PIC::FieldLine::cFieldLineVertex* Vertex,int iFieldLine) {
-  return MagneticTubeRadius(Vertex->GetX(),iFieldLine);
-}
-
-double SEP::FieldLine::GetSegmentVolume(PIC::FieldLine::cFieldLineSegment* Segment,int iFieldLine) {
-  double r0,r1;
-
-  r0=MagneticTubeRadius(Segment->GetBegin(),iFieldLine);
-  r1=MagneticTubeRadius(Segment->GetEnd(),iFieldLine);
-
-  return Pi*(r0*r0+r0*r1+r1*r1)*Segment->GetLength()/3.0;
-}
- 
-
-

@@ -36,7 +36,7 @@ PHYSICS IMPLEMENTATION:
 - Wave energy density: ε = (δB²)/(2μ₀) where δB = turbulence_level × B₀
 - Integrated energy: E± = ε × V_segment / 2 (equal E+ and E-)
 - Segment center: r = √(x² + y² + z²) from vertex midpoint
-- Volume integration: Uses SEP::FieldLine::GetSegmentVolume()
+- Volume integration: Uses SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3()
 
 COORDINATE SYSTEM:
 ------------------
@@ -186,7 +186,7 @@ void InitializeWaveEnergyInAllSegments(
 /// Notes
 /// -----
 /// - The routine assumes balanced turbulence at initialization: W⁺ = W⁻ = ½ W_total.
-/// - The segment volume is obtained from `SEP::FieldLine::GetSegmentVolume`, and
+/// - The segment volume is obtained from `SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3`, and
 ///   E⁺/E⁻ are set as W⁺/W⁻ times this volume.
 ///
 void InitializeWaveEnergyFromPhysicalParameters(

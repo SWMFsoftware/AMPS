@@ -552,7 +552,7 @@ void CompareGrowthRateCalculations() {
             double Omega = Q * B0 / M;                        // Cyclotron frequency
             
             // Get segment volume
-            double V_cell = SEP::FieldLine::GetSegmentVolume(segment, field_line_idx);
+            double V_cell = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment, field_line_idx);
             if (V_cell <= 0.0) {
                 continue;  // Skip invalid segments
             }
@@ -900,7 +900,7 @@ void DetailedSegmentComparison(int max_segments_to_report) {
                 
                 comp.vA = comp.B0 / sqrt(VacuumPermeability * comp.rho);
                 comp.Omega = Q * comp.B0 / M;
-                comp.segment_volume = SEP::FieldLine::GetSegmentVolume(segment, field_line_idx);
+                comp.segment_volume = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment, field_line_idx);
                 
                 if (comp.segment_volume <= 0.0) {
                     continue;

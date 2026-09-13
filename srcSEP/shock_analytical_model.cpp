@@ -98,18 +98,16 @@ double SEP::ParticleSource::ShockWave::Tenishev2005::GetSolarWindDensity() {
 }
 
 double SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() {
-  double r_sh,s,density,efficientcy,res;
+  double r_sh,density;
   double n_m3, V_ms, divV;
 
   if (InitFlag==false) Init(); 
 
   switch (SEP::ShockModelType) {
   case SEP::cShockModelType::Analytic1D: 
-    s=SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio();
     density=GetSolarWindDensity();
     break;
   case SEP::cShockModelType::SwCme1d:
-    s=SEP::SW1DAdapter::gState.rc;
     r_sh=SEP::SW1DAdapter::gState.r_sh_m;  
 
     if (SEP::SW1DAdapter::QueryAtRadius(r_sh, n_m3, V_ms, divV, /*applyClamp=*/true)) {
@@ -124,12 +122,13 @@ double SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() {
     exit(__LINE__,__FILE__,"Error: the case is not known");
   }
 
-
-
-  efficientcy=(s-1.0)/s;
-  res=density*efficientcy;
-
-  return res;
+  // Apply the single configured source efficiency used by every background
+  // provider.  The former analytic-only (compression-1)/compression factor
+  // made identical analytic, SWCME, and SWMF shock states inject different
+  // physical particle counts.
+  return SEP::FieldLine::FluxTubeGeometryCore::InjectedPhysicalParticleCount(
+      SEP::Units::NumberDensityPerM3(density), SEP::Units::VolumeM3(1.0),
+      SEP::FieldLine::InjectionParameters::InjectionEfficiency);
 }
 
 int SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(int iFieldLine,double &S,double *xInjection) {
@@ -243,24 +242,12 @@ void ShockTurbulenceEnergyInjection(double r0, double r1, double dt) {
     const double f=0.5;        // Fraction of the injected power that populates the outward-propagating (+) wave sense; (1−f) goes into the inward (−) sense. 
     double shock_velocity_squared = v * v; // Shock velocity²
     
-    // Lambda function to calculate magnetic tube volume for a segment portion
+    // Calculate a partial control volume with the shared SI geometry.  This is
+    // the same finite-volume rule used by particle sampling and turbulence,
+    // preventing the shock source from applying an independent radius model.
     auto calculateTubeVolume = [](cFieldLineSegment* segment, double sStart, double sEnd, int iFieldLine) -> double {
-        // Get segment length
-        double segmentLength = segment->GetLength();
-        double affectedLength = (sEnd - sStart) * segmentLength;
-        
-        // Get 3D positions at start and end
-        double xStart[3], xEnd[3];
-        segment->GetCartesian(xStart, sStart);
-        segment->GetCartesian(xEnd, sEnd);
-        
-        // Get magnetic tube radii at start and end positions
-        double radiusStart = SEP::FieldLine::MagneticTubeRadius(xStart, iFieldLine);
-        double radiusEnd = SEP::FieldLine::MagneticTubeRadius(xEnd, iFieldLine);
-        
-        // Calculate volume using truncated cone formula: V = (π/3) * h * (r1² + r1*r2 + r2²)
-        return (M_PI / 3.0) * affectedLength * 
-               (radiusStart*radiusStart + radiusStart*radiusEnd + radiusEnd*radiusEnd);
+        return SEP::FieldLine::FluxTubeGeometry::PartialSegmentVolumeM3(
+            segment, iFieldLine, sStart, sEnd);
     };
     
     // Lambda function to get average mass density for a segment portion

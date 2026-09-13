@@ -336,7 +336,7 @@ extern const double M;          // Proton mass [kg]
  * - Determines all segments intersected by particle trajectory
  * - For each segment: calculates path length ds_seg within that segment
  * - Finds resonant wavenumber: k_res = Ω / |μ v|
- * - Uses segment-specific volume: V_cell = SEP::FieldLine::GetSegmentVolume(segment, field_line_idx)
+ * - Uses segment-specific volume: V_cell = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment, field_line_idx)
  * - Adds to streaming integrals: G±(k) += coeff × (v μ ± v_A)
  * 
  * Multi-segment handling:

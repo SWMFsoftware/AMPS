@@ -16,6 +16,12 @@ make test-cli-unit
 # Dependency-light immutable-background and single-clock contract tests.
 make test-state-unit
 
+# Dependency-light SI flux-tube geometry and source-normalization tests.
+make test-geometry-source-unit
+
+# Dependency-light three-mover registry and CLI contract tests.
+make test-mover-api-unit
+
 # Discover the catalog without initializing the model.
 make test-list
 
@@ -44,6 +50,39 @@ Equivalent CLI examples are:
 `make -j test` intentionally sequences shared-state component execution even
 when Make is given `-j`, then runs the embedded SWCME suite using its own native
 parallel target.  Expensive extended tests are not part of `--all-tests`.
+
+## Focused Step 3 geometry and source tests
+
+`test/run_step3_tests.sh` builds the production
+`util/sep_flux_tube_geometry_core.cpp` with C++11, strict warnings,
+AddressSanitizer, and UndefinedBehaviorSanitizer. It requires neither AMPS nor
+MPI and verifies:
+
+- `GEOA01`: magnetic-flux conservation, `A|B| = constant`;
+- `GEOA02`: fourth-order convergence of segment-volume integration;
+- `SRC01`: swept-volume dimensions and numerical value;
+- `SRC02`: equal injected physical weight for provider-equivalent shock states;
+- `SRC03`: spectral normalization and the MeV-to-joule API boundary.
+
+The PIC-facing adapter is exercised by the native regression gate because its
+vertex and segment types are supplied by the enclosing AMPS checkout. See
+[../FLUX_TUBE_GEOMETRY.md](../FLUX_TUBE_GEOMETRY.md).
+
+## Focused Step 4 production-mover tests
+
+`test/run_step4_tests.sh` compiles the exact production registry and CLI parser
+with C++11 and strict warnings. It verifies:
+
+- `MOVCLI01`: canonical `parker`, `fte-dmumu`, and `fte-mfp` parsing and a
+  three-entry help/discovery surface;
+- `MOVCLI02`: warnings for only semantically exact transition aliases;
+- `MOVCLI03`: coefficient/state capability reporting and capability-based
+  main-loop policy;
+- `MOVCLI04`: rejection of ambiguous, direct-wave, legacy, and 3-D movers.
+
+The linked native gate remains responsible for passing a real particle through
+each PIC adapter mapping. See
+[../PRODUCTION_MOVER_API.md](../PRODUCTION_MOVER_API.md).
 
 ## Focused Step 2 state and clock tests
 

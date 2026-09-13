@@ -7,11 +7,40 @@ providers, SWCME, or an SWMF coupling.  The source also contains the
 self-consistent Alfvén-turbulence subsystem, including integrated and
 wave-number-resolved representations and particle-wave coupling.
 
-This source now includes the Step 1 selectable standalone component-test
-registry and the Step 2 immutable background/clock boundary. Step 2 does **not**
-remove or change any particle mover, transport coefficient, injection model, or
-turbulence equation. The later field-line-mover cleanup remains outside this
-change.
+This source includes the Step 1 selectable standalone component-test registry,
+the Step 2 immutable background/clock boundary, and the Step 3 common SI
+flux-tube geometry and source normalization. Step 3 does not remove the
+self-consistent Alfvén-turbulence subsystem; it makes that subsystem use the
+same physical area and volume as injection and particle sampling.
+
+## Flux-tube geometry and source units
+
+`SEP::FieldLine::FluxTubeGeometry` returns area in m² and volume in m³. With
+valid magnetic data it enforces `A|B| = constant`; otherwise the application
+must configure an explicit area profile. Segment population, solar-wind and
+shock sources, wave-energy density, growth rates, turbulence transport, and
+sampling all consume this interface.
+
+Shock-source efficiency is configured once through `InjectionEfficiency` for
+analytic, SWCME, and SWMF providers. The historical hard-coded particle-weight
+override has been removed, and MeV input energies are converted to joules before
+SI momentum routines. See [FLUX_TUBE_GEOMETRY.md](FLUX_TUBE_GEOMETRY.md) for the
+API, fallback policy, normalization contract, and focused-test definitions.
+
+## Production mover API
+
+The supported public mover set is now exactly `parker`, `fte-dmumu`, and
+`fte-mfp`. `--list-movers` reports their field-line representation, turbulence,
+and coefficient capabilities without initializing AMPS. A single adapter
+validates particle and field-line attachment state before dispatch. Main-loop
+physics queries mover capabilities and no longer compares function addresses.
+
+Strictly equivalent legacy CLI names are accepted for one transition release
+with warnings; ambiguous movers, direct-wave experimental movers, and 3-D
+trajectory names are rejected. Startup metadata prints the canonical choice and
+active `Dxx`, `Dmumu`, or mean-free-path provider. See
+[PRODUCTION_MOVER_API.md](PRODUCTION_MOVER_API.md) for mappings, aliases,
+rejections, capabilities, and examples.
 
 ## Background state and time
 
@@ -88,6 +117,9 @@ is `../amps`; override it when necessary:
 ```sh
 make test-cli-unit
 make test-state-unit
+make test-geometry-source-unit
+make test-mover-api-unit
+../amps --list-movers
 make test-list SEP_EXECUTABLE=/path/to/amps
 make test-case CASE=DXX01 SEP_EXECUTABLE=/path/to/amps
 make test-group GROUP=turbulence SEP_EXECUTABLE=/path/to/amps
@@ -95,8 +127,9 @@ make test-turbulence SEP_EXECUTABLE=/path/to/amps
 make -j test SEP_EXECUTABLE=/path/to/amps
 ```
 
-`test-cli-unit` is a dependency-light strict-warning check of the production
-parser and generic registry.  The remaining targets intentionally invoke the
+The first three unit targets are dependency-light strict-warning checks of the
+production parser, immutable background core, and SI geometry/source core. The
+remaining targets intentionally invoke the
 linked production CLI and propagate its status.  See [test/README.md](test/README.md)
 for the catalog, prerequisites, isolation contracts, and extension procedure.
 
