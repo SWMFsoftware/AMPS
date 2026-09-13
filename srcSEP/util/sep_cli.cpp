@@ -1,5 +1,7 @@
 #include "sep_cli.h"
+#ifndef SEP_CLI_PARSE_ONLY
 #include "../sep.h"
+#endif
 
 #include <algorithm>
 #include <cerrno>
@@ -352,6 +354,18 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  --run-test-manager           Shortcut for --test-manager on.\n"
       << "  --no-test-manager            Shortcut for --test-manager off.\n"
       << "\n"
+      << "Selectable standalone component tests (test-only execution):\n"
+      << "  --list-tests                 List stable test IDs and metadata, then exit\n"
+      << "                               before model initialization.\n"
+      << "  --test <ID>                  Run one test; repeat to select several tests.\n"
+      << "  --test=<ID>                  Equivalent equals-sign form.\n"
+      << "  --test-group <GROUP>         Run every test in a group; repeatable.\n"
+      << "  --test-group=<GROUP>         Equivalent equals-sign form.\n"
+      << "  --all-tests                  Run the bounded routine component-test set.\n"
+      << "                               Extended tests remain individually selectable.\n"
+      << "                               IDs/groups are case-insensitive and overlaps\n"
+      << "                               execute once in stable ID order.\n"
+      << "\n"
       << "General:\n"
       << "  -h, --help                   Print this help message and exit before AMPS\n"
       << "                               initialization.\n"
@@ -367,6 +381,10 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  " << exe << " --coupling off --cascade off --reflection off\n"
       << "  " << exe << " --coupling-mode=on --no-cascade --reflection=on\n"
       << "  " << exe << " --run-test-manager\n"
+      << "  " << exe << " --list-tests\n"
+      << "  " << exe << " --test DXX01 --test=TURB01\n"
+      << "  " << exe << " --test-group parker\n"
+      << "  " << exe << " --all-tests\n"
       << "  " << exe << " --turbulence-model wave-number-resolved --coupling on\n"
       << "  " << exe << " --wave-number-resolved --particle-mover focused-transport-event-driven --coupling on\n"
       << "  " << exe << " --particles-per-iteration 1000\n"
@@ -387,6 +405,41 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
 
     std::string option_name, value_from_equals;
     SplitOption(arg, option_name, value_from_equals);
+
+    if (option_name == "--list-tests") {
+      if (!value_from_equals.empty()) {
+        err << "ERROR: option '--list-tests' does not take a value.\n";
+        return false;
+      }
+      options.listTests = true;
+      continue;
+    }
+
+    if (option_name == "--all-tests") {
+      if (!value_from_equals.empty()) {
+        err << "ERROR: option '--all-tests' does not take a value.\n";
+        return false;
+      }
+      options.runAllTests = true;
+      continue;
+    }
+
+    if (option_name == "--test" || option_name == "--test-group") {
+      std::string selector;
+      if (!GetOptionValue(argc, argv, i, option_name, value_from_equals,
+                          selector, err)) {
+        return false;
+      }
+      if (selector.empty()) {
+        err << "ERROR: option '" << option_name
+            << "' requires a non-empty selector.\n";
+        return false;
+      }
+
+      if (option_name == "--test") options.testIds.push_back(selector);
+      else options.testGroups.push_back(selector);
+      continue;
+    }
 
     if (option_name == "--coupling" || option_name == "--coupling-mode" ||
         option_name == "--particle-coupling") {
@@ -546,9 +599,31 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
     return false;
   }
 
+  const bool executionRequested = IsComponentTestExecutionRequested(options);
+  if (options.listTests && executionRequested) {
+    err << "ERROR: --list-tests cannot be combined with --test, --test-group, "
+        << "or --all-tests.\n";
+    return false;
+  }
+
+  // --all-tests already denotes the complete bounded selection.  Rejecting a
+  // simultaneous explicit selector prevents scripts from assuming that an
+  // extended test was included in --all-tests when routine-only policy omits it.
+  if (options.runAllTests &&
+      (!options.testIds.empty() || !options.testGroups.empty())) {
+    err << "ERROR: --all-tests cannot be combined with --test or --test-group.\n";
+    return false;
+  }
+
   return true;
 }
 
+bool IsComponentTestExecutionRequested(const Options& options) {
+  return options.runAllTests || !options.testIds.empty() ||
+         !options.testGroups.empty();
+}
+
+#ifndef SEP_CLI_PARSE_ONLY
 void ApplyTurbulenceOptions(const Options& options) {
   // These are the three runtime switches used by the turbulence operators.  The
   // assignment is centralized here so the standalone driver no longer hard-codes
@@ -615,6 +690,7 @@ void ApplyTurbulenceOptions(const Options& options) {
           ? SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::ModelMode::WaveNumberResolved
           : SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::ModelMode::Integrated;
 }
+#endif
 
 void PrintTurbulenceOptions(const Options& options, std::ostream& out) {
   out << "SEP turbulence CLI configuration:\n"

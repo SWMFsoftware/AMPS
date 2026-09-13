@@ -15,6 +15,7 @@
 #include <fstream>
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <time.h>
 
 #include <sys/time.h>
@@ -129,6 +130,68 @@ int main(int argc,char **argv) {
     return 0;
   }
 
+  // Listing and selection resolution are intentionally performed before shock
+  // configuration, post-compile input, AMPS mesh allocation, field-line setup,
+  // turbulence initialization, or any output writer.  Thus malformed test
+  // requests cannot accidentally fall through into a long production run.
+  const SEP::Testing::Registry& componentTestRegistry = ComponentTestRegistry();
+  if (cli_options.listTests) {
+    if (PIC::ThisThread == 0) componentTestRegistry.PrintList(std::cout);
+    return 0;
+  }
+
+  const bool componentTestMode =
+      SEP::Util::CLI::IsComponentTestExecutionRequested(cli_options);
+  std::vector<const SEP::Testing::Descriptor*> selectedComponentTests;
+  if (componentTestMode) {
+    try {
+      selectedComponentTests = componentTestRegistry.Select(
+          cli_options.testIds, cli_options.testGroups,
+          cli_options.runAllTests);
+    }
+    catch (const std::exception& exception) {
+      if (PIC::ThisThread == 0) {
+        std::cerr << "ERROR: cannot resolve component-test selection: "
+                  << exception.what() << '\n';
+      }
+      return 1;
+    }
+
+    if (selectedComponentTests.empty()) {
+      if (PIC::ThisThread == 0) {
+        std::cerr << "ERROR: component-test selection resolved to no tests.\n";
+      }
+      return 1;
+    }
+
+    if (PIC::ThisThread == 0) {
+      std::cout << "SEP component-test mode: selected";
+      for (const SEP::Testing::Descriptor* descriptor : selectedComponentTests) {
+        std::cout << ' ' << descriptor->id;
+      }
+      std::cout << '\n';
+    }
+
+    if (RequiredInitializationLevel(selectedComponentTests) ==
+            SEP::Testing::InitializationLevel::FieldLineModel &&
+        _PIC_FIELD_LINE_MODE_ != _PIC_MODE_ON_) {
+      if (PIC::ThisThread == 0) {
+        std::cerr << "ERROR: selected component tests require "
+                  << "_PIC_FIELD_LINE_MODE_ to be enabled in this build.\n";
+      }
+      return 1;
+    }
+
+    // Initialization-free callbacks are executed immediately.  This makes
+    // component tests of pure formulas genuinely lightweight and proves that
+    // test-only execution does not require a mesh merely because other catalog
+    // entries do.
+    if (RequiredInitializationLevel(selectedComponentTests) ==
+        SEP::Testing::InitializationLevel::None) {
+      return RunSelectedComponentTests(selectedComponentTests, std::cout);
+    }
+  }
+
 
   SEP::ShockModelType=SEP::cShockModelType::SwCme1d;
 
@@ -142,7 +205,12 @@ int main(int argc,char **argv) {
   configure_swcme1d(CMEScenario::Fast); 
 
   //output parameters of the sshock 
-  SEP::sw1d.write_tecplot_shock_vs_time(2.0*24.0*3600, 200, "shock_vs_time.dat");
+  // The production shock diagnostic is unrelated to component-test setup and
+  // would create an unrequested shared artifact.  Field-line tests still receive
+  // the configured SWCME model, but only a production run writes this file.
+  if (!componentTestMode) {
+    SEP::sw1d.write_tecplot_shock_vs_time(2.0*24.0*3600, 200, "shock_vs_time.dat");
+  }
 
   // --------------------------------------------------------------------------
   // Configure the optional turbulence physics from command-line options before
@@ -192,6 +260,14 @@ int main(int argc,char **argv) {
 
   //init the Alfven turbulence IC
   if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) SEP::AlfvenTurbulence_Kolmogorov::ModelInit::Init(); 
+
+  // Selected component tests own the process after their declared field-line
+  // prerequisite is available.  Returning here is the critical test-only
+  // boundary: neither the compatibility TestManager path nor the production
+  // timestep loop can execute after a --test/--test-group/--all-tests request.
+  if (componentTestMode) {
+    return RunSelectedComponentTests(selectedComponentTests, std::cout);
+  }
 
   // --------------------------------------------------------------------------
   // Optional development diagnostics.

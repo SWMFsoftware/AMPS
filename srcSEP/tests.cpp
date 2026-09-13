@@ -26,16 +26,44 @@
 
 using namespace std;
 
+namespace {
+
+// Several historical tests temporarily replace the process-wide pitch-angle
+// diffusion callback.  The registry can run multiple IDs in one process, so a
+// missed restoration would make later results selector-order dependent.  This
+// narrow RAII guard restores the exact incoming pointer on normal return and on
+// C++ exception unwinding; individual tests may still perform earlier explicit
+// restores when their numerical algorithm switches providers mid-test.
+class PitchAngleDiffusionPointerGuard {
+ public:
+  typedef decltype(SEP::Diffusion::GetPitchAngleDiffusionCoefficient) Function;
+
+  PitchAngleDiffusionPointerGuard()
+      : saved_(SEP::Diffusion::GetPitchAngleDiffusionCoefficient) {}
+  ~PitchAngleDiffusionPointerGuard() {
+    SEP::Diffusion::GetPitchAngleDiffusionCoefficient = saved_;
+  }
+
+  Function Saved() const { return saved_; }
+
+ private:
+  Function saved_;
+  PitchAngleDiffusionPointerGuard(const PitchAngleDiffusionPointerGuard&);
+  PitchAngleDiffusionPointerGuard& operator=(const PitchAngleDiffusionPointerGuard&);
+};
+
+}  // namespace
+
 void TestManager() {
 
   ScatteringBeyond1AU();
 
-  FTE_Convectoin();
+  (void)FTE_Convectoin();
 
 
-  DxxTest();
-  ParkerModelMoverTest_convection();
-  ParkerModelMoverTest_const_plasma_field();
+  (void)DxxTest();
+  (void)ParkerModelMoverTest_convection();
+  (void)ParkerModelMoverTest_const_plasma_field();
 }
 
 void DiffusionCoefficient_const(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment) {
@@ -43,7 +71,7 @@ void DiffusionCoefficient_const(double& D,double &dD_dmu,double mu,double vParal
 }
 
 
-void DxxTest() {
+bool DxxTest() {
   double c,D,dDxx_dx,FieldLineCoord,v;
   int spec,iFieldLine;
   PIC::FieldLine::cFieldLineSegment *Segment; 
@@ -52,7 +80,8 @@ void DxxTest() {
   const bool _fail=false;
 
   bool res=_pass;
-  auto DiffCoeffFunct=SEP::Diffusion::GetPitchAngleDiffusionCoefficient;
+  PitchAngleDiffusionPointerGuard diffusionPointerGuard;
+  auto DiffCoeffFunct=diffusionPointerGuard.Saved();
   
   for (int iround=0;iround<4;iround++) {
     v=1.0E5*pow(10,iround); 
@@ -67,9 +96,17 @@ void DxxTest() {
     SEP::Diffusion::GetDxx(D,dDxx_dx,v,spec,FieldLineCoord,Segment,iFieldLine); 
    
     double D_mu_mu=1.0; //as defined in DiffusionCoefficient_const() 
-    cout << v <<  "  " << D << "  " << v*v/8.0*(2.0-2.0*2.0/3.0+2.0/5.0)/D_mu_mu  << endl;
+    if (PIC::ThisThread==0) {
+      cout << v <<  "  " << D << "  "
+           << v*v/8.0*(2.0-2.0*2.0/3.0+2.0/5.0)/D_mu_mu << endl;
+    }
 
-    if ((fabs(dDxx_dx)>1.0E-5)||(c=fabs(1.0-D/(v*v/8.0*16.0/15.0))>1.0E-5)) {
+    // Keep the historical tolerance and analytical expression, but return the
+    // comparison result to the registry instead of leaving it in an unobserved
+    // local flag.  Parentheses also ensure c stores the relative error rather
+    // than the Boolean result of the comparison.
+    c=fabs(1.0-D/(v*v/8.0*16.0/15.0));
+    if ((fabs(dDxx_dx)>1.0E-5)||(c>1.0E-5)) {
       res=_fail;
 
       //debugging:
@@ -98,14 +135,27 @@ void DxxTest() {
 
     D_test*=v*v/8.0;
 
-    cout << v << "  " << D << "   " << D_test <<  "   "  << fabs(D-D_test)*2.0/(D+D_test) << endl;
+    if (PIC::ThisThread==0) {
+      cout << v << "  " << D << "   " << D_test <<  "   "
+           << fabs(D-D_test)*2.0/(D+D_test) << endl;
+    }
+
+    // The numerical quadrature was previously print-only.  Propagating its
+    // existing relative-difference quantity makes a registry PASS meaningful
+    // without changing either the production coefficient or quadrature.
+    if (fabs(D-D_test)*2.0/(D+D_test)>1.0E-5) res=_fail;
 
 
   }
+
+  // The production diffusion-provider pointer is restored above after each
+  // constant-coefficient probe; returning only after all rounds preserves that
+  // state-restoration invariant for subsequent selected tests.
+  return res;
 }
   
 //====================================================================================
-void ParkerModelMoverTest_const_plasma_field() {
+bool ParkerModelMoverTest_const_plasma_field() {
   namespace PB = PIC::ParticleBuffer;
   namespace FL = PIC::FieldLine;
   
@@ -123,6 +173,7 @@ void ParkerModelMoverTest_const_plasma_field() {
 
   array_1d<double> SamplingBuffer(nSampleIntervals);
   SamplingBuffer=0.0;
+  long int acceptedSamples=0;
 
   double dtTotal=3.0;
 
@@ -171,17 +222,32 @@ void ParkerModelMoverTest_const_plasma_field() {
 
     if ((iSample>=0)&&(iSample<nSampleIntervals-1)) {
       SamplingBuffer(iSample)+=1.0;
+      acceptedSamples++;
     } 
   }
 
-  //output sampled data
-  ofstream fout("dxParker.dat");
-  
-  for (i=0;i<nSampleIntervals;i++) {
-    fout << dxSampleMin+(i+0.5)*dxSampleStep << "   " << SamplingBuffer(i) << endl;
-  } 
+  // Only the designated root rank writes the shared histogram.  The legacy
+  // routine used to let every rank truncate the same path concurrently, which
+  // made a selected MPI test nondeterministic even when the mover samples were
+  // valid.  This writer change does not alter particle motion or sampling.
+  bool outputGood=true;
+  if (PIC::ThisThread==0) {
+    ofstream fout("dxParker.dat");
+    outputGood=fout.good();
 
-  fout.close();
+    for (i=0;i<nSampleIntervals;i++) {
+      fout << dxSampleMin+(i+0.5)*dxSampleStep << "   " << SamplingBuffer(i) << endl;
+    }
+
+    fout.close();
+    outputGood=outputGood && !fout.fail();
+  }
+
+  int outputGoodInt=outputGood ? 1 : 0;
+  MPI_Bcast(&outputGoodInt,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+  long int globalAcceptedSamples=0;
+  MPI_Allreduce(&acceptedSamples,&globalAcceptedSamples,1,MPI_LONG,MPI_SUM,
+                MPI_GLOBAL_COMMUNICATOR);
 
   //cleanup
   PB::DeleteParticle(ptr);
@@ -194,11 +260,17 @@ void ParkerModelMoverTest_const_plasma_field() {
   }
 
   PIC::TimeStepInternal::CheckParticleLists();
+
+  // This extended legacy test does not yet claim a distribution-shape
+  // validation.  Its authoritative contract is narrower: the full stochastic
+  // mover campaign must produce at least one in-range sample and commit a
+  // writable histogram.  The README records this limitation explicitly.
+  return outputGoodInt!=0 && globalAcceptedSamples>0;
 }  
 
 
 //====================================================================================
-void ParkerModelMoverTest_convection() {
+bool ParkerModelMoverTest_convection() {
   namespace PB = PIC::ParticleBuffer;
   namespace FL = PIC::FieldLine;
 
@@ -217,7 +289,8 @@ void ParkerModelMoverTest_convection() {
   double SolarWindVelocityCurrent[3]={4.0E3,0.0,0.0};
   double dtTotal=1.0;
   
-  auto DiffusionCoeffcient=SEP::Diffusion::GetPitchAngleDiffusionCoefficient;
+  PitchAngleDiffusionPointerGuard diffusionPointerGuard;
+  auto DiffusionCoeffcient=diffusionPointerGuard.Saved();
   SEP::Diffusion::GetPitchAngleDiffusionCoefficient=NULL;   
   
   //determine the particle location and the starting node 
@@ -307,11 +380,16 @@ void ParkerModelMoverTest_convection() {
     v1->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensity1_old);
 
     if ((PlasmaDensity1_old!=DensityOld)||(PlasmaDensity0_old!=DensityOld)) {
-      exit(__LINE__,__FILE__,"Error: density is inconsistent");
+      // A component test must not terminate the MPI job from inside its body.
+      // Record the failed fixture invariant and leave the sampling loop so the
+      // common restoration/particle cleanup below always runs.
+      res=_fail;
+      break;
     }
 
     if ((PlasmaDensity1_new!=DensityOld)||(PlasmaDensity0_new!=DensityCurrent)) {
-      exit(__LINE__,__FILE__,"Error: density is inconsistent");
+      res=_fail;
+      break;
     }
 
     #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
@@ -331,6 +409,15 @@ void ParkerModelMoverTest_convection() {
     //simulate Parker equation
     SEP::ParticleMover_ParkerEquation(ptr,dtTotal,node);
 
+    // Evaluate the post-move momentum.  The legacy diagnostic calculated p1
+    // before calling the mover and therefore could not authoritatively test the
+    // adiabatic update.  This is test-result plumbing only: the mover inputs,
+    // timestep, analytical reference, and production algorithm are unchanged.
+    vParallel=PB::GetVParallel(ptr);
+    vNorm=PB::GetVNormal(ptr);
+    p1=Relativistic::Speed2Momentum(
+        sqrt(vParallel*vParallel+vNorm*vNorm),mass);
+
     //check the new particle location: it sould no change
     s1=PB::GetFieldLineCoord(ptr);
 
@@ -341,8 +428,8 @@ void ParkerModelMoverTest_convection() {
     if (fabs(1.0-p1_theory/p1)>1.0E-5) {
       res=_fail;
       
-      PB::SetVParallel(vParallel,ptr);
-      PB::SetVNormal(vNorm,ptr);
+      PB::SetVParallel(vParallelInit,ptr);
+      PB::SetVNormal(vNormInit,ptr);
       SEP::ParticleMover_ParkerEquation(ptr,dtTotal,node);
     } 
   }
@@ -369,11 +456,12 @@ void ParkerModelMoverTest_convection() {
   }
 
   PIC::TimeStepInternal::CheckParticleLists();
+  return res;
 }
 
    
 
-void FTE_Convectoin() {
+bool FTE_Convectoin() {
   namespace PB = PIC::ParticleBuffer;
   namespace FL = PIC::FieldLine;
 
@@ -391,7 +479,8 @@ void FTE_Convectoin() {
   double SolarWindVelocity[3]={0.0,0.0,0.0};
   double dtTotal=1.0;
 
-  auto DiffusionCoeffcient=SEP::Diffusion::GetPitchAngleDiffusionCoefficient;
+  PitchAngleDiffusionPointerGuard diffusionPointerGuard;
+  auto DiffusionCoeffcient=diffusionPointerGuard.Saved();
   SEP::Diffusion::GetPitchAngleDiffusionCoefficient=NULL;
 
   //determine the particle location and the starting node
@@ -506,6 +595,7 @@ void FTE_Convectoin() {
   }
 
   PIC::TimeStepInternal::CheckParticleLists(); 
+  return res;
 }
 
 
@@ -758,5 +848,3 @@ void ScatteringBeyond1AU() {
     ScatteringBeyond1AU(i*50.0*MeV2J);
   }
 }
-
-

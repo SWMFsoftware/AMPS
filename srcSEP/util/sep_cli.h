@@ -2,6 +2,8 @@
 #define SEP_UTIL_SEP_CLI_H
 
 #include <iosfwd>
+#include <string>
+#include <vector>
 
 namespace SEP {
 namespace Util {
@@ -50,6 +52,15 @@ struct Options {
   // production runs, so the command-line default is intentionally OFF.
   bool runTestManager = false;
 
+  // Step 1 adds a test-only run mode to the existing parser rather than
+  // introducing a second command-line implementation.  Selectors are retained
+  // in parse order here; the registry later resolves them case-insensitively,
+  // de-duplicates overlaps, and sorts by stable test ID.
+  bool listTests = false;
+  bool runAllTests = false;
+  std::vector<std::string> testIds;
+  std::vector<std::string> testGroups;
+
   // Frequency, in main-loop iterations, for writing the large Tecplot 2-D
   // wave-number-resolved spectrum diagnostic.  The default of 100 keeps the
   // output volume manageable while still giving useful temporal resolution.
@@ -78,6 +89,12 @@ void PrintHelp(const char* program_name, std::ostream& out);
 // unknown.  In that case the caller should terminate before AMPS initialization.
 bool ParseCommandLine(int argc, char** argv, Options& options,
                       std::ostream& out, std::ostream& err);
+
+// New registry selectors imply a test-only process: the selected tests run and
+// the executable exits before the production timestep loop.  The historical
+// --test-manager switch is intentionally excluded because its frozen behavior
+// runs diagnostics and then continues into production.
+bool IsComponentTestExecutionRequested(const Options& options);
 
 // Apply the parsed options to the turbulence model flags used by the physics
 // kernels.  Keeping this in a separate function makes the point where CLI

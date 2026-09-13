@@ -19,20 +19,35 @@
 
 #include "constants.h"
 #include "sep.h"
+#include "util/sep_test_registry.h"
 
 #ifndef _SEP_TESTS_
 #define _SEP_TESTS_
 
 void TestManager();
 
+// Return the authoritative Step 1 component-test catalog.  The registry is
+// constructed once, validates metadata/ID uniqueness, and is used only by the
+// standalone main program; SWMF library entry points never invoke it.
+const SEP::Testing::Registry& ComponentTestRegistry();
+
+// Execute an already-resolved selection on every participating MPI rank, emit
+// one root summary, and return the process status defined by Testing::Summary.
+int RunSelectedComponentTests(
+    const std::vector<const SEP::Testing::Descriptor*>& selected,
+    std::ostream& out);
+
+SEP::Testing::InitializationLevel RequiredInitializationLevel(
+    const std::vector<const SEP::Testing::Descriptor*>& selected);
+
 void DiffusionCoefficient_const(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment); 
 
-void DxxTest();
+bool DxxTest();
 void ParkerModelMoverTest();
-void ParkerModelMoverTest_const_plasma_field();
-void ParkerModelMoverTest_convection();
+bool ParkerModelMoverTest_const_plasma_field();
+bool ParkerModelMoverTest_convection();
 
-void FTE_Convectoin();
+bool FTE_Convectoin();
 void FTE_Acceleration();
 void FTE_Diffusion();
 
