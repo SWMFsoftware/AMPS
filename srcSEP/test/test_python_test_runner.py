@@ -16,11 +16,14 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "test" / "run_tests.py"
+CASE_RUNNER = ROOT / "validation" / "run_case.py"
 
 
 def _load_runner_module():
@@ -48,6 +51,7 @@ class PythonTestRunnerTests(unittest.TestCase):
         for expected in (
                 "Discover the tests registered",
                 "--test PARK07",
+                "--amps ../amps --validation-case CV01",
                 "--group parker --group fte-dmumu",
                 "--routine",
                 "--all",
@@ -138,6 +142,43 @@ class PythonTestRunnerTests(unittest.TestCase):
                 (output / "run_manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(run_manifest["exit_code"], 0)
             self.assertTrue(run_manifest["report_sha256"])
+
+    def test_validation_mode_forwards_the_selected_linked_executable(self):
+        """Prevent CV01 from regressing to a Python-compiled model driver."""
+        runner = _load_runner_module()
+        with tempfile.TemporaryDirectory(prefix="srcsep-validation-command-") as tmp:
+            output = Path(tmp)
+            arguments = SimpleNamespace(
+                amps="/opt/amps/bin/srcsep-amps",
+                validation_all=False,
+                validation_cases=["CV01"],
+                case_input=None,
+                timeout=42.0,
+            )
+            with mock.patch.object(runner, "_run_streaming", return_value=0) as run:
+                _, _, command = runner._run_validation_cases(
+                    arguments, output, output / "runner.log")
+            self.assertEqual(command[:4], [
+                sys.executable,
+                str(ROOT / "validation" / "run_case.py"),
+                "--amps",
+                "/opt/amps/bin/srcsep-amps",
+            ])
+            self.assertIn("CV01", command)
+            self.assertIn("--timeout", command)
+            run.assert_called_once()
+
+    def test_validation_case_rejects_a_missing_linked_executable(self):
+        """Never replace unavailable application evidence with a local build."""
+        with tempfile.TemporaryDirectory(prefix="srcsep-missing-amps-") as tmp:
+            missing = Path(tmp) / "amps-does-not-exist"
+            completed = subprocess.run(
+                [sys.executable, str(CASE_RUNNER), "--amps", str(missing),
+                 "--case", "CV01", "--output-dir", str(Path(tmp) / "out")],
+                cwd=str(ROOT), text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, check=False)
+            self.assertEqual(completed.returncode, 2, completed.stdout)
+            self.assertIn("linked srcSEP/AMPS executable is missing", completed.stdout)
 
 
 if __name__ == "__main__":

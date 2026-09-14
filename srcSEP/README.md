@@ -18,6 +18,10 @@ subsystem, and the Step 12 deterministic parallel-reduction contract.
 Step 13 adds reportable, fail-closed acceptance fixtures, Step 14 removes
 the retired mover implementations/aliases while enforcing a clean source
 handoff, and Step 15 adds a claim-separated scientific-validation campaign.
+The numbered campaign now begins with the linked-application `CV01`
+ballistic-streaming case, which establishes the reusable native-registry,
+model-input, independent-reference, metric, visualization, and provenance
+layout for later validation tests.
 See [STEP13_CHANGE_MANIFEST.md](STEP13_CHANGE_MANIFEST.md),
 [STEP14_CHANGE_MANIFEST.md](STEP14_CHANGE_MANIFEST.md), and
 [STEP15_CHANGE_MANIFEST.md](STEP15_CHANGE_MANIFEST.md). Retired names remain
@@ -328,6 +332,11 @@ the production registry rather than duplicating test selection or physics in
 Python. The default figure formats are PNG and EPS:
 
 ```sh
+# Run Test 01 / CV01 in the linked application, then compare its output with
+# the independent characteristic and create PNG/EPS figures.
+python3 test/run_tests.py --amps /path/to/amps --validation-case CV01 \
+  --output-dir /absolute/path/to/evidence/CV01
+
 # Discover stable IDs from the linked executable.
 python3 test/run_tests.py --amps /path/to/amps --list
 
@@ -361,6 +370,14 @@ figure as metric-level evidence. It never reconstructs an expected solution
 with production model code. `run_manifest.json`, the authoritative registry
 JSON/JUnit reports, `analytical_plot_manifest.json`, the command log, and
 `plots/*.{png,eps}` remain together in the selected output directory.
+CV01 first verifies that the selected linked executable advertises the case,
+then runs all six numerical realizations through `amps --test CV01`. It writes
+native JSON/JUnit, raw model and independent reference states for periodic/open
+boundaries at all three timesteps, particle and packet-moment tables, a
+four-panel diagnostic, the resolved input, and checksummed executable
+provenance. A missing or stale binary is an error, never a Python/standalone
+fallback. See
+[validation/cases/CV01/README.md](validation/cases/CV01/README.md).
 
 The source-only Step 13 fixtures registered in the same production catalog are
 `BG01` (analytic/SWCME provider epochs), `BG02` (mock read-only SWMF import and

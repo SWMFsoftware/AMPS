@@ -1,0 +1,68 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "CV01",
+  "title": "Ballistic streaming on a uniform field line",
+  "model": {
+    "mover": "fte-dmumu",
+    "equation_mode": "full-gyrotropic",
+    "background_provider": "analytic-uniform",
+    "turbulence_source": "prescribed-zero",
+    "particle_species": "proton"
+  },
+  "constants": {
+    "astronomical_unit_m": 149597870700.0,
+    "speed_of_light_m_per_s": 299792458.0,
+    "proton_mass_kg": 1.67262192369e-27,
+    "electron_volt_j": 1.602176634e-19
+  },
+  "field_line": {
+    "minimum_m": 0.0,
+    "maximum_m": 149597870700.0,
+    "magnetic_field_t": 5e-9,
+    "plasma_speed_m_per_s": 400000.0,
+    "number_density_per_m3": 5000000.0,
+    "d_ln_abs_b_ds_per_m": 0.0,
+    "parallel_velocity_gradient_per_s": 0.0,
+    "velocity_divergence_per_s": 0.0,
+    "field_aligned_strain_per_s": 0.0
+  },
+  "particle_packet": {
+    "kinetic_energy_mev": 10.0,
+    "pitch_angle_cosines": [-1.0, -0.5, 0.5, 1.0],
+    "center_m": 74798935350.0,
+    "sigma_m": 448793612.1,
+    "particles_per_pitch_angle": 41,
+    "gaussian_half_width_sigma": 4.0,
+    "total_weight_per_pitch_angle": 1.0
+  },
+  "operators": {
+    "pitch_angle_diffusion_per_s": 0.0,
+    "focusing": false,
+    "adiabatic_momentum_change": false,
+    "perpendicular_transport": false,
+    "sources": false,
+    "losses": false,
+    "particle_wave_coupling": false
+  },
+  "boundaries": ["periodic", "open"],
+  "numerics": {
+    "final_time_s": 1800.0,
+    "sample_interval_s": 60.0,
+    "time_steps_s": [60.0, 30.0, 15.0],
+    "campaign_seed": 10101
+  },
+  "acceptance": {
+    "trajectory_error_over_line_length_max": 1e-12,
+    "centroid_error_over_line_length_max": 1e-12,
+    "variance_error_over_line_length_squared_max": 1e-12,
+    "weight_closure_relative_error_max": 1e-13,
+    "boundary_time_error_over_final_time_max": 1e-12,
+    "pitch_angle_absolute_error_max": 1e-13,
+    "momentum_relative_error_max": 1e-13,
+    "negative_control_minimum_error_over_line_length": 0.01
+  },
+  "plot": {
+    "formats": ["png", "eps"],
+    "profile_bins": 80
+  }
+}

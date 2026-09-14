@@ -1,0 +1,67 @@
+# Registered validation-case layout
+
+The end-to-end validation portfolio uses one registry and one directory
+contract. `validation/case_registry.json` is the authoritative catalog;
+`validation/run_case.py` resolves selections and aggregates standard result
+records; `test/run_tests.py` is the user-facing orchestrator that also renders
+saved numerical/reference comparisons.
+
+Each new test from the validation plan should use this layout:
+
+```text
+validation/cases/<ID>/
+  README.md              physics, assumptions, commands, and failure diagnosis
+  input.json             reviewed production-style configuration
+  case.py                model/reference/scoring adapter with run_case()
+  <model adapter>        calls a production kernel or linked executable
+  <reference solver>     mathematically independent expected solution
+```
+
+The case descriptor must provide a stable ID, group, runtime class, entrypoint,
+default input, and description. A case entrypoint receives `source_root`,
+`input_path`, `output_dir`, `executable`, and `timeout`; it returns the existing
+`srcsep-component-tests-v1` result fields. `executable` is the resolved linked
+srcSEP/AMPS application, never a case-specific substitute. The entrypoint must
+write comparisons from saved model/reference files, record effective physics
+flags and checksums, and return `PASS`, `FAIL`, `SKIP`, or `ERROR` without
+terminating the parent runner.
+
+This structure intentionally mirrors production campaign setup: a versioned
+input is resolved once; the selected physics executable consumes it; raw model
+output is immutable; a separate reference/observation stage produces matched
+quantities; scoring and plots read saved artifacts; and a provenance manifest
+links inputs, code, commands, and results. Later analytical, cross-model, and
+observational cases may use different executables or data acquisition, but they
+must preserve these lifecycle and evidence contracts.
+
+To add a case:
+
+1. Copy the directory structure, choose the next stable plan ID, and add one
+   descriptor to `case_registry.json`.
+2. Express units and every enabled/disabled operator in `input.json`; never
+   inherit an undocumented production default.
+3. Register the numerical stage in the linked application's native test
+   registry and invoke that exact executable through `--test <ID>`.
+4. Implement the reference independently and add a negative control capable of
+   detecting the principal sign, factor, or normalization failure.
+5. Emit metrics with frozen comparisons/tolerances, CSV comparison series,
+   PNG/EPS figures, a run log, resolved input, and provenance.
+6. Add a bounded `make test-<id>-unit` gate and document which SWMF or
+   observational evidence remains outside the linked-application result.
+
+The production CLI carries case-specific paths with `--test-input` and
+`--test-output-dir`. These options must be supplied together and only with one
+explicit `--test` selector, preventing a reviewed input from leaking into a
+group or `--all-tests` run. A generated narrow native protocol is allowed, but
+the reviewed public input and resolved snapshot remain portable, unit-bearing
+JSON.
+
+List or execute registered cases with:
+
+```sh
+python3 validation/run_case.py --list
+python3 test/run_tests.py --amps /path/to/amps --validation-case CV01 \
+  --output-dir test_output/CV01
+python3 test/run_tests.py --amps /path/to/amps --validation-all \
+  --output-dir test_output/validation-all
+```

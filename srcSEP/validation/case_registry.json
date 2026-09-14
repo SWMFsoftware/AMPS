@@ -1,0 +1,14 @@
+{
+  "schema": "srcsep-validation-case-registry-v1",
+  "cases": [
+    {
+      "id": "CV01",
+      "name": "Ballistic streaming on a uniform field line",
+      "group": "controlled-analytical",
+      "runtime_class": "routine",
+      "entrypoint": "validation/cases/CV01/case.py",
+      "default_input": "validation/cases/CV01/input.json",
+      "description": "Run a localized monoenergetic packet through the linked srcSEP/AMPS native registry with every non-streaming operator disabled, then compare its focused-transport characteristic with the independent closed-form solution."
+    }
+  ]
+}

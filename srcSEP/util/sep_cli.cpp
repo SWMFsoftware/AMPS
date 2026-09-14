@@ -383,6 +383,10 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  --test-json <path>           Write the complete result/metric/evidence\n"
       << "                               summary as srcsep-component-tests-v1 JSON.\n"
       << "  --test-junit <path>          Write the same outcomes as JUnit XML.\n"
+      << "  --test-input <path>          Reviewed native input for one end-to-end\n"
+      << "                               validation test selected by explicit ID.\n"
+      << "  --test-output-dir <path>     Isolated directory for that test's native\n"
+      << "                               model artifacts.\n"
       << "\n"
       << "General:\n"
       << "  -h, --help                   Print this help message and exit before AMPS\n"
@@ -405,6 +409,7 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  " << exe << " --test DXX01 --test=TURB01\n"
       << "  " << exe << " --test-group parker\n"
       << "  " << exe << " --all-tests --test-json results.json --test-junit results.xml\n"
+      << "  " << exe << " --test CV01 --test-input CV01-native.args --test-output-dir evidence/CV01\n"
       << "  " << exe << " --all-tests\n"
       << "  " << exe << " --turbulence-model wave-number-resolved --coupling on\n"
       << "  " << exe << " --wave-number-resolved --particle-mover fte-mfp --coupling on\n"
@@ -472,7 +477,8 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
       continue;
     }
 
-    if (option_name == "--test-json" || option_name == "--test-junit") {
+    if (option_name == "--test-json" || option_name == "--test-junit" ||
+        option_name == "--test-input" || option_name == "--test-output-dir") {
       std::string path;
       if (!GetOptionValue(argc, argv, i, option_name, value_from_equals,
                           path, err)) return false;
@@ -482,7 +488,9 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
         return false;
       }
       if (option_name == "--test-json") options.testJsonPath = path;
-      else options.testJunitPath = path;
+      else if (option_name == "--test-junit") options.testJunitPath = path;
+      else if (option_name == "--test-input") options.testInputPath = path;
+      else options.testArtifactDirectory = path;
       continue;
     }
 
@@ -999,6 +1007,23 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
       !executionRequested) {
     err << "ERROR: --test-json and --test-junit require --test, --test-group, "
         << "or --all-tests.\n";
+    return false;
+  }
+
+  // Input and artifact paths form one indivisible end-to-end test contract.
+  // Requiring one explicit ID prevents a group/all invocation from sharing a
+  // case-specific file accidentally, and requiring both paths prevents a case
+  // from falling back to an unreviewed default or the process working directory.
+  const bool hasTestInput = !options.testInputPath.empty();
+  const bool hasTestArtifacts = !options.testArtifactDirectory.empty();
+  if (hasTestInput != hasTestArtifacts) {
+    err << "ERROR: --test-input and --test-output-dir must be provided together.\n";
+    return false;
+  }
+  if (hasTestInput &&
+      (options.testIds.size() != 1 || !options.testGroups.empty() ||
+       options.runAllTests)) {
+    err << "ERROR: end-to-end test input requires exactly one explicit --test ID.\n";
     return false;
   }
 

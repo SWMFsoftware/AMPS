@@ -134,6 +134,25 @@ void TestCli04(const SEP::Testing::Registry& registry) {
   options = SEP::Util::CLI::Options();
   Check(!Parse({"sep", "--test-json", "results.json"}, options, error),
         "CLI04", "a report path without a test selector must be rejected");
+
+  // Application-level validation paths are parsed by the same production CLI
+  // and are deliberately restricted to one explicit test. This prevents a
+  // case input from leaking into an unrelated callback selected by a group.
+  SEP::Util::CLI::Options validation;
+  Check(Parse({"sep", "--test", "CV01", "--test-input", "native.args",
+               "--test-output-dir", "evidence/CV01"}, validation, error) &&
+            validation.testInputPath == "native.args" &&
+            validation.testArtifactDirectory == "evidence/CV01",
+        "CLI04", "end-to-end paths must reach one explicit linked test");
+  SEP::Util::CLI::Options missingArtifacts;
+  Check(!Parse({"sep", "--test", "CV01", "--test-input", "native.args"},
+               missingArtifacts, error),
+        "CLI04", "end-to-end input and artifact paths must be atomic");
+  SEP::Util::CLI::Options ambiguousValidation;
+  Check(!Parse({"sep", "--test", "CV01", "--test", "PARK01",
+                "--test-input", "native.args", "--test-output-dir", "out"},
+               ambiguousValidation, error),
+        "CLI04", "one case-specific input cannot configure multiple tests");
 }
 
 void TestCli05LegacyAndErrors() {

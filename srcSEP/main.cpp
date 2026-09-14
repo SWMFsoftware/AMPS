@@ -180,6 +180,15 @@ int main(int argc,char **argv) {
       std::cout << '\n';
     }
 
+    // Publish the already-validated case paths once before either the
+    // initialization-free or field-line-initialized dispatch point. The
+    // registry context is deliberately independent of the CV01 implementation
+    // so later end-to-end cases reuse the same production CLI contract.
+    SEP::Testing::ExecutionContext testContext;
+    testContext.inputPath = cli_options.testInputPath;
+    testContext.artifactDirectory = cli_options.testArtifactDirectory;
+    SEP::Testing::SetExecutionContext(testContext);
+
     // Initialization-free callbacks are executed immediately.  This makes
     // component tests of pure formulas genuinely lightweight and proves that
     // test-only execution does not require a mesh merely because other catalog

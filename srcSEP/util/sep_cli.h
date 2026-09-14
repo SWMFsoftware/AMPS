@@ -82,6 +82,13 @@ struct Options {
   std::string testJsonPath;
   std::string testJunitPath;
 
+  // End-to-end validation cases can require a reviewed model-input manifest
+  // and an isolated artifact directory. These paths are carried by the same
+  // production parser as every other test option. They do not affect ordinary
+  // component tests and are legal only with exactly one explicit --test ID.
+  std::string testInputPath;
+  std::string testArtifactDirectory;
+
   // Frequency, in main-loop iterations, for writing the large Tecplot 2-D
   // wave-number-resolved spectrum diagnostic.  The default of 100 keeps the
   // output volume manageable while still giving useful temporal resolution.

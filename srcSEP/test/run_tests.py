@@ -72,7 +72,7 @@ SOURCE_SUITES: Dict[str, str] = {
 # conservation/limit invariant.  Keeping the classification explicit prevents
 # a generic software contract from being advertised as an analytical solution.
 ANALYTICAL_IDS = {
-    "DXX01", "FTE01", "PARKER01", "TURB01", "VAL01", "CROSS02",
+    "CV01", "DXX01", "FTE01", "PARKER01", "TURB01", "VAL01", "CROSS02",
     *(f"PARK{i:02d}" for i in range(1, 8)),
     *(f"FTED{i:02d}" for i in range(1, 9)),
     *(f"FTEM{i:02d}" for i in range(1, 9)),
@@ -107,6 +107,17 @@ Examples:
 
        python3 test/run_tests.py --amps ../amps --test PARK07 \
          --output-dir test_output/parker07
+
+     Run the end-to-end CV01 validation case from its production-style input:
+
+       python3 test/run_tests.py --amps ../amps --validation-case CV01 \
+         --output-dir test_output/CV01
+
+     CV01 invokes that exact linked application six times through its native
+     --test CV01 registry entry, runs periodic/open boundaries at three
+     timesteps, evaluates an independent closed-form reference, and writes both
+     the standard overlay and four-panel review figure. Use --case-input to
+     test one reviewed configuration variant.
 
      Repeat --test to choose any collection of individual cases:
 
@@ -147,6 +158,9 @@ Examples:
 
        python3 test/run_tests.py --suite parker --suite fte-dmumu \
          --output-dir test_output/focused-movers
+
+     This mode checks component kernels only. It does not replace the linked
+     CV01 command in example 2.
 
   7. Launch the selected native tests under MPI:
 
@@ -376,7 +390,7 @@ def _column(fieldnames: Iterable[str], candidates: Sequence[str]) -> Optional[st
 
 def _read_comparison_csv(path: Path) -> Optional[Tuple[str, str, str,
                                                        List[float], List[float],
-                                                       List[float]]]:
+                                                       List[float], str, str]]:
     """Read a convention-based independent numerical/analytical series."""
     try:
         with path.open("r", encoding="utf-8", newline="") as stream:
@@ -391,6 +405,8 @@ def _read_comparison_csv(path: Path) -> Optional[Tuple[str, str, str,
             x_values: List[float] = []
             numerical: List[float] = []
             analytical: List[float] = []
+            quantity = "solution"
+            units = ""
             for row in reader:
                 x = _safe_float(row.get(x_name))
                 model = _safe_float(row.get(numerical_name))
@@ -399,9 +415,17 @@ def _read_comparison_csv(path: Path) -> Optional[Tuple[str, str, str,
                     x_values.append(x)
                     numerical.append(model)
                     analytical.append(exact)
+                    # Optional metadata columns keep the basic three-column
+                    # convention backward compatible while allowing physical
+                    # axes for campaign cases such as CV01.
+                    if row.get("quantity"):
+                        quantity = str(row["quantity"]).strip()
+                    if row.get("units"):
+                        units = str(row["units"]).strip()
             if len(x_values) < 2:
                 return None
-            return x_name, numerical_name, analytical_name, x_values, numerical, analytical
+            return (x_name, numerical_name, analytical_name, x_values,
+                    numerical, analytical, quantity, units)
     except (OSError, csv.Error):
         return None
 
@@ -426,17 +450,35 @@ def _save_figure(figure: Any, stem: Path, formats: Sequence[str]) -> List[str]:
 
 def _plot_series(plt: Any, test_id: str, status: str, series: Tuple[Any, ...],
                  stem: Path, formats: Sequence[str]) -> List[str]:
-    x_name, numerical_name, analytical_name, x, numerical, analytical = series
-    figure, axis = plt.subplots(figsize=(8.5, 5.2))
-    axis.plot(x, analytical, color="black", linewidth=2.0,
-              label=f"Analytical ({analytical_name})")
-    axis.plot(x, numerical, color="#1565c0", linewidth=1.5, marker="o",
-              markersize=3.0, label=f"Numerical ({numerical_name})")
-    axis.set_xlabel(x_name)
-    axis.set_ylabel("solution")
-    axis.set_title(f"{test_id}: numerical and analytical solution [{status}]")
-    axis.grid(True, color="0.85", linewidth=0.7)
-    axis.legend(frameon=False)
+    (x_name, numerical_name, analytical_name, x, numerical, analytical,
+     quantity, units) = series
+    figure, axes = plt.subplots(
+        2, 1, figsize=(8.5, 6.8), sharex=True,
+        gridspec_kw={"height_ratios": [3.0, 1.25]})
+    solution_axis, residual_axis = axes
+    solution_axis.plot(x, analytical, color="black", linewidth=2.0,
+                       label=f"Analytical ({analytical_name})")
+    solution_axis.plot(x, numerical, color="#1565c0", linewidth=1.5,
+                       marker="o", markersize=3.0,
+                       label=f"Numerical ({numerical_name})")
+    y_label = quantity + (f" [{units}]" if units else "")
+    solution_axis.set_ylabel(y_label)
+    solution_axis.set_title(
+        f"{test_id}: numerical and analytical solution [{status}]")
+    solution_axis.grid(True, color="0.85", linewidth=0.7)
+    solution_axis.legend(frameon=False)
+
+    # The residual is calculated only from values reloaded from the archived
+    # CSV.  This makes the figure independently reproducible and prevents an
+    # in-memory plotting path from hiding serialization or unit mistakes.
+    residual = [model - exact for model, exact in zip(numerical, analytical)]
+    residual_axis.axhline(0.0, color="black", linewidth=1.0)
+    residual_axis.plot(x, residual, color="#c62828", linewidth=1.2,
+                       marker="o", markersize=2.8)
+    residual_axis.set_xlabel(x_name)
+    residual_axis.set_ylabel("model - reference" +
+                             (f" [{units}]" if units else ""))
+    residual_axis.grid(True, color="0.88", linewidth=0.7)
     figure.tight_layout()
     outputs = _save_figure(figure, stem, formats)
     plt.close(figure)
@@ -583,6 +625,26 @@ def _run_source_suites(args: argparse.Namespace, output_dir: Path,
     return exit_code, merged_path
 
 
+def _run_validation_cases(args: argparse.Namespace, output_dir: Path,
+                          log_path: Path) -> Tuple[int, Path, List[str]]:
+    """Run application-level cases through the requested linked executable."""
+    command = [sys.executable, str(ROOT / "validation" / "run_case.py"),
+               "--amps", str(Path(args.amps).expanduser().resolve())]
+    if args.validation_all:
+        command.append("--all")
+    else:
+        for case_id in args.validation_cases:
+            command.extend(("--case", case_id))
+    if args.case_input:
+        command.extend(("--input", str(args.case_input.expanduser().resolve())))
+    if args.timeout is not None:
+        command.extend(("--timeout", str(args.timeout)))
+    command.extend(("--output-dir", str(output_dir)))
+    exit_code = _run_streaming(
+        command, ROOT, log_path, dict(os.environ), args.timeout)
+    return exit_code, output_dir / "srcsep-tests.json", command
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run any/all srcSEP tests and plot analytical comparisons.",
@@ -607,6 +669,13 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--suite", dest="suites", action="append", default=[],
                         choices=sorted(SOURCE_SUITES),
                         help="run a dependency-light Make suite; repeatable")
+    parser.add_argument("--validation-case", dest="validation_cases",
+                        action="append", default=[], metavar="ID",
+                        help="run one registered end-to-end validation case; repeatable")
+    parser.add_argument("--validation-all", action="store_true",
+                        help="run every registered end-to-end validation case")
+    parser.add_argument("--case-input", type=Path,
+                        help="override the input for one --validation-case")
     parser.add_argument("--from-json", type=Path,
                         help="plot an existing component-test JSON without running tests")
     parser.add_argument("--output-dir", type=Path,
@@ -642,15 +711,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         raise RunnerError("--mpi-np must be positive")
 
     native_selection = bool(args.tests or args.groups or args.routine or args.all)
+    validation_selection = bool(args.validation_cases or args.validation_all)
     modes = sum((bool(args.suites), bool(args.from_json), native_selection,
-                 bool(args.list)))
+                 validation_selection, bool(args.list)))
     if modes != 1:
         raise RunnerError(
-            "choose exactly one mode: native selection, --suite, --from-json, or --list")
+            "choose exactly one mode: native selection, validation case, "
+            "--suite, --from-json, or --list")
     if args.all and (args.routine or args.tests or args.groups):
         raise RunnerError("--all cannot be combined with other native selectors")
     if args.routine and (args.tests or args.groups):
         raise RunnerError("--routine cannot be combined with --test or --group")
+    if args.validation_all and args.validation_cases:
+        raise RunnerError("--validation-all cannot be combined with --validation-case")
+    if args.case_input and (args.validation_all or len(args.validation_cases) != 1):
+        raise RunnerError("--case-input requires exactly one --validation-case")
+    if validation_selection and args.mpi_np is not None:
+        raise RunnerError(
+            "end-to-end validation cases currently require serial linked execution; "
+            "omit --mpi-np")
 
     if args.list:
         executable = Path(args.amps).expanduser().resolve()
@@ -669,6 +748,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         report_path = args.from_json.expanduser().resolve()
         report = _load_report(report_path)
         exit_code = int(report.get("exit_code", 0))
+    elif validation_selection:
+        exit_code, report_path, command = _run_validation_cases(
+            args, output_dir, log_path)
+        report = _load_report(report_path) if report_path.is_file() else None
     elif args.suites:
         exit_code, report_path = _run_source_suites(args, output_dir, log_path)
         report = _load_report(report_path) if report_path else None
@@ -687,10 +770,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "root": str(ROOT),
         "command": command,
         "source_suites": args.suites,
+        "validation_cases": args.validation_cases,
+        "validation_all": args.validation_all,
         "report": str(report_path) if report_path else None,
         "exit_code": exit_code,
     }
-    if native_selection:
+    if native_selection or validation_selection:
         executable = Path(args.amps).expanduser().resolve()
         # Hashing the linked executable makes the orchestration record useful
         # as provenance: plots can be tied to the exact production binary that

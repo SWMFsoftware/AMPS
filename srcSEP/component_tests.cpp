@@ -3,10 +3,14 @@
 #include "util/sep_mover_validation.h"
 #include "util/sep_scientific_validation.h"
 #include "util/sep_turbulence_validation.h"
+#include "validation/cases/CV01/cv01_model.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
+#include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
@@ -131,6 +135,117 @@ SEP::Testing::Result RunTurbulenceEnergyClosure() {
   return result;
 }
 
+SEP::Testing::Result RunCV01LinkedModel() {
+  SEP::Testing::Result result;
+  const SEP::Testing::ExecutionContext& context =
+      SEP::Testing::GetExecutionContext();
+  if (context.inputPath.empty() || context.artifactDirectory.empty()) {
+    // Generic --all-tests/--test-group invocations have no case-specific
+    // configuration by design. Report an explicit prerequisite SKIP so CV01
+    // remains discoverable without breaking unrelated registry regression;
+    // the validation runner always supplies both paths and therefore cannot
+    // turn a missing linked-model run into PASS.
+    result.status = SEP::Testing::Status::Skip;
+    result.message =
+        "CV01 requires --test-input and --test-output-dir; run it through "
+        "test/run_tests.py --validation-case CV01 --amps /path/to/amps";
+    return result;
+  }
+
+  // The Python case layer writes one UTF-8 argument per line. The first line
+  // freezes the protocol version; all remaining lines are passed to the linked
+  // model in --name/value pairs. This intentionally narrow format avoids a
+  // second JSON implementation in C++ while retaining all reviewed JSON and
+  // resolved-input evidence in the orchestration layer.
+  std::ifstream input(context.inputPath.c_str());
+  std::string line;
+  if (!input.good() || !std::getline(input, line) ||
+      line != "srcsep-cv01-native-args-v1") {
+    result.status = SEP::Testing::Status::Error;
+    result.message = "CV01 cannot read a supported native argument manifest";
+    result.metrics.push_back({"native_model_execution_errors", 1.0, 0.0,
+                              "<=", "count"});
+    return result;
+  }
+  std::vector<std::string> arguments;
+  while (std::getline(input, line)) {
+    if (!line.empty() && line[line.size() - 1] == '\r')
+      line.erase(line.size() - 1);
+    if (line.empty()) {
+      result.status = SEP::Testing::Status::Error;
+      result.message = "CV01 native argument manifest contains an empty token";
+      result.metrics.push_back({"native_model_execution_errors", 1.0, 0.0,
+                                "<=", "count"});
+      return result;
+    }
+    arguments.push_back(line);
+  }
+  if (!input.eof() || arguments.empty() || arguments.size() % 2 != 0) {
+    result.status = SEP::Testing::Status::Error;
+    result.message = "CV01 native argument manifest is truncated or unpaired";
+    result.metrics.push_back({"native_model_execution_errors", 1.0, 0.0,
+                              "<=", "count"});
+    return result;
+  }
+
+  // Preserve the campaign seed reported by the reviewed input instead of
+  // hard-coding the default. Although ballistic D_mumu=0 consumes no random
+  // increment, recording the configured stream identity keeps provenance
+  // stable when users run a reviewed input variant.
+  std::uint64_t campaignSeed = 0;
+  bool foundCampaignSeed = false;
+  for (std::size_t i = 0; i + 1 < arguments.size(); i += 2) {
+    if (arguments[i] != "--campaign-seed") continue;
+    char* end = NULL;
+    errno = 0;
+    const unsigned long long parsed =
+        std::strtoull(arguments[i + 1].c_str(), &end, 10);
+    if (arguments[i + 1].empty() || arguments[i + 1][0] == '-' ||
+        errno == ERANGE || !end || *end != '\0' ||
+        parsed > std::numeric_limits<std::uint64_t>::max()) {
+      result.status = SEP::Testing::Status::Error;
+      result.message = "CV01 native manifest contains an invalid campaign seed";
+      result.metrics.push_back({"native_model_execution_errors", 1.0, 0.0,
+                                "<=", "count"});
+      return result;
+    }
+    campaignSeed = static_cast<std::uint64_t>(parsed);
+    foundCampaignSeed = true;
+    break;
+  }
+  if (!foundCampaignSeed) {
+    result.status = SEP::Testing::Status::Error;
+    result.message = "CV01 native manifest does not declare a campaign seed";
+    result.metrics.push_back({"native_model_execution_errors", 1.0, 0.0,
+                              "<=", "count"});
+    return result;
+  }
+
+  const std::string outputPath =
+      context.artifactDirectory + "/CV01_model.csv";
+  std::string error;
+  const bool completed = SEP::Validation::CV01::RunModel(
+      arguments, outputPath, &error);
+  result.status = completed ? SEP::Testing::Status::Pass
+                            : SEP::Testing::Status::Error;
+  result.message = completed
+      ? "linked srcSEP/AMPS application completed the controlled CV01 model stage"
+      : "linked CV01 model stage failed: " + error;
+  result.hasSeed = true;
+  result.seed = campaignSeed;
+  result.configuration.push_back("execution=linked-srcsep-amps");
+  result.configuration.push_back("mover=fte-dmumu");
+  result.configuration.push_back("background=analytic-uniform");
+  result.configuration.push_back("Dmumu_s^-1=0");
+  result.configuration.push_back("native_input=" + context.inputPath);
+  result.configuration.push_back("native_artifact_directory=" +
+                                 context.artifactDirectory);
+  result.metrics.push_back({"native_model_execution_errors",
+                            completed ? 0.0 : 1.0, 0.0, "<=", "count"});
+  if (completed) result.artifacts.push_back(outputPath);
+  return result;
+}
+
 SEP::Testing::Descriptor MakeDescriptor(
     const char* id, const char* name, const char* group,
     const char* description, SEP::Testing::InitializationLevel initialization,
@@ -147,6 +262,22 @@ SEP::Testing::Descriptor MakeDescriptor(
   descriptor.seedPolicy = seedPolicy;
   descriptor.stateIsolation = stateIsolation;
   descriptor.callback = callback;
+  return descriptor;
+}
+
+SEP::Testing::Descriptor MakeCV01Descriptor() {
+  SEP::Testing::Descriptor descriptor = MakeDescriptor(
+      "CV01", "Ballistic streaming on a uniform field line",
+      "controlled-analytical",
+      "Run the numerical stage inside the linked srcSEP/AMPS application; the Python case runner supplies the independent characteristic and final acceptance.",
+      SEP::Testing::InitializationLevel::None,
+      SEP::Testing::RuntimeClass::Routine, "fixed case seed from reviewed input",
+      "isolated process and artifact directory; immutable synthetic input",
+      RunCV01LinkedModel);
+  // The callback writes one synthetic, non-decomposed particle CSV before MPI
+  // initialization. The campaign therefore refuses --mpi-np and advertises
+  // serial support until a future case defines rank-partitioned output.
+  descriptor.supportedBuildModes = "serial linked srcSEP/AMPS executable";
   return descriptor;
 }
 
@@ -215,6 +346,7 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
     descriptors.insert(descriptors.end(), turbulence_descriptors.begin(),
                        turbulence_descriptors.end());
     const SEP::Testing::Descriptor legacy_descriptors[] = {
+      MakeCV01Descriptor(),
       MakeDescriptor("TURB01", "Alfven wave-energy closure", "turbulence",
           "Compare the production 1-AU wave-energy helper with an independent magnetic-pressure expression.",
           SEP::Testing::InitializationLevel::None,

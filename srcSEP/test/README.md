@@ -69,8 +69,12 @@ make test-documentation-unit
 # Step 15 numerical, cross-mover/model, SWCME replay, and release-report gates.
 make test-scientific-validation
 
-# Complete source-only analytical catalog, including extended ensembles.
+# Dependency-light analytical component catalog. CV01 runs additionally when
+# SEP_EXECUTABLE identifies the linked application.
 make test-controlled-analytical
+
+# Test 01 / CV01 strict compile gate plus linked end-to-end execution.
+make test-cv01-unit SEP_EXECUTABLE=/path/to/amps
 
 # All dependency-light ASan/UBSan suites from Steps 3 and 6–13.
 make test-sanitizer
@@ -133,6 +137,10 @@ every selection mode, MPI execution, report replotting, plot controls, and
 forwarding model-specific arguments to the linked executable.
 
 ```sh
+# Run the first numbered validation case through the linked application.
+python3 test/run_tests.py --amps /path/to/amps --validation-case CV01 \
+  --output-dir /evidence/srcsep/CV01
+
 # List all native registry IDs without initializing AMPS.
 python3 test/run_tests.py --amps /path/to/amps --list
 
@@ -157,6 +165,26 @@ python3 test/run_tests.py --suite controlled-analytical \
 python3 test/run_tests.py --from-json /evidence/results.json \
   --output-dir /evidence/srcsep/replot --formats png,eps
 ```
+
+`--validation-case ID` selects a registered end-to-end case from
+`validation/case_registry.json`; `--validation-all` runs the complete currently
+implemented portfolio. Both use `--amps PATH` (or `SEP_EXECUTABLE`) and refuse
+to run if the linked binary is missing, rejects `--list-tests`, or does not
+advertise the selected case. `--case-input PATH` overrides the reviewed default
+for one case. To use sanitizers, build the linked application with the desired
+sanitizer flags and pass that executable; the runner never compiles a substitute
+driver. These cases retain richer native/model/reference artifacts while using
+the same aggregate report and plotting contract as other runner modes.
+See [../validation/cases/README.md](../validation/cases/README.md) for the
+required structure and [../validation/cases/CV01/README.md](../validation/cases/CV01/README.md)
+for the first implementation.
+
+For CV01 the Python runner executes six commands of the form `amps --test CV01
+--test-input <generated-native-args> --test-output-dir <isolated-directory>`.
+Each command also requests native JSON and JUnit and must return a registry
+`PASS` plus a nonempty model CSV before the independent reference runs. The
+generated native argument file is an internal, one-token-per-line protocol;
+`resolved_input.json` remains the authoritative unit-bearing configuration.
 
 `--routine` forwards the native `--all-tests` policy and therefore excludes
 extended cases. `--all` first calls `--list-tests`, then selects every returned
@@ -556,6 +584,7 @@ standalone and SWMF-coupled run. See
 
 | ID | Group | Class | Initialization | What is asserted | State/artifacts |
 |---|---|---|---|---|---|
+| `CV01` | `controlled-analytical` | routine | linked srcSEP/AMPS registry | A localized 10 MeV proton packet follows exact ballistic characteristics for four pitch angles, two boundary policies, and three timesteps; packet moments, crossing times, momentum, and active/escaped weight close against an independent solver. | Linked executable hash; case-registry input; seed 10101; native JSON/JUnit and raw model/reference CSV; aggregate JSON/JUnit; PNG/EPS overlay, residual, and four-panel evidence. |
 | `BG01` | `background` | routine | none | Standalone analytic and SWCME snapshots preserve provider, epoch, ownership, validity, generation, and distinct configuration identity. | Stack-owned immutable snapshots; no external provider or artifact. |
 | `BG02` | `background` | routine | none | A mock SWMF import is read-only and becomes locally evolved only through an explicit handoff copy. | Resets the snapshot store before/after; no external SWMF process. |
 | `CROSS01` | `cross-mover` | routine | none | `fte-dmumu` and `fte-mfp` agree in the matched ballistic limit. | Keyed seed 1301; stack-owned state; no artifact. |
@@ -575,9 +604,12 @@ standalone and SWMF-coupled run. See
 | `VAL03` | `validation` | extended | none | Dmumu ensemble agrees with an independent finite-volume solver. | Fixed seed 1503001; report only when requested. |
 | `VAL04` | `validation` | routine | none | Actual SWCME SI background/source records drive srcSEP Parker transport. | Fixed API seed 1504001; focused C++17 registry; report only when requested. |
 
-The list printed by `--list-tests` is authoritative and also includes supported
-build modes, seed policy, and state/isolation notes.  Entries are sorted by ID
-regardless of their construction order.
+The list printed by native `--list-tests` is authoritative for C++ component
+callbacks and also includes supported build modes, seed policy, and
+state/isolation notes. End-to-end portfolio cases such as CV01 are listed by
+`python3 validation/run_case.py --list`; both paths are selected through the
+common `test/run_tests.py` orchestration interface. Entries are sorted by ID
+regardless of construction or registration order.
 
 ## WP01--WP10 focused contract gate
 
