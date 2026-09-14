@@ -28,6 +28,7 @@
 #include "constants.h"
 #include "sep.h"
 #include "transport_common.h"
+#include "turbulence_production_adapter.h"
 #include "sep.dfn"
 #include "tests.h"
 
@@ -665,7 +666,11 @@ start:
     // Coupled-library runs use the same post-particle deterministic reduction
     // as the standalone driver; the library entry point still does not parse or
     // execute standalone component-test options.
-    SEP::Transport::PICAdapter::FlushWaveContributions();
+    const SEP::Transport::Status turbulenceStatus =
+        SEP::Turbulence::PICAdapter::Advance(
+            PIC::ParticleWeightTimeStep::GlobalTimeStep[0], NAN, NAN);
+    if (!turbulenceStatus.ok())
+      exit(__LINE__, __FILE__, turbulenceStatus.message.c_str());
 
 //    PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(50,100); //(SEP::MinParticleLimit,SEP::MaxParticleLimit);
 

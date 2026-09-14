@@ -13,17 +13,6 @@ void AbortFocusedStatus(const SEP::Transport::Status& status) {
   exit(__LINE__, __FILE__, status.message.c_str());
 }
 
-struct SurvivingWaveContribution {
-  std::string turbulenceStateIdentity;
-  double dtS;
-  double vParallelMPerS;
-  double vNormalMPerS;
-  double startCoordinate;
-  double finishCoordinate;
-  double signedPathM;
-  std::uint64_t eventIndex;
-};
-
 }  // namespace
 
 int SEP::ParticleMover_FocusedTransport_Dmumu(
@@ -51,10 +40,9 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
   double elapsedS = 0.0;
   std::uint64_t eventIndex = 0;
   StepDiagnostics diagnostics;
-  std::vector<SurvivingWaveContribution> survivingWaveContributions;
   while (elapsedS < dtTotal) {
     PICAdapter::LocalBackground local;
-    status = PICAdapter::EvaluateLocalBackground(context, dtTotal, &local);
+    status = PICAdapter::EvaluateLocalBackground(context, &local);
     if (!status.ok()) AbortFocusedStatus(status);
     PICAdapter::PICPitchAngleDiffusionProvider provider(
         context, local.identity);
@@ -82,26 +70,48 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
       limits.push_back(StepLimit(
           "fte-diffusion-drift",
           0.05 / std::fabs(coefficient.dDmuMuDmuPerS)));
+    const ScalarResult snapshotLimit = ComposeSnapshotValidityLimit(
+        context.particleStepEpochS, elapsedS,
+        context.particleStepEpochS + local.snapshotSecondsRemaining,
+        context.snapshotGeneration, local.generation);
+    if (!snapshotLimit.status.ok() || snapshotLimit.value <= 0.0)
+      AbortFocusedStatus(snapshotLimit.status.ok()
+          ? Status::Error(StatusCode::StepUnderflow,
+                          "Dmumu mover reached the snapshot boundary")
+          : snapshotLimit.status);
+    if (std::isfinite(snapshotLimit.value))
+      limits.push_back(StepLimit("fte-dmumu-snapshot", snapshotLimit.value));
 
     const ScalarResult selected = SelectSubstep(
         dtTotal - elapsedS, limits, 1.0e-12, &diagnostics);
     if (!selected.status.ok()) AbortFocusedStatus(selected.status);
 
     const double startCoordinate = context.state.coordinate;
+    const double preMomentum = momentum.value;
+    const double preParallel = context.state.vParallelMPerS;
+    const double preNormal = context.state.vNormalMPerS;
     KeyedRandomStream random(PICAdapter::CampaignRandomSeed,
-                             static_cast<std::uint64_t>(ptr), 8, eventIndex);
+                             context.stableParticleId, 8, eventIndex);
     ThreadLocalWaveAccumulator identityAccumulator;
+    FocusedTransportBackground focusedBackground(
+        local.dLnAbsBdsPerM, local.plasmaAdvectionMPerS,
+        local.parallelVelocityGradientPerS,
+        SEP::AccountAdiabaticCoolingFlag
+            ? local.velocityDivergencePerS : 0.0);
+    // WP07 uses the full gyrotropic coefficients and the independently
+    // published bb:grad(U).  Disabling cooling zeros both momentum-driving
+    // invariants while retaining magnetic focusing and scattering.
+    focusedBackground.fieldAlignedStrainPerS =
+        SEP::AccountAdiabaticCoolingFlag
+            ? local.fieldAlignedStrainPerS : 0.0;
+    focusedBackground.equationMode = FocusedEquationMode::FullGyrotropic;
     // The compatibility cooling switch acts only on the cooling operator.
     // Focusing, velocity-gradient drift, streaming, and scattering still read
     // the same immutable background when cooling is disabled.
     const FocusedTransportIncrement increment =
         AdvanceFocusedTransportDmumu(
             FocusedTransportState(0.0, momentum.value, mu),
-            FocusedTransportBackground(
-                local.dLnAbsBdsPerM, local.plasmaAdvectionMPerS,
-                local.parallelVelocityGradientPerS,
-                SEP::AccountAdiabaticCoolingFlag
-                    ? local.velocityDivergencePerS : 0.0),
+            focusedBackground,
             context.state.massKg, SpeedOfLight, selected.value,
             provider, random,
             SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode
@@ -117,35 +127,56 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
     if (!updatedSpeed.status.ok()) AbortFocusedStatus(updatedSpeed.status);
     speed = updatedSpeed.value;
 
-    if (status.code == StatusCode::OutOfDomain) {
-      PIC::ParticleBuffer::DeleteParticle(ptr);
-      return _PARTICLE_LEFT_THE_DOMAIN_;
-    }
-    if (!status.ok()) AbortFocusedStatus(status);
-
     context.state.vParallelMPerS = speed * mu;
     context.state.vNormalMPerS =
         speed * std::sqrt(std::max(0.0, 1.0 - mu * mu));
     if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag &&
         SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode &&
         !identityAccumulator.Contributions().empty()) {
-      // The identity recorded by the core came from the same provider sample
-      // used for this Dmumu kick.  Keep the record mover-local until the full
-      // timestep survives: an absorbing boundary deletes the particle record,
-      // so publishing earlier substeps would leave a dangling PIC handle in
-      // the post-step wave queue.
-      SurvivingWaveContribution contribution;
+      PICAdapter::CouplingRecord contribution;
       contribution.turbulenceStateIdentity =
           identityAccumulator.Contributions()[0].turbulenceStateIdentity;
+      contribution.fieldLineId = context.state.fieldLineId;
+      contribution.species = context.state.species;
+      contribution.statisticalWeight = context.statisticalWeight;
+      contribution.stableParticleId = context.stableParticleId;
+      contribution.snapshotGeneration = context.snapshotGeneration;
       contribution.dtS = selected.value;
-      contribution.vParallelMPerS = context.state.vParallelMPerS;
-      contribution.vNormalMPerS = context.state.vNormalMPerS;
+      contribution.preMomentumKgMPerS = preMomentum;
+      contribution.postMomentumKgMPerS = momentum.value;
+      contribution.midpointParallelVelocityMPerS =
+          0.5 * (preParallel + context.state.vParallelMPerS);
+      contribution.midpointNormalVelocityMPerS =
+          0.5 * (preNormal + context.state.vNormalMPerS);
       contribution.startCoordinate = startCoordinate;
       contribution.finishCoordinate = context.state.coordinate;
       contribution.signedPathM = increment.displacementM;
       contribution.eventIndex = eventIndex;
-      survivingWaveContributions.push_back(contribution);
+      contribution.intervalIndex = eventIndex;
+      contribution.pitchAngleResolved = true;
+      contribution.crossedBoundary = status.code == StatusCode::OutOfDomain;
+      contribution.eventType = contribution.crossedBoundary
+          ? PICAdapter::CouplingEventType::BoundaryExit
+          : PICAdapter::CouplingEventType::DeterministicInterval;
+      if (contribution.crossedBoundary) {
+        double boundaryCoordinate = 0.0, inDomainPathM = 0.0;
+        const Status clip = PICAdapter::ClipPathToFieldLineBoundary(
+            contribution.fieldLineId, startCoordinate,
+            increment.displacementM, &boundaryCoordinate, &inDomainPathM);
+        if (!clip.ok()) AbortFocusedStatus(clip);
+        contribution.finishCoordinate = boundaryCoordinate;
+        contribution.dtS *= std::fabs(
+            inDomainPathM / increment.displacementM);
+        contribution.signedPathM = inDomainPathM;
+      }
+      PICAdapter::QueueWaveContribution(contribution);
     }
+
+    if (status.code == StatusCode::OutOfDomain) {
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_LEFT_THE_DOMAIN_;
+    }
+    if (!status.ok()) AbortFocusedStatus(status);
 
     elapsedS += selected.value;
     eventIndex++;
@@ -154,17 +185,5 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
   status = PICAdapter::CommitAndAttach(context);
   if (!status.ok()) AbortFocusedStatus(status);
 
-  // Commit the deferred coupling records only after the particle has been
-  // reattached successfully.  FlushWaveContributions() later sorts records
-  // from every worker, making accumulation order independent of scheduling.
-  for (const SurvivingWaveContribution& contribution :
-       survivingWaveContributions) {
-    PICAdapter::QueueFocusedWaveContribution(
-        contribution.turbulenceStateIdentity,
-        context.state.fieldLineId, ptr, contribution.dtS,
-        contribution.vParallelMPerS, contribution.vNormalMPerS,
-        contribution.startCoordinate, contribution.finishCoordinate,
-        contribution.signedPathM, contribution.eventIndex);
-  }
   return _PARTICLE_MOTION_FINISHED_;
 }

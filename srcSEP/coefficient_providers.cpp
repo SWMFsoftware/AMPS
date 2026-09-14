@@ -35,6 +35,28 @@ std::string Provenance(const char* quantity, const char* provider) {
   return out.str();
 }
 
+ParticleContext AtRelativeArcLength(const ParticleContext& origin,
+                                    double relativeArcLengthM,
+                                    Status* status) {
+  ParticleContext sampled = origin;
+  if (!std::isfinite(relativeArcLengthM)) {
+    *status = Status::Error(StatusCode::InvalidArgument,
+                            "coefficient sample location must be finite");
+    return sampled;
+  }
+  sampled.state.coordinate =
+      PIC::FieldLine::FieldLinesAll[origin.state.fieldLineId].move(
+          origin.state.coordinate, relativeArcLengthM, sampled.segment);
+  sampled.segment =
+      PIC::FieldLine::FieldLinesAll[origin.state.fieldLineId].GetSegment(
+          sampled.state.coordinate);
+  *status = sampled.segment
+      ? Status::Ok()
+      : Status::Error(StatusCode::OutOfDomain,
+                      "coefficient sample lies outside the field line");
+  return sampled;
+}
+
 // Evaluate one of the historical analytical lambda models at the particle's
 // actual field-line location.  The routine returns the raw model value; policy
 // for NaN, zero, or negative output is applied once by the public provider.
@@ -155,9 +177,46 @@ PICMeanFreePathProvider::PICMeanFreePathProvider(
     : context_(context), turbulenceIdentity_(turbulenceIdentity) {}
 
 MeanFreePathSample PICMeanFreePathProvider::Evaluate(
-    double, double momentumKgMPerS, double) const {
-  return EvaluateMeanFreePath(context_, momentumKgMPerS,
+    double sM, double momentumKgMPerS, double) const {
+  Status locationStatus;
+  const ParticleContext sampled = AtRelativeArcLength(
+      context_, sM, &locationStatus);
+  if (!locationStatus.ok()) {
+    MeanFreePathSample result;
+    result.status = locationStatus;
+    return result;
+  }
+  MeanFreePathSample result = EvaluateMeanFreePath(sampled, momentumKgMPerS,
                               turbulenceIdentity_);
+  if (result.status.ok()) {
+    // Until a spectral provider publishes resonant branch rates, the legacy
+    // lambda closure is represented as balanced turbulence.  The explicit flag
+    // ensures the mover never falls back to sign(mu) branch selection.
+    const ScalarResult speed = SpeedFromMomentum(
+        momentumKgMPerS, sampled.state.massKg, SpeedOfLight);
+    if (speed.status.ok()) {
+      const double total = std::isinf(result.lambdaParallelM)
+          ? 0.0 : speed.value / result.lambdaParallelM;
+      double plusFraction = 0.5;
+      if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
+        double* branchEnergy = sampled.segment->GetDatum_ptr(
+            SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+        if (branchEnergy && std::isfinite(branchEnergy[0]) &&
+            std::isfinite(branchEnergy[1]) && branchEnergy[0] >= 0.0 &&
+            branchEnergy[1] >= 0.0 && branchEnergy[0] + branchEnergy[1] > 0.0) {
+          // The compatibility lambda fixes the total hazard; the authoritative
+          // local E+/E- populations partition that hazard between propagation
+          // branches.  A zero-energy branch consequently receives zero rate.
+          plusFraction = branchEnergy[0] /
+              (branchEnergy[0] + branchEnergy[1]);
+        }
+      }
+      result.nuPlusPerS = plusFraction * total;
+      result.nuMinusPerS = (1.0 - plusFraction) * total;
+      result.hasBranchResolvedRates = true;
+    }
+  }
+  return result;
 }
 
 PICSpatialDiffusionProvider::PICSpatialDiffusionProvider(
@@ -165,8 +224,15 @@ PICSpatialDiffusionProvider::PICSpatialDiffusionProvider(
     : context_(context), turbulenceIdentity_(turbulenceIdentity) {}
 
 SpatialDiffusionSample PICSpatialDiffusionProvider::Evaluate(
-    double, double speedMPerS) const {
+    double sM, double speedMPerS) const {
   SpatialDiffusionSample sample;
+  Status locationStatus;
+  const ParticleContext sampled = AtRelativeArcLength(
+      context_, sM, &locationStatus);
+  if (!locationStatus.ok()) {
+    sample.status = locationStatus;
+    return sample;
+  }
   const Status sourceStatus = ValidateConfiguredSource();
   if (!sourceStatus.ok()) {
     sample.status = sourceStatus;
@@ -184,8 +250,8 @@ SpatialDiffusionSample PICSpatialDiffusionProvider::Evaluate(
     }
     SEP::Diffusion::GetDxx(sample.kappaParallelM2PerS,
                            sample.dKappaParallelDsMPerS, speedMPerS,
-                           context_.state.species, context_.state.coordinate,
-                           context_.segment, context_.state.fieldLineId);
+                           sampled.state.species, sampled.state.coordinate,
+                           sampled.segment, sampled.state.fieldLineId);
   }
   else {
     const ScalarResult momentum = MomentumFromSpeed(
@@ -195,7 +261,7 @@ SpatialDiffusionSample PICSpatialDiffusionProvider::Evaluate(
       return sample;
     }
     const MeanFreePathSample lambda = EvaluateMeanFreePath(
-        context_, momentum.value, turbulenceIdentity_);
+        sampled, momentum.value, turbulenceIdentity_);
     if (!lambda.status.ok()) {
       sample.status = lambda.status;
       return sample;
@@ -211,11 +277,11 @@ SpatialDiffusionSample PICSpatialDiffusionProvider::Evaluate(
     // The selected analytical lambda models depend on heliocentric position.
     // Use a symmetric physical-distance stencil along the field line; if one
     // side reaches a boundary, the valid one-sided stencil remains explicit.
-    const double hM = 0.05 * context_.segment->GetLength();
+    const double hM = 0.05 * sampled.segment->GetLength();
     bool haveMinus = false, havePlus = false;
     double kappaMinus = 0.0, kappaPlus = 0.0;
     for (int sign = -1; sign <= 1; sign += 2) {
-      ParticleContext shifted = context_;
+      ParticleContext shifted = sampled;
       shifted.state.coordinate =
           PIC::FieldLine::FieldLinesAll[shifted.state.fieldLineId].move(
               shifted.state.coordinate, sign * hM, shifted.segment);
@@ -271,12 +337,19 @@ PICPitchAngleDiffusionProvider::PICPitchAngleDiffusionProvider(
     : context_(context), turbulenceIdentity_(turbulenceIdentity) {}
 
 PitchAngleDiffusionSample PICPitchAngleDiffusionProvider::Evaluate(
-    double, double momentumKgMPerS, double mu) const {
+    double sM, double momentumKgMPerS, double mu) const {
   PitchAngleDiffusionSample sample;
   sample.turbulenceStateIdentity = turbulenceIdentity_;
   const Status sourceStatus = ValidateConfiguredSource();
   if (!sourceStatus.ok()) {
     sample.status = sourceStatus;
+    return sample;
+  }
+  Status locationStatus;
+  const ParticleContext sampled = AtRelativeArcLength(
+      context_, sM, &locationStatus);
+  if (!locationStatus.ok()) {
+    sample.status = locationStatus;
     return sample;
   }
   if (SEP::Diffusion::GetPitchAngleDiffusionCoefficient == NULL) {
@@ -286,7 +359,7 @@ PitchAngleDiffusionSample PICPitchAngleDiffusionProvider::Evaluate(
   }
 
   const ScalarResult speed = SpeedFromMomentum(
-      momentumKgMPerS, context_.state.massKg, SpeedOfLight);
+      momentumKgMPerS, sampled.state.massKg, SpeedOfLight);
   if (!speed.status.ok()) {
     sample.status = speed.status;
     return sample;
@@ -297,8 +370,8 @@ PitchAngleDiffusionSample PICPitchAngleDiffusionProvider::Evaluate(
       std::sqrt(std::max(0.0, 1.0 - boundedMu * boundedMu));
   SEP::Diffusion::GetPitchAngleDiffusionCoefficient(
       sample.dMuMuPerS, sample.dDmuMuDmuPerS, boundedMu,
-      vParallel, vNormal, context_.state.species,
-      context_.state.coordinate, context_.segment);
+      vParallel, vNormal, sampled.state.species,
+      sampled.state.coordinate, sampled.segment);
 
   if (SEP::Diffusion::PitchAngleDifferentialMode ==
       SEP::Diffusion::PitchAngleDifferentialModeNumerical) {
@@ -315,11 +388,11 @@ PitchAngleDiffusionSample PICPitchAngleDiffusionProvider::Evaluate(
     SEP::Diffusion::GetPitchAngleDiffusionCoefficient(
         dMinus, unusedMinus, muMinus, speed.value * muMinus,
         speed.value * std::sqrt(std::max(0.0, 1.0 - muMinus * muMinus)),
-        context_.state.species, context_.state.coordinate, context_.segment);
+        sampled.state.species, sampled.state.coordinate, sampled.segment);
     SEP::Diffusion::GetPitchAngleDiffusionCoefficient(
         dPlus, unusedPlus, muPlus, speed.value * muPlus,
         speed.value * std::sqrt(std::max(0.0, 1.0 - muPlus * muPlus)),
-        context_.state.species, context_.state.coordinate, context_.segment);
+        sampled.state.species, sampled.state.coordinate, sampled.segment);
     if (!(muPlus > muMinus)) {
       sample.status = Status::Error(StatusCode::InvalidCoefficient,
                                     "Dmumu derivative stencil collapsed");

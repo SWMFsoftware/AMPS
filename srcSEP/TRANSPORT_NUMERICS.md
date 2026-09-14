@@ -93,18 +93,23 @@ diffusion drift separately.
 
 ## Event-driven mean-free-path focused transport
 
-`MeanFreePathProvider` returns `lambda_parallel` [m], status, provenance,
-optional momentum validity bounds, and turbulence-state identity. The event
-rate is exactly `nu=v/lambda`; positive infinite lambda is the explicit
-zero-rate ballistic limit. Waiting times use `-log(xi)/nu` with `xi` drawn from
-the keyed open interval `(0,1)`. Exponential memorylessness makes resampling
-after a deterministic boundary split equivalent to carrying a residual wait.
+`MeanFreePathProvider` returns `lambda_parallel` [m], branch rates `nu+` and
+`nu-` [s^-1], status, provenance, optional momentum validity bounds, and the
+turbulence-state identity. Positive infinite lambda is the explicit zero-rate
+ballistic limit. A particle stores the remaining unit-exponential optical depth
+`tau=-log(xi)`. Each deterministic interval integrates the nonhomogeneous
+hazard `integral(nu+ + nu-) dt`; a monotone root solve locates an event inside
+the interval, and only a completed event draws the next optical depth. Segment,
+shock, snapshot, and outer-timestep partitions therefore do not resample the
+physical process.
 
 Between events, the mover applies midpoint focusing and parallel-flow-gradient
-drift, exact plasma-frame cooling, and midpoint streaming. At an event it
-selects the counter-propagating Alfvén branch and redistributes direction
-isotropically in that wave frame. Exact Lorentz velocity transforms preserve
-wave-frame speed and keep the returned plasma-frame state subluminal.
+drift, exact plasma-frame cooling, and midpoint streaming. At an event the
+branch is sampled with probabilities `nu+/(nu+ + nu-)` and
+`nu-/(nu+ + nu-)`; an empty branch is never selected. The particle direction
+is redistributed isotropically in that signed Alfvén wave frame. Exact Lorentz
+velocity transforms preserve wave-frame speed and keep the returned
+plasma-frame state subluminal.
 
 ## Unified coefficient registry
 
@@ -136,25 +141,46 @@ An invalid input or a resonance outside the represented band returns zero from
 the historical QLT API. Provider adapters subsequently reject any non-finite or
 negative coefficient before advancing a particle.
 
+## Full focused equation and authoritative background view
+
+Production `fte-dmumu` and `fte-mfp` use the local plasma-frame gyrotropic SDE
+
+`dmu/dt = (1-mu^2)/2[-v dln|B|/ds + mu(divU - 3 bb:gradU)] + dDmumu/dmu`,
+
+`dln(p)/dt = -1/2[(1-mu^2)divU + (3mu^2-1)bb:gradU]`.
+
+The stochastic pitch increment is `sqrt(2 Dmumu dt) dW`. The explicit
+`ReducedFieldAligned1D` mode preserves the earlier one-dimensional closure for
+documented comparisons, but production adapters select `FullGyrotropic`.
+`LocalBackgroundView` is the single SI record supplying magnetic field/vector,
+unit field direction, line tangent, plasma velocity, number/mass density,
+`divU`, `bb:gradU`, Alfvén speed, provider provenance, generation, and validity.
+Providers evaluate requested physical arc-length displacements and the Dmumu
+core samples its predicted midpoint rather than a hard-coded location.
+
+Density-derived divergence uses the interval between physical background
+epochs stored by `BackgroundSnapshot`, never a particle timestep. All three
+movers compose the same snapshot validity/generation limit before every shell;
+a stale generation or an attempt beyond the validity endpoint is an error.
+
 ## Wave feedback and concurrency
 
 The numerical core deposits only a signed streaming record labelled with the
 same turbulence identity carried by its coefficient. PIC-facing movers never
-write shared G+/G- wave arrays from worker threads. They retain substep records
-locally until the particle survives and is attached, then append them to a
-worker-local process-lifetime queue. After `PIC::TimeStep()` joins its workers,
-`FlushWaveContributions` merges and sorts by field line, particle, event, and
-coordinate before invoking the existing turbulence accumulator.
-
-The current legacy accumulator obtains statistical weight from a live particle
-record. Consequently, an absorbed particle cannot safely contribute a deferred
-boundary-exit record; that contribution is intentionally omitted until the
-accumulator accepts copied species/weight data.
+write shared G+/G- wave arrays from worker threads. They append a typed,
+self-contained record after every completed deterministic interval/event.
+Species and statistical weight are copied while the particle is alive; the
+post-step queue never retains or dereferences a PIC handle. If an absorbing
+boundary is crossed, the attempted trajectory is clipped to the exact endpoint,
+interval time is scaled to the in-domain fraction, the boundary record is
+enqueued, and only then is the particle deleted.
 
 Step 12 formalizes the next reduction boundary in
-`util/sep_reproducible_reduction.*`. Thread-local records carry field line,
-segment, branch, particle, step, and purpose keys. After workers join (and after
-rank-local records are gathered), a complete-key sort establishes one fixed
+`util/sep_reproducible_reduction.*`. Thread-local records carry a versioned
+schema plus source, field line, segment, branch, spectral bin, species, stable
+particle, step, event, interval, and purpose keys. Duplicate complete keys are
+errors. After workers join (and after rank-local records are gathered), a
+complete-key sort establishes one fixed
 accumulation order with long-double intermediates. Non-additive authoritative
 wave state uses owner/gather synchronization, never an `MPI_Allreduce`
 overwrite. Canonical evidence hashes are bitwise invariant to the tested worker

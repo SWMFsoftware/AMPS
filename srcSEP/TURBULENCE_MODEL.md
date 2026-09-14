@@ -40,6 +40,19 @@ coupled state adapters. Its fixed order is:
 6. authoritative/derived representation synchronization; and
 7. diagnostics, ledger accumulation, and checkpoint phase reset.
 
+`SEP::Turbulence::PICAdapter::Advance` is the only reachable production
+mutation entry in both `main.cpp` and `main_lib.cpp`. It flushes typed particle
+records, runs the retained shock and resonant-growth implementations strictly
+as source adapters inside one transaction, imports each field line into the
+common `State`, invokes the core for advection/reflection/cascade, exports the
+authoritative integrated or spectral representation, and refreshes derived
+energy density/cross helicity. The prior inline driver block remains guarded by
+constant false only as migration-review evidence and cannot be executed.
+`LastStepLedger()` exposes measured shock/particle source changes plus summed
+core boundary exchange, dissipation, limiter correction, closure residual, and
+subcycle count; source-adapter mutations are therefore visible rather than
+being hidden before the common-core ledger.
+
 The standalone loop installs the same active source, operator, and coefficient
 configuration. Prescribed and `swmf-read-only` sources bypass every mutating
 operator but remain available for synchronization and diagnostics. An invalid
@@ -81,9 +94,11 @@ authoritative energies. Deserialization validates ownership and dimensions.
 ## Deterministic concurrency policy
 
 `util/sep_reproducible_reduction.*` supplies worker-local append-only buffers.
-Contributions are keyed by field line, segment, branch, particle, timestep, and
-purpose—never MPI rank or thread. After workers join, the reducer sorts by the
-complete key and accumulates with long-double intermediates. MPI rank blocks
+Contributions are keyed by schema, source, field line, segment, branch,
+spectral bin, species, stable particle, timestep, event, interval, and
+purpose—never MPI rank, thread, queue order, or a pointer. Duplicate complete
+keys are rejected. After workers join, the reducer sorts by the complete key
+and accumulates with long-double intermediates. MPI rank blocks
 must be gathered and passed through the same canonical reducer. `MPI_Allreduce`
 is reserved for genuinely additive accumulators; non-additive authoritative
 state uses owner/gather synchronization.

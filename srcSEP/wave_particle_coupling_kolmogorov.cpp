@@ -423,7 +423,6 @@ inline void AccumulateBranchStreamingContribution(
     double* G_data,
     int branch_sign,
     int seg_idx,
-    long int particle_index,
     double weighted_flux_prefactor,
     double vParallel,
     double v_magnitude,
@@ -1109,6 +1108,21 @@ void AccumulateParticleFluxForWaveCoupling(
     double s_finish,                             // End position along field line [segment+fraction] or <0 exit sentinel
     double totalTraversedPath                    // Signed parallel path length [m] (+ outward, - inward)
 ) {
+    if (particle_index < 0) return;
+    const int species = PIC::ParticleBuffer::GetI(particle_index);
+    if (species < 0 || species >= PIC::nTotalSpecies) return;
+    const double weight =
+        PIC::ParticleWeightTimeStep::GlobalParticleWeight[species] *
+        PIC::ParticleBuffer::GetIndividualStatWeightCorrection(particle_index);
+    AccumulateParticleFluxForWaveCoupling(
+        field_line_idx, species, weight, dt, speed, s_start, s_finish,
+        totalTraversedPath);
+}
+
+void AccumulateParticleFluxForWaveCoupling(
+    int field_line_idx, int particle_species, double w_i, double dt,
+    double speed, double s_start, double s_finish,
+    double totalTraversedPath) {
     /*
     BIDIRECTIONAL MOTION HANDLING:
     - totalTraversedPath > 0: Particle moving away from Sun (outward, mu > 0)
@@ -1130,7 +1144,9 @@ void AccumulateParticleFluxForWaveCoupling(
         return;
     }
 
-    if (particle_index < 0 || !(dt > 0.0) || !std::isfinite(dt) ||
+    if (particle_species < 0 || particle_species >= PIC::nTotalSpecies ||
+        !(w_i > 0.0) || !std::isfinite(w_i) ||
+        !(dt > 0.0) || !std::isfinite(dt) ||
         !(speed > 0.0) || !std::isfinite(speed) ||
         !std::isfinite(totalTraversedPath)) {
         return;
@@ -1154,13 +1170,6 @@ void AccumulateParticleFluxForWaveCoupling(
     // outside that interval remain valid transport particles but are not included
     // in the turbulence growth-rate source term.
     if (!(p_momentum >= P_MIN && p_momentum <= P_MAX) || !std::isfinite(p_momentum)) return;
-
-    int particle_species = PIC::ParticleBuffer::GetI(particle_index);
-    if (particle_species < 0 || particle_species >= PIC::nTotalSpecies) return;
-
-    const double w_i = PIC::ParticleWeightTimeStep::GlobalParticleWeight[particle_species] *
-                       PIC::ParticleBuffer::GetIndividualStatWeightCorrection(particle_index);
-    if (!(w_i > 0.0) || !std::isfinite(w_i)) return;
 
     PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
 
@@ -1221,13 +1230,13 @@ void AccumulateParticleFluxForWaveCoupling(
         // motion, using the branch-specific resonant wave number.  Out-of-range
         // resonances are skipped rather than clamped into edge bins.
         if (mu < 0.0) {
-            AccumulateBranchStreamingContribution(G_plus_data,+1,seg_idx,particle_index,
+            AccumulateBranchStreamingContribution(G_plus_data,+1,seg_idx,
                                                   weighted_flux_prefactor,
                                                   vParallel,v_magnitude,gamma_rel,
                                                   vA,Omega,dt);
         }
         if (mu > 0.0) {
-            AccumulateBranchStreamingContribution(G_minus_data,-1,seg_idx,particle_index,
+            AccumulateBranchStreamingContribution(G_minus_data,-1,seg_idx,
                                                   weighted_flux_prefactor,
                                                   vParallel,v_magnitude,gamma_rel,
                                                   vA,Omega,dt);
@@ -2437,6 +2446,21 @@ void AccumulateParticleFluxForWaveCoupling(
     double s_finish,                            // End position along field line [m]
     double totalTraversedPath                   // Signed parallel path length [m] (+ outward, - inward)
 ) {
+    if (particle_index < 0) return;
+    const int species = PIC::ParticleBuffer::GetI(particle_index);
+    if (species < 0 || species >= PIC::nTotalSpecies) return;
+    const double weight =
+        PIC::ParticleWeightTimeStep::GlobalParticleWeight[species] *
+        PIC::ParticleBuffer::GetIndividualStatWeightCorrection(particle_index);
+    AccumulateParticleFluxForWaveCoupling(
+        field_line_idx, species, weight, dt, vParallel, vNormal, s_start,
+        s_finish, totalTraversedPath);
+}
+
+void AccumulateParticleFluxForWaveCoupling(
+    int field_line_idx, int particle_species, double w_i, double dt,
+    double vParallel, double vNormal, double s_start, double s_finish,
+    double totalTraversedPath) {
     /*
     MODIFIED VERSION - TIME-WEIGHTED FLUX ACCUMULATION WITH PROPER GYRATION:
     - vParallel: translational motion along magnetic field line
@@ -2474,8 +2498,8 @@ void AccumulateParticleFluxForWaveCoupling(
         return;
     }
     
-    if (particle_index < 0) {
-        std::cerr << "Error: Invalid particle index (" << particle_index 
+    if (particle_species < 0 || particle_species >= PIC::nTotalSpecies) {
+        std::cerr << "Error: Invalid particle species (" << particle_species
                   << ") in AccumulateParticleFluxForWaveCoupling" << std::endl;
         return;
     }
@@ -2545,20 +2569,9 @@ void AccumulateParticleFluxForWaveCoupling(
     // GET PARTICLE STATISTICAL WEIGHT USING SPECIES-SPECIFIC CALCULATION
     // ========================================================================
     // Get particle species number for this particle
-    int particle_species = PIC::ParticleBuffer::GetI(particle_index);
-    if (particle_species < 0 || particle_species >= PIC::nTotalSpecies) {
-        std::cerr << "Error: Invalid particle species (" << particle_species 
-                  << ") for particle " << particle_index << std::endl;
-        return;
-    }
-    
-    // Calculate species-specific statistical weight
-    double w_i = PIC::ParticleWeightTimeStep::GlobalParticleWeight[particle_species] * 
-                 PIC::ParticleBuffer::GetIndividualStatWeightCorrection(particle_index);
-    
-    if (w_i <= 0.0) {
-        std::cerr << "Warning: Invalid particle weight (" << w_i 
-                  << ") for particle " << particle_index << std::endl;
+    if (!(w_i > 0.0) || !std::isfinite(w_i)) {
+        std::cerr << "Warning: Invalid particle statistical weight (" << w_i
+                  << ")" << std::endl;
         return;
     }
     
@@ -2776,13 +2789,13 @@ void AccumulateParticleFluxForWaveCoupling(
         //   mu < 0: inward-moving particles resonate with outward waves (G_plus)
         //   mu > 0: outward-moving particles resonate with inward waves (G_minus)
         if (mu < 0.0) {
-            AccumulateBranchStreamingContribution(G_plus_data,+1,seg_idx,particle_index,
+            AccumulateBranchStreamingContribution(G_plus_data,+1,seg_idx,
                                                   weighted_flux_prefactor,
                                                   vParallel,v_magnitude,gamma_rel,
                                                   vAc,Omega,dt);
         }
         if (mu > 0.0) {
-            AccumulateBranchStreamingContribution(G_minus_data,-1,seg_idx,particle_index,
+            AccumulateBranchStreamingContribution(G_minus_data,-1,seg_idx,
                                                   weighted_flux_prefactor,
                                                   vParallel,v_magnitude,gamma_rel,
                                                   vAc,Omega,dt);

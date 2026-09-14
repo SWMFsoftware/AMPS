@@ -29,7 +29,6 @@ int SEP::ParticleMover_Parker(
                                    "Parker timestep must be finite and nonnegative"));
   }
 
-  const double initialCoordinate = context.state.coordinate;
   const double initialSpeed = std::hypot(context.state.vParallelMPerS,
                                          context.state.vNormalMPerS);
   ScalarResult momentum = MomentumFromSpeed(
@@ -38,13 +37,12 @@ int SEP::ParticleMover_Parker(
 
   double elapsedS = 0.0;
   double currentSpeed = initialSpeed;
-  double totalDisplacementM = 0.0;
   std::uint64_t eventIndex = 0;
   StepDiagnostics stepDiagnostics;
 
   while (elapsedS < dtTotal) {
     PICAdapter::LocalBackground local;
-    status = PICAdapter::EvaluateLocalBackground(context, dtTotal, &local);
+    status = PICAdapter::EvaluateLocalBackground(context, &local);
     if (!status.ok()) AbortMoverStatus(status);
 
     PICAdapter::PICSpatialDiffusionProvider provider(context, local.identity);
@@ -66,6 +64,17 @@ int SEP::ParticleMover_Parker(
           "parker-diffusion",
           target * target / (2.0 * coefficient.kappaParallelM2PerS)));
     }
+    const ScalarResult snapshotLimit = ComposeSnapshotValidityLimit(
+        context.particleStepEpochS, elapsedS,
+        context.particleStepEpochS + local.snapshotSecondsRemaining,
+        context.snapshotGeneration, local.generation);
+    if (!snapshotLimit.status.ok() || snapshotLimit.value <= 0.0)
+      AbortMoverStatus(snapshotLimit.status.ok()
+          ? Status::Error(StatusCode::StepUnderflow,
+                          "Parker mover reached the snapshot boundary")
+          : snapshotLimit.status);
+    if (std::isfinite(snapshotLimit.value))
+      limits.push_back(StepLimit("parker-snapshot", snapshotLimit.value));
 
     const ScalarResult selected = SelectSubstep(
         dtTotal - elapsedS, limits, 1.0e-12, &stepDiagnostics);
@@ -75,10 +84,13 @@ int SEP::ParticleMover_Parker(
     // seed, particle handle, mover operator, and substep index, the stochastic
     // displacement is invariant under OpenMP/MPI scheduling.
     KeyedRandomStream random(PICAdapter::CampaignRandomSeed,
-                             static_cast<std::uint64_t>(ptr), 7, eventIndex);
+                             context.stableParticleId, 7, eventIndex);
     // Preserve the established cooling switch without introducing a second
     // equation: disabling cooling supplies zero divergence to the same exact
     // plasma-frame momentum operator.
+    const double preMomentum = momentum.value;
+    const double preSpeed = currentSpeed;
+    const double startCoordinate = context.state.coordinate;
     const ParkerIncrement increment = AdvanceParker(
         ParkerState(0.0, momentum.value),
         ParkerBackground(local.plasmaAdvectionMPerS,
@@ -89,7 +101,6 @@ int SEP::ParticleMover_Parker(
 
     status = PICAdapter::AdvanceAlongFieldLine(
         &context, increment.displacementM);
-    totalDisplacementM += increment.displacementM;
     elapsedS += selected.value;
     eventIndex++;
     momentum.value = increment.state.momentumKgMPerS;
@@ -99,11 +110,46 @@ int SEP::ParticleMover_Parker(
     if (!updatedSpeed.status.ok()) AbortMoverStatus(updatedSpeed.status);
     currentSpeed = updatedSpeed.value;
 
+    if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag &&
+        SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode) {
+      PICAdapter::CouplingRecord record;
+      record.turbulenceStateIdentity = local.identity;
+      record.fieldLineId = context.state.fieldLineId;
+      record.species = context.state.species;
+      record.statisticalWeight = context.statisticalWeight;
+      record.stableParticleId = context.stableParticleId;
+      record.snapshotGeneration = context.snapshotGeneration;
+      record.eventIndex = eventIndex;
+      record.intervalIndex = eventIndex;
+      record.dtS = selected.value;
+      record.preMomentumKgMPerS = preMomentum;
+      record.postMomentumKgMPerS = momentum.value;
+      // The averaged coupling overload reconstructs signed parallel motion
+      // from the path and uses this magnitude only for particle momentum.
+      record.midpointNormalVelocityMPerS =
+          0.5 * (currentSpeed + preSpeed);
+      record.startCoordinate = startCoordinate;
+      record.finishCoordinate = context.state.coordinate;
+      record.signedPathM = increment.displacementM;
+      record.pitchAngleResolved = false;
+      record.crossedBoundary = status.code == StatusCode::OutOfDomain;
+      record.eventType = record.crossedBoundary
+          ? PICAdapter::CouplingEventType::BoundaryExit
+          : PICAdapter::CouplingEventType::DeterministicInterval;
+      if (record.crossedBoundary) {
+        double boundaryCoordinate = 0.0, inDomainPathM = 0.0;
+        const Status clip = PICAdapter::ClipPathToFieldLineBoundary(
+            record.fieldLineId, startCoordinate, increment.displacementM,
+            &boundaryCoordinate, &inDomainPathM);
+        if (!clip.ok()) AbortMoverStatus(clip);
+        record.finishCoordinate = boundaryCoordinate;
+        record.dtS *= std::fabs(inDomainPathM / increment.displacementM);
+        record.signedPathM = inDomainPathM;
+      }
+      PICAdapter::QueueWaveContribution(record);
+    }
+
     if (status.code == StatusCode::OutOfDomain) {
-      // A deleted particle cannot be deferred because its statistical weight is
-      // no longer available at the post-step reduction boundary.  Boundary-flux
-      // coupling remains disabled until the accumulator stores weight/species
-      // explicitly; transport and absorbing-boundary behavior are unaffected.
       PIC::ParticleBuffer::DeleteParticle(ptr);
       return _PARTICLE_LEFT_THE_DOMAIN_;
     }
@@ -122,7 +168,7 @@ int SEP::ParticleMover_Parker(
   if (SEP::Offset::MeanFreePath != -1 &&
       SEP::Sampling::MeanFreePath::active_flag && finalSpeed.value > 0.0) {
     PICAdapter::LocalBackground local;
-    status = PICAdapter::EvaluateLocalBackground(context, dtTotal, &local);
+    status = PICAdapter::EvaluateLocalBackground(context, &local);
     if (!status.ok()) AbortMoverStatus(status);
     PICAdapter::PICSpatialDiffusionProvider provider(context, local.identity);
     const SpatialDiffusionSample coefficient =
@@ -135,14 +181,6 @@ int SEP::ParticleMover_Parker(
   // Parker feedback is intentionally restricted to the existing isotropic
   // streaming closure.  When that subsystem is inactive, the mover remains
   // one-way coupled and never mutates wave energy directly.
-  if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag &&
-      SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode && dtTotal > 0.0) {
-    PICAdapter::QueueAveragedWaveContribution(
-        context.state.fieldLineId, ptr, dtTotal, finalSpeed.value,
-        initialCoordinate, context.state.coordinate, totalDisplacementM,
-        eventIndex);
-  }
-
   status = PICAdapter::CommitAndAttach(context);
   if (!status.ok()) AbortMoverStatus(status);
   return _PARTICLE_MOTION_FINISHED_;

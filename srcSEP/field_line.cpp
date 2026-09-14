@@ -1,6 +1,7 @@
 
 #include "pic.h"
 #include "sep.h"
+#include "transport_common.h"
 #include "amps2swmf.h"
 
 
@@ -47,6 +48,11 @@ long int SEP::FieldLine::InjectParticleFieldLineBeginning(int spec,int iFieldLin
     if (Vector3D::DotProduct(p,l)<0.0) for (int idim=0;idim<3;idim++) p[idim]=-p[idim];
 
     if ((newParticle=PIC::FieldLine::InjectParticle_default(spec,p,ParticleWeightCorrectionFactor,iFieldLine,0))!=-1) {
+      SEP::Transport::PICAdapter::InitializeParticleTransportState(
+          newParticle, UINT64_C(1),
+          (static_cast<std::uint64_t>(iFieldLine) << 32) |
+              static_cast<std::uint64_t>(i),
+          p);
       nInjectedParticles++;
 
     }
@@ -405,6 +411,11 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     long int newParticle;
 
     if ((newParticle=PIC::FieldLine::InjectParticle_default(spec,p,GlobalWeightCorrectionFactor*WeightCorrectionTable[i],iFieldLine,iShockFieldLine))!=-1) {
+      SEP::Transport::PICAdapter::InitializeParticleTransportState(
+          newParticle, UINT64_C(2),
+          (static_cast<std::uint64_t>(iFieldLine) << 32) |
+              static_cast<std::uint64_t>(i),
+          p);
       nInjectedParticles++;
 
       //Set the local coordinte to the shock location

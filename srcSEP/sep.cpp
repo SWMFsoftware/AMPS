@@ -2,6 +2,10 @@
 #include "sep.h"
 
 int SEP::Offset::MeanFreePath=-1;
+int SEP::Offset::TransportSchema=-1;
+int SEP::Offset::StableParticleId=-1;
+int SEP::Offset::MfpOpticalDepth=-1;
+int SEP::Offset::MfpEventIndex=-1;
 
 //selector of the shock wave model
 SEP::cShockModelType SEP::ShockModelType=SEP::cShockModelType::Analytic1D;
@@ -140,10 +144,17 @@ void SEP::Init() {
 void SEP::RequestParticleData() {
   long int offset;
 
-  // Mean free path is the only srcSEP-specific per-particle scalar shared by
-  // the supported field-line movers and diagnostics.  Step 5 intentionally
-  // removed Cartesian momentum and cross-field displacement extensions so a
-  // production particle cannot silently acquire a second 3-D representation.
+  // These are scalar field-line transport state, not a second Cartesian
+  // position/momentum representation.  AMPS checkpoints include requested
+  // particle storage, so stochastic event continuity survives restart.
   PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(double));
   Offset::MeanFreePath=offset;
+  PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(std::uint64_t));
+  Offset::TransportSchema=offset;
+  PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(std::uint64_t));
+  Offset::StableParticleId=offset;
+  PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(double));
+  Offset::MfpOpticalDepth=offset;
+  PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(std::uint64_t));
+  Offset::MfpEventIndex=offset;
 }

@@ -6,6 +6,7 @@
  */
 
 #include "sep.h"
+#include "transport_common.h"
 
 
 double SEP::ParticleSource::InnerBoundary::sphereInjectionRate(int spec,int BoundaryElementType,void *BoundaryElement) {
@@ -130,6 +131,12 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
     // components, and segment-list membership are initialized as one contract.
     newParticle=PIC::FieldLine::InjectParticle_default(
         spec,pvect,ParticleWeightCorrection,iFieldLine,0);
+    if (newParticle != -1)
+      SEP::Transport::PICAdapter::InitializeParticleTransportState(
+          newParticle, UINT64_C(3),
+          (static_cast<std::uint64_t>(iFieldLine) << 32) |
+              static_cast<std::uint64_t>(nInjectedParticles),
+          pvect);
     newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
 
 

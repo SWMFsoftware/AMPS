@@ -15,17 +15,6 @@ void AbortMfpStatus(const SEP::Transport::Status& status) {
   exit(__LINE__, __FILE__, status.message.c_str());
 }
 
-struct SurvivingMfpWaveContribution {
-  std::string turbulenceStateIdentity;
-  double dtS = 0.0;
-  double vParallelMPerS = 0.0;
-  double vNormalMPerS = 0.0;
-  double startCoordinate = 0.0;
-  double finishCoordinate = 0.0;
-  double signedPathM = 0.0;
-  std::uint64_t eventIndex = 0;
-};
-
 double ShockCrossingTimeS(
     const SEP::Transport::PICAdapter::ParticleContext& context,
     double signedStreamingSpeedMPerS) {
@@ -86,12 +75,22 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
   mu = std::max(-1.0, std::min(1.0, mu));
 
   double elapsedS = 0.0;
-  std::uint64_t eventIndex = 0;
+  std::uint64_t eventIndex = *reinterpret_cast<std::uint64_t*>(
+      context.data + SEP::Offset::MfpEventIndex);
+  std::uint64_t shellIndex = 0;
+  double residualOpticalDepth = *reinterpret_cast<double*>(
+      context.data + SEP::Offset::MfpOpticalDepth);
+  if (!(residualOpticalDepth > 0.0) ||
+      !std::isfinite(residualOpticalDepth))
+    residualOpticalDepth = std::numeric_limits<double>::quiet_NaN();
   StepDiagnostics stepDiagnostics;
-  std::vector<SurvivingMfpWaveContribution> survivingContributions;
+  // One keyed stream spans every deterministic shell in this particle step.
+  // Segment/snapshot partitioning therefore cannot restart the hazard stream.
+  KeyedRandomStream eventRandom(PICAdapter::CampaignRandomSeed,
+                                context.stableParticleId, 9, 0);
   while (elapsedS < dtTotal) {
     PICAdapter::LocalBackground local;
-    status = PICAdapter::EvaluateLocalBackground(context, dtTotal, &local);
+    status = PICAdapter::EvaluateLocalBackground(context, &local);
     if (!status.ok()) AbortMfpStatus(status);
 
     PICAdapter::PICMeanFreePathProvider provider(context, local.identity);
@@ -124,13 +123,16 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
     // The elapsed portion of this particle step consumes the same immutable
     // snapshot validity budget.  A non-positive residual is a hard error: using
     // new fields would require ending the global PIC read phase first.
-    const double snapshotRemainingS =
-        local.snapshotSecondsRemaining - elapsedS;
-    if (snapshotRemainingS <= 0.0) {
+    const ScalarResult snapshotLimit = ComposeSnapshotValidityLimit(
+        context.particleStepEpochS, elapsedS,
+        context.particleStepEpochS + local.snapshotSecondsRemaining,
+        context.snapshotGeneration, local.generation);
+    if (!snapshotLimit.status.ok() || snapshotLimit.value <= 0.0) {
       AbortMfpStatus(Status::Error(StatusCode::StepUnderflow,
           "event-driven mover reached the background validity boundary"));
     }
-    limits.push_back(StepLimit("fte-mfp-snapshot", snapshotRemainingS));
+    if (std::isfinite(snapshotLimit.value))
+      limits.push_back(StepLimit("fte-mfp-snapshot", snapshotLimit.value));
 
     const double shockCrossingS =
         ShockCrossingTimeS(context, signedStreamingSpeed);
@@ -142,20 +144,28 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
     if (!selected.status.ok()) AbortMfpStatus(selected.status);
 
     const double startCoordinate = context.state.coordinate;
-    KeyedRandomStream random(PICAdapter::CampaignRandomSeed,
-                             static_cast<std::uint64_t>(ptr), 9, eventIndex);
+    const double preMomentum = momentum.value;
+    const double preParallel = context.state.vParallelMPerS;
+    const double preNormal = context.state.vNormalMPerS;
     ThreadLocalWaveAccumulator identityAccumulator;
+    FocusedTransportMfpState coreState(0.0, momentum.value, mu);
+    coreState.remainingOpticalDepth = residualOpticalDepth;
+    coreState.nextEventIndex = eventIndex;
+    FocusedTransportMfpBackground focusedBackground(
+        local.dLnAbsBdsPerM, local.plasmaAdvectionMPerS,
+        local.parallelVelocityGradientPerS,
+        SEP::AccountAdiabaticCoolingFlag
+            ? local.velocityDivergencePerS : 0.0,
+        local.alfvenSpeedMPerS);
+    focusedBackground.fieldAlignedStrainPerS =
+        SEP::AccountAdiabaticCoolingFlag
+            ? local.fieldAlignedStrainPerS : 0.0;
+    focusedBackground.equationMode = FocusedEquationMode::FullGyrotropic;
     const FocusedTransportMfpIncrement increment =
         AdvanceFocusedTransportMfp(
-            FocusedTransportMfpState(0.0, momentum.value, mu),
-            FocusedTransportMfpBackground(
-                local.dLnAbsBdsPerM, local.plasmaAdvectionMPerS,
-                local.parallelVelocityGradientPerS,
-                SEP::AccountAdiabaticCoolingFlag
-                    ? local.velocityDivergencePerS : 0.0,
-                local.alfvenSpeedMPerS),
+            coreState, focusedBackground,
             context.state.massKg, SpeedOfLight, selected.value,
-            selected.value, provider, random,
+            selected.value, provider, eventRandom,
             SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode
                 ? &identityAccumulator : NULL);
     if (!increment.status.ok()) AbortMfpStatus(increment.status);
@@ -164,16 +174,16 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
         &context, increment.displacementM);
     momentum.value = increment.state.momentumKgMPerS;
     mu = increment.state.mu;
+    residualOpticalDepth = increment.state.remainingOpticalDepth;
+    *reinterpret_cast<double*>(
+        context.data + SEP::Offset::MfpOpticalDepth) = residualOpticalDepth;
+    *reinterpret_cast<std::uint64_t*>(
+        context.data + SEP::Offset::MfpEventIndex) =
+            increment.state.nextEventIndex;
     const ScalarResult updatedSpeed = SpeedFromMomentum(
         momentum.value, context.state.massKg, SpeedOfLight);
     if (!updatedSpeed.status.ok()) AbortMfpStatus(updatedSpeed.status);
     speed = updatedSpeed.value;
-
-    if (status.code == StatusCode::OutOfDomain) {
-      PIC::ParticleBuffer::DeleteParticle(ptr);
-      return _PARTICLE_LEFT_THE_DOMAIN_;
-    }
-    if (!status.ok()) AbortMfpStatus(status);
 
     context.state.vParallelMPerS = speed * mu;
     context.state.vNormalMPerS =
@@ -181,30 +191,81 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
     if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag &&
         SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode &&
         !identityAccumulator.Contributions().empty()) {
-      // Defer publication until the particle survives and is reattached.  The
-      // deterministic post-step queue then sorts records independently of the
-      // OpenMP worker that happened to advance this event stream.
-      SurvivingMfpWaveContribution contribution;
-      contribution.turbulenceStateIdentity =
-          identityAccumulator.Contributions()[0].turbulenceStateIdentity;
-      contribution.dtS = selected.value;
-      contribution.vParallelMPerS = context.state.vParallelMPerS;
-      contribution.vNormalMPerS = context.state.vNormalMPerS;
-      contribution.startCoordinate = startCoordinate;
-      contribution.finishCoordinate = context.state.coordinate;
-      contribution.signedPathM = increment.displacementM;
-      contribution.eventIndex = eventIndex;
-      survivingContributions.push_back(contribution);
+      double intervalStart = startCoordinate;
+      PIC::FieldLine::cFieldLineSegment* intervalSegment =
+          PIC::FieldLine::FieldLinesAll[context.state.fieldLineId].GetSegment(
+              intervalStart);
+      for (std::size_t i = 0;
+           i < identityAccumulator.Contributions().size(); ++i) {
+        const WaveContribution& emitted =
+            identityAccumulator.Contributions()[i];
+        double intervalFinish =
+            PIC::FieldLine::FieldLinesAll[context.state.fieldLineId].move(
+                intervalStart, emitted.displacementM, intervalSegment);
+        intervalSegment =
+            PIC::FieldLine::FieldLinesAll[context.state.fieldLineId].GetSegment(
+                intervalFinish);
+
+        PICAdapter::CouplingRecord contribution;
+        contribution.turbulenceStateIdentity =
+            emitted.turbulenceStateIdentity;
+        contribution.fieldLineId = context.state.fieldLineId;
+        contribution.species = context.state.species;
+        contribution.statisticalWeight = context.statisticalWeight;
+        contribution.stableParticleId = context.stableParticleId;
+        contribution.snapshotGeneration = context.snapshotGeneration;
+        contribution.dtS = emitted.intervalS;
+        contribution.preMomentumKgMPerS = preMomentum;
+        contribution.postMomentumKgMPerS = momentum.value;
+        contribution.midpointParallelVelocityMPerS =
+            0.5 * (preParallel + context.state.vParallelMPerS);
+        contribution.midpointNormalVelocityMPerS =
+            0.5 * (preNormal + context.state.vNormalMPerS);
+        contribution.startCoordinate = intervalStart;
+        contribution.finishCoordinate = intervalFinish;
+        contribution.signedPathM = emitted.displacementM;
+        contribution.eventIndex = emitted.eventIndex;
+        contribution.intervalIndex =
+            (shellIndex << 32) | static_cast<std::uint64_t>(i);
+        contribution.pitchAngleResolved = true;
+        contribution.crossedBoundary = intervalSegment == NULL;
+        contribution.eventType = contribution.crossedBoundary
+            ? PICAdapter::CouplingEventType::BoundaryExit
+            : (emitted.scatteringEventAtEnd
+                ? PICAdapter::CouplingEventType::ScatteringEvent
+                : PICAdapter::CouplingEventType::DeterministicInterval);
+        if (contribution.crossedBoundary) {
+          double boundaryCoordinate = 0.0, inDomainPathM = 0.0;
+          const Status clip = PICAdapter::ClipPathToFieldLineBoundary(
+              contribution.fieldLineId, intervalStart,
+              emitted.displacementM, &boundaryCoordinate, &inDomainPathM);
+          if (!clip.ok()) AbortMfpStatus(clip);
+          contribution.finishCoordinate = boundaryCoordinate;
+          contribution.dtS *= std::fabs(
+              inDomainPathM / emitted.displacementM);
+          contribution.signedPathM = inDomainPathM;
+        }
+        PICAdapter::QueueWaveContribution(contribution);
+        intervalStart = intervalFinish;
+        if (!intervalSegment) break;
+      }
     }
 
+    if (status.code == StatusCode::OutOfDomain) {
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_LEFT_THE_DOMAIN_;
+    }
+    if (!status.ok()) AbortMfpStatus(status);
+
     elapsedS += selected.value;
-    eventIndex += 1 + increment.diagnostics.scatteringEvents;
+    eventIndex = increment.state.nextEventIndex;
+    ++shellIndex;
   }
 
   if (SEP::Offset::MeanFreePath != -1 &&
       SEP::Sampling::MeanFreePath::active_flag) {
     PICAdapter::LocalBackground local;
-    status = PICAdapter::EvaluateLocalBackground(context, dtTotal, &local);
+    status = PICAdapter::EvaluateLocalBackground(context, &local);
     if (!status.ok()) AbortMfpStatus(status);
     PICAdapter::PICMeanFreePathProvider provider(context, local.identity);
     const MeanFreePathSample sample = provider.Evaluate(
@@ -216,14 +277,5 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
 
   status = PICAdapter::CommitAndAttach(context);
   if (!status.ok()) AbortMfpStatus(status);
-  for (const SurvivingMfpWaveContribution& contribution :
-       survivingContributions) {
-    PICAdapter::QueueFocusedWaveContribution(
-        contribution.turbulenceStateIdentity,
-        context.state.fieldLineId, ptr, contribution.dtS,
-        contribution.vParallelMPerS, contribution.vNormalMPerS,
-        contribution.startCoordinate, contribution.finishCoordinate,
-        contribution.signedPathM, contribution.eventIndex);
-  }
   return _PARTICLE_MOTION_FINISHED_;
 }

@@ -1970,6 +1970,12 @@ double e_mev=e*J2MeV;
   namespace Offset {
     //offset to keep the particle's mean free path for sampling
     extern int MeanFreePath;
+    // Restarted particle records persist the reproducibility schema, immutable
+    // identity, residual MFP optical depth, and next scattering event index.
+    extern int TransportSchema;
+    extern int StableParticleId;
+    extern int MfpOpticalDepth;
+    extern int MfpEventIndex;
   }
 
   //request data in the particle state vector

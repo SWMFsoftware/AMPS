@@ -102,12 +102,23 @@ velocity transforms. The QLT Kolmogorov spectrum is normalized so its integral
 is `deltaB^2` and `Dmumu` is returned in s^-1.
 
 Neither mover mutates shared wave arrays from a particle worker. Coupling
-records are accumulated locally, published only for surviving particles, and
-sorted before the post-`PIC::TimeStep()` update. This keeps scattering and
-feedback tied to the same immutable turbulence identity while making reduction
-order independent of worker completion order. See
+records are self-contained (stable particle ID, species, statistical weight,
+snapshot generation, pre/post momentum, interval, event, branch, and boundary
+metadata) and are published once each in-domain interval completes. Boundary
+exit records are clipped to the exact endpoint before particle deletion. The
+post-`PIC::TimeStep()` update rejects duplicate physical keys and sorts without
+using particle-buffer addresses, thread IDs, or ranks. See
 [TRANSPORT_NUMERICS.md](TRANSPORT_NUMERICS.md) and the Step 6–10 change manifests
 for equations, contracts, tests, and limitations.
+
+WP01–WP10 additionally make `SEP::Turbulence::PICAdapter::Advance` the sole
+reachable production turbulence mutation entry for standalone and coupled
+library stepping. The adapter converts legacy shock/coupling sources inside one
+transaction, maps authoritative PIC segment state into the common core, runs
+the configured operator order, exports the authoritative representation, and
+derives output fields. See
+[WP01_WP10_IMPLEMENTATION.md](WP01_WP10_IMPLEMENTATION.md) for the work-package
+mapping and validation boundary.
 
 All three movers obtain coefficients through one registry. Canonical CLI names
 select coefficient authority (`prescribed`, `self-consistent`, `swmf`), spatial
@@ -146,6 +157,11 @@ and purpose keys. See [TURBULENCE_MODEL.md](TURBULENCE_MODEL.md),
 [STEP12_CHANGE_MANIFEST.md](STEP12_CHANGE_MANIFEST.md). The exact source-only
 results and native-build boundary are recorded in
 [STEPS10_12_VALIDATION_REPORT.md](STEPS10_12_VALIDATION_REPORT.md).
+
+The bounded WP01--WP10 contract gate is available as
+`make test-wp01-wp10-unit` (or `./test/run_wp01_wp10_tests.sh`). It compiles
+only dependency-free numerical contracts; the production PIC adapter still
+requires the enclosing AMPS configuration.
 
 `TURB02`–`TURB23` and `TURBOWN01` are also registered with the common CLI.
 The new `TURB21` test advects a nonuniform periodic sine profile and measures

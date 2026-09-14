@@ -5,6 +5,19 @@ match the public runtime contract. Only three particle movers are selectable:
 `parker`, `fte-dmumu`, and `fte-mfp`. There is no fallback based on function
 address, no mutable public mover pointer, and no retained legacy mover source.
 
+## WP01--WP10 production-contract replacements
+
+| Former production surface | Replacement | Compatibility |
+|---|---|---|
+| inline turbulence mutation sequence in `main.cpp` | `SEP::Turbulence::PICAdapter::Advance` | former block retained constant-false for review; remove after native parity gate |
+| `QueueAveragedWaveContribution` / `QueueFocusedWaveContribution` with a PIC handle | typed `QueueWaveContribution(const CouplingRecord&)` | no live-pointer compatibility path in the production queue |
+| `EvaluateLocalBackground(context, particle_dt, ...)` | `EvaluateLocalBackgroundAt(context, relative_arc_length_m, ...)` and zero-displacement wrapper | particle-timestep overload removed because its derivative semantics were invalid |
+| sign(mu) / 50:50 event branch inference | provider `nuPlusPerS` / `nuMinusPerS` | lambda-only providers map explicitly to balanced rates |
+| resampled waiting time at every limiter shell | carried `remainingOpticalDepth` and `nextEventIndex` | NaN state initializes a new/backward-compatible particle history |
+
+Full details and validation boundaries are in
+[WP01_WP10_IMPLEMENTATION.md](WP01_WP10_IMPLEMENTATION.md).
+
 ## Runtime-name replacements
 
 | Retired input name | Required canonical replacement | Reason |

@@ -3,6 +3,7 @@
 #include <limits>       // std::numeric_limits
 
 #include "sep.h"
+#include "transport_common.h"
 
 namespace SEP {
     namespace SolarWind {
@@ -653,6 +654,11 @@ long int SEP::SolarWind::InitializeSolarWindFieldLine(int spec, int iFieldLine, 
                 spec, p, weightCorrectionFactor, iFieldLine, iSegment, S);
 
             if (newParticle != -1) {
+                SEP::Transport::PICAdapter::InitializeParticleTransportState(
+                    newParticle, UINT64_C(4),
+                    (static_cast<std::uint64_t>(iFieldLine) << 32) |
+                        static_cast<std::uint64_t>(nInjectedParticles),
+                    p);
                 nInjectedParticles++;
             }
         }
@@ -754,6 +760,11 @@ long int SEP::SolarWind::InjectSolarWindAtFieldLineBeginning(int spec, int iFiel
             spec, p, weightCorrectionFactor, iFieldLine, 0, S);
 
         if (newParticle != -1) {
+            SEP::Transport::PICAdapter::InitializeParticleTransportState(
+                newParticle, UINT64_C(5),
+                (static_cast<std::uint64_t>(iFieldLine) << 32) |
+                    static_cast<std::uint64_t>(ipart),
+                p);
             nInjectedParticles++;
 
             // Shift particle location by random fraction of time step

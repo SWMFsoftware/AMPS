@@ -1,4 +1,5 @@
 #include "transport_common.h"
+#include "util/sep_reproducible_reduction.h"
 
 #include "amps2swmf.h"
 
@@ -7,6 +8,8 @@
 #include <mutex>
 #include <sstream>
 #include <vector>
+#include <cstring>
+#include <limits>
 
 namespace SEP {
 namespace Transport {
@@ -16,22 +19,48 @@ std::uint64_t CampaignRandomSeed = 0;
 
 namespace {
 
-struct PendingWaveContribution {
-  std::string turbulenceStateIdentity;
-  int fieldLineId;
-  long int particlePointer;
-  double dtS;
-  double speedOrParallelMPerS;
-  double normalMPerS;
-  double startCoordinate;
-  double finishCoordinate;
-  double signedPathM;
-  std::uint64_t eventIndex;
-  bool pitchAngleResolved;
-};
+std::uint64_t HashParticleBirthState(const ParticleState& state) {
+  // FNV-1a hashes an immutable physical tuple.  Particle-buffer addresses,
+  // worker indices, and MPI ranks are excluded from the persistent identity.
+  std::uint64_t hash = UINT64_C(1469598103934665603);
+  const auto append = [&hash](const void* value, std::size_t size) {
+    const unsigned char* bytes =
+        reinterpret_cast<const unsigned char*>(value);
+    for (std::size_t i = 0; i < size; ++i) {
+      hash ^= bytes[i];
+      hash *= UINT64_C(1099511628211);
+    }
+  };
+  append(&state.species, sizeof(state.species));
+  append(&state.fieldLineId, sizeof(state.fieldLineId));
+  append(&state.coordinate, sizeof(state.coordinate));
+  append(&state.vParallelMPerS, sizeof(state.vParallelMPerS));
+  append(&state.vNormalMPerS, sizeof(state.vNormalMPerS));
+  append(&state.massKg, sizeof(state.massKg));
+  return hash == 0 ? UINT64_C(1) : hash;
+}
+
+Status ContextAtRelativeArcLength(const ParticleContext& base,
+                                  double relativeArcLengthM,
+                                  ParticleContext* sampled) {
+  if (!sampled || !std::isfinite(relativeArcLengthM))
+    return Status::Error(StatusCode::InvalidArgument,
+                         "background sample displacement must be finite");
+  *sampled = base;
+  sampled->state.coordinate =
+      PIC::FieldLine::FieldLinesAll[base.state.fieldLineId].move(
+          base.state.coordinate, relativeArcLengthM, sampled->segment);
+  sampled->segment =
+      PIC::FieldLine::FieldLinesAll[base.state.fieldLineId].GetSegment(
+          sampled->state.coordinate);
+  return sampled->segment
+      ? Status::Ok()
+      : Status::Error(StatusCode::OutOfDomain,
+                      "requested sample is outside the field line");
+}
 
 struct PendingQueue {
-  std::vector<PendingWaveContribution> values;
+  std::vector<CouplingRecord> values;
 };
 
 std::mutex gQueueRegistrationMutex;
@@ -52,71 +81,66 @@ PendingQueue& LocalQueue() {
   return *queue;
 }
 
-bool PendingLess(const PendingWaveContribution& left,
-                 const PendingWaveContribution& right) {
+bool PendingLess(const CouplingRecord& left,
+                 const CouplingRecord& right) {
   if (left.turbulenceStateIdentity != right.turbulenceStateIdentity)
     return left.turbulenceStateIdentity < right.turbulenceStateIdentity;
   if (left.fieldLineId != right.fieldLineId)
     return left.fieldLineId < right.fieldLineId;
-  if (left.particlePointer != right.particlePointer)
-    return left.particlePointer < right.particlePointer;
+  if (left.stableParticleId != right.stableParticleId)
+    return left.stableParticleId < right.stableParticleId;
   if (left.eventIndex != right.eventIndex)
     return left.eventIndex < right.eventIndex;
-  return left.startCoordinate < right.startCoordinate;
+  if (left.intervalIndex != right.intervalIndex)
+    return left.intervalIndex < right.intervalIndex;
+  return static_cast<int>(left.eventType) < static_cast<int>(right.eventType);
 }
 
 }  // namespace
 
-void QueueAveragedWaveContribution(int fieldLineId, long int particlePointer,
-                                   double dtS, double speedMPerS,
-                                   double startCoordinate,
-                                   double finishCoordinate,
-                                   double signedPathM,
-                                   std::uint64_t eventIndex) {
-  PendingWaveContribution value;
-  value.turbulenceStateIdentity = "pitch-angle-averaged";
-  value.fieldLineId = fieldLineId;
-  value.particlePointer = particlePointer;
-  value.dtS = dtS;
-  value.speedOrParallelMPerS = speedMPerS;
-  value.normalMPerS = 0.0;
-  value.startCoordinate = startCoordinate;
-  value.finishCoordinate = finishCoordinate;
-  value.signedPathM = signedPathM;
-  value.eventIndex = eventIndex;
-  value.pitchAngleResolved = false;
-  LocalQueue().values.push_back(value);
+void InitializeParticleTransportState(long int pointer,
+                                      std::uint64_t sourceKey,
+                                      std::uint64_t sequenceKey,
+                                      const double momentumKgMPerS[3]) {
+  PIC::ParticleBuffer::byte* data =
+      PIC::ParticleBuffer::GetParticleDataPointer(pointer);
+  if (!data || !momentumKgMPerS) return;
+  std::uint64_t hash = UINT64_C(1469598103934665603);
+  const auto append = [&hash](const void* value, std::size_t size) {
+    const unsigned char* bytes =
+        reinterpret_cast<const unsigned char*>(value);
+    for (std::size_t i = 0; i < size; ++i) {
+      hash ^= bytes[i];
+      hash *= UINT64_C(1099511628211);
+    }
+  };
+  append(&sourceKey, sizeof(sourceKey));
+  append(&sequenceKey, sizeof(sequenceKey));
+  append(momentumKgMPerS, 3 * sizeof(double));
+  if (hash == 0) hash = UINT64_C(1);
+  *reinterpret_cast<std::uint64_t*>(data + SEP::Offset::TransportSchema) =
+      UINT64_C(0x5352435345500001);
+  *reinterpret_cast<std::uint64_t*>(data + SEP::Offset::StableParticleId) =
+      hash;
+  *reinterpret_cast<double*>(data + SEP::Offset::MfpOpticalDepth) =
+      std::numeric_limits<double>::quiet_NaN();
+  *reinterpret_cast<std::uint64_t*>(data + SEP::Offset::MfpEventIndex) = 0;
 }
 
-void QueueFocusedWaveContribution(const std::string& turbulenceStateIdentity,
-                                  int fieldLineId, long int particlePointer,
-                                  double dtS, double vParallelMPerS,
-                                  double vNormalMPerS,
-                                  double startCoordinate,
-                                  double finishCoordinate,
-                                  double signedPathM,
-                                  std::uint64_t eventIndex) {
-  PendingWaveContribution value;
-  // Preserve the provider's immutable identity through the worker queue.  The
-  // physical legacy accumulator cannot consume this label yet, but ordering by
-  // it prevents contributions from distinct published states from interleaving
-  // if a future driver intentionally batches more than one snapshot.
-  value.turbulenceStateIdentity = turbulenceStateIdentity;
-  value.fieldLineId = fieldLineId;
-  value.particlePointer = particlePointer;
-  value.dtS = dtS;
-  value.speedOrParallelMPerS = vParallelMPerS;
-  value.normalMPerS = vNormalMPerS;
-  value.startCoordinate = startCoordinate;
-  value.finishCoordinate = finishCoordinate;
-  value.signedPathM = signedPathM;
-  value.eventIndex = eventIndex;
-  value.pitchAngleResolved = true;
+void QueueWaveContribution(const CouplingRecord& value) {
+  if (value.fieldLineId < 0 || value.species < 0 ||
+      !(value.statisticalWeight > 0.0) ||
+      value.stableParticleId == 0 || value.snapshotGeneration == 0 ||
+      !(value.dtS > 0.0) || !std::isfinite(value.dtS) ||
+      !std::isfinite(value.signedPathM)) {
+    exit(__LINE__, __FILE__,
+         "invalid self-contained particle-wave coupling record");
+  }
   LocalQueue().values.push_back(value);
 }
 
 void FlushWaveContributions() {
-  std::vector<PendingWaveContribution> merged;
+  std::vector<CouplingRecord> merged;
   {
     // PIC::TimeStep() has joined its worker region before this call, so the
     // queues are quiescent.  The mutex protects only registry traversal and
@@ -128,21 +152,54 @@ void FlushWaveContributions() {
       queue->values.clear();
     }
   }
+
+  // Exercise the same physical-key reducer used by decomposition tests before
+  // touching legacy G arrays.  The reduced values are an audit ledger here;
+  // path-resolved deposition below still decodes exact segment overlaps.
+  std::vector<std::vector<Reproducibility::Contribution> > partitions(1);
+  partitions[0].reserve(merged.size());
+  for (const CouplingRecord& value : merged) {
+    Reproducibility::Contribution audit;
+    audit.key.schema = Reproducibility::ProductionContributionKeySchema;
+    audit.key.source = static_cast<std::uint64_t>(value.eventType);
+    audit.key.fieldLine = static_cast<std::uint64_t>(value.fieldLineId);
+    audit.key.segment = static_cast<std::uint64_t>(
+        std::max(0.0, std::floor(value.startCoordinate)));
+    audit.key.branch = static_cast<std::uint64_t>(value.resonantBranch + 1);
+    audit.key.species = static_cast<std::uint64_t>(value.species);
+    audit.key.particle = value.stableParticleId;
+    audit.key.step = value.snapshotGeneration;
+    audit.key.event = value.eventIndex;
+    audit.key.interval = value.intervalIndex;
+    audit.key.purpose = value.pitchAngleResolved ? 2 : 1;
+    audit.streaming = value.signedPathM * value.statisticalWeight;
+    audit.resonantCount = value.eventType == CouplingEventType::ScatteringEvent;
+    partitions[0].push_back(audit);
+  }
+  std::vector<Reproducibility::SegmentAccumulator> auditLedger;
+  const Status reductionStatus = Reproducibility::CanonicalPartitionReduction(
+      partitions, &auditLedger);
+  if (!reductionStatus.ok())
+    exit(__LINE__, __FILE__, reductionStatus.message.c_str());
+
   std::sort(merged.begin(), merged.end(), PendingLess);
-  for (const PendingWaveContribution& value : merged) {
+  for (const CouplingRecord& value : merged) {
     if (value.pitchAngleResolved) {
       SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::
           AccumulateParticleFluxForWaveCoupling(
-              value.fieldLineId, value.particlePointer, value.dtS,
-              value.speedOrParallelMPerS, value.normalMPerS,
+              value.fieldLineId, value.species, value.statisticalWeight,
+              value.dtS, value.midpointParallelVelocityMPerS,
+              value.midpointNormalVelocityMPerS,
               value.startCoordinate, value.finishCoordinate,
               value.signedPathM);
     }
     else {
       SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::
           AccumulateParticleFluxForWaveCoupling(
-              value.fieldLineId, value.particlePointer, value.dtS,
-              value.speedOrParallelMPerS, value.startCoordinate,
+              value.fieldLineId, value.species, value.statisticalWeight,
+              value.dtS, std::hypot(value.midpointParallelVelocityMPerS,
+                                    value.midpointNormalVelocityMPerS),
+              value.startCoordinate,
               value.finishCoordinate, value.signedPathM);
     }
   }
@@ -191,6 +248,36 @@ Status LoadParticle(long int pointer, ParticleContext* context) {
     return Status::Error(StatusCode::OutOfDomain,
                          "particle coordinate is outside its field line");
   }
+  const Background::BackgroundSnapshot& snapshot =
+      Background::SnapshotStore::Instance().AcquireForMover();
+  context->snapshotGeneration = snapshot.field_line_generation();
+  context->particleStepEpochS = Background::SimulationTimeSeconds();
+  const std::uint64_t transportSchema = UINT64_C(0x5352435345500001);
+  std::uint64_t* storedSchema = reinterpret_cast<std::uint64_t*>(
+      context->data + SEP::Offset::TransportSchema);
+  std::uint64_t* storedIdentity = reinterpret_cast<std::uint64_t*>(
+      context->data + SEP::Offset::StableParticleId);
+  if (*storedSchema != transportSchema || *storedIdentity == 0) {
+    // Newly injected AMPS extension bytes are normally zero.  The explicit
+    // schema marker also detects pre-WP09 restart records and initializes their
+    // event state without interpreting arbitrary legacy bytes as optical depth.
+    *storedSchema = transportSchema;
+    *storedIdentity = HashParticleBirthState(context->state);
+    *reinterpret_cast<double*>(
+        context->data + SEP::Offset::MfpOpticalDepth) =
+            std::numeric_limits<double>::quiet_NaN();
+    *reinterpret_cast<std::uint64_t*>(
+        context->data + SEP::Offset::MfpEventIndex) = 0;
+  }
+  context->stableParticleId = *storedIdentity;
+  context->statisticalWeight =
+      PIC::ParticleWeightTimeStep::GlobalParticleWeight[context->state.species] *
+      PIC::ParticleBuffer::GetIndividualStatWeightCorrection(pointer);
+  if (!(context->statisticalWeight > 0.0) ||
+      !std::isfinite(context->statisticalWeight)) {
+    return Status::Error(StatusCode::InvalidParticleState,
+                         "particle statistical weight is invalid");
+  }
   return Status::Ok();
 }
 
@@ -213,6 +300,45 @@ Status AdvanceAlongFieldLine(ParticleContext* context,
   if (!context->segment) {
     return Status::Error(StatusCode::OutOfDomain,
                          "particle crossed an absorbing field-line boundary");
+  }
+  return Status::Ok();
+}
+
+Status ClipPathToFieldLineBoundary(int fieldLineId, double startCoordinate,
+                                   double attemptedDisplacementM,
+                                   double* boundaryCoordinate,
+                                   double* inDomainDisplacementM) {
+  if (!boundaryCoordinate || !inDomainDisplacementM ||
+      fieldLineId < 0 || fieldLineId >= PIC::FieldLine::nFieldLine ||
+      !std::isfinite(startCoordinate) ||
+      !std::isfinite(attemptedDisplacementM) ||
+      attemptedDisplacementM == 0.0) {
+    return Status::Error(StatusCode::InvalidArgument,
+                         "boundary clipping input is invalid");
+  }
+  PIC::FieldLine::cFieldLine* line =
+      &PIC::FieldLine::FieldLinesAll[fieldLineId];
+  const int count = line->GetTotalSegmentNumber();
+  const int startSegment = static_cast<int>(std::floor(startCoordinate));
+  const double fraction = startCoordinate - std::floor(startCoordinate);
+  if (count <= 0 || startSegment < 0 || startSegment >= count)
+    return Status::Error(StatusCode::OutOfDomain,
+                         "boundary clipping start is outside the field line");
+
+  double distanceM = 0.0;
+  if (attemptedDisplacementM > 0.0) {
+    distanceM += (1.0 - fraction) * line->GetSegment(startSegment)->GetLength();
+    for (int i = startSegment + 1; i < count; ++i)
+      distanceM += line->GetSegment(i)->GetLength();
+    *boundaryCoordinate = static_cast<double>(count);
+    *inDomainDisplacementM = distanceM;
+  }
+  else {
+    distanceM += fraction * line->GetSegment(startSegment)->GetLength();
+    for (int i = startSegment - 1; i >= 0; --i)
+      distanceM += line->GetSegment(i)->GetLength();
+    *boundaryCoordinate = 0.0;
+    *inDomainDisplacementM = -distanceM;
   }
   return Status::Ok();
 }
@@ -240,24 +366,27 @@ Status CommitAndAttach(const ParticleContext& context) {
   return Status::Ok();
 }
 
-Status EvaluateLocalBackground(const ParticleContext& context,
-                               double densityEvolutionIntervalS,
-                               LocalBackground* background) {
+Status EvaluateLocalBackgroundAt(const ParticleContext& context,
+                                 double relativeArcLengthM,
+                                 LocalBackgroundView* background) {
   namespace FL = PIC::FieldLine;
-  if (!background || !context.segment ||
-      !std::isfinite(densityEvolutionIntervalS) ||
-      densityEvolutionIntervalS <= 0.0) {
+  if (!background || !context.segment || !std::isfinite(relativeArcLengthM)) {
     return Status::Error(StatusCode::InvalidArgument,
-                         "local background requires a segment and positive interval");
+                         "local background requires a segment and finite location");
   }
 
-  FL::cFieldLineVertex* begin = context.segment->GetBegin();
-  FL::cFieldLineVertex* end = context.segment->GetEnd();
+  ParticleContext sampled;
+  Status sampledStatus = ContextAtRelativeArcLength(
+      context, relativeArcLengthM, &sampled);
+  if (!sampledStatus.ok()) return sampledStatus;
+
+  FL::cFieldLineVertex* begin = sampled.segment->GetBegin();
+  FL::cFieldLineVertex* end = sampled.segment->GetEnd();
   if (!begin || !end) {
     return Status::Error(StatusCode::InvalidParticleState,
                          "field-line segment has incomplete vertices");
   }
-  const double lengthM = context.segment->GetLength();
+  const double lengthM = sampled.segment->GetLength();
   if (!std::isfinite(lengthM) || lengthM <= 0.0) {
     return Status::Error(StatusCode::InvalidParticleState,
                          "field-line segment length is invalid");
@@ -284,8 +413,28 @@ Status EvaluateLocalBackground(const ParticleContext& context,
   end->GetPlasmaVelocity(u1);
   const double uParallel0 = Vector3D::DotProduct(u0, b0) / absB0;
   const double uParallel1 = Vector3D::DotProduct(u1, b1) / absB1;
-  const double fraction = context.state.coordinate -
-                          std::floor(context.state.coordinate);
+  const double fraction = sampled.state.coordinate -
+                          std::floor(sampled.state.coordinate);
+  for (int d = 0; d < 3; ++d) {
+    background->magneticFieldT[d] =
+        (1.0 - fraction) * b0[d] + fraction * b1[d];
+    background->plasmaVelocityMPerS[d] =
+        (1.0 - fraction) * u0[d] + fraction * u1[d];
+  }
+  sampled.segment->GetDir(background->tangent);
+  const double tangentNorm = Vector3D::Length(background->tangent);
+  background->magneticFieldMagnitudeT =
+      Vector3D::Length(background->magneticFieldT);
+  if (!(tangentNorm > 0.0) ||
+      !(background->magneticFieldMagnitudeT > 0.0)) {
+    return Status::Error(StatusCode::InvalidParticleState,
+        "interpolated tangent and magnetic field must be nonzero");
+  }
+  for (int d = 0; d < 3; ++d) {
+    background->tangent[d] /= tangentNorm;
+    background->bUnit[d] = background->magneticFieldT[d] /
+        background->magneticFieldMagnitudeT;
+  }
   background->plasmaAdvectionMPerS =
       (1.0 - fraction) * uParallel0 + fraction * uParallel1;
   background->parallelVelocityGradientPerS =
@@ -311,32 +460,34 @@ Status EvaluateLocalBackground(const ParticleContext& context,
                          "current and previous plasma density must be positive");
   }
 
-  double intervalS = densityEvolutionIntervalS;
-#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-  if (AMPS2SWMF::MagneticFieldLineUpdate::SecondCouplingFlag) {
-    intervalS = AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime -
-                AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime;
+  const Background::BackgroundSnapshot& snapshot =
+      Background::SnapshotStore::Instance().AcquireForMover();
+  const double intervalS = snapshot.physical_epoch_interval_seconds();
+  if (intervalS > 0.0) {
+    background->velocityDivergencePerS =
+        -std::log(current / previous) / intervalS;
   }
-#endif
-  if (!std::isfinite(intervalS) || intervalS <= 0.0) {
+  else if (std::fabs(current - previous) <=
+           32.0 * std::numeric_limits<double>::epsilon() * current) {
+    // A static provider may publish a single epoch.  Equal density states then
+    // represent exactly zero temporal compression/expansion.
+    background->velocityDivergencePerS = 0.0;
+  }
+  else {
     return Status::Error(StatusCode::InvalidParticleState,
-                         "background density epochs are not time ordered");
+        "distinct density states require ordered physical background epochs");
   }
-  background->velocityDivergencePerS = -std::log(current / previous) / intervalS;
   if (!std::isfinite(background->velocityDivergencePerS)) {
     return Status::Error(StatusCode::InvalidParticleState,
                          "plasma velocity divergence is not finite");
   }
-
-  const Background::BackgroundSnapshot& snapshot =
-      Background::SnapshotStore::Instance().AcquireForMover();
 
   // The vertex density is a number density [m^-3].  Convert it with the same
   // mean-ion-mass convention used by the SWMF coupling before evaluating
   // v_A=|B|/sqrt(mu0*rho).  Keeping this calculation in the shared adapter
   // guarantees that both focused movers use the same plasma/wave frames.
   const double absB = SEP::FieldLineData::GetAbsB(
-      context.state.coordinate, context.segment, context.state.fieldLineId);
+      sampled.state.coordinate, sampled.segment, sampled.state.fieldLineId);
   const double massDensity =
       current * PIC::CPLR::SWMF::MeanPlasmaAtomicMass;
   if (!std::isfinite(absB) || absB <= 0.0 ||
@@ -346,6 +497,14 @@ Status EvaluateLocalBackground(const ParticleContext& context,
   }
   background->alfvenSpeedMPerS =
       absB / std::sqrt(VacuumPermeability * massDensity);
+  background->numberDensityPerM3 = current;
+  background->massDensityKgPerM3 = massDensity;
+  background->sampleCoordinate = sampled.state.coordinate;
+  // With the current line-centered velocity data, bb:grad(U) is the resolved
+  // field-aligned strain.  Publishing it explicitly freezes the approximation
+  // and prevents movers from guessing it from divergence.
+  background->fieldAlignedStrainPerS =
+      background->parallelVelocityGradientPerS;
   if (!std::isfinite(background->alfvenSpeedMPerS) ||
       background->alfvenSpeedMPerS < 0.0 ||
       background->alfvenSpeedMPerS >= SpeedOfLight) {
@@ -368,7 +527,14 @@ Status EvaluateLocalBackground(const ParticleContext& context,
            << snapshot.field_line_generation() << ":t"
            << snapshot.epoch_seconds();
   background->identity = identity.str();
+  background->generation = snapshot.field_line_generation();
+  background->provenance = snapshot.provenance();
   return Status::Ok();
+}
+
+Status EvaluateLocalBackground(const ParticleContext& context,
+                               LocalBackgroundView* background) {
+  return EvaluateLocalBackgroundAt(context, 0.0, background);
 }
 
 }  // namespace PICAdapter

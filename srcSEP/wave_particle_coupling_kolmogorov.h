@@ -358,6 +358,14 @@ void AccumulateParticleFluxForWaveCoupling(
     double totalTraversedPath
 );
 
+// Escape-safe overloads consume a self-contained species/weight payload.  They
+// are used by the deterministic post-particle queue, where the original PIC
+// particle may already have crossed an absorbing boundary and been deleted.
+void AccumulateParticleFluxForWaveCoupling(
+    int field_line_idx, int particle_species, double statistical_weight,
+    double dt, double speed, double s_start, double s_finish,
+    double totalTraversedPath);
+
 void AccumulateParticleFluxForWaveCoupling(
     int field_line_idx,                          // Field line index
     long int particle_index,                     // Particle index parameter
@@ -368,6 +376,11 @@ void AccumulateParticleFluxForWaveCoupling(
     double s_finish,                            // End position along field line [m]
     double totalTraversedPath                   // Signed parallel path length [m] (+ outward, - inward)
     ); 
+
+void AccumulateParticleFluxForWaveCoupling(
+    int field_line_idx, int particle_species, double statistical_weight,
+    double dt, double vParallel, double vNormal, double s_start,
+    double s_finish, double totalTraversedPath);
 
 // ----------------------------------------------------------------------------
 // PHASE 2: GROWTH RATE CALCULATION (called after particle transport)

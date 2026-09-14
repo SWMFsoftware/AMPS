@@ -408,6 +408,21 @@ The list printed by `--list-tests` is authoritative and also includes supported
 build modes, seed policy, and state/isolation notes.  Entries are sorted by ID
 regardless of their construction order.
 
+## WP01--WP10 focused contract gate
+
+Run `./test/run_wp01_wp10_tests.sh` from the srcSEP directory. The disposable
+C++11 strict-warning executable checks physical snapshot limits and generations,
+physical background epochs, full gyrotropic coefficients, location-aware
+midpoint sampling, carried nonhomogeneous optical depth, zero-probability empty
+branches, and duplicate physical-key rejection. The same script checks that
+both production drivers call the single turbulence PIC adapter and that all
+three movers publish self-contained coupling records without a stored particle
+pointer.
+
+This is a source-only controlled gate. It does not claim a native AMPS build,
+MPI decomposition, SWMF coupling, restart continuity, or observational PASS;
+those remain separate targets and must run in their configured environments.
+
 ## Results, exit codes, and MPI
 
 Each test returns one of `PASS`, `FAIL`, `SKIP`, or `ERROR`, plus a message,

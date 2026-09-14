@@ -31,6 +31,7 @@ records:
 | provider | `analytic`, `swcme`, `swmf`, or `local-evolution` authority |
 | ownership | model-owned, imported read-only, or an explicit handoff copy |
 | epoch | provider-state epoch in simulation seconds |
+| previous/current physical epochs | provider realization times used for temporal derivatives; never a particle substep |
 | validity | closed interval of simulation seconds for which particles may consume the state |
 | field-line generation | nonzero identity of the imported/constructed field-line state |
 | configuration fingerprint | stable 64-bit FNV-1a identity of canonical background-affecting configuration |
@@ -50,6 +51,13 @@ reference that remains valid for the full mover call. The enclosing read-phase
 guard owns the snapshot, and an atomic phase marker avoids a mutex/reference-count
 operation in every particle call. This gives all scheduler threads one read-only
 realization without a per-particle field-array copy.
+
+`EvaluateLocalBackgroundAt` derives density-based `div(U)` from the previous
+and current physical epochs. A static zero-length epoch pair is valid only when
+the two density values agree. Every mover composes the same snapshot-validity
+limit and verifies the field-line generation before each substep shell; reaching
+the closed validity endpoint requires the driver to end the read phase before
+continuing with a new snapshot.
 
 ## Provider ownership and handoff
 

@@ -31,6 +31,7 @@
 #include "constants.h"
 #include "sep.h"
 #include "transport_common.h"
+#include "turbulence_production_adapter.h"
 #include "util/sep_cli.h"
 #include "debug/sep_debug_fieldline_datum.h"
 
@@ -632,13 +633,28 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
 
     amps_time_step();
 
-    // Particle workers only append to thread-local coupling queues.  Apply the
-    // records now, in deterministic particle/event order, before the existing
-    // MPI reduction and turbulence manager consume G+ and G-.
-    SEP::Transport::PICAdapter::FlushWaveContributions();
+    double rsh_after = rsh0;
+    if (niter != 0) {
+      switch (SEP::ShockModelType) {
+        case SEP::cShockModelType::Analytic1D:
+          rsh_after = SEP::ParticleSource::ShockWave::Tenishev2005::rShock;
+          break;
+        case SEP::cShockModelType::SwCme1d:
+          rsh_after = SEP::SW1DAdapter::gState.r_sh_m;
+          break;
+      }
+    }
+    const SEP::Transport::Status turbulence_status =
+        SEP::Turbulence::PICAdapter::Advance(
+            PIC::ParticleWeightTimeStep::GlobalTimeStep[0], rsh0, rsh_after);
+    if (!turbulence_status.ok())
+      exit(__LINE__, __FILE__, turbulence_status.message.c_str());
+    rsh0 = rsh_after;
 
-
-    if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
+    // Retain the former orchestration temporarily as unreachable migration
+    // evidence.  Keeping it beside the adapter call makes review against old
+    // runs straightforward; no production control path can enter it.
+    if (false && SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
       // Source ownership is independent of the selected particle mover.
       // Prescribed and SWMF-read-only sources may be synchronized and sampled
       // below, but every local mutating operator is gated by this one contract.
@@ -976,6 +992,20 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
       }
 */
 
+    }
+
+    // The adapter already exported these derived values.  Recomputing through
+    // the historical output helper is harmless and preserves byte-compatible
+    // diagnostic formatting while the old block remains for migration review.
+    if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
+      CalculateWaveEnergyDensity();
+      if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive() &&
+          cli_options.spectralOutputInterval > 0 &&
+          ((niter + 1) % cli_options.spectralOutputInterval == 0)) {
+        SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::
+            OutputSpectrumTecplot2D(
+                niter + 1, SEP::Background::SimulationTimeSeconds());
+      }
     }
 
 
