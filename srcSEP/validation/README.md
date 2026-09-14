@@ -40,6 +40,57 @@ gate and requires the linked application:
 make test-native-amps-validation SEP_EXECUTABLE=/path/to/amps
 ```
 
+WP11--WP20 also provide a bounded coefficient and stochastic-numerics gate:
+
+```sh
+make test-wp11-wp20-unit
+```
+
+That command checks bounded pitch diffusion, error controls, pure source-bound
+coefficient kernels, species normalization, adaptive quadrature, and ballistic
+compatibility. Its PASS is dependency-light numerical evidence only; it cannot
+satisfy the native AMPS, real SWMF, or held-out observational gates below.
+
+WP31--WP41 add a source-contract gate and a registry-generated compatibility
+inventory:
+
+```sh
+make test-wp31-wp41-unit
+make print-configuration-matrix
+```
+
+Evidence is labelled `analytical-core`, `source-integration`, `native-amps`,
+`swmf-replay`, or `observational-validation`. A passing claim may not name a
+level above what actually executed. The source gate therefore leaves native
+adapter execution, scheduled multi-seed campaigns, MPI/OpenMP scaling, real
+SWMF, and held-out observations explicitly BLOCKED when their inputs are absent.
+
+WP42--WP64 extend that boundary with executable native-trace,
+decomposition/restart-signature, multi-level refinement, predeclared power,
+external-event-manifest, and scaling/resource contracts. Run the analytical and
+source-integration portion with:
+
+```sh
+make test-wp42-wp64-unit
+```
+
+The command also prints the unavailable higher evidence as `BLOCKED`. To run
+the site-owned native campaign explicitly, provide a reviewed command whose
+outputs retain the executable checksum, compiler/flags, callback traces,
+configuration fingerprints, decomposition/restart hashes, ledgers, and frozen
+performance environment:
+
+```sh
+make test-wp59-wp64-native \
+  SRCSEP_NATIVE_GATE='/reviewed/site/runner --matrix --restart --mpi --scaling'
+```
+
+This variable is a CI/operator integration seam; it is not populated from a
+simulation input file. Real SWMF and held-out observational manifests continue
+to use the independent authenticated targets below. See
+[../WP42_WP64_VALIDATION_REPORT.md](../WP42_WP64_VALIDATION_REPORT.md) for the
+observed source-only results and remaining evidence requirements.
+
 ## Completing external gates
 
 Copy the appropriate file from `manifests/`, replace every placeholder, and
@@ -103,6 +154,14 @@ identify at least one mission/instrument data product, be marked held out,
 provide an uncertainty method, and pass checksum verification. Labels that
 identify manufactured data are rejected. This safeguard test is itself only a
 software-governance test and never appears as observational evidence.
+
+WP39 also requires `configuration.forward_operator` to name a versioned energy
+response, angular response, cadence, species, dead time, saturation policy,
+background subtraction, and uncertainty propagation. The C++ forward model
+uses SI differential intensity, energy edges, `m² sr` geometric factor, and
+seconds to predict detector counts. A synthetic response test validates that
+operator, but only checksum-verified held-out spacecraft products can satisfy
+the observational gate.
 
 See each `cases/VAL*/README.md` for equations, configurations, metrics, and
 limitations. See [STEP15_VALIDATION_REPORT.md](../STEP15_VALIDATION_REPORT.md)

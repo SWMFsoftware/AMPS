@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -11,6 +13,8 @@ namespace {
 // rule.  Applications with a measured tube area should set it before startup.
 double g_reference_area_m2 = Pi;
 SEP::FieldLine::FluxTubeGeometry::ExplicitAreaProfile g_explicit_area = NULL;
+std::vector<SEP::FieldLine::FluxTubeGeometryCore::MagneticFluxRecord>
+    g_field_line_flux;
 
 double MagneticMagnitudeT(PIC::FieldLine::cFieldLineVertex* vertex) {
   if (vertex == NULL) return 0.0;
@@ -32,6 +36,44 @@ double ExplicitAreaM2(const double* x_m, int iFieldLine) {
 }
 
 }  // namespace
+
+void SEP::FieldLine::FluxTubeGeometry::SetMagneticFluxWb(
+    int iFieldLine,double magnetic_flux_Wb,const char* provenance,
+    unsigned long long generation) {
+  if (iFieldLine<0 || !std::isfinite(magnetic_flux_Wb) ||
+      magnetic_flux_Wb<=0.0 || provenance==NULL || provenance[0]=='\0')
+    throw std::invalid_argument("FluxTubeGeometry magnetic-flux record is invalid");
+  if (g_field_line_flux.size()<=static_cast<std::size_t>(iFieldLine))
+    g_field_line_flux.resize(static_cast<std::size_t>(iFieldLine)+1);
+  FluxTubeGeometryCore::MagneticFluxRecord record;
+  record.magneticFluxWb=magnetic_flux_Wb;
+  record.generation=static_cast<std::uint64_t>(generation);
+  record.provenance=provenance;
+  const SEP::Transport::Status status=
+      FluxTubeGeometryCore::ValidateMagneticFluxRecord(record);
+  if (!status.ok()) throw std::invalid_argument(status.message);
+  g_field_line_flux[static_cast<std::size_t>(iFieldLine)]=record;
+}
+
+double SEP::FieldLine::FluxTubeGeometry::GetMagneticFluxWb(int iFieldLine) {
+  if (iFieldLine<0 || iFieldLine>=PIC::FieldLine::nFieldLine)
+    throw std::invalid_argument("FluxTubeGeometry field-line id is invalid");
+  if (g_field_line_flux.size()<=static_cast<std::size_t>(iFieldLine) ||
+      !FluxTubeGeometryCore::ValidateMagneticFluxRecord(
+          g_field_line_flux[static_cast<std::size_t>(iFieldLine)]).ok()) {
+    PIC::FieldLine::cFieldLineSegment* first=
+        PIC::FieldLine::FieldLinesAll[iFieldLine].GetFirstSegment();
+    const double seed_B=first ? MagneticMagnitudeT(first->GetBegin()) : 0.0;
+    if (!(seed_B>0.0))
+      throw std::runtime_error("FluxTubeGeometry cannot derive Phi_i without seed |B|");
+    // Compatibility input is converted exactly once to an owned flux record.
+    // Every downstream area/volume consumer then uses Phi_i/|B| and therefore
+    // cannot choose a different reference vertex or normalization.
+    SetMagneticFluxWb(iFieldLine,g_reference_area_m2*seed_B,
+        "configured seed area times first-vertex magnetic field",0);
+  }
+  return g_field_line_flux[static_cast<std::size_t>(iFieldLine)].magneticFluxWb;
+}
 
 void SEP::FieldLine::FluxTubeGeometry::SetReferenceAreaM2(
     double reference_area_m2) {
@@ -63,19 +105,13 @@ double SEP::FieldLine::FluxTubeGeometry::AreaAtVertexM2(
     throw std::invalid_argument("FluxTubeGeometry vertex or field-line id is invalid");
   }
 
-  PIC::FieldLine::cFieldLineSegment* first_segment =
-      PIC::FieldLine::FieldLinesAll[iFieldLine].GetFirstSegment();
-  if (first_segment == NULL) {
-    throw std::runtime_error("FluxTubeGeometry field line has no segments");
-  }
-
-  const double reference_abs_B_T = MagneticMagnitudeT(first_segment->GetBegin());
   const double local_abs_B_T = MagneticMagnitudeT(vertex);
-  if (reference_abs_B_T > 0.0 && local_abs_B_T > 0.0) {
+  if (local_abs_B_T > 0.0) {
+    FluxTubeGeometryCore::MagneticFluxRecord record;
+    record.magneticFluxWb=GetMagneticFluxWb(iFieldLine);
+    record.provenance="production field-line flux registry";
     return FluxTubeGeometryCore::AreaFromMagneticFlux(
-        Units::AreaM2(g_reference_area_m2),
-        Units::MagneticFieldT(reference_abs_B_T),
-        Units::MagneticFieldT(local_abs_B_T)).Value();
+        record,Units::MagneticFieldT(local_abs_B_T)).Value();
   }
 
   // A missing magnetic magnitude does not justify silently fabricating an r^2
@@ -96,22 +132,18 @@ double SEP::FieldLine::FluxTubeGeometry::AreaAtSegmentFractionM2(
       iFieldLine >= PIC::FieldLine::nFieldLine) {
     throw std::invalid_argument("FluxTubeGeometry segment fraction is invalid");
   }
-  PIC::FieldLine::cFieldLineSegment* first_segment =
-      PIC::FieldLine::FieldLinesAll[iFieldLine].GetFirstSegment();
-  const double reference_abs_B_T =
-      first_segment ? MagneticMagnitudeT(first_segment->GetBegin()) : 0.0;
   double local_B_T[3] = {0.0,0.0,0.0};
   segment->GetMagneticField(fraction, local_B_T);
   const double local_abs_B_T = std::sqrt(
       local_B_T[0]*local_B_T[0] + local_B_T[1]*local_B_T[1] +
       local_B_T[2]*local_B_T[2]);
 
-  if (reference_abs_B_T > 0.0 && std::isfinite(local_abs_B_T) &&
-      local_abs_B_T > 0.0) {
+  if (std::isfinite(local_abs_B_T) && local_abs_B_T > 0.0) {
+    FluxTubeGeometryCore::MagneticFluxRecord record;
+    record.magneticFluxWb=GetMagneticFluxWb(iFieldLine);
+    record.provenance="production field-line flux registry";
     return FluxTubeGeometryCore::AreaFromMagneticFlux(
-        Units::AreaM2(g_reference_area_m2),
-        Units::MagneticFieldT(reference_abs_B_T),
-        Units::MagneticFieldT(local_abs_B_T)).Value();
+        record,Units::MagneticFieldT(local_abs_B_T)).Value();
   }
 
   double x_m[3] = {0.0,0.0,0.0};

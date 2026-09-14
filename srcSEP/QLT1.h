@@ -27,7 +27,6 @@ namespace QLT1 {
     const double speed_of_light = 3e8;       // Speed of light in m/s
 
 
-    extern double B(double r);
     extern double gyrofrequency(double B);
     extern double larmor_radius(double v_perp, double Omega);
     extern double L_c(double r);

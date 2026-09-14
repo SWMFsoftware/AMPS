@@ -1,8 +1,12 @@
 
 #include "sep.h"
+#include "util/sep_transactional_output.h"
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <string>
 
 SEP::Sampling::cSamplingBuffer **SEP::Sampling::SamplingBufferTable=NULL;
@@ -50,25 +54,35 @@ array_3d<double> SEP::Sampling::MeanFreePath::SamplingTable;
 // NaN + valid_number remains NaN forever in accumulated diagnostics.
 //
 // These helpers deliberately do not modify the particle stored in the AMPS
-// particle buffer.  They only decide whether the particle is safe to sample and
-// apply a conservative subluminal cap to the speed used by diagnostic energy
-// conversion.  State repair belongs in the mover; diagnostic sampling should
-// either use a safe value or skip the particle.
+// particle buffer.  They only decide whether the particle is safe to sample.
+// State repair belongs in the mover; diagnostic sampling uses a valid value or
+// excludes the particle, and never invents a subluminal replacement.
 // ============================================================================
 namespace {
+
+  void CommitSamplingStage(const std::string& stage,
+                           const std::string& relative,
+                           std::uint64_t records) {
+    std::ifstream input(stage.c_str(),std::ios::binary);
+    std::ostringstream payload; payload<<input.rdbuf();
+    if (!input && !input.eof())
+      exit(__LINE__,__FILE__,"cannot read staged pitch-angle output");
+    ::unlink(stage.c_str());
+    SEP::Output::ArtifactMetadata metadata;
+    metadata.schemaVersion="srcsep-sampling-v2";
+    metadata.recordCount=records;
+    metadata.configurationFingerprint=
+        SEP::Background::CurrentConfigurationFingerprint();
+    const SEP::Output::WriteResult result=SEP::Output::WriteTransactional(
+        PIC::OutputDataFileDirectory,relative,payload.str(),metadata);
+    if (!result.status.ok()) exit(__LINE__,__FILE__,result.status.message.c_str());
+  }
 
   // Numerical floor used only for diagnostic sampling.  A zero-speed particle
   // makes the pitch-angle cosine mu=v_parallel/|v| undefined.  If a particle
   // reaches this point with a speed below the floor, sampling skips it rather
   // than placing it into an arbitrary pitch-angle bin.
   constexpr double SEP_SAMPLING_MIN_SPEED = 1.0; // [m/s]
-
-  // Relativistic energy and momentum conversions become singular at v=c.  The
-  // event-driven mover applies the same type of cap before writing velocities
-  // back to the particle buffer, but the sampling layer applies its own guard so
-  // that a single pathological particle cannot create NaN/Inf in diagnostic
-  // arrays or in PIC::FieldLine::DatumAtVertexParticleEnergy.
-  constexpr double SEP_SAMPLING_MAX_BETA = 1.0 - 1.0e-12;
 
   // Limit warning output.  A bad-particle population can otherwise flood stdout
   // and make MPI debugging impossible.  The validation itself is applied to
@@ -143,15 +157,13 @@ namespace {
 
     speed = sqrt(speed2);
 
-    // Cap only the diagnostic speed used for the relativistic energy conversion.
-    // The direction information, including mu, is still computed from the stored
-    // velocity components.  The actual particle velocity in the buffer is not
-    // changed here.
-    const double maxSamplingSpeed = SEP_SAMPLING_MAX_BETA*SpeedOfLight;
-    if (speed >= maxSamplingSpeed) {
-      SamplingWarning("speed at/above relativistic sampling cap", ptr, spec,
+    // Diagnostics must not repair a particle.  A luminal or superluminal state
+    // is excluded and counted by the warning path; capping it would fabricate a
+    // finite high-energy event and contaminate every absolute sampling product.
+    if (speed >= SpeedOfLight) {
+      SamplingWarning("luminal/superluminal particle excluded", ptr, spec,
                       iFieldLine, v[0], v[1], speed, fieldLineCoord);
-      speed = maxSamplingSpeed;
+      return false;
     }
 
     mu = v[0]/sqrt(speed2);
@@ -281,11 +293,17 @@ void SEP::Sampling::Manager() {
       int iL,iMu,iR,spec,iE;
       double rLarmor,MiddleX[3],MiddleB;
 
-      for (;Segment!=NULL;Segment=Segment->GetNext()) {
+      int iSegment=0;
+      for (;Segment!=NULL;Segment=Segment->GetNext(),++iSegment) {
         ptr=Segment->FirstParticleIndex;
 
 	Segment->GetCartesian(MiddleX,0.5);
-	MiddleB=QLT1::B(Vector3D::Length(MiddleX));
+	// Sample the same field-line magnetic datum used by the production
+	// coefficient view.  The removed QLT1::B helper embedded an unrelated
+	// 5e-5 T at 0.1 AU Parker-like scale, so diagnostics could report a Larmor
+	// radius inconsistent with the field that actually transported the particle.
+	MiddleB=SEP::FieldLineData::GetAbsB(
+	    static_cast<double>(iSegment)+0.5,Segment,iFieldLine);
 
 
         while (ptr!=-1) {
@@ -301,10 +319,9 @@ void SEP::Sampling::Manager() {
           //   * particles with non-finite velocity components are skipped;
           //   * particles with speed below the diagnostic floor are skipped
           //     because mu=v_parallel/|v| is undefined there;
-          //   * speeds at or above c are capped only for the diagnostic
-          //     relativistic energy conversion.  The particle buffer itself is
-          //     not modified here; state repair remains the responsibility of
-          //     the mover.
+          //   * speeds at or above c are excluded rather than capped.  The
+          //     particle buffer itself is not modified here; state repair
+          //     remains the responsibility of the mover.
           // ------------------------------------------------------------------
           if (!ValidateSamplingSpecies(spec,ptr,iFieldLine)) {
             ptr=PB::GetNext(ptr);
@@ -334,7 +351,12 @@ void SEP::Sampling::Manager() {
           if (isfinite(MiddleB) && fabs(MiddleB) > 0.0 &&
               isfinite(charge) && fabs(charge) > 0.0 &&
               isfinite(v[1])) {
-            rLarmor= mass*v[1]/fabs(charge*MiddleB);
+            // Relativistic r_L=p_perp/(|q|B); mass*v_perp is only the
+            // non-relativistic approximation and becomes species/energy biased
+            // for high-energy ions and electrons.
+            const double momentum=Relativistic::Speed2Momentum(speed,mass);
+            rLarmor=momentum*sqrt(std::max(0.0,1.0-mu*mu)) /
+                fabs(charge*MiddleB);
           }
           else {
             rLarmor=NAN;
@@ -351,9 +373,15 @@ void SEP::Sampling::Manager() {
           }
 
           iE=(int)(log(e/SEP::Sampling::PitchAngle::emin)/SEP::Sampling::PitchAngle::dLogE);
-
-          if (iE>=SEP::Sampling::PitchAngle::nEnergySamplingIntervals) iE=SEP::Sampling::PitchAngle::nEnergySamplingIntervals-1;
-          if (iE<0)iE=0;
+          // Underflow and overflow are excluded rather than folded into an edge
+          // bin.  The dependency-free WP28 accumulator retains separate counts;
+          // this production path preserves the same no-clamping semantics.
+          if (iE<0 || iE>=SEP::Sampling::PitchAngle::nEnergySamplingIntervals) {
+            SamplingWarning(iE<0 ? "energy-bin underflow" : "energy-bin overflow",
+                            ptr,spec,iFieldLine,v[0],v[1],speed,FieldLineCoord);
+            ptr=PB::GetNext(ptr);
+            continue;
+          }
 
           iMu=(int)((mu+1.0)/SEP::Sampling::PitchAngle::dMu);
           if (iMu>=SEP::Sampling::PitchAngle::nMuIntervals) iMu=SEP::Sampling::PitchAngle::nMuIntervals-1;
@@ -369,8 +397,12 @@ void SEP::Sampling::Manager() {
           }
 
           iR=(int)(Vector3D::Length(x)/SEP::Sampling::PitchAngle::dR);
-          if (iR>=SEP::Sampling::PitchAngle::nRadiusIntervals) iR=SEP::Sampling::PitchAngle::nRadiusIntervals-1;
-          if (iR<0) iR=0;
+          if (iR<0 || iR>=SEP::Sampling::PitchAngle::nRadiusIntervals) {
+            SamplingWarning(iR<0 ? "radius-bin underflow" : "radius-bin overflow",
+                            ptr,spec,iFieldLine,v[0],v[1],speed,FieldLineCoord);
+            ptr=PB::GetNext(ptr);
+            continue;
+          }
 
           double ParticleWeight;
           if (!SafeSamplingWeight(ParticleData,spec,ptr,iFieldLine,ParticleWeight)) {
@@ -385,17 +417,11 @@ void SEP::Sampling::Manager() {
 
 	  //sample particle Larmor radius
 	  if (isfinite(rLarmor)==true) {
-	    if (rLarmor<1.0) {
-               iL=0;
-             }
-             else if (rLarmor>=SEP::Sampling::LarmorRadius::rLarmorRadiusMax) {
-               iL=SEP::Sampling::LarmorRadius::nSampleIntervals-1;
-             }
-             else {
+	    if (rLarmor>=1.0 &&
+               rLarmor<SEP::Sampling::LarmorRadius::rLarmorRadiusMax) {
                iL=(int)(log(rLarmor)/Sampling::LarmorRadius::dLog);
-	     }
-
-	    SEP::Sampling::LarmorRadius::SamplingTable(iL,iR,iFieldLine)+=ParticleWeight;
+	      SEP::Sampling::LarmorRadius::SamplingTable(iL,iR,iFieldLine)+=ParticleWeight;
+	    }
 	  }
 
 	  //sample mean free path
@@ -403,17 +429,10 @@ void SEP::Sampling::Manager() {
             double v=*((double*)(ParticleData+SEP::Offset::MeanFreePath));
 	    int i;
 
-	    if (isfinite(v)==true) {
-	      if (v<SEP::Sampling::MeanFreePath::MinSampledMeanFreePath) {
-	        i=0;
-	      }
-	      else if (v>=SEP::Sampling::MeanFreePath::MaxSampledMeanFreePath) {
-	        i=nSampleIntervals-1;
-	      }
-	      else {
+	    if (isfinite(v)==true &&
+                v>=SEP::Sampling::MeanFreePath::MinSampledMeanFreePath &&
+                v<SEP::Sampling::MeanFreePath::MaxSampledMeanFreePath) {
                 i=(int)(log(v/SEP::Sampling::MeanFreePath::MinSampledMeanFreePath)/SEP::Sampling::MeanFreePath::dLogMeanFreePath);
-	      }
-
 	      SEP::Sampling::MeanFreePath::SamplingTable(i,iR,iFieldLine)+=ParticleWeight;
 	    }
           }
@@ -457,8 +476,12 @@ void SEP::Sampling::Manager() {
     SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
     SEP::Sampling::PitchAngle::DmumuSamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
 
-    if (PIC::ThisThread!=0) goto end;
-
+    // Every rank participates in the reductions above and clears its local
+    // buffers below, but only rank zero normalizes and writes the reduced
+    // products.  A structured conditional is required here: the former
+    // `goto end` jumped across construction of std::string and FILE* locals,
+    // which is ill-formed C++ and fails in the native C++17 AMPS build.
+    if (PIC::ThisThread==0) {
     for (iLine=0;iLine<FL::nFieldLineMax;iLine++) if (FL::FieldLinesAll[iLine].IsInitialized()==true)  for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {
       summ=0.0;
 
@@ -492,11 +515,12 @@ void SEP::Sampling::Manager() {
     }
 
     //output a  file
-    FILE *fout;
-    char fname[200];
-
-    sprintf(fname,"%s/PitchAngleRSample.cnt=%i.dat",PIC::OutputDataFileDirectory,cnt);
-    fout=fopen(fname,"w");
+    const std::string pitchRelative=
+        "PitchAngleRSample.cnt="+std::to_string(cnt)+".dat";
+    const std::string pitchStage=std::string(PIC::OutputDataFileDirectory)+
+        "/"+pitchRelative+".stage";
+    FILE* fout=fopen(pitchStage.c_str(),"wb");
+    if (fout==NULL) exit(__LINE__,__FILE__,"cannot open staged pitch-angle output");
 
     fprintf(fout,"VARIABLES=\"R [AU]\", \"Mu\"");
 
@@ -580,18 +604,25 @@ void SEP::Sampling::Manager() {
      }
    }
 
-   fclose(fout);
+   if (fflush(fout)!=0 || ::fsync(::fileno(fout))!=0 || fclose(fout)!=0)
+     exit(__LINE__,__FILE__,"cannot flush staged pitch-angle output");
+   CommitSamplingStage(pitchStage,pitchRelative,
+       static_cast<std::uint64_t>(SEP::Sampling::PitchAngle::nMuIntervals+1)*
+       static_cast<std::uint64_t>(SEP::Sampling::PitchAngle::nRadiusIntervals+1));
 
    //output the field line background data
    for (iLine=0;iLine<FL::nFieldLineMax;iLine++) if (FL::FieldLinesAll[iLine].IsInitialized()==true) {
-     sprintf(fname,"%s/background.fl=%i.cnt=%i.dat",PIC::OutputDataFileDirectory,iLine,cnt);
-     SEP::FieldLine::OutputBackgroundData(fname,iLine);
+     const std::string backgroundName=std::string(PIC::OutputDataFileDirectory)+
+         "/background.fl="+std::to_string(iLine)+".cnt="+
+         std::to_string(cnt)+".dat";
+     SEP::FieldLine::OutputBackgroundData(
+         const_cast<char*>(backgroundName.c_str()),iLine);
    }
+    }  // PIC::ThisThread == 0: root-only normalization and output
 
 
 
 
-end:
    SEP::Sampling::PitchAngle::PitchAngleRSamplingTable=0.0;
    SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable=0.0;
    SEP::Sampling::PitchAngle::DmumuSamplingTable=0.0;

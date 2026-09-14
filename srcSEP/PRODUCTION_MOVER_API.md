@@ -102,3 +102,18 @@ IDs and tolerances are documented in [test/README.md](test/README.md).
 The complete native AMPS regression gate must additionally exercise one
 particle through each adapter mapping and confirm startup metadata on the linked
 executable. That dependency is not present in a source-only `srcSEP` archive.
+
+## WP34 and WP35 native evidence boundary
+
+`sep_configuration_matrix.*` forms the 90-row mover/coefficient-source/
+turbulence-source/coupling product from the production mover registry and
+classifies every row before initialization. `make print-configuration-matrix`
+prints that exact registry output. Unsupported rows return stable `CFG-*`
+diagnostics with an alternative and allocate no particle state.
+
+`sep_evidence.*` defines the observation record a linked harness must return:
+registered production mover entered, configured coefficient adapter entered,
+common turbulence driver entered, exactly one queue-flush owner, executable and
+configuration identity, source generation, thread count, and rank count. The
+validator rejects any source-only attempt to claim `native-amps`. Completion of
+the actual PIC fixture remains a linked AMPS gate, not a dependency-light test.

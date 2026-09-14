@@ -24,9 +24,18 @@ vertices, the default closure is magnetic-flux conservation:
 A(s) |B(s)| = A(reference) |B(reference)|.
 ```
 
-The default reference area is π m², which makes the former implicit one-metre
-reference radius explicit without preserving its erroneous radial scaling.
-Applications with a measured normalization call `SetReferenceAreaM2()`.
+WP26 converts the configured seed normalization into an owned field-line
+magnetic flux `Phi_i=A_seed|B_seed|` exactly once. Every later query uses
+`A(s)=Phi_i/|B(s)|`; consumers cannot independently choose another reference
+vertex. `SetMagneticFluxWb()` installs a measured/coupled value directly and
+records generation/provenance. The default seed area is the explicitly named,
+fingerprinted legacy value π m². Applications should override it through
+`SetReferenceAreaM2()` or `--field-line-seed-area`.
+
+`MagneticFluxRecord` and its versioned table serializer are dependency-free.
+Refinement distributes the parent flux by positive fractions summing to one,
+increments generation, and assigns the rounding residual to the last child so
+the double-precision sum remains exactly conservative.
 
 If either magnetic magnitude is absent, zero, NaN, or infinite, geometry throws
 unless the application has installed an `ExplicitAreaProfile`. The callback

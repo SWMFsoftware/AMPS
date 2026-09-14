@@ -40,6 +40,29 @@ make test-fte-mfp-unit
 # Step 10 coefficient registries, validation, and SI conversions.
 make test-coefficients-unit
 
+# WP11-WP20 bounded diffusion, error controls, repaired coefficients,
+# species-source normalization, named scales, and ballistic compatibility.
+make test-wp11-wp20-unit
+
+# WP21-WP30 shock/source/flux/sampling/output/configuration contracts.
+make test-wp21-wp30-unit
+
+# WP31-WP41 stiffness, population, system, statistical, robustness,
+# observation, performance, and evidence-governance contracts.
+make test-wp31-wp41-unit
+
+# WP42-WP64 ownership, physics, adaptive numerics, estimators, and
+# fail-closed validation/performance contracts.
+make test-wp42-wp64-unit
+
+# Site-owned linked AMPS/MPI/restart/scaling campaign. This reports BLOCKED
+# rather than inventing evidence when SRCSEP_NATIVE_GATE is unset.
+make test-wp59-wp64-native \
+  SRCSEP_NATIVE_GATE='/reviewed/site/runner --matrix --restart --mpi'
+
+# Print the exact 90-row production compatibility matrix from its registry.
+make print-configuration-matrix
+
 # Step 11 authoritative turbulence state, ledger, remap, and restart.
 make test-turbulence-core-unit
 
@@ -100,11 +123,81 @@ Equivalent CLI examples are:
 when Make is given `-j`, then runs the embedded SWCME suite using its own native
 parallel target.  Expensive extended tests are not part of `--all-tests`.
 
-The Step 6–15 focused targets do not require the linked executable, AMPS, PIC,
+The Step 6–15 and WP11–WP64 focused targets do not require the linked executable, AMPS, PIC,
 MPI, SWMF, or field-line host classes. Each compiles the exact production
 numerical cores with C++11, `-Wall -Wextra -Werror -pedantic`, AddressSanitizer,
 and UndefinedBehaviorSanitizer. LeakSanitizer alone is disabled because the
 managed test environment does not expose the required `/proc` task data.
+
+## Focused WP21–WP30 tests
+
+`test/run_wp21_wp30_tests.sh` compiles the production dependency-free kernels
+and executes one controlled assertion per work package. Coverage includes exact
+shock knots/restart partitioning, oriented multi-crossings, normalized spectra,
+position-sensitive source keys, relative-normal shock-wave energy and branch
+closure, conserved flux/refinement/restart, relativistic Larmor and invalid
+exclusion, no-clamp bins plus physical products/uncertainty, transactional
+checksum/duplicate/corruption behavior, and run-configuration
+precedence/fingerprint/restart mismatch. A final source gate verifies each core
+is reached from its production adapter and that sampling output contains no
+shell invocation or unchecked `sprintf`.
+
+The target is not a substitute for `test-native-amps-validation`,
+`test-swmf-validation`, or `test-observational-validation`.
+
+## Focused WP31–WP41 tests
+
+`test/run_wp31_wp41_tests.sh` compiles the production dependency-light
+contracts under C++11, strict warnings, ASan, and UBSan. It checks:
+
+- `WP31`: a shared stiff reflection limit and automatically fitted first-order
+  cascade refinement (`p=0.969891` in the delivered environment);
+- `WP32`: typed correction/rejection accounting and nonfinite-state failure;
+- `WP33`: exact split/merge moments plus stable lineage identifiers;
+- `WP34`: refusal to promote a source double to native evidence and validation
+  of the complete native-observation record;
+- `WP35`: all 90 mover/source/ownership/coupling rows classified, preflighted,
+  and rendered from one registry;
+- `WP36`: global number/charge/energy/momentum closure and checksummed restart;
+- `WP37`: versioned domain-separated seed panels and explicit mean statistics;
+- `WP38`: IEEE boundary generation, reproducible counterexamples, and fault hits;
+- `WP39`: analytical response-folded instrument counts and uncertainty;
+- `WP40`: exact normalized-work and environment-specific timing decisions;
+- `WP41`: claim/evidence validation and exactly one queue-flush owner.
+
+WP34 native mover execution, WP36 full PIC seam activation, WP37 scheduled
+ensembles, WP38 native adapter fuzzing, WP39 held-out events, and WP40 MPI/OpenMP
+scaling require the enclosing application or external evidence. Their absence
+is BLOCKED, never converted into a source-only PASS.
+
+## Focused WP11--WP20 tests
+
+`test/run_wp11_wp20_tests.sh` compiles the exact dependency-light production
+kernels and executes one controlled case per work package:
+
+- `WP11`: stationary isotropic bounded Milstein diffusion, endpoint symmetry,
+  and proof that no coefficient call leaves `|mu|<=1`;
+- `WP12`: tolerance validation, full-step/two-half-step error estimate,
+  accepted-step accounting, and named limiter histogram;
+- `WP13`: authoritative source-field perturbation and irrelevant-field
+  isolation through the pure coefficient view;
+- `WP14`: constant Dmumu value/derivative and invalid-value rejection;
+- `WP15`: Jokipii analytic derivative versus finite differences and finite
+  endpoint limits;
+- `WP16`: Florinskiy branch mirror symmetry, output assignment, and bounded
+  derivative behavior;
+- `WP17`: adaptive recovery of `kappa=v^2/(6D0)` and explicit resonance-gap
+  reject/ballistic states;
+- `WP18`: proton/alpha/electron scaling, exact species-abundance closure,
+  energy-per-nucleon conversion, and incomplete-definition rejection;
+- `WP19`: validation of named turbulence/spectrum scales and removal of the
+  sampling hard-coded field;
+- `WP20`: typed ballistic lambda, event-mover compatibility, and Parker
+  preflight rejection.
+
+The runner adds source gates for production adapter delegation and uses strict
+warnings plus ASan/UBSan. It does not link the PIC adapter; native AMPS, real
+SWMF, and observational evidence remain separate validation gates.
 
 ## Focused Step 15 scientific-validation tests
 
@@ -243,6 +336,7 @@ separate gate.
 - `COEF03`: lambda/kappa and isotropic-Dmumu conversion round trips;
 - `COEF04`: analytic/imported source identity with identical SI conversion;
 - `COEF05`: structured invalid-domain and ownership status;
+- `COEF06`: parsed constant Dmumu reaches the same pure provider value;
 - `COEF-SOURCE`: all three canonical movers and CLI use the shared registry.
 
 ## Focused Step 11 turbulence tests
@@ -422,6 +516,32 @@ pointer.
 This is a source-only controlled gate. It does not claim a native AMPS build,
 MPI decomposition, SWMF coupling, restart continuity, or observational PASS;
 those remain separate targets and must run in their configured environments.
+
+## WP42--WP64 focused contract gate
+
+`test/run_wp42_wp64_tests.sh` builds one disposable strict-warning sanitizer
+executable from `sep_runtime_contracts`, `sep_physics_extensions`,
+`sep_numerical_extensions`, and `sep_validation_extensions`. It executes one
+positive/negative controlled contract for each work package in order:
+
+- WP42--WP46: persistent turbulence ownership/restart, transactional coupling,
+  distinct velocity derivatives, shock state/upstream flux, and restartable
+  source-event identities;
+- WP47--WP52: Parker measure, signed resonance/bin overlap, 90-degree closure,
+  wave action, conservative cascade/heat, and versioned C1 profiles;
+- WP53--WP56: same-path Brownian adaptivity, TVD second-order advection,
+  conservative remap, and typed particle failure/commit behavior;
+- WP57--WP64: lineage covariance, instrument count likelihood, native trace
+  level, decomposition/restart signatures, multi-level refinement fit,
+  predeclared power/distribution comparison, external manifest governance, and
+  scaling/resource limits.
+
+The runner then checks the production seams for the WP42--WP46 P0 changes and
+invokes `run_wp59_wp64_native_gates.sh`. With no site command, the latter prints
+`BLOCKED` for native, external, and hardware evidence and returns control to the
+source suite. A release workflow must run the explicit native target and treat
+those blocked classes as incomplete. Full equations, APIs, and limitations are
+in [../WP42_WP64_IMPLEMENTATION.md](../WP42_WP64_IMPLEMENTATION.md).
 
 ## Results, exit codes, and MPI
 

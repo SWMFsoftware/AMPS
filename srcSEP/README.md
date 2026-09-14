@@ -120,12 +120,65 @@ derives output fields. See
 [WP01_WP10_IMPLEMENTATION.md](WP01_WP10_IMPLEMENTATION.md) for the work-package
 mapping and validation boundary.
 
+WP11–WP20 add bounded Milstein pitch-angle diffusion, named local error
+budgets, source-bound coefficient inputs, repaired constant/Jokipii/Florinskiy
+providers, adaptive spatial-diffusion quadrature, species-aware transport and
+injection, named turbulence scales, and typed ballistic compatibility. The
+implementation, equations, configuration behavior, per-package verification,
+and native-review boundary are recorded in
+[WP11_WP20_IMPLEMENTATION.md](WP11_WP20_IMPLEMENTATION.md).
+The executed source-only evidence and explicit native/external-data boundary are
+summarized in
+[WP11_WP20_VALIDATION_REPORT.md](WP11_WP20_VALIDATION_REPORT.md).
+
+WP21–WP30 repair analytical shock evolution/restart, general field-line shock
+intersections, injection-spectrum normalization and semantic RNG keys, shock
+turbulence ledgering, per-line magnetic flux, strict particle diagnostics,
+unit-bearing sampling products, transactional output, and immutable run control.
+See [WP21_WP30_IMPLEMENTATION.md](WP21_WP30_IMPLEMENTATION.md) for the formulas,
+configuration/provenance contracts, production wiring, and limitations, and
+[WP21_WP30_VALIDATION_REPORT.md](WP21_WP30_VALIDATION_REPORT.md) for executed
+evidence versus blocked native/external gates.
+
+WP31–WP41 add shared turbulence stiffness planning and typed exceptional paths,
+configured particle-population invariants and lineage, a fail-closed native
+adapter observation contract, a generated 90-case compatibility matrix, global
+system checkpoint ledgers, versioned seed panels, bounded property/fault tests,
+an instrument forward model, deterministic performance counters, and evidence-
+level governance. See
+[WP31_WP41_IMPLEMENTATION.md](WP31_WP41_IMPLEMENTATION.md) for each package's
+why/what/how contract and
+[WP31_WP41_VALIDATION_REPORT.md](WP31_WP41_VALIDATION_REPORT.md) for executed
+versus blocked evidence.
+
+WP42–WP64 close the next production-truth and validation gaps. They add a
+persistent per-field-line turbulence owner, atomic particle–wave transactions,
+distinct velocity-gradient contractions, upstream-flux shock normalization,
+restartable integer source events, explicit Parker measure, signed dynamic
+resonance, a named 90-degree closure, wave-action and spectral heat ledgers,
+versioned C1 profiles, Brownian-tree adaptivity, second-order TVD transport,
+conservative remap, typed mover transactions, lineage-aware estimators,
+multidimensional instrument response, and fail-closed native, decomposition,
+refinement, statistical, external-evidence, and scaling gates. See
+[WP42_WP64_IMPLEMENTATION.md](WP42_WP64_IMPLEMENTATION.md) for the per-package
+why/what/how contracts and
+[WP42_WP64_VALIDATION_REPORT.md](WP42_WP64_VALIDATION_REPORT.md) for executed
+evidence and the explicit native/external limitations.
+
 All three movers obtain coefficients through one registry. Canonical CLI names
 select coefficient authority (`prescribed`, `self-consistent`, `swmf`), spatial
-closure (`from-dmumu`, `from-mfp`), pitch-angle provider (`configured`), MFP
+closure (`from-dmumu`, `from-mfp`), pitch-angle provider (`configured`,
+`constant`, `jokipii-1966`, `florinskiy`), MFP
 model (`qlt`, `qlt1`, `tenishev-2005`, `chen-2024`, `from-spatial`), and invalid
 value policy (`fail`, `ballistic`). Conversion cycles and source/ownership
 mismatches are rejected rather than inferred.
+
+The WP11–WP20 registry also exposes resonance-gap and turbulence-amplitude
+policies and makes spectrum, correlation, quadrature, and mover-error scales
+named configuration. Coupled sources require a source-bound provider and never
+fall back to the legacy configured callback. Parker configurations that could
+produce infinite spatial diffusion fail during preflight, while `fte-mfp`
+retains the exact ballistic zero-event-rate state.
 
 The controlled mover cases `PARK01`–`PARK07`, `FTED01`–`FTED08`, and
 `FTEM01`–`FTEM08` are now descriptors in the same selectable component-test
@@ -158,10 +211,22 @@ and purpose keys. See [TURBULENCE_MODEL.md](TURBULENCE_MODEL.md),
 results and native-build boundary are recorded in
 [STEPS10_12_VALIDATION_REPORT.md](STEPS10_12_VALIDATION_REPORT.md).
 
+WP31 declares the production time integrator as first-order Lie splitting and
+chooses one stage count from advection, source, reflection, and cascade limits.
+`--turbulence-operator-safety`, `--turbulence-max-source-fraction`,
+`--turbulence-max-cascade-fraction`, `--turbulence-min-substep`, and
+`--turbulence-max-substeps` configure and fingerprint this policy. Corrections,
+rejected source energy, physical zeros, and per-operator work are explicit.
+
 The bounded WP01--WP10 contract gate is available as
 `make test-wp01-wp10-unit` (or `./test/run_wp01_wp10_tests.sh`). It compiles
 only dependency-free numerical contracts; the production PIC adapter still
 requires the enclosing AMPS configuration.
+
+The corresponding WP11--WP20 gate is available as
+`make test-wp11-wp20-unit` (or `./test/run_wp11_wp20_tests.sh`). It executes ten
+focused physics/numerics tests with ASan/UBSan and verifies production source
+wiring without claiming a native AMPS result.
 
 `TURB02`–`TURB23` and `TURBOWN01` are also registered with the common CLI.
 The new `TURB21` test advects a nonuniform periodic sine profile and measures
@@ -300,6 +365,13 @@ The enclosing AMPS checkout supplies `Makefile.conf`, PIC/field-line headers,
 MPI, and the final linked executable.  From `srcSEP`, the default expected path
 is `../amps`; override it when necessary:
 
+The WP42--WP64 delivery also removes the legacy `goto end` in
+`SEP::Sampling::Manager`. All ranks still participate in reductions and clear
+their local buffers, while a structured `PIC::ThisThread==0` block alone
+normalizes and writes pitch-angle/background products. This avoids an illegal
+C++ jump across `std::string` and `FILE*` initialization in native C++17 builds
+without changing MPI sampling semantics.
+
 ```sh
 make test-cli-unit
 make test-state-unit
@@ -313,6 +385,11 @@ make test-fte-mfp-unit
 make test-coefficients-unit
 make test-turbulence-core-unit
 make test-reproducibility-unit
+make test-wp21-wp30-unit
+make test-wp31-wp41-unit
+make test-wp42-wp64-unit
+make test-wp59-wp64-native SRCSEP_NATIVE_GATE='/reviewed/site/runner ...'
+make print-configuration-matrix
 make test-acceptance-unit
 make test-documentation-unit
 make test-scientific-validation
@@ -335,7 +412,7 @@ field-line-only source boundary, common transport kernels, Parker solver, and
 coefficient-driven focused-transport solver, event-driven MFP solver, and
 coefficient registry, authoritative turbulence driver, reproducible reduction,
 reportable acceptance fixtures, and the cleaned public/source inventory. The
-Step 6–14 numerical targets use strict C++11 warnings plus AddressSanitizer and
+Step 6–14 and WP31–WP64 numerical targets use strict C++11 warnings plus AddressSanitizer and
 UndefinedBehaviorSanitizer. The Step 15 numerical runner uses the same C++11
 checks; its real SWCME replay uses C++17 because that is SWCME's public API
 baseline. The remaining targets intentionally invoke the linked production CLI
@@ -355,9 +432,10 @@ observational validation. Step 15 records their evidence as separate classes
 and intentionally reports the delivered campaign `INCOMPLETE`. A source-only archive cannot
 exercise the enclosing AMPS/PIC adapter, MPI rank decomposition, coupled SWMF
 epochs, or long campaign conservation behavior; those remain native integration
-gates. Boundary-exit particle-to-wave flux is intentionally not deposited
-because the legacy coupling callback still requires a live particle record.
-The dependency-light TURB01–TURB20 and PAR01–PAR05 suites cover the new core and
+gates. Boundary-exit particle-to-wave work is now carried by a self-contained
+record and committed through the persistent turbulence owner after the particle
+step; no live particle pointer is required. The dependency-light TURB01–TURB23
+and controlled mover suites cover the new core and
 synthetic decomposition invariance, but do not replace native AMPS/OpenMP/MPI,
 SWMF handoff, long-campaign conservation, or observational validation.
 `SCAT01` is explicitly `SKIP` because the historical stochastic diagnostic has
@@ -371,3 +449,18 @@ output, test reports, or nested archives. `mover.cpp`, `fte_mover.cpp`, and
 `mover_state.cpp` are the complete mover source layout. A source-only archive
 still cannot claim the native AMPS strict-warning, MPI, or coupled-SWMF gates;
 commands for those checks are recorded in the migration manifest.
+
+The WP31–WP41 source gate establishes only analytical-core and source-integration
+contracts. Native mover traversal, full seam conservation, long multi-seed
+ensembles, native fuzzing, real instrument comparisons, and MPI/OpenMP scaling
+remain BLOCKED until their named executable, data, or hardware baselines are
+supplied. Documentation uses these evidence levels: `analytical-core`,
+`source-integration`, `native-amps`, `swmf-replay`, and
+`observational-validation`.
+
+For WP42–WP64, production source wiring and analytical contracts pass, while
+the linked callback matrix/restart/decomposition campaign, authenticated SWMF
+and held-out observational comparisons, and frozen multi-node scaling campaign
+remain separate fail-closed gates. `test/run_wp59_wp64_native_gates.sh` reports
+them as `BLOCKED` unless a reviewed site runner is supplied; this is an evidence
+boundary, not a skipped scientific PASS.

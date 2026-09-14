@@ -3,6 +3,12 @@
 #include "sep.h"
 #include "transport_common.h"
 #include "amps2swmf.h"
+#include "util/sep_species_source.h"
+#include "util/sep_injection_spectrum.h"
+#include "util/sep_runtime_contracts.h"
+
+#include <cmath>
+#include <string>
 
 
 int SEP::FieldLine::InjectionParameters::nParticlesPerIteration=300;
@@ -25,6 +31,153 @@ int SEP::FieldLine::InjectionParameters::InjectLocation=SEP::FieldLine::Injectio
 int SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_tenishev2005aiaa;
 int SEP::FieldLine::InjectionParameters::UseAnalyticShockModel=SEP::FieldLine::InjectionParameters::AnalyticShockModel_Tenishev2005;
 
+namespace {
+
+SEP::RuntimeContracts::SourceEventScheduler gSourceEventScheduler;
+std::uint64_t gActiveSourceEvent = 0;
+const std::uint64_t BeginningSourceId = UINT64_C(1);
+const std::uint64_t ShockSourceId = UINT64_C(2);
+
+void BeginInjectionEvent() {
+  // The frozen campaign seed is installed by the run configuration before
+  // injection begins.  Replacing a nonempty scheduler would fork the physical
+  // random sequence, so a mid-campaign seed change is rejected explicitly.
+  const std::uint64_t campaign =
+      SEP::Transport::PICAdapter::CampaignRandomSeed;
+  if (gSourceEventScheduler.campaignSeed() != campaign) {
+    if (gSourceEventScheduler.nextEvent() != 0)
+      exit(__LINE__, __FILE__,
+           "campaign random seed changed after source events were allocated");
+    gSourceEventScheduler =
+        SEP::RuntimeContracts::SourceEventScheduler(campaign);
+  }
+  gActiveSourceEvent = gSourceEventScheduler.AllocateEvent();
+}
+
+SEP::Transport::KeyedRandomStream SourceRandom(
+    std::uint64_t source,int fieldLine,int species,std::uint64_t macro,
+    SEP::Injection::RandomPurpose purpose) {
+  SEP::RuntimeContracts::SourceEventKey key;
+  key.campaign = SEP::Transport::PICAdapter::CampaignRandomSeed;
+  key.source = source;
+  key.event = gActiveSourceEvent;
+  key.fieldLine = static_cast<std::uint64_t>(fieldLine);
+  key.species = static_cast<std::uint64_t>(species);
+  key.ordinal = macro;
+  return SEP::RuntimeContracts::SourceRandomStream(
+      key, static_cast<SEP::RuntimeContracts::SourceRandomPurpose>(
+          static_cast<std::uint64_t>(purpose)));
+}
+
+SEP::RuntimeContracts::SourceEventKey SourceIdentity(
+    std::uint64_t source,int fieldLine,int species,std::uint64_t macro) {
+  // The same immutable tuple labels both purpose-separated random streams and
+  // the particle itself.  Momentum is intentionally absent: changing the
+  // sampling algorithm must change draws, not the identity of source event N.
+  SEP::RuntimeContracts::SourceEventKey key;
+  key.campaign=SEP::Transport::PICAdapter::CampaignRandomSeed;
+  key.source=source;
+  key.event=gActiveSourceEvent;
+  key.fieldLine=static_cast<std::uint64_t>(fieldLine);
+  key.species=static_cast<std::uint64_t>(species);
+  key.ordinal=macro;
+  return key;
+}
+
+void SampleIsotropicMomentum(double magnitude,
+                             SEP::Transport::RandomStream& random,
+                             double p[3]) {
+  const double mu=2.0*random.UniformOpen01()-1.0;
+  const double phi=2.0*Pi*random.UniformOpen01();
+  const double perpendicular=std::sqrt(std::max(0.0,1.0-mu*mu));
+  p[0]=magnitude*perpendicular*std::cos(phi);
+  p[1]=magnitude*perpendicular*std::sin(phi);
+  p[2]=magnitude*mu;
+}
+
+void SamplePitchAngleMomentum(double magnitude,double mu,const double l[3],
+                              SEP::Transport::RandomStream& random,double p[3]) {
+  // Construct a deterministic perpendicular frame, then randomize only the
+  // physical gyrophase with its purpose-tagged stream.  This removes the hidden
+  // global RNG consumed by Vector3D::GetRandomNormFrame.
+  double reference[3]={0.0,0.0,1.0};
+  if (std::fabs(l[2])>0.9) { reference[0]=1.0;reference[2]=0.0; }
+  double e0[3]={l[1]*reference[2]-l[2]*reference[1],
+                l[2]*reference[0]-l[0]*reference[2],
+                l[0]*reference[1]-l[1]*reference[0]};
+  const double norm=Vector3D::Length(e0);
+  for (int d=0;d<3;++d) e0[d]/=norm;
+  const double e1[3]={l[1]*e0[2]-l[2]*e0[1],
+                      l[2]*e0[0]-l[0]*e0[2],
+                      l[0]*e0[1]-l[1]*e0[0]};
+  const double phi=2.0*Pi*random.UniformOpen01();
+  const double perpendicular=std::sqrt(std::max(0.0,1.0-mu*mu));
+  for (int d=0;d<3;++d)
+    p[d]=magnitude*(mu*l[d]+perpendicular*(std::cos(phi)*e0[d]+
+                                           std::sin(phi)*e1[d]));
+}
+
+SEP::Transport::SpeciesSource::Configuration ResolveSpeciesSource(int spec) {
+  namespace SS = SEP::Transport::SpeciesSource;
+  SS::Configuration source;
+  if (SS::HasActiveConfiguration()) {
+    const SEP::Transport::Status status =
+        SS::FindActiveConfiguration(spec, &source);
+    if (!status.ok()) exit(__LINE__, __FILE__, status.message.c_str());
+    return source;
+  }
+
+  // Preserve legacy input behavior when no explicit WP18 source table was
+  // installed, while still returning a complete typed species record to the
+  // injection calculations below.  The fallback is intentionally visible and
+  // cannot be used after an explicit table is installed: a missing configured
+  // species then fails before it can inherit proton-like parameters.
+  source.species.modelSpecies = spec;
+  source.species.name = "PIC-species-" + std::to_string(spec);
+  source.species.signedChargeC =
+      PIC::MolecularData::GetElectricCharge(spec);
+  source.species.restMassKg = PIC::MolecularData::GetMass(spec);
+  const double protonMassKg = 1.67262192369e-27;
+  const double massRatio = source.species.restMassKg / protonMassKg;
+  source.species.nucleonCount =
+      massRatio >= 0.5 ? std::floor(massRatio + 0.5) : 0.0;
+  source.abundanceFraction = 1.0;
+  source.injectionEfficiency =
+      SEP::FieldLine::InjectionParameters::InjectionEfficiency;
+  source.spectralIndex = SEP::FieldLine::InjectionParameters::PowerIndex;
+  source.energyConvention = SS::EnergyConvention::TotalKinetic;
+  return source;
+}
+
+double ResolveTotalEnergyJ(
+    const SEP::Transport::SpeciesSource::Configuration& source,
+    double configuredEnergyMeV) {
+  const SEP::Transport::ScalarResult total =
+      SEP::Transport::SpeciesSource::TotalKineticEnergyJ(
+          source, SEP::Units::EnergyFromMeV(configuredEnergyMeV).Value());
+  if (!total.status.ok())
+    exit(__LINE__, __FILE__, total.status.message.c_str());
+  return total.value;
+}
+
+double ExplicitSourceScale(
+    const SEP::Transport::SpeciesSource::Configuration& source) {
+  if (!SEP::Transport::SpeciesSource::HasActiveConfiguration()) return 1.0;
+  const double legacyEfficiency =
+      SEP::FieldLine::InjectionParameters::InjectionEfficiency;
+  if (!(legacyEfficiency > 0.0))
+    exit(__LINE__, __FILE__,
+         "explicit species source cannot scale a non-positive legacy efficiency");
+  // Analytic legacy rates already include the historical global efficiency.
+  // Replace that factor with the species-local efficiency, then partition the
+  // event by normalized abundance.  SWMF count construction below uses the
+  // local efficiency directly and therefore does not call this helper.
+  return source.abundanceFraction *
+      source.injectionEfficiency / legacyEfficiency;
+}
+
+}  // namespace
+
 
 
 long int SEP::FieldLine::InjectParticleFieldLineBeginning(int spec,int iFieldLine) {
@@ -37,22 +190,29 @@ long int SEP::FieldLine::InjectParticleFieldLineBeginning(int spec,int iFieldLin
   double l[3],pAbs,p[3],ParticleWeightCorrectionFactor=1.0;
 
   npart=100;
-  pAbs=Relativistic::Energy2Momentum(100.0*MeV2J,PIC::MolecularData::GetMass(spec));
+  const SEP::Transport::SpeciesSource::Configuration speciesSource =
+      ResolveSpeciesSource(spec);
+  ParticleWeightCorrectionFactor=ExplicitSourceScale(speciesSource);
+  pAbs=Relativistic::Energy2Momentum(
+      ResolveTotalEnergyJ(speciesSource,100.0),
+      PIC::MolecularData::GetMass(spec));
 
   FL::FieldLinesAll[iFieldLine].GetSegment(0)->GetDir(l);
 
   for (int i=0;i<npart;i++) {
     //generate a particle
-    Vector3D::Distribution::Uniform(p,pAbs);
+    SEP::Transport::KeyedRandomStream random=SourceRandom(
+        BeginningSourceId,iFieldLine,spec,static_cast<std::uint64_t>(i),
+        SEP::Injection::RandomPurpose::PitchAngle);
+    SampleIsotropicMomentum(pAbs,random,p);
 
     if (Vector3D::DotProduct(p,l)<0.0) for (int idim=0;idim<3;idim++) p[idim]=-p[idim];
 
     if ((newParticle=PIC::FieldLine::InjectParticle_default(spec,p,ParticleWeightCorrectionFactor,iFieldLine,0))!=-1) {
-      SEP::Transport::PICAdapter::InitializeParticleTransportState(
-          newParticle, UINT64_C(1),
-          (static_cast<std::uint64_t>(iFieldLine) << 32) |
-              static_cast<std::uint64_t>(i),
-          p);
+      SEP::Transport::PICAdapter::InitializeParticleTransportStateWithIdentity(
+          newParticle, SEP::RuntimeContracts::StableSourceIdentity(
+              SourceIdentity(BeginningSourceId,iFieldLine,spec,
+                             static_cast<std::uint64_t>(i))));
       nInjectedParticles++;
 
     }
@@ -88,6 +248,12 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   double xInjection[3]={0.0,0.0,0.0},S=0.0,anpart,p[3],ParticleWeightCorrectionFactor;
   int nInjectedParticles=0;
   bool injection_coordinate_was_set=false;
+
+  // Resolve the species contract once for the complete injection event.  Its
+  // charge/mass metadata, abundance, efficiency, spectral index, and energy
+  // convention therefore cannot change between count and momentum sampling.
+  const SEP::Transport::SpeciesSource::Configuration speciesSource =
+      ResolveSpeciesSource(spec);
 
 
   //determine the filed line to inject particles
@@ -165,19 +331,29 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   const double local_fraction=S-iShockFieldLine;
 
   #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-  if (AMPS2SWMF::ShockData[iFieldLine].ShockSpeed>AMPS2SWMF::MinShockSpeed) {
-    swept_volume_m3=SEP::FieldLine::FluxTubeGeometry::SweptVolumeM3(
-        Segment,iFieldLine,local_fraction,
-        AMPS2SWMF::ShockData[iFieldLine].ShockSpeed,
-        node->block->GetLocalTimeStep(spec));
-  }
-  else {
-    if (AMPS2SWMF::MinShockSpeed==0.0) exit(__LINE__,__FILE__,"Error: AMPS2SWMF::MinShockSpeed is not set");
+  // WP45 counts particles from the upstream normal mass flux.  A configured
+  // minimum shock speed is a detector threshold, not a physical substitute:
+  // using it here would manufacture particles when the supplied shock stalls.
+  const double shock_speed_m_s=AMPS2SWMF::ShockData[iFieldLine].ShockSpeed;
+  if (!(shock_speed_m_s>0.0) || !std::isfinite(shock_speed_m_s)) return 0;
 
-    swept_volume_m3=SEP::FieldLine::FluxTubeGeometry::SweptVolumeM3(
-        Segment,iFieldLine,local_fraction,AMPS2SWMF::MinShockSpeed,
-        node->block->GetLocalTimeStep(spec));
-  }
+  double upstream_velocity_begin[3],upstream_velocity_end[3];
+  Segment->GetBegin()->GetPlasmaVelocity(upstream_velocity_begin);
+  Segment->GetEnd()->GetPlasmaVelocity(upstream_velocity_end);
+  const double radius_m=Vector3D::Length(xInjection);
+  if (!(radius_m>0.0) || !std::isfinite(radius_m)) return 0;
+  double upstream_normal_speed_m_s=0.0;
+  for (int d=0;d<3;++d)
+    upstream_normal_speed_m_s+=
+        0.5*(upstream_velocity_begin[d]+upstream_velocity_end[d])*
+        xInjection[d]/radius_m;
+  const double relative_normal_speed_m_s=
+      shock_speed_m_s-upstream_normal_speed_m_s;
+  if (!(relative_normal_speed_m_s>0.0) ||
+      !std::isfinite(relative_normal_speed_m_s)) return 0;
+  swept_volume_m3=SEP::FieldLine::FluxTubeGeometry::SweptVolumeM3(
+      Segment,iFieldLine,local_fraction,relative_normal_speed_m_s,
+      node->block->GetLocalTimeStep(spec));
   #else
     switch (InjectionParameters::UseAnalyticShockModel) {
     case InjectionParameters::AnalyticShockModel_Tenishev2005:
@@ -223,21 +399,30 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-  n_sw_end=AMPS2SWMF::ShockData[iFieldLine].DownStreamDensity;
-
+  // Both vertex samples are upstream values.  The old downstream-density
+  // overwrite multiplied a downstream state by the shock-frame swept volume
+  // and therefore violated the Rankine-Hugoniot flux balance by roughly the
+  // compression ratio.  Linear midpoint interpolation matches the geometric
+  // midpoint used by this segment-local source.
+  const double upstream_density_per_m3=0.5*(n_sw_begin+n_sw_end);
   const double injected_physical_particles=
       SEP::FieldLine::FluxTubeGeometryCore::InjectedPhysicalParticleCount(
-          SEP::Units::NumberDensityPerM3(n_sw_end),
+          SEP::Units::NumberDensityPerM3(upstream_density_per_m3),
           SEP::Units::VolumeM3(swept_volume_m3),
-          SEP::FieldLine::InjectionParameters::InjectionEfficiency);
-  anpart=injected_physical_particles;
+          speciesSource.injectionEfficiency);
+  // abundanceFraction partitions the total source across explicitly
+  // configured species.  Legacy mode returns one here and is bit-compatible
+  // with the former single-parameter source.
+  anpart=speciesSource.abundanceFraction*injected_physical_particles;
   anpart/=node->block->GetLocalParticleWeight(spec);
 #else
   n_sw_end=1.0;
 
   switch (InjectionParameters::UseAnalyticShockModel) {
   case InjectionParameters::AnalyticShockModel_Tenishev2005:
-    anpart=swept_volume_m3*SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate()/node->block->GetLocalParticleWeight(spec);
+    anpart=ExplicitSourceScale(speciesSource)*swept_volume_m3*
+        SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate()/
+        node->block->GetLocalParticleWeight(spec);
     cout << "Shock locaiton=" << Vector3D::Length(xInjection)/_AU_ << "[AU], Source Rate=" << SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() << endl << flush;
     break;
   case InjectionParameters::AnalyticShockModel_none:
@@ -266,11 +451,17 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   }
 
   npart=(int)anpart;
-  if (anpart-npart>rnd()) npart++;
+  SEP::Transport::KeyedRandomStream countRandom=SourceRandom(
+      ShockSourceId,iFieldLine,spec,0,
+      SEP::Injection::RandomPurpose::EventCount);
+  if (anpart-npart>countRandom.UniformOpen01()) npart++;
 
   auto GetMomentum_Tenishev2005AIAA = [&] (double *pAbsTable,double *WeightCorrectionTable,int nParticles) -> bool {
-    double emin=InjectionParameters::emin*MeV2J;
-    double emax=InjectionParameters::emax*MeV2J;
+    // Convert MeV or MeV/nucleon to total joules before the relativistic
+    // momentum transform.  The convention is part of the per-species source
+    // record and is therefore unambiguous for alpha particles and heavy ions.
+    double emin=ResolveTotalEnergyJ(speciesSource,InjectionParameters::emin);
+    double emax=ResolveTotalEnergyJ(speciesSource,InjectionParameters::emax);
 
     double s;
 
@@ -295,20 +486,19 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
     }
 
-    if (s>SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio) s=SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio;
-
-    if (s==1.0) return false;
+    // The compression ratio is an input state, not a tunable numerical cap.
+    // Invalid or degenerate shocks are rejected before the DSA exponent is
+    // evaluated; silently clipping r or q would change the requested physics.
+    if (!(s>1.0) || !std::isfinite(s)) return false;
 
     double q=3.0*s/(s-1.0);
     double pAbs,pmin,pmax,speed,pvect[3];
     double mass=PIC::MolecularData::GetMass(spec);
 
-    if (q<1.0) q=1.0;
+    if (!(q>0.0) || !std::isfinite(q)) return false;
 
     pmin=Relativistic::Energy2Momentum(emin,mass);
     pmax=Relativistic::Energy2Momentum(emax,mass);
-
-    double cMin=pow(pmin,-q);
 
     speed=Relativistic::E2Speed(emin,PIC::MolecularData::GetMass(spec));
     pmin=Relativistic::Speed2Momentum(speed,mass);
@@ -316,19 +506,24 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     speed=Relativistic::E2Speed(emax,PIC::MolecularData::GetMass(spec));
     pmax=Relativistic::Speed2Momentum(speed,mass);
 
-    double WeightNorm=pow(pmin,1.0-q);
-
-    //to cover the entire range of the particle momentum, the momentum will be generated in the log(p) space
-    //that will be accounted for with a statistical weight correction
-
-    double log_pmin=log(pmin);
-    double log_pmax=log(pmax);
-
+    // Diffusive-shock acceleration supplies phase-space f(p) proportional to
+    // p^-q.  The number spectrum is dN/dp proportional to p^(2-q), hence the
+    // explicit density index q-2 below.  Sampling its normalized inverse CDF
+    // eliminates the ambiguous historical log-p proposal weight.
+    SEP::Injection::Spectrum spectrum;
+    spectrum.measure=SEP::Injection::Measure::Momentum;
+    spectrum.minimum=pmin;
+    spectrum.maximum=pmax;
+    spectrum.powerIndex=q-2.0;
     for (int i=0;i<nParticles;i++) {
-      pAbsTable[i]=pmin*exp(rnd()*(log_pmax-log_pmin));
-      WeightCorrectionTable[i]=pow(pAbsTable[i],1.0-q)/WeightNorm;
-
-      validate_numeric(WeightCorrectionTable[i],1.0E-50,1.0E10,__LINE__,__FILE__);
+      SEP::Transport::KeyedRandomStream random=SourceRandom(
+          ShockSourceId,iFieldLine,spec,static_cast<std::uint64_t>(i),
+          SEP::Injection::RandomPurpose::Spectrum);
+      const SEP::Transport::ScalarResult sample=SEP::Injection::InverseCdf(
+          spectrum,random.UniformOpen01());
+      if (!sample.status.ok()) exit(__LINE__,__FILE__,sample.status.message.c_str());
+      pAbsTable[i]=sample.value;
+      WeightCorrectionTable[i]=1.0;
     }
 
     return true;
@@ -337,25 +532,30 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   auto GetMomentum_Sokolov2004AJ = [&] (double *pAbsTable,double *WeightCorrectionTable,int nParticles) {
     // Configuration energies are MeV; relativistic momentum helpers require
     // joules.  The typed conversion makes this unit boundary explicit.
-    const double energy_min_J=
-        SEP::Units::EnergyFromMeV(SEP::FieldLine::InjectionParameters::emin).Value();
-    const double energy_max_J=
-        SEP::Units::EnergyFromMeV(SEP::FieldLine::InjectionParameters::emax).Value();
+    const double energy_min_J=ResolveTotalEnergyJ(
+        speciesSource,SEP::FieldLine::InjectionParameters::emin);
+    const double energy_max_J=ResolveTotalEnergyJ(
+        speciesSource,SEP::FieldLine::InjectionParameters::emax);
     double p_injection_min=Relativistic::Energy2Momentum(
         energy_min_J,PIC::MolecularData::GetMass(spec));
     double p_injection_max=Relativistic::Energy2Momentum(
         energy_max_J,PIC::MolecularData::GetMass(spec));
 
-    double log_p_injection_min=log(p_injection_min);
-    double log_p_injection_max=log(p_injection_max);
-
-    double WeightNorm=pow(log_p_injection_min,1.0-InjectionParameters::PowerIndex);
-
-    if (InjectionParameters::PowerIndex<1.0) exit(__LINE__,__FILE__,"InjectionParameters::PowerIndex is out of range: must be more then 1");
-
+    if (speciesSource.spectralIndex<=1.0) exit(__LINE__,__FILE__,"species source spectral index is out of range: must be greater than one");
+    SEP::Injection::Spectrum spectrum;
+    spectrum.measure=SEP::Injection::Measure::Momentum;
+    spectrum.minimum=p_injection_min;
+    spectrum.maximum=p_injection_max;
+    spectrum.powerIndex=speciesSource.spectralIndex;
     for (int i=0;i<nParticles;i++) {
-      pAbsTable[i]=p_injection_min*exp(rnd()*(log_p_injection_max-log_p_injection_min));
-      WeightCorrectionTable[i]=pow(pAbsTable[i],1.0-InjectionParameters::PowerIndex)/WeightNorm;
+      SEP::Transport::KeyedRandomStream random=SourceRandom(
+          ShockSourceId,iFieldLine,spec,static_cast<std::uint64_t>(i),
+          SEP::Injection::RandomPurpose::Spectrum);
+      const SEP::Transport::ScalarResult sample=SEP::Injection::InverseCdf(
+          spectrum,random.UniformOpen01());
+      if (!sample.status.ok()) exit(__LINE__,__FILE__,sample.status.message.c_str());
+      pAbsTable[i]=sample.value;
+      WeightCorrectionTable[i]=1.0;
     }
   };
 
@@ -380,8 +580,9 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
      // ConstEnergyInjectionValue is part of the legacy input contract and is
      // expressed in MeV, not joules.
      p_const=Relativistic::Energy2Momentum(
-         SEP::Units::EnergyFromMeV(
-             SEP::FieldLine::InjectionParameters::ConstEnergyInjectionValue).Value(),
+         ResolveTotalEnergyJ(
+             speciesSource,
+             SEP::FieldLine::InjectionParameters::ConstEnergyInjectionValue),
          PIC::MolecularData::GetMass(spec));
 
     for (int i=0;i<npart;i++) pAbsTable[i]=p_const,WeightCorrectionTable[i]=1.0;
@@ -392,30 +593,30 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
   if (shock_injects_particles==true) for (int i=0;i<npart;i++) {
     if ((InjectionParameters::InjectionMomentumModel==InjectionParameters::_const_speed)||(InjectionParameters::InjectionMomentumModel==InjectionParameters::_const_energy)) {
-      double p_parallel[3],p_norm[3];
       double l[3];
-      double e0[3],e1[3],c,mu;
+      double mu;
 
       Segment->GetDir(l);
-      Vector3D::GetRandomNormFrame(e0,e1,l);
-
       mu=SEP::FieldLine::InjectionParameters::ConstMuInjectionValue;
-      c=sqrt(1.0-mu*mu);
-
-      for (int idim=0;idim<3;idim++) p[idim]=pAbsTable[i]*(mu*l[idim]+c*e0[idim]);
+      SEP::Transport::KeyedRandomStream gyrophaseRandom=SourceRandom(
+          ShockSourceId,iFieldLine,spec,static_cast<std::uint64_t>(i),
+          SEP::Injection::RandomPurpose::Gyrophase);
+      SamplePitchAngleMomentum(pAbsTable[i],mu,l,gyrophaseRandom,p);
     }
     else {
-      Vector3D::Distribution::Uniform(p,pAbsTable[i]);
+      SEP::Transport::KeyedRandomStream directionRandom=SourceRandom(
+          ShockSourceId,iFieldLine,spec,static_cast<std::uint64_t>(i),
+          SEP::Injection::RandomPurpose::PitchAngle);
+      SampleIsotropicMomentum(pAbsTable[i],directionRandom,p);
     }
 
     long int newParticle;
 
     if ((newParticle=PIC::FieldLine::InjectParticle_default(spec,p,GlobalWeightCorrectionFactor*WeightCorrectionTable[i],iFieldLine,iShockFieldLine))!=-1) {
-      SEP::Transport::PICAdapter::InitializeParticleTransportState(
-          newParticle, UINT64_C(2),
-          (static_cast<std::uint64_t>(iFieldLine) << 32) |
-              static_cast<std::uint64_t>(i),
-          p);
+      SEP::Transport::PICAdapter::InitializeParticleTransportStateWithIdentity(
+          newParticle, SEP::RuntimeContracts::StableSourceIdentity(
+              SourceIdentity(ShockSourceId,iFieldLine,spec,
+                             static_cast<std::uint64_t>(i))));
       nInjectedParticles++;
 
       //Set the local coordinte to the shock location
@@ -433,6 +634,11 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
 long int SEP::FieldLine::InjectParticles() {
   long int res=0;
+
+  // One integer event is shared by all species/field-line records generated by
+  // this scheduler invocation.  Timestep subdivision and decimal formatting of
+  // simulation time therefore cannot change source identities or random draws.
+  BeginInjectionEvent();
 
   for (int spec=0;spec<PIC::nTotalSpecies;spec++) for (int iFieldLine=0;iFieldLine<PIC::FieldLine::nFieldLine;iFieldLine++) {
     switch (SEP::FieldLine::InjectionParameters::InjectLocation) {
@@ -454,6 +660,28 @@ long int SEP::FieldLine::InjectParticles() {
   }
 
   return res;
+}
+
+SEP::Transport::Status SEP::FieldLine::SerializeInjectionSourceState(
+    std::string* text) {
+  return gSourceEventScheduler.Serialize(text);
+}
+
+SEP::Transport::Status SEP::FieldLine::RestoreInjectionSourceState(
+    const std::string& text) {
+  // Deserialize into a staged scheduler first.  A malformed checkpoint cannot
+  // advance or reset the live event counter, which is essential for exactly-
+  // once source identities after restart.
+  SEP::RuntimeContracts::SourceEventScheduler staged;
+  const SEP::Transport::Status status=staged.Deserialize(text);
+  if (!status.ok()) return status;
+  if (staged.campaignSeed()!=SEP::Transport::PICAdapter::CampaignRandomSeed)
+    return SEP::Transport::Status::Error(
+        SEP::Transport::StatusCode::InvalidArgument,
+        "source scheduler campaign seed disagrees with run configuration");
+  gSourceEventScheduler=staged;
+  gActiveSourceEvent=0;
+  return SEP::Transport::Status::Ok();
 }
 
 //=============================================================================

@@ -27,3 +27,10 @@ cover:
 
 Every metric also carries its value, threshold, comparison operator, and units.
 The runner will never infer a pass from a plot or free-form narrative.
+
+WP39 replaces the former free-form forward-operator label with the structured
+`configuration.forward_operator` object in
+`observational_event.template.json`. It must identify the response matrix and
+angular model, cadence and species, detector dead time and saturation policy,
+background subtraction, uncertainty propagation, and operator version. Archive
+response files through `inputs` and record their SHA-256 like observations.

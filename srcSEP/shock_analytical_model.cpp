@@ -1,4 +1,8 @@
 #include "sep.h"
+#include "util/sep_shock_source_core.h"
+#include "turbulence_production_adapter.h"
+#include "util/sep_run_configuration.h"
+#include "util/sep_physics_extensions.h"
 //analytic model of a shock wave (Tenishev-2005-AIAA-4928
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
@@ -8,6 +12,28 @@
 double SEP::ParticleSource::ShockWave::Tenishev2005::rShock =1.0E-5*_SUN__RADIUS_;
 bool SEP::ParticleSource::ShockWave::Tenishev2005::InitFlag=false;
 double SEP::ParticleSource::ShockWave::Tenishev2005::MinFieldLineHeliocentricDistance=-1.0;
+
+namespace {
+
+SEP::Shock::TrajectoryState gAnalyticalShockState;
+
+SEP::Shock::TrajectoryConfiguration AnalyticalShockConfiguration(
+    double launchRadiusM) {
+  SEP::Shock::TrajectoryConfiguration configuration;
+  configuration.launchEpochS=0.0;
+  configuration.launchRadiusM=launchRadiusM;
+  const double radiiAu[]={0.1,0.15,0.3,0.5,1.3};
+  const double speedsKmS[]={1800.0,1500.0,1500.0,1100.0,900.0};
+  for (std::size_t i=0;i<sizeof(radiiAu)/sizeof(radiiAu[0]);++i) {
+    SEP::Shock::SpeedKnot knot;
+    knot.radiusM=radiiAu[i]*_AU_;
+    knot.speedMPerS=speedsKmS[i]*1.0e3;
+    configuration.knots.push_back(knot);
+  }
+  return configuration;
+}
+
+}  // namespace
 
 
 void SEP::ParticleSource::ShockWave::Tenishev2005::Init() {
@@ -27,51 +53,55 @@ void SEP::ParticleSource::ShockWave::Tenishev2005::Init() {
 
   rShock=MinFieldLineHeliocentricDistance;
 
+  // Establish a complete analytical state at the physical launch epoch.  The
+  // state is advanced from this datum with exact piecewise integration, so a
+  // restart at nonzero time and a differently partitioned timestep reproduce
+  // the same radius instead of depending on a function-static last time.
+  const SEP::Transport::Status trajectoryStatus=SEP::Shock::StateAtEpoch(
+      AnalyticalShockConfiguration(rShock),0.0,&gAnalyticalShockState);
+  if (!trajectoryStatus.ok())
+    exit(__LINE__,__FILE__,trajectoryStatus.message.c_str());
+
 }
 
 double SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio() {
-  double r = rShock / _AU_;
-  double res;
-
-  if (r<0.04) {
-    res=1.7;
-  }
-  else {
-    res=2.0+(1.4-2.0)/(0.14-0.04)*(r-0.04);
-    if (res<1.0) res=1.0;
-  }
-
-  return res;
+  // WP52 makes this legacy analytical closure a named, versioned C1 profile.
+  // Zero endpoint slopes remove the derivative jump at 0.04 and 0.14 AU; the
+  // constant-endpoint policy states explicitly how the model behaves outside
+  // its calibration interval.  The former unconstrained linear continuation
+  // eventually produced r<=1 and was then hidden by an unrelated floor.
+  SEP::PhysicsExtensions::AnalyticProfile profile;
+  profile.id="tenishev2005-compression-ratio";
+  profile.version="2.0.0";
+  profile.units="dimensionless";
+  profile.provenance=
+      "srcSEP WP52 C1 replacement of the historical 0.04--0.14 AU fit";
+  profile.extrapolation=
+      SEP::PhysicsExtensions::ProfileExtrapolation::ConstantEndpoint;
+  SEP::PhysicsExtensions::ProfileKnot inner,outer;
+  inner.radiusM=0.04*_AU_; inner.value=1.7; inner.derivativePerM=0.0;
+  outer.radiusM=0.14*_AU_; outer.value=1.4; outer.derivativePerM=0.0;
+  profile.knots.push_back(inner);
+  profile.knots.push_back(outer);
+  const SEP::PhysicsExtensions::ProfileValue value=
+      SEP::PhysicsExtensions::EvaluateProfile(profile,rShock);
+  if (!value.status.ok() || !(value.value>1.0))
+    exit(__LINE__,__FILE__,"invalid analytical shock compression profile");
+  return value.value;
 }
 
 double SEP::ParticleSource::ShockWave::Tenishev2005::GetShockSpeed() {
-  double r = rShock / _AU_;
-  double res;
-
   if (SEP::ShockModelType==SEP::cShockModelType::SwCme1d) {
     return SEP::SW1DAdapter::gState.V_sh_ms;
   }
-
-
-  if (r < 0.1)
-    res = 1800.0;
-  else if (r < 0.15)
-    res = 1800.0 + (1500.0 - 1800.0) / (0.15 - 0.1) * (r - 0.1);
-  else if (r < 0.3)
-    res = 1500.0;
-  else if (r < 0.5)
-    res = 1500.0 + (1100.0 - 1500.0) / (0.5 - 0.1) * (r - 0.3);
-  else if (r < 1.3)
-    res = 1100 + (900.0 - 1100.0) / (1.3 - 0.5) * (r - 0.5);
-  else
-    res = 900.0;
-
-  return res*1.0E3;
+  if (InitFlag==false) Init();
+  const SEP::Transport::ScalarResult speed=SEP::Shock::SpeedAtRadius(
+      gAnalyticalShockState.configuration,rShock);
+  if (!speed.status.ok()) exit(__LINE__,__FILE__,speed.status.message.c_str());
+  return speed.value;
 }
 
 void SEP::ParticleSource::ShockWave::Tenishev2005::UpdateShockLocation() {
-  static double simulation_time_last = 0.0;
-
   if (InitFlag==false) Init();
 
   // PIC owns the only simulation clock.  Read it through the same srcSEP clock
@@ -80,11 +110,14 @@ void SEP::ParticleSource::ShockWave::Tenishev2005::UpdateShockLocation() {
   // clock in this shock model.
   const double simulation_time = SEP::Background::SimulationTimeSeconds();
 
-  if (simulation_time_last != simulation_time) {
-    double speed = GetShockSpeed();
-    rShock += speed * (simulation_time - simulation_time_last);
-    simulation_time_last=simulation_time;
+  if (SEP::ShockModelType==SEP::cShockModelType::SwCme1d) {
+    rShock=SEP::SW1DAdapter::gState.r_sh_m;
+    return;
   }
+  const SEP::Transport::Status status=
+      SEP::Shock::AdvanceToEpoch(&gAnalyticalShockState,simulation_time);
+  if (!status.ok()) exit(__LINE__,__FILE__,status.message.c_str());
+  rShock=gAnalyticalShockState.radiusM;
 }
 
 double SEP::ParticleSource::ShockWave::Tenishev2005::GetSolarWindDensity() {
@@ -127,90 +160,34 @@ double SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() {
 }
 
 int SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(int iFieldLine,double &S,double *xInjection) {
-  double r, *x, r_sh,r2 = rShock * rShock;
-  int iSegment;
-  PIC::FieldLine::cFieldLineSegment *Segment =
-      PIC::FieldLine::FieldLinesAll[iFieldLine].GetFirstSegment();
-
-  if (SEP::ShockModelType==SEP::cShockModelType::SwCme1d) {
-    r_sh=SEP::SW1DAdapter::gState.r_sh_m;
-    r2=r_sh*r_sh;
-  }
-
+  // Update the authoritative trajectory before deriving the surface radius.
+  // The former order used a stale rShock^2 for analytical runs.
   UpdateShockLocation();
-  x = Segment->GetBegin()->GetX();
-
-  S = -1.0;
-  if (r2 <= Vector3D::DotProduct(x, x)) return -1;
-
-  for (iSegment = 0; Segment != NULL; iSegment++, Segment = Segment->GetNext()) {
-    double *x1 = Segment->GetBegin()->GetX();
-    double r1_2 = Vector3D::DotProduct(x1, x1);
-
-    if (r1_2 < r2) {
-        double *x2 = Segment->GetEnd()->GetX();
-        double r2_2 = Vector3D::DotProduct(x2, x2);
-
-        if (r2_2 >= r2) {
-            // Solve quadratic equation |x1 + t(x2-x1)|^2 = r2
-            double d[3];
-            double a = 0.0, b = 0.0, c = -r2;
-
-            for (int i = 0; i < 3; i++) {
-                d[i] = x2[i] - x1[i];
-                a += d[i] * d[i];           // |d|^2
-                b += 2.0 * x1[i] * d[i];    // 2(x1·d)
-                c += x1[i] * x1[i];         // |x1|^2
-            }
-
-            // Solve at^2 + bt + c = 0
-            double discriminant = b*b - 4*a*c;
-
-            if (discriminant < 0) {
-                // Use segment start point since it's inside shock
-                for (int i = 0; i < 3; i++) {
-                   xInjection[i] = x1[i];
-                }
-
-		S=iSegment;
-                return iSegment;
-            }
-
-            // Two real solutions
-            double t1 = (-b - sqrt(discriminant))/(2*a);
-            double t2 = (-b + sqrt(discriminant))/(2*a);
-
-            // Find valid t
-            if (t1 >= 0 && t1 <= 1) {  // t1 is in [0,1]
-                for (int i = 0; i < 3; i++) {
-                    xInjection[i] = x1[i] + t1 * d[i];
-                }
-
-		S=t1+iSegment;
-                return iSegment;
-            }
-            else if (t2 >= 0 && t2 <= 1) {  // t2 is in [0,1]
-                for (int i = 0; i < 3; i++) {
-                    xInjection[i] = x1[i] + t2 * d[i];
-                }
-
-		S=t2+iSegment;
-                return iSegment;
-            }
-            else if (t1 < 0 && t2 > 1) {  // Solutions bracket the segment
-                for (int i = 0; i < 3; i++) {
-                    xInjection[i] = x1[i];
-                }
-
-		S=iSegment;
-                return iSegment;
-            }
-        }
+  const double radius=SEP::ShockModelType==SEP::cShockModelType::SwCme1d
+      ? SEP::SW1DAdapter::gState.r_sh_m : rShock;
+  std::vector<SEP::Shock::Vector3> vertices;
+  PIC::FieldLine::cFieldLineSegment* segment=
+      PIC::FieldLine::FieldLinesAll[iFieldLine].GetFirstSegment();
+  if (segment==NULL) { S=-1.0; return -1; }
+  for (;segment!=NULL;segment=segment->GetNext()) {
+    if (vertices.empty()) {
+      const double* x=segment->GetBegin()->GetX();
+      SEP::Shock::Vector3 point; point.x=x[0];point.y=x[1];point.z=x[2];
+      vertices.push_back(point);
     }
-}
-
-
-return -1;
+    const double* x=segment->GetEnd()->GetX();
+    SEP::Shock::Vector3 point; point.x=x[0];point.y=x[1];point.z=x[2];
+    vertices.push_back(point);
+  }
+  const SEP::Shock::IntersectionResult result=SEP::Shock::IntersectSphere(
+      vertices,radius,std::max(1.0,1.0e-12*radius),
+      SEP::Shock::IntersectionPolicy::FirstOutward);
+  if (result.status!=SEP::Shock::IntersectionStatus::Ok) { S=-1.0; return -1; }
+  const SEP::Shock::Intersection& hit=result.intersections.front();
+  xInjection[0]=hit.positionM.x; xInjection[1]=hit.positionM.y;
+  xInjection[2]=hit.positionM.z;
+  S=static_cast<double>(hit.segment)+hit.fraction;
+  return static_cast<int>(hit.segment);
 }
 
 
@@ -223,110 +200,97 @@ namespace ShockWave {
 // dt: time needed for shock to move from r0 to r1
 void ShockTurbulenceEnergyInjection(double r0, double r1, double dt) {
     using namespace PIC::FieldLine;
-
-    // Validate input parameters
-    if (r1 <= r0 || r0 < 0.0 || dt <= 0.0) {
-        return; // Invalid shock propagation or time
+    if (!(r1>r0) || !(r0>=0.0) || !(dt>0.0) || !std::isfinite(dt)) {
+      SEP::Turbulence::PICAdapter::RecordShockSourceRejection(true);
+      return;
     }
+    const double shockSpeed=(r1-r0)/dt;
+    const SEP::Run::Configuration& run=SEP::Run::Active().get();
+    const double efficiency=run.shockTurbulenceEfficiency.value;
+    const double plusFraction=run.shockTurbulencePlusFraction.value;
 
-    // Calculate shock velocity from distance and time
-    double v = (r1 - r0) / dt; // Shock speed [m/s]
+    for (int iFieldLine=0;iFieldLine<nFieldLine;++iFieldLine) {
+      PIC::FieldLine::cFieldLine* line=&FieldLinesAll[iFieldLine];
+      for (int iSegment=0;iSegment<line->GetTotalSegmentNumber();++iSegment) {
+        cFieldLineSegment* segment=line->GetSegment(iSegment);
+        if (segment==NULL) continue;
+        const double* begin=segment->GetBegin()->GetX();
+        const double* end=segment->GetEnd()->GetX();
+        std::vector<SEP::Shock::Vector3> chord(2);
+        chord[0].x=begin[0];chord[0].y=begin[1];chord[0].z=begin[2];
+        chord[1].x=end[0];chord[1].y=end[1];chord[1].z=end[2];
+        const double tolerance=std::max(1.0,1.0e-12*r1);
+        SEP::Shock::IntersectionResult inner;
+        if (r0>0.0) inner=SEP::Shock::IntersectSphere(
+            chord,r0,tolerance,SEP::Shock::IntersectionPolicy::All);
+        const SEP::Shock::IntersectionResult outer=SEP::Shock::IntersectSphere(
+            chord,r1,tolerance,SEP::Shock::IntersectionPolicy::All);
+        if (inner.status==SEP::Shock::IntersectionStatus::InvalidGeometry ||
+            outer.status==SEP::Shock::IntersectionStatus::InvalidGeometry) {
+          SEP::Turbulence::PICAdapter::RecordShockSourceRejection(true);
+          continue;
+        }
+        // Sphere roots partition the straight PIC segment into intervals that
+        // are wholly inside or outside the swept shell.  Midpoint classification
+        // handles inward, outward, tangent, and two-crossing chords uniformly.
+        std::vector<double> boundaries;
+        boundaries.push_back(0.0);boundaries.push_back(1.0);
+        for (std::size_t hit=0;hit<inner.intersections.size();++hit)
+          boundaries.push_back(inner.intersections[hit].fraction);
+        for (std::size_t hit=0;hit<outer.intersections.size();++hit)
+          boundaries.push_back(outer.intersections[hit].fraction);
+        std::sort(boundaries.begin(),boundaries.end());
+        boundaries.erase(std::unique(boundaries.begin(),boundaries.end(),
+            [tolerance,segment](double a,double b) {
+              return std::fabs(a-b)*segment->GetLength()<=tolerance;
+            }),boundaries.end());
 
-    // Physical parameters for turbulence generation
-    const double eta = 0.02;   // Fraction of upstream kinetic-energy flux converted to broad-band Alfvén waves at the shock ramp
-    const double f=0.5;        // Fraction of the injected power that populates the outward-propagating (+) wave sense; (1−f) goes into the inward (−) sense.
-    double shock_velocity_squared = v * v; // Shock velocity²
+        for (std::size_t interval=0;interval+1<boundaries.size();++interval) {
+          const double start=boundaries[interval];
+          const double finish=boundaries[interval+1];
+          if (!(finish>start)) continue;
+          double testPoint[3]={0.0,0.0,0.0};
+          segment->GetCartesian(testPoint,0.5*(start+finish));
+          const double testRadius=Vector3D::Length(testPoint);
+          if (testRadius<r0 || testRadius>=r1) continue;
 
-    // Calculate a partial control volume with the shared SI geometry.  This is
-    // the same finite-volume rule used by particle sampling and turbulence,
-    // preventing the shock source from applying an independent radius model.
-    auto calculateTubeVolume = [](cFieldLineSegment* segment, double sStart, double sEnd, int iFieldLine) -> double {
-        return SEP::FieldLine::FluxTubeGeometry::PartialSegmentVolumeM3(
-            segment, iFieldLine, sStart, sEnd);
-    };
+          double density0=0.0,density1=0.0;
+          segment->GetPlasmaDensity(start,density0);
+          segment->GetPlasmaDensity(finish,density1);
+          double velocity0[3]={0.0,0.0,0.0};
+          double velocity1[3]={0.0,0.0,0.0};
+          segment->GetBegin()->GetPlasmaVelocity(velocity0);
+          segment->GetEnd()->GetPlasmaVelocity(velocity1);
+          const double radius=Vector3D::Length(testPoint);
+          const double upstreamNormalSpeed=radius>0.0 ?
+              0.5*((velocity0[0]+velocity1[0])*testPoint[0]+
+                   (velocity0[1]+velocity1[1])*testPoint[1]+
+                   (velocity0[2]+velocity1[2])*testPoint[2])/radius : 0.0;
 
-    // Lambda function to get average mass density for a segment portion
-    auto getAverageMassDensity = [](cFieldLineSegment* segment, double sStart, double sEnd) -> double {
-        // Get plasma number density at segment endpoints
-        double densityStart, densityEnd;
-        segment->GetPlasmaDensity(sStart, densityStart);  // Number density
-        segment->GetPlasmaDensity(sEnd, densityEnd);      // Number density
-
-        // Calculate average number density and convert to mass density
-        double avgNumberDensity = 0.5 * (densityStart + densityEnd);
-        return avgNumberDensity * ProtonMass; // kg/m³
-    };
-
-    // Loop through all field lines
-    for (int iFieldLine = 0; iFieldLine < nFieldLine; iFieldLine++) {
-        PIC::FieldLine::cFieldLine* fieldLine = &FieldLinesAll[iFieldLine];
-
-        // Get the position of the first vertex to calculate datum vector
-        PIC::FieldLine::cFieldLineVertex* firstVertex = fieldLine->GetFirstVertex();
-        if (firstVertex == NULL) {
+          SEP::Shock::TurbulenceSourceInput input;
+          input.sweptVolumeM3=SEP::FieldLine::FluxTubeGeometry::
+              PartialSegmentVolumeM3(segment,iFieldLine,start,finish);
+          input.upstreamMassDensityKgPerM3=
+              0.5*(density0+density1)*PIC::CPLR::SWMF::MeanPlasmaAtomicMass;
+          input.shockNormalSpeedMPerS=shockSpeed;
+          input.upstreamNormalSpeedMPerS=upstreamNormalSpeed;
+          input.efficiency=efficiency;
+          input.plusBranchFraction=plusFraction;
+          const SEP::Shock::TurbulenceSourceEnergy energy=
+              SEP::Shock::ComputeTurbulenceSource(input);
+          if (!energy.status.ok()) {
+            SEP::Turbulence::PICAdapter::RecordShockSourceRejection(false);
             continue;
+          }
+          SEP::Turbulence::PICAdapter::ShockContribution contribution;
+          contribution.fieldLine=iFieldLine;
+          contribution.segment=iSegment;
+          contribution.plusJ=energy.plusJ;
+          contribution.minusJ=energy.minusJ;
+          contribution.provenance="WP25 sphere-shell overlap; upstream normal-relative speed";
+          SEP::Turbulence::PICAdapter::QueueShockContribution(contribution);
         }
-
-        double firstVertexPos[3];
-        firstVertex->GetX(firstVertexPos);
-
-        // Calculate heliocentric distance of the first vertex (datum)
-        double datumDistance = sqrt(firstVertexPos[0]*firstVertexPos[0] +
-                                   firstVertexPos[1]*firstVertexPos[1] +
-                                   firstVertexPos[2]*firstVertexPos[2]);
-
-        // Convert heliocentric distances to distances along field line
-        // by subtracting the datum distance
-        double distance0 = r0 - datumDistance;
-        double distance1 = r1 - datumDistance;
-
-        // Convert distances to field line coordinates using GetS method
-        double s0 = fieldLine->GetS(distance0);
-        double s1 = fieldLine->GetS(distance1);
-
-        // Skip if conversion failed or invalid coordinates
-        if (s0 < 0.0 || s1 < 0.0 || s0 >= s1) {
-            continue;
-        }
-
-        // Process segments between s0 and s1
-        int startSegment = static_cast<int>(floor(s0));
-        int endSegment = static_cast<int>(floor(s1));
-
-        for (int iSegment = startSegment; iSegment <= endSegment &&
-             iSegment < fieldLine->GetTotalSegmentNumber(); iSegment++) {
-
-            cFieldLineSegment* segment = fieldLine->GetSegment(iSegment);
-            if (segment == NULL) continue;
-
-            // Calculate segment boundaries affected by shock
-            double segmentStart = max(s0, static_cast<double>(iSegment));
-            double segmentEnd = min(s1, static_cast<double>(iSegment + 1));
-
-            if (segmentEnd <= segmentStart) continue;
-
-            // Convert to local segment coordinates [0,1]
-            double sStart = segmentStart - static_cast<double>(iSegment);
-            double sEnd = segmentEnd - static_cast<double>(iSegment);
-
-            // Calculate tube volume and mass density using lambda functions
-            double tubeVolume = calculateTubeVolume(segment, sStart, sEnd, iFieldLine);
-            double massDensity = getAverageMassDensity(segment, sStart, sEnd);
-
-            // Calculate deposited turbulence energy
-            // ΔE± = 0.25η_f± ρu² V_tube (using mass density and provided shock speed v)
-            double deltaE_forward = 0.25 * eta * f * massDensity *
-                                   shock_velocity_squared * tubeVolume;
-            double deltaE_backward = 0.25 * eta * (1.0-f) * massDensity *
-                                    shock_velocity_squared * tubeVolume;
-
-            // Save energy directly to the segment using datum pointer
-            double* wave_data = segment->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
-            if (wave_data != NULL) {
-                wave_data[0] += deltaE_forward;   // E_plus (forward waves)
-                wave_data[1] += deltaE_backward;  // E_minus (backward waves)
-            }
-        }
+      }
     }
 }
 

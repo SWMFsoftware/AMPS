@@ -55,6 +55,27 @@ keys. The open-interval uniform generator supports Box–Muller normals without 
 singular logarithm, and an identical key reproduces an identical stream
 independently of scheduling.
 
+WP24 additionally makes key composition ordered and purpose tagged. The source
+tuple is `(campaign,event,field-line,species,macroparticle,purpose)`; swapping
+two fields changes the stream, and count/spectrum/pitch/gyrophase draws cannot
+perturb one another. The primary field-line shock source no longer consumes the
+process-global RNG.
+
+## Shock/source and diagnostic numerical contracts
+
+WP21 integrates a piecewise-linear `v_shock(r)` exactly from a serialized launch
+datum, and WP22 intersects its spherical surface with the complete 3-D
+field-line polyline using oriented/tolerance-aware typed results. WP25 evaluates
+the swept shell volume and upstream normal-relative kinetic energy, queues the
+result, and lets the authoritative turbulence core apply and ledger it.
+
+WP27 diagnostics reject invalid or luminal particle state rather than clipping
+it. Relativistic Larmor radius is `p_perp/(|q|B_local)`. WP28 uses half-open bins
+with separate underflow/overflow/invalid counters, preserves `sum(w^2)` for
+effective sample size/error, and constructs number density, omnidirectional
+differential intensity, directional crossing flux, and normalized shape as
+separate unit-bearing products.
+
 `CampaignRandomSeed` is the production adapter boundary. A campaign that needs
 a nonzero seed must set it before particle motion; leaving it at zero is still
 deterministic and explicit.
@@ -188,6 +209,23 @@ and synthetic rank partitions.
 
 The retained turbulence driver, ownership, boundary, ledger, remap, and restart
 contract is documented in [TURBULENCE_MODEL.md](TURBULENCE_MODEL.md).
+
+## WP33 population control and WP36 system accounting
+
+`RunConfiguration::populationControl` owns the actual spatial/momentum/pitch
+bin counts, minimum/maximum population, deterministic-selection requirement,
+invariant tolerance, and lineage schema passed to PIC merging and splitting.
+`sep_population_control.*` provides the independent SI moment observer used by
+controlled and native fixtures. Split children inherit phase-space state and
+partition weight with a final-child residual; stable child IDs hash parent,
+generation, ordinal, and schema without rank or thread.
+
+`sep_system_ledger.*` closes number, charge, energy, and parallel momentum over
+named signed seam transactions. Its checksum-protected checkpoint carries
+field-line generation, stable IDs, lineage, RNG counters, residual scattering
+hazards, turbulence-state identity, and output-manifest identity. This source
+contract is ready for native adapters; complete injection/escape/coupling/remap/
+restart equality still requires a linked AMPS campaign.
 
 ## Verification boundary
 

@@ -203,6 +203,21 @@ energy and report the same signed increment in `particleExchangeJ`, both within
 branch, so a positivity-limiter activation fails the case instead of hiding an
 incorrect sign or branch assignment.
 
+## WP31–WP41 controlled contracts
+
+Run `make test-wp31-wp41-unit` for the later work-package gate. The WP31
+manufactured cascade fit uses the same automatic order formula above and checks
+the declared first-order Lie/backward-Euler behavior. WP33 uses independent
+weighted moments before and after split/merge. WP37 records panel version,
+observable, seed count, estimator, standard error, confidence level, and z
+score. WP38 records the exact seed/index of its first counterexample. WP39 folds
+a two-bin differential intensity through analytically known response and
+exposure to obtain 35 incident and 30 background-subtracted counts.
+
+These results have `analytical-core` or `source-integration` evidence level.
+They do not exercise a generated PIC particle buffer, MPI decomposition,
+spacecraft product, or stable performance host.
+
 ## Validation gate boundary
 
 The source-only analytical command is `make test-controlled-analytical`.

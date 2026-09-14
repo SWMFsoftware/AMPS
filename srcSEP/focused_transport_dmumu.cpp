@@ -41,6 +41,7 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
   std::uint64_t eventIndex = 0;
   StepDiagnostics diagnostics;
   while (elapsedS < dtTotal) {
+    const NumericalTolerances& tolerances = ActiveNumericalTolerances();
     PICAdapter::LocalBackground local;
     status = PICAdapter::EvaluateLocalBackground(context, &local);
     if (!status.ok()) AbortFocusedStatus(status);
@@ -56,20 +57,29 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
         std::fabs(local.plasmaAdvectionMPerS + speed * mu);
     if (streamingSpeed > 0.0) {
       limits.push_back(StepLimit(
-          "fte-streaming", 0.25 * segmentLengthM / streamingSpeed));
+          "fte-streaming", tolerances.geometryFraction * segmentLengthM /
+                               streamingSpeed));
     }
     const double focusingRate = 0.5 * std::max(0.0, 1.0 - mu * mu) *
         speed * std::fabs(local.dLnAbsBdsPerM);
     if (focusingRate > 0.0)
-      limits.push_back(StepLimit("fte-focusing", 0.05 / focusingRate));
+      limits.push_back(StepLimit(
+          "fte-focusing", tolerances.focusingPitchChange / focusingRate));
     if (coefficient.dMuMuPerS > 0.0)
       limits.push_back(StepLimit(
-          "fte-diffusion", 0.05 * 0.05 /
+          "fte-diffusion", tolerances.stochasticPitchRms *
+                               tolerances.stochasticPitchRms /
                                (2.0 * coefficient.dMuMuPerS)));
     if (std::fabs(coefficient.dDmuMuDmuPerS) > 0.0)
       limits.push_back(StepLimit(
           "fte-diffusion-drift",
-          0.05 / std::fabs(coefficient.dDmuMuDmuPerS)));
+          tolerances.focusingPitchChange /
+              std::fabs(coefficient.dDmuMuDmuPerS)));
+    if (SEP::AccountAdiabaticCoolingFlag &&
+        std::fabs(local.velocityDivergencePerS) > 0.0)
+      limits.push_back(StepLimit(
+          "fte-cooling", tolerances.coolingLogChange /
+                             std::fabs(local.velocityDivergencePerS)));
     const ScalarResult snapshotLimit = ComposeSnapshotValidityLimit(
         context.particleStepEpochS, elapsedS,
         context.particleStepEpochS + local.snapshotSecondsRemaining,
@@ -83,7 +93,7 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
       limits.push_back(StepLimit("fte-dmumu-snapshot", snapshotLimit.value));
 
     const ScalarResult selected = SelectSubstep(
-        dtTotal - elapsedS, limits, 1.0e-12, &diagnostics);
+        dtTotal - elapsedS, limits, tolerances.minimumStepS, &diagnostics);
     if (!selected.status.ok()) AbortFocusedStatus(selected.status);
 
     const double startCoordinate = context.state.coordinate;
@@ -117,6 +127,7 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
             SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode
                 ? &identityAccumulator : NULL);
     if (!increment.status.ok()) AbortFocusedStatus(increment.status);
+    RecordAcceptedStep(&diagnostics);
 
     status = PICAdapter::AdvanceAlongFieldLine(&context,
                                                increment.displacementM);
@@ -148,6 +159,11 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
           0.5 * (preParallel + context.state.vParallelMPerS);
       contribution.midpointNormalVelocityMPerS =
           0.5 * (preNormal + context.state.vNormalMPerS);
+      // Continuous D_mumu is elastic in the local plasma frame. It has no
+      // discrete wave-frame event from which one can assign branch energy, so
+      // branch zero explicitly prevents adiabatic cooling from being
+      // misclassified as resonant particle-wave exchange.
+      contribution.resonantBranch = 0;
       contribution.startCoordinate = startCoordinate;
       contribution.finishCoordinate = context.state.coordinate;
       contribution.signedPathM = increment.displacementM;
@@ -169,7 +185,8 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
             inDomainPathM / increment.displacementM);
         contribution.signedPathM = inDomainPathM;
       }
-      PICAdapter::QueueWaveContribution(contribution);
+      const Status queueStatus = PICAdapter::QueueWaveContribution(contribution);
+      if (!queueStatus.ok()) AbortFocusedStatus(queueStatus);
     }
 
     if (status.code == StatusCode::OutOfDomain) {

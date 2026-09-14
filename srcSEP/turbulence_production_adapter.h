@@ -3,6 +3,9 @@
 
 #include "util/sep_transport_common.h"
 
+#include <cstddef>
+#include <string>
+
 namespace SEP {
 namespace Turbulence {
 namespace PICAdapter {
@@ -15,7 +18,36 @@ struct ProductionLedger {
   double limiterCorrectionJ = 0.0;
   double closureResidualJ = 0.0;
   std::uint64_t coreSubcycles = 0;
+  std::uint64_t limiterActivations = 0;
+  std::uint64_t rejectedUpdates = 0;
+  std::uint64_t advectionFaceUpdates = 0;
+  std::uint64_t reflectionCellUpdates = 0;
+  std::uint64_t cascadeCellUpdates = 0;
+  std::uint64_t spectralBinUpdates = 0;
 };
+
+struct ShockContribution {
+  int fieldLine = -1;
+  int segment = -1;
+  double plusJ = 0.0;
+  double minusJ = 0.0;
+  std::string provenance;
+};
+
+struct ShockSourceDiagnostics {
+  std::uint64_t accepted = 0;
+  std::uint64_t noIntersection = 0;
+  std::uint64_t invalidGeometry = 0;
+  std::uint64_t invalidPhysics = 0;
+};
+
+// Shock adapters enqueue typed, immutable source records.  The next Advance
+// imports them into CellState::pendingShock*, after which only the common core
+// mutates wave energy and closes the signed energy ledger.
+Transport::Status QueueShockContribution(const ShockContribution& contribution);
+void ClearShockContributions();
+const ShockSourceDiagnostics& LastShockSourceDiagnostics();
+void RecordShockSourceRejection(bool geometryFailure);
 
 // Advance is the only production mutation entry point for locally evolved
 // turbulence.  shockRadiusBeforeM/shockRadiusAfterM are SI metres; NaN disables
@@ -24,6 +56,18 @@ struct ProductionLedger {
 Transport::Status Advance(double dtS, double shockRadiusBeforeM,
                           double shockRadiusAfterM);
 const ProductionLedger& LastStepLedger();
+
+// Application restart adapters persist this payload beside particle and
+// background checkpoints.  Restoring validates the complete runtime store in a
+// staged object before replacing live state, so a truncated or incompatible
+// checkpoint cannot partially alter authoritative wave ownership.
+Transport::Status SerializeRuntimeStore(std::string* text);
+Transport::Status RestoreRuntimeStore(const std::string& text);
+std::size_t RuntimeOwnerCount();
+
+// Test/support reset must be called only before particles or turbulence are
+// initialized.  Production timestepping never discards the owner store.
+void ResetRuntimeStoreForTests();
 
 }  // namespace PICAdapter
 }  // namespace Turbulence

@@ -41,6 +41,7 @@ int SEP::ParticleMover_Parker(
   StepDiagnostics stepDiagnostics;
 
   while (elapsedS < dtTotal) {
+    const NumericalTolerances& tolerances = ActiveNumericalTolerances();
     PICAdapter::LocalBackground local;
     status = PICAdapter::EvaluateLocalBackground(context, &local);
     if (!status.ok()) AbortMoverStatus(status);
@@ -56,10 +57,11 @@ int SEP::ParticleMover_Parker(
         local.plasmaAdvectionMPerS + coefficient.dKappaParallelDsMPerS);
     if (deterministicSpeed > 0.0) {
       limits.push_back(StepLimit(
-          "parker-drift", 0.25 * segmentLengthM / deterministicSpeed));
+          "parker-drift", tolerances.geometryFraction * segmentLengthM /
+                              deterministicSpeed));
     }
     if (coefficient.kappaParallelM2PerS > 0.0) {
-      const double target = 0.25 * segmentLengthM;
+      const double target = tolerances.geometryFraction * segmentLengthM;
       limits.push_back(StepLimit(
           "parker-diffusion",
           target * target / (2.0 * coefficient.kappaParallelM2PerS)));
@@ -77,7 +79,7 @@ int SEP::ParticleMover_Parker(
       limits.push_back(StepLimit("parker-snapshot", snapshotLimit.value));
 
     const ScalarResult selected = SelectSubstep(
-        dtTotal - elapsedS, limits, 1.0e-12, &stepDiagnostics);
+        dtTotal - elapsedS, limits, tolerances.minimumStepS, &stepDiagnostics);
     if (!selected.status.ok()) AbortMoverStatus(selected.status);
 
     // The stream key contains no rank or thread identifier.  For fixed campaign
@@ -98,6 +100,7 @@ int SEP::ParticleMover_Parker(
                              ? local.velocityDivergencePerS : 0.0),
         currentSpeed, selected.value, provider, random);
     if (!increment.status.ok()) AbortMoverStatus(increment.status);
+    RecordAcceptedStep(&stepDiagnostics);
 
     status = PICAdapter::AdvanceAlongFieldLine(
         &context, increment.displacementM);
@@ -146,7 +149,8 @@ int SEP::ParticleMover_Parker(
         record.dtS *= std::fabs(inDomainPathM / increment.displacementM);
         record.signedPathM = inDomainPathM;
       }
-      PICAdapter::QueueWaveContribution(record);
+      const Status queueStatus = PICAdapter::QueueWaveContribution(record);
+      if (!queueStatus.ok()) AbortMoverStatus(queueStatus);
     }
 
     if (status.code == StatusCode::OutOfDomain) {

@@ -33,6 +33,7 @@
 #include "transport_common.h"
 #include "turbulence_production_adapter.h"
 #include "util/sep_cli.h"
+#include "util/sep_run_configuration.h"
 #include "debug/sep_debug_fieldline_datum.h"
 
 #include "tests.h"
@@ -46,12 +47,9 @@ enum class CMEScenario { Fast, Slow };
 
 // Configure the single model for the requested scenario (called only on change)
 static inline void configure_swcme1d(CMEScenario scenario){
-  static bool inited = false;
-
-  if (inited==true) return;
-
-  inited=true;
-
+  // Configuration is frozen before this routine is called.  Re-applying the
+  // selected scenario is deterministic and avoids an unserialized one-time
+  // flag that previously made in-process restart/reinitialization order matter.
   if (scenario == CMEScenario::Fast){
 	  SEP::sw1d.SetAmbient(400.0, 6.0, 5.0, 1.2e5)                 // Vsw[km/s], n1AU[cm^-3], B1AU[nT], T[K]
       .SetCME(1.05, 1900.0, 8e-8)                         // r0[Rs],   V0_sh[km/s],  Γ[1/km]
@@ -194,16 +192,104 @@ int main(int argc,char **argv) {
   }
 
 
-  SEP::ShockModelType=SEP::cShockModelType::SwCme1d;
-
   //read post-compile input file
   if (PIC::PostCompileInputFileName!="") {
      SEP::Parser::ReadFile(PIC::PostCompileInputFileName);
   }
 
+  // Preserve a constant Dmumu value supplied by the post-compile input unless
+  // the command line explicitly overrides it.  Keeping the effective value in
+  // the options record also makes the startup configuration print truthful.
+  if (!cli_options.constantDmumuProvided) {
+    cli_options.constantDmumuPerS =
+        SEP::Diffusion::ConstPitchAngleDiffusionValue;
+    cli_options.coefficients.constantDmumuPerS =
+        cli_options.constantDmumuPerS;
+  }
+
+  // WP30 freezes the effective run contract after defaults, post-compile input,
+  // and CLI overrides have all been resolved.  Downstream code receives only a
+  // const view and the fingerprint is emitted before mesh/model initialization.
+  SEP::Run::Configuration runConfiguration=SEP::Run::Defaults();
+  runConfiguration.mover.value=cli_options.particleMover;
+  runConfiguration.mover.source=cli_options.particleMoverProvided
+      ? SEP::Run::ValueSource::CommandLine : SEP::Run::ValueSource::Default;
+  runConfiguration.shockModel.value=cli_options.analyticalShock
+      ? SEP::Run::ShockModel::Analytical : SEP::Run::ShockModel::Swcme1d;
+  if (!cli_options.shockModelProvided)
+    runConfiguration.shockModel.value=SEP::ShockModelType==
+        SEP::cShockModelType::Analytic1D ? SEP::Run::ShockModel::Analytical
+                                        : SEP::Run::ShockModel::Swcme1d;
+  runConfiguration.shockModel.source=cli_options.shockModelProvided
+      ? SEP::Run::ValueSource::CommandLine
+      : (PIC::PostCompileInputFileName!="" ? SEP::Run::ValueSource::InputFile
+                                           : SEP::Run::ValueSource::Default);
+  runConfiguration.scenario.value=cli_options.slowCmeScenario
+      ? SEP::Run::CmeScenario::Slow : SEP::Run::CmeScenario::Fast;
+  runConfiguration.scenario.source=cli_options.cmeScenarioProvided
+      ? SEP::Run::ValueSource::CommandLine : SEP::Run::ValueSource::Default;
+  runConfiguration.totalIterations.value=static_cast<std::uint64_t>(
+      cli_options.totalIterations);
+  runConfiguration.totalIterations.source=cli_options.totalIterationsProvided
+      ? SEP::Run::ValueSource::CommandLine : SEP::Run::ValueSource::Default;
+  runConfiguration.fieldLineSeedAreaM2.value=cli_options.fieldLineSeedAreaM2;
+  runConfiguration.fieldLineSeedAreaM2.source=cli_options.fieldLineSeedAreaProvided
+      ? SEP::Run::ValueSource::CommandLine : SEP::Run::ValueSource::Default;
+  runConfiguration.shockTurbulenceEfficiency.value=
+      cli_options.shockTurbulenceEfficiency;
+  runConfiguration.shockTurbulenceEfficiency.source=
+      cli_options.shockTurbulenceEfficiencyProvided
+      ? SEP::Run::ValueSource::CommandLine : SEP::Run::ValueSource::Default;
+  runConfiguration.shockTurbulencePlusFraction.value=
+      cli_options.shockTurbulencePlusFraction;
+  runConfiguration.shockTurbulencePlusFraction.source=
+      cli_options.shockTurbulencePlusFractionProvided
+      ? SEP::Run::ValueSource::CommandLine : SEP::Run::ValueSource::Default;
+  runConfiguration.mergeMinimum.value=cli_options.mergeMinimum;
+  runConfiguration.mergeMinimum.source=cli_options.mergeMinimumProvided
+      ? SEP::Run::ValueSource::CommandLine : SEP::Run::ValueSource::Default;
+  runConfiguration.mergeMaximum.value=cli_options.mergeMaximum;
+  runConfiguration.mergeMaximum.source=cli_options.mergeMaximumProvided
+      ? SEP::Run::ValueSource::CommandLine : SEP::Run::ValueSource::Default;
+  // WP33 keeps the legacy CLI aliases but freezes the complete population
+  // policy in one record.  The PIC merge/split calls below consume this record,
+  // so a printed option cannot diverge from the thresholds actually executed.
+  runConfiguration.populationControl.minimumParticlesPerCell=
+      runConfiguration.mergeMinimum.value;
+  runConfiguration.populationControl.maximumParticlesPerCell=
+      runConfiguration.mergeMaximum.value;
+  runConfiguration.coefficients=cli_options.coefficients;
+  runConfiguration.numericalTolerances=cli_options.numericalTolerances;
+  runConfiguration.turbulence=cli_options.turbulence;
+  runConfiguration.injection.macroparticlesPerEvent=
+      static_cast<std::uint64_t>(cli_options.injectionParticlesPerIteration);
+  runConfiguration.injection.injectionEfficiency=
+      SEP::FieldLine::InjectionParameters::InjectionEfficiency;
+  const SEP::Transport::Status runStatus=
+      SEP::Run::InstallActive(runConfiguration);
+  if (!runStatus.ok()) {
+    if (PIC::ThisThread==0)
+      std::cerr<<"ERROR: invalid final RunConfiguration: "
+               <<runStatus.message<<'\n';
+    return 1;
+  }
+  const SEP::Run::FrozenConfiguration& frozenRun=SEP::Run::Active();
+  SEP::ShockModelType=frozenRun.get().shockModel.value==
+      SEP::Run::ShockModel::Swcme1d ? SEP::cShockModelType::SwCme1d
+                                    : SEP::cShockModelType::Analytic1D;
+  SEP::FieldLine::FluxTubeGeometry::SetReferenceAreaM2(
+      frozenRun.get().fieldLineSeedAreaM2.value);
+  if (PIC::ThisThread==0)
+    std::cout<<"RunConfiguration fingerprint="<<frozenRun.fingerprint()
+             <<" seed-area="<<frozenRun.get().fieldLineSeedAreaM2.value
+             <<" m2 source="
+             <<SEP::Run::ValueSourceName(
+                   frozenRun.get().fieldLineSeedAreaM2.source)<<'\n';
+
 
   //set up shock wave model
-  configure_swcme1d(CMEScenario::Fast);
+  configure_swcme1d(frozenRun.get().scenario.value==SEP::Run::CmeScenario::Fast
+      ? CMEScenario::Fast : CMEScenario::Slow);
 
   // Prepare the initial SWCME cache before mesh/field-line initialization can
   // query shock geometry.  Metadata publication waits until immediately before
@@ -227,11 +313,10 @@ int main(int argc,char **argv) {
   // which segment datums must be allocated.  In particular, the new
   // wave-number-resolved model needs an additional 2*NK spectral-energy datum.
   // --------------------------------------------------------------------------
-  // Establish the default coefficient provider before printing startup
-  // metadata.  A future coefficient CLI can replace this single assignment;
-  // the mover metadata will continue to report the selected provider.
-  SEP::Diffusion::GetPitchAngleDiffusionCoefficient=
-      SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient;
+  // In `configured` mode the post-compile input remains authoritative.  An
+  // explicit CLI provider is applied below.  Do not overwrite either selection
+  // here: doing so previously made startup metadata disagree with the source
+  // that the user had requested.
   SEP::Util::CLI::ApplyTurbulenceOptions(cli_options);
   if (PIC::ThisThread == 0) {
     SEP::Util::CLI::PrintTurbulenceOptions(cli_options, std::cout);
@@ -305,7 +390,9 @@ int main(int argc,char **argv) {
     TestManager();
   }
 
-  int TotalIterations=(_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_) ? PIC::RequiredSampleLength+10 : 100000001;
+  const long int TotalIterations=(_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_)
+      ? static_cast<long int>(PIC::RequiredSampleLength+10)
+      : static_cast<long int>(frozenRun.get().totalIterations.value);
 
   //init turbulence wave energy
   double B0_1AU = 5.0e-9;        // 5 nT magnetic field

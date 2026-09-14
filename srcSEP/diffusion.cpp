@@ -1,10 +1,13 @@
 //SEP diffusion models
 
 
+#include <algorithm>
 #include <cmath>
 #include <ctgmath>
+#include <limits>
 
 #include "sep.h"
+#include "util/sep_coefficient_physics.h"
 
 double calculateDmuMu(double dB, double B, double r, double mu, double v_parallel); 
 
@@ -199,7 +202,21 @@ double SEP::Diffusion::GetDdMu(std::function<double (double& speed,double& mu)> 
 
 //========= Constant pitch angle diffusion  =============================
 void SEP::Diffusion::Constant::GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment) {
-   D=0.0,dD_dmu=0.0;
+  // This compatibility callback now delegates validation to the same pure
+  // WP14 kernel used by the production provider.  The configured value is in
+  // s^-1 and its derivative with respect to dimensionless mu is exactly zero.
+  // NaN outputs intentionally force the typed adapter to reject an invalid
+  // post-compile configuration; silently substituting zero would be ballistic.
+  const SEP::Transport::CoefficientPhysics::PitchAngleResult result =
+      SEP::Transport::CoefficientPhysics::EvaluateConstantDmumu(
+          SEP::Diffusion::ConstPitchAngleDiffusionValue, mu);
+  if (!result.status.ok()) {
+    D=std::numeric_limits<double>::quiet_NaN();
+    dD_dmu=std::numeric_limits<double>::quiet_NaN();
+    return;
+  }
+  D=result.dMuMuPerS;
+  dD_dmu=result.dDmuMuDmuPerS;
 }
 
 //========= Roux2004AJ (LeRoux-2004-AJ) =============================
@@ -374,62 +391,64 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   namespace FL = PIC::FieldLine;
   namespace MD = PIC::MolecularData;
 
-  static bool init_flag=false;
-
-  if (init_flag==false) {
-    init_flag=true; 
-    Init();
-  }
-  
-  double k,P,c,absB,dB,SummW,omega,dB2,absB2,r2;
+  double absB,dB,SummW,r2;
 
   // GetIMF() initializes r2.  The previous code used r2 to compute iR
   // before this call, which made the radial bin depend on uninitialized
   // stack memory and could select an arbitrary turbulence spectrum.
   GetIMF(absB,dB,SummW,FieldLineCoord,Segment,r2);
-  absB2=absB*absB;
-  dB2=dB*dB;
+  (void)SummW;
+  SEP::Transport::CoefficientPhysics::LocalInputView input;
+  input.source="legacy-configured";
+  input.representation="field-line-interpolated";
+  input.generation=1;
+  input.checksum=1;
+  input.heliocentricRadiusM=sqrt(r2);
+  input.magneticFieldT=absB;
+  input.deltaB2T2=dB*dB;
+  input.deltaBPlus2T2=0.5*input.deltaB2T2;
+  input.deltaBMinus2T2=0.5*input.deltaB2T2;
+  input.alfvenSpeedMPerS=0.0;
 
-  double dR=Rmax/nR;
-  int iR=sqrt(r2)/dR;
+  SEP::Transport::CoefficientPhysics::SpectrumParameters spectrum;
+  spectrum.referenceRadiusM=k_ref_R;
+  spectrum.kMinAtReferencePerM=k_ref_min;
+  spectrum.kMaxAtReferencePerM=k_ref_max;
+  // Preserve this named provider's historical r^-2 bound scaling while the
+  // source-bound production configuration can choose each exponent explicitly.
+  spectrum.kMinRadialExponent=2.0;
+  spectrum.kMaxRadialExponent=2.0;
 
-  if (iR<0) iR=0;
-  if (iR>=nR) iR=nR-1;
-  
-  //reference values of k_max and k_min at 1 AU
-  //k_max and k_min are scaled with B, which is turne is scaled with 1/R^2
-  double k_min,k_max;
-  double t=k_ref_R*k_ref_R/r2;
-
-  k_min=t*k_ref_min;
-  k_max=t*k_ref_max;
-  
-  omega=fabs(MD::GetElectricCharge(spec))*absB/MD::GetMass(spec);
- 
-  k=(vParallel!=0.0) ? omega/fabs(vParallel) : k_max;
-
-  if (isfinite(k)==false) {
-    k=k_max;
+  SEP::Transport::CoefficientPhysics::SpeciesProperties species;
+  species.modelSpecies=spec;
+  species.name="PIC-configured-species";
+  species.signedChargeC=MD::GetElectricCharge(spec);
+  species.restMassKg=MD::GetMass(spec);
+  const double protonMassKg=1.67262192369e-27;
+  const double massRatio=species.restMassKg/protonMassKg;
+  species.nucleonCount=massRatio>=0.5 ? floor(massRatio+0.5) : 0.0;
+  const double speed=sqrt(vParallel*vParallel+vNorm*vNorm);
+  const SEP::Transport::CoefficientPhysics::PitchAngleResult result =
+      SEP::Transport::CoefficientPhysics::EvaluateJokipiiSlab(
+          input,spectrum,species,speed,mu);
+  if (!result.status.ok()) {
+    D=std::numeric_limits<double>::quiet_NaN();
+    dD_dmu=std::numeric_limits<double>::quiet_NaN();
+    return;
   }
-  else if (k>k_max) {
-    k=k_max; 
-  } 
-
-  P=A[iR]*Lambda[iR]/(1.0+pow(k*Lambda[iR],5.0/3.0))*dB2;
-  c=Pi/4.0*omega*k*P/absB2;
-
-  D=c*(1.0-mu*mu);
-  dD_dmu=-c*2*mu;
-
-  D=calculateDmuMu(dB,absB,sqrt(r2),mu,vParallel);
-  dD_dmu=-D/(1.0-mu*mu)*2*mu; 
+  D=result.dMuMuPerS;
+  dD_dmu=result.dDmuMuDmuPerS;
 
 
   if ((SEP::Diffusion::LimitSpecialMuPointsMode==SEP::Diffusion::LimitSpecialMuPointsModeOn)&& (fabs(mu)>1.0-SEP::Diffusion::LimitSpecialMuPointsDistance)) {
     double mu_abs=1.0-SEP::Diffusion::LimitSpecialMuPointsDistance;
   
-    D=c*(1.0-mu_abs*mu_abs);
-    dD_dmu=0.0; 
+    const SEP::Transport::CoefficientPhysics::PitchAngleResult limited =
+        SEP::Transport::CoefficientPhysics::EvaluateJokipiiSlab(
+            input,spectrum,species,speed,mu<0.0 ? -mu_abs : mu_abs);
+    D=limited.status.ok() ? limited.dMuMuPerS :
+        std::numeric_limits<double>::quiet_NaN();
+    dD_dmu=0.0;
   }
 }
 
@@ -655,30 +674,45 @@ void SEP::Diffusion::Florinskiy::GetPitchAngleDiffusionCoefficient(double& D,dou
 
 
   
-  auto GetD_mu_mu = [&] (double mu) {
+  auto GetD_mu_mu = [&] (double muValue) {
     double res,t0,t1;
 
-    t0=fabs(v_abs*mu-vAlfven);
-    t1=fabs(v_abs*mu+vAlfven);
+    t0=fabs(v_abs*muValue-vAlfven);
+    t1=fabs(v_abs*muValue+vAlfven);
 
-    res=Pi*Omega*Omega*(1.0-mu*mu)/(4.0*B2)*
-    (P_s_plus(Omega/t0,delta_B_s_plus_2)/t0+P_s_minus(Omega/t1,delta_B_s_minus_2)/t0);  
+    // For gamma>1, P(Omega/t)/t tends to zero when t tends to zero.  The two
+    // resonance branches use their own denominators; the historical minus
+    // term incorrectly divided by t0 even though its resonant k used t1.
+    const double plusTerm=t0==0.0 ? 0.0 :
+        P_s_plus(Omega/t0,delta_B_s_plus_2)/t0;
+    const double minusTerm=t1==0.0 ? 0.0 :
+        P_s_minus(-Omega/t1,delta_B_s_minus_2)/t1;
+    res=Pi*Omega*Omega*(1.0-muValue*muValue)/(4.0*B2)*
+        (plusTerm+minusTerm);
 
     return res;
   };
 
   double D_mu_mu=GetD_mu_mu(mu);
+  D=D_mu_mu;
   
-  //calculate d(D_mu_mu)/d(mu)
-  double mu_step=2.0/100.0; 
-  
-  double mu_plus=mu+mu_step; 
-  double mu_minus=mu-mu_step;
- 
-  dD_dmu=(GetD_mu_mu(mu_plus)-GetD_mu_mu(mu_minus))/(mu_plus-mu_minus);
-} 
-
-
-
+  // Use a bounded second-order stencil.  Exact endpoints use one-sided limits;
+  // interior points reduce h as needed so GetD_mu_mu is never called at
+  // |mu|>1.  This fixes both the missing D assignment and the out-of-domain
+  // centered derivative while preserving the legacy public signature.
+  const double mu_step=1.0E-5;
+  if (mu<=-1.0+mu_step) {
+    dD_dmu=(-3.0*GetD_mu_mu(mu)+4.0*GetD_mu_mu(mu+mu_step)-
+        GetD_mu_mu(mu+2.0*mu_step))/(2.0*mu_step);
+  }
+  else if (mu>=1.0-mu_step) {
+    dD_dmu=(3.0*GetD_mu_mu(mu)-4.0*GetD_mu_mu(mu-mu_step)+
+        GetD_mu_mu(mu-2.0*mu_step))/(2.0*mu_step);
+  }
+  else {
+    const double h=std::min(mu_step,0.25*std::min(1.0-mu,mu+1.0));
+    dD_dmu=(GetD_mu_mu(mu+h)-GetD_mu_mu(mu-h))/(2.0*h);
+  }
+}
 
 

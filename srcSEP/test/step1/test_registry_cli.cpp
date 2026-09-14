@@ -145,6 +145,24 @@ void TestCli05LegacyAndErrors() {
   Check(!SEP::Util::CLI::IsComponentTestExecutionRequested(legacy),
         "CLI05", "legacy TestManager must not imply new test-only mode");
 
+  SEP::Util::CLI::Options wp30;
+  Check(Parse({"sep", "--total-iterations=42", "--shock-model", "analytical",
+               "--cme-scenario=slow", "--field-line-seed-area", "12.5",
+               "--shock-turbulence-efficiency", "0.04",
+               "--shock-turbulence-plus-fraction=0.7",
+               "--merge-minimum", "10", "--merge-maximum=20"},
+              wp30,error) && wp30.totalIterations==42 &&
+            wp30.totalIterationsProvided && wp30.analyticalShock &&
+            wp30.slowCmeScenario && wp30.fieldLineSeedAreaM2==12.5 &&
+            wp30.shockTurbulenceEfficiency==0.04 &&
+            wp30.shockTurbulencePlusFraction==0.7 &&
+            wp30.mergeMinimum==10 && wp30.mergeMaximum==20,
+        "CLI05", "WP30 run controls or source-layer markers did not parse");
+  SEP::Util::CLI::Options invalidWp30;
+  Check(!Parse({"sep", "--shock-turbulence-efficiency", "1.1"},
+               invalidWp30,error),
+        "CLI05", "WP30 out-of-range source efficiency must fail preflight");
+
   int failCalls = 0;
   int errorCalls = 0;
   SEP::Testing::Registry outcomes({

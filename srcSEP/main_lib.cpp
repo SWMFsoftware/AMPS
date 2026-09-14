@@ -29,6 +29,7 @@
 #include "sep.h"
 #include "transport_common.h"
 #include "turbulence_production_adapter.h"
+#include "util/sep_run_configuration.h"
 #include "sep.dfn"
 #include "tests.h"
 
@@ -675,8 +676,19 @@ start:
 //    PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(50,100); //(SEP::MinParticleLimit,SEP::MaxParticleLimit);
 
 
-     PIC::ParticleSplitting::FledLine::WeightedParticleMerging(20,20,20,600,1000);
-     PIC::ParticleSplitting::FledLine::WeightedParticleSplitting(20,20,20,600,1000);
+     const SEP::Run::Configuration& run=SEP::Run::Active().get();
+     PIC::ParticleSplitting::FledLine::WeightedParticleMerging(
+         run.populationControl.spatialBins,
+         run.populationControl.momentumBins,
+         run.populationControl.pitchBins,
+         run.populationControl.minimumParticlesPerCell,
+         run.populationControl.maximumParticlesPerCell);
+     PIC::ParticleSplitting::FledLine::WeightedParticleSplitting(
+         run.populationControl.spatialBins,
+         run.populationControl.momentumBins,
+         run.populationControl.pitchBins,
+         run.populationControl.minimumParticlesPerCell,
+         run.populationControl.maximumParticlesPerCell);
 
 
      // write output file

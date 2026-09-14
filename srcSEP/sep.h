@@ -17,6 +17,7 @@
 #include "util/sep_flux_tube_geometry_core.h"
 #include "util/sep_production_mover.h"
 #include "util/sep_transport_common.h"
+#include "util/sep_transactional_output.h"
 #include "util/sep_transport_coefficients.h"
 #include "util/sep_coefficient_registry.h"
 #include "util/sep_parker_core.h"
@@ -363,6 +364,13 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
     long int InjectParticlesSingleFieldLine(int spec,int iFieldLine);
     long int InjectParticles();
 
+    // WP46 restart adapters persist this scheduler payload beside particles.
+    // Checkpoints are taken only between completed injection calls, so the next
+    // integer event plus the frozen campaign seed completely defines the next
+    // source identity and every purpose-separated random stream.
+    Transport::Status SerializeInjectionSourceState(std::string* text);
+    Transport::Status RestoreInjectionSourceState(const std::string& text);
+
     namespace FluxTubeGeometry {
       // An explicit profile is the required fallback when a field magnitude is
       // unavailable.  The callback consumes Cartesian position in metres and
@@ -371,6 +379,13 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
       typedef double (*ExplicitAreaProfile)(const double* x_m,int iFieldLine);
 
       void SetReferenceAreaM2(double reference_area_m2);
+      // WP26 records the conserved magnetic flux Phi_i [Wb] for each field
+      // line.  SetReferenceAreaM2 remains a compatibility seed: on first use it
+      // creates Phi_i=A_seed*|B_seed| with explicit provenance.
+      void SetMagneticFluxWb(int iFieldLine,double magnetic_flux_Wb,
+                             const char* provenance,
+                             unsigned long long generation=0);
+      double GetMagneticFluxWb(int iFieldLine);
       void SetExplicitAreaProfile(ExplicitAreaProfile profile);
       void ClearExplicitAreaProfile();
 
@@ -561,11 +576,13 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
         double dMu, mu_min, mu_max, f_Plus, f_Minus, MuWaveFrame, p0, m0, p1, m1;
 
         MuWaveFrame=GetMuWaveFrame();
+        // Initialize the differentiation scale before the resonance-gap test.
+        // The prior ordering read an indeterminate stack value and could return
+        // zero or continue unpredictably under optimization.
+        dMu = muLimit / 2.0;
         if (fabs(MuWaveFrame) < dMu) {
           return 0.0;
         }
-
-        dMu = muLimit / 2.0;
 
         mu_min = MuWaveFrame - dMu;
         if (mu_min < -1.0 + muLimit) mu_min = -1.0 + muLimit;
@@ -1627,9 +1644,8 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
           // contaminate the output.  The particle mover is responsible for
           // repairing or deleting invalid particles; this diagnostic routine
           // simply skips particles whose velocity cannot be converted safely to
-          // energy and pitch angle.  The same subluminal cap used in
-          // SEP::Sampling::Manager is applied here before the relativistic energy
-          // conversion, because Speed2E(v) is singular at v=c.
+          // energy and pitch angle. Luminal/superluminal states are excluded;
+          // diagnostics never fabricate a replacement velocity.
           // ------------------------------------------------------------------
           if (!isfinite(v[0]) || !isfinite(v[1])) {
             ptr=PB::GetNext(ParticleData);
@@ -1643,8 +1659,10 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
           }
 
           double speed=sqrt(speed2);
-          const double maxSamplingSpeed=(1.0-1.0e-12)*SpeedOfLight;
-          if (speed>=maxSamplingSpeed) speed=maxSamplingSpeed;
+          if (speed>=SpeedOfLight) {
+            ptr=PB::GetNext(ParticleData);
+            continue;
+          }
 
           mu=v[0]/sqrt(speed2);
           if (!isfinite(mu)) {
@@ -1731,9 +1749,11 @@ double e_mev=e*J2MeV;
         // before sampling even began.
           const std::string pitchAngleDirectory=
               base_name+".pitch_angle_distribution";
-          const std::string makeDirectoryCommand=
-              "mkdir -p "+pitchAngleDirectory;
-	  system(makeDirectoryCommand.c_str());
+          const SEP::Transport::Status pitchDirectoryStatus=
+              SEP::Output::EnsureOutputDirectory(
+                  PIC::OutputDataFileDirectory,"sample.pitch_angle_distribution");
+          if (!pitchDirectoryStatus.ok())
+            exit(__LINE__,__FILE__,pitchDirectoryStatus.message.c_str());
 
         // Only the numeric suffix uses a bounded buffer.  Its maximum size is
         // independent of the user path, and the snprintf result is checked
@@ -1891,8 +1911,11 @@ double e_mev=e*J2MeV;
           }
 
           const std::string densityDirectory=base_name+".density";
-          const std::string makeDensityDirectory="mkdir -p "+densityDirectory;
-          system(makeDensityDirectory.c_str());
+          const SEP::Transport::Status densityDirectoryStatus=
+              SEP::Output::EnsureOutputDirectory(
+                  PIC::OutputDataFileDirectory,"sample.density");
+          if (!densityDirectoryStatus.ok())
+            exit(__LINE__,__FILE__,densityDirectoryStatus.message.c_str());
 
           full_name_density=densityDirectory+suffix;
           foutDensity=fopen(full_name_density.c_str(),"w");
@@ -1903,8 +1926,11 @@ double e_mev=e*J2MeV;
         fprintf(foutDensity,"\n");
 
           const std::string fluxDirectory=base_name+".flux";
-          const std::string makeFluxDirectory="mkdir -p "+fluxDirectory;
-	  system(makeFluxDirectory.c_str());
+          const SEP::Transport::Status fluxDirectoryStatus=
+              SEP::Output::EnsureOutputDirectory(
+                  PIC::OutputDataFileDirectory,"sample.flux");
+          if (!fluxDirectoryStatus.ok())
+            exit(__LINE__,__FILE__,fluxDirectoryStatus.message.c_str());
 
           full_name_flux=fluxDirectory+suffix;
           foutFlux=fopen(full_name_flux.c_str(),"w");
@@ -1915,9 +1941,11 @@ double e_mev=e*J2MeV;
         fprintf(foutFlux,"\n");
 
           const std::string returnFluxDirectory=base_name+".return_flux";
-          const std::string makeReturnFluxDirectory=
-              "mkdir -p "+returnFluxDirectory;
-	  system(makeReturnFluxDirectory.c_str());
+          const SEP::Transport::Status returnFluxDirectoryStatus=
+              SEP::Output::EnsureOutputDirectory(
+                  PIC::OutputDataFileDirectory,"sample.return_flux");
+          if (!returnFluxDirectoryStatus.ok())
+            exit(__LINE__,__FILE__,returnFluxDirectoryStatus.message.c_str());
 
           full_name_return_flux=returnFluxDirectory+suffix;
           foutReturnFlux=fopen(full_name_return_flux.c_str(),"w");

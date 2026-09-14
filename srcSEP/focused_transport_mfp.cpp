@@ -89,6 +89,7 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
   KeyedRandomStream eventRandom(PICAdapter::CampaignRandomSeed,
                                 context.stableParticleId, 9, 0);
   while (elapsedS < dtTotal) {
+    const NumericalTolerances& tolerances = ActiveNumericalTolerances();
     PICAdapter::LocalBackground local;
     status = PICAdapter::EvaluateLocalBackground(context, &local);
     if (!status.ok()) AbortMfpStatus(status);
@@ -106,18 +107,22 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
     if (signedStreamingSpeed != 0.0) {
       limits.push_back(StepLimit(
           "fte-mfp-segment",
-          0.25 * segmentLengthM / std::fabs(signedStreamingSpeed)));
+          tolerances.geometryFraction * segmentLengthM /
+              std::fabs(signedStreamingSpeed)));
     }
     const double focusingRate =
         0.5 * std::max(0.0, 1.0 - mu * mu) * speed *
         std::fabs(local.dLnAbsBdsPerM);
     if (focusingRate > 0.0)
-      limits.push_back(StepLimit("fte-mfp-focusing", 0.05 / focusingRate));
+      limits.push_back(StepLimit(
+          "fte-mfp-focusing",
+          tolerances.focusingPitchChange / focusingRate));
     if (SEP::AccountAdiabaticCoolingFlag &&
         std::fabs(local.velocityDivergencePerS) > 0.0) {
       limits.push_back(StepLimit(
           "fte-mfp-cooling",
-          0.05 / std::fabs(local.velocityDivergencePerS)));
+          tolerances.coolingLogChange /
+              std::fabs(local.velocityDivergencePerS)));
     }
 
     // The elapsed portion of this particle step consumes the same immutable
@@ -137,10 +142,11 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
     const double shockCrossingS =
         ShockCrossingTimeS(context, signedStreamingSpeed);
     if (std::isfinite(shockCrossingS) && shockCrossingS > 0.0)
-      limits.push_back(StepLimit("fte-mfp-shock", shockCrossingS));
+      limits.push_back(StepLimit(
+          "fte-mfp-shock", tolerances.shockFraction * shockCrossingS));
 
     const ScalarResult selected = SelectSubstep(
-        remainingS, limits, 1.0e-12, &stepDiagnostics);
+        remainingS, limits, tolerances.minimumStepS, &stepDiagnostics);
     if (!selected.status.ok()) AbortMfpStatus(selected.status);
 
     const double startCoordinate = context.state.coordinate;
@@ -169,6 +175,7 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
             SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode
                 ? &identityAccumulator : NULL);
     if (!increment.status.ok()) AbortMfpStatus(increment.status);
+    RecordAcceptedStep(&stepDiagnostics);
 
     status = PICAdapter::AdvanceAlongFieldLine(
         &context, increment.displacementM);
@@ -215,8 +222,11 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
         contribution.stableParticleId = context.stableParticleId;
         contribution.snapshotGeneration = context.snapshotGeneration;
         contribution.dtS = emitted.intervalS;
-        contribution.preMomentumKgMPerS = preMomentum;
-        contribution.postMomentumKgMPerS = momentum.value;
+        // Each event-core record owns its own wave-frame momentum jump. A shell
+        // can contain several intervals, so reusing the shell endpoints here
+        // would multiply the same energy change by the interval count.
+        contribution.preMomentumKgMPerS = emitted.preWaveMomentumKgMPerS;
+        contribution.postMomentumKgMPerS = emitted.postWaveMomentumKgMPerS;
         contribution.midpointParallelVelocityMPerS =
             0.5 * (preParallel + context.state.vParallelMPerS);
         contribution.midpointNormalVelocityMPerS =
@@ -224,6 +234,7 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
         contribution.startCoordinate = intervalStart;
         contribution.finishCoordinate = intervalFinish;
         contribution.signedPathM = emitted.displacementM;
+        contribution.resonantBranch = emitted.resonantBranch;
         contribution.eventIndex = emitted.eventIndex;
         contribution.intervalIndex =
             (shellIndex << 32) | static_cast<std::uint64_t>(i);
@@ -245,7 +256,8 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
               inDomainPathM / emitted.displacementM);
           contribution.signedPathM = inDomainPathM;
         }
-        PICAdapter::QueueWaveContribution(contribution);
+        const Status queueStatus = PICAdapter::QueueWaveContribution(contribution);
+        if (!queueStatus.ok()) AbortMfpStatus(queueStatus);
         intervalStart = intervalFinish;
         if (!intervalSegment) break;
       }

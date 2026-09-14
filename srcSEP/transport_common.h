@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace SEP {
 namespace Transport {
@@ -31,6 +32,11 @@ void InitializeParticleTransportState(long int pointer,
                                       std::uint64_t sourceKey,
                                       std::uint64_t sequenceKey,
                                       const double momentumKgMPerS[3]);
+// WP46 injection paths that already possess a versioned source-event identity
+// use this overload.  It prevents a second, less complete hash from dropping
+// campaign, event, field-line, or species fields after allocation.
+void InitializeParticleTransportStateWithIdentity(
+    long int pointer, std::uint64_t stableParticleId);
 Status AdvanceAlongFieldLine(ParticleContext* context,
                              double displacementM);
 Status CommitAndAttach(const ParticleContext& context);
@@ -60,6 +66,11 @@ struct LocalBackgroundView {
   double parallelVelocityGradientPerS = 0.0;
   double velocityDivergencePerS = 0.0;
   double fieldAlignedStrainPerS = 0.0;
+  // Continuity residual R=D ln(rho)/Dt+div(U) [s^-1].  A density-history
+  // inference is valid only when this residual is evaluated and its material-
+  // following flux-tube assumption is recorded by the provider.
+  double continuityResidualPerS = 0.0;
+  std::string velocityDerivativeMethod;
   double alfvenSpeedMPerS = 0.0;
   double snapshotSecondsRemaining = 0.0;
   double sampleCoordinate = 0.0;
@@ -88,7 +99,7 @@ enum class CouplingEventType {
 };
 
 struct CouplingRecord {
-  // This payload is self-contained by design.  FlushWaveContributions never
+  // This payload is self-contained by design.  DrainWaveContributions never
   // dereferences a particle-buffer handle, so an absorbing-boundary exit cannot
   // discard already completed in-domain work or leave a dangling pointer.
   std::string turbulenceStateIdentity;
@@ -113,10 +124,18 @@ struct CouplingRecord {
   bool crossedBoundary = false;
 };
 
-// Movers enqueue coupling records in worker-local storage.  The driver calls
-// FlushWaveContributions() after PIC::TimeStep(), when no particle thread is
-// writing, to sort and apply them deterministically to the legacy G+/G- arrays.
-void QueueWaveContribution(const CouplingRecord& record);
+// Movers enqueue coupling records in worker-local storage.  The turbulence
+// adapter drains them after PIC::TimeStep(), when no particle thread is
+// writing, then validates and commits them to the persistent common-core owner.
+Status QueueWaveContribution(const CouplingRecord& record);
+
+// WP43 separates deterministic reduction from mutation.  Drain validates and
+// sorts the complete worker batch but never changes PIC or turbulence arrays;
+// the turbulence runtime owner applies it transactionally inside Advance().
+Status DrainWaveContributions(std::vector<CouplingRecord>* records);
+
+// Deprecated source-compatible wrapper.  Production orchestration must use
+// DrainWaveContributions so a reduction failure can propagate as typed status.
 void FlushWaveContributions();
 
 }  // namespace PICAdapter

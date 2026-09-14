@@ -1,4 +1,5 @@
 #include "sep_cli.h"
+#include "sep_configuration_matrix.h"
 #ifndef SEP_CLI_PARSE_ONLY
 #include "../sep.h"
 #endif
@@ -262,6 +263,11 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  --turbulence-advection <on|off> Enable/disable conservative wave advection.\n"
       << "  --shock-injection <on|off> Enable/disable the shock turbulence source.\n"
       << "  --turbulence-cfl <value>   Set the finite-volume CFL safety in (0,1].\n"
+      << "  --turbulence-operator-safety <value> Shared local-rate accuracy safety in (0,1].\n"
+      << "  --turbulence-max-source-fraction <value> Maximum source/energy ratio per step.\n"
+      << "  --turbulence-max-cascade-fraction <value> Maximum cascade fraction per substep.\n"
+      << "  --turbulence-min-substep <s> Reject smaller combined operator steps.\n"
+      << "  --turbulence-max-substeps <N> Reject plans requiring more than N stages.\n"
       << "  --turbulence-correlation-length <m> Positive perpendicular scale [m].\n"
       << "  --spectral-k-min <1/m> --spectral-k-max <1/m> --spectral-bins <N>\n"
       << "                               Configure the logarithmic spectral authority.\n"
@@ -283,8 +289,9 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "                               or swmf. Default: prescribed.\n"
       << "  --spatial-diffusion-provider <name>\n"
       << "                               kappa provider: from-dmumu or from-mfp.\n"
-      << "  --pitch-angle-diffusion-provider <configured>\n"
-      << "                               Dmumu provider (configured callback).\n"
+      << "  --pitch-angle-diffusion-provider <name>\n"
+      << "                               Dmumu provider: configured, constant,\n"
+      << "                               jokipii-1966, or florinskiy.\n"
       << "  --mean-free-path-provider <name>\n"
       << "                               lambda provider: qlt, qlt1, tenishev-2005,\n"
       << "                               chen-2024, or from-spatial.\n"
@@ -293,6 +300,30 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "                               lambda=+infinity zero-event-rate limit.\n"
       << "                               Incompatible conversion cycles and source/\n"
       << "                               provider combinations are rejected at parse.\n"
+      << "  --resonance-gap-policy <reject|ballistic>\n"
+      << "                               Declare the physical 90-degree-gap behavior.\n"
+      << "  --turbulence-amplitude-policy <reject|limit-to-mean-field>\n"
+      << "                               Reject deltaB/B>1 or ledger an explicit limit.\n"
+      << "  --constant-dmumu <1/s>      Non-negative constant provider value.\n"
+      << "  --prescribed-delta-b-over-b <ratio>\n"
+      << "  --coefficient-correlation-length <m>\n"
+      << "  --coefficient-k-min <1/m> --coefficient-k-max <1/m>\n"
+      << "  --coefficient-reference-radius <m>\n"
+      << "  --coefficient-k-min-radial-exponent <q>\n"
+      << "  --coefficient-k-max-radial-exponent <q>\n"
+      << "  --coefficient-quadrature-absolute <m2/s>\n"
+      << "  --coefficient-quadrature-relative <fraction>\n"
+      << "                               Configure named prescribed scales and adaptive\n"
+      << "                               Dmumu-to-kappa integration tolerances.\n"
+      << "\n"
+      << "Transport numerical error controls:\n"
+      << "  --transport-geometry-fraction <fraction>\n"
+      << "  --transport-deterministic-tolerance <fraction>\n"
+      << "  --transport-stochastic-mu-rms <fraction>\n"
+      << "  --transport-cooling-log-change <fraction>\n"
+      << "  --transport-focusing-mu-change <fraction>\n"
+      << "  --transport-shock-fraction <fraction>\n"
+      << "  --transport-min-step <s>    Set the shared mover error budget.\n"
       << "\n"
       << "Field-line SEP injection controls:\n"
       << "  --particles-per-iteration <N>\n"
@@ -306,6 +337,16 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  --particles-per-iteration=... Same option using --option=value syntax.\n"
       << "  --n-particles-per-iteration <N>\n"
       << "                               Alias for --particles-per-iteration.\n"
+      << "\n"
+      << "Authoritative run controls (WP30):\n"
+      << "  --total-iterations <N>       Positive standalone driver iteration count.\n"
+      << "  --shock-model <analytical|swcme1d>\n"
+      << "  --cme-scenario <fast|slow>   Select the frozen SWCME parameter set.\n"
+      << "  --field-line-seed-area <m2> Positive seed surface area used once to form Phi_i.\n"
+      << "  --shock-turbulence-efficiency <0..1>\n"
+      << "  --shock-turbulence-plus-fraction <0..1>\n"
+      << "  --merge-minimum <N> --merge-maximum <N>\n"
+      << "                               Configure particle merge/split population bounds.\n"
       << "  --injection-particles-per-iteration <N>\n"
       << "                               Alias for --particles-per-iteration.\n"
       << "\n"
@@ -553,6 +594,10 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
         option_name == "--reflection-coefficient" ||
         option_name == "--cascade-coefficient" ||
         option_name == "--turbulence-cfl" ||
+        option_name == "--turbulence-operator-safety" ||
+        option_name == "--turbulence-max-source-fraction" ||
+        option_name == "--turbulence-max-cascade-fraction" ||
+        option_name == "--turbulence-min-substep" ||
         option_name == "--turbulence-correlation-length" ||
         option_name == "--spectral-k-min" || option_name == "--spectral-k-max" ||
         option_name == "--turbulence-conservation-tolerance") {
@@ -568,6 +613,22 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
         destination = &options.turbulence.cascadeCoefficient;
       else if (option_name == "--turbulence-cfl") {
         destination = &options.turbulence.cflSafety;
+        non_negative = false;
+      }
+      else if (option_name == "--turbulence-operator-safety") {
+        destination = &options.turbulence.operatorAccuracySafety;
+        non_negative = false;
+      }
+      else if (option_name == "--turbulence-max-source-fraction") {
+        destination = &options.turbulence.maximumSourceFraction;
+        non_negative = false;
+      }
+      else if (option_name == "--turbulence-max-cascade-fraction") {
+        destination = &options.turbulence.maximumCascadeFraction;
+        non_negative = false;
+      }
+      else if (option_name == "--turbulence-min-substep") {
+        destination = &options.turbulence.minimumSubstepS;
         non_negative = false;
       }
       else if (option_name == "--turbulence-correlation-length") {
@@ -598,6 +659,16 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
       continue;
     }
 
+    if (option_name == "--turbulence-max-substeps") {
+      int count = 0;
+      if (!ParsePositiveIntegerOption(argc, argv, i, option_name,
+                                      value_from_equals,
+                                      "turbulence maximum substeps",
+                                      count, err)) return false;
+      options.turbulence.maximumSubsteps = static_cast<std::uint64_t>(count);
+      continue;
+    }
+
     if (option_name == "--particle-mover" || option_name == "--mover" ||
         option_name == "--sep-mover") {
       std::string raw_value;
@@ -613,6 +684,7 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
       }
 
       options.particleMover = parsed_mover;
+      options.particleMoverProvided = true;
       if (!alias_warning.empty()) out << "WARNING: " << alias_warning << ".\n";
       continue;
     }
@@ -621,7 +693,9 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
         option_name == "--spatial-diffusion-provider" ||
         option_name == "--pitch-angle-diffusion-provider" ||
         option_name == "--mean-free-path-provider" ||
-        option_name == "--invalid-coefficient-policy") {
+        option_name == "--invalid-coefficient-policy" ||
+        option_name == "--resonance-gap-policy" ||
+        option_name == "--turbulence-amplitude-policy") {
       std::string raw_value;
       if (!GetOptionValue(argc, argv, i, option_name, value_from_equals,
                           raw_value, err)) return false;
@@ -642,14 +716,101 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
         parsed = Transport::Coefficient::ParseMeanFreePath(
             raw_value, &options.coefficients.meanFreePath);
       }
-      else {
+      else if (option_name == "--invalid-coefficient-policy") {
         parsed = Transport::Coefficient::ParseInvalidPolicy(
             raw_value, &options.coefficients.invalidPolicy);
+      }
+      else if (option_name == "--resonance-gap-policy") {
+        parsed = Transport::Coefficient::ParseResonanceGapPolicy(
+            raw_value, &options.coefficients.resonanceGapPolicy);
+      }
+      else {
+        parsed = Transport::Coefficient::ParseTurbulenceAmplitudePolicy(
+            raw_value, &options.coefficients.amplitudePolicy);
       }
       if (!parsed) {
         err << "ERROR: invalid value '" << raw_value << "' for "
             << option_name << ". Run with --help for canonical names.\n";
         return false;
+      }
+      continue;
+    }
+
+    if (option_name == "--constant-dmumu" ||
+        option_name == "--prescribed-delta-b-over-b" ||
+        option_name == "--coefficient-correlation-length" ||
+        option_name == "--coefficient-k-min" ||
+        option_name == "--coefficient-k-max" ||
+        option_name == "--coefficient-reference-radius" ||
+        option_name == "--coefficient-k-min-radial-exponent" ||
+        option_name == "--coefficient-k-max-radial-exponent" ||
+        option_name == "--coefficient-quadrature-absolute" ||
+        option_name == "--coefficient-quadrature-relative" ||
+        option_name == "--transport-geometry-fraction" ||
+        option_name == "--transport-deterministic-tolerance" ||
+        option_name == "--transport-stochastic-mu-rms" ||
+        option_name == "--transport-cooling-log-change" ||
+        option_name == "--transport-focusing-mu-change" ||
+        option_name == "--transport-shock-fraction" ||
+        option_name == "--transport-min-step") {
+      double* destination = NULL;
+      bool nonNegative = false;
+      if (option_name == "--constant-dmumu") {
+        destination = &options.constantDmumuPerS;
+        nonNegative = true;
+        options.constantDmumuProvided = true;
+      }
+      else if (option_name == "--prescribed-delta-b-over-b") {
+        destination = &options.coefficients.prescribedDeltaBOverB;
+        nonNegative = true;
+      }
+      else if (option_name == "--coefficient-correlation-length")
+        destination = &options.coefficients.correlationLengthAt1AuM;
+      else if (option_name == "--coefficient-k-min")
+        destination = &options.coefficients.spectrum.kMinAtReferencePerM;
+      else if (option_name == "--coefficient-k-max")
+        destination = &options.coefficients.spectrum.kMaxAtReferencePerM;
+      else if (option_name == "--coefficient-reference-radius")
+        destination = &options.coefficients.spectrum.referenceRadiusM;
+      else if (option_name == "--coefficient-k-min-radial-exponent") {
+        destination = &options.coefficients.spectrum.kMinRadialExponent;
+        nonNegative = true;
+      }
+      else if (option_name == "--coefficient-k-max-radial-exponent") {
+        destination = &options.coefficients.spectrum.kMaxRadialExponent;
+        nonNegative = true;
+      }
+      else if (option_name == "--coefficient-quadrature-absolute") {
+        destination = &options.coefficients.spatialQuadrature.absoluteToleranceM2PerS;
+        nonNegative = true;
+      }
+      else if (option_name == "--coefficient-quadrature-relative")
+        destination = &options.coefficients.spatialQuadrature.relativeTolerance;
+      else if (option_name == "--transport-geometry-fraction")
+        destination = &options.numericalTolerances.geometryFraction;
+      else if (option_name == "--transport-deterministic-tolerance")
+        destination = &options.numericalTolerances.deterministicRelativeTolerance;
+      else if (option_name == "--transport-stochastic-mu-rms")
+        destination = &options.numericalTolerances.stochasticPitchRms;
+      else if (option_name == "--transport-cooling-log-change")
+        destination = &options.numericalTolerances.coolingLogChange;
+      else if (option_name == "--transport-focusing-mu-change")
+        destination = &options.numericalTolerances.focusingPitchChange;
+      else if (option_name == "--transport-shock-fraction")
+        destination = &options.numericalTolerances.shockFraction;
+      else {
+        destination = &options.numericalTolerances.minimumStepS;
+        nonNegative = true;
+      }
+      if (!ParseDoubleOption(argc, argv, i, option_name, value_from_equals,
+                             option_name.c_str(), nonNegative,
+                             *destination, err)) return false;
+      if (option_name == "--constant-dmumu") {
+        // Keep the pure registry value synchronized with the compatibility
+        // callback value.  Provider provenance fingerprints the registry
+        // record, while legacy diagnostics still read the public scalar.
+        options.coefficients.constantDmumuPerS =
+            options.constantDmumuPerS;
       }
       continue;
     }
@@ -662,6 +823,59 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
                                       "field-line injection particles per iteration",
                                       options.injectionParticlesPerIteration, err)) {
         return false;
+      }
+      continue;
+    }
+
+    if (option_name=="--total-iterations" || option_name=="--merge-minimum" ||
+        option_name=="--merge-maximum") {
+      int* destination=option_name=="--total-iterations" ? &options.totalIterations
+          : (option_name=="--merge-minimum" ? &options.mergeMinimum
+                                             : &options.mergeMaximum);
+      if (!ParsePositiveIntegerOption(argc,argv,i,option_name,value_from_equals,
+                                      "WP30 positive run control",*destination,err))
+        return false;
+      if (option_name=="--total-iterations") options.totalIterationsProvided=true;
+      else if (option_name=="--merge-minimum") options.mergeMinimumProvided=true;
+      else options.mergeMaximumProvided=true;
+      continue;
+    }
+
+    if (option_name=="--field-line-seed-area" ||
+        option_name=="--shock-turbulence-efficiency" ||
+        option_name=="--shock-turbulence-plus-fraction") {
+      double* destination=option_name=="--field-line-seed-area"
+          ? &options.fieldLineSeedAreaM2
+          : (option_name=="--shock-turbulence-efficiency"
+              ? &options.shockTurbulenceEfficiency
+              : &options.shockTurbulencePlusFraction);
+      if (!ParseDoubleOption(argc,argv,i,option_name,value_from_equals,
+                             "WP30 SI/fraction run control",
+                             option_name!="--field-line-seed-area",
+                             *destination,err))
+        return false;
+      if (option_name=="--field-line-seed-area") options.fieldLineSeedAreaProvided=true;
+      else if (option_name=="--shock-turbulence-efficiency")
+        options.shockTurbulenceEfficiencyProvided=true;
+      else options.shockTurbulencePlusFractionProvided=true;
+      continue;
+    }
+
+    if (option_name=="--shock-model" || option_name=="--cme-scenario") {
+      std::string value;
+      if (!GetOptionValue(argc,argv,i,option_name,value_from_equals,value,err)) return false;
+      value=ToLower(value);
+      if (option_name=="--shock-model") {
+        if (value=="analytical" || value=="analytic") options.analyticalShock=true;
+        else if (value=="swcme1d" || value=="swcme") options.analyticalShock=false;
+        else { err<<"ERROR: --shock-model requires analytical or swcme1d.\n";return false; }
+        options.shockModelProvided=true;
+      }
+      else {
+        if (value=="slow") options.slowCmeScenario=true;
+        else if (value=="fast") options.slowCmeScenario=false;
+        else { err<<"ERROR: --cme-scenario requires fast or slow.\n";return false; }
+        options.cmeScenarioProvided=true;
       }
       continue;
     }
@@ -795,6 +1009,33 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
         << coefficientStatus.message << ".\n";
     return false;
   }
+  const Transport::Status compatibilityStatus =
+      Transport::Coefficient::ValidateMoverCompatibility(
+          options.coefficients,
+          Mover::Describe(options.particleMover).canonicalName);
+  if (!compatibilityStatus.ok()) {
+    err << "ERROR: unsupported mover/coefficient combination: "
+        << compatibilityStatus.message << ".\n";
+    return false;
+  }
+  const Transport::Status toleranceStatus =
+      Transport::ValidateNumericalTolerances(options.numericalTolerances);
+  if (!toleranceStatus.ok()) {
+    err << "ERROR: invalid transport error controls: "
+        << toleranceStatus.message << ".\n";
+    return false;
+  }
+  if (!std::isfinite(options.constantDmumuPerS) ||
+      options.constantDmumuPerS < 0.0) {
+    err << "ERROR: constant Dmumu must be finite and non-negative [1/s].\n";
+    return false;
+  }
+  if (options.shockTurbulenceEfficiency>1.0 ||
+      options.shockTurbulencePlusFraction>1.0 ||
+      options.mergeMaximum<options.mergeMinimum) {
+    err << "ERROR: shock fractions must be in [0,1] and merge maximum must not be below minimum.\n";
+    return false;
+  }
 
   // Compatibility switches feed the one authoritative Step 11 configuration;
   // they are not a second ownership path.
@@ -810,6 +1051,18 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
   if (!turbulenceStatus.ok()) {
     err << "ERROR: invalid turbulence configuration: "
         << turbulenceStatus.message << ".\n";
+    return false;
+  }
+  ConfigurationMatrix::Combination combination;
+  combination.mover=options.particleMover;
+  combination.coefficientSource=options.coefficients.source;
+  combination.turbulenceSource=options.turbulence.source;
+  combination.coupling=options.turbulence.coupling;
+  const Transport::Status matrixStatus=
+      ConfigurationMatrix::Preflight(combination,false);
+  if (!matrixStatus.ok()) {
+    err << "ERROR: unsupported production configuration: "
+        << matrixStatus.message << ".\n";
     return false;
   }
 
@@ -853,10 +1106,58 @@ void ApplyTurbulenceOptions(const Options& options) {
   // the same validation at the mutation boundary so non-CLI callers cannot
   // install a configuration that the production movers would interpret
   // recursively or against the wrong background authority.
+  const Transport::Status compatibilityStatus =
+      Transport::Coefficient::ValidateMoverCompatibility(
+          options.coefficients,
+          Mover::Describe(options.particleMover).canonicalName);
+  if (!compatibilityStatus.ok())
+    exit(__LINE__, __FILE__, compatibilityStatus.message.c_str());
+
   const Transport::Status coefficientStatus =
       Transport::Coefficient::SetActiveConfiguration(options.coefficients);
   if (!coefficientStatus.ok())
     exit(__LINE__, __FILE__, coefficientStatus.message.c_str());
+
+  const Transport::Status toleranceStatus =
+      Transport::SetActiveNumericalTolerances(options.numericalTolerances);
+  if (!toleranceStatus.ok())
+    exit(__LINE__, __FILE__, toleranceStatus.message.c_str());
+
+  if (options.constantDmumuProvided)
+    SEP::Diffusion::ConstPitchAngleDiffusionValue =
+        options.coefficients.constantDmumuPerS;
+
+  // A constant model selected in post-compile input may retain its input-file
+  // value when the CLI does not override it.  Validate that effective value at
+  // the final mutation boundary instead of silently resetting it to zero.
+  if (options.coefficients.pitchAngle ==
+          Transport::Coefficient::PitchAngleKind::Constant &&
+      (!std::isfinite(SEP::Diffusion::ConstPitchAngleDiffusionValue) ||
+       SEP::Diffusion::ConstPitchAngleDiffusionValue < 0.0)) {
+    exit(__LINE__, __FILE__,
+         "effective constant Dmumu must be finite and non-negative [1/s]");
+  }
+  // Explicit registry models also update the legacy compatibility callback so
+  // diagnostics and any not-yet-migrated read-only sampling path observe the
+  // same selection.  The production adapters themselves use source-bound pure
+  // kernels and do not infer capability from these function-pointer values.
+  switch (options.coefficients.pitchAngle) {
+    case Transport::Coefficient::PitchAngleKind::Constant:
+      SEP::Diffusion::GetPitchAngleDiffusionCoefficient =
+          SEP::Diffusion::Constant::GetPitchAngleDiffusionCoefficient;
+      break;
+    case Transport::Coefficient::PitchAngleKind::Jokipii1966:
+      SEP::Diffusion::GetPitchAngleDiffusionCoefficient =
+          SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient;
+      break;
+    case Transport::Coefficient::PitchAngleKind::Florinskiy:
+      SEP::Diffusion::GetPitchAngleDiffusionCoefficient =
+          SEP::Diffusion::Florinskiy::GetPitchAngleDiffusionCoefficient;
+      break;
+    case Transport::Coefficient::PitchAngleKind::Configured:
+      // Post-compile input owns the compatibility callback in this mode.
+      break;
+  }
 
   const Transport::Status turbulenceStatus =
       Turbulence::SetActiveConfiguration(options.turbulence);
@@ -907,6 +1208,13 @@ void PrintTurbulenceOptions(const Options& options, std::ostream& out) {
       << (options.turbulence.advectionEnabled ? "on" : "off") << "/"
       << (options.turbulence.shockInjectionEnabled ? "on" : "off")
       << " (CFL=" << options.turbulence.cflSafety << ")\n"
+      << "  operator safety/source/cascade: "
+      << options.turbulence.operatorAccuracySafety << "/"
+      << options.turbulence.maximumSourceFraction << "/"
+      << options.turbulence.maximumCascadeFraction << "\n"
+      << "  operator min step/max stages:  "
+      << options.turbulence.minimumSubstepS << " s/"
+      << options.turbulence.maximumSubsteps << "\n"
       << "  particle mover:                "
       << Mover::Describe(options.particleMover).canonicalName << "\n"
       << "  coefficient contract:          "
@@ -926,6 +1234,39 @@ void PrintTurbulenceOptions(const Options& options, std::ostream& out) {
       << "  invalid-coefficient policy:    "
       << Transport::Coefficient::InvalidPolicyName(
              options.coefficients.invalidPolicy) << "\n"
+      << "  resonance-gap policy:          "
+      << Transport::Coefficient::ResonanceGapPolicyName(
+             options.coefficients.resonanceGapPolicy) << "\n"
+      << "  amplitude policy:              "
+      << Transport::Coefficient::TurbulenceAmplitudePolicyName(
+             options.coefficients.amplitudePolicy) << "\n"
+      << "  constant Dmumu [1/s]:          "
+      << options.constantDmumuPerS << "\n"
+      << "  prescribed deltaB/B:           "
+      << options.coefficients.prescribedDeltaBOverB << "\n"
+      << "  correlation length at 1 AU [m]: "
+      << options.coefficients.correlationLengthAt1AuM << "\n"
+      << "  coefficient k range [1/m]:     "
+      << options.coefficients.spectrum.kMinAtReferencePerM << " .. "
+      << options.coefficients.spectrum.kMaxAtReferencePerM << "\n"
+      << "  quadrature abs/rel tolerance:  "
+      << options.coefficients.spatialQuadrature.absoluteToleranceM2PerS
+      << " / " << options.coefficients.spatialQuadrature.relativeTolerance << "\n"
+      << "  coefficient fingerprint:      "
+      << Transport::Coefficient::ConfigurationFingerprint(
+             options.coefficients) << "\n"
+      << "  transport geometry fraction:   "
+      << options.numericalTolerances.geometryFraction << "\n"
+      << "  deterministic tolerance:       "
+      << options.numericalTolerances.deterministicRelativeTolerance << "\n"
+      << "  stochastic pitch RMS:          "
+      << options.numericalTolerances.stochasticPitchRms << "\n"
+      << "  cooling/focusing limits:       "
+      << options.numericalTolerances.coolingLogChange << " / "
+      << options.numericalTolerances.focusingPitchChange << "\n"
+      << "  shock fraction/min step [s]:   "
+      << options.numericalTolerances.shockFraction << " / "
+      << options.numericalTolerances.minimumStepS << "\n"
       << "  injected particles/iteration:  " << options.injectionParticlesPerIteration << "\n"
       << "  spectrum output interval:      " << options.spectralOutputInterval
       << " iteration(s)" << (options.spectralOutputInterval == 0 ? " (disabled)" : "") << "\n"

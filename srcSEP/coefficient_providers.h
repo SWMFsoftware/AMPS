@@ -18,6 +18,8 @@ namespace PICAdapter {
 struct CoefficientProviderDiagnostics {
   std::uint64_t invalidSamples = 0;
   std::uint64_t ballisticSubstitutions = 0;
+  std::uint64_t amplitudeRegularizations = 0;
+  std::uint64_t quadratureEvaluations = 0;
 };
 
 CoefficientProviderDiagnostics GetCoefficientProviderDiagnostics();

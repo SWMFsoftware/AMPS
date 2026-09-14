@@ -1,4 +1,4 @@
-# Current srcSEP CLI contract through Step 12
+# Current srcSEP CLI contract through WP41
 
 The authoritative parser remains `SEP::Util::CLI::ParseCommandLine` in
 `util/sep_cli.cpp`.  Step 1 is additive.
@@ -59,7 +59,9 @@ The authoritative parser remains `SEP::Util::CLI::ParseCommandLine` in
 
 - `--coefficient-source` accepts `prescribed`, `self-consistent`, or `swmf`.
 - `--spatial-diffusion-provider` accepts `from-dmumu` or `from-mfp`.
-- `--pitch-angle-diffusion-provider` accepts `configured`.
+- `--pitch-angle-diffusion-provider` accepts `configured`, `constant`,
+  `jokipii-1966`, or `florinskiy`. Coupled turbulence sources reject
+  `configured` because that compatibility callback is not source-bound.
 - `--mean-free-path-provider` accepts `qlt`, `qlt1`, `tenishev-2005`,
   `chen-2024`, or `from-spatial`.
 - `--invalid-coefficient-policy` accepts `fail` or `ballistic`; ballistic is
@@ -68,6 +70,34 @@ The authoritative parser remains `SEP::Util::CLI::ParseCommandLine` in
   configured Dmumu, Tenishev-2005 MFP, and fail policy.
 - Invalid values, conversion cycles, and incompatible source/model pairs fail
   before initialization. Startup metadata prints every canonical selection.
+
+## WP11--WP20 coefficient and error-control behavior
+
+- `--constant-dmumu <1/s>` explicitly overrides the constant provider with a
+  finite non-negative SI rate. If absent, a post-compile input value is retained
+  and validated.
+- `--resonance-gap-policy` accepts `reject` or `ballistic`.
+- `--turbulence-amplitude-policy` accepts `reject` or
+  `limit-to-mean-field`; limiting is reported by a diagnostic counter.
+- `--prescribed-delta-b-over-b`, `--coefficient-correlation-length`,
+  `--coefficient-reference-radius`, `--coefficient-k-min`,
+  `--coefficient-k-max`, and both radial-exponent options define the named
+  prescribed spectrum and correlation scales.
+- `--coefficient-quadrature-absolute` and
+  `--coefficient-quadrature-relative` control adaptive Dmumu-to-kappa
+  integration.
+- `--transport-geometry-fraction`, `--transport-deterministic-tolerance`,
+  `--transport-stochastic-mu-rms`, `--transport-cooling-log-change`,
+  `--transport-focusing-mu-change`, `--transport-shock-fraction`, and
+  `--transport-min-step` define one validated mover error budget.
+- Parker preflight rejects any selected policy that can deliver an infinite
+  kappa to its finite diffusion operator. `fte-mfp` accepts typed ballistic
+  lambda and advances with zero scattering rate.
+- Per-species source abundance, signed charge, mass, nucleon count, injection
+  efficiency, spectral index, and energy convention are currently configured
+  through the C++ `SEP::Transport::SpeciesSource` initialization API. Installing
+  an explicit table requires an entry for every injected species; no CLI syntax
+  for that table is introduced in this work package.
 
 ## Step 11 turbulence behavior
 
@@ -90,3 +120,34 @@ The authoritative parser remains `SEP::Util::CLI::ParseCommandLine` in
 
 Step 12 adds no decomposition selector: reproducibility keys intentionally
 exclude thread count and MPI rank.
+
+## WP30 authoritative run controls
+
+- `--total-iterations <N>` sets the positive standalone iteration count.
+- `--shock-model <analytical|swcme1d>` and `--cme-scenario <fast|slow>` select
+  shock/background behavior before initialization.
+- `--field-line-seed-area <m2>` supplies the positive area used once to form
+  each line's conserved magnetic-flux record.
+- `--shock-turbulence-efficiency <0..1>` and
+  `--shock-turbulence-plus-fraction <0..1>` configure the WP25 source formula.
+- `--merge-minimum <N>` and `--merge-maximum <N>` configure the coupled
+  merge/split population range; maximum must not be below minimum.
+
+These values are copied into a validated immutable `RunConfiguration` after
+input-file and CLI resolution. Startup prints its fingerprint and source layer.
+A restart whose fingerprint differs is rejected rather than silently adopting
+the checkpoint or current defaults.
+
+## WP31 turbulence operator controls
+
+- `--turbulence-operator-safety <value>` sets the dimensionless local-rate
+  accuracy safety in `(0,1]`.
+- `--turbulence-max-source-fraction <value>` limits the diagnosed source change
+  relative to current wave energy.
+- `--turbulence-max-cascade-fraction <value>` limits cascade transfer per stage.
+- `--turbulence-min-substep <s>` sets the positive minimum accepted stage.
+- `--turbulence-max-substeps <N>` sets the positive stage-count guard.
+
+All options support both `--name value` and `--name=value`. The scheme is
+currently the fingerprinted `LieFirstOrder` implementation; no CLI option
+silently selects a different temporal order.

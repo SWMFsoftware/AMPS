@@ -256,6 +256,41 @@ def validate_external_manifest(path: pathlib.Path,
         for forbidden in FORBIDDEN_OBSERVATIONAL_LABELS:
             require(forbidden not in serialized,
                     "observational evidence contains forbidden label '{}'".format(forbidden))
+        configuration = require_nonempty_mapping(
+            manifest.get("configuration"), "configuration")
+        # WP39 requires the evidence manifest to describe the same operations
+        # performed by sep_observation_forward_model: response folding,
+        # exposure/cadence, species, detector nonlinearity, background, and
+        # uncertainty propagation.  A free-form label cannot establish that a
+        # simulation spectrum was converted into instrument-space counts.
+        forward = require_nonempty_mapping(
+            configuration.get("forward_operator"),
+            "configuration.forward_operator")
+        for field in ("version", "energy_response", "angular_response",
+                      "cadence_s", "species", "dead_time_s",
+                      "saturation_policy", "background_subtraction",
+                      "uncertainty_propagation"):
+            require(field in forward,
+                    "configuration.forward_operator omits {}".format(field))
+        require_nonempty_string(forward.get("version"),
+                                "configuration.forward_operator.version")
+        require_nonempty_string(forward.get("energy_response"),
+                                "configuration.forward_operator.energy_response")
+        require_nonempty_string(forward.get("angular_response"),
+                                "configuration.forward_operator.angular_response")
+        require_nonempty_string(forward.get("species"),
+                                "configuration.forward_operator.species")
+        require(isinstance(forward.get("cadence_s"), (int, float)) and
+                forward["cadence_s"] > 0,
+                "configuration.forward_operator.cadence_s must be positive")
+        require(isinstance(forward.get("dead_time_s"), (int, float)) and
+                forward["dead_time_s"] >= 0,
+                "configuration.forward_operator.dead_time_s must be non-negative")
+        for field in ("saturation_policy", "background_subtraction",
+                      "uncertainty_propagation"):
+            require_nonempty_string(
+                forward.get(field),
+                "configuration.forward_operator.{}".format(field))
         event = require_nonempty_mapping(manifest.get("event"), "event")
         for field in ("id", "start_utc", "end_utc"):
             require_nonempty_string(event.get(field), "event.{}".format(field))

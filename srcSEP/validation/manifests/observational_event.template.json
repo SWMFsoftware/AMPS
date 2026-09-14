@@ -8,7 +8,17 @@
     "srcsep_parameter_file": "replace-with-path",
     "background_run_identifier": "replace-with-run-id",
     "transport_mover": "replace-with-parker-or-fte-mover",
-    "observer_forward_operator": "replace-with-cadence-energy-and-pitch-angle-response"
+    "forward_operator": {
+      "version": "srcsep-observation-forward-v1",
+      "energy_response": "replace-with-response-matrix-id-and-checksum",
+      "angular_response": "replace-with-viewing-geometry-id-and-checksum",
+      "cadence_s": 0,
+      "species": "replace-with-species-and-charge-state",
+      "dead_time_s": 0,
+      "saturation_policy": "replace-with-policy",
+      "background_subtraction": "replace-with-method",
+      "uncertainty_propagation": "replace-with-method"
+    }
   },
   "inputs": [],
   "random_seeds": [],

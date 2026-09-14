@@ -1,9 +1,12 @@
 
+#include <algorithm>
 #include <cmath>
 #include <ctgmath>
+#include <limits>
 
 #include "sep.h"
-#include "quadrature.h"
+#include "util/sep_coefficient_physics.h"
+#include "util/sep_coefficient_registry.h"
 
 //static variables from c_D_x_x
 //template<class T> double SEP::Diffusion::cD_x_x<T>::speed;
@@ -30,108 +33,100 @@ template<class T>
 PIC::FieldLine::cFieldLineSegment*  SEP::Diffusion::cD_x_x<T>::Segment=NULL;*/
 
 namespace DxxInternalNumerics {
-  thread_local double v;
-  thread_local int spec;
-  thread_local double FieldLineCoord;
-  thread_local PIC::FieldLine::cFieldLineSegment *Segment;
-
-  double Integrant(double *mu) {
-    double D,dD_dmu,vParallel,vNorm;
-    double t=1.0-mu[0]*mu[0];
-
-    vParallel=v*mu[0];
-    vNorm=v*sqrt(t); 
-
-    SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu[0],vParallel,vNorm,spec,FieldLineCoord,Segment);
-
-    if (D==0.0) {
-      //for debugging: catch the issue in the debugger by pacing a breat point in calculation of the D_mu_mu
-      SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu[0],vParallel,vNorm,spec,FieldLineCoord,Segment);
+  SEP::Transport::CoefficientPhysics::SpatialDiffusionResult Evaluate(
+      double speedMPerS, int spec, double fieldLineCoordinate,
+      PIC::FieldLine::cFieldLineSegment* segment) {
+    namespace CP=SEP::Transport::CoefficientPhysics;
+    CP::SpatialDiffusionResult result;
+    if (SEP::Diffusion::GetPitchAngleDiffusionCoefficient==NULL) {
+      result.status=SEP::Transport::Status::Ok();
+      result.valueState=CP::ValueState::Finite;
+      result.kappaParallelM2PerS=0.0;
+      return result;
     }
-
-    return t*t/D;
+    CP::SpatialQuadratureConfiguration configuration=
+        SEP::Transport::Coefficient::ActiveConfiguration().spatialQuadrature;
+    configuration.gapPolicy=
+        SEP::Transport::Coefficient::ActiveConfiguration().resonanceGapPolicy;
+    return CP::IntegrateSpatialDiffusion(
+        speedMPerS,
+        [=](double mu) {
+          CP::PitchAngleResult pitch;
+          const double shape=std::max(0.0,1.0-mu*mu);
+          double derivative=0.0;
+          SEP::Diffusion::GetPitchAngleDiffusionCoefficient(
+              pitch.dMuMuPerS,derivative,mu,speedMPerS*mu,
+              speedMPerS*sqrt(shape),spec,fieldLineCoordinate,segment);
+          pitch.dDmuMuDmuPerS=derivative;
+          pitch.valueState=CP::ValueState::Finite;
+          pitch.status=std::isfinite(pitch.dMuMuPerS) &&
+              pitch.dMuMuPerS>=0.0
+              ? SEP::Transport::Status::Ok()
+              : SEP::Transport::Status::Error(
+                    SEP::Transport::StatusCode::InvalidCoefficient,
+                    "legacy Dmumu callback returned invalid quadrature input");
+          return pitch;
+        },configuration);
   }
 } 
 
 void SEP::Diffusion::GetDxx(double& D,double &dDxx_dx,double v,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
   namespace FL = PIC::FieldLine;
-  double s,ds,D1,D0;
-
-  DxxInternalNumerics::v=v;
-  DxxInternalNumerics::spec=spec;
-  DxxInternalNumerics::FieldLineCoord=FieldLineCoord;
-  DxxInternalNumerics::Segment=Segment;
-
-  //as Dxx depends only on |\mu|, the integration limit is chabnged fomr (-1,1) to (0+something very small to exclude 0 from integraiont), 1);
-  double xmin[]={0.00001};
-  double xmax[]={1.0};
-
-  if (v<1.0E6) {     
-    D=2.0*v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,4,DxxInternalNumerics::Integrant,xmin,xmax);
-  } 
-  else if (v<1.0E7) {
-    D=2.0*v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,4,DxxInternalNumerics::Integrant,xmin,xmax);
+  namespace CP = SEP::Transport::CoefficientPhysics;
+  const CP::SpatialDiffusionResult center=
+      DxxInternalNumerics::Evaluate(v,spec,FieldLineCoord,Segment);
+  if (!center.status.ok()) {
+    D=std::numeric_limits<double>::quiet_NaN();
+    dDxx_dx=std::numeric_limits<double>::quiet_NaN();
+    return;
   }
-  else {
-    D=2.0*v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,6,DxxInternalNumerics::Integrant,xmin,xmax);  
-  }
-
-  double DTEST,DTEST1,DDTEST1;
-
-  {
-  FL::cFieldLineVertex* VertexBegin=Segment->GetBegin();
-  FL::cFieldLineVertex* VertexEnd=Segment->GetEnd();
-  double *x0,*x1;
-  double w0,w1;
-
-    x0=VertexBegin->GetX();
-    x1=VertexEnd->GetX();
-
-      w1=fmod(FieldLineCoord,1);
-  w0=1.0-w1; 
-
-
-  double XTEST[3];
-
-  for (int idim=0;idim<3;idim++) {
-    double t;
-
-    t=w0*x0[idim]+w1*x1[idim];
-    XTEST[idim]=t;
-
-  }
-
-  DTEST = DLT::calculate_Dxx(Vector3D::Length(XTEST),v);
-
-  QLT::calculateAtHeliocentricDistance(DTEST,DDTEST1,Vector3D::Length(XTEST),v);
-
-  }
-
-  ds=Segment->GetLength();
-
-  DxxInternalNumerics::FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds);
-  DxxInternalNumerics::Segment=FL::FieldLinesAll[iFieldLine].GetSegment(DxxInternalNumerics::FieldLineCoord);
-
-  if (DxxInternalNumerics::FieldLineCoord<0.0) {
+  D=center.kappaParallelM2PerS;
+  if (center.valueState==CP::ValueState::Ballistic) {
+    // The legacy signature cannot carry the typed state.  Positive infinity is
+    // retained only as a compatibility serialization; production adapters use
+    // SpatialDiffusionResult and reject infinite kappa before Parker stepping.
     dDxx_dx=0.0;
     return;
   }
-  else {
-    D1=2.0*v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,4,DxxInternalNumerics::Integrant,xmin,xmax);
-  }
 
-  DxxInternalNumerics::FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,-ds);
-  DxxInternalNumerics::Segment=FL::FieldLinesAll[iFieldLine].GetSegment(DxxInternalNumerics::FieldLineCoord);
-
-  if (DxxInternalNumerics::FieldLineCoord<0.0) {
-    dDxx_dx=0.0;
-    return;
+  double h=SEP::Transport::ActiveNumericalTolerances().geometryFraction*
+      Segment->GetLength();
+  bool derivativeFound=false;
+  for (int refinement=0;refinement<10;refinement++) {
+    PIC::FieldLine::cFieldLineSegment* plusSegment=Segment;
+    PIC::FieldLine::cFieldLineSegment* minusSegment=Segment;
+    const double plusCoordinate=FL::FieldLinesAll[iFieldLine].move(
+        FieldLineCoord,h,plusSegment);
+    const double minusCoordinate=FL::FieldLinesAll[iFieldLine].move(
+        FieldLineCoord,-h,minusSegment);
+    plusSegment=FL::FieldLinesAll[iFieldLine].GetSegment(plusCoordinate);
+    minusSegment=FL::FieldLinesAll[iFieldLine].GetSegment(minusCoordinate);
+    const CP::SpatialDiffusionResult plus=plusSegment ?
+        DxxInternalNumerics::Evaluate(v,spec,plusCoordinate,plusSegment) :
+        CP::SpatialDiffusionResult();
+    const CP::SpatialDiffusionResult minus=minusSegment ?
+        DxxInternalNumerics::Evaluate(v,spec,minusCoordinate,minusSegment) :
+        CP::SpatialDiffusionResult();
+    if (plus.status.ok() && minus.status.ok() &&
+        plus.valueState==CP::ValueState::Finite &&
+        minus.valueState==CP::ValueState::Finite) {
+      dDxx_dx=(plus.kappaParallelM2PerS-minus.kappaParallelM2PerS)/(2.0*h);
+      derivativeFound=std::isfinite(dDxx_dx);
+      if (derivativeFound) break;
+    }
+    else if (plus.status.ok() && plus.valueState==CP::ValueState::Finite) {
+      dDxx_dx=(plus.kappaParallelM2PerS-D)/h;
+      derivativeFound=std::isfinite(dDxx_dx);
+      if (derivativeFound) break;
+    }
+    else if (minus.status.ok() && minus.valueState==CP::ValueState::Finite) {
+      dDxx_dx=(D-minus.kappaParallelM2PerS)/h;
+      derivativeFound=std::isfinite(dDxx_dx);
+      if (derivativeFound) break;
+    }
+    h*=0.5;
   }
-  else {
-    D0=2.0*v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,4,DxxInternalNumerics::Integrant,xmin,xmax);
-  }
-
-  dDxx_dx=(D1-D0)/(2.0*ds);
+  if (!derivativeFound) dDxx_dx=std::numeric_limits<double>::quiet_NaN();
 } 
 
 //====================================================================================================

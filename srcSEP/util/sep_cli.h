@@ -37,12 +37,24 @@ struct Options {
   // Dmumu implementation while assigning it an explicit canonical name.
   Mover::ProductionMover particleMover =
       Mover::ProductionMover::FocusedTransportDiffusion;
+  bool particleMoverProvided = false;
   bool listMovers = false;
 
   // Step 10 exposes one validated coefficient configuration shared by Parker,
   // diffusive FTE, and event-driven FTE.  The defaults preserve the historical
   // srcSEP choices while making their names and source authority explicit.
   Transport::Coefficient::Configuration coefficients;
+
+  // WP12 exposes the one mover-independent local error budget.  These values
+  // are applied only after the full command line and compatibility matrix pass
+  // validation, so malformed tolerances cannot partially mutate a run.
+  Transport::NumericalTolerances numericalTolerances;
+
+  // The pure constant Dmumu provider uses SI s^-1.  It is stored beside the
+  // registry selection so parse-only tests can verify CLI-to-provider intent
+  // without linking PIC globals.
+  double constantDmumuPerS = 0.0;
+  bool constantDmumuProvided = false;
 
   // Step 11 keeps turbulence-source ownership separate from the exactly three
   // particle movers.  This configuration is the authoritative CLI contract for
@@ -86,6 +98,26 @@ struct Options {
   // zero injected particles would make the injection weight correction formulas
   // singular and would silently disable the SEP source.
   int injectionParticlesPerIteration = 300;
+
+  // WP30 driver controls.  Each "Provided" bit preserves provenance when the
+  // value remains a default and lets the final RunConfiguration enforce the
+  // documented defaults < input file < command line precedence.
+  int totalIterations = 100000001;
+  bool totalIterationsProvided = false;
+  double fieldLineSeedAreaM2 = 3.14159265358979323846;
+  bool fieldLineSeedAreaProvided = false;
+  double shockTurbulenceEfficiency = 0.02;
+  bool shockTurbulenceEfficiencyProvided = false;
+  double shockTurbulencePlusFraction = 0.5;
+  bool shockTurbulencePlusFractionProvided = false;
+  int mergeMinimum = 600;
+  int mergeMaximum = 1000;
+  bool mergeMinimumProvided = false;
+  bool mergeMaximumProvided = false;
+  bool analyticalShock = false;
+  bool shockModelProvided = false;
+  bool slowCmeScenario = false;
+  bool cmeScenarioProvided = false;
 
   bool printHelp = false;
 };

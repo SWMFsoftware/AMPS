@@ -205,7 +205,12 @@ void SEP::Mover::PrintRuntimeConfiguration(std::ostream& out) {
             << QLT::k_min_1AU << " .. " << QLT::k_max_1AU << "\n";
         break;
       case SEP::Scattering::MeanFreePathMode_QLT1:
-        out << "  QLT1 deltaB/B:                 0.3\n";
+        out << "  QLT1 deltaB/B:                 "
+            << SEP::Transport::Coefficient::ActiveConfiguration().
+                   prescribedDeltaBOverB << "\n"
+            << "  QLT1 correlation length [m]:   "
+            << SEP::Transport::Coefficient::ActiveConfiguration().
+                   correlationLengthAt1AuM << "\n";
         break;
       case SEP::Scattering::MeanFreePathMode_Tenishev2005AIAA:
         out << "  Tenishev lambda0 [m]:          "
@@ -220,4 +225,36 @@ void SEP::Mover::PrintRuntimeConfiguration(std::ostream& out) {
         break;
     }
   }
+
+  const SEP::Transport::Coefficient::Configuration& coefficients =
+      SEP::Transport::Coefficient::ActiveConfiguration();
+  const SEP::Transport::NumericalTolerances& tolerances =
+      SEP::Transport::ActiveNumericalTolerances();
+  out << "  source/representation policy:  "
+      << SEP::Transport::Coefficient::SourceName(coefficients.source)
+      << " / "
+      << SEP::Transport::Coefficient::PitchAngleName(coefficients.pitchAngle)
+      << "\n"
+      << "  amplitude/gap policy:          "
+      << SEP::Transport::Coefficient::TurbulenceAmplitudePolicyName(
+             coefficients.amplitudePolicy) << " / "
+      << SEP::Transport::Coefficient::ResonanceGapPolicyName(
+             coefficients.resonanceGapPolicy) << "\n"
+      << "  adaptive quadrature abs/rel:   "
+      << coefficients.spatialQuadrature.absoluteToleranceM2PerS << " / "
+      << coefficients.spatialQuadrature.relativeTolerance << "\n"
+      << "  coefficient fingerprint:      "
+      << SEP::Transport::Coefficient::ConfigurationFingerprint(coefficients)
+      << "\n"
+      << "  mover geometry/stochastic:     "
+      << tolerances.geometryFraction << " / "
+      << tolerances.stochasticPitchRms << "\n"
+      << "  mover deterministic tolerance: "
+      << tolerances.deterministicRelativeTolerance << "\n"
+      << "  mover cooling/focusing:        "
+      << tolerances.coolingLogChange << " / "
+      << tolerances.focusingPitchChange << "\n"
+      << "  mover shock/min-step [s]:      "
+      << tolerances.shockFraction << " / " << tolerances.minimumStepS
+      << "\n";
 }

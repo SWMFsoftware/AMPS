@@ -64,6 +64,35 @@ Particle and shock withdrawals are limited by available branch energy, with
 the requested/applied difference reported as a limiter correction. The
 integrated reference cascade uses an implicit positive turnover sink.
 
+### WP31 shared operator limits
+
+The declared production scheme is `LieFirstOrder`. Before mutation,
+`PlanAdvance` evaluates the finite-volume CFL bound, pending-source change,
+reflection rate, and nonlinear cascade rate in every segment. The smallest
+limit determines a common stage count. A plan below `minimumSubstepS` or above
+`maximumSubsteps` is rejected with `StepUnderflow`; no operator substitutes the
+global step as a fallback. Reflection uses its exact exponential branch exchange
+at each stage and cascade uses a positive backward-Euler update. The focused
+combined-operator case automatically measures first-order temporal convergence.
+
+| Field | Meaning | Unit/domain |
+| --- | --- | --- |
+| `operatorAccuracySafety` | reflection/local-rate accuracy fraction | dimensionless `(0,1]` |
+| `maximumSourceFraction` | pending source relative to current energy | dimensionless `(0,1]` |
+| `maximumCascadeFraction` | cascade transfer per stage | dimensionless `(0,1]` |
+| `minimumSubstepS` | smallest accepted common stage | seconds, positive |
+| `maximumSubsteps` | work/underflow guard | positive count |
+
+### WP32 statuses and WP40 work counters
+
+Every correction creates an `OperatorEvent` with requested/applied joules and a
+typed disposition. The signed unapplied amount enters `rejectedSourceJ`; exact
+zero sources and empty physical wave states are counted as physical zeros.
+Nonfinite rates, invalid density/volume, and zero-pitch resonance fail explicitly.
+Diagnostics also count advection faces, reflection/cascade cells, spectral-bin
+updates, limiters, rejections, and per-operator stages. The PIC adapter exports
+these deterministic cost drivers with `LastStepLedger()`.
+
 ## Boundary and conservation ledger
 
 Each field-line end owns one restartable boundary object:
@@ -85,7 +114,7 @@ conserves each integrated branch and, in spectral mode, every individual bin on
 the covered domain. It increments the field-line generation and reports any
 domain or roundoff correction.
 
-The deterministic versioned checkpoint contains source, representation,
+The deterministic versioned checkpoint schema 2 contains source, representation,
 operators, boundary objects, spectral grid, phase, epoch, field-line
 generation, campaign seed, completed step, pending shock/particle exchange,
 handoff epoch/checksum, provenance, accumulated ledger, geometry, and all
@@ -143,3 +172,13 @@ The same controlled turbulence descriptors can be selected in a linked build:
 
 Explicit group selection includes every registered turbulence case. Routine
 `--all-tests` selection remains governed by each descriptor's runtime class.
+# WP25 shock-source transaction
+
+Shock injection no longer mutates `CellIntegratedWaveEnergy` before the common
+driver. The shock adapter computes typed, provenance-bearing segment records
+from swept spherical-shell overlap, per-line flux-tube volume, upstream mass
+density, and the normal-relative speed. `PICAdapter::QueueShockContribution`
+holds them until import maps them to `pendingShockPlusJ/MinusJ`. The common
+`Turbulence::Advance` routine is the only writer and records the applied amount,
+limiter correction, and closure residual in the signed energy ledger. Efficiency
+and branch split come from the frozen WP30 `RunConfiguration`.

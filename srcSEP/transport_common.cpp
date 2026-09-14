@@ -1,5 +1,6 @@
 #include "transport_common.h"
 #include "util/sep_reproducible_reduction.h"
+#include "util/sep_runtime_contracts.h"
 
 #include "amps2swmf.h"
 
@@ -102,9 +103,7 @@ void InitializeParticleTransportState(long int pointer,
                                       std::uint64_t sourceKey,
                                       std::uint64_t sequenceKey,
                                       const double momentumKgMPerS[3]) {
-  PIC::ParticleBuffer::byte* data =
-      PIC::ParticleBuffer::GetParticleDataPointer(pointer);
-  if (!data || !momentumKgMPerS) return;
+  if (!momentumKgMPerS) return;
   std::uint64_t hash = UINT64_C(1469598103934665603);
   const auto append = [&hash](const void* value, std::size_t size) {
     const unsigned char* bytes =
@@ -118,28 +117,43 @@ void InitializeParticleTransportState(long int pointer,
   append(&sequenceKey, sizeof(sequenceKey));
   append(momentumKgMPerS, 3 * sizeof(double));
   if (hash == 0) hash = UINT64_C(1);
+  InitializeParticleTransportStateWithIdentity(pointer, hash);
+}
+
+void InitializeParticleTransportStateWithIdentity(
+    long int pointer, std::uint64_t stableParticleId) {
+  // Particle-buffer addresses are deliberately excluded.  AMPS may compact or
+  // migrate the buffer, whereas the caller-provided source-event identity is a
+  // persistent physical label and therefore survives restart/decomposition.
+  PIC::ParticleBuffer::byte* data =
+      PIC::ParticleBuffer::GetParticleDataPointer(pointer);
+  if (!data || stableParticleId == 0) return;
   *reinterpret_cast<std::uint64_t*>(data + SEP::Offset::TransportSchema) =
       UINT64_C(0x5352435345500001);
   *reinterpret_cast<std::uint64_t*>(data + SEP::Offset::StableParticleId) =
-      hash;
+      stableParticleId;
   *reinterpret_cast<double*>(data + SEP::Offset::MfpOpticalDepth) =
       std::numeric_limits<double>::quiet_NaN();
   *reinterpret_cast<std::uint64_t*>(data + SEP::Offset::MfpEventIndex) = 0;
 }
 
-void QueueWaveContribution(const CouplingRecord& value) {
+Status QueueWaveContribution(const CouplingRecord& value) {
   if (value.fieldLineId < 0 || value.species < 0 ||
       !(value.statisticalWeight > 0.0) ||
       value.stableParticleId == 0 || value.snapshotGeneration == 0 ||
       !(value.dtS > 0.0) || !std::isfinite(value.dtS) ||
       !std::isfinite(value.signedPathM)) {
-    exit(__LINE__, __FILE__,
-         "invalid self-contained particle-wave coupling record");
+    return Status::Error(StatusCode::InvalidArgument,
+        "invalid self-contained particle-wave coupling record");
   }
   LocalQueue().values.push_back(value);
+  return Status::Ok();
 }
 
-void FlushWaveContributions() {
+Status DrainWaveContributions(std::vector<CouplingRecord>* records) {
+  if (!records)
+    return Status::Error(StatusCode::InvalidArgument,
+                         "coupling drain destination is null");
   std::vector<CouplingRecord> merged;
   {
     // PIC::TimeStep() has joined its worker region before this call, so the
@@ -179,30 +193,20 @@ void FlushWaveContributions() {
   std::vector<Reproducibility::SegmentAccumulator> auditLedger;
   const Status reductionStatus = Reproducibility::CanonicalPartitionReduction(
       partitions, &auditLedger);
-  if (!reductionStatus.ok())
-    exit(__LINE__, __FILE__, reductionStatus.message.c_str());
+  if (!reductionStatus.ok()) return reductionStatus;
 
   std::sort(merged.begin(), merged.end(), PendingLess);
-  for (const CouplingRecord& value : merged) {
-    if (value.pitchAngleResolved) {
-      SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::
-          AccumulateParticleFluxForWaveCoupling(
-              value.fieldLineId, value.species, value.statisticalWeight,
-              value.dtS, value.midpointParallelVelocityMPerS,
-              value.midpointNormalVelocityMPerS,
-              value.startCoordinate, value.finishCoordinate,
-              value.signedPathM);
-    }
-    else {
-      SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::
-          AccumulateParticleFluxForWaveCoupling(
-              value.fieldLineId, value.species, value.statisticalWeight,
-              value.dtS, std::hypot(value.midpointParallelVelocityMPerS,
-                                    value.midpointNormalVelocityMPerS),
-              value.startCoordinate,
-              value.finishCoordinate, value.signedPathM);
-    }
-  }
+  records->swap(merged);
+  return Status::Ok();
+}
+
+void FlushWaveContributions() {
+  // Kept only for source compatibility with out-of-tree callers during the
+  // WP43 migration.  The production drivers use DrainWaveContributions and
+  // propagate its Status.  Discarding here is safer than resurrecting direct
+  // mutation of legacy G+/G- arrays behind an untyped void interface.
+  std::vector<CouplingRecord> discarded;
+  (void)DrainWaveContributions(&discarded);
 }
 
 Status LoadParticle(long int pointer, ParticleContext* context) {
@@ -464,8 +468,15 @@ Status EvaluateLocalBackgroundAt(const ParticleContext& context,
       Background::SnapshotStore::Instance().AcquireForMover();
   const double intervalS = snapshot.physical_epoch_interval_seconds();
   if (intervalS > 0.0) {
+    const double materialLogDensityDerivativePerS =
+        std::log(current / previous) / intervalS;
     background->velocityDivergencePerS =
-        -std::log(current / previous) / intervalS;
+        -materialLogDensityDerivativePerS;
+    const ScalarResult residual = RuntimeContracts::ContinuityResidualPerS(
+        materialLogDensityDerivativePerS,
+        background->velocityDivergencePerS);
+    if (!residual.status.ok()) return residual.status;
+    background->continuityResidualPerS = residual.value;
   }
   else if (std::fabs(current - previous) <=
            32.0 * std::numeric_limits<double>::epsilon() * current) {
@@ -500,11 +511,30 @@ Status EvaluateLocalBackgroundAt(const ParticleContext& context,
   background->numberDensityPerM3 = current;
   background->massDensityKgPerM3 = massDensity;
   background->sampleCoordinate = sampled.state.coordinate;
-  // With the current line-centered velocity data, bb:grad(U) is the resolved
-  // field-aligned strain.  Publishing it explicitly freezes the approximation
-  // and prevents movers from guessing it from divergence.
+  // Resolve bb:grad(U) separately from d(U.b)/ds.  The rank-one tensor below is
+  // the derivative information available from a field-line chord:
+  // grad(U) ~= (dU/ds) b.  Curvature db/ds is evaluated from the endpoint B
+  // directions, so a rigid vector translation on a curved line yields zero
+  // strain while d(U.b)/ds retains its geometric U.kappa contribution.
+  RuntimeContracts::VelocityGradientInput derivativeInput;
+  for (int i = 0; i < 3; ++i) {
+    derivativeInput.velocityMPerS[i] = background->plasmaVelocityMPerS[i];
+    derivativeInput.bUnit[i] = background->bUnit[i];
+    derivativeInput.curvaturePerM[i] =
+        (b1[i] / absB1 - b0[i] / absB0) / lengthM;
+    const double dUds = (u1[i] - u0[i]) / lengthM;
+    for (int j = 0; j < 3; ++j)
+      derivativeInput.gradientPerS[i][j] =
+          dUds * background->bUnit[j];
+  }
+  const RuntimeContracts::VelocityDerivatives velocityDerivatives =
+      RuntimeContracts::ComputeVelocityDerivatives(derivativeInput);
+  if (!velocityDerivatives.status.ok()) return velocityDerivatives.status;
   background->fieldAlignedStrainPerS =
-      background->parallelVelocityGradientPerS;
+      velocityDerivatives.fieldAlignedStrainPerS;
+  background->parallelVelocityGradientPerS =
+      velocityDerivatives.parallelVelocityGradientPerS;
+  background->velocityDerivativeMethod = velocityDerivatives.method;
   if (!std::isfinite(background->alfvenSpeedMPerS) ||
       background->alfvenSpeedMPerS < 0.0 ||
       background->alfvenSpeedMPerS >= SpeedOfLight) {

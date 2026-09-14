@@ -18,26 +18,6 @@
 
 namespace QLT1 {
 
-    /// \brief Computes the magnetic field strength B(r) at a given heliocentric distance r.
-    ///
-    /// The Parker spiral model describes how the solar wind drags the magnetic field
-    /// outward from the Sun, creating a spiral structure. The magnetic field strength
-    /// decreases with the square of the distance from the Sun:
-    ///     B(r) = B0 * (R0 / r)^2
-    ///
-    /// Reference:
-    /// - Parker, E. N. (1958). Dynamics of the Interplanetary Gas and Magnetic Fields.
-    ///
-    /// \param r Heliocentric distance in meters.
-    /// \return Magnetic field strength at distance r in Tesla.
-    double B(double r) {
-        // B0: Magnetic field at reference distance R0.
-        // For the inner heliosphere, B0 ~ 5e-5 T at R0 = 0.1 AU.
-        double B0 = 5e-5;               // Magnetic field at reference distance (Tesla)
-        double R0 = 0.1 * AU;           // Reference distance (meters)
-        return B0 * pow(R0 / r, 2);
-    }
-
     /// \brief Computes the proton gyrofrequency Omega.
     ///
     /// The gyrofrequency is the angular frequency of a charged particle in a magnetic field:
@@ -173,4 +153,3 @@ namespace QLT1 {
   }
 
 } // namespace QLT3
-
