@@ -149,8 +149,7 @@ int SEP::ParticleMover_Parker(
         record.dtS *= std::fabs(inDomainPathM / increment.displacementM);
         record.signedPathM = inDomainPathM;
       }
-      const Status queueStatus = PICAdapter::QueueWaveContribution(record);
-      if (!queueStatus.ok()) AbortMoverStatus(queueStatus);
+      PICAdapter::QueueWaveContribution(record);
     }
 
     if (status.code == StatusCode::OutOfDomain) {

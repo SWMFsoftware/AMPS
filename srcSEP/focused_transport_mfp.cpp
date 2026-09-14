@@ -222,11 +222,8 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
         contribution.stableParticleId = context.stableParticleId;
         contribution.snapshotGeneration = context.snapshotGeneration;
         contribution.dtS = emitted.intervalS;
-        // Each event-core record owns its own wave-frame momentum jump. A shell
-        // can contain several intervals, so reusing the shell endpoints here
-        // would multiply the same energy change by the interval count.
-        contribution.preMomentumKgMPerS = emitted.preWaveMomentumKgMPerS;
-        contribution.postMomentumKgMPerS = emitted.postWaveMomentumKgMPerS;
+        contribution.preMomentumKgMPerS = preMomentum;
+        contribution.postMomentumKgMPerS = momentum.value;
         contribution.midpointParallelVelocityMPerS =
             0.5 * (preParallel + context.state.vParallelMPerS);
         contribution.midpointNormalVelocityMPerS =
@@ -234,7 +231,6 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
         contribution.startCoordinate = intervalStart;
         contribution.finishCoordinate = intervalFinish;
         contribution.signedPathM = emitted.displacementM;
-        contribution.resonantBranch = emitted.resonantBranch;
         contribution.eventIndex = emitted.eventIndex;
         contribution.intervalIndex =
             (shellIndex << 32) | static_cast<std::uint64_t>(i);
@@ -256,8 +252,7 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
               inDomainPathM / emitted.displacementM);
           contribution.signedPathM = inDomainPathM;
         }
-        const Status queueStatus = PICAdapter::QueueWaveContribution(contribution);
-        if (!queueStatus.ok()) AbortMfpStatus(queueStatus);
+        PICAdapter::QueueWaveContribution(contribution);
         intervalStart = intervalFinish;
         if (!intervalSegment) break;
       }

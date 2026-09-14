@@ -3,9 +3,6 @@
 
 #include "util/sep_transport_common.h"
 
-#include <cstddef>
-#include <string>
-
 namespace SEP {
 namespace Turbulence {
 namespace PICAdapter {
@@ -56,18 +53,6 @@ void RecordShockSourceRejection(bool geometryFailure);
 Transport::Status Advance(double dtS, double shockRadiusBeforeM,
                           double shockRadiusAfterM);
 const ProductionLedger& LastStepLedger();
-
-// Application restart adapters persist this payload beside particle and
-// background checkpoints.  Restoring validates the complete runtime store in a
-// staged object before replacing live state, so a truncated or incompatible
-// checkpoint cannot partially alter authoritative wave ownership.
-Transport::Status SerializeRuntimeStore(std::string* text);
-Transport::Status RestoreRuntimeStore(const std::string& text);
-std::size_t RuntimeOwnerCount();
-
-// Test/support reset must be called only before particles or turbulence are
-// initialized.  Production timestepping never discards the owner store.
-void ResetRuntimeStoreForTests();
 
 }  // namespace PICAdapter
 }  // namespace Turbulence

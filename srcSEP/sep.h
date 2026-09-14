@@ -364,13 +364,6 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
     long int InjectParticlesSingleFieldLine(int spec,int iFieldLine);
     long int InjectParticles();
 
-    // WP46 restart adapters persist this scheduler payload beside particles.
-    // Checkpoints are taken only between completed injection calls, so the next
-    // integer event plus the frozen campaign seed completely defines the next
-    // source identity and every purpose-separated random stream.
-    Transport::Status SerializeInjectionSourceState(std::string* text);
-    Transport::Status RestoreInjectionSourceState(const std::string& text);
-
     namespace FluxTubeGeometry {
       // An explicit profile is the required fallback when a field magnitude is
       // unavailable.  The callback consumes Cartesian position in metres and

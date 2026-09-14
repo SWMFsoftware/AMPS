@@ -40,6 +40,22 @@ gate and requires the linked application:
 make test-native-amps-validation SEP_EXECUTABLE=/path/to/amps
 ```
 
+For review figures, run the same controlled catalog through the Python
+orchestrator. It preserves the component JSON and produces PNG plus EPS without
+changing the scientific status or evidence class:
+
+```sh
+python3 test/run_tests.py --suite controlled-analytical \
+  --output-dir /absolute/path/to/evidence/controlled-with-figures
+```
+
+Figures backed by a numerical/analytical CSV are pointwise solution overlays.
+Where a case emits only moments, norms, convergence order, or conservation
+residuals, the figure is explicitly a metric-versus-reference/acceptance plot.
+The latter is useful for review but must not be cited as a spatial or temporal
+solution curve. `analytical_plot_manifest.json` records the kind and source of
+every figure; registry JSON remains the authoritative result.
+
 WP11--WP20 also provide a bounded coefficient and stochastic-numerics gate:
 
 ```sh
@@ -64,32 +80,6 @@ Evidence is labelled `analytical-core`, `source-integration`, `native-amps`,
 level above what actually executed. The source gate therefore leaves native
 adapter execution, scheduled multi-seed campaigns, MPI/OpenMP scaling, real
 SWMF, and held-out observations explicitly BLOCKED when their inputs are absent.
-
-WP42--WP64 extend that boundary with executable native-trace,
-decomposition/restart-signature, multi-level refinement, predeclared power,
-external-event-manifest, and scaling/resource contracts. Run the analytical and
-source-integration portion with:
-
-```sh
-make test-wp42-wp64-unit
-```
-
-The command also prints the unavailable higher evidence as `BLOCKED`. To run
-the site-owned native campaign explicitly, provide a reviewed command whose
-outputs retain the executable checksum, compiler/flags, callback traces,
-configuration fingerprints, decomposition/restart hashes, ledgers, and frozen
-performance environment:
-
-```sh
-make test-wp59-wp64-native \
-  SRCSEP_NATIVE_GATE='/reviewed/site/runner --matrix --restart --mpi --scaling'
-```
-
-This variable is a CI/operator integration seam; it is not populated from a
-simulation input file. Real SWMF and held-out observational manifests continue
-to use the independent authenticated targets below. See
-[../WP42_WP64_VALIDATION_REPORT.md](../WP42_WP64_VALIDATION_REPORT.md) for the
-observed source-only results and remaining evidence requirements.
 
 ## Completing external gates
 

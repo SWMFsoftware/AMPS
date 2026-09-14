@@ -51,15 +51,6 @@ make test-wp21-wp30-unit
 # observation, performance, and evidence-governance contracts.
 make test-wp31-wp41-unit
 
-# WP42-WP64 ownership, physics, adaptive numerics, estimators, and
-# fail-closed validation/performance contracts.
-make test-wp42-wp64-unit
-
-# Site-owned linked AMPS/MPI/restart/scaling campaign. This reports BLOCKED
-# rather than inventing evidence when SRCSEP_NATIVE_GATE is unset.
-make test-wp59-wp64-native \
-  SRCSEP_NATIVE_GATE='/reviewed/site/runner --matrix --restart --mpi'
-
 # Print the exact 90-row production compatibility matrix from its registry.
 make print-configuration-matrix
 
@@ -123,11 +114,94 @@ Equivalent CLI examples are:
 when Make is given `-j`, then runs the embedded SWCME suite using its own native
 parallel target.  Expensive extended tests are not part of `--all-tests`.
 
-The Step 6–15 and WP11–WP64 focused targets do not require the linked executable, AMPS, PIC,
+The Step 6–15, WP11–WP20, WP21–WP30, and WP31–WP41 focused targets do not require the linked executable, AMPS, PIC,
 MPI, SWMF, or field-line host classes. Each compiles the exact production
 numerical cores with C++11, `-Wall -Wextra -Werror -pedantic`, AddressSanitizer,
 and UndefinedBehaviorSanitizer. LeakSanitizer alone is disabled because the
 managed test environment does not expose the required `/proc` task data.
+
+## Python runner and analytical-comparison plots
+
+`run_tests.py` provides one Python 3 entry point for native registry tests and
+dependency-light Make suites. It does not contain test callbacks, movers, or
+analytical physics: stable IDs/groups are discovered from the linked executable
+and execution status comes from the registry JSON. Matplotlib is the only
+additional runtime dependency for figures.
+
+Run `python3 test/run_tests.py --help` for annotated, copy-and-paste examples of
+every selection mode, MPI execution, report replotting, plot controls, and
+forwarding model-specific arguments to the linked executable.
+
+```sh
+# List all native registry IDs without initializing AMPS.
+python3 test/run_tests.py --amps /path/to/amps --list
+
+# Select arbitrary IDs and/or groups. Repeat either selector as needed.
+python3 test/run_tests.py --amps /path/to/amps \
+  --test PARK01 --test FTED08 --group fte-mfp \
+  --output-dir /evidence/srcsep/selected
+
+# Bounded routine registry versus every discoverable routine/extended case.
+python3 test/run_tests.py --amps /path/to/amps --routine \
+  --output-dir /evidence/srcsep/routine
+python3 test/run_tests.py --amps /path/to/amps --all \
+  --output-dir /evidence/srcsep/all
+
+# Dependency-light focused suites are repeatable and use the Make build rules.
+python3 test/run_tests.py --suite parker --suite fte-dmumu \
+  --output-dir /evidence/srcsep/focused
+python3 test/run_tests.py --suite controlled-analytical \
+  --output-dir /evidence/srcsep/controlled
+
+# Plot a previously archived component-test report without rerunning tests.
+python3 test/run_tests.py --from-json /evidence/results.json \
+  --output-dir /evidence/srcsep/replot --formats png,eps
+```
+
+`--routine` forwards the native `--all-tests` policy and therefore excludes
+extended cases. `--all` first calls `--list-tests`, then selects every returned
+ID explicitly; it can run costly ensembles. `--mpi-np N` and `--mpiexec PATH`
+launch the same native selection under MPI. Arguments after a literal `--` are
+passed unchanged to the AMPS executable. `--timeout` applies per command and
+`--keep-going` allows later repeated source suites to execute after one fails.
+
+The output directory contains `test-run.log`, `run_manifest.json`, native
+`srcsep-tests.json`/`srcsep-tests.xml` (or a merged focused JSON when focused
+runners retain reports), `analytical_plot_manifest.json`, and a `plots/`
+directory. The run manifest records the selected command and hashes both the
+report and native executable. JSON is authoritative; images are review aids.
+
+There are two deliberately distinct image types:
+
+- **Solution-series comparison:** a declared artifact CSV has at least two
+  finite rows and recognized coordinate (`x`, `time`, `s`, `mu`, and documented
+  unit-bearing variants), numerical (`numerical`, `model`, `simulated`), and
+  analytical (`analytic`, `analytical`, `exact`, `reference`) columns. The
+  figure overlays those two series.
+- **Metric-level comparison:** no eligible CSV exists, so reported numerical
+  errors, moments, orders, probabilities, or conservation residuals are shown
+  against their analytical reference/acceptance tolerance. The title labels
+  this explicitly; it is not a fabricated pointwise solution.
+
+Only controlled IDs explicitly classified in `ANALYTICAL_IDS`, or results that
+declare a recognizable analytical-series CSV, are plotted by default.
+`--plot all` also plots other tests with comparable finite metrics; `--plot
+none` disables Matplotlib entirely. `--formats png`, `--formats eps`, or
+`--formats png,eps` selects outputs. A failed test retains its figures and the
+runner returns the originating status (`1` for FAIL, `2` for ERROR); plots can
+never convert a failed registry result to PASS.
+
+The focused Parker, Dmumu, MFP, and turbulence scripts normally delete all
+temporary evidence. When invoked through this runner they honor the internal
+`SRCSEP_REPORT_DIR` contract and copy only validated JSON/JUnit reports before
+cleanup; sanitizer executables and objects are never retained. Other source
+suites that do not emit structured reports still run normally and produce a
+log/manifest but cannot generate analytical plots. Verify the orchestration and
+both figure paths with:
+
+```sh
+make test-python-runner-unit
+```
 
 ## Focused WP21–WP30 tests
 
@@ -248,6 +322,9 @@ Monte Carlo checks remain in the explicitly selected Parker/FTE stress cases.
   canonical movers and no retired mutable function-pointer API;
 - `DOC03`: the source handoff contains no objects, libraries, coverage data,
   generated test evidence, or nested archive;
+- `WARN-FULL-SOURCE`: the root-only sampling writer uses structured control
+  flow rather than a jump across initialized C++ objects, and field-line list
+  sizes use a `size_t`-compatible output format;
 - `WARN01`: every dependency-light Step 13/14 translation unit compiles with
   C++11, `-Wall -Wextra -Wpedantic -Werror`;
 - `STATIC01`: GCC's `-fanalyzer` checks the new infrastructure when supported;
@@ -516,32 +593,6 @@ pointer.
 This is a source-only controlled gate. It does not claim a native AMPS build,
 MPI decomposition, SWMF coupling, restart continuity, or observational PASS;
 those remain separate targets and must run in their configured environments.
-
-## WP42--WP64 focused contract gate
-
-`test/run_wp42_wp64_tests.sh` builds one disposable strict-warning sanitizer
-executable from `sep_runtime_contracts`, `sep_physics_extensions`,
-`sep_numerical_extensions`, and `sep_validation_extensions`. It executes one
-positive/negative controlled contract for each work package in order:
-
-- WP42--WP46: persistent turbulence ownership/restart, transactional coupling,
-  distinct velocity derivatives, shock state/upstream flux, and restartable
-  source-event identities;
-- WP47--WP52: Parker measure, signed resonance/bin overlap, 90-degree closure,
-  wave action, conservative cascade/heat, and versioned C1 profiles;
-- WP53--WP56: same-path Brownian adaptivity, TVD second-order advection,
-  conservative remap, and typed particle failure/commit behavior;
-- WP57--WP64: lineage covariance, instrument count likelihood, native trace
-  level, decomposition/restart signatures, multi-level refinement fit,
-  predeclared power/distribution comparison, external manifest governance, and
-  scaling/resource limits.
-
-The runner then checks the production seams for the WP42--WP46 P0 changes and
-invokes `run_wp59_wp64_native_gates.sh`. With no site command, the latter prints
-`BLOCKED` for native, external, and hardware evidence and returns control to the
-source suite. A release workflow must run the explicit native target and treat
-those blocked classes as incomplete. Full equations, APIs, and limitations are
-in [../WP42_WP64_IMPLEMENTATION.md](../WP42_WP64_IMPLEMENTATION.md).
 
 ## Results, exit codes, and MPI
 

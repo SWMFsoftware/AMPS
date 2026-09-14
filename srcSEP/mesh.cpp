@@ -89,7 +89,10 @@ void SEP::Mesh::PrintFieldLine(list<SEP::cFieldLine> *field_line,const char *fna
 
   if (PIC::ThisThread==0) {
     fLine=fopen(fname,"w");
-    fprintf(fLine,"VARIABLES=\"x\",\"y\",\"z\"\nZONE T=\"Magnetic Field Line\", I=%i\n",field_line->size());
+    // std::list::size() returns size_type (size_t on the supported toolchains),
+    // not int.  `%zu` preserves the complete field-line vertex count and keeps
+    // strict-format builds from diagnosing an ABI-unsafe variadic mismatch.
+    fprintf(fLine,"VARIABLES=\"x\",\"y\",\"z\"\nZONE T=\"Magnetic Field Line\", I=%zu\n",field_line->size());
 
     for (it=field_line->begin();it!=field_line->end();it++) {
       fprintf(fLine,"%e %e %e\n",it->x[0],it->x[1],it->x[2]);

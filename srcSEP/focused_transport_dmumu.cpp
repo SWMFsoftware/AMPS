@@ -159,11 +159,6 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
           0.5 * (preParallel + context.state.vParallelMPerS);
       contribution.midpointNormalVelocityMPerS =
           0.5 * (preNormal + context.state.vNormalMPerS);
-      // Continuous D_mumu is elastic in the local plasma frame. It has no
-      // discrete wave-frame event from which one can assign branch energy, so
-      // branch zero explicitly prevents adiabatic cooling from being
-      // misclassified as resonant particle-wave exchange.
-      contribution.resonantBranch = 0;
       contribution.startCoordinate = startCoordinate;
       contribution.finishCoordinate = context.state.coordinate;
       contribution.signedPathM = increment.displacementM;
@@ -185,8 +180,7 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
             inDomainPathM / increment.displacementM);
         contribution.signedPathM = inDomainPathM;
       }
-      const Status queueStatus = PICAdapter::QueueWaveContribution(contribution);
-      if (!queueStatus.ok()) AbortFocusedStatus(queueStatus);
+      PICAdapter::QueueWaveContribution(contribution);
     }
 
     if (status.code == StatusCode::OutOfDomain) {

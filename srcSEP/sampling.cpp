@@ -476,12 +476,14 @@ void SEP::Sampling::Manager() {
     SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
     SEP::Sampling::PitchAngle::DmumuSamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
 
-    // Every rank participates in the reductions above and clears its local
-    // buffers below, but only rank zero normalizes and writes the reduced
-    // products.  A structured conditional is required here: the former
-    // `goto end` jumped across construction of std::string and FILE* locals,
-    // which is ill-formed C++ and fails in the native C++17 AMPS build.
+    // Every MPI rank must participate in the reductions above, and every rank
+    // must clear its local sampling buffers below.  Only rank zero may
+    // normalize the reduced tables and commit shared output.  A structured
+    // writer-only block preserves that ownership rule without jumping across
+    // std::string and FILE* initializations, which is illegal C++ and caused
+    // the production compilation failure reported for the former `goto end`.
     if (PIC::ThisThread==0) {
+
     for (iLine=0;iLine<FL::nFieldLineMax;iLine++) if (FL::FieldLinesAll[iLine].IsInitialized()==true)  for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {
       summ=0.0;
 
@@ -618,11 +620,14 @@ void SEP::Sampling::Manager() {
      SEP::FieldLine::OutputBackgroundData(
          const_cast<char*>(backgroundName.c_str()),iLine);
    }
-    }  // PIC::ThisThread == 0: root-only normalization and output
+   }
 
 
 
 
+   // Reset occurs on every rank after the root-only output block.  Keeping it
+   // outside that block prevents non-root ranks from carrying samples into the
+   // next accumulation interval after they participated in the MPI reduction.
    SEP::Sampling::PitchAngle::PitchAngleRSamplingTable=0.0;
    SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable=0.0;
    SEP::Sampling::PitchAngle::DmumuSamplingTable=0.0;

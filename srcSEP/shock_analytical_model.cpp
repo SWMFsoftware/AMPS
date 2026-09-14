@@ -2,7 +2,6 @@
 #include "util/sep_shock_source_core.h"
 #include "turbulence_production_adapter.h"
 #include "util/sep_run_configuration.h"
-#include "util/sep_physics_extensions.h"
 //analytic model of a shock wave (Tenishev-2005-AIAA-4928
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
@@ -65,29 +64,18 @@ void SEP::ParticleSource::ShockWave::Tenishev2005::Init() {
 }
 
 double SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio() {
-  // WP52 makes this legacy analytical closure a named, versioned C1 profile.
-  // Zero endpoint slopes remove the derivative jump at 0.04 and 0.14 AU; the
-  // constant-endpoint policy states explicitly how the model behaves outside
-  // its calibration interval.  The former unconstrained linear continuation
-  // eventually produced r<=1 and was then hidden by an unrelated floor.
-  SEP::PhysicsExtensions::AnalyticProfile profile;
-  profile.id="tenishev2005-compression-ratio";
-  profile.version="2.0.0";
-  profile.units="dimensionless";
-  profile.provenance=
-      "srcSEP WP52 C1 replacement of the historical 0.04--0.14 AU fit";
-  profile.extrapolation=
-      SEP::PhysicsExtensions::ProfileExtrapolation::ConstantEndpoint;
-  SEP::PhysicsExtensions::ProfileKnot inner,outer;
-  inner.radiusM=0.04*_AU_; inner.value=1.7; inner.derivativePerM=0.0;
-  outer.radiusM=0.14*_AU_; outer.value=1.4; outer.derivativePerM=0.0;
-  profile.knots.push_back(inner);
-  profile.knots.push_back(outer);
-  const SEP::PhysicsExtensions::ProfileValue value=
-      SEP::PhysicsExtensions::EvaluateProfile(profile,rShock);
-  if (!value.status.ok() || !(value.value>1.0))
-    exit(__LINE__,__FILE__,"invalid analytical shock compression profile");
-  return value.value;
+  double r = rShock / _AU_;
+  double res;
+
+  if (r<0.04) {
+    res=1.7;
+  }
+  else {
+    res=2.0+(1.4-2.0)/(0.14-0.04)*(r-0.04);
+    if (res<1.0) res=1.0;
+  }
+
+  return res;
 }
 
 double SEP::ParticleSource::ShockWave::Tenishev2005::GetShockSpeed() {

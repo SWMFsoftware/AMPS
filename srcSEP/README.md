@@ -151,20 +151,6 @@ why/what/how contract and
 [WP31_WP41_VALIDATION_REPORT.md](WP31_WP41_VALIDATION_REPORT.md) for executed
 versus blocked evidence.
 
-WP42–WP64 close the next production-truth and validation gaps. They add a
-persistent per-field-line turbulence owner, atomic particle–wave transactions,
-distinct velocity-gradient contractions, upstream-flux shock normalization,
-restartable integer source events, explicit Parker measure, signed dynamic
-resonance, a named 90-degree closure, wave-action and spectral heat ledgers,
-versioned C1 profiles, Brownian-tree adaptivity, second-order TVD transport,
-conservative remap, typed mover transactions, lineage-aware estimators,
-multidimensional instrument response, and fail-closed native, decomposition,
-refinement, statistical, external-evidence, and scaling gates. See
-[WP42_WP64_IMPLEMENTATION.md](WP42_WP64_IMPLEMENTATION.md) for the per-package
-why/what/how contracts and
-[WP42_WP64_VALIDATION_REPORT.md](WP42_WP64_VALIDATION_REPORT.md) for executed
-evidence and the explicit native/external limitations.
-
 All three movers obtain coefficients through one registry. Canonical CLI names
 select coefficient authority (`prescribed`, `self-consistent`, `swmf`), spatial
 closure (`from-dmumu`, `from-mfp`), pitch-angle provider (`configured`,
@@ -334,6 +320,48 @@ PASS into FAIL. Requested JSON/JUnit output is acceptance evidence: inability to
 create either report is ERROR/status 2, and both formats retain IDs, seeds,
 configuration, metrics, messages, durations, and artifact paths.
 
+### Python campaign runner and analytical figures
+
+`test/run_tests.py` is the single orchestration interface for selecting one,
+several, a group, the bounded routine set, or every registered test. It calls
+the production registry rather than duplicating test selection or physics in
+Python. The default figure formats are PNG and EPS:
+
+```sh
+# Discover stable IDs from the linked executable.
+python3 test/run_tests.py --amps /path/to/amps --list
+
+# Run any chosen cases; --test and --group may each be repeated.
+python3 test/run_tests.py --amps /path/to/amps \
+  --test PARK07 --test FTED08 --group turbulence \
+  --output-dir /absolute/path/to/evidence/selected
+
+# Run the bounded native set, or literally every discoverable test including
+# extended Monte Carlo cases. The latter can be substantially more expensive.
+python3 test/run_tests.py --amps /path/to/amps --routine \
+  --output-dir /absolute/path/to/evidence/routine
+python3 test/run_tests.py --amps /path/to/amps --all \
+  --output-dir /absolute/path/to/evidence/all
+
+# Run the dependency-light analytical mover/turbulence suite without AMPS.
+python3 test/run_tests.py --suite controlled-analytical \
+  --output-dir /absolute/path/to/evidence/controlled
+
+# Re-render a previously retained registry report without rerunning physics.
+python3 test/run_tests.py --from-json results.json \
+  --output-dir /absolute/path/to/evidence/figures
+```
+
+For an analytical case, a reported CSV artifact with conventional coordinate,
+`numerical`/`model`, and `analytical`/`exact` columns becomes a pointwise
+solution overlay. When a C++ test reports only an error, moment, convergence
+order, or conservation residual, the runner instead plots that numerical
+metric against its analytical reference or acceptance limit and labels the
+figure as metric-level evidence. It never reconstructs an expected solution
+with production model code. `run_manifest.json`, the authoritative registry
+JSON/JUnit reports, `analytical_plot_manifest.json`, the command log, and
+`plots/*.{png,eps}` remain together in the selected output directory.
+
 The source-only Step 13 fixtures registered in the same production catalog are
 `BG01` (analytic/SWCME provider epochs), `BG02` (mock read-only SWMF import and
 handoff), `CROSS01` (matched ballistic focused movers), and `CROSS02` (the
@@ -365,13 +393,6 @@ The enclosing AMPS checkout supplies `Makefile.conf`, PIC/field-line headers,
 MPI, and the final linked executable.  From `srcSEP`, the default expected path
 is `../amps`; override it when necessary:
 
-The WP42--WP64 delivery also removes the legacy `goto end` in
-`SEP::Sampling::Manager`. All ranks still participate in reductions and clear
-their local buffers, while a structured `PIC::ThisThread==0` block alone
-normalizes and writes pitch-angle/background products. This avoids an illegal
-C++ jump across `std::string` and `FILE*` initialization in native C++17 builds
-without changing MPI sampling semantics.
-
 ```sh
 make test-cli-unit
 make test-state-unit
@@ -387,8 +408,7 @@ make test-turbulence-core-unit
 make test-reproducibility-unit
 make test-wp21-wp30-unit
 make test-wp31-wp41-unit
-make test-wp42-wp64-unit
-make test-wp59-wp64-native SRCSEP_NATIVE_GATE='/reviewed/site/runner ...'
+make test-python-runner-unit
 make print-configuration-matrix
 make test-acceptance-unit
 make test-documentation-unit
@@ -412,11 +432,16 @@ field-line-only source boundary, common transport kernels, Parker solver, and
 coefficient-driven focused-transport solver, event-driven MFP solver, and
 coefficient registry, authoritative turbulence driver, reproducible reduction,
 reportable acceptance fixtures, and the cleaned public/source inventory. The
-Step 6–14 and WP31–WP64 numerical targets use strict C++11 warnings plus AddressSanitizer and
+Step 6–14 and WP31–WP41 numerical targets use strict C++11 warnings plus AddressSanitizer and
 UndefinedBehaviorSanitizer. The Step 15 numerical runner uses the same C++11
 checks; its real SWCME replay uses C++17 because that is SWCME's public API
 baseline. The remaining targets intentionally invoke the linked production CLI
 and propagate its status.
+
+The Python plotting test requires Python 3 and Matplotlib. It uses only a
+temporary synthetic structured report, verifies PNG and EPS output paths, and
+does not require the linked executable. See [test/README.md](test/README.md)
+for all runner selectors, output semantics, MPI launch support, and exit codes.
 
 For the native Step 5 completion gate, build this application in a field-line
 AMPS configuration, then build the receiving Cartesian-transport application
@@ -432,10 +457,9 @@ observational validation. Step 15 records their evidence as separate classes
 and intentionally reports the delivered campaign `INCOMPLETE`. A source-only archive cannot
 exercise the enclosing AMPS/PIC adapter, MPI rank decomposition, coupled SWMF
 epochs, or long campaign conservation behavior; those remain native integration
-gates. Boundary-exit particle-to-wave work is now carried by a self-contained
-record and committed through the persistent turbulence owner after the particle
-step; no live particle pointer is required. The dependency-light TURB01–TURB23
-and controlled mover suites cover the new core and
+gates. Boundary-exit particle-to-wave flux is intentionally not deposited
+because the legacy coupling callback still requires a live particle record.
+The dependency-light TURB01–TURB20 and PAR01–PAR05 suites cover the new core and
 synthetic decomposition invariance, but do not replace native AMPS/OpenMP/MPI,
 SWMF handoff, long-campaign conservation, or observational validation.
 `SCAT01` is explicitly `SKIP` because the historical stochastic diagnostic has
@@ -457,10 +481,3 @@ remain BLOCKED until their named executable, data, or hardware baselines are
 supplied. Documentation uses these evidence levels: `analytical-core`,
 `source-integration`, `native-amps`, `swmf-replay`, and
 `observational-validation`.
-
-For WP42–WP64, production source wiring and analytical contracts pass, while
-the linked callback matrix/restart/decomposition campaign, authenticated SWMF
-and held-out observational comparisons, and frozen multi-node scaling campaign
-remain separate fail-closed gates. `test/run_wp59_wp64_native_gates.sh` reports
-them as `BLOCKED` unless a reviewed site runner is supplied; this is an evidence
-boundary, not a skipped scientific PASS.
