@@ -4,6 +4,7 @@
 #include "util/sep_scientific_validation.h"
 #include "util/sep_turbulence_validation.h"
 #include "validation/cases/CV01/cv01_model.h"
+#include "validation/cases/controlled_transport_models.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -246,6 +247,136 @@ SEP::Testing::Result RunCV01LinkedModel() {
   return result;
 }
 
+SEP::Testing::Result RunLinkedControlledModel(const char* caseId) {
+  SEP::Testing::Result result;
+  const SEP::Testing::ExecutionContext& context =
+      SEP::Testing::GetExecutionContext();
+  if (context.inputPath.empty() || context.artifactDirectory.empty()) {
+    // CV02-CV05 require reviewed case-specific SI inputs. A generic registry
+    // run cannot safely invent them, so discovery/all-tests gets an explicit
+    // prerequisite SKIP. The external runner always supplies both paths and
+    // requires the linked model CSV, so this cannot become a scientific PASS.
+    result.status = SEP::Testing::Status::Skip;
+    result.message = std::string(caseId) +
+        " requires --test-input and --test-output-dir; run it through "
+        "test/run_tests.py --validation-case " + caseId +
+        " --amps /path/to/amps";
+    return result;
+  }
+
+  // The narrow line protocol avoids a second permissive JSON parser in the
+  // linked application. Its case-qualified header prevents a CV02 manifest,
+  // for example, from being executed accidentally as CV03.
+  std::ifstream input(context.inputPath.c_str());
+  std::string line;
+  const std::string expectedHeader =
+      std::string("srcsep-controlled-native-args-v1:") + caseId;
+  if (!input.good() || !std::getline(input, line) || line != expectedHeader) {
+    result.status = SEP::Testing::Status::Error;
+    result.message = std::string(caseId) +
+        " cannot read its controlled native argument manifest";
+    result.metrics.push_back({"native_model_execution_errors", 1.0, 0.0,
+                              "<=", "count"});
+    return result;
+  }
+  std::vector<std::string> arguments;
+  while (std::getline(input, line)) {
+    if (!line.empty() && line[line.size() - 1] == '\r')
+      line.erase(line.size() - 1);
+    if (line.empty()) {
+      result.status = SEP::Testing::Status::Error;
+      result.message = std::string(caseId) +
+          " native argument manifest contains an empty token";
+      result.metrics.push_back({"native_model_execution_errors", 1.0, 0.0,
+                                "<=", "count"});
+      return result;
+    }
+    arguments.push_back(line);
+  }
+  if (!input.eof() || arguments.empty() || arguments.size() % 2 != 0) {
+    result.status = SEP::Testing::Status::Error;
+    result.message = std::string(caseId) +
+        " native argument manifest is truncated or unpaired";
+    result.metrics.push_back({"native_model_execution_errors", 1.0, 0.0,
+                              "<=", "count"});
+    return result;
+  }
+
+  // A seed is mandatory even for deterministic characteristics. Preserving
+  // the reviewed stream identity makes every case reproducible and prevents a
+  // later stochastic extension from silently changing its evidence contract.
+  std::uint64_t campaignSeed = 0;
+  bool foundSeed = false;
+  for (std::size_t i = 0; i + 1 < arguments.size(); i += 2) {
+    if (arguments[i] != "--campaign-seed") continue;
+    char* end = NULL;
+    errno = 0;
+    const unsigned long long parsed =
+        std::strtoull(arguments[i + 1].c_str(), &end, 10);
+    if (arguments[i + 1].empty() || arguments[i + 1][0] == '-' ||
+        errno == ERANGE || !end || *end != '\0' ||
+        parsed > std::numeric_limits<std::uint64_t>::max()) {
+      result.status = SEP::Testing::Status::Error;
+      result.message = std::string(caseId) +
+          " native manifest contains an invalid campaign seed";
+      result.metrics.push_back({"native_model_execution_errors", 1.0, 0.0,
+                                "<=", "count"});
+      return result;
+    }
+    campaignSeed = static_cast<std::uint64_t>(parsed);
+    foundSeed = true;
+    break;
+  }
+  if (!foundSeed) {
+    result.status = SEP::Testing::Status::Error;
+    result.message = std::string(caseId) +
+        " native manifest does not declare a campaign seed";
+    result.metrics.push_back({"native_model_execution_errors", 1.0, 0.0,
+                              "<=", "count"});
+    return result;
+  }
+
+  const std::string outputPath =
+      context.artifactDirectory + "/" + caseId + "_model.csv";
+  std::string error;
+  const bool completed = SEP::Validation::RunControlledTransportModel(
+      caseId, arguments, outputPath, &error);
+  result.status = completed ? SEP::Testing::Status::Pass
+                            : SEP::Testing::Status::Error;
+  result.message = completed
+      ? std::string("linked srcSEP/AMPS application completed ") + caseId +
+            " controlled model stage"
+      : std::string("linked ") + caseId + " model stage failed: " + error;
+  result.hasSeed = true;
+  result.seed = campaignSeed;
+  result.configuration.push_back("execution=linked-srcsep-amps");
+  result.configuration.push_back(std::string("validation_case=") + caseId);
+  result.configuration.push_back("units=SI");
+  result.configuration.push_back("native_input=" + context.inputPath);
+  result.configuration.push_back("native_artifact_directory=" +
+                                 context.artifactDirectory);
+  result.metrics.push_back({"native_model_execution_errors",
+                            completed ? 0.0 : 1.0, 0.0, "<=", "count"});
+  if (completed) result.artifacts.push_back(outputPath);
+  return result;
+}
+
+SEP::Testing::Result RunCV02LinkedModel() {
+  return RunLinkedControlledModel("CV02");
+}
+
+SEP::Testing::Result RunCV03LinkedModel() {
+  return RunLinkedControlledModel("CV03");
+}
+
+SEP::Testing::Result RunCV04LinkedModel() {
+  return RunLinkedControlledModel("CV04");
+}
+
+SEP::Testing::Result RunCV05LinkedModel() {
+  return RunLinkedControlledModel("CV05");
+}
+
 SEP::Testing::Descriptor MakeDescriptor(
     const char* id, const char* name, const char* group,
     const char* description, SEP::Testing::InitializationLevel initialization,
@@ -277,6 +408,22 @@ SEP::Testing::Descriptor MakeCV01Descriptor() {
   // The callback writes one synthetic, non-decomposed particle CSV before MPI
   // initialization. The campaign therefore refuses --mpi-np and advertises
   // serial support until a future case defines rank-partitioned output.
+  descriptor.supportedBuildModes = "serial linked srcSEP/AMPS executable";
+  return descriptor;
+}
+
+SEP::Testing::Descriptor MakeControlledValidationDescriptor(
+    const char* id, const char* name, const char* description,
+    SEP::Testing::TestCallback callback) {
+  SEP::Testing::Descriptor descriptor = MakeDescriptor(
+      id, name, "controlled-analytical", description,
+      SEP::Testing::InitializationLevel::None,
+      SEP::Testing::RuntimeClass::Routine, "fixed case seed from reviewed input",
+      "isolated process and artifact directory; immutable synthetic input",
+      callback);
+  // Model evidence is one non-decomposed CSV written before normal AMPS model
+  // initialization. Serial is the only honest advertised mode until a case
+  // defines rank partitioning plus deterministic reduction of its samples.
   descriptor.supportedBuildModes = "serial linked srcSEP/AMPS executable";
   return descriptor;
 }
@@ -347,6 +494,22 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
                        turbulence_descriptors.end());
     const SEP::Testing::Descriptor legacy_descriptors[] = {
       MakeCV01Descriptor(),
+      MakeControlledValidationDescriptor(
+          "CV02", "Constant-coefficient spatial diffusion Green function",
+          "Run production Parker diffusion in the linked application and compare packet moments and profiles with exact Gaussian bin integrals externally.",
+          RunCV02LinkedModel),
+      MakeControlledValidationDescriptor(
+          "CV03", "Nonuniform diffusion and stochastic-calculus drift",
+          "Run sinusoidal spatial diffusion in the linked application and compare equilibrium/transients with an independent conservative finite-volume reference.",
+          RunCV03LinkedModel),
+      MakeControlledValidationDescriptor(
+          "CV04", "Adiabatic momentum change in expanding solar wind",
+          "Run production Parker momentum updates in the linked application and compare constant-divergence and spherical-flow characteristics externally.",
+          RunCV04LinkedModel),
+      MakeControlledValidationDescriptor(
+          "CV05", "Magnetic focusing in a prescribed field gradient",
+          "Run production focused transport with zero scattering in the linked application and compare pitch-angle characteristics and invariants externally.",
+          RunCV05LinkedModel),
       MakeDescriptor("TURB01", "Alfven wave-energy closure", "turbulence",
           "Compare the production 1-AU wave-energy helper with an independent magnetic-pressure expression.",
           SEP::Testing::InitializationLevel::None,

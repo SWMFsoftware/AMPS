@@ -76,6 +76,9 @@ make test-controlled-analytical
 # Test 01 / CV01 strict compile gate plus linked end-to-end execution.
 make test-cv01-unit SEP_EXECUTABLE=/path/to/amps
 
+# CV02-CV05 strict source/registry gate plus linked end-to-end execution.
+make test-cv02-cv05-unit SEP_EXECUTABLE=/path/to/amps
+
 # All dependency-light ASan/UBSan suites from Steps 3 and 6–13.
 make test-sanitizer
 
@@ -141,6 +144,12 @@ forwarding model-specific arguments to the linked executable.
 python3 test/run_tests.py --amps /path/to/amps --validation-case CV01 \
   --output-dir /evidence/srcsep/CV01
 
+# Repeat --validation-case to run any subset of the linked portfolio.
+python3 test/run_tests.py --amps /path/to/amps \
+  --validation-case CV02 --validation-case CV03 \
+  --validation-case CV04 --validation-case CV05 \
+  --output-dir /evidence/srcsep/CV02-CV05
+
 # List all native registry IDs without initializing AMPS.
 python3 test/run_tests.py --amps /path/to/amps --list
 
@@ -176,8 +185,8 @@ sanitizer flags and pass that executable; the runner never compiles a substitute
 driver. These cases retain richer native/model/reference artifacts while using
 the same aggregate report and plotting contract as other runner modes.
 See [../validation/cases/README.md](../validation/cases/README.md) for the
-required structure and [../validation/cases/CV01/README.md](../validation/cases/CV01/README.md)
-for the first implementation.
+required structure and the CV01-CV05 subdirectory READMEs for their equations,
+inputs, gates, outputs, and failure interpretation.
 
 For CV01 the Python runner executes six commands of the form `amps --test CV01
 --test-input <generated-native-args> --test-output-dir <isolated-directory>`.
@@ -185,6 +194,9 @@ Each command also requests native JSON and JUnit and must return a registry
 `PASS` plus a nonempty model CSV before the independent reference runs. The
 generated native argument file is an internal, one-token-per-line protocol;
 `resolved_input.json` remains the authoritative unit-bearing configuration.
+CV02-CV05 use the same protocol once per case. Their C++ callback writes raw
+model evidence only; Python then runs an independent analytical or finite-
+volume reference and generates both case-specific and common PNG/EPS overlays.
 
 `--routine` forwards the native `--all-tests` policy and therefore excludes
 extended cases. `--all` first calls `--list-tests`, then selects every returned
@@ -585,6 +597,10 @@ standalone and SWMF-coupled run. See
 | ID | Group | Class | Initialization | What is asserted | State/artifacts |
 |---|---|---|---|---|---|
 | `CV01` | `controlled-analytical` | routine | linked srcSEP/AMPS registry | A localized 10 MeV proton packet follows exact ballistic characteristics for four pitch angles, two boundary policies, and three timesteps; packet moments, crossing times, momentum, and active/escaped weight close against an independent solver. | Linked executable hash; case-registry input; seed 10101; native JSON/JUnit and raw model/reference CSV; aggregate JSON/JUnit; PNG/EPS overlay, residual, and four-panel evidence. |
+| `CV02` | `controlled-analytical` | routine | linked srcSEP/AMPS registry | Constant spatial diffusion matches Gaussian moments, exact bin probabilities, and fitted kappa across 10 seeds, three particle counts, and three timesteps. | Seed 20202; raw ensemble moments/profiles; exact-bin reference; negative-control ratio; JSON/JUnit, hashes, PNG/EPS. |
+| `CV03` | `controlled-analytical` | routine | linked srcSEP/AMPS registry | Sinusoidal diffusion preserves uniform equilibrium and matches an independent conservative finite-volume transient with analytic/numerical derivative paths. | Seed 30303; four seeds; reversed-drift control; refinement/closure metrics; JSON/JUnit, hashes, PNG/EPS. |
+| `CV04` | `controlled-analytical` | routine | linked srcSEP/AMPS registry | Constant-divergence and spherical-wind adiabatic momentum changes match exact proton/alpha relativistic characteristics and designed order. | Seed 40404; three energies/species and timesteps; momentum/energy histories; JSON/JUnit, hashes, PNG/EPS. |
+| `CV05` | `controlled-analytical` | routine | linked srcSEP/AMPS registry | Zero-scattering magnetic focusing matches exact position/pitch characteristics for both gradient signs while preserving bounds, momentum, angular moments, and invariant. | Seed 50505; endpoint/near-endpoint pitch angles; three timesteps; JSON/JUnit, hashes, PNG/EPS. |
 | `BG01` | `background` | routine | none | Standalone analytic and SWCME snapshots preserve provider, epoch, ownership, validity, generation, and distinct configuration identity. | Stack-owned immutable snapshots; no external provider or artifact. |
 | `BG02` | `background` | routine | none | A mock SWMF import is read-only and becomes locally evolved only through an explicit handoff copy. | Resets the snapshot store before/after; no external SWMF process. |
 | `CROSS01` | `cross-mover` | routine | none | `fte-dmumu` and `fte-mfp` agree in the matched ballistic limit. | Keyed seed 1301; stack-owned state; no artifact. |
@@ -606,7 +622,7 @@ standalone and SWMF-coupled run. See
 
 The list printed by native `--list-tests` is authoritative for C++ component
 callbacks and also includes supported build modes, seed policy, and
-state/isolation notes. End-to-end portfolio cases such as CV01 are listed by
+state/isolation notes. End-to-end portfolio cases CV01-CV05 are listed by
 `python3 validation/run_case.py --list`; both paths are selected through the
 common `test/run_tests.py` orchestration interface. Entries are sorted by ID
 regardless of construction or registration order.

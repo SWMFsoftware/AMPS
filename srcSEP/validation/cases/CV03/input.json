@@ -1,0 +1,12 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "CV03",
+  "title": "Nonuniform diffusion and stochastic-calculus drift",
+  "model": {"mover": "parker", "coefficient": "sinusoidal", "boundary": "periodic", "calculus": "Ito conservative"},
+  "physics": {"line_length_m": 100000000.0, "kappa0_m2_per_s": 2000000000000.0, "sinusoidal_amplitude": 0.4},
+  "packet": {"center_m": 50000000.0},
+  "numerics": {"final_time_s": 100.0, "time_steps_s": [4.0, 2.0, 1.0], "derivative_step_m": 24414.0625, "particle_count": 6000, "seed_count": 4, "campaign_seed": 30303, "profile_bins": 64},
+  "reference": {"finite_volume_cells": 256, "stability_factor": 0.35},
+  "acceptance": {"transient_l2_max": 0.07, "equilibrium_max_bin_error": 0.025, "equilibrium_flux_rms_per_s_max": 0.003, "derivative_path_l2_max": 0.04, "refinement_order_min": -0.25, "negative_control_error_ratio_min": 1.1, "probability_closure_max": 1e-12},
+  "plot": {"formats": ["png", "eps"]}
+}

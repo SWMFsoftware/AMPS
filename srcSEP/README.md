@@ -18,10 +18,11 @@ subsystem, and the Step 12 deterministic parallel-reduction contract.
 Step 13 adds reportable, fail-closed acceptance fixtures, Step 14 removes
 the retired mover implementations/aliases while enforcing a clean source
 handoff, and Step 15 adds a claim-separated scientific-validation campaign.
-The numbered campaign now begins with the linked-application `CV01`
-ballistic-streaming case, which establishes the reusable native-registry,
-model-input, independent-reference, metric, visualization, and provenance
-layout for later validation tests.
+The numbered campaign now includes linked-application cases `CV01`–`CV05`.
+They cover ballistic streaming, constant and nonuniform spatial diffusion,
+adiabatic cooling, and magnetic focusing through the same native-registry,
+reviewed-input, independent-reference, metric, visualization, and provenance
+contract.
 See [STEP13_CHANGE_MANIFEST.md](STEP13_CHANGE_MANIFEST.md),
 [STEP14_CHANGE_MANIFEST.md](STEP14_CHANGE_MANIFEST.md), and
 [STEP15_CHANGE_MANIFEST.md](STEP15_CHANGE_MANIFEST.md). Retired names remain
@@ -337,6 +338,12 @@ Python. The default figure formats are PNG and EPS:
 python3 test/run_tests.py --amps /path/to/amps --validation-case CV01 \
   --output-dir /absolute/path/to/evidence/CV01
 
+# Run CV02-CV05 together; each still invokes the selected linked application.
+python3 test/run_tests.py --amps /path/to/amps \
+  --validation-case CV02 --validation-case CV03 \
+  --validation-case CV04 --validation-case CV05 \
+  --output-dir /absolute/path/to/evidence/CV02-CV05
+
 # Discover stable IDs from the linked executable.
 python3 test/run_tests.py --amps /path/to/amps --list
 
@@ -378,6 +385,10 @@ four-panel diagnostic, the resolved input, and checksummed executable
 provenance. A missing or stale binary is an error, never a Python/standalone
 fallback. See
 [validation/cases/CV01/README.md](validation/cases/CV01/README.md).
+CV02-CV05 use the same fail-closed application lifecycle and add exact
+Green-function, independent finite-volume, adiabatic-characteristic, and
+focusing-characteristic references. See the case README files under
+[validation/cases](validation/cases/README.md).
 
 The source-only Step 13 fixtures registered in the same production catalog are
 `BG01` (analytic/SWCME provider epochs), `BG02` (mock read-only SWMF import and

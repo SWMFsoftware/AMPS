@@ -168,6 +168,27 @@ class PythonTestRunnerTests(unittest.TestCase):
             self.assertIn("--timeout", command)
             run.assert_called_once()
 
+    def test_cv02_cv05_share_the_linked_application_selection_path(self):
+        """Require every new controlled case to use the requested AMPS binary."""
+        runner = _load_runner_module()
+        with tempfile.TemporaryDirectory(prefix="srcsep-validation-command-") as tmp:
+            output = Path(tmp)
+            arguments = SimpleNamespace(
+                amps="/opt/amps/bin/srcsep-amps",
+                validation_all=False,
+                validation_cases=["CV02", "CV03", "CV04", "CV05"],
+                case_input=None,
+                timeout=120.0,
+            )
+            with mock.patch.object(runner, "_run_streaming", return_value=0) as run:
+                _, _, command = runner._run_validation_cases(
+                    arguments, output, output / "runner.log")
+            self.assertEqual(command[2:4], ["--amps", "/opt/amps/bin/srcsep-amps"])
+            for case_id in ("CV02", "CV03", "CV04", "CV05"):
+                self.assertIn(case_id, command)
+            self.assertNotIn("controlled_transport_models.cpp", " ".join(command))
+            run.assert_called_once()
+
     def test_validation_case_rejects_a_missing_linked_executable(self):
         """Never replace unavailable application evidence with a local build."""
         with tempfile.TemporaryDirectory(prefix="srcsep-missing-amps-") as tmp:

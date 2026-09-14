@@ -72,7 +72,8 @@ SOURCE_SUITES: Dict[str, str] = {
 # conservation/limit invariant.  Keeping the classification explicit prevents
 # a generic software contract from being advertised as an analytical solution.
 ANALYTICAL_IDS = {
-    "CV01", "DXX01", "FTE01", "PARKER01", "TURB01", "VAL01", "CROSS02",
+    "CV01", "CV02", "CV03", "CV04", "CV05", "DXX01", "FTE01",
+    "PARKER01", "TURB01", "VAL01", "CROSS02",
     *(f"PARK{i:02d}" for i in range(1, 8)),
     *(f"FTED{i:02d}" for i in range(1, 9)),
     *(f"FTEM{i:02d}" for i in range(1, 9)),
@@ -118,6 +119,17 @@ Examples:
      timesteps, evaluates an independent closed-form reference, and writes both
      the standard overlay and four-panel review figure. Use --case-input to
      test one reviewed configuration variant.
+
+     Run the remaining controlled transport cases individually or together:
+
+       python3 test/run_tests.py --amps ../amps \
+         --validation-case CV02 --validation-case CV03 \
+         --validation-case CV04 --validation-case CV05 \
+         --output-dir test_output/CV02-CV05
+
+     These validate Gaussian spatial diffusion, nonuniform Ito drift,
+     adiabatic cooling, and magnetic focusing. Each invokes the linked binary,
+     evaluates an independent reference, and emits PNG/EPS comparisons.
 
      Repeat --test to choose any collection of individual cases:
 

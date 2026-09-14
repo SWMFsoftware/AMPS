@@ -1,0 +1,11 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "CV02",
+  "title": "Constant-coefficient spatial diffusion Green function",
+  "model": {"mover": "parker", "background": "uniform", "boundary": "remote-open"},
+  "physics": {"kappa_parallel_m2_per_s": 1000000000000.0, "advection_m_per_s": 0.0, "velocity_divergence_per_s": 0.0},
+  "domain": {"minimum_m": 0.0, "maximum_m": 1000000000.0, "packet_center_m": 500000000.0, "profile_half_width_m": 150000000.0},
+  "numerics": {"final_time_s": 200.0, "time_steps_s": [20.0, 10.0, 5.0], "sample_count": 5, "particle_counts": [1000, 4000, 16000], "seed_count": 10, "campaign_seed": 20202, "profile_bins": 80},
+  "acceptance": {"kappa_relative_error_max": 0.02, "mean_standard_errors_max": 3.5, "profile_l1_max": 0.08, "profile_l2_max": 0.025, "profile_linf_max": 0.012, "skewness_absolute_max": 0.08, "kurtosis_absolute_error_max": 0.15, "escaped_weight_max": 0.0001, "negative_control_error_ratio_min": 1.5},
+  "plot": {"formats": ["png", "eps"]}
+}

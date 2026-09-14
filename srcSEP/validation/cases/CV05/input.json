@@ -1,0 +1,11 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "CV05",
+  "title": "Magnetic focusing in a prescribed field gradient",
+  "constants": {"speed_of_light_m_per_s": 299792458.0, "proton_mass_kg": 1.67262192369e-27},
+  "physics": {"speed_m_per_s": 10000000.0, "focusing_length_m": 50000000000.0, "initial_position_m": 0.0, "gradient_signs": [-1.0, 1.0], "pitch_angle_diffusion_per_s": 0.0},
+  "particles": {"initial_mu": [-1.0, -0.999, -0.8, -0.05, 0.0, 0.05, 0.8, 0.999, 1.0]},
+  "numerics": {"final_time_s": 1000.0, "time_steps_s": [20.0, 10.0, 5.0], "sample_count": 10, "campaign_seed": 50505},
+  "acceptance": {"position_relative_to_path_max": 3e-5, "mu_absolute_error_max": 3e-6, "momentum_relative_error_max": 2e-13, "invariant_relative_error_max": 3e-5, "angular_moment_absolute_error_max": 3e-6, "weight_closure_relative_error_max": 1e-15, "refinement_order_min": 1.8, "mu_bound_excess_max": 1e-14},
+  "plot": {"formats": ["png", "eps"]}
+}

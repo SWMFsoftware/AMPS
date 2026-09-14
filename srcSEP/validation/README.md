@@ -10,6 +10,10 @@ validation, and passing coupled code is not called observational validation.
 | Case | Evidence class | Reference | Current status/prerequisite |
 |---|---|---|---|
 | `CV01` | Linked-application controlled numerical verification | Linked srcSEP/AMPS `--test CV01` output versus an independent closed-form ballistic characteristic with periodic/open boundary solutions | Implemented; requires linked executable |
+| `CV02` | Linked-application controlled numerical verification | Constant-kappa Parker ensembles versus exact Gaussian moments and finite-bin Green-function integrals | Implemented; requires linked executable |
+| `CV03` | Linked-application controlled numerical verification | Sinusoidal-kappa Parker ensembles versus an independent conservative periodic finite-volume solver | Implemented; requires linked executable |
+| `CV04` | Linked-application controlled numerical verification | Constant-divergence and spherical-flow momentum/energy histories versus exact relativistic characteristics | Implemented; requires linked executable |
+| `CV05` | Linked-application controlled numerical verification | Zero-scattering focusing trajectories and angular moments versus exact hyperbolic characteristics | Implemented; requires linked executable |
 | `VAL01` | Numerical verification | Independent analytical diffusion moments and adiabatic-cooling characteristic | Implemented |
 | `VAL02` | Cross-mover verification | Matched `fte-dmumu`/`fte-mfp` mean-free-path closure | Implemented |
 | `VAL03` | Cross-model verification | Independently coded conservative finite-volume pitch-angle solver | Implemented |
@@ -23,22 +27,25 @@ The source-only command is:
 make test-scientific-validation
 ```
 
-The new numbered validation portfolio uses the shared case registry described
-in [cases/README.md](cases/README.md). CV01 is the first complete template:
+The numbered validation portfolio uses the shared case registry described in
+[cases/README.md](cases/README.md). CV01-CV05 are complete linked cases:
 
 ```sh
 python3 test/run_tests.py --amps /absolute/path/to/amps \
   --validation-case CV01 \
   --output-dir /absolute/path/to/evidence/CV01
 make test-cv01-unit SEP_EXECUTABLE=/absolute/path/to/amps
+make test-cv02-cv05-unit SEP_EXECUTABLE=/absolute/path/to/amps
 ```
 
-This verifies that the supplied executable advertises CV01, executes every
-numerical stage through that linked application's native registry, and produces
+This verifies that the supplied executable advertises each selected ID,
+executes every numerical stage through that linked application's native
+registry, and produces
 the model input snapshot, independent reference, native JSON/JUnit, particle/
 moment/profile CSV files, frozen metrics, negative-control evidence, PNG/EPS
-figures, logs, and executable provenance. Later `CV02`–`EV02` cases are added
-to the same registry and follow the same linked-application lifecycle.
+figures, logs, and executable provenance. CV03 additionally retains its
+finite-volume reference and reversed-drift control; CV02 uses ten independent
+seeds and three particle counts; CV04/CV05 report refinement order.
 
 It runs `VAL01`–`VAL04-SWCME` under AddressSanitizer and
 UndefinedBehaviorSanitizer, assembles a temporary campaign, and proves that

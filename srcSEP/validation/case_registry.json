@@ -9,6 +9,42 @@
       "entrypoint": "validation/cases/CV01/case.py",
       "default_input": "validation/cases/CV01/input.json",
       "description": "Run a localized monoenergetic packet through the linked srcSEP/AMPS native registry with every non-streaming operator disabled, then compare its focused-transport characteristic with the independent closed-form solution."
+    },
+    {
+      "id": "CV02",
+      "name": "Constant-coefficient spatial diffusion Green function",
+      "group": "controlled-analytical",
+      "runtime_class": "routine",
+      "entrypoint": "validation/cases/CV02/case.py",
+      "default_input": "validation/cases/CV02/input.json",
+      "description": "Run constant-kappa Parker diffusion in the linked application and compare ensemble moments and finite-bin profiles with the exact Gaussian Green function."
+    },
+    {
+      "id": "CV03",
+      "name": "Nonuniform diffusion and stochastic-calculus drift",
+      "group": "controlled-analytical",
+      "runtime_class": "routine",
+      "entrypoint": "validation/cases/CV03/case.py",
+      "default_input": "validation/cases/CV03/input.json",
+      "description": "Exercise sinusoidal kappa, conservative Ito drift, analytic/numerical coefficient gradients, uniform equilibrium, and a reversed-drift negative control against an independent finite-volume reference."
+    },
+    {
+      "id": "CV04",
+      "name": "Adiabatic momentum change in expanding solar wind",
+      "group": "controlled-analytical",
+      "runtime_class": "routine",
+      "entrypoint": "validation/cases/CV04/case.py",
+      "default_input": "validation/cases/CV04/input.json",
+      "description": "Compare linked Parker momentum updates for constant divergence and spherical constant-speed wind with exact proton/alpha relativistic characteristics."
+    },
+    {
+      "id": "CV05",
+      "name": "Magnetic focusing in a prescribed field gradient",
+      "group": "controlled-analytical",
+      "runtime_class": "routine",
+      "entrypoint": "validation/cases/CV05/case.py",
+      "default_input": "validation/cases/CV05/input.json",
+      "description": "Compare linked zero-scattering focused transport in both field-gradient directions with exact pitch-angle/position characteristics and magnetic-moment conservation."
     }
   ]
 }

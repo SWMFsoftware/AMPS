@@ -1,0 +1,11 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "CV04",
+  "title": "Adiabatic momentum change in expanding solar wind",
+  "constants": {"speed_of_light_m_per_s": 299792458.0, "proton_mass_kg": 1.67262192369e-27, "astronomical_unit_m": 149597870700.0, "electron_volt_j": 1.602176634e-19},
+  "physics": {"constant_divergence_per_s": 0.00002, "radial_wind_speed_m_per_s": 400000.0, "initial_radius_m": 44879361210.0},
+  "particles": {"atomic_mass_numbers": [1.0, 4.0], "energies_mev_per_nucleon": [0.1, 10.0, 1000.0], "momentum_spectral_index": 3.5},
+  "numerics": {"constant_final_time_s": 1000.0, "constant_time_steps_s": [20.0, 10.0, 5.0], "spherical_final_time_s": 10000.0, "spherical_time_steps_s": [200.0, 100.0, 50.0], "sample_count": 10, "campaign_seed": 40404},
+  "acceptance": {"constant_momentum_relative_error_max": 1e-9, "spherical_momentum_relative_error_max": 2e-8, "spherical_refinement_order_min": 1.8, "energy_relative_error_max": 5e-9, "weight_relative_error_max": 1e-10, "spectral_slope_absolute_error_max": 1e-10},
+  "plot": {"formats": ["png", "eps"]}
+}

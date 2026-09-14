@@ -245,6 +245,17 @@ known source is integrated and accounted; it does not replace the native
 particle-distribution-to-growth-rate test. Source checks additionally
 verify public dispatch and the common adapter boundary.
 
+Linked-application cases CV02-CV05 exercise these same pure cores through the
+production `amps --test` registry. CV02 checks the constant-kappa Green
+function over independent seed, particle-count, and timestep refinements. CV03
+checks the conservative Ito `d(kappa)/ds` drift, uniform equilibrium, analytic
+versus numerical gradients, and a reversed-drift control against an independent
+finite-volume solver. CV04 verifies frozen-divergence cooling and second-order
+spherical midpoint convergence across species and energy. CV05 verifies
+constant-gradient focusing, pitch-angle bounds, and `(1-mu^2)/B` conservation.
+Run them with `make test-cv02-cv05-unit SEP_EXECUTABLE=/path/to/amps`; absence
+of that linked binary is SKIP and is never replaced by source-only evidence.
+
 Refinement evidence is evaluated uniformly as
 `p=log(e_coarse/e_fine)/log(h_coarse/h_fine)`. The common helper rejects zero,
 negative, nonfinite, or reversed-resolution inputs so an empty/error-free

@@ -62,6 +62,17 @@ List or execute registered cases with:
 python3 validation/run_case.py --list
 python3 test/run_tests.py --amps /path/to/amps --validation-case CV01 \
   --output-dir test_output/CV01
+python3 test/run_tests.py --amps /path/to/amps \
+  --validation-case CV02 --validation-case CV03 \
+  --validation-case CV04 --validation-case CV05 \
+  --output-dir test_output/CV02-CV05
 python3 test/run_tests.py --amps /path/to/amps --validation-all \
   --output-dir test_output/validation-all
 ```
+
+CV02-CV05 share `linked_case_common.py` for strict native process/report
+verification and `controlled_case_runner.py` for evidence plumbing. Their
+expected physics remains in separate case-local `reference_solution.py`
+programs. The shared C++ adapter calls the production Parker and focused-
+transport cores and is compiled into the requested AMPS application; it is not
+a substitute executable.
