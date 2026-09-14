@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <string>
 
 SEP::Sampling::cSamplingBuffer **SEP::Sampling::SamplingBufferTable=NULL;
 vector<double> SEP::Sampling::SamplingHeliocentricDistanceList;
@@ -230,17 +231,21 @@ void SEP::Sampling::Init() {
 }
 
 void SEP::Sampling::InitSingleFieldLineSampling(int iFieldLine) {
-  char fname[200];
-
   if (SamplingBufferTable[iFieldLine]!=NULL) return;
+
+  // PIC::OutputDataFileDirectory may be substantially longer than the legacy
+  // 200-byte stack buffer used here.  Construct the common base name once with
+  // std::string and let cSamplingBuffer retain it dynamically; this preserves
+  // the complete user-selected output path and eliminates both overflow and
+  // silent-truncation failure modes.
+  const std::string sampleBaseName=
+      std::string(PIC::OutputDataFileDirectory)+"/sample";
 
   if (SamplingHeliocentricDistanceList.size()==0) {
     SamplingBufferTable[iFieldLine]=new cSamplingBuffer [SamplingHeliocentricDistanceTableLength];
 
     for (int i=0;i<SamplingHeliocentricDistanceTableLength;i++) {
-      sprintf(fname,"%s/sample",PIC::OutputDataFileDirectory);
-
-      SamplingBufferTable[iFieldLine][i].Init(fname,MinSampleEnergy,MaxSampleEnergy,nSampleIntervals,SamplingHeliocentricDistanceTable[i],iFieldLine);
+      SamplingBufferTable[iFieldLine][i].Init(sampleBaseName.c_str(),MinSampleEnergy,MaxSampleEnergy,nSampleIntervals,SamplingHeliocentricDistanceTable[i],iFieldLine);
     }
   }
   else {
@@ -248,9 +253,7 @@ void SEP::Sampling::InitSingleFieldLineSampling(int iFieldLine) {
     SamplingBufferTable[iFieldLine]=new cSamplingBuffer [size];
 
     for (int i=0;i<SamplingHeliocentricDistanceList.size();i++) {
-      sprintf(fname,"%s/sample",PIC::OutputDataFileDirectory);
-
-      SamplingBufferTable[iFieldLine][i].Init(fname,MinSampleEnergy,MaxSampleEnergy,nSampleIntervals,SamplingHeliocentricDistanceList[i],iFieldLine);
+      SamplingBufferTable[iFieldLine][i].Init(sampleBaseName.c_str(),MinSampleEnergy,MaxSampleEnergy,nSampleIntervals,SamplingHeliocentricDistanceList[i],iFieldLine);
     }
   }
 }
@@ -603,4 +606,3 @@ end:
 
 
 }
-

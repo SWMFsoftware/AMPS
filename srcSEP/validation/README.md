@@ -1,0 +1,109 @@
+# Step 15 scientific-validation campaign
+
+Step 15 adds scientific verification after the transport architecture and
+component contracts have stabilized. It deliberately reports five evidence
+classes separately. Passing a manufactured solution is not called coupled
+validation, and passing coupled code is not called observational validation.
+
+## Included cases
+
+| Case | Evidence class | Reference | Current source-only status |
+|---|---|---|---|
+| `VAL01` | Numerical verification | Independent analytical diffusion moments and adiabatic-cooling characteristic | Implemented |
+| `VAL02` | Cross-mover verification | Matched `fte-dmumu`/`fte-mfp` mean-free-path closure | Implemented |
+| `VAL03` | Cross-model verification | Independently coded conservative finite-volume pitch-angle solver | Implemented |
+| `VAL04-SWCME` | Coupled integration | Actual `swcme::sep::Interface1D` states consumed by the srcSEP Parker kernel | Implemented |
+| `VAL04-SWMF` | Coupled integration | Checksum-verified native SWMF replay | Requires external run evidence |
+| Event campaigns | Observational validation | Held-out spacecraft products with uncertainties and forward operators | Requires external data evidence |
+
+The source-only command is:
+
+```sh
+make test-scientific-validation
+```
+
+It runs `VAL01`–`VAL04-SWCME` under AddressSanitizer and
+UndefinedBehaviorSanitizer, assembles a temporary campaign, and proves that
+release mode refuses the expected missing SWMF and spacecraft evidence. The
+normal command leaves no generated result files in the source tree. To retain
+its JSON, JUnit, and campaign reports outside the tree:
+
+```sh
+STEP15_REPORT_DIR=/absolute/path/to/evidence make test-scientific-validation
+```
+
+For a bounded equation-level regression that does not enter Step 15 campaign
+assembly, use `make test-controlled-analytical`. Native execution is a separate
+gate and requires the linked application:
+
+```sh
+make test-native-amps-validation SEP_EXECUTABLE=/path/to/amps
+```
+
+## Completing external gates
+
+Copy the appropriate file from `manifests/`, replace every placeholder, and
+archive each input alongside the manifest or at a path relative to it. Every
+input record must include its lowercase SHA-256, role, source URL or persistent
+identifier, access time, and licensing/acknowledgment text. The runner opens
+the local bytes and recomputes every checksum; a citation without archived
+bytes is insufficient.
+
+Each external class can be authenticated independently before assembling the
+full release campaign:
+
+```sh
+make test-swmf-validation SWMF_MANIFEST=/evidence/swmf-replay.json
+make test-observational-validation \
+  OBSERVATIONAL_MANIFESTS="/evidence/event-1.json /evidence/event-2.json"
+```
+
+Both targets require every manifest to declare `status=PASS` and verify every
+referenced input checksum. The SWMF target accepts only
+`COUPLED_INTEGRATION`/`SWMF_OUTPUT`. The observational target accepts only
+`OBSERVATIONAL_VALIDATION`/`SPACECRAFT_OBSERVATION` and requires the supplied
+held-out events, collectively, to cover all six required metric families.
+These commands do not run or inherit status from controlled or native tests.
+
+```sh
+python3 validation/run_campaign.py \
+  --numerical-json /evidence/step15-numerical-results.json \
+  --swcme-json /evidence/step15-swcme-results.json \
+  --swmf-manifest /evidence/swmf-replay.json \
+  --observational-manifest /evidence/event-1.json \
+  --observational-manifest /evidence/event-2.json \
+  --output-dir /evidence/release --campaign-id campaign-identifier --release
+```
+
+`--release` succeeds only if all numerical cases pass, both the real SWCME and
+real SWMF coupled cases pass, and the held-out observational manifests jointly
+cover onset, anisotropy, spectra, fluence, decay, and multi-spacecraft
+longitude. Any missing class is `INCOMPLETE`; an asserted failure is `FAILED`.
+
+## Provenance and output contract
+
+`campaign.schema.json` describes the assembled
+`srcsep-validation-campaign-v1` record. `run_campaign.py` captures:
+
+- the deterministic source-tree SHA-256 and every input/report SHA-256;
+- complete internal case configuration, seeds, metrics, tolerances, and units;
+- compiler command/version/flags and host platform;
+- external run configuration, data provenance, output variables and units;
+- independent statuses for numerical, cross-mover, cross-model, coupled, and
+  observational evidence.
+
+Both JSON and Markdown campaign reports are written transactionally through a
+same-directory temporary file, flush, `fsync`, and atomic replacement. The JSON
+record is authoritative; Markdown is a compact status view.
+
+## Scientific-claim safeguards
+
+An observational manifest must declare `data_class=SPACECRAFT_OBSERVATION`,
+identify at least one mission/instrument data product, be marked held out,
+provide an uncertainty method, and pass checksum verification. Labels that
+identify manufactured data are rejected. This safeguard test is itself only a
+software-governance test and never appears as observational evidence.
+
+See each `cases/VAL*/README.md` for equations, configurations, metrics, and
+limitations. See [STEP15_VALIDATION_REPORT.md](../STEP15_VALIDATION_REPORT.md)
+for the evidence obtained in this delivered environment.

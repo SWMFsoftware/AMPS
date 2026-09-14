@@ -6,6 +6,8 @@
 #include <vector>
 
 #include "sep_production_mover.h"
+#include "sep_coefficient_registry.h"
+#include "sep_turbulence_core.h"
 
 namespace SEP {
 namespace Util {
@@ -37,6 +39,17 @@ struct Options {
       Mover::ProductionMover::FocusedTransportDiffusion;
   bool listMovers = false;
 
+  // Step 10 exposes one validated coefficient configuration shared by Parker,
+  // diffusive FTE, and event-driven FTE.  The defaults preserve the historical
+  // srcSEP choices while making their names and source authority explicit.
+  Transport::Coefficient::Configuration coefficients;
+
+  // Step 11 keeps turbulence-source ownership separate from the exactly three
+  // particle movers.  This configuration is the authoritative CLI contract for
+  // source, representation, boundary, operator, spectral, cadence, and
+  // conservation settings; legacy booleans above remain compatibility aliases.
+  Turbulence::Configuration turbulence;
+
   // Run the standalone SEP TestManager diagnostics.  These diagnostics are
   // useful during development but can be intrusive and expensive in normal
   // production runs, so the command-line default is intentionally OFF.
@@ -50,6 +63,12 @@ struct Options {
   bool runAllTests = false;
   std::vector<std::string> testIds;
   std::vector<std::string> testGroups;
+
+  // Structured reports are opt-in and valid only for an executing component
+  // test selection.  Empty paths disable the corresponding writer; report
+  // creation failure is a test ERROR rather than a warning.
+  std::string testJsonPath;
+  std::string testJunitPath;
 
   // Frequency, in main-loop iterations, for writing the large Tecplot 2-D
   // wave-number-resolved spectrum diagnostic.  The default of 100 keeps the

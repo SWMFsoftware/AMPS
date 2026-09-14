@@ -1,5 +1,9 @@
 # Step 4 change manifest
 
+> Step 14 supersession: the documented transition-alias interval has ended.
+> Only `parker`, `fte-dmumu`, and `fte-mfp` now parse; see
+> `MIGRATION_MANIFEST.md` for replacements.
+
 Step 4 introduces the three-mover public production API on top of the completed
 Step 3 SI geometry/source normalization.
 
@@ -17,7 +21,7 @@ Step 3 SI geometry/source normalization.
 
 - `sep.h` routes PIC callbacks through the validating adapter;
 - `util/sep_cli.h` and `util/sep_cli.cpp` expose only canonical production
-  choices and implement strict transition aliases;
+  choices; Step 14 removed the temporary transition aliases;
 - `main.cpp` implements pre-initialization `--list-movers`, prints complete
   mover/coefficient metadata, and uses capabilities for turbulence dispatch;
 - `makefile`, `test/run_step1_tests.sh`, `README.md`, `test/README.md`, and

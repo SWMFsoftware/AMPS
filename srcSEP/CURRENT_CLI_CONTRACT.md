@@ -1,4 +1,4 @@
-# Current srcSEP CLI contract through Step 5
+# Current srcSEP CLI contract through Step 12
 
 The authoritative parser remains `SEP::Util::CLI::ParseCommandLine` in
 `util/sep_cli.cpp`.  Step 1 is additive.
@@ -54,3 +54,39 @@ The authoritative parser remains `SEP::Util::CLI::ParseCommandLine` in
 - `--run-test-manager` remains functional, but it no longer needs a runtime
   fallback for builds without field lines because such builds are rejected at
   compile time.
+
+## Step 10 coefficient behavior
+
+- `--coefficient-source` accepts `prescribed`, `self-consistent`, or `swmf`.
+- `--spatial-diffusion-provider` accepts `from-dmumu` or `from-mfp`.
+- `--pitch-angle-diffusion-provider` accepts `configured`.
+- `--mean-free-path-provider` accepts `qlt`, `qlt1`, `tenishev-2005`,
+  `chen-2024`, or `from-spatial`.
+- `--invalid-coefficient-policy` accepts `fail` or `ballistic`; ballistic is
+  the exact `lambda=+infinity` zero-event-rate state, not a finite clamp.
+- Defaults preserve prior behavior: prescribed source, spatial-from-Dmumu,
+  configured Dmumu, Tenishev-2005 MFP, and fail policy.
+- Invalid values, conversion cycles, and incompatible source/model pairs fail
+  before initialization. Startup metadata prints every canonical selection.
+
+## Step 11 turbulence behavior
+
+- `--turbulence-source` accepts `prescribed`,
+  `self-consistent-integrated`, `self-consistent-spectral`, `swmf-read-only`,
+  or `swmf-initial-then-local`.
+- `--turbulence-model` selects integrated or wave-number-resolved authority;
+  self-consistent source and representation remain synchronized.
+- `--turbulence-coupling-policy` accepts `disabled` or
+  `streaming-energy-exchange`; existing `--coupling` forms remain aliases.
+- Inner/outer boundaries independently select `specified-incoming-energy`,
+  `specified-incoming-flux`, `transparent-outflow`, or `fixed-reservoir`, with
+  SI values supplied by the matching `--turbulence-*-value` option.
+- `--turbulence-advection`, `--shock-injection`, `--reflection`, and
+  `--cascade` control the documented operator phases.
+- Reflection/cascade coefficients, CFL safety, perpendicular correlation
+  length [m], spectral k range [1/m], bin count, output cadence, and
+  conservation tolerance are validated before initialization.
+- Startup metadata prints the complete turbulence configuration.
+
+Step 12 adds no decomposition selector: reproducibility keys intentionally
+exclude thread count and MPI rank.

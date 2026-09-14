@@ -18,14 +18,17 @@ namespace {
 
 SEP::Mover::ProductionMover g_selected_mover =
     SEP::Mover::ProductionMover::FocusedTransportDiffusion;
-SEP::fParticleMover g_selected_implementation = SEP::ParticleMover_FTE;
+using MoverImplementation = int (*)(
+    long int, double, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*);
+MoverImplementation g_selected_implementation =
+    SEP::ParticleMover_FocusedTransport_Dmumu;
 
-SEP::fParticleMover ImplementationFor(SEP::Mover::ProductionMover mover) {
+MoverImplementation ImplementationFor(SEP::Mover::ProductionMover mover) {
   switch (mover) {
     case SEP::Mover::ProductionMover::Parker:
-      return SEP::ParticleMover_Parker_Dxx;
+      return SEP::ParticleMover_Parker;
     case SEP::Mover::ProductionMover::FocusedTransportDiffusion:
-      return SEP::ParticleMover_FTE;
+      return SEP::ParticleMover_FocusedTransport_Dmumu;
     case SEP::Mover::ProductionMover::FocusedTransportMeanFreePath:
       return SEP::ParticleMover_FocusedTransport_EventDriven;
   }
@@ -71,12 +74,11 @@ const char* MeanFreePathProviderName() {
 }  // namespace
 
 void SEP::Mover::SelectProductionMover(ProductionMover mover) {
-  // Resolve through one audited mapping.  ParticleMoverPtr is updated only as
-  // a deprecated observability hook for older embedding code; production PIC
-  // callbacks invoke DispatchProductionMover and do not dispatch through it.
+  // Resolve through one audited, private mapping.  Step 14 removes the public
+  // mutable function pointer so callers cannot bypass state validation or
+  // manufacture a mover that is absent from the three-entry registry.
   g_selected_mover = mover;
   g_selected_implementation = ImplementationFor(mover);
-  SEP::ParticleMoverPtr = g_selected_implementation;
 }
 
 SEP::Mover::ProductionMover SEP::Mover::CurrentProductionMover() {
@@ -195,11 +197,7 @@ void SEP::Mover::PrintRuntimeConfiguration(std::ostream& out) {
     }
   } else {
     out << "  MFP lower-Larmor limiter:      "
-        << (SEP::LimitMeanFreePath ? "on" : "off") << "\n"
-        << "  scattering-event limiter:     "
-        << (SEP::NumericalScatteringEventMode ? "on" : "off") << "\n"
-        << "  scattering-event maximum:     "
-        << SEP::NumericalScatteringEventLimiter << "\n";
+        << (SEP::LimitMeanFreePath ? "on" : "off") << "\n";
 
     switch (SEP::Scattering::MeanFreePathMode) {
       case SEP::Scattering::MeanFreePathMode_QLT:

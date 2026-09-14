@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://srcsep.example/schemas/validation-campaign-v1.json",
+  "title": "srcSEP Step 15 validation campaign",
+  "description": "Machine-readable release evidence with separate numerical, cross-mover, cross-model, coupled, and observational claims.",
+  "type": "object",
+  "required": [
+    "schema",
+    "campaign_id",
+    "generated_utc",
+    "release_status",
+    "provenance",
+    "sections"
+  ],
+  "properties": {
+    "schema": {"const": "srcsep-validation-campaign-v1"},
+    "campaign_id": {"type": "string", "minLength": 1},
+    "generated_utc": {"type": "string", "format": "date-time"},
+    "release_status": {
+      "enum": ["RELEASE_READY", "INCOMPLETE", "FAILED"]
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "source_tree_sha256",
+        "input_checksums",
+        "compiler",
+        "platform",
+        "output_schema"
+      ],
+      "properties": {
+        "source_tree_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "input_checksums": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/checksum"}
+        },
+        "compiler": {
+          "type": "object",
+          "required": ["command", "version", "flags"],
+          "properties": {
+            "command": {"type": "string"},
+            "version": {"type": "string"},
+            "flags": {"type": "array", "items": {"type": "string"}}
+          },
+          "additionalProperties": false
+        },
+        "platform": {"type": "string", "minLength": 1},
+        "output_schema": {"const": "srcsep-validation-campaign-v1"}
+      },
+      "additionalProperties": false
+    },
+    "sections": {
+      "type": "object",
+      "required": [
+        "numerical_verification",
+        "cross_mover_verification",
+        "cross_model_verification",
+        "coupled_integration",
+        "observational_validation"
+      ],
+      "additionalProperties": {"$ref": "#/$defs/section"}
+    }
+  },
+  "$defs": {
+    "checksum": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "additionalProperties": false
+    },
+    "section": {
+      "type": "object",
+      "required": ["status", "required_cases", "cases", "limitations"],
+      "properties": {
+        "status": {"enum": ["PASS", "FAIL", "INCOMPLETE"]},
+        "required_cases": {"type": "array", "items": {"type": "string"}},
+        "cases": {"type": "array", "items": {"type": "object"}},
+        "limitations": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

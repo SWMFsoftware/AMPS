@@ -654,6 +654,15 @@ configured. `source_csv_header()` and `serialize_source_csv()` define a stable
 machine-readable handoff record. `Interface*::resolved_manifest()` concatenates
 the model and spectrum configuration records.
 
+The parent srcSEP Step 15 campaign contains `VAL04-SWCME`, which constructs this
+actual interface, prepares a time sequence of model states, publishes their
+configuration identity through srcSEP's immutable background snapshots, drives
+the production Parker core with the returned SI velocity/divergence, and
+requires an active source record. Run it from the parent directory with
+`make test-scientific-validation`. This proves the source-distribution
+SWCME-to-srcSEP core boundary; native AMPS/PIC and SWMF replay remain separate
+gates documented in `../validation/README.md`.
+
 ## Use examples
 
 ### Example 1: batch 1-D background sampling

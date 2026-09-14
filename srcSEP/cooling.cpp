@@ -1,5 +1,5 @@
-#include <iostream>
 #include <cmath>
+#include <limits>
 
 #include "cooling.h"
 
@@ -22,72 +22,33 @@
 
 namespace COOLING_FACTOR_PARKER {
 
-    /*
-     * Function: calculateAdiabaticCooling
-     * Calculates the new momentum of a particle after a time step due to adiabatic cooling
-     * in the expanding solar wind.
-     *
-     * Inputs:
-     * - p_old: Particle's initial momentum in kg·m/s (must be > 0)
-     * - r: Heliocentric distance from the Sun in meters (must be > 0)
-     * - dt: Time step in seconds (must be > 0)
-     * - V_sw: Solar wind speed in m/s (typical values between 400e3 and 800e3 m/s)
-     *
-     * Output:
-     * - p_new: Particle's new momentum in kg·m/s after adiabatic cooling
-     *
-     * Assumptions:
-     * - The solar wind is radial and has a constant speed V_sw.
-     * - The divergence of the solar wind velocity is given by ∇·V_sw = 2 V_sw / r.
-     * - Uses non-relativistic approximation for momentum update (valid for v << c).
-     * - The radial distance r is the heliocentric distance from the Sun.
-     *
-     * References:
-     * - Parker, E. N. (1965). "The passage of energetic charged particles through interplanetary space."
-     *   Planetary and Space Science, 13(1), 9-49.
-     */
-    double calculateAdiabaticCooling(double p_old, double r, double dt, double V_sw) {
-        // Validate inputs
-        if (p_old <= 0) {
-            std::cerr << "Error: Particle momentum must be positive." << std::endl;
-            return -1.0;
-        }
-        if (r <= 0) {
-            std::cerr << "Error: Heliocentric distance must be positive." << std::endl;
-            return -1.0;
-        }
-        if (dt <= 0) {
-            std::cerr << "Error: Time step must be positive." << std::endl;
-            return -1.0;
-        }
-        if (V_sw <= 0) {
-            std::cerr << "Error: Solar wind speed must be positive." << std::endl;
-            return -1.0;
+    SEP::Transport::ScalarResult CalculateAdiabaticMomentum(
+        double p_old, double r, double dt, double V_sw) {
+        SEP::Transport::ScalarResult result;
+        if (!std::isfinite(r) || !std::isfinite(V_sw) || r <= 0.0 ||
+            V_sw < 0.0) {
+            result.status = SEP::Transport::Status::Error(
+                SEP::Transport::StatusCode::InvalidArgument,
+                "radial cooling requires r>0 and finite V_sw>=0");
+            return result;
         }
 
-        // Avoid division by zero near the Sun by setting a minimum heliocentric distance
-        const double r_min = 1e7; // Minimum distance (e.g., 10,000 km) in meters
-        if (r < r_min) {
-            r = r_min;
-        }
+        // No artificial inner-radius floor is applied.  The caller must supply
+        // a valid physical domain, so a geometry error cannot silently change
+        // the represented cooling rate.
+        const double divergencePerS = 2.0 * V_sw / r;
+        return SEP::Transport::ApplyAdiabaticMomentum(
+            p_old, divergencePerS, dt);
+    }
 
-        // Compute divergence of solar wind velocity: ∇·V_sw = 2 V_sw / r
-        double divergence_Vsw = (2.0 * V_sw) / r; // Units: 1/s
-
-        // Rate of change of momentum due to adiabatic cooling: dp/dt = - (1/3) p * ∇·V_sw
-        double dp_dt = - (1.0 / 3.0) * p_old * divergence_Vsw; // Units: kg·m/s²
-
-        // Update momentum: p_new = p_old + dp/dt * dt
-        double p_new = p_old + dp_dt * dt; // Units: kg·m/s
-
-        // Ensure that momentum does not become negative
-        if (p_new < 0) {
-            p_new = 0.0;
-        }
-
-        return p_new;
+    double calculateAdiabaticCooling(double p_old, double r, double dt,
+                                     double V_sw) {
+        const SEP::Transport::ScalarResult result =
+            CalculateAdiabaticMomentum(p_old, r, dt, V_sw);
+        return result.status.ok()
+            ? result.value
+            : std::numeric_limits<double>::quiet_NaN();
     }
 
 } // namespace COOLING_FACTOR_PARKER
-
 

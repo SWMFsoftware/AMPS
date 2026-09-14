@@ -1,0 +1,38 @@
+{
+  "schema": "srcsep-external-evidence-v1",
+  "campaign_id": "replace-with-campaign-id",
+  "evidence_class": "OBSERVATIONAL_VALIDATION",
+  "data_class": "SPACECRAFT_OBSERVATION",
+  "status": "INCOMPLETE",
+  "configuration": {
+    "srcsep_parameter_file": "replace-with-path",
+    "background_run_identifier": "replace-with-run-id",
+    "transport_mover": "replace-with-parker-or-fte-mover",
+    "observer_forward_operator": "replace-with-cadence-energy-and-pitch-angle-response"
+  },
+  "inputs": [],
+  "random_seeds": [],
+  "compiler": {
+    "command": "replace-with-compiler",
+    "version": "replace-with-complete-version",
+    "flags": []
+  },
+  "output_schema": {
+    "name": "replace-with-schema-name",
+    "version": "replace-with-version",
+    "variables": []
+  },
+  "event": {
+    "id": "replace-with-event-id",
+    "start_utc": "replace-with-ISO-8601-time",
+    "end_utc": "replace-with-ISO-8601-time"
+  },
+  "observers": [],
+  "uncertainty": {
+    "method": "replace-with-method",
+    "confidence_level": 0
+  },
+  "held_out": true,
+  "acceptance_metrics": [],
+  "notes": "Copy this template and cite locally archived, checksum-verified spacecraft products before setting PASS or FAIL."
+}

@@ -256,13 +256,15 @@ long int SEP::ParticleSource::ShockWaveSphere::InjectionModel() {
     #endif
 
 
-    SEP::ParticleMoverPtr(newParticle,rnd()*dtTotal,startNode); 
+    // Newly injected particles must pass through the same field-line state
+    // validation and three-mover dispatch boundary as timestep particles.
+    SEP::Mover::DispatchProductionMover(
+        newParticle,rnd()*dtTotal,startNode);
     res++;
   } 
 
   return res;
 }
-
 
 
 

@@ -27,6 +27,7 @@
 //the particle class
 #include "constants.h"
 #include "sep.h"
+#include "transport_common.h"
 #include "sep.dfn"
 #include "tests.h"
 
@@ -660,6 +661,11 @@ start:
       exit(__LINE__, __FILE__,
            "Error: invalid SEP background snapshot state");
     }
+
+    // Coupled-library runs use the same post-particle deterministic reduction
+    // as the standalone driver; the library entry point still does not parse or
+    // execute standalone component-test options.
+    SEP::Transport::PICAdapter::FlushWaveContributions();
 
 //    PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(50,100); //(SEP::MinParticleLimit,SEP::MaxParticleLimit);
 

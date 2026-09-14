@@ -25,6 +25,45 @@ make test-mover-api-unit
 # Source-scope checks for the field-line-only Step 5 boundary.
 make test-field-line-scope-unit
 
+# Step 6 shared state, coordinate, cooling, limits, and RNG kernels.
+make test-transport-common-unit
+
+# Step 7 canonical Itô Parker solver.
+make test-parker-unit
+
+# Step 8 coefficient-driven focused-transport Dmumu solver.
+make test-fte-dmumu-unit
+
+# Step 9 event-driven focused-transport mean-free-path solver.
+make test-fte-mfp-unit
+
+# Step 10 coefficient registries, validation, and SI conversions.
+make test-coefficients-unit
+
+# Step 11 authoritative turbulence state, ledger, remap, and restart.
+make test-turbulence-core-unit
+
+# Step 12 deterministic worker/rank reduction and keyed RNG evidence.
+make test-reproducibility-unit
+
+# Step 13 registered background/cross-mover fixtures and JSON/JUnit evidence.
+make test-acceptance-unit
+
+# Step 14 docs, public-symbol, archive-hygiene, warning, and analyzer gates.
+make test-documentation-unit
+
+# Step 15 numerical, cross-mover/model, SWCME replay, and release-report gates.
+make test-scientific-validation
+
+# Complete source-only analytical catalog, including extended ensembles.
+make test-controlled-analytical
+
+# All dependency-light ASan/UBSan suites from Steps 3 and 6–13.
+make test-sanitizer
+
+# Repeat keyed campaigns and compare physics evidence after timing normalization.
+make test-stochastic-repeat
+
 # Discover the catalog without initializing the model.
 make test-list
 
@@ -32,6 +71,8 @@ make test-list
 make test-case CASE=DXX01
 make test-group GROUP=parker
 make test-turbulence
+make test-stress
+make test-mpi MPI_NP=4
 make -j test
 ```
 
@@ -47,12 +88,223 @@ Equivalent CLI examples are:
 ../amps --test DXX01
 ../amps --test=DXX01 --test=TURB01
 ../amps --test-group parker
+../amps --test-group fte-dmumu
+../amps --test-group fte-mfp
+../amps --test PARK07 --test FTEM08
+../amps --test TURB21 --test TURB22 --test TURB23
 ../amps --all-tests
+../amps --all-tests --test-json results.json --test-junit results.xml
 ```
 
 `make -j test` intentionally sequences shared-state component execution even
 when Make is given `-j`, then runs the embedded SWCME suite using its own native
 parallel target.  Expensive extended tests are not part of `--all-tests`.
+
+The Step 6–15 focused targets do not require the linked executable, AMPS, PIC,
+MPI, SWMF, or field-line host classes. Each compiles the exact production
+numerical cores with C++11, `-Wall -Wextra -Werror -pedantic`, AddressSanitizer,
+and UndefinedBehaviorSanitizer. LeakSanitizer alone is disabled because the
+managed test environment does not expose the required `/proc` task data.
+
+## Focused Step 15 scientific-validation tests
+
+`test/run_step15_tests.sh` runs four source-distribution cases and assembles an
+auditable campaign report:
+
+- `VAL01`: analytical Parker displacement moments and adiabatic cooling;
+- `VAL02`: matched `fte-dmumu`/`fte-mfp` pitch moments, diffusion, detector
+  onset, peak time, and fluence;
+- `VAL03`: production Dmumu particles versus an independently coded
+  conservative finite-volume pitch-angle solver;
+- `VAL04`: actual `swcme::sep::Interface1D` background/source records consumed
+  by immutable srcSEP snapshots and the production Parker core.
+
+The runner also verifies that missing real SWMF and held-out spacecraft inputs
+remain `INCOMPLETE`, that `--release` returns nonzero, and that manufactured
+labels cannot acquire observational status. Set `STEP15_REPORT_DIR` to an
+absolute directory to retain JSON, JUnit, and campaign reports; by default all
+outputs are disposable. Full formats and external-manifest requirements are in
+[../validation/README.md](../validation/README.md).
+
+## Focused Step 13 acceptance tests
+
+`test/run_step13_tests.sh` compiles the exact descriptors linked into the
+production registry and verifies:
+
+- `BG01`: standalone analytic and SWCME snapshots preserve distinct provider,
+  epoch, ownership, validity, generation, and configuration identity;
+- `BG02`: a mock SWMF snapshot is imported read-only and can become locally
+  evolved only through an explicit handoff copy;
+- `CROSS01`: `fte-dmumu` at `Dmumu=0` and `fte-mfp` at
+  `lambda_parallel=+infinity` produce the same ballistic state;
+- `CROSS02`: Parker `kappa`, focused-transport `Dmumu`, and event-driven
+  `lambda_parallel` round-trip under their declared isotropic closure;
+- `HIDDEN`: a callback cannot return PASS with a retained assertion failure;
+- `REPORT`: JSON and JUnit retain every result's diagnostic evidence.
+
+The fixtures are deterministic and small enough for routine acceptance. Large
+Monte Carlo checks remain in the explicitly selected Parker/FTE stress cases.
+
+## Focused Step 14 cleanup tests
+
+`test/run_step14_tests.sh` verifies:
+
+- `DOC01`: every documented focused command and structured-report option maps
+  to a real Make target or parser option;
+- `DOC02`: public headers, dispatch, and build inputs contain only the three
+  canonical movers and no retired mutable function-pointer API;
+- `DOC03`: the source handoff contains no objects, libraries, coverage data,
+  generated test evidence, or nested archive;
+- `WARN01`: every dependency-light Step 13/14 translation unit compiles with
+  C++11, `-Wall -Wextra -Wpedantic -Werror`;
+- `STATIC01`: GCC's `-fanalyzer` checks the new infrastructure when supported;
+- `SAN01`: the exact Step 13 production callbacks pass ASan and UBSan.
+
+The full native `SAN01`/MPI acceptance command is `make test` in an enclosing
+AMPS checkout. A source archive cannot emulate generated PIC types or MPI rank
+execution and reports that boundary explicitly.
+
+## Focused Step 6 common-transport tests
+
+`test/run_step6_tests.sh` verifies:
+
+- `CORE01`: relativistic SI speed/momentum round trips and rejection of
+  luminal input;
+- `CORE02`: a physical arc-length advance does not leak host coordinate units;
+- `CORE03`: absorbing and reflecting boundary policies are explicit;
+- `CORE04`: focusing length is exactly `-1/(d ln|B|/ds)`, including the uniform
+  field limit;
+- `CORE05`: exact plasma-frame adiabatic momentum evolution;
+- `CORE06`: named timestep limits, limiter diagnostics, and explicit underflow;
+- `CORE07`: keyed stochastic streams reproduce independently of particle order;
+- `CORE-SOURCE`: all three production shells use common loading, advancement,
+  commit, and field-line attachment code.
+
+## Focused Step 7 Parker tests
+
+`test/run_step7_tests.sh` verifies:
+
+- `PARK01`: zero-diffusion convection;
+- `PARK02`: Gaussian displacement mean and variance `2*kappa*dt` over 120,000
+  deterministically keyed samples;
+- `PARK03`: the Itô variable-diffusion drift has the `+d(kappa)/ds` sign;
+- `PARK04`: the manufactured adiabatic momentum solution;
+- `PARK05`: explicit absorbing boundary crossing;
+- `PARK06`: refinement convergence for a variable-kappa manufactured drift;
+- `PARK07`: absorbing first-passage probability and mean exit time for
+  drift-free Brownian transport on a finite interval;
+- `PARK-SOURCE`: the public registry selects the canonical provider-driven
+  implementation and its source contains no hidden/global random draw.
+
+## Focused Step 8 coefficient-driven FTE tests
+
+`test/run_step8_tests.sh` verifies:
+
+- `FTED01`: constant-`Dmumu` Itô ensemble moments;
+- `FTED02`: inclusion and sign of `dDmumu/dmu` drift;
+- `FTED03`: the shared magnetic-focusing convention;
+- `FTED04`: combined focusing, velocity gradient, streaming, and cooling;
+- `FTED05`: regular `mu=0` behavior and arbitrary reflective overshoot;
+- `FTED06`: QLT normalization/units plus matching coefficient and turbulence
+  identity for wave deposition;
+- `FTED07`: refinement convergence of the symmetric split;
+- `FTED08`: decay of a Legendre `P2` eigenmode according to
+  `<P2>(t)=(a/5) exp(-6 D0 t)`;
+- `FTED-SOURCE`: canonical dispatch, coefficient-provider isolation, explicit
+  randomness, and deferred wave coupling.
+
+These stable IDs are emitted by the focused test binary. They complement the
+linked standalone CLI catalog because they are designed to run from a
+source-only handoff; native adapter and coupled-execution evidence remains a
+separate gate.
+
+## Focused Step 9 event-driven FTE tests
+
+`test/run_step9_tests.sh` verifies:
+
+- `FTEM01`: exponential waiting-time mean `1/nu`;
+- `FTEM02`: Poisson event-count mean `nu*dt`;
+- `FTEM03`: infinite-lambda ballistic transport;
+- `FTEM04`: wave-frame speed conservation under Lorentz scattering;
+- `FTEM05`: magnetic-focusing refinement;
+- `FTEM06`: exact adiabatic cooling between events;
+- `FTEM07`: combined focus/cooling/streaming event-split refinement;
+- `FTEM08`: finite-time persistent-flight mean-square displacement and its
+  long-time `kappa_parallel=v*lambda_parallel/3` diffusion limit;
+- `FTEM-SOURCE`: canonical dispatch and removal of the legacy MFP object from
+  the production archive.
+
+## Focused Step 10 coefficient tests
+
+`test/run_step10_tests.sh` verifies:
+
+- `COEF01`: canonical registry names, SI units, and parameter schemas;
+- `COEF02`: invalid parameter/source combinations and conversion cycles;
+- `COEF03`: lambda/kappa and isotropic-Dmumu conversion round trips;
+- `COEF04`: analytic/imported source identity with identical SI conversion;
+- `COEF05`: structured invalid-domain and ownership status;
+- `COEF-SOURCE`: all three canonical movers and CLI use the shared registry.
+
+## Focused Step 11 turbulence tests
+
+`test/run_step11_tests.sh` executes registered `TURB02`–`TURB23` plus
+`TURBOWN01`: source ownership,
+particle-wave closure, units/volume, initialization, integrated/spectral
+projection, constant/variable-speed advection, boundary policies, reflection,
+cascade/dissipation, growth, resonance/coefficient closure, shock injection,
+operator order, positivity limiting, conservative remap, restart,
+reproducibility, mover/source separation, and standalone/coupled driver
+equivalence. `TURB21` compares nonuniform advection with an exact translated
+sine profile at two resolutions; `TURB22` compares every time level of a
+linear-in-time wave-energy source with its quadratic integral. `TURB22`
+isolates the source-application operator: calculating the source from a
+particle distribution remains covered by the native
+`growth_rate_validation_test.cpp` path, which requires the full AMPS/PIC/MPI
+environment. The focused runner also validates each Step 11 CLI family and
+source contract. `TURB23` converts kinetic-energy changes from controlled
+outward/minus-branch and inward/plus-branch wave-frame scattering events into
+opposite signed wave increments and checks total particle-plus-wave energy and
+ledger closure without invoking an external turbulence data source.
+
+## Analytical refinement evidence
+
+`PARK06`, `FTED07`, `FTEM05`, `FTEM07`, and `TURB21` call the common
+`EstimateRefinementOrder` helper. Given positive errors `e_c`, `e_f` and
+resolutions `h_c>h_f`, it records
+`p=log(e_c/e_f)/log(h_c/h_f)` plus both input ratios. Invalid, zero-error, or
+reversed-resolution inputs fail instead of producing a manufactured order.
+The Step 1 `REFINE` fixture independently checks an exact second-order example
+and the invalid-input paths.
+
+## Separate validation gates
+
+Use `make test-controlled-analytical` for dependency-light equation-level
+tests. Native AMPS, real SWMF, and held-out spacecraft evidence are separate:
+
+```sh
+make test-native-amps-validation SEP_EXECUTABLE=/path/to/amps
+make test-swmf-validation SWMF_MANIFEST=/evidence/swmf-replay.json
+make test-observational-validation \
+  OBSERVATIONAL_MANIFESTS="/evidence/event-1.json /evidence/event-2.json"
+```
+
+The latter two commands reopen and hash every manifest input. The
+observational command also requires complete onset, anisotropy, spectra,
+fluence, decay, and multi-spacecraft-longitude coverage. Missing arguments are
+errors, not `SKIP`, and no gate inherits PASS from another evidence class.
+
+## Focused Step 12 reproducibility tests
+
+`test/run_step12_tests.sh` executes:
+
+- `PAR01`: worker-local accumulation followed by a single canonical writer;
+- `PAR02`: identical evidence across worker/scheduler layouts;
+- `PAR03`: identical evidence across synthetic MPI partitions;
+- `PAR04`: mover RNG independence from a diagnostic purpose stream;
+- `PAR05`: stable evidence hashes and resettable atomic integer counters.
+
+The source gate confirms that rank/thread IDs are absent from physical keys and
+that MPI policy is gather followed by the same canonical reduction.
 
 ## Focused Step 3 geometry and source tests
 
@@ -78,7 +330,7 @@ with C++11 and strict warnings. It verifies:
 
 - `MOVCLI01`: canonical `parker`, `fte-dmumu`, and `fte-mfp` parsing and a
   three-entry help/discovery surface;
-- `MOVCLI02`: warnings for only semantically exact transition aliases;
+- `MOVCLI02`: hard rejection of every retired transition alias;
 - `MOVCLI03`: coefficient/state capability reporting and capability-based
   main-loop policy;
 - `MOVCLI04`: rejection of ambiguous, direct-wave, legacy, and 3-D movers.
@@ -133,12 +385,24 @@ standalone and SWMF-coupled run. See
 
 | ID | Group | Class | Initialization | What is asserted | State/artifacts |
 |---|---|---|---|---|---|
+| `BG01` | `background` | routine | none | Standalone analytic and SWCME snapshots preserve provider, epoch, ownership, validity, generation, and distinct configuration identity. | Stack-owned immutable snapshots; no external provider or artifact. |
+| `BG02` | `background` | routine | none | A mock SWMF import is read-only and becomes locally evolved only through an explicit handoff copy. | Resets the snapshot store before/after; no external SWMF process. |
+| `CROSS01` | `cross-mover` | routine | none | `fte-dmumu` and `fte-mfp` agree in the matched ballistic limit. | Keyed seed 1301; stack-owned state; no artifact. |
+| `CROSS02` | `cross-mover` | routine | none | Parker `kappa`, FTE `Dmumu`, and event-driven `lambda` round-trip under the declared isotropic closure. | Pure SI conversion; no RNG or artifact. |
 | `DXX01` | `diffusion` | routine | field-line model | `GetDxx` agrees with the constant-coefficient analytical result and the existing million-panel independent quadrature at relative tolerance `1e-5`. | Temporarily replaces and restores the pitch-angle diffusion function pointer; no artifact. |
 | `FTE01` | `transport` | routine | field-line model | The focused-transport mover follows the expected field-line displacement while preserving velocity in a static-plasma fixture, using the existing `1e-2`/`1e-5` checks. | Uses fixed registry seed 1002, restores vertex data and diffusion pointer, deletes its particle, and clears test lists. |
 | `PARKER01` | `parker` | routine | field-line model | Parker convection keeps the line coordinate stationary in the fixture and matches the analytical density-driven momentum update within `1e-5`. | Uses fixed registry seed 1001, restores vertex data and diffusion pointer, deletes its particle, and clears lists. |
 | `PARKER02` | `parker` | extended | field-line model | Four million legacy stochastic trials produce at least one in-range displacement sample and rank 0 successfully writes the histogram.  This is an execution/output assertion, not yet a Gaussian-shape validation. | Uses fixed registry seed 1003; rank 0 writes `dxParker.dat`; particle/lists are cleaned. |
 | `SCAT01` | `scattering` | extended | field-line model | Currently reports `SKIP`: the legacy return-probability diagnostic has no approved reference/tolerance and contains a singular zero-energy case. | Registry path performs no mutation. Historical TestManager may write `rmax-E=...` and `time-E=...` files. |
 | `TURB01` | `turbulence` | routine | none | The production 1-AU helper equals the independently evaluated magnetic-pressure closure `delta_B^2/(2 mu_0)` within 32 machine epsilons. | Pure deterministic calculation; no RNG, model state, or artifact. |
+| `PARK01`–`PARK07` | `parker` | routine except `PARK02`/`PARK07` extended | none | Controlled convection, Gaussian diffusion, Itô drift, cooling, boundary, refinement, and first-passage references. | Injected providers; fixed seeds where stochastic. |
+| `FTED01`–`FTED08` | `fte-dmumu` | routine except `FTED01`/`FTED08` extended | none | Controlled Itô, focusing, cooling, reflection, QLT, refinement, and Legendre-mode references. | Injected providers; fixed seeds where stochastic. |
+| `FTEM01`–`FTEM08` | `fte-mfp` | routine except `FTEM01`/`FTEM02`/`FTEM08` extended | none | Waiting-time, Poisson, ballistic, wave-frame, cooling, refinement, persistent-flight, and diffusion-limit references. | Injected providers; fixed seeds where stochastic. |
+| `TURB02`–`TURB23`, `TURBOWN01` | `turbulence` | routine | none | Controlled ownership, ledger, operator, restart, translated-profile, time-dependent-growth, and particle-wave total-energy checks. | Stack-owned state; fixed seed only for `TURB23`; JSON/JUnit in disposable focused builds. |
+| `VAL01` | `validation` | routine | none | Parker displacement moments and cooling match independent analytical solutions. | Fixed seed 1501001; report only when requested. |
+| `VAL02` | `validation` | extended | none | Matched Dmumu/MFP ensembles agree in pitch, diffusion, onset, peak, and fluence. | Fixed seed 1502001; report only when requested. |
+| `VAL03` | `validation` | extended | none | Dmumu ensemble agrees with an independent finite-volume solver. | Fixed seed 1503001; report only when requested. |
+| `VAL04` | `validation` | routine | none | Actual SWCME SI background/source records drive srcSEP Parker transport. | Fixed API seed 1504001; focused C++17 registry; report only when requested. |
 
 The list printed by `--list-tests` is authoritative and also includes supported
 build modes, seed policy, and state/isolation notes.  Entries are sorted by ID
@@ -153,9 +417,11 @@ duration, optional seed, metrics/tolerances, and artifact paths.  Exit status is
 - `1`: one or more scientific/test assertions are `FAIL`;
 - `2`: one or more tests encounter `ERROR`.
 
-In MPI execution every required rank calls the adapter.  Status severity and
+In MPI execution every required rank calls the adapter. Status severity and
 duration are reduced deterministically; the most severe rank status and maximum
-duration are reported.  Only rank 0 prints the registry summary.  Shared output
+duration are reported. Before reduction, root gathers each rank's complete
+status/message/seed/configuration/metric/artifact evidence for JSON and JUnit.
+Only rank 0 prints the registry summary. Shared output
 from `PARKER02` is also root-only.  Legacy test bodies may still print detailed
 per-rank diagnostics; their removal requires a later test refactor.
 
@@ -177,6 +443,8 @@ and exercises:
 - `CLI03`: deterministic ordering, de-duplication, groups, routine/extended;
 - `CLI04`: malformed/conflicting/unknown selection rejection;
 - `CLI05`: result exit propagation and frozen legacy TestManager parsing;
+- `HIDDEN`: positive `assertion_failures` cannot be masked by callback PASS;
+- `REPORT`: JSON/JUnit schema, outcome, metric, and artifact preservation;
 - registry completeness: required metadata, callbacks, and unique IDs.
 
 The linked-host targets are still required for final evidence that early exits

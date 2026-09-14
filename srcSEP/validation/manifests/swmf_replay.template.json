@@ -1,0 +1,27 @@
+{
+  "schema": "srcsep-external-evidence-v1",
+  "campaign_id": "replace-with-campaign-id",
+  "evidence_class": "COUPLED_INTEGRATION",
+  "data_class": "SWMF_OUTPUT",
+  "status": "INCOMPLETE",
+  "configuration": {
+    "srcsep_parameter_file": "replace-with-path",
+    "swmf_run_identifier": "replace-with-run-id",
+    "coupling_cadence_s": 0,
+    "field_line_selection": "replace-with-selection"
+  },
+  "inputs": [],
+  "random_seeds": [],
+  "compiler": {
+    "command": "replace-with-compiler",
+    "version": "replace-with-complete-version",
+    "flags": []
+  },
+  "output_schema": {
+    "name": "replace-with-schema-name",
+    "version": "replace-with-version",
+    "variables": []
+  },
+  "acceptance_metrics": [],
+  "notes": "Copy this template, provide real SWMF output files and recorded metrics, then change status to PASS or FAIL."
+}

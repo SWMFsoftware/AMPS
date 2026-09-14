@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cmath>
+#include <limits>
 #include "QLT.h"
 
 /*
@@ -41,27 +42,51 @@ namespace QLT {
     // Where \( \Omega \) is the proton gyrofrequency, \( v \) is the particle velocity, and \( \mu \) is the pitch-angle cosine.
     double calculateKParallel(double B, double v, double mu) {
         double omega = calculateOmega(B);
-        return omega / (v * std::fabs(mu));
+        const double resonantSpeed = v * std::fabs(mu);
+        return (std::isfinite(resonantSpeed) && resonantSpeed > 0.0)
+            ? omega / resonantSpeed
+            : std::numeric_limits<double>::infinity();
     }
 
     // Heliocentric Dependence of the Power Spectrum (calculateDmuMu)
     // The Kolmogorov turbulence spectrum is given by \( P(k) \propto k^{-5/3} \).
     // The minimum wavenumber \( k_{\text{min}} \) scales as \( \frac{1}{r} \), and the maximum wavenumber \( k_{\text{max}} \) scales as \( \frac{1}{r^2} \).
     double calculateDmuMu(double B, double dB, double v, double mu, double r) {
+        // This routine returns SI s^-1.  P(k) is normalized so that
+        // integral_{kmin}^{kmax} P(k) dk = deltaB^2 [T^2]; therefore P carries
+        // T^2 m and the QLT prefactor below supplies the inverse-second unit.
+        if (!std::isfinite(B) || !std::isfinite(dB) || !std::isfinite(v) ||
+            !std::isfinite(mu) || !std::isfinite(r) || B <= 0.0 || dB < 0.0 ||
+            v <= 0.0 || r <= 0.0 || std::fabs(mu) > 1.0) return 0.0;
         double k_parallel = calculateKParallel(B, v, mu);
 
         // Heliocentric dependence for k_min and k_max
         double k_min_r = k_min_1AU * (r0 / r);
         double k_max_r = k_max_1AU * std::pow(r0 / r, 2);
 
-        // Normalization constant C based on magnetic field fluctuations dB
-        double C = (dB * dB) / (3.0 / 2.0) * (std::pow(k_min_r, -2.0 / 3.0) - std::pow(k_max_r, -2.0 / 3.0));
+        if (!std::isfinite(k_parallel) || k_parallel < k_min_r ||
+            k_parallel > k_max_r || !(k_max_r > k_min_r)) return 0.0;
+
+        // For P=C k^-5/3, integral P dk=(3/2)C
+        // (kmin^-2/3-kmax^-2/3).  The older expression multiplied by this
+        // bandwidth instead of dividing by it and therefore did not reconstruct
+        // deltaB^2.
+        const double bandwidth = std::pow(k_min_r, -2.0 / 3.0) -
+                                 std::pow(k_max_r, -2.0 / 3.0);
+        if (!(bandwidth > 0.0) || !std::isfinite(bandwidth)) return 0.0;
+        double C = (2.0 / 3.0) * dB * dB / bandwidth;
 
         // Power spectrum follows Kolmogorov's scaling: \( P(k_{\parallel}) = C k_{\parallel}^{-5/3} \)
         double P_k = C * std::pow(k_parallel, -5.0 / 3.0);
 
-        // Pitch-angle diffusion coefficient \( D_{\mu\mu} = \frac{k_{\parallel} P(k_{\parallel})}{B^2} \)
-        return (k_parallel * P_k) / (B * B);
+        // Magnetostatic slab QLT: D_mumu=(pi/2) Omega^2 (1-mu^2)
+        // P(k_res)/(B^2 |v mu|).  The resonance gate above makes mu=0 a
+        // regular zero-coupling limit for a finite represented k band.
+        const double resonantSpeed = v * std::fabs(mu);
+        if (!(resonantSpeed > 0.0)) return 0.0;
+        const double omega = calculateOmega(B);
+        return (M_PI / 2.0) * omega * omega * (1.0 - mu * mu) * P_k /
+               (B * B * resonantSpeed);
     }
 
     //wrapper function for calculateDmuMu(double B, double dB, double v, double mu, double r) 
@@ -200,5 +225,4 @@ double adiabaticCooling(double r,double v_sw) {
 
 
 }
-
 

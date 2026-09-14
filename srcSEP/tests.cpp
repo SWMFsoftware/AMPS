@@ -196,7 +196,7 @@ bool ParkerModelMoverTest_const_plasma_field() {
     PB::SetVNormal(v_comp,ptr);
     PB::SetFieldLineCoord(xParticleCoordinate,ptr); 
 
-    SEP::ParticleMover_ParkerEquation(ptr,dtTotal,node); 
+    SEP::ParticleMover_Parker(ptr,dtTotal,node);
 
     if (PIC::ParticleBuffer::IsParticleAllocated(ptr)==false) {
       //the particle was develed -- it probably left the domain 
@@ -407,7 +407,7 @@ bool ParkerModelMoverTest_convection() {
     p1_theory=p0*exp(d_ln_rho_dt*dtTotal/3.0);
 
     //simulate Parker equation
-    SEP::ParticleMover_ParkerEquation(ptr,dtTotal,node);
+    SEP::ParticleMover_Parker(ptr,dtTotal,node);
 
     // Evaluate the post-move momentum.  The legacy diagnostic calculated p1
     // before calling the mover and therefore could not authoritatively test the
@@ -430,7 +430,7 @@ bool ParkerModelMoverTest_convection() {
       
       PB::SetVParallel(vParallelInit,ptr);
       PB::SetVNormal(vNormInit,ptr);
-      SEP::ParticleMover_ParkerEquation(ptr,dtTotal,node);
+      SEP::ParticleMover_Parker(ptr,dtTotal,node);
     } 
   }
 
@@ -540,7 +540,7 @@ bool FTE_Convectoin() {
     FL::FieldLinesAll[0].GetCartesian(x0,s0);
     node=PIC::Mesh::mesh->findTreeNode(x0);
 
-    SEP::ParticleMover_He_2011_AJ(ptr,dtTotal,node);
+    SEP::ParticleMover_FocusedTransport_Dmumu(ptr,dtTotal,node);
 
     //check the new particle location: it sould no change
     s1=PB::GetFieldLineCoord(ptr);
@@ -567,7 +567,7 @@ bool FTE_Convectoin() {
       res=_fail;
    
       PB::SetFieldLineCoord(s0,ptr);
-      SEP::ParticleMover_He_2011_AJ(ptr,dtTotal,node);
+      SEP::ParticleMover_FocusedTransport_Dmumu(ptr,dtTotal,node);
       s1=PB::GetFieldLineCoord(ptr);
     }
   }

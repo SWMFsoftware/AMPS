@@ -30,6 +30,7 @@
 //the particle class
 #include "constants.h"
 #include "sep.h"
+#include "transport_common.h"
 #include "util/sep_cli.h"
 #include "debug/sep_debug_fieldline_datum.h"
 
@@ -186,7 +187,8 @@ int main(int argc,char **argv) {
     // entries do.
     if (RequiredInitializationLevel(selectedComponentTests) ==
         SEP::Testing::InitializationLevel::None) {
-      return RunSelectedComponentTests(selectedComponentTests, std::cout);
+      return RunSelectedComponentTests(selectedComponentTests, std::cout,
+          cli_options.testJsonPath, cli_options.testJunitPath);
     }
   }
 
@@ -280,7 +282,8 @@ int main(int argc,char **argv) {
   // boundary: neither the compatibility TestManager path nor the production
   // timestep loop can execute after a --test/--test-group/--all-tests request.
   if (componentTestMode) {
-    return RunSelectedComponentTests(selectedComponentTests, std::cout);
+    return RunSelectedComponentTests(selectedComponentTests, std::cout,
+        cli_options.testJsonPath, cli_options.testJunitPath);
   }
 
   // --------------------------------------------------------------------------
@@ -629,11 +632,23 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
 
     amps_time_step();
 
+    // Particle workers only append to thread-local coupling queues.  Apply the
+    // records now, in deterministic particle/event order, before the existing
+    // MPI reduction and turbulence manager consume G+ and G-.
+    SEP::Transport::PICAdapter::FlushWaveContributions();
+
 
     if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
+      // Source ownership is independent of the selected particle mover.
+      // Prescribed and SWMF-read-only sources may be synchronized and sampled
+      // below, but every local mutating operator is gated by this one contract.
+      const bool evolve_turbulence_locally = SEP::Turbulence::EvolvesLocally(
+          SEP::Turbulence::ActiveConfiguration().source);
 
       // Function to increment integrated wave energy due to shock passing
-      if (niter!=0) {
+      if (evolve_turbulence_locally &&
+          SEP::Turbulence::ActiveConfiguration().shockInjectionEnabled &&
+          niter!=0) {
          double rsh1;
 
          switch (SEP::ShockModelType) {
@@ -661,7 +676,8 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
 	 rsh0=rsh1;
       }
 
-      if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
+      if (evolve_turbulence_locally &&
+          SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
         // Reset per-bin source/sink diagnostics after the shock source has been
         // applied and before particle coupling/reflection/cascade for this
         // iteration.  The requested Tecplot diagnostics describe the exchange
@@ -674,7 +690,9 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
       // Dispatch policy is described by capabilities, not by comparing raw
       // function addresses.  None of the three production movers evolves wave
       // state directly; movers that accumulate streaming feed this manager.
-      if (!SEP::Mover::CurrentCapabilities().evolvesWaveStateDirectly) {
+      if (evolve_turbulence_locally &&
+          SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode &&
+          !SEP::Mover::CurrentCapabilities().evolvesWaveStateDirectly) {
 
       // Function to increment integrated wave energy due to shock passing
       //reduce S
@@ -749,19 +767,21 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
       // artificial source.  The TurbulenceLevelEnd argument is retained only for
       // backward-compatible call signatures and is not used to inject W-.
       // ----------------------------------------------------------------------
-      {
+      if (evolve_turbulence_locally &&
+          SEP::Turbulence::ActiveConfiguration().advectionEnabled) {
         const double dt_total_turbulence = PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
         double dt_done_turbulence = 0.0;
 
         while (dt_done_turbulence < dt_total_turbulence) {
           double dt_cfl_turbulence = SEP::AlfvenTurbulence_Kolmogorov::GetGlobalMaxStableTimeStep();
 
-          // Guard against invalid CFL estimates.  This should only happen if no
-          // valid local field-line segment is found, but using the remaining
-          // time avoids an infinite loop and preserves the previous behavior in
-          // that degenerate case.
+          // An invalid CFL limit is a rejected physical update.  Advancing the
+          // remaining particle timestep would knowingly violate the wave
+          // solver's stability condition and can create an unreported energy
+          // pile-up, so fail before mutating another subcycle.
           if (dt_cfl_turbulence <= 0.0 || !std::isfinite(dt_cfl_turbulence)) {
-            dt_cfl_turbulence = dt_total_turbulence - dt_done_turbulence;
+            exit(__LINE__,__FILE__,
+                 "No finite positive turbulence-advection CFL timestep");
           }
 
           const double dt_subcycle = std::min(dt_cfl_turbulence, dt_total_turbulence - dt_done_turbulence);
@@ -810,8 +830,10 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
       }
 
       //model the effect of wave reflection
-      if (SEP::AlfvenTurbulence_Kolmogorov::Reflection::active==true) {
-        double C_reflection=0.6;
+      if (evolve_turbulence_locally &&
+          SEP::AlfvenTurbulence_Kolmogorov::Reflection::active==true) {
+        const double C_reflection =
+            SEP::Turbulence::ActiveConfiguration().reflectionCoefficient;
 
         if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
           // Fully spectral reflection: convert E+(k_j) and E-(k_j) into one
@@ -841,11 +863,15 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
       }
 
       // Configure cascade
-      if (SEP::AlfvenTurbulence_Kolmogorov::Cascade::active==true) {
-        SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetCascadeCoefficient(0.8);             // C_nl
-        SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetDefaultPerpendicularCorrelationLength(1.0e7); // 10,000 km
+      if (evolve_turbulence_locally &&
+          SEP::AlfvenTurbulence_Kolmogorov::Cascade::active==true) {
+        SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetCascadeCoefficient(
+            SEP::Turbulence::ActiveConfiguration().cascadeCoefficient);
+        SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetDefaultPerpendicularCorrelationLength(
+            SEP::Turbulence::ActiveConfiguration().perpendicularCorrelationLengthM);
         SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetDefaultEffectiveArea(1.0);           // V_cell = Δs
-        SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetElectronHeatingFraction(0.3);        // 30% to electrons
+        SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetElectronHeatingFraction(
+            SEP::Turbulence::ActiveConfiguration().electronHeatingFraction);
         SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableCrossHelicityModulation(false);
         SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableTwoSweepIMEX(false);
 
@@ -863,8 +889,8 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
           // The compact integrated datum is then refreshed as the sum over k.
           SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::CascadeSpectrumAllFieldLines(
               PIC::ParticleWeightTimeStep::GlobalTimeStep[0],
-              0.8,     // C_nl, same value used by the legacy cascade operator
-              1.0e7,   // lambda_perp [m], same 10,000 km value used above
+              SEP::Turbulence::ActiveConfiguration().cascadeCoefficient,
+              SEP::Turbulence::ActiveConfiguration().perpendicularCorrelationLengthM,
               true,    // enable per-bin cross-helicity modulation
               true,    // two half-sweeps for a Picard-like update
               false);  // enable_logging

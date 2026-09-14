@@ -66,6 +66,13 @@ The store applies these rules before accepting a publication:
   generation with `HandoffCopy` ownership;
 - no update or handoff is permitted while particles are reading a snapshot.
 
+Step 11 applies the same rule to wave ownership. `Turbulence::State` records
+the imported epoch, source checksum, integrated/spectral representation, and a
+one-time handoff marker. `swmf-read-only` is immutable;
+`swmf-initial-then-local` can evolve only after that explicit handoff. A later
+field-line remap increments its generation while conserving branch and
+spectral-bin energy on the covered physical arc length.
+
 SWCME's legacy `SetModelAndState` entry point also calls
 `AssertProviderMayWrite` before changing its backing cache. This prevents code
 that bypasses the normal publisher from mutating SWCME state during a particle

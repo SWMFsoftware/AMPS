@@ -9,11 +9,19 @@
 #ifndef _PROTOSTELLARNEBULA_H_
 #define _PROTOSTELLARNEBULA_H_
 
+#include <cstdio>
 #include <math.h>
+#include <string>
 
 #include "util/sep_physical_units.h"
 #include "util/sep_flux_tube_geometry_core.h"
 #include "util/sep_production_mover.h"
+#include "util/sep_transport_common.h"
+#include "util/sep_transport_coefficients.h"
+#include "util/sep_coefficient_registry.h"
+#include "util/sep_parker_core.h"
+#include "util/sep_focused_transport_core.h"
+#include "util/sep_focused_transport_mfp_core.h"
 
 #define _DOMAIN_GEOMETRY_PARKER_SPIRAL_ 0
 #define _DOMAIN_GEOMETRY_BOX_    1
@@ -196,14 +204,6 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
 
   //set the lower limit of the mean free path being the local Larmor radius of the particle
   extern bool LimitMeanFreePath;
-
-   //limit scattering only with the incoming wave
-   //(if vParallel>0, then scatter only of the wave movinf with -vAlfven, or if vParallel<0, them scatter on the wave moveing with +vAlfven)
-   extern bool LimitScatteringUpcomingWave;
-
-   //set the numerical limit on the number of simulated scattering events
-   extern bool NumericalScatteringEventMode;
-   extern double NumericalScatteringEventLimiter;
 
   //the type of the equation that is solved
   const int ModelEquationParker=0,ModelEquationFTE=1;
@@ -1723,15 +1723,37 @@ double e_mev=e*J2MeV;
 	PitchAngleSamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
 
 	if (PIC::ThisThread==0) {
+          FILE *fout=NULL;
 
-        char fname[200];
-        FILE *fout=NULL;
+        // Store the directory and complete file name in dynamically sized
+        // strings.  OutputDataFileDirectory can be much longer than the old
+        // 200-byte buffers, so fixed-size formatting could overwrite the stack
+        // before sampling even began.
+          const std::string pitchAngleDirectory=
+              base_name+".pitch_angle_distribution";
+          const std::string makeDirectoryCommand=
+              "mkdir -p "+pitchAngleDirectory;
+	  system(makeDirectoryCommand.c_str());
 
-	sprintf(fname,"mkdir -p %s.pitch_angle_distribution",base_name);
-	system(fname);
+        // Only the numeric suffix uses a bounded buffer.  Its maximum size is
+        // independent of the user path, and the snprintf result is checked
+        // before it is appended to the dynamic directory name.
+          char suffix[160];
+          const int suffixLength=std::snprintf(
+              suffix,sizeof(suffix),"/field-line=%d.r=%e.t=%e.dat",
+              iFieldLine,HeliocentricDisctance/_AU_,SamplingTime);
+          if ((suffixLength<0) ||
+              (static_cast<std::size_t>(suffixLength)>=sizeof(suffix))) {
+            exit(__LINE__,__FILE__,
+                 "Error: cannot format the pitch-angle sampling file name");
+          }
 
-        sprintf(fname,"%s.pitch_angle_distribution/field-line=%d.r=%e.t=%e.dat",base_name,iFieldLine,HeliocentricDisctance/_AU_,SamplingTime);
-        fout=fopen(fname,"w");
+          const std::string pitchAngleFileName=pitchAngleDirectory+suffix;
+          fout=fopen(pitchAngleFileName.c_str(),"w");
+          if (fout==NULL) {
+            exit(__LINE__,__FILE__,
+                 "Error: cannot open a pitch-angle sampling file for writing");
+          }
 
         fprintf(fout,"VARIABLES = \"Pitch Angle\"  ");
 
@@ -1832,9 +1854,11 @@ double e_mev=e*J2MeV;
       }
 
 
-      //full name of the output file is saved here for debugging purposes
-      char full_name_density[200],full_name_flux[200],full_name_return_flux[200];
-      char base_name[200];
+      // Keep complete paths for diagnostics and output reopening.  These must
+      // be dynamically sized because PIC::OutputDataFileDirectory is allowed
+      // to exceed the former 200-byte storage used by this class.
+      std::string full_name_density,full_name_flux,full_name_return_flux;
+      std::string base_name;
 
       void Init(const char *fname,double e_min,double e_max,int n,double r,int l) {
         nEnergyBins=n;
@@ -1846,44 +1870,63 @@ double e_mev=e*J2MeV;
         nPitchAngleBins=20;
         PitchAngleSamplingTable.init(nPitchAngleBins,nEnergyBins);
 
-	if (PIC::ThisThread!=0) goto end;
+        if (PIC::ThisThread==0) {
+          if (fname==NULL || fname[0]=='\0') {
+            exit(__LINE__,__FILE__,
+                 "Error: the sampling output base name is empty");
+          }
 
-        sprintf(base_name,"%s",fname);
+          base_name=fname;
 
-	sprintf(full_name_density,"mkdir -p %s.density",fname);
-        system(full_name_density);
+        // The formatted suffix contains only bounded numeric fields.  The
+        // potentially long directory component remains in std::string, so a
+        // valid AMPS output path cannot overflow a sampling buffer.
+          char suffix[128];
+          const int suffixLength=std::snprintf(
+              suffix,sizeof(suffix),"/field-line=%d.r=%e.dat",l,r/_AU_);
+          if ((suffixLength<0) ||
+              (static_cast<std::size_t>(suffixLength)>=sizeof(suffix))) {
+            exit(__LINE__,__FILE__,
+                 "Error: cannot format the field-line sampling file name");
+          }
 
-        sprintf(full_name_density,"%s.density/field-line=%d.r=%e.dat",fname,l,r/_AU_);
-        foutDensity=fopen(full_name_density,"w");
-        if (foutDensity==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writting");
+          const std::string densityDirectory=base_name+".density";
+          const std::string makeDensityDirectory="mkdir -p "+densityDirectory;
+          system(makeDensityDirectory.c_str());
+
+          full_name_density=densityDirectory+suffix;
+          foutDensity=fopen(full_name_density.c_str(),"w");
+          if (foutDensity==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writing");
 
         fprintf(foutDensity,"VARIABLES=\"time\"");
         for (int i=0;i<nEnergyBins;i++) fprintf(foutDensity,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
         fprintf(foutDensity,"\n");
 
-	sprintf(full_name_flux,"mkdir -p %s.flux",fname);
-	system(full_name_flux);
+          const std::string fluxDirectory=base_name+".flux";
+          const std::string makeFluxDirectory="mkdir -p "+fluxDirectory;
+	  system(makeFluxDirectory.c_str());
 
-        sprintf(full_name_flux,"%s.flux/field-line=%d.r=%e.dat",fname,l,r/_AU_);
-        foutFlux=fopen(full_name_flux,"w");
-        if (foutFlux==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writting");
+          full_name_flux=fluxDirectory+suffix;
+          foutFlux=fopen(full_name_flux.c_str(),"w");
+          if (foutFlux==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writing");
 
         fprintf(foutFlux,"VARIABLES=\"time\"");
         for (int i=0;i<nEnergyBins;i++) fprintf(foutFlux,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
         fprintf(foutFlux,"\n");
 
-	sprintf(full_name_return_flux,"mkdir -p %s.return_flux",fname);
-	system(full_name_return_flux);
+          const std::string returnFluxDirectory=base_name+".return_flux";
+          const std::string makeReturnFluxDirectory=
+              "mkdir -p "+returnFluxDirectory;
+	  system(makeReturnFluxDirectory.c_str());
 
-        sprintf(full_name_return_flux,"%s.return_flux/field-line=%d.r=%e.dat",fname,l,r/_AU_);
-        foutReturnFlux=fopen(full_name_return_flux,"w");
-        if (foutReturnFlux==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writting");
+          full_name_return_flux=returnFluxDirectory+suffix;
+          foutReturnFlux=fopen(full_name_return_flux.c_str(),"w");
+          if (foutReturnFlux==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writing");
 
         fprintf(foutReturnFlux,"VARIABLES=\"time\"");
         for (int i=0;i<nEnergyBins;i++) fprintf(foutReturnFlux,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
         fprintf(foutReturnFlux,"\n");
-
-end:
+        }
 
         SamplingTime=0.0;
         DensitySamplingTable=new double[nEnergyBins];
@@ -1932,11 +1975,6 @@ end:
   //request data in the particle state vector
   void RequestParticleData();
 
-  extern bool AccountTransportCoefficient;
-
-  typedef int (*fParticleMover) (long int,double,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*);
-  extern fParticleMover ParticleMoverPtr;
-
   namespace Mover {
     // All PIC callbacks enter through this adapter.  It validates the common
     // field-line particle representation before invoking the implementation
@@ -1949,24 +1987,12 @@ end:
   // Apply adiabatic cooling only if the flag is set
   extern bool AccountAdiabaticCoolingFlag;
 
-  int ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
-
-  int ParticleMover_Tenishev_2005_FL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
-  int ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
-  int ParticleMover_MeanFreePathScattering(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
-  int ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
-  int ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
-  int ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
-
+  // Canonical production callbacks.  These are the only functions reachable
+  // from the three-entry mover registry; their names describe equations rather
+  // than historical implementations.
+  int ParticleMover_Parker(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+  int ParticleMover_FocusedTransport_Dmumu(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   int ParticleMover_FocusedTransport_EventDriven(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
-
-
-  void GetTransportCoefficients(double& dP,double& dLogP,double& dmu,double v,double mu,PIC::FieldLine::cFieldLineSegment *Segment,double FieldLineCoord,double dt,int iFieldLine,double& vSolarWindParallel);
-
-  int ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
-
-  int ParticleMover_FocusedTransport_WaveScattering(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
-
   // Every production callback acquires one immutable background generation and
   // then enters the validated field-line adapter.  Scattering is implemented
   // inside the selected canonical mover; there is no Cartesian post-move

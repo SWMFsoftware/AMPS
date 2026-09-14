@@ -11,6 +11,9 @@ namespace QLT {
 
     extern double calculateOmega(double B);
     extern double calculateKParallel(double B, double v, double mu);
+    // SI contract: B and dB [T], v [m/s], r [m], dimensionless mu, and a
+    // returned pitch-angle diffusion rate D_mumu [s^-1]. Resonances outside
+    // the represented Kolmogorov wavenumber band return zero.
     extern double calculateDmuMu(double B, double dB, double v, double mu, double r);
     extern double calculateDmuMu(double v, double mu, double r);
     extern double calculateDxx(double B, double dB, double v, double r);
@@ -22,4 +25,3 @@ namespace QLT {
 }
 
 #endif
-

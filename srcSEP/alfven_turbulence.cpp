@@ -165,9 +165,13 @@ void SEP::AlfvenTurbulence_Kolmogorov::ModelInit::Init() {
 
      // Report completion
      if (PIC::ThisThread == 0) {
-       printf("SEP::AlfvenTurbulence_Kolmogorov::ModelInit: Initialized turbulence for %d segments across %d field lines\n",
-       totalSegmentsProcessed, FL::nFieldLine);
+       // FL::nFieldLine is a long int in the AMPS field-line API, whereas the
+       // local segment counter is intentionally an int.  Use the matching
+       // conversion for each argument so warning-enabled builds do not invoke
+       // undefined variadic-format behaviour on platforms where the two types
+       // have different widths.
+       printf("SEP::AlfvenTurbulence_Kolmogorov::ModelInit: Initialized turbulence for %d segments across %ld field lines\n",
+              totalSegmentsProcessed, FL::nFieldLine);
      }
    }
 }
-

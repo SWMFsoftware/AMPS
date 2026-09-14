@@ -35,7 +35,9 @@ const SEP::Testing::Registry& ComponentTestRegistry();
 // one root summary, and return the process status defined by Testing::Summary.
 int RunSelectedComponentTests(
     const std::vector<const SEP::Testing::Descriptor*>& selected,
-    std::ostream& out);
+    std::ostream& out,
+    const std::string& jsonReportPath = std::string(),
+    const std::string& junitReportPath = std::string());
 
 SEP::Testing::InitializationLevel RequiredInitializationLevel(
     const std::vector<const SEP::Testing::Descriptor*>& selected);

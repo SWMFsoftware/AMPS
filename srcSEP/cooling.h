@@ -1,8 +1,7 @@
-#include <iostream>
-#include <cmath>
-
 #ifndef _COOLING_FACTOR_PARKER_
 #define _COOLING_FACTOR_PARKER_
+
+#include "util/sep_transport_common.h"
 
 /*
  * Namespace: COOLING_FACTOR_PARKER
@@ -29,30 +28,15 @@ namespace COOLING_FACTOR_PARKER {
     const double mp = 1.67262192369e-27; // Proton mass in kg
     const double AU = 1.495978707e11;   // Astronomical Unit in meters
 
-    /*
-     * Function: calculateAdiabaticCooling
-     * Calculates the new momentum of a particle after a time step due to adiabatic cooling
-     * in the expanding solar wind.
-     *
-     * Inputs:
-     * - p_old: Particle's initial momentum in kg·m/s (must be > 0)
-     * - r: Heliocentric distance from the Sun in meters (must be > 0)
-     * - dt: Time step in seconds (must be > 0)
-     * - V_sw: Solar wind speed in m/s (typical values between 400e3 and 800e3 m/s)
-     *
-     * Output:
-     * - p_new: Particle's new momentum in kg·m/s after adiabatic cooling
-     *
-     * Assumptions:
-     * - The solar wind is radial and has a constant speed V_sw.
-     * - The divergence of the solar wind velocity is given by ∇·V_sw = 2 V_sw / r.
-     * - Uses non-relativistic approximation for momentum update (valid for v << c).
-     * - The radial distance r is the heliocentric distance from the Sun.
-     *
-     * References:
-     * - Parker, E. N. (1965). "The passage of energetic charged particles through interplanetary space."
-     *   Planetary and Space Science, 13(1), 9-49.
-     */
+    // Status-returning radial-wind adapter for the common plasma-frame
+    // adiabatic update.  The radial model supplies div(U)=2*V_sw/r; the common
+    // kernel then integrates dp/dt=-(p/3)div(U) exactly over dt.
+    SEP::Transport::ScalarResult CalculateAdiabaticMomentum(
+        double p_old, double r, double dt, double V_sw);
+
+    // Compatibility wrapper retained for external callers of the historical
+    // API.  It returns quiet NaN for invalid input; new code must call the
+    // status-returning function above and handle the reported cause explicitly.
     extern double calculateAdiabaticCooling(double p_old, double r, double dt, double V_sw);
 } // namespace COOLING_FACTOR_PARKER
 

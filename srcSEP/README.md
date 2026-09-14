@@ -9,10 +9,21 @@ wave-number-resolved representations and particle-wave coupling.
 
 This source includes the Step 1 selectable standalone component-test registry,
 the Step 2 immutable background/clock boundary, the Step 3 common SI flux-tube
-geometry/source normalization, the Step 4 production mover API, and the Step 5
-field-line-only scope boundary. Self-consistent Alfvén turbulence remains a
-production subsystem and uses the same physical area and volume as injection
-and particle sampling.
+geometry/source normalization, the Step 4 production mover API, the Step 5
+field-line-only scope boundary, the Step 6 common transport numerics, the Step
+7 canonical Parker solver, the Step 8 coefficient-driven focused-transport
+solver, the Step 9 event-driven mean-free-path mover, the Step 10 shared
+coefficient registries, the Step 11 authoritative/restartable turbulence
+subsystem, and the Step 12 deterministic parallel-reduction contract.
+Step 13 adds reportable, fail-closed acceptance fixtures, Step 14 removes
+the retired mover implementations/aliases while enforcing a clean source
+handoff, and Step 15 adds a claim-separated scientific-validation campaign.
+See [STEP13_CHANGE_MANIFEST.md](STEP13_CHANGE_MANIFEST.md),
+[STEP14_CHANGE_MANIFEST.md](STEP14_CHANGE_MANIFEST.md), and
+[STEP15_CHANGE_MANIFEST.md](STEP15_CHANGE_MANIFEST.md). Retired names remain
+mapped in [MIGRATION_MANIFEST.md](MIGRATION_MANIFEST.md).
+Self-consistent Alfvén turbulence remains a production subsystem and uses the
+same physical area and volume as injection and particle sampling.
 
 ## Field-line-only production scope
 
@@ -59,12 +70,96 @@ and coefficient capabilities without initializing AMPS. A single adapter
 validates particle and field-line attachment state before dispatch. Main-loop
 physics queries mover capabilities and no longer compares function addresses.
 
-Strictly equivalent legacy CLI names are accepted for one transition release
-with warnings; ambiguous movers, direct-wave experimental movers, and 3-D
-trajectory names are rejected. Startup metadata prints the canonical choice and
-active `Dxx`, `Dmumu`, or mean-free-path provider. See
-[PRODUCTION_MOVER_API.md](PRODUCTION_MOVER_API.md) for mappings, aliases,
-rejections, capabilities, and examples.
+Step 14 closes the legacy-name transition period: only the three names printed
+by `--list-movers` are accepted. Ambiguous movers, direct-wave experimental
+movers, former aliases, and 3-D trajectory names all fail before model
+initialization. Startup metadata prints the canonical choice, coefficient
+authority, and active `Dxx`, `Dmumu`, and mean-free-path providers. See
+[PRODUCTION_MOVER_API.md](PRODUCTION_MOVER_API.md) for the runtime contract and
+[MIGRATION_MANIFEST.md](MIGRATION_MANIFEST.md) for every retired replacement.
+
+## Common and canonical transport numerics
+
+All public mover shells now share one validated particle representation, one
+physical-distance field-line advance, one attachment path, one
+`d ln|B|/ds` focusing convention, exact plasma-frame adiabatic cooling, and
+explicitly keyed random streams. All three canonical paths use strict
+relativistic conversion and named composable timestep limits;
+invalid input and a stability-limit underflow are errors rather than silent
+clamps.
+
+The canonical Parker mover advances the Itô process
+`ds=(U_parallel+d(kappa)/ds)dt+sqrt(2*kappa*dt)dW`, with `kappa` and its SI
+gradient supplied together by `SpatialDiffusionProvider`. The canonical
+`fte-dmumu` mover obtains `Dmumu`, `dDmumu/dmu`, provenance, and turbulence-state
+identity from `PitchAngleDiffusionProvider`; it uses symmetric deterministic /
+stochastic / deterministic splitting, reflective pitch-angle boundaries, and
+midpoint streaming. The canonical `fte-mfp` mover samples exact exponential
+waiting times with event rate `nu=v/lambda`, treats `lambda=+infinity` as the
+ballistic limit, applies focusing/cooling between events, and redistributes
+pitch angle isotropically in the selected Alfvén-wave frame with exact Lorentz
+velocity transforms. The QLT Kolmogorov spectrum is normalized so its integral
+is `deltaB^2` and `Dmumu` is returned in s^-1.
+
+Neither mover mutates shared wave arrays from a particle worker. Coupling
+records are accumulated locally, published only for surviving particles, and
+sorted before the post-`PIC::TimeStep()` update. This keeps scattering and
+feedback tied to the same immutable turbulence identity while making reduction
+order independent of worker completion order. See
+[TRANSPORT_NUMERICS.md](TRANSPORT_NUMERICS.md) and the Step 6–10 change manifests
+for equations, contracts, tests, and limitations.
+
+All three movers obtain coefficients through one registry. Canonical CLI names
+select coefficient authority (`prescribed`, `self-consistent`, `swmf`), spatial
+closure (`from-dmumu`, `from-mfp`), pitch-angle provider (`configured`), MFP
+model (`qlt`, `qlt1`, `tenishev-2005`, `chen-2024`, `from-spatial`), and invalid
+value policy (`fail`, `ballistic`). Conversion cycles and source/ownership
+mismatches are rejected rather than inferred.
+
+The controlled mover cases `PARK01`–`PARK07`, `FTED01`–`FTED08`, and
+`FTEM01`–`FTEM08` are now descriptors in the same selectable component-test
+registry used by the linked CLI. The source-only sanitizer targets execute
+those exact callbacks. Analytical references include convection, diffusion
+moments, cooling, Itô drift, waiting/event statistics, ballistic transport,
+first passage, persistent-random-flight transport, automatically calculated
+refinement order, and Legendre-mode pitch-angle decay. See
+[CONTROLLED_COMPONENT_VALIDATION.md](CONTROLLED_COMPONENT_VALIDATION.md) for
+equations, tolerances, and commands.
+
+## Authoritative turbulence and reproducibility
+
+Turbulence source is explicit and independent of the mover: `prescribed`,
+`self-consistent-integrated`, `self-consistent-spectral`, `swmf-read-only`, or
+`swmf-initial-then-local`. Exactly one integrated or spectral state is
+authoritative. A fixed driver order applies sources, particle exchange,
+CFL-subcycled advection, reflection, cascade/dissipation, synchronization,
+diagnostics, and checkpoint accounting. Prescribed and SWMF-read-only states
+are immutable; the SWMF-to-local path requires a one-time epoch/checksum
+handoff.
+
+Every update produces a signed energy ledger. Boundary policies, remap,
+spectral grid, pending coupling, RNG metadata, operator phase, and accumulated
+ledger are restartable. Worker contributions use physical keys and one
+canonical reduction order, while random streams use campaign, particle, step,
+and purpose keys. See [TURBULENCE_MODEL.md](TURBULENCE_MODEL.md),
+[STEP11_CHANGE_MANIFEST.md](STEP11_CHANGE_MANIFEST.md), and
+[STEP12_CHANGE_MANIFEST.md](STEP12_CHANGE_MANIFEST.md). The exact source-only
+results and native-build boundary are recorded in
+[STEPS10_12_VALIDATION_REPORT.md](STEPS10_12_VALIDATION_REPORT.md).
+
+`TURB02`–`TURB23` and `TURBOWN01` are also registered with the common CLI.
+The new `TURB21` test advects a nonuniform periodic sine profile and measures
+L1 convergence and energy conservation against exact translated cell averages.
+`TURB22` compares the complete wave-energy growth history with an analytically
+integrated linear-in-time source. It validates application and accounting of a
+known growth source; it deliberately does not claim to validate the separate
+QLT calculation that derives that source from particle distributions. These
+cases strengthen the earlier uniform-state and one-step invariants without
+replacing the AMPS/PIC/MPI-dependent coupled growth-rate validation.
+`TURB23` independently calculates the kinetic-energy change of controlled
+macro-particles scattered in both resonant Alfvén-wave branches, applies the
+opposite signed wave-energy increments, and requires particle-plus-wave total
+energy and the turbulence ledger to close to `2e-12 J`.
 
 ## Background state and time
 
@@ -85,6 +180,42 @@ rejected while `PIC::TimeStep()` is moving particles.
 See [BACKGROUND_STATE.md](BACKGROUND_STATE.md) for the data contract, update
 order, API, ownership rules, units, tests, and current limitations.
 
+## Step 15 scientific validation
+
+Step 15 adds four stable validation cases after the numerical architecture has
+stabilized. `VAL01` compares Parker diffusion/cooling with independent
+analytical solutions. `VAL02` compares the two focused movers under a matched
+mean-free-path closure using pitch moments, diffusion, onset, peak, and
+fluence. `VAL03` compares the Dmumu ensemble with a separately implemented
+finite-volume solver under an identical coefficient history. `VAL04-SWCME`
+passes real SWCME adapter states through the immutable background boundary and
+production Parker kernel and also requires an active SWCME shock source.
+
+The release report keeps numerical, cross-mover, cross-model, coupled, and
+observational evidence separate. A complete coupled result additionally
+requires a checksum-verified real SWMF replay. Observational readiness requires
+held-out spacecraft products, uncertainty metadata, instrument forward
+operators, and onset, anisotropy, spectra, fluence, decay, and
+multi-spacecraft-longitude metrics. Missing external evidence is
+`INCOMPLETE`; manufactured data cannot be labelled observational. See
+[validation/README.md](validation/README.md) and
+[STEP15_VALIDATION_REPORT.md](STEP15_VALIDATION_REPORT.md).
+
+The evidence classes have intentionally separate commands:
+
+```sh
+make test-controlled-analytical
+make test-native-amps-validation SEP_EXECUTABLE=/path/to/amps
+make test-swmf-validation SWMF_MANIFEST=/evidence/swmf-replay.json
+make test-observational-validation \
+  OBSERVATIONAL_MANIFESTS="/evidence/event-1.json /evidence/event-2.json"
+```
+
+A successful controlled or native command cannot satisfy either external-data
+gate. SWMF and observational targets require checksum-verified `PASS`
+manifests; the observational target also requires the union of supplied
+held-out events to cover every declared metric family.
+
 ## Standalone component-test CLI
 
 The registry extends the existing parser in `util/sep_cli.cpp`; there is no
@@ -97,7 +228,12 @@ executable:
 ../amps --test=DXX01 --test=TURB01
 ../amps --test-group parker
 ../amps --test-group=turbulence
+../amps --test-group fte-dmumu
+../amps --test-group fte-mfp
+../amps --test PARK07 --test FTED08 --test FTEM08
+../amps --test TURB21 --test TURB22 --test TURB23
 ../amps --all-tests
+../amps --all-tests --test-json results.json --test-junit results.xml
 ```
 
 IDs and group names are case-insensitive.  Repeated/overlapping selectors run a
@@ -112,6 +248,16 @@ tests, prints one MPI-root summary, and exits before `TestManager()` and the
 production timestep loop.  `FAIL` returns status 1, `ERROR` returns status 2,
 and selections containing only `PASS`/`SKIP` return 0.  A skipped test remains
 labelled `SKIP`; it is never presented as a successful scientific assertion.
+Any positive/non-finite `assertion_failures` metric converts a nominal callback
+PASS into FAIL. Requested JSON/JUnit output is acceptance evidence: inability to
+create either report is ERROR/status 2, and both formats retain IDs, seeds,
+configuration, metrics, messages, durations, and artifact paths.
+
+The source-only Step 13 fixtures registered in the same production catalog are
+`BG01` (analytic/SWCME provider epochs), `BG02` (mock read-only SWMF import and
+handoff), `CROSS01` (matched ballistic focused movers), and `CROSS02` (the
+isotropic `kappa`/`Dmumu`/`lambda` closure). Bounded fixtures run under
+`--all-tests`; long Monte Carlo campaigns remain explicitly selectable.
 
 The historical `--test-manager`, `--testmanager`, `--run-test-manager`, and
 `--no-test-manager` switches retain their earlier behavior: when enabled they
@@ -144,18 +290,40 @@ make test-state-unit
 make test-geometry-source-unit
 make test-mover-api-unit
 make test-field-line-scope-unit
+make test-transport-common-unit
+make test-parker-unit
+make test-fte-dmumu-unit
+make test-fte-mfp-unit
+make test-coefficients-unit
+make test-turbulence-core-unit
+make test-reproducibility-unit
+make test-acceptance-unit
+make test-documentation-unit
+make test-scientific-validation
+make test-controlled-analytical
+make test-sanitizer
+make test-stochastic-repeat
 ../amps --list-movers
 make test-list SEP_EXECUTABLE=/path/to/amps
 make test-case CASE=DXX01 SEP_EXECUTABLE=/path/to/amps
 make test-group GROUP=turbulence SEP_EXECUTABLE=/path/to/amps
 make test-turbulence SEP_EXECUTABLE=/path/to/amps
-make -j test SEP_EXECUTABLE=/path/to/amps
+make test-stress SEP_EXECUTABLE=/path/to/amps
+make test-mpi MPI_NP=4 SEP_EXECUTABLE=/path/to/amps
+make -j test SEP_EXECUTABLE=/path/to/amps JSON=results.json JUNIT=results.xml
 ```
 
-The five focused unit targets are dependency-light checks of the parser,
+The focused unit targets are dependency-light checks of the parser,
 immutable background core, SI geometry/source core, production mover registry,
-and field-line-only source boundary. The remaining targets intentionally invoke
-the linked production CLI and propagate its status.
+field-line-only source boundary, common transport kernels, Parker solver, and
+coefficient-driven focused-transport solver, event-driven MFP solver, and
+coefficient registry, authoritative turbulence driver, reproducible reduction,
+reportable acceptance fixtures, and the cleaned public/source inventory. The
+Step 6–14 numerical targets use strict C++11 warnings plus AddressSanitizer and
+UndefinedBehaviorSanitizer. The Step 15 numerical runner uses the same C++11
+checks; its real SWCME replay uses C++17 because that is SWCME's public API
+baseline. The remaining targets intentionally invoke the linked production CLI
+and propagate its status.
 
 For the native Step 5 completion gate, build this application in a field-line
 AMPS configuration, then build the receiving Cartesian-transport application
@@ -166,11 +334,24 @@ catalog, prerequisites, isolation contracts, and extension procedure.
 
 ## Current limitations
 
-The registry is test infrastructure, not a claim of complete model validation.
-`TURB01` checks one deterministic wave-energy closure; it does not replace the
-planned Alfvén-turbulence initialization, advection, cascade, reflection,
-particle-coupling, conservation-ledger, MPI, restart, and observational tests.
+The registry and focused numerical suites are not a claim of complete model or
+observational validation. Step 15 records their evidence as separate classes
+and intentionally reports the delivered campaign `INCOMPLETE`. A source-only archive cannot
+exercise the enclosing AMPS/PIC adapter, MPI rank decomposition, coupled SWMF
+epochs, or long campaign conservation behavior; those remain native integration
+gates. Boundary-exit particle-to-wave flux is intentionally not deposited
+because the legacy coupling callback still requires a live particle record.
+The dependency-light TURB01–TURB20 and PAR01–PAR05 suites cover the new core and
+synthetic decomposition invariance, but do not replace native AMPS/OpenMP/MPI,
+SWMF handoff, long-campaign conservation, or observational validation.
 `SCAT01` is explicitly `SKIP` because the historical stochastic diagnostic has
 no quantitative acceptance rule and includes a singular zero-energy sample.
 The historical routine remains callable through `--run-test-manager` until its
 physics reference and valid input domain are approved in a later step.
+
+The archive intentionally contains no build products, coverage data, runtime
+output, test reports, or nested archives. `mover.cpp`, `fte_mover.cpp`, and
+`fte_mover_dmumu.cpp` no longer exist; the three canonical adapters and
+`mover_state.cpp` are the complete mover source layout. A source-only archive
+still cannot claim the native AMPS strict-warning, MPI, or coupled-SWMF gates;
+commands for those checks are recorded in the migration manifest.

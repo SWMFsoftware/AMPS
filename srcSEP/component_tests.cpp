@@ -1,8 +1,13 @@
 #include "tests.h"
+#include "util/sep_acceptance_cases.h"
+#include "util/sep_mover_validation.h"
+#include "util/sep_scientific_validation.h"
+#include "util/sep_turbulence_validation.h"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <vector>
 
@@ -155,6 +160,28 @@ int StatusSeverity(SEP::Testing::Status status) {
   return 3;
 }
 
+std::string SerializeRankEvidence(const SEP::Testing::Result& result) {
+  // The payload is intentionally plain text because it is embedded verbatim in
+  // both JSON configuration evidence and JUnit system-out.  Structured report
+  // writers own escaping, so rank-local diagnostics cannot corrupt either
+  // output format.
+  std::ostringstream evidence;
+  evidence << "status=" << SEP::Testing::StatusName(result.status)
+           << ";message=" << result.message;
+  if (result.hasSeed) evidence << ";seed=" << result.seed;
+  for (std::size_t i = 0; i < result.configuration.size(); ++i)
+    evidence << ";configuration=" << result.configuration[i];
+  for (std::size_t i = 0; i < result.metrics.size(); ++i)
+    evidence << ";metric=" << result.metrics[i].name << ':'
+             << result.metrics[i].value << ':'
+             << result.metrics[i].comparison << ':'
+             << result.metrics[i].tolerance << ':'
+             << result.metrics[i].units;
+  for (std::size_t i = 0; i < result.artifacts.size(); ++i)
+    evidence << ";artifact=" << result.artifacts[i];
+  return evidence.str();
+}
+
 SEP::Testing::Status StatusFromSeverity(int severity) {
   if (severity == 0) return SEP::Testing::Status::Pass;
   if (severity == 1) return SEP::Testing::Status::Skip;
@@ -169,7 +196,25 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
   // initialization ordering.  Registry construction also validates every
   // descriptor and deterministically sorts this deliberately unsorted source
   // list before it becomes observable through --list-tests.
-  static const SEP::Testing::Registry registry({
+  static const SEP::Testing::Registry registry([]() {
+    std::vector<SEP::Testing::Descriptor> descriptors =
+        SEP::Testing::AcceptanceCaseDescriptors();
+    const std::vector<SEP::Testing::Descriptor> validation_descriptors =
+        SEP::Testing::ScientificValidationDescriptors();
+    descriptors.insert(descriptors.end(), validation_descriptors.begin(),
+                       validation_descriptors.end());
+    // The linked CLI and dependency-light runners intentionally share these
+    // exact callbacks.  Keeping the controlled kernels in the production
+    // catalog prevents a Make-only test from drifting away from --test ID.
+    const std::vector<SEP::Testing::Descriptor> mover_descriptors =
+        SEP::Testing::ControlledMoverDescriptors();
+    descriptors.insert(descriptors.end(), mover_descriptors.begin(),
+                       mover_descriptors.end());
+    const std::vector<SEP::Testing::Descriptor> turbulence_descriptors =
+        SEP::Testing::ControlledTurbulenceDescriptors();
+    descriptors.insert(descriptors.end(), turbulence_descriptors.begin(),
+                       turbulence_descriptors.end());
+    const SEP::Testing::Descriptor legacy_descriptors[] = {
       MakeDescriptor("TURB01", "Alfven wave-energy closure", "turbulence",
           "Compare the production 1-AU wave-energy helper with an independent magnetic-pressure expression.",
           SEP::Testing::InitializationLevel::None,
@@ -202,7 +247,13 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
           SEP::Testing::InitializationLevel::FieldLineModel,
           SEP::Testing::RuntimeClass::Routine, "fixed registry seed 1001",
           "adapter reseeds; plasma/coefficient/particle/list state is restored; process exits after tests", RunParkerConvection),
-  });
+    };
+    descriptors.insert(descriptors.end(),
+        legacy_descriptors,
+        legacy_descriptors + sizeof(legacy_descriptors) /
+            sizeof(legacy_descriptors[0]));
+    return descriptors;
+  }());
   return registry;
 }
 
@@ -222,7 +273,9 @@ SEP::Testing::InitializationLevel RequiredInitializationLevel(
 
 int RunSelectedComponentTests(
     const std::vector<const SEP::Testing::Descriptor*>& selected,
-    std::ostream& out) {
+    std::ostream& out,
+    const std::string& jsonReportPath,
+    const std::string& junitReportPath) {
   SEP::Testing::Summary summary;
   const SEP::Testing::Registry& registry = ComponentTestRegistry();
 
@@ -235,6 +288,36 @@ int RunSelectedComponentTests(
     int initialized = 0;
     MPI_Initialized(&initialized);
     if (initialized) {
+      int rank = 0;
+      int ranks = 1;
+      MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
+      MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &ranks);
+
+      // Gather the full pre-reduction outcome from every rank.  A severity-only
+      // reduction gives a correct exit status but would discard the message,
+      // seed, metrics, and artifact paths from a failing non-root rank.  These
+      // payloads make JSON/JUnit reports sufficient to diagnose MPI failures.
+      const std::string localEvidence = SerializeRankEvidence(result);
+      const int localLength = static_cast<int>(localEvidence.size());
+      std::vector<int> lengths(rank == 0 ? ranks : 0, 0);
+      MPI_Gather(&localLength, 1, MPI_INT,
+                 rank == 0 ? lengths.data() : NULL, 1, MPI_INT, 0,
+                 MPI_GLOBAL_COMMUNICATOR);
+      std::vector<int> displacements(rank == 0 ? ranks : 0, 0);
+      int totalLength = 0;
+      if (rank == 0) {
+        for (int i = 0; i < ranks; ++i) {
+          displacements[i] = totalLength;
+          totalLength += lengths[i];
+        }
+      }
+      std::vector<char> gathered(rank == 0 ? totalLength : 0);
+      MPI_Gatherv(localEvidence.data(), localLength, MPI_CHAR,
+                  rank == 0 && totalLength != 0 ? gathered.data() : NULL,
+                  rank == 0 ? lengths.data() : NULL,
+                  rank == 0 ? displacements.data() : NULL,
+                  MPI_CHAR, 0, MPI_GLOBAL_COMMUNICATOR);
+
       const int localSeverity = StatusSeverity(result.status);
       int globalSeverity = localSeverity;
       double globalDuration = result.elapsedSeconds;
@@ -247,14 +330,17 @@ int RunSelectedComponentTests(
       }
       result.status = StatusFromSeverity(globalSeverity);
       result.elapsedSeconds = globalDuration;
+      if (rank == 0) {
+        for (int i = 0; i < ranks; ++i) {
+          result.configuration.push_back(
+              "mpi_rank_" + std::to_string(i) + "=" +
+              std::string(gathered.data() + displacements[i], lengths[i]));
+        }
+      }
     }
 
     if (PIC::ThisThread == 0) SEP::Testing::PrintResult(result, out);
-    summary.results.push_back(result);
-    if (result.status == SEP::Testing::Status::Pass) summary.passed++;
-    else if (result.status == SEP::Testing::Status::Fail) summary.failed++;
-    else if (result.status == SEP::Testing::Status::Skip) summary.skipped++;
-    else summary.errors++;
+    summary.Add(result);
   }
 
   if (PIC::ThisThread == 0) {
@@ -262,5 +348,28 @@ int RunSelectedComponentTests(
         << " FAIL=" << summary.failed << " SKIP=" << summary.skipped
         << " ERROR=" << summary.errors << '\n';
   }
-  return summary.ExitCode();
+
+  // Only MPI root writes shared report paths.  A requested report is acceptance
+  // evidence, so open/write failure is broadcast as ERROR to every rank and
+  // changes the process status rather than being reduced to a console warning.
+  int reportError = 0;
+  if (PIC::ThisThread == 0) {
+    std::string error;
+    if (!jsonReportPath.empty() &&
+        !SEP::Testing::WriteJsonSummary(summary, jsonReportPath, &error)) {
+      out << "ERROR: " << error << '\n';
+      reportError = 1;
+    }
+    error.clear();
+    if (!junitReportPath.empty() &&
+        !SEP::Testing::WriteJUnitSummary(summary, junitReportPath, &error)) {
+      out << "ERROR: " << error << '\n';
+      reportError = 1;
+    }
+  }
+  int initialized = 0;
+  MPI_Initialized(&initialized);
+  if (initialized)
+    MPI_Bcast(&reportError, 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
+  return reportError ? 2 : summary.ExitCode();
 }
