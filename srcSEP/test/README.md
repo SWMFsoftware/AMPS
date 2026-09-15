@@ -1,5 +1,22 @@
 # srcSEP standalone component tests
 
+## Run the complete test series
+
+From the `srcSEP` directory, run every test advertised by the linked AMPS
+application with:
+
+```sh
+test/run_tests.py --amps ../amps --all --output-dir test_output/all
+```
+
+The runner discovers the complete native registry, executes every test in an
+isolated process, and automatically uses the registered input/reference
+workflow for CV, IV, and XM validation cases. A failed, errored, or crashed
+test does not prevent later tests from running. The final output reports the
+PASS/FAIL/SKIP/ERROR totals and lists every failed or errored test with its
+diagnostic. Detailed JSON, JUnit, logs, plots, and per-test artifacts are saved
+under `test_output/all`.
+
 Step 1 provides one catalog and result contract for standalone component tests.
 The catalog lives in `component_tests.cpp`; generic deterministic selection,
 metadata validation, timing, status handling, and output formatting live in
