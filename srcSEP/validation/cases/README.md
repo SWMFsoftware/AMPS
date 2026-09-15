@@ -71,13 +71,18 @@ python3 test/run_tests.py --amps /path/to/amps \
   --validation-case CV08 --validation-case CV09 \
   --validation-case CV10 --validation-case CV11 \
   --validation-case CV12 --output-dir test_output/CV06-CV12
+python3 test/run_tests.py --amps /path/to/amps \
+  --validation-case IV01 --validation-case IV02 \
+  --validation-case IV03 --validation-case IV04 \
+  --validation-case IV05 --validation-case IV06 \
+  --output-dir test_output/IV01-IV06
 python3 test/run_tests.py --amps /path/to/amps --validation-all \
   --output-dir test_output/validation-all
 ```
 
 CV02-CV12 share `linked_case_common.py` for strict native process/report
 verification. CV02-CV05 use `controlled_case_runner.py`; CV06-CV12 use
-`advanced_case_runner.py`. Their
+`advanced_case_runner.py`; IV01-IV06 use `integrated_case_runner.py`. Their
 expected physics remains in separate case-local `reference_solution.py`
 programs. The shared C++ adapter calls the production Parker and focused-
 transport/turbulence cores and is compiled into the requested AMPS application;

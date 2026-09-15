@@ -21,6 +21,12 @@ validation, and passing coupled code is not called observational validation.
 | `CV10` | Linked-application controlled numerical verification | Spectral wave advection/remap versus cell-integrated manufactured characteristics | Implemented; requires linked executable |
 | `CV11` | Linked-application controlled numerical verification | One-hot wave growth/damping histories versus exact exponential integrals | Implemented; requires linked executable |
 | `CV12` | Linked-application controlled numerical verification | Closed particle-wave exchange versus total-energy identity and broken-ledger control | Implemented; requires linked executable |
+| `IV01` | Integrated manufactured verification | Parker-spiral characteristics, weak scattering, and orientation invariance | Implemented; required nightly; linked executable |
+| `IV02` | Integrated manufactured verification | Coupled scattering/focusing versus zero-flux equilibrium | Implemented; required nightly; linked executable |
+| `IV03` | Integrated manufactured verification | Positive full transport manufactured residual and refinement | Implemented; required nightly; linked executable |
+| `IV04` | Integrated manufactured verification | Moving-grid free-stream preservation and conservative remap | Implemented; required nightly; linked executable |
+| `IV05` | Integrated manufactured verification | Moving/stationary shock frame equivalence and CV09 spectrum | Implemented; required nightly; linked executable |
+| `IV06` | Integrated manufactured verification | Frozen/one-way/two-way self-generated turbulence feedback | Implemented; required nightly; linked executable |
 | `VAL01` | Numerical verification | Independent analytical diffusion moments and adiabatic-cooling characteristic | Implemented |
 | `VAL02` | Cross-mover verification | Matched `fte-dmumu`/`fte-mfp` mean-free-path closure | Implemented |
 | `VAL03` | Cross-model verification | Independently coded conservative finite-volume pitch-angle solver | Implemented |
@@ -35,7 +41,7 @@ make test-scientific-validation
 ```
 
 The numbered validation portfolio uses the shared case registry described in
-[cases/README.md](cases/README.md). CV01-CV12 are complete linked cases:
+[cases/README.md](cases/README.md). CV01-CV12 and IV01-IV06 are complete linked cases:
 
 ```sh
 python3 test/run_tests.py --amps /absolute/path/to/amps \
@@ -44,6 +50,7 @@ python3 test/run_tests.py --amps /absolute/path/to/amps \
 make test-cv01-unit SEP_EXECUTABLE=/absolute/path/to/amps
 make test-cv02-cv05-unit SEP_EXECUTABLE=/absolute/path/to/amps
 make test-cv06-cv12-unit SEP_EXECUTABLE=/absolute/path/to/amps
+make test-iv01-iv06-unit SEP_EXECUTABLE=/absolute/path/to/amps
 ```
 
 This verifies that the supplied executable advertises each selected ID,

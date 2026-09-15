@@ -5,13 +5,17 @@ DEFAULT_TARGET : lib
 # The parser/registry unit target is intentionally dependency-light and can run
 # from a source-only archive.  Every production build target still requires the
 # enclosing AMPS configuration exactly as before.
-ifneq ($(filter test-cli-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat,$(MAKECMDGOALS)),)
+ifneq ($(filter test-cli-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit test-iv01-iv06-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat,$(MAKECMDGOALS)),)
 -include ../../Makefile.conf
 else
 include ../../Makefile.conf
 endif
 
 MAINLIBOBJ = exosphere_module.o  main_lib.o inner_boundary_injection.o outer_boundary_injection.o mesh.o mover_state.o production_mover_runtime.o transport_common.o coefficient_providers.o parker_mover.o focused_transport_dmumu.o focused_transport_mfp.o turbulence_production_adapter.o parker.o scattering.o sep.o field_line.o flux_tube_geometry.o sampling.o diffusion.o shock_injection.o BoundaryInjection.o BoundaryInjection_GCR.o GCR_Badavi2011ASR.o parser.o diffusion_dxx.o tests.o component_tests.o validation/cases/CV01/cv01_model.o validation/cases/controlled_transport_models.o validation/cases/advanced_validation_models.o util/sep_test_registry.o util/sep_acceptance_cases.o util/sep_scientific_validation.o util/sep_mover_validation.o util/sep_turbulence_validation.o util/sep_background_snapshot.o util/sep_background_runtime.o util/sep_flux_tube_geometry_core.o util/sep_injection_spectrum.o util/sep_sampling_products.o util/sep_shock_source_core.o util/sep_transactional_output.o util/sep_run_configuration.o util/sep_population_control.o util/sep_configuration_matrix.o util/sep_evidence.o util/sep_system_ledger.o util/sep_validation_tools.o util/sep_observation_forward_model.o util/sep_production_mover.o util/sep_transport_common.o util/sep_parker_core.o util/sep_focused_transport_core.o util/sep_focused_transport_mfp_core.o util/sep_coefficient_physics.o util/sep_species_source.o util/sep_coefficient_registry.o util/sep_turbulence_core.o util/sep_reproducible_reduction.o shock_analytical_model.o diffusion_dmumu.o DLT.o QLT.o cooling.o QLT1.o sampling_output.o output_fl_background.o shock_analytical_model2D.o solar_wind.o alfven_turbulence.o parker_streaming_calculator.o turbulence_advection_kolmogorov.o wave_energy_initialization.o test_wave_energy_initialization.o wave_particle_coupling_kolmogorov.o growth_rate_validation_test.o kolmogorov.o kolmogorov_scatter.o shock1d_vertex_distance.o sw1d.o turbulence_cascade_kolmogorov.o turbulence_reflection_kolmogorov.o turbulence_wave_number_resolved/turbulence_wave_number_resolved.o
+# Integrated IV01-IV06 model stages are linked into the same application-level
+# registry as CV01-CV12; they are not standalone substitutes for AMPS.
+MAINLIBOBJ += validation/cases/integrated_validation_models.o
+
 # sep_cli.o is kept under srcSEP/util to separate command-line parsing from
 # the physics driver.  It is archived into main.a because only the standalone
 # executable uses these run-time switches; the AMPS library objects remain
@@ -31,7 +35,7 @@ amps : $(MAINOBJ)
 # real production CLI; selector semantics are never reimplemented in Make.
 SEP_EXECUTABLE ?= ../amps
 
-.PHONY: test-cli-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat require-sep-executable test-cli test-list test-case \
+.PHONY: test-cli-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit test-iv01-iv06-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat require-sep-executable test-cli test-list test-case \
 	test-group test-turbulence test-stress test-mpi test
 
 test-cli-unit:
@@ -111,6 +115,11 @@ test-cv02-cv05-unit:
 test-cv06-cv12-unit:
 	./test/run_cv06_cv12_tests.sh
 
+# Integrated manufactured verification is a distinct gate because these cases
+# couple geometry/operators and remain required nightly in the campaign plan.
+test-iv01-iv06-unit:
+	./test/run_iv01_iv06_tests.sh
+
 print-configuration-matrix:
 	./test/print_configuration_matrix.sh
 
@@ -131,6 +140,7 @@ test-controlled-analytical:
 	./test/run_cv01_tests.sh
 	./test/run_cv02_cv05_tests.sh
 	./test/run_cv06_cv12_tests.sh
+	./test/run_iv01_iv06_tests.sh
 
 # Step 15 is intentionally opt-in because VAL02 and VAL03 use statistically
 # meaningful ensembles.  The target also verifies that absent real SWMF and

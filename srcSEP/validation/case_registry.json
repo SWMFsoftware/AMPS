@@ -80,6 +80,24 @@
       "id": "CV12", "name": "Controlled particle-wave total-energy exchange", "group": "controlled-analytical", "runtime_class": "routine",
       "entrypoint": "validation/cases/CV12/case.py", "default_input": "validation/cases/CV12/input.json",
       "description": "Verify closed particle-wave total-energy accounting with coupled, uncoupled, and deliberately broken-deposition controls."
+    },
+    {
+      "id":"IV01","name":"Streaming plus Parker-spiral focusing","group":"integrated-manufactured","runtime_class":"routine","entrypoint":"validation/cases/IV01/case.py","default_input":"validation/cases/IV01/input.json","description":"Verify Parker-spiral geometry, focused streaming, weak scattering, travel time, and field-line storage orientation together."
+    },
+    {
+      "id":"IV02","name":"Scattering-focusing equilibrium","group":"integrated-manufactured","runtime_class":"routine","entrypoint":"validation/cases/IV02/case.py","default_input":"validation/cases/IV02/input.json","description":"Verify that coupled focusing and pitch diffusion approach the independent zero-flux stationary distribution."
+    },
+    {
+      "id":"IV03","name":"Manufactured spatial-pitch-momentum transport","group":"integrated-manufactured","runtime_class":"routine","entrypoint":"validation/cases/IV03/case.py","default_input":"validation/cases/IV03/input.json","description":"Verify a positive manufactured transport residual and second-order derivative/source assembly across all coordinates."
+    },
+    {
+      "id":"IV04","name":"Moving field-line grid conservation and GCL","group":"integrated-manufactured","runtime_class":"routine","entrypoint":"validation/cases/IV04/case.py","default_input":"validation/cases/IV04/input.json","description":"Verify free-stream preservation and conservative remapping on stretched, compressed, and sinusoidally moved segment grids."
+    },
+    {
+      "id":"IV05","name":"Moving shock crossing and acceleration","group":"integrated-manufactured","runtime_class":"routine","entrypoint":"validation/cases/IV05/case.py","default_input":"validation/cases/IV05/input.json","description":"Verify moving/stationary shock frame equivalence, continuous crossing times, node coincidence, and DSA slope."
+    },
+    {
+      "id":"IV06","name":"Coupled self-generated turbulence feedback","group":"integrated-manufactured","runtime_class":"routine","entrypoint":"validation/cases/IV06/case.py","default_input":"validation/cases/IV06/input.json","description":"Verify the causal streaming-growth-scattering feedback with frozen, one-way, and two-way controls and an energy ledger."
     }
   ]
 }

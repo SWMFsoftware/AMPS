@@ -6,6 +6,7 @@
 #include "validation/cases/CV01/cv01_model.h"
 #include "validation/cases/controlled_transport_models.h"
 #include "validation/cases/advanced_validation_models.h"
+#include "validation/cases/integrated_validation_models.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -253,7 +254,7 @@ SEP::Testing::Result RunLinkedControlledModel(const char* caseId) {
   const SEP::Testing::ExecutionContext& context =
       SEP::Testing::GetExecutionContext();
   if (context.inputPath.empty() || context.artifactDirectory.empty()) {
-    // CV02-CV05 require reviewed case-specific SI inputs. A generic registry
+    // CV02-CV12 and IV01-IV06 require reviewed case-specific SI inputs. A generic registry
     // run cannot safely invent them, so discovery/all-tests gets an explicit
     // prerequisite SKIP. The external runner always supplies both paths and
     // requires the linked model CSV, so this cannot become a scientific PASS.
@@ -345,11 +346,16 @@ SEP::Testing::Result RunLinkedControlledModel(const char* caseId) {
   // the Python campaign validates the linked srcSEP/AMPS application rather
   // than compiling and executing a replacement model.
   const std::string identifier(caseId);
-  const bool completed = identifier >= "CV06"
-      ? SEP::Validation::RunAdvancedValidationModel(
-            identifier, arguments, outputPath, &error)
-      : SEP::Validation::RunControlledTransportModel(
-            identifier, arguments, outputPath, &error);
+  bool completed = false;
+  if (identifier.size() >= 2 && identifier.substr(0, 2) == "IV")
+    completed = SEP::Validation::RunIntegratedValidationModel(
+        identifier, arguments, outputPath, &error);
+  else if (identifier >= "CV06")
+    completed = SEP::Validation::RunAdvancedValidationModel(
+        identifier, arguments, outputPath, &error);
+  else
+    completed = SEP::Validation::RunControlledTransportModel(
+        identifier, arguments, outputPath, &error);
   result.status = completed ? SEP::Testing::Status::Pass
                             : SEP::Testing::Status::Error;
   result.message = completed
@@ -393,6 +399,12 @@ SEP::Testing::Result RunCV09LinkedModel() { return RunLinkedControlledModel("CV0
 SEP::Testing::Result RunCV10LinkedModel() { return RunLinkedControlledModel("CV10"); }
 SEP::Testing::Result RunCV11LinkedModel() { return RunLinkedControlledModel("CV11"); }
 SEP::Testing::Result RunCV12LinkedModel() { return RunLinkedControlledModel("CV12"); }
+SEP::Testing::Result RunIV01LinkedModel() { return RunLinkedControlledModel("IV01"); }
+SEP::Testing::Result RunIV02LinkedModel() { return RunLinkedControlledModel("IV02"); }
+SEP::Testing::Result RunIV03LinkedModel() { return RunLinkedControlledModel("IV03"); }
+SEP::Testing::Result RunIV04LinkedModel() { return RunLinkedControlledModel("IV04"); }
+SEP::Testing::Result RunIV05LinkedModel() { return RunLinkedControlledModel("IV05"); }
+SEP::Testing::Result RunIV06LinkedModel() { return RunLinkedControlledModel("IV06"); }
 
 SEP::Testing::Descriptor MakeDescriptor(
     const char* id, const char* name, const char* group,
@@ -441,6 +453,27 @@ SEP::Testing::Descriptor MakeControlledValidationDescriptor(
   // Model evidence is one non-decomposed CSV written before normal AMPS model
   // initialization. Serial is the only honest advertised mode until a case
   // defines rank partitioning plus deterministic reduction of its samples.
+  descriptor.supportedBuildModes = "serial linked srcSEP/AMPS executable";
+  return descriptor;
+}
+
+SEP::Testing::Descriptor MakeIntegratedValidationDescriptor(
+    const char* id, const char* name, const char* description,
+    SEP::Testing::TestCallback callback) {
+  // Integrated manufactured cases exercise several production operators in
+  // one controlled scenario.  Give them their own registry group so users can
+  // select the IV campaign independently from the single-operator CV cases
+  // with `--test-group integrated-manufactured`.
+  SEP::Testing::Descriptor descriptor = MakeDescriptor(
+      id, name, "integrated-manufactured", description,
+      SEP::Testing::InitializationLevel::None,
+      SEP::Testing::RuntimeClass::Routine, "fixed case seed from reviewed input",
+      "isolated process and artifact directory; immutable synthetic input",
+      callback);
+  // Each IV callback writes a single deterministic evidence table before the
+  // regular AMPS model initialization.  MPI execution is intentionally not
+  // advertised until rank-local sampling and deterministic reduction are part
+  // of the validation contract.
   descriptor.supportedBuildModes = "serial linked srcSEP/AMPS executable";
   return descriptor;
 }
@@ -555,6 +588,18 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
           "CV12", "Controlled particle-wave total-energy exchange",
           "Exercise production wave-frame scattering and the turbulence exchange ledger in closed coupled and uncoupled controls, then score total-energy closure externally.",
           RunCV12LinkedModel),
+      MakeIntegratedValidationDescriptor("IV01", "Streaming plus Parker-spiral focusing",
+          "Couple analytic Parker geometry, production focusing, time of flight, weak scattering, and reversed field-line storage order.", RunIV01LinkedModel),
+      MakeIntegratedValidationDescriptor("IV02", "Scattering-focusing equilibrium",
+          "Evolve coupled focusing and Dmumu from isotropic and beam states toward the independent zero-flux equilibrium.", RunIV02LinkedModel),
+      MakeIntegratedValidationDescriptor("IV03", "Manufactured spatial-pitch-momentum transport",
+          "Evaluate a smooth full transport residual and refinement across advection, pitch, momentum, and diffusion terms.", RunIV03LinkedModel),
+      MakeIntegratedValidationDescriptor("IV04", "Moving field-line grid conservation and GCL",
+          "Remap a uniform state through stretching, compression, and sinusoidal segment motion and verify free-stream preservation.", RunIV04LinkedModel),
+      MakeIntegratedValidationDescriptor("IV05", "Moving shock crossing and acceleration",
+          "Compare stationary/moving shock frames, interpolated crossings, node coincidence, and the CV09 DSA reference.", RunIV05LinkedModel),
+      MakeIntegratedValidationDescriptor("IV06", "Coupled self-generated turbulence feedback",
+          "Compare frozen, one-way, and two-way scattering/growth controls with resonant and total-energy evidence.", RunIV06LinkedModel),
       MakeDescriptor("TURB01", "Alfven wave-energy closure", "turbulence",
           "Compare the production 1-AU wave-energy helper with an independent magnetic-pressure expression.",
           SEP::Testing::InitializationLevel::None,

@@ -18,11 +18,14 @@ subsystem, and the Step 12 deterministic parallel-reduction contract.
 Step 13 adds reportable, fail-closed acceptance fixtures, Step 14 removes
 the retired mover implementations/aliases while enforcing a clean source
 handoff, and Step 15 adds a claim-separated scientific-validation campaign.
-The numbered campaign now includes linked-application cases `CV01`–`CV12`.
+The numbered campaign now includes linked-application cases `CV01`–`CV12` and
+integrated manufactured cases `IV01`–`IV06`.
 They cover ballistic streaming; constant/nonuniform spatial diffusion;
 adiabatic cooling; magnetic focusing; Legendre pitch diffusion; telegraph and
 first-passage transport; planar DSA; turbulence advection and growth; and
-closed particle-wave exchange through the same native-registry,
+closed particle-wave exchange. IV01-IV06 then couple Parker geometry,
+scattering/focusing, manufactured multi-coordinate transport, moving grids,
+moving shocks, and nonlinear wave feedback through the same native-registry,
 reviewed-input, independent-reference, metric, visualization, and provenance
 contract.
 See [STEP13_CHANGE_MANIFEST.md](STEP13_CHANGE_MANIFEST.md),
@@ -30,6 +33,9 @@ See [STEP13_CHANGE_MANIFEST.md](STEP13_CHANGE_MANIFEST.md),
 [STEP15_CHANGE_MANIFEST.md](STEP15_CHANGE_MANIFEST.md). The CV06–CV12 design,
 scope, evidence contract, and commands are summarized in
 [CV06_CV12_VALIDATION_IMPLEMENTATION.md](CV06_CV12_VALIDATION_IMPLEMENTATION.md).
+The integrated geometry/operator, moving-grid/shock, and nonlinear-feedback
+cases are documented in
+[IV01_IV06_VALIDATION_IMPLEMENTATION.md](IV01_IV06_VALIDATION_IMPLEMENTATION.md).
 Retired names remain
 mapped in [MIGRATION_MANIFEST.md](MIGRATION_MANIFEST.md).
 Self-consistent Alfvén turbulence remains a production subsystem and uses the
@@ -357,6 +363,13 @@ python3 test/run_tests.py --amps /path/to/amps \
   --validation-case CV10 --validation-case CV11 \
   --validation-case CV12 \
   --output-dir /absolute/path/to/evidence/CV06-CV12
+
+# Run all required-nightly integrated manufactured cases.
+python3 test/run_tests.py --amps /path/to/amps \
+  --validation-case IV01 --validation-case IV02 \
+  --validation-case IV03 --validation-case IV04 \
+  --validation-case IV05 --validation-case IV06 \
+  --output-dir /absolute/path/to/evidence/IV01-IV06
 
 # Discover stable IDs from the linked executable.
 python3 test/run_tests.py --amps /path/to/amps --list

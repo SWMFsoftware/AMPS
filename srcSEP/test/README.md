@@ -82,6 +82,9 @@ make test-cv02-cv05-unit SEP_EXECUTABLE=/path/to/amps
 # CV06-CV12 strict source/registry gate plus optional linked execution.
 make test-cv06-cv12-unit SEP_EXECUTABLE=/path/to/amps
 
+# IV01-IV06 integrated manufactured source gate plus linked execution.
+make test-iv01-iv06-unit SEP_EXECUTABLE=/path/to/amps
+
 # All dependency-light ASan/UBSan suites from Steps 3 and 6–13.
 make test-sanitizer
 
@@ -160,6 +163,13 @@ python3 test/run_tests.py --amps /path/to/amps \
   --validation-case CV10 --validation-case CV11 \
   --validation-case CV12 --output-dir /evidence/srcsep/CV06-CV12
 
+# Run integrated manufactured geometry/operator/coupling cases.
+python3 test/run_tests.py --amps /path/to/amps \
+  --validation-case IV01 --validation-case IV02 \
+  --validation-case IV03 --validation-case IV04 \
+  --validation-case IV05 --validation-case IV06 \
+  --output-dir /evidence/srcsep/IV01-IV06
+
 # List all native registry IDs without initializing AMPS.
 python3 test/run_tests.py --amps /path/to/amps --list
 
@@ -195,7 +205,7 @@ sanitizer flags and pass that executable; the runner never compiles a substitute
 driver. These cases retain richer native/model/reference artifacts while using
 the same aggregate report and plotting contract as other runner modes.
 See [../validation/cases/README.md](../validation/cases/README.md) for the
-required structure and the CV01-CV12 subdirectory READMEs for their equations,
+required structure and the CV01-CV12 and IV01-IV06 subdirectory READMEs for their equations,
 inputs, gates, outputs, and failure interpretation.
 
 For CV01 the Python runner executes six commands of the form `amps --test CV01
@@ -620,6 +630,12 @@ standalone and SWMF-coupled run. See
 | `CV10` | `controlled-analytical` | routine | linked srcSEP/AMPS registry | Both spectral wave branches advect conservatively across fixed, expanding-area, and remapped grids. | Three resolutions; per-bin profiles, invariant/non-negativity/order metrics; PNG/EPS. |
 | `CV11` | `controlled-analytical` | routine | linked srcSEP/AMPS registry | One-hot wave energy matches constant and time-dependent exponential growth/damping histories. | Three timesteps; active/inactive bins, cancellation, positivity, second-order rate integration. |
 | `CV12` | `controlled-analytical` | routine | linked srcSEP/AMPS registry | Coupled wave-frame scattering closes total energy while uncoupled controls remain fixed and suppressed deposition fails. | Three counts/timesteps; branch exchange and per-step ledger residuals; PNG/EPS. |
+| `IV01` | `integrated-manufactured` | routine | linked srcSEP/AMPS registry | Parker-spiral focusing and flight time agree with independent characteristics and are invariant to vertex order. | Two wind speeds; ballistic/weak scattering; three timesteps; per-particle CSV and PNG/EPS. |
+| `IV02` | `integrated-manufactured` | routine | linked srcSEP/AMPS registry | Coupled scattering/focusing converges from isotropic and beam states to the zero-flux exponential PDF. | Three focusing ratios; 40-bin PDFs; normalization and first-moment metrics. |
+| `IV03` | `integrated-manufactured` | routine | linked srcSEP/AMPS registry | The full smooth manufactured residual converges at second order without loss of positivity. | Exact/operator residual rows at three levels; L2/order evidence. |
+| `IV04` | `integrated-manufactured` | routine | linked srcSEP/AMPS registry | Uniform physical state survives conservative remap on translated-shape grids at roundoff. | Four node motions, three resolutions, node/segment/integral/ledger diagnostics. |
+| `IV05` | `integrated-manufactured` | routine | linked srcSEP/AMPS registry | Moving and stationary shock frames give the same crossings, momentum, and DSA spectrum. | Two shock speeds, three timesteps, 5k histories, exact-node flag. |
+| `IV06` | `integrated-manufactured` | routine | linked srcSEP/AMPS registry | Resonant wave growth strengthens scattering and self-limits streaming while total energy closes. | Frozen/one-way/two-way timelines, resonant bin, Dmumu, streaming and ledger evidence. |
 | `BG01` | `background` | routine | none | Standalone analytic and SWCME snapshots preserve provider, epoch, ownership, validity, generation, and distinct configuration identity. | Stack-owned immutable snapshots; no external provider or artifact. |
 | `BG02` | `background` | routine | none | A mock SWMF import is read-only and becomes locally evolved only through an explicit handoff copy. | Resets the snapshot store before/after; no external SWMF process. |
 | `CROSS01` | `cross-mover` | routine | none | `fte-dmumu` and `fte-mfp` agree in the matched ballistic limit. | Keyed seed 1301; stack-owned state; no artifact. |
@@ -641,7 +657,7 @@ standalone and SWMF-coupled run. See
 
 The list printed by native `--list-tests` is authoritative for C++ component
 callbacks and also includes supported build modes, seed policy, and
-state/isolation notes. End-to-end portfolio cases CV01-CV12 are listed by
+state/isolation notes. End-to-end portfolio cases CV01-CV12 and IV01-IV06 are listed by
 `python3 validation/run_case.py --list`; both paths are selected through the
 common `test/run_tests.py` orchestration interface. Entries are sorted by ID
 regardless of construction or registration order.

@@ -217,6 +217,24 @@ class PythonTestRunnerTests(unittest.TestCase):
             self.assertNotIn("advanced_validation_models.cpp", " ".join(command))
             run.assert_called_once()
 
+    def test_iv01_iv06_use_the_selected_linked_application(self):
+        """Integrated cases must never be relabelled standalone evidence."""
+        runner = _load_runner_module()
+        with tempfile.TemporaryDirectory(prefix="srcsep-iv-command-") as tmp:
+            output = Path(tmp)
+            selected = [f"IV{index:02d}" for index in range(1, 7)]
+            arguments = SimpleNamespace(
+                amps="/opt/amps/bin/srcsep-amps", validation_all=False,
+                validation_cases=selected, case_input=None, timeout=600.0)
+            with mock.patch.object(runner, "_run_streaming", return_value=0) as run:
+                _, _, command = runner._run_validation_cases(
+                    arguments, output, output / "runner.log")
+            self.assertEqual(command[2:4], ["--amps", "/opt/amps/bin/srcsep-amps"])
+            for case_id in selected:
+                self.assertIn(case_id, command)
+            self.assertNotIn("integrated_validation_models.cpp", " ".join(command))
+            run.assert_called_once()
+
     def test_validation_case_rejects_a_missing_linked_executable(self):
         """Never replace unavailable application evidence with a local build."""
         with tempfile.TemporaryDirectory(prefix="srcsep-missing-amps-") as tmp:

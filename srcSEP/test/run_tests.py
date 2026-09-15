@@ -73,7 +73,8 @@ SOURCE_SUITES: Dict[str, str] = {
 # a generic software contract from being advertised as an analytical solution.
 ANALYTICAL_IDS = {
     "CV01", "CV02", "CV03", "CV04", "CV05", "CV06", "CV07", "CV08",
-    "CV09", "CV10", "CV11", "CV12", "DXX01", "FTE01",
+    "CV09", "CV10", "CV11", "CV12", "IV01", "IV02", "IV03", "IV04",
+    "IV05", "IV06", "DXX01", "FTE01",
     "PARKER01", "TURB01", "VAL01", "CROSS02",
     *(f"PARK{i:02d}" for i in range(1, 8)),
     *(f"FTED{i:02d}" for i in range(1, 9)),
@@ -142,6 +143,17 @@ Examples:
 
      CV06-CV09 are extended stochastic/distribution campaigns. CV10-CV12 are
      bounded turbulence-advection, source-history, and energy-ledger checks.
+
+     Run all integrated manufactured cases through the linked application:
+
+       python3 test/run_tests.py --amps ../amps \
+         --validation-case IV01 --validation-case IV02 \
+         --validation-case IV03 --validation-case IV04 \
+         --validation-case IV05 --validation-case IV06 \
+         --output-dir test_output/IV01-IV06
+
+     These combine geometry/operators, moving grids and shocks, and nonlinear
+     wave feedback. They are required nightly cases in the validation plan.
 
      Repeat --test to choose any collection of individual cases:
 
