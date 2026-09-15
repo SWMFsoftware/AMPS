@@ -1014,9 +1014,10 @@ bool RunCrossModelValidationModel(const std::string& caseId,
     else if (caseId == "XM02") RunXM02(values, outputPath);
     else if (caseId == "XM03" || caseId == "OV01")
       RunXM03(values, outputPath);
-    else if (caseId.size() == 4 && caseId.substr(0, 2) == "OV")
+    else if ((caseId.size() == 4 && caseId.substr(0, 2) == "OV") ||
+             caseId == "EV01" || caseId == "EV02")
       RunObservationalProfile(values, outputPath);
-    else throw std::runtime_error("unsupported XM/OV validation case");
+    else throw std::runtime_error("unsupported XM/OV/EV validation case");
     if (error) error->clear();
     return true;
   } catch (const std::exception& exception) {

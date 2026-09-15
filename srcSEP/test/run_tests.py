@@ -86,13 +86,13 @@ ANALYTICAL_IDS = {
     *(f"TURB{i:02d}" for i in (2, 3, 5, 6, 7, 9, 11, 12, 13, 16, 21, 22, 23)),
 }
 
-# XM02/XM03 and OV01-OV05 represent one published configuration each. Their test inputs
+# XM02/XM03, OV01-OV05, and EV01-EV02 use registry-owned scientific evidence inputs. Their test inputs
 # are source-reviewed artifacts selected through validation/case_registry.json,
 # not user-selectable campaign variants.  Keeping this policy in one explicit
 # set lets both argument validation and help-oriented unit tests detect an
 # accidental return of the former "reviewed input file" workflow.
 FIXED_PUBLICATION_INPUT_CASES = {
-    "XM02", "XM03", "OV01", "OV02", "OV03", "OV04", "OV05"
+    "XM02", "XM03", "OV01", "OV02", "OV03", "OV04", "OV05", "EV01", "EV02"
 }
 
 X_COLUMNS = ("x", "time", "time_s", "s", "s_m", "mu", "radius", "radius_m",
@@ -676,7 +676,7 @@ def _print_summary(report: Dict[str, Any]) -> None:
 def _validation_case_ids() -> set[str]:
     """Return IDs that require the registered validation-case input protocol.
 
-    CV, IV, XM, and OV callbacks cannot be launched as bare ``amps --test ID``
+    CV, IV, XM, OV, and EV callbacks cannot be launched as bare ``amps --test ID``
     commands because their Python entrypoints construct reviewed native input
     manifests and independent references.  Loading the data registry, rather
     than maintaining a second hard-coded list, keeps ``--all`` correct as new
@@ -718,7 +718,7 @@ def _run_all_tests(args: argparse.Namespace, output_dir: Path,
     timeout, abort, or segmentation fault affects only its current test.  The
     runner synthesizes an ERROR record when that process cannot write valid
     JSON, prints the outcome, and continues through the remaining IDs.
-    Registered CV/IV/XM/OV cases are delegated one at a time to run_case.py so the
+    Registered CV/IV/XM/OV/EV cases are delegated one at a time to run_case.py so the
     exact application input and independent-reference workflow is preserved.
     """
     executable = Path(args.amps).expanduser().resolve()

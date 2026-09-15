@@ -344,14 +344,16 @@ SEP::Testing::Result RunLinkedControlledModel(const char* caseId) {
       context.artifactDirectory + "/" + caseId + "_model.csv";
   std::string error;
   // CV02-CV05 use the original controlled-transport collection; CV06-CV12
-  // use the advanced collection. IV and XM/OV cases have dedicated collections.
+  // use the advanced collection. IV and XM/OV/EV cases have dedicated collections.
   // Every collection enters through this native callback so
   // the Python campaign validates the linked srcSEP/AMPS application rather
   // than compiling and executing a replacement model.
   const std::string identifier(caseId);
   bool completed = false;
   if (identifier.size() >= 2 &&
-      (identifier.substr(0, 2) == "XM" || identifier.substr(0, 2) == "OV"))
+      (identifier.substr(0, 2) == "XM" ||
+       identifier.substr(0, 2) == "OV" ||
+       identifier.substr(0, 2) == "EV"))
     completed = SEP::Validation::RunCrossModelValidationModel(
         identifier, arguments, outputPath, &error);
   else if (identifier.size() >= 2 && identifier.substr(0, 2) == "IV")
@@ -420,6 +422,8 @@ SEP::Testing::Result RunOV02LinkedModel() { return RunLinkedControlledModel("OV0
 SEP::Testing::Result RunOV03LinkedModel() { return RunLinkedControlledModel("OV03"); }
 SEP::Testing::Result RunOV04LinkedModel() { return RunLinkedControlledModel("OV04"); }
 SEP::Testing::Result RunOV05LinkedModel() { return RunLinkedControlledModel("OV05"); }
+SEP::Testing::Result RunEV01LinkedModel() { return RunLinkedControlledModel("EV01"); }
+SEP::Testing::Result RunEV02LinkedModel() { return RunLinkedControlledModel("EV02"); }
 
 SEP::Testing::Descriptor MakeDescriptor(
     const char* id, const char* name, const char* group,
@@ -665,6 +669,10 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
           "Propagate three documented connection-delay realizations and compare their event spectra with the PAMELA spectrum in Bruno et al. Figure 4.", RunOV04LinkedModel),
       MakeObservationalValidationDescriptor("OV05", "September 2017 compound-event diagnostic",
           "Propagate publication-timed September 4, 6, and 10 injections and compare with STEREO-A profiles in Bruno et al. Figure 2.", RunOV05LinkedModel),
+      MakeObservationalValidationDescriptor("EV01", "Calibration ensemble and parameter identifiability",
+          "Generate linked event predictions for the sealed CCMC training/validation ensemble; calibration and observation scoring are performed by the campaign runner.", RunEV01LinkedModel),
+      MakeObservationalValidationDescriptor("EV02", "Locked held-out validation campaign",
+          "Generate linked event predictions without using held-out targets; the campaign runner applies the frozen split and scores untouched observations.", RunEV02LinkedModel),
       MakeDescriptor("TURB01", "Alfven wave-energy closure", "turbulence",
           "Compare the production 1-AU wave-energy helper with an independent magnetic-pressure expression.",
           SEP::Testing::InitializationLevel::None,

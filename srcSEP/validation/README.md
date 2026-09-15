@@ -35,6 +35,8 @@ validation, and passing coupled code is not called observational validation.
 | `OV03` | Observational diagnostic | 2013 May 22 GOES/STEREO-A profiles from Ding et al. Figure 1 under single/twin-CME sources | Implemented; diagnostic-only due wide-longitude interacting CMEs |
 | `OV04` | Observational diagnostic | 2014 January 6 PAMELA event spectrum from Bruno et al. Figure 4 under three connection delays | Implemented; diagnostic-only due behind-limb anisotropic event |
 | `OV05` | Observational diagnostic | September 2017 STEREO-A profiles from Bruno et al. Figure 2 with three tagged injections | Implemented; diagnostic-only due compound transients and cross-field transport |
+| `EV01` | Campaign-level calibration evidence | NASA CCMC/GOES SHINE/ISWAT observed event quantities; sealed training/validation split | Implemented pilot; real observations only; expand to CLEAR 15–30 event/non-event cohort for formal campaign |
+| `EV02` | Campaign-level held-out evidence | Same immutable NASA CCMC observations with untouched holdout IDs | Implemented pilot sealed gate; prospective CCMC Scoreboard cohort remains future evidence |
 | `VAL01` | Numerical verification | Independent analytical diffusion moments and adiabatic-cooling characteristic | Implemented |
 | `VAL02` | Cross-mover verification | Matched `fte-dmumu`/`fte-mfp` mean-free-path closure | Implemented |
 | `VAL03` | Cross-model verification | Independently coded conservative finite-volume pitch-angle solver | Implemented |
@@ -61,6 +63,7 @@ make test-cv06-cv12-unit SEP_EXECUTABLE=/absolute/path/to/amps
 make test-iv01-iv06-unit SEP_EXECUTABLE=/absolute/path/to/amps
 make test-xm01-xm03-unit SEP_EXECUTABLE=/absolute/path/to/amps
 make test-ov01-ov05-unit SEP_EXECUTABLE=/absolute/path/to/amps
+make test-ev01-ev02-unit SEP_EXECUTABLE=/absolute/path/to/amps
 ```
 
 This verifies that the supplied executable advertises each selected ID,
@@ -225,3 +228,6 @@ the observational gate.
 See each `cases/VAL*/README.md` for equations, configurations, metrics, and
 limitations. See [STEP15_VALIDATION_REPORT.md](../STEP15_VALIDATION_REPORT.md)
 for the evidence obtained in this delivered environment.
+
+
+EV01-EV02 are documented in `../EV01_EV02_VALIDATION_IMPLEMENTATION.md`. Their committed reference values are observed NASA CCMC/GOES quantities, not synthetic expected solutions. The nine-event challenge bundle exercises campaign mechanics; the implementation plan still requires a larger CLEAR-based 15–30 event/non-event cohort before treating EV01/EV02 as the final statistical release campaign.

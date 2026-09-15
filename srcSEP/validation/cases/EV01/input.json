@@ -1,0 +1,73 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "EV01",
+  "title": "Calibration ensemble and parameter identifiability \u2014 CCMC real-observation pilot",
+  "reference": {
+    "csv": "reference/ccmc_2021_goes_observations.csv",
+    "kind": "NASA-CCMC-OpSEP-derived-GOES-event-quantities",
+    "source_url": "https://ccmc.gsfc.nasa.gov/assessment/topics/SEP/campaign2020/input_parameters.php",
+    "synthetic_reference": false
+  },
+  "split": {
+    "training": [
+      "20120307",
+      "20120517",
+      "20120712",
+      "20130411",
+      "20140107",
+      "20170904_06"
+    ],
+    "validation": [
+      "20170714"
+    ],
+    "holdout": [
+      "20140106",
+      "20170910"
+    ]
+  },
+  "physics": {
+    "injection_radius_solar_radii": 2.5,
+    "solar_wind_speed_m_per_s": 400000.0,
+    "shock_speed_m_per_s": 1000000.0,
+    "solar_rotation_rate_rad_per_s": 2.8653290846e-06,
+    "mean_free_path_normalization_au": 0.3,
+    "mean_free_path_radial_exponent": 1.0,
+    "mean_free_path_rigidity_exponent": 0.3333333333333333,
+    "injection_momentum_index": 5.0,
+    "energy_grid_mev": [
+      10,
+      15,
+      22,
+      33,
+      50,
+      75,
+      100,
+      150,
+      220,
+      330,
+      500
+    ]
+  },
+  "numerics": {
+    "particles_per_energy": 300,
+    "time_step_s": 180.0,
+    "duration_hours": 168.0,
+    "output_cadence_hours": 1.0,
+    "campaign_seed": 27001
+  },
+  "acceptance": {
+    "pilot_event_count_min": 9,
+    "peak_log10_rmse_max": 1.0,
+    "peak_time_mae_hours_max": 24.0,
+    "true_skill_statistic_min": -0.25
+  },
+  "campaign_scope": {
+    "full_plan_requires": "15\u201330 events and non-events plus bootstrap identifiability",
+    "this_repository_bundle": "nine-event CCMC SHINE/ISWAT pilot using measured GOES quantities only",
+    "reference_policy": "observations only; no synthetic/theoretical expected solution"
+  },
+  "identifiability": {
+    "bootstrap_replicates": 1000,
+    "resampling_unit": "event"
+  }
+}

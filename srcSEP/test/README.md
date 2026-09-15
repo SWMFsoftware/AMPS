@@ -11,7 +11,7 @@ test/run_tests.py --amps ../amps --all --output-dir test_output/all
 
 The runner discovers the complete native registry, executes every test in an
 isolated process, and automatically uses the registered input/reference
-workflow for CV, IV, XM, and OV validation cases. A failed, errored, or crashed
+workflow for CV, IV, XM, OV, and EV validation cases. A failed, errored, or crashed
 test does not prevent later tests from running. The final output reports the
 PASS/FAIL/SKIP/ERROR totals and lists every failed or errored test with its
 diagnostic. Detailed JSON, JUnit, logs, plots, and per-test artifacts are saved
@@ -31,6 +31,24 @@ physics-discrepancy metrics remain in the report with `gating=false`, while a
 missing reference, incomplete native CSV, registry error, or failed linked run
 still fails/errors the campaign. All five use their single repository-owned
 publication input; `--case-input` is intentionally rejected.
+
+
+The campaign-level EV cases can be run together:
+
+```sh
+test/run_tests.py --amps ../amps \
+  --validation-case EV01 --validation-case EV02 \
+  --output-dir test_output/EV01-EV02
+```
+
+EV01 fits only the predeclared training partition; EV02 scores only the sealed
+holdout after repeating the training-only fit. Their expected values are real
+NASA CCMC/GOES observations. The committed nine-event set is a pilot and is
+explicitly not padded with synthetic non-events.
+
+EV01/EV02 currently use **serial linked execution**. Do not pass `--mpi-np`; the
+runner intentionally rejects MPI for these end-to-end cases until the native
+per-event output contract is made rank-safe.
 
 Step 1 provides one catalog and result contract for standalone component tests.
 The catalog lives in `component_tests.cpp`; generic deterministic selection,
@@ -94,6 +112,9 @@ make test-reproducibility-unit
 
 # OV01-OV05 source/provenance checks and optional linked observational run.
 make test-ov01-ov05-unit SEP_EXECUTABLE=../amps
+
+# EV01-EV02 campaign split/provenance checks.
+make test-ev01-ev02-unit
 
 # Step 13 registered background/cross-mover fixtures and JSON/JUnit evidence.
 make test-acceptance-unit

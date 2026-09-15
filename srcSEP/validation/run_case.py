@@ -33,7 +33,7 @@ REGISTRY_PATH = ROOT / "validation" / "case_registry.json"
 # public test/run_tests.py front end enforces the same rule, while duplicating
 # the guard here protects operators who invoke validation/run_case.py directly.
 FIXED_PUBLICATION_INPUT_CASES = {
-    "XM02", "XM03", "OV01", "OV02", "OV03", "OV04", "OV05"
+    "XM02", "XM03", "OV01", "OV02", "OV03", "OV04", "OV05", "EV01", "EV02"
 }
 
 

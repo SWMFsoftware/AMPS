@@ -47,81 +47,211 @@
       "description": "Compare linked zero-scattering focused transport in both field-gradient directions with exact pitch-angle/position characteristics and magnetic-moment conservation."
     },
     {
-      "id": "CV06", "name": "Legendre-mode pitch-angle diffusion", "group": "controlled-analytical", "runtime_class": "extended",
-      "entrypoint": "validation/cases/CV06/case.py", "default_input": "validation/cases/CV06/input.json",
+      "id": "CV06",
+      "name": "Legendre-mode pitch-angle diffusion",
+      "group": "controlled-analytical",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/CV06/case.py",
+      "default_input": "validation/cases/CV06/input.json",
       "description": "Compare production Dmumu evolution for Legendre modes l=1 through 6 with exact modal decay, leakage, normalization, and boundary statistics."
     },
     {
-      "id": "CV07", "name": "Telegraph transport and diffusion limit", "group": "controlled-analytical", "runtime_class": "extended",
-      "entrypoint": "validation/cases/CV07/case.py", "default_input": "validation/cases/CV07/input.json",
+      "id": "CV07",
+      "name": "Telegraph transport and diffusion limit",
+      "group": "controlled-analytical",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/CV07/case.py",
+      "default_input": "validation/cases/CV07/input.json",
       "description": "Compare persistent random flights with telegraph fronts, causal support, exact moments, and the late-time diffusion coefficient."
     },
     {
-      "id": "CV08", "name": "Absorbing-boundary first-passage distribution", "group": "controlled-analytical", "runtime_class": "extended",
-      "entrypoint": "validation/cases/CV08/case.py", "default_input": "validation/cases/CV08/input.json",
+      "id": "CV08",
+      "name": "Absorbing-boundary first-passage distribution",
+      "group": "controlled-analytical",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/CV08/case.py",
+      "default_input": "validation/cases/CV08/input.json",
       "description": "Compare production Parker drift-diffusion arrivals with the inverse-Gaussian first-passage law across drift and timestep sweeps."
     },
     {
-      "id": "CV09", "name": "Planar diffusive shock acceleration spectrum", "group": "controlled-analytical", "runtime_class": "extended",
-      "entrypoint": "validation/cases/CV09/case.py", "default_input": "validation/cases/CV09/input.json",
+      "id": "CV09",
+      "name": "Planar diffusive shock acceleration spectrum",
+      "group": "controlled-analytical",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/CV09/case.py",
+      "default_input": "validation/cases/CV09/input.json",
       "description": "Compare a controlled linked shock-cycle model with planar DSA spectral indices and acceleration times for compression ratios 2, 3, and 4."
     },
     {
-      "id": "CV10", "name": "Nonuniform turbulence advection", "group": "controlled-analytical", "runtime_class": "routine",
-      "entrypoint": "validation/cases/CV10/case.py", "default_input": "validation/cases/CV10/input.json",
+      "id": "CV10",
+      "name": "Nonuniform turbulence advection",
+      "group": "controlled-analytical",
+      "runtime_class": "routine",
+      "entrypoint": "validation/cases/CV10/case.py",
+      "default_input": "validation/cases/CV10/input.json",
       "description": "Compare both production spectral wave branches on fixed, variable-area, and remapped grids with manufactured characteristic solutions."
     },
     {
-      "id": "CV11", "name": "Time-dependent resonant wave growth and damping", "group": "controlled-analytical", "runtime_class": "routine",
-      "entrypoint": "validation/cases/CV11/case.py", "default_input": "validation/cases/CV11/input.json",
+      "id": "CV11",
+      "name": "Time-dependent resonant wave growth and damping",
+      "group": "controlled-analytical",
+      "runtime_class": "routine",
+      "entrypoint": "validation/cases/CV11/case.py",
+      "default_input": "validation/cases/CV11/input.json",
       "description": "Compare one-hot production wave-source histories with exact growth, damping, cancellation, and sinusoidal-rate solutions."
     },
     {
-      "id": "CV12", "name": "Controlled particle-wave total-energy exchange", "group": "controlled-analytical", "runtime_class": "routine",
-      "entrypoint": "validation/cases/CV12/case.py", "default_input": "validation/cases/CV12/input.json",
+      "id": "CV12",
+      "name": "Controlled particle-wave total-energy exchange",
+      "group": "controlled-analytical",
+      "runtime_class": "routine",
+      "entrypoint": "validation/cases/CV12/case.py",
+      "default_input": "validation/cases/CV12/input.json",
       "description": "Verify closed particle-wave total-energy accounting with coupled, uncoupled, and deliberately broken-deposition controls."
     },
     {
-      "id":"IV01","name":"Streaming plus Parker-spiral focusing","group":"integrated-manufactured","runtime_class":"routine","entrypoint":"validation/cases/IV01/case.py","default_input":"validation/cases/IV01/input.json","description":"Verify Parker-spiral geometry, focused streaming, weak scattering, travel time, and field-line storage orientation together."
+      "id": "IV01",
+      "name": "Streaming plus Parker-spiral focusing",
+      "group": "integrated-manufactured",
+      "runtime_class": "routine",
+      "entrypoint": "validation/cases/IV01/case.py",
+      "default_input": "validation/cases/IV01/input.json",
+      "description": "Verify Parker-spiral geometry, focused streaming, weak scattering, travel time, and field-line storage orientation together."
     },
     {
-      "id":"IV02","name":"Scattering-focusing equilibrium","group":"integrated-manufactured","runtime_class":"routine","entrypoint":"validation/cases/IV02/case.py","default_input":"validation/cases/IV02/input.json","description":"Verify that coupled focusing and pitch diffusion approach the independent zero-flux stationary distribution."
+      "id": "IV02",
+      "name": "Scattering-focusing equilibrium",
+      "group": "integrated-manufactured",
+      "runtime_class": "routine",
+      "entrypoint": "validation/cases/IV02/case.py",
+      "default_input": "validation/cases/IV02/input.json",
+      "description": "Verify that coupled focusing and pitch diffusion approach the independent zero-flux stationary distribution."
     },
     {
-      "id":"IV03","name":"Manufactured spatial-pitch-momentum transport","group":"integrated-manufactured","runtime_class":"routine","entrypoint":"validation/cases/IV03/case.py","default_input":"validation/cases/IV03/input.json","description":"Verify a positive manufactured transport residual and second-order derivative/source assembly across all coordinates."
+      "id": "IV03",
+      "name": "Manufactured spatial-pitch-momentum transport",
+      "group": "integrated-manufactured",
+      "runtime_class": "routine",
+      "entrypoint": "validation/cases/IV03/case.py",
+      "default_input": "validation/cases/IV03/input.json",
+      "description": "Verify a positive manufactured transport residual and second-order derivative/source assembly across all coordinates."
     },
     {
-      "id":"IV04","name":"Moving field-line grid conservation and GCL","group":"integrated-manufactured","runtime_class":"routine","entrypoint":"validation/cases/IV04/case.py","default_input":"validation/cases/IV04/input.json","description":"Verify free-stream preservation and conservative remapping on stretched, compressed, and sinusoidally moved segment grids."
+      "id": "IV04",
+      "name": "Moving field-line grid conservation and GCL",
+      "group": "integrated-manufactured",
+      "runtime_class": "routine",
+      "entrypoint": "validation/cases/IV04/case.py",
+      "default_input": "validation/cases/IV04/input.json",
+      "description": "Verify free-stream preservation and conservative remapping on stretched, compressed, and sinusoidally moved segment grids."
     },
     {
-      "id":"IV05","name":"Moving shock crossing and acceleration","group":"integrated-manufactured","runtime_class":"routine","entrypoint":"validation/cases/IV05/case.py","default_input":"validation/cases/IV05/input.json","description":"Verify moving/stationary shock frame equivalence, continuous crossing times, node coincidence, and DSA slope."
+      "id": "IV05",
+      "name": "Moving shock crossing and acceleration",
+      "group": "integrated-manufactured",
+      "runtime_class": "routine",
+      "entrypoint": "validation/cases/IV05/case.py",
+      "default_input": "validation/cases/IV05/input.json",
+      "description": "Verify moving/stationary shock frame equivalence, continuous crossing times, node coincidence, and DSA slope."
     },
     {
-      "id":"IV06","name":"Coupled self-generated turbulence feedback","group":"integrated-manufactured","runtime_class":"routine","entrypoint":"validation/cases/IV06/case.py","default_input":"validation/cases/IV06/input.json","description":"Verify the causal streaming-growth-scattering feedback with frozen, one-way, and two-way controls and an energy ledger."
+      "id": "IV06",
+      "name": "Coupled self-generated turbulence feedback",
+      "group": "integrated-manufactured",
+      "runtime_class": "routine",
+      "entrypoint": "validation/cases/IV06/case.py",
+      "default_input": "validation/cases/IV06/input.json",
+      "description": "Verify the causal streaming-growth-scattering feedback with frozen, one-way, and two-way controls and an energy ledger."
     },
     {
-      "id":"XM01","name":"Independent focused-transport PDE solver comparison","group":"cross-model","runtime_class":"extended","entrypoint":"validation/cases/XM01/case.py","default_input":"validation/cases/XM01/input.json","description":"Compare linked production focused transport with an independent conservative finite-volume solver for isolated and combined operators."
+      "id": "XM01",
+      "name": "Independent focused-transport PDE solver comparison",
+      "group": "cross-model",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/XM01/case.py",
+      "default_input": "validation/cases/XM01/input.json",
+      "description": "Compare linked production focused transport with an independent conservative finite-volume solver for isolated and combined operators."
     },
     {
-      "id":"XM02","name":"Publication-informed M-FLAMPA transport reconstruction","group":"cross-model","runtime_class":"extended","entrypoint":"validation/cases/XM02/case.py","default_input":"validation/cases/XM02/input.json","description":"Run a linked controlled first-passage calculation with the reported 0.05, 0.3, and 1.0 au mean free paths and compare unit-peak profiles with digitized Zhao et al. Figure 7."
+      "id": "XM02",
+      "name": "Publication-informed M-FLAMPA transport reconstruction",
+      "group": "cross-model",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/XM02/case.py",
+      "default_input": "validation/cases/XM02/input.json",
+      "description": "Run a linked controlled first-passage calculation with the reported 0.05, 0.3, and 1.0 au mean free paths and compare unit-peak profiles with digitized Zhao et al. Figure 7."
     },
     {
-      "id":"XM03","name":"2013 April 11 Earth spectra in Liu Figure 12","group":"cross-model","runtime_class":"extended","entrypoint":"validation/cases/XM03/case.py","default_input":"validation/cases/XM03/input.json","description":"Run event-informed one-field-line Parker transport in the linked srcSEP/AMPS application and compare with ACE, GOES-13, and SOHO Earth observations digitized from Liu et al. Figure 12."
+      "id": "XM03",
+      "name": "2013 April 11 Earth spectra in Liu Figure 12",
+      "group": "cross-model",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/XM03/case.py",
+      "default_input": "validation/cases/XM03/input.json",
+      "description": "Run event-informed one-field-line Parker transport in the linked srcSEP/AMPS application and compare with ACE, GOES-13, and SOHO Earth observations digitized from Liu et al. Figure 12."
     },
     {
-      "id":"OV01","name":"2013 April 11 near-Earth observational benchmark","group":"observational-validation","runtime_class":"extended","entrypoint":"validation/cases/OV01/case.py","default_input":"validation/cases/OV01/input.json","description":"Apply release-gating criteria to linked Parker transport and the ACE, GOES-13, and SOHO spectra digitized from Liu et al. Figure 12."
+      "id": "OV01",
+      "name": "2013 April 11 near-Earth observational benchmark",
+      "group": "observational-validation",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/OV01/case.py",
+      "default_input": "validation/cases/OV01/input.json",
+      "description": "Apply release-gating criteria to linked Parker transport and the ACE, GOES-13, and SOHO spectra digitized from Liu et al. Figure 12."
     },
     {
-      "id":"OV02","name":"2020 May 29 PSP/STEREO-A radial benchmark","group":"observational-validation","runtime_class":"extended","entrypoint":"validation/cases/OV02/case.py","default_input":"validation/cases/OV02/input.json","description":"Use one unchanged transport setup at 0.33 and 0.96 AU and compare linked profiles with PSP and STEREO-A observations in Cheng et al. Figures 3 and 6."
+      "id": "OV02",
+      "name": "2020 May 29 PSP/STEREO-A radial benchmark",
+      "group": "observational-validation",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/OV02/case.py",
+      "default_input": "validation/cases/OV02/input.json",
+      "description": "Use one unchanged transport setup at 0.33 and 0.96 AU and compare linked profiles with PSP and STEREO-A observations in Cheng et al. Figures 3 and 6."
     },
     {
-      "id":"OV03","name":"2013 May 22 interacting-CME diagnostic","group":"observational-validation","runtime_class":"extended","entrypoint":"validation/cases/OV03/case.py","default_input":"validation/cases/OV03/input.json","description":"Compare linked single- and twin-source hypotheses with GOES and STEREO-A profiles digitized from Ding et al. Figure 1."
+      "id": "OV03",
+      "name": "2013 May 22 interacting-CME diagnostic",
+      "group": "observational-validation",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/OV03/case.py",
+      "default_input": "validation/cases/OV03/input.json",
+      "description": "Compare linked single- and twin-source hypotheses with GOES and STEREO-A profiles digitized from Ding et al. Figure 1."
     },
     {
-      "id":"OV04","name":"2014 January 6 connectivity diagnostic","group":"observational-validation","runtime_class":"extended","entrypoint":"validation/cases/OV04/case.py","default_input":"validation/cases/OV04/input.json","description":"Compare three linked magnetic-connection realizations with the PAMELA event-integrated spectrum in Bruno et al. Figure 4."
+      "id": "OV04",
+      "name": "2014 January 6 connectivity diagnostic",
+      "group": "observational-validation",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/OV04/case.py",
+      "default_input": "validation/cases/OV04/input.json",
+      "description": "Compare three linked magnetic-connection realizations with the PAMELA event-integrated spectrum in Bruno et al. Figure 4."
     },
     {
-      "id":"OV05","name":"September 2017 compound-event diagnostic","group":"observational-validation","runtime_class":"extended","entrypoint":"validation/cases/OV05/case.py","default_input":"validation/cases/OV05/input.json","description":"Compare a linked three-injection September 2017 transport run with multi-energy STEREO-A profiles digitized from Bruno et al. Figure 2."
+      "id": "OV05",
+      "name": "September 2017 compound-event diagnostic",
+      "group": "observational-validation",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/OV05/case.py",
+      "default_input": "validation/cases/OV05/input.json",
+      "description": "Compare a linked three-injection September 2017 transport run with multi-energy STEREO-A profiles digitized from Bruno et al. Figure 2."
+    },
+    {
+      "id": "EV01",
+      "name": "Calibration ensemble and parameter identifiability",
+      "group": "campaign-evidence",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/EV01/case.py",
+      "default_input": "validation/cases/EV01/input.json",
+      "description": "Fit one campaign-wide source-amplitude covariate law on a sealed training subset and score linked srcSEP predictions against NASA CCMC GOES observations without event-by-event normalization."
+    },
+    {
+      "id": "EV02",
+      "name": "Locked held-out and forward validation campaign",
+      "group": "campaign-evidence",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/EV02/case.py",
+      "default_input": "validation/cases/EV02/input.json",
+      "description": "Refit only the predeclared training subset, keep hold-out targets sealed during fitting, and score linked srcSEP predictions against untouched NASA CCMC GOES observations."
     }
   ]
 }

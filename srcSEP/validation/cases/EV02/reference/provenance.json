@@ -1,0 +1,12 @@
+{
+  "schema": "srcsep-observational-reference-v1",
+  "case_id": "EV02",
+  "provider": "NASA CCMC SEP Model Validation Challenge",
+  "product": "Standard Input Parameters / GOES Proton Measurements",
+  "url": "https://ccmc.gsfc.nasa.gov/assessment/topics/SEP/campaign2020/input_parameters.php",
+  "accessed_utc": "2026-09-15",
+  "observation_method": "CCMC values derived from GOES observations using the OpSEP validation workflow",
+  "transcription": "Rows transcribed from the official >10 MeV/10 pfu and >100 MeV/1 pfu tables; N/A threshold crossings are preserved as non-crossings.",
+  "synthetic_or_theoretical_values": false,
+  "notes": "This is the nine-event SHINE/ISWAT pilot, not the full 15\u201330 event/non-event EV01 campaign requested by the implementation plan. The current CLEAR benchmark should be used to expand the cohort when archived locally."
+}

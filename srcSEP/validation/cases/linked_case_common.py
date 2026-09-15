@@ -1,5 +1,5 @@
 """Shared linked-application mechanics for CV02-CV12, IV01-IV06, XM01-XM03,
-and OV01-OV05.
+OV01-OV05, and EV01-EV02.
 
 This module owns evidence plumbing, not expected physics.  Every case passes a
 flat, reviewed SI argument vector to the selected ``amps`` executable and owns
