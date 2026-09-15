@@ -75,6 +75,8 @@ class PythonTestRunnerTests(unittest.TestCase):
                 "validation/cases/XM03/publication_input.json",
                 "validation/cases/XM03/input/earth_shock_thermal_source.csv",
                 "validation/cases/XM03/reference/liu_figure12_earth_observations.csv",
+                "--validation-case OV01 --validation-case OV02",
+                "OV03-OV05 are diagnostic-only",
                 "Do not add --case-input",
                 "No external production CSV is used by XM02",
                 "XM03 needs no external model CSV",
@@ -481,6 +483,44 @@ PARK01 | parker | duplicate
                      str(temporary / case_id)],
                     cwd=str(ROOT), text=True, stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT, check=False)
+                self.assertEqual(completed.returncode, 2, completed.stdout)
+                self.assertIn(
+                    f"{case_id} uses its single registered publication-derived input",
+                    completed.stdout)
+
+    def test_ov01_ov05_use_linked_application_and_fixed_inputs(self):
+        """Keep observational evidence attached to one reviewed event input.
+
+        The Python layer may score and plot observations, but it must forward
+        every OV ID to validation/run_case.py with the operator-selected AMPS
+        binary.  It must also reject a replacement case input before checking
+        whether that binary exists, making the evidence policy deterministic.
+        """
+        runner = _load_runner_module()
+        selected = [f"OV{index:02d}" for index in range(1, 6)]
+        with tempfile.TemporaryDirectory(prefix="srcsep-ov-command-") as tmp:
+            temporary = Path(tmp)
+            arguments = SimpleNamespace(
+                amps="/opt/amps/bin/srcsep-amps", validation_all=False,
+                validation_cases=selected, case_input=None, timeout=900.0)
+            with mock.patch.object(runner, "_run_streaming", return_value=0) as run:
+                _, _, command = runner._run_validation_cases(
+                    arguments, temporary, temporary / "runner.log")
+            self.assertEqual(command[2:4], ["--amps", "/opt/amps/bin/srcsep-amps"])
+            for case_id in selected:
+                self.assertIn(case_id, command)
+            self.assertNotIn("--input", command)
+            run.assert_called_once()
+
+            alternate = temporary / "alternate.json"
+            alternate.write_text("{}\n", encoding="utf-8")
+            for case_id in selected:
+                completed = subprocess.run(
+                    [sys.executable, str(RUNNER), "--amps",
+                     str(temporary / "missing-amps"), "--validation-case", case_id,
+                     "--case-input", str(alternate), "--output-dir",
+                     str(temporary / case_id)], cwd=str(ROOT), text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
                 self.assertEqual(completed.returncode, 2, completed.stdout)
                 self.assertIn(
                     f"{case_id} uses its single registered publication-derived input",

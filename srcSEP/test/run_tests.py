@@ -86,12 +86,14 @@ ANALYTICAL_IDS = {
     *(f"TURB{i:02d}" for i in (2, 3, 5, 6, 7, 9, 11, 12, 13, 16, 21, 22, 23)),
 }
 
-# XM02 and XM03 represent one published configuration each.  Their test inputs
+# XM02/XM03 and OV01-OV05 represent one published configuration each. Their test inputs
 # are source-reviewed artifacts selected through validation/case_registry.json,
 # not user-selectable campaign variants.  Keeping this policy in one explicit
 # set lets both argument validation and help-oriented unit tests detect an
 # accidental return of the former "reviewed input file" workflow.
-FIXED_PUBLICATION_INPUT_CASES = {"XM02", "XM03"}
+FIXED_PUBLICATION_INPUT_CASES = {
+    "XM02", "XM03", "OV01", "OV02", "OV03", "OV04", "OV05"
+}
 
 X_COLUMNS = ("x", "time", "time_s", "s", "s_m", "mu", "radius", "radius_m",
              "energy", "energy_mev", "coordinate")
@@ -235,6 +237,30 @@ Examples:
      comparison and XM03 a reduced Parker event reconstruction; neither is an
      exact global-model replay. Both run to PASS or FAIL with their fixed
      repository inputs, and neither compares a reference with itself.
+
+     Run the complete observational portfolio:
+
+       python3 test/run_tests.py --amps ../amps \
+         --validation-case OV01 --validation-case OV02 \
+         --validation-case OV03 --validation-case OV04 \
+         --validation-case OV05 --output-dir test_output/OV01-OV05
+
+     OV01 is the 2013-04-11 near-Earth release gate and shares the immutable
+     Liu et al. Figure 12 observations/source artifact with XM03. OV02 is the
+     2020-05-29 radial release gate at PSP (0.33 au) and STEREO-A (0.96 au),
+     using Cheng et al. Figures 3 and 6. OV03 compares single- and twin-CME
+     source histories with Ding et al. Figure 1. OV04 compares three connection
+     delays with the 2014-01-06 PAMELA spectrum in Bruno et al. Figure 4. OV05
+     uses the September 4, 6, and 10 injections and STEREO-A profiles in Bruno
+     et al. Figure 2. OV03-OV05 are diagnostic-only because a one-field-line
+     model cannot represent their wide-longitude/compound transient geometry;
+     their discrepancy metrics are reported with gating=false, while missing
+     evidence or linked-execution errors still fail the case.
+
+     Every OV case automatically selects its only reviewed input under
+     validation/cases/OVxx/input.json. Do not pass --case-input. Each case
+     directory documents publication URLs, PDF SHA-256, figure/panel, excluded
+     curves, digitization uncertainty, source-time derivation, and model limits.
 
      Repeat --test to choose any collection of individual cases:
 
@@ -650,7 +676,7 @@ def _print_summary(report: Dict[str, Any]) -> None:
 def _validation_case_ids() -> set[str]:
     """Return IDs that require the registered validation-case input protocol.
 
-    CV, IV, and XM callbacks cannot be launched as bare ``amps --test ID``
+    CV, IV, XM, and OV callbacks cannot be launched as bare ``amps --test ID``
     commands because their Python entrypoints construct reviewed native input
     manifests and independent references.  Loading the data registry, rather
     than maintaining a second hard-coded list, keeps ``--all`` correct as new
@@ -692,7 +718,7 @@ def _run_all_tests(args: argparse.Namespace, output_dir: Path,
     timeout, abort, or segmentation fault affects only its current test.  The
     runner synthesizes an ERROR record when that process cannot write valid
     JSON, prints the outcome, and continues through the remaining IDs.
-    Registered CV/IV/XM cases are delegated one at a time to run_case.py so the
+    Registered CV/IV/XM/OV cases are delegated one at a time to run_case.py so the
     exact application input and independent-reference workflow is preserved.
     """
     executable = Path(args.amps).expanduser().resolve()
@@ -1108,8 +1134,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--validation-all", action="store_true",
                         help="run every registered end-to-end validation case")
     parser.add_argument("--case-input", type=Path,
-                        help=("override one CV/IV validation input; XM02/XM03 "
-                              "always use their registered publication-derived input"))
+                        help=("override one CV/IV validation input; XM02/XM03 and "
+                              "OV01-OV05 always use their registered publication-derived input"))
     parser.add_argument("--from-json", type=Path,
                         help="plot an existing component-test JSON without running tests")
     parser.add_argument("--output-dir", type=Path,

@@ -1,0 +1,38 @@
+series,observer,instrument,figure,comparison_mode,elapsed_hours,energy_mev,value,digitization_relative_uncertainty
+PSP_2.2MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,1.5,2.2,0.061,0.18
+PSP_2.2MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,2.5,2.2,0.088,0.16
+PSP_2.2MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,3.5,2.2,0.091,0.16
+PSP_2.2MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,4.5,2.2,0.112,0.15
+PSP_2.2MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,5.5,2.2,0.145,0.15
+PSP_2.2MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,6.5,2.2,0.155,0.15
+PSP_2.2MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,7.5,2.2,0.121,0.15
+PSP_2.2MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,8.5,2.2,0.069,0.16
+PSP_2.2MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,9.5,2.2,0.052,0.17
+PSP_2.2MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,10.5,2.2,0.041,0.18
+PSP_2.2MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,12.5,2.2,0.044,0.18
+PSP_2.2MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,14.5,2.2,0.033,0.19
+PSP_2.2MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,16.5,2.2,0.019,0.22
+PSP_12.3MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,1.5,12.3,0.0061,0.22
+PSP_12.3MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,2.5,12.3,0.0067,0.21
+PSP_12.3MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,3.5,12.3,0.0043,0.22
+PSP_12.3MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,4.5,12.3,0.0034,0.22
+PSP_12.3MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,5.5,12.3,0.0024,0.23
+PSP_12.3MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,6.5,12.3,0.0019,0.24
+PSP_12.3MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,8.5,12.3,0.0014,0.25
+PSP_12.3MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,10.5,12.3,0.0008,0.28
+PSP_12.3MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,13.5,12.3,0.0010,0.27
+PSP_12.3MeV,PSP,PSP/EPI-Hi,Figure 3,time-profile,16.5,12.3,0.00027,0.32
+STA_2.7MeV,STA,STEREO-A/LET 1.8-3.6 MeV,Figure 6,time-profile,4.5,2.7,0.00062,0.25
+STA_2.7MeV,STA,STEREO-A/LET 1.8-3.6 MeV,Figure 6,time-profile,7.5,2.7,0.00072,0.24
+STA_2.7MeV,STA,STEREO-A/LET 1.8-3.6 MeV,Figure 6,time-profile,10.5,2.7,0.00063,0.25
+STA_2.7MeV,STA,STEREO-A/LET 1.8-3.6 MeV,Figure 6,time-profile,13.5,2.7,0.0010,0.23
+STA_2.7MeV,STA,STEREO-A/LET 1.8-3.6 MeV,Figure 6,time-profile,16.5,2.7,0.0024,0.21
+STA_2.7MeV,STA,STEREO-A/LET 1.8-3.6 MeV,Figure 6,time-profile,19.5,2.7,0.0034,0.20
+STA_2.7MeV,STA,STEREO-A/LET 1.8-3.6 MeV,Figure 6,time-profile,22.5,2.7,0.0045,0.19
+STA_5MeV,STA,STEREO-A/LET 4.0-6.0 MeV,Figure 6,time-profile,4.5,5.0,0.00023,0.30
+STA_5MeV,STA,STEREO-A/LET 4.0-6.0 MeV,Figure 6,time-profile,7.5,5.0,0.00019,0.31
+STA_5MeV,STA,STEREO-A/LET 4.0-6.0 MeV,Figure 6,time-profile,10.5,5.0,0.00031,0.28
+STA_5MeV,STA,STEREO-A/LET 4.0-6.0 MeV,Figure 6,time-profile,13.5,5.0,0.00072,0.25
+STA_5MeV,STA,STEREO-A/LET 4.0-6.0 MeV,Figure 6,time-profile,16.5,5.0,0.0012,0.23
+STA_5MeV,STA,STEREO-A/LET 4.0-6.0 MeV,Figure 6,time-profile,19.5,5.0,0.0021,0.22
+STA_5MeV,STA,STEREO-A/LET 4.0-6.0 MeV,Figure 6,time-profile,22.5,5.0,0.0025,0.21

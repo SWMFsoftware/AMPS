@@ -26,6 +26,14 @@ Earth-observation comparison for the 2013 April 11 event. XM03 now generates
 its Parker-transport spectrum inside the selected executable and compares it
 with ACE/EPAM, GOES-13/EPEAD, and SOHO/ERNE data from Liu et al. Figure 12; it
 does not require or accept an external model export.
+Observational cases `OV01`–`OV05` add two release gates (the 2013 April 11
+near-Earth benchmark and the 2020 May 29 PSP/STEREO-A radial comparison) plus
+three explicitly diagnostic stress cases for the 2013 May 22 interacting CMEs,
+the 2014 January 6 connectivity-sensitive event, and the September 2017
+compound sequence. Every OV model artifact is produced by the selected linked
+application; immutable spacecraft points, publication figure attribution,
+fixed inputs, digitization uncertainty, and missing-physics limitations live
+beside each case.
 They cover ballistic streaming; constant/nonuniform spatial diffusion;
 adiabatic cooling; magnetic focusing; Legendre pitch diffusion; telegraph and
 first-passage transport; planar DSA; turbulence advection and growth; and
@@ -45,6 +53,9 @@ cases are documented in
 XM equations, publication sources, reference extraction, inputs, and evidence
 limits are documented in
 [XM01_XM03_VALIDATION_IMPLEMENTATION.md](XM01_XM03_VALIDATION_IMPLEMENTATION.md).
+The observational sources, input derivations, acceptance roles, and run
+commands are documented in
+[OV01_OV05_VALIDATION_IMPLEMENTATION.md](OV01_OV05_VALIDATION_IMPLEMENTATION.md).
 Retired names remain
 mapped in [MIGRATION_MANIFEST.md](MIGRATION_MANIFEST.md).
 Self-consistent Alfvén turbulence remains a production subsystem and uses the

@@ -1,0 +1,11 @@
+{
+  "schema":"srcsep-digitized-reference-v1",
+  "case_id":"OV03",
+  "publication":"Ding et al. (2014), doi:10.1088/2041-8205/793/2/L35",
+  "source_pdf_sha256":"d8bb151455a907904f0336884e9ce114f1e823ef37fc4e92bda0a139a6981abb",
+  "figure":"Figure 1(b,d)",
+  "method":"Manual centerline digitization of the red/green integrated-flux traces on a 130-dpi Poppler rendering; linear time and logarithmic intensity axes.",
+  "time_origin_utc":"2013-05-22T08:48:00Z",
+  "duplicate_reference_policy":"The same observed trace is repeated under single and twin run keys so both hypotheses are scored and plotted against an identical baseline.",
+  "uncertainty":"Row values describe figure-reading uncertainty, not detector calibration uncertainty."
+}

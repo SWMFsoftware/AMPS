@@ -11,11 +11,26 @@ test/run_tests.py --amps ../amps --all --output-dir test_output/all
 
 The runner discovers the complete native registry, executes every test in an
 isolated process, and automatically uses the registered input/reference
-workflow for CV, IV, and XM validation cases. A failed, errored, or crashed
+workflow for CV, IV, XM, and OV validation cases. A failed, errored, or crashed
 test does not prevent later tests from running. The final output reports the
 PASS/FAIL/SKIP/ERROR totals and lists every failed or errored test with its
 diagnostic. Detailed JSON, JUnit, logs, plots, and per-test artifacts are saved
 under `test_output/all`.
+
+The five observational cases can also be run as a focused campaign:
+
+```sh
+test/run_tests.py --amps ../amps \
+  --validation-case OV01 --validation-case OV02 \
+  --validation-case OV03 --validation-case OV04 \
+  --validation-case OV05 --output-dir test_output/OV01-OV05
+```
+
+OV01 and OV02 are release gates. OV03-OV05 are diagnostic stress cases: their
+physics-discrepancy metrics remain in the report with `gating=false`, while a
+missing reference, incomplete native CSV, registry error, or failed linked run
+still fails/errors the campaign. All five use their single repository-owned
+publication input; `--case-input` is intentionally rejected.
 
 Step 1 provides one catalog and result contract for standalone component tests.
 The catalog lives in `component_tests.cpp`; generic deterministic selection,
@@ -76,6 +91,9 @@ make test-turbulence-core-unit
 
 # Step 12 deterministic worker/rank reduction and keyed RNG evidence.
 make test-reproducibility-unit
+
+# OV01-OV05 source/provenance checks and optional linked observational run.
+make test-ov01-ov05-unit SEP_EXECUTABLE=../amps
 
 # Step 13 registered background/cross-mover fixtures and JSON/JUnit evidence.
 make test-acceptance-unit

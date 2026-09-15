@@ -1,0 +1,23 @@
+{
+  "schema": "srcsep-publication-input-reconstruction-v1",
+  "case_id": "OV01",
+  "title": "Release-gate view of the 2013 April 11 Earth reconstruction",
+  "reproduction_status": "partial",
+  "scientific_use": "Apply release criteria to the same immutable Liu et al. Figure 12 observations and source trace used by XM03.",
+  "publication": {
+    "title": "Physics-based Simulation of the 2013 April 11 Solar Energetic Particle Event",
+    "doi": "10.3847/1538-4357/adc4e3",
+    "arxiv": "2412.07581v2",
+    "source_url": "https://arxiv.org/abs/2412.07581"
+  },
+  "shared_artifacts": {
+    "observations": "../XM03/reference/liu_figure12_earth_observations.csv",
+    "source_history": "../XM03/input/earth_shock_thermal_source.csv",
+    "reason": "one reviewed copy prevents the release and cross-model baselines from diverging"
+  },
+  "missing_required_inputs": [
+    "time-dependent Earth-connected AWSoM field line",
+    "three-dimensional shock geometry and source area",
+    "complete SWMF/SOFIE restart and run deck"
+  ]
+}

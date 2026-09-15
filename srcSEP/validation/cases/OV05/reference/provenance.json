@@ -1,0 +1,3 @@
+{
+  "schema":"srcsep-digitized-reference-v1","case_id":"OV05","publication":"Bruno et al. (2019), doi:10.1029/2018SW002085, arXiv:1902.03969v1","source_pdf_sha256":"ec0afd0fe44302dcdb8f193aa2629b2e4a726ee9621e29504f92bd2d8efc4dfd","figure":"Figure 2","method":"Manual trace-center digitization from a 150-dpi Poppler rendering at four labeled STEREO-A LET/HET energy channels; linear time and logarithmic intensity axes.","time_origin_utc":"2017-09-04T20:00:00Z","uncertainty":"Large row uncertainties reflect dense overlapping colored traces and line thickness; they are not detector calibration uncertainties.","excluded_features":["orange CIR intervals","gray/green ICME/HSS shading","publication interpretation curves—Figure 2 contains observations only"]
+}

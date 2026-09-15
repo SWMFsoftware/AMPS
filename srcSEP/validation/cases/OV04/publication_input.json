@@ -1,0 +1,6 @@
+{
+  "schema":"srcsep-publication-input-reconstruction-v1","case_id":"OV04","title":"2014 January 6 high-energy connectivity diagnostic","reproduction_status":"partial","scientific_use":"Bracket magnetic connection time with three fixed realizations and compare all with one PAMELA event-integrated spectrum.",
+  "publication":{"title":"Solar Energetic Particle Events Observed by the PAMELA Mission","authors":"Bruno et al.","doi":"10.3847/1538-4357/aacc26","arxiv":"1807.10183v1","source_url":"https://arxiv.org/abs/1807.10183","source_pdf_sha256":"733b46b142b36c3b9821d49b0268c645fb68dc44480393383b7520ebc1160fe5"},
+  "reported_parameters_used":{"event_interval_utc":"2014-01-06T07:39:00Z/2014-01-07T19:39:00Z","figure_fit_spectral_index":2.14,"figure_fit_rollover_energy_mev":240.5,"cme_speed_km_s":1960.0,"solar_particle_release_utc":"2014-01-06T07:55:00Z"},
+  "missing_required_inputs":["event-specific field-line geometry","spacecraft pitch-angle distribution and detector response matrix","author table underlying the plotted PAMELA points"]
+}

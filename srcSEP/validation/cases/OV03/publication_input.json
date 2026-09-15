@@ -1,0 +1,10 @@
+{
+  "schema":"srcsep-publication-input-reconstruction-v1",
+  "case_id":"OV03",
+  "title":"2013 May 22 single-CME versus twin-CME diagnostic",
+  "reproduction_status":"partial",
+  "scientific_use":"Diagnose whether a second source episode changes the linked 1-D response in the direction of the multi-spacecraft observations; agreement is not a release gate.",
+  "publication":{"title":"Interaction between Two Coronal Mass Ejections in the 2013 May 22 Large Solar Energetic Particle Event","authors":"Ding et al.","doi":"10.1088/2041-8205/793/2/L35","source_url":"https://doi.org/10.1088/2041-8205/793/2/L35","source_pdf_sha256":"d8bb151455a907904f0336884e9ce114f1e823ef37fc4e92bda0a139a6981abb"},
+  "reported_parameters_used":{"epoch_utc":"2013-05-22T08:48:00Z","CME1_speed_km_s":519.0,"CME2_speed_km_s":1439.0,"CME2_launch_utc":"2013-05-22T13:25:00Z","earth_wind_km_s":444.0,"earth_STA_separation_deg":141.0,"earth_onset_utc":"13:50","STA_onset_utc":"20:30"},
+  "missing_required_inputs":["time-dependent three-dimensional CME/shock geometry","field-line-specific turbulence and perpendicular transport","author numerical tables underlying Figure 1"]
+}

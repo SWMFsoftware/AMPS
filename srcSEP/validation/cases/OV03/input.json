@@ -1,0 +1,37 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "OV03",
+  "title": "2013 May 22 interacting-CME observational diagnostic",
+  "publication_input_only": true,
+  "publication_input_manifest": "publication_input.json",
+  "validation_role": "diagnostic-only",
+  "reference": {
+    "csv": "reference/ding_figure1_observations.csv",
+    "publication_id": "Ding2014-2013-May-22",
+    "plot_citation": "Ding et al. (2014), doi:10.1088/2041-8205/793/2/L35",
+    "figure": "Figure 1(b,d)",
+    "reference_kind": "digitized-GOES-STEREO-A-observations"
+  },
+  "physics": {
+    "transport_equation": "field-aligned-parker-sde",
+    "source_radius_mode": "inner-boundary",
+    "field_geometry": "constant-speed-equatorial-parker-spiral",
+    "injection_radius_solar_radii": 2.5,
+    "shock_speed_m_per_s": 1439000.0,
+    "solar_rotation_rate_rad_per_s": 2.8653290846e-6,
+    "mean_free_path_normalization_au": 0.3,
+    "mean_free_path_radial_exponent": 1.0,
+    "mean_free_path_rigidity_exponent": 0.3333333333333333,
+    "injection_momentum_index": 5.0,
+    "comparison_normalization": "unit-peak-per-series"
+  },
+  "model_runs": [
+    {"name":"Earth_single","observer_radius_au":1.0,"solar_wind_speed_m_per_s":444000.0,"connection_delay_s":0.0,"launch_offset_s":16620.0,"energies_mev":[30.6],"source_history_csv":"input/single_cme2_source.csv","output_mode":"time-profile","duration_hours":168.0,"output_cadence_hours":6.0,"seed_offset":0},
+    {"name":"Earth_twin","observer_radius_au":1.0,"solar_wind_speed_m_per_s":444000.0,"connection_delay_s":0.0,"launch_offset_s":0.0,"energies_mev":[30.6],"source_history_csv":"input/twin_cme_source.csv","output_mode":"time-profile","duration_hours":168.0,"output_cadence_hours":6.0,"seed_offset":10000},
+    {"name":"STA_single","observer_radius_au":0.96,"solar_wind_speed_m_per_s":444000.0,"connection_delay_s":0.0,"launch_offset_s":16620.0,"energies_mev":[29.7],"source_history_csv":"input/single_cme2_source.csv","output_mode":"time-profile","duration_hours":168.0,"output_cadence_hours":6.0,"seed_offset":20000},
+    {"name":"STA_twin","observer_radius_au":0.96,"solar_wind_speed_m_per_s":444000.0,"connection_delay_s":0.0,"launch_offset_s":0.0,"energies_mev":[29.7],"source_history_csv":"input/twin_cme_source.csv","output_mode":"time-profile","duration_hours":168.0,"output_cadence_hours":6.0,"seed_offset":30000}
+  ],
+  "numerics": {"particles_per_energy": 900,"time_step_s":300.0,"campaign_seed":40303},
+  "acceptance": {"reference_point_coverage_min":0.85,"log10_profile_rmse_max":0.8,"log10_profile_correlation_min":0.0},
+  "plot": {"formats":["png","eps"]}
+}

@@ -255,7 +255,8 @@ SEP::Testing::Result RunLinkedControlledModel(const char* caseId) {
   const SEP::Testing::ExecutionContext& context =
       SEP::Testing::GetExecutionContext();
   if (context.inputPath.empty() || context.artifactDirectory.empty()) {
-    // CV02-CV12, IV01-IV06, and XM01-XM03 require reviewed case-specific SI inputs. A generic registry
+    // CV02-CV12, IV01-IV06, XM01-XM03, and OV01-OV05 require reviewed
+    // case-specific SI inputs. A generic registry
     // run cannot safely invent them, so discovery/all-tests gets an explicit
     // prerequisite SKIP. The external runner always supplies both paths and
     // requires the linked model CSV, so this cannot become a scientific PASS.
@@ -343,13 +344,14 @@ SEP::Testing::Result RunLinkedControlledModel(const char* caseId) {
       context.artifactDirectory + "/" + caseId + "_model.csv";
   std::string error;
   // CV02-CV05 use the original controlled-transport collection; CV06-CV12
-  // use the advanced collection. IV and XM cases have dedicated collections.
+  // use the advanced collection. IV and XM/OV cases have dedicated collections.
   // Every collection enters through this native callback so
   // the Python campaign validates the linked srcSEP/AMPS application rather
   // than compiling and executing a replacement model.
   const std::string identifier(caseId);
   bool completed = false;
-  if (identifier.size() >= 2 && identifier.substr(0, 2) == "XM")
+  if (identifier.size() >= 2 &&
+      (identifier.substr(0, 2) == "XM" || identifier.substr(0, 2) == "OV"))
     completed = SEP::Validation::RunCrossModelValidationModel(
         identifier, arguments, outputPath, &error);
   else if (identifier.size() >= 2 && identifier.substr(0, 2) == "IV")
@@ -413,6 +415,11 @@ SEP::Testing::Result RunIV06LinkedModel() { return RunLinkedControlledModel("IV0
 SEP::Testing::Result RunXM01LinkedModel() { return RunLinkedControlledModel("XM01"); }
 SEP::Testing::Result RunXM02LinkedModel() { return RunLinkedControlledModel("XM02"); }
 SEP::Testing::Result RunXM03LinkedModel() { return RunLinkedControlledModel("XM03"); }
+SEP::Testing::Result RunOV01LinkedModel() { return RunLinkedControlledModel("OV01"); }
+SEP::Testing::Result RunOV02LinkedModel() { return RunLinkedControlledModel("OV02"); }
+SEP::Testing::Result RunOV03LinkedModel() { return RunLinkedControlledModel("OV03"); }
+SEP::Testing::Result RunOV04LinkedModel() { return RunLinkedControlledModel("OV04"); }
+SEP::Testing::Result RunOV05LinkedModel() { return RunLinkedControlledModel("OV05"); }
 
 SEP::Testing::Descriptor MakeDescriptor(
     const char* id, const char* name, const char* group,
@@ -497,6 +504,24 @@ SEP::Testing::Descriptor MakeCrossModelValidationDescriptor(
       SEP::Testing::InitializationLevel::None,
       SEP::Testing::RuntimeClass::Extended, "fixed case seed from reviewed input",
       "isolated process; immutable reference and transactional model CSV",
+      callback);
+  descriptor.supportedBuildModes = "serial linked srcSEP/AMPS executable";
+  return descriptor;
+}
+
+SEP::Testing::Descriptor MakeObservationalValidationDescriptor(
+    const char* id, const char* name, const char* description,
+    SEP::Testing::TestCallback callback) {
+  // Observational cases are deliberately separated from cross-model tests.
+  // Their immutable baselines are spacecraft measurements (or publication
+  // renderings of those measurements), and each case declares whether the
+  // resulting agreement metrics are release-gating or diagnostic-only.
+  SEP::Testing::Descriptor descriptor = MakeDescriptor(
+      id, name, "observational-validation", description,
+      SEP::Testing::InitializationLevel::None,
+      SEP::Testing::RuntimeClass::Extended,
+      "fixed case seed from reviewed publication input",
+      "isolated linked process; immutable observations; transactional CSV",
       callback);
   descriptor.supportedBuildModes = "serial linked srcSEP/AMPS executable";
   return descriptor;
@@ -630,6 +655,16 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
           "Run a controlled linked first-passage reconstruction for the three published mean free paths and compare with provenance-tracked M-FLAMPA sensitivity curves.", RunXM02LinkedModel),
       MakeCrossModelValidationDescriptor("XM03", "2013 April 11 Earth observation comparison",
           "Run event-informed Parker transport in the linked application and compare its Earth spectra with ACE, GOES-13, and SOHO observations digitized from Liu et al. Figure 12.", RunXM03LinkedModel),
+      MakeObservationalValidationDescriptor("OV01", "2013 April 11 near-Earth observational benchmark",
+          "Apply the release-gating Earth spectrum contract to linked Parker transport and ACE, GOES-13, and SOHO observations from Liu et al. Figure 12.", RunOV01LinkedModel),
+      MakeObservationalValidationDescriptor("OV02", "2020 May 29 radial PSP/STEREO-A benchmark",
+          "Run one unchanged transport setup at 0.33 and 0.96 AU and compare with PSP/EPI-Hi and STEREO-A/LET profiles from Cheng et al. Figures 3 and 6.", RunOV02LinkedModel),
+      MakeObservationalValidationDescriptor("OV03", "2013 May 22 interacting-CME diagnostic",
+          "Compare single- and twin-source linked transport hypotheses with GOES and STEREO-A profiles from Ding et al. Figure 1.", RunOV03LinkedModel),
+      MakeObservationalValidationDescriptor("OV04", "2014 January 6 connectivity diagnostic",
+          "Propagate three documented connection-delay realizations and compare their event spectra with the PAMELA spectrum in Bruno et al. Figure 4.", RunOV04LinkedModel),
+      MakeObservationalValidationDescriptor("OV05", "September 2017 compound-event diagnostic",
+          "Propagate publication-timed September 4, 6, and 10 injections and compare with STEREO-A profiles in Bruno et al. Figure 2.", RunOV05LinkedModel),
       MakeDescriptor("TURB01", "Alfven wave-energy closure", "turbulence",
           "Compare the production 1-AU wave-energy helper with an independent magnetic-pressure expression.",
           SEP::Testing::InitializationLevel::None,

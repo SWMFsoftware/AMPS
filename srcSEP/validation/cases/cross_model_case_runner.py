@@ -107,7 +107,16 @@ def _xm03_arguments(case: Dict[str, Any], input_path: Path) -> List[str]:
     relative = Path(str(physics["source_history_csv"]))
     if relative.is_absolute() or ".." in relative.parts:
         raise ValueError("XM03 source_history_csv must be case-relative")
-    case_directory = input_path.parent.resolve()
+    # OV01 deliberately reuses the exact XM03 Figure-12(d) source artifact so
+    # the release-gate and cross-model views cannot drift.  A named sibling
+    # case is allowed only through this explicit field; arbitrary ``..`` path
+    # traversal remains forbidden.
+    source_case = str(physics.get("source_history_case", "")).strip()
+    if source_case and (Path(source_case).name != source_case or
+                        source_case not in {"XM03"}):
+        raise ValueError("source_history_case must name the reviewed XM03 case")
+    case_directory = ((Path(__file__).parent / source_case).resolve()
+                      if source_case else input_path.parent.resolve())
     source = (case_directory / relative).resolve()
     if case_directory not in source.parents or not source.is_file():
         raise ValueError(f"XM03 source history is missing or outside the case: {source}")
@@ -589,7 +598,7 @@ def _xm03_score(case: Dict[str, Any], model_rows: Sequence[Dict[str, str]],
 def _xm03_plot(case: Dict[str, Any], output: Path,
                model_rows: Sequence[Dict[str, str]],
                reference_rows: Sequence[Dict[str, str]], scale: float,
-               formats: Sequence[str]) -> List[Path]:
+               formats: Sequence[str], case_id: str = "XM03") -> List[Path]:
     """Overlay the linked Earth spectra and Figure-12 measurements."""
     import matplotlib
     matplotlib.use("Agg")
@@ -637,11 +646,12 @@ def _xm03_plot(case: Dict[str, Any], output: Path,
     figure.legend(handles, labels, loc="lower center", ncol=4,
                   bbox_to_anchor=(0.5, -0.03), framealpha=1.0)
     figure.suptitle(
-        "XM03: Earth-observation spectral comparison\n"
+        f"{case_id}: Earth-observation spectral comparison\n"
         f"{_publication_plot_label(case)}\n"
         f"one global model amplitude = {scale:.3e}")
     figure.tight_layout(rect=(0.0, 0.11, 1.0, 0.88))
-    paths = _save_figure(figure, output, "XM03_earth_observation_comparison", formats)
+    paths = _save_figure(
+        figure, output, f"{case_id}_earth_observation_comparison", formats)
     plt.close(figure)
     return paths
 

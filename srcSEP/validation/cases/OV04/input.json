@@ -1,0 +1,18 @@
+{
+  "schema":"srcsep-validation-case-input-v1",
+  "case_id":"OV04",
+  "title":"2014 January 6 connectivity-sensitive PAMELA diagnostic",
+  "publication_input_only":true,
+  "publication_input_manifest":"publication_input.json",
+  "validation_role":"diagnostic-only",
+  "reference":{"csv":"reference/bruno_figure4_20140106_pamela.csv","publication_id":"Bruno2018-PAMELA-2014-Jan-06","plot_citation":"Bruno et al. (2018), doi:10.3847/1538-4357/aacc26","figure":"Figure 4, 2014-01-06 panel","reference_kind":"digitized-PAMELA-event-fluence"},
+  "physics":{"transport_equation":"field-aligned-parker-sde","field_geometry":"constant-speed-equatorial-parker-spiral","source_radius_mode":"inner-boundary","injection_radius_solar_radii":2.5,"shock_speed_m_per_s":1960000.0,"solar_rotation_rate_rad_per_s":2.8653290846e-6,"mean_free_path_normalization_au":0.3,"mean_free_path_radial_exponent":1.0,"mean_free_path_rigidity_exponent":0.3333333333333333,"injection_momentum_index":5.28,"comparison_normalization":"one-global-log-amplitude"},
+  "model_runs":[
+    {"name":"early","observer_radius_au":1.0,"solar_wind_speed_m_per_s":400000.0,"connection_delay_s":0.0,"launch_offset_s":0.0,"energies_mev":[90,105,125,150,180,215,250,290,335,390,460,560,700,900,1100],"source_history_csv":"input/gcle_source.csv","output_mode":"integrated-spectrum","duration_hours":36.0,"output_cadence_hours":1.0,"seed_offset":0},
+    {"name":"nominal","observer_radius_au":1.0,"solar_wind_speed_m_per_s":400000.0,"connection_delay_s":1800.0,"launch_offset_s":0.0,"energies_mev":[90,105,125,150,180,215,250,290,335,390,460,560,700,900,1100],"source_history_csv":"input/gcle_source.csv","output_mode":"integrated-spectrum","duration_hours":36.0,"output_cadence_hours":1.0,"seed_offset":10000},
+    {"name":"late","observer_radius_au":1.0,"solar_wind_speed_m_per_s":400000.0,"connection_delay_s":5400.0,"launch_offset_s":0.0,"energies_mev":[90,105,125,150,180,215,250,290,335,390,460,560,700,900,1100],"source_history_csv":"input/gcle_source.csv","output_mode":"integrated-spectrum","duration_hours":36.0,"output_cadence_hours":1.0,"seed_offset":20000}
+  ],
+  "numerics":{"particles_per_energy":600,"time_step_s":180.0,"campaign_seed":40404},
+  "acceptance":{"reference_point_coverage_min":0.9,"log10_profile_rmse_max":0.8,"log10_profile_correlation_min":0.0},
+  "plot":{"formats":["png","eps"]}
+}

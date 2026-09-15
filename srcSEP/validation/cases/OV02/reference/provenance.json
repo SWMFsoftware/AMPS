@@ -1,0 +1,11 @@
+{
+  "schema": "srcsep-digitized-reference-v1",
+  "case_id": "OV02",
+  "publication": "Cheng et al. (2023), doi:10.3847/1538-4357/acac21, arXiv:2209.02566v1",
+  "source_pdf_sha256": "bb7946663ea7b3b0424385478200997ea3459a3aba6f0f1c1bb65be307e2292b",
+  "figures": ["Figure 3 PSP/EPI-Hi open symbols", "Figure 6 STEREO-A/LET dashed traces"],
+  "method": "Manual point digitization on a 140-dpi Poppler rendering with linear time and logarithmic intensity axes; points are placed at visible symbol/trace centers.",
+  "time_origin_utc": "2020-05-29T07:30:00Z",
+  "uncertainty": "Per-row relative digitization uncertainty includes line thickness and log-axis reading; it is not an instrument calibration error.",
+  "exclusions": ["published simulation curves", "STEREO-A/SEPT background-only 1.11-1.98 MeV trace"]
+}

@@ -1,0 +1,6 @@
+{
+  "schema":"srcsep-publication-input-reconstruction-v1","case_id":"OV05","title":"September 2017 three-injection STEREO-A diagnostic","reproduction_status":"partial","scientific_use":"Compare a fixed three-pulse linked Parker reconstruction with the multi-energy STEREO-A record; discrepancies diagnose missing longitudinal and transient-structure physics.",
+  "publication":{"title":"Spectral Analysis of the September 2017 Solar Energetic Particle Events","authors":"Bruno et al.","doi":"10.1029/2018SW002085","arxiv":"1902.03969v1","source_url":"https://arxiv.org/abs/1902.03969","source_pdf_sha256":"ec0afd0fe44302dcdb8f193aa2629b2e4a726ee9621e29504f92bd2d8efc4dfd"},
+  "reported_parameters_used":{"epoch_utc":"2017-09-04T20:00:00Z","injections_utc":["2017-09-04T20:33:00Z","2017-09-06T12:02:00Z","2017-09-10T16:06:00Z"],"STEREO_A_longitude_from_earth_deg":128.0,"parker_plot_wind_km_s":450.0,"september10_cme_speed_km_s":3163.0,"STEREO_A_delay":"greater than 10 hours"},
+  "missing_required_inputs":["cross-field diffusion and evolving longitude-dependent shock connection","ICME/HSS magnetic structures identified in the paper","instrument response matrices and author data table underlying Figure 2"]
+}

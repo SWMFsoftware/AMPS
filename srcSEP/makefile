@@ -5,7 +5,7 @@ DEFAULT_TARGET : lib
 # The parser/registry unit target is intentionally dependency-light and can run
 # from a source-only archive.  Every production build target still requires the
 # enclosing AMPS configuration exactly as before.
-ifneq ($(filter test-cli-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit test-iv01-iv06-unit test-xm01-xm03-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat,$(MAKECMDGOALS)),)
+ifneq ($(filter test-cli-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit test-iv01-iv06-unit test-xm01-xm03-unit test-ov01-ov05-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat,$(MAKECMDGOALS)),)
 -include ../../Makefile.conf
 else
 include ../../Makefile.conf
@@ -38,7 +38,7 @@ amps : $(MAINOBJ)
 # real production CLI; selector semantics are never reimplemented in Make.
 SEP_EXECUTABLE ?= ../amps
 
-.PHONY: test-cli-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit test-iv01-iv06-unit test-xm01-xm03-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat require-sep-executable test-cli test-list test-case \
+.PHONY: test-cli-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit test-iv01-iv06-unit test-xm01-xm03-unit test-ov01-ov05-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat require-sep-executable test-cli test-list test-case \
 	test-group test-turbulence test-stress test-mpi test
 
 test-cli-unit:
@@ -103,6 +103,12 @@ test-python-runner-unit:
 
 test-xm01-xm03-unit:
 	./test/run_xm01_xm03_tests.sh
+
+# OV01-OV05 are linked observational cases.  The source-only phase validates
+# schema, provenance, and the shared native callback; scientific comparisons
+# run only when SEP_EXECUTABLE names the linked application under test.
+test-ov01-ov05-unit:
+	./test/run_ov01_ov05_tests.sh
 
 # CV01 establishes the reusable linked-application case pattern. The target
 # always compiles the native model source strictly and runs the full case only

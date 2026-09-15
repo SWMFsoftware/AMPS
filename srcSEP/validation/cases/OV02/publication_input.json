@@ -1,0 +1,30 @@
+{
+  "schema": "srcsep-publication-input-reconstruction-v1",
+  "case_id": "OV02",
+  "title": "2020 May 29 PSP and STEREO-A radial reconstruction",
+  "reproduction_status": "partial",
+  "scientific_use": "Test radial transport with one unchanged source and coefficient set at 0.33 and 0.96 AU.",
+  "publication": {
+    "title": "Simulation of the Solar Energetic Particle Event on 2020 May 29 Observed by Parker Solar Probe",
+    "authors": "Cheng et al.",
+    "doi": "10.3847/1538-4357/acac21",
+    "arxiv": "2209.02566v1",
+    "source_url": "https://arxiv.org/abs/2209.02566",
+    "source_pdf_sha256": "bb7946663ea7b3b0424385478200997ea3459a3aba6f0f1c1bb65be307e2292b"
+  },
+  "reported_parameters_used": {
+    "event_epoch_utc": "2020-05-29T07:30:00Z",
+    "PSP_radius_au": 0.33,
+    "STEREO_A_radius_au": 0.96,
+    "cme_plane_of_sky_speed_km_s": 337.0,
+    "shock_interval_utc": "07:38-08:10",
+    "one_GV_radial_mean_free_path_au": 0.0465,
+    "source_momentum_index": 6.16,
+    "observed_PSP_energy_index": 2.18
+  },
+  "missing_required_inputs": [
+    "data-driven PFSS field and reconstructed ellipsoid shock surface",
+    "perpendicular diffusion used by the published three-dimensional model",
+    "author numerical tables underlying Figures 3 and 6"
+  ]
+}

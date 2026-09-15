@@ -30,6 +30,11 @@ validation, and passing coupled code is not called observational validation.
 | `XM01` | Cross-model verification | Linked production characteristics versus an independent conservative focused-transport PDE solver | Implemented; extended; linked executable |
 | `XM02` | Publication-informed controlled M-FLAMPA comparison | Linked first-passage reconstruction for the three reported MFPs plus digitized >10 MeV profiles from Zhao et al. Figure 7 | Implemented; runs from the single registered input; no external CSV |
 | `XM03` | Event-informed observational validation | Linked one-field-line Parker transport versus 80 ACE/EPAM, GOES-13/EPEAD, and SOHO/ERNE Earth measurements from Liu et al. Figure 12(a–c) | Implemented; fixed paper-derived input; no external model CSV |
+| `OV01` | Observational release gate | 2013 April 11 ACE/GOES/SOHO spectra from Liu et al. Figure 12(a–c) | Implemented; linked executable; fixed shared reference/source |
+| `OV02` | Observational release gate | 2020 May 29 PSP/EPI-Hi and STEREO-A/LET profiles from Cheng et al. Figures 3 and 6 | Implemented; linked executable; one unchanged radial setup |
+| `OV03` | Observational diagnostic | 2013 May 22 GOES/STEREO-A profiles from Ding et al. Figure 1 under single/twin-CME sources | Implemented; diagnostic-only due wide-longitude interacting CMEs |
+| `OV04` | Observational diagnostic | 2014 January 6 PAMELA event spectrum from Bruno et al. Figure 4 under three connection delays | Implemented; diagnostic-only due behind-limb anisotropic event |
+| `OV05` | Observational diagnostic | September 2017 STEREO-A profiles from Bruno et al. Figure 2 with three tagged injections | Implemented; diagnostic-only due compound transients and cross-field transport |
 | `VAL01` | Numerical verification | Independent analytical diffusion moments and adiabatic-cooling characteristic | Implemented |
 | `VAL02` | Cross-mover verification | Matched `fte-dmumu`/`fte-mfp` mean-free-path closure | Implemented |
 | `VAL03` | Cross-model verification | Independently coded conservative finite-volume pitch-angle solver | Implemented |
@@ -55,6 +60,7 @@ make test-cv02-cv05-unit SEP_EXECUTABLE=/absolute/path/to/amps
 make test-cv06-cv12-unit SEP_EXECUTABLE=/absolute/path/to/amps
 make test-iv01-iv06-unit SEP_EXECUTABLE=/absolute/path/to/amps
 make test-xm01-xm03-unit SEP_EXECUTABLE=/absolute/path/to/amps
+make test-ov01-ov05-unit SEP_EXECUTABLE=/absolute/path/to/amps
 ```
 
 This verifies that the supplied executable advertises each selected ID,
@@ -75,6 +81,15 @@ spiral heliosphere, then scores Earth observations from Figure 12(a–c). Their
 `publication_input.json` manifests distinguish reported inputs, standard
 constants, reduced-model assumptions, and missing global-run artifacts. No
 external `model_source_csv` is used.
+
+OV01-OV05 follow the same linked-application contract and always select their
+registry-owned publication inputs. Each comparison plot embeds the citation
+and source figure number. OV01 and OV02 are release gates. OV03-OV05 preserve
+their quantitative discrepancies as `gating=false` metrics because the
+campaign plan classifies them as diagnostic stress tests outside the scope of
+one-field-line physics; missing evidence and linked execution failures remain
+hard failures. See `../OV01_OV05_VALIDATION_IMPLEMENTATION.md` and each
+`cases/OVxx/README.md` for source hashes, extraction details, and limitations.
 
 It runs `VAL01`–`VAL04-SWCME` under AddressSanitizer and
 UndefinedBehaviorSanitizer, assembles a temporary campaign, and proves that

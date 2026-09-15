@@ -1,0 +1,16 @@
+{
+  "schema":"srcsep-validation-case-input-v1",
+  "case_id":"OV05",
+  "title":"September 2017 widespread compound-event observational diagnostic",
+  "publication_input_only":true,
+  "publication_input_manifest":"publication_input.json",
+  "validation_role":"diagnostic-only",
+  "reference":{"csv":"reference/bruno_figure2_stereo_a.csv","publication_id":"Bruno2019-September-2017","plot_citation":"Bruno et al. (2019), doi:10.1029/2018SW002085","figure":"Figure 2","reference_kind":"digitized-STEREO-A-observations"},
+  "physics":{"transport_equation":"field-aligned-parker-sde","field_geometry":"constant-speed-equatorial-parker-spiral","source_radius_mode":"inner-boundary","injection_radius_solar_radii":2.5,"shock_speed_m_per_s":3163000.0,"solar_rotation_rate_rad_per_s":2.8653290846e-6,"mean_free_path_normalization_au":0.3,"mean_free_path_radial_exponent":1.0,"mean_free_path_rigidity_exponent":0.3333333333333333,"injection_momentum_index":5.0,"comparison_normalization":"one-global-log-amplitude"},
+  "model_runs":[
+    {"name":"STA","observer_radius_au":1.0,"solar_wind_speed_m_per_s":450000.0,"connection_delay_s":0.0,"launch_offset_s":0.0,"energies_mev":[4.25,11.0,31.5,80.0],"source_history_csv":"input/three_injection_source.csv","output_mode":"time-profile","duration_hours":408.0,"output_cadence_hours":6.0,"seed_offset":0}
+  ],
+  "numerics":{"particles_per_energy":1000,"time_step_s":600.0,"campaign_seed":40505},
+  "acceptance":{"reference_point_coverage_min":0.75,"log10_profile_rmse_max":1.0,"log10_profile_correlation_min":0.0},
+  "plot":{"formats":["png","eps"]}
+}

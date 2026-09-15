@@ -6,13 +6,15 @@
 
 namespace SEP { namespace Validation {
 
-// Execute the native half of XM01-XM03 inside the selected srcSEP/AMPS
+// Execute the native half of XM01-XM03 and OV01-OV05 inside the selected srcSEP/AMPS
 // application. XM01 advances production focused-transport particles. XM02
 // advances a publication-informed controlled first-passage ensemble with the
 // same production core. XM03 advances an event-informed Parker-transport
 // ensemble on an Earth-connected spiral and compares that linked result with
 // the Earth observations digitized from Liu et al. Figure 12.  No case reads a
-// reference table as model output.
+// reference table as model output. OV01 reuses the reviewed XM03 Earth kernel;
+// OV02-OV05 use a generic publication-driven Parker arrival-profile/spectrum
+// callback whose inputs are serialized by observational_case_runner.py.
 bool RunCrossModelValidationModel(const std::string& caseId,
     const std::vector<std::string>& arguments, const std::string& outputPath,
     std::string* error);

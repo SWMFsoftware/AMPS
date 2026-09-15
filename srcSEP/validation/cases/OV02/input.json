@@ -1,0 +1,68 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "OV02",
+  "title": "2020 May 29 PSP/STEREO-A radial observational benchmark",
+  "publication_input_only": true,
+  "publication_input_manifest": "publication_input.json",
+  "validation_role": "release-gate",
+  "reference": {
+    "csv": "reference/cheng_figures3_6_observations.csv",
+    "publication_id": "Cheng2023-2020-May-29",
+    "plot_citation": "Cheng et al. (2023), doi:10.3847/1538-4357/acac21",
+    "figures": ["Figure 3", "Figure 6"],
+    "reference_kind": "digitized-PSP-STEREO-A-observations"
+  },
+  "physics": {
+    "transport_equation": "field-aligned-parker-sde",
+    "field_geometry": "constant-speed-equatorial-parker-spiral",
+    "source_radius_mode": "inner-boundary",
+    "injection_radius_solar_radii": 2.5,
+    "shock_speed_m_per_s": 337000.0,
+    "solar_rotation_rate_rad_per_s": 2.8653290846e-6,
+    "mean_free_path_normalization_au": 0.0465,
+    "mean_free_path_radial_exponent": 1.0,
+    "mean_free_path_rigidity_exponent": 0.3333333333333333,
+    "injection_momentum_index": 6.16,
+    "comparison_normalization": "one-global-log-amplitude",
+    "perpendicular_diffusion_limitation": "not represented by the one-field-line reconstruction"
+  },
+  "model_runs": [
+    {
+      "name": "PSP",
+      "observer_radius_au": 0.33,
+      "solar_wind_speed_m_per_s": 337000.0,
+      "connection_delay_s": 0.0,
+      "launch_offset_s": 0.0,
+      "energies_mev": [2.2, 12.3],
+      "source_history_csv": "input/coronal_shock_source.csv",
+      "output_mode": "time-profile",
+      "duration_hours": 24.0,
+      "output_cadence_hours": 1.0,
+      "seed_offset": 0
+    },
+    {
+      "name": "STA",
+      "observer_radius_au": 0.96,
+      "solar_wind_speed_m_per_s": 337000.0,
+      "connection_delay_s": 0.0,
+      "launch_offset_s": 0.0,
+      "energies_mev": [2.7, 5.0],
+      "source_history_csv": "input/coronal_shock_source.csv",
+      "output_mode": "time-profile",
+      "duration_hours": 30.0,
+      "output_cadence_hours": 1.0,
+      "seed_offset": 10000
+    }
+  ],
+  "numerics": {
+    "particles_per_energy": 1600,
+    "time_step_s": 120.0,
+    "campaign_seed": 40202
+  },
+  "acceptance": {
+    "reference_point_coverage_min": 0.9,
+    "log10_profile_rmse_max": 0.75,
+    "log10_profile_correlation_min": 0.35
+  },
+  "plot": {"formats": ["png", "eps"]}
+}
