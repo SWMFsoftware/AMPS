@@ -34,7 +34,9 @@ import shlex
 import subprocess
 import sys
 import threading
+import time
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from xml.sax.saxutils import escape as _xml_escape
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -261,8 +263,14 @@ Examples:
        python3 test/run_tests.py --amps ../amps --all \
          --output-dir test_output/all-tests
 
-     --all can be substantially more expensive than --routine.  The runner
-     discovers every ID with --list-tests and selects each one explicitly.
+     --all can be substantially more expensive than --routine. The runner
+     discovers every ID with --list-tests, rejects the printed table header,
+     and executes each ID in its own process. A crash, timeout, FAIL, or ERROR
+     is printed immediately and does not prevent later tests from running.
+     CV/IV/XM IDs use their registered validation input/reference workflow;
+     all other IDs are invoked directly as `amps --test ID ...`. Every exact
+     outer command and every linked AMPS command is printed before execution.
+     The final line reports TOTAL, PASS, FAIL, SKIP, and ERROR counts.
 
   6. Run source-only controlled tests when a linked AMPS executable is absent:
 
@@ -400,12 +408,23 @@ def _run_streaming(command: Sequence[str], cwd: Path, log_path: Path,
 
 
 def _parse_list_output(text: str) -> List[str]:
-    """Extract stable registry IDs from the documented pipe-delimited list."""
+    """Extract stable registry IDs from the documented pipe-delimited list.
+
+    A registry identifier must contain at least one decimal digit.  That small
+    grammar distinguishes real srcSEP IDs (for example ``PARK01`` and
+    ``TURBOWN01``) from the human-readable ``ID | group | ...`` header without
+    coupling this runner to the current collection of prefixes.  The previous
+    permissive expression accepted the header as a test named ``ID`` and made
+    an otherwise valid ``--all`` command fail before any result was retained.
+    """
     ids: List[str] = []
     for line in text.splitlines():
-        match = re.match(r"^([A-Za-z][A-Za-z0-9_-]*)\s*\|", line)
-        if match:
-            ids.append(match.group(1))
+        if "|" not in line:
+            continue
+        candidate = line.split("|", 1)[0].strip()
+        if re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*[0-9][A-Za-z0-9_-]*",
+                        candidate):
+            ids.append(candidate.upper())
     if not ids:
         raise RunnerError("--list-tests returned no parseable registry IDs")
     return sorted(set(ids), key=str.casefold)
@@ -433,12 +452,11 @@ def _native_command(args: argparse.Namespace, report_json: Path,
 
     selection: List[str] = []
     if args.all:
-        # The native --all-tests contract intentionally excludes extended Monte
-        # Carlo cases.  Python --all means literally every discoverable test, so
-        # expand the registry IDs into explicit selectors.
-        for test_id in _discover_all_ids(executable, args.model_args):
-            selection.extend(("--test", test_id))
-    elif args.routine:
+        # ``--all`` is executed by _run_all_tests(), one isolated process per
+        # test.  Refusing to rebuild the former monolithic command here makes a
+        # future refactor unable to silently discard fault isolation.
+        raise RunnerError("internal error: --all requires isolated orchestration")
+    if args.routine:
         selection.append("--all-tests")
     else:
         for test_id in args.tests:
@@ -476,7 +494,19 @@ def _merge_reports(paths: Iterable[Path], destination: Path) -> Dict[str, Any]:
         report = _load_report(path)
         for result in report["results"]:
             if isinstance(result, dict) and result.get("id"):
-                by_id[str(result["id"])] = result
+                retained = dict(result)
+                artifacts = retained.get("artifacts")
+                if isinstance(artifacts, list):
+                    # Per-test reports live below ``individual/<ID>`` during
+                    # --all. Resolve their relative artifacts before moving
+                    # records into the top-level aggregate, otherwise plotting
+                    # would search relative to the wrong report directory.
+                    retained["artifacts"] = [
+                        str((path.parent / Path(str(item))).resolve())
+                        if not Path(str(item)).is_absolute() else str(item)
+                        for item in artifacts
+                    ]
+                by_id[str(retained["id"])] = retained
     results = [by_id[key] for key in sorted(by_id, key=str.casefold)]
     totals = {"passed": 0, "failed": 0, "skipped": 0, "errors": 0}
     status_key = {"PASS": "passed", "FAIL": "failed",
@@ -493,6 +523,255 @@ def _merge_reports(paths: Iterable[Path], destination: Path) -> Dict[str, Any]:
     }
     _write_json(destination, merged)
     return merged
+
+
+def _write_junit(path: Path, report: Dict[str, Any]) -> None:
+    """Write a JUnit mirror for a Python-aggregated isolated test campaign.
+
+    Each native process still writes its own detailed JUnit file.  This compact
+    top-level document is needed because no single AMPS process owns an
+    isolated ``--all`` run.  Status and diagnostics are copied from the merged
+    JSON, which remains the authoritative evidence artifact.
+    """
+    results = [item for item in report.get("results", [])
+               if isinstance(item, dict)]
+    totals = report.get("totals", {})
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        (f'<testsuite name="srcSEP isolated all-tests" tests="{len(results)}" '
+         f'failures="{int(totals.get("failed", 0))}" '
+         f'errors="{int(totals.get("errors", 0))}" '
+         f'skipped="{int(totals.get("skipped", 0))}">'),
+    ]
+    for result in results:
+        identifier = _xml_escape(str(result.get("id", "unknown")))
+        message = _xml_escape(str(result.get("message", "")))
+        try:
+            elapsed = float(result.get("elapsed_seconds", 0.0))
+        except (TypeError, ValueError):
+            elapsed = 0.0
+        status = str(result.get("status", "ERROR")).upper()
+        lines.append(
+            f'  <testcase classname="srcSEP.component" name="{identifier}" '
+            f'time="{elapsed:.17g}">')
+        if status == "FAIL":
+            lines.append(f'    <failure message="{message}"/>')
+        elif status == "ERROR":
+            lines.append(f'    <error message="{message}"/>')
+        elif status == "SKIP":
+            lines.append(f'    <skipped message="{message}"/>')
+        lines.append(f'    <system-out>{message}</system-out>')
+        lines.append("  </testcase>")
+    lines.append("</testsuite>")
+    stage = path.with_name(path.name + ".stage")
+    with stage.open("w", encoding="utf-8") as stream:
+        stream.write("\n".join(lines) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(stage, path)
+
+
+def _report_totals(results: Sequence[Dict[str, Any]]) -> Dict[str, int]:
+    """Count normalized statuses, treating unknown values as runner errors."""
+    totals = {"passed": 0, "failed": 0, "skipped": 0, "errors": 0}
+    keys = {"PASS": "passed", "FAIL": "failed", "SKIP": "skipped",
+            "ERROR": "errors"}
+    for result in results:
+        totals[keys.get(str(result.get("status", "ERROR")).upper(),
+                        "errors")] += 1
+    return totals
+
+
+def _print_result(result: Dict[str, Any]) -> None:
+    """Print one stable, immediately visible result line for humans and CI."""
+    identifier = str(result.get("id", "unknown"))
+    status = str(result.get("status", "ERROR")).upper()
+    message = str(result.get("message", "no diagnostic"))
+    print(f"RESULT {identifier}: {status} - {message}", flush=True)
+
+
+def _print_summary(report: Dict[str, Any]) -> None:
+    """Print the complete categorical outcome after every runner mode."""
+    # Recompute from result records instead of trusting optional/stale summary
+    # metadata supplied by an external report producer. The same records drive
+    # the lines printed immediately above and are the authoritative outcome.
+    results = [item for item in report.get("results", [])
+               if isinstance(item, dict)]
+    totals = _report_totals(results)
+    passed = int(totals.get("passed", 0))
+    failed = int(totals.get("failed", 0))
+    skipped = int(totals.get("skipped", 0))
+    errors = int(totals.get("errors", 0))
+    total = passed + failed + skipped + errors
+    print("Overall test summary: "
+          f"TOTAL={total} PASS={passed} FAIL={failed} "
+          f"SKIP={skipped} ERROR={errors}", flush=True)
+
+
+def _validation_case_ids() -> set[str]:
+    """Return IDs that require the registered validation-case input protocol.
+
+    CV, IV, and XM callbacks cannot be launched as bare ``amps --test ID``
+    commands because their Python entrypoints construct reviewed native input
+    manifests and independent references.  Loading the data registry, rather
+    than maintaining a second hard-coded list, keeps ``--all`` correct as new
+    application-level cases are added.
+    """
+    registry = ROOT / "validation" / "case_registry.json"
+    try:
+        with registry.open("r", encoding="utf-8") as stream:
+            value = json.load(stream)
+    except (OSError, json.JSONDecodeError) as error:
+        raise RunnerError(f"cannot read validation case registry {registry}: {error}") from error
+    cases = value.get("cases") if isinstance(value, dict) else None
+    if not isinstance(cases, list):
+        raise RunnerError(f"validation case registry has no cases array: {registry}")
+    return {str(item["id"]).upper() for item in cases
+            if isinstance(item, dict) and item.get("id")}
+
+
+def _synthetic_error(test_id: str, message: str, elapsed: float,
+                     log_path: Path) -> Dict[str, Any]:
+    """Represent a crash, timeout, or missing report in the normal schema."""
+    return {
+        "id": test_id,
+        "status": "ERROR",
+        "message": message,
+        "elapsed_seconds": elapsed,
+        "seed": None,
+        "configuration": ["execution=isolated-by-python-runner"],
+        "metrics": [],
+        "artifacts": [str(log_path)],
+    }
+
+
+def _run_all_tests(args: argparse.Namespace, output_dir: Path,
+                   log_path: Path) -> Tuple[int, Path, List[List[str]]]:
+    """Run every discovered ID independently and retain all outcomes.
+
+    Process isolation is the key reliability property: a failed assertion,
+    timeout, abort, or segmentation fault affects only its current test.  The
+    runner synthesizes an ERROR record when that process cannot write valid
+    JSON, prints the outcome, and continues through the remaining IDs.
+    Registered CV/IV/XM cases are delegated one at a time to run_case.py so the
+    exact application input and independent-reference workflow is preserved.
+    """
+    executable = Path(args.amps).expanduser().resolve()
+    ids = _discover_all_ids(executable, args.model_args)
+    validation_ids = _validation_case_ids()
+    individual = output_dir / "individual"
+    individual.mkdir(parents=True, exist_ok=True)
+    reports: List[Path] = []
+    commands: List[List[str]] = []
+    print(f"Discovered {len(ids)} tests; executing each in an isolated process.")
+
+    for index, test_id in enumerate(ids, start=1):
+        print(f"\n=== [{index}/{len(ids)}] {test_id} ===", flush=True)
+        test_directory = individual / test_id
+        test_directory.mkdir(parents=True, exist_ok=True)
+        report_path = test_directory / f"{test_id}.json"
+        junit_path = test_directory / f"{test_id}.xml"
+        if test_id in validation_ids:
+            if args.mpi_np is not None:
+                command: List[str] = []
+                launch_error = (
+                    "registered validation cases require serial linked execution; "
+                    "rerun without --mpi-np")
+            else:
+                command = [
+                    sys.executable, str(ROOT / "validation" / "run_case.py"),
+                    "--amps", str(executable), "--case", test_id,
+                    "--output-dir", str(test_directory),
+                ]
+                if args.timeout is not None:
+                    command.extend(("--timeout", str(args.timeout)))
+                launch_error = None
+                # run_case.py owns its standard aggregate filenames.
+                report_path = test_directory / "srcsep-tests.json"
+                junit_path = test_directory / "srcsep-tests.xml"
+                # run_case.py applies the requested timeout to each linked or
+                # independent-reference command. Do not apply the same value
+                # to the enclosing campaign, because cases such as CV01 run
+                # several bounded AMPS realizations sequentially.
+                orchestration_timeout = None
+        else:
+            command = [str(executable), "--test", test_id,
+                       "--test-json", str(report_path),
+                       "--test-junit", str(junit_path), *args.model_args]
+            if args.mpi_np:
+                command = [args.mpiexec, "-n", str(args.mpi_np), *command]
+            launch_error = None
+            orchestration_timeout = args.timeout
+        # Output directories may intentionally be reused. Remove only this
+        # test's two prior status files before launch so a crash cannot be
+        # misclassified using a stale PASS while preserving all other evidence
+        # for diagnosis. Successful children atomically recreate both files.
+        report_path.unlink(missing_ok=True)
+        junit_path.unlink(missing_ok=True)
+        if command:
+            commands.append(command)
+
+        started = time.monotonic()
+        status: Optional[int] = None
+        if launch_error is None:
+            try:
+                status = _run_streaming(
+                    command, ROOT, log_path, dict(os.environ),
+                    orchestration_timeout)
+            except RunnerError as error:
+                launch_error = str(error)
+
+        result: Optional[Dict[str, Any]] = None
+        if report_path.is_file():
+            try:
+                child_report = _load_report(report_path)
+                matching = [item for item in child_report["results"]
+                            if isinstance(item, dict) and
+                            str(item.get("id", "")).upper() == test_id]
+                if len(matching) == 1:
+                    result = dict(matching[0])
+                    if str(result.get("status", "")).upper() not in {
+                            "PASS", "FAIL", "SKIP", "ERROR"}:
+                        result = None
+                        launch_error = (
+                            f"structured report has an invalid status for {test_id}")
+                else:
+                    launch_error = (
+                        f"structured report contains {len(matching)} records for {test_id}")
+            except RunnerError as error:
+                launch_error = str(error)
+
+        # A native process may return nonzero for an ordinary reported FAIL or
+        # ERROR. Preserve that scientific result. A contradictory PASS/nonzero
+        # pair or a process that never produced a matching record is an
+        # orchestration ERROR and must not be mistaken for completed evidence.
+        if launch_error is not None:
+            result = None
+        elif result is not None and status not in (None, 0):
+            if str(result.get("status", "ERROR")).upper() == "PASS":
+                result = None
+                launch_error = f"process exited {status} despite reporting PASS"
+        if result is None:
+            reason = launch_error or (
+                f"process exited {status} without a valid structured result")
+            result = _synthetic_error(
+                test_id, reason, time.monotonic() - started, log_path)
+            # A normalized per-test report lets the aggregate merge use the
+            # same audited path for both native results and runner failures.
+            totals = _report_totals([result])
+            _write_json(report_path, {
+                "schema": "srcsep-component-tests-v1", "exit_code": 2,
+                "totals": totals, "results": [result]})
+            _write_junit(junit_path, {
+                "totals": totals, "results": [result]})
+        reports.append(report_path)
+        _print_result(result)
+
+    aggregate_path = output_dir / "srcsep-tests.json"
+    aggregate = _merge_reports(reports, aggregate_path)
+    _write_junit(output_dir / "srcsep-tests.xml", aggregate)
+    _print_summary(aggregate)
+    return int(aggregate["exit_code"]), aggregate_path, commands
 
 
 def _column(fieldnames: Iterable[str], candidates: Sequence[str]) -> Optional[str]:
@@ -780,7 +1059,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--routine", action="store_true",
                         help="run the bounded native --all-tests set")
     parser.add_argument("--all", action="store_true",
-                        help="discover and run every test, including extended cases")
+                        help=("run every discovered test in an isolated process, "
+                              "continuing after failures and printing a summary"))
     parser.add_argument("--suite", dest="suites", action="append", default=[],
                         choices=sorted(SOURCE_SUITES),
                         help="run a dependency-light Make suite; repeatable")
@@ -809,7 +1089,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=float,
                         help="per-command timeout in seconds")
     parser.add_argument("--keep-going", action="store_true",
-                        help="continue later --suite targets after a failure")
+                        help=("continue later --suite targets after a failure; "
+                              "--all always continues"))
     parser.add_argument("model_args", nargs=argparse.REMAINDER,
                         help="arguments after -- are passed unchanged to AMPS")
     return parser
@@ -869,7 +1150,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     log_path = output_dir / "test-run.log"
     report_path: Optional[Path] = None
     exit_code = 0
-    command: Optional[List[str]] = None
+    # A normal mode records one command. Isolated --all records the ordered
+    # list of commands so the manifest captures exactly what was executed.
+    command: Any = None
 
     if args.from_json:
         report_path = args.from_json.expanduser().resolve()
@@ -885,10 +1168,26 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     else:
         report_path = output_dir / "srcsep-tests.json"
         junit_path = output_dir / "srcsep-tests.xml"
-        command = _native_command(args, report_path, junit_path)
-        exit_code = _run_streaming(
-            command, ROOT, log_path, dict(os.environ), args.timeout)
-        report = _load_report(report_path) if report_path.is_file() else None
+        if args.all:
+            exit_code, report_path, command = _run_all_tests(
+                args, output_dir, log_path)
+            report = _load_report(report_path)
+        else:
+            command = _native_command(args, report_path, junit_path)
+            exit_code = _run_streaming(
+                command, ROOT, log_path, dict(os.environ), args.timeout)
+            report = _load_report(report_path) if report_path.is_file() else None
+
+    # Native AMPS output is not assumed to use a stable human-readable layout.
+    # Reprinting normalized records from JSON guarantees that every successful
+    # runner mode exposes the result and the same aggregate category counts.
+    # Isolated --all already printed each result at completion, so only repeat
+    # its summary here if another mode produced the report.
+    if report is not None and not args.all:
+        for result in report.get("results", []):
+            if isinstance(result, dict):
+                _print_result(result)
+        _print_summary(report)
 
     manifest: Dict[str, Any] = {
         "schema": "srcsep-python-test-run-v1",

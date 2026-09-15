@@ -63,6 +63,14 @@ argument manifest, linked model CSV, native JSON/JUnit, comparison metrics,
 provenance, and PNG/EPS overlays. It reports PASS or FAIL rather than SKIP once
 the linked executable has been rebuilt with this implementation.
 
+Every generated comparison image is self-attributing: its title includes
+`Reference: Zhao et al. (2024), arXiv:2309.16903; extracted from Figure 7`.
+This short label is stored as `reference.plot_citation` plus
+`reference.figure` in `input.json`; full title, URL, PDF hash, source page,
+digitization calibration, and uncertainty remain in `publication_input.json`
+and `reference/provenance.json`. Thus a detached PNG/EPS still identifies its
+reference, while the machine-readable artifacts retain complete provenance.
+
 The provisional controlled-reconstruction gates are complete coverage of all
 three MFP series, unit-peak log-intensity RMSE no greater than 0.6 dex, and a
 maximum peak-time difference no greater than 6 h. These deliberately include

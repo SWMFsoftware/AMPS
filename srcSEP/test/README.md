@@ -229,17 +229,36 @@ The advanced cases additionally retain modal leakage, event/front statistics,
 censored arrival histories, spectral fits, per-bin wave state, and energy ledgers.
 
 `--routine` forwards the native `--all-tests` policy and therefore excludes
-extended cases. `--all` first calls `--list-tests`, then selects every returned
-ID explicitly; it can run costly ensembles. `--mpi-np N` and `--mpiexec PATH`
-launch the same native selection under MPI. Arguments after a literal `--` are
-passed unchanged to the AMPS executable. `--timeout` applies per command and
-`--keep-going` allows later repeated source suites to execute after one fails.
+extended cases. `--all` first calls `--list-tests`, accepts only identifier
+tokens containing a digit (so the printed `ID | ...` heading can never become
+a selection), and runs every discovered ID in a separate process. Ordinary
+component tests use an explicit command of the form `amps --test PARK01
+--test-json ... --test-junit ...`. Registered CV/IV/XM IDs instead use one
+isolated `validation/run_case.py --case ID` command so their reviewed input,
+native argument manifest, and independent reference are honored. That case
+runner prints the exact nested `amps --test ID --test-input ...` command before
+starting the linked application.
 
-The output directory contains `test-run.log`, `run_manifest.json`, native
-`srcsep-tests.json`/`srcsep-tests.xml` (or a merged focused JSON when focused
-runners retain reports), `analytical_plot_manifest.json`, and a `plots/`
-directory. The run manifest records the selected command and hashes both the
-report and native executable. JSON is authoritative; images are review aids.
+Isolation means an assertion failure, nonzero exit, timeout, abort, or
+segmentation fault produces a `FAIL`/`ERROR` record for only that ID. If the
+child could not write JSON, the Python runner creates an explicit synthetic
+`ERROR` record, prints it immediately, and proceeds with the next test. At the
+end it merges all per-test records into top-level JSON/JUnit and prints
+`Overall test summary: TOTAL=... PASS=... FAIL=... SKIP=... ERROR=...`.
+The process exit remains 0 when all non-skipped tests pass, 1 when at least one
+test fails, and 2 when at least one test errors. Consequently `--all` always
+continues; `--keep-going` controls only repeated source-suite targets.
+`--mpi-np N` and `--mpiexec PATH` launch ordinary native selections under MPI;
+registered validation cases remain serial. Arguments after a literal `--` are
+passed unchanged to direct AMPS invocations. `--timeout` applies per command.
+
+The output directory contains `test-run.log`, `run_manifest.json`,
+`srcsep-tests.json`/`srcsep-tests.xml`, `analytical_plot_manifest.json`, and a
+`plots/` directory. Isolated `--all` runs additionally retain each native or
+validation report beneath `individual/<ID>/`; their run manifest records the
+ordered command list rather than a single monolithic command. The manifest
+also hashes both the aggregate report and native executable. JSON is
+authoritative; images are review aids.
 
 There are two deliberately distinct image types:
 

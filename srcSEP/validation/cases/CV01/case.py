@@ -8,6 +8,7 @@ import json
 import math
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 import time
@@ -135,6 +136,11 @@ def _run(command: Sequence[str], cwd: Path, log: Path,
          environment: Optional[Dict[str, str]] = None,
          timeout: Optional[float] = None) -> None:
     """Run one stage, append its exact command/output, and propagate failure."""
+    # CV01 owns six linked realizations plus independent reference commands
+    # instead of using linked_case_common.run_linked_model(). Echo every exact,
+    # shell-escaped invocation here so --all offers the same audit trail for
+    # this multi-realization case as it does for every other CV/IV/XM case.
+    print("RUN:", shlex.join(command), flush=True)
     with log.open("a", encoding="utf-8") as stream:
         stream.write("COMMAND: " + " ".join(command) + "\n")
         try:

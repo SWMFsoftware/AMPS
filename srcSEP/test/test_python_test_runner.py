@@ -11,6 +11,7 @@ production numerical routine against itself.
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -90,9 +91,101 @@ class PythonTestRunnerTests(unittest.TestCase):
 
     def test_registry_list_parser_ignores_headers_and_deduplicates(self):
         runner = _load_runner_module()
-        listing = """Available tests:\nPARK01 | parker | deterministic\nFTED08 | fte-dmumu | extended\nPARK01 | parker | duplicate\n"""
+        # This reproduces the real C++ registry preamble and column heading.
+        # The historical parser accepted ``ID`` and later asked AMPS to run an
+        # unknown test called "id", terminating a monolithic --all command.
+        listing = """Registered srcSEP standalone component tests
+ID | group | class | initialization | build modes | description
+PARK01 | parker | deterministic
+FTED08 | fte-dmumu | extended
+PARK01 | parker | duplicate
+"""
         self.assertEqual(runner._parse_list_output(listing),
                          ["FTED08", "PARK01"])
+
+    def test_isolated_all_continues_after_a_process_dies(self):
+        """Retain GOOD01 after BAD02 exits without producing a report.
+
+        A fake process layer keeps this unit test independent of AMPS while
+        exercising the real per-ID paths, synthetic ERROR record, aggregate
+        JSON/JUnit generation, printed results, and final summary.
+        """
+        runner = _load_runner_module()
+        with tempfile.TemporaryDirectory(prefix="srcsep-isolated-all-") as tmp:
+            temporary = Path(tmp)
+            executable = temporary / "amps"
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(0o755)
+            output = temporary / "output"
+            output.mkdir()
+            arguments = SimpleNamespace(
+                amps=str(executable), model_args=[], mpi_np=None,
+                mpiexec="mpiexec", timeout=None)
+            called: list[list[str]] = []
+
+            def fake_run(command, cwd, log_path, environment=None,
+                         timeout_s=None):
+                del cwd, log_path, environment, timeout_s
+                command = list(command)
+                called.append(command)
+                identifier = command[command.index("--test") + 1]
+                if identifier == "BAD02":
+                    # Model a fatal signal/abort: no JSON exists for this ID.
+                    return 134
+                report_path = Path(command[command.index("--test-json") + 1])
+                report_path.write_text(json.dumps({
+                    "schema": "srcsep-component-tests-v1",
+                    "exit_code": 0,
+                    "totals": {"passed": 1, "failed": 0,
+                               "skipped": 0, "errors": 0},
+                    "results": [{
+                        "id": identifier, "status": "PASS",
+                        "message": "fixture passed", "elapsed_seconds": 0.01,
+                        "seed": 7, "configuration": [], "metrics": [],
+                        "artifacts": [],
+                    }],
+                }), encoding="utf-8")
+                return 0
+
+            stdout = io.StringIO()
+            with (mock.patch.object(runner, "_discover_all_ids",
+                                    return_value=["BAD02", "GOOD01"]),
+                  mock.patch.object(runner, "_validation_case_ids",
+                                    return_value=set()),
+                  mock.patch.object(runner, "_run_streaming",
+                                    side_effect=fake_run),
+                  mock.patch("sys.stdout", stdout)):
+                exit_code, report_path, commands = runner._run_all_tests(
+                    arguments, output, output / "test-run.log")
+
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(len(called), 2)
+            self.assertEqual(commands, called)
+            self.assertEqual([command[command.index("--test") + 1]
+                              for command in called], ["BAD02", "GOOD01"])
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(report["totals"], {
+                "passed": 1, "failed": 0, "skipped": 0, "errors": 1})
+            self.assertTrue((output / "srcsep-tests.xml").is_file())
+            rendered = stdout.getvalue()
+            self.assertIn("RESULT BAD02: ERROR", rendered)
+            self.assertIn("RESULT GOOD01: PASS", rendered)
+            self.assertIn(
+                "Overall test summary: TOTAL=2 PASS=1 FAIL=0 SKIP=0 ERROR=1",
+                rendered)
+
+    def test_publication_plot_labels_name_source_and_exact_figures(self):
+        """Ensure detached XM02/XM03 figures remain self-attributing."""
+        runner = _load_cross_model_runner()
+        for case_id, expected in (
+                ("XM02", "Figure 7"),
+                ("XM03", "Figure 12(a), Figure 12(b), Figure 12(c)")):
+            case = json.loads((ROOT / "validation" / "cases" / case_id /
+                               "input.json").read_text(encoding="utf-8"))
+            label = runner._publication_plot_label(case)
+            self.assertIn("Reference:", label)
+            self.assertIn(case["reference"]["plot_citation"], label)
+            self.assertIn(expected, label)
 
     def test_xm03_uses_one_global_amplitude_for_all_observations(self):
         """Prevent accidental per-time or per-instrument normalization.

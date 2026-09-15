@@ -307,7 +307,33 @@ def _score_xm01(case: Dict[str, Any], model_rows: Sequence[Dict[str, str]],
                acceptance["fine_to_coarse_error_ratio_max"], "<=", "dimensionless"),
     ]
 
-def _external_plot(case_id: str, output: Path,
+def _publication_plot_label(case: Dict[str, Any]) -> str:
+    """Build the mandatory on-figure publication and panel attribution.
+
+    A PNG or EPS file is often detached from the JSON provenance that was
+    shipped beside it. Requiring the short citation and exact source panel in
+    the plotted image keeps the scientific origin visible in that common
+    review workflow. Full titles, URLs, hashes, and digitization details remain
+    in publication_input.json and reference/provenance.json.
+    """
+    reference = case.get("reference")
+    if not isinstance(reference, dict):
+        raise ValueError("publication comparison requires reference metadata")
+    citation = str(reference.get("plot_citation", "")).strip()
+    figures_value = reference.get("figures", reference.get("figure"))
+    if isinstance(figures_value, list):
+        figures = [str(item).strip() for item in figures_value if str(item).strip()]
+    elif figures_value is None:
+        figures = []
+    else:
+        figures = [str(figures_value).strip()]
+    if not citation or not figures:
+        raise ValueError(
+            "publication comparison requires reference.plot_citation and figure(s)")
+    return f"Reference: {citation}; extracted from {', '.join(figures)}"
+
+
+def _external_plot(case_id: str, case: Dict[str, Any], output: Path,
                    reference_rows: Sequence[Dict[str, str]],
                    model_rows: Optional[Sequence[Dict[str, str]]],
                    formats: Sequence[str]) -> List[Path]:
@@ -354,11 +380,17 @@ def _external_plot(case_id: str, output: Path,
             axis.set_yscale("log")
         axis.set_title(name.replace("_", " "))
         axis.set_ylabel("unit-peak intensity" if case_id == "XM02" else "value")
-        axis.grid(alpha=0.25)
-        axis.legend()
+        # EPS has no transparency channel. Use opaque, light-gray grid and
+        # legend styling so PNG and PostScript exports preserve the same visual
+        # attribution without backend warnings or renderer-dependent opacity.
+        axis.grid(color="0.86", linewidth=0.6)
+        axis.legend(framealpha=1.0)
     axes[-1, 0].set_xlabel("elapsed hours" if case_id == "XM02" else "published coordinate")
-    figure.suptitle(f"{case_id} publication-derived comparison")
-    figure.tight_layout()
+    figure.suptitle(
+        f"{case_id} publication-derived comparison\n"
+        f"{_publication_plot_label(case)}",
+        fontsize=11)
+    figure.tight_layout(rect=(0.0, 0.0, 1.0, 0.94))
     paths = _save_figure(figure, output, f"{case_id}_comparison", formats)
     plt.close(figure)
     return paths
@@ -554,7 +586,8 @@ def _xm03_score(case: Dict[str, Any], model_rows: Sequence[Dict[str, str]],
     ]
     return metrics, scale, comparison_rows
 
-def _xm03_plot(output: Path, model_rows: Sequence[Dict[str, str]],
+def _xm03_plot(case: Dict[str, Any], output: Path,
+               model_rows: Sequence[Dict[str, str]],
                reference_rows: Sequence[Dict[str, str]], scale: float,
                formats: Sequence[str]) -> List[Path]:
     """Overlay the linked Earth spectra and Figure-12 measurements."""
@@ -604,9 +637,10 @@ def _xm03_plot(output: Path, model_rows: Sequence[Dict[str, str]],
     figure.legend(handles, labels, loc="lower center", ncol=4,
                   bbox_to_anchor=(0.5, -0.03), framealpha=1.0)
     figure.suptitle(
-        "XM03: Earth observations from Liu et al. Figure 12\n"
+        "XM03: Earth-observation spectral comparison\n"
+        f"{_publication_plot_label(case)}\n"
         f"one global model amplitude = {scale:.3e}")
-    figure.tight_layout(rect=(0.0, 0.11, 1.0, 0.93))
+    figure.tight_layout(rect=(0.0, 0.11, 1.0, 0.88))
     paths = _save_figure(figure, output, "XM03_earth_observation_comparison", formats)
     plt.close(figure)
     return paths
@@ -683,7 +717,7 @@ def run_cross_model_case(case_id: str, *, source_root: Path, input_path: Path,
             timeout=timeout)
         model_rows = read_csv(native["model"])
         metrics = _score_external(case_id, case, model_rows, reference_rows)
-        figures = _external_plot(case_id, output_dir, reference_rows,
+        figures = _external_plot(case_id, case, output_dir, reference_rows,
                                  model_rows, formats)
         provenance = output_dir / "provenance.json"
         atomic_json(provenance, {
@@ -727,7 +761,7 @@ def run_cross_model_case(case_id: str, *, source_root: Path, input_path: Path,
             "scored", "model_relative", "model_scaled_pfu_per_mev",
             "log10_model_over_observation"), comparison_rows)
         figures = _xm03_plot(
-            output_dir, model_rows, reference_rows, scale, formats)
+            case, output_dir, model_rows, reference_rows, scale, formats)
         provenance = output_dir / "provenance.json"
         atomic_json(provenance, {
             "schema": "srcsep-validation-provenance-v1",

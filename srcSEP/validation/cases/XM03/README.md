@@ -123,6 +123,15 @@ relative model spectrum, copied observations, point-by-point comparison CSV,
 run provenance, and PNG/EPS overlays. A missing external model CSV can no
 longer cause XM03 to SKIP.
 
+Every PNG/EPS title includes the short bibliographic reference
+`Liu et al. (2025), doi:10.3847/1538-4357/adc4e3` and explicitly identifies
+the extracted observation panels as Figure 12(a), Figure 12(b), and Figure
+12(c). The values come from `reference.plot_citation` and
+`reference.figures` in `input.json`, making missing attribution a configuration
+error rather than silently producing an unlabeled plot. Complete publication,
+PDF/vector-figure hashes, extraction, and exclusion details remain in
+`publication_input.json` and `reference/provenance.json`.
+
 ## Reproduce the vector extraction
 
 Obtain `Fig/1304_Fig12_Spectrum_V8.pdf` from the arXiv source distribution for

@@ -408,6 +408,18 @@ python3 test/run_tests.py --from-json results.json \
   --output-dir /absolute/path/to/evidence/figures
 ```
 
+The Python `--all` mode is fault-isolated. It filters the human-readable
+`ID | ...` table heading from `--list-tests`, then launches one selected test
+per process instead of passing every ID to one AMPS invocation. Each exact
+command and normalized `RESULT ID: PASS|FAIL|SKIP|ERROR` line is printed as it
+runs. A crash, timeout, or missing child report becomes a retained `ERROR` and
+does not stop later IDs. CV/IV/XM IDs are run through their registered
+validation entrypoints so required case inputs and independent references are
+constructed before the linked `amps --test ID --test-input ...` call. The
+aggregate JSON/JUnit and final TOTAL/PASS/FAIL/SKIP/ERROR summary cover the
+whole discovered portfolio; per-ID evidence is retained under
+`individual/<ID>/`.
+
 For an analytical case, a reported CSV artifact with conventional coordinate,
 `numerical`/`model`, and `analytical`/`exact` columns becomes a pointwise
 solution overlay. When a C++ test reports only an error, moment, convergence

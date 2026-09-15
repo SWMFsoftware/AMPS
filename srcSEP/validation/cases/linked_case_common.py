@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import time
 from typing import Any, Dict, Iterable, List, Optional, Sequence
@@ -114,6 +115,11 @@ def run_linked_model(*, case_id: str, arguments: Sequence[str],
         "--test-json", str(report),
         "--test-junit", str(junit),
     ]
+    # The higher-level runner prints its Python orchestration command, but the
+    # linked application is the numerical system under test. Print the exact,
+    # shell-escaped AMPS invocation as a separate line so a user can audit or
+    # reproduce the actual model call without opening the retained log first.
+    print("RUN:", shlex.join(command), flush=True)
     try:
         completed = subprocess.run(
             command, cwd=str(source_root), text=True, stdout=subprocess.PIPE,

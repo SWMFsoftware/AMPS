@@ -22,6 +22,7 @@
   "reference": {
     "csv": "reference/mflampa_2013_apr11_mfp_sensitivity.csv",
     "publication_id": "Zhao2024-SOFIE-MFLAMPA",
+    "plot_citation": "Zhao et al. (2024), arXiv:2309.16903",
     "figure": "Figure 7",
     "reference_kind": "digitized-publication-curve"
   },
