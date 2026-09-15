@@ -28,7 +28,9 @@ configuration or require a command-line input override.
    `945361cc4c27e6481eac042eaf9a0e3f6b097ed277e1b7fab793ab9305591bbe`.
 2. Liu et al., *Physics-based Simulation of the 2013 April 11 Solar Energetic
    Particle Event*, Astrophysical Journal 985:82 (2025), DOI
-   `10.3847/1538-4357/adc4e3`. XM03 uses Figures 14–15 on PDF pages 23–24.
+   `10.3847/1538-4357/adc4e3`. XM03 uses the Earth observations in Figure
+   12(a–c) as its scored reference and the Earth shock thermal-energy curve in
+   Figure 12(d) only as its publication-derived injection-time input.
    Expected PDF SHA-256:
    `a5a613e9ad3b127c5c412366b0c4a2029339f9ac068fd9508325ab682a6dc357`.
    The article is distributed under CC BY 4.0; retain author/title/journal/DOI
@@ -56,3 +58,18 @@ python3 validation/reference/digitize_mflampa_figures.py \
 
 The script checks exact PDF bytes before rendering. It never overwrites a
 case reference, and reference regeneration is not part of test execution.
+
+XM03's Figure-12 vector extraction is reproduced separately from the arXiv
+source distribution because the authors supply that figure as a Matplotlib
+vector PDF:
+
+```sh
+python3 validation/reference/digitize_liu_figure12.py \
+  --figure-pdf /path/to/Fig/1304_Fig12_Spectrum_V8.pdf \
+  --observations /tmp/liu_figure12_earth_observations.csv \
+  --earth-source /tmp/earth_shock_thermal_source.csv
+```
+
+The script selects vector paths by the embedded instrument colors, calibrates
+against vector grid coordinates, and asserts the reviewed count of 80 Earth
+measurements. It excludes all SOFIE curves and STEREO-B observations.

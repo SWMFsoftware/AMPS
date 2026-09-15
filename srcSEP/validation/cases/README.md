@@ -95,7 +95,9 @@ shock-cycle test rather than a full resolved heliospheric shock campaign.
 
 XM02/XM03 each use one registry-owned paper reconstruction and reject input
 overrides. XM02 runs a controlled production-core first-passage ensemble for
-the three published MFPs, so it requires no external model CSV. XM03 retains a
-fail-closed full-event output contract: a missing case-local
-`model/srcsep_output.csv` yields SKIP. See each XM README for the precise
-physics scope, assumptions, columns, provenance, and provisional gates.
+the three published MFPs. XM03 runs production Parker transport on a reduced
+Earth-connected Parker spiral, uses the Earth shock thermal-energy trace from
+Liu et al. Figure 12(d) as source timing, and scores Earth observations from
+Figure 12(a–c). Both obtain every model row from the selected linked executable
+and require no external model CSV. See each XM README for the precise physics
+scope, assumptions, columns, provenance, and provisional gates.

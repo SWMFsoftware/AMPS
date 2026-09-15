@@ -206,27 +206,33 @@ Examples:
 
        validation/cases/XM03/input.json
        validation/cases/XM03/publication_input.json
-       validation/cases/XM03/reference/mflampa_2013_apr11_event.csv
+       validation/cases/XM03/input/earth_shock_thermal_source.csv
+       validation/cases/XM03/reference/liu_figure12_earth_observations.csv
        validation/cases/XM03/reference/provenance.json
-       validation/cases/XM03/model/srcsep_output.csv
 
-     The XM03 reconstruction was derived from Liu et al. (2025), Table 1,
-     Table 2, Equations (1) and (12)-(22), and Sections 2.1-2.3 and 4.4. It
-     records the 2013-04-11 06:04 UTC GONG map and weak-field transform, PFSS
-     order/source surface, AWSoM-R parameters and grids, Gibson-Low parameters,
-     648-line M-FLAMPA geometry, transport/injection laws, observer geometry,
-     and requested energy/time products. The reference combines digitized
-     Figures 14(b), 15(a), and 15(b) with the Figure 15(c) reported fluence
-     index. Its provenance file records calibration and extraction uncertainty.
-     The production XM03 result uses the fixed model/srcsep_output.csv path.
+     XM03 compares only with the Earth observations in Liu et al. Figure
+     12(a-c): ACE/EPAM, GOES-13/EPEAD, and SOHO/ERNE spectra at 4, 12, and 36 h.
+     The 80 points and energy-channel bounds come from the authors' vector PDF;
+     neither plotted SOFIE curves nor STEREO-B points are reference data. The
+     Figure 12(d) Earth shock thermal-energy trace supplies source timing because
+     the paper states injection is proportional to it. It is not scored.
+
+     The linked application runs the production Parker SDE on one Parker spiral.
+     Paper-derived inputs are 2.5 solar-radii injection, Earth at 1 au, 363 km/s
+     Earth wind, 675 km/s CME speed, lambda0=0.3 au with r*(pc)^(1/3) scaling,
+     10 keV p^-5 proton injection, a 1.2 flux factor, and no perpendicular
+     diffusion. Additional standard/reduced choices are fully documented in
+     publication_input.json. One global amplitude accounts for the unpublished
+     shock and flux-tube areas; no time-, energy-, or instrument-specific scale
+     is fitted. XM03 needs no external model CSV and cannot SKIP because
+     model/srcsep_output.csv is absent.
 
      Both publication_input.json files are marked reproduction_status=partial.
      The papers do not publish complete SWMF PARAM/restart/source/mesh data or
      author numerical tables. XM02 consequently reports a controlled transport
-     comparison, not an exact event reproduction, but it runs to PASS or FAIL
-     with no other file. XM03 still needs the complete production event result
-     at its documented fixed model-output path. Neither case ever compares a
-     reference with itself.
+     comparison and XM03 a reduced Parker event reconstruction; neither is an
+     exact global-model replay. Both run to PASS or FAIL with their fixed
+     repository inputs, and neither compares a reference with itself.
 
      Repeat --test to choose any collection of individual cases:
 

@@ -1,0 +1,107 @@
+{
+  "schema": "srcsep-publication-input-reconstruction-v1",
+  "case_id": "XM03",
+  "title": "Event-informed one-field-line input for the 2013 April 11 Earth comparison",
+  "reproduction_status": "partial",
+  "scientific_use": "Run linked srcSEP Parker transport with values reported by Liu et al. and compare the result with Earth observations in Figure 12; do not claim to reproduce the unpublished global SOFIE state.",
+  "publication": {
+    "id": "Liu2025-2013-April-11",
+    "title": "Physics-based Simulation of the 2013 April 11 Solar Energetic Particle Event",
+    "doi": "10.3847/1538-4357/adc4e3",
+    "arxiv": "2412.07581v2",
+    "source_url": "https://authors.library.caltech.edu/records/qwsnd-jmx38",
+    "source_pdf_sha256": "a5a613e9ad3b127c5c412366b0c4a2029339f9ac068fd9508325ab682a6dc357",
+    "arxiv_source_sha256": "83ca4c7fd89c00a6daafdc898e9e401efdf02ba69c8f61bf970bb2e9ed6be91d"
+  },
+  "reported_parameters_used": {
+    "time_origin_utc": "2013-04-11T06:00:00Z",
+    "first_lasco_c2_observation_and_model_launch_utc": "2013-04-11T07:24:00Z",
+    "earth_shock_connection_delay_minutes": 15.0,
+    "earth_radius_au": 1.0,
+    "earth_solar_wind_speed_km_per_s": 363.0,
+    "field_line_seed_radius_solar_radii": 2.5,
+    "eeggl_input_cme_speed_km_per_s": 675.0,
+    "parallel_mean_free_path": "lambda_parallel=0.3 AU*(r/1 AU)*(p*c/1 GeV)^(1/3)",
+    "parallel_diffusion_coefficient": "kappa_parallel=lambda_parallel*v/3",
+    "particle_species": "proton",
+    "injection_energy_kev": 10.0,
+    "source_distribution": "f proportional to p^-5",
+    "base_injection_coefficient": 1.0,
+    "postprocessing_flux_factor": 1.2,
+    "perpendicular_diffusion": false,
+    "shock_source_time_dependence": "Earth thermal energy density in Figure 12(d); the paper states injected particle number is proportional to this quantity",
+    "comparison_snapshots_hours_after_cme_launch": [4.0, 12.0, 36.0],
+    "observation_instruments": ["ACE/EPAM", "GOES-13/EPEAD", "SOHO/ERNE"],
+    "source_locators": ["Table 1", "Table 2", "Equations 14-16", "Section 2.3.5", "Section 4.4.2", "Figure 12"]
+  },
+  "standard_or_reduced_model_choices": {
+    "nominal_solar_radius_m": {
+      "value": 695700000.0,
+      "source": "IAU 2015 Resolution B3",
+      "purpose": "convert the paper's 2.5 solar-radii boundary to SI"
+    },
+    "astronomical_unit_m": {
+      "value": 149597870700.0,
+      "source": "IAU 2012 exact astronomical-unit definition",
+      "purpose": "convert observer radius and mean free path to SI"
+    },
+    "solar_sidereal_rotation_period_days": {
+      "value": 25.38,
+      "angular_rate_rad_per_s": 2.8653290846e-6,
+      "source": "Carrington sidereal rotation convention",
+      "purpose": "construct the reduced equatorial Parker spiral"
+    },
+    "field_geometry": {
+      "value": "constant-speed equatorial Parker spiral",
+      "reason": "the paper does not release its time-dependent Earth-connected AWSoM field line; this is a transparent one-dimensional heliospheric geometry, not a surrogate SOFIE result"
+    },
+    "solar_wind_profile": {
+      "value": "constant 363 km/s radial wind",
+      "reason": "use the event-specific Earth value in Liu et al. Table 2 rather than a generic 400 km/s default"
+    },
+    "shock_trajectory": {
+      "value": "radial constant-speed propagation from 2.5 solar radii at 675 km/s",
+      "reason": "675 km/s is the paper's EEGGL input speed; the unpublished shock trajectory is not reconstructed or fitted"
+    },
+    "source_sampling": {
+      "value": "exact piecewise-linear inversion of the vector Figure 12(d) Earth trace",
+      "reason": "preserve the published time dependence without inventing an exponential source"
+    },
+    "observer": {
+      "value": "first passage at 1 AU",
+      "reason": "represent outward flux through the Earth location on one field line"
+    },
+    "inner_boundary": {
+      "value": "absorbing at 2.5 solar radii",
+      "reason": "avoid artificial reinjection of sunward pseudo-particles"
+    },
+    "comparison_amplitude": {
+      "value": "one global log-least-squares multiplicative factor",
+      "reason": "the paper does not publish shock surface area or the flux-tube collection area needed to predict absolute pfu from a one-dimensional source; no time-, energy-, or instrument-specific fitting is allowed"
+    }
+  },
+  "digitized_inputs_and_observations": {
+    "figure_pdf": "Fig/1304_Fig12_Spectrum_V8.pdf in the arXiv source distribution",
+    "figure_pdf_sha256": "e33756667d35fba02df2f4183cf9ee16647869008e6ae5db56db30094dada605",
+    "earth_observation_csv": "reference/liu_figure12_earth_observations.csv",
+    "earth_observation_points": 80,
+    "earth_source_csv": "input/earth_shock_thermal_source.csv",
+    "earth_source_points": 97,
+    "method": "read Matplotlib vector paths after PDF-to-SVG conversion; calibrate against embedded logarithmic grid coordinates",
+    "regenerator": "../../reference/digitize_liu_figure12.py"
+  },
+  "observational_cautions": [
+    "Only Earth measurements are used; STEREO-B measurements belong to a different connected field line.",
+    "The paper background-subtracts the observations and notes SOHO high-flux saturation.",
+    "ACE/EPAM has no ion discrimination and the low-energy channels can contain contamination; formal scoring therefore begins at 1 MeV.",
+    "The horizontal bars in Figure 12 are energy-bin limits, not statistical error bars."
+  ],
+  "missing_required_inputs": [
+    "The evolving Earth-connected AWSoM magnetic-field line and solar-wind profiles",
+    "The three-dimensional CME shock position, normal, compression ratio, and thermal state along that line",
+    "The shock surface area and flux-tube collection area required for absolute one-dimensional injection normalization",
+    "Author-produced numerical tables underlying Figure 12 and the instrument preprocessing workflow",
+    "The complete SWMF/SOFIE run deck, restart state, source revision, solver controls, and random state"
+  ],
+  "completion_rule": "XM03 is complete as a documented reduced srcSEP-versus-observation validation case, but reproduction_status remains partial for the original global simulation. Never describe the Parker reconstruction as an exact SOFIE replay."
+}

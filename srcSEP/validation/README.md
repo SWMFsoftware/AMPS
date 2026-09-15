@@ -29,7 +29,7 @@ validation, and passing coupled code is not called observational validation.
 | `IV06` | Integrated manufactured verification | Frozen/one-way/two-way self-generated turbulence feedback | Implemented; required nightly; linked executable |
 | `XM01` | Cross-model verification | Linked production characteristics versus an independent conservative focused-transport PDE solver | Implemented; extended; linked executable |
 | `XM02` | Publication-informed controlled M-FLAMPA comparison | Linked first-passage reconstruction for the three reported MFPs plus digitized >10 MeV profiles from Zhao et al. Figure 7 | Implemented; runs from the single registered input; no external CSV |
-| `XM03` | Published M-FLAMPA event comparison | Single registered partial input reconstruction plus digitized 2013-04-11 intensity/MFP products and reported fluence slope from Liu et al. Figures 14–15 | Implemented workflow; SKIP only when the fixed-path production result is absent |
+| `XM03` | Event-informed observational validation | Linked one-field-line Parker transport versus 80 ACE/EPAM, GOES-13/EPEAD, and SOHO/ERNE Earth measurements from Liu et al. Figure 12(a–c) | Implemented; fixed paper-derived input; no external model CSV |
 | `VAL01` | Numerical verification | Independent analytical diffusion moments and adiabatic-cooling characteristic | Implemented |
 | `VAL02` | Cross-mover verification | Matched `fte-dmumu`/`fte-mfp` mean-free-path closure | Implemented |
 | `VAL03` | Cross-model verification | Independently coded conservative finite-volume pitch-angle solver | Implemented |
@@ -67,13 +67,14 @@ finite-volume reference and reversed-drift control; CV02 uses ten independent
 seeds and three particle counts; CV04-CV06 and CV10-CV11 report refinement;
 CV07-CV09 retain statistical/distribution evidence; CV12 closes the energy ledger.
 XM01 is an extended linked cross-solver gate. XM02/XM03 automatically select
-their registered publication inputs. XM02 generates its controlled numerical
-solution inside the linked application and reports PASS or FAIL; XM03 still
-SKIPs until its fixed case-local full-event production result is supplied.
-Their default inputs point to source-reviewed `publication_input.json`
-manifests. These make known parameters and missing run artifacts explicit and
-are copied into validation evidence, but they are not production srcSEP input
-decks and cannot replace `model_source_csv`.
+their registered publication inputs and generate numerical solutions inside
+the linked application. XM02 is a controlled first-passage comparison. XM03
+uses the production Parker core with event inputs from Liu et al., a vector-
+extracted Figure 12(d) Earth shock-source history, and a documented Parker-
+spiral heliosphere, then scores Earth observations from Figure 12(a–c). Their
+`publication_input.json` manifests distinguish reported inputs, standard
+constants, reduced-model assumptions, and missing global-run artifacts. No
+external `model_source_csv` is used.
 
 It runs `VAL01`–`VAL04-SWCME` under AddressSanitizer and
 UndefinedBehaviorSanitizer, assembles a temporary campaign, and proves that

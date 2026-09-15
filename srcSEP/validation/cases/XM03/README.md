@@ -1,79 +1,140 @@
-# XM03 — published M-FLAMPA 2013 April 11 event reproduction
+# XM03 — 2013 April 11 Earth observations in Liu et al. Figure 12
 
-XM03 compares linked srcSEP products with Liu et al. (2025), DOI
-`10.3847/1538-4357/adc4e3`. It includes a structured reconstruction of the
-published model input (`publication_input.json`) as well as the reference
-solution. The reference contains Earth 2.0–2.5 and 20–25 MeV
-time-intensity curves for lambda0=0.3 au from Figure 15(a,b), the Earth-connected
-radial mean-free-path profile from Figure 14(b), and the reported Earth fluence
-spectral index -1.78 from Figure 15(c). The event interval begins at 2013-04-11
-06:00 UTC. Differential intensity units are `(cm2 s sr MeV)^-1`, radius is in
-solar radii, mean free path is in au, and the fitted index is dimensionless.
+XM03 validates the linked `srcSEP/AMPS` application against the Earth proton
+spectra in Figure 12(a–c) of Liu et al. (2025), DOI
+`10.3847/1538-4357/adc4e3`. It no longer uses SOFIE/M-FLAMPA output as the
+reference and it never reads a precomputed `model/srcsep_output.csv`. Every
+model spectrum is produced by the executable named with `--amps` during the
+current run.
 
-Export the production comparison products in long form:
+## What the case compares
 
-```text
-observable,coordinate,value
-```
+`reference/liu_figure12_earth_observations.csv` contains 80 vector-extracted
+measurements at 4, 12, and 36 hours after the 07:24 UTC CME flux-rope launch:
 
-The required observable names are exactly those in
-`reference/mflampa_2013_apr11_event.csv`. Time-series coordinates are elapsed
-hours, mean-free-path coordinates are solar radii, and the spectral-index
-coordinate is zero. The linked callback validates finite coordinates/values,
-permits a negative value only for the signed spectral index, and writes its
-normalized artifact transactionally.
+- ACE/EPAM, GOES-13/EPEAD, and SOHO/ERNE Earth measurements are included;
+- STEREO-B/HET is excluded because a separate spacecraft requires a separate
+  connected field line; and
+- the plotted SOFIE curves are excluded because the validation target is the
+  observations.
 
-## Extracted publication input
+The energy-bin limits are retained as `energy_low_mev` and `energy_high_mev`.
+The plotted horizontal bars describe channel width, not measurement
+uncertainty. Differential intensity is in `pfu MeV^-1`, equivalent to
+`(cm^2 s sr MeV)^-1`.
 
-The article is unusually detailed, and `publication_input.json` records the
-reported setup at section/table/equation granularity. Major items include:
+Liu et al. note three limitations that matter when interpreting a result: the
+observations were background-subtracted, SOHO can saturate at high flux, and
+ACE/EPAM does not discriminate ions. Because low-energy contamination is most
+problematic, the formal score uses only points at or above 1 MeV. All points
+remain visible in the CSV and comparison plots.
 
-- the 2013-04-11 06:04 UTC GONG map, weak-field transform from Equation (1),
-  PFSS source surface at 2.5 solar radii, harmonic order 180, and 5-by-5-pixel
-  EEGGL smoothing;
-- all four AWSoM-R free parameters from Table 1 and the approximate SC/IH grid
-  extents, block sizes, resolutions, cell counts, and CME-path refinement;
-- the GL pole locations, radius, stretching, height, field strength, and the
-  675 km/s CME speed used by EEGGL;
-- 648 M-FLAMPA lines seeded at 2.5 solar radii over 360 degrees longitude and
-  +/-85 degrees latitude, 120 s coupling, the -120 km/s shock criterion, the
-  Parker/Poisson-bracket formulation, and the absence of perpendicular
-  diffusion;
-- the upstream mean-free-path law and 0.1/0.3/1.0 au sensitivity values, the
-  downstream turbulence prescription and diffusion floor, and the 10 keV,
-  p^-5 injection with unit coefficient followed by a 1.2 flux scaling; and
-- the Earth/STA/STB coordinates from Table 2 plus the energy channels,
-  mean-free-path snapshot, three-day fluence interval, and 1–50 MeV fit range.
+## Paper-derived model input
 
-Reported values are not the same as a complete executable input. The exact map
-bytes, PARAM files, SWMF revisions, restart, AMR state, particle grids, solver
-controls, all 648 seed coordinates, observer interpolation, and author-produced
-Figure 14/15 tables are unavailable in the paper. The manifest therefore sets
-`reproduction_status` to `partial` and enumerates these blockers in
-`missing_required_inputs`. A future author data release can fill those fields
-without changing the scored reference schema.
+The linked calculation uses values explicitly reported by the paper:
 
-Save the production result at the single fixed location
-`model/srcsep_output.csv`. It is a model output, not an alternate input. The
-registered `input.json` automatically selects `publication_input.json`, the
-reference, acceptance gates, and that result path. Missing production output
-yields SKIP while retaining the extracted input, reference, and figures.
+| Quantity | XM03 value | Publication basis |
+| --- | ---: | --- |
+| Source-table time origin | 2013-04-11 06:00 UTC | Figure 12(d) civil-time axis |
+| Model launch | 07:24 UTC (5040 s after origin) | first LASCO/C2 time and event setup |
+| Earth connection | 15 min after launch | Section 4.4.2 |
+| Inner/source radius | 2.5 solar radii | M-FLAMPA seed sphere |
+| Earth radius | 1 AU | Table 2 |
+| Earth solar wind | 363 km/s | Table 2 |
+| CME/shock propagation speed | 675 km/s | EEGGL event input, Table 1 |
+| Mean free path | `0.3 AU (r/AU) (pc/GeV)^(1/3)` | Equations 14–16, preferred event run |
+| Diffusion | `kappa_parallel=lambda_parallel v/3` | Equation 14 |
+| Injection threshold | 10 keV protons | Section 2.3.5 |
+| Injection distribution | `f(p) proportional to p^-5` | Section 2.3.5 |
+| Flux factor | 1.2 | postprocessing factor stated by paper |
+| Perpendicular diffusion | disabled | published setup |
+
+`input/earth_shock_thermal_source.csv` is the Earth curve from Figure 12(d).
+The paper states that the injected particle number is proportional to the
+plasma thermal energy density at the shock. The native callback therefore
+integrates the vector trace as a piecewise-linear function and draws release
+times by exact inverse-CDF sampling. It does not fit an exponential source, and
+the Figure 12(a–c) observations never enter this source calculation.
+
+## Selected heliospheric parameters and assumptions
+
+The paper does not publish the evolving Earth-connected AWSoM field line or a
+complete SOFIE restart. XM03 consequently uses the smallest transparent
+one-field-line heliosphere that can run independently:
+
+- constant 363 km/s radial wind, chosen from the event-specific Earth value in
+  Table 2 rather than a generic 400 km/s solar wind;
+- an equatorial Parker spiral using the Carrington 25.38-day sidereal rotation
+  period (`2.8653290846e-6 rad/s`);
+- the IAU nominal solar radius `6.957e8 m` and exact astronomical unit
+  `149597870700 m` for unit conversion;
+- a radial shock moving from 2.5 solar radii at the paper's 675 km/s EEGGL
+  input speed; this is explicitly a reduced trajectory, not a reconstruction
+  of the unpublished three-dimensional shock; and
+- spherical expansion `div(U)=2U/r`, adiabatic momentum loss, an absorbing
+  inner boundary, and first passage through 1 AU as the outward-flux sample.
+
+The two published clocks are kept distinct: source-table hours are measured
+from 06:00 UTC, while spectral snapshot hours are measured from the 07:24 UTC
+flux-rope launch. The native callback adds the 5040 s offset when it samples
+the 4, 12, and 36 h spectra.
+
+The native callback uses `SEP::Transport::AdvanceParker`; the test is therefore
+an application-level exercise of the production Parker SDE, spatial-diffusion
+provider contract, stochastic stream, and adiabatic update. A 120 s timestep
+matches the paper's reported MHD/particle coupling cadence. The 36 logarithmic
+energy bins span 10 keV to 200 MeV and use 2500 particles per injection bin.
+The random seed is fixed for reproducibility.
+
+These choices do not turn the case into an exact SOFIE reproduction. The
+missing global field, shock geometry, source area, and complete run deck are
+listed in `publication_input.json` and must remain visible in scientific
+reporting.
+
+## Normalization and acceptance
+
+A one-dimensional source cannot infer absolute pfu because the paper does not
+publish the shock surface area or the connected flux-tube collection area.
+XM03 therefore estimates exactly one multiplicative amplitude in logarithmic
+space using all scored times, energies, and instruments together. It never
+fits a separate factor by time, energy, or instrument. The model's spectral
+and time dependence are consequently unchanged.
+
+The provisional gates are at least 90% scored-point coverage, at most 1.0 dex
+global log-RMSE, at most 0.8 dex median absolute log error, and at least 0.45
+correlation between modeled and observed log intensity. The deliberately broad
+thresholds recognize that this is a one-field-line Parker reconstruction, not
+the paper's global MHD calculation. Tighten them only after a convergence and
+observational-uncertainty study; never tune them merely to obtain PASS.
+
+## Run
+
+From the `srcSEP` directory:
 
 ```sh
-python3 test/run_tests.py --amps /path/to/linked/srcSEP/AMPS \
+python3 test/run_tests.py --amps ../amps \
   --validation-case XM03 \
   --output-dir test_output/XM03
 ```
 
-Passing `--case-input` is an error for XM03. This keeps every archived XM03
-command tied to the same paper-derived physical setup.
+`--case-input` is rejected for XM03 because there is one reviewed event input.
+The output contains the resolved input, linked native manifest/report/log,
+relative model spectrum, copied observations, point-by-point comparison CSV,
+run provenance, and PNG/EPS overlays. A missing external model CSV can no
+longer cause XM03 to SKIP.
 
-Provisional gates are a factor-three (0.477 dex) intensity RMSE, 3 h peak-time
-error, 0.3 spectral-index error, 0.2 dex mean-free-path RMSE, and complete
-series coverage. The plan's 1 h onset metric requires an agreed background and
-threshold definition and is recorded in input but is not scored prematurely.
-Model-to-M-FLAMPA and model-to-spacecraft results must be reported separately.
-Digitization calibration and uncertainty are in `reference/provenance.json`.
-Every run also copies the source-reviewed reconstruction into the output as
-`XM03_publication_input.json`; completed comparisons include its SHA-256 in
-`provenance.json` so the exact literature interpretation is recoverable.
+## Reproduce the vector extraction
+
+Obtain `Fig/1304_Fig12_Spectrum_V8.pdf` from the arXiv source distribution for
+`2412.07581v2`, then run:
+
+```sh
+python3 validation/reference/digitize_liu_figure12.py \
+  --figure-pdf /path/to/Fig/1304_Fig12_Spectrum_V8.pdf \
+  --observations validation/cases/XM03/reference/liu_figure12_earth_observations.csv \
+  --earth-source validation/cases/XM03/input/earth_shock_thermal_source.csv
+```
+
+The script checks the reviewed 80-observation count. Coordinate calibration,
+file hashes, exclusions, units, and limitations are recorded in
+`reference/provenance.json`.

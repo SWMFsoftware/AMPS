@@ -2,10 +2,11 @@
 
 XM01 compares production stochastic characteristics with an independent
 finite-volume PDE solver. XM02 runs a linked, publication-informed controlled
-transport reconstruction. XM03 compares a normalized production export with
-immutable M-FLAMPA references. XM02/XM03 accept only their registered
-publication inputs, so the former command-line equivalence-review input branch
-is intentionally absent. This distinction is part of the evidence contract.
+transport reconstruction. XM03 runs an event-informed Parker transport model
+inside the selected executable and compares it with Earth measurements from
+Liu et al. Figure 12. XM02/XM03 accept only their registered publication inputs,
+so the former command-line equivalence-review input branch is intentionally
+absent. This distinction is part of the evidence contract.
 """
 from __future__ import annotations
 
@@ -79,6 +80,63 @@ def _xm02_arguments(case: Dict[str, Any]) -> List[str]:
         "--time-step-s", str(numerics["time_step_s"]),
         "--duration-s", str(3600.0 * float(numerics["duration_hours"])),
         "--output-cadence-s", str(3600.0 * float(numerics["output_cadence_hours"])),
+        "--campaign-seed", str(numerics["campaign_seed"]),
+    ]
+
+def _xm03_arguments(case: Dict[str, Any], input_path: Path) -> List[str]:
+    """Serialize the single reviewed Figure-12 event reconstruction.
+
+    The paper does not publish its evolving AWSoM magnetic field.  XM03 uses a
+    Parker spiral with the paper's event-specific Earth solar-wind speed and
+    all remaining choices declared in input.json.  The source-history path is
+    constrained to the case directory so an operator cannot replace the
+    Figure-12 trace with a fitted curve at run time.
+    """
+    physics, numerics = case["physics"], case["numerics"]
+    fixed = {
+        "transport_equation": "field-aligned-parker-sde",
+        "field_geometry": "constant-speed-equatorial-parker-spiral",
+        "inner_boundary": "absorbing-at-2.5-solar-radii",
+        "outer_boundary": "first-passage-at-earth",
+        "perpendicular_diffusion": "disabled",
+        "comparison_normalization": "one-global-log-least-squares-amplitude",
+    }
+    for name, expected in fixed.items():
+        if physics.get(name) != expected:
+            raise ValueError(f"XM03 {name} must be {expected}")
+    relative = Path(str(physics["source_history_csv"]))
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("XM03 source_history_csv must be case-relative")
+    case_directory = input_path.parent.resolve()
+    source = (case_directory / relative).resolve()
+    if case_directory not in source.parents or not source.is_file():
+        raise ValueError(f"XM03 source history is missing or outside the case: {source}")
+    return [
+        "--source-history-csv", str(source),
+        "--injection-radius-solar-radii", str(physics["injection_radius_solar_radii"]),
+        "--observer-radius-au", str(physics["observer_radius_au"]),
+        "--solar-wind-speed-m-per-s", str(physics["earth_solar_wind_speed_m_per_s"]),
+        "--shock-speed-m-per-s", str(physics["cme_shock_speed_m_per_s"]),
+        "--solar-rotation-rate-rad-per-s", str(physics["solar_rotation_rate_rad_per_s"]),
+        "--launch-offset-s", str(physics["cme_launch_offset_s"]),
+        "--connection-delay-s", str(physics["earth_shock_connection_delay_s"]),
+        "--mfp-normalization-au", str(physics["mean_free_path_normalization_au"]),
+        "--mfp-radial-exponent", str(physics["mean_free_path_radial_exponent"]),
+        "--mfp-rigidity-exponent", str(physics["mean_free_path_rigidity_exponent"]),
+        "--injection-min-energy-mev", str(physics["injection_min_energy_mev"]),
+        "--injection-max-energy-mev", str(physics["injection_max_energy_mev"]),
+        "--injection-momentum-index", str(physics["injection_momentum_index"]),
+        "--injection-flux-factor", str(physics["injection_flux_factor"]),
+        "--energy-bins", str(numerics["energy_bins"]),
+        "--particles-per-energy", str(numerics["particles_per_energy_bin"]),
+        "--time-step-s", str(numerics["time_step_s"]),
+        # XM03 carries two clocks: the source table begins at 06:00 UTC while
+        # spectral snapshots are measured after the 07:24 UTC CME launch.  The
+        # key name makes the former origin explicit and prevents an apparently
+        # generic duration from being applied to the wrong epoch.
+        "--duration-s", str(3600.0 * float(
+            numerics["duration_hours_from_0600_utc"])),
+        "--snapshot-window-s", str(3600.0 * float(numerics["snapshot_window_hours"])),
         "--campaign-seed", str(numerics["campaign_seed"]),
     ]
 
@@ -393,17 +451,165 @@ def _score_external(case_id: str, case: Dict[str, Any],
                    a["log10_mean_free_path_rmse_max"], "<=", "dex")]
     return metrics
 
-def _skip_result(case_id: str, started: float, case: Dict[str, Any],
-                 input_path: Path, executable: Path, artifacts: Sequence[Path],
-                 reason: str) -> Dict[str, Any]:
-    return {"id": case_id, "status": "SKIP", "message": reason,
-            "elapsed_seconds": time.monotonic()-started,
-            "seed": int(case["numerics"]["campaign_seed"]),
-            "configuration": [f"input={input_path}", "execution=linked-srcsep-amps",
-                f"executable={executable}", f"executable_sha256={sha256(executable)}",
-                "reference=digitized-published-M-FLAMPA",
-                "input_policy=single-registered-publication-reconstruction"],
-            "metrics": [], "artifacts": [str(path) for path in artifacts]}
+def _xm03_model_value(model_rows: Sequence[Dict[str, str]],
+                      elapsed_hours: float, energy_mev: float) -> Optional[float]:
+    """Interpolate one positive model spectrum in log-energy/log-intensity.
+
+    Empty Monte-Carlo bins are omitted instead of being replaced by an
+    invented floor.  The coverage metric then exposes inadequate statistics;
+    it cannot be hidden inside an apparently precise logarithmic residual.
+    """
+    points = sorted(
+        (float(row["energy_mev"]), float(row["relative_differential_intensity"]))
+        for row in model_rows
+        if float(row["elapsed_hours"]) == elapsed_hours and
+        float(row["relative_differential_intensity"]) > 0.0)
+    if len(points) < 2 or energy_mev < points[0][0] or energy_mev > points[-1][0]:
+        return None
+    log_points = [(math.log10(energy), value) for energy, value in points]
+    return _interpolate(log_points, math.log10(energy_mev))
+
+def _xm03_score(case: Dict[str, Any], model_rows: Sequence[Dict[str, str]],
+                reference_rows: Sequence[Dict[str, str]]) -> Tuple[
+                    List[Dict[str, Any]], float, List[Dict[str, Any]]]:
+    """Compare Figure-12 Earth spectra with one globally scaled model.
+
+    A one-dimensional injection calculation does not know the shock surface
+    area or flux-tube collection area, so absolute normalization is not
+    identifiable from the paper.  One multiplicative nuisance amplitude is
+    estimated across *all* times, energies, and instruments.  No per-panel or
+    per-instrument scaling is permitted; spectral and temporal shapes remain
+    genuine predictions of the linked model.
+    """
+    acceptance = case["acceptance"]
+    minimum_energy = float(acceptance["scored_energy_min_mev"])
+    scored = [row for row in reference_rows
+              if float(row["effective_energy_mev"]) >= minimum_energy]
+    matched: List[Tuple[Dict[str, str], float]] = []
+    for row in scored:
+        model_value = _xm03_model_value(
+            model_rows, float(row["elapsed_hours"]),
+            float(row["effective_energy_mev"]))
+        if model_value is not None and model_value > 0.0:
+            matched.append((row, model_value))
+    if not matched:
+        scale = 1.0
+        residuals: List[float] = []
+    else:
+        offsets = [
+            math.log10(float(row["differential_intensity_pfu_per_mev"]) / model)
+            for row, model in matched]
+        scale = 10.0 ** (sum(offsets) / len(offsets))
+        residuals = [
+            math.log10(scale * model /
+                       float(row["differential_intensity_pfu_per_mev"]))
+            for row, model in matched]
+
+    absolute = sorted(abs(value) for value in residuals)
+    if absolute:
+        middle = len(absolute) // 2
+        median = (absolute[middle] if len(absolute) % 2 else
+                  0.5 * (absolute[middle - 1] + absolute[middle]))
+    else:
+        median = math.inf
+    # Pearson correlation in log intensity rewards the joint spectral/time
+    # ordering while remaining invariant to the single nuisance amplitude.
+    expected_logs = [math.log10(float(row["differential_intensity_pfu_per_mev"]))
+                     for row, _ in matched]
+    model_logs = [math.log10(model) for _, model in matched]
+    if len(matched) >= 2:
+        expected_mean = sum(expected_logs) / len(expected_logs)
+        model_mean = sum(model_logs) / len(model_logs)
+        numerator = sum((x - expected_mean) * (y - model_mean)
+                        for x, y in zip(expected_logs, model_logs))
+        denominator = math.sqrt(
+            sum((x - expected_mean) ** 2 for x in expected_logs) *
+            sum((y - model_mean) ** 2 for y in model_logs))
+        correlation = numerator / denominator if denominator > 0.0 else -1.0
+    else:
+        correlation = -1.0
+    coverage = len(matched) / len(scored) if scored else 0.0
+    comparison_rows: List[Dict[str, Any]] = []
+    matched_lookup = {id(row): value for row, value in matched}
+    for row in reference_rows:
+        raw_model = matched_lookup.get(id(row))
+        comparison_rows.append({
+            **row,
+            "scored": int(float(row["effective_energy_mev"]) >= minimum_energy),
+            "model_relative": "" if raw_model is None else raw_model,
+            "model_scaled_pfu_per_mev": "" if raw_model is None else scale * raw_model,
+            "log10_model_over_observation": "" if raw_model is None else
+                math.log10(scale * raw_model /
+                           float(row["differential_intensity_pfu_per_mev"])),
+        })
+    metrics = [
+        metric("observation_point_coverage", coverage,
+               acceptance["observation_point_coverage_min"], ">=", "fraction"),
+        metric("global_log10_intensity_rmse", _rmse(residuals),
+               acceptance["global_log10_intensity_rmse_max"], "<=", "dex"),
+        metric("median_absolute_log10_error", median,
+               acceptance["median_absolute_log10_error_max"], "<=", "dex"),
+        metric("log10_intensity_correlation", correlation,
+               acceptance["log10_intensity_correlation_min"], ">=", "correlation"),
+    ]
+    return metrics, scale, comparison_rows
+
+def _xm03_plot(output: Path, model_rows: Sequence[Dict[str, str]],
+               reference_rows: Sequence[Dict[str, str]], scale: float,
+               formats: Sequence[str]) -> List[Path]:
+    """Overlay the linked Earth spectra and Figure-12 measurements."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    colors = {"ACE/EPAM": "#1f77b4", "GOES-13/EPEAD": "#003fff",
+              "SOHO/ERNE": "#008b8b"}
+    figure, axes = plt.subplots(1, 3, figsize=(14, 4.6), sharey=True)
+    for axis, elapsed in zip(axes, (4.0, 12.0, 36.0)):
+        model = sorted(
+            (float(row["energy_mev"]),
+             scale * float(row["relative_differential_intensity"]))
+            for row in model_rows
+            if float(row["elapsed_hours"]) == elapsed and
+            float(row["relative_differential_intensity"]) > 0.0)
+        if model:
+            axis.plot([item[0] for item in model], [item[1] for item in model],
+                      color="black", linewidth=1.5,
+                      label="linked srcSEP Parker reconstruction")
+        for instrument, color in colors.items():
+            rows = [row for row in reference_rows
+                    if float(row["elapsed_hours"]) == elapsed and
+                    row["instrument"] == instrument]
+            if not rows:
+                continue
+            energy = [float(row["effective_energy_mev"]) for row in rows]
+            axis.errorbar(
+                energy,
+                [float(row["differential_intensity_pfu_per_mev"]) for row in rows],
+                xerr=[[center - float(row["energy_low_mev"])
+                       for center, row in zip(energy, rows)],
+                      [float(row["energy_high_mev"]) - center
+                       for center, row in zip(energy, rows)]],
+                fmt="o", markersize=3.5, capsize=2, color=color,
+                label=instrument)
+        axis.set_xscale("log")
+        axis.set_yscale("log")
+        axis.set_xlim(0.07, 130.0)
+        axis.set_title(f"t = {elapsed:g} h")
+        axis.set_xlabel("proton energy [MeV]")
+        # A solid light grid avoids the PostScript transparency warning while
+        # preserving identical PNG and EPS scientific content.
+        axis.grid(color="0.86", linewidth=0.6)
+    axes[0].set_ylabel("differential intensity [pfu MeV$^{-1}$]")
+    handles, labels = axes[-1].get_legend_handles_labels()
+    figure.legend(handles, labels, loc="lower center", ncol=4,
+                  bbox_to_anchor=(0.5, -0.03), framealpha=1.0)
+    figure.suptitle(
+        "XM03: Earth observations from Liu et al. Figure 12\n"
+        f"one global model amplitude = {scale:.3e}")
+    figure.tight_layout(rect=(0.0, 0.11, 1.0, 0.93))
+    paths = _save_figure(figure, output, "XM03_earth_observation_comparison", formats)
+    plt.close(figure)
+    return paths
 
 def run_cross_model_case(case_id: str, *, source_root: Path, input_path: Path,
                          output_dir: Path, executable: Path,
@@ -500,40 +706,56 @@ def run_cross_model_case(case_id: str, *, source_root: Path, input_path: Path,
             executable=executable, metrics=metrics, artifacts=artifacts,
             message="XM02 linked publication-informed transport comparison passed")
 
-    source_text = str(case.get("model_source_csv", "")).strip()
-    if not source_text:
-        artifacts += _external_plot(case_id, output_dir, reference_rows, None, formats)
-        return _skip_result(case_id, started, case, input_path, executable, artifacts,
-            f"{case_id} reference prepared; registered production-result path is empty")
-    source = Path(source_text).expanduser()
-    if not source.is_absolute(): source = (input_path.parent/source).resolve()
-    if not source.is_file():
-        artifacts += _external_plot(case_id, output_dir, reference_rows, None, formats)
-        return _skip_result(case_id, started, case, input_path, executable, artifacts,
-                            f"{case_id} model_source_csv does not exist: {source}")
-    native = run_linked_model(case_id=case_id,
-        arguments=["--source-csv", str(source), "--campaign-seed",
-                   str(case["numerics"]["campaign_seed"])],
-        source_root=source_root, output_dir=output_dir, executable=executable,
-        timeout=timeout)
-    model_rows = read_csv(native["model"])
-    metrics = _score_external(case_id, case, model_rows, reference_rows)
-    figures = _external_plot(case_id, output_dir, reference_rows, model_rows, formats)
-    provenance = output_dir / "provenance.json"
-    atomic_json(provenance, {"schema": "srcsep-validation-provenance-v1",
-        "case_id": case_id, "publication_id": case["reference"]["publication_id"],
-        "input_policy": "single-registered-publication-reconstruction",
-        "sha256": {"executable": sha256(executable), "model_source": sha256(source),
-                   "normalized_model": sha256(native["model"]), "reference": sha256(reference),
-                   # A missing key means an older case definition did not
-                   # provide a reconstruction; an empty string is avoided so
-                   # downstream provenance readers cannot confuse it with a
-                   # real digest.
-                   **({"publication_input": sha256(publication_input)}
-                      if publication_input is not None else {})}})
-    artifacts += [native["manifest"], native["model"], native["report"], native["junit"],
-                  native["log"], provenance] + figures
-    return finish_result(case_id=case_id, started=started,
-        seed=int(case["numerics"]["campaign_seed"]), input_path=input_path,
-        executable=executable, metrics=metrics, artifacts=artifacts,
-        message=f"{case_id} linked M-FLAMPA comparison passed")
+    if case_id == "XM03":
+        # Unlike the former adapter workflow, XM03 now obtains every model row
+        # from this invocation of the selected linked executable.  The only
+        # source table is a reviewed Figure-12(d) input trace; the immutable
+        # comparison table contains observations from panels (a)-(c).
+        native_arguments = _xm03_arguments(case, input_path)
+        source = Path(native_arguments[native_arguments.index(
+            "--source-history-csv") + 1])
+        native = run_linked_model(case_id=case_id, arguments=native_arguments,
+            source_root=source_root, output_dir=output_dir, executable=executable,
+            timeout=timeout)
+        model_rows = read_csv(native["model"])
+        metrics, scale, comparison_rows = _xm03_score(
+            case, model_rows, reference_rows)
+        comparison = output_dir / "XM03_observation_comparison.csv"
+        write_csv(comparison, (
+            "elapsed_hours", "instrument", "energy_low_mev", "energy_high_mev",
+            "effective_energy_mev", "differential_intensity_pfu_per_mev",
+            "scored", "model_relative", "model_scaled_pfu_per_mev",
+            "log10_model_over_observation"), comparison_rows)
+        figures = _xm03_plot(
+            output_dir, model_rows, reference_rows, scale, formats)
+        provenance = output_dir / "provenance.json"
+        atomic_json(provenance, {
+            "schema": "srcsep-validation-provenance-v1",
+            "case_id": case_id,
+            "publication_id": case["reference"]["publication_id"],
+            "model": "linked event-informed one-field-line Parker transport",
+            "reference": "Earth observations digitized from Liu et al. Figure 12",
+            "comparison_normalization": {
+                "kind": "one-global-log-least-squares-amplitude",
+                "factor": scale,
+                "reason": "shock surface and flux-tube collection areas are not published",
+            },
+            "heliosphere_parameter_policy": (
+                "event values from Liu et al.; standard constants only where the paper "
+                "does not define a conversion or Parker-spiral rotation rate"),
+            "sha256": {
+                "executable": sha256(executable),
+                "model": sha256(native["model"]),
+                "observations": sha256(reference),
+                "source_history": sha256(source),
+                **({"publication_input": sha256(publication_input)}
+                   if publication_input is not None else {})}})
+        artifacts += [source, native["manifest"], native["model"],
+                      native["report"], native["junit"], native["log"],
+                      comparison, provenance] + figures
+        return finish_result(case_id=case_id, started=started,
+            seed=int(case["numerics"]["campaign_seed"]), input_path=input_path,
+            executable=executable, metrics=metrics, artifacts=artifacts,
+            message="XM03 linked Earth-observation comparison passed")
+
+    raise ValueError(f"unsupported cross-model case: {case_id}")

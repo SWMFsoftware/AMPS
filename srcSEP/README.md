@@ -21,9 +21,11 @@ handoff, and Step 15 adds a claim-separated scientific-validation campaign.
 The numbered campaign now includes linked-application cases `CV01`–`CV12` and
 integrated manufactured cases `IV01`–`IV06`.
 Cross-model cases `XM01`–`XM03` add an independent focused-transport PDE
-comparison and two provenance-tracked M-FLAMPA publication workflows. The
-publication cases remain SKIP until a production export and explicit
-configuration-equivalence review are supplied.
+comparison, a publication-informed M-FLAMPA transport benchmark, and a linked
+Earth-observation comparison for the 2013 April 11 event. XM03 now generates
+its Parker-transport spectrum inside the selected executable and compares it
+with ACE/EPAM, GOES-13/EPEAD, and SOHO/ERNE data from Liu et al. Figure 12; it
+does not require or accept an external model export.
 They cover ballistic streaming; constant/nonuniform spatial diffusion;
 adiabatic cooling; magnetic focusing; Legendre pitch diffusion; telegraph and
 first-passage transport; planar DSA; turbulence advection and growth; and

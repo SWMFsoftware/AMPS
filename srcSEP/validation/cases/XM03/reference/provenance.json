@@ -6,43 +6,48 @@
     "title": "Physics-based Simulation of the 2013 April 11 Solar Energetic Particle Event",
     "authors": "Liu et al.",
     "doi": "10.3847/1538-4357/adc4e3",
+    "arxiv": "2412.07581v2",
     "source_url": "https://authors.library.caltech.edu/records/qwsnd-jmx38",
     "source_pdf_sha256": "a5a613e9ad3b127c5c412366b0c4a2029339f9ac068fd9508325ab682a6dc357",
     "license": "Creative Commons Attribution 4.0"
   },
+  "figure": {
+    "number": 12,
+    "arxiv_source_path": "Fig/1304_Fig12_Spectrum_V8.pdf",
+    "vector_pdf_sha256": "e33756667d35fba02df2f4183cf9ee16647869008e6ae5db56db30094dada605",
+    "vector_pdf_bytes": 259215
+  },
   "digitization": {
-    "tool": "validation/reference/digitize_mflampa_figures.py",
-    "render_dpi": 400,
-    "figure_15_time_panels": {
-      "page_in_pdf": 24,
-      "panel_a_box_pixels": [489, 538, 1210, 1133],
-      "panel_b_box_pixels": [1343, 538, 2085, 1133],
-      "x_calibration": "0 to 44 h from 2013-04-11T06:00Z",
-      "y_calibration": "log10 intensity from -2 to 3",
-      "selected_curve": "green dashed, lambda0=0.3 au",
-      "estimated_log10_uncertainty_dex": 0.08
+    "tool": "validation/reference/digitize_liu_figure12.py",
+    "method": "pdftocairo vector PDF to SVG followed by exact path-coordinate extraction",
+    "spectra": {
+      "panels": ["a", "b", "c"],
+      "snapshots_hours": [4.0, 12.0, 36.0],
+      "selected_series": ["ACE/EPAM Earth", "GOES-13/EPEAD Earth", "SOHO/ERNE Earth"],
+      "excluded_series": ["STEREO-B/HET because XM03 contains one Earth-connected field line", "all plotted SOFIE curves because the reference is observational"],
+      "point_count": 80,
+      "x_calibration": "embedded log-energy grid; 74.022178 vector units per decade",
+      "y_calibration": "embedded log-intensity grid; 19.596962 vector units per decade",
+      "horizontal_segments": "instrument energy-channel bounds"
     },
-    "figure_14_mean_free_path": {
-      "page_in_pdf": 23,
-      "panel_b_box_pixels": [2004, 386, 3079, 1354],
-      "x_calibration": "0 to 105 solar radii",
-      "y_calibration": "log10(lambda_parallel/AU) from -3 to 0",
-      "selected_curve": "Earth-connected dashed teal",
-      "estimated_log10_uncertainty_dex": 0.08,
-      "shock_feature_uncertainty_dex": 0.15
-    },
-    "fluence_spectral_index": "published Figure 15(c) annotation for Earth, lambda0=0.3 au"
+    "source": {
+      "panel": "d",
+      "selected_series": "Earth-connected shock thermal energy density",
+      "point_count": 97,
+      "use": "normalized injection-time probability only; never scored as an observation",
+      "calibration": "06:00 UTC origin, 12.997894625 vector units per hour, logarithmic density axis"
+    }
   },
   "units": {
-    "time_profile_coordinate": "h since 2013-04-11T06:00Z",
-    "time_profile_value": "(cm2 s sr MeV)^-1",
-    "mean_free_path_coordinate": "solar radii",
-    "mean_free_path_value": "au",
-    "fluence_spectral_index": "dimensionless"
+    "elapsed_hours": "observation CSV: hours after the 07:24 UTC CME launch; source CSV: hours after 2013-04-11T06:00:00Z",
+    "energy": "MeV",
+    "differential_intensity": "pfu MeV^-1, equivalent to (cm^2 s sr MeV)^-1",
+    "thermal_energy_density": "keV m^-3"
   },
   "limitations": [
-    "Digitized values carry graphical calibration uncertainty and are not exact author tables.",
-    "The sharp mean-free-path feature near 25 solar radii has larger extraction uncertainty.",
-    "Model-model and model-observation conclusions must be reported separately."
+    "The values are recovered from publication vector graphics, not an author data table.",
+    "The publication states that observations were background-subtracted; the exact processing arrays are not supplied.",
+    "SOHO may saturate at high flux and low-energy ACE/EPAM channels may contain non-proton contamination.",
+    "The Earth thermal-energy curve is a publication-derived source proxy, not independent observational validation data."
   ]
 }

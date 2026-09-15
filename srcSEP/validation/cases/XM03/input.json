@@ -1,25 +1,54 @@
 {
   "schema": "srcsep-validation-case-input-v1",
   "case_id": "XM03",
-  "title": "Published M-FLAMPA 2013 April 11 event reproduction",
-  "model_source_csv": "model/srcsep_output.csv",
+  "title": "2013 April 11 Earth SEP spectra from Liu et al. Figure 12",
   "publication_input_only": true,
   "publication_input_manifest": "publication_input.json",
   "reference": {
-    "csv": "reference/mflampa_2013_apr11_event.csv",
+    "csv": "reference/liu_figure12_earth_observations.csv",
     "publication_id": "Liu2025-2013-April-11",
-    "figures": ["Figure 14(b)", "Figure 15(a)", "Figure 15(b)", "Figure 15(c)"],
-    "reference_kind": "digitized-publication-curve-and-reported-fit"
+    "figures": ["Figure 12(a)", "Figure 12(b)", "Figure 12(c)"],
+    "reference_kind": "digitized-earth-observations"
   },
-  "numerics": {"campaign_seed": 30303},
+  "physics": {
+    "transport_equation": "field-aligned-parker-sde",
+    "field_geometry": "constant-speed-equatorial-parker-spiral",
+    "source_history_csv": "input/earth_shock_thermal_source.csv",
+    "injection_radius_solar_radii": 2.5,
+    "observer_radius_au": 1.0,
+    "earth_solar_wind_speed_m_per_s": 363000.0,
+    "cme_shock_speed_m_per_s": 675000.0,
+    "solar_rotation_rate_rad_per_s": 2.8653290846e-6,
+    "cme_launch_offset_s": 5040.0,
+    "earth_shock_connection_delay_s": 900.0,
+    "mean_free_path_normalization_au": 0.3,
+    "mean_free_path_radial_exponent": 1.0,
+    "mean_free_path_rigidity_exponent": 0.3333333333333333,
+    "injection_min_energy_mev": 0.01,
+    "injection_max_energy_mev": 200.0,
+    "injection_momentum_index": 5.0,
+    "injection_flux_factor": 1.2,
+    "inner_boundary": "absorbing-at-2.5-solar-radii",
+    "outer_boundary": "first-passage-at-earth",
+    "perpendicular_diffusion": "disabled",
+    "comparison_normalization": "one-global-log-least-squares-amplitude"
+  },
+  "numerics": {
+    "energy_bins": 36,
+    "particles_per_energy_bin": 2500,
+    "time_step_s": 120.0,
+    "duration_hours_from_0600_utc": 44.0,
+    "snapshot_window_hours": 2.0,
+    "campaign_seed": 30303
+  },
   "acceptance": {
-    "log10_intensity_rmse_max": 0.4771212547,
-    "onset_fraction_of_peak": 0.01,
-    "onset_timing_error_hours_max": 1.0,
-    "peak_timing_error_hours_max": 3.0,
-    "fluence_spectral_index_error_max": 0.3,
-    "log10_mean_free_path_rmse_max": 0.2,
-    "required_series_fraction_min": 1.0
+    "scored_energy_min_mev": 1.0,
+    "observation_point_coverage_min": 0.9,
+    "global_log10_intensity_rmse_max": 1.0,
+    "median_absolute_log10_error_max": 0.8,
+    "log10_intensity_correlation_min": 0.45
   },
-  "plot": {"formats": ["png", "eps"]}
+  "plot": {
+    "formats": ["png", "eps"]
+  }
 }

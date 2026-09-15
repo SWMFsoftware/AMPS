@@ -4,6 +4,7 @@
 // this nested source must compile without adding srcSEP/util to the include
 // search path.
 #include "../../util/sep_focused_transport_core.h"
+#include "../../util/sep_parker_core.h"
 #include "../../util/sep_transport_common.h"
 
 #include <algorithm>
@@ -26,8 +27,13 @@ using SEP::Transport::FocusedTransportBackground;
 using SEP::Transport::FocusedTransportIncrement;
 using SEP::Transport::FocusedTransportState;
 using SEP::Transport::KeyedRandomStream;
+using SEP::Transport::ParkerBackground;
+using SEP::Transport::ParkerIncrement;
+using SEP::Transport::ParkerState;
 using SEP::Transport::PitchAngleDiffusionProvider;
 using SEP::Transport::PitchAngleDiffusionSample;
+using SEP::Transport::SpatialDiffusionProvider;
+using SEP::Transport::SpatialDiffusionSample;
 using SEP::Transport::Status;
 
 const double ProtonMassKg = 1.67262192369e-27;
@@ -36,6 +42,7 @@ const double TwoPi = 6.283185307179586476925286766559;
 const double AstronomicalUnitM = 149597870700.0;
 const double SolarRadiusM = 695700000.0;
 const double MegaElectronVoltJ = 1.602176634e-13;
+const double GigaElectronVoltJ = 1.602176634e-10;
 
 std::map<std::string, std::string> Parse(
     const std::vector<std::string>& arguments) {
@@ -400,55 +407,376 @@ void RunXM02(const std::map<std::string, std::string>& values,
   Commit(&output, temporary, outputPath);
 }
 
-void NormalizeExternalCSV(const std::map<std::string, std::string>& values,
-                          const std::string& outputPath,
-                          const std::string& caseId) {
-  const std::string sourcePath = Require(values, "source-csv");
-  std::ifstream source(sourcePath.c_str());
-  std::string header;
-  if (!source.good() || !std::getline(source, header))
-    throw std::runtime_error(caseId + " cannot read --source-csv");
-  if (!header.empty() && header[header.size() - 1] == '\r') header.erase(header.size() - 1);
-  const std::string required = caseId == "XM02"
-      ? "elapsed_hours,series,intensity"
-      : "observable,coordinate,value";
-  if (header != required)
-    throw std::runtime_error(caseId + " source CSV header must be exactly: " + required);
+// A source sample is an event time measured from 2013-04-11 06:00 UTC and the
+// Earth-connected shock thermal energy density read from Figure 12(d).  The
+// density is never compared with srcSEP output: Liu et al. state that injected
+// particle number is proportional to it, so only its normalized time profile
+// is used to draw release times.
+struct XM03SourceSample {
+  double elapsedS;
+  double density;
+};
+
+std::vector<XM03SourceSample> ReadXM03Source(const std::string& path,
+                                             double earliestReleaseS,
+                                             double durationS) {
+  std::ifstream input(path.c_str());
+  std::string line;
+  if (!input.good() || !std::getline(input, line))
+    throw std::runtime_error("XM03 cannot read the reviewed Figure 12(d) source CSV");
+  if (!line.empty() && line[line.size() - 1] == '\r') line.erase(line.size() - 1);
+  if (line != "elapsed_hours,thermal_energy_density_kev_per_m3")
+    throw std::runtime_error("XM03 cannot read the reviewed Figure 12(d) source CSV");
+
+  std::vector<XM03SourceSample> allSamples;
+  while (std::getline(input, line)) {
+    if (!line.empty() && line[line.size() - 1] == '\r') line.erase(line.size() - 1);
+    if (line.empty()) continue;
+    const std::size_t comma = line.find(',');
+    if (comma == std::string::npos || line.find(',', comma + 1) != std::string::npos)
+      throw std::runtime_error("XM03 source CSV contains a malformed row");
+    char* end = NULL;
+    const double elapsedS = 3600.0 * std::strtod(line.substr(0, comma).c_str(), &end);
+    if (!end || *end != '\0')
+      throw std::runtime_error("XM03 source CSV contains an invalid time");
+    end = NULL;
+    const double density = std::strtod(line.substr(comma + 1).c_str(), &end);
+    if (!end || *end != '\0' || !std::isfinite(elapsedS) ||
+        !std::isfinite(density) || density <= 0.0)
+      throw std::runtime_error("XM03 source CSV contains an invalid density");
+    allSamples.push_back(XM03SourceSample{elapsedS, density});
+  }
+  for (std::size_t i = 1; i < allSamples.size(); ++i)
+    if (!(allSamples[i].elapsedS > allSamples[i - 1].elapsedS))
+      throw std::runtime_error("XM03 source times must be strictly increasing");
+  if (allSamples.size() < 2 || earliestReleaseS < allSamples.front().elapsedS ||
+      earliestReleaseS >= allSamples.back().elapsedS)
+    throw std::runtime_error("XM03 source history does not cover Earth connection");
+
+  std::vector<XM03SourceSample> samples;
+  // Insert a linearly interpolated sample exactly at the reported connection
+  // time.  Simply discarding the preceding vector point would shift the start
+  // by one digitizer interval, which matters because the source falls steeply
+  // immediately after connection.
+  for (std::size_t i = 1; i < allSamples.size(); ++i) {
+    if (allSamples[i - 1].elapsedS <= earliestReleaseS &&
+        earliestReleaseS <= allSamples[i].elapsedS) {
+      const double fraction = (earliestReleaseS - allSamples[i - 1].elapsedS) /
+          (allSamples[i].elapsedS - allSamples[i - 1].elapsedS);
+      samples.push_back(XM03SourceSample{
+          earliestReleaseS,
+          (1.0 - fraction) * allSamples[i - 1].density +
+              fraction * allSamples[i].density});
+      break;
+    }
+  }
+  for (std::size_t i = 0; i < allSamples.size(); ++i)
+    if (allSamples[i].elapsedS > earliestReleaseS &&
+        allSamples[i].elapsedS <= durationS)
+      samples.push_back(allSamples[i]);
+  if (samples.size() < 2)
+    throw std::runtime_error("XM03 source history does not cover the modeled interval");
+  return samples;
+}
+
+double SampleXM03ReleaseTime(const std::vector<XM03SourceSample>& samples,
+                             KeyedRandomStream* random) {
+  // Integrate the piecewise-linear source exactly with trapezoids, then invert
+  // the selected segment analytically.  This retains the authors' vector
+  // trace without imposing a fitted exponential or other surrogate profile.
+  std::vector<double> cumulative(samples.size(), 0.0);
+  for (std::size_t i = 1; i < samples.size(); ++i) {
+    const double width = samples[i].elapsedS - samples[i - 1].elapsedS;
+    cumulative[i] = cumulative[i - 1] +
+        0.5 * width * (samples[i - 1].density + samples[i].density);
+  }
+  const double target = random->UniformOpen01() * cumulative.back();
+  const std::size_t right = static_cast<std::size_t>(
+      std::lower_bound(cumulative.begin() + 1, cumulative.end(), target) -
+      cumulative.begin());
+  const XM03SourceSample& leftSample = samples[right - 1];
+  const XM03SourceSample& rightSample = samples[right];
+  const double width = rightSample.elapsedS - leftSample.elapsedS;
+  const double localArea = target - cumulative[right - 1];
+  const double slope = (rightSample.density - leftSample.density) / width;
+  double offset = 0.0;
+  if (std::fabs(slope) < 1.0e-30 * leftSample.density / width) {
+    offset = localArea / leftSample.density;
+  } else {
+    const double discriminant = std::max(
+        0.0, leftSample.density * leftSample.density + 2.0 * slope * localArea);
+    offset = (-leftSample.density + std::sqrt(discriminant)) / slope;
+  }
+  return leftSample.elapsedS + std::max(0.0, std::min(width, offset));
+}
+
+// Analytic geometry for a constant-speed equatorial Parker spiral.  The
+// source and observer radii are paper inputs; the spiral is the least-assumed
+// one-field-line replacement for the unpublished time-dependent AWSoM line.
+class XM03ParkerSpiral {
+ public:
+  XM03ParkerSpiral(double innerRadiusM, double observerRadiusM,
+                   double solarWindMPerS, double rotationRateRadPerS)
+      : innerRadiusM_(innerRadiusM), observerRadiusM_(observerRadiusM),
+        spiralPerM_(rotationRateRadPerS / solarWindMPerS) {
+    observerArcLengthM_ = ArcLengthAtRadius(observerRadiusM_);
+  }
+
+  double ArcLengthAtRadius(double radiusM) const {
+    const double x = std::max(0.0, radiusM - innerRadiusM_);
+    if (spiralPerM_ == 0.0) return x;
+    const double ax = spiralPerM_ * x;
+    return 0.5 * (x * std::sqrt(1.0 + ax * ax) +
+                  std::asinh(ax) / spiralPerM_);
+  }
+
+  double RadiusAtArcLength(double arcLengthM) const {
+    // The primitive is monotone and convex.  A safeguarded Newton iteration is
+    // much cheaper than per-step bisection for this extended particle campaign
+    // while retaining explicit [inner,observer] bounds after every update.
+    const double bounded = std::max(0.0, std::min(observerArcLengthM_, arcLengthM));
+    const double maximumX = observerRadiusM_ - innerRadiusM_;
+    double x = maximumX * bounded / observerArcLengthM_;
+    for (unsigned iteration = 0; iteration < 10; ++iteration) {
+      const double radiusM = innerRadiusM_ + x;
+      const double residual = ArcLengthAtRadius(radiusM) - bounded;
+      const double ax = spiralPerM_ * x;
+      const double derivative = std::sqrt(1.0 + ax * ax);
+      x = std::max(0.0, std::min(maximumX, x - residual / derivative));
+    }
+    return innerRadiusM_ + x;
+  }
+
+  double DrDs(double radiusM) const {
+    const double ax = spiralPerM_ * (radiusM - innerRadiusM_);
+    return 1.0 / std::sqrt(1.0 + ax * ax);
+  }
+
+  double observerArcLengthM() const { return observerArcLengthM_; }
+
+ private:
+  double innerRadiusM_;
+  double observerRadiusM_;
+  double spiralPerM_;
+  double observerArcLengthM_;
+};
+
+class XM03SpatialDiffusion final : public SpatialDiffusionProvider {
+ public:
+  XM03SpatialDiffusion(const XM03ParkerSpiral& geometry, double lambda0M,
+                       double radialExponent, double rigidityExponent)
+      : geometry_(geometry), lambda0M_(lambda0M),
+        radialExponent_(radialExponent),
+        rigidityExponent_(rigidityExponent) {}
+
+  SpatialDiffusionSample Evaluate(double sM, double speedMPerS) const override {
+    SpatialDiffusionSample result;
+    if (!(speedMPerS > 0.0 && speedMPerS < LightSpeedMPerS)) {
+      result.status = Status::Error(SEP::Transport::StatusCode::InvalidArgument,
+                                    "XM03 diffusion received an invalid speed");
+      return result;
+    }
+    const double radiusM = geometry_.RadiusAtArcLength(sM);
+    const double gamma = 1.0 / std::sqrt(
+        1.0 - speedMPerS * speedMPerS /
+                  (LightSpeedMPerS * LightSpeedMPerS));
+    const double momentum = gamma * ProtonMassKg * speedMPerS;
+    const double rigidityPcGeV = momentum * LightSpeedMPerS / GigaElectronVoltJ;
+    const double lambdaM = lambda0M_ *
+        std::pow(radiusM / AstronomicalUnitM, radialExponent_) *
+        std::pow(rigidityPcGeV, rigidityExponent_);
+    result.status = Status::Ok();
+    result.valueState = SEP::Transport::CoefficientPhysics::ValueState::Finite;
+    result.kappaParallelM2PerS = speedMPerS * lambdaM / 3.0;
+    // At fixed momentum, lambda is proportional to r^alpha.  The Ito drift
+    // needs d(kappa)/ds, so include the exact Parker-spiral metric dr/ds.
+    result.dKappaParallelDsMPerS = result.kappaParallelM2PerS *
+        radialExponent_ * geometry_.DrDs(radiusM) / radiusM;
+    result.provenance = "Liu2025:eq14-15:lambda0=0.3au:r^1:(pc)^(1/3)";
+    return result;
+  }
+
+ private:
+  const XM03ParkerSpiral& geometry_;
+  double lambda0M_;
+  double radialExponent_;
+  double rigidityExponent_;
+};
+
+double XM03MomentumFromEnergy(double energyMeV) {
+  const double restEnergyJ = ProtonMassKg * LightSpeedMPerS * LightSpeedMPerS;
+  const double gamma = 1.0 + energyMeV * MegaElectronVoltJ / restEnergyJ;
+  return ProtonMassKg * LightSpeedMPerS * std::sqrt(gamma * gamma - 1.0);
+}
+
+double XM03EnergyFromMomentum(double momentum) {
+  const double mc = ProtonMassKg * LightSpeedMPerS;
+  return (std::sqrt(1.0 + momentum * momentum / (mc * mc)) - 1.0) *
+      ProtonMassKg * LightSpeedMPerS * LightSpeedMPerS / MegaElectronVoltJ;
+}
+
+void RunXM03(const std::map<std::string, std::string>& values,
+             const std::string& outputPath) {
+  // XM03 is intentionally a reduced, event-informed heliospheric transport
+  // calculation rather than a reconstruction of the unavailable global SOFIE
+  // state.  Every physical value is supplied by the registered JSON and the
+  // linked executable advances particles through the production Parker SDE.
+  const double innerRadiusM = Number(values, "injection-radius-solar-radii") *
+      SolarRadiusM;
+  const double observerRadiusM = Number(values, "observer-radius-au") *
+      AstronomicalUnitM;
+  const double solarWindMPerS = Number(values, "solar-wind-speed-m-per-s");
+  const double shockSpeedMPerS = Number(values, "shock-speed-m-per-s");
+  const double rotationRate = Number(values, "solar-rotation-rate-rad-per-s");
+  const double launchOffsetS = Number(values, "launch-offset-s");
+  const double connectionDelayS = Number(values, "connection-delay-s");
+  const double lambda0M = Number(values, "mfp-normalization-au") *
+      AstronomicalUnitM;
+  const double radialExponent = Number(values, "mfp-radial-exponent");
+  const double rigidityExponent = Number(values, "mfp-rigidity-exponent");
+  const double minimumEnergyMeV = Number(values, "injection-min-energy-mev");
+  const double maximumEnergyMeV = Number(values, "injection-max-energy-mev");
+  const double momentumIndex = Number(values, "injection-momentum-index");
+  const double fluxFactor = Number(values, "injection-flux-factor");
+  const unsigned energyBins = static_cast<unsigned>(Unsigned(values, "energy-bins"));
+  const std::uint64_t particlesPerEnergy = Unsigned(values, "particles-per-energy");
+  const double timeStepS = Number(values, "time-step-s");
+  const double durationS = Number(values, "duration-s");
+  const double snapshotWindowS = Number(values, "snapshot-window-s");
+  const std::uint64_t campaignSeed = Unsigned(values, "campaign-seed");
+  const std::string sourcePath = Require(values, "source-history-csv");
+  if (!(innerRadiusM > 0.0 && observerRadiusM > innerRadiusM &&
+        solarWindMPerS > 0.0 && shockSpeedMPerS > solarWindMPerS &&
+        rotationRate > 0.0 && launchOffsetS >= 0.0 && connectionDelayS >= 0.0 &&
+        lambda0M > 0.0 && radialExponent == 1.0 && rigidityExponent > 0.0 &&
+        minimumEnergyMeV > 0.0 && maximumEnergyMeV > minimumEnergyMeV &&
+        momentumIndex > 2.0 && fluxFactor > 0.0 && energyBins >= 16 &&
+        particlesPerEnergy >= 100 && timeStepS > 0.0 &&
+        durationS > launchOffsetS + 36.0 * 3600.0 &&
+        snapshotWindowS > 0.0))
+    throw std::runtime_error("XM03 has an invalid event reconstruction domain");
+
+  const std::vector<XM03SourceSample> source = ReadXM03Source(
+      sourcePath, launchOffsetS + connectionDelayS, durationS);
+  const XM03ParkerSpiral geometry(
+      innerRadiusM, observerRadiusM, solarWindMPerS, rotationRate);
+  const XM03SpatialDiffusion diffusion(
+      geometry, lambda0M, radialExponent, rigidityExponent);
+  // Figure 12 labels time after flux-rope eruption, whereas the digitized
+  // source CSV uses the panel-(d) civil-time axis beginning at 06:00 UTC.
+  // Adding the 07:24 launch offset here keeps those two published clocks from
+  // being silently conflated.
+  const double snapshotAfterLaunchHours[] = {4.0, 12.0, 36.0};
+  const double snapshotS[] = {
+      launchOffsetS + snapshotAfterLaunchHours[0] * 3600.0,
+      launchOffsetS + snapshotAfterLaunchHours[1] * 3600.0,
+      launchOffsetS + snapshotAfterLaunchHours[2] * 3600.0};
+
+  // Logarithmic bin edges are shared by injection quadrature and the final
+  // spectrum.  Equal particle counts per injection bin keep high-energy
+  // statistics usable; physical quadrature weights restore f(p) proportional
+  // to p^-q and the energy-bin width after sampling.
+  std::vector<double> edges(energyBins + 1);
+  std::vector<double> centers(energyBins);
+  for (unsigned i = 0; i <= energyBins; ++i)
+    edges[i] = minimumEnergyMeV * std::pow(
+        maximumEnergyMeV / minimumEnergyMeV,
+        static_cast<double>(i) / energyBins);
+  for (unsigned i = 0; i < energyBins; ++i)
+    centers[i] = std::sqrt(edges[i] * edges[i + 1]);
+  std::vector<double> spectrum(3 * energyBins, 0.0);
+  std::vector<double> weightSquared(3 * energyBins, 0.0);
+
+  for (unsigned injectionBin = 0; injectionBin < energyBins; ++injectionBin) {
+    const double initialEnergyMeV = centers[injectionBin];
+    const double initialMomentum = XM03MomentumFromEnergy(initialEnergyMeV);
+    const double pcGeV = initialMomentum * LightSpeedMPerS / GigaElectronVoltJ;
+    // Differential intensity is j=p^2 f.  For the published f proportional
+    // to p^-q source this gives j proportional to p^(2-q).  Multiplication by
+    // dE turns the center value into a bin-integrated quadrature weight.
+    const double particleWeight = fluxFactor *
+        std::pow(pcGeV, 2.0 - momentumIndex) *
+        (edges[injectionBin + 1] - edges[injectionBin]) /
+        particlesPerEnergy;
+    for (std::uint64_t particle = 0; particle < particlesPerEnergy; ++particle) {
+      const std::uint64_t particleId =
+          static_cast<std::uint64_t>(injectionBin) * particlesPerEnergy + particle + 1;
+      KeyedRandomStream initial(campaignSeed, particleId, 5000, 0);
+      const double releaseS = SampleXM03ReleaseTime(source, &initial);
+      const double shockRadiusM = std::min(
+          observerRadiusM,
+          innerRadiusM + shockSpeedMPerS * std::max(0.0, releaseS - launchOffsetS));
+      ParkerState state(geometry.ArcLengthAtRadius(shockRadiusM), initialMomentum);
+      double elapsedS = releaseS;
+      std::uint64_t step = 0;
+      while (elapsedS < durationS &&
+             state.arcLengthM < geometry.observerArcLengthM()) {
+        const double previousS = state.arcLengthM;
+        const double previousMomentum = state.momentumKgMPerS;
+        const double radiusM = geometry.RadiusAtArcLength(previousS);
+        const SEP::Transport::ScalarResult speed = SEP::Transport::SpeedFromMomentum(
+            previousMomentum, ProtonMassKg, LightSpeedMPerS);
+        if (!speed.status.ok()) throw std::runtime_error(speed.status.message);
+        const double dtS = std::min(timeStepS, durationS - elapsedS);
+        // U_parallel is the projection of radial solar wind onto the Parker
+        // tangent.  div(U)=2U/r gives the standard spherical adiabatic loss.
+        const ParkerBackground background(
+            solarWindMPerS * geometry.DrDs(radiusM),
+            2.0 * solarWindMPerS / radiusM);
+        KeyedRandomStream transport(campaignSeed, particleId, 6000, step);
+        const ParkerIncrement increment = SEP::Transport::AdvanceParker(
+            state, background, speed.value, dtS, diffusion, transport);
+        if (!increment.status.ok())
+          throw std::runtime_error(increment.status.message);
+        state = increment.state;
+        if (state.arcLengthM <= 0.0) break;  // absorbing 2.5-Rsun inner boundary
+        if (state.arcLengthM >= geometry.observerArcLengthM()) {
+          double fraction = 1.0;
+          if (state.arcLengthM > previousS)
+            fraction = std::max(0.0, std::min(
+                1.0, (geometry.observerArcLengthM() - previousS) /
+                         (state.arcLengthM - previousS)));
+          const double arrivalS = elapsedS + fraction * dtS;
+          const double arrivalMomentum = previousMomentum * std::exp(
+              fraction * std::log(state.momentumKgMPerS / previousMomentum));
+          const double arrivalEnergyMeV = XM03EnergyFromMomentum(arrivalMomentum);
+          const std::vector<double>::const_iterator edge = std::upper_bound(
+              edges.begin(), edges.end(), arrivalEnergyMeV);
+          if (edge != edges.begin() && edge != edges.end()) {
+            const unsigned outputBin = static_cast<unsigned>(edge - edges.begin() - 1);
+            for (unsigned snapshot = 0; snapshot < 3; ++snapshot) {
+              if (std::fabs(arrivalS - snapshotS[snapshot]) <= 0.5 * snapshotWindowS) {
+                const std::size_t index = snapshot * energyBins + outputBin;
+                spectrum[index] += particleWeight;
+                weightSquared[index] += particleWeight * particleWeight;
+              }
+            }
+          }
+          break;
+        }
+        elapsedS += dtS;
+        ++step;
+      }
+    }
+  }
 
   const std::string temporary = outputPath + ".tmp";
   std::ofstream output(temporary.c_str());
-  output << header << '\n';
-  std::string row;
-  std::size_t rowCount = 0;
-  while (std::getline(source, row)) {
-    if (!row.empty() && row[row.size() - 1] == '\r') row.erase(row.size() - 1);
-    if (row.empty() || std::count(row.begin(), row.end(), ',') != 2)
-      throw std::runtime_error(caseId + " source CSV contains a malformed row");
-    // All XM02/XM03 comparison tables use a finite numeric coordinate and
-    // value. Parse both here so NaN, infinity, locale-dependent text, and
-    // truncated rows fail inside the linked application evidence boundary.
-    const std::size_t first = row.find(',');
-    const std::size_t second = row.find(',', first + 1);
-    const std::string coordinate = caseId == "XM02"
-        ? row.substr(0, first) : row.substr(first + 1, second - first - 1);
-    const std::string series = caseId == "XM03" ? row.substr(0, first) : "";
-    const std::string value = row.substr(second + 1);
-    char* end = NULL;
-    const double x = std::strtod(coordinate.c_str(), &end);
-    if (!end || *end != '\0' || !std::isfinite(x))
-      throw std::runtime_error(caseId + " source CSV has a non-finite coordinate");
-    end = NULL;
-    const double y = std::strtod(value.c_str(), &end);
-    const bool signedObservable =
-        caseId == "XM03" && series == "earth_fluence_spectral_index";
-    if (!end || *end != '\0' || !std::isfinite(y) ||
-        (!signedObservable && y < 0.0))
-      throw std::runtime_error(caseId + " source CSV has an invalid nonnegative value");
-    output << row << '\n';
-    ++rowCount;
+  output << std::setprecision(17)
+         << "elapsed_hours,energy_mev,relative_differential_intensity,"
+            "effective_sample_count\n";
+  for (unsigned snapshot = 0; snapshot < 3; ++snapshot) {
+    for (unsigned energyBin = 0; energyBin < energyBins; ++energyBin) {
+      const std::size_t index = snapshot * energyBins + energyBin;
+      const double binWidthMeV = edges[energyBin + 1] - edges[energyBin];
+      const double intensity = spectrum[index] /
+          (binWidthMeV * snapshotWindowS / 3600.0);
+      const double effectiveSamples = weightSquared[index] > 0.0
+          ? spectrum[index] * spectrum[index] / weightSquared[index] : 0.0;
+      output << snapshotAfterLaunchHours[snapshot] << ',' << centers[energyBin] << ','
+             << intensity << ',' << effectiveSamples << '\n';
+    }
   }
-  if (!source.eof() || rowCount < 2)
-    throw std::runtime_error(caseId + " source CSV is truncated or has fewer than two rows");
   Commit(&output, temporary, outputPath);
 }
 
@@ -463,7 +791,7 @@ bool RunCrossModelValidationModel(const std::string& caseId,
     const std::map<std::string, std::string> values = Parse(arguments);
     if (caseId == "XM01") RunXM01(values, outputPath);
     else if (caseId == "XM02") RunXM02(values, outputPath);
-    else if (caseId == "XM03") NormalizeExternalCSV(values, outputPath, caseId);
+    else if (caseId == "XM03") RunXM03(values, outputPath);
     else throw std::runtime_error("unsupported XM validation case");
     if (error) error->clear();
     return true;

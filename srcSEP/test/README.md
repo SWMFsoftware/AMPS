@@ -85,7 +85,7 @@ make test-cv06-cv12-unit SEP_EXECUTABLE=/path/to/amps
 # IV01-IV06 integrated manufactured source gate plus linked execution.
 make test-iv01-iv06-unit SEP_EXECUTABLE=/path/to/amps
 
-# XM01-XM03 cross-model source/reference gate plus linked execution.
+# XM01-XM03 cross-model/observation source gate plus linked execution.
 make test-xm01-xm03-unit SEP_EXECUTABLE=/path/to/amps
 
 # All dependency-light ASan/UBSan suites from Steps 3 and 6–13.
@@ -646,7 +646,7 @@ standalone and SWMF-coupled run. See
 | `IV06` | `integrated-manufactured` | routine | linked srcSEP/AMPS registry | Resonant wave growth strengthens scattering and self-limits streaming while total energy closes. | Frozen/one-way/two-way timelines, resonant bin, Dmumu, streaming and ledger evidence. |
 | `XM01` | `cross-model` | extended | linked srcSEP/AMPS registry | Production focused-transport samples agree with an independent conservative PDE solver across isolated and combined operators. | Two sampling refinements; full `(s,mu)` probability, intensity, anisotropy, momentum, JSON/JUnit, and PNG/EPS. |
 | `XM02` | `cross-model` | extended | linked srcSEP/AMPS registry | A controlled production-core first-passage ensemble uses the reported 0.05/0.3/1.0 au MFPs and compares unit-peak profiles with Zhao et al. Figure 7. | Fixed publication input, native model CSV, digitized reference/provenance, metrics, and PNG/EPS; no external CSV. |
-| `XM03` | `cross-model` | extended | linked srcSEP/AMPS registry | The single registered Liu et al. reconstruction compares 2013-04-11 intensity, radial mean-free-path, and fluence slope with published M-FLAMPA products. | Fixed publication input, digitized/reference-fit provenance, production-result adapter, metrics and PNG/EPS. |
+| `XM03` | `cross-model` | extended | linked srcSEP/AMPS registry | Event-informed one-field-line Parker transport is compared with ACE/EPAM, GOES-13/EPEAD, and SOHO/ERNE Earth spectra in Liu et al. Figure 12. | Fixed paper-derived input/source trace, 80 vector-extracted observations, one global amplitude, metrics and PNG/EPS; no external CSV. |
 | `BG01` | `background` | routine | none | Standalone analytic and SWCME snapshots preserve provider, epoch, ownership, validity, generation, and distinct configuration identity. | Stack-owned immutable snapshots; no external provider or artifact. |
 | `BG02` | `background` | routine | none | A mock SWMF import is read-only and becomes locally evolved only through an explicit handoff copy. | Resets the snapshot store before/after; no external SWMF process. |
 | `CROSS01` | `cross-mover` | routine | none | `fte-dmumu` and `fte-mfp` agree in the matched ballistic limit. | Keyed seed 1301; stack-owned state; no artifact. |

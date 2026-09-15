@@ -1,4 +1,4 @@
-"""XM03 linked 2013-04-11 M-FLAMPA event comparison entrypoint."""
+"""XM03 linked 2013-04-11 Earth-observation comparison entrypoint."""
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))

@@ -106,7 +106,7 @@
       "id":"XM02","name":"Publication-informed M-FLAMPA transport reconstruction","group":"cross-model","runtime_class":"extended","entrypoint":"validation/cases/XM02/case.py","default_input":"validation/cases/XM02/input.json","description":"Run a linked controlled first-passage calculation with the reported 0.05, 0.3, and 1.0 au mean free paths and compare unit-peak profiles with digitized Zhao et al. Figure 7."
     },
     {
-      "id":"XM03","name":"Published M-FLAMPA 2013 April 11 event reproduction","group":"cross-model","runtime_class":"extended","entrypoint":"validation/cases/XM03/case.py","default_input":"validation/cases/XM03/input.json","description":"Compare linked srcSEP event products with published M-FLAMPA intensity, mean-free-path, and fluence-slope results; keep model-model and model-observation claims separate."
+      "id":"XM03","name":"2013 April 11 Earth spectra in Liu Figure 12","group":"cross-model","runtime_class":"extended","entrypoint":"validation/cases/XM03/case.py","default_input":"validation/cases/XM03/input.json","description":"Run event-informed one-field-line Parker transport in the linked srcSEP/AMPS application and compare with ACE, GOES-13, and SOHO Earth observations digitized from Liu et al. Figure 12."
     }
   ]
 }

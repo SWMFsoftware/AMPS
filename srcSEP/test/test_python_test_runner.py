@@ -37,6 +37,23 @@ def _load_runner_module():
     return module
 
 
+def _load_cross_model_runner():
+    """Load the case scorer while preserving its sibling-module imports."""
+    case_directory = ROOT / "validation" / "cases"
+    sys.path.insert(0, str(case_directory))
+    try:
+        specification = importlib.util.spec_from_file_location(
+            "srcsep_cross_model_case_runner",
+            case_directory / "cross_model_case_runner.py")
+        if specification is None or specification.loader is None:
+            raise RuntimeError("cannot import cross-model case runner")
+        module = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(module)
+        return module
+    finally:
+        sys.path.pop(0)
+
+
 class PythonTestRunnerTests(unittest.TestCase):
     def test_help_contains_annotated_selection_and_plot_examples(self):
         """Keep the command-line quick-start available to archive users."""
@@ -55,8 +72,11 @@ class PythonTestRunnerTests(unittest.TestCase):
                 "--validation-case XM01 --validation-case XM02",
                 "validation/cases/XM02/publication_input.json",
                 "validation/cases/XM03/publication_input.json",
+                "validation/cases/XM03/input/earth_shock_thermal_source.csv",
+                "validation/cases/XM03/reference/liu_figure12_earth_observations.csv",
                 "Do not add --case-input",
                 "No external production CSV is used by XM02",
+                "XM03 needs no external model CSV",
                 "--group parker --group fte-dmumu",
                 "--routine",
                 "--all",
@@ -73,6 +93,68 @@ class PythonTestRunnerTests(unittest.TestCase):
         listing = """Available tests:\nPARK01 | parker | deterministic\nFTED08 | fte-dmumu | extended\nPARK01 | parker | duplicate\n"""
         self.assertEqual(runner._parse_list_output(listing),
                          ["FTED08", "PARK01"])
+
+    def test_xm03_uses_one_global_amplitude_for_all_observations(self):
+        """Prevent accidental per-time or per-instrument normalization.
+
+        The synthetic linked spectrum is exactly one fifth of every reference
+        value. A correct global log-space nuisance fit must recover five while
+        preserving zero residual and full coverage across all three times.
+        """
+        runner = _load_cross_model_runner()
+        case = json.loads((ROOT / "validation" / "cases" / "XM03" /
+                           "input.json").read_text(encoding="utf-8"))
+        model = []
+        reference = []
+        for elapsed, time_factor in ((4.0, 1.0), (12.0, 10.0), (36.0, 100.0)):
+            for energy, spectral_factor in ((1.0, 2.0), (10.0, 0.2)):
+                observed = time_factor * spectral_factor
+                model.append({
+                    "elapsed_hours": str(elapsed),
+                    "energy_mev": str(energy),
+                    "relative_differential_intensity": str(observed / 5.0),
+                    "effective_sample_count": "1000",
+                })
+                reference.append({
+                    "elapsed_hours": str(elapsed),
+                    "instrument": "fixture",
+                    "energy_low_mev": str(0.9 * energy),
+                    "energy_high_mev": str(1.1 * energy),
+                    "effective_energy_mev": str(energy),
+                    "differential_intensity_pfu_per_mev": str(observed),
+                })
+        metrics, scale, comparison = runner._xm03_score(case, model, reference)
+        self.assertAlmostEqual(scale, 5.0, places=12)
+        by_name = {item["name"]: item["value"] for item in metrics}
+        self.assertEqual(by_name["observation_point_coverage"], 1.0)
+        self.assertAlmostEqual(by_name["global_log10_intensity_rmse"], 0.0)
+        self.assertAlmostEqual(by_name["log10_intensity_correlation"], 1.0)
+        for row in comparison:
+            self.assertAlmostEqual(
+                float(row["model_scaled_pfu_per_mev"]),
+                float(row["differential_intensity_pfu_per_mev"]), places=12)
+
+    def test_xm02_and_xm03_duration_keys_match_their_registered_inputs(self):
+        """Exercise argument construction before a costly linked execution.
+
+        XM02 retains the historical ``duration_hours`` field. XM03 names its
+        06:00-UTC origin explicitly because its spectral clock begins at the
+        later CME launch. Constructing both native vectors here detects a key
+        rename applied to the wrong case before AMPS is started.
+        """
+        runner = _load_cross_model_runner()
+        xm02_path = ROOT / "validation" / "cases" / "XM02" / "input.json"
+        xm03_path = ROOT / "validation" / "cases" / "XM03" / "input.json"
+        xm02 = json.loads(xm02_path.read_text(encoding="utf-8"))
+        xm03 = json.loads(xm03_path.read_text(encoding="utf-8"))
+        xm02_arguments = runner._xm02_arguments(xm02)
+        xm03_arguments = runner._xm03_arguments(xm03, xm03_path)
+        self.assertEqual(
+            xm02_arguments[xm02_arguments.index("--duration-s") + 1],
+            "158400.0")
+        self.assertEqual(
+            xm03_arguments[xm03_arguments.index("--duration-s") + 1],
+            "158400.0")
 
     def test_existing_report_produces_png_eps_and_manifests(self):
         with tempfile.TemporaryDirectory(prefix="srcsep-python-runner-") as tmp:
