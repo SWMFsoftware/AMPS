@@ -1,0 +1,9 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "CV08",
+  "title": "Absorbing-boundary first-passage distribution",
+  "physics": {"boundary_m": 1.0, "kappa_m2_per_s": 0.1, "drifts_m_per_s": [0.1, 0.5]},
+  "numerics": {"time_steps_s": [0.1, 0.05, 0.025], "maximum_time_s": 30.0, "particle_count": 500, "seed_count": 10, "campaign_seed": 80808},
+  "acceptance": {"ks_alpha": 0.01, "seeds_allowed_to_fail": 3, "moment_standard_errors_max": 4.0, "overshoot_refinement_order_min": 0.25, "negative_control_ratio_min": 1.15},
+  "plot": {"formats": ["png", "eps"]}
+}

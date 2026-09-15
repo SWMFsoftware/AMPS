@@ -45,6 +45,41 @@
       "entrypoint": "validation/cases/CV05/case.py",
       "default_input": "validation/cases/CV05/input.json",
       "description": "Compare linked zero-scattering focused transport in both field-gradient directions with exact pitch-angle/position characteristics and magnetic-moment conservation."
+    },
+    {
+      "id": "CV06", "name": "Legendre-mode pitch-angle diffusion", "group": "controlled-analytical", "runtime_class": "extended",
+      "entrypoint": "validation/cases/CV06/case.py", "default_input": "validation/cases/CV06/input.json",
+      "description": "Compare production Dmumu evolution for Legendre modes l=1 through 6 with exact modal decay, leakage, normalization, and boundary statistics."
+    },
+    {
+      "id": "CV07", "name": "Telegraph transport and diffusion limit", "group": "controlled-analytical", "runtime_class": "extended",
+      "entrypoint": "validation/cases/CV07/case.py", "default_input": "validation/cases/CV07/input.json",
+      "description": "Compare persistent random flights with telegraph fronts, causal support, exact moments, and the late-time diffusion coefficient."
+    },
+    {
+      "id": "CV08", "name": "Absorbing-boundary first-passage distribution", "group": "controlled-analytical", "runtime_class": "extended",
+      "entrypoint": "validation/cases/CV08/case.py", "default_input": "validation/cases/CV08/input.json",
+      "description": "Compare production Parker drift-diffusion arrivals with the inverse-Gaussian first-passage law across drift and timestep sweeps."
+    },
+    {
+      "id": "CV09", "name": "Planar diffusive shock acceleration spectrum", "group": "controlled-analytical", "runtime_class": "extended",
+      "entrypoint": "validation/cases/CV09/case.py", "default_input": "validation/cases/CV09/input.json",
+      "description": "Compare a controlled linked shock-cycle model with planar DSA spectral indices and acceleration times for compression ratios 2, 3, and 4."
+    },
+    {
+      "id": "CV10", "name": "Nonuniform turbulence advection", "group": "controlled-analytical", "runtime_class": "routine",
+      "entrypoint": "validation/cases/CV10/case.py", "default_input": "validation/cases/CV10/input.json",
+      "description": "Compare both production spectral wave branches on fixed, variable-area, and remapped grids with manufactured characteristic solutions."
+    },
+    {
+      "id": "CV11", "name": "Time-dependent resonant wave growth and damping", "group": "controlled-analytical", "runtime_class": "routine",
+      "entrypoint": "validation/cases/CV11/case.py", "default_input": "validation/cases/CV11/input.json",
+      "description": "Compare one-hot production wave-source histories with exact growth, damping, cancellation, and sinusoidal-rate solutions."
+    },
+    {
+      "id": "CV12", "name": "Controlled particle-wave total-energy exchange", "group": "controlled-analytical", "runtime_class": "routine",
+      "entrypoint": "validation/cases/CV12/case.py", "default_input": "validation/cases/CV12/input.json",
+      "description": "Verify closed particle-wave total-energy accounting with coupled, uncoupled, and deliberately broken-deposition controls."
     }
   ]
 }

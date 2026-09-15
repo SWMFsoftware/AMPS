@@ -1,0 +1,9 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "CV07",
+  "title": "Telegraph transport and diffusion limit",
+  "physics": {"speed_m_per_s": 1000000.0, "switching_rates_per_s": [0.05, 0.1, 0.2]},
+  "numerics": {"normalized_times": [0.25, 1.0, 10.0, 30.0], "particle_count": 6000, "seed_count": 10, "profile_bins": 100, "campaign_seed": 70707},
+  "acceptance": {"support_probability_max": 0.0, "front_mass_standard_errors_max": 3.5, "msd_standard_errors_max": 4.0, "late_diffusion_relative_error_max": 0.05, "event_mean_relative_error_max": 0.04},
+  "plot": {"formats": ["png", "eps"]}
+}

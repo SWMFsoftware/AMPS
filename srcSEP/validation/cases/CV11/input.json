@@ -1,0 +1,9 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "CV11",
+  "title": "Time-dependent resonant wave growth and damping",
+  "physics": {"initial_energy_j": 2.0, "growth_rate_per_s": 0.15, "damping_rate_per_s": 0.05, "sinusoidal_rate_per_s": 0.2, "angular_frequency_per_s": 3.141592653589793},
+  "numerics": {"spectral_bins": 8, "active_bin": 3, "final_time_s": 1.6, "time_steps_s": [0.1, 0.05, 0.025], "campaign_seed": 111111},
+  "acceptance": {"constant_rate_relative_error_max": 0.005, "sign_change_relative_error_max": 0.002, "temporal_refinement_order_min": 1.8, "inactive_bin_energy_max_j": 1e-14, "negative_cell_count_max": 0, "cancellation_relative_change_max": 1e-14},
+  "plot": {"formats": ["png", "eps"]}
+}

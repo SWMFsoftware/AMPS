@@ -1,0 +1,9 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "CV12",
+  "title": "Controlled particle-wave total-energy exchange",
+  "physics": {"particle_speed_m_per_s": 14989622.9, "alfven_speed_m_per_s": 400000.0, "initial_wave_energy_j": 10.0, "target_exchange_j": 0.01},
+  "numerics": {"time_steps_s": [1.0, 0.5, 0.25], "particle_counts": [1000, 4000, 16000], "steps": 20, "campaign_seed": 121212},
+  "acceptance": {"coupled_total_relative_drift_max": 0.001, "ledger_step_residual_relative_max": 1e-12, "uncoupled_relative_drift_max": 1e-14, "negative_control_relative_drift_min": 1e-5},
+  "plot": {"formats": ["png", "eps"]}
+}

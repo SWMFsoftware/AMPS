@@ -5,6 +5,7 @@
 #include "util/sep_turbulence_validation.h"
 #include "validation/cases/CV01/cv01_model.h"
 #include "validation/cases/controlled_transport_models.h"
+#include "validation/cases/advanced_validation_models.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -339,8 +340,16 @@ SEP::Testing::Result RunLinkedControlledModel(const char* caseId) {
   const std::string outputPath =
       context.artifactDirectory + "/" + caseId + "_model.csv";
   std::string error;
-  const bool completed = SEP::Validation::RunControlledTransportModel(
-      caseId, arguments, outputPath, &error);
+  // CV02-CV05 use the original controlled-transport collection; CV06-CV12
+  // use the advanced collection. Both enter through this native callback so
+  // the Python campaign validates the linked srcSEP/AMPS application rather
+  // than compiling and executing a replacement model.
+  const std::string identifier(caseId);
+  const bool completed = identifier >= "CV06"
+      ? SEP::Validation::RunAdvancedValidationModel(
+            identifier, arguments, outputPath, &error)
+      : SEP::Validation::RunControlledTransportModel(
+            identifier, arguments, outputPath, &error);
   result.status = completed ? SEP::Testing::Status::Pass
                             : SEP::Testing::Status::Error;
   result.message = completed
@@ -376,6 +385,14 @@ SEP::Testing::Result RunCV04LinkedModel() {
 SEP::Testing::Result RunCV05LinkedModel() {
   return RunLinkedControlledModel("CV05");
 }
+
+SEP::Testing::Result RunCV06LinkedModel() { return RunLinkedControlledModel("CV06"); }
+SEP::Testing::Result RunCV07LinkedModel() { return RunLinkedControlledModel("CV07"); }
+SEP::Testing::Result RunCV08LinkedModel() { return RunLinkedControlledModel("CV08"); }
+SEP::Testing::Result RunCV09LinkedModel() { return RunLinkedControlledModel("CV09"); }
+SEP::Testing::Result RunCV10LinkedModel() { return RunLinkedControlledModel("CV10"); }
+SEP::Testing::Result RunCV11LinkedModel() { return RunLinkedControlledModel("CV11"); }
+SEP::Testing::Result RunCV12LinkedModel() { return RunLinkedControlledModel("CV12"); }
 
 SEP::Testing::Descriptor MakeDescriptor(
     const char* id, const char* name, const char* group,
@@ -510,6 +527,34 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
           "CV05", "Magnetic focusing in a prescribed field gradient",
           "Run production focused transport with zero scattering in the linked application and compare pitch-angle characteristics and invariants externally.",
           RunCV05LinkedModel),
+      MakeControlledValidationDescriptor(
+          "CV06", "Legendre-mode pitch-angle diffusion",
+          "Evolve Legendre modes l=1..6 with the production Dmumu mover and compare decay rates, mode leakage, normalization, and boundary handling externally.",
+          RunCV06LinkedModel),
+      MakeControlledValidationDescriptor(
+          "CV07", "Telegraph transport and diffusion limit",
+          "Run persistent random flights with production exponential waiting times and compare fronts, support, moments, profiles, and the late diffusion limit externally.",
+          RunCV07LinkedModel),
+      MakeControlledValidationDescriptor(
+          "CV08", "Absorbing-boundary first-passage distribution",
+          "Run production Parker drift-diffusion to an absorbing boundary and compare censored arrival distributions with the exact inverse-Gaussian law externally.",
+          RunCV08LinkedModel),
+      MakeControlledValidationDescriptor(
+          "CV09", "Planar diffusive-shock-acceleration spectrum",
+          "Run a controlled shock-cycle benchmark for compression ratios 2, 3, and 4 and compare spectral slopes and acceleration times with planar DSA theory externally.",
+          RunCV09LinkedModel),
+      MakeControlledValidationDescriptor(
+          "CV10", "Nonuniform turbulence advection",
+          "Advect both spectral wave branches on fixed, variable-area, and remapped grids with the production conservative turbulence core and score invariants and convergence externally.",
+          RunCV10LinkedModel),
+      MakeControlledValidationDescriptor(
+          "CV11", "Time-dependent resonant wave growth and damping",
+          "Apply one-hot, time-dependent wave-energy source histories through the production turbulence ledger and compare exponential growth/damping histories externally.",
+          RunCV11LinkedModel),
+      MakeControlledValidationDescriptor(
+          "CV12", "Controlled particle-wave total-energy exchange",
+          "Exercise production wave-frame scattering and the turbulence exchange ledger in closed coupled and uncoupled controls, then score total-energy closure externally.",
+          RunCV12LinkedModel),
       MakeDescriptor("TURB01", "Alfven wave-energy closure", "turbulence",
           "Compare the production 1-AU wave-energy helper with an independent magnetic-pressure expression.",
           SEP::Testing::InitializationLevel::None,

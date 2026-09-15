@@ -14,6 +14,13 @@ validation, and passing coupled code is not called observational validation.
 | `CV03` | Linked-application controlled numerical verification | Sinusoidal-kappa Parker ensembles versus an independent conservative periodic finite-volume solver | Implemented; requires linked executable |
 | `CV04` | Linked-application controlled numerical verification | Constant-divergence and spherical-flow momentum/energy histories versus exact relativistic characteristics | Implemented; requires linked executable |
 | `CV05` | Linked-application controlled numerical verification | Zero-scattering focusing trajectories and angular moments versus exact hyperbolic characteristics | Implemented; requires linked executable |
+| `CV06` | Linked-application controlled numerical verification | Legendre modes 1–6 versus exact pitch-diffusion eigenvalue decay | Implemented; requires linked executable |
+| `CV07` | Linked-application controlled numerical verification | Persistent flights versus telegraph fronts, moments, causal support, and diffusion limit | Implemented; requires linked executable |
+| `CV08` | Linked-application controlled numerical verification | Absorbing Parker drift-diffusion versus inverse-Gaussian first-passage statistics | Implemented; requires linked executable |
+| `CV09` | Linked-application controlled numerical verification | Controlled planar shock cycles versus DSA slope and acceleration time | Implemented; requires linked executable |
+| `CV10` | Linked-application controlled numerical verification | Spectral wave advection/remap versus cell-integrated manufactured characteristics | Implemented; requires linked executable |
+| `CV11` | Linked-application controlled numerical verification | One-hot wave growth/damping histories versus exact exponential integrals | Implemented; requires linked executable |
+| `CV12` | Linked-application controlled numerical verification | Closed particle-wave exchange versus total-energy identity and broken-ledger control | Implemented; requires linked executable |
 | `VAL01` | Numerical verification | Independent analytical diffusion moments and adiabatic-cooling characteristic | Implemented |
 | `VAL02` | Cross-mover verification | Matched `fte-dmumu`/`fte-mfp` mean-free-path closure | Implemented |
 | `VAL03` | Cross-model verification | Independently coded conservative finite-volume pitch-angle solver | Implemented |
@@ -28,7 +35,7 @@ make test-scientific-validation
 ```
 
 The numbered validation portfolio uses the shared case registry described in
-[cases/README.md](cases/README.md). CV01-CV05 are complete linked cases:
+[cases/README.md](cases/README.md). CV01-CV12 are complete linked cases:
 
 ```sh
 python3 test/run_tests.py --amps /absolute/path/to/amps \
@@ -36,6 +43,7 @@ python3 test/run_tests.py --amps /absolute/path/to/amps \
   --output-dir /absolute/path/to/evidence/CV01
 make test-cv01-unit SEP_EXECUTABLE=/absolute/path/to/amps
 make test-cv02-cv05-unit SEP_EXECUTABLE=/absolute/path/to/amps
+make test-cv06-cv12-unit SEP_EXECUTABLE=/absolute/path/to/amps
 ```
 
 This verifies that the supplied executable advertises each selected ID,
@@ -45,7 +53,8 @@ the model input snapshot, independent reference, native JSON/JUnit, particle/
 moment/profile CSV files, frozen metrics, negative-control evidence, PNG/EPS
 figures, logs, and executable provenance. CV03 additionally retains its
 finite-volume reference and reversed-drift control; CV02 uses ten independent
-seeds and three particle counts; CV04/CV05 report refinement order.
+seeds and three particle counts; CV04-CV06 and CV10-CV11 report refinement;
+CV07-CV09 retain statistical/distribution evidence; CV12 closes the energy ledger.
 
 It runs `VAL01`–`VAL04-SWCME` under AddressSanitizer and
 UndefinedBehaviorSanitizer, assembles a temporary campaign, and proves that

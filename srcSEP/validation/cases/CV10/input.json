@@ -1,0 +1,9 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "CV10",
+  "title": "Nonuniform turbulence advection",
+  "physics": {"domain_length_m": 1.0, "wave_speed_m_per_s": 1.0, "profile_amplitude": 0.25},
+  "numerics": {"resolutions": [32, 64, 128], "spectral_bins": 4, "duration_s": 0.25, "cfl": 0.25, "campaign_seed": 101010},
+  "acceptance": {"relative_l2_error_max": 0.08, "refinement_order_min": 0.75, "relative_invariant_error_max": 1e-8, "negative_cell_count_max": 0},
+  "plot": {"formats": ["png", "eps"]}
+}

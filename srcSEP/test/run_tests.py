@@ -72,7 +72,8 @@ SOURCE_SUITES: Dict[str, str] = {
 # conservation/limit invariant.  Keeping the classification explicit prevents
 # a generic software contract from being advertised as an analytical solution.
 ANALYTICAL_IDS = {
-    "CV01", "CV02", "CV03", "CV04", "CV05", "DXX01", "FTE01",
+    "CV01", "CV02", "CV03", "CV04", "CV05", "CV06", "CV07", "CV08",
+    "CV09", "CV10", "CV11", "CV12", "DXX01", "FTE01",
     "PARKER01", "TURB01", "VAL01", "CROSS02",
     *(f"PARK{i:02d}" for i in range(1, 8)),
     *(f"FTED{i:02d}" for i in range(1, 9)),
@@ -130,6 +131,17 @@ Examples:
      These validate Gaussian spatial diffusion, nonuniform Ito drift,
      adiabatic cooling, and magnetic focusing. Each invokes the linked binary,
      evaluates an independent reference, and emits PNG/EPS comparisons.
+
+     Run the advanced controlled cases with the same application contract:
+
+       python3 test/run_tests.py --amps ../amps \
+         --validation-case CV06 --validation-case CV07 \
+         --validation-case CV08 --validation-case CV09 \
+         --validation-case CV10 --validation-case CV11 \
+         --validation-case CV12 --output-dir test_output/CV06-CV12
+
+     CV06-CV09 are extended stochastic/distribution campaigns. CV10-CV12 are
+     bounded turbulence-advection, source-history, and energy-ledger checks.
 
      Repeat --test to choose any collection of individual cases:
 

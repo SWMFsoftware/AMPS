@@ -1,4 +1,4 @@
-"""Shared linked-application mechanics for controlled cases CV02-CV05.
+"""Shared linked-application mechanics for controlled cases CV02-CV12.
 
 This module owns evidence plumbing, not expected physics.  Every case passes a
 flat, reviewed SI argument vector to the selected ``amps`` executable and owns

@@ -189,6 +189,34 @@ class PythonTestRunnerTests(unittest.TestCase):
             self.assertNotIn("controlled_transport_models.cpp", " ".join(command))
             run.assert_called_once()
 
+    def test_cv06_cv12_share_the_linked_application_selection_path(self):
+        """Keep advanced physics cases attached to the selected application.
+
+        The case-local source harness is useful for compile testing, but it is
+        not scientific evidence. This assertion prevents future convenience
+        changes from bypassing validation/run_case.py or replacing ``--amps``
+        with advanced_validation_models.cpp.
+        """
+        runner = _load_runner_module()
+        with tempfile.TemporaryDirectory(prefix="srcsep-validation-command-") as tmp:
+            output = Path(tmp)
+            selected = [f"CV{index:02d}" for index in range(6, 13)]
+            arguments = SimpleNamespace(
+                amps="/opt/amps/bin/srcsep-amps",
+                validation_all=False,
+                validation_cases=selected,
+                case_input=None,
+                timeout=600.0,
+            )
+            with mock.patch.object(runner, "_run_streaming", return_value=0) as run:
+                _, _, command = runner._run_validation_cases(
+                    arguments, output, output / "runner.log")
+            self.assertEqual(command[2:4], ["--amps", "/opt/amps/bin/srcsep-amps"])
+            for case_id in selected:
+                self.assertIn(case_id, command)
+            self.assertNotIn("advanced_validation_models.cpp", " ".join(command))
+            run.assert_called_once()
+
     def test_validation_case_rejects_a_missing_linked_executable(self):
         """Never replace unavailable application evidence with a local build."""
         with tempfile.TemporaryDirectory(prefix="srcsep-missing-amps-") as tmp:

@@ -1,0 +1,9 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "CV09",
+  "title": "Planar diffusive shock acceleration spectrum",
+  "physics": {"compression_ratios": [2.0, 3.0, 4.0], "upstream_speed_m_per_s": 1000000.0, "particle_speed_m_per_s": 200000000.0, "kappa_upstream_m2_per_s": 1e14, "kappa_downstream_m2_per_s": 1e14, "injection_momentum_kg_m_per_s": 1e-19},
+  "numerics": {"particle_count": 50000, "campaign_seed": 90909, "fit_quantiles": [0.05, 0.95]},
+  "acceptance": {"momentum_slope_absolute_error_max": 0.16, "acceleration_time_relative_error_max": 0.1, "number_accounting_error_max": 1e-14, "resolved_diffusion_length_min_m": 10000000.0},
+  "plot": {"formats": ["png", "eps"]}
+}

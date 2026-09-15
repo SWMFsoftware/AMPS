@@ -18,14 +18,19 @@ subsystem, and the Step 12 deterministic parallel-reduction contract.
 Step 13 adds reportable, fail-closed acceptance fixtures, Step 14 removes
 the retired mover implementations/aliases while enforcing a clean source
 handoff, and Step 15 adds a claim-separated scientific-validation campaign.
-The numbered campaign now includes linked-application cases `CV01`–`CV05`.
-They cover ballistic streaming, constant and nonuniform spatial diffusion,
-adiabatic cooling, and magnetic focusing through the same native-registry,
+The numbered campaign now includes linked-application cases `CV01`–`CV12`.
+They cover ballistic streaming; constant/nonuniform spatial diffusion;
+adiabatic cooling; magnetic focusing; Legendre pitch diffusion; telegraph and
+first-passage transport; planar DSA; turbulence advection and growth; and
+closed particle-wave exchange through the same native-registry,
 reviewed-input, independent-reference, metric, visualization, and provenance
 contract.
 See [STEP13_CHANGE_MANIFEST.md](STEP13_CHANGE_MANIFEST.md),
 [STEP14_CHANGE_MANIFEST.md](STEP14_CHANGE_MANIFEST.md), and
-[STEP15_CHANGE_MANIFEST.md](STEP15_CHANGE_MANIFEST.md). Retired names remain
+[STEP15_CHANGE_MANIFEST.md](STEP15_CHANGE_MANIFEST.md). The CV06–CV12 design,
+scope, evidence contract, and commands are summarized in
+[CV06_CV12_VALIDATION_IMPLEMENTATION.md](CV06_CV12_VALIDATION_IMPLEMENTATION.md).
+Retired names remain
 mapped in [MIGRATION_MANIFEST.md](MIGRATION_MANIFEST.md).
 Self-consistent Alfvén turbulence remains a production subsystem and uses the
 same physical area and volume as injection and particle sampling.
@@ -344,6 +349,15 @@ python3 test/run_tests.py --amps /path/to/amps \
   --validation-case CV04 --validation-case CV05 \
   --output-dir /absolute/path/to/evidence/CV02-CV05
 
+# Run the advanced controlled portfolio. CV06-CV09 are extended stochastic
+# cases; CV10-CV12 are bounded deterministic/conservation cases.
+python3 test/run_tests.py --amps /path/to/amps \
+  --validation-case CV06 --validation-case CV07 \
+  --validation-case CV08 --validation-case CV09 \
+  --validation-case CV10 --validation-case CV11 \
+  --validation-case CV12 \
+  --output-dir /absolute/path/to/evidence/CV06-CV12
+
 # Discover stable IDs from the linked executable.
 python3 test/run_tests.py --amps /path/to/amps --list
 
@@ -385,9 +399,10 @@ four-panel diagnostic, the resolved input, and checksummed executable
 provenance. A missing or stale binary is an error, never a Python/standalone
 fallback. See
 [validation/cases/CV01/README.md](validation/cases/CV01/README.md).
-CV02-CV05 use the same fail-closed application lifecycle and add exact
+CV02-CV12 use the same fail-closed application lifecycle and add exact
 Green-function, independent finite-volume, adiabatic-characteristic, and
-focusing-characteristic references. See the case README files under
+focusing-characteristic references plus modal, telegraph, inverse-Gaussian,
+DSA, manufactured-wave, exponential-rate, and energy-ledger checks. See the case README files under
 [validation/cases](validation/cases/README.md).
 
 The source-only Step 13 fixtures registered in the same production catalog are

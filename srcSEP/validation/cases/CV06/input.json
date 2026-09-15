@@ -1,0 +1,9 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "CV06",
+  "title": "Legendre-mode pitch-angle diffusion",
+  "physics": {"d0_per_s": 0.2, "initial_perturbation": 0.6, "modes": [1, 2, 3, 4, 5, 6]},
+  "numerics": {"final_time_s": 0.1, "time_steps_s": [0.004, 0.002, 0.001], "sample_count": 5, "particle_count": 12000, "seed_count": 3, "campaign_seed": 60606},
+  "acceptance": {"decay_rate_relative_error_max": 0.2, "leakage_standard_errors_max": 5.0, "isotropic_mode_standard_errors_max": 5.0, "refinement_order_min": -0.25, "mu_boundary_reflections_min": 0},
+  "plot": {"formats": ["png", "eps"]}
+}

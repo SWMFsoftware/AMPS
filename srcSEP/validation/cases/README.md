@@ -66,13 +66,20 @@ python3 test/run_tests.py --amps /path/to/amps \
   --validation-case CV02 --validation-case CV03 \
   --validation-case CV04 --validation-case CV05 \
   --output-dir test_output/CV02-CV05
+python3 test/run_tests.py --amps /path/to/amps \
+  --validation-case CV06 --validation-case CV07 \
+  --validation-case CV08 --validation-case CV09 \
+  --validation-case CV10 --validation-case CV11 \
+  --validation-case CV12 --output-dir test_output/CV06-CV12
 python3 test/run_tests.py --amps /path/to/amps --validation-all \
   --output-dir test_output/validation-all
 ```
 
-CV02-CV05 share `linked_case_common.py` for strict native process/report
-verification and `controlled_case_runner.py` for evidence plumbing. Their
+CV02-CV12 share `linked_case_common.py` for strict native process/report
+verification. CV02-CV05 use `controlled_case_runner.py`; CV06-CV12 use
+`advanced_case_runner.py`. Their
 expected physics remains in separate case-local `reference_solution.py`
 programs. The shared C++ adapter calls the production Parker and focused-
-transport cores and is compiled into the requested AMPS application; it is not
-a substitute executable.
+transport/turbulence cores and is compiled into the requested AMPS application;
+it is not a substitute executable. CV09 explicitly remains a controlled
+shock-cycle test rather than a full resolved heliospheric shock campaign.
