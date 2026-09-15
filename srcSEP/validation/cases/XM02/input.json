@@ -1,0 +1,20 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "XM02",
+  "title": "Published M-FLAMPA Parker-spiral propagation comparison",
+  "model_source_csv": "",
+  "equivalence_reviewed": false,
+  "reference": {
+    "csv": "reference/mflampa_2013_apr11_mfp_sensitivity.csv",
+    "publication_id": "Zhao2024-SOFIE-MFLAMPA",
+    "figure": "Figure 7",
+    "reference_kind": "digitized-publication-curve"
+  },
+  "numerics": {"campaign_seed": 30202},
+  "acceptance": {
+    "log10_intensity_rmse_max": 0.3,
+    "peak_timing_error_hours_max": 2.0,
+    "required_series_fraction_min": 1.0
+  },
+  "plot": {"formats": ["png", "eps"]}
+}

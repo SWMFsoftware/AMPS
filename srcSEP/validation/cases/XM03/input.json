@@ -1,0 +1,24 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "XM03",
+  "title": "Published M-FLAMPA 2013 April 11 event reproduction",
+  "model_source_csv": "",
+  "equivalence_reviewed": false,
+  "reference": {
+    "csv": "reference/mflampa_2013_apr11_event.csv",
+    "publication_id": "Liu2025-2013-April-11",
+    "figures": ["Figure 14(b)", "Figure 15(a)", "Figure 15(b)", "Figure 15(c)"],
+    "reference_kind": "digitized-publication-curve-and-reported-fit"
+  },
+  "numerics": {"campaign_seed": 30303},
+  "acceptance": {
+    "log10_intensity_rmse_max": 0.4771212547,
+    "onset_fraction_of_peak": 0.01,
+    "onset_timing_error_hours_max": 1.0,
+    "peak_timing_error_hours_max": 3.0,
+    "fluence_spectral_index_error_max": 0.3,
+    "log10_mean_free_path_rmse_max": 0.2,
+    "required_series_fraction_min": 1.0
+  },
+  "plot": {"formats": ["png", "eps"]}
+}

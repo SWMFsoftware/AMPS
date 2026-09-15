@@ -98,6 +98,15 @@
     },
     {
       "id":"IV06","name":"Coupled self-generated turbulence feedback","group":"integrated-manufactured","runtime_class":"routine","entrypoint":"validation/cases/IV06/case.py","default_input":"validation/cases/IV06/input.json","description":"Verify the causal streaming-growth-scattering feedback with frozen, one-way, and two-way controls and an energy ledger."
+    },
+    {
+      "id":"XM01","name":"Independent focused-transport PDE solver comparison","group":"cross-model","runtime_class":"extended","entrypoint":"validation/cases/XM01/case.py","default_input":"validation/cases/XM01/input.json","description":"Compare linked production focused transport with an independent conservative finite-volume solver for isolated and combined operators."
+    },
+    {
+      "id":"XM02","name":"Published M-FLAMPA Parker-spiral comparison","group":"cross-model","runtime_class":"extended","entrypoint":"validation/cases/XM02/case.py","default_input":"validation/cases/XM02/input.json","description":"Compare a linked production export with digitized, provenance-tracked published M-FLAMPA mean-free-path sensitivity profiles; require an explicit equivalence review before PASS."
+    },
+    {
+      "id":"XM03","name":"Published M-FLAMPA 2013 April 11 event reproduction","group":"cross-model","runtime_class":"extended","entrypoint":"validation/cases/XM03/case.py","default_input":"validation/cases/XM03/input.json","description":"Compare linked srcSEP event products with published M-FLAMPA intensity, mean-free-path, and fluence-slope results; keep model-model and model-observation claims separate."
     }
   ]
 }

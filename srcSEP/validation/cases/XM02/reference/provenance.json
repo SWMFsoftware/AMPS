@@ -1,0 +1,30 @@
+{
+  "schema": "srcsep-digitized-reference-v1",
+  "case_id": "XM02",
+  "publication": {
+    "id": "Zhao2024-SOFIE-MFLAMPA",
+    "title": "Solar Wind with Field Lines and Energetic Particles (SOFIE) Model: Application to Historical Solar Energetic Particle Events",
+    "authors": "Zhao et al.",
+    "source_url": "https://arxiv.org/abs/2309.16903",
+    "source_pdf_sha256": "945361cc4c27e6481eac042eaf9a0e3f6b097ed277e1b7fab793ab9305591bbe",
+    "figure": "Figure 7",
+    "page_in_pdf": 30
+  },
+  "digitization": {
+    "tool": "validation/reference/digitize_mflampa_figures.py",
+    "render_dpi": 400,
+    "plot_box_pixels": {"left": 760, "right": 1587, "top": 408, "bottom": 1007},
+    "x_calibration": "left=2013-04-11T06:00Z (0 h), right=2013-04-13T02:00Z (44 h)",
+    "y_calibration": "log10(pfu)=2-(pixel_y-497)/145",
+    "curve_colors": {"0.05_au": "magenta", "0.3_au": "green", "1.0_au": "blue"},
+    "sample_spacing_hours": 2,
+    "estimated_log10_uncertainty_dex": 0.12,
+    "excluded_regions": "axis endpoints and in-panel legend"
+  },
+  "units": {"elapsed_hours": "h since 2013-04-11T06:00Z", "intensity": "pfu for >10 MeV protons"},
+  "limitations": [
+    "This publication curve is an event propagation sensitivity reference, not an exact quiet-Sun CCMC run export.",
+    "A release PASS requires a separately reviewed model-configuration equivalence record.",
+    "Digitization uncertainty is not observational or model uncertainty."
+  ]
+}

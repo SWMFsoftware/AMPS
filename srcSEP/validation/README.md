@@ -27,6 +27,9 @@ validation, and passing coupled code is not called observational validation.
 | `IV04` | Integrated manufactured verification | Moving-grid free-stream preservation and conservative remap | Implemented; required nightly; linked executable |
 | `IV05` | Integrated manufactured verification | Moving/stationary shock frame equivalence and CV09 spectrum | Implemented; required nightly; linked executable |
 | `IV06` | Integrated manufactured verification | Frozen/one-way/two-way self-generated turbulence feedback | Implemented; required nightly; linked executable |
+| `XM01` | Cross-model verification | Linked production characteristics versus an independent conservative focused-transport PDE solver | Implemented; extended; linked executable |
+| `XM02` | Published M-FLAMPA comparison | Digitized >10 MeV MFP-sensitivity profiles from Zhao et al. Figure 7 | Implemented workflow; SKIP until production export and equivalence review |
+| `XM03` | Published M-FLAMPA event comparison | Digitized 2013-04-11 intensity/MFP products and reported fluence slope from Liu et al. Figures 14–15 | Implemented workflow; SKIP until production export and equivalence review |
 | `VAL01` | Numerical verification | Independent analytical diffusion moments and adiabatic-cooling characteristic | Implemented |
 | `VAL02` | Cross-mover verification | Matched `fte-dmumu`/`fte-mfp` mean-free-path closure | Implemented |
 | `VAL03` | Cross-model verification | Independently coded conservative finite-volume pitch-angle solver | Implemented |
@@ -41,7 +44,7 @@ make test-scientific-validation
 ```
 
 The numbered validation portfolio uses the shared case registry described in
-[cases/README.md](cases/README.md). CV01-CV12 and IV01-IV06 are complete linked cases:
+[cases/README.md](cases/README.md). CV01-CV12, IV01-IV06, and XM01-XM03 use the same linked-case contract:
 
 ```sh
 python3 test/run_tests.py --amps /absolute/path/to/amps \
@@ -51,6 +54,7 @@ make test-cv01-unit SEP_EXECUTABLE=/absolute/path/to/amps
 make test-cv02-cv05-unit SEP_EXECUTABLE=/absolute/path/to/amps
 make test-cv06-cv12-unit SEP_EXECUTABLE=/absolute/path/to/amps
 make test-iv01-iv06-unit SEP_EXECUTABLE=/absolute/path/to/amps
+make test-xm01-xm03-unit SEP_EXECUTABLE=/absolute/path/to/amps
 ```
 
 This verifies that the supplied executable advertises each selected ID,
@@ -62,6 +66,9 @@ figures, logs, and executable provenance. CV03 additionally retains its
 finite-volume reference and reversed-drift control; CV02 uses ten independent
 seeds and three particle counts; CV04-CV06 and CV10-CV11 report refinement;
 CV07-CV09 retain statistical/distribution evidence; CV12 closes the energy ledger.
+XM01 is an extended linked cross-solver gate. XM02/XM03 deliberately SKIP until
+a production export and a reviewed assumption-equivalence flag are supplied;
+their default reference-only plots are preparation evidence, not model PASS.
 
 It runs `VAL01`–`VAL04-SWCME` under AddressSanitizer and
 UndefinedBehaviorSanitizer, assembles a temporary campaign, and proves that

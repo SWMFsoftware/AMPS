@@ -7,6 +7,7 @@
 #include "validation/cases/controlled_transport_models.h"
 #include "validation/cases/advanced_validation_models.h"
 #include "validation/cases/integrated_validation_models.h"
+#include "validation/cases/cross_model_validation_models.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -254,7 +255,7 @@ SEP::Testing::Result RunLinkedControlledModel(const char* caseId) {
   const SEP::Testing::ExecutionContext& context =
       SEP::Testing::GetExecutionContext();
   if (context.inputPath.empty() || context.artifactDirectory.empty()) {
-    // CV02-CV12 and IV01-IV06 require reviewed case-specific SI inputs. A generic registry
+    // CV02-CV12, IV01-IV06, and XM01-XM03 require reviewed case-specific SI inputs. A generic registry
     // run cannot safely invent them, so discovery/all-tests gets an explicit
     // prerequisite SKIP. The external runner always supplies both paths and
     // requires the linked model CSV, so this cannot become a scientific PASS.
@@ -342,12 +343,16 @@ SEP::Testing::Result RunLinkedControlledModel(const char* caseId) {
       context.artifactDirectory + "/" + caseId + "_model.csv";
   std::string error;
   // CV02-CV05 use the original controlled-transport collection; CV06-CV12
-  // use the advanced collection. Both enter through this native callback so
+  // use the advanced collection. IV and XM cases have dedicated collections.
+  // Every collection enters through this native callback so
   // the Python campaign validates the linked srcSEP/AMPS application rather
   // than compiling and executing a replacement model.
   const std::string identifier(caseId);
   bool completed = false;
-  if (identifier.size() >= 2 && identifier.substr(0, 2) == "IV")
+  if (identifier.size() >= 2 && identifier.substr(0, 2) == "XM")
+    completed = SEP::Validation::RunCrossModelValidationModel(
+        identifier, arguments, outputPath, &error);
+  else if (identifier.size() >= 2 && identifier.substr(0, 2) == "IV")
     completed = SEP::Validation::RunIntegratedValidationModel(
         identifier, arguments, outputPath, &error);
   else if (identifier >= "CV06")
@@ -405,6 +410,9 @@ SEP::Testing::Result RunIV03LinkedModel() { return RunLinkedControlledModel("IV0
 SEP::Testing::Result RunIV04LinkedModel() { return RunLinkedControlledModel("IV04"); }
 SEP::Testing::Result RunIV05LinkedModel() { return RunLinkedControlledModel("IV05"); }
 SEP::Testing::Result RunIV06LinkedModel() { return RunLinkedControlledModel("IV06"); }
+SEP::Testing::Result RunXM01LinkedModel() { return RunLinkedControlledModel("XM01"); }
+SEP::Testing::Result RunXM02LinkedModel() { return RunLinkedControlledModel("XM02"); }
+SEP::Testing::Result RunXM03LinkedModel() { return RunLinkedControlledModel("XM03"); }
 
 SEP::Testing::Descriptor MakeDescriptor(
     const char* id, const char* name, const char* group,
@@ -474,6 +482,22 @@ SEP::Testing::Descriptor MakeIntegratedValidationDescriptor(
   // regular AMPS model initialization.  MPI execution is intentionally not
   // advertised until rank-local sampling and deterministic reduction are part
   // of the validation contract.
+  descriptor.supportedBuildModes = "serial linked srcSEP/AMPS executable";
+  return descriptor;
+}
+
+SEP::Testing::Descriptor MakeCrossModelValidationDescriptor(
+    const char* id, const char* name, const char* description,
+    SEP::Testing::TestCallback callback) {
+  // Cross-model cases remain separate from analytical/manufactured evidence:
+  // agreement with another numerical model is useful validation evidence but
+  // does not establish correctness against an exact solution.
+  SEP::Testing::Descriptor descriptor = MakeDescriptor(
+      id, name, "cross-model", description,
+      SEP::Testing::InitializationLevel::None,
+      SEP::Testing::RuntimeClass::Extended, "fixed case seed from reviewed input",
+      "isolated process; immutable reference and transactional model CSV",
+      callback);
   descriptor.supportedBuildModes = "serial linked srcSEP/AMPS executable";
   return descriptor;
 }
@@ -600,6 +624,12 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
           "Compare stationary/moving shock frames, interpolated crossings, node coincidence, and the CV09 DSA reference.", RunIV05LinkedModel),
       MakeIntegratedValidationDescriptor("IV06", "Coupled self-generated turbulence feedback",
           "Compare frozen, one-way, and two-way scattering/growth controls with resonant and total-energy evidence.", RunIV06LinkedModel),
+      MakeCrossModelValidationDescriptor("XM01", "Independent focused-transport PDE solver comparison",
+          "Compare linked production characteristics with an independent conservative finite-volume solver for streaming, scattering, focusing, adiabatic momentum change, and their combination.", RunXM01LinkedModel),
+      MakeCrossModelValidationDescriptor("XM02", "Published M-FLAMPA Parker-spiral comparison",
+          "Normalize a production srcSEP export inside the linked application and compare it with provenance-tracked M-FLAMPA mean-free-path sensitivity curves.", RunXM02LinkedModel),
+      MakeCrossModelValidationDescriptor("XM03", "Published M-FLAMPA 2013 April 11 event reproduction",
+          "Normalize a production event export inside the linked application and compare intensity, transport-coefficient, and fluence-slope products with published M-FLAMPA results.", RunXM03LinkedModel),
       MakeDescriptor("TURB01", "Alfven wave-energy closure", "turbulence",
           "Compare the production 1-AU wave-energy helper with an independent magnetic-pressure expression.",
           SEP::Testing::InitializationLevel::None,

@@ -1,0 +1,48 @@
+{
+  "schema": "srcsep-digitized-reference-v1",
+  "case_id": "XM03",
+  "publication": {
+    "id": "Liu2025-2013-April-11",
+    "title": "Physics-based Simulation of the 2013 April 11 Solar Energetic Particle Event",
+    "authors": "Liu et al.",
+    "doi": "10.3847/1538-4357/adc4e3",
+    "source_url": "https://authors.library.caltech.edu/records/qwsnd-jmx38",
+    "source_pdf_sha256": "a5a613e9ad3b127c5c412366b0c4a2029339f9ac068fd9508325ab682a6dc357",
+    "license": "Creative Commons Attribution 4.0"
+  },
+  "digitization": {
+    "tool": "validation/reference/digitize_mflampa_figures.py",
+    "render_dpi": 400,
+    "figure_15_time_panels": {
+      "page_in_pdf": 24,
+      "panel_a_box_pixels": [489, 538, 1210, 1133],
+      "panel_b_box_pixels": [1343, 538, 2085, 1133],
+      "x_calibration": "0 to 44 h from 2013-04-11T06:00Z",
+      "y_calibration": "log10 intensity from -2 to 3",
+      "selected_curve": "green dashed, lambda0=0.3 au",
+      "estimated_log10_uncertainty_dex": 0.08
+    },
+    "figure_14_mean_free_path": {
+      "page_in_pdf": 23,
+      "panel_b_box_pixels": [2004, 386, 3079, 1354],
+      "x_calibration": "0 to 105 solar radii",
+      "y_calibration": "log10(lambda_parallel/AU) from -3 to 0",
+      "selected_curve": "Earth-connected dashed teal",
+      "estimated_log10_uncertainty_dex": 0.08,
+      "shock_feature_uncertainty_dex": 0.15
+    },
+    "fluence_spectral_index": "published Figure 15(c) annotation for Earth, lambda0=0.3 au"
+  },
+  "units": {
+    "time_profile_coordinate": "h since 2013-04-11T06:00Z",
+    "time_profile_value": "(cm2 s sr MeV)^-1",
+    "mean_free_path_coordinate": "solar radii",
+    "mean_free_path_value": "au",
+    "fluence_spectral_index": "dimensionless"
+  },
+  "limitations": [
+    "Digitized values carry graphical calibration uncertainty and are not exact author tables.",
+    "The sharp mean-free-path feature near 25 solar radii has larger extraction uncertainty.",
+    "Model-model and model-observation conclusions must be reported separately."
+  ]
+}

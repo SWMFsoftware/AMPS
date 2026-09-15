@@ -1,0 +1,29 @@
+{
+  "schema": "srcsep-validation-case-input-v1",
+  "case_id": "XM01",
+  "title": "Independent focused-transport PDE solver comparison",
+  "physics": {
+    "length_m": 10000000000.0,
+    "speed_m_per_s": 10000000.0,
+    "d0_per_s": 0.002,
+    "dlnb_ds_per_m": -1e-10,
+    "divergence_per_s": 0.0003
+  },
+  "numerics": {
+    "duration_s": 100.0,
+    "time_step_s": 0.5,
+    "reference_time_step_s": 0.05,
+    "s_bins": 32,
+    "mu_bins": 20,
+    "particles": 40000,
+    "campaign_seed": 30101
+  },
+  "acceptance": {
+    "resolved_probability_fraction_min": 0.02,
+    "log10_probability_rmse_max": 0.05,
+    "first_angular_moment_difference_max": 0.02,
+    "log_momentum_difference_max": 0.002,
+    "fine_to_coarse_error_ratio_max": 0.9
+  },
+  "plot": {"formats": ["png", "eps"]}
+}

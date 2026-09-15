@@ -20,6 +20,10 @@ the retired mover implementations/aliases while enforcing a clean source
 handoff, and Step 15 adds a claim-separated scientific-validation campaign.
 The numbered campaign now includes linked-application cases `CV01`–`CV12` and
 integrated manufactured cases `IV01`–`IV06`.
+Cross-model cases `XM01`–`XM03` add an independent focused-transport PDE
+comparison and two provenance-tracked M-FLAMPA publication workflows. The
+publication cases remain SKIP until a production export and explicit
+configuration-equivalence review are supplied.
 They cover ballistic streaming; constant/nonuniform spatial diffusion;
 adiabatic cooling; magnetic focusing; Legendre pitch diffusion; telegraph and
 first-passage transport; planar DSA; turbulence advection and growth; and
@@ -36,6 +40,9 @@ scope, evidence contract, and commands are summarized in
 The integrated geometry/operator, moving-grid/shock, and nonlinear-feedback
 cases are documented in
 [IV01_IV06_VALIDATION_IMPLEMENTATION.md](IV01_IV06_VALIDATION_IMPLEMENTATION.md).
+XM equations, publication sources, reference extraction, inputs, and evidence
+limits are documented in
+[XM01_XM03_VALIDATION_IMPLEMENTATION.md](XM01_XM03_VALIDATION_IMPLEMENTATION.md).
 Retired names remain
 mapped in [MIGRATION_MANIFEST.md](MIGRATION_MANIFEST.md).
 Self-consistent Alfvén turbulence remains a production subsystem and uses the
@@ -370,6 +377,10 @@ python3 test/run_tests.py --amps /path/to/amps \
   --validation-case IV03 --validation-case IV04 \
   --validation-case IV05 --validation-case IV06 \
   --output-dir /absolute/path/to/evidence/IV01-IV06
+
+python3 test/run_tests.py --amps /absolute/path/to/amps \
+  --validation-case XM01 --validation-case XM02 --validation-case XM03 \
+  --output-dir /absolute/path/to/evidence/XM01-XM03
 
 # Discover stable IDs from the linked executable.
 python3 test/run_tests.py --amps /path/to/amps --list

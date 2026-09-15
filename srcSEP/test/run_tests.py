@@ -60,6 +60,7 @@ SOURCE_SUITES: Dict[str, str] = {
     "wp21-wp30": "test-wp21-wp30-unit",
     "wp31-wp41": "test-wp31-wp41-unit",
     "python-runner": "test-python-runner-unit",
+    "cross-model": "test-xm01-xm03-unit",
     "acceptance": "test-acceptance-unit",
     "documentation": "test-documentation-unit",
     "controlled-analytical": "test-controlled-analytical",
@@ -75,6 +76,7 @@ ANALYTICAL_IDS = {
     "CV01", "CV02", "CV03", "CV04", "CV05", "CV06", "CV07", "CV08",
     "CV09", "CV10", "CV11", "CV12", "IV01", "IV02", "IV03", "IV04",
     "IV05", "IV06", "DXX01", "FTE01",
+    "XM01",
     "PARKER01", "TURB01", "VAL01", "CROSS02",
     *(f"PARK{i:02d}" for i in range(1, 8)),
     *(f"FTED{i:02d}" for i in range(1, 9)),
@@ -154,6 +156,16 @@ Examples:
 
      These combine geometry/operators, moving grids and shocks, and nonlinear
      wave feedback. They are required nightly cases in the validation plan.
+
+     Run the cross-model portfolio (XM02/XM03 SKIP until configured):
+
+       python3 test/run_tests.py --amps ../amps \
+         --validation-case XM01 --validation-case XM02 \
+         --validation-case XM03 --output-dir test_output/XM01-XM03
+
+     XM01 compares the linked production mover with an independent PDE solver.
+     XM02/XM03 prepare digitized M-FLAMPA references and require a reviewed
+     production export before they can report PASS or FAIL.
 
      Repeat --test to choose any collection of individual cases:
 

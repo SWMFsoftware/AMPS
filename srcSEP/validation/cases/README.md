@@ -76,15 +76,25 @@ python3 test/run_tests.py --amps /path/to/amps \
   --validation-case IV03 --validation-case IV04 \
   --validation-case IV05 --validation-case IV06 \
   --output-dir test_output/IV01-IV06
+python3 test/run_tests.py --amps /path/to/amps \
+  --validation-case XM01 --validation-case XM02 --validation-case XM03 \
+  --output-dir test_output/XM01-XM03
 python3 test/run_tests.py --amps /path/to/amps --validation-all \
   --output-dir test_output/validation-all
 ```
 
 CV02-CV12 share `linked_case_common.py` for strict native process/report
 verification. CV02-CV05 use `controlled_case_runner.py`; CV06-CV12 use
-`advanced_case_runner.py`; IV01-IV06 use `integrated_case_runner.py`. Their
+`advanced_case_runner.py`; IV01-IV06 use `integrated_case_runner.py`; XM01-XM03
+use `cross_model_case_runner.py`. Their
 expected physics remains in separate case-local `reference_solution.py`
 programs. The shared C++ adapter calls the production Parker and focused-
 transport/turbulence cores and is compiled into the requested AMPS application;
 it is not a substitute executable. CV09 explicitly remains a controlled
 shock-cycle test rather than a full resolved heliospheric shock campaign.
+
+XM02/XM03 add a fail-closed external-model contract. A missing production CSV
+or unreviewed configuration equivalence yields SKIP while retaining the
+digitized reference and PNG/EPS plots. The linked executable validates the
+long-form CSV before Python computes comparison metrics. See each XM README
+for exact columns, series names, units, provenance, and provisional gates.

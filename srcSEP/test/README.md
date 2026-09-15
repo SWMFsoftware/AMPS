@@ -85,6 +85,9 @@ make test-cv06-cv12-unit SEP_EXECUTABLE=/path/to/amps
 # IV01-IV06 integrated manufactured source gate plus linked execution.
 make test-iv01-iv06-unit SEP_EXECUTABLE=/path/to/amps
 
+# XM01-XM03 cross-model source/reference gate plus linked execution.
+make test-xm01-xm03-unit SEP_EXECUTABLE=/path/to/amps
+
 # All dependency-light ASan/UBSan suites from Steps 3 and 6–13.
 make test-sanitizer
 
@@ -170,6 +173,10 @@ python3 test/run_tests.py --amps /path/to/amps \
   --validation-case IV05 --validation-case IV06 \
   --output-dir /evidence/srcsep/IV01-IV06
 
+python3 test/run_tests.py --amps /path/to/amps \
+  --validation-case XM01 --validation-case XM02 --validation-case XM03 \
+  --output-dir /evidence/srcsep/XM01-XM03
+
 # List all native registry IDs without initializing AMPS.
 python3 test/run_tests.py --amps /path/to/amps --list
 
@@ -205,7 +212,7 @@ sanitizer flags and pass that executable; the runner never compiles a substitute
 driver. These cases retain richer native/model/reference artifacts while using
 the same aggregate report and plotting contract as other runner modes.
 See [../validation/cases/README.md](../validation/cases/README.md) for the
-required structure and the CV01-CV12 and IV01-IV06 subdirectory READMEs for their equations,
+required structure and the CV01-CV12, IV01-IV06, and XM01-XM03 subdirectory READMEs for their equations,
 inputs, gates, outputs, and failure interpretation.
 
 For CV01 the Python runner executes six commands of the form `amps --test CV01
@@ -636,6 +643,9 @@ standalone and SWMF-coupled run. See
 | `IV04` | `integrated-manufactured` | routine | linked srcSEP/AMPS registry | Uniform physical state survives conservative remap on translated-shape grids at roundoff. | Four node motions, three resolutions, node/segment/integral/ledger diagnostics. |
 | `IV05` | `integrated-manufactured` | routine | linked srcSEP/AMPS registry | Moving and stationary shock frames give the same crossings, momentum, and DSA spectrum. | Two shock speeds, three timesteps, 5k histories, exact-node flag. |
 | `IV06` | `integrated-manufactured` | routine | linked srcSEP/AMPS registry | Resonant wave growth strengthens scattering and self-limits streaming while total energy closes. | Frozen/one-way/two-way timelines, resonant bin, Dmumu, streaming and ledger evidence. |
+| `XM01` | `cross-model` | extended | linked srcSEP/AMPS registry | Production focused-transport samples agree with an independent conservative PDE solver across isolated and combined operators. | Two sampling refinements; full `(s,mu)` probability, intensity, anisotropy, momentum, JSON/JUnit, and PNG/EPS. |
+| `XM02` | `cross-model` | extended | linked srcSEP/AMPS registry | A normalized production export is compared with published M-FLAMPA >10 MeV mean-free-path sensitivity curves. | Digitized reference/provenance always; model overlay and metrics when supplied; SKIP until equivalence review. |
+| `XM03` | `cross-model` | extended | linked srcSEP/AMPS registry | 2013-04-11 intensity, radial mean-free-path, and fluence slope are compared with published M-FLAMPA products. | Digitized/reference-fit provenance, production CSV adapter, metrics and PNG/EPS; SKIP until equivalence review. |
 | `BG01` | `background` | routine | none | Standalone analytic and SWCME snapshots preserve provider, epoch, ownership, validity, generation, and distinct configuration identity. | Stack-owned immutable snapshots; no external provider or artifact. |
 | `BG02` | `background` | routine | none | A mock SWMF import is read-only and becomes locally evolved only through an explicit handoff copy. | Resets the snapshot store before/after; no external SWMF process. |
 | `CROSS01` | `cross-mover` | routine | none | `fte-dmumu` and `fte-mfp` agree in the matched ballistic limit. | Keyed seed 1301; stack-owned state; no artifact. |
@@ -657,7 +667,7 @@ standalone and SWMF-coupled run. See
 
 The list printed by native `--list-tests` is authoritative for C++ component
 callbacks and also includes supported build modes, seed policy, and
-state/isolation notes. End-to-end portfolio cases CV01-CV12 and IV01-IV06 are listed by
+state/isolation notes. End-to-end portfolio cases CV01-CV12, IV01-IV06, and XM01-XM03 are listed by
 `python3 validation/run_case.py --list`; both paths are selected through the
 common `test/run_tests.py` orchestration interface. Entries are sorted by ID
 regardless of construction or registration order.

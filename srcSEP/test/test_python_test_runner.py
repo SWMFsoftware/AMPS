@@ -52,6 +52,7 @@ class PythonTestRunnerTests(unittest.TestCase):
                 "Discover the tests registered",
                 "--test PARK07",
                 "--amps ../amps --validation-case CV01",
+                "--validation-case XM01 --validation-case XM02",
                 "--group parker --group fte-dmumu",
                 "--routine",
                 "--all",
@@ -233,6 +234,24 @@ class PythonTestRunnerTests(unittest.TestCase):
             for case_id in selected:
                 self.assertIn(case_id, command)
             self.assertNotIn("integrated_validation_models.cpp", " ".join(command))
+            run.assert_called_once()
+
+    def test_xm01_xm03_use_the_selected_linked_application(self):
+        """Cross-model orchestration must retain the production binary gate."""
+        runner = _load_runner_module()
+        with tempfile.TemporaryDirectory(prefix="srcsep-xm-command-") as tmp:
+            output = Path(tmp)
+            selected = ["XM01", "XM02", "XM03"]
+            arguments = SimpleNamespace(
+                amps="/opt/amps/bin/srcsep-amps", validation_all=False,
+                validation_cases=selected, case_input=None, timeout=900.0)
+            with mock.patch.object(runner, "_run_streaming", return_value=0) as run:
+                _, _, command = runner._run_validation_cases(
+                    arguments, output, output / "runner.log")
+            self.assertEqual(command[2:4], ["--amps", "/opt/amps/bin/srcsep-amps"])
+            for case_id in selected:
+                self.assertIn(case_id, command)
+            self.assertNotIn("cross_model_validation_models.cpp", " ".join(command))
             run.assert_called_once()
 
     def test_validation_case_rejects_a_missing_linked_executable(self):
