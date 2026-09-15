@@ -53,6 +53,10 @@ class PythonTestRunnerTests(unittest.TestCase):
                 "--test PARK07",
                 "--amps ../amps --validation-case CV01",
                 "--validation-case XM01 --validation-case XM02",
+                "validation/cases/XM02/publication_input.json",
+                "validation/cases/XM03/publication_input.json",
+                "Do not add --case-input",
+                "No external production CSV is used by XM02",
                 "--group parker --group fte-dmumu",
                 "--routine",
                 "--all",
@@ -251,8 +255,53 @@ class PythonTestRunnerTests(unittest.TestCase):
             self.assertEqual(command[2:4], ["--amps", "/opt/amps/bin/srcsep-amps"])
             for case_id in selected:
                 self.assertIn(case_id, command)
+            # XM02/XM03 resolve their only input from the registry.  The
+            # top-level runner must not manufacture an --input override while
+            # assembling a multi-case command.
+            self.assertNotIn("--input", command)
             self.assertNotIn("cross_model_validation_models.cpp", " ".join(command))
             run.assert_called_once()
+
+    def test_xm02_xm03_reject_command_line_input_overrides(self):
+        """Keep each publication comparison tied to its registered input.
+
+        This check occurs before executable validation, so a deliberately
+        missing binary can be used to prove that input-policy diagnostics are
+        deterministic and do not depend on the local AMPS installation.
+        """
+        with tempfile.TemporaryDirectory(prefix="srcsep-xm-fixed-input-") as tmp:
+            temporary = Path(tmp)
+            alternate = temporary / "alternate.json"
+            alternate.write_text("{}\n", encoding="utf-8")
+            for case_id in ("XM02", "XM03"):
+                completed = subprocess.run(
+                    [sys.executable, str(RUNNER), "--amps",
+                     str(temporary / "missing-amps"), "--validation-case", case_id,
+                     "--case-input", str(alternate), "--output-dir",
+                     str(temporary / case_id)],
+                    cwd=str(ROOT), text=True, stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT, check=False)
+                self.assertEqual(completed.returncode, 2, completed.stdout)
+                self.assertIn(
+                    f"{case_id} uses its single registered publication-derived input",
+                    completed.stdout)
+
+    def test_direct_case_runner_enforces_fixed_xm_input(self):
+        """Apply the same no-override rule below the convenience front end."""
+        with tempfile.TemporaryDirectory(prefix="srcsep-xm-direct-input-") as tmp:
+            temporary = Path(tmp)
+            alternate = temporary / "alternate.json"
+            alternate.write_text("{}\n", encoding="utf-8")
+            completed = subprocess.run(
+                [sys.executable, str(CASE_RUNNER), "--amps",
+                 str(temporary / "missing-amps"), "--case", "XM02", "--input",
+                 str(alternate), "--output-dir", str(temporary / "output")],
+                cwd=str(ROOT), text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, check=False)
+            self.assertEqual(completed.returncode, 2, completed.stdout)
+            self.assertIn(
+                "XM02 uses its single registered publication-derived input",
+                completed.stdout)
 
     def test_validation_case_rejects_a_missing_linked_executable(self):
         """Never replace unavailable application evidence with a local build."""

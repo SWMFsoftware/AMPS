@@ -1,0 +1,116 @@
+{
+  "schema": "srcsep-publication-input-reconstruction-v1",
+  "case_id": "XM02",
+  "title": "Publication-derived input reconstruction for the 2013 April 11 M-FLAMPA mean-free-path sensitivity run",
+  "reproduction_status": "partial",
+  "scientific_use": "The reported values define the closest defensible reconstruction of Zhao et al. Figure 7. They are comparison metadata, not a complete SWMF runtime configuration.",
+  "publication": {
+    "id": "Zhao2024-SOFIE-MFLAMPA",
+    "title": "Solar Wind with Field Lines and Energetic Particles (SOFIE) Model: Application to Historical Solar Energetic Particle Events",
+    "source_url": "https://arxiv.org/abs/2309.16903",
+    "source_pdf_sha256": "945361cc4c27e6481eac042eaf9a0e3f6b097ed277e1b7fab793ab9305591bbe"
+  },
+  "reported_parameters": {
+    "event": {
+      "date": "2013-04-11",
+      "flare_class": "M6.5",
+      "flare_onset_utc": "2013-04-11T06:55:00Z",
+      "active_region_stonyhurst": "N09E12",
+      "noaa_active_region": 11719,
+      "cme_first_lasco_c2_utc": "2013-04-11T07:24:00Z",
+      "cme_plane_of_sky_speed_km_per_s": 743,
+      "source_locator": "Table 1 and Section 3"
+    },
+    "background_solar_wind": {
+      "model": "stream-aligned AWSoM-R in SWMF",
+      "magnetogram_provider": "NSO Global Oscillation Network Group (GONG)",
+      "magnetogram_selection": "hourly magnetogram measured immediately before the flare eruption",
+      "inner_boundary_solar_radii": 1.105,
+      "outer_boundary_au": 2.5,
+      "poynting_flux_treatment": "varied to obtain the best comparison with near-Earth observations",
+      "source_locator": "Sections 2.1, 4, and 4.1"
+    },
+    "cme": {
+      "generator": "EEGGL",
+      "flux_rope": "force-imbalanced Gibson-Low",
+      "placement": "on top of NOAA AR 11719",
+      "parameter_derivation": "derived from the GONG magnetogram and observed CME speed",
+      "source_locator": "Sections 2.2 and 4.2"
+    },
+    "particle_transport": {
+      "model": "M-FLAMPA",
+      "equation": "Parker diffusion equation on time-evolving Lagrangian magnetic field lines",
+      "field_line_count": 648,
+      "seed_sphere_solar_radii": 2.5,
+      "longitude_coverage_degrees": 360.0,
+      "latitude_coverage_degrees": [-45.0, 45.0],
+      "awso_mflampa_coupling_cadence_seconds": 120.0,
+      "shock_detection": "sudden jump of solar-wind velocity along a field line",
+      "near_shock_diffusion": "derived from total Alfven-wave intensity in AWSoM-R using a Kolmogorov spectral index of -5/3",
+      "perpendicular_diffusion": false,
+      "source_locator": "Sections 2.3 and 4.3"
+    },
+    "particle_injection": {
+      "species": "proton",
+      "injection_energy_kev": 10.0,
+      "suprathermal_momentum_power_law_index": -5.0,
+      "event_injection_coefficient": 1.25,
+      "normalization": "Equation (1), using local AWSoM-R proton number density and temperature",
+      "source_locator": "Equation (1), Section 4.3, and Table 2"
+    },
+    "sensitivity_ensemble": {
+      "far_upstream_parallel_mean_free_path_au": [0.05, 0.3, 1.0],
+      "other_inputs_held_fixed": true,
+      "source_locator": "Section 4.6 and Figure 7"
+    },
+    "requested_product": {
+      "observable": "integral proton intensity above 10 MeV",
+      "units": "pfu",
+      "extraction_location": "a sample magnetic field line",
+      "publication_figure": "Figure 7",
+      "source_locator": "Section 4.6 and Figure 7 caption"
+    }
+  },
+  "figure_derived_values": {
+    "reference_csv": "reference/mflampa_2013_apr11_mfp_sensitivity.csv",
+    "time_origin_utc": "2013-04-11T06:00:00Z",
+    "sample_spacing_hours": 2.0,
+    "estimated_log10_digitization_uncertainty_dex": 0.12,
+    "derivation_record": "reference/provenance.json"
+  },
+  "assumptions_requiring_review": [
+    "The publication does not identify the sample field line used in Figure 7; an Earth-connected line must not be assumed equivalent without author data or a documented connectivity match.",
+    "The Figure 7 horizontal-axis origin is calibrated graphically and is not supplied as a numerical author table.",
+    "The three mean-free-path calculations are treated as differing only in their far-upstream constant mean free path, as stated in the sensitivity discussion.",
+    "The published integral channel is treated as an ideal greater-than-10-MeV model integral, not as a folded GOES instrument response."
+  ],
+  "controlled_reconstruction": {
+    "purpose": "Run the linked srcSEP focused-transport kernel using only reported mean-free-path sensitivity plus explicit fixed assumptions for unpublished event state.",
+    "injection_radius_solar_radii": 2.5,
+    "observer_radius_au": 1.0,
+    "transport_particle_energy_mev": 10.1,
+    "source_profile": "sum of independent exponential release clocks",
+    "source_rise_time_hours": 0.5,
+    "source_decay_time_hours": 3.0,
+    "plasma_advection_m_per_s": 0.0,
+    "magnetic_focusing_per_m": 0.0,
+    "initial_pitch_density": "P(mu)=2*mu for 0<=mu<=1",
+    "inner_boundary": "reflecting",
+    "observer": "first passage at 1 AU",
+    "pitch_diffusion": "D_mumu=D0*(1-mu^2), D0=v/(2*lambda_parallel)",
+    "comparison_normalization": "unit peak independently for each model and reference series",
+    "scientific_label": "publication-informed controlled benchmark; not exact 2013-04-11 event reproduction"
+  },
+  "missing_required_inputs": [
+    "Exact GONG magnetogram product name, timestamp, map bytes, and preprocessing operations used by the run",
+    "Event-specific AWSoM-R Poynting-flux and Alfven-wave correlation-length values",
+    "Complete EEGGL Gibson-Low parameter set and any manual orientation or placement adjustments",
+    "SWMF, AWSoM-R, EEGGL, and M-FLAMPA source revisions and build options",
+    "Complete SWMF PARAM files, boundary conditions, solver controls, and restart state",
+    "SC/IH mesh hierarchy, adaptive-refinement state, and numerical time-step controls",
+    "M-FLAMPA momentum grid, spatial discretization, time integrator settings, and boundary conditions",
+    "Coordinates or persistent identifier of the sample magnetic field line used for Figure 7",
+    "Exact author-produced numerical time series underlying Figure 7"
+  ],
+  "completion_rule": "This is the only XM02 input reconstruction. Retain reproduction_status=partial until the missing run-defining artifacts are obtained from the authors; preserve all controlled srcSEP substitutions in input.json and run provenance rather than creating an alternate runner input."
+}

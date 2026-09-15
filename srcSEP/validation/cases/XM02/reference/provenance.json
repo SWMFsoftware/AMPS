@@ -24,7 +24,7 @@
   "units": {"elapsed_hours": "h since 2013-04-11T06:00Z", "intensity": "pfu for >10 MeV protons"},
   "limitations": [
     "This publication curve is an event propagation sensitivity reference, not an exact quiet-Sun CCMC run export.",
-    "A release PASS requires a separately reviewed model-configuration equivalence record.",
+    "XM02 scores this event curve only as a publication-informed controlled transport reconstruction, not as an exact event reproduction.",
     "Digitization uncertainty is not observational or model uncertainty."
   ]
 }

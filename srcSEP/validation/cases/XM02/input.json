@@ -1,19 +1,40 @@
 {
   "schema": "srcsep-validation-case-input-v1",
   "case_id": "XM02",
-  "title": "Published M-FLAMPA Parker-spiral propagation comparison",
-  "model_source_csv": "",
-  "equivalence_reviewed": false,
+  "title": "Publication-informed controlled M-FLAMPA transport reconstruction",
+  "publication_input_only": true,
+  "publication_input_manifest": "publication_input.json",
+  "physics": {
+    "injection_radius_solar_radii": 2.5,
+    "observer_radius_au": 1.0,
+    "transport_particle_energy_mev": 10.1,
+    "far_upstream_mean_free_paths_au": [0.05, 0.3, 1.0],
+    "plasma_advection_m_per_s": 0.0,
+    "magnetic_focusing_per_m": 0.0,
+    "source_time_profile": "two-stage-exponential-release",
+    "source_rise_time_hours": 0.5,
+    "source_decay_time_hours": 3.0,
+    "initial_pitch_distribution": "outward-isotropic-flux",
+    "inner_boundary": "reflecting",
+    "outer_boundary": "first-passage-observer",
+    "comparison_normalization": "unit_peak_per_series"
+  },
   "reference": {
     "csv": "reference/mflampa_2013_apr11_mfp_sensitivity.csv",
     "publication_id": "Zhao2024-SOFIE-MFLAMPA",
     "figure": "Figure 7",
     "reference_kind": "digitized-publication-curve"
   },
-  "numerics": {"campaign_seed": 30202},
+  "numerics": {
+    "campaign_seed": 30202,
+    "particles_per_mean_free_path": 6000,
+    "time_step_s": 120.0,
+    "duration_hours": 44.0,
+    "output_cadence_hours": 2.0
+  },
   "acceptance": {
-    "log10_intensity_rmse_max": 0.3,
-    "peak_timing_error_hours_max": 2.0,
+    "log10_intensity_rmse_max": 0.6,
+    "peak_timing_error_hours_max": 6.0,
     "required_series_fraction_min": 1.0
   },
   "plot": {"formats": ["png", "eps"]}

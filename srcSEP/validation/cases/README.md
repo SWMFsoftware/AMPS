@@ -93,8 +93,9 @@ transport/turbulence cores and is compiled into the requested AMPS application;
 it is not a substitute executable. CV09 explicitly remains a controlled
 shock-cycle test rather than a full resolved heliospheric shock campaign.
 
-XM02/XM03 add a fail-closed external-model contract. A missing production CSV
-or unreviewed configuration equivalence yields SKIP while retaining the
-digitized reference and PNG/EPS plots. The linked executable validates the
-long-form CSV before Python computes comparison metrics. See each XM README
-for exact columns, series names, units, provenance, and provisional gates.
+XM02/XM03 each use one registry-owned paper reconstruction and reject input
+overrides. XM02 runs a controlled production-core first-passage ensemble for
+the three published MFPs, so it requires no external model CSV. XM03 retains a
+fail-closed full-event output contract: a missing case-local
+`model/srcsep_output.csv` yields SKIP. See each XM README for the precise
+physics scope, assumptions, columns, provenance, and provisional gates.

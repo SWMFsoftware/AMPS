@@ -2,8 +2,9 @@
   "schema": "srcsep-validation-case-input-v1",
   "case_id": "XM03",
   "title": "Published M-FLAMPA 2013 April 11 event reproduction",
-  "model_source_csv": "",
-  "equivalence_reviewed": false,
+  "model_source_csv": "model/srcsep_output.csv",
+  "publication_input_only": true,
+  "publication_input_manifest": "publication_input.json",
   "reference": {
     "csv": "reference/mflampa_2013_apr11_event.csv",
     "publication_id": "Liu2025-2013-April-11",

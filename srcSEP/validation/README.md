@@ -28,8 +28,8 @@ validation, and passing coupled code is not called observational validation.
 | `IV05` | Integrated manufactured verification | Moving/stationary shock frame equivalence and CV09 spectrum | Implemented; required nightly; linked executable |
 | `IV06` | Integrated manufactured verification | Frozen/one-way/two-way self-generated turbulence feedback | Implemented; required nightly; linked executable |
 | `XM01` | Cross-model verification | Linked production characteristics versus an independent conservative focused-transport PDE solver | Implemented; extended; linked executable |
-| `XM02` | Published M-FLAMPA comparison | Digitized >10 MeV MFP-sensitivity profiles from Zhao et al. Figure 7 | Implemented workflow; SKIP until production export and equivalence review |
-| `XM03` | Published M-FLAMPA event comparison | Digitized 2013-04-11 intensity/MFP products and reported fluence slope from Liu et al. Figures 14–15 | Implemented workflow; SKIP until production export and equivalence review |
+| `XM02` | Publication-informed controlled M-FLAMPA comparison | Linked first-passage reconstruction for the three reported MFPs plus digitized >10 MeV profiles from Zhao et al. Figure 7 | Implemented; runs from the single registered input; no external CSV |
+| `XM03` | Published M-FLAMPA event comparison | Single registered partial input reconstruction plus digitized 2013-04-11 intensity/MFP products and reported fluence slope from Liu et al. Figures 14–15 | Implemented workflow; SKIP only when the fixed-path production result is absent |
 | `VAL01` | Numerical verification | Independent analytical diffusion moments and adiabatic-cooling characteristic | Implemented |
 | `VAL02` | Cross-mover verification | Matched `fte-dmumu`/`fte-mfp` mean-free-path closure | Implemented |
 | `VAL03` | Cross-model verification | Independently coded conservative finite-volume pitch-angle solver | Implemented |
@@ -66,9 +66,14 @@ figures, logs, and executable provenance. CV03 additionally retains its
 finite-volume reference and reversed-drift control; CV02 uses ten independent
 seeds and three particle counts; CV04-CV06 and CV10-CV11 report refinement;
 CV07-CV09 retain statistical/distribution evidence; CV12 closes the energy ledger.
-XM01 is an extended linked cross-solver gate. XM02/XM03 deliberately SKIP until
-a production export and a reviewed assumption-equivalence flag are supplied;
-their default reference-only plots are preparation evidence, not model PASS.
+XM01 is an extended linked cross-solver gate. XM02/XM03 automatically select
+their registered publication inputs. XM02 generates its controlled numerical
+solution inside the linked application and reports PASS or FAIL; XM03 still
+SKIPs until its fixed case-local full-event production result is supplied.
+Their default inputs point to source-reviewed `publication_input.json`
+manifests. These make known parameters and missing run artifacts explicit and
+are copied into validation evidence, but they are not production srcSEP input
+decks and cannot replace `model_source_csv`.
 
 It runs `VAL01`–`VAL04-SWCME` under AddressSanitizer and
 UndefinedBehaviorSanitizer, assembles a temporary campaign, and proves that

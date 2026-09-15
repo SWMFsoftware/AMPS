@@ -206,8 +206,9 @@ python3 test/run_tests.py --from-json /evidence/results.json \
 `validation/case_registry.json`; `--validation-all` runs the complete currently
 implemented portfolio. Both use `--amps PATH` (or `SEP_EXECUTABLE`) and refuse
 to run if the linked binary is missing, rejects `--list-tests`, or does not
-advertise the selected case. `--case-input PATH` overrides the reviewed default
-for one case. To use sanitizers, build the linked application with the desired
+advertise the selected case. `--case-input PATH` can override one CV/IV case,
+but is rejected for XM02/XM03 because those tests have one registered
+publication-derived input each. To use sanitizers, build the linked application with the desired
 sanitizer flags and pass that executable; the runner never compiles a substitute
 driver. These cases retain richer native/model/reference artifacts while using
 the same aggregate report and plotting contract as other runner modes.
@@ -644,8 +645,8 @@ standalone and SWMF-coupled run. See
 | `IV05` | `integrated-manufactured` | routine | linked srcSEP/AMPS registry | Moving and stationary shock frames give the same crossings, momentum, and DSA spectrum. | Two shock speeds, three timesteps, 5k histories, exact-node flag. |
 | `IV06` | `integrated-manufactured` | routine | linked srcSEP/AMPS registry | Resonant wave growth strengthens scattering and self-limits streaming while total energy closes. | Frozen/one-way/two-way timelines, resonant bin, Dmumu, streaming and ledger evidence. |
 | `XM01` | `cross-model` | extended | linked srcSEP/AMPS registry | Production focused-transport samples agree with an independent conservative PDE solver across isolated and combined operators. | Two sampling refinements; full `(s,mu)` probability, intensity, anisotropy, momentum, JSON/JUnit, and PNG/EPS. |
-| `XM02` | `cross-model` | extended | linked srcSEP/AMPS registry | A normalized production export is compared with published M-FLAMPA >10 MeV mean-free-path sensitivity curves. | Digitized reference/provenance always; model overlay and metrics when supplied; SKIP until equivalence review. |
-| `XM03` | `cross-model` | extended | linked srcSEP/AMPS registry | 2013-04-11 intensity, radial mean-free-path, and fluence slope are compared with published M-FLAMPA products. | Digitized/reference-fit provenance, production CSV adapter, metrics and PNG/EPS; SKIP until equivalence review. |
+| `XM02` | `cross-model` | extended | linked srcSEP/AMPS registry | A controlled production-core first-passage ensemble uses the reported 0.05/0.3/1.0 au MFPs and compares unit-peak profiles with Zhao et al. Figure 7. | Fixed publication input, native model CSV, digitized reference/provenance, metrics, and PNG/EPS; no external CSV. |
+| `XM03` | `cross-model` | extended | linked srcSEP/AMPS registry | The single registered Liu et al. reconstruction compares 2013-04-11 intensity, radial mean-free-path, and fluence slope with published M-FLAMPA products. | Fixed publication input, digitized/reference-fit provenance, production-result adapter, metrics and PNG/EPS. |
 | `BG01` | `background` | routine | none | Standalone analytic and SWCME snapshots preserve provider, epoch, ownership, validity, generation, and distinct configuration identity. | Stack-owned immutable snapshots; no external provider or artifact. |
 | `BG02` | `background` | routine | none | A mock SWMF import is read-only and becomes locally evolved only through an explicit handoff copy. | Resets the snapshot store before/after; no external SWMF process. |
 | `CROSS01` | `cross-mover` | routine | none | `fte-dmumu` and `fte-mfp` agree in the matched ballistic limit. | Keyed seed 1301; stack-owned state; no artifact. |

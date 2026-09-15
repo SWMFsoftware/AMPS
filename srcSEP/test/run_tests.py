@@ -84,6 +84,13 @@ ANALYTICAL_IDS = {
     *(f"TURB{i:02d}" for i in (2, 3, 5, 6, 7, 9, 11, 12, 13, 16, 21, 22, 23)),
 }
 
+# XM02 and XM03 represent one published configuration each.  Their test inputs
+# are source-reviewed artifacts selected through validation/case_registry.json,
+# not user-selectable campaign variants.  Keeping this policy in one explicit
+# set lets both argument validation and help-oriented unit tests detect an
+# accidental return of the former "reviewed input file" workflow.
+FIXED_PUBLICATION_INPUT_CASES = {"XM02", "XM03"}
+
 X_COLUMNS = ("x", "time", "time_s", "s", "s_m", "mu", "radius", "radius_m",
              "energy", "energy_mev", "coordinate")
 NUMERICAL_COLUMNS = ("numerical", "model", "simulated", "simulation")
@@ -157,15 +164,69 @@ Examples:
      These combine geometry/operators, moving grids and shocks, and nonlinear
      wave feedback. They are required nightly cases in the validation plan.
 
-     Run the cross-model portfolio (XM02/XM03 SKIP until configured):
+     Run the cross-model portfolio using its registered inputs:
 
        python3 test/run_tests.py --amps ../amps \
          --validation-case XM01 --validation-case XM02 \
          --validation-case XM03 --output-dir test_output/XM01-XM03
 
      XM01 compares the linked production mover with an independent PDE solver.
-     XM02/XM03 prepare digitized M-FLAMPA references and require a reviewed
-     production export before they can report PASS or FAIL.
+     XM02 and XM03 automatically use their single publication-derived input
+     sets. Do not add --case-input to either command; the runner rejects an
+     override because it would change the published case being validated.
+
+     XM02 input and reference locations:
+
+       validation/cases/XM02/input.json
+       validation/cases/XM02/publication_input.json
+       validation/cases/XM02/reference/mflampa_2013_apr11_mfp_sensitivity.csv
+       validation/cases/XM02/reference/provenance.json
+
+     input.json is the registered runner configuration. It fixes the seed,
+     acceptance thresholds, plot formats, reference path, and the path to the
+     physical reconstruction. publication_input.json contains the parameters
+     recovered from Zhao et al.: the 2013-04-11 event, GONG/AWSoM-R/EEGGL
+     setup that is stated in the article, 648 field lines seeded at 2.5 solar
+     radii, 120 s coupling, 10 keV p^-5 injection with coefficient 1.25, and
+     far-upstream mean free paths 0.05, 0.3, and 1.0 au. The reference CSV was
+     digitized from Figure 7; provenance.json records the exact PDF SHA-256,
+     plot calibration, sample spacing, curve colors, and uncertainty.
+
+     Because the article does not publish its evolving shock/field-line state,
+     input.json also fixes the controlled reconstruction: 10.1 MeV protons
+     travel from 2.5 solar radii to 1 au; a two-stage 0.5 h rise/3 h decay
+     release represents the unavailable shock history; advection and focusing
+     are zero; the inner boundary reflects; and 1 au records first passage.
+     The linked application generates the model CSV with the production
+     focused-transport core. No external production CSV is used by XM02.
+     Profiles are compared after independent unit-peak normalization because
+     the publication does not provide enough data to derive absolute pfu.
+
+     XM03 input and reference locations:
+
+       validation/cases/XM03/input.json
+       validation/cases/XM03/publication_input.json
+       validation/cases/XM03/reference/mflampa_2013_apr11_event.csv
+       validation/cases/XM03/reference/provenance.json
+       validation/cases/XM03/model/srcsep_output.csv
+
+     The XM03 reconstruction was derived from Liu et al. (2025), Table 1,
+     Table 2, Equations (1) and (12)-(22), and Sections 2.1-2.3 and 4.4. It
+     records the 2013-04-11 06:04 UTC GONG map and weak-field transform, PFSS
+     order/source surface, AWSoM-R parameters and grids, Gibson-Low parameters,
+     648-line M-FLAMPA geometry, transport/injection laws, observer geometry,
+     and requested energy/time products. The reference combines digitized
+     Figures 14(b), 15(a), and 15(b) with the Figure 15(c) reported fluence
+     index. Its provenance file records calibration and extraction uncertainty.
+     The production XM03 result uses the fixed model/srcsep_output.csv path.
+
+     Both publication_input.json files are marked reproduction_status=partial.
+     The papers do not publish complete SWMF PARAM/restart/source/mesh data or
+     author numerical tables. XM02 consequently reports a controlled transport
+     comparison, not an exact event reproduction, but it runs to PASS or FAIL
+     with no other file. XM03 still needs the complete production event result
+     at its documented fixed model-output path. Neither case ever compares a
+     reference with itself.
 
      Repeat --test to choose any collection of individual cases:
 
@@ -723,7 +784,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--validation-all", action="store_true",
                         help="run every registered end-to-end validation case")
     parser.add_argument("--case-input", type=Path,
-                        help="override the input for one --validation-case")
+                        help=("override one CV/IV validation input; XM02/XM03 "
+                              "always use their registered publication-derived input"))
     parser.add_argument("--from-json", type=Path,
                         help="plot an existing component-test JSON without running tests")
     parser.add_argument("--output-dir", type=Path,
@@ -774,6 +836,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         raise RunnerError("--validation-all cannot be combined with --validation-case")
     if args.case_input and (args.validation_all or len(args.validation_cases) != 1):
         raise RunnerError("--case-input requires exactly one --validation-case")
+    if (args.case_input and args.validation_cases and
+            args.validation_cases[0].upper() in FIXED_PUBLICATION_INPUT_CASES):
+        # A second XM02/XM03 input was the source of ambiguous validation runs:
+        # the command line no longer revealed whether the paper reconstruction
+        # or a locally edited JSON file defined the physics.  Fail explicitly
+        # instead of silently ignoring the override so archived commands remain
+        # sufficient to identify the configuration that was tested.
+        selected = args.validation_cases[0].upper()
+        raise RunnerError(
+            f"{selected} uses its single registered publication-derived input; "
+            "remove --case-input")
     if validation_selection and args.mpi_np is not None:
         raise RunnerError(
             "end-to-end validation cases currently require serial linked execution; "

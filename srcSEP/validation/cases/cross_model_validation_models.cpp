@@ -33,6 +33,9 @@ using SEP::Transport::Status;
 const double ProtonMassKg = 1.67262192369e-27;
 const double LightSpeedMPerS = 299792458.0;
 const double TwoPi = 6.283185307179586476925286766559;
+const double AstronomicalUnitM = 149597870700.0;
+const double SolarRadiusM = 695700000.0;
+const double MegaElectronVoltJ = 1.602176634e-13;
 
 std::map<std::string, std::string> Parse(
     const std::vector<std::string>& arguments) {
@@ -248,6 +251,155 @@ void RunXM01(const std::map<std::string, std::string>& values,
   Commit(&output, temporary, outputPath);
 }
 
+void RunXM02(const std::map<std::string, std::string>& values,
+             const std::string& outputPath) {
+  // XM02 is a controlled reconstruction of the transport sensitivity in Zhao
+  // et al. Figure 7.  The paper does not publish the evolving AWSoM-R field
+  // line or shock source used for that panel.  We therefore test the reported
+  // far-upstream MFPs in a fully specified first-passage problem and clearly
+  // treat already-accelerated 10.1 MeV protons with a fixed causal source. This
+  // exercises production streaming and D_mumu scattering without inventing a
+  // time-dependent CME/shock history that the publication does not provide.
+  const double injectionRadius =
+      Number(values, "injection-radius-solar-radii") * SolarRadiusM;
+  const double observerRadius = Number(values, "observer-radius-au") *
+      AstronomicalUnitM;
+  const double energyMeV = Number(values, "particle-energy-mev");
+  const double advectionMPerS = Number(values, "plasma-advection-m-per-s");
+  const double dLnBdsPerM = Number(values, "dlnb-ds-per-m");
+  const double sourceRiseTimeS = Number(values, "source-rise-time-s");
+  const double sourceDecayTimeS = Number(values, "source-decay-time-s");
+  const double timeStepS = Number(values, "time-step-s");
+  const double durationS = Number(values, "duration-s");
+  const double cadenceS = Number(values, "output-cadence-s");
+  const std::uint64_t particles = Unsigned(values, "particles");
+  const std::uint64_t campaignSeed = Unsigned(values, "campaign-seed");
+  const double meanFreePathsAu[] = {
+      Number(values, "mfp-0-au"), Number(values, "mfp-1-au"),
+      Number(values, "mfp-2-au")};
+  const double expectedMeanFreePathsAu[] = {0.05, 0.3, 1.0};
+  const char* seriesNames[] = {
+      "mfp_0.05au_integral_gt10mev",
+      "mfp_0.3au_integral_gt10mev",
+      "mfp_1.0au_integral_gt10mev"};
+
+  const double lengthM = observerRadius - injectionRadius;
+  if (!(lengthM > 0.0 && energyMeV > 10.0 && timeStepS > 0.0 &&
+        durationS > 0.0 && cadenceS > 0.0 && sourceRiseTimeS > 0.0 &&
+        sourceDecayTimeS > sourceRiseTimeS && particles >= 1000) ||
+      std::fabs(durationS / cadenceS -
+                std::floor(durationS / cadenceS + 0.5)) > 1.0e-12)
+    throw std::runtime_error("XM02 has an invalid controlled domain");
+  for (unsigned i = 0; i < 3; ++i) {
+    if (std::fabs(meanFreePathsAu[i] - expectedMeanFreePathsAu[i]) > 1.0e-12)
+      throw std::runtime_error(
+          "XM02 registered MFP ensemble must be 0.05, 0.3, and 1.0 au");
+  }
+
+  // Convert kinetic energy to the exact relativistic momentum and speed used
+  // by the production focused-transport kernel.  The slightly-above-threshold
+  // 10.1 MeV energy makes the controlled population unambiguously part of the
+  // publication's >10 MeV integral channel.
+  const double restEnergyJ = ProtonMassKg * LightSpeedMPerS * LightSpeedMPerS;
+  const double gamma = 1.0 + energyMeV * MegaElectronVoltJ / restEnergyJ;
+  const double speedMPerS = LightSpeedMPerS *
+      std::sqrt(std::max(0.0, 1.0 - 1.0 / (gamma * gamma)));
+  const double momentumKgMPerS = gamma * ProtonMassKg * speedMPerS;
+  const unsigned binCount = static_cast<unsigned>(
+      std::floor(durationS / cadenceS + 0.5));
+
+  const std::string temporary = outputPath + ".tmp";
+  std::ofstream output(temporary.c_str());
+  output << std::setprecision(17) << "elapsed_hours,series,intensity\n";
+  for (unsigned mfpIndex = 0; mfpIndex < 3; ++mfpIndex) {
+    std::vector<std::uint64_t> arrivals(binCount, 0);
+    const double meanFreePathM = meanFreePathsAu[mfpIndex] *
+        AstronomicalUnitM;
+
+    // For D_mumu=D0(1-mu^2), the standard diffusion integral gives
+    // lambda_parallel=v/(2 D0).  This maps each reported MFP into the exact
+    // coefficient provider used by the production SDE update.
+    IsotropicPitchDiffusion diffusion(speedMPerS / (2.0 * meanFreePathM));
+    FocusedTransportBackground background(
+        dLnBdsPerM, advectionMPerS, 0.0, 0.0);
+    for (std::uint64_t particle = 0; particle < particles; ++particle) {
+      KeyedRandomStream initial(campaignSeed, particle + 1,
+                                3000 + mfpIndex, 0);
+      // Figure 7 contains continuing acceleration at an evolving CME shock,
+      // but its numerical source history is unavailable.  A fixed two-stage
+      // release (sum of independent exponential rise and decay clocks) gives
+      // a causal fast rise and a longer tail without reading or fitting the
+      // digitized reference inside the native model.  The 0.5 h and 3 h scales
+      // are registered assumptions, identical for every MFP sensitivity run.
+      const double releaseTimeS =
+          -sourceRiseTimeS * std::log(initial.UniformOpen01()) -
+          sourceDecayTimeS * std::log(initial.UniformOpen01());
+      if (releaseTimeS >= durationS) continue;
+      // An isotropic distribution crossing an outward-facing surface has
+      // probability density 2*mu on 0<=mu<=1, hence mu=sqrt(U).  Sampling this
+      // flux distribution avoids an unphysical inward half-population at the
+      // injection boundary while introducing no fit to the reference curve.
+      FocusedTransportState state(
+          0.0, momentumKgMPerS, std::sqrt(initial.UniformOpen01()));
+      double elapsedS = 0.0;
+      std::uint64_t step = 0;
+      while (elapsedS < durationS - releaseTimeS) {
+        const double dtS = std::min(
+            timeStepS, durationS - releaseTimeS - elapsedS);
+        const double previousS = state.arcLengthM;
+        KeyedRandomStream transport(campaignSeed, particle + 1,
+                                    4000 + mfpIndex, step);
+        const FocusedTransportIncrement increment =
+            SEP::Transport::AdvanceFocusedTransportDmumu(
+                state, background, ProtonMassKg, LightSpeedMPerS, dtS,
+                diffusion, transport, NULL);
+        if (!increment.status.ok())
+          throw std::runtime_error(increment.status.message);
+        state = increment.state;
+
+        // The 2.5-Rsun source is reflecting in this controlled experiment.
+        // Mirror both position and pitch direction so no probability is lost
+        // at a boundary whose physical behavior is not specified by Figure 7.
+        if (state.arcLengthM < 0.0) {
+          state.arcLengthM = -state.arcLengthM;
+          state.mu = std::fabs(state.mu);
+        }
+        if (state.arcLengthM >= lengthM) {
+          // Interpolate within the final mover step to avoid quantizing first
+          // passage at the numerical timestep.  Output bins are much wider,
+          // but retaining continuous crossing time protects future refinement.
+          double fraction = 1.0;
+          if (state.arcLengthM > previousS)
+            fraction = std::max(0.0, std::min(
+                1.0, (lengthM - previousS) /
+                         (state.arcLengthM - previousS)));
+          const double arrivalS = releaseTimeS + elapsedS + fraction * dtS;
+          const unsigned bin = std::min(
+              binCount - 1, static_cast<unsigned>(arrivalS / cadenceS));
+          ++arrivals[bin];
+          break;
+        }
+        elapsedS += dtS;
+        ++step;
+      }
+    }
+
+    for (unsigned bin = 0; bin < binCount; ++bin) {
+      const double centerHours = (bin + 0.5) * cadenceS / 3600.0;
+      // A Jeffreys half-count prevents an empty Monte-Carlo tail from becoming
+      // log(0) during the shape comparison.  Absolute normalization is not
+      // scored because the paper omits the sample-line plasma density, shock
+      // history, and response needed to convert injection coefficient to pfu.
+      const double probabilityDensityPerHour =
+          (arrivals[bin] + 0.5) /
+          (static_cast<double>(particles) * cadenceS / 3600.0);
+      output << centerHours << ',' << seriesNames[mfpIndex] << ','
+             << probabilityDensityPerHour << '\n';
+    }
+  }
+  Commit(&output, temporary, outputPath);
+}
+
 void NormalizeExternalCSV(const std::map<std::string, std::string>& values,
                           const std::string& outputPath,
                           const std::string& caseId) {
@@ -310,8 +462,8 @@ bool RunCrossModelValidationModel(const std::string& caseId,
   try {
     const std::map<std::string, std::string> values = Parse(arguments);
     if (caseId == "XM01") RunXM01(values, outputPath);
-    else if (caseId == "XM02" || caseId == "XM03")
-      NormalizeExternalCSV(values, outputPath, caseId);
+    else if (caseId == "XM02") RunXM02(values, outputPath);
+    else if (caseId == "XM03") NormalizeExternalCSV(values, outputPath, caseId);
     else throw std::runtime_error("unsupported XM validation case");
     if (error) error->clear();
     return true;

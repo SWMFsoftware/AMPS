@@ -5,6 +5,21 @@ downloaded article PDFs. The delivery includes a separate publication packet
 so repository users can inspect the exact source bytes without turning large
 third-party documents into normal source-controlled inputs.
 
+## Publication-derived model inputs
+
+XM02 and XM03 each provide `publication_input.json`. These structured manifests
+contain the model parameters that can be recovered from the papers, source
+locators, figure-derived assumptions, and a concrete list of missing artifacts.
+They deliberately use `reproduction_status: partial`: neither paper publishes
+a complete executable SWMF run directory. The validation runner checks the
+manifest schema and case identity, copies it into each evidence directory, and
+hashes it in completed-comparison provenance.
+
+`partial` remains an important provenance label even though XM02/XM03 now use
+only these registered inputs. It states that the literature does not provide a
+complete SWMF reproduction package; it does not create another selectable
+configuration or require a command-line input override.
+
 ## Scored curve sources
 
 1. Zhao et al., *Solar Wind with Field Lines and Energetic Particles (SOFIE)

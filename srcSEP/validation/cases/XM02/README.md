@@ -1,37 +1,78 @@
-# XM02 — published M-FLAMPA Parker-spiral comparison
+# XM02 — publication-informed M-FLAMPA transport reconstruction
 
-XM02 provides a controlled interface for comparing a production srcSEP run
-with M-FLAMPA. The bundled reference is a digitization of Zhao et al. Figure 7:
-M-FLAMPA >10 MeV proton intensity for far-upstream mean free paths 0.05, 0.3,
-and 1 au during the 2013 April 11 event. It is useful for propagation/MFP
-sensitivity, but it is not the exact quiet Parker-spiral CCMC export originally
-requested by the validation plan. The case therefore cannot return PASS until
-the reference and configuration-equivalence review are explicitly approved.
+XM02 runs a controlled srcSEP transport calculation inside the selected linked
+`AMPS` executable and compares it with Zhao et al. Figure 7. No production CSV
+and no `--case-input` argument are required. The registry always selects the
+single source-owned `input.json`; attempts to override it are rejected.
 
-Prepare a production export with the exact header:
+## What came from the publication
 
-```text
-elapsed_hours,series,intensity
-```
+`publication_input.json` records the values stated by Zhao et al., including
+the 2013 April 11 event, 743 km/s CME, GONG/AWSoM-R/EEGGL model chain, 648
+field lines seeded at 2.5 solar radii, 120 s coupling cadence, 10 keV injection,
+p^-5 suprathermal tail, injection coefficient 1.25, absence of perpendicular
+diffusion, and the 0.05, 0.3, and 1.0 au far-upstream mean free paths. Each
+group identifies its source section, table, equation, or figure.
 
-`series` must use `mfp_0.05au_integral_gt10mev`,
-`mfp_0.3au_integral_gt10mev`, and `mfp_1.0au_integral_gt10mev`; time is hours
-since 2013-04-11 06:00 UTC and intensity is pfu. Copy `input.json`, set
-`model_source_csv` to that file, and record whether injection, magnetic
-connection, observer extraction, energy integration, mean-free-path law,
-background evolution, normalization, and time origin are equivalent. Set
-`equivalence_reviewed=true` only after that review. The linked application
-validates and normalizes the table; Python never manufactures the model data.
+The reference solution is
+`reference/mflampa_2013_apr11_mfp_sensitivity.csv`. It contains the three
+digitized >10 MeV intensity histories from Figure 7. The exact source-PDF hash,
+pixel-to-axis calibration, curve colors, sampling interval, and estimated
+0.12-dex graphical uncertainty are preserved in `reference/provenance.json`.
+
+## Controlled reconstruction required by missing publication data
+
+Figure 7 does not provide the evolving AWSoM-R field line, CME shock history,
+sample-line coordinates, plasma density/temperature, numerical grids, or the
+author's tabulated solution. An exact event rerun cannot be made from the paper
+alone. XM02 therefore isolates the reported transport sensitivity with the
+following fixed assumptions, all stored in `input.json`:
+
+- already-accelerated 10.1 MeV protons are released at 2.5 solar radii and
+  observed at 1 au; 10.1 MeV lies unambiguously inside the >10 MeV channel;
+- a causal two-stage release is the sum of exponential 0.5 h rise and 3 h
+  decay clocks, standing in for the unpublished evolving shock source;
+- the controlled line has zero plasma advection and zero magnetic focusing,
+  so the comparison isolates field-aligned scattering and streaming;
+- the outward surface flux has density `P(mu)=2*mu` on `0<=mu<=1`, the inner
+  boundary reflects particles, and 1 au is a first-passage observer;
+- `D_mumu=D0*(1-mu^2)` with `D0=v/(2*lambda_parallel)`, which gives each
+  requested parallel mean free path through the standard diffusion integral;
+- 6,000 particles per MFP use keyed seed 30202, a 120 s mover step, a 44 h
+  duration, and 2 h output bins; and
+- model and reference profiles are independently divided by their peak before
+  scoring. Absolute pfu is not scored because its required shock/source
+  normalization is absent from the publication.
+
+The linked callback calls the production focused-transport core for every
+particle and timestep. Python supplies only orchestration, the digitized
+reference, scoring, plotting, and provenance. The reference is never passed to
+the native model and is never used as its output.
+
+## Running XM02
+
+From the `srcSEP` directory:
 
 ```sh
-python3 test/run_tests.py --amps /path/to/linked/srcSEP/AMPS \
-  --validation-case XM02 --case-input /path/to/reviewed-xm02.json \
+test/run_tests.py --amps ../amps --validation-case XM02 \
   --output-dir test_output/XM02
 ```
 
-With no model export, the command stages the immutable reference and PNG/EPS
-reference plots and returns SKIP. With an export but no equivalence approval it
-computes metrics and still returns SKIP. After approval, all three series must
-be present, log-intensity RMSE must be no more than 0.3 dex, and peak-time
-error no more than 2 h. Publication/figure coordinates, PDF checksum, axis
-calibration, and 0.12 dex extraction uncertainty are in `reference/provenance.json`.
+The case writes the resolved input, copied publication reconstruction, native
+argument manifest, linked model CSV, native JSON/JUnit, comparison metrics,
+provenance, and PNG/EPS overlays. It reports PASS or FAIL rather than SKIP once
+the linked executable has been rebuilt with this implementation.
+
+The provisional controlled-reconstruction gates are complete coverage of all
+three MFP series, unit-peak log-intensity RMSE no greater than 0.6 dex, and a
+maximum peak-time difference no greater than 6 h. These deliberately include
+model-form uncertainty from the missing shock history; they must not be cited
+as validation of the full 2013 April 11 CME simulation.
+
+## Interpretation
+
+A PASS means the srcSEP production streaming/scattering kernel reproduces the
+published ordering and approximate temporal response to the three mean free
+paths under the declared controlled reconstruction. It does not validate the
+unavailable AWSoM-R background, EEGGL CME, shock acceleration, absolute pfu
+normalization, or the exact unidentified M-FLAMPA sample line.

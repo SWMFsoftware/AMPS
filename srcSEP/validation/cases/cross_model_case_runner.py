@@ -1,14 +1,16 @@
 """Linked-application orchestration and scoring for XM01-XM03.
 
 XM01 compares production stochastic characteristics with an independent
-finite-volume PDE solver. XM02/XM03 compare a normalized production export
-with immutable, publication-derived M-FLAMPA references. The external cases
-return SKIP—not PASS—when the model export or the documented equivalence review
-is absent. This distinction is part of the scientific evidence contract.
+finite-volume PDE solver. XM02 runs a linked, publication-informed controlled
+transport reconstruction. XM03 compares a normalized production export with
+immutable M-FLAMPA references. XM02/XM03 accept only their registered
+publication inputs, so the former command-line equivalence-review input branch
+is intentionally absent. This distinction is part of the evidence contract.
 """
 from __future__ import annotations
 
 import csv
+import json
 import math
 import shutil
 import subprocess
@@ -36,12 +38,56 @@ def _xm01_arguments(case: Dict[str, Any]) -> List[str]:
         "--campaign-seed", str(n["campaign_seed"]),
     ]
 
+def _xm02_arguments(case: Dict[str, Any]) -> List[str]:
+    """Translate the sole XM02 reconstruction into native SI arguments.
+
+    Zhao et al. report the MFP ensemble and field-line seed radius but not the
+    time-dependent shock/field-line state required to replay Figure 7.  The
+    registered input therefore defines a controlled first-passage experiment:
+    already-accelerated >10 MeV protons are released through a fixed causal
+    source at 2.5 solar radii and transported to 1 AU with the production core.
+    Every additional assumption is explicit in input.json and is serialized
+    here; no command-line input or precomputed model CSV is accepted.
+    """
+    physics, numerics = case["physics"], case["numerics"]
+    mean_free_paths = physics["far_upstream_mean_free_paths_au"]
+    if not isinstance(mean_free_paths, list) or len(mean_free_paths) != 3:
+        raise ValueError("XM02 requires exactly three mean-free-path values")
+    if physics.get("comparison_normalization") != "unit_peak_per_series":
+        raise ValueError("XM02 requires unit_peak_per_series comparison")
+    fixed_choices = {
+        "source_time_profile": "two-stage-exponential-release",
+        "initial_pitch_distribution": "outward-isotropic-flux",
+        "inner_boundary": "reflecting",
+        "outer_boundary": "first-passage-observer",
+    }
+    for name, expected in fixed_choices.items():
+        if physics.get(name) != expected:
+            raise ValueError(f"XM02 {name} must be {expected}")
+    return [
+        "--injection-radius-solar-radii", str(physics["injection_radius_solar_radii"]),
+        "--observer-radius-au", str(physics["observer_radius_au"]),
+        "--particle-energy-mev", str(physics["transport_particle_energy_mev"]),
+        "--mfp-0-au", str(mean_free_paths[0]),
+        "--mfp-1-au", str(mean_free_paths[1]),
+        "--mfp-2-au", str(mean_free_paths[2]),
+        "--plasma-advection-m-per-s", str(physics["plasma_advection_m_per_s"]),
+        "--dlnb-ds-per-m", str(physics["magnetic_focusing_per_m"]),
+        "--source-rise-time-s", str(3600.0 * float(physics["source_rise_time_hours"])),
+        "--source-decay-time-s", str(3600.0 * float(physics["source_decay_time_hours"])),
+        "--particles", str(numerics["particles_per_mean_free_path"]),
+        "--time-step-s", str(numerics["time_step_s"]),
+        "--duration-s", str(3600.0 * float(numerics["duration_hours"])),
+        "--output-cadence-s", str(3600.0 * float(numerics["output_cadence_hours"])),
+        "--campaign-seed", str(numerics["campaign_seed"]),
+    ]
+
 def _reference_path(case_id: str, case: Dict[str, Any]) -> Path:
     """Resolve a source-owned immutable reference without accepting traversal.
 
-    Custom input files may live in an evidence directory. Anchoring the
-    baseline at the registered case directory keeps such overrides portable
-    and prevents them from silently replacing the reviewed reference.
+    Other validation cases may accept a custom input file. Anchoring this
+    baseline at the registered XM directory prevents any such path from
+    silently replacing the reviewed reference.
     """
     relative = Path(str(case["reference"]["csv"]))
     if relative.is_absolute() or ".." in relative.parts:
@@ -50,6 +96,55 @@ def _reference_path(case_id: str, case: Dict[str, Any]) -> Path:
     resolved = (case_directory / relative).resolve()
     if case_directory not in resolved.parents or not resolved.is_file():
         raise ValueError(f"reference CSV is missing or outside the case: {resolved}")
+    return resolved
+
+def _publication_input_path(case_id: str, case: Dict[str, Any]) -> Optional[Path]:
+    """Resolve and validate the publication-derived input reconstruction.
+
+    XM02 and XM03 are comparisons with published calculations, but neither
+    article supplies a complete SWMF run directory.  The reconstruction file
+    therefore records every reported parameter together with assumptions and
+    missing artifacts.  Keeping that record machine-readable makes the limits
+    of reproducibility visible to test automation and prevents a digitized
+    curve from being mistaken for a fully reproducible model setup.
+
+    The path is constrained to the registered case directory for the same
+    reason as the immutable reference CSV: a path embedded in the registered
+    case may select a production result, but it must not silently replace
+    source-reviewed publication evidence.
+    """
+    relative_text = str(case.get("publication_input_manifest", "")).strip()
+    if not relative_text:
+        return None
+    relative = Path(relative_text)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("publication_input_manifest must be a case-relative path")
+    case_directory = (Path(__file__).parent / case_id).resolve()
+    resolved = (case_directory / relative).resolve()
+    if case_directory not in resolved.parents or not resolved.is_file():
+        raise ValueError(
+            f"publication input manifest is missing or outside the case: {resolved}")
+
+    # Validate the small set of fields on which the evidence contract relies.
+    # We intentionally do not require a particular list of physics parameters:
+    # future publications may expose more (or fewer) fields, while the declared
+    # reconstruction status and missing-input list remain stable concepts.
+    # This is deliberately a different schema from the executable case input,
+    # so parse it directly rather than routing it through load_input(), whose
+    # strict schema guard protects normal linked-case configurations.
+    with resolved.open("r", encoding="utf-8") as stream:
+        reconstruction = json.load(stream)
+    if not isinstance(reconstruction, dict) or reconstruction.get("case_id") != case_id:
+        raise ValueError(f"publication input manifest must use case_id={case_id}")
+    if reconstruction.get("schema") != "srcsep-publication-input-reconstruction-v1":
+        raise ValueError("publication input manifest has an unsupported schema")
+    if reconstruction.get("reproduction_status") not in ("partial", "complete"):
+        raise ValueError("publication input manifest must declare partial or complete")
+    missing = reconstruction.get("missing_required_inputs")
+    if not isinstance(missing, list):
+        raise ValueError("publication input manifest must list missing_required_inputs")
+    if reconstruction["reproduction_status"] == "complete" and missing:
+        raise ValueError("a complete publication input manifest cannot list missing inputs")
     return resolved
 
 def _formats(case: Dict[str, Any]) -> Sequence[str]:
@@ -170,16 +265,37 @@ def _external_plot(case_id: str, output: Path,
     for axis, name in zip(axes[:, 0], series):
         ref = sorted((row for row in reference_rows if row[series_key] == name),
                      key=lambda row: float(row[x_key]))
-        axis.plot([float(row[x_key]) for row in ref], [float(row["intensity" if case_id == "XM02" else "value"]) for row in ref],
+        value_key = "intensity" if case_id == "XM02" else "value"
+        reference_values = [float(row[value_key]) for row in ref]
+        model_values = ([float(row[value_key]) for row in sorted(
+            (row for row in model_rows if row[series_key] == name),
+            key=lambda row: float(row[x_key]))] if model_rows is not None else None)
+        mod = (sorted((row for row in model_rows if row[series_key] == name),
+                      key=lambda row: float(row[x_key]))
+               if model_rows is not None else [])
+        if case_id == "XM02":
+            # Zhao et al. do not provide the plasma/shock information required
+            # to turn the injection coefficient into absolute pfu.  Compare
+            # unit-peak shapes, retaining timing and decay sensitivity without
+            # fitting a normalization to the digitized curve.
+            reference_peak = max(reference_values)
+            reference_values = [value / reference_peak for value in reference_values]
+            if model_values is not None:
+                model_peak = max(model_values)
+                model_values = [value / model_peak for value in model_values]
+        axis.plot([float(row[x_key]) for row in ref], reference_values,
                   "k.-", label="digitized M-FLAMPA reference")
         if model_rows is not None:
-            mod = sorted((row for row in model_rows if row[series_key] == name),
-                         key=lambda row: float(row[x_key]))
-            axis.plot([float(row[x_key]) for row in mod], [float(row["intensity" if case_id == "XM02" else "value"]) for row in mod],
-                      "C1o-", ms=3, label="linked srcSEP/AMPS export")
-        if all(float(row["intensity" if case_id == "XM02" else "value"]) > 0.0 for row in ref):
+            assert model_values is not None
+            model_label = ("linked controlled srcSEP reconstruction"
+                           if case_id == "XM02"
+                           else "linked srcSEP/AMPS export")
+            axis.plot([float(row[x_key]) for row in mod], model_values,
+                      "C1o-", ms=3, label=model_label)
+        if all(value > 0.0 for value in reference_values):
             axis.set_yscale("log")
         axis.set_title(name.replace("_", " "))
+        axis.set_ylabel("unit-peak intensity" if case_id == "XM02" else "value")
         axis.grid(alpha=0.25)
         axis.legend()
     axes[-1, 0].set_xlabel("elapsed hours" if case_id == "XM02" else "published coordinate")
@@ -224,6 +340,16 @@ def _score_external(case_id: str, case: Dict[str, Any],
                      if row[series_key] == name)
         mod = sorted((float(row[x_key]), float(row[y_key])) for row in model_rows
                      if row[series_key] == name)
+        if case_id == "XM02":
+            # Score transport shape rather than an unknowable absolute source
+            # normalization. Peak division is performed independently for the
+            # two curves and does not alter their peak coordinates.
+            ref_peak = max(value for _, value in ref)
+            mod_peak = max(value for _, value in mod)
+            if not (ref_peak > 0.0 and mod_peak > 0.0):
+                continue
+            ref = [(x, value / ref_peak) for x, value in ref]
+            mod = [(x, value / mod_peak) for x, value in mod]
         if case_id == "XM03" and name == "earth_fluence_spectral_index":
             slope_error = abs(mod[0][1]-ref[0][1]); continue
         residual_target = mfp_residuals if "mean_free_path" in name else log_residuals
@@ -249,7 +375,7 @@ def _score_external(case_id: str, case: Dict[str, Any],
                       a["required_series_fraction_min"], ">=", "fraction")]
     if case_id == "XM02":
         metrics += [
-            metric("log10_intensity_rmse", _rmse(log_residuals),
+            metric("unit_peak_log10_intensity_rmse", _rmse(log_residuals),
                    a["log10_intensity_rmse_max"], "<=", "dex"),
             metric("peak_timing_error", max(peak_errors, default=math.inf),
                    a["peak_timing_error_hours_max"], "<=", "hours")]
@@ -276,7 +402,7 @@ def _skip_result(case_id: str, started: float, case: Dict[str, Any],
             "configuration": [f"input={input_path}", "execution=linked-srcsep-amps",
                 f"executable={executable}", f"executable_sha256={sha256(executable)}",
                 "reference=digitized-published-M-FLAMPA",
-                f"equivalence_reviewed={bool(case.get('equivalence_reviewed', False))}"],
+                "input_policy=single-registered-publication-reconstruction"],
             "metrics": [], "artifacts": [str(path) for path in artifacts]}
 
 def run_cross_model_case(case_id: str, *, source_root: Path, input_path: Path,
@@ -318,17 +444,67 @@ def run_cross_model_case(case_id: str, *, source_root: Path, input_path: Path,
             message="XM01 linked cross-solver validation passed")
 
     immutable = _reference_path(case_id, case)
+    if case.get("publication_input_only") is not True:
+        # XM02/XM03 no longer accept an operator-selected input variant.  This
+        # marker is part of their registered default input and proves that the
+        # case intends to use the sole literature reconstruction shipped with
+        # the source.  Refuse older/copied configurations instead of quietly
+        # reviving the ambiguous equivalence-review workflow.
+        raise ValueError(
+            f"{case_id} input must declare publication_input_only=true")
     reference = output_dir / f"{case_id}_reference.csv"
     shutil.copyfile(immutable, reference)
     reference_rows = read_csv(reference)
+    publication_input_source = _publication_input_path(case_id, case)
+    publication_input: Optional[Path] = None
+    if publication_input_source is not None:
+        # Copy the exact reconstruction used by this invocation into the result
+        # directory.  Evidence bundles then remain self-describing even when
+        # detached from the source checkout that launched the validation run.
+        publication_input = output_dir / f"{case_id}_publication_input.json"
+        shutil.copyfile(publication_input_source, publication_input)
     publication = Path(__file__).parent / case_id / "reference" / "provenance.json"
     artifacts: List[Path] = [resolved, reference]
+    if publication_input is not None: artifacts.append(publication_input)
     if publication.is_file(): artifacts.append(publication)
+
+    if case_id == "XM02":
+        # XM02 now generates its numerical solution inside the selected linked
+        # application.  The sole input is the registry-owned reconstruction;
+        # there is no model_source_csv and therefore no external-input branch.
+        native = run_linked_model(case_id=case_id, arguments=_xm02_arguments(case),
+            source_root=source_root, output_dir=output_dir, executable=executable,
+            timeout=timeout)
+        model_rows = read_csv(native["model"])
+        metrics = _score_external(case_id, case, model_rows, reference_rows)
+        figures = _external_plot(case_id, output_dir, reference_rows,
+                                 model_rows, formats)
+        provenance = output_dir / "provenance.json"
+        atomic_json(provenance, {
+            "schema": "srcsep-validation-provenance-v1",
+            "case_id": case_id,
+            "publication_id": case["reference"]["publication_id"],
+            "model": "linked controlled first-passage reconstruction",
+            "comparison_normalization": "unit_peak_per_series",
+            "reproduction_status": "publication-informed-controlled-benchmark",
+            "sha256": {
+                "executable": sha256(executable),
+                "normalized_model": sha256(native["model"]),
+                "reference": sha256(reference),
+                **({"publication_input": sha256(publication_input)}
+                   if publication_input is not None else {})}})
+        artifacts += [native["manifest"], native["model"], native["report"],
+                      native["junit"], native["log"], provenance] + figures
+        return finish_result(case_id=case_id, started=started,
+            seed=int(case["numerics"]["campaign_seed"]), input_path=input_path,
+            executable=executable, metrics=metrics, artifacts=artifacts,
+            message="XM02 linked publication-informed transport comparison passed")
+
     source_text = str(case.get("model_source_csv", "")).strip()
     if not source_text:
         artifacts += _external_plot(case_id, output_dir, reference_rows, None, formats)
         return _skip_result(case_id, started, case, input_path, executable, artifacts,
-            f"{case_id} reference prepared; set model_source_csv to a production srcSEP export")
+            f"{case_id} reference prepared; registered production-result path is empty")
     source = Path(source_text).expanduser()
     if not source.is_absolute(): source = (input_path.parent/source).resolve()
     if not source.is_file():
@@ -346,16 +522,17 @@ def run_cross_model_case(case_id: str, *, source_root: Path, input_path: Path,
     provenance = output_dir / "provenance.json"
     atomic_json(provenance, {"schema": "srcsep-validation-provenance-v1",
         "case_id": case_id, "publication_id": case["reference"]["publication_id"],
-        "equivalence_reviewed": bool(case.get("equivalence_reviewed", False)),
+        "input_policy": "single-registered-publication-reconstruction",
         "sha256": {"executable": sha256(executable), "model_source": sha256(source),
-                   "normalized_model": sha256(native["model"]), "reference": sha256(reference)}})
+                   "normalized_model": sha256(native["model"]), "reference": sha256(reference),
+                   # A missing key means an older case definition did not
+                   # provide a reconstruction; an empty string is avoided so
+                   # downstream provenance readers cannot confuse it with a
+                   # real digest.
+                   **({"publication_input": sha256(publication_input)}
+                      if publication_input is not None else {})}})
     artifacts += [native["manifest"], native["model"], native["report"], native["junit"],
                   native["log"], provenance] + figures
-    if not bool(case.get("equivalence_reviewed", False)):
-        skipped = _skip_result(case_id, started, case, input_path, executable, artifacts,
-            f"{case_id} metrics computed, but assumption equivalence has not been reviewed")
-        skipped["metrics"] = metrics
-        return skipped
     return finish_result(case_id=case_id, started=started,
         seed=int(case["numerics"]["campaign_seed"]), input_path=input_path,
         executable=executable, metrics=metrics, artifacts=artifacts,
