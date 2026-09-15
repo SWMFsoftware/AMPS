@@ -270,7 +270,9 @@ Examples:
      CV/IV/XM IDs use their registered validation input/reference workflow;
      all other IDs are invoked directly as `amps --test ID ...`. Every exact
      outer command and every linked AMPS command is printed before execution.
-     The final line reports TOTAL, PASS, FAIL, SKIP, and ERROR counts.
+     The final block reports TOTAL, PASS, FAIL, SKIP, and ERROR counts, then
+     lists every failed and errored test ID with its diagnostic. Empty failure
+     categories are printed explicitly as `none`.
 
   6. Run source-only controlled tests when a linked AMPS executable is absent:
 
@@ -591,7 +593,16 @@ def _print_result(result: Dict[str, Any]) -> None:
 
 
 def _print_summary(report: Dict[str, Any]) -> None:
-    """Print the complete categorical outcome after every runner mode."""
+    """Print aggregate counts followed by every failed or errored test.
+
+    The compact totals answer whether the campaign passed, while the final two
+    deterministic lists tell an operator exactly which cases need attention
+    without searching through a long interleaved ``--all`` transcript.  A
+    diagnostic is included beside each ID and internal whitespace is collapsed
+    so one child exception cannot corrupt the line-oriented terminal summary.
+    Unknown status strings are treated and displayed as errors, matching
+    ``_report_totals`` and the runner's fail-closed policy.
+    """
     # Recompute from result records instead of trusting optional/stale summary
     # metadata supplied by an external report producer. The same records drive
     # the lines printed immediately above and are the authoritative outcome.
@@ -606,6 +617,34 @@ def _print_summary(report: Dict[str, Any]) -> None:
     print("Overall test summary: "
           f"TOTAL={total} PASS={passed} FAIL={failed} "
           f"SKIP={skipped} ERROR={errors}", flush=True)
+
+    failed_results = sorted(
+        (item for item in results
+         if str(item.get("status", "ERROR")).upper() == "FAIL"),
+        key=lambda item: str(item.get("id", "unknown")).casefold())
+    error_results = sorted(
+        (item for item in results
+         if str(item.get("status", "ERROR")).upper()
+         not in {"PASS", "FAIL", "SKIP"}),
+        key=lambda item: str(item.get("id", "unknown")).casefold())
+
+    def print_problem_list(title: str,
+                           problem_results: Sequence[Dict[str, Any]]) -> None:
+        """Render one stable status category, including an explicit empty state."""
+        print(f"{title} ({len(problem_results)}):", flush=True)
+        if not problem_results:
+            print("  none", flush=True)
+            return
+        for result in problem_results:
+            identifier = str(result.get("id", "unknown"))
+            diagnostic = " ".join(
+                str(result.get("message", "no diagnostic")).split())
+            if not diagnostic:
+                diagnostic = "no diagnostic"
+            print(f"  - {identifier}: {diagnostic}", flush=True)
+
+    print_problem_list("Failed tests", failed_results)
+    print_problem_list("Error tests", error_results)
 
 
 def _validation_case_ids() -> set[str]:
@@ -770,7 +809,6 @@ def _run_all_tests(args: argparse.Namespace, output_dir: Path,
     aggregate_path = output_dir / "srcsep-tests.json"
     aggregate = _merge_reports(reports, aggregate_path)
     _write_junit(output_dir / "srcsep-tests.xml", aggregate)
-    _print_summary(aggregate)
     return int(aggregate["exit_code"]), aggregate_path, commands
 
 
@@ -1187,7 +1225,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         for result in report.get("results", []):
             if isinstance(result, dict):
                 _print_result(result)
-        _print_summary(report)
 
     manifest: Dict[str, Any] = {
         "schema": "srcsep-python-test-run-v1",
@@ -1222,6 +1259,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("No structured JSON was retained; no analytical plots were generated.")
 
     print(f"Results: {output_dir}")
+    # Keep the problem lists at the literal end of terminal output. This is
+    # especially useful for long --all campaigns, where plots and manifest
+    # messages would otherwise push the actionable IDs out of view.
+    if report is not None:
+        _print_summary(report)
     return exit_code
 
 

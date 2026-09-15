@@ -103,12 +103,12 @@ PARK01 | parker | duplicate
         self.assertEqual(runner._parse_list_output(listing),
                          ["FTED08", "PARK01"])
 
-    def test_isolated_all_continues_after_a_process_dies(self):
-        """Retain GOOD01 after BAD02 exits without producing a report.
+    def test_isolated_all_continues_and_lists_failed_and_error_tests(self):
+        """Retain GOOD01 after BAD02 errors and FAIL03 reports failure.
 
         A fake process layer keeps this unit test independent of AMPS while
         exercising the real per-ID paths, synthetic ERROR record, aggregate
-        JSON/JUnit generation, printed results, and final summary.
+        JSON/JUnit generation, printed results, and actionable final lists.
         """
         runner = _load_runner_module()
         with tempfile.TemporaryDirectory(prefix="srcsep-isolated-all-") as tmp:
@@ -132,24 +132,29 @@ PARK01 | parker | duplicate
                 if identifier == "BAD02":
                     # Model a fatal signal/abort: no JSON exists for this ID.
                     return 134
+                result_status = "FAIL" if identifier == "FAIL03" else "PASS"
+                result_message = ("analytical tolerance exceeded"
+                                  if result_status == "FAIL" else
+                                  "fixture passed")
                 report_path = Path(command[command.index("--test-json") + 1])
                 report_path.write_text(json.dumps({
                     "schema": "srcsep-component-tests-v1",
-                    "exit_code": 0,
-                    "totals": {"passed": 1, "failed": 0,
+                    "exit_code": 1 if result_status == "FAIL" else 0,
+                    "totals": {"passed": int(result_status == "PASS"),
+                               "failed": int(result_status == "FAIL"),
                                "skipped": 0, "errors": 0},
                     "results": [{
-                        "id": identifier, "status": "PASS",
-                        "message": "fixture passed", "elapsed_seconds": 0.01,
+                        "id": identifier, "status": result_status,
+                        "message": result_message, "elapsed_seconds": 0.01,
                         "seed": 7, "configuration": [], "metrics": [],
                         "artifacts": [],
                     }],
                 }), encoding="utf-8")
-                return 0
+                return 1 if result_status == "FAIL" else 0
 
             stdout = io.StringIO()
             with (mock.patch.object(runner, "_discover_all_ids",
-                                    return_value=["BAD02", "GOOD01"]),
+                                    return_value=["BAD02", "FAIL03", "GOOD01"]),
                   mock.patch.object(runner, "_validation_case_ids",
                                     return_value=set()),
                   mock.patch.object(runner, "_run_streaming",
@@ -157,22 +162,33 @@ PARK01 | parker | duplicate
                   mock.patch("sys.stdout", stdout)):
                 exit_code, report_path, commands = runner._run_all_tests(
                     arguments, output, output / "test-run.log")
+                # main() calls the final summary only after plot/manifest output;
+                # invoke the same helper here because this focused unit calls
+                # the lower-level isolated campaign function directly.
+                runner._print_summary(json.loads(
+                    report_path.read_text(encoding="utf-8")))
 
             self.assertEqual(exit_code, 2)
-            self.assertEqual(len(called), 2)
+            self.assertEqual(len(called), 3)
             self.assertEqual(commands, called)
             self.assertEqual([command[command.index("--test") + 1]
-                              for command in called], ["BAD02", "GOOD01"])
+                              for command in called],
+                             ["BAD02", "FAIL03", "GOOD01"])
             report = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertEqual(report["totals"], {
-                "passed": 1, "failed": 0, "skipped": 0, "errors": 1})
+                "passed": 1, "failed": 1, "skipped": 0, "errors": 1})
             self.assertTrue((output / "srcsep-tests.xml").is_file())
             rendered = stdout.getvalue()
             self.assertIn("RESULT BAD02: ERROR", rendered)
+            self.assertIn("RESULT FAIL03: FAIL", rendered)
             self.assertIn("RESULT GOOD01: PASS", rendered)
             self.assertIn(
-                "Overall test summary: TOTAL=2 PASS=1 FAIL=0 SKIP=0 ERROR=1",
+                "Overall test summary: TOTAL=3 PASS=1 FAIL=1 SKIP=0 ERROR=1",
                 rendered)
+            self.assertIn("Failed tests (1):\n  - FAIL03: analytical tolerance exceeded",
+                          rendered)
+            self.assertIn("Error tests (1):\n  - BAD02: process exited 134",
+                          rendered)
 
     def test_publication_plot_labels_name_source_and_exact_figures(self):
         """Ensure detached XM02/XM03 figures remain self-attributing."""
@@ -305,6 +321,15 @@ PARK01 | parker | duplicate
                 cwd=str(ROOT), text=True, stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT, check=False)
             self.assertEqual(completed.returncode, 0, completed.stdout)
+            # The actionable lists intentionally close the transcript, after
+            # plot generation and the output-directory announcement. A clean
+            # report still names both categories and marks them empty.
+            self.assertGreater(completed.stdout.rfind("Failed tests (0):"),
+                               completed.stdout.rfind("Results:"))
+            self.assertGreater(completed.stdout.rfind("Error tests (0):"),
+                               completed.stdout.rfind("Failed tests (0):"))
+            self.assertTrue(completed.stdout.rstrip().endswith(
+                "Error tests (0):\n  none"), completed.stdout)
 
             manifest = json.loads(
                 (output / "analytical_plot_manifest.json").read_text(

@@ -245,6 +245,11 @@ child could not write JSON, the Python runner creates an explicit synthetic
 `ERROR` record, prints it immediately, and proceeds with the next test. At the
 end it merges all per-test records into top-level JSON/JUnit and prints
 `Overall test summary: TOTAL=... PASS=... FAIL=... SKIP=... ERROR=...`.
+After the counts, `Failed tests (N)` and `Error tests (N)` list the affected
+IDs and their diagnostics in stable ID order. Both headings are always shown;
+a clean category contains `none`. This actionable block is deliberately
+printed after the results-directory and plotting messages, so it remains at
+the bottom of even a long terminal transcript.
 The process exit remains 0 when all non-skipped tests pass, 1 when at least one
 test fails, and 2 when at least one test errors. Consequently `--all` always
 continues; `--keep-going` controls only repeated source-suite targets.

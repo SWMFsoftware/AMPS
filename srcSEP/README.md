@@ -420,6 +420,11 @@ aggregate JSON/JUnit and final TOTAL/PASS/FAIL/SKIP/ERROR summary cover the
 whole discovered portfolio; per-ID evidence is retained under
 `individual/<ID>/`.
 
+The terminal summary ends with separate `Failed tests (N)` and `Error tests
+(N)` lists. Each entry contains the test ID and its normalized diagnostic, so
+the cases requiring attention remain visible without searching the complete
+run log. A category with no affected tests explicitly prints `none`.
+
 For an analytical case, a reported CSV artifact with conventional coordinate,
 `numerical`/`model`, and `analytical`/`exact` columns becomes a pointwise
 solution overlay. When a C++ test reports only an error, moment, convergence
