@@ -69,3 +69,29 @@ srcSEP/AMPS executable selected with `--amps`.
   introduce an arbitrary physical source duration.
 - Extended the EV unit gate to reject accidental reintroduction of
   `math.nextafter` and to verify the compatibility helper directly.
+
+## Fix 4 — detailed EV documentation and explicit observational provenance on figures
+
+- Expanded the EV01 and EV02 READMEs into full scientific test descriptions,
+  including purpose, validation question, immutable split, model configuration,
+  model-to-observation mapping, calibration/identifiability logic, metrics,
+  outputs, interpretation, run commands, and campaign limitations.
+- Added reference-directory READMEs describing exactly how the CCMC/GOES
+  observational values were obtained and why no fabricated figure number is
+  used for the CCMC web plots.
+- Upgraded `reference/provenance.json` to record the NASA CCMC campaign/product,
+  GOES-13 data type, exact >10 MeV/10 pfu and >100 MeV/1 pfu table names,
+  master/data-set/event-list/per-event locations, OpSEP processing-code URL,
+  auxiliary flare/CME input provenance, and the explicit raw-NOAA-file
+  limitation of this pilot bundle.
+- Added row-level observation provenance to `EV01_campaign_scores.csv` and
+  `EV02_campaign_scores.csv`: spacecraft, dataset, master-table location,
+  per-event CCMC URL, figure/section location, and processing method.
+- Updated PNG/EPS comparison figures so the observation source is printed
+  directly on the figure, including the exact CCMC master URL, table names,
+  table version, per-event URL pattern, unnumbered GOES Proton Measurements
+  figure location, and OpSEP processing method.
+- Added generated `EV0*_observation_reference.txt` artifacts containing a
+  human-readable source statement and full data locations.
+- Extended the dependency-light EV regression gate to verify the detailed
+  provenance and plot-attribution contracts.

@@ -230,4 +230,16 @@ limitations. See [STEP15_VALIDATION_REPORT.md](../STEP15_VALIDATION_REPORT.md)
 for the evidence obtained in this delivered environment.
 
 
-EV01-EV02 are documented in `../EV01_EV02_VALIDATION_IMPLEMENTATION.md`. Their committed reference values are observed NASA CCMC/GOES quantities, not synthetic expected solutions. The nine-event challenge bundle exercises campaign mechanics; the implementation plan still requires a larger CLEAR-based 15–30 event/non-event cohort before treating EV01/EV02 as the final statistical release campaign.
+EV01-EV02 are documented in `../EV01_EV02_VALIDATION_IMPLEMENTATION.md` and in
+the per-case READMEs. Their committed reference values are observed NASA
+CCMC/GOES quantities, not synthetic expected solutions. The comparison figures
+carry an on-figure data-source footer, the score CSV records per-row source
+locations, and each result directory contains machine- and human-readable
+reference provenance. The source is the CCMC SHINE/ISWAT SEP Model Validation
+Challenge GOES-13 corrected integral proton measurements; exact numeric values
+come from the official `>10 MeV / 10 pfu` and `>100 MeV / 1 pfu` threshold
+tables. CCMC's per-event web figures are unnumbered, so the implementation cites
+the section/table instead of assigning a false figure number. The nine-event
+challenge bundle exercises campaign mechanics; the implementation plan still
+requires a larger CLEAR-based 15–30 event/non-event cohort before treating
+EV01/EV02 as the final statistical release campaign.

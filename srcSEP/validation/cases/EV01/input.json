@@ -6,7 +6,14 @@
     "csv": "reference/ccmc_2021_goes_observations.csv",
     "kind": "NASA-CCMC-OpSEP-derived-GOES-event-quantities",
     "source_url": "https://ccmc.gsfc.nasa.gov/assessment/topics/SEP/campaign2020/input_parameters.php",
-    "synthetic_reference": false
+    "synthetic_reference": false,
+    "provenance": "reference/provenance.json",
+    "dataset": "GOES-13 corrected integral proton fluxes / NASA CCMC SEP Model Validation Challenge",
+    "table_locations": [
+      "GOES Proton Measurements for >10 MeV, 10 pfu Threshold",
+      "GOES Proton Measurements for >100 MeV, 1 pfu Threshold"
+    ],
+    "figure_location": "Per-event CCMC GOES Proton Measurements section; web figures unnumbered; exact numeric values are taken from adjacent threshold tables"
   },
   "split": {
     "training": [

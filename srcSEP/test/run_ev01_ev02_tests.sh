@@ -30,13 +30,22 @@ assert 'RunCrossModelValidationModel' in text, 'cross-model/observational dispat
 print('PASS EV01-EV02-DISPATCH: EV cases route to RunCrossModelValidationModel')
 PY_DISPATCH
 python3 - <<'PY' "$root"
-import csv,sys
+import csv,json,sys
 from pathlib import Path
 root=Path(sys.argv[1]); rows=list(csv.DictReader(open(root/'validation/cases/EV01/reference/ccmc_2021_goes_observations.csv')))
 assert len({r['event_id'] for r in rows})==9
 assert any(r['threshold_mev']=='100' and not r['crossing_utc'] for r in rows)
 assert all(r['source']=='CCMC-SEPVAL-2021' for r in rows)
-print('PASS EV01-EV02-OBS: nine real CCMC events; observed non-crossings retained')
+for case_id in ('EV01','EV02'):
+    prov=json.load(open(root/f'validation/cases/{case_id}/reference/provenance.json'))
+    assert prov['synthetic_or_theoretical_values'] is False
+    assert prov['spacecraft']=='GOES-13'
+    assert 'input_parameters.php' in prov['url']
+    assert 'data_sets.php' in prov['data_sets_url']
+    assert 'sep_events.php' in prov['event_list_url']
+    assert prov['figure_number'].startswith('not applicable')
+    assert 'operational-sep' in prov['processing_code_url']
+print('PASS EV01-EV02-OBS: nine real CCMC events; observed non-crossings and detailed provenance retained')
 PY
 
 # 2012-07-12 is a real CCMC edge case: flare peak and flare end are both
@@ -75,4 +84,27 @@ times=[float(r['elapsed_hours']) for r in generated]
 assert times[2] > times[1] and (times[2]-times[1]) < 1.0e-12
 print('PASS EV01-EV02-SOURCE: portable source timestamps strictly increase for all events, including 2012-07-12 peak=end')
 PY_SOURCE
-echo "PASS EV01-EV02-UNIT: registry, fixed observation provenance, source serialization, and campaign runner syntax"
+
+# Plot/source-attribution regression guard.  The comparison figure must carry
+# enough provenance to remain interpretable when exported from the run tree.
+python3 - <<'PY_PLOT_PROV' "$root"
+import json,sys
+from pathlib import Path
+root=Path(sys.argv[1])
+sys.path.insert(0,str(root/'validation/cases'))
+import campaign_evidence_runner as ev
+prov=json.load(open(root/'validation/cases/EV01/reference/provenance.json'))
+note=ev._observation_source_note(prov)
+assert 'NASA CCMC' in note
+assert 'GOES-13 corrected integral proton fluxes' in note
+assert '>10 MeV, 10 pfu' in note and '>100 MeV, 1 pfu' in note
+assert 'unnumbered' in note.lower()
+assert 'OpSEP' in note
+assert ev._event_page_url('20170904_06').endswith('/20170904.php')
+assert 'GOES Proton Measurements for >10 MeV' in ev._observation_table_location(10.0)
+runner=(root/'validation/cases/campaign_evidence_runner.py').read_text(encoding='utf-8')
+assert 'fig.text' in runner and 'obs_reference_location' in runner and 'obs_event_page' in runner
+print('PASS EV01-EV02-PLOT-PROVENANCE: comparison plots and score rows carry explicit observation source locations')
+PY_PLOT_PROV
+
+echo "PASS EV01-EV02-UNIT: registry, detailed observation provenance, source serialization, plot attribution, and campaign runner syntax"

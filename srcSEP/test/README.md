@@ -41,10 +41,20 @@ test/run_tests.py --amps ../amps \
   --output-dir test_output/EV01-EV02
 ```
 
-EV01 fits only the predeclared training partition; EV02 scores only the sealed
-holdout after repeating the training-only fit. Their expected values are real
-NASA CCMC/GOES observations. The committed nine-event set is a pilot and is
-explicitly not padded with synthetic non-events.
+EV01 fits only the predeclared training partition and evaluates calibration
+stability with event-level bootstrap resampling; EV02 independently reconstructs
+the training-only calibration and scores only the sealed holdout. Their expected
+values are real NASA CCMC/GOES observations. The committed nine-event set is a
+pilot and is explicitly not padded with synthetic non-events.
+
+Observation provenance is carried into every campaign score row and printed on
+the PNG/EPS comparison figures. The source is the NASA CCMC SHINE/ISWAT SEP
+Model Validation Challenge, GOES-13 corrected integral proton fluxes, using the
+official Model Input Parameters tables for `>10 MeV / 10 pfu` and `>100 MeV /
+1 pfu`. The per-event CCMC GOES plots are unnumbered, so the code records the
+exact web section/table location rather than fabricating a figure number. See
+`validation/cases/EV01/README.md`, `validation/cases/EV02/README.md`, and each
+case's `reference/provenance.json` for the complete data path and interpretation.
 
 EV01/EV02 currently use **serial linked execution**. Do not pass `--mpi-np`; the
 runner intentionally rejects MPI for these end-to-end cases until the native

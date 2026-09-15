@@ -1,1 +1,45 @@
-{"schema":"srcsep-observational-reference-v1","case_id":"EV01","provider":"NASA CCMC SEP Model Validation Challenge","product":"Standard Input Parameters / GOES Proton Measurements","url":"https://ccmc.gsfc.nasa.gov/assessment/topics/SEP/campaign2020/input_parameters.php","accessed_utc":"2026-09-15","observation_method":"CCMC values derived from GOES observations using the OpSEP validation workflow","transcription":"Rows transcribed from the official >10 MeV/10 pfu and >100 MeV/1 pfu tables; N/A threshold crossings are preserved as non-crossings.","synthetic_or_theoretical_values":false,"notes":"This is the nine-event SHINE/ISWAT pilot, not the full 15–30 event/non-event EV01 campaign requested by the implementation plan. The current CLEAR benchmark should be used to expand the cohort when archived locally."}
+{
+  "schema": "srcsep-observational-reference-v2",
+  "provider": "NASA Community Coordinated Modeling Center (CCMC)",
+  "campaign": "SHINE/ISWAT/ESWW SEP Model Validation Challenge (2021 pilot event set)",
+  "product": "GOES Proton Measurements / Standard Input Parameters",
+  "observation_dataset": "GOES-13 corrected integral proton fluxes as distributed/processed by the CCMC SEP Model Validation Challenge",
+  "spacecraft": "GOES-13",
+  "target_channels": [
+    {
+      "energy": " >10 MeV integral proton flux",
+      "threshold": "10 pfu",
+      "table": "GOES Proton Measurements for >10 MeV, 10 pfu Threshold"
+    },
+    {
+      "energy": " >100 MeV integral proton flux",
+      "threshold": "1 pfu",
+      "table": "GOES Proton Measurements for >100 MeV, 1 pfu Threshold"
+    }
+  ],
+  "url": "https://ccmc.gsfc.nasa.gov/assessment/topics/SEP/campaign2020/input_parameters.php",
+  "data_sets_url": "https://ccmc.gsfc.nasa.gov/assessment/topics/SEP/campaign2020/data_sets.php",
+  "event_list_url": "https://ccmc.gsfc.nasa.gov/assessment/topics/SEP/campaign2020/sep_events.php",
+  "per_event_url_template": "https://ccmc.gsfc.nasa.gov/assessment/topics/SEP/campaign2020/<YYYYMMDD>.php (2017-09-04/06 uses 20170904.php)",
+  "processing_code_url": "https://github.com/ktindiana/operational-sep",
+  "processing_code": "OpSEP / operational_sep_quantities.py",
+  "accessed_utc": "2026-09-15",
+  "table_version": "updated 2021-04-29 on CCMC Model Input Parameters page",
+  "observation_method": "CCMC event quantities calculated from GOES observations with OpSEP. The code applies the >10 MeV/10 pfu and >100 MeV/1 pfu event definitions and reports threshold crossing, maximum peak flux/time, end time, duration, and fluence.",
+  "comparison_values_used": [
+    "threshold crossing / non-crossing",
+    "maximum peak flux",
+    "maximum peak time"
+  ],
+  "auxiliary_observed_inputs": [
+    "GOES X-ray flare onset/peak/end times from the Model Input Parameters page",
+    "NOAA/CCMC/DONKI forecaster CME time at 21.5 Rs and 3-D CME speed from the Model Input Parameters page"
+  ],
+  "figure_location": "Per-event CCMC pages, GOES Proton Measurements section. The website plots are unnumbered; the integral-flux threshold panels and adjacent tables show the event quantities. Numeric values in srcSEP are transcribed from the tables, not digitized from figures.",
+  "figure_number": "not applicable: CCMC web figures are unnumbered",
+  "transcription": "Rows transcribed from the official >10 MeV/10 pfu and >100 MeV/1 pfu tables; N/A threshold crossings are preserved as non-crossings.",
+  "synthetic_or_theoretical_values": false,
+  "raw_data_limitation": "This pilot commits CCMC-derived event quantities rather than raw NOAA/NCEI GOES telemetry files; therefore no raw NOAA file/dataset identifier is claimed by this case.",
+  "notes": "This is the nine-event SHINE/ISWAT pilot, not the full 15\u201330 event/non-event EV01 campaign requested by the implementation plan. The current CLEAR benchmark should be used to expand the cohort when archived locally.",
+  "case_id": "EV01"
+}
