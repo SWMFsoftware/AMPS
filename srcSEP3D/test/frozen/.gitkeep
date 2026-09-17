@@ -1,0 +1,5 @@
+# This directory holds frozen reference records.
+# Each file is written by a test on first run and compared byte-for-byte on
+# subsequent runs.  See the implementation plan Section 12 for the protocol.
+# Files are version-controlled; re-freezing requires a separate commit with a
+# one-line justification in the file header.

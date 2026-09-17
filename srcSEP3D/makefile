@@ -1,15 +1,221 @@
-SHELL =/bin/sh
+# ==============================================================================
+# srcSEP3D/makefile — Phase R0 production-tree baseline
+#
+# Production and dependency-light tests are intentionally separate:
+#
+#   lib / amps
+#       These archive targets are called by the enclosing AMPS build after the
+#       application has been copied to AMPS/build/main.  They are not complete
+#       standalone source-directory build commands.
+#
+#   strict-production
+#       Delegates to the enclosing `make amps` target so compilation receives
+#       the generated headers, include paths, definitions, and link settings
+#       owned by AMPS.  It then audits the resulting build/main archives.
+#
+#   test-stage1 / check-layering
+#       Compile only L0/L1 kernels and the shared SEP test registry.  These
+#       targets work without AMPS or MPI and are driven by test/run_tests.py.
+#
+# The old SEP3D.cpp object is absent by design.  main_lib.cpp is the only L3
+# application-library source retained in R0; main.cpp supplies the driver
+# archive.  BLDL3D02 checks this manifest and the source tree together.
+# ==============================================================================
 
-DEFAULT_TARGET : lib
+SHELL := /bin/sh
 
-include ../../Makefile.conf
+DEFAULT_TARGET: lib
 
-MAINLIBOBJ = main_lib.o SEP3D.o
-MAINOBJ = main.o
+# The source application lives at AMPS/srcSEP3D, but AMPS copies it to
+# AMPS/build/main for compilation.  The build may also invoke this makefile
+# through -f from a different current working directory.  Resolve the absolute
+# directory of the active makefile first; no configuration or shared-library
+# path below depends on AMPS/build/main being the process working directory.
+SEP3D_MAKEFILE_DIR := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 
-lib : $(MAINLIBOBJ)
-	ar -rc mainlib.a $(MAINLIBOBJ)
-	@echo "Target 'main' is done."
+ifneq ($(wildcard $(SEP3D_MAKEFILE_DIR)/../Makefile.conf),)
+AMPS_ROOT ?= $(abspath $(SEP3D_MAKEFILE_DIR)/..)
+else ifneq ($(wildcard $(SEP3D_MAKEFILE_DIR)/../../Makefile.conf),)
+AMPS_ROOT ?= $(abspath $(SEP3D_MAKEFILE_DIR)/../..)
+else
+AMPS_ROOT ?= $(abspath $(SEP3D_MAKEFILE_DIR)/..)
+endif
 
-amps : $(MAINOBJ)
+AMPS_CONFIG ?= $(AMPS_ROOT)/Makefile.conf
+SEP_COMMON_DIR ?= $(AMPS_ROOT)/src/models/sep_common
+SEP_COMMON_ARCHIVE ?= $(SEP_COMMON_DIR)/sep_common.a
+SEP_COMMON_OBJECTS := \
+    $(SEP_COMMON_DIR)/build/sep_transport_common.o \
+    $(SEP_COMMON_DIR)/build/sep_coefficient_physics.o \
+    $(SEP_COMMON_DIR)/build/sep_coefficient_registry.o \
+    $(SEP_COMMON_DIR)/build/sep_background_snapshot.o \
+    $(SEP_COMMON_DIR)/build/sep_test_registry.o \
+    $(SEP_COMMON_DIR)/build/sep_injection_spectrum.o \
+    $(SEP_COMMON_DIR)/build/sep_species_source.o
+
+# Dependency-light goals must remain usable in a source-only archive.  All
+# production goals deliberately fail during makefile parsing if AMPS_CONFIG is
+# missing, because a local mock configuration is not production evidence.
+STANDALONE_GOALS := check-layering test-stage1 test-harn-unit test-lay-unit \
+                    test-bld-unit test-util-unit clean clean-standalone help \
+                    print-layout-paths
+ifneq ($(filter $(STANDALONE_GOALS),$(MAKECMDGOALS)),)
+-include $(AMPS_CONFIG)
+else
+include $(AMPS_CONFIG)
+endif
+
+CXX ?= g++
+
+# L0 numerical core.  Headers are not listed here; normal compiler dependency
+# tracking in the enclosing AMPS build determines when they trigger rebuilds.
+CORE_SRC :=
+BG_SRC :=
+
+# L3 AMPS application sources.  Retired prototype sources must never be added
+# here.  BLDL3D02 also rejects them if they reappear elsewhere in production.
+AMPS_SRC := main_lib.cpp
+DRIVER_SRC := main.cpp
+
+CORE_OBJ := $(CORE_SRC:.cpp=.o)
+BG_OBJ := $(BG_SRC:.cpp=.o)
+AMPS_OBJ := $(AMPS_SRC:.cpp=.o)
+DRIVER_OBJ := $(DRIVER_SRC:.cpp=.o)
+
+MAINLIBOBJ := $(CORE_OBJ) $(BG_OBJ) $(AMPS_OBJ)
+MAINOBJ := $(DRIVER_OBJ)
+
+STAGE1_TEST_SRC := \
+    test/stage1.cpp \
+    test/individual-test/test_harness.cpp \
+    test/individual-test/test_layering.cpp \
+    test/individual-test/test_build.cpp \
+    test/individual-test/test_kernels.cpp
+STAGE1_TEST_OBJ := $(STAGE1_TEST_SRC:.cpp=.o)
+
+SEP_COMMON_INCLUDES := -I$(SEP_COMMON_DIR)
+STAGE1_CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -Werror -O2 \
+                   -Icore -Ibackground $(SEP_COMMON_INCLUDES)
+
+.PHONY: lib amps strict-production audit-production-symbols
+
+lib: $(SEP_COMMON_ARCHIVE) $(MAINLIBOBJ)
+	# Keep the enclosing AMPS link contract unchanged: common objects are built
+	# once in sep_common and inserted into this application's mainlib archive.
+	ar -rc mainlib.a $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS)
+	@echo "[srcSEP3D] mainlib.a built from application + sep_common objects"
+
+amps: $(MAINOBJ)
 	ar -rc main.a $(MAINOBJ)
+	@echo "[srcSEP3D] main.a built from: $(MAINOBJ)"
+
+# A source-directory submake does not inherit the include list assembled by the
+# top-level AMPS build.  Compiling main_lib.cpp here would therefore test an
+# artificial command and fail to find generated build/pic/pic.h.  Delegate to
+# the enclosing build instead; this exercises the same build/main copy and
+# compiler command used to create the real AMPS executable.
+strict-production:
+	@$(MAKE) -C "$(AMPS_ROOT)" amps
+	@$(MAKE) --no-print-directory -f "$(SEP3D_MAKEFILE_DIR)/makefile" \
+	  audit-production-symbols AMPS_ROOT="$(AMPS_ROOT)"
+
+# The enclosing build writes these archives in AMPS/build/main.  Keeping their
+# location absolute prevents an audit launched from srcSEP3D, AMPS, or another
+# working directory from accidentally inspecting stale local archives.
+PRODUCTION_ARCHIVE_DIR ?= $(AMPS_ROOT)/build/main
+PRODUCTION_ARCHIVES := $(PRODUCTION_ARCHIVE_DIR)/mainlib.a \
+                       $(PRODUCTION_ARCHIVE_DIR)/main.a
+
+audit-production-symbols:
+	@command -v nm >/dev/null 2>&1 || { \
+	  echo "ERROR: nm is required for the Phase R0 production audit." >&2; \
+	  exit 2; \
+	}
+	@for archive in $(PRODUCTION_ARCHIVES); do \
+	  test -f "$$archive" || { \
+	    echo "ERROR: enclosing AMPS build did not produce $$archive" >&2; \
+	    exit 1; \
+	  }; \
+	done
+	@if nm -A $(PRODUCTION_ARCHIVES) | grep -E \
+	  'Mover_Axisymmetric_SecondOrder|TotalParticleAcceleration|GlobalEnergyDistribution|inject_particle_onto_field_line' \
+	  >/dev/null; then \
+	  echo "ERROR: a retired prototype symbol is present in a production archive." >&2; \
+	  exit 1; \
+	fi
+	@echo "[srcSEP3D] enclosing AMPS build and production archive audit passed."
+
+.PHONY: sep-common
+sep-common:
+	$(MAKE) -C $(SEP_COMMON_DIR)
+
+$(SEP_COMMON_ARCHIVE): sep-common
+
+test/stage1.o: test/stage1.cpp
+	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+
+test/individual-test/%.o: test/individual-test/%.cpp
+	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+
+core/%.o: core/%.cpp
+	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+
+test/stage1: check-layering $(CORE_OBJ) $(BG_OBJ) $(STAGE1_TEST_OBJ) \
+             $(SEP_COMMON_ARCHIVE)
+	$(CXX) -o $@ $(CORE_OBJ) $(BG_OBJ) $(STAGE1_TEST_OBJ) \
+	  $(SEP_COMMON_ARCHIVE)
+	@echo "[srcSEP3D] standalone test binary built: test/stage1"
+
+.PHONY: test-stage1 test-harn-unit test-lay-unit test-bld-unit test-util-unit
+test-stage1: test/stage1
+	./test/stage1 --all-tests
+
+test-harn-unit: test/stage1
+	./test/stage1 --test-group HARN
+
+test-lay-unit: test/stage1
+	./test/stage1 --test-group LAY
+
+test-bld-unit: test/stage1
+	./test/stage1 --test-group BLD
+
+test-util-unit: test/stage1
+	./test/stage1 --test-group UTIL
+
+.PHONY: check-layering
+check-layering:
+	@echo "[srcSEP3D] checking that L0/L1 do not depend on AMPS or MPI"
+	@FOUND=0; \
+	for dir in core background; do \
+	  if grep -rn -E --include='*.h' --include='*.cpp' \
+	    -e '#include.*pic\.h' -e '#include.*mpi\.h' -e '\bPIC::' \
+	    $$dir 2>/dev/null; then FOUND=1; fi; \
+	done; \
+	if [ $$FOUND -ne 0 ]; then \
+	  echo "ERROR: srcSEP3D L0/L1 layering violation." >&2; exit 1; \
+	fi
+
+.PHONY: clean clean-production clean-standalone
+clean: clean-production clean-standalone
+
+clean-production:
+	rm -f $(MAINLIBOBJ) $(MAINOBJ) mainlib.a main.a
+
+clean-standalone:
+	rm -f $(CORE_OBJ) $(STAGE1_TEST_OBJ) test/stage1
+
+.PHONY: help
+help:
+	@echo "Production:  make lib | make amps | make strict-production"
+	@echo "Standalone:  make test-stage1 | make check-layering"
+	@echo "Preferred:   python3 test/run_tests.py --help"
+
+# Diagnostic target used by BLDL3D05 and useful when inspecting a configured
+# AMPS build tree.  In particular, it proves that a makefile copied into
+# AMPS/build/main resolves the same canonical files as AMPS/srcSEP3D/makefile.
+.PHONY: print-layout-paths
+print-layout-paths:
+	@echo "SEP3D_MAKEFILE_DIR=$(SEP3D_MAKEFILE_DIR)"
+	@echo "AMPS_ROOT=$(AMPS_ROOT)"
+	@echo "AMPS_CONFIG=$(AMPS_CONFIG)"
+	@echo "SEP_COMMON_DIR=$(SEP_COMMON_DIR)"

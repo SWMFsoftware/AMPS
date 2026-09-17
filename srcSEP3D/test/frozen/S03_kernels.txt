@@ -1,0 +1,59 @@
+# srcSEP3D frozen kernel record (UTIL02, Step 3)
+# Byte-exact reference of shared-kernel outputs. Re-freeze only
+# alongside a deliberate change, with a justification in this header.
+# Format: <label> <value at %.17g>
+SECTION momentum_speed_roundtrip
+  p_from_v[0] 1.672622016742152e-22
+  v_roundtrip[0] 100000.00000000001
+  p_from_v[1] 1.6726312289820374e-21
+  v_roundtrip[1] 1000000.0000000001
+  p_from_v[2] 8.3642730129634031e-21
+  v_roundtrip[2] 5000000.0000000009
+  p_from_v[3] 1.6735532223578101e-20
+  v_roundtrip[3] 10000000
+  p_from_v[4] 8.4819090405548726e-20
+  v_roundtrip[4] 50000000
+  p_from_v[5] 1.7742370515410004e-19
+  v_roundtrip[5] 100000000
+SECTION select_substep
+  selected_dt 0.84999999999999998
+  binding_name focusing
+SECTION jokipii_slab
+  Dmumu[0] 0.00014598155749995584
+  dDmumu_dmu[0] 0.0027423256145740682
+  Dmumu[1] 0.00055953836990566019
+  dDmumu_dmu[1] 0.0014210498283318354
+  Dmumu[2] 0.0007320131900412386
+  dDmumu_dmu[2] -1.6253957958261869e-19
+  Dmumu[3] 0.00057642426683353289
+  dDmumu_dmu[3] -0.0012297051025782037
+  Dmumu[4] 0
+  dDmumu_dmu[4] 0
+  Dmumu[5] 0
+  dDmumu_dmu[5] 0
+  Dmumu[6] 0
+  dDmumu_dmu[6] 0
+  Dmumu[7] 0
+  dDmumu_dmu[7] 0
+  Dmumu[8] 0.00057642426683353289
+  dDmumu_dmu[8] 0.0012297051025782037
+  Dmumu[9] 0.0007320131900412386
+  dDmumu_dmu[9] 1.6253957958261869e-19
+  Dmumu[10] 0.00055953836990566019
+  dDmumu_dmu[10] -0.0014210498283318354
+  Dmumu[11] 0.00014598155749995584
+  dDmumu_dmu[11] -0.0027423256145740682
+SECTION spatial_diffusion
+  kappa_parallel[0] 1666666666666666.5
+  kappa_parallel[1] 41666666666666664
+  kappa_parallel[2] 1.6666666666666666e+17
+  kappa_parallel[3] 1.4999999999999997e+18
+SECTION configuration_fingerprint
+  fingerprint[0] 401258285158f1ae
+  fingerprint[1] 79c85bc6b2c6a2df
+  fingerprint[2] 94d8c5b3e8ea18fb
+  fingerprint[3] f524d0fac0f795cc
+  fingerprint[4] 4aa17073ac144a2c
+  fingerprint[5] 53ce39e78803b03e
+  fingerprint[6] ef828149c6dec08f
+  fingerprint[7] 89bda4a04b7e17bf

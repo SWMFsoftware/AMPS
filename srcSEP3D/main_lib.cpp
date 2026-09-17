@@ -1,227 +1,126 @@
-//$Id$
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <vector>
-#include <string>
-#include <list>
-#include <math.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <time.h>
-#include <iostream>
-#include <iostream>
-#include <fstream>
-#include <time.h>
-
-
-#include <sys/time.h>
-#include <sys/resource.h>
-
-#include "pic.h"
-#include "constants.h"
-
-#include "Exosphere.h"
+// ============================================================================
+// srcSEP3D/main_lib.cpp
+//
+// Phase R0 AMPS application boundary.
+//
+// R0 has one narrow purpose: establish a compile-clean, truthful production
+// tree before a new three-dimensional Runtime or transport mover is added.
+// The former file silently retained a narrow axisymmetric wedge, uniform
+// resolution, Maxwellian prepopulation, and placeholder sampling.  Running
+// those defaults could look like a valid srcSEP3D calculation even though they
+// belonged to the retired prototype.
+//
+// Therefore the AMPS-required symbols are retained for production linking,
+// but every entry point that would start a simulation terminates with an
+// explicit R0 diagnostic.  Phase R2 will replace this guard with the typed
+// Runtime lifecycle; Phase M will supply the real mesh and refinement law.
+// No placeholder physics is executed in the interim.
+// ============================================================================
 
 #include "SEP3D.h"
 
-//default definition of the functions for the exospehre module ==================================
-double Exosphere::OrbitalMotion::GetTAA(SpiceDouble et) {return 0.0;}
-int Exosphere::ColumnIntegral::GetVariableList(char *vlist) {return 0;}
-void Exosphere::ColumnIntegral::ProcessColumnIntegrationVector(double *res,int resLength) {}
-double Exosphere::GetSurfaceTemperature(double cosSubsolarAngle,double *x_LOCAL_SO_OBJECT) {return 0.0;}
-char Exosphere::SO_FRAME[_MAX_STRING_LENGTH_PIC_]="GALL_EPHIOD";
-char Exosphere::ObjectName[_MAX_STRING_LENGTH_PIC_]="Europa";
-void Exosphere::ColumnIntegral::CoulumnDensityIntegrant(double *res,int resLength,double* x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {}
-double Exosphere::SurfaceInteraction::StickingProbability(int spec,double& ReemissionParticleFraction,double Temp) {return 0.0;}
-//===============================================================================================
+#include <cstdlib>
+#include <iostream>
 
-static double DomainDX = 2E6;
-static double DomainXMin[3]={8.760E8,-0.5*DomainDX,-1.3E7};
-#if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
-static double DomainXMax[3]={9.400E8, 0.5*DomainDX, 1.3E7};
-#else
-static double DomainXMax[3]={9.445E8, 0.5*DomainDX, 1.3E7};
-#endif
+namespace {
 
-double localResolution(double *x) {
-
-  return DomainDX;
+[[noreturn]] void StopBeforePrototypePhysics(const char* entryPoint) {
+  std::cerr
+      << "[srcSEP3D:R0] " << entryPoint << " was called, but Phase R0 is a "
+      << "compile/link baseline only. The retired wedge, Maxwellian source, "
+      << "and legacy sampler have been removed. Complete the Runtime and mesh "
+      << "phases before executing a physical simulation.\n";
+  std::abort();
 }
 
-//set up the local time step
+} // namespace
 
-double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-  double CharacteristicSpeed;
-
-  switch (spec) {
-  case _H_PLUS_SPEC_: case _ELECTRON_SPEC_:
-    CharacteristicSpeed=1.0e7;
-    break;
-  default:
-    exit(__LINE__,__FILE__,"unknown species");
-   }
-
-  return 0.3*startNode->GetCharacteristicCellSize()/CharacteristicSpeed;
+// ---------------------------------------------------------------------------
+// Required Exosphere hooks
+//
+// AMPS links these symbols for applications based on the Exosphere module.
+// They are inert compatibility hooks, not srcSEP3D physics.  Named casts make
+// the intentionally unused inputs explicit and keep strict-warning builds
+// clean.
+// ---------------------------------------------------------------------------
+double Exosphere::OrbitalMotion::GetTAA(SpiceDouble et) {
+  (void)et;
+  return 0.0;
 }
 
+int Exosphere::ColumnIntegral::GetVariableList(char* variableList) {
+  (void)variableList;
+  return 0;
+}
+
+void Exosphere::ColumnIntegral::ProcessColumnIntegrationVector(
+    double* result, int resultLength) {
+  (void)result;
+  (void)resultLength;
+}
+
+double Exosphere::GetSurfaceTemperature(double cosSubsolarAngle,
+                                         double* position) {
+  (void)cosSubsolarAngle;
+  (void)position;
+  return 0.0;
+}
+
+char Exosphere::SO_FRAME[_MAX_STRING_LENGTH_PIC_] = "HCI_like_inertial";
+char Exosphere::ObjectName[_MAX_STRING_LENGTH_PIC_] = "Sun";
+
+void Exosphere::ColumnIntegral::CoulumnDensityIntegrant(
+    double* result, int resultLength, double* position,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  (void)result;
+  (void)resultLength;
+  (void)position;
+  (void)node;
+}
+
+double Exosphere::SurfaceInteraction::StickingProbability(
+    int spec, double& reemissionParticleFraction, double temperature) {
+  (void)spec;
+  (void)temperature;
+  reemissionParticleFraction = 0.0;
+  return 0.0;
+}
+
+void SEP3D::Init_BeforeParser() {
+  // Deliberately empty in R0.  Configuration ownership is introduced with
+  // the Runtime lifecycle rather than through file-scope mutable globals.
+}
+
+double localResolution(double* position) {
+  (void)position;
+  StopBeforePrototypePhysics("localResolution");
+}
 
 double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
-	double res=1.0;
-
-	// for (int idim=0;idim<DIM;idim++) res*=(node->xmax[idim]-node->xmin[idim]);
-
-	return res;
+  (void)node;
+  // The callback is retained only to satisfy the AMPS application interface.
+  // Returning a uniform weight is safe for a link check; amps_init_mesh stops
+  // before the callback can be installed in an executable run.
+  return 1.0;
 }
 
-bool TrajectoryTrackingCondition(double *x,double *v,int spec,void *ParticleData) {
+bool TrajectoryTrackingCondition(double* position, double* velocity, int spec,
+                                 void* particleData) {
+  (void)position;
+  (void)velocity;
+  (void)spec;
+  (void)particleData;
   return false;
 }
 
-
-
 void amps_init_mesh() {
-  PIC::InitMPI();
-  
-  //init the interpolation routines
-  PIC::InterpolationRoutines::Init();
-
-	MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-
-	//init the particle solver
-	PIC::Init_BeforeParser();
-
-	//PIC::Mover::Init_BeforeParser();
-
-#if _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
-	// initialize field lines
-	PIC::FieldLine::Init();
-#endif//_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
-
-	//init the solver
-	PIC::Mesh::initCellSamplingDataBuffer();
-
-	//init the mesh
-	double xmax[3]={0.0,0.0,0.0},xmin[3]={0.0,0.0,0.0};
-	int idim;
-
-
-	//generate only the tree
-	PIC::Mesh::mesh->AllowBlockAllocation=false;
-	PIC::Mesh::mesh->init(DomainXMin,DomainXMax,localResolution);
-	PIC::Mesh::mesh->memoryAllocationReport();
-
-	if (PIC::Mesh::mesh->ThisThread==0) {
-		PIC::Mesh::mesh->buildMesh();
-		PIC::Mesh::mesh->saveMeshFile("mesh.msh");
-		MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-	}
-	else {
-		MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-		PIC::Mesh::mesh->readMeshFile("mesh.msh");
-	}
-
-	PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
-
-	PIC::Mesh::mesh->memoryAllocationReport();
-	PIC::Mesh::mesh->GetMeshTreeStatistics();
-
-#ifdef _CHECK_MESH_CONSISTENCY_
-	PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
-#endif
-
-	PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
-	PIC::Mesh::mesh->CreateNewParallelDistributionLists();
-
-	//initialize the blocks
-	PIC::Mesh::mesh->AllowBlockAllocation=true;
-	PIC::Mesh::mesh->AllocateTreeBlocks();
-
-	PIC::Mesh::mesh->memoryAllocationReport();
-	PIC::Mesh::mesh->GetMeshTreeStatistics();
-
-#ifdef _CHECK_MESH_CONSISTENCY_
-	PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
-#endif
-
-	//init the volume of the cells'
-	PIC::Mesh::mesh->InitCellMeasure();
-
-	//read the data file
-	if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_)
-	  PIC::CPLR::DATAFILE::MULTIFILE::Init(true,33);
-	else
-	  PIC::CPLR::DATAFILE::MULTIFILE::Init(true,300);//15
+  StopBeforePrototypePhysics("amps_init_mesh");
 }
 
-void amps_init(){
-	//init the PIC solver
-	PIC::Init_AfterParser();
-	PIC::Mover::Init();
-
-  //create the list of mesh nodes where the injection boundary conditinos are applied
-	/*
-  PIC::BC::BlockInjectionBCindicatior=BoundingBoxParticleInjectionIndicator;
-  PIC::BC::userDefinedBoundingBlockInjectionFunction=BoundingBoxInjection;
-  PIC::BC::InitBoundingBoxInjectionBlockList();
-  PIC::ParticleWeightTimeStep::LocalBlockInjectionRate=BoundingBoxInjectionRate;
-	*/
-
-  //set up the time step
-  PIC::ParticleWeightTimeStep::LocalTimeStep=localTimeStep;
-  PIC::ParticleWeightTimeStep::initTimeStep();
-  
-  //init particle weight
-  for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(s,3.0E+26);
-  
-
-  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-  if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
-  
-  //init the particle buffer
-  PIC::ParticleBuffer::Init(10000000);
-#if _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
-  {  // create field lines and inject particles
-    //    PIC::FieldLine::Init();
-    double xStart[3] = {0.0,0.0,-1.3e+6};
-    for(xStart[0] = 9.435E+8; xStart[0]> 9.40E+8; xStart[0]-=0.0025E+8)
-      PIC::FieldLine::InitLoop2D(xStart,0.1,1e+5,3e+5);
-    for(int i=0; i<2000000; i++)
-      PIC::FieldLine::InjectParticle(0);
-    SEP3D::GlobalEnergyDistribution::sample();
-    SEP3D::GlobalEnergyDistribution::print("EnergyDistribution.000000",0);
-    }
-#else
-  {  // prepopulate the domain
-    double NDensity=1.0E+10, Temperature=6000, Velocity[3]={1.0E6,0.0,0.0};
-    for (int s=0;s<PIC::nTotalSpecies;s++)
-      PIC::InitialCondition::PrepopulateDomain(s,NDensity, Velocity, Temperature,false);
-  }
-#endif
-    
-  PIC::Mesh::mesh->outputMeshDataTECPLOT("plasma-data.dat",0);
-
+void amps_init() {
+  StopBeforePrototypePhysics("amps_init");
 }
 
-
-
-int amps_time_step () {
-
-#if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
-#else
-  static int cnt=0;
-  static int file=0;
-  cnt++;
-  if(cnt==10){
-    file++;
-    cnt = 0;
-    char Name[100];
-    sprintf(Name,"EnergyDistribution.%06d", file);
-    SEP3D::GlobalEnergyDistribution::sample();
-    SEP3D::GlobalEnergyDistribution::print(Name,0);
-  }
-#endif
-  return PIC::TimeStep();
-  
+int amps_time_step() {
+  StopBeforePrototypePhysics("amps_time_step");
 }
