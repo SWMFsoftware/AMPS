@@ -4,7 +4,7 @@
 The command vocabulary intentionally follows ``srcSEP/test/run_tests.py``:
 ``--list``, repeatable ``--test``/``--group``/``--suite``, ``--routine``,
 ``--all``, and ``--output-dir`` have the same meaning.  This runner joins
-the foundation plus Phase-M/B/T evidence classes without pretending they are
+the foundation plus Phase-M/B/T/P/A/O/V evidence classes without pretending they are
 interchangeable:
 
 * standalone C++ tests compile core/mesh/background/turbulence/runtime without
@@ -137,10 +137,19 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("RST3D01", "RST3D", "Complete restart round trip", "cpp"),
     TestDefinition("RST3D02", "RST3D", "Transactional restart rejection", "cpp"),
     TestDefinition("RST3D03", "RST3D", "Snapshot restart policy", "cpp"),
+    TestDefinition("INT3D01", "INT3D", "Deterministic rank gather", "cpp"),
+    TestDefinition("INT3D02", "INT3D", "Global conservation audit", "cpp"),
+    TestDefinition("INT3D03", "INT3D", "Load and resource budgets", "cpp"),
+    TestDefinition("VFY3D01", "VFY3D", "Profile metric normalization", "cpp"),
+    TestDefinition("VFY3D02", "VFY3D", "Coverage and malformed evidence", "cpp"),
+    TestDefinition("VFY3D03", "VFY3D", "Parker Green-function validation", "cpp"),
+    TestDefinition("VFY3D04", "VFY3D", "Focused convergence", "cpp"),
+    TestDefinition("VFY3D05", "VFY3D", "SWCME DSA distribution", "cpp"),
     TestDefinition("UTIL02", "UTIL", "Shared-kernel frozen record", "cpp"),
     TestDefinition("HARN02-EXITCODE", "HARN_SHELL", "Outer failure exit code", "shell", False),
     TestDefinition("HARN03-EXITCODE", "HARN_SHELL", "Outer skip exit code", "shell", False),
     TestDefinition("RUN3D01", "RUNNER", "Python runner CLI contract", "source"),
+    TestDefinition("VALRUN3D01", "RUNNER", "Phase-V evidence runner contract", "source"),
     TestDefinition("BLDL3D01", "BLDL3D", "Configured enclosing AMPS build", "source"),
     TestDefinition("BLDL3D02", "BLDL3D", "Retired production-symbol exclusion", "source"),
     TestDefinition("BLDL3D03", "BLDL3D", "AMPS mover return-code mapping", "source"),
@@ -149,6 +158,28 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("BLDL3D06", "BLDL3D", "Production turbulence-header boundary", "source"),
     TestDefinition("ARCH3D02", "ARCH3D", "Canonical shared-archive ownership", "source"),
     TestDefinition("SWCME3D01", "SWCME3D", "Relocated SWCME common runner", "source"),
+    # Linked and external-evidence cases are intentionally non-routine.  They
+    # remain visible through --all/--suite phase-v and report SKIP when their
+    # configured executable or reviewed bundle is unavailable.
+    TestDefinition("NAT3D01", "NAT3D", "AMPS mesh integration", "validation", False),
+    TestDefinition("NAT3D02", "NAT3D", "Cell background integration", "validation", False),
+    TestDefinition("NAT3D03", "NAT3D", "AMR gradient integration", "validation", False),
+    TestDefinition("NAT3D09", "NAT3D", "Particle load balance", "validation", False),
+    TestDefinition("NAT3D10", "NAT3D", "Production resource budgets", "validation", False),
+    TestDefinition("NAT3D11", "NAT3D", "Coupled snapshot/shock schedule", "validation", False),
+    TestDefinition("NAT3D12", "NAT3D", "Production product grammar", "validation", False),
+    TestDefinition("MPI3D01", "MPI3D", "Multi-rank sampling reproducibility", "validation", False),
+    TestDefinition("MPI3D02", "MPI3D", "Multi-rank restart continuation", "validation", False),
+    TestDefinition("XM3D01", "XM3D", "Parker cross-model profiles", "validation", False),
+    TestDefinition("XM3D02", "XM3D", "Focused cross-model profiles", "validation", False),
+    TestDefinition("XM3D03", "XM3D", "Longitudinal displacement diagnostic", "validation", False),
+    TestDefinition("XM3D04", "XM3D", "SWCME shock-source reduction", "validation", False),
+    TestDefinition("XM3D05", "XM3D", "Resolution convergence", "validation", False),
+    TestDefinition("XM3D06", "XM3D", "Independent 3-D PDE reference", "validation", False),
+    TestDefinition("OV3D01", "OV3D", "2013 April 11 near-Earth event", "validation", False),
+    TestDefinition("OV3D02", "OV3D", "2020 May 29 PSP/STEREO-A event", "validation", False),
+    TestDefinition("OV3D03", "OV3D", "2014 January 6 PAMELA diagnostic", "validation", False),
+    TestDefinition("OV3D04", "OV3D", "Electron multi-spacecraft diagnostic", "validation", False),
 )
 
 BY_ID: Dict[str, TestDefinition] = {item.test_id: item for item in TESTS}
@@ -158,7 +189,8 @@ for _item in TESTS:
 
 SUITES: Dict[str, Tuple[str, ...]] = {
     "standalone": tuple(item.test_id for item in TESTS
-                        if item.kind in ("cpp", "shell") or item.test_id == "RUN3D01"),
+                        if item.kind in ("cpp", "shell") or
+                        item.test_id in ("RUN3D01", "VALRUN3D01")),
     "r0": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04", "BLDL3D05",
            "BLDL3D06",
            "RUN3D01", "LAY01", "BLD01"),
@@ -179,6 +211,10 @@ SUITES: Dict[str, Tuple[str, ...]] = {
     "phase-o": tuple(item.test_id for item in TESTS
                      if item.group == "RST3D" or
                      item.test_id in ("NAT3D06", "NAT3D07")),
+    "phase-v": tuple(item.test_id for item in TESTS
+                     if item.group in ("INT3D", "VFY3D", "MPI3D", "XM3D", "OV3D") or
+                     (item.group == "NAT3D" and item.kind == "validation") or
+                     item.test_id == "VALRUN3D01"),
     "production": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04",
                    "BLDL3D05", "BLDL3D06"),
 }
@@ -204,7 +240,7 @@ Examples:
 
 For a configured AMPS checkout, either place srcSEP3D in its normal
 application location or provide --make-config /path/to/Makefile.conf.  A
-source-only archive can run the standalone, R1, R2, M/B/T/P/A/O, and source-only
+source-only archive can run the standalone, R1, R2, M/B/T/P/A/O/V, and source-only
 build tests. BLDL3D01 is recorded as SKIP until a real production configuration is
 present; BLDL3D03 is SKIP if the actual AMPS pic.h is unavailable.
 """
@@ -216,11 +252,16 @@ def _utc_stamp() -> str:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run srcSEP3D standalone, R0-R2/M/B/T/P/A/O, and production-build tests.",
+        description="Run srcSEP3D standalone, R0-R2/M/B/T/P/A/O/V, and production-build tests.",
         formatter_class=_HelpFormatter,
         epilog=EPILOG)
     parser.add_argument("--amps", default=os.environ.get("SEP3D_EXECUTABLE"),
-                        help="linked srcSEP3D/AMPS executable (reserved for linked phases)")
+                        help="linked srcSEP3D/AMPS executable for Phase-V native cases")
+    parser.add_argument("--validation-data", type=Path,
+                        default=os.environ.get("SEP3D_VALIDATION_DATA"),
+                        help="root containing CASE_ID/manifest.json evidence bundles")
+    parser.add_argument("--validation-launch-prefix", default="",
+                        help="optional argv prefix for linked cases, e.g. 'mpiexec -n 8'")
     parser.add_argument("--amps-source", type=Path,
                         default=os.environ.get("AMPS_SOURCE_ROOT"),
                         help="AMPS root containing src/pic/pic.h for ABI checks")
@@ -420,7 +461,8 @@ def _production_files() -> List[Path]:
     files = [ROOT / "SEP3D.h", ROOT / "main_lib.cpp", ROOT / "main.cpp"]
     for directory in (ROOT / "core", ROOT / "background", ROOT / "runtime",
                       ROOT / "mesh", ROOT / "turbulence", ROOT / "transport",
-                      ROOT / "adapters", ROOT / "output", ROOT / "amps"):
+                      ROOT / "adapters", ROOT / "output", ROOT / "validation",
+                      ROOT / "amps"):
         files.extend(sorted(directory.glob("*.h")))
         files.extend(sorted(directory.glob("*.cpp")))
     return files
@@ -472,7 +514,7 @@ def _check_retired_sources(definition: TestDefinition) -> Result:
     status = "FAIL" if errors else "PASS"
     message = "; ".join(errors) if errors else (
         "retired mover/sampler source is absent; application sources are explicit "
-        "and M/B/T/P/A/O implementations remain in layered modules; wedge and "
+        "and M/B/T/P/A/O/V implementations remain in layered modules; wedge and "
         "prepopulation operations are absent")
     return Result(definition.test_id, definition.group, status, message,
                   time.monotonic() - started, [])
@@ -917,7 +959,64 @@ def _run_source(definition: TestDefinition, args: argparse.Namespace,
                       "PASS" if code == 0 else "FAIL",
                       output.strip() or f"runner unit test exited {code}",
                       elapsed, command)
+    if definition.test_id == "VALRUN3D01":
+        command = [sys.executable,
+                   str(ROOT / "test" / "test_validation_runner.py")]
+        code, output, elapsed = _run_command(
+            command, ROOT, args.timeout, args.verbose)
+        return Result(definition.test_id, definition.group,
+                      "PASS" if code == 0 else "FAIL",
+                      output.strip() or
+                      f"Phase-V runner unit test exited {code}",
+                      elapsed, command)
     raise RunnerError(f"no source-test implementation for {definition.test_id}")
+
+
+def _run_validation(definition: TestDefinition, args: argparse.Namespace,
+                    output_dir: Path) -> Result:
+    """Run one external Phase-V descriptor and preserve its evidence class.
+
+    The nested campaign runner performs checksum, schema, and linked-registry
+    checks.  This front end only translates its one-case result into the common
+    srcSEP3D summary so ``--all`` can continue after an unavailable dataset or
+    a failed event without losing the other development evidence.
+    """
+    campaign_output = output_dir / "phase-v"
+    command = [sys.executable, str(ROOT / "validation" / "run_validation.py"),
+               "--case", definition.test_id,
+               "--output-dir", str(campaign_output),
+               "--timeout", str(args.timeout)]
+    if args.amps:
+        command.extend(("--amps", str(Path(args.amps).expanduser().resolve())))
+    if args.validation_data is not None:
+        command.extend(("--evidence-root",
+                        str(args.validation_data.expanduser().resolve())))
+    if args.validation_launch_prefix:
+        command.extend(("--launch-prefix", args.validation_launch_prefix))
+    code, output, elapsed = _run_command(
+        command, ROOT, args.timeout + 5.0, args.verbose)
+    report = campaign_output / definition.test_id / "result.json"
+    if not report.is_file():
+        return Result(definition.test_id, definition.group, "ERROR",
+                      "Phase-V runner wrote no case report: " + output[-2000:],
+                      elapsed, command)
+    try:
+        record = json.loads(report.read_text(encoding="utf-8"))
+        status = str(record.get("status", "ERROR")).upper()
+        message = str(record.get("message", ""))
+    except (OSError, ValueError) as error:
+        return Result(definition.test_id, definition.group, "ERROR",
+                      f"cannot parse Phase-V case report: {error}",
+                      elapsed, command)
+    if status not in ("PASS", "FAIL", "SKIP", "ERROR"):
+        status = "ERROR"
+        message = "Phase-V case report has an invalid status"
+    expected_code = 2 if status == "ERROR" else (1 if status == "FAIL" else 0)
+    if code != expected_code:
+        status = "ERROR"
+        message += f" (runner exit {code}, expected {expected_code})"
+    return Result(definition.test_id, definition.group, status, message,
+                  elapsed, command)
 
 
 def _select(args: argparse.Namespace) -> List[TestDefinition]:
@@ -1039,8 +1138,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             result = _run_cpp(definition, args, output_dir)
         elif definition.kind == "shell":
             result = _run_shell(definition, args)
-        else:
+        elif definition.kind == "source":
             result = _run_source(definition, args, output_dir)
+        elif definition.kind == "validation":
+            result = _run_validation(definition, args, output_dir)
+        else:
+            raise RunnerError(f"unknown test kind for {definition.test_id}: "
+                              f"{definition.kind}")
         results.append(result)
         print(f"[{result.test_id}] {result.status}", flush=True)
 

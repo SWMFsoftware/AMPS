@@ -1,0 +1,232 @@
+{
+  "schema": "srcsep3d-validation-case-registry-v1",
+  "cases": [
+    {
+      "id": "NAT3D01",
+      "name": "AMPS mesh versus standalone budget",
+      "evidence_class": "linked",
+      "role": "release-gate",
+      "description": "Compare the real AMPS leaf histogram and balance with the Phase-M prediction."
+    },
+    {
+      "id": "NAT3D02",
+      "name": "Cell background storage",
+      "evidence_class": "linked",
+      "role": "release-gate",
+      "description": "Compare owner-local cell storage with direct immutable-provider evaluations."
+    },
+    {
+      "id": "NAT3D03",
+      "name": "AMR field-gradient continuity",
+      "evidence_class": "linked",
+      "role": "release-gate",
+      "description": "Validate generated magnetic gradients and refinement-boundary continuity."
+    },
+    {
+      "id": "NAT3D09",
+      "name": "Particle load balance",
+      "evidence_class": "linked",
+      "role": "release-gate",
+      "description": "Require the configured max/mean rank particle count to remain below two."
+    },
+    {
+      "id": "NAT3D10",
+      "name": "Production memory and wall-clock budgets",
+      "evidence_class": "linked",
+      "role": "release-gate",
+      "description": "Measure rather than estimate the declared production resource budgets."
+    },
+    {
+      "id": "NAT3D11",
+      "name": "Coupled snapshot and shock schedule",
+      "evidence_class": "linked",
+      "role": "release-gate",
+      "description": "Validate SWCME/SWMF generation cadence, interpolation continuity, and crossing time."
+    },
+    {
+      "id": "NAT3D12",
+      "name": "Production product grammar",
+      "evidence_class": "linked",
+      "role": "release-gate",
+      "description": "Parse all linked CSV/Tecplot products and prove staging cleanup."
+    },
+    {
+      "id": "MPI3D01",
+      "name": "Multi-rank sampling reproducibility",
+      "evidence_class": "linked",
+      "role": "release-gate",
+      "description": "Compare globally stable-ID-ordered samples across the declared rank/thread matrix."
+    },
+    {
+      "id": "MPI3D02",
+      "name": "Multi-rank restart continuation",
+      "evidence_class": "linked",
+      "role": "release-gate",
+      "description": "Compare uninterrupted and restarted particle/sampling state in a linked decomposition."
+    },
+    {
+      "id": "XM3D01",
+      "name": "Parker 3-D versus field-line reference",
+      "evidence_class": "series",
+      "role": "release-gate",
+      "description": "Compare intensity-time and radial profiles against an independently exported field-line result.",
+      "acceptance": {
+        "normalization": "absolute",
+        "minimum_coverage": 0.9,
+        "maximum_log10_rmse": 0.045757,
+        "maximum_median_absolute_log10_error": 0.045757,
+        "minimum_log10_correlation": 0.95,
+        "maximum_onset_coordinate_error": 1e300,
+        "maximum_peak_coordinate_error": 1e300,
+        "maximum_absolute_log10_peak_ratio": 0.045757,
+        "maximum_absolute_log10_fluence_ratio": 0.045757
+      }
+    },
+    {
+      "id": "XM3D02",
+      "name": "Focused 3-D versus focused field-line reference",
+      "evidence_class": "series",
+      "role": "release-gate",
+      "description": "Compare onset, peak, fluence, and profile shape using identical D_mumu inputs.",
+      "acceptance": {
+        "normalization": "absolute",
+        "minimum_coverage": 0.9,
+        "maximum_log10_rmse": 0.070581,
+        "maximum_median_absolute_log10_error": 0.070581,
+        "minimum_log10_correlation": 0.9,
+        "maximum_onset_coordinate_error": 1.0,
+        "maximum_peak_coordinate_error": 1.0,
+        "maximum_absolute_log10_peak_ratio": 0.070581,
+        "maximum_absolute_log10_fluence_ratio": 0.070581
+      }
+    },
+    {
+      "id": "XM3D03",
+      "name": "Longitudinal displacement diagnostic",
+      "evidence_class": "reserved",
+      "role": "diagnostic",
+      "description": "Quantify zero response with kappa_perp=0 and finite response only after perpendicular transport is released.",
+      "skip_reason": "perpendicular diffusion is a reserved post-release extension"
+    },
+    {
+      "id": "XM3D04",
+      "name": "SWCME shock-source reduction",
+      "evidence_class": "series",
+      "role": "release-gate",
+      "description": "Require exact common source artifacts and transported spectra within fifteen percent.",
+      "requires_exact_pairs": true,
+      "acceptance": {
+        "normalization": "absolute",
+        "minimum_coverage": 0.9,
+        "maximum_log10_rmse": 0.070581,
+        "maximum_median_absolute_log10_error": 0.070581,
+        "minimum_log10_correlation": 0.9,
+        "maximum_onset_coordinate_error": 1e300,
+        "maximum_peak_coordinate_error": 1e300,
+        "maximum_absolute_log10_peak_ratio": 0.070581,
+        "maximum_absolute_log10_fluence_ratio": 0.070581
+      }
+    },
+    {
+      "id": "XM3D05",
+      "name": "Mesh and timestep convergence",
+      "evidence_class": "convergence",
+      "role": "release-gate",
+      "description": "Report observed order and require the declared default to remain within five percent of the finest result.",
+      "acceptance": {
+        "minimum_observed_order": 1.0,
+        "maximum_default_relative_difference": 0.05
+      }
+    },
+    {
+      "id": "XM3D06",
+      "name": "Independent three-dimensional PDE comparison",
+      "evidence_class": "series",
+      "role": "extended",
+      "description": "Compare a manufactured small problem against a separately maintained finite-volume solver.",
+      "acceptance": {
+        "normalization": "absolute",
+        "minimum_coverage": 1.0,
+        "maximum_log10_rmse": 0.022276,
+        "maximum_median_absolute_log10_error": 0.022276,
+        "minimum_log10_correlation": 0.98,
+        "maximum_onset_coordinate_error": 1e300,
+        "maximum_peak_coordinate_error": 1e300,
+        "maximum_absolute_log10_peak_ratio": 0.022276,
+        "maximum_absolute_log10_fluence_ratio": 0.022276
+      }
+    },
+    {
+      "id": "OV3D01",
+      "name": "2013 April 11 near-Earth event",
+      "evidence_class": "series",
+      "role": "release-gate",
+      "description": "ACE/EPAM, GOES-13/EPEAD, and SOHO/ERNE comparison with reviewed provenance.",
+      "acceptance": {
+        "normalization": "one-global-amplitude",
+        "minimum_coverage": 0.9,
+        "maximum_log10_rmse": 0.5,
+        "maximum_median_absolute_log10_error": 0.5,
+        "minimum_log10_correlation": 0.45,
+        "maximum_onset_coordinate_error": 1e300,
+        "maximum_peak_coordinate_error": 1e300,
+        "maximum_absolute_log10_peak_ratio": 0.5,
+        "maximum_absolute_log10_fluence_ratio": 0.5
+      }
+    },
+    {
+      "id": "OV3D02",
+      "name": "2020 May 29 PSP/STEREO-A event",
+      "evidence_class": "series",
+      "role": "release-gate",
+      "description": "Radial and longitudinal profile comparison at PSP and STEREO-A.",
+      "acceptance": {
+        "normalization": "one-global-amplitude",
+        "minimum_coverage": 0.9,
+        "maximum_log10_rmse": 0.75,
+        "maximum_median_absolute_log10_error": 0.75,
+        "minimum_log10_correlation": 0.35,
+        "maximum_onset_coordinate_error": 1e300,
+        "maximum_peak_coordinate_error": 1e300,
+        "maximum_absolute_log10_peak_ratio": 0.75,
+        "maximum_absolute_log10_fluence_ratio": 0.75
+      }
+    },
+    {
+      "id": "OV3D03",
+      "name": "2014 January 6 PAMELA diagnostic",
+      "evidence_class": "series",
+      "role": "diagnostic",
+      "description": "Connectivity-sensitive spectrum that quantifies the kappa_perp=0 limitation.",
+      "acceptance": {
+        "normalization": "one-global-amplitude",
+        "minimum_coverage": 0.9,
+        "maximum_log10_rmse": 0.8,
+        "maximum_median_absolute_log10_error": 0.8,
+        "minimum_log10_correlation": 0.0,
+        "maximum_onset_coordinate_error": 1e300,
+        "maximum_peak_coordinate_error": 1e300,
+        "maximum_absolute_log10_peak_ratio": 0.8,
+        "maximum_absolute_log10_fluence_ratio": 0.8
+      }
+    },
+    {
+      "id": "OV3D04",
+      "name": "Near-relativistic electron diagnostic",
+      "evidence_class": "series",
+      "role": "diagnostic",
+      "description": "Multi-spacecraft electron evidence with explicit detector and provenance metadata.",
+      "acceptance": {
+        "normalization": "one-global-amplitude",
+        "minimum_coverage": 0.8,
+        "maximum_log10_rmse": 1.0,
+        "maximum_median_absolute_log10_error": 1.0,
+        "minimum_log10_correlation": 0.0,
+        "maximum_onset_coordinate_error": 1e300,
+        "maximum_peak_coordinate_error": 1e300,
+        "maximum_absolute_log10_peak_ratio": 1.0,
+        "maximum_absolute_log10_fluence_ratio": 1.0
+      }
+    }
+  ]
+}

@@ -5,7 +5,9 @@ match `srcSEP/test/run_tests.py` so the two applications can use the same
 automation habits. The runner combines R0/R1/R2 foundation evidence with
 Phase-M mesh, Phase-B background, Phase-T turbulence/coefficient, Phase-P
 transport, Phase-A adapter, and Phase-O sampling/restart evidence without
-requiring AMPS for dependency-free tests.
+requiring AMPS for dependency-free tests. Phase V adds controlled integration
+and physics checks plus explicit linked/cross-model/observational evidence
+gates.
 
 ## Quick commands
 
@@ -16,6 +18,10 @@ python3 test/run_tests.py --test LAY01
 python3 test/run_tests.py --suite r1 --suite r2
 python3 test/run_tests.py --suite phase-m --suite phase-b --suite phase-t
 python3 test/run_tests.py --suite phase-p --suite phase-a --suite phase-o
+python3 test/run_tests.py --suite phase-v --rebuild
+python3 test/run_tests.py --suite phase-v --amps /path/to/amps \
+  --validation-data /path/to/evidence \
+  --validation-launch-prefix "mpiexec -n 8"
 python3 test/run_tests.py --group HARN --group BLDL3D \
   --amps-source /path/to/AMPS
 python3 test/run_tests.py --all --amps-source /path/to/AMPS \
@@ -57,11 +63,12 @@ for a shell-independent command.
 | `--all` | runs every public test separately and continues after failures |
 | `--suite NAME` | runs one dependency/evidence class; repeatable |
 | `--output-dir DIR` | writes the complete report bundle below `DIR` |
-| `--amps PATH` | reserves the linked-executable path for later linked phases |
+| `--amps PATH` | supplies the configured linked executable for Phase-V native cases |
 | `--timeout SEC` | applies a per-command timeout |
 
 Additional setup options are `--amps-source`, `--make-config`,
-`--sep-common-dir`, and `--sep-common-archive`.
+`--sep-common-dir`, `--sep-common-archive`, `--validation-data`, and
+`--validation-launch-prefix`.
 
 ## Evidence classes
 
@@ -70,13 +77,14 @@ Additional setup options are `--amps-source`, `--make-config`,
 `test/stage1` is compiled with no AMPS include path and no MPI library. It links
 the Phase-M mesh model, Phase-B providers/snapshots, Phase-T turbulence bridge,
 Phase-P transport cores, Phase-A neutral adapters, Phase-O output/restart,
-R2 Runtime, test callbacks, and shared `sep_common.a`. The runner adds
+Phase-V metrics/audits, R2 Runtime, test callbacks, and shared `sep_common.a`.
+The runner adds
 `-Wall -Wextra -Wpedantic -Werror`.
 
 | Group | IDs | Purpose |
 |---|---|---|
 | `HARN` | `HARN01`–`HARN04` | registry selection, PASS/FAIL/SKIP/ERROR exits, JSON, and JUnit |
-| `LAY` | `LAY01`, `LAY02` | AMPS-free core/background/runtime/mesh/turbulence/transport/adapters/output rule and negative control |
+| `LAY` | `LAY01`, `LAY02` | AMPS-free core/background/runtime/mesh/turbulence/transport/adapters/output/validation rule and negative control |
 | `BLD` | `BLD01` | `nm -u` confirms the standalone binary has no AMPS/MPI symbols |
 | `UTIL` | `UTIL02` | byte-exact shared-kernel reference record |
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
@@ -92,6 +100,8 @@ R2 Runtime, test callbacks, and shared `sep_common.a`. The runner adds
 | `NAT3D` | `NAT3D04`–`NAT3D08` | boundary outcomes, ledger closure, sampling isolation, output schema, shock crossing |
 | `SHK3D` | `SHK3D01`–`SHK3D04` | common source identity, moving-sphere geometry, guards, and normalization |
 | `RST3D` | `RST3D01`–`RST3D03` | full round trip, transactional rejection, and snapshot policy |
+| `INT3D` | `INT3D01`–`INT3D03` | stable-ID rank merge, global conservation, and resource budgets |
+| `VFY3D` | `VFY3D01`–`VFY3D05` | comparison metrics and analytical Parker/focused/SWCME validation |
 | `RUNNER` | `RUN3D01` | Python selector, de-duplication, usage-error, JSON, and JUnit contract |
 
 `HARN02-EXITCODE` and `HARN03-EXITCODE` are shell-level probes. They launch the
@@ -308,11 +318,58 @@ python3 test/run_tests.py --suite phase-o --rebuild \
   --output-dir test_output/phase-o
 ```
 
+### Phase V integration/scientific-validation gates
+
+The Phase-V suite combines immediately executable prerequisites with external
+release evidence; their statuses must be interpreted separately.
+
+| IDs | Acceptance contract |
+|---|---|
+| `INT3D01–03` | rank/order-independent stable-ID gather, exact global integer conservation, and explicit load/wall/memory budgets |
+| `VFY3D01–02` | normalization, log-space metrics, coverage rejection, and malformed-evidence classification |
+| `VFY3D03` | 3-D Parker projections reproduce the independent one-dimensional Gaussian Green function |
+| `VFY3D04` | focused transport converges at second order to the exact focusing characteristic |
+| `VFY3D05` | sampled SWCME/DSA momentum CDF and total represented event weight agree with their declared laws |
+| `NAT3D01–03/09–12` | configured AMPS mesh, storage, gradients, balance, budgets, coupled cadence, and output grammar |
+| `MPI3D01–02` | multi-rank sampling and restart continuation are decomposition independent |
+| `XM3D01–06` | checksum-owned cross-model profiles, exact source identity, convergence, and independent PDE evidence |
+| `OV3D01–04` | reviewed event comparisons, with release-gate and diagnostic roles retained in reports |
+| `VALRUN3D01` | runner lists all classes, preserves SKIP, verifies checksums, and evaluates convergence bundles |
+
+```bash
+# Runs controlled prerequisites now and records unavailable external work as SKIP.
+python3 test/run_tests.py --suite phase-v --rebuild \
+  --output-dir test_output/phase-v
+
+# Adds independently exported cross-model/observational evidence.
+python3 test/run_tests.py --suite phase-v \
+  --validation-data /path/to/evidence \
+  --output-dir test_output/phase-v-evidence
+
+# Adds native tests from a configured linked application.
+python3 test/run_tests.py --suite phase-v --amps /path/to/amps \
+  --validation-launch-prefix "mpiexec -n 8" \
+  --output-dir test_output/phase-v-linked
+```
+
+The launch prefix is parsed into process arguments and is never passed to a
+shell. A linked binary must advertise the requested ID through `--list-tests`;
+a stale binary is `ERROR`. Scientific evidence must use the templates under
+`validation/templates/`, remain inside `EVIDENCE_ROOT/CASE_ID`, and match every
+declared SHA-256. Missing evidence is `SKIP`; checksum/schema/provenance failure
+is `ERROR`; a valid metric outside tolerance is `FAIL`.
+
+`XM3D03`, `OV3D03`, and `OV3D04` are diagnostic because perpendicular
+diffusion and drifts remain disabled. They quantify the expected poor-
+connection limitation and cannot be used to claim that cross-field transport
+has been validated. See `INTEGRATION_SCIENTIFIC_VALIDATION.md` for the full
+equations, algorithms, case roles, and evidence schemas.
+
 ## Named suites
 
 | Suite | Contents |
 |---|---|
-| `standalone` | C++ registry, shell exit-code probes, and `RUN3D01` |
+| `standalone` | C++ registry, shell exit-code probes, `RUN3D01`, and `VALRUN3D01` |
 | `r0` | R0 source/ABI/production gates plus RUN3D01, LAY01, and BLD01 |
 | `r1` | canonical shared-archive audit, relocated SWCME suite, and frozen common kernels |
 | `r2` | LIFE3D01–LIFE3D04 immutable configuration and lifecycle gates |
@@ -322,6 +379,7 @@ python3 test/run_tests.py --suite phase-o --rebuild \
 | `phase-p` | COEF3D03–05, PRK3D01–08, FTE3D01–07, RNG3D01–03 |
 | `phase-a` | ADP3D01, NAT3D04–05/08, SHK3D01–04 |
 | `phase-o` | NAT3D06–07 and RST3D01–03 |
+| `phase-v` | INT3D/VFY3D prerequisites, external NAT3D/MPI3D/XM3D/OV3D cases, and VALRUN3D01 |
 | `production` | BLDL3D01–06 |
 
 Suites can be repeated. Overlapping IDs are de-duplicated in stable order.
@@ -389,5 +447,9 @@ invoke that exact linked callback, following the srcSEP pattern.
 | `BLDL3D03 SKIP` | pass `--amps-source` pointing to a tree containing `src/pic/pic.h` |
 | `build/main` cannot find `../Makefile.conf` | run `make print-layout-paths`; `AMPS_CONFIG` must resolve to the absolute `AMPS/Makefile.conf` path |
 | standalone compile failure | rerun with `--rebuild --verbose` |
+| Phase-V linked case `SKIP` | supply `--amps`; use `--validation-launch-prefix` when MPI launch arguments are required |
+| XM3D/OV3D case `SKIP` | supply `--validation-data` containing `CASE_ID/manifest.json` and its declared artifacts |
+| Phase-V checksum `ERROR` | regenerate the SHA-256 only after reviewing the changed evidence; never edit a hash merely to silence the gate |
+| linked executable does not advertise a case | rebuild the configured AMPS application from this source tree and verify its production test registry |
 | unknown test/group | use `--list`; unknown selectors are usage errors |
 | report missing after a C++ test | treat as ERROR; inspect verbose subprocess output |

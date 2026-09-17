@@ -117,8 +117,8 @@ const int N_FORBIDDEN = 3;
 
 const char* DIRS[] = {
     "core", "background", "runtime", "mesh", "turbulence", "transport",
-    "adapters", "output"};
-const int N_DIRS = 8;
+    "adapters", "output", "validation"};
+const int N_DIRS = 9;
 
 // ============================================================================
 // LAY01 — positive case: no forbidden symbols in core/ or background/
@@ -154,7 +154,7 @@ SEP3D::Testing::Result run_LAY01() {
   }
 
   return Pass(
-      "core/, background/, runtime/, mesh/, turbulence/, transport/, adapters/, and output/ contain no #include pic.h, #include mpi.h, "
+      "core/, background/, runtime/, mesh/, turbulence/, transport/, adapters/, output/, and validation/ contain no #include pic.h, #include mpi.h, "
       "or PIC:: references.");
 }
 
@@ -257,7 +257,7 @@ std::vector<SEP3D::Testing::Descriptor> RegisterLayeringTests(
     make("LAY01",
          "AMPS-independent directories contain no AMPS symbols",
          "grep -rn -E for #include pic.h, #include mpi.h, PIC:: in "
-         "core/, background/, runtime/, mesh/, turbulence/, transport/, adapters/, and output/; fails if any match is found.",
+         "core/, background/, runtime/, mesh/, turbulence/, transport/, adapters/, output/, and validation/; fails if any match is found.",
          run_LAY01),
 
     make("LAY02",

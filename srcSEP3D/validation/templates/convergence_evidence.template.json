@@ -1,0 +1,15 @@
+{
+  "schema": "srcsep3d-convergence-evidence-v1",
+  "case_id": "XM3D05",
+  "quantity": "L1 profile error",
+  "levels": [
+    {"resolution": 4.0, "error": 0.08},
+    {"resolution": 2.0, "error": 0.04},
+    {"resolution": 1.0, "error": 0.02}
+  ],
+  "default_relative_difference": 0.04,
+  "provenance": {
+    "model": "Describe executable revision, configuration fingerprint, seed, ranks, and the norm used.",
+    "reference": "Describe the finest-grid or independent reference product."
+  }
+}

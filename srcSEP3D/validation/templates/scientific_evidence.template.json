@@ -1,0 +1,17 @@
+{
+  "schema": "srcsep3d-scientific-evidence-v1",
+  "case_id": "XM3D01",
+  "coordinate_name": "time",
+  "coordinate_units": "s",
+  "value_name": "differential_intensity",
+  "value_units": "m^-2 s^-1 sr^-1 J^-1",
+  "model_csv": "model.csv",
+  "model_sha256": "REPLACE_WITH_SHA256",
+  "reference_csv": "reference.csv",
+  "reference_sha256": "REPLACE_WITH_SHA256",
+  "provenance": {
+    "model": "Describe executable revision, configuration fingerprint, snapshot identity, seed, ranks, and threads.",
+    "reference": "Describe independent model or observation, publication/dataset, instrument, processing, and uncertainty."
+  },
+  "exact_pairs": []
+}

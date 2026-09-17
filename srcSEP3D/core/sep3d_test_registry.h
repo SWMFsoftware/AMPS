@@ -162,6 +162,12 @@ std::vector<SEP3D::Testing::Descriptor> RegisterAdapterTests();
 // schema/hash verification, and complete restart/reproducibility state.
 std::vector<SEP3D::Testing::Descriptor> RegisterOutputTests();
 
+// INT3D/VFY3D — Phase-V deterministic rank integration and controlled
+// scientific-validation prerequisites.  Linked/cross-model/observational
+// evidence remains in the Python campaign because it requires external
+// executables or reviewed data bundles.
+std::vector<SEP3D::Testing::Descriptor> RegisterValidationTests();
+
 
 // ---- Future linked groups --------------------------------------------------
 

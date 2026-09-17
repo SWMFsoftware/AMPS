@@ -115,7 +115,7 @@ static void PrintHelp(const char* argv0) {
     << "  1  at least one FAILED\n"
     << "  2  at least one ERROR, or a usage error (unknown option, bad ID)\n"
     << "\n"
-    << "Groups through Phase O:   ADP3D  BGP3D  BLD  COEF3D  FTE3D  HARN  LAY  LIFE3D  MSH3D  NAT3D  PRK3D  RNG3D  RST3D  SHK3D  SNAP3D  TUR3D  UTIL\n"
+    << "Groups through Phase V:   ADP3D  BGP3D  BLD  COEF3D  FTE3D  HARN  INT3D  LAY  LIFE3D  MSH3D  NAT3D  PRK3D  RNG3D  RST3D  SHK3D  SNAP3D  TUR3D  UTIL  VFY3D\n"
     << "Frozen records:    test/frozen/\n"
     << "Test artifacts:    test/individual-test/\n"
     << "Full procedure:    test/README.md\n";
@@ -159,9 +159,11 @@ int main(int argc, char** argv) {
   append(RegisterTransportTests());   // PRK3D/FTE3D/RNG3D — Phase P
   append(RegisterAdapterTests());     // ADP3D/NAT3D/SHK3D — Phase A
   append(RegisterOutputTests());      // NAT3D/RST3D — Phase O
+  append(RegisterValidationTests());  // INT3D/VFY3D — Phase V prerequisites
 
-  // Linked multi-rank validation groups are added only when they execute the
-  // configured AMPS binary; they must not be represented by standalone mocks.
+  // Linked multi-rank and observational groups are added only by the Phase-V
+  // campaign runner when real external evidence is available; they must not
+  // be represented by standalone mocks.
 
   SEP3D::Testing::Registry registry(std::move(all));
 

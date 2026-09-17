@@ -1,6 +1,6 @@
 # srcSEP3D Migration Manifest
 
-This manifest records what Phases R0–R2, M, B, T, P, A, and O removed, retained, or
+This manifest records what Phases R0–R2, M, B, T, P, A, O, and V removed, retained, or
 replaced. It is an
 evidence document: completion claims must correspond to an executable test or
 an explicitly identified external build gate.
@@ -272,10 +272,34 @@ either rejected or awaited with an explicit bounded callback; another
 generation is never substituted. `NAT3D06–07` and `RST3D01–03` are the Phase-O
 evidence.
 
+## Phase V — integration and scientific validation
+
+| File | Ownership and invariant |
+|---|---|
+| `validation/validation_metrics.{h,cpp}` | canonical stable-ID rank merge, exact global ledger reduction, resource budgets, and positive-series scientific metrics |
+| `validation/case_registry.json` | immutable IDs, evidence classes, release/diagnostic roles, and quantitative thresholds |
+| `validation/run_validation.py` | linked invocation, checksum/provenance validation, series/convergence evaluation, and atomic JSON/JUnit reports |
+| `validation/templates/` | non-passing instructions for series and convergence evidence bundles |
+| `test/individual-test/test_validation.cpp` | controlled integration plus analytical Parker/focused/SWCME validation |
+| `test/test_validation_runner.py` | CLI, SKIP, checksum-failure, and convergence-runner regression tests |
+| `INTEGRATION_SCIENTIFIC_VALIDATION.md` | algorithms, equations, evidence boundary, case roles, and physical interpretation |
+
+Phase V preserves application independence: cross-model evidence is exported
+by its owner and consumed as immutable bytes; neither runner constructs a path
+to the sibling `srcSEP` application. Controlled `INT3D`/`VFY3D` results cannot
+satisfy linked `NAT3D`/`MPI3D`, cross-model `XM3D`, or observational `OV3D`
+gates. Missing external evidence is reported as `SKIP`, while malformed or
+checksum-invalid evidence is `ERROR`.
+
+The controlled release prerequisites are `INT3D01–03`, `VFY3D01–05`, and
+`VALRUN3D01`. Linked and scientific release closure requires the real target
+executable and reviewed evidence bundles; the source package intentionally
+contains templates rather than manufactured passing event records.
+
 ## Remaining production boundary
 
-The remaining work is host-specific integration and validation rather than a
-placeholder numerical phase: configure the AMPS mover declaration/macro,
-install a pinned-snapshot coefficient resolver, connect SWCME event scheduling,
-perform deterministic global observation collection, and run linked MPI
-conservation/restart/scientific campaigns.
+The remaining work is release evidence rather than a placeholder numerical
+phase: configure the AMPS mover declaration/macro, install a pinned-snapshot
+coefficient resolver, connect SWCME event scheduling, feed deterministic global
+observations into the Phase-V audit, and run the registered linked MPI and
+scientific campaigns.

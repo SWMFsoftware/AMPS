@@ -12,7 +12,7 @@ The production tree implements the rebaseline and shared foundations (R0–R2),
 **Phase M Mesh and Storage**, **Phase B Background Providers and Snapshots**,
 **Phase T Turbulence and Scattering Inputs**, **Phase P Transport Cores**,
 **Phase A AMPS Mover and Source Adapters**, and **Phase O Sampling, Output, and
-Restart**.
+Restart**, and **Phase V Integration and Scientific Validation**.
 
 `amps_time_step()` now enters the typed Runtime particle phase, calls the AMPS
 step, and completes the Runtime cadence transition. Scientific production
@@ -175,6 +175,31 @@ geometry, DSA spectrum mapping, conservation, and host configuration.
 See [SAMPLING_OUTPUT_RESTART.md](SAMPLING_OUTPUT_RESTART.md) for algorithms,
 file schemas, atomicity, restart contents, and lifecycle rules.
 
+### Phase V: integration and scientific validation
+
+- Rank-local observations are merged in stable-ID order, independently of
+  rank and receive order. Duplicate physical identities are rejected globally.
+- Closed integer particle ledgers are reduced by `(step,species)` with overflow
+  checks and exact global conservation. Load imbalance, wall time, and memory
+  are evaluated against explicit budgets.
+- The positive-series comparator performs log-linear interpolation only within
+  model coverage and reports log-space errors, correlation, onset, peak, and
+  fluence metrics.
+- Absolute, one-global-amplitude, and unit-peak normalization are distinct
+  policies; shape-only results cannot be reported as absolute-flux validation.
+- Controlled validation calls the production Parker, focused, and SWCME source
+  kernels against independent analytical distributions and characteristics.
+- Linked `NAT3D`/`MPI3D`, cross-model `XM3D`, and observational `OV3D` cases
+  share the public CLI. Missing prerequisites are `SKIP`; malformed or
+  checksum-invalid evidence is `ERROR`.
+- Cross-model results are immutable exported evidence. srcSEP3D never searches
+  for or executes the independent `srcSEP` application.
+
+See
+[INTEGRATION_SCIENTIFIC_VALIDATION.md](INTEGRATION_SCIENTIFIC_VALIDATION.md)
+and [validation/README.md](validation/README.md) for algorithms, metrics,
+schemas, case roles, commands, and physical limitations.
+
 ## Current limitations
 
 The following are intentionally not enabled:
@@ -183,7 +208,8 @@ The following are intentionally not enabled:
 - self-consistent 3-D turbulence evolution;
 - external-script background providers;
 - unconfigured direct access to mutable SWMF state from mover workers;
-- full linked/MPI scientific validation and conservation campaigns.
+- bundled linked/MPI and observational evidence. Those Phase-V gates require
+  the configured target executable and independently reviewed evidence bytes.
 
 For coupled operation, the host must configure SWMF authority and call
 `InstallBackgroundSnapshot()` and, when selected,
@@ -205,6 +231,7 @@ srcSEP3D/
 ├── transport/                    Phase-P Parker/focused cores, timestep, RNG
 ├── adapters/                     Phase-A neutral dispatch, ledger, SWCME source
 ├── output/                       Phase-O sampling, publication, restart
+├── validation/                   Phase-V audits, metrics, registry, runner
 ├── runtime/                      immutable configuration and lifecycle
 ├── amps/                         AMPS-only ABI adapters
 ├── MESH_STORAGE.md
@@ -213,6 +240,7 @@ srcSEP3D/
 ├── TRANSPORT_CORES.md
 ├── AMPS_ADAPTERS.md
 ├── SAMPLING_OUTPUT_RESTART.md
+├── INTEGRATION_SCIENTIFIC_VALIDATION.md
 ├── MIGRATION_MANIFEST.md
 ├── SEP3D.h                       production/coupling interface
 ├── main_lib.cpp                  AMPS mesh/storage/provider boundary
@@ -237,7 +265,7 @@ delete stale files; remove an old `AMPS/srcSEP3D/SEP3D.cpp` explicitly if
 | L0/L1 | `core/`, `mesh/` | No | types, resolution, standalone octree/storage, gradients |
 | L1 | `background/` | No | analytic/imported ambient state and snapshots |
 | L1 | `turbulence/` | No | scattering authority, spectra, AWSoM mapping, coefficient bridge |
-| L1/L2 | `runtime/`, `transport/`, `adapters/`, `output/` | No | lifecycle, numerical transport, neutral coupling, diagnostics/restart |
+| L1/L2 | `runtime/`, `transport/`, `adapters/`, `output/`, `validation/` | No | lifecycle, transport, neutral coupling, diagnostics/restart, validation metrics |
 | L2 | `amps/` | Yes | model-to-AMPS ABI translation |
 | L3 | `SEP3D.h`, `main_lib.cpp`, `main.cpp` | Yes | AMPS allocation, owner-local filling, host entry points |
 
@@ -263,6 +291,13 @@ test/run_tests.py --suite phase-t --rebuild
 test/run_tests.py --suite phase-p --rebuild
 test/run_tests.py --suite phase-a --rebuild
 test/run_tests.py --suite phase-o --rebuild
+test/run_tests.py --suite phase-v --rebuild
+
+# Configured Phase-V executable and independently owned evidence.
+test/run_tests.py --suite phase-v --amps ../amps \
+  --validation-data /path/to/evidence \
+  --validation-launch-prefix "mpiexec -n 8" \
+  --output-dir test_output/phase-v
 
 # Complete source and configured-production evidence.
 env MAKEFLAGS="-j16" test/run_tests.py --all \
@@ -319,12 +354,17 @@ same `AMPS/Makefile.conf`, `src/models/sep_common`, and `src/models/swcme`.
 | `FTE3D01–07`, `RNG3D01–03` | focused transport, pitch boundaries, strong-scattering limit, keyed reproducibility |
 | `ADP3D01`, `NAT3D04–05/08`, `SHK3D01–04` | mover dispatch, boundaries, ledger, moving shocks, common SWCME source |
 | `NAT3D06–07`, `RST3D01–03` | sampling isolation, transactional output/schema, complete restart |
+| `INT3D01–03`, `VFY3D01–05` | deterministic rank audit, scientific metrics, analytical Parker/focused/source validation |
+| `NAT3D01–03/09–12`, `MPI3D01–02` | registered configured-host integration and multi-rank gates |
+| `XM3D01–06`, `OV3D01–04` | checksum-owned cross-model and observational campaign gates |
 
-## Next release gate
+## Remaining release evidence
 
-The next work is configured-host integration and scientific validation: make
-the generated AMPS mover macro see `AMPS::Movers::MoveParticle`, install the
-analytic/SWMF local coefficient resolver, connect the coupled SWCME event
-schedule and global observation gather, and run linked single-/multi-rank
-conservation and restart campaigns. A configured `BLDL3D01` run on the target
-AMPS checkout remains required after every production-boundary change.
+Phase-V algorithms, case registration, evidence validation, and controlled
+physics gates are implemented. Closing the production release still requires
+running the registered linked cases on the configured AMPS host and supplying
+the reviewed cross-model/observational bundles. The generated mover macro must
+see `AMPS::Movers::MoveParticle`; the host must install the pinned-snapshot
+coefficient resolver and SWCME schedule; and the global observation gather
+must feed the Phase-V audit. A configured `BLDL3D01` run on the target checkout
+remains required after every production-boundary change.
