@@ -1,6 +1,6 @@
 # srcSEP3D Migration Manifest
 
-This manifest records what Phases R0–R2, M, B, and T removed, retained, or
+This manifest records what Phases R0–R2, M, B, T, P, A, and O removed, retained, or
 replaced. It is an
 evidence document: completion claims must correspond to an executable test or
 an explicitly identified external build gate.
@@ -13,7 +13,7 @@ an explicitly identified external build gate.
 |---|---|---|
 | `SEP3D.cpp` | deleted | contained the axisymmetric y=0 mover and legacy global energy sampler; neither belongs in a three-dimensional transport application |
 | `amps/amps_sampling.h` | deleted | declaration-only placeholder with no production implementation; retaining it implied sampling existed when it did not |
-| `core/sep3d_energy_distribution.{h,cpp}` | deleted | unintegrated replacement kernel had no registered acceptance test or production consumer; Phase O will add sampling as one complete implementation |
+| `core/sep3d_energy_distribution.{h,cpp}` | deleted | unintegrated replacement kernel had no registered acceptance test or production consumer; Phase O now provides one complete sampling implementation under `output/` |
 | `test/stage1` | removed from deliverable | generated executable from the uploaded archive, not source; rebuilt locally by the runner |
 
 ### Retained and rewritten files
@@ -50,11 +50,14 @@ valid AMPS particle result. They must be handled before the adapter is called.
 ### Production execution policy
 
 The host installs an immutable configuration through `ConfigureApplication`.
-Phases M/B/T now build the AMPS mesh, reserve/fill the frozen cell layout,
-publish an analytic or coupled ambient snapshot, and validate prescribed or
-coupled scattering input. `amps_time_step()` still terminates at the explicit
-Phase-P boundary. This is safer and more truthful than running the previous
-wedge or silently substituting a placeholder mover/source/sampler.
+Phases M/B/T build the AMPS mesh, reserve/fill the frozen cell layout, publish
+an analytic or coupled ambient snapshot, and validate prescribed or coupled
+scattering input. Phase P supplies the numerical transport; Phase A supplies
+the single AMPS dispatcher and common SWCME source conversion; Phase O supplies
+read-only products and complete restart state. `amps_time_step()` now executes
+the typed Runtime/PIC step. It does not silently substitute a local-state
+resolver, shock schedule, or MPI observation gather that the host has not
+installed.
 
 ### R0 evidence
 
@@ -222,9 +225,57 @@ reserved feature. `TUR3D01–04` and `COEF3D01–02` are the release evidence.
 `BLDL3D06` additionally proves that the provider header compiles without a
 sep_common include path while the bridge compiles with the canonical one.
 
+## Phase P — transport cores
+
+| File | Ownership and invariant |
+|---|---|
+| `transport/parker_transport.{h,cpp}` | complete tensor-Parker Itô step and exact frozen-divergence cooling |
+| `transport/focused_transport.{h,cpp}` | bounded split focused SDE with declared pitch scheme |
+| `transport/time_step.{h,cpp}` | named stability/accuracy limits with typed, unclamped underflow |
+| `transport/keyed_random.{h,cpp}` | particle/purpose-keyed restartable stochastic streams |
+| `TRANSPORT_CORES.md` | governing equations, numerical split, limits, and reproducibility contract |
+
+The core contains no AMPS list manipulation or source injection. Perpendicular
+diffusion and drift inputs are explicit zero-only guards. `COEF3D03–05`,
+`PRK3D01–08`, `FTE3D01–07`, and `RNG3D01–03` are the Phase-P release evidence.
+
+## Phase A — AMPS mover and source adapters
+
+| File | Ownership and invariant |
+|---|---|
+| `adapters/transport_adapter.{h,cpp}` | complete-record validation, exact two-core dispatch, named substep, boundaries, and expanding-shock crossing |
+| `adapters/particle_ledger.{h,cpp}` | exact integer particle conservation per step/species |
+| `adapters/swcme_source_adapter.{h,cpp}` | canonical SWCME source to shared DSA sampler; dimension-independent semantic keys |
+| `amps/amps_particle_adapter.{h,cpp}` | packed AMPS particle state, ABI return mapping, deterministic velocity reconstruction, and destination-list insertion |
+| `AMPS_ADAPTERS.md` | physics mapping, algorithms, host responsibilities, and evidence |
+
+The AMPS allocator slot is never a particle identity. New particles must be
+initialized with the stable ID and gyrotropic state returned by the common
+source adapter. The generated mover configuration must route to the one Phase-A
+dispatcher and make its declaration visible to the AMPS mover translation
+unit. `ADP3D01`, `NAT3D04–05/08`, and `SHK3D01–04` are the standalone evidence;
+`BLDL3D01/03` remain the linked ABI gate.
+
+## Phase O — sampling, output, and restart
+
+| File | Ownership and invariant |
+|---|---|
+| `output/sampling.{h,cpp}` | stable-ID ordering, compensated cell/spacecraft/field-line reductions, and closed-ledger shock diagnostics |
+| `output/publication.{h,cpp}` | unit-bearing CSV schemas, identity manifest, artifact hashes, and atomic directory publication |
+| `output/restart.{h,cpp}` | versioned canonical little-endian codec for all runtime/stochastic/particle/generation/sampling/ledger state |
+| `output/output_coordinator.{h,cpp}` | Runtime-owned cadence, checkpoint commit/rollback, and pre-mesh restore |
+| `SAMPLING_OUTPUT_RESTART.md` | products, equations, schemas, transactional rules, and evidence |
+
+No sampler changes a particle or consumes a random stream. No restart parser
+mutates caller state before all checks succeed. A missing coupled snapshot is
+either rejected or awaited with an explicit bounded callback; another
+generation is never substituted. `NAT3D06–07` and `RST3D01–03` are the Phase-O
+evidence.
+
 ## Remaining production boundary
 
-The next enabled work package is Phase P. Until its Parker/focused transport
-cores and AMPS mover adapters pass their gates, `amps_time_step()` is the only
-phase stop remaining in the initialized M/B/T path. Shock injection, sampling,
-restart serialization, and validation campaigns remain later phases.
+The remaining work is host-specific integration and validation rather than a
+placeholder numerical phase: configure the AMPS mover declaration/macro,
+install a pinned-snapshot coefficient resolver, connect SWCME event scheduling,
+perform deterministic global observation collection, and run linked MPI
+conservation/restart/scientific campaigns.

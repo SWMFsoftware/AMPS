@@ -131,6 +131,16 @@ const char* Name(ResonanceRangeMode value) {
   return "unknown";
 }
 
+const char* Name(PitchAngleSchemeMode value) {
+  switch (value) {
+    case PitchAngleSchemeMode::ReflectingMilstein:
+      return "reflecting-milstein";
+    case PitchAngleSchemeMode::ReflectingEulerMaruyama:
+      return "reflecting-euler-maruyama";
+  }
+  return "unknown";
+}
+
 bool operator==(const StorageLayout& left, const StorageLayout& right) {
   return left.magneticFieldOffset == right.magneticFieldOffset &&
          left.bulkVelocityOffset == right.bulkVelocityOffset &&
@@ -232,6 +242,16 @@ Core::Status RunConfiguration3D::Create(
         Core::StatusCode::ConfigurationConflict,
         "SWMF turbulence requires the SWMF background authority");
   }
+  const double transportControls[] = {
+      options.cellCrossingFraction, options.diffusionFraction,
+      options.focusingFraction, options.coolingFraction,
+      options.fieldVariationFraction, options.shockCrossingFraction,
+      options.minimumTransportSubstepS};
+  for (double value : transportControls) {
+    if (!std::isfinite(value) || value <= 0.0) {
+      return Invalid("transport time-step controls must be finite and positive");
+    }
+  }
 
   const char* reserved = nullptr;
   if (options.enablePerpendicularDiffusion) reserved = "perpendicular diffusion";
@@ -276,6 +296,14 @@ Core::Status RunConfiguration3D::Create(
           << options.turbulenceCorrelationLengthM
           << ";missing_turbulence=" << Name(options.missingTurbulence)
           << ";resonance_range=" << Name(options.resonanceRange)
+          << ";cell_crossing_fraction=" << options.cellCrossingFraction
+          << ";diffusion_fraction=" << options.diffusionFraction
+          << ";focusing_fraction=" << options.focusingFraction
+          << ";cooling_fraction=" << options.coolingFraction
+          << ";field_variation_fraction=" << options.fieldVariationFraction
+          << ";shock_crossing_fraction=" << options.shockCrossingFraction
+          << ";minimum_substep_s=" << options.minimumTransportSubstepS
+          << ";pitch_scheme=" << Name(options.pitchAngleScheme)
           << ";layout=" << layout.fingerprint;
   const std::string fingerprint =
       SEP::Background::FingerprintConfiguration(physics.str());

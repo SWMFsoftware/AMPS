@@ -8,14 +8,17 @@ shock/source parameters.
 
 ## Implemented scope
 
-The production tree now implements the rebaseline and shared foundations
-(R0–R2), **Phase M Mesh and Storage**, **Phase B Background Providers and
-Snapshots**, and **Phase T Turbulence and Scattering Inputs**.
+The production tree implements the rebaseline and shared foundations (R0–R2),
+**Phase M Mesh and Storage**, **Phase B Background Providers and Snapshots**,
+**Phase T Turbulence and Scattering Inputs**, **Phase P Transport Cores**,
+**Phase A AMPS Mover and Source Adapters**, and **Phase O Sampling, Output, and
+Restart**.
 
-This is not yet an end-to-end SEP simulation. The AMPS mesh, cell storage,
-ambient state, and scattering inputs can be initialized, but `amps_time_step()`
-stops at the explicit **Phase P Transport Cores** boundary. No placeholder
-mover, particle source, or sampler is substituted.
+`amps_time_step()` now enters the typed Runtime particle phase, calls the AMPS
+step, and completes the Runtime cadence transition. Scientific production
+still requires the configured AMPS mover macro and a host-installed local-state
+resolver described in Phase A; no legacy mover, source, sampler, or fallback
+physics is substituted when that coupling is absent.
 
 ### R0–R2 foundation
 
@@ -110,23 +113,86 @@ coupling ownership, and atomicity rules.
 See [TURBULENCE_SCATTERING.md](TURBULENCE_SCATTERING.md) for conventions,
 normalization, policies, and the shared-kernel boundary.
 
+### Phase P: transport cores
+
+- The Parker core advances the rank-one tensor
+  `kappa_parallel * b * b` with the complete Itô drift, including the
+  field-aligned coefficient gradient, field-line curvature, and `div(b)`.
+- The focused core advances full gyrotropic focusing and flow coefficients
+  with a symmetric split, reflecting pitch boundaries, and a declared
+  Milstein or Euler–Maruyama stochastic scheme.
+- Cell crossing, diffusion, focusing, cooling, background variation, shock
+  crossing, and snapshot validity are separate named timestep limits.
+- Counter-based random streams are keyed by campaign, particle, step,
+  substep, and physical purpose, making histories independent of iteration
+  order and worker ownership.
+- Perpendicular diffusion and drifts must be exactly zero until their own
+  physics and validation gates are implemented.
+
+See [TRANSPORT_CORES.md](TRANSPORT_CORES.md) for the equations, splitting
+algorithm, reproducibility contract, and Phase-P acceptance tests.
+
+### Phase A: AMPS mover and SWCME source adapters
+
+- One AMPS particle-buffer entry point validates and dispatches exactly the
+  tensor Parker or split focused core selected by immutable configuration.
+- A packed particle extension persists stable ID, stochastic step/substep,
+  shock generation, momentum, pitch cosine, and gyrophase through migration
+  and AMPS checkpointing.
+- The adapter performs deterministic gyrotropic-to-Cartesian velocity
+  reconstruction, exact destination-list insertion, and explicit terminal
+  deletion/return-code mapping.
+- Inner absorption, outer escape, invalid background, and failed transport are
+  distinct semantic outcomes. Per-step/species integer ledgers require exact
+  closure of active, injected, escaped, absorbed, and failed counts.
+- Moving spherical shock crossings use the first analytic segment/surface root
+  and are de-duplicated by shock generation.
+- The SWCME adapter consumes the canonical common `SEPSourceState`, maps the
+  DSA law to the shared `sep_common` injection sampler, and uses independent
+  semantic random streams for momentum, pitch, gyrophase, and stable identity.
+
+See [AMPS_ADAPTERS.md](AMPS_ADAPTERS.md) for buffer layout, dispatch, shock
+geometry, DSA spectrum mapping, conservation, and host configuration.
+
+### Phase O: sampling, output, and restart
+
+- Read-only particle observations are sorted by stable ID and reduced with a
+  specified compensated sum into cell moments, virtual-spacecraft spectra and
+  anisotropy, field-line projections, and closed-ledger shock diagnostics.
+- Output uses SI unit-bearing CSV schemas, per-artifact hashes, and a manifest
+  containing configuration, code, and snapshot identities. A staging-directory
+  rename publishes the complete sequence atomically.
+- The independent parser verifies manifest keys, exact schemas, and hashes;
+  corrupted or partial products never replace caller state.
+- The restart codec writes a canonical versioned little-endian image rather
+  than C++ object memory. It includes Runtime cadence/checkpoint counters,
+  stochastic identity, all active particle state, snapshot/turbulence/source
+  generations, sampling state, next stable ID, and closed ledger rows.
+- Snapshot mismatch has an explicit reject or bounded-wait policy. Failed
+  checkpoint writes roll Runtime back to `SnapshotReady` without incrementing
+  the checkpoint sequence.
+
+See [SAMPLING_OUTPUT_RESTART.md](SAMPLING_OUTPUT_RESTART.md) for algorithms,
+file schemas, atomicity, restart contents, and lifecycle rules.
+
 ## Current limitations
 
 The following are intentionally not enabled:
 
-- Parker and focused 3-D particle transport steps (Phase P);
 - perpendicular diffusion and gradient/curvature drifts;
-- SWCME shock-surface injection and source normalization;
-- production sampling/output products and checkpoint serialization;
 - self-consistent 3-D turbulence evolution;
 - external-script background providers;
-- full linked/MPI scientific validation campaigns.
+- unconfigured direct access to mutable SWMF state from mover workers;
+- full linked/MPI scientific validation and conservation campaigns.
 
 For coupled operation, the host must configure SWMF authority and call
 `InstallBackgroundSnapshot()` and, when selected,
 `InstallTurbulenceProvider()` before `amps_init()`. A standalone analytic run
 constructs its Parker snapshot and prescribed turbulence from the immutable
-configuration. Both paths still require Phase P before timestepping can run.
+configuration. Before injecting particles, either host must install an
+`AMPS::Movers::Context` whose resolver supplies coefficients from the pinned
+snapshot. Output collection likewise must gather one globally stable-ID-ordered
+observation set before invoking the Phase-O sampler.
 
 ## Source layout
 
@@ -136,11 +202,17 @@ srcSEP3D/
 ├── mesh/                         Phase-M resolution, octree, storage, gradients
 ├── background/                   Phase-B providers and immutable snapshots
 ├── turbulence/                   Phase-T providers, spectra, coefficient bridge
+├── transport/                    Phase-P Parker/focused cores, timestep, RNG
+├── adapters/                     Phase-A neutral dispatch, ledger, SWCME source
+├── output/                       Phase-O sampling, publication, restart
 ├── runtime/                      immutable configuration and lifecycle
 ├── amps/                         AMPS-only ABI adapters
 ├── MESH_STORAGE.md
 ├── BACKGROUND_FIELD.md
 ├── TURBULENCE_SCATTERING.md
+├── TRANSPORT_CORES.md
+├── AMPS_ADAPTERS.md
+├── SAMPLING_OUTPUT_RESTART.md
 ├── MIGRATION_MANIFEST.md
 ├── SEP3D.h                       production/coupling interface
 ├── main_lib.cpp                  AMPS mesh/storage/provider boundary
@@ -165,12 +237,12 @@ delete stale files; remove an old `AMPS/srcSEP3D/SEP3D.cpp` explicitly if
 | L0/L1 | `core/`, `mesh/` | No | types, resolution, standalone octree/storage, gradients |
 | L1 | `background/` | No | analytic/imported ambient state and snapshots |
 | L1 | `turbulence/` | No | scattering authority, spectra, AWSoM mapping, coefficient bridge |
-| L1/L2 | `runtime/` | No | immutable configuration, layout, lifecycle, neutral adapters |
+| L1/L2 | `runtime/`, `transport/`, `adapters/`, `output/` | No | lifecycle, numerical transport, neutral coupling, diagnostics/restart |
 | L2 | `amps/` | Yes | model-to-AMPS ABI translation |
 | L3 | `SEP3D.h`, `main_lib.cpp`, `main.cpp` | Yes | AMPS allocation, owner-local filling, host entry points |
 
-The first four source directories must not include AMPS/MPI headers or refer to
-the AMPS namespace. `LAY01`, `LAY02`, and `BLD01` enforce this with a source
+Every directory except `amps/` and L3 must not include AMPS/MPI headers or
+refer to the AMPS namespace. `LAY01`, `LAY02`, and `BLD01` enforce this with a source
 scan, negative control, AMPS-free link, and symbol-table inspection.
 
 ## Test runner
@@ -188,6 +260,9 @@ test/run_tests.py --routine --amps-source .. --rebuild
 test/run_tests.py --suite phase-m --rebuild
 test/run_tests.py --suite phase-b --rebuild
 test/run_tests.py --suite phase-t --rebuild
+test/run_tests.py --suite phase-p --rebuild
+test/run_tests.py --suite phase-a --rebuild
+test/run_tests.py --suite phase-o --rebuild
 
 # Complete source and configured-production evidence.
 env MAKEFLAGS="-j16" test/run_tests.py --all \
@@ -240,12 +315,16 @@ same `AMPS/Makefile.conf`, `src/models/sep_common`, and `src/models/swcme`.
 | `SNAP3D01–08` | completeness, finite values, units, epochs, atomicity, interpolation, batch status, frame |
 | `TUR3D01–04` | spectrum normalization, AWSoM mapping, resonance range, missing-data policy |
 | `COEF3D01–02` | six-decade conversions and bitwise shared-kernel identity |
+| `COEF3D03–05`, `PRK3D01–08` | tensor assembly/Itô drift and Parker transport behavior |
+| `FTE3D01–07`, `RNG3D01–03` | focused transport, pitch boundaries, strong-scattering limit, keyed reproducibility |
+| `ADP3D01`, `NAT3D04–05/08`, `SHK3D01–04` | mover dispatch, boundaries, ledger, moving shocks, common SWCME source |
+| `NAT3D06–07`, `RST3D01–03` | sampling isolation, transactional output/schema, complete restart |
 
-## Next phase
+## Next release gate
 
-The next development phase is **Phase P Transport Cores**: implement the
-AMPS-independent tensor Parker and focused-transport steps, named timestep
-limits, keyed random streams, and linked mover adapters. It must consume the
-frozen Phase-B snapshot and typed Phase-T coefficient state without adding a
-second background or turbulence authority. A configured `BLDL3D01` run on the
-target AMPS checkout remains required after every production-boundary change.
+The next work is configured-host integration and scientific validation: make
+the generated AMPS mover macro see `AMPS::Movers::MoveParticle`, install the
+analytic/SWMF local coefficient resolver, connect the coupled SWCME event
+schedule and global observation gather, and run linked single-/multi-rank
+conservation and restart campaigns. A configured `BLDL3D01` run on the target
+AMPS checkout remains required after every production-boundary change.

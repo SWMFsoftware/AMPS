@@ -150,22 +150,22 @@ std::vector<SEP3D::Testing::Descriptor> RegisterBackgroundTests();
 // TUR3D/COEF3D — Phase T turbulence authority and shared coefficients.
 std::vector<SEP3D::Testing::Descriptor> RegisterTurbulenceTests();
 
+// COEF3D03-05, PRK3D, FTE3D, and RNG3D — Phase-P tensor Parker and focused
+// transport cores, named timestep limits, and keyed random streams.
+std::vector<SEP3D::Testing::Descriptor> RegisterTransportTests();
 
-// ---- Future groups (uncomment at the step indicated) -----------------------
+// ADP3D/NAT3D/SHK3D — Phase-A transport dispatch, boundary bookkeeping,
+// particle ledger, expanding-shock geometry, and common SWCME source adapter.
+std::vector<SEP3D::Testing::Descriptor> RegisterAdapterTests();
 
-// Step 20 — substep selector and timestep limits
-// std::vector<SEP3D::Testing::Descriptor> RegisterTimestepTests();
+// NAT3D06-07/RST3D — Phase-O read-only sampling, transactional publication,
+// schema/hash verification, and complete restart/reproducibility state.
+std::vector<SEP3D::Testing::Descriptor> RegisterOutputTests();
 
-// Step 21 — Parker 3-D mover core
-// std::vector<SEP3D::Testing::Descriptor> RegisterParkerMoverTests();
 
-// Step 22 — focused-transport 3-D mover core
-// std::vector<SEP3D::Testing::Descriptor> RegisterFTEMoverTests();
+// ---- Future linked groups --------------------------------------------------
 
-// Step 25 — sampling products
-// std::vector<SEP3D::Testing::Descriptor> RegisterSamplingTests();
-
-// Step 27 — reproducibility across MPI configurations (Stage 2 only)
+// Reproducibility across MPI configurations (configured AMPS binary only).
 // std::vector<SEP3D::Testing::Descriptor> RegisterReproducibilityTests();
 
 #endif // SEP3D_CORE_SEP3D_TEST_REGISTRY_H

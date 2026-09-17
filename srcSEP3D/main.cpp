@@ -1,7 +1,7 @@
 // ============================================================================
 // srcSEP3D/main.cpp
 //
-// Standard standalone AMPS application driver through Phases M/B/T.
+// Standard standalone AMPS application driver through Phases M/B/T/P/A/O.
 //
 // This executable is itself the standalone host, so it constructs a typed
 // default configuration directly.  It deliberately does not parse argv or an

@@ -83,7 +83,6 @@
 // std::vector<SEP3D::Testing::Descriptor> RegisterTimestepTests();    // Step 20
 // std::vector<SEP3D::Testing::Descriptor> RegisterParkerMoverTests(); // Step 21
 // std::vector<SEP3D::Testing::Descriptor> RegisterFTEMoverTests();    // Step 22
-// std::vector<SEP3D::Testing::Descriptor> RegisterSamplingTests();    // Step 25
 
 
 // ============================================================================
@@ -116,7 +115,7 @@ static void PrintHelp(const char* argv0) {
     << "  1  at least one FAILED\n"
     << "  2  at least one ERROR, or a usage error (unknown option, bad ID)\n"
     << "\n"
-    << "Groups through Phase T:   BGP3D  BLD  COEF3D  HARN  LAY  LIFE3D  MSH3D  SNAP3D  TUR3D  UTIL\n"
+    << "Groups through Phase O:   ADP3D  BGP3D  BLD  COEF3D  FTE3D  HARN  LAY  LIFE3D  MSH3D  NAT3D  PRK3D  RNG3D  RST3D  SHK3D  SNAP3D  TUR3D  UTIL\n"
     << "Frozen records:    test/frozen/\n"
     << "Test artifacts:    test/individual-test/\n"
     << "Full procedure:    test/README.md\n";
@@ -157,12 +156,12 @@ int main(int argc, char** argv) {
   append(RegisterMeshTests());     // MSH3D — Phase M mesh/storage
   append(RegisterBackgroundTests());  // BGP3D/SNAP3D — Phase B
   append(RegisterTurbulenceTests());  // TUR3D/COEF3D — Phase T
+  append(RegisterTransportTests());   // PRK3D/FTE3D/RNG3D — Phase P
+  append(RegisterAdapterTests());     // ADP3D/NAT3D/SHK3D — Phase A
+  append(RegisterOutputTests());      // NAT3D/RST3D — Phase O
 
-  // Future groups — uncomment when the step is implemented:
-  // append(RegisterTimestepTests());    // Step 20
-  // append(RegisterParkerMoverTests()); // Step 21
-  // append(RegisterFTEMoverTests());    // Step 22
-  // append(RegisterSamplingTests());    // Step 25
+  // Linked multi-rank validation groups are added only when they execute the
+  // configured AMPS binary; they must not be represented by standalone mocks.
 
   SEP3D::Testing::Registry registry(std::move(all));
 

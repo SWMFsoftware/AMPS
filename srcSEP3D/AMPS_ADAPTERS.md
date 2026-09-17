@@ -1,0 +1,150 @@
+# Phase A: AMPS Mover and SWCME Source Adapters
+
+Phase A connects the AMPS particle buffer and SWCME shock source to the
+AMPS-independent Phase-P transport cores. It deliberately does not introduce
+another Parker equation, focused equation, scattering closure, or shock model.
+The adapter boundary performs representation conversion, validation, list
+bookkeeping, and conservation accounting only.
+
+## Production mover path
+
+`AMPS::Movers::MoveParticle` is the sole AMPS mover entry point. The immutable
+run configuration selects exactly one of two registered cores:
+
+| Canonical name | Configuration | Core |
+|---|---|---|
+| `parker3d-tensor` | `TransportModel::Parker3D` | `AdvanceParker` |
+| `focused3d-split` | `TransportModel::Focused3D` | `AdvanceFocused` |
+
+The path for one particle is:
+
+1. Read the AMPS Cartesian position, species, statistical-weight correction,
+   and the packed srcSEP3D persistent extension.
+2. Reject an absent schema tag or zero stable particle ID. The allocator slot
+   is never used as a stochastic identity because slots change after deletion,
+   restart, and MPI migration.
+3. Require `Runtime::Running`, then call the installed `LocalRecordResolver`.
+   The resolver must use the Runtime-pinned background/turbulence generations
+   and return a complete `LocalTransportRecord`.
+4. `AdvanceParticle` validates the complete record, selects a named substep,
+   constructs the semantic random key, and dispatches one Phase-P core.
+5. Classify the final radius as active, inner-boundary absorbed, outer-boundary
+   escaped, or failed. Evaluate an expanding-shock intersection on the accepted
+   segment and suppress duplicate crossings of the same shock generation.
+6. For an active particle, write position, gyrotropic persistent state, and a
+   deterministic Cartesian velocity; then insert the particle into AMPS's
+   temporary destination-cell list and return `_PARTICLE_MOTION_FINISHED_`.
+   Terminal records are deleted and return `_PARTICLE_LEFT_THE_DOMAIN_`.
+
+The local resolver is explicit because a coupled run must never read mutable
+SWMF arrays while mover workers are active. For a Parker run it must provide
+`kappaParallelM2PerS` and the full field-aligned derivative
+`dKappaParallelDsMPerS`; setting the derivative to zero is valid only for a
+physically constant coefficient. For focused transport it supplies both
+`D_mumu` and `dD_mumu/dmu` from the shared coefficient bridge.
+
+### Persistent particle schema
+
+`RequestParticleStorage()` reserves one packed AMPS extension before the
+particle buffer is frozen. The extension contains:
+
+- a 64-bit schema tag;
+- stable particle ID;
+- completed global step and transport substep;
+- last crossed shock generation;
+- total relativistic momentum, pitch cosine, and gyrophase.
+
+All access uses `memcpy`; AMPS extension offsets are not assumed to satisfy C++
+structure alignment. AMPS's own particle restart therefore carries the same
+stochastic tuple. `InitializeParticle()` is the only supported way to attach
+this state to a newly allocated source particle.
+
+### Velocity reconstruction
+
+The transport state is gyrotropic. AMPS still expects a Cartesian velocity for
+generic diagnostics. The adapter computes
+
+\[
+\mathbf v=v\left[\mu\mathbf b+\sqrt{1-\mu^2}
+(\cos\phi\,\mathbf e_1+\sin\phi\,\mathbf e_2)\right],
+\]
+
+where `e1` is formed by crossing `b` with the Cartesian axis least aligned with
+it and `e2=b×e1`. This deterministic basis is nonsingular at magnetic poles and
+does not consume random numbers.
+
+## Expanding-shock intersection
+
+For a straight accepted substep
+`x(u)=x0+u(x1-x0)`, `0<=u<=1`, and a spherical shock
+`R(u)=R0+u Vsh dt`, `FirstShockIntersection` solves
+
+\[
+|\mathbf x_0-\mathbf c+u\Delta\mathbf x|^2
+=(R_0+uV_{sh}\Delta t)^2.
+\]
+
+The smallest root in `[0,1]` is the physical first crossing. A linear fallback
+handles a numerically vanishing quadratic coefficient. The mover also adds a
+conservative pre-step limiter based on radial gap divided by particle, plasma,
+and shock closing speeds; the post-step quadratic remains authoritative.
+
+## SWCME injection path
+
+`MakeShockSourceRecord` consumes the canonical
+`swcme::sep::SEPSourceState`, already validated by SWCME shock acceleration.
+For isotropic diffusive-shock acceleration,
+
+\[
+f(p)\propto p^{-q},\qquad \frac{dN}{dp}\propto p^2f(p)
+\propto p^{-(q-2)}.
+\]
+
+Therefore the shared `sep_common` linear-momentum spectrum receives
+`powerIndex=q-2`. The minimum and maximum kinetic energies are converted to
+relativistic SI momentum by the common SWCME helper. `SampleInjectedParticle`
+then uses independent keyed streams for momentum, pitch angle, gyrophase, and
+stable ID. Isotropic launch uses `mu=2u-1` and `phi=2 pi u`.
+
+Each macroparticle represents
+
+\[
+w_i=\frac{w_{patch}\,\epsilon_{inj}}{N_{macro}}.
+\]
+
+The adapter is dimension independent: a 1-D or 3-D application supplied with
+the same common source record, campaign, generation, patch ID, species, and
+macro index obtains identical spectrum fingerprints, random keys, momenta,
+and weights. No `srcSEP` source file is inspected or linked.
+
+## Exact particle ledger
+
+Each `(step,species)` row must satisfy the integer identity
+
+\[
+N_{start}+N_{injected}=N_{end}+N_{escaped}+N_{absorbed}+N_{failed}.
+\]
+
+`advanced` and `shockCrossings` are diagnostics and are not additional sinks.
+A mismatched close returns an error and leaves the row open, preserving the
+evidence needed to locate a list or return-code bug.
+
+## Production configuration requirement
+
+The generated AMPS mover macro must call
+`SEP3D::AMPS::Movers::MoveParticle`. The build configuration must also make the
+declaration in `amps/amps_particle_adapter.h` visible while compiling the AMPS
+mover translation unit. This is an AMPS configuration/header-injection step;
+it is not implemented by redefining a core acceleration macro. A coupled host
+must install `AMPS::Movers::Context` before injecting particles.
+
+## Evidence
+
+- `ADP3D01`: exact two-entry registry and validating dispatch.
+- `NAT3D04`: inner, outer, and invalid-background dispositions.
+- `NAT3D05`: exact ledger closure and transactional mismatch.
+- `NAT3D08`: first moving-shock root and generation de-duplication.
+- `SHK3D01–04`: dimensional source identity, analytic shock geometry, source
+  ownership guards, and source-weight normalization.
+- `BLDL3D01/03`: configured AMPS compilation and actual mover-return ABI.
+

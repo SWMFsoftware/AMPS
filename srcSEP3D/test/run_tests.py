@@ -103,6 +103,40 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("TUR3D04", "TUR3D", "Missing turbulence policy", "cpp"),
     TestDefinition("COEF3D01", "COEF3D", "Coefficient conversions", "cpp"),
     TestDefinition("COEF3D02", "COEF3D", "Shared coefficient kernel", "cpp"),
+    TestDefinition("COEF3D03", "COEF3D", "Parallel tensor assembly", "cpp"),
+    TestDefinition("COEF3D04", "COEF3D", "Complete Ito drift", "cpp"),
+    TestDefinition("COEF3D05", "COEF3D", "Invalid coefficient status", "cpp"),
+    TestDefinition("PRK3D01", "PRK3D", "Parallel diffusion moments", "cpp"),
+    TestDefinition("PRK3D02", "PRK3D", "Advection", "cpp"),
+    TestDefinition("PRK3D03", "PRK3D", "Orientation invariance", "cpp"),
+    TestDefinition("PRK3D04", "PRK3D", "Nonuniform equilibrium", "cpp"),
+    TestDefinition("PRK3D05", "PRK3D", "Adiabatic cooling", "cpp"),
+    TestDefinition("PRK3D06", "PRK3D", "First passage", "cpp"),
+    TestDefinition("PRK3D07", "PRK3D", "Radial PDE comparison", "cpp"),
+    TestDefinition("PRK3D08", "PRK3D", "Named substep limits", "cpp"),
+    TestDefinition("FTE3D01", "FTE3D", "Ballistic streaming", "cpp"),
+    TestDefinition("FTE3D02", "FTE3D", "Magnetic focusing", "cpp"),
+    TestDefinition("FTE3D03", "FTE3D", "Pitch-angle eigenmodes", "cpp"),
+    TestDefinition("FTE3D04", "FTE3D", "Pitch boundaries", "cpp"),
+    TestDefinition("FTE3D05", "FTE3D", "Momentum characteristic", "cpp"),
+    TestDefinition("FTE3D06", "FTE3D", "Strong-scattering reduction", "cpp"),
+    TestDefinition("FTE3D07", "FTE3D", "Zero perpendicular identity", "cpp"),
+    TestDefinition("RNG3D01", "RNG3D", "Thread reproducibility", "cpp"),
+    TestDefinition("RNG3D02", "RNG3D", "Order independence", "cpp"),
+    TestDefinition("RNG3D03", "RNG3D", "Purpose isolation", "cpp"),
+    TestDefinition("ADP3D01", "ADP3D", "Production mover dispatch", "cpp"),
+    TestDefinition("NAT3D04", "NAT3D", "Boundary dispositions", "cpp"),
+    TestDefinition("NAT3D05", "NAT3D", "Particle ledger closure", "cpp"),
+    TestDefinition("NAT3D06", "NAT3D", "Sampling isolation", "cpp"),
+    TestDefinition("NAT3D07", "NAT3D", "Output schema and publication", "cpp"),
+    TestDefinition("NAT3D08", "NAT3D", "Shock crossing dispatch", "cpp"),
+    TestDefinition("SHK3D01", "SHK3D", "Dimensional source identity", "cpp"),
+    TestDefinition("SHK3D02", "SHK3D", "Expanding shock geometry", "cpp"),
+    TestDefinition("SHK3D03", "SHK3D", "Source ownership guards", "cpp"),
+    TestDefinition("SHK3D04", "SHK3D", "Source weight normalization", "cpp"),
+    TestDefinition("RST3D01", "RST3D", "Complete restart round trip", "cpp"),
+    TestDefinition("RST3D02", "RST3D", "Transactional restart rejection", "cpp"),
+    TestDefinition("RST3D03", "RST3D", "Snapshot restart policy", "cpp"),
     TestDefinition("UTIL02", "UTIL", "Shared-kernel frozen record", "cpp"),
     TestDefinition("HARN02-EXITCODE", "HARN_SHELL", "Outer failure exit code", "shell", False),
     TestDefinition("HARN03-EXITCODE", "HARN_SHELL", "Outer skip exit code", "shell", False),
@@ -134,7 +168,17 @@ SUITES: Dict[str, Tuple[str, ...]] = {
     "phase-b": tuple(item.test_id for item in TESTS
                      if item.group in ("BGP3D", "SNAP3D")),
     "phase-t": tuple(item.test_id for item in TESTS
-                     if item.group in ("TUR3D", "COEF3D")),
+                     if item.group == "TUR3D" or
+                     item.test_id in ("COEF3D01", "COEF3D02")),
+    "phase-p": tuple(item.test_id for item in TESTS
+                     if item.group in ("PRK3D", "FTE3D", "RNG3D") or
+                     item.test_id in ("COEF3D03", "COEF3D04", "COEF3D05")),
+    "phase-a": tuple(item.test_id for item in TESTS
+                     if item.group in ("ADP3D", "SHK3D") or
+                     item.test_id in ("NAT3D04", "NAT3D05", "NAT3D08")),
+    "phase-o": tuple(item.test_id for item in TESTS
+                     if item.group == "RST3D" or
+                     item.test_id in ("NAT3D06", "NAT3D07")),
     "production": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04",
                    "BLDL3D05", "BLDL3D06"),
 }
@@ -160,7 +204,7 @@ Examples:
 
 For a configured AMPS checkout, either place srcSEP3D in its normal
 application location or provide --make-config /path/to/Makefile.conf.  A
-source-only archive can run the standalone, R1, R2, M/B/T, and source-only
+source-only archive can run the standalone, R1, R2, M/B/T/P/A/O, and source-only
 build tests. BLDL3D01 is recorded as SKIP until a real production configuration is
 present; BLDL3D03 is SKIP if the actual AMPS pic.h is unavailable.
 """
@@ -172,7 +216,7 @@ def _utc_stamp() -> str:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run srcSEP3D standalone, R0-R2/M/B/T, and production-build tests.",
+        description="Run srcSEP3D standalone, R0-R2/M/B/T/P/A/O, and production-build tests.",
         formatter_class=_HelpFormatter,
         epilog=EPILOG)
     parser.add_argument("--amps", default=os.environ.get("SEP3D_EXECUTABLE"),
@@ -375,7 +419,8 @@ def _run_shell(definition: TestDefinition, args: argparse.Namespace) -> Result:
 def _production_files() -> List[Path]:
     files = [ROOT / "SEP3D.h", ROOT / "main_lib.cpp", ROOT / "main.cpp"]
     for directory in (ROOT / "core", ROOT / "background", ROOT / "runtime",
-                      ROOT / "amps"):
+                      ROOT / "mesh", ROOT / "turbulence", ROOT / "transport",
+                      ROOT / "adapters", ROOT / "output", ROOT / "amps"):
         files.extend(sorted(directory.glob("*.h")))
         files.extend(sorted(directory.glob("*.cpp")))
     return files
@@ -426,9 +471,9 @@ def _check_retired_sources(definition: TestDefinition) -> Result:
 
     status = "FAIL" if errors else "PASS"
     message = "; ".join(errors) if errors else (
-        "retired mover/sampler source is absent; the L3 manifest contains only "
-        "main_lib.cpp/main.cpp while M/B/T implementations remain in explicit "
-        "AMPS-independent modules; wedge and prepopulation operations are absent")
+        "retired mover/sampler source is absent; application sources are explicit "
+        "and M/B/T/P/A/O implementations remain in layered modules; wedge and "
+        "prepopulation operations are absent")
     return Result(definition.test_id, definition.group, status, message,
                   time.monotonic() - started, [])
 

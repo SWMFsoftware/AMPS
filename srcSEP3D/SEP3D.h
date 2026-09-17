@@ -1,12 +1,12 @@
 // ============================================================================
 // srcSEP3D/SEP3D.h
 //
-// Production umbrella header through Phases M, B, and T.  The AMPS boundary
+// Production umbrella header through Phases M/B/T/P/A/O. The AMPS boundary
 // owns one typed Runtime whose configuration is supplied by the standalone or
 // SWMF host.  Background snapshots and turbulence providers are installed as
 // immutable/typed objects; process arguments and parameter files never leak
-// into the physics layers.  Transport-mover declarations remain absent until
-// Phase P.
+// into the physics layers. The one production mover declaration is provided by
+// amps/amps_particle_adapter.h; numerical transport remains AMPS-independent.
 //
 // LAYER: L3 (application).  L3 may include AMPS.  Lower layers under core/
 // and background/ must remain independent of pic.h and mpi.h.
@@ -26,6 +26,7 @@
 #include "runtime/runtime.h"
 #include "turbulence/turbulence_provider.h"
 #include "amps/amps_mover_status.h"
+#include "amps/amps_particle_adapter.h"
 
 namespace SEP3D {
 

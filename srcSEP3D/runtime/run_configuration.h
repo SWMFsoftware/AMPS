@@ -26,6 +26,7 @@ enum class TransportModel { Parker3D, Focused3D };
 enum class DomainPreset { Earth, Mars };
 enum class MissingTurbulenceMode { Fail, Ballistic };
 enum class ResonanceRangeMode { Reject, PowerLawExtension };
+enum class PitchAngleSchemeMode { ReflectingMilstein, ReflectingEulerMaruyama };
 
 const char* Name(BackgroundAuthority value);
 const char* Name(TurbulenceAuthority value);
@@ -34,6 +35,7 @@ const char* Name(TransportModel value);
 const char* Name(DomainPreset value);
 const char* Name(MissingTurbulenceMode value);
 const char* Name(ResonanceRangeMode value);
+const char* Name(PitchAngleSchemeMode value);
 
 // Mutable input record used only while the host resolves configuration.  The
 // successful factory copies it into a RunConfiguration3D exposed solely
@@ -82,6 +84,21 @@ struct RunConfiguration3DOptions {
   double turbulenceCorrelationLengthM = 0.03 * Core::Const::AU;
   MissingTurbulenceMode missingTurbulence = MissingTurbulenceMode::Fail;
   ResonanceRangeMode resonanceRange = ResonanceRangeMode::Reject;
+
+  // Phase-P numerical controls. Each fraction limits the named local time
+  // scale; none is an undocumented global safety factor. A selected step below
+  // minimumTransportSubstepS returns StepUnderflow and is never silently
+  // clamped. The stochastic scheme is fingerprinted because Milstein and
+  // Euler-Maruyama do not define identical finite-step trajectories.
+  double cellCrossingFraction = 0.4;
+  double diffusionFraction = 0.2;
+  double focusingFraction = 0.2;
+  double coolingFraction = 0.2;
+  double fieldVariationFraction = 0.2;
+  double shockCrossingFraction = 0.5;
+  double minimumTransportSubstepS = 1.0e-12;
+  PitchAngleSchemeMode pitchAngleScheme =
+      PitchAngleSchemeMode::ReflectingMilstein;
 
   // Frozen pre-mesh storage choices.  Offsets are derived by the factory in a
   // canonical order; adapters may not append fields after Configure().

@@ -4,8 +4,8 @@
 // Test group LAY — layering-boundary tests.
 //
 // WHY THIS GROUP EXISTS:
-//   The Stage-1 test strategy depends entirely on the guarantee that core/,
-//   background/, and runtime/ contain no AMPS or MPI symbols. If that boundary erodes,
+//   The Stage-1 test strategy depends entirely on the guarantee that every
+//   model directory outside amps/ contains no AMPS or MPI symbols. If that boundary erodes,
 //   the Stage-1 binary silently starts requiring AMPS headers and the "test
 //   without building AMPS" property is lost — without any obvious error
 //   message.  These tests enforce the boundary actively, at every build,
@@ -13,7 +13,7 @@
 //
 // TESTS (match plan document Section 12.3 Step 2 exactly):
 //
-//   LAY01 — Positive case: core/, background/, and runtime/ are free of pic.h, mpi.h,
+//   LAY01 — Positive case: all AMPS-independent directories are free of pic.h, mpi.h,
 //            and PIC:: on the current working tree.
 //
 //            HOW: invokes grep -rn -E over all three directories for each
@@ -115,8 +115,10 @@ const Pattern FORBIDDEN[] = {
 };
 const int N_FORBIDDEN = 3;
 
-const char* DIRS[] = { "core", "background", "runtime", "mesh", "turbulence" };
-const int N_DIRS = 5;
+const char* DIRS[] = {
+    "core", "background", "runtime", "mesh", "turbulence", "transport",
+    "adapters", "output"};
+const int N_DIRS = 8;
 
 // ============================================================================
 // LAY01 — positive case: no forbidden symbols in core/ or background/
@@ -146,13 +148,13 @@ SEP3D::Testing::Result run_LAY01() {
 
   if (!violations.empty()) {
     return Fail(
-        "Layering violations found in core/, background/, runtime/, mesh/, or turbulence/:\n" + violations
+        "Layering violations found in an AMPS-independent source directory:\n" + violations
         + "These files must not include pic.h, mpi.h, or use PIC::.\n"
         + "See README.md (Layering rules) and MIGRATION_MANIFEST.md.");
   }
 
   return Pass(
-      "core/, background/, runtime/, mesh/, and turbulence/ contain no #include pic.h, #include mpi.h, "
+      "core/, background/, runtime/, mesh/, turbulence/, transport/, adapters/, and output/ contain no #include pic.h, #include mpi.h, "
       "or PIC:: references.");
 }
 
@@ -253,9 +255,9 @@ std::vector<SEP3D::Testing::Descriptor> RegisterLayeringTests(
 
   return {
     make("LAY01",
-         "core/, background/, and runtime/ contain no AMPS symbols",
+         "AMPS-independent directories contain no AMPS symbols",
          "grep -rn -E for #include pic.h, #include mpi.h, PIC:: in "
-         "core/, background/, and runtime/; fails if any match is found.",
+         "core/, background/, runtime/, mesh/, turbulence/, transport/, adapters/, and output/; fails if any match is found.",
          run_LAY01),
 
     make("LAY02",

@@ -93,6 +93,9 @@ class Runtime final {
   Core::Status CompleteStep();
   Core::Status BeginCheckpoint();
   Core::Status CompleteCheckpoint();
+  // Return from a failed transactional checkpoint without incrementing its
+  // sequence. This is the only legal rollback transition in Runtime.
+  Core::Status AbortCheckpoint();
   Core::Status RestoreCounters(const RuntimeCounters& counters);
   Core::Status Finalize();
 

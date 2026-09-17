@@ -3,8 +3,9 @@
 `test/run_tests.py` is the single user-facing test interface. Its selectors
 match `srcSEP/test/run_tests.py` so the two applications can use the same
 automation habits. The runner combines R0/R1/R2 foundation evidence with
-Phase-M mesh, Phase-B background, and Phase-T turbulence/coefficient evidence
-without requiring AMPS for dependency-free tests.
+Phase-M mesh, Phase-B background, Phase-T turbulence/coefficient, Phase-P
+transport, Phase-A adapter, and Phase-O sampling/restart evidence without
+requiring AMPS for dependency-free tests.
 
 ## Quick commands
 
@@ -14,6 +15,7 @@ python3 test/run_tests.py --routine --amps-source /path/to/AMPS
 python3 test/run_tests.py --test LAY01
 python3 test/run_tests.py --suite r1 --suite r2
 python3 test/run_tests.py --suite phase-m --suite phase-b --suite phase-t
+python3 test/run_tests.py --suite phase-p --suite phase-a --suite phase-o
 python3 test/run_tests.py --group HARN --group BLDL3D \
   --amps-source /path/to/AMPS
 python3 test/run_tests.py --all --amps-source /path/to/AMPS \
@@ -67,13 +69,14 @@ Additional setup options are `--amps-source`, `--make-config`,
 
 `test/stage1` is compiled with no AMPS include path and no MPI library. It links
 the Phase-M mesh model, Phase-B providers/snapshots, Phase-T turbulence bridge,
-R2 Runtime/adapters, test callbacks, and shared `sep_common.a`. The runner adds
+Phase-P transport cores, Phase-A neutral adapters, Phase-O output/restart,
+R2 Runtime, test callbacks, and shared `sep_common.a`. The runner adds
 `-Wall -Wextra -Wpedantic -Werror`.
 
 | Group | IDs | Purpose |
 |---|---|---|
 | `HARN` | `HARN01`–`HARN04` | registry selection, PASS/FAIL/SKIP/ERROR exits, JSON, and JUnit |
-| `LAY` | `LAY01`, `LAY02` | core/background/runtime/mesh/turbulence dependency rule and a negative control proving the guard fires |
+| `LAY` | `LAY01`, `LAY02` | AMPS-free core/background/runtime/mesh/turbulence/transport/adapters/output rule and negative control |
 | `BLD` | `BLD01` | `nm -u` confirms the standalone binary has no AMPS/MPI symbols |
 | `UTIL` | `UTIL02` | byte-exact shared-kernel reference record |
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
@@ -81,7 +84,14 @@ R2 Runtime/adapters, test callbacks, and shared `sep_common.a`. The runner adds
 | `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
 | `SNAP3D` | `SNAP3D01`–`SNAP3D08` | snapshot completeness, coupling conversion, atomicity, interpolation, batch/frame policy |
 | `TUR3D` | `TUR3D01`–`TUR3D04` | spectrum, AWSoM convention, resonance, missing-data policy |
-| `COEF3D` | `COEF3D01`, `COEF3D02` | conversion round trips and shared-kernel identity |
+| `COEF3D` | `COEF3D01`–`COEF3D05` | conversion/shared identity plus tensor assembly, Itô drift, and rejection |
+| `PRK3D` | `PRK3D01`–`PRK3D08` | Parker moments, characteristics, PDE/first passage, and named limits |
+| `FTE3D` | `FTE3D01`–`FTE3D07` | focused streaming, focusing, pitch scattering/boundaries, momentum, strong-scattering limit |
+| `RNG3D` | `RNG3D01`–`RNG3D03` | worker/order independence and random-purpose isolation |
+| `ADP3D` | `ADP3D01` | exact two-core production registry and one validating dispatch |
+| `NAT3D` | `NAT3D04`–`NAT3D08` | boundary outcomes, ledger closure, sampling isolation, output schema, shock crossing |
+| `SHK3D` | `SHK3D01`–`SHK3D04` | common source identity, moving-sphere geometry, guards, and normalization |
+| `RST3D` | `RST3D01`–`RST3D03` | full round trip, transactional rejection, and snapshot policy |
 | `RUNNER` | `RUN3D01` | Python selector, de-duplication, usage-error, JSON, and JUnit contract |
 
 `HARN02-EXITCODE` and `HARN03-EXITCODE` are shell-level probes. They launch the
@@ -119,7 +129,7 @@ This check reads the live source tree and active makefile lines. It requires:
 - no former wedge bounds;
 - no `PrepopulateDomain`, placeholder mesh output, or mesh-file write in
   `main_lib.cpp`;
-- only the current R0–R2/M/B/T production manifest described in the root README.
+- only the current R0–R2/M/B/T/P/A/O production manifest described in the root README.
 
 The check deliberately scans production code, not documentation, because the
 migration record must be allowed to name what was removed.
@@ -246,6 +256,58 @@ python3 test/run_tests.py --suite phase-t --rebuild \
   --output-dir test_output/phase-t
 ```
 
+`phase-t` deliberately contains `COEF3D01–02`; the later tensor/drift
+coefficient tests belong to Phase P even though they share the `COEF3D` group.
+
+### Phase P transport gates
+
+| IDs | Acceptance contract |
+|---|---|
+| `COEF3D03–05` | rank-one tensor assembly, complete numerical/analytic Itô divergence, invalid/reserved coefficient rejection |
+| `PRK3D01–08` | diffusion moments, advection/rotation, nonuniform equilibrium, cooling, first passage, radial PDE, all named limits |
+| `FTE3D01–07` | ballistic characteristic, focusing, eigenmodes, reflecting boundaries, momentum, Parker limit, zero-perpendicular guard |
+| `RNG3D01–03` | worker partition, list order, and future-purpose changes cannot alter keyed histories |
+
+```bash
+python3 test/run_tests.py --suite phase-p --rebuild \
+  --output-dir test_output/phase-p
+```
+
+### Phase A mover/source adapter gates
+
+| ID | Acceptance contract |
+|---|---|
+| `ADP3D01` | registry contains only Parker tensor and focused split; both pass one validator |
+| `NAT3D04` | inner absorption, outer escape, and invalid background remain distinct |
+| `NAT3D05` | integer particle ledger closes exactly and mismatch is transactional |
+| `NAT3D08` | first expanding-sphere root is recorded once per generation |
+| `SHK3D01` | identical common SWCME records produce bitwise-identical dimensional source samples |
+| `SHK3D02–04` | analytic moving shock, ownership/generation guards, and event-weight sum |
+
+```bash
+python3 test/run_tests.py --suite phase-a --rebuild \
+  --output-dir test_output/phase-a
+```
+
+The standalone gate proves the AMPS-independent conversion and conservation
+logic. `BLDL3D01` remains required to compile `amps_particle_adapter.cpp`
+against the real particle-buffer/list ABI and the generated mover macro.
+
+### Phase O sampling/output/restart gates
+
+| ID | Acceptance contract |
+|---|---|
+| `NAT3D06` | stable-ID order and repeated sampling are bitwise identical; input remains untouched |
+| `NAT3D07` | atomic output bundle has SI headers, complete identity manifest, and verified hashes |
+| `RST3D01` | all state round-trips and future keyed normal draws are identical |
+| `RST3D02` | fingerprint/checksum errors leave destination state unchanged |
+| `RST3D03` | unavailable snapshot is rejected or awaited only through explicit bounded policy |
+
+```bash
+python3 test/run_tests.py --suite phase-o --rebuild \
+  --output-dir test_output/phase-o
+```
+
 ## Named suites
 
 | Suite | Contents |
@@ -257,7 +319,10 @@ python3 test/run_tests.py --suite phase-t --rebuild \
 | `phase-m` | MSH3D01–MSH3D09 mesh/storage gates |
 | `phase-b` | BGP3D01–06 and SNAP3D01–08 background/snapshot gates |
 | `phase-t` | TUR3D01–04 and COEF3D01–02 turbulence/coefficient gates |
-| `production` | BLDL3D01–05 |
+| `phase-p` | COEF3D03–05, PRK3D01–08, FTE3D01–07, RNG3D01–03 |
+| `phase-a` | ADP3D01, NAT3D04–05/08, SHK3D01–04 |
+| `phase-o` | NAT3D06–07 and RST3D01–03 |
+| `production` | BLDL3D01–06 |
 
 Suites can be repeated. Overlapping IDs are de-duplicated in stable order.
 

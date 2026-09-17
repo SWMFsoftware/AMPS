@@ -1,7 +1,7 @@
 // ============================================================================
 // srcSEP3D/main_lib.cpp
 //
-// AMPS application boundary through Phases R2, M, B, and T.
+// AMPS application boundary through Phases R2, M, B, T, P, A, and O.
 //
 // The production boundary now owns the typed Runtime introduced in R2.  Both
 // standalone and coupled hosts install a validated immutable configuration and
@@ -9,7 +9,8 @@
 // or parameter files.  Phase M builds the Cartesian AMR mesh and freezes AMPS
 // storage offsets.  Phase B publishes a complete immutable ambient snapshot,
 // and Phase T validates/fills the selected turbulence input.  Particle motion
-// remains a Phase-P boundary and therefore still stops explicitly.
+// is dispatched through the single Phase-A AMPS adapter. Phase-O coordinators
+// are available to the host only at joined step/checkpoint boundaries.
 // ============================================================================
 
 #include "SEP3D.h"
@@ -30,16 +31,6 @@
 #include <vector>
 
 namespace {
-
-[[noreturn]] void StopAtUnimplementedPhase(const char* entryPoint,
-                                            const char* requiredPhase) {
-  std::cerr
-      << "[srcSEP3D] " << entryPoint << " reached the implemented runtime "
-      << "boundary, but " << requiredPhase << " is not implemented. The "
-      << "retired wedge, Maxwellian source, and legacy sampler remain removed; "
-      << "no placeholder physics was executed.\n";
-  std::abort();
-}
 
 [[noreturn]] void StopWithStatus(const char* operation,
                                  const SEP3D::Core::Status& status) {
@@ -467,6 +458,9 @@ void SEP3D::Init_BeforeParser() {
   // callbacks return the exact sizes already fingerprinted by RunConfiguration.
   // Coupled entry points still do not inspect argc/argv or AMPS_PARAM.in.
   (void)Configuration();
+  const Core::Status particleStorage = AMPS::Movers::RequestParticleStorage();
+  if (!particleStorage.ok())
+    StopWithStatus("particle-buffer storage request", particleStorage);
   if (!gStorageCallbacksRegistered) {
     PIC::IndividualModelSampling::RequestStaticCellData.push_back(
         RequestStaticCellData);
@@ -567,5 +561,14 @@ void amps_init() {
 }
 
 int amps_time_step() {
-  StopAtUnimplementedPhase("amps_time_step", "transport mover phases");
+  // Pin one immutable background generation for the whole AMPS particle
+  // phase. All workers therefore observe identical coefficients even if a
+  // coupled host stages the next SWMF snapshot concurrently.
+  SEP3D::RuntimeModel::Runtime& runtime = SEP3D::ApplicationRuntime();
+  SEP3D::Core::Status status = runtime.BeginStep(PIC::SimulationTime::Get());
+  if (!status.ok()) StopWithStatus("Runtime BeginStep", status);
+  const int returnCode = PIC::TimeStep();
+  status = runtime.CompleteStep();
+  if (!status.ok()) StopWithStatus("Runtime CompleteStep", status);
+  return returnCode;
 }

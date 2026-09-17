@@ -1,0 +1,318 @@
+#include "restart.h"
+
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <limits>
+#include <thread>
+
+namespace SEP3D {
+namespace Output {
+namespace {
+
+namespace fs = std::filesystem;
+constexpr char kMagic[8] = {'S','E','P','3','D','R','0','1'};
+constexpr std::uint32_t kSchema = 1;
+constexpr std::uint64_t kMaximumRecords = UINT64_C(1000000000);
+
+Core::Status Error(const std::string& message) {
+  return Core::Status(Core::StatusCode::Error, message);
+}
+
+std::uint64_t Hash(const unsigned char* bytes, std::size_t size) {
+  std::uint64_t value = UINT64_C(14695981039346656037);
+  for (std::size_t i = 0; i < size; ++i) {
+    value ^= bytes[i]; value *= UINT64_C(1099511628211);
+  }
+  return value;
+}
+
+bool AddWouldOverflow(std::uint64_t left, std::uint64_t right) {
+  return right > std::numeric_limits<std::uint64_t>::max() - left;
+}
+
+// Writing fields one-by-one, rather than dumping C++ structs, excludes
+// padding, enum width, host endian, and compiler ABI from the restart format.
+class Writer {
+ public:
+  void U32(std::uint32_t value) {
+    for (unsigned shift = 0; shift < 32; shift += 8)
+      bytes.push_back(static_cast<unsigned char>((value >> shift) & 0xffU));
+  }
+  void U64(std::uint64_t value) {
+    for (unsigned shift = 0; shift < 64; shift += 8)
+      bytes.push_back(static_cast<unsigned char>((value >> shift) & 0xffU));
+  }
+  void I32(std::int32_t value) { U32(static_cast<std::uint32_t>(value)); }
+  void Double(double value) {
+    std::uint64_t bits = 0; std::memcpy(&bits, &value, sizeof(bits)); U64(bits);
+  }
+  void Bool(bool value) { bytes.push_back(value ? 1U : 0U); }
+  void String(const std::string& value) {
+    U64(value.size()); bytes.insert(bytes.end(), value.begin(), value.end());
+  }
+  std::vector<unsigned char> bytes;
+};
+
+class Reader {
+ public:
+  Reader(const unsigned char* data, std::size_t size) : data_(data), size_(size) {}
+  bool U32(std::uint32_t* value) {
+    if (!Need(4)) return false;
+    *value = 0;
+    for (unsigned shift = 0; shift < 32; shift += 8)
+      *value |= static_cast<std::uint32_t>(data_[offset_++]) << shift;
+    return true;
+  }
+  bool U64(std::uint64_t* value) {
+    if (!Need(8)) return false;
+    *value = 0;
+    for (unsigned shift = 0; shift < 64; shift += 8)
+      *value |= static_cast<std::uint64_t>(data_[offset_++]) << shift;
+    return true;
+  }
+  bool I32(std::int32_t* value) {
+    std::uint32_t raw = 0; if (!U32(&raw)) return false;
+    *value = static_cast<std::int32_t>(raw); return true;
+  }
+  bool Double(double* value) {
+    std::uint64_t bits = 0; if (!U64(&bits)) return false;
+    std::memcpy(value, &bits, sizeof(bits)); return true;
+  }
+  bool Bool(bool* value) {
+    if (!Need(1) || data_[offset_] > 1) return false;
+    *value = data_[offset_++] != 0; return true;
+  }
+  bool String(std::string* value) {
+    std::uint64_t length = 0;
+    if (!U64(&length) || length > size_ || !Need(static_cast<std::size_t>(length)))
+      return false;
+    value->assign(reinterpret_cast<const char*>(data_ + offset_),
+                  static_cast<std::size_t>(length));
+    offset_ += static_cast<std::size_t>(length); return true;
+  }
+  bool Done() const { return offset_ == size_; }
+ private:
+  bool Need(std::size_t count) const { return count <= size_ - offset_; }
+  const unsigned char* data_ = nullptr;
+  std::size_t size_ = 0;
+  std::size_t offset_ = 0;
+};
+
+void WriteParticle(Writer* out, const Adapters::ParticleRecord& p) {
+  out->U64(p.stableId); out->I32(p.species);
+  out->Double(p.positionM.x); out->Double(p.positionM.y); out->Double(p.positionM.z);
+  out->Double(p.momentumKgMPerS); out->Double(p.mu); out->Double(p.gyrophaseRad);
+  out->Double(p.statisticalWeight); out->U64(p.completedStep);
+  out->U64(p.substep); out->U64(p.lastShockGeneration);
+}
+
+bool ReadParticle(Reader* in, Adapters::ParticleRecord* p) {
+  std::int32_t species = -1;
+  if (!in->U64(&p->stableId) || !in->I32(&species) ||
+      !in->Double(&p->positionM.x) || !in->Double(&p->positionM.y) ||
+      !in->Double(&p->positionM.z) || !in->Double(&p->momentumKgMPerS) ||
+      !in->Double(&p->mu) || !in->Double(&p->gyrophaseRad) ||
+      !in->Double(&p->statisticalWeight) || !in->U64(&p->completedStep) ||
+      !in->U64(&p->substep) || !in->U64(&p->lastShockGeneration)) return false;
+  p->species = species; return true;
+}
+
+void WriteLedger(Writer* out, const Adapters::LedgerRow& row) {
+  out->U64(row.key.step); out->I32(row.key.species);
+  out->U64(row.activeStart); out->U64(row.injected); out->U64(row.advanced);
+  out->U64(row.escaped); out->U64(row.absorbed); out->U64(row.failed);
+  out->U64(row.shockCrossings); out->U64(row.activeEnd); out->Bool(row.closed);
+}
+
+bool ReadLedger(Reader* in, Adapters::LedgerRow* row) {
+  std::int32_t species = -1;
+  if (!in->U64(&row->key.step) || !in->I32(&species) ||
+      !in->U64(&row->activeStart) || !in->U64(&row->injected) ||
+      !in->U64(&row->advanced) || !in->U64(&row->escaped) ||
+      !in->U64(&row->absorbed) || !in->U64(&row->failed) ||
+      !in->U64(&row->shockCrossings) || !in->U64(&row->activeEnd) ||
+      !in->Bool(&row->closed)) return false;
+  row->key.species = species; return true;
+}
+
+Core::Status Validate(const RestartState& state) {
+  if (state.configurationFingerprint.empty() || state.codeIdentity.empty() ||
+      state.snapshotFingerprint.empty() || state.backgroundGeneration == 0 ||
+      state.campaignSeed == 0 || state.nextStableParticleId == 0)
+    return Error("restart identity or generation is invalid");
+  std::uint64_t previousId = 0;
+  for (const Adapters::ParticleRecord& p : state.particles) {
+    if (p.stableId == 0 || p.stableId <= previousId || p.species < 0 ||
+        !std::isfinite(p.positionM.x) || !std::isfinite(p.positionM.y) ||
+        !std::isfinite(p.positionM.z) || !std::isfinite(p.momentumKgMPerS) ||
+        p.momentumKgMPerS < 0.0 || !std::isfinite(p.mu) || p.mu < -1.0 ||
+        p.mu > 1.0 || !std::isfinite(p.statisticalWeight) ||
+        p.statisticalWeight <= 0.0)
+      return Error("restart particle table is invalid or not canonically sorted");
+    previousId = p.stableId;
+  }
+  if (state.nextStableParticleId <= previousId)
+    return Error("restart next stable particle ID collides with active state");
+  for (const Adapters::LedgerRow& row : state.ledgerRows) {
+    if (AddWouldOverflow(row.activeStart, row.injected) ||
+        AddWouldOverflow(row.activeEnd, row.escaped) ||
+        AddWouldOverflow(row.activeEnd + row.escaped, row.absorbed) ||
+        AddWouldOverflow(row.activeEnd + row.escaped + row.absorbed,
+                         row.failed))
+      return Error("restart particle ledger counter overflow");
+    const std::uint64_t left = row.activeStart + row.injected;
+    const std::uint64_t right = row.activeEnd + row.escaped + row.absorbed + row.failed;
+    if (!row.closed || row.key.species < 0 || left != right ||
+        row.advanced != row.activeEnd)
+      return Error("restart contains an open or unbalanced particle ledger row");
+  }
+  return Core::Status::OK();
+}
+
+}  // namespace
+
+Core::Status WriteRestart(const std::string& path, const RestartState& state) {
+  RestartState canonical = state;
+  std::sort(canonical.particles.begin(), canonical.particles.end(),
+            [](const Adapters::ParticleRecord& left,
+               const Adapters::ParticleRecord& right) {
+              return left.stableId < right.stableId;
+            });
+  std::sort(canonical.ledgerRows.begin(), canonical.ledgerRows.end(),
+            [](const Adapters::LedgerRow& left,
+               const Adapters::LedgerRow& right) {
+              return left.key < right.key;
+            });
+  const Core::Status valid = Validate(canonical);
+  if (!valid.ok()) return valid;
+  Writer payload;
+  payload.U32(kSchema);
+  payload.String(canonical.configurationFingerprint);
+  payload.String(canonical.codeIdentity);
+  payload.String(canonical.snapshotFingerprint);
+  payload.U64(canonical.runtimeCounters.completedSteps);
+  payload.U64(canonical.runtimeCounters.stepsSinceOutput);
+  payload.U64(canonical.runtimeCounters.outputSequence);
+  payload.U64(canonical.runtimeCounters.checkpointSequence);
+  payload.U64(canonical.backgroundGeneration);
+  payload.U64(canonical.turbulenceGeneration);
+  payload.U64(canonical.sourceGeneration);
+  payload.U64(canonical.campaignSeed);
+  payload.U64(canonical.nextStableParticleId);
+  payload.U64(canonical.samplingState.completedSamplings);
+  payload.U64(canonical.samplingState.observationsProcessed);
+  payload.U64(canonical.particles.size());
+  for (const auto& particle : canonical.particles) WriteParticle(&payload, particle);
+  payload.U64(canonical.ledgerRows.size());
+  for (const auto& row : canonical.ledgerRows) WriteLedger(&payload, row);
+
+  const fs::path final(path);
+  const fs::path staging(path + ".staging");
+  std::error_code ec;
+  if (!final.parent_path().empty()) fs::create_directories(final.parent_path(), ec);
+  if (ec || fs::exists(staging))
+    return Error("restart staging path is unavailable");
+  std::ofstream out(staging, std::ios::binary | std::ios::trunc);
+  out.write(kMagic, sizeof(kMagic));
+  Writer header; header.U64(payload.bytes.size());
+  out.write(reinterpret_cast<const char*>(header.bytes.data()), header.bytes.size());
+  out.write(reinterpret_cast<const char*>(payload.bytes.data()), payload.bytes.size());
+  Writer trailer; trailer.U64(Hash(payload.bytes.data(), payload.bytes.size()));
+  out.write(reinterpret_cast<const char*>(trailer.bytes.data()), trailer.bytes.size());
+  out.close();
+  if (!out.good()) { fs::remove(staging, ec); return Error("restart write failed"); }
+  fs::rename(staging, final, ec);
+  if (ec) { fs::remove(staging, ec); return Error("atomic restart rename failed"); }
+  return Core::Status::OK();
+}
+
+Core::Status ReadRestart(const std::string& path,
+                         const RestartLoadOptions& options,
+                         RestartState* output) {
+  if (output == nullptr) return Error("restart output is null");
+  std::ifstream input(path, std::ios::binary);
+  if (!input) return Error("restart file is absent");
+  input.seekg(0, std::ios::end);
+  const std::streamoff length = input.tellg(); input.seekg(0, std::ios::beg);
+  if (length < 24) return Error("restart file is truncated");
+  std::vector<unsigned char> bytes(static_cast<std::size_t>(length));
+  input.read(reinterpret_cast<char*>(bytes.data()), length);
+  if (!input || std::memcmp(bytes.data(), kMagic, sizeof(kMagic)) != 0)
+    return Error("restart magic is invalid");
+  Reader header(bytes.data() + 8, 8);
+  std::uint64_t payloadSize = 0;
+  if (!header.U64(&payloadSize) || payloadSize != bytes.size() - 24)
+    return Error("restart payload length is invalid");
+  Reader trailer(bytes.data() + 16 + payloadSize, 8);
+  std::uint64_t expectedHash = 0;
+  if (!trailer.U64(&expectedHash) ||
+      Hash(bytes.data() + 16, payloadSize) != expectedHash)
+    return Error("restart checksum mismatch");
+
+  Reader in(bytes.data() + 16, static_cast<std::size_t>(payloadSize));
+  RestartState candidate;
+  std::uint32_t schema = 0;
+  if (!in.U32(&schema) || schema != kSchema ||
+      !in.String(&candidate.configurationFingerprint) ||
+      !in.String(&candidate.codeIdentity) ||
+      !in.String(&candidate.snapshotFingerprint) ||
+      !in.U64(&candidate.runtimeCounters.completedSteps) ||
+      !in.U64(&candidate.runtimeCounters.stepsSinceOutput) ||
+      !in.U64(&candidate.runtimeCounters.outputSequence) ||
+      !in.U64(&candidate.runtimeCounters.checkpointSequence) ||
+      !in.U64(&candidate.backgroundGeneration) ||
+      !in.U64(&candidate.turbulenceGeneration) ||
+      !in.U64(&candidate.sourceGeneration) || !in.U64(&candidate.campaignSeed) ||
+      !in.U64(&candidate.nextStableParticleId) ||
+      !in.U64(&candidate.samplingState.completedSamplings) ||
+      !in.U64(&candidate.samplingState.observationsProcessed))
+    return Error("restart header schema is invalid or truncated");
+  std::uint64_t count = 0;
+  if (!in.U64(&count) || count > kMaximumRecords)
+    return Error("restart particle count is invalid");
+  candidate.particles.resize(static_cast<std::size_t>(count));
+  for (auto& particle : candidate.particles)
+    if (!ReadParticle(&in, &particle)) return Error("restart particle is truncated");
+  if (!in.U64(&count) || count > kMaximumRecords)
+    return Error("restart ledger count is invalid");
+  candidate.ledgerRows.resize(static_cast<std::size_t>(count));
+  for (auto& row : candidate.ledgerRows)
+    if (!ReadLedger(&in, &row)) return Error("restart ledger is truncated");
+  if (!in.Done()) return Error("restart contains undeclared trailing payload");
+
+  const Core::Status valid = Validate(candidate);
+  if (!valid.ok()) return valid;
+  if (candidate.configurationFingerprint !=
+          options.expectedConfigurationFingerprint ||
+      candidate.codeIdentity != options.expectedCodeIdentity ||
+      candidate.snapshotFingerprint != options.expectedSnapshotFingerprint)
+    return Core::Status(Core::StatusCode::ConfigurationConflict,
+                        "restart configuration, code, or snapshot fingerprint mismatch");
+
+  if (candidate.backgroundGeneration != options.availableBackgroundGeneration) {
+    if (options.missingSnapshot == MissingSnapshotPolicy::Reject)
+      return Core::Status(Core::StatusCode::SnapshotUnavailable,
+                          "restart background generation is not available");
+    if (!options.snapshotAvailable)
+      return Core::Status(Core::StatusCode::SnapshotUnavailable,
+                          "wait policy requires a snapshot availability callback");
+    const auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(options.waitTimeoutMilliseconds);
+    while (!options.snapshotAvailable(candidate.backgroundGeneration)) {
+      if (std::chrono::steady_clock::now() >= deadline)
+        return Core::Status(Core::StatusCode::SnapshotUnavailable,
+                            "timed out waiting for restart background generation");
+      std::this_thread::sleep_for(std::chrono::milliseconds(
+          std::max<std::uint64_t>(1, options.pollMilliseconds)));
+    }
+  }
+  *output = candidate;
+  return Core::Status::OK();
+}
+
+}  // namespace Output
+}  // namespace SEP3D

@@ -1,5 +1,5 @@
 # ==============================================================================
-# srcSEP3D/makefile — R0-R2 plus Phase-M/B/T production and component tests
+# srcSEP3D/makefile — R0-R2 plus Phase-M/B/T/P/A/O production and tests
 #
 # Production and dependency-light tests are intentionally separate:
 #
@@ -14,14 +14,14 @@
 #       owned by AMPS.  It then audits the resulting build/main archives.
 #
 #   test-stage1 / check-layering
-#       Compile the AMPS-independent mesh, background, turbulence, Runtime,
-#       adapters, and shared SEP test registry. These targets work without
-#       AMPS or MPI and are driven by test/run_tests.py.
+#       Compile the AMPS-independent mesh, background, turbulence, transport,
+#       Runtime, neutral adapters, output/restart, and shared SEP test registry.
+#       These targets work without AMPS or MPI and are driven by the runner.
 #
-# The old SEP3D.cpp object is absent by design.  main_lib.cpp is the only L3
-# application-library source; main.cpp supplies the driver archive.  R1 shared
-# code is inserted from its canonical archives, while M/B/T and Runtime sources
-# stay independent of AMPS so their contracts can be validated separately.
+# The old SEP3D.cpp object is absent by design. main_lib.cpp and the explicit
+# AMPS particle adapter are the only AMPS-dependent application-library
+# sources; main.cpp supplies the driver archive. R1 shared code is inserted
+# from canonical archives, while M/B/T/P/A/O model sources stay AMPS-free.
 # ==============================================================================
 
 SHELL := /bin/sh
@@ -64,6 +64,7 @@ SWCME_OBJECTS := $(SWCME_DIR)/build/swcme3d.o
 STANDALONE_GOALS := check-layering test/stage1 test-stage1 test-harn-unit \
                     test-lay-unit test-bld-unit test-util-unit test-life-unit \
                     test-mesh-unit test-background-unit test-turbulence-unit \
+                    test-transport-unit test-adapter-unit test-output-unit \
                     clean clean-standalone help print-layout-paths
 ifneq ($(filter $(STANDALONE_GOALS),$(MAKECMDGOALS)),)
 -include $(AMPS_CONFIG)
@@ -93,24 +94,42 @@ BG_SRC := \
     background/bg_swmf.cpp \
     background/background_snapshot.cpp
 TURBULENCE_SRC := turbulence/turbulence_models.cpp
+TRANSPORT_SRC := \
+    transport/keyed_random.cpp \
+    transport/time_step.cpp \
+    transport/parker_transport.cpp \
+    transport/focused_transport.cpp
 RUNTIME_SRC := \
     runtime/run_configuration.cpp \
     runtime/runtime.cpp \
     runtime/runtime_adapters.cpp
+ADAPTER_SRC := \
+    adapters/transport_adapter.cpp \
+    adapters/particle_ledger.cpp \
+    adapters/swcme_source_adapter.cpp
+OUTPUT_SRC := \
+    output/sampling.cpp \
+    output/publication.cpp \
+    output/restart.cpp \
+    output/output_coordinator.cpp
 
 # L3 AMPS application sources.  Retired prototype sources must never be added
 # here.  BLDL3D02 also rejects them if they reappear elsewhere in production.
-AMPS_SRC := main_lib.cpp
+AMPS_SRC := main_lib.cpp amps/amps_particle_adapter.cpp
 DRIVER_SRC := main.cpp
 
 CORE_OBJ := $(CORE_SRC:.cpp=.o)
 BG_OBJ := $(BG_SRC:.cpp=.o)
 TURBULENCE_OBJ := $(TURBULENCE_SRC:.cpp=.o)
+TRANSPORT_OBJ := $(TRANSPORT_SRC:.cpp=.o)
 RUNTIME_OBJ := $(RUNTIME_SRC:.cpp=.o)
+ADAPTER_OBJ := $(ADAPTER_SRC:.cpp=.o)
+OUTPUT_OBJ := $(OUTPUT_SRC:.cpp=.o)
 AMPS_OBJ := $(AMPS_SRC:.cpp=.o)
 DRIVER_OBJ := $(DRIVER_SRC:.cpp=.o)
 
-MAINLIBOBJ := $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(RUNTIME_OBJ) $(AMPS_OBJ)
+MAINLIBOBJ := $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) \
+              $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(AMPS_OBJ)
 MAINOBJ := $(DRIVER_OBJ)
 
 STAGE1_TEST_SRC := \
@@ -122,13 +141,16 @@ STAGE1_TEST_SRC := \
     test/individual-test/test_runtime.cpp \
     test/individual-test/test_mesh.cpp \
     test/individual-test/test_background.cpp \
-    test/individual-test/test_turbulence.cpp
+    test/individual-test/test_turbulence.cpp \
+    test/individual-test/test_transport.cpp \
+    test/individual-test/test_adapters.cpp \
+    test/individual-test/test_output.cpp
 STAGE1_TEST_OBJ := $(STAGE1_TEST_SRC:.cpp=.o)
 
 SEP_COMMON_INCLUDES := -I$(SEP_COMMON_DIR)
 STAGE1_CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -Werror -O2 \
-                   -Icore -Ibackground -Iruntime -Imesh -Iturbulence \
-                   $(SEP_COMMON_INCLUDES)
+                   -Icore -Ibackground -Iruntime -Imesh -Iturbulence -Itransport \
+                   -Iadapters -Ioutput -I$(SWCME_DIR) $(SEP_COMMON_INCLUDES)
 
 .PHONY: lib amps strict-production audit-production-symbols
 
@@ -231,14 +253,24 @@ mesh/%.o: mesh/%.cpp
 turbulence/%.o: turbulence/%.cpp
 	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
 
-test/stage1: check-layering $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(RUNTIME_OBJ) $(STAGE1_TEST_OBJ) \
+transport/%.o: transport/%.cpp
+	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+
+adapters/%.o: adapters/%.cpp
+	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+
+output/%.o: output/%.cpp
+	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+
+test/stage1: check-layering $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(STAGE1_TEST_OBJ) \
              $(SEP_COMMON_ARCHIVE)
-	$(CXX) -o $@ $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(RUNTIME_OBJ) $(STAGE1_TEST_OBJ) \
+	$(CXX) -o $@ $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(STAGE1_TEST_OBJ) \
 	  $(SEP_COMMON_ARCHIVE)
 	@echo "[srcSEP3D] standalone test binary built: test/stage1"
 
 .PHONY: test-stage1 test-harn-unit test-lay-unit test-bld-unit test-util-unit \
-        test-life-unit test-mesh-unit test-background-unit test-turbulence-unit
+        test-life-unit test-mesh-unit test-background-unit test-turbulence-unit \
+        test-transport-unit test-adapter-unit test-output-unit
 test-stage1: test/stage1
 	./test/stage1 --all-tests
 
@@ -264,13 +296,22 @@ test-background-unit: test/stage1
 	./test/stage1 --test-group BGP3D --test-group SNAP3D
 
 test-turbulence-unit: test/stage1
-	./test/stage1 --test-group TUR3D --test-group COEF3D
+	./test/stage1 --test-group TUR3D --test COEF3D01 --test COEF3D02
+
+test-transport-unit: test/stage1
+	./test/stage1 --test-group PRK3D --test-group FTE3D --test-group RNG3D
+
+test-adapter-unit: test/stage1
+	./test/stage1 --test-group ADP3D --test NAT3D04 --test NAT3D05 --test NAT3D08 --test-group SHK3D
+
+test-output-unit: test/stage1
+	./test/stage1 --test NAT3D06 --test NAT3D07 --test-group RST3D
 
 .PHONY: check-layering
 check-layering:
-	@echo "[srcSEP3D] checking that core/background/runtime/mesh/turbulence do not depend on AMPS or MPI"
+	@echo "[srcSEP3D] checking that core/background/runtime/mesh/turbulence/transport/adapters/output do not depend on AMPS or MPI"
 	@FOUND=0; \
-	for dir in core background runtime mesh turbulence; do \
+	for dir in core background runtime mesh turbulence transport adapters output; do \
 	  if grep -rn -E --include='*.h' --include='*.cpp' \
 	    -e '#include.*pic\.h' -e '#include.*mpi\.h' -e '\bPIC::' \
 	    $$dir 2>/dev/null; then FOUND=1; fi; \
@@ -286,12 +327,12 @@ clean-production:
 	rm -f $(MAINLIBOBJ) $(MAINOBJ) mainlib.a main.a
 
 clean-standalone:
-	rm -f $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(RUNTIME_OBJ) $(STAGE1_TEST_OBJ) test/stage1
+	rm -f $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(STAGE1_TEST_OBJ) test/stage1
 
 .PHONY: help
 help:
 	@echo "Production:  make lib | make amps | make strict-production"
-	@echo "Standalone:  make test-stage1 | make test-life-unit | make test-mesh-unit | make test-background-unit | make test-turbulence-unit | make check-layering"
+	@echo "Standalone:  make test-stage1 | make test-life-unit | make test-mesh-unit | make test-background-unit | make test-turbulence-unit | make test-transport-unit | make test-adapter-unit | make test-output-unit | make check-layering"
 	@echo "Preferred:   python3 test/run_tests.py --help"
 
 # Diagnostic target used by BLDL3D05 and useful when inspecting a configured

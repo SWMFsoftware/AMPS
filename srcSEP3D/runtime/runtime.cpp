@@ -180,6 +180,14 @@ Core::Status Runtime::CompleteCheckpoint() {
   return Core::Status::OK();
 }
 
+Core::Status Runtime::AbortCheckpoint() {
+  const Core::Status order = RequireState(LifecycleState::Checkpointing,
+                                          "AbortCheckpoint");
+  if (!order.ok()) return order;
+  state_ = LifecycleState::SnapshotReady;
+  return Core::Status::OK();
+}
+
 Core::Status Runtime::RestoreCounters(const RuntimeCounters& counters) {
   const Core::Status order = RequireState(LifecycleState::Configured,
                                           "RestoreCounters");
