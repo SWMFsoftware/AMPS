@@ -1,11 +1,11 @@
 // ============================================================================
 // srcSEP3D/SEP3D.h
 //
-// Production umbrella header after Phase R0 (production-tree rebaseline).
-// It declares only the AMPS application entry points and includes the one
-// adapter whose compile-time assertions protect the mover return-code ABI.
-// Physics/runtime objects are added by later phases; prototype mover and
-// sampler declarations are intentionally absent.
+// Production umbrella header through Phase R2.  The AMPS boundary owns one
+// typed Runtime whose configuration is supplied by the standalone or SWMF
+// host.  It also includes the adapter whose compile-time assertions protect
+// the mover return-code ABI. Prototype mover and sampler declarations remain
+// absent until their later implementation phases.
 //
 // LAYER: L3 (application).  L3 may include AMPS.  Lower layers under core/
 // and background/ must remain independent of pic.h and mpi.h.
@@ -21,14 +21,22 @@
 
 #include "core/sep3d_types.h"
 #include "background/bg_provider.h"
+#include "runtime/runtime.h"
 #include "amps/amps_mover_status.h"
 
 namespace SEP3D {
 
-// Phase R0 intentionally provides no runnable transport Runtime.  The
-// application entry points exist so the production objects and archives can
-// be compiled and linked by AMPS, but they stop with an explicit diagnostic if
-// executed.  Phase R2 replaces that stop with the typed Runtime lifecycle.
+// Return the process-owned lifecycle object used by both standalone and SWMF
+// hosts.  All restart/output counters live inside this object; the production
+// boundary maintains no independent cadence statics that could diverge after
+// restart.  A host must install one immutable configuration before mesh setup.
+RuntimeModel::Runtime& ApplicationRuntime();
+Core::Status ConfigureApplication(
+    const std::shared_ptr<const RuntimeModel::RunConfiguration3D>& configuration);
+
+// AMPS calls this before its legacy parser.  srcSEP3D intentionally performs
+// no argument or AMPS_PARAM.in parsing here: a standalone driver or the SWMF
+// coupler resolves input and calls ConfigureApplication explicitly.
 void Init_BeforeParser();
 
 } // namespace SEP3D

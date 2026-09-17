@@ -1,20 +1,14 @@
 // ============================================================================
 // srcSEP3D/main_lib.cpp
 //
-// Phase R0 AMPS application boundary.
+// Phase R2 AMPS application boundary.
 //
-// R0 has one narrow purpose: establish a compile-clean, truthful production
-// tree before a new three-dimensional Runtime or transport mover is added.
-// The former file silently retained a narrow axisymmetric wedge, uniform
-// resolution, Maxwellian prepopulation, and placeholder sampling.  Running
-// those defaults could look like a valid srcSEP3D calculation even though they
-// belonged to the retired prototype.
-//
-// Therefore the AMPS-required symbols are retained for production linking,
-// but every entry point that would start a simulation terminates with an
-// explicit R0 diagnostic.  Phase R2 will replace this guard with the typed
-// Runtime lifecycle; Phase M will supply the real mesh and refinement law.
-// No placeholder physics is executed in the interim.
+// The production boundary now owns the typed Runtime introduced in R2.  Both
+// standalone and coupled hosts install a validated immutable configuration and
+// use the same Runtime transitions; this file does not parse process arguments
+// or parameter files.  Mesh construction and transport physics belong to
+// later phases, so AMPS callbacks that would cross those boundaries still stop
+// explicitly rather than executing the retired prototype defaults.
 // ============================================================================
 
 #include "SEP3D.h"
@@ -24,12 +18,13 @@
 
 namespace {
 
-[[noreturn]] void StopBeforePrototypePhysics(const char* entryPoint) {
+[[noreturn]] void StopAtUnimplementedPhase(const char* entryPoint,
+                                            const char* requiredPhase) {
   std::cerr
-      << "[srcSEP3D:R0] " << entryPoint << " was called, but Phase R0 is a "
-      << "compile/link baseline only. The retired wedge, Maxwellian source, "
-      << "and legacy sampler have been removed. Complete the Runtime and mesh "
-      << "phases before executing a physical simulation.\n";
+      << "[srcSEP3D:R2] " << entryPoint << " reached the implemented Runtime "
+      << "boundary, but " << requiredPhase << " is not implemented. The "
+      << "retired wedge, Maxwellian source, and legacy sampler remain removed; "
+      << "no placeholder physics was executed.\n";
   std::abort();
 }
 
@@ -86,14 +81,28 @@ double Exosphere::SurfaceInteraction::StickingProbability(
   return 0.0;
 }
 
+SEP3D::RuntimeModel::Runtime& SEP3D::ApplicationRuntime() {
+  // AMPS exposes process-level application callbacks, so one process-owned
+  // Runtime is the matching ownership scope.  The object's state and counters
+  // are encapsulated and change only through typed, transactional methods.
+  static RuntimeModel::Runtime runtime;
+  return runtime;
+}
+
+SEP3D::Core::Status SEP3D::ConfigureApplication(
+    const std::shared_ptr<const RuntimeModel::RunConfiguration3D>& configuration) {
+  return ApplicationRuntime().Configure(configuration);
+}
+
 void SEP3D::Init_BeforeParser() {
-  // Deliberately empty in R0.  Configuration ownership is introduced with
-  // the Runtime lifecycle rather than through file-scope mutable globals.
+  // Deliberately empty.  Coupled entry points must not inspect argc/argv or
+  // AMPS_PARAM.in; the host supplies a resolved RunConfiguration3D through
+  // ConfigureApplication before invoking mesh setup.
 }
 
 double localResolution(double* position) {
   (void)position;
-  StopBeforePrototypePhysics("localResolution");
+  StopAtUnimplementedPhase("localResolution", "Phase M mesh resolution");
 }
 
 double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
@@ -114,13 +123,20 @@ bool TrajectoryTrackingCondition(double* position, double* velocity, int spec,
 }
 
 void amps_init_mesh() {
-  StopBeforePrototypePhysics("amps_init_mesh");
+  if (SEP3D::ApplicationRuntime().state() ==
+      SEP3D::RuntimeModel::LifecycleState::Created) {
+    std::cerr
+        << "[srcSEP3D:R2] amps_init_mesh requires the host to install an "
+        << "immutable RunConfiguration3D before AMPS allocates mesh storage.\n";
+    std::abort();
+  }
+  StopAtUnimplementedPhase("amps_init_mesh", "Phase M mesh construction");
 }
 
 void amps_init() {
-  StopBeforePrototypePhysics("amps_init");
+  StopAtUnimplementedPhase("amps_init", "background and transport phases");
 }
 
 int amps_time_step() {
-  StopBeforePrototypePhysics("amps_time_step");
+  StopAtUnimplementedPhase("amps_time_step", "transport mover phases");
 }

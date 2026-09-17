@@ -11,7 +11,7 @@
 //
 //   BLD01 closes that gap by inspecting the symbol table of the compiled,
 //   linked Stage-1 binary with nm.  If any AMPS or MPI symbol appears there,
-//   the L0/L1 boundary has been breached at the binary level, regardless of
+//   the core/background/runtime boundary has been breached at the binary level, regardless of
 //   what the source says.
 //
 // TESTS:
@@ -190,7 +190,7 @@ SEP3D::Testing::Result run_BLD01(const std::string& binaryPath) {
 
   return Pass(
       "nm -u '" + binaryPath + "' contains no AMPS or MPI symbols.  "
-      "The L0/L1 boundary is intact at the binary level.");
+      "The core/background/runtime boundary is intact at the binary level.");
 }
 
 } // anonymous namespace

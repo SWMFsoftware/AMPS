@@ -30,8 +30,8 @@
 //     (c) srcSEP's test tooling (campaign runner, CI scripts) can consume
 //         srcSEP3D Stage-1 reports without modification
 //
-// PHASE R0 STATE:
-//   HARN, LAY, BLD, and UTIL are active.  The header is resolved from the
+// PHASE R2 STATE:
+//   HARN, LAY, BLD, UTIL, and LIFE3D are active. The header is resolved from the
 //   shared sep_common installation/source directory supplied by the build; this
 //   application does not compile a private registry implementation.
 // ============================================================================
@@ -94,8 +94,8 @@ namespace Testing {
 // the fully populated descriptors for that group.  test/stage1.cpp calls
 // each in order and feeds the result to the Registry constructor.
 //
-// STATUS at Phase R0:
-//   Active: HARN, LAY, BLD, UTIL.  Later physics groups remain declarations in
+// STATUS at Phase R2:
+//   Active: HARN, LAY, BLD, UTIL, LIFE3D. Later physics groups remain declarations in
 //   the development plan until their production implementations exist.
 //
 // TO ADD A NEW GROUP:
@@ -110,7 +110,7 @@ namespace Testing {
 //   The runner sorts by ID, so group prefixes also control display order.
 // ============================================================================
 
-// ---- Phase R0 standalone groups (active) -----------------------------------
+// ---- Phase R0-R2 standalone groups (active) --------------------------------
 
 // HARN — harness self-verification tests
 // Verifies the runner's own exit-code, JSON/JUnit writer, and empty-registry
@@ -119,7 +119,7 @@ namespace Testing {
 std::vector<SEP3D::Testing::Descriptor> RegisterHarnessTests();
 
 // LAY — layering-boundary tests
-// Verifies core/ and background/ contain no AMPS symbols (LAY01) and that
+// Verifies core/, background/, and runtime/ contain no AMPS symbols (LAY01) and that
 // the grep used by LAY01 actually detects a violation (LAY02 negative control).
 std::vector<SEP3D::Testing::Descriptor> RegisterLayeringTests(
     const std::string& selfPath = {});
@@ -134,6 +134,11 @@ std::vector<SEP3D::Testing::Descriptor> RegisterBuildTests(
 // UTIL02: reproduce a fixed set of sep_common.a kernel calls and compare
 // byte-for-byte with test/frozen/S03_kernels.txt.
 std::vector<SEP3D::Testing::Descriptor> RegisterKernelTests();
+
+// LIFE3D — Phase R2 immutable configuration and Runtime lifecycle.
+// The implementation links no AMPS/MPI object and exhaustively checks the
+// legal/illegal transition matrix before adapters are connected to AMPS.
+std::vector<SEP3D::Testing::Descriptor> RegisterRuntimeTests();
 
 
 // ---- Future groups (uncomment at the step indicated) -----------------------

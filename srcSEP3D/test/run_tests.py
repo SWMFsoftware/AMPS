@@ -3,11 +3,12 @@
 
 The command vocabulary intentionally follows ``srcSEP/test/run_tests.py``:
 ``--list``, repeatable ``--test``/``--group``/``--suite``, ``--routine``,
-``--all``, and ``--output-dir`` have the same meaning.  This R0 runner joins
-three evidence classes without pretending they are interchangeable:
+``--all``, and ``--output-dir`` have the same meaning.  This R2 runner joins
+four evidence classes without pretending they are interchangeable:
 
-* standalone C++ tests compile L0/L1 without AMPS or MPI;
-* R0 source/ABI checks inspect the actual production manifest and AMPS pic.h;
+* standalone C++ tests compile core/background/runtime without AMPS or MPI;
+* source/ABI checks inspect the actual production manifest and AMPS pic.h;
+* R1 gates audit the canonical sep_common/SWCME archives and relocated runner;
 * the strict production build runs only with a real configured AMPS checkout.
 
 Missing production configuration is reported as SKIP, never as PASS.  That
@@ -67,6 +68,10 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("HARN04", "HARN", "JSON/JUnit writer contract", "cpp"),
     TestDefinition("LAY01", "LAY", "L0/L1 AMPS dependency exclusion", "cpp"),
     TestDefinition("LAY02", "LAY", "Layering negative control", "cpp"),
+    TestDefinition("LIFE3D01", "LIFE3D", "Legal lifecycle and counters", "cpp"),
+    TestDefinition("LIFE3D02", "LIFE3D", "Illegal transition matrix", "cpp"),
+    TestDefinition("LIFE3D03", "LIFE3D", "Frozen layout and fingerprint", "cpp"),
+    TestDefinition("LIFE3D04", "LIFE3D", "Standalone/SWMF adapter parity", "cpp"),
     TestDefinition("UTIL02", "UTIL", "Shared-kernel frozen record", "cpp"),
     TestDefinition("HARN02-EXITCODE", "HARN_SHELL", "Outer failure exit code", "shell", False),
     TestDefinition("HARN03-EXITCODE", "HARN_SHELL", "Outer skip exit code", "shell", False),
@@ -76,6 +81,8 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("BLDL3D03", "BLDL3D", "AMPS mover return-code mapping", "source"),
     TestDefinition("BLDL3D04", "BLDL3D", "AMPS Pi-macro namespace hygiene", "source"),
     TestDefinition("BLDL3D05", "BLDL3D", "Source/build makefile path resolution", "source"),
+    TestDefinition("ARCH3D02", "ARCH3D", "Canonical shared-archive ownership", "source"),
+    TestDefinition("SWCME3D01", "SWCME3D", "Relocated SWCME common runner", "source"),
 )
 
 BY_ID: Dict[str, TestDefinition] = {item.test_id: item for item in TESTS}
@@ -88,6 +95,8 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                         if item.kind in ("cpp", "shell") or item.test_id == "RUN3D01"),
     "r0": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04", "BLDL3D05",
            "RUN3D01", "LAY01", "BLD01"),
+    "r1": ("ARCH3D02", "SWCME3D01", "UTIL02"),
+    "r2": ("LIFE3D01", "LIFE3D02", "LIFE3D03", "LIFE3D04"),
     "production": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04",
                    "BLDL3D05"),
 }
@@ -113,8 +122,9 @@ Examples:
 
 For a configured AMPS checkout, either place srcSEP3D in its normal
 application location or provide --make-config /path/to/Makefile.conf.  A
-source-only archive can run all standalone tests and BLDL3D02/03; BLDL3D01
-will be recorded as SKIP until the real production configuration is present.
+source-only archive can run the standalone, R1, R2, and source-only build
+tests. BLDL3D01 is recorded as SKIP until a real production configuration is
+present; BLDL3D03 is SKIP if the actual AMPS pic.h is unavailable.
 """
 
 
@@ -124,7 +134,7 @@ def _utc_stamp() -> str:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run srcSEP3D standalone, R0, and production-build tests.",
+        description="Run srcSEP3D standalone, R0-R2, and production-build tests.",
         formatter_class=_HelpFormatter,
         epilog=EPILOG)
     parser.add_argument("--amps", default=os.environ.get("SEP3D_EXECUTABLE"),
@@ -221,6 +231,10 @@ def _build_standalone(args: argparse.Namespace) -> None:
         ROOT / "test" / "individual-test" / "test_layering.cpp",
         ROOT / "test" / "individual-test" / "test_build.cpp",
         ROOT / "test" / "individual-test" / "test_kernels.cpp",
+        ROOT / "test" / "individual-test" / "test_runtime.cpp",
+        ROOT / "runtime" / "run_configuration.cpp",
+        ROOT / "runtime" / "runtime.cpp",
+        ROOT / "runtime" / "runtime_adapters.cpp",
         archive,
     ]
     newest_input = max(path.stat().st_mtime for path in inputs)
@@ -234,7 +248,8 @@ def _build_standalone(args: argparse.Namespace) -> None:
     BINARY.parent.mkdir(parents=True, exist_ok=True)
     command = [
         compiler, "-std=c++17", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
-        "-O2", f"-I{ROOT / 'core'}", f"-I{ROOT / 'background'}", f"-I{source}",
+        "-O2", f"-I{ROOT / 'core'}", f"-I{ROOT / 'background'}",
+        f"-I{ROOT / 'runtime'}", f"-I{source}",
         *(str(path) for path in inputs[:-1]), str(archive), "-o", str(BINARY),
     ]
     if args.verbose:
@@ -296,6 +311,24 @@ def _run_cpp(definition: TestDefinition, args: argparse.Namespace,
     if code == 2 and result.status not in ("ERROR",):
         result.status = "ERROR"
         result.message += " (binary exit code 2)"
+    if definition.test_id == "LIFE3D04" and result.status == "PASS":
+        # The C++ half proves both adapters traverse the same Runtime calls.
+        # Audit the actual coupled boundary as well: a fixture alone cannot
+        # prove main_lib.cpp has not gained an independent parser.
+        coupled = _strip_cpp_comments(
+            (ROOT / "main_lib.cpp").read_text(encoding="utf-8"))
+        forbidden = ("argc", "argv", "AMPS_PARAM.in", "std::ifstream",
+                     "getenv(", "ParseCommandLine")
+        observed = [token for token in forbidden if token in coupled]
+        if observed:
+            result.status = "FAIL"
+            result.message = (
+                "coupled entry points contain internal configuration parsing: " +
+                ", ".join(observed))
+        else:
+            result.message += (
+                "; production coupled entry points contain no process-argument, "
+                "AMPS parameter-file, stream, or environment parser")
     return result
 
 
@@ -313,7 +346,8 @@ def _run_shell(definition: TestDefinition, args: argparse.Namespace) -> Result:
 
 def _production_files() -> List[Path]:
     files = [ROOT / "SEP3D.h", ROOT / "main_lib.cpp", ROOT / "main.cpp"]
-    for directory in (ROOT / "core", ROOT / "background", ROOT / "amps"):
+    for directory in (ROOT / "core", ROOT / "background", ROOT / "runtime",
+                      ROOT / "amps"):
         files.extend(sorted(directory.glob("*.h")))
         files.extend(sorted(directory.glob("*.cpp")))
     return files
@@ -364,8 +398,9 @@ def _check_retired_sources(definition: TestDefinition) -> Result:
 
     status = "FAIL" if errors else "PASS"
     message = "; ".join(errors) if errors else (
-        "retired mover/sampler source is absent; production manifest contains only "
-        "main_lib.cpp and main.cpp; wedge and prepopulation operations are absent")
+        "retired mover/sampler source is absent; the L3 manifest contains only "
+        "main_lib.cpp/main.cpp and the AMPS-independent R2 runtime is explicit; "
+        "wedge and prepopulation operations are absent")
     return Result(definition.test_id, definition.group, status, message,
                   time.monotonic() - started, [])
 
@@ -469,18 +504,26 @@ def _check_makefile_relocation(definition: TestDefinition,
     source_dir = fixture / "srcSEP3D"
     build_dir = fixture / "build" / "main"
     common_dir = fixture / "src" / "models" / "sep_common"
+    swcme_dir = fixture / "src" / "models" / "swcme"
     source_dir.mkdir(parents=True)
     build_dir.mkdir(parents=True)
     common_dir.mkdir(parents=True)
+    swcme_dir.mkdir(parents=True)
     (fixture / "Makefile.conf").write_text(
         "# Empty BLDL3D05 configuration fixture.\n", encoding="utf-8")
-    # The fixture's enclosing target creates valid empty archives.  It proves
-    # that strict-production delegates outward and audits build/main rather
-    # than attempting the invalid direct compile that lacks build/pic headers.
+    # The fixture's enclosing target creates valid ar containers with named
+    # placeholder members. It proves routing and member-audit behavior only;
+    # BLDL3D01 against real AMPS remains the production compilation evidence.
+    shared_members = (
+        "sep_transport_common.o sep_coefficient_physics.o "
+        "sep_coefficient_registry.o sep_background_snapshot.o "
+        "sep_test_registry.o sep_injection_spectrum.o sep_species_source.o "
+        "swcme3d.o")
     (fixture / "Makefile").write_text(
         "amps:\n"
         "\t@mkdir -p build/main\n"
-        "\t@ar -rc build/main/mainlib.a\n"
+        f"\t@for member in {shared_members}; do : > build/main/$$member; done\n"
+        f"\t@cd build/main && ar -rc mainlib.a {shared_members}\n"
         "\t@ar -rc build/main/main.a\n",
         encoding="utf-8")
     shutil.copy2(ROOT / "makefile", source_dir / "makefile")
@@ -490,6 +533,7 @@ def _check_makefile_relocation(definition: TestDefinition,
         f"AMPS_ROOT={fixture.resolve()}",
         f"AMPS_CONFIG={(fixture / 'Makefile.conf').resolve()}",
         f"SEP_COMMON_DIR={common_dir.resolve()}",
+        f"SWCME_DIR={swcme_dir.resolve()}",
     }
     commands: List[str] = []
     elapsed = 0.0
@@ -537,9 +581,121 @@ def _check_makefile_relocation(definition: TestDefinition,
     return Result(
         definition.test_id, definition.group, "PASS",
         "source srcSEP3D and copied build/main makefiles resolve the same "
-        "AMPS root, Makefile.conf, and sep_common directory; production "
+        "AMPS root, Makefile.conf, sep_common, and SWCME directories; production "
         "orchestration delegates to enclosing make amps",
         elapsed, commands)
+
+
+def _canonical_model_dirs(args: argparse.Namespace) -> Tuple[Path, Path]:
+    """Resolve R1 model roots without depending on the process CWD."""
+    roots: List[Path] = []
+    if args.amps_source is not None:
+        roots.append(args.amps_source.expanduser().resolve())
+    roots.append(ROOT.parent.resolve())
+    for root in roots:
+        common = root / "src" / "models" / "sep_common"
+        swcme = root / "src" / "models" / "swcme"
+        if common.is_dir() and swcme.is_dir():
+            return common, swcme
+    raise RunnerError(
+        "cannot locate canonical src/models/sep_common and src/models/swcme")
+
+
+def _check_shared_archives(definition: TestDefinition,
+                           args: argparse.Namespace) -> Result:
+    """Audit canonical R1 archives and this application's ownership manifest.
+
+    srcSEP and srcSEP3D are separately selectable AMPS applications.  A
+    srcSEP3D test must therefore remain runnable in a checkout that does not
+    install srcSEP at all.  Cross-application ownership is checked by each
+    application's own runner, never by reaching sideways into a sibling tree.
+    """
+    started = time.monotonic()
+    try:
+        common, swcme = _canonical_model_dirs(args)
+    except RunnerError as error:
+        return Result(definition.test_id, definition.group, "ERROR", str(error),
+                      time.monotonic() - started, [])
+    make = shutil.which("make")
+    ar = shutil.which("ar")
+    if make is None or ar is None:
+        return Result(definition.test_id, definition.group, "ERROR",
+                      "make and ar are required for the R1 archive audit",
+                      time.monotonic() - started, [])
+
+    commands: List[str] = []
+    for directory in (common, swcme):
+        command = [make, "-C", str(directory), "verify"]
+        code, output, _ = _run_command(
+            command, ROOT, args.timeout, args.verbose)
+        commands.extend(command)
+        if code != 0:
+            return Result(
+                definition.test_id, definition.group, "FAIL",
+                f"canonical archive verification failed in {directory}:\n" +
+                output[-4000:], time.monotonic() - started, commands)
+
+    expected = {
+        common / "sep_common.a": (
+            "sep_transport_common.o", "sep_coefficient_physics.o",
+            "sep_coefficient_registry.o", "sep_background_snapshot.o",
+            "sep_test_registry.o", "sep_injection_spectrum.o",
+            "sep_species_source.o"),
+        swcme / "swcme.a": ("swcme3d.o",),
+    }
+    for archive, members in expected.items():
+        completed = subprocess.run(
+            [ar, "t", str(archive)], text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, check=False)
+        observed = tuple(line.strip() for line in completed.stdout.splitlines()
+                         if line.strip())
+        if completed.returncode != 0 or observed != members:
+            return Result(
+                definition.test_id, definition.group, "FAIL",
+                f"{archive} members {observed!r} do not equal {members!r}",
+                time.monotonic() - started, commands)
+
+    makefile = ROOT / "makefile"
+    text = makefile.read_text(encoding="utf-8")
+    required = ("SEP_COMMON_ARCHIVE", "SWCME_ARCHIVE",
+                "SEP_COMMON_OBJECTS", "SWCME_OBJECTS")
+    missing = [token for token in required if token not in text]
+    if missing:
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            f"{makefile} does not consume canonical R1 objects: " +
+            ", ".join(missing), time.monotonic() - started, commands)
+
+    return Result(
+        definition.test_id, definition.group, "PASS",
+        "sep_common.a and swcme.a have exact canonical membership and "
+        "srcSEP3D consumes their canonical objects without inspecting srcSEP",
+        time.monotonic() - started, commands)
+
+
+def _run_swcme_common(definition: TestDefinition, args: argparse.Namespace,
+                      output_dir: Path) -> Result:
+    """Run the relocated common 1-D/3-D SWCME acceptance set."""
+    try:
+        _, swcme = _canonical_model_dirs(args)
+    except RunnerError as error:
+        return Result(definition.test_id, definition.group, "ERROR", str(error),
+                      0.0, [])
+    runner = swcme / "test" / "run_tests.py"
+    if not runner.is_file():
+        return Result(definition.test_id, definition.group, "FAIL",
+                      f"relocated SWCME runner is absent: {runner}", 0.0, [])
+    command = [sys.executable, str(runner), "--routine", "--output-dir",
+               str(output_dir / "swcme-r1")]
+    if args.rebuild:
+        command.append("--rebuild")
+    code, output, elapsed = _run_command(
+        command, swcme, args.timeout, args.verbose)
+    return Result(
+        definition.test_id, definition.group,
+        "PASS" if code == 0 else ("FAIL" if code == 1 else "ERROR"),
+        ("relocated SWCME 1-D/3-D common suite passed"
+         if code == 0 else output[-5000:]), elapsed, command)
 
 
 def _find_make_config(args: argparse.Namespace) -> Optional[Path]:
@@ -587,7 +743,7 @@ def _check_production_build(definition: TestDefinition,
     if code == 0:
         return Result(definition.test_id, definition.group, "PASS",
                       "enclosing `make amps` completed and build/main archives "
-                      "passed the retired-symbol audit",
+                      "passed retired-symbol and exact shared-member audits",
                       elapsed, command)
     return Result(definition.test_id, definition.group, "FAIL",
                   "configured enclosing AMPS build failed:\n" + output[-4000:],
@@ -606,6 +762,10 @@ def _run_source(definition: TestDefinition, args: argparse.Namespace,
         return _check_macro_hygiene(definition, args)
     if definition.test_id == "BLDL3D05":
         return _check_makefile_relocation(definition, args, output_dir)
+    if definition.test_id == "ARCH3D02":
+        return _check_shared_archives(definition, args)
+    if definition.test_id == "SWCME3D01":
+        return _run_swcme_common(definition, args, output_dir)
     if definition.test_id == "RUN3D01":
         command = [sys.executable, str(ROOT / "test" / "test_python_runner.py")]
         code, output, elapsed = _run_command(

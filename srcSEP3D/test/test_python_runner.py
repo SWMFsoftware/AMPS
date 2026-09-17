@@ -106,5 +106,13 @@ class ProductionBuildRoutingTests(unittest.TestCase):
             self.assertIn(f"AMPS_CONFIG={config.resolve()}", command)
 
 
+class ApplicationIsolationTests(unittest.TestCase):
+    def test_runner_never_constructs_a_srcsep_sibling_path(self):
+        """srcSEP3D tests may use shared models, but never the srcSEP app."""
+        source = RUNNER_PATH.read_text(encoding="utf-8")
+        self.assertNotIn('ROOT.parent / "srcSEP"', source)
+        self.assertNotIn("ROOT.parent / 'srcSEP'", source)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

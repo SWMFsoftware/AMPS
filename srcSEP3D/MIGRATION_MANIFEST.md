@@ -1,6 +1,6 @@
 # srcSEP3D Migration Manifest
 
-This manifest records what Phase R0 removed, retained, or replaced. It is an
+This manifest records what Phases R0–R2 removed, retained, or replaced. It is an
 evidence document: completion claims must correspond to an executable test or
 an explicitly identified external build gate.
 
@@ -48,11 +48,11 @@ valid AMPS particle result. They must be handled before the adapter is called.
 
 ### Production execution policy
 
-R0 does not provide a simulation. Calling `amps_init_mesh`, `amps_init`,
-`amps_time_step`, or `localResolution` terminates with an explicit message.
-This is safer and more truthful than running the previous wedge or silently
-substituting placeholder values. The guard is removed only when R2 and the
-mesh phase supply a validated Runtime and production domain.
+R2 provides a typed Runtime but not a physical simulation. The host may install
+an immutable configuration through `ConfigureApplication`; calls that require
+the not-yet-implemented mesh, background population, or mover terminate with a
+phase-specific message. This is safer and more truthful than running the
+previous wedge or silently substituting placeholder values.
 
 ### R0 evidence
 
@@ -74,11 +74,12 @@ The uploaded tree described Steps 1–4 as complete. R0 corrects that claim:
   mover until this R0 change;
 - `sep_common` now owns the canonical shared sources and archive beside both
   applications; the former `srcSEP/util` copies are absent;
-- SWCME now has one canonical `src/models/swcme` tree and srcSEP consumes its public
-  headers from that location; the former `srcSEP/swcme` duplicate is absent;
+- SWCME now has one canonical `src/models/swcme` implementation, which
+  srcSEP3D consumes directly without inspecting or requiring srcSEP;
 - a configured enclosing AMPS executable link is still required before the
   production-build portion of R1 can be declared complete;
-- no complete three-dimensional coupled background snapshot owner exists yet.
+- R2 now owns validated snapshot metadata and lifecycle transitions; physical
+  cell-field storage and population remain subsequent phases.
 
 No later physics phase should use the old Step 1–4 completion labels as release
 evidence. The current runner reports the gates that are actually executable.
@@ -101,8 +102,9 @@ copied tree: it resolves to `AMPS/build/Makefile.conf` instead of the canonical
 
 The makefile now obtains the absolute directory containing the active makefile
 from `MAKEFILE_LIST`, identifies whether it is the source or copied location,
-and resolves `AMPS_ROOT` once. `AMPS_CONFIG`, `SEP_COMMON_DIR`, the common
-archive, and all common-object paths are absolute descendants of that root.
+and resolves `AMPS_ROOT` once. `AMPS_CONFIG`, `SEP_COMMON_DIR`, `SWCME_DIR`,
+both shared archives, and all shared-object paths are absolute descendants of
+that root.
 This logic does not depend on the current working directory. `BLDL3D05`
 constructs both layouts, invokes each makefile from a third directory, and
 requires identical canonical paths.
@@ -131,3 +133,39 @@ build. `strict-production` and `BLDL3D01` therefore delegate to the top-level
 
 Documentation and tests may name retired identifiers when explaining or
 detecting them; production headers and translation units may not.
+
+## Phase R1 — shared kernel and SWCME integration
+
+| Contract | Implementation | Evidence |
+|---|---|---|
+| one dependency-free SEP kernel archive | `src/models/sep_common/makefile` produces exactly seven members | `ARCH3D02`, `UTIL02`, archive `verify` |
+| one compiled SWCME archive | `src/models/swcme/makefile` produces exactly `swcme3d.o` | `ARCH3D02`, `R1SW01` |
+| srcSEP3D consumes canonical objects | its makefile rebuilds `mainlib.a` from local objects plus the canonical object lists | `ARCH3D02` |
+| bounded common 1-D/3-D coupling runner | `src/models/swcme/test/run_tests.py` exposes srcSEP-style selectors and JSON/JUnit | `SWCME3D01`, runner unit tests |
+
+The uploaded SWCME subset omits translation units referenced by its historical
+extended Makefile. R1 does not report those missing campaigns as passes. The
+new runner exposes only the four executable common-library gates, while the
+larger catalog remains pending source restoration.
+
+## Phase R2 — immutable configuration and Runtime lifecycle
+
+| File | Ownership and invariant |
+|---|---|
+| `runtime/run_configuration.{h,cpp}` | validates host options, derives the complete pre-mesh byte layout, and publishes immutable physics/output manifests |
+| `runtime/runtime.{h,cpp}` | owns lifecycle state, snapshot metadata, pinned generation, and restartable step/output/checkpoint counters |
+| `runtime/runtime_adapters.{h,cpp}` | maps analytic Parker and SWMF authorities onto identical acquisition/publication calls |
+| `main_lib.cpp`, `SEP3D.h` | own and expose the process Runtime without parsing process arguments or parameter files |
+
+The lifecycle is `Created → Configured → MeshReady → WaitingForSnapshot →
+SnapshotReady`, with `Running` and `Checkpointing` as transactional excursions
+back to `SnapshotReady`, and `Finalized` as the terminal state. Every mutating
+method validates all inputs before committing state. `LIFE3D02` exercises all
+80 operation/state pairs and proves rejected calls preserve state, counters,
+and snapshot generation.
+
+The physics fingerprint includes authorities, transport/domain selection,
+physical radii and timestep, seed, background cadence, and storage-layout
+identity. Output directory, prefix, and cadence remain in the resolved manifest
+but are intentionally excluded from physics identity. `LIFE3D03` protects that
+separation and the exact storage offsets.

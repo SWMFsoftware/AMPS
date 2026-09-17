@@ -77,8 +77,8 @@ namespace Const {
 // int.  The StatusCode enum provides fine-grained diagnostics that can be
 // logged, counted, and branched on without string parsing.
 //
-// StatusCode taxonomy (mirrors SEP::Transport::StatusCode in srcSEP so that
-// the two applications share the same diagnostic vocabulary):
+// StatusCode taxonomy (transport values mirror SEP::Transport::StatusCode in
+// srcSEP; R2 adds lifecycle-specific values without reusing those meanings):
 //
 //   OK             - normal completion
 //   Ballistic      - coefficient provider returned the λ=+∞ zero-rate state;
@@ -92,6 +92,10 @@ namespace Const {
 //   BackgroundInvalid - the background validity flag is clear at this point
 //   DomainExit     - the particle left the computational domain
 //   InnerBoundary  - the particle crossed the inner sphere r < r_in
+//   InvalidTransition - Runtime operation is illegal in the current state
+//   ConfigurationConflict - selected providers cannot be authoritative together
+//   LayoutMismatch - allocated mesh bytes differ from the frozen pre-mesh layout
+//   SnapshotUnavailable - snapshot metadata is incomplete, stale, or invalid
 //   Error          - generic unrecoverable error; message carries details
 // ----------------------------------------------------------------------------
 enum class StatusCode : int {
@@ -104,6 +108,10 @@ enum class StatusCode : int {
   BackgroundInvalid = 6,
   DomainExit      =  7,
   InnerBoundary   =  8,
+  InvalidTransition = 9,
+  ConfigurationConflict = 10,
+  LayoutMismatch = 11,
+  SnapshotUnavailable = 12,
   Error           = -1
 };
 

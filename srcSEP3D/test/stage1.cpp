@@ -4,23 +4,23 @@
 // AMPS-independent standalone test runner.
 //
 // LAYER: test binary only — not part of any library.
-//   Links: CORE_OBJ + BG_OBJ + test objects.
+//   Links: CORE_OBJ + BG_OBJ + RUNTIME_OBJ + test objects.
 //   Must NOT link any AMPS or MPI object.  The linker enforcing this is the
 //   whole point of having a separate binary.
 //
 // WHAT "STANDALONE" MEANS:
-//   These tests exercise the L0 (core/) and L1 (background/) layers
+//   These tests exercise core/, background/, and the R2 runtime/ layer
 //   without any AMPS or MPI dependency.  The complete Stage-1 suite runs in
 //   under two minutes on a laptop.  This is what makes the suite useful
 //   during development rather than only in CI — a developer can run it
 //   between every commit, without needing an AMPS installation.
 //
-//   Phase R0 source/ABI gates are orchestrated by test/run_tests.py because
+//   R0/R1 source/ABI gates are orchestrated by test/run_tests.py because
 //   they inspect the production tree or an external AMPS checkout.  Later
 //   linked and validation tests must run through the production executable.
 //
 // HOW THE BINARY ENFORCES THE LAYERING BOUNDARY:
-//   The linker only sees CORE_OBJ and BG_OBJ — the Stage-1 link line in
+//   The linker sees core/background/runtime and test objects — the Stage-1 link line in
 //   the makefile does not include any AMPS archive.  If a developer adds
 //   #include "pic.h" to a core/ file, the linker will produce an undefined-
 //   symbol error here, immediately.  That error is BLD01 (test group BLD)
@@ -119,7 +119,7 @@ static void PrintHelp(const char* argv0) {
     << "  1  at least one FAILED\n"
     << "  2  at least one ERROR, or a usage error (unknown option, bad ID)\n"
     << "\n"
-    << "Groups at Phase R0:  BLD  HARN  LAY  UTIL\n"
+    << "Groups through Phase R2:  BLD  HARN  LAY  LIFE3D  UTIL\n"
     << "Frozen records:    test/frozen/\n"
     << "Test artifacts:    test/individual-test/\n"
     << "Full procedure:    test/README.md\n";
@@ -156,6 +156,7 @@ int main(int argc, char** argv) {
   append(RegisterLayeringTests(selfPath));
   append(RegisterBuildTests(selfPath));
   append(RegisterKernelTests());   // UTIL — shared-kernel frozen record (Step 3)
+  append(RegisterRuntimeTests());  // LIFE3D — Phase R2 lifecycle
 
   // Future groups — uncomment when the step is implemented:
   // append(RegisterMeshTests());        // Step 7

@@ -1,11 +1,11 @@
 // ============================================================================
 // srcSEP3D/main.cpp
 //
-// Standard AMPS application driver.  During Phase R0, amps_init_mesh() stops
-// deliberately before any simulation because the retired prototype physics
-// has been removed and the new Runtime has not yet been implemented.  Keeping
-// this driver in the production archive proves that the public AMPS entry-point
-// signatures remain linkable without preserving obsolete mover sources.
+// Standard AMPS application driver.  Through Phase R2, configuration is a
+// host responsibility and the typed Runtime exists, but mesh/background/mover
+// phases are not yet executable.  amps_init_mesh() therefore diagnoses the
+// missing host configuration or stops at the Phase-M gate.  The driver never
+// interprets argv, preserving a clean coupled-library configuration boundary.
 // ============================================================================
 
 #include "pic.h"

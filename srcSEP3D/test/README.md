@@ -2,7 +2,8 @@
 
 `test/run_tests.py` is the single user-facing test interface. Its selectors
 match `srcSEP/test/run_tests.py` so the two applications can use the same
-automation habits even though srcSEP3D currently has only the R0 evidence set.
+automation habits. The runner combines R0 baseline, R1 shared-library, and R2
+lifecycle evidence without requiring AMPS for dependency-free tests.
 
 ## Quick commands
 
@@ -10,6 +11,7 @@ automation habits even though srcSEP3D currently has only the R0 evidence set.
 python3 test/run_tests.py --list
 python3 test/run_tests.py --routine --amps-source /path/to/AMPS
 python3 test/run_tests.py --test LAY01
+python3 test/run_tests.py --suite r1 --suite r2
 python3 test/run_tests.py --group HARN --group BLDL3D \
   --amps-source /path/to/AMPS
 python3 test/run_tests.py --all --amps-source /path/to/AMPS \
@@ -19,6 +21,25 @@ python3 test/run_tests.py --all --amps-source /path/to/AMPS \
 The runner does not accept an implicit mode. Choose exactly one of `--list`,
 `--test`/`--group`, `--routine`, `--all`, or `--suite`. This prevents an empty
 or misspelled selection from exiting successfully.
+
+### Parallel production compilation
+
+The `BLDL3D01` gate delegates compilation to the enclosing AMPS GNU Make
+build. Set `MAKEFLAGS` for this runner invocation to allow that build and its
+recursive make operations to compile in parallel. The portable `env` form
+works with `tcsh`, `csh`, `bash`, and `zsh`:
+
+```bash
+env MAKEFLAGS="-j16" test/run_tests.py --all --amps-source .. \
+  --make-config ../Makefile.conf --output-dir test_output/all --rebuild
+```
+
+Adjust `16` to the CPU and memory available on the build host. Parallelism
+applies to GNU Make compilation performed by the runner; the tests themselves
+remain sequential, and the standalone `test/stage1` build is a single compiler
+command. The shorter `MAKEFLAGS="-j16" command` assignment-prefix form is valid
+in `bash` and `zsh`, but not in `csh` or `tcsh`; use the documented `env` form
+for a shell-independent command.
 
 ## CLI correspondence with srcSEP
 
@@ -34,7 +55,7 @@ or misspelled selection from exiting successfully.
 | `--amps PATH` | reserves the linked-executable path for later linked phases |
 | `--timeout SEC` | applies a per-command timeout |
 
-Additional R0 setup options are `--amps-source`, `--make-config`,
+Additional setup options are `--amps-source`, `--make-config`,
 `--sep-common-dir`, and `--sep-common-archive`.
 
 ## Evidence classes
@@ -42,15 +63,16 @@ Additional R0 setup options are `--amps-source`, `--make-config`,
 ### Standalone C++ registry
 
 `test/stage1` is compiled with no AMPS include path and no MPI library. It links
-only the retained L0 source, test callbacks, and the shared `sep_common.a` test
+the R2 Runtime/adapters, test callbacks, and the shared `sep_common.a` test
 registry. The runner adds `-Wall -Wextra -Wpedantic -Werror`.
 
 | Group | IDs | Purpose |
 |---|---|---|
 | `HARN` | `HARN01`–`HARN04` | registry selection, PASS/FAIL/SKIP/ERROR exits, JSON, and JUnit |
-| `LAY` | `LAY01`, `LAY02` | L0/L1 dependency rule and a negative control proving the guard fires |
+| `LAY` | `LAY01`, `LAY02` | core/background/runtime dependency rule and a negative control proving the guard fires |
 | `BLD` | `BLD01` | `nm -u` confirms the standalone binary has no AMPS/MPI symbols |
 | `UTIL` | `UTIL02` | byte-exact shared-kernel reference record |
+| `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
 | `RUNNER` | `RUN3D01` | Python selector, de-duplication, usage-error, JSON, and JUnit contract |
 
 `HARN02-EXITCODE` and `HARN03-EXITCODE` are shell-level probes. They launch the
@@ -71,7 +93,8 @@ make -f makefile strict-production \
 
 That target invokes the top-level `make amps`, which owns generated headers,
 include paths, compile definitions, libraries, and the final executable link.
-It then audits `AMPS/build/main/mainlib.a` and `main.a` with `nm`. A direct
+It then audits `AMPS/build/main/mainlib.a` and `main.a` with `nm`/`ar`, including
+exactly one member for each shared kernel and SWCME. A direct
 `make lib` from `AMPS/srcSEP3D` is not production evidence because it does not
 inherit the enclosing include configuration and cannot reliably locate
 `build/pic/pic.h`. If the real configuration is absent, the result is SKIP. A
@@ -87,7 +110,7 @@ This check reads the live source tree and active makefile lines. It requires:
 - no former wedge bounds;
 - no `PrepopulateDomain`, placeholder mesh output, or mesh-file write in
   `main_lib.cpp`;
-- only the R0 production manifest described in the root README.
+- only the current R0–R2 production manifest described in the root README.
 
 The check deliberately scans production code, not documentation, because the
 migration record must be allowed to name what was removed.
@@ -118,12 +141,39 @@ AMPS copies the application into `AMPS/build/main` before compiling it. This
 test constructs both `AMPS/srcSEP3D/makefile` and copied
 `AMPS/build/main/makefile` fixtures, then invokes each with `make -f` from an
 unrelated working directory. Both must resolve the same absolute `AMPS_ROOT`,
-`AMPS_CONFIG`, and `SEP_COMMON_DIR`; the active makefile directory itself must
-match its source or copied location. This directly protects against the
+`AMPS_CONFIG`, `SEP_COMMON_DIR`, and `SWCME_DIR`; the active makefile directory
+itself must match its source or copied location. This directly protects against the
 `build/main: ../Makefile.conf: No such file or directory` failure.
 The same fixture also supplies a synthetic enclosing `amps` target and verifies
 that `strict-production` delegates to it and audits `build/main` archives rather
 than attempting a bare compile in `srcSEP3D`.
+
+### Phase R1 shared-library gates
+
+`ARCH3D02` runs both canonical archives' `verify` targets, compares exact `ar`
+membership, and checks that the srcSEP3D makefile consumes the canonical object
+lists. It deliberately does not inspect or require the independent `srcSEP`
+application tree. `SWCME3D01` invokes the relocated SWCME runner and requires
+`R1CFG01`, `R1D01`, `R3D01`, and `R13D01` to pass.
+
+```bash
+../src/models/swcme/test/run_tests.py --routine \
+  --output-dir test_output/swcme-r1 --rebuild
+```
+
+### Phase R2 lifecycle gates
+
+| ID | Acceptance contract |
+|---|---|
+| `LIFE3D01` | canonical legal path reaches `Finalized`; step/output/checkpoint counters remain inside `Runtime` |
+| `LIFE3D02` | all 80 operation/state pairs match the transition table; rejected calls preserve state, counters, and snapshot generation |
+| `LIFE3D03` | pre-mesh layout is deterministic; output-only settings do not change physics identity; mismatched binding is atomic |
+| `LIFE3D04` | standalone Parker and SWMF adapters reach `SnapshotReady` through `Runtime`; coupled sources contain no process/file/environment parser |
+
+```bash
+python3 test/run_tests.py --suite r2 --rebuild \
+  --output-dir test_output/r2
+```
 
 ## Named suites
 
@@ -131,6 +181,8 @@ than attempting a bare compile in `srcSEP3D`.
 |---|---|
 | `standalone` | C++ registry, shell exit-code probes, and `RUN3D01` |
 | `r0` | R0 source/ABI/production gates plus RUN3D01, LAY01, and BLD01 |
+| `r1` | canonical shared-archive audit, relocated SWCME suite, and frozen common kernels |
+| `r2` | LIFE3D01–LIFE3D04 immutable configuration and lifecycle gates |
 | `production` | BLDL3D01–05 |
 
 Suites can be repeated. Overlapping IDs are de-duplicated in stable order.
@@ -190,7 +242,7 @@ invoke that exact linked callback, following the srcSEP pattern.
 
 | Symptom | Interpretation and action |
 |---|---|
-| `cannot locate srcSEP utility headers` | pass `--sep-common-dir` |
+| `cannot locate sep_common directory` | pass `--sep-common-dir` |
 | `cannot locate sep_common.a` | build the shared archive, then pass `--sep-common-archive` |
 | `BLDL3D01 SKIP` | run in a configured AMPS checkout or pass `--make-config` |
 | `BLDL3D01` reports `pic.h: No such file or directory` from `srcSEP3D` | update the makefile; the gate must delegate to top-level `make amps`, not compile `main_lib.cpp` directly in the source directory |
