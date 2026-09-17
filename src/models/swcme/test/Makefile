@@ -8,6 +8,9 @@ CPPFLAGS += -isystem .. -Icore
 CXXFLAGS += -std=c++17 -Wall -Wextra -Wpedantic
 
 TARGET := output/test_swcme
+R1_TARGET := output/test_swcme_r1
+R1_SOURCE := core/test_r1_shared_integration.cpp
+SWCME_ARCHIVE := ../swcme.a
 PST08_TARGET := output/test_swcme_pst08_performance
 SAN01_TARGET := output/test_swcme_san01
 SAN01_DIR := output/san01
@@ -110,7 +113,7 @@ OUT08_WARNING_FLAGS := -std=c++17 -Wall -Wextra -Wpedantic -Wformat=2 \
 	-Wformat-security -Wconversion -Wsign-conversion -Wshadow \
 	-Werror=format-security -Werror
 
-.PHONY: all test tools demos demo-run campaign-test validation-list validation-test \
+.PHONY: all test r1-smoke r1-test tools demos demo-run campaign-test validation-list validation-test \
 	validation-case validation-implemented validation-campaign \
 	vp01-data vp01-test vp01-validation vp02-data vp02-test vp02-validation \
 	vp03-data vp03-test vp03-validation vp04-data vp04-test vp04-validation \
@@ -124,6 +127,23 @@ OUT08_WARNING_FLAGS := -std=c++17 -Wall -Wextra -Wpedantic -Wformat=2 \
 	perf01-performance thr01-tsan out08-strict san01-sanitize cov01-coverage clean
 
 all: $(TARGET) demos
+
+# Phase R1 recovery gate.  The uploaded historical extended manifest names
+# several validation translation units that are not present in the archive.
+# Keep that manifest available for later restoration, but provide one bounded,
+# honest executable now that tests the canonical 1-D header path and the
+# compiled 3-D object from ../swcme.a.  test/run_tests.py is the user-facing
+# selector and invokes this target for --routine/--all.
+r1-smoke: $(R1_TARGET)
+
+$(SWCME_ARCHIVE):
+	$(MAKE) -C .. all
+
+$(R1_TARGET): $(R1_SOURCE) $(SWCME_ARCHIVE) | output
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(R1_SOURCE) $(SWCME_ARCHIVE) -o $@
+
+r1-test: $(R1_TARGET)
+	./$(R1_TARGET) --all
 
 $(TARGET): $(OBJECTS)
 	$(CXX) $(CXXFLAGS) $(THREAD_FLAGS) $(OBJECTS) -o $@
@@ -613,7 +633,7 @@ test: all
 	./$(TARGET)
 
 clean:
-	rm -f $(TARGET) $(SEP_REFERENCE_TARGET) $(DEMO_TARGETS) $(OBJECTS) output/test_swcme_pst05_asan $(PST08_TARGET) $(SAN01_TARGET) output/bench_tmp \
+	rm -f $(TARGET) $(R1_TARGET) $(SEP_REFERENCE_TARGET) $(DEMO_TARGETS) $(OBJECTS) output/test_swcme_pst05_asan $(PST08_TARGET) $(SAN01_TARGET) output/bench_tmp \
 		$(SAN01_DIR)/swcme3d.o $(SAN01_DIR)/demo1d $(SAN01_DIR)/demo3d_1 $(SAN01_DIR)/demo3d_2 \
 		$(OUT08_DEBUG_DIR)/swcme3d.o $(OUT08_DEBUG_DIR)/demo1d $(OUT08_DEBUG_DIR)/demo3d_1 $(OUT08_DEBUG_DIR)/demo3d_2 $(OUT08_DEBUG_DIR)/test_out08 \
 		$(OUT08_OPTIMIZED_DIR)/swcme3d.o $(OUT08_OPTIMIZED_DIR)/demo1d $(OUT08_OPTIMIZED_DIR)/demo3d_1 $(OUT08_OPTIMIZED_DIR)/demo3d_2 $(OUT08_OPTIMIZED_DIR)/test_out08

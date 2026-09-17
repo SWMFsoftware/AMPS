@@ -76,6 +76,23 @@ solver.
 There is no required external numerical library. A C++17 compiler is sufficient.
 The 1-D model is header-only; the 3-D model must link `swcme3d.cpp`.
 
+In the AMPS tree, use the canonical archive instead of compiling an
+application-private copy:
+
+```sh
+make                  # builds build/swcme3d.o and swcme.a
+make verify           # exact archive membership and no AMPS/MPI dependency
+test/run_tests.py --routine --output-dir test/output/r1 --rebuild
+```
+
+The bounded R1 runner supports `--list`, repeatable `--test`/`--group`,
+`--routine`, `--all`, `--jobs`, and JSON/JUnit output. It verifies shared
+configuration, one-dimensional and three-dimensional prepared-state queries,
+and their common ambient-state identity. The historical extended test Makefile
+references several translation units not present in the supplied source
+archive; those campaigns remain pending restoration and are not represented as
+passes by the bounded runner.
+
 ```sh
 # Header-only 1-D demonstration
 g++ -std=c++17 -O3 -Wall -Wextra -Wpedantic demo1d.cpp -o demo1d

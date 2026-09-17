@@ -1,8 +1,14 @@
 # SWCME validation
 
-The validation suite is a standalone C++ executable that calls production
-SWCME interfaces. It uses the repository's existing Make-based build approach;
-no second build system or external test dependency is required.
+The Phase-R1 validation suite is a standalone C++ executable that calls
+production SWCME interfaces. It uses the repository's existing Make-based
+build approach; no second build system or external test dependency is required.
+
+The supplied source subset can execute four bounded common-library gates:
+`R1CFG01`, `R1D01`, `R3D01`, and `R13D01`. The historical extended catalog
+documented later in this file references translation units absent from the
+uploaded archive. Those cases remain specifications pending source restoration;
+they are not silently skipped or reported as passes by the R1 runner.
 
 ## Directory layout
 
@@ -20,32 +26,45 @@ test/
   event_config.example.json  executable EVENT/sweep example
 ```
 
-Every validation is linked into the single `output/test_swcme` executable.
+The executable R1 gates are linked into `output/test_swcme_r1`.
 
 ## Build
 
-From `srcSEP/swcme`:
+From `src/models/swcme`:
 
 ```sh
-make -C test clean all
+make clean verify
+test/run_tests.py --routine --output-dir test/output/r1 --rebuild
 ```
 
-From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
+From `src/models/swcme/test`, the focused build target is `make r1-smoke`.
 
-To build the test executable and demonstrations in parallel and then run the
-complete registered validation suite, run the following command from
-`srcSEP/swcme/test`:
+To build the bounded executable in parallel and run the current registered
+suite, use:
 
 ```sh
-make -j test
+./run_tests.py --routine --jobs 16 --rebuild
 ```
 
-The `test` target first brings all required binaries up to date and then runs
-`output/test_swcme` in registry order. Because `-j` does not set an explicit
-job limit, use `make -jN test` instead when the build host should be limited to
-`N` concurrent compilation jobs.
+`--jobs` controls GNU Make compilation. Tests execute sequentially so their
+terminal and report records remain deterministic.
 
-## Command-line interface
+## Bounded R1 command-line interface
+
+```sh
+./run_tests.py --list
+./run_tests.py --test R1D01
+./run_tests.py --group 3D
+./run_tests.py --routine --output-dir output/r1
+./run_tests.py --all --jobs 16 --rebuild
+```
+
+The selectors are case-insensitive and repeatable where applicable. Unknown
+IDs/groups and invalid selector combinations return exit code 2. Test failures
+return 1. Each execution emits JSON and JUnit summaries from the same result
+records printed to the terminal.
+
+## Historical extended command-line interface (pending sources)
 
 ```sh
 ./output/test_swcme                 # run all tests; same as --all
