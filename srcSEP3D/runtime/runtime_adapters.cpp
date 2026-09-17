@@ -1,5 +1,7 @@
 #include "runtime_adapters.h"
 
+#include "../background/background_snapshot.h"
+
 namespace SEP3D {
 namespace RuntimeModel {
 
@@ -30,6 +32,37 @@ SnapshotDescriptor Candidate(
   return result;
 }
 
+Core::Status CandidateFromSnapshot(
+    const Runtime& runtime,
+    const Background::BackgroundSnapshot& snapshot,
+    BackgroundAuthority expectedAuthority,
+    SnapshotDescriptor* result) {
+  if (result == nullptr) {
+    return Core::Status(Core::StatusCode::InvalidInput,
+                        "snapshot descriptor output is null");
+  }
+  const Background::SnapshotMetadata& metadata = snapshot.metadata();
+  const bool authorityMatches =
+      (expectedAuthority == BackgroundAuthority::AnalyticParker &&
+       metadata.provider == Background::ProviderKind::AnalyticParker) ||
+      (expectedAuthority == BackgroundAuthority::Swmf &&
+       metadata.provider == Background::ProviderKind::SwmfAwsom);
+  if (!authorityMatches) {
+    return Core::Status(Core::StatusCode::ConfigurationConflict,
+                        "snapshot provider does not match the Runtime adapter");
+  }
+  if (snapshot.samples().empty()) {
+    return Core::Status(Core::StatusCode::SnapshotUnavailable,
+                        "cannot publish an empty physical snapshot");
+  }
+  *result = Candidate(runtime, expectedAuthority, metadata.epochS,
+                      metadata.validUntilS, metadata.generation, true,
+                      metadata.providerIdentity.c_str());
+  result->validFromS = metadata.validFromS;
+  result->coordinateFrame = metadata.coordinateFrame;
+  return Core::Status::OK();
+}
+
 }  // namespace
 
 Core::Status StandaloneAdapter::Initialize(Runtime* runtime) const {
@@ -46,6 +79,16 @@ Core::Status StandaloneAdapter::PublishFrozenParker(
       generation, true, "analytic-parker-r2"));
 }
 
+Core::Status StandaloneAdapter::PublishSnapshot(
+    Runtime* runtime,
+    const Background::BackgroundSnapshot& snapshot) const {
+  if (runtime == nullptr) return MissingRuntime();
+  SnapshotDescriptor candidate;
+  const Core::Status converted = CandidateFromSnapshot(
+      *runtime, snapshot, BackgroundAuthority::AnalyticParker, &candidate);
+  return converted.ok() ? runtime->PublishSnapshot(candidate) : converted;
+}
+
 Core::Status SwmfAdapter::Initialize(Runtime* runtime) const {
   if (runtime == nullptr) return MissingRuntime();
   return runtime->BeginBackgroundAcquisition(AdapterKind::Swmf);
@@ -58,6 +101,16 @@ Core::Status SwmfAdapter::PublishImported(
   return runtime->PublishSnapshot(Candidate(
       *runtime, BackgroundAuthority::Swmf, epochS, validUntilS, generation,
       complete, "swmf-import-r2"));
+}
+
+Core::Status SwmfAdapter::PublishSnapshot(
+    Runtime* runtime,
+    const Background::BackgroundSnapshot& snapshot) const {
+  if (runtime == nullptr) return MissingRuntime();
+  SnapshotDescriptor candidate;
+  const Core::Status converted = CandidateFromSnapshot(
+      *runtime, snapshot, BackgroundAuthority::Swmf, &candidate);
+  return converted.ok() ? runtime->PublishSnapshot(candidate) : converted;
 }
 
 }  // namespace RuntimeModel

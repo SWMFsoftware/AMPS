@@ -420,9 +420,16 @@ Result RunLIFE3D03() {
       layout.bulkVelocityOffset != 3 * sizeof(double) ||
       layout.numberDensityOffset != 6 * sizeof(double) ||
       layout.velocityDivergenceOffset != 7 * sizeof(double) ||
-      layout.magneticGradientOffset != 8 * sizeof(double) ||
-      layout.velocityGradientOffset != 17 * sizeof(double) ||
-      layout.cellAssociatedBytes != 26 * sizeof(double) ||
+      layout.temperatureOffset != 8 * sizeof(double) ||
+      layout.pressureOffset != 9 * sizeof(double) ||
+      layout.alfvenSpeedOffset != 10 * sizeof(double) ||
+      layout.divBhatOffset != 11 * sizeof(double) ||
+      layout.focusingLengthOffset != 12 * sizeof(double) ||
+      layout.curvatureOffset != 13 * sizeof(double) ||
+      layout.fieldAlignedStrainOffset != 16 * sizeof(double) ||
+      layout.magneticGradientOffset != 17 * sizeof(double) ||
+      layout.velocityGradientOffset != 26 * sizeof(double) ||
+      layout.cellAssociatedBytes != 35 * sizeof(double) ||
       layout.samplingBytesPerCell != 40) {
     return Fail("canonical pre-mesh offsets or sizes are incorrect");
   }
@@ -433,9 +440,9 @@ Result RunLIFE3D03() {
   std::shared_ptr<const RM::RunConfiguration3D> importedConfiguration;
   if (!RM::RunConfiguration3D::Create(imported, &importedConfiguration).ok() ||
       importedConfiguration->storage_layout().waveEnergyOffset !=
-          8 * sizeof(double) ||
+          17 * sizeof(double) ||
       importedConfiguration->storage_layout().cellAssociatedBytes !=
-          10 * sizeof(double)) {
+          19 * sizeof(double)) {
     return Fail("SWMF turbulence layout did not reserve two wave-energy doubles");
   }
 

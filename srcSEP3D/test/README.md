@@ -2,8 +2,9 @@
 
 `test/run_tests.py` is the single user-facing test interface. Its selectors
 match `srcSEP/test/run_tests.py` so the two applications can use the same
-automation habits. The runner combines R0 baseline, R1 shared-library, and R2
-lifecycle evidence without requiring AMPS for dependency-free tests.
+automation habits. The runner combines R0/R1/R2 foundation evidence with
+Phase-M mesh, Phase-B background, and Phase-T turbulence/coefficient evidence
+without requiring AMPS for dependency-free tests.
 
 ## Quick commands
 
@@ -12,6 +13,7 @@ python3 test/run_tests.py --list
 python3 test/run_tests.py --routine --amps-source /path/to/AMPS
 python3 test/run_tests.py --test LAY01
 python3 test/run_tests.py --suite r1 --suite r2
+python3 test/run_tests.py --suite phase-m --suite phase-b --suite phase-t
 python3 test/run_tests.py --group HARN --group BLDL3D \
   --amps-source /path/to/AMPS
 python3 test/run_tests.py --all --amps-source /path/to/AMPS \
@@ -35,9 +37,10 @@ env MAKEFLAGS="-j16" test/run_tests.py --all --amps-source .. \
 ```
 
 Adjust `16` to the CPU and memory available on the build host. Parallelism
-applies to GNU Make compilation performed by the runner; the tests themselves
-remain sequential, and the standalone `test/stage1` build is a single compiler
-command. The shorter `MAKEFLAGS="-j16" command` assignment-prefix form is valid
+applies to GNU Make compilation performed by the runner, including independent
+standalone object compilation and the enclosing AMPS build. The tests
+themselves remain sequential. The shorter `MAKEFLAGS="-j16" command`
+assignment-prefix form is valid
 in `bash` and `zsh`, but not in `csh` or `tcsh`; use the documented `env` form
 for a shell-independent command.
 
@@ -63,16 +66,22 @@ Additional setup options are `--amps-source`, `--make-config`,
 ### Standalone C++ registry
 
 `test/stage1` is compiled with no AMPS include path and no MPI library. It links
-the R2 Runtime/adapters, test callbacks, and the shared `sep_common.a` test
-registry. The runner adds `-Wall -Wextra -Wpedantic -Werror`.
+the Phase-M mesh model, Phase-B providers/snapshots, Phase-T turbulence bridge,
+R2 Runtime/adapters, test callbacks, and shared `sep_common.a`. The runner adds
+`-Wall -Wextra -Wpedantic -Werror`.
 
 | Group | IDs | Purpose |
 |---|---|---|
 | `HARN` | `HARN01`–`HARN04` | registry selection, PASS/FAIL/SKIP/ERROR exits, JSON, and JUnit |
-| `LAY` | `LAY01`, `LAY02` | core/background/runtime dependency rule and a negative control proving the guard fires |
+| `LAY` | `LAY01`, `LAY02` | core/background/runtime/mesh/turbulence dependency rule and a negative control proving the guard fires |
 | `BLD` | `BLD01` | `nm -u` confirms the standalone binary has no AMPS/MPI symbols |
 | `UTIL` | `UTIL02` | byte-exact shared-kernel reference record |
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
+| `MSH3D` | `MSH3D01`–`MSH3D09` | resolution, tube geometry, balance, octree budget/ownership, presets, gradients |
+| `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
+| `SNAP3D` | `SNAP3D01`–`SNAP3D08` | snapshot completeness, coupling conversion, atomicity, interpolation, batch/frame policy |
+| `TUR3D` | `TUR3D01`–`TUR3D04` | spectrum, AWSoM convention, resonance, missing-data policy |
+| `COEF3D` | `COEF3D01`, `COEF3D02` | conversion round trips and shared-kernel identity |
 | `RUNNER` | `RUN3D01` | Python selector, de-duplication, usage-error, JSON, and JUnit contract |
 
 `HARN02-EXITCODE` and `HARN03-EXITCODE` are shell-level probes. They launch the
@@ -110,7 +119,7 @@ This check reads the live source tree and active makefile lines. It requires:
 - no former wedge bounds;
 - no `PrepopulateDomain`, placeholder mesh output, or mesh-file write in
   `main_lib.cpp`;
-- only the current R0–R2 production manifest described in the root README.
+- only the current R0–R2/M/B/T production manifest described in the root README.
 
 The check deliberately scans production code, not documentation, because the
 migration record must be allowed to name what was removed.
@@ -148,6 +157,17 @@ The same fixture also supplies a synthetic enclosing `amps` target and verifies
 that `strict-production` delegates to it and audits `build/main` archives rather
 than attempting a bare compile in `srcSEP3D`.
 
+#### BLDL3D06 — production turbulence-header boundary
+
+AMPS compiles `build/main/main_lib.cpp` through a generic `Makefile.conf` rule.
+Some deployed rules do not consume application additions to `CPPFLAGS`,
+`CXXFLAGS`, or `INCLUDE`. This regression therefore compiles
+`turbulence_models.h` with only the srcSEP3D include root and requires it to be
+independent of `sep_common`. It then compiles the opt-in
+`coefficient_bridge.h` with the canonical `SEP_COMMON_DIR` include path. The
+test reproduces the former `sep_coefficient_physics.h: No such file or
+directory` failure without requiring a configured AMPS build.
+
 ### Phase R1 shared-library gates
 
 `ARCH3D02` runs both canonical archives' `verify` targets, compares exact `ar`
@@ -175,6 +195,57 @@ python3 test/run_tests.py --suite r2 --rebuild \
   --output-dir test_output/r2
 ```
 
+### Phase M mesh/storage gates
+
+| ID | Acceptance contract |
+|---|---|
+| `MSH3D01` | one million deterministic points stay within the configured cell-size bounds |
+| `MSH3D02` | radial surface, transition, and octave values match closed forms |
+| `MSH3D03` | generated Parker centrelines have negligible tube distance for both polarities |
+| `MSH3D04` | fast tube-distance approximation converges above second order |
+| `MSH3D05` | shoulder mesh is 2:1 balanced and a deliberately illegal jump is detected |
+| `MSH3D06` | co-rotation preserves resolution |
+| `MSH3D07` | five octrees reproduce exact leaf/memory counts and reject non-owner writes |
+| `MSH3D08` | Earth and Mars domains enclose exact declared outer spheres |
+| `MSH3D09` | mixed coarse/fine gradients are linear-exact and rank-deficient stencils fail |
+
+```bash
+python3 test/run_tests.py --suite phase-m --rebuild \
+  --output-dir test_output/phase-m
+```
+
+### Phase B background/snapshot gates
+
+| IDs | Acceptance contract |
+|---|---|
+| `BGP3D01–03` | analytic Parker divergence, components, and tangency |
+| `BGP3D04–06` | focusing derivative, radial-wind derivatives, and finite polar limits |
+| `SNAP3D01–02` | missing/non-finite required fields reject the candidate |
+| `SNAP3D03–05` | coupling units, epoch consistency, and atomic failure |
+| `SNAP3D06` | compatible snapshots interpolate only inside their time bracket |
+| `SNAP3D07–08` | per-sample batch status and explicit coordinate-frame policy |
+
+```bash
+python3 test/run_tests.py --suite phase-b --rebuild \
+  --output-dir test_output/phase-b
+```
+
+### Phase T turbulence/coefficient gates
+
+| ID | Acceptance contract |
+|---|---|
+| `TUR3D01` | log-space quadrature recovers prescribed magnetic variance |
+| `TUR3D02` | AWSoM energies use `deltaB²=mu0*w` and directions follow field polarity |
+| `TUR3D03` | proton/electron resonances below, inside, and above the band apply the selected policy exactly |
+| `TUR3D04` | incomplete waves fail unless ballistic mode is explicit and typed |
+| `COEF3D01` | Dmumu/mean-free-path/kappa conversions round-trip below 1e-12 over six decades |
+| `COEF3D02` | srcSEP3D bridge and direct `sep_common` Jokipii calls are bitwise identical |
+
+```bash
+python3 test/run_tests.py --suite phase-t --rebuild \
+  --output-dir test_output/phase-t
+```
+
 ## Named suites
 
 | Suite | Contents |
@@ -183,6 +254,9 @@ python3 test/run_tests.py --suite r2 --rebuild \
 | `r0` | R0 source/ABI/production gates plus RUN3D01, LAY01, and BLD01 |
 | `r1` | canonical shared-archive audit, relocated SWCME suite, and frozen common kernels |
 | `r2` | LIFE3D01–LIFE3D04 immutable configuration and lifecycle gates |
+| `phase-m` | MSH3D01–MSH3D09 mesh/storage gates |
+| `phase-b` | BGP3D01–06 and SNAP3D01–08 background/snapshot gates |
+| `phase-t` | TUR3D01–04 and COEF3D01–02 turbulence/coefficient gates |
 | `production` | BLDL3D01–05 |
 
 Suites can be repeated. Overlapping IDs are de-duplicated in stable order.

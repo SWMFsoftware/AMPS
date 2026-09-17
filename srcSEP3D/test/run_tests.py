@@ -3,10 +3,12 @@
 
 The command vocabulary intentionally follows ``srcSEP/test/run_tests.py``:
 ``--list``, repeatable ``--test``/``--group``/``--suite``, ``--routine``,
-``--all``, and ``--output-dir`` have the same meaning.  This R2 runner joins
-four evidence classes without pretending they are interchangeable:
+``--all``, and ``--output-dir`` have the same meaning.  This runner joins
+the foundation plus Phase-M/B/T evidence classes without pretending they are
+interchangeable:
 
-* standalone C++ tests compile core/background/runtime without AMPS or MPI;
+* standalone C++ tests compile core/mesh/background/turbulence/runtime without
+  AMPS or MPI;
 * source/ABI checks inspect the actual production manifest and AMPS pic.h;
 * R1 gates audit the canonical sep_common/SWCME archives and relocated runner;
 * the strict production build runs only with a real configured AMPS checkout.
@@ -72,6 +74,35 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("LIFE3D02", "LIFE3D", "Illegal transition matrix", "cpp"),
     TestDefinition("LIFE3D03", "LIFE3D", "Frozen layout and fingerprint", "cpp"),
     TestDefinition("LIFE3D04", "LIFE3D", "Standalone/SWMF adapter parity", "cpp"),
+    TestDefinition("MSH3D01", "MSH3D", "Resolution bounds", "cpp"),
+    TestDefinition("MSH3D02", "MSH3D", "Radial closed forms", "cpp"),
+    TestDefinition("MSH3D03", "MSH3D", "Parker tube centreline", "cpp"),
+    TestDefinition("MSH3D04", "MSH3D", "Tube-distance convergence", "cpp"),
+    TestDefinition("MSH3D05", "MSH3D", "Shoulder and 2:1 balance", "cpp"),
+    TestDefinition("MSH3D06", "MSH3D", "Rotation invariance", "cpp"),
+    TestDefinition("MSH3D07", "MSH3D", "Octree budget and ownership", "cpp"),
+    TestDefinition("MSH3D08", "MSH3D", "Earth and Mars presets", "cpp"),
+    TestDefinition("MSH3D09", "MSH3D", "Refinement-boundary gradients", "cpp"),
+    TestDefinition("BGP3D01", "BGP3D", "Divergence-free Parker field", "cpp"),
+    TestDefinition("BGP3D02", "BGP3D", "Parker component laws", "cpp"),
+    TestDefinition("BGP3D03", "BGP3D", "Field-line tangency", "cpp"),
+    TestDefinition("BGP3D04", "BGP3D", "Focusing length", "cpp"),
+    TestDefinition("BGP3D05", "BGP3D", "Velocity derivatives", "cpp"),
+    TestDefinition("BGP3D06", "BGP3D", "Polar limits", "cpp"),
+    TestDefinition("SNAP3D01", "SNAP3D", "Required-field completeness", "cpp"),
+    TestDefinition("SNAP3D02", "SNAP3D", "Finite-value policy", "cpp"),
+    TestDefinition("SNAP3D03", "SNAP3D", "SWMF unit conversion", "cpp"),
+    TestDefinition("SNAP3D04", "SNAP3D", "SWMF epoch consistency", "cpp"),
+    TestDefinition("SNAP3D05", "SNAP3D", "Atomic snapshot publication", "cpp"),
+    TestDefinition("SNAP3D06", "SNAP3D", "Snapshot time interpolation", "cpp"),
+    TestDefinition("SNAP3D07", "SNAP3D", "Batch per-sample status", "cpp"),
+    TestDefinition("SNAP3D08", "SNAP3D", "Coordinate-frame rejection", "cpp"),
+    TestDefinition("TUR3D01", "TUR3D", "Prescribed spectrum normalization", "cpp"),
+    TestDefinition("TUR3D02", "TUR3D", "AWSoM wave mapping", "cpp"),
+    TestDefinition("TUR3D03", "TUR3D", "Resonance bounds", "cpp"),
+    TestDefinition("TUR3D04", "TUR3D", "Missing turbulence policy", "cpp"),
+    TestDefinition("COEF3D01", "COEF3D", "Coefficient conversions", "cpp"),
+    TestDefinition("COEF3D02", "COEF3D", "Shared coefficient kernel", "cpp"),
     TestDefinition("UTIL02", "UTIL", "Shared-kernel frozen record", "cpp"),
     TestDefinition("HARN02-EXITCODE", "HARN_SHELL", "Outer failure exit code", "shell", False),
     TestDefinition("HARN03-EXITCODE", "HARN_SHELL", "Outer skip exit code", "shell", False),
@@ -81,6 +112,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("BLDL3D03", "BLDL3D", "AMPS mover return-code mapping", "source"),
     TestDefinition("BLDL3D04", "BLDL3D", "AMPS Pi-macro namespace hygiene", "source"),
     TestDefinition("BLDL3D05", "BLDL3D", "Source/build makefile path resolution", "source"),
+    TestDefinition("BLDL3D06", "BLDL3D", "Production turbulence-header boundary", "source"),
     TestDefinition("ARCH3D02", "ARCH3D", "Canonical shared-archive ownership", "source"),
     TestDefinition("SWCME3D01", "SWCME3D", "Relocated SWCME common runner", "source"),
 )
@@ -94,11 +126,17 @@ SUITES: Dict[str, Tuple[str, ...]] = {
     "standalone": tuple(item.test_id for item in TESTS
                         if item.kind in ("cpp", "shell") or item.test_id == "RUN3D01"),
     "r0": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04", "BLDL3D05",
+           "BLDL3D06",
            "RUN3D01", "LAY01", "BLD01"),
     "r1": ("ARCH3D02", "SWCME3D01", "UTIL02"),
     "r2": ("LIFE3D01", "LIFE3D02", "LIFE3D03", "LIFE3D04"),
+    "phase-m": tuple(item.test_id for item in TESTS if item.group == "MSH3D"),
+    "phase-b": tuple(item.test_id for item in TESTS
+                     if item.group in ("BGP3D", "SNAP3D")),
+    "phase-t": tuple(item.test_id for item in TESTS
+                     if item.group in ("TUR3D", "COEF3D")),
     "production": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04",
-                   "BLDL3D05"),
+                   "BLDL3D05", "BLDL3D06"),
 }
 
 
@@ -122,8 +160,8 @@ Examples:
 
 For a configured AMPS checkout, either place srcSEP3D in its normal
 application location or provide --make-config /path/to/Makefile.conf.  A
-source-only archive can run the standalone, R1, R2, and source-only build
-tests. BLDL3D01 is recorded as SKIP until a real production configuration is
+source-only archive can run the standalone, R1, R2, M/B/T, and source-only
+build tests. BLDL3D01 is recorded as SKIP until a real production configuration is
 present; BLDL3D03 is SKIP if the actual AMPS pic.h is unavailable.
 """
 
@@ -134,7 +172,7 @@ def _utc_stamp() -> str:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run srcSEP3D standalone, R0-R2, and production-build tests.",
+        description="Run srcSEP3D standalone, R0-R2/M/B/T, and production-build tests.",
         formatter_class=_HelpFormatter,
         epilog=EPILOG)
     parser.add_argument("--amps", default=os.environ.get("SEP3D_EXECUTABLE"),
@@ -225,42 +263,32 @@ def _build_standalone(args: argparse.Namespace) -> None:
         return
 
     source, archive = _sep_common_paths(args)
-    inputs = [
-        ROOT / "test" / "stage1.cpp",
-        ROOT / "test" / "individual-test" / "test_harness.cpp",
-        ROOT / "test" / "individual-test" / "test_layering.cpp",
-        ROOT / "test" / "individual-test" / "test_build.cpp",
-        ROOT / "test" / "individual-test" / "test_kernels.cpp",
-        ROOT / "test" / "individual-test" / "test_runtime.cpp",
-        ROOT / "runtime" / "run_configuration.cpp",
-        ROOT / "runtime" / "runtime.cpp",
-        ROOT / "runtime" / "runtime_adapters.cpp",
-        archive,
-    ]
-    newest_input = max(path.stat().st_mtime for path in inputs)
-    if (BINARY.is_file() and not args.rebuild
-            and BINARY.stat().st_mtime >= newest_input):
-        return
-
     compiler = shutil.which(args.cxx)
     if compiler is None:
         raise RunnerError(f"C++ compiler not found: {args.cxx}")
-    BINARY.parent.mkdir(parents=True, exist_ok=True)
-    command = [
-        compiler, "-std=c++17", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
-        "-O2", f"-I{ROOT / 'core'}", f"-I{ROOT / 'background'}",
-        f"-I{ROOT / 'runtime'}", f"-I{source}",
-        *(str(path) for path in inputs[:-1]), str(archive), "-o", str(BINARY),
-    ]
-    if args.verbose:
-        print("RUN:", shlex.join(command))
-    completed = subprocess.run(command, cwd=ROOT, text=True,
-                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                               timeout=args.timeout, check=False)
-    if completed.returncode != 0:
-        raise RunnerError("standalone build failed:\n" + completed.stdout)
-    if args.verbose and completed.stdout:
-        print(completed.stdout, end="")
+    make = shutil.which("make")
+    if make is None:
+        raise RunnerError("make is required to build the standalone registry")
+
+    # Use the application makefile instead of one monolithic compiler command.
+    # This keeps the runner and documented build manifest identical and lets
+    # GNU Make honor inherited MAKEFLAGS=-jN for independent object files.
+    variables = [f"CXX={compiler}", f"SEP_COMMON_DIR={source}",
+                 f"SEP_COMMON_ARCHIVE={archive}"]
+    commands: List[List[str]] = []
+    if args.rebuild:
+        commands.append([make, "-C", str(ROOT), "clean-standalone", *variables])
+    commands.append([make, "-C", str(ROOT), "test/stage1", *variables])
+    for command in commands:
+        if args.verbose:
+            print("RUN:", shlex.join(command))
+        completed = subprocess.run(
+            command, cwd=ROOT, text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, timeout=args.timeout, check=False)
+        if completed.returncode != 0:
+            raise RunnerError("standalone build failed:\n" + completed.stdout)
+        if args.verbose and completed.stdout:
+            print(completed.stdout, end="")
 
 
 def _run_command(command: List[str], cwd: Path, timeout: float,
@@ -399,8 +427,8 @@ def _check_retired_sources(definition: TestDefinition) -> Result:
     status = "FAIL" if errors else "PASS"
     message = "; ".join(errors) if errors else (
         "retired mover/sampler source is absent; the L3 manifest contains only "
-        "main_lib.cpp/main.cpp and the AMPS-independent R2 runtime is explicit; "
-        "wedge and prepopulation operations are absent")
+        "main_lib.cpp/main.cpp while M/B/T implementations remain in explicit "
+        "AMPS-independent modules; wedge and prepopulation operations are absent")
     return Result(definition.test_id, definition.group, status, message,
                   time.monotonic() - started, [])
 
@@ -484,6 +512,74 @@ def _check_macro_hygiene(definition: TestDefinition,
     return Result(definition.test_id, definition.group, "PASS",
                   "sep3d_types.h compiles after the AMPS Pi macro is defined",
                   elapsed, command)
+
+
+def _check_turbulence_header_boundary(definition: TestDefinition,
+                                      args: argparse.Namespace,
+                                      output_dir: Path) -> Result:
+    """Compile the production provider API without a sep_common include path.
+
+    AMPS compiles the copied build/main/main_lib.cpp with a generic rule from
+    Makefile.conf. Several deployed revisions of that rule do not consume the
+    CPPFLAGS/CXXFLAGS appended by the application makefile. Consequently any
+    header included by main_lib.cpp must be self-contained with respect to
+    application-local include directories. The coefficient bridge is tested
+    separately with SEP_COMMON_DIR because only its explicit turbulence/*.cpp
+    rule is allowed to require that path.
+    """
+    compiler = shutil.which(args.cxx)
+    if compiler is None:
+        return Result(definition.test_id, definition.group, "ERROR",
+                      f"C++ compiler not found: {args.cxx}", 0.0, [])
+
+    try:
+        common_dir, _ = _canonical_model_dirs(args)
+    except RunnerError as error:
+        return Result(definition.test_id, definition.group, "ERROR",
+                      str(error), 0.0, [])
+
+    fixture = output_dir / "BLDL3D06-header-boundary"
+    fixture.mkdir(parents=True, exist_ok=True)
+    provider_source = fixture / "provider_only.cpp"
+    bridge_source = fixture / "coefficient_bridge.cpp"
+    provider_source.write_text(
+        '#include "turbulence/turbulence_models.h"\n'
+        'int main() {\n'
+        '  SEP3D::Turbulence::PrescribedKolmogorovConfiguration value;\n'
+        '  return value.spectralIndex > 1.0 ? 0 : 1;\n'
+        '}\n', encoding="utf-8")
+    bridge_source.write_text(
+        '#include "turbulence/coefficient_bridge.h"\n'
+        'int main() { return 0; }\n', encoding="utf-8")
+
+    common_flags = [compiler, "-std=c++17", "-Wall", "-Wextra",
+                    "-Wpedantic", "-Werror", "-fsyntax-only",
+                    f"-I{ROOT}"]
+    provider_command = [*common_flags, str(provider_source)]
+    code, output, elapsed = _run_command(
+        provider_command, ROOT, args.timeout, args.verbose)
+    if code != 0:
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            "production-facing turbulence_models.h requires an undeclared "
+            "sep_common include path:\n" + output[-3000:],
+            elapsed, provider_command)
+
+    bridge_command = [*common_flags, f"-I{common_dir}", str(bridge_source)]
+    code, output, bridge_elapsed = _run_command(
+        bridge_command, ROOT, args.timeout, args.verbose)
+    elapsed += bridge_elapsed
+    if code != 0:
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            "coefficient_bridge.h does not compile with canonical "
+            "SEP_COMMON_DIR:\n" + output[-3000:], elapsed, bridge_command)
+
+    return Result(
+        definition.test_id, definition.group, "PASS",
+        "production turbulence provider header is sep_common-independent; "
+        "the opt-in coefficient bridge compiles with canonical SEP_COMMON_DIR",
+        elapsed, provider_command + bridge_command)
 
 
 def _check_makefile_relocation(definition: TestDefinition,
@@ -762,6 +858,8 @@ def _run_source(definition: TestDefinition, args: argparse.Namespace,
         return _check_macro_hygiene(definition, args)
     if definition.test_id == "BLDL3D05":
         return _check_makefile_relocation(definition, args, output_dir)
+    if definition.test_id == "BLDL3D06":
+        return _check_turbulence_header_boundary(definition, args, output_dir)
     if definition.test_id == "ARCH3D02":
         return _check_shared_archives(definition, args)
     if definition.test_id == "SWCME3D01":

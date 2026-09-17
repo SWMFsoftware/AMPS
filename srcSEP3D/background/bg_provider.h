@@ -7,10 +7,9 @@
 //   May include L0 (core/) headers.
 //   Must NOT include pic.h, mpi.h, or any AMPS symbol.
 //
-// STEP 1 STATUS:
-//   This is the forward declaration / stub that Step 1 puts in place so
-//   that SEP3D.h can include it and the layering guard can verify it has
-//   no AMPS dependency.  The full implementation is added in Steps 12–14.
+// PHASE B STATUS:
+//   The interface is active. Analytic Parker and imported SWMF/AWSoM
+//   implementations use it to build immutable BackgroundSnapshot objects.
 //
 // PURPOSE:
 //   Every source of background magnetic field and plasma state (analytic
@@ -37,7 +36,7 @@
 //      used for cell-centre filling, where N is typically 4^3 or 8^3 per
 //      AMR block.  The single-point Evaluate() is for particle substeps.
 //
-// FULL SPECIFICATION: see BACKGROUND_FIELD.md (written at Step 17).
+// FULL SPECIFICATION: see BACKGROUND_FIELD.md.
 // ============================================================================
 
 #ifndef SEP3D_BG_PROVIDER_H
@@ -46,7 +45,9 @@
 #include "../core/sep3d_types.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace SEP3D {
 namespace Background {
@@ -84,6 +85,7 @@ struct BackgroundSample {
 
   // Plasma bulk velocity [m/s]
   Core::Vec3   U;
+  Core::Tensor3 gradU;              // dU_i/dx_j [1/s]
   double       divU = 0.0;         // ∇·U [1/s]
   double       fieldAlignedStrain = 0.0;  // b̂b̂:∇U [1/s]
 
@@ -117,14 +119,33 @@ struct ProviderCapabilities {
   bool supportsBatchEval  = false; // EvaluateBatch() is implemented
 };
 
+enum class ProviderKind { AnalyticParker, SwmfAwsom };
+enum class StorageOwnership { ModelOwned, ImportedReadOnly };
+
+// Metadata are frozen by Prepare() and copied into every snapshot.  Keeping
+// frame, ownership, epoch, and configuration identity next to the numerical
+// values prevents an imported field from being silently reused in the wrong
+// coordinate system or after the coupled epoch changes.
+struct SnapshotMetadata {
+  ProviderKind provider = ProviderKind::AnalyticParker;
+  StorageOwnership ownership = StorageOwnership::ModelOwned;
+  double epochS = 0.0;
+  double validFromS = 0.0;
+  double validUntilS = 0.0;
+  std::uint64_t generation = 0;
+  std::string coordinateFrame;
+  std::string providerIdentity;
+  std::string configurationFingerprint;
+};
+
 
 // ----------------------------------------------------------------------------
 // BackgroundProvider — the abstract interface every provider implements.
 //
-// Concrete implementations (Steps 12–14):
+// Concrete implementations (Phase B):
 //   bg_parker.cpp   — analytic Parker spiral
-//   bg_swcme.cpp    — SWCME prepared-state adapter
-//   bg_external_script.cpp — external Python script (RESERVED: Step WP28)
+//   bg_swmf.cpp     — read-only SWMF/AWSoM import adapter
+//   external-script provider — RESERVED until its own release gate
 // ----------------------------------------------------------------------------
 class BackgroundProvider {
 public:
@@ -142,6 +163,10 @@ public:
   // May be expensive; must never be called from a particle loop.
   virtual Core::Status Prepare(double timeS) = 0;
 
+  // Available only after successful Prepare().  Implementations must leave
+  // their previous metadata and values unchanged when a new candidate fails.
+  virtual const SnapshotMetadata* PreparedMetadata() const = 0;
+
   // Evaluate the background at one point x [m] in the heliocentric frame.
   // Returns immediately; the caller must have called Prepare() first.
   virtual BackgroundSample Evaluate(const Core::Vec3& x) const = 0;
@@ -153,10 +178,18 @@ public:
   virtual Core::Status EvaluateBatch(
       const double* x_m, const double* y_m, const double* z_m,
       std::size_t n, BackgroundSample* out) const {
-    for (std::size_t i = 0; i < n; ++i)
-      out[i] = Evaluate({x_m[i], y_m[i], z_m[i]});
-    return Core::Status::OK();
+    std::vector<Core::Status> statuses(n);
+    return EvaluateBatchDetailed(x_m, y_m, z_m, n, out, statuses.data());
   }
+
+  // Detailed batch evaluation has transactional per-sample output.  A valid
+  // candidate replaces out[i]; a failed candidate writes only status[i] and
+  // leaves out[i] byte-for-byte unchanged.  The aggregate return is the first
+  // failed status, allowing a builder to reject the whole snapshot without
+  // losing the identity of each bad sample.
+  virtual Core::Status EvaluateBatchDetailed(
+      const double* x_m, const double* y_m, const double* z_m,
+      std::size_t n, BackgroundSample* out, Core::Status* status) const;
 
   // Returns the resolved configuration as a JSON-like manifest string.
   // Stored in the run manifest; compared on restart.

@@ -9,7 +9,7 @@
 //   whole point of having a separate binary.
 //
 // WHAT "STANDALONE" MEANS:
-//   These tests exercise core/, background/, and the R2 runtime/ layer
+//   These tests exercise core/, mesh/, background/, turbulence/, and runtime/
 //   without any AMPS or MPI dependency.  The complete Stage-1 suite runs in
 //   under two minutes on a laptop.  This is what makes the suite useful
 //   during development rather than only in CI — a developer can run it
@@ -20,7 +20,7 @@
 //   linked and validation tests must run through the production executable.
 //
 // HOW THE BINARY ENFORCES THE LAYERING BOUNDARY:
-//   The linker sees core/background/runtime and test objects — the Stage-1 link line in
+//   The linker sees AMPS-independent model/runtime and test objects — the Stage-1 link line in
 //   the makefile does not include any AMPS archive.  If a developer adds
 //   #include "pic.h" to a core/ file, the linker will produce an undefined-
 //   symbol error here, immediately.  That error is BLD01 (test group BLD)
@@ -79,10 +79,7 @@
 // Implementations are in test/individual-test/test_harness.cpp,
 // test/individual-test/test_layering.cpp, and test/individual-test/test_build.cpp.
 
-// ---- Steps 7+: inactive groups (uncomment as steps are completed) ----------
-// std::vector<SEP3D::Testing::Descriptor> RegisterMeshTests();        // Step 7
-// std::vector<SEP3D::Testing::Descriptor> RegisterBackgroundTests();  // Step 12
-// std::vector<SEP3D::Testing::Descriptor> RegisterCoefficientTests(); // Step 18
+// ---- Later inactive groups (uncomment as steps are completed) --------------
 // std::vector<SEP3D::Testing::Descriptor> RegisterTimestepTests();    // Step 20
 // std::vector<SEP3D::Testing::Descriptor> RegisterParkerMoverTests(); // Step 21
 // std::vector<SEP3D::Testing::Descriptor> RegisterFTEMoverTests();    // Step 22
@@ -119,7 +116,7 @@ static void PrintHelp(const char* argv0) {
     << "  1  at least one FAILED\n"
     << "  2  at least one ERROR, or a usage error (unknown option, bad ID)\n"
     << "\n"
-    << "Groups through Phase R2:  BLD  HARN  LAY  LIFE3D  UTIL\n"
+    << "Groups through Phase T:   BGP3D  BLD  COEF3D  HARN  LAY  LIFE3D  MSH3D  SNAP3D  TUR3D  UTIL\n"
     << "Frozen records:    test/frozen/\n"
     << "Test artifacts:    test/individual-test/\n"
     << "Full procedure:    test/README.md\n";
@@ -157,11 +154,11 @@ int main(int argc, char** argv) {
   append(RegisterBuildTests(selfPath));
   append(RegisterKernelTests());   // UTIL — shared-kernel frozen record (Step 3)
   append(RegisterRuntimeTests());  // LIFE3D — Phase R2 lifecycle
+  append(RegisterMeshTests());     // MSH3D — Phase M mesh/storage
+  append(RegisterBackgroundTests());  // BGP3D/SNAP3D — Phase B
+  append(RegisterTurbulenceTests());  // TUR3D/COEF3D — Phase T
 
   // Future groups — uncomment when the step is implemented:
-  // append(RegisterMeshTests());        // Step 7
-  // append(RegisterBackgroundTests());  // Step 12
-  // append(RegisterCoefficientTests()); // Step 18
   // append(RegisterTimestepTests());    // Step 20
   // append(RegisterParkerMoverTests()); // Step 21
   // append(RegisterFTEMoverTests());    // Step 22

@@ -115,8 +115,8 @@ const Pattern FORBIDDEN[] = {
 };
 const int N_FORBIDDEN = 3;
 
-const char* DIRS[] = { "core", "background", "runtime" };
-const int N_DIRS = 3;
+const char* DIRS[] = { "core", "background", "runtime", "mesh", "turbulence" };
+const int N_DIRS = 5;
 
 // ============================================================================
 // LAY01 — positive case: no forbidden symbols in core/ or background/
@@ -146,13 +146,13 @@ SEP3D::Testing::Result run_LAY01() {
 
   if (!violations.empty()) {
     return Fail(
-        "Layering violations found in core/, background/, or runtime/:\n" + violations
+        "Layering violations found in core/, background/, runtime/, mesh/, or turbulence/:\n" + violations
         + "These files must not include pic.h, mpi.h, or use PIC::.\n"
         + "See README.md (Layering rules) and MIGRATION_MANIFEST.md.");
   }
 
   return Pass(
-      "core/, background/, and runtime/ contain no #include pic.h, #include mpi.h, "
+      "core/, background/, runtime/, mesh/, and turbulence/ contain no #include pic.h, #include mpi.h, "
       "or PIC:: references.");
 }
 

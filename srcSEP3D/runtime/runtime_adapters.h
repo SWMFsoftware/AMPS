@@ -7,6 +7,8 @@
 
 #include "runtime.h"
 
+namespace SEP3D { namespace Background { class BackgroundSnapshot; } }
+
 namespace SEP3D {
 namespace RuntimeModel {
 
@@ -16,6 +18,9 @@ class StandaloneAdapter {
   Core::Status PublishFrozenParker(Runtime* runtime, double epochS,
                                    double validUntilS,
                                    std::uint64_t generation) const;
+  Core::Status PublishSnapshot(
+      Runtime* runtime,
+      const Background::BackgroundSnapshot& snapshot) const;
 };
 
 class SwmfAdapter {
@@ -25,6 +30,9 @@ class SwmfAdapter {
                                double validUntilS,
                                std::uint64_t generation,
                                bool complete) const;
+  Core::Status PublishSnapshot(
+      Runtime* runtime,
+      const Background::BackgroundSnapshot& snapshot) const;
 };
 
 }  // namespace RuntimeModel

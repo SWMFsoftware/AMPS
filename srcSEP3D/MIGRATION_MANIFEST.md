@@ -1,6 +1,7 @@
 # srcSEP3D Migration Manifest
 
-This manifest records what Phases R0–R2 removed, retained, or replaced. It is an
+This manifest records what Phases R0–R2, M, B, and T removed, retained, or
+replaced. It is an
 evidence document: completion claims must correspond to an executable test or
 an explicitly identified external build gate.
 
@@ -48,11 +49,12 @@ valid AMPS particle result. They must be handled before the adapter is called.
 
 ### Production execution policy
 
-R2 provides a typed Runtime but not a physical simulation. The host may install
-an immutable configuration through `ConfigureApplication`; calls that require
-the not-yet-implemented mesh, background population, or mover terminate with a
-phase-specific message. This is safer and more truthful than running the
-previous wedge or silently substituting placeholder values.
+The host installs an immutable configuration through `ConfigureApplication`.
+Phases M/B/T now build the AMPS mesh, reserve/fill the frozen cell layout,
+publish an analytic or coupled ambient snapshot, and validate prescribed or
+coupled scattering input. `amps_time_step()` still terminates at the explicit
+Phase-P boundary. This is safer and more truthful than running the previous
+wedge or silently substituting a placeholder mover/source/sampler.
 
 ### R0 evidence
 
@@ -78,8 +80,9 @@ The uploaded tree described Steps 1–4 as complete. R0 corrects that claim:
   srcSEP3D consumes directly without inspecting or requiring srcSEP;
 - a configured enclosing AMPS executable link is still required before the
   production-build portion of R1 can be declared complete;
-- R2 now owns validated snapshot metadata and lifecycle transitions; physical
-  cell-field storage and population remain subsequent phases.
+- R2 owns validated snapshot metadata and lifecycle transitions; Phases M/B/T
+  now provide the physical mesh/storage, ambient field, and scattering input
+  that those transitions describe.
 
 No later physics phase should use the old Step 1–4 completion labels as release
 evidence. The current runner reports the gates that are actually executable.
@@ -169,3 +172,59 @@ physical radii and timestep, seed, background cadence, and storage-layout
 identity. Output directory, prefix, and cadence remain in the resolved manifest
 but are intentionally excluded from physics identity. `LIFE3D03` protects that
 separation and the exact storage offsets.
+
+## Phase M — mesh and storage
+
+| File | Ownership and invariant |
+|---|---|
+| `mesh/mesh_model.{h,cpp}` | owns domain presets, radial/tube resolution, standalone balanced octree, deterministic identities, memory estimate, owner-only storage, and mixed-resolution gradients |
+| `runtime/run_configuration.{h,cpp}` | fingerprints Phase-M options and freezes the complete background/turbulence cell layout before allocation |
+| `main_lib.cpp` | registers exact AMPS static/sampling requests, drives `localResolution`, partitions/allocates the production mesh, and binds the frozen layout |
+| `MESH_STORAGE.md` | records formulas, byte order, AMPS initialization order, and evidence |
+
+The standalone octree is a verification oracle, not a competing production
+mesh. Production allocation stays in AMPS. Both call the same resolution
+function, and production cell population uses only owner-local decomposition
+blocks. `MSH3D01–09` are the release evidence.
+
+## Phase B — background providers and snapshots
+
+| File | Ownership and invariant |
+|---|---|
+| `background/bg_provider.{h,cpp}` | complete SI sample and transactional per-point batch interface |
+| `background/bg_parker.{h,cpp}` | analytic Cartesian Parker field/plasma state and derivatives with finite polar limits |
+| `background/bg_swmf.{h,cpp}` | read-only, unit-aware, frame/epoch-checked SWMF/AWSoM ambient import |
+| `background/background_snapshot.{h,cpp}` | validate-before-publication immutable snapshot and compatible current/next interpolation |
+| `runtime/runtime_adapters.{h,cpp}` | publishes physical Parker/SWMF snapshots through the existing neutral Runtime path |
+| `BACKGROUND_FIELD.md` | complete-field, coupling-unit, ownership, and atomicity contract |
+
+No provider writes AMPS memory. The L3 boundary maps a validated immutable
+snapshot to the owner-local cell list and then publishes its metadata. Failed
+candidates and failed batch indices do not modify active output.
+`BGP3D01–06` and `SNAP3D01–08` are the release evidence.
+
+## Phase T — turbulence and scattering inputs
+
+| File | Ownership and invariant |
+|---|---|
+| `turbulence/turbulence_provider.h` | separate turbulence authority, typed missing/ballistic state, directional magnetic variance |
+| `turbulence/turbulence_models.{h,cpp}` | sep_common-independent provider API, normalized prescribed spectrum, explicit AWSoM w+/w− conversion, and resonance policy |
+| `turbulence/coefficient_bridge.h` | opt-in adapter declarations for canonical sep_common coefficient types; intentionally excluded from the AMPS-facing provider header |
+| `runtime/run_configuration.{h,cpp}` | validates/fingerprints amplitude, spectral band/index, correlation scale, missing policy, and resonance policy |
+| `TURBULENCE_SCATTERING.md` | units, sign convention, normalization, policies, and shared-kernel boundary |
+
+The AWSoM convention is field aligned: plus travels along `+B`, minus against
+it, and `deltaB²=mu0*w`. Heliocentric outward/inward aliases are determined
+from `B·r`, not assumed from a variable name. The coefficient bridge calls the
+canonical `sep_common.a`; `COEF3D02` checks bitwise identity with a direct
+shared-kernel call. Self-consistent 3-D turbulence remains a configuration-time
+reserved feature. `TUR3D01–04` and `COEF3D01–02` are the release evidence.
+`BLDL3D06` additionally proves that the provider header compiles without a
+sep_common include path while the bridge compiles with the canonical one.
+
+## Remaining production boundary
+
+The next enabled work package is Phase P. Until its Parker/focused transport
+cores and AMPS mover adapters pass their gates, `amps_time_step()` is the only
+phase stop remaining in the initialized M/B/T path. Shock injection, sampling,
+restart serialization, and validation campaigns remain later phases.

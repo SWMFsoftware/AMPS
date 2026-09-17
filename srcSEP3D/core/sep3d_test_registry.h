@@ -94,9 +94,10 @@ namespace Testing {
 // the fully populated descriptors for that group.  test/stage1.cpp calls
 // each in order and feeds the result to the Registry constructor.
 //
-// STATUS at Phase R2:
-//   Active: HARN, LAY, BLD, UTIL, LIFE3D. Later physics groups remain declarations in
-//   the development plan until their production implementations exist.
+// STATUS through Phase M:
+//   Active: HARN, LAY, BLD, UTIL, LIFE3D, and MSH3D. Later physics groups are
+//   enabled only when their production implementation and negative controls
+//   are present.
 //
 // TO ADD A NEW GROUP:
 //   1. Create test/individual-test/test_<group>.cpp
@@ -140,17 +141,17 @@ std::vector<SEP3D::Testing::Descriptor> RegisterKernelTests();
 // legal/illegal transition matrix before adapters are connected to AMPS.
 std::vector<SEP3D::Testing::Descriptor> RegisterRuntimeTests();
 
+// MSH3D — Phase M domain, refinement, octree, storage, and gradient tests.
+std::vector<SEP3D::Testing::Descriptor> RegisterMeshTests();
+
+// BGP3D/SNAP3D — Phase B analytic/coupled providers and frozen snapshots.
+std::vector<SEP3D::Testing::Descriptor> RegisterBackgroundTests();
+
+// TUR3D/COEF3D — Phase T turbulence authority and shared coefficients.
+std::vector<SEP3D::Testing::Descriptor> RegisterTurbulenceTests();
+
 
 // ---- Future groups (uncomment at the step indicated) -----------------------
-
-// Step 7  — mesh resolution law
-// std::vector<SEP3D::Testing::Descriptor> RegisterMeshTests();
-
-// Step 12 — background field providers
-// std::vector<SEP3D::Testing::Descriptor> RegisterBackgroundTests();
-
-// Step 18 — diffusion coefficient registry and tensor assembly
-// std::vector<SEP3D::Testing::Descriptor> RegisterCoefficientTests();
 
 // Step 20 — substep selector and timestep limits
 // std::vector<SEP3D::Testing::Descriptor> RegisterTimestepTests();

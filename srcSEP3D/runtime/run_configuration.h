@@ -24,12 +24,16 @@ enum class TurbulenceAuthority { Prescribed, Swmf };
 enum class ShockAuthority { None, Swcme };
 enum class TransportModel { Parker3D, Focused3D };
 enum class DomainPreset { Earth, Mars };
+enum class MissingTurbulenceMode { Fail, Ballistic };
+enum class ResonanceRangeMode { Reject, PowerLawExtension };
 
 const char* Name(BackgroundAuthority value);
 const char* Name(TurbulenceAuthority value);
 const char* Name(ShockAuthority value);
 const char* Name(TransportModel value);
 const char* Name(DomainPreset value);
+const char* Name(MissingTurbulenceMode value);
+const char* Name(ResonanceRangeMode value);
 
 // Mutable input record used only while the host resolves configuration.  The
 // successful factory copies it into a RunConfiguration3D exposed solely
@@ -47,6 +51,37 @@ struct RunConfiguration3DOptions {
   double requestedTimeStepS = 1.0;
   std::uint64_t campaignSeed = 1;
   std::uint64_t backgroundCadenceSteps = 1;
+
+  // Phase-M mesh controls.  The radial law and optional Parker tube are
+  // evaluated by one AMPS-independent implementation used by both the
+  // production localResolution callback and the standalone octree emulator.
+  double minimumCellSizeM = 0.01 * Core::Const::AU;
+  double backgroundCellSizeM = 0.25 * Core::Const::AU;
+  bool enableRadialRefinement = true;
+  bool enableTubeRefinement = false;
+  double tubeLongitudeRad = 0.0;
+  double tubeColatitudeRad = 0.5 * Core::Const::kPi;
+  int tubePolarity = 1;
+  double tubeCoreRadiusM = 0.01 * Core::Const::AU;
+  double tubeShoulderRadiusM = 0.03 * Core::Const::AU;
+  double tubeCellSizeM = 0.01 * Core::Const::AU;
+  unsigned meshCellsPerBlockEdge = 4;
+  unsigned maximumMeshLevel = 5;
+  std::size_t meshBlockOverheadBytes = 1024;
+  std::size_t meshMemoryBudgetBytes =
+      std::size_t{4} * 1024 * 1024 * 1024;
+
+  // Phase-T scattering inputs.  Integrated wave amplitude, spectral shape,
+  // finite-band behavior, and missing-data behavior are all fingerprinted.
+  // SWMF supplies w+/w- amplitudes, but it still uses these declared spectral
+  // bounds unless a future coupled interface publishes a resolved spectrum.
+  double prescribedDeltaBOverB = 0.3;
+  double turbulenceKMinPerM = 1.0e-10;
+  double turbulenceKMaxPerM = 1.0e-7;
+  double turbulenceSpectralIndex = 5.0 / 3.0;
+  double turbulenceCorrelationLengthM = 0.03 * Core::Const::AU;
+  MissingTurbulenceMode missingTurbulence = MissingTurbulenceMode::Fail;
+  ResonanceRangeMode resonanceRange = ResonanceRangeMode::Reject;
 
   // Frozen pre-mesh storage choices.  Offsets are derived by the factory in a
   // canonical order; adapters may not append fields after Configure().
@@ -74,8 +109,17 @@ struct StorageLayout {
   std::size_t bulkVelocityOffset = kNoOffset;        // 3 doubles
   std::size_t numberDensityOffset = kNoOffset;       // 1 double
   std::size_t velocityDivergenceOffset = kNoOffset;  // 1 double
+  std::size_t temperatureOffset = kNoOffset;         // 1 double
+  std::size_t pressureOffset = kNoOffset;            // 1 double
+  std::size_t alfvenSpeedOffset = kNoOffset;         // 1 double
+  std::size_t divBhatOffset = kNoOffset;              // 1 double
+  std::size_t focusingLengthOffset = kNoOffset;       // 1 double
+  std::size_t curvatureOffset = kNoOffset;            // 3 doubles
+  std::size_t fieldAlignedStrainOffset = kNoOffset;  // 1 double
   std::size_t magneticGradientOffset = kNoOffset;    // optional 9 doubles
   std::size_t velocityGradientOffset = kNoOffset;    // optional 9 doubles
+  // Optional directional magnetic wave variances [T^2], along/against +B.
+  // The historic member name is retained as a storage-ABI label.
   std::size_t waveEnergyOffset = kNoOffset;          // optional 2 doubles
   std::size_t cellAssociatedBytes = 0;
   std::size_t samplingBytesPerCell = 0;

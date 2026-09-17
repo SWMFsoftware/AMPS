@@ -1,14 +1,15 @@
 // ============================================================================
 // srcSEP3D/main.cpp
 //
-// Standard AMPS application driver.  Through Phase R2, configuration is a
-// host responsibility and the typed Runtime exists, but mesh/background/mover
-// phases are not yet executable.  amps_init_mesh() therefore diagnoses the
-// missing host configuration or stops at the Phase-M gate.  The driver never
-// interprets argv, preserving a clean coupled-library configuration boundary.
+// Standard standalone AMPS application driver through Phases M/B/T.
+//
+// This executable is itself the standalone host, so it constructs a typed
+// default configuration directly.  It deliberately does not parse argv or an
+// AMPS parameter file.  Coupled SWMF builds call the same library entry points
+// with their own immutable configuration and imported provider objects.
 // ============================================================================
 
-#include "pic.h"
+#include "SEP3D.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -21,6 +22,18 @@ int amps_time_step();
 int main(int argc, char** argv) {
   (void)argc;
   (void)argv;
+
+  SEP3D::RuntimeModel::RunConfiguration3DOptions options;
+  options.shock = SEP3D::RuntimeModel::ShockAuthority::None;
+  std::shared_ptr<const SEP3D::RuntimeModel::RunConfiguration3D> configuration;
+  SEP3D::Core::Status status =
+      SEP3D::RuntimeModel::RunConfiguration3D::Create(options, &configuration);
+  if (status.ok()) status = SEP3D::ConfigureApplication(configuration);
+  if (!status.ok()) {
+    std::cerr << "srcSEP3D standalone configuration failed: "
+              << status.message << '\n';
+    return EXIT_FAILURE;
+  }
 
   amps_init_mesh();
   amps_init();

@@ -1,5 +1,5 @@
 # ==============================================================================
-# srcSEP3D/makefile — Phase R2 production tree and standalone lifecycle tests
+# srcSEP3D/makefile — R0-R2 plus Phase-M/B/T production and component tests
 #
 # Production and dependency-light tests are intentionally separate:
 #
@@ -14,14 +14,14 @@
 #       owned by AMPS.  It then audits the resulting build/main archives.
 #
 #   test-stage1 / check-layering
-#       Compile the AMPS-independent core, Runtime, adapters, and shared SEP
-#       test registry.  These targets work without AMPS or MPI and are driven
-#       by test/run_tests.py.
+#       Compile the AMPS-independent mesh, background, turbulence, Runtime,
+#       adapters, and shared SEP test registry. These targets work without
+#       AMPS or MPI and are driven by test/run_tests.py.
 #
 # The old SEP3D.cpp object is absent by design.  main_lib.cpp is the only L3
 # application-library source; main.cpp supplies the driver archive.  R1 shared
-# code is inserted from its canonical archives, while R2 Runtime sources stay
-# independent of AMPS so the lifecycle can be validated before a mesh exists.
+# code is inserted from its canonical archives, while M/B/T and Runtime sources
+# stay independent of AMPS so their contracts can be validated separately.
 # ==============================================================================
 
 SHELL := /bin/sh
@@ -63,6 +63,7 @@ SWCME_OBJECTS := $(SWCME_DIR)/build/swcme3d.o
 # missing, because a local mock configuration is not production evidence.
 STANDALONE_GOALS := check-layering test/stage1 test-stage1 test-harn-unit \
                     test-lay-unit test-bld-unit test-util-unit test-life-unit \
+                    test-mesh-unit test-background-unit test-turbulence-unit \
                     clean clean-standalone help print-layout-paths
 ifneq ($(filter $(STANDALONE_GOALS),$(MAKECMDGOALS)),)
 -include $(AMPS_CONFIG)
@@ -85,8 +86,13 @@ INCLUDE += $(MODEL_INCLUDE_FLAGS)
 
 # L0 numerical core.  Headers are not listed here; normal compiler dependency
 # tracking in the enclosing AMPS build determines when they trigger rebuilds.
-CORE_SRC :=
-BG_SRC :=
+CORE_SRC := mesh/mesh_model.cpp
+BG_SRC := \
+    background/bg_provider.cpp \
+    background/bg_parker.cpp \
+    background/bg_swmf.cpp \
+    background/background_snapshot.cpp
+TURBULENCE_SRC := turbulence/turbulence_models.cpp
 RUNTIME_SRC := \
     runtime/run_configuration.cpp \
     runtime/runtime.cpp \
@@ -99,11 +105,12 @@ DRIVER_SRC := main.cpp
 
 CORE_OBJ := $(CORE_SRC:.cpp=.o)
 BG_OBJ := $(BG_SRC:.cpp=.o)
+TURBULENCE_OBJ := $(TURBULENCE_SRC:.cpp=.o)
 RUNTIME_OBJ := $(RUNTIME_SRC:.cpp=.o)
 AMPS_OBJ := $(AMPS_SRC:.cpp=.o)
 DRIVER_OBJ := $(DRIVER_SRC:.cpp=.o)
 
-MAINLIBOBJ := $(CORE_OBJ) $(BG_OBJ) $(RUNTIME_OBJ) $(AMPS_OBJ)
+MAINLIBOBJ := $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(RUNTIME_OBJ) $(AMPS_OBJ)
 MAINOBJ := $(DRIVER_OBJ)
 
 STAGE1_TEST_SRC := \
@@ -112,12 +119,16 @@ STAGE1_TEST_SRC := \
     test/individual-test/test_layering.cpp \
     test/individual-test/test_build.cpp \
     test/individual-test/test_kernels.cpp \
-    test/individual-test/test_runtime.cpp
+    test/individual-test/test_runtime.cpp \
+    test/individual-test/test_mesh.cpp \
+    test/individual-test/test_background.cpp \
+    test/individual-test/test_turbulence.cpp
 STAGE1_TEST_OBJ := $(STAGE1_TEST_SRC:.cpp=.o)
 
 SEP_COMMON_INCLUDES := -I$(SEP_COMMON_DIR)
 STAGE1_CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -Werror -O2 \
-                   -Icore -Ibackground -Iruntime $(SEP_COMMON_INCLUDES)
+                   -Icore -Ibackground -Iruntime -Imesh -Iturbulence \
+                   $(SEP_COMMON_INCLUDES)
 
 .PHONY: lib amps strict-production audit-production-symbols
 
@@ -208,17 +219,26 @@ test/individual-test/%.o: test/individual-test/%.cpp
 core/%.o: core/%.cpp
 	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
 
+background/%.o: background/%.cpp
+	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+
 runtime/%.o: runtime/%.cpp
 	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
 
-test/stage1: check-layering $(CORE_OBJ) $(BG_OBJ) $(RUNTIME_OBJ) $(STAGE1_TEST_OBJ) \
+mesh/%.o: mesh/%.cpp
+	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+
+turbulence/%.o: turbulence/%.cpp
+	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+
+test/stage1: check-layering $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(RUNTIME_OBJ) $(STAGE1_TEST_OBJ) \
              $(SEP_COMMON_ARCHIVE)
-	$(CXX) -o $@ $(CORE_OBJ) $(BG_OBJ) $(RUNTIME_OBJ) $(STAGE1_TEST_OBJ) \
+	$(CXX) -o $@ $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(RUNTIME_OBJ) $(STAGE1_TEST_OBJ) \
 	  $(SEP_COMMON_ARCHIVE)
 	@echo "[srcSEP3D] standalone test binary built: test/stage1"
 
 .PHONY: test-stage1 test-harn-unit test-lay-unit test-bld-unit test-util-unit \
-        test-life-unit
+        test-life-unit test-mesh-unit test-background-unit test-turbulence-unit
 test-stage1: test/stage1
 	./test/stage1 --all-tests
 
@@ -237,11 +257,20 @@ test-util-unit: test/stage1
 test-life-unit: test/stage1
 	./test/stage1 --test-group LIFE3D
 
+test-mesh-unit: test/stage1
+	./test/stage1 --test-group MSH3D
+
+test-background-unit: test/stage1
+	./test/stage1 --test-group BGP3D --test-group SNAP3D
+
+test-turbulence-unit: test/stage1
+	./test/stage1 --test-group TUR3D --test-group COEF3D
+
 .PHONY: check-layering
 check-layering:
-	@echo "[srcSEP3D] checking that core/background/runtime do not depend on AMPS or MPI"
+	@echo "[srcSEP3D] checking that core/background/runtime/mesh/turbulence do not depend on AMPS or MPI"
 	@FOUND=0; \
-	for dir in core background runtime; do \
+	for dir in core background runtime mesh turbulence; do \
 	  if grep -rn -E --include='*.h' --include='*.cpp' \
 	    -e '#include.*pic\.h' -e '#include.*mpi\.h' -e '\bPIC::' \
 	    $$dir 2>/dev/null; then FOUND=1; fi; \
@@ -257,12 +286,12 @@ clean-production:
 	rm -f $(MAINLIBOBJ) $(MAINOBJ) mainlib.a main.a
 
 clean-standalone:
-	rm -f $(CORE_OBJ) $(BG_OBJ) $(RUNTIME_OBJ) $(STAGE1_TEST_OBJ) test/stage1
+	rm -f $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(RUNTIME_OBJ) $(STAGE1_TEST_OBJ) test/stage1
 
 .PHONY: help
 help:
 	@echo "Production:  make lib | make amps | make strict-production"
-	@echo "Standalone:  make test-stage1 | make test-life-unit | make check-layering"
+	@echo "Standalone:  make test-stage1 | make test-life-unit | make test-mesh-unit | make test-background-unit | make test-turbulence-unit | make check-layering"
 	@echo "Preferred:   python3 test/run_tests.py --help"
 
 # Diagnostic target used by BLDL3D05 and useful when inspecting a configured
