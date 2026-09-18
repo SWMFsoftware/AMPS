@@ -3,11 +3,12 @@
 // Repository-relative includes deliberately reproduce the enclosing AMPS
 // build contract. Nested validation sources must not depend on an unconfigured
 // srcSEP/util include path.
+#include "../../util/sep_common_header_path.h"
 #include "../../util/sep_focused_transport_core.h"
 #include "../../util/sep_focused_transport_mfp_core.h"
 #include "../../util/sep_parker_core.h"
 #include "../../util/sep_shock_source_core.h"
-#include "../../util/sep_transport_common.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_transport_common.h)
 #include "../../util/sep_turbulence_core.h"
 
 #include <algorithm>

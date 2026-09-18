@@ -10,9 +10,9 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 ${CXX:-c++} -std=c++11 -Wall -Wextra -Wpedantic -Werror \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
-  -I"$src_root/util" \
+  -I"$src_root/util" -I"$src_root/../src/models/sep_common" \
   "$src_root/test/step3/test_flux_tube_geometry.cpp" \
-  "$src_root/util/sep_transport_common.cpp" \
+  "$src_root/../src/models/sep_common/sep_transport_common.cpp" \
   "$src_root/util/sep_flux_tube_geometry_core.cpp" \
   -o "$build_dir/test_flux_tube_geometry"
 

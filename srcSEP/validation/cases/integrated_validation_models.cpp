@@ -1,9 +1,10 @@
 #include "integrated_validation_models.h"
 
+#include "../../util/sep_common_header_path.h"
 #include "../../util/sep_focused_transport_core.h"
 #include "../../util/sep_flux_tube_geometry_core.h"
 #include "../../util/sep_shock_source_core.h"
-#include "../../util/sep_transport_common.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_transport_common.h)
 #include "../../util/sep_turbulence_core.h"
 
 #include <algorithm>

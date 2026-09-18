@@ -1,0 +1,67 @@
+{
+  "schema": "amps-sep-source-manifest-v1",
+  "component": "srcSEP3D",
+  "production_source_globs": [
+    "*.cpp",
+    "*.h",
+    "amps/*.cpp",
+    "amps/*.h",
+    "adapters/*.cpp",
+    "adapters/*.h",
+    "background/*.cpp",
+    "background/*.h",
+    "core/*.h",
+    "mesh/*.cpp",
+    "mesh/*.h",
+    "output/*.cpp",
+    "output/*.h",
+    "runtime/*.cpp",
+    "runtime/*.h",
+    "transport/*.cpp",
+    "transport/*.h",
+    "turbulence/*.cpp",
+    "turbulence/*.h",
+    "validation/*.cpp",
+    "validation/*.h"
+  ],
+  "test_source_globs": [
+    "test/*.py",
+    "test/*.cpp",
+    "test/**/*.sh",
+    "test/**/*.cpp",
+    "validation/*.py"
+  ],
+  "documentation_globs": [
+    "*.md",
+    "*.docx",
+    "test/*.md",
+    "validation/*.md"
+  ],
+  "retained_input_globs": [
+    "test/frozen/*",
+    "validation/**/*.json"
+  ],
+  "support_globs": [
+    "makefile",
+    "validation/templates/*"
+  ],
+  "generated_globs": [
+    "*.o",
+    "*.d",
+    "*.a",
+    "**/*.o",
+    "**/*.d",
+    "**/*.a",
+    "test/stage1",
+    "build/**",
+    "test_output/**",
+    "**/__pycache__/**",
+    "**/*.pyc"
+  ],
+  "retired_sources": [
+    "SEP3D.cpp",
+    "SEP3D_legacy.cpp",
+    "axisymmetric_mover.cpp",
+    "sample_global.cpp"
+  ]
+}

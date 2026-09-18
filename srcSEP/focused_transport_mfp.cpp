@@ -222,8 +222,16 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
         contribution.stableParticleId = context.stableParticleId;
         contribution.snapshotGeneration = context.snapshotGeneration;
         contribution.dtS = emitted.intervalS;
-        contribution.preMomentumKgMPerS = preMomentum;
-        contribution.postMomentumKgMPerS = momentum.value;
+        // A discrete event must carry the momentum pair immediately before
+        // and after its own wave-frame Lorentz scatter.  Shell-wide endpoints
+        // include focusing/cooling and possibly several events, so using them
+        // here would deposit the wrong particle-energy change into a branch.
+        // Deterministic intervals retain the legacy shell endpoints because
+        // they contribute streaming diagnostics but no branch-resolved jump.
+        contribution.preMomentumKgMPerS = emitted.scatteringEventAtEnd
+            ? emitted.preWaveMomentumKgMPerS : preMomentum;
+        contribution.postMomentumKgMPerS = emitted.scatteringEventAtEnd
+            ? emitted.postWaveMomentumKgMPerS : momentum.value;
         contribution.midpointParallelVelocityMPerS =
             0.5 * (preParallel + context.state.vParallelMPerS);
         contribution.midpointNormalVelocityMPerS =
@@ -232,6 +240,7 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
         contribution.finishCoordinate = intervalFinish;
         contribution.signedPathM = emitted.displacementM;
         contribution.eventIndex = emitted.eventIndex;
+        contribution.resonantBranch = emitted.resonantBranch;
         contribution.intervalIndex =
             (shellIndex << 32) | static_cast<std::uint64_t>(i);
         contribution.pitchAngleResolved = true;

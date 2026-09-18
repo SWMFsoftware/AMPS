@@ -1,8 +1,9 @@
 #ifndef SEP_UTIL_SEP_RUN_CONFIGURATION_H
 #define SEP_UTIL_SEP_RUN_CONFIGURATION_H
 
-#include "sep_coefficient_registry.h"
-#include "sep_injection_spectrum.h"
+#include "sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_coefficient_registry.h)
+#include SRCSEP_SEP_COMMON_HEADER(sep_injection_spectrum.h)
 #include "sep_population_control.h"
 #include "sep_production_mover.h"
 #include "sep_sampling_products.h"

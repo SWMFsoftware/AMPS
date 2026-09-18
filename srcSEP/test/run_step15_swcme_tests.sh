@@ -24,11 +24,11 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 ${CXX:-c++} -std=c++17 -O1 -Wall -Wextra -Wpedantic -Werror \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
-  -I"$src_root/util" -I"$swcme_dir" \
-  "$src_root/util/sep_transport_common.cpp" \
+  -I"$src_root/util" -I"$src_root/../src/models/sep_common" -I"$swcme_dir" \
+  "$src_root/../src/models/sep_common/sep_transport_common.cpp" \
   "$src_root/util/sep_parker_core.cpp" \
-  "$src_root/util/sep_background_snapshot.cpp" \
-  "$src_root/util/sep_test_registry.cpp" \
+  "$src_root/../src/models/sep_common/sep_background_snapshot.cpp" \
+  "$src_root/../src/models/sep_common/sep_test_registry.cpp" \
   "$src_root/test/step15/test_swcme_srcsep_integration.cpp" \
   -pthread -o "$build_dir/test_swcme_srcsep_integration"
 

@@ -7,13 +7,13 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 ${CXX:-c++} -std=c++11 -Wall -Wextra -Werror -pedantic \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
-  -I"$src_dir" -I"$src_dir/util" \
+  -I"$src_dir" -I"$src_dir/util" -I"$src_dir/../src/models/sep_common" \
   "$src_dir/QLT.cpp" \
-  "$src_dir/util/sep_transport_common.cpp" \
+  "$src_dir/../src/models/sep_common/sep_transport_common.cpp" \
   "$src_dir/util/sep_parker_core.cpp" \
   "$src_dir/util/sep_focused_transport_core.cpp" \
   "$src_dir/util/sep_focused_transport_mfp_core.cpp" \
-  "$src_dir/util/sep_test_registry.cpp" \
+  "$src_dir/../src/models/sep_common/sep_test_registry.cpp" \
   "$src_dir/util/sep_mover_validation.cpp" \
   "$src_dir/test/controlled/test_registered_movers.cpp" \
   -o "$build_dir/test_registered_movers"

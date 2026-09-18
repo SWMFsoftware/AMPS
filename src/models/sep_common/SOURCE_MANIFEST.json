@@ -1,0 +1,23 @@
+{
+  "schema": "amps-sep-source-manifest-v1",
+  "component": "src/models/sep_common",
+  "production_source_globs": [
+    "*.cpp",
+    "*.h"
+  ],
+  "test_source_globs": [],
+  "documentation_globs": [
+    "*.md"
+  ],
+  "retained_input_globs": [],
+  "support_globs": [
+    "makefile"
+  ],
+  "generated_globs": [
+    "build/**",
+    "*.o",
+    "*.d",
+    "*.a"
+  ],
+  "retired_sources": []
+}

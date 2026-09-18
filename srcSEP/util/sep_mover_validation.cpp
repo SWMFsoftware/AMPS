@@ -3,7 +3,8 @@
 #include "sep_focused_transport_core.h"
 #include "sep_focused_transport_mfp_core.h"
 #include "sep_parker_core.h"
-#include "sep_transport_common.h"
+#include "sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_transport_common.h)
 #include "../QLT.h"
 
 #include <algorithm>

@@ -1,0 +1,44 @@
+{
+  "schema": "amps-sep-source-manifest-v1",
+  "component": "src/models/swcme",
+  "production_source_globs": [
+    "swcme3d.cpp",
+    "swcme*.hpp"
+  ],
+  "test_source_globs": [
+    "demo*.cpp",
+    "test/**/*.cpp",
+    "test/**/*.hpp",
+    "test/**/*.py",
+    "tools/*.cpp"
+  ],
+  "documentation_globs": [
+    "*.md",
+    "*.docx",
+    "test/*.md",
+    "test/**/*.md"
+  ],
+  "retained_input_globs": [
+    "test/**/*.json",
+    "test/**/*.txt"
+  ],
+  "support_globs": [
+    "makefile",
+    "test/Makefile",
+    "test/.gitignore",
+    "test/**/*.gitkeep",
+    "test/**/.gitignore",
+    "test/**/*.hpp"
+  ],
+  "generated_globs": [
+    "build/**",
+    "*.o",
+    "*.d",
+    "*.a",
+    "test/output/test_*",
+    "test/validation/output/**",
+    "test/**/__pycache__/**",
+    "test/**/*.pyc"
+  ],
+  "retired_sources": []
+}

@@ -4,8 +4,15 @@
 #include "adapters/swcme1d_adapter.h"
 #include "transport_common.h"
 #include "amps2swmf.h"
-#include "util/sep_species_source.h"
-#include "util/sep_injection_spectrum.h"
+
+// field_line.cpp is copied to build/main and compiled by AMPS's generic
+// object rule.  That rule always exposes the AMPS root, but it does not inherit
+// include flags appended by the earlier srcSEP submake.  Resolve these shared
+// model headers through the same canonical-path adapter used by public srcSEP
+// headers so the source works in both source/srcSEP and copied build/main.
+#include "util/sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_species_source.h)
+#include SRCSEP_SEP_COMMON_HEADER(sep_injection_spectrum.h)
 
 #include <cmath>
 #include <cstring>

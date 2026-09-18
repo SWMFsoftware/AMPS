@@ -1,7 +1,8 @@
 #ifndef SEP_UTIL_BACKGROUND_RUNTIME_H
 #define SEP_UTIL_BACKGROUND_RUNTIME_H
 
-#include "sep_background_snapshot.h"
+#include "sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_background_snapshot.h)
 
 #include <string>
 

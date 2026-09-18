@@ -6,9 +6,10 @@ set -eu
 # dependency-light distributions report BLOCKED and still return success so the
 # routine source suite can distinguish unavailable infrastructure from failure.
 if [ -z "${SRCSEP_NATIVE_GATE:-}" ]; then
-  echo "BLOCKED WP59-WP60: set SRCSEP_NATIVE_GATE to the linked AMPS matrix/restart command"
-  echo "BLOCKED WP63: real SWMF replay and held-out observational manifests are not bundled"
-  echo "BLOCKED WP64: multi-node scaling requires a frozen hardware environment"
+  echo "SRCSEP_SUITE_RESULT=SKIP"
+  echo "SKIP WP59-WP60: set SRCSEP_NATIVE_GATE to the linked AMPS matrix/restart command"
+  echo "SKIP WP63: real SWMF replay and held-out observational manifests are not bundled"
+  echo "SKIP WP64: multi-node scaling requires a frozen hardware environment"
   exit 0
 fi
 

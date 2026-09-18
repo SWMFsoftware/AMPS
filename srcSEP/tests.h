@@ -19,7 +19,8 @@
 
 #include "constants.h"
 #include "sep.h"
-#include "util/sep_test_registry.h"
+#include "util/sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_test_registry.h)
 
 #ifndef _SEP_TESTS_
 #define _SEP_TESTS_

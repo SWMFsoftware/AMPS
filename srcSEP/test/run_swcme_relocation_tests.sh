@@ -41,10 +41,32 @@ for obsolete in "$src_root/swcme" "$src_root/swcme----moved-out" \
   }
 done
 
-test ! -e "$src_root/demo1d.cpp" || {
-  echo "FAIL SWCME-R1: obsolete application-local SWCME demo remains" >&2
+# Exact historical filenames are forbidden anywhere in the application.  The
+# provider adapter may be called swcme1d_adapter.cpp, but an implementation or
+# demonstration with one of these canonical/retired names has no valid owner
+# beneath srcSEP.
+for name in demo1d.cpp demo3d_1.cpp demo3d_2.cpp sw1d.cpp swcme3d.cpp; do
+  if find "$src_root" -type f -name "$name" -print -quit | grep -q .; then
+    echo "FAIL SWCME-R1: application-local implementation/example remains: $name" >&2
+    exit 1
+  fi
+done
+for header in "$swcme_dir"/swcme*.hpp; do
+  name=$(basename "$header")
+  if find "$src_root" -type f -name "$name" -print -quit | grep -q .; then
+    echo "FAIL SWCME-R1: copied canonical public header remains: $name" >&2
+    exit 1
+  fi
+done
+
+# Type use in the private adapter is expected. Opening an SWCME namespace in
+# application source is not: it would define model code outside the canonical
+# owner even if the filename were disguised.
+if grep -R -n -E '^[[:space:]]*namespace[[:space:]]+(swcme|swcme1d|swcme3d)\b' \
+    "$src_root" --include='*.h' --include='*.hpp' --include='*.cpp'; then
+  echo "FAIL SWCME-R1: SWCME implementation namespace defined in srcSEP" >&2
   exit 1
-}
+fi
 
 # Production and focused-validation consumers use public header names. A path
 # containing swcme/ would again bind them to a directory beneath srcSEP.
@@ -77,6 +99,16 @@ for token in SWCME_ARCHIVE SWCME_OBJECTS SWCME_ADAPTER_CXXFLAGS \
     exit 1
   }
 done
+
+# The canonical model archive is recreated from its one production translation
+# unit and audited before the application adapter is compiled.  This catches a
+# stale ar member that path checks alone cannot see.
+make -C "$swcme_dir" --no-print-directory verify
+members=$(ar t "$swcme_dir/swcme.a")
+test "$members" = "swcme3d.o" || {
+  echo "FAIL SWCME-R1: canonical archive members are: $members" >&2
+  exit 1
+}
 
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/srcsep-swcme-layout.XXXXXX")
 trap 'rm -rf "$fixture"' EXIT HUP INT TERM
@@ -113,7 +145,7 @@ for makefile in "$fixture/srcSEP/makefile" \
     exit 1
   }
   printf '%s\n' "$output" | grep -Fx \
-    "MODEL_INCLUDE_FLAGS=-I$expected_swcme" >/dev/null || {
+    "MODEL_INCLUDE_FLAGS=-I$expected_root/src/models/sep_common -I$expected_swcme" >/dev/null || {
     echo "FAIL SWCME-R1: canonical include flag is absent from $makefile" >&2
     printf '%s\n' "$output" >&2
     exit 1
@@ -143,7 +175,8 @@ ${CXX:-c++} -std=c++17 -Wall -Wextra -Wpedantic -Werror \
 # Conversely, the one provider-facing implementation compiles only when the
 # canonical model root is supplied, just like srcSEP3D's adapters/%.o rule.
 ${CXX:-c++} -std=c++17 -Wall -Wextra -Wpedantic -Werror \
-  -I"$src_root/adapters" -I"$src_root/util" -I"$swcme_dir" \
+  -I"$src_root/adapters" -I"$src_root/util" \
+  -I"$amps_root/src/models/sep_common" -I"$swcme_dir" \
   -c "$src_root/adapters/swcme1d_adapter.cpp" \
   -o "$fixture/swcme1d_adapter.o"
 

@@ -1,4 +1,4 @@
-#include "../../util/sep_test_registry.h"
+#include "sep_test_registry.h"
 #include "../../util/sep_turbulence_validation.h"
 
 #include <iostream>

@@ -1,7 +1,8 @@
 #ifndef SEP_UTIL_SEP_ACCEPTANCE_CASES_H
 #define SEP_UTIL_SEP_ACCEPTANCE_CASES_H
 
-#include "sep_test_registry.h"
+#include "sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_test_registry.h)
 
 #include <vector>
 

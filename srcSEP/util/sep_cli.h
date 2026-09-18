@@ -6,7 +6,8 @@
 #include <vector>
 
 #include "sep_production_mover.h"
-#include "sep_coefficient_registry.h"
+#include "sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_coefficient_registry.h)
 #include "sep_turbulence_core.h"
 
 namespace SEP {

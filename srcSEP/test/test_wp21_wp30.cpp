@@ -1,5 +1,5 @@
 #include "../util/sep_flux_tube_geometry_core.h"
-#include "../util/sep_injection_spectrum.h"
+#include "sep_injection_spectrum.h"
 #include "../util/sep_run_configuration.h"
 #include "../util/sep_sampling_products.h"
 #include "../util/sep_shock_source_core.h"

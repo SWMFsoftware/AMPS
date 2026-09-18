@@ -1,7 +1,8 @@
 #ifndef SEP_TURBULENCE_PRODUCTION_ADAPTER_H
 #define SEP_TURBULENCE_PRODUCTION_ADAPTER_H
 
-#include "util/sep_transport_common.h"
+#include "util/sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_transport_common.h)
 
 namespace SEP {
 namespace Turbulence {

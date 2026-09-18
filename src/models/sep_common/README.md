@@ -6,6 +6,15 @@ sibling, not an SWCME submodule: most of its APIs are transport, coefficient,
 injection, species, background-snapshot, or test-infrastructure APIs that are
 also valid for Parker-spiral and other non-SWCME backgrounds.
 
+## Source-distribution ownership
+
+`SOURCE_MANIFEST.json` declares this directory as the sole source owner for
+the seven shared SEP kernels. `build/` and `sep_common.a` are generated and
+must not appear in a source release. The AMPS-level B01 hygiene gate checks
+that rule by suffix, path, and native-binary signature before packaging. The
+archive is rebuilt from these sources in every clean extraction; a preexisting
+archive is never accepted as evidence that the current sources compile.
+
 ## Ownership boundary
 
 The directory contains the canonical source and header for each shared kernel:
@@ -49,7 +58,9 @@ The numerical build deliberately excludes `-ffast-math`. `srcSEP3D` test
 `UTIL02` freezes representative kernel results byte-for-byte and will detect a
 floating-point flag or implementation change.
 
-Phase R1 additionally audits this archive together with the sibling SWCME
-archive through srcSEP3D test `ARCH3D02`. That gate requires exact member order,
-consumption by both application makefiles, and the absence of duplicate SWCME
-implementation sources in the compatibility include directory.
+Both applications audit this archive without inspecting each other's trees.
+For `srcSEP`, `make test-sep-common-ownership-unit` verifies the seven-member
+archive, unique strong definitions, canonical-header consumer link, and
+source-versus-`build/main` path equivalence.  `srcSEP3D` performs its own
+archive and byte-exact frozen-kernel checks.  The AMPS-level source-package
+gate is the only place that may inspect both independent applications at once.

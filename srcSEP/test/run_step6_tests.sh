@@ -9,8 +9,8 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 ${CXX:-c++} -std=c++11 -Wall -Wextra -Werror -pedantic \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
-  -I"$src_dir" -I"$src_dir/util" \
-  "$src_dir/util/sep_transport_common.cpp" \
+  -I"$src_dir" -I"$src_dir/util" -I"$src_dir/../src/models/sep_common" \
+  "$src_dir/../src/models/sep_common/sep_transport_common.cpp" \
   "$src_dir/test/step6_8/test_transport_numerics.cpp" \
   -o "$build_dir/test_transport_numerics"
 

@@ -3,9 +3,10 @@
 // Repository-relative includes preserve the enclosing AMPS build contract:
 // this nested source must compile without adding srcSEP/util to the include
 // search path.
+#include "../../util/sep_common_header_path.h"
 #include "../../util/sep_focused_transport_core.h"
 #include "../../util/sep_parker_core.h"
-#include "../../util/sep_transport_common.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_transport_common.h)
 
 #include <algorithm>
 #include <cerrno>

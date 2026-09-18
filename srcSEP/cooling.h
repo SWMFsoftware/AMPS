@@ -1,7 +1,8 @@
 #ifndef _COOLING_FACTOR_PARKER_
 #define _COOLING_FACTOR_PARKER_
 
-#include "util/sep_transport_common.h"
+#include "util/sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_transport_common.h)
 
 /*
  * Namespace: COOLING_FACTOR_PARKER

@@ -14,12 +14,13 @@
 #include <string>
 
 #include "util/sep_physical_units.h"
+#include "util/sep_common_header_path.h"
 #include "util/sep_flux_tube_geometry_core.h"
 #include "util/sep_production_mover.h"
-#include "util/sep_transport_common.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_transport_common.h)
 #include "util/sep_transactional_output.h"
 #include "util/sep_transport_coefficients.h"
-#include "util/sep_coefficient_registry.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_coefficient_registry.h)
 #include "util/sep_parker_core.h"
 #include "util/sep_focused_transport_core.h"
 #include "util/sep_focused_transport_mfp_core.h"

@@ -1,4 +1,4 @@
-#include "../../util/sep_background_snapshot.h"
+#include "sep_background_snapshot.h"
 
 #include <atomic>
 #include <cmath>

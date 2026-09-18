@@ -11,6 +11,30 @@ directory. Detailed verification and campaign instructions are in
 [`test/README.md`](test/README.md); the `*_FIX_NOTES.md` files retain the design
 history behind individual corrections.
 
+## Source-distribution ownership
+
+`SOURCE_MANIFEST.json` defines this directory as the only SWCME implementation
+owner. `swcme3d.cpp` and the public `swcme*.hpp` interfaces are production;
+the `demo*.cpp` programs and `test/` sources are explicit test/example code.
+Generated `build/`, `swcme.a`, compiled demo/test programs, and validation
+output are excluded from source releases. The B01 package gate verifies these
+classes and rejects native binaries even when their execute permission is
+missing.
+
+The B03 ownership contract also forbids copied `swcme*.hpp` headers, SWCME
+namespace definitions, historical `demo1d.cpp`/`sw1d.cpp` sources, and local
+`swcme` compatibility directories beneath either application.  Application
+adapters include bare public names through `-I$(SWCME_DIR)` and keep SWCME
+types out of their public provider-neutral interfaces.  Each application
+audits only itself; the AMPS-level
+`tools/check_swcme_ownership.py --root . --self-test` command performs the
+cross-application release scan without coupling the two application runners.
+
+`swcme.a` contains exactly `swcme3d.o`. The 1-D implementation is deliberately
+header-only, so consumers do not add an application-owned 1-D translation
+unit. `make verify` recreates/audits the archive, rejects strong-symbol
+duplicates, and confirms that it has no PIC or MPI dependency.
+
 > **Validation scope.** Passing the bundled tests demonstrates consistency with
 > analytical limits, independent numerical references, conservation laws, API
 > contracts, and synthetic campaign fixtures. It does not by itself establish
@@ -84,6 +108,11 @@ make                  # builds build/swcme3d.o and swcme.a
 make verify           # exact archive membership and no AMPS/MPI dependency
 test/run_tests.py --routine --output-dir test/output/r1 --rebuild
 ```
+
+`make clean` removes the canonical object/archive and generated files below
+`test/output` and `test/validation/output`, while preserving their tracked
+`.gitignore` sentinels. This makes the same command suitable before a B01
+source-package hygiene audit; no test executable is part of the source input.
 
 The bounded R1 runner supports `--list`, repeatable `--test`/`--group`,
 `--routine`, `--all`, `--jobs`, and JSON/JUnit output. It verifies shared

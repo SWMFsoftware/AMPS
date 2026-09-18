@@ -31,6 +31,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import signal
 import subprocess
 import sys
 import threading
@@ -40,11 +41,20 @@ from xml.sax.saxutils import escape as _xml_escape
 
 
 ROOT = Path(__file__).resolve().parents[1]
+_DIAGNOSTIC_EXCERPT_LIMIT = 16 * 1024
 
 # Make target names are kept in one audited mapping.  The Python interface uses
 # short stable labels while Make remains authoritative for compilers, source
 # lists, sanitizers, and the exact focused executable being tested.
 SOURCE_SUITES: Dict[str, str] = {
+    # Cross-component source packaging is owned by AMPS/tools, outside both
+    # independent applications.  srcSEP only exposes the make target so the
+    # existing unified runner can retain its structured release evidence.
+    "package-hygiene": "test-package-hygiene-unit",
+    # B02 proves that srcSEP links the seven canonical sep_common objects,
+    # carries no application-local definitions, and resolves the same model
+    # directory after AMPS copies the application to build/main.
+    "sep-common-ownership": "test-sep-common-ownership-unit",
     # Build/layout gate shared in intent with srcSEP3D BLDL3D05. It proves that
     # source and copied build/main makefiles locate the one canonical SWCME
     # provider and that no application-local compatibility tree survives.
@@ -65,6 +75,11 @@ SOURCE_SUITES: Dict[str, str] = {
     "wp11-wp20": "test-wp11-wp20-unit",
     "wp21-wp30": "test-wp21-wp30-unit",
     "wp31-wp41": "test-wp31-wp41-unit",
+    # B05 keeps the advanced overlay visible without mislabelling prototype
+    # objects as production.  Native/replay/scaling evidence is a separate
+    # selectable gate and reports SKIP until a site supplies its real command.
+    "wp42-wp64-experimental": "test-wp42-wp64-experimental",
+    "wp59-wp64-native": "test-wp59-wp64-native",
     "python-runner": "test-python-runner-unit",
     "cross-model": "test-xm01-xm03-unit",
     "acceptance": "test-acceptance-unit",
@@ -337,6 +352,11 @@ def _utc_stamp() -> str:
         "%Y%m%dT%H%M%SZ")
 
 
+def _utc_iso() -> str:
+    """Return a timezone-explicit timestamp for per-command evidence."""
+    return _datetime.datetime.now(_datetime.timezone.utc).isoformat()
+
+
 def _safe_float(value: Any) -> Optional[float]:
     """Return a finite float or None for JSON NaN/Infinity/string sentinels."""
     try:
@@ -368,13 +388,23 @@ def _write_json(path: Path, value: Any) -> None:
 
 def _run_streaming(command: Sequence[str], cwd: Path, log_path: Path,
                    environment: Optional[Dict[str, str]] = None,
-                   timeout_s: Optional[float] = None) -> int:
-    """Execute a command while mirroring combined output to screen and log."""
+                   timeout_s: Optional[float] = None,
+                   captured_output: Optional[List[str]] = None) -> int:
+    """Execute a command while mirroring and retaining bounded diagnostics.
+
+    ``captured_output`` receives only the tail needed for a structured result;
+    the complete stream remains in ``log_path``.  Bounding the in-memory copy
+    prevents a compiler avalanche from turning failure reporting into another
+    failure while still preserving the lines nearest the exit/timeout.
+    """
     print("RUN:", shlex.join(str(item) for item in command), flush=True)
     started = _datetime.datetime.now(_datetime.timezone.utc)
     with log_path.open("a", encoding="utf-8") as log:
         log.write(f"\n[{started.isoformat()}] RUN {shlex.join(command)}\n")
         log.flush()
+        if captured_output is not None:
+            captured_output.clear()
+        captured_characters = 0
         try:
             process = subprocess.Popen(
                 list(command), cwd=str(cwd), env=environment,
@@ -389,11 +419,18 @@ def _run_streaming(command: Sequence[str], cwd: Path, log_path: Path,
 
         def copy_output() -> None:
             """Drain the pipe continuously so verbose native tests cannot block."""
+            nonlocal captured_characters
             assert process.stdout is not None
             for line in process.stdout:
                 sys.stdout.write(line)
                 sys.stdout.flush()
                 log.write(line)
+                if captured_output is not None:
+                    captured_output.append(line)
+                    captured_characters += len(line)
+                    while (captured_characters > _DIAGNOSTIC_EXCERPT_LIMIT and
+                           len(captured_output) > 1):
+                        captured_characters -= len(captured_output.pop(0))
 
         # Reading in a helper thread lets the controlling thread enforce a
         # wall-clock timeout even when a stalled test emits no newline.  A
@@ -407,9 +444,16 @@ def _run_streaming(command: Sequence[str], cwd: Path, log_path: Path,
             process.kill()
             process.wait()
             reader.join()
-            log.write(f"ERROR timeout after {timeout_s} seconds\n")
+            if process.stdout is not None:
+                process.stdout.close()
+            timeout_line = f"ERROR timeout after {timeout_s} seconds\n"
+            log.write(timeout_line)
+            if captured_output is not None:
+                captured_output.append(timeout_line)
             raise RunnerError(f"test command exceeded {timeout_s} seconds")
         reader.join()
+        if process.stdout is not None:
+            process.stdout.close()
         return status
 
 
@@ -512,15 +556,9 @@ def _merge_reports(paths: Iterable[Path], destination: Path) -> Dict[str, Any]:
                         if not Path(str(item)).is_absolute() else str(item)
                         for item in artifacts
                     ]
-                by_id[str(retained["id"])] = retained
+                by_id[str(retained["id"]).upper()] = retained
     results = [by_id[key] for key in sorted(by_id, key=str.casefold)]
-    totals = {"passed": 0, "failed": 0, "skipped": 0, "errors": 0}
-    status_key = {"PASS": "passed", "FAIL": "failed",
-                  "SKIP": "skipped", "ERROR": "errors"}
-    for result in results:
-        key = status_key.get(str(result.get("status", "")).upper())
-        if key:
-            totals[key] += 1
+    totals = _report_totals(results)
     merged = {
         "schema": "srcsep-component-tests-v1",
         "exit_code": 2 if totals["errors"] else (1 if totals["failed"] else 0),
@@ -541,7 +579,10 @@ def _write_junit(path: Path, report: Dict[str, Any]) -> None:
     """
     results = [item for item in report.get("results", [])
                if isinstance(item, dict)]
-    totals = report.get("totals", {})
+    # Recompute counts from the same records rendered below.  JSON, terminal,
+    # JUnit, and process exit status must never disagree because one producer
+    # supplied stale summary metadata.
+    totals = _report_totals(results)
     lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         (f'<testsuite name="srcSEP isolated all-tests" tests="{len(results)}" '
@@ -566,7 +607,16 @@ def _write_junit(path: Path, report: Dict[str, Any]) -> None:
             lines.append(f'    <error message="{message}"/>')
         elif status == "SKIP":
             lines.append(f'    <skipped message="{message}"/>')
-        lines.append(f'    <system-out>{message}</system-out>')
+        details = [str(result.get("message", ""))]
+        command = result.get("command")
+        if command:
+            details.append("command: " + str(command))
+        if "return_code" in result:
+            details.append("return_code: " + str(result.get("return_code")))
+        diagnostic = str(result.get("diagnostic_excerpt", "")).strip()
+        if diagnostic:
+            details.append("diagnostic excerpt:\n" + diagnostic)
+        lines.append(f'    <system-out>{_xml_escape(chr(10).join(details))}</system-out>')
         lines.append("  </testcase>")
     lines.append("</testsuite>")
     stage = path.with_name(path.name + ".stage")
@@ -1037,28 +1087,125 @@ def generate_plots(report: Dict[str, Any], report_path: Path, output_dir: Path,
 
 
 def _run_source_suites(args: argparse.Namespace, output_dir: Path,
-                       log_path: Path) -> Tuple[int, Optional[Path]]:
+                       log_path: Path) -> Tuple[int, Path, List[List[str]]]:
+    """Run Make-backed suites and retain one wrapper result for every choice.
+
+    Child C++ runners may additionally publish their detailed registry JSON in
+    ``focused_reports``.  The wrapper records are still necessary: compiler
+    failures, missing launchers, timeouts, and signals happen outside that
+    registry and historically disappeared from JSON/JUnit even though the
+    shell returned nonzero.
+    """
     report_dir = output_dir / "focused_reports"
     report_dir.mkdir(parents=True, exist_ok=True)
+    # Output directories may be reused.  A stale child PASS must not mask a
+    # compiler failure from the current invocation.
+    for old_report in list(report_dir.glob("*.json")) + list(report_dir.glob("*.xml")):
+        old_report.unlink()
     environment = dict(os.environ)
     # Focused C++ runners copy their already-validated JSON/JUnit products only
     # when this variable is set. Normal Make invocations remain artifact-free.
     environment["SRCSEP_REPORT_DIR"] = str(report_dir)
-    exit_code = 0
-    for suite in args.suites:
+    records: List[Dict[str, Any]] = []
+    commands: List[List[str]] = []
+    blocked_by: Optional[str] = None
+    # Repeated CLI spellings select one stable suite result, like repeated
+    # native IDs.  Preserve first-selection order for execution and evidence.
+    suites = list(dict.fromkeys(args.suites))
+    for suite in suites:
         target = SOURCE_SUITES[suite]
-        status = _run_streaming(
-            ["make", target], ROOT, log_path, environment, args.timeout)
-        if status != 0:
-            exit_code = status
-            if not args.keep_going:
-                break
+        command = ["make", target]
+        command_text = shlex.join(command)
+        identifier = "SUITE-" + re.sub(r"[^A-Za-z0-9]+", "-", suite).strip("-").upper()
+        if blocked_by is not None:
+            now = _utc_iso()
+            records.append({
+                "id": identifier, "group": "source-suite", "status": "SKIP",
+                "message": f"not run because {blocked_by} did not pass",
+                "elapsed_seconds": 0.0, "started_utc": now, "ended_utc": now,
+                "command": command_text, "command_argv": command,
+                "return_code": None, "diagnostic_excerpt": "",
+                "seed": None,
+                "configuration": [f"suite={suite}", f"make_target={target}"],
+                "metrics": [], "artifacts": [str(log_path)],
+            })
+            continue
+
+        commands.append(command)
+        captured: List[str] = []
+        started_utc = _utc_iso()
+        started = time.monotonic()
+        status: Optional[int] = None
+        launch_error: Optional[str] = None
+        try:
+            status = _run_streaming(
+                command, ROOT, log_path, environment, args.timeout,
+                captured_output=captured)
+        except RunnerError as error:
+            launch_error = str(error)
+        elapsed = time.monotonic() - started
+        ended_utc = _utc_iso()
+
+        explicit_skip = any(
+            line.strip() == "SRCSEP_SUITE_RESULT=SKIP" for line in captured)
+        if launch_error is not None:
+            outcome = "ERROR"
+            message = launch_error
+        elif status == 0 and explicit_skip:
+            # GNU/POSIX make translates a recipe's exit 77 into its own
+            # generic nonzero status.  A successful wrapper therefore emits a
+            # reserved exact marker when an external prerequisite is
+            # intentionally unavailable; arbitrary text containing "SKIP"
+            # cannot downgrade a failure.
+            outcome = "SKIP"
+            message = f"{command_text} reported an intentional external-prerequisite skip"
+        elif status == 0:
+            outcome = "PASS"
+            message = f"{command_text} completed successfully"
+        elif status == 77:
+            outcome = "SKIP"
+            message = f"{command_text} reported an optional prerequisite skip"
+        elif status is not None and status < 0:
+            outcome = "ERROR"
+            try:
+                signal_name = signal.Signals(-status).name
+            except ValueError:
+                signal_name = f"signal {-status}"
+            message = f"{command_text} terminated by {signal_name}"
+        else:
+            outcome = "FAIL"
+            message = f"{command_text} exited with status {status}"
+
+        diagnostic = "".join(captured).strip()
+        if not diagnostic and launch_error:
+            diagnostic = launch_error
+        record = {
+            "id": identifier, "group": "source-suite", "status": outcome,
+            "message": message, "elapsed_seconds": elapsed,
+            "started_utc": started_utc, "ended_utc": ended_utc,
+            "command": command_text, "command_argv": command,
+            "return_code": status, "diagnostic_excerpt": diagnostic,
+            "seed": None,
+            "configuration": [f"suite={suite}", f"make_target={target}"],
+            "metrics": [], "artifacts": [str(log_path)],
+        }
+        records.append(record)
+        if outcome in {"FAIL", "ERROR"} and not args.keep_going:
+            blocked_by = identifier
+
+    wrapper_report = report_dir / "source-suite-results.json"
+    wrapper_totals = _report_totals(records)
+    _write_json(wrapper_report, {
+        "schema": "srcsep-component-tests-v1",
+        "exit_code": (2 if wrapper_totals["errors"] else
+                      (1 if wrapper_totals["failed"] else 0)),
+        "totals": wrapper_totals, "results": records,
+    })
     reports = list(report_dir.glob("*.json"))
-    if not reports:
-        return exit_code, None
     merged_path = output_dir / "srcsep-tests.json"
-    _merge_reports(reports, merged_path)
-    return exit_code, merged_path
+    merged = _merge_reports(reports, merged_path)
+    _write_junit(output_dir / "srcsep-tests.xml", merged)
+    return int(merged["exit_code"]), merged_path, commands
 
 
 def _run_validation_cases(args: argparse.Namespace, output_dir: Path,
@@ -1205,7 +1352,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args, output_dir, log_path)
         report = _load_report(report_path) if report_path.is_file() else None
     elif args.suites:
-        exit_code, report_path = _run_source_suites(args, output_dir, log_path)
+        exit_code, report_path, command = _run_source_suites(
+            args, output_dir, log_path)
         report = _load_report(report_path) if report_path else None
     else:
         report_path = output_dir / "srcsep-tests.json"

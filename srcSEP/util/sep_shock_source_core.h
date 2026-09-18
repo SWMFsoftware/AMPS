@@ -1,7 +1,8 @@
 #ifndef SEP_UTIL_SEP_SHOCK_SOURCE_CORE_H
 #define SEP_UTIL_SEP_SHOCK_SOURCE_CORE_H
 
-#include "sep_transport_common.h"
+#include "sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_transport_common.h)
 
 #include <cstddef>
 #include <string>

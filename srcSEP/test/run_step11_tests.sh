@@ -10,12 +10,12 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 ${CXX:-c++} -std=c++11 -Wall -Wextra -Werror -pedantic \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
-  -I"$src_dir/util" \
-  "$src_dir/util/sep_transport_common.cpp" \
+  -I"$src_dir/util" -I"$src_dir/../src/models/sep_common" \
+  "$src_dir/../src/models/sep_common/sep_transport_common.cpp" \
   "$src_dir/util/sep_focused_transport_core.cpp" \
   "$src_dir/util/sep_focused_transport_mfp_core.cpp" \
   "$src_dir/util/sep_turbulence_core.cpp" \
-  "$src_dir/util/sep_test_registry.cpp" \
+  "$src_dir/../src/models/sep_common/sep_test_registry.cpp" \
   "$src_dir/util/sep_turbulence_validation.cpp" \
   "$src_dir/test/step11/test_turbulence.cpp" \
   -o "$build_dir/test_turbulence"
@@ -45,11 +45,11 @@ grep -q 'util/sep_turbulence_validation.o' "$src_dir/makefile"
 
 ${CXX:-c++} -std=c++11 -Wall -Wextra -Werror -pedantic \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
-  -DSEP_CLI_PARSE_ONLY -I"$src_dir/util" \
-  "$src_dir/util/sep_transport_common.cpp" \
+  -DSEP_CLI_PARSE_ONLY -I"$src_dir/util" -I"$src_dir/../src/models/sep_common" \
+  "$src_dir/../src/models/sep_common/sep_transport_common.cpp" \
   "$src_dir/util/sep_turbulence_core.cpp" \
-  "$src_dir/util/sep_coefficient_physics.cpp" \
-  "$src_dir/util/sep_coefficient_registry.cpp" \
+  "$src_dir/../src/models/sep_common/sep_coefficient_physics.cpp" \
+  "$src_dir/../src/models/sep_common/sep_coefficient_registry.cpp" \
   "$src_dir/util/sep_production_mover.cpp" \
   "$src_dir/util/sep_cli.cpp" \
   "$src_dir/util/sep_configuration_matrix.cpp" \

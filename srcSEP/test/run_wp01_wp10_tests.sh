@@ -9,10 +9,10 @@ build_dir=$(mktemp -d)
 trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 "$cxx" -std=c++11 -Wall -Wextra -Werror -pedantic \
-  -I. -Iutil \
+  -I. -Iutil -I../src/models/sep_common \
   test/test_wp01_wp10.cpp \
-  util/sep_transport_common.cpp \
-  util/sep_background_snapshot.cpp \
+  ../src/models/sep_common/sep_transport_common.cpp \
+  ../src/models/sep_common/sep_background_snapshot.cpp \
   util/sep_focused_transport_core.cpp \
   util/sep_focused_transport_mfp_core.cpp \
   util/sep_reproducible_reduction.cpp \

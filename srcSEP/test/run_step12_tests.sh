@@ -10,8 +10,8 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 ${CXX:-c++} -std=c++11 -Wall -Wextra -Werror -pedantic \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
-  -I"$src_dir/util" \
-  "$src_dir/util/sep_transport_common.cpp" \
+  -I"$src_dir/util" -I"$src_dir/../src/models/sep_common" \
+  "$src_dir/../src/models/sep_common/sep_transport_common.cpp" \
   "$src_dir/util/sep_reproducible_reduction.cpp" \
   "$src_dir/test/step12/test_reproducibility.cpp" \
   -o "$build_dir/test_reproducibility"

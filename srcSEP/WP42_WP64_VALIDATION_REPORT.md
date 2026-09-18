@@ -1,90 +1,107 @@
-# WP42--WP64 validation report
+# WP42--WP64 B05 validation and evidence status
 
-## Executed in the delivered source environment
+## Decision represented by this report
 
-The following commands were run from the srcSEP directory:
+B05 replaces the historical overlay report with current, reproducible status.
+The authority for every package is
+[`WP42_WP64_DISPOSITION.json`](WP42_WP64_DISPOSITION.json). The four extension
+implementations are experimental component APIs and are deliberately absent
+from the production `MAINLIBOBJ`. WP59, WP60, WP63, and WP64 are external
+qualification gates. None of these work packages is claimed as an active
+end-to-end production feature by this source-only report.
+
+Two supporting changes are accepted in current interfaces because they resolve
+concrete compatibility/correctness defects without selecting new physics:
+
+1. `SEP::Transport::ParkerMeasure` is defined once in canonical `sep_common`,
+   giving both applications the same per-arc-length/per-volume vocabulary.
+2. Event-driven focused transport records the selected wave branch and the
+   actual momenta immediately before and after each wave-frame scatter. The
+   record is deposited only after the full event succeeds, and the production
+   adapter no longer substitutes enclosing-shell endpoints for a discrete
+   event.
+
+## Dependency-light command and interpretation
+
+Run from `srcSEP`:
 
 ```sh
-./test/run_wp42_wp64_tests.sh
-./test/run_wp31_wp41_tests.sh
-make test-sanitizer
-./test/run_step7_tests.sh
-./test/run_step8_tests.sh
-./test/run_step9_tests.sh
-./test/run_step14_tests.sh
+make test-wp42-wp64-experimental
 ```
 
-All returned exit status zero. The WP42--WP64 executable was built with C++11,
-`-Wall -Wextra -Wpedantic -Werror`, AddressSanitizer, and
-UndefinedBehaviorSanitizer. It reported one PASS for every work package.
+The target compiles the experimental sources and their current dependencies
+with C++11, `-Wall -Wextra -Wpedantic -Werror`, AddressSanitizer, and
+UndefinedBehaviorSanitizer. It then runs one controlled contract for each
+WP42--WP64 identifier and executes the machine-readable disposition audit plus
+its negative documentation-claim control.
 
-Notable measured results were:
+A PASS establishes only that the typed algorithms satisfy their controlled
+fixtures and that source/build/runner classification is internally consistent.
+It does not establish that the experimental objects are linked, selected, or
+executed by AMPS. In particular, the test's WP59/WP60/WP63/WP64 component
+checks validate fail-closed evidence schemas; they are not substitutes for the
+external evidence named by those schemas.
 
-| Work package | Metric | Observed |
+The deterministic numerical reference metrics retained by the component test
+are:
+
+| Work package | Metric | Expected current record |
 |---|---|---:|
 | WP53 | Brownian parent-minus-children residual | `0` |
 | WP53 | accepted / rejected / maximum depth | `3 / 2 / 2` |
-| WP54 | coarse L1 error | `0.00385425` |
-| WP54 | fine L1 error | `0.00122031` |
-| WP54 | observed refinement order | `1.6592` |
-| WP31 regression | observed combined-operator order | `0.969891` |
+| WP54 | coarse L1 error | approximately `0.00385425` |
+| WP54 | fine L1 error | approximately `0.00122031` |
+| WP54 | observed refinement order | approximately `1.6592` |
 
-The source-integration assertions also confirmed that production contains a
-persistent `TurbulenceRuntimeStore`, has no per-step local `State state;`, has
-no legacy `WaveParticleCouplingManager` call in the production turbulence
-adapter, drains coupling through the transactional API, uses the campaign seed
-and stable source identity, evaluates distinct velocity derivatives, normalizes
-shock processing with upstream relative speed, and copies per-event MFP
-wave-frame momentum/branch metadata rather than shell-wide endpoints.
-The same gate now rejects any reintroduction of the sampling manager's
-`goto end`; root-only output is expressed as a structured conditional so native
-C++17 compilers do not diagnose a jump across initialized local objects.
+These values are component regression evidence, not a scientific validation
+of the production model.
 
-## What the controlled tests establish
+## What the component suite covers
 
-- Runtime turbulence ownership and restart round trips preserve complete state.
-- Particle--wave batches reject duplicates/invalid records without partial
-  mutation and close particle-plus-wave energy for valid records.
-- Curved-field velocity derivatives and continuity residuals are distinct.
-- Shock validation, upstream processed flux, and Mach compression are bounded.
-- Source IDs and random-purpose streams survive scheduler restart.
-- Parker measure conversion, dynamic resonance, 90-degree closure, wave action,
-  conservative cascade, and versioned profiles satisfy analytical invariants.
-- Brownian bridges preserve paths; adaptive rejection is transactional.
-- MUSCL/SSPRK2 advection improves under refinement and conserves the integral.
-- Remap, mover failure, lineage statistics, detector response, native-evidence
-  level, decomposition signatures, refinement fits, power plans, external
-  manifests, and scaling gates accept valid fixtures and reject negative ones.
-- The preceding WP31--WP41 suite still passes after the production queue-owner
-  migration.
-- The complete dependency-light sanitizer aggregate, Parker, both focused
-  movers, and documentation/static-analysis gates remain green.
+- WP42--WP46: prototype turbulence ownership/checkpoint, atomic transaction,
+  derivative, shock-state, and source-key contracts.
+- WP47--WP52: explicit Parker measure, dynamic resonance, named 90-degree
+  closure, wave invariant, conservative cascade, and versioned-profile APIs.
+- WP53--WP56: same-path adaptive SDE, periodic MUSCL/SSPRK2 fixture,
+  conservative overlap remap, and typed transaction/failure primitives.
+- WP57--WP58: lineage-aware estimator and multidimensional detector response.
+- WP59--WP64: validators for native traces, decomposition signatures,
+  refinement fits, preregistered statistics, external manifests, and scaling
+  records, including negative fixtures that reject insufficient evidence.
 
-## Explicitly blocked evidence
+The disposition audit additionally requires all 23 ordered IDs, reasons and
+promotion gates; verifies the experimental objects are outside the production
+object list; verifies both suites are selectable from the unified runner; and
+rejects unqualified historical production/pass claims.
 
-The runner reported these conditions as `BLOCKED`, not `PASS`:
+## External evidence remains separate
 
-- **WP59--WP60 native:** no linked AMPS executable/matrix/restart command was
-  supplied through `SRCSEP_NATIVE_GATE`.
-- **WP63 external:** the source archive contains no authenticated real SWMF
-  replay or held-out spacecraft manifests.
-- **WP64 scaling:** no frozen multi-node hardware/environment campaign was
-  supplied.
-
-These are release gates. A source-only analytical PASS must not be promoted to
-native, coupled, observational, or scaling evidence.
-
-## Required completion commands
+Select the native/external gate explicitly:
 
 ```sh
-make test-wp59-wp64-native \
-  SRCSEP_NATIVE_GATE='/reviewed/site/runner --matrix --restart --mpi'
+python3 test/run_tests.py --suite wp59-wp64-native \
+  --plot none --output-dir test_output/wp59-wp64-native
+```
+
+Without `SRCSEP_NATIVE_GATE`, the wrapper emits the exact intentional-skip
+marker and the unified runner records `SUITE-WP59-WP64-NATIVE` as `SKIP`. That
+is acceptable for a development source-only profile but leaves native,
+parallel, coupled/observational, and scaling qualification incomplete.
+
+At a configured site, run:
+
+```sh
+SRCSEP_NATIVE_GATE='/reviewed/site/runner --matrix --restart --mpi' \
+python3 test/run_tests.py --suite wp59-wp64-native \
+  --plot none --output-dir /evidence/wp59-wp64-native
+
 make test-swmf-validation SWMF_MANIFEST=/evidence/swmf-replay.json
 make test-observational-validation \
   OBSERVATIONAL_MANIFESTS='/evidence/event-1.json /evidence/event-2.json'
 ```
 
-The native command must archive its executable checksum, compiler/flags,
-configuration fingerprints, callback traces, decomposition/restart signatures,
-and frozen performance environment. External commands must retain input bytes,
-checksums, roles, preprocessing, exclusions, uncertainty, and metric results.
+Promotion requires executable/compiler checksums, resolved configuration,
+callback traces, decomposition and restart signatures, real input lineage,
+preprocessing/exclusion records, uncertainty, and frozen hardware/workload
+metadata as applicable. Those artifacts must be reviewed before changing any
+entry in the disposition manifest to `integrated`.

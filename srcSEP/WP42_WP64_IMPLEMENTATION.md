@@ -2,10 +2,11 @@
 
 ## Scope and evidence boundary
 
-This increment implements the work packages in numerical order so that later
-validation contracts depend on already-defined production state, physics, and
-failure semantics.  The source tree remains field-line-only and retains exactly
-the three public movers `parker`, `fte-dmumu`, and `fte-mfp`.
+This directory contains dependency-light prototypes for the work packages in
+numerical order. B05 deliberately does not relabel those prototypes as active
+production behavior merely because they compile. The source tree remains
+field-line-only and retains exactly the three public movers `parker`,
+`fte-dmumu`, and `fte-mfp`.
 
 The dependency-light gate compiles the production-independent implementations
 with strict C++11 warnings, AddressSanitizer, and UndefinedBehaviorSanitizer.
@@ -13,13 +14,20 @@ It is analytical-core and source-integration evidence.  It does not claim that
 native AMPS, MPI/OpenMP decomposition, real SWMF replay, held-out spacecraft
 data, or multi-node performance ran in the source-only environment.
 
-Implementation status is intentionally explicit:
+The machine-readable authority is
+[`WP42_WP64_DISPOSITION.json`](WP42_WP64_DISPOSITION.json). The current
+classification is intentionally conservative:
 
 | Status | Work packages | Meaning |
 |---|---|---|
-| Production seam active | WP42--WP46, WP52 | Existing defaults now use the new ownership, coupling, derivative, shock, source-identity, and analytical-profile contracts. |
-| Selectable/core API | WP47--WP51, WP53--WP58, WP61--WP64 | The complete typed kernel is available and controlled-tested; configurations must select it explicitly, and no unrelated legacy default is silently changed. |
-| External execution gate | WP59--WP60, WP63--WP64 | The validation code is implemented, but native/coupled/data/hardware evidence remains blocked until its real inputs are supplied. |
+| Accepted supporting data contract | `ParkerMeasure`; per-event `WaveContribution` branch and momentum fields | These small contracts repair current header compatibility and event bookkeeping. They do not promote an entire work package. |
+| Experimental component API | WP42--WP58, WP61--WP62 | The four extension implementations compile under strict warnings/sanitizers and have controlled tests, but are absent from `MAINLIBOBJ` and have no production selector/call path. |
+| External qualification gate | WP59--WP60, WP63--WP64 | Validators exist, but linked AMPS, decomposition/restart, real SWMF/observational, or frozen-hardware evidence must be supplied externally. |
+
+No WP42--WP64 package is currently classified as a production-active
+end-to-end feature. This avoids changing stable physics merely to satisfy a
+stale overlay. Promotion requires the per-package gate recorded in the
+disposition manifest and a separate review of the resulting native evidence.
 
 ## WP42 -- persistent production turbulence ownership
 
@@ -27,35 +35,33 @@ Implementation status is intentionally explicit:
 pending sources, operator phase, restart metadata, and accumulated ledgers. It
 also permits two apparent owners of the same wave energy.
 
-**What and how.** `TurbulenceRuntimeStore` owns one `TurbulenceLineRecord` per
+**Prototype.** `TurbulenceRuntimeStore` can own one `TurbulenceLineRecord` per
 integer field-line ID. The record contains the complete common-core `State`,
 geometry generation, owner rank, and configuration fingerprint. The production
-adapter imports host wave arrays only when the owner is installed. Subsequent
-updates refresh geometry/background coefficients without importing wave energy,
-advance the stored state, and export a synchronized host view. Store checkpoints
+adapter does not yet use this owner; it still imports/exports host arrays.
+The prototype refreshes geometry/background coefficients without importing
+wave energy and its checkpoints
 hex-encode complete core checkpoints and are deserialized into staged objects
 before live state is replaced.
 
 **Contract.** A geometry-generation change is rejected while unresolved source
 transactions remain unless the caller explicitly selects apply-before-remap.
-`SerializeRuntimeStore` and `RestoreRuntimeStore` are the application restart
-seams.
+The component `Serialize`/`Deserialize` API is not an application restart seam
+until a configured AMPS run owns it across checkpoint/restart.
 
 ## WP43 -- atomic particle--wave exchange
 
 **Why.** Worker-side mutation and a second legacy coupling call can double count
 energy, depend on thread order, or lose work when a particle exits a boundary.
 
-**What and how.** Movers enqueue self-contained `CouplingRecord` values. The
-single turbulence driver calls `DrainWaveContributions`, canonicalizes physical
-keys, and converts records into immutable `CouplingTransaction` objects. Batch
-application validates identity, generation, cell, branch, bin, uniqueness, and
-available wave energy before committing a staged runtime store. Invalid batches
-roll back completely. The exact opposite of weighted particle kinetic-energy
-change from each completed MFP wave-frame event is assigned to that event's
-selected branch. Continuous plasma-frame `D_mumu` intervals have no discrete
-branch energy and remain streaming diagnostics rather than misclassifying
-adiabatic cooling as particle--wave work.
+**Prototype and accepted supporting fix.** `ApplyCouplingTransactions`
+validates identity, generation, cell, branch, bin, uniqueness, and available
+wave energy before committing a staged prototype store; invalid batches roll
+back completely. It is not called by the active production turbulence driver.
+The accepted current-mover fix is narrower: each completed MFP event now emits
+its actual selected branch and its immediate pre/post wave-frame momenta.
+Deterministic intervals use branch zero and zero event momenta. Records are
+deposited only after the complete event/no-event update succeeds.
 
 **Contract.** PIC particle pointers, worker IDs, rank IDs, and queue addresses
 are never part of transaction identity or ordering. The deprecated void flush
@@ -67,12 +73,12 @@ wrapper is retained only for source compatibility and is not a production owner.
 expanding field line. Reusing one scalar for all three changes focusing and
 adiabatic terms.
 
-**What and how.** `VelocityGradientInput` accepts a full Cartesian velocity
+**Prototype.** `VelocityGradientInput` accepts a full Cartesian velocity
 gradient, field unit vector, and curvature. `ComputeVelocityDerivatives`
 calculates divergence, field-aligned strain, parallel derivative, and curvature
-contribution separately. The PIC adapter now constructs the reduced tensor from
-the available chord derivative and explicitly records its method. Density-
-history inference reports the continuity residual
+contribution separately. The current PIC adapter has not migrated to the full
+tensor because the required provider gradient is not yet available. Density-
+history experiments can report the continuity residual
 `D ln(rho)/Dt + div(U)` rather than silently asserting exact continuity.
 
 **Limitation.** The current host exposes a field-line chord reconstruction at
@@ -86,27 +92,27 @@ particles, while replacing a slow shock with a configured minimum speed creates
 unphysical source particles. Silent compression/exponent clipping masks invalid
 shock states.
 
-**What and how.** `ShockState` records the normal, upstream/downstream normal
+**Prototype.** `ShockState` records the normal, upstream/downstream normal
 velocities and densities, compression, Mach numbers, obliquity, provider, and
 provenance. Validation distinguishes no-compressive-shock from inconsistent
 Rankine--Hugoniot data. `ProcessedUpstreamParticles` uses
-`n_up A max(V_sh,n-U_up,n,0) dt`. The SWMF production source now uses this
-upstream shock-frame swept volume, never substitutes `MinShockSpeed`, and no
-longer overwrites the upstream density with `DownStreamDensity`. DSA requires a
-finite `r>1` and uses `q=3r/(r-1)` without hidden caps or floors.
+`n_up A max(V_sh,n-U_up,n,0) dt`. The active analytic/SWMF injection branches
+have not all migrated and are therefore not claimed fixed by B05. Their
+replacement belongs to the dedicated production shock/source work package.
+The prototype DSA contract requires finite `r>1` and uses `q=3r/(r-1)` without
+hidden caps or floors.
 
 ## WP46 -- versioned source-event identity
 
 **Why.** Floating timestamps, buffer handles, and shared RNG consumption make
 injection change under restart, timestep subdivision, or decomposition.
 
-**What and how.** `SourceEventKey` contains schema, campaign, source, integer
+**Prototype.** `SourceEventKey` contains schema, campaign, source, integer
 event, field line, species, and ordinal. `StableSourceIdentity` hashes exactly
 that tuple. Random purposes use separate deterministic streams, so adding a
-gyrophase draw cannot move the energy sequence. The production injection
-scheduler allocates one integer event per call and writes the complete identity
-into each particle. Its campaign seed and next event are restartable through
-`SerializeInjectionSourceState` and `RestoreInjectionSourceState`.
+gyrophase draw cannot move the energy sequence. The component scheduler
+serializes campaign seed and next event, but the active injection/restart path
+has not adopted it and must not be described as timestep-invariant yet.
 
 ## WP47 -- Parker measure and geometric drift
 
@@ -167,12 +173,11 @@ sinks. Negative trial energies fail rather than being silently clipped.
 **Why.** Anonymous piecewise fits with implicit extrapolation introduce jumps
 in derivative-driven transport and are impossible to identify in evidence.
 
-**What and how.** `AnalyticProfile` stores ID, semantic version, units,
+**Prototype.** `AnalyticProfile` stores ID, semantic version, units,
 provenance, ordered Hermite knots, analytic slopes, and a named extrapolation
-policy. Validation rejects incomplete or non-finite profiles. The Tenishev shock
-compression closure now uses a versioned C1 two-knot profile with explicit
-constant-endpoint behavior, replacing a linear continuation that eventually
-fell below one.
+policy. Validation rejects incomplete or non-finite profiles. Existing
+production analytic fits have not been migrated; each requires reviewed knots,
+units, provenance, and an explicit domain policy before promotion.
 
 ## WP53 -- Brownian-tree adaptive SDE integration
 
@@ -316,10 +321,12 @@ The implementation is in:
 - `util/sep_physics_extensions.*` for WP47--WP52;
 - `util/sep_numerical_extensions.*` for WP53--WP56;
 - `util/sep_validation_extensions.*` for WP57--WP64;
-- `turbulence_production_adapter.cpp`, `transport_common.*`, `field_line.cpp`,
-  and `shock_analytical_model.cpp` for the production seams;
+- `src/models/sep_common/sep_transport_common.h` and
+  `util/sep_focused_transport_core.h` plus the MFP core/adapter for the two
+  accepted supporting data-contract corrections;
 - `test/test_wp42_wp64.cpp` and `test/run_wp42_wp64_tests.sh` for the bounded
   implementation gate.
 
-Run `make test-wp42-wp64-unit`. Run native/external/scaling evidence separately
+The four extension `.cpp` files are deliberately absent from `MAINLIBOBJ`.
+Run `make test-wp42-wp64-experimental`. Run native/external/scaling evidence separately
 with `make test-wp59-wp64-native SRCSEP_NATIVE_GATE='reviewed command ...'`.

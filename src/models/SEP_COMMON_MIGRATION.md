@@ -31,27 +31,12 @@ include path supplied by each makefile/test runner.
 
 ## SWCME relocation
 
-The private `srcSEP/swcme` implementation was removed. srcSEP now includes
-public SWCME headers through `SWCME_DIR` (normally
-`AMPS/src/models/swcme`), and its SWCME integration runner uses that canonical
-tree. Six compatibility headers remain temporarily under `srcSEP/swcme`; they
-contain only angle-bracket forwards to the canonical public headers, never
-implementation source. Their removal date is 2027-03-31. SWCME remains
-separate from `sep_common` because it is one background/shock provider, not a
-prerequisite of general SEP transport.
-
-An archive overlay cannot remove files from the former full compatibility
-tree. After overlaying R1 on an older checkout, run this command from the AMPS
-root:
-
-```bash
-src/models/migrate_r1_layout.sh --apply
-```
-
-Without `--apply`, the script only audits the directory. Apply mode is bounded
-to immediate children of `srcSEP/swcme`, preserves the six forwarding headers
-and their README by explicit allowlist, rejects a symlinked target, and does not
-touch the canonical `src/models/swcme` tree.
+The private `srcSEP/swcme` implementation and its temporary forwarding headers
+were removed. srcSEP now includes public SWCME headers through `SWCME_DIR`
+(normally `AMPS/src/models/swcme`), and its SWCME integration runner uses that
+canonical tree. There is no application-local fallback or compatibility
+directory. SWCME remains separate from `sep_common` because it is one
+background/shock provider, not a prerequisite of general SEP transport.
 
 ## Additional stale-source cleanup
 
@@ -75,10 +60,8 @@ protects both the source and copied layouts.
 
 ## Compatibility policy
 
-There is no `sep_util` compatibility tree because its former wrapper did not
-own model-specific public include paths. SWCME does retain the bounded header-
-only forwarding interval described above because downstream code historically
-included `srcSEP/swcme/<header>`. Detached users can set `SEP_COMMON_DIR` and
-`SWCME_DIR` while migrating; installed paths should use the documented
-AMPS-root application layout and `src/models` shared-library layout. No
-additional file or directory is permitted in the compatibility tree.
+There is no `sep_util` or SWCME compatibility tree. Detached users can set
+`SEP_COMMON_DIR` and `SWCME_DIR` while migrating; installed paths should use
+the documented AMPS-root application layout and `src/models` shared-library
+layout. Any application-local shared-model source or forwarding header is an
+ownership error.

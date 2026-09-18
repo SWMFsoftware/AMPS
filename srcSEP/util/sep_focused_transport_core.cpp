@@ -84,8 +84,25 @@ double FocusedLogMomentumRatePerS(
 
 void ThreadLocalWaveAccumulator::Deposit(
     const WaveContribution& contribution) {
-  if (!contribution.turbulenceStateIdentity.empty() &&
-      std::isfinite(contribution.signedStreaming)) {
+  const bool commonFieldsValid =
+      !contribution.turbulenceStateIdentity.empty() &&
+      std::isfinite(contribution.signedStreaming) &&
+      std::isfinite(contribution.intervalS) && contribution.intervalS > 0.0 &&
+      std::isfinite(contribution.displacementM);
+  const bool eventFieldsValid = contribution.scatteringEventAtEnd
+      ? ((contribution.resonantBranch == -1 ||
+          contribution.resonantBranch == 1) &&
+         std::isfinite(contribution.preWaveMomentumKgMPerS) &&
+         contribution.preWaveMomentumKgMPerS > 0.0 &&
+         std::isfinite(contribution.postWaveMomentumKgMPerS) &&
+         contribution.postWaveMomentumKgMPerS > 0.0)
+      : (contribution.resonantBranch == 0 &&
+         contribution.preWaveMomentumKgMPerS == 0.0 &&
+         contribution.postWaveMomentumKgMPerS == 0.0);
+  // Invalid records are not partially retained.  Production adapters validate
+  // the complete mover result and treat an absent expected record as a typed
+  // failure; dependency-light tests can inspect the accumulator directly.
+  if (commonFieldsValid && eventFieldsValid) {
     contributions_.push_back(contribution);
   }
 }
@@ -102,6 +119,16 @@ std::vector<WaveContribution> ThreadLocalWaveAccumulator::DeterministicReduce(
             [](const WaveContribution& left, const WaveContribution& right) {
               if (left.turbulenceStateIdentity != right.turbulenceStateIdentity)
                 return left.turbulenceStateIdentity < right.turbulenceStateIdentity;
+              if (left.eventIndex != right.eventIndex)
+                return left.eventIndex < right.eventIndex;
+              if (left.scatteringEventAtEnd != right.scatteringEventAtEnd)
+                return left.scatteringEventAtEnd < right.scatteringEventAtEnd;
+              if (left.resonantBranch != right.resonantBranch)
+                return left.resonantBranch < right.resonantBranch;
+              if (left.intervalS != right.intervalS)
+                return left.intervalS < right.intervalS;
+              if (left.displacementM != right.displacementM)
+                return left.displacementM < right.displacementM;
               return left.signedStreaming < right.signedStreaming;
             });
   return reduced;

@@ -10,11 +10,12 @@ mkdir -p "$out"
 export PYTHONPYCACHEPREFIX="$out/pycache"
 
 g++ -std=c++11 -Wall -Wextra -Wpedantic -Werror \
+  -I"$root/../src/models/sep_common" \
   -DSRCSEP_CROSS_MODEL_STANDALONE_TEST_HARNESS \
   "$root/validation/cases/cross_model_validation_models.cpp" \
   "$root/util/sep_focused_transport_core.cpp" \
   "$root/util/sep_parker_core.cpp" \
-  "$root/util/sep_transport_common.cpp" \
+  "$root/../src/models/sep_common/sep_transport_common.cpp" \
   -o "$out/ov_native_harness"
 
 # Exercise the generic observational callback with the minimum accepted

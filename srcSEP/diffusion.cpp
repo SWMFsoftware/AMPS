@@ -7,7 +7,8 @@
 #include <limits>
 
 #include "sep.h"
-#include "util/sep_coefficient_physics.h"
+#include "util/sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_coefficient_physics.h)
 
 double calculateDmuMu(double dB, double B, double r, double mu, double v_parallel); 
 
@@ -714,5 +715,3 @@ void SEP::Diffusion::Florinskiy::GetPitchAngleDiffusionCoefficient(double& D,dou
     dD_dmu=(GetD_mu_mu(mu+h)-GetD_mu_mu(mu-h))/(2.0*h);
   }
 }
-
-

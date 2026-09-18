@@ -2,7 +2,8 @@
 #define SEP_UTIL_SEP_EVIDENCE_H
 
 #include "sep_configuration_matrix.h"
-#include "sep_transport_common.h"
+#include "sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_transport_common.h)
 
 #include <cstdint>
 #include <string>

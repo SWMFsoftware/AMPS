@@ -1,6 +1,71 @@
 # Step 14 mover migration manifest
 
-## Canonical SWCME relocation
+## B01 source-tree rebaseline
+
+The release manifest now matches the physical tree. Generated products are
+excluded by `SOURCE_MANIFEST.json`, local ignore rules, and the AMPS-level
+`tools/sep_package_hygiene.py` gate. The following unlinked historical files
+were removed only after the makefiles and source references were audited:
+
+| Removed source | Active owner or replacement |
+| --- | --- |
+| `mover.cpp` | `parker_mover.cpp`, `focused_transport_dmumu.cpp`, `focused_transport_mfp.cpp`, and `mover_state.cpp` |
+| `fte_mover.cpp`, `fte_mover_dmumu.cpp` | the two canonical focused-transport adapters and tested pure cores |
+| `drift.cpp` | outside the field-line-only `srcSEP` scope; reserved 3-D transport interfaces are owned by `srcSEP3D` |
+| `output.cpp`, `sample3d*` | field-line `sampling.cpp`, `sampling_output.cpp`, `output_fl_background.cpp`, and the independent 3-D application's output layer |
+| `demo1d.cpp`, `sw1d.cpp` | canonical SWCME examples under `src/models/swcme` and the private `adapters/swcme1d_adapter.cpp` consumer |
+
+Object/dependency/archive files, native test executables, `test_output`, Python
+caches, AMPS `amr.sig` data, and historical `PT` plot/log output were also
+removed. They are generated evidence, not source inputs.
+
+## B02 canonical SEP-common relocation
+
+| Former application-local source | Canonical owner | Build/test behavior |
+|---|---|---|
+| `util/sep_transport_common.*` | `src/models/sep_common/sep_transport_common.*` | canonical public include; object inserted once into `mainlib.a` |
+| `util/sep_coefficient_physics.*`, `util/sep_coefficient_registry.*` | matching files in `src/models/sep_common` | one coefficient implementation and registry across applications |
+| `util/sep_background_snapshot.*` | matching files in `src/models/sep_common` | immutable snapshot ABI comes from the shared archive |
+| `util/sep_test_registry.*` | matching files in `src/models/sep_common` | standalone and production reports use one result schema |
+| `util/sep_injection_spectrum.*`, `util/sep_species_source.*` | matching files in `src/models/sep_common` | injection measure and species normalization cannot drift by application |
+
+There are no forwarding headers or `.cpp` wrappers.  The makefile resolves the
+canonical directory from the active source/copied-build location, builds its
+archive, inserts its exact seven objects, and audits member counts plus strong
+definitions. `test/run_sep_common_ownership_tests.sh` also links a public
+consumer and constructs synthetic `srcSEP` and `build/main` layouts so a
+working-directory-dependent path cannot pass accidentally.
+
+`util/sep_common_header_path.h` is the sole include-path resolver, not a copy of
+any canonical declaration. In an installed tree it prefers the canonical
+AMPS-root path, preventing a stale short-name header from winning by include
+order; detached component builds use `-I$(SEP_COMMON_DIR)`. When an AMPS sibling
+library includes `build/main/sep.h` through `pic.h`, it has the global
+`-I$(AMPS_ROOT)` but cannot inherit variables from the build/main child make;
+the resolver therefore selects `src/models/sep_common/<header>` from that root.
+Production translation units copied to `build/main` have the same constraint,
+so `field_line.cpp`, the diffusion implementations, the private SWCME adapter,
+and linked validation sources use the resolver as well. Focused test sources
+may retain canonical short names because their compile commands explicitly add
+`-I$(SEP_COMMON_DIR)`. The B02 gate compiles both contexts, rejects direct path
+fallbacks anywhere outside this resolver, and rejects bare shared-header
+includes from every non-test `.cpp` file.
+
+## B04 external-suite result migration
+
+The historical Python runner propagated a failed Make return code but omitted
+that suite from merged JSON/JUnit when no child report existed. Every selected
+source suite now owns a `SUITE-*` wrapper result with command, timestamps,
+elapsed time, return code, and bounded diagnostic output. Wrapper and child
+records are merged before any summary is written. Compile/assertion exits are
+`FAIL`; launch failures, timeout, and signals are `ERROR`; explicit or blocked
+skips remain `SKIP`. Direct launchers may return 77; Make-backed gates emit the
+exact `SRCSEP_SUITE_RESULT=SKIP` line and return zero because Make rewrites a
+recipe exit 77 as failure. Exit precedence is ERROR/status 2, then FAIL/status
+1, then PASS-or-SKIP/status 0. Runner self-tests cover every state and a real
+invalid-C++ compilation.
+
+## B03 canonical SWCME relocation
 
 | Former application-local surface | Canonical replacement | Compatibility |
 |---|---|---|
@@ -15,6 +80,35 @@ builds `$(SWCME_DIR)/swcme.a`, and inserts canonical `swcme3d.o` exactly once
 into `mainlib.a`. `test/run_swcme_relocation_tests.sh` enforces ownership,
 the srcSEP3D-style private-adapter boundary, and source-versus-build/main path
 equivalence.
+
+## B05 WP42–WP64 disposition and promotion boundary
+
+The previous overlay could compile prototypes while its prose implied that
+they were active production algorithms. B05 replaces that ambiguity with
+[`WP42_WP64_DISPOSITION.json`](WP42_WP64_DISPOSITION.json), an exact inventory
+that must classify every WP42–WP64 item and state why it has that status, which
+symbol or gate owns it, and what evidence is required for promotion.
+
+| Classification | Work packages | Build and evidence behavior |
+|---|---|---|
+| `experimental-component` | WP42–WP58, WP61–WP62 | four extension `.cpp` files compile under strict warnings and sanitizers and execute controlled component tests, but are absent from `MAINLIBOBJ` and have no production selector/call path |
+| `external-gate` | WP59, WP60, WP63, WP64 | native AMPS/SWMF, external-data, or scaling evidence is required; an unconfigured gate produces an explicit B04 `SKIP` record |
+
+Two supporting contracts were accepted independently of the experimental
+overlay. `ParkerMeasure` now names the distribution measure in the canonical
+SEP-common transport header. Event-driven wave coupling now carries the
+actual resonant branch and the pre/post-event momenta produced by the completed
+MFP event; the active adapter no longer substitutes limiter-shell endpoints.
+These changes are audited by source reachability plus the focused event tests.
+
+`test-wp42-wp64-experimental` verifies the 23 component contracts and the
+machine-readable disposition, including a deliberately corrupted negative
+control. `test-wp59-wp64-native` invokes an explicitly supplied
+`SRCSEP_NATIVE_GATE`, or emits the exact `SRCSEP_SUITE_RESULT=SKIP` marker when
+no reviewed command exists. Neither result silently inserts an experimental
+object into `mainlib.a`. Promotion requires a reviewed production selector,
+restart behavior, native observation, and coordinated updates to the source
+manifest, archive audit, disposition, and documentation.
 
 Step 14 closes the temporary compatibility period and makes the source layout
 match the public runtime contract. Only three particle movers are selectable:

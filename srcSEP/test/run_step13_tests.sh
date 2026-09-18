@@ -11,14 +11,14 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 ${CXX:-c++} -std=c++11 -Wall -Wextra -Werror -pedantic \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
-  -I"$src_root/util" \
-  "$src_root/util/sep_transport_common.cpp" \
+  -I"$src_root/util" -I"$src_root/../src/models/sep_common" \
+  "$src_root/../src/models/sep_common/sep_transport_common.cpp" \
   "$src_root/util/sep_focused_transport_core.cpp" \
   "$src_root/util/sep_focused_transport_mfp_core.cpp" \
-  "$src_root/util/sep_coefficient_physics.cpp" \
-  "$src_root/util/sep_coefficient_registry.cpp" \
-  "$src_root/util/sep_background_snapshot.cpp" \
-  "$src_root/util/sep_test_registry.cpp" \
+  "$src_root/../src/models/sep_common/sep_coefficient_physics.cpp" \
+  "$src_root/../src/models/sep_common/sep_coefficient_registry.cpp" \
+  "$src_root/../src/models/sep_common/sep_background_snapshot.cpp" \
+  "$src_root/../src/models/sep_common/sep_test_registry.cpp" \
   "$src_root/util/sep_acceptance_cases.cpp" \
   "$src_root/test/step13/test_acceptance_cases.cpp" \
   -pthread -o "$build_dir/test_acceptance_cases"

@@ -1,8 +1,8 @@
-#include "../util/sep_coefficient_physics.h"
-#include "../util/sep_coefficient_registry.h"
+#include "sep_coefficient_physics.h"
+#include "sep_coefficient_registry.h"
 #include "../util/sep_focused_transport_core.h"
-#include "../util/sep_species_source.h"
-#include "../util/sep_transport_common.h"
+#include "sep_species_source.h"
+#include "sep_transport_common.h"
 
 #include <algorithm>
 #include <cmath>

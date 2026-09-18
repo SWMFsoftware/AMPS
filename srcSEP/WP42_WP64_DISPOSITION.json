@@ -1,0 +1,185 @@
+{
+  "schema": "srcsep-wp42-wp64-disposition-v1",
+  "policy": "No work package is production-active merely because its dependency-light prototype compiles. Promotion requires an explicit production call site and the evidence level named by its gate.",
+  "experimental_sources": [
+    "util/sep_runtime_contracts.cpp",
+    "util/sep_physics_extensions.cpp",
+    "util/sep_numerical_extensions.cpp",
+    "util/sep_validation_extensions.cpp"
+  ],
+  "accepted_supporting_changes": [
+    {
+      "symbol": "SEP::Transport::ParkerMeasure",
+      "owner": "src/models/sep_common/sep_transport_common.h",
+      "reason": "Both applications require one unambiguous arc-length-versus-volume measure vocabulary before any Parker geometric-drift option can be promoted."
+    },
+    {
+      "symbol": "SEP::Transport::WaveContribution event metadata",
+      "owner": "srcSEP/util/sep_focused_transport_core.h",
+      "reason": "The active event-driven mover must preserve the actual branch and immediate pre/post wave-frame momenta; shell endpoints include unrelated deterministic work."
+    }
+  ],
+  "work_packages": [
+    {
+      "id": "WP42",
+      "status": "experimental",
+      "symbols": ["SEP::RuntimeContracts::TurbulenceRuntimeStore"],
+      "reason": "The store and restart format are controlled-tested, but the active AMPS adapter still uses host wave arrays as its runtime owner.",
+      "promotion_gate": "Replace the host-array lifecycle transactionally and pass configured AMPS restart equivalence."
+    },
+    {
+      "id": "WP43",
+      "status": "experimental",
+      "symbols": ["SEP::RuntimeContracts::ApplyCouplingTransactions"],
+      "reason": "Atomic batch logic is a prototype. Only branch-local event metadata is accepted in the active mover; production still uses the established queue/flush adapter.",
+      "promotion_gate": "Wire one drain-and-commit path and close particle plus wave energy in native AMPS and MPI runs."
+    },
+    {
+      "id": "WP44",
+      "status": "experimental",
+      "symbols": ["SEP::RuntimeContracts::ComputeVelocityDerivatives"],
+      "reason": "The tensor contraction is verified, but the present host does not provide the complete three-dimensional velocity gradient at this seam.",
+      "promotion_gate": "Add a provider-owned full gradient and validate divergence, strain, curvature, and continuity residuals natively."
+    },
+    {
+      "id": "WP45",
+      "status": "experimental",
+      "symbols": ["SEP::RuntimeContracts::ShockState", "SEP::RuntimeContracts::ProcessedUpstreamParticleCount"],
+      "reason": "The typed shock/upstream-flux contract is tested independently but has not replaced every legacy analytic/SWMF injection branch.",
+      "promotion_gate": "Complete the dedicated production shock/source correction and replay analytic, SWCME, and SWMF inputs."
+    },
+    {
+      "id": "WP46",
+      "status": "experimental",
+      "symbols": ["SEP::RuntimeContracts::SourceEventKey", "SEP::RuntimeContracts::SourceEventScheduler"],
+      "reason": "Integer identity and purpose streams round-trip in isolation; the active injection scheduler still requires a native checkpoint migration.",
+      "promotion_gate": "Persist the scheduler in production restart and prove timestep/decomposition-invariant source sequences."
+    },
+    {
+      "id": "WP47",
+      "status": "experimental",
+      "symbols": ["SEP::Transport::ParkerMeasure", "SEP::PhysicsExtensions::ParkerItoDriftMPerS"],
+      "reason": "The shared measure type is accepted, but no production option selects the new volume-measure drift kernel.",
+      "promotion_gate": "Expose a frozen run configuration and validate density normalization on variable-area tubes."
+    },
+    {
+      "id": "WP48",
+      "status": "experimental",
+      "symbols": ["SEP::PhysicsExtensions::SolveDynamicResonance"],
+      "reason": "Signed dynamic resonance and finite-bin weights are dependency-light prototypes, not the active scattering provider.",
+      "promotion_gate": "Connect to the authoritative spectral state and pass polarity, branch, and bin-refinement native tests."
+    },
+    {
+      "id": "WP49",
+      "status": "experimental",
+      "symbols": ["SEP::PhysicsExtensions::ApplyNinetyDegreeClosure"],
+      "reason": "The C1 broadening formula is verified but has no approved physical calibration or production selector.",
+      "promotion_gate": "Name and freeze calibration provenance, then validate parallel transport sensitivity."
+    },
+    {
+      "id": "WP50",
+      "status": "experimental",
+      "symbols": ["SEP::PhysicsExtensions::ApplyGeometricConservation"],
+      "reason": "Wave-action conversion is tested independently; active turbulence storage remains integrated branch energy.",
+      "promotion_gate": "Select one authoritative invariant by mode and close geometric background work through restart/remap."
+    },
+    {
+      "id": "WP51",
+      "status": "experimental",
+      "symbols": ["SEP::PhysicsExtensions::AdvanceConservativeCascade"],
+      "reason": "The telescoping cascade/heat ledger is not the current production cascade operator.",
+      "promotion_gate": "Replace the production operator and verify spectral convergence plus electron/ion heat closure."
+    },
+    {
+      "id": "WP52",
+      "status": "experimental",
+      "symbols": ["SEP::PhysicsExtensions::AnalyticProfile"],
+      "reason": "Versioned Hermite profiles are controlled-tested data objects; existing analytic background fits have not all migrated.",
+      "promotion_gate": "Migrate each selected profile with reviewed knots, units, provenance, and domain policy."
+    },
+    {
+      "id": "WP53",
+      "status": "experimental",
+      "symbols": ["SEP::NumericalExtensions::AdvanceAdaptiveMultiplicativeSde"],
+      "reason": "The Brownian tree preserves paths in isolation but is not the active focused-transport integrator.",
+      "promotion_gate": "Integrate keyed interval addresses with particle restart and demonstrate weak/strong convergence."
+    },
+    {
+      "id": "WP54",
+      "status": "experimental",
+      "symbols": ["SEP::NumericalExtensions::AdvectPeriodic"],
+      "reason": "MUSCL/SSPRK2 is a periodic scalar fixture, not the nonuniform production turbulence advection path.",
+      "promotion_gate": "Port to field-line geometry/boundaries and pass conservation and refinement gates."
+    },
+    {
+      "id": "WP55",
+      "status": "experimental",
+      "symbols": ["SEP::NumericalExtensions::RemapConservative"],
+      "reason": "Exact-overlap remap is tested on scalar volume coordinates but is not wired to AMPS field-line regeneration.",
+      "promotion_gate": "Integrate generation changes, MPI ownership, uncovered-domain policy, and restart parity."
+    },
+    {
+      "id": "WP56",
+      "status": "experimental",
+      "symbols": ["SEP::NumericalExtensions::ParticleTransaction", "SEP::NumericalExtensions::ClassifyMoverFailure"],
+      "reason": "Typed failure/rollback semantics are prototypes and do not yet own all active mover error exits.",
+      "promotion_gate": "Map each AMPS mover outcome and prove no particle/coupling partial commit under injected faults."
+    },
+    {
+      "id": "WP57",
+      "status": "experimental",
+      "symbols": ["SEP::ValidationExtensions::EstimateByLineage"],
+      "reason": "The lineage estimator is verified on controlled samples but production sampling does not persist every root lineage/window key.",
+      "promotion_gate": "Persist lineage metadata and compare estimator uncertainty against independent ensembles."
+    },
+    {
+      "id": "WP58",
+      "status": "experimental",
+      "symbols": ["SEP::ValidationExtensions::FoldInstrumentCounts"],
+      "reason": "The multidimensional response kernel lacks an approved mission calibration package in this source tree.",
+      "promotion_gate": "Ingest checksummed calibration validity, species/direction response, dead time, and held-out observations."
+    },
+    {
+      "id": "WP59",
+      "status": "external-gate",
+      "symbols": ["SEP::ValidationExtensions::NativeMatrixTrace"],
+      "reason": "The validator intentionally rejects source-only evidence.",
+      "promotion_gate": "Run a linked AMPS configuration matrix with executable checksum and observed callback traces."
+    },
+    {
+      "id": "WP60",
+      "status": "external-gate",
+      "symbols": ["SEP::ValidationExtensions::DecompositionSignature"],
+      "reason": "Comparison logic exists, but serial/MPI/thread/restart signatures require a configured host campaign.",
+      "promotion_gate": "Supply current serial, multi-rank, multi-thread, and restart evidence from the same physics configuration."
+    },
+    {
+      "id": "WP61",
+      "status": "experimental",
+      "symbols": ["SEP::ValidationExtensions::FitRefinementOrder"],
+      "reason": "The fit utility is tested; no new manufactured production case is registered by this overlay.",
+      "promotion_gate": "Register cases declaring all active terms and retain three-or-more-resolution model/reference artifacts."
+    },
+    {
+      "id": "WP62",
+      "status": "experimental",
+      "symbols": ["SEP::ValidationExtensions::PlanNormalMeanPower", "SEP::ValidationExtensions::KolmogorovSmirnovStatistic"],
+      "reason": "Planning/statistics helpers are valid component APIs but are not a completed preregistered scientific campaign.",
+      "promotion_gate": "Freeze observable, effect, multiplicity, seeds, exclusions, and distribution test before event execution."
+    },
+    {
+      "id": "WP63",
+      "status": "external-gate",
+      "symbols": ["SEP::ValidationExtensions::ExternalEventManifest"],
+      "reason": "The source package contains no authenticated real SWMF replay or held-out spacecraft event required by the validator.",
+      "promotion_gate": "Provide checksummed nonsynthetic manifests and execute coupled/cross-model/observational scoring."
+    },
+    {
+      "id": "WP64",
+      "status": "external-gate",
+      "symbols": ["SEP::ValidationExtensions::ScalingGate"],
+      "reason": "Complexity calculations are testable locally, while wall-time, memory, and queue limits are hardware-specific evidence.",
+      "promotion_gate": "Run the frozen workload on a declared multi-node environment and archive counters, timing, and peak resources."
+    }
+  ]
+}

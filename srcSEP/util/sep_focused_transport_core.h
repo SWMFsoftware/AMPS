@@ -64,6 +64,16 @@ struct WaveContribution {
   double displacementM = 0.0;
   std::uint64_t eventIndex = 0;
   bool scatteringEventAtEnd = false;
+  // A discrete mean-free-path event is resolved against exactly one wave
+  // branch: +1 propagates along local B, -1 against local B, and 0 means this
+  // record contains only deterministic streaming.  The momenta bracket the
+  // instantaneous wave-frame scatter after deterministic cooling/focusing for
+  // this interval.  They are zero for a non-event record.  Recording the local
+  // pair here is essential: copying the enclosing mover shell's endpoints into
+  // every event assigns unrelated adiabatic work to the resonant wave branch.
+  int resonantBranch = 0;
+  double preWaveMomentumKgMPerS = 0.0;
+  double postWaveMomentumKgMPerS = 0.0;
 };
 
 // Each worker owns one accumulator.  Sorting on reduction makes the numerical

@@ -72,5 +72,17 @@ test: verify
 
 clean:
 	rm -rf $(BUILD_DIR) $(ARCHIVE)
+	# The routine runner writes its executable and structured evidence below
+	# test/output.  Preserve the tracked .gitignore sentinel, but remove every
+	# generated file and then prune empty result directories so `make clean`
+	# restores a source-package-ready tree after B03 ownership verification.
+	@if [ -d test/output ]; then \
+	  find test/output -type f ! -name .gitignore -delete; \
+	  find test/output -mindepth 1 -type d -empty -delete; \
+	fi
+	@if [ -d test/validation/output ]; then \
+	  find test/validation/output -type f ! -name .gitignore -delete; \
+	  find test/validation/output -mindepth 1 -type d -empty -delete; \
+	fi
 
 -include $(DEPENDENCY)

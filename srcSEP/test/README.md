@@ -20,7 +20,8 @@ under `test_output/all`.
 Step 1 provides one catalog and result contract for standalone component tests.
 The catalog lives in `component_tests.cpp`; generic deterministic selection,
 metadata validation, timing, status handling, and output formatting live in
-`util/sep_test_registry.*`.  The production CLI remains `util/sep_cli.*`.
+the canonical `src/models/sep_common/sep_test_registry.*`.  The production CLI
+remains application-owned in `util/sep_cli.*`.
 
 ## Running tests
 
@@ -68,6 +69,14 @@ make test-wp21-wp30-unit
 # observation, performance, and evidence-governance contracts.
 make test-wp31-wp41-unit
 
+# B05 experimental WP42-WP64 mathematical/component contracts. These
+# implementations are intentionally not linked into the production archive.
+make test-wp42-wp64-experimental
+
+# Native/external WP59, WP60, WP63, and WP64 gates. Without an approved site
+# command this produces a first-class SKIP record, never a synthetic PASS.
+make test-wp59-wp64-native
+
 # Print the exact 90-row production compatibility matrix from its registry.
 make print-configuration-matrix
 
@@ -88,6 +97,11 @@ make test-scientific-validation
 
 # Canonical SWCME ownership plus srcSEP/build-main path equivalence.
 make test-swcme-relocation-unit
+
+# Canonical seven-member SEP-common archive, one-definition, consumer-link,
+# srcSEP/build-main path equivalence, sibling-AMPS public-header fallback, and
+# AMPS-root-only production-source include coverage (including field_line.cpp).
+make test-sep-common-ownership-unit
 
 # Dependency-light analytical component catalog. CV01 runs additionally when
 # SEP_EXECUTABLE identifies the linked application.
@@ -162,11 +176,15 @@ In the normal AMPS layout it discovers `../src/models/swcme` automatically. A
 detached source checkout may set `SWCME_DIR=/absolute/path/to/swcme`; this is an
 explicit development override, never a fallback to a directory within srcSEP.
 
-The Step 6–15, WP11–WP20, WP21–WP30, and WP31–WP41 focused targets do not require the linked executable, AMPS, PIC,
-MPI, SWMF, or field-line host classes. Each compiles the exact production
-numerical cores with C++11, `-Wall -Wextra -Werror -pedantic`, AddressSanitizer,
-and UndefinedBehaviorSanitizer. LeakSanitizer alone is disabled because the
-managed test environment does not expose the required `/proc` task data.
+The Step 6–15, WP11–WP20, WP21–WP30, and WP31–WP41 focused targets do not
+require the linked executable, AMPS, PIC, MPI, SWMF, or field-line host classes.
+Each compiles the exact production numerical cores with C++11,
+`-Wall -Wextra -Werror -pedantic`, AddressSanitizer, and
+UndefinedBehaviorSanitizer. The B05 WP42–WP64 focused target uses the same
+compiler discipline but compiles a deliberately experimental overlay that is
+absent from `MAINLIBOBJ`; its result must not be described as production-path
+coverage. LeakSanitizer alone is disabled because the managed test environment
+does not expose the required `/proc` task data.
 
 ## Python runner and analytical-comparison plots
 
@@ -297,6 +315,44 @@ ordered command list rather than a single monolithic command. The manifest
 also hashes both the aggregate report and native executable. JSON is
 authoritative; images are review aids.
 
+### B04 build and orchestration result records
+
+Every `--suite` selection now creates an outer result even when no C++ test
+executable is produced. Its stable ID is `SUITE-<NORMALIZED-SELECTION>` and its
+record contains `status`, monotonic elapsed seconds, UTC start/end timestamps,
+the exact normalized Make command, raw return code, and a bounded diagnostic
+excerpt. The complete interleaved output remains in `test-run.log`; the JSON
+excerpt retains only the final 16 KiB so a compiler-error cascade cannot
+exhaust runner memory.
+
+The outer record and any child registry records copied through
+`SRCSEP_REPORT_DIR` are merged before the terminal summary,
+`srcsep-tests.json`, and `srcsep-tests.xml` are written. Thus a compilation
+failure cannot disappear merely because the test executable never created its
+own report. Reusing an output directory removes only stale focused JSON/JUnit
+files before launch, preventing an earlier PASS from masking a current build
+failure.
+
+External status classification is explicit:
+
+- return 0 is `PASS`;
+- direct return 77 is an intentional `SKIP`;
+- the exact output line `SRCSEP_SUITE_RESULT=SKIP` plus return 0 is also
+  `SKIP`; this is the supported path through Make, which converts recipe 77
+  into its own failure status;
+- an ordinary nonzero Make/shell return is `FAIL`;
+- launcher/permission errors, timeout, and signal termination are `ERROR`;
+- without `--keep-going`, later selected suites receive explicit `SKIP`
+  records naming the failed/error suite that blocked them.
+
+Overall status is calculated only from merged records: any `ERROR` gives exit
+2; otherwise any `FAIL` gives exit 1; otherwise `PASS` plus optional `SKIP`
+gives exit 0. `run_manifest.json` stores that same code, and JUnit recomputes
+its counts from the same records rather than trusting copied summary fields.
+The Python self-test exercises a real invalid-C++ compile plus synthetic
+success, timeout, missing executable, signal, skip, fail-fast blocking, and
+cross-format count/identifier checks.
+
 There are two deliberately distinct image types:
 
 - **Solution-series comparison:** a declared artifact CSV has at least two
@@ -320,10 +376,10 @@ never convert a failed registry result to PASS.
 The focused Parker, Dmumu, MFP, and turbulence scripts normally delete all
 temporary evidence. When invoked through this runner they honor the internal
 `SRCSEP_REPORT_DIR` contract and copy only validated JSON/JUnit reports before
-cleanup; sanitizer executables and objects are never retained. Other source
-suites that do not emit structured reports still run normally and produce a
-log/manifest but cannot generate analytical plots. Verify the orchestration and
-both figure paths with:
+cleanup; sanitizer executables and objects are never retained. Source suites
+that do not emit child reports still produce their B04 outer result in console,
+JSON, and JUnit. They have no physical metrics to plot, but their build status
+is part of campaign evidence. Verify orchestration and both figure paths with:
 
 ```sh
 make test-python-runner-unit
@@ -369,6 +425,53 @@ WP34 native mover execution, WP36 full PIC seam activation, WP37 scheduled
 ensembles, WP38 native adapter fuzzing, WP39 held-out events, and WP40 MPI/OpenMP
 scaling require the enclosing application or external evidence. Their absence
 is BLOCKED, never converted into a source-only PASS.
+
+## B05 WP42–WP64 disposition and focused tests
+
+`WP42_WP64_DISPOSITION.json` is the authoritative inventory for all 23 work
+packages. The checker requires the exact ordered WP42–WP64 set, one approved
+status and reason for every entry, a named implementation symbol or evidence
+gate, and a concrete promotion condition. It also proves that the four
+experimental extension implementations are absent from `MAINLIBOBJ`, that the
+accepted supporting contracts are reached by active production code, and that
+both runner selections remain exposed. Its negative control mutates a copy of
+the manifest and requires the audit to reject that copy.
+
+`test/run_wp42_wp64_tests.sh` compiles the experimental component surface with
+C++11, strict warnings, ASan, and UBSan, then executes one stable WP42–WP64
+check per identifier. The checks cover persistent turbulence/checkpoint
+concepts, transaction and rollback semantics, geometry/measure contracts,
+adaptive integration and convergence, validation/evidence records, and
+performance accounting. This is deliberately an algorithm/component suite:
+`sep_runtime_contracts.cpp`, `sep_physics_extensions.cpp`,
+`sep_numerical_extensions.cpp`, and `sep_validation_extensions.cpp` are not
+production archive members and have no production selector.
+
+Two narrow supporting changes are production-active and are audited separately:
+
+- canonical `sep_transport_common.h` defines `ParkerMeasure`, making the
+  distribution measure explicit instead of relying on an undocumented factor;
+- the event-driven MFP core records `resonantBranch` and the actual
+  `preWaveMomentumKgMPerS`/`postWaveMomentumKgMPerS` at a completed scattering
+  event, and `focused_transport_mfp.cpp` deposits those values only after the
+  event/no-event transaction succeeds.
+
+The native/external target covers WP59, WP60, WP63, and WP64. With no reviewed
+site command, `run_wp59_wp64_native_gates.sh` emits
+`SRCSEP_SUITE_RESULT=SKIP`; B04 therefore records
+`SUITE-WP59-WP64-NATIVE` as `SKIP` in terminal, JSON, and JUnit output. A site
+may run an approved command explicitly:
+
+```sh
+make test-wp59-wp64-native \
+  SRCSEP_NATIVE_GATE='/absolute/path/to/reviewed-native-gate --options'
+```
+
+That command is responsible for retaining its native AMPS/SWMF, external-data,
+or scaling evidence. A successful external gate does not by itself insert the
+experimental objects into `mainlib.a`; production promotion additionally
+requires a selector/call path, restart compatibility, native observations, and
+an explicit reviewed update to the disposition and source manifest.
 
 ## Focused WP11--WP20 tests
 

@@ -1,5 +1,5 @@
 #include "../../util/sep_cli.h"
-#include "../../util/sep_test_registry.h"
+#include "sep_test_registry.h"
 
 #include <cmath>
 #include <cstdlib>

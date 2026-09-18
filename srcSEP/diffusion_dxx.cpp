@@ -5,8 +5,9 @@
 #include <limits>
 
 #include "sep.h"
-#include "util/sep_coefficient_physics.h"
-#include "util/sep_coefficient_registry.h"
+#include "util/sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_coefficient_physics.h)
+#include SRCSEP_SEP_COMMON_HEADER(sep_coefficient_registry.h)
 
 //static variables from c_D_x_x
 //template<class T> double SEP::Diffusion::cD_x_x<T>::speed;

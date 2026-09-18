@@ -12,12 +12,12 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 ${CXX:-c++} -std=c++11 -O1 -Wall -Wextra -Wpedantic -Werror \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
-  -I"$src_root/util" \
-  "$src_root/util/sep_transport_common.cpp" \
+  -I"$src_root/util" -I"$src_root/../src/models/sep_common" \
+  "$src_root/../src/models/sep_common/sep_transport_common.cpp" \
   "$src_root/util/sep_turbulence_core.cpp" \
   "$src_root/util/sep_configuration_matrix.cpp" \
-  "$src_root/util/sep_coefficient_registry.cpp" \
-  "$src_root/util/sep_coefficient_physics.cpp" \
+  "$src_root/../src/models/sep_common/sep_coefficient_registry.cpp" \
+  "$src_root/../src/models/sep_common/sep_coefficient_physics.cpp" \
   "$src_root/util/sep_production_mover.cpp" \
   "$src_root/util/sep_focused_transport_core.cpp" \
   "$src_root/util/sep_focused_transport_mfp_core.cpp" \
@@ -31,37 +31,26 @@ ${CXX:-c++} -std=c++11 -O1 -Wall -Wextra -Wpedantic -Werror \
 
 ASAN_OPTIONS=${ASAN_OPTIONS:-detect_leaks=0} "$build_dir/test_wp42_wp64"
 
-# Production seams are checked separately from pure numerical tests.  These
-# assertions prevent the two P0 defects identified by the review from being
-# reintroduced: per-step State construction and direct legacy wave mutation.
-grep -q 'TurbulenceRuntimeStore' "$src_root/turbulence_production_adapter.cpp"
-if grep -q 'State state;' "$src_root/turbulence_production_adapter.cpp"; then
-  echo "FAIL WP42-SOURCE: production adapter still constructs per-step state" >&2
-  exit 1
-fi
-if grep -q 'WaveParticleCouplingManager' "$src_root/turbulence_production_adapter.cpp"; then
-  echo "FAIL WP43-SOURCE: production adapter still calls legacy coupling manager" >&2
-  exit 1
-fi
-grep -q 'DrainWaveContributions' "$src_root/turbulence_production_adapter.cpp"
-grep -q 'CampaignRandomSeed' "$src_root/field_line.cpp"
-grep -q 'StableSourceIdentity' "$src_root/field_line.cpp"
-grep -q 'relative_normal_speed_m_s' "$src_root/field_line.cpp"
-if grep -q 'n_sw_end=AMPS2SWMF::ShockData.*DownStreamDensity' \
-    "$src_root/field_line.cpp"; then
-  echo "FAIL WP45-SOURCE: downstream density still normalizes upstream flux" >&2
-  exit 1
-fi
-grep -q 'emitted.preWaveMomentumKgMPerS' \
-  "$src_root/focused_transport_mfp.cpp"
-grep -q 'VelocityGradientInput' "$src_root/transport_common.cpp"
+# B05 does not promote prototype sources merely to preserve an obsolete
+# overlay.  The manifest checker requires every WP42--WP64 item to be either an
+# experimental component contract or an external gate, keeps the four
+# prototype objects out of the production archive, verifies unified-runner
+# discovery, and rejects historical documents that claim production status.
+PYTHONDONTWRITEBYTECODE=1 python3 \
+  "$src_root/test/check_wp42_wp64_disposition.py" --root "$src_root" --self-test
+
+# Two supporting data contracts are accepted into current code: the canonical
+# Parker measure vocabulary and branch-local wave-frame event metadata.  The
+# latter must be copied from each emitted event, never from enclosing shell
+# endpoints that include unrelated focusing/cooling work.
+grep -q 'enum class ParkerMeasure' \
+  "$src_root/../src/models/sep_common/sep_transport_common.h"
+grep -q 'emitted.preWaveMomentumKgMPerS' "$src_root/focused_transport_mfp.cpp"
+grep -q 'emitted.postWaveMomentumKgMPerS' "$src_root/focused_transport_mfp.cpp"
+grep -q 'emitted.resonantBranch' "$src_root/focused_transport_mfp.cpp"
 if grep -Eq '^[[:space:]]*goto[[:space:]]+end' "$src_root/sampling.cpp"; then
   echo "FAIL SAMPLING-SOURCE: root-only output still jumps across C++ locals" >&2
   exit 1
 fi
 grep -q 'PIC::ThisThread==0' "$src_root/sampling.cpp"
-echo "PASS WP42-WP46-SOURCE: persistent owner, common coupling, derivatives, and source identity seams"
-
-# Higher evidence gates are executable contracts, not silent skips.  The
-# optional native runner returns BLOCKED when no linked AMPS command is supplied.
-"$src_root/test/run_wp59_wp64_native_gates.sh"
+echo "PASS B05-SOURCE: accepted data seams and experimental ownership boundary"

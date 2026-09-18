@@ -190,6 +190,168 @@ PARK01 | parker | duplicate
             self.assertIn("Error tests (1):\n  - BAD02: process exited 134",
                           rendered)
 
+    def test_source_suites_record_every_outer_process_outcome(self):
+        """Keep Make/launcher failures visible in console, JSON, and JUnit.
+
+        A source suite can fail before a C++ registry exists.  These six
+        outcomes exercise the B04 wrapper contract without invoking a compiler:
+        success, ordinary compile failure, timeout, missing launcher, fatal
+        signal, and an explicit optional-prerequisite skip.
+        """
+        runner = _load_runner_module()
+        suites = ["fixture-pass", "fixture-compile", "fixture-timeout",
+                  "fixture-missing", "fixture-signal", "fixture-skip"]
+        targets = {name: "target-" + name.split("fixture-", 1)[1]
+                   for name in suites}
+        arguments = SimpleNamespace(
+            suites=suites, keep_going=True, timeout=0.01)
+
+        def fake_run(command, cwd, log_path, environment=None,
+                     timeout_s=None, captured_output=None):
+            del cwd, log_path, environment, timeout_s
+            target = list(command)[-1]
+            if captured_output is not None and target != "target-missing":
+                captured_output.append(f"{target}: diagnostic fixture\n")
+                if target == "target-skip":
+                    captured_output.append("SRCSEP_SUITE_RESULT=SKIP\n")
+            if target == "target-timeout":
+                raise runner.RunnerError("test command exceeded 0.01 seconds")
+            if target == "target-missing":
+                raise runner.RunnerError(
+                    "cannot start test command make: executable not found")
+            return {
+                "target-pass": 0,
+                "target-compile": 2,
+                "target-signal": -11,
+                "target-skip": 0,
+            }[target]
+
+        with tempfile.TemporaryDirectory(prefix="srcsep-source-results-") as tmp:
+            output = Path(tmp)
+            with (mock.patch.dict(runner.SOURCE_SUITES, targets, clear=False),
+                  mock.patch.object(runner, "_run_streaming",
+                                    side_effect=fake_run)):
+                exit_code, report_path, commands = runner._run_source_suites(
+                    arguments, output, output / "test-run.log")
+
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(len(commands), 6)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(report["totals"], {
+                "passed": 1, "failed": 1, "skipped": 1, "errors": 3})
+            by_id = {item["id"]: item for item in report["results"]}
+            expected_status = {
+                "SUITE-FIXTURE-PASS": "PASS",
+                "SUITE-FIXTURE-COMPILE": "FAIL",
+                "SUITE-FIXTURE-TIMEOUT": "ERROR",
+                "SUITE-FIXTURE-MISSING": "ERROR",
+                "SUITE-FIXTURE-SIGNAL": "ERROR",
+                "SUITE-FIXTURE-SKIP": "SKIP",
+            }
+            self.assertEqual({key: value["status"] for key, value in by_id.items()},
+                             expected_status)
+            for identifier, record in by_id.items():
+                self.assertIn("command", record, identifier)
+                self.assertIn("diagnostic_excerpt", record, identifier)
+                self.assertIn("started_utc", record, identifier)
+                self.assertIn("ended_utc", record, identifier)
+                self.assertGreaterEqual(record["elapsed_seconds"], 0.0)
+            self.assertIn("executable not found",
+                          by_id["SUITE-FIXTURE-MISSING"]["diagnostic_excerpt"])
+            self.assertIn("SIGSEGV", by_id["SUITE-FIXTURE-SIGNAL"]["message"])
+
+            junit = (output / "srcsep-tests.xml").read_text(encoding="utf-8")
+            self.assertIn('tests="6" failures="1" errors="3" skipped="1"',
+                          junit)
+            for identifier in expected_status:
+                self.assertIn(f'name="{identifier}"', junit)
+            self.assertIn("command: make target-compile", junit)
+            self.assertIn("target-compile: diagnostic fixture", junit)
+
+            stdout = io.StringIO()
+            with mock.patch("sys.stdout", stdout):
+                for record in report["results"]:
+                    runner._print_result(record)
+                runner._print_summary(report)
+            rendered = stdout.getvalue()
+            for identifier, status in expected_status.items():
+                self.assertIn(f"RESULT {identifier}: {status}", rendered)
+            self.assertIn(
+                "Overall test summary: TOTAL=6 PASS=1 FAIL=1 SKIP=1 ERROR=3",
+                rendered)
+
+    def test_real_compile_error_is_a_structured_suite_failure(self):
+        """Compile invalid C++ and retain the compiler diagnostic in reports."""
+        runner = _load_runner_module()
+        with tempfile.TemporaryDirectory(prefix="srcsep-real-compile-fail-") as tmp:
+            temporary = Path(tmp)
+            (temporary / "broken.cpp").write_text(
+                "int main( { return 0; }\n", encoding="utf-8")
+            (temporary / "makefile").write_text(
+                "target-compile:\n"
+                "\t$(CXX) -std=c++17 -fsyntax-only broken.cpp\n",
+                encoding="utf-8")
+            output = temporary / "output"
+            output.mkdir()
+            arguments = SimpleNamespace(
+                suites=["fixture-real-compile"], keep_going=True,
+                timeout=30.0)
+            with (mock.patch.dict(
+                    runner.SOURCE_SUITES,
+                    {"fixture-real-compile": "target-compile"}, clear=False),
+                  mock.patch.object(runner, "ROOT", temporary)):
+                exit_code, report_path, _ = runner._run_source_suites(
+                    arguments, output, output / "test-run.log")
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(report["totals"], {
+            "passed": 0, "failed": 1, "skipped": 0, "errors": 0})
+        record = report["results"][0]
+        self.assertEqual(record["id"], "SUITE-FIXTURE-REAL-COMPILE")
+        self.assertEqual(record["status"], "FAIL")
+        self.assertIn("error:", record["diagnostic_excerpt"].lower())
+        self.assertEqual(record["command"], "make target-compile")
+
+    def test_source_suite_fail_fast_records_later_suites_as_skipped(self):
+        """A fail-fast run must account for choices it deliberately blocks."""
+        runner = _load_runner_module()
+        arguments = SimpleNamespace(
+            suites=["fixture-first", "fixture-second", "fixture-third"],
+            keep_going=False, timeout=None)
+        mapping = {
+            "fixture-first": "target-first",
+            "fixture-second": "target-second",
+            "fixture-third": "target-third",
+        }
+        called = []
+
+        def fail_first(command, cwd, log_path, environment=None,
+                       timeout_s=None, captured_output=None):
+            del cwd, log_path, environment, timeout_s
+            called.append(list(command))
+            if captured_output is not None:
+                captured_output.append("compiler failed\n")
+            return 2
+
+        with tempfile.TemporaryDirectory(prefix="srcsep-source-blocked-") as tmp:
+            output = Path(tmp)
+            with (mock.patch.dict(runner.SOURCE_SUITES, mapping, clear=False),
+                  mock.patch.object(runner, "_run_streaming",
+                                    side_effect=fail_first)):
+                exit_code, report_path, _ = runner._run_source_suites(
+                    arguments, output, output / "test-run.log")
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(len(called), 1)
+        self.assertEqual(report["totals"], {
+            "passed": 0, "failed": 1, "skipped": 2, "errors": 0})
+        blocked = [item for item in report["results"]
+                   if item["status"] == "SKIP"]
+        self.assertTrue(all("SUITE-FIXTURE-FIRST" in item["message"]
+                            for item in blocked))
+
     def test_xm02_publication_plot_label_names_source_and_exact_figure(self):
         """XM02 retains its detached-figure publication attribution."""
         runner = _load_cross_model_runner()

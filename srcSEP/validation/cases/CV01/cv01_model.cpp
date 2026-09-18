@@ -15,8 +15,9 @@
 // which intentionally does not expose srcSEP/util as a flat include root.
 // Repository-relative includes therefore work both in the linked production
 // build and in the dependency-light CV01 compile gate.
+#include "../../../util/sep_common_header_path.h"
 #include "../../../util/sep_focused_transport_core.h"
-#include "../../../util/sep_transport_common.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_transport_common.h)
 
 #include <cmath>
 #include <cerrno>

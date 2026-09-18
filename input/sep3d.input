@@ -74,14 +74,13 @@ MoverIntegratorMode=GuidingCenter
   define _PIC_SAMPLING_MODE_  _PIC_MODE_ON_
   define _PIC_PARTICLE_TRACKER_MODE_ _PIC_MODE_ON_  
 
-  define _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_(x,v,spec,ParticleData) SEP3D::ParticleTracker::TrajectoryTrackingCondition(x,v,spec,ParticleData)
+  !define _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_(x,v,spec,ParticleData) SEP3D::ParticleTracker::TrajectoryTrackingCondition(x,v,spec,ParticleData)
 
-  define _PIC_INJECT_PARTICLE_ONTO_FIELD_LINE_(spec) SEP3D::inject_particle_onto_field_line(spec)
 
   define _PIC_GLOBAL_TIME_COUNTER_MODE_ _PIC_MODE_ON_
   define _PIC_SYMMETRY_MODE_ _PIC_SYMMETRY_MODE__AXIAL_
 
-  define _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(acclMiddle,spec,ptr,xMiddle,vMiddle,middleNode) SEP3D::Physics::TotalParticleAcceleration(acclMiddle,spec,ptr,xMiddle,vMiddle,middleNode)
+! define _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(acclMiddle,spec,ptr,xMiddle,vMiddle,middleNode) SEP3D::Physics::TotalParticleAcceleration(acclMiddle,spec,ptr,xMiddle,vMiddle,middleNode)
 
 #endGeneral
 

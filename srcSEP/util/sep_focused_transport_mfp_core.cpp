@@ -378,17 +378,17 @@ FocusedTransportMfpIncrement AdvanceFocusedTransportMfp(
     if (rates0.totalPerS == 0.0 && rates1.totalPerS == 0.0)
       result.diagnostics.ballisticIntervals++;
 
-    if (waveAccumulator) {
-      WaveContribution contribution;
-      contribution.turbulenceStateIdentity =
-          sample0.turbulenceStateIdentity;
-      contribution.signedStreaming = midpointMu * displacement;
-      contribution.intervalS = intervalS;
-      contribution.displacementM = displacement;
-      contribution.eventIndex = result.state.nextEventIndex;
-      contribution.scatteringEventAtEnd = eventOccurs;
-      waveAccumulator->Deposit(contribution);
-    }
+    // Stage the complete interval record locally.  It is deposited only after
+    // the event/no-event branch below succeeds, so a failed Lorentz transform
+    // or invalid next optical-depth draw cannot publish work from a particle
+    // update that the caller must reject transactionally.
+    WaveContribution contribution;
+    contribution.turbulenceStateIdentity = sample0.turbulenceStateIdentity;
+    contribution.signedStreaming = midpointMu * displacement;
+    contribution.intervalS = intervalS;
+    contribution.displacementM = displacement;
+    contribution.eventIndex = result.state.nextEventIndex;
+    contribution.scatteringEventAtEnd = eventOccurs;
 
     elapsedS += intervalS;
     if (eventOccurs) {
@@ -409,6 +409,8 @@ FocusedTransportMfpIncrement AdvanceFocusedTransportMfp(
       const bool plusBranch = random.UniformOpen01() <
           plusAtEvent / totalAtEvent;
       const double branchSign = plusBranch ? 1.0 : -1.0;
+      contribution.resonantBranch = plusBranch ? 1 : -1;
+      contribution.preWaveMomentumKgMPerS = finalMomentum;
       const WaveFrameScatterResult scattered =
           ScatterIsotropicallyInWaveFrame(
               finalSpeed.value, result.state.mu,
@@ -424,6 +426,7 @@ FocusedTransportMfpIncrement AdvanceFocusedTransportMfp(
         result.status = scatteredMomentum.status;
         return result;
       }
+      contribution.postWaveMomentumKgMPerS = scatteredMomentum.value;
       result.state.momentumKgMPerS = scatteredMomentum.value;
       result.state.mu = scattered.mu;
       result.diagnostics.scatteringEvents++;
@@ -452,6 +455,7 @@ FocusedTransportMfpIncrement AdvanceFocusedTransportMfp(
         return result;
       }
     }
+    if (waveAccumulator) waveAccumulator->Deposit(contribution);
   }
   result.status = Status::Ok();
   return result;

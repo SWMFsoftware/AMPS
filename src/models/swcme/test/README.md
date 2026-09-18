@@ -37,6 +37,11 @@ make clean verify
 test/run_tests.py --routine --output-dir test/output/r1 --rebuild
 ```
 
+The parent `make clean` target also removes the R1 executable and generated
+report files while retaining `output/.gitignore`. Run it before packaging the
+canonical model tree; a retained `output/test_swcme_r1` is evidence from a
+local run, not a distributable source file.
+
 From `src/models/swcme/test`, the focused build target is `make r1-smoke`.
 
 To build the bounded executable in parallel and run the current registered

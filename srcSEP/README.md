@@ -7,6 +7,90 @@ providers, SWCME, or an SWMF coupling.  The source also contains the
 self-consistent Alfvén-turbulence subsystem, including integrated and
 wave-number-resolved representations and particle-wave coupling.
 
+## B01 source-distribution baseline
+
+`srcSEP` is distributed as source, documentation, reviewed validation inputs,
+and test scripts only. Its authoritative classification is
+[`SOURCE_MANIFEST.json`](SOURCE_MANIFEST.json). The manifest is enforced by the
+AMPS-level package gate rather than by either SEP application, preserving the
+rule that `srcSEP` and `srcSEP3D` are independent applications.
+
+Run the focused gate with:
+
+```sh
+python3 test/run_tests.py --suite package-hygiene \
+  --output-dir test_output/package-hygiene
+```
+
+The gate rejects retired mover/SWCME sources, native binaries, object and
+archive files, dependency files, Python caches, test-output trees, and AMPS
+runtime binary data. It also runs an isolated negative control that inserts a
+deliberate stale object and verifies that the checker fails. Local ignore rules
+name only generated products; validation JSON/CSV inputs remain visible.
+
+The removed monolithic mover, full-three-dimensional drift/sample sources, and
+application-local SWCME examples were not production objects. Their active
+responsibilities are owned respectively by the three canonical field-line
+movers, field-line sampling/output, `srcSEP3D`, and `src/models/swcme`. See
+`MIGRATION_MANIFEST.md` for symbol-level mappings.
+
+## B02 canonical SEP-common dependency
+
+The seven provider-neutral kernels have exactly one source and binary owner:
+`AMPS/src/models/sep_common`.  No corresponding `.h` or `.cpp` file remains
+under `srcSEP/util`. Public srcSEP headers route the canonical names through
+`util/sep_common_header_path.h`. In an installed AMPS tree it prefers
+`src/models/sep_common/<header>` through the standard `-I$(AMPS_ROOT)`, which
+also prevents a stale short-name header from winning by include order. A
+detached component build falls back to the public short name supplied by
+`-I$(SEP_COMMON_DIR)`. This is a path resolver, not a forwarding copy; both
+branches open the same canonical file and the canonical archive remains the
+only binary owner.
+
+The fallback is necessary because `sep.h` is included transitively through
+`pic.h` while AMPS compiles libraries such as meshAMR. Variables appended by
+`build/main/makefile` apply to that child build only and cannot modify a sibling
+submake's already-generated compile command. The global AMPS-root include is
+part of those commands, so the resolver makes source `srcSEP/sep.h` and copied
+`build/main/sep.h` behave identically without modifying `Makefile.conf` or
+installing duplicate shared headers.
+
+The same constraint applies to production translation units compiled by the
+generic AMPS object rule. Files such as `field_line.cpp`, `diffusion.cpp`, the
+private SWCME adapter, and the linked validation cases therefore include
+`sep_common_header_path.h` and request each canonical header through
+`SRCSEP_SEP_COMMON_HEADER(...)`. A bare `#include "sep_species_source.h"` can
+work in a focused local build yet fail after the application is copied to
+`build/main`, because the earlier child make cannot add its private include
+variables to that later command. Test-only translation units retain short
+includes intentionally and receive `-I$(SEP_COMMON_DIR)` explicitly.
+
+`srcSEP/makefile` resolves `SEP_COMMON_DIR` from `AMPS_ROOT`, builds
+`sep_common.a`, and inserts the seven canonical objects into `mainlib.a`.
+Inserting objects preserves AMPS's existing application-archive link contract;
+the archive audit then requires each member exactly once and rejects duplicate
+strong symbols.  The same active-makefile algorithm works both at
+`AMPS/srcSEP/makefile` and after AMPS copies the application to
+`AMPS/build/main/makefile`.  An override is supported only for a deliberately
+detached component checkout.
+
+The focused ownership gate is:
+
+```sh
+make test-sep-common-ownership-unit
+```
+
+It rejects local copies and ad hoc path-qualified shared includes, verifies all
+canonical sources, rebuilds and audits exact archive membership, links a real
+consumer through that archive, and reproduces both installed makefile layouts
+from an unrelated working directory. It also rejects bare shared-header
+includes in production `.cpp` files, compiles public and production-source
+header surfaces with only `-I$(AMPS_ROOT)`, and repeats the public-header probe
+from a synthetic copied `build/main` layout. This directly covers both the
+meshAMR/PIC include context and the `field_line.cpp` failure mode.
+Dependency-light physics tests compile the same canonical sources with their
+sanitizer/debug flags; they do not keep test-only copies.
+
 ## Canonical SWCME dependency
 
 SWCME is not stored or built beneath this application. Its single source and
@@ -41,9 +125,12 @@ make test-swcme-relocation-unit
 
 It reproduces both source and copied-build layouts, compiles both the
 provider-neutral adapter API and the canonical-header implementation, and
-rejects application-local SWCME sources, wrappers, or include paths.
+rejects application-local SWCME sources, wrappers, public-header copies,
+implementation namespaces, or path-qualified includes. It also rebuilds and
+audits the one-member canonical archive before compiling the private adapter.
 `make strict-production` delegates to the enclosing `make amps` build and then
-audits `AMPS/build/main/mainlib.a` to require exactly one `swcme3d.o` member.
+audits `AMPS/build/main/mainlib.a` to require exactly one member for every
+SEP-common kernel and exactly one `swcme3d.o`, with no duplicate strong symbol.
 
 This source includes the Step 1 selectable standalone component-test registry,
 the Step 2 immutable background/clock boundary, the Step 3 common SI flux-tube
@@ -213,6 +300,24 @@ level governance. See
 why/what/how contract and
 [WP31_WP41_VALIDATION_REPORT.md](WP31_WP41_VALIDATION_REPORT.md) for executed
 versus blocked evidence.
+
+B05 classifies every WP42–WP64 item before it can affect the production build.
+The authoritative, machine-readable decision record is
+[WP42_WP64_DISPOSITION.json](WP42_WP64_DISPOSITION.json): WP42–WP58 and
+WP61–WP62 are dependency-light experimental component APIs, while WP59, WP60,
+WP63, and WP64 are native/external evidence gates. The four experimental
+implementation files compile and run under strict warnings and sanitizers, but
+are deliberately absent from `MAINLIBOBJ`; therefore their focused tests are
+not evidence that a production mover calls them. Two supporting contracts were
+accepted into active code because existing production paths consume them:
+`ParkerMeasure` names the phase-space measure used by Parker transport, and an
+event-driven wave contribution now carries the actual resonant branch and
+pre/post-event particle momenta rather than reconstructing them from limiter
+shell endpoints. See
+[WP42_WP64_IMPLEMENTATION.md](WP42_WP64_IMPLEMENTATION.md) for algorithms and
+promotion criteria and
+[WP42_WP64_VALIDATION_REPORT.md](WP42_WP64_VALIDATION_REPORT.md) for the exact
+evidence boundary.
 
 All three movers obtain coefficients through one registry. Canonical CLI names
 select coefficient authority (`prescribed`, `self-consistent`, `swmf`), spatial
@@ -458,6 +563,18 @@ aggregate JSON/JUnit and final TOTAL/PASS/FAIL/SKIP/ERROR summary cover the
 whole discovered portfolio; per-ID evidence is retained under
 `individual/<ID>/`.
 
+Make-backed `--suite` selections use the same evidence model. Each receives a
+stable `SUITE-*` record containing the exact command, start/end time, duration,
+return code, and bounded output excerpt even if compilation fails before a C++
+registry can start. Child registry reports are merged with those outer records.
+Timeouts, missing launchers, and signals are `ERROR`; ordinary nonzero suite
+exits are `FAIL`. A suite may request `SKIP` either by exiting 77 when invoked
+directly or by emitting the exact `SRCSEP_SUITE_RESULT=SKIP` marker and exiting
+successfully through Make, which does not preserve recipe status 77.
+Fail-fast-blocked later suites are also `SKIP`. JSON, JUnit, terminal counts,
+`run_manifest.json`, and the process exit code are all derived from the merged records with precedence
+`ERROR (2) > FAIL (1) > PASS/SKIP (0)`.
+
 The terminal summary ends with separate `Failed tests (N)` and `Error tests
 (N)` lists. Each entry contains the test ID and its normalized diagnostic, so
 the cases requiring attention remain visible without searching the complete
@@ -532,6 +649,8 @@ make test-turbulence-core-unit
 make test-reproducibility-unit
 make test-wp21-wp30-unit
 make test-wp31-wp41-unit
+make test-wp42-wp64-experimental
+make test-wp59-wp64-native
 make test-python-runner-unit
 make print-configuration-matrix
 make test-acceptance-unit
@@ -556,7 +675,8 @@ field-line-only source boundary, common transport kernels, Parker solver, and
 coefficient-driven focused-transport solver, event-driven MFP solver, and
 coefficient registry, authoritative turbulence driver, reproducible reduction,
 reportable acceptance fixtures, and the cleaned public/source inventory. The
-Step 6–14 and WP31–WP41 numerical targets use strict C++11 warnings plus AddressSanitizer and
+Step 6–14, WP31–WP41, and the explicitly experimental WP42–WP64 component
+targets use strict C++11 warnings plus AddressSanitizer and
 UndefinedBehaviorSanitizer. The Step 15 numerical runner uses the same C++11
 checks; its real SWCME replay uses C++17 because that is SWCME's public API
 baseline. The remaining targets intentionally invoke the linked production CLI
@@ -605,3 +725,12 @@ remain BLOCKED until their named executable, data, or hardware baselines are
 supplied. Documentation uses these evidence levels: `analytical-core`,
 `source-integration`, `native-amps`, `swmf-replay`, and
 `observational-validation`.
+
+WP42–WP64 remain governed by the B05 disposition record. Passing
+`test-wp42-wp64-experimental` proves the isolated algorithms and contracts
+compile and behave as specified; it does not promote the four extension source
+files into `mainlib.a` and does not establish native traversal. WP59, WP60,
+WP63, and WP64 report `SKIP` until a reviewed native AMPS/SWMF, external-data,
+or scaling command is supplied through `SRCSEP_NATIVE_GATE`. Promotion
+requires an explicit production selector/call path, restart compatibility,
+native observations, and a disposition update reviewed with the build manifest.

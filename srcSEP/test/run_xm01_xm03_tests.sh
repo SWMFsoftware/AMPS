@@ -10,6 +10,7 @@ mkdir -p "$out"
 export PYTHONPYCACHEPREFIX="$out/pycache"
 
 g++ -std=c++11 -Wall -Wextra -Wpedantic -Werror \
+  -I"$root/../src/models/sep_common" \
   -c "$root/validation/cases/cross_model_validation_models.cpp" \
   -o "$out/cross_model_validation_models.o"
 
@@ -18,11 +19,12 @@ g++ -std=c++11 -Wall -Wextra -Wpedantic -Werror \
 # regressions even on a workstation where the complete AMPS link is absent;
 # scientific evidence still requires SEP_EXECUTABLE in the block below.
 g++ -std=c++11 -Wall -Wextra -Wpedantic -Werror \
+  -I"$root/../src/models/sep_common" \
   -DSRCSEP_CROSS_MODEL_STANDALONE_TEST_HARNESS \
   "$root/validation/cases/cross_model_validation_models.cpp" \
   "$root/util/sep_focused_transport_core.cpp" \
   "$root/util/sep_parker_core.cpp" \
-  "$root/util/sep_transport_common.cpp" \
+  "$root/../src/models/sep_common/sep_transport_common.cpp" \
   -o "$out/xm_native_harness"
 "$out/xm_native_harness" XM02 "$out/XM02_native_model.csv" \
   --injection-radius-solar-radii 2.5 --observer-radius-au 1.0 \

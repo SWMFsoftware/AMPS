@@ -2,8 +2,9 @@
 #define _SEP_FLUX_TUBE_GEOMETRY_CORE_H_
 
 #include "sep_physical_units.h"
+#include "sep_common_header_path.h"
 
-#include "sep_transport_common.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_transport_common.h)
 
 #include <cstdint>
 #include <string>

@@ -4,9 +4,10 @@
 // does not add srcSEP/util as a flat include directory for nested validation
 // sources. Keeping these paths local also makes the focused compile gate match
 // the production build that previously exposed this integration error.
+#include "../../util/sep_common_header_path.h"
 #include "../../util/sep_focused_transport_core.h"
 #include "../../util/sep_parker_core.h"
-#include "../../util/sep_transport_common.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_transport_common.h)
 
 #include <algorithm>
 #include <cerrno>

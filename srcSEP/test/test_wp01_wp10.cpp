@@ -1,8 +1,8 @@
-#include "../util/sep_background_snapshot.h"
+#include "sep_background_snapshot.h"
 #include "../util/sep_focused_transport_core.h"
 #include "../util/sep_focused_transport_mfp_core.h"
 #include "../util/sep_reproducible_reduction.h"
-#include "../util/sep_transport_common.h"
+#include "sep_transport_common.h"
 
 #include <cmath>
 #include <iostream>

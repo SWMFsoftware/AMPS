@@ -1,7 +1,8 @@
 #ifndef SEP_UTIL_SEP_POPULATION_CONTROL_H
 #define SEP_UTIL_SEP_POPULATION_CONTROL_H
 
-#include "sep_transport_common.h"
+#include "sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_transport_common.h)
 
 #include <cstdint>
 #include <string>

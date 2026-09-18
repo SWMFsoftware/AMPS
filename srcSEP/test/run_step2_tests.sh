@@ -12,7 +12,8 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 cxx=${CXX:-c++}
 "$cxx" -std=c++11 -Wall -Wextra -Werror -pthread \
-  "$source_root/util/sep_background_snapshot.cpp" \
+  -I"$source_root/../src/models/sep_common" \
+  "$source_root/../src/models/sep_common/sep_background_snapshot.cpp" \
   "$script_dir/step2/test_background_snapshot.cpp" \
   -o "$build_dir/test_background_snapshot"
 

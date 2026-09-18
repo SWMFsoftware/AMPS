@@ -40,6 +40,18 @@ struct ScalarResult {
   double value = 0.0;
 };
 
+// The transported scalar carried by a Parker-equation Monte Carlo walker must
+// name its measure.  If q=A*n is density per field-line arc length, tube-area
+// expansion is applied only when converting q back to physical volume density.
+// If the walker directly represents n per volume, the Itô spatial drift also
+// contains kappa_parallel*d(ln A)/ds.  Keeping this enum in sep_common gives
+// both SEP applications one convention and prevents an application extension
+// from silently adding or omitting the geometric term.
+enum class ParkerMeasure {
+  PerArcLength,
+  PerVolume
+};
+
 // Minimal state shared by all field-line movers.  coordinate is the host field
 // line coordinate (not assumed to be arc length); the PIC-facing adapter is the
 // only layer allowed to translate a physical displacement in metres into this

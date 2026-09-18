@@ -10,13 +10,13 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 ${CXX:-c++} -std=c++11 -O1 -Wall -Wextra -Wpedantic -Werror \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
-  -I"$src_root/util" \
-  "$src_root/util/sep_transport_common.cpp" \
-  "$src_root/util/sep_coefficient_physics.cpp" \
-  "$src_root/util/sep_coefficient_registry.cpp" \
+  -I"$src_root/util" -I"$src_root/../src/models/sep_common" \
+  "$src_root/../src/models/sep_common/sep_transport_common.cpp" \
+  "$src_root/../src/models/sep_common/sep_coefficient_physics.cpp" \
+  "$src_root/../src/models/sep_common/sep_coefficient_registry.cpp" \
   "$src_root/util/sep_production_mover.cpp" \
   "$src_root/util/sep_turbulence_core.cpp" \
-  "$src_root/util/sep_injection_spectrum.cpp" \
+  "$src_root/../src/models/sep_common/sep_injection_spectrum.cpp" \
   "$src_root/util/sep_shock_source_core.cpp" \
   "$src_root/util/sep_flux_tube_geometry_core.cpp" \
   "$src_root/util/sep_sampling_products.cpp" \

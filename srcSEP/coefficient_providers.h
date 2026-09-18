@@ -3,7 +3,8 @@
 
 #include "transport_common.h"
 
-#include "util/sep_coefficient_registry.h"
+#include "util/sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_coefficient_registry.h)
 
 #include <cstdint>
 #include <string>

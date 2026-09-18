@@ -1,6 +1,7 @@
 #include "swcme1d_adapter.h"
 
-#include "../util/sep_background_snapshot.h"
+#include "../util/sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_background_snapshot.h)
 
 // The makefile's adapter-only rule supplies AMPS/src/models/swcme as an
 // include root.  This is the sole srcSEP production translation unit that
