@@ -138,6 +138,22 @@ Core::Status PrescribedKolmogorovProvider::Prepare(double epochS) {
   return Core::Status::OK();
 }
 
+Core::Status PrescribedKolmogorovProvider::PrepareGeneration(
+    double epochS, std::uint64_t generation) {
+  const Core::Status valid = Validate();
+  if (!valid.ok()) return valid;
+  if (!std::isfinite(epochS) || generation == 0)
+    return Invalid("restored turbulence epoch or generation is invalid");
+  TurbulenceMetadata candidate = metadata_;
+  candidate.epochS = epochS;
+  candidate.validFromS = epochS;
+  candidate.validUntilS = epochS + configuration_.validityCadenceS;
+  candidate.generation = generation;
+  metadata_ = candidate;
+  prepared_ = true;
+  return Core::Status::OK();
+}
+
 const TurbulenceMetadata*
 PrescribedKolmogorovProvider::PreparedMetadata() const {
   return prepared_ ? &metadata_ : nullptr;
@@ -411,6 +427,76 @@ double NormalizedPowerLawSpectrum::AnalyticBandVarianceT2() const {
   return normalization_ / exponent *
       (std::pow(kMaxPerM_, exponent) -
        std::pow(kMinPerM_, exponent));
+}
+
+LocalScatteringCoefficients EvaluateLocalScattering(
+    const TurbulenceSample& turbulence,
+    const Background::BackgroundSample& background,
+    const Core::Vec3& positionM,
+    int modelSpecies,
+    double speciesMassKg,
+    double signedChargeC,
+    double momentumKgMPerS,
+    double mu) {
+  namespace CP = SEP::Transport::CoefficientPhysics;
+  LocalScatteringCoefficients result;
+  result.turbulenceGeneration = turbulence.generation;
+  if (modelSpecies < 0 || !FinitePositive(speciesMassKg) ||
+      !std::isfinite(signedChargeC) || signedChargeC == 0.0 ||
+      !std::isfinite(momentumKgMPerS) || momentumKgMPerS < 0.0 ||
+      !std::isfinite(mu) || mu < -1.0 || mu > 1.0 ||
+      !FinitePositive(positionM.Norm())) {
+    result.status = Invalid("local scattering particle input is invalid");
+    return result;
+  }
+  const double mc = speciesMassKg * Core::Const::c;
+  const double speed = Core::Const::c * momentumKgMPerS /
+      std::sqrt(momentumKgMPerS * momentumKgMPerS + mc * mc);
+  CP::SpeciesProperties species;
+  species.modelSpecies = modelSpecies;
+  species.name = "AMPS-species-" + std::to_string(modelSpecies);
+  species.signedChargeC = signedChargeC;
+  species.restMassKg = speciesMassKg;
+  species.nucleonCount = speciesMassKg / Core::Const::m_p;
+  CP::SpectrumParameters spectrum;
+  spectrum.referenceRadiusM = positionM.Norm();
+  spectrum.kMinAtReferencePerM = turbulence.kMinPerM;
+  spectrum.kMaxAtReferencePerM = turbulence.kMaxPerM;
+  spectrum.kMinRadialExponent = 0.0;
+  spectrum.kMaxRadialExponent = 0.0;
+  spectrum.spectralIndex = turbulence.spectralIndex;
+  const CP::PitchAngleResult pitch = CoefficientBridge::JokipiiDmumu(
+      turbulence, background, positionM.Norm(), spectrum, species, speed, mu);
+  if (!pitch.status.ok()) {
+    result.status = Invalid("shared D_mumu evaluation failed: " +
+                            pitch.status.message);
+    return result;
+  }
+  result.dMuMuPerS = pitch.dMuMuPerS;
+  result.dDmuMuDmuPerS = pitch.dDmuMuDmuPerS;
+
+  const auto local = CoefficientBridge::ToSharedInput(
+      turbulence, background, positionM.Norm());
+  const CP::MeanFreePathResult meanFreePath =
+      CP::EvaluateCorrelationMeanFreePath(
+          local, species, momentumKgMPerS,
+          turbulence.parallelCorrelationLengthM, positionM.Norm());
+  if (!meanFreePath.status.ok()) {
+    result.status = Invalid("shared mean-free-path evaluation failed: " +
+                            meanFreePath.status.message);
+    return result;
+  }
+  const SEP::Transport::ScalarResult kappa =
+      CoefficientBridge::KappaFromMeanFreePath(
+          meanFreePath.lambdaParallelM, speed);
+  if (!kappa.status.ok()) {
+    result.status = Invalid("shared kappa evaluation failed: " +
+                            kappa.status.message);
+    return result;
+  }
+  result.kappaParallelM2PerS = kappa.value;
+  result.status = Core::Status::OK();
+  return result;
 }
 
 SEP::Transport::CoefficientPhysics::LocalInputView

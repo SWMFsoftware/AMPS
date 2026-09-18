@@ -101,6 +101,26 @@ thread identifier. One normal draw always consumes two counters. Consequently:
 `RNG3D01–03` exercise worker partitioning, reversed particle order, and an
 otherwise unused future-physics stream bit-for-bit.
 
+## R02 complete requested-time orchestration
+
+The core routines above advance one accepted numerical substep. The AMPS
+contract, however, requests a complete interval. `AdvanceParticleRequestedTime`
+holds the accepted particle state and consumed time and repeatedly invokes a
+resolver before selecting the next substep. The resolver is therefore evaluated
+at the new AMR cell, momentum, and pitch after every accepted move. Snapshot
+validity time is reduced by elapsed time, and an expanding shock is evaluated
+at `R_start + V_shock * elapsed`.
+
+The final roundoff tolerance is
+`64 * epsilon * max(1 s, requested_dt)`. It may close only a subtraction
+residue; it never skips a physical minimum step. A semantic terminal state
+returns the accepted prefix and exact consumed time. Resolver failure,
+non-positive progress, time overshoot, or the configured substep cap becomes a
+hard failed disposition. An active return guarantees
+`consumedTimeS == requestedDtS` and carries the final local background used to
+reconstruct AMPS Cartesian velocity. `R3D02` verifies multiple accepted
+substeps, one re-resolution per substep, and exact full-time consumption.
+
 ## Deliberately unavailable physics
 
 Both cores require perpendicular diffusion and explicit drift velocity to be

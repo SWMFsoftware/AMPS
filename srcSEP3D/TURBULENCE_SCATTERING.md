@@ -107,6 +107,14 @@ prevents `main_lib.cpp` from acquiring a transitive include dependency that
 historic AMPS `Makefile.conf` rules omit when compiling the copied
 `AMPS/build/main` application.
 
+`EvaluateLocalScattering` is the AMPS-independent R02 entry point used by the
+production resolver. At every accepted particle substep it combines the
+currently pinned turbulence sample, background, species mass/charge, momentum,
+and pitch cosine, then delegates to `CoefficientBridge`. It returns
+`kappa_parallel`, `D_mumu`, and `dD_mumu/dmu` in one validated record. This is
+why cell crossing during one AMPS call cannot reuse coefficients from the
+starting cell.
+
 ## Production storage
 
 Prescribed turbulence is evaluated for every owner-local physical cell during
@@ -114,6 +122,12 @@ Prescribed turbulence is evaluated for every owner-local physical cell during
 fingerprinted configuration and background. When SWMF turbulence authority is
 selected, the host must install a loaded `AwsomTurbulenceProvider`; the two
 directional magnetic variances are stored at the optional Phase-M wave offset.
+
+R03 prepares a candidate turbulence provider together with the candidate
+background generation. Both are evaluated at all owner-local cells and become
+active only after collective readiness. `PrescribedKolmogorovProvider` can be
+re-based to an R07 saved generation so the first post-restart snapshot and
+future coefficient provenance match an uninterrupted run.
 
 Self-consistent 3-D turbulence remains reserved. Enabling it fails during
 `RunConfiguration3D::Create`; it will not become a no-op or alias for the

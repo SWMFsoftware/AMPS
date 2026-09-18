@@ -186,6 +186,9 @@ MoverResult AdvanceParticle(const MoverInput& input) {
   key.step = particle.completedStep;
   key.substep = particle.substep;
   const double dtS = result.selectedStep.valueS;
+  result.consumedTimeS = dtS;
+  result.acceptedSubsteps = 1;
+  result.finalLocal = input.local;
   if (input.model == RuntimeModel::TransportModel::Parker3D) {
     key.purpose = Transport::RandomPurpose::ParkerParallel;
     Transport::KeyedRandomStream random(key);
@@ -256,6 +259,102 @@ MoverResult AdvanceParticle(const MoverInput& input) {
   result.disposition = ParticleDisposition::Active;
   result.status = Core::Status::OK();
   return result;
+}
+
+MoverResult AdvanceParticleRequestedTime(const RequestedTimeAdvance& request) {
+  const MoverInput& original = request.input;
+  if (request.resolveLocal == nullptr || request.maximumSubsteps == 0) {
+    return Failed(original, Invalid(
+        "complete mover request requires a resolver and positive substep cap"));
+  }
+  if (!std::isfinite(original.requestedDtS) || original.requestedDtS <= 0.0) {
+    return Failed(original, Invalid(
+        "complete mover requested time must be finite and positive"));
+  }
+
+  // The tolerance is relative to the requested interval, but has an absolute
+  // floor near one second.  It is used only to absorb subtraction roundoff;
+  // it is never used to skip a physically meaningful minimum substep.
+  const double toleranceS = 64.0 * std::numeric_limits<double>::epsilon() *
+      std::max(1.0, original.requestedDtS);
+  double consumedS = 0.0;
+  ParticleRecord current = original.particle;
+  MoverResult aggregate;
+  aggregate.particle = current;
+  aggregate.disposition = ParticleDisposition::Active;
+  aggregate.status = Core::Status::OK();
+
+  for (std::uint64_t accepted = 0; accepted < request.maximumSubsteps;
+       ++accepted) {
+    double remainingS = original.requestedDtS - consumedS;
+    if (remainingS <= toleranceS) {
+      // Make the public accounting exact after proving that only roundoff is
+      // left.  This avoids restart drift caused by repeatedly carrying a
+      // 1-ulp residue into the next global step.
+      aggregate.consumedTimeS = original.requestedDtS;
+      aggregate.particle = current;
+      aggregate.disposition = ParticleDisposition::Active;
+      aggregate.status = Core::Status::OK();
+      return aggregate;
+    }
+
+    MoverInput substep = original;
+    substep.particle = current;
+    substep.requestedDtS = remainingS;
+    if (substep.shock.active) {
+      substep.shock.radiusAtStepStartM =
+          original.shock.radiusAtStepStartM +
+          original.shock.radialSpeedMPerS * consumedS;
+    }
+    Core::Status resolved = request.resolveLocal(
+        current, consumedS, request.resolverContext, &substep.local);
+    if (!resolved.ok()) {
+      aggregate.status = resolved;
+      aggregate.disposition = ParticleDisposition::Failed;
+      aggregate.particle = current;
+      aggregate.consumedTimeS = consumedS;
+      return aggregate;
+    }
+
+    MoverResult moved = AdvanceParticle(substep);
+    if (!std::isfinite(moved.consumedTimeS) || moved.consumedTimeS <= 0.0 ||
+        moved.consumedTimeS > remainingS + toleranceS) {
+      aggregate.status = Core::Status(
+          Core::StatusCode::StepUnderflow,
+          "accepted transport substep made no valid progress");
+      aggregate.disposition = ParticleDisposition::Failed;
+      aggregate.particle = current;
+      aggregate.consumedTimeS = consumedS;
+      return aggregate;
+    }
+
+    consumedS += moved.consumedTimeS;
+    current = moved.particle;
+    aggregate.selectedStep = moved.selectedStep;
+    aggregate.finalLocal = moved.finalLocal;
+    ++aggregate.acceptedSubsteps;
+    if (moved.shockIntersection.crossed &&
+        !aggregate.shockIntersection.crossed) {
+      aggregate.shockIntersection = moved.shockIntersection;
+    }
+
+    if (!moved.status.ok() ||
+        moved.disposition != ParticleDisposition::Active) {
+      aggregate.status = moved.status;
+      aggregate.disposition = moved.disposition;
+      aggregate.particle = current;
+      aggregate.consumedTimeS = consumedS;
+      return aggregate;
+    }
+  }
+
+  aggregate.status = Core::Status(
+      Core::StatusCode::StepUnderflow,
+      "transport substep cap reached before requested time was consumed");
+  aggregate.disposition = ParticleDisposition::Failed;
+  aggregate.particle = current;
+  aggregate.consumedTimeS = consumedS;
+  return aggregate;
 }
 
 }  // namespace Adapters

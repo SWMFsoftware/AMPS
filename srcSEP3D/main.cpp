@@ -12,6 +12,7 @@
 // ============================================================================
 
 #include "SEP3D.h"
+#include "output/output_coordinator.h"
 #include "runtime/configuration_io.h"
 
 #include <cstdio>
@@ -61,6 +62,35 @@ int main(int argc, char** argv) {
     std::cerr << "srcSEP3D standalone configuration failed: "
               << status.message << '\n';
     return EXIT_FAILURE;
+  }
+
+  if (!request.configuration->options().restartInputPath.empty()) {
+    SEP3D::Output::RestartLoadOptions load;
+    load.expectedConfigurationFingerprint =
+        request.configuration->physics_fingerprint();
+    load.expectedResolvedConfigurationManifest =
+        request.configuration->resolved_manifest();
+    load.expectedStorageLayoutFingerprint =
+        request.configuration->storage_layout().fingerprint;
+    load.expectedCodeIdentity = "srcSEP3D-R01-R07";
+    // Snapshot identity is read from the checkpoint.  Analytic state is
+    // rebuilt at that exact epoch/generation below; coupled state must be
+    // supplied by its host before initialization.
+    load.missingSnapshot = SEP3D::Output::MissingSnapshotPolicy::Wait;
+    load.waitTimeoutMilliseconds = 0;
+    load.snapshotAvailable = [](std::uint64_t) { return true; };
+    load.repartition =
+        SEP3D::Output::RepartitionPolicy::DeterministicByStableId;
+    SEP3D::Output::RestartState restored;
+    status = SEP3D::Output::RestoreRestartBeforeMesh(
+        &SEP3D::ApplicationRuntime(),
+        request.configuration->options().restartInputPath, load, &restored);
+    if (status.ok()) status = SEP3D::InstallRestartState(restored);
+    if (!status.ok()) {
+      std::cerr << "srcSEP3D restart validation failed: "
+                << status.message << '\n';
+      return EXIT_FAILURE;
+    }
   }
 
   amps_init_mesh();

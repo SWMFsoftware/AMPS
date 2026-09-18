@@ -52,6 +52,11 @@ struct VirtualSpacecraftDefinition {
   Core::Vec3 positionM;
   double collectionRadiusM = 0.0;
   std::vector<double> kineticEnergyEdgesJ;
+  std::vector<int> acceptedSpecies;
+  double minimumMu = -1.0;
+  double maximumMu = 1.0;
+  std::string observerKind = "fixed-cartesian";
+  std::string normalization = "differential-intensity";
 };
 
 struct VirtualSpacecraftProduct {
@@ -59,7 +64,13 @@ struct VirtualSpacecraftProduct {
   int species = -1;
   std::vector<double> kineticEnergyEdgesJ;
   std::vector<double> representedParticlesPerJ;
+  // Sum-of-weight-squared propagation.  The square root is the Monte-Carlo
+  // standard uncertainty in the same differential units as the spectrum.
+  std::vector<double> standardUncertaintyPerJ;
   double dipoleAnisotropy = 0.0;  // 3 * sum(w mu) / sum(w)
+  std::string observerKind;
+  std::string normalization;
+  std::uint64_t acceptedMacroparticles = 0;
 };
 
 struct FieldLineProjectionDefinition {
@@ -91,6 +102,11 @@ struct ShockDiagnostic {
 struct SamplingState {
   std::uint64_t completedSamplings = 0;
   std::uint64_t observationsProcessed = 0;
+  // Pending-window summaries are checkpointed even before publication.  They
+  // let restart validation detect a lost or duplicated observer window.
+  std::uint64_t pendingWindows = 0;
+  std::uint64_t pendingObservations = 0;
+  double pendingRepresentedParticles = 0.0;
 };
 
 struct SamplingSnapshot {

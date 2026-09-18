@@ -57,6 +57,12 @@ bool ValidEdges(const std::vector<double>& edges) {
   return true;
 }
 
+bool AcceptsSpecies(const VirtualSpacecraftDefinition& craft, int species) {
+  return craft.acceptedSpecies.empty() ||
+      std::find(craft.acceptedSpecies.begin(), craft.acceptedSpecies.end(),
+                species) != craft.acceptedSpecies.end();
+}
+
 std::size_t Bin(const std::vector<double>& edges, double value) {
   if (value < edges.front() || value > edges.back()) return edges.size();
   if (value == edges.back()) return edges.size() - 2;
@@ -81,7 +87,11 @@ SamplingSnapshot Sample(const SamplingRequest& request) {
     if (craft.name.empty() || !Finite(craft.positionM) ||
         !std::isfinite(craft.collectionRadiusM) ||
         craft.collectionRadiusM <= 0.0 ||
-        !ValidEdges(craft.kineticEnergyEdgesJ)) {
+        !ValidEdges(craft.kineticEnergyEdgesJ) ||
+        !std::isfinite(craft.minimumMu) || !std::isfinite(craft.maximumMu) ||
+        craft.minimumMu < -1.0 || craft.maximumMu > 1.0 ||
+        craft.maximumMu <= craft.minimumMu || craft.observerKind.empty() ||
+        craft.normalization.empty()) {
       result.status = Invalid("virtual-spacecraft definition is invalid");
       return result;
     }
@@ -158,32 +168,54 @@ SamplingSnapshot Sample(const SamplingRequest& request) {
   }
 
   for (const VirtualSpacecraftDefinition& craft : request.spacecraft) {
-    std::map<int, std::pair<std::vector<Sum>, std::pair<Sum, Sum>>> bySpecies;
+    struct CraftAcc {
+      std::vector<Sum> weight;
+      std::vector<Sum> weightSquared;
+      Sum totalWeight;
+      Sum weightedMu;
+      std::uint64_t macroCount = 0;
+    };
+    std::map<int, CraftAcc> bySpecies;
     for (const ParticleObservation& particle : particles) {
       if ((particle.positionM - craft.positionM).Norm() >
-          craft.collectionRadiusM) continue;
+          craft.collectionRadiusM || !AcceptsSpecies(craft, particle.species) ||
+          particle.mu < craft.minimumMu || particle.mu > craft.maximumMu)
+        continue;
       const double energy = KineticEnergy(
           particle.momentumKgMPerS, particle.restMassKg);
       const std::size_t bin = Bin(craft.kineticEnergyEdgesJ, energy);
       if (bin >= craft.kineticEnergyEdgesJ.size() - 1) continue;
       auto& acc = bySpecies[particle.species];
-      if (acc.first.empty()) acc.first.resize(craft.kineticEnergyEdgesJ.size() - 1);
-      acc.first[bin].Add(particle.statisticalWeight);
-      acc.second.first.Add(particle.statisticalWeight);
-      acc.second.second.Add(particle.statisticalWeight * particle.mu);
+      if (acc.weight.empty()) {
+        acc.weight.resize(craft.kineticEnergyEdgesJ.size() - 1);
+        acc.weightSquared.resize(craft.kineticEnergyEdgesJ.size() - 1);
+      }
+      acc.weight[bin].Add(particle.statisticalWeight);
+      acc.weightSquared[bin].Add(
+          particle.statisticalWeight * particle.statisticalWeight);
+      acc.totalWeight.Add(particle.statisticalWeight);
+      acc.weightedMu.Add(particle.statisticalWeight * particle.mu);
+      ++acc.macroCount;
     }
     for (const auto& item : bySpecies) {
       VirtualSpacecraftProduct product;
       product.name = craft.name; product.species = item.first;
       product.kineticEnergyEdgesJ = craft.kineticEnergyEdgesJ;
-      for (std::size_t i = 0; i < item.second.first.size(); ++i)
+      product.observerKind = craft.observerKind;
+      product.normalization = craft.normalization;
+      product.acceptedMacroparticles = item.second.macroCount;
+      for (std::size_t i = 0; i < item.second.weight.size(); ++i) {
+        const double width = craft.kineticEnergyEdgesJ[i + 1] -
+            craft.kineticEnergyEdgesJ[i];
         product.representedParticlesPerJ.push_back(
-            item.second.first[i].Value() /
-            (craft.kineticEnergyEdgesJ[i + 1] -
-             craft.kineticEnergyEdgesJ[i]));
-      product.dipoleAnisotropy = item.second.second.first.Value() == 0.0 ? 0.0
-          : 3.0 * item.second.second.second.Value() /
-                item.second.second.first.Value();
+            item.second.weight[i].Value() / width);
+        product.standardUncertaintyPerJ.push_back(
+            std::sqrt(std::max(0.0,
+                item.second.weightSquared[i].Value())) / width);
+      }
+      product.dipoleAnisotropy = item.second.totalWeight.Value() == 0.0 ? 0.0
+          : 3.0 * item.second.weightedMu.Value() /
+                item.second.totalWeight.Value();
       result.spacecraft.push_back(product);
     }
   }
@@ -230,6 +262,9 @@ SamplingSnapshot Sample(const SamplingRequest& request) {
   result.nextState = request.previousState;
   ++result.nextState.completedSamplings;
   result.nextState.observationsProcessed += particles.size();
+  result.nextState.pendingWindows = 0;
+  result.nextState.pendingObservations = 0;
+  result.nextState.pendingRepresentedParticles = 0.0;
   result.status = Core::Status::OK();
   return result;
 }

@@ -47,6 +47,20 @@ and reports the dipole anisotropy `3<mu>`. A field-line projection computes
 particles per metre. Every bin edge is strict, finite, and increasing; the
 rightmost edge belongs to the final bin.
 
+R06 resolves each configured observer at the authoritative post-step time.
+Fixed Cartesian/heliographic, moving Cartesian, spherical-shell, and
+host-updated field-connected locations share the same immutable sampling
+definition. Species and pitch-angle acceptance are applied before logarithmic
+energy binning. Each spectrum retains represented weight, squared-weight sum,
+accepted macro count, declared normalization, and the standard uncertainty
+derived from the squared weights.
+
+Production gathers complete particle/cell records to root and lets `Sample()`
+perform the stable-ID ordering; it does not reduce rank-local floating sums.
+`ObserverRuntime` uses capture/prepare/commit phases. A failed staging write
+leaves the pending observation window intact and only a successful atomic
+publication clears its counters.
+
 Shock diagnostics are copied only from closed ledger rows. Thus injected,
 escaped, absorbed, failed, and crossing counts have the same conservation
 authority as the mover rather than being inferred later from floating output.
@@ -80,22 +94,25 @@ There is no second static modulo counter that can drift after restart.
 
 The restart file is not a memory dump. It contains:
 
-1. eight-byte magic `SEP3DR01`;
+1. eight-byte magic `SEP3DR02`;
 2. little-endian payload length;
 3. versioned payload;
 4. FNV-1a checksum of the exact payload bytes.
 
-The payload serializes:
+Schema 2 serializes:
 
-- configuration, code, and snapshot fingerprints;
-- completed-step, output-cadence, output-sequence, and checkpoint counters;
-- background, turbulence, and source generations;
+- physics fingerprint, resolved configuration manifest, code identity,
+  storage-layout fingerprint, snapshot fingerprint, and saved MPI rank count;
+- authoritative current tick, completed steps, output/checkpoint counters, the
+  base time step, and every persisted next-event tick;
+- complete active snapshot descriptor plus background, turbulence, and source
+  generations and the complete shock state;
 - campaign seed and next stable particle ID;
-- sampling counters;
+- committed and pending sampling counters;
 - every active particle's stable ID, species, Cartesian position, momentum,
   pitch cosine, gyrophase, weight, completed step, substep, and last shock
   generation;
-- every closed particle-ledger row.
+- every globally closed particle-ledger row and physical source-ledger row.
 
 Integers and IEEE-754 bit patterns are written field by field in little-endian
 order. Structure padding, native enum width, and host ABI therefore cannot
@@ -106,7 +123,11 @@ campaign/particle/step/substep/purpose tuple reconstructs its future exactly.
 Writing uses a sibling `.staging` file and a final rename. Reading builds a
 candidate and validates magic, length, schema, checksum, fingerprints, record
 limits, finite particle state, unique sorted IDs, and exact ledger closure.
-Caller output is changed only after all checks pass.
+Caller output is changed only after all checks pass. Optional load expectations
+also verify the resolved manifest and storage layout. Rank-count mismatch is
+either rejected or admitted only under the explicit deterministic repartition
+policy; particles are then reinserted on their spatial AMPS owner without
+changing their stochastic tuple.
 
 ## Snapshot policy and lifecycle
 
@@ -123,6 +144,15 @@ changing the sequence. `RestoreRestartBeforeMesh()` is legal only from
 `Configured`, so counters are restored before mesh allocation and background
 publication.
 
+The production coordinator gathers complete particles and rank-owned source
+rows at a joined due tick. Root writes a sibling staging file and renames it;
+the success flag is broadcast before every rank completes or aborts the
+checkpoint transition. Restore validates the whole candidate before mesh
+mutation, restores clock/events first, re-bases provider generations, sets PIC
+simulation time, then inserts particles. This ordering makes a split run use
+the same next `(campaign,particle,step,substep,purpose)` random key as the
+uninterrupted run.
+
 ## Evidence
 
 - `NAT3D06`: repeated/reversed input produces identical products and caller
@@ -132,4 +162,6 @@ publication.
 - `RST3D01`: complete round trip and identical future keyed normal draws.
 - `RST3D02`: fingerprint/checksum failures are transactional.
 - `RST3D03`: explicit missing-snapshot reject/wait behavior.
-
+- `R3D06`: resolved observers, uncertainty, and commit-only window reset.
+- `R3D07`: complete schema-2 clock/event/provider/shock/RNG/ledger/sampling
+  round trip.

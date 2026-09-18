@@ -222,8 +222,14 @@ from `B·r`, not assumed from a variable name. The coefficient bridge calls the
 canonical `sep_common.a`; `COEF3D02` checks bitwise identity with a direct
 shared-kernel call. Self-consistent 3-D turbulence remains a configuration-time
 reserved feature. `TUR3D01–04` and `COEF3D01–02` are the release evidence.
-`BLDL3D06` additionally proves that the provider header compiles without a
-sep_common include path while the bridge compiles with the canonical one.
+`BLDL3D06` additionally proves that `SEP3D.h` does not transitively expose
+source/restart headers to generic AMPS translation units, that the provider
+header compiles without a sep_common include path, and that only the opt-in
+bridge requires the canonical one. Its production-recipe probe deliberately
+ignores `CPPFLAGS`, `CXXFLAGS`, and `INCLUDE`, then verifies that the
+target-scoped `CPLUS_INCLUDE_PATH` still supplies `src/models/sep_common` and
+`src/models/swcme` while compiling the root-level `main_lib.o` target. This is
+the exact build-system boundary implicated by installed AMPS generic recipes.
 
 ## Phase P — transport cores
 

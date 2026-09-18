@@ -13,6 +13,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <utility>
 
 namespace SEP3D {
 namespace RuntimeModel {
@@ -69,6 +70,26 @@ bool ParseSize(const std::string& text, std::size_t* value) {
   if (!ParseUnsigned64(text, &parsed) ||
       parsed > std::numeric_limits<std::size_t>::max()) return false;
   *value = static_cast<std::size_t>(parsed);
+  return true;
+}
+
+bool ParseSpeciesList(const std::string& text, std::vector<int>* values) {
+  if (values == nullptr) return false;
+  std::vector<int> parsed;
+  std::istringstream input(text);
+  std::string token;
+  while (std::getline(input, token, ',')) {
+    token = Trim(token);
+    if (token.empty() || token[0] == '-') return false;
+    errno = 0;
+    char* end = nullptr;
+    const long value = std::strtol(token.c_str(), &end, 10);
+    if (errno == ERANGE || end == token.c_str() || *end != '\0' ||
+        value > std::numeric_limits<int>::max()) return false;
+    parsed.push_back(static_cast<int>(value));
+  }
+  if (parsed.empty()) return false;
+  *values = std::move(parsed);
   return true;
 }
 
@@ -153,6 +174,8 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     if (!ParseUnsigned64(value, &o->campaignSeed)) return invalidValue();
   } else if (field == "run.background_cadence_steps") {
     if (!ParseUnsigned64(value, &o->backgroundCadenceSteps)) return invalidValue();
+  } else if (field == "run.injection_cadence_steps") {
+    if (!ParseUnsigned64(value, &o->injectionCadenceSteps)) return invalidValue();
   } else if (field == "domain.preset") {
     if (!ParseEnum(value, {{"solar", DomainPreset::Solar},
                            {"one-au", DomainPreset::OneAu},
@@ -312,6 +335,8 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     if (!ParseDouble(value, &o->shockCrossingFraction)) return invalidValue();
   } else if (field == "transport.minimum_substep_s") {
     if (!ParseDouble(value, &o->minimumTransportSubstepS)) return invalidValue();
+  } else if (field == "transport.maximum_substeps") {
+    if (!ParseUnsigned64(value, &o->maximumTransportSubsteps)) return invalidValue();
   } else if (field == "transport.pitch_angle_scheme") {
     if (!ParseEnum(value,
         {{"reflecting-milstein", PitchAngleSchemeMode::ReflectingMilstein},
@@ -340,6 +365,8 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     if (!ParseDouble(value, &o->shockModel.compressionRatio)) return invalidValue();
   } else if (field == "source.enabled") {
     if (!ParseBool(value, &o->source.enabled)) return invalidValue();
+  } else if (field == "source.physical_particle_rate_per_s") {
+    if (!ParseDouble(value, &o->source.physicalParticleRatePerS)) return invalidValue();
   } else if (field == "source.injection_efficiency") {
     if (!ParseDouble(value, &o->source.injectionEfficiency)) return invalidValue();
   } else if (field == "source.minimum_energy_j") {
@@ -360,6 +387,8 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     if (!ParseDouble(value, &o->species.macroparticleWeight)) return invalidValue();
   } else if (field == "output.cadence_steps") {
     if (!ParseUnsigned64(value, &o->outputCadenceSteps)) return invalidValue();
+  } else if (field == "output.checkpoint_cadence_steps") {
+    if (!ParseUnsigned64(value, &o->checkpointCadenceSteps)) return invalidValue();
   } else if (field == "output.directory") {
     o->outputDirectory = value;
   } else if (field == "output.prefix") {
@@ -397,6 +426,39 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
       if (!ParseUnsigned(value, &observer->pitchAngleBins)) return invalidValue();
     } else if (key == "products") {
       observer->products = value;
+    } else if (key == "kind") {
+      if (!ParseEnum(value,
+          {{"fixed-cartesian", ObserverKind::FixedCartesian},
+           {"fixed-heliographic", ObserverKind::FixedHeliographic},
+           {"moving-cartesian", ObserverKind::MovingCartesian},
+           {"spherical-shell", ObserverKind::SphericalShell},
+           {"field-connected", ObserverKind::FieldConnected}},
+          &observer->kind)) return invalidValue();
+    } else if (key == "normalization") {
+      if (!ParseEnum(value,
+          {{"represented-particles", ObserverNormalization::RepresentedParticles},
+           {"differential-intensity", ObserverNormalization::DifferentialIntensity}},
+          &observer->normalization)) return invalidValue();
+    } else if (key == "velocity_x_m_per_s") {
+      if (!ParseDouble(value, &observer->velocityMPerS.x)) return invalidValue();
+    } else if (key == "velocity_y_m_per_s") {
+      if (!ParseDouble(value, &observer->velocityMPerS.y)) return invalidValue();
+    } else if (key == "velocity_z_m_per_s") {
+      if (!ParseDouble(value, &observer->velocityMPerS.z)) return invalidValue();
+    } else if (key == "collection_radius_m") {
+      if (!ParseDouble(value, &observer->collectionRadiusM)) return invalidValue();
+    } else if (key == "shell_radius_m") {
+      if (!ParseDouble(value, &observer->shellRadiusM)) return invalidValue();
+    } else if (key == "minimum_energy_j") {
+      if (!ParseDouble(value, &observer->minimumEnergyJ)) return invalidValue();
+    } else if (key == "maximum_energy_j") {
+      if (!ParseDouble(value, &observer->maximumEnergyJ)) return invalidValue();
+    } else if (key == "minimum_mu") {
+      if (!ParseDouble(value, &observer->minimumMu)) return invalidValue();
+    } else if (key == "maximum_mu") {
+      if (!ParseDouble(value, &observer->maximumMu)) return invalidValue();
+    } else if (key == "species") {
+      if (!ParseSpeciesList(value, &observer->species)) return invalidValue();
     } else {
       return Invalid("unknown configuration key '" + field + "'");
     }

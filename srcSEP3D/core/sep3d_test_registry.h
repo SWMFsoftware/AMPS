@@ -171,6 +171,9 @@ std::vector<SEP3D::Testing::Descriptor> RegisterOutputTests();
 // executables or reviewed data bundles.
 std::vector<SEP3D::Testing::Descriptor> RegisterValidationTests();
 
+// R3D01-R3D07 — production runtime improvements R01-R07.
+std::vector<SEP3D::Testing::Descriptor> RegisterRuntimeImprovementTests();
+
 
 // ---- Future linked groups --------------------------------------------------
 

@@ -37,6 +37,14 @@ enum class RunIntent { TransportOnly, ShockInjection };
 enum class MissingTurbulenceMode { Fail, Ballistic };
 enum class ResonanceRangeMode { Reject, PowerLawExtension };
 enum class PitchAngleSchemeMode { ReflectingMilstein, ReflectingEulerMaruyama };
+enum class ObserverKind {
+  FixedCartesian,
+  FixedHeliographic,
+  MovingCartesian,
+  SphericalShell,
+  FieldConnected
+};
+enum class ObserverNormalization { RepresentedParticles, DifferentialIntensity };
 
 const char* Name(BackgroundAuthority value);
 const char* Name(TurbulenceAuthority value);
@@ -52,6 +60,8 @@ const char* Name(RunIntent value);
 const char* Name(MissingTurbulenceMode value);
 const char* Name(ResonanceRangeMode value);
 const char* Name(PitchAngleSchemeMode value);
+const char* Name(ObserverKind value);
+const char* Name(ObserverNormalization value);
 
 // C02 typed physical groups.  These records deliberately contain SI values
 // only.  The file parser converts unit-bearing text into these records, while
@@ -86,6 +96,9 @@ struct ShockOptions {
 
 struct SourceOptions {
   bool enabled = false;
+  // Total represented physical particle rate before patch partitioning [s^-1].
+  // SWCME supplies relative_patch_weight; their product is the patch rate.
+  double physicalParticleRatePerS = 1.0;
   double injectionEfficiency = 1.0e-4;
   double minimumEnergyJ = 1.0e4 * Core::Const::e;
   double maximumEnergyJ = 1.0e8 * Core::Const::e;
@@ -108,6 +121,17 @@ struct ObserverOptions {
   unsigned energyBins = 32;
   unsigned pitchAngleBins = 24;
   std::string products = "flux,spectrum";
+  ObserverKind kind = ObserverKind::FixedCartesian;
+  ObserverNormalization normalization =
+      ObserverNormalization::DifferentialIntensity;
+  Core::Vec3 velocityMPerS;
+  double collectionRadiusM = 0.01 * Core::Const::AU;
+  double shellRadiusM = Core::Const::AU;
+  double minimumEnergyJ = 1.0e4 * Core::Const::e;
+  double maximumEnergyJ = 1.0e8 * Core::Const::e;
+  double minimumMu = -1.0;
+  double maximumMu = 1.0;
+  std::vector<int> species = {0};
 };
 
 struct MemoryModelOptions {
@@ -148,6 +172,10 @@ struct RunConfiguration3DOptions {
   std::uint64_t maximumTimeSteps = 100000001;
   std::uint64_t campaignSeed = 1;
   std::uint64_t backgroundCadenceSteps = 1;
+  // All runtime schedules are expressed as integer global ticks.  Zero is
+  // reserved for a disabled optional event (checkpoint only); physical
+  // background and injection schedules always have a positive cadence.
+  std::uint64_t injectionCadenceSteps = 1;
 
   // Phase-M mesh controls.  The radial law and optional Parker tube are
   // evaluated by one AMPS-independent implementation used by both the
@@ -183,9 +211,17 @@ struct RunConfiguration3DOptions {
   ShockOptions shockModel;
   SourceOptions source;
   SpeciesOptions species;
-  std::vector<ObserverOptions> observers = {
-      {"default", {0.25 * Core::Const::AU, 0.0, 0.0}, false, 60.0, 32, 24,
-       "flux,spectrum"}};
+  std::vector<ObserverOptions> observers = [] {
+    ObserverOptions observer;
+    observer.id = "default";
+    observer.positionM = {0.25 * Core::Const::AU, 0.0, 0.0};
+    observer.followsTrajectory = false;
+    observer.cadenceS = 60.0;
+    observer.energyBins = 32;
+    observer.pitchAngleBins = 24;
+    observer.products = "flux,spectrum";
+    return std::vector<ObserverOptions>{observer};
+  }();
 
   // Phase-T scattering inputs.  Integrated wave amplitude, spectral shape,
   // finite-band behavior, and missing-data behavior are all fingerprinted.
@@ -211,6 +247,7 @@ struct RunConfiguration3DOptions {
   double fieldVariationFraction = 0.2;
   double shockCrossingFraction = 0.5;
   double minimumTransportSubstepS = 1.0e-12;
+  std::uint64_t maximumTransportSubsteps = 100000;
   PitchAngleSchemeMode pitchAngleScheme =
       PitchAngleSchemeMode::ReflectingMilstein;
 
@@ -222,6 +259,7 @@ struct RunConfiguration3DOptions {
 
   // Output-only controls: these affect products, not particle trajectories.
   std::uint64_t outputCadenceSteps = 1;
+  std::uint64_t checkpointCadenceSteps = 0;
   std::string outputDirectory = "output";
   std::string outputPrefix = "sep3d";
   std::string restartInputPath;

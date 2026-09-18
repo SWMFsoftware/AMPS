@@ -5,8 +5,8 @@
 // owns one typed Runtime whose configuration is supplied by the standalone or
 // SWMF host.  Background snapshots and turbulence providers are installed as
 // immutable/typed objects; process arguments and parameter files never leak
-// into the physics layers. The one production mover declaration is provided by
-// amps/amps_particle_adapter.h; numerical transport remains AMPS-independent.
+// into the physics layers. The generated R01 hook supplies the one mover
+// declaration to pic_mover.cpp; numerical transport remains AMPS-independent.
 //
 // LAYER: L3 (application).  L3 may include AMPS.  Lower layers under core/
 // and background/ must remain independent of pic.h and mpi.h.
@@ -20,13 +20,21 @@
 #include "constants.h"
 #include "SpiceEmptyDefinitions.h"
 
-#include "core/sep3d_types.h"
-#include "background/bg_provider.h"
-#include "background/background_snapshot.h"
 #include "runtime/runtime.h"
-#include "turbulence/turbulence_provider.h"
-#include "amps/amps_mover_status.h"
-#include "amps/amps_particle_adapter.h"
+
+#include <memory>
+
+// Keep this AMPS-facing umbrella dependency-light.  pic.h includes SEP3D.h in
+// every AMPS translation unit, including generic interface and mesh sources
+// whose compiler command does not contain src/models/sep_common or SWCME
+// include directories.  Concrete provider/source/restart headers therefore
+// belong in main_lib.cpp or main.cpp, never in this transitive public header.
+namespace SEP3D {
+namespace Background { class BackgroundSnapshot; }
+namespace Turbulence { class TurbulenceProvider; }
+namespace Adapters { class ShockProvider; }
+namespace Output { struct RestartState; }
+}
 
 namespace SEP3D {
 
@@ -38,13 +46,22 @@ RuntimeModel::Runtime& ApplicationRuntime();
 Core::Status ConfigureApplication(
     const std::shared_ptr<const RuntimeModel::RunConfiguration3D>& configuration);
 
-// Coupled hosts install imported data before amps_init().  A standalone Parker
-// run may omit both calls: amps_init() builds a frozen analytic snapshot and a
-// prescribed Kolmogorov provider from the immutable RunConfiguration3D.
+// Coupled hosts install initial imported data before amps_init(). At a later
+// joined SnapshotReady boundary the same calls stage the next candidate; the
+// R03 coordinator validates background and turbulence together and swaps them
+// only after collective readiness. A standalone Parker run may omit both
+// calls: amps_init() builds the corresponding immutable analytic providers.
 Core::Status InstallBackgroundSnapshot(
     const std::shared_ptr<const Background::BackgroundSnapshot>& snapshot);
 Core::Status InstallTurbulenceProvider(
     const std::shared_ptr<Turbulence::TurbulenceProvider>& provider);
+Core::Status InstallShockProvider(
+    const std::shared_ptr<Adapters::ShockProvider>& provider);
+// Install a completely validated R07 candidate before mesh construction.
+// The standalone driver calls RestoreRestartBeforeMesh first; this function
+// retains the particle/provider/observer payload until amps_init() can restore
+// AMPS ownership without changing any stochastic identity.
+Core::Status InstallRestartState(const Output::RestartState& state);
 
 // AMPS calls this before its legacy parser.  srcSEP3D intentionally performs
 // no argument or AMPS_PARAM.in parsing here: a standalone driver or the SWMF

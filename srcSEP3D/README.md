@@ -28,13 +28,15 @@ The production tree implements the rebaseline and shared foundations (R0–R2),
 **Phase M Mesh and Storage**, **Phase B Background Providers and Snapshots**,
 **Phase T Turbulence and Scattering Inputs**, **Phase P Transport Cores**,
 **Phase A AMPS Mover and Source Adapters**, and **Phase O Sampling, Output, and
-Restart**, and **Phase V Integration and Scientific Validation**.
+Restart**, **Phase V Integration and Scientific Validation**, and production
+runtime improvements **R01–R07**.
 
 `amps_time_step()` now enters the typed Runtime particle phase, calls the AMPS
-step, and completes the Runtime cadence transition. Scientific production
-still requires the configured AMPS mover macro and a host-installed local-state
-resolver described in Phase A; no legacy mover, source, sampler, or fallback
-physics is substituted when that coupling is absent.
+step through the installed srcSEP3D mover, closes a global conservation ledger,
+and executes due snapshot, source, observer, and checkpoint transactions at the
+joined boundary. `make prepare-production` installs the configured mover hook;
+`amps_init()` installs the immutable local resolver automatically. No legacy
+mover, source, sampler, or fallback physics is substituted.
 
 ### R0–R2 foundation
 
@@ -54,6 +56,29 @@ physics is substituted when that coupling is absent.
   publication path.
 - AMPS mover integers are translated only in `amps/amps_mover_status.h`, where
   `static_assert` binds the adapter to the actual `pic.h` ABI.
+
+### Improvements R01–R07: production runtime closure
+
+- R01 installs one idempotent generated AMPS mover hook, one immutable mover
+  context, and collectively closed per-step/species particle ledgers.
+- R02 consumes the full requested AMPS interval through accepted substeps,
+  re-resolving cells and coefficients before every substep.
+- R03 stages background and turbulence together and publishes their immutable
+  generation only after every MPI rank accepts the complete candidate.
+- R04 derives physical time and all recurring events from one persisted integer
+  tick and verifies PIC, snapshot, shock, and Runtime clocks before motion.
+- R05 reconstructs analytic or coupled shock states, converts physical patch
+  rates to weighted AMPS particles with semantic stochastic rounding, and
+  records number/energy/momentum source ledgers.
+- R06 makes observers first-class configuration, gathers complete records in
+  stable-ID order, reports statistical uncertainty, and resets a sampling
+  window only after atomic publication succeeds.
+- R07 writes and transactionally restores a versioned complete state image,
+  including identities/layout, clocks/events, provider generations, shock,
+  particles/RNG tuples, ledgers, and pending sampling state.
+
+See [RUNTIME_INTEGRATION.md](RUNTIME_INTEGRATION.md) for the algorithms,
+failure semantics, MPI ownership rules, and restart ordering.
 
 ### Improvements C01–C05: production configuration and preflight
 
@@ -262,14 +287,13 @@ The following are intentionally not enabled:
 - bundled linked/MPI and observational evidence. Those Phase-V gates require
   the configured target executable and independently reviewed evidence bytes.
 
-For coupled operation, the host must configure SWMF authority and call
-`InstallBackgroundSnapshot()` and, when selected,
-`InstallTurbulenceProvider()` before `amps_init()`. A standalone analytic run
-constructs its Parker snapshot and prescribed turbulence from the immutable
-configuration. Before injecting particles, either host must install an
-`AMPS::Movers::Context` whose resolver supplies coefficients from the pinned
-snapshot. Output collection likewise must gather one globally stable-ID-ordered
-observation set before invoking the Phase-O sampler.
+For coupled operation, the host configures SWMF authority and publishes a
+complete initial background, selected turbulence provider, and optional shock
+provider before `amps_init()`. Later candidates may be staged only while the
+Runtime is joined at `SnapshotReady`; srcSEP3D performs the collective commit,
+mover-context update, global observation gather, and checkpoint coordination.
+A standalone analytic run constructs the same provider interfaces from the
+immutable input configuration.
 
 ## Source layout
 
@@ -294,6 +318,7 @@ srcSEP3D/
 ├── AMPS_ADAPTERS.md
 ├── SAMPLING_OUTPUT_RESTART.md
 ├── INTEGRATION_SCIENTIFIC_VALIDATION.md
+├── RUNTIME_INTEGRATION.md          R01–R07 algorithms and invariants
 ├── MIGRATION_MANIFEST.md
 ├── SEP3D.h                       production/coupling interface
 ├── main_lib.cpp                  AMPS mesh/storage/provider boundary
@@ -326,6 +351,18 @@ Every directory except `amps/` and L3 must not include AMPS/MPI headers or
 refer to the AMPS namespace. `LAY01`, `LAY02`, and `BLD01` enforce this with a source
 scan, negative control, AMPS-free link, and symbol-table inspection.
 
+Because generated `pic.h` exposes `SEP3D.h` to generic AMPS translation units,
+the umbrella uses forward declarations for source, restart, and provider
+objects. Concrete headers that require `src/models/sep_common` or SWCME are
+included only by srcSEP3D implementation files compiled with those paths.
+Historic `Makefile.conf` recipes do not consistently expand `CPPFLAGS`,
+`CXXFLAGS`, or `INCLUDE`, so the srcSEP3D makefile also exports the canonical
+model roots through `CPLUS_INCLUDE_PATH` **only for `MAINLIBOBJ` and
+`MAINOBJ`**. This target-scoped environment reaches `mpicxx` even for a fixed
+generic recipe without exposing model headers to unrelated AMPS objects.
+`BLDL3D06` enforces both the transitive-header boundary and this real compiler
+search-path contract.
+
 ## Test runner
 
 Run from `AMPS/srcSEP3D`:
@@ -346,6 +383,7 @@ test/run_tests.py --suite phase-a --rebuild
 test/run_tests.py --suite phase-o --rebuild
 test/run_tests.py --suite phase-v --rebuild
 test/run_tests.py --suite improvements-c --rebuild
+test/run_tests.py --suite improvements-r --rebuild
 
 # Configured Phase-V executable and independently owned evidence.
 test/run_tests.py --suite phase-v --amps ../amps \
@@ -382,10 +420,13 @@ selection rules, exit codes, and troubleshooting.
 Within a configured AMPS tree:
 
 ```bash
-make strict-production
+make -C srcSEP3D prepare-production
+make -C srcSEP3D strict-production
 ```
 
-The application target delegates to the enclosing `make amps` workflow, then
+`prepare-production` installs the idempotent mover declaration/macro in the
+already configured `build/pic/picGlobal.dfn`. The strict target then delegates
+to the enclosing `make amps` workflow and
 audits `AMPS/build/main/mainlib.a` and `main.a`. This is required because AMPS
 copies `srcSEP3D` to `build/main`; a direct source-directory compile lacks the
 generated include/definition set and is not production evidence. All paths are
@@ -407,6 +448,7 @@ normalized-domain/preflight definitions before the final Fortran-driver link.
 | `BLDL3D`, `ARCH3D`, `SWCME3D` | production routing, retired-symbol audit, canonical archives |
 | `HARN`, `RUNNER`, `LAY`, `BLD`, `UTIL` | runner, layering, binary boundary, frozen common kernels |
 | `LIFE3D01–04` | immutable configuration and complete lifecycle transition matrix |
+| `R3D01–07` | mover hook, subcycling, transactional snapshots, clock/events, source, observers, complete restart |
 | `CFG3D01–05` | input/CLI, typed contracts, domains, shared Parker geometry, mesh/memory preflight |
 | `MSH3D01–09` | resolution bounds/laws, tube geometry, balance, octrees, memory, ownership, presets, gradients |
 | `BGP3D01–06` | analytic Parker identities, component laws, focusing, wind derivatives, polar limits |
@@ -426,8 +468,7 @@ normalized-domain/preflight definitions before the final Fortran-driver link.
 Phase-V algorithms, case registration, evidence validation, and controlled
 physics gates are implemented. Closing the production release still requires
 running the registered linked cases on the configured AMPS host and supplying
-the reviewed cross-model/observational bundles. The generated mover macro must
-see `AMPS::Movers::MoveParticle`; the host must install the pinned-snapshot
-coefficient resolver and SWCME schedule; and the global observation gather
-must feed the Phase-V audit. A configured `BLDL3D01` run on the target checkout
-remains required after every production-boundary change.
+the reviewed cross-model/observational bundles. The R01 hook, pinned resolver,
+integer schedule, global observation gather, and restart coordinator are now
+implemented; a configured `BLDL3D01` run on the target checkout remains
+required after every production-boundary change.

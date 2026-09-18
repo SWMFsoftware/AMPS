@@ -37,7 +37,8 @@ SEP::Injection::RandomKey Key(const ShockSourceRecord& source,
                               SEP::Injection::RandomPurpose purpose) {
   SEP::Injection::RandomKey key;
   key.campaign = source.injection.campaignSeed;
-  key.event = source.eventGeneration;
+  key.event = source.injectionSequence == 0
+      ? source.eventGeneration : source.injectionSequence;
   key.fieldLine = source.sourceId;  // semantic slot: shock-patch identity
   key.species = static_cast<std::uint64_t>(species);
   key.macroparticle = macroIndex;
@@ -72,6 +73,7 @@ ShockSourceRecord MakeShockSourceRecord(
   }
 
   result.eventGeneration = eventGeneration;
+  result.injectionSequence = eventGeneration;
   result.sourceId = static_cast<std::uint64_t>(source.source_id);
   result.positionM = Core::Vec3(source.position_m.data());
   result.outwardNormal = Core::Vec3(source.normal.data()).Normalized();

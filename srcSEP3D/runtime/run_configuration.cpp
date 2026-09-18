@@ -208,6 +208,27 @@ const char* Name(PitchAngleSchemeMode value) {
   return "unknown";
 }
 
+const char* Name(ObserverKind value) {
+  switch (value) {
+    case ObserverKind::FixedCartesian: return "fixed-cartesian";
+    case ObserverKind::FixedHeliographic: return "fixed-heliographic";
+    case ObserverKind::MovingCartesian: return "moving-cartesian";
+    case ObserverKind::SphericalShell: return "spherical-shell";
+    case ObserverKind::FieldConnected: return "field-connected";
+  }
+  return "unknown";
+}
+
+const char* Name(ObserverNormalization value) {
+  switch (value) {
+    case ObserverNormalization::RepresentedParticles:
+      return "represented-particles";
+    case ObserverNormalization::DifferentialIntensity:
+      return "differential-intensity";
+  }
+  return "unknown";
+}
+
 bool operator==(const StorageLayout& left, const StorageLayout& right) {
   return left.magneticFieldOffset == right.magneticFieldOffset &&
          left.bulkVelocityOffset == right.bulkVelocityOffset &&
@@ -288,6 +309,9 @@ Core::Status RunConfiguration3D::Create(
   if (normalized.campaignSeed == 0) return Invalid("campaignSeed zero is reserved");
   if (normalized.backgroundCadenceSteps == 0) {
     return Invalid("backgroundCadenceSteps must be positive");
+  }
+  if (normalized.injectionCadenceSteps == 0) {
+    return Invalid("injectionCadenceSteps must be positive");
   }
   if (normalized.outputCadenceSteps == 0) {
     return Invalid("outputCadenceSteps must be positive");
@@ -384,6 +408,9 @@ Core::Status RunConfiguration3D::Create(
       return Invalid("transport time-step controls must be finite and positive");
     }
   }
+  if (normalized.maximumTransportSubsteps == 0) {
+    return Invalid("maximumTransportSubsteps must be positive");
+  }
 
   const ParkerPhysicsOptions& parker = normalized.parker;
   const double parkerValues[] = {
@@ -433,10 +460,12 @@ Core::Status RunConfiguration3D::Create(
   }
   const SourceOptions& source = normalized.source;
   if (source.enabled &&
-      (!std::isfinite(source.injectionEfficiency) ||
+      (!std::isfinite(source.physicalParticleRatePerS) ||
+       !std::isfinite(source.injectionEfficiency) ||
        !std::isfinite(source.minimumEnergyJ) ||
        !std::isfinite(source.maximumEnergyJ) ||
        !std::isfinite(source.spectralIndex) ||
+       source.physicalParticleRatePerS <= 0.0 ||
        source.injectionEfficiency <= 0.0 || source.injectionEfficiency > 1.0 ||
        source.minimumEnergyJ <= 0.0 ||
        source.maximumEnergyJ <= source.minimumEnergyJ ||
@@ -459,13 +488,37 @@ Core::Status RunConfiguration3D::Create(
         !std::isfinite(observer.cadenceS) || observer.cadenceS <= 0.0 ||
         observer.energyBins == 0 || observer.pitchAngleBins == 0 ||
         observer.products.empty() ||
+        !FiniteVector(observer.velocityMPerS) ||
+        !std::isfinite(observer.collectionRadiusM) ||
+        observer.collectionRadiusM <= 0.0 ||
+        !std::isfinite(observer.shellRadiusM) || observer.shellRadiusM <= 0.0 ||
+        !std::isfinite(observer.minimumEnergyJ) ||
+        !std::isfinite(observer.maximumEnergyJ) ||
+        observer.minimumEnergyJ <= 0.0 ||
+        observer.maximumEnergyJ <= observer.minimumEnergyJ ||
+        !std::isfinite(observer.minimumMu) ||
+        !std::isfinite(observer.maximumMu) ||
+        observer.minimumMu < -1.0 || observer.maximumMu > 1.0 ||
+        observer.maximumMu <= observer.minimumMu || observer.species.empty() ||
         (!observer.followsTrajectory &&
          (radius < normalized.innerRadiusM || radius > normalized.outerRadiusM))) {
       return Invalid("observer identity, location, cadence, bins, or products are invalid");
     }
+    const double observerTicks =
+        observer.cadenceS / normalized.requestedTimeStepS;
+    const double nearestTicks = std::round(observerTicks);
+    if (nearestTicks < 1.0 ||
+        std::fabs(observerTicks - nearestTicks) >
+            64.0 * std::numeric_limits<double>::epsilon() *
+                std::max(1.0, std::fabs(observerTicks))) {
+      return Invalid(
+          "observer cadence must be an integer multiple of requestedTimeStepS");
+    }
     if (std::find(observerIds.begin(), observerIds.end(), observer.id) !=
         observerIds.end()) return Invalid("observer IDs must be unique");
     observerIds.push_back(observer.id);
+    for (int species : observer.species)
+      if (species < 0) return Invalid("observer species index is negative");
   }
 
   const char* reserved = nullptr;
@@ -495,6 +548,7 @@ Core::Status RunConfiguration3D::Create(
           << ";maximum_steps=" << normalized.maximumTimeSteps
           << ";seed=" << normalized.campaignSeed
           << ";background_cadence=" << normalized.backgroundCadenceSteps
+          << ";injection_cadence=" << normalized.injectionCadenceSteps
           << ";mesh_min_m=" << normalized.minimumCellSizeM
           << ";mesh_background_m=" << normalized.backgroundCellSizeM
           << ";mesh_radial=" << normalized.enableRadialRefinement
@@ -538,6 +592,7 @@ Core::Status RunConfiguration3D::Create(
           << ";shock_speed_m_s=" << shock.speedMPerS
           << ";shock_compression=" << shock.compressionRatio
           << ";source_enabled=" << source.enabled
+          << ";source_rate_s-1=" << source.physicalParticleRatePerS
           << ";source_efficiency=" << source.injectionEfficiency
           << ";source_min_J=" << source.minimumEnergyJ
           << ";source_max_J=" << source.maximumEnergyJ
@@ -562,6 +617,7 @@ Core::Status RunConfiguration3D::Create(
           << ";field_variation_fraction=" << normalized.fieldVariationFraction
           << ";shock_crossing_fraction=" << normalized.shockCrossingFraction
           << ";minimum_substep_s=" << normalized.minimumTransportSubstepS
+          << ";maximum_substeps=" << normalized.maximumTransportSubsteps
           << ";pitch_scheme=" << Name(normalized.pitchAngleScheme)
           << ";layout=" << layout.fingerprint;
   for (const ObserverOptions& observer : normalized.observers) {
@@ -569,7 +625,14 @@ Core::Status RunConfiguration3D::Create(
             << ',' << observer.positionM.y << ',' << observer.positionM.z
             << ',' << observer.followsTrajectory << ',' << observer.cadenceS
             << ',' << observer.energyBins << ',' << observer.pitchAngleBins
-            << ',' << observer.products;
+            << ',' << observer.products << ',' << Name(observer.kind)
+            << ',' << Name(observer.normalization)
+            << ',' << observer.velocityMPerS.x << ',' << observer.velocityMPerS.y
+            << ',' << observer.velocityMPerS.z
+            << ',' << observer.collectionRadiusM << ',' << observer.shellRadiusM
+            << ',' << observer.minimumEnergyJ << ',' << observer.maximumEnergyJ
+            << ',' << observer.minimumMu << ',' << observer.maximumMu;
+    for (int species : observer.species) physics << ',' << species;
   }
   const std::string fingerprint =
       SEP::Background::FingerprintConfiguration(physics.str());
@@ -577,6 +640,7 @@ Core::Status RunConfiguration3D::Create(
   std::ostringstream manifest;
   manifest << physics.str()
            << ";output_cadence=" << normalized.outputCadenceSteps
+           << ";checkpoint_cadence=" << normalized.checkpointCadenceSteps
            << ";output_directory=" << normalized.outputDirectory
            << ";output_prefix=" << normalized.outputPrefix
            << ";restart_input=" << normalized.restartInputPath

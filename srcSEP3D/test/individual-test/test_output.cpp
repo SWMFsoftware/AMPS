@@ -92,15 +92,30 @@ std::string SnapshotText(const O::SamplingSnapshot& s) {
 O::RestartState State() {
   O::RestartState state;
   state.configurationFingerprint = "cfg-123";
+  state.resolvedConfigurationManifest = "resolved-cfg-123";
+  state.storageLayoutFingerprint = "layout-123";
   state.codeIdentity = "commit-abc";
   state.snapshotFingerprint = "snapshot-77";
-  state.runtimeCounters = {8, 1, 3, 2};
+  state.runtimeCounters = {8, 1, 3, 2, 8};
+  state.eventSchedule = {9, 9, 10, UINT64_MAX};
+  state.activeSnapshot.authority =
+      SEP3D::RuntimeModel::BackgroundAuthority::AnalyticParker;
+  state.activeSnapshot.epochS = 8.0;
+  state.activeSnapshot.validFromS = 0.0;
+  state.activeSnapshot.validUntilS = 20.0;
+  state.activeSnapshot.generation = 77;
+  state.activeSnapshot.complete = true;
+  state.activeSnapshot.coordinateFrame = "HCI-like-inertial";
+  state.activeSnapshot.providerIdentity = "restart-fixture";
+  state.activeSnapshot.configurationFingerprint = "cfg-123";
+  state.baseTimeStepS = 1.0;
   state.backgroundGeneration = 77;
   state.turbulenceGeneration = 78;
   state.sourceGeneration = 79;
   state.campaignSeed = 1234;
   state.nextStableParticleId = 100;
-  state.samplingState = {4, 20};
+  state.savedRankCount = 1;
+  state.samplingState = {4, 20, 0, 0, 0.0};
   A::ParticleRecord p;
   p.stableId = 7; p.species = 0; p.positionM = C::Vec3(1.0, 2.0, 3.0);
   p.momentumKgMPerS = 1.0e-19; p.mu = 0.3; p.gyrophaseRad = 0.4;

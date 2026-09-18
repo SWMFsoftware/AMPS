@@ -12,6 +12,9 @@ time_step_s = 1
 maximum_time_steps = 100000
 campaign_seed = 4701
 background_cadence_steps = 100
+# Source evaluation is disabled below, but its integer cadence remains part of
+# the resolved schedule and will be used unchanged if shock injection is enabled.
+injection_cadence_steps = 10
 
 [domain]
 # Presets are solar (0.30 AU), one-au, and mars (1.666 AU).  With mode=preset,
@@ -102,6 +105,8 @@ cooling_fraction = 0.2
 field_variation_fraction = 0.2
 shock_crossing_fraction = 0.5
 minimum_substep_s = 1e-12
+# A malformed limiter cannot trap one AMPS mover call indefinitely.
+maximum_substeps = 100000
 pitch_angle_scheme = reflecting-milstein
 perpendicular_diffusion = false
 drifts = false
@@ -120,6 +125,7 @@ compression_ratio = 4
 
 [source]
 enabled = false
+physical_particle_rate_per_s = 1
 injection_efficiency = 1e-4
 minimum_energy_j = 1.602176634e-15
 maximum_energy_j = 1.602176634e-11
@@ -138,17 +144,32 @@ velocity_gradient = false
 sampling_bytes_per_cell = 0
 
 [observer.earth]
+kind = fixed-cartesian
+normalization = differential-intensity
 position_x_m = 1.495978707e11
 position_y_m = 0
 position_z_m = 0
 follows_trajectory = false
+velocity_x_m_per_s = 0
+velocity_y_m_per_s = 0
+velocity_z_m_per_s = 0
+collection_radius_m = 1.495978707e9
+shell_radius_m = 1.495978707e11
 cadence_s = 60
 energy_bins = 48
 pitch_angle_bins = 24
+minimum_energy_j = 1.602176634e-15
+maximum_energy_j = 1.602176634e-11
+minimum_mu = -1
+maximum_mu = 1
+species = 0
 products = flux,spectrum,anisotropy
 
 [output]
 cadence_steps = 100
+# Zero disables periodic checkpointing; choose a positive tick cadence for a
+# production continuation campaign.
+checkpoint_cadence_steps = 0
 directory = output/analytic-parker
 prefix = sep3d
 

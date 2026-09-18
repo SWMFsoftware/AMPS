@@ -17,6 +17,7 @@
 #include "../transport/time_step.h"
 
 #include <cstdint>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -88,6 +89,29 @@ struct MoverResult {
   ParticleDisposition disposition = ParticleDisposition::Failed;
   Transport::TimeStepSelection selectedStep;
   ShockIntersection shockIntersection;
+  // R02 accounting fields. AdvanceParticle() reports one accepted substep;
+  // AdvanceParticleRequestedTime() accumulates these fields over the complete
+  // AMPS request.  Keeping the consumed time explicit makes a terminal
+  // boundary crossing distinguishable from an accidental short advance.
+  double consumedTimeS = 0.0;
+  std::uint64_t acceptedSubsteps = 0;
+  LocalTransportRecord finalLocal;
+};
+
+// Resolve the immutable cell-local state at the particle's *current* position.
+// elapsedTimeS is measured from the beginning of this AMPS mover call.  The
+// callback may use it to select the correct staged snapshot, but it must never
+// mutate the particle.  A void context keeps this AMPS-independent while
+// allowing the production boundary to carry its current AMR-node hint.
+using LocalTransportResolver = Core::Status (*)(
+    const ParticleRecord& particle, double elapsedTimeS,
+    void* resolverContext, LocalTransportRecord* local);
+
+struct RequestedTimeAdvance {
+  MoverInput input;
+  LocalTransportResolver resolveLocal = nullptr;
+  void* resolverContext = nullptr;
+  std::uint64_t maximumSubsteps = 100000;
 };
 
 // Solve the first intersection between a straight particle substep and a
@@ -108,6 +132,14 @@ class ProductionMoverRegistry final {
 };
 
 MoverResult AdvanceParticle(const MoverInput& input);
+
+// Consume one complete host-requested interval through accepted local
+// substeps.  The resolver is called before every substep, so a particle that
+// enters another AMR cell cannot continue with stale B, U, gradients, or
+// scattering coefficients.  Active results consume requestedDtS to a stable
+// floating-point tolerance; terminal results report the physically consumed
+// prefix, and failures report the prefix completed before the error.
+MoverResult AdvanceParticleRequestedTime(const RequestedTimeAdvance& request);
 
 }  // namespace Adapters
 }  // namespace SEP3D

@@ -109,6 +109,29 @@ the authority, frame, grid, and fields, writes the same layout, and publishes
 through `SwmfAdapter`. Both adapters invoke the same `Runtime` transition from
 `MeshReady` to `WaitingForSnapshot` to `SnapshotReady`.
 
+## R03 joined-boundary update transaction
+
+Subsequent coupled or analytic generations use a separate update state:
+
+`Idle -> Requested -> Filling -> Staged -> Idle`.
+
+`RequestSnapshotUpdate` freezes the requested epoch/generation;
+`BeginSnapshotFill` authorizes provider work; `StageSnapshot` validates the
+complete descriptor without replacing the active descriptor; and
+`PublishStagedSnapshot(true)` performs the commit. A provider or rank failure
+enters `Failed`. `AcknowledgeSnapshotFailure` returns to `Idle`, leaving the
+previous active generation and its validity interval unchanged.
+
+`main_lib.cpp` builds the candidate background and evaluates the matching
+turbulence provider at every owner-local physical cell. An `MPI_Allreduce` of
+the readiness flag precedes publication. Only after all ranks agree does the
+application swap both immutable shared pointers. The AMPS associated-data
+bytes are a cache/diagnostic copy; mover resolution reads the immutable active
+snapshot, so partially filled next-generation cache bytes are never physics
+authority. Snapshot provenance records provider, frame, configuration digest,
+epoch, validity interval, and monotonically increasing generation and is
+written into every R07 checkpoint.
+
 ## Evidence
 
 | IDs | Contract |
@@ -119,5 +142,6 @@ through `SwmfAdapter`. Both adapters invoke the same `Runtime` transition from
 | `SNAP3D03–05` | unit equivalence, epoch consistency, atomic failed update |
 | `SNAP3D06` | bracketed time interpolation and extrapolation rejection |
 | `SNAP3D07–08` | per-sample batch status and coordinate-frame rejection |
+| `R3D03` | requested/filling/staged/failed transitions and collective atomic publication |
 
 Run `test/run_tests.py --suite phase-b --rebuild`.

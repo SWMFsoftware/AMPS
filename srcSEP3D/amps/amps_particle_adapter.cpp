@@ -1,6 +1,7 @@
 #include "amps_particle_adapter.h"
 
 #include "../SEP3D.h"
+#include "../adapters/source_runtime.h"
 
 #include <algorithm>
 #include <cmath>
@@ -79,12 +80,32 @@ void RecordOutcome(const Adapters::MoverResult& moved, int species,
 Core::Status InstallContext(const Context& context) {
   if (context.resolveLocal == nullptr)
     return Invalid("AMPS mover context requires a local-state resolver");
+  if (context.maximumSubsteps == 0)
+    return Invalid("AMPS mover context requires a positive substep cap");
   if (SEP3D::ApplicationRuntime().state() ==
       RuntimeModel::LifecycleState::Running)
     return Core::Status(Core::StatusCode::InvalidTransition,
                         "cannot replace mover context during PIC::TimeStep");
   gContext = context;
   gContextInstalled = true;
+  return Core::Status::OK();
+}
+
+bool ContextInstalled() { return gContextInstalled; }
+
+Core::Status UpdateShock(const Adapters::ExpandingSphericalShock& shock) {
+  if (!gContextInstalled)
+    return Invalid("AMPS mover context is not installed");
+  if (SEP3D::ApplicationRuntime().state() ==
+      RuntimeModel::LifecycleState::Running)
+    return Core::Status(Core::StatusCode::InvalidTransition,
+                        "cannot replace shock state during particle motion");
+  if (shock.active && (shock.generation == 0 ||
+      !std::isfinite(shock.radiusAtStepStartM) ||
+      shock.radiusAtStepStartM <= 0.0 ||
+      !std::isfinite(shock.radialSpeedMPerS)))
+    return Invalid("active AMPS shock state is invalid");
+  gContext.shock = shock;
   return Core::Status::OK();
 }
 
@@ -123,6 +144,85 @@ Core::Status InitializeParticle(long int ptr,
   state.gyrophaseRad = particle.gyrophaseRad;
   StorePersistent(data, state);
   return Core::Status::OK();
+}
+
+Core::Status ReadParticle(long int ptr, Adapters::ParticleRecord* particle) {
+  if (!gStorageRequested || ptr < 0 || particle == nullptr)
+    return Invalid("AMPS particle read request is invalid");
+  PIC::ParticleBuffer::byte* data =
+      PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+  if (data == nullptr) return Invalid("AMPS particle pointer is null");
+  PersistentState state;
+  LoadPersistent(data, &state);
+  if (state.schema != kParticleSchema || state.stableId == 0)
+    return Invalid("AMPS particle has no valid srcSEP3D persistent state");
+  double x[3]; PIC::ParticleBuffer::GetX(x, data);
+  particle->stableId = state.stableId;
+  particle->species = PIC::ParticleBuffer::GetI(data);
+  particle->positionM = Core::Vec3(x);
+  particle->momentumKgMPerS = state.momentumKgMPerS;
+  particle->mu = state.mu;
+  particle->gyrophaseRad = state.gyrophaseRad;
+  particle->statisticalWeight =
+      PIC::ParticleWeightTimeStep::GlobalParticleWeight[particle->species] *
+      PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
+  particle->completedStep = state.completedStep;
+  particle->substep = state.substep;
+  particle->lastShockGeneration = state.lastShockGeneration;
+  return Core::Status::OK();
+}
+
+InjectionOutcome InjectParticles(const Adapters::InjectionPlan& plan) {
+  InjectionOutcome outcome;
+  if (!gContextInstalled || !plan.status.ok()) {
+    outcome.status = !plan.status.ok()
+        ? plan.status
+        : Invalid("AMPS mover context must be installed before injection");
+    outcome.rejected = plan.particles.size();
+    return outcome;
+  }
+  for (const Adapters::InjectedParticle& injected : plan.particles) {
+    const Adapters::ParticleRecord& particle = injected.particle;
+    double x[3]; particle.positionM.CopyTo(x);
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
+        PIC::Mesh::mesh->findTreeNode(x);
+    if (node != nullptr && node->Thread != PIC::ThisThread) continue;
+    if (!injected.status.ok() || node == nullptr || node->block == nullptr ||
+        particle.species < 0 || particle.species >= PIC::nTotalSpecies) {
+      ++outcome.rejected;
+      continue;
+    }
+    Adapters::LocalTransportRecord local;
+    const Core::Status localStatus = gContext.resolveLocal(
+        particle.positionM, particle.species, particle.momentumKgMPerS,
+        particle.mu, node, &local);
+    if (!localStatus.ok()) { ++outcome.rejected; continue; }
+    const double speed = Transport::RelativisticSpeed(
+        particle.momentumKgMPerS,
+        PIC::MolecularData::GetMass(particle.species));
+    const Core::Vec3 velocity = GyrotropicVelocity(
+        speed, particle.mu, particle.gyrophaseRad, local.background.bHat);
+    double v[3]; velocity.CopyTo(v);
+    int species = particle.species;
+    double correction = particle.statisticalWeight /
+        PIC::ParticleWeightTimeStep::GlobalParticleWeight[species];
+    const long int ptr = PIC::ParticleBuffer::InitiateParticle(
+        x, v, &correction, &species, nullptr,
+        _PIC_INIT_PARTICLE_MODE__ADD2LIST_, static_cast<void*>(node));
+    if (ptr < 0) { ++outcome.rejected; continue; }
+    const Core::Status initialized = InitializeParticle(ptr, particle);
+    if (!initialized.ok()) {
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      ++outcome.rejected;
+      continue;
+    }
+    ++outcome.allocated;
+  }
+  outcome.status = outcome.rejected == 0
+      ? Core::Status::OK()
+      : Core::Status(Core::StatusCode::Error,
+                     "one or more planned source particles were rejected by AMPS");
+  return outcome;
 }
 
 int MoveParticle(long int ptr, double dtTotal,
@@ -186,17 +286,37 @@ int MoveParticle(long int ptr, double dtTotal,
   input.timeStepControls.minimumSubstepS =
       configuration->options().minimumTransportSubstepS;
 
-  Core::Status localStatus = gContext.resolveLocal(
-      input.particle.positionM, species, input.particle.momentumKgMPerS,
-      input.particle.mu, startNode, &input.local);
-  Adapters::MoverResult moved;
-  if (!localStatus.ok()) {
-    moved.status = localStatus;
-    moved.particle = input.particle;
-    moved.disposition = Adapters::ParticleDisposition::Failed;
-  } else {
-    moved = Adapters::AdvanceParticle(input);
-  }
+  struct ResolverBridge {
+    LocalRecordResolver resolver = nullptr;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node = nullptr;
+  } bridge{gContext.resolveLocal, startNode};
+  auto resolveEverySubstep = [](
+      const Adapters::ParticleRecord& particle, double elapsedTimeS,
+      void* opaque, Adapters::LocalTransportRecord* local) {
+    ResolverBridge* state = static_cast<ResolverBridge*>(opaque);
+    if (state == nullptr || state->resolver == nullptr || local == nullptr)
+      return Invalid("AMPS local-state resolver bridge is invalid");
+    double x[3];
+    particle.positionM.CopyTo(x);
+    state->node = PIC::Mesh::mesh->findTreeNode(x, state->node);
+    if (state->node == nullptr || state->node->block == nullptr)
+      return Core::Status(Core::StatusCode::DomainExit,
+                          "particle left the allocated AMR tree during subcycling");
+    Core::Status resolved = state->resolver(
+        particle.positionM, particle.species, particle.momentumKgMPerS,
+        particle.mu, state->node, local);
+    if (resolved.ok() && local->timeToSnapshotBoundaryS > 0.0)
+      local->timeToSnapshotBoundaryS = std::max(
+          0.0, local->timeToSnapshotBoundaryS - elapsedTimeS);
+    return resolved;
+  };
+  Adapters::RequestedTimeAdvance request;
+  request.input = input;
+  request.resolveLocal = resolveEverySubstep;
+  request.resolverContext = &bridge;
+  request.maximumSubsteps = gContext.maximumSubsteps;
+  Adapters::MoverResult moved =
+      Adapters::AdvanceParticleRequestedTime(request);
   const std::uint64_t step = runtime.counters().completedSteps;
   RecordOutcome(moved, species, step);
 
@@ -206,7 +326,10 @@ int MoveParticle(long int ptr, double dtTotal,
     return _PARTICLE_LEFT_THE_DOMAIN_;
   }
 
-  persistent.completedStep = step;
+  // completedSteps is the start tick while Runtime is Running.  The accepted
+  // particle has consumed the complete requested interval and therefore uses
+  // the next integer tick for all future semantic random keys.
+  persistent.completedStep = step + 1;
   persistent.substep = moved.particle.substep;
   persistent.lastShockGeneration = moved.particle.lastShockGeneration;
   persistent.momentumKgMPerS = moved.particle.momentumKgMPerS;
@@ -220,13 +343,13 @@ int MoveParticle(long int ptr, double dtTotal,
       persistent.momentumKgMPerS, input.speciesMassKg);
   Core::Vec3 velocity = GyrotropicVelocity(
       speed, persistent.mu, persistent.gyrophaseRad,
-      input.local.background.bHat);
+      moved.finalLocal.background.bHat);
   double finalVelocity[3];
   velocity.CopyTo(finalVelocity);
   PIC::ParticleBuffer::SetV(finalVelocity, data);
 
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* finalNode =
-      PIC::Mesh::mesh->findTreeNode(finalPosition, startNode);
+      PIC::Mesh::mesh->findTreeNode(finalPosition, bridge.node);
   int i = 0, j = 0, k = 0;
   if (finalNode == nullptr || finalNode->block == nullptr ||
       PIC::Mesh::mesh->FindCellIndex(

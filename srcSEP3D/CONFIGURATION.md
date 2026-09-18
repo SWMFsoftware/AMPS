@@ -53,14 +53,16 @@ does not maintain a second configuration representation. The successful
 The typed contract includes:
 
 - run intent, transport core, time step, maximum steps, random campaign, and
-  background cadence;
+  integer background/injection/sampling/checkpoint cadences;
 - explicit domain, boundary, coordinate-frame, mesh, and storage choices;
 - complete analytic Parker parameters;
 - turbulence spectrum and out-of-range/missing-data policies;
 - shock interval, radial extent, speed, and compression;
-- source efficiency, energy interval, spectrum, and samples per step;
+- source efficiency, physical particle rate, energy interval, spectrum, and
+  maximum samples per injection event;
 - species name, mass, signed charge, and macroparticle weight;
-- named observer position/trajectory, cadence, bin counts, and products;
+- named observer geometry/trajectory, collection or shell radius, cadence,
+  species/pitch acceptance, energy range/bin counts, normalization, and products;
 - output/restart paths and cadence.
 
 The run intent prevents ambiguous source behavior. `transport-only` rejects an
@@ -162,6 +164,31 @@ gate; native integration tests compare it with actual AMPS counts and peak
 memory. Configuration also proves that `maximum_level` can realize the finest
 requested cell size. An impossible level cap or an estimate above the memory
 budget fails before full allocation.
+
+## R04–R06 runtime controls
+
+The production clock and recurring services are configured with integer
+cadences:
+
+| Key | Meaning |
+|---|---|
+| `run.background_cadence_steps` | request the next background/turbulence generation |
+| `run.injection_cadence_steps` | evaluate shock patches and inject a source event |
+| `output.cadence_steps` | gather and publish observer products |
+| `output.checkpoint_cadence_steps` | write a complete R07 restart; zero disables periodic checkpoints |
+| `transport.maximum_substeps` | hard accepted-substep limit for one requested AMPS interval |
+| `source.physical_particle_rate_per_s` | physical source rate normalized over the injection interval |
+
+Observer sections additionally accept `kind`, Cartesian velocity, collection
+radius, shell radius, minimum/maximum energy, minimum/maximum pitch cosine,
+comma-separated species IDs, and `normalization`. Observer cadence in seconds
+must be an exact integer multiple of `run.time_step_s`; normalization therefore
+cannot acquire a drifting fractional-tick window.
+
+All trajectory, cadence, source, and observer acceptance fields participate in
+the physics fingerprint. Checkpoint and output paths remain relocation-only
+manifest fields. `R3D04–06` cover clock/event restoration, source cadence
+identity/conservation, and resolved observer geometry plus commit-only reset.
 
 ## Acceptance evidence
 

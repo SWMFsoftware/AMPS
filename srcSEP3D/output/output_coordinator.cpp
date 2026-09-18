@@ -59,7 +59,16 @@ Core::Status WriteRestartAtBoundary(RuntimeModel::Runtime* runtime,
   if (!status.ok()) return status;
   state.configurationFingerprint =
       runtime->configuration()->physics_fingerprint();
+  state.resolvedConfigurationManifest =
+      runtime->configuration()->resolved_manifest();
+  state.storageLayoutFingerprint =
+      runtime->configuration()->storage_layout().fingerprint;
   state.runtimeCounters = runtime->counters();
+  state.eventSchedule = runtime->event_schedule();
+  state.baseTimeStepS =
+      runtime->configuration()->options().requestedTimeStepS;
+  if (runtime->active_snapshot() != nullptr)
+    state.activeSnapshot = *runtime->active_snapshot();
   ++state.runtimeCounters.checkpointSequence;
   status = WriteRestart(path, state);
   if (!status.ok()) {
@@ -82,6 +91,8 @@ Core::Status RestoreRestartBeforeMesh(RuntimeModel::Runtime* runtime,
   Core::Status status = ReadRestart(path, options, &candidate);
   if (!status.ok()) return status;
   status = runtime->RestoreCounters(candidate.runtimeCounters);
+  if (!status.ok()) return status;
+  status = runtime->RestoreEventSchedule(candidate.eventSchedule);
   if (!status.ok()) return status;
   *output = candidate;
   return Core::Status::OK();

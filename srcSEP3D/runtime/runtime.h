@@ -35,6 +35,20 @@ const char* Name(LifecycleState state);
 
 enum class AdapterKind { Standalone, Swmf };
 
+// Snapshot updates have their own transaction state because transport may
+// continue to reference the active generation while a coupled provider fills
+// the inactive buffer.  The main lifecycle therefore remains SnapshotReady
+// until one collective publication commits the staged descriptor.
+enum class SnapshotUpdateState {
+  Idle,
+  Requested,
+  Filling,
+  Staged,
+  Failed
+};
+
+const char* Name(SnapshotUpdateState state);
+
 struct MeshBinding {
   // Exact byte contract used by the mesh allocator. Runtime copies it only
   // after equality with RunConfiguration3D::storage_layout() is established.
@@ -63,6 +77,24 @@ struct RuntimeCounters {
   std::uint64_t stepsSinceOutput = 0;
   std::uint64_t outputSequence = 0;
   std::uint64_t checkpointSequence = 0;
+  std::uint64_t currentTick = 0;
+};
+
+struct EventSchedule {
+  std::uint64_t nextBackgroundTick = 0;
+  std::uint64_t nextInjectionTick = 0;
+  std::uint64_t nextSamplingTick = 0;
+  // UINT64_MAX denotes a disabled periodic checkpoint.
+  std::uint64_t nextCheckpointTick = UINT64_MAX;
+};
+
+enum class ScheduledEvent { Background, Injection, Sampling, Checkpoint };
+
+struct ClockObservation {
+  double picTimeS = 0.0;
+  double picTimeStepS = 0.0;
+  double snapshotTimeS = 0.0;
+  double shockTimeS = 0.0;
 };
 
 class Runtime final {
@@ -83,12 +115,27 @@ class Runtime final {
   std::uint64_t pinned_snapshot_generation() const {
     return pinnedSnapshotGeneration_;
   }
+  SnapshotUpdateState snapshot_update_state() const {
+    return snapshotUpdateState_;
+  }
+  const EventSchedule& event_schedule() const { return eventSchedule_; }
+  double CurrentTimeS() const;
+  double NextStepEndTimeS() const;
+  bool EventDue(ScheduledEvent event) const;
 
   Core::Status Configure(
       const std::shared_ptr<const RunConfiguration3D>& configuration);
   Core::Status BindMesh(const MeshBinding& binding);
   Core::Status BeginBackgroundAcquisition(AdapterKind adapter);
   Core::Status PublishSnapshot(const SnapshotDescriptor& candidate);
+  Core::Status RequestSnapshotUpdate(double epochS,
+                                     std::uint64_t generation);
+  Core::Status BeginSnapshotFill();
+  Core::Status StageSnapshot(const SnapshotDescriptor& candidate);
+  Core::Status PublishStagedSnapshot(bool collectiveReady);
+  Core::Status FailSnapshotUpdate(const std::string& reason);
+  Core::Status AcknowledgeSnapshotFailure();
+  Core::Status VerifyClockAgreement(const ClockObservation& observation) const;
   Core::Status BeginStep(double simulationTimeS);
   Core::Status CompleteStep();
   Core::Status BeginCheckpoint();
@@ -97,6 +144,7 @@ class Runtime final {
   // sequence. This is the only legal rollback transition in Runtime.
   Core::Status AbortCheckpoint();
   Core::Status RestoreCounters(const RuntimeCounters& counters);
+  Core::Status RestoreEventSchedule(const EventSchedule& schedule);
   Core::Status Finalize();
 
  private:
@@ -111,6 +159,13 @@ class Runtime final {
   bool hasSnapshot_ = false;
   std::uint64_t pinnedSnapshotGeneration_ = 0;
   RuntimeCounters counters_;
+  EventSchedule eventSchedule_;
+  SnapshotUpdateState snapshotUpdateState_ = SnapshotUpdateState::Idle;
+  SnapshotDescriptor stagedSnapshot_;
+  bool hasStagedSnapshot_ = false;
+  double requestedSnapshotEpochS_ = 0.0;
+  std::uint64_t requestedSnapshotGeneration_ = 0;
+  std::string snapshotUpdateFailure_;
 };
 
 }  // namespace RuntimeModel

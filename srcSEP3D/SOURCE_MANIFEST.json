@@ -6,6 +6,7 @@
     "*.h",
     "amps/*.cpp",
     "amps/*.h",
+    "amps/*.py",
     "adapters/*.cpp",
     "adapters/*.h",
     "background/*.cpp",

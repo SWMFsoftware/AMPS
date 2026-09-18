@@ -30,6 +30,12 @@ struct ShockSourceRecord {
   Core::Status status;
   bool active = false;
   std::uint64_t eventGeneration = 0;
+  // Stochastic identity of one injection opportunity.  It defaults to the
+  // physical shock generation for direct/common-model calls, while the R05
+  // cadence layer combines that generation with the authoritative run tick.
+  // Separating the two prevents repeated injections from reusing stable IDs
+  // without corrupting lastShockGeneration crossing de-duplication.
+  std::uint64_t injectionSequence = 0;
   std::uint64_t sourceId = 0;
   Core::Vec3 positionM;
   Core::Vec3 outwardNormal;

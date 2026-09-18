@@ -23,11 +23,13 @@ The path for one particle is:
 2. Reject an absent schema tag or zero stable particle ID. The allocator slot
    is never used as a stochastic identity because slots change after deletion,
    restart, and MPI migration.
-3. Require `Runtime::Running`, then call the installed `LocalRecordResolver`.
-   The resolver must use the Runtime-pinned background/turbulence generations
-   and return a complete `LocalTransportRecord`.
-4. `AdvanceParticle` validates the complete record, selects a named substep,
-   constructs the semantic random key, and dispatches one Phase-P core.
+3. Require `Runtime::Running`, then enter the requested-time loop. Before each
+   accepted substep the bridge finds the current AMR node and calls the
+   installed `LocalRecordResolver`. The resolver uses only the Runtime-pinned
+   background/turbulence generations and returns a complete local record.
+4. `AdvanceParticleRequestedTime` selects a named substep, dispatches one
+   Phase-P core, advances the moving-shock radius by consumed time, and repeats
+   until the complete AMPS interval is consumed or a terminal state occurs.
 5. Classify the final radius as active, inner-boundary absorbed, outer-boundary
    escaped, or failed. Evaluate an expanding-shock intersection on the accepted
    segment and suppress duplicate crossings of the same shock generation.
@@ -119,7 +121,7 @@ and weights. No `srcSEP` source file is inspected or linked.
 
 ## Exact particle ledger
 
-Each `(step,species)` row must satisfy the integer identity
+Each globally reduced `(step,species)` row must satisfy the integer identity
 
 \[
 N_{start}+N_{injected}=N_{end}+N_{escaped}+N_{absorbed}+N_{failed}.
@@ -129,14 +131,35 @@ N_{start}+N_{injected}=N_{end}+N_{escaped}+N_{absorbed}+N_{failed}.
 A mismatched close returns an error and leaves the row open, preserving the
 evidence needed to locate a list or return-code bug.
 
+Production opens rank-local rows immediately before `PIC::TimeStep`. Movers
+record exactly one final disposition after consuming the complete requested
+time. After AMPS finishes list exchange, start/outcome/end counters are summed
+with `MPI_Allreduce` and imported only if the global row closes exactly. This
+ordering makes ordinary rank migration invisible to conservation while still
+detecting an invalid final-list insertion or an unaccounted deletion.
+
 ## Production configuration requirement
 
-The generated AMPS mover macro must call
-`SEP3D::AMPS::Movers::MoveParticle`. The build configuration must also make the
-declaration in `amps/amps_particle_adapter.h` visible while compiling the AMPS
-mover translation unit. This is an AMPS configuration/header-injection step;
-it is not implemented by redefining a core acceleration macro. A coupled host
-must install `AMPS::Movers::Context` before injecting particles.
+Run the hook after configuring AMPS and before compiling `pic_mover.cpp`:
+
+```bash
+make -C srcSEP3D prepare-production
+```
+
+`amps/install_mover_hook.py` inserts the exact declaration and maps the
+generated `_PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_` macro to
+`SEP3D::AMPS::Movers::MoveParticle`. It is idempotent and refuses to overwrite
+an unrelated mover. `strict-production` depends on this target and audits the
+result. During `amps_init()`, srcSEP3D installs the resolver, substep cap,
+ledger, and initial shock state as one immutable `AMPS::Movers::Context`; a
+coupled host supplies providers, not a second mover context.
+
+Repeated source cadences under one physical shock generation receive distinct
+`injectionSequence` keys derived from `(shock generation, Runtime tick)`. The
+physical generation remains unchanged in `lastShockGeneration`, so stochastic
+identity cannot collide and crossing de-duplication retains its intended
+meaning. A source row is retained only on the AMPS rank that owns the patch
+position, avoiding replicated physical totals at checkpoint gather.
 
 ## Evidence
 
@@ -147,4 +170,7 @@ must install `AMPS::Movers::Context` before injecting particles.
 - `SHK3D01–04`: dimensional source identity, analytic shock geometry, source
   ownership guards, and source-weight normalization.
 - `BLDL3D01/03`: configured AMPS compilation and actual mover-return ABI.
-
+- `R3D01–02`: installed generated hook and complete re-resolved requested-time
+  advancement.
+- `R3D05`: physical source normalization, cap/disconnection policy, and unique
+  cadence identity.

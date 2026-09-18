@@ -95,7 +95,7 @@ bool DriveTo(RM::LifecycleState target, RM::Runtime* runtime,
   if (target == RM::LifecycleState::SnapshotReady) return true;
 
   if (target == RM::LifecycleState::Running) {
-    return runtime->BeginStep(1.0).ok();
+    return runtime->BeginStep(0.0).ok();
   }
   if (target == RM::LifecycleState::Checkpointing) {
     return runtime->BeginCheckpoint().ok();
@@ -122,8 +122,8 @@ Result RunLIFE3D01() {
       !adapter.PublishFrozenParker(&runtime, 0.0, 10.0, 1).ok()) {
     return Fail("MeshReady -> WaitingForSnapshot -> SnapshotReady failed");
   }
-  if (!runtime.BeginStep(1.0).ok() || !runtime.CompleteStep().ok() ||
-      !runtime.BeginStep(2.0).ok() || !runtime.CompleteStep().ok()) {
+  if (!runtime.BeginStep(0.0).ok() || !runtime.CompleteStep().ok() ||
+      !runtime.BeginStep(1.0).ok() || !runtime.CompleteStep().ok()) {
     return Fail("SnapshotReady -> Running -> SnapshotReady failed");
   }
   if (runtime.counters().completedSteps != 2 ||
@@ -187,8 +187,7 @@ bool Allowed(RM::LifecycleState state, Operation operation) {
       return operation == Operation::Publish ||
              operation == Operation::Finalize;
     case RM::LifecycleState::SnapshotReady:
-      return operation == Operation::Publish ||
-             operation == Operation::BeginStep ||
+      return operation == Operation::BeginStep ||
              operation == Operation::BeginCheckpoint ||
              operation == Operation::Finalize;
     case RM::LifecycleState::Running:
@@ -261,7 +260,7 @@ SEP3D::Core::Status Apply(
       return runtime->PublishSnapshot(candidate);
     }
     case Operation::BeginStep:
-      return runtime->BeginStep(1.0);
+      return runtime->BeginStep(0.0);
     case Operation::CompleteStep:
       return runtime->CompleteStep();
     case Operation::BeginCheckpoint:
@@ -274,6 +273,7 @@ SEP3D::Core::Status Apply(
       counters.stepsSinceOutput = 1;
       counters.outputSequence = 2;
       counters.checkpointSequence = 3;
+      counters.currentTick = 4;
       return runtime->RestoreCounters(counters);
     }
     case Operation::Finalize:

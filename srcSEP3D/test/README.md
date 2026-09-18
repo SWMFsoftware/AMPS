@@ -7,7 +7,8 @@ Phase-M mesh, Phase-B background, Phase-T turbulence/coefficient, Phase-P
 transport, Phase-A adapter, and Phase-O sampling/restart evidence without
 requiring AMPS for dependency-free tests. Phase V adds controlled integration
 and physics checks plus explicit linked/cross-model/observational evidence
-gates.
+gates. R01–R07 production-runtime improvements are native registry tests, not
+an external checklist.
 
 ## Quick commands
 
@@ -17,6 +18,7 @@ python3 test/run_tests.py --routine --amps-source /path/to/AMPS
 python3 test/run_tests.py --test LAY01
 python3 test/run_tests.py --suite r1 --suite r2
 python3 test/run_tests.py --suite improvements-c --rebuild
+python3 test/run_tests.py --suite improvements-r --rebuild
 python3 test/run_tests.py --suite phase-m --suite phase-b --suite phase-t
 python3 test/run_tests.py --suite phase-p --suite phase-a --suite phase-o
 python3 test/run_tests.py --suite phase-v --rebuild
@@ -89,6 +91,7 @@ The runner adds
 | `BLD` | `BLD01` | `nm -u` confirms the standalone binary has no AMPS/MPI symbols |
 | `UTIL` | `UTIL02` | byte-exact shared-kernel reference record |
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
+| `R3D` | `R3D01`–`R3D07` | mover hook, requested-time loop, snapshot transaction, tick/events, source, observers, restart |
 | `CFG3D` | `CFG3D01`–`CFG3D05` | C01-C05 schema/CLI, typed contracts, domains, Parker geometry, and mesh/memory preflight |
 | `MSH3D` | `MSH3D01`–`MSH3D09` | resolution, tube geometry, balance, octree budget/ownership, presets, gradients |
 | `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
@@ -183,16 +186,29 @@ and exports the normalized-domain and C05 mesh-preflight ABI names required by
 the production audit. It therefore exercises the strict archive contract while
 leaving real AMPS compilation coverage to BLDL3D01.
 
-#### BLDL3D06 — production turbulence-header boundary
+#### BLDL3D06 — production transitive-header boundary
 
-AMPS compiles `build/main/main_lib.cpp` through a generic `Makefile.conf` rule.
-Some deployed rules do not consume application additions to `CPPFLAGS`,
-`CXXFLAGS`, or `INCLUDE`. This regression therefore compiles
-`turbulence_models.h` with only the srcSEP3D include root and requires it to be
-independent of `sep_common`. It then compiles the opt-in
-`coefficient_bridge.h` with the canonical `SEP_COMMON_DIR` include path. The
-test reproduces the former `sep_coefficient_physics.h: No such file or
-directory` failure without requiring a configured AMPS build.
+Every generic AMPS translation unit reaches `SEP3D.h` through generated
+`pic.h`. Those compiler commands do not necessarily contain the canonical
+`sep_common` or SWCME include paths. This regression rejects concrete
+source/restart/particle-adapter includes from the umbrella header and rejects a
+concrete `source_runtime.h` include from the AMPS adapter declaration. The
+corresponding types must remain forward declarations until an implementation
+file that is compiled with model include paths.
+
+The same gate compiles `turbulence_models.h` with only the srcSEP3D include
+root and requires it to be independent of `sep_common`. It then compiles the opt-in
+`coefficient_bridge.h` with the canonical `SEP_COMMON_DIR` include path.
+
+Finally, the gate creates a mock installed `Makefile.conf` whose generic
+`main_lib.o` recipe intentionally ignores `CPPFLAGS`, `CXXFLAGS`, and
+`INCLUDE`. The command has the same fixed shape seen in production AMPS logs.
+It must nevertheless compile a translation unit that includes both
+`sep_injection_spectrum.h` and `swcme_sep_source.hpp`, proving that the
+makefile's target-scoped `CPLUS_INCLUDE_PATH` reaches `mpicxx`. The test thus
+reproduces both former `sep_coefficient_physics.h` and
+`sep_injection_spectrum.h: No such file or directory` failures without a
+configured AMPS build.
 
 #### BLDL3D07 — application-object ABI freshness
 
@@ -234,6 +250,35 @@ application tree. `SWCME3D01` invokes the relocated SWCME runner and requires
 ```bash
 python3 test/run_tests.py --suite r2 --rebuild \
   --output-dir test_output/r2
+```
+
+### R01–R07 production-runtime gates
+
+| ID | Acceptance contract |
+|---|---|
+| `R3D01` | generated `picGlobal.dfn` hook names the exact mover signature and strict production depends on hook installation |
+| `R3D02` | one AMPS request is consumed by multiple accepted substeps with fresh local resolution and exact final time |
+| `R3D03` | failed fill preserves the active generation; a collectively accepted staged pair commits atomically |
+| `R3D04` | integer clock/event schedule agrees with host time and restores without cadence drift |
+| `R3D05` | physical source number survives rounding/cap, policies are counted, and successive ticks use distinct identities |
+| `R3D06` | moving observer geometry, acceptance/uncertainty metadata, and commit-only accumulator reset are enforced |
+| `R3D07` | schema-2 restart round-trips identities/layout, clocks/events, providers, shock, RNG tuple, ledgers, and sampling state |
+
+```bash
+python3 test/run_tests.py --suite improvements-r --rebuild \
+  --output-dir test_output/improvements-r
+```
+
+These tests are AMPS-independent and always participate in `--all`.
+`BLDL3D01/03/05` remain the configured-host evidence for the generated mover
+ABI and copied `build/main` production layout. On a configured tree the build
+sequence is:
+
+```bash
+make -C srcSEP3D prepare-production
+env MAKEFLAGS="-j16" srcSEP3D/test/run_tests.py --all \
+  --amps-source . --make-config Makefile.conf \
+  --output-dir srcSEP3D/test_output/all --rebuild
 ```
 
 ### C01-C05 configuration and preflight gates
@@ -410,6 +455,7 @@ equations, algorithms, case roles, and evidence schemas.
 | `r1` | canonical shared-archive audit, relocated SWCME suite, and frozen common kernels |
 | `r2` | LIFE3D01–LIFE3D04 immutable configuration and lifecycle gates |
 | `improvements-c` | CFG3D01–CFG3D05 production configuration and preflight gates |
+| `improvements-r` | R3D01–R3D07 production runtime integration gates |
 | `phase-m` | MSH3D01–MSH3D09 mesh/storage gates |
 | `phase-b` | BGP3D01–06 and SNAP3D01–08 background/snapshot gates |
 | `phase-t` | TUR3D01–04 and COEF3D01–02 turbulence/coefficient gates |
@@ -483,6 +529,7 @@ invoke that exact linked callback, following the srcSEP pattern.
 | `BLDL3D02` reports stale `SEP3D.cpp` | remove the obsolete file from the installed `srcSEP3D`; overlay extraction does not delete files left by an older version |
 | `BLDL3D03 SKIP` | pass `--amps-source` pointing to a tree containing `src/pic/pic.h` |
 | `build/main` cannot find `../Makefile.conf` | run `make print-layout-paths`; `AMPS_CONFIG` must resolve to the absolute `AMPS/Makefile.conf` path |
+| `main_lib.cpp` reports `sep_injection_spectrum.h: No such file or directory` | install the updated srcSEP3D makefile in the source tree and refresh the copied `build/main`; `BLDL3D06` verifies that the fixed generic recipe receives the target-scoped canonical model search path |
 | final link reports undefined `Mesh::MakeDomain(RunConfiguration3DOptions)` or `BuildRefinementPreflight` | stale pre-C03/C05 `mesh_model.o`; install the updated makefile, run `make clean`, and rebuild. BLDL3D07 prevents recurrence |
 | standalone compile failure | rerun with `--rebuild --verbose` |
 | Phase-V linked case `SKIP` | supply `--amps`; use `--validation-launch-prefix` when MPI launch arguments are required |

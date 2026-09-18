@@ -66,7 +66,8 @@ STANDALONE_GOALS := check-layering test/stage1 test-stage1 test-harn-unit \
                     test-configuration-unit \
                     test-mesh-unit test-background-unit test-turbulence-unit \
                     test-transport-unit test-adapter-unit test-output-unit \
-                    test-validation-unit clean clean-standalone help \
+                    test-validation-unit test-runtime-improvements-unit \
+                    clean clean-standalone help \
                     print-layout-paths
 ifneq ($(filter $(STANDALONE_GOALS),$(MAKECMDGOALS)),)
 -include $(AMPS_CONFIG)
@@ -86,6 +87,24 @@ CXXFLAGS += $(MODEL_INCLUDE_FLAGS)
 # rather than CPPFLAGS. Supplying both variables keeps the application portable
 # across those revisions; duplicate -I arguments are harmless and deterministic.
 INCLUDE += $(MODEL_INCLUDE_FLAGS)
+
+# Some installed AMPS Makefile.conf revisions compile every ``.cpp`` through
+# a literal generic recipe that does not reference CPPFLAGS, CXXFLAGS, or
+# INCLUDE.  Adding ``-I`` to those make variables is therefore insufficient:
+# the additions never reach mpicxx (the failure is first visible when
+# adapters/swcme_source_adapter.h includes sep_injection_spectrum.h).
+#
+# CPLUS_INCLUDE_PATH is part of the GCC/Clang driver contract and is consumed
+# by mpicxx even when the surrounding make recipe supplies a fixed command.
+# Keep it target-scoped below rather than exporting it globally: only
+# srcSEP3D-owned C++ objects may see the canonical shared-model headers, while
+# generic PIC, mesh, and interface translation units retain their normal AMPS
+# include boundary.  Preserve a caller-provided suffix so site-local compiler
+# installations continue to work.
+SEP3D_MODEL_CPLUS_INCLUDE_PATH := $(SEP_COMMON_DIR):$(SWCME_DIR)
+ifneq ($(strip $(CPLUS_INCLUDE_PATH)),)
+SEP3D_MODEL_CPLUS_INCLUDE_PATH := $(SEP3D_MODEL_CPLUS_INCLUDE_PATH):$(CPLUS_INCLUDE_PATH)
+endif
 
 # L0 numerical core.  Headers are not listed here; normal compiler dependency
 # tracking in the enclosing AMPS build determines when they trigger rebuilds.
@@ -111,9 +130,11 @@ RUNTIME_SRC := \
 ADAPTER_SRC := \
     adapters/transport_adapter.cpp \
     adapters/particle_ledger.cpp \
-    adapters/swcme_source_adapter.cpp
+    adapters/swcme_source_adapter.cpp \
+    adapters/source_runtime.cpp
 OUTPUT_SRC := \
     output/sampling.cpp \
+    output/observer_runtime.cpp \
     output/publication.cpp \
     output/restart.cpp \
     output/output_coordinator.cpp
@@ -139,6 +160,12 @@ MAINLIBOBJ := $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) \
               $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(VALIDATION_OBJ) \
               $(AMPS_OBJ)
 MAINOBJ := $(DRIVER_OBJ)
+
+# Target-specific exported variables are inherited by the recipe selected for
+# each target, including the generic ``%.o: %.cpp`` recipe imported from
+# Makefile.conf.  This is deliberately attached after MAINLIBOBJ/MAINOBJ are
+# complete so every application-owned production object is covered.
+$(MAINLIBOBJ) $(MAINOBJ): export CPLUS_INCLUDE_PATH := $(SEP3D_MODEL_CPLUS_INCLUDE_PATH)
 
 # Source release archives use normalized timestamps for reproducibility.  When
 # such an archive is overlaid on an existing AMPS checkout, an old object can
@@ -170,6 +197,7 @@ STAGE1_TEST_SRC := \
     test/individual-test/test_transport.cpp \
     test/individual-test/test_adapters.cpp \
     test/individual-test/test_output.cpp \
+    test/individual-test/test_runtime_improvements.cpp \
     test/individual-test/test_validation.cpp
 STAGE1_TEST_OBJ := $(STAGE1_TEST_SRC:.cpp=.o)
 
@@ -179,7 +207,7 @@ STAGE1_CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -Werror -O2 \
                    -Iadapters -Ioutput -Ivalidation -I$(SWCME_DIR) \
                    $(SEP_COMMON_INCLUDES)
 
-.PHONY: lib amps strict-production audit-production-symbols
+.PHONY: lib amps prepare-production strict-production audit-production-symbols
 
 lib: $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE) $(MAINLIBOBJ)
 	# Keep the enclosing AMPS link contract unchanged: common objects are built
@@ -217,7 +245,17 @@ amps: $(MAINOBJ)
 # artificial command and fail to find generated build/pic/pic.h.  Delegate to
 # the enclosing build instead; this exercises the same build/main copy and
 # compiler command used to create the real AMPS executable.
-strict-production:
+# R01 application configuration hook. AMPS has already generated build/pic at
+# this point; selecting the callback here keeps the canonical src/pic template
+# untouched so srcSEP and srcSEP3D remain independent applications.
+PIC_GLOBAL_DFN ?= $(AMPS_ROOT)/build/pic/picGlobal.dfn
+prepare-production:
+	@test -f "$(PIC_GLOBAL_DFN)" || { \
+	  echo "ERROR: configure AMPS first; missing $(PIC_GLOBAL_DFN)" >&2; exit 2; }
+	@python3 "$(SEP3D_MAKEFILE_DIR)/amps/install_mover_hook.py" \
+	  "$(PIC_GLOBAL_DFN)"
+
+strict-production: prepare-production
 	@$(MAKE) -C "$(AMPS_ROOT)" amps
 	@$(MAKE) --no-print-directory -f "$(SEP3D_MAKEFILE_DIR)/makefile" \
 	  audit-production-symbols AMPS_ROOT="$(AMPS_ROOT)"
@@ -240,6 +278,11 @@ audit-production-symbols:
 	    exit 1; \
 	  }; \
 	done
+	@grep -Fq 'SEP3D::AMPS::Movers::MoveParticle(ptr,LocalTimeStep,node)' \
+	  "$(PIC_GLOBAL_DFN)" || { \
+	  echo "ERROR: generated picGlobal.dfn does not select the srcSEP3D mover" >&2; \
+	  exit 1; \
+	}
 	@if nm -A $(PRODUCTION_ARCHIVES) | grep -E \
 	  'Mover_Axisymmetric_SecondOrder|TotalParticleAcceleration|GlobalEnergyDistribution|inject_particle_onto_field_line' \
 	  >/dev/null; then \
@@ -320,7 +363,7 @@ test/stage1: check-layering $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_
 .PHONY: test-stage1 test-harn-unit test-lay-unit test-bld-unit test-util-unit \
         test-life-unit test-configuration-unit test-mesh-unit test-background-unit test-turbulence-unit \
         test-transport-unit test-adapter-unit test-output-unit \
-        test-validation-unit
+        test-validation-unit test-runtime-improvements-unit
 test-stage1: test/stage1
 	./test/stage1 --all-tests
 
@@ -363,6 +406,9 @@ test-output-unit: test/stage1
 test-validation-unit: test/stage1
 	./test/stage1 --test-group INT3D --test-group VFY3D
 
+test-runtime-improvements-unit: test/stage1
+	./test/stage1 --test-group R3D
+
 .PHONY: check-layering
 check-layering:
 	@echo "[srcSEP3D] checking that core/background/runtime/mesh/turbulence/transport/adapters/output/validation do not depend on AMPS or MPI"
@@ -388,7 +434,7 @@ clean-standalone:
 .PHONY: help
 help:
 	@echo "Production:  make lib | make amps | make strict-production"
-	@echo "Standalone:  make test-stage1 | make test-configuration-unit | make test-life-unit | make test-mesh-unit | make test-background-unit | make test-turbulence-unit | make test-transport-unit | make test-adapter-unit | make test-output-unit | make test-validation-unit | make check-layering"
+	@echo "Standalone:  make test-stage1 | make test-runtime-improvements-unit | make test-configuration-unit | make test-life-unit | make test-mesh-unit | make test-background-unit | make test-turbulence-unit | make test-transport-unit | make test-adapter-unit | make test-output-unit | make test-validation-unit | make check-layering"
 	@echo "Preferred:   python3 test/run_tests.py --help"
 
 # Diagnostic target used by BLDL3D05 and useful when inspecting a configured

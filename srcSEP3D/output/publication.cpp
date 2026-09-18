@@ -39,13 +39,17 @@ bool WriteCells(const fs::path& path, const SamplingSnapshot& snapshot) {
 bool WriteSpacecraft(const fs::path& path, const SamplingSnapshot& snapshot) {
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
   out << "spacecraft,species,energy_min_J,energy_max_J,"
-         "represented_particles_J-1,dipole_anisotropy\n";
+         "represented_particles_J-1,standard_uncertainty_J-1,"
+         "dipole_anisotropy,observer_kind,normalization,accepted_macroparticles\n";
   out << std::scientific << std::setprecision(17);
   for (const VirtualSpacecraftProduct& p : snapshot.spacecraft)
     for (std::size_t i = 0; i < p.representedParticlesPerJ.size(); ++i)
       out << p.name << ',' << p.species << ',' << p.kineticEnergyEdgesJ[i]
           << ',' << p.kineticEnergyEdgesJ[i + 1] << ','
-          << p.representedParticlesPerJ[i] << ',' << p.dipoleAnisotropy << '\n';
+          << p.representedParticlesPerJ[i] << ','
+          << p.standardUncertaintyPerJ[i] << ',' << p.dipoleAnisotropy << ','
+          << p.observerKind << ',' << p.normalization << ','
+          << p.acceptedMacroparticles << '\n';
   out.close(); return out.good();
 }
 
@@ -244,7 +248,7 @@ Core::Status ParseAndVerifyPublication(const std::string& directory,
   }
   const std::vector<std::pair<std::string, std::string>> headers = {
       {"cells.csv", "cell_id,species,represented_particles,number_density_m-3,flux_x_m-2_s-1,flux_y_m-2_s-1,flux_z_m-2_s-1,kinetic_energy_density_J_m-3,first_pitch_moment"},
-      {"spacecraft.csv", "spacecraft,species,energy_min_J,energy_max_J,represented_particles_J-1,dipole_anisotropy"},
+      {"spacecraft.csv", "spacecraft,species,energy_min_J,energy_max_J,represented_particles_J-1,standard_uncertainty_J-1,dipole_anisotropy,observer_kind,normalization,accepted_macroparticles"},
       {"field_lines.csv", "projection,species,distance_min_m,distance_max_m,represented_particles_m-1"},
       {"shocks.csv", "step,species,injected_count,escaped_count,absorbed_count,failed_count,shock_crossings_count"}};
   for (const auto& header : headers) {

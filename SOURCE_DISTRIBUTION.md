@@ -36,6 +36,29 @@ MPI/restart campaign. Python `--all` discovers all three from `--list-tests`.
 Its optional `--rebuild` performs the enclosing clean/strict production build
 before discovery, so a stale executable cannot hide newly registered tests.
 
+## Current srcSEP3D milestone
+
+The 3-D application now includes runtime improvements R01–R07 in addition to
+the R0–R2/M/B/T/P/A/O/V and C01–C05 foundations:
+
+- R01 installs and audits the single configured AMPS mover hook and closes
+  species/step particle ledgers after global rank reduction;
+- R02 consumes every requested AMPS interval through re-resolved accepted
+  substeps with semantic random identities;
+- R03 publishes paired background/turbulence generations transactionally;
+- R04 owns one integer tick clock and persisted event schedule;
+- R05 turns time-stamped shock patches into conservatively weighted AMPS
+  particles and physical source ledgers;
+- R06 resolves configured observers and commits deterministic sampling windows
+  only after atomic output publication; and
+- R07 validates, writes, and restores complete schema-2 checkpoint state before
+  mutating the mesh or particle lists.
+
+The native `R3D01`–`R3D07` group and `improvements-r` suite are part of
+srcSEP3D `--all`. Configured linked/MPI and independently reviewed scientific
+evidence remain explicit `SKIP` prerequisites when those external inputs are
+not supplied.
+
 ## Authoritative manifests
 
 Each maintained component contains `SOURCE_MANIFEST.json`.  A manifest names
@@ -84,7 +107,8 @@ After the hygiene gate passes, create a deterministic source package with:
 
 ```sh
 python3 tools/create_sep_source_package.py \
-  --root . --output ../AMPS-SEP-B01-B05-D01-D03-source.tar.gz
+  --root . \
+  --output ../AMPS-SEP-B01-B05-D01-D03-C01-C05-R01-R07-source.tar.gz
 ```
 
 The packager reruns hygiene, excludes only the generated paths declared by the

@@ -14,8 +14,8 @@ namespace Output {
 namespace {
 
 namespace fs = std::filesystem;
-constexpr char kMagic[8] = {'S','E','P','3','D','R','0','1'};
-constexpr std::uint32_t kSchema = 1;
+constexpr char kMagic[8] = {'S','E','P','3','D','R','0','2'};
+constexpr std::uint32_t kSchema = 2;
 constexpr std::uint64_t kMaximumRecords = UINT64_C(1000000000);
 
 Core::Status Error(const std::string& message) {
@@ -139,10 +139,89 @@ bool ReadLedger(Reader* in, Adapters::LedgerRow* row) {
   row->key.species = species; return true;
 }
 
+void WriteSourceLedger(Writer* out, const Adapters::SourceLedgerRow& row) {
+  out->U64(row.step); out->I32(row.species); out->U64(row.shockGeneration);
+  out->U64(row.sourceId);
+  out->Double(row.representedParticles); out->Double(row.injectedEnergyJ);
+  out->Double(row.injectedMomentumKgMPerS.x);
+  out->Double(row.injectedMomentumKgMPerS.y);
+  out->Double(row.injectedMomentumKgMPerS.z);
+  out->U64(row.macroparticles); out->U64(row.rejected); out->U64(row.capped);
+  out->U64(row.inactivePatches); out->U64(row.disconnectedPatches);
+}
+
+bool ReadSourceLedger(Reader* in, Adapters::SourceLedgerRow* row) {
+  std::int32_t species = -1;
+  if (!in->U64(&row->step) || !in->I32(&species) ||
+      !in->U64(&row->shockGeneration) || !in->U64(&row->sourceId) ||
+      !in->Double(&row->representedParticles) ||
+      !in->Double(&row->injectedEnergyJ) ||
+      !in->Double(&row->injectedMomentumKgMPerS.x) ||
+      !in->Double(&row->injectedMomentumKgMPerS.y) ||
+      !in->Double(&row->injectedMomentumKgMPerS.z) ||
+      !in->U64(&row->macroparticles) || !in->U64(&row->rejected) ||
+      !in->U64(&row->capped) || !in->U64(&row->inactivePatches) ||
+      !in->U64(&row->disconnectedPatches)) return false;
+  row->species = species;
+  return true;
+}
+
+void WriteSnapshot(Writer* out, const RuntimeModel::SnapshotDescriptor& value) {
+  out->U32(static_cast<std::uint32_t>(value.authority));
+  out->Double(value.epochS); out->Double(value.validFromS);
+  out->Double(value.validUntilS); out->U64(value.generation);
+  out->Bool(value.complete); out->String(value.coordinateFrame);
+  out->String(value.providerIdentity);
+  out->String(value.configurationFingerprint);
+}
+
+bool ReadSnapshot(Reader* in, RuntimeModel::SnapshotDescriptor* value) {
+  std::uint32_t authority = 0;
+  if (!in->U32(&authority) || authority > 1 ||
+      !in->Double(&value->epochS) || !in->Double(&value->validFromS) ||
+      !in->Double(&value->validUntilS) || !in->U64(&value->generation) ||
+      !in->Bool(&value->complete) || !in->String(&value->coordinateFrame) ||
+      !in->String(&value->providerIdentity) ||
+      !in->String(&value->configurationFingerprint)) return false;
+  value->authority = static_cast<RuntimeModel::BackgroundAuthority>(authority);
+  return true;
+}
+
+void WriteShock(Writer* out, const Adapters::ShockState& value) {
+  out->Bool(value.active); out->U64(value.generation);
+  out->Double(value.epochS); out->Double(value.validUntilS);
+  out->Double(value.centerM.x); out->Double(value.centerM.y);
+  out->Double(value.centerM.z); out->Double(value.radiusM);
+  out->Double(value.radialSpeedMPerS); out->Double(value.compressionRatio);
+  out->String(value.providerIdentity);
+  out->String(value.configurationFingerprint);
+}
+
+bool ReadShock(Reader* in, Adapters::ShockState* value) {
+  if (!in->Bool(&value->active) || !in->U64(&value->generation) ||
+      !in->Double(&value->epochS) || !in->Double(&value->validUntilS) ||
+      !in->Double(&value->centerM.x) || !in->Double(&value->centerM.y) ||
+      !in->Double(&value->centerM.z) || !in->Double(&value->radiusM) ||
+      !in->Double(&value->radialSpeedMPerS) ||
+      !in->Double(&value->compressionRatio) ||
+      !in->String(&value->providerIdentity) ||
+      !in->String(&value->configurationFingerprint)) return false;
+  value->status = Core::Status::OK();
+  return true;
+}
+
 Core::Status Validate(const RestartState& state) {
-  if (state.configurationFingerprint.empty() || state.codeIdentity.empty() ||
+  if (state.configurationFingerprint.empty() ||
+      state.resolvedConfigurationManifest.empty() ||
+      state.storageLayoutFingerprint.empty() || state.codeIdentity.empty() ||
       state.snapshotFingerprint.empty() || state.backgroundGeneration == 0 ||
-      state.campaignSeed == 0 || state.nextStableParticleId == 0)
+      state.campaignSeed == 0 || state.nextStableParticleId == 0 ||
+      state.savedRankCount == 0 || !std::isfinite(state.baseTimeStepS) ||
+      state.baseTimeStepS <= 0.0 ||
+      state.runtimeCounters.currentTick !=
+          state.runtimeCounters.completedSteps ||
+      !state.activeSnapshot.complete || state.activeSnapshot.generation !=
+          state.backgroundGeneration)
     return Error("restart identity or generation is invalid");
   std::uint64_t previousId = 0;
   for (const Adapters::ParticleRecord& p : state.particles) {
@@ -170,6 +249,23 @@ Core::Status Validate(const RestartState& state) {
         row.advanced != row.activeEnd)
       return Error("restart contains an open or unbalanced particle ledger row");
   }
+  const Adapters::SourceLedgerRow* previousSource = nullptr;
+  for (const Adapters::SourceLedgerRow& row : state.sourceLedgerRows) {
+    if (row.species < 0 || !std::isfinite(row.representedParticles) ||
+        row.representedParticles < 0.0 || !std::isfinite(row.injectedEnergyJ) ||
+        row.injectedEnergyJ < 0.0 ||
+        !std::isfinite(row.injectedMomentumKgMPerS.x) ||
+        !std::isfinite(row.injectedMomentumKgMPerS.y) ||
+        !std::isfinite(row.injectedMomentumKgMPerS.z))
+      return Error("restart source ledger is invalid");
+    if (previousSource != nullptr &&
+        previousSource->step == row.step &&
+        previousSource->species == row.species &&
+        previousSource->shockGeneration == row.shockGeneration &&
+        previousSource->sourceId == row.sourceId)
+      return Error("restart contains a duplicate physical source ledger row");
+    previousSource = &row;
+  }
   return Core::Status::OK();
 }
 
@@ -187,28 +283,55 @@ Core::Status WriteRestart(const std::string& path, const RestartState& state) {
                const Adapters::LedgerRow& right) {
               return left.key < right.key;
             });
+  std::sort(canonical.sourceLedgerRows.begin(), canonical.sourceLedgerRows.end(),
+            [](const Adapters::SourceLedgerRow& left,
+               const Adapters::SourceLedgerRow& right) {
+              if (left.step != right.step) return left.step < right.step;
+              if (left.species != right.species)
+                return left.species < right.species;
+              if (left.shockGeneration != right.shockGeneration)
+                return left.shockGeneration < right.shockGeneration;
+              return left.sourceId < right.sourceId;
+            });
   const Core::Status valid = Validate(canonical);
   if (!valid.ok()) return valid;
   Writer payload;
   payload.U32(kSchema);
   payload.String(canonical.configurationFingerprint);
+  payload.String(canonical.resolvedConfigurationManifest);
+  payload.String(canonical.storageLayoutFingerprint);
   payload.String(canonical.codeIdentity);
   payload.String(canonical.snapshotFingerprint);
   payload.U64(canonical.runtimeCounters.completedSteps);
   payload.U64(canonical.runtimeCounters.stepsSinceOutput);
   payload.U64(canonical.runtimeCounters.outputSequence);
   payload.U64(canonical.runtimeCounters.checkpointSequence);
+  payload.U64(canonical.runtimeCounters.currentTick);
+  payload.U64(canonical.eventSchedule.nextBackgroundTick);
+  payload.U64(canonical.eventSchedule.nextInjectionTick);
+  payload.U64(canonical.eventSchedule.nextSamplingTick);
+  payload.U64(canonical.eventSchedule.nextCheckpointTick);
+  WriteSnapshot(&payload, canonical.activeSnapshot);
+  payload.Double(canonical.baseTimeStepS);
   payload.U64(canonical.backgroundGeneration);
   payload.U64(canonical.turbulenceGeneration);
   payload.U64(canonical.sourceGeneration);
   payload.U64(canonical.campaignSeed);
   payload.U64(canonical.nextStableParticleId);
+  payload.U64(canonical.savedRankCount);
+  WriteShock(&payload, canonical.shockState);
   payload.U64(canonical.samplingState.completedSamplings);
   payload.U64(canonical.samplingState.observationsProcessed);
+  payload.U64(canonical.samplingState.pendingWindows);
+  payload.U64(canonical.samplingState.pendingObservations);
+  payload.Double(canonical.samplingState.pendingRepresentedParticles);
   payload.U64(canonical.particles.size());
   for (const auto& particle : canonical.particles) WriteParticle(&payload, particle);
   payload.U64(canonical.ledgerRows.size());
   for (const auto& row : canonical.ledgerRows) WriteLedger(&payload, row);
+  payload.U64(canonical.sourceLedgerRows.size());
+  for (const auto& row : canonical.sourceLedgerRows)
+    WriteSourceLedger(&payload, row);
 
   const fs::path final(path);
   const fs::path staging(path + ".staging");
@@ -258,18 +381,32 @@ Core::Status ReadRestart(const std::string& path,
   std::uint32_t schema = 0;
   if (!in.U32(&schema) || schema != kSchema ||
       !in.String(&candidate.configurationFingerprint) ||
+      !in.String(&candidate.resolvedConfigurationManifest) ||
+      !in.String(&candidate.storageLayoutFingerprint) ||
       !in.String(&candidate.codeIdentity) ||
       !in.String(&candidate.snapshotFingerprint) ||
       !in.U64(&candidate.runtimeCounters.completedSteps) ||
       !in.U64(&candidate.runtimeCounters.stepsSinceOutput) ||
       !in.U64(&candidate.runtimeCounters.outputSequence) ||
       !in.U64(&candidate.runtimeCounters.checkpointSequence) ||
+      !in.U64(&candidate.runtimeCounters.currentTick) ||
+      !in.U64(&candidate.eventSchedule.nextBackgroundTick) ||
+      !in.U64(&candidate.eventSchedule.nextInjectionTick) ||
+      !in.U64(&candidate.eventSchedule.nextSamplingTick) ||
+      !in.U64(&candidate.eventSchedule.nextCheckpointTick) ||
+      !ReadSnapshot(&in, &candidate.activeSnapshot) ||
+      !in.Double(&candidate.baseTimeStepS) ||
       !in.U64(&candidate.backgroundGeneration) ||
       !in.U64(&candidate.turbulenceGeneration) ||
       !in.U64(&candidate.sourceGeneration) || !in.U64(&candidate.campaignSeed) ||
       !in.U64(&candidate.nextStableParticleId) ||
+      !in.U64(&candidate.savedRankCount) ||
+      !ReadShock(&in, &candidate.shockState) ||
       !in.U64(&candidate.samplingState.completedSamplings) ||
-      !in.U64(&candidate.samplingState.observationsProcessed))
+      !in.U64(&candidate.samplingState.observationsProcessed) ||
+      !in.U64(&candidate.samplingState.pendingWindows) ||
+      !in.U64(&candidate.samplingState.pendingObservations) ||
+      !in.Double(&candidate.samplingState.pendingRepresentedParticles))
     return Error("restart header schema is invalid or truncated");
   std::uint64_t count = 0;
   if (!in.U64(&count) || count > kMaximumRecords)
@@ -282,16 +419,38 @@ Core::Status ReadRestart(const std::string& path,
   candidate.ledgerRows.resize(static_cast<std::size_t>(count));
   for (auto& row : candidate.ledgerRows)
     if (!ReadLedger(&in, &row)) return Error("restart ledger is truncated");
+  if (!in.U64(&count) || count > kMaximumRecords)
+    return Error("restart source-ledger count is invalid");
+  candidate.sourceLedgerRows.resize(static_cast<std::size_t>(count));
+  for (auto& row : candidate.sourceLedgerRows)
+    if (!ReadSourceLedger(&in, &row))
+      return Error("restart source ledger is truncated");
   if (!in.Done()) return Error("restart contains undeclared trailing payload");
 
   const Core::Status valid = Validate(candidate);
   if (!valid.ok()) return valid;
-  if (candidate.configurationFingerprint !=
-          options.expectedConfigurationFingerprint ||
-      candidate.codeIdentity != options.expectedCodeIdentity ||
-      candidate.snapshotFingerprint != options.expectedSnapshotFingerprint)
+  if ((!options.expectedConfigurationFingerprint.empty() &&
+       candidate.configurationFingerprint !=
+           options.expectedConfigurationFingerprint) ||
+      (!options.expectedCodeIdentity.empty() &&
+       candidate.codeIdentity != options.expectedCodeIdentity) ||
+      (!options.expectedSnapshotFingerprint.empty() &&
+       candidate.snapshotFingerprint != options.expectedSnapshotFingerprint))
     return Core::Status(Core::StatusCode::ConfigurationConflict,
                         "restart configuration, code, or snapshot fingerprint mismatch");
+  if ((!options.expectedResolvedConfigurationManifest.empty() &&
+       candidate.resolvedConfigurationManifest !=
+           options.expectedResolvedConfigurationManifest) ||
+      (!options.expectedStorageLayoutFingerprint.empty() &&
+       candidate.storageLayoutFingerprint !=
+           options.expectedStorageLayoutFingerprint))
+    return Core::Status(Core::StatusCode::ConfigurationConflict,
+                        "restart resolved manifest or storage layout mismatch");
+  if (options.currentRankCount == 0 ||
+      (options.repartition == RepartitionPolicy::RequireSameRankCount &&
+       candidate.savedRankCount != options.currentRankCount))
+    return Core::Status(Core::StatusCode::ConfigurationConflict,
+                        "restart rank count differs and deterministic repartition is disabled");
 
   if (candidate.backgroundGeneration != options.availableBackgroundGeneration) {
     if (options.missingSnapshot == MissingSnapshotPolicy::Reject)

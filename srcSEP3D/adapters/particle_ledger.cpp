@@ -16,6 +16,8 @@ bool AddWouldOverflow(std::uint64_t left, std::uint64_t right) {
 
 }  // namespace
 
+void ParticleLedger::Clear() { rows_.clear(); }
+
 Core::Status ParticleLedger::Begin(std::uint64_t step, int species,
                                    std::uint64_t activeStart) {
   if (species < 0) return Invalid("ledger species is negative");
@@ -98,6 +100,27 @@ Core::Status ParticleLedger::Close(std::uint64_t step, int species,
                         "particle ledger does not close exactly or active count differs");
   candidate.closed = true;
   found->second = candidate;
+  return Core::Status::OK();
+}
+
+Core::Status ParticleLedger::ImportClosed(const LedgerRow& row) {
+  if (!row.closed || row.key.species < 0)
+    return Invalid("import requires a closed ledger row and valid species");
+  if (rows_.find(row.key) != rows_.end())
+    return Invalid("imported ledger row already exists");
+  if (AddWouldOverflow(row.activeStart, row.injected) ||
+      AddWouldOverflow(row.activeEnd, row.escaped) ||
+      AddWouldOverflow(row.activeEnd + row.escaped, row.absorbed) ||
+      AddWouldOverflow(row.activeEnd + row.escaped + row.absorbed,
+                       row.failed))
+    return Invalid("imported particle ledger conservation sum overflow");
+  const std::uint64_t left = row.activeStart + row.injected;
+  const std::uint64_t right = row.activeEnd + row.escaped +
+      row.absorbed + row.failed;
+  if (left != right || row.advanced != row.activeEnd)
+    return Core::Status(Core::StatusCode::Error,
+                        "imported particle ledger does not close exactly");
+  rows_.emplace(row.key, row);
   return Core::Status::OK();
 }
 

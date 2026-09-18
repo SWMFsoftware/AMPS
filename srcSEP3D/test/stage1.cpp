@@ -161,6 +161,7 @@ int main(int argc, char** argv) {
   append(RegisterAdapterTests());     // ADP3D/NAT3D/SHK3D — Phase A
   append(RegisterOutputTests());      // NAT3D/RST3D — Phase O
   append(RegisterValidationTests());  // INT3D/VFY3D — Phase V prerequisites
+  append(RegisterRuntimeImprovementTests());  // R3D — improvements R01-R07
 
   // Linked multi-rank and observational groups are added only by the Phase-V
   // campaign runner when real external evidence is available; they must not

@@ -48,6 +48,10 @@ class PrescribedKolmogorovProvider final : public TurbulenceProvider {
   }
   Core::Status Validate() const override;
   Core::Status Prepare(double epochS) override;
+  // Restart-only provenance restoration.  Physics configuration is already
+  // frozen; this restores the published generation without replaying every
+  // historical cadence.
+  Core::Status PrepareGeneration(double epochS, std::uint64_t generation);
   const TurbulenceMetadata* PreparedMetadata() const override;
   TurbulenceSample Evaluate(
       const Core::Vec3& positionM,
@@ -144,6 +148,28 @@ class NormalizedPowerLawSpectrum {
   double index_ = 0.0;
   double normalization_ = 0.0;
 };
+
+// sep_common-free result used by the AMPS local-state resolver.  The
+// implementation delegates every physical coefficient to CoefficientBridge;
+// exposing only primitive SI values here preserves the production header
+// boundary that older AMPS Makefile.conf revisions require.
+struct LocalScatteringCoefficients {
+  Core::Status status;
+  double kappaParallelM2PerS = 0.0;
+  double dMuMuPerS = 0.0;
+  double dDmuMuDmuPerS = 0.0;
+  std::uint64_t turbulenceGeneration = 0;
+};
+
+LocalScatteringCoefficients EvaluateLocalScattering(
+    const TurbulenceSample& turbulence,
+    const Background::BackgroundSample& background,
+    const Core::Vec3& positionM,
+    int modelSpecies,
+    double speciesMassKg,
+    double signedChargeC,
+    double momentumKgMPerS,
+    double mu);
 
 }  // namespace Turbulence
 }  // namespace SEP3D

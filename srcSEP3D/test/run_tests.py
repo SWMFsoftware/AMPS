@@ -74,6 +74,13 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("LIFE3D02", "LIFE3D", "Illegal transition matrix", "cpp"),
     TestDefinition("LIFE3D03", "LIFE3D", "Frozen layout and fingerprint", "cpp"),
     TestDefinition("LIFE3D04", "LIFE3D", "Standalone/SWMF adapter parity", "cpp"),
+    TestDefinition("R3D01", "R3D", "AMPS mover selection hook", "cpp"),
+    TestDefinition("R3D02", "R3D", "Complete requested-time advance", "cpp"),
+    TestDefinition("R3D03", "R3D", "Transactional snapshot update", "cpp"),
+    TestDefinition("R3D04", "R3D", "Authoritative integer clock", "cpp"),
+    TestDefinition("R3D05", "R3D", "Shock source lifecycle", "cpp"),
+    TestDefinition("R3D06", "R3D", "Observer publication transaction", "cpp"),
+    TestDefinition("R3D07", "R3D", "Complete restart contract", "cpp"),
     TestDefinition("CFG3D01", "CFG3D", "Input schema and CLI", "cpp"),
     TestDefinition("CFG3D02", "CFG3D", "Complete typed contracts", "cpp"),
     TestDefinition("CFG3D03", "CFG3D", "Domain and boundaries", "cpp"),
@@ -160,7 +167,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("BLDL3D03", "BLDL3D", "AMPS mover return-code mapping", "source"),
     TestDefinition("BLDL3D04", "BLDL3D", "AMPS Pi-macro namespace hygiene", "source"),
     TestDefinition("BLDL3D05", "BLDL3D", "Source/build makefile path resolution", "source"),
-    TestDefinition("BLDL3D06", "BLDL3D", "Production turbulence-header boundary", "source"),
+    TestDefinition("BLDL3D06", "BLDL3D", "Production transitive-header boundary", "source"),
     TestDefinition("BLDL3D07", "BLDL3D", "Application-object ABI freshness", "source"),
     TestDefinition("ARCH3D02", "ARCH3D", "Canonical shared-archive ownership", "source"),
     TestDefinition("SWCME3D01", "SWCME3D", "Relocated SWCME common runner", "source"),
@@ -202,6 +209,8 @@ SUITES: Dict[str, Tuple[str, ...]] = {
            "RUN3D01", "LAY01", "BLD01"),
     "r1": ("ARCH3D02", "SWCME3D01", "UTIL02"),
     "r2": ("LIFE3D01", "LIFE3D02", "LIFE3D03", "LIFE3D04"),
+    "improvements-r": tuple(item.test_id for item in TESTS
+                             if item.group == "R3D"),
     "improvements-c": tuple(item.test_id for item in TESTS
                             if item.group == "CFG3D"),
     "phase-m": tuple(item.test_id for item in TESTS if item.group == "MSH3D"),
@@ -596,6 +605,28 @@ def _check_macro_hygiene(definition: TestDefinition,
     if compiler is None:
         return Result(definition.test_id, definition.group, "ERROR",
                       f"C++ compiler not found: {args.cxx}", 0.0, [])
+
+    # SEP3D.h is included from generated pic.h, so a concrete source/restart
+    # include here leaks sep_common into unrelated AMPS interface and mesh
+    # translation units.  The particle-adapter declaration is reachable from
+    # the same public boundary and must keep InjectionPlan incomplete until its
+    # implementation file.  Audit these precise dependency edges first.
+    umbrella = (ROOT / "SEP3D.h").read_text(encoding="utf-8")
+    particle_adapter = (ROOT / "amps" / "amps_particle_adapter.h").read_text(
+        encoding="utf-8")
+    forbidden_umbrella = (
+        '"adapters/source_runtime.h"',
+        '"output/restart.h"',
+        '"amps/amps_particle_adapter.h"',
+    )
+    leaked = [item for item in forbidden_umbrella if item in umbrella]
+    if '"../adapters/source_runtime.h"' in particle_adapter:
+        leaked.append('amps_particle_adapter.h -> source_runtime.h')
+    if leaked:
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            "AMPS-facing headers expose canonical-model-only dependencies: " +
+            ", ".join(leaked), 0.0, [])
     source = ROOT / "test" / "compile_macro_hygiene.cpp"
     command = [compiler, "-std=c++17", "-Wall", "-Wextra", "-Wpedantic",
                "-Werror", "-fsyntax-only", str(source)]
@@ -612,15 +643,17 @@ def _check_macro_hygiene(definition: TestDefinition,
 def _check_turbulence_header_boundary(definition: TestDefinition,
                                       args: argparse.Namespace,
                                       output_dir: Path) -> Result:
-    """Compile the production provider API without a sep_common include path.
+    """Check both transitive headers and the installed AMPS object recipe.
 
     AMPS compiles the copied build/main/main_lib.cpp with a generic rule from
     Makefile.conf. Several deployed revisions of that rule do not consume the
-    CPPFLAGS/CXXFLAGS appended by the application makefile. Consequently any
-    header included by main_lib.cpp must be self-contained with respect to
-    application-local include directories. The coefficient bridge is tested
-    separately with SEP_COMMON_DIR because only its explicit turbulence/*.cpp
-    rule is allowed to require that path.
+    CPPFLAGS/CXXFLAGS/INCLUDE variables appended by the application makefile.
+    Consequently transitive public headers must stay dependency-light, while
+    application-owned objects that legitimately consume sep_common/SWCME must
+    receive the canonical directories through the target-scoped compiler
+    environment.  The final probe deliberately uses a generic recipe with no
+    include variables; it reproduces the command shape used by those AMPS
+    installations instead of merely inspecting makefile text.
     """
     compiler = shutil.which(args.cxx)
     if compiler is None:
@@ -628,7 +661,7 @@ def _check_turbulence_header_boundary(definition: TestDefinition,
                       f"C++ compiler not found: {args.cxx}", 0.0, [])
 
     try:
-        common_dir, _ = _canonical_model_dirs(args)
+        common_dir, swcme_dir = _canonical_model_dirs(args)
     except RunnerError as error:
         return Result(definition.test_id, definition.group, "ERROR",
                       str(error), 0.0, [])
@@ -670,11 +703,61 @@ def _check_turbulence_header_boundary(definition: TestDefinition,
             "coefficient_bridge.h does not compile with canonical "
             "SEP_COMMON_DIR:\n" + output[-3000:], elapsed, bridge_command)
 
+    # Reproduce an installed Makefile.conf whose generic C++ recipe ignores
+    # CPPFLAGS, CXXFLAGS, and INCLUDE.  Name the target like a real srcSEP3D
+    # production object so the makefile's target-scoped CPLUS_INCLUDE_PATH is
+    # exercised.  The probe must find both canonical model headers even though
+    # neither directory appears on the compiler command line.
+    make = shutil.which("make")
+    if make is None:
+        return Result(definition.test_id, definition.group, "ERROR",
+                      "make is unavailable for the generic-recipe probe",
+                      elapsed, provider_command + bridge_command)
+    generic_root = fixture / "generic-recipe"
+    generic_root.mkdir(parents=True, exist_ok=True)
+    # main_lib.o intentionally has no application-local explicit recipe; in
+    # production it is exactly the root-level object compiled by the generic
+    # Makefile.conf rule shown in AMPS build logs.
+    generic_source = generic_root / "main_lib.cpp"
+    generic_source.write_text(
+        '#include "sep_injection_spectrum.h"\n'
+        '#include "swcme_sep_source.hpp"\n'
+        'int sep3d_model_header_probe() {\n'
+        '  SEP::Injection::Configuration injection;\n'
+        '  swcme::sep::SEPSourceState source;\n'
+        '  return injection.macroparticlesPerEvent == 0 && !source.active;\n'
+        '}\n', encoding="utf-8")
+    generic_config = generic_root / "Makefile.conf"
+    generic_config.write_text(
+        '%.o: %.cpp\n'
+        '\t$(CXX) -std=c++17 -Wall -Wextra -Werror -c $< -o $@\n',
+        encoding="utf-8")
+    generic_command = [
+        make, "-f", str(ROOT / "makefile"),
+        "main_lib.o",
+        f"AMPS_ROOT={ROOT.parent}",
+        f"AMPS_CONFIG={generic_config}",
+        f"SEP_COMMON_DIR={common_dir}",
+        f"SWCME_DIR={swcme_dir}",
+        f"CXX={compiler}",
+    ]
+    code, output, generic_elapsed = _run_command(
+        generic_command, generic_root, args.timeout, args.verbose)
+    elapsed += generic_elapsed
+    if code != 0:
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            "an AMPS generic recipe that ignores make include variables cannot "
+            "compile a srcSEP3D-owned canonical-model consumer:\n" +
+            output[-3000:], elapsed, generic_command)
+
     return Result(
         definition.test_id, definition.group, "PASS",
-        "production turbulence provider header is sep_common-independent; "
-        "the opt-in coefficient bridge compiles with canonical SEP_COMMON_DIR",
-        elapsed, provider_command + bridge_command)
+        "SEP3D.h and the AMPS adapter hide source/restart model dependencies; "
+        "the turbulence provider remains sep_common-independent; and an AMPS "
+        "generic object recipe that ignores CPPFLAGS/CXXFLAGS/INCLUDE still "
+        "receives canonical sep_common/SWCME headers for srcSEP3D objects",
+        elapsed, provider_command + bridge_command + generic_command)
 
 
 def _check_makefile_relocation(definition: TestDefinition,
@@ -706,6 +789,8 @@ def _check_makefile_relocation(definition: TestDefinition,
     build_dir.mkdir(parents=True)
     common_dir.mkdir(parents=True)
     swcme_dir.mkdir(parents=True)
+    (source_dir / "amps").mkdir(parents=True)
+    (fixture / "build" / "pic").mkdir(parents=True)
     (fixture / "Makefile.conf").write_text(
         "# Empty BLDL3D05 configuration fixture.\n", encoding="utf-8")
 
@@ -769,8 +854,8 @@ def _check_makefile_relocation(definition: TestDefinition,
         "turbulence_models.o keyed_random.o time_step.o "
         "parker_transport.o focused_transport.o "
         "run_configuration.o configuration_io.o runtime.o runtime_adapters.o "
-        "transport_adapter.o particle_ledger.o swcme_source_adapter.o "
-        "sampling.o publication.o restart.o output_coordinator.o "
+        "transport_adapter.o particle_ledger.o swcme_source_adapter.o source_runtime.o "
+        "sampling.o observer_runtime.o publication.o restart.o output_coordinator.o "
         "validation_metrics.o main_lib.o amps_particle_adapter.o")
     shared_members = (
         "sep_transport_common.o sep_coefficient_physics.o "
@@ -792,6 +877,15 @@ def _check_makefile_relocation(definition: TestDefinition,
         encoding="utf-8")
     shutil.copy2(ROOT / "makefile", source_dir / "makefile")
     shutil.copy2(ROOT / "makefile", build_dir / "makefile")
+    shutil.copy2(ROOT / "amps" / "install_mover_hook.py",
+                 source_dir / "amps" / "install_mover_hook.py")
+    (fixture / "build" / "pic" / "picGlobal.dfn").write_text(
+        "#ifndef _PIC_GLOBAL_DEFINITIONS_H_\n"
+        "#define _PIC_GLOBAL_DEFINITIONS_H_\n"
+        "#define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) "
+        "PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_SecondOrder"
+        "(ptr,LocalTimeStep,node);\n"
+        "#endif\n", encoding="utf-8")
 
     expected = {
         f"AMPS_ROOT={fixture.resolve()}",

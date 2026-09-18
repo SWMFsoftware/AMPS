@@ -43,6 +43,10 @@ struct LedgerRow {
 
 class ParticleLedger final {
  public:
+  // Remove the previous rank-local working set before a new AMPS particle
+  // phase begins.  Production preserves already reduced, closed rows in its
+  // separate history vector; this object is the mover's per-step scratchpad.
+  void Clear();
   Core::Status Begin(std::uint64_t step, int species,
                      std::uint64_t activeStart);
   Core::Status RecordInjection(std::uint64_t step, int species,
@@ -52,6 +56,11 @@ class ParticleLedger final {
                            bool shockCrossed = false);
   Core::Status Close(std::uint64_t step, int species,
                      std::uint64_t activeEnd);
+  // Install a row that has already been summed over every MPI rank.  The same
+  // exact closure checks used by Close are applied before it becomes visible
+  // to sampling or restart.  This avoids pretending rank migration is a local
+  // source/sink while retaining a globally exact conservation identity.
+  Core::Status ImportClosed(const LedgerRow& row);
   const LedgerRow* Find(std::uint64_t step, int species) const;
   std::vector<LedgerRow> Rows() const;
 
