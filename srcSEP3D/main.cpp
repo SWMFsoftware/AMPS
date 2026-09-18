@@ -3,13 +3,16 @@
 //
 // Standard standalone AMPS application driver through Phases M/B/T/P/A/O.
 //
-// This executable is itself the standalone host, so it constructs a typed
-// default configuration directly.  It deliberately does not parse argv or an
-// AMPS parameter file.  Coupled SWMF builds call the same library entry points
-// with their own immutable configuration and imported provider objects.
+// This executable is itself the standalone host.  It owns the one permitted
+// text boundary: argv selects a versioned input file, configuration_io parses
+// and normalizes it, and the AMPS-independent immutable factory validates the
+// complete request before any AMPS mesh or MPI lifecycle operation begins.
+// Coupled SWMF builds bypass this file parser and construct the same typed
+// RunConfiguration3DOptions record directly.
 // ============================================================================
 
 #include "SEP3D.h"
+#include "runtime/configuration_io.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -20,15 +23,40 @@ void amps_init_mesh();
 int amps_time_step();
 
 int main(int argc, char** argv) {
-  (void)argc;
-  (void)argv;
-
-  SEP3D::RuntimeModel::RunConfiguration3DOptions options;
-  options.shock = SEP3D::RuntimeModel::ShockAuthority::None;
-  std::shared_ptr<const SEP3D::RuntimeModel::RunConfiguration3D> configuration;
+  SEP3D::RuntimeModel::StandaloneRunRequest request;
   SEP3D::Core::Status status =
-      SEP3D::RuntimeModel::RunConfiguration3D::Create(options, &configuration);
-  if (status.ok()) status = SEP3D::ConfigureApplication(configuration);
+      SEP3D::RuntimeModel::BuildStandaloneRunRequest(argc, argv, &request);
+  if (!status.ok()) {
+    std::cerr << "srcSEP3D command/configuration error: "
+              << status.message << '\n';
+    return 2;
+  }
+
+  // Test discovery/execution uses test/stage1 for AMPS-independent cases and
+  // test/run_tests.py for linked/validation cases.  The parser recognizes the
+  // common spelling so accidental use fails before AMPS starts, rather than
+  // being mistaken for a production simulation.
+  if (request.commandLine.listTests || request.commandLine.allTests ||
+      !request.commandLine.tests.empty()) {
+    std::cerr << "srcSEP3D test selection is provided by test/stage1 and "
+                 "test/run_tests.py; no simulation was started\n";
+    return 2;
+  }
+
+  if (request.commandLine.dryRun) {
+    std::string summary;
+    status = SEP3D::RuntimeModel::BuildDryRunSummary(
+        *request.configuration, &summary);
+    if (!status.ok()) {
+      std::cerr << "srcSEP3D dry-run preflight failed: " << status.message
+                << '\n';
+      return EXIT_FAILURE;
+    }
+    std::cout << summary;
+    return EXIT_SUCCESS;
+  }
+
+  status = SEP3D::ConfigureApplication(request.configuration);
   if (!status.ok()) {
     std::cerr << "srcSEP3D standalone configuration failed: "
               << status.message << '\n';
@@ -38,7 +66,9 @@ int main(int argc, char** argv) {
   amps_init_mesh();
   amps_init();
 
-  for (long int iteration = 0; iteration < 100000001L; ++iteration) {
+  const std::uint64_t maximumSteps =
+      request.configuration->options().maximumTimeSteps;
+  for (std::uint64_t iteration = 0; iteration < maximumSteps; ++iteration) {
     if (amps_time_step() == _PIC_TIMESTEP_RETURN_CODE__END_SIMULATION_) break;
   }
 

@@ -115,7 +115,7 @@ static void PrintHelp(const char* argv0) {
     << "  1  at least one FAILED\n"
     << "  2  at least one ERROR, or a usage error (unknown option, bad ID)\n"
     << "\n"
-    << "Groups through Phase V:   ADP3D  BGP3D  BLD  COEF3D  FTE3D  HARN  INT3D  LAY  LIFE3D  MSH3D  NAT3D  PRK3D  RNG3D  RST3D  SHK3D  SNAP3D  TUR3D  UTIL  VFY3D\n"
+    << "Groups through C01-C05/Phase V:   ADP3D  BGP3D  BLD  CFG3D  COEF3D  FTE3D  HARN  INT3D  LAY  LIFE3D  MSH3D  NAT3D  PRK3D  RNG3D  RST3D  SHK3D  SNAP3D  TUR3D  UTIL  VFY3D\n"
     << "Frozen records:    test/frozen/\n"
     << "Test artifacts:    test/individual-test/\n"
     << "Full procedure:    test/README.md\n";
@@ -153,6 +153,7 @@ int main(int argc, char** argv) {
   append(RegisterBuildTests(selfPath));
   append(RegisterKernelTests());   // UTIL — shared-kernel frozen record (Step 3)
   append(RegisterRuntimeTests());  // LIFE3D — Phase R2 lifecycle
+  append(RegisterConfigurationTests());  // CFG3D — improvements C01-C05
   append(RegisterMeshTests());     // MSH3D — Phase M mesh/storage
   append(RegisterBackgroundTests());  // BGP3D/SNAP3D — Phase B
   append(RegisterTurbulenceTests());  // TUR3D/COEF3D — Phase T

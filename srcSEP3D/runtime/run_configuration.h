@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace SEP3D {
 namespace RuntimeModel {
@@ -23,7 +24,16 @@ enum class BackgroundAuthority { AnalyticParker, Swmf };
 enum class TurbulenceAuthority { Prescribed, Swmf };
 enum class ShockAuthority { None, Swcme };
 enum class TransportModel { Parker3D, Focused3D };
-enum class DomainPreset { Earth, Mars };
+// Domain presets are physical choices, not shorthand for a hidden numeric
+// default.  ``Earth`` remains an input spelling retained for compatibility;
+// normalization maps it to the one-AU preset before fingerprinting.
+enum class DomainPreset { Solar, OneAu, Earth, Mars };
+enum class OuterRadiusMode { Preset, Explicit };
+enum class InnerBoundaryMode { Absorb };
+enum class OuterBoundaryMode { Escape, ImportedCoverage };
+enum class RefinementProfile { Linear, PowerLaw, Smoothstep };
+enum class TubeRadiusMode { PhysicalConstant, ConstantAngularWidth };
+enum class RunIntent { TransportOnly, ShockInjection };
 enum class MissingTurbulenceMode { Fail, Ballistic };
 enum class ResonanceRangeMode { Reject, PowerLawExtension };
 enum class PitchAngleSchemeMode { ReflectingMilstein, ReflectingEulerMaruyama };
@@ -33,9 +43,86 @@ const char* Name(TurbulenceAuthority value);
 const char* Name(ShockAuthority value);
 const char* Name(TransportModel value);
 const char* Name(DomainPreset value);
+const char* Name(OuterRadiusMode value);
+const char* Name(InnerBoundaryMode value);
+const char* Name(OuterBoundaryMode value);
+const char* Name(RefinementProfile value);
+const char* Name(TubeRadiusMode value);
+const char* Name(RunIntent value);
 const char* Name(MissingTurbulenceMode value);
 const char* Name(ResonanceRangeMode value);
 const char* Name(PitchAngleSchemeMode value);
+
+// C02 typed physical groups.  These records deliberately contain SI values
+// only.  The file parser converts unit-bearing text into these records, while
+// an SWMF host may populate the same records directly without linking parser
+// code into the coupler.
+struct ParkerPhysicsOptions {
+  double sourceRadiusM = 20.0 * Core::Const::R_sun;
+  double sourceLongitudeRad = 0.0;
+  double sourceColatitudeRad = 0.5 * Core::Const::kPi;
+  double referenceRadiusM = Core::Const::AU;
+  double radialFieldAtReferenceT = 3.0e-9;
+  double solarRotationRateRadPerS = Core::Const::Omega_sun;
+  double solarWindSpeedMPerS = Core::Const::V_sw_default;
+  int magneticPolarity = 1;
+  double numberDensityAtReferenceM3 = 5.0e6;
+  double temperatureK = 1.0e5;
+  double validityCadenceS = 3600.0;
+  std::string coordinateFrame = "HCI-like-inertial";
+};
+
+struct ShockOptions {
+  // Times are relative to the host simulation clock.  A shock authority of
+  // None ignores the interval; Swcme requires a finite ordered interval and a
+  // maximum front radius within the frozen computational domain.
+  double activeFromS = 0.0;
+  double activeUntilS = 86400.0;
+  double initialRadiusM = 20.0 * Core::Const::R_sun;
+  double maximumRadiusM = Core::Const::AU;
+  double speedMPerS = 1.0e6;
+  double compressionRatio = 4.0;
+};
+
+struct SourceOptions {
+  bool enabled = false;
+  double injectionEfficiency = 1.0e-4;
+  double minimumEnergyJ = 1.0e4 * Core::Const::e;
+  double maximumEnergyJ = 1.0e8 * Core::Const::e;
+  double spectralIndex = 5.0;
+  std::uint64_t samplesPerStep = 1000;
+};
+
+struct SpeciesOptions {
+  std::string name = "proton";
+  double massKg = Core::Const::m_p;
+  double chargeC = Core::Const::e;
+  double macroparticleWeight = 1.0;
+};
+
+struct ObserverOptions {
+  std::string id;
+  Core::Vec3 positionM;
+  bool followsTrajectory = false;
+  double cadenceS = 60.0;
+  unsigned energyBins = 32;
+  unsigned pitchAngleBins = 24;
+  std::string products = "flux,spectrum";
+};
+
+struct MemoryModelOptions {
+  // Coefficients are explicit because AMPS object sizes are build dependent.
+  // They are conservative defaults for dry-run planning, not universal ABI
+  // constants.  Native validation may replace them with calibrated values.
+  std::size_t baseCellBytes = 256;
+  std::size_t baseNodeBytes = 128;
+  std::size_t blockStructureBytes = 4096;
+  std::size_t communicationBytesPerBlock = 2048;
+  std::size_t particleBytes = 160;
+  double particlesPerCell = 2.0;
+  double haloFraction = 0.20;
+  double safetyMarginFraction = 0.25;
+};
 
 // Mutable input record used only while the host resolves configuration.  The
 // successful factory copies it into a RunConfiguration3D exposed solely
@@ -44,13 +131,21 @@ const char* Name(PitchAngleSchemeMode value);
 struct RunConfiguration3DOptions {
   BackgroundAuthority background = BackgroundAuthority::AnalyticParker;
   TurbulenceAuthority turbulence = TurbulenceAuthority::Prescribed;
-  ShockAuthority shock = ShockAuthority::Swcme;
+  ShockAuthority shock = ShockAuthority::None;
   TransportModel transport = TransportModel::Parker3D;
-  DomainPreset domain = DomainPreset::Earth;
+  DomainPreset domain = DomainPreset::OneAu;
+  OuterRadiusMode outerRadiusMode = OuterRadiusMode::Preset;
+  InnerBoundaryMode innerBoundary = InnerBoundaryMode::Absorb;
+  OuterBoundaryMode outerBoundary = OuterBoundaryMode::Escape;
+  Core::Vec3 coordinateOriginM = {0.0, 0.0, 0.0};
+  std::string coordinateFrame = "HCI-like-inertial";
 
   double innerRadiusM = 20.0 * Core::Const::R_sun;
+  // ``outerRadiusM`` is normalized to a resolved SI value by Create().  The
+  // input value is consulted only when outerRadiusMode is Explicit.
   double outerRadiusM = Core::Const::AU;
   double requestedTimeStepS = 1.0;
+  std::uint64_t maximumTimeSteps = 100000001;
   std::uint64_t campaignSeed = 1;
   std::uint64_t backgroundCadenceSteps = 1;
 
@@ -60,18 +155,37 @@ struct RunConfiguration3DOptions {
   double minimumCellSizeM = 0.01 * Core::Const::AU;
   double backgroundCellSizeM = 0.25 * Core::Const::AU;
   bool enableRadialRefinement = true;
+  double solarSurfaceCellSizeM = 0.01 * Core::Const::AU;
+  double solarRefinementOuterRadiusM = 0.25 * Core::Const::AU;
+  RefinementProfile solarRefinementProfile = RefinementProfile::Smoothstep;
+  double solarRefinementExponent = 1.0;
   bool enableTubeRefinement = false;
   double tubeLongitudeRad = 0.0;
   double tubeColatitudeRad = 0.5 * Core::Const::kPi;
-  int tubePolarity = 1;
-  double tubeCoreRadiusM = 0.01 * Core::Const::AU;
-  double tubeShoulderRadiusM = 0.03 * Core::Const::AU;
+  double tubeReferenceRadiusM = Core::Const::AU;
+  double tubeRadiusAtReferenceM = 0.03 * Core::Const::AU;
+  TubeRadiusMode tubeRadiusMode = TubeRadiusMode::ConstantAngularWidth;
   double tubeCellSizeM = 0.01 * Core::Const::AU;
+  RefinementProfile tubeTransverseProfile = RefinementProfile::Smoothstep;
+  double tubeTransverseExponent = 1.0;
   unsigned meshCellsPerBlockEdge = 4;
-  unsigned maximumMeshLevel = 5;
+  unsigned maximumMeshLevel = 7;
   std::size_t meshBlockOverheadBytes = 1024;
   std::size_t meshMemoryBudgetBytes =
       std::size_t{4} * 1024 * 1024 * 1024;
+  MemoryModelOptions memoryModel;
+
+  // Complete C02 physical inputs.  ``intent`` prevents a transport-only
+  // demonstration from being confused with an injection run that silently
+  // disabled its source.
+  RunIntent intent = RunIntent::TransportOnly;
+  ParkerPhysicsOptions parker;
+  ShockOptions shockModel;
+  SourceOptions source;
+  SpeciesOptions species;
+  std::vector<ObserverOptions> observers = {
+      {"default", {0.25 * Core::Const::AU, 0.0, 0.0}, false, 60.0, 32, 24,
+       "flux,spectrum"}};
 
   // Phase-T scattering inputs.  Integrated wave amplitude, spectral shape,
   // finite-band behavior, and missing-data behavior are all fingerprinted.
@@ -110,6 +224,8 @@ struct RunConfiguration3DOptions {
   std::uint64_t outputCadenceSteps = 1;
   std::string outputDirectory = "output";
   std::string outputPrefix = "sep3d";
+  std::string restartInputPath;
+  std::string restartOutputPath = "restart/sep3d.chk";
 
   // Reserved physics must fail during configuration rather than quietly
   // becoming a no-op in a mover.

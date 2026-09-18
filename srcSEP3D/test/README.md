@@ -16,6 +16,7 @@ python3 test/run_tests.py --list
 python3 test/run_tests.py --routine --amps-source /path/to/AMPS
 python3 test/run_tests.py --test LAY01
 python3 test/run_tests.py --suite r1 --suite r2
+python3 test/run_tests.py --suite improvements-c --rebuild
 python3 test/run_tests.py --suite phase-m --suite phase-b --suite phase-t
 python3 test/run_tests.py --suite phase-p --suite phase-a --suite phase-o
 python3 test/run_tests.py --suite phase-v --rebuild
@@ -88,6 +89,7 @@ The runner adds
 | `BLD` | `BLD01` | `nm -u` confirms the standalone binary has no AMPS/MPI symbols |
 | `UTIL` | `UTIL02` | byte-exact shared-kernel reference record |
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
+| `CFG3D` | `CFG3D01`–`CFG3D05` | C01-C05 schema/CLI, typed contracts, domains, Parker geometry, and mesh/memory preflight |
 | `MSH3D` | `MSH3D01`–`MSH3D09` | resolution, tube geometry, balance, octree budget/ownership, presets, gradients |
 | `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
 | `SNAP3D` | `SNAP3D01`–`SNAP3D08` | snapshot completeness, coupling conversion, atomicity, interpolation, batch/frame policy |
@@ -175,7 +177,11 @@ itself must match its source or copied location. This directly protects against 
 `build/main: ../Makefile.conf: No such file or directory` failure.
 The same fixture also supplies a synthetic enclosing `amps` target and verifies
 that `strict-production` delegates to it and audits `build/main` archives rather
-than attempting a bare compile in `srcSEP3D`.
+than attempting a bare compile in `srcSEP3D`. The synthetic build uses valid
+ELF fixture objects, creates the complete application/shared member manifest,
+and exports the normalized-domain and C05 mesh-preflight ABI names required by
+the production audit. It therefore exercises the strict archive contract while
+leaving real AMPS compilation coverage to BLDL3D01.
 
 #### BLDL3D06 — production turbulence-header boundary
 
@@ -187,6 +193,21 @@ independent of `sep_common`. It then compiles the opt-in
 `coefficient_bridge.h` with the canonical `SEP_COMMON_DIR` include path. The
 test reproduces the former `sep_coefficient_physics.h: No such file or
 directory` failure without requiring a configured AMPS build.
+
+#### BLDL3D07 — application-object ABI freshness
+
+Reproducible source packages normalize file timestamps. If such a package is
+overlaid on an existing configured tree, timestamp-only dependency checks can
+mistake an older `build/main/mesh/mesh_model.o` for a current object. The
+symptom is a final-link failure for the new normalized-domain or C05 preflight
+symbols even though other, unchanged mesh symbols resolve.
+
+The production makefile therefore forces every srcSEP3D-owned object to be
+recompiled whenever its `lib` or `amps` target runs. It recreates indexed
+archives, verifies exactly one copy of every application/shared member, and
+uses `nm -C` to require the current `MakeDomain(RunConfiguration3DOptions)` and
+`BuildRefinementPreflight` definitions before AMPS reaches `mpif90`. BLDL3D07
+protects that makefile contract without requiring a configured host.
 
 ### Phase R1 shared-library gates
 
@@ -215,15 +236,30 @@ python3 test/run_tests.py --suite r2 --rebuild \
   --output-dir test_output/r2
 ```
 
+### C01-C05 configuration and preflight gates
+
+| ID | Acceptance contract |
+|---|---|
+| `CFG3D01` | complete versioned input parses; file and typed construction have one fingerprint; documented CLI, early-error, and dry-run contracts hold |
+| `CFG3D02` | output-only changes preserve physics identity; physical changes alter it; invalid shock/source intent fails; SWMF uses the same factory |
+| `CFG3D03` | solar, one-AU, Mars, and explicit radii normalize exactly; invalid observers fail; boundary status respects crossing direction |
+| `CFG3D04` | mesh centerline/tangent and analytic field use one Parker geometry; polarity reverses `B` without moving the tube |
+| `CFG3D05` | composite profiles are monotone, tube width scales from its reference, all memory categories/levels report, and an impossible level cap fails |
+
+```bash
+python3 test/run_tests.py --suite improvements-c --rebuild \
+  --output-dir test_output/improvements-c
+```
+
 ### Phase M mesh/storage gates
 
 | ID | Acceptance contract |
 |---|---|
 | `MSH3D01` | one million deterministic points stay within the configured cell-size bounds |
-| `MSH3D02` | radial surface, transition, and octave values match closed forms |
-| `MSH3D03` | generated Parker centrelines have negligible tube distance for both polarities |
+| `MSH3D02` | linear radial surface, midpoint, and transition values match closed forms |
+| `MSH3D03` | generated polarity-independent Parker centreline has negligible tube distance |
 | `MSH3D04` | fast tube-distance approximation converges above second order |
-| `MSH3D05` | shoulder mesh is 2:1 balanced and a deliberately illegal jump is detected |
+| `MSH3D05` | composite tube mesh is 2:1 balanced and a deliberately illegal jump is detected |
 | `MSH3D06` | co-rotation preserves resolution |
 | `MSH3D07` | five octrees reproduce exact leaf/memory counts and reject non-owner writes |
 | `MSH3D08` | Earth and Mars domains enclose exact declared outer spheres |
@@ -373,6 +409,7 @@ equations, algorithms, case roles, and evidence schemas.
 | `r0` | R0 source/ABI/production gates plus RUN3D01, LAY01, and BLD01 |
 | `r1` | canonical shared-archive audit, relocated SWCME suite, and frozen common kernels |
 | `r2` | LIFE3D01–LIFE3D04 immutable configuration and lifecycle gates |
+| `improvements-c` | CFG3D01–CFG3D05 production configuration and preflight gates |
 | `phase-m` | MSH3D01–MSH3D09 mesh/storage gates |
 | `phase-b` | BGP3D01–06 and SNAP3D01–08 background/snapshot gates |
 | `phase-t` | TUR3D01–04 and COEF3D01–02 turbulence/coefficient gates |
@@ -380,7 +417,7 @@ equations, algorithms, case roles, and evidence schemas.
 | `phase-a` | ADP3D01, NAT3D04–05/08, SHK3D01–04 |
 | `phase-o` | NAT3D06–07 and RST3D01–03 |
 | `phase-v` | INT3D/VFY3D prerequisites, external NAT3D/MPI3D/XM3D/OV3D cases, and VALRUN3D01 |
-| `production` | BLDL3D01–06 |
+| `production` | BLDL3D01–07 |
 
 Suites can be repeated. Overlapping IDs are de-duplicated in stable order.
 
@@ -446,6 +483,7 @@ invoke that exact linked callback, following the srcSEP pattern.
 | `BLDL3D02` reports stale `SEP3D.cpp` | remove the obsolete file from the installed `srcSEP3D`; overlay extraction does not delete files left by an older version |
 | `BLDL3D03 SKIP` | pass `--amps-source` pointing to a tree containing `src/pic/pic.h` |
 | `build/main` cannot find `../Makefile.conf` | run `make print-layout-paths`; `AMPS_CONFIG` must resolve to the absolute `AMPS/Makefile.conf` path |
+| final link reports undefined `Mesh::MakeDomain(RunConfiguration3DOptions)` or `BuildRefinementPreflight` | stale pre-C03/C05 `mesh_model.o`; install the updated makefile, run `make clean`, and rebuild. BLDL3D07 prevents recurrence |
 | standalone compile failure | rerun with `--rebuild --verbose` |
 | Phase-V linked case `SKIP` | supply `--amps`; use `--validation-launch-prefix` when MPI launch arguments are required |
 | XM3D/OV3D case `SKIP` | supply `--validation-data` containing `CASE_ID/manifest.json` and its declared artifacts |

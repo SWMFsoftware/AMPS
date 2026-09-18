@@ -38,6 +38,18 @@ double Component(const Core::Vec3& value, int index) {
   return index == 0 ? value.x : (index == 1 ? value.y : value.z);
 }
 
+Core::ParkerSpiralGeometry Geometry(const ParkerConfiguration& configuration) {
+  Core::ParkerSpiralGeometry geometry;
+  geometry.sourceRadiusM = configuration.sourceRadiusM;
+  geometry.sourceLongitudeRad = configuration.sourceLongitudeRad;
+  geometry.sourceColatitudeRad = configuration.sourceColatitudeRad;
+  geometry.solarWindSpeedMPerS = configuration.solarWindSpeedMPerS;
+  geometry.solarRotationRateRadPerS =
+      configuration.solarRotationRateRadPerS;
+  geometry.rotationAxis = configuration.rotationAxis;
+  return geometry;
+}
+
 }  // namespace
 
 AnalyticParkerProvider::AnalyticParkerProvider(
@@ -55,6 +67,8 @@ AnalyticParkerProvider::AnalyticParkerProvider(
 Core::Status AnalyticParkerProvider::Validate() const {
   const double values[] = {
       configuration_.sourceRadiusM, configuration_.referenceRadiusM,
+      configuration_.sourceLongitudeRad,
+      configuration_.sourceColatitudeRad,
       configuration_.radialFieldAtReferenceT,
       configuration_.numberDensityAtReferenceM3, configuration_.temperatureK,
       configuration_.solarWindSpeedMPerS,
@@ -70,6 +84,8 @@ Core::Status AnalyticParkerProvider::Validate() const {
       configuration_.temperatureK <= 0.0 ||
       configuration_.solarWindSpeedMPerS <= 0.0 ||
       configuration_.validityCadenceS <= 0.0 ||
+      configuration_.sourceColatitudeRad < 0.0 ||
+      configuration_.sourceColatitudeRad > Core::Const::kPi ||
       (configuration_.magneticPolarity != 1 &&
        configuration_.magneticPolarity != -1) ||
       configuration_.coordinateFrame.empty()) {
@@ -79,6 +95,9 @@ Core::Status AnalyticParkerProvider::Validate() const {
   if (!std::isfinite(axisNorm) || axisNorm <= 0.0) {
     return Invalid("Parker rotation axis must be finite and non-zero");
   }
+  const Core::Status geometry = Core::ValidateParkerGeometry(
+      Geometry(configuration_));
+  if (!geometry.ok()) return geometry;
   return Core::Status::OK();
 }
 
@@ -125,8 +144,13 @@ BackgroundSample AnalyticParkerProvider::Evaluate(
                          configuration_.solarWindSpeedMPerS;
   const double inverseR3 = 1.0 / (radius * radius * radius);
   const double spiralFactor = winding * (radius - configuration_.sourceRadiusM);
-  sample.B = coefficient * inverseR3 *
+  const Core::Vec3 unsignedField = coefficient * inverseR3 *
       (positionM - spiralFactor * axisCrossX);
+  const Core::Vec3 geometricTangent =
+      Core::ParkerLocalTangent(positionM, Geometry(configuration_));
+  // The helper above is also used by the mesh centreline.  Apply polarity only
+  // here, after geometry is fixed, so a sign reversal cannot move refinement.
+  sample.B = polarity * unsignedField.Norm() * geometricTangent;
   sample.absB = sample.B.Norm();
   if (!(sample.absB > 0.0) || !std::isfinite(sample.absB)) {
     sample.status = Core::Status(Core::StatusCode::BackgroundInvalid,
@@ -207,6 +231,8 @@ std::string AnalyticParkerProvider::ResolvedManifest() const {
   out << std::setprecision(17) << std::scientific
       << "parker-provider-v1"
       << ";source_m=" << configuration_.sourceRadiusM
+      << ";source_lon_rad=" << configuration_.sourceLongitudeRad
+      << ";source_colat_rad=" << configuration_.sourceColatitudeRad
       << ";reference_m=" << configuration_.referenceRadiusM
       << ";Br_ref_T=" << configuration_.radialFieldAtReferenceT
       << ";n_ref_m-3=" << configuration_.numberDensityAtReferenceM3

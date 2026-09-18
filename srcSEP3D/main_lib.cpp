@@ -67,17 +67,27 @@ SEP3D::Mesh::ResolutionConfiguration ResolutionConfiguration() {
   result.minimumCellSizeM = options.minimumCellSizeM;
   result.backgroundCellSizeM = options.backgroundCellSizeM;
   result.enableRadialRefinement = options.enableRadialRefinement;
+  result.solarSurfaceCellSizeM = options.solarSurfaceCellSizeM;
+  result.solarRefinementOuterRadiusM =
+      options.solarRefinementOuterRadiusM;
+  result.solarRefinementProfile = options.solarRefinementProfile;
+  result.solarRefinementExponent = options.solarRefinementExponent;
   result.enableTubeRefinement = options.enableTubeRefinement;
   result.tubeLongitudeRad = options.tubeLongitudeRad;
   result.tubeColatitudeRad = options.tubeColatitudeRad;
-  result.tubePolarity = options.tubePolarity;
-  result.tubeCoreRadiusM = options.tubeCoreRadiusM;
-  result.tubeShoulderRadiusM = options.tubeShoulderRadiusM;
+  result.tubeReferenceRadiusM = options.tubeReferenceRadiusM;
+  result.tubeRadiusAtReferenceM = options.tubeRadiusAtReferenceM;
+  result.tubeRadiusMode = options.tubeRadiusMode;
   result.tubeCellSizeM = options.tubeCellSizeM;
+  result.tubeTransverseProfile = options.tubeTransverseProfile;
+  result.tubeTransverseExponent = options.tubeTransverseExponent;
+  result.solarWindSpeedMPerS = options.parker.solarWindSpeedMPerS;
+  result.solarRotationRateRadPerS = options.parker.solarRotationRateRadPerS;
   result.cellsPerBlockEdge = options.meshCellsPerBlockEdge;
   result.maximumLevel = options.maximumMeshLevel;
   result.blockOverheadBytes = options.meshBlockOverheadBytes;
   result.memoryBudgetBytes = options.meshMemoryBudgetBytes;
+  result.memoryModel = options.memoryModel;
   return result;
 }
 
@@ -233,10 +243,20 @@ void FillAndPublishBackground() {
           "SWMF authority requires InstallBackgroundSnapshot before amps_init"));
     }
     Background::ParkerConfiguration parker;
-    parker.sourceRadiusM = Configuration().options().innerRadiusM;
-    parker.validityCadenceS =
-        Configuration().options().requestedTimeStepS *
-        Configuration().options().backgroundCadenceSteps;
+    const RuntimeModel::ParkerPhysicsOptions& configured =
+        Configuration().options().parker;
+    parker.sourceRadiusM = configured.sourceRadiusM;
+    parker.sourceLongitudeRad = configured.sourceLongitudeRad;
+    parker.sourceColatitudeRad = configured.sourceColatitudeRad;
+    parker.referenceRadiusM = configured.referenceRadiusM;
+    parker.radialFieldAtReferenceT = configured.radialFieldAtReferenceT;
+    parker.numberDensityAtReferenceM3 = configured.numberDensityAtReferenceM3;
+    parker.temperatureK = configured.temperatureK;
+    parker.solarWindSpeedMPerS = configured.solarWindSpeedMPerS;
+    parker.solarRotationRateRadPerS = configured.solarRotationRateRadPerS;
+    parker.magneticPolarity = configured.magneticPolarity;
+    parker.validityCadenceS = configured.validityCadenceS;
+    parker.coordinateFrame = configured.coordinateFrame;
     Background::AnalyticParkerProvider provider(parker);
     Core::Status status = provider.Prepare(0.0);
     if (!status.ok()) StopWithStatus("Parker preparation", status);
@@ -526,8 +546,8 @@ void amps_init_mesh() {
   }
 
   const auto& options = Configuration().options();
-  const SEP3D::Mesh::DomainBounds domain = SEP3D::Mesh::MakeDomain(
-      options.domain, options.innerRadiusM, options.outerRadiusM);
+  const SEP3D::Mesh::DomainBounds domain =
+      SEP3D::Mesh::MakeDomain(options);
   double minimum[3] = {
       domain.minimumM.x, domain.minimumM.y, domain.minimumM.z};
   double maximum[3] = {

@@ -63,6 +63,7 @@ SWCME_OBJECTS := $(SWCME_DIR)/build/swcme3d.o
 # missing, because a local mock configuration is not production evidence.
 STANDALONE_GOALS := check-layering test/stage1 test-stage1 test-harn-unit \
                     test-lay-unit test-bld-unit test-util-unit test-life-unit \
+                    test-configuration-unit \
                     test-mesh-unit test-background-unit test-turbulence-unit \
                     test-transport-unit test-adapter-unit test-output-unit \
                     test-validation-unit clean clean-standalone help \
@@ -88,7 +89,9 @@ INCLUDE += $(MODEL_INCLUDE_FLAGS)
 
 # L0 numerical core.  Headers are not listed here; normal compiler dependency
 # tracking in the enclosing AMPS build determines when they trigger rebuilds.
-CORE_SRC := mesh/mesh_model.cpp
+CORE_SRC := \
+    core/parker_geometry.cpp \
+    mesh/mesh_model.cpp
 BG_SRC := \
     background/bg_provider.cpp \
     background/bg_parker.cpp \
@@ -102,6 +105,7 @@ TRANSPORT_SRC := \
     transport/focused_transport.cpp
 RUNTIME_SRC := \
     runtime/run_configuration.cpp \
+    runtime/configuration_io.cpp \
     runtime/runtime.cpp \
     runtime/runtime_adapters.cpp
 ADAPTER_SRC := \
@@ -136,6 +140,22 @@ MAINLIBOBJ := $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) \
               $(AMPS_OBJ)
 MAINOBJ := $(DRIVER_OBJ)
 
+# Source release archives use normalized timestamps for reproducibility.  When
+# such an archive is overlaid on an existing AMPS checkout, an old object can
+# therefore appear newer than its replacement source even though its C++ ABI is
+# obsolete.  This is especially dangerous for mesh_model.o: unchanged symbols
+# still link, while newly introduced overloads fail only at the final mpif90
+# link.  Production builds deliberately rebuild every application-owned object
+# on each `lib`/`amps` invocation.  Shared sep_common/SWCME objects retain their
+# own dependency-tracked makefiles.  Standalone test goals are excluded so the
+# fast development runner remains incremental.
+ifneq ($(filter $(STANDALONE_GOALS),$(MAKECMDGOALS)),)
+else
+.PHONY: FORCE_SEP3D_APPLICATION_OBJECTS
+FORCE_SEP3D_APPLICATION_OBJECTS:
+$(MAINLIBOBJ) $(MAINOBJ): FORCE_SEP3D_APPLICATION_OBJECTS
+endif
+
 STAGE1_TEST_SRC := \
     test/stage1.cpp \
     test/individual-test/test_harness.cpp \
@@ -143,6 +163,7 @@ STAGE1_TEST_SRC := \
     test/individual-test/test_build.cpp \
     test/individual-test/test_kernels.cpp \
     test/individual-test/test_runtime.cpp \
+    test/individual-test/test_configuration.cpp \
     test/individual-test/test_mesh.cpp \
     test/individual-test/test_background.cpp \
     test/individual-test/test_turbulence.cpp \
@@ -166,18 +187,29 @@ lib: $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE) $(MAINLIBOBJ)
 	# application's archive. Recreate the archive so ar cannot retain a retired
 	# member from a previous application version.
 	rm -f mainlib.a
-	ar -rc mainlib.a $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS)
+	ar -rcs mainlib.a $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS)
 	@members=$$(ar t mainlib.a); \
-	for member in $(notdir $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS)); do \
+	for member in $(notdir $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS)); do \
 	  count=$$(printf '%s\n' "$$members" | awk -v expected="$$member" \
 	    '$$0 == expected { found++ } END { print found + 0 }'); \
 	  test "$$count" -eq 1 || { \
-	    echo "ERROR: shared member $$member occurs $$count times" >&2; exit 1; }; \
+	    echo "ERROR: required mainlib.a member $$member occurs $$count times" >&2; exit 1; }; \
 	done
+	@nm -C --defined-only mainlib.a | \
+	  grep -Fq 'SEP3D::Mesh::MakeDomain(SEP3D::RuntimeModel::RunConfiguration3DOptions const&)' || { \
+	    echo "ERROR: mainlib.a contains a stale mesh_model.o without the normalized-domain ABI" >&2; \
+	    exit 1; \
+	  }
+	@nm -C --defined-only mainlib.a | \
+	  grep -Fq 'SEP3D::Mesh::BuildRefinementPreflight(' || { \
+	    echo "ERROR: mainlib.a contains a stale mesh_model.o without the C05 preflight ABI" >&2; \
+	    exit 1; \
+	  }
 	@echo "[srcSEP3D] mainlib.a built from application + shared model objects"
 
 amps: $(MAINOBJ)
-	ar -rc main.a $(MAINOBJ)
+	rm -f main.a
+	ar -rcs main.a $(MAINOBJ)
 	@echo "[srcSEP3D] main.a built from: $(MAINOBJ)"
 
 # A source-directory submake does not inherit the include list assembled by the
@@ -215,15 +247,23 @@ audit-production-symbols:
 	  exit 1; \
 	fi
 	@members=$$(ar t $(PRODUCTION_ARCHIVE_DIR)/mainlib.a); \
-	for member in $(notdir $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS)); do \
+	for member in $(notdir $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS)); do \
 	  count=$$(printf '%s\n' "$$members" | \
 	    awk -v expected="$$member" '$$0 == expected { found++ } \
 	      END { print found + 0 }'); \
 	  if [ "$$count" -ne 1 ]; then \
-	    echo "ERROR: shared archive member $$member occurs $$count times in mainlib.a" >&2; \
+	    echo "ERROR: required archive member $$member occurs $$count times in mainlib.a" >&2; \
 	    exit 1; \
 	  fi; \
 	done
+	@nm -C --defined-only $(PRODUCTION_ARCHIVE_DIR)/mainlib.a | \
+	  grep -Fq 'SEP3D::Mesh::MakeDomain(SEP3D::RuntimeModel::RunConfiguration3DOptions const&)' || { \
+	    echo "ERROR: production mainlib.a has the stale pre-C03 mesh ABI" >&2; exit 1; \
+	  }
+	@nm -C --defined-only $(PRODUCTION_ARCHIVE_DIR)/mainlib.a | \
+	  grep -Fq 'SEP3D::Mesh::BuildRefinementPreflight(' || { \
+	    echo "ERROR: production mainlib.a has the stale pre-C05 mesh ABI" >&2; exit 1; \
+	  }
 	@echo "[srcSEP3D] enclosing AMPS build and production archive audit passed."
 
 .PHONY: sep-common
@@ -278,7 +318,7 @@ test/stage1: check-layering $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_
 	@echo "[srcSEP3D] standalone test binary built: test/stage1"
 
 .PHONY: test-stage1 test-harn-unit test-lay-unit test-bld-unit test-util-unit \
-        test-life-unit test-mesh-unit test-background-unit test-turbulence-unit \
+        test-life-unit test-configuration-unit test-mesh-unit test-background-unit test-turbulence-unit \
         test-transport-unit test-adapter-unit test-output-unit \
         test-validation-unit
 test-stage1: test/stage1
@@ -298,6 +338,9 @@ test-util-unit: test/stage1
 
 test-life-unit: test/stage1
 	./test/stage1 --test-group LIFE3D
+
+test-configuration-unit: test/stage1
+	./test/stage1 --test-group CFG3D
 
 test-mesh-unit: test/stage1
 	./test/stage1 --test-group MSH3D
@@ -345,7 +388,7 @@ clean-standalone:
 .PHONY: help
 help:
 	@echo "Production:  make lib | make amps | make strict-production"
-	@echo "Standalone:  make test-stage1 | make test-life-unit | make test-mesh-unit | make test-background-unit | make test-turbulence-unit | make test-transport-unit | make test-adapter-unit | make test-output-unit | make test-validation-unit | make check-layering"
+	@echo "Standalone:  make test-stage1 | make test-configuration-unit | make test-life-unit | make test-mesh-unit | make test-background-unit | make test-turbulence-unit | make test-transport-unit | make test-adapter-unit | make test-output-unit | make test-validation-unit | make check-layering"
 	@echo "Preferred:   python3 test/run_tests.py --help"
 
 # Diagnostic target used by BLDL3D05 and useful when inspecting a configured

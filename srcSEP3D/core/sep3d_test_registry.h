@@ -141,6 +141,9 @@ std::vector<SEP3D::Testing::Descriptor> RegisterKernelTests();
 // legal/illegal transition matrix before adapters are connected to AMPS.
 std::vector<SEP3D::Testing::Descriptor> RegisterRuntimeTests();
 
+// CFG3D — C01-C05 input, contract, domain, geometry, and preflight tests.
+std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests();
+
 // MSH3D — Phase M domain, refinement, octree, storage, and gradient tests.
 std::vector<SEP3D::Testing::Descriptor> RegisterMeshTests();
 

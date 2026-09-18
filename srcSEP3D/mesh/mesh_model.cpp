@@ -24,14 +24,44 @@ void SetComponent(Core::Vec3* value, int axis, double component) {
   else value->z = component;
 }
 
-double WrapAngle(double value) {
-  const double period = 2.0 * Core::Const::kPi;
-  value = std::fmod(value, period);
-  return value < 0.0 ? value + period : value;
-}
-
 double Clamp(double value, double lower, double upper) {
   return std::max(lower, std::min(value, upper));
+}
+
+double ProfileFraction(double coordinate,
+                       RuntimeModel::RefinementProfile profile,
+                       double exponent) {
+  const double x = Clamp(coordinate, 0.0, 1.0);
+  switch (profile) {
+    case RuntimeModel::RefinementProfile::Linear:
+      return x;
+    case RuntimeModel::RefinementProfile::PowerLaw:
+      return std::pow(x, exponent);
+    case RuntimeModel::RefinementProfile::Smoothstep: {
+      const double smooth = x * x * (3.0 - 2.0 * x);
+      return std::pow(smooth, exponent);
+    }
+  }
+  return x;
+}
+
+Core::ParkerSpiralGeometry Geometry(
+    const ResolutionConfiguration& configuration) {
+  Core::ParkerSpiralGeometry geometry;
+  geometry.sourceRadiusM = configuration.innerRadiusM;
+  geometry.sourceLongitudeRad = configuration.tubeLongitudeRad;
+  geometry.sourceColatitudeRad = configuration.tubeColatitudeRad;
+  geometry.solarWindSpeedMPerS = configuration.solarWindSpeedMPerS;
+  geometry.solarRotationRateRadPerS = configuration.solarRotationRateRadPerS;
+  geometry.rotationAxis = configuration.rotationAxis;
+  return geometry;
+}
+
+std::size_t SaturatingBytes(long double value) {
+  if (!(value >= 0.0L) ||
+      value > static_cast<long double>(std::numeric_limits<std::size_t>::max()))
+    return std::numeric_limits<std::size_t>::max();
+  return static_cast<std::size_t>(value);
 }
 
 double BlockSide(const LeafBlock& block) {
@@ -47,7 +77,7 @@ double RequestedInBlock(const LeafBlock& block,
   // The centre and eight corners are sufficient for this monotone radial law
   // and conservatively sample a curved tube crossing a block.  The result is
   // the smallest requested cell size, so an unsampled minimum can only delay
-  // refinement by one level and is caught by the balance shoulder tests.
+  // refinement by one level and is caught by the profile/balance tests.
   double requested = RequestedCellSizeM(BlockCenter(block), configuration);
   for (int child = 0; child < 8; ++child) {
     Core::Vec3 point;
@@ -176,9 +206,17 @@ Core::Status Validate(const ResolutionConfiguration& configuration) {
   const double values[] = {
       configuration.innerRadiusM, configuration.outerRadiusM,
       configuration.minimumCellSizeM, configuration.backgroundCellSizeM,
-      configuration.tubeCoreRadiusM, configuration.tubeShoulderRadiusM,
-      configuration.tubeCellSizeM, configuration.solarWindSpeedMPerS,
-      configuration.solarRotationRateRadPerS};
+      configuration.solarSurfaceCellSizeM,
+      configuration.solarRefinementOuterRadiusM,
+      configuration.solarRefinementExponent,
+      configuration.tubeReferenceRadiusM,
+      configuration.tubeRadiusAtReferenceM,
+      configuration.tubeCellSizeM,
+      configuration.tubeTransverseExponent,
+      configuration.solarWindSpeedMPerS,
+      configuration.solarRotationRateRadPerS,
+      configuration.rotationAxis.x, configuration.rotationAxis.y,
+      configuration.rotationAxis.z};
   for (double value : values) {
     if (!std::isfinite(value)) return Invalid("mesh configuration contains a non-finite value");
   }
@@ -187,7 +225,14 @@ Core::Status Validate(const ResolutionConfiguration& configuration) {
     return Invalid("mesh radii must be positive and ordered");
   }
   if (configuration.minimumCellSizeM <= 0.0 ||
-      configuration.backgroundCellSizeM < configuration.minimumCellSizeM) {
+      configuration.backgroundCellSizeM < configuration.minimumCellSizeM ||
+      configuration.solarSurfaceCellSizeM < configuration.minimumCellSizeM ||
+      configuration.solarSurfaceCellSizeM >
+          configuration.backgroundCellSizeM ||
+      configuration.solarRefinementOuterRadiusM <=
+          configuration.innerRadiusM ||
+      configuration.solarRefinementExponent <= 0.0 ||
+      configuration.tubeTransverseExponent <= 0.0) {
     return Invalid("mesh cell sizes must be positive and ordered");
   }
   if (configuration.cellsPerBlockEdge == 0 ||
@@ -198,45 +243,57 @@ Core::Status Validate(const ResolutionConfiguration& configuration) {
     return Invalid("mesh memory budget must be positive");
   }
   if (configuration.enableTubeRefinement) {
-    if ((configuration.tubePolarity != 1 && configuration.tubePolarity != -1) ||
-        configuration.tubeCoreRadiusM <= 0.0 ||
-        configuration.tubeShoulderRadiusM < configuration.tubeCoreRadiusM ||
+    if (configuration.tubeReferenceRadiusM <= configuration.innerRadiusM ||
+        configuration.tubeRadiusAtReferenceM <= 0.0 ||
         configuration.tubeCellSizeM <= 0.0 ||
+        configuration.tubeCellSizeM > configuration.backgroundCellSizeM ||
         configuration.solarWindSpeedMPerS <= 0.0 ||
         configuration.tubeColatitudeRad < 0.0 ||
-        configuration.tubeColatitudeRad > Core::Const::kPi) {
+        configuration.tubeColatitudeRad > Core::Const::kPi ||
+        !Core::ValidateParkerGeometry(Geometry(configuration)).ok()) {
       return Invalid("Parker tube parameters are outside their physical range");
     }
   }
   return Core::Status::OK();
 }
 
-DomainBounds MakeDomain(RuntimeModel::DomainPreset preset,
-                        double innerRadiusM, double requestedOuterRadiusM) {
+DomainBounds MakeDomain(
+    const RuntimeModel::RunConfiguration3DOptions& configuration) {
   DomainBounds result;
-  result.innerRadiusM = innerRadiusM;
-  const double presetOuter = preset == RuntimeModel::DomainPreset::Earth
-                                 ? Core::Const::AU
-                                 : 1.666 * Core::Const::AU;
-  result.outerRadiusM = requestedOuterRadiusM > 0.0
-                            ? requestedOuterRadiusM : presetOuter;
-  result.minimumM = Core::Vec3(-result.outerRadiusM, -result.outerRadiusM,
-                               -result.outerRadiusM);
-  result.maximumM = Core::Vec3(result.outerRadiusM, result.outerRadiusM,
-                               result.outerRadiusM);
+  result.innerRadiusM = configuration.innerRadiusM;
+  result.outerRadiusM = configuration.outerRadiusM;
+  result.originM = configuration.coordinateOriginM;
+  result.innerBoundary = configuration.innerBoundary;
+  result.outerBoundary = configuration.outerBoundary;
+  result.minimumM = result.originM -
+      Core::Vec3(result.outerRadiusM, result.outerRadiusM, result.outerRadiusM);
+  result.maximumM = result.originM +
+      Core::Vec3(result.outerRadiusM, result.outerRadiusM, result.outerRadiusM);
   return result;
+}
+
+double TubeRadiusM(double radiusM,
+                   const ResolutionConfiguration& configuration) {
+  if (!std::isfinite(radiusM) || radiusM <= 0.0 ||
+      configuration.tubeReferenceRadiusM <= 0.0) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  if (configuration.tubeRadiusMode ==
+      RuntimeModel::TubeRadiusMode::PhysicalConstant) {
+    return configuration.tubeRadiusAtReferenceM;
+  }
+  return configuration.tubeRadiusAtReferenceM * radiusM /
+         configuration.tubeReferenceRadiusM;
 }
 
 Core::Vec3 ParkerTubeDirection(
     double radiusM, const ResolutionConfiguration& configuration) {
-  const double travel = std::max(0.0, radiusM - configuration.innerRadiusM);
-  const double winding = configuration.tubePolarity *
-      configuration.solarRotationRateRadPerS * travel /
-      configuration.solarWindSpeedMPerS;
-  const double phi = WrapAngle(configuration.tubeLongitudeRad - winding);
-  const double sinTheta = std::sin(configuration.tubeColatitudeRad);
-  return Core::Vec3(sinTheta * std::cos(phi), sinTheta * std::sin(phi),
-                    std::cos(configuration.tubeColatitudeRad));
+  return Core::ParkerCurvePoint(radiusM, Geometry(configuration)).Normalized();
+}
+
+Core::Vec3 ParkerTubeTangent(
+    double radiusM, const ResolutionConfiguration& configuration) {
+  return Core::ParkerCurveTangent(radiusM, Geometry(configuration));
 }
 
 double TubeDistanceM(const Core::Vec3& positionM,
@@ -260,27 +317,27 @@ double RequestedCellSizeM(const Core::Vec3& positionM,
   const double radius = positionM.Norm();
   double requested = configuration.backgroundCellSizeM;
   if (configuration.enableRadialRefinement) {
-    const double radial = configuration.minimumCellSizeM *
-        std::max(radius, configuration.innerRadiusM) /
-        configuration.innerRadiusM;
-    requested = std::min(requested,
-                         Clamp(radial, configuration.minimumCellSizeM,
-                               configuration.backgroundCellSizeM));
+    const double fraction = (radius - configuration.innerRadiusM) /
+        (configuration.solarRefinementOuterRadiusM -
+         configuration.innerRadiusM);
+    const double radial = configuration.solarSurfaceCellSizeM +
+        ProfileFraction(fraction, configuration.solarRefinementProfile,
+                        configuration.solarRefinementExponent) *
+        (configuration.backgroundCellSizeM -
+         configuration.solarSurfaceCellSizeM);
+    requested = std::min(requested, Clamp(
+        radial, configuration.solarSurfaceCellSizeM,
+        configuration.backgroundCellSizeM));
   }
   if (configuration.enableTubeRefinement) {
     const double distance = TubeDistanceM(positionM, configuration);
-    double tube = configuration.backgroundCellSizeM;
-    if (distance <= configuration.tubeCoreRadiusM) {
-      tube = configuration.tubeCellSizeM;
-    } else if (distance < configuration.tubeShoulderRadiusM) {
-      const double fraction =
-          (distance - configuration.tubeCoreRadiusM) /
-          (configuration.tubeShoulderRadiusM -
-           configuration.tubeCoreRadiusM);
-      tube = configuration.tubeCellSizeM + fraction *
-          (configuration.backgroundCellSizeM -
-           configuration.tubeCellSizeM);
-    }
+    const double boundary = TubeRadiusM(radius, configuration);
+    const double fraction = distance / boundary;
+    const double tube = configuration.tubeCellSizeM +
+        ProfileFraction(fraction, configuration.tubeTransverseProfile,
+                        configuration.tubeTransverseExponent) *
+        (configuration.backgroundCellSizeM -
+         configuration.tubeCellSizeM);
     requested = std::min(requested, tube);
   }
   return Clamp(requested, configuration.minimumCellSizeM,
@@ -384,15 +441,159 @@ std::size_t EstimateMemoryBytes(
     const MeshSummary& topology,
     const ResolutionConfiguration& resolution,
     const RuntimeModel::StorageLayout& storage) {
-  const std::size_t perCell = storage.cellAssociatedBytes +
-                              storage.samplingBytesPerCell;
-  const long double estimate =
-      static_cast<long double>(topology.cellCount) * perCell +
-      static_cast<long double>(topology.leafCount) *
-          resolution.blockOverheadBytes;
-  if (estimate > std::numeric_limits<std::size_t>::max())
-    return std::numeric_limits<std::size_t>::max();
-  return static_cast<std::size_t>(estimate);
+  return EstimateWholeRunMemory(topology, resolution, storage).totalBytes;
+}
+
+MemoryEstimate EstimateWholeRunMemory(
+    const MeshSummary& topology,
+    const ResolutionConfiguration& resolution,
+    const RuntimeModel::StorageLayout& storage) {
+  MemoryEstimate result;
+  const long double cells = topology.cellCount;
+  const long double leaves = topology.leafCount;
+  const RuntimeModel::MemoryModelOptions& model = resolution.memoryModel;
+  result.baseCellBytes = SaturatingBytes(cells * model.baseCellBytes);
+  result.associatedDataBytes = SaturatingBytes(
+      cells * storage.cellAssociatedBytes);
+  result.samplingBytes = SaturatingBytes(
+      cells * storage.samplingBytesPerCell);
+  // A Cartesian cell contributes a bounded number of face/edge/corner nodes;
+  // using one full node allocation per cell is deliberately conservative and
+  // avoids claiming shared-node savings before the native AMPS calibration.
+  result.nodeBytes = SaturatingBytes(cells * model.baseNodeBytes);
+  result.blockBytes = SaturatingBytes(leaves *
+      (model.blockStructureBytes + resolution.blockOverheadBytes));
+  result.particleBytes = SaturatingBytes(
+      cells * model.particlesPerCell * model.particleBytes);
+  const long double communicationBase = leaves *
+      model.communicationBytesPerBlock;
+  const long double residentBase =
+      static_cast<long double>(result.baseCellBytes) +
+      result.associatedDataBytes + result.samplingBytes + result.nodeBytes +
+      result.blockBytes + result.particleBytes;
+  result.communicationAndHaloBytes = SaturatingBytes(
+      communicationBase + model.haloFraction * residentBase);
+  result.subtotalBytes = SaturatingBytes(
+      residentBase + result.communicationAndHaloBytes);
+  result.safetyMarginBytes = SaturatingBytes(
+      model.safetyMarginFraction * result.subtotalBytes);
+  result.totalBytes = SaturatingBytes(
+      static_cast<long double>(result.subtotalBytes) +
+      result.safetyMarginBytes);
+  return result;
+}
+
+Core::Status BuildRefinementPreflight(
+    const DomainBounds& domain,
+    const ResolutionConfiguration& resolution,
+    const RuntimeModel::StorageLayout& storage,
+    RefinementPreflight* report) {
+  if (report == nullptr) return Invalid("refinement preflight output is null");
+  const Core::Status valid = Validate(resolution);
+  if (!valid.ok()) return valid;
+  RefinementPreflight candidate;
+  candidate.minimumRequestedCellM = std::numeric_limits<double>::infinity();
+  candidate.maximumRequestedCellM = 0.0;
+
+  // The preflight samples all named limiting manifolds: radial axes, Parker
+  // centreline, and the transverse tube boundary.  It does not allocate the
+  // AMPS mesh and therefore remains safe for a CLI --dry-run summary.
+  constexpr int kRadialSamples = 512;
+  for (int i = 0; i <= kRadialSamples; ++i) {
+    const double radius = resolution.innerRadiusM +
+        (resolution.outerRadiusM - resolution.innerRadiusM) * i /
+        static_cast<double>(kRadialSamples);
+    const Core::Vec3 probes[] = {
+        {radius, 0.0, 0.0}, {-radius, 0.0, 0.0},
+        {0.0, radius, 0.0}, {0.0, 0.0, radius},
+        radius * ParkerTubeDirection(radius, resolution)};
+    for (const Core::Vec3& probe : probes) {
+      const double cell = RequestedCellSizeM(probe, resolution);
+      if (cell < candidate.minimumRequestedCellM) {
+        candidate.minimumRequestedCellM = cell;
+        candidate.minimumLocationM = probe;
+      }
+      if (cell > candidate.maximumRequestedCellM) {
+        candidate.maximumRequestedCellM = cell;
+        candidate.maximumLocationM = probe;
+      }
+    }
+  }
+  candidate.tubeRadiusAtReferenceM =
+      TubeRadiusM(resolution.tubeReferenceRadiusM, resolution);
+
+  // Estimate blocks level-by-level from the fraction of sample points that
+  // request each level.  Native mesh-count gates compare this planning value
+  // with the actual AMPS tree; it is not presented as an exact allocator.
+  candidate.estimatedBlocksByLevel.assign(resolution.maximumLevel + 1, 0);
+  const double rootCell = 2.0 * domain.outerRadiusM /
+      resolution.cellsPerBlockEdge;
+  constexpr int kVolumeSamplesPerAxis = 17;
+  std::uint64_t sampleCounts[20] = {};
+  std::uint64_t totalSamples = 0;
+  for (int iz = 0; iz < kVolumeSamplesPerAxis; ++iz) {
+    for (int iy = 0; iy < kVolumeSamplesPerAxis; ++iy) {
+      for (int ix = 0; ix < kVolumeSamplesPerAxis; ++ix) {
+        const auto coordinate = [&](int index) {
+          return -domain.outerRadiusM + 2.0 * domain.outerRadiusM * index /
+              static_cast<double>(kVolumeSamplesPerAxis - 1);
+        };
+        const Core::Vec3 point = domain.originM +
+            Core::Vec3(coordinate(ix), coordinate(iy), coordinate(iz));
+        const double requested = RequestedCellSizeM(
+            point - domain.originM, resolution);
+        unsigned level = 0;
+        while (level < resolution.maximumLevel &&
+               rootCell / std::pow(2.0, level) > requested) ++level;
+        ++sampleCounts[level];
+        ++totalSamples;
+      }
+    }
+  }
+  std::uint64_t leafEstimate = 0;
+  for (unsigned level = 0; level <= resolution.maximumLevel; ++level) {
+    const long double fullLevelBlocks = std::pow(8.0L, level);
+    const std::uint64_t count = static_cast<std::uint64_t>(std::ceil(
+        fullLevelBlocks * sampleCounts[level] /
+        static_cast<long double>(totalSamples)));
+    candidate.estimatedBlocksByLevel[level] = count;
+    leafEstimate += count;
+  }
+  MeshSummary topology;
+  topology.leafCount = std::max<std::uint64_t>(1, leafEstimate);
+  topology.cellCount = topology.leafCount * resolution.cellsPerBlockEdge *
+      resolution.cellsPerBlockEdge * resolution.cellsPerBlockEdge;
+  candidate.memory = EstimateWholeRunMemory(topology, resolution, storage);
+  if (candidate.memory.totalBytes > resolution.memoryBudgetBytes) {
+    std::ostringstream message;
+    message << "preflight memory " << candidate.memory.totalBytes
+            << " exceeds budget " << resolution.memoryBudgetBytes;
+    return Core::Status(Core::StatusCode::LayoutMismatch, message.str());
+  }
+  *report = candidate;
+  return Core::Status::OK();
+}
+
+Core::Status ClassifyBoundaryCrossing(const Core::Vec3& previousM,
+                                      const Core::Vec3& currentM,
+                                      const DomainBounds& domain) {
+  const double previousRadius = (previousM - domain.originM).Norm();
+  const double currentRadius = (currentM - domain.originM).Norm();
+  if (!std::isfinite(previousRadius) || !std::isfinite(currentRadius))
+    return Invalid("boundary-crossing position is not finite");
+  if (previousRadius >= domain.innerRadiusM &&
+      currentRadius < domain.innerRadiusM) {
+    return Core::Status(Core::StatusCode::InnerBoundary,
+                        "particle crossed inward through the absorbing solar boundary");
+  }
+  if (previousRadius <= domain.outerRadiusM &&
+      currentRadius > domain.outerRadiusM) {
+    return Core::Status(Core::StatusCode::DomainExit,
+        domain.outerBoundary == RuntimeModel::OuterBoundaryMode::ImportedCoverage
+            ? "particle left imported SWMF coverage"
+            : "particle escaped through the outer boundary");
+  }
+  return Core::Status::OK();
 }
 
 Core::Status CellStorage::Allocate(

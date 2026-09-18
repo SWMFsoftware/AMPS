@@ -9,10 +9,17 @@ is in `mesh/mesh_model.{h,cpp}`; the production adapter is in `main_lib.cpp`.
 The numerical mesh is a Cartesian cube. `DomainBounds` retains both the cube
 and the physical heliocentric shell:
 
-- Earth preset outer radius: 1 AU;
+- solar preset outer radius: 0.30 AU;
+- one-AU (`earth` input alias) preset outer radius: 1 AU;
 - Mars preset outer radius: 1.666 AU;
 - inner radius: supplied by immutable run configuration;
-- Cartesian bounds: `[-r_outer,+r_outer]` on every axis.
+- Cartesian bounds: `origin+[-r_outer,+r_outer]` on every axis.
+
+There is no numeric automatic-radius sentinel. `OuterRadiusMode::Preset`
+resolves one of the named values before fingerprinting, while
+`OuterRadiusMode::Explicit` uses the supplied positive `outerRadiusM`.
+Observer, shock, and reference locations are checked against those resolved
+bounds before AMPS initialization.
 
 The inner sphere is a physical boundary, not a reason to change the Cartesian
 allocation. Production background filling excludes cell centers inside the
@@ -21,29 +28,32 @@ boundary phase defines its behavior.
 
 ## Resolution law
 
-The radial request is
+The near-Sun request is a named interpolation. With
+\(s=\operatorname{clip}[(r-r_{in})/(r_{transition}-r_{in}),0,1]\),
 
 \[
-h_r(r)=\operatorname{clip}\left(h_{\min}\frac{\max(r,r_{\rm in})}
-{r_{\rm in}},h_{\min},h_{\rm bg}\right).
+h_r(r)=h_{surface}+P(s)(h_{global}-h_{surface}),
 \]
 
-It equals the minimum size on the inner sphere, doubles when radius doubles,
-and joins the background size continuously.
+where `P` is `linear`, `power-law`, or `smoothstep`, optionally raised to the
+declared positive exponent. It equals the surface target at the inner sphere
+and joins the global target continuously at the declared transition radius.
 
 The optional Parker-tube centerline has a configured longitude and colatitude
 at the inner radius. Its longitude winds by
 
 \[
-\Delta\phi=-p\,\Omega_\odot(r-r_{\rm in})/V_{\rm sw},
+\Delta\phi=-\Omega_\odot(r-r_{\rm in})/V_{\rm sw}.
 \]
 
-where `p` is ±1. `TubeDistanceM` uses
+Magnetic polarity is absent from geometry: reversing polarity changes the
+analytic field and pitch orientation, not the refined tube. `TubeDistanceM` uses
 `r*atan2(|r_hat × t_hat|, r_hat·t_hat)`, which remains first-order accurate for
-nearly coincident directions. Inside the core the tube requests `h_tube`;
-between core and shoulder radii it linearly joins `h_bg`. The final request is
-the minimum of radial, tube, and background requests, clipped to declared
-bounds.
+nearly coincident directions. The tube radius is declared at a reference
+heliocentric distance and is either physically constant or proportional to
+radius (constant angular width). A named transverse profile joins `h_tube` on
+the centerline to `h_global` exactly at the tube boundary. The final request is
+the finer of radial and tube requests, clipped to declared bounds.
 
 ## Standalone octree and ownership
 
@@ -60,14 +70,22 @@ and level before receiving:
 not a second production mesh; it is an AMPS-free oracle for the resolution,
 balance, identity, storage, and memory contracts.
 
-The memory estimate is
+The former application-storage-only estimate has been replaced by a whole-run
+planning model:
 
 \[
-N_{cell}(B_{static}+B_{sample})+N_{leaf}B_{block-overhead}.
+M_{resident}=N_{cell}(B_{base-cell}+B_{static}+B_{sample}+B_{node}
++N_{particle/cell}B_{particle})
++N_{leaf}(B_{block}+B_{app-overhead}),
 \]
 
-A build that exceeds the configured budget fails before allocating the
-standalone storage image.
+plus per-block communication buffers, a configurable halo fraction, and a
+configurable safety margin. Every ABI-dependent coefficient is explicit in
+the immutable configuration. `BuildRefinementPreflight` samples limiting
+surfaces without building the full tree, reports requested resolution extrema
+and estimated blocks by level, and rejects an estimate above the configured
+budget. Native integration evidence remains responsible for comparing this
+conservative plan to actual AMPS peak memory.
 
 ## Frozen cell layout
 
@@ -125,11 +143,12 @@ zero gradient.
 | IDs | Contract |
 |---|---|
 | `MSH3D01` | one million points remain between resolution floor/background bounds |
-| `MSH3D02` | radial surface, transition, and octave closed forms |
-| `MSH3D03–04` | Parker-tube centerline and convergence |
-| `MSH3D05–06` | shoulder balance, live negative control, rotation invariance |
+| `MSH3D02` | linear radial surface, midpoint, and transition closed forms |
+| `MSH3D03–04` | polarity-independent Parker-tube centerline and convergence |
+| `MSH3D05–06` | composite tube balance, live negative control, rotation invariance |
 | `MSH3D07` | five octrees, exact histograms/memory, owner-only storage |
 | `MSH3D08` | Earth/Mars preset extents |
 | `MSH3D09` | coarse/fine linear exactness and rank-deficient rejection |
+| `CFG3D03–05` | normalized domains, shared Parker geometry, composite preflight and whole-run memory |
 
 Run `test/run_tests.py --suite phase-m --rebuild`.

@@ -1,0 +1,158 @@
+# srcSEP3D standalone analytic Parker example — schema version 1
+#
+# Every dimensional key states its SI unit in the key name.  Bare alternatives
+# such as "inner_radius" are deliberately invalid: this prevents a value in AU,
+# R_sun, km/s, nT, or MeV from being silently interpreted as SI.
+
+[run]
+schema_version = 1
+intent = transport-only
+transport = parker3d
+time_step_s = 1
+maximum_time_steps = 100000
+campaign_seed = 4701
+background_cadence_steps = 100
+
+[domain]
+# Presets are solar (0.30 AU), one-au, and mars (1.666 AU).  With mode=preset,
+# outer_radius_m is ignored and the resolved preset value is fingerprinted.
+preset = one-au
+inner_radius_m = 1.3914e10
+inner_boundary = absorb
+outer_radius_mode = preset
+outer_radius_m = 1.495978707e11
+outer_boundary = escape
+coordinate_frame = HCI-like-inertial
+origin_x_m = 0
+origin_y_m = 0
+origin_z_m = 0
+
+[mesh]
+global_cell_size_m = 3.7399467675e10
+minimum_cell_size_m = 1.495978707e9
+cells_per_block_edge = 4
+maximum_level = 7
+memory_budget_bytes = 68719476736
+block_overhead_bytes = 1024
+
+[mesh.solar]
+# Resolution degrades continuously from surface_cell_size_m at inner_radius_m
+# to the global size at transition_outer_radius_m.
+enabled = true
+surface_cell_size_m = 1.495978707e9
+transition_outer_radius_m = 3.7399467675e10
+profile = smoothstep
+exponent = 1
+
+[mesh.tube]
+# The tube follows the same polarity-independent Parker curve used by the
+# analytic background.  At its boundary the requested size is exactly global.
+enabled = true
+source_longitude_rad = 0
+source_colatitude_rad = 1.5707963267948966
+reference_radius_m = 1.495978707e11
+radius_at_reference_m = 4.487936121e9
+radius_mode = constant-angular-width
+center_cell_size_m = 1.495978707e9
+transverse_profile = smoothstep
+transverse_exponent = 1
+
+[memory]
+# These are explicit planning coefficients.  Calibrate them from a native AMPS
+# build when exact production memory, rather than a conservative plan, matters.
+base_cell_bytes = 256
+base_node_bytes = 128
+block_structure_bytes = 4096
+communication_bytes_per_block = 2048
+particle_bytes = 160
+particles_per_cell = 2
+halo_fraction = 0.20
+safety_margin_fraction = 0.25
+
+[background]
+provider = analytic-parker
+external_script = false
+
+[background.parker]
+reference_radius_m = 1.495978707e11
+radial_field_at_reference_t = 3e-9
+solar_rotation_rate_rad_per_s = 2.865e-6
+solar_wind_speed_m_per_s = 400000
+magnetic_polarity = 1
+number_density_at_reference_m3 = 5e6
+temperature_k = 1e5
+validity_cadence_s = 3600
+
+[turbulence]
+authority = prescribed
+delta_b_over_b = 0.3
+k_min_per_m = 1e-10
+k_max_per_m = 1e-7
+spectral_index = 1.6666666666666667
+correlation_length_m = 4.487936121e9
+missing_data = fail
+resonance_range = reject
+self_consistent_3d = false
+
+[transport]
+cell_crossing_fraction = 0.4
+diffusion_fraction = 0.2
+focusing_fraction = 0.2
+cooling_fraction = 0.2
+field_variation_fraction = 0.2
+shock_crossing_fraction = 0.5
+minimum_substep_s = 1e-12
+pitch_angle_scheme = reflecting-milstein
+perpendicular_diffusion = false
+drifts = false
+
+[shock]
+# These physical parameters are retained even when authority=none, so changing
+# to a shock-injection campaign is an explicit reviewed edit.  Enabling it also
+# requires run.intent=shock-injection and source.enabled=true.
+authority = none
+active_from_s = 0
+active_until_s = 86400
+initial_radius_m = 1.3914e10
+maximum_radius_m = 1.495978707e11
+speed_m_per_s = 1000000
+compression_ratio = 4
+
+[source]
+enabled = false
+injection_efficiency = 1e-4
+minimum_energy_j = 1.602176634e-15
+maximum_energy_j = 1.602176634e-11
+spectral_index = 5
+samples_per_step = 1000
+
+[species]
+name = proton
+mass_kg = 1.67262192369e-27
+charge_c = 1.602176634e-19
+macroparticle_weight = 1
+
+[storage]
+magnetic_gradient = false
+velocity_gradient = false
+sampling_bytes_per_cell = 0
+
+[observer.earth]
+position_x_m = 1.495978707e11
+position_y_m = 0
+position_z_m = 0
+follows_trajectory = false
+cadence_s = 60
+energy_bins = 48
+pitch_angle_bins = 24
+products = flux,spectrum,anisotropy
+
+[output]
+cadence_steps = 100
+directory = output/analytic-parker
+prefix = sep3d
+
+[restart]
+# Use the explicit token none for a fresh run; --restart PATH overrides it.
+input_path = none
+output_path = restart/sep3d.chk

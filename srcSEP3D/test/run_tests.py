@@ -74,6 +74,11 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("LIFE3D02", "LIFE3D", "Illegal transition matrix", "cpp"),
     TestDefinition("LIFE3D03", "LIFE3D", "Frozen layout and fingerprint", "cpp"),
     TestDefinition("LIFE3D04", "LIFE3D", "Standalone/SWMF adapter parity", "cpp"),
+    TestDefinition("CFG3D01", "CFG3D", "Input schema and CLI", "cpp"),
+    TestDefinition("CFG3D02", "CFG3D", "Complete typed contracts", "cpp"),
+    TestDefinition("CFG3D03", "CFG3D", "Domain and boundaries", "cpp"),
+    TestDefinition("CFG3D04", "CFG3D", "Shared Parker geometry", "cpp"),
+    TestDefinition("CFG3D05", "CFG3D", "Mesh and memory preflight", "cpp"),
     TestDefinition("MSH3D01", "MSH3D", "Resolution bounds", "cpp"),
     TestDefinition("MSH3D02", "MSH3D", "Radial closed forms", "cpp"),
     TestDefinition("MSH3D03", "MSH3D", "Parker tube centreline", "cpp"),
@@ -156,6 +161,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("BLDL3D04", "BLDL3D", "AMPS Pi-macro namespace hygiene", "source"),
     TestDefinition("BLDL3D05", "BLDL3D", "Source/build makefile path resolution", "source"),
     TestDefinition("BLDL3D06", "BLDL3D", "Production turbulence-header boundary", "source"),
+    TestDefinition("BLDL3D07", "BLDL3D", "Application-object ABI freshness", "source"),
     TestDefinition("ARCH3D02", "ARCH3D", "Canonical shared-archive ownership", "source"),
     TestDefinition("SWCME3D01", "SWCME3D", "Relocated SWCME common runner", "source"),
     # Linked and external-evidence cases are intentionally non-routine.  They
@@ -192,10 +198,12 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                         if item.kind in ("cpp", "shell") or
                         item.test_id in ("RUN3D01", "VALRUN3D01")),
     "r0": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04", "BLDL3D05",
-           "BLDL3D06",
+           "BLDL3D06", "BLDL3D07",
            "RUN3D01", "LAY01", "BLD01"),
     "r1": ("ARCH3D02", "SWCME3D01", "UTIL02"),
     "r2": ("LIFE3D01", "LIFE3D02", "LIFE3D03", "LIFE3D04"),
+    "improvements-c": tuple(item.test_id for item in TESTS
+                            if item.group == "CFG3D"),
     "phase-m": tuple(item.test_id for item in TESTS if item.group == "MSH3D"),
     "phase-b": tuple(item.test_id for item in TESTS
                      if item.group in ("BGP3D", "SNAP3D")),
@@ -216,7 +224,7 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                      (item.group == "NAT3D" and item.kind == "validation") or
                      item.test_id == "VALRUN3D01"),
     "production": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04",
-                   "BLDL3D05", "BLDL3D06"),
+                   "BLDL3D05", "BLDL3D06", "BLDL3D07"),
 }
 
 
@@ -252,7 +260,7 @@ def _utc_stamp() -> str:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run srcSEP3D standalone, R0-R2/M/B/T/P/A/O/V, and production-build tests.",
+        description="Run srcSEP3D standalone, R0-R2/C01-C05/M/B/T/P/A/O/V, and production-build tests.",
         formatter_class=_HelpFormatter,
         epilog=EPILOG)
     parser.add_argument("--amps", default=os.environ.get("SEP3D_EXECUTABLE"),
@@ -678,9 +686,15 @@ def _check_makefile_relocation(definition: TestDefinition,
         return Result(definition.test_id, definition.group, "ERROR",
                       "make is not available", 0.0, [])
 
-    # The temporary tree reproduces only the paths involved in discovery.  No
-    # production compilation is claimed here; BLDL3D01 remains authoritative
-    # for compilation against a real configured Makefile.conf.
+    compiler = shutil.which(args.cxx)
+    if compiler is None:
+        return Result(definition.test_id, definition.group, "ERROR",
+                      f"C++ compiler is not available: {args.cxx}", 0.0, [])
+
+    # The temporary tree reproduces the paths involved in discovery and the
+    # archive contract checked after an enclosing AMPS build.  It deliberately
+    # compiles tiny fixture translation units instead of any production code;
+    # BLDL3D01 remains authoritative for a real configured AMPS compilation.
     fixture = output_dir / "BLDL3D05-layout"
     if fixture.exists():
         shutil.rmtree(fixture)
@@ -694,20 +708,87 @@ def _check_makefile_relocation(definition: TestDefinition,
     swcme_dir.mkdir(parents=True)
     (fixture / "Makefile.conf").write_text(
         "# Empty BLDL3D05 configuration fixture.\n", encoding="utf-8")
-    # The fixture's enclosing target creates valid ar containers with named
-    # placeholder members. It proves routing and member-audit behavior only;
-    # BLDL3D01 against real AMPS remains the production compilation evidence.
+
+    # The production audit invokes nm on every archive member.  Consequently,
+    # zero-byte placeholders are not adequate: each fixture member must be a
+    # valid object file.  The mesh fixture also exports the exact C01/C05 ABI
+    # names required by audit-production-symbols.  Return types are immaterial
+    # to these ordinary C++ mangled names, so minimal local structures keep the
+    # routing test independent of all AMPS and SEP3D headers.
+    empty_source = fixture / "fixture_empty.cpp"
+    mesh_source = fixture / "fixture_mesh_abi.cpp"
+    empty_object = fixture / "fixture_empty.o"
+    mesh_object = fixture / "fixture_mesh_abi.o"
+    empty_source.write_text(
+        "// Valid object with no production symbols; used for archive shape.\n"
+        "namespace { constexpr int kArchiveFixture = 0; }\n",
+        encoding="utf-8")
+    mesh_source.write_text(
+        "namespace SEP3D {\n"
+        "namespace RuntimeModel {\n"
+        "struct RunConfiguration3DOptions {};\n"
+        "struct StorageLayout {};\n"
+        "}\n"
+        "namespace Mesh {\n"
+        "struct DomainBounds {};\n"
+        "struct ResolutionConfiguration {};\n"
+        "struct RefinementPreflight {};\n"
+        "DomainBounds MakeDomain(\n"
+        "    const RuntimeModel::RunConfiguration3DOptions&) { return {}; }\n"
+        "int BuildRefinementPreflight(\n"
+        "    const DomainBounds&, const ResolutionConfiguration&,\n"
+        "    const RuntimeModel::StorageLayout&, RefinementPreflight*) {\n"
+        "  return 0;\n"
+        "}\n"
+        "}\n"
+        "}\n",
+        encoding="utf-8")
+
+    commands: List[str] = []
+    elapsed = 0.0
+    for source, target in ((empty_source, empty_object),
+                           (mesh_source, mesh_object)):
+        command = [compiler, "-std=c++17", "-c", str(source),
+                   "-o", str(target)]
+        code, output, duration = _run_command(
+            command, fixture, args.timeout, args.verbose)
+        commands.extend(command)
+        elapsed += duration
+        if code != 0:
+            return Result(
+                definition.test_id, definition.group, "ERROR",
+                "could not compile a valid archive fixture object:\n" +
+                output[-3000:], elapsed, commands)
+
+    # Keep this list explicit.  A production-manifest change must update this
+    # relocation fixture as well, otherwise the archive audit should fail and
+    # expose the disagreement rather than silently accepting a partial build.
+    application_members = (
+        "parker_geometry.o mesh_model.o "
+        "bg_provider.o bg_parker.o bg_swmf.o background_snapshot.o "
+        "turbulence_models.o keyed_random.o time_step.o "
+        "parker_transport.o focused_transport.o "
+        "run_configuration.o configuration_io.o runtime.o runtime_adapters.o "
+        "transport_adapter.o particle_ledger.o swcme_source_adapter.o "
+        "sampling.o publication.o restart.o output_coordinator.o "
+        "validation_metrics.o main_lib.o amps_particle_adapter.o")
     shared_members = (
         "sep_transport_common.o sep_coefficient_physics.o "
         "sep_coefficient_registry.o sep_background_snapshot.o "
         "sep_test_registry.o sep_injection_spectrum.o sep_species_source.o "
         "swcme3d.o")
     (fixture / "Makefile").write_text(
+        f"APPLICATION_MEMBERS := {application_members}\n"
+        f"SHARED_MEMBERS := {shared_members}\n"
         "amps:\n"
         "\t@mkdir -p build/main\n"
-        f"\t@for member in {shared_members}; do : > build/main/$$member; done\n"
-        f"\t@cd build/main && ar -rc mainlib.a {shared_members}\n"
-        "\t@ar -rc build/main/main.a\n",
+        "\t@for member in $(APPLICATION_MEMBERS) $(SHARED_MEMBERS); do "
+        "cp fixture_empty.o build/main/$$member; done\n"
+        "\t@cp fixture_mesh_abi.o build/main/mesh_model.o\n"
+        "\t@cd build/main && rm -f mainlib.a && "
+        "ar -rcs mainlib.a $(APPLICATION_MEMBERS) $(SHARED_MEMBERS)\n"
+        "\t@cp fixture_empty.o build/main/main.o\n"
+        "\t@cd build/main && rm -f main.a && ar -rcs main.a main.o\n",
         encoding="utf-8")
     shutil.copy2(ROOT / "makefile", source_dir / "makefile")
     shutil.copy2(ROOT / "makefile", build_dir / "makefile")
@@ -718,8 +799,6 @@ def _check_makefile_relocation(definition: TestDefinition,
         f"SEP_COMMON_DIR={common_dir.resolve()}",
         f"SWCME_DIR={swcme_dir.resolve()}",
     }
-    commands: List[str] = []
-    elapsed = 0.0
     for location in (source_dir, build_dir):
         # Deliberately run from the fixture root, not from either makefile
         # directory.  A relative-to-CWD implementation would fail this probe.
@@ -933,6 +1012,38 @@ def _check_production_build(definition: TestDefinition,
                   elapsed, command)
 
 
+def _check_application_object_freshness(definition: TestDefinition) -> Result:
+    """Protect the copied build/main tree from timestamp-stale C++ ABIs.
+
+    Deterministic source packages normalize mtimes.  Without a force edge,
+    make may retain an object compiled against an earlier mesh_model.h when a
+    package is overlaid on an existing configured tree.  The final linker then
+    sees new callers but an old provider object.  This source gate verifies
+    both the forced-rebuild edge and the archive-time ABI/member checks.
+    """
+    started = time.monotonic()
+    makefile = (ROOT / "makefile").read_text(encoding="utf-8")
+    required = (
+        ".PHONY: FORCE_SEP3D_APPLICATION_OBJECTS",
+        "$(MAINLIBOBJ) $(MAINOBJ): FORCE_SEP3D_APPLICATION_OBJECTS",
+        "ar -rcs mainlib.a",
+        "$(notdir $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS))",
+        "MakeDomain(SEP3D::RuntimeModel::RunConfiguration3DOptions const&)",
+        "SEP3D::Mesh::BuildRefinementPreflight(",
+    )
+    missing = [token for token in required if token not in makefile]
+    if missing:
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            "production stale-object guard is incomplete: " +
+            "; ".join(missing), time.monotonic() - started, [])
+    return Result(
+        definition.test_id, definition.group, "PASS",
+        "production rebuilds application-owned objects and audits every "
+        "mainlib member plus the normalized-domain/C05 mesh ABI before link",
+        time.monotonic() - started, [])
+
+
 def _run_source(definition: TestDefinition, args: argparse.Namespace,
                 output_dir: Path) -> Result:
     if definition.test_id == "BLDL3D01":
@@ -947,6 +1058,8 @@ def _run_source(definition: TestDefinition, args: argparse.Namespace,
         return _check_makefile_relocation(definition, args, output_dir)
     if definition.test_id == "BLDL3D06":
         return _check_turbulence_header_boundary(definition, args, output_dir)
+    if definition.test_id == "BLDL3D07":
+        return _check_application_object_freshness(definition)
     if definition.test_id == "ARCH3D02":
         return _check_shared_archives(definition, args)
     if definition.test_id == "SWCME3D01":

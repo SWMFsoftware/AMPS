@@ -10,6 +10,7 @@
     "adapters/*.h",
     "background/*.cpp",
     "background/*.h",
+    "core/*.cpp",
     "core/*.h",
     "mesh/*.cpp",
     "mesh/*.h",
@@ -38,6 +39,7 @@
     "validation/*.md"
   ],
   "retained_input_globs": [
+    "examples/*.in",
     "test/frozen/*",
     "validation/**/*.json"
   ],

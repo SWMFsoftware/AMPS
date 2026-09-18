@@ -10,6 +10,7 @@
 #ifndef SEP3D_MESH_MODEL_H
 #define SEP3D_MESH_MODEL_H
 
+#include "../core/parker_geometry.h"
 #include "../core/sep3d_types.h"
 #include "../runtime/run_configuration.h"
 
@@ -31,6 +32,11 @@ struct DomainBounds {
   Core::Vec3 maximumM;
   double innerRadiusM = 0.0;
   double outerRadiusM = 0.0;
+  Core::Vec3 originM;
+  RuntimeModel::InnerBoundaryMode innerBoundary =
+      RuntimeModel::InnerBoundaryMode::Absorb;
+  RuntimeModel::OuterBoundaryMode outerBoundary =
+      RuntimeModel::OuterBoundaryMode::Escape;
 };
 
 struct ResolutionConfiguration {
@@ -39,37 +45,56 @@ struct ResolutionConfiguration {
   double minimumCellSizeM = 0.01 * Core::Const::AU;
   double backgroundCellSizeM = 0.25 * Core::Const::AU;
 
-  // The radial law is h(r)=h_min*r/r_inner, clipped to [h_min,h_bg].  It
-  // therefore doubles exactly when radius doubles and joins the background
-  // value continuously at r_inner*h_bg/h_min.
+  // The surface target and transition radius define an explicit degradation
+  // region.  The selected named profile is monotone on [inner,transition] and
+  // equals the global size outside it.
   bool enableRadialRefinement = true;
+  double solarSurfaceCellSizeM = 0.01 * Core::Const::AU;
+  double solarRefinementOuterRadiusM = 0.25 * Core::Const::AU;
+  RuntimeModel::RefinementProfile solarRefinementProfile =
+      RuntimeModel::RefinementProfile::Smoothstep;
+  double solarRefinementExponent = 1.0;
 
   // Optional Parker-spiral tube.  tubeLongitudeRad is the centreline
   // longitude at innerRadiusM; tubeColatitudeRad is measured from +Z.
   bool enableTubeRefinement = false;
   double tubeLongitudeRad = 0.0;
   double tubeColatitudeRad = 0.5 * Core::Const::kPi;
-  int tubePolarity = 1;
-  double tubeCoreRadiusM = 0.01 * Core::Const::AU;
-  double tubeShoulderRadiusM = 0.03 * Core::Const::AU;
+  double tubeReferenceRadiusM = Core::Const::AU;
+  double tubeRadiusAtReferenceM = 0.03 * Core::Const::AU;
+  RuntimeModel::TubeRadiusMode tubeRadiusMode =
+      RuntimeModel::TubeRadiusMode::ConstantAngularWidth;
   double tubeCellSizeM = 0.01 * Core::Const::AU;
+  RuntimeModel::RefinementProfile tubeTransverseProfile =
+      RuntimeModel::RefinementProfile::Smoothstep;
+  double tubeTransverseExponent = 1.0;
   double solarWindSpeedMPerS = Core::Const::V_sw_default;
   double solarRotationRateRadPerS = Core::Const::Omega_sun;
+  Core::Vec3 rotationAxis = {0.0, 0.0, 1.0};
 
   unsigned cellsPerBlockEdge = 4;
   unsigned maximumLevel = 5;
   std::size_t blockOverheadBytes = 1024;
   std::size_t memoryBudgetBytes = std::size_t{4} * 1024 * 1024 * 1024;
+  RuntimeModel::MemoryModelOptions memoryModel;
 };
 
 Core::Status Validate(const ResolutionConfiguration& configuration);
-DomainBounds MakeDomain(RuntimeModel::DomainPreset preset,
-                        double innerRadiusM, double requestedOuterRadiusM);
+DomainBounds MakeDomain(
+    const RuntimeModel::RunConfiguration3DOptions& configuration);
+
+// Return the physical radius of the refined tube at a given heliocentric
+// radius.  ConstantAngularWidth scales linearly with radius; PhysicalConstant
+// retains the reference cross section everywhere.
+double TubeRadiusM(double radiusM,
+                   const ResolutionConfiguration& configuration);
 
 // Analytic tube geometry used by both refinement and tests.  Simultaneously
 // rotating a point and tubeLongitudeRad leaves TubeDistanceM invariant.
 Core::Vec3 ParkerTubeDirection(double radiusM,
                                const ResolutionConfiguration& configuration);
+Core::Vec3 ParkerTubeTangent(double radiusM,
+                             const ResolutionConfiguration& configuration);
 double TubeDistanceM(const Core::Vec3& positionM,
                      const ResolutionConfiguration& configuration);
 double RequestedCellSizeM(const Core::Vec3& positionM,
@@ -90,6 +115,29 @@ struct MeshSummary {
   std::uint64_t cellCount = 0;
   std::vector<std::uint64_t> leavesByLevel;
   std::size_t estimatedBytes = 0;
+};
+
+struct MemoryEstimate {
+  std::size_t baseCellBytes = 0;
+  std::size_t associatedDataBytes = 0;
+  std::size_t samplingBytes = 0;
+  std::size_t nodeBytes = 0;
+  std::size_t blockBytes = 0;
+  std::size_t particleBytes = 0;
+  std::size_t communicationAndHaloBytes = 0;
+  std::size_t subtotalBytes = 0;
+  std::size_t safetyMarginBytes = 0;
+  std::size_t totalBytes = 0;
+};
+
+struct RefinementPreflight {
+  double minimumRequestedCellM = 0.0;
+  double maximumRequestedCellM = 0.0;
+  Core::Vec3 minimumLocationM;
+  Core::Vec3 maximumLocationM;
+  double tubeRadiusAtReferenceM = 0.0;
+  std::vector<std::uint64_t> estimatedBlocksByLevel;
+  MemoryEstimate memory;
 };
 
 class StandaloneOctree final {
@@ -116,6 +164,23 @@ bool AreLeavesBalanced(const std::vector<LeafBlock>& leaves);
 std::size_t EstimateMemoryBytes(const MeshSummary& topology,
                                 const ResolutionConfiguration& resolution,
                                 const RuntimeModel::StorageLayout& storage);
+MemoryEstimate EstimateWholeRunMemory(
+    const MeshSummary& topology,
+    const ResolutionConfiguration& resolution,
+    const RuntimeModel::StorageLayout& storage);
+Core::Status BuildRefinementPreflight(
+    const DomainBounds& domain,
+    const ResolutionConfiguration& resolution,
+    const RuntimeModel::StorageLayout& storage,
+    RefinementPreflight* report);
+
+// Classify one segment crossing.  Direction matters: moving from outside into
+// the shell is not an escape, while crossing inward through the solar sphere
+// is absorption.  ImportedCoverage uses the same geometric crossing but keeps
+// its distinct status message at the host boundary.
+Core::Status ClassifyBoundaryCrossing(const Core::Vec3& previousM,
+                                      const Core::Vec3& currentM,
+                                      const DomainBounds& domain);
 
 // A small standalone storage image used to prove two Phase-M invariants:
 // offsets are frozen before allocation, and only the deterministic owner may

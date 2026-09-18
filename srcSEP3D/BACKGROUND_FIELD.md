@@ -38,6 +38,14 @@ Density scales as `r^-2`; pressure is `n k_B T`; Alfvén speed is
 `|B|/sqrt(mu0 m_p n)`. `Prepare(epoch)` freezes only validity/generation
 metadata; the analytic configuration is immutable.
 
+The curve and tangent are not duplicated here. `core/parker_geometry.cpp`
+owns the same source longitude, source colatitude, source radius, wind speed,
+rotation rate, and rotation axis used by Phase-M tube refinement. The provider
+computes the unsigned tangent first and applies magnetic polarity only to the
+field vector. Thus `polarity=-1` reverses `B` and the focused-transport pitch
+orientation while leaving the mesh centerline and tube distance unchanged.
+`CFG3D04` verifies both alignments at the same physical point.
+
 ## SWMF/AWSoM ambient import
 
 `SwmfAwsomProvider` is an import adapter, not an SWMF reader. The host supplies

@@ -5,6 +5,7 @@
 #ifndef SEP3D_BG_PARKER_H
 #define SEP3D_BG_PARKER_H
 
+#include "../core/parker_geometry.h"
 #include "bg_provider.h"
 
 namespace SEP3D {
@@ -12,6 +13,8 @@ namespace Background {
 
 struct ParkerConfiguration {
   double sourceRadiusM = 2.5 * Core::Const::R_sun;
+  double sourceLongitudeRad = 0.0;
+  double sourceColatitudeRad = 0.5 * Core::Const::kPi;
   double referenceRadiusM = Core::Const::AU;
   double radialFieldAtReferenceT = 3.0e-9;
   double numberDensityAtReferenceM3 = 5.0e6;

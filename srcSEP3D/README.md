@@ -55,12 +55,47 @@ physics is substituted when that coupling is absent.
 - AMPS mover integers are translated only in `amps/amps_mover_status.h`, where
   `static_assert` binds the adapter to the actual `pic.h` ABI.
 
+### Improvements C01–C05: production configuration and preflight
+
+- The standalone host reads one versioned, sectioned input file through
+  `runtime/configuration_io.cpp`. Every dimensional key declares its SI unit;
+  duplicate, unknown, unitless, malformed, or missing required entries fail
+  before AMPS initializes.
+- `RunConfiguration3DOptions` is the single typed contract for file-driven and
+  coupled SWMF construction. It contains complete Parker, turbulence,
+  transport, shock, source, species, observer, mesh, storage, memory, output,
+  and restart groups.
+- Domain radii use explicit `preset` or `explicit` modes rather than a numeric
+  sentinel. Solar, one-AU, and Mars presets are normalized before bounds,
+  observers, shock extent, mesh levels, and fingerprints are validated.
+- `core/parker_geometry.cpp` owns one polarity-independent Parker curve and
+  tangent for both background evaluation and tube refinement. Magnetic
+  polarity reverses the field only; it cannot move the refined tube.
+- Composite near-Sun and transverse-tube profiles meet the global resolution
+  continuously. Their overlap requests the finer size. The tube radius is
+  defined at an explicit reference distance and may retain physical width or
+  constant angular width.
+- `--dry-run` reports normalized physics identity, resolution extrema,
+  estimated blocks by level, and full resident/particle/halo/sampling/safety
+  memory without allocating the AMPS mesh.
+
+For a standalone preflight and run:
+
+```bash
+./amps --input srcSEP3D/examples/sep3d_analytic_parker.in --dry-run
+./amps --input srcSEP3D/examples/sep3d_analytic_parker.in \
+  --output-dir output/production
+```
+
+See [CONFIGURATION.md](CONFIGURATION.md) for the schema, algorithms, formulas,
+coupled-host contract, and C01–C05 acceptance evidence.
+
 ### Phase M: mesh and storage
 
 - Earth and Mars heliospheric domain presets are represented as Cartesian
   cubes containing a physical inner sphere and requested outer sphere.
-- One resolution law provides radial refinement and an optional finite-width
-  Parker-spiral tube with a continuous shoulder.
+- One resolution law provides named near-Sun degradation and an optional
+  finite-width Parker-spiral tube with a continuous transverse profile.
 - The same AMPS-independent law drives the standalone octree verifier and the
   production `localResolution()` callback.
 - The standalone octree enforces 2:1 face balance, deterministic global leaf
@@ -249,8 +284,10 @@ srcSEP3D/
 ├── output/                       Phase-O sampling, publication, restart
 ├── validation/                   Phase-V audits, metrics, registry, runner
 ├── runtime/                      immutable configuration and lifecycle
+├── examples/                     annotated versioned production input
 ├── amps/                         AMPS-only ABI adapters
 ├── MESH_STORAGE.md
+├── CONFIGURATION.md
 ├── BACKGROUND_FIELD.md
 ├── TURBULENCE_SCATTERING.md
 ├── TRANSPORT_CORES.md
@@ -308,6 +345,7 @@ test/run_tests.py --suite phase-p --rebuild
 test/run_tests.py --suite phase-a --rebuild
 test/run_tests.py --suite phase-o --rebuild
 test/run_tests.py --suite phase-v --rebuild
+test/run_tests.py --suite improvements-c --rebuild
 
 # Configured Phase-V executable and independently owned evidence.
 test/run_tests.py --suite phase-v --amps ../amps \
@@ -354,6 +392,14 @@ generated include/definition set and is not production evidence. All paths are
 resolved from the active makefile, so source and copied locations find the
 same `AMPS/Makefile.conf`, `src/models/sep_common`, and `src/models/swcme`.
 
+Production application objects are intentionally rebuilt on every application
+archive invocation. Deterministic release archives use normalized timestamps;
+without this guard, overlaying a new package can retain an older
+`mesh_model.o` whose unchanged symbols resolve but whose C03/C05 ABI does not.
+The archive step also verifies every required member and the current
+normalized-domain/preflight definitions before the final Fortran-driver link.
+`BLDL3D07` enforces this freshness contract.
+
 ## Implemented acceptance groups
 
 | Group | Scope |
@@ -361,6 +407,7 @@ same `AMPS/Makefile.conf`, `src/models/sep_common`, and `src/models/swcme`.
 | `BLDL3D`, `ARCH3D`, `SWCME3D` | production routing, retired-symbol audit, canonical archives |
 | `HARN`, `RUNNER`, `LAY`, `BLD`, `UTIL` | runner, layering, binary boundary, frozen common kernels |
 | `LIFE3D01–04` | immutable configuration and complete lifecycle transition matrix |
+| `CFG3D01–05` | input/CLI, typed contracts, domains, shared Parker geometry, mesh/memory preflight |
 | `MSH3D01–09` | resolution bounds/laws, tube geometry, balance, octrees, memory, ownership, presets, gradients |
 | `BGP3D01–06` | analytic Parker identities, component laws, focusing, wind derivatives, polar limits |
 | `SNAP3D01–08` | completeness, finite values, units, epochs, atomicity, interpolation, batch status, frame |

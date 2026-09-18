@@ -44,6 +44,9 @@ M::ResolutionConfiguration Baseline() {
   configuration.backgroundCellSizeM = 0.25 * SEP3D::Core::Const::AU;
   configuration.innerRadiusM = 0.1 * SEP3D::Core::Const::AU;
   configuration.outerRadiusM = SEP3D::Core::Const::AU;
+  configuration.solarSurfaceCellSizeM = configuration.minimumCellSizeM;
+  configuration.solarRefinementOuterRadiusM = 0.5 * SEP3D::Core::Const::AU;
+  configuration.solarRefinementProfile = RM::RefinementProfile::Linear;
   configuration.maximumLevel = 3;
   configuration.cellsPerBlockEdge = 4;
   return configuration;
@@ -99,42 +102,40 @@ Result RunMSH3D01() {
 
 Result RunMSH3D02() {
   const M::ResolutionConfiguration configuration = Baseline();
-  const double transition = configuration.innerRadiusM *
-      configuration.backgroundCellSizeM / configuration.minimumCellSizeM;
+  const double transition = configuration.solarRefinementOuterRadiusM;
+  const double midpoint = 0.5 * (configuration.innerRadiusM + transition);
   const double atSurface = M::RequestedCellSizeM(
       {configuration.innerRadiusM, 0.0, 0.0}, configuration);
   const double atTransition = M::RequestedCellSizeM(
       {transition, 0.0, 0.0}, configuration);
-  const double first = M::RequestedCellSizeM(
-      {2.0 * configuration.innerRadiusM, 0.0, 0.0}, configuration);
-  const double second = M::RequestedCellSizeM(
-      {4.0 * configuration.innerRadiusM, 0.0, 0.0}, configuration);
-  if (atSurface != configuration.minimumCellSizeM ||
+  const double atMidpoint = M::RequestedCellSizeM(
+      {midpoint, 0.0, 0.0}, configuration);
+  const double expectedMidpoint = 0.5 *
+      (configuration.solarSurfaceCellSizeM +
+       configuration.backgroundCellSizeM);
+  if (atSurface != configuration.solarSurfaceCellSizeM ||
       atTransition != configuration.backgroundCellSizeM ||
-      second != 2.0 * first) {
-    return Fail("radial surface, transition, or octave identity is not exact");
+      atMidpoint != expectedMidpoint) {
+    return Fail("linear near-Sun surface, midpoint, or transition identity is not exact");
   }
-  return Pass("radial refinement matches its surface, transition, and octave closed forms exactly");
+  return Pass("linear near-Sun degradation matches its surface, midpoint, and transition values exactly");
 }
 
 Result RunMSH3D03() {
   M::ResolutionConfiguration configuration = Baseline();
   configuration.enableTubeRefinement = true;
   double worstRelativeDistance = 0.0;
-  for (int polarity : {-1, 1}) {
-    configuration.tubePolarity = polarity;
-    for (int i = 1; i <= 200; ++i) {
-      const double radius = configuration.innerRadiusM +
-          (configuration.outerRadiusM - configuration.innerRadiusM) * i / 200.0;
-      const SEP3D::Core::Vec3 point =
-          radius * M::ParkerTubeDirection(radius, configuration);
-      worstRelativeDistance = std::max(
-          worstRelativeDistance, M::TubeDistanceM(point, configuration) / radius);
-    }
+  for (int i = 1; i <= 200; ++i) {
+    const double radius = configuration.innerRadiusM +
+        (configuration.outerRadiusM - configuration.innerRadiusM) * i / 200.0;
+    const SEP3D::Core::Vec3 point =
+        radius * M::ParkerTubeDirection(radius, configuration);
+    worstRelativeDistance = std::max(
+        worstRelativeDistance, M::TubeDistanceM(point, configuration) / radius);
   }
   if (worstRelativeDistance > 1.0e-9)
     return Fail("analytic Parker centreline is not zero-distance within tolerance");
-  return Pass("analytic Parker centrelines for both polarities have distance below 1e-9 radius");
+  return Pass("the polarity-independent analytic Parker centreline has distance below 1e-9 radius");
 }
 
 Result RunMSH3D04() {
@@ -164,14 +165,17 @@ Result RunMSH3D04() {
 Result RunMSH3D05() {
   M::ResolutionConfiguration configuration = Baseline();
   configuration.enableTubeRefinement = true;
-  configuration.tubeCoreRadiusM = 0.03 * SEP3D::Core::Const::AU;
-  configuration.tubeShoulderRadiusM = 0.12 * SEP3D::Core::Const::AU;
+  configuration.tubeReferenceRadiusM = SEP3D::Core::Const::AU;
+  configuration.tubeRadiusAtReferenceM = 0.12 * SEP3D::Core::Const::AU;
+  configuration.tubeCellSizeM = configuration.minimumCellSizeM;
   M::StandaloneOctree mesh;
-  const M::DomainBounds domain = M::MakeDomain(
-      RM::DomainPreset::Earth, configuration.innerRadiusM,
-      configuration.outerRadiusM);
+  RM::RunConfiguration3DOptions domainOptions;
+  domainOptions.innerRadiusM = configuration.innerRadiusM;
+  domainOptions.outerRadiusMode = RM::OuterRadiusMode::Explicit;
+  domainOptions.outerRadiusM = configuration.outerRadiusM;
+  const M::DomainBounds domain = M::MakeDomain(domainOptions);
   if (!mesh.Build(domain, configuration, Layout(), 4).ok() ||
-      !mesh.IsBalanced()) return Fail("valid shoulder did not produce a balanced octree");
+      !mesh.IsBalanced()) return Fail("valid tube profile did not produce a balanced octree");
 
   M::LeafBlock coarse;
   coarse.minimumM = {0.0, 0.0, 0.0};
@@ -183,7 +187,7 @@ Result RunMSH3D05() {
   fine.level = 2;
   if (M::AreLeavesBalanced({coarse, fine}))
     return Fail("balance negative control did not detect a two-level jump");
-  return Pass("tube shoulder produces a 2:1 mesh and the negative control detects an illegal level jump");
+  return Pass("tube profile produces a 2:1 mesh and the negative control detects an illegal level jump");
 }
 
 Result RunMSH3D06() {
@@ -212,11 +216,14 @@ Result RunMSH3D07() {
     configuration.maximumLevel = level;
     configuration.minimumCellSizeM =
         configuration.backgroundCellSizeM / std::pow(2.0, level);
+    configuration.solarSurfaceCellSizeM = configuration.minimumCellSizeM;
     M::StandaloneOctree first;
     M::StandaloneOctree second;
-    const M::DomainBounds domain = M::MakeDomain(
-        RM::DomainPreset::Earth, configuration.innerRadiusM,
-        configuration.outerRadiusM);
+    RM::RunConfiguration3DOptions domainOptions;
+    domainOptions.innerRadiusM = configuration.innerRadiusM;
+    domainOptions.outerRadiusMode = RM::OuterRadiusMode::Explicit;
+    domainOptions.outerRadiusM = configuration.outerRadiusM;
+    const M::DomainBounds domain = M::MakeDomain(domainOptions);
     if (!first.Build(domain, configuration, layout, 3).ok() ||
         !second.Build(domain, configuration, layout, 3).ok() ||
         first.summary().leafCount != second.summary().leafCount ||
@@ -250,8 +257,19 @@ Result RunMSH3D07() {
 
 Result RunMSH3D08() {
   const double inner = 20.0 * SEP3D::Core::Const::R_sun;
-  const M::DomainBounds earth = M::MakeDomain(RM::DomainPreset::Earth, inner, 0.0);
-  const M::DomainBounds mars = M::MakeDomain(RM::DomainPreset::Mars, inner, 0.0);
+  RM::RunConfiguration3DOptions earthOptions;
+  earthOptions.domain = RM::DomainPreset::Earth;
+  earthOptions.innerRadiusM = inner;
+  RM::RunConfiguration3DOptions marsOptions = earthOptions;
+  marsOptions.domain = RM::DomainPreset::Mars;
+  marsOptions.maximumMeshLevel = 8;
+  std::shared_ptr<const RM::RunConfiguration3D> earthConfiguration;
+  std::shared_ptr<const RM::RunConfiguration3D> marsConfiguration;
+  if (!RM::RunConfiguration3D::Create(earthOptions, &earthConfiguration).ok() ||
+      !RM::RunConfiguration3D::Create(marsOptions, &marsConfiguration).ok())
+    return Fail("Earth/Mars preset normalization failed");
+  const M::DomainBounds earth = M::MakeDomain(earthConfiguration->options());
+  const M::DomainBounds mars = M::MakeDomain(marsConfiguration->options());
   if (earth.innerRadiusM != inner || mars.innerRadiusM != inner ||
       earth.outerRadiusM != SEP3D::Core::Const::AU ||
       mars.outerRadiusM != 1.666 * SEP3D::Core::Const::AU ||
@@ -302,10 +320,10 @@ std::vector<SEP3D::Testing::Descriptor> RegisterMeshTests() {
   };
   return {
       make("MSH3D01", "Resolution bounds", "One million deterministic resolution probes.", RunMSH3D01),
-      make("MSH3D02", "Radial closed forms", "Surface, transition, and octave identities.", RunMSH3D02),
+      make("MSH3D02", "Radial closed forms", "Surface, midpoint, and transition identities.", RunMSH3D02),
       make("MSH3D03", "Tube centreline", "Analytic Parker centreline distance.", RunMSH3D03),
       make("MSH3D04", "Tube distance convergence", "Fast chord converges to exact arc.", RunMSH3D04),
-      make("MSH3D05", "Shoulder and balance", "2:1 balance with a live negative control.", RunMSH3D05),
+      make("MSH3D05", "Tube profile and balance", "Composite tube refinement with a live 2:1 negative control.", RunMSH3D05),
       make("MSH3D06", "Rotation invariance", "Co-rotation leaves resolution invariant.", RunMSH3D06),
       make("MSH3D07", "Octree budget and ownership", "Reproducible memory and owner-only fills.", RunMSH3D07),
       make("MSH3D08", "Earth and Mars presets", "Exact preset bounds and shell coverage.", RunMSH3D08),
