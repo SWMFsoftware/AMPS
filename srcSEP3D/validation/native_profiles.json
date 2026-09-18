@@ -1,0 +1,8 @@
+{
+  "schema": "srcsep3d-native-profiles-v1",
+  "profiles": [
+    {"name": "small", "ranks": [1, 2], "threads": [1, 2], "required_cases": ["MPI3D01", "MPI3D02"]},
+    {"name": "medium", "ranks": [1, 2, 4], "threads": [1, 2, 4], "required_cases": ["MPI3D01", "MPI3D02", "NAT3D09", "NAT3D10"]},
+    {"name": "production", "ranks": [1, 2, 4, 8], "threads": [1, 2, 4], "required_cases": ["MPI3D01", "MPI3D02", "NAT3D09", "NAT3D10", "NAT3D11", "NAT3D12"]}
+  ]
+}

@@ -108,8 +108,14 @@ minimum_substep_s = 1e-12
 # A malformed limiter cannot trap one AMPS mover call indefinitely.
 maximum_substeps = 100000
 pitch_angle_scheme = reflecting-milstein
-perpendicular_diffusion = false
-drifts = false
+# V01 controlled extensions. "none" preserves the parallel-only baseline.
+# Select "constant" or "constant-ratio" only with the matching positive
+# coefficient. Drift accepts gradient-b, curvature, or their sum; current-
+# sheet drift remains unsupported until a sheet-geometry contract exists.
+perpendicular_diffusion = none
+constant_kappa_perpendicular_m2_per_s = 0
+kappa_perpendicular_to_parallel_ratio = 0
+drifts = none
 
 [shock]
 # These physical parameters are retained even when authority=none, so changing

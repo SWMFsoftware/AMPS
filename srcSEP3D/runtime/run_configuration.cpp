@@ -208,6 +208,25 @@ const char* Name(PitchAngleSchemeMode value) {
   return "unknown";
 }
 
+const char* Name(PerpendicularDiffusionMode value) {
+  switch (value) {
+    case PerpendicularDiffusionMode::None: return "none";
+    case PerpendicularDiffusionMode::Constant: return "constant";
+    case PerpendicularDiffusionMode::ConstantRatio: return "constant-ratio";
+  }
+  return "unknown";
+}
+
+const char* Name(DriftMode value) {
+  switch (value) {
+    case DriftMode::None: return "none";
+    case DriftMode::GradientB: return "gradient-b";
+    case DriftMode::Curvature: return "curvature";
+    case DriftMode::GradientAndCurvature: return "gradient-curvature";
+  }
+  return "unknown";
+}
+
 const char* Name(ObserverKind value) {
   switch (value) {
     case ObserverKind::FixedCartesian: return "fixed-cartesian";
@@ -521,17 +540,33 @@ Core::Status RunConfiguration3D::Create(
       if (species < 0) return Invalid("observer species index is negative");
   }
 
+  if (normalized.enablePerpendicularDiffusion || normalized.enableDrifts)
+    return Invalid("legacy Boolean perpendicular/drift switches are retired; select the named transport models");
+  if (!std::isfinite(normalized.constantKappaPerpendicularM2PerS) ||
+      normalized.constantKappaPerpendicularM2PerS < 0.0 ||
+      !std::isfinite(normalized.kappaPerpendicularToParallelRatio) ||
+      normalized.kappaPerpendicularToParallelRatio < 0.0)
+    return Invalid("perpendicular diffusion coefficients must be finite and nonnegative");
+  if (normalized.perpendicularDiffusion == PerpendicularDiffusionMode::Constant &&
+      normalized.constantKappaPerpendicularM2PerS <= 0.0)
+    return Invalid("constant perpendicular diffusion requires positive kappa_perpendicular");
+  if (normalized.perpendicularDiffusion == PerpendicularDiffusionMode::ConstantRatio &&
+      normalized.kappaPerpendicularToParallelRatio <= 0.0)
+    return Invalid("constant-ratio perpendicular diffusion requires a positive ratio");
+  // Guiding-centre drift needs grad|B|. Force the storage choice before the
+  // layout is frozen so analytic and imported backgrounds use one ABI.
+  if (normalized.drift != DriftMode::None)
+    normalized.storeMagneticGradient = true;
+
   const char* reserved = nullptr;
-  if (normalized.enablePerpendicularDiffusion) reserved = "perpendicular diffusion";
-  else if (normalized.enableDrifts) reserved = "gradient/curvature drifts";
-  else if (normalized.enableExternalScriptBackground) reserved = "external-script background";
+  if (normalized.enableExternalScriptBackground) reserved = "external-script background";
   else if (normalized.enableSelfConsistent3DTurbulence) reserved = "self-consistent 3-D turbulence";
   if (reserved != nullptr) return Core::Status::Reserved(reserved);
 
   const StorageLayout layout = BuildLayout(normalized);
   std::ostringstream physics;
   physics << std::setprecision(17) << std::scientific
-          << "sep3d-physics-v2"
+          << "sep3d-physics-v3"
           << ";intent=" << Name(normalized.intent)
           << ";background=" << Name(normalized.background)
           << ";turbulence=" << Name(normalized.turbulence)
@@ -619,6 +654,12 @@ Core::Status RunConfiguration3D::Create(
           << ";minimum_substep_s=" << normalized.minimumTransportSubstepS
           << ";maximum_substeps=" << normalized.maximumTransportSubsteps
           << ";pitch_scheme=" << Name(normalized.pitchAngleScheme)
+          << ";perpendicular_diffusion=" << Name(normalized.perpendicularDiffusion)
+          << ";kappa_perpendicular_m2_s="
+          << normalized.constantKappaPerpendicularM2PerS
+          << ";kappa_perpendicular_ratio="
+          << normalized.kappaPerpendicularToParallelRatio
+          << ";drift=" << Name(normalized.drift)
           << ";layout=" << layout.fingerprint;
   for (const ObserverOptions& observer : normalized.observers) {
     physics << ";observer=" << observer.id << ',' << observer.positionM.x

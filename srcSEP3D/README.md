@@ -1,5 +1,13 @@
 # srcSEP3D
 
+## V01–V05 controlled extensions and evidence gates
+
+See `V01_V05_IMPLEMENTATION.md` for the algorithms, configuration, tests, and
+release rules. V01 adds controlled perpendicular diffusion and relativistic
+gradient-B/curvature drift. V02 uses distinct compiled 1-D and 3-D producers;
+V03–V05 add native MPI, scientific-campaign, and release-evidence gates. R8 is
+deferred, so live-SWMF validation remains explicitly blocked.
+
 `srcSEP3D` is the AMPS application for three-dimensional solar-energetic-
 particle and energetic-electron transport in the heliosphere. Its target
 physics is the Parker or focused transport equation in an analytic Parker or
@@ -191,8 +199,8 @@ normalization, policies, and the shared-kernel boundary.
 
 ### Phase P: transport cores
 
-- The Parker core advances the rank-one tensor
-  `kappa_parallel * b * b` with the complete Itô drift, including the
+- The Parker core advances the gyrotropic tensor
+  `kappa_perpendicular I + (kappa_parallel-kappa_perpendicular) b b` with the complete Itô drift, including the
   field-aligned coefficient gradient, field-line curvature, and `div(b)`.
 - The focused core advances full gyrotropic focusing and flow coefficients
   with a symmetric split, reflecting pitch boundaries, and a declared
@@ -202,8 +210,9 @@ normalization, policies, and the shared-kernel boundary.
 - Counter-based random streams are keyed by campaign, particle, step,
   substep, and physical purpose, making histories independent of iteration
   order and worker ownership.
-- Perpendicular diffusion and drifts must be exactly zero until their own
-  physics and validation gates are implemented.
+- Controlled constant/constant-ratio perpendicular diffusion and selectable
+  gradient-B/curvature drifts are implemented by V01. Current-sheet drift is
+  still excluded because the required sheet geometry is unspecified.
 
 See [TRANSPORT_CORES.md](TRANSPORT_CORES.md) for the equations, splitting
 algorithm, reproducibility contract, and Phase-P acceptance tests.
@@ -268,8 +277,9 @@ file schemas, atomicity, restart contents, and lifecycle rules.
 - Linked `NAT3D`/`MPI3D`, cross-model `XM3D`, and observational `OV3D` cases
   share the public CLI. Missing prerequisites are `SKIP`; malformed or
   checksum-invalid evidence is `ERROR`.
-- Cross-model results are immutable exported evidence. srcSEP3D never searches
-  for or executes the independent `srcSEP` application.
+- Scientific cross-model results are immutable exported evidence. The bounded
+  V2D01 development gate deliberately compiles distinct cores from both source
+  trees; the scientific validation runner itself never searches for srcSEP.
 
 See
 [INTEGRATION_SCIENTIFIC_VALIDATION.md](INTEGRATION_SCIENTIFIC_VALIDATION.md)
@@ -280,7 +290,7 @@ schemas, case roles, commands, and physical limitations.
 
 The following are intentionally not enabled:
 
-- perpendicular diffusion and gradient/curvature drifts;
+- current-sheet drift and arbitrary tensor-valued perpendicular closures;
 - self-consistent 3-D turbulence evolution;
 - external-script background providers;
 - unconfigured direct access to mutable SWMF state from mover workers;

@@ -1,8 +1,8 @@
 // ============================================================================
 // AMPS-independent three-dimensional Parker transport core.
 //
-// For a gyrotropic, pitch-angle-averaged distribution with parallel-only
-// diffusion, the spatial tensor is K = kappa_parallel b b.  The equivalent
+// For a gyrotropic, pitch-angle-averaged distribution the spatial tensor is
+// K = kappa_perp I +(kappa_parallel-kappa_perp) b b.  The equivalent
 // Ito pseudo-particle equation is
 //
 //   dX = [U + div(K)] dt + sqrt(2 kappa_parallel) b dW,
@@ -15,8 +15,7 @@
 //
 // Retaining all three terms is essential: omitting the tensor-geometry terms
 // breaks uniform-density equilibrium in a curved/nonuniform field.  This
-// release intentionally sets perpendicular diffusion and gradient/curvature
-// drifts to exactly zero; nonzero values are rejected rather than ignored.
+// gradient-B/curvature drift is supplied explicitly by the shared V01 closure.
 // ============================================================================
 
 #ifndef SEP3D_TRANSPORT_PARKER_TRANSPORT_H
@@ -24,6 +23,7 @@
 
 #include "../core/sep3d_types.h"
 #include "keyed_random.h"
+#include "perpendicular_transport.h"
 
 namespace SEP3D {
 namespace Transport {
@@ -42,10 +42,17 @@ struct ParkerLocalState {
   double kappaParallelM2PerS = 0.0;
   double dKappaParallelDsMPerS = 0.0;
 
-  // Reserved hooks are explicit so a caller cannot accidentally pass a
-  // future coefficient to a parallel-only kernel and have it discarded.
+  // Cross-field coefficients remain explicit so each closure, derivative,
+  // timestep bound, and restart fingerprint is visible at the core boundary.
   double kappaPerpendicularM2PerS = 0.0;
+  double dKappaPerpendicularDsMPerS = 0.0;
   Core::Vec3 driftVelocityMPerS;
+};
+
+struct ParkerRandomStreams {
+  KeyedRandomStream* parallel = nullptr;
+  KeyedRandomStream* perpendicularFirst = nullptr;
+  KeyedRandomStream* perpendicularSecond = nullptr;
 };
 
 struct ParkerStepResult {
@@ -60,6 +67,11 @@ struct ParkerStepResult {
 Core::Tensor3 AssembleParallelDiffusionTensor(double kappaParallelM2PerS,
                                                const Core::Vec3& bHat);
 Core::Vec3 ParallelTensorItoDrift(const ParkerLocalState& local);
+ParkerStepResult AdvanceParker(const ParkerParticleState& initial,
+                               const ParkerLocalState& local,
+                               double dtS,
+                               const ParkerRandomStreams& random);
+// Compatibility overload for the released parallel-only call surface.
 ParkerStepResult AdvanceParker(const ParkerParticleState& initial,
                                const ParkerLocalState& local,
                                double dtS,

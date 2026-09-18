@@ -136,6 +136,13 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("RNG3D01", "RNG3D", "Thread reproducibility", "cpp"),
     TestDefinition("RNG3D02", "RNG3D", "Order independence", "cpp"),
     TestDefinition("RNG3D03", "RNG3D", "Purpose isolation", "cpp"),
+    TestDefinition("V1D01", "V1D", "Gyrotropic tensor and Ito drift", "cpp"),
+    TestDefinition("V1D02", "V1D", "Perpendicular diffusion moments", "cpp"),
+    TestDefinition("V1D03", "V1D", "Guiding-centre drift direction", "cpp"),
+    TestDefinition("V1D04", "V1D", "Focused perpendicular transport", "cpp"),
+    TestDefinition("V1D05", "V1D", "Tensor diffusion timestep", "cpp"),
+    TestDefinition("V2D01", "V2D", "Distinct 1-D/3-D production-core parity", "source"),
+    TestDefinition("V5D01", "V5D", "Validation/release governance contracts", "source"),
     TestDefinition("ADP3D01", "ADP3D", "Production mover dispatch", "cpp"),
     TestDefinition("NAT3D04", "NAT3D", "Boundary dispositions", "cpp"),
     TestDefinition("NAT3D05", "NAT3D", "Particle ledger closure", "cpp"),
@@ -193,6 +200,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("OV3D02", "OV3D", "2020 May 29 PSP/STEREO-A event", "validation", False),
     TestDefinition("OV3D03", "OV3D", "2014 January 6 PAMELA diagnostic", "validation", False),
     TestDefinition("OV3D04", "OV3D", "Electron multi-spacecraft diagnostic", "validation", False),
+    TestDefinition("SWMF3D01", "SWMF3D", "Live SWMF coupling replay (blocked by R8)", "validation", False),
 )
 
 BY_ID: Dict[str, TestDefinition] = {item.test_id: item for item in TESTS}
@@ -213,6 +221,8 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                              if item.group == "R3D"),
     "improvements-c": tuple(item.test_id for item in TESTS
                             if item.group == "CFG3D"),
+    "improvements-v": tuple(item.test_id for item in TESTS
+                            if item.group in ("V1D", "V2D", "V5D")),
     "phase-m": tuple(item.test_id for item in TESTS if item.group == "MSH3D"),
     "phase-b": tuple(item.test_id for item in TESTS
                      if item.group in ("BGP3D", "SNAP3D")),
@@ -229,7 +239,7 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                      if item.group == "RST3D" or
                      item.test_id in ("NAT3D06", "NAT3D07")),
     "phase-v": tuple(item.test_id for item in TESTS
-                     if item.group in ("INT3D", "VFY3D", "MPI3D", "XM3D", "OV3D") or
+                     if item.group in ("V1D", "V2D", "V5D", "INT3D", "VFY3D", "MPI3D", "XM3D", "OV3D", "SWMF3D") or
                      (item.group == "NAT3D" and item.kind == "validation") or
                      item.test_id == "VALRUN3D01"),
     "production": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04",
@@ -282,6 +292,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--amps-source", type=Path,
                         default=os.environ.get("AMPS_SOURCE_ROOT"),
                         help="AMPS root containing src/pic/pic.h for ABI checks")
+    parser.add_argument("--sep1d-source", type=Path,
+                        help="explicit srcSEP root for V2D01; never inferred")
     parser.add_argument("--make-config", type=Path,
                         default=os.environ.get("AMPS_MAKE_CONFIG"),
                         help="configured AMPS Makefile.conf for BLDL3D01")
@@ -851,7 +863,7 @@ def _check_makefile_relocation(definition: TestDefinition,
     application_members = (
         "parker_geometry.o mesh_model.o "
         "bg_provider.o bg_parker.o bg_swmf.o background_snapshot.o "
-        "turbulence_models.o keyed_random.o time_step.o "
+        "turbulence_models.o keyed_random.o time_step.o perpendicular_transport.o "
         "parker_transport.o focused_transport.o "
         "run_configuration.o configuration_io.o runtime.o runtime_adapters.o "
         "transport_adapter.o particle_ledger.o swcme_source_adapter.o source_runtime.o "
@@ -1175,6 +1187,28 @@ def _run_source(definition: TestDefinition, args: argparse.Namespace,
                       "PASS" if code == 0 else "FAIL",
                       output.strip() or
                       f"Phase-V runner unit test exited {code}",
+                      elapsed, command)
+    if definition.test_id == "V2D01":
+        if args.sep1d_source is None:
+            return Result(definition.test_id, definition.group, "SKIP",
+                          "provide --sep1d-source explicitly; srcSEP3D never searches a sibling application",
+                          0.0, [])
+        command = [sys.executable, str(ROOT / "test" / "run_cross_model_parity.py"),
+                   "--sep1d-root", str(args.sep1d_source.expanduser().resolve()),
+                   "--output-dir", str(output_dir / "V2D01")]
+        code, output, elapsed = _run_command(command, ROOT, args.timeout,
+                                             args.verbose)
+        return Result(definition.test_id, definition.group,
+                      "PASS" if code == 0 else "FAIL",
+                      output.strip() or f"cross-model parity exited {code}",
+                      elapsed, command)
+    if definition.test_id == "V5D01":
+        command = [sys.executable, str(ROOT / "test" / "test_v_program.py")]
+        code, output, elapsed = _run_command(command, ROOT, args.timeout,
+                                             args.verbose)
+        return Result(definition.test_id, definition.group,
+                      "PASS" if code == 0 else "FAIL",
+                      output.strip() or f"V03-V05 governance tests exited {code}",
                       elapsed, command)
     raise RunnerError(f"no source-test implementation for {definition.test_id}")
 

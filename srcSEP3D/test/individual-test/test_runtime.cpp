@@ -383,9 +383,9 @@ Result RunLIFE3D03() {
   reserved.enableDrifts = true;
   configurationStatus =
       RM::RunConfiguration3D::Create(reserved, &rejectedConfiguration);
-  if (configurationStatus.code != SEP3D::Core::StatusCode::ReservedFeature ||
+  if (configurationStatus.code != SEP3D::Core::StatusCode::InvalidInput ||
       rejectedConfiguration) {
-    return Fail("reserved drift physics did not fail during configuration");
+    return Fail("ambiguous legacy drift Boolean was not rejected during migration");
   }
 
   RM::RunConfiguration3DOptions base;

@@ -74,6 +74,7 @@ struct MoverInput {
   LocalTransportRecord local;
   ExpandingSphericalShock shock;
   double speciesMassKg = 0.0;
+  double speciesChargeC = 0.0;
   double requestedDtS = 0.0;
   double innerRadiusM = 0.0;
   double outerRadiusM = 0.0;
@@ -81,6 +82,11 @@ struct MoverInput {
   Transport::TimeStepControls timeStepControls;
   RuntimeModel::PitchAngleSchemeMode pitchScheme =
       RuntimeModel::PitchAngleSchemeMode::ReflectingMilstein;
+  RuntimeModel::PerpendicularDiffusionMode perpendicularDiffusion =
+      RuntimeModel::PerpendicularDiffusionMode::None;
+  double constantKappaPerpendicularM2PerS = 0.0;
+  double kappaPerpendicularToParallelRatio = 0.0;
+  RuntimeModel::DriftMode drift = RuntimeModel::DriftMode::None;
 };
 
 struct MoverResult {

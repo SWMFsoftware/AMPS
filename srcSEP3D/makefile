@@ -120,6 +120,7 @@ TURBULENCE_SRC := turbulence/turbulence_models.cpp
 TRANSPORT_SRC := \
     transport/keyed_random.cpp \
     transport/time_step.cpp \
+    transport/perpendicular_transport.cpp \
     transport/parker_transport.cpp \
     transport/focused_transport.cpp
 RUNTIME_SRC := \

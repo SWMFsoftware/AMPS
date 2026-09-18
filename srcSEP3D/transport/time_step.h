@@ -45,6 +45,9 @@ struct TimeStepPhysics {
   double cellSizeM = 0.0;
   double characteristicSpeedMPerS = 0.0;
   double kappaParallelM2PerS = 0.0;
+  // The tensor stability bound is controlled by its largest eigenvalue. For
+  // gyrotropic diffusion this is max(kappa_parallel,kappa_perpendicular).
+  double kappaPerpendicularM2PerS = 0.0;
   double focusingRatePerS = 0.0;
   double coolingRatePerS = 0.0;
   double fractionalFieldVariationPerS = 0.0;

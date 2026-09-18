@@ -50,6 +50,7 @@ TimeStepSelection SelectTimeStep(const TimeStepControls& controls,
   const double physicalValues[] = {
       physics.requestedS, physics.cellSizeM,
       physics.characteristicSpeedMPerS, physics.kappaParallelM2PerS,
+      physics.kappaPerpendicularM2PerS,
       physics.focusingRatePerS, physics.coolingRatePerS,
       physics.fractionalFieldVariationPerS,
       physics.timeToShockCrossingS, physics.timeToSnapshotBoundaryS};
@@ -70,9 +71,11 @@ TimeStepSelection SelectTimeStep(const TimeStepControls& controls,
       physics.characteristicSpeedMPerS > 0.0
           ? controls.cellCrossingFraction * physics.cellSizeM /
                 physics.characteristicSpeedMPerS : infinity,
-      physics.kappaParallelM2PerS > 0.0
+      std::max(physics.kappaParallelM2PerS,
+               physics.kappaPerpendicularM2PerS) > 0.0
           ? controls.diffusionFraction * physics.cellSizeM * physics.cellSizeM /
-                (2.0 * physics.kappaParallelM2PerS) : infinity,
+                (2.0 * std::max(physics.kappaParallelM2PerS,
+                                physics.kappaPerpendicularM2PerS)) : infinity,
       RateLimit(controls.focusingFraction, physics.focusingRatePerS),
       RateLimit(controls.coolingFraction, physics.coolingRatePerS),
       RateLimit(controls.fieldVariationFraction,

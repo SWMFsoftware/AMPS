@@ -17,6 +17,32 @@ Core::Status Invalid(const std::string& message) {
   return Core::Status(Core::StatusCode::InvalidInput, message);
 }
 
+double ResolveKappaPerpendicular(const MoverInput& input) {
+  switch (input.perpendicularDiffusion) {
+    case RuntimeModel::PerpendicularDiffusionMode::None: return 0.0;
+    case RuntimeModel::PerpendicularDiffusionMode::Constant:
+      return input.constantKappaPerpendicularM2PerS;
+    case RuntimeModel::PerpendicularDiffusionMode::ConstantRatio:
+      return input.kappaPerpendicularToParallelRatio *
+          input.local.kappaParallelM2PerS;
+  }
+  return std::numeric_limits<double>::quiet_NaN();
+}
+
+Core::Vec3 GradientOfMagnitude(const Background::BackgroundSample& background) {
+  // gradB(i,j)=d B_i/d x_j. Therefore d|B|/d x_j=sum_i b_i gradB(i,j).
+  return {
+      background.bHat.x*background.gradB(0,0) +
+          background.bHat.y*background.gradB(1,0) +
+          background.bHat.z*background.gradB(2,0),
+      background.bHat.x*background.gradB(0,1) +
+          background.bHat.y*background.gradB(1,1) +
+          background.bHat.z*background.gradB(2,1),
+      background.bHat.x*background.gradB(0,2) +
+          background.bHat.y*background.gradB(1,2) +
+          background.bHat.z*background.gradB(2,2)};
+}
+
 MoverResult Failed(const MoverInput& input, const Core::Status& status) {
   MoverResult result;
   result.particle = input.particle;
@@ -120,6 +146,9 @@ MoverResult AdvanceParticle(const MoverInput& input) {
       !std::isfinite(particle.statisticalWeight) ||
       particle.statisticalWeight <= 0.0 ||
       !std::isfinite(input.speciesMassKg) || input.speciesMassKg <= 0.0 ||
+      !std::isfinite(input.speciesChargeC) ||
+      (input.drift != RuntimeModel::DriftMode::None &&
+       input.speciesChargeC == 0.0) ||
       !std::isfinite(input.requestedDtS) || input.requestedDtS <= 0.0 ||
       !std::isfinite(input.innerRadiusM) || input.innerRadiusM <= 0.0 ||
       !std::isfinite(input.outerRadiusM) ||
@@ -137,12 +166,36 @@ MoverResult AdvanceParticle(const MoverInput& input) {
 
   const double speed = Transport::RelativisticSpeed(
       particle.momentumKgMPerS, input.speciesMassKg);
+  const double kappaPerpendicularM2PerS = ResolveKappaPerpendicular(input);
+  if (!std::isfinite(kappaPerpendicularM2PerS) ||
+      kappaPerpendicularM2PerS < 0.0)
+    return Failed(input, Invalid("resolved perpendicular diffusion is invalid"));
+  Core::Vec3 guidingCenterDrift;
+  Transport::GuidingCenterInput driftInput;
+  driftInput.bHat = background.bHat;
+  driftInput.gradAbsBTPerM = GradientOfMagnitude(background);
+  driftInput.curvaturePerM = background.curvature;
+  driftInput.absBT = background.absB;
+  driftInput.momentumKgMPerS = particle.momentumKgMPerS;
+  driftInput.speedMPerS = speed;
+  driftInput.pitchCosine = particle.mu;
+  driftInput.chargeC = input.speciesChargeC;
+  driftInput.pitchAveraged =
+      input.model == RuntimeModel::TransportModel::Parker3D;
+  driftInput.includeGradientB = input.drift == RuntimeModel::DriftMode::GradientB ||
+      input.drift == RuntimeModel::DriftMode::GradientAndCurvature;
+  driftInput.includeCurvature = input.drift == RuntimeModel::DriftMode::Curvature ||
+      input.drift == RuntimeModel::DriftMode::GradientAndCurvature;
+  Core::Status driftStatus =
+      Transport::EvaluateGuidingCenterDrift(driftInput, &guidingCenterDrift);
+  if (!driftStatus.ok()) return Failed(input, driftStatus);
   Transport::TimeStepPhysics physics;
   physics.requestedS = input.requestedDtS;
   physics.cellSizeM = input.local.cellSizeM;
   physics.characteristicSpeedMPerS = background.U.Norm() + speed;
   physics.kappaParallelM2PerS = input.model == RuntimeModel::TransportModel::Parker3D
       ? input.local.kappaParallelM2PerS : 0.0;
+  physics.kappaPerpendicularM2PerS = kappaPerpendicularM2PerS;
   physics.focusingRatePerS = input.model == RuntimeModel::TransportModel::Focused3D
       ? std::fabs(Transport::FocusedPitchDriftPerS(
             particle.mu, speed, [&]() {
@@ -192,6 +245,10 @@ MoverResult AdvanceParticle(const MoverInput& input) {
   if (input.model == RuntimeModel::TransportModel::Parker3D) {
     key.purpose = Transport::RandomPurpose::ParkerParallel;
     Transport::KeyedRandomStream random(key);
+    key.purpose = Transport::RandomPurpose::PerpendicularFirst;
+    Transport::KeyedRandomStream perpendicularFirst(key);
+    key.purpose = Transport::RandomPurpose::PerpendicularSecond;
+    Transport::KeyedRandomStream perpendicularSecond(key);
     Transport::ParkerParticleState state;
     state.positionM = particle.positionM;
     state.momentumKgMPerS = particle.momentumKgMPerS;
@@ -203,13 +260,31 @@ MoverResult AdvanceParticle(const MoverInput& input) {
     local.divUPerS = background.divU;
     local.kappaParallelM2PerS = input.local.kappaParallelM2PerS;
     local.dKappaParallelDsMPerS = input.local.dKappaParallelDsMPerS;
-    const auto moved = Transport::AdvanceParker(state, local, dtS, &random);
+    local.kappaPerpendicularM2PerS = kappaPerpendicularM2PerS;
+    local.dKappaPerpendicularDsMPerS =
+        input.perpendicularDiffusion ==
+                RuntimeModel::PerpendicularDiffusionMode::ConstantRatio
+            ? input.kappaPerpendicularToParallelRatio *
+                input.local.dKappaParallelDsMPerS
+            : 0.0;
+    local.driftVelocityMPerS = guidingCenterDrift;
+    Transport::ParkerRandomStreams streams;
+    streams.parallel = &random;
+    streams.perpendicularFirst = kappaPerpendicularM2PerS > 0.0
+        ? &perpendicularFirst : nullptr;
+    streams.perpendicularSecond = kappaPerpendicularM2PerS > 0.0
+        ? &perpendicularSecond : nullptr;
+    const auto moved = Transport::AdvanceParker(state, local, dtS, streams);
     if (!moved.status.ok()) return Failed(input, moved.status);
     result.particle.positionM = moved.state.positionM;
     result.particle.momentumKgMPerS = moved.state.momentumKgMPerS;
   } else {
     key.purpose = Transport::RandomPurpose::FocusedPitch;
     Transport::KeyedRandomStream random(key);
+    key.purpose = Transport::RandomPurpose::PerpendicularFirst;
+    Transport::KeyedRandomStream perpendicularFirst(key);
+    key.purpose = Transport::RandomPurpose::PerpendicularSecond;
+    Transport::KeyedRandomStream perpendicularSecond(key);
     Transport::FocusedParticleState state;
     state.positionM = particle.positionM;
     state.momentumKgMPerS = particle.momentumKgMPerS;
@@ -222,12 +297,20 @@ MoverResult AdvanceParticle(const MoverInput& input) {
     local.fieldAlignedStrainPerS = background.fieldAlignedStrain;
     local.dMuMuPerS = input.local.dMuMuPerS;
     local.dDmuMuDmuPerS = input.local.dDmuMuDmuPerS;
+    local.kappaPerpendicularM2PerS = kappaPerpendicularM2PerS;
+    local.driftVelocityMPerS = guidingCenterDrift;
     local.scheme = input.pitchScheme ==
             RuntimeModel::PitchAngleSchemeMode::ReflectingMilstein
         ? Transport::PitchAngleScheme::ReflectingMilstein
         : Transport::PitchAngleScheme::ReflectingEulerMaruyama;
+    Transport::FocusedRandomStreams streams;
+    streams.pitch = &random;
+    streams.perpendicularFirst = kappaPerpendicularM2PerS > 0.0
+        ? &perpendicularFirst : nullptr;
+    streams.perpendicularSecond = kappaPerpendicularM2PerS > 0.0
+        ? &perpendicularSecond : nullptr;
     const auto moved = Transport::AdvanceFocused(
-        state, local, input.speciesMassKg, dtS, &random);
+        state, local, input.speciesMassKg, dtS, streams);
     if (!moved.status.ok()) return Failed(input, moved.status);
     result.particle.positionM = moved.state.positionM;
     result.particle.momentumKgMPerS = moved.state.momentumKgMPerS;

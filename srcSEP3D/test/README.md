@@ -19,6 +19,8 @@ python3 test/run_tests.py --test LAY01
 python3 test/run_tests.py --suite r1 --suite r2
 python3 test/run_tests.py --suite improvements-c --rebuild
 python3 test/run_tests.py --suite improvements-r --rebuild
+python3 test/run_tests.py --suite improvements-v --rebuild
+python3 test/run_tests.py --test V2D01 --sep1d-source /path/to/AMPS/srcSEP
 python3 test/run_tests.py --suite phase-m --suite phase-b --suite phase-t
 python3 test/run_tests.py --suite phase-p --suite phase-a --suite phase-o
 python3 test/run_tests.py --suite phase-v --rebuild
@@ -101,6 +103,9 @@ The runner adds
 | `PRK3D` | `PRK3D01`–`PRK3D08` | Parker moments, characteristics, PDE/first passage, and named limits |
 | `FTE3D` | `FTE3D01`–`FTE3D07` | focused streaming, focusing, pitch scattering/boundaries, momentum, strong-scattering limit |
 | `RNG3D` | `RNG3D01`–`RNG3D03` | worker/order independence and random-purpose isolation |
+| `V1D` | `V1D01`–`V1D05` | V01 tensor, cross-field moments, drift, focused invariance, and timestep |
+| `V2D` | `V2D01` | distinct compiled srcSEP/srcSEP3D production-core parity |
+| `V5D` | `V5D01` | native profiles, deferred-R8 campaign block, and release governance |
 | `ADP3D` | `ADP3D01` | exact two-core production registry and one validating dispatch |
 | `NAT3D` | `NAT3D04`–`NAT3D08` | boundary outcomes, ledger closure, sampling isolation, output schema, shock crossing |
 | `SHK3D` | `SHK3D01`–`SHK3D04` | common source identity, moving-sphere geometry, guards, and normalization |
@@ -440,10 +445,10 @@ a stale binary is `ERROR`. Scientific evidence must use the templates under
 declared SHA-256. Missing evidence is `SKIP`; checksum/schema/provenance failure
 is `ERROR`; a valid metric outside tolerance is `FAIL`.
 
-`XM3D03`, `OV3D03`, and `OV3D04` are diagnostic because perpendicular
-diffusion and drifts remain disabled. They quantify the expected poor-
-connection limitation and cannot be used to claim that cross-field transport
-has been validated. See `INTEGRATION_SCIENTIFIC_VALIDATION.md` for the full
+`XM3D03`, `OV3D03`, and `OV3D04` remain diagnostic. V01 now supplies controlled
+perpendicular diffusion and guiding-centre drift, but these cases still need
+reviewed evidence before cross-field transport can be called scientifically
+validated. See `INTEGRATION_SCIENTIFIC_VALIDATION.md` for the full
 equations, algorithms, case roles, and evidence schemas.
 
 ## Named suites
@@ -456,6 +461,7 @@ equations, algorithms, case roles, and evidence schemas.
 | `r2` | LIFE3D01–LIFE3D04 immutable configuration and lifecycle gates |
 | `improvements-c` | CFG3D01–CFG3D05 production configuration and preflight gates |
 | `improvements-r` | R3D01–R3D07 production runtime integration gates |
+| `improvements-v` | V1D01–05 controlled physics, V2D01 true parity, and V5D01 governance |
 | `phase-m` | MSH3D01–MSH3D09 mesh/storage gates |
 | `phase-b` | BGP3D01–06 and SNAP3D01–08 background/snapshot gates |
 | `phase-t` | TUR3D01–04 and COEF3D01–02 turbulence/coefficient gates |

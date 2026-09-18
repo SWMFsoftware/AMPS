@@ -1,0 +1,12 @@
+{
+  "schema": "srcsep3d-v04-campaign-v1",
+  "description": "Numerical, cross-model, and observational validation ladder; a higher rung never substitutes for a missing lower rung.",
+  "rungs": [
+    {"name": "analytic", "required": ["VFY3D03", "VFY3D04", "VFY3D05"]},
+    {"name": "native", "required": ["NAT3D01", "NAT3D02", "NAT3D03", "MPI3D01", "MPI3D02"]},
+    {"name": "cross-model", "required": ["V2D01", "XM3D01", "XM3D02", "XM3D04", "XM3D05"]},
+    {"name": "observational", "required": ["OV3D01", "OV3D02"], "diagnostic": ["OV3D03", "OV3D04"]},
+    {"name": "live-swmf", "required": ["SWMF3D01"], "blocked_by": "R8", "status": "BLOCKED", "reason": "R8 coupling is deliberately deferred; analytic snapshots are not accepted as live-coupling evidence."}
+  ],
+  "provenance_policy": {"hash": "sha256", "units": "SI", "immutable_inputs": true, "self_generated_reference_forbidden": true}
+}

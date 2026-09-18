@@ -13,8 +13,8 @@
 // dlnp/dt = -1/2 [(1-mu^2)divU +(3mu^2-1)bb:gradU].
 //
 // Isotropic pitch averaging of the second equation recovers Parker cooling,
-// dlnp/dt=-divU/3.  Spatial motion is U + mu v b.  Perpendicular transport
-// and drift hooks are present only as zero-valued release guards.
+// dlnp/dt=-divU/3. Spatial motion is U + mu v b plus the controlled V01
+// guiding-centre drift and two separately keyed perpendicular Wiener terms.
 // ============================================================================
 
 #ifndef SEP3D_TRANSPORT_FOCUSED_TRANSPORT_H
@@ -22,6 +22,7 @@
 
 #include "../core/sep3d_types.h"
 #include "keyed_random.h"
+#include "perpendicular_transport.h"
 
 namespace SEP3D {
 namespace Transport {
@@ -47,6 +48,12 @@ struct FocusedLocalState {
   Core::Vec3 driftVelocityMPerS;
 };
 
+struct FocusedRandomStreams {
+  KeyedRandomStream* pitch = nullptr;
+  KeyedRandomStream* perpendicularFirst = nullptr;
+  KeyedRandomStream* perpendicularSecond = nullptr;
+};
+
 struct FocusedStepResult {
   Core::Status status;
   FocusedParticleState state;
@@ -64,6 +71,12 @@ double FocusedLogMomentumRatePerS(double mu,
                                   const FocusedLocalState& local);
 double ReflectPitchAngle(double mu, unsigned* reflections = nullptr);
 
+FocusedStepResult AdvanceFocused(const FocusedParticleState& initial,
+                                  const FocusedLocalState& local,
+                                  double massKg,
+                                  double dtS,
+                                  const FocusedRandomStreams& random);
+// Compatibility overload for callers selecting no perpendicular diffusion.
 FocusedStepResult AdvanceFocused(const FocusedParticleState& initial,
                                   const FocusedLocalState& local,
                                   double massKg,

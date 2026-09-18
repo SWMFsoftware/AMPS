@@ -25,6 +25,11 @@ enum class RandomPurpose : std::uint64_t {
   SourcePitch = 5,
   SourceGyrophase = 6,
   SourcePosition = 7,
+  // V01 assigns new stable values without renumbering any released stream.
+  // Each stochastic operator owns a stream so enabling cross-field diffusion
+  // cannot change the Parker-parallel or focused-pitch random history.
+  PerpendicularFirst = 8,
+  PerpendicularSecond = 9,
   ReservedFuturePhysics = 1024
 };
 

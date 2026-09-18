@@ -32,17 +32,20 @@
     "test/**/*.sh",
     "test/**/*.cpp",
     "validation/*.py"
+    ,"release/*.py"
   ],
   "documentation_globs": [
     "*.md",
     "*.docx",
     "test/*.md",
-    "validation/*.md"
+    "validation/*.md",
+    "release/*.md"
   ],
   "retained_input_globs": [
     "examples/*.in",
     "test/frozen/*",
-    "validation/**/*.json"
+    "validation/**/*.json",
+    "release/*.json"
   ],
   "support_globs": [
     "makefile",

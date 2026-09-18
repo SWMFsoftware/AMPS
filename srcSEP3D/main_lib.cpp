@@ -365,6 +365,9 @@ SEP3D::Core::Status ResolveLocalTransport(
             sizeof(double));
   LoadBytes(cell, layout.fieldAlignedStrainOffset,
             &background.fieldAlignedStrain, sizeof(double));
+  if (layout.magneticGradientOffset != RuntimeModel::kNoOffset)
+    LoadBytes(cell, layout.magneticGradientOffset, background.gradB.m,
+              sizeof(background.gradB.m));
   background.valid = std::isfinite(background.absB) && background.absB > 0.0;
   background.status = background.valid
       ? Core::Status::OK()

@@ -1,5 +1,16 @@
 # Configuration, Geometry, and Preflight (C01-C05)
 
+## V01 perpendicular diffusion and guiding-centre drift
+
+Under `[transport]`, `perpendicular_diffusion` accepts `none`, `constant`, or
+`constant-ratio`. The selected closure requires its positive SI coefficient:
+`constant_kappa_perpendicular_m2_per_s` or
+`kappa_perpendicular_to_parallel_ratio`. `drifts` accepts `none`,
+`gradient-b`, `curvature`, or `gradient-curvature`. These choices enter the
+physics fingerprint. Drift uses signed `[species] charge_c` and forces
+magnetic-gradient storage before the mesh layout freezes. Current-sheet drift
+is unsupported because its geometry is unspecified.
+
 This document describes the production input boundary introduced by
 improvements C01-C05. The implementation is split between
 `runtime/configuration_io.{h,cpp}`, `runtime/run_configuration.{h,cpp}`,

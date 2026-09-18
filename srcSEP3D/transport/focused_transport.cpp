@@ -67,7 +67,7 @@ FocusedStepResult AdvanceFocused(const FocusedParticleState& initial,
                                   const FocusedLocalState& local,
                                   double massKg,
                                   double dtS,
-                                  KeyedRandomStream* random) {
+                                  const FocusedRandomStreams& random) {
   FocusedStepResult result;
   result.state = initial;
   const double bNorm = local.bHat.Norm();
@@ -82,20 +82,26 @@ FocusedStepResult AdvanceFocused(const FocusedParticleState& initial,
       !std::isfinite(local.dMuMuPerS) || local.dMuMuPerS < 0.0 ||
       !std::isfinite(local.dDmuMuDmuPerS) ||
       !std::isfinite(local.kappaPerpendicularM2PerS) ||
-      local.kappaPerpendicularM2PerS != 0.0 ||
+      local.kappaPerpendicularM2PerS < 0.0 ||
       !Finite(local.driftVelocityMPerS) ||
-      local.driftVelocityMPerS.NormSq() != 0.0 ||
       !std::isfinite(massKg) || massKg <= 0.0 ||
       !std::isfinite(dtS) || dtS < 0.0) {
     result.status = Core::Status(
         Core::StatusCode::InvalidInput,
-        "invalid focused state or nonzero reserved perpendicular/drift input");
+        "invalid focused state or transport coefficient");
     return result;
   }
-  if (local.dMuMuPerS > 0.0 && random == nullptr) {
+  if (local.dMuMuPerS > 0.0 && random.pitch == nullptr) {
     result.status = Core::Status(
         Core::StatusCode::InvalidInput,
         "scattering step requires a keyed pitch-angle random stream");
+    return result;
+  }
+  if (local.kappaPerpendicularM2PerS > 0.0 &&
+      (random.perpendicularFirst == nullptr ||
+       random.perpendicularSecond == nullptr)) {
+    result.status = Core::Status(Core::StatusCode::InvalidInput,
+        "focused perpendicular diffusion requires two keyed random streams");
     return result;
   }
 
@@ -122,7 +128,7 @@ FocusedStepResult AdvanceFocused(const FocusedParticleState& initial,
     return result;
   }
 
-  const double normal = local.dMuMuPerS > 0.0 ? random->Normal01() : 0.0;
+  const double normal = local.dMuMuPerS > 0.0 ? random.pitch->Normal01() : 0.0;
   const double dW = std::sqrt(dtS) * normal;
   result.deterministicMuIncrement = local.dDmuMuDmuPerS * dtS;
   result.stochasticMuIncrement = local.dMuMuPerS > 0.0
@@ -157,8 +163,20 @@ FocusedStepResult AdvanceFocused(const FocusedParticleState& initial,
   const double midpointMu = 0.5 * (initial.mu + muFinal);
   const double midpointSpeed = 0.5 * (initialSpeed + finalSpeed);
   result.displacementM =
-      (local.bulkVelocityMPerS + local.bHat * (midpointMu * midpointSpeed)) *
+      (local.bulkVelocityMPerS + local.driftVelocityMPerS +
+       local.bHat * (midpointMu * midpointSpeed)) *
       dtS;
+  if (local.kappaPerpendicularM2PerS > 0.0) {
+    PerpendicularBasis basis;
+    result.status = BuildPerpendicularBasis(local.bHat, &basis);
+    if (!result.status.ok()) return result;
+    const double scale = std::sqrt(
+        2.0 * local.kappaPerpendicularM2PerS * dtS);
+    result.displacementM += basis.first *
+        (scale * random.perpendicularFirst->Normal01());
+    result.displacementM += basis.second *
+        (scale * random.perpendicularSecond->Normal01());
+  }
   result.state.positionM += result.displacementM;
   result.state.momentumKgMPerS = finalMomentum;
   result.state.mu = muFinal;
@@ -170,6 +188,15 @@ FocusedStepResult AdvanceFocused(const FocusedParticleState& initial,
   }
   result.status = Core::Status::OK();
   return result;
+}
+
+FocusedStepResult AdvanceFocused(const FocusedParticleState& initial,
+                                  const FocusedLocalState& local,
+                                  double massKg, double dtS,
+                                  KeyedRandomStream* random) {
+  FocusedRandomStreams streams;
+  streams.pitch = random;
+  return AdvanceFocused(initial, local, massKg, dtS, streams);
 }
 
 }  // namespace Transport

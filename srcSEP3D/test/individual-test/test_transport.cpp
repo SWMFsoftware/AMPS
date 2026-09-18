@@ -550,6 +550,95 @@ Result RunRNG3D03() {
   return Pass("an inert future random purpose cannot perturb existing streams");
 }
 
+Result RunV1D01() {
+  // For b=x the gyrotropic tensor is diagonal, so this is an independent
+  // eigenvalue check rather than a restatement of the assembly loop.
+  const auto tensor = T::AssembleGyrotropicDiffusionTensor(7.0, 2.0, {1,0,0});
+  if (tensor(0,0) != 7.0 || tensor(1,1) != 2.0 || tensor(2,2) != 2.0 ||
+      tensor(0,1) != 0.0 || tensor(1,2) != 0.0)
+    return Fail("gyrotropic tensor does not have one parallel and two transverse eigenvalues");
+  const SEP3D::Core::Vec3 drift = T::GyrotropicTensorItoDrift(
+      7.0, 3.0, 2.0, 0.5, {1,0,0}, {0,0.1,0}, 0.2);
+  const SEP3D::Core::Vec3 exact = {4.0, 0.5, 0.0};
+  if ((drift-exact).Norm() > 1.0e-14)
+    return Fail("gyrotropic Ito drift omitted a coefficient or geometry term");
+  return Pass("gyrotropic tensor eigenvalues and complete Ito drift match closed forms");
+}
+
+Result RunV1D02() {
+  constexpr std::size_t count = 30000;
+  constexpr double kappa = 4.0, dt = 0.5;
+  long double y2=0.0L, z2=0.0L, x2=0.0L;
+  for (std::size_t i=0;i<count;++i) {
+    T::ParkerParticleState state;
+    auto local = ParkerLocal({1,0,0});
+    local.kappaPerpendicularM2PerS = kappa;
+    T::KeyedRandomStream a(Key(i,T::RandomPurpose::PerpendicularFirst));
+    T::KeyedRandomStream b(Key(i,T::RandomPurpose::PerpendicularSecond));
+    T::ParkerRandomStreams streams; streams.perpendicularFirst=&a;
+    streams.perpendicularSecond=&b;
+    const auto moved=T::AdvanceParker(state,local,dt,streams);
+    if (!moved.status.ok()) return Fail("perpendicular Parker step failed");
+    x2 += moved.state.positionM.x*moved.state.positionM.x;
+    y2 += moved.state.positionM.y*moved.state.positionM.y;
+    z2 += moved.state.positionM.z*moved.state.positionM.z;
+  }
+  const double target=2.0*kappa*dt;
+  if (Relative(static_cast<double>(y2/count),target)>0.04 ||
+      Relative(static_cast<double>(z2/count),target)>0.04 || x2!=0.0L)
+    return Fail("perpendicular Gaussian moments do not recover 2*kappa_perp*dt");
+  return Pass("both transverse Parker variances recover 2*kappa_perp*dt with zero parallel leakage");
+}
+
+Result RunV1D03() {
+  T::GuidingCenterInput in;
+  in.bHat={0,0,1}; in.gradAbsBTPerM={2.0e-18,0,0};
+  in.curvaturePerM={1.0e-10,0,0}; in.absBT=5.0e-9;
+  in.momentumKgMPerS=2.0e-19; in.speedMPerS=1.0e7;
+  in.pitchCosine=0.4; in.chargeC=SEP3D::Core::Const::e;
+  in.includeGradientB=true; in.includeCurvature=true;
+  SEP3D::Core::Vec3 positive,negative,oppositeField;
+  if (!T::EvaluateGuidingCenterDrift(in,&positive).ok())
+    return Fail("valid guiding-centre drift was rejected");
+  in.chargeC=-in.chargeC;
+  if (!T::EvaluateGuidingCenterDrift(in,&negative).ok())
+    return Fail("negative-charge guiding-centre drift was rejected");
+  in.chargeC=-in.chargeC; in.bHat*= -1.0;
+  if (!T::EvaluateGuidingCenterDrift(in,&oppositeField).ok())
+    return Fail("opposite-polarity guiding-centre drift was rejected");
+  if ((positive+negative).Norm()>1.0e-12*positive.Norm() ||
+      (positive+oppositeField).Norm()>1.0e-12*positive.Norm())
+    return Fail("drift direction does not reverse with charge and magnetic polarity");
+  return Pass("relativistic gradient-B/curvature drift reverses with signed charge and field polarity");
+}
+
+Result RunV1D04() {
+  T::FocusedParticleState state; state.momentumKgMPerS=2.0e-20; state.mu=0.2;
+  auto local=FocusedLocal({1,0,0}); local.kappaPerpendicularM2PerS=3.0;
+  T::KeyedRandomStream a(Key(5,T::RandomPurpose::PerpendicularFirst));
+  T::KeyedRandomStream b(Key(5,T::RandomPurpose::PerpendicularSecond));
+  T::FocusedRandomStreams streams; streams.perpendicularFirst=&a;
+  streams.perpendicularSecond=&b;
+  const auto moved=T::AdvanceFocused(state,local,SEP3D::Core::Const::m_p,0.5,streams);
+  if (!moved.status.ok() || moved.state.positionM.x==0.0 ||
+      (moved.state.positionM.y==0.0 && moved.state.positionM.z==0.0) ||
+      moved.state.momentumKgMPerS!=state.momentumKgMPerS || moved.state.mu!=state.mu)
+    return Fail("focused cross-field step changed energy/pitch or omitted displacement");
+  return Pass("focused transport adds keyed transverse displacement without changing momentum or pitch");
+}
+
+Result RunV1D05() {
+  T::TimeStepControls controls; controls.diffusionFraction=0.2;
+  T::TimeStepPhysics physics; physics.requestedS=10.0; physics.cellSizeM=10.0;
+  physics.kappaParallelM2PerS=1.0; physics.kappaPerpendicularM2PerS=20.0;
+  const auto selected=T::SelectTimeStep(controls,physics);
+  const double expected=0.2*100.0/(2.0*20.0);
+  if (!selected.status.ok() || selected.limiter!=T::StepLimiter::Diffusion ||
+      selected.valueS!=expected)
+    return Fail("time-step diffusion limit did not use the tensor maximum eigenvalue");
+  return Pass("diffusion substep is limited by max(kappa_parallel,kappa_perpendicular)");
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterTransportTests() {
@@ -587,5 +676,10 @@ std::vector<SEP3D::Testing::Descriptor> RegisterTransportTests() {
       make("RNG3D01", "RNG3D", "Thread reproducibility", RunRNG3D01),
       make("RNG3D02", "RNG3D", "Order independence", RunRNG3D02),
       make("RNG3D03", "RNG3D", "Purpose isolation", RunRNG3D03),
+      make("V1D01", "V1D", "Gyrotropic tensor and Ito drift", RunV1D01),
+      make("V1D02", "V1D", "Perpendicular diffusion moments", RunV1D02),
+      make("V1D03", "V1D", "Guiding-centre drift direction", RunV1D03),
+      make("V1D04", "V1D", "Focused perpendicular transport", RunV1D04),
+      make("V1D05", "V1D", "Tensor diffusion timestep", RunV1D05),
   };
 }

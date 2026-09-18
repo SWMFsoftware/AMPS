@@ -7,17 +7,19 @@ coefficients use SI units.
 
 ## Tensor Parker step
 
-For parallel-only diffusion, the spatial diffusion tensor is
+With the V01 controlled extension, the spatial diffusion tensor is
 
 \[
-\boldsymbol{\kappa}=\kappa_\parallel\mathbf b\mathbf b,
+\boldsymbol{\kappa}=\kappa_\perp I+
+(\kappa_\parallel-\kappa_\perp)\mathbf b\mathbf b,
 \]
 
 where \(\mathbf b=\mathbf B/|\mathbf B|\). The implemented Itô SDE is
 
 \[
-d\mathbf X=[\mathbf U+\nabla\!\cdot\boldsymbol{\kappa}]dt
- +\sqrt{2\kappa_\parallel}\,\mathbf b\,dW,
+d\mathbf X=[\mathbf U+\mathbf v_d+\nabla\!\cdot\boldsymbol{\kappa}]dt
+ +\sqrt{2\kappa_\parallel}\,\mathbf b\,dW_\parallel
+ +\sqrt{2\kappa_\perp}(\mathbf e_1dW_1+\mathbf e_2dW_2),
 \qquad
 dp=-\frac{p}{3}(\nabla\!\cdot\mathbf U)dt.
 \]
@@ -75,7 +77,9 @@ The algorithm is a symmetric deterministic–stochastic–deterministic split:
 4. Advance the second deterministic half-step and stream with midpoint pitch
    angle and speed.
 
-The pitch-averaged momentum equation reduces to Parker cooling. `FTE3D01–07`
+The pitch-averaged momentum equation reduces to Parker cooling. V01 adds the
+same guiding-centre drift and two perpendicular Wiener terms after the split;
+they do not alter momentum or pitch. `FTE3D01–07`
 verify ballistic motion, focusing and mirroring, Legendre eigenmode rates,
 bounded strong scattering, momentum characteristics, the strong-scattering
 Parker limit, and bitwise identity of the zero-perpendicular hooks.
@@ -121,9 +125,9 @@ hard failed disposition. An active return guarantees
 reconstruct AMPS Cartesian velocity. `R3D02` verifies multiple accepted
 substeps, one re-resolution per substep, and exact full-time consumption.
 
-## Deliberately unavailable physics
+## Controlled extension boundary
 
-Both cores require perpendicular diffusion and explicit drift velocity to be
-exactly zero. A nonzero value returns `InvalidInput`. This is a release guard:
-those terms require their own coefficient, timestep, boundary, and validation
-campaign and are not represented by silent no-op branches.
+V01 supports scalar perpendicular diffusion (constant or constant ratio) and
+standard first-order gradient-B/curvature drift. `V1D01–05` are the component
+gate. Arbitrary transverse tensors and current-sheet drift remain unavailable;
+the latter requires a defined sheet surface, thickness, and regularization.

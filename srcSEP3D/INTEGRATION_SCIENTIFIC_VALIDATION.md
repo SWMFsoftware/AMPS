@@ -143,7 +143,7 @@ both release criteria.
 |---|---|
 | `XM3D01` | Parker 3-D versus independently exported field-line profiles; release gate |
 | `XM3D02` | focused 3-D versus focused field-line onset/peak/profile; release gate |
-| `XM3D03` | disconnected-longitude diagnostic; remains SKIP until perpendicular diffusion is released |
+| `XM3D03` | disconnected-longitude diagnostic for the V01 constant/ratio closures |
 | `XM3D04` | exact common SWCME source plus transported spectrum; release gate |
 | `XM3D05` | mesh/timestep convergence; release gate |
 | `XM3D06` | independent 3-D finite-volume reference; extended |
@@ -159,13 +159,11 @@ event-specific provenance may add more fields without changing the parser.
 
 ## 6. Physical scope of interpretation
 
-Release 1 has three-dimensional geometry and local background evaluation, but
-parallel-only particle transport. It should reproduce well-connected events
-within the limits of the background, source, and scattering model. It is
-expected to under-predict poorly connected observers because
-`kappa_perpendicular=0` and gradient/curvature drifts are disabled. Therefore
-`OV3D03`, `OV3D04`, and `XM3D03` quantify a known physics gap and are diagnostic,
-not evidence that missing perpendicular physics has been validated.
+The baseline remains parallel-only, while V01 permits explicitly selected
+constant/constant-ratio perpendicular diffusion and gradient-B/curvature
+drift. `OV3D03`, `OV3D04`, and `XM3D03` remain diagnostic until reviewed
+evidence constrains those closures; code availability alone is not scientific
+validation. Current-sheet drift is still outside scope.
 
 ## 7. Commands
 

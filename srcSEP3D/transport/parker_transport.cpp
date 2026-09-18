@@ -39,7 +39,7 @@ Core::Vec3 ParallelTensorItoDrift(const ParkerLocalState& local) {
 ParkerStepResult AdvanceParker(const ParkerParticleState& initial,
                                const ParkerLocalState& local,
                                double dtS,
-                               KeyedRandomStream* random) {
+                               const ParkerRandomStreams& random) {
   ParkerStepResult result;
   result.state = initial;
   const double bNorm = local.bHat.Norm();
@@ -52,30 +52,53 @@ ParkerStepResult AdvanceParker(const ParkerParticleState& initial,
       local.kappaParallelM2PerS < 0.0 ||
       !std::isfinite(local.dKappaParallelDsMPerS) ||
       !std::isfinite(local.kappaPerpendicularM2PerS) ||
-      local.kappaPerpendicularM2PerS != 0.0 ||
+      local.kappaPerpendicularM2PerS < 0.0 ||
+      !std::isfinite(local.dKappaPerpendicularDsMPerS) ||
       !Finite(local.driftVelocityMPerS) ||
-      local.driftVelocityMPerS.NormSq() != 0.0 ||
       !std::isfinite(dtS) || dtS < 0.0 ||
       std::fabs(bNorm - 1.0) > 1.0e-12) {
     result.status = Invalid(
-        "invalid Parker state or nonzero reserved perpendicular/drift input");
+        "invalid Parker state or transport coefficient");
     return result;
   }
-  if (local.kappaParallelM2PerS > 0.0 && random == nullptr) {
+  if (local.kappaParallelM2PerS > 0.0 && random.parallel == nullptr) {
     result.status = Invalid("diffusive Parker step requires a keyed random stream");
     return result;
   }
+  if (local.kappaPerpendicularM2PerS > 0.0 &&
+      (random.perpendicularFirst == nullptr ||
+       random.perpendicularSecond == nullptr)) {
+    result.status = Invalid(
+        "perpendicular Parker diffusion requires two keyed random streams");
+    return result;
+  }
 
-  result.diffusionTensorM2PerS = AssembleParallelDiffusionTensor(
-      local.kappaParallelM2PerS, local.bHat);
-  result.itoDriftMPerS = ParallelTensorItoDrift(local);
+  result.diffusionTensorM2PerS = AssembleGyrotropicDiffusionTensor(
+      local.kappaParallelM2PerS, local.kappaPerpendicularM2PerS, local.bHat);
+  result.itoDriftMPerS = GyrotropicTensorItoDrift(
+      local.kappaParallelM2PerS, local.dKappaParallelDsMPerS,
+      local.kappaPerpendicularM2PerS,
+      local.dKappaPerpendicularDsMPerS, local.bHat,
+      local.curvaturePerM, local.divBhatPerM);
   result.deterministicDisplacementM =
-      (local.bulkVelocityMPerS + result.itoDriftMPerS) * dtS;
+      (local.bulkVelocityMPerS + local.driftVelocityMPerS +
+       result.itoDriftMPerS) * dtS;
   result.stochasticDisplacementM = local.kappaParallelM2PerS == 0.0
       ? Core::Vec3{}
       : local.bHat *
           (std::sqrt(2.0 * local.kappaParallelM2PerS * dtS) *
-           random->Normal01());
+           random.parallel->Normal01());
+  if (local.kappaPerpendicularM2PerS > 0.0) {
+    PerpendicularBasis basis;
+    result.status = BuildPerpendicularBasis(local.bHat, &basis);
+    if (!result.status.ok()) return result;
+    const double scale = std::sqrt(
+        2.0 * local.kappaPerpendicularM2PerS * dtS);
+    result.stochasticDisplacementM += basis.first *
+        (scale * random.perpendicularFirst->Normal01());
+    result.stochasticDisplacementM += basis.second *
+        (scale * random.perpendicularSecond->Normal01());
+  }
   result.state.positionM += result.deterministicDisplacementM +
                             result.stochasticDisplacementM;
 
@@ -97,6 +120,15 @@ ParkerStepResult AdvanceParker(const ParkerParticleState& initial,
   }
   result.status = Core::Status::OK();
   return result;
+}
+
+ParkerStepResult AdvanceParker(const ParkerParticleState& initial,
+                               const ParkerLocalState& local,
+                               double dtS,
+                               KeyedRandomStream* random) {
+  ParkerRandomStreams streams;
+  streams.parallel = random;
+  return AdvanceParker(initial, local, dtS, streams);
 }
 
 }  // namespace Transport

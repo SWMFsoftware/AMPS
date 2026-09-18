@@ -37,6 +37,8 @@ enum class RunIntent { TransportOnly, ShockInjection };
 enum class MissingTurbulenceMode { Fail, Ballistic };
 enum class ResonanceRangeMode { Reject, PowerLawExtension };
 enum class PitchAngleSchemeMode { ReflectingMilstein, ReflectingEulerMaruyama };
+enum class PerpendicularDiffusionMode { None, Constant, ConstantRatio };
+enum class DriftMode { None, GradientB, Curvature, GradientAndCurvature };
 enum class ObserverKind {
   FixedCartesian,
   FixedHeliographic,
@@ -60,6 +62,8 @@ const char* Name(RunIntent value);
 const char* Name(MissingTurbulenceMode value);
 const char* Name(ResonanceRangeMode value);
 const char* Name(PitchAngleSchemeMode value);
+const char* Name(PerpendicularDiffusionMode value);
+const char* Name(DriftMode value);
 const char* Name(ObserverKind value);
 const char* Name(ObserverNormalization value);
 
@@ -251,6 +255,18 @@ struct RunConfiguration3DOptions {
   PitchAngleSchemeMode pitchAngleScheme =
       PitchAngleSchemeMode::ReflectingMilstein;
 
+  // V01 controlled extensions.  The coefficient is isotropic in the plane
+  // perpendicular to B. ConstantRatio evaluates k_perp=ratio*k_parallel in
+  // each immutable local background; Constant uses the explicit SI value.
+  // Drift choices use signed species charge and the relativistic p*v form.
+  // Current-sheet drift is intentionally absent: no sheet-geometry contract
+  // exists yet, so accepting it would invent coupling physics.
+  PerpendicularDiffusionMode perpendicularDiffusion =
+      PerpendicularDiffusionMode::None;
+  double constantKappaPerpendicularM2PerS = 0.0;
+  double kappaPerpendicularToParallelRatio = 0.0;
+  DriftMode drift = DriftMode::None;
+
   // Frozen pre-mesh storage choices.  Offsets are derived by the factory in a
   // canonical order; adapters may not append fields after Configure().
   bool storeMagneticGradient = false;
@@ -265,8 +281,9 @@ struct RunConfiguration3DOptions {
   std::string restartInputPath;
   std::string restartOutputPath = "restart/sep3d.chk";
 
-  // Reserved physics must fail during configuration rather than quietly
-  // becoming a no-op in a mover.
+  // Deprecated Boolean spellings remain in the typed surface for one source
+  // compatibility interval. A true value is rejected with a migration error;
+  // text input uses the enum-valued fields above.
   bool enablePerpendicularDiffusion = false;
   bool enableDrifts = false;
   bool enableExternalScriptBackground = false;

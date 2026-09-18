@@ -292,6 +292,15 @@ Result RunCFG3D02() {
   coupled.turbulence = RM::TurbulenceAuthority::Swmf;
   if (!RM::RunConfiguration3D::Create(coupled, &c).ok())
     return Fail("typed SWMF authority could not use the shared immutable factory");
+  RM::RunConfiguration3DOptions extension = baseline;
+  extension.perpendicularDiffusion =
+      RM::PerpendicularDiffusionMode::ConstantRatio;
+  extension.kappaPerpendicularToParallelRatio = 0.02;
+  extension.drift = RM::DriftMode::GradientAndCurvature;
+  if (!RM::RunConfiguration3D::Create(extension, &c).ok() ||
+      !c->options().storeMagneticGradient ||
+      a->physics_fingerprint() == c->physics_fingerprint())
+    return Fail("V01 closure did not freeze gradients or enter the physics fingerprint");
   return Pass("typed groups, field classifications, incompatibility checks, and analytic/SWMF factory parity passed");
 }
 

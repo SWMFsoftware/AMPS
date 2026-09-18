@@ -115,7 +115,7 @@ static void PrintHelp(const char* argv0) {
     << "  1  at least one FAILED\n"
     << "  2  at least one ERROR, or a usage error (unknown option, bad ID)\n"
     << "\n"
-    << "Groups through C01-C05/Phase V:   ADP3D  BGP3D  BLD  CFG3D  COEF3D  FTE3D  HARN  INT3D  LAY  LIFE3D  MSH3D  NAT3D  PRK3D  RNG3D  RST3D  SHK3D  SNAP3D  TUR3D  UTIL  VFY3D\n"
+    << "Groups through V01-V05:   ADP3D  BGP3D  BLD  CFG3D  COEF3D  FTE3D  HARN  INT3D  LAY  LIFE3D  MSH3D  NAT3D  PRK3D  RNG3D  RST3D  SHK3D  SNAP3D  TUR3D  UTIL  V1D  VFY3D\n"
     << "Frozen records:    test/frozen/\n"
     << "Test artifacts:    test/individual-test/\n"
     << "Full procedure:    test/README.md\n";

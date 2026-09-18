@@ -103,10 +103,20 @@
     {
       "id": "XM3D03",
       "name": "Longitudinal displacement diagnostic",
-      "evidence_class": "reserved",
+      "evidence_class": "series",
       "role": "diagnostic",
-      "description": "Quantify zero response with kappa_perp=0 and finite response only after perpendicular transport is released.",
-      "skip_reason": "perpendicular diffusion is a reserved post-release extension"
+      "description": "Quantify the zero-response baseline and finite constant/constant-ratio perpendicular-diffusion response.",
+      "acceptance": {
+        "normalization": "absolute",
+        "minimum_coverage": 0.9,
+        "maximum_log10_rmse": 0.176091,
+        "maximum_median_absolute_log10_error": 0.176091,
+        "minimum_log10_correlation": 0.8,
+        "maximum_onset_coordinate_error": 1e300,
+        "maximum_peak_coordinate_error": 1e300,
+        "maximum_absolute_log10_peak_ratio": 0.176091,
+        "maximum_absolute_log10_fluence_ratio": 0.176091
+      }
     },
     {
       "id": "XM3D04",
@@ -227,6 +237,14 @@
         "maximum_absolute_log10_peak_ratio": 1.0,
         "maximum_absolute_log10_fluence_ratio": 1.0
       }
+    },
+    {
+      "id": "SWMF3D01",
+      "name": "Live SWMF coupling scientific replay",
+      "evidence_class": "reserved",
+      "role": "release-gate",
+      "description": "Replay a versioned live SWMF background/turbulence exchange through the production coupler.",
+      "skip_reason": "BLOCKED by deferred R8; analytic or file-replayed snapshots are not live-coupling evidence"
     }
   ]
 }

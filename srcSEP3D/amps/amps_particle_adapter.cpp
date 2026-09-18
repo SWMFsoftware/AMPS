@@ -266,11 +266,19 @@ int MoveParticle(long int ptr, double dtTotal,
       PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
   input.shock = gContext.shock;
   input.speciesMassKg = PIC::MolecularData::GetMass(species);
+  input.speciesChargeC = PIC::MolecularData::GetElectricCharge(species);
   input.requestedDtS = dtTotal;
   input.innerRadiusM = configuration->options().innerRadiusM;
   input.outerRadiusM = configuration->options().outerRadiusM;
   input.campaignSeed = configuration->options().campaignSeed;
   input.pitchScheme = configuration->options().pitchAngleScheme;
+  input.perpendicularDiffusion =
+      configuration->options().perpendicularDiffusion;
+  input.constantKappaPerpendicularM2PerS =
+      configuration->options().constantKappaPerpendicularM2PerS;
+  input.kappaPerpendicularToParallelRatio =
+      configuration->options().kappaPerpendicularToParallelRatio;
+  input.drift = configuration->options().drift;
   input.timeStepControls.cellCrossingFraction =
       configuration->options().cellCrossingFraction;
   input.timeStepControls.diffusionFraction =

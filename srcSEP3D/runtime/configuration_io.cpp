@@ -344,9 +344,34 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
           PitchAngleSchemeMode::ReflectingEulerMaruyama}},
         &o->pitchAngleScheme)) return invalidValue();
   } else if (field == "transport.perpendicular_diffusion") {
-    if (!ParseBool(value, &o->enablePerpendicularDiffusion)) return invalidValue();
+    if (!ParseEnum(value,
+        {{"none", PerpendicularDiffusionMode::None},
+         {"constant", PerpendicularDiffusionMode::Constant},
+         {"constant-ratio", PerpendicularDiffusionMode::ConstantRatio}},
+        &o->perpendicularDiffusion)) {
+      // Input files from the parallel-only release used "false". Preserve
+      // that inert spelling, but reject "true" because it never identified a
+      // coefficient closure and therefore cannot be migrated unambiguously.
+      bool legacy = false;
+      if (!ParseBool(value, &legacy) || legacy) return invalidValue();
+      o->perpendicularDiffusion = PerpendicularDiffusionMode::None;
+    }
+  } else if (field == "transport.constant_kappa_perpendicular_m2_per_s") {
+    if (!ParseDouble(value, &o->constantKappaPerpendicularM2PerS))
+      return invalidValue();
+  } else if (field == "transport.kappa_perpendicular_to_parallel_ratio") {
+    if (!ParseDouble(value, &o->kappaPerpendicularToParallelRatio))
+      return invalidValue();
   } else if (field == "transport.drifts") {
-    if (!ParseBool(value, &o->enableDrifts)) return invalidValue();
+    if (!ParseEnum(value,
+        {{"none", DriftMode::None}, {"gradient-b", DriftMode::GradientB},
+         {"curvature", DriftMode::Curvature},
+         {"gradient-curvature", DriftMode::GradientAndCurvature}},
+        &o->drift)) {
+      bool legacy = false;
+      if (!ParseBool(value, &legacy) || legacy) return invalidValue();
+      o->drift = DriftMode::None;
+    }
   } else if (field == "shock.authority") {
     if (!ParseEnum(value, {{"none", ShockAuthority::None},
                            {"swcme", ShockAuthority::Swcme}}, &o->shock))

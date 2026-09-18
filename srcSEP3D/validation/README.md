@@ -1,5 +1,14 @@
 # Phase-V validation runner
 
+## V03–V05 qualification
+
+Run `python3 validation/run_native_matrix.py --amps /path/to/amps --profile
+small --output-dir test_output/native-small` for a real MPI matrix. Profiles
+are declared in `native_profiles.json`; source-only execution is never MPI
+evidence. `v04_campaign.json` defines the ordered scientific ladder. Its
+live-SWMF rung and `SWMF3D01` remain blocked by deferred R8. Release profiles
+and evidence generation are documented in `../release/README.md`.
+
 `run_validation.py` is the external-evidence half of the srcSEP3D test system.
 The public entry point remains `test/run_tests.py`; this lower-level runner is
 also available for batch campaigns that need only linked, cross-model, or
