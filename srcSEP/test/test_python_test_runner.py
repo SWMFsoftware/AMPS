@@ -81,8 +81,15 @@ class PythonTestRunnerTests(unittest.TestCase):
                 "--group parker --group fte-dmumu",
                 "--routine",
                 "--all",
+                "D01, D02, and D03PRE",
                 "--suite controlled-analytical",
+                "--suite d03-native-integration",
                 "--mpi-np 4",
+                "--amps-source",
+                "--make-config",
+                "--native-manifest",
+                "--rebuild",
+                "--release",
                 "--from-json results.json",
                 "--plot none",
                 "--mover parker --turbulence-source prescribed",
@@ -102,6 +109,87 @@ PARK01 | parker | duplicate
 """
         self.assertEqual(runner._parse_list_output(listing),
                          ["FTED08", "PARK01"])
+
+    def test_all_rebuild_uses_enclosing_configured_build_commands(self):
+        """Make newly linked registry IDs visible before --all discovery.
+
+        The clean/build commands are intentionally tested without invoking an
+        actual AMPS tree.  Their exact routing is the important contract: both
+        commands operate on the enclosing source root, and strict-production
+        receives absolute AMPS_ROOT/AMPS_CONFIG values.
+        """
+        runner = _load_runner_module()
+        with tempfile.TemporaryDirectory(prefix="srcsep-all-rebuild-") as tmp:
+            amps_source = Path(tmp) / "AMPS"
+            (amps_source / "srcSEP").mkdir(parents=True)
+            application_makefile = amps_source / "srcSEP" / "makefile"
+            application_makefile.write_text("strict-production:\n\t@true\n",
+                                             encoding="utf-8")
+            make_config = amps_source / "Makefile.conf"
+            make_config.write_text("# configured fixture\n", encoding="utf-8")
+            arguments = SimpleNamespace(
+                amps_source=amps_source, make_config=make_config,
+                timeout=42.0)
+            with mock.patch.object(runner, "_run_streaming", return_value=0) as run:
+                commands = runner._rebuild_linked_application(
+                    arguments, Path(tmp) / "rebuild.log")
+
+        self.assertEqual(commands[0], [
+            "make", "-C", str(amps_source.resolve()), "clean"])
+        self.assertEqual(commands[1][:5], [
+            "make", "--no-print-directory", "-f",
+            str(application_makefile.resolve()), "strict-production"])
+        self.assertIn(f"AMPS_ROOT={amps_source.resolve()}", commands[1])
+        self.assertIn(f"AMPS_CONFIG={make_config.resolve()}", commands[1])
+        self.assertEqual(run.call_count, 2)
+
+    def test_all_accepts_rebuild_and_runs_build_before_discovery(self):
+        """Preserve the documented --all --rebuild one-liner."""
+        runner = _load_runner_module()
+        with tempfile.TemporaryDirectory(prefix="srcsep-all-rebuild-main-") as tmp:
+            temporary = Path(tmp)
+            executable = temporary / "amps"
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(0o755)
+            output = temporary / "output"
+            events: list[str] = []
+
+            def fake_rebuild(args, log_path):
+                del args, log_path
+                events.append("rebuild")
+                return [["make", "clean"], ["make", "strict-production"]]
+
+            def fake_all(args, output_dir, log_path):
+                del args, log_path
+                events.append("discover-and-run")
+                report_path = output_dir / "srcsep-tests.json"
+                report_path.write_text(json.dumps({
+                    "schema": "srcsep-component-tests-v1", "exit_code": 0,
+                    "totals": {"passed": 1, "failed": 0,
+                               "skipped": 0, "errors": 0},
+                    "results": [{"id": "D01", "status": "PASS",
+                                 "message": "fixture", "metrics": [],
+                                 "configuration": [], "artifacts": []}],
+                }), encoding="utf-8")
+                return 0, report_path, [[str(executable), "--test", "D01"]]
+
+            with (mock.patch.object(runner, "_rebuild_linked_application",
+                                    side_effect=fake_rebuild),
+                  mock.patch.object(runner, "_run_all_tests",
+                                    side_effect=fake_all),
+                  mock.patch("sys.stdout", io.StringIO())):
+                exit_code = runner.main([
+                    "--amps", str(executable), "--all", "--rebuild",
+                    "--amps-source", str(temporary), "--make-config",
+                    str(temporary / "Makefile.conf"), "--plot", "none",
+                    "--output-dir", str(output)])
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(events, ["rebuild", "discover-and-run"])
+            manifest = json.loads(
+                (output / "run_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["command"][0], ["make", "clean"])
+            self.assertEqual(manifest["command"][-1][-2:], ["--test", "D01"])
 
     def test_isolated_all_continues_and_lists_failed_and_error_tests(self):
         """Retain GOOD01 after BAD02 errors and FAIL03 reports failure.

@@ -116,7 +116,6 @@ double SEP::ParticleSource::ShockWave::Tenishev2005::GetSolarWindDensity() {
 
 double SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() {
   double r_sh,density;
-  double n_m3, V_ms, divV;
 
   if (InitFlag==false) Init();
 
@@ -127,11 +126,19 @@ double SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() {
   case SEP::cShockModelType::SwCme1d:
     r_sh=SEP::SW1DAdapter::ShockRadiusM();
 
-    if (SEP::SW1DAdapter::QueryAtRadius(r_sh, n_m3, V_ms, divV, /*applyClamp=*/true)) {
-      density=n_m3;
-    }
-    else {
-      density=0.0;
+    // D01: consume one transactional sample. A rejected provider query is a
+    // fatal background-consistency error, not a zero-density interval. The
+    // formatted message records the MPI rank, physical epoch, radius, failed
+    // field, and immutable SWCME state ID needed to reproduce the failure.
+    {
+      const SEP::SW1DAdapter::QueryResult query =
+          SEP::SW1DAdapter::QueryAtRadius(r_sh, /*applySheathClamp=*/true);
+      if (!query.ok()) {
+        const std::string diagnostic =
+            SEP::SW1DAdapter::FormatFailure(query, PIC::ThisThread);
+        exit(__LINE__,__FILE__,diagnostic.c_str());
+      }
+      density=query.sample.number_density_m3();
     }
 
     break;
@@ -143,7 +150,10 @@ double SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() {
   // provider.  The former analytic-only (compression-1)/compression factor
   // made identical analytic, SWCME, and SWMF shock states inject different
   // physical particle counts.
-  return SEP::FieldLine::FluxTubeGeometryCore::InjectedPhysicalParticleCount(
+  const double sourceWeight=SEP::ShockModelType==SEP::cShockModelType::SwCme1d
+      ? SEP::SW1DAdapter::RelativeSourceWeightPerArea() : 1.0;
+  return sourceWeight*
+      SEP::FieldLine::FluxTubeGeometryCore::InjectedPhysicalParticleCount(
       SEP::Units::NumberDensityPerM3(density), SEP::Units::VolumeM3(1.0),
       SEP::FieldLine::InjectionParameters::InjectionEfficiency);
 }

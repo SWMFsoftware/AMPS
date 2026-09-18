@@ -1,6 +1,7 @@
 #ifndef SEP_UTIL_SEP_PRODUCTION_MOVER_H
 #define SEP_UTIL_SEP_PRODUCTION_MOVER_H
 
+#include <cstdint>
 #include <iosfwd>
 #include <string>
 #include <vector>
@@ -59,6 +60,14 @@ void PrintProductionMovers(std::ostream& out);
 void SelectProductionMover(ProductionMover mover);
 ProductionMover CurrentProductionMover();
 const MoverCapabilities& CurrentCapabilities();
+
+// Return the number of particle-dispatch calls that reached and returned from
+// the selected production implementation on this process.  This is an
+// integration-evidence counter, not a physical particle population: a mover
+// may legitimately delete a particle at a boundary after advancing it, and
+// that completed dispatch is still counted.  Selection resets the counter so
+// a linked test run cannot inherit evidence from an earlier mover choice.
+std::uint64_t CompletedDispatchCount();
 void PrintRuntimeConfiguration(std::ostream& out);
 
 }  // namespace Mover

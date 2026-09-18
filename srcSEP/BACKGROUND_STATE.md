@@ -86,6 +86,38 @@ The private SWCME adapter's `Configure` and `PrepareState` entry points call
 provider update during a particle phase or while a different provider owns the
 background, without exposing the provider's state type through `sep.h`.
 
+### D01 fail-closed SWCME queries
+
+`SW1DAdapter::QueryAtRadius` returns a `QueryResult`, not a Boolean plus three
+write-through references. The result contains one immutable SI sample only when
+the operation succeeded. Its status distinguishes an unprepared model,
+non-finite input/output, an out-of-domain radius, non-positive density, invalid
+speed, invalid divergence, and a canonical provider failure. A rejected query
+therefore cannot leave density updated while speed or divergence still contains
+an older value.
+
+The default `strict` policy rejects every invalid query. Two recovery policies
+exist for controlled experiments and are never selected implicitly:
+
+- `clamp-radius` maps only a radius below the canonical `1.05 R_sun` boundary
+  to that boundary; it does not repair provider output;
+- `diagnostic-fallback` returns a user-specified sample whose density and speed
+  must be positive and whose three fields must be finite.
+
+The selected policy and fallback SI values are frozen in `Run::Configuration`,
+included in its restart fingerprint, and copied into the background metadata
+fingerprint. Process-local atomic counters record successful queries, rejected
+queries, radius clamps, and diagnostic fallbacks. Rank zero prints these
+counters in the final run summary. A failure message records MPI rank,
+simulation epoch, requested/evaluated radius, failed field, immutable source
+state ID, and canonical detail.
+
+Preparation is transactional as well. `PrepareState` constructs a candidate
+cache and publishes neither it nor new snapshot metadata until canonical
+validation succeeds. If preparation fails, the previous valid cache and state
+ID remain unchanged. The caller receives an explicit status and terminates the
+step, so particles can never consume old fields under a new epoch label.
+
 The handoff API records ownership but does not itself copy AMPS arrays. A future
 caller enabling local evolution is responsible for making that one-time private
 copy before publishing the handoff. No existing Step 2 path requests local
@@ -97,7 +129,9 @@ For a standalone SWCME step:
 
 1. Read the upcoming epoch from `PIC::SimulationTime`.
 2. Ask the private SWCME adapter to prepare its state at that exact epoch.
-3. Publish model-owned metadata valid through the upcoming global time step.
+3. If preparation failed, report rank/epoch/previous state ID and stop without
+   changing the current snapshot. Otherwise publish model-owned metadata valid
+   through the upcoming global time step.
 4. Enter a `ParticleReadPhase` and call `PIC::TimeStep()`.
 5. Each particle mover acquires the same const snapshot in
    `SEP::ParticleMover`.
@@ -125,6 +159,7 @@ Run the dependency-light focused tests with:
 
 ```sh
 make test-state-unit
+make test-swcme-fail-closed-unit
 ```
 
 The test compiles the production snapshot implementation using C++11,
@@ -133,6 +168,20 @@ compile-time non-assignability, interval enforcement, provider isolation,
 explicit SWMF handoff, generation/epoch monotonicity, publication exclusion,
 concurrent mover views, deterministic fingerprints, and the single-clock source
 invariant.
+
+The D01 test links the production adapter to the canonical SWCME model and
+checks unprepared access, the exact inner boundary and its adjacent invalid
+point, NaN/infinity, negative density, zero speed, failed-preparation atomicity,
+explicit clamp/fallback counters, complete diagnostics, and unchanged fast and
+slow preset trajectories.
+
+Those assertions are implemented once in `util/sep_swcme_validation.cpp` and
+registered as extended native ID `D01`. `make test-swcme-fail-closed-unit`
+compiles a dependency-light launcher around that descriptor; a linked complete
+run discovers the same callback with `amps --list-tests` and executes it through
+`test/run_tests.py --amps ../amps --all`. The callback restores a prepared fast,
+strict state before returning, while the complete runner additionally gives it
+process isolation.
 
 The complete native gate remains:
 

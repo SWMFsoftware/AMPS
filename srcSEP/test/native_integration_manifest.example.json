@@ -1,0 +1,96 @@
+{
+  "schema": "srcsep-native-integration-v1",
+  "template_only": true,
+  "executable": "amps",
+  "common_args": [
+    "--shock-model", "swcme1d",
+    "--total-iterations", "20",
+    "--swcme-failure-policy", "strict",
+    "--swcme-override", "event.valid_until=24 h"
+  ],
+  "mpi_launcher": ["mpiexec", "-n", "{ranks}"],
+  "environment": {},
+  "cases": [
+    {
+      "id": "parker-serial",
+      "kind": "transport",
+      "mover": "parker",
+      "ranks": 1,
+      "args": ["--site-input", "/replace/with/reviewed/native-input"],
+      "expect": {"exit_code": 0, "minimum_source_state_id": 2, "minimum_particle_dispatches": 1},
+      "artifacts": [{"path": "final_state.bin", "equivalence_group": "parker-final"}]
+    },
+    {
+      "id": "parker-mpi2",
+      "kind": "transport",
+      "mover": "parker",
+      "ranks": 2,
+      "args": ["--site-input", "/replace/with/reviewed/native-input"],
+      "expect": {"exit_code": 0, "minimum_source_state_id": 2, "minimum_particle_dispatches": 1},
+      "artifacts": [{"path": "final_state.bin", "equivalence_group": "parker-final"}]
+    },
+    {
+      "id": "parker-mpi4",
+      "kind": "transport",
+      "mover": "parker",
+      "ranks": 4,
+      "args": ["--site-input", "/replace/with/reviewed/native-input"],
+      "expect": {"exit_code": 0, "minimum_source_state_id": 2, "minimum_particle_dispatches": 1},
+      "artifacts": [{"path": "final_state.bin", "equivalence_group": "parker-final"}]
+    },
+    {
+      "id": "fte-dmumu-serial", "kind": "transport", "mover": "fte-dmumu", "ranks": 1,
+      "args": ["--site-input", "/replace/with/reviewed/native-input"],
+      "expect": {"exit_code": 0, "minimum_source_state_id": 2, "minimum_particle_dispatches": 1},
+      "artifacts": [{"path": "final_state.bin", "equivalence_group": "fte-dmumu-final"}]
+    },
+    {
+      "id": "fte-dmumu-mpi2", "kind": "transport", "mover": "fte-dmumu", "ranks": 2,
+      "args": ["--site-input", "/replace/with/reviewed/native-input"],
+      "expect": {"exit_code": 0, "minimum_source_state_id": 2, "minimum_particle_dispatches": 1},
+      "artifacts": [{"path": "final_state.bin", "equivalence_group": "fte-dmumu-final"}]
+    },
+    {
+      "id": "fte-dmumu-mpi4", "kind": "transport", "mover": "fte-dmumu", "ranks": 4,
+      "args": ["--site-input", "/replace/with/reviewed/native-input"],
+      "expect": {"exit_code": 0, "minimum_source_state_id": 2, "minimum_particle_dispatches": 1},
+      "artifacts": [{"path": "final_state.bin", "equivalence_group": "fte-dmumu-final"}]
+    },
+    {
+      "id": "fte-mfp-serial", "kind": "transport", "mover": "fte-mfp", "ranks": 1,
+      "args": ["--site-input", "/replace/with/reviewed/native-input"],
+      "expect": {"exit_code": 0, "minimum_source_state_id": 2, "minimum_particle_dispatches": 1},
+      "artifacts": [{"path": "final_state.bin", "equivalence_group": "fte-mfp-final"}]
+    },
+    {
+      "id": "fte-mfp-mpi2", "kind": "transport", "mover": "fte-mfp", "ranks": 2,
+      "args": ["--site-input", "/replace/with/reviewed/native-input"],
+      "expect": {"exit_code": 0, "minimum_source_state_id": 2, "minimum_particle_dispatches": 1},
+      "artifacts": [{"path": "final_state.bin", "equivalence_group": "fte-mfp-final"}]
+    },
+    {
+      "id": "fte-mfp-mpi4", "kind": "transport", "mover": "fte-mfp", "ranks": 4,
+      "args": ["--site-input", "/replace/with/reviewed/native-input"],
+      "expect": {"exit_code": 0, "minimum_source_state_id": 2, "minimum_particle_dispatches": 1},
+      "artifacts": [{"path": "final_state.bin", "equivalence_group": "fte-mfp-final"}]
+    },
+    {
+      "id": "restart-uninterrupted", "kind": "uninterrupted", "mover": "fte-dmumu", "ranks": 2,
+      "args": ["--site-input", "/replace/with/uninterrupted-input"],
+      "expect": {"exit_code": 0, "minimum_source_state_id": 2, "minimum_particle_dispatches": 1},
+      "artifacts": [{"path": "final_state.bin", "equivalence_group": "restart-final"}]
+    },
+    {
+      "id": "restart-checkpoint", "kind": "checkpoint", "mover": "fte-dmumu", "ranks": 2,
+      "args": ["--site-input", "/replace/with/checkpoint-writing-input"],
+      "expect": {"exit_code": 0, "minimum_source_state_id": 2, "minimum_particle_dispatches": 1},
+      "artifacts": [{"path": "checkpoint.dat"}]
+    },
+    {
+      "id": "restart-resume", "kind": "resume", "mover": "fte-dmumu", "ranks": 2,
+      "args": ["--site-input", "/replace/with/resume-input", "--checkpoint", "{output_dir}/cases/restart-checkpoint/checkpoint.dat"],
+      "expect": {"exit_code": 0, "minimum_source_state_id": 2, "minimum_particle_dispatches": 1},
+      "artifacts": [{"path": "final_state.bin", "equivalence_group": "restart-final"}]
+    }
+  ]
+}

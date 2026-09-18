@@ -127,6 +127,23 @@ struct Options {
   bool slowCmeScenario = false;
   bool cmeScenarioProvided = false;
 
+  // D01 background-failure controls. Strict is intentionally the default.
+  // The fallback values are SI and have no effect unless the user explicitly
+  // chooses diagnostic-fallback; all choices are copied into the frozen run
+  // configuration and consequently into restart/provenance fingerprints.
+  enum class SwcmeFailurePolicy { Strict, ClampRadius, DiagnosticFallback };
+  SwcmeFailurePolicy swcmeFailurePolicy = SwcmeFailurePolicy::Strict;
+  bool swcmeFailurePolicyProvided = false;
+  double swcmeFallbackDensityM3 = 5.0e6;
+  double swcmeFallbackSpeedMPerS = 4.0e5;
+  double swcmeFallbackDivergencePerS = 0.0;
+  bool swcmeFallbackDensityProvided = false;
+  bool swcmeFallbackSpeedProvided = false;
+  bool swcmeFallbackDivergenceProvided = false;
+  // Repeatable canonical D02 overrides. The CLI checks only key=value shape;
+  // the canonical SWCME resolver owns key names, units, and physical ranges.
+  std::vector<std::string> swcmeOverrides;
+
   bool printHelp = false;
 };
 

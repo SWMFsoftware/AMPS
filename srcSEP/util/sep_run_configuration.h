@@ -17,6 +17,7 @@ namespace Run {
 
 enum class ShockModel { Analytical, Swcme1d };
 enum class CmeScenario { Fast, Slow };
+enum class SwcmeFailurePolicy { Strict, ClampRadius, DiagnosticFallback };
 enum class ValueSource { Default, InputFile, CommandLine };
 
 template <class T>
@@ -29,6 +30,16 @@ struct Configuration {
   LayeredValue<Mover::ProductionMover> mover;
   LayeredValue<ShockModel> shockModel;
   LayeredValue<CmeScenario> scenario;
+  // D01 makes background recovery part of the immutable run contract. The
+  // three fallback values use SI units and are consumed only when the explicit
+  // diagnostic-fallback policy is selected.
+  LayeredValue<SwcmeFailurePolicy> swcmeFailurePolicy;
+  LayeredValue<double> swcmeFallbackDensityM3;
+  LayeredValue<double> swcmeFallbackSpeedMPerS;
+  LayeredValue<double> swcmeFallbackDivergencePerS;
+  // Fingerprint produced by the canonical src/models/swcme resolver after
+  // preset expansion, unit conversion, overrides, and validation.
+  LayeredValue<std::string> swcmeConfigurationFingerprint;
   LayeredValue<std::uint64_t> totalIterations;
   LayeredValue<double> fieldLineSeedAreaM2;
   LayeredValue<double> shockTurbulenceEfficiency;

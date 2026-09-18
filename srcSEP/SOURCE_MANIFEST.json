@@ -1,0 +1,72 @@
+{
+  "schema": "amps-sep-source-manifest-v1",
+  "component": "srcSEP",
+  "production_source_globs": [
+    "*.cpp",
+    "*.h",
+    "adapters/*.cpp",
+    "adapters/*.h",
+    "debug/*.cpp",
+    "debug/*.h",
+    "turbulence_wave_number_resolved/*.cpp",
+    "turbulence_wave_number_resolved/*.h",
+    "util/*.cpp",
+    "util/*.h",
+    "validation/cases/*.cpp",
+    "validation/cases/*.h",
+    "validation/cases/*/*.cpp",
+    "validation/cases/*/*.h"
+  ],
+  "test_source_globs": [
+    "test/*.py",
+    "test/*.sh",
+    "test/*.cpp",
+    "test/**/*.py",
+    "test/**/*.cpp",
+    "validation/*.py",
+    "validation/**/*.py"
+  ],
+  "documentation_globs": [
+    "*.md",
+    "*.docx",
+    "test/*.md",
+    "validation/*.md",
+    "validation/**/*.md"
+  ],
+  "retained_input_globs": [
+    "PARAM.in",
+    "PARAM*.example",
+    "test/native_integration_manifest.example.json",
+    "*.pl",
+    "validation/**/*.json",
+    "validation/**/*.csv"
+  ],
+  "support_globs": [
+    "makefile",
+    "WP42_WP64_DISPOSITION.json",
+    "validation/**/*"
+  ],
+  "generated_globs": [
+    "*.o",
+    "*.d",
+    "*.a",
+    "amr.sig=*.bin",
+    "build/**",
+    "test_output/**",
+    "**/__pycache__/**",
+    "**/*.pyc"
+  ],
+  "retired_sources": [
+    "demo1d.cpp",
+    "drift.cpp",
+    "output.cpp",
+    "mover.cpp",
+    "fte_mover.cpp",
+    "fte_mover_dmumu.cpp",
+    "sample3d.h",
+    "sample3d_init.cpp",
+    "sample3d_sampling.cpp",
+    "sample3d_output.cpp",
+    "sw1d.cpp"
+  ]
+}

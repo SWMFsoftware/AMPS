@@ -20,6 +20,8 @@ for target in test-cli-unit test-state-unit test-geometry-source-unit \
   test-wp42-wp64-experimental test-wp59-wp64-native \
   test-package-hygiene-unit test-sep-common-ownership-unit \
   test-swcme-relocation-unit test-python-runner-unit \
+  test-swcme-fail-closed-unit test-swcme-configuration-unit \
+  test-d03-runner-unit test-d03-native-integration \
   test-acceptance-unit test-documentation-unit \
   test-controlled-analytical test-scientific-validation \
   test-native-amps-validation test-swmf-validation \

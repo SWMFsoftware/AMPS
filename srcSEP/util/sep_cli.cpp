@@ -212,6 +212,29 @@ bool ParseDoubleOption(int argc, char** argv, int& i,
   return true;
 }
 
+// Divergence is signed, so it cannot use the positive/non-negative helper.
+// This parser still rejects suffixes, overflow, NaN, and infinity.
+bool ParseFiniteDoubleOption(int argc, char** argv, int& i,
+                             const std::string& option_name,
+                             const std::string& value_from_equals,
+                             const char* description, double& destination,
+                             std::ostream& err) {
+  std::string raw_value;
+  if (!GetOptionValue(argc, argv, i, option_name, value_from_equals,
+                      raw_value, err)) return false;
+  errno = 0;
+  char* end_ptr = nullptr;
+  const double parsed = std::strtod(raw_value.c_str(), &end_ptr);
+  if (errno != 0 || end_ptr == raw_value.c_str() ||
+      (end_ptr && *end_ptr != '\0') || !std::isfinite(parsed)) {
+    err << "ERROR: invalid value '" << raw_value << "' for " << description
+        << ". Use a finite number.\n";
+    return false;
+  }
+  destination = parsed;
+  return true;
+}
+
 } // anonymous namespace
 
 void PrintHelp(const char* program_name, std::ostream& out) {
@@ -342,6 +365,15 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  --total-iterations <N>       Positive standalone driver iteration count.\n"
       << "  --shock-model <analytical|swcme1d>\n"
       << "  --cme-scenario <fast|slow>   Select the frozen SWCME parameter set.\n"
+      << "  --swcme-failure-policy <strict|clamp-radius|diagnostic-fallback>\n"
+      << "                               strict rejects every invalid query (default);\n"
+      << "                               recovery modes are counted and fingerprinted.\n"
+      << "  --swcme-fallback-density <m^-3> --swcme-fallback-speed <m/s>\n"
+      << "  --swcme-fallback-divergence <s^-1>\n"
+      << "                               Explicit sample used only by diagnostic-fallback.\n"
+      << "  --swcme-override <key=value> Repeatable canonical SWCME/shock/source override.\n"
+      << "                               Values carry explicit units, e.g.\n"
+      << "                               --swcme-override 'cme.launch_speed=1400 km/s'.\n"
       << "  --field-line-seed-area <m2> Positive seed surface area used once to form Phi_i.\n"
       << "  --shock-turbulence-efficiency <0..1>\n"
       << "  --shock-turbulence-plus-fraction <0..1>\n"
@@ -885,6 +917,65 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
         else { err<<"ERROR: --cme-scenario requires fast or slow.\n";return false; }
         options.cmeScenarioProvided=true;
       }
+      continue;
+    }
+
+    if (option_name=="--swcme-failure-policy") {
+      std::string value;
+      if (!GetOptionValue(argc,argv,i,option_name,value_from_equals,value,err))
+        return false;
+      value=ToLower(value);
+      if (value=="strict")
+        options.swcmeFailurePolicy=Options::SwcmeFailurePolicy::Strict;
+      else if (value=="clamp-radius" || value=="clamp")
+        options.swcmeFailurePolicy=Options::SwcmeFailurePolicy::ClampRadius;
+      else if (value=="diagnostic-fallback" || value=="fallback")
+        options.swcmeFailurePolicy=
+            Options::SwcmeFailurePolicy::DiagnosticFallback;
+      else {
+        err<<"ERROR: --swcme-failure-policy requires strict, clamp-radius, "
+              "or diagnostic-fallback.\n";
+        return false;
+      }
+      options.swcmeFailurePolicyProvided=true;
+      continue;
+    }
+
+    if (option_name=="--swcme-override") {
+      std::string assignment;
+      if (!GetOptionValue(argc,argv,i,option_name,value_from_equals,
+                          assignment,err)) return false;
+      const std::string::size_type separator=assignment.find('=');
+      if (separator==std::string::npos || separator==0 ||
+          separator+1>=assignment.size()) {
+        err<<"ERROR: --swcme-override requires non-empty key=value.\n";
+        return false;
+      }
+      options.swcmeOverrides.push_back(assignment);
+      continue;
+    }
+
+    if (option_name=="--swcme-fallback-density" ||
+        option_name=="--swcme-fallback-speed" ||
+        option_name=="--swcme-fallback-divergence") {
+      double* destination=option_name=="--swcme-fallback-density"
+          ? &options.swcmeFallbackDensityM3
+          : (option_name=="--swcme-fallback-speed"
+              ? &options.swcmeFallbackSpeedMPerS
+              : &options.swcmeFallbackDivergencePerS);
+      const bool parsed=option_name=="--swcme-fallback-divergence"
+          ? ParseFiniteDoubleOption(argc,argv,i,option_name,value_from_equals,
+                                    "SWCME fallback divergence [s^-1]",
+                                    *destination,err)
+          : ParseDoubleOption(argc,argv,i,option_name,value_from_equals,
+                              "SWCME fallback density/speed in SI",false,
+                              *destination,err);
+      if (!parsed) return false;
+      if (option_name=="--swcme-fallback-density")
+        options.swcmeFallbackDensityProvided=true;
+      else if (option_name=="--swcme-fallback-speed")
+        options.swcmeFallbackSpeedProvided=true;
+      else options.swcmeFallbackDivergenceProvided=true;
       continue;
     }
 

@@ -300,6 +300,7 @@ namespace SEP {
     void ReadFile(string fname);
     void SelectCommand(vector<string>& StringVector);
     void Scattering(vector<string>& StringVector);
+    void SWCME1D(vector<string>& StringVector);
   }
 
 
@@ -1991,6 +1992,9 @@ double e_mev=e*J2MeV;
     int DispatchProductionMover(
         long int ptr,double dtTotal,
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+    // Process-local integration counter; the standalone driver reduces it
+    // across MPI ranks only after the timestep loop has stopped mutating it.
+    std::uint64_t CompletedDispatchCount();
   }
 
   // Apply adiabatic cooling only if the flag is set

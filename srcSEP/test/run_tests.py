@@ -59,6 +59,15 @@ SOURCE_SUITES: Dict[str, str] = {
     # source and copied build/main makefiles locate the one canonical SWCME
     # provider and that no application-local compatibility tree survives.
     "swcme-relocation": "test-swcme-relocation-unit",
+    # D01/D02 are also native registry IDs. These source-suite aliases remain
+    # useful before an AMPS executable exists and compile the *same* descriptor
+    # callbacks, rather than maintaining a second Make-only implementation.
+    "d01-background": "test-swcme-fail-closed-unit",
+    "d02-configuration": "test-swcme-configuration-unit",
+    # D03PRE is the native-registry preflight. This external suite additionally
+    # performs the enclosing configured build and consumes only real
+    # serial/MPI/restart evidence described by a site campaign manifest.
+    "d03-native-integration": "test-d03-native-integration",
     "cli": "test-cli-unit",
     "state": "test-state-unit",
     "geometry-source": "test-geometry-source-unit",
@@ -286,12 +295,21 @@ Examples:
      discovers every ID with --list-tests, rejects the printed table header,
      and executes each ID in its own process. A crash, timeout, FAIL, or ERROR
      is printed immediately and does not prevent later tests from running.
+     The native catalog includes D01, D02, and D03PRE; the latter is a linked
+     evidence-hook preflight, not the external D03 MPI/restart campaign.
      CV/IV/XM IDs use their registered validation input/reference workflow;
      all other IDs are invoked directly as `amps --test ID ...`. Every exact
      outer command and every linked AMPS command is printed before execution.
      The final block reports TOTAL, PASS, FAIL, SKIP, and ERROR counts, then
      lists every failed and errored test ID with its diagnostic. Empty failure
      categories are printed explicitly as `none`.
+
+     Rebuild the configured linked executable first when C++ descriptors have
+     changed (MAKEFLAGS controls build parallelism):
+
+       env MAKEFLAGS="-j16" python3 test/run_tests.py --amps ../amps --all \
+         --amps-source .. --make-config ../Makefile.conf --rebuild \
+         --output-dir test_output/all-rebuilt
 
   6. Run source-only controlled tests when a linked AMPS executable is absent:
 
@@ -334,6 +352,18 @@ Examples:
 
      The literal -- ends runner-option parsing; every following token is sent
      to srcSEP/AMPS.  Put all runner options before that separator.
+
+ 11. Run the configured D03 AMPS/MPI/restart campaign:
+
+       env MAKEFLAGS="-j16" python3 test/run_tests.py \
+         --suite d03-native-integration \
+         --amps-source .. --make-config ../Makefile.conf \
+         --native-manifest test/native_integration_manifest.site.json \
+         --rebuild --release --output-dir test_output/d03-release
+
+     Omit --release and --native-manifest for a development prerequisite probe;
+     unavailable native inputs then produce an explicit SKIP. The release form
+     requires a clean configured build and treats missing evidence as INCOMPLETE.
 
 Outputs:
   The selected output directory contains the command log, run manifest,
@@ -738,6 +768,49 @@ def _synthetic_error(test_id: str, message: str, elapsed: float,
     }
 
 
+def _rebuild_linked_application(args: argparse.Namespace,
+                                log_path: Path) -> List[List[str]]:
+    """Clean and rebuild the configured application before native discovery.
+
+    ``--all`` obtains its catalog from the linked executable, so newly added
+    C++ descriptors cannot be visible until that executable has been rebuilt.
+    This helper gives ``--all --rebuild`` the same relocation-safe enclosing
+    AMPS build route used by D03: the application makefile delegates to normal
+    ``make amps`` and audits the resulting shared-model archive.  It never
+    compiles PIC-dependent sources directly in ``srcSEP``.
+
+    The clean is performed only after an explicit ``--rebuild`` request and
+    only after both the selected AMPS root and configuration file have been
+    resolved.  MAKEFLAGS is inherited unchanged, so callers may use, for
+    example, ``env MAKEFLAGS=-j16 ...`` for the build without parallelizing the
+    stateful registry callbacks themselves.
+    """
+    amps_source = Path(args.amps_source).expanduser().resolve()
+    make_config = Path(args.make_config).expanduser().resolve()
+    application_makefile = amps_source / "srcSEP" / "makefile"
+    if not amps_source.is_dir() or not application_makefile.is_file():
+        raise RunnerError(
+            f"configured AMPS/srcSEP source tree is absent: {amps_source}")
+    if not make_config.is_file():
+        raise RunnerError(f"configured Makefile.conf is absent: {make_config}")
+
+    commands = [
+        ["make", "-C", str(amps_source), "clean"],
+        ["make", "--no-print-directory", "-f", str(application_makefile),
+         "strict-production", f"AMPS_ROOT={amps_source}",
+         f"AMPS_CONFIG={make_config}"],
+    ]
+    environment = dict(os.environ)
+    for command in commands:
+        status = _run_streaming(
+            command, amps_source, log_path, environment, args.timeout)
+        if status != 0:
+            raise RunnerError(
+                f"configured srcSEP rebuild command exited with status {status}: "
+                f"{shlex.join(command)}")
+    return commands
+
+
 def _run_all_tests(args: argparse.Namespace, output_dir: Path,
                    log_path: Path) -> Tuple[int, Path, List[List[str]]]:
     """Run every discovered ID independently and retain all outcomes.
@@ -1106,6 +1179,28 @@ def _run_source_suites(args: argparse.Namespace, output_dir: Path,
     # Focused C++ runners copy their already-validated JSON/JUnit products only
     # when this variable is set. Normal Make invocations remain artifact-free.
     environment["SRCSEP_REPORT_DIR"] = str(report_dir)
+    # D03 needs paths and release policy that are not meaningful to ordinary
+    # dependency-light targets. Passing them as environment keeps Make's public
+    # target stable and records the exact outer runner command in its manifest.
+    environment["SRCSEP_D03_AMPS_SOURCE"] = str(
+        Path(getattr(args, "amps_source", ROOT.parent)).expanduser().resolve())
+    environment["SRCSEP_D03_MAKE_CONFIG"] = str(
+        Path(getattr(args, "make_config", ROOT.parent / "Makefile.conf"))
+        .expanduser().resolve())
+    environment["SRCSEP_D03_OUTPUT_DIR"] = str(
+        (output_dir / "d03_native").resolve())
+    native_manifest = getattr(args, "native_manifest", None)
+    if native_manifest:
+        environment["SRCSEP_D03_NATIVE_MANIFEST"] = str(
+            Path(native_manifest).expanduser().resolve())
+    if getattr(args, "release", False):
+        environment["SRCSEP_D03_RELEASE"] = "1"
+    if getattr(args, "rebuild", False):
+        environment["SRCSEP_D03_REBUILD"] = "1"
+    if getattr(args, "no_build", False):
+        environment["SRCSEP_D03_NO_BUILD"] = "1"
+    if getattr(args, "timeout", None) is not None:
+        environment["SRCSEP_D03_TIMEOUT"] = str(args.timeout)
     records: List[Dict[str, Any]] = []
     commands: List[List[str]] = []
     blocked_by: Optional[str] = None
@@ -1275,6 +1370,20 @@ def _parser() -> argparse.ArgumentParser:
                         help="launch the native executable with this rank count")
     parser.add_argument("--mpiexec", default="mpiexec",
                         help="MPI launcher used with --mpi-np")
+    parser.add_argument("--amps-source", type=Path, default=ROOT.parent,
+                        help="enclosing configured AMPS source root for rebuild/D03")
+    parser.add_argument("--make-config", type=Path,
+                        default=ROOT.parent / "Makefile.conf",
+                        help="configured Makefile.conf used by rebuild/D03")
+    parser.add_argument("--native-manifest", type=Path,
+                        help="site serial/MPI/restart campaign manifest for D03")
+    parser.add_argument("--release", action="store_true",
+                        help="make missing D03 native prerequisites an incomplete failure")
+    parser.add_argument("--rebuild", action="store_true",
+                        help=("run enclosing AMPS clean/build before linked --all "
+                              "or the D03 production campaign"))
+    parser.add_argument("--no-build", action="store_true",
+                        help="reuse an existing build (forbidden by D03 release mode)")
     parser.add_argument("--timeout", type=float,
                         help="per-command timeout in seconds")
     parser.add_argument("--keep-going", action="store_true",
@@ -1295,6 +1404,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         raise RunnerError("--formats accepts only png and eps")
     if args.mpi_np is not None and args.mpi_np <= 0:
         raise RunnerError("--mpi-np must be positive")
+    if args.rebuild and args.no_build:
+        raise RunnerError("--rebuild and --no-build are mutually exclusive")
 
     native_selection = bool(args.tests or args.groups or args.routine or args.all)
     validation_selection = bool(args.validation_cases or args.validation_all)
@@ -1327,6 +1438,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         raise RunnerError(
             "end-to-end validation cases currently require serial linked execution; "
             "omit --mpi-np")
+    if args.rebuild and not (args.all or
+                             "d03-native-integration" in args.suites):
+        raise RunnerError(
+            "--rebuild requires --all or --suite d03-native-integration")
+    if (args.release or args.no_build or args.native_manifest) and (
+            "d03-native-integration" not in args.suites):
+        raise RunnerError(
+            "--release/--no-build/--native-manifest require "
+            "--suite d03-native-integration")
 
     if args.list:
         executable = Path(args.amps).expanduser().resolve()
@@ -1359,8 +1479,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         report_path = output_dir / "srcsep-tests.json"
         junit_path = output_dir / "srcsep-tests.xml"
         if args.all:
-            exit_code, report_path, command = _run_all_tests(
+            build_commands: List[List[str]] = []
+            if args.rebuild:
+                build_commands = _rebuild_linked_application(args, log_path)
+            exit_code, report_path, native_commands = _run_all_tests(
                 args, output_dir, log_path)
+            command = build_commands + native_commands
             report = _load_report(report_path)
         else:
             command = _native_command(args, report_path, junit_path)

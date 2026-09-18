@@ -9,6 +9,19 @@ application with:
 test/run_tests.py --amps ../amps --all --output-dir test_output/all
 ```
 
+When registry source has changed, rebuild the configured enclosing application
+before discovery with the single command:
+
+```sh
+env MAKEFLAGS="-j16" test/run_tests.py --amps ../amps --all \
+  --amps-source .. --make-config ../Makefile.conf --rebuild \
+  --output-dir test_output/all
+```
+
+`MAKEFLAGS` affects the enclosing clean/build only. Registry callbacks still
+run one isolated process at a time so process-global AMPS/SWCME state and each
+test's log/report remain deterministic.
+
 The runner discovers the complete native registry, executes every test in an
 isolated process, and automatically uses the registered input/reference
 workflow for CV, IV, and XM validation cases. A failed, errored, or crashed
@@ -16,6 +29,16 @@ test does not prevent later tests from running. The final output reports the
 PASS/FAIL/SKIP/ERROR totals and lists every failed or errored test with its
 diagnostic. Detailed JSON, JUnit, logs, plots, and per-test artifacts are saved
 under `test_output/all`.
+
+Improvements D01 and D02 and the bounded D03 native preflight are now public
+C++ registry entries named `D01`, `D02`, and `D03PRE`. Consequently the command
+above discovers and executes them automatically; selecting a Make suite is no
+longer required to make their results visible. They are marked `extended`
+because they reconfigure process-owned SWCME state, so `--routine`/native
+`--all-tests` excludes them while the isolated Python `--all` includes them.
+`D03PRE` verifies only the linked mover/refresh evidence hooks. The configured
+serial/MPI/restart D03 campaign remains the separate external gate documented
+below and must pass before a release can claim D03 completion.
 
 Step 1 provides one catalog and result contract for standalone component tests.
 The catalog lives in `component_tests.cpp`; generic deterministic selection,
@@ -98,6 +121,15 @@ make test-scientific-validation
 # Canonical SWCME ownership plus srcSEP/build-main path equivalence.
 make test-swcme-relocation-unit
 
+# D01 strict SWCME query/preparation status, recovery policy, and counters.
+make test-swcme-fail-closed-unit
+
+# D02 canonical presets, units, layers, source/event config, and fingerprint.
+make test-swcme-configuration-unit
+
+# D03 manifest/coverage self-test. The configured native command is below.
+make test-d03-runner-unit
+
 # Canonical seven-member SEP-common archive, one-definition, consumer-link,
 # srcSEP/build-main path equivalence, sibling-AMPS public-header fallback, and
 # AMPS-root-only production-source include coverage (including field_line.cpp).
@@ -156,6 +188,12 @@ Equivalent CLI examples are:
 ../amps --test-group fte-mfp
 ../amps --test PARK07 --test FTEM08
 ../amps --test TURB21 --test TURB22 --test TURB23
+../amps --test D01
+../amps --test D02
+../amps --test D03PRE
+../amps --test-group swcme-background
+../amps --test-group swcme-configuration
+../amps --test-group native-integration
 ../amps --all-tests
 ../amps --all-tests --test-json results.json --test-junit results.xml
 ```
@@ -165,7 +203,87 @@ when Make is given `-j`, then runs the canonical
 `src/models/swcme/test/run_tests.py --routine` suite. SWCME is not embedded in
 srcSEP. Expensive extended tests are not part of `--all-tests`.
 
-The relocation gate can also be selected through the Python runner:
+The dependency-light D01 gate can also be selected through the Python runner:
+
+```sh
+test/run_tests.py --suite d01-background --output-dir test_output/d01
+```
+
+This source-only gate compiles the production private adapter and the same
+`SwcmeImprovementDescriptors()` factory linked into the application against
+the canonical `src/models/swcme` implementation. It covers unprepared state,
+boundary and sub-boundary radii, NaN/infinity, negative density, zero speed,
+transactional failed preparation, strict/clamp/fallback policy semantics,
+recovery counters, complete rank/epoch/location/state diagnostics, and the
+unchanged fast/slow preset trajectories. It does not substitute for the D03
+native MPI gate, which verifies cross-rank agreement in a configured AMPS run.
+
+The D02 gate is selectable with:
+
+```sh
+test/run_tests.py --suite d02-configuration --output-dir test_output/d02
+```
+
+It verifies fast/slow equivalence, supported unit conversion, input-to-CLI
+precedence, duplicate/unknown/unsupported fields, incompatible shock modes,
+data-driven tables, deterministic normalized fingerprints, parser-free host
+construction, validity intervals, and explicit rejection of an absolute source
+normalization not yet implemented by srcSEP.
+
+The three native entries can be checked directly after rebuilding the linked
+application:
+
+```sh
+../amps --test D01 --test-json d01.json --test-junit d01.xml
+../amps --test D02 --test-json d02.json --test-junit d02.xml
+../amps --test D03PRE --test-json d03pre.json --test-junit d03pre.xml
+```
+
+`D01` and `D02` run the identical callbacks used by the corresponding focused
+Make targets. `D03PRE` checks the exact three canonical movers, their
+coefficient contracts, a nonempty canonical SWCME fingerprint, and two
+monotonic prepared-state generations. A PASS means the linked executable is
+ready to emit the evidence consumed by the outer campaign; it does not claim
+that MPI decomposition or checkpoint/restart equivalence was executed.
+
+The D03 gate uses the same runner entry point but requires an enclosing AMPS
+configuration and, for execution rather than a development SKIP, a reviewed
+site manifest:
+
+```sh
+# Development: missing native prerequisites are retained as a structured SKIP.
+env MAKEFLAGS="-j16" test/run_tests.py \
+  --suite d03-native-integration \
+  --amps-source .. --make-config ../Makefile.conf \
+  --output-dir test_output/d03
+
+# Release: clean build and complete site campaign are mandatory.
+env MAKEFLAGS="-j16" test/run_tests.py \
+  --suite d03-native-integration \
+  --amps-source .. --make-config ../Makefile.conf \
+  --native-manifest test/native_integration_manifest.site.json \
+  --rebuild --release --output-dir test_output/d03-release
+```
+
+`test/native_integration_manifest.example.json` is a coverage template. Copy it
+to a site file, remove `"template_only": true`, and replace all `--site-input`,
+`--checkpoint`, and artifact placeholders with the actual AMPS post-compile
+input/restart convention. It is intentionally not runnable unchanged. The
+validator requires all three movers,
+serial plus two distinct MPI decompositions for each, a source state ID of at
+least two, at least one completed particle dispatch per case, one exact output
+group spanning each mover's decompositions, and uninterrupted/checkpoint/resume
+coverage with a shared exact final-output group.
+
+The native executable, not the Python orchestrator, supplies the physics
+evidence. At shutdown it compares SWCME state identity and epoch across ranks,
+reduces background diagnostics and completed mover dispatches, and prints an
+explicit consensus marker. The gate additionally compares configuration
+fingerprints and SHA-256 artifacts. Full logs, commands, compiler/MPI versions,
+checksums, timings, case results, and equivalence groups are saved in
+`native_integration_evidence.json`. See
+[`../NATIVE_INTEGRATION.md`](../NATIVE_INTEGRATION.md) for the complete evidence
+and claim contract.
 
 ```sh
 test/run_tests.py --suite swcme-relocation \
@@ -241,6 +359,11 @@ python3 test/run_tests.py --amps /path/to/amps --routine \
 python3 test/run_tests.py --amps /path/to/amps --all \
   --output-dir /evidence/srcsep/all
 
+# Rebuild the configured binary before discovering the native catalog.
+env MAKEFLAGS="-j16" python3 test/run_tests.py --amps /path/to/amps --all \
+  --amps-source /path/to/AMPS --make-config /path/to/AMPS/Makefile.conf \
+  --rebuild --output-dir /evidence/srcsep/all-rebuilt
+
 # Dependency-light focused suites are repeatable and use the Make build rules.
 python3 test/run_tests.py --suite parker --suite fte-dmumu \
   --output-dir /evidence/srcsep/focused
@@ -281,7 +404,8 @@ censored arrival histories, spectral fits, per-bin wave state, and energy ledger
 `--routine` forwards the native `--all-tests` policy and therefore excludes
 extended cases. `--all` first calls `--list-tests`, accepts only identifier
 tokens containing a digit (so the printed `ID | ...` heading can never become
-a selection), and runs every discovered ID in a separate process. Ordinary
+a selection), and runs every discovered ID in a separate process. This includes
+the extended `D01`, `D02`, and `D03PRE` registry entries. Ordinary
 component tests use an explicit command of the form `amps --test PARK01
 --test-json ... --test-junit ...`. Registered CV/IV/XM IDs instead use one
 isolated `validation/run_case.py --case ID` command so their reviewed input,
@@ -810,6 +934,9 @@ standalone and SWMF-coupled run. See
 | `BG02` | `background` | routine | none | A mock SWMF import is read-only and becomes locally evolved only through an explicit handoff copy. | Resets the snapshot store before/after; no external SWMF process. |
 | `CROSS01` | `cross-mover` | routine | none | `fte-dmumu` and `fte-mfp` agree in the matched ballistic limit. | Keyed seed 1301; stack-owned state; no artifact. |
 | `CROSS02` | `cross-mover` | routine | none | Parker `kappa`, FTE `Dmumu`, and event-driven `lambda` round-trip under the declared isotropic closure. | Pure SI conversion; no RNG or artifact. |
+| `D01` | `swcme-background` | extended | none | The production SWCME adapter rejects invalid/unprepared state, preserves transactional preparation, and exposes only explicit, counted clamp/fallback recovery. | Deterministic, no RNG; restores fast/strict state; identical callback used by `test-swcme-fail-closed-unit`. |
+| `D02` | `swcme-configuration` | extended | none | The canonical resolver enforces presets, units, layer precedence, provenance, validity, supported source modes, and order-independent fingerprints. | Deterministic, no RNG; restores fast/strict state; identical callback used by `test-swcme-configuration-unit`. |
+| `D03PRE` | `native-integration` | extended | none | The linked catalog contains the three field-line movers with the expected coefficient contracts, and SWCME refresh exposes a monotonic state ID/epoch plus fingerprint. | Preflight only; full D03 requires `--suite d03-native-integration` with reviewed site inputs. |
 | `DXX01` | `diffusion` | routine | field-line model | `GetDxx` agrees with the constant-coefficient analytical result and the existing million-panel independent quadrature at relative tolerance `1e-5`. | Temporarily replaces and restores the pitch-angle diffusion function pointer; no artifact. |
 | `FTE01` | `transport` | routine | field-line model | The focused-transport mover follows the expected field-line displacement while preserving velocity in a static-plasma fixture, using the existing `1e-2`/`1e-5` checks. | Uses fixed registry seed 1002, restores vertex data and diffusion pointer, deletes its particle, and clears test lists. |
 | `PARKER01` | `parker` | routine | field-line model | Parker convection keeps the line coordinate stationary in the fixture and matches the analytical density-driven momentum update within `1e-5`. | Uses fixed registry seed 1001, restores vertex data and diffusion pointer, deletes its particle, and clears lists. |

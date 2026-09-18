@@ -1,6 +1,8 @@
 #include "sep_background_runtime.h"
 
 #include "../sep.h"
+#include "../adapters/swcme1d_adapter.h"
+#include "sep_run_configuration.h"
 
 #include <algorithm>
 #include <cmath>
@@ -61,7 +63,7 @@ std::string CurrentConfigurationFingerprint() {
   // Only settings that define the background realization belong here.  The
   // particle mover and its scattering parameterization are intentionally not
   // included, preserving identical provider state in cross-mover comparisons.
-  canonical << "schema=srcsep-background-v1"
+  canonical << "schema=srcsep-background-v2"
             << ";provider=" << ProviderName(ConfiguredProvider())
             << ";domain=" << SEP::DomainType
             << ";imf=" << SEP::ModeIMF
@@ -69,6 +71,13 @@ std::string CurrentConfigurationFingerprint() {
             << (SEP::ShockModelType == SEP::cShockModelType::SwCme1d
                     ? "swcme-1d"
                     : "analytic-1d")
+            // The complete frozen run fingerprint includes the D01 policy and
+            // fallback SI values. Naming the policy again keeps human-readable
+            // provenance intelligible without decoding the hash.
+            << ";run-configuration=" << SEP::Run::Active().fingerprint()
+            << ";swcme-failure-policy="
+            << SEP::SW1DAdapter::FailurePolicyName(
+                   SEP::SW1DAdapter::GetFailurePolicy())
             << ";turbulence-active="
             << (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag ? 1 : 0)
             << ";turbulence-representation="

@@ -92,8 +92,9 @@ if grep -n -E 'swcme1d::|#include[[:space:]]*[<"]swcme' \
 fi
 grep -q '#include "swcme_sep_interface.hpp"' \
   "$src_root/test/step15/test_swcme_srcsep_integration.cpp"
-for token in SWCME_ARCHIVE SWCME_OBJECTS SWCME_ADAPTER_CXXFLAGS \
-             'adapters/%.o' audit-production-swcme; do
+for token in SWCME_ARCHIVE SWCME_OBJECTS SWCME_CONSUMER_CXXFLAGS \
+             'adapters/%.o' 'util/sep_swcme_validation.o:' \
+             audit-production-swcme; do
   grep -q "$token" "$src_root/makefile" || {
     echo "FAIL SWCME-R1: makefile omits canonical contract token $token" >&2
     exit 1
@@ -112,11 +113,16 @@ test "$members" = "swcme3d.o" || {
 
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/srcsep-swcme-layout.XXXXXX")
 trap 'rm -rf "$fixture"' EXIT HUP INT TERM
-mkdir -p "$fixture/srcSEP" "$fixture/build/main" \
+mkdir -p "$fixture/srcSEP/util" "$fixture/build/main/util" \
          "$fixture/src/models/swcme"
 : > "$fixture/Makefile.conf"
 cp "$src_root/makefile" "$fixture/srcSEP/makefile"
 cp "$src_root/makefile" "$fixture/build/main/makefile"
+# A dry-run needs the explicit prerequisite to exist. Its contents are
+# immaterial: this probe audits recipe selection and include-path expansion,
+# not C++ semantics.
+: > "$fixture/srcSEP/util/sep_swcme_validation.cpp"
+: > "$fixture/build/main/util/sep_swcme_validation.cpp"
 
 expected_root=$(CDPATH= cd -- "$fixture" && pwd)
 expected_swcme="$expected_root/src/models/swcme"
@@ -150,6 +156,21 @@ for makefile in "$fixture/srcSEP/makefile" \
     printf '%s\n' "$output" >&2
     exit 1
   }
+
+  # Reproduce the exact production regression: older Makefile.conf files use
+  # a generic compile command that ignores appended application variables.
+  # The exact-object rule must put the canonical SWCME directory on the command
+  # line itself in both source and copied build/main layouts.
+  object_dir=$(dirname "$makefile")
+  compile_command=$(cd "$object_dir" && \
+    env -u AMPS_ROOT -u AMPS_CONFIG -u SWCME_DIR \
+      -u MAKEFLAGS -u MAKEOVERRIDES -u MFLAGS -u MAKELEVEL \
+      make --no-print-directory -n util/sep_swcme_validation.o)
+  printf '%s\n' "$compile_command" | grep -F -- "-I$expected_swcme" >/dev/null || {
+    echo "FAIL SWCME-R1: validation object omits canonical SWCME include in $makefile" >&2
+    printf '%s\n' "$compile_command" >&2
+    exit 1
+  }
 done
 
 # Finally compile a tiny consumer through only the canonical -I root. This
@@ -180,4 +201,4 @@ ${CXX:-c++} -std=c++17 -Wall -Wextra -Wpedantic -Werror \
   -c "$src_root/adapters/swcme1d_adapter.cpp" \
   -o "$fixture/swcme1d_adapter.o"
 
-echo "SWCME-R1 PASS: srcSEP3D-style private adapter uses canonical src/models/swcme"
+echo "SWCME-R1 PASS: private runtime and registry consumers use canonical src/models/swcme"

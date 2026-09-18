@@ -100,12 +100,18 @@ binary owner is `AMPS/src/models/swcme`, shared independently by `srcSEP` and
 - it derives `AMPS_ROOT` from the active makefile rather than the shell's
   current directory, so the same file works in `AMPS/srcSEP` and after AMPS
   copies it to `AMPS/build/main`;
-- it defines `SWCME_DIR=$(AMPS_ROOT)/src/models/swcme` and, as in
-  `srcSEP3D`, gives the explicit `adapters/%.o` rule that canonical include
-  root;
+- it defines `SWCME_DIR=$(AMPS_ROOT)/src/models/swcme` and gives the private
+  adapter and validation-registry objects that canonical include root;
 - `sep.h` exposes no SWCME header or type. Only
   `adapters/swcme1d_adapter.cpp` includes `swcme1d.hpp`, while its application
   API remains provider-neutral;
+- `util/sep_swcme_validation.cpp` privately includes `swcme1d_input.hpp`
+  because the native D01-D03 callbacks validate the canonical production
+  configuration rather than a copied test schema;
+- both SWCME-facing objects have explicit make rules. Older AMPS
+  `Makefile.conf` generic recipes do not consistently consume flags appended
+  to `CPPFLAGS`, `CXXFLAGS`, or `INCLUDE`, so the explicit recipes pass
+  `-I$(SWCME_DIR)` in both the source tree and copied `build/main` tree;
 - it builds the canonical `swcme.a` and inserts its one production member,
   `swcme3d.o`, exactly once into `mainlib.a`; and
 - source-only validation uses the same `SWCME_DIR` and never searches for an
@@ -131,6 +137,87 @@ audits the one-member canonical archive before compiling the private adapter.
 `make strict-production` delegates to the enclosing `make amps` build and then
 audits `AMPS/build/main/mainlib.a` to require exactly one member for every
 SEP-common kernel and exactly one `swcme3d.o`, with no duplicate strong symbol.
+
+### D01 fail-closed SWCME background handling
+
+The 1-D adapter no longer clips every sub-domain radius or converts malformed
+density, speed, and divergence to zero. `QueryAtRadius` returns a typed,
+transactional result containing one immutable SI sample. Production defaults to
+`--swcme-failure-policy strict`; `clamp-radius` and `diagnostic-fallback` are
+explicit, fingerprinted experimental policies. Every recovery is counted and
+reported at shutdown. Shock injection treats an unrecovered query as a fatal
+background-consistency error and prints rank, epoch, radius, failed field, and
+source-state ID instead of silently injecting no particles.
+
+The fallback sample can be set with `--swcme-fallback-density` `[m^-3]`,
+`--swcme-fallback-speed` `[m/s]`, and `--swcme-fallback-divergence` `[s^-1]`.
+All values are validated and stored in the frozen run/restart fingerprint even
+when strict mode leaves them dormant. Detailed lifecycle and physics behavior
+is documented in [BACKGROUND_STATE.md](BACKGROUND_STATE.md). Run the focused
+gate with `make test-swcme-fail-closed-unit`. The identical callback is linked
+into the native C++ registry as extended test `D01`, so
+`test/run_tests.py --amps ../amps --all ...` executes it automatically in an
+isolated process.
+
+### D02 general SWCME and shock configuration
+
+`src/models/swcme/swcme1d_input.hpp` now owns the one textual configuration
+schema. It expands `fast`/`slow`, applies input-file and CLI/programmatic layers,
+converts explicitly named units into canonical public units, calls the existing
+model/source validators, and emits a deterministic normalized manifest plus
+fingerprint. srcSEP transports assignments through its private adapter and does
+not duplicate canonical model fields.
+
+Standalone input uses a `SWCME1D on` block; see
+[`PARAM.SWCME1D.example`](PARAM.SWCME1D.example). Repeatable
+`--swcme-override 'key=value unit'` values have the final authority. The schema
+covers ambient wind, Parker settings, ballistic/DBM/data-driven CME kinematics,
+shock acceleration representation, region geometry/smoothing, launch and
+validity epochs, source species, energy bounds, normalization, and injection
+efficiency. The resolved energy interval and efficiency drive the existing 1-D
+injector; relative shock source weight multiplies its swept-volume source. AMPS
+species mass/charge are checked against the resolved source after AMPS setup.
+
+Invalid or duplicate input is rejected before mesh construction with key,
+authority layer, and source line. Equivalent effective configurations produce
+the same field-order-canonical fingerprint regardless of assignment order. A
+coupled host uses the parser-free `ConfigurationRequest` API. Focused coverage
+is `make test-swcme-configuration-unit`.
+
+The identical configuration callback is linked into the native C++ registry as
+extended test `D02`. Both the focused Make target and `amps --test D02` use
+`util/sep_swcme_validation.cpp`; there is no second expected-value
+implementation that can drift away from the production-registry gate.
+
+### D03 configured AMPS, MPI, refresh, and restart integration
+
+D03 closes the source-only evidence boundary with a configured enclosing AMPS
+build and short native campaigns. Every production mover must run in serial and
+in at least two distinct MPI decompositions, refresh the SWCME state, complete
+at least one validated particle dispatch, and produce a canonical artifact that
+is byte-identical across decompositions. A checkpointed/resumed trajectory must
+also match its uninterrupted trajectory exactly.
+
+The driver reduces the process-local mover-dispatch and D01 query/recovery
+counters after the final timestep. It independently checks that all ranks have
+the same SWCME state ID and epoch before printing `mpi_consensus=pass`. The
+Python gate archives the build and launch commands, tool versions, executable,
+configuration and log checksums, run/SWCME fingerprints, artifacts, and exact
+comparison groups in one JSON evidence record.
+
+A missing native tree or reviewed campaign is an explicit `SKIP` during
+development and a nonzero `INCOMPLETE` result in `--release` mode. Release mode
+requires `--rebuild` and cannot reuse an existing binary. See
+[NATIVE_INTEGRATION.md](NATIVE_INTEGRATION.md) for the manifest schema,
+site-placeholder boundary, algorithms, evidence interpretation, and complete
+commands.
+
+Extended registry test `D03PRE` is a bounded prerequisite check executed by
+Python `--all`: it verifies the exact three linked mover names/capabilities and
+two monotonic SWCME refresh generations with a canonical fingerprint. It is
+deliberately named as a preflight and cannot satisfy the D03 release gate; only
+the external campaign can launch multiple decompositions, compare canonical
+artifacts, and establish checkpoint/resume equivalence.
 
 This source includes the Step 1 selectable standalone component-test registry,
 the Step 2 immutable background/clock boundary, the Step 3 common SI flux-tube
@@ -542,6 +629,12 @@ python3 test/run_tests.py --amps /path/to/amps --routine \
 python3 test/run_tests.py --amps /path/to/amps --all \
   --output-dir /absolute/path/to/evidence/all
 
+# After changing C++ registry sources, rebuild the enclosing application before
+# discovery. MAKEFLAGS parallelizes compilation, not registry execution.
+env MAKEFLAGS="-j16" python3 test/run_tests.py --amps /path/to/amps --all \
+  --amps-source /path/to/AMPS --make-config /path/to/AMPS/Makefile.conf \
+  --rebuild --output-dir /absolute/path/to/evidence/all-rebuilt
+
 # Run the dependency-light analytical mover/turbulence suite without AMPS.
 python3 test/run_tests.py --suite controlled-analytical \
   --output-dir /absolute/path/to/evidence/controlled
@@ -555,7 +648,8 @@ The Python `--all` mode is fault-isolated. It filters the human-readable
 `ID | ...` table heading from `--list-tests`, then launches one selected test
 per process instead of passing every ID to one AMPS invocation. Each exact
 command and normalized `RESULT ID: PASS|FAIL|SKIP|ERROR` line is printed as it
-runs. A crash, timeout, or missing child report becomes a retained `ERROR` and
+runs. The discovered set includes extended IDs `D01`, `D02`, and `D03PRE`.
+A crash, timeout, or missing child report becomes a retained `ERROR` and
 does not stop later IDs. CV/IV/XM IDs are run through their registered
 validation entrypoints so required case inputs and independent references are
 constructed before the linked `amps --test ID --test-input ...` call. The

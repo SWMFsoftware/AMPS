@@ -138,6 +138,67 @@ input-file and CLI resolution. Startup prints its fingerprint and source layer.
 A restart whose fingerprint differs is rejected rather than silently adopting
 the checkpoint or current defaults.
 
+## D01-D02 SWCME background and source controls
+
+- `--swcme-failure-policy` accepts `strict`, `clamp-radius`, or
+  `diagnostic-fallback`. `strict` is the production default. Recovery choices
+  and their use counters are never hidden.
+- `--swcme-fallback-density <m^-3>`, `--swcme-fallback-speed <m/s>`, and
+  `--swcme-fallback-divergence <s^-1>` define the validated diagnostic sample.
+  They have no physical effect unless `diagnostic-fallback` is selected.
+- `--swcme-override key=value` is repeatable and accepts both separated and
+  equals-sign CLI forms. Shell quoting is required when the value contains a
+  space before its unit, for example
+  `--swcme-override 'cme.launch_speed=1400 km/s'`.
+- The same canonical keys can be placed in a `SWCME1D on` block in the
+  post-compile input. Resolution is preset, then input block, then command-line
+  overrides. Duplicate keys within one layer, unknown keys, missing/wrong
+  units, and incompatible physics choices fail before mesh initialization.
+- `--cme-scenario fast|slow` remains the convenient preset selector and maps to
+  the same canonical `preset` key. Existing option spelling and precedence are
+  preserved.
+
+The authoritative key/unit schema is `src/models/swcme/swcme1d_input.hpp`, not
+the application parser. It covers ambient plasma, Parker normalization, CME
+kinematics (including data-driven tables), shock representation, sheath/ejecta
+geometry and smoothing, launch/validity epochs, and the one-species source
+record. `sheath.compression_floor` is explicitly rejected because it has no
+effect in the canonical RH model. Calibrated reference-intensity normalization
+is canonical SWCME functionality but is explicitly rejected by the current
+srcSEP swept-volume adapter; `relative_only` is the supported 1-D source mode.
+
+After unit conversion and validation, startup prints the normalized manifest
+and its 16-hex fingerprint. That canonical fingerprint is embedded in the
+frozen run configuration, background snapshot metadata, serialized restart
+record, and compatibility check. SWMF/coupled hosts call
+`SW1DAdapter::Configure(ConfigurationRequest)` directly; no process arguments,
+environment variables, or PARAM parsing occur in the coupled API.
+
+The linked native registry contains extended IDs `D01`, `D02`, and `D03PRE`.
+They are discoverable through `--list-tests` and individually selectable with
+`--test`. Python `test/run_tests.py --all` includes them because it runs every
+discovered ID in a separate process. Native `--all-tests` and Python
+`--routine` select only routine-class tests and therefore intentionally exclude
+these process-global SWCME reconfiguration checks.
+
+## D03 test-runner controls
+
+D03 does not add production-model options. Its build and campaign controls
+belong only to `test/run_tests.py`. `--native-manifest`, `--no-build`, and
+`--release` require `--suite d03-native-integration`. `--rebuild` is also
+accepted with native `--all`: it runs the enclosing AMPS clean and relocation-
+safe `strict-production` build before asking the newly linked executable for
+`--list-tests`. `--amps-source` and `--make-config` identify that enclosing
+build in either mode. This separation prevents a test orchestrator path from
+becoming a second production input parser.
+
+The gate appends the selected canonical `--particle-mover` value to each site
+case and rejects a duplicate mover option in manifest arguments. All other
+physical configuration continues through the production CLI and the canonical
+D02 SWCME schema. `--release` requires `--rebuild`, rejects `--no-build`, and
+makes missing configured-build/campaign prerequisites nonzero `INCOMPLETE`
+results instead of development `SKIP` results.
+
 ## WP31 turbulence operator controls
 
 - `--turbulence-operator-safety <value>` sets the dimensionless local-rate

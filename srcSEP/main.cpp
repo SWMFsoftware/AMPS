@@ -13,6 +13,7 @@
 #include <iostream>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <algorithm>
 #include <cmath>
 #include <exception>
@@ -59,7 +60,18 @@ void publish_sw1d_for_particle_step(double epoch_seconds, double dt,
   // Build the small time-dependent cache behind the adapter before publishing
   // its metadata.  No SWCME type crosses into this AMPS driver translation
   // unit, exactly as in srcSEP3D's provider adapter.
-  SEP::SW1DAdapter::PrepareState(epoch_seconds);
+  const SEP::SW1DAdapter::Status preparation =
+      SEP::SW1DAdapter::PrepareState(epoch_seconds);
+  if (!preparation.ok()) {
+    const SEP::SW1DAdapter::Diagnostics diagnostics =
+        SEP::SW1DAdapter::GetDiagnostics();
+    std::ostringstream message;
+    message << "SWCME preparation failed rank=" << PIC::ThisThread
+            << " epoch_s=" << epoch_seconds
+            << " previous_source_state_id=" << diagnostics.prepared_state_id
+            << " detail=" << preparation.detail;
+    exit(__LINE__, __FILE__, message.str().c_str());
+  }
 
   SEP::Background::PublishModelOwnedSnapshot(
       SEP::Background::Provider::Swcme, epoch_seconds, epoch_seconds + dt,
@@ -180,6 +192,43 @@ int main(int argc,char **argv) {
      SEP::Parser::ReadFile(PIC::PostCompileInputFileName);
   }
 
+  // D02 resolves the complete canonical SWCME configuration before the AMPS
+  // mesh or species storage exists. The request carries only provider-neutral
+  // strings; key ownership, unit conversion, preset expansion, and physics
+  // validation remain in src/models/swcme. Coupled hosts can construct the
+  // same request directly and never invoke this command-line/PARAM parser.
+  SEP::SW1DAdapter::ConfigurationRequest swcmeRequest;
+  swcmeRequest.preset=cli_options.slowCmeScenario
+      ? SEP::SW1DAdapter::Scenario::Slow
+      : SEP::SW1DAdapter::Scenario::Fast;
+  if (cli_options.cmeScenarioProvided) {
+    SEP::SW1DAdapter::ParameterAssignment presetAssignment;
+    presetAssignment.key="preset";
+    presetAssignment.value=cli_options.slowCmeScenario ? "slow" : "fast";
+    presetAssignment.origin="command-line --cme-scenario";
+    swcmeRequest.command_line_assignments.push_back(presetAssignment);
+  }
+  for (std::size_t i=0;i<cli_options.swcmeOverrides.size();++i) {
+    const std::string& raw=cli_options.swcmeOverrides[i];
+    const std::size_t separator=raw.find('=');
+    SEP::SW1DAdapter::ParameterAssignment assignment;
+    assignment.key=raw.substr(0,separator);
+    assignment.value=raw.substr(separator+1);
+    assignment.origin="command-line --swcme-override";
+    assignment.line=i+1;
+    swcmeRequest.command_line_assignments.push_back(assignment);
+  }
+  SEP::SW1DAdapter::Status swcmeConfigurationStatus=
+      SEP::SW1DAdapter::Configure(swcmeRequest);
+  if (!swcmeConfigurationStatus.ok()) {
+    if (PIC::ThisThread==0)
+      std::cerr<<"ERROR: invalid canonical SWCME configuration: "
+               <<swcmeConfigurationStatus.detail<<'\n';
+    return 1;
+  }
+  const SEP::SW1DAdapter::ConfigurationSummary swcmeSummary=
+      SEP::SW1DAdapter::GetConfigurationSummary();
+
   // Preserve a constant Dmumu value supplied by the post-compile input unless
   // the command line explicitly overrides it.  Keeping the effective value in
   // the options record also makes the startup configuration print truthful.
@@ -207,10 +256,56 @@ int main(int argc,char **argv) {
       ? SEP::Run::ValueSource::CommandLine
       : (PIC::PostCompileInputFileName!="" ? SEP::Run::ValueSource::InputFile
                                            : SEP::Run::ValueSource::Default);
-  runConfiguration.scenario.value=cli_options.slowCmeScenario
+  runConfiguration.scenario.value=swcmeSummary.preset=="SLOW"
       ? SEP::Run::CmeScenario::Slow : SEP::Run::CmeScenario::Fast;
   runConfiguration.scenario.source=cli_options.cmeScenarioProvided
-      ? SEP::Run::ValueSource::CommandLine : SEP::Run::ValueSource::Default;
+      ? SEP::Run::ValueSource::CommandLine
+      : (PIC::PostCompileInputFileName!="" ? SEP::Run::ValueSource::InputFile
+                                           : SEP::Run::ValueSource::Default);
+  switch (cli_options.swcmeFailurePolicy) {
+    case SEP::Util::CLI::Options::SwcmeFailurePolicy::Strict:
+      runConfiguration.swcmeFailurePolicy.value=
+          SEP::Run::SwcmeFailurePolicy::Strict;
+      break;
+    case SEP::Util::CLI::Options::SwcmeFailurePolicy::ClampRadius:
+      runConfiguration.swcmeFailurePolicy.value=
+          SEP::Run::SwcmeFailurePolicy::ClampRadius;
+      break;
+    case SEP::Util::CLI::Options::SwcmeFailurePolicy::DiagnosticFallback:
+      runConfiguration.swcmeFailurePolicy.value=
+          SEP::Run::SwcmeFailurePolicy::DiagnosticFallback;
+      break;
+  }
+  runConfiguration.swcmeFailurePolicy.source=
+      cli_options.swcmeFailurePolicyProvided
+          ? SEP::Run::ValueSource::CommandLine
+          : SEP::Run::ValueSource::Default;
+  runConfiguration.swcmeFallbackDensityM3.value=
+      cli_options.swcmeFallbackDensityM3;
+  runConfiguration.swcmeFallbackDensityM3.source=
+      cli_options.swcmeFallbackDensityProvided
+          ? SEP::Run::ValueSource::CommandLine
+          : SEP::Run::ValueSource::Default;
+  runConfiguration.swcmeFallbackSpeedMPerS.value=
+      cli_options.swcmeFallbackSpeedMPerS;
+  runConfiguration.swcmeFallbackSpeedMPerS.source=
+      cli_options.swcmeFallbackSpeedProvided
+          ? SEP::Run::ValueSource::CommandLine
+          : SEP::Run::ValueSource::Default;
+  runConfiguration.swcmeFallbackDivergencePerS.value=
+      cli_options.swcmeFallbackDivergencePerS;
+  runConfiguration.swcmeFallbackDivergencePerS.source=
+      cli_options.swcmeFallbackDivergenceProvided
+          ? SEP::Run::ValueSource::CommandLine
+          : SEP::Run::ValueSource::Default;
+  runConfiguration.swcmeConfigurationFingerprint.value=
+      swcmeSummary.fingerprint;
+  runConfiguration.swcmeConfigurationFingerprint.source=
+      (!cli_options.swcmeOverrides.empty() || cli_options.cmeScenarioProvided)
+          ? SEP::Run::ValueSource::CommandLine
+          : (PIC::PostCompileInputFileName!=""
+              ? SEP::Run::ValueSource::InputFile
+              : SEP::Run::ValueSource::Default);
   runConfiguration.totalIterations.value=static_cast<std::uint64_t>(
       cli_options.totalIterations);
   runConfiguration.totalIterations.source=cli_options.totalIterationsProvided
@@ -247,7 +342,7 @@ int main(int argc,char **argv) {
   runConfiguration.injection.macroparticlesPerEvent=
       static_cast<std::uint64_t>(cli_options.injectionParticlesPerIteration);
   runConfiguration.injection.injectionEfficiency=
-      SEP::FieldLine::InjectionParameters::InjectionEfficiency;
+      swcmeSummary.source_injection_efficiency;
   const SEP::Transport::Status runStatus=
       SEP::Run::InstallActive(runConfiguration);
   if (!runStatus.ok()) {
@@ -267,22 +362,67 @@ int main(int argc,char **argv) {
              <<" seed-area="<<frozenRun.get().fieldLineSeedAreaM2.value
              <<" m2 source="
              <<SEP::Run::ValueSourceName(
-                   frozenRun.get().fieldLineSeedAreaM2.source)<<'\n';
+                   frozenRun.get().fieldLineSeedAreaM2.source)<<'\n'
+             <<"SWCME configuration fingerprint="<<swcmeSummary.fingerprint
+             <<" preset="<<swcmeSummary.preset<<'\n'
+             <<swcmeSummary.normalized_manifest;
 
 
   //set up shock wave model
-  SEP::SW1DAdapter::Configure(
-      frozenRun.get().scenario.value==SEP::Run::CmeScenario::Fast
-          ? SEP::SW1DAdapter::Scenario::Fast
-          : SEP::SW1DAdapter::Scenario::Slow);
   SEP::SW1DAdapter::EnableSheathClamp(true);
+  // Bridge the canonical source interval/efficiency into the existing 1-D
+  // field-line injector. Energies remain MeV at this public boundary and are
+  // converted exactly once to joules inside field_line.cpp.
+  SEP::FieldLine::InjectionParameters::emin=swcmeSummary.source_energy_min_MeV;
+  SEP::FieldLine::InjectionParameters::emax=swcmeSummary.source_energy_max_MeV;
+  SEP::FieldLine::InjectionParameters::InjectionEfficiency=
+      swcmeSummary.source_injection_efficiency;
+  // Install the already-frozen recovery contract. The fallback sample is
+  // validated even in strict mode so a restart fingerprint can never preserve
+  // malformed dormant values that become active in a later run.
+  SEP::SW1DAdapter::Status adapterStatus=
+      SEP::SW1DAdapter::SetDiagnosticFallback(
+          SEP::SW1DAdapter::BackgroundSample(
+              frozenRun.get().swcmeFallbackDensityM3.value,
+              frozenRun.get().swcmeFallbackSpeedMPerS.value,
+              frozenRun.get().swcmeFallbackDivergencePerS.value));
+  if (!adapterStatus.ok()) {
+    if (PIC::ThisThread==0)
+      std::cerr<<"ERROR: invalid SWCME fallback: "<<adapterStatus.detail<<'\n';
+    return 1;
+  }
+  SEP::SW1DAdapter::FailurePolicy adapterPolicy=
+      SEP::SW1DAdapter::FailurePolicy::Strict;
+  if (frozenRun.get().swcmeFailurePolicy.value==
+      SEP::Run::SwcmeFailurePolicy::ClampRadius)
+    adapterPolicy=SEP::SW1DAdapter::FailurePolicy::ClampRadius;
+  else if (frozenRun.get().swcmeFailurePolicy.value==
+           SEP::Run::SwcmeFailurePolicy::DiagnosticFallback)
+    adapterPolicy=SEP::SW1DAdapter::FailurePolicy::DiagnosticFallback;
+  adapterStatus=SEP::SW1DAdapter::SetFailurePolicy(adapterPolicy);
+  if (!adapterStatus.ok()) {
+    if (PIC::ThisThread==0)
+      std::cerr<<"ERROR: invalid SWCME failure policy: "
+               <<adapterStatus.detail<<'\n';
+    return 1;
+  }
 
   // Prepare the initial SWCME cache before mesh/field-line initialization can
   // query shock geometry.  Metadata publication waits until immediately before
   // the first particle step, after all background-affecting CLI options and
   // field-line/turbulence initialization have completed.
-  SEP::SW1DAdapter::PrepareState(
-      SEP::Background::SimulationTimeSeconds());
+  {
+    const double initial_epoch=SEP::Background::SimulationTimeSeconds();
+    const SEP::SW1DAdapter::Status preparation=
+        SEP::SW1DAdapter::PrepareState(initial_epoch);
+    if (!preparation.ok()) {
+      if (PIC::ThisThread==0)
+        std::cerr << "ERROR: SWCME initial preparation failed rank="
+                  << PIC::ThisThread << " epoch_s=" << initial_epoch
+                  << " detail=" << preparation.detail << '\n';
+      return 1;
+    }
+  }
 
   //output parameters of the sshock
   // The production shock diagnostic is unrelated to component-test setup and
@@ -345,6 +485,37 @@ int main(int argc,char **argv) {
 
   amps_init_mesh();
   amps_init();
+
+  // The canonical source record describes one physical species. srcSEP may use
+  // several AMPS species indices as numerical populations, but each must match
+  // that mass and signed charge. A mixed-species campaign requires the existing
+  // explicit SpeciesSource table and is deliberately not inferred from one
+  // SWCME source record.
+  if (SEP::ShockModelType==SEP::cShockModelType::SwCme1d) {
+    const double elementaryChargeC=1.602176634e-19;
+    for (int spec=0;spec<PIC::nTotalSpecies;++spec) {
+      const double actualMass=PIC::MolecularData::GetMass(spec);
+      const double actualCharge=PIC::MolecularData::GetElectricCharge(spec);
+      const double expectedCharge=
+          swcmeSummary.source_charge_number*elementaryChargeC;
+      const double massScale=std::max(
+          std::fabs(actualMass),std::fabs(swcmeSummary.source_particle_mass_kg));
+      const double chargeScale=std::max(
+          std::fabs(actualCharge),std::fabs(expectedCharge));
+      if (std::fabs(actualMass-swcmeSummary.source_particle_mass_kg)>
+              1.0e-5*std::max(massScale,1.0e-40) ||
+          std::fabs(actualCharge-expectedCharge)>
+              1.0e-10*std::max(chargeScale,1.0e-30)) {
+        std::ostringstream message;
+        message<<"SWCME source species does not match AMPS species "<<spec
+               <<": expected mass="<<swcmeSummary.source_particle_mass_kg
+               <<" kg charge="<<expectedCharge
+               <<" C; actual mass="<<actualMass
+               <<" kg charge="<<actualCharge<<" C";
+        exit(__LINE__,__FILE__,message.str().c_str());
+      }
+    }
+  }
 
   //init the Alfven turbulence IC
   if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) SEP::AlfvenTurbulence_Kolmogorov::ModelInit::Init();
@@ -1094,7 +1265,61 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
   sprintf(fname,"%s/test_SEP.dat",PIC::OutputDataFileDirectory);
   PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
 
-  cout << "End of the run:" << PIC::nTotalSpecies << endl;
+  {
+    const SEP::SW1DAdapter::Diagnostics localDiagnostics=
+        SEP::SW1DAdapter::GetDiagnostics();
+    const unsigned long long localStateId=
+        static_cast<unsigned long long>(localDiagnostics.prepared_state_id);
+    unsigned long long minimumStateId=0,maximumStateId=0;
+    double minimumEpoch=0.0,maximumEpoch=0.0;
+    MPI_Allreduce(&localStateId,&minimumStateId,1,MPI_UNSIGNED_LONG_LONG,
+                  MPI_MIN,MPI_COMM_WORLD);
+    MPI_Allreduce(&localStateId,&maximumStateId,1,MPI_UNSIGNED_LONG_LONG,
+                  MPI_MAX,MPI_COMM_WORLD);
+    MPI_Allreduce(&localDiagnostics.prepared_epoch_seconds,&minimumEpoch,1,
+                  MPI_DOUBLE,MPI_MIN,MPI_COMM_WORLD);
+    MPI_Allreduce(&localDiagnostics.prepared_epoch_seconds,&maximumEpoch,1,
+                  MPI_DOUBLE,MPI_MAX,MPI_COMM_WORLD);
+    if (minimumStateId!=maximumStateId || minimumEpoch!=maximumEpoch) {
+      std::ostringstream message;
+      message<<"SWCME MPI state consensus failed: state_id_range=["
+             <<minimumStateId<<','<<maximumStateId<<"] epoch_range=["
+             <<minimumEpoch<<','<<maximumEpoch<<']';
+      exit(__LINE__,__FILE__,message.str().c_str());
+    }
+
+    // Query counts depend on each rank's particle ownership, so sum rather than
+    // require equality. State identity/epoch above must agree exactly. The D03
+    // native gate parses this explicit consensus marker and archives the global
+    // recovery totals for each decomposition.
+    const unsigned long long localCounters[4]={
+        static_cast<unsigned long long>(localDiagnostics.successful_queries),
+        static_cast<unsigned long long>(localDiagnostics.failed_queries),
+        static_cast<unsigned long long>(localDiagnostics.radius_clamps),
+        static_cast<unsigned long long>(localDiagnostics.diagnostic_fallbacks)};
+    unsigned long long globalCounters[4]={0,0,0,0};
+    MPI_Reduce(localCounters,globalCounters,4,MPI_UNSIGNED_LONG_LONG,MPI_SUM,0,
+               MPI_COMM_WORLD);
+    const unsigned long long localCompletedDispatches=
+        static_cast<unsigned long long>(SEP::Mover::CompletedDispatchCount());
+    unsigned long long globalCompletedDispatches=0;
+    MPI_Reduce(&localCompletedDispatches,&globalCompletedDispatches,1,
+               MPI_UNSIGNED_LONG_LONG,MPI_SUM,0,MPI_COMM_WORLD);
+    if (PIC::ThisThread==0) {
+    cout << "SWCME background summary: policy="
+         << SEP::SW1DAdapter::FailurePolicyName(
+                SEP::SW1DAdapter::GetFailurePolicy())
+         << " successful_queries=" << globalCounters[0]
+         << " failed_queries=" << globalCounters[1]
+         << " radius_clamps=" << globalCounters[2]
+         << " diagnostic_fallbacks=" << globalCounters[3]
+         << " final_source_state_id=" << maximumStateId
+         << " completed_particle_dispatches=" << globalCompletedDispatches
+         << " mpi_consensus=pass"
+         << endl;
+    cout << "End of the run:" << PIC::nTotalSpecies << endl;
+    }
+  }
 
   MPI_Finalize();
   return EXIT_SUCCESS;

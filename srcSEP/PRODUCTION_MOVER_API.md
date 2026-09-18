@@ -71,6 +71,15 @@ the only validation/commit/segment-attachment sequence. The coefficient-driven
 movers additionally use explicit keyed random streams whose keys exclude
 MPI rank and worker identity.
 
+For native integration evidence, the adapter increments a process-local atomic
+counter only after the selected concrete mover returns. The value is not a
+particle number, flux, or source normalization: a particle that is advanced to
+and deleted at a valid boundary still completed one dispatch. Mover selection
+resets the count. After stepping stops, the standalone driver reduces the count
+across MPI ranks and prints `completed_particle_dispatches`; D03 requires a
+positive value for every mover/decomposition/restart case. Fatal preflight or
+physics errors do not return and therefore cannot satisfy that requirement.
+
 Startup output records the canonical mover, representation requirements,
 turbulence streaming behavior, coefficient contract, and active provider.
 Self-consistent Alfvén turbulence remains a separate production subsystem; all
@@ -99,9 +108,11 @@ Run `make test-transport-common-unit`, `make test-parker-unit`,
 `make test-coefficients-unit` for the Step 6–10 numerical contracts. Their stable
 IDs and tolerances are documented in [test/README.md](test/README.md).
 
-The complete native AMPS regression gate must additionally exercise one
-particle through each adapter mapping and confirm startup metadata on the linked
-executable. That dependency is not present in a source-only `srcSEP` archive.
+The complete native AMPS regression gate exercises at least one completed
+dispatch through each adapter mapping, confirms startup/final metadata, and
+compares serial/MPI/restart artifacts from the linked executable. Its campaign
+inputs remain site-owned and that dependency is not present in a source-only
+`srcSEP` archive. See [NATIVE_INTEGRATION.md](NATIVE_INTEGRATION.md).
 
 ## WP34 and WP35 native evidence boundary
 

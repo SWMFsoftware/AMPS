@@ -77,6 +77,7 @@ The principal files are:
 | File | Responsibility |
 | --- | --- |
 | `swcme1d.hpp` | Header-only radial model and 1-D output API. |
+| `swcme1d_input.hpp` | Canonical preset, key/unit, layered override, source/event validation, normalized manifest, and fingerprint for 1-D hosts. |
 | `swcme3d.hpp`, `swcme3d.cpp` | Three-dimensional geometry, fields, shocks, connectivity, meshes, and output. |
 | `swcme_solarwind.hpp` | Shared Leblanc density, Parker field, composition, pressure, sound speed, path length, and focusing. |
 | `swcme_kinematics.hpp` | Shared ballistic, sign-aware DBM, and monotone data-driven apex motion. |
@@ -94,6 +95,26 @@ physics. Equivalent radial and Cartesian configurations therefore use the same
 unit conversion, density normalization, Parker normalization, thermodynamic
 closure, apex kinematics, region rules, acceleration record, and MHD shock
 solver.
+
+### Canonical 1-D textual configuration
+
+`swcme1d_input.hpp` is the only maintained key/unit schema for standalone 1-D
+hosts. `input1d::Resolve` accepts a named fast/slow preset followed by ordered
+authority layers. It rejects duplicates inside a layer while allowing a later
+layer to override an earlier one. Every scalar carries an explicit unit where
+dimensional, including km/s or m/s, cm^-3 or m^-3, nT or T, `R_sun`/AU/m,
+1/km or 1/m, seconds/minutes/hours, kg or proton masses, and keV/MeV/J.
+Data-driven time/radius lists require a unit on every comma-separated value.
+Integer narrowing and unit-conversion overflow are rejected before a candidate
+configuration is published. Source injection efficiency uses the existing
+physical `[0,1]` contract; zero explicitly disables injection.
+
+The result owns `swcme1d::Params`, the canonical `sep::SpectrumConfig`, source
+efficiency, launch epoch, and validity interval. It invokes
+`swcme1d::validate_params` and `sep::validate_spectrum_config`, then serializes
+every effective field in fixed order and fingerprints those bytes. This is an
+input/provenance layer only; it does not change the Parker, Leblanc, DBM,
+Rankine-Hugoniot, region, or source equations.
 
 ## Build and quick start
 

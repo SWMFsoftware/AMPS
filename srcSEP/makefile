@@ -60,6 +60,10 @@ STANDALONE_GOALS := test-cli-unit test-state-unit test-geometry-source-unit \
                     test-swmf-validation test-observational-validation \
                     test-sanitizer test-stochastic-repeat \
                     test-swcme-relocation-unit test-sep-common-ownership-unit \
+                    test-swcme-fail-closed-unit \
+                    test-swcme-configuration-unit \
+                    test-d03-native-integration \
+                    test-d03-runner-unit \
                     test-package-hygiene-unit \
                     print-layout-paths
 ifneq ($(filter $(STANDALONE_GOALS),$(MAKECMDGOALS)),)
@@ -78,13 +82,16 @@ CPPFLAGS += $(MODEL_INCLUDE_FLAGS)
 CXXFLAGS += $(MODEL_INCLUDE_FLAGS)
 INCLUDE += $(MODEL_INCLUDE_FLAGS)
 
-# Like srcSEP3D's adapters/%.o rule, compile the provider-facing adapter with
-# the canonical model directory on its private include path.  sep.h and every
-# unrelated AMPS translation unit remain independent of SWCME headers.
-SWCME_ADAPTER_CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -O3 \
-                          -Iadapters -Iutil -I$(SEP_COMMON_DIR) -I$(SWCME_DIR)
+# Compile only the two SWCME-facing translation units with the canonical model
+# directory on their private include path. Historical AMPS Makefile.conf
+# generic rules do not consistently consume application-appended CPPFLAGS,
+# CXXFLAGS, or INCLUDE. In particular, a copied build/main must not rely on
+# those variables to find swcme1d_input.hpp. Keeping this list private also
+# leaves sep.h and every unrelated AMPS translation unit independent of SWCME.
+SWCME_CONSUMER_CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -O3 \
+                           -Iadapters -Iutil -I$(SEP_COMMON_DIR) -I$(SWCME_DIR)
 
-MAINLIBOBJ = exosphere_module.o  main_lib.o inner_boundary_injection.o outer_boundary_injection.o mesh.o mover_state.o production_mover_runtime.o transport_common.o coefficient_providers.o parker_mover.o focused_transport_dmumu.o focused_transport_mfp.o turbulence_production_adapter.o parker.o scattering.o sep.o field_line.o flux_tube_geometry.o sampling.o diffusion.o shock_injection.o BoundaryInjection.o BoundaryInjection_GCR.o GCR_Badavi2011ASR.o parser.o diffusion_dxx.o tests.o component_tests.o validation/cases/CV01/cv01_model.o validation/cases/controlled_transport_models.o validation/cases/advanced_validation_models.o util/sep_acceptance_cases.o util/sep_scientific_validation.o util/sep_mover_validation.o util/sep_turbulence_validation.o util/sep_background_runtime.o util/sep_flux_tube_geometry_core.o util/sep_sampling_products.o util/sep_shock_source_core.o util/sep_transactional_output.o util/sep_run_configuration.o util/sep_population_control.o util/sep_configuration_matrix.o util/sep_evidence.o util/sep_system_ledger.o util/sep_validation_tools.o util/sep_observation_forward_model.o util/sep_production_mover.o util/sep_parker_core.o util/sep_focused_transport_core.o util/sep_focused_transport_mfp_core.o util/sep_turbulence_core.o util/sep_reproducible_reduction.o shock_analytical_model.o diffusion_dmumu.o DLT.o QLT.o cooling.o QLT1.o sampling_output.o output_fl_background.o shock_analytical_model2D.o solar_wind.o alfven_turbulence.o parker_streaming_calculator.o turbulence_advection_kolmogorov.o wave_energy_initialization.o test_wave_energy_initialization.o wave_particle_coupling_kolmogorov.o growth_rate_validation_test.o kolmogorov.o kolmogorov_scatter.o shock1d_vertex_distance.o adapters/swcme1d_adapter.o turbulence_cascade_kolmogorov.o turbulence_reflection_kolmogorov.o turbulence_wave_number_resolved/turbulence_wave_number_resolved.o
+MAINLIBOBJ = exosphere_module.o  main_lib.o inner_boundary_injection.o outer_boundary_injection.o mesh.o mover_state.o production_mover_runtime.o transport_common.o coefficient_providers.o parker_mover.o focused_transport_dmumu.o focused_transport_mfp.o turbulence_production_adapter.o parker.o scattering.o sep.o field_line.o flux_tube_geometry.o sampling.o diffusion.o shock_injection.o BoundaryInjection.o BoundaryInjection_GCR.o GCR_Badavi2011ASR.o parser.o diffusion_dxx.o tests.o component_tests.o validation/cases/CV01/cv01_model.o validation/cases/controlled_transport_models.o validation/cases/advanced_validation_models.o util/sep_acceptance_cases.o util/sep_scientific_validation.o util/sep_mover_validation.o util/sep_swcme_validation.o util/sep_turbulence_validation.o util/sep_background_runtime.o util/sep_flux_tube_geometry_core.o util/sep_sampling_products.o util/sep_shock_source_core.o util/sep_transactional_output.o util/sep_run_configuration.o util/sep_population_control.o util/sep_configuration_matrix.o util/sep_evidence.o util/sep_system_ledger.o util/sep_validation_tools.o util/sep_observation_forward_model.o util/sep_production_mover.o util/sep_parker_core.o util/sep_focused_transport_core.o util/sep_focused_transport_mfp_core.o util/sep_turbulence_core.o util/sep_reproducible_reduction.o shock_analytical_model.o diffusion_dmumu.o DLT.o QLT.o cooling.o QLT1.o sampling_output.o output_fl_background.o shock_analytical_model2D.o solar_wind.o alfven_turbulence.o parker_streaming_calculator.o turbulence_advection_kolmogorov.o wave_energy_initialization.o test_wave_energy_initialization.o wave_particle_coupling_kolmogorov.o growth_rate_validation_test.o kolmogorov.o kolmogorov_scatter.o shock1d_vertex_distance.o adapters/swcme1d_adapter.o turbulence_cascade_kolmogorov.o turbulence_reflection_kolmogorov.o turbulence_wave_number_resolved/turbulence_wave_number_resolved.o
 # Integrated IV01-IV06 model stages are linked into the same application-level
 # registry as CV01-CV12; they are not standalone substitutes for AMPS.
 MAINLIBOBJ += validation/cases/integrated_validation_models.o
@@ -133,7 +140,15 @@ amps : $(MAINOBJ)
 	ar -rc main.a $(MAINOBJ)
 
 adapters/%.o: adapters/%.cpp
-	$(CXX) $(SWCME_ADAPTER_CXXFLAGS) -c -o $@ $<
+	$(CXX) $(SWCME_CONSUMER_CXXFLAGS) -c -o $@ $<
+
+# D01-D03 registry callbacks consume the canonical SWCME input schema just as
+# the runtime adapter consumes the canonical model. Give this object an exact
+# rule so it cannot fall through to an AMPS generic compile recipe that omits
+# the application include flags. The rule works unchanged in srcSEP and in the
+# copied AMPS/build/main tree because SWCME_DIR is AMPS-root-relative.
+util/sep_swcme_validation.o: util/sep_swcme_validation.cpp
+	$(CXX) $(SWCME_CONSUMER_CXXFLAGS) -c -o $@ $<
 
 # As in srcSEP3D, a production verification must enter the enclosing AMPS
 # build. Compiling AMPS-dependent sources directly in srcSEP would omit the
@@ -185,7 +200,7 @@ audit-production-swcme: audit-production-shared-models
 # real production CLI; selector semantics are never reimplemented in Make.
 SEP_EXECUTABLE ?= ../amps
 
-.PHONY: test-cli-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-wp42-wp64-experimental test-wp59-wp64-native test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit test-iv01-iv06-unit test-xm01-xm03-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat test-swcme-relocation-unit test-sep-common-ownership-unit test-package-hygiene-unit require-sep-executable test-cli test-list test-case \
+.PHONY: test-cli-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-wp42-wp64-experimental test-wp59-wp64-native test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit test-iv01-iv06-unit test-xm01-xm03-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat test-swcme-relocation-unit test-sep-common-ownership-unit test-swcme-fail-closed-unit test-swcme-configuration-unit test-d03-native-integration test-d03-runner-unit test-package-hygiene-unit require-sep-executable test-cli test-list test-case \
 	test-group test-turbulence test-stress test-mpi test
 
 # B01 is a release-tree check, not a srcSEP dependency.  Resolve the tool from
@@ -200,6 +215,24 @@ test-package-hygiene-unit:
 # absence of application-local SWCME headers or sources.
 test-swcme-relocation-unit:
 	./test/run_swcme_relocation_tests.sh
+
+test-swcme-fail-closed-unit:
+	./test/run_d01_tests.sh
+
+test-swcme-configuration-unit:
+	./test/run_d02_tests.sh
+
+# D03PRE first compiles and executes the exact extended descriptor registered
+# in the linked application. The Python gate then owns external build/run
+# policy. Environment-backed arguments let test/run_tests.py retain the same
+# outer JSON/JUnit wrapper as every source suite while direct Make users can
+# set the variables explicitly.
+test-d03-runner-unit:
+	./test/run_d03_preflight_tests.sh
+	@PYTHONDONTWRITEBYTECODE=1 python3 test/test_native_integration_runner.py
+
+test-d03-native-integration: test-d03-runner-unit
+	@PYTHONDONTWRITEBYTECODE=1 python3 test/run_native_integration.py
 
 test-sep-common-ownership-unit:
 	./test/run_sep_common_ownership_tests.sh

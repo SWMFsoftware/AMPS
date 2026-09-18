@@ -40,6 +40,16 @@ std::string Canonical(const Configuration& c) {
       <<static_cast<int>(c.mover.value)<<' '<<static_cast<int>(c.mover.source)<<' '
       <<static_cast<int>(c.shockModel.value)<<' '<<static_cast<int>(c.shockModel.source)<<' '
       <<static_cast<int>(c.scenario.value)<<' '<<static_cast<int>(c.scenario.source)<<' '
+      <<static_cast<int>(c.swcmeFailurePolicy.value)<<' '
+      <<static_cast<int>(c.swcmeFailurePolicy.source)<<' '
+      <<c.swcmeFallbackDensityM3.value<<' '
+      <<static_cast<int>(c.swcmeFallbackDensityM3.source)<<' '
+      <<c.swcmeFallbackSpeedMPerS.value<<' '
+      <<static_cast<int>(c.swcmeFallbackSpeedMPerS.source)<<' '
+      <<c.swcmeFallbackDivergencePerS.value<<' '
+      <<static_cast<int>(c.swcmeFallbackDivergencePerS.source)<<' '
+      <<c.swcmeConfigurationFingerprint.value<<' '
+      <<static_cast<int>(c.swcmeConfigurationFingerprint.source)<<' '
       <<c.totalIterations.value<<' '<<static_cast<int>(c.totalIterations.source)<<' '
       <<c.fieldLineSeedAreaM2.value<<' '<<static_cast<int>(c.fieldLineSeedAreaM2.source)<<' '
       <<c.shockTurbulenceEfficiency.value<<' '
@@ -88,6 +98,11 @@ Configuration Defaults() {
   c.mover.value=Mover::ProductionMover::FocusedTransportDiffusion;
   c.shockModel.value=ShockModel::Swcme1d;
   c.scenario.value=CmeScenario::Fast;
+  c.swcmeFailurePolicy.value=SwcmeFailurePolicy::Strict;
+  c.swcmeFallbackDensityM3.value=5.0e6;
+  c.swcmeFallbackSpeedMPerS.value=4.0e5;
+  c.swcmeFallbackDivergencePerS.value=0.0;
+  c.swcmeConfigurationFingerprint.value="not-resolved";
   c.totalIterations.value=UINT64_C(100000001);
   // This names the old pi-square-metre normalization explicitly.  Applications
   // should override it with their seed-surface partition; it is fingerprinted
@@ -111,6 +126,13 @@ Configuration Defaults() {
 }
 
 Transport::Status Validate(const Configuration& c) {
+  if (!std::isfinite(c.swcmeFallbackDensityM3.value) ||
+      !(c.swcmeFallbackDensityM3.value>0.0) ||
+      !std::isfinite(c.swcmeFallbackSpeedMPerS.value) ||
+      !(c.swcmeFallbackSpeedMPerS.value>0.0) ||
+      !std::isfinite(c.swcmeFallbackDivergencePerS.value) ||
+      c.swcmeConfigurationFingerprint.value.empty())
+    return Error("SWCME diagnostic fallback requires positive density/speed and finite divergence");
   if (c.totalIterations.value==0 || !std::isfinite(c.fieldLineSeedAreaM2.value) ||
       c.fieldLineSeedAreaM2.value<=0.0 ||
       !std::isfinite(c.shockTurbulenceEfficiency.value) ||
@@ -148,6 +170,16 @@ Configuration Merge(const Configuration& base,const Configuration& overlay) {
   c.mover=Select(base.mover,overlay.mover);
   c.shockModel=Select(base.shockModel,overlay.shockModel);
   c.scenario=Select(base.scenario,overlay.scenario);
+  c.swcmeFailurePolicy=Select(base.swcmeFailurePolicy,
+                              overlay.swcmeFailurePolicy);
+  c.swcmeFallbackDensityM3=Select(base.swcmeFallbackDensityM3,
+                                  overlay.swcmeFallbackDensityM3);
+  c.swcmeFallbackSpeedMPerS=Select(base.swcmeFallbackSpeedMPerS,
+                                   overlay.swcmeFallbackSpeedMPerS);
+  c.swcmeFallbackDivergencePerS=Select(base.swcmeFallbackDivergencePerS,
+                                       overlay.swcmeFallbackDivergencePerS);
+  c.swcmeConfigurationFingerprint=Select(base.swcmeConfigurationFingerprint,
+                                         overlay.swcmeConfigurationFingerprint);
   c.totalIterations=Select(base.totalIterations,overlay.totalIterations);
   c.fieldLineSeedAreaM2=Select(base.fieldLineSeedAreaM2,overlay.fieldLineSeedAreaM2);
   c.shockTurbulenceEfficiency=Select(base.shockTurbulenceEfficiency,
@@ -180,20 +212,27 @@ Transport::Status FrozenConfiguration::Create(const Configuration& c,
 
 Transport::Status Serialize(const FrozenConfiguration& c,std::string* text) {
   if (!text) return Error("run configuration checkpoint output is null");
-  *text="SEP_RUN_CONFIGURATION 2\n"+c.fingerprint()+"\n"+Canonical(c.get());
+  *text="SEP_RUN_CONFIGURATION 4\n"+c.fingerprint()+"\n"+Canonical(c.get());
   return Transport::Status::Ok();
 }
 
 Transport::Status Deserialize(const std::string& text,FrozenConfiguration* result) {
   if (!result) return Error("run configuration checkpoint destination is null");
   std::istringstream in(text); std::string magic,fingerprint; int version=0;
-  Configuration c=Defaults(); int mover,shock,scenario,sampling;
+  Configuration c=Defaults(); int mover,shock,scenario,swcmePolicy,sampling;
   int moverSource,shockSource,scenarioSource,totalSource,areaSource,
       shockEfficiencySource,shockSplitSource,minSource,
       maxSource,samplingSource,turbSource,turbRep,turbCoupling,measure,angular,
+      swcmePolicySource,swcmeDensitySource,swcmeSpeedSource,
+      swcmeDivergenceSource,swcmeFingerprintSource,
       turbulenceSplitting;
-  if (!(in>>magic>>version>>fingerprint) || magic!="SEP_RUN_CONFIGURATION" || version!=2 ||
+  if (!(in>>magic>>version>>fingerprint) || magic!="SEP_RUN_CONFIGURATION" || version!=4 ||
       !(in>>mover>>moverSource>>shock>>shockSource>>scenario>>scenarioSource
+          >>swcmePolicy>>swcmePolicySource
+          >>c.swcmeFallbackDensityM3.value>>swcmeDensitySource
+          >>c.swcmeFallbackSpeedMPerS.value>>swcmeSpeedSource
+          >>c.swcmeFallbackDivergencePerS.value>>swcmeDivergenceSource
+          >>c.swcmeConfigurationFingerprint.value>>swcmeFingerprintSource
           >>c.totalIterations.value>>totalSource>>c.fieldLineSeedAreaM2.value>>areaSource
           >>c.shockTurbulenceEfficiency.value>>shockEfficiencySource
           >>c.shockTurbulencePlusFraction.value>>shockSplitSource
@@ -228,6 +267,14 @@ Transport::Status Deserialize(const std::string& text,FrozenConfiguration* resul
   c.shockModel.source=static_cast<ValueSource>(shockSource);
   c.scenario.value=static_cast<CmeScenario>(scenario);
   c.scenario.source=static_cast<ValueSource>(scenarioSource);
+  c.swcmeFailurePolicy.value=static_cast<SwcmeFailurePolicy>(swcmePolicy);
+  c.swcmeFailurePolicy.source=static_cast<ValueSource>(swcmePolicySource);
+  c.swcmeFallbackDensityM3.source=static_cast<ValueSource>(swcmeDensitySource);
+  c.swcmeFallbackSpeedMPerS.source=static_cast<ValueSource>(swcmeSpeedSource);
+  c.swcmeFallbackDivergencePerS.source=
+      static_cast<ValueSource>(swcmeDivergenceSource);
+  c.swcmeConfigurationFingerprint.source=
+      static_cast<ValueSource>(swcmeFingerprintSource);
   c.totalIterations.source=static_cast<ValueSource>(totalSource);
   c.fieldLineSeedAreaM2.source=static_cast<ValueSource>(areaSource);
   c.shockTurbulenceEfficiency.source=static_cast<ValueSource>(shockEfficiencySource);

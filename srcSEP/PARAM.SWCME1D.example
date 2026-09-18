@@ -1,0 +1,55 @@
+! Standalone srcSEP post-compile input example for the canonical SWCME1D
+! resolver. Values must carry the units shown below. A command-line
+! --swcme-override key=value is applied after this block and may override it.
+!
+! Keep the block contiguous: the legacy PIC post-compile format uses a blank
+! line to terminate a command block. For data-driven kinematics, replace
+! cme.kinematics=dbm and add these two rows before the terminating blank:
+!   cme.data_times = 0 s, 1 h, 2 h
+!   cme.data_radii = 1.05 Rs, 5 Rs, 10 Rs
+!
+! `sheath.compression_floor` is deliberately unsupported because the canonical
+! Rankine-Hugoniot solver, not an empirical floor, owns shock compression.
+
+SWCME1D on
+preset = fast
+ambient.wind_speed = 400 km/s
+ambient.density_1au = 6 cm^-3
+ambient.magnetic_field_1au = 5 nT
+ambient.proton_temperature = 120000 K
+ambient.adiabatic_index = 1.6666666666666667
+ambient.thermodynamic_closure = proton_only
+ambient.alpha_to_proton_ratio = 0
+ambient.electron_temperature = 120000 K
+ambient.alpha_temperature = 120000 K
+parker.radial_polarity = 1
+parker.sin_theta = 1
+parker.source_radius = 1.05 Rs
+cme.kinematics = dbm
+cme.launch_radius = 1.05 Rs
+cme.launch_speed = 1900 km/s
+cme.drag_coefficient = 8e-8 1/km
+cme.extrapolation = outside_time
+shock.region_mode = shock_only
+shock.acceleration_mode = source
+shock.relative_source_weight_per_area = 1
+geometry.sheath_thickness_1au = 0.12 AU
+geometry.ejecta_thickness_1au = 0.22 AU
+smoothing.shock_width_1au = 0.010 AU
+smoothing.leading_edge_width_1au = 0.020 AU
+smoothing.trailing_edge_width_1au = 0.030 AU
+sheath.ramp_power = 2
+sheath.leading_edge_speed_factor = 1.12
+ejecta.density_factor = 0.50
+ejecta.speed_factor = 0.80
+event.launch_epoch = 0 s
+event.valid_from = 0 s
+event.valid_until = 72 h
+source.particle_mass = 1 mp
+source.charge_number = 1
+source.energy_min = 0.1 MeV
+source.energy_max = 500 MeV
+source.reference_energy = 10 MeV
+source.injection_efficiency = 3.4e-4
+source.normalization = relative_only
+

@@ -167,6 +167,12 @@ void TestCli05LegacyAndErrors() {
   SEP::Util::CLI::Options wp30;
   Check(Parse({"sep", "--total-iterations=42", "--shock-model", "analytical",
                "--cme-scenario=slow", "--field-line-seed-area", "12.5",
+               "--swcme-failure-policy=diagnostic-fallback",
+               "--swcme-fallback-density", "7e6",
+               "--swcme-fallback-speed=350000",
+               "--swcme-fallback-divergence", "-2e-6",
+               "--swcme-override", "ambient.wind_speed=450 km/s",
+               "--swcme-override=cme.launch_speed=1400 km/s",
                "--shock-turbulence-efficiency", "0.04",
                "--shock-turbulence-plus-fraction=0.7",
                "--merge-minimum", "10", "--merge-maximum=20"},
@@ -175,12 +181,27 @@ void TestCli05LegacyAndErrors() {
             wp30.slowCmeScenario && wp30.fieldLineSeedAreaM2==12.5 &&
             wp30.shockTurbulenceEfficiency==0.04 &&
             wp30.shockTurbulencePlusFraction==0.7 &&
+            wp30.swcmeFailurePolicy==
+                SEP::Util::CLI::Options::SwcmeFailurePolicy::DiagnosticFallback &&
+            wp30.swcmeFailurePolicyProvided &&
+            wp30.swcmeFallbackDensityM3==7.0e6 &&
+            wp30.swcmeFallbackSpeedMPerS==350000.0 &&
+            wp30.swcmeFallbackDivergencePerS==-2.0e-6 &&
+            wp30.swcmeOverrides.size()==2 &&
             wp30.mergeMinimum==10 && wp30.mergeMaximum==20,
         "CLI05", "WP30 run controls or source-layer markers did not parse");
   SEP::Util::CLI::Options invalidWp30;
   Check(!Parse({"sep", "--shock-turbulence-efficiency", "1.1"},
                invalidWp30,error),
         "CLI05", "WP30 out-of-range source efficiency must fail preflight");
+  SEP::Util::CLI::Options invalidPolicy;
+  Check(!Parse({"sep", "--swcme-failure-policy", "silently-zero"},
+               invalidPolicy,error),
+        "CLI05", "unknown SWCME recovery policy must fail preflight");
+  SEP::Util::CLI::Options invalidOverride;
+  Check(!Parse({"sep", "--swcme-override", "ambient.wind_speed"},
+               invalidOverride,error),
+        "CLI05", "SWCME override without key=value must fail preflight");
 
   int failCalls = 0;
   int errorCalls = 0;

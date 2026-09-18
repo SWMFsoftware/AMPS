@@ -228,6 +228,8 @@ int main() {
   input.totalIterations.value=20;input.totalIterations.source=SEP::Run::ValueSource::InputFile;
   SEP::Run::Configuration cli=SEP::Run::Defaults();
   cli.totalIterations.value=30;cli.totalIterations.source=SEP::Run::ValueSource::CommandLine;
+  cli.swcmeConfigurationFingerprint.value="0123456789abcdef";
+  cli.swcmeConfigurationFingerprint.source=SEP::Run::ValueSource::CommandLine;
   const SEP::Run::Configuration merged=SEP::Run::Merge(input,cli);
   SEP::Run::FrozenConfiguration frozen,roundTrip,other;
   const SEP::Transport::Status frozenStatus=SEP::Run::FrozenConfiguration::Create(merged,&frozen);
@@ -237,8 +239,10 @@ int main() {
   SEP::Run::FrozenConfiguration::Create(changed,&other);
   failures+=Check(merged.totalIterations.value==30 && frozenStatus.ok() &&
       roundStatus.ok() && frozen.fingerprint()==roundTrip.fingerprint() &&
+      roundTrip.get().swcmeConfigurationFingerprint.value==
+          "0123456789abcdef" &&
       !SEP::Run::VerifyRestartCompatibility(frozen,other).ok(),
-      "WP30 precedence, immutable roundtrip, and restart compatibility");
+      "WP30 precedence, canonical SWCME fingerprint roundtrip, and restart compatibility");
 
   return failures==0 ? 0 : 1;
 }

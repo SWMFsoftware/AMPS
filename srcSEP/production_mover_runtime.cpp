@@ -1,6 +1,8 @@
 #include "sep.h"
 
+#include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <ostream>
 
 // srcSEP is the field-line transport application.  Reject an incompatible
@@ -22,6 +24,13 @@ using MoverImplementation = int (*)(
     long int, double, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*);
 MoverImplementation g_selected_implementation =
     SEP::ParticleMover_FocusedTransport_Dmumu;
+
+// Each MPI process owns its particle list, so the local count can be updated
+// without inter-rank synchronization.  Worker threads can enter the PIC mover
+// concurrently; a relaxed atomic is sufficient because the counter carries no
+// ordering relationship with particle state.  main.cpp performs the explicit
+// MPI reduction after all timesteps have completed.
+std::atomic<std::uint64_t> g_completed_dispatches{0};
 
 MoverImplementation ImplementationFor(SEP::Mover::ProductionMover mover) {
   switch (mover) {
@@ -79,6 +88,7 @@ void SEP::Mover::SelectProductionMover(ProductionMover mover) {
   // manufacture a mover that is absent from the three-entry registry.
   g_selected_mover = mover;
   g_selected_implementation = ImplementationFor(mover);
+  g_completed_dispatches.store(0,std::memory_order_relaxed);
 }
 
 SEP::Mover::ProductionMover SEP::Mover::CurrentProductionMover() {
@@ -87,6 +97,10 @@ SEP::Mover::ProductionMover SEP::Mover::CurrentProductionMover() {
 
 const SEP::Mover::MoverCapabilities& SEP::Mover::CurrentCapabilities() {
   return Describe(g_selected_mover).capabilities;
+}
+
+std::uint64_t SEP::Mover::CompletedDispatchCount() {
+  return g_completed_dispatches.load(std::memory_order_relaxed);
 }
 
 int SEP::Mover::DispatchProductionMover(
@@ -121,7 +135,14 @@ int SEP::Mover::DispatchProductionMover(
          "particle violates production field-line representation contract");
   }
 
-  return g_selected_implementation(ptr,dtTotal,startNode);
+  // Increment only after the concrete mover returns.  A fatal validation or
+  // physics error therefore cannot masquerade as native advancement evidence.
+  // The integer return code may describe a normal boundary deletion as well as
+  // ordinary completion, so D03 deliberately records "completed dispatches"
+  // rather than claiming that every particle survived the interval.
+  const int result=g_selected_implementation(ptr,dtTotal,startNode);
+  g_completed_dispatches.fetch_add(1,std::memory_order_relaxed);
+  return result;
 }
 
 void SEP::Mover::PrintRuntimeConfiguration(std::ostream& out) {

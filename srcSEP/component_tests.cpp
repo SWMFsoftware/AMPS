@@ -2,6 +2,7 @@
 #include "util/sep_acceptance_cases.h"
 #include "util/sep_mover_validation.h"
 #include "util/sep_scientific_validation.h"
+#include "util/sep_swcme_validation.h"
 #include "util/sep_turbulence_validation.h"
 #include "validation/cases/CV01/cv01_model.h"
 #include "validation/cases/controlled_transport_models.h"
@@ -566,6 +567,15 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
         SEP::Testing::ControlledTurbulenceDescriptors();
     descriptors.insert(descriptors.end(), turbulence_descriptors.begin(),
                        turbulence_descriptors.end());
+    // D01, D02, and the bounded D03 preflight are part of the same native C++
+    // catalog as every other public ID.  test/run_tests.py --all discovers
+    // this catalog through --list-tests and launches each descriptor in an
+    // isolated linked process, so these checks can no longer be omitted merely
+    // because their dependency-light Make targets were not selected.
+    const std::vector<SEP::Testing::Descriptor> swcme_descriptors =
+        SEP::Testing::SwcmeImprovementDescriptors();
+    descriptors.insert(descriptors.end(), swcme_descriptors.begin(),
+                       swcme_descriptors.end());
     const SEP::Testing::Descriptor legacy_descriptors[] = {
       MakeCV01Descriptor(),
       MakeControlledValidationDescriptor(
