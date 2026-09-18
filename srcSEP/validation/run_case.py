@@ -32,9 +32,7 @@ REGISTRY_PATH = ROOT / "validation" / "case_registry.json"
 # Cross-model publication cases are immutable scientific definitions.  The
 # public test/run_tests.py front end enforces the same rule, while duplicating
 # the guard here protects operators who invoke validation/run_case.py directly.
-FIXED_PUBLICATION_INPUT_CASES = {
-    "XM02", "XM03", "OV01", "OV02", "OV03", "OV04", "OV05", "EV01", "EV02"
-}
+FIXED_PUBLICATION_INPUT_CASES = {"XM02", "XM03"}
 
 
 class CaseRunnerError(RuntimeError):
@@ -315,8 +313,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--all", action="store_true",
                         help="execute every case in deterministic registry order")
     parser.add_argument("--input", type=Path,
-                        help=("override one selected CV/IV input; XM02/XM03 and "
-                              "OV01-OV05 always use their registered publication-derived input"))
+                        help=("override one selected CV/IV input; XM02/XM03 "
+                              "always use their registered publication-derived input"))
     parser.add_argument("--output-dir", type=Path, required=False,
                         default=Path("test_output") / "validation-cases",
                         help="directory for model, reference, metrics, and manifests")

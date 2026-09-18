@@ -1,4 +1,7 @@
-#include "../../swcme/swcme_sep_interface.hpp"
+// The runner supplies AMPS/src/models/swcme as an include root. A bare public
+// include proves this validation consumes the same canonical provider as the
+// two production SEP applications rather than an application-local copy.
+#include "swcme_sep_interface.hpp"
 #include "../../util/sep_background_snapshot.h"
 #include "../../util/sep_parker_core.h"
 #include "../../util/sep_test_registry.h"

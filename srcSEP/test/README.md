@@ -11,54 +11,11 @@ test/run_tests.py --amps ../amps --all --output-dir test_output/all
 
 The runner discovers the complete native registry, executes every test in an
 isolated process, and automatically uses the registered input/reference
-workflow for CV, IV, XM, OV, and EV validation cases. A failed, errored, or crashed
+workflow for CV, IV, and XM validation cases. A failed, errored, or crashed
 test does not prevent later tests from running. The final output reports the
 PASS/FAIL/SKIP/ERROR totals and lists every failed or errored test with its
 diagnostic. Detailed JSON, JUnit, logs, plots, and per-test artifacts are saved
 under `test_output/all`.
-
-The five observational cases can also be run as a focused campaign:
-
-```sh
-test/run_tests.py --amps ../amps \
-  --validation-case OV01 --validation-case OV02 \
-  --validation-case OV03 --validation-case OV04 \
-  --validation-case OV05 --output-dir test_output/OV01-OV05
-```
-
-OV01 and OV02 are release gates. OV03-OV05 are diagnostic stress cases: their
-physics-discrepancy metrics remain in the report with `gating=false`, while a
-missing reference, incomplete native CSV, registry error, or failed linked run
-still fails/errors the campaign. All five use their single repository-owned
-publication input; `--case-input` is intentionally rejected.
-
-
-The campaign-level EV cases can be run together:
-
-```sh
-test/run_tests.py --amps ../amps \
-  --validation-case EV01 --validation-case EV02 \
-  --output-dir test_output/EV01-EV02
-```
-
-EV01 fits only the predeclared training partition and evaluates calibration
-stability with event-level bootstrap resampling; EV02 independently reconstructs
-the training-only calibration and scores only the sealed holdout. Their expected
-values are real NASA CCMC/GOES observations. The committed nine-event set is a
-pilot and is explicitly not padded with synthetic non-events.
-
-Observation provenance is carried into every campaign score row and printed on
-the PNG/EPS comparison figures. The source is the NASA CCMC SHINE/ISWAT SEP
-Model Validation Challenge, GOES-13 corrected integral proton fluxes, using the
-official Model Input Parameters tables for `>10 MeV / 10 pfu` and `>100 MeV /
-1 pfu`. The per-event CCMC GOES plots are unnumbered, so the code records the
-exact web section/table location rather than fabricating a figure number. See
-`validation/cases/EV01/README.md`, `validation/cases/EV02/README.md`, and each
-case's `reference/provenance.json` for the complete data path and interpretation.
-
-EV01/EV02 currently use **serial linked execution**. Do not pass `--mpi-np`; the
-runner intentionally rejects MPI for these end-to-end cases until the native
-per-event output contract is made rank-safe.
 
 Step 1 provides one catalog and result contract for standalone component tests.
 The catalog lives in `component_tests.cpp`; generic deterministic selection,
@@ -120,12 +77,6 @@ make test-turbulence-core-unit
 # Step 12 deterministic worker/rank reduction and keyed RNG evidence.
 make test-reproducibility-unit
 
-# OV01-OV05 source/provenance checks and optional linked observational run.
-make test-ov01-ov05-unit SEP_EXECUTABLE=../amps
-
-# EV01-EV02 campaign split/provenance checks.
-make test-ev01-ev02-unit
-
 # Step 13 registered background/cross-mover fixtures and JSON/JUnit evidence.
 make test-acceptance-unit
 
@@ -134,6 +85,9 @@ make test-documentation-unit
 
 # Step 15 numerical, cross-mover/model, SWCME replay, and release-report gates.
 make test-scientific-validation
+
+# Canonical SWCME ownership plus srcSEP/build-main path equivalence.
+make test-swcme-relocation-unit
 
 # Dependency-light analytical component catalog. CV01 runs additionally when
 # SEP_EXECUTABLE identifies the linked application.
@@ -193,8 +147,20 @@ Equivalent CLI examples are:
 ```
 
 `make -j test` intentionally sequences shared-state component execution even
-when Make is given `-j`, then runs the embedded SWCME suite using its own native
-parallel target.  Expensive extended tests are not part of `--all-tests`.
+when Make is given `-j`, then runs the canonical
+`src/models/swcme/test/run_tests.py --routine` suite. SWCME is not embedded in
+srcSEP. Expensive extended tests are not part of `--all-tests`.
+
+The relocation gate can also be selected through the Python runner:
+
+```sh
+test/run_tests.py --suite swcme-relocation \
+  --output-dir test_output/swcme-relocation
+```
+
+In the normal AMPS layout it discovers `../src/models/swcme` automatically. A
+detached source checkout may set `SWCME_DIR=/absolute/path/to/swcme`; this is an
+explicit development override, never a fallback to a directory within srcSEP.
 
 The Step 6–15, WP11–WP20, WP21–WP30, and WP31–WP41 focused targets do not require the linked executable, AMPS, PIC,
 MPI, SWMF, or field-line host classes. Each compiles the exact production
@@ -736,7 +702,7 @@ standalone and SWMF-coupled run. See
 | `IV06` | `integrated-manufactured` | routine | linked srcSEP/AMPS registry | Resonant wave growth strengthens scattering and self-limits streaming while total energy closes. | Frozen/one-way/two-way timelines, resonant bin, Dmumu, streaming and ledger evidence. |
 | `XM01` | `cross-model` | extended | linked srcSEP/AMPS registry | Production focused-transport samples agree with an independent conservative PDE solver across isolated and combined operators. | Two sampling refinements; full `(s,mu)` probability, intensity, anisotropy, momentum, JSON/JUnit, and PNG/EPS. |
 | `XM02` | `cross-model` | extended | linked srcSEP/AMPS registry | A controlled production-core first-passage ensemble uses the reported 0.05/0.3/1.0 au MFPs and compares unit-peak profiles with Zhao et al. Figure 7. | Fixed publication input, native model CSV, digitized reference/provenance, metrics, and PNG/EPS; no external CSV. |
-| `XM03` | `cross-model` | extended | linked srcSEP/AMPS registry | Event-informed one-field-line Parker transport is compared with ACE/EPAM, GOES-13/EPEAD, and SOHO/ERNE Earth spectra in Liu et al. Figure 12. | Fixed paper-derived input/source trace, 80 vector-extracted observations, one global amplitude, metrics and PNG/EPS; no external CSV. |
+| `XM03` | `cross-model` | extended | linked srcSEP/AMPS registry | Event-informed one-field-line Parker transport is compared with ACE/EPAM, GOES-13/EPEAD, and SOHO/ERNE Earth spectra in Liu et al. Figure 12. | Fixed paper-derived input/source trace, 80 vector-extracted observations, one global amplitude, metrics, and individual 4/12/36 h publication PNG/EPS figures with in-panel legends; no external CSV. |
 | `BG01` | `background` | routine | none | Standalone analytic and SWCME snapshots preserve provider, epoch, ownership, validity, generation, and distinct configuration identity. | Stack-owned immutable snapshots; no external provider or artifact. |
 | `BG02` | `background` | routine | none | A mock SWMF import is read-only and becomes locally evolved only through an explicit handoff copy. | Resets the snapshot store before/after; no external SWMF process. |
 | `CROSS01` | `cross-mover` | routine | none | `fte-dmumu` and `fte-mfp` agree in the matched ballistic limit. | Keyed seed 1301; stack-owned state; no artifact. |

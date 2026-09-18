@@ -80,8 +80,12 @@ the plot.
 
 Outputs include the raw relative model spectrum, copied observation CSV,
 pointwise scaled comparison, resolved input, native manifest/JSON/JUnit/log,
-provenance, and PNG/EPS overlays. The registered gates cover point coverage,
-global log-RMSE, median absolute log error, and log-intensity correlation.
+provenance, and a separate publication-quality PNG/EPS pair for each 4, 12,
+and 36 h spectrum. Every figure contains its model/instrument legend and uses
+the same log-energy/log-intensity limits. Citation, source-panel, and
+normalization text remain in the machine-readable provenance rather than in
+the artwork. The registered gates cover point coverage, global log-RMSE,
+median absolute log error, and log-intensity correlation.
 They are provisional reduced-model validation criteria, not a statement that
 srcSEP reproduces the original global SOFIE run.
 

@@ -30,6 +30,7 @@
 //the particle class
 #include "constants.h"
 #include "sep.h"
+#include "adapters/swcme1d_adapter.h"
 #include "transport_common.h"
 #include "turbulence_production_adapter.h"
 #include "util/sep_cli.h"
@@ -41,32 +42,6 @@
 void amps_init();
 void amps_init_mesh();
 void amps_time_step();
-
-enum class CMEScenario { Fast, Slow };
-
-
-// Configure the single model for the requested scenario (called only on change)
-static inline void configure_swcme1d(CMEScenario scenario){
-  // Configuration is frozen before this routine is called.  Re-applying the
-  // selected scenario is deterministic and avoids an unserialized one-time
-  // flag that previously made in-process restart/reinitialization order matter.
-  if (scenario == CMEScenario::Fast){
-	  SEP::sw1d.SetAmbient(400.0, 6.0, 5.0, 1.2e5)                 // Vsw[km/s], n1AU[cm^-3], B1AU[nT], T[K]
-      .SetCME(1.05, 1900.0, 8e-8)                         // r0[Rs],   V0_sh[km/s],  Γ[1/km]
-      .SetGeometry(0.12, 0.22)                            // sheath & ME thickness @1 AU [AU]
-      .SetSmoothing(0.010, 0.020, 0.030)                  // shock/LE/TE widths @1 AU [AU]
-      .SetSheathEjecta(1.25, 2.0, 1.12, 0.50, 0.80);      // rc_floor, ramp_p, Vshe_LE, fME, VME
-  } else {
-	  SEP::sw1d.SetAmbient(380.0, 5.0, 4.5, 1.0e5)
-      .SetCME(1.05, 950.0, 3e-8)
-      .SetGeometry(0.08, 0.18)
-      .SetSmoothing(0.015, 0.030, 0.050)
-      .SetSheathEjecta(1.15, 1.5, 1.08, 0.60, 0.90);
-  }
-
-  SEP::SW1DAdapter::EnableSheathClamp(true);      // optional stability aid
-
-}
 
 /**
  * Prepare and publish SWCME at the one authoritative PIC clock epoch.
@@ -81,11 +56,10 @@ static inline void configure_swcme1d(CMEScenario scenario){
  */
 void publish_sw1d_for_particle_step(double epoch_seconds, double dt,
                                     long int iteration) {
-  // Build the small time-dependent cache before publishing its metadata.  A
-  // mover can therefore never observe a snapshot epoch for which gState has not
-  // already been prepared.
-  swcme1d::StepState S = SEP::sw1d.prepare_step(epoch_seconds);
-  SEP::SW1DAdapter::SetModelAndState(&SEP::sw1d, S);
+  // Build the small time-dependent cache behind the adapter before publishing
+  // its metadata.  No SWCME type crosses into this AMPS driver translation
+  // unit, exactly as in srcSEP3D's provider adapter.
+  SEP::SW1DAdapter::PrepareState(epoch_seconds);
 
   SEP::Background::PublishModelOwnedSnapshot(
       SEP::Background::Provider::Swcme, epoch_seconds, epoch_seconds + dt,
@@ -104,8 +78,8 @@ void publish_sw1d_for_particle_step(double epoch_seconds, double dt,
     }
 
     sprintf(fname,"sw_profile_%li.dat",iteration+1);
-    SEP::sw1d.write_tecplot_radial_profile_from_r(
-        S, r, N, fname, epoch_seconds);
+    SEP::SW1DAdapter::WriteRadialProfileFromR(
+        r, N, fname, epoch_seconds);
   }
 }
 
@@ -297,23 +271,26 @@ int main(int argc,char **argv) {
 
 
   //set up shock wave model
-  configure_swcme1d(frozenRun.get().scenario.value==SEP::Run::CmeScenario::Fast
-      ? CMEScenario::Fast : CMEScenario::Slow);
+  SEP::SW1DAdapter::Configure(
+      frozenRun.get().scenario.value==SEP::Run::CmeScenario::Fast
+          ? SEP::SW1DAdapter::Scenario::Fast
+          : SEP::SW1DAdapter::Scenario::Slow);
+  SEP::SW1DAdapter::EnableSheathClamp(true);
 
   // Prepare the initial SWCME cache before mesh/field-line initialization can
   // query shock geometry.  Metadata publication waits until immediately before
   // the first particle step, after all background-affecting CLI options and
   // field-line/turbulence initialization have completed.
-  SEP::SW1DAdapter::SetModelAndState(
-      &SEP::sw1d,
-      SEP::sw1d.prepare_step(SEP::Background::SimulationTimeSeconds()));
+  SEP::SW1DAdapter::PrepareState(
+      SEP::Background::SimulationTimeSeconds());
 
   //output parameters of the sshock
   // The production shock diagnostic is unrelated to component-test setup and
   // would create an unrequested shared artifact.  Field-line tests still receive
   // the configured SWCME model, but only a production run writes this file.
   if (!componentTestMode) {
-    SEP::sw1d.write_tecplot_shock_vs_time(2.0*24.0*3600, 200, "shock_vs_time.dat");
+    SEP::SW1DAdapter::WriteShockVsTime(
+        2.0*24.0*3600, 200, "shock_vs_time.dat");
   }
 
   // --------------------------------------------------------------------------
@@ -721,7 +698,7 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
         rsh0=SEP::ParticleSource::ShockWave::Tenishev2005::rShock;
         break;
       case SEP::cShockModelType::SwCme1d:
-        rsh0=SEP::SW1DAdapter::gState.r_sh_m;
+        rsh0=SEP::SW1DAdapter::ShockRadiusM();
         break;
       }
     }
@@ -736,7 +713,7 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
           rsh_after = SEP::ParticleSource::ShockWave::Tenishev2005::rShock;
           break;
         case SEP::cShockModelType::SwCme1d:
-          rsh_after = SEP::SW1DAdapter::gState.r_sh_m;
+          rsh_after = SEP::SW1DAdapter::ShockRadiusM();
           break;
       }
     }
@@ -768,7 +745,7 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
            rsh1=SEP::ParticleSource::ShockWave::Tenishev2005::rShock;
            break;
          case SEP::cShockModelType::SwCme1d:
-           rsh1=SEP::SW1DAdapter::gState.r_sh_m;
+           rsh1=SEP::SW1DAdapter::ShockRadiusM();
            break;
          }
 

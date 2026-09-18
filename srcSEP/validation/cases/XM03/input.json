@@ -50,6 +50,7 @@
     "log10_intensity_correlation_min": 0.45
   },
   "plot": {
-    "formats": ["png", "eps"]
+    "formats": ["png", "eps"],
+    "png_dpi": 600
   }
 }

@@ -87,7 +87,6 @@
 #include "turbulence_reflection_kolmogorov.h"
 #include "turbulence_wave_number_resolved/turbulence_wave_number_resolved.h"
 
-#include "swcme/swcme1d.hpp"
 #include "util/sep_background_runtime.h"
 
 //define which diffution model is used in the simulation
@@ -147,24 +146,6 @@ public:
 
 namespace SEP {
   using namespace Exosphere;
-
-  //the model of SW + CME
-  namespace SW1DAdapter {
-// ------------------------
-// Canonical adapter state
-// ------------------------
-extern swcme1d::Model*    gModel;       // published by SetModelAndState()
-extern swcme1d::StepState gState;              // last prepared time cache
-extern bool               gClampSheath;    // optional monotonic clamp flag
-
-
-    void SetModelAndState(swcme1d::Model* m, const swcme1d::StepState& S);
-    void EnableSheathClamp(bool on=true);
-    double DlnB_Dr_at_r(double r_m);
-    bool QueryAtRadius(double r_m, double& n_m3, double& V_ms, double& divV_sinv,bool applyClamp=true);
-  }
-
-  extern swcme1d::Model sw1d;
 
   //selector of the shock wave model
   enum class cShockModelType { Analytic1D, SwCme1d };

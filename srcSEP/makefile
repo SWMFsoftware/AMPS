@@ -1,17 +1,72 @@
-SHELL =/bin/sh
+SHELL := /bin/sh
 
-DEFAULT_TARGET : lib
+DEFAULT_TARGET: lib
+
+# Match srcSEP3D's relocation-safe path discovery. AMPS compiles an
+# application after copying it from AMPS/srcSEP to AMPS/build/main, and it may
+# invoke this makefile with -f from a third working directory. Therefore no
+# shared-model or configuration path may be relative to the process CWD.
+SEP_MAKEFILE_DIR := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+
+ifneq ($(wildcard $(SEP_MAKEFILE_DIR)/../Makefile.conf),)
+AMPS_ROOT ?= $(abspath $(SEP_MAKEFILE_DIR)/..)
+else ifneq ($(wildcard $(SEP_MAKEFILE_DIR)/../../Makefile.conf),)
+AMPS_ROOT ?= $(abspath $(SEP_MAKEFILE_DIR)/../..)
+else
+AMPS_ROOT ?= $(abspath $(SEP_MAKEFILE_DIR)/..)
+endif
+
+AMPS_CONFIG ?= $(AMPS_ROOT)/Makefile.conf
+
+# SWCME has one source and binary owner under src/models. srcSEP consumes the
+# canonical header-only 1-D interface and inserts the canonical 3-D object into
+# mainlib.a, exactly as srcSEP3D does. SWCME_DIR may be overridden only for a
+# detached development tree; an installed AMPS checkout requires no override.
+SWCME_DIR ?= $(AMPS_ROOT)/src/models/swcme
+SWCME_ARCHIVE ?= $(SWCME_DIR)/swcme.a
+SWCME_OBJECTS := $(SWCME_DIR)/build/swcme3d.o
 
 # The parser/registry unit target is intentionally dependency-light and can run
 # from a source-only archive.  Every production build target still requires the
 # enclosing AMPS configuration exactly as before.
-ifneq ($(filter test-cli-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit test-iv01-iv06-unit test-xm01-xm03-unit test-ov01-ov05-unit test-ev01-ev02-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat,$(MAKECMDGOALS)),)
--include ../../Makefile.conf
+STANDALONE_GOALS := test-cli-unit test-state-unit test-geometry-source-unit \
+                    test-mover-api-unit test-field-line-scope-unit \
+                    test-transport-common-unit test-parker-unit \
+                    test-fte-dmumu-unit test-fte-mfp-unit \
+                    test-coefficients-unit test-turbulence-core-unit \
+                    test-reproducibility-unit test-wp01-wp10-unit \
+                    test-wp11-wp20-unit test-wp21-wp30-unit \
+                    test-wp31-wp41-unit test-python-runner-unit \
+                    test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit \
+                    test-iv01-iv06-unit test-xm01-xm03-unit \
+                    print-configuration-matrix test-acceptance-unit \
+                    test-documentation-unit test-controlled-analytical \
+                    test-scientific-validation test-native-amps-validation \
+                    test-swmf-validation test-observational-validation \
+                    test-sanitizer test-stochastic-repeat \
+                    test-swcme-relocation-unit print-layout-paths
+ifneq ($(filter $(STANDALONE_GOALS),$(MAKECMDGOALS)),)
+-include $(AMPS_CONFIG)
 else
-include ../../Makefile.conf
+include $(AMPS_CONFIG)
 endif
 
-MAINLIBOBJ = exosphere_module.o  main_lib.o inner_boundary_injection.o outer_boundary_injection.o mesh.o mover_state.o production_mover_runtime.o transport_common.o coefficient_providers.o parker_mover.o focused_transport_dmumu.o focused_transport_mfp.o turbulence_production_adapter.o parker.o scattering.o sep.o field_line.o flux_tube_geometry.o sampling.o diffusion.o shock_injection.o BoundaryInjection.o BoundaryInjection_GCR.o GCR_Badavi2011ASR.o parser.o diffusion_dxx.o tests.o component_tests.o validation/cases/CV01/cv01_model.o validation/cases/controlled_transport_models.o validation/cases/advanced_validation_models.o util/sep_test_registry.o util/sep_acceptance_cases.o util/sep_scientific_validation.o util/sep_mover_validation.o util/sep_turbulence_validation.o util/sep_background_snapshot.o util/sep_background_runtime.o util/sep_flux_tube_geometry_core.o util/sep_injection_spectrum.o util/sep_sampling_products.o util/sep_shock_source_core.o util/sep_transactional_output.o util/sep_run_configuration.o util/sep_population_control.o util/sep_configuration_matrix.o util/sep_evidence.o util/sep_system_ledger.o util/sep_validation_tools.o util/sep_observation_forward_model.o util/sep_production_mover.o util/sep_transport_common.o util/sep_parker_core.o util/sep_focused_transport_core.o util/sep_focused_transport_mfp_core.o util/sep_coefficient_physics.o util/sep_species_source.o util/sep_coefficient_registry.o util/sep_turbulence_core.o util/sep_reproducible_reduction.o shock_analytical_model.o diffusion_dmumu.o DLT.o QLT.o cooling.o QLT1.o sampling_output.o output_fl_background.o shock_analytical_model2D.o solar_wind.o alfven_turbulence.o parker_streaming_calculator.o turbulence_advection_kolmogorov.o wave_energy_initialization.o test_wave_energy_initialization.o wave_particle_coupling_kolmogorov.o growth_rate_validation_test.o kolmogorov.o kolmogorov_scatter.o shock1d_vertex_distance.o sw1d.o turbulence_cascade_kolmogorov.o turbulence_reflection_kolmogorov.o turbulence_wave_number_resolved/turbulence_wave_number_resolved.o
+# Makefile.conf revisions in supported AMPS trees use one or more of these
+# variables in their generic .cpp -> .o rule. Populate all three, as srcSEP3D
+# does, so quoted canonical SWCME headers resolve identically in srcSEP and in
+# the copied build/main tree.
+MODEL_INCLUDE_FLAGS := -I$(SWCME_DIR)
+CPPFLAGS += $(MODEL_INCLUDE_FLAGS)
+CXXFLAGS += $(MODEL_INCLUDE_FLAGS)
+INCLUDE += $(MODEL_INCLUDE_FLAGS)
+
+# Like srcSEP3D's adapters/%.o rule, compile the provider-facing adapter with
+# the canonical model directory on its private include path.  sep.h and every
+# unrelated AMPS translation unit remain independent of SWCME headers.
+SWCME_ADAPTER_CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -O3 \
+                          -Iadapters -Iutil -I$(SWCME_DIR)
+
+MAINLIBOBJ = exosphere_module.o  main_lib.o inner_boundary_injection.o outer_boundary_injection.o mesh.o mover_state.o production_mover_runtime.o transport_common.o coefficient_providers.o parker_mover.o focused_transport_dmumu.o focused_transport_mfp.o turbulence_production_adapter.o parker.o scattering.o sep.o field_line.o flux_tube_geometry.o sampling.o diffusion.o shock_injection.o BoundaryInjection.o BoundaryInjection_GCR.o GCR_Badavi2011ASR.o parser.o diffusion_dxx.o tests.o component_tests.o validation/cases/CV01/cv01_model.o validation/cases/controlled_transport_models.o validation/cases/advanced_validation_models.o util/sep_test_registry.o util/sep_acceptance_cases.o util/sep_scientific_validation.o util/sep_mover_validation.o util/sep_turbulence_validation.o util/sep_background_snapshot.o util/sep_background_runtime.o util/sep_flux_tube_geometry_core.o util/sep_injection_spectrum.o util/sep_sampling_products.o util/sep_shock_source_core.o util/sep_transactional_output.o util/sep_run_configuration.o util/sep_population_control.o util/sep_configuration_matrix.o util/sep_evidence.o util/sep_system_ledger.o util/sep_validation_tools.o util/sep_observation_forward_model.o util/sep_production_mover.o util/sep_transport_common.o util/sep_parker_core.o util/sep_focused_transport_core.o util/sep_focused_transport_mfp_core.o util/sep_coefficient_physics.o util/sep_species_source.o util/sep_coefficient_registry.o util/sep_turbulence_core.o util/sep_reproducible_reduction.o shock_analytical_model.o diffusion_dmumu.o DLT.o QLT.o cooling.o QLT1.o sampling_output.o output_fl_background.o shock_analytical_model2D.o solar_wind.o alfven_turbulence.o parker_streaming_calculator.o turbulence_advection_kolmogorov.o wave_energy_initialization.o test_wave_energy_initialization.o wave_particle_coupling_kolmogorov.o growth_rate_validation_test.o kolmogorov.o kolmogorov_scatter.o shock1d_vertex_distance.o adapters/swcme1d_adapter.o turbulence_cascade_kolmogorov.o turbulence_reflection_kolmogorov.o turbulence_wave_number_resolved/turbulence_wave_number_resolved.o
 # Integrated IV01-IV06 model stages are linked into the same application-level
 # registry as CV01-CV12; they are not standalone substitutes for AMPS.
 MAINLIBOBJ += validation/cases/integrated_validation_models.o
@@ -25,12 +80,69 @@ MAINLIBOBJ += validation/cases/cross_model_validation_models.o
 # independent of the CLI.
 MAINOBJ = main.o util/sep_cli.o debug/sep_debug_fieldline_datum.o
 
-lib : $(MAINLIBOBJ)
-	ar -rc mainlib.a $(MAINLIBOBJ)
+lib: $(SWCME_ARCHIVE) $(MAINLIBOBJ)
+	# Recreate the application archive. Plain `ar -r` would retain a stale
+	# shared member after a manifest change and could silently introduce a
+	# second SWCME definition.
+	rm -f mainlib.a
+	ar -rc mainlib.a $(MAINLIBOBJ) $(SWCME_OBJECTS)
+	@members=$$(ar t mainlib.a); \
+	for member in $(notdir $(SWCME_OBJECTS)); do \
+	  count=$$(printf '%s\n' "$$members" | awk -v expected="$$member" \
+	    '$$0 == expected { found++ } END { print found + 0 }'); \
+	  test "$$count" -eq 1 || { \
+	    echo "ERROR: canonical SWCME member $$member occurs $$count times" >&2; \
+	    exit 1; \
+	  }; \
+	done
 	@echo "Target 'main' is done."
+
+# A phony prerequisite is intentional: the application archive consumes the
+# canonical object, not merely the .a timestamp, so its build directory must
+# exist even after an independent clean of src/models/swcme.
+.PHONY: swcme
+swcme:
+	$(MAKE) -C $(SWCME_DIR)
+
+$(SWCME_ARCHIVE): swcme
 
 amps : $(MAINOBJ)
 	ar -rc main.a $(MAINOBJ)
+
+adapters/%.o: adapters/%.cpp
+	$(CXX) $(SWCME_ADAPTER_CXXFLAGS) -c -o $@ $<
+
+# As in srcSEP3D, a production verification must enter the enclosing AMPS
+# build. Compiling AMPS-dependent sources directly in srcSEP would omit the
+# generated build/pic headers and configuration assembled by the parent build.
+.PHONY: strict-production audit-production-swcme
+strict-production:
+	@$(MAKE) -C "$(AMPS_ROOT)" amps
+	@$(MAKE) --no-print-directory -f "$(SEP_MAKEFILE_DIR)/makefile" \
+	  audit-production-swcme AMPS_ROOT="$(AMPS_ROOT)"
+
+PRODUCTION_ARCHIVE_DIR ?= $(AMPS_ROOT)/build/main
+PRODUCTION_MAINLIB := $(PRODUCTION_ARCHIVE_DIR)/mainlib.a
+
+audit-production-swcme:
+	@command -v ar >/dev/null 2>&1 || { \
+	  echo "ERROR: ar is required for the production archive audit." >&2; \
+	  exit 2; \
+	}
+	@test -f "$(PRODUCTION_MAINLIB)" || { \
+	  echo "ERROR: enclosing AMPS build did not produce $(PRODUCTION_MAINLIB)" >&2; \
+	  exit 1; \
+	}
+	@members=$$(ar t "$(PRODUCTION_MAINLIB)"); \
+	for member in $(notdir $(SWCME_OBJECTS)); do \
+	  count=$$(printf '%s\n' "$$members" | awk -v expected="$$member" \
+	    '$$0 == expected { found++ } END { print found + 0 }'); \
+	  test "$$count" -eq 1 || { \
+	    echo "ERROR: canonical SWCME member $$member occurs $$count times in $(PRODUCTION_MAINLIB)" >&2; \
+	    exit 1; \
+	  }; \
+	done
+	@echo "[srcSEP] enclosing AMPS build contains one canonical SWCME member"
 
 # The linked executable is produced by the enclosing AMPS application build,
 # not by this archive-only subdirectory makefile.  Override SEP_EXECUTABLE when
@@ -38,8 +150,13 @@ amps : $(MAINOBJ)
 # real production CLI; selector semantics are never reimplemented in Make.
 SEP_EXECUTABLE ?= ../amps
 
-.PHONY: test-cli-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit test-iv01-iv06-unit test-xm01-xm03-unit test-ov01-ov05-unit test-ev01-ev02-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat require-sep-executable test-cli test-list test-case \
+.PHONY: test-cli-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit test-iv01-iv06-unit test-xm01-xm03-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat test-swcme-relocation-unit require-sep-executable test-cli test-list test-case \
 	test-group test-turbulence test-stress test-mpi test
+
+# Fast structural test for source-tree/build-main path equivalence and the
+# absence of application-local SWCME headers or sources.
+test-swcme-relocation-unit:
+	./test/run_swcme_relocation_tests.sh
 
 test-cli-unit:
 	./test/run_step1_tests.sh
@@ -103,16 +220,6 @@ test-python-runner-unit:
 
 test-xm01-xm03-unit:
 	./test/run_xm01_xm03_tests.sh
-
-# OV01-OV05 are linked observational cases.  The source-only phase validates
-# schema, provenance, and the shared native callback; scientific comparisons
-# run only when SEP_EXECUTABLE names the linked application under test.
-test-ov01-ov05-unit:
-	./test/run_ov01_ov05_tests.sh
-
-# EV01-EV02 campaign-level observational evidence and sealed-split checks.
-test-ev01-ev02-unit:
-	./test/run_ev01_ev02_tests.sh
 
 # CV01 establishes the reusable linked-application case pattern. The target
 # always compiles the native model source strictly and runs the full case only
@@ -235,7 +342,18 @@ test-mpi: require-sep-executable
 # `make -j test`: component tests share initialized model/output state and must
 # not be launched concurrently.  The embedded SWCME suite retains its own
 # internal parallel build through its native target.
-test: test-cli-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-python-runner-unit test-cv01-unit test-acceptance-unit test-documentation-unit require-sep-executable
+test: test-swcme-relocation-unit test-cli-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-python-runner-unit test-cv01-unit test-acceptance-unit test-documentation-unit require-sep-executable
 	@"$(SEP_EXECUTABLE)" --list-tests >/dev/null
 	@"$(SEP_EXECUTABLE)" --all-tests $(if $(JSON),--test-json "$(JSON)",) $(if $(JUNIT),--test-junit "$(JUNIT)",)
-	@$(MAKE) -C swcme/test -j test
+	@PYTHONDONTWRITEBYTECODE=1 python3 "$(SWCME_DIR)/test/run_tests.py" \
+	  --routine --output-dir "$(abspath test_output/swcme-r1)"
+
+# Diagnostic target copied from srcSEP3D's relocation contract. It is used by
+# the focused test and is also useful when diagnosing an installed AMPS tree.
+.PHONY: print-layout-paths
+print-layout-paths:
+	@echo "SEP_MAKEFILE_DIR=$(SEP_MAKEFILE_DIR)"
+	@echo "AMPS_ROOT=$(AMPS_ROOT)"
+	@echo "AMPS_CONFIG=$(AMPS_CONFIG)"
+	@echo "SWCME_DIR=$(SWCME_DIR)"
+	@echo "MODEL_INCLUDE_FLAGS=$(MODEL_INCLUDE_FLAGS)"

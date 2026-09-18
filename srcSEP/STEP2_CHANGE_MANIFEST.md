@@ -24,7 +24,8 @@ component-test registry plus all Step 2 changes.
 - `sep.cpp`
 - `sep.h`
 - `shock_analytical_model.cpp`
-- `sw1d.cpp`
+- `adapters/swcme1d_adapter.cpp`
+- `adapters/swcme1d_adapter.h`
 - `test/README.md`
 
 ## Quick verification after extraction

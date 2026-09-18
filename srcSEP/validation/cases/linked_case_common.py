@@ -1,5 +1,4 @@
-"""Shared linked-application mechanics for CV02-CV12, IV01-IV06, XM01-XM03,
-OV01-OV05, and EV01-EV02.
+"""Shared linked-application mechanics for CV02-CV12, IV01-IV06, and XM01-XM03.
 
 This module owns evidence plumbing, not expected physics.  Every case passes a
 flat, reviewed SI argument vector to the selected ``amps`` executable and owns
@@ -149,26 +148,15 @@ def run_linked_model(*, case_id: str, arguments: Sequence[str],
 
 
 def metric(name: str, value: float, tolerance: float, comparison: str,
-           units: str, *, gating: bool = True) -> Dict[str, Any]:
-    """Construct one quantitative metric with an explicit gating role.
-
-    Controlled and release-validation cases use the default ``gating=True``.
-    Observational stress cases may retain scientifically useful discrepancies
-    with ``gating=False``: those values remain visible in JSON, JUnit system
-    output, and comparison plots without pretending that a reduced 1-D model
-    has a defensible scalar acceptance threshold for a compound 3-D event.
-    """
+           units: str) -> Dict[str, Any]:
+    """Construct the metric schema consumed by both JSON and plot runners."""
     return {"name": name, "value": float(value), "tolerance": float(tolerance),
-            "comparison": comparison, "units": units, "gating": bool(gating)}
+            "comparison": comparison, "units": units}
 
 
 def metrics_pass(metrics: Sequence[Dict[str, Any]]) -> bool:
     """Evaluate the deliberately small comparison vocabulary used by cases."""
     for item in metrics:
-        # Diagnostic metrics are evidence, not acceptance gates.  The flag is
-        # opt-out rather than opt-in so all older cases remain fail-closed.
-        if item.get("gating", True) is False:
-            continue
         value, tolerance = float(item["value"]), float(item["tolerance"])
         comparison = item["comparison"]
         if comparison == "<=" and not value <= tolerance:

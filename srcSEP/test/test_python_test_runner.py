@@ -75,8 +75,6 @@ class PythonTestRunnerTests(unittest.TestCase):
                 "validation/cases/XM03/publication_input.json",
                 "validation/cases/XM03/input/earth_shock_thermal_source.csv",
                 "validation/cases/XM03/reference/liu_figure12_earth_observations.csv",
-                "--validation-case OV01 --validation-case OV02",
-                "OV03-OV05 are diagnostic-only",
                 "Do not add --case-input",
                 "No external production CSV is used by XM02",
                 "XM03 needs no external model CSV",
@@ -192,18 +190,80 @@ PARK01 | parker | duplicate
             self.assertIn("Error tests (1):\n  - BAD02: process exited 134",
                           rendered)
 
-    def test_publication_plot_labels_name_source_and_exact_figures(self):
-        """Ensure detached XM02/XM03 figures remain self-attributing."""
+    def test_xm02_publication_plot_label_names_source_and_exact_figure(self):
+        """XM02 retains its detached-figure publication attribution."""
         runner = _load_cross_model_runner()
-        for case_id, expected in (
-                ("XM02", "Figure 7"),
-                ("XM03", "Figure 12(a), Figure 12(b), Figure 12(c)")):
-            case = json.loads((ROOT / "validation" / "cases" / case_id /
-                               "input.json").read_text(encoding="utf-8"))
-            label = runner._publication_plot_label(case)
-            self.assertIn("Reference:", label)
-            self.assertIn(case["reference"]["plot_citation"], label)
-            self.assertIn(expected, label)
+        case = json.loads((ROOT / "validation" / "cases" / "XM02" /
+                           "input.json").read_text(encoding="utf-8"))
+        label = runner._publication_plot_label(case)
+        self.assertIn("Reference:", label)
+        self.assertIn(case["reference"]["plot_citation"], label)
+        self.assertIn("Figure 7", label)
+
+    def test_xm03_plot_is_individual_legended_and_source_free(self):
+        """Each XM03 time is a standalone publication panel without citation text."""
+        runner = _load_cross_model_runner()
+        case = json.loads((ROOT / "validation" / "cases" / "XM03" /
+                           "input.json").read_text(encoding="utf-8"))
+        model = []
+        reference = []
+        instrument_points = (
+            ("ACE/EPAM", 0.3, 0.2, 0.5, 30.0),
+            ("GOES-13/EPEAD", 3.0, 2.0, 5.0, 3.0),
+            ("SOHO/ERNE", 30.0, 20.0, 50.0, 0.3),
+        )
+        for elapsed, time_factor in ((4.0, 1.0), (12.0, 2.0), (36.0, 0.5)):
+            for energy, intensity in ((0.1, 100.0), (1.0, 10.0),
+                                      (10.0, 1.0), (100.0, 0.1)):
+                model.append({
+                    "elapsed_hours": str(elapsed),
+                    "energy_mev": str(energy),
+                    "relative_differential_intensity": str(time_factor * intensity),
+                })
+            for instrument, energy, low, high, intensity in instrument_points:
+                reference.append({
+                    "elapsed_hours": str(elapsed),
+                    "instrument": instrument,
+                    "effective_energy_mev": str(energy),
+                    "energy_low_mev": str(low),
+                    "energy_high_mev": str(high),
+                    "differential_intensity_pfu_per_mev": str(
+                        time_factor * intensity),
+                })
+
+        captured = {}
+
+        def capture(figure, output, stem, formats, **kwargs):
+            axis = figure.axes[0]
+            legend = axis.get_legend()
+            captured[stem] = {
+                "title": axis.get_title(),
+                "legend": [text.get_text() for text in legend.get_texts()],
+                "figure_text": " ".join(text.get_text() for text in figure.texts),
+            }
+            return [Path(output) / f"{stem}.{extension}" for extension in formats]
+
+        with mock.patch.object(runner, "_save_figure", side_effect=capture):
+            paths = runner._xm03_plot(
+                case, Path("unused"), model, reference, 1.0, ("png", "eps"))
+
+        self.assertEqual(len(paths), 6)
+        self.assertEqual(set(captured), {
+            "XM03_earth_observation_comparison_04h",
+            "XM03_earth_observation_comparison_12h",
+            "XM03_earth_observation_comparison_36h",
+        })
+        for record in captured.values():
+            self.assertIn("after CME launch", record["title"])
+            self.assertEqual(set(record["legend"]), {
+                "srcSEP model",
+                "ACE/EPAM observations",
+                "GOES-13/EPEAD observations",
+                "SOHO/ERNE observations",
+            })
+            visible_text = (record["title"] + " " + record["figure_text"]).lower()
+            for forbidden in ("liu", "doi", "figure 12", "reference:", "source"):
+                self.assertNotIn(forbidden, visible_text)
 
     def test_xm03_uses_one_global_amplitude_for_all_observations(self):
         """Prevent accidental per-time or per-instrument normalization.
@@ -483,44 +543,6 @@ PARK01 | parker | duplicate
                      str(temporary / case_id)],
                     cwd=str(ROOT), text=True, stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT, check=False)
-                self.assertEqual(completed.returncode, 2, completed.stdout)
-                self.assertIn(
-                    f"{case_id} uses its single registered publication-derived input",
-                    completed.stdout)
-
-    def test_ov01_ov05_use_linked_application_and_fixed_inputs(self):
-        """Keep observational evidence attached to one reviewed event input.
-
-        The Python layer may score and plot observations, but it must forward
-        every OV ID to validation/run_case.py with the operator-selected AMPS
-        binary.  It must also reject a replacement case input before checking
-        whether that binary exists, making the evidence policy deterministic.
-        """
-        runner = _load_runner_module()
-        selected = [f"OV{index:02d}" for index in range(1, 6)]
-        with tempfile.TemporaryDirectory(prefix="srcsep-ov-command-") as tmp:
-            temporary = Path(tmp)
-            arguments = SimpleNamespace(
-                amps="/opt/amps/bin/srcsep-amps", validation_all=False,
-                validation_cases=selected, case_input=None, timeout=900.0)
-            with mock.patch.object(runner, "_run_streaming", return_value=0) as run:
-                _, _, command = runner._run_validation_cases(
-                    arguments, temporary, temporary / "runner.log")
-            self.assertEqual(command[2:4], ["--amps", "/opt/amps/bin/srcsep-amps"])
-            for case_id in selected:
-                self.assertIn(case_id, command)
-            self.assertNotIn("--input", command)
-            run.assert_called_once()
-
-            alternate = temporary / "alternate.json"
-            alternate.write_text("{}\n", encoding="utf-8")
-            for case_id in selected:
-                completed = subprocess.run(
-                    [sys.executable, str(RUNNER), "--amps",
-                     str(temporary / "missing-amps"), "--validation-case", case_id,
-                     "--case-input", str(alternate), "--output-dir",
-                     str(temporary / case_id)], cwd=str(ROOT), text=True,
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
                 self.assertEqual(completed.returncode, 2, completed.stdout)
                 self.assertIn(
                     f"{case_id} uses its single registered publication-derived input",

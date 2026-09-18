@@ -107,16 +107,7 @@ def _xm03_arguments(case: Dict[str, Any], input_path: Path) -> List[str]:
     relative = Path(str(physics["source_history_csv"]))
     if relative.is_absolute() or ".." in relative.parts:
         raise ValueError("XM03 source_history_csv must be case-relative")
-    # OV01 deliberately reuses the exact XM03 Figure-12(d) source artifact so
-    # the release-gate and cross-model views cannot drift.  A named sibling
-    # case is allowed only through this explicit field; arbitrary ``..`` path
-    # traversal remains forbidden.
-    source_case = str(physics.get("source_history_case", "")).strip()
-    if source_case and (Path(source_case).name != source_case or
-                        source_case not in {"XM03"}):
-        raise ValueError("source_history_case must name the reviewed XM03 case")
-    case_directory = ((Path(__file__).parent / source_case).resolve()
-                      if source_case else input_path.parent.resolve())
+    case_directory = input_path.parent.resolve()
     source = (case_directory / relative).resolve()
     if case_directory not in source.parents or not source.is_file():
         raise ValueError(f"XM03 source history is missing or outside the case: {source}")
@@ -221,11 +212,22 @@ def _formats(case: Dict[str, Any]) -> Sequence[str]:
     return formats
 
 def _save_figure(figure, output: Path, stem: str,
-                 formats: Sequence[str]) -> List[Path]:
+                 formats: Sequence[str], *, png_dpi: int = 180,
+                 bbox_inches: Optional[str] = None,
+                 pad_inches: float = 0.1) -> List[Path]:
     paths: List[Path] = []
     for extension in formats:
         path = output / f"{stem}.{extension}"
-        figure.savefig(path, dpi=180 if extension == "png" else None)
+        save_options: Dict[str, Any] = {
+            "format": extension,
+            "facecolor": "white",
+        }
+        if extension == "png":
+            save_options["dpi"] = png_dpi
+        if bbox_inches is not None:
+            save_options["bbox_inches"] = bbox_inches
+            save_options["pad_inches"] = pad_inches
+        figure.savefig(path, **save_options)
         paths.append(path)
     return paths
 
@@ -598,61 +600,153 @@ def _xm03_score(case: Dict[str, Any], model_rows: Sequence[Dict[str, str]],
 def _xm03_plot(case: Dict[str, Any], output: Path,
                model_rows: Sequence[Dict[str, str]],
                reference_rows: Sequence[Dict[str, str]], scale: float,
-               formats: Sequence[str], case_id: str = "XM03") -> List[Path]:
-    """Overlay the linked Earth spectra and Figure-12 measurements."""
+               formats: Sequence[str]) -> List[Path]:
+    """Create one publication-quality model/observation figure per epoch.
+
+    The scientific source and digitization provenance are intentionally kept in
+    the JSON/CSV evidence bundle rather than printed into the figure.  A paper
+    can cite that material in its caption; embedding a DOI and source-panel
+    inventory in the artwork makes the plot visually crowded and difficult to
+    reuse.  Each exported figure is instead self-contained with axis units, its
+    physical epoch relative to CME launch, and a complete in-panel legend.
+
+    PNG files use the configured high-resolution raster DPI.  EPS files retain
+    vector paths and Type-42 fonts so labels remain sharp and editable in a
+    publication workflow.
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    colors = {"ACE/EPAM": "#1f77b4", "GOES-13/EPEAD": "#003fff",
-              "SOHO/ERNE": "#008b8b"}
-    figure, axes = plt.subplots(1, 3, figsize=(14, 4.6), sharey=True)
-    for axis, elapsed in zip(axes, (4.0, 12.0, 36.0)):
-        model = sorted(
-            (float(row["energy_mev"]),
-             scale * float(row["relative_differential_intensity"]))
-            for row in model_rows
-            if float(row["elapsed_hours"]) == elapsed and
-            float(row["relative_differential_intensity"]) > 0.0)
-        if model:
-            axis.plot([item[0] for item in model], [item[1] for item in model],
-                      color="black", linewidth=1.5,
-                      label="linked srcSEP Parker reconstruction")
-        for instrument, color in colors.items():
-            rows = [row for row in reference_rows
-                    if float(row["elapsed_hours"]) == elapsed and
-                    row["instrument"] == instrument]
-            if not rows:
-                continue
-            energy = [float(row["effective_energy_mev"]) for row in rows]
-            axis.errorbar(
-                energy,
-                [float(row["differential_intensity_pfu_per_mev"]) for row in rows],
-                xerr=[[center - float(row["energy_low_mev"])
-                       for center, row in zip(energy, rows)],
-                      [float(row["energy_high_mev"]) - center
-                       for center, row in zip(energy, rows)]],
-                fmt="o", markersize=3.5, capsize=2, color=color,
-                label=instrument)
-        axis.set_xscale("log")
-        axis.set_yscale("log")
-        axis.set_xlim(0.07, 130.0)
-        axis.set_title(f"t = {elapsed:g} h")
-        axis.set_xlabel("proton energy [MeV]")
-        # A solid light grid avoids the PostScript transparency warning while
-        # preserving identical PNG and EPS scientific content.
-        axis.grid(color="0.86", linewidth=0.6)
-    axes[0].set_ylabel("differential intensity [pfu MeV$^{-1}$]")
-    handles, labels = axes[-1].get_legend_handles_labels()
-    figure.legend(handles, labels, loc="lower center", ncol=4,
-                  bbox_to_anchor=(0.5, -0.03), framealpha=1.0)
-    figure.suptitle(
-        f"{case_id}: Earth-observation spectral comparison\n"
-        f"{_publication_plot_label(case)}\n"
-        f"one global model amplitude = {scale:.3e}")
-    figure.tight_layout(rect=(0.0, 0.11, 1.0, 0.88))
-    paths = _save_figure(
-        figure, output, f"{case_id}_earth_observation_comparison", formats)
-    plt.close(figure)
+
+    plot_configuration = case.get("plot", {})
+    png_dpi = int(plot_configuration.get("png_dpi", 600))
+    if png_dpi < 300:
+        raise ValueError("XM03 publication PNG resolution must be at least 300 dpi")
+
+    times = sorted({float(row["elapsed_hours"]) for row in reference_rows})
+    if not times:
+        raise ValueError("XM03 has no observation epochs to plot")
+
+    # Okabe-Ito colors plus distinct markers remain separable for common forms
+    # of color-vision deficiency and in grayscale proofs.  The model is the
+    # only connected curve; observation channel widths remain horizontal bars.
+    observation_styles = {
+        "ACE/EPAM": {
+            "color": "#0072B2", "marker": "o",
+            "label": "ACE/EPAM observations"},
+        "GOES-13/EPEAD": {
+            "color": "#D55E00", "marker": "s",
+            "label": "GOES-13/EPEAD observations"},
+        "SOHO/ERNE": {
+            "color": "#009E73", "marker": "^",
+            "label": "SOHO/ERNE observations"},
+    }
+
+    # Use one vertical scale for every individual epoch so visual differences
+    # between the three files represent physics rather than autoscaling.
+    positive_values = [
+        float(row["differential_intensity_pfu_per_mev"])
+        for row in reference_rows
+        if float(row["differential_intensity_pfu_per_mev"]) > 0.0]
+    positive_values.extend(
+        scale * float(row["relative_differential_intensity"])
+        for row in model_rows
+        if float(row["relative_differential_intensity"]) > 0.0)
+    if not positive_values:
+        raise ValueError("XM03 has no positive model or observation intensity")
+    lower_exponent = math.floor(math.log10(min(positive_values)) - 0.08)
+    upper_exponent = math.ceil(math.log10(max(positive_values)) + 0.08)
+    if upper_exponent <= lower_exponent:
+        upper_exponent = lower_exponent + 1
+    y_limits = (10.0 ** lower_exponent, 10.0 ** upper_exponent)
+
+    publication_style = {
+        "font.family": "DejaVu Serif",
+        "font.size": 10.0,
+        "axes.labelsize": 11.0,
+        "axes.titlesize": 11.0,
+        "axes.linewidth": 0.9,
+        "xtick.labelsize": 9.5,
+        "ytick.labelsize": 9.5,
+        "legend.fontsize": 8.5,
+        "mathtext.fontset": "dejavuserif",
+        "ps.fonttype": 42,
+        "pdf.fonttype": 42,
+        "savefig.facecolor": "white",
+        "axes.unicode_minus": False,
+    }
+
+    paths: List[Path] = []
+    with plt.rc_context(publication_style):
+        for elapsed in times:
+            figure, axis = plt.subplots(figsize=(6.5, 5.0))
+            model = sorted(
+                (float(row["energy_mev"]),
+                 scale * float(row["relative_differential_intensity"]))
+                for row in model_rows
+                if math.isclose(float(row["elapsed_hours"]), elapsed,
+                                rel_tol=0.0, abs_tol=1.0e-12) and
+                float(row["relative_differential_intensity"]) > 0.0)
+            if model:
+                axis.plot(
+                    [item[0] for item in model],
+                    [item[1] for item in model],
+                    color="#202020", linewidth=2.0, solid_capstyle="round",
+                    zorder=2, label="srcSEP model")
+
+            for instrument, style in observation_styles.items():
+                rows = sorted(
+                    (row for row in reference_rows
+                     if math.isclose(float(row["elapsed_hours"]), elapsed,
+                                     rel_tol=0.0, abs_tol=1.0e-12) and
+                     row["instrument"] == instrument),
+                    key=lambda row: float(row["effective_energy_mev"]))
+                if not rows:
+                    continue
+                energy = [float(row["effective_energy_mev"]) for row in rows]
+                axis.errorbar(
+                    energy,
+                    [float(row["differential_intensity_pfu_per_mev"])
+                     for row in rows],
+                    xerr=[[center - float(row["energy_low_mev"])
+                           for center, row in zip(energy, rows)],
+                          [float(row["energy_high_mev"]) - center
+                           for center, row in zip(energy, rows)]],
+                    linestyle="none", marker=style["marker"], markersize=5.2,
+                    markerfacecolor=style["color"], markeredgecolor="white",
+                    markeredgewidth=0.55, color=style["color"],
+                    elinewidth=1.05, capsize=2.2, capthick=1.05, zorder=3,
+                    label=style["label"])
+
+            axis.set_xscale("log")
+            axis.set_yscale("log")
+            axis.set_xlim(0.07, 130.0)
+            axis.set_ylim(*y_limits)
+            axis.set_title(f"{elapsed:g} h after CME launch", pad=8.0)
+            axis.set_xlabel("Proton energy (MeV)")
+            axis.set_ylabel(
+                "Differential proton intensity "
+                "[(cm$^{2}$ s sr MeV)$^{-1}$]")
+            axis.grid(which="major", color="0.86", linewidth=0.65,
+                      linestyle="-")
+            axis.tick_params(which="both", direction="in", top=True,
+                             right=True, width=0.8)
+            axis.tick_params(which="major", length=5.0)
+            axis.tick_params(which="minor", length=2.8)
+            axis.legend(loc="best", frameon=True, framealpha=1.0,
+                        facecolor="white", edgecolor="0.35",
+                        borderpad=0.55, handlelength=2.3)
+            figure.tight_layout(pad=0.8)
+
+            if elapsed.is_integer():
+                time_tag = f"{int(elapsed):02d}h"
+            else:
+                time_tag = (f"{elapsed:g}".replace(".", "p") + "h")
+            stem = f"XM03_earth_observation_comparison_{time_tag}"
+            paths.extend(_save_figure(
+                figure, output, stem, formats, png_dpi=png_dpi,
+                bbox_inches="tight", pad_inches=0.04))
+            plt.close(figure)
     return paths
 
 def run_cross_model_case(case_id: str, *, source_root: Path, input_path: Path,

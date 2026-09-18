@@ -425,11 +425,7 @@ std::vector<XM03SourceSample> ReadXM03Source(const std::string& path,
   if (!input.good() || !std::getline(input, line))
     throw std::runtime_error("XM03 cannot read the reviewed Figure 12(d) source CSV");
   if (!line.empty() && line[line.size() - 1] == '\r') line.erase(line.size() - 1);
-  const bool isThermalHistory =
-      line == "elapsed_hours,thermal_energy_density_kev_per_m3";
-  const bool isRelativeHistory =
-      line == "elapsed_hours,relative_source_rate";
-  if (!isThermalHistory && !isRelativeHistory)
+  if (line != "elapsed_hours,thermal_energy_density_kev_per_m3")
     throw std::runtime_error("XM03 cannot read the reviewed Figure 12(d) source CSV");
 
   std::vector<XM03SourceSample> allSamples;
@@ -446,17 +442,13 @@ std::vector<XM03SourceSample> ReadXM03Source(const std::string& path,
     end = NULL;
     const double density = std::strtod(line.substr(comma + 1).c_str(), &end);
     if (!end || *end != '\0' || !std::isfinite(elapsedS) ||
-        !std::isfinite(density) || density < 0.0)
+        !std::isfinite(density) || density <= 0.0)
       throw std::runtime_error("XM03 source CSV contains an invalid density");
     allSamples.push_back(XM03SourceSample{elapsedS, density});
   }
   for (std::size_t i = 1; i < allSamples.size(); ++i)
     if (!(allSamples[i].elapsedS > allSamples[i - 1].elapsedS))
       throw std::runtime_error("XM03 source times must be strictly increasing");
-  if (std::find_if(allSamples.begin(), allSamples.end(),
-          [](const XM03SourceSample& sample) { return sample.density > 0.0; }) ==
-      allSamples.end())
-    throw std::runtime_error("XM03 source history has zero integrated strength");
   if (allSamples.size() < 2 || earliestReleaseS < allSamples.front().elapsedS ||
       earliestReleaseS >= allSamples.back().elapsedS)
     throw std::runtime_error("XM03 source history does not cover Earth connection");
@@ -498,8 +490,6 @@ double SampleXM03ReleaseTime(const std::vector<XM03SourceSample>& samples,
     cumulative[i] = cumulative[i - 1] +
         0.5 * width * (samples[i - 1].density + samples[i].density);
   }
-  if (!(cumulative.back() > 0.0))
-    throw std::runtime_error("source history is zero after the connection time");
   const double target = random->UniformOpen01() * cumulative.back();
   const std::size_t right = static_cast<std::size_t>(
       std::lower_bound(cumulative.begin() + 1, cumulative.end(), target) -
@@ -623,217 +613,6 @@ double XM03EnergyFromMomentum(double momentum) {
   const double mc = ProtonMassKg * LightSpeedMPerS;
   return (std::sqrt(1.0 + momentum * momentum / (mc * mc)) - 1.0) *
       ProtonMassKg * LightSpeedMPerS * LightSpeedMPerS / MegaElectronVoltJ;
-}
-
-std::vector<double> ParsePositiveList(
-    const std::map<std::string, std::string>& values,
-    const std::string& name) {
-  // Native validation manifests deliberately use a flat name/value protocol.
-  // A comma-separated list is therefore the smallest unambiguous way to pass
-  // the reviewed instrument-channel centers without introducing a second JSON
-  // parser into the linked application.  Empty, duplicate, and non-positive
-  // channels are rejected because any of them would bias a spectrum or time
-  // profile while still producing a superficially plausible CSV file.
-  const std::string text = Require(values, name);
-  std::stringstream stream(text);
-  std::vector<double> result;
-  std::string token;
-  while (std::getline(stream, token, ',')) {
-    char* end = NULL;
-    errno = 0;
-    const double value = std::strtod(token.c_str(), &end);
-    if (token.empty() || errno == ERANGE || !end || *end != '\0' ||
-        !std::isfinite(value) || value <= 0.0)
-      throw std::runtime_error("invalid positive value in --" + name);
-    result.push_back(value);
-  }
-  if (result.empty())
-    throw std::runtime_error("--" + name + " must contain at least one value");
-  std::sort(result.begin(), result.end());
-  if (std::adjacent_find(result.begin(), result.end()) != result.end())
-    throw std::runtime_error("--" + name + " contains a duplicate value");
-  return result;
-}
-
-std::string CompactEnergyLabel(double energyMeV) {
-  // CSV series names are machine keys.  Keep them locale-independent and free
-  // of whitespace so Python can join a publication trace to the native output
-  // without fuzzy string matching.
-  std::ostringstream label;
-  label << std::setprecision(8) << energyMeV;
-  return label.str();
-}
-
-void RunObservationalProfile(
-    const std::map<std::string, std::string>& values,
-    const std::string& outputPath) {
-  // OV02-OV05 use the same production Parker SDE as XM03 but request either
-  // arrival-time profiles or an event-integrated spectrum.  The observational
-  // runner may invoke this callback more than once for a case (different
-  // spacecraft, connection hypotheses, or source hypotheses).  Each call is
-  // still made through the linked srcSEP/AMPS registry and produces its own
-  // native manifest/report, so Python never substitutes for model execution.
-  const std::string observer = Require(values, "observer");
-  if (observer.find(',') != std::string::npos ||
-      observer.find('\n') != std::string::npos ||
-      observer.find('\r') != std::string::npos)
-    throw std::runtime_error("--observer is not a valid CSV key");
-  const std::string outputMode = Require(values, "output-mode");
-  if (outputMode != "time-profile" && outputMode != "integrated-spectrum")
-    throw std::runtime_error(
-        "--output-mode must be time-profile or integrated-spectrum");
-  const std::string sourceRadiusMode = Require(values, "source-radius-mode");
-  if (sourceRadiusMode != "inner-boundary" &&
-      sourceRadiusMode != "moving-shock")
-    throw std::runtime_error(
-        "--source-radius-mode must be inner-boundary or moving-shock");
-
-  const std::vector<double> energiesMeV =
-      ParsePositiveList(values, "energies-mev");
-  const double innerRadiusM = Number(values, "injection-radius-solar-radii") *
-      SolarRadiusM;
-  const double observerRadiusM = Number(values, "observer-radius-au") *
-      AstronomicalUnitM;
-  const double solarWindMPerS = Number(values, "solar-wind-speed-m-per-s");
-  const double shockSpeedMPerS = Number(values, "shock-speed-m-per-s");
-  const double rotationRate = Number(values, "solar-rotation-rate-rad-per-s");
-  const double launchOffsetS = Number(values, "launch-offset-s");
-  const double connectionDelayS = Number(values, "connection-delay-s");
-  const double lambda0M = Number(values, "mfp-normalization-au") *
-      AstronomicalUnitM;
-  const double radialExponent = Number(values, "mfp-radial-exponent");
-  const double rigidityExponent = Number(values, "mfp-rigidity-exponent");
-  const double momentumIndex = Number(values, "injection-momentum-index");
-  const std::uint64_t particlesPerEnergy =
-      Unsigned(values, "particles-per-energy");
-  const double timeStepS = Number(values, "time-step-s");
-  const double durationS = Number(values, "duration-s");
-  const double cadenceS = Number(values, "output-cadence-s");
-  const std::uint64_t campaignSeed = Unsigned(values, "campaign-seed");
-  const std::string sourcePath = Require(values, "source-history-csv");
-  if (!(innerRadiusM > 0.0 && observerRadiusM > innerRadiusM &&
-        solarWindMPerS > 0.0 && shockSpeedMPerS > 0.0 &&
-        rotationRate > 0.0 && launchOffsetS >= 0.0 &&
-        connectionDelayS >= 0.0 && lambda0M > 0.0 &&
-        std::isfinite(radialExponent) && rigidityExponent > 0.0 &&
-        momentumIndex > 2.0 && particlesPerEnergy >= 100 &&
-        timeStepS > 0.0 && durationS > launchOffsetS + connectionDelayS &&
-        cadenceS > 0.0 && cadenceS <= durationS))
-    throw std::runtime_error("OV case has an invalid Parker reconstruction domain");
-
-  const std::vector<XM03SourceSample> source = ReadXM03Source(
-      sourcePath, launchOffsetS + connectionDelayS, durationS);
-  const XM03ParkerSpiral geometry(
-      innerRadiusM, observerRadiusM, solarWindMPerS, rotationRate);
-  const XM03SpatialDiffusion diffusion(
-      geometry, lambda0M, radialExponent, rigidityExponent);
-  const unsigned timeBins = static_cast<unsigned>(std::ceil(durationS / cadenceS));
-  std::vector<double> intensity(energiesMeV.size() * timeBins, 0.0);
-  std::vector<double> weightSquared(energiesMeV.size() * timeBins, 0.0);
-  std::vector<double> integrated(energiesMeV.size(), 0.0);
-  std::vector<double> integratedSquared(energiesMeV.size(), 0.0);
-
-  for (std::size_t channel = 0; channel < energiesMeV.size(); ++channel) {
-    const double initialMomentum = XM03MomentumFromEnergy(energiesMeV[channel]);
-    const double pcGeV = initialMomentum * LightSpeedMPerS / GigaElectronVoltJ;
-    // Equal Monte-Carlo counts are launched at every reviewed channel center.
-    // The p^(2-q) factor restores the differential-intensity spectrum implied
-    // by f(p) proportional to p^-q.  Absolute source area is not published for
-    // these events, so the Python comparison estimates only the normalization
-    // explicitly allowed by each case's evidence contract.
-    const double particleWeight =
-        std::pow(pcGeV, 2.0 - momentumIndex) / particlesPerEnergy;
-    for (std::uint64_t particle = 0; particle < particlesPerEnergy; ++particle) {
-      const std::uint64_t particleId =
-          static_cast<std::uint64_t>(channel) * particlesPerEnergy + particle + 1;
-      KeyedRandomStream initial(campaignSeed, particleId, 7100, 0);
-      const double releaseS = SampleXM03ReleaseTime(source, &initial);
-      const double connectedLaunchS = launchOffsetS + connectionDelayS;
-      // For events where the publication identifies only a coronal release,
-      // inject at the declared inner boundary.  ``moving-shock`` is reserved
-      // for cases with a traceable interplanetary shock trajectory.  Keeping
-      // the choice explicit prevents a multi-day source from silently being
-      // placed at 1 AU merely because a constant-speed extrapolation arrived
-      // there long before the later injection episode.
-      const double shockRadiusM = sourceRadiusMode == "moving-shock"
-          ? std::min(observerRadiusM, innerRadiusM + shockSpeedMPerS *
-                std::max(0.0, releaseS - connectedLaunchS))
-          : innerRadiusM;
-      ParkerState state(geometry.ArcLengthAtRadius(shockRadiusM), initialMomentum);
-      double elapsedS = releaseS;
-      std::uint64_t step = 0;
-      while (elapsedS < durationS &&
-             state.arcLengthM < geometry.observerArcLengthM()) {
-        const double previousS = state.arcLengthM;
-        const double radiusM = geometry.RadiusAtArcLength(previousS);
-        const SEP::Transport::ScalarResult speed = SEP::Transport::SpeedFromMomentum(
-            state.momentumKgMPerS, ProtonMassKg, LightSpeedMPerS);
-        if (!speed.status.ok()) throw std::runtime_error(speed.status.message);
-        const double dtS = std::min(timeStepS, durationS - elapsedS);
-        const ParkerBackground background(
-            solarWindMPerS * geometry.DrDs(radiusM),
-            2.0 * solarWindMPerS / radiusM);
-        KeyedRandomStream transport(campaignSeed, particleId, 7200, step);
-        const ParkerIncrement increment = SEP::Transport::AdvanceParker(
-            state, background, speed.value, dtS, diffusion, transport);
-        if (!increment.status.ok())
-          throw std::runtime_error(increment.status.message);
-        state = increment.state;
-        if (state.arcLengthM <= 0.0) break;
-        if (state.arcLengthM >= geometry.observerArcLengthM()) {
-          double fraction = 1.0;
-          if (state.arcLengthM > previousS)
-            fraction = std::max(0.0, std::min(
-                1.0, (geometry.observerArcLengthM() - previousS) /
-                         (state.arcLengthM - previousS)));
-          const double arrivalS = elapsedS + fraction * dtS;
-          const unsigned timeBin = std::min(
-              timeBins - 1, static_cast<unsigned>(arrivalS / cadenceS));
-          const std::size_t index = channel * timeBins + timeBin;
-          intensity[index] += particleWeight;
-          weightSquared[index] += particleWeight * particleWeight;
-          integrated[channel] += particleWeight;
-          integratedSquared[channel] += particleWeight * particleWeight;
-          break;
-        }
-        elapsedS += dtS;
-        ++step;
-      }
-    }
-  }
-
-  const std::string temporary = outputPath + ".tmp";
-  std::ofstream output(temporary.c_str());
-  output << std::setprecision(17)
-         << "observer,series,elapsed_hours,energy_mev,relative_intensity,"
-            "effective_sample_count\n";
-  if (outputMode == "time-profile") {
-    for (std::size_t channel = 0; channel < energiesMeV.size(); ++channel) {
-      const std::string series = observer + "_" +
-          CompactEnergyLabel(energiesMeV[channel]) + "MeV";
-      for (unsigned timeBin = 0; timeBin < timeBins; ++timeBin) {
-        const std::size_t index = channel * timeBins + timeBin;
-        const double effective = weightSquared[index] > 0.0
-            ? intensity[index] * intensity[index] / weightSquared[index] : 0.0;
-        output << observer << ',' << series << ','
-               << (timeBin + 0.5) * cadenceS / 3600.0 << ','
-               << energiesMeV[channel] << ','
-               << intensity[index] / (cadenceS / 3600.0) << ','
-               << effective << '\n';
-      }
-    }
-  } else {
-    const std::string series = observer + "_fluence_spectrum";
-    for (std::size_t channel = 0; channel < energiesMeV.size(); ++channel) {
-      const double effective = integratedSquared[channel] > 0.0
-          ? integrated[channel] * integrated[channel] /
-                integratedSquared[channel] : 0.0;
-      output << observer << ',' << series << ',' << durationS / 7200.0 << ','
-             << energiesMeV[channel] << ',' << integrated[channel] << ','
-             << effective << '\n';
-    }
-  }
-  Commit(&output, temporary, outputPath);
 }
 
 void RunXM03(const std::map<std::string, std::string>& values,
@@ -1012,12 +791,8 @@ bool RunCrossModelValidationModel(const std::string& caseId,
     const std::map<std::string, std::string> values = Parse(arguments);
     if (caseId == "XM01") RunXM01(values, outputPath);
     else if (caseId == "XM02") RunXM02(values, outputPath);
-    else if (caseId == "XM03" || caseId == "OV01")
-      RunXM03(values, outputPath);
-    else if ((caseId.size() == 4 && caseId.substr(0, 2) == "OV") ||
-             caseId == "EV01" || caseId == "EV02")
-      RunObservationalProfile(values, outputPath);
-    else throw std::runtime_error("unsupported XM/OV/EV validation case");
+    else if (caseId == "XM03") RunXM03(values, outputPath);
+    else throw std::runtime_error("unsupported XM validation case");
     if (error) error->clear();
     return true;
   } catch (const std::exception& exception) {

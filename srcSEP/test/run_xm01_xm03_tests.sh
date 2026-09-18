@@ -79,6 +79,39 @@ if grep -q 'model_source_csv' "$root/validation/cases/XM03/input.json"; then
   echo "ERROR XM03 must not accept an external model result" >&2
   exit 1
 fi
+
+# Exercise the publication renderer without requiring the complete AMPS link.
+# The smoke-model CSV was produced by the native XM03 callback above, while the
+# observation CSV is the immutable reviewed Figure-12 extraction.  Each time
+# must produce its own PNG/EPS pair; a combined three-panel figure no longer
+# satisfies the XM03 publication-output contract.
+python3 - "$root" "$out" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1]).resolve()
+output = Path(sys.argv[2]).resolve() / "XM03_plot_contract"
+output.mkdir(parents=True, exist_ok=True)
+sys.path.insert(0, str(root))
+sys.path.insert(0, str(root / "validation/cases"))
+from validation.cases import cross_model_case_runner as runner
+
+case = json.loads((root / "validation/cases/XM03/input.json").read_text(
+    encoding="utf-8"))
+model = runner.read_csv(Path(sys.argv[2]) / "XM03_native_model.csv")
+reference = runner.read_csv(
+    root / "validation/cases/XM03/reference/liu_figure12_earth_observations.csv")
+_, scale, _ = runner._xm03_score(case, model, reference)
+paths = runner._xm03_plot(
+    case, output, model, reference, scale, case["plot"]["formats"])
+if len(paths) != 6:
+    raise SystemExit(f"XM03 renderer returned {len(paths)} artifacts, expected 6")
+PY
+for time in 04h 12h 36h; do
+  test -s "$out/XM03_plot_contract/XM03_earth_observation_comparison_${time}.png"
+  test -s "$out/XM03_plot_contract/XM03_earth_observation_comparison_${time}.eps"
+done
 python3 "$root/validation/run_case.py" --list | grep -q 'XM03 | cross-model'
 grep -q 'RunCrossModelValidationModel' "$root/component_tests.cpp"
 grep -q 'cross_model_validation_models.o' "$root/makefile"
@@ -101,7 +134,10 @@ python3 "$root/test/run_tests.py" --amps "$SEP_EXECUTABLE" \
 test -s "$out/linked/XM01/XM01_comparison.png"
 test -s "$out/linked/XM01/XM01_comparison.eps"
 test -s "$out/linked/XM02/XM02_comparison.png"
-test -s "$out/linked/XM03/XM03_earth_observation_comparison.eps"
+for time in 04h 12h 36h; do
+  test -s "$out/linked/XM03/XM03_earth_observation_comparison_${time}.png"
+  test -s "$out/linked/XM03/XM03_earth_observation_comparison_${time}.eps"
+done
 # The runner must preserve the exact literature-input interpretation next to
 # each reference plot.  These artifacts make a reference-only SKIP auditable.
 test -s "$out/linked/XM02/XM02_publication_input.json"

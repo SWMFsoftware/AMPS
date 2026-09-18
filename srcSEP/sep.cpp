@@ -1,5 +1,6 @@
 
 #include "sep.h"
+#include "adapters/swcme1d_adapter.h"
 
 int SEP::Offset::MeanFreePath=-1;
 int SEP::Offset::TransportSchema=-1;
@@ -71,7 +72,7 @@ void SEP::TecplotFileTitle(char* title) {
     ShockModelName="analytic-1D";
     break;
   case SEP::cShockModelType::SwCme1d:
-    rShock=SEP::SW1DAdapter::gState.r_sh_m;
+    rShock=SEP::SW1DAdapter::ShockRadiusM();
     ShockModelName="SW-CME-1D";
     break;
   default:

@@ -81,10 +81,10 @@ one-time handoff marker. `swmf-read-only` is immutable;
 field-line remap increments its generation while conserving branch and
 spectral-bin energy on the covered physical arc length.
 
-SWCME's legacy `SetModelAndState` entry point also calls
-`AssertProviderMayWrite` before changing its backing cache. This prevents code
-that bypasses the normal publisher from mutating SWCME state during a particle
-phase or while a different provider owns the background.
+The private SWCME adapter's `Configure` and `PrepareState` entry points call
+`AssertProviderMayWrite` before changing their backing cache. This prevents a
+provider update during a particle phase or while a different provider owns the
+background, without exposing the provider's state type through `sep.h`.
 
 The handoff API records ownership but does not itself copy AMPS arrays. A future
 caller enabling local evolution is responsible for making that one-time private
@@ -96,7 +96,7 @@ evolution.
 For a standalone SWCME step:
 
 1. Read the upcoming epoch from `PIC::SimulationTime`.
-2. Prepare `swcme1d::StepState` at that exact epoch.
+2. Ask the private SWCME adapter to prepare its state at that exact epoch.
 3. Publish model-owned metadata valid through the upcoming global time step.
 4. Enter a `ParticleReadPhase` and call `PIC::TimeStep()`.
 5. Each particle mover acquires the same const snapshot in

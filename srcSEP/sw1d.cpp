@@ -36,7 +36,10 @@
 #include <cstdio>
 
 #include "sep.h"
-#include "swcme/swcme1d.hpp"   // header-only 1D SW + CME model (provides Model & StepState)
+// The absolute include root is supplied by SWCME_DIR in the application
+// makefile. Use the canonical public name, as srcSEP3D's SWCME adapter does;
+// a relative `swcme/...` path would incorrectly search AMPS/build/main.
+#include "swcme1d.hpp"
 
 
 swcme1d::Model SEP::sw1d;

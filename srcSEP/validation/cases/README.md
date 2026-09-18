@@ -15,9 +15,6 @@ validation/cases/<ID>/
   case.py                model/reference/scoring adapter with run_case()
   <model adapter>        calls a production kernel or linked executable
   <reference solver>     mathematically independent expected solution
-  reference/*.csv        immutable observation/digitized publication points
-  reference/provenance.json publication, figure, extraction, hash, uncertainty
-  publication_input.json reported inputs, reduced assumptions, missing inputs
 ```
 
 The case descriptor must provide a stable ID, group, runtime class, entrypoint,
@@ -36,13 +33,6 @@ quantities; scoring and plots read saved artifacts; and a provenance manifest
 links inputs, code, commands, and results. Later analytical, cross-model, and
 observational cases may use different executables or data acquisition, but they
 must preserve these lifecycle and evidence contracts.
-
-OV01-OV05 use the same lifecycle with the `observational-validation` group. EV01-EV02 add the `campaign-evidence` group and use real NASA CCMC/GOES observations with a frozen train/validation/holdout split.
-OV01/OV02 are release-gating comparisons. OV03-OV05 are diagnostic-only because
-their compound or wide-longitude structure is outside a one-field-line model;
-diagnostic metrics are retained with `gating=false`, never discarded or
-misrepresented as acceptance. Evidence coverage and linked execution remain
-hard gates in every case.
 
 To add a case:
 
@@ -89,8 +79,6 @@ python3 test/run_tests.py --amps /path/to/amps \
 python3 test/run_tests.py --amps /path/to/amps \
   --validation-case XM01 --validation-case XM02 --validation-case XM03 \
   --output-dir test_output/XM01-XM03
-python3 test/run_tests.py --amps /path/to/amps \
-  --validation-case EV01 --validation-case EV02 --output-dir test_output/EV01-EV02
 python3 test/run_tests.py --amps /path/to/amps --validation-all \
   --output-dir test_output/validation-all
 ```

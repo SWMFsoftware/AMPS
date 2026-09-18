@@ -1,5 +1,21 @@
 # Step 14 mover migration manifest
 
+## Canonical SWCME relocation
+
+| Former application-local surface | Canonical replacement | Compatibility |
+|---|---|---|
+| `srcSEP/swcme/` or transitional `srcSEP/swcme----moved-out/` | `AMPS/src/models/swcme/` | no application-local forwarding tree |
+| public or application-local `#include "swcme/swcme1d.hpp"` | private `adapters/swcme1d_adapter.cpp` includes `swcme1d.hpp` with `-I$(SWCME_DIR)` | `sep.h` is provider-free; source and copied `build/main` layouts supported |
+| `#include "../../swcme/swcme_sep_interface.hpp"` in VAL04 | `#include "swcme_sep_interface.hpp"` with the canonical test include root | no relative sibling dependency |
+| `make -C swcme/test` | canonical `$(SWCME_DIR)/test/run_tests.py --routine` | test failures continue to propagate |
+| root `srcSEP/demo1d.cpp` | `src/models/swcme/demo1d.cpp` | duplicate application copy removed |
+
+The makefile now uses the same active-makefile path discovery as srcSEP3D,
+builds `$(SWCME_DIR)/swcme.a`, and inserts canonical `swcme3d.o` exactly once
+into `mainlib.a`. `test/run_swcme_relocation_tests.sh` enforces ownership,
+the srcSEP3D-style private-adapter boundary, and source-versus-build/main path
+equivalence.
+
 Step 14 closes the temporary compatibility period and makes the source layout
 match the public runtime contract. Only three particle movers are selectable:
 `parker`, `fte-dmumu`, and `fte-mfp`. There is no fallback based on function

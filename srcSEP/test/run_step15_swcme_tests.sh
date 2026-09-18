@@ -5,12 +5,26 @@ set -eu
 # components together.  This target is deliberately independent of AMPS so a
 # source archive can verify the coupling boundary under ASan/UBSan.
 src_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+amps_root=$(CDPATH= cd -- "$src_root/.." && pwd)
+
+# Match the production makefile and srcSEP3D runner: the normal installed path
+# is AMPS/src/models/swcme, while SWCME_DIR supports an intentionally detached
+# source checkout. Never fall back to srcSEP/swcme, because that would hide an
+# incomplete relocation behind a private provider copy.
+swcme_dir=${SWCME_DIR:-"$amps_root/src/models/swcme"}
+test -d "$swcme_dir" || {
+  echo "ERROR: canonical SWCME directory is absent: $swcme_dir" >&2
+  echo "       Install it at AMPS/src/models/swcme or set SWCME_DIR." >&2
+  exit 2
+}
+swcme_dir=$(CDPATH= cd -- "$swcme_dir" && pwd)
+
 build_dir=$(mktemp -d "${TMPDIR:-/tmp}/srcsep-step15-swcme.XXXXXX")
 trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 ${CXX:-c++} -std=c++17 -O1 -Wall -Wextra -Wpedantic -Werror \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
-  -I"$src_root/util" -I"$src_root/swcme" \
+  -I"$src_root/util" -I"$swcme_dir" \
   "$src_root/util/sep_transport_common.cpp" \
   "$src_root/util/sep_parker_core.cpp" \
   "$src_root/util/sep_background_snapshot.cpp" \

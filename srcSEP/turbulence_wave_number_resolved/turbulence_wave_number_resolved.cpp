@@ -43,6 +43,7 @@ wave-number bin, not pointwise spectral densities.
 */
 
 #include "turbulence_wave_number_resolved.h"
+#include "adapters/swcme1d_adapter.h"
 #include "../sep.h"
 #include "../wave_particle_coupling_kolmogorov.h"
 
@@ -1552,7 +1553,7 @@ void OutputSpectrumTecplot2D(long int iteration, double simulation_time) {
     shock_model_name = "analytic-1D";
     break;
   case SEP::cShockModelType::SwCme1d:
-    r_shock = SEP::SW1DAdapter::gState.r_sh_m;
+    r_shock = SEP::SW1DAdapter::ShockRadiusM();
     shock_model_name = "SW-CME-1D";
     break;
   }

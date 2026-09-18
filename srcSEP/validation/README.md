@@ -30,13 +30,6 @@ validation, and passing coupled code is not called observational validation.
 | `XM01` | Cross-model verification | Linked production characteristics versus an independent conservative focused-transport PDE solver | Implemented; extended; linked executable |
 | `XM02` | Publication-informed controlled M-FLAMPA comparison | Linked first-passage reconstruction for the three reported MFPs plus digitized >10 MeV profiles from Zhao et al. Figure 7 | Implemented; runs from the single registered input; no external CSV |
 | `XM03` | Event-informed observational validation | Linked one-field-line Parker transport versus 80 ACE/EPAM, GOES-13/EPEAD, and SOHO/ERNE Earth measurements from Liu et al. Figure 12(a–c) | Implemented; fixed paper-derived input; no external model CSV |
-| `OV01` | Observational release gate | 2013 April 11 ACE/GOES/SOHO spectra from Liu et al. Figure 12(a–c) | Implemented; linked executable; fixed shared reference/source |
-| `OV02` | Observational release gate | 2020 May 29 PSP/EPI-Hi and STEREO-A/LET profiles from Cheng et al. Figures 3 and 6 | Implemented; linked executable; one unchanged radial setup |
-| `OV03` | Observational diagnostic | 2013 May 22 GOES/STEREO-A profiles from Ding et al. Figure 1 under single/twin-CME sources | Implemented; diagnostic-only due wide-longitude interacting CMEs |
-| `OV04` | Observational diagnostic | 2014 January 6 PAMELA event spectrum from Bruno et al. Figure 4 under three connection delays | Implemented; diagnostic-only due behind-limb anisotropic event |
-| `OV05` | Observational diagnostic | September 2017 STEREO-A profiles from Bruno et al. Figure 2 with three tagged injections | Implemented; diagnostic-only due compound transients and cross-field transport |
-| `EV01` | Campaign-level calibration evidence | NASA CCMC/GOES SHINE/ISWAT observed event quantities; sealed training/validation split | Implemented pilot; real observations only; expand to CLEAR 15–30 event/non-event cohort for formal campaign |
-| `EV02` | Campaign-level held-out evidence | Same immutable NASA CCMC observations with untouched holdout IDs | Implemented pilot sealed gate; prospective CCMC Scoreboard cohort remains future evidence |
 | `VAL01` | Numerical verification | Independent analytical diffusion moments and adiabatic-cooling characteristic | Implemented |
 | `VAL02` | Cross-mover verification | Matched `fte-dmumu`/`fte-mfp` mean-free-path closure | Implemented |
 | `VAL03` | Cross-model verification | Independently coded conservative finite-volume pitch-angle solver | Implemented |
@@ -62,8 +55,6 @@ make test-cv02-cv05-unit SEP_EXECUTABLE=/absolute/path/to/amps
 make test-cv06-cv12-unit SEP_EXECUTABLE=/absolute/path/to/amps
 make test-iv01-iv06-unit SEP_EXECUTABLE=/absolute/path/to/amps
 make test-xm01-xm03-unit SEP_EXECUTABLE=/absolute/path/to/amps
-make test-ov01-ov05-unit SEP_EXECUTABLE=/absolute/path/to/amps
-make test-ev01-ev02-unit SEP_EXECUTABLE=/absolute/path/to/amps
 ```
 
 This verifies that the supplied executable advertises each selected ID,
@@ -84,15 +75,6 @@ spiral heliosphere, then scores Earth observations from Figure 12(a–c). Their
 `publication_input.json` manifests distinguish reported inputs, standard
 constants, reduced-model assumptions, and missing global-run artifacts. No
 external `model_source_csv` is used.
-
-OV01-OV05 follow the same linked-application contract and always select their
-registry-owned publication inputs. Each comparison plot embeds the citation
-and source figure number. OV01 and OV02 are release gates. OV03-OV05 preserve
-their quantitative discrepancies as `gating=false` metrics because the
-campaign plan classifies them as diagnostic stress tests outside the scope of
-one-field-line physics; missing evidence and linked execution failures remain
-hard failures. See `../OV01_OV05_VALIDATION_IMPLEMENTATION.md` and each
-`cases/OVxx/README.md` for source hashes, extraction details, and limitations.
 
 It runs `VAL01`–`VAL04-SWCME` under AddressSanitizer and
 UndefinedBehaviorSanitizer, assembles a temporary campaign, and proves that
@@ -228,18 +210,3 @@ the observational gate.
 See each `cases/VAL*/README.md` for equations, configurations, metrics, and
 limitations. See [STEP15_VALIDATION_REPORT.md](../STEP15_VALIDATION_REPORT.md)
 for the evidence obtained in this delivered environment.
-
-
-EV01-EV02 are documented in `../EV01_EV02_VALIDATION_IMPLEMENTATION.md` and in
-the per-case READMEs. Their committed reference values are observed NASA
-CCMC/GOES quantities, not synthetic expected solutions. The comparison figures
-carry an on-figure data-source footer, the score CSV records per-row source
-locations, and each result directory contains machine- and human-readable
-reference provenance. The source is the CCMC SHINE/ISWAT SEP Model Validation
-Challenge GOES-13 corrected integral proton measurements; exact numeric values
-come from the official `>10 MeV / 10 pfu` and `>100 MeV / 1 pfu` threshold
-tables. CCMC's per-event web figures are unnumbered, so the implementation cites
-the section/table instead of assigning a false figure number. The nine-event
-challenge bundle exercises campaign mechanics; the implementation plan still
-requires a larger CLEAR-based 15–30 event/non-event cohort before treating
-EV01/EV02 as the final statistical release campaign.

@@ -1,6 +1,7 @@
 
 #include "pic.h"
 #include "sep.h"
+#include "adapters/swcme1d_adapter.h"
 #include "transport_common.h"
 #include "amps2swmf.h"
 #include "util/sep_species_source.h"
@@ -433,7 +434,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
         s=SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio();
         break;
       case SEP::cShockModelType::SwCme1d:
-        s=SEP::SW1DAdapter::gState.rc;
+        s=SEP::SW1DAdapter::CompressionRatio();
         break;
       default:
         exit(__LINE__,__FILE__,"Error: the case is not known");

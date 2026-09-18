@@ -120,17 +120,26 @@ python3 test/run_tests.py --amps ../amps \
 `--case-input` is rejected for XM03 because there is one reviewed event input.
 The output contains the resolved input, linked native manifest/report/log,
 relative model spectrum, copied observations, point-by-point comparison CSV,
-run provenance, and PNG/EPS overlays. A missing external model CSV can no
-longer cause XM03 to SKIP.
+run provenance, and six publication figures:
 
-Every PNG/EPS title includes the short bibliographic reference
-`Liu et al. (2025), doi:10.3847/1538-4357/adc4e3` and explicitly identifies
-the extracted observation panels as Figure 12(a), Figure 12(b), and Figure
-12(c). The values come from `reference.plot_citation` and
-`reference.figures` in `input.json`, making missing attribution a configuration
-error rather than silently producing an unlabeled plot. Complete publication,
-PDF/vector-figure hashes, extraction, and exclusion details remain in
-`publication_input.json` and `reference/provenance.json`.
+- `XM03_earth_observation_comparison_04h.{png,eps}`;
+- `XM03_earth_observation_comparison_12h.{png,eps}`; and
+- `XM03_earth_observation_comparison_36h.{png,eps}`.
+
+Each time is rendered as a separate 6.5-by-5-inch log-log plot. The model and
+the three observing instruments use distinct line/marker/color encodings, and
+the complete legend is placed inside every figure. All three figures use the
+same energy and intensity ranges, which makes visual comparison between times
+quantitative rather than an artifact of per-panel autoscaling. PNG output is
+600 dpi; EPS output preserves vector curves and Type-42 fonts.
+
+The artwork intentionally contains no bibliographic citation, DOI, source
+panel number, extraction note, or fitted normalization. Those details belong
+in the publication caption and remain fully recorded in `input.json`,
+`publication_input.json`, `reference/provenance.json`, and the run provenance.
+The plot itself contains only the physical time, axis quantities and units,
+and the in-figure model/observation legend. A missing external model CSV can no
+longer cause XM03 to SKIP.
 
 ## Reproduce the vector extraction
 

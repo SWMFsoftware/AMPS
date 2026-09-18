@@ -7,6 +7,44 @@ providers, SWCME, or an SWMF coupling.  The source also contains the
 self-consistent Alfvén-turbulence subsystem, including integrated and
 wave-number-resolved representations and particle-wave coupling.
 
+## Canonical SWCME dependency
+
+SWCME is not stored or built beneath this application. Its single source and
+binary owner is `AMPS/src/models/swcme`, shared independently by `srcSEP` and
+`srcSEP3D`. The application makefile follows the proven srcSEP3D pattern:
+
+- it derives `AMPS_ROOT` from the active makefile rather than the shell's
+  current directory, so the same file works in `AMPS/srcSEP` and after AMPS
+  copies it to `AMPS/build/main`;
+- it defines `SWCME_DIR=$(AMPS_ROOT)/src/models/swcme` and, as in
+  `srcSEP3D`, gives the explicit `adapters/%.o` rule that canonical include
+  root;
+- `sep.h` exposes no SWCME header or type. Only
+  `adapters/swcme1d_adapter.cpp` includes `swcme1d.hpp`, while its application
+  API remains provider-neutral;
+- it builds the canonical `swcme.a` and inserts its one production member,
+  `swcme3d.o`, exactly once into `mainlib.a`; and
+- source-only validation uses the same `SWCME_DIR` and never searches for an
+  application-local fallback.
+
+`SWCME_DIR` can be overridden for a deliberately detached checkout. No
+override is needed in the installed AMPS layout. The former
+`swcme----moved-out` tree and root-level SWCME demo are absent; the maintained
+provider sources, demonstrations, tests, and documentation all live under
+`src/models/swcme`.
+
+The focused relocation gate is:
+
+```sh
+make test-swcme-relocation-unit
+```
+
+It reproduces both source and copied-build layouts, compiles both the
+provider-neutral adapter API and the canonical-header implementation, and
+rejects application-local SWCME sources, wrappers, or include paths.
+`make strict-production` delegates to the enclosing `make amps` build and then
+audits `AMPS/build/main/mainlib.a` to require exactly one `swcme3d.o` member.
+
 This source includes the Step 1 selectable standalone component-test registry,
 the Step 2 immutable background/clock boundary, the Step 3 common SI flux-tube
 geometry/source normalization, the Step 4 production mover API, the Step 5
@@ -26,14 +64,6 @@ Earth-observation comparison for the 2013 April 11 event. XM03 now generates
 its Parker-transport spectrum inside the selected executable and compares it
 with ACE/EPAM, GOES-13/EPEAD, and SOHO/ERNE data from Liu et al. Figure 12; it
 does not require or accept an external model export.
-Observational cases `OV01`–`OV05` add two release gates (the 2013 April 11
-near-Earth benchmark and the 2020 May 29 PSP/STEREO-A radial comparison) plus
-three explicitly diagnostic stress cases for the 2013 May 22 interacting CMEs,
-the 2014 January 6 connectivity-sensitive event, and the September 2017
-compound sequence. Every OV model artifact is produced by the selected linked
-application; immutable spacecraft points, publication figure attribution,
-fixed inputs, digitization uncertainty, and missing-physics limitations live
-beside each case.
 They cover ballistic streaming; constant/nonuniform spatial diffusion;
 adiabatic cooling; magnetic focusing; Legendre pitch diffusion; telegraph and
 first-passage transport; planar DSA; turbulence advection and growth; and
@@ -53,9 +83,6 @@ cases are documented in
 XM equations, publication sources, reference extraction, inputs, and evidence
 limits are documented in
 [XM01_XM03_VALIDATION_IMPLEMENTATION.md](XM01_XM03_VALIDATION_IMPLEMENTATION.md).
-The observational sources, input derivations, acceptance roles, and run
-commands are documented in
-[OV01_OV05_VALIDATION_IMPLEMENTATION.md](OV01_OV05_VALIDATION_IMPLEMENTATION.md).
 Retired names remain
 mapped in [MIGRATION_MANIFEST.md](MIGRATION_MANIFEST.md).
 Self-consistent Alfvén turbulence remains a production subsystem and uses the

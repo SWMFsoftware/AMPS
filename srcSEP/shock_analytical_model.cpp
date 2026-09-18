@@ -1,4 +1,5 @@
 #include "sep.h"
+#include "adapters/swcme1d_adapter.h"
 #include "util/sep_shock_source_core.h"
 #include "turbulence_production_adapter.h"
 #include "util/sep_run_configuration.h"
@@ -80,7 +81,7 @@ double SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio() {
 
 double SEP::ParticleSource::ShockWave::Tenishev2005::GetShockSpeed() {
   if (SEP::ShockModelType==SEP::cShockModelType::SwCme1d) {
-    return SEP::SW1DAdapter::gState.V_sh_ms;
+    return SEP::SW1DAdapter::ShockSpeedMPerS();
   }
   if (InitFlag==false) Init();
   const SEP::Transport::ScalarResult speed=SEP::Shock::SpeedAtRadius(
@@ -99,7 +100,7 @@ void SEP::ParticleSource::ShockWave::Tenishev2005::UpdateShockLocation() {
   const double simulation_time = SEP::Background::SimulationTimeSeconds();
 
   if (SEP::ShockModelType==SEP::cShockModelType::SwCme1d) {
-    rShock=SEP::SW1DAdapter::gState.r_sh_m;
+    rShock=SEP::SW1DAdapter::ShockRadiusM();
     return;
   }
   const SEP::Transport::Status status=
@@ -124,7 +125,7 @@ double SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() {
     density=GetSolarWindDensity();
     break;
   case SEP::cShockModelType::SwCme1d:
-    r_sh=SEP::SW1DAdapter::gState.r_sh_m;
+    r_sh=SEP::SW1DAdapter::ShockRadiusM();
 
     if (SEP::SW1DAdapter::QueryAtRadius(r_sh, n_m3, V_ms, divV, /*applyClamp=*/true)) {
       density=n_m3;
@@ -152,7 +153,7 @@ int SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(int iFiel
   // The former order used a stale rShock^2 for analytical runs.
   UpdateShockLocation();
   const double radius=SEP::ShockModelType==SEP::cShockModelType::SwCme1d
-      ? SEP::SW1DAdapter::gState.r_sh_m : rShock;
+      ? SEP::SW1DAdapter::ShockRadiusM() : rShock;
   std::vector<SEP::Shock::Vector3> vertices;
   PIC::FieldLine::cFieldLineSegment* segment=
       PIC::FieldLine::FieldLinesAll[iFieldLine].GetFirstSegment();
