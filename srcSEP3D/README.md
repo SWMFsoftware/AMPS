@@ -459,8 +459,8 @@ normalized-domain/preflight definitions before the final Fortran-driver link.
 | `HARN`, `RUNNER`, `LAY`, `BLD`, `UTIL` | runner, layering, binary boundary, frozen common kernels |
 | `LIFE3D01–04` | immutable configuration and complete lifecycle transition matrix |
 | `R3D01–07` | mover hook, subcycling, transactional snapshots, clock/events, source, observers, complete restart |
-| `CFG3D01–05` | input/CLI, typed contracts, domains, shared Parker geometry, mesh/memory preflight |
-| `MSH3D01–09` | resolution bounds/laws, tube geometry, balance, octrees, memory, ownership, presets, gradients |
+| `CFG3D01–06` | input/CLI, typed contracts, domains, shared Parker geometry, mesh/memory preflight, finite-line schema |
+| `MSH3D01–10` | resolution bounds/laws, tube geometry, balance, octrees, memory, ownership, presets, gradients, finite-line/origin identities |
 | `BGP3D01–06` | analytic Parker identities, component laws, focusing, wind derivatives, polar limits |
 | `SNAP3D01–08` | completeness, finite values, units, epochs, atomicity, interpolation, batch status, frame |
 | `TUR3D01–04` | spectrum normalization, AWSoM mapping, resonance range, missing-data policy |
@@ -482,3 +482,26 @@ the reviewed cross-model/observational bundles. The R01 hook, pinned resolver,
 integer schedule, global observation gather, and restart coordinator are now
 implemented; a configured `BLDL3D01` run on the target checkout remains
 required after every production-boundary change.
+
+## Schema-version-2 Parker initialization
+
+`examples/sep3d_analytic_parker.in` now uses schema version 2 and adds a
+required `[parker_spiral]` section.  It supplies the origin, initial point,
+physical arc length, and total number of points in SI units.  Version-1 files
+remain accepted and normalize to a deterministic line derived from their
+existing domain/tube settings; this preserves archived campaigns and typed
+SWMF-host construction.
+
+During standalone initialization the input is parsed before the runtime
+lifecycle enters mesh setup.  The finite line is materialized with a
+second-order midpoint tangent integration and appears in the dry-run summary.
+The production AMPS `localResolution()` callback continues to use the same
+analytic Parker geometry, so line sampling density cannot imprint artificial
+facets on the refined tube.  The origin is carried through the mesh law and all
+radial/tube distances are origin-relative.  The current analytic/SWMF physics
+contract still requires a heliocentric zero origin; a nonzero production
+origin fails validation rather than being only partially honored.
+
+`CFG3D06` enforces the complete version-2 input and source consistency;
+`MSH3D10` enforces point count, arc length, and origin-relative AMR invariance.
+Both are part of the normal `test/run_tests.py --all` manifest.

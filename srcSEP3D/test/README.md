@@ -544,3 +544,11 @@ invoke that exact linked callback, following the srcSEP pattern.
 | linked executable does not advertise a case | rebuild the configured AMPS application from this source tree and verify its production test registry |
 | unknown test/group | use `--list`; unknown selectors are usage errors |
 | report missing after a C++ test | treat as ERROR; inspect verbose subprocess output |
+
+`CFG3D06` and `MSH3D10` are routine C++ entries in the runner manifest.
+`CFG3D06` uses live negative controls for an omitted version-2 key and an
+initial point inconsistent with the inner sphere. `MSH3D10` constructs the
+configured number of vertices, sums every segment to the requested arc length,
+and translates the origin/probe together to prove the AMR law is not tied to
+coordinate zero.  These extend the gates; none of the earlier CFG3D/MSH3D
+thresholds or negative controls was relaxed.

@@ -204,6 +204,10 @@ Core::Status Solve3(double matrix[3][3], double rhs[3], Core::Vec3* result) {
 
 Core::Status Validate(const ResolutionConfiguration& configuration) {
   const double values[] = {
+      configuration.originM.x, configuration.originM.y,
+      configuration.originM.z, configuration.parkerInitialPointM.x,
+      configuration.parkerInitialPointM.y,
+      configuration.parkerInitialPointM.z, configuration.parkerLengthM,
       configuration.innerRadiusM, configuration.outerRadiusM,
       configuration.minimumCellSizeM, configuration.backgroundCellSizeM,
       configuration.solarSurfaceCellSizeM,
@@ -238,6 +242,21 @@ Core::Status Validate(const ResolutionConfiguration& configuration) {
   if (configuration.cellsPerBlockEdge == 0 ||
       configuration.maximumLevel > 19) {
     return Invalid("cellsPerBlockEdge must be positive and maximumLevel <= 19");
+  }
+  if (configuration.parkerLengthM <= 0.0 ||
+      configuration.parkerPointCount < 2 ||
+      configuration.parkerPointCount > 10000000ULL ||
+      std::fabs((configuration.parkerInitialPointM - configuration.originM).Norm() -
+                configuration.innerRadiusM) >
+          1.0e-10 * configuration.innerRadiusM) {
+    return Invalid("finite Parker centreline definition is invalid");
+  }
+  const Core::Vec3 declaredSource = configuration.originM +
+      Core::ParkerCurvePoint(configuration.innerRadiusM,
+                             Geometry(configuration));
+  if ((configuration.parkerInitialPointM - declaredSource).Norm() >
+      1.0e-10 * configuration.innerRadiusM) {
+    return Invalid("finite Parker initial point disagrees with tube source angles");
   }
   if (configuration.memoryBudgetBytes == 0) {
     return Invalid("mesh memory budget must be positive");
@@ -298,11 +317,12 @@ Core::Vec3 ParkerTubeTangent(
 
 double TubeDistanceM(const Core::Vec3& positionM,
                      const ResolutionConfiguration& configuration) {
-  const double radius = positionM.Norm();
+  const Core::Vec3 relative = positionM - configuration.originM;
+  const double radius = relative.Norm();
   if (radius <= 0.0 || !std::isfinite(radius)) {
     return std::numeric_limits<double>::infinity();
   }
-  const Core::Vec3 direction = positionM.Normalized();
+  const Core::Vec3 direction = relative.Normalized();
   const Core::Vec3 centreline = ParkerTubeDirection(radius, configuration);
   // atan2(|u x v|,u.v) retains first-order accuracy for nearly coincident
   // directions; acos(u.v) amplifies a one-ulp dot-product error to O(1e-8)
@@ -314,7 +334,7 @@ double TubeDistanceM(const Core::Vec3& positionM,
 
 double RequestedCellSizeM(const Core::Vec3& positionM,
                           const ResolutionConfiguration& configuration) {
-  const double radius = positionM.Norm();
+  const double radius = (positionM - configuration.originM).Norm();
   double requested = configuration.backgroundCellSizeM;
   if (configuration.enableRadialRefinement) {
     const double fraction = (radius - configuration.innerRadiusM) /
@@ -342,6 +362,36 @@ double RequestedCellSizeM(const Core::Vec3& positionM,
   }
   return Clamp(requested, configuration.minimumCellSizeM,
                configuration.backgroundCellSizeM);
+}
+
+Core::Status BuildParkerCenterline(
+    const ResolutionConfiguration& configuration,
+    std::vector<Core::Vec3>* points) {
+  if (points == nullptr) return Invalid("Parker centreline output is null");
+  const Core::Status valid = Validate(configuration);
+  if (!valid.ok()) return valid;
+
+  std::vector<Core::Vec3> candidate;
+  candidate.reserve(static_cast<std::size_t>(configuration.parkerPointCount));
+  Core::Vec3 point = configuration.parkerInitialPointM;
+  candidate.push_back(point);
+  const double step = configuration.parkerLengthM /
+      static_cast<double>(configuration.parkerPointCount - 1);
+  const Core::ParkerSpiralGeometry geometry = Geometry(configuration);
+  for (std::uint64_t i = 1; i < configuration.parkerPointCount; ++i) {
+    const Core::Vec3 relative = point - configuration.originM;
+    const Core::Vec3 first = Core::ParkerLocalTangent(relative, geometry);
+    if (first.Norm() == 0.0)
+      return Invalid("Parker tangent vanished while sampling centreline");
+    const Core::Vec3 midpoint = relative + 0.5 * step * first;
+    const Core::Vec3 tangent = Core::ParkerLocalTangent(midpoint, geometry);
+    if (tangent.Norm() == 0.0)
+      return Invalid("Parker midpoint tangent vanished while sampling centreline");
+    point += step * tangent;
+    candidate.push_back(point);
+  }
+  points->swap(candidate);
+  return Core::Status::OK();
 }
 
 Core::Status StandaloneOctree::Build(
@@ -504,9 +554,11 @@ Core::Status BuildRefinementPreflight(
         (resolution.outerRadiusM - resolution.innerRadiusM) * i /
         static_cast<double>(kRadialSamples);
     const Core::Vec3 probes[] = {
-        {radius, 0.0, 0.0}, {-radius, 0.0, 0.0},
-        {0.0, radius, 0.0}, {0.0, 0.0, radius},
-        radius * ParkerTubeDirection(radius, resolution)};
+        domain.originM + Core::Vec3(radius, 0.0, 0.0),
+        domain.originM + Core::Vec3(-radius, 0.0, 0.0),
+        domain.originM + Core::Vec3(0.0, radius, 0.0),
+        domain.originM + Core::Vec3(0.0, 0.0, radius),
+        domain.originM + radius * ParkerTubeDirection(radius, resolution)};
     for (const Core::Vec3& probe : probes) {
       const double cell = RequestedCellSizeM(probe, resolution);
       if (cell < candidate.minimumRequestedCellM) {
@@ -540,8 +592,7 @@ Core::Status BuildRefinementPreflight(
         };
         const Core::Vec3 point = domain.originM +
             Core::Vec3(coordinate(ix), coordinate(iy), coordinate(iz));
-        const double requested = RequestedCellSizeM(
-            point - domain.originM, resolution);
+        const double requested = RequestedCellSizeM(point, resolution);
         unsigned level = 0;
         while (level < resolution.maximumLevel &&
                rootCell / std::pow(2.0, level) > requested) ++level;

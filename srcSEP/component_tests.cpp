@@ -3,6 +3,7 @@
 #include "util/sep_mover_validation.h"
 #include "util/sep_scientific_validation.h"
 #include "util/sep_swcme_validation.h"
+#include "util/sep_initialization_validation.h"
 #include "util/sep_turbulence_validation.h"
 #include "validation/cases/CV01/cv01_model.h"
 #include "validation/cases/controlled_transport_models.h"
@@ -576,6 +577,13 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
         SEP::Testing::SwcmeImprovementDescriptors();
     descriptors.insert(descriptors.end(), swcme_descriptors.begin(),
                        swcme_descriptors.end());
+    // These AMPS-independent callbacks are linked into the production catalog
+    // as routine tests, so `test/run_tests.py --all` discovers and executes
+    // the same INIT01/INIT02 gates as the focused source-only build.
+    const std::vector<SEP::Testing::Descriptor> initialization_descriptors =
+        SEP::Testing::InitializationDescriptors();
+    descriptors.insert(descriptors.end(), initialization_descriptors.begin(),
+                       initialization_descriptors.end());
     const SEP::Testing::Descriptor legacy_descriptors[] = {
       MakeCV01Descriptor(),
       MakeControlledValidationDescriptor(

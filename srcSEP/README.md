@@ -828,3 +828,50 @@ WP63, and WP64 report `SKIP` until a reviewed native AMPS/SWMF, external-data,
 or scaling command is supplied through `SRCSEP_NATIVE_GATE`. Promotion
 requires an explicit production selector/call path, restart compatibility,
 native observations, and a disposition update reviewed with the build manifest.
+
+## File-driven Parker and mesh initialization
+
+The standalone driver now accepts `--input PATH`.  The file is parsed and
+validated before the post-compile parser, SWCME configuration, MPI startup, or
+AMPS mesh allocation.  If `--input` is omitted, the historical hard-coded
+domain, line length, point count, and mesh refinement remain unchanged.  This
+is an intentional compatibility boundary, not an implicit default file.
+
+[`examples/sep_parker_mesh.in`](examples/sep_parker_mesh.in) is the complete
+schema-version-1 example.  It defines, in SI units:
+
+- the Parker origin, initial point, physical arc length, and total point count;
+- the inner radius and cubic root-domain half-size;
+- the uniform background cell size, hard resolution floor, and maximum AMR
+  level;
+- the solar-surface cell size, transition radius, named degradation profile,
+  and exponent;
+- the magnetic-tube radius at a reference heliocentric distance, its radial
+  scaling mode, centerline cell size, transverse profile, and exponent; and
+- the wind speed and solar rotation rate that set the Parker winding.
+
+The generated line has `point_count` vertices, including both ends.  A
+midpoint-tangent step uses constant arc increment
+`length_m/(point_count-1)`.  The spatial AMR law does not measure distance to
+that polygonal line: it evaluates the corresponding analytic Parker curve, so
+increasing the output point count does not change mesh refinement.  Near the
+Sun and within the magnetic tube, the requested size is the minimum of the two
+monotone profiles and the global size, then bounded by
+`minimum_cell_size_m`.  At the tube boundary and solar transition the relevant
+profile equals the global size exactly.
+
+Configured mode currently supports exactly one Parker spiral.  A straight,
+FLAMPA, or random multi-line compile-time domain is rejected rather than
+silently ignoring file fields.  Particles still move on srcSEP's distributed
+one-dimensional field line; the Cartesian AMR mesh supports the embedded line
+and background data.
+
+Run the focused initialization gate with:
+
+```sh
+make test-initialization-unit
+```
+
+`INIT01` and `INIT02` are also native routine descriptors.  After rebuilding
+the linked AMPS executable, `test/run_tests.py --all --amps ../amps ...`
+discovers and executes them with the rest of the catalog.

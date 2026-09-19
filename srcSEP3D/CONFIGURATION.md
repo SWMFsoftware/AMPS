@@ -210,6 +210,35 @@ identity/conservation, and resolved observer geometry plus commit-only reset.
 | `CFG3D03` | presets, explicit override, containment, and directional boundary status |
 | `CFG3D04` | shared tangent and polarity-independent tube geometry |
 | `CFG3D05` | monotone composite profiles, tube scaling, AMR levels, memory categories, and level rejection |
+| `CFG3D06` | complete finite Parker-line input and fail-closed source consistency |
+
+## Version 2 finite Parker-line section
+
+Schema version 2 requires these eight keys:
+
+```ini
+[parker_spiral]
+origin_x_m = 0
+origin_y_m = 0
+origin_z_m = 0
+initial_x_m = 1.3914e10
+initial_y_m = 0
+initial_z_m = 0
+length_m = 2.0e11
+point_count = 4001
+```
+
+`point_count` includes both endpoints and must be at least two.  `length_m` is
+arc length, not final heliocentric radius.  The origin must equal the domain
+origin, and the initial point relative to that origin must lie on
+`domain.inner_radius_m` in the direction declared by the tube source longitude
+and colatitude.  Solar wind speed and rotation remain owned by
+`[background.parker]`; the line section does not duplicate them.
+
+The parser accepts schema version 1 for restart/campaign compatibility.  Its
+finite line is normalized from the existing source direction, domain radii,
+and a deterministic count before fingerprinting.  Schema version 2 never
+falls back to those values: omitting any of the eight keys is an error.
 
 Run only these gates with:
 

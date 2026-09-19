@@ -108,7 +108,7 @@ bool ParseBool(const std::string& text, bool* value) {
 
 bool KnownSection(const std::string& section) {
   static const std::set<std::string> fixed = {
-      "run", "domain", "mesh", "mesh.solar", "mesh.tube", "memory",
+      "run", "domain", "parker_spiral", "mesh", "mesh.solar", "mesh.tube", "memory",
       "background", "background.parker", "turbulence", "transport",
       "shock", "source", "species", "storage", "output", "restart"};
   return fixed.count(section) != 0 ||
@@ -155,7 +155,9 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
 
   if (field == "run.schema_version") {
     std::uint64_t version = 0;
-    if (!ParseUnsigned64(value, &version) || version != 1) return invalidValue();
+    if (!ParseUnsigned64(value, &version) || version < 1 || version > 2)
+      return invalidValue();
+    o->inputSchemaVersion = static_cast<unsigned>(version);
     return Core::Status::OK();
   }
   if (field == "run.intent") {
@@ -206,6 +208,22 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     if (!ParseDouble(value, &o->coordinateOriginM.y)) return invalidValue();
   } else if (field == "domain.origin_z_m") {
     if (!ParseDouble(value, &o->coordinateOriginM.z)) return invalidValue();
+  } else if (field == "parker_spiral.origin_x_m") {
+    if (!ParseDouble(value, &o->parkerSpiralOriginM.x)) return invalidValue();
+  } else if (field == "parker_spiral.origin_y_m") {
+    if (!ParseDouble(value, &o->parkerSpiralOriginM.y)) return invalidValue();
+  } else if (field == "parker_spiral.origin_z_m") {
+    if (!ParseDouble(value, &o->parkerSpiralOriginM.z)) return invalidValue();
+  } else if (field == "parker_spiral.initial_x_m") {
+    if (!ParseDouble(value, &o->parkerSpiralInitialPointM.x)) return invalidValue();
+  } else if (field == "parker_spiral.initial_y_m") {
+    if (!ParseDouble(value, &o->parkerSpiralInitialPointM.y)) return invalidValue();
+  } else if (field == "parker_spiral.initial_z_m") {
+    if (!ParseDouble(value, &o->parkerSpiralInitialPointM.z)) return invalidValue();
+  } else if (field == "parker_spiral.length_m") {
+    if (!ParseDouble(value, &o->parkerSpiralLengthM)) return invalidValue();
+  } else if (field == "parker_spiral.point_count") {
+    if (!ParseUnsigned64(value, &o->parkerSpiralPointCount)) return invalidValue();
   } else if (field == "mesh.global_cell_size_m") {
     if (!ParseDouble(value, &o->backgroundCellSizeM)) return invalidValue();
   } else if (field == "mesh.minimum_cell_size_m") {
@@ -616,6 +634,20 @@ Core::Status ParseConfigurationText(
                      std::string(required) + "]'");
     }
   }
+  if (candidate.inputSchemaVersion >= 2) {
+    if (sections.count("parker_spiral") == 0)
+      return Invalid("schema version 2 requires [parker_spiral]");
+    const char* requiredLineFields[] = {
+        "parker_spiral.origin_x_m", "parker_spiral.origin_y_m",
+        "parker_spiral.origin_z_m", "parker_spiral.initial_x_m",
+        "parker_spiral.initial_y_m", "parker_spiral.initial_z_m",
+        "parker_spiral.length_m", "parker_spiral.point_count"};
+    for (const char* required : requiredLineFields) {
+      if (assigned.count(required) == 0)
+        return Invalid("schema version 2 is missing required key '" +
+                       std::string(required) + "'");
+    }
+  }
   bool observerSectionSeen = false;
   for (const std::string& present : sections) {
     if (present.rfind("observer.", 0) == 0) observerSectionSeen = true;
@@ -675,6 +707,7 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
   if (summary == nullptr) return Invalid("dry-run summary output is null");
   const RunConfiguration3DOptions& options = configuration.options();
   Mesh::ResolutionConfiguration resolution;
+  resolution.originM = options.coordinateOriginM;
   resolution.innerRadiusM = options.innerRadiusM;
   resolution.outerRadiusM = options.outerRadiusM;
   resolution.minimumCellSizeM = options.minimumCellSizeM;
@@ -695,6 +728,9 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
   resolution.tubeTransverseExponent = options.tubeTransverseExponent;
   resolution.solarWindSpeedMPerS = options.parker.solarWindSpeedMPerS;
   resolution.solarRotationRateRadPerS = options.parker.solarRotationRateRadPerS;
+  resolution.parkerInitialPointM = options.parkerSpiralInitialPointM;
+  resolution.parkerLengthM = options.parkerSpiralLengthM;
+  resolution.parkerPointCount = options.parkerSpiralPointCount;
   resolution.cellsPerBlockEdge = options.meshCellsPerBlockEdge;
   resolution.maximumLevel = options.maximumMeshLevel;
   resolution.blockOverheadBytes = options.meshBlockOverheadBytes;
@@ -705,6 +741,11 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
   const Core::Status status = Mesh::BuildRefinementPreflight(
       domain, resolution, configuration.storage_layout(), &preflight);
   if (!status.ok()) return status;
+  std::vector<Core::Vec3> centreline;
+  const Core::Status lineStatus =
+      Mesh::BuildParkerCenterline(resolution, &centreline);
+  if (!lineStatus.ok()) return lineStatus;
+  const Core::Vec3& lineEnd = centreline.back();
   std::ostringstream output;
   output << std::setprecision(17) << std::scientific
          << "srcSEP3D dry-run configuration\n"
@@ -712,6 +753,10 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
          << "domain_preset=" << Name(options.domain) << '\n'
          << "inner_radius_m=" << options.innerRadiusM << '\n'
          << "outer_radius_m=" << options.outerRadiusM << '\n'
+         << "parker_spiral_point_count=" << centreline.size() << '\n'
+         << "parker_spiral_length_m=" << options.parkerSpiralLengthM << '\n'
+         << "parker_spiral_end_m=" << lineEnd.x << ',' << lineEnd.y << ','
+         << lineEnd.z << '\n'
          << "minimum_requested_cell_m=" << preflight.minimumRequestedCellM << '\n'
          << "maximum_requested_cell_m=" << preflight.maximumRequestedCellM << '\n'
          << "tube_radius_at_reference_m=" << preflight.tubeRadiusAtReferenceM << '\n'

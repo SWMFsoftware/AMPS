@@ -7,10 +7,13 @@
 
 
 #include "sep.h"
+#include "util/sep_initialization.h"
 
 
 #include <iostream>
+#include <algorithm>
 #include <cmath>
+#include <vector>
 
 // Function to calculate the Parker spiral magnetic field in 3D, using arrays
 void calculateIMFParkerSpiral3D(double* x, double u_sw, double* B) {
@@ -76,6 +79,26 @@ void SEP::ParkerSpiral::GetB(double* B,double *x,double u_sw) {
   for (idim=0;idim<3;idim++) B[idim]=aa*e_r[idim]-bb*e_phi[idim];
 }
 
+void SEP::ParkerSpiral::GetB(
+    double* B, const double* x_m, const double* origin_m,
+    double source_radius_m, double solar_wind_speed_m_per_s,
+    double solar_rotation_rate_rad_per_s) {
+  double radial[3] = {x_m[0] - origin_m[0], x_m[1] - origin_m[1],
+                      x_m[2] - origin_m[2]};
+  const double radius = Vector3D::Length(radial);
+  if (!(radius > 0.0) || !(solar_wind_speed_m_per_s > 0.0))
+    exit(__LINE__, __FILE__, "invalid configured Parker magnetic-field point");
+  Vector3D::Normalize(radial);
+  const double winding = solar_rotation_rate_rad_per_s *
+      std::max(0.0, radius - source_radius_m) / solar_wind_speed_m_per_s;
+  double tangent[3] = {radial[0] + winding * radial[1],
+                       radial[1] - winding * radial[0], radial[2]};
+  Vector3D::Normalize(tangent);
+  const double magnitude = 5.0e-9 * std::pow(_AU_ / radius, 2) *
+      std::sqrt(1.0 + winding * winding);
+  for (int idim = 0; idim < 3; ++idim) B[idim] = magnitude * tangent[idim];
+}
+
 
 void SEP::ParkerSpiral::CreateFileLine(list<SEP::cFieldLine> *field_line,double *xstart,double length_rsun) {
   double l[3],dl;
@@ -104,6 +127,60 @@ void SEP::ParkerSpiral::CreateFileLine(list<SEP::cFieldLine> *field_line,double 
 
     GetB(p.B,p.x,u_sw);
     field_line->push_back(p);
+  }
+}
+
+void SEP::ParkerSpiral::CreateFileLine(
+    list<SEP::cFieldLine>* field_line, const double* origin_m,
+    const double* initial_m, double length_m, unsigned long long point_count,
+    double solar_wind_speed_m_per_s,
+    double solar_rotation_rate_rad_per_s) {
+  if (field_line == NULL || origin_m == NULL || initial_m == NULL)
+    exit(__LINE__, __FILE__, "null argument in configured Parker line creation");
+
+  // Reuse the AMPS-independent initializer rather than maintaining a second
+  // curve integrator in the PIC adapter.  The adapter's only responsibility is
+  // translating each SI point into the historical cFieldLine record and
+  // attaching a magnetic vector parallel to the same configured geometry.
+  SEP::Initialization::Configuration configuration;
+  configuration.parkerOriginM = {origin_m[0], origin_m[1], origin_m[2]};
+  configuration.parkerInitialPointM =
+      {initial_m[0], initial_m[1], initial_m[2]};
+  configuration.parkerLengthM = length_m;
+  configuration.parkerPointCount = point_count;
+  configuration.solarWindSpeedMPerS = solar_wind_speed_m_per_s;
+  configuration.solarRotationRateRadPerS = solar_rotation_rate_rad_per_s;
+  configuration.innerRadiusM = std::sqrt(
+      std::pow(initial_m[0] - origin_m[0], 2) +
+      std::pow(initial_m[1] - origin_m[1], 2) +
+      std::pow(initial_m[2] - origin_m[2], 2));
+  // The following mesh fields are irrelevant to line generation, but the one
+  // public validation gate intentionally validates a complete configuration.
+  configuration.outerRadiusM = configuration.innerRadiusM + length_m;
+  configuration.minimumCellSizeM = 1.0;
+  configuration.globalCellSizeM = 1.0;
+  configuration.maximumMeshLevel = 0;
+  configuration.solarRefinementEnabled = false;
+  configuration.solarSurfaceCellSizeM = 1.0;
+  configuration.solarTransitionOuterRadiusM = configuration.outerRadiusM;
+  configuration.tubeRefinementEnabled = false;
+  configuration.tubeReferenceRadiusM = configuration.outerRadiusM;
+  configuration.tubeRadiusAtReferenceM = 1.0;
+  configuration.tubeCenterCellSizeM = 1.0;
+
+  std::vector<SEP::Initialization::Vec3> points;
+  const SEP::Transport::Status built =
+      SEP::Initialization::BuildParkerLine(configuration, &points);
+  if (!built.ok()) exit(__LINE__, __FILE__, built.message.c_str());
+
+  for (std::size_t i = 0; i < points.size(); ++i) {
+    SEP::cFieldLine point;
+    point.x[0] = points[i].x;
+    point.x[1] = points[i].y;
+    point.x[2] = points[i].z;
+    GetB(point.B, point.x, origin_m, configuration.innerRadiusM,
+         solar_wind_speed_m_per_s, solar_rotation_rate_rad_per_s);
+    field_line->push_back(point);
   }
 }
 
@@ -185,4 +262,3 @@ void SEP::ParkerSpiral::InitDomain(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* start
     }
   }
 }
-

@@ -2166,7 +2166,16 @@ double e_mev=e*J2MeV;
 
     namespace ParkerSpiral {
       void GetB(double *B,double *x,double u_sw=400.0E3);
+      void GetB(double* B, const double* x_m, const double* origin_m,
+                double source_radius_m, double solar_wind_speed_m_per_s,
+                double solar_rotation_rate_rad_per_s);
       void CreateFileLine(list<SEP::cFieldLine> *field_line,double *xstart,double length_rsun);
+      // File-driven SI overload.  Unlike the legacy solar-radius wrapper, all
+      // geometry is explicit and point_count includes both endpoints.
+      void CreateFileLine(list<SEP::cFieldLine>* field_line,
+          const double* origin_m, const double* initial_m, double length_m,
+          unsigned long long point_count, double solar_wind_speed_m_per_s,
+          double solar_rotation_rate_rad_per_s);
       void CreateStraitFileLine(list<SEP::cFieldLine> *field_line,double *xstart,double length_rsun);
     }
 

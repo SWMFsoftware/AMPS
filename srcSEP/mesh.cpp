@@ -10,6 +10,7 @@
 
 
 #include "sep.h"
+#include "util/sep_initialization.h"
 
 
 double** SEP::Mesh::FieldLineTable=NULL;
@@ -20,6 +21,17 @@ int SEP::Domain_nTotalParkerSpirals=1;
 
 
 double SEP::Mesh::localSphericalSurfaceResolution(double *x) {
+  if (SEP::Initialization::HasActive()) {
+    const SEP::Initialization::Configuration& configuration =
+        SEP::Initialization::Active();
+    const double rootCell = std::max(
+        2.0 * configuration.outerRadiusM / _BLOCK_CELLS_X_,
+        std::max(2.0 * configuration.outerRadiusM / _BLOCK_CELLS_Y_,
+                 2.0 * configuration.outerRadiusM / _BLOCK_CELLS_Z_));
+    const double levelFloor = rootCell /
+        std::pow(2.0, static_cast<double>(configuration.maximumMeshLevel));
+    return std::max(configuration.solarSurfaceCellSizeM, levelFloor);
+  }
   double res,r,l[3];
   int idim;
   double SubsolarAngle;
@@ -38,6 +50,24 @@ double SEP::Mesh::localSphericalSurfaceResolution(double *x) {
 }
 
 double SEP::Mesh::localResolution(double *x) {
+  if (SEP::Initialization::HasActive()) {
+    const SEP::Initialization::Configuration& configuration =
+        SEP::Initialization::Active();
+    const SEP::Initialization::Vec3 point = {x[0], x[1], x[2]};
+    const double requested = SEP::Initialization::RequestedCellSizeM(
+        point, configuration);
+    // AMPS asks this callback for a physical cell target.  Convert the user's
+    // maximum level into the coarsest enforceable floor using the compiled
+    // block dimensions, ensuring the input limit affects the actual tree and
+    // not only the supplemental NodeSplitCriterion.
+    const double rootCell = std::max(
+        2.0 * configuration.outerRadiusM / _BLOCK_CELLS_X_,
+        std::max(2.0 * configuration.outerRadiusM / _BLOCK_CELLS_Y_,
+                 2.0 * configuration.outerRadiusM / _BLOCK_CELLS_Z_));
+    const double levelFloor = rootCell /
+        std::pow(2.0, static_cast<double>(configuration.maximumMeshLevel));
+    return std::max(requested, levelFloor);
+  }
   double res=20.0*_RADIUS_(_SUN_);
 
   if (Vector3D::Length(x)<4.0*_RADIUS_(_SUN_)) return 0.2*_RADIUS_(_SUN_);
@@ -151,6 +181,38 @@ bool SEP::Mesh::NodeSplitCriterion(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *start
   int i;
   double d2;
 
+
+  if (SEP::Initialization::HasActive()) {
+    const SEP::Initialization::Configuration& configuration =
+        SEP::Initialization::Active();
+    if (startNode->RefinmentLevel >=
+        static_cast<int>(configuration.maximumMeshLevel)) return false;
+
+    // Test the block centre and all eight corners.  Refining against the
+    // smallest requested value is conservative for both monotone profiles and
+    // curved tube intersections, and uses the exact same law as localResolution.
+    double requested = configuration.globalCellSizeM;
+    for (int probe = -1; probe < 8; ++probe) {
+      SEP::Initialization::Vec3 point;
+      if (probe < 0) {
+        point = {0.5 * (xmin[0] + xmax[0]),
+                 0.5 * (xmin[1] + xmax[1]),
+                 0.5 * (xmin[2] + xmax[2])};
+      }
+      else {
+        point = {(probe & 1) ? xmax[0] : xmin[0],
+                 (probe & 2) ? xmax[1] : xmin[1],
+                 (probe & 4) ? xmax[2] : xmin[2]};
+      }
+      requested = std::min(requested,
+          SEP::Initialization::RequestedCellSizeM(point, configuration));
+    }
+    const double cellSize = std::max(
+        (xmax[0] - xmin[0]) / _BLOCK_CELLS_X_,
+        std::max((xmax[1] - xmin[1]) / _BLOCK_CELLS_Y_,
+                 (xmax[2] - xmin[2]) / _BLOCK_CELLS_Z_));
+    return cellSize > requested * (1.0 + 1.0e-12);
+  }
 
   if (startNode->RefinmentLevel>=7) return false;
 

@@ -1037,3 +1037,19 @@ Self-consistent Alfvén turbulence remains a production provider/evolution
 subsystem, not a particle mover.  Its registry group is only a component-test
 entry point and does not replace the later dedicated turbulence verification and
 validation campaign.
+
+## Initialization input and mesh gates
+
+`make test-initialization-unit` compiles the production
+`util/sep_initialization.cpp` and the exact native callbacks without AMPS or
+MPI.  `INIT01` checks the complete SI schema, fingerprint, and live negative
+controls for missing and unknown input.  `INIT02` checks requested Parker point
+count, configured arc length, the surface resolution identity, and the tube
+cross-section identity at its reference radius.
+
+The same callbacks are appended by `ComponentTestRegistry()`.  Consequently a
+rebuilt linked executable advertises both IDs through `--list-tests`, and the
+normal Python `--all` procedure executes them individually.  Do not remove
+them from the native registry or replace their negative controls with a source
+scan; the focused gate is fast feedback, while the linked registry proves the
+packaged production objects contain the feature.

@@ -30,6 +30,7 @@
 #include "transport_common.h"
 #include "turbulence_production_adapter.h"
 #include "util/sep_run_configuration.h"
+#include "util/sep_initialization.h"
 #include "sep.dfn"
 #include "tests.h"
 
@@ -73,6 +74,17 @@ int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &
 
 void amps_init_mesh() {
   PIC::InitMPI();
+
+  // The first file-driven workflow intentionally defines one Parker spiral.
+  // Reject compile-time domain variants explicitly instead of accepting an
+  // input whose line parameters would then be ignored by a straight/FLAMPA or
+  // random multi-line branch.
+  if (SEP::Initialization::HasActive() &&
+      (SEP::DomainType != SEP::DomainType_ParkerSpiral ||
+       SEP::Domain_nTotalParkerSpirals != 1)) {
+    exit(__LINE__, __FILE__,
+         "file-driven initialization requires one Parker-spiral domain");
+  }
 
   //set up the conversion factor for output of the magnetic field line length
   PIC::FieldLine::cFieldLine::OutputLengthConversionFactor.first=1.0/_AU_;
@@ -154,6 +166,14 @@ void amps_init_mesh() {
   //register the sphere
   {
     double sx0[3]={0.0,0.0,0.0};
+    if (SEP::Initialization::HasActive()) {
+      const SEP::Initialization::Configuration& initialization =
+          SEP::Initialization::Active();
+      sx0[0] = initialization.parkerOriginM.x;
+      sx0[1] = initialization.parkerOriginM.y;
+      sx0[2] = initialization.parkerOriginM.z;
+      rSphere = initialization.innerRadiusM;
+    }
     cInternalBoundaryConditionsDescriptor SphereDescriptor;
     cInternalSphericalData *Sphere;
 
@@ -221,6 +241,17 @@ void amps_init_mesh() {
     xmax[idim]=xMaxDomain*_RADIUS_(_SUN_);
     xmin[idim]=-xMaxDomain*_RADIUS_(_SUN_);
   }
+  if (SEP::Initialization::HasActive()) {
+    const SEP::Initialization::Configuration& initialization =
+        SEP::Initialization::Active();
+    const double origin[3] = {initialization.parkerOriginM.x,
+                              initialization.parkerOriginM.y,
+                              initialization.parkerOriginM.z};
+    for (idim=0; idim<DIM; ++idim) {
+      xmin[idim] = origin[idim] - initialization.outerRadiusM;
+      xmax[idim] = origin[idim] + initialization.outerRadiusM;
+    }
+  }
 
   //generate the magneric field line
   list<SEP::cFieldLine> field_line,field_line_old,field_line_new;
@@ -236,7 +267,25 @@ void amps_init_mesh() {
     PIC::FieldLine::VertexAllocationManager.PlasmaVelocity=true;
 
     if (SEP::Domain_nTotalParkerSpirals==1) {
-      SEP::ParkerSpiral::CreateFileLine(&field_line,xStart,FieldLineRequestedLength*215.0);
+      if (SEP::Initialization::HasActive()) {
+        const SEP::Initialization::Configuration& initialization =
+            SEP::Initialization::Active();
+        const double origin[3] = {initialization.parkerOriginM.x,
+                                  initialization.parkerOriginM.y,
+                                  initialization.parkerOriginM.z};
+        const double initial[3] = {initialization.parkerInitialPointM.x,
+                                   initialization.parkerInitialPointM.y,
+                                   initialization.parkerInitialPointM.z};
+        SEP::ParkerSpiral::CreateFileLine(
+            &field_line, origin, initial, initialization.parkerLengthM,
+            initialization.parkerPointCount,
+            initialization.solarWindSpeedMPerS,
+            initialization.solarRotationRateRadPerS);
+      }
+      else {
+        SEP::ParkerSpiral::CreateFileLine(
+            &field_line,xStart,FieldLineRequestedLength*215.0);
+      }
       SEP::Mesh::ImportFieldLine(&field_line);
 
       PIC::FieldLine::Init();
@@ -460,7 +509,8 @@ void amps_init_mesh() {
 
   GetMaxBlockRefinmentLevel(PIC::Mesh::mesh->rootTree);
 
-  if (_DOMAIN_GEOMETRY_!= _DOMAIN_GEOMETRY_BOX_)  {
+  if (!SEP::Initialization::HasActive() &&
+      _DOMAIN_GEOMETRY_!= _DOMAIN_GEOMETRY_BOX_)  {
     MarkNotUsed(PIC::Mesh::mesh->rootTree,&not_used_list);
 
     PIC::Mesh::mesh->SetTreeNodeActiveUseFlag(&not_used_list,NULL,false,NULL);
@@ -536,7 +586,20 @@ void amps_init() {
 
           if ((cell=block->GetCenterNode(LocalCellNumber))!=NULL) {
             cell->GetX(x);
-            SEP::ParkerSpiral::GetB(B,x);
+            if (SEP::Initialization::HasActive()) {
+              const SEP::Initialization::Configuration& initialization =
+                  SEP::Initialization::Active();
+              const double origin[3] = {initialization.parkerOriginM.x,
+                                        initialization.parkerOriginM.y,
+                                        initialization.parkerOriginM.z};
+              SEP::ParkerSpiral::GetB(
+                  B, x, origin, initialization.innerRadiusM,
+                  initialization.solarWindSpeedMPerS,
+                  initialization.solarRotationRateRadPerS);
+            }
+            else {
+              SEP::ParkerSpiral::GetB(B,x);
+            }
 
             if (cell->Measure==0.0) {
               PIC::Mesh::mesh->InitCellMeasureBlock(startNode);

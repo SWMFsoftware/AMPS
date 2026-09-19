@@ -157,6 +157,11 @@ struct MemoryModelOptions {
 // through const accessors.  Output formatting fields are deliberately present
 // so CFG3D03/LIFE3D03 can prove that they do not alter the physics fingerprint.
 struct RunConfiguration3DOptions {
+  // Human-authored files set this through run.schema_version.  Version 1 is
+  // retained for existing campaigns; version 2 additionally requires an
+  // explicit finite Parker centreline definition.  Programmatic SWMF hosts
+  // may keep the default and receive the same normalized legacy geometry.
+  unsigned inputSchemaVersion = 1;
   BackgroundAuthority background = BackgroundAuthority::AnalyticParker;
   TurbulenceAuthority turbulence = TurbulenceAuthority::Prescribed;
   ShockAuthority shock = ShockAuthority::None;
@@ -167,6 +172,15 @@ struct RunConfiguration3DOptions {
   OuterBoundaryMode outerBoundary = OuterBoundaryMode::Escape;
   Core::Vec3 coordinateOriginM = {0.0, 0.0, 0.0};
   std::string coordinateFrame = "HCI-like-inertial";
+
+  // Finite Parker-line construction used by initialization, diagnostics, and
+  // future mesh export.  Coordinates and length are SI.  A zero length/count
+  // or a zero initial vector is a programmatic version-1 sentinel; Create()
+  // replaces it transactionally with the resolved domain/source defaults.
+  Core::Vec3 parkerSpiralOriginM = {0.0, 0.0, 0.0};
+  Core::Vec3 parkerSpiralInitialPointM = {0.0, 0.0, 0.0};
+  double parkerSpiralLengthM = 0.0;
+  std::uint64_t parkerSpiralPointCount = 0;
 
   double innerRadiusM = 20.0 * Core::Const::R_sun;
   // ``outerRadiusM`` is normalized to a resolved SI value by Create().  The

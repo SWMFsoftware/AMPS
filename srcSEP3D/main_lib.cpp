@@ -87,6 +87,7 @@ const SEP3D::RuntimeModel::RunConfiguration3D& Configuration() {
 SEP3D::Mesh::ResolutionConfiguration ResolutionConfiguration() {
   const auto& options = Configuration().options();
   SEP3D::Mesh::ResolutionConfiguration result;
+  result.originM = options.coordinateOriginM;
   result.innerRadiusM = options.innerRadiusM;
   result.outerRadiusM = options.outerRadiusM;
   result.minimumCellSizeM = options.minimumCellSizeM;
@@ -108,6 +109,9 @@ SEP3D::Mesh::ResolutionConfiguration ResolutionConfiguration() {
   result.tubeTransverseExponent = options.tubeTransverseExponent;
   result.solarWindSpeedMPerS = options.parker.solarWindSpeedMPerS;
   result.solarRotationRateRadPerS = options.parker.solarRotationRateRadPerS;
+  result.parkerInitialPointM = options.parkerSpiralInitialPointM;
+  result.parkerLengthM = options.parkerSpiralLengthM;
+  result.parkerPointCount = options.parkerSpiralPointCount;
   result.cellsPerBlockEdge = options.meshCellsPerBlockEdge;
   result.maximumLevel = options.maximumMeshLevel;
   result.blockOverheadBytes = options.meshBlockOverheadBytes;

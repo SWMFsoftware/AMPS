@@ -47,6 +47,10 @@ M::ResolutionConfiguration Baseline() {
   configuration.solarSurfaceCellSizeM = configuration.minimumCellSizeM;
   configuration.solarRefinementOuterRadiusM = 0.5 * SEP3D::Core::Const::AU;
   configuration.solarRefinementProfile = RM::RefinementProfile::Linear;
+  configuration.parkerInitialPointM =
+      {configuration.innerRadiusM, 0.0, 0.0};
+  configuration.parkerLengthM = configuration.outerRadiusM;
+  configuration.parkerPointCount = 101;
   configuration.maximumLevel = 3;
   configuration.cellsPerBlockEdge = 4;
   return configuration;
@@ -303,6 +307,39 @@ Result RunMSH3D09() {
   return Pass("mixed coarse/fine least-squares gradients are linear exact and reject rank-deficient stencils");
 }
 
+Result RunMSH3D10() {
+  M::ResolutionConfiguration configuration = Baseline();
+  configuration.enableTubeRefinement = true;
+  configuration.parkerLengthM = 0.7 * SEP3D::Core::Const::AU;
+  configuration.parkerPointCount = 401;
+  std::vector<SEP3D::Core::Vec3> points;
+  if (!M::BuildParkerCenterline(configuration, &points).ok() ||
+      points.size() != configuration.parkerPointCount ||
+      !(points.front() == configuration.parkerInitialPointM)) {
+    return Fail("finite Parker centreline count or initial point is wrong");
+  }
+  double polylineLength = 0.0;
+  for (std::size_t i = 1; i < points.size(); ++i)
+    polylineLength += (points[i] - points[i - 1]).Norm();
+  if (std::fabs(polylineLength - configuration.parkerLengthM) >
+      1.0e-12 * configuration.parkerLengthM) {
+    return Fail("sampled Parker polyline did not preserve the configured arc length");
+  }
+
+  const SEP3D::Core::Vec3 shift(3.0e9, -4.0e9, 2.0e9);
+  M::ResolutionConfiguration translated = configuration;
+  translated.originM += shift;
+  translated.parkerInitialPointM += shift;
+  const SEP3D::Core::Vec3 probe = points[points.size() / 2];
+  const double original = M::RequestedCellSizeM(probe, configuration);
+  const double moved = M::RequestedCellSizeM(probe + shift, translated);
+  if (std::fabs(original - moved) >
+      1.0e-12 * configuration.backgroundCellSizeM) {
+    return Fail("translated domain changed the Parker-tube resolution law");
+  }
+  return Pass("finite Parker sampling preserves point count/length and mesh refinement is origin-relative");
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterMeshTests() {
@@ -328,5 +365,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterMeshTests() {
       make("MSH3D07", "Octree budget and ownership", "Reproducible memory and owner-only fills.", RunMSH3D07),
       make("MSH3D08", "Earth and Mars presets", "Exact preset bounds and shell coverage.", RunMSH3D08),
       make("MSH3D09", "Refinement gradients", "Mixed-spacing gradient reconstruction.", RunMSH3D09),
+      make("MSH3D10", "Finite Parker initialization", "Point-count, arc-length, and translated-origin identities.", RunMSH3D10),
   };
 }

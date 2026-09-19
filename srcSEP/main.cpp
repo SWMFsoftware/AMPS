@@ -35,6 +35,7 @@
 #include "transport_common.h"
 #include "turbulence_production_adapter.h"
 #include "util/sep_cli.h"
+#include "util/sep_initialization.h"
 #include "util/sep_run_configuration.h"
 #include "debug/sep_debug_fieldline_datum.h"
 
@@ -184,6 +185,34 @@ int main(int argc,char **argv) {
       return RunSelectedComponentTests(selectedComponentTests, std::cout,
           cli_options.testJsonPath, cli_options.testJunitPath);
     }
+  }
+
+
+  // Parse and freeze the optional mesh/field-line initialization contract
+  // before the historical post-compile parser, SWCME setup, MPI, or AMPS mesh
+  // allocation.  Failure is therefore atomic: no partially initialized AMPS
+  // state survives a malformed scientific input.  An absent --input leaves
+  // HasActive()==false and the legacy mesh path remains unchanged.
+  if (!cli_options.inputPath.empty()) {
+    SEP::Initialization::Configuration initialization;
+    const SEP::Transport::Status loaded =
+        SEP::Initialization::LoadFile(cli_options.inputPath, &initialization);
+    if (!loaded.ok()) {
+      if (PIC::ThisThread == 0)
+        std::cerr << "ERROR: initialization input: " << loaded.message << '\n';
+      return 1;
+    }
+    const SEP::Transport::Status installed =
+        SEP::Initialization::Install(initialization);
+    if (!installed.ok()) {
+      if (PIC::ThisThread == 0)
+        std::cerr << "ERROR: initialization install: " << installed.message << '\n';
+      return 1;
+    }
+    if (PIC::ThisThread == 0)
+      std::cout << "Initialization input=" << cli_options.inputPath
+                << " fingerprint="
+                << SEP::Initialization::Fingerprint(initialization) << '\n';
   }
 
 

@@ -1,0 +1,62 @@
+# srcSEP file-driven Parker and mesh initialization, schema version 1.
+#
+# Every dimensional key includes its SI unit.  The parser rejects unknown,
+# duplicate, and omitted keys before MPI/AMPS initialization.  The finite line
+# remains a one-dimensional particle-transport domain embedded in the 3-D AMR
+# support mesh.
+
+[run]
+schema_version = 1
+
+[parker_spiral]
+# Origin of the Parker geometry and first point on the inner boundary sphere.
+# length_m is physical arc length; point_count includes both endpoints.
+origin_x_m = 0
+origin_y_m = 0
+origin_z_m = 0
+initial_x_m = 1.3914e10
+initial_y_m = 0
+initial_z_m = 0
+length_m = 2.0e11
+point_count = 4001
+
+[domain]
+# The AMR root is the cube origin +/- outer_radius_m.  inner_radius_m must
+# equal the distance from Parker origin to the initial point.
+inner_radius_m = 1.3914e10
+outer_radius_m = 1.495978707e11
+
+[mesh]
+# global_cell_size_m is the asymptotic background request.  The minimum is a
+# hard floor shared by the solar and tube refinement profiles.
+global_cell_size_m = 3.7399467675e10
+minimum_cell_size_m = 1.495978707e9
+maximum_level = 7
+
+[mesh.solar]
+# Cell size changes monotonically from surface_cell_size_m at the inner sphere
+# to the global size at transition_outer_radius_m.  profile is linear,
+# power-law, or smoothstep; exponent controls how quickly it degrades.
+enabled = true
+surface_cell_size_m = 1.495978707e9
+transition_outer_radius_m = 3.7399467675e10
+profile = smoothstep
+exponent = 1
+
+[mesh.tube]
+# At the analytic Parker centreline the requested cell size is
+# center_cell_size_m.  It becomes exactly global at the tube boundary.
+# constant-angular-width scales the physical radius linearly with heliocentric
+# radius; physical-constant retains radius_at_reference_m everywhere.
+enabled = true
+reference_radius_m = 1.495978707e11
+radius_at_reference_m = 4.487936121e9
+radius_mode = constant-angular-width
+center_cell_size_m = 1.495978707e9
+transverse_profile = smoothstep
+transverse_exponent = 1
+
+[background.parker]
+# These values determine both the field-line winding and the magnetic tangent.
+solar_wind_speed_m_per_s = 400000
+solar_rotation_rate_rad_per_s = 2.865e-6

@@ -36,6 +36,7 @@
   "retained_input_globs": [
     "PARAM.in",
     "PARAM*.example",
+    "examples/*.in",
     "test/native_integration_manifest.example.json",
     "*.pl",
     "validation/**/*.json",

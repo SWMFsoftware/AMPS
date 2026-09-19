@@ -47,6 +47,7 @@ _DIAGNOSTIC_EXCERPT_LIMIT = 16 * 1024
 # short stable labels while Make remains authoritative for compilers, source
 # lists, sanitizers, and the exact focused executable being tested.
 SOURCE_SUITES: Dict[str, str] = {
+    "initialization": "test-initialization-unit",
     # Cross-component source packaging is owned by AMPS/tools, outside both
     # independent applications.  srcSEP only exposes the make target so the
     # existing unified runner can retain its structured release evidence.

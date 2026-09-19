@@ -40,6 +40,11 @@ struct DomainBounds {
 };
 
 struct ResolutionConfiguration {
+  // All radius and Parker-geometry calculations are relative to this origin.
+  // Keeping it in the AMPS-independent record makes translated-domain tests
+  // possible even though the current analytic/SWMF background contract still
+  // requires the production origin to be heliocentric zero.
+  Core::Vec3 originM = {0.0, 0.0, 0.0};
   double innerRadiusM = 20.0 * Core::Const::R_sun;
   double outerRadiusM = Core::Const::AU;
   double minimumCellSizeM = 0.01 * Core::Const::AU;
@@ -72,6 +77,14 @@ struct ResolutionConfiguration {
   double solarRotationRateRadPerS = Core::Const::Omega_sun;
   Core::Vec3 rotationAxis = {0.0, 0.0, 1.0};
 
+  // Explicit finite line requested by schema version 2.  The fast AMR law
+  // evaluates the corresponding analytic curve, so changing pointCount does
+  // not change the physical mesh.  BuildParkerCenterline materializes these
+  // samples for initialization output and verification.
+  Core::Vec3 parkerInitialPointM = {20.0 * Core::Const::R_sun, 0.0, 0.0};
+  double parkerLengthM = Core::Const::AU;
+  std::uint64_t parkerPointCount = 4001;
+
   unsigned cellsPerBlockEdge = 4;
   unsigned maximumLevel = 5;
   std::size_t blockOverheadBytes = 1024;
@@ -99,6 +112,13 @@ double TubeDistanceM(const Core::Vec3& positionM,
                      const ResolutionConfiguration& configuration);
 double RequestedCellSizeM(const Core::Vec3& positionM,
                           const ResolutionConfiguration& configuration);
+
+// Generate pointCount points separated by uniform requested arc length.  A
+// midpoint tangent step is used instead of a first-order Euler step so a
+// coarse diagnostic line remains faithful to the analytic Parker curve.
+Core::Status BuildParkerCenterline(
+    const ResolutionConfiguration& configuration,
+    std::vector<Core::Vec3>* points);
 
 struct LeafBlock {
   Core::Vec3 minimumM;

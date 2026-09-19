@@ -1,5 +1,6 @@
 #include "run_configuration.h"
 
+#include "../core/parker_geometry.h"
 #include "sep_background_snapshot.h"
 
 #include <algorithm>
@@ -302,6 +303,22 @@ Core::Status RunConfiguration3D::Create(
   normalized.parker.sourceLongitudeRad = normalized.tubeLongitudeRad;
   normalized.parker.sourceColatitudeRad = normalized.tubeColatitudeRad;
 
+  // Version-1/programmatic construction did not expose a finite line.  Derive
+  // an equivalent, deterministic definition before validation so old files
+  // and typed construction still normalize to the same fingerprint.
+  if (normalized.parkerSpiralPointCount == 0)
+    normalized.parkerSpiralPointCount = 4001;
+  if (normalized.parkerSpiralLengthM == 0.0)
+    normalized.parkerSpiralLengthM = normalized.outerRadiusM - normalized.innerRadiusM;
+  if (normalized.parkerSpiralInitialPointM.Norm() == 0.0) {
+    const double sine = std::sin(normalized.tubeColatitudeRad);
+    normalized.parkerSpiralInitialPointM = normalized.coordinateOriginM +
+        normalized.innerRadiusM * Core::Vec3(
+            sine * std::cos(normalized.tubeLongitudeRad),
+            sine * std::sin(normalized.tubeLongitudeRad),
+            std::cos(normalized.tubeColatitudeRad));
+  }
+
   if (!std::isfinite(normalized.innerRadiusM) || normalized.innerRadiusM <= 0.0) {
     return Invalid("innerRadiusM must be finite and positive");
   }
@@ -313,6 +330,33 @@ Core::Status RunConfiguration3D::Create(
       normalized.coordinateOriginM.Norm() != 0.0 ||
       normalized.coordinateFrame.empty()) {
     return Invalid("the current Parker/SWMF contract requires a finite heliocentric origin and named frame");
+  }
+  if (normalized.inputSchemaVersion < 1 || normalized.inputSchemaVersion > 2)
+    return Invalid("inputSchemaVersion must be 1 or 2");
+  if (!FiniteVector(normalized.parkerSpiralOriginM) ||
+      !FiniteVector(normalized.parkerSpiralInitialPointM) ||
+      (normalized.parkerSpiralOriginM - normalized.coordinateOriginM).Norm() != 0.0 ||
+      !std::isfinite(normalized.parkerSpiralLengthM) ||
+      normalized.parkerSpiralLengthM <= 0.0 ||
+      normalized.parkerSpiralPointCount < 2 ||
+      normalized.parkerSpiralPointCount > 10000000ULL) {
+    return Invalid("finite Parker spiral origin, length, or point count is invalid");
+  }
+  const Core::Vec3 lineSource =
+      normalized.parkerSpiralInitialPointM - normalized.parkerSpiralOriginM;
+  const double sourceRadius = lineSource.Norm();
+  const double geometryTolerance = 1.0e-10 * normalized.innerRadiusM;
+  Core::ParkerSpiralGeometry declaredGeometry;
+  declaredGeometry.sourceRadiusM = normalized.innerRadiusM;
+  declaredGeometry.sourceLongitudeRad = normalized.tubeLongitudeRad;
+  declaredGeometry.sourceColatitudeRad = normalized.tubeColatitudeRad;
+  declaredGeometry.solarWindSpeedMPerS = normalized.parker.solarWindSpeedMPerS;
+  declaredGeometry.solarRotationRateRadPerS = normalized.parker.solarRotationRateRadPerS;
+  const Core::Vec3 declaredSource =
+      Core::ParkerCurvePoint(normalized.innerRadiusM, declaredGeometry);
+  if (std::fabs(sourceRadius - normalized.innerRadiusM) > geometryTolerance ||
+      (lineSource - declaredSource).Norm() > geometryTolerance) {
+    return Invalid("Parker initial point must lie at inner_radius_m and match the mesh-tube source angles");
   }
   if (normalized.outerBoundary == OuterBoundaryMode::ImportedCoverage &&
       normalized.background != BackgroundAuthority::Swmf) {
@@ -577,6 +621,14 @@ Core::Status RunConfiguration3D::Create(
           << ";inner_boundary=" << Name(normalized.innerBoundary)
           << ";outer_boundary=" << Name(normalized.outerBoundary)
           << ";frame=" << normalized.coordinateFrame
+          << ";parker_line_origin=" << normalized.parkerSpiralOriginM.x << ','
+          << normalized.parkerSpiralOriginM.y << ','
+          << normalized.parkerSpiralOriginM.z
+          << ";parker_line_initial=" << normalized.parkerSpiralInitialPointM.x << ','
+          << normalized.parkerSpiralInitialPointM.y << ','
+          << normalized.parkerSpiralInitialPointM.z
+          << ";parker_line_length_m=" << normalized.parkerSpiralLengthM
+          << ";parker_line_points=" << normalized.parkerSpiralPointCount
           << ";inner_m=" << normalized.innerRadiusM
           << ";outer_m=" << normalized.outerRadiusM
           << ";dt_s=" << normalized.requestedTimeStepS

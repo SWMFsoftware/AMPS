@@ -22,6 +22,10 @@ namespace CLI {
 // reflection are all enabled unless the user explicitly disables them on the
 // command line.
 struct Options {
+  // Optional runtime-initialization file.  An empty path preserves the legacy
+  // hard-coded domain/field-line mesh.  A supplied path is parsed and frozen
+  // before AMPS initializes MPI or allocates the mesh.
+  std::string inputPath;
   bool particleCouplingMode = true;
   bool cascadeActive = true;
   bool reflectionActive = true;

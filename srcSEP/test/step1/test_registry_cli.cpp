@@ -67,6 +67,10 @@ void TestCli01(const SEP::Testing::Registry& registry) {
   Check(Parse({"sep", "--list-tests"}, list, error) && list.listTests &&
             !SEP::Util::CLI::IsComponentTestExecutionRequested(list),
         "CLI01", "--list-tests must not become an execution selector");
+  SEP::Util::CLI::Options input;
+  Check(Parse({"sep", "--input=examples/sep_parker_mesh.in"}, input, error) &&
+            input.inputPath == "examples/sep_parker_mesh.in",
+        "CLI01", "--input must preserve its production initialization path");
 
   std::ostringstream listing;
   registry.PrintList(listing);
@@ -115,6 +119,9 @@ void TestCli04(const SEP::Testing::Registry& registry) {
   options = SEP::Util::CLI::Options();
   Check(!Parse({"sep", "--all-tests", "--test-group=alpha"}, options, error),
         "CLI04", "--all-tests and explicit selectors must be rejected");
+  options = SEP::Util::CLI::Options();
+  Check(!Parse({"sep", "--input", "run.in", "--all-tests"}, options, error),
+        "CLI04", "production input must not leak into component-test mode");
 
   bool rejectedUnknown = false;
   try {

@@ -1,11 +1,11 @@
-# srcSEP3D standalone analytic Parker example — schema version 1
+# srcSEP3D standalone analytic Parker example — schema version 2
 #
 # Every dimensional key states its SI unit in the key name.  Bare alternatives
 # such as "inner_radius" are deliberately invalid: this prevents a value in AU,
 # R_sun, km/s, nT, or MeV from being silently interpreted as SI.
 
 [run]
-schema_version = 1
+schema_version = 2
 intent = transport-only
 transport = parker3d
 time_step_s = 1
@@ -29,6 +29,19 @@ coordinate_frame = HCI-like-inertial
 origin_x_m = 0
 origin_y_m = 0
 origin_z_m = 0
+
+[parker_spiral]
+# The origin must currently equal the domain origin.  The initial point lies
+# on inner_radius_m and must agree with the source longitude/colatitude below.
+# length_m is arc length, not radial extent; point_count includes both ends.
+origin_x_m = 0
+origin_y_m = 0
+origin_z_m = 0
+initial_x_m = 1.3914e10
+initial_y_m = 0
+initial_z_m = 0
+length_m = 2.0e11
+point_count = 4001
 
 [mesh]
 global_cell_size_m = 3.7399467675e10

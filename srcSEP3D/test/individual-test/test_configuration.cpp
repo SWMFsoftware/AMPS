@@ -175,9 +175,35 @@ output_path = restart/sep3d.chk
 )SEP3D";
 }
 
+// Schema version 2 deliberately adds only the finite-line section to the
+// complete version-1 fixture.  This keeps the test sensitive to accidental
+// changes in every pre-existing required section while exercising all eight
+// newly required SI fields.
+std::string CompleteVersion2Input() {
+  std::string input = CompleteInput();
+  const std::string oldVersion = "schema_version = 1";
+  input.replace(input.find(oldVersion), oldVersion.size(),
+                "schema_version = 2");
+  const std::string marker = "\n[mesh]\n";
+  const std::string section = R"SEP3D(
+[parker_spiral]
+origin_x_m = 0
+origin_y_m = 0
+origin_z_m = 0
+initial_x_m = 1.3914e10
+initial_y_m = 0
+initial_z_m = 0
+length_m = 2.0e11
+point_count = 257
+)SEP3D";
+  input.insert(input.find(marker), section);
+  return input;
+}
+
 M::ResolutionConfiguration Resolution(
     const RM::RunConfiguration3DOptions& options) {
   M::ResolutionConfiguration r;
+  r.originM = options.coordinateOriginM;
   r.innerRadiusM = options.innerRadiusM;
   r.outerRadiusM = options.outerRadiusM;
   r.minimumCellSizeM = options.minimumCellSizeM;
@@ -198,6 +224,9 @@ M::ResolutionConfiguration Resolution(
   r.tubeTransverseExponent = options.tubeTransverseExponent;
   r.solarWindSpeedMPerS = options.parker.solarWindSpeedMPerS;
   r.solarRotationRateRadPerS = options.parker.solarRotationRateRadPerS;
+  r.parkerInitialPointM = options.parkerSpiralInitialPointM;
+  r.parkerLengthM = options.parkerSpiralLengthM;
+  r.parkerPointCount = options.parkerSpiralPointCount;
   r.cellsPerBlockEdge = options.meshCellsPerBlockEdge;
   r.maximumLevel = options.maximumMeshLevel;
   r.blockOverheadBytes = options.meshBlockOverheadBytes;
@@ -420,6 +449,32 @@ Result RunCFG3D05() {
   return Pass("composite profiles, tube scaling, level preflight, full memory accounting, and level rejection passed");
 }
 
+Result RunCFG3D06() {
+  RM::RunConfiguration3DOptions options;
+  const SEP3D::Core::Status status =
+      RM::ParseConfigurationText(CompleteVersion2Input(), &options);
+  if (!status.ok() || options.inputSchemaVersion != 2 ||
+      options.parkerSpiralPointCount != 257 ||
+      options.parkerSpiralLengthM != 2.0e11 ||
+      options.parkerSpiralInitialPointM.x != options.innerRadiusM) {
+    return Fail("complete schema-version-2 Parker definition did not parse exactly");
+  }
+
+  std::string missing = CompleteVersion2Input();
+  const std::string required = "point_count = 257\n";
+  missing.erase(missing.find(required), required.size());
+  if (RM::ParseConfigurationText(missing, &options).ok())
+    return Fail("schema version 2 accepted a missing finite-line point count");
+
+  std::string inconsistent = CompleteVersion2Input();
+  const std::string initial = "initial_x_m = 1.3914e10";
+  inconsistent.replace(inconsistent.find(initial), initial.size(),
+                       "initial_x_m = 1.4e10");
+  if (RM::ParseConfigurationText(inconsistent, &options).ok())
+    return Fail("schema version 2 accepted a line source outside the inner boundary");
+  return Pass("schema version 2 requires and validates the complete finite Parker-line definition");
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
@@ -447,5 +502,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
       make("CFG3D03", "Domain contract", "C03 presets, containment, and boundary direction.", RunCFG3D03),
       make("CFG3D04", "Parker geometry", "C04 shared polarity-independent geometry.", RunCFG3D04),
       make("CFG3D05", "Mesh preflight", "C05 composite refinement and memory planning.", RunCFG3D05),
+      make("CFG3D06", "Initialization schema", "Finite Parker-line fields and fail-closed consistency checks.", RunCFG3D06),
   };
 }

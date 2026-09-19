@@ -246,6 +246,12 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "Usage:\n"
       << "  " << exe << " [options]\n"
       << "\n"
+      << "Runtime initialization:\n"
+      << "  --input <path>              Parse the SI Parker/domain/mesh input before\n"
+      << "                               AMPS initialization. If omitted, the legacy\n"
+      << "                               hard-coded srcSEP mesh is preserved.\n"
+      << "  --input=<path>              Equivalent equals-sign form.\n"
+      << "\n"
       << "Turbulence physics switches:\n"
       << "  --coupling <on|off>          Enable/disable SEP particle coupling to the\n"
       << "                               Alfven turbulence wave energy.\n"
@@ -464,6 +470,16 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
 
     std::string option_name, value_from_equals;
     SplitOption(arg, option_name, value_from_equals);
+
+    if (option_name == "--input") {
+      if (!GetOptionValue(argc, argv, i, option_name, value_from_equals,
+                          options.inputPath, err)) return false;
+      if (options.inputPath.empty()) {
+        err << "ERROR: option '--input' requires a non-empty path.\n";
+        return false;
+      }
+      continue;
+    }
 
     if (option_name == "--list-tests") {
       if (!value_from_equals.empty()) {
@@ -1082,6 +1098,12 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
   if (options.listTests && executionRequested) {
     err << "ERROR: --list-tests cannot be combined with --test, --test-group, "
         << "or --all-tests.\n";
+    return false;
+  }
+  if (!options.inputPath.empty() &&
+      (options.listTests || options.listMovers || executionRequested)) {
+    err << "ERROR: --input configures a production initialization and cannot "
+        << "be combined with test/list modes.\n";
     return false;
   }
 
