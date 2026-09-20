@@ -107,6 +107,97 @@
     },
     {
       "id":"XM03","name":"2013 April 11 Earth spectra in Liu Figure 12","group":"cross-model","runtime_class":"extended","entrypoint":"validation/cases/XM03/case.py","default_input":"validation/cases/XM03/input.json","description":"Run event-informed one-field-line Parker transport in the linked srcSEP/AMPS application and compare with ACE, GOES-13, and SOHO Earth observations digitized from Liu et al. Figure 12."
+    },
+    {
+      "id": "OV01",
+      "name": "2013 April 11 near-Earth observational release gate",
+      "group": "observational-validation",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/OV01/case.py",
+      "default_input": "validation/cases/OV01/input.json",
+      "evidence_class": "observational-validation",
+      "release_status": "release-gate",
+      "input_policy": "fixed-publication",
+      "normalization_policy": "one-global-log-least-squares-amplitude",
+      "description": "Run the linked 2013 April 11 Earth calculation against 80 ACE, GOES-13, and SOHO points from Liu et al. Figure 12 using one amplitude shared by all times, energies, and instruments."
+    },
+    {
+      "id": "OV02",
+      "name": "2020 May 29 PSP and STEREO-A radial benchmark",
+      "group": "observational-validation",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/OV02/case.py",
+      "default_input": "validation/cases/OV02/input.json",
+      "evidence_class": "observational-validation",
+      "release_status": "release-gate",
+      "input_policy": "fixed-publication",
+      "normalization_policy": "one-global-log-amplitude",
+      "description": "Compare linked PSP and STEREO-A time profiles with Cheng et al. Figures 3 and 6 using one amplitude across both spacecraft and all four energy channels."
+    },
+    {
+      "id": "OV03",
+      "name": "2013 May 22 interacting-CME diagnostic",
+      "group": "observational-validation",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/OV03/case.py",
+      "default_input": "validation/cases/OV03/input.json",
+      "evidence_class": "observational-validation",
+      "release_status": "diagnostic-only",
+      "input_policy": "fixed-publication",
+      "normalization_policy": "unit-peak-per-series",
+      "description": "Compare single- and twin-source linked calculations with GOES-15 and STEREO-A observations from Ding et al. Figure 1 while retaining the one-dimensional model limitation as a non-gating diagnostic."
+    },
+    {
+      "id": "OV04",
+      "name": "2014 January 6 connectivity-sensitive diagnostic",
+      "group": "observational-validation",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/OV04/case.py",
+      "default_input": "validation/cases/OV04/input.json",
+      "evidence_class": "observational-validation",
+      "release_status": "diagnostic-only",
+      "input_policy": "fixed-publication",
+      "normalization_policy": "one-global-log-amplitude",
+      "description": "Compare three fixed connection-delay realizations with the PAMELA fluence spectrum in Bruno et al. Figure 4 using one amplitude across every realization."
+    },
+    {
+      "id": "OV05",
+      "name": "September 2017 compound-event diagnostic",
+      "group": "observational-validation",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/OV05/case.py",
+      "default_input": "validation/cases/OV05/input.json",
+      "evidence_class": "observational-validation",
+      "release_status": "diagnostic-only",
+      "input_policy": "fixed-publication",
+      "normalization_policy": "one-global-log-amplitude",
+      "description": "Compare fixed September 4, 6, and 10 source pulses with STEREO-A profiles from Bruno et al. Figure 2 while reporting missing wide-longitude physics explicitly."
+    },
+    {
+      "id": "EV01",
+      "name": "Calibration ensemble and parameter identifiability pilot",
+      "group": "campaign-evidence",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/EV01/case.py",
+      "default_input": "validation/cases/EV01/input.json",
+      "evidence_class": "campaign-evidence",
+      "release_status": "pilot-incomplete",
+      "input_policy": "registered-pilot-split",
+      "normalization_policy": "training-only-shared-cme-speed-law",
+      "description": "Fit one declared calibration law on the six-event training partition, score training and validation members, and quantify bootstrap identifiability without event-by-event retuning."
+    },
+    {
+      "id": "EV02",
+      "name": "Locked held-out validation campaign pilot",
+      "group": "campaign-evidence",
+      "runtime_class": "extended",
+      "entrypoint": "validation/cases/EV02/case.py",
+      "default_input": "validation/cases/EV02/input.json",
+      "evidence_class": "campaign-evidence",
+      "release_status": "pilot-incomplete",
+      "input_policy": "registered-pilot-split",
+      "normalization_policy": "training-only-shared-cme-speed-law",
+      "description": "Reconstruct the calibration from training observations only and score the two untouched CCMC holdout events without reading holdout targets during fitting."
     }
   ]
 }

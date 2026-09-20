@@ -152,6 +152,10 @@ spectral_index = 5
 samples_per_step = 1000
 
 [species]
+# Stage 3 is intentionally proton-only.  The explicit AMPS index is included
+# in the physics/restart fingerprint and must remain zero until a reviewed
+# multi-species table replaces the single SpeciesOptions record.
+amps_index = 0
 name = proton
 mass_kg = 1.67262192369e-27
 charge_c = 1.602176634e-19

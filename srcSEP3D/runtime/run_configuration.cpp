@@ -94,6 +94,17 @@ bool ValidProfileExponent(double value) {
   return std::isfinite(value) && value > 0.0;
 }
 
+bool SamePhysicalValue(double left, double right) {
+  // Human-authored SI input and generated AMPS constants can pass through
+  // different decimal parsers.  A relative tolerance of 1e-12 accepts only
+  // representation-scale differences; it is far too small to confuse a
+  // proton with another ion or a singly charged ion with a different charge
+  // state.  No absolute floor is used because mass and charge are very small
+  // SI values and an O(1) floor would make the comparison meaningless.
+  const double scale = std::max(std::fabs(left), std::fabs(right));
+  return scale > 0.0 && std::fabs(left - right) <= 1.0e-12 * scale;
+}
+
 }  // namespace
 
 const char* Name(BackgroundAuthority value) {
@@ -271,6 +282,45 @@ bool operator==(const StorageLayout& left, const StorageLayout& right) {
 
 bool operator!=(const StorageLayout& left, const StorageLayout& right) {
   return !(left == right);
+}
+
+Core::Status ValidateSingleSpeciesBinding(
+    const SpeciesOptions& configured, int ampsSpeciesCount,
+    double ampsMassKg, double ampsChargeC) {
+  // The near-term production contract is deliberately proton-only.  Failing
+  // before particle weights or source callbacks are installed prevents the
+  // former behavior in which one configured weight was copied to every AMPS
+  // species and only species zero received shock particles.
+  if (ampsSpeciesCount != 1) {
+    return Core::Status(
+        Core::StatusCode::ConfigurationConflict,
+        "srcSEP3D currently requires exactly one AMPS species");
+  }
+  if (configured.ampsSpeciesIndex != 0) {
+    return Core::Status(
+        Core::StatusCode::ConfigurationConflict,
+        "the proton-only srcSEP3D contract requires AMPS species index zero");
+  }
+  if (configured.name != "proton") {
+    return Core::Status(
+        Core::StatusCode::ConfigurationConflict,
+        "the current srcSEP3D release contract supports proton only");
+  }
+  if (!std::isfinite(ampsMassKg) || ampsMassKg <= 0.0 ||
+      !std::isfinite(ampsChargeC) || ampsChargeC == 0.0) {
+    return Invalid("AMPS species zero has an invalid SI mass or charge");
+  }
+  if (!SamePhysicalValue(configured.massKg, ampsMassKg)) {
+    return Core::Status(
+        Core::StatusCode::ConfigurationConflict,
+        "configured proton mass does not match AMPS species zero");
+  }
+  if (!SamePhysicalValue(configured.chargeC, ampsChargeC)) {
+    return Core::Status(
+        Core::StatusCode::ConfigurationConflict,
+        "configured proton charge does not match AMPS species zero");
+  }
+  return Core::Status::OK();
 }
 
 RunConfiguration3D::RunConfiguration3D(
@@ -535,14 +585,17 @@ Core::Status RunConfiguration3D::Create(
        source.spectralIndex <= 0.0 || source.samplesPerStep == 0)) {
     return Invalid("source spectrum, efficiency, or sampling controls are invalid");
   }
-  if (normalized.species.name.empty() ||
+  if (normalized.species.ampsSpeciesIndex != 0 ||
+      normalized.species.name != "proton" ||
       !std::isfinite(normalized.species.massKg) ||
       !std::isfinite(normalized.species.chargeC) ||
       !std::isfinite(normalized.species.macroparticleWeight) ||
       normalized.species.massKg <= 0.0 ||
       normalized.species.chargeC == 0.0 ||
       normalized.species.macroparticleWeight <= 0.0) {
-    return Invalid("species name, mass, charge, or particle weight is invalid");
+    return Invalid(
+        "the current species contract requires index-zero proton with finite "
+        "positive mass, positive charge, and particle weight");
   }
   std::vector<std::string> observerIds;
   for (const ObserverOptions& observer : normalized.observers) {
@@ -581,7 +634,9 @@ Core::Status RunConfiguration3D::Create(
         observerIds.end()) return Invalid("observer IDs must be unique");
     observerIds.push_back(observer.id);
     for (int species : observer.species)
-      if (species < 0) return Invalid("observer species index is negative");
+      if (species != normalized.species.ampsSpeciesIndex)
+        return Invalid(
+            "observer species must equal the configured proton AMPS index");
   }
 
   if (normalized.enablePerpendicularDiffusion || normalized.enableDrifts)
@@ -610,7 +665,7 @@ Core::Status RunConfiguration3D::Create(
   const StorageLayout layout = BuildLayout(normalized);
   std::ostringstream physics;
   physics << std::setprecision(17) << std::scientific
-          << "sep3d-physics-v3"
+          << "sep3d-physics-v4"
           << ";intent=" << Name(normalized.intent)
           << ";background=" << Name(normalized.background)
           << ";turbulence=" << Name(normalized.turbulence)
@@ -685,6 +740,7 @@ Core::Status RunConfiguration3D::Create(
           << ";source_max_J=" << source.maximumEnergyJ
           << ";source_index=" << source.spectralIndex
           << ";source_samples=" << source.samplesPerStep
+          << ";species_amps_index=" << normalized.species.ampsSpeciesIndex
           << ";species_name=" << normalized.species.name
           << ";species_mass_kg=" << normalized.species.massKg
           << ";species_charge_C=" << normalized.species.chargeC

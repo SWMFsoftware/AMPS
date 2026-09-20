@@ -92,6 +92,12 @@ SOURCE_SUITES: Dict[str, str] = {
     "wp59-wp64-native": "test-wp59-wp64-native",
     "python-runner": "test-python-runner-unit",
     "cross-model": "test-xm01-xm03-unit",
+    # These suites validate registry/provenance/input-policy wiring and run
+    # the linked cases only when SEP_EXECUTABLE is supplied by the caller.
+    # Keeping OV and EV separate prevents a diagnostic publication comparison
+    # or a nine-event pilot from being mistaken for a completed release gate.
+    "observational-cases": "test-ov01-ov05-unit",
+    "ensemble-cases": "test-ev01-ev02-unit",
     "acceptance": "test-acceptance-unit",
     "documentation": "test-documentation-unit",
     "controlled-analytical": "test-controlled-analytical",
@@ -115,12 +121,15 @@ ANALYTICAL_IDS = {
     *(f"TURB{i:02d}" for i in (2, 3, 5, 6, 7, 9, 11, 12, 13, 16, 21, 22, 23)),
 }
 
-# XM02 and XM03 represent one published configuration each.  Their test inputs
-# are source-reviewed artifacts selected through validation/case_registry.json,
-# not user-selectable campaign variants.  Keeping this policy in one explicit
-# set lets both argument validation and help-oriented unit tests detect an
-# accidental return of the former "reviewed input file" workflow.
-FIXED_PUBLICATION_INPUT_CASES = {"XM02", "XM03"}
+# XM02/XM03 and OV01-OV05 represent fixed, reviewed publication
+# reconstructions.  Their inputs are selected by case_registry.json and may
+# not be replaced from the command line: an override would silently change the
+# publication, digitization, source history, normalization, or scientific role
+# identified by the stable case ID.  EV01/EV02 are also registered inputs, but
+# remain a versioned pilot campaign rather than publication-figure cases.
+FIXED_PUBLICATION_INPUT_CASES = {
+    "XM02", "XM03", "OV01", "OV02", "OV03", "OV04", "OV05",
+}
 
 X_COLUMNS = ("x", "time", "time_s", "s", "s_m", "mu", "radius", "radius_m",
              "energy", "energy_mev", "coordinate")
@@ -257,6 +266,23 @@ Examples:
      shock and flux-tube areas; no time-, energy-, or instrument-specific scale
      is fitted. XM03 needs no external model CSV and cannot SKIP because
      model/srcsep_output.csv is absent.
+
+     Run all fixed observational cases and both campaign-evidence pilots:
+
+       python3 test/run_tests.py --amps ../amps \
+         --validation-case OV01 --validation-case OV02 \
+         --validation-case OV03 --validation-case OV04 \
+         --validation-case OV05 --output-dir test_output/OV01-OV05
+
+       python3 test/run_tests.py --amps ../amps \
+         --validation-case EV01 --validation-case EV02 \
+         --output-dir test_output/EV01-EV02
+
+     OV01/OV02 are release-gating observational comparisons; OV03-OV05 are
+     diagnostic-only because their defining physics is not one-dimensional.
+     EV01/EV02 exercise calibration/holdout separation but remain
+     pilot-incomplete until the reviewed 15-30 event/non-event population and
+     a larger sealed holdout are supplied.
 
      Both publication_input.json files are marked reproduction_status=partial.
      The papers do not publish complete SWMF PARAM/restart/source/mesh data or
@@ -1356,7 +1382,7 @@ def _parser() -> argparse.ArgumentParser:
                         help="run every registered end-to-end validation case")
     parser.add_argument("--case-input", type=Path,
                         help=("override one CV/IV validation input; XM02/XM03 "
-                              "always use their registered publication-derived input"))
+                              "and OV01-OV05 always use registered reviewed inputs"))
     parser.add_argument("--from-json", type=Path,
                         help="plot an existing component-test JSON without running tests")
     parser.add_argument("--output-dir", type=Path,

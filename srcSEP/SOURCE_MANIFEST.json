@@ -43,6 +43,9 @@
     "validation/**/*.csv"
   ],
   "support_globs": [
+    ".gitignore",
+    "SOURCE_MANIFEST.json",
+    "sep.dfn",
     "makefile",
     "WP42_WP64_DISPOSITION.json",
     "validation/**/*"
@@ -52,6 +55,7 @@
     "*.d",
     "*.a",
     "amr.sig=*.bin",
+    "PT/**",
     "build/**",
     "test_output/**",
     "**/__pycache__/**",

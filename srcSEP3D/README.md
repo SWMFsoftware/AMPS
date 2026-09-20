@@ -465,7 +465,7 @@ normalized-domain/preflight definitions before the final Fortran-driver link.
 | `HARN`, `RUNNER`, `LAY`, `BLD`, `UTIL` | runner, layering, binary boundary, frozen common kernels |
 | `LIFE3D01–04` | immutable configuration and complete lifecycle transition matrix |
 | `R3D01–07` | mover hook, subcycling, transactional snapshots, clock/events, source, observers, complete restart |
-| `CFG3D01–06` | input/CLI, typed contracts, domains, shared Parker geometry, mesh/memory preflight, finite-line schema |
+| `CFG3D01–07` | input/CLI, typed contracts, domains, shared Parker geometry, mesh/memory preflight, finite-line schema, proton-only AMPS binding |
 | `MSH3D01–10` | resolution bounds/laws, tube geometry, balance, octrees, memory, ownership, presets, gradients, finite-line/origin identities |
 | `BGP3D01–06` | analytic Parker identities, component laws, focusing, wind derivatives, polar limits |
 | `SNAP3D01–08` | completeness, finite values, units, epochs, atomicity, interpolation, batch status, frame |
@@ -478,6 +478,24 @@ normalized-domain/preflight definitions before the final Fortran-driver link.
 | `INT3D01–03`, `VFY3D01–05` | deterministic rank audit, scientific metrics, analytical Parker/focused/source validation |
 | `NAT3D01–03/09–12`, `MPI3D01–02` | registered configured-host integration and multi-rank gates |
 | `XM3D01–06`, `OV3D01–04` | checksum-owned cross-model and observational campaign gates |
+
+## Stage 3 single-species ownership
+
+The current application is explicitly proton-only. `[species] amps_index=0`
+and `name=proton` are required configuration, and the index participates in
+the physics fingerprint. Every observer species filter must select that same
+index. After PIC has initialized its species table, but before any time step,
+weight, or injected-particle field is assigned, the application requires one
+AMPS species at index zero and compares its SI mass and signed charge with the
+immutable configuration to relative tolerance `1e-12`.
+
+The validated index is then reused for PIC time-step/weight assignment,
+observer filtering, and source injection; those paths do not maintain separate
+species literals. `CFG3D07` exercises the successful binding and independent
+negative controls for count, index, name, mass, charge, observer selection,
+and fingerprint identity. Multi-species operation remains unsupported because
+it requires species-specific transport, source, storage, ledger, output, and
+restart semantics rather than removal of a single guard.
 
 ## Remaining release evidence
 
@@ -510,4 +528,5 @@ origin fails validation rather than being only partially honored.
 
 `CFG3D06` enforces the complete version-2 input and source consistency;
 `MSH3D10` enforces point count, arc length, and origin-relative AMR invariance.
-Both are part of the normal `test/run_tests.py --all` manifest.
+`CFG3D07` enforces the AMPS/configuration proton binding. All three are part of
+the normal `test/run_tests.py --all` manifest.

@@ -1,4 +1,4 @@
-# Configuration, Geometry, and Preflight (C01-C05)
+# Configuration, Geometry, Preflight, and Species Binding
 
 ## V01 perpendicular diffusion and guiding-centre drift
 
@@ -11,8 +11,9 @@ physics fingerprint. Drift uses signed `[species] charge_c` and forces
 magnetic-gradient storage before the mesh layout freezes. Current-sheet drift
 is unsupported because its geometry is unspecified.
 
-This document describes the production input boundary introduced by
-improvements C01-C05. The implementation is split between
+This document describes the production input boundary introduced by the
+configuration/preflight improvements and extended by Stage 3 species
+ownership. The implementation is split between
 `runtime/configuration_io.{h,cpp}`, `runtime/run_configuration.{h,cpp}`,
 `core/parker_geometry.{h,cpp}`, and `mesh/mesh_model.{h,cpp}`. None of these
 files depends on AMPS or MPI.
@@ -71,7 +72,7 @@ The typed contract includes:
 - shock interval, radial extent, speed, and compression;
 - source efficiency, physical particle rate, energy interval, spectrum, and
   maximum samples per injection event;
-- species name, mass, signed charge, and macroparticle weight;
+- species AMPS index, name, mass, signed charge, and macroparticle weight;
 - named observer geometry/trajectory, collection or shell radius, cadence,
   species/pitch acceptance, energy range/bin counts, normalization, and products;
 - output/restart paths and cadence.
@@ -88,6 +89,24 @@ from the physics fingerprint. Consequently a cosmetic output relocation can
 resume the same physics, while a species weight, observer, mesh, shock, or
 transport change cannot masquerade as the same run. Restart loading compares
 the frozen physics/layout identities transactionally.
+
+### Proton-only AMPS binding
+
+The current schema makes the application scope explicit with
+`[species] amps_index=0` and `name=proton`. `RunConfiguration3D::Create`
+rejects another index or name before mesh allocation, and each observer's
+comma-separated species list must contain only that index. The index is part of
+the physics fingerprint, so a species-layout change cannot reuse a restart or
+evidence identity.
+
+PIC owns the authoritative runtime species table. Immediately after PIC
+initialization, `ValidateSingleSpeciesBinding` requires exactly one AMPS
+species at index zero and compares its finite SI mass and signed charge with
+the immutable configuration to relative tolerance `1e-12`. Only after that
+validation does the adapter assign the species time step and statistical
+weight. The same validated index is used for injection and observer filtering.
+This is a fail-closed single-species contract, not partial multi-species
+support.
 
 ## C03: domain and boundary contract
 
@@ -211,6 +230,7 @@ identity/conservation, and resolved observer geometry plus commit-only reset.
 | `CFG3D04` | shared tangent and polarity-independent tube geometry |
 | `CFG3D05` | monotone composite profiles, tube scaling, AMR levels, memory categories, and level rejection |
 | `CFG3D06` | complete finite Parker-line input and fail-closed source consistency |
+| `CFG3D07` | index-zero proton configuration, AMPS count/name/mass/charge agreement, observer ownership, and fingerprint identity |
 
 ## Version 2 finite Parker-line section
 

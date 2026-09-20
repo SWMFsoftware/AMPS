@@ -75,8 +75,13 @@ interval are part of the publication and restart provenance.
 
 `RuntimeCounters.currentTick` is authoritative.  `CurrentTimeS()` and
 `NextStepEndTimeS()` are derived from the frozen base time step; repeated
-floating additions are not used.  `amps_init()` applies the same time step to
-every AMPS species and every owner-local block.  Before every particle phase,
+floating additions are not used. The Stage 3 application contract is exactly
+one AMPS proton at index zero. After PIC creates its species table,
+`ValidateSingleSpeciesBinding` compares the AMPS count, name, finite SI mass,
+and signed charge with immutable configuration before `amps_init()` applies
+the time step and weight to that validated index and every owner-local block.
+Observer filters and source injection reuse the same index; there is no
+independent hard-coded species selection. Before every particle phase,
 `VerifyClockAgreement` checks Runtime time, PIC time, PIC time step, snapshot
 time, and shock time.
 
@@ -167,4 +172,3 @@ hook, complete subcycling, transactional publication, integer clocks/events,
 source conservation and cadence identity, observer commit behavior, and the
 full restart round trip.  `BLDL3D01`, `BLDL3D03`, and `BLDL3D05` additionally
 exercise the configured AMPS boundary and copied `build/main` layout.
-

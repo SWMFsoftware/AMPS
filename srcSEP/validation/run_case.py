@@ -29,10 +29,14 @@ from xml.sax.saxutils import escape as xml_escape
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "validation" / "case_registry.json"
 
-# Cross-model publication cases are immutable scientific definitions.  The
-# public test/run_tests.py front end enforces the same rule, while duplicating
-# the guard here protects operators who invoke validation/run_case.py directly.
-FIXED_PUBLICATION_INPUT_CASES = {"XM02", "XM03"}
+# Publication-derived cases are immutable scientific definitions.  The public
+# test/run_tests.py front end enforces the same rule, while duplicating the
+# guard here protects operators who invoke this lower-level runner directly.
+# OV IDs encode a specific reference, figure/product, source history, and
+# normalization; accepting --input would make an archived command ambiguous.
+FIXED_PUBLICATION_INPUT_CASES = {
+    "XM02", "XM03", "OV01", "OV02", "OV03", "OV04", "OV05",
+}
 
 
 class CaseRunnerError(RuntimeError):
@@ -134,6 +138,18 @@ def _registry() -> List[Dict[str, Any]]:
         seen.add(canonical)
         descriptor = dict(case)
         descriptor["id"] = canonical
+        if canonical.startswith(("OV", "EV")):
+            # Stage 3 requires scientific role to be machine-readable.  These
+            # fields prevent `--all` from flattening a diagnostic OV case or a
+            # pilot EV population into the same claim as a release gate.
+            policy_fields = ("evidence_class", "release_status",
+                             "input_policy", "normalization_policy")
+            missing_policy = [key for key in policy_fields
+                              if not descriptor.get(key)]
+            if missing_policy:
+                raise CaseRunnerError(
+                    f"{canonical} descriptor lacks Stage-3 policy fields: " +
+                    ", ".join(missing_policy))
         for key in ("entrypoint", "default_input"):
             candidate = (ROOT / str(descriptor[key])).resolve()
             if ROOT not in candidate.parents or not candidate.is_file():
@@ -314,7 +330,7 @@ def _parser() -> argparse.ArgumentParser:
                         help="execute every case in deterministic registry order")
     parser.add_argument("--input", type=Path,
                         help=("override one selected CV/IV input; XM02/XM03 "
-                              "always use their registered publication-derived input"))
+                              "and OV01-OV05 always use registered reviewed inputs"))
     parser.add_argument("--output-dir", type=Path, required=False,
                         default=Path("test_output") / "validation-cases",
                         help="directory for model, reference, metrics, and manifests")

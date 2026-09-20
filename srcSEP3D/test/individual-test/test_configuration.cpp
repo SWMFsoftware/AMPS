@@ -144,6 +144,7 @@ authority = none
 enabled = false
 
 [species]
+amps_index = 0
 name = proton
 mass_kg = 1.67262192369e-27
 charge_c = 1.602176634e-19
@@ -475,6 +476,54 @@ Result RunCFG3D06() {
   return Pass("schema version 2 requires and validates the complete finite Parker-line definition");
 }
 
+Result RunCFG3D07() {
+  // Stage 3 deliberately chooses the low-risk single-proton release contract.
+  // Exercise the AMPS-independent validator with the values that amps_init
+  // reads from PIC after parsing, then prove every ambiguity fails closed
+  // before weights or sources can be installed.
+  RM::SpeciesOptions proton;
+  if (!RM::ValidateSingleSpeciesBinding(
+           proton, 1, SEP3D::Core::Const::m_p,
+           SEP3D::Core::Const::e).ok())
+    return Fail("the canonical one-proton AMPS binding was rejected");
+  if (RM::ValidateSingleSpeciesBinding(
+          proton, 2, SEP3D::Core::Const::m_p,
+          SEP3D::Core::Const::e).ok())
+    return Fail("a multi-species AMPS table was accepted");
+  if (RM::ValidateSingleSpeciesBinding(
+          proton, 1, 4.0 * SEP3D::Core::Const::m_p,
+          SEP3D::Core::Const::e).ok())
+    return Fail("an AMPS mass mismatch was accepted");
+  if (RM::ValidateSingleSpeciesBinding(
+          proton, 1, SEP3D::Core::Const::m_p,
+          2.0 * SEP3D::Core::Const::e).ok())
+    return Fail("an AMPS charge mismatch was accepted");
+
+  std::shared_ptr<const RM::RunConfiguration3D> configuration;
+  RM::RunConfiguration3DOptions options;
+  options.species.ampsSpeciesIndex = 1;
+  if (RM::RunConfiguration3D::Create(options, &configuration).ok())
+    return Fail("immutable configuration accepted a nonzero AMPS species index");
+  options = RM::RunConfiguration3DOptions();
+  options.species.name = "alpha";
+  if (RM::RunConfiguration3D::Create(options, &configuration).ok())
+    return Fail("immutable configuration accepted a non-proton species name");
+  options = RM::RunConfiguration3DOptions();
+  options.observers.front().species = {1};
+  if (RM::RunConfiguration3D::Create(options, &configuration).ok())
+    return Fail("observer configuration accepted a species outside the binding");
+
+  options = RM::RunConfiguration3DOptions();
+  std::shared_ptr<const RM::RunConfiguration3D> baseline, changed;
+  if (!RM::RunConfiguration3D::Create(options, &baseline).ok())
+    return Fail("baseline proton configuration is invalid");
+  options.species.macroparticleWeight = 2.0;
+  if (!RM::RunConfiguration3D::Create(options, &changed).ok() ||
+      baseline->physics_fingerprint() == changed->physics_fingerprint())
+    return Fail("species weight is absent from restart compatibility identity");
+  return Pass("proton-only AMPS count, index, mass, charge, observer, and fingerprint contracts passed");
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
@@ -503,5 +552,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
       make("CFG3D04", "Parker geometry", "C04 shared polarity-independent geometry.", RunCFG3D04),
       make("CFG3D05", "Mesh preflight", "C05 composite refinement and memory planning.", RunCFG3D05),
       make("CFG3D06", "Initialization schema", "Finite Parker-line fields and fail-closed consistency checks.", RunCFG3D06),
+      make("CFG3D07", "Single-species binding", "Stage-3 proton-only AMPS identity and fingerprint contract.", RunCFG3D07),
   };
 }

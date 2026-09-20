@@ -55,6 +55,7 @@ STANDALONE_GOALS := test-cli-unit test-state-unit test-geometry-source-unit \
                     test-wp59-wp64-native test-python-runner-unit \
                     test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit \
                     test-iv01-iv06-unit test-xm01-xm03-unit \
+                    test-ov01-ov05-unit test-ev01-ev02-unit \
                     print-configuration-matrix test-acceptance-unit \
                     test-documentation-unit test-controlled-analytical \
                     test-scientific-validation test-native-amps-validation \
@@ -66,6 +67,7 @@ STANDALONE_GOALS := test-cli-unit test-state-unit test-geometry-source-unit \
                     test-d03-native-integration \
                     test-d03-runner-unit \
                     test-stage1-stage2-contracts \
+                    test-stage3-contracts \
                     test-package-hygiene-unit \
                     print-layout-paths
 ifneq ($(filter $(STANDALONE_GOALS),$(MAKECMDGOALS)),)
@@ -202,7 +204,7 @@ audit-production-swcme: audit-production-shared-models
 # real production CLI; selector semantics are never reimplemented in Make.
 SEP_EXECUTABLE ?= ../amps
 
-.PHONY: test-cli-unit test-initialization-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-wp42-wp64-experimental test-wp59-wp64-native test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit test-iv01-iv06-unit test-xm01-xm03-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat test-swcme-relocation-unit test-sep-common-ownership-unit test-swcme-fail-closed-unit test-swcme-configuration-unit test-d03-native-integration test-d03-runner-unit test-stage1-stage2-contracts test-package-hygiene-unit require-sep-executable test-cli test-list test-case \
+.PHONY: test-cli-unit test-initialization-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-wp42-wp64-experimental test-wp59-wp64-native test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit test-iv01-iv06-unit test-xm01-xm03-unit test-ov01-ov05-unit test-ev01-ev02-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat test-swcme-relocation-unit test-sep-common-ownership-unit test-swcme-fail-closed-unit test-swcme-configuration-unit test-d03-native-integration test-d03-runner-unit test-stage1-stage2-contracts test-stage3-contracts test-package-hygiene-unit require-sep-executable test-cli test-list test-case \
 	test-group test-turbulence test-stress test-mpi test
 
 # Source-only audit for the Stage 1–2 integration boundaries.  It stays
@@ -210,6 +212,12 @@ SEP_EXECUTABLE ?= ../amps
 # prove single-owner calls, provider-aware initialization, and fixture guards.
 test-stage1-stage2-contracts:
 	@PYTHONDONTWRITEBYTECODE=1 python3 test/check_stage1_stage2_contracts.py
+
+# Stage 3 is a source/release-structure gate.  It deliberately runs before
+# expensive scientific cases and proves that retired code, case-registration
+# policy, and the proton-only srcSEP3D contract cannot drift independently.
+test-stage3-contracts:
+	@PYTHONDONTWRITEBYTECODE=1 python3 test/check_stage3_contracts.py
 
 # B01 is a release-tree check, not a srcSEP dependency.  Resolve the tool from
 # the enclosing AMPS root so the same target works when this makefile is copied
@@ -323,6 +331,16 @@ test-python-runner-unit:
 test-xm01-xm03-unit:
 	./test/run_xm01_xm03_tests.sh
 
+# The shell gates authenticate the fixed inputs and provenance without
+# claiming a scientific PASS when no linked AMPS executable is available.
+# If SEP_EXECUTABLE is set, OV01-OV05 additionally execute through the linked
+# registry; EV01/EV02 remain explicitly labelled as a nine-event pilot.
+test-ov01-ov05-unit:
+	./test/run_ov01_ov05_tests.sh
+
+test-ev01-ev02-unit:
+	./test/run_ev01_ev02_tests.sh
+
 # CV01 establishes the reusable linked-application case pattern. The target
 # always compiles the native model source strictly and runs the full case only
 # when SEP_EXECUTABLE names the linked srcSEP/AMPS binary; it never substitutes
@@ -371,7 +389,7 @@ test-controlled-analytical:
 # Step 15 is intentionally opt-in because VAL02 and VAL03 use statistically
 # meaningful ensembles.  The target also verifies that absent real SWMF and
 # spacecraft evidence produces INCOMPLETE and fails the release-mode gate.
-test-scientific-validation:
+test-scientific-validation: test-ov01-ov05-unit test-ev01-ev02-unit
 	./test/run_step15_tests.sh
 
 # Native, SWMF, and observational checks remain distinct so a PASS in one

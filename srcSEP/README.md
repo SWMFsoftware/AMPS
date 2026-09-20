@@ -20,19 +20,47 @@ Run the focused gate with:
 ```sh
 python3 test/run_tests.py --suite package-hygiene \
   --output-dir test_output/package-hygiene
+# Or invoke the AMPS-level auditor directly from the repository root.
+python3 tools/sep_package_hygiene.py --root . --self-test
 ```
 
 The gate rejects retired mover/SWCME sources, native binaries, object and
 archive files, dependency files, Python caches, test-output trees, and AMPS
 runtime binary data. It also runs an isolated negative control that inserts a
-deliberate stale object and verifies that the checker fails. Local ignore rules
-name only generated products; validation JSON/CSV inputs remain visible.
+deliberate stale object and verifies that the checker fails. Additional
+negative controls cover the retired mover, Python caches, test output, and an
+unclassified file. Every physical file must match an explicit manifest
+allowlist; generated and retired classifications win over broad source globs.
+The optional archive writer normalizes metadata and reopens the result to
+verify its exact member set and safe paths before reporting its SHA-256.
+Local ignore rules name only generated products; validation JSON/CSV inputs
+remain visible.
 
 The removed monolithic mover, full-three-dimensional drift/sample sources, and
 application-local SWCME examples were not production objects. Their active
 responsibilities are owned respectively by the three canonical field-line
 movers, field-line sampling/output, `srcSEP3D`, and `src/models/swcme`. See
 `MIGRATION_MANIFEST.md` for symbol-level mappings.
+
+## Stage 3 observational and ensemble registration
+
+`OV01`–`OV05` and `EV01`–`EV02` are registered consistently in
+`validation/case_registry.json`, the Python runner, the linked native registry,
+and focused Make targets. Their roles are deliberately not interchangeable:
+
+| Cases | Registered status | Meaning |
+|---|---|---|
+| `OV01`, `OV02` | `release-gate` | fixed-publication observational evidence required for the associated claim |
+| `OV03`–`OV05` | `diagnostic-only` | retained comparisons with documented dimensional/connectivity limitations |
+| `EV01`, `EV02` | `pilot-incomplete` | calibration/held-out campaign pilots, not release evidence |
+
+Run the dependency-light registry, source, provenance, and dispatch checks
+with `make test-ov01-ov05-unit test-ev01-ev02-unit`. The OV target additionally
+runs linked callbacks when `SEP_EXECUTABLE` names a configured application;
+otherwise it reports that portion as `SKIP`. Publication-owned OV inputs are
+fixed defaults and cannot be replaced through `--case-input` while retaining
+the registered case identity. See the root `STAGE3_IMPLEMENTATION.md` and
+`validation/README.md` for the normalization and evidence contracts.
 
 ## B02 canonical SEP-common dependency
 

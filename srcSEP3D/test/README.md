@@ -94,7 +94,7 @@ The runner adds
 | `UTIL` | `UTIL02` | byte-exact shared-kernel reference record |
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
 | `R3D` | `R3D01`–`R3D07` | mover hook, requested-time loop, snapshot transaction, tick/events, source, observers, restart |
-| `CFG3D` | `CFG3D01`–`CFG3D05` | C01-C05 schema/CLI, typed contracts, domains, Parker geometry, and mesh/memory preflight |
+| `CFG3D` | `CFG3D01`–`CFG3D07` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line schema, and proton-only AMPS binding |
 | `MSH3D` | `MSH3D01`–`MSH3D09` | resolution, tube geometry, balance, octree budget/ownership, presets, gradients |
 | `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
 | `SNAP3D` | `SNAP3D01`–`SNAP3D08` | snapshot completeness, coupling conversion, atomicity, interpolation, batch/frame policy |
@@ -286,7 +286,7 @@ env MAKEFLAGS="-j16" srcSEP3D/test/run_tests.py --all \
   --output-dir srcSEP3D/test_output/all --rebuild
 ```
 
-### C01-C05 configuration and preflight gates
+### Configuration, preflight, finite-line, and species-binding gates
 
 | ID | Acceptance contract |
 |---|---|
@@ -295,6 +295,8 @@ env MAKEFLAGS="-j16" srcSEP3D/test/run_tests.py --all \
 | `CFG3D03` | solar, one-AU, Mars, and explicit radii normalize exactly; invalid observers fail; boundary status respects crossing direction |
 | `CFG3D04` | mesh centerline/tangent and analytic field use one Parker geometry; polarity reverses `B` without moving the tube |
 | `CFG3D05` | composite profiles are monotone, tube width scales from its reference, all memory categories/levels report, and an impossible level cap fails |
+| `CFG3D06` | schema version 2 requires the complete finite Parker line and rejects a source-inconsistent initial point |
+| `CFG3D07` | configuration and AMPS bind exactly one proton at index zero; count, index, name, mass, charge, observer, and fingerprint negative controls fail closed |
 
 ```bash
 python3 test/run_tests.py --suite improvements-c --rebuild \
@@ -461,7 +463,7 @@ equations, algorithms, case roles, and evidence schemas.
 | `r0` | R0 source/ABI/production gates plus RUN3D01, LAY01, and BLD01 |
 | `r1` | canonical shared-archive audit, relocated SWCME suite, and frozen common kernels |
 | `r2` | LIFE3D01–LIFE3D04 immutable configuration and lifecycle gates |
-| `improvements-c` | CFG3D01–CFG3D05 production configuration and preflight gates |
+| `improvements-c` | CFG3D01–CFG3D07 production configuration, preflight, finite-line, and species-binding gates |
 | `improvements-r` | R3D01–R3D07 production runtime integration gates |
 | `improvements-v` | V1D01–05 controlled physics, V2D01 true parity, and V5D01 governance |
 | `phase-m` | MSH3D01–MSH3D09 mesh/storage gates |
@@ -548,10 +550,12 @@ invoke that exact linked callback, following the srcSEP pattern.
 | unknown test/group | use `--list`; unknown selectors are usage errors |
 | report missing after a C++ test | treat as ERROR; inspect verbose subprocess output |
 
-`CFG3D06` and `MSH3D10` are routine C++ entries in the runner manifest.
+`CFG3D06`, `CFG3D07`, and `MSH3D10` are routine C++ entries in the runner manifest.
 `CFG3D06` uses live negative controls for an omitted version-2 key and an
 initial point inconsistent with the inner sphere. `MSH3D10` constructs the
 configured number of vertices, sums every segment to the requested arc length,
 and translates the origin/probe together to prove the AMR law is not tied to
-coordinate zero.  These extend the gates; none of the earlier CFG3D/MSH3D
-thresholds or negative controls was relaxed.
+coordinate zero. `CFG3D07` tests the positive index-zero proton binding plus
+rejected AMPS species count, configured index, species name, mass, signed
+charge, observer index, and changed fingerprint. These extend the gates; none
+of the earlier CFG3D/MSH3D thresholds or negative controls was relaxed.

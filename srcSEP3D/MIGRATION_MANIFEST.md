@@ -176,6 +176,16 @@ identity. Output directory, prefix, and cadence remain in the resolved manifest
 but are intentionally excluded from physics identity. `LIFE3D03` protects that
 separation and the exact storage offsets.
 
+Stage 3 adds the missing runtime species identity to this immutable boundary.
+`SpeciesOptions::ampsSpeciesIndex` must be zero, the configured name must be
+`proton`, observers may select only that index, and the index participates in
+the physics fingerprint. After PIC initialization, the application validates
+that AMPS exposes exactly one species and that species zero has matching finite
+SI mass and signed charge before assigning its time step/weight or injecting a
+particle. `CFG3D07` supplies positive and independent negative controls for
+every part of this contract. This records a deliberate proton-only application;
+it does not imply incomplete multi-species loops are supported.
+
 ## Phase M — mesh and storage
 
 | File | Ownership and invariant |

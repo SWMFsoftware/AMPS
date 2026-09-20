@@ -111,11 +111,24 @@ struct SourceOptions {
 };
 
 struct SpeciesOptions {
+  // Stage 3 intentionally supports one AMPS species only.  Keeping the index
+  // in immutable configuration still matters: source injection, observers,
+  // ledgers, and restart fingerprints must refer to the same resolved AMPS
+  // slot rather than relying on scattered literal zeroes.  Multi-species
+  // support requires replacing this record with a validated species table.
+  int ampsSpeciesIndex = 0;
   std::string name = "proton";
   double massKg = Core::Const::m_p;
   double chargeC = Core::Const::e;
   double macroparticleWeight = 1.0;
 };
+
+// Validate the immutable application species against AMPS after PIC has
+// parsed its generated species table.  This helper remains AMPS-independent
+// so the fail-closed count/index/mass/charge policy has a routine unit test.
+Core::Status ValidateSingleSpeciesBinding(
+    const SpeciesOptions& configured, int ampsSpeciesCount,
+    double ampsMassKg, double ampsChargeC);
 
 struct ObserverOptions {
   std::string id;

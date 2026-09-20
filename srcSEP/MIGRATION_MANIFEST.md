@@ -229,6 +229,32 @@ The dependency-light enforcement command is
 `make test-stage1-stage2-contracts`; the numerical companion gates are
 `test-state-unit`, `test-turbulence-core-unit`, and `test-cv01-unit`.
 
+## Stage 3 release and validation migration
+
+Stage 3 closes the gap between this disposition record and the physical
+release tree. `mover.cpp` is no longer merely absent from `MAINLIBOBJ`; it is
+physically absent and listed as retired in `SOURCE_MANIFEST.json`. The
+AMPS-level `tools/sep_package_hygiene.py` auditor reads the manifests for both
+applications and both shared-model directories in one transaction. It rejects
+retired, generated, unclassified, or unsafe-symlink paths and can create a
+metadata-normalized archive whose exact members are verified after writing.
+
+The same stage promotes the existing observational and ensemble case sources
+to discoverable registry entries without overstating their evidence:
+
+| IDs | Registry group | Evidence disposition |
+|---|---|---|
+| `OV01`–`OV02` | `observational-validation` | release gates using immutable publication inputs and one declared shared normalization |
+| `OV03`–`OV05` | `observational-validation` | diagnostic only; documented 1-D/connectivity limitations remain |
+| `EV01`–`EV02` | `campaign-evidence` | incomplete calibration/holdout pilots |
+
+`test-stage3-contracts` audits these mappings across the JSON registry, Python
+runner, native descriptors, Make targets, manifests, and the independent
+`srcSEP3D` species boundary. `test-ov01-ov05-unit` and
+`test-ev01-ev02-unit` execute the focused case-specific source checks. A linked
+OV run still requires `SEP_EXECUTABLE`; its absence is reported as `SKIP` and
+cannot close a release gate.
+
 ## Verification
 
 Run the dependency-light migration and documentation gate:

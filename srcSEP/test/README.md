@@ -154,6 +154,21 @@ make test-iv01-iv06-unit SEP_EXECUTABLE=/path/to/amps
 # XM01-XM03 cross-model/observation source gate plus linked execution.
 make test-xm01-xm03-unit SEP_EXECUTABLE=/path/to/amps
 
+# OV01-OV05 observational registry/fixed-input gate. OV01-OV02 are release
+# gates; OV03-OV05 remain diagnostic. Linked execution is optional here.
+make test-ov01-ov05-unit SEP_EXECUTABLE=/path/to/amps
+
+# EV01-EV02 training/holdout pilot registration, dispatch, provenance, and
+# source-history checks. These cases intentionally remain pilot-incomplete.
+make test-ev01-ev02-unit
+
+# Cross-file Stage 3 manifests, retired files, OV/EV roles, and srcSEP3D
+# proton-only ownership. This gate needs neither AMPS nor MPI.
+make test-stage3-contracts
+
+# Strict four-component source-tree audit and negative controls.
+make test-package-hygiene-unit
+
 # All dependency-light ASan/UBSan suites from Steps 3 and 6–13.
 make test-sanitizer
 
@@ -344,6 +359,19 @@ python3 test/run_tests.py --amps /path/to/amps \
 python3 test/run_tests.py --amps /path/to/amps \
   --validation-case XM01 --validation-case XM02 --validation-case XM03 \
   --output-dir /evidence/srcsep/XM01-XM03
+
+# Registered observational comparisons. Their publication-owned defaults are
+# immutable, so --case-input is intentionally rejected for these IDs.
+python3 test/run_tests.py --amps /path/to/amps \
+  --validation-case OV01 --validation-case OV02 \
+  --validation-case OV03 --validation-case OV04 --validation-case OV05 \
+  --output-dir /evidence/srcsep/OV01-OV05
+
+# Calibration/held-out ensemble pilots. These emit campaign evidence but do
+# not acquire release-gate status when they pass.
+python3 test/run_tests.py --amps /path/to/amps \
+  --validation-case EV01 --validation-case EV02 \
+  --output-dir /evidence/srcsep/EV01-EV02
 
 # List all native registry IDs without initializing AMPS.
 python3 test/run_tests.py --amps /path/to/amps --list
@@ -929,6 +957,31 @@ properties that equation-level tests cannot infer from numerical output:
 disposable directory. If `SEP_EXECUTABLE` is set to a linked application, the
 same target also runs the complete linked comparison; otherwise that portion
 is explicitly `SKIP`.
+
+## Stage 3 release, validation, and species gates
+
+`make test-stage3-contracts` runs `test/check_stage3_contracts.py`. This is a
+source-structure test for invariants that cannot be inferred from a successful
+numerical trajectory. It requires all four `SOURCE_MANIFEST.json` files, proves
+that `srcSEP/mover.cpp` is absent and retired, checks the unified runner/Make
+and native OV/EV registration, verifies each evidence role and fixed-input
+policy, and follows the `srcSEP3D` species index from configuration through
+observer selection and injection.
+
+The case-specific targets provide complementary executable evidence:
+
+- `test-ov01-ov05-unit` compiles the production validation callback, verifies
+  immutable publication inputs/references and registry metadata, and runs the
+  linked cases when `SEP_EXECUTABLE` is available;
+- `test-ev01-ev02-unit` verifies production dispatch, the nine-event CCMC
+  source/observation provenance, strictly increasing source histories,
+  plotting attribution, and campaign-runner syntax; and
+- `test-package-hygiene-unit` executes the four-component allowlist audit plus
+  positive and negative self-tests.
+
+Evidence labels remain binding. `OV01`/`OV02` are release gates,
+`OV03`–`OV05` are diagnostic only, and `EV01`/`EV02` are incomplete pilots.
+A source-only linked-case `SKIP` is not converted into a release pass.
 
 ## Registered tests
 

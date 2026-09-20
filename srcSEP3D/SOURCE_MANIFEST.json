@@ -48,10 +48,13 @@
     "release/*.json"
   ],
   "support_globs": [
+    ".gitignore",
+    "SOURCE_MANIFEST.json",
     "makefile",
     "validation/templates/*"
   ],
   "generated_globs": [
+    "outlog",
     "*.o",
     "*.d",
     "*.a",

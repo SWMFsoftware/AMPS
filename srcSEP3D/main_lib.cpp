@@ -1327,15 +1327,39 @@ void amps_init_mesh() {
 
 void amps_init() {
   PIC::Init_AfterParser();
-  // R04: one configured base step is authoritative for Runtime and every AMPS
-  // species/block.  Assigning this after PIC initialization prevents legacy
-  // default setup from silently replacing the user-resolved cadence.
+  // Stage 3 validates the generated AMPS species table before any weight,
+  // timestep, source, observer, ledger, or restart state can consume it.  The
+  // previous loop copied one configured weight to every AMPS species while
+  // shock injection used literal species zero; a multi-species build could
+  // therefore start with internally inconsistent normalization.  The current
+  // release contract is deliberately one index-zero proton, with SI mass and
+  // charge matching both immutable configuration and AMPS molecular data.
+  const SEP3D::RuntimeModel::SpeciesOptions& configuredSpecies =
+      Configuration().options().species;
+  double ampsSpeciesMassKg = std::numeric_limits<double>::quiet_NaN();
+  double ampsSpeciesChargeC = std::numeric_limits<double>::quiet_NaN();
+  // Do not index AMPS molecular tables until their cardinality has been
+  // checked locally.  The validator then returns the authoritative typed
+  // diagnostic for zero, multiple, or mismatched species.
+  if (PIC::nTotalSpecies == 1 && configuredSpecies.ampsSpeciesIndex == 0) {
+    ampsSpeciesMassKg = PIC::MolecularData::GetMass(0);
+    ampsSpeciesChargeC = PIC::MolecularData::GetElectricCharge(0);
+  }
+  const SEP3D::Core::Status speciesBinding =
+      SEP3D::RuntimeModel::ValidateSingleSpeciesBinding(
+          configuredSpecies, static_cast<int>(PIC::nTotalSpecies),
+          ampsSpeciesMassKg, ampsSpeciesChargeC);
+  if (!speciesBinding.ok())
+    StopWithStatus("AMPS species binding", speciesBinding);
+  const int speciesIndex = configuredSpecies.ampsSpeciesIndex;
+
+  // R04: one configured base step is authoritative for Runtime and the one
+  // validated AMPS species/block.  Assigning this after PIC initialization
+  // prevents legacy default setup from silently replacing the resolved cadence.
   const double configuredDt = Configuration().options().requestedTimeStepS;
-  for (int species = 0; species < PIC::nTotalSpecies; ++species)
-    PIC::ParticleWeightTimeStep::GlobalTimeStep[species] = configuredDt;
-  for (int species = 0; species < PIC::nTotalSpecies; ++species)
-    PIC::ParticleWeightTimeStep::GlobalParticleWeight[species] =
-        Configuration().options().species.macroparticleWeight;
+  PIC::ParticleWeightTimeStep::GlobalTimeStep[speciesIndex] = configuredDt;
+  PIC::ParticleWeightTimeStep::GlobalParticleWeight[speciesIndex] =
+      configuredSpecies.macroparticleWeight;
   PIC::ParticleWeightTimeStep::GlobalTimeStepInitialized = true;
   for (unsigned int blockIndex = 0;
        blockIndex < PIC::DomainBlockDecomposition::nLocalBlocks;
@@ -1343,8 +1367,7 @@ void amps_init() {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
         PIC::DomainBlockDecomposition::BlockTable[blockIndex];
     if (node == nullptr || node->block == nullptr) continue;
-    for (int species = 0; species < PIC::nTotalSpecies; ++species)
-      node->block->SetLocalTimeStep(configuredDt, species);
+    node->block->SetLocalTimeStep(configuredDt, speciesIndex);
   }
   FillAndPublishBackground();
   SEP3D::AMPS::Movers::Context mover;
@@ -1453,8 +1476,11 @@ int amps_time_step() {
         SEP3D::Adapters::SourceRequest source;
         source.patch = patch;
         source.step = runtime.counters().currentTick;
-        source.species = 0;
-        source.speciesMassKg = PIC::MolecularData::GetMass(0);
+        // Injection uses the same immutable index that passed the AMPS
+        // mass/charge binding check in amps_init.  This identity is carried by
+        // the source ledger and physics fingerprint used for restart checks.
+        source.species = options.species.ampsSpeciesIndex;
+        source.speciesMassKg = PIC::MolecularData::GetMass(source.species);
         source.intervalS = options.requestedTimeStepS *
             options.injectionCadenceSteps;
         source.physicalParticleRatePerS =

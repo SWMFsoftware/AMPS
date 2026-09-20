@@ -87,6 +87,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("CFG3D04", "CFG3D", "Shared Parker geometry", "cpp"),
     TestDefinition("CFG3D05", "CFG3D", "Mesh and memory preflight", "cpp"),
     TestDefinition("CFG3D06", "CFG3D", "Finite Parker initialization schema", "cpp"),
+    TestDefinition("CFG3D07", "CFG3D", "Proton-only AMPS species binding", "cpp"),
     TestDefinition("MSH3D01", "MSH3D", "Resolution bounds", "cpp"),
     TestDefinition("MSH3D02", "MSH3D", "Radial closed forms", "cpp"),
     TestDefinition("MSH3D03", "MSH3D", "Parker tube centreline", "cpp"),

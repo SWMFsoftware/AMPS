@@ -422,6 +422,16 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     if (!ParseUnsigned64(value, &o->source.samplesPerStep)) return invalidValue();
   } else if (field == "species.name") {
     o->species.name = value;
+  } else if (field == "species.amps_index") {
+    // The input surface records the resolved AMPS slot even though Stage 3
+    // accepts index zero only.  Parsing a nonnegative integer here and letting
+    // RunConfiguration3D::Create reject nonzero values gives operators a clear
+    // species-contract error instead of an unknown-key or silent fallback.
+    std::uint64_t parsed = 0;
+    if (!ParseUnsigned64(value, &parsed) ||
+        parsed > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
+      return invalidValue();
+    o->species.ampsSpeciesIndex = static_cast<int>(parsed);
   } else if (field == "species.mass_kg") {
     if (!ParseDouble(value, &o->species.massKg)) return invalidValue();
   } else if (field == "species.charge_c") {
@@ -757,6 +767,8 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
          << "parker_spiral_length_m=" << options.parkerSpiralLengthM << '\n'
          << "parker_spiral_end_m=" << lineEnd.x << ',' << lineEnd.y << ','
          << lineEnd.z << '\n'
+         << "amps_species_index=" << options.species.ampsSpeciesIndex << '\n'
+         << "species_name=" << options.species.name << '\n'
          << "minimum_requested_cell_m=" << preflight.minimumRequestedCellM << '\n'
          << "maximum_requested_cell_m=" << preflight.maximumRequestedCellM << '\n'
          << "tube_radius_at_reference_m=" << preflight.tubeRadiusAtReferenceM << '\n'
