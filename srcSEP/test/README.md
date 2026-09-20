@@ -1123,7 +1123,9 @@ validation campaign.
 MPI.  `INIT01` checks the complete SI schema, fingerprint, and live negative
 controls for missing and unknown input.  `INIT02` checks requested Parker point
 count, configured arc length, the surface resolution identity, and the tube
-cross-section identity at its reference radius.
+cross-section identity at its reference radius. `INIT03` writes the production
+finite-line Tecplot zone, verifies its unit-qualified schema and configured
+point count, and removes the temporary product.
 
 The same callbacks are appended by `ComponentTestRegistry()`.  Consequently a
 rebuilt linked executable advertises both IDs through `--list-tests`, and the

@@ -14,6 +14,7 @@
 #include "swcme_source_adapter.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -97,6 +98,11 @@ struct SourceRequest {
   double intervalS = 0.0;
   double physicalParticleRatePerS = 0.0;
   double macroparticleWeight = 0.0;
+  // A non-zero value is an exact host allocation, not an expectation.  The
+  // schema-v3 initialization path uses this field after distributing the
+  // configured global samples_per_step across every active SWCME patch.
+  // Older callers leave it zero and retain deterministic stochastic rounding.
+  std::uint64_t prescribedMacroparticles = 0;
   std::uint64_t maximumMacroparticles = 0;
   bool connected = true;
 };
@@ -107,11 +113,31 @@ struct InjectionPlan {
   SourceLedgerRow ledger;
 };
 
-// Apply stochastic rounding with a semantic (campaign,event,patch,species,
-// step) key, then sample a complete position/momentum/pitch record for every
-// accepted macroparticle.  A cap is visible in the ledger and the weight is
-// renormalized so represented physical number remains conservative.
+// Use a host-prescribed exact count when present; otherwise apply deterministic
+// stochastic rounding with a semantic (campaign,event,patch,species,step) key.
+// Then sample a complete position/momentum/pitch record for every accepted
+// macroparticle.  Legacy caps are visible in the ledger and all paths
+// renormalize particle weight so represented physical number is conservative.
 InjectionPlan BuildInjectionPlan(const SourceRequest& request);
+
+// Allocate exactly totalMacroparticles over an active canonical shock surface.
+// Every active patch receives one representative before the remaining samples
+// are apportioned by normalized physical patch weight with the deterministic
+// largest-remainder method.  Requiring at least one sample per active patch is
+// essential: otherwise a patch with a non-zero physical source would silently
+// lose its represented particles.  The returned vector follows patches order.
+Core::Status AllocateExactPatchMacroparticles(
+    const std::vector<ShockSourceRecord>& patches,
+    std::uint64_t totalMacroparticles,
+    std::vector<std::uint64_t>* perPatchCounts);
+
+// Construct the canonical standalone SWCME3D provider from the exact raw
+// assignment layer retained by RunConfiguration3D.  Resolution and model
+// validation finish before a provider is returned; failure leaves the caller's
+// shared_ptr unchanged and occurs before AMPS mesh allocation.
+Core::Status CreateStandaloneSwcmeShockProvider(
+    const RuntimeModel::RunConfiguration3D& configuration,
+    std::shared_ptr<ShockProvider>* provider);
 
 }  // namespace Adapters
 }  // namespace SEP3D

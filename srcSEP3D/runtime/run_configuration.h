@@ -100,14 +100,24 @@ struct ShockOptions {
 
 struct SourceOptions {
   bool enabled = false;
-  // Total represented physical particle rate before patch partitioning [s^-1].
-  // SWCME supplies relative_patch_weight; their product is the patch rate.
+  // Physical seed-particle rate before injection efficiency and shock-patch
+  // partitioning [s^-1].  Runtime multiplies this by injectionEfficiency and
+  // SWCME relative_patch_weight exactly once.
   double physicalParticleRatePerS = 1.0;
   double injectionEfficiency = 1.0e-4;
   double minimumEnergyJ = 1.0e4 * Core::Const::e;
   double maximumEnergyJ = 1.0e8 * Core::Const::e;
   double spectralIndex = 5.0;
   std::uint64_t samplesPerStep = 1000;
+};
+
+// Provider-neutral transport record for the standalone [swcme] section.  Key
+// ownership and physical validation remain in src/models/swcme; coupled hosts
+// may leave this list empty and install their own already-validated provider.
+struct SwcmeAssignment {
+  std::string key;
+  std::string value;
+  std::size_t line = 0;
 };
 
 struct SpeciesOptions {
@@ -172,8 +182,11 @@ struct MemoryModelOptions {
 struct RunConfiguration3DOptions {
   // Human-authored files set this through run.schema_version.  Version 1 is
   // retained for existing campaigns; version 2 additionally requires an
-  // explicit finite Parker centreline definition.  Programmatic SWMF hosts
-  // may keep the default and receive the same normalized legacy geometry.
+  // explicit finite Parker centreline definition.  Version 3 is the complete
+  // standalone initialization contract: every application value, observer,
+  // output path, and canonical SWCME3D parameter must be explicit.  Parser-
+  // free programmatic SWMF hosts may keep the default and install equivalent
+  // validated providers through the typed interface.
   unsigned inputSchemaVersion = 1;
   BackgroundAuthority background = BackgroundAuthority::AnalyticParker;
   TurbulenceAuthority turbulence = TurbulenceAuthority::Prescribed;
@@ -242,6 +255,12 @@ struct RunConfiguration3DOptions {
   ShockOptions shockModel;
   SourceOptions source;
   SpeciesOptions species;
+  std::vector<SwcmeAssignment> swcmeAssignments;
+  // Filled only by the standalone parser after canonical resolution.  These
+  // strings enter the immutable physics identity; textual spellings alone do
+  // not masquerade as a validated SWCME configuration.
+  std::string swcmeConfigurationFingerprint;
+  std::string swcmeResolvedManifest;
   std::vector<ObserverOptions> observers = [] {
     ObserverOptions observer;
     observer.id = "default";
@@ -305,6 +324,10 @@ struct RunConfiguration3DOptions {
   std::uint64_t checkpointCadenceSteps = 0;
   std::string outputDirectory = "output";
   std::string outputPrefix = "sep3d";
+  std::string initializationMeshTecplotFile =
+      "sep3d-initialization-mesh.dat";
+  std::string initializationParkerLineTecplotFile =
+      "sep3d-initialization-parker-line.dat";
   std::string restartInputPath;
   std::string restartOutputPath = "restart/sep3d.chk";
 

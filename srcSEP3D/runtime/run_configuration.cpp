@@ -343,6 +343,12 @@ Core::Status RunConfiguration3D::Create(
   // succeeds.  Preset resolution therefore becomes part of the immutable
   // configuration rather than a late mesh-builder side effect.
   RunConfiguration3DOptions normalized = options;
+  // Schema 3 obtains the momentum index from each canonical MHD shock state.
+  // Zero is an explicit "provider-owned DSA" sentinel; it prevents the legacy
+  // constant SourceOptions default from entering the physics fingerprint as if
+  // it controlled injection.
+  if (normalized.inputSchemaVersion >= 3)
+    normalized.source.spectralIndex = 0.0;
   if (normalized.outerRadiusMode == OuterRadiusMode::Preset) {
     normalized.outerRadiusM = PresetOuterRadiusM(normalized.domain);
   }
@@ -381,8 +387,8 @@ Core::Status RunConfiguration3D::Create(
       normalized.coordinateFrame.empty()) {
     return Invalid("the current Parker/SWMF contract requires a finite heliocentric origin and named frame");
   }
-  if (normalized.inputSchemaVersion < 1 || normalized.inputSchemaVersion > 2)
-    return Invalid("inputSchemaVersion must be 1 or 2");
+  if (normalized.inputSchemaVersion < 1 || normalized.inputSchemaVersion > 3)
+    return Invalid("inputSchemaVersion must be 1, 2, or 3");
   if (!FiniteVector(normalized.parkerSpiralOriginM) ||
       !FiniteVector(normalized.parkerSpiralInitialPointM) ||
       (normalized.parkerSpiralOriginM - normalized.coordinateOriginM).Norm() != 0.0 ||
@@ -431,6 +437,30 @@ Core::Status RunConfiguration3D::Create(
   }
   if (normalized.outputDirectory.empty() || normalized.outputPrefix.empty()) {
     return Invalid("output directory and prefix must not be empty");
+  }
+  if (normalized.inputSchemaVersion >= 3 &&
+      (normalized.initializationMeshTecplotFile.empty() ||
+       normalized.initializationParkerLineTecplotFile.empty() ||
+       normalized.swcmeAssignments.empty() ||
+       normalized.swcmeConfigurationFingerprint.empty() ||
+       normalized.swcmeResolvedManifest.empty())) {
+    return Invalid("schema version 3 requires validated SWCME and initialization Tecplot outputs");
+  }
+  if (normalized.inputSchemaVersion >= 3 &&
+      (normalized.intent != RunIntent::ShockInjection ||
+       normalized.shock != ShockAuthority::Swcme ||
+       !normalized.source.enabled)) {
+    return Invalid("schema version 3 requires an enabled canonical SWCME shock source");
+  }
+  if (normalized.inputSchemaVersion >= 3 &&
+      normalized.injectionCadenceSteps != 1) {
+    return Invalid("schema version 3 requires source injection on every time step");
+  }
+  if (normalized.inputSchemaVersion >= 3 &&
+      (normalized.background != BackgroundAuthority::AnalyticParker ||
+       normalized.turbulence != TurbulenceAuthority::Prescribed)) {
+    return Invalid("standalone schema version 3 requires analytic Parker "
+                   "background and prescribed turbulence");
   }
   const double meshValues[] = {
       normalized.minimumCellSizeM, normalized.backgroundCellSizeM,
@@ -557,7 +587,8 @@ Core::Status RunConfiguration3D::Create(
                         "enabled source requires shock-injection run intent");
   }
   const ShockOptions& shock = normalized.shockModel;
-  if (normalized.shock == ShockAuthority::Swcme &&
+  if (normalized.inputSchemaVersion < 3 &&
+      normalized.shock == ShockAuthority::Swcme &&
       (!std::isfinite(shock.activeFromS) ||
        !std::isfinite(shock.activeUntilS) ||
        !std::isfinite(shock.initialRadiusM) ||
@@ -582,7 +613,8 @@ Core::Status RunConfiguration3D::Create(
        source.injectionEfficiency <= 0.0 || source.injectionEfficiency > 1.0 ||
        source.minimumEnergyJ <= 0.0 ||
        source.maximumEnergyJ <= source.minimumEnergyJ ||
-       source.spectralIndex <= 0.0 || source.samplesPerStep == 0)) {
+       (normalized.inputSchemaVersion < 3 && source.spectralIndex <= 0.0) ||
+       source.samplesPerStep == 0)) {
     return Invalid("source spectrum, efficiency, or sampling controls are invalid");
   }
   if (normalized.species.ampsSpeciesIndex != 0 ||
@@ -726,20 +758,33 @@ Core::Status RunConfiguration3D::Create(
           << ";parker_polarity=" << parker.magneticPolarity
           << ";parker_density_m-3=" << parker.numberDensityAtReferenceM3
           << ";parker_temperature_K=" << parker.temperatureK
-          << ";parker_cadence_s=" << parker.validityCadenceS
-          << ";shock_from_s=" << shock.activeFromS
-          << ";shock_until_s=" << shock.activeUntilS
-          << ";shock_initial_m=" << shock.initialRadiusM
-          << ";shock_maximum_m=" << shock.maximumRadiusM
-          << ";shock_speed_m_s=" << shock.speedMPerS
-          << ";shock_compression=" << shock.compressionRatio
+          << ";parker_cadence_s=" << parker.validityCadenceS;
+  if (normalized.inputSchemaVersion < 3) {
+    physics << ";shock_from_s=" << shock.activeFromS
+            << ";shock_until_s=" << shock.activeUntilS
+            << ";shock_initial_m=" << shock.initialRadiusM
+            << ";shock_maximum_m=" << shock.maximumRadiusM
+            << ";shock_speed_m_s=" << shock.speedMPerS
+            << ";shock_compression=" << shock.compressionRatio;
+  } else {
+    // Schema 3 has no surrogate constant-speed ShockOptions.  Its complete
+    // kinematics, geometry, and compression are represented only by the
+    // canonical SWCME fingerprint below; serializing dormant C++ defaults
+    // would falsely make them look like reviewed physics inputs.
+    physics << ";shock_model=canonical-swcme3d";
+  }
+  physics << ";swcme_fingerprint="
+          << normalized.swcmeConfigurationFingerprint
           << ";source_enabled=" << source.enabled
           << ";source_rate_s-1=" << source.physicalParticleRatePerS
           << ";source_efficiency=" << source.injectionEfficiency
           << ";source_min_J=" << source.minimumEnergyJ
-          << ";source_max_J=" << source.maximumEnergyJ
-          << ";source_index=" << source.spectralIndex
-          << ";source_samples=" << source.samplesPerStep
+          << ";source_max_J=" << source.maximumEnergyJ;
+  if (normalized.inputSchemaVersion < 3)
+    physics << ";source_index=" << source.spectralIndex;
+  else
+    physics << ";source_index=canonical-local-compression";
+  physics << ";source_samples=" << source.samplesPerStep
           << ";species_amps_index=" << normalized.species.ampsSpeciesIndex
           << ";species_name=" << normalized.species.name
           << ";species_mass_kg=" << normalized.species.massKg
@@ -788,10 +833,16 @@ Core::Status RunConfiguration3D::Create(
 
   std::ostringstream manifest;
   manifest << physics.str()
+           << ";swcme_resolved_manifest="
+           << normalized.swcmeResolvedManifest
            << ";output_cadence=" << normalized.outputCadenceSteps
            << ";checkpoint_cadence=" << normalized.checkpointCadenceSteps
            << ";output_directory=" << normalized.outputDirectory
            << ";output_prefix=" << normalized.outputPrefix
+           << ";initialization_mesh_tecplot="
+           << normalized.initializationMeshTecplotFile
+           << ";initialization_parker_line_tecplot="
+           << normalized.initializationParkerLineTecplotFile
            << ";restart_input=" << normalized.restartInputPath
            << ";restart_output=" << normalized.restartOutputPath;
 

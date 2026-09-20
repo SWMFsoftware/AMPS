@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <exception>
+#include <limits>
 #include <time.h>
 
 #include <sys/time.h>
@@ -214,6 +215,19 @@ int main(int argc,char **argv) {
       std::cout << "Initialization input=" << cli_options.inputPath
                 << " fingerprint="
                 << SEP::Initialization::Fingerprint(initialization) << '\n';
+
+    // Version 2 makes the one-dimensional observer and source sampling count
+    // part of the same immutable startup contract as the mesh.  The retained
+    // sampler consumes heliocentric radius, while the command line remains a
+    // higher-precedence compatibility layer for convergence studies.
+    if (initialization.schemaVersion >= 2) {
+      SEP::Sampling::SamplingHeliocentricDistanceList.clear();
+      SEP::Sampling::SamplingHeliocentricDistanceList.push_back(
+          initialization.observerHeliocentricRadiusM);
+      if (!cli_options.injectionParticlesProvided)
+        cli_options.injectionParticlesPerIteration = static_cast<int>(
+            initialization.macroparticlesPerStep);
+    }
   }
 
 
@@ -231,6 +245,20 @@ int main(int argc,char **argv) {
   swcmeRequest.preset=cli_options.slowCmeScenario
       ? SEP::SW1DAdapter::Scenario::Slow
       : SEP::SW1DAdapter::Scenario::Fast;
+  if (SEP::Initialization::HasActive() &&
+      SEP::Initialization::Active().schemaVersion >= 2) {
+    const SEP::Initialization::Configuration& initialization =
+        SEP::Initialization::Active();
+    for (const SEP::Initialization::SwcmeAssignment& raw :
+         initialization.swcmeAssignments) {
+      SEP::SW1DAdapter::ParameterAssignment assignment;
+      assignment.key = raw.key;
+      assignment.value = raw.value;
+      assignment.origin = cli_options.inputPath;
+      assignment.line = raw.line;
+      swcmeRequest.input_assignments.push_back(assignment);
+    }
+  }
   if (cli_options.cmeScenarioProvided) {
     SEP::SW1DAdapter::ParameterAssignment presetAssignment;
     presetAssignment.key="preset";
@@ -258,6 +286,42 @@ int main(int argc,char **argv) {
   }
   const SEP::SW1DAdapter::ConfigurationSummary swcmeSummary=
       SEP::SW1DAdapter::GetConfigurationSummary();
+  if (SEP::Initialization::HasActive() &&
+      SEP::Initialization::Active().schemaVersion >= 2) {
+    const SEP::Initialization::Configuration& initialization =
+        SEP::Initialization::Active();
+    const auto samePhysicalScalar = [](double left, double right) {
+      return std::fabs(left - right) <=
+          64.0 * std::numeric_limits<double>::epsilon() *
+          std::max(std::fabs(left), std::fabs(right));
+    };
+    const double relativeX = initialization.parkerInitialPointM.x -
+        initialization.parkerOriginM.x;
+    const double relativeY = initialization.parkerInitialPointM.y -
+        initialization.parkerOriginM.y;
+    const double relativeZ = initialization.parkerInitialPointM.z -
+        initialization.parkerOriginM.z;
+    const double sourceRadius = std::sqrt(
+        relativeX * relativeX + relativeY * relativeY + relativeZ * relativeZ);
+    const double lineSinTheta =
+        std::sqrt(relativeX * relativeX + relativeY * relativeY) / sourceRadius;
+    if (!samePhysicalScalar(initialization.solarWindSpeedMPerS,
+                            swcmeSummary.ambient_wind_speed_m_per_s) ||
+        !samePhysicalScalar(initialization.solarRotationRateRadPerS,
+                            swcmeSummary.solar_rotation_rate_rad_per_s) ||
+        !samePhysicalScalar(initialization.innerRadiusM,
+                            swcmeSummary.parker_source_radius_m) ||
+        !samePhysicalScalar(lineSinTheta,
+                            swcmeSummary.parker_reference_sin_theta) ||
+        !std::isfinite(swcmeSummary.parker_radial_field_at_one_au_t) ||
+        swcmeSummary.parker_radial_field_at_one_au_t == 0.0) {
+      if (PIC::ThisThread == 0)
+        std::cerr << "ERROR: initialization Parker wind/rotation/source/"
+                     "latitude differs from canonical SWCME, or the resolved "
+                     "magnetic normalization is zero\n";
+      return 1;
+    }
+  }
 
   // Preserve a constant Dmumu value supplied by the post-compile input unless
   // the command line explicitly overrides it.  Keeping the effective value in

@@ -123,12 +123,20 @@ to its sampling configuration.
 5. let AMPS freeze its complete center-node layout;
 6. build the tree with the tested `localResolution()` function;
 7. partition the tree and create owner lists;
-8. allocate blocks and initialize cell measures;
-9. bind the exact frozen `StorageLayout` to `Runtime`.
+8. for schema 3, write the final distributed tree with AMPS'
+   `outputMeshTECPLOT` and write the finite Parker centreline once on rank zero;
+9. allocate blocks and initialize cell measures;
+10. bind the exact frozen `StorageLayout` to `Runtime`.
 
 Changing or appending fields after step 5 is a layout error. Background filling
 iterates `DomainBlockDecomposition::BlockTable`, so each rank writes only cells
 in blocks assigned to that rank.
+
+The two schema-3 paths are explicit input fields. The centreline writer builds
+and validates the entire ordered curve before opening its output and records
+arc length, Cartesian position, heliocentric radius, and requested cell size in
+metres. A write failure is fatal; these are initialization products, not
+best-effort diagnostics.
 
 ## Gradient reconstruction
 
@@ -149,6 +157,7 @@ zero gradient.
 | `MSH3D07` | five octrees, exact histograms/memory, owner-only storage |
 | `MSH3D08` | Earth/Mars preset extents |
 | `MSH3D09` | coarse/fine linear exactness and rank-deficient rejection |
+| `MSH3D10–11` | finite-line arc length/origin invariance and Tecplot initialization output |
 | `CFG3D03–05` | normalized domains, shared Parker geometry, composite preflight and whole-run memory |
 
 Run `test/run_tests.py --suite phase-m --rebuild`.

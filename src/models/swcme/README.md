@@ -79,6 +79,7 @@ The principal files are:
 | --- | --- |
 | `swcme1d.hpp` | Header-only radial model and 1-D output API. |
 | `swcme1d_input.hpp` | Canonical preset, key/unit, layered override, source/event validation, normalized manifest, and fingerprint for 1-D hosts. |
+| `swcme3d_input.hpp` | Complete standalone 3-D resolver that reuses the 1-D unit/physics schema and adds only 3-D geometry, axes, and surface resolution. |
 | `swcme3d.hpp`, `swcme3d.cpp` | Three-dimensional geometry, fields, shocks, connectivity, meshes, and output. |
 | `swcme_solarwind.hpp` | Shared Leblanc density, Parker field, composition, pressure, sound speed, path length, and focusing. |
 | `swcme_kinematics.hpp` | Shared ballistic, sign-aware DBM, and monotone data-driven apex motion. |
@@ -116,6 +117,34 @@ efficiency, launch epoch, and validity interval. It invokes
 every effective field in fixed order and fingerprints those bytes. This is an
 input/provenance layer only; it does not change the Parker, Leblanc, DBM,
 Rankine-Hugoniot, region, or source equations.
+
+### Canonical 3-D textual configuration
+
+`swcme3d_input.hpp` is the canonical resolver for a complete standalone 3-D
+assignment layer. It deliberately delegates every common ambient, Parker,
+kinematic, region, thermodynamic, event, and source field to
+`swcme1d_input.hpp`; there is no second unit parser. It adds only:
+
+- `geometry.shape`, `geometry.axis_ratio_y`, `geometry.axis_ratio_z`, and
+  `geometry.half_width_rad`;
+- all three components of `geometry.cme_direction_*` and
+  `geometry.solar_rotation_axis_*`;
+- `parker.solar_rotation_rate_rad_per_s`; and
+- integer `surface.theta_intervals` and `surface.phi_points`.
+
+All common and 3-D fields are required in this complete interface. The two
+data-driven knot lists are required only for data-driven kinematics and are
+forbidden otherwise. The resolver copies common fields one by one into
+`swcme3d::Params`, applies the explicit geometry, calls the canonical model and
+spectrum validators, and emits a fixed-order manifest/fingerprint containing
+the model, spectrum, event interval, and surface resolution. Deprecated
+compatibility members with no effect on current physics are not exposed as
+textual inputs.
+
+The resolver does not impose application-specific geometry. For example,
+srcSEP3D currently restricts its standalone schema to a sphere because its
+AMPS crossing operator is spherical, while the canonical resolver and model
+continue to support sphere, ellipsoid, and SSE for other hosts.
 
 ## Build and quick start
 

@@ -119,6 +119,40 @@ the same common source record, campaign, generation, patch ID, species, and
 macro index obtains identical spectrum fingerprints, random keys, momenta,
 and weights. No `srcSEP` source file is inspected or linked.
 
+### Schema-3 standalone provider and exact global count
+
+`CreateStandaloneSwcmeShockProvider` re-resolves the frozen raw `[swcme]`
+assignments and requires the resulting canonical manifest/fingerprint to match
+the immutable application configuration byte-for-byte. It then constructs the
+canonical `swcme::sep::Interface3D`, evaluates the complete surface at the
+declared first valid epoch, and rejects an invalid MHD solve, invalid mesh,
+empty active source, or insufficient computational sample count before AMPS
+mesh allocation. Before `event.valid_from` it publishes a valid inactive state;
+it does not invent a shock.
+
+For schema 3, `source.samples_per_step` is a global integer, not an independent
+expectation for every patch. `AllocateExactPatchMacroparticles` reserves one
+representative for each positive-weight active patch, apportions the remaining
+integer samples in proportion to canonical physical patch weight, and assigns
+largest remainders with stable source-ID/index tie-breaking. The sum is exactly
+the input count on every active step. A count below the active patch cardinality
+fails closed because silently omitting a nonzero source patch would not be a
+conservative representation.
+
+`SourceRequest::prescribedMacroparticles` carries each exact patch allocation
+through `BuildInjectionPlan`. That path never stochastically rounds or caps the
+count. Instead, every particle receives
+
+\[
+W_{patch}=\frac{\dot N_{seed}\,\epsilon_{inj}\,
+w_{patch}\,\Delta t}{N_{patch}},
+\]
+
+through AMPS' individual statistical-weight correction. Schemas 1–2 retain the
+keyed stochastic-rounding/cap behavior for compatibility. Both paths record the
+represented physical population, energy, momentum, count, rejections, and caps
+in the source ledger.
+
 ## Exact particle ledger
 
 Each globally reduced `(step,species)` row must satisfy the integer identity
@@ -174,3 +208,5 @@ position, avoiding replicated physical totals at checkpoint gather.
   advancement.
 - `R3D05`: physical source normalization, cap/disconnection policy, and unique
   cadence identity.
+- `R3D08`: canonical provider preflight, delayed activation, deterministic
+  largest-remainder allocation, exact global count, and no downstream cap.

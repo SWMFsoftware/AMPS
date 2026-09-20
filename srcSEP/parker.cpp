@@ -82,21 +82,28 @@ void SEP::ParkerSpiral::GetB(double* B,double *x,double u_sw) {
 void SEP::ParkerSpiral::GetB(
     double* B, const double* x_m, const double* origin_m,
     double source_radius_m, double solar_wind_speed_m_per_s,
-    double solar_rotation_rate_rad_per_s) {
+    double solar_rotation_rate_rad_per_s,
+    double radial_field_at_one_au_t) {
   double radial[3] = {x_m[0] - origin_m[0], x_m[1] - origin_m[1],
                       x_m[2] - origin_m[2]};
   const double radius = Vector3D::Length(radial);
-  if (!(radius > 0.0) || !(solar_wind_speed_m_per_s > 0.0))
+  if (!(radius > 0.0) || !(solar_wind_speed_m_per_s > 0.0) ||
+      !std::isfinite(radial_field_at_one_au_t) ||
+      radial_field_at_one_au_t == 0.0)
     exit(__LINE__, __FILE__, "invalid configured Parker magnetic-field point");
   Vector3D::Normalize(radial);
   const double winding = solar_rotation_rate_rad_per_s *
       std::max(0.0, radius - source_radius_m) / solar_wind_speed_m_per_s;
-  double tangent[3] = {radial[0] + winding * radial[1],
-                       radial[1] - winding * radial[0], radial[2]};
-  Vector3D::Normalize(tangent);
-  const double magnitude = 5.0e-9 * std::pow(_AU_ / radius, 2) *
-      std::sqrt(1.0 + winding * winding);
-  for (int idim = 0; idim < 3; ++idim) B[idim] = magnitude * tangent[idim];
+  // radial_field_at_one_au_t is signed Br(1 AU), already converted from the
+  // canonical total |B|(1 AU) and radial polarity.  Multiplying the
+  // *unnormalized* Parker vector by Br(r) lets its transverse norm supply the
+  // local sin(theta) factor exactly; a separate sqrt(1+winding^2) magnitude
+  // would be valid only on the equator and would double-count normalization.
+  const double radialField = radial_field_at_one_au_t *
+      std::pow(_AU_ / radius, 2);
+  B[0] = radialField * (radial[0] + winding * radial[1]);
+  B[1] = radialField * (radial[1] - winding * radial[0]);
+  B[2] = radialField * radial[2];
 }
 
 
@@ -134,7 +141,8 @@ void SEP::ParkerSpiral::CreateFileLine(
     list<SEP::cFieldLine>* field_line, const double* origin_m,
     const double* initial_m, double length_m, unsigned long long point_count,
     double solar_wind_speed_m_per_s,
-    double solar_rotation_rate_rad_per_s) {
+    double solar_rotation_rate_rad_per_s,
+    double radial_field_at_one_au_t) {
   if (field_line == NULL || origin_m == NULL || initial_m == NULL)
     exit(__LINE__, __FILE__, "null argument in configured Parker line creation");
 
@@ -179,7 +187,8 @@ void SEP::ParkerSpiral::CreateFileLine(
     point.x[1] = points[i].y;
     point.x[2] = points[i].z;
     GetB(point.B, point.x, origin_m, configuration.innerRadiusM,
-         solar_wind_speed_m_per_s, solar_rotation_rate_rad_per_s);
+         solar_wind_speed_m_per_s, solar_rotation_rate_rad_per_s,
+         radial_field_at_one_au_t);
     field_line->push_back(point);
   }
 }
@@ -212,7 +221,7 @@ void SEP::ParkerSpiral::CreateStraitFileLine(list<SEP::cFieldLine> *field_line,d
   }
 }
 
-//init the magnetic field in teh entire domain with Parker spiral 
+//init the magnetic field in teh entire domain with Parker spiral
 void SEP::ParkerSpiral::InitDomain(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   if (startNode==NULL) startNode=PIC::Mesh::mesh->rootTree;
 

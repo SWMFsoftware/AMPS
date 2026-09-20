@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <vector>
 
 namespace SEP3D {
@@ -119,6 +120,12 @@ double RequestedCellSizeM(const Core::Vec3& positionM,
 Core::Status BuildParkerCenterline(
     const ResolutionConfiguration& configuration,
     std::vector<Core::Vec3>* points);
+
+// Serialize the exact finite centreline used by initialization.  Geometry is
+// completed before the destination is opened, so a bad configuration cannot
+// leave a plausible-looking partial Tecplot product.
+Core::Status WriteParkerCenterlineTecplot(
+    const ResolutionConfiguration& configuration, const std::string& path);
 
 struct LeafBlock {
   Core::Vec3 minimumM;

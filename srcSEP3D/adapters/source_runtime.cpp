@@ -1,8 +1,14 @@
 #include "source_runtime.h"
 
+#include "swcme3d_input.hpp"
+#include "swcme_sep_interface.hpp"
+
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <limits>
+#include <memory>
+#include <sstream>
 #include <utility>
 
 namespace SEP3D {
@@ -37,6 +43,109 @@ std::uint64_t InjectionSequence(std::uint64_t generation,
   value ^= value >> 31;
   return value == 0 ? 1 : value;
 }
+
+class StandaloneSwcmeShockProvider final : public ShockProvider {
+ public:
+  StandaloneSwcmeShockProvider(
+      const swcme::input3d::ResolvedConfiguration& model,
+      const RuntimeModel::RunConfiguration3DOptions& application)
+      : model_(model), application_(application),
+        interface_(new swcme::sep::Interface3D(model.model, model.spectrum)) {}
+
+  const char* CanonicalName() const override {
+    return "canonical-swcme3d-standalone";
+  }
+
+  ShockState Evaluate(double timeS) const override {
+    ShockState result;
+    result.providerIdentity = CanonicalName();
+    result.configurationFingerprint = model_.fingerprint;
+    result.centerM = application_.coordinateOriginM;
+    if (!std::isfinite(timeS)) {
+      result.status = Invalid("SWCME shock evaluation time is not finite");
+      return result;
+    }
+    if (timeS < model_.valid_from_s || timeS > model_.valid_until_s) {
+      result.status = Core::Status::OK();
+      result.active = false;
+      result.epochS = timeS;
+      result.validUntilS = model_.valid_until_s;
+      return result;
+    }
+
+    try {
+      const double modelTimeS = timeS - model_.launch_epoch_s;
+      const swcme::sep::Interface3D::PreparedStep step =
+          interface_->prepare(modelTimeS);
+      if (step.common.apex.status != swcme::kinematics::Status::Ok) {
+        result.status = Invalid(
+            std::string("SWCME kinematics rejected initialization epoch: ") +
+            swcme::kinematics::status_name(step.common.apex.status));
+        return result;
+      }
+      result.epochS = timeS;
+      result.validUntilS = std::min(
+          model_.valid_until_s, timeS + application_.requestedTimeStepS);
+      result.radiusM = step.r_sh_m;
+      result.radialSpeedMPerS = step.V_sh_ms;
+      result.compressionRatio = step.rc;
+      result.active = step.has_shock;
+      const long double tick =
+          (static_cast<long double>(timeS) - model_.valid_from_s) /
+          application_.requestedTimeStepS;
+      if (!(tick >= 0.0L) || tick > static_cast<long double>(UINT64_MAX - 1)) {
+        result.status = Invalid("SWCME shock generation overflows");
+        result.active = false;
+        return result;
+      }
+      result.generation = 1 + static_cast<std::uint64_t>(std::llround(tick));
+
+      swcme::sep::SourceSurface surface;
+      const swcme::ModelStatus surfaceStatus =
+          interface_->build_shock_surface_source(
+              step, model_.surface_theta_intervals,
+              model_.surface_phi_points, surface);
+      if (!surfaceStatus.ok()) {
+        result.status = Invalid(
+            std::string("canonical SWCME surface source failed: ") +
+            surfaceStatus.summary());
+        result.active = false;
+        return result;
+      }
+      result.patches.reserve(surface.active_patch_count);
+      for (const swcme::sep::SEPSourceState& source : surface.patches) {
+        if (!source.active) continue;
+        ShockSourceRecord patch = MakeShockSourceRecord(
+            source, result.generation, application_.campaignSeed,
+            application_.source.samplesPerStep,
+            model_.injection_efficiency);
+        if (!patch.status.ok()) {
+          result.status = patch.status;
+          result.active = false;
+          result.patches.clear();
+          return result;
+        }
+        // Canonical SWCME coordinates are heliocentric.  Apply the declared
+        // application origin exactly once at the provider boundary.
+        patch.positionM += application_.coordinateOriginM;
+        result.patches.push_back(std::move(patch));
+      }
+      result.status = Core::Status::OK();
+      return result;
+    } catch (const std::exception& exception) {
+      result.status = Invalid(
+          std::string("canonical SWCME provider exception: ") +
+          exception.what());
+      result.active = false;
+      return result;
+    }
+  }
+
+ private:
+  swcme::input3d::ResolvedConfiguration model_;
+  RuntimeModel::RunConfiguration3DOptions application_;
+  std::unique_ptr<swcme::sep::Interface3D> interface_;
+};
 
 }  // namespace
 
@@ -162,34 +271,54 @@ InjectionPlan BuildInjectionPlan(const SourceRequest& request) {
       request.physicalParticleRatePerS * request.intervalS;
   result.ledger.representedParticles = represented;
   if (represented == 0.0) {
+    if (request.prescribedMacroparticles != 0) {
+      ++result.ledger.rejected;
+      result.status = Invalid(
+          "cannot prescribe macroparticles for a zero physical source");
+      return result;
+    }
     result.status = Core::Status::OK();
     return result;
   }
-  const double expectedMacro = represented / request.macroparticleWeight;
-  if (!std::isfinite(expectedMacro) ||
-      expectedMacro > static_cast<double>(UINT64_MAX)) {
-    ++result.ledger.rejected;
-    result.status = Invalid("source macroparticle expectation overflows");
-    return result;
-  }
-  std::uint64_t count = static_cast<std::uint64_t>(std::floor(expectedMacro));
-  const double fractional = expectedMacro - static_cast<double>(count);
-  Transport::RandomKey roundingKey;
-  roundingKey.campaignSeed = request.patch.injection.campaignSeed;
-  roundingKey.particleId = request.patch.sourceId;
-  roundingKey.step = request.step;
-  roundingKey.substep = request.patch.eventGeneration;
-  roundingKey.purpose = Transport::RandomPurpose::SourceCount;
-  Transport::KeyedRandomStream rounding(roundingKey);
-  if (fractional > 0.0 && rounding.UniformOpen01() < fractional) ++count;
-  if (count == 0) {
-    // One weighted macro represents a non-zero source without silently losing
-    // the event.  Its statistical weight is the exact represented number.
-    count = 1;
-  }
-  if (count > request.maximumMacroparticles) {
-    result.ledger.capped = count - request.maximumMacroparticles;
-    count = request.maximumMacroparticles;
+  std::uint64_t count = request.prescribedMacroparticles;
+  if (count != 0) {
+    // An exact schema-v3 allocation must fail rather than cap: capping would
+    // contradict the input contract that exactly samples_per_step are born at
+    // every active injection boundary.
+    if (count > request.maximumMacroparticles) {
+      ++result.ledger.rejected;
+      result.status = Invalid(
+          "prescribed source count exceeds maximumMacroparticles");
+      return result;
+    }
+  } else {
+    const double expectedMacro = represented / request.macroparticleWeight;
+    if (!std::isfinite(expectedMacro) ||
+        expectedMacro > static_cast<double>(UINT64_MAX)) {
+      ++result.ledger.rejected;
+      result.status = Invalid("source macroparticle expectation overflows");
+      return result;
+    }
+    count = static_cast<std::uint64_t>(std::floor(expectedMacro));
+    const double fractional = expectedMacro - static_cast<double>(count);
+    Transport::RandomKey roundingKey;
+    roundingKey.campaignSeed = request.patch.injection.campaignSeed;
+    roundingKey.particleId = request.patch.sourceId;
+    roundingKey.step = request.step;
+    roundingKey.substep = request.patch.eventGeneration;
+    roundingKey.purpose = Transport::RandomPurpose::SourceCount;
+    Transport::KeyedRandomStream rounding(roundingKey);
+    if (fractional > 0.0 && rounding.UniformOpen01() < fractional) ++count;
+    if (count == 0) {
+      // One weighted macro represents a non-zero source without silently
+      // losing the event.  Its statistical weight is the exact represented
+      // number, so this legacy fallback remains conservative.
+      count = 1;
+    }
+    if (count > request.maximumMacroparticles) {
+      result.ledger.capped = count - request.maximumMacroparticles;
+      count = request.maximumMacroparticles;
+    }
   }
 
   ShockSourceRecord sampledSource = request.patch;
@@ -223,6 +352,141 @@ InjectionPlan BuildInjectionPlan(const SourceRequest& request) {
   result.ledger.macroparticles = count;
   result.status = Core::Status::OK();
   return result;
+}
+
+Core::Status AllocateExactPatchMacroparticles(
+    const std::vector<ShockSourceRecord>& patches,
+    std::uint64_t totalMacroparticles,
+    std::vector<std::uint64_t>* perPatchCounts) {
+  if (perPatchCounts == nullptr)
+    return Invalid("exact patch-allocation output is null");
+  perPatchCounts->clear();
+  if (patches.empty()) {
+    if (totalMacroparticles == 0) return Core::Status::OK();
+    return Invalid("cannot allocate source samples without active patches");
+  }
+  if (totalMacroparticles < patches.size()) {
+    return Invalid(
+        "samples_per_step is smaller than the active SWCME patch count; "
+        "at least one weighted representative per physical patch is required");
+  }
+
+  long double weightSum = 0.0L;
+  for (const ShockSourceRecord& patch : patches) {
+    if (!patch.status.ok() || !patch.active ||
+        !std::isfinite(patch.relativePatchWeight) ||
+        patch.relativePatchWeight <= 0.0) {
+      return Invalid(
+          "exact source allocation requires active patches with positive "
+          "finite physical weights");
+    }
+    weightSum += static_cast<long double>(patch.relativePatchWeight);
+  }
+  if (!(weightSum > 0.0L) || !std::isfinite(weightSum))
+    return Invalid("active SWCME patch-weight sum is invalid");
+
+  perPatchCounts->assign(patches.size(), UINT64_C(1));
+  const std::uint64_t remaining =
+      totalMacroparticles - static_cast<std::uint64_t>(patches.size());
+  if (remaining == 0) return Core::Status::OK();
+
+  struct Remainder {
+    long double fraction = 0.0L;
+    std::uint64_t sourceId = 0;
+    std::size_t index = 0;
+  };
+  std::vector<Remainder> remainders;
+  remainders.reserve(patches.size());
+  std::uint64_t apportioned = 0;
+  for (std::size_t i = 0; i < patches.size(); ++i) {
+    const long double quota = static_cast<long double>(remaining) *
+        static_cast<long double>(patches[i].relativePatchWeight) / weightSum;
+    if (!(quota >= 0.0L) || !std::isfinite(quota) ||
+        quota > static_cast<long double>(UINT64_MAX))
+      return Invalid("exact source allocation quota is invalid");
+    const std::uint64_t base = static_cast<std::uint64_t>(std::floor(quota));
+    if (base > remaining - apportioned)
+      return Invalid("exact source allocation lost numerical normalization");
+    (*perPatchCounts)[i] += base;
+    apportioned += base;
+    remainders.push_back(
+        {quota - static_cast<long double>(base), patches[i].sourceId, i});
+  }
+  const std::uint64_t residual = remaining - apportioned;
+  if (residual > remainders.size())
+    return Invalid("largest-remainder source allocation is inconsistent");
+  std::sort(remainders.begin(), remainders.end(),
+            [](const Remainder& left, const Remainder& right) {
+              if (left.fraction != right.fraction)
+                return left.fraction > right.fraction;
+              if (left.sourceId != right.sourceId)
+                return left.sourceId < right.sourceId;
+              return left.index < right.index;
+            });
+  for (std::uint64_t i = 0; i < residual; ++i)
+    ++(*perPatchCounts)[remainders[static_cast<std::size_t>(i)].index];
+  return Core::Status::OK();
+}
+
+Core::Status CreateStandaloneSwcmeShockProvider(
+    const RuntimeModel::RunConfiguration3D& configuration,
+    std::shared_ptr<ShockProvider>* provider) {
+  if (provider == nullptr) return Invalid("SWCME provider output is null");
+  const RuntimeModel::RunConfiguration3DOptions& options =
+      configuration.options();
+  if (options.inputSchemaVersion < 3 ||
+      options.shock != RuntimeModel::ShockAuthority::Swcme ||
+      options.swcmeAssignments.empty())
+    return Invalid("standalone SWCME provider requires schema version 3 and shock authority swcme");
+
+  std::vector<swcme::input3d::Assignment> assignments;
+  assignments.reserve(options.swcmeAssignments.size());
+  for (const RuntimeModel::SwcmeAssignment& raw : options.swcmeAssignments) {
+    swcme::input3d::Assignment assignment;
+    assignment.key = raw.key;
+    assignment.value = raw.value;
+    assignment.origin = "frozen srcSEP3D configuration";
+    assignment.line = raw.line;
+    assignments.push_back(assignment);
+  }
+  const swcme::input3d::ResolveResult resolved =
+      swcme::input3d::Resolve(assignments);
+  if (!resolved.ok()) {
+    std::ostringstream message;
+    message << "SWCME3D resolution failed key='" << resolved.status.key << "'";
+    if (!resolved.status.message.empty())
+      message << ": " << resolved.status.message;
+    return Invalid(message.str());
+  }
+  if (resolved.configuration.fingerprint !=
+          options.swcmeConfigurationFingerprint ||
+      resolved.configuration.normalized_manifest !=
+          options.swcmeResolvedManifest)
+    return Core::Status(Core::StatusCode::ConfigurationConflict,
+                        "re-resolved SWCME configuration differs from frozen identity");
+  std::shared_ptr<ShockProvider> candidate;
+  try {
+    candidate.reset(new StandaloneSwcmeShockProvider(
+        resolved.configuration, options));
+  } catch (const std::exception& exception) {
+    return Invalid(std::string("cannot construct canonical SWCME provider: ") +
+                   exception.what());
+  }
+  // Preflight the first declared active epoch, rather than merely time zero.
+  // A delayed event is legitimately inactive at t=0; accepting that trivial
+  // state would postpone a malformed MHD jump or surface mesh until after the
+  // expensive AMPS mesh had already been allocated.
+  const ShockState initial =
+      candidate->Evaluate(resolved.configuration.valid_from_s);
+  if (!initial.status.ok()) return initial.status;
+  if (!initial.active || initial.patches.empty())
+    return Invalid("canonical SWCME source has no active patches at event.valid_from");
+  std::vector<std::uint64_t> preflightCounts;
+  const Core::Status allocation = AllocateExactPatchMacroparticles(
+      initial.patches, options.source.samplesPerStep, &preflightCounts);
+  if (!allocation.ok()) return allocation;
+  *provider = std::move(candidate);
+  return Core::Status::OK();
 }
 
 }  // namespace Adapters

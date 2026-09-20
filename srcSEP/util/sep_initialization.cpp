@@ -109,6 +109,35 @@ double Profile(double coordinate, RefinementProfile profile, double exponent) {
   return std::pow(smooth, exponent);
 }
 
+// Complete set of physically effective canonical SWCME1D inputs.  Data knots
+// are conditional because an empty list is the only physically correct value
+// for ballistic/DBM, whereas data-driven kinematics requires both lists.  The
+// deprecated sheath.compression_floor is intentionally absent: canonical RH
+// physics rejects it because it has no effect.
+const std::set<std::string>& RequiredSwcmeKeys() {
+  static const std::set<std::string> keys = {
+      "preset",
+      "ambient.wind_speed", "ambient.density_1au",
+      "ambient.magnetic_field_1au", "ambient.proton_temperature",
+      "ambient.adiabatic_index", "ambient.alpha_to_proton_ratio",
+      "ambient.electron_temperature", "ambient.alpha_temperature",
+      "ambient.thermodynamic_closure", "parker.radial_polarity",
+      "parker.sin_theta", "parker.source_radius", "cme.kinematics",
+      "cme.launch_radius", "cme.launch_speed", "cme.drag_coefficient",
+      "cme.extrapolation", "shock.region_mode",
+      "shock.acceleration_mode", "shock.relative_source_weight_per_area",
+      "geometry.sheath_thickness_1au", "geometry.ejecta_thickness_1au",
+      "smoothing.shock_width_1au", "smoothing.leading_edge_width_1au",
+      "smoothing.trailing_edge_width_1au", "sheath.ramp_power",
+      "sheath.leading_edge_speed_factor", "ejecta.density_factor",
+      "ejecta.speed_factor", "event.launch_epoch", "event.valid_from",
+      "event.valid_until", "source.particle_mass", "source.charge_number",
+      "source.energy_min", "source.energy_max", "source.reference_energy",
+      "source.injection_efficiency", "source.normalization",
+      "source.reference_intensity_si"};
+  return keys;
+}
+
 // Positive-polarity outward tangent. Magnetic polarity changes B, not this
 // geometric curve, so it is deliberately absent from initialization input.
 Vec3 ParkerTangent(const Vec3& relativePosition,
@@ -148,8 +177,21 @@ Transport::Status Apply(const std::string& section, const std::string& key,
   auto invalid = [&]() { return Error("invalid value for '" + field + "': " + value); };
   if (field == "run.schema_version") {
     std::uint64_t parsed = 0;
-    if (!ParseUnsigned64(value, &parsed) || parsed != 1) return invalid();
+    if (!ParseUnsigned64(value, &parsed) || (parsed != 1 && parsed != 2))
+      return invalid();
     c->schemaVersion = static_cast<unsigned>(parsed);
+  } else if (field == "run.time_step_s") {
+    if (!ParseDouble(value, &c->timeStepS)) return invalid();
+  } else if (field == "injection.macroparticles_per_step") {
+    if (!ParseUnsigned64(value, &c->macroparticlesPerStep)) return invalid();
+  } else if (field == "species.particle_weight") {
+    if (!ParseDouble(value, &c->particleWeight)) return invalid();
+  } else if (field == "observer.heliocentric_radius_m") {
+    if (!ParseDouble(value, &c->observerHeliocentricRadiusM)) return invalid();
+  } else if (field == "output.mesh_tecplot_file") {
+    c->meshTecplotFile = value;
+  } else if (field == "output.field_line_tecplot_file") {
+    c->fieldLineTecplotFile = value;
   } else if (field == "parker_spiral.origin_x_m") {
     if (!ParseDouble(value, &c->parkerOriginM.x)) return invalid();
   } else if (field == "parker_spiral.origin_y_m") {
@@ -252,7 +294,8 @@ Transport::Status Validate(const Configuration& c) {
       c.tubeCenterCellSizeM, c.tubeExponent};
   for (double value : values)
     if (!std::isfinite(value)) return Error("configuration contains a non-finite value");
-  if (c.schemaVersion != 1 || c.parkerPointCount < 2 ||
+  if ((c.schemaVersion != 1 && c.schemaVersion != 2) ||
+      c.parkerPointCount < 2 ||
       c.parkerPointCount > 10000000ULL || c.parkerLengthM <= 0.0 ||
       c.solarWindSpeedMPerS <= 0.0 || c.solarRotationRateRadPerS < 0.0 ||
       c.innerRadiusM <= 0.0 || c.outerRadiusM <= c.innerRadiusM ||
@@ -260,6 +303,19 @@ Transport::Status Validate(const Configuration& c) {
       c.maximumMeshLevel > 19 || c.solarExponent <= 0.0 ||
       c.tubeExponent <= 0.0) {
     return Error("Parker, domain, or global mesh values are outside their supported range");
+  }
+  if (c.schemaVersion >= 2 &&
+      (!std::isfinite(c.timeStepS) || c.timeStepS <= 0.0 ||
+       c.macroparticlesPerStep == 0 ||
+       c.macroparticlesPerStep >
+           static_cast<std::uint64_t>(std::numeric_limits<int>::max()) ||
+       !std::isfinite(c.particleWeight) || c.particleWeight <= 0.0 ||
+       !std::isfinite(c.observerHeliocentricRadiusM) ||
+       c.observerHeliocentricRadiusM < c.innerRadiusM ||
+       c.observerHeliocentricRadiusM > c.outerRadiusM ||
+       c.meshTecplotFile.empty() || c.fieldLineTecplotFile.empty())) {
+    return Error("time step, particle sampling, observer, or Tecplot output "
+                 "configuration is invalid");
   }
   const double sourceRadius = Norm(Subtract(c.parkerInitialPointM, c.parkerOriginM));
   if (std::fabs(sourceRadius - c.innerRadiusM) > 1.0e-10 * c.innerRadiusM)
@@ -292,7 +348,8 @@ Transport::Status ParseText(const std::string& text, Configuration* result) {
   std::size_t lineNumber = 0;
   const std::set<std::string> known = {
       "run", "parker_spiral", "domain", "mesh", "mesh.solar",
-      "mesh.tube", "background.parker"};
+      "mesh.tube", "background.parker", "injection", "species",
+      "observer", "output", "swcme"};
   while (std::getline(input, line)) {
     ++lineNumber;
     const std::size_t comment = line.find('#');
@@ -315,18 +372,73 @@ Transport::Status ParseText(const std::string& text, Configuration* result) {
     const std::string qualified = section + "." + key;
     if (key.empty() || value.empty() || !assigned.insert(qualified).second)
       return Error("empty or duplicate key '" + qualified + "'");
+    // [swcme] is a transport envelope.  Model keys commonly contain dots and
+    // are intentionally not duplicated in this mesh parser; main.cpp forwards
+    // them to the canonical model-owned resolver, which rejects unknown keys,
+    // invalid units, duplicates, and inconsistent combinations.
+    if (section == "swcme") {
+      SwcmeAssignment assignment;
+      assignment.key = key;
+      assignment.value = value;
+      assignment.line = lineNumber;
+      candidate.swcmeAssignments.push_back(assignment);
+      continue;
+    }
     const Transport::Status status = Apply(section, key, value, &candidate);
     if (!status.ok())
       return Error("line " + std::to_string(lineNumber) + ": " + status.message);
   }
-  for (const std::string& required : known)
+  const std::set<std::string> versionOneSections = {
+      "run", "parker_spiral", "domain", "mesh", "mesh.solar",
+      "mesh.tube", "background.parker"};
+  const std::set<std::string> versionTwoSections = known;
+  const std::set<std::string>& requiredSections =
+      candidate.schemaVersion >= 2 ? versionTwoSections : versionOneSections;
+  for (const std::string& required : requiredSections)
     if (sections.count(required) == 0)
       return Error("missing required section '[" + required + "]'");
   // Every supported field is mandatory. This fail-closed count is paired with
   // duplicate/unknown rejection above, so a future key cannot silently inherit
   // a zero/default value without updating the schema and its tests.
-  if (assigned.size() != 28)
+  if (candidate.schemaVersion == 1 && assigned.size() != 28)
     return Error("configuration must assign all 28 version-1 keys exactly once");
+  if (candidate.schemaVersion >= 2) {
+    // There are 34 application-owned scalar/string keys in version 2.  SWCME
+    // keys are counted separately because their names belong to the provider.
+    const std::size_t applicationKeyCount =
+        assigned.size() - candidate.swcmeAssignments.size();
+    if (applicationKeyCount != 34)
+      return Error("configuration must assign all 34 version-2 application "
+                   "keys exactly once");
+    if (candidate.swcmeAssignments.empty())
+      return Error("schema version 2 requires complete [swcme] assignments");
+    std::set<std::string> swcmeKeys;
+    std::string kinematics;
+    for (const SwcmeAssignment& assignment : candidate.swcmeAssignments) {
+      swcmeKeys.insert(assignment.key);
+      if (assignment.key == "cme.kinematics")
+        kinematics = Lower(Trim(assignment.value));
+      if (RequiredSwcmeKeys().count(assignment.key) == 0 &&
+          assignment.key != "cme.data_times" &&
+          assignment.key != "cme.data_radii")
+        return Error("unknown SWCME configuration key '" + assignment.key +
+                     "'");
+    }
+    for (const std::string& required : RequiredSwcmeKeys())
+      if (swcmeKeys.count(required) == 0)
+        return Error("schema version 2 is missing required SWCME key '" +
+                     required + "'");
+    const bool hasDataTimes = swcmeKeys.count("cme.data_times") != 0;
+    const bool hasDataRadii = swcmeKeys.count("cme.data_radii") != 0;
+    if (kinematics == "data_driven") {
+      if (!hasDataTimes || !hasDataRadii)
+        return Error("data_driven CME kinematics requires cme.data_times and "
+                     "cme.data_radii");
+    }
+    else if (hasDataTimes || hasDataRadii) {
+      return Error("CME data knots are legal only for data_driven kinematics");
+    }
+  }
   const Transport::Status valid = Validate(candidate);
   if (!valid.ok()) return valid;
   *result = candidate;
@@ -357,7 +469,22 @@ const Configuration& Active() { return *gActive; }
 std::string Fingerprint(const Configuration& c) {
   std::ostringstream canonical;
   canonical << std::setprecision(17) << std::scientific
-      << "srcsep-initialization-v1;origin=" << c.parkerOriginM.x << ','
+      << "srcsep-initialization-v" << c.schemaVersion;
+
+  // Schema 1 fingerprints were already published before the complete
+  // initialization contract existed.  Append version-2-only state only for a
+  // version-2 document so restarting or comparing a legacy campaign retains
+  // its exact historical identity.
+  if (c.schemaVersion >= 2) {
+    canonical << ";dt=" << c.timeStepS
+        << ";macro_per_step=" << c.macroparticlesPerStep
+        << ";particle_weight=" << c.particleWeight
+        << ";observer_radius=" << c.observerHeliocentricRadiusM
+        << ";mesh_output=" << c.meshTecplotFile
+        << ";line_output=" << c.fieldLineTecplotFile;
+  }
+
+  canonical << ";origin=" << c.parkerOriginM.x << ','
       << c.parkerOriginM.y << ',' << c.parkerOriginM.z << ";initial="
       << c.parkerInitialPointM.x << ',' << c.parkerInitialPointM.y << ','
       << c.parkerInitialPointM.z << ";length=" << c.parkerLengthM
@@ -371,6 +498,21 @@ std::string Fingerprint(const Configuration& c) {
       << c.tubeReferenceRadiusM << ',' << c.tubeRadiusAtReferenceM << ','
       << Name(c.tubeRadiusMode) << ',' << c.tubeCenterCellSizeM << ','
       << Name(c.tubeProfile) << ',' << c.tubeExponent;
+
+  if (c.schemaVersion >= 2) {
+    // INI field order has no physical meaning.  Sort a private copy so two
+    // complete decks with the same SWCME assignments have the same startup
+    // fingerprint.  The canonical SWCME resolver separately normalizes units
+    // and produces the model-owned physical fingerprint.
+    std::vector<SwcmeAssignment> assignments = c.swcmeAssignments;
+    std::sort(assignments.begin(), assignments.end(),
+        [](const SwcmeAssignment& left, const SwcmeAssignment& right) {
+          if (left.key != right.key) return left.key < right.key;
+          return left.value < right.value;
+        });
+    for (const SwcmeAssignment& assignment : assignments)
+      canonical << ";swcme." << assignment.key << '=' << assignment.value;
+  }
   // FNV-1a is used as a compact deterministic identity, not as a security
   // primitive. The canonical manifest above retains full scientific meaning.
   std::uint64_t hash = 1469598103934665603ULL;
@@ -406,6 +548,38 @@ Transport::Status BuildParkerLine(const Configuration& c,
     candidate.push_back(point);
   }
   points->swap(candidate);
+  return Transport::Status::Ok();
+}
+
+Transport::Status WriteParkerLineTecplot(const Configuration& c,
+                                         const std::string& path) {
+  if (path.empty()) return Error("Parker-line Tecplot path is empty");
+  std::vector<Vec3> points;
+  const Transport::Status built = BuildParkerLine(c, &points);
+  if (!built.ok()) return built;
+
+  // Open only after all geometry succeeds.  A stream failure is returned to
+  // the caller and is fatal during initialization; visualization is part of
+  // the declared startup contract rather than a best-effort diagnostic.
+  std::ofstream output(path.c_str(), std::ios::out | std::ios::trunc);
+  if (!output.good())
+    return Error("cannot open Parker-line Tecplot file '" + path + "'");
+  output << "TITLE=\"srcSEP initialized Parker field line\"\n"
+         << "VARIABLES=\"arc_length_m\",\"x_m\",\"y_m\",\"z_m\","
+            "\"heliocentric_radius_m\",\"requested_cell_size_m\"\n"
+         << "ZONE T=\"field-line\", I=" << points.size()
+         << ", F=POINT\n" << std::scientific << std::setprecision(17);
+  double arcLength = 0.0;
+  for (std::size_t i = 0; i < points.size(); ++i) {
+    if (i != 0) arcLength += Norm(Subtract(points[i], points[i - 1]));
+    output << arcLength << ' ' << points[i].x << ' ' << points[i].y << ' '
+           << points[i].z << ' '
+           << Norm(Subtract(points[i], c.parkerOriginM)) << ' '
+           << RequestedCellSizeM(points[i], c) << '\n';
+  }
+  output.flush();
+  if (!output.good())
+    return Error("failed while writing Parker-line Tecplot file '" + path + "'");
   return Transport::Status::Ok();
 }
 

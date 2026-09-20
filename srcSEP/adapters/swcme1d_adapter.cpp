@@ -260,6 +260,29 @@ ConfigurationSummary GetConfigurationSummary() {
       resolved_configuration.source.injection_efficiency;
   summary.relative_source_weight_per_area=
       resolved_configuration.model.relative_source_weight_per_area;
+  summary.ambient_wind_speed_m_per_s=
+      resolved_configuration.model.V_sw_kms*1000.0;
+  summary.solar_rotation_rate_rad_per_s=
+      swcme::defaults::SOLAR_ROTATION_RATE_RAD_S;
+  summary.parker_source_radius_m=
+      resolved_configuration.model.parker_source_radius_Rs*
+      swcme::constants::SOLAR_RADIUS_M;
+  summary.parker_reference_sin_theta=resolved_configuration.model.sin_theta;
+  summary.parker_radial_polarity=
+      resolved_configuration.model.parker_radial_polarity;
+  // ambient.magnetic_field_1au is canonical total |B| at the configured
+  // reference latitude, not Br.  Remove the Parker azimuthal contribution at
+  // one AU and retain polarity in the signed radial normalization consumed by
+  // srcSEP's field-line/domain field constructor.
+  const double reference_winding=
+      summary.solar_rotation_rate_rad_per_s*
+      (swcme::constants::AU_M-summary.parker_source_radius_m)/
+      summary.ambient_wind_speed_m_per_s*
+      summary.parker_reference_sin_theta;
+  summary.parker_radial_field_at_one_au_t=
+      static_cast<double>(summary.parker_radial_polarity)*
+      resolved_configuration.model.B1AU_nT*1.0e-9/
+      std::sqrt(1.0+reference_winding*reference_winding);
   return summary;
 }
 

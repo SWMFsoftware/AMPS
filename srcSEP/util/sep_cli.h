@@ -110,6 +110,10 @@ struct Options {
   // zero injected particles would make the injection weight correction formulas
   // singular and would silently disable the SEP source.
   int injectionParticlesPerIteration = 300;
+  // Preserve command-line precedence over the versioned initialization file.
+  // Without this provenance bit, the historical default 300 is
+  // indistinguishable from an operator's explicit override.
+  bool injectionParticlesProvided = false;
 
   // WP30 driver controls.  Each "Provided" bit preserves provenance when the
   // value remains a default and lets the final RunConfiguration enforce the

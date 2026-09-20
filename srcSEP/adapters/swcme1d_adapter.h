@@ -143,6 +143,17 @@ struct ConfigurationSummary {
   double source_reference_energy_MeV = 0.0;
   double source_injection_efficiency = 0.0;
   double relative_source_weight_per_area = 0.0;
+  // Startup consistency fields: the finite Parker mesh and SWCME background
+  // must use exactly one wind/rotation/latitude law.  The signed radial field
+  // is derived from SWCME's total 1-AU magnitude using its documented
+  // reference latitude and polarity; application code must not reinterpret
+  // the total magnitude as Br.
+  double ambient_wind_speed_m_per_s = 0.0;
+  double solar_rotation_rate_rad_per_s = 0.0;
+  double parker_source_radius_m = 0.0;
+  double parker_reference_sin_theta = 0.0;
+  int parker_radial_polarity = 0;
+  double parker_radial_field_at_one_au_t = 0.0;
 };
 
 // Configure the process-wide 1-D SW+CME model. Call PrepareState() after

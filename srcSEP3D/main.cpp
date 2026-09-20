@@ -12,12 +12,14 @@
 // ============================================================================
 
 #include "SEP3D.h"
+#include "adapters/source_runtime.h"
 #include "output/output_coordinator.h"
 #include "runtime/configuration_io.h"
 
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 
 void amps_init();
 void amps_init_mesh();
@@ -62,6 +64,20 @@ int main(int argc, char** argv) {
     std::cerr << "srcSEP3D standalone configuration failed: "
               << status.message << '\n';
     return EXIT_FAILURE;
+  }
+
+  if (request.configuration->options().inputSchemaVersion >= 3 &&
+      request.configuration->options().shock ==
+          SEP3D::RuntimeModel::ShockAuthority::Swcme) {
+    std::shared_ptr<SEP3D::Adapters::ShockProvider> shock;
+    status = SEP3D::Adapters::CreateStandaloneSwcmeShockProvider(
+        *request.configuration, &shock);
+    if (status.ok()) status = SEP3D::InstallShockProvider(shock);
+    if (!status.ok()) {
+      std::cerr << "srcSEP3D SWCME provider initialization failed: "
+                << status.message << '\n';
+      return EXIT_FAILURE;
+    }
   }
 
   if (!request.configuration->options().restartInputPath.empty()) {

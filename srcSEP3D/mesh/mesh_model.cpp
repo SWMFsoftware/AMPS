@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <fstream>
+#include <iomanip>
 #include <limits>
 #include <sstream>
 
@@ -391,6 +393,35 @@ Core::Status BuildParkerCenterline(
     candidate.push_back(point);
   }
   points->swap(candidate);
+  return Core::Status::OK();
+}
+
+Core::Status WriteParkerCenterlineTecplot(
+    const ResolutionConfiguration& configuration, const std::string& path) {
+  if (path.empty()) return Invalid("Parker centreline Tecplot path is empty");
+  std::vector<Core::Vec3> points;
+  const Core::Status built = BuildParkerCenterline(configuration, &points);
+  if (!built.ok()) return built;
+  std::ofstream output(path.c_str(), std::ios::out | std::ios::trunc);
+  if (!output.good())
+    return Invalid("cannot open Parker centreline Tecplot file '" + path + "'");
+  output << "TITLE=\"srcSEP3D initialized Parker centreline\"\n"
+         << "VARIABLES=\"arc_length_m\",\"x_m\",\"y_m\",\"z_m\","
+            "\"heliocentric_radius_m\",\"requested_cell_size_m\"\n"
+         << "ZONE T=\"parker-centreline\", I=" << points.size()
+         << ", F=POINT\n" << std::scientific << std::setprecision(17);
+  double arcLengthM = 0.0;
+  for (std::size_t i = 0; i < points.size(); ++i) {
+    if (i != 0) arcLengthM += (points[i] - points[i - 1]).Norm();
+    output << arcLengthM << ' ' << points[i].x << ' ' << points[i].y << ' '
+           << points[i].z << ' '
+           << (points[i] - configuration.originM).Norm() << ' '
+           << RequestedCellSizeM(points[i], configuration) << '\n';
+  }
+  output.flush();
+  if (!output.good())
+    return Invalid("failed while writing Parker centreline Tecplot file '" +
+                   path + "'");
   return Core::Status::OK();
 }
 

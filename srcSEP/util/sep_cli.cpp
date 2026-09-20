@@ -880,6 +880,7 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
                                       options.injectionParticlesPerIteration, err)) {
         return false;
       }
+      options.injectionParticlesProvided = true;
       continue;
     }
 

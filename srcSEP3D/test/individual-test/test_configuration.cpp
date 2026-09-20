@@ -14,7 +14,9 @@
 #include "configuration_io.h"
 
 #include <cmath>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -283,9 +285,11 @@ Result RunCFG3D01() {
   // Keeping it inside the acceptance test prevents a renamed key or tightened
   // validator from leaving users with an example that only looks plausible.
   RM::RunConfiguration3DOptions exampleOptions;
-  if (!RM::LoadConfigurationFile(
-          "examples/sep3d_analytic_parker.in", &exampleOptions).ok()) {
-    return Fail("the annotated production example no longer matches schema v1");
+  const SEP3D::Core::Status exampleStatus = RM::LoadConfigurationFile(
+      "examples/sep3d_analytic_parker.in", &exampleOptions);
+  if (!exampleStatus.ok()) {
+    return Fail("the annotated production example is invalid: " +
+                exampleStatus.message);
   }
   std::shared_ptr<const RM::RunConfiguration3D> example;
   if (!RM::RunConfiguration3D::Create(exampleOptions, &example).ok() ||
@@ -524,6 +528,137 @@ Result RunCFG3D07() {
   return Pass("proton-only AMPS count, index, mass, charge, observer, and fingerprint contracts passed");
 }
 
+Result RunCFG3D08() {
+  RM::RunConfiguration3DOptions options;
+  const SEP3D::Core::Status loaded = RM::LoadConfigurationFile(
+      "examples/sep3d_analytic_parker.in", &options);
+  if (!loaded.ok())
+    return Fail("complete schema-version-3 initialization input did not resolve: " +
+                loaded.message);
+  if (
+      options.inputSchemaVersion != 3 ||
+      options.injectionCadenceSteps != 1 ||
+      options.source.samplesPerStep != 1000 ||
+      options.swcmeAssignments.empty() ||
+      options.swcmeConfigurationFingerprint.empty() ||
+      options.swcmeResolvedManifest.empty()) {
+    return Fail("schema-version-3 initialization metadata is incomplete");
+  }
+
+  std::ifstream input("examples/sep3d_analytic_parker.in");
+  std::ostringstream buffer;
+  buffer << input.rdbuf();
+  const std::string complete = buffer.str();
+  if (!input || complete.empty()) return Fail("could not read schema-v3 fixture");
+
+  std::string missing = complete;
+  const std::string required = "surface.phi_points = 24\n";
+  const std::size_t requiredAt = missing.find(required);
+  if (requiredAt == std::string::npos)
+    return Fail("schema-v3 fixture lost its surface resolution field");
+  missing.erase(requiredAt, required.size());
+  if (RM::ParseConfigurationText(missing, &options).ok())
+    return Fail("schema version 3 accepted an incomplete canonical SWCME model");
+
+  std::string wrongWeight = complete;
+  const std::string weight = "macroparticle_weight = 1e23";
+  const std::size_t weightAt = wrongWeight.find(weight);
+  if (weightAt == std::string::npos)
+    return Fail("schema-v3 fixture lost its derived particle weight");
+  wrongWeight.replace(weightAt, weight.size(),
+                      "macroparticle_weight = 2e23");
+  if (RM::ParseConfigurationText(wrongWeight, &options).ok())
+    return Fail("schema version 3 accepted a particle weight inconsistent with its physical source rate");
+
+  std::string skippedStep = complete;
+  const std::string cadence = "injection_cadence_steps = 1";
+  const std::size_t cadenceAt = skippedStep.find(cadence);
+  if (cadenceAt == std::string::npos)
+    return Fail("schema-v3 fixture lost its injection cadence");
+  skippedStep.replace(cadenceAt, cadence.size(),
+                      "injection_cadence_steps = 2");
+  if (RM::ParseConfigurationText(skippedStep, &options).ok())
+    return Fail("schema version 3 accepted a source that skips simulation steps");
+
+  std::string absoluteNormalization = complete;
+  const std::string relative = "source.normalization = relative_only";
+  const std::size_t relativeAt = absoluteNormalization.find(relative);
+  if (relativeAt == std::string::npos)
+    return Fail("schema-v3 fixture lost its source normalization");
+  absoluteNormalization.replace(
+      relativeAt, relative.size(),
+      "source.normalization = reference_differential_intensity");
+  if (RM::ParseConfigurationText(absoluteNormalization, &options).ok())
+    return Fail("schema version 3 accepted two competing absolute source normalizations");
+
+  std::string wrongAxis = complete;
+  const std::string axisX = "geometry.solar_rotation_axis_x = 0";
+  const std::string axisZ = "geometry.solar_rotation_axis_z = 1";
+  const std::size_t axisXAt = wrongAxis.find(axisX);
+  const std::size_t axisZAt = wrongAxis.find(axisZ);
+  if (axisXAt == std::string::npos || axisZAt == std::string::npos)
+    return Fail("schema-v3 fixture lost its solar rotation axis");
+  wrongAxis.replace(axisXAt, axisX.size(),
+                    "geometry.solar_rotation_axis_x = 1");
+  wrongAxis.replace(wrongAxis.find(axisZ), axisZ.size(),
+                    "geometry.solar_rotation_axis_z = 0");
+  if (RM::ParseConfigurationText(wrongAxis, &options).ok())
+    return Fail("schema version 3 accepted inconsistent Parker rotation axes");
+
+  // SWCME defines total |B| at one AU, while AnalyticParkerProvider accepts
+  // radial Br at its independently declared reference radius.  A half-AU
+  // reference therefore has four times the one-AU radial component.  This
+  // positive case prevents the cross-model consistency gate from confusing
+  // those two distinct physical conventions.
+  std::string halfAuReference = complete;
+  const std::size_t backgroundAt =
+      halfAuReference.find("[background.parker]");
+  const std::string oneAuReference =
+      "reference_radius_m = 1.495978707e11";
+  const std::size_t referenceAt =
+      halfAuReference.find(oneAuReference, backgroundAt);
+  const std::string oneAuRadialField =
+      "radial_field_at_reference_t = 3.585667175612118e-9";
+  const std::size_t fieldAt = halfAuReference.find(oneAuRadialField);
+  if (backgroundAt == std::string::npos ||
+      referenceAt == std::string::npos || fieldAt == std::string::npos)
+    return Fail("schema-v3 fixture lost its Parker reference normalization");
+  halfAuReference.replace(referenceAt, oneAuReference.size(),
+                          "reference_radius_m = 7.479893535e10");
+  halfAuReference.replace(
+      fieldAt, oneAuRadialField.size(),
+      "radial_field_at_reference_t = 1.4342668702448471e-8");
+  if (!RM::ParseConfigurationText(halfAuReference, &options).ok())
+    return Fail("schema version 3 rejected the correctly r^-2-scaled half-AU Parker reference");
+
+  // The source surface is explicit physics, not a hidden 20-R_sun constant.
+  // Move the domain, finite line, Parker source, and CME launch surface to
+  // 25 R_sun and supply the corresponding one-AU radial component.
+  std::string movedSource = complete;
+  auto replaceRequired = [&](const std::string& from,
+                             const std::string& to) -> bool {
+    const std::size_t at = movedSource.find(from);
+    if (at == std::string::npos) return false;
+    movedSource.replace(at, from.size(), to);
+    return true;
+  };
+  if (!replaceRequired("inner_radius_m = 1.3914e10",
+                       "inner_radius_m = 1.73925e10") ||
+      !replaceRequired("initial_x_m = 1.3914e10",
+                       "initial_x_m = 1.73925e10") ||
+      !replaceRequired(oneAuRadialField,
+                       "radial_field_at_reference_t = 3.6305743892405979e-9") ||
+      !replaceRequired("parker.source_radius = 20 Rs",
+                       "parker.source_radius = 25 Rs") ||
+      !replaceRequired("cme.launch_radius = 20 Rs",
+                       "cme.launch_radius = 25 Rs"))
+    return Fail("schema-v3 fixture lost an explicit source-surface field");
+  if (!RM::ParseConfigurationText(movedSource, &options).ok())
+    return Fail("schema version 3 retained a hidden 20-R_sun source assumption");
+
+  return Pass("schema version 3 resolves complete SWCME physics, honors explicit Parker references/source radii, and rejects missing or inconsistent physics");
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
@@ -553,5 +688,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
       make("CFG3D05", "Mesh preflight", "C05 composite refinement and memory planning.", RunCFG3D05),
       make("CFG3D06", "Initialization schema", "Finite Parker-line fields and fail-closed consistency checks.", RunCFG3D06),
       make("CFG3D07", "Single-species binding", "Stage-3 proton-only AMPS identity and fingerprint contract.", RunCFG3D07),
+      make("CFG3D08", "Complete initialization", "Schema-v3 canonical SWCME and exact per-step source contract.", RunCFG3D08),
   };
 }

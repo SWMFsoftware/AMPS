@@ -13,12 +13,15 @@
 #include "restart.h"
 #include "runtime_adapters.h"
 #include "source_runtime.h"
+#include "configuration_io.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <numeric>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -335,6 +338,69 @@ Result RunR3D07() {
   return Pass("restart round-trips clock, events, snapshots, shock, RNG tuple, ledgers, and pending sampling state");
 }
 
+Result RunR3D08() {
+  R::RunConfiguration3DOptions options;
+  if (!R::LoadConfigurationFile(
+          "examples/sep3d_analytic_parker.in", &options).ok())
+    return Fail("could not resolve the schema-v3 initialization fixture");
+  std::shared_ptr<const R::RunConfiguration3D> configuration;
+  if (!R::RunConfiguration3D::Create(options, &configuration).ok())
+    return Fail("could not freeze the schema-v3 initialization fixture");
+  std::shared_ptr<A::ShockProvider> provider;
+  const C::Status created = A::CreateStandaloneSwcmeShockProvider(
+      *configuration, &provider);
+  if (!created.ok() || !provider)
+    return Fail("canonical standalone SWCME3D provider was not created: " +
+                created.message);
+  // The fixture explicitly declares 3600 s as its first physically valid
+  // source epoch; before that boundary the provider must remain inactive.
+  const A::ShockState before = provider->Evaluate(3599.0);
+  const A::ShockState state = provider->Evaluate(3600.0);
+  if (!state.status.ok() || !state.active || state.patches.empty() ||
+      !before.status.ok() || before.active ||
+      state.configurationFingerprint !=
+          options.swcmeConfigurationFingerprint)
+    return Fail("canonical SWCME3D provider did not publish its initial shock surface");
+
+  std::vector<std::uint64_t> counts;
+  if (!A::AllocateExactPatchMacroparticles(
+           state.patches, options.source.samplesPerStep, &counts).ok() ||
+      counts.size() != state.patches.size() ||
+      std::accumulate(counts.begin(), counts.end(), UINT64_C(0)) !=
+          options.source.samplesPerStep ||
+      std::find(counts.begin(), counts.end(), UINT64_C(0)) != counts.end())
+    return Fail("global exact source count was not conserved over all active patches");
+  std::vector<std::uint64_t> repeated;
+  if (!A::AllocateExactPatchMacroparticles(
+           state.patches, options.source.samplesPerStep, &repeated).ok() ||
+      repeated != counts)
+    return Fail("largest-remainder source allocation is not deterministic");
+  if (A::AllocateExactPatchMacroparticles(
+          state.patches,
+          static_cast<std::uint64_t>(state.patches.size() - 1),
+          &repeated).ok())
+    return Fail("source allocation silently omitted a non-zero physical patch");
+
+  A::SourceRequest request;
+  request.patch = state.patches.front();
+  request.step = 0;
+  request.species = options.species.ampsSpeciesIndex;
+  request.speciesMassKg = options.species.massKg;
+  request.intervalS = options.requestedTimeStepS;
+  request.physicalParticleRatePerS =
+      options.source.physicalParticleRatePerS *
+      options.source.injectionEfficiency *
+      request.patch.relativePatchWeight;
+  request.macroparticleWeight = options.species.macroparticleWeight;
+  request.prescribedMacroparticles = counts.front();
+  request.maximumMacroparticles = counts.front();
+  const A::InjectionPlan plan = A::BuildInjectionPlan(request);
+  if (!plan.status.ok() || plan.particles.size() != counts.front() ||
+      plan.ledger.macroparticles != counts.front() || plan.ledger.capped != 0)
+    return Fail("an exact patch allocation was rounded or capped downstream");
+  return Pass("canonical SWCME initialization publishes a physical surface and injects exactly the configured global count per step");
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterRuntimeImprovementTests() {
@@ -358,5 +424,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterRuntimeImprovementTests() {
       make("R3D05", "Shock source lifecycle", RunR3D05),
       make("R3D06", "Observer publication transaction", RunR3D06),
       make("R3D07", "Complete restart contract", RunR3D07),
+      make("R3D08", "Canonical initialization source", RunR3D08),
   };
 }

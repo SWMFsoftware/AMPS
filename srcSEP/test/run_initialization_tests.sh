@@ -2,7 +2,7 @@
 set -eu
 
 # Compile the exact production parser/geometry and native callbacks without
-# AMPS or MPI.  The linked executable registers the same INIT01/INIT02 records,
+# AMPS or MPI.  The linked executable registers the same INIT01-INIT03 records,
 # so this fast gate and `amps --all-tests` cannot diverge semantically.
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 source_root=$(CDPATH= cd -- "$script_dir/.." && pwd)

@@ -421,6 +421,10 @@ SEP::Testing::Result RunD02CanonicalConfiguration() {
                       Close(summary.valid_until_s, 7200.0) &&
                       Close(summary.source_energy_min_MeV, 0.25) &&
                       Close(summary.source_injection_efficiency, 0.001) &&
+                      Close(summary.parker_reference_sin_theta, 1.0) &&
+                      summary.parker_radial_polarity == 1 &&
+                      summary.parker_radial_field_at_one_au_t > 0.0 &&
+                      summary.parker_radial_field_at_one_au_t < 5.0e-9 &&
                       summary.fingerprint.size() == 16 &&
                       summary.normalized_manifest.find("preset=FAST") !=
                           std::string::npos,

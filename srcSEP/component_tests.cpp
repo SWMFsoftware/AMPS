@@ -609,7 +609,7 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
                        swcme_descriptors.end());
     // These AMPS-independent callbacks are linked into the production catalog
     // as routine tests, so `test/run_tests.py --all` discovers and executes
-    // the same INIT01/INIT02 gates as the focused source-only build.
+    // the same INIT01-INIT03 gates as the focused source-only build.
     const std::vector<SEP::Testing::Descriptor> initialization_descriptors =
         SEP::Testing::InitializationDescriptors();
     descriptors.insert(descriptors.end(), initialization_descriptors.begin(),

@@ -4,6 +4,7 @@
 #include "adapters/swcme1d_adapter.h"
 #include "transport_common.h"
 #include "amps2swmf.h"
+#include "util/sep_initialization.h"
 
 // field_line.cpp is copied to build/main and compiled by AMPS's generic
 // object rule.  That rule always exposes the AMPS root, but it does not inherit
@@ -401,6 +402,16 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   double GlobalWeightCorrectionFactor=1.0;
 
   if (anpart==0.0) return 0.0;
+  else if (SEP::Initialization::HasActive() &&
+           SEP::Initialization::Active().schemaVersion >= 2) {
+    // Version-2 input defines an exact computational population per active
+    // field-line source event.  Preserve the physical particle count by
+    // moving the complete ratio into AMPS' individual statistical-weight
+    // correction; never change the represented source merely to hit N.
+    GlobalWeightCorrectionFactor =
+        anpart / InjectionParameters::nParticlesPerIteration;
+    anpart = InjectionParameters::nParticlesPerIteration;
+  }
   else if (anpart<InjectionParameters::nParticlesPerIteration) {
     GlobalWeightCorrectionFactor=anpart/InjectionParameters::nParticlesPerIteration;
     anpart=InjectionParameters::nParticlesPerIteration;
@@ -411,7 +422,9 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   }
 
   //in case particle are injected at the beginning of the field line, the actual plasma density is not used -> set the particle weight == 1
-  if (InjectionParameters::InjectLocation==InjectionParameters::_InjectBegginingFL) {
+  if ((!SEP::Initialization::HasActive() ||
+       SEP::Initialization::Active().schemaVersion < 2) &&
+      InjectionParameters::InjectLocation==InjectionParameters::_InjectBegginingFL) {
     GlobalWeightCorrectionFactor=1.0;
   }
 

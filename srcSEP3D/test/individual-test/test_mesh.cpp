@@ -14,6 +14,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <cstdio>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <sstream>
@@ -340,6 +342,26 @@ Result RunMSH3D10() {
   return Pass("finite Parker sampling preserves point count/length and mesh refinement is origin-relative");
 }
 
+Result RunMSH3D11() {
+  const M::ResolutionConfiguration configuration = Baseline();
+  const char* path = "test/.initialization-parker-line-test.dat";
+  const SEP3D::Core::Status written =
+      M::WriteParkerCenterlineTecplot(configuration, path);
+  std::ifstream input(path);
+  std::ostringstream text;
+  text << input.rdbuf();
+  const std::string contents = text.str();
+  input.close();
+  std::remove(path);
+  if (!written.ok() || contents.find("TITLE=\"srcSEP3D initialized Parker centreline\"") ==
+          std::string::npos ||
+      contents.find("ZONE T=\"parker-centreline\", I=101, F=POINT") ==
+          std::string::npos ||
+      contents.find("x_m") == std::string::npos)
+    return Fail("initialization Parker line was not written as unit-labeled Tecplot data");
+  return Pass("initialized finite Parker line is written as deterministic unit-labeled Tecplot data");
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterMeshTests() {
@@ -366,5 +388,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterMeshTests() {
       make("MSH3D08", "Earth and Mars presets", "Exact preset bounds and shell coverage.", RunMSH3D08),
       make("MSH3D09", "Refinement gradients", "Mixed-spacing gradient reconstruction.", RunMSH3D09),
       make("MSH3D10", "Finite Parker initialization", "Point-count, arc-length, and translated-origin identities.", RunMSH3D10),
+      make("MSH3D11", "Initialization Tecplot", "Finite Parker-line visualization output.", RunMSH3D11),
   };
 }

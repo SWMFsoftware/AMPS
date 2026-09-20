@@ -356,9 +356,9 @@ validation/%.o: validation/%.cpp
 	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
 
 test/stage1: check-layering $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(VALIDATION_OBJ) $(STAGE1_TEST_OBJ) \
-             $(SEP_COMMON_ARCHIVE)
+             $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE)
 	$(CXX) -o $@ $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(VALIDATION_OBJ) $(STAGE1_TEST_OBJ) \
-	  $(SEP_COMMON_ARCHIVE)
+	  $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE)
 	@echo "[srcSEP3D] standalone test binary built: test/stage1"
 
 .PHONY: test-stage1 test-harn-unit test-lay-unit test-bld-unit test-util-unit \

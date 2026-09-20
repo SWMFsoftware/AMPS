@@ -1312,6 +1312,23 @@ void amps_init_mesh() {
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
   PIC::Mesh::mesh->CreateNewParallelDistributionLists();
+  if (options.inputSchemaVersion >= 3) {
+    // The AMPS writer emits the final distributed octree after refinement and
+    // decomposition.  The finite Parker centreline is a deterministic ordered
+    // zone and is written once by rank zero from the same ResolutionConfiguration
+    // consumed by localResolution().  Failure is fatal because both files are
+    // declared initialization products, not optional diagnostics.
+    PIC::Mesh::mesh->outputMeshTECPLOT(
+        options.initializationMeshTecplotFile.c_str());
+    if (PIC::ThisThread == 0) {
+      const SEP3D::Core::Status lineOutput =
+          SEP3D::Mesh::WriteParkerCenterlineTecplot(
+              resolution, options.initializationParkerLineTecplotFile);
+      if (!lineOutput.ok())
+        StopWithStatus("Parker initialization Tecplot", lineOutput);
+    }
+    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+  }
   PIC::Mesh::mesh->AllowBlockAllocation = true;
   PIC::Mesh::mesh->AllocateTreeBlocks();
   PIC::Mesh::mesh->InitCellMeasure();
@@ -1368,6 +1385,12 @@ void amps_init() {
         PIC::DomainBlockDecomposition::BlockTable[blockIndex];
     if (node == nullptr || node->block == nullptr) continue;
     node->block->SetLocalTimeStep(configuredDt, speciesIndex);
+    // Keep AMPS' block-local normalization identical to the global base
+    // weight.  Injection may apply an individual correction for exact patch
+    // conservation, but no block is allowed to inherit an unrelated default
+    // weight from a prior initialization path.
+    node->block->SetLocalParticleWeight(
+        configuredSpecies.macroparticleWeight, speciesIndex);
   }
   FillAndPublishBackground();
   SEP3D::AMPS::Movers::Context mover;
@@ -1469,10 +1492,29 @@ int amps_time_step() {
     status = SEP3D::AMPS::Movers::UpdateShock(moverShock);
     if (!status.ok()) StopWithStatus("mover shock update", status);
 
-    if (Configuration().options().source.enabled &&
+    // A valid CME may deliberately start after simulation time zero.  Its
+    // provider publishes active=false and no surface patches before
+    // event.valid_from; that interval represents zero physical source, not an
+    // allocation failure and not N synthetic particles.  Once active, an
+    // empty/malformed surface still reaches AllocateExactPatchMacroparticles
+    // and fails closed.
+    if (shock.active && Configuration().options().source.enabled &&
         runtime.EventDue(SEP3D::RuntimeModel::ScheduledEvent::Injection)) {
       const auto& options = Configuration().options();
-      for (const SEP3D::Adapters::ShockSourceRecord& patch : shock.patches) {
+      std::vector<std::uint64_t> exactPatchCounts;
+      if (options.inputSchemaVersion >= 3) {
+        // The input declares one global number of computational particles per
+        // physical time step.  Allocate that integer once over the complete
+        // active SWCME surface; doing independent stochastic rounding in each
+        // patch would not preserve the user-visible global count.
+        status = SEP3D::Adapters::AllocateExactPatchMacroparticles(
+            shock.patches, options.source.samplesPerStep, &exactPatchCounts);
+        if (!status.ok()) StopWithStatus("exact shock source allocation", status);
+      }
+      for (std::size_t patchIndex = 0;
+           patchIndex < shock.patches.size(); ++patchIndex) {
+        const SEP3D::Adapters::ShockSourceRecord& patch =
+            shock.patches[patchIndex];
         SEP3D::Adapters::SourceRequest source;
         source.patch = patch;
         source.step = runtime.counters().currentTick;
@@ -1483,11 +1525,23 @@ int amps_time_step() {
         source.speciesMassKg = PIC::MolecularData::GetMass(source.species);
         source.intervalS = options.requestedTimeStepS *
             options.injectionCadenceSteps;
+        // physicalParticleRatePerS is the seed population rate before the
+        // explicitly configured injection efficiency.  Apply efficiency once
+        // here, then partition the represented rate by SWCME's normalized
+        // physical shock-patch weight.  The schema-v3 base particle weight is
+        // derived from the same product, so the expected global sample count
+        // is exactly source.samplesPerStep.
         source.physicalParticleRatePerS =
             options.source.physicalParticleRatePerS *
+            options.source.injectionEfficiency *
             patch.relativePatchWeight;
         source.macroparticleWeight = options.species.macroparticleWeight;
-        source.maximumMacroparticles = options.source.samplesPerStep;
+        if (options.inputSchemaVersion >= 3) {
+          source.prescribedMacroparticles = exactPatchCounts[patchIndex];
+          source.maximumMacroparticles = source.prescribedMacroparticles;
+        } else {
+          source.maximumMacroparticles = options.source.samplesPerStep;
+        }
         SEP3D::Adapters::InjectionPlan plan =
             SEP3D::Adapters::BuildInjectionPlan(source);
         if (!plan.status.ok()) StopWithStatus("shock source plan", plan.status);

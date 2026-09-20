@@ -83,6 +83,27 @@ struct ShockRadiusHistory {
   double previousRadiusM = std::numeric_limits<double>::quiet_NaN();
 };
 
+// Install one explicit startup timestep and statistical weight on every
+// allocated leaf block.  AMPS normally derives these quantities from local
+// resolution and boundary rates; schema-v2 initialization instead treats both
+// as reviewed campaign inputs, so re-deriving either would silently change the
+// requested physical normalization.
+void InstallConfiguredParticleNumerics(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node, int species,
+    double timeStepS, double particleWeight) {
+  if (node == NULL) return;
+  if (node->lastBranchFlag() == _BOTTOM_BRANCH_TREE_) {
+    if (node->block != NULL) {
+      node->block->SetLocalTimeStep(timeStepS, species);
+      node->block->SetLocalParticleWeight(particleWeight, species);
+    }
+    return;
+  }
+  for (int child = 0; child < (1 << DIM); ++child)
+    InstallConfiguredParticleNumerics(
+        node->downNode[child], species, timeStepS, particleWeight);
+}
+
 }  // namespace
 
 double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
@@ -301,6 +322,16 @@ void amps_init_mesh() {
       if (SEP::Initialization::HasActive()) {
         const SEP::Initialization::Configuration& initialization =
             SEP::Initialization::Active();
+        // Schema 1 predates the canonical SWCME normalization bridge and
+        // retains its historical signed +5 nT radial normalization.  The
+        // complete schema-2 contract instead consumes the canonically derived
+        // signed Br(1 AU), including its configured polarity.
+        double radialFieldAtOneAuT = 5.0e-9;
+        if (initialization.schemaVersion >= 2) {
+          radialFieldAtOneAuT =
+              SEP::SW1DAdapter::GetConfigurationSummary()
+                  .parker_radial_field_at_one_au_t;
+        }
         const double origin[3] = {initialization.parkerOriginM.x,
                                   initialization.parkerOriginM.y,
                                   initialization.parkerOriginM.z};
@@ -311,7 +342,8 @@ void amps_init_mesh() {
             &field_line, origin, initial, initialization.parkerLengthM,
             initialization.parkerPointCount,
             initialization.solarWindSpeedMPerS,
-            initialization.solarRotationRateRadPerS);
+            initialization.solarRotationRateRadPerS,
+            radialFieldAtOneAuT);
       }
       else {
         SEP::ParkerSpiral::CreateFileLine(
@@ -550,7 +582,24 @@ void amps_init_mesh() {
   PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
   PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
-  //PIC::Mesh::mesh->outputMeshTECPLOT("mesh-reduced.dat");
+  if (SEP::Initialization::HasActive() &&
+      SEP::Initialization::Active().schemaVersion >= 2) {
+    const SEP::Initialization::Configuration& initialization =
+        SEP::Initialization::Active();
+    // outputMeshTECPLOT owns the distributed AMR serialization.  The finite
+    // field line is a rank-independent ordered zone and is therefore written
+    // once by rank zero after the final active-node pruning is complete.
+    PIC::Mesh::mesh->outputMeshTECPLOT(
+        initialization.meshTecplotFile.c_str());
+    if (PIC::ThisThread == 0) {
+      const SEP::Transport::Status written =
+          SEP::Initialization::WriteParkerLineTecplot(
+              initialization, initialization.fieldLineTecplotFile);
+      if (!written.ok())
+        exit(__LINE__, __FILE__, written.message.c_str());
+    }
+    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+  }
 
   //initialize the blocks
   PIC::Mesh::mesh->AllowBlockAllocation=true;
@@ -580,7 +629,20 @@ void amps_init() {
 
   //set up the time step
   PIC::ParticleWeightTimeStep::LocalTimeStep=SEP::Mesh::localTimeStep;
-  PIC::ParticleWeightTimeStep::initTimeStep();
+  const bool configuredNumerics = SEP::Initialization::HasActive() &&
+      SEP::Initialization::Active().schemaVersion >= 2;
+  // Freeze the canonical signed Br(1 AU) once for domain-cell initialization.
+  // Fetching a full configuration summary inside the cell loop would copy its
+  // manifest repeatedly and obscure that every cell uses one resolved model.
+  double configuredRadialFieldAtOneAuT = 5.0e-9;
+  if (configuredNumerics) {
+    configuredRadialFieldAtOneAuT =
+        SEP::SW1DAdapter::GetConfigurationSummary()
+            .parker_radial_field_at_one_au_t;
+  }
+  if (!configuredNumerics) {
+    PIC::ParticleWeightTimeStep::initTimeStep();
+  }
 
   //create the list of mesh nodes where the injection boundary conditinos are applied
   if (_DOMAIN_GEOMETRY_==_DOMAIN_GEOMETRY_BOX_) {
@@ -591,7 +653,22 @@ void amps_init() {
 
   //set up the particle weight
   PIC::ParticleWeightTimeStep::LocalBlockInjectionRate=SEP::ParticleSource::OuterBoundary::BoundingBoxInjectionRate;
-  PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_H_PLUS_SPEC_);
+  if (configuredNumerics) {
+    const SEP::Initialization::Configuration& initialization =
+        SEP::Initialization::Active();
+    PIC::ParticleWeightTimeStep::GlobalTimeStep[_H_PLUS_SPEC_] =
+        initialization.timeStepS;
+    PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_PLUS_SPEC_] =
+        initialization.particleWeight;
+    PIC::ParticleWeightTimeStep::GlobalTimeStepInitialized = true;
+    InstallConfiguredParticleNumerics(
+        PIC::Mesh::mesh->rootTree, _H_PLUS_SPEC_, initialization.timeStepS,
+        initialization.particleWeight);
+  }
+  else {
+    PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(
+        _H_PLUS_SPEC_);
+  }
 
   // Do not overwrite AMPS' configured base particle weight with a second,
   // hard-coded source model.  Field-line injection now computes the physical
@@ -626,7 +703,8 @@ void amps_init() {
               SEP::ParkerSpiral::GetB(
                   B, x, origin, initialization.innerRadiusM,
                   initialization.solarWindSpeedMPerS,
-                  initialization.solarRotationRateRadPerS);
+                  initialization.solarRotationRateRadPerS,
+                  configuredRadialFieldAtOneAuT);
             }
             else {
               SEP::ParkerSpiral::GetB(B,x);

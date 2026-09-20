@@ -55,6 +55,76 @@ or immutable factory.
 The complete commented example is
 [`examples/sep3d_analytic_parker.in`](examples/sep3d_analytic_parker.in).
 
+### Schema 3 initialization contract
+
+Schema 3 adds the required `[parker_spiral]` section from schema 2, a complete
+canonical `[swcme]` section, explicit initialization Tecplot paths, complete
+observer acceptance fields, and an exact particle source. It is intended for
+standalone SWCME shock-injection runs and therefore requires:
+
+- `run.intent = shock-injection`, `shock.authority = swcme`, and
+  `source.enabled = true`;
+- `run.injection_cadence_steps = 1`, so
+  `source.samples_per_step` means exactly that many computational particles on
+  every active simulation step;
+- analytic Parker background and prescribed turbulence. SWMF/AWSoM coupling
+  remains available through the parser-free typed host interface;
+- a spherical canonical shock with `shock_only` region behavior,
+  source-mode acceleration, and relative-only source normalization. The
+  current AMPS crossing operator is spherical, so accepting ellipsoid/SSE here
+  would be a physically false approximation;
+- a complete `[swcme]` assignment layer: the 41 common SWCME1D fields plus
+  shape, axis ratios, half width, CME direction, solar rotation axis/rate, and
+  surface theta/phi resolution. Data-driven kinematics additionally owns its
+  two knot lists;
+- exact agreement between application and canonical descriptions of Parker
+  wind/rotation/source radius/reference latitude, +Z rotation axis, magnetic
+  normalization/polarity, density, temperature, species, energy range, and
+  injection efficiency; and
+- nonempty `output.initialization_mesh_tecplot_file` and
+  `output.initialization_parker_line_tecplot_file`.
+
+The magnetic comparison respects the two public conventions. SWCME supplies
+total `|B|` at one AU and its reference latitude; the analytic provider
+supplies radial `Br` at its declared reference radius. The parser removes the
+one-AU Parker winding and then applies `Br proportional to r^-2`. Consequently
+a half-AU analytic reference requires four times the corresponding one-AU
+radial component; it is not compared directly with the total SWCME magnitude.
+
+All application fields and every field of every `[observer.ID]` are explicit,
+including values inactive under the chosen mode. The `[swcme]` resolver is the
+only code that interprets its unit-bearing values. Its normalized manifest and
+fingerprint are frozen into the application identity; raw spelling is not used
+as a substitute for resolved physics.
+
+Before AMPS allocation, the standalone provider evaluates the canonical model
+at `event.valid_from`, builds and validates the complete shock surface, solves
+the MHD jump/source state on every patch, and verifies that
+`source.samples_per_step` is at least the active patch count. This distinguishes
+a legitimately delayed event (inactive before `valid_from`) from an invalid or
+empty source.
+
+The required particle-weight identity is
+
+```text
+species.macroparticle_weight =
+  source.physical_particle_rate_per_s
+  * source.injection_efficiency
+  * swcme.shock.relative_source_weight_per_area
+  * run.time_step_s
+  / source.samples_per_step
+```
+
+The global count is apportioned with a deterministic largest-remainder
+allocation after reserving one representative per active physical patch.
+Per-patch individual weight corrections preserve represented physical number
+exactly. The global and every local AMPS proton timestep/weight are then set
+from the frozen configuration.
+
+The full field-by-field tables and `[swcme]` key list are in the top-level
+[`README.md`](README.md); the annotated file is executable acceptance input,
+not pseudocode.
+
 ## C02: typed run contract and fingerprints
 
 The parser produces `RunConfiguration3DOptions`, the same SI-only record a
@@ -69,7 +139,8 @@ The typed contract includes:
 - explicit domain, boundary, coordinate-frame, mesh, and storage choices;
 - complete analytic Parker parameters;
 - turbulence spectrum and out-of-range/missing-data policies;
-- shock interval, radial extent, speed, and compression;
+- legacy shock interval/radial/speed/compression for schemas 1–2, or the
+  canonical SWCME3D manifest/fingerprint for schema 3;
 - source efficiency, physical particle rate, energy interval, spectrum, and
   maximum samples per injection event;
 - species AMPS index, name, mass, signed charge, and macroparticle weight;
@@ -231,6 +302,9 @@ identity/conservation, and resolved observer geometry plus commit-only reset.
 | `CFG3D05` | monotone composite profiles, tube scaling, AMR levels, memory categories, and level rejection |
 | `CFG3D06` | complete finite Parker-line input and fail-closed source consistency |
 | `CFG3D07` | index-zero proton configuration, AMPS count/name/mass/charge agreement, observer ownership, and fingerprint identity |
+| `CFG3D08` | complete schema-3 SWCME input plus missing-field, weight, and per-step-cadence rejection |
+| `MSH3D11` | deterministic unit-labeled initialization Parker Tecplot output |
+| `R3D08` | canonical source-surface preflight and exact global per-step particle allocation |
 
 ## Version 2 finite Parker-line section
 
@@ -255,10 +329,12 @@ origin, and the initial point relative to that origin must lie on
 and colatitude.  Solar wind speed and rotation remain owned by
 `[background.parker]`; the line section does not duplicate them.
 
-The parser accepts schema version 1 for restart/campaign compatibility.  Its
+The parser accepts schema version 1 for restart/campaign compatibility. Its
 finite line is normalized from the existing source direction, domain radii,
 and a deterministic count before fingerprinting.  Schema version 2 never
-falls back to those values: omitting any of the eight keys is an error.
+falls back to those values: omitting any of the eight keys is an error. Schema
+version 3 includes the same explicit line and adds the complete initialization
+contract above.
 
 Run only these gates with:
 

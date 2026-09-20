@@ -1,6 +1,7 @@
 #include "configuration_io.h"
 
 #include "../mesh/mesh_model.h"
+#include "swcme3d_input.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -106,11 +107,19 @@ bool ParseBool(const std::string& text, bool* value) {
   return false;
 }
 
+bool NearlyEqual(double left, double right) {
+  return std::fabs(left - right) <=
+      128.0 * std::numeric_limits<double>::epsilon() *
+      std::max(std::numeric_limits<double>::min(),
+               std::max(std::fabs(left), std::fabs(right)));
+}
+
 bool KnownSection(const std::string& section) {
   static const std::set<std::string> fixed = {
       "run", "domain", "parker_spiral", "mesh", "mesh.solar", "mesh.tube", "memory",
       "background", "background.parker", "turbulence", "transport",
-      "shock", "source", "species", "storage", "output", "restart"};
+      "shock", "source", "species", "storage", "output", "restart",
+      "swcme"};
   return fixed.count(section) != 0 ||
          (section.rfind("observer.", 0) == 0 &&
           section.size() > std::string("observer.").size());
@@ -155,9 +164,16 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
 
   if (field == "run.schema_version") {
     std::uint64_t version = 0;
-    if (!ParseUnsigned64(value, &version) || version < 1 || version > 2)
+    if (!ParseUnsigned64(value, &version) || version < 1 || version > 3)
       return invalidValue();
     o->inputSchemaVersion = static_cast<unsigned>(version);
+    return Core::Status::OK();
+  }
+  if (section == "swcme") {
+    SwcmeAssignment assignment;
+    assignment.key = key;
+    assignment.value = value;
+    o->swcmeAssignments.push_back(assignment);
     return Core::Status::OK();
   }
   if (field == "run.intent") {
@@ -446,6 +462,10 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     o->outputDirectory = value;
   } else if (field == "output.prefix") {
     o->outputPrefix = value;
+  } else if (field == "output.initialization_mesh_tecplot_file") {
+    o->initializationMeshTecplotFile = value;
+  } else if (field == "output.initialization_parker_line_tecplot_file") {
+    o->initializationParkerLineTecplotFile = value;
   } else if (field == "storage.magnetic_gradient") {
     if (!ParseBool(value, &o->storeMagneticGradient)) return invalidValue();
   } else if (field == "storage.velocity_gradient") {
@@ -627,6 +647,8 @@ Core::Status ParseConfigurationText(
     if (!status.ok())
       return Invalid("line " + std::to_string(lineNumber) + ": " + status.message);
     if (qualified == "run.schema_version") schemaSeen = true;
+    if (section == "swcme" && !candidate.swcmeAssignments.empty())
+      candidate.swcmeAssignments.back().line = lineNumber;
   }
   if (!schemaSeen) return Invalid("missing required run.schema_version");
   // C01 distinguishes file input from typed coupled construction.  A coupled
@@ -657,6 +679,240 @@ Core::Status ParseConfigurationText(
         return Invalid("schema version 2 is missing required key '" +
                        std::string(required) + "'");
     }
+  }
+  if (candidate.inputSchemaVersion >= 3) {
+    if (sections.count("swcme") == 0)
+      return Invalid("schema version 3 requires a complete [swcme] section");
+    // Schema 3 is the no-assumptions production surface.  Every application-
+    // owned value is present even if its selected mode makes it inactive; this
+    // prevents a later mode edit from reviving a C++ default that never
+    // appeared in the reviewed input deck.
+    const char* requiredFields[] = {
+        "run.schema_version", "run.intent", "run.transport",
+        "run.time_step_s", "run.maximum_time_steps", "run.campaign_seed",
+        "run.background_cadence_steps", "run.injection_cadence_steps",
+        "domain.preset", "domain.inner_radius_m", "domain.inner_boundary",
+        "domain.outer_radius_mode", "domain.outer_radius_m",
+        "domain.outer_boundary", "domain.coordinate_frame",
+        "domain.origin_x_m", "domain.origin_y_m", "domain.origin_z_m",
+        "parker_spiral.origin_x_m", "parker_spiral.origin_y_m",
+        "parker_spiral.origin_z_m", "parker_spiral.initial_x_m",
+        "parker_spiral.initial_y_m", "parker_spiral.initial_z_m",
+        "parker_spiral.length_m", "parker_spiral.point_count",
+        "mesh.global_cell_size_m", "mesh.minimum_cell_size_m",
+        "mesh.cells_per_block_edge", "mesh.maximum_level",
+        "mesh.memory_budget_bytes", "mesh.block_overhead_bytes",
+        "mesh.solar.enabled", "mesh.solar.surface_cell_size_m",
+        "mesh.solar.transition_outer_radius_m", "mesh.solar.profile",
+        "mesh.solar.exponent", "mesh.tube.enabled",
+        "mesh.tube.source_longitude_rad",
+        "mesh.tube.source_colatitude_rad",
+        "mesh.tube.reference_radius_m", "mesh.tube.radius_at_reference_m",
+        "mesh.tube.radius_mode", "mesh.tube.center_cell_size_m",
+        "mesh.tube.transverse_profile", "mesh.tube.transverse_exponent",
+        "memory.base_cell_bytes", "memory.base_node_bytes",
+        "memory.block_structure_bytes",
+        "memory.communication_bytes_per_block", "memory.particle_bytes",
+        "memory.particles_per_cell", "memory.halo_fraction",
+        "memory.safety_margin_fraction", "background.provider",
+        "background.external_script", "background.parker.reference_radius_m",
+        "background.parker.radial_field_at_reference_t",
+        "background.parker.solar_rotation_rate_rad_per_s",
+        "background.parker.solar_wind_speed_m_per_s",
+        "background.parker.magnetic_polarity",
+        "background.parker.number_density_at_reference_m3",
+        "background.parker.temperature_k",
+        "background.parker.validity_cadence_s", "turbulence.authority",
+        "turbulence.delta_b_over_b", "turbulence.k_min_per_m",
+        "turbulence.k_max_per_m", "turbulence.spectral_index",
+        "turbulence.correlation_length_m", "turbulence.missing_data",
+        "turbulence.resonance_range", "turbulence.self_consistent_3d",
+        "transport.cell_crossing_fraction", "transport.diffusion_fraction",
+        "transport.focusing_fraction", "transport.cooling_fraction",
+        "transport.field_variation_fraction",
+        "transport.shock_crossing_fraction", "transport.minimum_substep_s",
+        "transport.maximum_substeps", "transport.pitch_angle_scheme",
+        "transport.perpendicular_diffusion",
+        "transport.constant_kappa_perpendicular_m2_per_s",
+        "transport.kappa_perpendicular_to_parallel_ratio",
+        "transport.drifts", "shock.authority", "source.enabled",
+        "source.physical_particle_rate_per_s",
+        "source.injection_efficiency", "source.minimum_energy_j",
+        "source.maximum_energy_j", "source.samples_per_step",
+        "species.amps_index", "species.name", "species.mass_kg",
+        "species.charge_c", "species.macroparticle_weight",
+        "storage.magnetic_gradient", "storage.velocity_gradient",
+        "storage.sampling_bytes_per_cell", "output.cadence_steps",
+        "output.checkpoint_cadence_steps", "output.directory",
+        "output.prefix", "output.initialization_mesh_tecplot_file",
+        "output.initialization_parker_line_tecplot_file",
+        "restart.input_path", "restart.output_path"};
+    for (const char* required : requiredFields)
+      if (assigned.count(required) == 0)
+        return Invalid("schema version 3 is missing required key '" +
+                       std::string(required) + "'");
+    const char* observerFields[] = {
+        "kind", "normalization", "position_x_m", "position_y_m",
+        "position_z_m", "follows_trajectory", "velocity_x_m_per_s",
+        "velocity_y_m_per_s", "velocity_z_m_per_s",
+        "collection_radius_m", "shell_radius_m", "cadence_s",
+        "energy_bins", "pitch_angle_bins", "minimum_energy_j",
+        "maximum_energy_j", "minimum_mu", "maximum_mu", "species",
+        "products"};
+    for (const std::string& presentSection : sections) {
+      if (presentSection.rfind("observer.", 0) != 0) continue;
+      for (const char* suffix : observerFields) {
+        const std::string required = presentSection + "." + suffix;
+        if (assigned.count(required) == 0)
+          return Invalid("schema version 3 is missing required key '" +
+                         required + "'");
+      }
+    }
+    if (candidate.injectionCadenceSteps != 1)
+      return Invalid("schema version 3 defines source.samples_per_step as "
+                     "an exact count at every simulation step; therefore "
+                     "run.injection_cadence_steps must equal 1");
+    if (candidate.background != BackgroundAuthority::AnalyticParker ||
+        candidate.turbulence != TurbulenceAuthority::Prescribed)
+      return Invalid("standalone schema version 3 requires analytic-parker "
+                     "background and prescribed turbulence; coupled SWMF "
+                     "hosts must use the parser-free typed interface");
+
+    std::vector<swcme::input3d::Assignment> assignments;
+    assignments.reserve(candidate.swcmeAssignments.size());
+    for (const SwcmeAssignment& raw : candidate.swcmeAssignments) {
+      swcme::input3d::Assignment assignment;
+      assignment.key = raw.key;
+      assignment.value = raw.value;
+      assignment.origin = "srcSEP3D input";
+      assignment.line = raw.line;
+      assignments.push_back(assignment);
+    }
+    const swcme::input3d::ResolveResult resolved =
+        swcme::input3d::Resolve(assignments);
+    if (!resolved.ok()) {
+      std::ostringstream message;
+      message << "invalid complete SWCME3D configuration key='"
+              << resolved.status.key << "'";
+      if (resolved.status.line != 0)
+        message << " line=" << resolved.status.line;
+      if (!resolved.status.message.empty())
+        message << ": " << resolved.status.message;
+      return Invalid(message.str());
+    }
+    const swcme3d::Params& model = resolved.configuration.model;
+    const swcme::sep::SpectrumConfig& spectrum =
+        resolved.configuration.spectrum;
+    if (candidate.intent != RunIntent::ShockInjection ||
+        candidate.shock != ShockAuthority::Swcme ||
+        !candidate.source.enabled)
+      return Invalid("schema version 3 requires shock-injection intent, "
+                     "shock.authority=swcme, and source.enabled=true");
+    if (model.shape != swcme3d::ShockShape::Sphere ||
+        model.region_mode != swcme::regions::Mode::ShockOnly ||
+        model.shock_acceleration_mode != swcme::acceleration::Mode::Source)
+      return Invalid("srcSEP3D currently supports canonical SWCME only as a "
+                     "spherical SHOCK_ONLY/SOURCE provider; other geometries "
+                     "would require a non-spherical AMPS crossing operator");
+    const char* retiredShockFields[] = {
+        "shock.active_from_s", "shock.active_until_s",
+        "shock.initial_radius_m", "shock.maximum_radius_m",
+        "shock.speed_m_per_s", "shock.compression_ratio"};
+    for (const char* field : retiredShockFields)
+      if (assigned.count(field) != 0)
+        return Invalid(std::string("schema version 3 rejects duplicate legacy '") +
+                       field + "'; [swcme] is authoritative");
+    if (assigned.count("source.spectral_index") != 0)
+      return Invalid("schema version 3 rejects source.spectral_index; "
+                     "canonical local SWCME compression owns the DSA index");
+
+    // The AMR Parker field, SWCME upstream state, species table, and source
+    // spectrum must describe the same physical system.  Reject discrepancies
+    // here rather than letting mesh refinement, transport, and injection use
+    // different winds or particles.
+    const double parkerSourceM = model.parker_source_radius_Rs *
+        swcme::constants::SOLAR_RADIUS_M;
+    // SWCME's B1AU_nT is the *total* Parker magnitude at one AU and at the
+    // configured reference colatitude.  The analytic background instead
+    // accepts the radial component at an arbitrary declared reference radius.
+    // First remove the one-AU azimuthal winding, then apply magnetic-flux
+    // conservation Br proportional to r^-2.  Using the configured reference
+    // radius inside the magnitude conversion would be physically wrong for
+    // every otherwise-valid deck whose reference is not exactly one AU.
+    const double oneAuWinding = model.solar_rotation_rate_rad_s *
+        (Core::Const::AU - parkerSourceM) /
+        (model.V_sw_kms * 1.0e3) * model.sin_theta;
+    const double radialFieldAtOneAuT = model.B1AU_nT * 1.0e-9 /
+        std::sqrt(1.0 + oneAuWinding * oneAuWinding);
+    const double radialScale =
+        Core::Const::AU / candidate.parker.referenceRadiusM;
+    const double canonicalRadialFieldT =
+        radialFieldAtOneAuT * radialScale * radialScale;
+    const bool sameBackground =
+        NearlyEqual(model.V_sw_kms * 1.0e3,
+                    candidate.parker.solarWindSpeedMPerS) &&
+        NearlyEqual(model.solar_rotation_rate_rad_s,
+                    candidate.parker.solarRotationRateRadPerS) &&
+        // RunConfiguration3D::Create derives parker.sourceRadiusM from the
+        // explicit domain inner radius.  Compare against that input here as
+        // well; comparing with the pre-factory C++ default would silently
+        // restrict complete schema-3 files to 20 solar radii.
+        NearlyEqual(parkerSourceM, candidate.innerRadiusM) &&
+        NearlyEqual(model.n1AU_cm3 * 1.0e6,
+                    candidate.parker.numberDensityAtReferenceM3) &&
+        NearlyEqual(canonicalRadialFieldT,
+                    candidate.parker.radialFieldAtReferenceT) &&
+        NearlyEqual(model.T_K, candidate.parker.temperatureK) &&
+        model.parker_radial_polarity == candidate.parker.magneticPolarity;
+    const bool sameSpecies =
+        NearlyEqual(spectrum.particle_mass_kg, candidate.species.massKg) &&
+        NearlyEqual(static_cast<double>(spectrum.charge_number) *
+                        Core::Const::e,
+                    candidate.species.chargeC);
+    const bool sameSource =
+        NearlyEqual(spectrum.kinetic_energy_min_MeV * 1.0e6 * Core::Const::e,
+                    candidate.source.minimumEnergyJ) &&
+        NearlyEqual(spectrum.kinetic_energy_max_MeV * 1.0e6 * Core::Const::e,
+                    candidate.source.maximumEnergyJ) &&
+        NearlyEqual(resolved.configuration.injection_efficiency,
+                    candidate.source.injectionEfficiency) &&
+        spectrum.normalization == swcme::sep::NormalizationMode::RelativeOnly;
+    const bool sameParkerGeometry =
+        NearlyEqual(model.sin_theta,
+                    std::sin(candidate.tubeColatitudeRad)) &&
+        NearlyEqual(model.solar_rotation_axis[0], 0.0) &&
+        NearlyEqual(model.solar_rotation_axis[1], 0.0) &&
+        NearlyEqual(model.solar_rotation_axis[2], 1.0);
+    if (!sameBackground)
+      return Invalid("[background.parker] differs from the canonical "
+                     "[swcme] wind, Parker field, density, or temperature");
+    if (!sameSpecies)
+      return Invalid("[species] mass or charge differs from canonical [swcme]");
+    if (!sameSource)
+      return Invalid("[source] energy/efficiency differs from canonical "
+                     "[swcme], or SWCME normalization is not relative_only");
+    if (!sameParkerGeometry)
+      return Invalid("[mesh.tube] colatitude or analytic +Z rotation axis "
+                     "differs from canonical [swcme] Parker geometry");
+
+    const long double representedPerEvent =
+        static_cast<long double>(candidate.source.physicalParticleRatePerS) *
+        static_cast<long double>(candidate.source.injectionEfficiency) *
+        static_cast<long double>(model.relative_source_weight_per_area) *
+        static_cast<long double>(candidate.requestedTimeStepS) *
+        static_cast<long double>(candidate.injectionCadenceSteps);
+    const double derivedWeight = static_cast<double>(
+        representedPerEvent /
+        static_cast<long double>(candidate.source.samplesPerStep));
+    if (!std::isfinite(derivedWeight) || derivedWeight <= 0.0 ||
+        !NearlyEqual(derivedWeight, candidate.species.macroparticleWeight))
+      return Invalid("species.macroparticle_weight must equal "
+                     "rate*efficiency*relative_source_weight*cadence_dt/"
+                     "source.samples_per_step");
+    candidate.swcmeConfigurationFingerprint =
+        resolved.configuration.fingerprint;
+    candidate.swcmeResolvedManifest =
+        resolved.configuration.normalized_manifest;
   }
   bool observerSectionSeen = false;
   for (const std::string& present : sections) {

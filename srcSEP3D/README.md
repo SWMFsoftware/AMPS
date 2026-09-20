@@ -14,6 +14,191 @@ physics is the Parker or focused transport equation in an analytic Parker or
 coupled SWMF/AWSoM background, with Alfvén-turbulence scattering and SWCME
 shock/source parameters.
 
+## Complete standalone initialization input (schema 3)
+
+New standalone shock-injection runs use the strict schema-3 deck:
+
+```sh
+./amps --input srcSEP3D/examples/sep3d_analytic_parker.in --dry-run
+./amps --input srcSEP3D/examples/sep3d_analytic_parker.in
+```
+
+The first command parses, canonically resolves, validates, fingerprints, and
+resource-preflights the request without allocating AMPS. The production command
+repeats the same parser on initialization; no cached parse result or generated
+configuration source is used. Unknown/duplicate sections or keys, missing
+fields, invalid enumerations, non-finite values, and inconsistent physical
+descriptions fail before mesh allocation.
+
+The file is INI syntax. Section/key names are case-insensitive, `#` begins a
+comment, and each assignment is `key = value`. Application dimensional keys
+are bare SI values with the unit in the key. Values inside `[swcme]` retain
+their unit token and are resolved by the canonical model-owned parser. Schema
+3 requires even mode-inactive application fields so a later mode edit cannot
+silently revive a C++ default. The only deliberately excluded model values are
+deprecated compatibility parameters that no longer affect SWCME physics.
+
+### Mesh, line, run, and resource syntax
+
+| Section | Required keys | Contract |
+|---|---|---|
+| `[run]` | `schema_version`, `intent`, `transport`, `time_step_s`, `maximum_time_steps`, `campaign_seed`, `background_cadence_steps`, `injection_cadence_steps` | Schema is `3`; intent is `shock-injection`; transport is `parker3d` or `focused3d`. Time step is positive SI seconds, seed and step counts are nonzero, and injection cadence must be exactly one because `samples_per_step` is a count for every simulation step. |
+| `[domain]` | `preset`, `inner_radius_m`, `inner_boundary`, `outer_radius_mode`, `outer_radius_m`, `outer_boundary`, `coordinate_frame`, `origin_x_m`, `origin_y_m`, `origin_z_m` | Presets are `solar`, `one-au`, or `mars`; outer mode is `preset` or `explicit`. The current heliocentric implementation requires the declared origin `(0,0,0)`, absorbing inner boundary, and a domain containing fixed observers and mesh references. |
+| `[parker_spiral]` | `origin_x_m`, `origin_y_m`, `origin_z_m`, `initial_x_m`, `initial_y_m`, `initial_z_m`, `length_m`, `point_count` | Finite diagnostic/refinement centreline. The origin equals the domain origin; the initial point lies on the inner sphere and matches the tube longitude/colatitude. Length is positive arc length and count includes both endpoints. |
+| `[mesh]` | `global_cell_size_m`, `minimum_cell_size_m`, `cells_per_block_edge`, `maximum_level`, `memory_budget_bytes`, `block_overhead_bytes` | Global/floor resolution, AMPS block shape, realizable AMR depth, and pre-allocation resource ceiling. |
+| `[mesh.solar]` | `enabled`, `surface_cell_size_m`, `transition_outer_radius_m`, `profile`, `exponent` | Resolution at the Sun and its radial degradation to the global value. Profiles are `linear`, `power-law`, or `smoothstep`; exponent is positive. |
+| `[mesh.tube]` | `enabled`, `source_longitude_rad`, `source_colatitude_rad`, `reference_radius_m`, `radius_at_reference_m`, `radius_mode`, `center_cell_size_m`, `transverse_profile`, `transverse_exponent` | Parker-centreline location, physical/angular tube radius, centre resolution, and degradation in the perpendicular plane. Radius mode is `physical-constant` or `constant-angular-width`; profile choices match `[mesh.solar]`. |
+| `[memory]` | `base_cell_bytes`, `base_node_bytes`, `block_structure_bytes`, `communication_bytes_per_block`, `particle_bytes`, `particles_per_cell`, `halo_fraction`, `safety_margin_fraction` | Explicit build-dependent coefficients used by the allocation-free memory preflight; fractions are finite and nonnegative. |
+
+The near-Sun interpolation is
+
+\[
+h_\mathrm{sun}=h_\mathrm{surface}+P(s)
+(h_\mathrm{global}-h_\mathrm{surface}),\qquad
+s=\frac{r-r_\mathrm{in}}{r_\mathrm{transition}-r_\mathrm{in}},
+\]
+
+with `s` clamped to `[0,1]`. The tube uses the same profile with normalized
+transverse arc distance. In constant-angular-width mode its radius is
+`radius_at_reference_m*r/reference_radius_m`. The finer of radial and tube
+requests wins, then the result is clamped between the declared minimum and
+global cell sizes. The same function drives dry-run planning, the standalone
+octree tests, and AMPS `localResolution()`.
+
+### Background, transport, source, and particle syntax
+
+| Section | Required keys | Contract |
+|---|---|---|
+| `[background]` | `provider`, `external_script` | Standalone schema 3 requires `analytic-parker` and `external_script = false`. A coupled SWMF host uses the parser-free typed interface instead. |
+| `[background.parker]` | `reference_radius_m`, `radial_field_at_reference_t`, `solar_rotation_rate_rad_per_s`, `solar_wind_speed_m_per_s`, `magnetic_polarity`, `number_density_at_reference_m3`, `temperature_k`, `validity_cadence_s` | Complete analytic Parker state in SI. Wind, rotation, source radius, field normalization, density, temperature, and polarity must agree with `[swcme]`. |
+| `[turbulence]` | `authority`, `delta_b_over_b`, `k_min_per_m`, `k_max_per_m`, `spectral_index`, `correlation_length_m`, `missing_data`, `resonance_range`, `self_consistent_3d` | Schema 3 standalone authority is `prescribed`; self-consistent 3-D is false. Missing-data policy is `fail` or `ballistic`; resonance policy is `reject` or `power-law-extension`. |
+| `[transport]` | `cell_crossing_fraction`, `diffusion_fraction`, `focusing_fraction`, `cooling_fraction`, `field_variation_fraction`, `shock_crossing_fraction`, `minimum_substep_s`, `maximum_substeps`, `pitch_angle_scheme`, `perpendicular_diffusion`, `constant_kappa_perpendicular_m2_per_s`, `kappa_perpendicular_to_parallel_ratio`, `drifts` | Positive timestep limiters. Pitch scheme is `reflecting-milstein` or `reflecting-euler-maruyama`. Perpendicular mode is `none`, `constant`, or `constant-ratio`; drift is `none`, `gradient-b`, `curvature`, or `gradient-curvature`. Selected extensions require their positive coefficient/storage. |
+| `[shock]` | `authority` | Must be `swcme`. Schema 3 rejects the retired constant-radius/speed/compression surrogate fields. |
+| `[source]` | `enabled`, `physical_particle_rate_per_s`, `injection_efficiency`, `minimum_energy_j`, `maximum_energy_j`, `samples_per_step` | Source is enabled. Rate is the physical seed rate before efficiency and patch partition; energies, efficiency, and exact global computational count are positive. No free spectral index is accepted: each patch's canonical compression ratio determines its DSA slope. |
+| `[species]` | `amps_index`, `name`, `mass_kg`, `charge_c`, `macroparticle_weight` | Current reviewed contract is exactly one index-zero proton. Mass and charge must match both AMPS and `[swcme]`; base weight is derived by the conservation identity below. |
+| `[storage]` | `magnetic_gradient`, `velocity_gradient`, `sampling_bytes_per_cell` | Explicit associated-data layout. Required transport choices may force a gradient on before the layout fingerprint freezes. |
+
+For schema 3 the base AMPS weight must satisfy
+
+\[
+W_0=\frac{\dot N_\mathrm{seed}\,\epsilon\,
+w_\mathrm{surface}\,\Delta t}{N_\mathrm{macro}},
+\]
+
+where `physical_particle_rate_per_s` is \(\dot N_\mathrm{seed}\), the application
+and canonical SWCME injection efficiencies are identical, canonical
+`shock.relative_source_weight_per_area` is \(w_\mathrm{surface}\),
+`run.time_step_s` is \(\Delta t\), and `source.samples_per_step` is
+\(N_\mathrm{macro}\). Injection cadence is one, so no hidden cadence multiplier
+exists. The parser rejects a mismatched `species.macroparticle_weight`.
+
+At an active boundary, the runtime assigns exactly `samples_per_step` over all
+active SWCME surface patches. It first reserves one weighted representative for
+each nonzero patch, then apportions the remainder by physical patch weight with
+a deterministic largest-remainder rule and stable source-ID tie-break. If the
+requested count is smaller than the active patch count, initialization fails;
+it never drops a physical patch. Each patch's individual AMPS weight correction
+is its represented physical population divided by its exact assigned count, so
+integer apportionment does not alter total physical number.
+
+### Observer and output syntax
+
+Every `[observer.ID]` requires all of these fields:
+
+| Fields | Meaning |
+|---|---|
+| `kind`, `normalization` | Kind is `fixed-cartesian`, `fixed-heliographic`, `moving-cartesian`, `spherical-shell`, or `field-connected`; normalization is `represented-particles` or `differential-intensity`. |
+| `position_x_m`, `position_y_m`, `position_z_m`, `follows_trajectory` | Initial observer location and explicit trajectory choice. A fixed observer must lie inside the heliocentric shell. |
+| `velocity_x_m_per_s`, `velocity_y_m_per_s`, `velocity_z_m_per_s` | Cartesian trajectory velocity; explicit even for a fixed observer. |
+| `collection_radius_m`, `shell_radius_m` | Positive spatial acceptance geometry. |
+| `cadence_s`, `energy_bins`, `pitch_angle_bins` | Positive cadence/counts; cadence must be an integer multiple of the simulation step. |
+| `minimum_energy_j`, `maximum_energy_j`, `minimum_mu`, `maximum_mu` | Energy and pitch-cosine acceptance with ordered bounds and `-1 <= mu <= 1`. |
+| `species`, `products` | Comma-separated AMPS species indices (currently only `0`) and requested product names. |
+
+`[output]` requires `cadence_steps`, `checkpoint_cadence_steps`, `directory`,
+`prefix`, `initialization_mesh_tecplot_file`, and
+`initialization_parker_line_tecplot_file`. `[restart]` requires `input_path` and
+`output_path`; the literal `none` selects a fresh run. Output/restart relocation
+does not change the physics fingerprint, while every mesh, observer, source,
+species, and canonical SWCME input does.
+
+After final AMR refinement and decomposition, the initialization stage writes
+the actual distributed AMPS tree to `initialization_mesh_tecplot_file` and a
+rank-zero ordered Parker-centreline zone to
+`initialization_parker_line_tecplot_file`. The line contains arc length,
+Cartesian position, heliocentric radius, and requested resolution, all with SI
+unit-bearing variable names. Both paths are mandatory and write failures are
+fatal.
+
+### Complete canonical `[swcme]` syntax
+
+The common model keys are the same unit-aware fields used by srcSEP:
+
+| Group | Required keys |
+|---|---|
+| Scenario/ambient | `preset`; `ambient.wind_speed`, `ambient.density_1au`, `ambient.magnetic_field_1au`, `ambient.proton_temperature`, `ambient.adiabatic_index`, `ambient.alpha_to_proton_ratio`, `ambient.electron_temperature`, `ambient.alpha_temperature`, `ambient.thermodynamic_closure` |
+| Parker/CME | `parker.radial_polarity`, `parker.sin_theta`, `parker.source_radius`, `parker.solar_rotation_rate_rad_per_s`; `cme.kinematics`, `cme.launch_radius`, `cme.launch_speed`, `cme.drag_coefficient`, `cme.extrapolation` |
+| Shock/regions | `shock.region_mode`, `shock.acceleration_mode`, `shock.relative_source_weight_per_area`; `geometry.sheath_thickness_1au`, `geometry.ejecta_thickness_1au`; all three `smoothing.*_width_1au` keys; `sheath.ramp_power`, `sheath.leading_edge_speed_factor`, `ejecta.density_factor`, `ejecta.speed_factor` |
+| Event/source | `event.launch_epoch`, `event.valid_from`, `event.valid_until`; `source.particle_mass`, `source.charge_number`, `source.energy_min`, `source.energy_max`, `source.reference_energy`, `source.injection_efficiency`, `source.normalization`, `source.reference_intensity_si` |
+
+The genuinely three-dimensional keys are all required:
+
+```ini
+geometry.shape = sphere
+geometry.axis_ratio_y = 1
+geometry.axis_ratio_z = 1
+geometry.half_width_rad = 1.5707963267948966
+geometry.cme_direction_x = 1
+geometry.cme_direction_y = 0
+geometry.cme_direction_z = 0
+geometry.solar_rotation_axis_x = 0
+geometry.solar_rotation_axis_y = 0
+geometry.solar_rotation_axis_z = 1
+surface.theta_intervals = 13
+surface.phi_points = 24
+```
+
+`cme.kinematics = data_driven` additionally requires both `cme.data_times` and
+`cme.data_radii`; the pair is forbidden otherwise. The canonical resolver
+validates all units and model combinations, then emits a normalized manifest
+and fingerprint. The standalone AMPS crossing operator is currently spherical,
+so schema 3 deliberately accepts only `geometry.shape = sphere`,
+`shock.region_mode = shock_only`, and `shock.acceleration_mode = source`.
+Ellipsoid or SSE input is rejected rather than approximated by a sphere.
+`source.normalization` must be `relative_only` because the application-owned
+physical rate supplies absolute population normalization.
+
+The resolved SWCME and application descriptions must also agree on Parker wind,
+rotation, source radius, reference-latitude field normalization, +Z rotation
+axis, density, temperature, polarity, particle mass/charge, source energies,
+and injection efficiency. Before AMPS allocates its mesh, the provider evaluates
+the complete surface at `event.valid_from`, solves every canonical MHD shock
+state, validates every source patch, and proves the requested exact particle
+count can represent all active patches. A delayed valid epoch is allowed and
+the provider remains inactive before it; an invalid surface or empty source is
+not.
+
+Here SWCME's `ambient.magnetic_field_1au` is total magnitude at one AU and
+`parker.sin_theta`, whereas the analytic provider accepts radial field at the
+application's arbitrary `background.parker.reference_radius_m = r_ref`. The
+required value is therefore
+
+\[
+B_r(r_\mathrm{ref})=
+\frac{|B|(1\,\mathrm{AU})}
+{\sqrt{1+[\Omega(1\,\mathrm{AU}-r_0)\sin\theta/V_\mathrm{sw}]^2}}
+\left(\frac{1\,\mathrm{AU}}{r_\mathrm{ref}}\right)^2.
+\]
+
+The polarity is checked separately. This conversion permits any physically
+valid declared reference radius; it does not silently treat a total field at
+one AU as a radial field somewhere else.
+
+The authoritative, fully commented input is
+[`examples/sep3d_analytic_parker.in`](examples/sep3d_analytic_parker.in).
+Schemas 1 and 2 remain available only for existing transport campaigns; schema
+3 is the no-hidden-default initialization path described here.
+
 ## B01 source-distribution baseline
 
 The 3-D application is independently classified by

@@ -7,6 +7,143 @@ providers, SWCME, or an SWMF coupling.  The source also contains the
 self-consistent Alfvén-turbulence subsystem, including integrated and
 wave-number-resolved representations and particle-wave coupling.
 
+## Complete initialization input (schema 2)
+
+Use the initialization contract on every new standalone run:
+
+```sh
+./amps --input srcSEP/examples/sep_parker_mesh.in
+```
+
+The file is parsed and validated before the canonical SWCME model, MPI, the
+AMPS mesh, field lines, particle weights, or output writers are initialized.
+Parsing is strict INI syntax: section and key names are case-insensitive,
+comments start with `#`, and every non-comment assignment is `key = value`.
+Duplicate sections, duplicate keys, unknown fields, missing fields, empty
+values, non-finite numbers, and invalid cross-field combinations are fatal.
+All application-owned dimensional values are bare SI numbers whose unit is in
+the key. The `[swcme]` values retain explicit units and are interpreted only by
+the canonical `src/models/swcme/swcme1d_input.hpp` resolver.
+
+Schema 1 remains readable for old campaigns. Schema 2 is the complete startup
+contract and requires every field below; it never obtains a time step, particle
+weight, observer, output path, or CME parameter from an unreviewed C++ default.
+
+### Application-owned sections
+
+| Section | Required keys | Meaning and validation |
+|---|---|---|
+| `[run]` | `schema_version`, `time_step_s` | `schema_version = 2`; the positive SI step is installed as the global and every allocated block's proton time step. |
+| `[injection]` | `macroparticles_per_step` | Positive integer no larger than `INT_MAX`; exactly this many computational particles are created at every active field-line source event unless the explicit legacy CLI count override is supplied. |
+| `[species]` | `particle_weight` | Positive finite base AMPS statistical weight, in represented physical protons per macroparticle. |
+| `[observer]` | `heliocentric_radius_m` | One-dimensional observer radius, inclusive between the inner and outer radii; it replaces the retained field-line sampling-radius list. |
+| `[output]` | `mesh_tecplot_file`, `field_line_tecplot_file` | Nonempty paths for the final distributed AMR tree and finite Parker line. A write failure aborts initialization. |
+| `[parker_spiral]` | `origin_x_m`, `origin_y_m`, `origin_z_m`, `initial_x_m`, `initial_y_m`, `initial_z_m`, `length_m`, `point_count` | Three-dimensional embedding of the 1-D transport line. `point_count >= 2`, maximum 10,000,000, includes both endpoints; `length_m` is positive arc length. The initial point must lie on `domain.inner_radius_m`. |
+| `[domain]` | `inner_radius_m`, `outer_radius_m` | Positive heliocentric shell radii with `outer > inner`; the AMR root is the cube enclosing the outer sphere. |
+| `[mesh]` | `global_cell_size_m`, `minimum_cell_size_m`, `maximum_level` | Positive target sizes with `global >= minimum`; AMR level is limited to 19. |
+| `[mesh.solar]` | `enabled`, `surface_cell_size_m`, `transition_outer_radius_m`, `profile`, `exponent` | Near-Sun resolution. Profiles are `linear`, `power-law`, or `smoothstep`; exponent is positive. An enabled profile runs from the surface size at the inner radius to the global size at the transition radius. |
+| `[mesh.tube]` | `enabled`, `reference_radius_m`, `radius_at_reference_m`, `radius_mode`, `center_cell_size_m`, `transverse_profile`, `transverse_exponent` | Parker-tube resolution in the plane perpendicular to the line. Radius mode is `physical-constant` or `constant-angular-width`; profile names match the solar profile. |
+| `[background.parker]` | `solar_wind_speed_m_per_s`, `solar_rotation_rate_rad_per_s` | Positive wind speed and nonnegative rotation rate used by both line geometry and refinement. They must exactly match the canonically resolved SWCME wind and rotation. |
+
+Boolean values accept `true/false`, `yes/no`, or `on/off`. Output filenames and
+all physical values enter the initialization fingerprint. Command-line SWCME
+overrides retain their documented higher precedence. The particle-count CLI
+aliases override `macroparticles_per_step` only when explicitly present.
+
+The near-Sun requested size is
+
+\[
+h_\mathrm{sun}(r)=h_\mathrm{surface}+
+P\!\left(\frac{r-r_\mathrm{in}}{r_\mathrm{transition}-r_\mathrm{in}}\right)
+(h_\mathrm{global}-h_\mathrm{surface}),
+\]
+
+where the profile argument is clamped to `[0,1]`. The transverse tube law uses
+the same interpolation with normalized Parker-line distance
+`d_perpendicular / tube_radius(r)`. Constant-angular-width mode uses
+`tube_radius(r)=radius_at_reference_m*r/reference_radius_m`. In overlap regions
+the finer of the solar and tube requests wins, followed by the declared global
+minimum/maximum clamp.
+
+### Canonical `[swcme]` section
+
+Every physically effective SWCME1D field is mandatory. The application only
+retains the raw key, value, and line number; the canonical resolver owns unit
+conversion, preset expansion, validation, the normalized manifest, and the
+model fingerprint.
+
+| Group | Required keys |
+|---|---|
+| Scenario and ambient wind | `preset`; `ambient.wind_speed`, `ambient.density_1au`, `ambient.magnetic_field_1au`, `ambient.proton_temperature`, `ambient.adiabatic_index`, `ambient.alpha_to_proton_ratio`, `ambient.electron_temperature`, `ambient.alpha_temperature`, `ambient.thermodynamic_closure` |
+| Parker field | `parker.radial_polarity`, `parker.sin_theta`, `parker.source_radius` |
+| CME kinematics | `cme.kinematics`, `cme.launch_radius`, `cme.launch_speed`, `cme.drag_coefficient`, `cme.extrapolation` |
+| Shock/source mode | `shock.region_mode`, `shock.acceleration_mode`, `shock.relative_source_weight_per_area` |
+| Region geometry | `geometry.sheath_thickness_1au`, `geometry.ejecta_thickness_1au`, `smoothing.shock_width_1au`, `smoothing.leading_edge_width_1au`, `smoothing.trailing_edge_width_1au` |
+| Sheath/ejecta closure | `sheath.ramp_power`, `sheath.leading_edge_speed_factor`, `ejecta.density_factor`, `ejecta.speed_factor` |
+| Event clock | `event.launch_epoch`, `event.valid_from`, `event.valid_until` |
+| Particle spectrum | `source.particle_mass`, `source.charge_number`, `source.energy_min`, `source.energy_max`, `source.reference_energy`, `source.injection_efficiency`, `source.normalization`, `source.reference_intensity_si` |
+
+`cme.kinematics` accepts the canonical ballistic, DBM, or data-driven modes.
+Data-driven mode additionally requires both `cme.data_times` and
+`cme.data_radii`; those keys are forbidden for the other modes. The 1-D AMPS
+source supports `source.normalization = relative_only`; calibrated reference
+intensity is rejected because no adapter yet maps it to the swept-volume
+source. Deprecated SWCME compatibility values that have no effect on the
+canonical physics are intentionally not accepted as configuration.
+
+The startup gate also requires
+`parker.source_radius == domain.inner_radius_m`. The example therefore uses
+`20 Rs = 1.3914e10 m`. The SWCME wind and rotation must match
+`[background.parker]`, so mesh winding, background evaluation, and CME
+transport cannot silently use different Parker spirals. The sine of the
+colatitude computed from `parker_spiral.initial_*_m -
+parker_spiral.origin_*_m` must also equal canonical `parker.sin_theta`.
+
+SWCME defines `ambient.magnetic_field_1au` as total field magnitude at that
+reference latitude. srcSEP therefore derives, rather than guesses, the signed
+radial normalization
+
+\[
+B_r(1\,\mathrm{AU})=
+\frac{p\,|B|(1\,\mathrm{AU})}
+{\sqrt{1+[\Omega(1\,\mathrm{AU}-r_0)\sin\theta/V_\mathrm{sw}]^2}},
+\]
+
+where `p = parker.radial_polarity`. The field-line and AMPS-cell Parker fields
+use this same signed value with the exact radial `r^-2` law; polarity changes
+field direction but never changes the refinement centreline.
+
+### Particle normalization and initialization products
+
+For an active source event, the existing physical source calculation first
+computes the represented proton count \(N_\mathrm{physical}\) from the selected
+shock model, swept flux-tube volume, density, abundance, and canonical injection
+efficiency. Schema 2 then creates exactly
+`injection.macroparticles_per_step` particles and assigns the individual AMPS
+weight correction
+
+\[
+C_w=\frac{N_\mathrm{physical}/W_0}{N_\mathrm{macro}},
+\]
+
+where `W0 = species.particle_weight`. Thus the requested computational count
+does not change the physical source. A zero physical source creates zero
+particles. The historical min/max source-count heuristic and the beginning-of-
+line unit-weight override are used only by legacy schema 1.
+
+After final AMR refinement and decomposition, initialization writes:
+
+- `output.mesh_tecplot_file` through AMPS' distributed mesh writer; and
+- `output.field_line_tecplot_file` as one ordered Tecplot POINT zone with
+  `arc_length_m`, Cartesian position, heliocentric radius, and requested cell
+  size.
+
+The line writer constructs and validates the full geometry before opening its
+destination, preventing an invalid run from leaving a plausible partial file.
+The complete annotated reference input is
+[`examples/sep_parker_mesh.in`](examples/sep_parker_mesh.in). Focused parser,
+geometry, and Tecplot checks are run by `test/run_initialization_tests.sh`.
+
 ## B01 source-distribution baseline
 
 `srcSEP` is distributed as source, documentation, reviewed validation inputs,

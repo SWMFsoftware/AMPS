@@ -1,4 +1,4 @@
-# srcSEP file-driven Parker and mesh initialization, schema version 1.
+# srcSEP complete startup configuration, schema version 2.
 #
 # Every dimensional key includes its SI unit.  The parser rejects unknown,
 # duplicate, and omitted keys before MPI/AMPS initialization.  The finite line
@@ -6,7 +6,29 @@
 # support mesh.
 
 [run]
-schema_version = 1
+schema_version = 2
+# The PIC clock step is explicit.  It is installed on every proton block and
+# is never re-derived from the AMR cell size when this schema is active.
+time_step_s = 1
+
+[injection]
+# Exact macroparticle count per active field-line source event.  The individual
+# AMPS weight correction carries the physical-rate/count ratio.
+macroparticles_per_step = 1000
+
+[species]
+# Number of represented physical protons in the base AMPS macroparticle.  The
+# shock-source correction multiplies this value without changing conservation.
+particle_weight = 1e30
+
+[observer]
+# srcSEP's retained observer is a radius on its one-dimensional field line.
+heliocentric_radius_m = 1.495978707e11
+
+[output]
+# Both products are emitted after final mesh pruning/decomposition.
+mesh_tecplot_file = srcsep-initialization-mesh.dat
+field_line_tecplot_file = srcsep-initialization-field-line.dat
 
 [parker_spiral]
 # Origin of the Parker geometry and first point on the inner boundary sphere.
@@ -59,4 +81,53 @@ transverse_exponent = 1
 [background.parker]
 # These values determine both the field-line winding and the magnetic tangent.
 solar_wind_speed_m_per_s = 400000
-solar_rotation_rate_rad_per_s = 2.865e-6
+# SWCME1D uses its documented Carrington sidereal rate as canonical physics;
+# this application-owned mesh value must match it exactly.
+solar_rotation_rate_rad_per_s = 2.86533e-6
+
+[swcme]
+# Complete canonical SWCME1D assignment layer.  Units are interpreted only by
+# src/models/swcme/swcme1d_input.hpp.  Every physically effective key is
+# explicit; there are no hidden CME/source defaults in a version-2 run.
+preset = fast
+ambient.wind_speed = 400 km/s
+ambient.density_1au = 6 cm^-3
+ambient.magnetic_field_1au = 5 nT
+ambient.proton_temperature = 1.2e5 K
+ambient.adiabatic_index = 1.6666666666666667
+ambient.alpha_to_proton_ratio = 0.04
+ambient.electron_temperature = 1.2e5 K
+ambient.alpha_temperature = 4.8e5 K
+ambient.thermodynamic_closure = proton_only
+parker.radial_polarity = 1
+parker.sin_theta = 1
+parker.source_radius = 20 Rs
+cme.kinematics = dbm
+cme.launch_radius = 20 Rs
+cme.launch_speed = 1900 km/s
+cme.drag_coefficient = 8e-8 1/km
+cme.extrapolation = outside_time
+shock.region_mode = shock_only
+shock.acceleration_mode = source
+shock.relative_source_weight_per_area = 1
+geometry.sheath_thickness_1au = 0.12 AU
+geometry.ejecta_thickness_1au = 0.22 AU
+smoothing.shock_width_1au = 0.010 AU
+smoothing.leading_edge_width_1au = 0.020 AU
+smoothing.trailing_edge_width_1au = 0.030 AU
+sheath.ramp_power = 2
+sheath.leading_edge_speed_factor = 1.12
+ejecta.density_factor = 0.50
+ejecta.speed_factor = 0.80
+event.launch_epoch = 0 s
+event.valid_from = 0 s
+event.valid_until = 604800 s
+source.particle_mass = 1 mp
+source.charge_number = 1
+source.energy_min = 0.1 MeV
+source.energy_max = 500 MeV
+source.reference_energy = 10 MeV
+source.injection_efficiency = 3.4e-4
+source.normalization = relative_only
+# Required for a complete auditable input but inactive under relative_only.
+source.reference_intensity_si = 1 si

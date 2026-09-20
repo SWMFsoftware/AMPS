@@ -24,6 +24,16 @@ struct Vec3 {
       : x(xValue), y(yValue), z(zValue) {}
 };
 
+// Raw provider assignment transported to the canonical SWCME1D resolver.
+// This startup layer deliberately does not interpret model keys or units: the
+// model-owned resolver remains the single scientific authority.  Keeping line
+// provenance here lets a malformed physical value identify its input record.
+struct SwcmeAssignment {
+  std::string key;
+  std::string value;
+  std::size_t line = 0;
+};
+
 enum class RefinementProfile { Linear, PowerLaw, Smoothstep };
 enum class TubeRadiusMode { PhysicalConstant, ConstantAngularWidth };
 
@@ -32,6 +42,23 @@ enum class TubeRadiusMode { PhysicalConstant, ConstantAngularWidth };
 // remain on the one-dimensional PIC field-line representation.
 struct Configuration {
   unsigned schemaVersion = 1;
+
+  // Explicit numerical initialization.  Version 2 never derives either value
+  // from mesh resolution or an unrelated boundary source: those choices are
+  // campaign physics and must be supplied by the operator.
+  double timeStepS = 0.0;
+  std::uint64_t macroparticlesPerStep = 0;
+  double particleWeight = 0.0;  // represented physical protons per macro
+
+  // srcSEP samples a one-dimensional field line at a heliocentric radius.
+  // The radius is SI and is installed into the retained field-line sampler.
+  double observerHeliocentricRadiusM = 0.0;
+
+  // Initialization products are written only after the corresponding AMPS
+  // mesh/field line exists.  Explicit paths avoid an undocumented working-
+  // directory convention and are part of the startup fingerprint.
+  std::string meshTecplotFile;
+  std::string fieldLineTecplotFile;
 
   Vec3 parkerOriginM;
   Vec3 parkerInitialPointM;
@@ -59,10 +86,16 @@ struct Configuration {
   double tubeCenterCellSizeM = 0.0;
   RefinementProfile tubeProfile = RefinementProfile::Smoothstep;
   double tubeExponent = 1.0;
+
+  // A schema-v2 file supplies every active canonical SWCME setting.  The
+  // application forwards this layer unchanged to SW1DAdapter::Configure().
+  std::vector<SwcmeAssignment> swcmeAssignments;
 };
 
-// Parse a complete version-1 INI document. Unknown/duplicate sections and
-// keys are errors; no value is silently inherited from a production default.
+// Parse a complete version-1 or version-2 INI document.  Version 2 adds the
+// explicit numerical/source/observer/output/SWCME initialization contract.
+// Unknown or duplicate sections and keys are errors; no schema-required value
+// is silently inherited from a production default.
 Transport::Status ParseText(const std::string& text, Configuration* result);
 Transport::Status LoadFile(const std::string& path, Configuration* result);
 Transport::Status Validate(const Configuration& configuration);
@@ -81,6 +114,12 @@ std::string Fingerprint(const Configuration& configuration);
 // geometry while preserving each requested segment length to roundoff.
 Transport::Status BuildParkerLine(const Configuration& configuration,
                                   std::vector<Vec3>* points);
+
+// Write the finite one-dimensional transport mesh as a Tecplot ordered POINT
+// zone.  The writer validates/builds the complete curve before opening the
+// destination, so invalid physics never leaves a partial visualization file.
+Transport::Status WriteParkerLineTecplot(
+    const Configuration& configuration, const std::string& path);
 
 double TubeRadiusM(double heliocentricRadiusM,
                    const Configuration& configuration);

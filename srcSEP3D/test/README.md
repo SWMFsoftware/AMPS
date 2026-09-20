@@ -93,9 +93,9 @@ The runner adds
 | `BLD` | `BLD01` | `nm -u` confirms the standalone binary has no AMPS/MPI symbols |
 | `UTIL` | `UTIL02` | byte-exact shared-kernel reference record |
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
-| `R3D` | `R3D01`–`R3D07` | mover hook, requested-time loop, snapshot transaction, tick/events, source, observers, restart |
-| `CFG3D` | `CFG3D01`–`CFG3D07` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line schema, and proton-only AMPS binding |
-| `MSH3D` | `MSH3D01`–`MSH3D09` | resolution, tube geometry, balance, octree budget/ownership, presets, gradients |
+| `R3D` | `R3D01`–`R3D08` | mover hook, requested-time loop, snapshot transaction, tick/events, source, observers, restart, canonical initialization source |
+| `CFG3D` | `CFG3D01`–`CFG3D08` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line/schema-3 initialization, and proton-only AMPS binding |
+| `MSH3D` | `MSH3D01`–`MSH3D11` | resolution, tube geometry, balance, octree budget/ownership, presets, gradients, finite line, and initialization Tecplot output |
 | `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
 | `SNAP3D` | `SNAP3D01`–`SNAP3D08` | snapshot completeness, coupling conversion, atomicity, interpolation, batch/frame policy |
 | `TUR3D` | `TUR3D01`–`TUR3D04` | spectrum, AWSoM convention, resonance, missing-data policy |
@@ -268,6 +268,7 @@ python3 test/run_tests.py --suite r2 --rebuild \
 | `R3D05` | physical source number survives rounding/cap, policies are counted, and successive ticks use distinct identities |
 | `R3D06` | moving observer geometry, acceptance/uncertainty metadata, and commit-only accumulator reset are enforced |
 | `R3D07` | schema-2 restart round-trips identities/layout, clocks/events, providers, shock, RNG tuple, ledgers, and sampling state |
+| `R3D08` | canonical schema-3 provider preflights the first valid source surface and allocates the exact global per-step particle count deterministically |
 
 ```bash
 python3 test/run_tests.py --suite improvements-r --rebuild \
@@ -297,6 +298,7 @@ env MAKEFLAGS="-j16" srcSEP3D/test/run_tests.py --all \
 | `CFG3D05` | composite profiles are monotone, tube width scales from its reference, all memory categories/levels report, and an impossible level cap fails |
 | `CFG3D06` | schema version 2 requires the complete finite Parker line and rejects a source-inconsistent initial point |
 | `CFG3D07` | configuration and AMPS bind exactly one proton at index zero; count, index, name, mass, charge, observer, and fingerprint negative controls fail closed |
+| `CFG3D08` | complete schema-3 SWCME input resolves while a missing canonical field, inconsistent weight, or skipped-step injection fails closed |
 
 ```bash
 python3 test/run_tests.py --suite improvements-c --rebuild \
@@ -316,6 +318,8 @@ python3 test/run_tests.py --suite improvements-c --rebuild \
 | `MSH3D07` | five octrees reproduce exact leaf/memory counts and reject non-owner writes |
 | `MSH3D08` | Earth and Mars domains enclose exact declared outer spheres |
 | `MSH3D09` | mixed coarse/fine gradients are linear-exact and rank-deficient stencils fail |
+| `MSH3D10` | finite Parker line preserves configured count/arc length and origin-relative refinement |
+| `MSH3D11` | initialization Parker line is deterministic unit-labeled Tecplot data |
 
 ```bash
 python3 test/run_tests.py --suite phase-m --rebuild \
@@ -463,10 +467,10 @@ equations, algorithms, case roles, and evidence schemas.
 | `r0` | R0 source/ABI/production gates plus RUN3D01, LAY01, and BLD01 |
 | `r1` | canonical shared-archive audit, relocated SWCME suite, and frozen common kernels |
 | `r2` | LIFE3D01–LIFE3D04 immutable configuration and lifecycle gates |
-| `improvements-c` | CFG3D01–CFG3D07 production configuration, preflight, finite-line, and species-binding gates |
-| `improvements-r` | R3D01–R3D07 production runtime integration gates |
+| `improvements-c` | CFG3D01–CFG3D08 production configuration, preflight, finite-line/schema-3 initialization, and species-binding gates |
+| `improvements-r` | R3D01–R3D08 production runtime integration gates |
 | `improvements-v` | V1D01–05 controlled physics, V2D01 true parity, and V5D01 governance |
-| `phase-m` | MSH3D01–MSH3D09 mesh/storage gates |
+| `phase-m` | MSH3D01–MSH3D11 mesh/storage and initialization-output gates |
 | `phase-b` | BGP3D01–06 and SNAP3D01–08 background/snapshot gates |
 | `phase-t` | TUR3D01–04, COEF3D01–02, and COEF3D06 turbulence/coefficient gates |
 | `phase-p` | COEF3D03–05, PRK3D01–08, FTE3D01–07, RNG3D01–03 |
@@ -550,7 +554,8 @@ invoke that exact linked callback, following the srcSEP pattern.
 | unknown test/group | use `--list`; unknown selectors are usage errors |
 | report missing after a C++ test | treat as ERROR; inspect verbose subprocess output |
 
-`CFG3D06`, `CFG3D07`, and `MSH3D10` are routine C++ entries in the runner manifest.
+`CFG3D06`–`CFG3D08`, `MSH3D10`–`MSH3D11`, and `R3D08` are routine C++ entries
+in the runner manifest.
 `CFG3D06` uses live negative controls for an omitted version-2 key and an
 initial point inconsistent with the inner sphere. `MSH3D10` constructs the
 configured number of vertices, sums every segment to the requested arc length,
@@ -559,3 +564,8 @@ coordinate zero. `CFG3D07` tests the positive index-zero proton binding plus
 rejected AMPS species count, configured index, species name, mass, signed
 charge, observer index, and changed fingerprint. These extend the gates; none
 of the earlier CFG3D/MSH3D thresholds or negative controls was relaxed.
+`CFG3D08` exercises complete canonical input and three live schema-3 negative
+controls. `MSH3D11` creates, verifies, and removes a real Tecplot product.
+`R3D08` constructs the canonical provider, checks delayed activation and the
+full surface, and proves deterministic exact-count allocation plus downstream
+no-cap behavior.
