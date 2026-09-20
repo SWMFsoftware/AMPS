@@ -9,7 +9,12 @@ src_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 output_dir=$(mktemp -d "${TMPDIR:-/tmp}/srcsep-cv02-cv05.XXXXXX")
 trap 'rm -rf "$output_dir"' EXIT HUP INT TERM
 
+# Use the repository root as the public include root, matching production's
+# <src/models/sep_common/...> spelling.  The validation source includes srcSEP
+# headers relatively, but those headers must not depend on the caller's CWD or
+# on a previously configured AMPS build directory to find the canonical model.
 "${CXX:-c++}" -std=c++11 -Wall -Wextra -Werror -pedantic -O1 -g \
+  -I"$src_root/.." \
   -c "$src_root/validation/cases/controlled_transport_models.cpp" \
   -o "$output_dir/controlled_transport_models.o"
 test -s "$output_dir/controlled_transport_models.o"

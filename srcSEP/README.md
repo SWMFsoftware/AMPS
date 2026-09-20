@@ -502,6 +502,60 @@ rejected while `PIC::TimeStep()` is moving particles.
 See [BACKGROUND_STATE.md](BACKGROUND_STATE.md) for the data contract, update
 order, API, ownership rules, units, tests, and current limitations.
 
+## Stage 1–2 runtime correctness closure
+
+The common application entry point, `amps_time_step()`, now owns the only live
+`PICAdapter::Advance` call. It enters one immutable particle read phase, runs
+`PIC::TimeStep()`, ends that read phase, and then advances turbulence once with
+the previous and current shock radii. Standalone `main.cpp` never performs a
+second turbulence transaction. This ordering applies equally to analytic,
+SWCME, and coupled-library execution and prevents shock injection, advection,
+reflection, cascade, and particle-wave exchange from being applied twice.
+
+Startup writes are also source-owned:
+
+- self-consistent integrated and spectral sources receive the local analytical
+  wave initializer;
+- prescribed and SWMF-read-only sources retain their provider values;
+- `swmf-initial-then-local` retains the imported generation until the explicit
+  one-time handoff copies it into locally owned turbulence state;
+- the legacy radial density initializer runs only for the analytic background;
+  SWCME and SWMF plasma arrays are never overwritten; and
+- the standalone driver publishes a prepared SWCME generation only when SWCME
+  is the configured provider. Analytic and SWMF generations are prepared by the
+  common snapshot boundary.
+
+Native mover fixtures `FTE01`, `PARKER01`, and `PARKER02` now publish one
+background generation before dispatch and open `ParticleReadPhase` only after
+their temporary field-line data are installed. The scope closes before fixture
+restoration, so setup/cleanup remains mutable while every production mover call
+observes the same immutable generation. The source-only CV01 compile gate adds
+the repository root explicitly, resolving canonical
+`src/models/sep_common/...` headers independently of the caller's working
+directory or a stale AMPS build tree. The same explicit root is used by the
+CV02–CV12 and IV01–IV06 source compiles, so the complete controlled analytical
+portfolio has one detached-header contract.
+
+Run the focused Stage 1–2 boundary audit and numerical gates with:
+
+```sh
+make test-stage1-stage2-contracts
+make test-state-unit
+make test-turbulence-core-unit
+make test-cv01-unit
+```
+
+`test-cv01-unit` always performs its strict source compile. It reports the
+linked CV01 campaign as `SKIP` when `SEP_EXECUTABLE` is unavailable rather than
+substituting a standalone model and calling that native application evidence.
+
+The standalone driver obtains coefficient declarations through `sep.h`, which
+routes them to `src/models/sep_common` with
+`SRCSEP_SEP_COMMON_HEADER(sep_coefficient_registry.h)`. It must not include the
+retired `util/sep_coefficient_registry.h`: loading both physical headers in one
+translation unit produces duplicate `Provider`, `Ownership`, snapshot, and
+coefficient definitions even though their contents look identical.
+
 ## Step 15 scientific validation
 
 Step 15 adds four stable validation cases after the numerical architecture has

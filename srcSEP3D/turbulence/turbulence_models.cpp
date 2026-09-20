@@ -429,6 +429,50 @@ double NormalizedPowerLawSpectrum::AnalyticBandVarianceT2() const {
        std::pow(kMinPerM_, exponent));
 }
 
+Core::Status EvaluateParallelKappaGradient(
+    const ParallelKappaGradientStencil& stencil,
+    double* dKappaParallelDsMPerS) {
+  if (dKappaParallelDsMPerS == nullptr)
+    return Invalid("parallel-kappa gradient output pointer is null");
+  if (!std::isfinite(stencil.centerKappaM2PerS) ||
+      stencil.centerKappaM2PerS < 0.0 ||
+      !FinitePositive(stencil.stepM) ||
+      (stencil.hasMinus &&
+       (!std::isfinite(stencil.minusKappaM2PerS) ||
+        stencil.minusKappaM2PerS < 0.0)) ||
+      (stencil.hasPlus &&
+       (!std::isfinite(stencil.plusKappaM2PerS) ||
+        stencil.plusKappaM2PerS < 0.0))) {
+    return Invalid("parallel-kappa gradient stencil is non-finite or negative");
+  }
+  if (!stencil.hasMinus && !stencil.hasPlus)
+    return Invalid("parallel-kappa gradient has no usable neighbour");
+
+  // A centred difference is second order on a uniform local stencil.  A
+  // one-sided difference is reserved for a declared missing neighbour at a
+  // physical/partition boundary; it preserves the coefficient variation and
+  // is strictly safer than the former unconditional zero derivative.
+  if (stencil.hasMinus && stencil.hasPlus) {
+    *dKappaParallelDsMPerS =
+        (stencil.plusKappaM2PerS - stencil.minusKappaM2PerS) /
+        (2.0 * stencil.stepM);
+  }
+  else if (stencil.hasPlus) {
+    *dKappaParallelDsMPerS =
+        (stencil.plusKappaM2PerS - stencil.centerKappaM2PerS) /
+        stencil.stepM;
+  }
+  else {
+    *dKappaParallelDsMPerS =
+        (stencil.centerKappaM2PerS - stencil.minusKappaM2PerS) /
+        stencil.stepM;
+  }
+
+  if (!std::isfinite(*dKappaParallelDsMPerS))
+    return Invalid("parallel-kappa gradient overflowed");
+  return Core::Status::OK();
+}
+
 LocalScatteringCoefficients EvaluateLocalScattering(
     const TurbulenceSample& turbulence,
     const Background::BackgroundSample& background,

@@ -65,6 +65,7 @@ STANDALONE_GOALS := test-cli-unit test-state-unit test-geometry-source-unit \
                     test-swcme-configuration-unit \
                     test-d03-native-integration \
                     test-d03-runner-unit \
+                    test-stage1-stage2-contracts \
                     test-package-hygiene-unit \
                     print-layout-paths
 ifneq ($(filter $(STANDALONE_GOALS),$(MAKECMDGOALS)),)
@@ -201,8 +202,14 @@ audit-production-swcme: audit-production-shared-models
 # real production CLI; selector semantics are never reimplemented in Make.
 SEP_EXECUTABLE ?= ../amps
 
-.PHONY: test-cli-unit test-initialization-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-wp42-wp64-experimental test-wp59-wp64-native test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit test-iv01-iv06-unit test-xm01-xm03-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat test-swcme-relocation-unit test-sep-common-ownership-unit test-swcme-fail-closed-unit test-swcme-configuration-unit test-d03-native-integration test-d03-runner-unit test-package-hygiene-unit require-sep-executable test-cli test-list test-case \
+.PHONY: test-cli-unit test-initialization-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-wp42-wp64-experimental test-wp59-wp64-native test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit test-iv01-iv06-unit test-xm01-xm03-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat test-swcme-relocation-unit test-sep-common-ownership-unit test-swcme-fail-closed-unit test-swcme-configuration-unit test-d03-native-integration test-d03-runner-unit test-stage1-stage2-contracts test-package-hygiene-unit require-sep-executable test-cli test-list test-case \
 	test-group test-turbulence test-stress test-mpi test
+
+# Source-only audit for the Stage 1–2 integration boundaries.  It stays
+# separate from linked native tests so a detached review archive can still
+# prove single-owner calls, provider-aware initialization, and fixture guards.
+test-stage1-stage2-contracts:
+	@PYTHONDONTWRITEBYTECODE=1 python3 test/check_stage1_stage2_contracts.py
 
 # B01 is a release-tree check, not a srcSEP dependency.  Resolve the tool from
 # the enclosing AMPS root so the same target works when this makefile is copied
@@ -352,6 +359,7 @@ test-documentation-unit:
 # runs; its application-level comparison runs only when SEP_EXECUTABLE is
 # available. SWMF and observational evidence remain separate targets below.
 test-controlled-analytical:
+	@PYTHONDONTWRITEBYTECODE=1 python3 test/check_stage1_stage2_contracts.py
 	@set -e; for step in 1 6 7 8 9 11; do \
 		./test/run_step$${step}_tests.sh; \
 	done

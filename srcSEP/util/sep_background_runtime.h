@@ -15,6 +15,12 @@ namespace Background {
 // simulation-time origin.
 double SimulationTimeSeconds();
 
+// Resolve the background authority selected by the compiled coupling mode and
+// frozen run configuration.  Startup code uses this query before any local
+// initializer writes field-line plasma or turbulence storage; it must never
+// infer authority from whether a legacy array happens to contain zeroes.
+Provider ConfiguredProvider();
+
 // Build the fingerprint of background-affecting configuration.  Mover choice
 // is intentionally excluded: selecting Parker versus focused transport changes
 // the particle operator, never the solar-wind/IMF/shock/turbulence authority.

@@ -214,6 +214,21 @@ visible in batch logs instead of silently changing the requested physics.
 `AccountAdiabaticCoolingFlag` remain in `mover_state.cpp` because canonical
 coefficient/mover code still consumes them.
 
+## Stage 1–2 runtime ownership migration
+
+| Former behavior | Current owner and invariant |
+|---|---|
+| Standalone `main.cpp` advanced turbulence after `amps_time_step()` had already done so | `amps_time_step()` is the sole transaction owner for standalone and coupled execution; it advances exactly once after the immutable particle phase. |
+| Shock injection history existed only in the standalone driver | `main_lib.cpp` keeps provider-neutral previous/current shock radii at the common transaction boundary. |
+| `ModelInit::Init()` and a second wave initializer both wrote startup turbulence | Only self-consistent integrated/spectral sources receive the local initializer. Prescribed, SWMF-read-only, and SWMF-handoff inputs retain provider authority. |
+| The radial density helper overwrote every provider | It is restricted to the analytic provider; SWCME and SWMF plasma state is preserved. |
+| Native mover fixtures called production movers outside a snapshot read phase | `FTE01`, `PARKER01`, and `PARKER02` hold an immutable generation around mover calls and release it before restoring fixture data. |
+| Detached CV01 compilation depended on incidental include state | `run_cv01_tests.sh` supplies the canonical repository root explicitly and uses a disposable object directory. |
+
+The dependency-light enforcement command is
+`make test-stage1-stage2-contracts`; the numerical companion gates are
+`test-state-unit`, `test-turbulence-core-unit`, and `test-cv01-unit`.
+
 ## Verification
 
 Run the dependency-light migration and documentation gate:

@@ -23,6 +23,7 @@
 
 #include "tests.h"
 #include "amps2swmf.h"
+#include "util/sep_background_runtime.h"
 
 using namespace std;
 
@@ -191,7 +192,17 @@ bool ParkerModelMoverTest_const_plasma_field() {
   ptr=PB::GetNewParticle();
   PB::SetI(0,ptr);
 
-  for (int ntest=0;ntest<nTotalTests;ntest++) {
+  // The production coefficient providers reject mover entry unless the driver
+  // has frozen one immutable background generation.  Hold a single read phase
+  // for this long Monte-Carlo loop: the test changes only particle records,
+  // never provider-owned field-line state, so reacquiring it four million
+  // times would add overhead without strengthening the ownership contract.
+  {
+    SEP::Background::ParticleReadPhase backgroundRead =
+        SEP::Background::SnapshotStore::Instance().BeginParticleRead(
+            SEP::Background::SimulationTimeSeconds());
+
+    for (int ntest=0;ntest<nTotalTests;ntest++) {
     PB::SetVParallel(v_comp,ptr);
     PB::SetVNormal(v_comp,ptr);
     PB::SetFieldLineCoord(xParticleCoordinate,ptr); 
@@ -224,6 +235,7 @@ bool ParkerModelMoverTest_const_plasma_field() {
       SamplingBuffer(iSample)+=1.0;
       acceptedSamples++;
     } 
+    }
   }
 
   // Only the designated root rank writes the shared histogram.  The legacy
@@ -339,7 +351,17 @@ bool ParkerModelMoverTest_convection() {
     }
   }
 
-  for (int ntest=0;ntest<nTotalTests;ntest++) {
+  // Fixture mutations are complete before the read phase begins.  From this
+  // point until all production-mover calls return, publication of a new
+  // analytic/SWCME/SWMF snapshot is forbidden exactly as it is during
+  // PIC::TimeStep().  The nested scope ends the read phase before the original
+  // vertex values are restored below.
+  {
+    SEP::Background::ParticleReadPhase backgroundRead =
+        SEP::Background::SnapshotStore::Instance().BeginParticleRead(
+            SEP::Background::SimulationTimeSeconds());
+
+    for (int ntest=0;ntest<nTotalTests;ntest++) {
     s0=iSegment+rnd();
     PB::SetFieldLineCoord(s0,ptr);
 
@@ -432,6 +454,7 @@ bool ParkerModelMoverTest_convection() {
       PB::SetVNormal(vNormInit,ptr);
       SEP::ParticleMover_Parker(ptr,dtTotal,node);
     } 
+    }
   }
 
   //return the original parameters of the field line
@@ -520,8 +543,16 @@ bool FTE_Convectoin() {
     Vertex->SetPlasmaVelocity(SolarWindVelocity);
   }
 
+  // The focused-transport fixture uses temporary uniform vertex data, but its
+  // mover still consumes the published provider identity through the same
+  // coefficient path as production.  Enter the immutable phase only after the
+  // temporary data are installed and retain it through every mover call.
+  {
+    SEP::Background::ParticleReadPhase backgroundRead =
+        SEP::Background::SnapshotStore::Instance().BeginParticleRead(
+            SEP::Background::SimulationTimeSeconds());
 
-  for (int ntest=0;ntest<nTotalTests;ntest++) {
+    for (int ntest=0;ntest<nTotalTests;ntest++) {
     mu=-1.0+2.0*rnd();
     e=exp(logEmin+rnd()*(logEmax-logEmin));
 
@@ -569,6 +600,7 @@ bool FTE_Convectoin() {
       PB::SetFieldLineCoord(s0,ptr);
       SEP::ParticleMover_FocusedTransport_Dmumu(ptr,dtTotal,node);
       s1=PB::GetFieldLineCoord(ptr);
+    }
     }
   }
 

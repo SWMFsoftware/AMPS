@@ -393,7 +393,7 @@ test-background-unit: test/stage1
 	./test/stage1 --test-group BGP3D --test-group SNAP3D
 
 test-turbulence-unit: test/stage1
-	./test/stage1 --test-group TUR3D --test COEF3D01 --test COEF3D02
+	./test/stage1 --test-group TUR3D --test COEF3D01 --test COEF3D02 --test COEF3D06
 
 test-transport-unit: test/stage1
 	./test/stage1 --test-group PRK3D --test-group FTE3D --test-group RNG3D

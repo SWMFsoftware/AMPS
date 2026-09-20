@@ -10,7 +10,11 @@ mkdir -p "$out"
 # the gate safe to run immediately before packaging and prevents validation
 # imports from contaminating the source tree with __pycache__ directories.
 export PYTHONPYCACHEPREFIX="$out/pycache"
-g++ -std=c++11 -Wall -Wextra -Wpedantic -Werror \
+# The integrated native source reaches canonical shared headers through
+# srcSEP's public resolver.  Supplying the repository root explicitly makes
+# that path independent of both the process CWD and generated AMPS includes.
+"${CXX:-c++}" -std=c++11 -Wall -Wextra -Wpedantic -Werror \
+  -I"$root/.." \
   -c "$root/validation/cases/integrated_validation_models.cpp" \
   -o "$out/integrated_validation_models.o"
 python3 -m py_compile \

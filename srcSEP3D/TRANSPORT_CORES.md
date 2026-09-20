@@ -43,6 +43,18 @@ invalid coefficients. `PRK3D01–08` cover moments, advection, rotations,
 nonuniform equilibrium, cooling, first passage, a PDE Green-function baseline,
 and every named timestep limiter.
 
+At the AMPS boundary, `ResolveLocalTransport` computes
+`dKappaParallelDsMPerS` rather than defaulting it to zero. For local magnetic
+direction `b`, it chooses a metric step
+`h=min(dx,dy,dz)/max(|b_x|,|b_y|,|b_z|)`, so at least one Cartesian coordinate
+crosses a cell-center spacing, then reevaluates the same background,
+turbulence, and coefficient providers at `x-hb` and `x+hb`. Two usable samples
+give `(kappa_plus-kappa_minus)/(2h)`; exactly one gives the corresponding
+first-order one-sided difference. With no usable neighbor the resolver returns
+a typed error because a fabricated zero would change the Itô drift.
+`COEF3D06` isolates this arithmetic with an exact linear coefficient profile,
+checks centered and both one-sided cases, and verifies the no-neighbor failure.
+
 ## Focused transport step
 
 The gyrotropic state is `(positionM, momentumKgMPerS, mu)`. For one immutable

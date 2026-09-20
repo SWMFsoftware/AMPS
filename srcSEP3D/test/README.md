@@ -99,7 +99,7 @@ The runner adds
 | `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
 | `SNAP3D` | `SNAP3D01`–`SNAP3D08` | snapshot completeness, coupling conversion, atomicity, interpolation, batch/frame policy |
 | `TUR3D` | `TUR3D01`–`TUR3D04` | spectrum, AWSoM convention, resonance, missing-data policy |
-| `COEF3D` | `COEF3D01`–`COEF3D05` | conversion/shared identity plus tensor assembly, Itô drift, and rejection |
+| `COEF3D` | `COEF3D01`–`COEF3D06` | conversion/shared identity, tensor assembly, Itô drift, rejection, and field-aligned gradient stencil |
 | `PRK3D` | `PRK3D01`–`PRK3D08` | Parker moments, characteristics, PDE/first passage, and named limits |
 | `FTE3D` | `FTE3D01`–`FTE3D07` | focused streaming, focusing, pitch scattering/boundaries, momentum, strong-scattering limit |
 | `RNG3D` | `RNG3D01`–`RNG3D03` | worker/order independence and random-purpose isolation |
@@ -346,13 +346,15 @@ python3 test/run_tests.py --suite phase-b --rebuild \
 | `TUR3D04` | incomplete waves fail unless ballistic mode is explicit and typed |
 | `COEF3D01` | Dmumu/mean-free-path/kappa conversions round-trip below 1e-12 over six decades |
 | `COEF3D02` | srcSEP3D bridge and direct `sep_common` Jokipii calls are bitwise identical |
+| `COEF3D06` | centered and both one-sided stencils recover an exact nonzero linear `dKappa_parallel/ds`; no usable neighbor fails closed |
 
 ```bash
 python3 test/run_tests.py --suite phase-t --rebuild \
   --output-dir test_output/phase-t
 ```
 
-`phase-t` deliberately contains `COEF3D01–02`; the later tensor/drift
+`phase-t` deliberately contains `COEF3D01–02` and the host-neutral `COEF3D06`
+stencil test; the later tensor/drift
 coefficient tests belong to Phase P even though they share the `COEF3D` group.
 
 ### Phase P transport gates
@@ -464,7 +466,7 @@ equations, algorithms, case roles, and evidence schemas.
 | `improvements-v` | V1D01–05 controlled physics, V2D01 true parity, and V5D01 governance |
 | `phase-m` | MSH3D01–MSH3D09 mesh/storage gates |
 | `phase-b` | BGP3D01–06 and SNAP3D01–08 background/snapshot gates |
-| `phase-t` | TUR3D01–04 and COEF3D01–02 turbulence/coefficient gates |
+| `phase-t` | TUR3D01–04, COEF3D01–02, and COEF3D06 turbulence/coefficient gates |
 | `phase-p` | COEF3D03–05, PRK3D01–08, FTE3D01–07, RNG3D01–03 |
 | `phase-a` | ADP3D01, NAT3D04–05/08, SHK3D01–04 |
 | `phase-o` | NAT3D06–07 and RST3D01–03 |
@@ -539,6 +541,7 @@ invoke that exact linked callback, following the srcSEP pattern.
 | final link reports undefined `Mesh::MakeDomain(RunConfiguration3DOptions)` or `BuildRefinementPreflight` | stale pre-C03/C05 `mesh_model.o`; install the updated makefile, run `make clean`, and rebuild. BLDL3D07 prevents recurrence |
 | standalone compile failure | rerun with `--rebuild --verbose` |
 | Phase-V linked case `SKIP` | supply `--amps`; use `--validation-launch-prefix` when MPI launch arguments are required |
+| `V5D01` cannot open `release/generate_release_evidence.py` | restore the complete `srcSEP3D/release/` source set (`generate_release_evidence.py`, `profiles.json`, `capabilities.json`, `README.md`, and `checklist.md`). These files are required test/governance inputs declared by `SOURCE_MANIFEST.json`, not generated build products. |
 | XM3D/OV3D case `SKIP` | supply `--validation-data` containing `CASE_ID/manifest.json` and its declared artifacts |
 | Phase-V checksum `ERROR` | regenerate the SHA-256 only after reviewing the changed evidence; never edit a hash merely to silence the gate |
 | linked executable does not advertise a case | rebuild the configured AMPS application from this source tree and verify its production test registry |

@@ -10,10 +10,14 @@ src_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 output_dir=$(mktemp -d "${TMPDIR:-/tmp}/srcsep-cv01.XXXXXX")
 trap 'rm -rf "$output_dir"' EXIT HUP INT TERM
 
-# Deliberately omit a srcSEP/util include flag. The enclosing AMPS production
-# compile does not add that directory as a flat include root, so this command
-# reproduces the include-resolution contract that previously failed there.
+# Deliberately omit a srcSEP/util include flag.  Add only the repository root,
+# which is the canonical production include root for
+# <src/models/sep_common/...>.  This makes the detached compile hermetic: it
+# neither relies on the caller's current directory nor on stale headers in an
+# AMPS build tree, while still exercising the same public path used by sibling
+# AMPS libraries.
 "${CXX:-c++}" -std=c++11 -Wall -Wextra -Werror -pedantic -O1 -g \
+  -I"$src_root/.." \
   -c "$src_root/validation/cases/CV01/cv01_model.cpp" \
   -o "$output_dir/cv01_model.o"
 test -s "$output_dir/cv01_model.o"

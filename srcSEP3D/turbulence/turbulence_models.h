@@ -161,6 +161,25 @@ struct LocalScatteringCoefficients {
   std::uint64_t turbulenceGeneration = 0;
 };
 
+// Cell-centred stencil used to recover b-hat dot grad(kappa_parallel) at the
+// AMPS application boundary.  The coefficient evaluator remains the canonical
+// source of kappa; this helper owns only the finite-difference arithmetic and
+// its boundary policy.  At an inner/outer boundary exactly one neighbour may
+// be unavailable, in which case a first-order one-sided derivative is explicit
+// rather than silently substituting zero.
+struct ParallelKappaGradientStencil {
+  double centerKappaM2PerS = 0.0;
+  double stepM = 0.0;
+  bool hasMinus = false;
+  double minusKappaM2PerS = 0.0;
+  bool hasPlus = false;
+  double plusKappaM2PerS = 0.0;
+};
+
+Core::Status EvaluateParallelKappaGradient(
+    const ParallelKappaGradientStencil& stencil,
+    double* dKappaParallelDsMPerS);
+
 LocalScatteringCoefficients EvaluateLocalScattering(
     const TurbulenceSample& turbulence,
     const Background::BackgroundSample& background,

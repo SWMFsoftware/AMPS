@@ -314,11 +314,12 @@ void LoadBytes(PIC::Mesh::cDataCenterNode* cell, std::size_t offset,
               bytes);
 }
 
-SEP3D::Core::Status ResolveLocalTransport(
+SEP3D::Core::Status ResolveLocalTransportImpl(
     const SEP3D::Core::Vec3& positionM, int species,
     double momentumKgMPerS, double mu,
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
-    SEP3D::Adapters::LocalTransportRecord* local) {
+    SEP3D::Adapters::LocalTransportRecord* local,
+    bool evaluateParallelGradient) {
   using namespace SEP3D;
   if (node == nullptr || node->block == nullptr || local == nullptr)
     return Core::Status(Core::StatusCode::NotFound,
@@ -406,15 +407,85 @@ SEP3D::Core::Status ResolveLocalTransport(
           momentumKgMPerS, mu);
   if (!coefficients.status.ok()) return coefficients.status;
   local->kappaParallelM2PerS = coefficients.kappaParallelM2PerS;
-  local->dKappaParallelDsMPerS = 0.0;
   local->dMuMuPerS = coefficients.dMuMuPerS;
   local->dDmuMuDmuPerS = coefficients.dDmuMuDmuPerS;
+
+  // The Parker Ito drift requires b-hat dot grad(kappa_parallel), not merely
+  // kappa itself.  Evaluate the same provider/coefficient chain one local-cell
+  // spacing in both field-aligned directions.  The spacing is enlarged by the
+  // largest b component so at least one Cartesian coordinate crosses a cell
+  // centre spacing even when the field is oblique to the AMR axes.
+  if (evaluateParallelGradient) {
+    // Do not prefill the production derivative with zero.  A successful
+    // top-level resolution must write a value through the validated stencil;
+    // every failure returns before the partially filled record can reach a
+    // mover.  Recursive neighbour records need only kappa_parallel itself and
+    // therefore deliberately skip this field.
+    const double maximumDirectionComponent = std::max(
+        std::fabs(background.bHat.x),
+        std::max(std::fabs(background.bHat.y),
+                 std::fabs(background.bHat.z)));
+    if (!(maximumDirectionComponent > 0.0) ||
+        !std::isfinite(maximumDirectionComponent)) {
+      return Core::Status(Core::StatusCode::BackgroundInvalid,
+                          "parallel-kappa stencil has invalid magnetic direction");
+    }
+    const double stencilStepM = local->cellSizeM / maximumDirectionComponent;
+    const Core::Vec3 displacement = background.bHat * stencilStepM;
+    const Core::Vec3 minusPosition = positionM - displacement;
+    const Core::Vec3 plusPosition = positionM + displacement;
+
+    auto nodeAt = [node](const Core::Vec3& position) {
+      double coordinates[3];
+      position.CopyTo(coordinates);
+      return PIC::Mesh::mesh->findTreeNode(coordinates, node);
+    };
+    Adapters::LocalTransportRecord minus;
+    Adapters::LocalTransportRecord plus;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* minusNode = nodeAt(minusPosition);
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* plusNode = nodeAt(plusPosition);
+    const Core::Status minusStatus = ResolveLocalTransportImpl(
+        minusPosition, species, momentumKgMPerS, mu, minusNode, &minus, false);
+    const Core::Status plusStatus = ResolveLocalTransportImpl(
+        plusPosition, species, momentumKgMPerS, mu, plusNode, &plus, false);
+
+    Turbulence::ParallelKappaGradientStencil stencil;
+    stencil.centerKappaM2PerS = local->kappaParallelM2PerS;
+    stencil.stepM = stencilStepM;
+    stencil.hasMinus = minusStatus.ok();
+    stencil.minusKappaM2PerS = minus.kappaParallelM2PerS;
+    stencil.hasPlus = plusStatus.ok();
+    stencil.plusKappaM2PerS = plus.kappaParallelM2PerS;
+    const Core::Status gradientStatus =
+        Turbulence::EvaluateParallelKappaGradient(
+            stencil, &local->dKappaParallelDsMPerS);
+    if (!gradientStatus.ok()) {
+      // A particle for which neither neighbour is locally resolvable cannot be
+      // advanced with a fabricated zero drift.  Return the explicit stencil
+      // failure; AMPS will classify the particle through its normal fail-closed
+      // mover path and retain the diagnostic in the particle ledger.
+      return gradientStatus;
+    }
+  }
   local->fractionalFieldVariationPerS = std::fabs(background.divU);
   const RuntimeModel::SnapshotDescriptor* active =
       ApplicationRuntime().active_snapshot();
   local->timeToSnapshotBoundaryS = active == nullptr ? 0.0 :
       std::max(0.0, active->validUntilS - ApplicationRuntime().CurrentTimeS());
   return Core::Status::OK();
+}
+
+SEP3D::Core::Status ResolveLocalTransport(
+    const SEP3D::Core::Vec3& positionM, int species,
+    double momentumKgMPerS, double mu,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+    SEP3D::Adapters::LocalTransportRecord* local) {
+  // Only the top-level resolver constructs a derivative stencil.  Its
+  // neighbour evaluations call the implementation with the flag cleared, so
+  // the work is bounded to two additional coefficient evaluations rather than
+  // recursively expanding across the mesh.
+  return ResolveLocalTransportImpl(positionM, species, momentumKgMPerS, mu,
+                                   node, local, true);
 }
 
 void StoreBackground(PIC::Mesh::cDataCenterNode* cell,

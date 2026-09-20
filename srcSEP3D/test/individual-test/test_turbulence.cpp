@@ -288,6 +288,50 @@ Result RunCOEF3D02() {
       "srcSEP3D and direct sep_common Jokipii calls are bitwise identical at matched local state");
 }
 
+Result RunCOEF3D06() {
+  // kappa(s)=7+3s is sampled at s0-h, s0, and s0+h.  The centred and both
+  // one-sided boundary stencils must recover the same exact derivative.  The
+  // final case proves that a missing two-sided neighbourhood is an error rather
+  // than the former silent dKappa/ds=0 substitution.
+  const double stepM = 4.0;
+  const double center = 31.0;
+  const double expected = 3.0;
+  const double minus = center - expected * stepM;
+  const double plus = center + expected * stepM;
+  const struct Case {
+    bool hasMinus;
+    bool hasPlus;
+  } cases[] = {{true, true}, {true, false}, {false, true}};
+
+  for (const Case& item : cases) {
+    T::ParallelKappaGradientStencil stencil;
+    stencil.centerKappaM2PerS = center;
+    stencil.stepM = stepM;
+    stencil.hasMinus = item.hasMinus;
+    stencil.minusKappaM2PerS = minus;
+    stencil.hasPlus = item.hasPlus;
+    stencil.plusKappaM2PerS = plus;
+    double derivative = 0.0;
+    const SEP3D::Core::Status status =
+        T::EvaluateParallelKappaGradient(stencil, &derivative);
+    if (!status.ok() || !Relative(derivative, expected, 1.0e-15))
+      return Fail("parallel-kappa gradient stencil lost a linear coefficient derivative");
+  }
+
+  T::ParallelKappaGradientStencil missing;
+  missing.centerKappaM2PerS = center;
+  missing.stepM = stepM;
+  double ignored = 0.0;
+  if (T::EvaluateParallelKappaGradient(missing, &ignored).ok())
+    return Fail("parallel-kappa gradient accepted a stencil with no neighbours");
+
+  Result result = Pass(
+      "centred and one-sided stencils recover nonzero dKappa_parallel/ds and fail closed without neighbours");
+  result.metrics.push_back(
+      {"linear_gradient_error", 0.0, 1.0e-15, "<=", "m/s"});
+  return result;
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterTurbulenceTests() {
@@ -329,5 +373,8 @@ std::vector<SEP3D::Testing::Descriptor> RegisterTurbulenceTests() {
       make("COEF3D02", "COEF3D", "Shared coefficient kernel",
            "Compare the 3-D bridge and direct sep_common kernel bitwise.",
            RunCOEF3D02),
+      make("COEF3D06", "COEF3D", "Parallel coefficient gradient",
+           "Recover field-aligned kappa gradients with centred and boundary stencils.",
+           RunCOEF3D06),
   };
 }

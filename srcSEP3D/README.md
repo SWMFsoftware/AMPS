@@ -213,6 +213,12 @@ normalization, policies, and the shared-kernel boundary.
 - Controlled constant/constant-ratio perpendicular diffusion and selectable
   gradient-B/curvature drifts are implemented by V01. Current-sheet drift is
   still excluded because the required sheet geometry is unspecified.
+- The AMPS local-state resolver now supplies the Parker core's required
+  `b·grad(kappa_parallel)` term. It reevaluates the canonical local coefficient
+  chain one cell crossing in both field-aligned directions, uses a centered
+  difference when both samples exist, and uses an explicit one-sided difference
+  at a boundary. If neither neighbor is usable it returns a typed failure; it
+  never substitutes the former unconditional zero drift.
 
 See [TRANSPORT_CORES.md](TRANSPORT_CORES.md) for the equations, splitting
 algorithm, reproducibility contract, and Phase-P acceptance tests.
@@ -464,7 +470,7 @@ normalized-domain/preflight definitions before the final Fortran-driver link.
 | `BGP3D01–06` | analytic Parker identities, component laws, focusing, wind derivatives, polar limits |
 | `SNAP3D01–08` | completeness, finite values, units, epochs, atomicity, interpolation, batch status, frame |
 | `TUR3D01–04` | spectrum normalization, AWSoM mapping, resonance range, missing-data policy |
-| `COEF3D01–02` | six-decade conversions and bitwise shared-kernel identity |
+| `COEF3D01–02`, `COEF3D06` | six-decade conversions, bitwise shared-kernel identity, and nonzero field-aligned kappa-gradient stencils |
 | `COEF3D03–05`, `PRK3D01–08` | tensor assembly/Itô drift and Parker transport behavior |
 | `FTE3D01–07`, `RNG3D01–03` | focused transport, pitch boundaries, strong-scattering limit, keyed reproducibility |
 | `ADP3D01`, `NAT3D04–05/08`, `SHK3D01–04` | mover dispatch, boundaries, ledger, moving shocks, common SWCME source |

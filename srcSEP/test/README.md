@@ -905,6 +905,31 @@ required to prove the snapshot boundary around the real `PIC::TimeStep()` in a
 standalone and SWMF-coupled run. See
 [../BACKGROUND_STATE.md](../BACKGROUND_STATE.md) for the full runtime contract.
 
+## Stage 1–2 integration-boundary gates
+
+`make test-stage1-stage2-contracts` runs
+`test/check_stage1_stage2_contracts.py` without AMPS or MPI. The audit checks
+properties that equation-level tests cannot infer from numerical output:
+
+- `main_lib.cpp` contains exactly one live turbulence `Advance` call and
+  standalone `main.cpp` contains none;
+- `main.cpp` does not include the retired application-local coefficient
+  registry after `sep.h` has loaded the canonical `sep_common` registry;
+- the legacy unconditional initializer is not executable and local wave
+  initialization names only the two sources owned from startup;
+- analytic density and SWCME preparation are guarded by the configured
+  provider;
+- `FTE01`, `PARKER01`, and `PARKER02` acquire `BeginParticleRead` before their
+  first production mover call; and
+- the CV01–CV12 and IV01–IV06 detached compiles include the canonical
+  repository root.
+
+`make test-controlled-analytical` runs this audit before its numerical suites.
+`make test-cv01-unit` then strictly compiles the native CV01 model in a
+disposable directory. If `SEP_EXECUTABLE` is set to a linked application, the
+same target also runs the complete linked comparison; otherwise that portion
+is explicitly `SKIP`.
+
 ## Registered tests
 
 | ID | Group | Class | Initialization | What is asserted | State/artifacts |
@@ -938,9 +963,9 @@ standalone and SWMF-coupled run. See
 | `D02` | `swcme-configuration` | extended | none | The canonical resolver enforces presets, units, layer precedence, provenance, validity, supported source modes, and order-independent fingerprints. | Deterministic, no RNG; restores fast/strict state; identical callback used by `test-swcme-configuration-unit`. |
 | `D03PRE` | `native-integration` | extended | none | The linked catalog contains the three field-line movers with the expected coefficient contracts, and SWCME refresh exposes a monotonic state ID/epoch plus fingerprint. | Preflight only; full D03 requires `--suite d03-native-integration` with reviewed site inputs. |
 | `DXX01` | `diffusion` | routine | field-line model | `GetDxx` agrees with the constant-coefficient analytical result and the existing million-panel independent quadrature at relative tolerance `1e-5`. | Temporarily replaces and restores the pitch-angle diffusion function pointer; no artifact. |
-| `FTE01` | `transport` | routine | field-line model | The focused-transport mover follows the expected field-line displacement while preserving velocity in a static-plasma fixture, using the existing `1e-2`/`1e-5` checks. | Uses fixed registry seed 1002, restores vertex data and diffusion pointer, deletes its particle, and clears test lists. |
-| `PARKER01` | `parker` | routine | field-line model | Parker convection keeps the line coordinate stationary in the fixture and matches the analytical density-driven momentum update within `1e-5`. | Uses fixed registry seed 1001, restores vertex data and diffusion pointer, deletes its particle, and clears lists. |
-| `PARKER02` | `parker` | extended | field-line model | Four million legacy stochastic trials produce at least one in-range displacement sample and rank 0 successfully writes the histogram.  This is an execution/output assertion, not yet a Gaussian-shape validation. | Uses fixed registry seed 1003; rank 0 writes `dxParker.dat`; particle/lists are cleaned. |
+| `FTE01` | `transport` | routine | field-line model | The focused-transport mover follows the expected field-line displacement while preserving velocity in a static-plasma fixture, using the existing `1e-2`/`1e-5` checks. | Uses fixed registry seed 1002; opens one immutable background read phase around all mover calls; then restores vertex data and diffusion pointer, deletes its particle, and clears test lists. |
+| `PARKER01` | `parker` | routine | field-line model | Parker convection keeps the line coordinate stationary in the fixture and matches the analytical density-driven momentum update within `1e-5`. | Uses fixed registry seed 1001; opens one immutable background read phase around all mover calls; then restores vertex data and diffusion pointer, deletes its particle, and clears lists. |
+| `PARKER02` | `parker` | extended | field-line model | Four million legacy stochastic trials produce at least one in-range displacement sample and rank 0 successfully writes the histogram.  This is an execution/output assertion, not yet a Gaussian-shape validation. | Uses fixed registry seed 1003; holds one immutable generation for the Monte Carlo loop; rank 0 writes `dxParker.dat`; particle/lists are cleaned. |
 | `SCAT01` | `scattering` | extended | field-line model | Currently reports `SKIP`: the legacy return-probability diagnostic has no approved reference/tolerance and contains a singular zero-energy case. | Registry path performs no mutation. Historical TestManager may write `rmax-E=...` and `time-E=...` files. |
 | `TURB01` | `turbulence` | routine | none | The production 1-AU helper equals the independently evaluated magnetic-pressure closure `delta_B^2/(2 mu_0)` within 32 machine epsilons. | Pure deterministic calculation; no RNG, model state, or artifact. |
 | `PARK01`–`PARK07` | `parker` | routine except `PARK02`/`PARK07` extended | none | Controlled convection, Gaussian diffusion, Itô drift, cooling, boundary, refinement, and first-passage references. | Injected providers; fixed seeds where stochastic. |

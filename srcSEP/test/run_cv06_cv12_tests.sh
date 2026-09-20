@@ -7,7 +7,11 @@ src_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 output_dir=${SEP_TEST_OUTPUT_DIR:-/tmp/srcsep-cv06-cv12-test}
 mkdir -p "$output_dir"
 
-g++ -std=c++11 -Wall -Wextra -Wpedantic -Werror \
+# Resolve canonical sep_common headers from the same repository-root include
+# used by production.  This strict compile therefore succeeds from any working
+# directory and cannot accidentally consume headers from a stale AMPS build.
+"${CXX:-c++}" -std=c++11 -Wall -Wextra -Wpedantic -Werror \
+  -I"$src_root/.." \
   -c "$src_root/validation/cases/advanced_validation_models.cpp" \
   -o "$output_dir/advanced_validation_models.o"
 # py_compile intentionally writes bytecode even when PYTHONDONTWRITEBYTECODE is

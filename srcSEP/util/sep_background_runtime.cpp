@@ -19,16 +19,6 @@ namespace Background {
 
 namespace {
 
-Provider ConfiguredProvider() {
-#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-  if (PIC::CPLR::SWMF::BlCouplingFlag) return Provider::Swmf;
-#endif
-
-  return SEP::ShockModelType == SEP::cShockModelType::SwCme1d
-             ? Provider::Swcme
-             : Provider::Analytic;
-}
-
 double SwmfEpochSeconds() {
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
   return AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime;
@@ -49,6 +39,16 @@ double PreviousSwmfEpochSeconds(double currentEpochS) {
 }
 
 }  // namespace
+
+Provider ConfiguredProvider() {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  if (PIC::CPLR::SWMF::BlCouplingFlag) return Provider::Swmf;
+#endif
+
+  return SEP::ShockModelType == SEP::cShockModelType::SwCme1d
+             ? Provider::Swcme
+             : Provider::Analytic;
+}
 
 double SimulationTimeSeconds() {
   // PIC::SimulationTime is advanced by PIC::TimeStep().  This read-only adapter

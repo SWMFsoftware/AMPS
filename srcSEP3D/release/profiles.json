@@ -1,0 +1,9 @@
+{
+  "schema":"srcsep3d-release-profiles-v1",
+  "profiles": {
+    "development":{"required":["V1D01","V1D02","V1D03","V1D04","V1D05","V2D01","V5D01"]},
+    "native-integration":{"inherits":"development","required":["NAT3D01","NAT3D02","NAT3D03"]},
+    "mpi-qualification":{"inherits":"native-integration","required":["MPI3D01","MPI3D02","NAT3D09","NAT3D10"]},
+    "scientific-release":{"inherits":"mpi-qualification","required":["XM3D01","XM3D02","XM3D04","XM3D05","OV3D01","OV3D02","SWMF3D01"],"blocked_by":"R8"}
+  }
+}

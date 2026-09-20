@@ -13,6 +13,7 @@
 #include <iostream>
 #include <iostream>
 #include <fstream>
+#include <limits>
 #include <time.h>
 
 #include <sys/time.h>
@@ -27,6 +28,7 @@
 //the particle class
 #include "constants.h"
 #include "sep.h"
+#include "adapters/swcme1d_adapter.h"
 #include "transport_common.h"
 #include "turbulence_production_adapter.h"
 #include "util/sep_run_configuration.h"
@@ -53,6 +55,35 @@ const double dxMinGlobal=DebugRunMultiplier*2.0,dxMaxGlobal=DebugRunMultiplier*1
 const double dxMinSphere=DebugRunMultiplier*4.0*1.0/100/2.5,dxMaxSphere=DebugRunMultiplier*2.0/10.0;
 
 const double MarkNotUsedRadiusLimit=100.0;
+
+namespace {
+
+// Return the shock radius associated with the background state that is
+// currently visible to particle transport.  Keeping this translation at the
+// AMPS application boundary is important: the turbulence adapter accepts SI
+// metres and must not know whether the radius came from the analytic shock or
+// from the prepared SWCME provider.
+double CurrentShockRadiusM() {
+  switch (SEP::ShockModelType) {
+    case SEP::cShockModelType::Analytic1D:
+      return SEP::ParticleSource::ShockWave::Tenishev2005::rShock;
+    case SEP::cShockModelType::SwCme1d:
+      return SEP::SW1DAdapter::ShockRadiusM();
+  }
+
+  // The enum currently has only the two cases above.  Returning NaN keeps a
+  // future unsupported model fail-closed with respect to shock injection: the
+  // turbulence transaction will still run, but it cannot invent a displacement
+  // interval for an unknown shock representation.
+  return std::numeric_limits<double>::quiet_NaN();
+}
+
+struct ShockRadiusHistory {
+  bool initialized = false;
+  double previousRadiusM = std::numeric_limits<double>::quiet_NaN();
+};
+
+}  // namespace
 
 double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   double res=1.0;
@@ -702,6 +733,20 @@ void amps_time_step(){
 
 start:
 
+    // The application-level timestep is the sole owner of turbulence
+    // evolution.  Capture the previously published shock position before the
+    // particle phase and the new position after it, then pass that interval to
+    // the same transaction that reduces particle-wave exchange.  A static
+    // history is intentional here: amps_time_step() is the common standalone
+    // and coupled entry point, so neither caller may perform a second Advance.
+    // On the first call the before/after radii are identical and no artificial
+    // shock source is deposited.
+    static ShockRadiusHistory shockHistory;
+    if (!shockHistory.initialized) {
+      shockHistory.previousRadiusM = CurrentShockRadiusM();
+      shockHistory.initialized = true;
+    }
+
     // Bind the whole AMPS particle phase to one immutable background snapshot.
     // PrepareSnapshotForParticleStep() observes a new SWMF coupling epoch only
     // between steps and publishes it as a new read-only generation.  The RAII
@@ -727,14 +772,18 @@ start:
            "Error: invalid SEP background snapshot state");
     }
 
-    // Coupled-library runs use the same post-particle deterministic reduction
-    // as the standalone driver; the library entry point still does not parse or
-    // execute standalone component-test options.
+    // Coupled-library and standalone runs use this one post-particle
+    // deterministic reduction.  The current radius is sampled only after the
+    // particle read phase has ended, so provider publication and turbulence
+    // mutation cannot overlap an immutable mover snapshot.
+    const double currentShockRadiusM = CurrentShockRadiusM();
     const SEP::Transport::Status turbulenceStatus =
         SEP::Turbulence::PICAdapter::Advance(
-            PIC::ParticleWeightTimeStep::GlobalTimeStep[0], NAN, NAN);
+            PIC::ParticleWeightTimeStep::GlobalTimeStep[0],
+            shockHistory.previousRadiusM, currentShockRadiusM);
     if (!turbulenceStatus.ok())
       exit(__LINE__, __FILE__, turbulenceStatus.message.c_str());
+    shockHistory.previousRadiusM = currentShockRadiusM;
 
 //    PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(50,100); //(SEP::MinParticleLimit,SEP::MaxParticleLimit);
 

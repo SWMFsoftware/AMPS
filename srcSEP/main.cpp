@@ -35,6 +35,7 @@
 #include "transport_common.h"
 #include "turbulence_production_adapter.h"
 #include "util/sep_cli.h"
+#include "util/sep_background_runtime.h"
 #include "util/sep_initialization.h"
 #include "util/sep_run_configuration.h"
 #include "debug/sep_debug_fieldline_datum.h"
@@ -546,14 +547,35 @@ int main(int argc,char **argv) {
     }
   }
 
-  //init the Alfven turbulence IC
-  if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) SEP::AlfvenTurbulence_Kolmogorov::ModelInit::Init();
+  // Turbulence storage is initialized exactly once below, after the optional
+  // test-only exit.  The former ModelInit::Init() call wrote an independent
+  // hard-coded profile here and was then overwritten by a second initializer.
+  // More importantly, it wrote even when SWMF or a prescribed provider owned
+  // the wave state.  Deferring to the source-aware block below gives every
+  // field exactly one declared startup owner.
 
   // Selected component tests own the process after their declared field-line
   // prerequisite is available.  Returning here is the critical test-only
   // boundary: neither the compatibility TestManager path nor the production
   // timestep loop can execute after a --test/--test-group/--all-tests request.
   if (componentTestMode) {
+    if (RequiredInitializationLevel(selectedComponentTests) ==
+        SEP::Testing::InitializationLevel::FieldLineModel) {
+      // Native mover fixtures call the same production coefficient adapters as
+      // an ordinary particle step.  Publish one immutable snapshot before the
+      // registry starts, but do not enter its read phase here: each fixture must
+      // first install and later restore its temporary vertex values.  The
+      // fixture itself opens ParticleReadPhase only around actual mover calls.
+      const double epochS = SEP::Background::SimulationTimeSeconds();
+      if (SEP::Background::ConfiguredProvider() ==
+          SEP::Background::Provider::Swcme) {
+        publish_sw1d_for_particle_step(
+            epochS, PIC::ParticleWeightTimeStep::GlobalTimeStep[0], 0);
+      }
+      else {
+        SEP::Background::PrepareSnapshotForParticleStep();
+      }
+    }
     return RunSelectedComponentTests(selectedComponentTests, std::cout,
         cli_options.testJsonPath, cli_options.testJunitPath);
   }
@@ -580,29 +602,45 @@ int main(int argc,char **argv) {
       ? static_cast<long int>(PIC::RequiredSampleLength+10)
       : static_cast<long int>(frozenRun.get().totalIterations.value);
 
-  //init turbulence wave energy
-  double B0_1AU = 5.0e-9;        // 5 nT magnetic field
-  double turbulence_level = 0.2; // 20% turbulence
+  // Initialize wave storage only for a source that is locally owned from the
+  // beginning of the run.  Prescribed and SWMF-read-only providers remain
+  // authoritative, while SwmfInitialThenEvolveLocal must first copy the
+  // imported generation through the production adapter's ImportFieldLine path
+  // and record its one-time handoff; treating that mode as an ordinary startup
+  // would destroy the very SWMF state it is required to inherit.  The
+  // configurable prescribed amplitude is reused as the initial self-consistent
+  // deltaB/B; the named 1-AU field constant is only a fallback for malformed or
+  // missing local magnetic-field values inside the legacy initializer.
+  const SEP::Turbulence::Source turbulenceSource =
+      SEP::Turbulence::ActiveConfiguration().source;
+  const bool locallyOwnedFromStartup =
+      turbulenceSource ==
+          SEP::Turbulence::Source::SelfConsistentIntegrated ||
+      turbulenceSource ==
+          SEP::Turbulence::Source::SelfConsistentSpectral;
+  const bool initializeLocalTurbulence =
+      SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag &&
+      locallyOwnedFromStartup;
+  if (initializeLocalTurbulence) {
+    const double initialDeltaBOverB =
+        SEP::Transport::Coefficient::ActiveConfiguration().
+            prescribedDeltaBOverB;
 
-  SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0);
+    SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(
+        SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0);
+    SEP::AlfvenTurbulence_Kolmogorov::InitializeWaveEnergyFromPhysicalParameters(
+        SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
+        SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyConstants::TYPICAL_B0_1AU,
+        initialDeltaBOverB, initialDeltaBOverB, -2.0, false, true);
 
-  SEP::AlfvenTurbulence_Kolmogorov::InitializeWaveEnergyFromPhysicalParameters(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy, B0_1AU, 0.01,0.01, -2.0,false,true);
-
-
-  SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0);
-
-  //exchenge the initial wave energy density and output in a file
-  PIC::FieldLine::Parallel::MPIGatherDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0);
-
-  SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0);
-
-  SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,1);
-
-
-  PIC::FieldLine::Parallel::MPIBcastDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0);
-
-  SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0);
-  SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,1);
+    // The initializer writes owned edge segments.  Gather to rank zero and
+    // broadcast the complete generation once, before any boundary reservoir is
+    // captured, so every rank begins from the same authoritative state.
+    PIC::FieldLine::Parallel::MPIGatherDatumStoredAtEdge(
+        SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0);
+    PIC::FieldLine::Parallel::MPIBcastDatumStoredAtEdge(
+        SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0);
+  }
 
   // Capture the right-boundary W- initial condition after the turbulence wave
   // energy has been initialized and the edge data have been synchronized.
@@ -616,7 +654,8 @@ int main(int argc,char **argv) {
   //   at the last segment.  This keeps the right boundary fixed as a
   //   pre-existing spectral turbulence reservoir rather than an artificial
   //   time-growing source.
-  if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
+  if (initializeLocalTurbulence &&
+      SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
     SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::InitializeSpectrumFromIntegratedEnergy(
         SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
     SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::ResetRightBoundarySpectrumInitialCondition();
@@ -625,7 +664,7 @@ int main(int argc,char **argv) {
     SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::UpdateIntegratedEnergyFromSpectrum(
         SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
   }
-  else {
+  else if (initializeLocalTurbulence) {
     SEP::AlfvenTurbulence_Kolmogorov::ResetRightBoundaryEminusInitialCondition();
     SEP::AlfvenTurbulence_Kolmogorov::CaptureRightBoundaryEminusInitialCondition(
         SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
@@ -675,7 +714,14 @@ auto set_background_plasma_density = []() {
 };
 
 
- set_background_plasma_density();
+ // Analytic Parker runs own their plasma profile and may create the r^-2
+ // density used by the legacy field-line geometry.  SWCME and SWMF provide
+ // authoritative plasma state; overwriting either provider here previously
+ // made the snapshot metadata disagree with the arrays consumed by movers.
+ if (SEP::Background::ConfiguredProvider() ==
+     SEP::Background::Provider::Analytic) {
+   set_background_plasma_density();
+ }
 
   // Calculate turbulence wave enregy density from wave energy integrated over the segments of the magnetic tube:
 auto CalculateWaveEnergyDensity = [&]() {
@@ -814,8 +860,16 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
     // ParticleReadPhase in amps_time_step() has ended.
     const double global_dt =
         PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
-    publish_sw1d_for_particle_step(
-        SEP::Background::SimulationTimeSeconds(), global_dt, niter);
+    // SWCME is the only provider whose physical cache must be prepared by the
+    // standalone driver before the common application step.  Analytic and SWMF
+    // runs are prepared by PrepareSnapshotForParticleStep() in amps_time_step;
+    // publishing an SWCME generation for either would violate provider
+    // authority and is rejected by PublishModelOwnedSnapshot().
+    if (SEP::Background::ConfiguredProvider() ==
+        SEP::Background::Provider::Swcme) {
+      publish_sw1d_for_particle_step(
+          SEP::Background::SimulationTimeSeconds(), global_dt, niter);
+    }
 
     if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag &&
         SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode) {
@@ -906,23 +960,11 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
 
     amps_time_step();
 
-    double rsh_after = rsh0;
-    if (niter != 0) {
-      switch (SEP::ShockModelType) {
-        case SEP::cShockModelType::Analytic1D:
-          rsh_after = SEP::ParticleSource::ShockWave::Tenishev2005::rShock;
-          break;
-        case SEP::cShockModelType::SwCme1d:
-          rsh_after = SEP::SW1DAdapter::ShockRadiusM();
-          break;
-      }
-    }
-    const SEP::Transport::Status turbulence_status =
-        SEP::Turbulence::PICAdapter::Advance(
-            PIC::ParticleWeightTimeStep::GlobalTimeStep[0], rsh0, rsh_after);
-    if (!turbulence_status.ok())
-      exit(__LINE__, __FILE__, turbulence_status.message.c_str());
-    rsh0 = rsh_after;
+    // amps_time_step() owns the single post-particle turbulence transaction for
+    // both standalone and coupled execution.  Do not advance turbulence again
+    // here: doing so previously applied advection, reflection, cascade, and
+    // particle-wave exchange twice per global particle step.  Shock-radius
+    // history is now captured at that common transaction boundary as well.
 
     // Retain the former orchestration temporarily as unreachable migration
     // evidence.  Keeping it beside the adapter call makes review against old

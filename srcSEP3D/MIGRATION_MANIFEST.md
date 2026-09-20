@@ -245,6 +245,13 @@ The core contains no AMPS list manipulation or source injection. Perpendicular
 diffusion and drift inputs are explicit zero-only guards. `COEF3D03–05`,
 `PRK3D01–08`, `FTE3D01–07`, and `RNG3D01–03` are the Phase-P release evidence.
 
+The production AMPS resolver now fills the previously missing
+`dKappaParallelDsMPerS` input by sampling the same canonical coefficient path
+at field-aligned neighboring positions. Centered differences are preferred;
+one-sided differences are explicit at boundaries, and the resolver fails
+closed when neither neighbor is usable. The host-neutral arithmetic and its
+boundary policy are registered as `COEF3D06` and run in `phase-t`.
+
 ## Phase A — AMPS mover and source adapters
 
 | File | Ownership and invariant |
