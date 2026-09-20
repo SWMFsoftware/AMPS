@@ -17,9 +17,10 @@ history behind individual corrections.
 owner. `swcme3d.cpp` and the public `swcme*.hpp` interfaces are production;
 the `demo*.cpp` programs and `test/` sources are explicit test/example code.
 Generated `build/`, `swcme.a`, compiled demo/test programs, and validation
-output are excluded from source releases. The B01 package gate verifies these
-classes and rejects native binaries even when their execute permission is
-missing.
+output are excluded from source releases. The AMPS-level
+`tools/sep_package_hygiene.py --root . --self-test` gate interprets all four SEP
+component manifests as strict allowlists, rejects generated/retired/unclassified
+paths, and verifies the exact contents of any deterministic archive it creates.
 
 The B03 ownership contract also forbids copied `swcme*.hpp` headers, SWCME
 namespace definitions, historical `demo1d.cpp`/`sw1d.cpp` sources, and local

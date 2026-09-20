@@ -23,6 +23,8 @@
     "test/**/*.txt"
   ],
   "support_globs": [
+    ".gitignore",
+    "SOURCE_MANIFEST.json",
     "makefile",
     "test/Makefile",
     "test/.gitignore",

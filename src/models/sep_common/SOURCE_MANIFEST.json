@@ -11,6 +11,8 @@
   ],
   "retained_input_globs": [],
   "support_globs": [
+    ".gitignore",
+    "SOURCE_MANIFEST.json",
     "makefile"
   ],
   "generated_globs": [

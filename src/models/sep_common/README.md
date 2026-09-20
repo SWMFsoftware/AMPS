@@ -11,9 +11,13 @@ also valid for Parker-spiral and other non-SWCME backgrounds.
 `SOURCE_MANIFEST.json` declares this directory as the sole source owner for
 the seven shared SEP kernels. `build/` and `sep_common.a` are generated and
 must not appear in a source release. The AMPS-level B01 hygiene gate checks
-that rule by suffix, path, and native-binary signature before packaging. The
-archive is rebuilt from these sources in every clean extraction; a preexisting
-archive is never accepted as evidence that the current sources compile.
+that rule from strict allowlists shared with both applications and SWCME.
+Generated and retired paths take precedence, and an unclassified path fails
+the release. Its isolated self-test inserts stale objects, caches, output,
+retired, and unclassified controls; its deterministic archive mode then
+reopens and verifies the exact member set. The archive is rebuilt from these
+sources in every clean extraction; a preexisting archive is never accepted as
+evidence that the current sources compile.
 
 ## Ownership boundary
 
