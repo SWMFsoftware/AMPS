@@ -436,23 +436,10 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     if (!ParseDouble(value, &o->source.spectralIndex)) return invalidValue();
   } else if (field == "source.samples_per_step") {
     if (!ParseUnsigned64(value, &o->source.samplesPerStep)) return invalidValue();
-  } else if (field == "species.name") {
-    o->species.name = value;
-  } else if (field == "species.amps_index") {
-    // The input surface records the resolved AMPS slot even though Stage 3
-    // accepts index zero only.  Parsing a nonnegative integer here and letting
-    // RunConfiguration3D::Create reject nonzero values gives operators a clear
-    // species-contract error instead of an unknown-key or silent fallback.
-    std::uint64_t parsed = 0;
-    if (!ParseUnsigned64(value, &parsed) ||
-        parsed > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
-      return invalidValue();
-    o->species.ampsSpeciesIndex = static_cast<int>(parsed);
-  } else if (field == "species.mass_kg") {
-    if (!ParseDouble(value, &o->species.massKg)) return invalidValue();
-  } else if (field == "species.charge_c") {
-    if (!ParseDouble(value, &o->species.chargeC)) return invalidValue();
   } else if (field == "species.macroparticle_weight") {
+    // This is deliberately the only post-compile species field.  Count,
+    // symbols, masses, charges, and indices are immutable products of the AMPS
+    // SpeciesList deck and are enumerated through the AMPS molecular-data API.
     if (!ParseDouble(value, &o->species.macroparticleWeight)) return invalidValue();
   } else if (field == "output.cadence_steps") {
     if (!ParseUnsigned64(value, &o->outputCadenceSteps)) return invalidValue();
@@ -531,7 +518,19 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     } else if (key == "maximum_mu") {
       if (!ParseDouble(value, &observer->maximumMu)) return invalidValue();
     } else if (key == "species") {
-      if (!ParseSpeciesList(value, &observer->species)) return invalidValue();
+      // Species identities do not exist in the post-compile input schema.
+      // `all` therefore means every entry in the immutable AMPS SpeciesList,
+      // whatever count that particular executable was generated with.  An
+      // explicit comma-separated list remains available for a deliberate
+      // observer subset and is upper-bound checked after AMPS exposes its
+      // generated table.
+      if (Lower(value) == "all") {
+        observer->allCompiledSpecies = true;
+        observer->species.clear();
+      } else {
+        if (!ParseSpeciesList(value, &observer->species)) return invalidValue();
+        observer->allCompiledSpecies = false;
+      }
     } else {
       return Invalid("unknown configuration key '" + field + "'");
     }
@@ -564,6 +563,13 @@ Core::Status ParseStandaloneCommandLine(
     if (argument == "--input") {
       if (!requireValue("--input", &candidate.inputPath))
         return Invalid("--input requires a path");
+    } else if (argument == "--initialization-only") {
+      candidate.initializationOnly = true;
+    } else if (argument == "--initialization-output-dir") {
+      if (!requireValue("--initialization-output-dir",
+                        &candidate.initializationOutputDirectory)) {
+        return Invalid("--initialization-output-dir requires a path");
+      }
     } else if (argument == "--output-dir") {
       if (!requireValue("--output-dir", &candidate.outputDirectoryOverride))
         return Invalid("--output-dir requires a path");
@@ -598,6 +604,18 @@ Core::Status ParseStandaloneCommandLine(
       static_cast<int>(!candidate.tests.empty());
   if (selectionModes > 1)
     return Invalid("--list-tests, --all-tests, and --test are mutually exclusive");
+  if (candidate.initializationOnly && candidate.dryRun) {
+    return Invalid("--initialization-only and --dry-run are mutually exclusive: "
+                   "the former builds the AMPS mesh, while the latter forbids "
+                   "AMPS allocation");
+  }
+  if (!candidate.initializationOutputDirectory.empty() &&
+      !candidate.initializationOnly) {
+    return Invalid("--initialization-output-dir requires --initialization-only");
+  }
+  if (candidate.initializationOnly && selectionModes != 0) {
+    return Invalid("--initialization-only cannot be combined with test selection");
+  }
   if (candidate.inputPath.empty() && selectionModes == 0)
     return Invalid("a standalone production run requires --input PATH");
   *result = candidate;
@@ -639,6 +657,17 @@ Core::Status ParseConfigurationText(
     const std::string value = Trim(line.substr(separator + 1));
     if (key.empty() || value.empty())
       return Invalid("empty key or value at line " + std::to_string(lineNumber));
+    // A bare assignment used to fall through to ApplyField(), which reported
+    // only "unknown configuration key".  That message made a legacy flat deck
+    // look like a misspelled schema-3 field.  The production grammar is strict
+    // INI, so identify the actual structural error and point to the canonical
+    // first section without guessing which physics group owned the old key.
+    if (section.empty()) {
+      return Invalid("line " + std::to_string(lineNumber) + ": key '" + key +
+                     "' appears before any [section]; srcSEP3D input uses the "
+                     "strict INI schema and must begin with [run] (see "
+                     "srcSEP3D/examples/sep3d_analytic_parker.in)");
+    }
     const std::string qualified = section.empty() ? key : section + "." + key;
     if (!assigned.insert(qualified).second)
       return Invalid("duplicate configuration key '" + qualified + "'");
@@ -739,8 +768,7 @@ Core::Status ParseConfigurationText(
         "source.physical_particle_rate_per_s",
         "source.injection_efficiency", "source.minimum_energy_j",
         "source.maximum_energy_j", "source.samples_per_step",
-        "species.amps_index", "species.name", "species.mass_kg",
-        "species.charge_c", "species.macroparticle_weight",
+        "species.macroparticle_weight",
         "storage.magnetic_gradient", "storage.velocity_gradient",
         "storage.sampling_bytes_per_cell", "output.cadence_steps",
         "output.checkpoint_cadence_steps", "output.directory",
@@ -826,10 +854,11 @@ Core::Status ParseConfigurationText(
       return Invalid("schema version 3 rejects source.spectral_index; "
                      "canonical local SWCME compression owns the DSA index");
 
-    // The AMR Parker field, SWCME upstream state, species table, and source
-    // spectrum must describe the same physical system.  Reject discrepancies
-    // here rather than letting mesh refinement, transport, and injection use
-    // different winds or particles.
+    // The AMR Parker field, SWCME upstream state, and source energy interval
+    // must describe the same physical system.  Species identity is purposely
+    // not compared here: the generated AMPS table is the sole authority and
+    // injection converts these declared kinetic-energy bounds to momentum
+    // independently with every compiled species' AMPS mass.
     const double parkerSourceM = model.parker_source_radius_Rs *
         swcme::constants::SOLAR_RADIUS_M;
     // SWCME's B1AU_nT is the *total* Parker magnitude at one AU and at the
@@ -864,11 +893,6 @@ Core::Status ParseConfigurationText(
                     candidate.parker.radialFieldAtReferenceT) &&
         NearlyEqual(model.T_K, candidate.parker.temperatureK) &&
         model.parker_radial_polarity == candidate.parker.magneticPolarity;
-    const bool sameSpecies =
-        NearlyEqual(spectrum.particle_mass_kg, candidate.species.massKg) &&
-        NearlyEqual(static_cast<double>(spectrum.charge_number) *
-                        Core::Const::e,
-                    candidate.species.chargeC);
     const bool sameSource =
         NearlyEqual(spectrum.kinetic_energy_min_MeV * 1.0e6 * Core::Const::e,
                     candidate.source.minimumEnergyJ) &&
@@ -886,8 +910,6 @@ Core::Status ParseConfigurationText(
     if (!sameBackground)
       return Invalid("[background.parker] differs from the canonical "
                      "[swcme] wind, Parker field, density, or temperature");
-    if (!sameSpecies)
-      return Invalid("[species] mass or charge differs from canonical [swcme]");
     if (!sameSource)
       return Invalid("[source] energy/efficiency differs from canonical "
                      "[swcme], or SWCME normalization is not relative_only");
@@ -943,6 +965,35 @@ Core::Status LoadConfigurationFile(
   return ParseConfigurationText(text.str(), result);
 }
 
+Core::Status ApplyInitializationOutputDirectory(
+    const std::string& directory, RunConfiguration3DOptions* options) {
+  if (options == nullptr) return Invalid("initialization options output is null");
+  if (directory.empty())
+    return Invalid("initialization output directory is empty");
+
+  // Retain the reviewed leaf names from [output].  Only their parent directory
+  // is a command-line concern.  Treat both slash spellings as separators so a
+  // deck copied between systems does not accidentally embed its former parent
+  // beneath the requested preview directory.
+  const auto leafName = [](const std::string& path) {
+    const std::size_t separator = path.find_last_of("/\\");
+    return separator == std::string::npos ? path : path.substr(separator + 1);
+  };
+  const std::string meshLeaf = leafName(options->initializationMeshTecplotFile);
+  const std::string lineLeaf =
+      leafName(options->initializationParkerLineTecplotFile);
+  if (meshLeaf.empty() || lineLeaf.empty() || meshLeaf == "." ||
+      meshLeaf == ".." || lineLeaf == "." || lineLeaf == "..") {
+    return Invalid("initialization Tecplot paths must end in file names before "
+                   "--initialization-output-dir can be applied");
+  }
+  const std::string separator =
+      (!directory.empty() && directory.back() == '/') ? "" : "/";
+  options->initializationMeshTecplotFile = directory + separator + meshLeaf;
+  options->initializationParkerLineTecplotFile = directory + separator + lineLeaf;
+  return Core::Status::OK();
+}
+
 Core::Status BuildStandaloneRunRequest(
     int argc, char* const argv[], StandaloneRunRequest* result) {
   if (result == nullptr) return Invalid("standalone request output is null");
@@ -958,6 +1009,11 @@ Core::Status BuildStandaloneRunRequest(
   RunConfiguration3DOptions options;
   status = LoadConfigurationFile(candidate.commandLine.inputPath, &options);
   if (!status.ok()) return status;
+  if (!candidate.commandLine.initializationOutputDirectory.empty()) {
+    status = ApplyInitializationOutputDirectory(
+        candidate.commandLine.initializationOutputDirectory, &options);
+    if (!status.ok()) return status;
+  }
   if (!candidate.commandLine.outputDirectoryOverride.empty())
     options.outputDirectory = candidate.commandLine.outputDirectoryOverride;
   if (!candidate.commandLine.restartPath.empty())
@@ -1023,8 +1079,9 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
          << "parker_spiral_length_m=" << options.parkerSpiralLengthM << '\n'
          << "parker_spiral_end_m=" << lineEnd.x << ',' << lineEnd.y << ','
          << lineEnd.z << '\n'
-         << "amps_species_index=" << options.species.ampsSpeciesIndex << '\n'
-         << "species_name=" << options.species.name << '\n'
+         << "compiled_species_authority=AMPS-SpeciesList\n"
+         << "source_samples_per_compiled_species="
+         << options.source.samplesPerStep << '\n'
          << "minimum_requested_cell_m=" << preflight.minimumRequestedCellM << '\n'
          << "maximum_requested_cell_m=" << preflight.maximumRequestedCellM << '\n'
          << "tube_radius_at_reference_m=" << preflight.tubeRadiusAtReferenceM << '\n'

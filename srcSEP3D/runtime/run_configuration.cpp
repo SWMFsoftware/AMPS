@@ -4,6 +4,7 @@
 #include "sep_background_snapshot.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <iomanip>
 #include <limits>
@@ -94,15 +95,21 @@ bool ValidProfileExponent(double value) {
   return std::isfinite(value) && value > 0.0;
 }
 
-bool SamePhysicalValue(double left, double right) {
-  // Human-authored SI input and generated AMPS constants can pass through
-  // different decimal parsers.  A relative tolerance of 1e-12 accepts only
-  // representation-scale differences; it is far too small to confuse a
-  // proton with another ion or a singly charged ion with a different charge
-  // state.  No absolute floor is used because mass and charge are very small
-  // SI values and an O(1) floor would make the comparison meaningless.
-  const double scale = std::max(std::fabs(left), std::fabs(right));
-  return scale > 0.0 && std::fabs(left - right) <= 1.0e-12 * scale;
+std::string NormalizedSpeciesSymbol(std::string symbol) {
+  // Case and surrounding whitespace are presentation details, but punctuation
+  // is chemical identity: H, H_PLUS, and H+ must never collapse to one value.
+  // This normalization is used only for duplicate detection and diagnostics;
+  // the original AMPS symbol is retained in the binding table.
+  symbol.erase(std::remove_if(symbol.begin(), symbol.end(),
+                              [](unsigned char value) {
+                                return std::isspace(value) != 0;
+                              }),
+               symbol.end());
+  std::transform(symbol.begin(), symbol.end(), symbol.begin(),
+                 [](unsigned char value) {
+                   return static_cast<char>(std::toupper(value));
+                 });
+  return symbol;
 }
 
 }  // namespace
@@ -284,41 +291,64 @@ bool operator!=(const StorageLayout& left, const StorageLayout& right) {
   return !(left == right);
 }
 
-Core::Status ValidateSingleSpeciesBinding(
-    const SpeciesOptions& configured, int ampsSpeciesCount,
-    double ampsMassKg, double ampsChargeC) {
-  // The near-term production contract is deliberately proton-only.  Failing
-  // before particle weights or source callbacks are installed prevents the
-  // former behavior in which one configured weight was copied to every AMPS
-  // species and only species zero received shock particles.
-  if (ampsSpeciesCount != 1) {
+Core::Status ValidateCompiledSpeciesBinding(
+    const RunConfiguration3DOptions& configured, int ampsSpeciesCount,
+    const std::vector<CompiledSpeciesRecord>& compiled) {
+  if (ampsSpeciesCount <= 0 ||
+      compiled.size() != static_cast<std::size_t>(ampsSpeciesCount)) {
     return Core::Status(
         Core::StatusCode::ConfigurationConflict,
-        "srcSEP3D currently requires exactly one AMPS species");
+        "compiled AMPS species table size does not match the generated count");
   }
-  if (configured.ampsSpeciesIndex != 0) {
-    return Core::Status(
-        Core::StatusCode::ConfigurationConflict,
-        "the proton-only srcSEP3D contract requires AMPS species index zero");
+
+  std::vector<std::string> symbols;
+  symbols.reserve(compiled.size());
+  for (std::size_t slot = 0; slot < compiled.size(); ++slot) {
+    const CompiledSpeciesRecord& species = compiled[slot];
+    const std::string symbol = NormalizedSpeciesSymbol(species.symbol);
+    if (species.ampsIndex != static_cast<int>(slot)) {
+      return Core::Status(
+          Core::StatusCode::ConfigurationConflict,
+          "compiled AMPS species indices are not contiguous at slot " +
+              std::to_string(slot));
+    }
+    if (symbol.empty())
+      return Invalid("compiled AMPS species has an empty chemical symbol");
+    if (std::find(symbols.begin(), symbols.end(), symbol) != symbols.end()) {
+      return Core::Status(
+          Core::StatusCode::ConfigurationConflict,
+          "compiled AMPS species table contains duplicate symbol '" +
+              species.symbol + "'");
+    }
+    symbols.push_back(symbol);
+    if (!std::isfinite(species.massKg) || species.massKg <= 0.0) {
+      return Invalid("compiled AMPS species '" + species.symbol +
+                     "' has a non-positive or non-finite mass");
+    }
+    if (!std::isfinite(species.chargeC) || species.chargeC == 0.0) {
+      return Core::Status(
+          Core::StatusCode::ConfigurationConflict,
+          "compiled AMPS species '" + species.symbol +
+              "' is neutral or has a non-finite charge; the selected SEP "
+              "scattering model requires every injected species to be charged");
+    }
   }
-  if (configured.name != "proton") {
-    return Core::Status(
-        Core::StatusCode::ConfigurationConflict,
-        "the current srcSEP3D release contract supports proton only");
-  }
-  if (!std::isfinite(ampsMassKg) || ampsMassKg <= 0.0 ||
-      !std::isfinite(ampsChargeC) || ampsChargeC == 0.0) {
-    return Invalid("AMPS species zero has an invalid SI mass or charge");
-  }
-  if (!SamePhysicalValue(configured.massKg, ampsMassKg)) {
-    return Core::Status(
-        Core::StatusCode::ConfigurationConflict,
-        "configured proton mass does not match AMPS species zero");
-  }
-  if (!SamePhysicalValue(configured.chargeC, ampsChargeC)) {
-    return Core::Status(
-        Core::StatusCode::ConfigurationConflict,
-        "configured proton charge does not match AMPS species zero");
+
+  for (const ObserverOptions& observer : configured.observers) {
+    // A wildcard has already been represented as an empty accepted-species
+    // vector for the sampling layer.  It is valid for every positive compiled
+    // table size and must not be expanded to a build-specific list in the
+    // post-compile configuration object.
+    if (observer.allCompiledSpecies) continue;
+    for (int species : observer.species) {
+      if (species < 0 || species >= ampsSpeciesCount) {
+        return Core::Status(
+            Core::StatusCode::ConfigurationConflict,
+            "observer '" + observer.id + "' selects AMPS species index " +
+                std::to_string(species) + " outside the compiled table [0," +
+                std::to_string(ampsSpeciesCount - 1) + "]");
+      }
+    }
   }
   return Core::Status::OK();
 }
@@ -617,18 +647,13 @@ Core::Status RunConfiguration3D::Create(
        source.samplesPerStep == 0)) {
     return Invalid("source spectrum, efficiency, or sampling controls are invalid");
   }
-  if (normalized.species.ampsSpeciesIndex != 0 ||
-      normalized.species.name != "proton" ||
-      !std::isfinite(normalized.species.massKg) ||
-      !std::isfinite(normalized.species.chargeC) ||
-      !std::isfinite(normalized.species.macroparticleWeight) ||
-      normalized.species.massKg <= 0.0 ||
-      normalized.species.chargeC == 0.0 ||
-      normalized.species.macroparticleWeight <= 0.0) {
-    return Invalid(
-        "the current species contract requires index-zero proton with finite "
-        "positive mass, positive charge, and particle weight");
-  }
+  // The post-compile file owns only a common numerical weight.  Species
+  // count, identity, mass, and charge are unavailable in this AMPS-independent
+  // factory and are validated against the generated table at the AMPS
+  // boundary before any mesh storage is allocated.
+  if (!std::isfinite(normalized.species.macroparticleWeight) ||
+      normalized.species.macroparticleWeight <= 0.0)
+    return Invalid("species.macroparticle_weight must be finite and positive");
   std::vector<std::string> observerIds;
   for (const ObserverOptions& observer : normalized.observers) {
     const double radius = observer.positionM.Norm();
@@ -647,7 +672,9 @@ Core::Status RunConfiguration3D::Create(
         !std::isfinite(observer.minimumMu) ||
         !std::isfinite(observer.maximumMu) ||
         observer.minimumMu < -1.0 || observer.maximumMu > 1.0 ||
-        observer.maximumMu <= observer.minimumMu || observer.species.empty() ||
+        observer.maximumMu <= observer.minimumMu ||
+        (observer.allCompiledSpecies && !observer.species.empty()) ||
+        (!observer.allCompiledSpecies && observer.species.empty()) ||
         (!observer.followsTrajectory &&
          (radius < normalized.innerRadiusM || radius > normalized.outerRadiusM))) {
       return Invalid("observer identity, location, cadence, bins, or products are invalid");
@@ -665,10 +692,14 @@ Core::Status RunConfiguration3D::Create(
     if (std::find(observerIds.begin(), observerIds.end(), observer.id) !=
         observerIds.end()) return Invalid("observer IDs must be unique");
     observerIds.push_back(observer.id);
-    for (int species : observer.species)
-      if (species != normalized.species.ampsSpeciesIndex)
-        return Invalid(
-            "observer species must equal the configured proton AMPS index");
+    // The generated AMPS table is intentionally not imported here.  Reject
+    // negative indices now; ValidateCompiledSpeciesBinding performs the upper
+    // bound check against the generated AMPS count during initialization.
+    if (!observer.allCompiledSpecies) {
+      for (int species : observer.species)
+        if (species < 0)
+          return Invalid("observer species indices must be non-negative");
+    }
   }
 
   if (normalized.enablePerpendicularDiffusion || normalized.enableDrifts)
@@ -784,11 +815,8 @@ Core::Status RunConfiguration3D::Create(
     physics << ";source_index=" << source.spectralIndex;
   else
     physics << ";source_index=canonical-local-compression";
-  physics << ";source_samples=" << source.samplesPerStep
-          << ";species_amps_index=" << normalized.species.ampsSpeciesIndex
-          << ";species_name=" << normalized.species.name
-          << ";species_mass_kg=" << normalized.species.massKg
-          << ";species_charge_C=" << normalized.species.chargeC
+  physics << ";source_samples_per_compiled_species=" << source.samplesPerStep
+          << ";compiled_species_authority=AMPS-SpeciesList"
           << ";species_weight=" << normalized.species.macroparticleWeight
           << ";deltaB_over_B=" << normalized.prescribedDeltaBOverB
           << ";turbulence_kmin_m-1=" << normalized.turbulenceKMinPerM
@@ -826,7 +854,13 @@ Core::Status RunConfiguration3D::Create(
             << ',' << observer.collectionRadiusM << ',' << observer.shellRadiusM
             << ',' << observer.minimumEnergyJ << ',' << observer.maximumEnergyJ
             << ',' << observer.minimumMu << ',' << observer.maximumMu;
-    for (int species : observer.species) physics << ',' << species;
+    if (observer.allCompiledSpecies) {
+      // Preserve wildcard intent in restart/physics identity.  It must not be
+      // fingerprinted as an accidentally empty observer selection.
+      physics << ",all-compiled-species";
+    } else {
+      for (int species : observer.species) physics << ',' << species;
+    }
   }
   const std::string fingerprint =
       SEP::Background::FingerprintConfiguration(physics.str());

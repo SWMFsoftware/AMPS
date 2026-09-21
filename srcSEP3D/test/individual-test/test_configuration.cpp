@@ -146,10 +146,6 @@ authority = none
 enabled = false
 
 [species]
-amps_index = 0
-name = proton
-mass_kg = 1.67262192369e-27
-charge_c = 1.602176634e-19
 macroparticle_weight = 1
 
 [storage]
@@ -254,26 +250,51 @@ Result RunCFG3D01() {
     return Fail("file and typed construction did not normalize to one physics fingerprint");
   }
 
-  const char* argv[] = {"srcSEP3D", "--input", "run.in", "--dry-run",
+  const char* argv[] = {"srcSEP3D", "--input", "run.in",
+                        "--initialization-only",
+                        "--initialization-output-dir", "preview",
                         "--output-dir", "products", "--log-level", "verbose"};
   RM::StandaloneCommandLine cli;
-  if (!RM::ParseStandaloneCommandLine(8, const_cast<char**>(argv), &cli).ok() ||
-      !cli.dryRun || cli.inputPath != "run.in" ||
+  if (!RM::ParseStandaloneCommandLine(10, const_cast<char**>(argv), &cli).ok() ||
+      !cli.initializationOnly || cli.dryRun || cli.inputPath != "run.in" ||
+      cli.initializationOutputDirectory != "preview" ||
       cli.outputDirectoryOverride != "products" ||
       cli.verbosity != RM::LogVerbosity::Verbose) {
     return Fail("documented standalone CLI options did not normalize correctly");
+  }
+  const char* conflicting[] = {"srcSEP3D", "--input", "run.in",
+                               "--dry-run", "--initialization-only"};
+  if (RM::ParseStandaloneCommandLine(
+          5, const_cast<char**>(conflicting), &cli).ok()) {
+    return Fail("dry-run and initialization-only modes were not rejected");
   }
 
   std::string bad = CompleteInput();
   bad += "\n[output]\nunknown_key = x\n";
   if (RM::ParseConfigurationText(bad, &parsed).ok())
     return Fail("duplicate/unknown input was not rejected before initialization");
+  // Molecular identity belongs exclusively to the AMPS build-time
+  // SpeciesList.  A post-compile attempt to redefine mass must be an unknown
+  // key rather than a silently ignored compatibility spelling.
+  std::string retiredSpeciesField = CompleteInput();
+  const std::string weightLine = "macroparticle_weight = 1\n";
+  retiredSpeciesField.insert(
+      retiredSpeciesField.find(weightLine) + weightLine.size(),
+      "mass_kg = 1.67262192369e-27\n");
+  if (RM::ParseConfigurationText(retiredSpeciesField, &parsed).ok())
+    return Fail("runtime input was allowed to redefine compiled species mass");
   const std::size_t observer = bad.find("[observer.default]");
   bad = CompleteInput();
   bad.erase(bad.find("[observer.default]"),
             bad.find("[output]") - bad.find("[observer.default]"));
   if (observer == std::string::npos || RM::ParseConfigurationText(bad, &parsed).ok())
     return Fail("a missing required observer group was not rejected");
+  const SEP3D::Core::Status flatStatus =
+      RM::ParseConfigurationText("scattering = prescribed\n", &parsed);
+  if (flatStatus.ok() ||
+      flatStatus.message.find("before any [section]") == std::string::npos) {
+    return Fail("a legacy flat deck did not receive the section-aware diagnostic");
+  }
 
   std::string summary;
   if (!RM::BuildDryRunSummary(*fromFile, &summary).ok() ||
@@ -295,6 +316,18 @@ Result RunCFG3D01() {
   if (!RM::RunConfiguration3D::Create(exampleOptions, &example).ok() ||
       !RM::BuildDryRunSummary(*example, &summary).ok()) {
     return Fail("the annotated production example failed resource preflight");
+  }
+  if (exampleOptions.observers.size() != 1 ||
+      !exampleOptions.observers.front().allCompiledSpecies ||
+      !exampleOptions.observers.front().species.empty()) {
+    return Fail("the production example does not preserve species=all as a wildcard");
+  }
+  if (!RM::ApplyInitializationOutputDirectory("preview", &exampleOptions).ok() ||
+      exampleOptions.initializationMeshTecplotFile !=
+          "preview/sep3d-initialization-mesh.dat" ||
+      exampleOptions.initializationParkerLineTecplotFile !=
+          "preview/sep3d-initialization-parker-line.dat") {
+    return Fail("initialization output-directory override changed product names");
   }
   return Pass("versioned input, CLI normalization, early errors, typed parity, and allocation-free dry-run passed");
 }
@@ -481,41 +514,40 @@ Result RunCFG3D06() {
 }
 
 Result RunCFG3D07() {
-  // Stage 3 deliberately chooses the low-risk single-proton release contract.
-  // Exercise the AMPS-independent validator with the values that amps_init
-  // reads from PIC after parsing, then prove every ambiguity fails closed
-  // before weights or sources can be installed.
-  RM::SpeciesOptions proton;
-  if (!RM::ValidateSingleSpeciesBinding(
-           proton, 1, SEP3D::Core::Const::m_p,
-           SEP3D::Core::Const::e).ok())
-    return Fail("the canonical one-proton AMPS binding was rejected");
-  if (RM::ValidateSingleSpeciesBinding(
-          proton, 2, SEP3D::Core::Const::m_p,
-          SEP3D::Core::Const::e).ok())
-    return Fail("a multi-species AMPS table was accepted");
-  if (RM::ValidateSingleSpeciesBinding(
-          proton, 1, 4.0 * SEP3D::Core::Const::m_p,
-          SEP3D::Core::Const::e).ok())
-    return Fail("an AMPS mass mismatch was accepted");
-  if (RM::ValidateSingleSpeciesBinding(
-          proton, 1, SEP3D::Core::Const::m_p,
-          2.0 * SEP3D::Core::Const::e).ok())
-    return Fail("an AMPS charge mismatch was accepted");
-
+  // The post-compile runtime never chooses species identity.  Exercise the
+  // neutral binding layer with the same records production reads from AMPS'
+  // generated ChemTable/MolMass/ElectricChargeTable arrays.
   std::shared_ptr<const RM::RunConfiguration3D> configuration;
   RM::RunConfiguration3DOptions options;
-  options.species.ampsSpeciesIndex = 1;
-  if (RM::RunConfiguration3D::Create(options, &configuration).ok())
-    return Fail("immutable configuration accepted a nonzero AMPS species index");
-  options = RM::RunConfiguration3DOptions();
-  options.species.name = "alpha";
-  if (RM::RunConfiguration3D::Create(options, &configuration).ok())
-    return Fail("immutable configuration accepted a non-proton species name");
-  options = RM::RunConfiguration3DOptions();
-  options.observers.front().species = {1};
-  if (RM::RunConfiguration3D::Create(options, &configuration).ok())
-    return Fail("observer configuration accepted a species outside the binding");
+  std::vector<RM::CompiledSpeciesRecord> compiled = {
+      {0, "H_PLUS", SEP3D::Core::Const::m_p, SEP3D::Core::Const::e},
+      {1, "ELECTRON", SEP3D::Core::Const::m_e, -SEP3D::Core::Const::e}};
+  options.observers.front().allCompiledSpecies = true;
+  options.observers.front().species.clear();
+  if (!RM::ValidateCompiledSpeciesBinding(options, 2, compiled).ok())
+    return Fail("an all-species observer rejected a mixed AMPS table");
+  if (RM::ValidateCompiledSpeciesBinding(options, 1, compiled).ok())
+    return Fail("a compiled species-count mismatch was accepted");
+  std::vector<RM::CompiledSpeciesRecord> invalid = compiled;
+  invalid[1].ampsIndex = 2;
+  if (RM::ValidateCompiledSpeciesBinding(options, 2, invalid).ok())
+    return Fail("a non-contiguous compiled species index was accepted");
+  invalid = compiled;
+  invalid[1].symbol = "h_plus";
+  if (RM::ValidateCompiledSpeciesBinding(options, 2, invalid).ok())
+    return Fail("a duplicate compiled chemical symbol was accepted");
+  invalid = compiled;
+  invalid[1].chargeC = 0.0;
+  if (RM::ValidateCompiledSpeciesBinding(options, 2, invalid).ok())
+    return Fail("a neutral species was accepted by charged SEP transport");
+  invalid = compiled;
+  invalid[1].massKg = 0.0;
+  if (RM::ValidateCompiledSpeciesBinding(options, 2, invalid).ok())
+    return Fail("a zero-mass compiled species was accepted");
+  options.observers.front().allCompiledSpecies = false;
+  options.observers.front().species = {2};
+  if (RM::ValidateCompiledSpeciesBinding(options, 2, compiled).ok())
+    return Fail("an observer species outside the compiled table was accepted");
 
   options = RM::RunConfiguration3DOptions();
   std::shared_ptr<const RM::RunConfiguration3D> baseline, changed;
@@ -525,7 +557,7 @@ Result RunCFG3D07() {
   if (!RM::RunConfiguration3D::Create(options, &changed).ok() ||
       baseline->physics_fingerprint() == changed->physics_fingerprint())
     return Fail("species weight is absent from restart compatibility identity");
-  return Pass("proton-only AMPS count, index, mass, charge, observer, and fingerprint contracts passed");
+  return Pass("the complete immutable AMPS species table binds without proton or slot assumptions");
 }
 
 Result RunCFG3D08() {
@@ -687,7 +719,7 @@ std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
       make("CFG3D04", "Parker geometry", "C04 shared polarity-independent geometry.", RunCFG3D04),
       make("CFG3D05", "Mesh preflight", "C05 composite refinement and memory planning.", RunCFG3D05),
       make("CFG3D06", "Initialization schema", "Finite Parker-line fields and fail-closed consistency checks.", RunCFG3D06),
-      make("CFG3D07", "Single-species binding", "Stage-3 proton-only AMPS identity and fingerprint contract.", RunCFG3D07),
+      make("CFG3D07", "Compiled-species binding", "Complete generated AMPS table and fingerprint contract.", RunCFG3D07),
       make("CFG3D08", "Complete initialization", "Schema-v3 canonical SWCME and exact per-step source contract.", RunCFG3D08),
   };
 }

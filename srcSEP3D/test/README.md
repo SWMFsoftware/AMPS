@@ -94,7 +94,7 @@ The runner adds
 | `UTIL` | `UTIL02` | byte-exact shared-kernel reference record |
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
 | `R3D` | `R3D01`–`R3D08` | mover hook, requested-time loop, snapshot transaction, tick/events, source, observers, restart, canonical initialization source |
-| `CFG3D` | `CFG3D01`–`CFG3D08` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line/schema-3 initialization, and proton-only AMPS binding |
+| `CFG3D` | `CFG3D01`–`CFG3D08` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line/schema-3 initialization, and complete compiled AMPS species binding |
 | `MSH3D` | `MSH3D01`–`MSH3D11` | resolution, tube geometry, balance, octree budget/ownership, presets, gradients, finite line, and initialization Tecplot output |
 | `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
 | `SNAP3D` | `SNAP3D01`–`SNAP3D08` | snapshot completeness, coupling conversion, atomicity, interpolation, batch/frame policy |
@@ -268,7 +268,7 @@ python3 test/run_tests.py --suite r2 --rebuild \
 | `R3D05` | physical source number survives rounding/cap, policies are counted, and successive ticks use distinct identities |
 | `R3D06` | moving observer geometry, acceptance/uncertainty metadata, and commit-only accumulator reset are enforced |
 | `R3D07` | schema-2 restart round-trips identities/layout, clocks/events, providers, shock, RNG tuple, ledgers, and sampling state |
-| `R3D08` | canonical schema-3 provider preflights the first valid source surface and allocates the exact global per-step particle count deterministically |
+| `R3D08` | canonical schema-3 provider preflights the first valid source surface and allocates the exact per-species, per-step particle count deterministically |
 
 ```bash
 python3 test/run_tests.py --suite improvements-r --rebuild \
@@ -297,7 +297,7 @@ env MAKEFLAGS="-j16" srcSEP3D/test/run_tests.py --all \
 | `CFG3D04` | mesh centerline/tangent and analytic field use one Parker geometry; polarity reverses `B` without moving the tube |
 | `CFG3D05` | composite profiles are monotone, tube width scales from its reference, all memory categories/levels report, and an impossible level cap fails |
 | `CFG3D06` | schema version 2 requires the complete finite Parker line and rejects a source-inconsistent initial point |
-| `CFG3D07` | configuration and AMPS bind exactly one proton at index zero; count, index, name, mass, charge, observer, and fingerprint negative controls fail closed |
+| `CFG3D07` | a complete mixed ion/electron table binds, while count mismatch, non-contiguous indices, duplicate symbols, invalid mass, neutral charge, out-of-range observers, and missing fingerprint state fail closed |
 | `CFG3D08` | complete schema-3 SWCME input resolves while a missing canonical field, inconsistent weight, or skipped-step injection fails closed |
 
 ```bash
@@ -560,10 +560,14 @@ in the runner manifest.
 initial point inconsistent with the inner sphere. `MSH3D10` constructs the
 configured number of vertices, sums every segment to the requested arc length,
 and translates the origin/probe together to prove the AMR law is not tied to
-coordinate zero. `CFG3D07` tests the positive index-zero proton binding plus
-rejected AMPS species count, configured index, species name, mass, signed
-charge, observer index, and changed fingerprint. These extend the gates; none
-of the earlier CFG3D/MSH3D thresholds or negative controls was relaxed.
+coordinate zero. `CFG3D07` tests complete generated-table ownership with a
+mixed positive-ion/negative-electron table and rejected count mismatch,
+non-contiguous index, duplicate case-normalized symbol, zero mass, neutral
+charge, out-of-range observer selection, and changed weight fingerprint.
+`R3D05` additionally proves that identical total kinetic-energy bounds produce
+different valid momentum intervals for proton and electron masses. These
+extend the gates; none of the earlier CFG3D/MSH3D thresholds or negative
+controls was relaxed.
 `CFG3D08` exercises complete canonical input and three live schema-3 negative
 controls. `MSH3D11` creates, verifies, and removes a real Tecplot product.
 `R3D08` constructs the canonical provider, checks delayed activation and the

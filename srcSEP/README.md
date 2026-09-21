@@ -13,6 +13,12 @@ Use the initialization contract on every new standalone run:
 
 ```sh
 ./amps --input srcSEP/examples/sep_parker_mesh.in
+
+# Build and visualize the initialized mesh/field line without taking a step.
+mpiexec -n 4 ./amps \
+  --input srcSEP/examples/sep_parker_mesh.in \
+  --initialization-only \
+  --initialization-output-dir sep_mesh_preview
 ```
 
 The file is parsed and validated before the canonical SWCME model, MPI, the
@@ -33,9 +39,9 @@ weight, observer, output path, or CME parameter from an unreviewed C++ default.
 
 | Section | Required keys | Meaning and validation |
 |---|---|---|
-| `[run]` | `schema_version`, `time_step_s` | `schema_version = 2`; the positive SI step is installed as the global and every allocated block's proton time step. |
-| `[injection]` | `macroparticles_per_step` | Positive integer no larger than `INT_MAX`; exactly this many computational particles are created at every active field-line source event unless the explicit legacy CLI count override is supplied. |
-| `[species]` | `particle_weight` | Positive finite base AMPS statistical weight, in represented physical protons per macroparticle. |
+| `[run]` | `schema_version`, `time_step_s` | `schema_version = 2`; the positive SI step is installed globally and on every allocated block for every species in the compiled AMPS `SpeciesList`. |
+| `[injection]` | `macroparticles_per_step` | Positive integer no larger than `INT_MAX`; exactly this many computational particles are created per compiled species at every active field-line source event unless the explicit legacy CLI count override is supplied. |
+| `[species]` | `particle_weight` | Positive finite common base AMPS statistical weight installed for every compiled species. Species count, type, mass, charge, and index remain build-time AMPS data and are not redefined here. |
 | `[observer]` | `heliocentric_radius_m` | One-dimensional observer radius, inclusive between the inner and outer radii; it replaces the retained field-line sampling-radius list. |
 | `[output]` | `mesh_tecplot_file`, `field_line_tecplot_file` | Nonempty paths for the final distributed AMR tree and finite Parker line. A write failure aborts initialization. |
 | `[parker_spiral]` | `origin_x_m`, `origin_y_m`, `origin_z_m`, `initial_x_m`, `initial_y_m`, `initial_z_m`, `length_m`, `point_count` | Three-dimensional embedding of the 1-D transport line. `point_count >= 2`, maximum 10,000,000, includes both endpoints; `length_m` is positive arc length. The initial point must lie on `domain.inner_radius_m`. |
@@ -49,6 +55,16 @@ Boolean values accept `true/false`, `yes/no`, or `on/off`. Output filenames and
 all physical values enter the initialization fingerprint. Command-line SWCME
 overrides retain their documented higher precedence. The particle-count CLI
 aliases override `macroparticles_per_step` only when explicitly present.
+
+`--initialization-only` executes the real MPI/AMPS initialization path. It
+builds and partitions the AMR mesh, allocates blocks, constructs the finite
+field line, installs the observer, time step, particle weight, background, and
+source configuration, writes both Tecplot products, synchronizes all ranks,
+and calls `MPI_Finalize()` before the first `amps_time_step()`. It is therefore
+not a parse-only or synthetic-mesh mode. `--initialization-output-dir DIR`
+retains the two filenames declared in `[output]`, replaces only their parent
+directory, creates that directory on rank zero, and requires
+`--initialization-only`.
 
 The near-Sun requested size is
 
@@ -116,10 +132,10 @@ field direction but never changes the refinement centreline.
 ### Particle normalization and initialization products
 
 For an active source event, the existing physical source calculation first
-computes the represented proton count \(N_\mathrm{physical}\) from the selected
+computes each species' represented physical count \(N_\mathrm{physical}\) from the selected
 shock model, swept flux-tube volume, density, abundance, and canonical injection
 efficiency. Schema 2 then creates exactly
-`injection.macroparticles_per_step` particles and assigns the individual AMPS
+`injection.macroparticles_per_step` particles for that compiled species and assigns the individual AMPS
 weight correction
 
 \[
@@ -1057,7 +1073,7 @@ domain, line length, point count, and mesh refinement remain unchanged.  This
 is an intentional compatibility boundary, not an implicit default file.
 
 [`examples/sep_parker_mesh.in`](examples/sep_parker_mesh.in) is the complete
-schema-version-1 example.  It defines, in SI units:
+schema-version-2 example.  It defines, in SI units:
 
 - the Parker origin, initial point, physical arc length, and total point count;
 - the inner radius and cubic root-domain half-size;

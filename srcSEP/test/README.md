@@ -163,7 +163,7 @@ make test-ov01-ov05-unit SEP_EXECUTABLE=/path/to/amps
 make test-ev01-ev02-unit
 
 # Cross-file Stage 3 manifests, retired files, OV/EV roles, and srcSEP3D
-# proton-only ownership. This gate needs neither AMPS nor MPI.
+# complete compiled-species ownership. This gate needs neither AMPS nor MPI.
 make test-stage3-contracts
 
 # Strict four-component source-tree audit and negative controls.

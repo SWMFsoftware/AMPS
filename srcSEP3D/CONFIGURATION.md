@@ -1,4 +1,27 @@
-# Configuration, Geometry, Preflight, and Species Binding
+# Configuration, Geometry, Preflight, and Compiled Species Binding
+
+## Compile-time species selection
+
+The AMPS application deck and the srcSEP3D runtime deck have different roles.
+`input/sep3d.input` is processed while AMPS is configured and compiled. Its
+`SpeciesList` is the only authority for species count, order, chemical symbol,
+mass, and signed charge. The file passed to `./amps --input FILE` is parsed only
+after compilation and cannot select, relabel, add, remove, or mutate an AMPS
+species. Its `[species]` section therefore contains only the common numerical
+`macroparticle_weight`.
+
+An executable generated with `SpeciesList=ELECTRON` is valid and injects an
+electron. A mixed `SpeciesList=H_PLUS ELECTRON` build initializes and injects
+both entries in generated index order. Runtime never searches for a proton
+macro and never overwrites either molecular-table entry.
+
+For an AMPS checkout already configured as `sep3d`, changing the source deck
+does not necessarily refresh the root-level working copy. Use
+`cp input/sep3d.input sep3d.input`, run
+`./ampsConfig.pl -input sep3d.input -no-compile`, and then perform the normal
+clean site build. Before execution, inspect the generated `nTotalSpecies` and
+`ChemTable` declarations in `build/pic/pic.h`; startup prints the same table
+with mass and signed charge after binding.
 
 ## V01 perpendicular diffusion and guiding-centre drift
 
@@ -7,7 +30,7 @@ Under `[transport]`, `perpendicular_diffusion` accepts `none`, `constant`, or
 `constant_kappa_perpendicular_m2_per_s` or
 `kappa_perpendicular_to_parallel_ratio`. `drifts` accepts `none`,
 `gradient-b`, `curvature`, or `gradient-curvature`. These choices enter the
-physics fingerprint. Drift uses signed `[species] charge_c` and forces
+physics fingerprint. Drift uses the signed charge from the compiled AMPS table and forces
 magnetic-gradient storage before the mesh layout freezes. Current-sheet drift
 is unsupported because its geometry is unspecified.
 
@@ -24,6 +47,8 @@ The standalone executable accepts one versioned INI-style file:
 
 ```bash
 ./amps --input srcSEP3D/examples/sep3d_analytic_parker.in --dry-run
+mpiexec -n 4 ./amps --input srcSEP3D/examples/sep3d_analytic_parker.in \
+  --initialization-only --initialization-output-dir mesh-preview
 ./amps --input run.in --output-dir products
 ./amps --input run.in --restart restart/sep3d.chk --log-level verbose
 ```
@@ -31,6 +56,11 @@ The standalone executable accepts one versioned INI-style file:
 `--output-dir` and `--restart` override only their corresponding file fields.
 `--dry-run` parses, normalizes, validates, freezes, fingerprints, samples the
 resolution law, and estimates memory; it does not allocate the AMPS mesh.
+`--initialization-only` instead follows the production path through AMPS mesh
+construction and complete application initialization, writes both declared
+Tecplot products, synchronizes all MPI ranks, and exits before the first
+particle step. `--initialization-output-dir` requires that mode and changes
+only the parent directory of the two initialization filenames.
 Unknown options, conflicting test selectors, or a missing `--input` are usage
 errors and return code 2 before AMPS initialization.
 
@@ -52,6 +82,12 @@ visible in code review. Duplicate keys, unknown keys, invalid enumerations,
 missing groups, non-finite values, and incompatible choices fail in the parser
 or immutable factory.
 
+Every assignment must follow a section header. A flat legacy assignment such
+as `scattering = ...` fails with a section-aware diagnostic rather than being
+guessed into `[turbulence]` or `[transport]`. This is intentional: those two
+groups represent different physical contracts. The current example begins
+with `[run]` and is exercised directly by `CFG3D01`.
+
 The complete commented example is
 [`examples/sep3d_analytic_parker.in`](examples/sep3d_analytic_parker.in).
 
@@ -65,8 +101,8 @@ standalone SWCME shock-injection runs and therefore requires:
 - `run.intent = shock-injection`, `shock.authority = swcme`, and
   `source.enabled = true`;
 - `run.injection_cadence_steps = 1`, so
-  `source.samples_per_step` means exactly that many computational particles on
-  every active simulation step;
+  `source.samples_per_step` means exactly that many computational particles for
+  every compiled AMPS species on every active simulation step;
 - analytic Parker background and prescribed turbulence. SWMF/AWSoM coupling
   remains available through the parser-free typed host interface;
 - a spherical canonical shock with `shock_only` region behavior,
@@ -79,8 +115,9 @@ standalone SWCME shock-injection runs and therefore requires:
   two knot lists;
 - exact agreement between application and canonical descriptions of Parker
   wind/rotation/source radius/reference latitude, +Z rotation axis, magnetic
-  normalization/polarity, density, temperature, species, energy range, and
-  injection efficiency; and
+  normalization/polarity, density, temperature, energy range, and injection
+  efficiency. Species identity remains exclusively in AMPS' compiled table;
+  and
 - nonempty `output.initialization_mesh_tecplot_file` and
   `output.initialization_parker_line_tecplot_file`.
 
@@ -100,7 +137,8 @@ as a substitute for resolved physics.
 Before AMPS allocation, the standalone provider evaluates the canonical model
 at `event.valid_from`, builds and validates the complete shock surface, solves
 the MHD jump/source state on every patch, and verifies that
-`source.samples_per_step` is at least the active patch count. This distinguishes
+the per-species `source.samples_per_step` is at least the active patch count.
+This distinguishes
 a legitimately delayed event (inactive before `valid_from`) from an invalid or
 empty source.
 
@@ -115,11 +153,11 @@ species.macroparticle_weight =
   / source.samples_per_step
 ```
 
-The global count is apportioned with a deterministic largest-remainder
+Each species' count is apportioned with a deterministic largest-remainder
 allocation after reserving one representative per active physical patch.
 Per-patch individual weight corrections preserve represented physical number
-exactly. The global and every local AMPS proton timestep/weight are then set
-from the frozen configuration.
+exactly. The global and every local AMPS timestep/weight are then set for every
+compiled species from the frozen configuration.
 
 The full field-by-field tables and `[swcme]` key list are in the top-level
 [`README.md`](README.md); the annotated file is executable acceptance input,
@@ -161,23 +199,31 @@ resume the same physics, while a species weight, observer, mesh, shock, or
 transport change cannot masquerade as the same run. Restart loading compares
 the frozen physics/layout identities transactionally.
 
-### Proton-only AMPS binding
+### Complete compiled AMPS binding
 
-The current schema makes the application scope explicit with
-`[species] amps_index=0` and `name=proton`. `RunConfiguration3D::Create`
-rejects another index or name before mesh allocation, and each observer's
-comma-separated species list must contain only that index. The index is part of
-the physics fingerprint, so a species-layout change cannot reuse a restart or
-evidence identity.
+Immediately after `PIC::Init_BeforeParser()`, production enumerates
+`0..PIC::nTotalSpecies-1` and copies `GetChemSymbol`, `GetMass`, and
+`GetElectricCharge` into AMPS-independent `CompiledSpeciesRecord` values.
+`ValidateCompiledSpeciesBinding` requires the copied count to equal the
+generated count, indices to be contiguous, symbols to be unique and nonempty,
+masses to be finite and positive, and charges to be finite and nonzero. A
+neutral entry fails because the selected focused SEP scattering operator
+requires charge; treating it as charged would not be physically correct.
 
-PIC owns the authoritative runtime species table. Immediately after PIC
-initialization, `ValidateSingleSpeciesBinding` requires exactly one AMPS
-species at index zero and compares its finite SI mass and signed charge with
-the immutable configuration to relative tolerance `1e-12`. Only after that
-validation does the adapter assign the species time step and statistical
-weight. The same validated index is used for injection and observer filtering.
-This is a fail-closed single-species contract, not partial multi-species
-support.
+The adapter does not call the AMPS molecular-data setters. It then installs the
+explicit runtime timestep and common base statistical weight in every compiled
+global slot and every allocated local block. Observer comma-separated numeric
+indices are checked against the generated count during this binding, when that
+count is authoritative and available. `species = all` selects the entire
+compiled table without embedding a build-specific count in the runtime file;
+use numeric indices only for an intentional observer subset.
+
+Source controls have per-compiled-species semantics. Every species receives
+`source.samples_per_step` computational particles and the declared per-species
+physical rate. The kinetic-energy bounds are converted to momentum separately
+with that species' AMPS mass; SWCME shock geometry and compression remain
+common. This is complete multi-species initialization/injection without a
+second runtime species-definition authority.
 
 ## C03: domain and boundary contract
 
@@ -282,7 +328,7 @@ cadences:
 
 Observer sections additionally accept `kind`, Cartesian velocity, collection
 radius, shell radius, minimum/maximum energy, minimum/maximum pitch cosine,
-comma-separated species IDs, and `normalization`. Observer cadence in seconds
+`species = all` or comma-separated subset IDs, and `normalization`. Observer cadence in seconds
 must be an exact integer multiple of `run.time_step_s`; normalization therefore
 cannot acquire a drifting fractional-tick window.
 
@@ -301,10 +347,10 @@ identity/conservation, and resolved observer geometry plus commit-only reset.
 | `CFG3D04` | shared tangent and polarity-independent tube geometry |
 | `CFG3D05` | monotone composite profiles, tube scaling, AMR levels, memory categories, and level rejection |
 | `CFG3D06` | complete finite Parker-line input and fail-closed source consistency |
-| `CFG3D07` | index-zero proton configuration, AMPS count/name/mass/charge agreement, observer ownership, and fingerprint identity |
+| `CFG3D07` | complete generated table, mixed signed charges, count/index/symbol/mass/charge failures, observer bounds, and fingerprint identity |
 | `CFG3D08` | complete schema-3 SWCME input plus missing-field, weight, and per-step-cadence rejection |
 | `MSH3D11` | deterministic unit-labeled initialization Parker Tecplot output |
-| `R3D08` | canonical source-surface preflight and exact global per-step particle allocation |
+| `R3D08` | canonical source-surface preflight and exact per-species, per-step particle allocation |
 
 ## Version 2 finite Parker-line section
 

@@ -251,6 +251,13 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "                               AMPS initialization. If omitted, the legacy\n"
       << "                               hard-coded srcSEP mesh is preserved.\n"
       << "  --input=<path>              Equivalent equals-sign form.\n"
+      << "  --initialization-only       Complete AMPS/model initialization, write the\n"
+      << "                               configured mesh and field-line Tecplot files,\n"
+      << "                               then finalize MPI before the first time step.\n"
+      << "  --initialization-output-dir <path>\n"
+      << "                               Put both initialization products in this\n"
+      << "                               directory while retaining their input-deck\n"
+      << "                               filenames. Requires --initialization-only.\n"
       << "\n"
       << "Turbulence physics switches:\n"
       << "  --coupling <on|off>          Enable/disable SEP particle coupling to the\n"
@@ -440,6 +447,8 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  particles-per-iteration=300, test-manager=off, spectrum-output-interval=100.\n"
       << "\n"
       << "Examples:\n"
+      << "  " << exe << " --input srcSEP/examples/sep_parker_mesh.in --initialization-only\\\n"
+      << "      --initialization-output-dir sep_mesh_preview\n"
       << "  " << exe << " --coupling off --cascade off --reflection off\n"
       << "  " << exe << " --coupling-mode=on --no-cascade --reflection=on\n"
       << "  " << exe << " --run-test-manager\n"
@@ -476,6 +485,28 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
                           options.inputPath, err)) return false;
       if (options.inputPath.empty()) {
         err << "ERROR: option '--input' requires a non-empty path.\n";
+        return false;
+      }
+      continue;
+    }
+
+    if (option_name == "--initialization-only") {
+      if (!value_from_equals.empty()) {
+        err << "ERROR: option '--initialization-only' does not take a value.\n";
+        return false;
+      }
+      options.initializationOnly = true;
+      continue;
+    }
+
+    if (option_name == "--initialization-output-dir") {
+      if (!GetOptionValue(argc, argv, i, option_name, value_from_equals,
+                          options.initializationOutputDirectory, err)) {
+        return false;
+      }
+      if (options.initializationOutputDirectory.empty()) {
+        err << "ERROR: option '--initialization-output-dir' requires a "
+               "non-empty path.\n";
         return false;
       }
       continue;
@@ -1105,6 +1136,24 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
       (options.listTests || options.listMovers || executionRequested)) {
     err << "ERROR: --input configures a production initialization and cannot "
         << "be combined with test/list modes.\n";
+    return false;
+  }
+  if (options.initializationOnly && options.inputPath.empty()) {
+    err << "ERROR: --initialization-only requires --input so the mesh and "
+           "field-line output contract is explicit.\n";
+    return false;
+  }
+  if (!options.initializationOutputDirectory.empty() &&
+      !options.initializationOnly) {
+    err << "ERROR: --initialization-output-dir requires "
+           "--initialization-only.\n";
+    return false;
+  }
+  if (options.initializationOnly &&
+      (options.listTests || options.listMovers || executionRequested ||
+       options.runTestManager)) {
+    err << "ERROR: --initialization-only cannot be combined with test or "
+           "listing modes.\n";
     return false;
   }
 

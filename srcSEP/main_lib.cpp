@@ -13,6 +13,7 @@
 #include <iostream>
 #include <iostream>
 #include <fstream>
+#include <filesystem>
 #include <limits>
 #include <time.h>
 
@@ -57,6 +58,44 @@ const double dxMinSphere=DebugRunMultiplier*4.0*1.0/100/2.5,dxMaxSphere=DebugRun
 const double MarkNotUsedRadiusLimit=100.0;
 
 namespace {
+
+namespace fs = std::filesystem;
+
+// Create both initialization-product parents once on rank zero and synchronize
+// the result before AMPS enters its distributed Tecplot writer.  Input-deck
+// paths and --initialization-output-dir therefore share exactly one filesystem
+// policy, and shared filesystems never see an avoidable many-rank mkdir race.
+void EnsureInitializationOutputParents(
+    const SEP::Initialization::Configuration& initialization) {
+  int directoryStatus = 1;
+  std::string rootMessage;
+  if (PIC::ThisThread == 0) {
+    const std::string paths[] = {
+        initialization.meshTecplotFile,
+        initialization.fieldLineTecplotFile};
+    for (const std::string& pathText : paths) {
+      const fs::path parent = fs::path(pathText).parent_path();
+      if (parent.empty()) continue;
+      std::error_code error;
+      fs::create_directories(parent, error);
+      const bool isDirectory = fs::is_directory(parent, error);
+      if (error || !isDirectory) {
+        directoryStatus = 0;
+        rootMessage = "cannot create initialization output directory '" +
+            parent.string() + "'";
+        if (error) rootMessage += ": " + error.message();
+        break;
+      }
+    }
+  }
+  MPI_Bcast(&directoryStatus, 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
+  if (directoryStatus == 0) {
+    const std::string message = PIC::ThisThread == 0
+        ? rootMessage : "rank zero could not create initialization output directory";
+    exit(__LINE__, __FILE__, message.c_str());
+  }
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+}
 
 // Return the shock radius associated with the background state that is
 // currently visible to particle transport.  Keeping this translation at the
@@ -589,6 +628,7 @@ void amps_init_mesh() {
     // outputMeshTECPLOT owns the distributed AMR serialization.  The finite
     // field line is a rank-independent ordered zone and is therefore written
     // once by rank zero after the final active-node pruning is complete.
+    EnsureInitializationOutputParents(initialization);
     PIC::Mesh::mesh->outputMeshTECPLOT(
         initialization.meshTecplotFile.c_str());
     if (PIC::ThisThread == 0) {
@@ -656,18 +696,28 @@ void amps_init() {
   if (configuredNumerics) {
     const SEP::Initialization::Configuration& initialization =
         SEP::Initialization::Active();
-    PIC::ParticleWeightTimeStep::GlobalTimeStep[_H_PLUS_SPEC_] =
-        initialization.timeStepS;
-    PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_PLUS_SPEC_] =
-        initialization.particleWeight;
+    // SpeciesList is resolved by AMPS at build time.  Initialize every slot in
+    // that generated table rather than assuming that H_PLUS exists or occupies
+    // a particular macro index.  The schema-v2 [species] value is explicitly a
+    // common base numerical weight, so applying it to all compiled entries is
+    // input semantics—not an inferred physical composition.
+    for (int species = 0; species < PIC::nTotalSpecies; ++species) {
+      PIC::ParticleWeightTimeStep::GlobalTimeStep[species] =
+          initialization.timeStepS;
+      PIC::ParticleWeightTimeStep::GlobalParticleWeight[species] =
+          initialization.particleWeight;
+    }
     PIC::ParticleWeightTimeStep::GlobalTimeStepInitialized = true;
-    InstallConfiguredParticleNumerics(
-        PIC::Mesh::mesh->rootTree, _H_PLUS_SPEC_, initialization.timeStepS,
-        initialization.particleWeight);
+    for (int species = 0; species < PIC::nTotalSpecies; ++species)
+      InstallConfiguredParticleNumerics(
+          PIC::Mesh::mesh->rootTree, species, initialization.timeStepS,
+          initialization.particleWeight);
   }
   else {
-    PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(
-        _H_PLUS_SPEC_);
+    // Preserve the legacy AMPS-derived numerical policy, but apply it to the
+    // complete compiled table just as the schema-v2 path does.
+    for (int species = 0; species < PIC::nTotalSpecies; ++species)
+      PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(species);
   }
 
   // Do not overwrite AMPS' configured base particle weight with a second,

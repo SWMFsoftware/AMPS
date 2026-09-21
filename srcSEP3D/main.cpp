@@ -112,6 +112,27 @@ int main(int argc, char** argv) {
   amps_init_mesh();
   amps_init();
 
+  // Initialization-only mode is a completed AMPS initialization, not a dry
+  // parser pass: the distributed mesh has been built and decomposed, blocks,
+  // particle weights, time steps, providers, and observers have been
+  // initialized, and the declared Tecplot products have been closed.  Every
+  // rank reaches this collective boundary before MPI is finalized; no rank can
+  // enter amps_time_step() while another rank is still writing initialization
+  // output.
+  if (request.commandLine.initializationOnly) {
+    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+    if (PIC::ThisThread == 0) {
+      const auto& options = request.configuration->options();
+      std::cout << "srcSEP3D initialization complete; no time steps executed\n"
+                << "initialization_mesh="
+                << options.initializationMeshTecplotFile << '\n'
+                << "initialization_parker_line="
+                << options.initializationParkerLineTecplotFile << '\n';
+    }
+    MPI_Finalize();
+    return EXIT_SUCCESS;
+  }
+
   const std::uint64_t maximumSteps =
       request.configuration->options().maximumTimeSteps;
   for (std::uint64_t iteration = 0; iteration < maximumSteps; ++iteration) {

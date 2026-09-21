@@ -25,6 +25,15 @@ enum class LogVerbosity { Quiet, Normal, Verbose };
 struct StandaloneCommandLine {
   std::string inputPath;
   std::string outputDirectoryOverride;
+  // Initialization-only execution builds the real distributed AMPS mesh,
+  // completes model initialization, writes the two declared Tecplot products,
+  // and exits collectively before the first particle time step.  This is
+  // deliberately different from dryRun, which never allocates an AMPS mesh.
+  bool initializationOnly = false;
+  // Optional parent directory for the initialization mesh and Parker-line
+  // products.  The input-deck filenames are retained, so this switch changes
+  // only their location and cannot silently rename either declared artifact.
+  std::string initializationOutputDirectory;
   std::string restartPath;
   bool dryRun = false;
   bool listTests = false;
@@ -44,6 +53,11 @@ Core::Status ParseConfigurationText(
     const std::string& text, RunConfiguration3DOptions* result);
 Core::Status LoadConfigurationFile(
     const std::string& path, RunConfiguration3DOptions* result);
+// Replace only the parent directories of the two initialization Tecplot
+// products.  The operation is pure: directory creation is deferred until MPI
+// initialization, immediately before the collective mesh writer runs.
+Core::Status ApplyInitializationOutputDirectory(
+    const std::string& directory, RunConfiguration3DOptions* options);
 Core::Status BuildStandaloneRunRequest(
     int argc, char* const argv[], StandaloneRunRequest* result);
 

@@ -176,15 +176,18 @@ identity. Output directory, prefix, and cadence remain in the resolved manifest
 but are intentionally excluded from physics identity. `LIFE3D03` protects that
 separation and the exact storage offsets.
 
-Stage 3 adds the missing runtime species identity to this immutable boundary.
-`SpeciesOptions::ampsSpeciesIndex` must be zero, the configured name must be
-`proton`, observers may select only that index, and the index participates in
-the physics fingerprint. After PIC initialization, the application validates
-that AMPS exposes exactly one species and that species zero has matching finite
-SI mass and signed charge before assigning its time step/weight or injecting a
-particle. `CFG3D07` supplies positive and independent negative controls for
-every part of this contract. This records a deliberate proton-only application;
-it does not imply incomplete multi-species loops are supported.
+The corrected species boundary treats AMPS `SpeciesList` as immutable and
+complete. Runtime no longer carries an asserted index, species name, mass, or
+charge and no longer calls molecular-data setters. Immediately after AMPS base
+initialization, the application enumerates every generated index through the
+chemical-symbol, mass, and signed-charge accessors and validates the complete
+table before mesh or after-parser initialization. The configured timestep and
+base weight are then installed for every species and every owner-local block.
+Injection iterates the same table, assigns the exact per-species sample count,
+and reconstructs momentum bounds from each AMPS mass. `CFG3D07` supplies
+positive mixed ion/electron coverage and independent negative controls for
+count, index continuity, symbol uniqueness, mass, charge, and observer range;
+`R3D05` covers the species-dependent energy-to-momentum conversion.
 
 ## Phase M — mesh and storage
 

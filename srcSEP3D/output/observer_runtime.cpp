@@ -48,6 +48,10 @@ Core::Status BuildObserverDefinitions(
     resolved.kineticEnergyEdgesJ = LogEdges(
         observer.minimumEnergyJ, observer.maximumEnergyJ,
         observer.energyBins);
+    // Sampling defines an empty acceptedSpecies vector as a wildcard.  The
+    // configuration factory permits that representation only when the user
+    // explicitly selected `species = all`, so no malformed empty list can
+    // accidentally broaden an observer here.
     resolved.acceptedSpecies = observer.species;
     resolved.minimumMu = observer.minimumMu;
     resolved.maximumMu = observer.maximumMu;

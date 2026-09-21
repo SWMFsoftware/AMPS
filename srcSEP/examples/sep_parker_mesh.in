@@ -7,8 +7,8 @@
 
 [run]
 schema_version = 2
-# The PIC clock step is explicit.  It is installed on every proton block and
-# is never re-derived from the AMR cell size when this schema is active.
+# The PIC clock step is explicit.  It is installed for every compiled AMPS
+# species on every block and is never re-derived from the AMR cell size.
 time_step_s = 1
 
 [injection]
@@ -17,8 +17,10 @@ time_step_s = 1
 macroparticles_per_step = 1000
 
 [species]
-# Number of represented physical protons in the base AMPS macroparticle.  The
-# shock-source correction multiplies this value without changing conservation.
+# Common base statistical weight installed for every entry in AMPS' generated
+# SpeciesList.  This runtime file does not redefine species identity, mass, or
+# charge.  The shock-source correction is species-aware and multiplies this
+# base value without changing conservation.
 particle_weight = 1e30
 
 [observer]
@@ -27,6 +29,8 @@ heliocentric_radius_m = 1.495978707e11
 
 [output]
 # Both products are emitted after final mesh pruning/decomposition.
+# With --initialization-output-dir DIR, these leaf names are retained and only
+# their parent is replaced. --initialization-only then exits before time step 1.
 mesh_tecplot_file = srcsep-initialization-mesh.dat
 field_line_tecplot_file = srcsep-initialization-field-line.dat
 

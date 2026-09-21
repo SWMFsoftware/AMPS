@@ -48,7 +48,11 @@ struct Configuration {
   // campaign physics and must be supplied by the operator.
   double timeStepS = 0.0;
   std::uint64_t macroparticlesPerStep = 0;
-  double particleWeight = 0.0;  // represented physical protons per macro
+  // Common base statistical weight installed for every species in AMPS'
+  // compiled SpeciesList.  Species identity/mass/charge never come from this
+  // post-compile file; injection applies any species-specific correction via
+  // the already validated source table.
+  double particleWeight = 0.0;
 
   // srcSEP samples a one-dimensional field line at a heliocentric radius.
   // The radius is SI and is installed into the retained field-line sampler.
@@ -99,6 +103,13 @@ struct Configuration {
 Transport::Status ParseText(const std::string& text, Configuration* result);
 Transport::Status LoadFile(const std::string& path, Configuration* result);
 Transport::Status Validate(const Configuration& configuration);
+
+// Retarget the two initialization products to one command-line-selected
+// directory while preserving the leaf names declared in [output].  This is a
+// pure configuration transform; the MPI-aware runtime creates parent
+// directories immediately before collective output begins.
+Transport::Status ApplyOutputDirectoryOverride(
+    const std::string& directory, Configuration* configuration);
 
 // Install exactly once before amps_init_mesh().  Absence means legacy mode and
 // intentionally preserves every historical hard-coded srcSEP mesh choice.

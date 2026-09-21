@@ -122,6 +122,13 @@ void SEP::ParticleSource::PopulateFieldLine(int iFieldLine) {
 
     for (int idim=0;idim<3;idim++) v[idim]=0.5*(v_sw_begin[idim]+v_sw_end[idim]);
 
-    PIC::FieldLine::PopulateSegment(_H_PLUS_SPEC_,NumberDensity,Temperature,v,Volume,iSegment,iFieldLine,200);
+    // The coupled prepopulation request applies to the compiled AMPS species
+    // table.  Never assume H_PLUS exists or maps to a particular slot: AMPS'
+    // build-time SpeciesList is the immutable authority and PopulateSegment
+    // records the actual generated index in every created particle.
+    for (int species=0;species<PIC::nTotalSpecies;++species) {
+      PIC::FieldLine::PopulateSegment(
+          species,NumberDensity,Temperature,v,Volume,iSegment,iFieldLine,200);
+    }
  }
 }

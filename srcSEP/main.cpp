@@ -204,6 +204,17 @@ int main(int argc,char **argv) {
         std::cerr << "ERROR: initialization input: " << loaded.message << '\n';
       return 1;
     }
+    if (!cli_options.initializationOutputDirectory.empty()) {
+      const SEP::Transport::Status redirected =
+          SEP::Initialization::ApplyOutputDirectoryOverride(
+              cli_options.initializationOutputDirectory, &initialization);
+      if (!redirected.ok()) {
+        if (PIC::ThisThread == 0)
+          std::cerr << "ERROR: initialization output directory: "
+                    << redirected.message << '\n';
+        return 1;
+      }
+    }
     const SEP::Transport::Status installed =
         SEP::Initialization::Install(initialization);
     if (!installed.ok()) {
@@ -522,7 +533,7 @@ int main(int argc,char **argv) {
   // The production shock diagnostic is unrelated to component-test setup and
   // would create an unrequested shared artifact.  Field-line tests still receive
   // the configured SWCME model, but only a production run writes this file.
-  if (!componentTestMode) {
+  if (!componentTestMode && !cli_options.initializationOnly) {
     SEP::SW1DAdapter::WriteShockVsTime(
         2.0*24.0*3600, 200, "shock_vs_time.dat");
   }
@@ -609,6 +620,27 @@ int main(int argc,char **argv) {
         exit(__LINE__,__FILE__,message.str().c_str());
       }
     }
+  }
+
+  // This boundary is intentionally after amps_init() and the canonical AMPS
+  // species check: mesh construction, block allocation, field-line creation,
+  // observer installation, time-step/weight initialization, and initialization
+  // Tecplot output have all succeeded.  It is intentionally before turbulence
+  // evolution and the first amps_time_step(), so a mesh preview cannot inject
+  // or move a particle.  All ranks synchronize before finalizing MPI.
+  if (cli_options.initializationOnly) {
+    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+    if (PIC::ThisThread == 0) {
+      const SEP::Initialization::Configuration& initialization =
+          SEP::Initialization::Active();
+      std::cout << "srcSEP initialization complete; no time steps executed\n"
+                << "initialization_mesh="
+                << initialization.meshTecplotFile << '\n'
+                << "initialization_field_line="
+                << initialization.fieldLineTecplotFile << '\n';
+    }
+    MPI_Finalize();
+    return EXIT_SUCCESS;
   }
 
   // Turbulence storage is initialized exactly once below, after the optional

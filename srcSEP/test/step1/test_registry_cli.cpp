@@ -71,6 +71,13 @@ void TestCli01(const SEP::Testing::Registry& registry) {
   Check(Parse({"sep", "--input=examples/sep_parker_mesh.in"}, input, error) &&
             input.inputPath == "examples/sep_parker_mesh.in",
         "CLI01", "--input must preserve its production initialization path");
+  SEP::Util::CLI::Options initializationOnly;
+  Check(Parse({"sep", "--input", "examples/sep_parker_mesh.in",
+               "--initialization-only", "--initialization-output-dir",
+               "preview"}, initializationOnly, error) &&
+            initializationOnly.initializationOnly &&
+            initializationOnly.initializationOutputDirectory == "preview",
+        "CLI01", "initialization-only options must normalize exactly");
 
   std::ostringstream listing;
   registry.PrintList(listing);
@@ -122,6 +129,13 @@ void TestCli04(const SEP::Testing::Registry& registry) {
   options = SEP::Util::CLI::Options();
   Check(!Parse({"sep", "--input", "run.in", "--all-tests"}, options, error),
         "CLI04", "production input must not leak into component-test mode");
+  options = SEP::Util::CLI::Options();
+  Check(!Parse({"sep", "--initialization-only"}, options, error),
+        "CLI04", "initialization-only mode must require an explicit input");
+  options = SEP::Util::CLI::Options();
+  Check(!Parse({"sep", "--input", "run.in",
+                "--initialization-output-dir", "preview"}, options, error),
+        "CLI04", "the initialization output directory must require its mode");
 
   bool rejectedUnknown = false;
   try {

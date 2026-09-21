@@ -100,14 +100,22 @@ struct ShockOptions {
 
 struct SourceOptions {
   bool enabled = false;
-  // Physical seed-particle rate before injection efficiency and shock-patch
-  // partitioning [s^-1].  Runtime multiplies this by injectionEfficiency and
-  // SWCME relative_patch_weight exactly once.
+  // The values in this record apply independently to every species in AMPS'
+  // compiled SpeciesList.  physicalParticleRatePerS is therefore a
+  // per-species seed-particle rate before injection efficiency and shock-patch
+  // partitioning [s^-1], not a total that runtime silently divides among an
+  // unknown composition.  Runtime multiplies it by injectionEfficiency and
+  // SWCME relative_patch_weight exactly once for each compiled species.
   double physicalParticleRatePerS = 1.0;
   double injectionEfficiency = 1.0e-4;
+  // Bounds are total kinetic energy for each particle [J].  The source adapter
+  // converts them to momentum separately with that species' immutable AMPS
+  // mass, which is essential for mixed electron/ion tables.
   double minimumEnergyJ = 1.0e4 * Core::Const::e;
   double maximumEnergyJ = 1.0e8 * Core::Const::e;
   double spectralIndex = 5.0;
+  // Exact number of computational particles injected per active time step,
+  // per compiled species, over the complete active shock surface.
   std::uint64_t samplesPerStep = 1000;
 };
 
@@ -121,24 +129,27 @@ struct SwcmeAssignment {
 };
 
 struct SpeciesOptions {
-  // Stage 3 intentionally supports one AMPS species only.  Keeping the index
-  // in immutable configuration still matters: source injection, observers,
-  // ledgers, and restart fingerprints must refer to the same resolved AMPS
-  // slot rather than relying on scattered literal zeroes.  Multi-species
-  // support requires replacing this record with a validated species table.
-  int ampsSpeciesIndex = 0;
-  std::string name = "proton";
-  double massKg = Core::Const::m_p;
-  double chargeC = Core::Const::e;
+  // Species identity is deliberately absent from the post-compile runtime
+  // schema.  AMPS fixes the number, order, chemical symbol, mass, and charge
+  // when SpeciesList is processed; allowing a second file to restate any of
+  // those values would create two conflicting authorities.  This one value is
+  // a run-wide numerical policy and is installed for *every* compiled AMPS
+  // species.  Individual source plans may apply a conservative per-particle
+  // correction, but all block/global base weights begin from this value.
   double macroparticleWeight = 1.0;
 };
 
-// Validate the immutable application species against AMPS after PIC has
-// parsed its generated species table.  This helper remains AMPS-independent
-// so the fail-closed count/index/mass/charge policy has a routine unit test.
-Core::Status ValidateSingleSpeciesBinding(
-    const SpeciesOptions& configured, int ampsSpeciesCount,
-    double ampsMassKg, double ampsChargeC);
+// AMPS-facing code copies its generated table into these neutral records.  The
+// runtime layer can then validate the full compiled table without including
+// pic.h or depending on species macros such as _H_PLUS_SPEC_.  ampsIndex is
+// required to be the contiguous generated array index; symbol, mass, and
+// charge are read-only facts obtained from the AMPS molecular-data API.
+struct CompiledSpeciesRecord {
+  int ampsIndex = -1;
+  std::string symbol;
+  double massKg = 0.0;
+  double chargeC = 0.0;
+};
 
 struct ObserverOptions {
   std::string id;
@@ -158,6 +169,12 @@ struct ObserverOptions {
   double maximumEnergyJ = 1.0e8 * Core::Const::e;
   double minimumMu = -1.0;
   double maximumMu = 1.0;
+  // `allCompiledSpecies` is resolved only at the AMPS boundary, where the
+  // generated SpeciesList count is available.  In the neutral output layer an
+  // empty accepted-species vector deliberately means "accept every species";
+  // the Boolean distinguishes that valid wildcard from a missing/empty
+  // explicit numeric list during configuration validation.
+  bool allCompiledSpecies = false;
   std::vector<int> species = {0};
 };
 
@@ -339,6 +356,17 @@ struct RunConfiguration3DOptions {
   bool enableExternalScriptBackground = false;
   bool enableSelfConsistent3DTurbulence = false;
 };
+
+// Validate the complete generated AMPS species table and every observer's
+// numeric selection in one fail-closed operation.  The table must contain the
+// same positive number of records reported by AMPS, indices must be exactly
+// 0..N-1, and symbols must be non-empty and unique.  srcSEP3D's focused SEP
+// transport requires finite positive rest mass and non-zero finite charge; a
+// neutral compiled species is rejected explicitly because silently applying a
+// charged-particle scattering model to it would be physically incorrect.
+Core::Status ValidateCompiledSpeciesBinding(
+    const RunConfiguration3DOptions& configured, int ampsSpeciesCount,
+    const std::vector<CompiledSpeciesRecord>& compiled);
 
 constexpr std::size_t kNoOffset = static_cast<std::size_t>(-1);
 

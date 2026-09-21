@@ -140,11 +140,6 @@ authority = swcme
 
 [source]
 enabled = true
-# All source fields apply independently to every species compiled into AMPS by
-# SpeciesList.  Thus samples_per_step=1000 injects exactly 1000 H_PLUS macros
-# and 1000 ELECTRON macros in a two-species build; it is not silently divided
-# between them.  Energy limits are total kinetic energies and are converted to
-# momentum with each entry's immutable PIC::MolecularData mass.
 physical_particle_rate_per_s = 1e30
 injection_efficiency = 1e-4
 minimum_energy_j = 1.602176634e-15
@@ -152,11 +147,13 @@ maximum_energy_j = 1.602176634e-11
 samples_per_step = 1000
 
 [species]
-# This post-compile section cannot redefine AMPS species.  Count, order,
-# chemical symbols, masses, and charges come only from SpeciesList in the AMPS
-# build input and are read through PIC::nTotalSpecies/GetChemSymbol/GetMass/
-# GetElectricCharge.  The base weight below is initialized for every compiled
-# species and for every allocated local block.
+# Stage 3 is intentionally proton-only.  The explicit AMPS index is included
+# in the physics/restart fingerprint and must remain zero until a reviewed
+# multi-species table replaces the single SpeciesOptions record.
+amps_index = 0
+name = proton
+mass_kg = 1.67262192369e-27
+charge_c = 1.602176634e-19
 # Derived identity: 1e30 s^-1 * 1e-4 * (1 step * 1 s) / 1000 = 1e23.
 macroparticle_weight = 1e23
 
@@ -184,11 +181,7 @@ minimum_energy_j = 1.602176634e-15
 maximum_energy_j = 1.602176634e-11
 minimum_mu = -1
 maximum_mu = 1
-# Select the complete immutable SpeciesList of the executable.  This wildcard
-# is resolved only after AMPS exposes PIC::nTotalSpecies, so the same runtime
-# file works for one-species, electron-only, and mixed-species builds.  Use an
-# explicit comma-separated list such as 0,2 only when a subset is intentional.
-species = all
+species = 0
 products = flux,spectrum,anisotropy
 
 [output]
@@ -259,10 +252,9 @@ event.launch_epoch = 0 s
 # MHD fast-shock/source solve over the complete configured surface.
 event.valid_from = 3600 s
 event.valid_until = 86400 s
-# SWCME still requires a reference spectrum to construct its canonical source
-# state.  srcSEP3D does not use this field to redefine AMPS molecular data:
-# before injection it reconstructs the momentum interval from [source]'s
-# kinetic-energy limits and each compiled AMPS species mass.
+# State the AMPS proton mass explicitly.  The canonical parser also accepts
+# "mp", but that unit is tied to SWCME's independently versioned reference
+# constant; an explicit SI value guarantees exact model/species identity.
 source.particle_mass = 1.67262192369e-27 kg
 source.charge_number = 1
 source.energy_min = 0.01 MeV

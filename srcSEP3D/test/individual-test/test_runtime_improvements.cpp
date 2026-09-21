@@ -212,8 +212,25 @@ Result RunR3D04() {
 Result RunR3D05() {
   const A::ShockSourceRecord patch = A::MakeShockSourceRecord(
       CommonSource(), 9, 91, 16, 0.2);
+  // Equal total kinetic-energy bounds must map to different momentum bounds
+  // for an electron and proton.  This is the regression guard against reusing
+  // SWCME's reference-particle interval for every compiled AMPS species.
+  A::ShockSourceRecord protonPatch = patch;
+  A::ShockSourceRecord electronPatch = patch;
+  const double minimumEnergyJ = 1.0e-15;
+  const double maximumEnergyJ = 1.0e-12;
+  if (!A::ConfigureSpeciesSpectrum(
+           &protonPatch, C::Const::m_p, minimumEnergyJ,
+           maximumEnergyJ).ok() ||
+      !A::ConfigureSpeciesSpectrum(
+           &electronPatch, C::Const::m_e, minimumEnergyJ,
+           maximumEnergyJ).ok() ||
+      !(electronPatch.injection.spectrum.minimum <
+        protonPatch.injection.spectrum.minimum) ||
+      electronPatch.sourceFingerprint == protonPatch.sourceFingerprint)
+    return Fail("species mass did not produce a distinct valid momentum interval");
   A::SourceRequest request;
-  request.patch = patch; request.step = 4; request.species = 0;
+  request.patch = protonPatch; request.step = 4; request.species = 0;
   request.speciesMassKg = C::Const::m_p; request.intervalS = 2.0;
   request.physicalParticleRatePerS = 10.0;
   request.macroparticleWeight = 3.0; request.maximumMacroparticles = 4;
@@ -237,7 +254,7 @@ Result RunR3D05() {
       !disconnected.status.ok() || !disconnected.particles.empty() ||
       disconnected.ledger.disconnectedPatches != 1)
     return Fail("source rate, cadence identity, cap, weight, or disconnected policy is incorrect");
-  return Pass("shock source planning conserves represented number, advances cadence identity, and records explicit policies");
+  return Pass("species-specific spectra and shock source planning conserve represented number and cadence identity");
 }
 
 Result RunR3D06() {
@@ -384,8 +401,8 @@ Result RunR3D08() {
   A::SourceRequest request;
   request.patch = state.patches.front();
   request.step = 0;
-  request.species = options.species.ampsSpeciesIndex;
-  request.speciesMassKg = options.species.massKg;
+  request.species = 0;
+  request.speciesMassKg = C::Const::m_p;
   request.intervalS = options.requestedTimeStepS;
   request.physicalParticleRatePerS =
       options.source.physicalParticleRatePerS *
@@ -398,7 +415,7 @@ Result RunR3D08() {
   if (!plan.status.ok() || plan.particles.size() != counts.front() ||
       plan.ledger.macroparticles != counts.front() || plan.ledger.capped != 0)
     return Fail("an exact patch allocation was rounded or capped downstream");
-  return Pass("canonical SWCME initialization publishes a physical surface and injects exactly the configured global count per step");
+  return Pass("canonical SWCME initialization publishes a physical surface and allocates one exact per-species count per step");
 }
 
 }  // namespace

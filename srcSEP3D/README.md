@@ -20,6 +20,10 @@ New standalone shock-injection runs use the strict schema-3 deck:
 
 ```sh
 ./amps --input srcSEP3D/examples/sep3d_analytic_parker.in --dry-run
+mpiexec -n 4 ./amps \
+  --input srcSEP3D/examples/sep3d_analytic_parker.in \
+  --initialization-only \
+  --initialization-output-dir sep3d_mesh_preview
 ./amps --input srcSEP3D/examples/sep3d_analytic_parker.in
 ```
 
@@ -30,6 +34,20 @@ configuration source is used. Unknown/duplicate sections or keys, missing
 fields, invalid enumerations, non-finite values, and inconsistent physical
 descriptions fail before mesh allocation.
 
+The middle command is the mesh-preview path. Unlike `--dry-run`, it builds the
+real distributed AMPS mesh, initializes blocks, particle weight and time step,
+providers, source, and observers, writes the mesh and Parker-centreline Tecplot
+files, and collectively finalizes MPI before `amps_time_step()` can execute.
+The output-directory option preserves the input-deck filenames and creates the
+selected parent directory on rank zero.
+
+After tree-block allocation, srcSEP3D explicitly refreshes AMPS'
+`DomainBlockDecomposition::BlockTable` before initializing per-block particle
+numerics or collecting background cells. This ordering is required because
+allocation and the cached owner table are separate AMPS operations; without
+the refresh, an allocated mesh can incorrectly produce an empty Parker
+snapshot during initialization.
+
 The file is INI syntax. Section/key names are case-insensitive, `#` begins a
 comment, and each assignment is `key = value`. Application dimensional keys
 are bare SI values with the unit in the key. Values inside `[swcme]` retain
@@ -37,6 +55,11 @@ their unit token and are resolved by the canonical model-owned parser. Schema
 3 requires even mode-inactive application fields so a later mode edit cannot
 silently revive a C++ default. The only deliberately excluded model values are
 deprecated compatibility parameters that no longer affect SWCME physics.
+Assignments before a section header are invalid. In particular, a legacy flat
+line such as `scattering = ...` is not a schema-3 srcSEP3D field and is not
+silently mapped to turbulence or pitch-angle transport. The authoritative
+example begins with `[run]`; scattering-related choices are explicitly split
+between `[turbulence]` and `[transport]`.
 
 ### Mesh, line, run, and resource syntax
 
@@ -74,8 +97,8 @@ octree tests, and AMPS `localResolution()`.
 | `[turbulence]` | `authority`, `delta_b_over_b`, `k_min_per_m`, `k_max_per_m`, `spectral_index`, `correlation_length_m`, `missing_data`, `resonance_range`, `self_consistent_3d` | Schema 3 standalone authority is `prescribed`; self-consistent 3-D is false. Missing-data policy is `fail` or `ballistic`; resonance policy is `reject` or `power-law-extension`. |
 | `[transport]` | `cell_crossing_fraction`, `diffusion_fraction`, `focusing_fraction`, `cooling_fraction`, `field_variation_fraction`, `shock_crossing_fraction`, `minimum_substep_s`, `maximum_substeps`, `pitch_angle_scheme`, `perpendicular_diffusion`, `constant_kappa_perpendicular_m2_per_s`, `kappa_perpendicular_to_parallel_ratio`, `drifts` | Positive timestep limiters. Pitch scheme is `reflecting-milstein` or `reflecting-euler-maruyama`. Perpendicular mode is `none`, `constant`, or `constant-ratio`; drift is `none`, `gradient-b`, `curvature`, or `gradient-curvature`. Selected extensions require their positive coefficient/storage. |
 | `[shock]` | `authority` | Must be `swcme`. Schema 3 rejects the retired constant-radius/speed/compression surrogate fields. |
-| `[source]` | `enabled`, `physical_particle_rate_per_s`, `injection_efficiency`, `minimum_energy_j`, `maximum_energy_j`, `samples_per_step` | Source is enabled. Rate is the physical seed rate before efficiency and patch partition; energies, efficiency, and exact global computational count are positive. No free spectral index is accepted: each patch's canonical compression ratio determines its DSA slope. |
-| `[species]` | `amps_index`, `name`, `mass_kg`, `charge_c`, `macroparticle_weight` | Current reviewed contract is exactly one index-zero proton. Mass and charge must match both AMPS and `[swcme]`; base weight is derived by the conservation identity below. |
+| `[source]` | `enabled`, `physical_particle_rate_per_s`, `injection_efficiency`, `minimum_energy_j`, `maximum_energy_j`, `samples_per_step` | All values apply independently to every species compiled by AMPS `SpeciesList`. Rate is the per-species physical seed rate before efficiency and patch partition; energies are total kinetic-energy bounds; `samples_per_step` is the exact per-species computational count over the complete shock. Each patch's canonical compression ratio determines its DSA slope. |
+| `[species]` | `macroparticle_weight` | Post-compile input owns only the positive common base AMPS statistical weight. Count, order, symbols, masses, and charges come exclusively from the compiled AMPS table and cannot be redefined here. |
 | `[storage]` | `magnetic_gradient`, `velocity_gradient`, `sampling_bytes_per_cell` | Explicit associated-data layout. Required transport choices may force a gradient on before the layout fingerprint freezes. |
 
 For schema 3 the base AMPS weight must satisfy
@@ -85,15 +108,17 @@ W_0=\frac{\dot N_\mathrm{seed}\,\epsilon\,
 w_\mathrm{surface}\,\Delta t}{N_\mathrm{macro}},
 \]
 
-where `physical_particle_rate_per_s` is \(\dot N_\mathrm{seed}\), the application
+for each compiled species, where `physical_particle_rate_per_s` is
+\(\dot N_\mathrm{seed}\), the application
 and canonical SWCME injection efficiencies are identical, canonical
 `shock.relative_source_weight_per_area` is \(w_\mathrm{surface}\),
 `run.time_step_s` is \(\Delta t\), and `source.samples_per_step` is
 \(N_\mathrm{macro}\). Injection cadence is one, so no hidden cadence multiplier
 exists. The parser rejects a mismatched `species.macroparticle_weight`.
 
-At an active boundary, the runtime assigns exactly `samples_per_step` over all
-active SWCME surface patches. It first reserves one weighted representative for
+At an active boundary, the runtime assigns exactly `samples_per_step` per
+compiled species over all active SWCME surface patches. For each species it
+first reserves one weighted representative for
 each nonzero patch, then apportions the remainder by physical patch weight with
 a deterministic largest-remainder rule and stable source-ID tie-break. If the
 requested count is smaller than the active patch count, initialization fails;
@@ -113,7 +138,7 @@ Every `[observer.ID]` requires all of these fields:
 | `collection_radius_m`, `shell_radius_m` | Positive spatial acceptance geometry. |
 | `cadence_s`, `energy_bins`, `pitch_angle_bins` | Positive cadence/counts; cadence must be an integer multiple of the simulation step. |
 | `minimum_energy_j`, `maximum_energy_j`, `minimum_mu`, `maximum_mu` | Energy and pitch-cosine acceptance with ordered bounds and `-1 <= mu <= 1`. |
-| `species`, `products` | Comma-separated AMPS species indices (currently only `0`) and requested product names. |
+| `species`, `products` | Use `species = all` for the complete compiled AMPS table, or a comma-separated index list for an intentional subset; startup validates every explicit index. `products` lists the requested product names. |
 
 `[output]` requires `cadence_steps`, `checkpoint_cadence_steps`, `directory`,
 `prefix`, `initialization_mesh_tecplot_file`, and
@@ -296,11 +321,20 @@ failure semantics, MPI ownership rules, and restart ordering.
 - `--dry-run` reports normalized physics identity, resolution extrema,
   estimated blocks by level, and full resident/particle/halo/sampling/safety
   memory without allocating the AMPS mesh.
+- `--initialization-only` follows normal initialization through mesh output and
+  model setup, then finalizes MPI before the time-step loop.
+- `--initialization-output-dir DIR` is legal only with
+  `--initialization-only`; it changes the parent of both initialization
+  Tecplot products without changing their reviewed leaf names.
 
 For a standalone preflight and run:
 
 ```bash
 ./amps --input srcSEP3D/examples/sep3d_analytic_parker.in --dry-run
+mpiexec -n 4 ./amps \
+  --input srcSEP3D/examples/sep3d_analytic_parker.in \
+  --initialization-only \
+  --initialization-output-dir output/mesh-preview
 ./amps --input srcSEP3D/examples/sep3d_analytic_parker.in \
   --output-dir output/production
 ```
@@ -650,7 +684,7 @@ normalized-domain/preflight definitions before the final Fortran-driver link.
 | `HARN`, `RUNNER`, `LAY`, `BLD`, `UTIL` | runner, layering, binary boundary, frozen common kernels |
 | `LIFE3D01–04` | immutable configuration and complete lifecycle transition matrix |
 | `R3D01–07` | mover hook, subcycling, transactional snapshots, clock/events, source, observers, complete restart |
-| `CFG3D01–07` | input/CLI, typed contracts, domains, shared Parker geometry, mesh/memory preflight, finite-line schema, proton-only AMPS binding |
+| `CFG3D01–07` | input/CLI, typed contracts, domains, shared Parker geometry, mesh/memory preflight, finite-line schema, complete AMPS species-table binding |
 | `MSH3D01–10` | resolution bounds/laws, tube geometry, balance, octrees, memory, ownership, presets, gradients, finite-line/origin identities |
 | `BGP3D01–06` | analytic Parker identities, component laws, focusing, wind derivatives, polar limits |
 | `SNAP3D01–08` | completeness, finite values, units, epochs, atomicity, interpolation, batch status, frame |
@@ -664,23 +698,69 @@ normalized-domain/preflight definitions before the final Fortran-driver link.
 | `NAT3D01–03/09–12`, `MPI3D01–02` | registered configured-host integration and multi-rank gates |
 | `XM3D01–06`, `OV3D01–04` | checksum-owned cross-model and observational campaign gates |
 
-## Stage 3 single-species ownership
+## Compiled AMPS species ownership
 
-The current application is explicitly proton-only. `[species] amps_index=0`
-and `name=proton` are required configuration, and the index participates in
-the physics fingerprint. Every observer species filter must select that same
-index. After PIC has initialized its species table, but before any time step,
-weight, or injected-particle field is assigned, the application requires one
-AMPS species at index zero and compares its SI mass and signed charge with the
-immutable configuration to relative tolerance `1e-12`.
+AMPS and srcSEP3D use two different input surfaces. The AMPS application deck
+is processed before compilation: its `SpeciesList` fixes the number, order,
+chemical symbols, masses, and charges in generated `pic.h` and the molecular
+tables. The file supplied to `./amps --input FILE` is post-compile runtime
+input. It cannot add a species, remove one, change its type, relabel an index,
+or overwrite molecular data. Consequently `[species]` contains only
+`macroparticle_weight`; the retired `amps_index`, `name`, `mass_kg`, and
+`charge_c` keys are errors.
 
-The validated index is then reused for PIC time-step/weight assignment,
-observer filtering, and source injection; those paths do not maintain separate
-species literals. `CFG3D07` exercises the successful binding and independent
-negative controls for count, index, name, mass, charge, observer selection,
-and fingerprint identity. Multi-species operation remains unsupported because
-it requires species-specific transport, source, storage, ledger, output, and
-restart semantics rather than removal of a single guard.
+After `PIC::Init_BeforeParser()` and before mesh allocation,
+`BindCompiledSpeciesTable()` enumerates every integer index in
+`[0, PIC::nTotalSpecies)`. For each entry it reads `GetChemSymbol(index)`,
+`GetMass(index)`, and `GetElectricCharge(index)`. A compile-time assertion also
+requires `_TOTAL_SPECIES_NUMBER_ == PIC::nTotalSpecies`, preventing a partially
+regenerated source tree from indexing arrays with inconsistent bounds. Binding
+requires contiguous indices, unique nonempty symbols, positive finite masses,
+and finite nonzero charges. The last restriction is physical: the selected SEP
+scattering model is a charged-particle model, so accepting a neutral compiled
+species would be a false simulation rather than multi-species support.
+
+The binding never calls `SetMass` or `SetElectricCharge`. An `ELECTRON`-only
+build therefore remains an electron simulation, an `H_PLUS`-only build remains
+an ion simulation, and a mixed table retains its generated order and signed
+charges. There is no `_H_PLUS_SPEC_` dependency and slot zero has no special
+meaning. Observer subsets remain numeric because AMPS particle records use
+those indices; startup checks every explicitly selected observer index against
+the complete compiled table before mesh allocation. The portable wildcard
+`species = all` accepts every entry in the executable's immutable SpeciesList,
+so the same runtime deck works with one-species and mixed-species builds.
+
+`amps_init()` assigns the declared `run.time_step_s` and
+`species.macroparticle_weight` to the global arrays and every allocated local
+block for every compiled index. At an active source event, srcSEP3D loops over
+that same immutable table. `source.samples_per_step` is allocated over the
+complete shock separately for each species, so no compiled entry can be
+silently omitted and no undeclared abundance split is invented. The declared
+kinetic-energy interval is converted with
+
+\[
+p(K,m)=\frac{\sqrt{K(K+2mc^2)}}{c}
+\]
+
+using that entry's AMPS mass. This prevents a proton momentum interval from
+being reused for electrons or heavy ions. Source ledgers, keyed random streams,
+movers, observers, and restart rows already carry the AMPS species index, so
+their identities remain distinct.
+
+The supplied build-time example uses `SpeciesList=H_PLUS ELECTRON` to exercise
+the mixed-table path; a campaign may select another set in its AMPS deck. The
+runtime example needs no matching list because it cannot redefine the compiled
+table. Before a long job, operators can inspect the generated declarations:
+
+```sh
+grep -E 'nTotalSpecies|ChemTable' build/pic/pic.h
+```
+
+Startup also prints one line per bound index with its symbol, mass, and signed
+charge. `CFG3D07` tests mixed ion/electron binding and independent failures for
+count mismatch, non-contiguous indices, duplicate symbols, invalid mass,
+neutral charge, and observer range. `R3D05` verifies that equal kinetic-energy
+bounds generate distinct valid proton/electron momentum intervals.
 
 ## Remaining release evidence
 

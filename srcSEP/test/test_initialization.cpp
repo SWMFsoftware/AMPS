@@ -21,6 +21,19 @@ int main(int argc, char** argv) {
               << loaded.message << '\n';
     return 1;
   }
+  // The command-line directory override must retain both reviewed leaf names;
+  // otherwise a preview run could silently change the declared artifact set.
+  const std::string meshLeaf = example.meshTecplotFile;
+  const std::string lineLeaf = example.fieldLineTecplotFile;
+  const SEP::Transport::Status redirected =
+      SEP::Initialization::ApplyOutputDirectoryOverride("preview", &example);
+  if (!redirected.ok() ||
+      example.meshTecplotFile != "preview/" + meshLeaf ||
+      example.fieldLineTecplotFile != "preview/" + lineLeaf) {
+    std::cerr << "initialization output-directory override failed: "
+              << redirected.message << '\n';
+    return 1;
+  }
   std::cout << "INIT-EXAMPLE PASS fingerprint="
             << SEP::Initialization::Fingerprint(example) << '\n';
   return 0;

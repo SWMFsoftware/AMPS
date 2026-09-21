@@ -455,6 +455,31 @@ Transport::Status LoadFile(const std::string& path, Configuration* result) {
   return ParseText(text.str(), result);
 }
 
+Transport::Status ApplyOutputDirectoryOverride(
+    const std::string& directory, Configuration* configuration) {
+  if (configuration == NULL) return Error("initialization configuration is null");
+  if (directory.empty()) return Error("initialization output directory is empty");
+
+  // Preserve the reviewed product names and remove only their former parent.
+  // Both separator spellings are recognized because input decks are commonly
+  // copied between workstation and HPC filesystems before a production run.
+  const auto leafName = [](const std::string& path) {
+    const std::size_t separator = path.find_last_of("/\\");
+    return separator == std::string::npos ? path : path.substr(separator + 1);
+  };
+  const std::string meshLeaf = leafName(configuration->meshTecplotFile);
+  const std::string lineLeaf = leafName(configuration->fieldLineTecplotFile);
+  if (meshLeaf.empty() || lineLeaf.empty() || meshLeaf == "." ||
+      meshLeaf == ".." || lineLeaf == "." || lineLeaf == "..") {
+    return Error("initialization Tecplot paths must end in file names before "
+                 "the output-directory override can be applied");
+  }
+  const std::string separator = directory.back() == '/' ? "" : "/";
+  configuration->meshTecplotFile = directory + separator + meshLeaf;
+  configuration->fieldLineTecplotFile = directory + separator + lineLeaf;
+  return Validate(*configuration);
+}
+
 Transport::Status Install(const Configuration& configuration) {
   if (gActive.get() != NULL) return Error("initialization configuration is already installed");
   const Transport::Status valid = Validate(configuration);

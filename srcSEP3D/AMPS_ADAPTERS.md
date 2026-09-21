@@ -119,7 +119,7 @@ the same common source record, campaign, generation, patch ID, species, and
 macro index obtains identical spectrum fingerprints, random keys, momenta,
 and weights. No `srcSEP` source file is inspected or linked.
 
-### Schema-3 standalone provider and exact global count
+### Schema-3 standalone provider and exact per-species count
 
 `CreateStandaloneSwcmeShockProvider` re-resolves the frozen raw `[swcme]`
 assignments and requires the resulting canonical manifest/fingerprint to match
@@ -130,16 +130,20 @@ empty active source, or insufficient computational sample count before AMPS
 mesh allocation. Before `event.valid_from` it publishes a valid inactive state;
 it does not invent a shock.
 
-For schema 3, `source.samples_per_step` is a global integer, not an independent
-expectation for every patch. `AllocateExactPatchMacroparticles` reserves one
-representative for each positive-weight active patch, apportions the remaining
-integer samples in proportion to canonical physical patch weight, and assigns
-largest remainders with stable source-ID/index tie-breaking. The sum is exactly
-the input count on every active step. A count below the active patch cardinality
+For schema 3, `source.samples_per_step` is an exact integer for each compiled
+AMPS species, not an independent expectation for every patch. For each species,
+`AllocateExactPatchMacroparticles` reserves one representative for each
+positive-weight active patch, apportions the remaining integer samples in
+proportion to canonical physical patch weight, and assigns largest remainders
+with stable source-ID/index tie-breaking. The sum is exactly the input count for
+that species on every active step. A count below the active patch cardinality
 fails closed because silently omitting a nonzero source patch would not be a
 conservative representation.
 
-`SourceRequest::prescribedMacroparticles` carries each exact patch allocation
+Before allocation, `ConfigureSpeciesSpectrum` converts the declared total
+kinetic-energy bounds to momentum using the current compiled AMPS mass. This
+prevents SWCME's reference-particle momentum interval from being reused across
+unlike species. `SourceRequest::prescribedMacroparticles` carries each exact patch allocation
 through `BuildInjectionPlan`. That path never stochastically rounds or caps the
 count. Instead, every particle receives
 
@@ -206,7 +210,7 @@ position, avoiding replicated physical totals at checkpoint gather.
 - `BLDL3D01/03`: configured AMPS compilation and actual mover-return ABI.
 - `R3D01–02`: installed generated hook and complete re-resolved requested-time
   advancement.
-- `R3D05`: physical source normalization, cap/disconnection policy, and unique
-  cadence identity.
+- `R3D05`: species-dependent energy-to-momentum conversion, physical source
+  normalization, cap/disconnection policy, and unique cadence identity.
 - `R3D08`: canonical provider preflight, delayed activation, deterministic
-  largest-remainder allocation, exact global count, and no downstream cap.
+  largest-remainder allocation, exact per-species count, and no downstream cap.

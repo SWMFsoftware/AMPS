@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <exception>
+#include <iomanip>
 #include <limits>
 #include <memory>
 #include <sstream>
@@ -236,6 +237,57 @@ ShockState PublishedShockProvider::Evaluate(double timeS) const {
     result.active = false;
   }
   return result;
+}
+
+Core::Status ConfigureSpeciesSpectrum(
+    ShockSourceRecord* patch, double speciesMassKg,
+    double minimumKineticEnergyJ, double maximumKineticEnergyJ) {
+  if (patch == nullptr)
+    return Invalid("species spectrum patch is null");
+  if (!patch->status.ok() || !patch->active ||
+      !std::isfinite(speciesMassKg) || speciesMassKg <= 0.0 ||
+      !std::isfinite(minimumKineticEnergyJ) ||
+      !std::isfinite(maximumKineticEnergyJ) ||
+      minimumKineticEnergyJ <= 0.0 ||
+      maximumKineticEnergyJ <= minimumKineticEnergyJ) {
+    return Invalid("species spectrum mass or kinetic-energy interval is invalid");
+  }
+
+  // Relativistic energy-momentum identity in SI:
+  //   p = sqrt(K * (K + 2 m c^2)) / c.
+  // Long double intermediates avoid overflowing a representable final double
+  // merely because K and rest energy were multiplied in double precision.
+  const auto momentumFromKineticEnergy = [speciesMassKg](double energyJ) {
+    const long double c = static_cast<long double>(Core::Const::c);
+    const long double mass = static_cast<long double>(speciesMassKg);
+    const long double kinetic = static_cast<long double>(energyJ);
+    const long double radicand =
+        kinetic * (kinetic + 2.0L * mass * c * c);
+    return static_cast<double>(std::sqrt(radicand) / c);
+  };
+
+  ShockSourceRecord candidate = *patch;
+  candidate.injection.spectrum.measure = SEP::Injection::Measure::Momentum;
+  candidate.injection.spectrum.minimum =
+      momentumFromKineticEnergy(minimumKineticEnergyJ);
+  candidate.injection.spectrum.maximum =
+      momentumFromKineticEnergy(maximumKineticEnergyJ);
+  const SEP::Transport::Status valid =
+      SEP::Injection::Validate(candidate.injection);
+  if (!valid.ok())
+    return Invalid("species-specific source spectrum is invalid: " +
+                   valid.message);
+
+  // Fingerprint the effective interval rather than retaining only SWCME's
+  // reference-particle identity.  This makes source diagnostics distinguish
+  // two compiled species even when their energy bounds and shock patch agree.
+  std::ostringstream identity;
+  identity << candidate.sourceFingerprint << ":species-spectrum:"
+           << std::setprecision(17) << speciesMassKg << ':'
+           << minimumKineticEnergyJ << ':' << maximumKineticEnergyJ;
+  candidate.sourceFingerprint = identity.str();
+  *patch = std::move(candidate);
+  return Core::Status::OK();
 }
 
 InjectionPlan BuildInjectionPlan(const SourceRequest& request) {

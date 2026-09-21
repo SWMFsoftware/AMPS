@@ -73,15 +73,24 @@ interval are part of the publication and restart provenance.
 
 ## R04: authoritative tick clock and integer event schedule
 
-`RuntimeCounters.currentTick` is authoritative.  `CurrentTimeS()` and
+`RuntimeCounters.currentTick` is authoritative. `CurrentTimeS()` and
 `NextStepEndTimeS()` are derived from the frozen base time step; repeated
-floating additions are not used. The Stage 3 application contract is exactly
-one AMPS proton at index zero. After PIC creates its species table,
-`ValidateSingleSpeciesBinding` compares the AMPS count, name, finite SI mass,
-and signed charge with immutable configuration before `amps_init()` applies
-the time step and weight to that validated index and every owner-local block.
-Observer filters and source injection reuse the same index; there is no
-independent hard-coded species selection. Before every particle phase,
+floating additions are not used. Species identity is likewise single-source:
+AMPS `SpeciesList` generates the complete count, index order, chemical table,
+mass table, and signed-charge table. Between `PIC::Init_BeforeParser()` and
+mesh/after-parser initialization, `BindCompiledSpeciesTable()` enumerates every
+index, copies those immutable values, and calls
+`ValidateCompiledSpeciesBinding`. The validator rejects count disagreement,
+non-contiguous indices, duplicate/empty symbols, non-positive mass, neutral or
+non-finite charge, and observer indices outside the generated table. It never
+writes AMPS molecular data and does not depend on a chemical-species macro.
+
+`amps_init()` applies the common explicit timestep and base statistical weight
+to every generated global slot and every owner-local block. Each due source
+event then allocates the exact requested count independently for every compiled
+species. Its kinetic-energy interval is converted to momentum with that
+species' AMPS mass before sampling, and the species index remains part of the
+random key and source/particle ledgers. Before every particle phase,
 `VerifyClockAgreement` checks Runtime time, PIC time, PIC time step, snapshot
 time, and shock time.
 

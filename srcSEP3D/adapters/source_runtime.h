@@ -99,8 +99,8 @@ struct SourceRequest {
   double physicalParticleRatePerS = 0.0;
   double macroparticleWeight = 0.0;
   // A non-zero value is an exact host allocation, not an expectation.  The
-  // schema-v3 initialization path uses this field after distributing the
-  // configured global samples_per_step across every active SWCME patch.
+  // schema-v3 initialization path uses this field after distributing one
+  // compiled species' exact samples_per_step across every active SWCME patch.
   // Older callers leave it zero and retain deterministic stochastic rounding.
   std::uint64_t prescribedMacroparticles = 0;
   std::uint64_t maximumMacroparticles = 0;
@@ -112,6 +112,17 @@ struct InjectionPlan {
   std::vector<InjectedParticle> particles;
   SourceLedgerRow ledger;
 };
+
+// Replace the provider's reference-particle momentum interval with the
+// interval for one compiled AMPS species.  SWCME publishes shock geometry and
+// the local compression-derived DSA slope, while the standalone [source]
+// section publishes total kinetic-energy bounds.  Because p(E,m) depends on
+// rest mass, this conversion must be repeated for every compiled species; re-
+// using the proton reference interval for electrons or heavy ions is
+// physically incorrect.  On failure the caller's record is not modified.
+Core::Status ConfigureSpeciesSpectrum(
+    ShockSourceRecord* patch, double speciesMassKg,
+    double minimumKineticEnergyJ, double maximumKineticEnergyJ);
 
 // Use a host-prescribed exact count when present; otherwise apply deterministic
 // stochastic rounding with a semantic (campaign,event,patch,species,step) key.

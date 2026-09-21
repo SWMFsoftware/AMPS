@@ -10,8 +10,8 @@ verified from a clean source extraction:
   AMPS-level manifest checker;
 * every OV/EV case is registered with an explicit scientific role and input
   policy; and
-* srcSEP3D exposes one immutable, proton-only AMPS species binding rather than
-  silently copying one species record over an arbitrary AMPS species table.
+* srcSEP3D enumerates and initializes the complete immutable AMPS species table
+  rather than assuming a proton macro, slot zero, or runtime molecular data.
 
 Keeping these assertions in one small gate prevents documentation-only fixes:
 the test inspects the actual runner, make targets, configuration contract, and
@@ -111,25 +111,100 @@ def check_validation_registration() -> None:
 
 
 def check_species_contract() -> None:
-    """Require one resolved species index and fail-closed AMPS binding."""
+    """Require complete generated-table enumeration and fail-closed binding."""
+    # The AMPS application deck is processed before compilation.  The
+    # post-compile SEP input must not attempt to replace its species list.
+    application_deck = read(AMPS_ROOT / "input" / "sep3d.input")
+    species_assignments = re.findall(
+        r"(?im)^\s*SpeciesList\s*=\s*([^!\r\n]+?)\s*(?:!.*)?$",
+        application_deck)
+    require(len(species_assignments) == 1 and species_assignments[0].split(),
+            "input/sep3d.input must contain one non-empty SpeciesList")
+
     header = read(SRCSEP3D / "runtime" / "run_configuration.h")
     implementation = read(SRCSEP3D / "runtime" / "run_configuration.cpp")
     parser = read(SRCSEP3D / "runtime" / "configuration_io.cpp")
     production = read(SRCSEP3D / "main_lib.cpp")
+    sep_initialization = read(SRCSEP / "main_lib.cpp")
+    sep_prepopulation = read(SRCSEP / "shock_injection.cpp")
+    sep_spherical_source = read(SRCSEP / "shock_analytical_model2D.cpp")
 
-    require("ampsSpeciesIndex" in header,
-            "SpeciesOptions has no immutable AMPS species index")
-    require("ValidateSingleSpeciesBinding" in header and
-            "ValidateSingleSpeciesBinding" in implementation,
-            "AMPS-independent single-species validator is missing")
-    require('field == "species.amps_index"' in parser,
-            "configuration parser does not accept species.amps_index")
-    require("ValidateSingleSpeciesBinding" in production,
-            "amps_init does not validate the configured AMPS species table")
+    require("CompiledSpeciesRecord" in header and
+            "ValidateCompiledSpeciesBinding" in header and
+            "ValidateCompiledSpeciesBinding" in implementation,
+            "complete AMPS species-table binding contract is missing")
+    for retired_key in ("species.amps_index", "species.name",
+                        "species.mass_kg", "species.charge_c"):
+        require(retired_key not in parser,
+                f"runtime parser still accepts compiled species field {retired_key}")
+    require("for (int speciesIndex = 0; speciesIndex < PIC::nTotalSpecies;" in
+            production and
+            "PIC::MolecularData::GetChemSymbol(speciesIndex)" in production,
+            "production does not enumerate the complete generated ChemTable")
+    require("PIC::MolecularData::SetMass(" not in production and
+            "PIC::MolecularData::SetElectricCharge(" not in production,
+            "production still overwrites immutable compiled molecular data")
+    require("for (const auto& species : gCompiledSpecies)" in production,
+            "particle numerics are not initialized for the full compiled table")
+    require("for (const auto& compiled : gCompiledSpecies)" in production and
+            "source.species = compiled.ampsIndex;" in production,
+            "shock injection does not iterate every compiled species")
+    require("ConfigureSpeciesSpectrum(" in production,
+            "injection does not rebuild momentum bounds from each AMPS mass")
+
+    # AMPS builds the final owner lists before allocating tree blocks, but its
+    # cached BlockTable is refreshed separately.  All srcSEP3D initialization
+    # passes use that cache, so it must be updated after allocation and before
+    # the first background snapshot is collected.
+    allocate_blocks = production.find("PIC::Mesh::mesh->AllocateTreeBlocks();")
+    update_blocks = production.find(
+        "PIC::DomainBlockDecomposition::UpdateBlockTable();", allocate_blocks)
+    publish_background = production.find("FillAndPublishBackground();",
+                                         update_blocks)
+    require(allocate_blocks >= 0 and
+            allocate_blocks < update_blocks < publish_background,
+            "srcSEP3D does not refresh AMPS BlockTable before background fill")
+
+    # Binding must occur after AMPS creates its base registries but before the
+    # cell layout/mesh and Init_AfterParser.  Checking this order protects the
+    # exact initialization boundary that first exposed the species mismatch.
+    mesh_start = production.find("void amps_init_mesh()")
+    pic_before = production.find("PIC::Init_BeforeParser();", mesh_start)
+    bind_call = production.find("BindCompiledSpeciesTable();", pic_before)
+    layout_freeze = production.find("PIC::Mesh::initCellSamplingDataBuffer();",
+                                    bind_call)
+    pic_after = production.find("PIC::Init_AfterParser();", mesh_start)
+    require(mesh_start >= 0 and
+            mesh_start < pic_before < bind_call < layout_freeze < pic_after,
+            "AMPS species-table binding is not ordered before mesh/after-parser initialization")
     require("source.species = 0" not in production,
             "shock injection still hard-codes AMPS species zero")
     require("source.speciesMassKg = PIC::MolecularData::GetMass(0)" not in production,
             "shock injection still hard-codes species-zero mass")
+
+    # srcSEP shares the same immutable AMPS SpeciesList contract.  Protect the
+    # base numerical initialization and both legacy injection/prepopulation
+    # paths against a regression to H_PLUS or slot-zero assumptions.
+    require(re.search(
+                r"for\s*\(int\s+species\s*=\s*0;\s*"
+                r"species\s*<\s*PIC::nTotalSpecies;\s*\+\+species\)",
+                sep_initialization) is not None,
+            "srcSEP does not initialize every compiled AMPS species")
+    require("for (int species=0;species<PIC::nTotalSpecies;++species)" in
+            sep_prepopulation and "PopulateSegment(\n          species," in
+            sep_prepopulation,
+            "srcSEP field-line prepopulation does not enumerate every species")
+    require("for (int spec=0;spec<PIC::nTotalSpecies;++spec)" in
+            sep_spherical_source and
+            "PIC::ParticleBuffer::SetI(spec,newParticleData)" in
+            sep_spherical_source,
+            "srcSEP spherical-shock injection does not enumerate every species")
+    for source_name, source_text in (
+            ("srcSEP initialization", sep_initialization),
+            ("srcSEP prepopulation", sep_prepopulation),
+            ("srcSEP spherical source", sep_spherical_source)):
+        require("_H_PLUS_SPEC_" not in source_text,
+                f"{source_name} still depends on _H_PLUS_SPEC_")
 
 
 def main() -> int:
@@ -141,7 +216,7 @@ def main() -> int:
         print(f"FAIL STAGE3-CONTRACTS: {error}", file=sys.stderr)
         return 1
     print("PASS STAGE3-CONTRACTS: release hygiene, OV/EV registration, and "
-          "single-species ownership are explicit")
+          "complete compiled-species ownership are explicit")
     return 0
 
 

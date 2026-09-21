@@ -26,6 +26,14 @@ struct Options {
   // hard-coded domain/field-line mesh.  A supplied path is parsed and frozen
   // before AMPS initializes MPI or allocates the mesh.
   std::string inputPath;
+  // Build the actual AMPS mesh and complete application initialization, write
+  // the declared mesh/field-line Tecplot products, and exit collectively
+  // before the first particle step.  This mode requires a versioned --input
+  // deck so an apparently successful preview can never omit its products.
+  bool initializationOnly = false;
+  // Optional parent directory for both initialization products.  The leaf
+  // names remain those reviewed in [output]; only their location is changed.
+  std::string initializationOutputDirectory;
   bool particleCouplingMode = true;
   bool cascadeActive = true;
   bool reflectionActive = true;
