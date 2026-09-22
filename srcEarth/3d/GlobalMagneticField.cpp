@@ -19,6 +19,7 @@
 #include <cstring>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,8 @@ std::vector<int> GlobalCellPresence_;
 long int GlobalUsedLeafBlocks_=0;
 long int GlobalInteriorCellCount_=0;
 bool GlobalFieldsReady_=false;
+Earth::Field::SnapshotMetadata GlobalSnapshotMetadata_;
+unsigned long long GlobalSnapshotGeneration_=0;
 
 std::string SafeTag_(const char* diagnosticTag) {
   return (diagnosticTag!=NULL && diagnosticTag[0]!='\0') ?
@@ -203,6 +206,21 @@ long int PackOwnedInteriorFields_(
             // simplifies future movers that request both fields.
           }
 
+          // Reject bad source data before MPI reduction.  Allowing NaN/Inf into the
+          // compact arrays would contaminate interpolation on every rank and could be
+          // mistaken downstream for a physical forbidden trajectory.
+          const double* packedB=&magneticField[static_cast<size_t>(vectorIndex)];
+          const double* packedE=&electricField[static_cast<size_t>(vectorIndex)];
+          if (!Earth::Field::FiniteVector3(packedB) ||
+              !Earth::Field::FiniteVector3(packedE)) {
+            std::ostringstream msg;
+            msg << "[Mode3D::GlobalMagneticField] non-finite owner-cell field at "
+                << "Temp_ID=" << node->Temp_ID
+                << ", cell=(" << i << ',' << j << ',' << k << ").";
+            const std::string text=msg.str();
+            exit(__LINE__,__FILE__,text.c_str());
+          }
+
           presence[static_cast<size_t>(cellIndex)]=1;
           nPacked++;
         }
@@ -326,6 +344,133 @@ bool InterpolateField_(const double* x,cAMRNode* node,double* field,
   return true;
 }
 
+Earth::Field::SnapshotMetadata LegacySnapshotMetadata_(
+    const std::string& tag,
+    bool electricFieldAvailable,
+    bool derivedElectricField) {
+  Earth::Field::SnapshotMetadata metadata;
+  metadata.sourceId=tag+":LEGACY_CELL_BUFFER";
+  metadata.modelName="LEGACY_CELL_BUFFER";
+  metadata.epochUTC="UNSPECIFIED";
+  metadata.frame=Earth::Field::CoordinateFrame::GSM;
+  metadata.interpolation=derivedElectricField ?
+      Earth::Field::InterpolationMode::CellCenteredLinearDerivedElectric :
+      Earth::Field::InterpolationMode::CellCenteredLinear;
+  metadata.magneticFieldAvailable=true;
+  metadata.electricFieldAvailable=electricFieldAvailable;
+  metadata.immutableDuringBatch=true;
+  metadata.valid=true;
+  metadata.validityMessage=
+      "legacy caller did not supply physical snapshot provenance";
+  std::ostringstream state;
+  state << "legacy|electric=" << (electricFieldAvailable ? 1 : 0)
+        << "|derived=" << (derivedElectricField ? 1 : 0);
+  metadata.snapshotId=Earth::Field::MakeSnapshotId(
+      metadata.sourceId,metadata.epochUTC,state.str());
+  return metadata;
+}
+
+// Generic view over one published compact-array generation.  It does not own/copy the
+// potentially large arrays; generation checks prevent it from ever sampling a later
+// replacement under an earlier snapshot identity.
+class CompactFieldSnapshotView_ : public Earth::Field::IFieldSnapshot {
+public:
+  CompactFieldSnapshotView_(const Earth::Field::SnapshotMetadata& metadata,
+                            unsigned long long generation)
+      : metadata_(metadata),generation_(generation) {}
+
+  const Earth::Field::SnapshotMetadata& Metadata() const override {
+    return metadata_;
+  }
+
+  Earth::Field::FieldSample Sample(
+      const Earth::Field::FieldQuery& query) const override {
+    Earth::Field::FieldSample sample;
+    sample.snapshotId=metadata_.snapshotId;
+    sample.interpolation=metadata_.interpolation;
+
+    sample.status=Earth::Field::ValidateMetadata(metadata_,&sample.message);
+    if (!sample.ok()) return sample;
+
+    if (!GlobalFieldsReady_ || generation_!=GlobalSnapshotGeneration_ ||
+        metadata_.snapshotId!=GlobalSnapshotMetadata_.snapshotId) {
+      sample.status=Earth::Field::FieldSampleStatus::StaleEpoch;
+      sample.message="compact field snapshot was superseded by another assembly";
+      return sample;
+    }
+
+    sample.status=Earth::Field::ValidateQuery(metadata_,query,&sample.message);
+    if (!sample.ok()) return sample;
+
+    if (PIC::Mesh::mesh==NULL) {
+      sample.status=Earth::Field::FieldSampleStatus::SourceUnavailable;
+      sample.message="AMPS mesh is unavailable for compact field interpolation";
+      return sample;
+    }
+
+    double position[3]={query.position_m[0],query.position_m[1],query.position_m[2]};
+    cAMRNode* node=PIC::Mesh::mesh->findTreeNode(position);
+    if (node==NULL) {
+      sample.status=Earth::Field::FieldSampleStatus::OutsideDomain;
+      sample.message="field query position is outside the used AMR tree";
+      return sample;
+    }
+
+    if (!InterpolateField_(position,node,sample.magneticField_T,
+                           GlobalMagneticField_,"magnetic field")) {
+      sample.status=Earth::Field::FieldSampleStatus::InterpolationFailure;
+      sample.message="failed to construct the magnetic-field interpolation row";
+      return sample;
+    }
+    if (metadata_.electricFieldAvailable &&
+        !InterpolateField_(position,node,sample.electricField_V_m,
+                           GlobalElectricField_,"electric field")) {
+      sample.status=Earth::Field::FieldSampleStatus::InterpolationFailure;
+      sample.message="failed to construct the electric-field interpolation row";
+      return sample;
+    }
+    if (!Earth::Field::FiniteVector3(sample.magneticField_T) ||
+        (metadata_.electricFieldAvailable &&
+         !Earth::Field::FiniteVector3(sample.electricField_V_m))) {
+      sample.status=Earth::Field::FieldSampleStatus::NonFiniteValue;
+      sample.message="compact field interpolation returned a non-finite value";
+      return sample;
+    }
+
+    sample.status=Earth::Field::FieldSampleStatus::Valid;
+    sample.message.clear();
+    return sample;
+  }
+
+private:
+  const Earth::Field::SnapshotMetadata metadata_;
+  const unsigned long long generation_;
+};
+
+class CompactFieldProviderView_ : public Earth::Field::IFieldProvider {
+public:
+  std::string SourceId() const override {
+    return GlobalFieldsReady_ ? GlobalSnapshotMetadata_.sourceId :
+                                std::string("MODE3D:UNAVAILABLE");
+  }
+
+  std::shared_ptr<const Earth::Field::IFieldSnapshot> CreateSnapshot(
+      const Earth::Field::SnapshotRequest& request) override {
+    if (!GlobalFieldsReady_)
+      throw std::runtime_error(
+          "Mode3D compact field provider requested before snapshot assembly");
+    if (!request.epochUTC.empty() &&
+        request.epochUTC!=GlobalSnapshotMetadata_.epochUTC)
+      throw std::runtime_error(
+          "Mode3D field-provider request epoch differs from published snapshot");
+
+    // requestId is diagnostic only and cannot affect physical snapshot identity.
+    return std::shared_ptr<const Earth::Field::IFieldSnapshot>(
+        new CompactFieldSnapshotView_(
+            GlobalSnapshotMetadata_,GlobalSnapshotGeneration_));
+  }
+};
+
 } // anonymous namespace
 
 long int DataFileMagneticFieldDataOffset() {
@@ -348,7 +493,55 @@ MaterializationStats AssembleCellCenteredFieldsForCutoff(
     bool verbose) {
 
   const std::string tag=SafeTag_(diagnosticTag);
+  const bool electricAvailable=
+      (electricFieldDataOffset>=0 || plasmaVelocityDataOffset>=0);
+  const Earth::Field::SnapshotMetadata metadata=LegacySnapshotMetadata_(
+      tag,electricAvailable,
+      electricFieldDataOffset<0 && plasmaVelocityDataOffset>=0);
+  return AssembleCellCenteredFieldsForCutoff(
+      diagnosticTag,magneticFieldDataOffset,electricFieldDataOffset,
+      plasmaVelocityDataOffset,metadata,verbose);
+}
+
+MaterializationStats AssembleCellCenteredFieldsForCutoff(
+    const char* diagnosticTag,
+    long int magneticFieldDataOffset,
+    long int electricFieldDataOffset,
+    long int plasmaVelocityDataOffset,
+    const Earth::Field::SnapshotMetadata& metadata,
+    bool verbose) {
+
+  const std::string tag=SafeTag_(diagnosticTag);
   ValidateMeshAndOffset_(tag,magneticFieldDataOffset);
+
+  std::string metadataError;
+  const Earth::Field::FieldSampleStatus metadataStatus=
+      Earth::Field::ValidateMetadata(metadata,&metadataError);
+  if (metadataStatus!=Earth::Field::FieldSampleStatus::Valid) {
+    std::ostringstream msg;
+    msg << "[" << tag << "] invalid field-snapshot metadata: status="
+        << Earth::Field::FieldSampleStatusName(metadataStatus)
+        << ", detail=" << metadataError << ".";
+    const std::string text=msg.str();
+    exit(__LINE__,__FILE__,text.c_str());
+  }
+
+  const bool electricSourceAvailable=
+      (electricFieldDataOffset>=0 || plasmaVelocityDataOffset>=0);
+  if (metadata.electricFieldAvailable && !electricSourceAvailable) {
+    const std::string msg="["+tag+
+        "] metadata advertises E, but no E or plasma-velocity source was supplied.";
+    exit(__LINE__,__FILE__,msg.c_str());
+  }
+  const Earth::Field::InterpolationMode expectedInterpolation=
+      (electricFieldDataOffset<0 && plasmaVelocityDataOffset>=0) ?
+      Earth::Field::InterpolationMode::CellCenteredLinearDerivedElectric :
+      Earth::Field::InterpolationMode::CellCenteredLinear;
+  if (metadata.interpolation!=expectedInterpolation) {
+    const std::string msg="["+tag+
+        "] metadata interpolation mode does not match compact-array assembly.";
+    exit(__LINE__,__FILE__,msg.c_str());
+  }
 
   MaterializationStats stats;
 
@@ -435,6 +628,16 @@ MaterializationStats AssembleCellCenteredFieldsForCutoff(
         GlobalElectricField_[static_cast<size_t>(3*c+d)]*=inv;
       }
     }
+
+    const double* reducedB=&GlobalMagneticField_[static_cast<size_t>(3*c)];
+    const double* reducedE=&GlobalElectricField_[static_cast<size_t>(3*c)];
+    if (!Earth::Field::FiniteVector3(reducedB) ||
+        !Earth::Field::FiniteVector3(reducedE)) {
+      std::ostringstream msg;
+      msg << "[" << tag << "] non-finite reduced field at compact cell " << c << ".";
+      const std::string text=msg.str();
+      exit(__LINE__,__FILE__,text.c_str());
+    }
   }
 
   stats.usedLeafBlocks=nUsedLeafBlocks;
@@ -447,6 +650,7 @@ MaterializationStats AssembleCellCenteredFieldsForCutoff(
   stats.electricFieldReadFromBuffer=(electricFieldDataOffset>=0);
   stats.electricFieldDerivedFromVelocity=
       ((electricFieldDataOffset<0)&&(plasmaVelocityDataOffset>=0));
+  stats.snapshotId=metadata.snapshotId;
 
   if ((nPackedGlobal!=nInteriorCells)||(nMissing!=0)||(nDuplicate!=0)) {
     std::ostringstream msg;
@@ -458,6 +662,10 @@ MaterializationStats AssembleCellCenteredFieldsForCutoff(
     exit(__LINE__,__FILE__,text.c_str());
   }
 
+  // Publish metadata and generation only after ownership, completeness, and finite-
+  // value gates pass.  A consumer can never observe new identity with old arrays.
+  GlobalSnapshotMetadata_=metadata;
+  ++GlobalSnapshotGeneration_;
   GlobalFieldsReady_=true;
 
   if ((verbose==true)&&(PIC::ThisThread==0)) {
@@ -467,6 +675,9 @@ MaterializationStats AssembleCellCenteredFieldsForCutoff(
               << ", interiorCells=" << stats.expectedInteriorCells
               << ", B=" << stats.magneticFieldBytes/mib << " MiB"
               << ", E=" << stats.electricFieldBytes/mib << " MiB"
+              << ", snapshot=" << stats.snapshotId
+              << ", epoch=" << metadata.epochUTC
+              << ", frame=" << Earth::Field::CoordinateFrameName(metadata.frame)
               << ", ESource=";
 
     if (stats.electricFieldReadFromBuffer) std::cout << "cell buffer";
@@ -517,6 +728,25 @@ void ClearGlobalFields() {
   GlobalMagneticField_.clear();
   GlobalElectricField_.clear();
   GlobalCellPresence_.clear();
+  GlobalSnapshotMetadata_=Earth::Field::SnapshotMetadata();
+  ++GlobalSnapshotGeneration_;
+}
+
+const Earth::Field::SnapshotMetadata& CurrentSnapshotMetadata() {
+  return GlobalSnapshotMetadata_;
+}
+
+std::shared_ptr<const Earth::Field::IFieldSnapshot> CurrentSnapshot() {
+  if (!GlobalFieldsReady_)
+    return std::shared_ptr<const Earth::Field::IFieldSnapshot>();
+  return std::shared_ptr<const Earth::Field::IFieldSnapshot>(
+      new CompactFieldSnapshotView_(
+          GlobalSnapshotMetadata_,GlobalSnapshotGeneration_));
+}
+
+std::shared_ptr<Earth::Field::IFieldProvider> CurrentFieldProvider() {
+  return std::shared_ptr<Earth::Field::IFieldProvider>(
+      new CompactFieldProviderView_());
 }
 
 long int RedefineGlobalMagneticField(
@@ -566,6 +796,14 @@ long int RedefineGlobalMagneticField(
           x[2]=node->xmin[2]+(k+0.5)*dx[2];
           fieldCallback(x,b);
 
+          if (!Earth::Field::FiniteVector3(b)) {
+            std::ostringstream msg;
+            msg << "[" << tag << "] callback returned non-finite B at x=("
+                << x[0] << ',' << x[1] << ',' << x[2] << ").";
+            const std::string text=msg.str();
+            exit(__LINE__,__FILE__,text.c_str());
+          }
+
           const long int c=GlobalCellIndex_(node,i,j,k);
           GlobalMagneticField_[static_cast<size_t>(3*c+0)]=b[0];
           GlobalMagneticField_[static_cast<size_t>(3*c+1)]=b[1];
@@ -575,6 +813,28 @@ long int RedefineGlobalMagneticField(
     }
   }
 
+  // A callback replacement is a new physical generation.  Preserve useful domain and
+  // epoch provenance when it exists, but never leave an earlier snapshot ID attached
+  // to new array values.  E is unavailable after replacement because its old values
+  // were explicitly reset to zero and are no longer physically synchronized with B.
+  const std::string previousId=GlobalSnapshotMetadata_.snapshotId;
+  Earth::Field::SnapshotMetadata replacement=GlobalSnapshotMetadata_;
+  replacement.sourceId=tag+":CALLBACK_REDEFINE";
+  replacement.modelName="CALLBACK";
+  if (replacement.epochUTC.empty()) replacement.epochUTC="UNSPECIFIED";
+  if (replacement.frame==Earth::Field::CoordinateFrame::Unknown)
+    replacement.frame=Earth::Field::CoordinateFrame::GSM;
+  replacement.interpolation=Earth::Field::InterpolationMode::CellCenteredLinear;
+  replacement.magneticFieldAvailable=true;
+  replacement.electricFieldAvailable=false;
+  replacement.immutableDuringBatch=true;
+  replacement.valid=true;
+  replacement.validityMessage.clear();
+  replacement.snapshotId=Earth::Field::MakeSnapshotId(
+      replacement.sourceId,replacement.epochUTC,
+      previousId+"|callback-redefine");
+  GlobalSnapshotMetadata_=replacement;
+  ++GlobalSnapshotGeneration_;
   GlobalFieldsReady_=true;
 
   if ((verbose==true)&&(PIC::ThisThread==0)) {

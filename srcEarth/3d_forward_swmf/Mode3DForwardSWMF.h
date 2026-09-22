@@ -83,6 +83,10 @@ bool ReadyForBackwardProductCalculation(bool verbose=true);
 // MPI-replicates only the compact physical arrays.  No nonlocal cDataBlockAMR objects
 // or ghost-cell state vectors are allocated.  Mode3D field evaluation subsequently
 // uses cRowStencil entries to address remote cells by (node->Temp_ID,i,j,k).
+//
+// Step-3 provenance is published with the compact arrays: source PIC::CPLR:SWMF,
+// configured reference epoch plus PT time, GSM/SI units, E=-v×B capability, and one
+// immutable generation ID checked after cutoff and density/flux products.
 void PrepareGlobalSWMFCoupledMagneticFieldForCutoff(bool verbose=true);
 
 // Replace the SWMF-coupled cell-centered magnetic field with the analytic dipole

@@ -3,7 +3,7 @@
 This directory contains executable regression/validation tests for the AMPS
 Earth SEP/geospace backward products.  Each test is stored in its own directory
 (`C1`, `C2`, ..., `C6`, `C11`, `C14`, `F1`, `F2`, `F3`, `F4`, `F5`, `F11`, `F12`, `F15`, `F16`,
-`UFluxNumerics`, ...).  Test scripts are intended to be executed
+`UFluxNumerics`, `UFieldProvider`, ...).  Test scripts are intended to be executed
 from the directory containing the `amps` executable, not from inside the test
 subdirectory.
 
@@ -30,6 +30,27 @@ grids, angular normalization, deterministic subsampling, total/channel quadratur
 unresolved-trajectory lower/upper bounds.  Its LINEAR-grid assertion is a permanent
 regression test for the corrected Mode3D quadratic-grid defect.  Full details and test
 IDs are in `UFluxNumerics/README.md`.
+
+## UFieldProvider: strict Step 3 suite
+
+The immutable field-provider contract and production analytic dipole have a standalone
+C++11 reference suite:
+
+```bash
+./srcEarth/test/UFieldProvider/run_test.sh
+```
+
+It checks a hard-coded deterministic-ID reference, exact SI samples, schema/frame/unit
+validation, stale/domain/error statuses, immutable provider revisions, cutoff/flux
+snapshot synchronization, closed-form dipole values, and 16-thread read stability.
+See `UFieldProvider/README.md` for the complete gate table.
+
+`test/list` schedules the Step 2 and Step 3 suites as its first two independent `P`
+entries. Each has its own `last pass:` record, so the main runner reports and commits
+their provenance separately. No pre-existing C/F command, expected status, input,
+reference file, tolerance, mover, trajectory limit, or last-pass record was modified;
+the existing tests remain independent validation tools rather than being adjusted to
+accommodate the new abstraction.
 
 ## C6 gridless and gridded external-reference validation
 

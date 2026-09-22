@@ -1,48 +1,43 @@
-# UFieldProvider — field-provider and immutable-snapshot contract
+# UFieldProvider — strict Step 3 reference tests
 
-This dependency-free unit test validates roadmap Step 3 without requiring AMPS, MPI,
-Geopack, Tsyganenko libraries, or SWMF. It compiles `util/FieldProvider.h` against a
-small uniform-field provider and checks the semantics required by both production
-backends. It also compiles the production Boris mover, dipole evaluator, boundary
-finder, and trap detector for a numerical reproduction of the F4 grid.
-
-Run it from any directory:
+Run from the repository root:
 
 ```bash
 ./srcEarth/test/UFieldProvider/run_test.sh
 ```
 
-The contract checks cover:
+It is also the second independent entry in `srcEarth/test/list`, immediately after the
+Step 2 flux-numerics suite, and therefore runs under the standard test runner. Its own
+`last pass:` field is updated only after a successful committed validation run.
 
-1. deterministic snapshot IDs that change with field-defining state;
-2. complete epoch, coordinate-frame, interpolation, validity, and SI-unit metadata;
-3. valid in-domain sampling with snapshot identity propagation;
-4. explicit `STALE_EPOCH` failure;
-5. distinct `OUTSIDE_DOMAIN` and `INVALID_REQUEST` failures;
-6. immutability of an existing snapshot after the provider advances;
-7. the same-snapshot gate used between cutoff and flux/spectrum products; and
-8. rejection of false unit or electric-field capability claims.
-9. production analytic-DIPOLE equatorial and polar point values in GSM/SI units; and
-10. an owned analytic-DIPOLE parameter value remains unchanged after legacy global
-    reconfiguration and under 16 concurrent readers.
+This dependency-free C++11 suite compiles the production `FieldProvider.h` contract
+and the production analytic-dipole implementation with `-Wall -Wextra -Werror`. It
+does not require an AMPS executable, MPI, PIC, SPICE, Geopack, or SWMF.
 
-The second executable then traces the exact five F4 latitudes, 32 logarithmic energies,
-and 16 deterministic directions in the analytic dipole. It uses the corrected F4
-policy (`BORIS`, 1-Re bounce-envelope tolerance) and fails if any point/energy bin has
-zero physically resolved directions. This is a numerical regression for the original
-`NaN` failure, not only a source or metadata check.
+The suite is intentionally not a smoke test. Its ten gates include fixed or independent
+references:
 
-Why the F4 policy is explicit: RK4 accumulated about 0.3--0.8% momentum-magnitude
-drift on long low-energy traces while the trap detector correctly required relative
-energy stability of `1e-4`. Consequently, no trajectory in some bins could receive a
-positive recurrent-trapping classification. Boris preserves the static-magnetic
-energy invariant to roundoff. The 1-Re envelope tolerance accommodates the sparse
-16-direction closure sample; time, step, and distance limits remain unresolved.
+| ID | Strict validation reference |
+|---|---|
+| U-P01 | hard-coded FNV-1a snapshot ID; identity changes for physical state but not cutoff/flux request labels |
+| U-P02 | complete schema, GSM frame, interpolation, immutability, and exact SI-unit contract |
+| U-P03 | exact uniform B/E component values and sample identity |
+| U-P04 | explicit stale-epoch rejection |
+| U-P05 | inclusive domain boundary plus distinct outside-domain and non-finite-query failures |
+| U-P06 | old field values and identity remain unchanged after provider revision |
+| U-P07 | exact cutoff/flux synchronization; replacement and reused-ID metadata tampering rejection |
+| U-P08 | negative tests for false schema, nT units, unknown interpolation, and unavailable E |
+| U-P09 | closed-form aligned equator/pole and tilted-axis dipole values |
+| U-P10 | immutable dipole values after legacy-global reconfiguration and under 16 concurrent readers |
 
-The suite tests the common API, the analytic snapshot's concurrency semantics, and the
-F4 setup. Backend-linked validation is still required in a configured AMPS tree:
+The pre-existing C/F validation cases and their thresholds are not changed by Step 3.
+In particular, F4 retains its original mover, trap detector settings, numerical limits,
+reference reconstruction, and pass/fail tolerances. The new unit suite supplements
+those cases; it does not replace or bypass them.
 
-- point comparisons for IGRF and selected Tsyganenko models (DIPOLE is covered here);
-- compact Mode3D versus source-evaluator values;
-- PIC::CPLR owner-cell buffer versus compact SWMF snapshot values; and
-- cutoff plus density/flux execution proving a single snapshot ID is retained.
+Backend-linked validation still requires a configured AMPS tree:
+
+- existing C/F cases for cutoff, flux, spectra, and external references;
+- direct-versus-compact point comparisons for standalone Mode3D;
+- owner-cell versus compact-array comparisons for SWMF B and `E=-v×B`; and
+- a combined cutoff+density run confirming that one snapshot ID survives both products.

@@ -4,34 +4,30 @@
 //======================================================================================
 // FieldProvider.h
 //======================================================================================
-// Backend-neutral contract for every magnetic/electric field used by the Earth
-// cutoff, access, flux, and spectrum calculations.
+// Backend-neutral, dependency-free contract for magnetic/electric fields used by
+// cutoff, access, flux, and energy-spectrum calculations.
 //
-// Roadmap Step 3 requires the particle tracer to be independent of the origin of the
-// field.  A direct DIPOLE/IGRF/Tsyganenko evaluator and a cell-centred PIC::CPLR/SWMF
-// mesh therefore expose the same two concepts:
+// Step-3 design rule
+// ------------------
+// A provider may own mutable setup state, but CreateSnapshot() must return a frozen,
+// read-only field state.  One trajectory batch samples exactly one snapshot.  Direct
+// analytic/empirical fields and compact Mode3D/SWMF fields expose the same metadata,
+// status, unit, and identity contract without changing the particle mover interface.
 //
-//   IFieldProvider  - a mutable source that can freeze a requested epoch/driver state;
-//   IFieldSnapshot  - the immutable, read-only object sampled by one trajectory batch.
+// This header intentionally has no MPI, PIC, SPICE, Geopack, or SWMF dependency.  The
+// production adapters live beside their backends; the contract and its failure modes
+// can therefore be validated by a strict standalone C++11 unit test.
 //
-// The common contract is intentionally independent of PIC, MPI, Geopack, and the
-// Tsyganenko interfaces.  It can be compiled and unit-tested as a small C++ library.
-// Backend adapters may contain those dependencies, but trajectory/product code must
-// see only the metadata and sample status declared here.
+// Physical contract
+// -----------------
+//   position : metres
+//   B        : tesla
+//   E        : volt/metre
+//   frame    : explicit (GSM in current production Earth paths)
 //
-// Phase-1 time semantics
-// ----------------------
-// A snapshot is static or quasi-static: B (and optional E) are held fixed from the
-// first trajectory in a batch through the last.  A series of such snapshots is NOT a
-// time-dependent characteristic.  The immutable flag and snapshot identifier make
-// this limitation visible in output provenance and allow cutoff and flux products to
-// verify that they used exactly the same field state.
-//
-// Unit/frame contract
-// -------------------
-// Positions are metres, B is tesla, and E is volt/metre.  The coordinate frame is
-// explicit and is currently GSM for production Earth calculations.  No adapter is
-// allowed to return nT, Re, km, or an implicit frame while claiming this contract.
+// A field error is not a geomagnetic-access decision.  OUTSIDE_DOMAIN may be consumed
+// by a boundary locator, but stale state, unavailable sources, interpolation failures,
+// and non-finite values must never be silently reclassified as forbidden access.
 //======================================================================================
 
 #include <cmath>
@@ -61,10 +57,6 @@ enum class InterpolationMode {
   CellCenteredLinearDerivedElectric
 };
 
-// FieldSampleStatus deliberately separates physical domain exclusion from numerical
-// or configuration failures.  A caller may classify OutsideDomain as an outer-boundary
-// trajectory event; it must never silently reinterpret StaleEpoch, SourceUnavailable,
-// InterpolationFailure, or NonFiniteValue as physical magnetic shielding.
 enum class FieldSampleStatus {
   Valid,
   InvalidRequest,
@@ -135,9 +127,8 @@ struct SnapshotMetadata {
   InterpolationMode interpolation{InterpolationMode::Unknown};
   AxisAlignedDomainSI domain;
 
-  // These strings are intentionally fixed by the contract.  Keeping them in the
-  // metadata makes serialized provenance self-describing and catches accidental
-  // nT/km adapters during validation.
+  // Fixed strings make serialized provenance self-describing and allow validation to
+  // reject a backend that accidentally exposes nT, km, Re, or an implicit E unit.
   std::string positionUnit{"m"};
   std::string magneticFieldUnit{"T"};
   std::string electricFieldUnit{"V/m"};
@@ -152,9 +143,8 @@ struct SnapshotMetadata {
 struct FieldQuery {
   double position_m[3]{0.0,0.0,0.0};
 
-  // Empty means "use the frozen snapshot epoch".  Supplying an epoch is a strong
-  // synchronization check: a different value returns StaleEpoch instead of quietly
-  // sampling the wrong field state.
+  // Empty means "use the snapshot epoch".  A nonempty value is a synchronization
+  // assertion; it never asks an immutable snapshot to advance to another epoch.
   std::string epochUTC;
   bool requireElectricField{false};
   bool enforceDomain{true};
@@ -176,9 +166,10 @@ inline bool FiniteVector3(const double value[3]) {
          std::isfinite(value[1]) && std::isfinite(value[2]);
 }
 
-// Deterministic FNV-1a identifier.  It is a provenance key, not a cryptographic data
-// hash.  Providers must include every field-defining driver in the canonicalState
-// string so two physically different snapshots cannot share an identifier.
+// Stable FNV-1a provenance identifier.  It is not a cryptographic checksum.  The
+// canonicalState argument must contain every physical driver and discretization
+// choice that can change sampled values.  Output names and request labels must not be
+// included: two requests for the same frozen physical field must receive the same ID.
 inline std::string MakeSnapshotId(const std::string& sourceId,
                                   const std::string& epochUTC,
                                   const std::string& canonicalState) {
@@ -195,15 +186,18 @@ inline std::string MakeSnapshotId(const std::string& sourceId,
 
 inline FieldSampleStatus ValidateMetadata(const SnapshotMetadata& metadata,
                                           std::string* message=nullptr) {
-  const auto fail=[&](FieldSampleStatus status,const char* text) {
+  const auto fail=[&](FieldSampleStatus status,const std::string& text) {
     if (message!=nullptr) *message=text;
     return status;
   };
 
   if (!metadata.valid)
     return fail(FieldSampleStatus::SourceUnavailable,
-                metadata.validityMessage.empty() ? "field snapshot is not valid" :
-                metadata.validityMessage.c_str());
+                metadata.validityMessage.empty() ?
+                "field snapshot is not valid" : metadata.validityMessage);
+  if (metadata.schemaVersion!=1)
+    return fail(FieldSampleStatus::InvalidRequest,
+                "unsupported field-snapshot metadata schema");
   if (metadata.snapshotId.empty() || metadata.sourceId.empty() ||
       metadata.modelName.empty() || metadata.epochUTC.empty())
     return fail(FieldSampleStatus::InvalidRequest,
@@ -211,6 +205,9 @@ inline FieldSampleStatus ValidateMetadata(const SnapshotMetadata& metadata,
   if (metadata.frame==CoordinateFrame::Unknown)
     return fail(FieldSampleStatus::InvalidRequest,
                 "field metadata has an unknown coordinate frame");
+  if (metadata.interpolation==InterpolationMode::Unknown)
+    return fail(FieldSampleStatus::InvalidRequest,
+                "field metadata has an unknown interpolation mode");
   if (metadata.positionUnit!="m" || metadata.magneticFieldUnit!="T" ||
       metadata.electricFieldUnit!="V/m")
     return fail(FieldSampleStatus::InvalidRequest,
@@ -269,6 +266,8 @@ public:
 
 struct SnapshotRequest {
   std::string epochUTC;
+  // Diagnostic label only.  A provider may log it, but it must not make physically
+  // identical snapshots acquire different snapshot IDs.
   std::string requestId;
 };
 
@@ -283,13 +282,48 @@ public:
 inline void RequireSameSnapshot(const SnapshotMetadata& expected,
                                 const SnapshotMetadata& actual,
                                 const char* context) {
-  if (expected.snapshotId.empty() || actual.snapshotId.empty() ||
-      expected.snapshotId!=actual.snapshotId) {
+  std::string expectedError,actualError;
+  const FieldSampleStatus expectedStatus=ValidateMetadata(expected,&expectedError);
+  const FieldSampleStatus actualStatus=ValidateMetadata(actual,&actualError);
+  bool sameDomain=expected.domain.enabled==actual.domain.enabled;
+  if (sameDomain && expected.domain.enabled) {
+    for (int d=0;d<3;++d) {
+      sameDomain=sameDomain &&
+          expected.domain.minimum_m[d]==actual.domain.minimum_m[d] &&
+          expected.domain.maximum_m[d]==actual.domain.maximum_m[d];
+    }
+  }
+
+  // The ID is the primary physical-state key, but compare the complete public
+  // contract as a second line of defence.  If an adapter accidentally reuses an ID
+  // after changing frame, interpolation, units, capabilities, or domain, cutoff and
+  // flux must fail synchronization instead of silently combining unlike fields.
+  const bool sameContract=
+      expected.schemaVersion==actual.schemaVersion &&
+      expected.sourceId==actual.sourceId &&
+      expected.modelName==actual.modelName &&
+      expected.epochUTC==actual.epochUTC &&
+      expected.frame==actual.frame &&
+      expected.interpolation==actual.interpolation &&
+      expected.positionUnit==actual.positionUnit &&
+      expected.magneticFieldUnit==actual.magneticFieldUnit &&
+      expected.electricFieldUnit==actual.electricFieldUnit &&
+      expected.magneticFieldAvailable==actual.magneticFieldAvailable &&
+      expected.electricFieldAvailable==actual.electricFieldAvailable &&
+      expected.immutableDuringBatch==actual.immutableDuringBatch &&
+      sameDomain;
+  if (expectedStatus!=FieldSampleStatus::Valid ||
+      actualStatus!=FieldSampleStatus::Valid ||
+      expected.snapshotId!=actual.snapshotId ||
+      !sameContract) {
     std::ostringstream msg;
     msg << (context!=nullptr ? context : "field product")
-        << ": cutoff/access and flux/spectrum did not use the same field snapshot"
-        << " (expected='" << expected.snapshotId
-        << "', actual='" << actual.snapshotId << "').";
+        << ": field snapshot changed or is invalid"
+        << " (expectedId='" << expected.snapshotId
+        << "', actualId='" << actual.snapshotId
+        << "', expectedStatus=" << FieldSampleStatusName(expectedStatus)
+        << ", actualStatus=" << FieldSampleStatusName(actualStatus)
+        << ", sameContract=" << (sameContract ? "true" : "false") << ").";
     throw std::runtime_error(msg.str());
   }
 }

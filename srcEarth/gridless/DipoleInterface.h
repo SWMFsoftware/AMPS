@@ -85,8 +85,22 @@ static constexpr double M_E_Am2 = B_eq_Re * Re_m*Re_m*Re_m / mu0_over_4pi; // AÂ
     double m_hat[3] = {0.0, 0.0, 1.0};
   };
 
-  // Global parameters used by the gridless solvers.
-  // NOTE: This is intentionally local to srcEarth/gridless.
+  // Construct a complete dipole parameter value without touching process-global
+  // state.  Step-3 field snapshots own this value: creating another snapshot can
+  // therefore neither reconfigure an earlier one nor race with concurrent readers.
+  inline Params MakeParams(double momentScale_Me,double tilt_deg) {
+    Params result;
+    result.momentScale_Me=momentScale_Me;
+    result.tilt_deg=tilt_deg;
+    const double th=tilt_deg*PI/180.0;
+    result.m_hat[0]=std::sin(th);
+    result.m_hat[1]=0.0;
+    result.m_hat[2]=std::cos(th);
+    return result;
+  }
+
+  // Legacy global parameters used by serial initialization and diagnostic paths.
+  // Provider snapshots must use the explicit-Params evaluator below instead.
   extern Params gParams;
 
   // Set moment scale (multiples of Earth canonical moment).
@@ -95,8 +109,9 @@ static constexpr double M_E_Am2 = B_eq_Re * Re_m*Re_m*Re_m / mu0_over_4pi; // AÂ
   // Set tilt (degrees). Updates gParams.m_hat.
   void SetTiltDeg(double tilt_deg);
 
-  // Evaluate dipole field at position x_m (meters). Output B_T (Tesla).
-  inline void GetB_Tesla(const double x_m[3], double B_T[3]) {
+  // Evaluate one explicitly supplied, immutable dipole at x_m [m]. Output is B [T].
+  // This overload is the authoritative formula for both provider and legacy paths.
+  inline void GetB_Tesla(const double x_m[3], double B_T[3],const Params& params) {
     // mu0/4pi = 1e-7 in SI.
     constexpr double mu0_over_4pi = 1.0e-7;
 
@@ -111,10 +126,10 @@ static constexpr double M_E_Am2 = B_eq_Re * Re_m*Re_m*Re_m / mu0_over_4pi; // AÂ
     const double r5 = r3*r2;
 
     // Dipole moment vector m = M * m_hat.
-    const double M = gParams.momentScale_Me * M_E_Am2;
-    const double mx = M * gParams.m_hat[0];
-    const double my = M * gParams.m_hat[1];
-    const double mz = M * gParams.m_hat[2];
+    const double M = params.momentScale_Me * M_E_Am2;
+    const double mx = M * params.m_hat[0];
+    const double my = M * params.m_hat[1];
+    const double mz = M * params.m_hat[2];
 
     const double mdotr = mx*x + my*y + mz*z;
 
@@ -122,6 +137,12 @@ static constexpr double M_E_Am2 = B_eq_Re * Re_m*Re_m*Re_m / mu0_over_4pi; // AÂ
     B_T[0] = mu0_over_4pi * ( 3.0*x*mdotr/r5 - mx/r3 );
     B_T[1] = mu0_over_4pi * ( 3.0*y*mdotr/r5 - my/r3 );
     B_T[2] = mu0_over_4pi * ( 3.0*z*mdotr/r5 - mz/r3 );
+  }
+
+  // Backward-compatible convenience overload.  Existing callers that configure one
+  // global dipole before a serial phase retain exactly their previous behavior.
+  inline void GetB_Tesla(const double x_m[3], double B_T[3]) {
+    GetB_Tesla(x_m,B_T,gParams);
   }
 
 } // namespace Dipole

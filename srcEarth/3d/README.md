@@ -15,6 +15,25 @@ Energy/rigidity conversion, energy coordinates, angular sampling, channel clippi
 quadrature, transmission diagnostics, and unresolved bounds come from
 `../util/FluxNumerics.h` in both backends.
 
+## Step 3 immutable compact-field generation
+
+`GlobalMagneticField` publishes compact B/E arrays and `FieldProvider.h` metadata as a
+single generation. Assembly proceeds in this order:
+
+1. invalidate the previous generation;
+2. gather exactly one owner value for every used interior cell;
+3. reject missing, duplicate, or non-finite B/E values;
+4. validate the GSM/SI/source/epoch/interpolation metadata;
+5. publish arrays, metadata, snapshot ID, and generation together;
+6. run requested products against read-only arrays; and
+7. verify that the snapshot ID is unchanged after each product.
+
+An `IFieldSnapshot` view captures the publication generation. If a new field is
+assembled or the arrays are cleared, an old view returns `STALE_EPOCH`; it never reads
+new arrays under an old identity. Standalone metadata includes the existing Step 2
+field and electric drivers plus mesh/domain controls. Step 3 does not add new empirical
+field models or modify interpolation, movers, trace limits, or validation tolerances.
+
 ## Unresolved trajectories
 
 `TraceTrajectoryMesh()` returns a structured termination code.  Physical inner losses
@@ -47,6 +66,7 @@ Run the dependency-free shared numerical suite from `srcEarth`:
 
 ```bash
 ./test/UFluxNumerics/run_test.sh
+./test/UFieldProvider/run_test.sh
 ```
 
 A full Mode3D or SWMF build still requires the parent AMPS build tree and its configured

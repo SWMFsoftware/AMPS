@@ -23,6 +23,7 @@
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include <memory>
 
 #ifndef _NO_SPICE_CALLS_
 #include "SpiceUsr.h"
@@ -1254,6 +1255,74 @@ EarthUtil::AmpsParam Mode3DBuildSnapshotParam(const EarthUtil::AmpsParam& base,
   return snap;
 }
 
+Earth::Field::SnapshotMetadata Mode3DBuildFieldMetadata_(
+    const EarthUtil::AmpsParam& snap,
+    bool electricFieldAvailable) {
+  Earth::Field::SnapshotMetadata metadata;
+  const std::string model=EarthUtil::ToUpper(snap.field.model);
+  metadata.sourceId="STANDALONE_MODE3D:"+model;
+  metadata.modelName=model;
+  metadata.epochUTC=snap.field.epoch.empty() ?
+      std::string("UNSPECIFIED") : snap.field.epoch;
+  metadata.frame=Earth::Field::CoordinateFrame::GSM;
+  metadata.interpolation=Earth::Field::InterpolationMode::CellCenteredLinear;
+  metadata.magneticFieldAvailable=true;
+  metadata.electricFieldAvailable=electricFieldAvailable;
+  metadata.immutableDuringBatch=true;
+
+  // Do not expand the set of field implementations as part of the provider work.
+  // Step 3 describes and freezes the backends already present in the Step-2 tree;
+  // adding T01/TA15 here previously introduced unrelated compile/link regressions.
+  metadata.valid=(model=="NONE" || model=="DIPOLE" || model=="IGRF" ||
+                  model=="T96" || model=="T05" || model=="TA16");
+  if (!metadata.valid)
+    metadata.validityMessage="unsupported standalone Mode3D field model: "+model;
+
+  metadata.domain.enabled=true;
+  metadata.domain.minimum_m[0]=1000.0*snap.domain.xMin;
+  metadata.domain.minimum_m[1]=1000.0*snap.domain.yMin;
+  metadata.domain.minimum_m[2]=1000.0*snap.domain.zMin;
+  metadata.domain.maximum_m[0]=1000.0*snap.domain.xMax;
+  metadata.domain.maximum_m[1]=1000.0*snap.domain.yMax;
+  metadata.domain.maximum_m[2]=1000.0*snap.domain.zMax;
+
+  // Canonical state contains the field/electric drivers and interpolation mesh.  It
+  // excludes suffixes, output names, and product selections so cutoff and flux over
+  // one physical snapshot necessarily receive the same identity.
+  std::ostringstream state;
+  state << std::setprecision(17)
+        << model << '|'
+        << snap.field.dipoleMoment_Me << '|' << snap.field.dipoleTilt_deg << '|'
+        << snap.field.pdyn_nPa << '|' << snap.field.dst_nT << '|'
+        << snap.field.imfBx_nT << '|' << snap.field.imfBy_nT << '|'
+        << snap.field.imfBz_nT << '|' << snap.field.swVx_kms << '|'
+        << snap.field.swN_cm3;
+  for (int i=0;i<3;++i) state << '|' << snap.field.g[i];
+  for (int i=0;i<6;++i) state << '|' << snap.field.w[i];
+  for (int i=0;i<6;++i) state << '|' << snap.field.bzAvg[i];
+  state << '|' << snap.field.xind << '|' << snap.field.ta16CoeffFile
+        << '|' << EarthUtil::ToUpper(snap.efield.model)
+        << '|' << snap.efield.corotationScale
+        << '|' << snap.efield.vsPotential_kV
+        << '|' << snap.efield.vsGamma
+        << '|' << snap.efield.vsReferenceL
+        << '|' << snap.efield.vsScale
+        << '|' << snap.efield.rMin_km
+        << '|' << snap.efield.lMin
+        << '|' << snap.domain.xMin << '|' << snap.domain.xMax
+        << '|' << snap.domain.yMin << '|' << snap.domain.yMax
+        << '|' << snap.domain.zMin << '|' << snap.domain.zMax
+        << '|' << snap.mode3d.meshResolutionProfileActive
+        << '|' << snap.mode3d.meshResolutionEarth_km
+        << '|' << snap.mode3d.meshResolutionBoundary_km
+        << '|' << snap.mode3d.meshResolutionOuterRadius_km
+        << '|' << snap.mode3d.meshResolutionCoarsening
+        << '|' << snap.mode3d.meshResolutionExponent;
+  metadata.snapshotId=Earth::Field::MakeSnapshotId(
+      metadata.sourceId,metadata.epochUTC,state.str());
+  return metadata;
+}
+
 void Mode3DPrepareMagneticFieldSnapshot(const EarthUtil::AmpsParam& snap,
                                          const std::string& suffix,
                                          bool verbose) {
@@ -1289,12 +1358,15 @@ void Mode3DPrepareMagneticFieldSnapshot(const EarthUtil::AmpsParam& snap,
   const long int electricFieldOffset =
       PIC::CPLR::DATAFILE::Offset::ElectricField.active ?
       Earth::Mode3D::GlobalMagneticField::DataFileElectricFieldDataOffset() : -1;
+  const Earth::Field::SnapshotMetadata metadata=
+      Mode3DBuildFieldMetadata_(snap,electricFieldOffset>=0);
 
   Earth::Mode3D::GlobalMagneticField::AssembleCellCenteredFieldsForCutoff(
       "Mode3D",
       Earth::Mode3D::GlobalMagneticField::DataFileMagneticFieldDataOffset(),
       electricFieldOffset,
       -1,
+      metadata,
       verbose);
 #else
   (void)verbose;
@@ -1533,6 +1605,20 @@ int Run(const EarthUtil::AmpsParam& prm) {
     // every MPI process for the cutoff tracer.
     Mode3DPrepareMagneticFieldSnapshot(snap,suffix,/*verbose=*/true);
 
+    // Retain the identity actually published with the compact arrays.  This gate is
+    // deliberately orthogonal to numerical acceptance: it cannot relax a tolerance,
+    // convert an unresolved trajectory, or change a mover.  It only prevents products
+    // from being combined if another field generation appears mid-batch.
+    std::shared_ptr<Earth::Field::IFieldProvider> batchFieldProvider=
+        Earth::Mode3D::GlobalMagneticField::CurrentFieldProvider();
+    Earth::Field::SnapshotRequest batchFieldRequest;
+    batchFieldRequest.epochUTC=snap.field.epoch;
+    batchFieldRequest.requestId=suffix;
+    const std::shared_ptr<const Earth::Field::IFieldSnapshot> batchFieldSnapshot=
+        batchFieldProvider->CreateSnapshot(batchFieldRequest);
+    const Earth::Field::SnapshotMetadata batchFieldMetadata=
+        batchFieldSnapshot->Metadata();
+
     //------------------------------------------------------------------------
     // Requested physics products for this snapshot
     //------------------------------------------------------------------------
@@ -1562,6 +1648,10 @@ int Run(const EarthUtil::AmpsParam& prm) {
 
       const int status = RunCutoffRigidity(snap,/*showProgressBar=*/true);
       if (status != 0) finalStatus = status;
+      Earth::Field::RequireSameSnapshot(
+          batchFieldMetadata,
+          Earth::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata(),
+          "Mode3D cutoff product");
 
       if (PIC::ThisThread == 0) {
         std::cout << "[Mode3D] Cutoff rigidity calculation complete for snapshot "
@@ -1580,6 +1670,10 @@ int Run(const EarthUtil::AmpsParam& prm) {
 
       const int status = RunDensityAndFlux(snap);
       if (status != 0) finalStatus = status;
+      Earth::Field::RequireSameSnapshot(
+          batchFieldMetadata,
+          Earth::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata(),
+          "Mode3D density/flux/spectrum product");
 
       if (PIC::ThisThread == 0) {
         std::cout << "[Mode3D] Density/flux calculation complete for snapshot "

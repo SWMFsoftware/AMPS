@@ -201,6 +201,9 @@
 #include "GridlessParticleMovers.h"
 
 #include "../util/TrajectoryTermination.h"
+#include "../util/FieldProvider.h"
+
+#include <memory>
 
 namespace Earth {
   namespace GridlessMode {
@@ -208,6 +211,18 @@ namespace Earth {
     // Returns 0 on success; throws std::runtime_error on invalid input
     // or runtime failures (file I/O, unsupported field model, etc.).
     int RunCutoffRigidity(const EarthUtil::AmpsParam& p);
+
+    // Create the backend-neutral view of the exact direct evaluator used by the
+    // production tracer.  The returned provider freezes an owned field state for the
+    // requested epoch; it does not introduce a second magnetic-field formula.
+    std::shared_ptr<Earth::Field::IFieldProvider>
+    CreateFieldProvider(const EarthUtil::AmpsParam& p);
+
+    // Return a value copy of the current thread's frozen direct-field metadata.  This
+    // is a provenance/synchronization operation and does not modify mover selection,
+    // trajectory limits, trap criteria, or access classification.
+    Earth::Field::SnapshotMetadata
+    FrozenFieldSnapshotMetadata(const EarthUtil::AmpsParam& p);
 
     // Shared low-level trajectory classifier used by both the cutoff-rigidity and
     // density/spectrum workflows.

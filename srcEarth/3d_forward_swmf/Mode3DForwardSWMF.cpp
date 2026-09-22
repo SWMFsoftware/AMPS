@@ -70,6 +70,7 @@
 #include <vector>
 #include <limits>
 #include <cstring>
+#include <memory>
 
 namespace Earth {
 namespace Mode3DForwardSWMF {
@@ -254,6 +255,53 @@ std::string FormatCutoffOutputSuffix_(long int callIndex) {
 
   return ss.str();
 }
+
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+Earth::Field::SnapshotMetadata BuildSWMFFieldSnapshotMetadata_() {
+  Earth::Field::SnapshotMetadata metadata;
+  metadata.sourceId="PIC::CPLR:SWMF";
+  metadata.modelName="SWMF";
+
+  // PT exposes an authoritative simulation-time offset.  Keep it together with the
+  // configured absolute reference instead of presenting a relative time as ISO UTC.
+  std::ostringstream epoch;
+  epoch << (s_prm.field.epoch.empty() ? "UNSPECIFIED" : s_prm.field.epoch)
+        << "+PT" << std::setprecision(17)
+        << CurrentCutoffOutputTimeSeconds_() << "s";
+  metadata.epochUTC=epoch.str();
+  metadata.frame=Earth::Field::CoordinateFrame::GSM;
+  metadata.interpolation=
+      Earth::Field::InterpolationMode::CellCenteredLinearDerivedElectric;
+  metadata.magneticFieldAvailable=true;
+  metadata.electricFieldAvailable=true;
+  metadata.immutableDuringBatch=true;
+  metadata.valid=true;
+
+  metadata.domain.enabled=true;
+  metadata.domain.minimum_m[0]=1000.0*s_prm.domain.xMin;
+  metadata.domain.minimum_m[1]=1000.0*s_prm.domain.yMin;
+  metadata.domain.minimum_m[2]=1000.0*s_prm.domain.zMin;
+  metadata.domain.maximum_m[0]=1000.0*s_prm.domain.xMax;
+  metadata.domain.maximum_m[1]=1000.0*s_prm.domain.yMax;
+  metadata.domain.maximum_m[2]=1000.0*s_prm.domain.zMax;
+
+  // The owner-cell gather freezes the received B and bulk velocity immediately after
+  // this record is built.  The call index distinguishes separate coupler receives at
+  // an identical PT clock value; request/output suffix strings are not part of identity.
+  std::ostringstream state;
+  state << std::setprecision(17)
+        << "call=" << s_cutoff_call_counter
+        << "|time=" << CurrentCutoffOutputTimeSeconds_()
+        << "|Boffset=" << PIC::CPLR::SWMF::MagneticFieldOffset
+        << "|Voffset=" << PIC::CPLR::SWMF::BulkVelocityOffset
+        << "|xmin=" << s_prm.domain.xMin << "|xmax=" << s_prm.domain.xMax
+        << "|ymin=" << s_prm.domain.yMin << "|ymax=" << s_prm.domain.yMax
+        << "|zmin=" << s_prm.domain.zMin << "|zmax=" << s_prm.domain.zMax;
+  metadata.snapshotId=Earth::Field::MakeSnapshotId(
+      metadata.sourceId,metadata.epochUTC,state.str());
+  return metadata;
+}
+#endif
 
 //======================================================================================
 // SWMF-coupled cutoff global-field assembly is implemented by the shared
@@ -701,6 +749,7 @@ void PrepareGlobalSWMFCoupledMagneticFieldForCutoff(bool verbose) {
       PIC::CPLR::SWMF::MagneticFieldOffset,
       -1,
       PIC::CPLR::SWMF::BulkVelocityOffset,
+      BuildSWMFFieldSnapshotMetadata_(),
       verbose);
 #endif
 }
@@ -785,6 +834,16 @@ void amps_cutoff_time_step() {
     // MPI rank.  Assemble the distributed SWMF fields into compact global arrays
     // before starting any backward tracing.
     PrepareGlobalSWMFCoupledMagneticFieldForCutoff(true);
+    std::shared_ptr<Earth::Field::IFieldProvider> batchFieldProvider=
+        Earth::Mode3D::GlobalMagneticField::CurrentFieldProvider();
+    Earth::Field::SnapshotRequest batchFieldRequest;
+    batchFieldRequest.epochUTC=
+        Earth::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata().epochUTC;
+    batchFieldRequest.requestId=suffix;
+    const std::shared_ptr<const Earth::Field::IFieldSnapshot> batchFieldSnapshot=
+        batchFieldProvider->CreateSnapshot(batchFieldRequest);
+    const Earth::Field::SnapshotMetadata batchFieldMetadata=
+        batchFieldSnapshot->Metadata();
 
     // Run the products requested by CALC_TARGET.  Both products intentionally share
     // the same compact SWMF B/E snapshot prepared above, so cutoff, directional maps,
@@ -793,9 +852,17 @@ void amps_cutoff_time_step() {
     // magnetic snapshot comes from live SWMF coupling instead of a Tsyganenko driver file.
     if (TargetRequestsCutoff_(s_prm)) {
       Earth::Mode3D::RunCutoffRigidity(s_prm,true);
+      Earth::Field::RequireSameSnapshot(
+          batchFieldMetadata,
+          Earth::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata(),
+          "SWMF-coupled cutoff product");
     }
     if (TargetRequestsDensityFlux_(s_prm)) {
       Earth::Mode3D::RunDensityAndFlux(s_prm);
+      Earth::Field::RequireSameSnapshot(
+          batchFieldMetadata,
+          Earth::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata(),
+          "SWMF-coupled density/flux/spectrum product");
     }
   }
   catch (const std::exception& e) {

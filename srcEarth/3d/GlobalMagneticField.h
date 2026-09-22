@@ -29,6 +29,10 @@
 //======================================================================================
 
 #include "pic.h"
+#include "../util/FieldProvider.h"
+
+#include <memory>
+#include <string>
 
 namespace Earth {
 namespace Mode3D {
@@ -48,6 +52,7 @@ struct MaterializationStats {
   long int electricFieldBytes;
   bool electricFieldReadFromBuffer;
   bool electricFieldDerivedFromVelocity;
+  std::string snapshotId;
 
   MaterializationStats() :
     usedLeafBlocks(0), ownerInteriorCells(0), expectedInteriorCells(0),
@@ -86,6 +91,17 @@ MaterializationStats AssembleCellCenteredFieldsForCutoff(
     long int plasmaVelocityDataOffset=-1,
     bool verbose=true);
 
+// Step-3 overload: publish validated provenance with the same generation as the
+// compact arrays.  The legacy overload above remains source-compatible, while all
+// production standalone/SWMF callers provide physical metadata through this form.
+MaterializationStats AssembleCellCenteredFieldsForCutoff(
+    const char* diagnosticTag,
+    long int magneticFieldDataOffset,
+    long int electricFieldDataOffset,
+    long int plasmaVelocityDataOffset,
+    const Earth::Field::SnapshotMetadata& metadata,
+    bool verbose=true);
+
 // Backward-compatible B-only entry point.  Existing call sites can continue using this
 // function; it now creates compact arrays and a zero E array instead of allocating and
 // populating nonlocal AMR blocks.
@@ -110,6 +126,13 @@ bool GetCellCenteredElectricField(cAMRNode* node,int i,int j,int k,double* E);
 bool GlobalFieldsReady();
 long int GlobalCellCount();
 void ClearGlobalFields();
+
+// Read-only metadata and provider views of the published compact generation.  A
+// snapshot view captures its generation; after reassembly or ClearGlobalFields(), its
+// Sample() method returns STALE_EPOCH instead of reading replacement arrays.
+const Earth::Field::SnapshotMetadata& CurrentSnapshotMetadata();
+std::shared_ptr<const Earth::Field::IFieldSnapshot> CurrentSnapshot();
+std::shared_ptr<Earth::Field::IFieldProvider> CurrentFieldProvider();
 
 // Replace the compact global magnetic field by values generated from a coordinate
 // callback.  No AMPS block allocation is performed.  The electric field is reset to

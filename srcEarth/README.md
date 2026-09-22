@@ -1,5 +1,39 @@
 # SEP-in-geospace model: compact global fields in Mode3D
 
+## Roadmap Step 3 reimplemented from the Step 2 baseline
+
+Step 3 now provides one explicit field-provider and immutable-snapshot contract in
+`util/FieldProvider.h`. This implementation was rebuilt from the clean Step 2 source;
+none of the earlier Step 3 production edits were carried forward implicitly.
+
+The contract records a deterministic physical-state ID, source/model, epoch, GSM frame,
+SI units, validity domain, interpolation method, B/E capabilities, and explicit failure
+status. Production adapters cover:
+
+| Backend | Frozen state |
+|---|---|
+| Gridless standalone | owned direct DIPOLE/IGRF/Tsyganenko evaluator; analytic dipole parameters are value-owned, not process-global |
+| Standalone Mode3D | compact replicated B/E arrays and metadata published as one generation |
+| SWMF-coupled Mode3D | owner-cell B plus `E=-v×B`, compactly replicated and tagged with PT time |
+
+The particle mover interface and numerical policies are unchanged. In particular, Step
+3 does not alter mover selection, time/step/distance limits, trapping criteria,
+unresolved classification, reference data, tolerances, or any existing C/F test input.
+F4 remains the original Step 2 validation case; no alternate mover or relaxed trap
+tolerance is inserted to make it pass.
+
+Run the strict dependency-free Step 2 and Step 3 suites from `srcEarth`:
+
+```bash
+./test/UFluxNumerics/run_test.sh
+./test/UFieldProvider/run_test.sh
+```
+
+`UFieldProvider` includes fixed-ID, exact SI-value, closed-form dipole, negative failure,
+snapshot-replacement, and 16-reader concurrency checks. See `util/README.md`,
+`test/UFieldProvider/README.md`, `gridless/READ.ME`, `3d/README.md`, and
+`3d_forward_swmf/README.md`.
+
 ## Roadmap Step 2 implemented: common flux numerics
 
 Step 2 of the cutoff-to-flux development roadmap is implemented in this source tree.
@@ -92,6 +126,7 @@ Mode3D now keeps the standard distributed AMPS mesh and replicates only compact 
 - `3d/Mode3DParallel.cpp`
 - `3d/Mode3DParallel.h`
 - `util/FluxNumerics.h`
+- `util/FieldProvider.h`
 - `util/amps_param_parser.cpp`
 - `util/amps_param_parser.h`
 - `3d_forward_swmf/Mode3DForwardSWMF.cpp`

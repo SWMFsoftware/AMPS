@@ -212,6 +212,7 @@
 #include "util/CutoffBandSearch.h"
 #include "util/AdaptiveDirectAccess.h"
 #include "DipoleInterface.h"
+#include "../util/FieldProvider.h"
 #include "../3d/Mode3DParallel.h" // shared MPI dynamic work-queue scheduler
 
 //--------------------------------------------------------------------------------------
@@ -243,6 +244,7 @@
 #include <numeric>
 #include <memory>
 #include <sstream>
+#include <iomanip>
 #include <limits>
 #include <thread>
 #include <atomic>
@@ -468,15 +470,17 @@ static inline double RigidityFromMomentum_GV(double p,double q_C_abs) {
   return (q_C_abs>0.0) ? (p*SpeedOfLight/q_C_abs/1.0e9) : 0.0;
 }
 
-class cFieldEvaluator : public IGridlessFieldEvaluator {
+class cFieldEvaluator : public IGridlessFieldEvaluator,
+                        public Earth::Field::IFieldSnapshot {
 public:
-  explicit cFieldEvaluator(const EarthUtil::AmpsParam& p) : prm(p) {
-    // Configure analytic dipole parameters.  These values are used only when the
-    // user explicitly requests FIELD_MODEL=DIPOLE; in the live SWMF-coupled build
-    // the normal production path instead samples the magnetic field imported from
-    // SWMF through PIC::CPLR.
-    Earth::GridlessMode::Dipole::SetMomentScale(prm.field.dipoleMoment_Me);
-    Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
+  explicit cFieldEvaluator(const EarthUtil::AmpsParam& p)
+      : prm(p),
+        dipoleParams_(Earth::GridlessMode::Dipole::MakeParams(
+            p.field.dipoleMoment_Me,p.field.dipoleTilt_deg)) {
+    // Do not call Dipole::SetMomentScale/SetTiltDeg here.  Those functions mutate
+    // process-global legacy state.  A Step-3 snapshot instead owns dipoleParams_, so
+    // creating another worker cannot change this evaluator's field and concurrent
+    // construction cannot introduce a data race.  The field formula is unchanged.
 
     PS = 0.170481; // same default as interfaces
 
@@ -522,6 +526,10 @@ public:
     // wrappers/Fortran common blocks in this compilation mode.
     currentEpoch_ = prm.field.epoch;
 #endif
+
+    // Metadata is created only after model setup succeeds.  It is observational: the
+    // mover continues to use the exact pre-Step-3 GetB_T() interface and algorithms.
+    RefreshSnapshotMetadata_();
   }
 
   // Return the canonical (normalised) model name.
@@ -620,7 +628,14 @@ public:
     (void)driverTable;
     return;
 #else
-    if (Model() == "DIPOLE" || Model() == "NONE") return;  // analytic/zero-field cases have no Geopack dependency
+    if (Model() == "DIPOLE" || Model() == "NONE") {
+      // The analytic/zero field has no epoch-dependent coefficients.  The requested
+      // epoch is nevertheless part of provenance, so freeze it before the batch.
+      prm.field.epoch=epoch;
+      currentEpoch_=epoch;
+      RefreshSnapshotMetadata_();
+      return;
+    }
 
     const bool epochChanged   = (epoch != currentEpoch_);
     const bool hasDriverTable = (driverTable && !driverTable->empty());
@@ -689,6 +704,9 @@ public:
       Geopack::Init(epoch.c_str(), "GSM");
       currentEpoch_ = epoch;  // remember for the guard check on the next call
     }
+
+    prm.field.epoch=epoch;
+    RefreshSnapshotMetadata_();
 #endif
   }
 
@@ -739,6 +757,44 @@ public:
     sharedModelStatePreinstalled_ = value;
   }
 
+  const Earth::Field::SnapshotMetadata& Metadata() const override {
+    return metadata_;
+  }
+
+  Earth::Field::FieldSample Sample(
+      const Earth::Field::FieldQuery& query) const override {
+    Earth::Field::FieldSample sample;
+    sample.snapshotId=metadata_.snapshotId;
+    sample.interpolation=metadata_.interpolation;
+    sample.status=Earth::Field::ValidateQuery(metadata_,query,&sample.message);
+    if (!sample.ok()) return sample;
+
+    try {
+      V3 field;
+      GetB_T(V3{query.position_m[0],query.position_m[1],query.position_m[2]},field);
+      sample.magneticField_T[0]=field.x;
+      sample.magneticField_T[1]=field.y;
+      sample.magneticField_T[2]=field.z;
+    }
+    catch (const std::exception& error) {
+      sample.status=Earth::Field::FieldSampleStatus::SourceUnavailable;
+      sample.message=error.what();
+      return sample;
+    }
+
+    if (!Earth::Field::FiniteVector3(sample.magneticField_T)) {
+      sample.status=Earth::Field::FieldSampleStatus::NonFiniteValue;
+      sample.message="standalone field evaluator returned a non-finite magnetic field";
+      return sample;
+    }
+
+    // The Phase-1 direct gridless trajectory path is magnetic-only.  Report E as
+    // unavailable in metadata instead of making an implicit zero field look physical.
+    sample.status=Earth::Field::FieldSampleStatus::Valid;
+    sample.message.clear();
+    return sample;
+  }
+
   void GetB_T(const V3& x_m, V3& B_T) const override {
     // Explicit zero-field branch used by density/flux normalization validation.
     // With FIELD_MODEL=NONE, particles move in straight lines and any non-unity
@@ -752,7 +808,7 @@ public:
     if (Model()=="DIPOLE") {
       double x_arr[3]={x_m.x,x_m.y,x_m.z};
       double b_arr[3];
-      Earth::GridlessMode::Dipole::GetB_Tesla(x_arr,b_arr);
+      Earth::GridlessMode::Dipole::GetB_Tesla(x_arr,b_arr,dipoleParams_);
       B_T.x=b_arr[0]; B_T.y=b_arr[1]; B_T.z=b_arr[2];
       return;
     }
@@ -863,15 +919,115 @@ public:
   }
 
 private:
+  void RefreshSnapshotMetadata_() {
+    metadata_=Earth::Field::SnapshotMetadata();
+    metadata_.modelName=Model();
+    metadata_.epochUTC=prm.field.epoch.empty() ?
+        std::string("UNSPECIFIED") : prm.field.epoch;
+    metadata_.frame=Earth::Field::CoordinateFrame::GSM;
+    metadata_.interpolation=(Model()=="DIPOLE" || Model()=="NONE") ?
+        Earth::Field::InterpolationMode::DirectAnalytic :
+        Earth::Field::InterpolationMode::DirectEmpirical;
+    metadata_.magneticFieldAvailable=true;
+    metadata_.electricFieldAvailable=false;
+    metadata_.immutableDuringBatch=true;
+
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+    metadata_.sourceId="PIC::CPLR:LIVE_GRIDLESS_LEGACY";
+    metadata_.valid=true;
+#else
+    metadata_.sourceId="STANDALONE:"+metadata_.modelName;
+    const bool supported=(Model()=="NONE" || Model()=="DIPOLE" || Model()=="IGRF" ||
+                          Model()=="T96" || Model()=="T01" || Model()=="T05" ||
+                          Model()=="TA15N" || Model()=="TA15B" || Model()=="TA16");
+    metadata_.valid=supported;
+    metadata_.validityMessage=supported ? std::string() :
+        std::string("unsupported standalone field model: ")+Model();
+#endif
+
+    metadata_.domain.enabled=true;
+    metadata_.domain.minimum_m[0]=1000.0*prm.domain.xMin;
+    metadata_.domain.minimum_m[1]=1000.0*prm.domain.yMin;
+    metadata_.domain.minimum_m[2]=1000.0*prm.domain.zMin;
+    metadata_.domain.maximum_m[0]=1000.0*prm.domain.xMax;
+    metadata_.domain.maximum_m[1]=1000.0*prm.domain.yMax;
+    metadata_.domain.maximum_m[2]=1000.0*prm.domain.zMax;
+
+    // Include every value consumed by direct field evaluation.  The request/output
+    // label is deliberately excluded: identity describes physical state, not a file.
+    std::ostringstream state;
+    state << std::setprecision(17)
+          << metadata_.modelName << '|'
+          << prm.field.dipoleMoment_Me << '|' << prm.field.dipoleTilt_deg << '|'
+          << prm.field.pdyn_nPa << '|' << prm.field.dst_nT << '|'
+          << prm.field.imfBx_nT << '|' << prm.field.imfBy_nT << '|'
+          << prm.field.imfBz_nT << '|' << prm.field.swVx_kms << '|'
+          << prm.field.swN_cm3;
+    for (int i=0;i<3;++i) state << '|' << prm.field.g[i];
+    for (int i=0;i<6;++i) state << '|' << prm.field.w[i];
+    for (int i=0;i<6;++i) state << '|' << prm.field.bzAvg[i];
+    state << '|' << prm.field.xind << '|' << prm.field.ta16CoeffFile
+          // The domain changes which queries the snapshot is valid to answer.  It is
+          // therefore part of snapshot state even though the direct B formula itself
+          // is analytic outside that box.
+          << '|' << prm.domain.xMin << '|' << prm.domain.xMax
+          << '|' << prm.domain.yMin << '|' << prm.domain.yMax
+          << '|' << prm.domain.zMin << '|' << prm.domain.zMax;
+    metadata_.snapshotId=Earth::Field::MakeSnapshotId(
+        metadata_.sourceId,metadata_.epochUTC,state.str());
+  }
+
   // Owned copy (not a reference) so ReinitGeopack can mutate PARMOD and field
   // parameters in-place when the driver table provides per-point values.
   EarthUtil::AmpsParam prm;
+  const Earth::GridlessMode::Dipole::Params dipoleParams_;
   double PARMOD[11];
   double PS;
   std::string currentEpoch_; // epoch string last used in Geopack::Init
   std::string currentDriverEpoch_; // exact UTC of cached driver/PARMOD snapshot
   bool driverSnapshotInitialized_ = false;
   bool sharedModelStatePreinstalled_ = false;
+  Earth::Field::SnapshotMetadata metadata_;
+};
+
+// Provider facade for the existing direct evaluator.  Keeping this adapter in the
+// same translation unit is deliberate: it cannot drift onto a second DIPOLE/IGRF/
+// Tsyganenko initialization path.  CreateTypedSnapshot() is used by production mover
+// workers; CreateSnapshot() exposes the identical object through the neutral Step-3
+// API for validation and provenance consumers.
+class cStandaloneFieldProvider : public Earth::Field::IFieldProvider {
+public:
+  explicit cStandaloneFieldProvider(const EarthUtil::AmpsParam& prm) : prm_(prm) {}
+
+  std::string SourceId() const override {
+    std::string model=EarthUtil::ToUpper(prm_.field.model);
+    if (model=="TS05" || model=="T05S" || model=="T04S" || model=="TS04") model="T05";
+    else if (model=="TS96" || model=="T96S") model="T96";
+    else if (model=="TS01" || model=="T01S") model="T01";
+    else if (model=="TA16RBF") model="TA16";
+    return std::string("STANDALONE:")+model;
+  }
+
+  std::unique_ptr<cFieldEvaluator> CreateTypedSnapshot(
+      const std::string& requestedEpoch=std::string()) const {
+    std::unique_ptr<cFieldEvaluator> snapshot(new cFieldEvaluator(prm_));
+    const std::string epoch=requestedEpoch.empty() ? prm_.field.epoch : requestedEpoch;
+    const EarthUtil::TsDriverTable* driverTable=
+        prm_.temporal.driverTable.empty() ? nullptr : &prm_.temporal.driverTable;
+    snapshot->ReinitGeopack(epoch,driverTable);
+    return snapshot;
+  }
+
+  std::shared_ptr<const Earth::Field::IFieldSnapshot> CreateSnapshot(
+      const Earth::Field::SnapshotRequest& request) override {
+    std::unique_ptr<cFieldEvaluator> typed=CreateTypedSnapshot(request.epochUTC);
+    // request.requestId is intentionally not used in snapshot identity.  It names a
+    // consumer batch, not a physical field-defining state.
+    return std::shared_ptr<const Earth::Field::IFieldSnapshot>(typed.release());
+  }
+
+private:
+  EarthUtil::AmpsParam prm_;
 };
 
 
@@ -1745,26 +1901,48 @@ static bool TraceAllowedImpl(const EarthUtil::AmpsParam& prm,
 namespace Earth {
 namespace GridlessMode {
 
+std::shared_ptr<Earth::Field::IFieldProvider>
+CreateFieldProvider(const EarthUtil::AmpsParam& prm) {
+  return std::shared_ptr<Earth::Field::IFieldProvider>(
+      new cStandaloneFieldProvider(prm));
+}
+
 static cFieldEvaluator& GetCachedFieldEvaluator(const EarthUtil::AmpsParam& prm) {
   std::ostringstream key;
-  key << prm.field.model << '|'
+  key << std::setprecision(17)
+      << prm.field.model << '|'
       << prm.field.epoch << '|'
       << prm.field.dipoleMoment_Me << '|'
       << prm.field.dipoleTilt_deg << '|'
       << prm.field.pdyn_nPa << '|'
       << prm.field.dst_nT << '|'
+      << prm.field.imfBx_nT << '|'
       << prm.field.imfBy_nT << '|'
-      << prm.field.imfBz_nT;
+      << prm.field.imfBz_nT << '|'
+      << prm.field.swVx_kms << '|'
+      << prm.field.swN_cm3;
+  for (int i=0;i<3;i++) key << '|' << prm.field.g[i];
   for (int i=0;i<6;i++) key << '|' << prm.field.w[i];
+  for (int i=0;i<6;i++) key << '|' << prm.field.bzAvg[i];
+  key << '|' << prm.field.xind << '|' << prm.field.ta16CoeffFile
+      << '|' << prm.domain.xMin << '|' << prm.domain.xMax
+      << '|' << prm.domain.yMin << '|' << prm.domain.yMax
+      << '|' << prm.domain.zMin << '|' << prm.domain.zMax;
 
   static thread_local std::string cachedKey;
   static thread_local std::unique_ptr<cFieldEvaluator> cachedField;
   const std::string newKey=key.str();
   if (!cachedField || cachedKey!=newKey) {
-    cachedField.reset(new cFieldEvaluator(prm));
+    cStandaloneFieldProvider provider(prm);
+    cachedField=provider.CreateTypedSnapshot();
     cachedKey=newKey;
   }
   return *cachedField;
+}
+
+Earth::Field::SnapshotMetadata
+FrozenFieldSnapshotMetadata(const EarthUtil::AmpsParam& prm) {
+  return GetCachedFieldEvaluator(prm).Metadata();
 }
 
 TrajectoryResult TraceTrajectoryShared(const EarthUtil::AmpsParam& prm,
@@ -2742,6 +2920,17 @@ namespace Earth {
 namespace GridlessMode {
 
 int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
+  // Preserve the pre-Step-3 diagnostic contract without making field snapshots
+  // mutable.  Several analytical Størmer-reporting helpers below read the legacy
+  // Dipole::gParams axis.  Before Step 3 it happened to be initialized as a side
+  // effect of every cFieldEvaluator construction, including worker construction.
+  // That was both order-dependent and a data race.  Initialize it exactly once on
+  // the calling thread, before any worker/provider is created.  Trajectory field
+  // evaluations do *not* read this global: each snapshot owns an immutable Params
+  // value and therefore remains stable for the complete calculation batch.
+  Earth::GridlessMode::Dipole::SetMomentScale(prm.field.dipoleMoment_Me);
+  Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
+
   // The shell-oriented RIGIDITY_LIST algorithm remains a Mode3D-only product because
   // its output contract is tied to the Mode3D structured-shell path.  DIRECT_ACCESS is
   // different: it is the point/trajectory directional A(R,Omega) product used by C19
@@ -4679,8 +4868,9 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   // read-only with respect to that process-global wrapper state.
   std::vector<std::unique_ptr<cFieldEvaluator>> gridlessWorkerFields;
   gridlessWorkerFields.reserve((std::size_t)gridlessThreadCount);
+  cStandaloneFieldProvider gridlessFieldProvider(prm);
   for (int iw=0; iw<gridlessThreadCount; ++iw)
-    gridlessWorkerFields.emplace_back(new cFieldEvaluator(prm));
+    gridlessWorkerFields.emplace_back(gridlessFieldProvider.CreateTypedSnapshot());
 
   const bool gridlessSharedThreadsActive =
       (gridlessBackend != GridlessParallelBackend_::SERIAL && gridlessThreadCount > 1);
@@ -4692,6 +4882,19 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
     gridlessWorkerFields.front()->InstallSharedModelState();
     for (auto& fieldPtr : gridlessWorkerFields)
       fieldPtr->UsePreinstalledSharedModelState(true);
+  }
+
+  // This check is deliberately strict and does not alter any trace limit or access
+  // classification.  Every worker in one batch must describe the identical physical
+  // field; a mismatch is a setup error, not something a regression test may ignore.
+  if (!gridlessWorkerFields.empty()) {
+    const Earth::Field::SnapshotMetadata& expected=
+        gridlessWorkerFields.front()->Metadata();
+    for (std::size_t i=1;i<gridlessWorkerFields.size();++i) {
+      Earth::Field::RequireSameSnapshot(
+          expected,gridlessWorkerFields[i]->Metadata(),
+          "gridless cutoff worker initialization");
+    }
   }
 
   // Missing sentinel for MPI_MIN.  Local arrays use -1 for user-facing output, but

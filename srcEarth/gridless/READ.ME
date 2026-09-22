@@ -141,6 +141,25 @@ Validation inputs should set `DS_FAIL_ON_UNRESOLVED T` together with an explicit
 `DS_UNRESOLVED_TOL`.  Survey runs can leave the flag false and use the written bounds.
 
 
+Step 3 field-provider contract
+------------------------------
+
+The production direct evaluator also implements the backend-neutral immutable snapshot
+API in `../util/FieldProvider.h`; the mover still calls its unchanged `GetB_T()` method.
+Consequently, adding provenance and explicit sample errors does not change integration,
+boundary events, trapping, or access classification.
+
+Each snapshot owns the full parameter record. In particular, DIPOLE snapshots own a
+`Dipole::Params` value and evaluate through the explicit-parameter overload. They never
+read or write `Dipole::gParams`, so another worker or provider cannot reconfigure an
+active F4 trajectory. Legacy global dipole helpers remain for serial diagnostics.
+
+The metadata identity includes every direct-field driver and the configured Cartesian
+domain, while request IDs and output names are excluded. `Sample()` enforces epoch,
+domain, unit, capability, and finite-value checks. `GetB_T()` retains the pre-Step-3 hot
+path and boundary-probe behavior. Existing test movers and tolerances are untouched.
+
+
 2.4 Optional anisotropic boundary mode
 --------------------------------------
 

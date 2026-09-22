@@ -9,6 +9,16 @@ Run from any directory:
 ./test/UFluxNumerics/run_test.sh
 ```
 
+From the AMPS repository root it is also executed automatically as the first entry in
+the normal validation list:
+
+```bash
+python3 srcEarth/test/test_runner.py -j 6 srcEarth/test/list
+```
+
+Its independent `last pass:` line is intentionally left empty until a successful run
+is committed with the test runner's last-pass update workflow.
+
 The runner compiles with C++11 plus `-Wall -Wextra -Werror -pedantic`, then exercises:
 
 - **U-F03** — relativistic energy/rigidity round trips and the speed bound;

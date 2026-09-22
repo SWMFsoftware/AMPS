@@ -1,8 +1,9 @@
 #include "../../util/FieldProvider.h"
 #include "../../gridless/DipoleInterface.h"
 
-#include <cmath>
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -22,10 +23,22 @@ void Check(bool condition,const std::string& message) {
   }
 }
 
+bool Near(double actual,double expected,double relative=1.0e-13,
+          double absolute=1.0e-18) {
+  return std::fabs(actual-expected)<=absolute+
+      relative*std::max(std::fabs(actual),std::fabs(expected));
+}
+
 class UniformSnapshot : public Earth::Field::IFieldSnapshot {
 public:
-  explicit UniformSnapshot(const Earth::Field::SnapshotMetadata& metadata)
-      : metadata_(metadata) {}
+  UniformSnapshot(const Earth::Field::SnapshotMetadata& metadata,
+                  const double magnetic_T[3],const double electric_V_m[3])
+      : metadata_(metadata) {
+    for (int d=0;d<3;++d) {
+      magnetic_T_[d]=magnetic_T[d];
+      electric_V_m_[d]=electric_V_m[d];
+    }
+  }
 
   const Earth::Field::SnapshotMetadata& Metadata() const override {
     return metadata_;
@@ -37,22 +50,18 @@ public:
     sample.snapshotId=metadata_.snapshotId;
     sample.interpolation=metadata_.interpolation;
     sample.status=Earth::Field::ValidateQuery(metadata_,query,&sample.message);
-    if (sample.status!=Earth::Field::FieldSampleStatus::Valid) return sample;
-
-    sample.magneticField_T[0]=3.0e-5;
-    sample.magneticField_T[1]=-2.0e-6;
-    sample.magneticField_T[2]=1.0e-5;
-    sample.electricField_V_m[0]=0.0;
-    sample.electricField_V_m[1]=1.0e-3;
-    sample.electricField_V_m[2]=0.0;
-    sample.status=Earth::Field::FieldSampleStatus::Valid;
+    if (!sample.ok()) return sample;
+    for (int d=0;d<3;++d) {
+      sample.magneticField_T[d]=magnetic_T_[d];
+      sample.electricField_V_m[d]=electric_V_m_[d];
+    }
     return sample;
   }
 
 private:
-  // A value copy is central to the test: changes to the provider after CreateSnapshot
-  // cannot alter the metadata or field state seen by this immutable batch snapshot.
   const Earth::Field::SnapshotMetadata metadata_;
+  double magnetic_T_[3];
+  double electric_V_m_[3];
 };
 
 class UniformProvider : public Earth::Field::IFieldProvider {
@@ -78,11 +87,15 @@ public:
       metadata.domain.minimum_m[d]=-10.0;
       metadata.domain.maximum_m[d]=10.0;
     }
+
+    // requestId is intentionally absent. It labels a consumer, not field state.
     metadata.snapshotId=Earth::Field::MakeSnapshotId(
         metadata.sourceId,metadata.epochUTC,
-        request.requestId+"|revision="+std::to_string(revision_));
+        "revision="+std::to_string(revision_));
+    const double magnetic[3]={3.0e-5*revision_,-2.0e-6,1.0e-5};
+    const double electric[3]={0.0,1.0e-3*revision_,0.0};
     return std::shared_ptr<const Earth::Field::IFieldSnapshot>(
-        new UniformSnapshot(metadata));
+        new UniformSnapshot(metadata,magnetic,electric));
   }
 
   void SetRevision(int revision) { revision_=revision; }
@@ -95,166 +108,197 @@ private:
 
 int main() {
   using namespace Earth::Field;
+  namespace Dipole=Earth::GridlessMode::Dipole;
 
-  // U-P01: stable snapshot identity and sensitivity to physical state.
-  const std::string id1=MakeSnapshotId("DIPOLE","2012-05-17T01:00:00","M=1|tilt=0");
-  const std::string id2=MakeSnapshotId("DIPOLE","2012-05-17T01:00:00","M=1|tilt=0");
-  const std::string id3=MakeSnapshotId("DIPOLE","2012-05-17T01:00:00","M=1|tilt=1");
-  Check(id1==id2,"snapshot IDs must be deterministic");
-  Check(id1!=id3,"snapshot IDs must change when a field-defining driver changes");
+  // U-P01: compare the deterministic ID with an independently precomputed FNV-1a
+  // reference, then prove sensitivity to a physical driver.
+  const std::string id1=MakeSnapshotId(
+      "DIPOLE","2012-05-17T01:00:00","M=1|tilt=0");
+  const std::string id2=MakeSnapshotId(
+      "DIPOLE","2012-05-17T01:00:00","M=1|tilt=0");
+  const std::string id3=MakeSnapshotId(
+      "DIPOLE","2012-05-17T01:00:00","M=1|tilt=1");
+  Check(id1=="field-v1-9a27e878e9de572e",
+        "snapshot ID must match the fixed FNV-1a reference");
+  Check(id1==id2,"identical physical state must have deterministic identity");
+  Check(id1!=id3,"field-defining state change must change identity");
 
   UniformProvider provider;
-  SnapshotRequest request;
-  request.epochUTC="2012-05-17T01:00:00";
-  request.requestId="batch-001";
-  std::shared_ptr<const IFieldSnapshot> snapshot=provider.CreateSnapshot(request);
+  SnapshotRequest requestA;
+  requestA.epochUTC="2012-05-17T01:00:00";
+  requestA.requestId="cutoff";
+  std::shared_ptr<const IFieldSnapshot> snapshot=provider.CreateSnapshot(requestA);
+  SnapshotRequest requestB=requestA;
+  requestB.requestId="flux";
+  const std::shared_ptr<const IFieldSnapshot> samePhysical=
+      provider.CreateSnapshot(requestB);
+  Check(snapshot->Metadata().snapshotId==samePhysical->Metadata().snapshotId,
+        "consumer request labels must not change physical snapshot identity");
 
-  // U-P02: complete epoch/frame/SI/interpolation/validity metadata.
+  // U-P02: complete frame/unit/interpolation/domain metadata is mandatory.
   std::string detail;
   Check(ValidateMetadata(snapshot->Metadata(),&detail)==FieldSampleStatus::Valid,
-        "a complete SI/GSM immutable metadata record must validate: "+detail);
-  Check(snapshot->Metadata().positionUnit=="m", "position unit must be m");
-  Check(snapshot->Metadata().magneticFieldUnit=="T", "B unit must be T");
-  Check(snapshot->Metadata().electricFieldUnit=="V/m", "E unit must be V/m");
-  Check(snapshot->Metadata().frame==CoordinateFrame::GSM, "frame must be explicit GSM");
+        "complete immutable SI/GSM metadata must validate: "+detail);
+  Check(snapshot->Metadata().positionUnit=="m" &&
+        snapshot->Metadata().magneticFieldUnit=="T" &&
+        snapshot->Metadata().electricFieldUnit=="V/m",
+        "snapshot units must be exactly m, T, and V/m");
 
-  // U-P03: nominal sample and exact snapshot identity propagation.
+  // U-P03: nominal sample values and identity propagation are checked against exact
+  // constants, not merely finite/nonzero conditions.
   FieldQuery query;
   query.position_m[0]=1.0;
   query.position_m[1]=2.0;
   query.position_m[2]=3.0;
-  query.epochUTC=request.epochUTC;
+  query.epochUTC=requestA.epochUTC;
   query.requireElectricField=true;
   FieldSample sample=snapshot->Sample(query);
-  Check(sample.ok(),"in-domain sample at the frozen epoch must be valid");
+  Check(sample.ok(),"in-domain sample at frozen epoch must be valid");
   Check(sample.snapshotId==snapshot->Metadata().snapshotId,
-        "sample must carry its snapshot identifier");
-  Check(std::fabs(sample.magneticField_T[0]-3.0e-5)<1.0e-18,
-        "provider must preserve SI magnetic-field values");
+        "sample must propagate exact snapshot identity");
+  Check(sample.magneticField_T[0]==3.0e-5 &&
+        sample.magneticField_T[1]==-2.0e-6 &&
+        sample.magneticField_T[2]==1.0e-5 &&
+        sample.electricField_V_m[1]==1.0e-3,
+        "uniform provider must preserve exact SI reference values");
 
-  // U-P04: stale-epoch requests fail explicitly.
+  // U-P04: stale epoch is explicit and cannot become a valid/zero sample.
   query.epochUTC="2012-05-17T01:05:00";
   sample=snapshot->Sample(query);
   Check(sample.status==FieldSampleStatus::StaleEpoch,
         "mismatched query epoch must return STALE_EPOCH");
 
-  // U-P05: domain and invalid-coordinate failures remain distinct.
-  query.epochUTC=request.epochUTC;
-  query.position_m[0]=11.0;
-  sample=snapshot->Sample(query);
-  Check(sample.status==FieldSampleStatus::OutsideDomain,
+  // U-P05: domain and malformed-coordinate failures remain distinct. Domain bounds
+  // are inclusive by contract.
+  query.epochUTC=requestA.epochUTC;
+  query.position_m[0]=10.0;
+  Check(snapshot->Sample(query).ok(),"domain maximum must be inclusive");
+  query.position_m[0]=10.0+1.0e-12;
+  Check(snapshot->Sample(query).status==FieldSampleStatus::OutsideDomain,
         "out-of-domain point must return OUTSIDE_DOMAIN");
   query.position_m[0]=std::nan("");
-  sample=snapshot->Sample(query);
-  Check(sample.status==FieldSampleStatus::InvalidRequest,
-        "non-finite point must return INVALID_REQUEST");
+  Check(snapshot->Sample(query).status==FieldSampleStatus::InvalidRequest,
+        "non-finite position must return INVALID_REQUEST");
 
-  // U-P06: the provider may advance, but an already returned snapshot is immutable.
+  // U-P06: advancing a provider creates a new object and cannot mutate the old field
+  // values or metadata.
   const std::string frozenId=snapshot->Metadata().snapshotId;
   provider.SetRevision(2);
-  std::shared_ptr<const IFieldSnapshot> next=provider.CreateSnapshot(request);
+  std::shared_ptr<const IFieldSnapshot> next=provider.CreateSnapshot(requestA);
+  query.position_m[0]=0.0;
+  const FieldSample oldValue=snapshot->Sample(query);
+  const FieldSample newValue=next->Sample(query);
   Check(next->Metadata().snapshotId!=frozenId,
-        "new provider revision must produce a new snapshot ID");
-  Check(snapshot->Metadata().snapshotId==frozenId,
-        "old immutable snapshot identity must not change with provider state");
+        "new physical revision must produce a new snapshot ID");
+  Check(snapshot->Metadata().snapshotId==frozenId &&
+        oldValue.magneticField_T[0]==3.0e-5 &&
+        newValue.magneticField_T[0]==6.0e-5,
+        "old snapshot must preserve owned field state after provider advances");
 
-  // U-P07: cutoff and flux product synchronization gate.
+  // U-P07: product synchronization accepts exact identity and rejects replacement.
   try {
-    RequireSameSnapshot(snapshot->Metadata(),snapshot->Metadata(),"unit test");
+    RequireSameSnapshot(snapshot->Metadata(),samePhysical->Metadata(),"unit test");
   }
   catch (...) {
-    Check(false,"matching snapshots must pass the product synchronization gate");
+    Check(false,"matching physical snapshots must pass synchronization gate");
   }
   bool mismatchCaught=false;
   try {
     RequireSameSnapshot(snapshot->Metadata(),next->Metadata(),"unit test");
   }
-  catch (const std::runtime_error&) {
-    mismatchCaught=true;
+  catch (const std::runtime_error&) { mismatchCaught=true; }
+  Check(mismatchCaught,"different snapshots must fail synchronization gate");
+  SnapshotMetadata reusedIdentity=snapshot->Metadata();
+  reusedIdentity.frame=CoordinateFrame::GEO;
+  mismatchCaught=false;
+  try {
+    RequireSameSnapshot(snapshot->Metadata(),reusedIdentity,"unit test");
   }
-  Check(mismatchCaught,"different cutoff/flux snapshots must fail the synchronization gate");
+  catch (const std::runtime_error&) { mismatchCaught=true; }
+  Check(mismatchCaught,
+        "reused identity with a changed metadata contract must fail synchronization");
 
-  // U-P08: unit and E-capability claims are validated rather than inferred.
+  // U-P08: false schema/unit/interpolation/E claims fail instead of being tolerated.
   SnapshotMetadata bad=snapshot->Metadata();
+  bad.schemaVersion=2;
+  Check(ValidateMetadata(bad,&detail)==FieldSampleStatus::InvalidRequest,
+        "unsupported metadata schema must fail");
+  bad=snapshot->Metadata();
   bad.magneticFieldUnit="nT";
   Check(ValidateMetadata(bad,&detail)==FieldSampleStatus::InvalidRequest,
-        "non-SI magnetic-field metadata must fail validation");
+        "non-SI B unit must fail");
+  bad=snapshot->Metadata();
+  bad.interpolation=InterpolationMode::Unknown;
+  Check(ValidateMetadata(bad,&detail)==FieldSampleStatus::InvalidRequest,
+        "unknown interpolation mode must fail");
   bad=snapshot->Metadata();
   bad.electricFieldAvailable=false;
-  query.position_m[0]=0.0;
   query.requireElectricField=true;
   Check(ValidateQuery(bad,query,&detail)==FieldSampleStatus::SourceUnavailable,
         "required but unavailable E must fail explicitly");
+  query.requireElectricField=false;
 
-  // U-P09: production analytic DIPOLE point values in the declared SI/GSM contract.
-  const Earth::GridlessMode::Dipole::Params alignedDipole=
-      Earth::GridlessMode::Dipole::MakeParams(1.0,0.0);
-  double xEquator[3]={Earth::GridlessMode::Dipole::Re_m,0.0,0.0};
-  double xPole[3]={0.0,0.0,Earth::GridlessMode::Dipole::Re_m};
-  double B[3]={0.0,0.0,0.0};
-  Earth::GridlessMode::Dipole::GetB_Tesla(xEquator,B,alignedDipole);
-  Check(std::fabs(B[0])<1.0e-18 && std::fabs(B[1])<1.0e-18 &&
-        std::fabs(B[2]+Earth::GridlessMode::Dipole::B_eq_Re)<1.0e-16,
-        "aligned dipole equator must be -B_eq along GSM Z");
-  Earth::GridlessMode::Dipole::GetB_Tesla(xPole,B,alignedDipole);
-  Check(std::fabs(B[0])<1.0e-18 && std::fabs(B[1])<1.0e-18 &&
-        std::fabs(B[2]-2.0*Earth::GridlessMode::Dipole::B_eq_Re)<1.0e-16,
-        "aligned dipole pole must be +2 B_eq along GSM Z");
+  // U-P09: production dipole values against closed-form independent references.
+  const Dipole::Params aligned=Dipole::MakeParams(1.0,0.0);
+  double xEquator[3]={Dipole::Re_m,0.0,0.0};
+  double xPole[3]={0.0,0.0,Dipole::Re_m};
+  double field[3]={0.0,0.0,0.0};
+  Dipole::GetB_Tesla(xEquator,field,aligned);
+  Check(Near(field[0],0.0) && Near(field[1],0.0) &&
+        Near(field[2],-Dipole::B_eq_Re),
+        "aligned dipole equator must be exactly -B_eq along GSM Z");
+  Dipole::GetB_Tesla(xPole,field,aligned);
+  Check(Near(field[0],0.0) && Near(field[1],0.0) &&
+        Near(field[2],2.0*Dipole::B_eq_Re),
+        "aligned dipole pole must be exactly +2 B_eq along GSM Z");
 
-  // U-P10: a provider-owned analytic snapshot must not alias mutable global DIPOLE
-  // configuration.  F4's threaded execution exposed this separate Step-3 contract
-  // defect while the all-unresolved NaN was being diagnosed: trajectory workers must
-  // be able to sample one frozen dipole while another provider/global setup is created,
-  // and every worker must see bitwise-stable field values.
-  const Earth::GridlessMode::Dipole::Params frozenDipole=
-      Earth::GridlessMode::Dipole::MakeParams(0.85,-17.0);
-  double xGeneral[3]={1.7*Earth::GridlessMode::Dipole::Re_m,
-                     0.2*Earth::GridlessMode::Dipole::Re_m,
-                    -0.4*Earth::GridlessMode::Dipole::Re_m};
+  const Dipole::Params tilted=Dipole::MakeParams(0.8,30.0);
+  const double xAxis[3]={2.0*Dipole::Re_m*tilted.m_hat[0],0.0,
+                         2.0*Dipole::Re_m*tilted.m_hat[2]};
+  Dipole::GetB_Tesla(xAxis,field,tilted);
+  const double axialMagnitude=0.25*0.8*Dipole::B_eq_Re;
+  Check(Near(field[0],axialMagnitude*tilted.m_hat[0]) &&
+        Near(field[1],0.0) &&
+        Near(field[2],axialMagnitude*tilted.m_hat[2]),
+        "tilted dipole axis value must follow the closed-form 2M/r^3 reference");
+
+  // U-P10: provider-owned dipole parameters remain stable after deliberate legacy
+  // global reconfiguration and under the 16 concurrent readers used by F4.
+  const Dipole::Params frozenDipole=Dipole::MakeParams(0.85,-17.0);
+  const double xGeneral[3]={1.7*Dipole::Re_m,0.2*Dipole::Re_m,-0.4*Dipole::Re_m};
   double frozenReference[3]={0.0,0.0,0.0};
-  Earth::GridlessMode::Dipole::GetB_Tesla(xGeneral,frozenReference,frozenDipole);
+  Dipole::GetB_Tesla(xGeneral,frozenReference,frozenDipole);
+  Dipole::SetMomentScale(1.7);
+  Dipole::SetTiltDeg(41.0);
+  double afterGlobalChange[3]={0.0,0.0,0.0};
+  Dipole::GetB_Tesla(xGeneral,afterGlobalChange,frozenDipole);
+  for (int d=0;d<3;++d)
+    Check(afterGlobalChange[d]==frozenReference[d],
+          "owned dipole state changed after legacy global reconfiguration");
 
-  // Deliberately move the legacy global field to a very different physical state.
-  // An old implementation sampled gParams from every supposedly immutable evaluator,
-  // so this operation changed already-created snapshots and raced under F4 threads.
-  Earth::GridlessMode::Dipole::SetMomentScale(1.7);
-  Earth::GridlessMode::Dipole::SetTiltDeg(41.0);
-  double frozenAfterGlobalChange[3]={0.0,0.0,0.0};
-  Earth::GridlessMode::Dipole::GetB_Tesla(
-      xGeneral,frozenAfterGlobalChange,frozenDipole);
-  for (int d=0;d<3;++d) {
-    Check(frozenAfterGlobalChange[d]==frozenReference[d],
-          "owned DIPOLE parameters must remain unchanged after legacy global reconfiguration");
-  }
-
-  // Exercise the same read-only object from the 16-worker count used by F4.  This is
-  // intentionally a concurrency contract test, not a performance benchmark.
   std::atomic<bool> concurrentStable(true);
   std::vector<std::thread> workers;
   for (int worker=0;worker<16;++worker) {
     workers.emplace_back([&]() {
-      for (int sampleIndex=0;sampleIndex<2000;++sampleIndex) {
+      for (int i=0;i<2000;++i) {
         double value[3]={0.0,0.0,0.0};
-        Earth::GridlessMode::Dipole::GetB_Tesla(xGeneral,value,frozenDipole);
-        for (int d=0;d<3;++d) {
+        Dipole::GetB_Tesla(xGeneral,value,frozenDipole);
+        for (int d=0;d<3;++d)
           if (value[d]!=frozenReference[d]) concurrentStable.store(false);
-        }
       }
     });
   }
   for (std::thread& worker:workers) worker.join();
   Check(concurrentStable.load(),
-        "one immutable DIPOLE snapshot must be stable across 16 concurrent readers");
+        "immutable dipole snapshot must be stable across concurrent readers");
 
-  // Restore process-global defaults so this test remains safe if embedded in a larger
-  // in-process test runner in the future.
-  Earth::GridlessMode::Dipole::SetMomentScale(1.0);
-  Earth::GridlessMode::Dipole::SetTiltDeg(0.0);
+  Dipole::SetMomentScale(1.0);
+  Dipole::SetTiltDeg(0.0);
 
   if (failures!=0) {
     std::cerr << "UFieldProvider: " << failures << " failure(s)\n";
     return EXIT_FAILURE;
   }
-  std::cout << "UFieldProvider: PASS (10 contracts)\n";
+  std::cout << "UFieldProvider: PASS (10 strict contracts)\n";
   return EXIT_SUCCESS;
 }

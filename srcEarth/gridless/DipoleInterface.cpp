@@ -2,9 +2,10 @@
 // DipoleInterface.cpp
 //======================================================================================
 // IMPLEMENTATION NOTES
-//   The dipole field is analytic and extremely cheap to evaluate.
-//   We keep the state in Dipole::gParams so that both cutoff and density workflows
-//   can share a common configuration and remain consistent.
+//   The dipole field is analytic and extremely cheap to evaluate. Dipole::gParams is
+//   retained for backward-compatible serial callers. Step-3 field snapshots instead
+//   own a Params value and use the explicit-parameter overload, so their supposedly
+//   immutable state cannot be changed by another worker or provider construction.
 //======================================================================================
 
 #include "DipoleInterface.h"
@@ -20,11 +21,9 @@ void SetMomentScale(double momentScale_Me) {
 }
 
 void SetTiltDeg(double tilt_deg) {
-  gParams.tilt_deg = tilt_deg;
-  const double th = tilt_deg * M_PI / 180.0;
-  gParams.m_hat[0] = std::sin(th);
-  gParams.m_hat[1] = 0.0;
-  gParams.m_hat[2] = std::cos(th);
+  // Use the same constructor as immutable snapshots so both paths have exactly the
+  // same tilt convention and floating-point operations.
+  gParams=MakeParams(gParams.momentScale_Me,tilt_deg);
 }
 
 } // namespace Dipole

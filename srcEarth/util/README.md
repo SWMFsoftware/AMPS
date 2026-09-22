@@ -1,5 +1,36 @@
 # Shared numerical utilities
 
+## `FieldProvider.h` — Roadmap Step 3
+
+`FieldProvider.h` is a dependency-free C++11 contract that separates a trajectory
+solver from the origin of its background field:
+
+```text
+IFieldProvider.CreateSnapshot(request) -> immutable IFieldSnapshot
+IFieldSnapshot.Sample(query)           -> B, E, status, snapshot ID
+```
+
+Every valid snapshot states its source/model, frozen epoch, coordinate frame, SI units,
+validity domain, interpolation method, B/E availability, and deterministic physical-
+state identity. `MakeSnapshotId()` uses stable FNV-1a over canonical source, epoch, and
+field-defining state. Request labels and output filenames are deliberately excluded.
+
+`ValidateQuery()` keeps failure modes separate: `OUTSIDE_DOMAIN`, `STALE_EPOCH`,
+`SOURCE_UNAVAILABLE`, `INTERPOLATION_FAILURE`, and `NONFINITE_VALUE` cannot silently
+become magnetic shielding. `RequireSameSnapshot()` prevents cutoff and flux/spectrum
+products from being combined after a field generation changes.
+
+Step 3 does not change `IGridlessFieldEvaluator`, particle movers, trajectory limits,
+or access classification. The direct evaluator implements the provider contract by
+multiple inheritance internally, while movers continue using the original `GetB_T()`
+call. Mode3D publishes metadata only after complete finite compact arrays are assembled.
+
+Run the strict contract and closed-form reference suite with:
+
+```bash
+./test/UFieldProvider/run_test.sh
+```
+
 ## `FluxNumerics.h`
 
 `FluxNumerics.h` is a header-only C++11 module shared by the standalone gridless and
