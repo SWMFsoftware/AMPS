@@ -188,25 +188,20 @@ bool SEP::Mesh::NodeSplitCriterion(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *start
     if (startNode->RefinmentLevel >=
         static_cast<int>(configuration.maximumMeshLevel)) return false;
 
-    // Test the block centre and all eight corners.  Refining against the
-    // smallest requested value is conservative for both monotone profiles and
-    // curved tube intersections, and uses the exact same law as localResolution.
+    // Probe the complete prospective cell-corner lattice, matching AMPS'
+    // localResolution sampling. A centre-and-eight-corners test can miss a
+    // Parker curve whose physical tube is narrower than a coarse block.
     double requested = configuration.globalCellSizeM;
-    for (int probe = -1; probe < 8; ++probe) {
-      SEP::Initialization::Vec3 point;
-      if (probe < 0) {
-        point = {0.5 * (xmin[0] + xmax[0]),
-                 0.5 * (xmin[1] + xmax[1]),
-                 0.5 * (xmin[2] + xmax[2])};
-      }
-      else {
-        point = {(probe & 1) ? xmax[0] : xmin[0],
-                 (probe & 2) ? xmax[1] : xmin[1],
-                 (probe & 4) ? xmax[2] : xmin[2]};
-      }
-      requested = std::min(requested,
-          SEP::Initialization::RequestedCellSizeM(point, configuration));
-    }
+    for (int k = 0; k <= _BLOCK_CELLS_Z_; ++k)
+      for (int j = 0; j <= _BLOCK_CELLS_Y_; ++j)
+        for (int i = 0; i <= _BLOCK_CELLS_X_; ++i) {
+          const SEP::Initialization::Vec3 point = {
+              xmin[0] + (xmax[0] - xmin[0]) * i / _BLOCK_CELLS_X_,
+              xmin[1] + (xmax[1] - xmin[1]) * j / _BLOCK_CELLS_Y_,
+              xmin[2] + (xmax[2] - xmin[2]) * k / _BLOCK_CELLS_Z_};
+          requested = std::min(requested,
+              SEP::Initialization::RequestedCellSizeM(point, configuration));
+        }
     const double cellSize = std::max(
         (xmax[0] - xmin[0]) / _BLOCK_CELLS_X_,
         std::max((xmax[1] - xmin[1]) / _BLOCK_CELLS_Y_,

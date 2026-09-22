@@ -82,6 +82,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("R3D06", "R3D", "Observer publication transaction", "cpp"),
     TestDefinition("R3D07", "R3D", "Complete restart contract", "cpp"),
     TestDefinition("R3D08", "R3D", "Canonical initialization source", "cpp"),
+    TestDefinition("R3D09", "R3D", "Finite empty-cell Tecplot output", "cpp"),
     TestDefinition("CFG3D01", "CFG3D", "Input schema and CLI", "cpp"),
     TestDefinition("CFG3D02", "CFG3D", "Complete typed contracts", "cpp"),
     TestDefinition("CFG3D03", "CFG3D", "Domain and boundaries", "cpp"),
@@ -534,7 +535,7 @@ def _check_retired_sources(definition: TestDefinition) -> Result:
     forbidden = (
         "Mover_Axisymmetric_SecondOrder", "TotalParticleAcceleration",
         "GlobalEnergyDistribution", "inject_particle_onto_field_line",
-        "CMPI_channel", "8.760e+08", "9.445e+08",
+        "8.760e+08", "9.445e+08",
     )
     for path in _production_files():
         text = _strip_cpp_comments(path.read_text(encoding="utf-8"))
@@ -543,7 +544,10 @@ def _check_retired_sources(definition: TestDefinition) -> Result:
                 errors.append(f"{path.relative_to(ROOT)} contains retired token {token}")
 
     main_lib = (ROOT / "main_lib.cpp").read_text(encoding="utf-8")
-    for call in ("PrepopulateDomain", "outputMeshDataTECPLOT", "saveMeshFile"):
+    # outputMeshDataTECPLOT is now the required native AMPS initialization
+    # evidence path. Prepopulation and binary mesh saves remain retired
+    # prototype operations and must not return to the production driver.
+    for call in ("PrepopulateDomain", "saveMeshFile"):
         if call in main_lib:
             errors.append(f"main_lib.cpp retains prototype operation {call}")
 

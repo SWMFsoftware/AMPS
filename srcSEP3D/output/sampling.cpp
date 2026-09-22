@@ -72,6 +72,45 @@ std::size_t Bin(const std::vector<double>& edges, double value) {
 
 }  // namespace
 
+TecplotCellPresentation PrepareTecplotCellPresentation(
+    const std::vector<double>& storedBackgroundValues,
+    bool insidePhysicalShell, long int particleSamplingWindowLength,
+    double sampledParticleNumber) {
+  TecplotCellPresentation result;
+  result.backgroundValues = storedBackgroundValues;
+
+  // A published background row is valid only when its cell belongs to the
+  // physical heliocentric shell and every stored quantity is finite.  The
+  // production snapshot validator normally guarantees the latter condition;
+  // repeating the check here keeps a diagnostic file parseable even if an
+  // output-only storage fault is encountered.
+  const bool finiteBackground = std::all_of(
+      result.backgroundValues.begin(), result.backgroundValues.end(),
+      [](double value) { return std::isfinite(value); });
+  const bool backgroundValid = insidePhysicalShell && finiteBackground;
+  if (!backgroundValid) {
+    // Tecplot and common post-processing packages propagate NaN through
+    // contour limits and derived expressions.  Zero is only a serialization
+    // placeholder here: backgroundValid=0 is the authoritative indication
+    // that these background columns must not be used as physical data.
+    std::fill(result.backgroundValues.begin(),
+              result.backgroundValues.end(), 0.0);
+  }
+  result.backgroundValid = backgroundValid ? 1.0 : 0.0;
+
+  // LastSampleLength distinguishes "no completed sampling interval yet" from
+  // a completed interval containing no particles.  A zero particle count in a
+  // valid window is not an error and must produce finite zero-valued moments.
+  const bool windowValid = particleSamplingWindowLength > 0;
+  result.particleSamplingWindowValid = windowValid ? 1.0 : 0.0;
+  result.particleSamplePresent =
+      windowValid && std::isfinite(sampledParticleNumber) &&
+              sampledParticleNumber > 0.0
+          ? 1.0
+          : 0.0;
+  return result;
+}
+
 SamplingSnapshot Sample(const SamplingRequest& request) {
   SamplingSnapshot result;
   std::map<std::uint64_t, CellDefinition> cells;

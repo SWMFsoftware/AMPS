@@ -7,7 +7,7 @@ Phase-M mesh, Phase-B background, Phase-T turbulence/coefficient, Phase-P
 transport, Phase-A adapter, and Phase-O sampling/restart evidence without
 requiring AMPS for dependency-free tests. Phase V adds controlled integration
 and physics checks plus explicit linked/cross-model/observational evidence
-gates. R01–R07 production-runtime improvements are native registry tests, not
+gates. R01–R09 production-runtime improvements are native registry tests, not
 an external checklist.
 
 ## Quick commands
@@ -93,7 +93,7 @@ The runner adds
 | `BLD` | `BLD01` | `nm -u` confirms the standalone binary has no AMPS/MPI symbols |
 | `UTIL` | `UTIL02` | byte-exact shared-kernel reference record |
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
-| `R3D` | `R3D01`–`R3D08` | mover hook, requested-time loop, snapshot transaction, tick/events, source, observers, restart, canonical initialization source |
+| `R3D` | `R3D01`–`R3D09` | mover hook, requested-time loop, snapshot transaction, tick/events, source, observers, restart, canonical initialization source, finite empty-cell output |
 | `CFG3D` | `CFG3D01`–`CFG3D08` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line/schema-3 initialization, and complete compiled AMPS species binding |
 | `MSH3D` | `MSH3D01`–`MSH3D11` | resolution, tube geometry, balance, octree budget/ownership, presets, gradients, finite line, and initialization Tecplot output |
 | `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
@@ -257,7 +257,7 @@ python3 test/run_tests.py --suite r2 --rebuild \
   --output-dir test_output/r2
 ```
 
-### R01–R07 production-runtime gates
+### R01–R09 production-runtime gates
 
 | ID | Acceptance contract |
 |---|---|
@@ -269,6 +269,7 @@ python3 test/run_tests.py --suite r2 --rebuild \
 | `R3D06` | moving observer geometry, acceptance/uncertainty metadata, and commit-only accumulator reset are enforced |
 | `R3D07` | schema-2 restart round-trips identities/layout, clocks/events, providers, shock, RNG tuple, ledgers, and sampling state |
 | `R3D08` | canonical schema-3 provider preflights the first valid source surface and allocates the exact per-species, per-step particle count deterministically |
+| `R3D09` | native Tecplot presentation distinguishes invalid background, no completed window, a valid empty particle cell, and an occupied cell without emitting `NaN` |
 
 ```bash
 python3 test/run_tests.py --suite improvements-r --rebuild \
@@ -468,7 +469,7 @@ equations, algorithms, case roles, and evidence schemas.
 | `r1` | canonical shared-archive audit, relocated SWCME suite, and frozen common kernels |
 | `r2` | LIFE3D01–LIFE3D04 immutable configuration and lifecycle gates |
 | `improvements-c` | CFG3D01–CFG3D08 production configuration, preflight, finite-line/schema-3 initialization, and species-binding gates |
-| `improvements-r` | R3D01–R3D08 production runtime integration gates |
+| `improvements-r` | R3D01–R3D09 production runtime integration gates |
 | `improvements-v` | V1D01–05 controlled physics, V2D01 true parity, and V5D01 governance |
 | `phase-m` | MSH3D01–MSH3D11 mesh/storage and initialization-output gates |
 | `phase-b` | BGP3D01–06 and SNAP3D01–08 background/snapshot gates |
@@ -554,7 +555,7 @@ invoke that exact linked callback, following the srcSEP pattern.
 | unknown test/group | use `--list`; unknown selectors are usage errors |
 | report missing after a C++ test | treat as ERROR; inspect verbose subprocess output |
 
-`CFG3D06`–`CFG3D08`, `MSH3D10`–`MSH3D11`, and `R3D08` are routine C++ entries
+`CFG3D06`–`CFG3D08`, `MSH3D10`–`MSH3D11`, and `R3D08`–`R3D09` are routine C++ entries
 in the runner manifest.
 `CFG3D06` uses live negative controls for an omitted version-2 key and an
 initial point inconsistent with the inner sphere. `MSH3D10` constructs the
@@ -573,3 +574,5 @@ controls. `MSH3D11` creates, verifies, and removes a real Tecplot product.
 `R3D08` constructs the canonical provider, checks delayed activation and the
 full surface, and proves deterministic exact-count allocation plus downstream
 no-cap behavior.
+`R3D09` verifies finite serialization and the independent background,
+sampling-window, and particle-occupancy flags for empty and occupied cells.

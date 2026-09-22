@@ -1,4 +1,4 @@
-# srcSEP complete startup configuration, schema version 2.
+# srcSEP complete startup configuration, schema version 3.
 #
 # Every dimensional key includes its SI unit.  The parser rejects unknown,
 # duplicate, and omitted keys before MPI/AMPS initialization.  The finite line
@@ -6,7 +6,7 @@
 # support mesh.
 
 [run]
-schema_version = 2
+schema_version = 3
 # The PIC clock step is explicit.  It is installed for every compiled AMPS
 # species on every block and is never re-derived from the AMR cell size.
 time_step_s = 1
@@ -23,16 +23,34 @@ macroparticles_per_step = 1000
 # base value without changing conservation.
 particle_weight = 1e30
 
-[observer]
-# srcSEP's retained observer is a radius on its one-dimensional field line.
+[observer.earth]
+# Each named observer is a radius on the one-dimensional field line and owns
+# an independent energy/pitch-angle sampling grid.
 heliocentric_radius_m = 1.495978707e11
+minimum_energy_j = 1.602176634e-15
+maximum_energy_j = 8.01088317e-11
+energy_channels = 70
+energy_spacing = logarithmic
+pitch_angle_bins = 24
+
+[observer.inner]
+heliocentric_radius_m = 4.487936121e10
+minimum_energy_j = 1.602176634e-15
+maximum_energy_j = 8.01088317e-15
+energy_channels = 20
+energy_spacing = linear
+pitch_angle_bins = 16
 
 [output]
-# Both products are emitted after final mesh pruning/decomposition.
+# Geometry products are emitted after final mesh pruning/decomposition. The
+# data product is emitted later, after AMPS initializes macroscopic fields,
+# local particle time steps, and local statistical weights.
 # With --initialization-output-dir DIR, these leaf names are retained and only
 # their parent is replaced. --initialization-only then exits before time step 1.
 mesh_tecplot_file = srcsep-initialization-mesh.dat
 field_line_tecplot_file = srcsep-initialization-field-line.dat
+# Mixed-species executables insert `.species-N` before this extension.
+data_tecplot_file = srcsep-initialization-data.dat
 
 [parker_spiral]
 # Origin of the Parker geometry and first point on the inner boundary sphere.

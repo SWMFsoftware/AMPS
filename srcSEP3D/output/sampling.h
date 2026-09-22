@@ -127,6 +127,29 @@ struct SamplingRequest {
   SamplingState previousState;
 };
 
+// Finite representation used by the native AMPS Tecplot callback.
+//
+// AMPS particle moments and srcSEP3D background quantities have different
+// availability rules.  An empty particle sample is a valid physical result,
+// while a Cartesian AMR cell outside the configured heliocentric shell has no
+// physical background state.  Keeping the three flags separate prevents a
+// zero-particle cell from being mistaken for a failed background evaluation.
+struct TecplotCellPresentation {
+  std::vector<double> backgroundValues;
+  double backgroundValid = 0.0;
+  double particleSamplingWindowValid = 0.0;
+  double particleSamplePresent = 0.0;
+};
+
+// Convert the internal background/sample state to a finite Tecplot record.
+// Undefined background values are represented by zeros and backgroundValid=0
+// rather than NaN.  Particle absence is represented independently by
+// particleSamplePresent=0; it never invalidates the background record.
+TecplotCellPresentation PrepareTecplotCellPresentation(
+    const std::vector<double>& storedBackgroundValues,
+    bool insidePhysicalShell, long int particleSamplingWindowLength,
+    double sampledParticleNumber);
+
 SamplingSnapshot Sample(const SamplingRequest& request);
 
 }  // namespace Output

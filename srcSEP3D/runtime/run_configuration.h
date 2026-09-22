@@ -47,6 +47,10 @@ enum class ObserverKind {
   FieldConnected
 };
 enum class ObserverNormalization { RepresentedParticles, DifferentialIntensity };
+// Energy-channel spacing is part of the observer definition rather than a
+// hard-coded sampling implementation detail. Logarithmic channels resolve
+// power-law SEP spectra; linear channels support narrow-band diagnostics.
+enum class EnergyChannelSpacing { Logarithmic, Linear };
 
 const char* Name(BackgroundAuthority value);
 const char* Name(TurbulenceAuthority value);
@@ -66,6 +70,7 @@ const char* Name(PerpendicularDiffusionMode value);
 const char* Name(DriftMode value);
 const char* Name(ObserverKind value);
 const char* Name(ObserverNormalization value);
+const char* Name(EnergyChannelSpacing value);
 
 // C02 typed physical groups.  These records deliberately contain SI values
 // only.  The file parser converts unit-bearing text into these records, while
@@ -158,6 +163,8 @@ struct ObserverOptions {
   double cadenceS = 60.0;
   unsigned energyBins = 32;
   unsigned pitchAngleBins = 24;
+  EnergyChannelSpacing energyChannelSpacing =
+      EnergyChannelSpacing::Logarithmic;
   std::string products = "flux,spectrum";
   ObserverKind kind = ObserverKind::FixedCartesian;
   ObserverNormalization normalization =
@@ -345,6 +352,11 @@ struct RunConfiguration3DOptions {
       "sep3d-initialization-mesh.dat";
   std::string initializationParkerLineTecplotFile =
       "sep3d-initialization-parker-line.dat";
+  // Base path for the native AMPS data-bearing Tecplot product. A
+  // multi-species executable writes one file per AMPS species by inserting a
+  // deterministic `.species-N` suffix before the extension.
+  std::string initializationDataTecplotFile =
+      "sep3d-initialization-data.dat";
   std::string restartInputPath;
   std::string restartOutputPath = "restart/sep3d.chk";
 

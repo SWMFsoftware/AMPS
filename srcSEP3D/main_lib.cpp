@@ -24,11 +24,13 @@
 #include "output/observer_runtime.h"
 #include "output/publication.h"
 #include "output/restart.h"
+#include "output/sampling.h"
 #include "runtime/runtime_adapters.h"
 #include "turbulence/turbulence_models.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <cstdlib>
 #include <filesystem>
@@ -52,7 +54,7 @@ namespace fs = std::filesystem;
   std::abort();
 }
 
-// Create initialization-product parents once on rank zero, then publish the
+// Create all initialization-product parents once on rank zero, then publish the
 // result to every rank before AMPS opens its distributed Tecplot mesh.  Doing
 // this after PIC has initialized MPI avoids a many-rank mkdir race on shared
 // filesystems.  It also covers paths declared directly in the input deck, not
@@ -64,7 +66,8 @@ void EnsureInitializationOutputParents(
   if (PIC::ThisThread == 0) {
     const std::string paths[] = {
         options.initializationMeshTecplotFile,
-        options.initializationParkerLineTecplotFile};
+        options.initializationParkerLineTecplotFile,
+        options.initializationDataTecplotFile};
     for (const std::string& pathText : paths) {
       const fs::path parent = fs::path(pathText).parent_path();
       if (parent.empty()) continue;
@@ -88,6 +91,20 @@ void EnsureInitializationOutputParents(
                                  : "rank zero could not create the directory"));
   }
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+}
+
+// AMPS' native data writer accepts one DataSetNumber, which is the compiled
+// species index used for block-local time step and weight. Preserve the exact
+// configured name for a one-species build; for mixed SpeciesList builds,
+// create deterministic sibling files so no species silently overwrites or
+// masquerades as another.
+std::string InitializationDataPath(const std::string& base, int species,
+                                   int speciesCount) {
+  if (speciesCount == 1) return base;
+  const fs::path path(base);
+  const std::string name = path.stem().string() + ".species-" +
+      std::to_string(species) + path.extension().string();
+  return (path.parent_path() / name).string();
 }
 
 std::shared_ptr<const SEP3D::Background::BackgroundSnapshot>
@@ -407,6 +424,127 @@ void LoadBytes(PIC::Mesh::cDataCenterNode* cell, std::size_t offset,
               cell->GetAssociatedDataBufferPointer() + gStaticCellDataOffset +
                   offset,
               bytes);
+}
+
+// Append names for every initialized srcSEP3D macroscopic field stored in the
+// AMPS center-node buffer. The block object itself appends the selected
+// species' local time step and particle weight, so the resulting file is a
+// native data-bearing AMPS Tecplot product rather than a geometry-only mesh.
+void PrintInitializationVariableList(FILE* output, int dataSetNumber) {
+  (void)dataSetNumber;
+  std::fprintf(output,
+      ", \"B_x_T\", \"B_y_T\", \"B_z_T\""
+      ", \"U_x_m_per_s\", \"U_y_m_per_s\", \"U_z_m_per_s\""
+      ", \"number_density_m-3\", \"div_U_s-1\", \"temperature_K\""
+      ", \"pressure_Pa\", \"alfven_speed_m_per_s\", \"div_bhat_m-1\""
+      ", \"focusing_length_m\""
+      ", \"curvature_x_m-1\", \"curvature_y_m-1\", \"curvature_z_m-1\""
+      ", \"field_aligned_strain_s-1\"");
+  const auto& layout = Configuration().storage_layout();
+  if (layout.magneticGradientOffset != SEP3D::RuntimeModel::kNoOffset)
+    for (int row = 0; row < 3; ++row)
+      for (int column = 0; column < 3; ++column)
+        std::fprintf(output, ", \"gradB_%d%d_T_per_m\"", row, column);
+  if (layout.velocityGradientOffset != SEP3D::RuntimeModel::kNoOffset)
+    for (int row = 0; row < 3; ++row)
+      for (int column = 0; column < 3; ++column)
+        std::fprintf(output, ", \"gradU_%d%d_s-1\"", row, column);
+  if (layout.waveEnergyOffset != SEP3D::RuntimeModel::kNoOffset)
+    std::fprintf(output,
+                 ", \"deltaB_plus_squared_T2\", \"deltaB_minus_squared_T2\"");
+  // These flags make the two independent empty-data cases machine-readable:
+  // background_valid=0 identifies padding cells outside the heliocentric
+  // shell, while particle_sample_present=0 identifies a cell/species with no
+  // sampled macroparticles.  particle_sampling_window_valid=0 additionally
+  // identifies initialization output written before the first sample window.
+  std::fprintf(output,
+      ", \"background_valid\""
+      ", \"particle_sampling_window_valid\""
+      ", \"particle_sample_present\"");
+}
+
+void PrintInitializationCellData(
+    FILE* output, int dataSetNumber, CMPI_channel* pipe,
+    int centerNodeThread, PIC::Mesh::cDataCenterNode* centerNode) {
+  (void)dataSetNumber;
+  const auto& layout = Configuration().storage_layout();
+  // Seventeen mandatory physical values plus three final validity flags.
+  // Cells outside the declared heliocentric shell are allocated by the
+  // enclosing Cartesian AMR cube but do not represent physical background
+  // samples. Empty particle samples are valid and are marked independently.
+  std::size_t valueCount = 20;
+  if (layout.magneticGradientOffset != SEP3D::RuntimeModel::kNoOffset)
+    valueCount += 9;
+  if (layout.velocityGradientOffset != SEP3D::RuntimeModel::kNoOffset)
+    valueCount += 9;
+  if (layout.waveEnergyOffset != SEP3D::RuntimeModel::kNoOffset)
+    valueCount += 2;
+  std::vector<double> values(valueCount, 0.0);
+
+  const bool ownsNode = pipe == nullptr || pipe->ThisThread == centerNodeThread;
+  if (ownsNode) {
+    std::size_t cursor = 0;
+    auto append = [&](std::size_t offset, std::size_t count) {
+      LoadBytes(centerNode, offset, values.data() + cursor,
+                count * sizeof(double));
+      cursor += count;
+    };
+    append(layout.magneticFieldOffset, 3);
+    append(layout.bulkVelocityOffset, 3);
+    append(layout.numberDensityOffset, 1);
+    append(layout.velocityDivergenceOffset, 1);
+    append(layout.temperatureOffset, 1);
+    append(layout.pressureOffset, 1);
+    append(layout.alfvenSpeedOffset, 1);
+    append(layout.divBhatOffset, 1);
+    append(layout.focusingLengthOffset, 1);
+    append(layout.curvatureOffset, 3);
+    append(layout.fieldAlignedStrainOffset, 1);
+    if (layout.magneticGradientOffset != SEP3D::RuntimeModel::kNoOffset)
+      append(layout.magneticGradientOffset, 9);
+    if (layout.velocityGradientOffset != SEP3D::RuntimeModel::kNoOffset)
+      append(layout.velocityGradientOffset, 9);
+    if (layout.waveEnergyOffset != SEP3D::RuntimeModel::kNoOffset)
+      append(layout.waveEnergyOffset, 2);
+
+    double position[3] = {};
+    centerNode->GetX(position);
+    const SEP3D::Core::Vec3 relative(
+        position[0] - Configuration().options().coordinateOriginM.x,
+        position[1] - Configuration().options().coordinateOriginM.y,
+        position[2] - Configuration().options().coordinateOriginM.z);
+    const double radius = relative.Norm();
+    const bool insidePhysicalShell =
+        radius >= Configuration().options().innerRadiusM &&
+        radius <= Configuration().options().outerRadiusM;
+
+    // AMPS' native particle sampler already returns finite zeros for weighted
+    // moments when the total sampled weight is zero.  Read its independently
+    // sampled particle count only to publish explicit availability flags; the
+    // background fields never depend on particle occupancy.
+    const double sampledParticleNumber = centerNode->GetDatumAverage(
+        PIC::Mesh::DatumParticleNumber, dataSetNumber);
+    std::vector<double> storedBackground(values.begin(),
+                                         values.begin() + cursor);
+    const SEP3D::Output::TecplotCellPresentation presentation =
+        SEP3D::Output::PrepareTecplotCellPresentation(
+            storedBackground, insidePhysicalShell, PIC::LastSampleLength,
+            sampledParticleNumber);
+    std::copy(presentation.backgroundValues.begin(),
+              presentation.backgroundValues.end(), values.begin());
+    values[cursor++] = presentation.backgroundValid;
+    values[cursor++] = presentation.particleSamplingWindowValid;
+    values[cursor++] = presentation.particleSamplePresent;
+  }
+
+  if (PIC::ThisThread == 0 || pipe == nullptr) {
+    if (centerNodeThread != 0 && pipe != nullptr)
+      pipe->recv(values.data(), static_cast<int>(values.size()),
+                 centerNodeThread);
+    for (double value : values) std::fprintf(output, "%e ", value);
+  } else {
+    pipe->send(values.data(), static_cast<int>(values.size()));
+  }
 }
 
 SEP3D::Core::Status ResolveLocalTransportImpl(
@@ -1333,6 +1471,12 @@ void SEP3D::Init_BeforeParser() {
       PIC::IndividualModelSampling::RequestSamplingData.push_back(
           RequestSamplingData);
     }
+    // Register before AMPS freezes its output callback lists. The callbacks
+    // read only the immutable storage layout and the completed center-node
+    // buffers; they do not introduce a second background representation.
+    PIC::Mesh::PrintVariableListCenterNode.push_back(
+        PrintInitializationVariableList);
+    PIC::Mesh::PrintDataCenterNode.push_back(PrintInitializationCellData);
     gStorageCallbacksRegistered = true;
   }
 }
@@ -1549,6 +1693,21 @@ void amps_init() {
               << " next_sampling_tick=" << events.nextSamplingTick
               << " next_checkpoint_tick=" << events.nextCheckpointTick
               << '\n';
+  }
+
+  if (Configuration().options().inputSchemaVersion >= 3) {
+    // This call occurs only after the background snapshot and every compiled
+    // species' global/block numerical values have been initialized. AMPS adds
+    // the selected species' local dt/weight columns and the callbacks above
+    // add the complete sampled macroscopic state.
+    for (const auto& species : gCompiledSpecies) {
+      const std::string path = InitializationDataPath(
+          Configuration().options().initializationDataTecplotFile,
+          species.ampsIndex, PIC::nTotalSpecies);
+      PIC::Mesh::mesh->outputMeshDataTECPLOT(
+          path.c_str(), species.ampsIndex);
+    }
+    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   }
 }
 

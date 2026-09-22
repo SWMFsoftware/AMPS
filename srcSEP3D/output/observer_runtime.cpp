@@ -11,12 +11,21 @@ Core::Status Invalid(const std::string& message) {
   return Core::Status(Core::StatusCode::InvalidInput, message);
 }
 
-std::vector<double> LogEdges(double minimum, double maximum, unsigned bins) {
+std::vector<double> EnergyEdges(
+    double minimum, double maximum, unsigned bins,
+    RuntimeModel::EnergyChannelSpacing spacing) {
   std::vector<double> result;
   result.reserve(static_cast<std::size_t>(bins) + 1);
-  const double ratio = std::pow(maximum / minimum, 1.0 / bins);
-  for (unsigned index = 0; index <= bins; ++index)
-    result.push_back(index == bins ? maximum : minimum * std::pow(ratio, index));
+  if (spacing == RuntimeModel::EnergyChannelSpacing::Linear) {
+    const double width = (maximum - minimum) / bins;
+    for (unsigned index = 0; index <= bins; ++index)
+      result.push_back(index == bins ? maximum : minimum + index * width);
+  } else {
+    const double ratio = std::pow(maximum / minimum, 1.0 / bins);
+    for (unsigned index = 0; index <= bins; ++index)
+      result.push_back(index == bins ? maximum
+                                    : minimum * std::pow(ratio, index));
+  }
   return result;
 }
 
@@ -45,9 +54,9 @@ Core::Status BuildObserverDefinitions(
     // call.  The resolved sampling contract is still Cartesian and immutable
     // for the complete reduction window.
     resolved.collectionRadiusM = observer.collectionRadiusM;
-    resolved.kineticEnergyEdgesJ = LogEdges(
+    resolved.kineticEnergyEdgesJ = EnergyEdges(
         observer.minimumEnergyJ, observer.maximumEnergyJ,
-        observer.energyBins);
+        observer.energyBins, observer.energyChannelSpacing);
     // Sampling defines an empty acceptedSpecies vector as a wildcard.  The
     // configuration factory permits that representation only when the user
     // explicitly selected `species = all`, so no malformed empty list can

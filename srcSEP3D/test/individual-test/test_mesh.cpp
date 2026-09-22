@@ -171,8 +171,14 @@ Result RunMSH3D04() {
 Result RunMSH3D05() {
   M::ResolutionConfiguration configuration = Baseline();
   configuration.enableTubeRefinement = true;
+  configuration.enableRadialRefinement = false;
+  configuration.maximumLevel = 4;
   configuration.tubeReferenceRadiusM = SEP3D::Core::Const::AU;
-  configuration.tubeRadiusAtReferenceM = 0.12 * SEP3D::Core::Const::AU;
+  // Deliberately much narrower than a coarse AMR probe cell. Before the
+  // capture-envelope fix this curve could pass through blocks unnoticed and
+  // produce the disconnected high-resolution island seen in Tecplot.
+  configuration.tubeRadiusAtReferenceM = 0.001 * SEP3D::Core::Const::AU;
+  configuration.tubeRadiusMode = RM::TubeRadiusMode::PhysicalConstant;
   configuration.tubeCellSizeM = configuration.minimumCellSizeM;
   M::StandaloneOctree mesh;
   RM::RunConfiguration3DOptions domainOptions;
@@ -182,6 +188,31 @@ Result RunMSH3D05() {
   const M::DomainBounds domain = M::MakeDomain(domainOptions);
   if (!mesh.Build(domain, configuration, Layout(), 4).ok() ||
       !mesh.IsBalanced()) return Fail("valid tube profile did not produce a balanced octree");
+
+  const double rootCell = 2.0 * configuration.outerRadiusM /
+      configuration.cellsPerBlockEdge;
+  const double achievable = std::max(
+      configuration.tubeCellSizeM,
+      rootCell / std::pow(2.0, configuration.maximumLevel));
+  for (int sample = 0; sample <= 80; ++sample) {
+    const double radius = configuration.innerRadiusM +
+        (configuration.outerRadiusM - configuration.innerRadiusM) *
+        sample / 80.0;
+    const SEP3D::Core::Vec3 point =
+        radius * M::ParkerTubeDirection(radius, configuration);
+    bool captured = false;
+    for (const M::LeafBlock& leaf : mesh.leaves()) {
+      if (point.x < leaf.minimumM.x || point.x > leaf.maximumM.x ||
+          point.y < leaf.minimumM.y || point.y > leaf.maximumM.y ||
+          point.z < leaf.minimumM.z || point.z > leaf.maximumM.z) continue;
+      const double cell = (leaf.maximumM.x - leaf.minimumM.x) /
+          configuration.cellsPerBlockEdge;
+      if (cell <= achievable * (1.0 + 1.0e-12)) captured = true;
+      break;
+    }
+    if (!captured)
+      return Fail("a sub-cell Parker centreline segment escaped AMR capture");
+  }
 
   M::LeafBlock coarse;
   coarse.minimumM = {0.0, 0.0, 0.0};
@@ -193,7 +224,7 @@ Result RunMSH3D05() {
   fine.level = 2;
   if (M::AreLeavesBalanced({coarse, fine}))
     return Fail("balance negative control did not detect a two-level jump");
-  return Pass("tube profile produces a 2:1 mesh and the negative control detects an illegal level jump");
+  return Pass("a sub-cell Parker tube remains continuously captured and the 2:1 negative control stays live");
 }
 
 Result RunMSH3D06() {

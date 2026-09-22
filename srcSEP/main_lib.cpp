@@ -61,7 +61,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
-// Create both initialization-product parents once on rank zero and synchronize
+// Create all initialization-product parents once on rank zero and synchronize
 // the result before AMPS enters its distributed Tecplot writer.  Input-deck
 // paths and --initialization-output-dir therefore share exactly one filesystem
 // policy, and shared filesystems never see an avoidable many-rank mkdir race.
@@ -72,7 +72,8 @@ void EnsureInitializationOutputParents(
   if (PIC::ThisThread == 0) {
     const std::string paths[] = {
         initialization.meshTecplotFile,
-        initialization.fieldLineTecplotFile};
+        initialization.fieldLineTecplotFile,
+        initialization.dataTecplotFile};
     for (const std::string& pathText : paths) {
       const fs::path parent = fs::path(pathText).parent_path();
       if (parent.empty()) continue;
@@ -95,6 +96,19 @@ void EnsureInitializationOutputParents(
     exit(__LINE__, __FILE__, message.c_str());
   }
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+}
+
+// AMPS writes local time step and particle weight for one DataSetNumber at a
+// time. Preserve the configured file name for a single-species executable;
+// mixed compiled SpeciesList tables receive deterministic sibling files so
+// every initialized species remains directly inspectable.
+std::string InitializationDataPath(const std::string& base, int species,
+                                   int speciesCount) {
+  if (speciesCount == 1) return base;
+  const fs::path path(base);
+  const std::string name = path.stem().string() + ".species-" +
+      std::to_string(species) + path.extension().string();
+  return (path.parent_path() / name).string();
 }
 
 // Return the shock radius associated with the background state that is
@@ -789,15 +803,28 @@ void amps_init() {
 
   if (_PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_) {
     InitMagneticField(PIC::Mesh::mesh->rootTree);
-    //PIC::Mesh::mesh->outputMeshDataTECPLOT("magnetic-field.dat",0);
   }
-
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
 
   //init the particle buffer
   if (PIC::ParticleBuffer::ParticleDataBuffer==NULL) PIC::ParticleBuffer::Init(10000000);
+
+  if (configuredNumerics &&
+      SEP::Initialization::Active().schemaVersion >= 3) {
+    // The native writer now sees the completed center-node Parker field, an
+    // initialized particle buffer, and the already installed global/block
+    // time step and statistical weight. Unlike outputMeshTECPLOT(), this
+    // product contains initialized AMPS data.
+    for (int species=0;species<PIC::nTotalSpecies;++species) {
+      const std::string path=InitializationDataPath(
+          SEP::Initialization::Active().dataTecplotFile,species,
+          PIC::nTotalSpecies);
+      PIC::Mesh::mesh->outputMeshDataTECPLOT(path.c_str(),species);
+    }
+    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+  }
 //  double TimeCounter=time(NULL);
 //  int LastDataOutputFileNumber=-1;
 

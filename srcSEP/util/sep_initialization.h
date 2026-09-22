@@ -36,6 +36,20 @@ struct SwcmeAssignment {
 
 enum class RefinementProfile { Linear, PowerLaw, Smoothstep };
 enum class TubeRadiusMode { PhysicalConstant, ConstantAngularWidth };
+enum class EnergyChannelSpacing { Logarithmic, Linear };
+
+// A one-dimensional observer is identified by its radius along the embedded
+// field line. Each repeatable [observer.ID] section owns a complete spectrum
+// grid; observers therefore need not share energy bounds or bin spacing.
+struct ObserverConfiguration {
+  std::string id;
+  double heliocentricRadiusM = 0.0;
+  double minimumEnergyJ = 0.0;
+  double maximumEnergyJ = 0.0;
+  unsigned energyChannels = 0;
+  EnergyChannelSpacing energySpacing = EnergyChannelSpacing::Logarithmic;
+  unsigned pitchAngleBins = 0;
+};
 
 // SI-only schema consumed by srcSEP's standalone runtime initialization.
 // The spatial mesh supports the embedded field line; particles themselves
@@ -57,12 +71,14 @@ struct Configuration {
   // srcSEP samples a one-dimensional field line at a heliocentric radius.
   // The radius is SI and is installed into the retained field-line sampler.
   double observerHeliocentricRadiusM = 0.0;
+  std::vector<ObserverConfiguration> observers;
 
   // Initialization products are written only after the corresponding AMPS
   // mesh/field line exists.  Explicit paths avoid an undocumented working-
   // directory convention and are part of the startup fingerprint.
   std::string meshTecplotFile;
   std::string fieldLineTecplotFile;
+  std::string dataTecplotFile;
 
   Vec3 parkerOriginM;
   Vec3 parkerInitialPointM;
@@ -96,15 +112,16 @@ struct Configuration {
   std::vector<SwcmeAssignment> swcmeAssignments;
 };
 
-// Parse a complete version-1 or version-2 INI document.  Version 2 adds the
-// explicit numerical/source/observer/output/SWCME initialization contract.
+// Parse a complete version-1, version-2, or version-3 INI document. Version 2
+// added the explicit numerical/source/SWCME contract; version 3 adds named,
+// repeatable observer spectra and native AMPS data-output evidence.
 // Unknown or duplicate sections and keys are errors; no schema-required value
 // is silently inherited from a production default.
 Transport::Status ParseText(const std::string& text, Configuration* result);
 Transport::Status LoadFile(const std::string& path, Configuration* result);
 Transport::Status Validate(const Configuration& configuration);
 
-// Retarget the two initialization products to one command-line-selected
+// Retarget all declared initialization products to one command-line-selected
 // directory while preserving the leaf names declared in [output].  This is a
 // pure configuration transform; the MPI-aware runtime creates parent
 // directories immediately before collective output begins.
@@ -141,6 +158,7 @@ double RequestedCellSizeM(const Vec3& positionM,
 
 const char* Name(RefinementProfile profile);
 const char* Name(TubeRadiusMode mode);
+const char* Name(EnergyChannelSpacing spacing);
 
 }  // namespace Initialization
 }  // namespace SEP

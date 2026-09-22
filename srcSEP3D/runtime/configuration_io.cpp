@@ -453,6 +453,8 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     o->initializationMeshTecplotFile = value;
   } else if (field == "output.initialization_parker_line_tecplot_file") {
     o->initializationParkerLineTecplotFile = value;
+  } else if (field == "output.initialization_data_tecplot_file") {
+    o->initializationDataTecplotFile = value;
   } else if (field == "storage.magnetic_gradient") {
     if (!ParseBool(value, &o->storeMagneticGradient)) return invalidValue();
   } else if (field == "storage.velocity_gradient") {
@@ -482,6 +484,11 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
       if (!ParseDouble(value, &observer->cadenceS)) return invalidValue();
     } else if (key == "energy_bins") {
       if (!ParseUnsigned(value, &observer->energyBins)) return invalidValue();
+    } else if (key == "energy_spacing") {
+      if (!ParseEnum(value,
+          {{"logarithmic", EnergyChannelSpacing::Logarithmic},
+           {"linear", EnergyChannelSpacing::Linear}},
+          &observer->energyChannelSpacing)) return invalidValue();
     } else if (key == "pitch_angle_bins") {
       if (!ParseUnsigned(value, &observer->pitchAngleBins)) return invalidValue();
     } else if (key == "products") {
@@ -774,6 +781,7 @@ Core::Status ParseConfigurationText(
         "output.checkpoint_cadence_steps", "output.directory",
         "output.prefix", "output.initialization_mesh_tecplot_file",
         "output.initialization_parker_line_tecplot_file",
+        "output.initialization_data_tecplot_file",
         "restart.input_path", "restart.output_path"};
     for (const char* required : requiredFields)
       if (assigned.count(required) == 0)
@@ -784,7 +792,7 @@ Core::Status ParseConfigurationText(
         "position_z_m", "follows_trajectory", "velocity_x_m_per_s",
         "velocity_y_m_per_s", "velocity_z_m_per_s",
         "collection_radius_m", "shell_radius_m", "cadence_s",
-        "energy_bins", "pitch_angle_bins", "minimum_energy_j",
+        "energy_bins", "energy_spacing", "pitch_angle_bins", "minimum_energy_j",
         "maximum_energy_j", "minimum_mu", "maximum_mu", "species",
         "products"};
     for (const std::string& presentSection : sections) {
@@ -971,7 +979,7 @@ Core::Status ApplyInitializationOutputDirectory(
   if (directory.empty())
     return Invalid("initialization output directory is empty");
 
-  // Retain the reviewed leaf names from [output].  Only their parent directory
+  // Retain all three reviewed leaf names from [output]. Only their parent directory
   // is a command-line concern.  Treat both slash spellings as separators so a
   // deck copied between systems does not accidentally embed its former parent
   // beneath the requested preview directory.
@@ -982,8 +990,11 @@ Core::Status ApplyInitializationOutputDirectory(
   const std::string meshLeaf = leafName(options->initializationMeshTecplotFile);
   const std::string lineLeaf =
       leafName(options->initializationParkerLineTecplotFile);
-  if (meshLeaf.empty() || lineLeaf.empty() || meshLeaf == "." ||
-      meshLeaf == ".." || lineLeaf == "." || lineLeaf == "..") {
+  const std::string dataLeaf =
+      leafName(options->initializationDataTecplotFile);
+  if (meshLeaf.empty() || lineLeaf.empty() || dataLeaf.empty() ||
+      meshLeaf == "." || meshLeaf == ".." || lineLeaf == "." ||
+      lineLeaf == ".." || dataLeaf == "." || dataLeaf == "..") {
     return Invalid("initialization Tecplot paths must end in file names before "
                    "--initialization-output-dir can be applied");
   }
@@ -991,6 +1002,7 @@ Core::Status ApplyInitializationOutputDirectory(
       (!directory.empty() && directory.back() == '/') ? "" : "/";
   options->initializationMeshTecplotFile = directory + separator + meshLeaf;
   options->initializationParkerLineTecplotFile = directory + separator + lineLeaf;
+  options->initializationDataTecplotFile = directory + separator + dataLeaf;
   return Core::Status::OK();
 }
 
@@ -1080,6 +1092,11 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
          << "parker_spiral_end_m=" << lineEnd.x << ',' << lineEnd.y << ','
          << lineEnd.z << '\n'
          << "compiled_species_authority=AMPS-SpeciesList\n"
+         << "time_step_s=" << options.requestedTimeStepS << '\n'
+         << "base_particle_weight=" << options.species.macroparticleWeight << '\n'
+         << "observer_count=" << options.observers.size() << '\n'
+         << "initialization_data_tecplot_base="
+         << options.initializationDataTecplotFile << '\n'
          << "source_samples_per_compiled_species="
          << options.source.samplesPerStep << '\n'
          << "minimum_requested_cell_m=" << preflight.minimumRequestedCellM << '\n'

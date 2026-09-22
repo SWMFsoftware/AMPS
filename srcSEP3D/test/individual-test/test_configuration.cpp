@@ -317,16 +317,22 @@ Result RunCFG3D01() {
       !RM::BuildDryRunSummary(*example, &summary).ok()) {
     return Fail("the annotated production example failed resource preflight");
   }
-  if (exampleOptions.observers.size() != 1 ||
-      !exampleOptions.observers.front().allCompiledSpecies ||
-      !exampleOptions.observers.front().species.empty()) {
+  if (exampleOptions.observers.size() != 2 ||
+      !std::all_of(exampleOptions.observers.begin(),
+                   exampleOptions.observers.end(),
+                   [](const RM::ObserverOptions& configured) {
+                     return configured.allCompiledSpecies &&
+                            configured.species.empty();
+                   })) {
     return Fail("the production example does not preserve species=all as a wildcard");
   }
   if (!RM::ApplyInitializationOutputDirectory("preview", &exampleOptions).ok() ||
       exampleOptions.initializationMeshTecplotFile !=
           "preview/sep3d-initialization-mesh.dat" ||
       exampleOptions.initializationParkerLineTecplotFile !=
-          "preview/sep3d-initialization-parker-line.dat") {
+          "preview/sep3d-initialization-parker-line.dat" ||
+      exampleOptions.initializationDataTecplotFile !=
+          "preview/sep3d-initialization-data.dat") {
     return Fail("initialization output-directory override changed product names");
   }
   return Pass("versioned input, CLI normalization, early errors, typed parity, and allocation-free dry-run passed");

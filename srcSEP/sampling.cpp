@@ -1,5 +1,6 @@
 
 #include "sep.h"
+#include "util/sep_initialization.h"
 #include "util/sep_transactional_output.h"
 
 #include <algorithm>
@@ -253,6 +254,24 @@ void SEP::Sampling::InitSingleFieldLineSampling(int iFieldLine) {
   const std::string sampleBaseName=
       std::string(PIC::OutputDataFileDirectory)+"/sample";
 
+  if (SEP::Initialization::HasActive() &&
+      SEP::Initialization::Active().schemaVersion>=3) {
+    const std::vector<SEP::Initialization::ObserverConfiguration>& observers=
+        SEP::Initialization::Active().observers;
+    SamplingBufferTable[iFieldLine]=new cSamplingBuffer[observers.size()];
+    for (std::size_t i=0;i<observers.size();++i) {
+      const SEP::Initialization::ObserverConfiguration& observer=observers[i];
+      SamplingBufferTable[iFieldLine][i].Init(
+          sampleBaseName.c_str(),observer.minimumEnergyJ,
+          observer.maximumEnergyJ,static_cast<int>(observer.energyChannels),
+          observer.heliocentricRadiusM,iFieldLine,observer.id.c_str(),
+          observer.energySpacing==
+              SEP::Initialization::EnergyChannelSpacing::Logarithmic,
+          static_cast<int>(observer.pitchAngleBins));
+    }
+    return;
+  }
+
   if (SamplingHeliocentricDistanceList.size()==0) {
     SamplingBufferTable[iFieldLine]=new cSamplingBuffer [SamplingHeliocentricDistanceTableLength];
 
@@ -447,7 +466,10 @@ void SEP::Sampling::Manager() {
     }
 
     //sample the field line data
-    int TableSize=SamplingHeliocentricDistanceList.size();
+    int TableSize=(SEP::Initialization::HasActive() &&
+                   SEP::Initialization::Active().schemaVersion>=3)
+        ? static_cast<int>(SEP::Initialization::Active().observers.size())
+        : static_cast<int>(SamplingHeliocentricDistanceList.size());
     if (TableSize==0) TableSize=SamplingHeliocentricDistanceTableLength;
 
     for (int i=0;i<TableSize;i++) {

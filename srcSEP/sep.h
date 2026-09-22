@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <math.h>
 #include <string>
+#include <vector>
 
 #include "util/sep_physical_units.h"
 #include "util/sep_common_header_path.h"
@@ -1520,7 +1521,10 @@ namespace SEP {
     class cSamplingBuffer {
     public:
       int nEnergyBins,nPitchAngleBins;
-      double MinEnergy,MaxEnergy,dLogEnergy;
+      double MinEnergy,MaxEnergy,dLogEnergy,dEnergy;
+      bool LogarithmicEnergyChannels;
+      std::vector<double> EnergyEdges;
+      std::string ObserverId;
 
       double *DensitySamplingTable;
       double *FluxSamplingTable,*ReturnFluxSamplingTable;
@@ -1676,14 +1680,29 @@ namespace SEP {
           // require the diagnostic energy and the logarithmic binning grid to be
           // valid before computing a bin index.
           if (!isfinite(e) || e<=0.0 || !isfinite(MinEnergy) || MinEnergy<=0.0 ||
-              !isfinite(dLogEnergy) || dLogEnergy<=0.0) {
+              !isfinite(dEnergy) || dEnergy<=0.0 ||
+              (LogarithmicEnergyChannels &&
+               (!isfinite(dLogEnergy) || dLogEnergy<=0.0))) {
+            ptr=PB::GetNext(ParticleData);
+            continue;
+          }
+          // Check the closed configured interval before converting to an
+          // integer. C++ truncates a small negative fractional index toward
+          // zero, which would otherwise place a just-below-minimum particle in
+          // channel zero for either linear or logarithmic spacing.
+          if (e<MinEnergy || e>MaxEnergy) {
             ptr=PB::GetNext(ParticleData);
             continue;
           }
 
 double e_mev=e*J2MeV;
 
-          ibin=(int)(log(e/MinEnergy)/dLogEnergy);
+          ibin=LogarithmicEnergyChannels
+              ? (int)(log(e/MinEnergy)/dLogEnergy)
+              : (int)((e-MinEnergy)/dEnergy);
+          // Include an energy exactly equal to the declared upper endpoint in
+          // the final channel; roundoff must not discard a boundary sample.
+          if (e==MaxEnergy) ibin=nEnergyBins-1;
           iMuBin=(int)(((mu+1.0)/dmu));
 
           if (iMuBin<0) iMuBin=0;
@@ -1736,8 +1755,8 @@ double e_mev=e*J2MeV;
         // before it is appended to the dynamic directory name.
           char suffix[160];
           const int suffixLength=std::snprintf(
-              suffix,sizeof(suffix),"/field-line=%d.r=%e.t=%e.dat",
-              iFieldLine,HeliocentricDisctance/_AU_,SamplingTime);
+              suffix,sizeof(suffix),"/observer=%s.field-line=%d.r=%e.t=%e.dat",
+              ObserverId.c_str(),iFieldLine,HeliocentricDisctance/_AU_,SamplingTime);
           if ((suffixLength<0) ||
               (static_cast<std::size_t>(suffixLength)>=sizeof(suffix))) {
             exit(__LINE__,__FILE__,
@@ -1757,7 +1776,8 @@ double e_mev=e*J2MeV;
         for (ibin=0;ibin<nEnergyBins;ibin++) {
           double sum=0.0;
 
-          fprintf(fout,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(ibin*dLogEnergy)*J2MeV,MinEnergy*exp((ibin+1)*dLogEnergy)*J2MeV);
+          fprintf(fout,", \"E(%e MeV - %e MeV)\"",
+                  EnergyEdges[ibin]*J2MeV,EnergyEdges[ibin+1]*J2MeV);
 
           for (j=0;j<nPitchAngleBins;j++) {
             sum+=PitchAngleSamplingTable(j,ibin);
@@ -1856,14 +1876,27 @@ double e_mev=e*J2MeV;
       std::string full_name_density,full_name_flux,full_name_return_flux;
       std::string base_name;
 
-      void Init(const char *fname,double e_min,double e_max,int n,double r,int l) {
+      void Init(const char *fname,double e_min,double e_max,int n,double r,int l,
+                const char* observerId="legacy",bool logarithmic=true,
+                int pitchAngleBins=20) {
         nEnergyBins=n;
         MinEnergy=e_min,MaxEnergy=e_max;
-        dLogEnergy=log(MaxEnergy/MinEnergy)/nEnergyBins;
+        LogarithmicEnergyChannels=logarithmic;
+        dLogEnergy=logarithmic ? log(MaxEnergy/MinEnergy)/nEnergyBins : 0.0;
+        dEnergy=(MaxEnergy-MinEnergy)/nEnergyBins;
+        EnergyEdges.resize(nEnergyBins+1);
+        for (int i=0;i<=nEnergyBins;i++) {
+          if (i==nEnergyBins) EnergyEdges[i]=MaxEnergy;
+          else if (LogarithmicEnergyChannels)
+            EnergyEdges[i]=MinEnergy*exp(i*dLogEnergy);
+          else EnergyEdges[i]=MinEnergy+i*dEnergy;
+        }
         HeliocentricDisctance=r;
         iFieldLine=l;
+        ObserverId=(observerId==NULL || observerId[0]=='\0')
+            ? "unnamed" : observerId;
 
-        nPitchAngleBins=20;
+        nPitchAngleBins=pitchAngleBins;
         PitchAngleSamplingTable.init(nPitchAngleBins,nEnergyBins);
 
         if (PIC::ThisThread==0) {
@@ -1879,7 +1912,8 @@ double e_mev=e*J2MeV;
         // valid AMPS output path cannot overflow a sampling buffer.
           char suffix[128];
           const int suffixLength=std::snprintf(
-              suffix,sizeof(suffix),"/field-line=%d.r=%e.dat",l,r/_AU_);
+              suffix,sizeof(suffix),"/observer=%s.field-line=%d.r=%e.dat",
+              ObserverId.c_str(),l,r/_AU_);
           if ((suffixLength<0) ||
               (static_cast<std::size_t>(suffixLength)>=sizeof(suffix))) {
             exit(__LINE__,__FILE__,
@@ -1898,7 +1932,7 @@ double e_mev=e*J2MeV;
           if (foutDensity==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writing");
 
         fprintf(foutDensity,"VARIABLES=\"time\"");
-        for (int i=0;i<nEnergyBins;i++) fprintf(foutDensity,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
+        for (int i=0;i<nEnergyBins;i++) fprintf(foutDensity,", \"E(%e MeV - %e MeV)\"",EnergyEdges[i]*J2MeV,EnergyEdges[i+1]*J2MeV);
         fprintf(foutDensity,"\n");
 
           const std::string fluxDirectory=base_name+".flux";
@@ -1913,7 +1947,7 @@ double e_mev=e*J2MeV;
           if (foutFlux==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writing");
 
         fprintf(foutFlux,"VARIABLES=\"time\"");
-        for (int i=0;i<nEnergyBins;i++) fprintf(foutFlux,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
+        for (int i=0;i<nEnergyBins;i++) fprintf(foutFlux,", \"E(%e MeV - %e MeV)\"",EnergyEdges[i]*J2MeV,EnergyEdges[i+1]*J2MeV);
         fprintf(foutFlux,"\n");
 
           const std::string returnFluxDirectory=base_name+".return_flux";
@@ -1928,7 +1962,7 @@ double e_mev=e*J2MeV;
           if (foutReturnFlux==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writing");
 
         fprintf(foutReturnFlux,"VARIABLES=\"time\"");
-        for (int i=0;i<nEnergyBins;i++) fprintf(foutReturnFlux,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
+        for (int i=0;i<nEnergyBins;i++) fprintf(foutReturnFlux,", \"E(%e MeV - %e MeV)\"",EnergyEdges[i]*J2MeV,EnergyEdges[i+1]*J2MeV);
         fprintf(foutReturnFlux,"\n");
         }
 

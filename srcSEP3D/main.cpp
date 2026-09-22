@@ -127,7 +127,9 @@ int main(int argc, char** argv) {
                 << "initialization_mesh="
                 << options.initializationMeshTecplotFile << '\n'
                 << "initialization_parker_line="
-                << options.initializationParkerLineTecplotFile << '\n';
+                << options.initializationParkerLineTecplotFile << '\n'
+                << "initialization_data_base="
+                << options.initializationDataTecplotFile << '\n';
     }
     MPI_Finalize();
     return EXIT_SUCCESS;

@@ -1,8 +1,8 @@
 // ============================================================================
-// R01-R07 executable acceptance tests.
+// R01-R09 executable acceptance tests.
 //
 // Each callback targets one improvement and stays AMPS/MPI independent.  R01
-// audits the generated-header hook text; R02-R07 exercise the exact portable
+// audits the generated-header hook text; R02-R09 exercise the exact portable
 // service invoked by the production AMPS boundary.  Keeping these in the
 // native registry means ``test/run_tests.py --all`` cannot omit the new work.
 // ============================================================================
@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <limits>
 #include <numeric>
 #include <sstream>
 #include <string>
@@ -264,13 +265,18 @@ Result RunR3D06() {
   options.observers[0].collectionRadiusM = 5.0;
   options.observers[0].minimumEnergyJ = 1.0e-20;
   options.observers[0].maximumEnergyJ = 1.0e-10;
+  options.observers[0].energyBins = 4;
+  options.observers[0].energyChannelSpacing = R::EnergyChannelSpacing::Linear;
   std::shared_ptr<const R::RunConfiguration3D> cfg;
   if (!R::RunConfiguration3D::Create(options, &cfg).ok())
     return Fail("observer configuration was rejected");
   std::vector<O::VirtualSpacecraftDefinition> definitions;
   if (!O::BuildObserverDefinitions(*cfg, 10.0, &definitions).ok() ||
       definitions.size() != 1 ||
-      definitions[0].positionM.x != options.observers[0].positionM.x + 20.0)
+      definitions[0].positionM.x != options.observers[0].positionM.x + 20.0 ||
+      definitions[0].kineticEnergyEdgesJ.size() != 5 ||
+      std::fabs(definitions[0].kineticEnergyEdgesJ[1] -
+                (1.0e-20 + (1.0e-10 - 1.0e-20) / 4.0)) > 1.0e-25)
     return Fail("moving observer was not resolved at the authoritative time");
   O::SamplingRequest sample;
   sample.cells.push_back({1, definitions[0].positionM, 1.0});
@@ -418,6 +424,55 @@ Result RunR3D08() {
   return Pass("canonical SWCME initialization publishes a physical surface and allocates one exact per-species count per step");
 }
 
+Result RunR3D09() {
+  const std::vector<double> physicalValues = {1.0, -2.0, 3.0};
+
+  // Before the first completed AMPS sampling window, particle moments are
+  // finite zeros but are explicitly marked as not-yet-sampled.
+  const O::TecplotCellPresentation initialization =
+      O::PrepareTecplotCellPresentation(physicalValues, true, 0, 0.0);
+  if (initialization.backgroundValues != physicalValues ||
+      initialization.backgroundValid != 1.0 ||
+      initialization.particleSamplingWindowValid != 0.0 ||
+      initialization.particleSamplePresent != 0.0)
+    return Fail("initialization output confused an absent sampling window with invalid background");
+
+  // A completed window with no particles is a valid zero-occupancy sample,
+  // not a failed or undefined numerical result.
+  const O::TecplotCellPresentation empty =
+      O::PrepareTecplotCellPresentation(physicalValues, true, 8, 0.0);
+  if (empty.backgroundValid != 1.0 ||
+      empty.particleSamplingWindowValid != 1.0 ||
+      empty.particleSamplePresent != 0.0)
+    return Fail("empty particle cell was not represented as a valid finite sample");
+
+  const O::TecplotCellPresentation occupied =
+      O::PrepareTecplotCellPresentation(physicalValues, true, 8, 2.0);
+  if (occupied.particleSamplingWindowValid != 1.0 ||
+      occupied.particleSamplePresent != 1.0)
+    return Fail("occupied particle cell lost its explicit presence flag");
+
+  // Cartesian padding cells and corrupted diagnostic values must remain
+  // parseable. Their zeros are placeholders guarded by backgroundValid=0.
+  std::vector<double> invalidValues = physicalValues;
+  invalidValues[1] = std::numeric_limits<double>::quiet_NaN();
+  const O::TecplotCellPresentation invalid =
+      O::PrepareTecplotCellPresentation(invalidValues, true, 8, 0.0);
+  const O::TecplotCellPresentation padding =
+      O::PrepareTecplotCellPresentation(physicalValues, false, 8, 0.0);
+  const auto finiteZero = [](const std::vector<double>& values) {
+    return std::all_of(values.begin(), values.end(),
+                       [](double value) {
+                         return std::isfinite(value) && value == 0.0;
+                       });
+  };
+  if (invalid.backgroundValid != 0.0 || !finiteZero(invalid.backgroundValues) ||
+      padding.backgroundValid != 0.0 || !finiteZero(padding.backgroundValues))
+    return Fail("invalid background emitted a non-finite Tecplot placeholder");
+
+  return Pass("Tecplot output separates invalid background, unsampled windows, empty cells, and occupied cells without NaN");
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterRuntimeImprovementTests() {
@@ -427,7 +482,7 @@ std::vector<SEP3D::Testing::Descriptor> RegisterRuntimeImprovementTests() {
   auto make = [](const char* id, const char* name,
                  SEP3D::Testing::TestCallback callback) {
     D d; d.id = id; d.name = name; d.group = "R3D";
-    d.description = "R01-R07 production-runtime improvement acceptance";
+    d.description = "R01-R09 production-runtime improvement acceptance";
     d.initialization = I::None; d.supportedBuildModes = "standalone-no-AMPS";
     d.runtime = RC::Routine; d.seedPolicy = "semantic keyed or deterministic";
     d.stateIsolation = "fresh runtime/service and temporary artifacts";
@@ -442,5 +497,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterRuntimeImprovementTests() {
       make("R3D06", "Observer publication transaction", RunR3D06),
       make("R3D07", "Complete restart contract", RunR3D07),
       make("R3D08", "Canonical initialization source", RunR3D08),
+      make("R3D09", "Finite empty-cell Tecplot output", RunR3D09),
   };
 }

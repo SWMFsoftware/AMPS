@@ -7,7 +7,7 @@ providers, SWCME, or an SWMF coupling.  The source also contains the
 self-consistent Alfvén-turbulence subsystem, including integrated and
 wave-number-resolved representations and particle-wave coupling.
 
-## Complete initialization input (schema 2)
+## Complete initialization input (schema 3)
 
 Use the initialization contract on every new standalone run:
 
@@ -31,19 +31,21 @@ All application-owned dimensional values are bare SI numbers whose unit is in
 the key. The `[swcme]` values retain explicit units and are interpreted only by
 the canonical `src/models/swcme/swcme1d_input.hpp` resolver.
 
-Schema 1 remains readable for old campaigns. Schema 2 is the complete startup
-contract and requires every field below; it never obtains a time step, particle
-weight, observer, output path, or CME parameter from an unreviewed C++ default.
+Schemas 1 and 2 remain readable for old campaigns. Schema 3 is the complete
+startup contract: it adds repeatable observers with explicit spectrum grids
+and a native data-bearing AMPS initialization product. It never obtains a time
+step, particle weight, observer, output path, or CME parameter from an
+unreviewed C++ default.
 
 ### Application-owned sections
 
 | Section | Required keys | Meaning and validation |
 |---|---|---|
-| `[run]` | `schema_version`, `time_step_s` | `schema_version = 2`; the positive SI step is installed globally and on every allocated block for every species in the compiled AMPS `SpeciesList`. |
+| `[run]` | `schema_version`, `time_step_s` | `schema_version = 3`; the positive SI step is installed globally and on every allocated block for every species in the compiled AMPS `SpeciesList`. |
 | `[injection]` | `macroparticles_per_step` | Positive integer no larger than `INT_MAX`; exactly this many computational particles are created per compiled species at every active field-line source event unless the explicit legacy CLI count override is supplied. |
 | `[species]` | `particle_weight` | Positive finite common base AMPS statistical weight installed for every compiled species. Species count, type, mass, charge, and index remain build-time AMPS data and are not redefined here. |
-| `[observer]` | `heliocentric_radius_m` | One-dimensional observer radius, inclusive between the inner and outer radii; it replaces the retained field-line sampling-radius list. |
-| `[output]` | `mesh_tecplot_file`, `field_line_tecplot_file` | Nonempty paths for the final distributed AMR tree and finite Parker line. A write failure aborts initialization. |
+| `[observer.ID]` | `heliocentric_radius_m`, `minimum_energy_j`, `maximum_energy_j`, `energy_channels`, `energy_spacing`, `pitch_angle_bins` | Repeatable named 1-D observer. Radius is inside the field-line domain; energy bounds are positive and ordered; counts are positive. Spacing is `logarithmic` or `linear`. IDs contain letters, digits, `_`, or `-` and are at most 48 characters. |
+| `[output]` | `mesh_tecplot_file`, `field_line_tecplot_file`, `data_tecplot_file` | Nonempty paths for the geometry tree, finite Parker line, and native initialized AMPS data. A write failure aborts initialization. |
 | `[parker_spiral]` | `origin_x_m`, `origin_y_m`, `origin_z_m`, `initial_x_m`, `initial_y_m`, `initial_z_m`, `length_m`, `point_count` | Three-dimensional embedding of the 1-D transport line. `point_count >= 2`, maximum 10,000,000, includes both endpoints; `length_m` is positive arc length. The initial point must lie on `domain.inner_radius_m`. |
 | `[domain]` | `inner_radius_m`, `outer_radius_m` | Positive heliocentric shell radii with `outer > inner`; the AMR root is the cube enclosing the outer sphere. |
 | `[mesh]` | `global_cell_size_m`, `minimum_cell_size_m`, `maximum_level` | Positive target sizes with `global >= minimum`; AMR level is limited to 19. |
@@ -58,11 +60,11 @@ aliases override `macroparticles_per_step` only when explicitly present.
 
 `--initialization-only` executes the real MPI/AMPS initialization path. It
 builds and partitions the AMR mesh, allocates blocks, constructs the finite
-field line, installs the observer, time step, particle weight, background, and
-source configuration, writes both Tecplot products, synchronizes all ranks,
+field line, installs every observer, time step, particle weight, background,
+and source configuration, writes all Tecplot products, synchronizes all ranks,
 and calls `MPI_Finalize()` before the first `amps_time_step()`. It is therefore
 not a parse-only or synthetic-mesh mode. `--initialization-output-dir DIR`
-retains the two filenames declared in `[output]`, replaces only their parent
+retains the three filenames declared in `[output]`, replaces only their parent
 directory, creates that directory on rank zero, and requires
 `--initialization-only`.
 
@@ -80,6 +82,15 @@ the same interpolation with normalized Parker-line distance
 `tube_radius(r)=radius_at_reference_m*r/reference_radius_m`. In overlap regions
 the finer of the solar and tube requests wins, followed by the declared global
 minimum/maximum clamp.
+
+AMPS samples `localResolution()` only on a Cartesian probe lattice. A physical
+tube narrower than that lattice can cross a coarse block without a probe
+falling inside it. The resolution law therefore also evaluates the numerical
+capture request `max(center_cell_size_m, 2*d_perpendicular)`. The nearest
+lattice point to a curve crossing a cell is within half a cell diagonal, so
+this request forces successive refinement along the whole centreline. It fixes
+the disconnected Tecplot band without changing the declared physical tube
+radius or its transverse profile.
 
 ### Canonical `[swcme]` section
 
@@ -134,7 +145,7 @@ field direction but never changes the refinement centreline.
 For an active source event, the existing physical source calculation first
 computes each species' represented physical count \(N_\mathrm{physical}\) from the selected
 shock model, swept flux-tube volume, density, abundance, and canonical injection
-efficiency. Schema 2 then creates exactly
+efficiency. Schema 3 then creates exactly
 `injection.macroparticles_per_step` particles for that compiled species and assigns the individual AMPS
 weight correction
 
@@ -149,10 +160,21 @@ line unit-weight override are used only by legacy schema 1.
 
 After final AMR refinement and decomposition, initialization writes:
 
-- `output.mesh_tecplot_file` through AMPS' distributed mesh writer; and
+- `output.mesh_tecplot_file` through AMPS' distributed mesh writer;
 - `output.field_line_tecplot_file` as one ordered Tecplot POINT zone with
   `arc_length_m`, Cartesian position, heliocentric radius, and requested cell
-  size.
+  size; and
+- `output.data_tecplot_file` through AMPS' native data writer after field,
+  timestep, and particle-weight initialization. It includes initialized
+  center-node macroscopic data plus `Local Time Step` and `Local Particle
+  Weight`. A mixed-species executable inserts `.species-N` before the extension
+  so each compiled species has an unambiguous data set.
+
+For each observer, logarithmic edges are
+`E_i=E_min*(E_max/E_min)^(i/N)`; linear edges are
+`E_i=E_min+i*(E_max-E_min)/N`. Both contain the declared endpoints exactly.
+Observer IDs are included in sampling filenames, so observers at the same
+radius cannot overwrite one another.
 
 The line writer constructs and validates the full geometry before opening its
 destination, preventing an invalid run from leaving a plausible partial file.
@@ -1073,7 +1095,7 @@ domain, line length, point count, and mesh refinement remain unchanged.  This
 is an intentional compatibility boundary, not an implicit default file.
 
 [`examples/sep_parker_mesh.in`](examples/sep_parker_mesh.in) is the complete
-schema-version-2 example.  It defines, in SI units:
+schema-version-3 example.  It defines, in SI units:
 
 - the Parker origin, initial point, physical arc length, and total point count;
 - the inner radius and cubic root-domain half-size;

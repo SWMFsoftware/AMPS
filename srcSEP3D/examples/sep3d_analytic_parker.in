@@ -179,6 +179,9 @@ collection_radius_m = 1.495978707e9
 shell_radius_m = 1.495978707e11
 cadence_s = 60
 energy_bins = 48
+# Channel edges are geometric for logarithmic and uniformly spaced in joules
+# for linear. Both include the declared minimum and maximum as exact endpoints.
+energy_spacing = logarithmic
 pitch_angle_bins = 24
 minimum_energy_j = 1.602176634e-15
 maximum_energy_j = 1.602176634e-11
@@ -191,6 +194,32 @@ maximum_mu = 1
 species = all
 products = flux,spectrum,anisotropy
 
+# A second observer demonstrates that [observer.ID] is repeatable. It samples
+# a narrow inner-heliosphere interval with linearly spaced energy channels;
+# each observer owns its position, cadence, species selection, and binning.
+[observer.inner]
+kind = fixed-cartesian
+normalization = differential-intensity
+position_x_m = 4.487936121e10
+position_y_m = 0
+position_z_m = 0
+follows_trajectory = false
+velocity_x_m_per_s = 0
+velocity_y_m_per_s = 0
+velocity_z_m_per_s = 0
+collection_radius_m = 1.495978707e9
+shell_radius_m = 4.487936121e10
+cadence_s = 20
+energy_bins = 20
+energy_spacing = linear
+pitch_angle_bins = 16
+minimum_energy_j = 1.602176634e-15
+maximum_energy_j = 8.01088317e-15
+minimum_mu = -1
+maximum_mu = 1
+species = all
+products = flux,spectrum,anisotropy
+
 [output]
 cadence_steps = 100
 # Zero disables periodic checkpointing; choose a positive tick cadence for a
@@ -198,10 +227,13 @@ cadence_steps = 100
 checkpoint_cadence_steps = 0
 directory = output/analytic-parker
 prefix = sep3d
-# --initialization-output-dir changes only the parents of the next two files;
+# --initialization-output-dir changes only the parents of the next three files;
 # --initialization-only writes them and exits before the first particle step.
 initialization_mesh_tecplot_file = sep3d-initialization-mesh.dat
 initialization_parker_line_tecplot_file = sep3d-initialization-parker-line.dat
+# Native AMPS data output. Mixed-species builds insert `.species-N` before the
+# extension so each compiled species has its own local dt/weight columns.
+initialization_data_tecplot_file = sep3d-initialization-data.dat
 
 [restart]
 # Use the explicit token none for a fresh run; --restart PATH overrides it.

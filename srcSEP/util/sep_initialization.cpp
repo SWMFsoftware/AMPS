@@ -171,13 +171,31 @@ Vec3 ParkerDirectionAtRadius(double radius,
           sine * source.x + cosine * source.y, source.z};
 }
 
+ObserverConfiguration* ObserverForSection(const std::string& section,
+                                          Configuration* configuration) {
+  const std::string prefix = "observer.";
+  if (section.rfind(prefix, 0) != 0 || section.size() == prefix.size())
+    return NULL;
+  const std::string id = section.substr(prefix.size());
+  for (char value : id)
+    if (!std::isalnum(static_cast<unsigned char>(value)) && value != '_' &&
+        value != '-') return NULL;
+  for (ObserverConfiguration& observer : configuration->observers)
+    if (observer.id == id) return &observer;
+  ObserverConfiguration observer;
+  observer.id = id;
+  configuration->observers.push_back(observer);
+  return &configuration->observers.back();
+}
+
 Transport::Status Apply(const std::string& section, const std::string& key,
                         const std::string& value, Configuration* c) {
   const std::string field = section + "." + key;
   auto invalid = [&]() { return Error("invalid value for '" + field + "': " + value); };
   if (field == "run.schema_version") {
     std::uint64_t parsed = 0;
-    if (!ParseUnsigned64(value, &parsed) || (parsed != 1 && parsed != 2))
+    if (!ParseUnsigned64(value, &parsed) ||
+        (parsed != 1 && parsed != 2 && parsed != 3))
       return invalid();
     c->schemaVersion = static_cast<unsigned>(parsed);
   } else if (field == "run.time_step_s") {
@@ -192,6 +210,8 @@ Transport::Status Apply(const std::string& section, const std::string& key,
     c->meshTecplotFile = value;
   } else if (field == "output.field_line_tecplot_file") {
     c->fieldLineTecplotFile = value;
+  } else if (field == "output.data_tecplot_file") {
+    c->dataTecplotFile = value;
   } else if (field == "parker_spiral.origin_x_m") {
     if (!ParseDouble(value, &c->parkerOriginM.x)) return invalid();
   } else if (field == "parker_spiral.origin_y_m") {
@@ -263,7 +283,35 @@ Transport::Status Apply(const std::string& section, const std::string& key,
   } else if (field == "background.parker.solar_rotation_rate_rad_per_s") {
     if (!ParseDouble(value, &c->solarRotationRateRadPerS)) return invalid();
   } else {
-    return Error("unknown configuration key '" + field + "'");
+    ObserverConfiguration* observer = ObserverForSection(section, c);
+    if (observer == NULL)
+      return Error("unknown configuration key '" + field + "'");
+    if (key == "heliocentric_radius_m") {
+      if (!ParseDouble(value, &observer->heliocentricRadiusM)) return invalid();
+    } else if (key == "minimum_energy_j") {
+      if (!ParseDouble(value, &observer->minimumEnergyJ)) return invalid();
+    } else if (key == "maximum_energy_j") {
+      if (!ParseDouble(value, &observer->maximumEnergyJ)) return invalid();
+    } else if (key == "energy_channels") {
+      std::uint64_t parsed = 0;
+      if (!ParseUnsigned64(value, &parsed) ||
+          parsed > std::numeric_limits<unsigned>::max()) return invalid();
+      observer->energyChannels = static_cast<unsigned>(parsed);
+    } else if (key == "energy_spacing") {
+      const std::string normalized = Lower(value);
+      if (normalized == "logarithmic")
+        observer->energySpacing = EnergyChannelSpacing::Logarithmic;
+      else if (normalized == "linear")
+        observer->energySpacing = EnergyChannelSpacing::Linear;
+      else return invalid();
+    } else if (key == "pitch_angle_bins") {
+      std::uint64_t parsed = 0;
+      if (!ParseUnsigned64(value, &parsed) ||
+          parsed > std::numeric_limits<unsigned>::max()) return invalid();
+      observer->pitchAngleBins = static_cast<unsigned>(parsed);
+    } else {
+      return Error("unknown configuration key '" + field + "'");
+    }
   }
   return Transport::Status::Ok();
 }
@@ -278,6 +326,10 @@ const char* Name(RefinementProfile profile) {
 const char* Name(TubeRadiusMode mode) {
   return mode == TubeRadiusMode::PhysicalConstant
       ? "physical-constant" : "constant-angular-width";
+}
+const char* Name(EnergyChannelSpacing spacing) {
+  return spacing == EnergyChannelSpacing::Logarithmic
+      ? "logarithmic" : "linear";
 }
 
 Transport::Status Validate(const Configuration& c) {
@@ -294,7 +346,7 @@ Transport::Status Validate(const Configuration& c) {
       c.tubeCenterCellSizeM, c.tubeExponent};
   for (double value : values)
     if (!std::isfinite(value)) return Error("configuration contains a non-finite value");
-  if ((c.schemaVersion != 1 && c.schemaVersion != 2) ||
+  if ((c.schemaVersion != 1 && c.schemaVersion != 2 && c.schemaVersion != 3) ||
       c.parkerPointCount < 2 ||
       c.parkerPointCount > 10000000ULL || c.parkerLengthM <= 0.0 ||
       c.solarWindSpeedMPerS <= 0.0 || c.solarRotationRateRadPerS < 0.0 ||
@@ -310,12 +362,33 @@ Transport::Status Validate(const Configuration& c) {
        c.macroparticlesPerStep >
            static_cast<std::uint64_t>(std::numeric_limits<int>::max()) ||
        !std::isfinite(c.particleWeight) || c.particleWeight <= 0.0 ||
-       !std::isfinite(c.observerHeliocentricRadiusM) ||
-       c.observerHeliocentricRadiusM < c.innerRadiusM ||
-       c.observerHeliocentricRadiusM > c.outerRadiusM ||
        c.meshTecplotFile.empty() || c.fieldLineTecplotFile.empty())) {
     return Error("time step, particle sampling, observer, or Tecplot output "
                  "configuration is invalid");
+  }
+  if (c.schemaVersion == 2 &&
+      (!std::isfinite(c.observerHeliocentricRadiusM) ||
+       c.observerHeliocentricRadiusM < c.innerRadiusM ||
+       c.observerHeliocentricRadiusM > c.outerRadiusM))
+    return Error("schema version 2 observer radius is outside the domain");
+  if (c.schemaVersion >= 3) {
+    if (c.observers.empty() || c.dataTecplotFile.empty())
+      return Error("schema version 3 requires observers and AMPS data output");
+    std::set<std::string> observerIds;
+    for (const ObserverConfiguration& observer : c.observers) {
+      if (observer.id.empty() || observer.id.size() > 48 ||
+          !observerIds.insert(observer.id).second ||
+          !std::isfinite(observer.heliocentricRadiusM) ||
+          observer.heliocentricRadiusM < c.innerRadiusM ||
+          observer.heliocentricRadiusM > c.outerRadiusM ||
+          !std::isfinite(observer.minimumEnergyJ) ||
+          !std::isfinite(observer.maximumEnergyJ) ||
+          observer.minimumEnergyJ <= 0.0 ||
+          observer.maximumEnergyJ <= observer.minimumEnergyJ ||
+          observer.energyChannels == 0 || observer.energyChannels > 1000000U ||
+          observer.pitchAngleBins == 0 || observer.pitchAngleBins > 1000000U)
+        return Error("one-dimensional observer identity, location, or spectrum is invalid");
+    }
   }
   const double sourceRadius = Norm(Subtract(c.parkerInitialPointM, c.parkerOriginM));
   if (std::fabs(sourceRadius - c.innerRadiusM) > 1.0e-10 * c.innerRadiusM)
@@ -358,7 +431,9 @@ Transport::Status ParseText(const std::string& text, Configuration* result) {
     if (line.empty()) continue;
     if (line.front() == '[' && line.back() == ']') {
       section = Lower(Trim(line.substr(1, line.size() - 2)));
-      if (known.count(section) == 0)
+      const bool namedObserver = section.rfind("observer.", 0) == 0 &&
+          section.size() > std::string("observer.").size();
+      if (known.count(section) == 0 && !namedObserver)
         return Error("unknown section at line " + std::to_string(lineNumber));
       if (!sections.insert(section).second)
         return Error("duplicate section '" + section + "'");
@@ -392,8 +467,13 @@ Transport::Status ParseText(const std::string& text, Configuration* result) {
       "run", "parker_spiral", "domain", "mesh", "mesh.solar",
       "mesh.tube", "background.parker"};
   const std::set<std::string> versionTwoSections = known;
+  const std::set<std::string> versionThreeSections = {
+      "run", "parker_spiral", "domain", "mesh", "mesh.solar",
+      "mesh.tube", "background.parker", "injection", "species",
+      "output", "swcme"};
   const std::set<std::string>& requiredSections =
-      candidate.schemaVersion >= 2 ? versionTwoSections : versionOneSections;
+      candidate.schemaVersion >= 3 ? versionThreeSections :
+      (candidate.schemaVersion >= 2 ? versionTwoSections : versionOneSections);
   for (const std::string& required : requiredSections)
     if (sections.count(required) == 0)
       return Error("missing required section '[" + required + "]'");
@@ -407,9 +487,27 @@ Transport::Status ParseText(const std::string& text, Configuration* result) {
     // keys are counted separately because their names belong to the provider.
     const std::size_t applicationKeyCount =
         assigned.size() - candidate.swcmeAssignments.size();
-    if (applicationKeyCount != 34)
+    if (candidate.schemaVersion == 2 && applicationKeyCount != 34)
       return Error("configuration must assign all 34 version-2 application "
                    "keys exactly once");
+    if (candidate.schemaVersion >= 3) {
+      if (sections.count("observer") != 0)
+        return Error("schema version 3 uses repeatable [observer.ID] sections");
+      if (candidate.observers.empty())
+        return Error("schema version 3 requires at least one [observer.ID]");
+      const std::size_t expected = 34 + 6 * candidate.observers.size();
+      if (applicationKeyCount != expected)
+        return Error("schema version 3 requires every observer spectrum field "
+                     "and all 34 non-observer application keys");
+      const char* observerFields[] = {
+          "heliocentric_radius_m", "minimum_energy_j", "maximum_energy_j",
+          "energy_channels", "energy_spacing", "pitch_angle_bins"};
+      for (const ObserverConfiguration& observer : candidate.observers)
+        for (const char* key : observerFields)
+          if (assigned.count("observer." + observer.id + "." + key) == 0)
+            return Error("missing required observer key 'observer." +
+                         observer.id + "." + key + "'");
+    }
     if (candidate.swcmeAssignments.empty())
       return Error("schema version 2 requires complete [swcme] assignments");
     std::set<std::string> swcmeKeys;
@@ -469,14 +567,19 @@ Transport::Status ApplyOutputDirectoryOverride(
   };
   const std::string meshLeaf = leafName(configuration->meshTecplotFile);
   const std::string lineLeaf = leafName(configuration->fieldLineTecplotFile);
-  if (meshLeaf.empty() || lineLeaf.empty() || meshLeaf == "." ||
-      meshLeaf == ".." || lineLeaf == "." || lineLeaf == "..") {
+  const std::string dataLeaf = leafName(configuration->dataTecplotFile);
+  if (meshLeaf.empty() || lineLeaf.empty() ||
+      (configuration->schemaVersion >= 3 && dataLeaf.empty()) ||
+      meshLeaf == "." || meshLeaf == ".." || lineLeaf == "." ||
+      lineLeaf == ".." || dataLeaf == "." || dataLeaf == "..") {
     return Error("initialization Tecplot paths must end in file names before "
                  "the output-directory override can be applied");
   }
   const std::string separator = directory.back() == '/' ? "" : "/";
   configuration->meshTecplotFile = directory + separator + meshLeaf;
   configuration->fieldLineTecplotFile = directory + separator + lineLeaf;
+  if (configuration->schemaVersion >= 3)
+    configuration->dataTecplotFile = directory + separator + dataLeaf;
   return Validate(*configuration);
 }
 
@@ -504,9 +607,19 @@ std::string Fingerprint(const Configuration& c) {
     canonical << ";dt=" << c.timeStepS
         << ";macro_per_step=" << c.macroparticlesPerStep
         << ";particle_weight=" << c.particleWeight
-        << ";observer_radius=" << c.observerHeliocentricRadiusM
         << ";mesh_output=" << c.meshTecplotFile
         << ";line_output=" << c.fieldLineTecplotFile;
+    if (c.schemaVersion == 2)
+      canonical << ";observer_radius=" << c.observerHeliocentricRadiusM;
+    if (c.schemaVersion >= 3) {
+      canonical << ";data_output=" << c.dataTecplotFile;
+      for (const ObserverConfiguration& observer : c.observers)
+        canonical << ";observer=" << observer.id << ','
+            << observer.heliocentricRadiusM << ',' << observer.minimumEnergyJ
+            << ',' << observer.maximumEnergyJ << ',' << observer.energyChannels
+            << ',' << Name(observer.energySpacing) << ','
+            << observer.pitchAngleBins;
+    }
   }
 
   canonical << ";origin=" << c.parkerOriginM.x << ','
@@ -638,10 +751,20 @@ double RequestedCellSizeM(const Vec3& position, const Configuration& c) {
         (c.globalCellSizeM - c.solarSurfaceCellSizeM));
   }
   if (c.tubeRefinementEnabled) {
-    const double fraction = TubeDistanceM(position, c) / TubeRadiusM(radius, c);
+    const double distance = TubeDistanceM(position, c);
+    const double fraction = distance / TubeRadiusM(radius, c);
     requested = std::min(requested, c.tubeCenterCellSizeM +
         Profile(fraction, c.tubeProfile, c.tubeExponent) *
         (c.globalCellSizeM - c.tubeCenterCellSizeM));
+
+    // The production AMR builder samples this point function on a Cartesian
+    // lattice. The closest lattice point to a curve crossing a cell is within
+    // half a cell diagonal, so max(h_tube,2*d) forces progressive capture of
+    // the centreline even when the physical tube is initially sub-cell wide.
+    constexpr double kStrictRefinement = 2.0 * (1.0 - 1.0e-12);
+    const double capture = std::max(
+        c.tubeCenterCellSizeM, kStrictRefinement * distance);
+    requested = std::min(requested, capture);
   }
   return Clamp(requested, c.minimumCellSizeM, c.globalCellSizeM);
 }

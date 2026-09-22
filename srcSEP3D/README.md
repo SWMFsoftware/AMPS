@@ -36,7 +36,7 @@ descriptions fail before mesh allocation.
 
 The middle command is the mesh-preview path. Unlike `--dry-run`, it builds the
 real distributed AMPS mesh, initializes blocks, particle weight and time step,
-providers, source, and observers, writes the mesh and Parker-centreline Tecplot
+providers, source, and observers, writes geometry and initialized-data Tecplot
 files, and collectively finalizes MPI before `amps_time_step()` can execute.
 The output-directory option preserves the input-deck filenames and creates the
 selected parent directory on rank zero.
@@ -88,6 +88,16 @@ requests wins, then the result is clamped between the declared minimum and
 global cell sizes. The same function drives dry-run planning, the standalone
 octree tests, and AMPS `localResolution()`.
 
+AMPS probes `localResolution()` on a Cartesian cell-corner lattice. The former
+physical-tube-only law could miss a centreline crossing when the tube was
+narrower than the coarse probe spacing, producing the apparent gap between the
+solar and Parker-spiral high-resolution regions. The corrected law also uses
+`h_capture=max(center_cell_size_m,2*d_perpendicular)`. A curve crossing a cell
+is within half a cell diagonal of a lattice point, so one probe requests the
+next level until the centreline target is reached. The physical tube profile
+is still evaluated unchanged; the finer request wins. `MSH3D05` exercises a
+deliberately sub-cell tube and checks every sampled centreline segment.
+
 ### Background, transport, source, and particle syntax
 
 | Section | Required keys | Contract |
@@ -136,13 +146,14 @@ Every `[observer.ID]` requires all of these fields:
 | `position_x_m`, `position_y_m`, `position_z_m`, `follows_trajectory` | Initial observer location and explicit trajectory choice. A fixed observer must lie inside the heliocentric shell. |
 | `velocity_x_m_per_s`, `velocity_y_m_per_s`, `velocity_z_m_per_s` | Cartesian trajectory velocity; explicit even for a fixed observer. |
 | `collection_radius_m`, `shell_radius_m` | Positive spatial acceptance geometry. |
-| `cadence_s`, `energy_bins`, `pitch_angle_bins` | Positive cadence/counts; cadence must be an integer multiple of the simulation step. |
+| `cadence_s`, `energy_bins`, `energy_spacing`, `pitch_angle_bins` | Positive cadence/counts; cadence must be an integer multiple of the simulation step. Spacing is `logarithmic` or `linear`. |
 | `minimum_energy_j`, `maximum_energy_j`, `minimum_mu`, `maximum_mu` | Energy and pitch-cosine acceptance with ordered bounds and `-1 <= mu <= 1`. |
 | `species`, `products` | Use `species = all` for the complete compiled AMPS table, or a comma-separated index list for an intentional subset; startup validates every explicit index. `products` lists the requested product names. |
 
 `[output]` requires `cadence_steps`, `checkpoint_cadence_steps`, `directory`,
-`prefix`, `initialization_mesh_tecplot_file`, and
-`initialization_parker_line_tecplot_file`. `[restart]` requires `input_path` and
+`prefix`, `initialization_mesh_tecplot_file`,
+`initialization_parker_line_tecplot_file`, and
+`initialization_data_tecplot_file`. `[restart]` requires `input_path` and
 `output_path`; the literal `none` selects a fresh run. Output/restart relocation
 does not change the physics fingerprint, while every mesh, observer, source,
 species, and canonical SWCME input does.
@@ -152,8 +163,29 @@ the actual distributed AMPS tree to `initialization_mesh_tecplot_file` and a
 rank-zero ordered Parker-centreline zone to
 `initialization_parker_line_tecplot_file`. The line contains arc length,
 Cartesian position, heliocentric radius, and requested resolution, all with SI
-unit-bearing variable names. Both paths are mandatory and write failures are
-fatal.
+unit-bearing variable names. After block-local time step/weight installation
+and background publication, it also calls AMPS' native data writer for
+`initialization_data_tecplot_file`. That product contains magnetic field, bulk
+velocity, density, divergence, temperature, pressure, Alfvén speed, focusing
+length, curvature, strain, enabled gradients/wave variance, and AMPS' `Local
+Time Step` and `Local Particle Weight` columns. A mixed SpeciesList produces
+`.species-N` siblings because those two block columns are species-selected.
+All paths are mandatory and write failures are fatal.
+
+The native data file contains only finite numeric values. Cartesian AMR padding
+cells outside the configured heliocentric shell contain zero placeholders and
+`background_valid=0`; the zero values must not be interpreted as a physical
+Parker state. Particle availability is independent of background availability:
+`particle_sampling_window_valid=0` means that no AMPS sampling interval has
+completed yet, while `particle_sample_present=0` with a valid window means that
+the cell contained no sampled macroparticles of the selected species. In that
+ordinary empty-cell case, AMPS writes zero density, particle number, velocity,
+energy, and temperature instead of `NaN`.
+
+Each `[observer.ID]` is independent and repeatable. For `N` energy channels,
+logarithmic edges are `E_i=E_min*(E_max/E_min)^(i/N)` and linear edges are
+`E_i=E_min+i*(E_max-E_min)/N`; both include the configured endpoints exactly.
+The example contains both forms at two observer locations.
 
 ### Complete canonical `[swcme]` syntax
 
@@ -324,7 +356,7 @@ failure semantics, MPI ownership rules, and restart ordering.
 - `--initialization-only` follows normal initialization through mesh output and
   model setup, then finalizes MPI before the time-step loop.
 - `--initialization-output-dir DIR` is legal only with
-  `--initialization-only`; it changes the parent of both initialization
+  `--initialization-only`; it changes the parent of all three initialization
   Tecplot products without changing their reviewed leaf names.
 
 For a standalone preflight and run:
@@ -772,14 +804,13 @@ integer schedule, global observation gather, and restart coordinator are now
 implemented; a configured `BLDL3D01` run on the target checkout remains
 required after every production-boundary change.
 
-## Schema-version-2 Parker initialization
+## Historical schema-version-2 Parker initialization
 
-`examples/sep3d_analytic_parker.in` now uses schema version 2 and adds a
-required `[parker_spiral]` section.  It supplies the origin, initial point,
-physical arc length, and total number of points in SI units.  Version-1 files
-remain accepted and normalize to a deterministic line derived from their
-existing domain/tube settings; this preserves archived campaigns and typed
-SWMF-host construction.
+Schema version 2 introduced the required `[parker_spiral]` section that is also
+present in the current schema-3 example. It supplies the origin, initial point,
+physical arc length, and total number of points in SI units. Version-1 and
+version-2 files remain accepted for archived campaigns and typed SWMF-host
+construction; new standalone shock-injection runs should use schema 3.
 
 During standalone initialization the input is parsed before the runtime
 lifecycle enters mesh setup.  The finite line is materialized with a

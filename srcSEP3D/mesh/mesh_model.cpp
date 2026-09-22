@@ -76,19 +76,25 @@ Core::Vec3 BlockCenter(const LeafBlock& block) {
 
 double RequestedInBlock(const LeafBlock& block,
                         const ResolutionConfiguration& configuration) {
-  // The centre and eight corners are sufficient for this monotone radial law
-  // and conservatively sample a curved tube crossing a block.  The result is
-  // the smallest requested cell size, so an unsampled minimum can only delay
-  // refinement by one level and is caught by the profile/balance tests.
+  // Match the lattice that AMPS uses when it asks localResolution() whether a
+  // block needs refinement. Centre-and-corner sampling is not conservative
+  // for a thin curved tube: the Parker centreline can cross a coarse block
+  // without passing close to any of those nine points.
   double requested = RequestedCellSizeM(BlockCenter(block), configuration);
-  for (int child = 0; child < 8; ++child) {
-    Core::Vec3 point;
-    SetComponent(&point, 0, (child & 1) ? block.maximumM.x : block.minimumM.x);
-    SetComponent(&point, 1, (child & 2) ? block.maximumM.y : block.minimumM.y);
-    SetComponent(&point, 2, (child & 4) ? block.maximumM.z : block.minimumM.z);
-    requested = std::min(requested,
-                         RequestedCellSizeM(point, configuration));
-  }
+  const unsigned n = configuration.cellsPerBlockEdge;
+  for (unsigned k = 0; k <= n; ++k)
+    for (unsigned j = 0; j <= n; ++j)
+      for (unsigned i = 0; i <= n; ++i) {
+        const double fx = static_cast<double>(i) / n;
+        const double fy = static_cast<double>(j) / n;
+        const double fz = static_cast<double>(k) / n;
+        const Core::Vec3 point(
+            block.minimumM.x + fx * (block.maximumM.x - block.minimumM.x),
+            block.minimumM.y + fy * (block.maximumM.y - block.minimumM.y),
+            block.minimumM.z + fz * (block.maximumM.z - block.minimumM.z));
+        requested = std::min(requested,
+                             RequestedCellSizeM(point, configuration));
+      }
   return requested;
 }
 
@@ -360,7 +366,17 @@ double RequestedCellSizeM(const Core::Vec3& positionM,
                         configuration.tubeTransverseExponent) *
         (configuration.backgroundCellSizeM -
          configuration.tubeCellSizeM);
-    requested = std::min(requested, tube);
+
+    // AMPS evaluates this point function on a Cartesian lattice. For a curve
+    // crossing one lattice cell, the nearest lattice point is at most half a
+    // cell diagonal away. Requesting max(h_tube,2*d) at distance d therefore
+    // guarantees that a sampled point asks for the next level until the
+    // centreline reaches h_tube. This numerical capture envelope fixes
+    // sub-cell aliasing without changing the declared physical tube profile.
+    constexpr double kStrictRefinement = 2.0 * (1.0 - 1.0e-12);
+    const double capture = std::max(
+        configuration.tubeCellSizeM, kStrictRefinement * distance);
+    requested = std::min(requested, std::min(tube, capture));
   }
   return Clamp(requested, configuration.minimumCellSizeM,
                configuration.backgroundCellSizeM);

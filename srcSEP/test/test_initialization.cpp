@@ -25,11 +25,18 @@ int main(int argc, char** argv) {
   // otherwise a preview run could silently change the declared artifact set.
   const std::string meshLeaf = example.meshTecplotFile;
   const std::string lineLeaf = example.fieldLineTecplotFile;
+  const std::string dataLeaf = example.dataTecplotFile;
   const SEP::Transport::Status redirected =
       SEP::Initialization::ApplyOutputDirectoryOverride("preview", &example);
   if (!redirected.ok() ||
       example.meshTecplotFile != "preview/" + meshLeaf ||
-      example.fieldLineTecplotFile != "preview/" + lineLeaf) {
+      example.fieldLineTecplotFile != "preview/" + lineLeaf ||
+      example.dataTecplotFile != "preview/" + dataLeaf ||
+      example.observers.size() != 2 ||
+      example.observers[0].energySpacing !=
+          SEP::Initialization::EnergyChannelSpacing::Logarithmic ||
+      example.observers[1].energySpacing !=
+          SEP::Initialization::EnergyChannelSpacing::Linear) {
     std::cerr << "initialization output-directory override failed: "
               << redirected.message << '\n';
     return 1;

@@ -267,6 +267,14 @@ const char* Name(ObserverNormalization value) {
   return "unknown";
 }
 
+const char* Name(EnergyChannelSpacing value) {
+  switch (value) {
+    case EnergyChannelSpacing::Logarithmic: return "logarithmic";
+    case EnergyChannelSpacing::Linear: return "linear";
+  }
+  return "unknown";
+}
+
 bool operator==(const StorageLayout& left, const StorageLayout& right) {
   return left.magneticFieldOffset == right.magneticFieldOffset &&
          left.bulkVelocityOffset == right.bulkVelocityOffset &&
@@ -471,6 +479,7 @@ Core::Status RunConfiguration3D::Create(
   if (normalized.inputSchemaVersion >= 3 &&
       (normalized.initializationMeshTecplotFile.empty() ||
        normalized.initializationParkerLineTecplotFile.empty() ||
+       normalized.initializationDataTecplotFile.empty() ||
        normalized.swcmeAssignments.empty() ||
        normalized.swcmeConfigurationFingerprint.empty() ||
        normalized.swcmeResolvedManifest.empty())) {
@@ -669,6 +678,8 @@ Core::Status RunConfiguration3D::Create(
         !std::isfinite(observer.maximumEnergyJ) ||
         observer.minimumEnergyJ <= 0.0 ||
         observer.maximumEnergyJ <= observer.minimumEnergyJ ||
+        (observer.energyChannelSpacing != EnergyChannelSpacing::Logarithmic &&
+         observer.energyChannelSpacing != EnergyChannelSpacing::Linear) ||
         !std::isfinite(observer.minimumMu) ||
         !std::isfinite(observer.maximumMu) ||
         observer.minimumMu < -1.0 || observer.maximumMu > 1.0 ||
@@ -853,6 +864,7 @@ Core::Status RunConfiguration3D::Create(
             << ',' << observer.velocityMPerS.z
             << ',' << observer.collectionRadiusM << ',' << observer.shellRadiusM
             << ',' << observer.minimumEnergyJ << ',' << observer.maximumEnergyJ
+            << ',' << Name(observer.energyChannelSpacing)
             << ',' << observer.minimumMu << ',' << observer.maximumMu;
     if (observer.allCompiledSpecies) {
       // Preserve wildcard intent in restart/physics identity.  It must not be
@@ -877,6 +889,8 @@ Core::Status RunConfiguration3D::Create(
            << normalized.initializationMeshTecplotFile
            << ";initialization_parker_line_tecplot="
            << normalized.initializationParkerLineTecplotFile
+           << ";initialization_data_tecplot="
+           << normalized.initializationDataTecplotFile
            << ";restart_input=" << normalized.restartInputPath
            << ";restart_output=" << normalized.restartOutputPath;
 

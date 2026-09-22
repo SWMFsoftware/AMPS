@@ -165,3 +165,21 @@ uninterrupted run.
 - `R3D06`: resolved observers, uncertainty, and commit-only window reset.
 - `R3D07`: complete schema-2 clock/event/provider/shock/RNG/ledger/sampling
   round trip.
+- `R3D09`: finite native Tecplot records for invalid background padding,
+  not-yet-sampled cells, completed empty particle cells, and occupied cells.
+
+## Native Tecplot empty-data semantics
+
+AMPS particle moments and the srcSEP3D background are sampled independently.
+A completed particle sampling window containing zero particles is therefore a
+valid measurement: particle number, density, velocity moments, energy, and
+temperature are written as finite zeros. `particle_sample_present=0` records
+that condition, while `particle_sampling_window_valid=0` means that the file
+was written before any sampling interval completed (as in initialization-only
+mode).
+
+The Cartesian AMR tree also contains padding cells outside the configured
+heliocentric shell. Background physics is undefined there. Those columns use
+finite zero placeholders with `background_valid=0`; post-processing must mask
+them with that flag. This avoids `NaN` propagation in Tecplot without assigning
+physical meaning to the placeholder values.

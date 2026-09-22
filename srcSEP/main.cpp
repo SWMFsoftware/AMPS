@@ -233,8 +233,15 @@ int main(int argc,char **argv) {
     // higher-precedence compatibility layer for convergence studies.
     if (initialization.schemaVersion >= 2) {
       SEP::Sampling::SamplingHeliocentricDistanceList.clear();
-      SEP::Sampling::SamplingHeliocentricDistanceList.push_back(
-          initialization.observerHeliocentricRadiusM);
+      if (initialization.schemaVersion >= 3) {
+        for (const SEP::Initialization::ObserverConfiguration& observer :
+             initialization.observers)
+          SEP::Sampling::SamplingHeliocentricDistanceList.push_back(
+              observer.heliocentricRadiusM);
+      } else {
+        SEP::Sampling::SamplingHeliocentricDistanceList.push_back(
+            initialization.observerHeliocentricRadiusM);
+      }
       if (!cli_options.injectionParticlesProvided)
         cli_options.injectionParticlesPerIteration = static_cast<int>(
             initialization.macroparticlesPerStep);
@@ -638,6 +645,9 @@ int main(int argc,char **argv) {
                 << initialization.meshTecplotFile << '\n'
                 << "initialization_field_line="
                 << initialization.fieldLineTecplotFile << '\n';
+      if (initialization.schemaVersion >= 3)
+        std::cout << "initialization_data_base="
+                  << initialization.dataTecplotFile << '\n';
     }
     MPI_Finalize();
     return EXIT_SUCCESS;
