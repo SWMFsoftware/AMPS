@@ -53,6 +53,23 @@ only then is the native background marked ready. The same bridge and halo
 boundary run on subsequent background generations, so AMPS-native accessors do
 not lag the immutable srcSEP3D snapshot.
 
+The application-owned slice is zeroed independently because it is a different
+region of each AMPS center node. Once both providers are prepared,
+initialization writes the canonical background and the two provider-produced
+directional magnetic variances to the same physical center node and immediately
+reads the variances back. Prescribed turbulence must be positive at every
+physical center; rank-local counts and extrema are MPI-reduced before
+publication. This check prevents a storage-offset or provider-wiring error from
+being labeled a completed initialization.
+
+AMPS converts center-cell state to vertex records when writing a FEBRICK
+Tecplot file. Its native DATAFILE callback interpolates plasma and IMF values,
+but it cannot discover application-requested offsets. The srcSEP3D
+`InterpolateInitializationCellData` callback therefore interpolates the entire
+frozen application slice into AMPS' temporary output node. This changes only
+presentation interpolation; it does not create a second background or
+turbulence model.
+
 `sep3d-initialization-data.dat` is written only after this bridge, runtime
 snapshot publication, turbulence preparation, all-species weight/time-step
 initialization, mover-context installation, and optional restart restoration.

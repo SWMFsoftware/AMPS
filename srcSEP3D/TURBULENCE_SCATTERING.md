@@ -23,11 +23,26 @@ spectrum, provided the immutable run configuration selects that authority.
 
 ## Selectable prescribed spectra and wave energy
 
-At radius `r`, the default amplitude is
+The spectrum and amplitude are selected independently. With
+`amplitude_model = constant-delta-b-over-b`, the amplitude is
 
 \[
-\delta B^2=(0.3|B|)^2.
+\delta B^2=(a|B|)^2,
 \]
+
+where `delta_b_over_b = a` is positive. With
+`amplitude_model = wave-energy-power-law`, input instead declares
+
+\[
+w(r)=w_\mathrm{ref}(r_\mathrm{ref}/r)^{p_w},\qquad
+\delta B^2=\mu_0 w(r),
+\]
+
+using positive `wave_energy_density_at_reference_j_per_m3` and finite
+`wave_energy_density_radial_exponent`. The inactive amplitude normalization
+must be exactly zero in either mode. This is deliberate: a deck containing
+both a nonzero ratio and a nonzero reference energy is physically ambiguous
+and fails before initialization.
 
 The directional split is not implicit. Input declares normalized cross
 helicity
@@ -45,7 +60,7 @@ which gives
 \delta B_-^2=\frac{1-\sigma_c}{2}\delta B^2.
 \]
 
-The provider initializes both total Alfvén-wave energy densities with the
+The provider initializes both directional Alfvén-wave energy densities with the
 same equipartition convention used by the AWSoM adapter,
 `w_plus/minus=deltaB_plus/minus_squared/mu0`. Bounds scale independently from
 their declared reference radius using `k_min_radial_exponent` and
@@ -153,9 +168,27 @@ Prescribed turbulence is evaluated for every owner-local physical cell during
 authority, not only SWMF, so standalone initialization output contains the
 actual wave state used by scattering. Storage retains `deltaB_+^2` and
 `deltaB_-^2` because those are the coefficient kernel's native quantities;
-Tecplot derives and emits `w_+` and `w_-` beside them. When SWMF turbulence
+Tecplot derives and emits the mandatory total and directional values
+`turbulence_wave_energy_density_J_per_m3` and
+`turbulence_wave_energy_plus/minus_J_per_m3` beside total/directional magnetic
+variance. When SWMF turbulence
 authority is selected, the host must install a loaded
 `AwsomTurbulenceProvider` and the same storage/output contract applies.
+
+The provider is prepared before the physical center-node fill. Each evaluated
+directional pair is validated, written to the frozen application offset, and
+read back before publication or halo exchange. For a prescribed amplitude law,
+`deltaB^2` must be strictly positive in every physical cell; the code reports
+the global positive-cell count and range. Zero turbulence is retained only for
+an explicitly selected coupled ballistic record, never as an implicit default.
+
+The AMPS Tecplot mesh is vertex-centred. The writer creates temporary
+center-node objects and invokes registered interpolators, so srcSEP3D registers
+an application-static interpolation callback in `Init_BeforeParser()`. That
+callback transports stored `deltaB_+^2` and `deltaB_-^2`—together with the rest
+of the frozen background state—from physical center nodes to the output node.
+Without it, native IMF/plasma columns are correct while application turbulence
+columns read untouched zeros from the temporary node.
 
 R03 prepares a candidate turbulence provider together with the candidate
 background generation. Both are evaluated at all owner-local cells and become
@@ -179,6 +212,7 @@ prescribed provider.
 | `TUR3D03` | proton/electron resonances below, inside, above band obey policy |
 | `TUR3D04` | incomplete waves fail unless explicit typed ballistic mode |
 | `TUR3D05` | named model slopes, cross-helicity partition, and SI wave-energy conversion |
+| `TUR3D06` | selectable amplitude laws, radial wave-energy scaling, and mandatory Tecplot total/directional energy columns |
 | `COEF3D01` | Dμμ/mean-free-path/parallel-diffusion round trips over six decades |
 | `COEF3D02` | 3-D bridge and direct shared Jokipii kernel are bitwise identical |
 

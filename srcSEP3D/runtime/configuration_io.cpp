@@ -230,6 +230,11 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     if (!ParseDouble(value, &o->parkerSpiralOriginM.y)) return invalidValue();
   } else if (field == "parker_spiral.origin_z_m") {
     if (!ParseDouble(value, &o->parkerSpiralOriginM.z)) return invalidValue();
+  } else if (field == "parker_spiral.start_mode") {
+    if (!ParseEnum(value,
+        {{"explicit", ParkerSpiralStartMode::Explicit},
+         {"cme-launch-point", ParkerSpiralStartMode::CmeLaunchPoint}},
+        &o->parkerSpiralStartMode)) return invalidValue();
   } else if (field == "parker_spiral.initial_x_m") {
     if (!ParseDouble(value, &o->parkerSpiralInitialPointM.x)) return invalidValue();
   } else if (field == "parker_spiral.initial_y_m") {
@@ -349,8 +354,22 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
          {"kolmogorov", PrescribedTurbulenceModel::Kolmogorov},
          {"kraichnan", PrescribedTurbulenceModel::Kraichnan}},
         &o->prescribedTurbulenceModel)) return invalidValue();
+  } else if (field == "turbulence.amplitude_model") {
+    if (!ParseEnum(value,
+        {{"constant-delta-b-over-b",
+              PrescribedTurbulenceAmplitudeModel::ConstantDeltaBOverB},
+         {"wave-energy-power-law",
+              PrescribedTurbulenceAmplitudeModel::WaveEnergyPowerLaw}},
+        &o->prescribedTurbulenceAmplitudeModel)) return invalidValue();
   } else if (field == "turbulence.delta_b_over_b") {
     if (!ParseDouble(value, &o->prescribedDeltaBOverB)) return invalidValue();
+  } else if (field ==
+             "turbulence.wave_energy_density_at_reference_j_per_m3") {
+    if (!ParseDouble(value, &o->turbulenceWaveEnergyAtReferenceJPerM3))
+      return invalidValue();
+  } else if (field == "turbulence.wave_energy_density_radial_exponent") {
+    if (!ParseDouble(value, &o->turbulenceWaveEnergyRadialExponent))
+      return invalidValue();
   } else if (field == "turbulence.normalized_cross_helicity") {
     if (!ParseDouble(value, &o->turbulenceNormalizedCrossHelicity))
       return invalidValue();
@@ -766,7 +785,8 @@ Core::Status ParseConfigurationText(
         "parker_spiral.origin_x_m", "parker_spiral.origin_y_m",
         "parker_spiral.origin_z_m", "parker_spiral.initial_x_m",
         "parker_spiral.initial_y_m", "parker_spiral.initial_z_m",
-        "parker_spiral.length_m", "parker_spiral.point_count",
+        "parker_spiral.start_mode", "parker_spiral.length_m",
+        "parker_spiral.point_count",
         "mesh.global_cell_size_m", "mesh.minimum_cell_size_m",
         "mesh.cells_per_block_edge", "mesh.maximum_level",
         "mesh.memory_budget_bytes", "mesh.block_overhead_bytes",
@@ -791,7 +811,10 @@ Core::Status ParseConfigurationText(
         "background.parker.number_density_at_one_au_m3",
         "background.parker.temperature_k",
         "background.parker.validity_cadence_s", "turbulence.authority",
-        "turbulence.model", "turbulence.delta_b_over_b",
+        "turbulence.model", "turbulence.amplitude_model",
+        "turbulence.delta_b_over_b",
+        "turbulence.wave_energy_density_at_reference_j_per_m3",
+        "turbulence.wave_energy_density_radial_exponent",
         "turbulence.normalized_cross_helicity",
         "turbulence.reference_radius_m", "turbulence.k_min_per_m",
         "turbulence.k_max_per_m", "turbulence.k_min_radial_exponent",
@@ -908,6 +931,58 @@ Core::Status ParseConfigurationText(
           "background.parker.number_density_at_reference_m3; use "
           "number_density_at_one_au_m3 because SWCME density is normalized "
           "at one AU independently of the magnetic reference radius");
+    }
+
+    // `cme-launch-point` is an explicit cross-model constraint, not a loose
+    // suggestion.  The canonical SWCME resolver owns both the launch radius
+    // and the apex direction; normalize the latter exactly as SWCME does and
+    // require the reviewed Parker and mesh values to identify that same point.
+    // The current finite Parker line begins on the AMPS inner sphere, so a
+    // linked launch radius outside that sphere is rejected rather than moving
+    // the mesh boundary or shortening the line implicitly.
+    if (candidate.parkerSpiralStartMode ==
+        ParkerSpiralStartMode::CmeLaunchPoint) {
+      const double directionNorm = std::sqrt(
+          model.cme_dir[0] * model.cme_dir[0] +
+          model.cme_dir[1] * model.cme_dir[1] +
+          model.cme_dir[2] * model.cme_dir[2]);
+      if (!std::isfinite(directionNorm) || directionNorm <= 0.0)
+        return Invalid("canonical [swcme] CME direction cannot define its "
+                       "launch-apex point");
+      const Core::Vec3 direction(
+          model.cme_dir[0] / directionNorm,
+          model.cme_dir[1] / directionNorm,
+          model.cme_dir[2] / directionNorm);
+      const double launchRadiusM = model.r0_Rs *
+          swcme::constants::SOLAR_RADIUS_M;
+      const Core::Vec3 launchPoint =
+          candidate.coordinateOriginM + launchRadiusM * direction;
+      const double linkageTolerance = 1.0e-10 *
+          std::max(1.0, std::max(candidate.innerRadiusM, launchRadiusM));
+      if (std::fabs(launchRadiusM - candidate.innerRadiusM) >
+          linkageTolerance) {
+        return Invalid("parker_spiral.start_mode=cme-launch-point requires "
+                       "SWCME cme.launch_radius to equal domain.inner_radius_m");
+      }
+      if ((candidate.parkerSpiralInitialPointM - launchPoint).Norm() >
+          linkageTolerance) {
+        return Invalid("[parker_spiral] initial point differs from the "
+                       "canonical SWCME launch-apex point");
+      }
+      const double sine = std::sin(candidate.tubeColatitudeRad);
+      const Core::Vec3 tubeDirection(
+          sine * std::cos(candidate.tubeLongitudeRad),
+          sine * std::sin(candidate.tubeLongitudeRad),
+          std::cos(candidate.tubeColatitudeRad));
+      if ((tubeDirection - direction).Norm() > 1.0e-12) {
+        return Invalid("[mesh.tube] source direction differs from the "
+                       "canonical SWCME CME launch-apex direction");
+      }
+      candidate.cmeLaunchPointResolved = true;
+      candidate.cmeLaunchPointM = launchPoint;
+      // Replace agreeing decimal spellings with the canonical derived point
+      // so fingerprints and geometry use one exact binary authority.
+      candidate.parkerSpiralInitialPointM = launchPoint;
     }
 
     // The AMR Parker field, SWCME upstream state, and source energy interval
@@ -1169,8 +1244,14 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
          << Name(options.parker.thermodynamicClosure) << '\n'
          << "prescribed_turbulence_model="
          << Name(options.prescribedTurbulenceModel) << '\n'
+         << "prescribed_turbulence_amplitude_model="
+         << Name(options.prescribedTurbulenceAmplitudeModel) << '\n'
+         << "turbulence_wave_energy_reference_j_per_m3="
+         << options.turbulenceWaveEnergyAtReferenceJPerM3 << '\n'
          << "turbulence_normalized_cross_helicity="
          << options.turbulenceNormalizedCrossHelicity << '\n'
+         << "parker_spiral_start_mode="
+         << Name(options.parkerSpiralStartMode) << '\n'
          << "parker_spiral_point_count=" << centreline.size() << '\n'
          << "parker_spiral_length_m=" << options.parkerSpiralLengthM << '\n'
          << "parker_spiral_end_m=" << lineEnd.x << ',' << lineEnd.y << ','

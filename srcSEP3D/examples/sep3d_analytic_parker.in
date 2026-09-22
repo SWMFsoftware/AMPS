@@ -33,10 +33,15 @@ origin_z_m = 0
 [parker_spiral]
 # The origin must currently equal the domain origin.  The initial point lies
 # on inner_radius_m and must agree with the source longitude/colatitude below.
+# cme-launch-point additionally makes this point the canonical SWCME launch
+# apex: cme.launch_radius times normalized geometry.cme_direction. A mismatch
+# in radius, direction, or explicit Cartesian cross-check is a fatal error.
+# Select explicit only when the line is intentionally independent of the CME.
 # length_m is arc length, not radial extent; point_count includes both ends.
 origin_x_m = 0
 origin_y_m = 0
 origin_z_m = 0
+start_mode = cme-launch-point
 initial_x_m = 1.3914e10
 initial_y_m = 0
 initial_z_m = 0
@@ -117,7 +122,16 @@ authority = prescribed
 # (any explicitly validated q>1). A named closure and spectral_index must
 # agree; the parser never silently replaces a contradictory value.
 model = kolmogorov
+# The amplitude law is independent of the spectral slope. This example keeps
+# a fixed local deltaB/|B|. To prescribe total wave energy directly instead,
+# select wave-energy-power-law, set delta_b_over_b=0, and provide positive
+# wave_energy_density_at_reference_j_per_m3 plus its explicit radial exponent.
+amplitude_model = constant-delta-b-over-b
 delta_b_over_b = 0.3
+# Zero values are required sentinels for the inactive amplitude branch; they
+# cannot be mistaken for an applied wave-energy normalization.
+wave_energy_density_at_reference_j_per_m3 = 0
+wave_energy_density_radial_exponent = 0
 # sigma_c=(deltaB_+^2-deltaB_-^2)/deltaB^2. Zero is explicitly balanced.
 normalized_cross_helicity = 0
 reference_radius_m = 1.495978707e11

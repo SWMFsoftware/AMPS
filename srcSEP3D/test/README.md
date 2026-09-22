@@ -94,11 +94,11 @@ The runner adds
 | `UTIL` | `UTIL02` | byte-exact shared-kernel reference record |
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
 | `R3D` | `R3D01`–`R3D09` | mover hook, requested-time loop, snapshot transaction, tick/events, source, observers, restart, canonical initialization source, finite empty-cell output |
-| `CFG3D` | `CFG3D01`–`CFG3D08` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line/schema-3 initialization, and complete compiled AMPS species binding |
+| `CFG3D` | `CFG3D01`–`CFG3D10` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line/schema-3 initialization, complete compiled AMPS species binding, turbulence selection, and CME/Parker linkage |
 | `MSH3D` | `MSH3D01`–`MSH3D11` | resolution, tube geometry, balance, octree budget/ownership, presets, gradients, finite line, and initialization Tecplot output |
 | `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
 | `SNAP3D` | `SNAP3D01`–`SNAP3D08` | snapshot completeness, coupling conversion, atomicity, interpolation, batch/frame policy |
-| `TUR3D` | `TUR3D01`–`TUR3D04` | spectrum, AWSoM convention, resonance, missing-data policy |
+| `TUR3D` | `TUR3D01`–`TUR3D06` | spectrum, AWSoM convention, resonance, missing-data policy, selectable spectral/amplitude closures, and mandatory Tecplot energy |
 | `COEF3D` | `COEF3D01`–`COEF3D06` | conversion/shared identity, tensor assembly, Itô drift, rejection, and field-aligned gradient stencil |
 | `PRK3D` | `PRK3D01`–`PRK3D08` | Parker moments, characteristics, PDE/first passage, and named limits |
 | `FTE3D` | `FTE3D01`–`FTE3D07` | focused streaming, focusing, pitch scattering/boundaries, momentum, strong-scattering limit |
@@ -237,9 +237,14 @@ background cache and AMPS' separate DATAFILE cache. It requires the production
 driver to zero native padding, copy the validated density/velocity/temperature/
 pressure/B/E/gradient fields, exchange block halos, and mark the installation
 complete before the final `outputMeshDataTECPLOT` call. It also requires the
-physical-cell selection to enforce both spherical radii. The gate catches the
-regression in which custom `B_x_T/B_y_T/B_z_T` was initialized while AMPS'
-native `Bx/By/Bz` columns remained allocation-time zeros. A configured
+physical-cell selection to enforce both spherical radii, unconditional wave
+storage, immediate center-node turbulence write/readback, the registered AMPS
+`InterpolateCenterNode` hook for application-owned bytes, and mandatory
+total/directional SI turbulence-energy columns. The gate catches both observed
+regressions: custom `B_x_T/B_y_T/B_z_T` initialized while native `Bx/By/Bz`
+remained zero, and native plasma/IMF initialized while turbulence read as zero
+from AMPS' temporary Tecplot vertex node. `TUR3D06` numerically checks that a
+positive directional variance survives the same weighted interpolation. A configured
 `BLDL3D01` run remains the compile/link authority for the AMPS API itself.
 
 ### Phase R1 shared-library gates
@@ -312,6 +317,8 @@ env MAKEFLAGS="-j16" srcSEP3D/test/run_tests.py --all \
 | `CFG3D06` | schema version 2 requires the complete finite Parker line and rejects a source-inconsistent initial point |
 | `CFG3D07` | a complete mixed ion/electron table binds, while count mismatch, non-contiguous indices, duplicate symbols, invalid mass, neutral charge, out-of-range observers, and missing fingerprint state fail closed |
 | `CFG3D08` | complete schema-3 SWCME input resolves while a missing canonical field, inconsistent weight, or skipped-step injection fails closed |
+| `CFG3D09` | spectral and amplitude turbulence models parse only with consistent slopes and exactly one active amplitude normalization; Python background remains reserved |
+| `CFG3D10` | `cme-launch-point` resolves the canonical SWCME launch apex and rejects radius/direction mismatches; explicit mode remains independent |
 
 ```bash
 python3 test/run_tests.py --suite improvements-c --rebuild \
@@ -363,6 +370,8 @@ python3 test/run_tests.py --suite phase-b --rebuild \
 | `TUR3D02` | AWSoM energies use `deltaB²=mu0*w` and directions follow field polarity |
 | `TUR3D03` | proton/electron resonances below, inside, and above the band apply the selected policy exactly |
 | `TUR3D04` | incomplete waves fail unless ballistic mode is explicit and typed |
+| `TUR3D05` | named spectral slopes, cross helicity, and directional SI wave-energy conversion agree |
+| `TUR3D06` | direct wave-energy normalization follows its declared radial power and supplies mandatory total/directional Tecplot columns |
 | `COEF3D01` | Dmumu/mean-free-path/kappa conversions round-trip below 1e-12 over six decades |
 | `COEF3D02` | srcSEP3D bridge and direct `sep_common` Jokipii calls are bitwise identical |
 | `COEF3D06` | centered and both one-sided stencils recover an exact nonzero linear `dKappa_parallel/ds`; no usable neighbor fails closed |
@@ -480,12 +489,12 @@ equations, algorithms, case roles, and evidence schemas.
 | `r0` | R0 source/ABI/production gates plus RUN3D01, LAY01, and BLD01 |
 | `r1` | canonical shared-archive audit, relocated SWCME suite, and frozen common kernels |
 | `r2` | LIFE3D01–LIFE3D04 immutable configuration and lifecycle gates |
-| `improvements-c` | CFG3D01–CFG3D08 production configuration, preflight, finite-line/schema-3 initialization, and species-binding gates |
+| `improvements-c` | CFG3D01–CFG3D10 production configuration, preflight, finite-line/schema-3 initialization, species/turbulence selection, and CME linkage gates |
 | `improvements-r` | R3D01–R3D09 production runtime integration gates |
 | `improvements-v` | V1D01–05 controlled physics, V2D01 true parity, and V5D01 governance |
 | `phase-m` | MSH3D01–MSH3D11 mesh/storage and initialization-output gates |
 | `phase-b` | BGP3D01–06 and SNAP3D01–08 background/snapshot gates |
-| `phase-t` | TUR3D01–04, COEF3D01–02, and COEF3D06 turbulence/coefficient gates |
+| `phase-t` | TUR3D01–06, COEF3D01–02, and COEF3D06 turbulence/coefficient gates |
 | `phase-p` | COEF3D03–05, PRK3D01–08, FTE3D01–07, RNG3D01–03 |
 | `phase-a` | ADP3D01, NAT3D04–05/08, SHK3D01–04 |
 | `phase-o` | NAT3D06–07 and RST3D01–03 |
@@ -567,7 +576,7 @@ invoke that exact linked callback, following the srcSEP pattern.
 | unknown test/group | use `--list`; unknown selectors are usage errors |
 | report missing after a C++ test | treat as ERROR; inspect verbose subprocess output |
 
-`CFG3D06`–`CFG3D08`, `MSH3D10`–`MSH3D11`, and `R3D08`–`R3D09` are routine C++ entries
+`CFG3D06`–`CFG3D10`, `TUR3D05`–`TUR3D06`, `MSH3D10`–`MSH3D11`, and `R3D08`–`R3D09` are routine C++ entries
 in the runner manifest.
 `CFG3D06` uses live negative controls for an omitted version-2 key and an
 initial point inconsistent with the inner sphere. `MSH3D10` constructs the
@@ -583,6 +592,10 @@ extend the gates; none of the earlier CFG3D/MSH3D thresholds or negative
 controls was relaxed.
 `CFG3D08` exercises complete canonical input and three live schema-3 negative
 controls. `MSH3D11` creates, verifies, and removes a real Tecplot product.
+`CFG3D09` and `TUR3D06` exercise both pre-existing turbulence-amplitude
+prescriptions and the public total wave-energy output contract. `CFG3D10`
+changes CME radius/direction independently to prove the optional launch-apex
+link fails closed rather than moving the Parker tube implicitly.
 `R3D08` constructs the canonical provider, checks delayed activation and the
 full surface, and proves deterministic exact-count allocation plus downstream
 no-cap behavior.

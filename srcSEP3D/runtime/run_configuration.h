@@ -35,6 +35,21 @@ enum class TurbulenceAuthority { Prescribed, Swmf };
 // inertial-range slope describes them" and leaves the SWMF/AWSoM import path
 // unchanged.
 enum class PrescribedTurbulenceModel { PowerLaw, Kolmogorov, Kraichnan };
+// The spectral slope and the pre-existing wave-amplitude prescription are
+// independent physical choices.  ConstantDeltaBOverB reproduces the original
+// local closure deltaB=a|B|.  WaveEnergyPowerLaw instead makes the total
+// Alfvén-wave energy density itself authoritative at a declared reference
+// radius and applies only the explicitly supplied radial exponent.
+enum class PrescribedTurbulenceAmplitudeModel {
+  ConstantDeltaBOverB,
+  WaveEnergyPowerLaw
+};
+// A finite Parker centreline can either use independently reviewed Cartesian
+// coordinates or be tied explicitly to the canonical SWCME launch-apex point.
+// The linked mode is resolved by configuration_io.cpp after SWCME validates
+// cme.launch_radius and geometry.cme_direction; no coordinate is inferred from
+// a textual assignment before that canonical resolution succeeds.
+enum class ParkerSpiralStartMode { Explicit, CmeLaunchPoint };
 // Runtime records remain independent of SWCME headers.  configuration_io.cpp
 // translates the canonical SWCME enum into this neutral value after SWCME has
 // validated the complete input layer.
@@ -72,6 +87,8 @@ enum class EnergyChannelSpacing { Logarithmic, Linear };
 const char* Name(BackgroundAuthority value);
 const char* Name(TurbulenceAuthority value);
 const char* Name(PrescribedTurbulenceModel value);
+const char* Name(PrescribedTurbulenceAmplitudeModel value);
+const char* Name(ParkerSpiralStartMode value);
 const char* Name(SolarWindThermodynamicClosure value);
 const char* Name(ShockAuthority value);
 const char* Name(TransportModel value);
@@ -254,6 +271,8 @@ struct RunConfiguration3DOptions {
   TurbulenceAuthority turbulence = TurbulenceAuthority::Prescribed;
   PrescribedTurbulenceModel prescribedTurbulenceModel =
       PrescribedTurbulenceModel::Kolmogorov;
+  PrescribedTurbulenceAmplitudeModel prescribedTurbulenceAmplitudeModel =
+      PrescribedTurbulenceAmplitudeModel::ConstantDeltaBOverB;
   ShockAuthority shock = ShockAuthority::None;
   TransportModel transport = TransportModel::Parker3D;
   DomainPreset domain = DomainPreset::OneAu;
@@ -269,6 +288,14 @@ struct RunConfiguration3DOptions {
   // replaces it transactionally with the resolved domain/source defaults.
   Core::Vec3 parkerSpiralOriginM = {0.0, 0.0, 0.0};
   Core::Vec3 parkerSpiralInitialPointM = {0.0, 0.0, 0.0};
+  ParkerSpiralStartMode parkerSpiralStartMode =
+      ParkerSpiralStartMode::Explicit;
+  // Parser-derived canonical SWCME launch-apex location.  It is populated
+  // only for CmeLaunchPoint mode and then revalidated by Create().  These
+  // fields let the AMPS-independent immutable factory enforce the linkage
+  // without depending on SWCME headers or reparsing raw text.
+  bool cmeLaunchPointResolved = false;
+  Core::Vec3 cmeLaunchPointM = {0.0, 0.0, 0.0};
   double parkerSpiralLengthM = 0.0;
   std::uint64_t parkerSpiralPointCount = 0;
 
@@ -342,6 +369,12 @@ struct RunConfiguration3DOptions {
   // SWMF supplies w+/w- amplitudes, but it still uses these declared spectral
   // bounds unless a future coupled interface publishes a resolved spectrum.
   double prescribedDeltaBOverB = 0.3;
+  // Used only by WaveEnergyPowerLaw.  The value is the total directional sum
+  // w_+ + w_- [J m^-3] at turbulenceReferenceRadiusM; the radial law is
+  // w(r)=w_ref*(r_ref/r)^p.  Complete input sets the inactive normalization to
+  // zero so no reviewed number is silently ignored by the selected model.
+  double turbulenceWaveEnergyAtReferenceJPerM3 = 0.0;
+  double turbulenceWaveEnergyRadialExponent = 0.0;
   // sigma_c=(deltaB_+^2-deltaB_-^2)/(deltaB_+^2+deltaB_-^2).  Requiring this
   // physical imbalance in complete input avoids an undocumented 50/50 split.
   double turbulenceNormalizedCrossHelicity = 0.0;
@@ -444,9 +477,11 @@ struct StorageLayout {
   std::size_t fieldAlignedStrainOffset = kNoOffset;  // 1 double
   std::size_t magneticGradientOffset = kNoOffset;    // optional 9 doubles
   std::size_t velocityGradientOffset = kNoOffset;    // optional 9 doubles
-  // Optional directional magnetic wave variances [T^2], along/against +B.
-  // The historic member name is retained as a storage-ABI label.
-  std::size_t waveEnergyOffset = kNoOffset;          // optional 2 doubles
+  // Mandatory directional magnetic wave variances [T^2], along/against +B.
+  // The historic member name is retained as a storage-ABI label.  Both
+  // prescribed and imported authorities reserve these two values so the
+  // initialization product always contains the wave state used by scattering.
+  std::size_t waveEnergyOffset = kNoOffset;          // 2 doubles
   std::size_t cellAssociatedBytes = 0;
   std::size_t samplingBytesPerCell = 0;
   std::string fingerprint;

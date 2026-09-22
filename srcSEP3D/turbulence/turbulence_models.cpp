@@ -98,6 +98,16 @@ const char* PrescribedSpectrumModelName(PrescribedSpectrumModel model) {
   return "unknown";
 }
 
+const char* PrescribedAmplitudeModelName(PrescribedAmplitudeModel model) {
+  switch (model) {
+    case PrescribedAmplitudeModel::ConstantDeltaBOverB:
+      return "constant-delta-b-over-b";
+    case PrescribedAmplitudeModel::WaveEnergyPowerLaw:
+      return "wave-energy-power-law";
+  }
+  return "unknown";
+}
+
 PrescribedKolmogorovProvider::PrescribedKolmogorovProvider(
     const PrescribedKolmogorovConfiguration& configuration)
     : configuration_(configuration) {
@@ -115,8 +125,16 @@ Core::Status PrescribedKolmogorovProvider::Validate() const {
       configuration_.spectrumModel != PrescribedSpectrumModel::Kraichnan) {
     return Invalid("prescribed turbulence model is unknown");
   }
+  if (configuration_.amplitudeModel !=
+          PrescribedAmplitudeModel::ConstantDeltaBOverB &&
+      configuration_.amplitudeModel !=
+          PrescribedAmplitudeModel::WaveEnergyPowerLaw) {
+    return Invalid("prescribed turbulence amplitude model is unknown");
+  }
   const double values[] = {
       configuration_.deltaBOverB, configuration_.normalizedCrossHelicity,
+      configuration_.waveEnergyAtReferenceJPerM3,
+      configuration_.waveEnergyRadialExponent,
       configuration_.referenceRadiusM,
       configuration_.kMinAtReferencePerM,
       configuration_.kMaxAtReferencePerM,
@@ -130,8 +148,7 @@ Core::Status PrescribedKolmogorovProvider::Validate() const {
     if (!std::isfinite(value))
       return Invalid("prescribed turbulence configuration is not finite");
   }
-  if (configuration_.deltaBOverB <= 0.0 ||
-      configuration_.normalizedCrossHelicity < -1.0 ||
+  if (configuration_.normalizedCrossHelicity < -1.0 ||
       configuration_.normalizedCrossHelicity > 1.0 ||
       configuration_.referenceRadiusM <= 0.0 ||
       configuration_.kMinAtReferencePerM <= 0.0 ||
@@ -142,6 +159,19 @@ Core::Status PrescribedKolmogorovProvider::Validate() const {
       configuration_.validityCadenceS <= 0.0 ||
       configuration_.coordinateFrame.empty()) {
     return Invalid("prescribed turbulence scales or spectral band are invalid");
+  }
+  if (configuration_.amplitudeModel ==
+          PrescribedAmplitudeModel::ConstantDeltaBOverB) {
+    if (configuration_.deltaBOverB <= 0.0 ||
+        configuration_.waveEnergyAtReferenceJPerM3 != 0.0 ||
+        configuration_.waveEnergyRadialExponent != 0.0) {
+      return Invalid("constant-delta-b-over-b requires a positive ratio and "
+                     "zero inactive wave-energy parameters");
+    }
+  } else if (configuration_.deltaBOverB != 0.0 ||
+             configuration_.waveEnergyAtReferenceJPerM3 <= 0.0) {
+    return Invalid("wave-energy-power-law requires zero inactive ratio and a "
+                   "positive reference energy density");
   }
   if ((configuration_.spectrumModel ==
            PrescribedSpectrumModel::Kolmogorov &&
@@ -210,7 +240,23 @@ TurbulenceSample PrescribedKolmogorovProvider::Evaluate(
                          "prescribed turbulence radius is invalid", metadata_);
 
   const double radiusRatio = configuration_.referenceRadiusM / radius;
-  sample.deltaB2T2 = std::pow(configuration_.deltaBOverB * background.absB, 2);
+  if (configuration_.amplitudeModel ==
+      PrescribedAmplitudeModel::ConstantDeltaBOverB) {
+    sample.deltaB2T2 =
+        std::pow(configuration_.deltaBOverB * background.absB, 2);
+  } else {
+    const double totalWaveEnergyJPerM3 =
+        configuration_.waveEnergyAtReferenceJPerM3 *
+        std::pow(radiusRatio, configuration_.waveEnergyRadialExponent);
+    if (!FinitePositive(totalWaveEnergyJPerM3)) {
+      return MissingSample(MissingTurbulencePolicy::Fail,
+                           "prescribed wave-energy radial law is invalid",
+                           metadata_);
+    }
+    // AWSoM's total Alfvén-wave-energy convention is used consistently for
+    // prescribed waves: magnetic equipartition gives deltaB^2=mu0*w.
+    sample.deltaB2T2 = kMu0 * totalWaveEnergyJPerM3;
+  }
   // The normalized cross helicity fixes the directional partition without an
   // implicit balanced-wave assumption.  The algebra conserves total magnetic
   // variance exactly for every sigma_c in [-1,1].
@@ -247,10 +293,16 @@ TurbulenceSample PrescribedKolmogorovProvider::Evaluate(
 std::string PrescribedKolmogorovProvider::ResolvedManifest() const {
   std::ostringstream output;
   output << std::setprecision(17) << std::scientific
-         << "prescribed-power-law-v2"
+         << "prescribed-power-law-v3"
          << ";model="
          << PrescribedSpectrumModelName(configuration_.spectrumModel)
+         << ";amplitude_model="
+         << PrescribedAmplitudeModelName(configuration_.amplitudeModel)
          << ";deltaB_over_B=" << configuration_.deltaBOverB
+         << ";wave_energy_reference_J_m-3="
+         << configuration_.waveEnergyAtReferenceJPerM3
+         << ";wave_energy_radial_exponent="
+         << configuration_.waveEnergyRadialExponent
          << ";normalized_cross_helicity="
          << configuration_.normalizedCrossHelicity
          << ";reference_m=" << configuration_.referenceRadiusM

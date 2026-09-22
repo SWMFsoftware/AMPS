@@ -142,6 +142,25 @@ const char* Name(PrescribedTurbulenceModel value) {
   return "unknown";
 }
 
+const char* Name(PrescribedTurbulenceAmplitudeModel value) {
+  switch (value) {
+    case PrescribedTurbulenceAmplitudeModel::ConstantDeltaBOverB:
+      return "constant-delta-b-over-b";
+    case PrescribedTurbulenceAmplitudeModel::WaveEnergyPowerLaw:
+      return "wave-energy-power-law";
+  }
+  return "unknown";
+}
+
+const char* Name(ParkerSpiralStartMode value) {
+  switch (value) {
+    case ParkerSpiralStartMode::Explicit: return "explicit";
+    case ParkerSpiralStartMode::CmeLaunchPoint:
+      return "cme-launch-point";
+  }
+  return "unknown";
+}
+
 const char* Name(SolarWindThermodynamicClosure value) {
   switch (value) {
     case SolarWindThermodynamicClosure::ProtonOnly: return "proton-only";
@@ -472,6 +491,30 @@ Core::Status RunConfiguration3D::Create(
       normalized.parkerSpiralPointCount > 10000000ULL) {
     return Invalid("finite Parker spiral origin, length, or point count is invalid");
   }
+  if (normalized.parkerSpiralStartMode != ParkerSpiralStartMode::Explicit &&
+      normalized.parkerSpiralStartMode !=
+          ParkerSpiralStartMode::CmeLaunchPoint) {
+    return Invalid("Parker spiral start mode is unknown");
+  }
+  if (normalized.parkerSpiralStartMode ==
+      ParkerSpiralStartMode::CmeLaunchPoint) {
+    if (!normalized.cmeLaunchPointResolved ||
+        !FiniteVector(normalized.cmeLaunchPointM)) {
+      return Invalid("CME-linked Parker start has no canonically resolved "
+                     "SWCME launch-apex point");
+    }
+    const double linkageScale = std::max(
+        1.0, std::max(normalized.innerRadiusM,
+                      normalized.cmeLaunchPointM.Norm()));
+    if ((normalized.parkerSpiralInitialPointM -
+         normalized.cmeLaunchPointM).Norm() > 1.0e-12 * linkageScale) {
+      return Invalid("CME-linked Parker start differs from the canonical "
+                     "SWCME launch-apex point");
+    }
+  } else if (normalized.cmeLaunchPointResolved) {
+    return Invalid("an explicit Parker start must not carry a resolved CME "
+                   "launch-apex linkage");
+  }
   const Core::Vec3 lineSource =
       normalized.parkerSpiralInitialPointM - normalized.parkerSpiralOriginM;
   const double sourceRadius = lineSource.Norm();
@@ -606,8 +649,15 @@ Core::Status RunConfiguration3D::Create(
           PrescribedTurbulenceModel::Kraichnan) {
     return Invalid("prescribed turbulence model is unknown");
   }
+  if (normalized.prescribedTurbulenceAmplitudeModel !=
+          PrescribedTurbulenceAmplitudeModel::ConstantDeltaBOverB &&
+      normalized.prescribedTurbulenceAmplitudeModel !=
+          PrescribedTurbulenceAmplitudeModel::WaveEnergyPowerLaw) {
+    return Invalid("prescribed turbulence amplitude model is unknown");
+  }
   if (!std::isfinite(normalized.prescribedDeltaBOverB) ||
-      normalized.prescribedDeltaBOverB <= 0.0 ||
+      !std::isfinite(normalized.turbulenceWaveEnergyAtReferenceJPerM3) ||
+      !std::isfinite(normalized.turbulenceWaveEnergyRadialExponent) ||
       !std::isfinite(normalized.turbulenceNormalizedCrossHelicity) ||
       normalized.turbulenceNormalizedCrossHelicity < -1.0 ||
       normalized.turbulenceNormalizedCrossHelicity > 1.0 ||
@@ -628,6 +678,24 @@ Core::Status RunConfiguration3D::Create(
       normalized.turbulenceValidityCadenceS <= 0.0) {
     return Invalid("turbulence amplitude, imbalance, radial scaling, band, "
                    "index, correlation length, or cadence is invalid");
+  }
+  // Each amplitude closure has exactly one active normalization.  Requiring a
+  // zero sentinel for the inactive branch prevents a complete input deck from
+  // carrying a plausible-looking number that does not affect the run.
+  if (normalized.prescribedTurbulenceAmplitudeModel ==
+          PrescribedTurbulenceAmplitudeModel::ConstantDeltaBOverB) {
+    if (normalized.prescribedDeltaBOverB <= 0.0 ||
+        normalized.turbulenceWaveEnergyAtReferenceJPerM3 != 0.0 ||
+        normalized.turbulenceWaveEnergyRadialExponent != 0.0) {
+      return Invalid("constant-delta-b-over-b turbulence requires positive "
+                     "delta_b_over_b and zero inactive wave-energy inputs");
+    }
+  } else {
+    if (normalized.prescribedDeltaBOverB != 0.0 ||
+        normalized.turbulenceWaveEnergyAtReferenceJPerM3 <= 0.0) {
+      return Invalid("wave-energy-power-law turbulence requires zero inactive "
+                     "delta_b_over_b and positive reference wave energy");
+    }
   }
   // Kolmogorov and Kraichnan are named physical closures, not aliases that
   // silently overwrite a contradictory number.  The explicit index remains
@@ -826,7 +894,7 @@ Core::Status RunConfiguration3D::Create(
   const StorageLayout layout = BuildLayout(normalized);
   std::ostringstream physics;
   physics << std::setprecision(17) << std::scientific
-          << "sep3d-physics-v5"
+          << "sep3d-physics-v6"
           << ";intent=" << Name(normalized.intent)
           << ";background=" << Name(normalized.background)
           << ";turbulence=" << Name(normalized.turbulence)
@@ -837,12 +905,22 @@ Core::Status RunConfiguration3D::Create(
           << ";inner_boundary=" << Name(normalized.innerBoundary)
           << ";outer_boundary=" << Name(normalized.outerBoundary)
           << ";frame=" << normalized.coordinateFrame
+          << ";parker_line_start_mode="
+          << Name(normalized.parkerSpiralStartMode)
           << ";parker_line_origin=" << normalized.parkerSpiralOriginM.x << ','
           << normalized.parkerSpiralOriginM.y << ','
           << normalized.parkerSpiralOriginM.z
           << ";parker_line_initial=" << normalized.parkerSpiralInitialPointM.x << ','
           << normalized.parkerSpiralInitialPointM.y << ','
           << normalized.parkerSpiralInitialPointM.z
+          << ";cme_launch_point_resolved="
+          << normalized.cmeLaunchPointResolved;
+  if (normalized.cmeLaunchPointResolved) {
+    physics << ";cme_launch_point_m=" << normalized.cmeLaunchPointM.x << ','
+            << normalized.cmeLaunchPointM.y << ','
+            << normalized.cmeLaunchPointM.z;
+  }
+  physics
           << ";parker_line_length_m=" << normalized.parkerSpiralLengthM
           << ";parker_line_points=" << normalized.parkerSpiralPointCount
           << ";inner_m=" << normalized.innerRadiusM
@@ -931,7 +1009,13 @@ Core::Status RunConfiguration3D::Create(
           << ";species_weight=" << normalized.species.macroparticleWeight
           << ";prescribed_turbulence_model="
           << Name(normalized.prescribedTurbulenceModel)
+          << ";prescribed_turbulence_amplitude_model="
+          << Name(normalized.prescribedTurbulenceAmplitudeModel)
           << ";deltaB_over_B=" << normalized.prescribedDeltaBOverB
+          << ";turbulence_wave_energy_reference_J_m-3="
+          << normalized.turbulenceWaveEnergyAtReferenceJPerM3
+          << ";turbulence_wave_energy_radial_exponent="
+          << normalized.turbulenceWaveEnergyRadialExponent
           << ";turbulence_sigma_c="
           << normalized.turbulenceNormalizedCrossHelicity
           << ";turbulence_reference_m="

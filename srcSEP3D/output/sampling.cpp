@@ -72,6 +72,86 @@ std::size_t Bin(const std::vector<double>& edges, double value) {
 
 }  // namespace
 
+const char* TurbulenceTecplotVariableList() {
+  // Keep names and order centralized with the arithmetic below.  This avoids
+  // the former situation in which turbulence existed in cell storage but an
+  // output callback condition could omit its public columns.
+  return
+      ", \"turbulence_deltaB_squared_T2\""
+      ", \"turbulence_deltaB_plus_squared_T2\""
+      ", \"turbulence_deltaB_minus_squared_T2\""
+      ", \"turbulence_wave_energy_density_J_per_m3\""
+      ", \"turbulence_wave_energy_plus_J_per_m3\""
+      ", \"turbulence_wave_energy_minus_J_per_m3\"";
+}
+
+Core::Status PrepareTurbulenceTecplotPresentation(
+    double deltaBPlus2T2, double deltaBMinus2T2,
+    TurbulenceTecplotPresentation* result) {
+  if (result == nullptr)
+    return Invalid("turbulence Tecplot presentation output is null");
+  if (!std::isfinite(deltaBPlus2T2) ||
+      !std::isfinite(deltaBMinus2T2) ||
+      deltaBPlus2T2 < 0.0 || deltaBMinus2T2 < 0.0) {
+    return Invalid("directional turbulence variance is negative or non-finite");
+  }
+
+  constexpr double magneticPermeabilityVacuum =
+      4.0e-7 * Core::Const::kPi;
+  TurbulenceTecplotPresentation candidate;
+  candidate.deltaBPlus2T2 = deltaBPlus2T2;
+  candidate.deltaBMinus2T2 = deltaBMinus2T2;
+  candidate.deltaB2T2 = deltaBPlus2T2 + deltaBMinus2T2;
+  candidate.waveEnergyPlusJPerM3 =
+      deltaBPlus2T2 / magneticPermeabilityVacuum;
+  candidate.waveEnergyMinusJPerM3 =
+      deltaBMinus2T2 / magneticPermeabilityVacuum;
+  candidate.waveEnergyJPerM3 = candidate.deltaB2T2 /
+      magneticPermeabilityVacuum;
+  const double values[] = {
+      candidate.deltaB2T2, candidate.waveEnergyJPerM3,
+      candidate.waveEnergyPlusJPerM3,
+      candidate.waveEnergyMinusJPerM3};
+  for (double value : values) {
+    if (!std::isfinite(value))
+      return Invalid("turbulence Tecplot conversion overflowed");
+  }
+  *result = candidate;
+  return Core::Status::OK();
+}
+
+Core::Status InterpolateStaticCenterState(
+    const double* const* stencilValues, const double* coefficients,
+    std::size_t stencilSize, std::size_t valueCount, double* result) {
+  if (stencilValues == nullptr || coefficients == nullptr || result == nullptr)
+    return Invalid("static center-state interpolation received a null buffer");
+  if (stencilSize == 0 || valueCount == 0)
+    return Invalid("static center-state interpolation received an empty stencil");
+
+  std::fill(result, result + valueCount, 0.0);
+  for (std::size_t stencilIndex = 0; stencilIndex < stencilSize;
+       ++stencilIndex) {
+    if (stencilValues[stencilIndex] == nullptr ||
+        !std::isfinite(coefficients[stencilIndex])) {
+      return Invalid(
+          "static center-state interpolation stencil is null or non-finite");
+    }
+    const double coefficient = coefficients[stencilIndex];
+    for (std::size_t valueIndex = 0; valueIndex < valueCount; ++valueIndex) {
+      const double source = stencilValues[stencilIndex][valueIndex];
+      if (!std::isfinite(source))
+        return Invalid(
+            "static center-state interpolation source is non-finite");
+      result[valueIndex] += coefficient * source;
+    }
+  }
+  for (std::size_t valueIndex = 0; valueIndex < valueCount; ++valueIndex) {
+    if (!std::isfinite(result[valueIndex]))
+      return Invalid("static center-state interpolation overflowed");
+  }
+  return Core::Status::OK();
+}
+
 TecplotCellPresentation PrepareTecplotCellPresentation(
     const std::vector<double>& storedBackgroundValues,
     bool insidePhysicalShell, long int particleSamplingWindowLength,

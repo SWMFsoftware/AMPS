@@ -92,6 +92,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("CFG3D07", "CFG3D", "Complete compiled AMPS species binding", "cpp"),
     TestDefinition("CFG3D08", "CFG3D", "Complete schema-3 initialization", "cpp"),
     TestDefinition("CFG3D09", "CFG3D", "Background and turbulence selection", "cpp"),
+    TestDefinition("CFG3D10", "CFG3D", "CME and Parker start linkage", "cpp"),
     TestDefinition("MSH3D01", "MSH3D", "Resolution bounds", "cpp"),
     TestDefinition("MSH3D02", "MSH3D", "Radial closed forms", "cpp"),
     TestDefinition("MSH3D03", "MSH3D", "Parker tube centreline", "cpp"),
@@ -123,6 +124,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("TUR3D03", "TUR3D", "Resonance bounds", "cpp"),
     TestDefinition("TUR3D04", "TUR3D", "Missing turbulence policy", "cpp"),
     TestDefinition("TUR3D05", "TUR3D", "Selectable prescribed models", "cpp"),
+    TestDefinition("TUR3D06", "TUR3D", "Amplitude models and Tecplot energy", "cpp"),
     TestDefinition("COEF3D01", "COEF3D", "Coefficient conversions", "cpp"),
     TestDefinition("COEF3D02", "COEF3D", "Shared coefficient kernel", "cpp"),
     TestDefinition("COEF3D03", "COEF3D", "Parallel tensor assembly", "cpp"),
@@ -568,12 +570,17 @@ def _check_initialized_native_background(definition: TestDefinition) -> Result:
     """Guard the data-bearing initialization product's ordering contract.
 
     A linked AMPS qualification run remains the numerical authority, but this
-    source gate catches the regression that caused the original zero native
-    Bx/By/Bz columns: filling only srcSEP3D's private cache and invoking AMPS'
-    writer before its independent DATAFILE buffer and halos were installed.
+    source gate catches both output-bridge regressions seen in production:
+    filling only srcSEP3D's private cache left native Bx/By/Bz at zero, while
+    omitting an InterpolateCenterNode callback left application-owned
+    turbulence at zero in AMPS' temporary vertex nodes.
     """
     started = time.monotonic()
     main_lib = (ROOT / "main_lib.cpp").read_text(encoding="utf-8")
+    output_sampling = (ROOT / "output" / "sampling.cpp").read_text(
+        encoding="utf-8")
+    run_configuration = (ROOT / "runtime" / "run_configuration.cpp").read_text(
+        encoding="utf-8")
     required = (
         "PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin",
         "Offset::PlasmaNumberDensity",
@@ -583,14 +590,33 @@ def _check_initialized_native_background(definition: TestDefinition) -> Result:
         "Offset::MagneticField",
         "Offset::ElectricField",
         "Offset::MagneticFieldGradient",
+        "ZeroApplicationStateOnOwnedCells();",
         "ZeroNativeAmpsBackgroundOnOwnedCells();",
         "StoreNativeAmpsBackground(cells[i].cell, snapshot->samples()[i]);",
+        "StoreTurbulenceAtCellCenter(cells[i].cell, waves)",
         "CompleteNativeAmpsBackgroundInstallation();",
+        "PIC::Mesh::InterpolateCenterNode.push_back(",
+        "InterpolateInitializationCellData",
         "WriteInitializationDataTecplotAfterBackground();",
         "outputMeshDataTECPLOT(",
         "radiusM >= innerRadiusM && radiusM <= outerRadiusM",
+        "TurbulenceTecplotVariableList()",
+        "PrepareTurbulenceTecplotPresentation(",
+        "mandatory directional turbulence storage is absent",
     )
     missing = [token for token in required if token not in main_lib]
+    required_output = (
+        "turbulence_wave_energy_density_J_per_m3",
+        "turbulence_wave_energy_plus_J_per_m3",
+        "turbulence_wave_energy_minus_J_per_m3",
+        "candidate.waveEnergyJPerM3 = candidate.deltaB2T2 /",
+        "Core::Status InterpolateStaticCenterState(",
+    )
+    missing.extend(token for token in required_output
+                   if token not in output_sampling)
+    if "AppendField(2, &cursor, &layout.waveEnergyOffset);" not in \
+            run_configuration:
+        missing.append("unconditional wave-energy storage allocation")
     if missing:
         return Result(
             definition.test_id, definition.group, "FAIL",
@@ -606,8 +632,10 @@ def _check_initialized_native_background(definition: TestDefinition) -> Result:
         initialize = main_lib[main_lib.index("void amps_init()"):
                               main_lib.index("int amps_time_step()")]
         fill_order = [
+            fill.index("ZeroApplicationStateOnOwnedCells();"),
             fill.index("ZeroNativeAmpsBackgroundOnOwnedCells();"),
             fill.index("StoreNativeAmpsBackground("),
+            fill.index("StoreTurbulenceAtCellCenter("),
             fill.rindex("CompleteNativeAmpsBackgroundInstallation();"),
         ]
         initialize_order = [
@@ -623,7 +651,7 @@ def _check_initialized_native_background(definition: TestDefinition) -> Result:
     if fill_order != sorted(fill_order) or initialize_order != sorted(initialize_order):
         return Result(
             definition.test_id, definition.group, "FAIL",
-            "native DATAFILE zero/fill/halo sequence or final writer call is out of order",
+            "application/native zero/fill/turbulence/halo sequence or final writer call is out of order",
             time.monotonic() - started, [])
     if "gNativeAmpsBackgroundReady" not in writer or \
        "outputMeshDataTECPLOT(" not in writer:
@@ -634,8 +662,10 @@ def _check_initialized_native_background(definition: TestDefinition) -> Result:
 
     return Result(
         definition.test_id, definition.group, "PASS",
-        "validated background is mirrored to native AMPS fields, halo-exchanged, "
-        "and checked before the final data-bearing initialization output",
+        "validated background/turbulence are stored at physical center nodes, "
+        "the application slice participates in AMPS vertex interpolation, wave "
+        "energy is emitted as mandatory total/directional SI columns, halos are "
+        "exchanged, and completion is checked before initialization output",
         time.monotonic() - started, [])
 
 

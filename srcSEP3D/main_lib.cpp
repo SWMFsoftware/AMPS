@@ -441,6 +441,71 @@ void LoadBytes(PIC::Mesh::cDataCenterNode* cell, std::size_t offset,
               bytes);
 }
 
+// AMPS writes a FEBRICK zone at mesh vertices.  Its writer obtains every
+// vertex value by creating a temporary cDataCenterNode and calling
+// cDataCenterNode::Interpolate() with the surrounding physical centre nodes.
+// That AMPS method knows how to interpolate built-in particle sampling and
+// DATAFILE fields, but deliberately knows nothing about static bytes requested
+// by an application.  Without this callback, the real cells contain the
+// initialized srcSEP3D turbulence state while the temporary node printed by
+// Tecplot retains allocation-time zeros.
+//
+// Registering this callback before AMPS freezes the centre-node layout makes
+// the complete srcSEP3D static slice participate in the same interpolation as
+// the native IMF/plasma fields.  The frozen slice consists only of doubles,
+// so background primitives, optional gradients, and deltaB_+/-^2 are
+// interpolated together and remain registered at every output vertex.
+void InterpolateInitializationCellData(
+    PIC::Mesh::cDataCenterNode** interpolationList,
+    double* interpolationCoefficients, int interpolationCount,
+    PIC::Mesh::cDataCenterNode* destinationNode) {
+  const std::size_t bytes =
+      Configuration().storage_layout().cellAssociatedBytes;
+  if (gStaticCellDataOffset < 0 || bytes == 0 ||
+      bytes % sizeof(double) != 0 || interpolationList == nullptr ||
+      interpolationCoefficients == nullptr || interpolationCount <= 0 ||
+      destinationNode == nullptr) {
+    StopWithStatus("srcSEP3D center-node interpolation",
+        SEP3D::Core::Status(SEP3D::Core::StatusCode::LayoutMismatch,
+            "AMPS requested interpolation before the frozen srcSEP3D "
+            "static center-node layout was available"));
+  }
+
+  const std::size_t valueCount = bytes / sizeof(double);
+  // The byte offset is owned by AMPS and is not assumed to satisfy C++ double
+  // alignment.  Copy each slice into aligned vector storage before doing
+  // floating-point arithmetic; StoreBytes/LoadBytes use memcpy for the same
+  // reason everywhere else at this boundary.
+  std::vector<double> alignedSources(
+      static_cast<std::size_t>(interpolationCount) * valueCount, 0.0);
+  std::vector<const double*> sourceValues(
+      static_cast<std::size_t>(interpolationCount), nullptr);
+  for (int index = 0; index < interpolationCount; ++index) {
+    if (interpolationList[index] == nullptr) {
+      StopWithStatus("srcSEP3D center-node interpolation",
+          SEP3D::Core::Status(SEP3D::Core::StatusCode::InvalidInput,
+              "AMPS supplied a null source center node"));
+    }
+    double* aligned = alignedSources.data() +
+        static_cast<std::size_t>(index) * valueCount;
+    std::memcpy(aligned,
+                interpolationList[index]->GetAssociatedDataBufferPointer() +
+                    gStaticCellDataOffset,
+                bytes);
+    sourceValues[static_cast<std::size_t>(index)] = aligned;
+  }
+  std::vector<double> interpolated(valueCount, 0.0);
+  const SEP3D::Core::Status status =
+      SEP3D::Output::InterpolateStaticCenterState(
+          sourceValues.data(), interpolationCoefficients,
+          sourceValues.size(), valueCount, interpolated.data());
+  if (!status.ok())
+    StopWithStatus("srcSEP3D center-node interpolation", status);
+  std::memcpy(destinationNode->GetAssociatedDataBufferPointer() +
+                  gStaticCellDataOffset,
+              interpolated.data(), bytes);
+}
+
 // Append names for every initialized srcSEP3D macroscopic field stored in the
 // AMPS center-node buffer. The block object itself appends the selected
 // species' local time step and particle weight, so the resulting file is a
@@ -464,11 +529,18 @@ void PrintInitializationVariableList(FILE* output, int dataSetNumber) {
     for (int row = 0; row < 3; ++row)
       for (int column = 0; column < 3; ++column)
         std::fprintf(output, ", \"gradU_%d%d_s-1\"", row, column);
-  if (layout.waveEnergyOffset != SEP3D::RuntimeModel::kNoOffset)
-    std::fprintf(output,
-                 ", \"deltaB_plus_squared_T2\", \"deltaB_minus_squared_T2\""
-                 ", \"wave_energy_plus_J_per_m3\""
-                 ", \"wave_energy_minus_J_per_m3\"");
+  // BuildLayout reserves directional wave variance for every authority.  The
+  // six public columns are therefore mandatory and include both the requested
+  // total turbulence wave-energy density and its field-aligned partition.
+  // Keeping the variable fragment in the AMPS-independent output module lets
+  // the standalone suite verify the exact output contract.
+  if (layout.waveEnergyOffset == SEP3D::RuntimeModel::kNoOffset) {
+    StopWithStatus("initialization turbulence output layout",
+        SEP3D::Core::Status(SEP3D::Core::StatusCode::LayoutMismatch,
+            "mandatory directional turbulence storage is absent"));
+  }
+  std::fprintf(output, "%s",
+               SEP3D::Output::TurbulenceTecplotVariableList());
   // These flags make the two independent empty-data cases machine-readable:
   // background_valid=0 identifies padding cells outside the heliocentric
   // shell, while particle_sample_present=0 identifies a cell/species with no
@@ -485,17 +557,16 @@ void PrintInitializationCellData(
     int centerNodeThread, PIC::Mesh::cDataCenterNode* centerNode) {
   (void)dataSetNumber;
   const auto& layout = Configuration().storage_layout();
-  // Seventeen mandatory physical values plus three final validity flags.
+  // Seventeen mandatory background values, six mandatory turbulence values,
+  // and three final validity flags.
   // Cells outside the declared heliocentric shell are allocated by the
   // enclosing Cartesian AMR cube but do not represent physical background
   // samples. Empty particle samples are valid and are marked independently.
-  std::size_t valueCount = 20;
+  std::size_t valueCount = 26;
   if (layout.magneticGradientOffset != SEP3D::RuntimeModel::kNoOffset)
     valueCount += 9;
   if (layout.velocityGradientOffset != SEP3D::RuntimeModel::kNoOffset)
     valueCount += 9;
-  if (layout.waveEnergyOffset != SEP3D::RuntimeModel::kNoOffset)
-    valueCount += 4;
   std::vector<double> values(valueCount, 0.0);
 
   const bool ownsNode = pipe == nullptr || pipe->ThisThread == centerNodeThread;
@@ -521,20 +592,26 @@ void PrintInitializationCellData(
       append(layout.magneticGradientOffset, 9);
     if (layout.velocityGradientOffset != SEP3D::RuntimeModel::kNoOffset)
       append(layout.velocityGradientOffset, 9);
-    if (layout.waveEnergyOffset != SEP3D::RuntimeModel::kNoOffset) {
-      // Cell storage keeps the two magnetic variances because the scattering
-      // kernel consumes them directly.  The initialization product also emits
-      // the physically requested Alfvén-wave energy densities using the same
-      // equipartition convention as AWSoM: w=deltaB^2/mu0.  Computing these two
-      // derived columns here avoids duplicating mutable cell state.
-      append(layout.waveEnergyOffset, 2);
-      values[cursor] = values[cursor - 2] /
-          kMagneticPermeabilityVacuum;
-      ++cursor;
-      values[cursor] = values[cursor - 2] /
-          kMagneticPermeabilityVacuum;
-      ++cursor;
+    if (layout.waveEnergyOffset == SEP3D::RuntimeModel::kNoOffset) {
+      StopWithStatus("initialization turbulence cell output",
+          SEP3D::Core::Status(SEP3D::Core::StatusCode::LayoutMismatch,
+              "mandatory directional turbulence storage is absent"));
     }
+    double variance[2] = {};
+    LoadBytes(centerNode, layout.waveEnergyOffset, variance, sizeof(variance));
+    SEP3D::Output::TurbulenceTecplotPresentation turbulence;
+    const SEP3D::Core::Status turbulenceStatus =
+        SEP3D::Output::PrepareTurbulenceTecplotPresentation(
+            variance[0], variance[1], &turbulence);
+    if (!turbulenceStatus.ok())
+      StopWithStatus("initialization turbulence cell output",
+                     turbulenceStatus);
+    values[cursor++] = turbulence.deltaB2T2;
+    values[cursor++] = turbulence.deltaBPlus2T2;
+    values[cursor++] = turbulence.deltaBMinus2T2;
+    values[cursor++] = turbulence.waveEnergyJPerM3;
+    values[cursor++] = turbulence.waveEnergyPlusJPerM3;
+    values[cursor++] = turbulence.waveEnergyMinusJPerM3;
 
     double position[3] = {};
     centerNode->GetX(position);
@@ -653,13 +730,14 @@ SEP3D::Core::Status ResolveLocalTransportImpl(
                         "no prepared turbulence provider is installed");
   Turbulence::TurbulenceSample waves =
       gInstalledTurbulence->Evaluate(positionM, background);
-  if (layout.waveEnergyOffset != RuntimeModel::kNoOffset) {
-    double variance[2];
-    LoadBytes(cell, layout.waveEnergyOffset, variance, sizeof(variance));
-    waves.deltaBPlus2T2 = variance[0];
-    waves.deltaBMinus2T2 = variance[1];
-    waves.deltaB2T2 = variance[0] + variance[1];
-  }
+  if (layout.waveEnergyOffset == RuntimeModel::kNoOffset)
+    return Core::Status(Core::StatusCode::LayoutMismatch,
+                        "mandatory directional turbulence storage is absent");
+  double variance[2];
+  LoadBytes(cell, layout.waveEnergyOffset, variance, sizeof(variance));
+  waves.deltaBPlus2T2 = variance[0];
+  waves.deltaBMinus2T2 = variance[1];
+  waves.deltaB2T2 = variance[0] + variance[1];
   if (!waves.status.usable() || !waves.valid) return waves.status;
   const Turbulence::LocalScatteringCoefficients coefficients =
       Turbulence::EvaluateLocalScattering(
@@ -780,6 +858,99 @@ void StoreBackground(PIC::Mesh::cDataCenterNode* cell,
   if (layout.velocityGradientOffset != SEP3D::RuntimeModel::kNoOffset)
     StoreBytes(cell, layout.velocityGradientOffset, sample.gradU.m,
                sizeof(sample.gradU.m));
+}
+
+// Give every owner-local interior cell a deterministic application state
+// before filling the physical heliocentric shell.  AMPS allocates a Cartesian
+// cube, while srcSEP3D's physical background occupies only the configured
+// spherical shell.  Explicitly zeroing the complete frozen slice makes the
+// nonphysical padding well-defined and, critically, gives the Tecplot
+// interpolation callback finite source values when a vertex stencil straddles
+// either spherical boundary.
+void ZeroApplicationStateOnOwnedCells() {
+  const std::size_t bytes =
+      Configuration().storage_layout().cellAssociatedBytes;
+  if (gStaticCellDataOffset < 0 || bytes == 0) {
+    StopWithStatus("srcSEP3D static center-node initialization",
+        SEP3D::Core::Status(SEP3D::Core::StatusCode::LayoutMismatch,
+            "the frozen application cell layout is not allocated"));
+  }
+  for (unsigned int blockIndex = 0;
+       blockIndex < PIC::DomainBlockDecomposition::nLocalBlocks;
+       ++blockIndex) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
+        PIC::DomainBlockDecomposition::BlockTable[blockIndex];
+    if (node == nullptr || node->block == nullptr) continue;
+    for (int k = 0; k < _BLOCK_CELLS_Z_; ++k)
+      for (int j = 0; j < _BLOCK_CELLS_Y_; ++j)
+        for (int i = 0; i < _BLOCK_CELLS_X_; ++i) {
+          PIC::Mesh::cDataCenterNode* cell = node->block->GetCenterNode(
+              PIC::Mesh::mesh->getCenterNodeLocalNumber(i, j, k));
+          if (cell == nullptr) continue;
+          std::memset(cell->GetAssociatedDataBufferPointer() +
+                          gStaticCellDataOffset,
+                      0, bytes);
+        }
+  }
+}
+
+// Store the directional magnetic variances used by the scattering kernel in
+// the application-owned center-node slice and immediately read them back.
+// This function is intentionally called only after the selected turbulence
+// provider has been prepared and before the associated-data halo exchange.
+// Thus one initialized value is authoritative for movers, interpolation, and
+// the initialization Tecplot product.
+double StoreTurbulenceAtCellCenter(
+    PIC::Mesh::cDataCenterNode* cell,
+    const SEP3D::Turbulence::TurbulenceSample& waves) {
+  using namespace SEP3D;
+  const std::size_t offset = Configuration().storage_layout().waveEnergyOffset;
+  if (cell == nullptr || offset == RuntimeModel::kNoOffset) {
+    StopWithStatus("turbulence cell storage",
+        Core::Status(Core::StatusCode::LayoutMismatch,
+            "mandatory directional turbulence center-node storage is absent"));
+  }
+  const double variance[2] = {
+      waves.deltaBPlus2T2, waves.deltaBMinus2T2};
+  const double total = variance[0] + variance[1];
+  if (!std::isfinite(variance[0]) || !std::isfinite(variance[1]) ||
+      !std::isfinite(total) || variance[0] < 0.0 || variance[1] < 0.0) {
+    StopWithStatus("turbulence cell storage",
+        Core::Status(Core::StatusCode::InvalidInput,
+            "provider returned negative or non-finite directional variance"));
+  }
+  const double comparisonScale = std::max(
+      std::numeric_limits<double>::min(),
+      std::max(std::fabs(total), std::fabs(waves.deltaB2T2)));
+  if (!std::isfinite(waves.deltaB2T2) ||
+      std::fabs(total - waves.deltaB2T2) >
+          128.0 * std::numeric_limits<double>::epsilon() * comparisonScale) {
+    StopWithStatus("turbulence cell storage",
+        Core::Status(Core::StatusCode::ConfigurationConflict,
+            "provider total variance disagrees with its directional partition"));
+  }
+  // Every accepted prescribed amplitude law has a strictly positive
+  // normalization and Parker/SWMF background validation requires |B|>0.
+  // Therefore an ordinary prescribed record cannot physically be zero.  A
+  // zero state remains legal only for an explicitly selected coupled
+  // ballistic/missing-data record, which carries waves.ballistic=true.
+  if (Configuration().options().turbulence ==
+          RuntimeModel::TurbulenceAuthority::Prescribed &&
+      !waves.ballistic && !(total > 0.0)) {
+    StopWithStatus("turbulence cell storage",
+        Core::Status(Core::StatusCode::BackgroundInvalid,
+            "prescribed turbulence evaluated to zero magnetic variance"));
+  }
+
+  StoreBytes(cell, offset, variance, sizeof(variance));
+  double readback[2] = {};
+  LoadBytes(cell, offset, readback, sizeof(readback));
+  if (readback[0] != variance[0] || readback[1] != variance[1]) {
+    StopWithStatus("turbulence cell storage",
+        Core::Status(Core::StatusCode::LayoutMismatch,
+            "directional turbulence variance failed center-node readback"));
+  }
+  return total;
 }
 
 // ---------------------------------------------------------------------------
@@ -1021,7 +1192,23 @@ MakePrescribedTurbulence() {
           SEP3D::Turbulence::PrescribedSpectrumModel::Kraichnan;
       break;
   }
+  switch (options.prescribedTurbulenceAmplitudeModel) {
+    case SEP3D::RuntimeModel::PrescribedTurbulenceAmplitudeModel::
+        ConstantDeltaBOverB:
+      model.amplitudeModel =
+          SEP3D::Turbulence::PrescribedAmplitudeModel::ConstantDeltaBOverB;
+      break;
+    case SEP3D::RuntimeModel::PrescribedTurbulenceAmplitudeModel::
+        WaveEnergyPowerLaw:
+      model.amplitudeModel =
+          SEP3D::Turbulence::PrescribedAmplitudeModel::WaveEnergyPowerLaw;
+      break;
+  }
   model.deltaBOverB = options.prescribedDeltaBOverB;
+  model.waveEnergyAtReferenceJPerM3 =
+      options.turbulenceWaveEnergyAtReferenceJPerM3;
+  model.waveEnergyRadialExponent =
+      options.turbulenceWaveEnergyRadialExponent;
   model.normalizedCrossHelicity =
       options.turbulenceNormalizedCrossHelicity;
   model.referenceRadiusM = options.turbulenceReferenceRadiusM;
@@ -1122,36 +1309,7 @@ void FillAndPublishBackground() {
         "installed SWMF snapshot generation differs from the checkpoint"));
   }
 
-  // DATAFILE owns a distinct native buffer used by AMPS' field accessor and
-  // Tecplot callback.  Clear it before the physical-cell pass so nonphysical
-  // Cartesian padding is finite and no byte from an earlier allocation can be
-  // presented as initialized background.
-  ZeroNativeAmpsBackgroundOnOwnedCells();
-  for (std::size_t i = 0; i < cells.size(); ++i) {
-    if (!SamePosition(snapshot->positions()[i], cells[i].positionM)) {
-      StopWithStatus("background cell mapping", Core::Status(
-          Core::StatusCode::LayoutMismatch,
-          "snapshot positions are not in deterministic owner-cell order"));
-    }
-    StoreBackground(cells[i].cell, snapshot->samples()[i]);
-    StoreNativeAmpsBackground(cells[i].cell, snapshot->samples()[i]);
-    gCellSampleIndex[cells[i].cell] = i;
-  }
-
-  RuntimeModel::Runtime& runtime = ApplicationRuntime();
   Core::Status status;
-  if (Configuration().options().background ==
-      RuntimeModel::BackgroundAuthority::AnalyticParker) {
-    RuntimeModel::StandaloneAdapter adapter;
-    status = adapter.Initialize(&runtime);
-    if (status.ok()) status = adapter.PublishSnapshot(&runtime, *snapshot);
-  } else {
-    RuntimeModel::SwmfAdapter adapter;
-    status = adapter.Initialize(&runtime);
-    if (status.ok()) status = adapter.PublishSnapshot(&runtime, *snapshot);
-  }
-  if (!status.ok()) StopWithStatus("background snapshot publication", status);
-
   std::shared_ptr<Turbulence::TurbulenceProvider> turbulence =
       gInstalledTurbulence;
   if (!turbulence) {
@@ -1176,19 +1334,103 @@ void FillAndPublishBackground() {
     status = turbulence->Prepare(snapshot->metadata().epochS);
   }
   if (!status.ok()) StopWithStatus("turbulence preparation", status);
+
+  // The application slice and AMPS' DATAFILE slice are independent regions of
+  // each center node.  Clear both before one joined physical-cell pass.  That
+  // pass is the correct initialization boundary: both providers are prepared,
+  // but neither the Runtime snapshot nor the halo-visible AMPS state has yet
+  // been advertised as complete.
+  ZeroApplicationStateOnOwnedCells();
+  ZeroNativeAmpsBackgroundOnOwnedCells();
+  gCellSampleIndex.clear();
+
+  unsigned long long localCellCount = 0;
+  unsigned long long localPositiveTurbulenceCount = 0;
+  double localMinimumVariance = std::numeric_limits<double>::infinity();
+  double localMaximumVariance = 0.0;
   for (std::size_t i = 0; i < cells.size(); ++i) {
+    if (!SamePosition(snapshot->positions()[i], cells[i].positionM)) {
+      StopWithStatus("background cell mapping", Core::Status(
+          Core::StatusCode::LayoutMismatch,
+          "snapshot positions are not in deterministic owner-cell order"));
+    }
     const Turbulence::TurbulenceSample waves = turbulence->Evaluate(
         cells[i].positionM, snapshot->samples()[i]);
     if (!waves.status.usable() || !waves.valid)
       StopWithStatus("turbulence cell evaluation", waves.status);
-    const std::size_t offset =
-        Configuration().storage_layout().waveEnergyOffset;
-    if (offset != RuntimeModel::kNoOffset) {
-      const double variance[2] = {
-          waves.deltaBPlus2T2, waves.deltaBMinus2T2};
-      StoreBytes(cells[i].cell, offset, variance, sizeof(variance));
+
+    // Prescribe background and turbulence to the same physical center-node
+    // object before it can be consumed by either movers or Tecplot.  Keeping
+    // these writes adjacent eliminates the former state in which the native
+    // plasma/IMF slice was populated but the application turbulence slice was
+    // still absent from AMPS' output interpolation path.
+    StoreBackground(cells[i].cell, snapshot->samples()[i]);
+    StoreNativeAmpsBackground(cells[i].cell, snapshot->samples()[i]);
+    const double totalVariance =
+        StoreTurbulenceAtCellCenter(cells[i].cell, waves);
+    gCellSampleIndex[cells[i].cell] = i;
+    ++localCellCount;
+    if (totalVariance > 0.0) {
+      ++localPositiveTurbulenceCount;
+      localMinimumVariance = std::min(localMinimumVariance, totalVariance);
+      localMaximumVariance = std::max(localMaximumVariance, totalVariance);
     }
   }
+
+  // Make a zero-filled prescribed mesh impossible to misreport as a completed
+  // initialization.  The count and range also provide a concise run-time
+  // diagnostic that can be compared with the Tecplot columns.  Coupled AWSoM
+  // may explicitly select ballistic missing-data handling; those zero cells
+  // remain visible through the positive/total count instead of being replaced
+  // by an invented amplitude.
+  unsigned long long globalCellCount = 0;
+  unsigned long long globalPositiveTurbulenceCount = 0;
+  double globalMinimumVariance = 0.0;
+  double globalMaximumVariance = 0.0;
+  MPI_Allreduce(&localCellCount, &globalCellCount, 1,
+                MPI_UNSIGNED_LONG_LONG, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&localPositiveTurbulenceCount,
+                &globalPositiveTurbulenceCount, 1,
+                MPI_UNSIGNED_LONG_LONG, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&localMinimumVariance, &globalMinimumVariance, 1, MPI_DOUBLE,
+                MPI_MIN, MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&localMaximumVariance, &globalMaximumVariance, 1, MPI_DOUBLE,
+                MPI_MAX, MPI_GLOBAL_COMMUNICATOR);
+  if (Configuration().options().turbulence ==
+          RuntimeModel::TurbulenceAuthority::Prescribed &&
+      globalPositiveTurbulenceCount != globalCellCount) {
+    StopWithStatus("turbulence center-node initialization",
+        Core::Status(Core::StatusCode::BackgroundInvalid,
+            "not every physical center node received positive prescribed "
+            "turbulence variance"));
+  }
+  if (PIC::ThisThread == 0) {
+    std::cout << "[srcSEP3D] turbulence center-node initialization: physical_cells="
+              << globalCellCount << " positive_variance_cells="
+              << globalPositiveTurbulenceCount;
+    if (globalPositiveTurbulenceCount != 0)
+      std::cout << " deltaB2_min_T2=" << std::scientific
+                << globalMinimumVariance << " deltaB2_max_T2="
+                << globalMaximumVariance << std::defaultfloat;
+    std::cout << '\n';
+  }
+
+  // Publish only after the complete background/turbulence state has survived
+  // provider validation, center-node write/readback, and collective coverage
+  // checks.  The subsequent halo exchange then makes precisely this published
+  // generation available to neighboring AMPS blocks and output interpolation.
+  RuntimeModel::Runtime& runtime = ApplicationRuntime();
+  if (Configuration().options().background ==
+      RuntimeModel::BackgroundAuthority::AnalyticParker) {
+    RuntimeModel::StandaloneAdapter adapter;
+    status = adapter.Initialize(&runtime);
+    if (status.ok()) status = adapter.PublishSnapshot(&runtime, *snapshot);
+  } else {
+    RuntimeModel::SwmfAdapter adapter;
+    status = adapter.Initialize(&runtime);
+    if (status.ok()) status = adapter.PublishSnapshot(&runtime, *snapshot);
+  }
+  if (!status.ok()) StopWithStatus("background snapshot publication", status);
 
   // This collective halo exchange is the final background-installation
   // boundary.  The data-bearing initialization file is deliberately emitted
@@ -1331,13 +1573,10 @@ void RefreshBackgroundAtBoundary() {
     StoreBackground(cells[index].cell, candidate->samples()[index]);
     StoreNativeAmpsBackground(cells[index].cell,
                               candidate->samples()[index]);
-    const std::size_t waveOffset =
-        Configuration().storage_layout().waveEnergyOffset;
-    if (waveOffset != RuntimeModel::kNoOffset) {
-      const double variance[2] = {
-          waves.deltaBPlus2T2, waves.deltaBMinus2T2};
-      StoreBytes(cells[index].cell, waveOffset, variance, sizeof(variance));
-    }
+    // Use the identical validated center-node write/readback path as initial
+    // publication so a later analytic/SWMF generation cannot reintroduce the
+    // zero-turbulence output defect.
+    (void)StoreTurbulenceAtCellCenter(cells[index].cell, waves);
   }
   int localReady = status.ok() ? 1 : 0;
   int globallyReady = 0;
@@ -1835,6 +2074,13 @@ void SEP3D::Init_BeforeParser() {
     PIC::Mesh::PrintVariableListCenterNode.push_back(
         PrintInitializationVariableList);
     PIC::Mesh::PrintDataCenterNode.push_back(PrintInitializationCellData);
+    // outputMeshDataTECPLOT prints vertex records through temporary
+    // center-node objects.  This hook is therefore as essential as the print
+    // callback: it copies the initialized application-owned background and
+    // turbulence slice into those objects before PrintInitializationCellData
+    // reads it.
+    PIC::Mesh::InterpolateCenterNode.push_back(
+        InterpolateInitializationCellData);
     gStorageCallbacksRegistered = true;
   }
 }

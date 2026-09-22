@@ -113,8 +113,11 @@ optional magnetic gradient (9 doubles), optional velocity gradient (9
 doubles), and then the two wave variances. The variances are allocated for both
 prescribed and SWMF turbulence, so the initialization file always exposes the
 state used by scattering. SI energy densities are derived for output as
-`w_plus/minus=deltaB_plus/minus_squared/mu0`; they are not duplicate mutable
-cell fields. Sampling bytes are tracked separately because AMPS
+`w_plus/minus=deltaB_plus/minus_squared/mu0`; their sum is emitted as
+`turbulence_wave_energy_density_J_per_m3`. The public six-column group (total,
+plus, and minus variance followed by total, plus, and minus energy density) is
+mandatory and is tested independently of AMPS. These derived quantities are
+not duplicate mutable cell fields. Sampling bytes are tracked separately because AMPS
 duplicates/switches sampling buffers according to its sampling configuration.
 
 ## Production initialization order
@@ -148,9 +151,12 @@ best-effort diagnostics.
 1. install positive finite global and block-local time step/weight for every
    species compiled from `SpeciesList`;
 2. build and validate the complete owner-local background snapshot;
-3. zero AMPS' native DATAFILE records, then copy the same background sample to
-   the srcSEP3D offsets and native AMPS magnetic/plasma/gradient offsets;
-4. initialize and store the selected directional turbulence state;
+3. zero the application and native DATAFILE records so Cartesian padding is a
+   finite, deterministic interpolation source;
+4. after preparing the selected turbulence provider, prescribe background and
+   directional turbulence together to every owner-local physical center node,
+   read back the two variance values, and collectively verify prescribed
+   turbulence is positive in every physical cell;
 5. exchange associated-data halos (and, for relativistic GCA, generate and
    exchange its neighbor-dependent derived fields);
 6. publish/install runtime and mover state, including an optional restart; and
@@ -162,6 +168,17 @@ The separation between steps 8–9 of `amps_init_mesh()` and this sequence is
 intentional: `outputMeshTECPLOT` needs only the finalized octree, whereas
 `outputMeshDataTECPLOT` must not observe the native buffer before Parker/SWCME
 and turbulence installation have completed on every rank.
+
+`outputMeshDataTECPLOT` represents a FEBRICK at its vertices. AMPS creates a
+temporary center node for each vertex and calls the registered center-node
+interpolators before printing it. Static bytes requested by an application are
+not included by AMPS' built-in interpolation. srcSEP3D consequently registers
+`InterpolateInitializationCellData` alongside its print callbacks before layout
+freeze. It interpolates all `cellAssociatedBytes / sizeof(double)` values as a
+single state vector, so the two turbulence variances cannot remain zero while
+the native DATAFILE plasma/IMF fields are populated. Cartesian padding is
+explicitly zeroed before the physical-cell fill and is identified in output by
+`background_valid=0`.
 
 ## Gradient reconstruction
 

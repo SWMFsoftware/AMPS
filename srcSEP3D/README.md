@@ -67,7 +67,7 @@ between `[turbulence]` and `[transport]`.
 |---|---|---|
 | `[run]` | `schema_version`, `intent`, `transport`, `time_step_s`, `maximum_time_steps`, `campaign_seed`, `background_cadence_steps`, `injection_cadence_steps` | Schema is `3`; intent is `shock-injection`; transport is `parker3d` or `focused3d`. Time step is positive SI seconds, seed and step counts are nonzero, and injection cadence must be exactly one because `samples_per_step` is a count for every simulation step. |
 | `[domain]` | `preset`, `inner_radius_m`, `inner_boundary`, `outer_radius_mode`, `outer_radius_m`, `outer_boundary`, `coordinate_frame`, `origin_x_m`, `origin_y_m`, `origin_z_m` | Presets are `solar`, `one-au`, or `mars`; outer mode is `preset` or `explicit`. The current heliocentric implementation requires the declared origin `(0,0,0)`, absorbing inner boundary, and a domain containing fixed observers and mesh references. |
-| `[parker_spiral]` | `origin_x_m`, `origin_y_m`, `origin_z_m`, `initial_x_m`, `initial_y_m`, `initial_z_m`, `length_m`, `point_count` | Finite diagnostic/refinement centreline. The origin equals the domain origin; the initial point lies on the inner sphere and matches the tube longitude/colatitude. Length is positive arc length and count includes both endpoints. |
+| `[parker_spiral]` | `origin_x_m`, `origin_y_m`, `origin_z_m`, `start_mode`, `initial_x_m`, `initial_y_m`, `initial_z_m`, `length_m`, `point_count` | Finite diagnostic/refinement centreline. `start_mode=explicit` uses the reviewed Cartesian point independently. `start_mode=cme-launch-point` requires that point, the inner radius, and the mesh-tube direction to equal the canonical SWCME launch apex defined by `cme.launch_radius` and normalized `geometry.cme_direction_*`. Length is positive arc length and count includes both endpoints. |
 | `[mesh]` | `global_cell_size_m`, `minimum_cell_size_m`, `cells_per_block_edge`, `maximum_level`, `memory_budget_bytes`, `block_overhead_bytes` | Global/floor resolution, AMPS block shape, realizable AMR depth, and pre-allocation resource ceiling. |
 | `[mesh.solar]` | `enabled`, `surface_cell_size_m`, `transition_outer_radius_m`, `profile`, `exponent` | Resolution at the Sun and its radial degradation to the global value. Profiles are `linear`, `power-law`, or `smoothstep`; exponent is positive. |
 | `[mesh.tube]` | `enabled`, `source_longitude_rad`, `source_colatitude_rad`, `reference_radius_m`, `radius_at_reference_m`, `radius_mode`, `center_cell_size_m`, `transverse_profile`, `transverse_exponent` | Parker-centreline location, physical/angular tube radius, centre resolution, and degradation in the perpendicular plane. Radius mode is `physical-constant` or `constant-angular-width`; profile choices match `[mesh.solar]`. |
@@ -104,7 +104,7 @@ deliberately sub-cell tube and checks every sampled centreline segment.
 |---|---|---|
 | `[background]` | `provider`, `external_script` | Implemented standalone authority is `analytic-parker`. `python-interpolator` is a recognized, typed, reserved future authority and stops before AMPS initialization; it never falls through to Parker/SWMF. The legacy Boolean must remain false. A coupled SWMF host uses the parser-free typed interface. |
 | `[background.parker]` | `reference_radius_m`, `radial_field_at_reference_t`, `solar_rotation_rate_rad_per_s`, `solar_wind_speed_m_per_s`, `magnetic_polarity`, `number_density_at_one_au_m3`, `temperature_k`, `validity_cadence_s` | SI cross-check of the Parker/SWCME ambient state. Magnetic Br may use any valid reference radius; electron density is unambiguously at one AU. Wind, rotation, source radius, field, density, temperature, and polarity must agree with `[swcme]`; the typed provider then receives canonical SWCME values, including its thermodynamic closure/composition. |
-| `[turbulence]` | `authority`, `model`, `delta_b_over_b`, `normalized_cross_helicity`, `reference_radius_m`, `k_min_per_m`, `k_max_per_m`, `k_min_radial_exponent`, `k_max_radial_exponent`, `spectral_index`, `correlation_length_m`, `correlation_length_radial_exponent`, `validity_cadence_s`, `missing_data`, `resonance_range`, `self_consistent_3d` | Standalone authority is `prescribed`. Model is `kolmogorov`, `kraichnan`, or `power-law`; named models require exactly their documented slope. Cross helicity explicitly partitions directional energy. Self-consistent 3-D is false. Missing-data policy is `fail` or `ballistic`; resonance policy is `reject` or `power-law-extension`. |
+| `[turbulence]` | `authority`, `model`, `amplitude_model`, `delta_b_over_b`, `wave_energy_density_at_reference_j_per_m3`, `wave_energy_density_radial_exponent`, `normalized_cross_helicity`, `reference_radius_m`, `k_min_per_m`, `k_max_per_m`, `k_min_radial_exponent`, `k_max_radial_exponent`, `spectral_index`, `correlation_length_m`, `correlation_length_radial_exponent`, `validity_cadence_s`, `missing_data`, `resonance_range`, `self_consistent_3d` | Standalone authority is `prescribed`. Spectral `model` is `kolmogorov`, `kraichnan`, or `power-law`; named models require exactly their documented slope. `amplitude_model` independently selects `constant-delta-b-over-b` or `wave-energy-power-law`. Exactly one amplitude normalization is active and the other must be zero. Cross helicity explicitly partitions directional energy. Self-consistent 3-D is false. Missing-data policy is `fail` or `ballistic`; resonance policy is `reject` or `power-law-extension`. |
 | `[transport]` | `cell_crossing_fraction`, `diffusion_fraction`, `focusing_fraction`, `cooling_fraction`, `field_variation_fraction`, `shock_crossing_fraction`, `minimum_substep_s`, `maximum_substeps`, `pitch_angle_scheme`, `perpendicular_diffusion`, `constant_kappa_perpendicular_m2_per_s`, `kappa_perpendicular_to_parallel_ratio`, `drifts` | Positive timestep limiters. Pitch scheme is `reflecting-milstein` or `reflecting-euler-maruyama`. Perpendicular mode is `none`, `constant`, or `constant-ratio`; drift is `none`, `gradient-b`, `curvature`, or `gradient-curvature`. Selected extensions require their positive coefficient/storage. |
 | `[shock]` | `authority` | Must be `swcme`. Schema 3 rejects the retired constant-radius/speed/compression surrogate fields. |
 | `[source]` | `enabled`, `physical_particle_rate_per_s`, `injection_efficiency`, `minimum_energy_j`, `maximum_energy_j`, `samples_per_step` | All values apply independently to every species compiled by AMPS `SpeciesList`. Rate is the per-species physical seed rate before efficiency and patch partition; energies are total kinetic-energy bounds; `samples_per_step` is the exact per-species computational count over the complete shock. Each patch's canonical compression ratio determines its DSA slope. |
@@ -173,7 +173,8 @@ v_A=\frac{|B|}{\sqrt{\mu_0\rho}}.
 Thus density, pressure, and Alfvén speed in the AMPS initialization product
 are all generated by the same SWCME closure used by the shock model.
 
-For prescribed turbulence, `delta_b_over_b = a` and the local background give
+For `amplitude_model = constant-delta-b-over-b`, the declared
+`delta_b_over_b = a` and the local background give
 
 \[
 \delta B^2=(a|B|)^2,\quad
@@ -190,7 +191,46 @@ bounds follow their separately declared powers of
 cases \(P(k)=Ak^{-q}\) is normalized so its finite-band integral is
 \(\delta B^2\). Both directional variances are stored in every initialized
 physical AMPS cell; the Tecplot writer also publishes the two SI energy
-densities.
+densities and their total.
+
+For `amplitude_model = wave-energy-power-law`, the input instead makes the
+total pre-existing Alfvén-wave energy density authoritative:
+
+\[
+w(r)=w_\mathrm{ref}\left(\frac{r_\mathrm{ref}}{r}\right)^{p_w},
+\qquad \delta B^2=\mu_0 w(r).
+\]
+
+Here `wave_energy_density_at_reference_j_per_m3` is
+\(w_\mathrm{ref}=w_++w_-\), and
+`wave_energy_density_radial_exponent` is the explicitly reviewed \(p_w\).
+The same cross-helicity equations partition the total into the two propagation
+directions. In this mode `delta_b_over_b` must be zero; conversely, the
+constant-relative-amplitude mode requires both wave-energy fields to be zero.
+The parser therefore cannot accept two competing normalizations or quietly
+ignore a nonzero inactive one.
+
+### Linking the CME launch apex and Parker start
+
+`parker_spiral.start_mode = cme-launch-point` creates a fail-closed relation
+between the two independently visible input sections. After the canonical
+SWCME parser has validated the model, srcSEP3D computes
+
+\[
+\mathbf x_\mathrm{launch}=\mathbf x_\mathrm{origin}+
+R_\mathrm{launch}\frac{\mathbf d_\mathrm{CME}}
+{|\mathbf d_\mathrm{CME}|},
+\]
+
+where `cme.launch_radius` owns \(R_\mathrm{launch}\) and
+`geometry.cme_direction_x/y/z` owns \(\mathbf d_\mathrm{CME}\). The computed
+point must equal `initial_x_m/y_m/z_m`, its radius must equal
+`domain.inner_radius_m`, and its direction must equal the `[mesh.tube]` source
+longitude/colatitude. The agreeing values are then replaced by the one
+canonical binary point before configuration fingerprinting. A partial edit to
+only the CME, line, domain, or mesh section is rejected before AMPS allocates
+the mesh. Use `start_mode = explicit` only when this physical linkage is not
+intended.
 
 `provider = python-interpolator` is the planned precalculated-heliosphere path,
 but it is deliberately not an executable subprocess yet. The released parser
@@ -259,9 +299,11 @@ and background publication, it also calls AMPS' native data writer for
 `initialization_data_tecplot_file`. That product contains magnetic field, bulk
 velocity, density, divergence, temperature, pressure, Alfvén speed, focusing
 length, curvature, strain, enabled gradients, directional wave variance
-`deltaB_plus/minus_squared_T2`, directional wave-energy density
-`wave_energy_plus/minus_J_per_m3`, and AMPS' `Local Time Step` and `Local
-Particle Weight` columns. A mixed SpeciesList produces
+`turbulence_deltaB_squared_T2` and its plus/minus partition, total turbulence
+wave-energy density `turbulence_wave_energy_density_J_per_m3`, directional
+`turbulence_wave_energy_plus/minus_J_per_m3`, and AMPS' `Local Time Step` and
+`Local Particle Weight` columns. These six turbulence columns are mandatory,
+not conditional on provider authority. A mixed SpeciesList produces
 `.species-N` siblings because those two block columns are species-selected.
 All paths are mandatory and write failures are fatal.
 
@@ -301,6 +343,27 @@ completed yet, while `particle_sample_present=0` with a valid window means that
 the cell contained no sampled macroparticles of the selected species. In that
 ordinary empty-cell case, AMPS writes zero density, particle number, velocity,
 energy, and temperature instead of `NaN`.
+
+AMPS' FEBRICK writer emits values at mesh vertices rather than printing a
+physical center-node object directly. For each vertex it constructs a temporary
+center node and interpolates the surrounding center nodes. Native DATAFILE
+fields already register their own interpolation hook, but static bytes
+requested by an application are not included automatically. srcSEP3D therefore
+registers `InterpolateInitializationCellData` during `Init_BeforeParser()`,
+before the associated-data layout is frozen. The hook interpolates the complete
+frozen application state—background, enabled gradients, and
+`deltaB_plus/minus_squared`—into the temporary node. Without that hook, native
+plasma/IMF columns can be nonzero while all srcSEP3D turbulence columns are
+zero, even though the physical cell centers were initialized correctly.
+
+During `amps_init()`, both static storage regions are zeroed first, the selected
+turbulence provider is prepared, and background plus directional turbulence
+variance are prescribed in one pass to every owner-local physical center node.
+Each variance pair is read back immediately. For prescribed turbulence every
+physical cell must have positive total variance; an MPI-reduced count and
+minimum/maximum `deltaB^2` are printed before Runtime publication and halo
+exchange. A zero coupled value remains possible only through the explicitly
+configured AWSoM ballistic/missing-data path; no fallback amplitude is guessed.
 
 Each `[observer.ID]` is independent and repeatable. For `N` energy channels,
 logarithmic edges are `E_i=E_min*(E_max/E_min)^(i/N)` and linear edges are
@@ -847,11 +910,11 @@ halo-exchanged before the final data-bearing initialization writer is called.
 | `HARN`, `RUNNER`, `LAY`, `BLD`, `UTIL` | runner, layering, binary boundary, frozen common kernels |
 | `LIFE3D01–04` | immutable configuration and complete lifecycle transition matrix |
 | `R3D01–07` | mover hook, subcycling, transactional snapshots, clock/events, source, observers, complete restart |
-| `CFG3D01–09` | input/CLI, typed contracts, domains, shared Parker geometry, mesh/memory preflight, finite-line/schema-3 contracts, AMPS species binding, background/turbulence selection |
+| `CFG3D01–10` | input/CLI, typed contracts, domains, shared Parker geometry, mesh/memory preflight, finite-line/schema-3 contracts, AMPS species binding, background/turbulence selection, CME/Parker launch-apex linkage |
 | `MSH3D01–10` | resolution bounds/laws, tube geometry, balance, octrees, memory, ownership, presets, gradients, finite-line/origin identities |
 | `BGP3D01–07` | analytic Parker identities, component laws, focusing, wind derivatives, polar limits, SWCME Leblanc/multi-species closure |
 | `SNAP3D01–08` | completeness, finite values, units, epochs, atomicity, interpolation, batch status, frame |
-| `TUR3D01–05` | spectrum normalization, AWSoM mapping, resonance range, missing-data policy, selectable slopes/cross helicity/wave energy |
+| `TUR3D01–06` | spectrum normalization, AWSoM mapping, resonance range, missing-data policy, selectable slopes/amplitude laws/cross helicity, mandatory Tecplot wave energy |
 | `COEF3D01–02`, `COEF3D06` | six-decade conversions, bitwise shared-kernel identity, and nonzero field-aligned kappa-gradient stencils |
 | `COEF3D03–05`, `PRK3D01–08` | tensor assembly/Itô drift and Parker transport behavior |
 | `FTE3D01–07`, `RNG3D01–03` | focused transport, pitch boundaries, strong-scattering limit, keyed reproducibility |

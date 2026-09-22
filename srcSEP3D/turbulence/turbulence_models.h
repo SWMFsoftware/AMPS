@@ -22,8 +22,13 @@ namespace SEP3D {
 namespace Turbulence {
 
 enum class PrescribedSpectrumModel { PowerLaw, Kolmogorov, Kraichnan };
+enum class PrescribedAmplitudeModel {
+  ConstantDeltaBOverB,
+  WaveEnergyPowerLaw
+};
 
 const char* PrescribedSpectrumModelName(PrescribedSpectrumModel model);
+const char* PrescribedAmplitudeModelName(PrescribedAmplitudeModel model);
 
 // The historic type name is retained as a source-compatibility surface.  Its
 // implementation is now a general normalized prescribed power law whose
@@ -31,7 +36,15 @@ const char* PrescribedSpectrumModelName(PrescribedSpectrumModel model);
 struct PrescribedKolmogorovConfiguration {
   PrescribedSpectrumModel spectrumModel =
       PrescribedSpectrumModel::Kolmogorov;
+  PrescribedAmplitudeModel amplitudeModel =
+      PrescribedAmplitudeModel::ConstantDeltaBOverB;
   double deltaBOverB = 0.3;
+  // WaveEnergyPowerLaw uses a total (w_+ + w_-) energy density at the
+  // reference radius and the explicit law w(r)=w_ref*(r_ref/r)^p.  The
+  // inactive normalization is required to be zero; this makes a reviewed
+  // configuration fail closed instead of silently ignoring a plausible value.
+  double waveEnergyAtReferenceJPerM3 = 0.0;
+  double waveEnergyRadialExponent = 0.0;
   // sigma_c=(deltaB_+^2-deltaB_-^2)/deltaB^2.  sigma_c=0 is balanced;
   // +1 and -1 are purely one-directional limiting states.
   double normalizedCrossHelicity = 0.0;

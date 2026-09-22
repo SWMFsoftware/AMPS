@@ -728,6 +728,42 @@ Result RunCFG3D09() {
   if (RM::ParseConfigurationText(contradictory, &options).ok())
     return Fail("a named Kraichnan model accepted the Kolmogorov index");
 
+  // The amplitude prescription is a separate input choice from the spectral
+  // slope.  Select direct total wave-energy normalization and its radial law,
+  // while setting the inactive deltaB/B normalization to the required zero.
+  std::string waveEnergy = complete;
+  auto replaceAmplitude = [&](const std::string& from,
+                              const std::string& to) -> bool {
+    const std::size_t at = waveEnergy.find(from);
+    if (at == std::string::npos) return false;
+    waveEnergy.replace(at, from.size(), to);
+    return true;
+  };
+  if (!replaceAmplitude("amplitude_model = constant-delta-b-over-b",
+                        "amplitude_model = wave-energy-power-law") ||
+      !replaceAmplitude("delta_b_over_b = 0.3", "delta_b_over_b = 0") ||
+      !replaceAmplitude("wave_energy_density_at_reference_j_per_m3 = 0",
+                        "wave_energy_density_at_reference_j_per_m3 = 4e-12") ||
+      !replaceAmplitude("wave_energy_density_radial_exponent = 0",
+                        "wave_energy_density_radial_exponent = 2")) {
+    return Fail("example lost its explicit turbulence amplitude controls");
+  }
+  if (!RM::ParseConfigurationText(waveEnergy, &options).ok() ||
+      options.prescribedTurbulenceAmplitudeModel !=
+          RM::PrescribedTurbulenceAmplitudeModel::WaveEnergyPowerLaw ||
+      options.turbulenceWaveEnergyAtReferenceJPerM3 != 4.0e-12 ||
+      options.turbulenceWaveEnergyRadialExponent != 2.0) {
+    return Fail("wave-energy-power-law amplitude selection did not parse exactly");
+  }
+
+  std::string competingAmplitudes = waveEnergy;
+  const std::string inactiveRatio = "delta_b_over_b = 0";
+  competingAmplitudes.replace(competingAmplitudes.find(inactiveRatio),
+                              inactiveRatio.size(),
+                              "delta_b_over_b = 0.3");
+  if (RM::ParseConfigurationText(competingAmplitudes, &options).ok())
+    return Fail("input accepted two competing turbulence amplitude normalizations");
+
   std::string python = complete;
   const std::string parker = "provider = analytic-parker";
   const std::size_t parkerAt = python.find(parker);
@@ -742,7 +778,67 @@ Result RunCFG3D09() {
   }
 
   return Pass(
-      "input selects validated prescribed turbulence models and reserves the future Python background explicitly");
+      "input selects validated spectral/amplitude turbulence models and reserves the future Python background explicitly");
+}
+
+Result RunCFG3D10() {
+  std::ifstream input("examples/sep3d_analytic_parker.in");
+  std::ostringstream buffer;
+  buffer << input.rdbuf();
+  const std::string complete = buffer.str();
+  if (!input || complete.empty())
+    return Fail("could not read the CME/Parker linkage fixture");
+
+  RM::RunConfiguration3DOptions linked;
+  const SEP3D::Core::Status parsed =
+      RM::ParseConfigurationText(complete, &linked);
+  if (!parsed.ok() ||
+      linked.parkerSpiralStartMode !=
+          RM::ParkerSpiralStartMode::CmeLaunchPoint ||
+      !linked.cmeLaunchPointResolved ||
+      (linked.parkerSpiralInitialPointM - linked.cmeLaunchPointM).Norm() !=
+          0.0) {
+    return Fail("canonical SWCME launch apex was not frozen as the Parker start");
+  }
+
+  // A changed CME direction must not leave the refinement tube/line at the
+  // former coordinates.  The linked mode rejects this incomplete edit before
+  // RunConfiguration reaches AMPS allocation.
+  std::string wrongDirection = complete;
+  const std::string yDirection = "geometry.cme_direction_y = 0";
+  const std::size_t yAt = wrongDirection.find(yDirection);
+  if (yAt == std::string::npos)
+    return Fail("linkage fixture lost the CME direction");
+  wrongDirection.replace(yAt, yDirection.size(),
+                         "geometry.cme_direction_y = 1");
+  if (RM::ParseConfigurationText(wrongDirection, &linked).ok())
+    return Fail("CME-linked Parker start accepted a different CME direction");
+
+  std::string wrongRadius = complete;
+  const std::string launch = "cme.launch_radius = 20 Rs";
+  const std::size_t launchAt = wrongRadius.find(launch);
+  if (launchAt == std::string::npos)
+    return Fail("linkage fixture lost the CME launch radius");
+  wrongRadius.replace(launchAt, launch.size(),
+                      "cme.launch_radius = 25 Rs");
+  if (RM::ParseConfigurationText(wrongRadius, &linked).ok())
+    return Fail("CME-linked Parker start accepted a launch radius outside the inner sphere");
+
+  // Explicit mode remains available for a deliberately independent field
+  // line.  It must not carry a stale derived CME point into the fingerprint.
+  std::string explicitLine = complete;
+  const std::string linkedMode = "start_mode = cme-launch-point";
+  const std::size_t modeAt = explicitLine.find(linkedMode);
+  if (modeAt == std::string::npos)
+    return Fail("linkage fixture lost its start mode");
+  explicitLine.replace(modeAt, linkedMode.size(), "start_mode = explicit");
+  if (!RM::ParseConfigurationText(explicitLine, &linked).ok() ||
+      linked.cmeLaunchPointResolved ||
+      linked.parkerSpiralStartMode != RM::ParkerSpiralStartMode::Explicit) {
+    return Fail("explicit Parker start retained an implicit CME linkage");
+  }
+  return Pass(
+      "input explicitly links the Parker start to the canonical SWCME launch apex and rejects radius/direction mismatches");
 }
 
 }  // namespace
@@ -776,5 +872,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
       make("CFG3D07", "Compiled-species binding", "Complete generated AMPS table and fingerprint contract.", RunCFG3D07),
       make("CFG3D08", "Complete initialization", "Schema-v3 canonical SWCME and exact per-step source contract.", RunCFG3D08),
       make("CFG3D09", "Background/turbulence selection", "Named prescribed slopes and reserved Python source.", RunCFG3D09),
+      make("CFG3D10", "CME/Parker start linkage", "Canonical launch-apex linkage and fail-closed geometry checks.", RunCFG3D10),
   };
 }

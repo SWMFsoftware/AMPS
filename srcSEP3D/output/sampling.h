@@ -13,6 +13,7 @@
 
 #include "../adapters/particle_ledger.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -140,6 +141,49 @@ struct TecplotCellPresentation {
   double particleSamplingWindowValid = 0.0;
   double particleSamplePresent = 0.0;
 };
+
+// Fixed six-column turbulence diagnostic appended to every initialization
+// Tecplot record.  Cell storage owns only the two directional magnetic
+// variances consumed by scattering; this presentation adds their total and
+// converts all three to the AWSoM-compatible total Alfvén-wave energy
+// convention w=deltaB^2/mu0.  A named aggregate
+// `turbulence_wave_energy_density_J_per_m3` makes the requested pre-existing
+// turbulence energy visible without requiring a postprocessor to add w+/w-.
+struct TurbulenceTecplotPresentation {
+  double deltaB2T2 = 0.0;
+  double deltaBPlus2T2 = 0.0;
+  double deltaBMinus2T2 = 0.0;
+  double waveEnergyJPerM3 = 0.0;
+  double waveEnergyPlusJPerM3 = 0.0;
+  double waveEnergyMinusJPerM3 = 0.0;
+};
+
+// The leading comma is intentional: AMPS has already emitted its native
+// VARIABLES entries when the application callback appends this fragment.
+const char* TurbulenceTecplotVariableList();
+
+// Validate and derive the immutable six-column presentation.  Negative or
+// non-finite directional variance is a storage/initialization error and is
+// never serialized as a plausible physical value.
+Core::Status PrepareTurbulenceTecplotPresentation(
+    double deltaBPlus2T2, double deltaBMinus2T2,
+    TurbulenceTecplotPresentation* result);
+
+// Interpolate one complete, cell-centred, static state into the temporary
+// centre-node object that AMPS creates while writing a vertex-centred Tecplot
+// FEBRICK zone.  AMPS interpolates its built-in sampling and DATAFILE slices,
+// but application-requested static bytes are not copied automatically.  The
+// production callback therefore supplies pointers to the srcSEP3D slice of
+// every node in AMPS' interpolation stencil and uses this AMPS-independent
+// routine for the component-wise weighted sum.
+//
+// All fields in the frozen srcSEP3D static layout are doubles.  Treating the
+// slice as one state vector guarantees that background primitives, optional
+// gradients, and the two directional turbulence variances use the identical
+// AMPS stencil and cannot become spatially misregistered in the output.
+Core::Status InterpolateStaticCenterState(
+    const double* const* stencilValues, const double* coefficients,
+    std::size_t stencilSize, std::size_t valueCount, double* result);
 
 // Convert the internal background/sample state to a finite Tecplot record.
 // Undefined background values are represented by zeros and backgroundValid=0

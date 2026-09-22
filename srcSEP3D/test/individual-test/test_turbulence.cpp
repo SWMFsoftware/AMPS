@@ -9,6 +9,7 @@
 // ============================================================================
 
 #include "../../core/sep3d_test_registry.h"
+#include "../../output/sampling.h"
 #include "../../turbulence/coefficient_bridge.h"
 #include "../../turbulence/turbulence_models.h"
 
@@ -22,6 +23,7 @@
 namespace {
 
 namespace B = SEP3D::Background;
+namespace O = SEP3D::Output;
 namespace T = SEP3D::Turbulence;
 namespace CP = SEP::Transport::CoefficientPhysics;
 using Result = SEP3D::Testing::Result;
@@ -267,6 +269,94 @@ Result RunTUR3D05() {
       "selectable Kolmogorov, Kraichnan, and power-law models initialize directional SI wave energy exactly");
 }
 
+Result RunTUR3D06() {
+  constexpr double mu0 = 4.0e-7 * SEP3D::Core::Const::kPi;
+  constexpr double referenceEnergyJPerM3 = 4.0e-12;
+
+  // This branch is deliberately independent of local |B|: the complete input
+  // makes total pre-existing wave energy, reference radius, and radial power
+  // the authority.  At 2 AU with p=2 the total energy must be one quarter of
+  // its 1-AU normalization.
+  T::PrescribedKolmogorovConfiguration configuration;
+  configuration.amplitudeModel = T::PrescribedAmplitudeModel::WaveEnergyPowerLaw;
+  configuration.deltaBOverB = 0.0;
+  configuration.waveEnergyAtReferenceJPerM3 = referenceEnergyJPerM3;
+  configuration.waveEnergyRadialExponent = 2.0;
+  configuration.normalizedCrossHelicity = -0.25;
+  T::PrescribedKolmogorovProvider provider(configuration);
+  if (!provider.Prepare(0.0).ok())
+    return Fail("wave-energy-power-law amplitude model did not prepare");
+  const T::TurbulenceSample atReference = provider.Evaluate(
+      {SEP3D::Core::Const::AU, 0.0, 0.0}, Background());
+  const T::TurbulenceSample atTwoAu = provider.Evaluate(
+      {2.0 * SEP3D::Core::Const::AU, 0.0, 0.0}, Background());
+  if (!atReference.status.ok() || !atTwoAu.status.ok() ||
+      !Relative(atReference.deltaB2T2,
+                mu0 * referenceEnergyJPerM3, 1.0e-15) ||
+      !Relative(atTwoAu.deltaB2T2,
+                0.25 * mu0 * referenceEnergyJPerM3, 1.0e-15) ||
+      !Relative(atReference.waveEnergyPlusJPerM3,
+                0.375 * referenceEnergyJPerM3, 1.0e-15) ||
+      !Relative(atReference.waveEnergyMinusJPerM3,
+                0.625 * referenceEnergyJPerM3, 1.0e-15)) {
+    return Fail("explicit wave-energy radial law or cross-helicity split is incorrect");
+  }
+
+  O::TurbulenceTecplotPresentation output;
+  if (!O::PrepareTurbulenceTecplotPresentation(
+           atReference.deltaBPlus2T2, atReference.deltaBMinus2T2,
+           &output).ok() ||
+      !Relative(output.waveEnergyJPerM3, referenceEnergyJPerM3,
+                1.0e-15) ||
+      !Relative(output.deltaB2T2, atReference.deltaB2T2, 1.0e-15)) {
+    return Fail("Tecplot turbulence presentation lost total wave energy");
+  }
+  const std::string variables = O::TurbulenceTecplotVariableList();
+  if (variables.find("turbulence_wave_energy_density_J_per_m3") ==
+          std::string::npos ||
+      variables.find("turbulence_wave_energy_plus_J_per_m3") ==
+          std::string::npos ||
+      variables.find("turbulence_wave_energy_minus_J_per_m3") ==
+          std::string::npos) {
+    return Fail("mandatory Tecplot variable list omits turbulence wave energy");
+  }
+
+  // AMPS' FEBRICK writer prints a temporary center-node value at every mesh
+  // vertex.  Exercise the AMPS-independent arithmetic used by the production
+  // interpolation callback and place the directional variances at the tail of
+  // a representative static state.  A missing callback previously left these
+  // exact slots at zero even though the physical cell centers were correct.
+  const double leftState[] = {
+      2.0, 4.0, atReference.deltaBPlus2T2,
+      atReference.deltaBMinus2T2};
+  const double rightState[] = {
+      6.0, 8.0, atTwoAu.deltaBPlus2T2,
+      atTwoAu.deltaBMinus2T2};
+  const double* stencil[] = {leftState, rightState};
+  const double coefficients[] = {0.25, 0.75};
+  double interpolated[4] = {};
+  const SEP3D::Core::Status interpolation =
+      O::InterpolateStaticCenterState(stencil, coefficients, 2, 4,
+                                      interpolated);
+  if (!interpolation.ok() ||
+      !Relative(interpolated[0], 5.0, 1.0e-15) ||
+      !Relative(interpolated[1], 7.0, 1.0e-15) ||
+      !Relative(interpolated[2],
+                0.25 * leftState[2] + 0.75 * rightState[2], 1.0e-15) ||
+      !Relative(interpolated[3],
+                0.25 * leftState[3] + 0.75 * rightState[3], 1.0e-15) ||
+      !(interpolated[2] + interpolated[3] > 0.0)) {
+    return Fail("AMPS vertex interpolation lost cell-centered turbulence");
+  }
+
+  T::PrescribedKolmogorovConfiguration ambiguous = configuration;
+  ambiguous.deltaBOverB = 0.3;
+  if (T::PrescribedKolmogorovProvider(ambiguous).Validate().ok())
+    return Fail("wave-energy model accepted a competing deltaB/B normalization");
+  return Pass(
+      "input-selectable wave-energy law initializes exact SI energy, and cell-centered directional variance remains nonzero through the Tecplot interpolation path");
+}
+
 Result RunCOEF3D01() {
   const double mus[] = {-0.75, 0.0, 0.65};
   const double speeds[] = {1.0e6, 1.0e7, 1.0e8};
@@ -413,6 +503,9 @@ std::vector<SEP3D::Testing::Descriptor> RegisterTurbulenceTests() {
       make("TUR3D05", "TUR3D", "Selectable prescribed models",
            "Validate named slopes, cross helicity, and SI wave energy.",
            RunTUR3D05),
+      make("TUR3D06", "TUR3D", "Amplitude models and Tecplot energy",
+           "Validate explicit wave-energy radial scaling and mandatory output columns.",
+           RunTUR3D06),
       make("COEF3D01", "COEF3D", "Coefficient conversions",
            "Round-trip Dmumu, mean free path, and parallel diffusion.",
            RunCOEF3D01),
