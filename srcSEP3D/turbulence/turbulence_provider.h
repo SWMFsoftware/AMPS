@@ -28,11 +28,18 @@ namespace Turbulence {
 // finite turbulence all the way to the coefficient bridge.
 enum class MissingTurbulencePolicy { Fail, Ballistic };
 
-enum class TurbulenceSource { PrescribedKolmogorov, SwmfAwsom };
+enum class TurbulenceSource {
+  PrescribedPowerLaw,
+  // Source-compatible alias for callers compiled against the original name.
+  // The provider is now generalized to named Kolmogorov/Kraichnan or explicit
+  // power-law slopes, all represented by the same normalized finite-band law.
+  PrescribedKolmogorov = PrescribedPowerLaw,
+  SwmfAwsom
+};
 enum class TurbulenceOwnership { ModelOwned, ImportedReadOnly };
 
 struct TurbulenceMetadata {
-  TurbulenceSource source = TurbulenceSource::PrescribedKolmogorov;
+  TurbulenceSource source = TurbulenceSource::PrescribedPowerLaw;
   TurbulenceOwnership ownership = TurbulenceOwnership::ModelOwned;
   double epochS = 0.0;
   double validFromS = 0.0;
@@ -58,6 +65,13 @@ struct TurbulenceSample {
   double deltaBMinus2T2 = 0.0;   // wave propagating against +B
   double deltaBOutward2T2 = 0.0;
   double deltaBInward2T2 = 0.0;
+
+  // Total Alfvén-wave energy density in each field-aligned propagation
+  // direction [J/m^3].  Under the equipartition convention shared with AWSoM,
+  // w_+/-=deltaB_+/-^2/mu0.  Keeping both representations in the typed sample
+  // prevents output code from mistaking magnetic variance [T^2] for energy.
+  double waveEnergyPlusJPerM3 = 0.0;
+  double waveEnergyMinusJPerM3 = 0.0;
 
   double kMinPerM = 0.0;
   double kMaxPerM = 0.0;

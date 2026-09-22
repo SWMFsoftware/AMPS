@@ -51,6 +51,12 @@ bool FinitePositive(double value) {
   return std::isfinite(value) && value > 0.0;
 }
 
+bool NearlyEqual(double left, double right) {
+  return std::fabs(left - right) <=
+      128.0 * std::numeric_limits<double>::epsilon() *
+      std::max(1.0, std::max(std::fabs(left), std::fabs(right)));
+}
+
 TurbulenceSample MissingSample(MissingTurbulencePolicy policy,
                                const std::string& message,
                                const TurbulenceMetadata& metadata) {
@@ -83,10 +89,19 @@ SEP::Transport::CoefficientPhysics::PitchAngleResult CoefficientError(
 
 }  // namespace
 
+const char* PrescribedSpectrumModelName(PrescribedSpectrumModel model) {
+  switch (model) {
+    case PrescribedSpectrumModel::PowerLaw: return "power-law";
+    case PrescribedSpectrumModel::Kolmogorov: return "kolmogorov";
+    case PrescribedSpectrumModel::Kraichnan: return "kraichnan";
+  }
+  return "unknown";
+}
+
 PrescribedKolmogorovProvider::PrescribedKolmogorovProvider(
     const PrescribedKolmogorovConfiguration& configuration)
     : configuration_(configuration) {
-  metadata_.source = TurbulenceSource::PrescribedKolmogorov;
+  metadata_.source = TurbulenceSource::PrescribedPowerLaw;
   metadata_.ownership = TurbulenceOwnership::ModelOwned;
   metadata_.coordinateFrame = configuration_.coordinateFrame;
   metadata_.providerIdentity = CanonicalName();
@@ -95,8 +110,14 @@ PrescribedKolmogorovProvider::PrescribedKolmogorovProvider(
 }
 
 Core::Status PrescribedKolmogorovProvider::Validate() const {
+  if (configuration_.spectrumModel != PrescribedSpectrumModel::PowerLaw &&
+      configuration_.spectrumModel != PrescribedSpectrumModel::Kolmogorov &&
+      configuration_.spectrumModel != PrescribedSpectrumModel::Kraichnan) {
+    return Invalid("prescribed turbulence model is unknown");
+  }
   const double values[] = {
-      configuration_.deltaBOverB, configuration_.referenceRadiusM,
+      configuration_.deltaBOverB, configuration_.normalizedCrossHelicity,
+      configuration_.referenceRadiusM,
       configuration_.kMinAtReferencePerM,
       configuration_.kMaxAtReferencePerM,
       configuration_.kMinRadialExponent,
@@ -110,6 +131,8 @@ Core::Status PrescribedKolmogorovProvider::Validate() const {
       return Invalid("prescribed turbulence configuration is not finite");
   }
   if (configuration_.deltaBOverB <= 0.0 ||
+      configuration_.normalizedCrossHelicity < -1.0 ||
+      configuration_.normalizedCrossHelicity > 1.0 ||
       configuration_.referenceRadiusM <= 0.0 ||
       configuration_.kMinAtReferencePerM <= 0.0 ||
       configuration_.kMaxAtReferencePerM <=
@@ -119,6 +142,15 @@ Core::Status PrescribedKolmogorovProvider::Validate() const {
       configuration_.validityCadenceS <= 0.0 ||
       configuration_.coordinateFrame.empty()) {
     return Invalid("prescribed turbulence scales or spectral band are invalid");
+  }
+  if ((configuration_.spectrumModel ==
+           PrescribedSpectrumModel::Kolmogorov &&
+       !NearlyEqual(configuration_.spectralIndex, 5.0 / 3.0)) ||
+      (configuration_.spectrumModel ==
+           PrescribedSpectrumModel::Kraichnan &&
+       !NearlyEqual(configuration_.spectralIndex, 3.0 / 2.0))) {
+    return Invalid(
+        "prescribed spectral index contradicts the named turbulence model");
   }
   return Core::Status::OK();
 }
@@ -179,8 +211,15 @@ TurbulenceSample PrescribedKolmogorovProvider::Evaluate(
 
   const double radiusRatio = configuration_.referenceRadiusM / radius;
   sample.deltaB2T2 = std::pow(configuration_.deltaBOverB * background.absB, 2);
-  sample.deltaBPlus2T2 = 0.5 * sample.deltaB2T2;
-  sample.deltaBMinus2T2 = 0.5 * sample.deltaB2T2;
+  // The normalized cross helicity fixes the directional partition without an
+  // implicit balanced-wave assumption.  The algebra conserves total magnetic
+  // variance exactly for every sigma_c in [-1,1].
+  sample.deltaBPlus2T2 = 0.5 *
+      (1.0 + configuration_.normalizedCrossHelicity) * sample.deltaB2T2;
+  sample.deltaBMinus2T2 = 0.5 *
+      (1.0 - configuration_.normalizedCrossHelicity) * sample.deltaB2T2;
+  sample.waveEnergyPlusJPerM3 = sample.deltaBPlus2T2 / kMu0;
+  sample.waveEnergyMinusJPerM3 = sample.deltaBMinus2T2 / kMu0;
   if (background.B.Dot(positionM) >= 0.0) {
     sample.deltaBOutward2T2 = sample.deltaBPlus2T2;
     sample.deltaBInward2T2 = sample.deltaBMinus2T2;
@@ -208,8 +247,12 @@ TurbulenceSample PrescribedKolmogorovProvider::Evaluate(
 std::string PrescribedKolmogorovProvider::ResolvedManifest() const {
   std::ostringstream output;
   output << std::setprecision(17) << std::scientific
-         << "prescribed-kolmogorov-v1"
+         << "prescribed-power-law-v2"
+         << ";model="
+         << PrescribedSpectrumModelName(configuration_.spectrumModel)
          << ";deltaB_over_B=" << configuration_.deltaBOverB
+         << ";normalized_cross_helicity="
+         << configuration_.normalizedCrossHelicity
          << ";reference_m=" << configuration_.referenceRadiusM
          << ";kmin_ref_m-1=" << configuration_.kMinAtReferencePerM
          << ";kmax_ref_m-1=" << configuration_.kMaxAtReferencePerM
@@ -331,6 +374,8 @@ TurbulenceSample AwsomTurbulenceProvider::Evaluate(
   sample.deltaBPlus2T2 = kMu0 * matched->wPlusJPerM3;
   sample.deltaBMinus2T2 = kMu0 * matched->wMinusJPerM3;
   sample.deltaB2T2 = sample.deltaBPlus2T2 + sample.deltaBMinus2T2;
+  sample.waveEnergyPlusJPerM3 = matched->wPlusJPerM3;
+  sample.waveEnergyMinusJPerM3 = matched->wMinusJPerM3;
   if (background.B.Dot(positionM) >= 0.0) {
     sample.deltaBOutward2T2 = sample.deltaBPlus2T2;
     sample.deltaBInward2T2 = sample.deltaBMinus2T2;

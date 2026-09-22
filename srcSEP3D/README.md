@@ -102,14 +102,105 @@ deliberately sub-cell tube and checks every sampled centreline segment.
 
 | Section | Required keys | Contract |
 |---|---|---|
-| `[background]` | `provider`, `external_script` | Standalone schema 3 requires `analytic-parker` and `external_script = false`. A coupled SWMF host uses the parser-free typed interface instead. |
-| `[background.parker]` | `reference_radius_m`, `radial_field_at_reference_t`, `solar_rotation_rate_rad_per_s`, `solar_wind_speed_m_per_s`, `magnetic_polarity`, `number_density_at_reference_m3`, `temperature_k`, `validity_cadence_s` | Complete analytic Parker state in SI. Wind, rotation, source radius, field normalization, density, temperature, and polarity must agree with `[swcme]`. |
-| `[turbulence]` | `authority`, `delta_b_over_b`, `k_min_per_m`, `k_max_per_m`, `spectral_index`, `correlation_length_m`, `missing_data`, `resonance_range`, `self_consistent_3d` | Schema 3 standalone authority is `prescribed`; self-consistent 3-D is false. Missing-data policy is `fail` or `ballistic`; resonance policy is `reject` or `power-law-extension`. |
+| `[background]` | `provider`, `external_script` | Implemented standalone authority is `analytic-parker`. `python-interpolator` is a recognized, typed, reserved future authority and stops before AMPS initialization; it never falls through to Parker/SWMF. The legacy Boolean must remain false. A coupled SWMF host uses the parser-free typed interface. |
+| `[background.parker]` | `reference_radius_m`, `radial_field_at_reference_t`, `solar_rotation_rate_rad_per_s`, `solar_wind_speed_m_per_s`, `magnetic_polarity`, `number_density_at_one_au_m3`, `temperature_k`, `validity_cadence_s` | SI cross-check of the Parker/SWCME ambient state. Magnetic Br may use any valid reference radius; electron density is unambiguously at one AU. Wind, rotation, source radius, field, density, temperature, and polarity must agree with `[swcme]`; the typed provider then receives canonical SWCME values, including its thermodynamic closure/composition. |
+| `[turbulence]` | `authority`, `model`, `delta_b_over_b`, `normalized_cross_helicity`, `reference_radius_m`, `k_min_per_m`, `k_max_per_m`, `k_min_radial_exponent`, `k_max_radial_exponent`, `spectral_index`, `correlation_length_m`, `correlation_length_radial_exponent`, `validity_cadence_s`, `missing_data`, `resonance_range`, `self_consistent_3d` | Standalone authority is `prescribed`. Model is `kolmogorov`, `kraichnan`, or `power-law`; named models require exactly their documented slope. Cross helicity explicitly partitions directional energy. Self-consistent 3-D is false. Missing-data policy is `fail` or `ballistic`; resonance policy is `reject` or `power-law-extension`. |
 | `[transport]` | `cell_crossing_fraction`, `diffusion_fraction`, `focusing_fraction`, `cooling_fraction`, `field_variation_fraction`, `shock_crossing_fraction`, `minimum_substep_s`, `maximum_substeps`, `pitch_angle_scheme`, `perpendicular_diffusion`, `constant_kappa_perpendicular_m2_per_s`, `kappa_perpendicular_to_parallel_ratio`, `drifts` | Positive timestep limiters. Pitch scheme is `reflecting-milstein` or `reflecting-euler-maruyama`. Perpendicular mode is `none`, `constant`, or `constant-ratio`; drift is `none`, `gradient-b`, `curvature`, or `gradient-curvature`. Selected extensions require their positive coefficient/storage. |
 | `[shock]` | `authority` | Must be `swcme`. Schema 3 rejects the retired constant-radius/speed/compression surrogate fields. |
 | `[source]` | `enabled`, `physical_particle_rate_per_s`, `injection_efficiency`, `minimum_energy_j`, `maximum_energy_j`, `samples_per_step` | All values apply independently to every species compiled by AMPS `SpeciesList`. Rate is the per-species physical seed rate before efficiency and patch partition; energies are total kinetic-energy bounds; `samples_per_step` is the exact per-species computational count over the complete shock. Each patch's canonical compression ratio determines its DSA slope. |
 | `[species]` | `macroparticle_weight` | Post-compile input owns only the positive common base AMPS statistical weight. Count, order, symbols, masses, and charges come exclusively from the compiled AMPS table and cannot be redefined here. |
 | `[storage]` | `magnetic_gradient`, `velocity_gradient`, `sampling_bytes_per_cell` | Explicit associated-data layout. Required transport choices may force a gradient on before the layout fingerprint freezes. |
+
+### Initialized Parker, solar-wind, and turbulence physics
+
+Schema 3 has one ambient-physics authority, not two agreeing approximations.
+The application first resolves the complete `[swcme]` layer with SWCME's own
+parser. The shorter `[background.parker]` section is a fail-closed human-review
+cross-check. After agreement, wind speed, rotation rate, polarity, density,
+proton/electron/alpha temperatures, abundance, adiabatic index, reference
+latitude, rotation axis, and thermodynamic closure are copied from the
+canonical SWCME result into `AnalyticParkerProvider`. Decimal spellings in the
+two sections therefore cannot produce separate runtime states.
+
+At position  \(\mathbf x\), radius \(r\), local colatitude \(\theta\), and
+source surface \(r_0\), the initialized magnetic field is
+
+\[
+B_r(r)=B_r(r_\mathrm{ref})
+       \left(\frac{r_\mathrm{ref}}{r}\right)^2,
+\qquad
+B_\phi(r,\theta)=-B_r(r)\,
+       \frac{\Omega(r-r_0)\sin\theta}{V_\mathrm{sw}}.
+\]
+
+The Cartesian implementation calls the shared SWCME Parker evaluator and uses
+the configured rotation axis; there is no singular spherical basis at the
+poles. Its closed Cartesian derivative supplies `gradB`, `div_bhat`, focusing
+length, and curvature. Magnetic polarity changes the vector direction but not
+the polarity-independent field-line/tube geometry.
+
+The wind is steady and radial,
+\(\mathbf U=V_\mathrm{sw}\hat{\mathbf r}\), with
+\(\nabla\mathbf U=V_\mathrm{sw}(\mathbf I-\hat{\mathbf r}\hat{\mathbf r})/r\)
+and \(\nabla\!\cdot\mathbf U=2V_\mathrm{sw}/r\). Electron density is the
+SWCME-normalized Leblanc, Dulk & Bougeret form
+
+\[
+n_e(r)=S\,10^6\left[
+3.3\!\times\!10^5\left(\frac{R_\odot}{r}\right)^2+
+4.1\!\times\!10^6\left(\frac{R_\odot}{r}\right)^4+
+8.0\!\times\!10^7\left(\frac{R_\odot}{r}\right)^6
+\right]\ \mathrm{m}^{-3},
+\]
+
+where \(S\) is solved so the configured `ambient.density_1au` is exact. This
+replaces the former pure \(r^{-2}\) approximation near the Sun. For
+`proton_only`, \(n_p=n_e\), \(\rho=m_p n_p\), and
+\(p=n_p k_B T_p\). For `multi_species`, charge neutrality and the configured
+\(f_\alpha=n_\alpha/n_p\) give
+
+\[
+n_p=\frac{n_e}{1+2f_\alpha},\quad n_\alpha=f_\alpha n_p,
+\quad
+\rho=m_p n_p+m_\alpha n_\alpha,
+\]
+
+\[
+p=k_B(n_pT_p+n_eT_e+n_\alpha T_\alpha),\qquad
+v_A=\frac{|B|}{\sqrt{\mu_0\rho}}.
+\]
+
+Thus density, pressure, and Alfvén speed in the AMPS initialization product
+are all generated by the same SWCME closure used by the shock model.
+
+For prescribed turbulence, `delta_b_over_b = a` and the local background give
+
+\[
+\delta B^2=(a|B|)^2,\quad
+\delta B_+^2=\tfrac12(1+\sigma_c)\delta B^2,\quad
+\delta B_-^2=\tfrac12(1-\sigma_c)\delta B^2,
+\quad w_\pm=\delta B_\pm^2/\mu_0,
+\]
+
+where `normalized_cross_helicity` is \(\sigma_c\in[-1,1]\). Wave-number
+bounds follow their separately declared powers of
+\(r_\mathrm{ref}/r\); correlation length follows its declared power of
+\(r/r_\mathrm{ref}\). `kolmogorov` requires \(q=5/3\), `kraichnan` requires
+\(q=3/2\), and `power-law` accepts the explicit validated \(q>1\). In all
+cases \(P(k)=Ak^{-q}\) is normalized so its finite-band integral is
+\(\delta B^2\). Both directional variances are stored in every initialized
+physical AMPS cell; the Tecplot writer also publishes the two SI energy
+densities.
+
+`provider = python-interpolator` is the planned precalculated-heliosphere path,
+but it is deliberately not an executable subprocess yet. The released parser
+returns `ReservedFeature` before mesh allocation. A future implementation must
+implement `BackgroundProvider`, batch all owner-local coordinates in metres at
+one prepared epoch, require a named coordinate frame and units, validate a
+complete `BackgroundSample` for every requested point, and publish only after
+the same all-rank transaction used by Parker/SWMF succeeds. Python will never
+be called from a particle mover or used as an unvalidated point-by-point
+fallback.
 
 For schema 3 the base AMPS weight must satisfy
 
@@ -167,10 +258,39 @@ unit-bearing variable names. After block-local time step/weight installation
 and background publication, it also calls AMPS' native data writer for
 `initialization_data_tecplot_file`. That product contains magnetic field, bulk
 velocity, density, divergence, temperature, pressure, Alfvén speed, focusing
-length, curvature, strain, enabled gradients/wave variance, and AMPS' `Local
-Time Step` and `Local Particle Weight` columns. A mixed SpeciesList produces
+length, curvature, strain, enabled gradients, directional wave variance
+`deltaB_plus/minus_squared_T2`, directional wave-energy density
+`wave_energy_plus/minus_J_per_m3`, and AMPS' `Local Time Step` and `Local
+Particle Weight` columns. A mixed SpeciesList produces
 `.species-N` siblings because those two block columns are species-selected.
 All paths are mandatory and write failures are fatal.
+
+The data-bearing file is intentionally the final operation of `amps_init()`;
+it is not written at the earlier geometry-output point in `amps_init_mesh()`.
+Before the writer is allowed to run, srcSEP3D copies each validated immutable
+background sample into both storage representations used by the executable:
+its versioned application cache and AMPS' independent native DATAFILE
+center-node buffer. The native mapping is exact: `Bx/By/Bz` receive the Parker
+field, `vPlasma*` receives the SWCME wind, native density receives the
+documented electron density, native temperature receives proton temperature,
+native pressure receives the canonical total thermal pressure, and the native
+magnetic-gradient tensor receives the provider's analytic tensor. `Ex/Ey/Ez`
+is the ideal-MHD motional field `-U x B`; a native current slot, when compiled,
+receives `curl(B)/mu0` from that same analytic gradient. No field is reevaluated
+by a second model.
+
+The bridge first writes finite zeros to the native buffer of every owner-local
+Cartesian cell, overwrites only cells in the configured heliocentric shell,
+then exchanges associated-data halos on all MPI ranks. Thus AMPS'
+center-to-corner interpolation cannot create a rank-boundary zero seam, while
+inner/outer Cartesian padding remains a finite placeholder guarded by
+`background_valid=0`. A DATAFILE build declaring more than one ion-fluid slot
+is rejected because the input schema does not define a fluid-index mapping;
+replicating one solar-wind state into unnamed fluids would not be physically
+valid. Reader-specific native quantities absent from the background contract
+(for example the ARMS flux-function slot) remain non-authoritative; the
+unit-bearing srcSEP3D columns and validity flags are the initialization
+contract for those cases.
 
 The native data file contains only finite numeric values. Cartesian AMR padding
 cells outside the configured heliocentric shell contain zero placeholders and
@@ -401,9 +521,12 @@ initialization order, and invariants.
 
 - `BackgroundProvider` is active and independent of AMPS/MPI.
 - `AnalyticParkerProvider` supplies Cartesian magnetic field, analytic
-  magnetic/velocity gradients, focusing length, curvature, density,
-  temperature, pressure, Alfvén speed, and validity metadata. Its Cartesian
-  form has finite polar limits.
+  magnetic/velocity gradients, focusing length, curvature, and validity
+  metadata. Its ambient plasma is the canonical SWCME Parker/Leblanc state,
+  including selectable proton-only or charge-neutral electron/proton/alpha
+  thermodynamics. Its Cartesian form has finite polar limits.
+- `PythonInterpolator` is a typed reserved authority. Selecting it fails before
+  AMPS initialization; no script is executed and no analytic fallback occurs.
 - `SwmfAwsomProvider` imports read-only SI or documented AWSoM coupling units,
   validates frame/epoch/ownership/completeness, and commits a generation only
   after the entire candidate succeeds.
@@ -414,8 +537,10 @@ initialization order, and invariants.
 - Batch evaluation returns one status per point and never overwrites output for
   a failed point.
 - The AMPS boundary stores every complete background field at its frozen
-  offset, then publishes the same immutable object through either the
-  standalone or SWMF `Runtime` adapter.
+  application offset, mirrors the same values into allocated native AMPS
+  DATAFILE offsets, exchanges halos, then publishes the immutable object
+  through either the standalone or SWMF `Runtime` adapter. The data-bearing
+  initialization writer is gated on completion of that installation boundary.
 
 See [BACKGROUND_FIELD.md](BACKGROUND_FIELD.md) for units, field completeness,
 coupling ownership, and atomicity rules.
@@ -423,9 +548,11 @@ coupling ownership, and atomicity rules.
 ### Phase T: turbulence and scattering inputs
 
 - `TurbulenceProvider` is a separate authority from `BackgroundProvider`.
-- The prescribed provider produces a normalized finite-band Kolmogorov
-  spectrum with explicit amplitude, wave-number bounds, radial scaling, and
-  correlation length.
+- The prescribed provider produces a normalized finite-band Kolmogorov,
+  Kraichnan, or explicit power-law spectrum with explicit amplitude, cross
+  helicity, wave-number bounds, radial scaling, correlation length, and update
+  cadence. It publishes both directional magnetic variance and SI total wave
+  energy density.
 - The AWSoM adapter accepts `w+` propagating along `+B` and `w-` propagating
   against `+B`, both in J/m³. It uses `δB²=μ₀w` and resolves outward/inward
   labels from the sign of `B·r`, so polarity reversals cannot silently swap
@@ -549,7 +676,9 @@ The following are intentionally not enabled:
 
 - current-sheet drift and arbitrary tensor-valued perpendicular closures;
 - self-consistent 3-D turbulence evolution;
-- external-script background providers;
+- execution of the recognized `python-interpolator` background authority (the
+  typed provider/provenance boundary is present; the external batch protocol is
+  intentionally reserved);
 - unconfigured direct access to mutable SWMF state from mover workers;
 - bundled linked/MPI and observational evidence. Those Phase-V gates require
   the configured target executable and independently reviewed evidence bytes.
@@ -706,7 +835,9 @@ without this guard, overlaying a new package can retain an older
 `mesh_model.o` whose unchanged symbols resolve but whose C03/C05 ABI does not.
 The archive step also verifies every required member and the current
 normalized-domain/preflight definitions before the final Fortran-driver link.
-`BLDL3D07` enforces this freshness contract.
+`BLDL3D07` enforces this freshness contract. `BLDL3D08` independently enforces
+that the validated background is copied into AMPS' native DATAFILE fields and
+halo-exchanged before the final data-bearing initialization writer is called.
 
 ## Implemented acceptance groups
 
@@ -716,11 +847,11 @@ normalized-domain/preflight definitions before the final Fortran-driver link.
 | `HARN`, `RUNNER`, `LAY`, `BLD`, `UTIL` | runner, layering, binary boundary, frozen common kernels |
 | `LIFE3D01–04` | immutable configuration and complete lifecycle transition matrix |
 | `R3D01–07` | mover hook, subcycling, transactional snapshots, clock/events, source, observers, complete restart |
-| `CFG3D01–07` | input/CLI, typed contracts, domains, shared Parker geometry, mesh/memory preflight, finite-line schema, complete AMPS species-table binding |
+| `CFG3D01–09` | input/CLI, typed contracts, domains, shared Parker geometry, mesh/memory preflight, finite-line/schema-3 contracts, AMPS species binding, background/turbulence selection |
 | `MSH3D01–10` | resolution bounds/laws, tube geometry, balance, octrees, memory, ownership, presets, gradients, finite-line/origin identities |
-| `BGP3D01–06` | analytic Parker identities, component laws, focusing, wind derivatives, polar limits |
+| `BGP3D01–07` | analytic Parker identities, component laws, focusing, wind derivatives, polar limits, SWCME Leblanc/multi-species closure |
 | `SNAP3D01–08` | completeness, finite values, units, epochs, atomicity, interpolation, batch status, frame |
-| `TUR3D01–04` | spectrum normalization, AWSoM mapping, resonance range, missing-data policy |
+| `TUR3D01–05` | spectrum normalization, AWSoM mapping, resonance range, missing-data policy, selectable slopes/cross helicity/wave energy |
 | `COEF3D01–02`, `COEF3D06` | six-decade conversions, bitwise shared-kernel identity, and nonzero field-aligned kappa-gradient stencils |
 | `COEF3D03–05`, `PRK3D01–08` | tensor assembly/Itô drift and Parker transport behavior |
 | `FTE3D01–07`, `RNG3D01–03` | focused transport, pitch boundaries, strong-scattering limit, keyed reproducibility |

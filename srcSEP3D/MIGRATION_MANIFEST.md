@@ -217,16 +217,16 @@ blocks. `MSH3D01–09` are the release evidence.
 No provider writes AMPS memory. The L3 boundary maps a validated immutable
 snapshot to the owner-local cell list and then publishes its metadata. Failed
 candidates and failed batch indices do not modify active output.
-`BGP3D01–06` and `SNAP3D01–08` are the release evidence.
+`BGP3D01–07` and `SNAP3D01–08` are the release evidence.
 
 ## Phase T — turbulence and scattering inputs
 
 | File | Ownership and invariant |
 |---|---|
-| `turbulence/turbulence_provider.h` | separate turbulence authority, typed missing/ballistic state, directional magnetic variance |
-| `turbulence/turbulence_models.{h,cpp}` | sep_common-independent provider API, normalized prescribed spectrum, explicit AWSoM w+/w− conversion, and resonance policy |
+| `turbulence/turbulence_provider.h` | separate turbulence authority, typed missing/ballistic state, directional magnetic variance and SI wave-energy density |
+| `turbulence/turbulence_models.{h,cpp}` | sep_common-independent provider API, selectable normalized Kolmogorov/Kraichnan/power-law spectrum, explicit cross helicity, AWSoM w+/w− conversion, and resonance policy |
 | `turbulence/coefficient_bridge.h` | opt-in adapter declarations for canonical sep_common coefficient types; intentionally excluded from the AMPS-facing provider header |
-| `runtime/run_configuration.{h,cpp}` | validates/fingerprints amplitude, spectral band/index, correlation scale, missing policy, and resonance policy |
+| `runtime/run_configuration.{h,cpp}` | validates/fingerprints named model, amplitude, cross helicity, radial scalings, spectral band/index, correlation scale, cadence, missing policy, and resonance policy |
 | `TURBULENCE_SCATTERING.md` | units, sign convention, normalization, policies, and shared-kernel boundary |
 
 The AWSoM convention is field aligned: plus travels along `+B`, minus against

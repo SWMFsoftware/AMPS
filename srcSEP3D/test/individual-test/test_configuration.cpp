@@ -697,6 +697,54 @@ Result RunCFG3D08() {
   return Pass("schema version 3 resolves complete SWCME physics, honors explicit Parker references/source radii, and rejects missing or inconsistent physics");
 }
 
+Result RunCFG3D09() {
+  std::ifstream input("examples/sep3d_analytic_parker.in");
+  std::ostringstream buffer;
+  buffer << input.rdbuf();
+  const std::string complete = buffer.str();
+  if (!input || complete.empty())
+    return Fail("could not read the selectable-background/turbulence fixture");
+
+  RM::RunConfiguration3DOptions options;
+  std::string kraichnan = complete;
+  const std::string model = "model = kolmogorov";
+  const std::string index = "spectral_index = 1.6666666666666667";
+  const std::size_t modelAt = kraichnan.find(model);
+  const std::size_t indexAt = kraichnan.find(index);
+  if (modelAt == std::string::npos || indexAt == std::string::npos)
+    return Fail("example lost its explicit turbulence model or slope");
+  kraichnan.replace(modelAt, model.size(), "model = kraichnan");
+  kraichnan.replace(kraichnan.find(index), index.size(),
+                    "spectral_index = 1.5");
+  if (!RM::ParseConfigurationText(kraichnan, &options).ok() ||
+      options.prescribedTurbulenceModel !=
+          RM::PrescribedTurbulenceModel::Kraichnan) {
+    return Fail("a physically consistent Kraichnan selection did not parse");
+  }
+
+  std::string contradictory = complete;
+  contradictory.replace(contradictory.find(model), model.size(),
+                         "model = kraichnan");
+  if (RM::ParseConfigurationText(contradictory, &options).ok())
+    return Fail("a named Kraichnan model accepted the Kolmogorov index");
+
+  std::string python = complete;
+  const std::string parker = "provider = analytic-parker";
+  const std::size_t parkerAt = python.find(parker);
+  if (parkerAt == std::string::npos)
+    return Fail("example lost its explicit background provider");
+  python.replace(parkerAt, parker.size(), "provider = python-interpolator");
+  const SEP3D::Core::Status pythonStatus =
+      RM::ParseConfigurationText(python, &options);
+  if (pythonStatus.code != SEP3D::Core::StatusCode::ReservedFeature ||
+      pythonStatus.message.find("Python") == std::string::npos) {
+    return Fail("reserved Python background did not fail with its typed status");
+  }
+
+  return Pass(
+      "input selects validated prescribed turbulence models and reserves the future Python background explicitly");
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
@@ -727,5 +775,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
       make("CFG3D06", "Initialization schema", "Finite Parker-line fields and fail-closed consistency checks.", RunCFG3D06),
       make("CFG3D07", "Compiled-species binding", "Complete generated AMPS table and fingerprint contract.", RunCFG3D07),
       make("CFG3D08", "Complete initialization", "Schema-v3 canonical SWCME and exact per-step source contract.", RunCFG3D08),
+      make("CFG3D09", "Background/turbulence selection", "Named prescribed slopes and reserved Python source.", RunCFG3D09),
   };
 }

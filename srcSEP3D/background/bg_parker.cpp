@@ -2,6 +2,7 @@
 
 #include "sep_background_snapshot.h"
 
+#include <array>
 #include <cmath>
 #include <iomanip>
 #include <limits>
@@ -50,6 +51,53 @@ Core::ParkerSpiralGeometry Geometry(const ParkerConfiguration& configuration) {
   return geometry;
 }
 
+// Translate the provider-neutral SI record into the one canonical SWCME
+// ambient state.  SWCME accepts total |B| at one AU, whereas srcSEP3D's Parker
+// cross-check records radial Br at an arbitrary reference radius.  The
+// conversion below is the exact inverse of SWCME's documented one-AU Parker
+// normalization and therefore preserves both conventions without maintaining
+// a second magnetic-field model.
+swcme::solarwind::ConfigSI SwcmeConfiguration(
+    const ParkerConfiguration& configuration) {
+  swcme::solarwind::ConfigSI result;
+  result.V_sw_m_s = configuration.solarWindSpeedMPerS;
+  result.T_K = configuration.temperatureK;
+  result.gamma_ad = configuration.adiabaticIndex;
+  result.thermodynamic_closure = configuration.thermodynamicClosure;
+  result.alpha_to_proton_ratio = configuration.alphaToProtonRatio;
+  result.electron_T_K = configuration.electronTemperatureK;
+  result.alpha_T_K = configuration.alphaTemperatureK;
+  result.parker_radial_polarity = configuration.magneticPolarity;
+  result.reference_sin_theta = configuration.referenceSinColatitude;
+  result.solar_rotation_rate_rad_s =
+      configuration.solarRotationRateRadPerS;
+  result.parker_source_radius_m = configuration.sourceRadiusM;
+
+  const double brAtOneAuT = configuration.radialFieldAtReferenceT *
+      std::pow(configuration.referenceRadiusM / Core::Const::AU, 2);
+  const double referencePitch = configuration.solarRotationRateRadPerS *
+      (Core::Const::AU - configuration.sourceRadiusM) /
+      configuration.solarWindSpeedMPerS *
+      configuration.referenceSinColatitude;
+  result.B1AU_T = brAtOneAuT *
+      std::sqrt(1.0 + referencePitch * referencePitch);
+
+  // SWCME's Leblanc helper is parameterized by n_e(1 AU).  A provider record
+  // may state the same normalization at another explicit radius, so first
+  // prepare a unit-one-AU profile and use its linear scaling to recover the
+  // equivalent n_e(1 AU).  This is exact for the complete C2/r^2+C4/r^4+C6/r^6
+  // law; replacing it with an r^-2 conversion would discard the near-Sun
+  // Leblanc terms that this integration is meant to preserve.
+  result.n1AU_m3 = 1.0;
+  const swcme::solarwind::PreparedState unitDensity =
+      swcme::solarwind::prepare(result);
+  const double unitAtReference = swcme::solarwind::density_m3(
+      unitDensity, configuration.densityReferenceRadiusM);
+  result.n1AU_m3 =
+      configuration.numberDensityAtReferenceM3 / unitAtReference;
+  return result;
+}
+
 }  // namespace
 
 AnalyticParkerProvider::AnalyticParkerProvider(
@@ -70,7 +118,12 @@ Core::Status AnalyticParkerProvider::Validate() const {
       configuration_.sourceLongitudeRad,
       configuration_.sourceColatitudeRad,
       configuration_.radialFieldAtReferenceT,
-      configuration_.numberDensityAtReferenceM3, configuration_.temperatureK,
+      configuration_.numberDensityAtReferenceM3,
+      configuration_.densityReferenceRadiusM, configuration_.temperatureK,
+      configuration_.adiabaticIndex, configuration_.alphaToProtonRatio,
+      configuration_.electronTemperatureK,
+      configuration_.alphaTemperatureK,
+      configuration_.referenceSinColatitude,
       configuration_.solarWindSpeedMPerS,
       configuration_.solarRotationRateRadPerS,
       configuration_.validityCadenceS};
@@ -81,8 +134,16 @@ Core::Status AnalyticParkerProvider::Validate() const {
       configuration_.referenceRadiusM <= configuration_.sourceRadiusM ||
       configuration_.radialFieldAtReferenceT <= 0.0 ||
       configuration_.numberDensityAtReferenceM3 <= 0.0 ||
+      configuration_.densityReferenceRadiusM <= configuration_.sourceRadiusM ||
       configuration_.temperatureK <= 0.0 ||
+      configuration_.adiabaticIndex <= 1.0 ||
+      configuration_.alphaToProtonRatio < 0.0 ||
+      configuration_.electronTemperatureK <= 0.0 ||
+      configuration_.alphaTemperatureK <= 0.0 ||
+      configuration_.referenceSinColatitude < 0.0 ||
+      configuration_.referenceSinColatitude > 1.0 ||
       configuration_.solarWindSpeedMPerS <= 0.0 ||
+      configuration_.solarRotationRateRadPerS < 0.0 ||
       configuration_.validityCadenceS <= 0.0 ||
       configuration_.sourceColatitudeRad < 0.0 ||
       configuration_.sourceColatitudeRad > Core::Const::kPi ||
@@ -90,6 +151,12 @@ Core::Status AnalyticParkerProvider::Validate() const {
        configuration_.magneticPolarity != -1) ||
       configuration_.coordinateFrame.empty()) {
     return Invalid("Parker configuration is outside its physical range");
+  }
+  if (configuration_.thermodynamicClosure !=
+          swcme::solarwind::ThermodynamicClosure::ProtonOnly &&
+      configuration_.thermodynamicClosure !=
+          swcme::solarwind::ThermodynamicClosure::MultiSpecies) {
+    return Invalid("Parker thermodynamic closure is not a supported SWCME closure");
   }
   const double axisNorm = configuration_.rotationAxis.Norm();
   if (!std::isfinite(axisNorm) || axisNorm <= 0.0) {
@@ -105,11 +172,23 @@ Core::Status AnalyticParkerProvider::Prepare(double timeS) {
   const Core::Status valid = Validate();
   if (!valid.ok()) return valid;
   if (!std::isfinite(timeS)) return Invalid("Parker preparation time is not finite");
+  // Build the complete candidate cache only after all divisors and physical
+  // ranges have been validated.  Assigning it before metadata publication
+  // keeps Prepare transactional if future SWCME preparation adds diagnostics.
+  const swcme::solarwind::PreparedState candidateSolarWind =
+      swcme::solarwind::prepare(SwcmeConfiguration(configuration_));
+  if (!std::isfinite(candidateSolarWind.Br1AU_T) ||
+      !std::isfinite(candidateSolarWind.C2) ||
+      !std::isfinite(candidateSolarWind.C4) ||
+      !std::isfinite(candidateSolarWind.C6)) {
+    return Invalid("SWCME Parker/Leblanc preparation produced a non-finite state");
+  }
   SnapshotMetadata candidate = metadata_;
   candidate.epochS = timeS;
   candidate.validFromS = timeS;
   candidate.validUntilS = timeS + configuration_.validityCadenceS;
   candidate.generation = metadata_.generation + 1;
+  solarWind_ = candidateSolarWind;
   metadata_ = candidate;
   prepared_ = true;
   return Core::Status::OK();
@@ -137,20 +216,21 @@ BackgroundSample AnalyticParkerProvider::Evaluate(
   const Core::Vec3 rHat = positionM / radius;
   const Core::Vec3 axis = configuration_.rotationAxis.Normalized();
   const Core::Vec3 axisCrossX = axis.Cross(positionM);
-  const double polarity = static_cast<double>(configuration_.magneticPolarity);
-  const double coefficient = polarity * configuration_.radialFieldAtReferenceT *
-      configuration_.referenceRadiusM * configuration_.referenceRadiusM;
-  const double winding = configuration_.solarRotationRateRadPerS /
-                         configuration_.solarWindSpeedMPerS;
+  const std::array<double, 3> axisArray = {{axis.x, axis.y, axis.z}};
+  const std::array<double, 3> radialArray = {{rHat.x, rHat.y, rHat.z}};
+  const std::array<double, 3> canonicalField =
+      swcme::solarwind::parker_field_cartesian(
+          solarWind_, axisArray, radialArray, radius);
+  sample.B = {canonicalField[0], canonicalField[1], canonicalField[2]};
+
+  // The closed Cartesian derivative below differentiates the exact same
+  // vector returned by swcme::solarwind::parker_field_cartesian.  Br1AU is
+  // signed, so polarity enters once here and never alters mesh geometry.
+  const double coefficient = solarWind_.Br1AU_T *
+      Core::Const::AU * Core::Const::AU;
+  const double winding = solarWind_.solar_rotation_rate_rad_s /
+                         solarWind_.V_sw_m_s;
   const double inverseR3 = 1.0 / (radius * radius * radius);
-  const double spiralFactor = winding * (radius - configuration_.sourceRadiusM);
-  const Core::Vec3 unsignedField = coefficient * inverseR3 *
-      (positionM - spiralFactor * axisCrossX);
-  const Core::Vec3 geometricTangent =
-      Core::ParkerLocalTangent(positionM, Geometry(configuration_));
-  // The helper above is also used by the mesh centreline.  Apply polarity only
-  // here, after geometry is fixed, so a sign reversal cannot move refinement.
-  sample.B = polarity * unsignedField.Norm() * geometricTangent;
   sample.absB = sample.B.Norm();
   if (!(sample.absB > 0.0) || !std::isfinite(sample.absB)) {
     sample.status = Core::Status(Core::StatusCode::BackgroundInvalid,
@@ -202,23 +282,28 @@ BackgroundSample AnalyticParkerProvider::Evaluate(
               (sample.absB * sample.absB);
   sample.curvature = gradBhat.Apply(sample.bHat);
 
-  sample.U = configuration_.solarWindSpeedMPerS * rHat;
+  sample.U = solarWind_.V_sw_m_s * rHat;
   for (int i = 0; i < 3; ++i)
     for (int j = 0; j < 3; ++j)
-      sample.gradU(i, j) = configuration_.solarWindSpeedMPerS / radius *
+      sample.gradU(i, j) = solarWind_.V_sw_m_s / radius *
           ((i == j ? 1.0 : 0.0) -
            Component(rHat, i) * Component(rHat, j));
   sample.divU = sample.gradU.Trace();
   sample.fieldAlignedStrain =
       sample.gradU.DoubleContract(sample.bHat, sample.bHat);
-  const double densityScale = configuration_.referenceRadiusM / radius;
-  sample.numberDensityM3 = configuration_.numberDensityAtReferenceM3 *
-                           densityScale * densityScale;
-  sample.temperatureK = configuration_.temperatureK;
-  sample.pressurePa = sample.numberDensityM3 * Core::Const::k_B *
-                      sample.temperatureK;
+  // SWCME defines n as electron density.  thermodynamic_state() then applies
+  // the selected proton-only or charge-neutral electron/proton/alpha closure;
+  // in particular, Alfvén speed uses the resulting mass density rather than
+  // assuming rho=m_p*n_e in a multi-species plasma.
+  sample.numberDensityM3 =
+      swcme::solarwind::density_m3(solarWind_, radius);
+  const swcme::solarwind::ThermodynamicState thermodynamics =
+      swcme::solarwind::thermodynamic_state(
+          solarWind_, sample.numberDensityM3);
+  sample.temperatureK = solarWind_.T_K;
+  sample.pressurePa = thermodynamics.pressure_Pa;
   sample.alfvenSpeedMpS = sample.absB /
-      std::sqrt(kMu0 * Core::Const::m_p * sample.numberDensityM3);
+      std::sqrt(kMu0 * thermodynamics.mass_density_kg_m3);
   sample.generation = metadata_.generation;
   sample.configurationDigest = configurationDigest_;
   sample.valid = true;
@@ -229,14 +314,25 @@ BackgroundSample AnalyticParkerProvider::Evaluate(
 std::string AnalyticParkerProvider::ResolvedManifest() const {
   std::ostringstream out;
   out << std::setprecision(17) << std::scientific
-      << "parker-provider-v1"
+      << "parker-provider-swcme-v2"
       << ";source_m=" << configuration_.sourceRadiusM
       << ";source_lon_rad=" << configuration_.sourceLongitudeRad
       << ";source_colat_rad=" << configuration_.sourceColatitudeRad
       << ";reference_m=" << configuration_.referenceRadiusM
       << ";Br_ref_T=" << configuration_.radialFieldAtReferenceT
       << ";n_ref_m-3=" << configuration_.numberDensityAtReferenceM3
+      << ";n_reference_m=" << configuration_.densityReferenceRadiusM
       << ";temperature_K=" << configuration_.temperatureK
+      << ";gamma=" << configuration_.adiabaticIndex
+      << ";thermodynamic_closure="
+      << swcme::solarwind::thermodynamic_closure_name(
+             configuration_.thermodynamicClosure)
+      << ";alpha_to_proton=" << configuration_.alphaToProtonRatio
+      << ";electron_temperature_K="
+      << configuration_.electronTemperatureK
+      << ";alpha_temperature_K=" << configuration_.alphaTemperatureK
+      << ";reference_sin_colatitude="
+      << configuration_.referenceSinColatitude
       << ";wind_m_s=" << configuration_.solarWindSpeedMPerS
       << ";omega_rad_s=" << configuration_.solarRotationRateRadPerS
       << ";axis=" << configuration_.rotationAxis.x << ','

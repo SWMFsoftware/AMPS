@@ -48,14 +48,18 @@ StorageLayout BuildLayout(const RunConfiguration3DOptions& options) {
   if (options.storeVelocityGradient) {
     AppendField(9, &cursor, &layout.velocityGradientOffset);
   }
-  if (options.turbulence == TurbulenceAuthority::Swmf) {
-    AppendField(2, &cursor, &layout.waveEnergyOffset);
-  }
+  // Every turbulence authority now publishes the same two directional
+  // magnetic variances.  Prescribed waves are no less physical than imported
+  // AWSoM waves, so reserving storage only for SWMF made the standalone
+  // initialization product omit its wave state even though the provider had
+  // evaluated it.  The stored values remain deltaB_+^2 and deltaB_-^2 [T^2];
+  // Tecplot also emits w_+/-=deltaB_+/-^2/mu0 [J m^-3].
+  AppendField(2, &cursor, &layout.waveEnergyOffset);
   layout.cellAssociatedBytes = cursor;
   layout.samplingBytesPerCell = options.samplingBytesPerCell;
 
   std::ostringstream canonical;
-  canonical << "sep3d-storage-v1"
+  canonical << "sep3d-storage-v2"
             << ";B=" << layout.magneticFieldOffset
             << ";U=" << layout.bulkVelocityOffset
             << ";n=" << layout.numberDensityOffset
@@ -95,6 +99,12 @@ bool ValidProfileExponent(double value) {
   return std::isfinite(value) && value > 0.0;
 }
 
+bool NearlyEqual(double left, double right) {
+  return std::fabs(left - right) <=
+      128.0 * std::numeric_limits<double>::epsilon() *
+      std::max(1.0, std::max(std::fabs(left), std::fabs(right)));
+}
+
 std::string NormalizedSpeciesSymbol(std::string symbol) {
   // Case and surrounding whitespace are presentation details, but punctuation
   // is chemical identity: H, H_PLUS, and H+ must never collapse to one value.
@@ -117,7 +127,25 @@ std::string NormalizedSpeciesSymbol(std::string symbol) {
 const char* Name(BackgroundAuthority value) {
   switch (value) {
     case BackgroundAuthority::AnalyticParker: return "analytic-parker";
+    case BackgroundAuthority::PythonInterpolator: return "python-interpolator";
     case BackgroundAuthority::Swmf: return "swmf";
+  }
+  return "unknown";
+}
+
+const char* Name(PrescribedTurbulenceModel value) {
+  switch (value) {
+    case PrescribedTurbulenceModel::PowerLaw: return "power-law";
+    case PrescribedTurbulenceModel::Kolmogorov: return "kolmogorov";
+    case PrescribedTurbulenceModel::Kraichnan: return "kraichnan";
+  }
+  return "unknown";
+}
+
+const char* Name(SolarWindThermodynamicClosure value) {
+  switch (value) {
+    case SolarWindThermodynamicClosure::ProtonOnly: return "proton-only";
+    case SolarWindThermodynamicClosure::MultiSpecies: return "multi-species";
   }
   return "unknown";
 }
@@ -427,6 +455,14 @@ Core::Status RunConfiguration3D::Create(
   }
   if (normalized.inputSchemaVersion < 1 || normalized.inputSchemaVersion > 3)
     return Invalid("inputSchemaVersion must be 1, 2, or 3");
+  if (normalized.background == BackgroundAuthority::PythonInterpolator) {
+    // The provider value is intentionally recognized before any AMPS state is
+    // touched, but execution remains fail-closed until the Python process,
+    // units, batching, error, and provenance protocol has its own validation
+    // gate.  It is never treated as Parker or SWMF by an else branch.
+    return Core::Status::Reserved(
+        "Python heliospheric-model interpolation background");
+  }
   if (!FiniteVector(normalized.parkerSpiralOriginM) ||
       !FiniteVector(normalized.parkerSpiralInitialPointM) ||
       (normalized.parkerSpiralOriginM - normalized.coordinateOriginM).Norm() != 0.0 ||
@@ -562,17 +598,49 @@ Core::Status RunConfiguration3D::Create(
       normalized.memoryModel.safetyMarginFraction < 0.0) {
     return Invalid("memory-model coefficients or safety factors are invalid");
   }
+  if (normalized.prescribedTurbulenceModel !=
+          PrescribedTurbulenceModel::PowerLaw &&
+      normalized.prescribedTurbulenceModel !=
+          PrescribedTurbulenceModel::Kolmogorov &&
+      normalized.prescribedTurbulenceModel !=
+          PrescribedTurbulenceModel::Kraichnan) {
+    return Invalid("prescribed turbulence model is unknown");
+  }
   if (!std::isfinite(normalized.prescribedDeltaBOverB) ||
       normalized.prescribedDeltaBOverB <= 0.0 ||
+      !std::isfinite(normalized.turbulenceNormalizedCrossHelicity) ||
+      normalized.turbulenceNormalizedCrossHelicity < -1.0 ||
+      normalized.turbulenceNormalizedCrossHelicity > 1.0 ||
+      !std::isfinite(normalized.turbulenceReferenceRadiusM) ||
+      normalized.turbulenceReferenceRadiusM <= 0.0 ||
       !std::isfinite(normalized.turbulenceKMinPerM) ||
       normalized.turbulenceKMinPerM <= 0.0 ||
       !std::isfinite(normalized.turbulenceKMaxPerM) ||
       normalized.turbulenceKMaxPerM <= normalized.turbulenceKMinPerM ||
+      !std::isfinite(normalized.turbulenceKMinRadialExponent) ||
+      !std::isfinite(normalized.turbulenceKMaxRadialExponent) ||
       !std::isfinite(normalized.turbulenceSpectralIndex) ||
       normalized.turbulenceSpectralIndex <= 1.0 ||
       !std::isfinite(normalized.turbulenceCorrelationLengthM) ||
-      normalized.turbulenceCorrelationLengthM <= 0.0) {
-    return Invalid("turbulence amplitude, band, index, or correlation length is invalid");
+      normalized.turbulenceCorrelationLengthM <= 0.0 ||
+      !std::isfinite(normalized.turbulenceCorrelationLengthRadialExponent) ||
+      !std::isfinite(normalized.turbulenceValidityCadenceS) ||
+      normalized.turbulenceValidityCadenceS <= 0.0) {
+    return Invalid("turbulence amplitude, imbalance, radial scaling, band, "
+                   "index, correlation length, or cadence is invalid");
+  }
+  // Kolmogorov and Kraichnan are named physical closures, not aliases that
+  // silently overwrite a contradictory number.  The explicit index remains
+  // in complete input and must agree with the selected closure.  power-law is
+  // the opt-in route for another validated q>1 slope.
+  if ((normalized.prescribedTurbulenceModel ==
+           PrescribedTurbulenceModel::Kolmogorov &&
+       !NearlyEqual(normalized.turbulenceSpectralIndex, 5.0 / 3.0)) ||
+      (normalized.prescribedTurbulenceModel ==
+           PrescribedTurbulenceModel::Kraichnan &&
+       !NearlyEqual(normalized.turbulenceSpectralIndex, 3.0 / 2.0))) {
+    return Invalid("turbulence.spectral_index contradicts the selected named "
+                   "turbulence model");
   }
   if (normalized.turbulence == TurbulenceAuthority::Swmf &&
       normalized.background != BackgroundAuthority::Swmf) {
@@ -600,14 +668,33 @@ Core::Status RunConfiguration3D::Create(
       parker.sourceColatitudeRad, parker.referenceRadiusM,
       parker.radialFieldAtReferenceT, parker.solarRotationRateRadPerS,
       parker.solarWindSpeedMPerS, parker.numberDensityAtReferenceM3,
-      parker.temperatureK, parker.validityCadenceS};
+      parker.densityReferenceRadiusM,
+      parker.temperatureK, parker.adiabaticIndex,
+      parker.alphaToProtonRatio, parker.electronTemperatureK,
+      parker.alphaTemperatureK, parker.referenceSinColatitude,
+      parker.validityCadenceS};
   for (double value : parkerValues)
     if (!std::isfinite(value)) return Invalid("Parker configuration contains a non-finite value");
+  if (parker.thermodynamicClosure !=
+          SolarWindThermodynamicClosure::ProtonOnly &&
+      parker.thermodynamicClosure !=
+          SolarWindThermodynamicClosure::MultiSpecies) {
+    return Invalid("Parker thermodynamic closure is unknown");
+  }
   if (parker.sourceRadiusM != normalized.innerRadiusM ||
       parker.referenceRadiusM <= parker.sourceRadiusM ||
       parker.radialFieldAtReferenceT <= 0.0 ||
+      parker.solarRotationRateRadPerS < 0.0 ||
       parker.solarWindSpeedMPerS <= 0.0 ||
-      parker.numberDensityAtReferenceM3 <= 0.0 || parker.temperatureK <= 0.0 ||
+      parker.numberDensityAtReferenceM3 <= 0.0 ||
+      parker.densityReferenceRadiusM <= parker.sourceRadiusM ||
+      parker.temperatureK <= 0.0 ||
+      parker.adiabaticIndex <= 1.0 || parker.alphaToProtonRatio < 0.0 ||
+      parker.electronTemperatureK <= 0.0 ||
+      parker.alphaTemperatureK <= 0.0 ||
+      parker.referenceSinColatitude < 0.0 ||
+      parker.referenceSinColatitude > 1.0 ||
+      !FiniteVector(parker.rotationAxis) || parker.rotationAxis.Norm() <= 0.0 ||
       parker.validityCadenceS <= 0.0 ||
       (parker.magneticPolarity != 1 && parker.magneticPolarity != -1) ||
       parker.sourceColatitudeRad < 0.0 ||
@@ -739,7 +826,7 @@ Core::Status RunConfiguration3D::Create(
   const StorageLayout layout = BuildLayout(normalized);
   std::ostringstream physics;
   physics << std::setprecision(17) << std::scientific
-          << "sep3d-physics-v4"
+          << "sep3d-physics-v5"
           << ";intent=" << Name(normalized.intent)
           << ";background=" << Name(normalized.background)
           << ";turbulence=" << Name(normalized.turbulence)
@@ -799,7 +886,20 @@ Core::Status RunConfiguration3D::Create(
           << ";parker_wind_m_s=" << parker.solarWindSpeedMPerS
           << ";parker_polarity=" << parker.magneticPolarity
           << ";parker_density_m-3=" << parker.numberDensityAtReferenceM3
+          << ";parker_density_reference_m="
+          << parker.densityReferenceRadiusM
           << ";parker_temperature_K=" << parker.temperatureK
+          << ";parker_gamma=" << parker.adiabaticIndex
+          << ";parker_thermodynamic_closure="
+          << Name(parker.thermodynamicClosure)
+          << ";parker_alpha_to_proton=" << parker.alphaToProtonRatio
+          << ";parker_electron_temperature_K="
+          << parker.electronTemperatureK
+          << ";parker_alpha_temperature_K=" << parker.alphaTemperatureK
+          << ";parker_reference_sin_colatitude="
+          << parker.referenceSinColatitude
+          << ";parker_rotation_axis=" << parker.rotationAxis.x << ','
+          << parker.rotationAxis.y << ',' << parker.rotationAxis.z
           << ";parker_cadence_s=" << parker.validityCadenceS;
   if (normalized.inputSchemaVersion < 3) {
     physics << ";shock_from_s=" << shock.activeFromS
@@ -829,12 +929,26 @@ Core::Status RunConfiguration3D::Create(
   physics << ";source_samples_per_compiled_species=" << source.samplesPerStep
           << ";compiled_species_authority=AMPS-SpeciesList"
           << ";species_weight=" << normalized.species.macroparticleWeight
+          << ";prescribed_turbulence_model="
+          << Name(normalized.prescribedTurbulenceModel)
           << ";deltaB_over_B=" << normalized.prescribedDeltaBOverB
+          << ";turbulence_sigma_c="
+          << normalized.turbulenceNormalizedCrossHelicity
+          << ";turbulence_reference_m="
+          << normalized.turbulenceReferenceRadiusM
           << ";turbulence_kmin_m-1=" << normalized.turbulenceKMinPerM
           << ";turbulence_kmax_m-1=" << normalized.turbulenceKMaxPerM
+          << ";turbulence_kmin_radial_exponent="
+          << normalized.turbulenceKMinRadialExponent
+          << ";turbulence_kmax_radial_exponent="
+          << normalized.turbulenceKMaxRadialExponent
           << ";turbulence_index=" << normalized.turbulenceSpectralIndex
           << ";turbulence_correlation_m="
           << normalized.turbulenceCorrelationLengthM
+          << ";turbulence_correlation_radial_exponent="
+          << normalized.turbulenceCorrelationLengthRadialExponent
+          << ";turbulence_validity_cadence_s="
+          << normalized.turbulenceValidityCadenceS
           << ";missing_turbulence=" << Name(normalized.missingTurbulence)
           << ";resonance_range=" << Name(normalized.resonanceRange)
           << ";cell_crossing_fraction=" << normalized.cellCrossingFraction

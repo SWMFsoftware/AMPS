@@ -230,6 +230,18 @@ uses `nm -C` to require the current `MakeDomain(RunConfiguration3DOptions)` and
 `BuildRefinementPreflight` definitions before AMPS reaches `mpif90`. BLDL3D07
 protects that makefile contract without requiring a configured host.
 
+#### BLDL3D08 — initialized native-background output ordering
+
+This source gate protects the boundary between srcSEP3D's application-owned
+background cache and AMPS' separate DATAFILE cache. It requires the production
+driver to zero native padding, copy the validated density/velocity/temperature/
+pressure/B/E/gradient fields, exchange block halos, and mark the installation
+complete before the final `outputMeshDataTECPLOT` call. It also requires the
+physical-cell selection to enforce both spherical radii. The gate catches the
+regression in which custom `B_x_T/B_y_T/B_z_T` was initialized while AMPS'
+native `Bx/By/Bz` columns remained allocation-time zeros. A configured
+`BLDL3D01` run remains the compile/link authority for the AMPS API itself.
+
 ### Phase R1 shared-library gates
 
 `ARCH3D02` runs both canonical archives' `verify` targets, compares exact `ar`
@@ -478,7 +490,7 @@ equations, algorithms, case roles, and evidence schemas.
 | `phase-a` | ADP3D01, NAT3D04–05/08, SHK3D01–04 |
 | `phase-o` | NAT3D06–07 and RST3D01–03 |
 | `phase-v` | INT3D/VFY3D prerequisites, external NAT3D/MPI3D/XM3D/OV3D cases, and VALRUN3D01 |
-| `production` | BLDL3D01–07 |
+| `production` | BLDL3D01–08 |
 
 Suites can be repeated. Overlapping IDs are de-duplicated in stable order.
 

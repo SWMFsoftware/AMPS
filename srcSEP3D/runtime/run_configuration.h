@@ -20,8 +20,25 @@
 namespace SEP3D {
 namespace RuntimeModel {
 
-enum class BackgroundAuthority { AnalyticParker, Swmf };
+// The Python option is a deliberately reserved standalone source.  Giving it
+// a typed value now lets an input deck state its intended authority and fail
+// with a precise "not implemented" status; it must never fall through to the
+// SWMF branch or silently reuse the analytic Parker provider.
+enum class BackgroundAuthority {
+  AnalyticParker,
+  PythonInterpolator,
+  Swmf
+};
 enum class TurbulenceAuthority { Prescribed, Swmf };
+// A prescribed authority still needs a spectral closure.  Keeping this choice
+// separate from authority distinguishes "who supplies the waves" from "which
+// inertial-range slope describes them" and leaves the SWMF/AWSoM import path
+// unchanged.
+enum class PrescribedTurbulenceModel { PowerLaw, Kolmogorov, Kraichnan };
+// Runtime records remain independent of SWCME headers.  configuration_io.cpp
+// translates the canonical SWCME enum into this neutral value after SWCME has
+// validated the complete input layer.
+enum class SolarWindThermodynamicClosure { ProtonOnly, MultiSpecies };
 enum class ShockAuthority { None, Swcme };
 enum class TransportModel { Parker3D, Focused3D };
 // Domain presets are physical choices, not shorthand for a hidden numeric
@@ -54,6 +71,8 @@ enum class EnergyChannelSpacing { Logarithmic, Linear };
 
 const char* Name(BackgroundAuthority value);
 const char* Name(TurbulenceAuthority value);
+const char* Name(PrescribedTurbulenceModel value);
+const char* Name(SolarWindThermodynamicClosure value);
 const char* Name(ShockAuthority value);
 const char* Name(TransportModel value);
 const char* Name(DomainPreset value);
@@ -86,7 +105,26 @@ struct ParkerPhysicsOptions {
   double solarWindSpeedMPerS = Core::Const::V_sw_default;
   int magneticPolarity = 1;
   double numberDensityAtReferenceM3 = 5.0e6;
+  double densityReferenceRadiusM = Core::Const::AU;
   double temperatureK = 1.0e5;
+  // These values complete the canonical SWCME ambient thermodynamic state.
+  // numberDensityAtReferenceM3 is the electron density used to normalize the
+  // Leblanc profile at densityReferenceRadiusM. This radius is deliberately
+  // separate from the magnetic Br reference: SWCME declares density at one AU
+  // even when a user chooses another convenient radius for Br. ProtonOnly
+  // reproduces the historical p=n_p k_B T_p closure. MultiSpecies enforces
+  // charge neutrality and adds electron/alpha pressure and alpha mass exactly
+  // as SWCME does.
+  double adiabaticIndex = 5.0 / 3.0;
+  SolarWindThermodynamicClosure thermodynamicClosure =
+      SolarWindThermodynamicClosure::ProtonOnly;
+  double alphaToProtonRatio = 0.0;
+  double electronTemperatureK = 1.0e5;
+  double alphaTemperatureK = 1.0e5;
+  // SWCME defines its public one-AU magnetic magnitude at this reference
+  // sin(colatitude).  The local 3-D Parker pitch still uses the actual point.
+  double referenceSinColatitude = 1.0;
+  Core::Vec3 rotationAxis = {0.0, 0.0, 1.0};
   double validityCadenceS = 3600.0;
   std::string coordinateFrame = "HCI-like-inertial";
 };
@@ -214,6 +252,8 @@ struct RunConfiguration3DOptions {
   unsigned inputSchemaVersion = 1;
   BackgroundAuthority background = BackgroundAuthority::AnalyticParker;
   TurbulenceAuthority turbulence = TurbulenceAuthority::Prescribed;
+  PrescribedTurbulenceModel prescribedTurbulenceModel =
+      PrescribedTurbulenceModel::Kolmogorov;
   ShockAuthority shock = ShockAuthority::None;
   TransportModel transport = TransportModel::Parker3D;
   DomainPreset domain = DomainPreset::OneAu;
@@ -302,10 +342,18 @@ struct RunConfiguration3DOptions {
   // SWMF supplies w+/w- amplitudes, but it still uses these declared spectral
   // bounds unless a future coupled interface publishes a resolved spectrum.
   double prescribedDeltaBOverB = 0.3;
+  // sigma_c=(deltaB_+^2-deltaB_-^2)/(deltaB_+^2+deltaB_-^2).  Requiring this
+  // physical imbalance in complete input avoids an undocumented 50/50 split.
+  double turbulenceNormalizedCrossHelicity = 0.0;
+  double turbulenceReferenceRadiusM = Core::Const::AU;
   double turbulenceKMinPerM = 1.0e-10;
   double turbulenceKMaxPerM = 1.0e-7;
+  double turbulenceKMinRadialExponent = 2.0;
+  double turbulenceKMaxRadialExponent = 2.0;
   double turbulenceSpectralIndex = 5.0 / 3.0;
   double turbulenceCorrelationLengthM = 0.03 * Core::Const::AU;
+  double turbulenceCorrelationLengthRadialExponent = 1.0;
+  double turbulenceValidityCadenceS = 60.0;
   MissingTurbulenceMode missingTurbulence = MissingTurbulenceMode::Fail;
   ResonanceRangeMode resonanceRange = ResonanceRangeMode::Reject;
 

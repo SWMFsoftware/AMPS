@@ -86,7 +86,14 @@ halo_fraction = 0.20
 safety_margin_fraction = 0.25
 
 [background]
+# The implemented standalone source is analytic-parker. The parser also
+# recognizes python-interpolator as the reserved future source, but selecting
+# it stops before AMPS initialization until its batch/units/provenance protocol
+# is implemented and validated.
 provider = analytic-parker
+# Deprecated compatibility guard. A true value is never interpreted as an
+# instruction to execute a process; use provider=python-interpolator once that
+# provider is released.
 external_script = false
 
 [background.parker]
@@ -98,17 +105,30 @@ radial_field_at_reference_t = 3.585667175612118e-9
 solar_rotation_rate_rad_per_s = 2.865e-6
 solar_wind_speed_m_per_s = 400000
 magnetic_polarity = 1
-number_density_at_reference_m3 = 5e6
+# Density has its own unambiguous SWCME reference. It remains n_e(1 AU) even
+# when reference_radius_m above is changed to express Br at another radius.
+number_density_at_one_au_m3 = 5e6
 temperature_k = 1e5
 validity_cadence_s = 3600
 
 [turbulence]
 authority = prescribed
+# Named closures are kolmogorov (q=5/3), kraichnan (q=3/2), and power-law
+# (any explicitly validated q>1). A named closure and spectral_index must
+# agree; the parser never silently replaces a contradictory value.
+model = kolmogorov
 delta_b_over_b = 0.3
+# sigma_c=(deltaB_+^2-deltaB_-^2)/deltaB^2. Zero is explicitly balanced.
+normalized_cross_helicity = 0
+reference_radius_m = 1.495978707e11
 k_min_per_m = 1e-10
 k_max_per_m = 1e-7
+k_min_radial_exponent = 2
+k_max_radial_exponent = 2
 spectral_index = 1.6666666666666667
 correlation_length_m = 4.487936121e9
+correlation_length_radial_exponent = 1
+validity_cadence_s = 60
 missing_data = fail
 resonance_range = reject
 self_consistent_3d = false

@@ -429,7 +429,8 @@ Result RunLIFE3D03() {
       layout.fieldAlignedStrainOffset != 16 * sizeof(double) ||
       layout.magneticGradientOffset != 17 * sizeof(double) ||
       layout.velocityGradientOffset != 26 * sizeof(double) ||
-      layout.cellAssociatedBytes != 35 * sizeof(double) ||
+      layout.waveEnergyOffset != 35 * sizeof(double) ||
+      layout.cellAssociatedBytes != 37 * sizeof(double) ||
       layout.samplingBytesPerCell != 40) {
     return Fail("canonical pre-mesh offsets or sizes are incorrect");
   }

@@ -11,6 +11,7 @@ coefficient physics.
 contains:
 
 - total, along-`+B`, against-`+B`, outward, and inward magnetic variances;
+- total Alfvén-wave energy density along and against `+B` in J/m³;
 - finite wave-number bounds and spectral index;
 - parallel correlation length;
 - generation, configuration digest, and source identity;
@@ -20,16 +21,46 @@ The interface is separate from `BackgroundProvider`: analytic Parker fields
 may use coupled turbulence, and a coupled background may use a prescribed
 spectrum, provided the immutable run configuration selects that authority.
 
-## Prescribed Kolmogorov spectrum
+## Selectable prescribed spectra and wave energy
 
 At radius `r`, the default amplitude is
 
 \[
-\delta B^2=(0.3|B|)^2,
+\delta B^2=(0.3|B|)^2.
 \]
 
-split equally between propagation directions. Bounds scale independently from
-their 1-AU references, and correlation length has its own radial exponent.
+The directional split is not implicit. Input declares normalized cross
+helicity
+
+\[
+\sigma_c=\frac{\delta B_+^2-\delta B_-^2}{\delta B^2},
+\qquad -1\le\sigma_c\le1,
+\]
+
+which gives
+
+\[
+\delta B_+^2=\frac{1+\sigma_c}{2}\delta B^2,
+\qquad
+\delta B_-^2=\frac{1-\sigma_c}{2}\delta B^2.
+\]
+
+The provider initializes both total Alfvén-wave energy densities with the
+same equipartition convention used by the AWSoM adapter,
+`w_plus/minus=deltaB_plus/minus_squared/mu0`. Bounds scale independently from
+their declared reference radius using `k_min_radial_exponent` and
+`k_max_radial_exponent`; parallel correlation length uses its separately
+declared radial exponent. All scale exponents and validity cadence are present
+in complete schema-3 input and in the physics fingerprint.
+
+Three input models use the same normalized finite-band implementation:
+
+- `model = kolmogorov` requires `spectral_index = 5/3`;
+- `model = kraichnan` requires `spectral_index = 3/2`;
+- `model = power-law` accepts the explicitly supplied finite `q>1`.
+
+A named model never silently replaces a contradictory numeric index; parsing
+fails instead.
 
 For index `q>1`, the one-dimensional spectrum is
 
@@ -118,16 +149,22 @@ starting cell.
 ## Production storage
 
 Prescribed turbulence is evaluated for every owner-local physical cell during
-`amps_init()` even though its variance can be reconstructed from the
-fingerprinted configuration and background. When SWMF turbulence authority is
-selected, the host must install a loaded `AwsomTurbulenceProvider`; the two
-directional magnetic variances are stored at the optional Phase-M wave offset.
+`amps_init()`. The two directional magnetic variances are now stored for every
+authority, not only SWMF, so standalone initialization output contains the
+actual wave state used by scattering. Storage retains `deltaB_+^2` and
+`deltaB_-^2` because those are the coefficient kernel's native quantities;
+Tecplot derives and emits `w_+` and `w_-` beside them. When SWMF turbulence
+authority is selected, the host must install a loaded
+`AwsomTurbulenceProvider` and the same storage/output contract applies.
 
 R03 prepares a candidate turbulence provider together with the candidate
 background generation. Both are evaluated at all owner-local cells and become
-active only after collective readiness. `PrescribedKolmogorovProvider` can be
-re-based to an R07 saved generation so the first post-restart snapshot and
-future coefficient provenance match an uninterrupted run.
+active only after collective readiness. The implementation retains the historic
+C++ class name `PrescribedKolmogorovProvider` for source compatibility, but its
+typed configuration now selects Kolmogorov, Kraichnan, or an explicitly indexed
+power law. The provider can be re-based to an R07 saved generation so the first
+post-restart snapshot and future coefficient provenance match an uninterrupted
+run.
 
 Self-consistent 3-D turbulence remains reserved. Enabling it fails during
 `RunConfiguration3D::Create`; it will not become a no-op or alias for the
@@ -141,6 +178,7 @@ prescribed provider.
 | `TUR3D02` | `deltaB²=mu0*w` and outward/inward mapping under both polarities |
 | `TUR3D03` | proton/electron resonances below, inside, above band obey policy |
 | `TUR3D04` | incomplete waves fail unless explicit typed ballistic mode |
+| `TUR3D05` | named model slopes, cross-helicity partition, and SI wave-energy conversion |
 | `COEF3D01` | Dμμ/mean-free-path/parallel-diffusion round trips over six decades |
 | `COEF3D02` | 3-D bridge and direct shared Jokipii kernel are bitwise identical |
 

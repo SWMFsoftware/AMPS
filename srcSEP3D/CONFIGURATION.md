@@ -57,10 +57,10 @@ mpiexec -n 4 ./amps --input srcSEP3D/examples/sep3d_analytic_parker.in \
 `--dry-run` parses, normalizes, validates, freezes, fingerprints, samples the
 resolution law, and estimates memory; it does not allocate the AMPS mesh.
 `--initialization-only` instead follows the production path through AMPS mesh
-construction and complete application initialization, writes both declared
+construction and complete application initialization, writes all three declared
 Tecplot products, synchronizes all MPI ranks, and exits before the first
 particle step. `--initialization-output-dir` requires that mode and changes
-only the parent directory of the two initialization filenames.
+only the parent directory of the three initialization filenames.
 Unknown options, conflicting test selectors, or a missing `--input` are usage
 errors and return code 2 before AMPS initialization.
 
@@ -103,8 +103,10 @@ standalone SWCME shock-injection runs and therefore requires:
 - `run.injection_cadence_steps = 1`, so
   `source.samples_per_step` means exactly that many computational particles for
   every compiled AMPS species on every active simulation step;
-- analytic Parker background and prescribed turbulence. SWMF/AWSoM coupling
-  remains available through the parser-free typed host interface;
+- `background.provider = analytic-parker` and prescribed turbulence selected as
+  `kolmogorov`, `kraichnan`, or explicit `power-law`. The recognized
+  `python-interpolator` value is reserved and fails before allocation; SWMF/AWSoM
+  coupling remains available through the parser-free typed host interface;
 - a spherical canonical shock with `shock_only` region behavior,
   source-mode acceleration, and relative-only source normalization. The
   current AMPS crossing operator is spherical, so accepting ellipsoid/SSE here
@@ -116,10 +118,14 @@ standalone SWCME shock-injection runs and therefore requires:
 - exact agreement between application and canonical descriptions of Parker
   wind/rotation/source radius/reference latitude, +Z rotation axis, magnetic
   normalization/polarity, density, temperature, energy range, and injection
-  efficiency. Species identity remains exclusively in AMPS' compiled table;
+  efficiency. After this check, the runtime Parker state is populated from the
+  canonical SWCME result, including adiabatic index, composition, electron and
+  alpha temperatures, and thermodynamic closure. Species identity remains
+  exclusively in AMPS' compiled table;
   and
 - nonempty `output.initialization_mesh_tecplot_file` and
-  `output.initialization_parker_line_tecplot_file`.
+  `output.initialization_parker_line_tecplot_file`, and
+  `output.initialization_data_tecplot_file`.
 
 The magnetic comparison respects the two public conventions. SWCME supplies
 total `|B|` at one AU and its reference latitude; the analytic provider
@@ -127,6 +133,19 @@ supplies radial `Br` at its declared reference radius. The parser removes the
 one-AU Parker winding and then applies `Br proportional to r^-2`. Consequently
 a half-AU analytic reference requires four times the corresponding one-AU
 radial component; it is not compared directly with the total SWCME magnitude.
+
+Density uses the separate, unambiguous key
+`background.parker.number_density_at_one_au_m3`. It must match SWCME
+`ambient.density_1au` and remains a one-AU normalization when the magnetic
+reference radius changes. The legacy `number_density_at_reference_m3` spelling
+is accepted only by schemas 1–2 and rejected by schema 3.
+
+Complete prescribed turbulence input additionally declares `model`,
+`normalized_cross_helicity`, `reference_radius_m`, independent radial exponents
+for both wave-number bounds, a correlation-length radial exponent, and provider
+validity cadence. Kolmogorov requires `q=5/3`, Kraichnan requires `q=3/2`, and
+the general power-law choice requires an explicit finite `q>1`; a contradictory
+named model/index pair fails rather than being normalized silently.
 
 All application fields and every field of every `[observer.ID]` are explicit,
 including values inactive under the chosen mode. The `[swcme]` resolver is the
@@ -175,8 +194,10 @@ The typed contract includes:
 - run intent, transport core, time step, maximum steps, random campaign, and
   integer background/injection/sampling/checkpoint cadences;
 - explicit domain, boundary, coordinate-frame, mesh, and storage choices;
-- complete analytic Parker parameters;
-- turbulence spectrum and out-of-range/missing-data policies;
+- complete SWCME-backed analytic Parker/solar-wind parameters and a typed
+  reserved Python-interpolator authority;
+- turbulence model, amplitude, cross helicity, radial scalings, spectrum,
+  cadence, and out-of-range/missing-data policies;
 - legacy shock interval/radial/speed/compression for schemas 1–2, or the
   canonical SWCME3D manifest/fingerprint for schema 3;
 - source efficiency, physical particle rate, energy interval, spectrum, and

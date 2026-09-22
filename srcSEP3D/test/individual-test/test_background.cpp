@@ -303,6 +303,58 @@ Result RunBGP3D06() {
   return Pass("Parker provider remains finite on and within 1e-12 rad of both rotation-axis poles");
 }
 
+Result RunBGP3D07() {
+  B::ParkerConfiguration configuration = ParkerConfig();
+  configuration.thermodynamicClosure =
+      swcme::solarwind::ThermodynamicClosure::MultiSpecies;
+  configuration.alphaToProtonRatio = 0.05;
+  configuration.electronTemperatureK = 2.0e5;
+  configuration.alphaTemperatureK = 3.0e5;
+  B::AnalyticParkerProvider provider(configuration);
+  if (!PreparedParker(&provider))
+    return Fail("SWCME-backed multi-species Parker provider did not prepare");
+
+  const B::BackgroundSample oneAu = provider.Evaluate(
+      {SEP3D::Core::Const::AU, 0.0, 0.0});
+  const B::BackgroundSample inner = provider.Evaluate(
+      {0.1 * SEP3D::Core::Const::AU, 0.0, 0.0});
+  if (!oneAu.status.ok() || !inner.status.ok() ||
+      !Nearly(oneAu.numberDensityM3,
+              configuration.numberDensityAtReferenceM3, 2.0e-14)) {
+    return Fail("Leblanc density did not retain its explicit one-AU normalization");
+  }
+
+  // At 0.1 AU, the positive r^-4 and r^-6 Leblanc terms make the density
+  // strictly larger than a pure n(1 AU)*(AU/r)^2 law. This catches a return to
+  // the former local r^-2 approximation without duplicating SWCME's constants
+  // in the test.
+  const double oldPowerLaw = configuration.numberDensityAtReferenceM3 * 100.0;
+  if (!(inner.numberDensityM3 > oldPowerLaw))
+    return Fail("near-Sun density collapsed to the retired r^-2 approximation");
+
+  const double electronDensity = inner.numberDensityM3;
+  const double protonDensity = electronDensity /
+      (1.0 + 2.0 * configuration.alphaToProtonRatio);
+  const double alphaDensity =
+      configuration.alphaToProtonRatio * protonDensity;
+  const double expectedPressure = SEP3D::Core::Const::k_B *
+      (protonDensity * configuration.temperatureK +
+       electronDensity * configuration.electronTemperatureK +
+       alphaDensity * configuration.alphaTemperatureK);
+  const double expectedMassDensity =
+      swcme::constants::PROTON_MASS_KG * protonDensity +
+      swcme::constants::ALPHA_PARTICLE_MASS_KG * alphaDensity;
+  const double mu0 = 4.0e-7 * SEP3D::Core::Const::kPi;
+  const double expectedAlfven =
+      inner.absB / std::sqrt(mu0 * expectedMassDensity);
+  if (!Nearly(inner.pressurePa, expectedPressure, 2.0e-14) ||
+      !Nearly(inner.alfvenSpeedMpS, expectedAlfven, 2.0e-14)) {
+    return Fail("multi-species pressure or mass-density Alfvén speed differs from SWCME closure");
+  }
+  return Pass(
+      "Parker initialization uses SWCME Leblanc density and charge-neutral multi-species thermodynamics");
+}
+
 Result RunSNAP3D01() {
   const SEP3D::Core::Vec3 point(SEP3D::Core::Const::AU, 0.0, 0.0);
   const B::BackgroundSample good = CompleteSample();
@@ -476,6 +528,7 @@ std::vector<SEP3D::Testing::Descriptor> RegisterBackgroundTests() {
       make("BGP3D04", "BGP3D", "Focusing length", "Analytic and numerical field-aligned derivative.", RunBGP3D04),
       make("BGP3D05", "BGP3D", "Velocity derivatives", "Radial wind gradient and divergence.", RunBGP3D05),
       make("BGP3D06", "BGP3D", "Polar limits", "Rotation-axis finite limits.", RunBGP3D06),
+      make("BGP3D07", "BGP3D", "SWCME ambient closure", "Leblanc density and multi-species thermodynamics.", RunBGP3D07),
       make("SNAP3D01", "SNAP3D", "Completeness", "Required fields and atomic candidate rejection.", RunSNAP3D01),
       make("SNAP3D02", "SNAP3D", "Finite-value policy", "NaN/Inf rejection without replacement.", RunSNAP3D02),
       make("SNAP3D03", "SNAP3D", "Unit conversion", "SI and AWSoM coupling-unit equivalence.", RunSNAP3D03),

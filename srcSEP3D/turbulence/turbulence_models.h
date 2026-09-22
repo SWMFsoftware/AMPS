@@ -21,8 +21,20 @@
 namespace SEP3D {
 namespace Turbulence {
 
+enum class PrescribedSpectrumModel { PowerLaw, Kolmogorov, Kraichnan };
+
+const char* PrescribedSpectrumModelName(PrescribedSpectrumModel model);
+
+// The historic type name is retained as a source-compatibility surface.  Its
+// implementation is now a general normalized prescribed power law whose
+// named model is explicit and whose slope is validated against that name.
 struct PrescribedKolmogorovConfiguration {
+  PrescribedSpectrumModel spectrumModel =
+      PrescribedSpectrumModel::Kolmogorov;
   double deltaBOverB = 0.3;
+  // sigma_c=(deltaB_+^2-deltaB_-^2)/deltaB^2.  sigma_c=0 is balanced;
+  // +1 and -1 are purely one-directional limiting states.
+  double normalizedCrossHelicity = 0.0;
   double referenceRadiusM = Core::Const::AU;
   double kMinAtReferencePerM = 1.0e-10;
   double kMaxAtReferencePerM = 1.0e-7;
@@ -41,10 +53,18 @@ class PrescribedKolmogorovProvider final : public TurbulenceProvider {
       const PrescribedKolmogorovConfiguration& configuration);
 
   const char* CanonicalName() const override {
-    return "prescribed-kolmogorov";
+    switch (configuration_.spectrumModel) {
+      case PrescribedSpectrumModel::PowerLaw:
+        return "prescribed-power-law";
+      case PrescribedSpectrumModel::Kolmogorov:
+        return "prescribed-kolmogorov";
+      case PrescribedSpectrumModel::Kraichnan:
+        return "prescribed-kraichnan";
+    }
+    return "prescribed-unknown";
   }
   TurbulenceSource Source() const override {
-    return TurbulenceSource::PrescribedKolmogorov;
+    return TurbulenceSource::PrescribedPowerLaw;
   }
   Core::Status Validate() const override;
   Core::Status Prepare(double epochS) override;

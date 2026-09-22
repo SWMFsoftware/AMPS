@@ -46,6 +46,8 @@
 namespace {
 
 namespace fs = std::filesystem;
+constexpr double kMagneticPermeabilityVacuum =
+    4.0e-7 * SEP3D::Core::Const::kPi;
 
 [[noreturn]] void StopWithStatus(const char* operation,
                                  const SEP3D::Core::Status& status) {
@@ -143,6 +145,12 @@ std::vector<SEP3D::RuntimeModel::CompiledSpeciesRecord> gCompiledSpecies;
 int gStaticCellDataOffset = -1;
 int gSamplingDataOffset = -1;
 bool gStorageCallbacksRegistered = false;
+// The initialization Tecplot product is not permitted to run until the same
+// validated background generation has been copied to both srcSEP3D's frozen
+// application storage and the native AMPS coupler storage used by AMPS' own
+// output callback.  This flag records completion of that collective boundary;
+// it is deliberately reset during each background refresh.
+bool gNativeAmpsBackgroundReady = false;
 std::unordered_map<PIC::Mesh::cDataCenterNode*, std::size_t> gCellSampleIndex;
 
 const SEP3D::RuntimeModel::RunConfiguration3D& Configuration() {
@@ -291,6 +299,9 @@ std::uint64_t StableCellId(const SEP3D::Core::Vec3& positionM) {
 std::vector<AmpsCellReference> CollectOwnedPhysicalCells() {
   std::vector<AmpsCellReference> result;
   const double innerRadiusM = Configuration().options().innerRadiusM;
+  const double outerRadiusM = Configuration().options().outerRadiusM;
+  const SEP3D::Core::Vec3 originM =
+      Configuration().options().coordinateOriginM;
   for (unsigned int blockIndex = 0;
        blockIndex < PIC::DomainBlockDecomposition::nLocalBlocks;
        ++blockIndex) {
@@ -311,10 +322,14 @@ std::vector<AmpsCellReference> CollectOwnedPhysicalCells() {
               node->xmin[0] + (i + 0.5) * dx[0],
               node->xmin[1] + (j + 0.5) * dx[1],
               node->xmin[2] + (k + 0.5) * dx[2]);
-          // The inner sphere is a physical boundary, not a second background
-          // domain.  Its allocated Cartesian cells remain zero-initialized and
-          // are excluded from the complete ambient snapshot.
-          if (position.Norm() >= innerRadiusM)
+          // Both spherical boundaries delimit the physical background domain.
+          // The enclosing Cartesian cube also allocates cells inside the Sun
+          // and outside the requested heliocentric radius; those padding cells
+          // stay zero-initialized and are explicitly marked background_valid=0
+          // in Tecplot output.  Measure radius from the configured heliocentric
+          // origin rather than silently assuming an origin at (0,0,0).
+          const double radiusM = (position - originM).Norm();
+          if (radiusM >= innerRadiusM && radiusM <= outerRadiusM)
             result.push_back({cell, position, StableCellId(position),
                               dx[0] * dx[1] * dx[2]});
         }
@@ -451,7 +466,9 @@ void PrintInitializationVariableList(FILE* output, int dataSetNumber) {
         std::fprintf(output, ", \"gradU_%d%d_s-1\"", row, column);
   if (layout.waveEnergyOffset != SEP3D::RuntimeModel::kNoOffset)
     std::fprintf(output,
-                 ", \"deltaB_plus_squared_T2\", \"deltaB_minus_squared_T2\"");
+                 ", \"deltaB_plus_squared_T2\", \"deltaB_minus_squared_T2\""
+                 ", \"wave_energy_plus_J_per_m3\""
+                 ", \"wave_energy_minus_J_per_m3\"");
   // These flags make the two independent empty-data cases machine-readable:
   // background_valid=0 identifies padding cells outside the heliocentric
   // shell, while particle_sample_present=0 identifies a cell/species with no
@@ -478,7 +495,7 @@ void PrintInitializationCellData(
   if (layout.velocityGradientOffset != SEP3D::RuntimeModel::kNoOffset)
     valueCount += 9;
   if (layout.waveEnergyOffset != SEP3D::RuntimeModel::kNoOffset)
-    valueCount += 2;
+    valueCount += 4;
   std::vector<double> values(valueCount, 0.0);
 
   const bool ownsNode = pipe == nullptr || pipe->ThisThread == centerNodeThread;
@@ -504,8 +521,20 @@ void PrintInitializationCellData(
       append(layout.magneticGradientOffset, 9);
     if (layout.velocityGradientOffset != SEP3D::RuntimeModel::kNoOffset)
       append(layout.velocityGradientOffset, 9);
-    if (layout.waveEnergyOffset != SEP3D::RuntimeModel::kNoOffset)
+    if (layout.waveEnergyOffset != SEP3D::RuntimeModel::kNoOffset) {
+      // Cell storage keeps the two magnetic variances because the scattering
+      // kernel consumes them directly.  The initialization product also emits
+      // the physically requested Alfvén-wave energy densities using the same
+      // equipartition convention as AWSoM: w=deltaB^2/mu0.  Computing these two
+      // derived columns here avoids duplicating mutable cell state.
       append(layout.waveEnergyOffset, 2);
+      values[cursor] = values[cursor - 2] /
+          kMagneticPermeabilityVacuum;
+      ++cursor;
+      values[cursor] = values[cursor - 2] /
+          kMagneticPermeabilityVacuum;
+      ++cursor;
+    }
 
     double position[3] = {};
     centerNode->GetX(position);
@@ -753,22 +782,267 @@ void StoreBackground(PIC::Mesh::cDataCenterNode* cell,
                sizeof(sample.gradU.m));
 }
 
+// ---------------------------------------------------------------------------
+// Native AMPS background bridge
+//
+// srcSEP3D keeps a complete, versioned BackgroundSample in application-owned
+// associated data because that is the mover/restart contract.  AMPS' native
+// Tecplot callback, however, does not read those offsets: in DATAFILE coupler
+// builds it reads PIC::CPLR::DATAFILE's independent center-node region.  A
+// Parker snapshot can therefore be fully initialized while the native Bx/By/
+// Bz columns still contain allocation-time zeros.  The bridge below copies the
+// *same validated sample* into that native region; it does not evaluate a
+// second model or invent a second set of plasma parameters.
+// ---------------------------------------------------------------------------
+
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
+
+void ValidateNativeAmpsBackgroundLayout() {
+  using namespace PIC::CPLR::DATAFILE;
+  if (CenterNodeAssociatedDataOffsetBegin < 0 ||
+      MULTIFILE::CurrDataFileOffset < 0 ||
+      nTotalBackgroundVariables <= 0) {
+    StopWithStatus("native AMPS background layout",
+        SEP3D::Core::Status(SEP3D::Core::StatusCode::LayoutMismatch,
+            "DATAFILE center-node storage was not allocated before the "
+            "srcSEP3D background fill"));
+  }
+
+  // BackgroundSample represents one canonical solar-wind state.  Replicating
+  // it into an arbitrary number of AMPS ion-fluid slots would silently assign
+  // identities/compositions that are not present in the input contract.  The
+  // current standalone interface therefore supports the one-fluid DATAFILE
+  // layout used by srcSEP3D and fails closed for a different AMPS build.
+  if (nIonFluids != 1) {
+    StopWithStatus("native AMPS background layout",
+        SEP3D::Core::Status(
+            SEP3D::Core::StatusCode::ConfigurationConflict,
+            "srcSEP3D has one canonical solar-wind state but the AMPS "
+            "DATAFILE layout declares " + std::to_string(nIonFluids) +
+            " ion fluids; an explicit fluid-to-physics mapping is required"));
+  }
+}
+
+// Return the current DATAFILE storage slot and, when AMPS has initialized a
+// distinct time-interpolation slot, that slot as well.  Initializing both
+// avoids a later interpolation between a valid Parker state and uninitialized
+// bytes.  DATAFILE leaves NextDataFileOffset negative when interpolation is
+// not in use, so no speculative schedule or offset is constructed here.
+int NativeAmpsDataSlots(int slots[2]) {
+  slots[0] = PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset;
+  const int next = PIC::CPLR::DATAFILE::MULTIFILE::NextDataFileOffset;
+  if (next >= 0 && next != slots[0]) {
+    slots[1] = next;
+    return 2;
+  }
+  return 1;
+}
+
+void StoreNativeAmpsField(
+    PIC::Mesh::cDataCenterNode* cell,
+    const PIC::CPLR::DATAFILE::cOffsetElement& field,
+    const double* values, int valueCount) {
+  // An unallocated optional field has no storage and is intentionally skipped.
+  // An allocated field with an invalid offset is a frozen-layout corruption,
+  // not a condition that may be hidden by omitting a Tecplot column.
+  if (!field.allocate) return;
+  if (field.RelativeOffset < 0 || field.nVars != valueCount) {
+    StopWithStatus("native AMPS background field",
+        SEP3D::Core::Status(SEP3D::Core::StatusCode::LayoutMismatch,
+            "allocated DATAFILE field '" + std::string(field.VarList) +
+            "' has an invalid offset or component count"));
+  }
+
+  int slots[2] = {};
+  const int slotCount = NativeAmpsDataSlots(slots);
+  for (int slotIndex = 0; slotIndex < slotCount; ++slotIndex) {
+    char* destination = cell->GetAssociatedDataBufferPointer() +
+        PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin +
+        slots[slotIndex] + field.RelativeOffset;
+    std::memcpy(destination, values,
+                static_cast<std::size_t>(valueCount) * sizeof(double));
+  }
+}
+
+void ZeroNativeAmpsBackgroundOnOwnedCells() {
+  ValidateNativeAmpsBackgroundLayout();
+  int slots[2] = {};
+  const int slotCount = NativeAmpsDataSlots(slots);
+  const std::size_t bytes = static_cast<std::size_t>(
+      PIC::CPLR::DATAFILE::nTotalBackgroundVariables) * sizeof(double);
+
+  // AMPS allocates a Cartesian cube around the physical heliocentric shell.
+  // Zero every owner-local interior cell first so padding cells have a finite,
+  // deterministic placeholder.  Physical cells are overwritten below and are
+  // distinguished from padding by srcSEP3D's background_valid column.
+  for (unsigned int blockIndex = 0;
+       blockIndex < PIC::DomainBlockDecomposition::nLocalBlocks;
+       ++blockIndex) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
+        PIC::DomainBlockDecomposition::BlockTable[blockIndex];
+    if (node == nullptr || node->block == nullptr) continue;
+    for (int k = 0; k < _BLOCK_CELLS_Z_; ++k)
+      for (int j = 0; j < _BLOCK_CELLS_Y_; ++j)
+        for (int i = 0; i < _BLOCK_CELLS_X_; ++i) {
+          PIC::Mesh::cDataCenterNode* cell = node->block->GetCenterNode(
+              PIC::Mesh::mesh->getCenterNodeLocalNumber(i, j, k));
+          if (cell == nullptr) continue;
+          for (int slotIndex = 0; slotIndex < slotCount; ++slotIndex) {
+            char* destination = cell->GetAssociatedDataBufferPointer() +
+                PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin +
+                slots[slotIndex];
+            std::memset(destination, 0, bytes);
+          }
+        }
+  }
+}
+
+void StoreNativeAmpsBackground(
+    PIC::Mesh::cDataCenterNode* cell,
+    const SEP3D::Background::BackgroundSample& sample) {
+  namespace Offset = PIC::CPLR::DATAFILE::Offset;
+
+  const double magnetic[3] = {sample.B.x, sample.B.y, sample.B.z};
+  const double velocity[3] = {sample.U.x, sample.U.y, sample.U.z};
+
+  // Both currently implemented background authorities describe an ideal-MHD
+  // solar wind.  The electric field is therefore the SI motional field
+  // E=-U x B.  This is derived from the already validated U and B rather than
+  // being supplied as an independent, potentially inconsistent input.
+  const double electric[3] = {
+      -(sample.U.y * sample.B.z - sample.U.z * sample.B.y),
+      -(sample.U.z * sample.B.x - sample.U.x * sample.B.z),
+      -(sample.U.x * sample.B.y - sample.U.y * sample.B.x)};
+
+  // The native field named PlasmaNumberDensity mirrors BackgroundSample's
+  // documented electron density; PlasmaTemperature mirrors proton
+  // temperature; and PlasmaIonPressure mirrors the canonical total thermal
+  // pressure.  These exact meanings are stated in BACKGROUND_FIELD.md and are
+  // also exposed by the unit-bearing srcSEP3D columns in the same file.
+  StoreNativeAmpsField(cell, Offset::PlasmaNumberDensity,
+                       &sample.numberDensityM3, 1);
+  StoreNativeAmpsField(cell, Offset::PlasmaBulkVelocity, velocity, 3);
+  StoreNativeAmpsField(cell, Offset::PlasmaTemperature,
+                       &sample.temperatureK, 1);
+  StoreNativeAmpsField(cell, Offset::PlasmaIonPressure,
+                       &sample.pressurePa, 1);
+  StoreNativeAmpsField(cell, Offset::PlasmaDivU, &sample.divU, 1);
+  StoreNativeAmpsField(cell, Offset::MagneticField, magnetic, 3);
+  StoreNativeAmpsField(cell, Offset::ElectricField, electric, 3);
+  StoreNativeAmpsField(cell, Offset::MagneticFieldGradient,
+                       &sample.gradB.m[0][0], 9);
+
+  // Relativistic-GCA builds allocate current explicitly.  It is determined
+  // without finite differencing from the provider's analytic gradient via
+  // Ampere's law (displacement current is absent in the stationary Parker
+  // initialization): J = curl(B)/mu0.
+  const double current[3] = {
+      (sample.gradB.m[2][1] - sample.gradB.m[1][2]) /
+          kMagneticPermeabilityVacuum,
+      (sample.gradB.m[0][2] - sample.gradB.m[2][0]) /
+          kMagneticPermeabilityVacuum,
+      (sample.gradB.m[1][0] - sample.gradB.m[0][1]) /
+          kMagneticPermeabilityVacuum};
+  StoreNativeAmpsField(cell, Offset::Current, current, 3);
+
+  // Electron pressure has a separate native slot only in selected AMPS
+  // readers.  Populate it from the resolved SWCME closure when present.  In
+  // proton-only closure the canonical pressure deliberately excludes an
+  // electron component; in multi-species closure ne*kB*Te is exact.
+  double electronPressurePa = 0.0;
+  const SEP3D::RuntimeModel::ParkerPhysicsOptions& parker =
+      Configuration().options().parker;
+  if (parker.thermodynamicClosure ==
+      SEP3D::RuntimeModel::SolarWindThermodynamicClosure::MultiSpecies) {
+    electronPressurePa = sample.numberDensityM3 * SEP3D::Core::Const::k_B *
+        parker.electronTemperatureK;
+  }
+  StoreNativeAmpsField(cell, Offset::PlasmaElectronPressure,
+                       &electronPressurePa, 1);
+}
+
+void CompleteNativeAmpsBackgroundInstallation() {
+  // AMPS' center-to-corner interpolation can consume neighboring ghost cells
+  // while producing output.  Exchange the complete associated-data buffer
+  // only after all owner cells contain background and turbulence values, so a
+  // rank boundary cannot introduce zero seams into the Tecplot product.
+  PIC::Mesh::mesh->ParallelBlockDataExchange();
+
+#if _PIC_MOVER_INTEGRATOR_MODE_ == \
+    _PIC_MOVER_INTEGRATOR_MODE__RELATIVISTIC_GCA_
+  // These higher-order relativistic-GCA quantities depend on neighboring B/E
+  // values.  Generate them only after the first halo exchange, then publish
+  // the derived values to ghosts with a second exchange.
+  for (unsigned int blockIndex = 0;
+       blockIndex < PIC::DomainBlockDecomposition::nLocalBlocks;
+       ++blockIndex) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
+        PIC::DomainBlockDecomposition::BlockTable[blockIndex];
+    if (node != nullptr && node->block != nullptr)
+      PIC::CPLR::DATAFILE::GenerateVarForRelativisticGCA(node);
+  }
+  PIC::Mesh::mesh->ParallelBlockDataExchange();
+#endif
+
+  gNativeAmpsBackgroundReady = true;
+}
+
+#else
+
+// SWMF-coupler builds own their native AMPS field buffers outside DATAFILE.
+// srcSEP3D still fills its application cache and publishes the immutable
+// snapshot, while this no-op keeps the initialization boundary uniform.
+void ZeroNativeAmpsBackgroundOnOwnedCells() {}
+void StoreNativeAmpsBackground(
+    PIC::Mesh::cDataCenterNode*,
+    const SEP3D::Background::BackgroundSample&) {}
+void CompleteNativeAmpsBackgroundInstallation() {
+  PIC::Mesh::mesh->ParallelBlockDataExchange();
+  gNativeAmpsBackgroundReady = true;
+}
+
+#endif
+
 std::shared_ptr<SEP3D::Turbulence::TurbulenceProvider>
 MakePrescribedTurbulence() {
   const auto& options = Configuration().options();
   SEP3D::Turbulence::PrescribedKolmogorovConfiguration model;
+  switch (options.prescribedTurbulenceModel) {
+    case SEP3D::RuntimeModel::PrescribedTurbulenceModel::PowerLaw:
+      model.spectrumModel =
+          SEP3D::Turbulence::PrescribedSpectrumModel::PowerLaw;
+      break;
+    case SEP3D::RuntimeModel::PrescribedTurbulenceModel::Kolmogorov:
+      model.spectrumModel =
+          SEP3D::Turbulence::PrescribedSpectrumModel::Kolmogorov;
+      break;
+    case SEP3D::RuntimeModel::PrescribedTurbulenceModel::Kraichnan:
+      model.spectrumModel =
+          SEP3D::Turbulence::PrescribedSpectrumModel::Kraichnan;
+      break;
+  }
   model.deltaBOverB = options.prescribedDeltaBOverB;
+  model.normalizedCrossHelicity =
+      options.turbulenceNormalizedCrossHelicity;
+  model.referenceRadiusM = options.turbulenceReferenceRadiusM;
   model.kMinAtReferencePerM = options.turbulenceKMinPerM;
   model.kMaxAtReferencePerM = options.turbulenceKMaxPerM;
+  model.kMinRadialExponent = options.turbulenceKMinRadialExponent;
+  model.kMaxRadialExponent = options.turbulenceKMaxRadialExponent;
   model.spectralIndex = options.turbulenceSpectralIndex;
   model.parallelCorrelationLengthAtReferenceM =
       options.turbulenceCorrelationLengthM;
+  model.correlationLengthRadialExponent =
+      options.turbulenceCorrelationLengthRadialExponent;
+  model.validityCadenceS = options.turbulenceValidityCadenceS;
+  model.coordinateFrame = options.coordinateFrame;
   return std::shared_ptr<SEP3D::Turbulence::TurbulenceProvider>(
       new SEP3D::Turbulence::PrescribedKolmogorovProvider(model));
 }
 
 void FillAndPublishBackground() {
   using namespace SEP3D;
+  gNativeAmpsBackgroundReady = false;
   const std::vector<AmpsCellReference> cells = CollectOwnedPhysicalCells();
   std::vector<Core::Vec3> positions;
   positions.reserve(cells.size());
@@ -792,9 +1066,21 @@ void FillAndPublishBackground() {
     parker.referenceRadiusM = configured.referenceRadiusM;
     parker.radialFieldAtReferenceT = configured.radialFieldAtReferenceT;
     parker.numberDensityAtReferenceM3 = configured.numberDensityAtReferenceM3;
+    parker.densityReferenceRadiusM = configured.densityReferenceRadiusM;
     parker.temperatureK = configured.temperatureK;
+    parker.adiabaticIndex = configured.adiabaticIndex;
+    parker.thermodynamicClosure =
+        configured.thermodynamicClosure ==
+                RuntimeModel::SolarWindThermodynamicClosure::MultiSpecies
+            ? swcme::solarwind::ThermodynamicClosure::MultiSpecies
+            : swcme::solarwind::ThermodynamicClosure::ProtonOnly;
+    parker.alphaToProtonRatio = configured.alphaToProtonRatio;
+    parker.electronTemperatureK = configured.electronTemperatureK;
+    parker.alphaTemperatureK = configured.alphaTemperatureK;
+    parker.referenceSinColatitude = configured.referenceSinColatitude;
     parker.solarWindSpeedMPerS = configured.solarWindSpeedMPerS;
     parker.solarRotationRateRadPerS = configured.solarRotationRateRadPerS;
+    parker.rotationAxis = configured.rotationAxis;
     parker.magneticPolarity = configured.magneticPolarity;
     parker.validityCadenceS = configured.validityCadenceS;
     parker.coordinateFrame = configured.coordinateFrame;
@@ -835,6 +1121,12 @@ void FillAndPublishBackground() {
         Core::StatusCode::SnapshotUnavailable,
         "installed SWMF snapshot generation differs from the checkpoint"));
   }
+
+  // DATAFILE owns a distinct native buffer used by AMPS' field accessor and
+  // Tecplot callback.  Clear it before the physical-cell pass so nonphysical
+  // Cartesian padding is finite and no byte from an earlier allocation can be
+  // presented as initialized background.
+  ZeroNativeAmpsBackgroundOnOwnedCells();
   for (std::size_t i = 0; i < cells.size(); ++i) {
     if (!SamePosition(snapshot->positions()[i], cells[i].positionM)) {
       StopWithStatus("background cell mapping", Core::Status(
@@ -842,6 +1134,7 @@ void FillAndPublishBackground() {
           "snapshot positions are not in deterministic owner-cell order"));
     }
     StoreBackground(cells[i].cell, snapshot->samples()[i]);
+    StoreNativeAmpsBackground(cells[i].cell, snapshot->samples()[i]);
     gCellSampleIndex[cells[i].cell] = i;
   }
 
@@ -896,12 +1189,71 @@ void FillAndPublishBackground() {
       StoreBytes(cells[i].cell, offset, variance, sizeof(variance));
     }
   }
+
+  // This collective halo exchange is the final background-installation
+  // boundary.  The data-bearing initialization file is deliberately emitted
+  // only after it returns on every rank.
+  CompleteNativeAmpsBackgroundInstallation();
+}
+
+void WriteInitializationDataTecplotAfterBackground() {
+  if (Configuration().options().inputSchemaVersion < 3) return;
+
+  // Treat the file location in the initialization sequence as a contract:
+  // geometry may be written after AMR construction, but this data-bearing
+  // product may be written only after the immutable snapshot, turbulence,
+  // srcSEP3D cell cache, native AMPS DATAFILE cache, species weights, and time
+  // steps all describe the same completed initialization state.
+  const SEP3D::RuntimeModel::SnapshotDescriptor* active =
+      SEP3D::ApplicationRuntime().active_snapshot();
+  if (!gInstalledBackground || !gInstalledTurbulence || active == nullptr ||
+      !active->complete || !gNativeAmpsBackgroundReady) {
+    StopWithStatus("initialization data output",
+        SEP3D::Core::Status(
+            SEP3D::Core::StatusCode::SnapshotUnavailable,
+            "sep3d-initialization-data.dat was requested before the complete "
+            "background/turbulence/native-AMPS installation boundary"));
+  }
+  if (!PIC::ParticleWeightTimeStep::GlobalTimeStepInitialized) {
+    StopWithStatus("initialization data output",
+        SEP3D::Core::Status(SEP3D::Core::StatusCode::InvalidTransition,
+            "AMPS particle time steps are not initialized"));
+  }
+  for (const auto& species : gCompiledSpecies) {
+    const double timeStep =
+        PIC::ParticleWeightTimeStep::GlobalTimeStep[species.ampsIndex];
+    const double weight =
+        PIC::ParticleWeightTimeStep::GlobalParticleWeight[species.ampsIndex];
+    if (!std::isfinite(timeStep) || timeStep <= 0.0 ||
+        !std::isfinite(weight) || weight <= 0.0) {
+      StopWithStatus("initialization data output",
+          SEP3D::Core::Status(SEP3D::Core::StatusCode::InvalidTransition,
+              "compiled species " + std::to_string(species.ampsIndex) +
+              " has no positive finite AMPS time step/particle weight"));
+    }
+  }
+
+  // CompleteNativeAmpsBackgroundInstallation() is already collective.  This
+  // extra barrier makes the output boundary explicit and prevents a fast rank
+  // from entering the distributed AMPS writer while another rank is still
+  // checking species numerics.
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+  for (const auto& species : gCompiledSpecies) {
+    const std::string path = InitializationDataPath(
+        Configuration().options().initializationDataTecplotFile,
+        species.ampsIndex, PIC::nTotalSpecies);
+    PIC::Mesh::mesh->outputMeshDataTECPLOT(
+        path.c_str(), species.ampsIndex);
+  }
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 }
 
 void RefreshBackgroundAtBoundary() {
   using namespace SEP3D;
   RuntimeModel::Runtime& runtime = ApplicationRuntime();
   if (!runtime.EventDue(RuntimeModel::ScheduledEvent::Background)) return;
+
+  gNativeAmpsBackgroundReady = false;
 
   const std::vector<AmpsCellReference> cells = CollectOwnedPhysicalCells();
   std::vector<Core::Vec3> positions;
@@ -977,6 +1329,8 @@ void RefreshBackgroundAtBoundary() {
     // Cell storage is a diagnostic/cache copy. The immutable shared_ptr above
     // remains the mover authority and is not swapped until collective commit.
     StoreBackground(cells[index].cell, candidate->samples()[index]);
+    StoreNativeAmpsBackground(cells[index].cell,
+                              candidate->samples()[index]);
     const std::size_t waveOffset =
         Configuration().storage_layout().waveEnergyOffset;
     if (waveOffset != RuntimeModel::kNoOffset) {
@@ -1003,6 +1357,10 @@ void RefreshBackgroundAtBoundary() {
   gInstalledTurbulence = turbulence;
   gStagedBackground.reset();
   gStagedTurbulence.reset();
+  // Publish the committed generation to AMPS ghost cells as one final
+  // collective operation.  The native buffer can now be consumed by the next
+  // particle phase and by any later AMPS data output.
+  CompleteNativeAmpsBackgroundInstallation();
 }
 
 struct PackedObservation {
@@ -1695,20 +2053,11 @@ void amps_init() {
               << '\n';
   }
 
-  if (Configuration().options().inputSchemaVersion >= 3) {
-    // This call occurs only after the background snapshot and every compiled
-    // species' global/block numerical values have been initialized. AMPS adds
-    // the selected species' local dt/weight columns and the callbacks above
-    // add the complete sampled macroscopic state.
-    for (const auto& species : gCompiledSpecies) {
-      const std::string path = InitializationDataPath(
-          Configuration().options().initializationDataTecplotFile,
-          species.ampsIndex, PIC::nTotalSpecies);
-      PIC::Mesh::mesh->outputMeshDataTECPLOT(
-          path.c_str(), species.ampsIndex);
-    }
-    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-  }
+  // Keep the data-bearing output as the final operation in amps_init().  At
+  // this point background/turbulence publication, native AMPS synchronization,
+  // mover installation, optional restart restoration, and all species
+  // numerical initialization have completed.
+  WriteInitializationDataTecplotAfterBackground();
 }
 
 int amps_time_step() {

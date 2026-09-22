@@ -90,7 +90,8 @@ conservative plan to actual AMPS peak memory.
 ## Frozen cell layout
 
 Offsets are bytes relative to the srcSEP3D static-data base assigned by AMPS.
-The default layout contains 17 doubles (136 bytes):
+The default layout contains 19 doubles (152 bytes): 17 background primitives
+plus two directional turbulence variances.
 
 | Order | Field | Count | Units |
 |---:|---|---:|---|
@@ -105,12 +106,16 @@ The default layout contains 17 doubles (136 bytes):
 | 9 | focusing length | 1 | m |
 | 10 | field-line curvature | 3 | m⁻¹ |
 | 11 | field-aligned strain | 1 | s⁻¹ |
+| 12 | `deltaB_plus_squared`, `deltaB_minus_squared` | 2 | T² |
 
-Optional fields follow in this exact order: magnetic gradient (9 doubles),
-velocity gradient (9 doubles), and—for SWMF turbulence authority—directional
-magnetic wave variances along/against `+B` (2 doubles, T²). Sampling bytes are
-tracked separately because AMPS duplicates/switches sampling buffers according
-to its sampling configuration.
+The actual canonical allocation order is the 17 background primitives,
+optional magnetic gradient (9 doubles), optional velocity gradient (9
+doubles), and then the two wave variances. The variances are allocated for both
+prescribed and SWMF turbulence, so the initialization file always exposes the
+state used by scattering. SI energy densities are derived for output as
+`w_plus/minus=deltaB_plus/minus_squared/mu0`; they are not duplicate mutable
+cell fields. Sampling bytes are tracked separately because AMPS
+duplicates/switches sampling buffers according to its sampling configuration.
 
 ## Production initialization order
 
@@ -137,6 +142,26 @@ and validates the entire ordered curve before opening its output and records
 arc length, Cartesian position, heliocentric radius, and requested cell size in
 metres. A write failure is fatal; these are initialization products, not
 best-effort diagnostics.
+
+`amps_init()` then performs the data-bearing sequence:
+
+1. install positive finite global and block-local time step/weight for every
+   species compiled from `SpeciesList`;
+2. build and validate the complete owner-local background snapshot;
+3. zero AMPS' native DATAFILE records, then copy the same background sample to
+   the srcSEP3D offsets and native AMPS magnetic/plasma/gradient offsets;
+4. initialize and store the selected directional turbulence state;
+5. exchange associated-data halos (and, for relativistic GCA, generate and
+   exchange its neighbor-dependent derived fields);
+6. publish/install runtime and mover state, including an optional restart; and
+7. verify the active snapshot and every species numerical value, then call
+   `outputMeshDataTECPLOT` for `sep3d-initialization-data.dat` as the final
+   operation of `amps_init()`.
+
+The separation between steps 8–9 of `amps_init_mesh()` and this sequence is
+intentional: `outputMeshTECPLOT` needs only the finalized octree, whereas
+`outputMeshDataTECPLOT` must not observe the native buffer before Parker/SWCME
+and turbulence installation have completed on every rank.
 
 ## Gradient reconstruction
 

@@ -119,7 +119,11 @@ struct ProviderCapabilities {
   bool supportsBatchEval  = false; // EvaluateBatch() is implemented
 };
 
-enum class ProviderKind { AnalyticParker, SwmfAwsom };
+// PythonInterpolator is a reserved provenance value for the future batched
+// external-model bridge.  No current provider may publish it; recognizing it
+// in the type system prevents a future implementation from masquerading as an
+// analytic or coupled snapshot while its protocol is being introduced.
+enum class ProviderKind { AnalyticParker, PythonInterpolator, SwmfAwsom };
 enum class StorageOwnership { ModelOwned, ImportedReadOnly };
 
 // Metadata are frozen by Prepare() and copied into every snapshot.  Keeping

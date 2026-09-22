@@ -224,6 +224,49 @@ Result RunTUR3D04() {
       "missing wave data fails by default and becomes zero-rate ballistic only when explicitly selected");
 }
 
+Result RunTUR3D05() {
+  constexpr double mu0 = 4.0e-7 * SEP3D::Core::Const::kPi;
+  const struct ModelCase {
+    T::PrescribedSpectrumModel model;
+    double index;
+  } cases[] = {
+      {T::PrescribedSpectrumModel::Kolmogorov, 5.0 / 3.0},
+      {T::PrescribedSpectrumModel::Kraichnan, 3.0 / 2.0},
+      {T::PrescribedSpectrumModel::PowerLaw, 1.8}};
+
+  for (const ModelCase& item : cases) {
+    T::PrescribedKolmogorovConfiguration configuration;
+    configuration.spectrumModel = item.model;
+    configuration.spectralIndex = item.index;
+    configuration.normalizedCrossHelicity = 0.5;
+    T::PrescribedKolmogorovProvider provider(configuration);
+    if (!provider.Prepare(0.0).ok())
+      return Fail("a valid selectable prescribed turbulence model was rejected");
+    const T::TurbulenceSample sample = provider.Evaluate(
+        {SEP3D::Core::Const::AU, 0.0, 0.0}, Background());
+    if (!sample.status.ok() || !sample.valid ||
+        !Relative(sample.spectralIndex, item.index, 1.0e-15) ||
+        !Relative(sample.deltaBPlus2T2, 0.75 * sample.deltaB2T2,
+                  1.0e-15) ||
+        !Relative(sample.deltaBMinus2T2, 0.25 * sample.deltaB2T2,
+                  1.0e-15) ||
+        !Relative(sample.waveEnergyPlusJPerM3,
+                  sample.deltaBPlus2T2 / mu0, 1.0e-15) ||
+        !Relative(sample.waveEnergyMinusJPerM3,
+                  sample.deltaBMinus2T2 / mu0, 1.0e-15)) {
+      return Fail("selected slope, cross helicity, or wave-energy conversion is incorrect");
+    }
+  }
+
+  T::PrescribedKolmogorovConfiguration contradictory;
+  contradictory.spectrumModel = T::PrescribedSpectrumModel::Kraichnan;
+  contradictory.spectralIndex = 5.0 / 3.0;
+  if (T::PrescribedKolmogorovProvider(contradictory).Validate().ok())
+    return Fail("a named Kraichnan model accepted a Kolmogorov slope");
+  return Pass(
+      "selectable Kolmogorov, Kraichnan, and power-law models initialize directional SI wave energy exactly");
+}
+
 Result RunCOEF3D01() {
   const double mus[] = {-0.75, 0.0, 0.65};
   const double speeds[] = {1.0e6, 1.0e7, 1.0e8};
@@ -367,6 +410,9 @@ std::vector<SEP3D::Testing::Descriptor> RegisterTurbulenceTests() {
       make("TUR3D04", "TUR3D", "Missing turbulence policy",
            "Require failure unless ballistic transport is explicit.",
            RunTUR3D04),
+      make("TUR3D05", "TUR3D", "Selectable prescribed models",
+           "Validate named slopes, cross helicity, and SI wave energy.",
+           RunTUR3D05),
       make("COEF3D01", "COEF3D", "Coefficient conversions",
            "Round-trip Dmumu, mean free path, and parallel diffusion.",
            RunCOEF3D01),

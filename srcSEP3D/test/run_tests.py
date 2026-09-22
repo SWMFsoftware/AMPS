@@ -91,6 +91,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("CFG3D06", "CFG3D", "Finite Parker initialization schema", "cpp"),
     TestDefinition("CFG3D07", "CFG3D", "Complete compiled AMPS species binding", "cpp"),
     TestDefinition("CFG3D08", "CFG3D", "Complete schema-3 initialization", "cpp"),
+    TestDefinition("CFG3D09", "CFG3D", "Background and turbulence selection", "cpp"),
     TestDefinition("MSH3D01", "MSH3D", "Resolution bounds", "cpp"),
     TestDefinition("MSH3D02", "MSH3D", "Radial closed forms", "cpp"),
     TestDefinition("MSH3D03", "MSH3D", "Parker tube centreline", "cpp"),
@@ -108,6 +109,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("BGP3D04", "BGP3D", "Focusing length", "cpp"),
     TestDefinition("BGP3D05", "BGP3D", "Velocity derivatives", "cpp"),
     TestDefinition("BGP3D06", "BGP3D", "Polar limits", "cpp"),
+    TestDefinition("BGP3D07", "BGP3D", "SWCME ambient closure", "cpp"),
     TestDefinition("SNAP3D01", "SNAP3D", "Required-field completeness", "cpp"),
     TestDefinition("SNAP3D02", "SNAP3D", "Finite-value policy", "cpp"),
     TestDefinition("SNAP3D03", "SNAP3D", "SWMF unit conversion", "cpp"),
@@ -120,6 +122,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("TUR3D02", "TUR3D", "AWSoM wave mapping", "cpp"),
     TestDefinition("TUR3D03", "TUR3D", "Resonance bounds", "cpp"),
     TestDefinition("TUR3D04", "TUR3D", "Missing turbulence policy", "cpp"),
+    TestDefinition("TUR3D05", "TUR3D", "Selectable prescribed models", "cpp"),
     TestDefinition("COEF3D01", "COEF3D", "Coefficient conversions", "cpp"),
     TestDefinition("COEF3D02", "COEF3D", "Shared coefficient kernel", "cpp"),
     TestDefinition("COEF3D03", "COEF3D", "Parallel tensor assembly", "cpp"),
@@ -184,6 +187,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("BLDL3D05", "BLDL3D", "Source/build makefile path resolution", "source"),
     TestDefinition("BLDL3D06", "BLDL3D", "Production transitive-header boundary", "source"),
     TestDefinition("BLDL3D07", "BLDL3D", "Application-object ABI freshness", "source"),
+    TestDefinition("BLDL3D08", "BLDL3D", "Initialized native background output ordering", "source"),
     TestDefinition("ARCH3D02", "ARCH3D", "Canonical shared-archive ownership", "source"),
     TestDefinition("SWCME3D01", "SWCME3D", "Relocated SWCME common runner", "source"),
     # Linked and external-evidence cases are intentionally non-routine.  They
@@ -221,7 +225,7 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                         if item.kind in ("cpp", "shell") or
                         item.test_id in ("RUN3D01", "VALRUN3D01")),
     "r0": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04", "BLDL3D05",
-           "BLDL3D06", "BLDL3D07",
+           "BLDL3D06", "BLDL3D07", "BLDL3D08",
            "RUN3D01", "LAY01", "BLD01"),
     "r1": ("ARCH3D02", "SWCME3D01", "UTIL02"),
     "r2": ("LIFE3D01", "LIFE3D02", "LIFE3D03", "LIFE3D04"),
@@ -251,7 +255,7 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                      (item.group == "NAT3D" and item.kind == "validation") or
                      item.test_id == "VALRUN3D01"),
     "production": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04",
-                   "BLDL3D05", "BLDL3D06", "BLDL3D07"),
+                   "BLDL3D05", "BLDL3D06", "BLDL3D07", "BLDL3D08"),
 }
 
 
@@ -558,6 +562,81 @@ def _check_retired_sources(definition: TestDefinition) -> Result:
         "prepopulation operations are absent")
     return Result(definition.test_id, definition.group, status, message,
                   time.monotonic() - started, [])
+
+
+def _check_initialized_native_background(definition: TestDefinition) -> Result:
+    """Guard the data-bearing initialization product's ordering contract.
+
+    A linked AMPS qualification run remains the numerical authority, but this
+    source gate catches the regression that caused the original zero native
+    Bx/By/Bz columns: filling only srcSEP3D's private cache and invoking AMPS'
+    writer before its independent DATAFILE buffer and halos were installed.
+    """
+    started = time.monotonic()
+    main_lib = (ROOT / "main_lib.cpp").read_text(encoding="utf-8")
+    required = (
+        "PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin",
+        "Offset::PlasmaNumberDensity",
+        "Offset::PlasmaBulkVelocity",
+        "Offset::PlasmaTemperature",
+        "Offset::PlasmaIonPressure",
+        "Offset::MagneticField",
+        "Offset::ElectricField",
+        "Offset::MagneticFieldGradient",
+        "ZeroNativeAmpsBackgroundOnOwnedCells();",
+        "StoreNativeAmpsBackground(cells[i].cell, snapshot->samples()[i]);",
+        "CompleteNativeAmpsBackgroundInstallation();",
+        "WriteInitializationDataTecplotAfterBackground();",
+        "outputMeshDataTECPLOT(",
+        "radiusM >= innerRadiusM && radiusM <= outerRadiusM",
+    )
+    missing = [token for token in required if token not in main_lib]
+    if missing:
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            "native initialization bridge is incomplete: " +
+            "; ".join(missing), time.monotonic() - started, [])
+
+    try:
+        fill = main_lib[main_lib.index("void FillAndPublishBackground()"):
+                        main_lib.index("void WriteInitializationDataTecplotAfterBackground()")]
+        writer = main_lib[
+            main_lib.index("void WriteInitializationDataTecplotAfterBackground()"):
+            main_lib.index("void RefreshBackgroundAtBoundary()")]
+        initialize = main_lib[main_lib.index("void amps_init()"):
+                              main_lib.index("int amps_time_step()")]
+        fill_order = [
+            fill.index("ZeroNativeAmpsBackgroundOnOwnedCells();"),
+            fill.index("StoreNativeAmpsBackground("),
+            fill.rindex("CompleteNativeAmpsBackgroundInstallation();"),
+        ]
+        initialize_order = [
+            initialize.index("FillAndPublishBackground();"),
+            initialize.index("WriteInitializationDataTecplotAfterBackground();"),
+        ]
+    except ValueError as error:
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            f"cannot identify native initialization ordering boundary: {error}",
+            time.monotonic() - started, [])
+
+    if fill_order != sorted(fill_order) or initialize_order != sorted(initialize_order):
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            "native DATAFILE zero/fill/halo sequence or final writer call is out of order",
+            time.monotonic() - started, [])
+    if "gNativeAmpsBackgroundReady" not in writer or \
+       "outputMeshDataTECPLOT(" not in writer:
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            "initialization writer does not enforce the completed native-background boundary",
+            time.monotonic() - started, [])
+
+    return Result(
+        definition.test_id, definition.group, "PASS",
+        "validated background is mirrored to native AMPS fields, halo-exchanged, "
+        "and checked before the final data-bearing initialization output",
+        time.monotonic() - started, [])
 
 
 def _find_pic_header(args: argparse.Namespace) -> Optional[Path]:
@@ -1177,6 +1256,8 @@ def _run_source(definition: TestDefinition, args: argparse.Namespace,
         return _check_turbulence_header_boundary(definition, args, output_dir)
     if definition.test_id == "BLDL3D07":
         return _check_application_object_freshness(definition)
+    if definition.test_id == "BLDL3D08":
+        return _check_initialized_native_background(definition)
     if definition.test_id == "ARCH3D02":
         return _check_shared_archives(definition, args)
     if definition.test_id == "SWCME3D01":

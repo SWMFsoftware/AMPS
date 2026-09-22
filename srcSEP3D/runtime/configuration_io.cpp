@@ -308,6 +308,7 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
   } else if (field == "background.provider") {
     if (!ParseEnum(value,
         {{"analytic-parker", BackgroundAuthority::AnalyticParker},
+         {"python-interpolator", BackgroundAuthority::PythonInterpolator},
          {"swmf", BackgroundAuthority::Swmf}}, &o->background))
       return invalidValue();
   } else if (field == "background.external_script") {
@@ -327,6 +328,13 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     o->parker.magneticPolarity = static_cast<int>(parsed);
   } else if (field == "background.parker.number_density_at_reference_m3") {
     if (!ParseDouble(value, &o->parker.numberDensityAtReferenceM3)) return invalidValue();
+  } else if (field == "background.parker.number_density_at_one_au_m3") {
+    // Complete schema-3 input uses the unambiguous SWCME spelling.  The older
+    // "at_reference" key remains parseable for version-1/2 files, where the
+    // magnetic and density references historically shared one label.
+    if (!ParseDouble(value, &o->parker.numberDensityAtReferenceM3))
+      return invalidValue();
+    o->parker.densityReferenceRadiusM = Core::Const::AU;
   } else if (field == "background.parker.temperature_k") {
     if (!ParseDouble(value, &o->parker.temperatureK)) return invalidValue();
   } else if (field == "background.parker.validity_cadence_s") {
@@ -335,16 +343,40 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     if (!ParseEnum(value, {{"prescribed", TurbulenceAuthority::Prescribed},
                            {"swmf", TurbulenceAuthority::Swmf}},
                    &o->turbulence)) return invalidValue();
+  } else if (field == "turbulence.model") {
+    if (!ParseEnum(value,
+        {{"power-law", PrescribedTurbulenceModel::PowerLaw},
+         {"kolmogorov", PrescribedTurbulenceModel::Kolmogorov},
+         {"kraichnan", PrescribedTurbulenceModel::Kraichnan}},
+        &o->prescribedTurbulenceModel)) return invalidValue();
   } else if (field == "turbulence.delta_b_over_b") {
     if (!ParseDouble(value, &o->prescribedDeltaBOverB)) return invalidValue();
+  } else if (field == "turbulence.normalized_cross_helicity") {
+    if (!ParseDouble(value, &o->turbulenceNormalizedCrossHelicity))
+      return invalidValue();
+  } else if (field == "turbulence.reference_radius_m") {
+    if (!ParseDouble(value, &o->turbulenceReferenceRadiusM))
+      return invalidValue();
   } else if (field == "turbulence.k_min_per_m") {
     if (!ParseDouble(value, &o->turbulenceKMinPerM)) return invalidValue();
   } else if (field == "turbulence.k_max_per_m") {
     if (!ParseDouble(value, &o->turbulenceKMaxPerM)) return invalidValue();
+  } else if (field == "turbulence.k_min_radial_exponent") {
+    if (!ParseDouble(value, &o->turbulenceKMinRadialExponent))
+      return invalidValue();
+  } else if (field == "turbulence.k_max_radial_exponent") {
+    if (!ParseDouble(value, &o->turbulenceKMaxRadialExponent))
+      return invalidValue();
   } else if (field == "turbulence.spectral_index") {
     if (!ParseDouble(value, &o->turbulenceSpectralIndex)) return invalidValue();
   } else if (field == "turbulence.correlation_length_m") {
     if (!ParseDouble(value, &o->turbulenceCorrelationLengthM)) return invalidValue();
+  } else if (field == "turbulence.correlation_length_radial_exponent") {
+    if (!ParseDouble(value, &o->turbulenceCorrelationLengthRadialExponent))
+      return invalidValue();
+  } else if (field == "turbulence.validity_cadence_s") {
+    if (!ParseDouble(value, &o->turbulenceValidityCadenceS))
+      return invalidValue();
   } else if (field == "turbulence.missing_data") {
     if (!ParseEnum(value, {{"fail", MissingTurbulenceMode::Fail},
                            {"ballistic", MissingTurbulenceMode::Ballistic}},
@@ -756,12 +788,17 @@ Core::Status ParseConfigurationText(
         "background.parker.solar_rotation_rate_rad_per_s",
         "background.parker.solar_wind_speed_m_per_s",
         "background.parker.magnetic_polarity",
-        "background.parker.number_density_at_reference_m3",
+        "background.parker.number_density_at_one_au_m3",
         "background.parker.temperature_k",
         "background.parker.validity_cadence_s", "turbulence.authority",
-        "turbulence.delta_b_over_b", "turbulence.k_min_per_m",
-        "turbulence.k_max_per_m", "turbulence.spectral_index",
-        "turbulence.correlation_length_m", "turbulence.missing_data",
+        "turbulence.model", "turbulence.delta_b_over_b",
+        "turbulence.normalized_cross_helicity",
+        "turbulence.reference_radius_m", "turbulence.k_min_per_m",
+        "turbulence.k_max_per_m", "turbulence.k_min_radial_exponent",
+        "turbulence.k_max_radial_exponent", "turbulence.spectral_index",
+        "turbulence.correlation_length_m",
+        "turbulence.correlation_length_radial_exponent",
+        "turbulence.validity_cadence_s", "turbulence.missing_data",
         "turbulence.resonance_range", "turbulence.self_consistent_3d",
         "transport.cell_crossing_fraction", "transport.diffusion_fraction",
         "transport.focusing_fraction", "transport.cooling_fraction",
@@ -808,6 +845,9 @@ Core::Status ParseConfigurationText(
       return Invalid("schema version 3 defines source.samples_per_step as "
                      "an exact count at every simulation step; therefore "
                      "run.injection_cadence_steps must equal 1");
+    if (candidate.background == BackgroundAuthority::PythonInterpolator)
+      return Core::Status::Reserved(
+          "Python heliospheric-model interpolation background");
     if (candidate.background != BackgroundAuthority::AnalyticParker ||
         candidate.turbulence != TurbulenceAuthority::Prescribed)
       return Invalid("standalone schema version 3 requires analytic-parker "
@@ -861,6 +901,14 @@ Core::Status ParseConfigurationText(
     if (assigned.count("source.spectral_index") != 0)
       return Invalid("schema version 3 rejects source.spectral_index; "
                      "canonical local SWCME compression owns the DSA index");
+    if (assigned.count(
+            "background.parker.number_density_at_reference_m3") != 0) {
+      return Invalid(
+          "schema version 3 rejects the ambiguous legacy key "
+          "background.parker.number_density_at_reference_m3; use "
+          "number_density_at_one_au_m3 because SWCME density is normalized "
+          "at one AU independently of the magnetic reference radius");
+    }
 
     // The AMR Parker field, SWCME upstream state, and source energy interval
     // must describe the same physical system.  Species identity is purposely
@@ -924,6 +972,34 @@ Core::Status ParseConfigurationText(
     if (!sameParkerGeometry)
       return Invalid("[mesh.tube] colatitude or analytic +Z rotation axis "
                      "differs from canonical [swcme] Parker geometry");
+
+    // From this point onward the typed Parker provider receives values copied
+    // from the canonical SWCME resolver, not a second independently parsed
+    // solar-wind model.  The [background.parker] values above are retained as
+    // fail-closed cross-checks for human review; after agreement they are
+    // normalized to the exact SWCME binary values so spelling/rounding cannot
+    // create two ambient states with one configuration fingerprint.
+    candidate.parker.radialFieldAtReferenceT = canonicalRadialFieldT;
+    candidate.parker.solarWindSpeedMPerS = model.V_sw_kms * 1.0e3;
+    candidate.parker.solarRotationRateRadPerS =
+        model.solar_rotation_rate_rad_s;
+    candidate.parker.magneticPolarity = model.parker_radial_polarity;
+    candidate.parker.numberDensityAtReferenceM3 = model.n1AU_cm3 * 1.0e6;
+    candidate.parker.densityReferenceRadiusM = Core::Const::AU;
+    candidate.parker.temperatureK = model.T_K;
+    candidate.parker.adiabaticIndex = model.gamma_ad;
+    candidate.parker.thermodynamicClosure =
+        model.thermodynamic_closure ==
+                swcme::solarwind::ThermodynamicClosure::MultiSpecies
+            ? SolarWindThermodynamicClosure::MultiSpecies
+            : SolarWindThermodynamicClosure::ProtonOnly;
+    candidate.parker.alphaToProtonRatio = model.alpha_to_proton_ratio;
+    candidate.parker.electronTemperatureK = model.electron_T_K;
+    candidate.parker.alphaTemperatureK = model.alpha_T_K;
+    candidate.parker.referenceSinColatitude = model.sin_theta;
+    candidate.parker.rotationAxis = {
+        model.solar_rotation_axis[0], model.solar_rotation_axis[1],
+        model.solar_rotation_axis[2]};
 
     const long double representedPerEvent =
         static_cast<long double>(candidate.source.physicalParticleRatePerS) *
@@ -1087,6 +1163,14 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
          << "domain_preset=" << Name(options.domain) << '\n'
          << "inner_radius_m=" << options.innerRadiusM << '\n'
          << "outer_radius_m=" << options.outerRadiusM << '\n'
+         << "background_provider=" << Name(options.background) << '\n'
+         << "solar_wind_model=canonical-swcme-parker-leblanc\n"
+         << "solar_wind_thermodynamic_closure="
+         << Name(options.parker.thermodynamicClosure) << '\n'
+         << "prescribed_turbulence_model="
+         << Name(options.prescribedTurbulenceModel) << '\n'
+         << "turbulence_normalized_cross_helicity="
+         << options.turbulenceNormalizedCrossHelicity << '\n'
          << "parker_spiral_point_count=" << centreline.size() << '\n'
          << "parker_spiral_length_m=" << options.parkerSpiralLengthM << '\n'
          << "parker_spiral_end_m=" << lineEnd.x << ',' << lineEnd.y << ','
