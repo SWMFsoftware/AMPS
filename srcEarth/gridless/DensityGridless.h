@@ -23,14 +23,17 @@
  * THEORY SUMMARY
  * --------------
  * For each observation point x0 and kinetic energy E:
- *   (1) Backtrace a set of directions and compute transmissivity:
- *         T(E;x0) = N_allowed / N_dirs
+ *   (1) Backtrace a set of directions and compute resolved-only transmissivity:
+ *         T(E;x0) = N_allowed,resolved / N_resolved
  *   (2) Local differential intensity (isotropic assumption):
  *         J_loc(E;x0) = T(E;x0) * J_b(E)
  *   (3) Total number density:
  *         n_tot(x0) = 4*pi * integral_{Emin}^{Emax} [ J_loc(E;x0) / v(E) ] dE
  *
- * where v(E) is the relativistic particle speed at kinetic energy E.
+ * where v(E) is the relativistic particle speed at kinetic energy E.  Numerical
+ * terminations are retained separately.  T_lower/T_upper and the corresponding
+ * spectrum, density, and flux bounds assume unresolved directions are respectively
+ * forbidden or maximally allowed; an all-unresolved nominal value is NaN, not zero.
  *
  * INPUT CONTRACT
  * --------------
@@ -49,15 +52,16 @@
  * POINTS:
  *   Writes three Tecplot files (rank 0):
  *     - gridless_points_density.dat
- *         Variables: X_km Y_km Z_km N_m3 N_cm3
+ *         Variables include nominal/lower/upper N in m^-3 and cm^-3.
  *         Number density integrated over [DS_EMIN, DS_EMAX].
  *
  *     - gridless_points_spectrum.dat
  *         One ZONE per observation point.
- *         Variables: E_MeV  T  J_boundary_perMeV  J_local_perMeV
+ *         Variables include E, nominal/lower/upper T, unresolved fraction, trajectory
+ *         counts, boundary intensity, and nominal/lower/upper local intensity.
  *
  *     - gridless_points_flux.dat
- *         Variables: X_km  Y_km  Z_km  F_tot_m2s1  [F_NAME_m2s1 ...]
+ *         Variables include nominal/lower/upper total and per-channel flux.
  *         F_tot = 4π ∫ T(E)·J_b(E) dE  over [DS_EMIN, DS_EMAX]  [m^-2 s^-1].
  *         Additional columns F_NAME_m2s1 are added for each user-defined channel
  *         from the #ENERGY_CHANNELS section of the input file.

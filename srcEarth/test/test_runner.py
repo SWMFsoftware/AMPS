@@ -271,7 +271,7 @@ after ignoring blank lines.  Duplicate metadata lines for one source entry are
 rejected.
 
 -------------------------------------------------------------------------------
-9. ``--update-last-pass`` behavior
+9. Immediate and deferred ``last pass:`` updates
 -------------------------------------------------------------------------------
 
 After execution, ``--update-last-pass`` obtains the selected commit id and
@@ -309,6 +309,40 @@ its vector element remains empty.  If metadata was absent, a new scalar or
 vector ``last pass:`` line is inserted immediately below the source command.
 The file is rewritten through a temporary sibling file and then atomically
 replaced.
+
+Without ``--update-last-pass``, a completed run does not modify the list.
+Instead, it atomically saves the full results, the selected commit id, the
+canonical test-list path, and a SHA-256 fingerprint in a hidden sibling file::
+
+    .<test-list-name>.last-pass-results.json
+
+For the standard ``srcEarth/test/list`` this is::
+
+    srcEarth/test/.list.last-pass-results.json
+
+The deferred results replace any older pending results for the same list.  They
+are written even when one or more actual results differ from their expected P/F
+markers, because last-pass provenance follows actual P results independently of
+the expected marker.
+
+A later invocation can apply those saved actual results without launching any
+test command::
+
+    srcEarth/test/test_runner.py --commit-last-pass
+
+The no-positional form targets the standard list beside the runner.  For a
+different list, supply it as the positional argument.  ``--commit-last-pass``
+uses the commit id captured by the original run, updates only actual passes via
+the same scalar/loop logic as ``--update-last-pass``, and removes the pending
+file only after the list update succeeds.
+
+Before applying anything, commit-only mode verifies that the canonical list
+path, its byte-for-byte SHA-256 fingerprint, test count, source line, variant
+index, expected marker, and expanded command still match the saved run.  A list
+edit or damaged/stale cache is rejected, leaving the pending file available for
+inspection.  ``--last-pass-results-file`` can select a non-default cache path,
+and ``--commit-id`` can supply a tested revision when the original run was made
+outside a git work tree.
 
 -------------------------------------------------------------------------------
 10. Compact grammar summary
@@ -478,6 +512,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import hashlib
 import json
 import os
 import re
@@ -487,6 +522,7 @@ import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from itertools import product
 from pathlib import Path
 from typing import Iterable, List, Optional
@@ -566,6 +602,13 @@ VARIABLE_REF_RE = re.compile(
     r"\$(?:\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}|"
     r"(?P<plain>[A-Za-z_][A-Za-z0-9_]*))"
 )
+
+# The deferred-last-pass file is deliberately versioned.  It is temporary in
+# the sense that it is removed after a successful --commit-last-pass, but it is
+# kept beside the test list (rather than in /tmp) so that it survives logout,
+# batch-job teardown, and a later invocation from a different directory.
+PENDING_LAST_PASS_SCHEMA_VERSION = 1
+DEFAULT_TEST_FILE = Path(__file__).resolve().with_name("list")
 
 
 def _parse_comma_list(text: str, *, what: str, allow_empty: bool) -> List[str]:
@@ -1588,6 +1631,247 @@ def get_git_commit_id(workdir: Path) -> str:
     return commit_id
 
 
+def test_file_sha256(test_file: Path) -> str:
+    """Return a byte-for-byte fingerprint of a test list.
+
+    Deferred results identify tests by source line and expanded-variant index.
+    Those identifiers are safe only while the source list is unchanged, so the
+    digest is part of the on-disk contract rather than merely diagnostic data.
+    """
+    digest = hashlib.sha256()
+    with test_file.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def default_pending_last_pass_path(test_file: Path) -> Path:
+    """Return the stable temporary-results path associated with ``test_file``."""
+    return test_file.with_name(f".{test_file.name}.last-pass-results.json")
+
+
+def write_pending_last_pass_results(
+    pending_file: Path,
+    test_file: Path,
+    test_file_digest: str,
+    results: List[TestResult],
+    commit_id: Optional[str],
+) -> None:
+    """Atomically save one completed run for a later --commit-last-pass.
+
+    The test-list digest was captured before commands started.  Rechecking it
+    here prevents a concurrent edit from producing a cache whose result line
+    numbers no longer describe the file on disk.  A per-process temporary name
+    also prevents two writers from exposing a partially serialized JSON file.
+    """
+    current_digest = test_file_sha256(test_file)
+    if current_digest != test_file_digest:
+        raise RuntimeError(
+            f"test list changed while tests were running: {test_file}; "
+            "deferred last-pass results were not saved"
+        )
+
+    payload = {
+        "schema_version": PENDING_LAST_PASS_SCHEMA_VERSION,
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "test_file": str(test_file.resolve()),
+        "test_file_sha256": test_file_digest,
+        "commit_id": commit_id,
+        "test_count": len(results),
+        "passing_count": sum(result.actual == "P" for result in results),
+        "results": [asdict(result) for result in results],
+    }
+
+    pending_file.parent.mkdir(parents=True, exist_ok=True)
+    temporary_file = pending_file.with_name(
+        f"{pending_file.name}.tmp.{os.getpid()}"
+    )
+    try:
+        with temporary_file.open("w", encoding="utf-8") as output:
+            json.dump(payload, output, indent=2, sort_keys=True)
+            output.write("\n")
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary_file, pending_file)
+    finally:
+        # os.replace() removes the source name on success.  On a serialization
+        # or filesystem failure, do not leave a second misleading cache behind.
+        try:
+            temporary_file.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def read_pending_last_pass_results(pending_file: Path) -> dict:
+    """Read and validate the outer structure of a deferred-results file."""
+    try:
+        with pending_file.open("r", encoding="utf-8") as source:
+            payload = json.load(source)
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"no deferred last-pass results found at {pending_file}; run the "
+            "tests once without --update-last-pass first"
+        ) from exc
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            f"could not read deferred last-pass results {pending_file}: {exc}"
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise RuntimeError(
+            f"invalid deferred last-pass results in {pending_file}: "
+            "top-level JSON value is not an object"
+        )
+    if payload.get("schema_version") != PENDING_LAST_PASS_SCHEMA_VERSION:
+        raise RuntimeError(
+            f"unsupported deferred last-pass schema in {pending_file}: "
+            f"expected {PENDING_LAST_PASS_SCHEMA_VERSION}, got "
+            f"{payload.get('schema_version')!r}"
+        )
+    if not isinstance(payload.get("test_file"), str):
+        raise RuntimeError(
+            f"invalid deferred last-pass results in {pending_file}: "
+            "missing test_file"
+        )
+    if not isinstance(payload.get("test_file_sha256"), str):
+        raise RuntimeError(
+            f"invalid deferred last-pass results in {pending_file}: "
+            "missing test_file_sha256"
+        )
+    if not isinstance(payload.get("results"), list):
+        raise RuntimeError(
+            f"invalid deferred last-pass results in {pending_file}: "
+            "results is not a list"
+        )
+    return payload
+
+
+def _restore_pending_test_results(
+    payload: dict,
+    pending_file: Path,
+) -> List[TestResult]:
+    """Reconstruct strongly typed results from a validated cache object."""
+    results: List[TestResult] = []
+    for position, row in enumerate(payload["results"], start=1):
+        if not isinstance(row, dict):
+            raise RuntimeError(
+                f"invalid result #{position} in {pending_file}: expected an object"
+            )
+        try:
+            result = TestResult(**row)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"invalid result #{position} in {pending_file}: {exc}"
+            ) from exc
+        if result.actual not in {"P", "F"}:
+            raise RuntimeError(
+                f"invalid result #{position} in {pending_file}: actual must be P or F"
+            )
+        results.append(result)
+
+    if payload.get("test_count") != len(results):
+        raise RuntimeError(
+            f"invalid deferred last-pass results in {pending_file}: test_count "
+            f"is {payload.get('test_count')!r}, but {len(results)} results were saved"
+        )
+    return results
+
+
+def commit_pending_last_pass_results(
+    pending_file: Path,
+    requested_test_file: Optional[Path] = None,
+    commit_id_override: Optional[str] = None,
+) -> tuple[int, str, Path]:
+    """Apply a saved run to its test list without executing any command.
+
+    ``requested_test_file`` is optional so an explicitly supplied pending file
+    can carry its own list location.  When a list is supplied, it must resolve
+    to the same path recorded by the run.  The byte digest and every parsed test
+    identity are then checked before the existing atomic metadata updater is
+    called.  The pending file is deleted only after that update succeeds.
+    """
+    payload = read_pending_last_pass_results(pending_file)
+    cached_test_file = Path(payload["test_file"]).expanduser().resolve()
+    if requested_test_file is None:
+        test_file = cached_test_file
+    else:
+        test_file = requested_test_file.expanduser().resolve()
+        if test_file != cached_test_file:
+            raise RuntimeError(
+                f"deferred results belong to {cached_test_file}, not {test_file}"
+            )
+
+    try:
+        current_digest = test_file_sha256(test_file)
+    except OSError as exc:
+        raise RuntimeError(f"could not fingerprint test list {test_file}: {exc}") from exc
+    if current_digest != payload["test_file_sha256"]:
+        raise RuntimeError(
+            f"test list {test_file} changed after the saved run; refusing to "
+            "apply stale line-number results. Re-run the tests to create a new "
+            "deferred-results file"
+        )
+
+    try:
+        tests = parse_test_file(test_file)
+    except Exception as exc:
+        raise RuntimeError(f"could not parse test list {test_file}: {exc}") from exc
+    results = _restore_pending_test_results(payload, pending_file)
+
+    # The digest already protects the source bytes.  This second validation
+    # catches a damaged or manually edited JSON cache before it can update any
+    # metadata, including subtle scalar/loop variant mix-ups.
+    if len(tests) != len(results):
+        raise RuntimeError(
+            f"deferred results contain {len(results)} tests, but {test_file} "
+            f"parses as {len(tests)} tests"
+        )
+    for test, result in zip(tests, results):
+        test_identity = (
+            test.index,
+            test.line_no,
+            test.variant_index,
+            test.variant_count,
+            test.expected,
+            test.command,
+        )
+        result_identity = (
+            result.index,
+            result.line_no,
+            result.variant_index,
+            result.variant_count,
+            result.expected,
+            result.command,
+        )
+        if test_identity != result_identity:
+            raise RuntimeError(
+                f"deferred result #{result.index} does not match the parsed "
+                f"test identity in {test_file}; the cache may be damaged"
+            )
+
+    saved_commit_id = payload.get("commit_id")
+    commit_id = commit_id_override or saved_commit_id
+    if not isinstance(commit_id, str) or not commit_id.strip():
+        raise RuntimeError(
+            "the saved run has no git commit id; repeat --commit-last-pass "
+            "with --commit-id <tested-commit>"
+        )
+    commit_id = commit_id.strip()
+
+    updated = update_last_pass_entries(test_file, tests, results, commit_id)
+    try:
+        pending_file.unlink()
+    except OSError as exc:
+        # The important atomic mutation already succeeded.  Report cleanup as a
+        # warning rather than claiming that the list update failed.
+        print(
+            f"WARNING: updated {test_file}, but could not remove deferred "
+            f"results {pending_file}: {exc}",
+            file=sys.stderr,
+        )
+    return updated, commit_id, test_file
+
+
 def update_last_pass_entries(
     test_file: Path,
     tests: List[TestCase],
@@ -1850,7 +2134,14 @@ def main(argv: Optional[List[str]] = None) -> int:
             "last-pass behavior is unchanged."
         ),
     )
-    parser.add_argument("test_file", help="Path to the test list file")
+    parser.add_argument(
+        "test_file",
+        nargs="?",
+        help=(
+            "Path to the test list file; required for a test run. With "
+            "--commit-last-pass it defaults to the 'list' file beside this runner"
+        ),
+    )
     parser.add_argument(
         "jobs_positional",
         nargs="?",
@@ -1972,7 +2263,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             "lines are still printed"
         ),
     )
-    parser.add_argument(
+    last_pass_mode = parser.add_mutually_exclusive_group()
+    last_pass_mode.add_argument(
         "--update-last-pass",
         action="store_true",
         help=(
@@ -1981,16 +2273,80 @@ def main(argv: Optional[List[str]] = None) -> int:
             "of its P/F marker"
         ),
     )
+    last_pass_mode.add_argument(
+        "--commit-last-pass",
+        action="store_true",
+        help=(
+            "Do not run tests; apply the results saved by the most recent run "
+            "without --update-last-pass, then remove that temporary results file"
+        ),
+    )
     parser.add_argument(
         "--commit-id",
         default=None,
         help=(
-            "Commit id to write with --update-last-pass; default: current "
-            "'git rev-parse HEAD' in --workdir"
+            "Commit id to record for --update-last-pass or a deferred run; "
+            "default: current 'git rev-parse HEAD' in --workdir. With "
+            "--commit-last-pass, override the commit stored in the results file"
+        ),
+    )
+    parser.add_argument(
+        "--last-pass-results-file",
+        default=None,
+        help=(
+            "Path for deferred last-pass JSON results; default: a hidden "
+            "'.<test-list>.last-pass-results.json' file beside the test list"
         ),
     )
 
     args = parser.parse_args(argv)
+
+    if args.commit_id is not None and not args.commit_id.strip():
+        parser.error("--commit-id must not be empty")
+    if args.commit_id is not None:
+        args.commit_id = args.commit_id.strip()
+
+    # Commit-only mode returns before any scheduler, memory, logging, or report
+    # setup.  Consequently no test command can be launched accidentally.  An
+    # explicit cache may name its list internally; otherwise the no-positional
+    # shorthand targets srcEarth/test/list as requested by the CLI contract.
+    if args.commit_last_pass:
+        if args.jobs_positional is not None or args.jobs is not None:
+            parser.error("job-count arguments cannot be used with --commit-last-pass")
+
+        requested_test_file = (
+            Path(args.test_file).expanduser().resolve()
+            if args.test_file is not None
+            else None
+        )
+        if args.last_pass_results_file is not None:
+            pending_file = Path(args.last_pass_results_file).expanduser().resolve()
+        else:
+            pending_test_file = requested_test_file or DEFAULT_TEST_FILE
+            pending_file = default_pending_last_pass_path(pending_test_file)
+
+        try:
+            n_updated, commit_id, committed_test_file = (
+                commit_pending_last_pass_results(
+                    pending_file=pending_file,
+                    requested_test_file=requested_test_file,
+                    commit_id_override=args.commit_id,
+                )
+            )
+        except Exception as exc:
+            print(f"ERROR committing deferred last-pass metadata: {exc}", file=sys.stderr)
+            return 2
+
+        print(
+            f"Updated {n_updated} last-pass entr{'y' if n_updated == 1 else 'ies'} "
+            f"in {committed_test_file} to commit {commit_id}"
+        )
+        if not pending_file.exists():
+            print(f"Removed deferred last-pass results: {pending_file}")
+        return 0
+
+    if args.test_file is None:
+        parser.error("test_file is required unless --commit-last-pass is used")
 
     jobs = args.jobs if args.jobs is not None else args.jobs_positional
     if jobs is None:
@@ -2012,9 +2368,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     workdir = Path(args.workdir).expanduser().resolve()
     log_dir = Path(args.log_dir).expanduser().resolve()
     report_prefix = Path(args.report_prefix).expanduser().resolve()
+    pending_file = (
+        Path(args.last_pass_results_file).expanduser().resolve()
+        if args.last_pass_results_file is not None
+        else default_pending_last_pass_path(test_file)
+    )
 
     try:
+        test_file_digest = test_file_sha256(test_file)
         tests = parse_test_file(test_file)
+        if test_file_sha256(test_file) != test_file_digest:
+            raise RuntimeError(f"test list changed while it was being parsed: {test_file}")
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -2086,6 +2450,24 @@ def main(argv: Optional[List[str]] = None) -> int:
             )
         return 0
 
+    # Resolve the provenance revision before executing any test.  This avoids
+    # recording a later HEAD if a long validation run overlaps a checkout or
+    # commit.  Non-git runs remain usable: their results are cached with no
+    # revision and can later be committed with an explicit --commit-id.
+    run_commit_id = args.commit_id
+    if run_commit_id is None:
+        try:
+            run_commit_id = get_git_commit_id(workdir)
+        except RuntimeError as exc:
+            if args.update_last_pass:
+                print(f"ERROR updating last-pass metadata: {exc}", file=sys.stderr)
+                return 2
+            print(
+                f"WARNING: {exc}. Deferred results will still be saved, but "
+                "--commit-last-pass will require --commit-id <tested-commit>.",
+                file=sys.stderr,
+            )
+
     try:
         results = asyncio.run(
             run_all_tests(
@@ -2137,15 +2519,72 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.update_last_pass:
         try:
-            commit_id = args.commit_id or get_git_commit_id(workdir)
-            n_updated = update_last_pass_entries(test_file, tests, results, commit_id)
+            if test_file_sha256(test_file) != test_file_digest:
+                raise RuntimeError(
+                    f"test list changed while tests were running: {test_file}; "
+                    "refusing to apply line-number results"
+                )
+            if run_commit_id is None:
+                raise RuntimeError("no commit id is available")
+            n_updated = update_last_pass_entries(
+                test_file,
+                tests,
+                results,
+                run_commit_id,
+            )
         except Exception as exc:
             print(f"ERROR updating last-pass metadata: {exc}", file=sys.stderr)
             return 2
         print(
             f"Updated {n_updated} last-pass entr{'y' if n_updated == 1 else 'ies'} "
-            f"in {test_file} to commit {commit_id}"
+            f"in {test_file} to commit {run_commit_id}"
         )
+        # Any older deferred cache now describes the pre-update list and cannot
+        # be valid.  Remove it after, never before, the immediate update.
+        try:
+            pending_file.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            print(
+                f"WARNING: could not remove stale deferred last-pass results "
+                f"{pending_file}: {exc}",
+                file=sys.stderr,
+            )
+    else:
+        try:
+            write_pending_last_pass_results(
+                pending_file=pending_file,
+                test_file=test_file,
+                test_file_digest=test_file_digest,
+                results=results,
+                commit_id=run_commit_id,
+            )
+        except Exception as exc:
+            print(f"ERROR saving deferred last-pass results: {exc}", file=sys.stderr)
+            return 2
+        print(
+            f"Saved deferred last-pass results for {len(results)} tests "
+            f"({sum(result.actual == 'P' for result in results)} passed): "
+            f"{pending_file}"
+        )
+        if test_file == DEFAULT_TEST_FILE:
+            commit_command = (
+                f"{shlex.quote(str(Path(__file__).resolve()))} --commit-last-pass"
+            )
+        else:
+            commit_command = (
+                f"{shlex.quote(str(Path(__file__).resolve()))} "
+                f"--commit-last-pass {shlex.quote(str(test_file))}"
+            )
+        if args.last_pass_results_file is not None:
+            commit_command += (
+                " --last-pass-results-file "
+                f"{shlex.quote(str(pending_file))}"
+            )
+        if run_commit_id is None:
+            commit_command += " --commit-id <tested-commit>"
+        print(f"Apply these results without re-running tests with: {commit_command}")
 
     return 0 if all(r.matched_reference for r in results) else 1
 

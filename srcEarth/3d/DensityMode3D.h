@@ -10,6 +10,13 @@
 // intended difference is the magnetic-field backend: Mode3D interpolates compact
 // global cell-centered arrays with a decomposition-independent row stencil, while
 // gridless evaluates Tsyganenko/dipole fields directly at every trajectory step.
+// Relativistic conversions, energy and angular grids, quadrature, channel clipping,
+// and structured unresolved-trajectory bounds are shared in util/FluxNumerics.h.
+//
+// Output includes nominal, lower, and upper transmission/spectrum/density/flux values.
+// Nominal values use only resolved trajectories and are NaN if none resolves; lower and
+// upper values retain a conservative physical interval.  Validation decks can make an
+// unresolved fraction above DS_UNRESOLVED_TOL fatal with DS_FAIL_ON_UNRESOLVED=T.
 //
 //======================================================================================
 

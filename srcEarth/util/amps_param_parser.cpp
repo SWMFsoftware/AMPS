@@ -3206,6 +3206,10 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
                uKey=="DENSITY_SAVE_TERMINATION_SUMMARY") {
         p.densitySpectrum.saveTerminationSummary=ToBool(val);
       }
+      else if (uKey=="DS_FAIL_ON_UNRESOLVED" ||
+               uKey=="DENSITY_FAIL_ON_UNRESOLVED") {
+        p.densitySpectrum.failOnUnresolved=ToBool(val);
+      }
       else if (uKey=="DS_PARALLEL" || uKey=="DS_BACKEND" ||
                uKey=="DENSITY_PARALLEL" || uKey=="DENSITY_BACKEND" ||
                uKey=="MODE3D_DENSITY_PARALLEL" || uKey=="MODE3D_DENSITY_BACKEND" ||

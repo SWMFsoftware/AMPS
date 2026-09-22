@@ -1,5 +1,53 @@
 # SEP-in-geospace model: compact global fields in Mode3D
 
+## Roadmap Step 2 implemented: common flux numerics
+
+Step 2 of the cutoff-to-flux development roadmap is implemented in this source tree.
+`util/FluxNumerics.h` is now the single backend-independent implementation of:
+
+- relativistic kinetic-energy, speed, and rigidity conversions;
+- LINEAR, LOG, and log-rigidity energy coordinates;
+- equal-solid-angle direction sampling and deterministic work-cap subsampling;
+- trapezoidal density, total-flux, and clipped-channel quadrature;
+- transmission diagnostics; and
+- structured trajectory accounting with nominal, lower, and upper access estimates.
+
+Both `gridless/DensityGridless.cpp` and `3d/DensityMode3D.cpp` call these kernels.  This
+also fixes the former Mode3D `DS_ENERGY_SPACING=LINEAR` expression, which multiplied the
+normalized coordinate by itself and generated a quadratic grid.
+
+Numerical safety exits are no longer interchangeable with geomagnetic shielding.
+Nominal transmission uses resolved trajectories only.  If no direction resolves, the
+nominal value is `NaN`, while lower and upper values represent the limiting assumptions
+that every unresolved direction is forbidden or maximally allowed.  The same bounds are
+folded through the spectrum to produce bounded density, total flux, channel flux, and
+local-spectrum products.  For anisotropic boundary spectra, the upper bound uses the
+largest configured spatial multiplier; the implemented PAD factors have maximum one.
+
+The validation controls are:
+
+```text
+DS_UNRESOLVED_TOL       0.01   # accepted unresolved fraction [0,1]
+DS_RETRY_UNRESOLVED     T      # one tighter/longer retry
+DS_SAVE_TERMINATION_SUMMARY T  # retain per-location/energy counts
+DS_FAIL_ON_UNRESOLVED   T      # recommended for validation decks
+```
+
+`DS_FAIL_ON_UNRESOLVED=F` (default) preserves survey-style execution and writes a
+warning plus uncertainty bounds.  `T` makes an exceedance fatal and is intended for
+regression and publication validation.  Mode3D writes
+`mode3d_termination_summary*.dat`; gridless point calculations write
+`gridless_termination_summary.dat`.
+
+Run the standalone unit suite without AMPS/SWMF dependencies:
+
+```bash
+./test/UFluxNumerics/run_test.sh
+```
+
+It covers roadmap tests U-F03, U-F04, U-F05, U-F06, and U-F12.  See
+`util/README.md` and `test/UFluxNumerics/README.md` for the API and test contracts.
+
 
 ## Selecting the background-field epoch
 
@@ -43,6 +91,9 @@ Mode3D now keeps the standard distributed AMPS mesh and replicates only compact 
 - `3d/DensityMode3D.h`
 - `3d/Mode3DParallel.cpp`
 - `3d/Mode3DParallel.h`
+- `util/FluxNumerics.h`
+- `util/amps_param_parser.cpp`
+- `util/amps_param_parser.h`
 - `3d_forward_swmf/Mode3DForwardSWMF.cpp`
 - `3d_forward_swmf/Mode3DForwardSWMF.h`
 

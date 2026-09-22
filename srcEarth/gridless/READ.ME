@@ -123,6 +123,23 @@ and the omnidirectional integral flux is
 
 Additional user-defined energy channels may also be integrated.
 
+Step 2 numerical contract
+-------------------------
+
+Density/spectrum post-processing is shared with the Mode3D/SWMF backend through
+`../util/FluxNumerics.h`.  Grid construction, relativistic conversions, direction
+sampling, quadrature, and unresolved bounds therefore have one implementation.
+
+For each energy, `T` is the resolved-only estimate.  `T_lower` treats every unresolved
+trajectory as forbidden and `T_upper` treats every unresolved trajectory as maximally
+allowed.  The POINTS/TRAJECTORY spectrum, density, and flux files include corresponding
+lower/upper columns; SHELL density zones include the same density bounds and the maximum
+unresolved fraction at that location.  A no-resolved energy is written as `NaN` for the
+nominal product rather than silently as zero.
+
+Validation inputs should set `DS_FAIL_ON_UNRESOLVED T` together with an explicit
+`DS_UNRESOLVED_TOL`.  Survey runs can leave the flag false and use the written bounds.
+
 
 2.4 Optional anisotropic boundary mode
 --------------------------------------
@@ -402,6 +419,16 @@ For density/spectrum runs add:
 
   #DENSITY_SPECTRUM
   #SPECTRUM
+
+Recommended validation controls inside `#DENSITY_SPECTRUM` are:
+
+  DS_UNRESOLVED_TOL          0.01
+  DS_RETRY_UNRESOLVED        T
+  DS_SAVE_TERMINATION_SUMMARY T
+  DS_FAIL_ON_UNRESOLVED      T
+
+The last flag defaults to F for backward compatibility.  With F, excessive unresolved
+sampling is warned and bracketed by lower/upper products; with T, it terminates the run.
 
 Optional sections:
 

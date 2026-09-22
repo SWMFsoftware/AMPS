@@ -83,6 +83,7 @@
 //     DS_UNRESOLVED_TOL       <double>   ! maximum accepted unresolved fraction [0,1]
 //     DS_RETRY_UNRESOLVED     T|F        ! retry unresolved trajectories once
 //     DS_SAVE_TERMINATION_SUMMARY T|F    ! write per-point/energy termination counts
+//     DS_FAIL_ON_UNRESOLVED   T|F        ! validation: abort if tolerance is exceeded
 //
 //   #NUMERICAL trapped-orbit controls (static fields only; disabled by default)
 //     TRAP_DETECTION T|F
@@ -781,6 +782,10 @@ namespace EarthUtil {
     double unresolvedTolerance{0.01}; // DS_UNRESOLVED_TOL, fraction in [0,1]
     bool retryUnresolved{false};      // DS_RETRY_UNRESOLVED
     bool saveTerminationSummary{true}; // DS_SAVE_TERMINATION_SUMMARY
+    // Production surveys may prefer to retain conservative lower/upper products and a
+    // warning.  Validation runs should set this true so excessive unresolved sampling
+    // cannot pass as a physically shielded (zero-flux) result.
+    bool failOnUnresolved{false};      // DS_FAIL_ON_UNRESOLVED
   };
 
   //====================================================================================

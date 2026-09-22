@@ -1,0 +1,53 @@
+# Mode3D cutoff, flux, and spectrum backend
+
+`DensityMode3D.cpp` computes backward-access transmission, local differential spectra,
+number density, total omnidirectional flux, and configured energy-channel fluxes using
+the compact AMR magnetic/electric-field snapshot.
+
+The same code path serves two configurations:
+
+- standalone Mode3D, after `Mode3DPrepareMagneticFieldSnapshot()`; and
+- SWMF coupling, after `PrepareGlobalSWMFCoupledMagneticFieldForCutoff()` assembles the
+  current coupler snapshot.
+
+The field evaluator is the only intended numerical difference from the gridless solver.
+Energy/rigidity conversion, energy coordinates, angular sampling, channel clipping,
+quadrature, transmission diagnostics, and unresolved bounds come from
+`../util/FluxNumerics.h` in both backends.
+
+## Unresolved trajectories
+
+`TraceTrajectoryMesh()` returns a structured termination code.  Physical inner losses
+and validated trapping are resolved forbidden states.  Time, step, distance, invalid
+field, invalid time step, and numerical failures remain unresolved.  For each energy,
+Mode3D now retains sampled, resolved, allowed, retried, and per-termination counts.
+
+Outputs use these values as follows:
+
+- `T` uses resolved trajectories only and is `NaN` if none resolves;
+- `T_lower` assumes all unresolved directions are forbidden;
+- `T_upper` assumes all unresolved directions are maximally allowed;
+- density, local spectrum, total flux, and channel flux repeat the same nominal/lower/
+  upper convention.
+
+`mode3d_termination_summary*.dat` contains the accounting when
+`DS_SAVE_TERMINATION_SUMMARY=T`.  Set `DS_FAIL_ON_UNRESOLVED=T` in validation cases to
+abort when any location/energy exceeds `DS_UNRESOLVED_TOL`; leave it false for survey
+runs that intentionally continue with explicit uncertainty bounds.
+
+## Linear-grid correction
+
+The former Mode3D LINEAR branch evaluated `Emin + a*(Emax-Emin)*a`.  The shared builder
+uses `Emin + a*(Emax-Emin)`, pins both endpoints exactly, and is covered by U-F04 in
+`../test/UFluxNumerics`.
+
+## Verification
+
+Run the dependency-free shared numerical suite from `srcEarth`:
+
+```bash
+./test/UFluxNumerics/run_test.sh
+```
+
+A full Mode3D or SWMF build still requires the parent AMPS build tree and its configured
+MPI, SPICE, and model dependencies.

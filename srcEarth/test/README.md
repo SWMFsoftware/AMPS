@@ -2,7 +2,8 @@
 
 This directory contains executable regression/validation tests for the AMPS
 Earth SEP/geospace backward products.  Each test is stored in its own directory
-(`C1`, `C2`, ..., `C6`, `C11`, `C14`, `F1`, `F2`, `F3`, `F4`, `F5`, `F11`, `F12`, `F15`, `F16`, ...).  Test scripts are intended to be executed
+(`C1`, `C2`, ..., `C6`, `C11`, `C14`, `F1`, `F2`, `F3`, `F4`, `F5`, `F11`, `F12`, `F15`, `F16`,
+`UFluxNumerics`, ...).  Test scripts are intended to be executed
 from the directory containing the `amps` executable, not from inside the test
 subdirectory.
 
@@ -14,6 +15,21 @@ python srcEarth/test/<TEST_ID>/run_<TEST_ID>.py -np 4 -nt 16
 
 where `-np` is the number of MPI ranks passed to `mpirun` and `-nt` is the number
 of threads per MPI rank.  Defaults are `-np 4` and `-nt 16`.
+
+## UFluxNumerics: Step 2 unit suite
+
+The shared cutoff-to-flux numerical module has a dependency-free C++11 unit suite:
+
+```bash
+./srcEarth/test/UFluxNumerics/run_test.sh
+```
+
+Unlike the full C/F validation cases, it does not require an `amps` executable, MPI,
+SPICE, Geopack, or SWMF.  It checks energy/rigidity conversion, all supported energy
+grids, angular normalization, deterministic subsampling, total/channel quadrature, and
+unresolved-trajectory lower/upper bounds.  Its LINEAR-grid assertion is a permanent
+regression test for the corrected Mode3D quadratic-grid defect.  Full details and test
+IDs are in `UFluxNumerics/README.md`.
 
 ## C6 gridless and gridded external-reference validation
 
