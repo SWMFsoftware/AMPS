@@ -2,6 +2,11 @@
 
 This directory contains the AMPS particle-in-cell interpolation infrastructure. The principal implementation is in `pic_interpolation_routines.cpp`; the public types and entry points are declared in `pic.h` under `PIC::InterpolationRoutines`.
 
+For the application-facing contract for associated center/corner storage,
+Tecplot variable/data callbacks, MPI ownership, sampled-data buffers, and
+temporary output-node interpolation, see the core developer guide in
+[`../README.md`](../README.md).
+
 ## 1. Interpolation representations
 
 AMPS now provides two complementary representations of a cell-centered interpolation stencil.

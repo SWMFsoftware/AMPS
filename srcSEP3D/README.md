@@ -365,6 +365,135 @@ minimum/maximum `deltaB^2` are printed before Runtime publication and halo
 exchange. A zero coupled value remains possible only through the explicitly
 configured AWSoM ballistic/missing-data path; no fallback amplitude is guessed.
 
+### Adding a user-side AMPS center-node output procedure
+
+A user-side output field must be integrated as an AMPS data-lifecycle feature,
+not added only as another `fprintf` call. In particular, AMPS' Tecplot writer
+prints a vertex-centred FEBRICK zone by constructing temporary center nodes.
+Application-owned static data appear in that file only when the application
+allocates the data before layout freeze, initializes the physical center
+nodes, exchanges their halos, and registers matching variable-list, data, and
+interpolation callbacks. The three output callbacks form one contract:
+
+| Callback or operation | Purpose | Required timing |
+|---|---|---|
+| `RequestStaticCellData` and `StorageLayout` | Reserve a stable byte offset for persistent cell state. | Register in `Init_BeforeParser()`; AMPS freezes the layout during `PIC::Init_BeforeParser()`. |
+| Physical-cell initialization | Write the authoritative primitive values to owner-local center nodes. | After block allocation and provider preparation, before publication or output. |
+| `ParallelBlockDataExchange()` | Copy the completed associated-data state into neighboring ghost cells. | After every owner cell is complete and before interpolation/output. |
+| `PrintVariableListCenterNode` | Append Tecplot variable names and units. | Register once in `Init_BeforeParser()`. |
+| `InterpolateCenterNode` | Populate the application slice of AMPS' temporary output node. | Register once with the print callbacks. |
+| `PrintDataCenterNode` | Append numeric values in exactly the declared order. | Execute only after initialization has crossed the completed-data boundary. |
+
+For a new persistent srcSEP3D primitive, extend `StorageLayout` and
+`BuildLayout()` in `runtime/run_configuration.{h,cpp}`. Append the field to the
+existing application slice, update the layout fingerprint, and document its
+component order and SI units in `MESH_STORAGE.md`. Do not assign a hand-written
+absolute offset and do not append storage after `PIC::Init_BeforeParser()`.
+Within srcSEP3D, the existing `RequestStaticCellData` callback reserves the
+entire `cellAssociatedBytes` slice; registering a second allocator for each new
+field would create a second ABI that the runtime fingerprint does not describe.
+
+Initialize a new field in the same owner-local pass as the background and
+turbulence whenever it belongs to that immutable generation. Use `StoreBytes`
+and `LoadBytes`, rather than casting an arbitrary AMPS byte offset to a
+`double*`, because the offset is not assumed to have C++ alignment. Zero the
+field for Cartesian padding, overwrite every physical center cell with a
+finite validated value, and read back values whose loss would invalidate the
+run. A diagnostic callback must not evaluate a second physical model or invent
+a replacement for missing data; it presents the already accepted runtime
+state. Duplicate a quantity into AMPS' native DATAFILE slice only when an AMPS
+native accessor or solver requires it. A user-only Tecplot column belongs in
+the srcSEP3D application slice.
+
+The variable-list and data callbacks must remain exactly synchronized. If the
+variable callback appends `N` names, the data callback must append exactly `N`
+numbers in the same order for every `DataSetNumber`. Names should include
+units, and every serialized value must be finite. Availability is represented
+by an explicit flag such as `background_valid` or
+`particle_sample_present`, not by `NaN`. A zero in a row with
+`background_valid=0` is a nonphysical padding placeholder; it is not a valid
+model result.
+
+AMPS invokes the data callback on all participating ranks while rank zero owns
+the output stream. The callback must follow AMPS' `CMPI_channel` ownership
+pattern:
+
+```cpp
+void PrintUserData(FILE* output, int dataSetNumber, CMPI_channel* pipe,
+                   int centerNodeThread,
+                   PIC::Mesh::cDataCenterNode* centerNode) {
+  (void)dataSetNumber;
+  std::array<double, kUserValueCount> values{};
+  const bool ownsNode =
+      pipe == nullptr || pipe->ThisThread == centerNodeThread;
+
+  if (ownsNode) {
+    // Read only initialized state from centerNode.  Do not mutate providers,
+    // sampling buffers, the runtime clock, or the particle list here.
+    LoadUserValues(centerNode, values.data());
+  }
+
+  if (PIC::ThisThread == 0 || pipe == nullptr) {
+    if (pipe != nullptr && centerNodeThread != 0)
+      pipe->recv(values.data(), static_cast<int>(values.size()),
+                 centerNodeThread);
+    for (double value : values) std::fprintf(output, "%e ", value);
+  } else {
+    pipe->send(values.data(), static_cast<int>(values.size()));
+  }
+}
+```
+
+Rank zero must not dereference a remote rank's center-node buffer. Conversely,
+the remote owner must not print to the shared file. Do not add an MPI
+collective inside a per-node callback: ranks can be at different positions in
+the distributed mesh traversal, so such a collective can deadlock. Perform
+global validation and halo exchange before entering `outputMeshDataTECPLOT()`.
+
+The interpolation callback is mandatory for application-owned center-node
+state. AMPS automatically interpolates its built-in sampled quantities and the
+native DATAFILE slice, but it does not know the srcSEP3D offsets. Follow
+`InterpolateInitializationCellData`: copy the contributing byte slices into
+aligned storage, apply AMPS' supplied coefficients through
+`Output::InterpolateStaticCenterState`, and copy the result into the temporary
+destination node. Interpolate authoritative primitives, then derive display
+quantities in the data callback. For example, srcSEP3D interpolates
+`deltaB_+^2` and `deltaB_-^2` and subsequently derives total variance and
+wave-energy density. Boolean states, identifiers, and categorical values must
+not be linearly interpolated; recompute an explicit validity flag at the
+destination or define a documented discrete rule.
+
+Register the callbacks together and only once:
+
+```cpp
+PIC::Mesh::PrintVariableListCenterNode.push_back(PrintUserVariableList);
+PIC::Mesh::PrintDataCenterNode.push_back(PrintUserData);
+PIC::Mesh::InterpolateCenterNode.push_back(InterpolateUserData);
+```
+
+Registration order is output order. If several modules append fields, their
+variable and data callback vectors must be populated in corresponding order.
+The srcSEP3D initialization product remains the final operation of
+`amps_init()` so that background, turbulence, species time steps, particle
+weights, native AMPS fields, application storage, and ghost cells all describe
+one completed state. Do not move data-bearing output back to the earlier
+geometry-only point in `amps_init_mesh()`.
+
+Every new output procedure requires validation at three levels:
+
+1. Add an AMPS-independent numerical test for interpolation and any unit
+   conversion or derived quantity. A test must check meaningful nonzero input;
+   a zero-only fixture cannot detect a missing callback.
+2. Extend `BLDL3D08` when the production storage/output ordering contract
+   changes, and run the complete routine suite. Do not weaken an existing
+   scientific tolerance to accommodate the new field.
+3. Run `BLDL3D01` in a configured AMPS tree and execute a multi-rank
+   `--initialization-only` case. Inspect rows with `background_valid=1`, verify
+   expected signs/ranges/units, and check that no zero seam appears at MPI or
+   AMR-block boundaries. For prescribed turbulence the total `deltaB^2` must be
+   positive in every physical row; one directional component may legitimately
+   be zero only at normalized cross helicity `+1` or `-1`.
+
 Each `[observer.ID]` is independent and repeatable. For `N` energy channels,
 logarithmic edges are `E_i=E_min*(E_max/E_min)^(i/N)` and linear edges are
 `E_i=E_min+i*(E_max-E_min)/N`; both include the configured endpoints exactly.
