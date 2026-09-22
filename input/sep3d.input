@@ -61,8 +61,8 @@ MoverIntegratorMode=GuidingCenter
   InitialSampleLength=100
   TestRunTotalIteration=-1 !set infinite number ot iterations 
 
-  BlockCells=20,3,20
-  GhostCells=2,1,2
+  BlockCells=6,6,6 
+  GhostCells=2,2,2
 
   NastranSurfaceUserData=on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
