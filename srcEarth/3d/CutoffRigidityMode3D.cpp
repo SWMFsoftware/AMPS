@@ -1036,8 +1036,9 @@ static inline double SelectTraceDt3D(const EarthUtil::AmpsParam& prm,
 //     GetB_T(x, B) virtual method, so all mover calls are identical.
 //
 // Mover selection is fully shared with the gridless solver:
-//   - gDefaultMover     (set by SetDefaultMoverType; honours -mover CLI flag)
-//   - GetDefaultMoverType()  (used to decide per-step branch in the integration loop)
+//   - gDefaultMover / GetDefaultMoverType() provide the compatibility-wrapper default;
+//   - the Step-4 Request overload passes its mover explicitly through every step and
+//     retry, so the integration loop never re-reads ambient mover state;
 //   - HybridPrepareStepUseGuidingCenter()  (HYBRID branch decision; thread-local)
 //   - ResetHybridTrajectoryContext()       (resets per-trajectory HYBRID state)
 //   - StepParticleChecked()               (unified step + inner-sphere contact test)
@@ -1049,8 +1050,8 @@ static inline double SelectTraceDt3D(const EarthUtil::AmpsParam& prm,
 // apply exactly the same integration algorithm to each backtraced trajectory.
 //
 // Thread safety:
-//   - gDefaultMover and GetDefaultMoverType() are read-only after SetDefaultMoverType
-//     is called once at startup (before any parallel region).
+//   - compatibility wrappers read gDefaultMover only while constructing a request;
+//     request-based trajectories carry an immutable mover value per call.
 //   - HybridPrepareStepUseGuidingCenter() reads and writes thread-local storage
 //     (the HYBRID trajectory context); each OpenMP thread is safe.
 //   - The field evaluator (cMode3DMeshFieldEval) is per-thread; see Section 5.
@@ -1066,15 +1067,24 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
                             double q_C,
                             double m0_kg,
                             const DomainBox3D& box,
-                            double maxTime_s = -1.0,
-                            bool captureExitState = false,
-                            TraceIntegrationPolicy3D integrationPolicy =
-                                TraceIntegrationPolicy3D::StructuredAccurate) {
+                            double maxTime_s,
+                            bool captureExitState,
+                            TraceIntegrationPolicy3D integrationPolicy,
+                            MoverType mover) {
     using Earth::GridlessMode::TrajectoryResult;
     using Earth::GridlessMode::TrajectoryTermination;
     using Earth::TrajectoryBoundary::EventType;
 
     TrajectoryResult result;
+    // Result provenance is taken from the published compact-field generation and the
+    // per-call mover, never inferred later from process-global state.
+    result.mover=mover;
+    result.backwardTimeMode=
+        EarthUtil::ToUpper(prm.cutoff.backtraceChargeConvention)=="REVERSED"
+        ? Earth::Trajectory::BackwardTimeMode::StaticMagneticAntiparticle
+        : Earth::Trajectory::BackwardTimeMode::StaticMagneticSameCharge;
+    result.snapshotFingerprint=Earth::Trajectory::SnapshotFingerprint(
+        Earth::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata().snapshotId);
     // Backtrace charge convention.
     //
     // Reversing a physical trajectory in a magnetic field requires reversing
@@ -1156,21 +1166,18 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
 
     auto PopulateExit=[&](const Earth::TrajectoryBoundary::Event& event,
                           const V3& xBefore,const V3& xAfter,
-                          const V3& pBefore,const V3& pAfter)->bool {
+                          const V3& pBefore,const V3& pAfter,
+                          double acceptedStep_s)->bool {
         if (!captureExitState) return true;
-        result.exitState.x_exit_m[0]=event.position[0];
-        result.exitState.x_exit_m[1]=event.position[1];
-        result.exitState.x_exit_m[2]=event.position[2];
-        const double a=std::max(0.0,std::min(1.0,event.fraction));
-        const V3 pCross=add(pBefore,mul(a,sub(pAfter,pBefore)));
-        const double p2=dot(pCross,pCross);
-        const double mc=m0_kg*SpeedOfLight;
-        const double gamma=std::sqrt(1.0+p2/(mc*mc));
-        if (!(gamma>0.0) || !std::isfinite(gamma)) return false;
-        const V3 vExit=v3unit(mul(1.0/(gamma*m0_kg),pCross));
-        result.exitState.v_exit_unit[0]=vExit.x;
-        result.exitState.v_exit_unit[1]=vExit.y;
-        result.exitState.v_exit_unit[2]=vExit.z;
+        // Use the exact same event-fraction helper as the gridless backend so every
+        // boundary product receives position, momentum, direction, time, and rigidity
+        // from one phase-space state.
+        const double pBeforeArray[3]={pBefore.x,pBefore.y,pBefore.z};
+        const double pAfterArray[3]={pAfter.x,pAfter.y,pAfter.z};
+        if (!Earth::Trajectory::PopulateExitKinematics(
+                result.exitState,event.position,pBeforeArray,pAfterArray,
+                event.fraction,tTrace,acceptedStep_s,qabs)) return false;
+        const double a=event.fraction;
 
         const V3 chord=sub(xAfter,xBefore);
         const double chordLength=v3norm(chord);
@@ -1179,10 +1186,9 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
             insetFraction=std::min(a,std::max(1.0,prm.numerics.boundaryEventTolerance_m)/chordLength);
         const V3 xEval=add(xBefore,mul(std::max(0.0,a-insetFraction),chord));
         V3 Bexit; field.GetB_T(xEval,Bexit);
-        const double Bnorm=v3norm(Bexit);
-        if (!(Bnorm>0.0) || !std::isfinite(Bnorm)) return false;
-        result.exitState.cosAlpha=dot(vExit,mul(1.0/Bnorm,Bexit));
-        return std::isfinite(result.exitState.cosAlpha);
+        const double bExitArray[3]={Bexit.x,Bexit.y,Bexit.z};
+        return Earth::Trajectory::CompleteExitPitchAngle(
+            result.exitState,bExitArray);
     };
 
     if (trapConfig.enabled) {
@@ -1208,14 +1214,13 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
             event.type=EventType::OuterBox;
             event.fraction=0.0;
             event.position[0]=x.x; event.position[1]=x.y; event.position[2]=x.z;
-            if (!PopulateExit(event,x,x,p,p))
+            if (!PopulateExit(event,x,x,p,p,0.0))
                 return Finalize(TrajectoryTermination::InvalidField);
             return Finalize(TrajectoryTermination::OuterBoundaryAllowed);
         }
 
         const double timeRemaining=maxTraceTime_s-tTrace;
         bool useGuidingCenterForThisStep=false;
-        const MoverType mover=GetDefaultMoverType();
         if (mover==MoverType::GC2 || mover==MoverType::GC4 || mover==MoverType::GC6)
             useGuidingCenterForThisStep=true;
         else if (mover==MoverType::HYBRID)
@@ -1228,7 +1233,7 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
 
         const V3 xPrev=x;
         const V3 pPrev=p;
-        if (!StepParticleChecked(gDefaultMover,x,p,qTrace,m0_kg,dt,field,box.rInner))
+        if (!StepParticleChecked(mover,x,p,qTrace,m0_kg,dt,field,box.rInner))
             return Finalize(TrajectoryTermination::InnerBoundaryForbidden);
 
         const double xPrevArr[3]={xPrev.x,xPrev.y,xPrev.z};
@@ -1251,7 +1256,7 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
             if (event.type==EventType::InnerSphere)
                 return Finalize(TrajectoryTermination::InnerBoundaryForbidden);
             if (event.type==EventType::OuterBox) {
-                if (!PopulateExit(event,xPrev,x,pPrev,p))
+                if (!PopulateExit(event,xPrev,x,pPrev,p,dt))
                     return Finalize(TrajectoryTermination::InvalidField);
                 return Finalize(TrajectoryTermination::OuterBoundaryAllowed);
             }
@@ -1293,12 +1298,14 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3DWithSingleRetry(
                             double m0_kg,
                             const DomainBox3D& box,
                             double maxTime_s,
-                            bool captureExitState) {
+                            bool captureExitState,
+                            MoverType mover,
+                            TraceIntegrationPolicy3D integrationPolicy) {
     using Earth::GridlessMode::TrajectoryResult;
-    using Earth::GridlessMode::TrajectoryTermination;
 
-    const TraceIntegrationPolicy3D integrationPolicy=
-        CutoffTraceIntegrationPolicy3D(prm);
+    Earth::Trajectory::RetryPolicy retryPolicy;
+    retryPolicy.unresolvedExtensionPasses=prm.cutoff.unresolvedExtensionPasses;
+    retryPolicy.unresolvedExtensionFactor=prm.cutoff.unresolvedExtensionFactor;
     const double primaryTime_s=(maxTime_s>0.0)
         ? maxTime_s
         : ((prm.cutoff.maxTrajTime_s>0.0)
@@ -1314,10 +1321,8 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3DWithSingleRetry(
         actualTimeBudget_s=requestedTime_s;
         auto out=TraceTrajectory3D(
             attemptPrm,field,x0_m,v0_unit,R_GV,q_C,m0_kg,box,
-            requestedTime_s,captureExitState,integrationPolicy);
-        if (out.resolved() ||
-            Earth::GridlessMode::IsTraceLimitTermination(out.termination) ||
-            !Earth::GridlessMode::IsRetryableNumericalTermination(out.termination))
+            requestedTime_s,captureExitState,integrationPolicy,mover);
+        if (!Earth::Trajectory::ShouldRetryNumerical(out,0,retryPolicy))
             return out;
 
         // Preserve the historical numerical-retry behavior exactly: halve DT_TRACE,
@@ -1327,14 +1332,17 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3DWithSingleRetry(
         // traceExtensionCount.
         EarthUtil::AmpsParam retryPrm=attemptPrm;
         retryPrm.numerics.dtTrace_s=
-            std::max(1.0e-12,0.5*attemptPrm.numerics.dtTrace_s);
+            std::max(1.0e-12,retryPolicy.numericalDtScale*
+                               attemptPrm.numerics.dtTrace_s);
         retryPrm.numerics.maxSteps=
             (attemptPrm.numerics.maxSteps<=std::numeric_limits<int>::max()/2)
-            ? 2*attemptPrm.numerics.maxSteps : std::numeric_limits<int>::max();
-        actualTimeBudget_s=2.0*requestedTime_s;
+            ? static_cast<int>(retryPolicy.numericalStepScale*
+                               attemptPrm.numerics.maxSteps)
+            : std::numeric_limits<int>::max();
+        actualTimeBudget_s=retryPolicy.numericalTimeScale*requestedTime_s;
         out=TraceTrajectory3D(
             retryPrm,field,x0_m,v0_unit,R_GV,q_C,m0_kg,box,
-            actualTimeBudget_s,captureExitState,integrationPolicy);
+            actualTimeBudget_s,captureExitState,integrationPolicy,mover);
         out.retryCount=1;
         return out;
     };
@@ -1355,17 +1363,7 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3DWithSingleRetry(
     result.initialTraceLimit_s=primaryTime_s;
     result.finalTraceLimit_s=usedBudget_s;
 
-    auto ExtendableLimit=[](TrajectoryTermination termination) {
-        // DISTANCE_LIMIT is intentionally excluded.  A cumulative-path cap is a
-        // separately configured safety rule; silently increasing it would change a
-        // different numerical assumption.  C19 sets MAX_TRACE_DISTANCE=0, so its
-        // unresolved population is expected to be TIME_LIMIT/STEP_LIMIT dominated.
-        return termination==TrajectoryTermination::TimeLimit ||
-               termination==TrajectoryTermination::StepLimit;
-    };
-
-    if (prm.cutoff.unresolvedExtensionPasses<=0 ||
-        !ExtendableLimit(result.termination))
+    if (!Earth::Trajectory::ShouldExtendUnresolved(result,0,retryPolicy))
         return result;
 
     // Only unresolved samples pay for the larger budgets.  Each pass restarts from the
@@ -1374,12 +1372,14 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3DWithSingleRetry(
     // than a true continuation but is scientifically safer: the extended classification
     // is exactly the classification an independent run with that larger T_max would
     // produce, and GRIDLESS/Mode3D retain identical semantics.
-    for (int pass=1;pass<=prm.cutoff.unresolvedExtensionPasses;++pass) {
-        if (!ExtendableLimit(result.termination)) break;
+    for (int pass=1;pass<=retryPolicy.unresolvedExtensionPasses;++pass) {
+        if (!Earth::Trajectory::ShouldExtendUnresolved(
+                result,pass-1,retryPolicy)) break;
 
-        const double factor=std::pow(prm.cutoff.unresolvedExtensionFactor,
+        const double factor=std::pow(retryPolicy.unresolvedExtensionFactor,
                                      static_cast<double>(pass));
-        const double targetTime_s=primaryTime_s*factor;
+        const double targetTime_s=Earth::Trajectory::ExtensionTimeBudget(
+            primaryTime_s,pass,retryPolicy);
         if (!(targetTime_s>primaryTime_s) || !std::isfinite(targetTime_s)) break;
 
         EarthUtil::AmpsParam extensionPrm=prm;
@@ -1389,22 +1389,8 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3DWithSingleRetry(
         // with time and also estimate the number of steps required from the previous
         // trajectory's observed mean dt.  The 25% margin accommodates later portions
         // of an adaptive trace that may require smaller gyro-resolving steps.
-        long double desiredSteps=static_cast<long double>(prm.numerics.maxSteps);
-        desiredSteps=std::max(
-            desiredSteps,
-            std::ceil(static_cast<long double>(prm.numerics.maxSteps)*factor*1.25L));
-        if (result.steps>0 && result.traceTime_s>0.0) {
-            const long double meanDt=
-                static_cast<long double>(result.traceTime_s)/result.steps;
-            if (meanDt>0.0L && std::isfinite(static_cast<double>(meanDt))) {
-                desiredSteps=std::max(
-                    desiredSteps,
-                    std::ceil(static_cast<long double>(targetTime_s)/meanDt*1.25L));
-            }
-        }
-        const long double maxInt=static_cast<long double>(std::numeric_limits<int>::max());
-        extensionPrm.numerics.maxSteps=static_cast<int>(
-            std::max(1.0L,std::min(maxInt,desiredSteps)));
+        extensionPrm.numerics.maxSteps=Earth::Trajectory::ScaledStepBudget(
+            prm.numerics.maxSteps,factor,result,targetTime_s);
 
         double extensionBudget_s=targetTime_s;
         TrajectoryResult extended=RunOneBudget(
@@ -1431,7 +1417,8 @@ static bool TraceAllowed3D(const EarthUtil::AmpsParam& prm,
                             double maxTime_s = -1.0,
                             Earth::GridlessMode::TrajectoryExitState* exitState = nullptr) {
     const auto result=TraceTrajectory3DWithSingleRetry(
-        prm,field,x0_m,v0_unit,R_GV,q_C,m0_kg,box,maxTime_s,exitState!=nullptr);
+        prm,field,x0_m,v0_unit,R_GV,q_C,m0_kg,box,maxTime_s,exitState!=nullptr,
+        GetDefaultMoverType(),CutoffTraceIntegrationPolicy3D(prm));
     if (result.allowed()) {
         if (exitState) *exitState=result.exitState;
         return true;
@@ -1513,18 +1500,7 @@ static const char* TraceExitReasonName3D_(TraceExitReason3D r) {
 }
 
 static const char* MoverTypeName3D_(MoverType m) {
-    switch (m) {
-        case MoverType::BORIS:  return "BORIS";
-        case MoverType::HC4:    return "HC4";
-        case MoverType::RK2:    return "RK2";
-        case MoverType::RK4:    return "RK4";
-        case MoverType::RK6:    return "RK6";
-        case MoverType::GC2:    return "GC2";
-        case MoverType::GC4:    return "GC4";
-        case MoverType::GC6:    return "GC6";
-        case MoverType::HYBRID: return "HYBRID";
-        default:                return "UNKNOWN";
-    }
+    return Earth::Trajectory::MoverName(m);
 }
 
 struct TraceDetailedResult3D {
@@ -2119,7 +2095,8 @@ static CutoffSampleDiagnostic3D_ ClassifyCutoffSample3DDetailed_(
                               double m0_kg,
                               const DomainBox3D& box) {
     const auto tr=TraceTrajectory3DWithSingleRetry(
-        prm,field,x0_m,v0,R_GV,q_C,m0_kg,box,-1.0,false);
+        prm,field,x0_m,v0,R_GV,q_C,m0_kg,box,-1.0,false,
+        GetDefaultMoverType(),CutoffTraceIntegrationPolicy3D(prm));
 
     CutoffSampleDiagnostic3D_ out;
     out.termination=tr.termination;
@@ -6128,6 +6105,74 @@ Earth::GridlessMode::TrajectoryResult TraceTrajectoryMesh(
                         double R_GV,
                         bool captureExitState,
                         double maxTraceTimeOverride_s) {
+    const V3 v0_unit=v3unit(V3{v0_unit_arr[0],v0_unit_arr[1],v0_unit_arr[2]});
+    Earth::GridlessMode::TrajectoryRequest request;
+    for (int d=0;d<3;++d) {
+        request.x0_m[d]=x0_m_arr[d];
+        request.direction0_unit[d]=d==0 ? v0_unit.x : (d==1 ? v0_unit.y : v0_unit.z);
+    }
+    request.rigidity_GV=R_GV;
+    request.charge_C=prm.species.charge_e*ElectronCharge;
+    request.restMass_kg=prm.species.mass_amu*_AMU_;
+    request.mover=GetDefaultMoverType();
+    request.backwardTimeMode=
+        EarthUtil::ToUpper(prm.cutoff.backtraceChargeConvention)=="REVERSED"
+        ? Earth::Trajectory::BackwardTimeMode::StaticMagneticAntiparticle
+        : Earth::Trajectory::BackwardTimeMode::StaticMagneticSameCharge;
+    request.maxTraceTime_s=maxTraceTimeOverride_s>0.0
+        ? maxTraceTimeOverride_s
+        : (prm.cutoff.maxTrajTime_s>0.0
+            ? prm.cutoff.maxTrajTime_s : prm.numerics.maxTraceTime_s);
+    request.maxTraceDistance_m=prm.numerics.maxTraceDistance_Re>0.0
+        ? prm.numerics.maxTraceDistance_Re*_EARTH__RADIUS_ : 0.0;
+    request.maxSteps=prm.numerics.maxSteps;
+    request.captureExitState=captureExitState;
+    request.reducedOrbitValidityDeclared=
+        Earth::Trajectory::IsReducedOrbitMover(request.mover);
+    request.snapshotFingerprint=Earth::Trajectory::SnapshotFingerprint(
+        Earth::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata().snapshotId);
+    request.requireSnapshotIdentity=true;
+    return TraceTrajectoryMesh(prm,request);
+}
+
+Earth::GridlessMode::TrajectoryResult TraceTrajectoryMesh(
+                        const EarthUtil::AmpsParam& prm,
+                        const Earth::GridlessMode::TrajectoryRequest& request) {
+    const Earth::Trajectory::RequestStatus status=
+        Earth::Trajectory::ValidateRequest(request);
+    if (status!=Earth::Trajectory::RequestStatus::Valid) {
+        throw std::runtime_error(
+            std::string("Invalid Mode3D trajectory request: ")+
+            Earth::Trajectory::RequestStatusName(status));
+    }
+
+    // Step 4 intentionally releases only frozen magnetic characteristics.  SWMF may
+    // publish an electric array in the same compact snapshot, but that availability
+    // does not enable E in the trajectory unless a physical-backward EM mover exists.
+    if (!Earth::Trajectory::IsReleasedFrozenMagneticRequest(request)) {
+        throw std::runtime_error(
+            "Mode3D production tracer has no released physical-backward electromagnetic mover");
+    }
+
+    const double expectedCharge_C=prm.species.charge_e*ElectronCharge;
+    const double expectedMass_kg=prm.species.mass_amu*_AMU_;
+    const double qScale=std::max(std::fabs(expectedCharge_C),1.0e-300);
+    const double mScale=std::max(std::fabs(expectedMass_kg),1.0e-300);
+    if (std::fabs(request.charge_C-expectedCharge_C)>1.0e-12*qScale ||
+        std::fabs(request.restMass_kg-expectedMass_kg)>1.0e-12*mScale) {
+        throw std::runtime_error(
+            "TrajectoryRequest species mass/charge do not match the parsed AMPS species");
+    }
+
+    const std::uint64_t actualFingerprint=Earth::Trajectory::SnapshotFingerprint(
+        Earth::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata().snapshotId);
+    if (!Earth::Trajectory::SnapshotIdentityMatches(
+            request.snapshotFingerprint,request.requireSnapshotIdentity,
+            actualFingerprint)) {
+        throw std::runtime_error(
+            "Mode3D trajectory request does not match the active immutable field snapshot");
+    }
+
     DomainBox3D box;
     box.xMin=Earth::Mode3D::ParsedDomainMin[0];
     box.xMax=Earth::Mode3D::ParsedDomainMax[0];
@@ -6137,14 +6182,29 @@ Earth::GridlessMode::TrajectoryResult TraceTrajectoryMesh(
     box.zMax=Earth::Mode3D::ParsedDomainMax[2];
     box.rInner=_EARTH__RADIUS_;
 
-    cMode3DMeshFieldEval field(prm);
-    const V3 x0_m{x0_m_arr[0],x0_m_arr[1],x0_m_arr[2]};
-    const V3 v0_unit=v3unit(V3{v0_unit_arr[0],v0_unit_arr[1],v0_unit_arr[2]});
-    const double q_C=prm.species.charge_e*ElectronCharge;
-    const double m0_kg=prm.species.mass_amu*_AMU_;
-    return TraceTrajectory3D(prm,field,x0_m,v0_unit,R_GV,q_C,m0_kg,box,
-                             maxTraceTimeOverride_s,captureExitState,
-                             TraceIntegrationPolicy3D::StructuredAccurate);
+    // Apply request-owned integration budgets through a private parameter copy.  The
+    // active compact field and run-wide configuration remain immutable.
+    EarthUtil::AmpsParam requestPrm=prm;
+    requestPrm.numerics.maxSteps=request.maxSteps;
+    requestPrm.numerics.maxTraceDistance_Re=request.maxTraceDistance_m>0.0
+        ? request.maxTraceDistance_m/_EARTH__RADIUS_ : 0.0;
+    requestPrm.cutoff.backtraceChargeConvention=
+        request.backwardTimeMode==
+            Earth::Trajectory::BackwardTimeMode::StaticMagneticSameCharge
+        ? "SAME_CHARGE" : "REVERSED";
+
+    cMode3DMeshFieldEval field(requestPrm);
+    const V3 x0_m{request.x0_m[0],request.x0_m[1],request.x0_m[2]};
+    const V3 v0_unit{request.direction0_unit[0],request.direction0_unit[1],
+                     request.direction0_unit[2]};
+    auto result=TraceTrajectory3DWithSingleRetry(
+        requestPrm,field,x0_m,v0_unit,request.rigidity_GV,request.charge_C,
+        request.restMass_kg,box,request.maxTraceTime_s,request.captureExitState,
+        request.mover,TraceIntegrationPolicy3D::StructuredAccurate);
+    result.snapshotFingerprint=actualFingerprint;
+    result.backwardTimeMode=request.backwardTimeMode;
+    result.mover=request.mover;
+    return result;
 }
 
 bool TraceAllowedMeshEx(const EarthUtil::AmpsParam& prm,
@@ -6163,7 +6223,8 @@ bool TraceAllowedMeshEx(const EarthUtil::AmpsParam& prm,
     const V3 v0_unit=v3unit(V3{v0_unit_arr[0],v0_unit_arr[1],v0_unit_arr[2]});
     const auto result=TraceTrajectory3DWithSingleRetry(
         prm,field,x0_m,v0_unit,R_GV,prm.species.charge_e*ElectronCharge,
-        prm.species.mass_amu*_AMU_,box,maxTraceTimeOverride_s,exitState!=nullptr);
+        prm.species.mass_amu*_AMU_,box,maxTraceTimeOverride_s,exitState!=nullptr,
+        GetDefaultMoverType(),CutoffTraceIntegrationPolicy3D(prm));
     if (result.allowed()) {
         if (exitState) *exitState=result.exitState;
         return true;

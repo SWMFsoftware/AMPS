@@ -949,6 +949,9 @@ def validate_unresolved_extension_contract() -> None:
     direct_h = (src_earth / "util" / "AdaptiveDirectAccess.h").read_text(errors="replace")
     mode3d = (src_earth / "3d" / "CutoffRigidityMode3D.cpp").read_text(errors="replace")
     gridless = (src_earth / "gridless" / "CutoffRigidityGridless.cpp").read_text(errors="replace")
+    trajectory_contract = (src_earth / "util" / "TrajectoryContract.h").read_text(
+        errors="replace"
+    )
     trap = (src_earth / "util" / "TrajectoryTrapDetector.h").read_text(errors="replace")
 
     required_runner = (
@@ -974,14 +977,25 @@ def validate_unresolved_extension_contract() -> None:
                    "driftMeanRadiusChange_Re"):
         if needle not in direct_h:
             raise SystemExit("DIRECT_ACCESS extension provenance missing %r" % needle)
+    # Roadmap Step 4 moved the retry/extension decision and step-budget formula into
+    # one dependency-free contract.  Keep the original C19 semantic gate strict: both
+    # backends must call that shared implementation, and the implementation itself
+    # must still include only TIME_LIMIT/STEP_LIMIT (not DISTANCE_LIMIT) plus the 25%
+    # step margin.  Looking only for the former duplicated local variable names would
+    # let one backend drift while still satisfying this static test.
     for source_name, text in (("Mode3D", mode3d), ("GRIDLESS", gridless)):
-        for needle in ("unresolvedExtensionPasses", "ExtendableLimit",
-                       "TrajectoryTermination::TimeLimit",
-                       "TrajectoryTermination::StepLimit",
-                       "desiredSteps", "traceExtensionCount"):
+        for needle in ("unresolvedExtensionPasses", "ShouldExtendUnresolved",
+                       "ExtensionTimeBudget", "ScaledStepBudget",
+                       "traceExtensionCount"):
             if needle not in text:
                 raise SystemExit("%s unresolved-extension contract missing %r" %
                                  (source_name, needle))
+    for needle in ("IsUnresolvedExtensionCandidate",
+                   "TrajectoryTermination::TimeLimit",
+                   "TrajectoryTermination::StepLimit",
+                   "DISTANCE_LIMIT", "1.25L"):
+        if needle not in trajectory_contract:
+            raise SystemExit("shared unresolved-extension contract missing %r" % needle)
     for needle in ("driftMaxMeanRadiusChange_m", "secularDriftOk",
                    "ProfileMeanRadius"):
         if needle not in trap:

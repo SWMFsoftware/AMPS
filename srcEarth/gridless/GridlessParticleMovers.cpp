@@ -979,18 +979,7 @@ bool ParseMoverType(const std::string& s, MoverType& out) {
 }
 
 const char* MoverTypeToString(MoverType m) {
-  switch (m) {
-    case MoverType::BORIS: return "BORIS";
-    case MoverType::HC4:   return "HC4";
-    case MoverType::RK2:   return "RK2";
-    case MoverType::RK4:   return "RK4";
-    case MoverType::RK6:   return "RK6";
-    case MoverType::GC2:   return "GC2";
-    case MoverType::GC4:   return "GC4";
-    case MoverType::GC6:   return "GC6";
-    case MoverType::HYBRID:return "HYBRID";
-    default: return "BORIS";
-  }
+  return Earth::Trajectory::MoverName(m);
 }
 
 void StepParticle(MoverType mover,

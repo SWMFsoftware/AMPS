@@ -283,6 +283,7 @@
 #include <cmath>
 #include <string>
 #include "constants.h"
+#include "../util/TrajectoryContract.h"
 
 struct V3 { double x,y,z; };
 
@@ -300,17 +301,10 @@ public:
   virtual void GetB_T(const V3& x_m, V3& B_T) const = 0;
 };
 
-enum class MoverType {
-  BORIS,
-  HC4,
-  RK2,
-  RK4,
-  RK6,
-  GC2,
-  GC4,
-  GC6,
-  HYBRID
-};
+// Roadmap Step 4 makes mover selection part of each trajectory request.  Keep the
+// historical MoverType spelling as an alias so the mature numerical mover code and
+// parser do not need duplicate enum conversions.
+using MoverType=Earth::Trajectory::Mover;
 
 extern MoverType gDefaultMover;
 

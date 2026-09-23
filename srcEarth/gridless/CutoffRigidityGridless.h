@@ -147,8 +147,11 @@
 // Extended version: same physics, but when the trajectory is ALLOWED also fills
 // a TrajectoryExitState struct with:
 //   - x_exit_m[3]   : GSM position where the particle crossed the outer domain [m]
+//   - p_exit_SI[3]  : momentum at the same crossing fraction [kg m/s]
 //   - v_exit_unit[3]: velocity unit vector at that crossing
 //   - cosAlpha      : cos(alpha) = v_exit . B_hat(x_exit), the pitch angle cosine
+//   - traceTimeAtExit_s and rigidityAtExit_GV
+//   - valid          : true only after every requested component is finite
 //
 // The extra field evaluation at the exit point (needed for B_hat(x_exit)) costs
 // one additional GetB_T call per allowed trajectory.
@@ -201,6 +204,7 @@
 #include "GridlessParticleMovers.h"
 
 #include "../util/TrajectoryTermination.h"
+#include "../util/TrajectoryContract.h"
 #include "../util/FieldProvider.h"
 
 #include <memory>
@@ -274,65 +278,10 @@ namespace Earth {
                             double R_GV,
                             double maxTraceTimeOverride_s=-1.0);
 
-    //-------------------------------------------------------------------------
-    // Extended trajectory result returned by TraceAllowedSharedEx.
-    //
-    // Fields are only meaningful when TraceAllowedSharedEx returns true.
-    // When the trajectory is FORBIDDEN (returns false), the fields are
-    // left at zero/default and must not be used by the caller.
-    //-------------------------------------------------------------------------
-    struct TrajectoryExitState {
-      double x_exit_m[3];    // GSM position where the trajectory crossed the
-                             // outer domain boundary [m].
-      double v_exit_unit[3]; // Velocity unit vector at that crossing point.
-                             // Points in the direction of particle travel (outward).
-      double cosAlpha;       // cos of pitch angle at exit:
-                             //   cos(alpha) = v_exit_unit . B_hat(x_exit)
-                             // where B_hat is the unit field vector at x_exit.
-                             // Range [-1, 1].  Sign convention follows the
-                             // standard geophysics convention (cosAlpha > 0 means
-                             // particle moves along the field).
-    };
-
-
-    struct TrajectoryResult {
-      TrajectoryTermination termination{TrajectoryTermination::NumericalFailure};
-      TrajectoryExitState exitState{{0.0,0.0,0.0},{0.0,0.0,0.0},0.0};
-      double traceTime_s{0.0};
-      double traceDistance_m{0.0};
-      int steps{0};
-      int retryCount{0};
-
-      // Unresolved-only cutoff trace extension diagnostics.  ``primary*`` records
-      // what happened at the normal CUTOFF_MAX_TRAJ_TIME budget before any C19-style
-      // extension was attempted.  ``traceExtensionCount`` is zero for the overwhelming
-      // majority of trajectories and positive only when a TIME_LIMIT/STEP_LIMIT sample
-      // was recomputed with a larger total-time budget.  These fields are diagnostics:
-      // the final ``termination`` remains the sole authoritative physical classifier.
-      int primaryTerminationCode{-1};
-      double primaryTraceTime_s{0.0};
-      int traceExtensionCount{0};
-      double initialTraceLimit_s{0.0};
-      double finalTraceLimit_s{0.0};
-
-      int mirrorPoints{0};
-      int bounceCycles{0};
-      // Diagnostics from the optional azimuthal drift-shell recurrence detector.
-      // trapMechanism uses Earth::TrajectoryTrap::Mechanism numeric values
-      // (0=None, 1=Bounce, 2=Drift) but is kept as an int here to avoid coupling the
-      // public Gridless header to the private trap-detector implementation header.
-      int driftRevolutions{0};
-      double driftAngle_rad{0.0};
-      // Absolute change in the mean radial drift-shell profile between the last two
-      // completed revolutions [m].  This supports the secular-drift veto used by the
-      // conservative full-orbit trap classifier.
-      double driftMeanRadiusChange_m{0.0};
-      int trapMechanism{0};
-      double momentumRelativeSpread{0.0};
-
-      bool allowed() const { return IsAllowedTermination(termination); }
-      bool resolved() const { return IsResolvedTermination(termination); }
-    };
+    // TrajectoryRequest, TrajectoryExitState, and TrajectoryResult are compatibility
+    // aliases defined by util/TrajectoryContract.h.
+    // The common result contains the old diagnostics plus momentum, exact event time,
+    // exit rigidity, mover/convention identity, and verified field-snapshot identity.
 
     // Structured trajectory APIs used by density/transmission and diagnostics.
     // They preserve numerical-limit states instead of folding them into FORBIDDEN.
@@ -347,6 +296,12 @@ namespace Earth {
                                               const double v0_unit[3],
                                               double R_GV,
                                               double maxTraceTimeOverride_s=-1.0);
+
+    // Preferred Step-4 entry point.  The request owns the mover, backward convention,
+    // budgets, species, exit-state request, and snapshot assertion.  The scalar forms
+    // above remain compatibility adapters and construct this same contract internally.
+    TrajectoryResult TraceTrajectoryShared(const EarthUtil::AmpsParam& p,
+                                            const TrajectoryRequest& request);
 
     // Identical physics to TraceAllowedShared but also fills *exitState when the
     // trajectory is allowed.  exitState may be nullptr; if so this call is

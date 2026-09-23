@@ -3,7 +3,7 @@
 This directory contains executable regression/validation tests for the AMPS
 Earth SEP/geospace backward products.  Each test is stored in its own directory
 (`C1`, `C2`, ..., `C6`, `C11`, `C14`, `F1`, `F2`, `F3`, `F4`, `F5`, `F11`, `F12`, `F15`, `F16`,
-`UFluxNumerics`, `UFieldProvider`, ...).  Test scripts are intended to be executed
+`UFluxNumerics`, `UFieldProvider`, `UTrajectoryCore`, ...).  Test scripts are intended to be executed
 from the directory containing the `amps` executable, not from inside the test
 subdirectory.
 
@@ -45,7 +45,24 @@ validation, stale/domain/error statuses, immutable provider revisions, cutoff/fl
 snapshot synchronization, closed-form dipole values, and 16-thread read stability.
 See `UFieldProvider/README.md` for the complete gate table.
 
-`test/list` schedules the Step 2 and Step 3 suites as its first two independent `P`
+## UTrajectoryCore: strict Step 4 suite
+
+The backend-neutral request/result contract and production full-orbit mover dispatcher
+have a dependency-free C++11 suite:
+
+```bash
+./srcEarth/test/UTrajectoryCore/run_test.sh
+```
+
+U-F10 compares BORIS and RK4 with the closed-form relativistic uniform-B helix over
+three step sizes. U-F11 exercises valid and invalid mover, species, direction, budget,
+snapshot, reduced-orbit, and electromagnetic combinations plus exact backward-time
+algebra. U-F12 checks every component of the outer-boundary phase-space state against
+an analytic interpolation reference. U-F13 checks distinct bounded retry/extension
+paths, prohibits distance-cap relaxation, and closes counts over the full termination
+taxonomy. See `UTrajectoryCore/README.md` for the exact gates.
+
+`test/list` schedules the Step 2, Step 3, and Step 4 suites as its first independent `P`
 entries. Each has its own `last pass:` record, so the main runner reports and commits
 their provenance separately. No pre-existing C/F command, expected status, input,
 reference file, tolerance, mover, trajectory limit, or last-pass record was modified;

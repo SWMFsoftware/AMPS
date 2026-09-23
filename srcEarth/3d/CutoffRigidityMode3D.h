@@ -127,6 +127,14 @@ Earth::GridlessMode::TrajectoryResult TraceTrajectoryMesh(
                       bool captureExitState=false,
                       double maxTraceTimeOverride_s=-1.0);
 
+// Same Step-4 request/result contract as the direct gridless backend.  The only
+// backend difference is how B is sampled: compact Mode3D/SWMF arrays rather than a
+// direct field evaluator.  Snapshot fingerprints are checked against the currently
+// published immutable compact-field generation before integration starts.
+Earth::GridlessMode::TrajectoryResult TraceTrajectoryMesh(
+                      const EarthUtil::AmpsParam& prm,
+                      const Earth::GridlessMode::TrajectoryRequest& request);
+
 bool TraceAllowedMesh(const EarthUtil::AmpsParam& prm,
                       const double x0_m[3],
                       const double v0_unit[3],

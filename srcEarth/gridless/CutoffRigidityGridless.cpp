@@ -224,7 +224,7 @@
 // This header provides:
 //   - struct V3 and common vector ops (add/mul/dot/cross/norm/unit)
 //   - interface IGridlessFieldEvaluator
-//   - enum class MoverType { BORIS, BORIS_MIDPOINT }
+//   - MoverType alias to the backend-neutral Earth::Trajectory::Mover enum
 //   - ::StepParticle(...) dispatcher and individual mover implementations
 //
 // IMPORTANT:
@@ -349,18 +349,7 @@ static inline void ApplyWideAffinityForGridlessThreadsOnce_(
 }
 
 static const char* MoverTypeNameGridless_(MoverType m) {
-  switch (m) {
-    case MoverType::BORIS:  return "BORIS";
-    case MoverType::HC4:    return "HC4";
-    case MoverType::RK2:    return "RK2";
-    case MoverType::RK4:    return "RK4";
-    case MoverType::RK6:    return "RK6";
-    case MoverType::GC2:    return "GC2";
-    case MoverType::GC4:    return "GC4";
-    case MoverType::GC6:    return "GC6";
-    case MoverType::HYBRID: return "HYBRID";
-    default:                return "UNKNOWN";
-  }
+  return Earth::Trajectory::MoverName(m);
 }
 
 /*
@@ -1508,12 +1497,23 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
                              double R_GV,
                              double maxTraceTimeOverride_s,
                              bool captureExitState,
-                             TraceIntegrationPolicy integrationPolicy) {
+                             TraceIntegrationPolicy integrationPolicy,
+                             MoverType mover) {
   using Earth::GridlessMode::TrajectoryResult;
   using Earth::GridlessMode::TrajectoryTermination;
   using Earth::TrajectoryBoundary::EventType;
 
   TrajectoryResult result;
+  // Record the actual numerical choices in every result, including failed and
+  // unresolved traces.  This is deliberately assigned from the active backend state,
+  // not copied from an unchecked caller claim.
+  result.mover=mover;
+  result.backwardTimeMode=
+      EarthUtil::ToUpper(prm.cutoff.backtraceChargeConvention)=="REVERSED"
+      ? Earth::Trajectory::BackwardTimeMode::StaticMagneticAntiparticle
+      : Earth::Trajectory::BackwardTimeMode::StaticMagneticSameCharge;
+  result.snapshotFingerprint=Earth::Trajectory::SnapshotFingerprint(
+      field.Metadata().snapshotId);
 
   // Backtracing is integrated forward in numerical time from the observation
   // point toward the outer boundary.  For a physically correct reverse
@@ -1606,23 +1606,19 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
 
   auto PopulateOuterExit = [&](const Earth::TrajectoryBoundary::Event& event,
                                const V3& xBefore, const V3& xAfter,
-                               const V3& pBefore, const V3& pAfter) -> bool {
+                               const V3& pBefore, const V3& pAfter,
+                               double acceptedStep_s) -> bool {
     if (!captureExitState) return true;
 
-    result.exitState.x_exit_m[0]=event.position[0];
-    result.exitState.x_exit_m[1]=event.position[1];
-    result.exitState.x_exit_m[2]=event.position[2];
-
-    const double a=std::max(0.0,std::min(1.0,event.fraction));
-    const V3 pCross=add(pBefore,mul(a,sub(pAfter,pBefore)));
-    const double p2n=dot(pCross,pCross);
-    const double mc=m0*SpeedOfLight;
-    const double gExit=std::sqrt(1.0+p2n/(mc*mc));
-    if (!(gExit>0.0) || !std::isfinite(gExit)) return false;
-    const V3 vExit=unit(mul(1.0/(gExit*m0),pCross));
-    result.exitState.v_exit_unit[0]=vExit.x;
-    result.exitState.v_exit_unit[1]=vExit.y;
-    result.exitState.v_exit_unit[2]=vExit.z;
+    // Position and momentum must refer to the same first-crossing event.  Keeping the
+    // interpolation in the common contract prevents the gridless and Mode3D adapters
+    // from drifting apart as boundary products gain momentum-dependent physics.
+    const double pBeforeArray[3]={pBefore.x,pBefore.y,pBefore.z};
+    const double pAfterArray[3]={pAfter.x,pAfter.y,pAfter.z};
+    if (!Earth::Trajectory::PopulateExitKinematics(
+            result.exitState,event.position,pBeforeArray,pAfterArray,event.fraction,
+            tTrace_s,acceptedStep_s,qabs)) return false;
+    const double a=event.fraction;
 
     // Evaluate the field at a valid point immediately inside the box.  This avoids
     // querying Geopack/mesh interpolation outside its domain and fixes the former
@@ -1635,10 +1631,9 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
     }
     const V3 xEval=add(xBefore,mul(std::max(0.0,a-insetFraction),chord));
     V3 Bexit; field.GetB_T(xEval,Bexit);
-    const double Bnorm=norm(Bexit);
-    if (!(Bnorm>0.0) || !std::isfinite(Bnorm)) return false;
-    result.exitState.cosAlpha=dot(vExit,mul(1.0/Bnorm,Bexit));
-    return std::isfinite(result.exitState.cosAlpha);
+    const double bExitArray[3]={Bexit.x,Bexit.y,Bexit.z};
+    return Earth::Trajectory::CompleteExitPitchAngle(
+        result.exitState,bExitArray);
   };
 
   if (trapConfig.enabled) {
@@ -1665,14 +1660,13 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
       event.type=EventType::OuterBox;
       event.fraction=0.0;
       event.position[0]=x.x; event.position[1]=x.y; event.position[2]=x.z;
-      if (!PopulateOuterExit(event,x,x,p,p))
+      if (!PopulateOuterExit(event,x,x,p,p,0.0))
         return Finalize(TrajectoryTermination::InvalidField);
       return Finalize(TrajectoryTermination::OuterBoundaryAllowed);
     }
 
     const double timeRemaining_s=maxTraceTime_s_effective-tTrace_s;
     bool useGuidingCenterForThisStep=false;
-    const MoverType mover=GetDefaultMoverType();
     if (mover==MoverType::GC2 || mover==MoverType::GC4 || mover==MoverType::GC6)
       useGuidingCenterForThisStep=true;
     else if (mover==MoverType::HYBRID)
@@ -1685,7 +1679,7 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
 
     const V3 xBefore=x;
     const V3 pBefore=p;
-    if (!StepParticleChecked(gDefaultMover,x,p,q,m0,dt,field,boundaryBox.innerRadius)) {
+    if (!StepParticleChecked(mover,x,p,q,m0,dt,field,boundaryBox.innerRadius)) {
       return Finalize(TrajectoryTermination::InnerBoundaryForbidden);
     }
 
@@ -1711,7 +1705,7 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
       if (event.type==EventType::InnerSphere)
         return Finalize(TrajectoryTermination::InnerBoundaryForbidden);
       if (event.type==EventType::OuterBox) {
-        if (!PopulateOuterExit(event,xBefore,x,pBefore,p))
+        if (!PopulateOuterExit(event,xBefore,x,pBefore,p,dt))
           return Finalize(TrajectoryTermination::InvalidField);
         return Finalize(TrajectoryTermination::OuterBoundaryAllowed);
       }
@@ -1750,11 +1744,14 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryWithSingleRetry(
                              const V3& v0_unit,
                              double R_GV,
                              double maxTraceTimeOverride_s,
-                             bool captureExitState) {
+                             bool captureExitState,
+                             MoverType mover,
+                             TraceIntegrationPolicy integrationPolicy) {
   using Earth::GridlessMode::TrajectoryResult;
-  using Earth::GridlessMode::TrajectoryTermination;
 
-  const TraceIntegrationPolicy integrationPolicy=CutoffTraceIntegrationPolicy(prm);
+  Earth::Trajectory::RetryPolicy retryPolicy;
+  retryPolicy.unresolvedExtensionPasses=prm.cutoff.unresolvedExtensionPasses;
+  retryPolicy.unresolvedExtensionFactor=prm.cutoff.unresolvedExtensionFactor;
   const double primaryTime_s=(maxTraceTimeOverride_s>0.0)
       ? maxTraceTimeOverride_s
       : ((prm.cutoff.maxTrajTime_s>0.0)
@@ -1769,10 +1766,8 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryWithSingleRetry(
     actualTimeBudget_s=requestedTime_s;
     auto out=TraceTrajectoryImpl(
         attemptPrm,field,x0_m,v0_unit,R_GV,requestedTime_s,captureExitState,
-        integrationPolicy);
-    if (out.resolved() ||
-        Earth::GridlessMode::IsTraceLimitTermination(out.termination) ||
-        !Earth::GridlessMode::IsRetryableNumericalTermination(out.termination))
+        integrationPolicy,mover);
+    if (!Earth::Trajectory::ShouldRetryNumerical(out,0,retryPolicy))
       return out;
 
     // Numerical retry semantics are unchanged from the pre-extension implementation:
@@ -1781,14 +1776,17 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryWithSingleRetry(
     // invalid rather than a valid UNRESOLVED cutoff sample.
     EarthUtil::AmpsParam retryPrm=attemptPrm;
     retryPrm.numerics.dtTrace_s=
-        std::max(1.0e-12,0.5*attemptPrm.numerics.dtTrace_s);
+        std::max(1.0e-12,retryPolicy.numericalDtScale*
+                           attemptPrm.numerics.dtTrace_s);
     retryPrm.numerics.maxSteps=
         (attemptPrm.numerics.maxSteps<=std::numeric_limits<int>::max()/2)
-        ? 2*attemptPrm.numerics.maxSteps : std::numeric_limits<int>::max();
-    actualTimeBudget_s=2.0*requestedTime_s;
+        ? static_cast<int>(retryPolicy.numericalStepScale*
+                           attemptPrm.numerics.maxSteps)
+        : std::numeric_limits<int>::max();
+    actualTimeBudget_s=retryPolicy.numericalTimeScale*requestedTime_s;
     out=TraceTrajectoryImpl(
         retryPrm,field,x0_m,v0_unit,R_GV,actualTimeBudget_s,captureExitState,
-        integrationPolicy);
+        integrationPolicy,mover);
     out.retryCount=1;
     return out;
   };
@@ -1803,46 +1801,25 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryWithSingleRetry(
   result.initialTraceLimit_s=primaryTime_s;
   result.finalTraceLimit_s=usedBudget_s;
 
-  auto ExtendableLimit=[](TrajectoryTermination termination) {
-    // Do not silently relax MAX_TRACE_DISTANCE.  C19 disables that path-length cap;
-    // if another cutoff product enables it, DISTANCE_LIMIT remains a visible unresolved
-    // outcome that the user must address explicitly.
-    return termination==TrajectoryTermination::TimeLimit ||
-           termination==TrajectoryTermination::StepLimit;
-  };
-  if (prm.cutoff.unresolvedExtensionPasses<=0 ||
-      !ExtendableLimit(result.termination))
+  if (!Earth::Trajectory::ShouldExtendUnresolved(result,0,retryPolicy))
     return result;
 
   // Recompute only unresolved samples with larger total-time budgets.  Restarting from
   // the original seed is deliberate: it avoids exposing/serializing private HYBRID and
   // trap-detector state and makes each extended result directly reproducible by a
   // stand-alone run configured with the same larger T_max.
-  for (int pass=1;pass<=prm.cutoff.unresolvedExtensionPasses;++pass) {
-    if (!ExtendableLimit(result.termination)) break;
+  for (int pass=1;pass<=retryPolicy.unresolvedExtensionPasses;++pass) {
+    if (!Earth::Trajectory::ShouldExtendUnresolved(result,pass-1,retryPolicy)) break;
 
-    const double factor=std::pow(prm.cutoff.unresolvedExtensionFactor,
+    const double factor=std::pow(retryPolicy.unresolvedExtensionFactor,
                                  static_cast<double>(pass));
-    const double targetTime_s=primaryTime_s*factor;
+    const double targetTime_s=Earth::Trajectory::ExtensionTimeBudget(
+        primaryTime_s,pass,retryPolicy);
     if (!(targetTime_s>primaryTime_s) || !std::isfinite(targetTime_s)) break;
 
     EarthUtil::AmpsParam extensionPrm=prm;
-    long double desiredSteps=static_cast<long double>(prm.numerics.maxSteps);
-    desiredSteps=std::max(
-        desiredSteps,
-        std::ceil(static_cast<long double>(prm.numerics.maxSteps)*factor*1.25L));
-    if (result.steps>0 && result.traceTime_s>0.0) {
-      const long double meanDt=
-          static_cast<long double>(result.traceTime_s)/result.steps;
-      if (meanDt>0.0L && std::isfinite(static_cast<double>(meanDt))) {
-        desiredSteps=std::max(
-            desiredSteps,
-            std::ceil(static_cast<long double>(targetTime_s)/meanDt*1.25L));
-      }
-    }
-    const long double maxInt=static_cast<long double>(std::numeric_limits<int>::max());
-    extensionPrm.numerics.maxSteps=static_cast<int>(
-        std::max(1.0L,std::min(maxInt,desiredSteps)));
+    extensionPrm.numerics.maxSteps=Earth::Trajectory::ScaledStepBudget(
+        prm.numerics.maxSteps,factor,result,targetTime_s);
 
     double extensionBudget_s=targetTime_s;
     TrajectoryResult extended=RunOneBudget(
@@ -1866,7 +1843,8 @@ static bool TraceAllowedImpl(const EarthUtil::AmpsParam& prm,
                              double maxTraceTimeOverride_s,
                              Earth::GridlessMode::TrajectoryExitState* exitState = nullptr) {
   const auto result=TraceTrajectoryWithSingleRetry(
-      prm,field,x0_m,v0_unit,R_GV,maxTraceTimeOverride_s,exitState!=nullptr);
+      prm,field,x0_m,v0_unit,R_GV,maxTraceTimeOverride_s,exitState!=nullptr,
+      GetDefaultMoverType(),CutoffTraceIntegrationPolicy(prm));
   if (result.allowed()) {
     if (exitState) *exitState=result.exitState;
     return true;
@@ -1950,11 +1928,34 @@ TrajectoryResult TraceTrajectoryShared(const EarthUtil::AmpsParam& prm,
                                        const double v0_unit_arr[3],
                                        double R_GV,
                                        double maxTraceTimeOverride_s) {
-  const V3 x0_m{x0_m_arr[0],x0_m_arr[1],x0_m_arr[2]};
   const V3 v0_unit=unit(V3{v0_unit_arr[0],v0_unit_arr[1],v0_unit_arr[2]});
-  return TraceTrajectoryImpl(prm,GetCachedFieldEvaluator(prm),x0_m,v0_unit,R_GV,
-                             maxTraceTimeOverride_s,false,
-                             TraceIntegrationPolicy::StructuredAccurate);
+  TrajectoryRequest request;
+  for (int d=0;d<3;++d) {
+    request.x0_m[d]=x0_m_arr[d];
+    request.direction0_unit[d]=d==0 ? v0_unit.x : (d==1 ? v0_unit.y : v0_unit.z);
+  }
+  request.rigidity_GV=R_GV;
+  request.charge_C=prm.species.charge_e*ElectronCharge;
+  request.restMass_kg=prm.species.mass_amu*_AMU_;
+  request.mover=GetDefaultMoverType();
+  request.backwardTimeMode=
+      EarthUtil::ToUpper(prm.cutoff.backtraceChargeConvention)=="REVERSED"
+      ? Earth::Trajectory::BackwardTimeMode::StaticMagneticAntiparticle
+      : Earth::Trajectory::BackwardTimeMode::StaticMagneticSameCharge;
+  request.maxTraceTime_s=maxTraceTimeOverride_s>0.0
+      ? maxTraceTimeOverride_s
+      : (prm.cutoff.maxTrajTime_s>0.0
+          ? prm.cutoff.maxTrajTime_s : prm.numerics.maxTraceTime_s);
+  request.maxTraceDistance_m=prm.numerics.maxTraceDistance_Re>0.0
+      ? prm.numerics.maxTraceDistance_Re*_EARTH__RADIUS_ : 0.0;
+  request.maxSteps=prm.numerics.maxSteps;
+  request.captureExitState=false;
+  request.reducedOrbitValidityDeclared=
+      Earth::Trajectory::IsReducedOrbitMover(request.mover);
+  request.snapshotFingerprint=Earth::Trajectory::SnapshotFingerprint(
+      GetCachedFieldEvaluator(prm).Metadata().snapshotId);
+  request.requireSnapshotIdentity=true;
+  return TraceTrajectoryShared(prm,request);
 }
 
 TrajectoryResult TraceTrajectorySharedEx(const EarthUtil::AmpsParam& prm,
@@ -1962,11 +1963,98 @@ TrajectoryResult TraceTrajectorySharedEx(const EarthUtil::AmpsParam& prm,
                                          const double v0_unit_arr[3],
                                          double R_GV,
                                          double maxTraceTimeOverride_s) {
-  const V3 x0_m{x0_m_arr[0],x0_m_arr[1],x0_m_arr[2]};
   const V3 v0_unit=unit(V3{v0_unit_arr[0],v0_unit_arr[1],v0_unit_arr[2]});
-  return TraceTrajectoryImpl(prm,GetCachedFieldEvaluator(prm),x0_m,v0_unit,R_GV,
-                             maxTraceTimeOverride_s,true,
-                             TraceIntegrationPolicy::StructuredAccurate);
+  TrajectoryRequest request;
+  for (int d=0;d<3;++d) {
+    request.x0_m[d]=x0_m_arr[d];
+    request.direction0_unit[d]=d==0 ? v0_unit.x : (d==1 ? v0_unit.y : v0_unit.z);
+  }
+  request.rigidity_GV=R_GV;
+  request.charge_C=prm.species.charge_e*ElectronCharge;
+  request.restMass_kg=prm.species.mass_amu*_AMU_;
+  request.mover=GetDefaultMoverType();
+  request.backwardTimeMode=
+      EarthUtil::ToUpper(prm.cutoff.backtraceChargeConvention)=="REVERSED"
+      ? Earth::Trajectory::BackwardTimeMode::StaticMagneticAntiparticle
+      : Earth::Trajectory::BackwardTimeMode::StaticMagneticSameCharge;
+  request.maxTraceTime_s=maxTraceTimeOverride_s>0.0
+      ? maxTraceTimeOverride_s
+      : (prm.cutoff.maxTrajTime_s>0.0
+          ? prm.cutoff.maxTrajTime_s : prm.numerics.maxTraceTime_s);
+  request.maxTraceDistance_m=prm.numerics.maxTraceDistance_Re>0.0
+      ? prm.numerics.maxTraceDistance_Re*_EARTH__RADIUS_ : 0.0;
+  request.maxSteps=prm.numerics.maxSteps;
+  request.captureExitState=true;
+  request.reducedOrbitValidityDeclared=
+      Earth::Trajectory::IsReducedOrbitMover(request.mover);
+  request.snapshotFingerprint=Earth::Trajectory::SnapshotFingerprint(
+      GetCachedFieldEvaluator(prm).Metadata().snapshotId);
+  request.requireSnapshotIdentity=true;
+  return TraceTrajectoryShared(prm,request);
+}
+
+TrajectoryResult TraceTrajectoryShared(const EarthUtil::AmpsParam& prm,
+                                       const TrajectoryRequest& request) {
+  const Earth::Trajectory::RequestStatus status=
+      Earth::Trajectory::ValidateRequest(request);
+  if (status!=Earth::Trajectory::RequestStatus::Valid) {
+    throw std::runtime_error(
+        std::string("Invalid gridless trajectory request: ")+
+        Earth::Trajectory::RequestStatusName(status));
+  }
+
+  // The common enum records the future dynamic-field semantics, but this backend has
+  // deliberately not released an E(x,t),B(x,t) characteristic.  Reject it here even
+  // if an external caller sets the abstract capability flag; never reinterpret it as
+  // the static antiparticle shortcut.
+  if (!Earth::Trajectory::IsReleasedFrozenMagneticRequest(request)) {
+    throw std::runtime_error(
+        "Gridless production tracer has no released physical-backward electromagnetic mover");
+  }
+
+  const double expectedCharge_C=prm.species.charge_e*ElectronCharge;
+  const double expectedMass_kg=prm.species.mass_amu*_AMU_;
+  const double qScale=std::max(std::fabs(expectedCharge_C),1.0e-300);
+  const double mScale=std::max(std::fabs(expectedMass_kg),1.0e-300);
+  if (std::fabs(request.charge_C-expectedCharge_C)>1.0e-12*qScale ||
+      std::fabs(request.restMass_kg-expectedMass_kg)>1.0e-12*mScale) {
+    throw std::runtime_error(
+        "TrajectoryRequest species mass/charge do not match the parsed AMPS species");
+  }
+
+  cFieldEvaluator& field=GetCachedFieldEvaluator(prm);
+  const std::uint64_t actualFingerprint=
+      Earth::Trajectory::SnapshotFingerprint(field.Metadata().snapshotId);
+  if (!Earth::Trajectory::SnapshotIdentityMatches(
+          request.snapshotFingerprint,request.requireSnapshotIdentity,
+          actualFingerprint)) {
+    throw std::runtime_error(
+        "Gridless trajectory request does not match the active immutable field snapshot");
+  }
+
+  // Request-owned budgets are applied to an isolated parameter copy.  This keeps the
+  // mature private tracer unchanged while preventing ambient run defaults from
+  // replacing a caller's explicit max-step or path budget.
+  EarthUtil::AmpsParam requestPrm=prm;
+  requestPrm.numerics.maxSteps=request.maxSteps;
+  requestPrm.numerics.maxTraceDistance_Re=request.maxTraceDistance_m>0.0
+      ? request.maxTraceDistance_m/_EARTH__RADIUS_ : 0.0;
+  requestPrm.cutoff.backtraceChargeConvention=
+      request.backwardTimeMode==
+          Earth::Trajectory::BackwardTimeMode::StaticMagneticSameCharge
+      ? "SAME_CHARGE" : "REVERSED";
+
+  const V3 x0_m{request.x0_m[0],request.x0_m[1],request.x0_m[2]};
+  const V3 v0_unit{request.direction0_unit[0],request.direction0_unit[1],
+                   request.direction0_unit[2]};
+  TrajectoryResult result=TraceTrajectoryWithSingleRetry(
+      requestPrm,field,x0_m,v0_unit,request.rigidity_GV,
+      request.maxTraceTime_s,request.captureExitState,request.mover,
+      TraceIntegrationPolicy::StructuredAccurate);
+  result.snapshotFingerprint=actualFingerprint;
+  result.backwardTimeMode=request.backwardTimeMode;
+  result.mover=request.mover;
+  return result;
 }
 
 bool TraceAllowedShared(const EarthUtil::AmpsParam& prm,
@@ -1978,7 +2066,8 @@ bool TraceAllowedShared(const EarthUtil::AmpsParam& prm,
   const V3 v0_unit=unit(V3{v0_unit_arr[0],v0_unit_arr[1],v0_unit_arr[2]});
   const TrajectoryResult result=TraceTrajectoryWithSingleRetry(
       prm,GetCachedFieldEvaluator(prm),x0_m,v0_unit,R_GV,
-      maxTraceTimeOverride_s,false);
+      maxTraceTimeOverride_s,false,GetDefaultMoverType(),
+      CutoffTraceIntegrationPolicy(prm));
   if (result.allowed()) return true;
   if (IsCutoffForbiddenTermination(result.termination)) return false;
 
@@ -1998,7 +2087,8 @@ bool TraceAllowedSharedEx(const EarthUtil::AmpsParam& prm,
   const V3 v0_unit=unit(V3{v0_unit_arr[0],v0_unit_arr[1],v0_unit_arr[2]});
   const TrajectoryResult result=TraceTrajectoryWithSingleRetry(
       prm,GetCachedFieldEvaluator(prm),x0_m,v0_unit,R_GV,
-      maxTraceTimeOverride_s,true);
+      maxTraceTimeOverride_s,exitState!=nullptr,GetDefaultMoverType(),
+      CutoffTraceIntegrationPolicy(prm));
   if (result.allowed()) {
     if (exitState) *exitState=result.exitState;
     return true;
@@ -3344,7 +3434,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
                                           const V3& v0,
                                           double R_GV) -> CutoffSampleDiagnosticGridless_ {
     const auto tr=TraceTrajectoryWithSingleRetry(
-        prm,taskField,x0_m,v0,R_GV,-1.0,false);
+        prm,taskField,x0_m,v0,R_GV,-1.0,false,GetDefaultMoverType(),
+        CutoffTraceIntegrationPolicy(prm));
     CutoffSampleDiagnosticGridless_ out;
     out.termination=tr.termination;
     out.traceTime_s=tr.traceTime_s;

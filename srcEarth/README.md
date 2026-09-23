@@ -1,5 +1,44 @@
 # SEP-in-geospace model: compact global fields in Mode3D
 
+## Roadmap Step 4 implemented: common trajectory contract
+
+Step 4 adds `util/TrajectoryContract.h`, a dependency-free request/result layer shared
+by direct gridless tracing and compact-field Mode3D/SWMF tracing. A request now states
+the launch phase-space seed, species, rigidity, mover, backward-time convention,
+time/step/path budgets, exit-state requirement, reduced-orbit validity declaration,
+and immutable field-snapshot fingerprint. A result retains the exact termination,
+retry/extension provenance, trap diagnostics, mover/convention, verified snapshot, and
+the complete first outer-boundary state:
+
+```text
+(x_exit, p_exit, v_exit_unit, cos(alpha), t_exit, R_exit, valid)
+```
+
+The field fingerprint is an assertion, not a label copied from the caller. Both
+backends compare it with the active Step 3 snapshot before integration. Per-request
+mover selection is passed through the original mover and retry stacks, so concurrent
+callers no longer need to infer the mover from ambient process state. Legacy scalar
+and Boolean APIs remain as compatibility adapters; cutoff reference behavior and the
+structured unresolved taxonomy are unchanged.
+
+Released production characteristics remain frozen-snapshot and magnetic-only.
+`STATIC_MAGNETIC_ANTIPARTICLE` is the physical static-B backtrace convention;
+`STATIC_MAGNETIC_SAME_CHARGE` preserves archived AMPS behavior. The contract names
+`PHYSICAL_BACKWARD_TIME` for future E(x,t),B(x,t) work, but gridless and Mode3D/SWMF
+currently reject that request explicitly rather than silently substituting the
+static-field shortcut. Adaptive directional-access refinement remains Roadmap Step 5.
+
+Run the strict Step 4 suite from `srcEarth`:
+
+```bash
+./test/UTrajectoryCore/run_test.sh
+```
+
+It compares BORIS and RK4 with the closed-form relativistic uniform-B helix, exercises
+negative request and snapshot cases, checks the analytic outer-event phase-space state,
+and verifies bounded retry/extension accounting. Existing C/F tolerances, reference
+files, movers, trace limits, and acceptance gates were not relaxed.
+
 ## Roadmap Step 3 reimplemented from the Step 2 baseline
 
 Step 3 now provides one explicit field-provider and immutable-snapshot contract in
@@ -27,6 +66,7 @@ Run the strict dependency-free Step 2 and Step 3 suites from `srcEarth`:
 ```bash
 ./test/UFluxNumerics/run_test.sh
 ./test/UFieldProvider/run_test.sh
+./test/UTrajectoryCore/run_test.sh
 ```
 
 `UFieldProvider` includes fixed-ID, exact SI-value, closed-form dipole, negative failure,
@@ -120,6 +160,10 @@ Mode3D now keeps the standard distributed AMPS mesh and replicates only compact 
 - `3d/GlobalMagneticField.cpp`
 - `3d/CutoffRigidityMode3D.cpp`
 - `3d/CutoffRigidityMode3D.h`
+- `gridless/CutoffRigidityGridless.cpp`
+- `gridless/CutoffRigidityGridless.h`
+- `gridless/GridlessParticleMovers.cpp`
+- `gridless/GridlessParticleMovers.h`
 - `3d/Mode3D.cpp`
 - `3d/DensityMode3D.cpp`
 - `3d/DensityMode3D.h`
@@ -127,10 +171,13 @@ Mode3D now keeps the standard distributed AMPS mesh and replicates only compact 
 - `3d/Mode3DParallel.h`
 - `util/FluxNumerics.h`
 - `util/FieldProvider.h`
+- `util/TrajectoryContract.h`
 - `util/amps_param_parser.cpp`
 - `util/amps_param_parser.h`
 - `3d_forward_swmf/Mode3DForwardSWMF.cpp`
 - `3d_forward_swmf/Mode3DForwardSWMF.h`
+- `test/UTrajectoryCore/*`
+- `test/list`
 
 ## Global cell indexing
 

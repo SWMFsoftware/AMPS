@@ -1,5 +1,52 @@
 # Shared numerical utilities
 
+## `TrajectoryContract.h` — Roadmap Step 4
+
+`TrajectoryContract.h` owns the common gridless/Mode3D/SWMF characteristic interface.
+It is header-only C++11 and intentionally independent of AMPS, MPI, field-model
+libraries, and mesh classes.
+
+### Request and result
+
+| Record | Required information |
+|---|---|
+| `Trajectory::Request` | SI launch position and unit direction, rigidity, physical charge/mass, per-request mover, explicit backward convention, time/step/path budgets, exit capture, field-use flags, reduced-orbit validity, snapshot fingerprint |
+| `Trajectory::Result` | terminal reason, total time/path/steps, numerical retry and unresolved-extension provenance, mirror/bounce/drift evidence, mover and backward convention, verified snapshot fingerprint |
+| `Trajectory::ExitState` | outer-event position, SI momentum, velocity direction, pitch cosine, event time, event rigidity, and a validity bit |
+
+The request validator rejects non-finite state, non-unit direction, invalid species or
+rigidity, missing budgets/identity, unknown enum values, undeclared reduced-orbit use,
+and incompatible electromagnetic/backward-time combinations. Production adapters add
+two backend checks: requested species must match the parsed run species, and every
+nonzero snapshot fingerprint must equal the active immutable field generation.
+
+`PopulateExitKinematics()` interpolates boundary position and momentum at the same
+first-event fraction. `CompleteExitPitchAngle()` then uses a finite nonzero boundary
+field to finish the record. Both direct and mesh backends call these helpers, so flux
+and spectrum code cannot receive backend-dependent asymptotic state definitions.
+
+### Retry and unresolved extension
+
+`RetryPolicy` keeps two mechanisms distinct:
+
+1. only an invalid timestep, invalid field, or numerical failure can receive the
+   bounded smaller-step recovery retry;
+2. only `TIME_LIMIT` or `STEP_LIMIT` can receive an explicitly configured larger-time
+   convergence pass, restarted from the original seed.
+
+`DISTANCE_LIMIT` is never expanded by the time-convergence policy. Primary and final
+terminations, budgets, and pass counts remain in the result. Gridless and Mode3D call
+the same `ShouldRetryNumerical()`, `ShouldExtendUnresolved()`,
+`ExtensionTimeBudget()`, and `ScaledStepBudget()` functions.
+
+Run the strict reference/invariant suite with:
+
+```bash
+./test/UTrajectoryCore/run_test.sh
+```
+
+See `test/UTrajectoryCore/README.md` for the U-F10 through U-F13 gates.
+
 ## `FieldProvider.h` — Roadmap Step 3
 
 `FieldProvider.h` is a dependency-free C++11 contract that separates a trajectory

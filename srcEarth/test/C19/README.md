@@ -2334,6 +2334,12 @@ from being silently converted into a progressively tighter `STEP_LIMIT` study.  
 normal one-time smaller-step retry for genuine numerical failures remains separate and
 continues to be recorded by `retry_count`.
 
+Roadmap Step 4 centralizes this unchanged policy in `util/TrajectoryContract.h`.
+`run_self_tests.py` now requires both GRIDDED and GRIDLESS to call the shared retry,
+extension-time, and scaled-step helpers, and independently checks that the common helper
+admits only `TIME_LIMIT`/`STEP_LIMIT` while retaining the 25% margin. This updates the
+static architecture check without relaxing any C19 numerical or observational gate.
+
 Every new DIRECT_ACCESS row records enough provenance to audit the before/after result:
 
 ```text

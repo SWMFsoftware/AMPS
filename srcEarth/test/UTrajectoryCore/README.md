@@ -1,26 +1,35 @@
-# Shared trajectory-core unit tests
+# UTrajectoryCore — strict Roadmap Step 4 tests
 
-This standalone suite validates the Step 4 trajectory contract without MPI, AMPS,
-SPICE, Geopack, or SWMF. Run it from any directory:
+This dependency-free suite validates the shared trajectory request/result contract and
+the production full-orbit mover dispatch without MPI, AMPS, SPICE, Geopack, or SWMF.
+Run it from the repository root or from `srcEarth`:
 
 ```bash
 ./srcEarth/test/UTrajectoryCore/run_test.sh
+# or, from srcEarth:
+./test/UTrajectoryCore/run_test.sh
 ```
 
-It compiles the production `GridlessParticleMovers.cpp` with C++11 and strict warnings.
-The checks are:
+The runner first compiles the gridless and Mode3D public headers together using the
+production C++17 standard and strict warnings. It then compiles the real
+`gridless/GridlessParticleMovers.cpp` plus the dependency-free contract test with
+C++11 and `-Wall -Wextra -Werror -pedantic`. It does not substitute a permissive test
+mover.
 
-- **U-F10 — analytic uniform-field orbit:** BORIS and RK4 are compared with the closed-
-  form relativistic helix in a uniform magnetic field over three timesteps. The test
-  requires decreasing phase-space error, the expected convergence trend, and BORIS
-  momentum-magnitude conservation. This is a reference-solution comparison.
-- **U-F11 — backward-time/E-field semantics:** request validation rejects static-B
-  conventions when E or explicit time dependence is enabled, rejects unreleased
-  electromagnetic and reduced-orbit combinations, checks an exact uniform-E momentum
-  forward/backward update, and checks the Liouville momentum factor.
-- **U-F12 — deterministic termination/retry policy:** numerical retry and unresolved
-  extension budgets are bounded and distinct; every termination reason is accumulated
-  once and the category counts must close to the sample total.
+## Gates and reference solutions
 
-The generated AMPS build normally supplies `constants.h`. This directory contains a
-test-local file defining the exact SI speed of light so this unit can remain standalone.
+| ID | Gate | Independent reference or invariant |
+|---|---|---|
+| U-F10 | BORIS and RK4 mover convergence | Closed-form relativistic helix in uniform `B`; three step sizes, monotone error, order-ratio floors, absolute finest-step error ceilings, and Boris momentum conservation |
+| U-F11 | Request/backward-time contract | Explicit negative-input matrix; exact `dp/dt=qE` forward/backward cancellation; Liouville `p²` intensity relation |
+| U-F12 | Complete outer-boundary state | Analytic linear event-fraction reference for position, momentum, direction, time, rigidity, and pitch angle; invalid event/field paths must fail closed |
+| U-F13 | Termination and bounded retry policy | Exact retry/extension counts, no distance-cap relaxation, exact scaled step budget, invalid-policy rejection, and closure over every termination enum |
+
+The fixed snapshot-fingerprint assertion is a literal FNV-1a reference value. This
+prevents a platform-specific `std::hash` or an accidental identity-algorithm change
+from weakening provenance checks.
+
+No tolerance, trajectory limit, mover, or expected value from an existing C/F test is
+changed by this suite. A failure should be fixed in the implementation or explained as
+an intentional physics-contract change; do not relax these gates to accommodate a
+regression.

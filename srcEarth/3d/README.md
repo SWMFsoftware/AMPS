@@ -15,6 +15,33 @@ Energy/rigidity conversion, energy coordinates, angular sampling, channel clippi
 quadrature, transmission diagnostics, and unresolved bounds come from
 `../util/FluxNumerics.h` in both backends.
 
+## Step 4 common trajectory request/result
+
+`TraceTrajectoryMesh(prm, request)` consumes the same `TrajectoryRequest` and returns
+the same `TrajectoryResult` as the direct gridless backend. The request-specific mover
+is passed through the full integration, numerical retry, and unresolved-extension
+stack; it is not re-read from `gDefaultMover` inside a trajectory. Time, step, and path
+budgets are applied to an isolated `AmpsParam` copy, leaving the run configuration and
+compact field immutable.
+
+Before the first step, Mode3D hashes the currently published
+`GlobalMagneticField::CurrentSnapshotMetadata().snapshotId` and compares it with every
+nonzero request fingerprint. A mismatch or missing required identity is fatal rather
+than a forbidden trajectory. This applies equally to standalone compact fields and to
+SWMF-published generations.
+
+An allowed captured trajectory returns position and SI momentum at the same exact
+outer-box chord fraction, velocity direction, pitch cosine, event time, exit rigidity,
+and `valid=true`. The common `TrajectoryContract.h` interpolation helpers are shared
+with gridless, while only the field evaluation differs. All non-allowed terminations
+leave the exit state invalid.
+
+The released solver remains frozen-B only. Compact snapshots may contain electric
+field data, but setting `electricFieldEnabled`, `fieldTimeDependent`, or
+`PhysicalBackwardTime` in a request fails before integration because no physical-
+backward electromagnetic mover has been released. Adaptive access refinement is a
+separate Step 5 concern.
+
 ## Step 3 immutable compact-field generation
 
 `GlobalMagneticField` publishes compact B/E arrays and `FieldProvider.h` metadata as a
@@ -67,6 +94,7 @@ Run the dependency-free shared numerical suite from `srcEarth`:
 ```bash
 ./test/UFluxNumerics/run_test.sh
 ./test/UFieldProvider/run_test.sh
+./test/UTrajectoryCore/run_test.sh
 ```
 
 A full Mode3D or SWMF build still requires the parent AMPS build tree and its configured

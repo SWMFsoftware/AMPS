@@ -160,6 +160,43 @@ domain, unit, capability, and finite-value checks. `GetB_T()` retains the pre-St
 path and boundary-probe behavior. Existing test movers and tolerances are untouched.
 
 
+Step 4 common trajectory contract
+---------------------------------
+
+`../util/TrajectoryContract.h` is now the authoritative request/result definition for
+gridless and Mode3D/SWMF backtracing. The preferred gridless entry point is:
+
+  TraceTrajectoryShared(const AmpsParam&, const TrajectoryRequest&)
+
+The request explicitly carries the mover, static-B backtrace convention, species,
+rigidity, integration budgets, exit-capture flag, reduced-orbit validity declaration,
+and Step 3 snapshot fingerprint. The implementation validates the request, verifies
+the fingerprint against the cached immutable direct-field evaluator, applies budgets
+to a private parameter copy, and passes the requested mover through every primary,
+retry, and unresolved-extension trace. It never changes `gDefaultMover`.
+
+Legacy scalar overloads construct this same request internally. The Boolean cutoff
+wrappers retain `LegacyCutoffCompatible` boundary and limit interpretation so existing
+cutoff references are not redefined; structured density/flux calls use exact first-
+event geometry and preserve unresolved outcomes.
+
+When exit capture is requested, an allowed result contains one complete event state:
+
+  x_exit_m, p_exit_SI, v_exit_unit, cosAlpha,
+  traceTimeAtExit_s, rigidityAtExit_GV, valid
+
+Position and momentum use the identical boundary-event fraction. Pitch angle is then
+evaluated just inside the direct-field validity domain. A zero/non-finite field makes
+the requested exit record invalid and returns `INVALID_FIELD`; it is never converted
+to forbidden access.
+
+Only frozen magnetic characteristics are released. Requests enabling E, explicit field
+time dependence, or `PhysicalBackwardTime` fail before integration. GC/HYBRID requests
+through the new API must explicitly declare that their validity conditions were
+checked. Run `../test/UTrajectoryCore/run_test.sh` for the independent helix reference,
+request-failure matrix, exact event-state checks, and retry-policy gates.
+
+
 2.4 Optional anisotropic boundary mode
 --------------------------------------
 
