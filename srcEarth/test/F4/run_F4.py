@@ -8,12 +8,18 @@ Run from the directory containing the AMPS executable:
 
 F4 runs gridless density/spectrum with FIELD_MODEL=DIPOLE and
 DS_TRANSMISSION_MODE=SCAN, then verifies exact internal reconstruction
-identities from the saved spectrum:
+identities from the saved nominal spectrum and its unresolved-trajectory
+bounds:
 
     J_local(E) = T(E) * J_boundary(E)
     n          = 4*pi*int J_local(E)/v(E) dE
     F          = 4*pi*int J_local(E) dE
     F_channel  = 4*pi*int_channel J_local(E) dE
+
+The nominal T/J_local value is intentionally NaN at an energy with no resolved
+trajectories.  Such a node is valid only when the saved sample counts demand
+that NaN and the independently reconstructable lower/upper products remain
+finite, ordered, and closed at the same tolerances as the nominal products.
 """
 
 from __future__ import print_function
@@ -262,24 +268,165 @@ def max_rel_boundary_spectrum(E, Jb):
     vals = []
     for e, jb in zip(E, Jb):
         ref = j_boundary(e)
+        if not (math.isfinite(e) and math.isfinite(jb) and math.isfinite(ref)):
+            return float("inf")
         vals.append(abs(jb - ref) / max(abs(ref), 1.0e-300))
     return max(vals) if vals else float("inf")
 
 
-def max_abs_jlocal_residual(T, Jb, Jl):
+def scalar_closure_residual(actual, expected):
+    """Return a relative residual, with NaN matching allowed explicitly.
+
+    A matching NaN pair is not a numerical comparison.  It records the exact
+    unresolved-data contract: the producer and independent reconstruction both
+    say that a nominal estimate does not exist.  Infinity is never an accepted
+    sentinel, and a NaN on only one side is always a failure.
+    """
+    if math.isfinite(actual) and math.isfinite(expected):
+        return abs(actual - expected) / max(abs(expected), 1.0e-300)
+    if math.isnan(actual) and math.isnan(expected):
+        return 0.0
+    return float("inf")
+
+
+def max_spectrum_closure_residual(T, Jb, Jl):
+    """Check J_local=T*J_boundary, including the defined NaN semantics."""
+    if not (len(T) == len(Jb) == len(Jl)) or not T:
+        return float("inf")
     vals = []
     for t, jb, jl in zip(T, Jb, Jl):
+        if not math.isfinite(jb):
+            return float("inf")
         ref = t * jb
-        vals.append(abs(jl - ref) / max(abs(jb), abs(ref), 1.0e-300))
+        if math.isfinite(jl) and math.isfinite(ref):
+            vals.append(abs(jl - ref) / max(abs(jb), abs(ref), 1.0e-300))
+        elif math.isnan(jl) and math.isnan(ref):
+            vals.append(0.0)
+        else:
+            vals.append(float("inf"))
     return max(vals) if vals else float("inf")
 
 
-def transmission_bounds_violation(T):
-    if not T:
+def max_count_contract_violation(N_sampled, N_resolved, expected_sampled):
+    """Counts are lossless integer-valued output and must match the F4 workload."""
+    if len(N_sampled) != len(N_resolved) or not N_sampled:
         return float("inf")
-    low = max(0.0, -min(T))
-    high = max(0.0, max(T) - 1.0)
-    return max(low, high)
+    violation = 0.0
+    for sampled, resolved in zip(N_sampled, N_resolved):
+        if not (math.isfinite(sampled) and math.isfinite(resolved)):
+            return float("inf")
+        violation = max(
+            violation,
+            abs(sampled - round(sampled)),
+            abs(resolved - round(resolved)),
+            abs(sampled - expected_sampled),
+            max(0.0, -resolved),
+            max(0.0, resolved - sampled),
+        )
+    return violation
+
+
+def max_unresolved_fraction_residual(N_sampled, N_resolved, unresolved_fraction):
+    if not (len(N_sampled) == len(N_resolved) == len(unresolved_fraction)) or not N_sampled:
+        return float("inf")
+    violation = 0.0
+    for sampled, resolved, saved in zip(N_sampled, N_resolved, unresolved_fraction):
+        if not (math.isfinite(sampled) and math.isfinite(resolved) and
+                math.isfinite(saved)) or sampled <= 0.0:
+            return float("inf")
+        expected = (sampled - resolved) / sampled
+        violation = max(violation, abs(saved - expected))
+    return violation
+
+
+def max_nominal_definedness_violation(T, Jl, N_resolved):
+    """Nominal values exist iff at least one trajectory resolved at that node."""
+    if not (len(T) == len(Jl) == len(N_resolved)) or not T:
+        return float("inf")
+    violation = 0.0
+    for t, jl, resolved in zip(T, Jl, N_resolved):
+        should_be_finite = resolved > 0.0
+        if should_be_finite:
+            if not (math.isfinite(t) and math.isfinite(jl)):
+                violation = 1.0
+        else:
+            # Step 2 deliberately chose NaN, rather than zero, for a nominal
+            # estimate with an empty resolved denominator.  Require that exact
+            # sentinel so an implementation cannot silently turn UNKNOWN into
+            # physical FORBIDDEN transmission.
+            if not (math.isnan(t) and math.isnan(jl)):
+                violation = 1.0
+    return violation
+
+
+def max_transmission_interval_violation(T, T_lower, T_upper):
+    """Return the largest violation of 0 <= lower <= nominal <= upper <= 1."""
+    if not (len(T) == len(T_lower) == len(T_upper)) or not T:
+        return float("inf")
+    violation = 0.0
+    for nominal, lower, upper in zip(T, T_lower, T_upper):
+        if not (math.isfinite(lower) and math.isfinite(upper)):
+            return float("inf")
+        violation = max(violation, -lower, lower - upper, upper - 1.0, 0.0)
+        if math.isfinite(nominal):
+            violation = max(violation, -nominal, nominal - 1.0,
+                            lower - nominal, nominal - upper)
+        elif not math.isnan(nominal):
+            return float("inf")
+    return violation
+
+
+def max_access_bound_formula_residual(T, T_lower, T_upper,
+                                      N_sampled, N_resolved):
+    """Independently reconstruct the isotropic unresolved access interval.
+
+    For F4 every resolved allowed trajectory has unit weight.  Consequently,
+    lower = T_resolved*N_resolved/N_sampled and
+    upper = lower + N_unresolved/N_sampled.  If N_resolved is zero, the exact
+    interval is [0,1] and no nominal T is used in the reconstruction.
+    """
+    if not (len(T) == len(T_lower) == len(T_upper) == len(N_sampled) ==
+            len(N_resolved)) or not T:
+        return float("inf")
+    violation = 0.0
+    for nominal, lower, upper, sampled, resolved in zip(
+            T, T_lower, T_upper, N_sampled, N_resolved):
+        if not (math.isfinite(sampled) and math.isfinite(resolved) and
+                math.isfinite(lower) and math.isfinite(upper)) or sampled <= 0.0:
+            return float("inf")
+        if resolved > 0.0:
+            if not math.isfinite(nominal):
+                return float("inf")
+            expected_lower = nominal * resolved / sampled
+        else:
+            expected_lower = 0.0
+        expected_upper = expected_lower + (sampled - resolved) / sampled
+        violation = max(violation, abs(lower - expected_lower),
+                        abs(upper - expected_upper))
+    return violation
+
+
+def scalar_interval_violation(nominal, lower, upper):
+    """Check a non-negative product interval; NaN nominal is allowed, not infinity."""
+    if not (math.isfinite(lower) and math.isfinite(upper)):
+        return float("inf")
+    violation = max(0.0, -lower, lower - upper)
+    if math.isfinite(nominal):
+        violation = max(violation, -nominal, lower - nominal, nominal - upper)
+    elif not math.isnan(nominal):
+        return float("inf")
+    return violation
+
+
+def energy_grid_violation(E):
+    """Zero only for a finite, strictly increasing grid with the configured endpoints."""
+    if len(E) < 2 or any(not math.isfinite(x) for x in E):
+        return float("inf")
+    violation = max(abs(E[0] - EMIN), abs(E[-1] - EMAX))
+    for left, right in zip(E[:-1], E[1:]):
+        if not right > left:
+            return float("inf")
+    return violation
 
 
 def _parse_variables(line):
@@ -355,19 +502,22 @@ def read_spectrum_file(path):
     return zones
 
 
-def find_col(record, candidates):
+def find_exact_col(record, candidates):
+    """Find an output column by normalized exact name, never by substring.
+
+    Bound-aware files contain names such as F_tot, F_tot_lower, and F_tot_upper.
+    A fuzzy fallback can accidentally substitute a bound when the nominal column
+    is missing, defeating the schema gate.  F4 therefore uses exact matching for
+    every required nominal/lower/upper product.
+    """
     norm = {}
-    for k in record.keys():
-        norm[k.lower().replace(" ", "_").replace("-", "_").replace("^", "")] = k
-    for c in candidates:
-        key = c.lower().replace(" ", "_").replace("-", "_").replace("^", "")
-        if key in norm:
-            return norm[key]
-    for c in candidates:
-        key = c.lower().replace(" ", "_").replace("-", "_").replace("^", "")
-        for nk, orig in norm.items():
-            if key in nk:
-                return orig
+    for key in record.keys():
+        normalized = key.lower().replace(" ", "_").replace("-", "_").replace("^", "")
+        norm[normalized] = key
+    for candidate in candidates:
+        normalized = candidate.lower().replace(" ", "_").replace("-", "_").replace("^", "")
+        if normalized in norm:
+            return norm[normalized]
     return None
 
 
@@ -445,26 +595,58 @@ def read_outputs(workdir, points):
                            (len(density_rows), len(flux_rows), len(spectra), len(points)))
     out = []
     for i, (p, drow, frow, spec) in enumerate(zip(points, density_rows, flux_rows, spectra)):
-        n_col = find_col(drow, ["N_m^-3", "N_m3", "density", "n"])
-        f_tot_col = find_col(frow, ["F_tot_m2s1", "F_total", "F_tot"])
-        if n_col is None or f_tot_col is None:
-            raise RuntimeError("Could not identify density or total-flux column in point %d" % i)
-        for key in ("E_MeV", "T", "J_boundary_perMeV", "J_local_perMeV"):
+        n_col = find_exact_col(drow, ["N_m^-3", "N_m3", "density", "n"])
+        n_lower_col = find_exact_col(drow, ["N_lower_m^-3", "N_lower_m3"])
+        n_upper_col = find_exact_col(drow, ["N_upper_m^-3", "N_upper_m3"])
+        f_tot_col = find_exact_col(frow, ["F_tot_m2s1", "F_total", "F_tot"])
+        f_tot_lower_col = find_exact_col(frow, ["F_tot_lower_m2s1"])
+        f_tot_upper_col = find_exact_col(frow, ["F_tot_upper_m2s1"])
+        if None in (n_col, n_lower_col, n_upper_col, f_tot_col,
+                    f_tot_lower_col, f_tot_upper_col):
+            raise RuntimeError(
+                "Could not identify nominal/lower/upper density or total-flux "
+                "columns in point %d" % i)
+        required_spectrum_columns = (
+            "E_MeV", "T", "T_lower", "T_upper", "unresolved_fraction",
+            "N_sampled", "N_resolved", "J_boundary_perMeV",
+            "J_local_perMeV", "J_local_lower_perMeV",
+            "J_local_upper_perMeV",
+        )
+        for key in required_spectrum_columns:
             if key not in spec:
                 raise RuntimeError("Spectrum output is missing column %s" % key)
-        flux = {"F_tot_m2s1": frow[f_tot_col]}
+        flux = {
+            "F_tot_m2s1": frow[f_tot_col],
+            "F_tot_lower_m2s1": frow[f_tot_lower_col],
+            "F_tot_upper_m2s1": frow[f_tot_upper_col],
+        }
         for name, e1, e2 in ENERGY_BINS:
-            col = find_col(frow, ["F_%s_m2s1" % name, name])
-            if col is not None:
+            col = find_exact_col(frow, ["F_%s_m2s1" % name, name])
+            lower_col = find_exact_col(frow, ["F_%s_lower_m2s1" % name])
+            upper_col = find_exact_col(frow, ["F_%s_upper_m2s1" % name])
+            if None not in (col, lower_col, upper_col):
                 flux["F_%s_m2s1" % name] = frow[col]
+                flux["F_%s_lower_m2s1" % name] = frow[lower_col]
+                flux["F_%s_upper_m2s1" % name] = frow[upper_col]
         out.append({
             "point": p,
-            "density": drow[n_col],
+            "density": {
+                "nominal": drow[n_col],
+                "lower": drow[n_lower_col],
+                "upper": drow[n_upper_col],
+            },
             "flux": flux,
             "E_MeV": spec["E_MeV"],
             "T": spec["T"],
+            "T_lower": spec["T_lower"],
+            "T_upper": spec["T_upper"],
+            "unresolved_fraction": spec["unresolved_fraction"],
+            "N_sampled": spec["N_sampled"],
+            "N_resolved": spec["N_resolved"],
             "J_boundary_perMeV": spec["J_boundary_perMeV"],
             "J_local_perMeV": spec["J_local_perMeV"],
+            "J_local_lower_perMeV": spec["J_local_lower_perMeV"],
+            "J_local_upper_perMeV": spec["J_local_upper_perMeV"],
         })
     return out
 
@@ -476,7 +658,10 @@ def add_check(rows, check, point, quantity, value, expected_value, rel_tol=None,
         rel_error = abs_error
     else:
         rel_error = abs_error / max(abs(expected_value), 1.0e-300)
-    ok = True
+    # Every caller supplies an error metric or another finite scalar.  Refuse
+    # NaN/Inf before applying tolerances: Python comparisons with NaN are false
+    # in ways that can otherwise make a diagnostic ambiguous.
+    ok = math.isfinite(value) and math.isfinite(expected_value)
     if rel_tol is not None:
         ok = ok and (rel_error <= rel_tol)
     if abs_tol is not None:
@@ -503,15 +688,31 @@ def analyze(workdir, points, args):
     outputs = read_outputs(workdir, points)
     rows = []
     passed = True
+    expected_directions = estimate_work(1, args.scan_n, args.max_particles)[0]
 
     for data in outputs:
         label = data["point"]["label"]
         E = data["E_MeV"]
         T = data["T"]
+        T_lower = data["T_lower"]
+        T_upper = data["T_upper"]
+        unresolved = data["unresolved_fraction"]
+        N_sampled = data["N_sampled"]
+        N_resolved = data["N_resolved"]
         Jb = data["J_boundary_perMeV"]
         Jl = data["J_local_perMeV"]
-        if not (len(E) == len(T) == len(Jb) == len(Jl)) or len(E) < 2:
+        Jl_lower = data["J_local_lower_perMeV"]
+        Jl_upper = data["J_local_upper_perMeV"]
+        arrays = (E, T, T_lower, T_upper, unresolved, N_sampled,
+                  N_resolved, Jb, Jl, Jl_lower, Jl_upper)
+        if len(E) < 2 or any(len(values) != len(E) for values in arrays):
             raise RuntimeError("Malformed spectrum zone for %s" % label)
+
+        passed = add_check(
+            rows, "energy_grid_contract", label, "energy_grid_violation_MeV",
+            energy_grid_violation(E), 0.0, abs_tol=args.t_bounds_tol,
+            units="MeV", check_type="setup_identity",
+            note="energy grid must be finite, strictly increasing, and span 1--1000 MeV") and passed
 
         passed = add_check(rows, "boundary_power_law", label, "max_rel_J_boundary",
                            max_rel_boundary_spectrum(E, Jb), 0.0,
@@ -519,55 +720,155 @@ def analyze(workdir, points, args):
                            check_type="setup_identity",
                            note="spectrum file must preserve the imposed power law") and passed
 
-        passed = add_check(rows, "local_spectrum_closure", label, "max_rel_Jlocal_minus_TJb",
-                           max_abs_jlocal_residual(T, Jb, Jl), 0.0,
-                           abs_tol=args.closure_tol, units="1",
-                           check_type="exact_internal_identity",
-                           note="J_local(E) must equal T(E)*J_boundary(E)") and passed
+        # These are exact sample-accounting gates.  In particular, accepting an
+        # undefined nominal value does not mean accepting arbitrary missing data:
+        # the saved counts must prove that the resolved denominator is empty.
+        passed = add_check(
+            rows, "sample_count_contract", label, "max_sample_count_violation",
+            max_count_contract_violation(N_sampled, N_resolved, expected_directions),
+            0.0, abs_tol=0.0, units="count", check_type="setup_identity",
+            note="integer sample counts must match the rendered F4 direction workload") and passed
+        passed = add_check(
+            rows, "unresolved_fraction_contract", label,
+            "max_unresolved_fraction_count_residual",
+            max_unresolved_fraction_residual(N_sampled, N_resolved, unresolved),
+            0.0, abs_tol=args.t_bounds_tol, units="1",
+            check_type="exact_internal_identity",
+            note="unresolved fraction must equal (N_sampled-N_resolved)/N_sampled") and passed
+        passed = add_check(
+            rows, "nominal_definedness_contract", label,
+            "max_nominal_definedness_violation",
+            max_nominal_definedness_violation(T, Jl, N_resolved),
+            0.0, abs_tol=0.0, units="1", check_type="unresolved_semantics",
+            note=("T and J_local must be finite iff N_resolved>0; an empty resolved "
+                  "denominator must be represented by NaN, never zero")) and passed
 
-        passed = add_check(rows, "transmission_bounds", label, "max_T_bounds_violation",
-                           transmission_bounds_violation(T), 0.0,
-                           abs_tol=args.t_bounds_tol, units="1",
-                           check_type="physical_bound",
-                           note="T(E) should remain inside [0,1]") and passed
+        passed = add_check(
+            rows, "transmission_bounds", label, "max_T_interval_violation",
+            max_transmission_interval_violation(T, T_lower, T_upper),
+            0.0, abs_tol=args.t_bounds_tol, units="1",
+            check_type="physical_bound",
+            note="require 0<=T_lower<=T<=T_upper<=1 wherever nominal T exists") and passed
+        passed = add_check(
+            rows, "transmission_bound_formula", label,
+            "max_T_bound_formula_residual",
+            max_access_bound_formula_residual(
+                T, T_lower, T_upper, N_sampled, N_resolved),
+            0.0, abs_tol=args.t_bounds_tol, units="1",
+            check_type="independent_reference_formula",
+            note=("isotropic access bounds must reconstruct independently from "
+                  "T_resolved and the saved sampled/resolved counts")) and passed
 
+        # The nominal closure remains a hard gate at every node where it is
+        # defined.  At a no-resolved node it passes only for the exact NaN/NaN
+        # pair already justified by the count and definedness checks above.
+        passed = add_check(
+            rows, "local_spectrum_closure", label, "max_rel_Jlocal_minus_TJb",
+            max_spectrum_closure_residual(T, Jb, Jl), 0.0,
+            abs_tol=args.closure_tol, units="1",
+            check_type="exact_internal_identity",
+            note="nominal J_local(E) must equal T(E)*J_boundary(E), including NaN semantics") and passed
+        passed = add_check(
+            rows, "local_spectrum_lower_closure", label,
+            "max_rel_Jlocal_lower_minus_TlowerJb",
+            max_spectrum_closure_residual(T_lower, Jb, Jl_lower), 0.0,
+            abs_tol=args.closure_tol, units="1",
+            check_type="exact_internal_identity",
+            note="finite lower spectrum must equal T_lower(E)*J_boundary(E)") and passed
+        passed = add_check(
+            rows, "local_spectrum_upper_closure", label,
+            "max_rel_Jlocal_upper_minus_TupperJb",
+            max_spectrum_closure_residual(T_upper, Jb, Jl_upper), 0.0,
+            abs_tol=args.closure_tol, units="1",
+            check_type="exact_internal_identity",
+            note="finite upper spectrum must equal T_upper(E)*J_boundary(E)") and passed
+
+        density = data["density"]
         dens_spec = density_from_local_spectrum(E, Jl, EMIN, EMAX)
-        dens_resid = abs(data["density"] - dens_spec) / max(abs(dens_spec), 1.0e-300)
-        passed = add_check(rows, "density_file_vs_spectrum", label, "density_total_relative_residual",
-                           dens_resid, 0.0, abs_tol=args.integral_tol, units="1",
-                           check_type="exact_internal_identity",
-                           note="density file must match 4*pi*int J_local(E)/v(E)dE") and passed
+        dens_lower_spec = density_from_local_spectrum(E, Jl_lower, EMIN, EMAX)
+        dens_upper_spec = density_from_local_spectrum(E, Jl_upper, EMIN, EMAX)
+        passed = add_check(
+            rows, "density_interval", label, "density_interval_violation",
+            scalar_interval_violation(
+                density["nominal"], density["lower"], density["upper"]),
+            0.0, abs_tol=args.t_bounds_tol, units="m^-3",
+            check_type="physical_bound",
+            note="saved density bounds must be finite, nonnegative, and ordered") and passed
+        for suffix, saved, reconstructed in (
+                ("", density["nominal"], dens_spec),
+                ("_lower", density["lower"], dens_lower_spec),
+                ("_upper", density["upper"], dens_upper_spec)):
+            passed = add_check(
+                rows, "density%s_file_vs_spectrum" % suffix, label,
+                "density%s_total_relative_residual" % suffix,
+                scalar_closure_residual(saved, reconstructed), 0.0,
+                abs_tol=args.integral_tol, units="1",
+                check_type="exact_internal_identity",
+                note=("density%s file value must match 4*pi*int "
+                      "J_local%s(E)/v(E)dE" % (suffix, suffix))) and passed
 
+        flux = data["flux"]
         flux_spec_total = flux_from_local_spectrum(E, Jl, EMIN, EMAX)
-        flux_resid = abs(data["flux"]["F_tot_m2s1"] - flux_spec_total) / max(abs(flux_spec_total), 1.0e-300)
-        passed = add_check(rows, "flux_file_vs_spectrum", label, "flux_total_relative_residual",
-                           flux_resid, 0.0, abs_tol=args.integral_tol, units="1",
-                           check_type="exact_internal_identity",
-                           note="total flux file must match 4*pi*int J_local(E)dE") and passed
+        flux_lower_spec_total = flux_from_local_spectrum(E, Jl_lower, EMIN, EMAX)
+        flux_upper_spec_total = flux_from_local_spectrum(E, Jl_upper, EMIN, EMAX)
+        passed = add_check(
+            rows, "flux_interval", label, "flux_total_interval_violation",
+            scalar_interval_violation(
+                flux["F_tot_m2s1"], flux["F_tot_lower_m2s1"],
+                flux["F_tot_upper_m2s1"]),
+            0.0, abs_tol=args.t_bounds_tol, units="m^-2 s^-1",
+            check_type="physical_bound",
+            note="saved total-flux bounds must be finite, nonnegative, and ordered") and passed
+        for suffix, saved, reconstructed in (
+                ("", flux["F_tot_m2s1"], flux_spec_total),
+                ("_lower", flux["F_tot_lower_m2s1"], flux_lower_spec_total),
+                ("_upper", flux["F_tot_upper_m2s1"], flux_upper_spec_total)):
+            passed = add_check(
+                rows, "flux%s_file_vs_spectrum" % suffix, label,
+                "flux%s_total_relative_residual" % suffix,
+                scalar_closure_residual(saved, reconstructed), 0.0,
+                abs_tol=args.integral_tol, units="1",
+                check_type="exact_internal_identity",
+                note=("total flux%s must match 4*pi*int J_local%s(E)dE" %
+                      (suffix, suffix))) and passed
 
         for name, e1, e2 in ENERGY_BINS:
             out_key = "F_%s_m2s1" % name
-            if out_key not in data["flux"]:
+            lower_key = "F_%s_lower_m2s1" % name
+            upper_key = "F_%s_upper_m2s1" % name
+            if any(key not in flux for key in (out_key, lower_key, upper_key)):
                 passed = add_check(rows, "flux_channel_present", label, out_key,
                                    0.0, 1.0, abs_tol=0.0, units="1",
                                    check_type="setup_identity",
-                                   note="missing requested flux-channel column") and passed
+                                   note="missing requested nominal/lower/upper flux-channel column") and passed
                 continue
+            passed = add_check(
+                rows, "flux_channel_interval", label,
+                "%s_interval_violation" % out_key,
+                scalar_interval_violation(flux[out_key], flux[lower_key], flux[upper_key]),
+                0.0, abs_tol=args.t_bounds_tol, units="m^-2 s^-1",
+                check_type="physical_bound",
+                note="saved channel-flux bounds must be finite, nonnegative, and ordered") and passed
             # Match the actual AMPS channel quadrature.  Channel boundaries are
             # generally not nodes of the logarithmic SCAN grid.  The C++ solver
             # interpolates T at each boundary and evaluates J_boundary exactly;
             # linearly interpolating the saved product J_local would test a
             # different numerical rule and gives percent-level false residuals on
             # the intentionally compact F4 grid.
-            f_spec = flux_channel_as_amps(E, T, e1, e2)
-            resid = abs(data["flux"][out_key] - f_spec) / max(abs(f_spec), 1.0e-300)
-            passed = add_check(rows, "flux_channel_file_vs_spectrum", label,
-                               "%s_relative_residual" % out_key,
-                               resid, 0.0, abs_tol=args.integral_tol, units="1",
-                               check_type="exact_internal_identity",
-                               note=("channel flux must match AMPS quadrature: interpolate T at "
-                                     "the exact channel edges, evaluate J_boundary there, then "
-                                     "integrate T*J_boundary on the augmented grid")) and passed
+            for suffix, saved, transmission in (
+                    ("", flux[out_key], T),
+                    ("_lower", flux[lower_key], T_lower),
+                    ("_upper", flux[upper_key], T_upper)):
+                f_spec = flux_channel_as_amps(E, transmission, e1, e2)
+                passed = add_check(
+                    rows, "flux_channel%s_file_vs_spectrum" % suffix, label,
+                    "%s%s_relative_residual" % (out_key, suffix),
+                    scalar_closure_residual(saved, f_spec), 0.0,
+                    abs_tol=args.integral_tol, units="1",
+                    check_type="exact_internal_identity",
+                    note=("channel flux%s must match AMPS quadrature: interpolate T%s "
+                          "at exact channel edges, evaluate J_boundary there, then "
+                          "integrate on the augmented grid" % (suffix, suffix))) and passed
 
     summary_csv = workdir / "F4_summary.csv"
     fieldnames = ["check", "point", "quantity", "check_type", "passed", "value",

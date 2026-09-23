@@ -110,6 +110,55 @@ F4 does not use the legacy Boolean cutoff interpretation in which a numerical
 limit is mapped to `false`; that compatibility policy is restricted to cutoff
 searches such as C1, C2, C3, and C11.
 
+### Nominal values versus unresolved bounds
+
+The Step 2 numerical contract intentionally writes the nominal transmission as
+`NaN` when `N_resolved=0` at an energy node.  Zero would mean a physical result
+(`all resolved trajectories were forbidden`), while `NaN` means that the sampled
+trajectories did not provide a resolved denominator.  The same undefined value
+propagates into any nominal spectrum, density, or flux integral that uses that
+node.
+
+This is not, by itself, an F4 closure failure.  F4 is the bounded functional
+closure test, so it verifies all of the following instead:
+
+1. `N_sampled` and `N_resolved` are integer-valued and match the rendered F4
+   direction workload.
+2. `unresolved_fraction=(N_sampled-N_resolved)/N_sampled`.
+3. Nominal `T` and `J_local` are finite if and only if `N_resolved>0`; an empty
+   resolved denominator must remain `NaN` and cannot be silently converted to
+   zero.
+4. The finite isotropic bounds independently reconstruct from the counts:
+
+   ```text
+   T_lower = T_resolved N_resolved / N_sampled
+   T_upper = T_lower + N_unresolved / N_sampled
+   ```
+
+   For `N_resolved=0`, the required interval is exactly `[0,1]`.
+5. `J_local_lower=T_lower J_boundary` and
+   `J_local_upper=T_upper J_boundary` satisfy the same differential tolerance
+   as the nominal identity.
+6. Lower and upper density, total-flux, and channel-flux files independently
+   reconstruct from those bound spectra using the same integral tolerance as
+   the nominal products.
+7. Every saved interval is finite, nonnegative, and ordered.  Wherever a
+   nominal value exists, it must lie inside its interval.
+
+The nominal closure checks are therefore still mandatory at every energy and
+for every integral where a nominal estimate exists.  A matching `NaN` is
+accepted only after the sample-count and definedness gates prove that it is the
+required unresolved sentinel.  Corrupting either finite bound, reversing an
+interval, inventing a nominal zero, or producing an unexpected `NaN` fails F4.
+
+No trajectory-classification threshold or validation tolerance was changed for
+this behavior.  F4 does not claim that its compact 16-direction sample is a
+converged physical transmission solution; F3 provides the independent
+trajectory/transmission reference validation.  Production validation inputs
+that require a converged nominal product should additionally enable
+`DS_FAIL_ON_UNRESOLVED T` and select budgets/resolution appropriate for that
+physical validation objective.
+
 ## Live progress and workload reporting
 
 Before launching AMPS, `run_F4.py` prints:
@@ -200,13 +249,40 @@ The expected value is zero for all rows in `F4_summary.csv` because the test
 reports residuals/errors, not physical density or flux values. The main checks
 are:
 
-1. Saved `J_boundary(E)` matches the input power law.
-2. Saved `J_local(E)` equals `T(E)J_boundary(E)`.
-3. `T(E)` remains in `[0,1]`.
-4. The density file matches direct reconstruction from
-   `gridless_points_spectrum.dat`.
-5. The total flux and every requested energy-channel flux match the numerical
-   quadrature used by AMPS.
+1. The energy grid and per-node sample accounting match the rendered run.
+2. Saved `J_boundary(E)` matches the input power law.
+3. Nominal defined/undefined states agree exactly with `N_resolved`.
+4. `T_lower`, nominal `T` where defined, and `T_upper` are physically ordered,
+   and the access bounds reproduce the independent count formula.
+5. Nominal, lower, and upper local spectra equal the corresponding
+   `T(E)J_boundary(E)` products.
+6. Nominal (where defined), lower, and upper density files match direct
+   reconstruction from `gridless_points_spectrum.dat`.
+7. Nominal (where defined), lower, and upper total/channel fluxes match the
+   numerical quadrature used by AMPS.
+
+All pre-existing numeric gates remain unchanged:
+
+```text
+--closure-tol      2e-5
+--integral-tol     2e-5
+--differential-tol 2e-5
+--t-bounds-tol     1e-12
+```
+
+### Validator self-tests
+
+The validator has deterministic tests that do not require an AMPS executable:
+
+```bash
+python srcEarth/test/F4/tests/run_self_tests.py
+```
+
+They cover a fully resolved reference fixture, a valid `N_resolved=0` fixture
+with finite uncertainty bounds, and negative fixtures that attempt to replace
+the required `NaN` with zero, corrupt a lower spectrum, or reverse an interval.
+Each negative fixture must fail the relevant unchanged gate.  A separate
+assertion locks the four numeric tolerance defaults shown above.
 
 ### Channel-boundary quadrature
 

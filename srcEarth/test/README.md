@@ -619,11 +619,20 @@ F_channel  = 4π ∫_channel J_local(E) dE
 
 The summary file therefore reports residuals with `expected_value=0`; those zero entries mean zero reconstruction error, not zero physical density or flux.
 
+F4 validates the Step 2 unresolved-data contract as part of that closure.  If an
+energy node has `N_resolved=0`, the nominal `T` and `J_local` must be `NaN`
+(never a fabricated zero), while `T_lower/T_upper` and all lower/upper spectra,
+densities, and fluxes must remain finite and reconstruct at the same unchanged
+closure/integral tolerances.  Sample counts independently determine the required
+isotropic access interval.  Nominal checks remain active everywhere the nominal
+estimate is defined; corrupt bounds and unexpected missing values fail the test.
+
 ```bash
 python srcEarth/test/F4/run_F4.py -np 4 -nt 16
 python srcEarth/test/F4/run_F4.py --scan-n 160 --nintervals 240
 python srcEarth/test/F4/run_F4.py --lons 0,90 --lats -60,-30,0,30,60
 python srcEarth/test/F4/run_F4.py --dry-run
+python srcEarth/test/F4/tests/run_self_tests.py
 ```
 
 F4 writes `F4_summary.csv`, `F4_result.json`, and `reference_F4_reconstruction_used.csv` under `test_output/F4_gridless`. The repository reference/check table is `srcEarth/test/F4/reference_F4_reconstruction.csv`.

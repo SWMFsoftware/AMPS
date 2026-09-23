@@ -1,7 +1,23 @@
 check,quantity,expected_value,units,check_type,notes
+energy_grid_contract,energy_grid_violation_MeV,0.0,MeV,setup_identity,Energy nodes must be finite and strictly increasing with the configured endpoints.
 boundary_power_law,max_rel_J_boundary,0.0,1,setup_identity,Saved boundary spectrum must equal the imposed POWER_LAW spectrum.
-local_spectrum_closure,max_rel_Jlocal_minus_TJb,0.0,1,exact_internal_identity,J_local(E) must equal T(E)*J_boundary(E) at every saved energy node.
-transmission_bounds,max_T_bounds_violation,0.0,1,physical_bound,Transmission must remain in the physical interval [0,1] up to roundoff.
+sample_count_contract,max_sample_count_violation,0.0,count,setup_identity,Sample and resolved counts must be integer-valued and match the rendered direction workload.
+unresolved_fraction_contract,max_unresolved_fraction_count_residual,0.0,1,exact_internal_identity,The saved unresolved fraction must reconstruct exactly from the sample counts.
+nominal_definedness_contract,max_nominal_definedness_violation,0.0,1,unresolved_semantics,Nominal T and J_local must be finite iff N_resolved is nonzero and NaN otherwise.
+transmission_bounds,max_T_interval_violation,0.0,1,physical_bound,Require 0 <= T_lower <= T <= T_upper <= 1 wherever nominal T exists.
+transmission_bound_formula,max_T_bound_formula_residual,0.0,1,independent_reference_formula,Isotropic T bounds must reconstruct independently from T_resolved and sampled/resolved counts.
+local_spectrum_closure,max_rel_Jlocal_minus_TJb,0.0,1,exact_internal_identity,Nominal J_local(E) must equal T(E)*J_boundary(E) at every node where the nominal estimate exists.
+local_spectrum_lower_closure,max_rel_Jlocal_lower_minus_TlowerJb,0.0,1,exact_internal_identity,J_local_lower(E) must equal T_lower(E)*J_boundary(E) at every saved energy node.
+local_spectrum_upper_closure,max_rel_Jlocal_upper_minus_TupperJb,0.0,1,exact_internal_identity,J_local_upper(E) must equal T_upper(E)*J_boundary(E) at every saved energy node.
+density_interval,density_interval_violation,0.0,m^-3,physical_bound,Density bounds must be finite nonnegative and ordered around any defined nominal value.
 density_file_vs_spectrum,density_total_relative_residual,0.0,1,exact_internal_identity,Density file must equal 4*pi*int J_local(E)/v(E)dE reconstructed from the saved spectrum.
+density_lower_file_vs_spectrum,density_lower_total_relative_residual,0.0,1,exact_internal_identity,Lower density must reconstruct from J_local_lower with the nominal integration gate unchanged.
+density_upper_file_vs_spectrum,density_upper_total_relative_residual,0.0,1,exact_internal_identity,Upper density must reconstruct from J_local_upper with the nominal integration gate unchanged.
+flux_interval,flux_total_interval_violation,0.0,m^-2 s^-1,physical_bound,Total-flux bounds must be finite nonnegative and ordered around any defined nominal value.
 flux_file_vs_spectrum,flux_total_relative_residual,0.0,1,exact_internal_identity,Total flux file must equal 4*pi*int J_local(E)dE reconstructed from the saved spectrum.
+flux_lower_file_vs_spectrum,flux_lower_total_relative_residual,0.0,1,exact_internal_identity,Lower total flux must reconstruct from J_local_lower with the nominal integration gate unchanged.
+flux_upper_file_vs_spectrum,flux_upper_total_relative_residual,0.0,1,exact_internal_identity,Upper total flux must reconstruct from J_local_upper with the nominal integration gate unchanged.
+flux_channel_interval,channel_flux_interval_violation,0.0,m^-2 s^-1,physical_bound,Every channel-flux interval must be finite nonnegative and ordered.
 flux_channel_file_vs_spectrum,channel_flux_relative_residual,0.0,1,exact_internal_identity,Each requested energy-channel flux must equal the same integral over the saved spectrum.
+flux_channel_lower_file_vs_spectrum,channel_flux_lower_relative_residual,0.0,1,exact_internal_identity,Each lower channel flux must reconstruct from T_lower using the same channel quadrature and tolerance.
+flux_channel_upper_file_vs_spectrum,channel_flux_upper_relative_residual,0.0,1,exact_internal_identity,Each upper channel flux must reconstruct from T_upper using the same channel quadrature and tolerance.

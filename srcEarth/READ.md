@@ -2860,7 +2860,23 @@ F           = 4*pi*int J_local(E) dE
 F_channel   = 4*pi*int_channel J_local(E) dE
 ```
 
-The runner reads `gridless_points_spectrum.dat`, reconstructs density and every requested integral-flux channel, and compares those values with `gridless_points_density.dat` and `gridless_points_flux.dat`.  It also verifies that the saved boundary spectrum matches the imposed power law and that `T(E)` remains in `[0,1]`.
+The runner reads `gridless_points_spectrum.dat`, reconstructs density and every requested integral-flux channel, and compares those values with `gridless_points_density.dat` and `gridless_points_flux.dat`.  It also verifies that the saved boundary spectrum matches the imposed power law and that the nominal/lower/upper transmission interval remains physically ordered.
+
+An energy with `N_resolved=0` has no nominal estimator: Step 2 writes `NaN`
+instead of silently mapping UNKNOWN access to forbidden access.  F4 now checks
+that definedness against the saved counts, independently reconstructs the finite
+isotropic `T_lower/T_upper` interval from those counts, and applies the existing
+differential/integral tolerances to all lower/upper spectrum, density, total-flux,
+and channel-flux products.  A matching nominal `NaN` is accepted only when the
+count contract requires it; a fabricated zero, corrupt bound, reversed interval,
+or unexpected `NaN` fails.  This adds coverage without changing any physical
+trajectory-classification threshold or numeric pass/fail tolerance.
+
+The validator-only regression suite does not require an AMPS executable:
+
+```bash
+python srcEarth/test/F4/tests/run_self_tests.py
+```
 
 Input and reference/check files:
 
