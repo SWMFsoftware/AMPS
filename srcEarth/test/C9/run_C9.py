@@ -2825,14 +2825,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         branch_models[solver] = interval_models
         branch_metrics[solver] = metrics
         branch_results[solver] = branch_result
+        # Print the timing observable beside the aggregate spatial metrics.  The
+        # timing-of-minimum requirement has always been an independent C9 gate, but
+        # omitting it from this one-line summary made a legitimate timing failure look
+        # as though one of the displayed RMSE/bias/correlation gates had malfunctioned.
+        # This is diagnostic-only: neither the calculation above nor any acceptance
+        # threshold is changed.
         print(
             "C9 %s: valid=%d/%d RMSE=%.3f deg bias=%+.3f deg corr=%s "
-            "suppression=%s deg -> %s%s" %
+            "suppression=%s deg min_time_error=%s min model/ref=%s/%s -> %s%s" %
             (solver.lower(), metrics.n_valid_model, metrics.n_reference,
              metrics.rmse_deg, metrics.mean_bias_deg,
              "n/a" if metrics.correlation is None else "%.3f" % metrics.correlation,
              "n/a" if metrics.modeled_low_rigidity_suppression_deg is None else
              "%.3f" % metrics.modeled_low_rigidity_suppression_deg,
+             "n/a" if metrics.minimum_time_error_minutes is None else
+             "%.1f min" % metrics.minimum_time_error_minutes,
+             metrics.modeled_minimum_time_utc or "n/a",
+             metrics.observed_minimum_time_utc or "n/a",
              "PASS" if metrics.passed else "FAIL",
              " (unverified alternate driver; not scientifically eligible)"
              if not metrics.scientific_validation_eligible else "")

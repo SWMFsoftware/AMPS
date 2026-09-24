@@ -18,77 +18,20 @@ Only the Python standard library is required.  ``--self-test`` validates input
 rendering, reference schemas, geometry, parser strictness, and the principal
 acceptance reductions without launching AMPS.
 
--------------------------------------------------------------------------------
-ERRATA / FIX HISTORY (read this before changing acceptance thresholds)
--------------------------------------------------------------------------------
-Two independent defects were found by auditing a ROUTINE C8 run that failed
-with "T96/T05 has no informative rigidity with D(+)>=0.01 and D(-)<=-0.01".
-Both are fixed in this revision.  Neither fix relaxes an acceptance threshold;
-both fixes correct the test's own bookkeeping/configuration so that the
-existing, unchanged thresholds are evaluated against physically and
-structurally correct inputs.
+Two compatibility rules are deliberately enforced here rather than left to
+downstream CSV reductions:
 
-FIX 1 — backtrace-charge convention (AMPS_PARAM_C8_gridless.in).
-  ``CUTOFF_BACKTRACE_CHARGE`` was set to ``SAME``.  AMPS backtraces a particle
-  by launching a forward-in-time numerical trajectory from the observation
-  point with velocity reversed relative to the requested arrival direction.
-  Time-reversing q(v x B) under that velocity flip additionally requires
-  flipping the charge sign used in the integration (the standard cosmic-ray
-  "antiparticle" cutoff construction).  ``REVERSED`` performs that flip;
-  ``SAME`` does not and is documented in the AMPS source as a legacy mode.
-  Under ``SAME`` the case labeled ``charge_plus`` numerically reproduces the
-  physics of a real NEGATIVE particle and vice versa, which flips the sign of
-  the computed East-West asymmetry for both charges -- exactly the failure
-  observed.  Fixed by selecting ``REVERSED``, matching every other
-  cutoff-physics test in this suite (C6, C7, C9, C10, C13, C15, C16, C18,
-  C19).  See the comment block in AMPS_PARAM_C8_gridless.in for the full
-  derivation.
+* the DIRECT_ACCESS producer must retain its 24-column Step-4 prefix (enforced
+  by UDirectionalAccess), while this recovery reader addresses values by their
+  VARIABLES names.  It can therefore audit both the corrected append-only
+  product and already-generated files from the brief historical Step-5 layout
+  that inserted two named weight fields into the prefix;
+* AMPS emits every longitude at both geographic poles.  Those rows are all
+  required, checked for azimuthal state degeneracy (C8-G11), and collapsed to
+  one exactly weighted polar-cap sample only after that check succeeds.
 
-FIX 2 — directional-grid completeness contract (this file).
-  ``expected_direction_keys()`` assumed AMPS's DIRECT_ACCESS producer omits
-  the longitude-degenerate +/-90-degree rows.  It does not: AMPS's directional
-  grid unconditionally includes both poles, one row per longitude value (see
-  ``nLatMap = ... + 1  // include poles`` in CutoffRigidityGridless.cpp), so a
-  ROUTINE (15-degree) run emits 24 extra rows at each pole (48 total) beyond
-  the 264-direction non-polar grid this file expected.  Because Section 5.1 /
-  gate C8-G01 is a HARD "zero coverage errors" gate, those 48 legitimate rows
-  were flagged as "unexpected directions" and silently failed the run via the
-  ``coverage_errors`` counter -- silently, because that counter fed
-  ``overall_passed`` without ever appending a message, so C8_summary.txt gave
-  no indication this gate had failed at all.
-  Fixed with three changes, all of which TIGHTEN the test rather than loosen
-  it:
-    (a) ``expected_full_direction_keys()`` now defines the true output
-        contract (264 regular cells + 48 polar cells for ROUTINE) used by the
-        Section-5.1 completeness/uniqueness audit, so genuine AMPS rows are
-        no longer misclassified as errors.
-    (b) A NEW hard check (gate C8-G11, "pole azimuthal degeneracy") verifies
-        that the 24 longitude-tagged duplicates AMPS writes at each pole
-        report an IDENTICAL access state per rigidity, since they all
-        represent the same physical direction.  A disagreement among these
-        duplicates is a genuine trace non-determinism/numerical defect that
-        the previous version of C8 could never have detected, because it
-        discarded pole rows outright instead of auditing them.
-    (c) The FOV/East-West/model-comparison solid-angle reduction previously
-        *approximated* the two polar caps by silently stretching the
-        adjacent 15-degree latitude band all the way to the pole.  Now that
-        genuine (and verified self-consistent) polar samples exist, each
-        pole is folded into the reduction as its own direction with the
-        exact polar-cap solid angle (``pole_cap_weight_sr``), replacing an
-        approximation with the real traced value.  Total solid angle is
-        unchanged (still exactly 4*pi sr, reapportioned rather than altered),
-        so this does not change what "resolved"/"unresolved" or the 0.98 /
-        0.15 / 0.01 thresholds mean -- it only makes the number that is
-        compared against those thresholds slightly more accurate for the two
-        observation points (|lat|=51.6 deg) whose 45-degree zenith cone
-        reaches a pole.
-
-Neither fix changes any CLI default or acceptance threshold in build_parser()
-or reference_C8_expected_physics.csv / reference_C8_acceptance_contract.csv
-(gate limits 0.98, 0.02, 0.25, 0.15, 0.01, 5 mrad are untouched); gate
-C8-G11 was added to reference_C8_acceptance_contract.csv as a strictly
-additional hard gate.
--------------------------------------------------------------------------------
+These are validation safeguards, not convenience fallbacks: malformed schemas,
+missing rows, and disagreeing polar duplicates remain hard failures.
 """
 
 from __future__ import print_function
@@ -108,12 +51,8 @@ from pathlib import Path
 
 TEST_ID = "C8"
 TEST_NAME = "Realistic-field directional access and East-West validation"
-# Schema version 2: adds the full (regular + polar) direction contract, gate
-# C8-G11 (pole azimuthal degeneracy), and the
-# requested_pole_direction_tasks_per_point / requested_full_direction_tasks_per_point
-# result fields.  See the "ERRATA / FIX HISTORY" note at the top of this file.
 RUNNER_SCHEMA_VERSION = 2
-RUNNER_RELEASE = "2026-09-02"
+RUNNER_RELEASE = "2026-09-23"
 
 RE_KM = 6371.2
 DEFAULT_EPOCH = "2012-05-17T06:00:00"
@@ -138,6 +77,56 @@ TERMINATION_CONTRACT = {
     9: ("DRIFT_TRAPPED_FORBIDDEN", 0, False),
 }
 STATE_NAMES = {0: "FORBIDDEN", 1: "ALLOWED", 2: "UNRESOLVED"}
+
+# Stable Step-4 DIRECT_ACCESS prefix.  The producer intentionally keeps these
+# names and this order unchanged, while Step 5 appends another 21 columns.  C8
+# maps row values through the VARIABLES declaration, so an extension cannot
+# shift ``access_state`` (the failure mode that previously left all comparison
+# products empty).  Requiring the complete prefix also makes an old/incomplete
+# executable fail explicitly rather than silently validating a partial cube.
+DIRECT_ACCESS_CORE_COLUMNS = (
+    "lon_deg", "lat_deg", "rigidity_gv", "energy_mev",
+    "access_state", "allowed", "unresolved", "termination_code",
+    "trace_time_s", "trace_distance_re", "trace_steps", "retry_count",
+    "primary_termination_code", "primary_trace_time_s",
+    "trace_extension_count", "initial_trace_limit_s", "final_trace_limit_s",
+    "mirror_points", "bounce_cycles", "drift_revolutions", "drift_angle_deg",
+    "drift_mean_radius_change_re", "trap_mechanism",
+    "momentum_relative_spread",
+)
+
+# Current Step-5 suffix, used by the self-test to reproduce the real 45-column
+# product.  Runtime parsing intentionally permits additional uniquely named
+# suffix fields so future append-only diagnostics do not break C8.
+DIRECT_ACCESS_STEP5_COLUMNS = (
+    "direction_weight_sr", "weighted_access_sr", "exit_state_valid",
+    "x_exit_m", "y_exit_m", "z_exit_m", "px_exit_si", "py_exit_si",
+    "pz_exit_si", "vx_exit_unit", "vy_exit_unit", "vz_exit_unit",
+    "cos_alpha_exit", "trace_time_at_exit_s", "rigidity_at_exit_gv",
+    "adaptive_refined_intervals", "adaptive_estimated_error_gv",
+    "adaptive_max_ambiguous_width_gv", "adaptive_target_reached",
+    "adaptive_max_samples_reached", "response_weighted_unresolved_support",
+)
+
+# Initial Step-5 builds emitted these same 45 named values in a shifted order.
+# The producer has since restored the stable prefix, but C8 keeps read-only
+# support so completed multi-hour runs can be re-audited with ``--skip-run``.
+DIRECT_ACCESS_HISTORICAL_STEP5_COLUMNS = (
+    "lon_deg", "lat_deg", "direction_weight_sr", "rigidity_gv",
+    "energy_mev", "access_state", "allowed", "weighted_access_sr",
+    "unresolved", "termination_code", "trace_time_s", "trace_distance_re",
+    "trace_steps", "retry_count", "primary_termination_code",
+    "primary_trace_time_s", "trace_extension_count", "initial_trace_limit_s",
+    "final_trace_limit_s", "mirror_points", "bounce_cycles",
+    "drift_revolutions", "drift_angle_deg", "drift_mean_radius_change_re",
+    "trap_mechanism", "momentum_relative_spread", "exit_state_valid",
+    "x_exit_m", "y_exit_m", "z_exit_m", "px_exit_si", "py_exit_si",
+    "pz_exit_si", "vx_exit_unit", "vy_exit_unit", "vz_exit_unit",
+    "cos_alpha_exit", "trace_time_at_exit_s", "rigidity_at_exit_gv",
+    "adaptive_refined_intervals", "adaptive_estimated_error_gv",
+    "adaptive_max_ambiguous_width_gv", "adaptive_target_reached",
+    "adaptive_max_samples_reached", "response_weighted_unresolved_support",
+)
 
 # Profiles change numerical coverage/cost, never the meaning of a pass.  SMOKE
 # is useful for parser and installation checks; ROUTINE is the validation run;
@@ -262,45 +251,14 @@ def points_block(points):
     return "\n".join(lines)
 
 
-def _direction_grid_counts(lon_res_deg, lat_res_deg):
-    """Validate and return (nlon, nlat_intervals) shared by every grid helper.
-
-    Factored out so the regular-grid, pole-grid, and full-grid builders below
-    can never disagree about how many longitude/latitude steps a resolution
-    implies.  ``nlat_intervals`` is the number of *non-polar* latitude bands
-    (11 for 15 degrees); the two poles are handled separately because AMPS
-    handles them separately (see ``expected_pole_direction_keys``).
-    """
+def expected_direction_keys(lon_res_deg, lat_res_deg):
+    """Derive the non-polar part of the regular directional grid."""
     nlon_float = 360.0 / float(lon_res_deg)
     nlat_float = 180.0 / float(lat_res_deg)
     nlon = int(round(nlon_float))
     nlat_intervals = int(round(nlat_float))
     if abs(nlon - nlon_float) > 1.0e-9 or abs(nlat_intervals - nlat_float) > 1.0e-9:
         raise ValueError("Directional resolution must divide 360 and 180 degrees")
-    return nlon, nlat_intervals
-
-
-def expected_direction_keys(lon_res_deg, lat_res_deg):
-    """Derive the complete REGULAR (non-polar) sky grid requested from AMPS.
-
-    This is the grid used for solid-angle-weighted reductions (FOV/EAST/WEST
-    integration, T96/T05 model comparison, asymptotic-direction comparison):
-    see ``sky_cell_weight_sr`` and ``fov_direction_terms``.  It intentionally
-    excludes the two poles.
-
-    NOTE (fix history): this function's docstring used to claim that AMPS's
-    DIRECT_ACCESS writer omits the longitude-degenerate +/-90-degree rows
-    entirely.  That is false -- AMPS's directional grid always includes both
-    poles, with one row per longitude value (see
-    ``nLatMap = ... + 1  // include poles`` in CutoffRigidityGridless.cpp).
-    Excluding poles here is still the *right* choice for the solid-angle
-    reduction (a regular lon/lat cell is a poor way to represent 24 identical
-    duplicate directions), but the OUTPUT-COMPLETENESS audit must not use
-    this function alone any more -- use ``expected_full_direction_keys``
-    for that.  See ``expected_pole_direction_keys`` and
-    ``pole_cap_weight_sr`` for how the poles are folded back in correctly.
-    """
-    nlon, nlat_intervals = _direction_grid_counts(lon_res_deg, lat_res_deg)
     return {
         direction_key(i * lon_res_deg, -90.0 + j * lat_res_deg)
         for j in range(1, nlat_intervals)
@@ -309,19 +267,15 @@ def expected_direction_keys(lon_res_deg, lat_res_deg):
 
 
 def expected_pole_direction_keys(lon_res_deg, lat_res_deg):
-    """Derive the pole rows AMPS actually writes for a given resolution.
+    """Return every longitude-tagged polar work item emitted by AMPS.
 
-    AMPS's directional-map cell count is ``nLonMap * nLatMap`` with
-    ``nLatMap = round(180/latRes) + 1`` (poles included), and it writes one
-    row per (longitude, pole-latitude) pair even though every one of those
-    rows is the same physical direction (cos(+/-90 deg) == 0, so the
-    longitude has no effect on the traced Cartesian direction).  This
-    function reproduces that same per-longitude duplication so the
-    completeness audit expects exactly what AMPS produces, and so the new
-    pole-degeneracy check (see ``audit_case``) has the full set of duplicate
-    keys to compare against each other.
+    Longitude is geometrically degenerate at +/-90 degrees, but the producer
+    schedules and writes one row for every longitude.  C8 must audit all of
+    those rows before selecting a canonical sample for solid-angle folds.
     """
-    nlon, _ = _direction_grid_counts(lon_res_deg, lat_res_deg)
+    # Reuse the divisibility validation in ``expected_direction_keys``.
+    expected_direction_keys(lon_res_deg, lat_res_deg)
+    nlon = int(round(360.0 / float(lon_res_deg)))
     return {
         direction_key(i * lon_res_deg, pole_lat)
         for pole_lat in (-90.0, 90.0)
@@ -330,35 +284,13 @@ def expected_pole_direction_keys(lon_res_deg, lat_res_deg):
 
 
 def expected_full_direction_keys(lon_res_deg, lat_res_deg):
-    """Return the true DIRECT_ACCESS output contract: regular cells + poles.
-
-    This is the set used by the Section-5.1 / gate C8-G01 "no missing or
-    unexpected directions" audit.  Using the regular-only set there (the
-    pre-fix behavior) misclassified every genuine pole row AMPS writes as an
-    "unexpected direction," silently failing gate C8-G01 on every ROUTINE
-    run without ever explaining why.
-    """
-    return expected_direction_keys(lon_res_deg, lat_res_deg) | \
-        expected_pole_direction_keys(lon_res_deg, lat_res_deg)
+    """Return the exact DIRECT_ACCESS output grid, including polar duplicates."""
+    return (expected_direction_keys(lon_res_deg, lat_res_deg) |
+            expected_pole_direction_keys(lon_res_deg, lat_res_deg))
 
 
 def sky_cell_weight_sr(lon_res_deg, lat_res_deg, sky_lat_deg):
-    """Exact solid angle of one regular (non-polar) longitude/latitude cell.
-
-    NOTE (fix history): earlier versions of this function stretched the
-    first and last non-polar latitude bands all the way to the corresponding
-    pole, because at that time no genuine polar sample existed to carry that
-    solid angle.  AMPS *does* write genuine (duplicate-but-verifiable) polar
-    samples -- see ``expected_pole_direction_keys`` and the new pole
-    degeneracy check in ``audit_case`` -- so every regular band, including
-    the first/last ones, is now a plain, unstretched cell, and the two polar
-    caps are folded into reductions separately with their own exact weight
-    via ``pole_cap_weight_sr``.  ``sky_cell_weight_sr`` plus two calls to
-    ``pole_cap_weight_sr`` still sum to exactly 4*pi sr (verified in
-    ``self_test``); the total solid angle represented is unchanged, only its
-    apportionment between "regular band" and "explicit pole sample" is more
-    faithful to what AMPS actually traced.
-    """
+    """Exact solid angle of one non-polar longitude/latitude cell."""
     lower = max(-90.0, float(sky_lat_deg) - 0.5 * lat_res_deg)
     upper = min(90.0, float(sky_lat_deg) + 0.5 * lat_res_deg)
     return math.radians(lon_res_deg) * (
@@ -366,28 +298,27 @@ def sky_cell_weight_sr(lon_res_deg, lat_res_deg, sky_lat_deg):
 
 
 def pole_cap_weight_sr(lat_res_deg):
-    """Exact solid angle of the polar cap represented by ONE pole direction.
+    """Exact solid angle assigned to one canonical polar sample."""
+    half_angle = math.radians(0.5 * float(lat_res_deg))
+    return 2.0 * math.pi * (1.0 - math.cos(half_angle))
 
-    The cap has angular radius ``lat_res_deg/2`` around the pole (it fills
-    exactly the gap left by the now-unstretched regular bands, see
-    ``sky_cell_weight_sr``).  Its solid angle is the standard spherical-cap
-    formula ``2*pi*(1 - cos(half_angle))``, written here in the same
-    ``sin(upper) - sin(lower)`` form used throughout this file for exact
-    consistency with ``sky_cell_weight_sr``:
 
-        upper = 90 deg (the pole itself)
-        lower = 90 deg - lat_res_deg/2 (edge of the last regular band)
+def fov_direction_terms(expected_directions, lon_res_deg, lat_res_deg):
+    """Return canonical direction/weight pairs for all-sky reductions.
 
-    This weight is independent of longitude resolution and is assigned ONCE
-    per pole (to a single canonical direction), not once per AMPS longitude
-    duplicate -- the 24-or-so duplicate rows AMPS writes at a pole are all
-    the same physical direction, not 24 physically distinct sub-cells, so
-    summing this weight once per duplicate would double- (or 24x-) count the
-    cap.  See ``audit_case`` for how a single canonical pole sample is
-    selected out of the verified-identical duplicates.
+    ``expected_directions`` contains only regular, non-polar cells.  Each pole
+    is added once at longitude zero after ``audit_case`` has confirmed that all
+    longitude-tagged producer rows at that pole agree in access state.  This
+    preserves exactly 4*pi steradians without copying a neighboring latitude.
     """
-    half_angle_deg = 0.5 * float(lat_res_deg)
-    return 2.0 * math.pi * (1.0 - math.sin(math.radians(90.0 - half_angle_deg)))
+    terms = [
+        (dkey, sky_cell_weight_sr(lon_res_deg, lat_res_deg, dkey[1]))
+        for dkey in sorted(expected_directions)
+    ]
+    cap_weight = pole_cap_weight_sr(lat_res_deg)
+    terms.extend(((direction_key(0.0, -90.0), cap_weight),
+                  (direction_key(0.0, 90.0), cap_weight)))
+    return terms
 
 
 def local_aperture(point, sky_lon_deg, sky_lat_deg, fov_half_angle_deg,
@@ -504,6 +435,70 @@ def normalize_variable_name(name):
     return re.sub(r"[^a-z0-9_]+", "", normalized)
 
 
+def validate_directional_access_schema(variables, path, line_number=None):
+    """Require every uniquely named compatibility field in a Tecplot header.
+
+    The compiled producer's *current* ABI is the exact 24-field prefix followed
+    by append-only diagnostics, and a separate source-level regression test
+    enforces it.  C8 is also a recovery postprocessor: it must be able to audit
+    the named 45-column files already emitted by the initial Step-5 build, where
+    two weight fields were inserted near the front.  Name-based lookup safely
+    supports both layouts without weakening any scientific gate.
+
+    Duplicate normalized names are rejected because converting such a header
+    to a dictionary would otherwise discard one value silently.
+    """
+    where = "%s%s" % (path, (":%d" % line_number) if line_number else "")
+    if not variables:
+        raise RuntimeError("%s has an empty VARIABLES declaration" % where)
+    duplicates = sorted(name for name, count in Counter(variables).items()
+                        if count > 1)
+    if duplicates:
+        raise RuntimeError("%s has duplicate VARIABLES names: %s" %
+                           (where, ", ".join(duplicates)))
+    missing = [name for name in DIRECT_ACCESS_CORE_COLUMNS
+               if name not in variables]
+    if missing:
+        raise RuntimeError("%s lacks required DIRECT_ACCESS columns: %s" %
+                           (where, ", ".join(missing)))
+    core_count = len(DIRECT_ACCESS_CORE_COLUMNS)
+    current_layout = tuple(variables[:core_count]) == DIRECT_ACCESS_CORE_COLUMNS
+    historical_count = len(DIRECT_ACCESS_HISTORICAL_STEP5_COLUMNS)
+    historical_layout = (
+        tuple(variables[:historical_count]) ==
+        DIRECT_ACCESS_HISTORICAL_STEP5_COLUMNS)
+    if not current_layout and not historical_layout:
+        raise RuntimeError(
+            "%s has a noncanonical DIRECT_ACCESS column order; expected the "
+            "24-column compatibility prefix or the documented historical "
+            "Step-5 45-column layout" % where)
+
+
+def directional_access_schema_layout(variables):
+    """Return provenance for the declared core-column ordering."""
+    core_count = len(DIRECT_ACCESS_CORE_COLUMNS)
+    if tuple(variables[:core_count]) == DIRECT_ACCESS_CORE_COLUMNS:
+        return "legacy_prefix_append_only"
+    if tuple(variables[:len(DIRECT_ACCESS_HISTORICAL_STEP5_COLUMNS)]) == \
+            DIRECT_ACCESS_HISTORICAL_STEP5_COLUMNS:
+        return "historical_step5_shifted"
+    # validate_directional_access_schema has already rejected all other orders.
+    raise RuntimeError("Unvalidated DIRECT_ACCESS schema layout")
+
+
+def exact_int(record, name):
+    """Parse an integer-valued numeric field without silently truncating it."""
+    try:
+        value = float(record[name])
+    except (KeyError, ValueError, OverflowError):
+        raise RuntimeError("Column %s contains a non-number %r" %
+                           (name, record.get(name, "<missing>")))
+    if not math.isfinite(value) or not value.is_integer():
+        raise RuntimeError("Column %s is not a finite integer: %r" %
+                           (name, record[name]))
+    return int(value)
+
+
 def optional_float(record, name):
     """Parse an optional finite column; malformed present values are errors."""
     if name not in record:
@@ -560,9 +555,19 @@ def asymptotic_lon_lat(record):
 
 
 def parse_directional_access(path):
-    """Parse a DIRECT_ACCESS cube with strict schema and duplicate checks."""
+    """Parse a DIRECT_ACCESS cube with strict, append-tolerant schema checks.
+
+    Modern files declare 45 or more VARIABLES: normally the stable 24-column
+    Step-4 prefix followed by append-only diagnostics.  The header controls all
+    name lookups (including recovery of historical named layouts), and every
+    row must have exactly the declared width.  A strict
+    24-value headerless fallback remains for archived Step-4 output only; a
+    headerless extended row is ambiguous and is rejected.
+    """
     variables = []
     reading_variables = False
+    saw_variables = False
+    schema_validated = False
     samples = {}
 
     with path.open("r", errors="replace") as stream:
@@ -572,11 +577,19 @@ def parse_directional_access(path):
                 continue
             upper = line.upper()
             if upper.startswith("VARIABLES"):
+                if saw_variables:
+                    raise RuntimeError("%s:%d contains multiple VARIABLES blocks" %
+                                       (path, line_number))
+                saw_variables = True
                 reading_variables = True
                 variables.extend(normalize_variable_name(name)
                                  for name in re.findall(r'"([^"]+)"', line))
                 continue
             if upper.startswith("ZONE"):
+                if saw_variables and not schema_validated:
+                    validate_directional_access_schema(
+                        variables, path, line_number)
+                    schema_validated = True
                 reading_variables = False
                 continue
             if reading_variables:
@@ -585,37 +598,59 @@ def parse_directional_access(path):
                     variables.extend(normalize_variable_name(name) for name in names)
                     continue
                 reading_variables = False
-            if upper.startswith(("TITLE", "#", "!")):
+                validate_directional_access_schema(variables, path, line_number)
+                schema_validated = True
+            if upper.startswith(("TITLE", "AUXDATA", "#", "!")):
                 continue
             parts = line.replace(",", " ").split()
             if not variables:
-                continue
+                if saw_variables:
+                    # A declared-but-empty/malformed header must never fall back
+                    # to positional parsing.
+                    validate_directional_access_schema(
+                        variables, path, line_number)
+                if len(parts) != len(DIRECT_ACCESS_CORE_COLUMNS):
+                    raise RuntimeError(
+                        "%s:%d headerless row has width %d; only the exact "
+                        "24-column legacy schema is accepted" %
+                        (path, line_number, len(parts)))
+                variables = list(DIRECT_ACCESS_CORE_COLUMNS)
+                schema_validated = True
+            elif not schema_validated:
+                validate_directional_access_schema(variables, path, line_number)
+                schema_validated = True
             if len(parts) != len(variables):
                 raise RuntimeError("%s:%d row width %d does not match %d VARIABLES" %
                                    (path, line_number, len(parts), len(variables)))
+            if any(token.strip().strip('"').strip() == "" for token in parts):
+                raise RuntimeError("%s:%d contains a blank VARIABLES value" %
+                                   (path, line_number))
             record = dict(zip(variables, parts))
-            required = ("lon_deg", "lat_deg", "rigidity_gv", "access_state",
-                        "termination_code", "trace_time_s",
-                        "trace_distance_re", "trace_steps")
-            missing = [name for name in required if name not in record]
-            if missing:
-                raise RuntimeError("%s lacks required C8 columns: %s" %
-                                   (path, ", ".join(missing)))
             try:
-                lon = float(record["lon_deg"])
-                lat = float(record["lat_deg"])
-                rigidity = float(record["rigidity_gv"])
-                state = int(float(record["access_state"]))
-                code = int(float(record["termination_code"]))
-                trace_time = float(record["trace_time_s"])
-                trace_distance = float(record["trace_distance_re"])
-                trace_steps = int(float(record["trace_steps"]))
+                # Parse every core value, not just the fields used in a gate.
+                # That guarantees a blank or non-numeric compatibility-prefix
+                # field cannot be ignored merely because a later reduction does
+                # not currently consume it.
+                core_values = {
+                    name: float(record[name])
+                    for name in DIRECT_ACCESS_CORE_COLUMNS
+                }
+                lon = core_values["lon_deg"]
+                lat = core_values["lat_deg"]
+                rigidity = core_values["rigidity_gv"]
+                state = exact_int(record, "access_state")
+                code = exact_int(record, "termination_code")
+                trace_time = core_values["trace_time_s"]
+                trace_distance = core_values["trace_distance_re"]
+                trace_steps = exact_int(record, "trace_steps")
+                retry_count = exact_int(record, "retry_count")
             except (ValueError, OverflowError) as exc:
                 raise RuntimeError("Malformed row %d in %s: %s" %
                                    (line_number, path, exc))
-            numeric = (lon, lat, rigidity, trace_time, trace_distance,
-                       float(trace_steps))
-            if not all(math.isfinite(value) for value in numeric):
+            except RuntimeError as exc:
+                raise RuntimeError("Malformed row %d in %s: %s" %
+                                   (line_number, path, exc))
+            if not all(math.isfinite(value) for value in core_values.values()):
                 raise RuntimeError("Non-finite C8 value at %s:%d" %
                                    (path, line_number))
             if not (-90.0 <= lat <= 90.0) or rigidity <= 0.0 or \
@@ -646,14 +681,18 @@ def parse_directional_access(path):
                 "trace_time_s": trace_time,
                 "trace_distance_Re": trace_distance,
                 "trace_steps": trace_steps,
-                "retry_count": optional_float(record, "retry_count"),
+                "retry_count": retry_count,
                 "contract_error": contract_error,
                 "fatal": fatal,
                 "asymptotic": asymptotic_lon_lat(record),
             }
+    if saw_variables and not schema_validated:
+        validate_directional_access_schema(variables, path)
     if not samples:
         raise RuntimeError("No DIRECT_ACCESS samples parsed from %s" % path)
-    return {"columns": tuple(variables), "samples": samples}
+    return {"columns": tuple(variables),
+            "schema_layout": directional_access_schema_layout(variables),
+            "samples": samples}
 
 
 def find_access_file(workdir, point_id):
@@ -674,39 +713,16 @@ def match_requested_rigidity(value, requested):
     return None
 
 
-def audit_case(case, points, expected_directions, pole_directions, rigidities_gv):
-    """Audit complete output coverage, verify pole self-consistency, and
-    build a common sample map.
+def audit_case(case, points, expected_directions, expected_full_directions,
+               rigidities_gv):
+    """Audit the complete cube, including duplicate polar work items.
 
-    ``expected_directions`` is the regular (non-polar) grid.  ``pole_directions``
-    is the set of per-longitude pole duplicates AMPS actually writes (see
-    ``expected_pole_direction_keys``).  Their union is the true DIRECT_ACCESS
-    output contract audited here for gate C8-G01 ("no missing or unexpected
-    directions").  Using the regular-only grid for that audit (the pre-fix
-    behavior) misclassified every genuine pole row as "unexpected" and
-    silently failed every ROUTINE run -- see the module docstring's "FIX 2"
-    note.
-
-    A second, independent hard check implements the new gate C8-G11: every
-    longitude-tagged duplicate AMPS writes at a given pole must report the
-    SAME three-state access classification for a given rigidity, since
-    cos(+/-90 deg) makes the traced Cartesian direction identical regardless
-    of the longitude label.  A disagreement is a genuine trace
-    non-determinism/numerical defect that the pre-fix runner could never
-    observe because it discarded pole rows before auditing them.  When all
-    duplicates for a pole/rigidity agree, ONE canonical sample (longitude
-    0.0) is published into ``sample_map`` so the FOV/model/asymptotic
-    reductions (see ``fov_direction_terms``) have a single, verified
-    representative direction per pole instead of 24 redundant ones.
-
-    Any coverage discrepancy (missing direction, unexpected direction,
-    missing sample, or unrecognized extra rigidity) now also appends a
-    specific message to the returned ``errors`` list.  Previously these
-    discrepancies only incremented a counter that fed ``overall_passed``
-    without any accompanying message, so a hard gate could fail completely
-    silently; that reporting gap is fixed here as well.
+    ``expected_directions`` is the non-polar grid used by later canonical
+    reductions; ``expected_full_directions`` is the producer contract audited
+    by C8-G01.  All polar rows remain in ``sample_map``.  Reductions select the
+    longitude-zero row only after this function proves that every longitude at
+    the same pole/rigidity has an identical three-state classification (G11).
     """
-    full_directions = expected_directions | pole_directions
     summaries = []
     sample_map = {}
     errors = []
@@ -726,79 +742,64 @@ def audit_case(case, points, expected_directions, pole_directions, rigidities_gv
             continue
 
         got_directions = {key[0] for key in parsed["samples"]}
-        missing_directions = full_directions - got_directions
-        extra_directions = got_directions - full_directions
+        missing_directions = expected_full_directions - got_directions
+        extra_directions = got_directions - expected_full_directions
         matched_keys = set()
         point_counts = Counter()
         extra_rigidities = 0
 
-        # Per (pole latitude, matched rigidity): {access_state -> {longitudes}}.
-        # Used only to check gate C8-G11 below; regular (non-polar) directions
-        # are not azimuthally degenerate and are not tracked here.
-        pole_states = defaultdict(lambda: defaultdict(set))
-
         for (dkey, _), sample in parsed["samples"].items():
             requested = match_requested_rigidity(sample["rigidity_GV"], rigidities_gv)
-            if dkey not in full_directions or requested is None:
+            if dkey not in expected_full_directions or requested is None:
                 if requested is None:
                     extra_rigidities += 1
                 continue
-            rkey = rigidity_key(requested)
-            out_key = (point["point_id"], dkey[0], dkey[1], rkey)
+            out_key = (point["point_id"], dkey[0], dkey[1],
+                       rigidity_key(requested))
             if out_key in sample_map:
                 errors.append("%s duplicate matched sample %s" %
                               (case["case_id"], out_key))
                 continue
             sample_map[out_key] = sample
-            matched_keys.add((dkey, rkey))
+            matched_keys.add((dkey, rigidity_key(requested)))
             point_counts["samples"] += 1
             point_counts["state_%d" % sample["access_state"]] += 1
             point_counts["contract_errors"] += int(sample["contract_error"])
             point_counts["fatal"] += int(sample["fatal"])
 
-            if dkey in pole_directions:
-                pole_states[(dkey[1], rkey)][sample["access_state"]].add(dkey[0])
-
-        # --- Gate C8-G11: pole azimuthal degeneracy (see docstring above). ---
-        pole_degeneracy_errors = 0
-        for (pole_lat, rkey), states in pole_states.items():
-            if len(states) > 1:
-                pole_degeneracy_errors += 1
-                detail = "; ".join(
-                    "state=%d at lon in %s" % (state, sorted(lons))
-                    for state, lons in sorted(states.items()))
-                errors.append(
-                    "%s point %d pole lat=%g R=%g GV: azimuthal degeneracy "
-                    "violated -- duplicate longitudes disagree (%s)" %
-                    (case["case_id"], point["point_id"], pole_lat, rkey, detail))
-                continue
-            # All present longitude duplicates agree: publish one canonical
-            # sample (lowest longitude, deterministically 0.0 whenever the
-            # full duplicate set is present) for downstream FOV/model/
-            # asymptotic reductions.
-            lon_set = next(iter(states.values()))
-            canonical_lon = min(lon_set)
-            canonical = sample_map[(point["point_id"], canonical_lon,
-                                    pole_lat, rkey)]
-            sample_map[(point["point_id"], 0.0, pole_lat, rkey)] = canonical
-
-        expected_samples = len(full_directions) * len(rigidities_gv)
+        expected_samples = len(expected_full_directions) * len(rigidities_gv)
         missing_samples = expected_samples - len(matched_keys)
         coverage_errors = (len(missing_directions) + len(extra_directions) +
                            missing_samples + extra_rigidities)
-        if coverage_errors:
-            errors.append(
-                "%s point %d coverage mismatch: missing_directions=%d "
-                "extra_directions=%d missing_samples=%d "
-                "extra_rigidity_rows=%d (see C8_coverage_summary.csv)" %
-                (case["case_id"], point["point_id"], len(missing_directions),
-                 len(extra_directions), missing_samples, extra_rigidities))
+
+        # At either pole all longitude labels map to the same Cartesian arrival
+        # direction.  Count a violation once per pole/rigidity group, not once
+        # per pair, so diagnostics remain stable as angular resolution changes.
+        pole_degeneracy_errors = 0
+        pole_error_groups = []
+        for pole_lat in (-90.0, 90.0):
+            pole_keys = sorted(dkey for dkey in expected_full_directions
+                               if dkey[1] == pole_lat)
+            for rigidity in rigidities_gv:
+                states = set()
+                for dkey in pole_keys:
+                    key = (point["point_id"], dkey[0], dkey[1],
+                           rigidity_key(rigidity))
+                    sample = sample_map.get(key)
+                    if sample is not None:
+                        states.add(sample["access_state"])
+                if len(states) > 1:
+                    pole_degeneracy_errors += 1
+                    pole_error_groups.append("lat=%g R=%g states=%s" %
+                                             (pole_lat, rigidity,
+                                              sorted(states)))
         summary = {
             "case_id": case["case_id"], "field_model": case["model"],
             "charge": case["charge"], "point_id": point["point_id"],
+            "schema_layout": parsed["schema_layout"],
             "obs_lon_deg": point["obs_lon_deg"],
             "obs_lat_deg": point["obs_lat_deg"],
-            "expected_directions": len(full_directions),
+            "expected_directions": len(expected_full_directions),
             "actual_directions": len(got_directions),
             "missing_directions": len(missing_directions),
             "extra_directions": len(extra_directions),
@@ -816,61 +817,48 @@ def audit_case(case, points, expected_directions, pole_directions, rigidities_gv
             "fatal_terminations": point_counts["fatal"],
             "coverage_errors": coverage_errors,
             "pole_degeneracy_errors": pole_degeneracy_errors,
-            "passed": int(coverage_errors == 0 and pole_degeneracy_errors == 0 and
+            "passed": int(coverage_errors == 0 and
                           point_counts["contract_errors"] == 0 and
-                          point_counts["fatal"] == 0),
+                          point_counts["fatal"] == 0 and
+                          pole_degeneracy_errors == 0),
         }
         summaries.append(summary)
         total.update(point_counts)
         total["coverage_errors"] += coverage_errors
         total["pole_degeneracy_errors"] += pole_degeneracy_errors
+        if coverage_errors:
+            errors.append(
+                "%s point %d coverage failed: missing_directions=%d "
+                "extra_directions=%d missing_samples=%d "
+                "extra_rigidity_rows=%d" %
+                (case["case_id"], point["point_id"],
+                 len(missing_directions), len(extra_directions),
+                 missing_samples, extra_rigidities))
+        if pole_degeneracy_errors:
+            errors.append(
+                "%s point %d pole azimuthal degeneracy failed in %d group(s): %s" %
+                (case["case_id"], point["point_id"],
+                 pole_degeneracy_errors, "; ".join(pole_error_groups)))
 
     if len(summaries) != len(points):
         total["coverage_errors"] += len(points) - len(summaries)
     return summaries, sample_map, total, errors
 
 
-def fov_direction_terms(point, expected_directions, dir_res_deg, args):
-    """Yield (direction_key, sector, weight_sr) for every direction that
-    contributes to one observation point's local-aperture reduction.
+def case_is_structurally_auditable(totals, audit_messages, sample_map,
+                                   expected_sample_count):
+    """Gate every reduction on a complete, internally consistent cube.
 
-    This walks the regular (non-polar) sky grid exactly as before, PLUS the
-    two poles -- each represented ONCE by its canonical (longitude 0.0)
-    direction and its exact polar-cap solid angle (``pole_cap_weight_sr``).
-
-    NOTE (fix history): before this fix, the two poles were never evaluated
-    here at all; their solid angle was folded, as an approximation, into the
-    adjacent regular band by ``sky_cell_weight_sr`` stretching that band's
-    edge to 90 degrees.  For the C8 points at |latitude| = 51.6 degrees, one
-    pole actually falls inside the 45-degree zenith aperture (its angular
-    distance from zenith there is 90 - 51.6 = 38.4 degrees), so it is not a
-    negligible edge case: the previous approximation replaced a real traced
-    access state at that direction with a copy of the neighboring band's
-    state.  This function is the SINGLE shared definition of "which
-    directions, sectors, and weights make up a point's FOV/EAST/WEST/CENTER
-    reduction," used identically by ``reduce_fov``, ``model_comparison``, and
-    ``asymptotic_comparison`` so the three reductions can never disagree
-    about the geometry.  Callers still look up the actual sample via
-    ``sample_map``/case sample maps keyed by the yielded direction key; for
-    poles that key is always ``direction_key(0.0, +/-90.0)``, the canonical
-    sample published by ``audit_case`` once gate C8-G11 (pole azimuthal
-    degeneracy) has verified every AMPS longitude duplicate agrees.
+    This predicate intentionally excludes the unresolved-population science
+    gate, which is evaluated separately.  Its job is to ensure reducers never
+    receive partial data and consequently never manufacture blank fractions.
     """
-    for dkey in expected_directions:
-        sector, zenith_deg, east_score = local_aperture(
-            point, dkey[0], dkey[1], args.fov_half_angle,
-            args.east_west_deadband)
-        if sector == "OUTSIDE":
-            continue
-        yield dkey, sector, sky_cell_weight_sr(dir_res_deg, dir_res_deg, dkey[1])
-    for pole_lat in (-90.0, 90.0):
-        canonical = direction_key(0.0, pole_lat)
-        sector, zenith_deg, east_score = local_aperture(
-            point, canonical[0], canonical[1], args.fov_half_angle,
-            args.east_west_deadband)
-        if sector == "OUTSIDE":
-            continue
-        yield canonical, sector, pole_cap_weight_sr(dir_res_deg)
+    return (
+        not audit_messages and totals["coverage_errors"] == 0 and
+        totals["contract_errors"] == 0 and totals["fatal"] == 0 and
+        totals["pole_degeneracy_errors"] == 0 and
+        totals["samples"] == expected_sample_count and
+        len(sample_map) == expected_sample_count)
 
 
 def reduce_fov(case, points, sample_map, expected_directions, rigidities_gv,
@@ -878,12 +866,20 @@ def reduce_fov(case, points, sample_map, expected_directions, rigidities_gv,
     """Reduce each cube to full, EAST, WEST, and meridian FOV solid angles."""
     rows = []
     errors = []
+    direction_terms = fov_direction_terms(
+        expected_directions, args.dir_res, args.dir_res)
     for point in points:
         geometry = {}
-        for dkey, sector, weight_sr in fov_direction_terms(
-                point, expected_directions, args.dir_res, args):
+        for dkey, direction_weight in direction_terms:
+            sector, zenith_deg, east_score = local_aperture(
+                point, dkey[0], dkey[1], args.fov_half_angle,
+                args.east_west_deadband)
+            if sector == "OUTSIDE":
+                continue
             geometry[dkey] = {
-                "sector": sector, "weight_sr": weight_sr,
+                "sector": sector, "zenith_deg": zenith_deg,
+                "east_score": east_score,
+                "weight_sr": direction_weight,
             }
         lobe_geometry = Counter()
         for item in geometry.values():
@@ -929,42 +925,47 @@ def reduce_fov(case, points, sample_map, expected_directions, rigidities_gv,
 
 
 def model_comparison(cases, points, expected_directions, rigidities_gv, args):
-    """Compare T96/T05 access states on identical resolved FOV samples.
-
-    Uses ``fov_direction_terms`` (shared with ``reduce_fov``) so the set of
-    directions compared here -- regular cells plus the two canonical pole
-    directions -- always matches what the FOV/East-West reduction actually
-    integrated.  Before this fix the two functions could silently disagree,
-    since poles were not evaluated by either one.
-    """
+    """Compare T96/T05 access states on identical resolved FOV samples."""
     rows = []
     messages = []
     passed = True
+    direction_terms = fov_direction_terms(
+        expected_directions, args.dir_res, args.dir_res)
     for charge in (+1, -1):
         left = cases[("T96", charge)]["sample_map"]
         right = cases[("T05", charge)]["sample_map"]
         for point in points:
             for rigidity in rigidities_gv:
                 counts = Counter()
-                for dkey, _sector, _weight_sr in fov_direction_terms(
-                        point, expected_directions, args.dir_res, args):
+                for dkey, direction_weight in direction_terms:
+                    sector, _, _ = local_aperture(
+                        point, dkey[0], dkey[1], args.fov_half_angle,
+                        args.east_west_deadband)
+                    if sector == "OUTSIDE":
+                        continue
                     key = (point["point_id"], dkey[0], dkey[1],
                            rigidity_key(rigidity))
                     a = left.get(key)
                     b = right.get(key)
                     if a is None or b is None:
                         counts["missing"] += 1
+                        counts["missing_weight_sr"] += direction_weight
                     elif a["access_state"] == 2 and b["access_state"] == 2:
                         counts["both_unresolved"] += 1
+                        counts["both_unresolved_weight_sr"] += direction_weight
                     elif a["access_state"] == 2 or b["access_state"] == 2:
                         counts["one_unresolved"] += 1
+                        counts["one_unresolved_weight_sr"] += direction_weight
                     else:
                         counts["resolved"] += 1
-                        counts["mismatch"] += int(
-                            a["access_state"] != b["access_state"])
-                mismatch_fraction = (float(counts["mismatch"]) /
-                                     counts["resolved"]
-                                     if counts["resolved"] else 1.0)
+                        counts["resolved_weight_sr"] += direction_weight
+                        mismatch = int(a["access_state"] != b["access_state"])
+                        counts["mismatch"] += mismatch
+                        counts["mismatch_weight_sr"] += mismatch * direction_weight
+                mismatch_fraction = (
+                    counts["mismatch_weight_sr"] /
+                    counts["resolved_weight_sr"]
+                    if counts["resolved_weight_sr"] else 1.0)
                 row_passed = (counts["missing"] == 0 and
                               (rigidity < args.high_rigidity_min or
                                mismatch_fraction <= args.max_model_mismatch))
@@ -974,6 +975,8 @@ def model_comparison(cases, points, expected_directions, rigidities_gv, args):
                     "obs_lat_deg": point["obs_lat_deg"],
                     "rigidity_GV": rigidity, "resolved_pairs": counts["resolved"],
                     "state_mismatches": counts["mismatch"],
+                    "resolved_weight_sr": counts["resolved_weight_sr"],
+                    "mismatch_weight_sr": counts["mismatch_weight_sr"],
                     "state_mismatch_fraction": mismatch_fraction,
                     "one_sided_unresolved": counts["one_unresolved"],
                     "both_unresolved": counts["both_unresolved"],
@@ -989,9 +992,12 @@ def model_comparison(cases, points, expected_directions, rigidities_gv, args):
                 continue
             aggregate["resolved"] += row["resolved_pairs"]
             aggregate["mismatch"] += row["state_mismatches"]
+            aggregate["resolved_weight_sr"] += row["resolved_weight_sr"]
+            aggregate["mismatch_weight_sr"] += row["mismatch_weight_sr"]
             aggregate["missing"] += row["missing_samples"]
-        fraction = (float(aggregate["mismatch"]) / aggregate["resolved"]
-                    if aggregate["resolved"] else 1.0)
+        fraction = (aggregate["mismatch_weight_sr"] /
+                    aggregate["resolved_weight_sr"]
+                    if aggregate["resolved_weight_sr"] else 1.0)
         if fraction > args.max_model_mismatch or aggregate["missing"]:
             passed = False
             messages.append(
@@ -1077,22 +1083,22 @@ def east_west_comparison(fov_rows, args):
 
 def asymptotic_comparison(cases, points, expected_directions, rigidities_gv,
                           args):
-    """Compare optional T96/T05 asymptotic coordinates and compute RMS values.
-
-    Uses ``fov_direction_terms`` (shared with ``reduce_fov`` and
-    ``model_comparison``) so this comparison covers exactly the same
-    direction set -- regular cells plus the two canonical pole directions --
-    as the other two FOV-based reductions.
-    """
+    """Compare optional T96/T05 asymptotic coordinates and compute RMS values."""
     rows = []
     bins = defaultdict(list)
     available_samples = 0
+    direction_terms = fov_direction_terms(
+        expected_directions, args.dir_res, args.dir_res)
     for charge in (+1, -1):
         left = cases[("T96", charge)]["sample_map"]
         right = cases[("T05", charge)]["sample_map"]
         for point in points:
-            for dkey, _sector, _weight_sr in fov_direction_terms(
-                    point, expected_directions, args.dir_res, args):
+            for dkey, direction_weight in direction_terms:
+                sector, _, _ = local_aperture(
+                    point, dkey[0], dkey[1], args.fov_half_angle,
+                    args.east_west_deadband)
+                if sector == "OUTSIDE":
+                    continue
                 for rigidity in rigidities_gv:
                     key = (point["point_id"], dkey[0], dkey[1],
                            rigidity_key(rigidity))
@@ -1111,13 +1117,15 @@ def asymptotic_comparison(cases, points, expected_directions, rigidities_gv,
                     bin_name = ("gt_50_GV" if rigidity >= 50.0 else
                                 "20_to_30_GV" if 20.0 <= rigidity <= 30.0 else
                                 "other")
-                    bins[bin_name].append((lat_mrad, lon_mrad))
+                    bins[bin_name].append(
+                        (lat_mrad, lon_mrad, direction_weight))
                     rows.append({
                         "charge": charge, "point_id": point["point_id"],
                         "sky_lon_deg": dkey[0], "sky_lat_deg": dkey[1],
                         "rigidity_GV": rigidity, "rigidity_bin": bin_name,
                         "latitude_difference_mrad": lat_mrad,
                         "longitude_difference_mrad": lon_mrad,
+                        "direction_weight_sr": direction_weight,
                         "t96_schema": a["asymptotic"][2],
                         "t05_schema": b["asymptotic"][2],
                     })
@@ -1125,12 +1133,14 @@ def asymptotic_comparison(cases, points, expected_directions, rigidities_gv,
     summary = []
     for bin_name in ("20_to_30_GV", "gt_50_GV"):
         values = bins.get(bin_name, [])
-        lat_rms = (math.sqrt(sum(item[0] ** 2 for item in values) / len(values))
-                   if values else None)
-        lon_rms = (math.sqrt(sum(item[1] ** 2 for item in values) / len(values))
-                   if values else None)
+        total_weight = sum(item[2] for item in values)
+        lat_rms = (math.sqrt(sum(item[2] * item[0] ** 2 for item in values) /
+                             total_weight) if total_weight else None)
+        lon_rms = (math.sqrt(sum(item[2] * item[1] ** 2 for item in values) /
+                             total_weight) if total_weight else None)
         summary.append({
             "rigidity_bin": bin_name, "samples": len(values),
+            "solid_angle_weight_sr": total_weight,
             "latitude_rms_mrad": lat_rms,
             "longitude_rms_mrad": lon_rms,
         })
@@ -1195,9 +1205,6 @@ def validate_reference_files(script_dir):
         raise RuntimeError("Published classification benchmark drifted")
     with contract.open(newline="") as stream:
         gates = list(csv.DictReader(stream))
-    # 11 gates as of the FIX 2 revision: C8-G11 ("pole azimuthal degeneracy")
-    # was added as a strictly ADDITIONAL hard gate -- see the module
-    # docstring's "FIX 2" note.  No existing gate's policy or limit changed.
     if len(gates) != 11 or {row["gate_id"] for row in gates} != \
             {"C8-G%02d" % index for index in range(1, 12)}:
         raise RuntimeError("Acceptance contract must contain gates C8-G01..G11")
@@ -1209,69 +1216,90 @@ def validate_reference_files(script_dir):
     return rows, gates, expected_rows
 
 
+def synthetic_access_record(dkey, rigidity, state):
+    """Return one fully numeric 45-field DIRECT_ACCESS self-test record."""
+    code = {0: 1, 1: 0, 2: 3}[int(state)]
+    weight = 0.25
+    record = {
+        "lon_deg": dkey[0], "lat_deg": dkey[1],
+        "rigidity_gv": rigidity, "energy_mev": rigidity * 1000.0,
+        "access_state": int(state), "allowed": int(state == 1),
+        "unresolved": int(state == 2), "termination_code": code,
+        "trace_time_s": 1.0, "trace_distance_re": 2.0,
+        "trace_steps": 10, "retry_count": 0,
+        "primary_termination_code": code, "primary_trace_time_s": 1.0,
+        "trace_extension_count": 0, "initial_trace_limit_s": 300.0,
+        "final_trace_limit_s": 300.0, "mirror_points": 0,
+        "bounce_cycles": 0, "drift_revolutions": 0,
+        "drift_angle_deg": 0.0, "drift_mean_radius_change_re": 0.0,
+        "trap_mechanism": 0, "momentum_relative_spread": 0.0,
+        "direction_weight_sr": weight,
+        "weighted_access_sr": weight if state == 1 else 0.0,
+        "exit_state_valid": 0, "x_exit_m": 0.0, "y_exit_m": 0.0,
+        "z_exit_m": 0.0, "px_exit_si": 0.0, "py_exit_si": 0.0,
+        "pz_exit_si": 0.0, "vx_exit_unit": 0.0, "vy_exit_unit": 0.0,
+        "vz_exit_unit": 0.0, "cos_alpha_exit": 0.0,
+        "trace_time_at_exit_s": 0.0, "rigidity_at_exit_gv": rigidity,
+        "adaptive_refined_intervals": 0,
+        "adaptive_estimated_error_gv": 0.0,
+        "adaptive_max_ambiguous_width_gv": 0.0,
+        "adaptive_target_reached": 1, "adaptive_max_samples_reached": 0,
+        "response_weighted_unresolved_support": 0.0,
+    }
+    return record
+
+
 def write_synthetic_access(path, directions, rigidities, state_function,
-                           with_asymptotic=False):
-    """Create a tiny valid cube used only by ``--self-test``."""
-    variables = ["lon_deg", "lat_deg", "rigidity_GV", "energy_MeV",
-                 "access_state", "termination_code", "trace_time_s",
-                 "trace_distance_Re", "trace_steps", "retry_count"]
+                           columns=None, with_asymptotic=False,
+                           include_header=True):
+    """Create a valid named-schema cube used only by ``--self-test``."""
+    if columns is None:
+        columns = DIRECT_ACCESS_CORE_COLUMNS
+    variables = list(columns)
     if with_asymptotic:
         variables += ["asymptotic_lon_deg", "asymptotic_lat_deg"]
-    lines = ["VARIABLES=" + " ".join('"%s"' % name for name in variables),
-             "ZONE T=\"synthetic\""]
+    lines = []
+    if include_header:
+        lines.extend([
+            "VARIABLES=" + " ".join('"%s"' % name for name in variables),
+            "ZONE T=\"synthetic\"",
+            "AUXDATA CUTOFF_RECONSTRUCTION=\"self-test\"",
+        ])
     for dkey in sorted(directions):
         for rigidity in rigidities:
             state = int(state_function(dkey, rigidity))
-            code = {0: 1, 1: 0, 2: 3}[state]
-            values = [dkey[0], dkey[1], rigidity, rigidity * 1000.0,
-                      state, code, 1.0, 2.0, 10, 0]
+            record = synthetic_access_record(dkey, rigidity, state)
             if with_asymptotic:
-                values += [dkey[0] + 0.01,
-                           max(-90.0, min(90.0, dkey[1] + 0.01))]
+                record["asymptotic_lon_deg"] = dkey[0] + 0.01
+                record["asymptotic_lat_deg"] = max(
+                    -90.0, min(90.0, dkey[1] + 0.01))
+            values = [record[name] for name in variables]
             lines.append(" ".join(fmt_number(value) for value in values))
     path.write_text("\n".join(lines) + "\n")
 
 
 def self_test(script_dir):
-    """Exercise reference, geometry, rendering, parser, and failure guards."""
+    """Exercise schemas, full-grid auditing, physics signs, and hard gates."""
     validate_reference_files(script_dir)
-
-    # --- Regular (non-polar) grid: unchanged behavior/counts. -----------
-    if len(expected_direction_keys(30.0, 30.0)) != 60:
-        raise AssertionError("30-degree regular (non-polar) task count changed")
-    if len(expected_direction_keys(15.0, 15.0)) != 264:
-        raise AssertionError("15-degree regular (non-polar) task count changed")
-
-    # --- FIX 2 checks: pole grid, full contract, and 4*pi conservation. ---
-    if len(expected_pole_direction_keys(15.0, 15.0)) != 48:
-        raise AssertionError(
-            "15-degree pole duplicate count changed (expected 24 longitudes "
-            "x 2 poles = 48, matching AMPS's nLatMap = ... + 1 // include "
-            "poles behavior)")
-    if len(expected_full_direction_keys(15.0, 15.0)) != 312:
-        raise AssertionError(
-            "15-degree full (regular+polar) DIRECT_ACCESS task count "
-            "changed; this must track AMPS's true producer contract")
-
-    regular_weight = sum(sky_cell_weight_sr(15.0, 15.0, key[1])
-                         for key in expected_direction_keys(15.0, 15.0))
-    full_weight = regular_weight + 2.0 * pole_cap_weight_sr(15.0)
-    if not math.isclose(full_weight, 4.0 * math.pi, rel_tol=0.0, abs_tol=1.0e-12):
-        raise AssertionError(
-            "Regular-band weights plus the two exact polar-cap weights do "
-            "not close to 4*pi sr; the FOV/East-West solid-angle "
-            "denominator would be wrong")
-    # Independent re-derivation (standard spherical-cap formula
-    # 2*pi*(1-cos(half_angle))) guards against a sign/formula slip inside
-    # pole_cap_weight_sr itself rather than merely checking it against its
-    # own algebraic rearrangement.
-    half_angle_rad = math.radians(0.5 * 15.0)
-    cross_check_cap = 2.0 * math.pi * (1.0 - math.cos(half_angle_rad))
-    if not math.isclose(pole_cap_weight_sr(15.0), cross_check_cap,
-                        rel_tol=1.0e-12, abs_tol=1.0e-15):
-        raise AssertionError(
-            "pole_cap_weight_sr disagrees with the independent spherical-"
-            "cap cross-check formula")
+    count_contracts = ((30.0, 60, 24, 84), (15.0, 264, 48, 312),
+                       (10.0, 612, 72, 684))
+    for resolution, nregular, npolar, nfull in count_contracts:
+        if len(expected_direction_keys(resolution, resolution)) != nregular or \
+                len(expected_pole_direction_keys(resolution,
+                                                 resolution)) != npolar or \
+                len(expected_full_direction_keys(resolution,
+                                                 resolution)) != nfull:
+            raise AssertionError("%g-degree direction-grid contract changed" %
+                                 resolution)
+    weights = sum(weight for _, weight in fov_direction_terms(
+        expected_direction_keys(15.0, 15.0), 15.0, 15.0))
+    if not math.isclose(weights, 4.0 * math.pi, rel_tol=0.0, abs_tol=1.0e-12):
+        raise AssertionError("Directional cell weights do not close to 4*pi")
+    independent_cap = 2.0 * math.pi * (
+        1.0 - math.cos(math.radians(7.5)))
+    if not math.isclose(pole_cap_weight_sr(15.0), independent_cap,
+                        rel_tol=0.0, abs_tol=1.0e-15):
+        raise AssertionError("Polar-cap solid-angle formula changed")
 
     point = build_points([0.0], [0.0], 400.0)[0]
     # At lon=0/lat=0, a detector look toward +Y is local EAST.  Arrival is -Y.
@@ -1292,6 +1320,12 @@ def self_test(script_dir):
     args.scheduler = "DYNAMIC"
     args.dynamic_chunk = 0
     args.nt = 2
+    args.fov_half_angle = 100.0
+    args.east_west_deadband = 0.2
+    args.transition_min = 0.05
+    args.transition_max = 0.95
+    args.max_lobe_unresolved = 0.20
+    args.min_east_west_effect = 0.01
     with tempfile.TemporaryDirectory(prefix="C8_selftest_") as temp_name:
         temp = Path(temp_name)
         rendered = temp / "AMPS_PARAM_C8.in"
@@ -1301,193 +1335,201 @@ def self_test(script_dir):
         required_patterns = (
             r"^CUTOFF_SAMPLING\s+VERTICAL\s*$",
             r"^CUTOFF_SEARCH_ALGORITHM\s+DIRECT_ACCESS\s*$",
-            # FIX 1: C8 must request the physically correct antiparticle
-            # backtrace convention.  SAME (the pre-fix setting) numerically
-            # swaps which real charge sign each case reports; see the
-            # module docstring's "FIX 1" note and AMPS_PARAM_C8_gridless.in.
             r"^CUTOFF_BACKTRACE_CHARGE\s+REVERSED\s*$",
             r"^FIELD_MODEL\s+T05\s*$",
             r"^CHARGE\s+-1\s*$",
         )
         if any(not re.search(pattern, text, re.MULTILINE)
                for pattern in required_patterns) or \
-                re.search(r"__[A-Z0-9_]+__", text):
+                re.search(r"__[A-Z0-9_]+__", text) or \
+                re.search(r"^CUTOFF_BACKTRACE_CHARGE\s+SAME\s*$",
+                          text, re.MULTILINE):
             raise AssertionError("Rendered C8 input is incomplete")
-        if re.search(r"^CUTOFF_BACKTRACE_CHARGE\s+SAME\s*$", text, re.MULTILINE):
-            raise AssertionError(
-                "Rendered C8 input still requests the SAME backtrace-charge "
-                "convention; this is the exact defect FIX 1 corrects")
 
-        directions = expected_direction_keys(90.0, 90.0)
-        access_path = temp / "cube.dat"
-        write_synthetic_access(
-            access_path, directions, [1.0, 50.0],
-            lambda dkey, rigidity: 1 if rigidity >= 50.0 else 0,
-            with_asymptotic=True)
-        parsed = parse_directional_access(access_path)
-        if len(parsed["samples"]) != len(directions) * 2 or \
-                not all(item["asymptotic"] for item in parsed["samples"].values()):
-            raise AssertionError("Valid synthetic cube did not parse")
+        regular = expected_direction_keys(90.0, 90.0)
+        full = expected_full_direction_keys(90.0, 90.0)
+        rigidities = [1.0, 50.0]
+        state_function = lambda dkey, rigidity: int(rigidity >= 50.0)
 
-        # Duplicate rows and state/reason disagreement are distinct defects.
+        # A Step-4 file, the corrected 45-field Step-5 file, and the historical
+        # shifted 45-field file must recover identical core samples.  This is
+        # the regression for the real C8 failure: positional indexing either
+        # discarded these rows or shifted state fields into unrelated columns.
+        schema_paths = []
+        schema_columns = (
+            DIRECT_ACCESS_CORE_COLUMNS,
+            DIRECT_ACCESS_CORE_COLUMNS + DIRECT_ACCESS_STEP5_COLUMNS,
+            DIRECT_ACCESS_HISTORICAL_STEP5_COLUMNS,
+        )
+        for index, columns in enumerate(schema_columns):
+            path = temp / ("schema_%d.dat" % index)
+            write_synthetic_access(path, full, rigidities, state_function,
+                                   columns=columns)
+            schema_paths.append(path)
+        parsed_schemas = [parse_directional_access(path)
+                          for path in schema_paths]
+        if not all(item["samples"] == parsed_schemas[0]["samples"]
+                   for item in parsed_schemas[1:]):
+            raise AssertionError("24/45-column named schemas changed core samples")
+        expected_layouts = ("legacy_prefix_append_only",
+                            "legacy_prefix_append_only",
+                            "historical_step5_shifted")
+        if tuple(item["schema_layout"] for item in parsed_schemas) != \
+                expected_layouts:
+            raise AssertionError("DIRECT_ACCESS schema provenance changed")
+
+        # The three schemas must also produce identical physical reductions,
+        # not merely the same row count.
+        reduced_rows = []
+        for parsed in parsed_schemas:
+            sample_map = {
+                (point["point_id"], dkey[0], dkey[1], rkey): sample
+                for (dkey, rkey), sample in parsed["samples"].items()
+            }
+            rows, errors = reduce_fov(
+                {"case_id": "schema", "model": "T96", "charge": 1},
+                [point], sample_map, regular, rigidities, args)
+            if errors:
+                raise AssertionError("Valid schema reduction failed: %s" % errors)
+            reduced_rows.append(rows)
+        if reduced_rows[1:] != [reduced_rows[0], reduced_rows[0]]:
+            raise AssertionError("24/45-column schemas reduced differently")
+
+        def assert_parse_failure(path, expected_fragment):
+            try:
+                parse_directional_access(path)
+            except RuntimeError as exc:
+                if expected_fragment.lower() not in str(exc).lower():
+                    raise AssertionError(
+                        "%s failed for the wrong reason: %s" % (path, exc))
+                return
+            raise AssertionError("Malformed schema was accepted: %s" % path)
+
+        access_path = schema_paths[0]
+        # Duplicate data rows and state/reason disagreement are distinct defects.
         duplicate_path = temp / "duplicate.dat"
         duplicate_path.write_text(access_path.read_text() +
                                   access_path.read_text().splitlines()[-1] + "\n")
-        try:
-            parse_directional_access(duplicate_path)
-            raise AssertionError("Duplicate sample was accepted")
-        except RuntimeError as exc:
-            if "Duplicate" not in str(exc):
-                raise
-        broken_text = access_path.read_text().replace(" 1 0 1 2 10 0 ",
-                                                      " 1 1 1 2 10 0 ", 1)
+        assert_parse_failure(duplicate_path, "duplicate direction")
+
+        broken_lines = access_path.read_text().splitlines()
+        first_values = broken_lines[3].split()
+        first_values[DIRECT_ACCESS_CORE_COLUMNS.index("termination_code")] = "0"
+        broken_lines[3] = " ".join(first_values)
         broken_path = temp / "broken.dat"
-        broken_path.write_text(broken_text)
+        broken_path.write_text("\n".join(broken_lines) + "\n")
         broken = parse_directional_access(broken_path)
         if not any(item["contract_error"] for item in broken["samples"].values()):
             raise AssertionError("State/reason mismatch was not detected")
 
-        # ------------------------------------------------------------------
-        # FIX 2, part (a)+(b): full-grid completeness and gate C8-G11 (pole
-        # azimuthal degeneracy), exercised end-to-end through audit_case.
-        # A coarse 90-degree grid keeps this fast: 4 regular directions (all
-        # at latitude 0) plus 4 longitude-tagged duplicates at each pole.
-        # ------------------------------------------------------------------
-        pole_res = 90.0
-        pole_regular = expected_direction_keys(pole_res, pole_res)
-        pole_poles = expected_pole_direction_keys(pole_res, pole_res)
-        pole_full = pole_regular | pole_poles
-        if len(pole_regular) != 4 or len(pole_poles) != 8 or len(pole_full) != 12:
-            raise AssertionError("90-degree pole self-test grid sizes changed")
+        # Schema failures must be explicit: missing and duplicate names, row
+        # widths both below and above the header, and blank numeric fields.
+        missing_path = temp / "missing_core.dat"
+        missing_columns = tuple(name for name in DIRECT_ACCESS_CORE_COLUMNS
+                                if name != "energy_mev")
+        write_synthetic_access(missing_path, {direction_key(0.0, 0.0)}, [1.0],
+                               state_function, columns=missing_columns)
+        assert_parse_failure(missing_path, "lacks required")
 
-        clean_dir = temp / "pole_clean"
-        clean_dir.mkdir()
-        clean_access = clean_dir / "cutoff_gridless_dir_access_point_0000.dat"
-        write_synthetic_access(clean_access, pole_full, [10.0],
-                               lambda dkey, rigidity: 1)  # everything ALLOWED
-        clean_case = {"case_id": "selftest_pole_clean", "model": "T05",
-                     "charge": -1, "workdir": clean_dir}
-        _, clean_sample_map, clean_totals, clean_errors = audit_case(
-            clean_case, [point], pole_regular, pole_poles, [10.0])
-        if clean_totals["coverage_errors"] or clean_totals["pole_degeneracy_errors"] \
-                or clean_errors:
-            raise AssertionError(
-                "Self-consistent full (regular+polar) cube unexpectedly "
-                "failed the coverage/pole-degeneracy audit: %r" % clean_errors)
-        rkey10 = rigidity_key(10.0)
-        if (0, 0.0, -90.0, rkey10) not in clean_sample_map or \
-                (0, 0.0, 90.0, rkey10) not in clean_sample_map:
-            raise AssertionError(
-                "audit_case did not publish canonical (lon=0) pole samples "
-                "for downstream FOV/model/asymptotic reductions")
+        duplicate_header_path = temp / "duplicate_header.dat"
+        write_synthetic_access(
+            duplicate_header_path, {direction_key(0.0, 0.0)}, [1.0],
+            state_function, columns=DIRECT_ACCESS_CORE_COLUMNS + ("lon_deg",))
+        assert_parse_failure(duplicate_header_path, "duplicate variables")
 
-        # Corrupt exactly one south-pole longitude duplicate's access state
-        # so the duplicates at that pole/rigidity no longer agree.
-        lines = clean_access.read_text().splitlines()
-        target = next((i for i, line in enumerate(lines)
-                       if line.split()[:2] == [fmt_number(0.0), fmt_number(-90.0)]),
-                      None)
-        if target is None:
-            raise AssertionError(
-                "Self-test could not locate a south-pole row to corrupt")
-        parts = lines[target].split()
-        parts[4], parts[5] = "0", "1"  # ALLOWED(1)/code0 -> FORBIDDEN(0)/code1
-        lines[target] = " ".join(parts)
-        broken_pole_dir = temp / "pole_broken"
-        broken_pole_dir.mkdir()
-        broken_pole_access = (broken_pole_dir /
-                              "cutoff_gridless_dir_access_point_0000.dat")
-        broken_pole_access.write_text("\n".join(lines) + "\n")
-        broken_pole_case = {"case_id": "selftest_pole_broken", "model": "T05",
-                           "charge": -1, "workdir": broken_pole_dir}
-        _, _, broken_pole_totals, broken_pole_errors = audit_case(
-            broken_pole_case, [point], pole_regular, pole_poles, [10.0])
-        if broken_pole_totals["pole_degeneracy_errors"] != 1:
-            raise AssertionError(
-                "Gate C8-G11 did not detect a single corrupted "
-                "pole-duplicate row (found %d)" %
-                broken_pole_totals["pole_degeneracy_errors"])
-        if not any("azimuthal degeneracy" in item for item in broken_pole_errors):
-            raise AssertionError(
-                "Pole-degeneracy violation (gate C8-G11) produced no "
-                "explanatory message")
+        current_lines = schema_paths[1].read_text().splitlines()
+        short_path = temp / "short_row.dat"
+        short_lines = list(current_lines)
+        short_lines[3] = " ".join(short_lines[3].split()[:-1])
+        short_path.write_text("\n".join(short_lines) + "\n")
+        assert_parse_failure(short_path, "row width")
+        long_path = temp / "long_row.dat"
+        long_lines = list(current_lines)
+        long_lines[3] += " 0"
+        long_path.write_text("\n".join(long_lines) + "\n")
+        assert_parse_failure(long_path, "row width")
+        blank_path = temp / "blank_value.dat"
+        blank_lines = access_path.read_text().splitlines()
+        blank_values = blank_lines[3].split()
+        blank_values[DIRECT_ACCESS_CORE_COLUMNS.index("energy_mev")] = '""'
+        blank_lines[3] = " ".join(blank_values)
+        blank_path.write_text("\n".join(blank_lines) + "\n")
+        assert_parse_failure(blank_path, "blank variables value")
 
-        # A cube that omits the poles entirely (the pre-fix producer
-        # assumption) must still be rejected: the completeness gate became
-        # more ACCURATE, not more permissive.
-        truncated_dir = temp / "pole_truncated"
-        truncated_dir.mkdir()
-        truncated_access = (truncated_dir /
-                            "cutoff_gridless_dir_access_point_0000.dat")
-        write_synthetic_access(truncated_access, pole_regular, [10.0],
-                               lambda dkey, rigidity: 1)
-        truncated_case = {"case_id": "selftest_pole_truncated", "model": "T05",
-                         "charge": -1, "workdir": truncated_dir}
-        _, _, truncated_totals, truncated_errors = audit_case(
-            truncated_case, [point], pole_regular, pole_poles, [10.0])
-        if truncated_totals["coverage_errors"] == 0:
-            raise AssertionError(
-                "A cube missing the pole rows AMPS actually writes was "
-                "incorrectly accepted as complete -- gate C8-G01 was "
-                "weakened, not fixed")
-        if not any("coverage mismatch" in item for item in truncated_errors):
-            raise AssertionError(
-                "Missing-pole coverage failure (gate C8-G01) produced no "
-                "explanatory message -- the silent-failure bug is back")
+        # The only positional fallback is an exact 24-value headerless row.
+        headerless_path = temp / "headerless_legacy.dat"
+        write_synthetic_access(
+            headerless_path, {direction_key(0.0, 0.0)}, [1.0],
+            state_function, columns=DIRECT_ACCESS_CORE_COLUMNS,
+            include_header=False)
+        if len(parse_directional_access(headerless_path)["samples"]) != 1:
+            raise AssertionError("Exact headerless legacy row did not parse")
 
-    # ------------------------------------------------------------------
-    # FIX 1 check: gate C8-G07 (East-West charge-odd response) must accept
-    # a physically correct sign pattern and reject the exact sign-inverted
-    # pattern that CUTOFF_BACKTRACE_CHARGE SAME used to produce.  This does
-    # not touch AMPS at all -- it proves the acceptance ARITHMETIC was
-    # always correct and unchanged; only the upstream input convention
-    # (fixed in AMPS_PARAM_C8_gridless.in) needed to change.
-    # ------------------------------------------------------------------
-    class EwArgs(object):
-        pass
-    ew_args = EwArgs()
-    ew_args.transition_min = 0.05
-    ew_args.transition_max = 0.95
-    ew_args.max_lobe_unresolved = 0.20
-    ew_args.min_east_west_effect = 0.01
+        # C8-G01/G11: a complete regular+polar cube passes; missing polar rows
+        # and one inconsistent polar duplicate each fail their own hard gate.
+        def audit_synthetic(dirname, directions, state_fn):
+            workdir = temp / dirname
+            workdir.mkdir()
+            write_synthetic_access(
+                workdir / "cutoff_gridless_dir_access_point_0000.dat",
+                directions, rigidities, state_fn,
+                columns=DIRECT_ACCESS_CORE_COLUMNS +
+                DIRECT_ACCESS_STEP5_COLUMNS)
+            case = {"case_id": dirname, "model": "T96", "charge": 1,
+                    "workdir": workdir}
+            return audit_case(case, [point], regular, full, rigidities)
 
-    def make_ew_row(model, charge, rigidity, west_allowed, east_allowed):
-        return {
-            "field_model": model, "charge": charge, "rigidity_GV": rigidity,
-            "west_allowed_fraction": west_allowed,
-            "east_allowed_fraction": east_allowed,
-            "fov_allowed_fraction": 0.5 * (west_allowed + east_allowed),
-            "east_unresolved_fraction": 0.0, "west_unresolved_fraction": 0.0,
-        }
+        summaries, sample_map, totals, errors = audit_synthetic(
+            "complete", full, state_function)
+        if errors or totals["coverage_errors"] or \
+                totals["pole_degeneracy_errors"] or not summaries[0]["passed"]:
+            raise AssertionError("Complete polar cube failed audit: %s" % errors)
+        if not case_is_structurally_auditable(
+                totals, errors, sample_map, len(full) * len(rigidities)):
+            raise AssertionError("Complete cube was blocked from reductions")
+        _, _, missing_totals, missing_errors = audit_synthetic(
+            "missing_poles", regular, state_function)
+        if not missing_totals["coverage_errors"] or not missing_errors:
+            raise AssertionError("Missing polar rows passed C8-G01")
+        if case_is_structurally_auditable(
+                missing_totals, missing_errors, {},
+                len(full) * len(rigidities)):
+            raise AssertionError("Partial cube could reach a blank-fraction reduction")
 
-    # Textbook East-West effect: positive charges see MORE access from the
-    # west (T_WEST > T_EAST); negative charges see the opposite.
-    correct_rows = [make_ew_row(model, charge, 10.0, west, east)
-                    for model in ("T96", "T05")
-                    for charge, west, east in ((+1, 0.60, 0.40),
-                                               (-1, 0.40, 0.60))]
-    _, correct_passed, correct_messages = east_west_comparison(correct_rows, ew_args)
-    if not correct_passed or correct_messages:
-        raise AssertionError(
-            "Gate C8-G07 rejected a physically correct East-West "
-            "asymmetry: %r" % correct_messages)
+        def corrupt_one_pole(dkey, rigidity):
+            base = state_function(dkey, rigidity)
+            if dkey == direction_key(90.0, -90.0) and rigidity == 1.0:
+                return 1 - base
+            return base
+        corrupt_summaries, _, corrupt_totals, corrupt_errors = audit_synthetic(
+            "corrupt_pole", full, corrupt_one_pole)
+        if corrupt_totals["pole_degeneracy_errors"] != 1 or \
+                corrupt_summaries[0]["pole_degeneracy_errors"] != 1 or \
+                not any("pole azimuthal degeneracy" in item
+                        for item in corrupt_errors):
+            raise AssertionError("Corrupt polar duplicate did not fail C8-G11")
 
-    # The exact defect CUTOFF_BACKTRACE_CHARGE SAME used to produce: both
-    # charges' D(q) = T_WEST - T_EAST signs inverted from the textbook
-    # pattern above.
-    reversed_rows = [make_ew_row(model, charge, 10.0, west, east)
-                     for model in ("T96", "T05")
-                     for charge, west, east in ((+1, 0.40, 0.60),
-                                                (-1, 0.60, 0.40))]
-    _, reversed_passed, reversed_messages = east_west_comparison(
-        reversed_rows, ew_args)
-    if reversed_passed or not reversed_messages:
-        raise AssertionError(
-            "Gate C8-G07 failed to reject a sign-inverted charge-odd "
-            "East-West response (the SAME-vs-REVERSED defect fixed in "
-            "AMPS_PARAM_C8_gridless.in); the acceptance criterion may have "
-            "been relaxed")
-
+        # C8-G07 must accept the physical charge-odd sign and reject its exact
+        # mirror.  No threshold is changed by the REVERSED-charge fix.
+        def synthetic_ew_rows(mirrored=False):
+            rows = []
+            for model in ("T96", "T05"):
+                for charge in (+1, -1):
+                    sign = charge * (-1 if mirrored else 1)
+                    rows.append({
+                        "field_model": model, "charge": charge,
+                        "rigidity_GV": 10.0,
+                        "east_allowed_fraction": 0.5 - 0.1 * sign,
+                        "west_allowed_fraction": 0.5 + 0.1 * sign,
+                        "fov_allowed_fraction": 0.5,
+                        "east_unresolved_fraction": 0.0,
+                        "west_unresolved_fraction": 0.0,
+                    })
+            return rows
+        if not east_west_comparison(synthetic_ew_rows(False), args)[1]:
+            raise AssertionError("Physical East-West sign failed C8-G07")
+        if east_west_comparison(synthetic_ew_rows(True), args)[1]:
+            raise AssertionError("Mirrored East-West sign passed C8-G07")
     print("C8 self-test: PASS")
 
 
@@ -1604,14 +1646,11 @@ def main(argv=None):
     points = build_points(parse_float_list(args.lons, "--lons"),
                           parse_float_list(args.lats, "--lats"), args.alt_km)
     validate_arguments(args, rigidities, points)
-    # ``expected_directions`` remains the regular (non-polar) grid used for
-    # solid-angle-weighted reductions.  ``pole_directions`` is the set of
-    # per-longitude pole duplicates AMPS actually writes, and their union
-    # (``full_directions``) is the true output contract audited for gate
-    # C8-G01.  See the module docstring's "FIX 2" note.
     expected_directions = expected_direction_keys(args.dir_res, args.dir_res)
-    pole_directions = expected_pole_direction_keys(args.dir_res, args.dir_res)
-    full_directions = expected_directions | pole_directions
+    expected_pole_directions = expected_pole_direction_keys(
+        args.dir_res, args.dir_res)
+    expected_full_directions = expected_full_direction_keys(
+        args.dir_res, args.dir_res)
 
     launch_dir = Path.cwd().resolve()
     base_workdir = (launch_dir / args.workdir).resolve()
@@ -1684,23 +1723,45 @@ def main(argv=None):
     for key, case in cases.items():
         if case.get("return_code", 0) != 0:
             case["sample_map"] = {}
+            case["auditable"] = False
+            case["reduction_ok"] = False
             continue
         summaries, sample_map, totals, audit_messages = audit_case(
-            case, points, expected_directions, pole_directions, rigidities)
-        case["sample_map"] = sample_map
+            case, points, expected_directions, expected_full_directions,
+            rigidities)
         case["audit_totals"] = dict(totals)
+        case["schema_layouts"] = sorted({row["schema_layout"]
+                                         for row in summaries})
         coverage_rows.extend(summaries)
         messages.extend(audit_messages)
-        # NOTE (fix history): every one of these hard-gate counters now has
-        # an accompanying entry in ``audit_messages`` (appended inside
-        # ``audit_case``), so a nonzero counter can no longer flip
-        # ``overall_passed`` to False without a corresponding, specific
-        # message reaching C8_summary.txt.  Previously ``coverage_errors``
-        # alone could fail the run silently.
-        if audit_messages or totals["coverage_errors"] or \
-                totals["pole_degeneracy_errors"] or \
-                totals["contract_errors"] or totals["fatal"]:
+        expected_case_samples = (len(points) * len(expected_full_directions) *
+                                 len(rigidities))
+        structurally_auditable = case_is_structurally_auditable(
+            totals, audit_messages, sample_map, expected_case_samples)
+        case["auditable"] = structurally_auditable
+        # Never pass a partial cube into a reduction.  In the original failure,
+        # a parse/schema problem left empty lobe totals; float("") then aborted
+        # before C8 could write any comparison artifact.  Structural gates now
+        # fail first and the reporting phase still writes explicit NO_ROWS CSVs.
+        case["sample_map"] = sample_map if structurally_auditable else {}
+        if not structurally_auditable:
             overall_passed = False
+            if totals["contract_errors"]:
+                messages.append("%s has %d state/termination contract errors" %
+                                (case["case_id"], totals["contract_errors"]))
+            if totals["fatal"]:
+                messages.append("%s has %d fatal numerical terminations" %
+                                (case["case_id"], totals["fatal"]))
+            if totals["pole_degeneracy_errors"] and not any(
+                    "pole azimuthal degeneracy" in item
+                    for item in audit_messages):
+                messages.append("%s has %d polar degeneracy errors" %
+                                (case["case_id"],
+                                 totals["pole_degeneracy_errors"]))
+            if totals["samples"] != expected_case_samples:
+                messages.append("%s has %d/%d auditable samples" %
+                                (case["case_id"], totals["samples"],
+                                 expected_case_samples))
         unresolved_fraction = (float(totals["state_2"]) / totals["samples"]
                                if totals["samples"] else 1.0)
         case["unresolved_fraction"] = unresolved_fraction
@@ -1709,10 +1770,14 @@ def main(argv=None):
             messages.append("%s unresolved fraction %.3f exceeds %.3f" %
                             (case["case_id"], unresolved_fraction,
                              args.max_unresolved_fraction))
+        if not structurally_auditable:
+            case["reduction_ok"] = False
+            continue
         reduced, reduction_errors = reduce_fov(
             case, points, sample_map, expected_directions, rigidities, args)
         fov_rows.extend(reduced)
         messages.extend(reduction_errors)
+        case["reduction_ok"] = not reduction_errors
         if reduction_errors:
             overall_passed = False
 
@@ -1732,7 +1797,8 @@ def main(argv=None):
                 (row["case_id"], row["point_id"], row["rigidity_GV"],
                  allowed, unresolved))
 
-    if all(cases[key].get("sample_map") for key in cases):
+    if all(cases[key].get("auditable", False) and
+           cases[key].get("reduction_ok", False) for key in cases):
         model_rows, model_passed, model_messages = model_comparison(
             cases, points, expected_directions, rigidities, args)
         ew_rows, ew_passed, ew_messages = east_west_comparison(fov_rows, args)
@@ -1757,7 +1823,8 @@ def main(argv=None):
               fieldnames=("charge", "point_id", "sky_lon_deg", "sky_lat_deg",
                           "rigidity_GV", "rigidity_bin",
                           "latitude_difference_mrad",
-                          "longitude_difference_mrad", "t96_schema", "t05_schema"))
+                          "longitude_difference_mrad", "direction_weight_sr",
+                          "t96_schema", "t05_schema"))
     shutil.copy2(str(script_dir / "reference_C8_boschini2013.csv"),
                  str(base_workdir / "reference_C8_boschini2013.csv"))
     shutil.copy2(str(script_dir / "reference_C8_acceptance_contract.csv"),
@@ -1772,15 +1839,11 @@ def main(argv=None):
         "profile": args.profile, "mover": args.mover, "np": args.np,
         "nt": args.nt, "epoch": DEFAULT_EPOCH, "points": points,
         "rigidities_GV": rigidities, "direction_resolution_deg": args.dir_res,
-        # requested_direction_tasks_per_point: regular (non-polar) grid size,
-        # unchanged in meaning from schema version 1 -- this is the grid used
-        # for solid-angle-weighted FOV/East-West reductions.
         "requested_direction_tasks_per_point": len(expected_directions),
-        # New in schema version 2: the pole duplicates AMPS actually writes,
-        # and the true total DIRECT_ACCESS output contract (their union).
-        # See the module docstring's "FIX 2" note and gate C8-G01/C8-G11.
-        "requested_pole_direction_tasks_per_point": len(pole_directions),
-        "requested_full_direction_tasks_per_point": len(full_directions),
+        "requested_pole_direction_tasks_per_point":
+            len(expected_pole_directions),
+        "requested_full_direction_tasks_per_point":
+            len(expected_full_directions),
         "fov_half_angle_deg": args.fov_half_angle,
         "asymptotic_policy": args.asymptotic_policy,
         "asymptotic_columns_available": asym_available,
@@ -1788,6 +1851,8 @@ def main(argv=None):
         "cases": [{
             "case_id": case["case_id"], "model": case["model"],
             "charge": case["charge"], "return_code": case.get("return_code", 0),
+            "auditable": case.get("auditable", False),
+            "schema_layouts": case.get("schema_layouts", []),
             "unresolved_fraction": case.get("unresolved_fraction"),
         } for case in cases.values()],
         "messages": messages, "runs": run_records,
@@ -1797,10 +1862,12 @@ def main(argv=None):
     summary_lines = [
         "C8 — %s" % TEST_NAME,
         "result: %s" % ("PASS" if overall_passed else "FAIL"),
-        "profile: %s; cases: 4; points: %d; directions/point: %d regular + "
-        "%d polar = %d total; rigidities: %d" %
-        (args.profile, len(points), len(expected_directions),
-         len(pole_directions), len(full_directions), len(rigidities)),
+        "profile: %s; cases: 4; points: %d; directions/point: %d "
+        "(%d regular + %d polar); "
+        "rigidities: %d" %
+        (args.profile, len(points), len(expected_full_directions),
+         len(expected_directions), len(expected_pole_directions),
+         len(rigidities)),
         "MPI ranks / threads: %d / %d" % (args.np, args.nt),
         "asymptotic direction columns: %s (policy=%s)" %
         ("AVAILABLE" if asym_available else "NOT_AVAILABLE",

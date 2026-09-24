@@ -47,6 +47,44 @@ Run the strict reference/invariant suite with:
 
 See `test/UTrajectoryCore/README.md` for the U-F10 through U-F13 gates.
 
+## `AdaptiveDirectAccess.h` and `DirectionalAccess.h` — Roadmap Step 5
+
+`AdaptiveDirectAccess.h` constructs one deterministic geometric-rigidity candidate
+tree per direction. Every requested seed is evaluated. Configured guard levels probe
+midpoints even when the endpoints agree, which can expose a hidden non-monotone access
+or forbidden pocket. Visible state-change and resolved/unresolved brackets are then
+refined until
+
+```text
+Delta R <= max(absoluteTolerance_GV, relativeTolerance * R)
+```
+
+or until a hard maximum depth/sample count is reached. The returned report distinguishes
+successful convergence from depth or work-budget exhaustion and carries the maximum
+ambiguous width, summed bracket-width support, and response-weighted unresolved
+support. It never relabels an unresolved trajectory to make the target pass. The legacy
+depth-only API remains as a zero-tolerance compatibility wrapper.
+
+`DirectionalAccess.h` defines one backend-neutral saved `A(E,Omega)` sample and the
+field-independent reconstruction of lower, effective, and upper cutoff plus penumbra.
+An allowed sample is valid only when it contains a finite, internally consistent Step-4
+exit position, momentum, velocity direction, pitch cosine, event time, and rigidity.
+Physical-forbidden and unresolved samples must not carry a valid exit state. The exact
+regular lon/lat cell-area helper closes to `4*pi`, including polar half cells.
+
+The production gridless and Mode3D/SWMF writers expose identical columns and repeat the
+per-direction convergence report on every realized sparse row. Consequently a consumer
+can reconstruct the cutoff diagnostics and angular integral from the saved file alone.
+
+Run the strict analytic, invariant, negative, deterministic, and C19-reader tests with:
+
+```bash
+./test/UDirectionalAccess/run_test.sh
+```
+
+See `test/UDirectionalAccess/README.md` for the U-F14 through U-F17 references and
+acceptance conditions.
+
 ## `FieldProvider.h` — Roadmap Step 3
 
 `FieldProvider.h` is a dependency-free C++11 contract that separates a trajectory

@@ -40,7 +40,37 @@ The released solver remains frozen-B only. Compact snapshots may contain electri
 field data, but setting `electricFieldEnabled`, `fieldTimeDependent`, or
 `PhysicalBackwardTime` in a request fails before integration because no physical-
 backward electromagnetic mover has been released. Adaptive access refinement is a
-separate Step 5 concern.
+separate opt-in product and does not change scalar cutoff behavior.
+
+## Step 5 directional-access product
+
+With `CUTOFF_SEARCH_ALGORITHM DIRECT_ACCESS`, Mode3D writes
+`cutoff_3d_dir_access_loc_######.dat`. The product now contains the complete
+three-state `A(E,Omega)` contract rather than only a binary access flag:
+
+- exact regular-cell `direction_weight_sr` and `weighted_access_sr`;
+- stable termination, retry, extension, and trap diagnostics;
+- the full outer-boundary position, SI momentum, unit velocity, pitch cosine, event
+  time, and exit rigidity for every allowed characteristic; and
+- adaptive refinement/error/support metrics plus explicit target/sample-limit status.
+
+The angular grid continues to use `DIRMAP_LON_RES`/`DIRMAP_LAT_RES` and is independent
+of the rigidity refinement. Adaptive mode evaluates every `CUTOFF_RIGIDITY_LIST_GV`
+seed, performs the configured guard probes, and refines all visible state changes
+without assuming monotonic access. Its absolute/relative tolerances and sample cap are
+read from the common Step-5 controls documented in `../README.md`.
+
+Standalone Mode3D and coupled SWMF calls execute this same code after publishing their
+respective immutable Step-3 snapshot. The coupled path therefore changes only the
+field snapshot; it does not have a separate access schema or convergence algorithm.
+Dense mode remains available for convergence/reference runs. Existing scalar cutoff
+searches, trace policies, C/F thresholds, and reference tables are unchanged.
+
+Run the dependency-free shared Step-5 tests with:
+
+```bash
+./test/UDirectionalAccess/run_test.sh
+```
 
 ## Step 3 immutable compact-field generation
 
@@ -95,6 +125,7 @@ Run the dependency-free shared numerical suite from `srcEarth`:
 ./test/UFluxNumerics/run_test.sh
 ./test/UFieldProvider/run_test.sh
 ./test/UTrajectoryCore/run_test.sh
+./test/UDirectionalAccess/run_test.sh
 ```
 
 A full Mode3D or SWMF build still requires the parent AMPS build tree and its configured

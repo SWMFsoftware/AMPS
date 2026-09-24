@@ -236,6 +236,7 @@
 #include "../util/amps_param_parser.h"
 #include "../util/CutoffBandSearch.h"
 #include "../util/AdaptiveDirectAccess.h"
+#include "../util/DirectionalAccess.h"
 
 // Standard library
 #include <cstdio>
@@ -2059,6 +2060,7 @@ struct CutoffSampleDiagnostic3D_ {
     double driftMeanRadiusChange_m{0.0};
     int trapMechanism{0};
     double momentumRelativeSpread{0.0};
+    Earth::GridlessMode::TrajectoryExitState exitState{};
 };
 
 static EarthUtil::DirectAccessSampleDiagnostic MakeDirectAccessDiagnostic3D_(
@@ -2082,6 +2084,17 @@ static EarthUtil::DirectAccessSampleDiagnostic MakeDirectAccessDiagnostic3D_(
     out.driftMeanRadiusChange_Re=sample.driftMeanRadiusChange_m/_EARTH__RADIUS_;
     out.trapMechanism=sample.trapMechanism;
     out.momentumRelativeSpread=sample.momentumRelativeSpread;
+    out.exitStateValid=sample.exitState.valid ? 1 : 0;
+    if (sample.exitState.valid) {
+        for (int d=0;d<3;++d) {
+            out.xExit_m[d]=sample.exitState.x_exit_m[d];
+            out.pExit_SI[d]=sample.exitState.p_exit_SI[d];
+            out.vExitUnit[d]=sample.exitState.v_exit_unit[d];
+        }
+        out.cosAlphaExit=sample.exitState.cosAlpha;
+        out.traceTimeAtExit_s=sample.exitState.traceTimeAtExit_s;
+        out.rigidityAtExit_GV=sample.exitState.rigidityAtExit_GV;
+    }
     return out;
 }
 
@@ -2093,9 +2106,15 @@ static CutoffSampleDiagnostic3D_ ClassifyCutoffSample3DDetailed_(
                               double R_GV,
                               double q_C,
                               double m0_kg,
-                              const DomainBox3D& box) {
+                              const DomainBox3D& box,
+                              bool captureExitState) {
+    // Exit phase space is required only by a saved directional A(R,Omega) row.
+    // Keeping this choice at the call site prevents scalar cutoff, PENUMBRA_SCAN, and
+    // RIGIDITY_LIST work from paying for (or accidentally depending on) Step-5 state
+    // capture.  Direct-access producers below pass true immediately before persisting
+    // the matching diagnostic record.
     const auto tr=TraceTrajectory3DWithSingleRetry(
-        prm,field,x0_m,v0,R_GV,q_C,m0_kg,box,-1.0,false,
+        prm,field,x0_m,v0,R_GV,q_C,m0_kg,box,-1.0,captureExitState,
         GetDefaultMoverType(),CutoffTraceIntegrationPolicy3D(prm));
 
     CutoffSampleDiagnostic3D_ out;
@@ -2116,6 +2135,7 @@ static CutoffSampleDiagnostic3D_ ClassifyCutoffSample3DDetailed_(
     out.driftMeanRadiusChange_m=tr.driftMeanRadiusChange_m;
     out.trapMechanism=tr.trapMechanism;
     out.momentumRelativeSpread=tr.momentumRelativeSpread;
+    out.exitState=tr.exitState;
 
     if (tr.allowed()) {
         out.state=EarthUtil::CutoffSampleState::Allowed;
@@ -2158,7 +2178,7 @@ static EarthUtil::CutoffSampleState ClassifyCutoffSample3D_(
     // directional diagnostics use the detailed helper above so the terminal reason
     // and trace budget are not discarded.
     return ClassifyCutoffSample3DDetailed_(
-        prm,field,x0_m,v0,R_GV,q_C,m0_kg,box).state;
+        prm,field,x0_m,v0,R_GV,q_C,m0_kg,box,false).state;
 }
 
 static CutoffBandResult3D_ CutoffForDirPenumbraScan_GV(
@@ -2192,7 +2212,7 @@ static CutoffBandResult3D_ CutoffForDirPenumbraScan_GV(
             if (item.first==R_GV) return item.second;
         }
         const CutoffSampleDiagnostic3D_ d=ClassifyCutoffSample3DDetailed_(
-            prm,field,x0_m,v0,R_GV,q_C,m0_kg,box);
+            prm,field,x0_m,v0,R_GV,q_C,m0_kg,box,false);
         sampleCache.emplace_back(R_GV,d);
         return d;
     };
@@ -3825,6 +3845,10 @@ static void WriteTecplot3DDirectionalAccess_Location(
     // the corresponding physical reason explicit for users reading the raw file.
     std::fprintf(f,
         "AUXDATA TERMINATION_REASON_CODES=\"0:OUTER_BOUNDARY_ALLOWED;1:INNER_BOUNDARY_FORBIDDEN;2:MAGNETICALLY_TRAPPED_FORBIDDEN;3:TIME_LIMIT;4:STEP_LIMIT;5:DISTANCE_LIMIT;6:INVALID_TIME_STEP;7:INVALID_FIELD;8:NUMERICAL_FAILURE;9:DRIFT_TRAPPED_FORBIDDEN\"\n");
+    // The first 24 columns are a public compatibility prefix shared with the Step-4
+    // GRIDLESS producer.  C8 and archived analysis scripts may consume that prefix
+    // positionally, so Step-5 fields must be appended rather than inserted.  Keeping
+    // the two backends byte-for-byte consistent also prevents solver-dependent folds.
     std::fprintf(f,
         "VARIABLES=\"lon_deg\",\"lat_deg\",\"rigidity_GV\",\"energy_MeV\","
         "\"access_state\",\"allowed\",\"unresolved\",\"termination_code\","
@@ -3832,14 +3856,27 @@ static void WriteTecplot3DDirectionalAccess_Location(
         "\"primary_termination_code\",\"primary_trace_time_s\",\"trace_extension_count\","
         "\"initial_trace_limit_s\",\"final_trace_limit_s\","
         "\"mirror_points\",\"bounce_cycles\",\"drift_revolutions\",\"drift_angle_deg\","
-        "\"drift_mean_radius_change_Re\",\"trap_mechanism\",\"momentum_relative_spread\"\n");
+        "\"drift_mean_radius_change_Re\",\"trap_mechanism\",\"momentum_relative_spread\","
+        "\"direction_weight_sr\",\"weighted_access_sr\","
+        "\"exit_state_valid\",\"x_exit_m\",\"y_exit_m\",\"z_exit_m\","
+        "\"px_exit_SI\",\"py_exit_SI\",\"pz_exit_SI\","
+        "\"vx_exit_unit\",\"vy_exit_unit\",\"vz_exit_unit\","
+        "\"cos_alpha_exit\",\"trace_time_at_exit_s\",\"rigidity_at_exit_GV\","
+        "\"adaptive_refined_intervals\",\"adaptive_estimated_error_GV\","
+        "\"adaptive_max_ambiguous_width_GV\",\"adaptive_target_reached\","
+        "\"adaptive_max_samples_reached\",\"response_weighted_unresolved_support\"\n");
     std::fprintf(f,
-        "ZONE T=\"loc=%d x_km=%g y_km=%g z_km=%g frame=%s coverage=%s adaptive=%c seed_n=%zu max_depth=%d guard_depth=%d\" I=%zu F=POINT\n",
+        "ZONE T=\"loc=%d x_km=%g y_km=%g z_km=%g frame=%s coverage=%s adaptive=%c seed_n=%zu max_depth=%d guard_depth=%d abs_tol_GV=%g rel_tol=%g max_samples=%d\" I=%zu F=POINT\n",
         locId,x0_m.x/1000.0,x0_m.y/1000.0,x0_m.z/1000.0,
         cfg.spiceOk ? "SM" : "GSM_fallback",cfg.coverage.c_str(),
         adaptiveSparse ? 'T' : 'F',prm.cutoff.rigidityList_GV.size(),
         prm.cutoff.directAccessAdaptiveMaxDepth,
-        prm.cutoff.directAccessAdaptiveGuardDepth,nRows);
+        prm.cutoff.directAccessAdaptiveGuardDepth,
+        prm.cutoff.directAccessAdaptiveTolerance_GV,
+        prm.cutoff.directAccessAdaptiveRelativeTolerance,
+        prm.cutoff.directAccessAdaptiveMaxSamples,nRows);
+    std::fprintf(f,
+        "AUXDATA CUTOFF_RECONSTRUCTION=\"group rows by lon_deg,lat_deg; sort by rigidity_GV; reconstruct lower/effective/upper from access_state; angular integration uses direction_weight_sr\"\n");
 
     // The compact selected-cell index is the scheduler/storage index. Convert it
     // back to the original regular-grid lon/lat so the file remains directly
@@ -3857,6 +3894,9 @@ static void WriteTecplot3DDirectionalAccess_Location(
         const int cellId=DirectionalMapLocationCellId3D(cfg,locId,localCellOrdinal);
         double lon_deg=0.0,lat_deg=0.0;
         DirectionalMapCellLonLat3D(cfg,cellId,lon_deg,lat_deg);
+        const double directionWeight_sr=
+            Earth::DirectionalAccess::RegularLonLatCellWeightSr(
+                cfg.lonRes_deg,lat_deg,cfg.latRes_deg);
         for (int ir=0;ir<nRigidity;++ir) {
             const std::size_t k=(std::size_t)cellId*(std::size_t)nRigidity+(std::size_t)ir;
             const int state=accessState[k];
@@ -3871,6 +3911,7 @@ static void WriteTecplot3DDirectionalAccess_Location(
             }
             const int allowed=(state==(int)EarthUtil::CutoffSampleState::Allowed) ? 1 : 0;
             const int unresolved=(state==(int)EarthUtil::CutoffSampleState::Unresolved) ? 1 : 0;
+            const double weightedAccess_sr=allowed*directionWeight_sr;
             const double rigidity=rigidityGrid_GV[(std::size_t)ir];
             const double p=MomentumFromRigidity_GV(rigidity,qabs);
             const double energy=KineticEnergyFromMomentum_MeV(p,m0_kg);
@@ -3883,16 +3924,31 @@ static void WriteTecplot3DDirectionalAccess_Location(
                     "Mode3D directional access state lacks its trajectory diagnostic record.");
             }
             const auto& d=*diagnosticIt;
+            // Preserve the Step-4 value prefix exactly; all Step-5 values follow it.
+            // This is intentionally split into two calls to make insertion into the
+            // compatibility prefix conspicuous during code review.
             std::fprintf(f,
                 "%.15e %.15e %.15e %.15e %d %d %d %d "
                 "%.15e %.15e %d %d %d %.15e %d %.15e %.15e "
-                "%d %d %d %.15e %.15e %d %.15e\n",
+                "%d %d %d %.15e %.15e %d %.15e",
                 lon_deg,lat_deg,rigidity,energy,state,allowed,unresolved,
                 d.terminationCode,d.traceTime_s,d.traceDistance_Re,d.steps,d.retryCount,
                 d.primaryTerminationCode,d.primaryTraceTime_s,d.traceExtensionCount,
                 d.initialTraceLimit_s,d.finalTraceLimit_s,
                 d.mirrorPoints,d.bounceCycles,d.driftRevolutions,d.driftAngle_deg,
                 d.driftMeanRadiusChange_Re,d.trapMechanism,d.momentumRelativeSpread);
+            std::fprintf(f,
+                " %.15e %.15e %d %.15e %.15e %.15e %.15e %.15e %.15e "
+                "%.15e %.15e %.15e %.15e %.15e %.15e "
+                "%d %.15e %.15e %d %d %.15e\n",
+                directionWeight_sr,weightedAccess_sr,
+                d.exitStateValid,d.xExit_m[0],d.xExit_m[1],d.xExit_m[2],
+                d.pExit_SI[0],d.pExit_SI[1],d.pExit_SI[2],
+                d.vExitUnit[0],d.vExitUnit[1],d.vExitUnit[2],d.cosAlphaExit,
+                d.traceTimeAtExit_s,d.rigidityAtExit_GV,
+                d.adaptiveRefinedIntervals,d.adaptiveEstimatedError_GV,
+                d.adaptiveMaxAmbiguousWidth_GV,d.adaptiveTargetReached,
+                d.adaptiveMaxSamplesReached,d.responseWeightedUnresolvedSupport);
             ++diagnosticIt;
         }
     }
@@ -5277,13 +5333,22 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 const std::size_t base=((std::size_t)globalIdx*(std::size_t)dirMapCfg.nCells+
                                         (std::size_t)cellId)*
                                        (std::size_t)nDirectionalAccessStorageRigidities;
-                EarthUtil::EvaluateAdaptiveDirectAccessDirection(
-                    adaptiveAccessGrid,prm.cutoff.directAccessAdaptiveGuardDepth,
-                    dirAccessStateRank,base,
+                EarthUtil::AdaptiveDirectAccessControls controls;
+                controls.guardDepth=prm.cutoff.directAccessAdaptiveGuardDepth;
+                controls.absoluteTolerance_GV=
+                    prm.cutoff.directAccessAdaptiveTolerance_GV;
+                controls.relativeTolerance=
+                    prm.cutoff.directAccessAdaptiveRelativeTolerance;
+                controls.maximumSamples=prm.cutoff.directAccessAdaptiveMaxSamples;
+                const std::size_t diagnosticBegin=
+                    directDiagnostics ? directDiagnostics->size() : 0;
+                const EarthUtil::AdaptiveDirectAccessReport report=
+                    EarthUtil::EvaluateAdaptiveDirectAccessDirectionDetailed(
+                    adaptiveAccessGrid,controls,dirAccessStateRank,base,
                     [&](double rigidity_GV,std::size_t candidateIndex) -> int {
                         const CutoffSampleDiagnostic3D_ sample=
                             ClassifyCutoffSample3DDetailed_(
-                                prm,threadField,x0_m,v0,rigidity_GV,q_C,m0,box);
+                                prm,threadField,x0_m,v0,rigidity_GV,q_C,m0,box,true);
                         if (directDiagnostics) {
                             directDiagnostics->push_back(MakeDirectAccessDiagnostic3D_(
                                 static_cast<std::uint64_t>(base+candidateIndex),sample));
@@ -5291,6 +5356,22 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                         return static_cast<int>(sample.state);
                     },
                     static_cast<int>(EarthUtil::CutoffSampleState::Unresolved));
+                if (directDiagnostics) {
+                    for (std::size_t i=diagnosticBegin;
+                         i<directDiagnostics->size();++i) {
+                        EarthUtil::DirectAccessSampleDiagnostic& d=
+                            (*directDiagnostics)[i];
+                        d.adaptiveRefinedIntervals=report.refinedIntervals;
+                        d.adaptiveEstimatedError_GV=report.estimatedError_GV;
+                        d.adaptiveMaxAmbiguousWidth_GV=
+                            report.maxAmbiguousWidth_GV;
+                        d.adaptiveTargetReached=report.targetReached ? 1 : 0;
+                        d.adaptiveMaxSamplesReached=
+                            report.maximumSamplesReached ? 1 : 0;
+                        d.responseWeightedUnresolvedSupport=
+                            report.responseWeightedUnresolvedSupport;
+                    }
+                }
             }
             else {
                 // Dense reference path: every scheduler task is exactly one requested
@@ -5303,7 +5384,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                                     (std::size_t)iRigidity;
                 const CutoffSampleDiagnostic3D_ sample=ClassifyCutoffSample3DDetailed_(
                     prm,threadField,x0_m,v0,
-                    prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],q_C,m0,box);
+                    prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],q_C,m0,box,true);
                 dirAccessStateRank[k]=static_cast<int>(sample.state);
                 if (directDiagnostics) {
                     directDiagnostics->push_back(MakeDirectAccessDiagnostic3D_(
@@ -5392,7 +5473,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             // historical fixed-distance exhaustion that motivated the C19 fix.
             const CutoffSampleDiagnostic3D_ sample=ClassifyCutoffSample3DDetailed_(
                 prm,threadField,x0_m,v0,
-                prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],q_C,m0,box);
+                prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],q_C,m0,box,true);
             dirAccessStateRank[k]=static_cast<int>(sample.state);
             if (directDiagnostics) {
                 directDiagnostics->push_back(MakeDirectAccessDiagnostic3D_(

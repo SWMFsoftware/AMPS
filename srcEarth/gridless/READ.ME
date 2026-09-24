@@ -685,6 +685,20 @@ guard probes, and then recursively bisects intervals whose endpoint states diffe
 default C19 settings are max depth 6 and guard depth 1.  The three trajectory states are
 unchanged: PHYSICAL_FORBIDDEN, ALLOWED, and UNRESOLVED.  No monotonic cutoff is assumed.
 
+Roadmap Step 5 adds explicit convergence targets and a hard per-direction work cap:
+
+```text
+CUTOFF_DIRECT_ACCESS_ADAPTIVE_TOLERANCE_GV       0.001
+CUTOFF_DIRECT_ACCESS_ADAPTIVE_RELATIVE_TOLERANCE 0.0001
+CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_SAMPLES        0
+```
+
+The local stopping target is
+`Delta R <= max(TOLERANCE_GV, RELATIVE_TOLERANCE*R)`. A zero sample limit means the
+deterministic candidate tree is the only work cap. Reaching maximum depth or maximum
+samples before the target sets `adaptive_target_reached=0`; it does not change a state,
+discard a bracket, or make a validation gate easier to pass.
+
 The full dyadic/geometric candidate tree is deterministic on every MPI rank.  Evaluated
 nodes are written into a direction-private slice of the fixed state array; unused nodes
 remain at the -1 sentinel.  This preserves the existing sentinel + MPI_MAX reduction
@@ -695,6 +709,13 @@ for each direction while retaining common seed/support nodes and the same public
 as Mode3D.  Dense behavior is available by setting
 `CUTOFF_DIRECT_ACCESS_ADAPTIVE F`; in dense mode an uncomputed -1 state remains a fatal
 consistency error.
+
+Each realized row also carries the exact spherical-cell solid angle, binary weighted
+access, and the complete outer-boundary phase-space state when the trajectory is
+allowed. Per-direction refinement counts, maximum/summed ambiguous-width support,
+sample-budget status, and response-weighted unresolved support are repeated on every
+row. These fields let downstream flux/spectrum code fold a boundary distribution and
+reconstruct lower/effective/upper cutoff without rerunning the trajectory.
 
 Guard probes are important because equal coarse endpoint states do not prove that no
 narrow access pocket exists between them.  After the guard depth, only visibly changing
@@ -722,6 +743,7 @@ Useful entry points:
   test/README_aniso_density_tests.md
   test/test_density_analytic.py
   test/test_density_aniso.py
+  ../test/UDirectionalAccess/run_test.sh
 
 These tests are important because they validate not only output formatting but
 also the physical consistency of transmissivity, density integration, and

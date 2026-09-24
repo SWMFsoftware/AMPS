@@ -6,6 +6,7 @@ from __future__ import annotations
 import csv
 import gzip
 import math
+import os
 import re
 import py_compile
 import shutil
@@ -16,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+RUNNER_EXCLUSIVE_ENV = "AMPS_TEST_RUNNER_EXCLUSIVE"
 
 
 def run(command):
@@ -23,6 +25,35 @@ def run(command):
     completed = subprocess.run(command, cwd=str(ROOT), check=False)
     if completed.returncode != 0:
         raise SystemExit(completed.returncode)
+
+
+def validate_runner_exclusive_fail_fast() -> None:
+    """Prove the test-list safety option rejects an obsolete runner first.
+
+    This invokes the real CLI without AMPS.  The exclusive-marker diagnostic
+    must win over ordinary input/executable validation, demonstrating that a
+    mixed deployment cannot spend minutes allocating the replicated C19 mesh
+    before revealing that its scheduling directive was ignored.
+    """
+
+    environment = os.environ.copy()
+    environment.pop(RUNNER_EXCLUSIVE_ENV, None)
+    completed = subprocess.run(
+        [sys.executable, str(ROOT / "run_C19.py"),
+         "--require-runner-exclusive"],
+        cwd=str(ROOT), env=environment, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    if completed.returncode != 2:
+        raise SystemExit(
+            "C19 exclusive fail-fast returned %d instead of 2" %
+            completed.returncode)
+    if ("runner-safety check failed" not in completed.stderr or
+            RUNNER_EXCLUSIVE_ENV not in completed.stderr):
+        raise SystemExit(
+            "C19 exclusive fail-fast omitted its actionable provenance error")
+    if "AMPS executable is missing" in completed.stderr:
+        raise SystemExit(
+            "C19 checked AMPS inputs before the exclusive runner handshake")
 
 
 def write_reference(path: Path) -> None:
@@ -1002,6 +1033,7 @@ def validate_unresolved_extension_contract() -> None:
             raise SystemExit("trap secular-drift contract missing %r" % needle)
 
 def main() -> int:
+    validate_runner_exclusive_fail_fast()
     validate_committed_inputs()
     validate_directional_coverage_source_contract()
     validate_direct_plot_contract()

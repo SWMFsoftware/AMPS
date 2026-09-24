@@ -53,9 +53,16 @@
 //     DIRMAP_COVERAGE         <string>   ! FULL_SPHERE or VECTOR_APERTURES
 //     DIRMAP_APERTURE_FILE    <path>     ! optional arbitrary instrument-aperture vector list
 //     DIRMAP_APERTURE         <spec>     ! repeatable inline aperture definition (see below)
-//     CUTOFF_SEARCH_ALGORITHM <string>   ! UPPER_SCAN, PENUMBRA_SCAN, RIGIDITY_LIST, or BINARY
+//     CUTOFF_SEARCH_ALGORITHM <string>   ! UPPER_SCAN, PENUMBRA_SCAN, DIRECT_ACCESS,
+//                                        ! RIGIDITY_LIST, or BINARY
 //     CUTOFF_UPPER_SCAN_N     <int>      ! samples for UPPER/PENUMBRA scan; 0 => CUTOFF_NENERGY
 //     CUTOFF_RIGIDITY_LIST_GV <list>     ! comma/space-separated positive GV values for RIGIDITY_LIST
+//     CUTOFF_DIRECT_ACCESS_ADAPTIVE <T/F> ! per-direction rigidity refinement
+//     CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_DEPTH <int> ! deterministic tree-depth cap
+//     CUTOFF_DIRECT_ACCESS_ADAPTIVE_GUARD_DEPTH <int> ! forced midpoint levels
+//     CUTOFF_DIRECT_ACCESS_ADAPTIVE_TOLERANCE_GV <double> ! absolute bracket target
+//     CUTOFF_DIRECT_ACCESS_ADAPTIVE_RELATIVE_TOLERANCE <double> ! relative target
+//     CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_SAMPLES <int> ! per-direction cap; 0=tree
 //     CUTOFF_ACCESS_ABS_LAT_MIN <double>  ! geodetic |latitude| lower bound [deg] for RIGIDITY_LIST
 //     CUTOFF_ACCESS_ABS_LAT_MAX <double>  ! geodetic |latitude| upper bound [deg] for RIGIDITY_LIST
 //     CUTOFF_SCAN_SPACING     LOG | LINEAR ! rigidity-node spacing; default LOG
@@ -491,6 +498,14 @@ namespace EarthUtil {
     bool directAccessAdaptive{false}; // CUTOFF_DIRECT_ACCESS_ADAPTIVE
     int directAccessAdaptiveMaxDepth{6}; // CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_DEPTH
     int directAccessAdaptiveGuardDepth{1}; // CUTOFF_DIRECT_ACCESS_ADAPTIVE_GUARD_DEPTH
+
+    // Step-5 error controls.  A visible state-change or resolved/unresolved bracket is
+    // refined until its width is no larger than max(absTol,relTol*R), unless the hard
+    // depth or per-direction trajectory budget is reached first.  Hard-limit failure
+    // is written into the A(E,Omega) product; it is not accepted as convergence.
+    double directAccessAdaptiveTolerance_GV{1.0e-3};
+    double directAccessAdaptiveRelativeTolerance{1.0e-4};
+    int directAccessAdaptiveMaxSamples{0}; // 0 = deterministic candidate-tree limit
 
     // Optional geodetic absolute-latitude band used only by RIGIDITY_LIST.
     //

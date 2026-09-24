@@ -2631,6 +2631,18 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
                uKey=="DIRECT_ACCESS_ADAPTIVE_GUARD_DEPTH") {
         p.cutoff.directAccessAdaptiveGuardDepth=std::stoi(val);
       }
+      else if (uKey=="CUTOFF_DIRECT_ACCESS_ADAPTIVE_TOLERANCE_GV" ||
+               uKey=="DIRECT_ACCESS_ADAPTIVE_TOLERANCE_GV") {
+        p.cutoff.directAccessAdaptiveTolerance_GV=std::stod(val);
+      }
+      else if (uKey=="CUTOFF_DIRECT_ACCESS_ADAPTIVE_RELATIVE_TOLERANCE" ||
+               uKey=="DIRECT_ACCESS_ADAPTIVE_RELATIVE_TOLERANCE") {
+        p.cutoff.directAccessAdaptiveRelativeTolerance=std::stod(val);
+      }
+      else if (uKey=="CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_SAMPLES" ||
+               uKey=="DIRECT_ACCESS_ADAPTIVE_MAX_SAMPLES") {
+        p.cutoff.directAccessAdaptiveMaxSamples=std::stoi(val);
+      }
       else if (uKey=="CUTOFF_ACCESS_ABS_LAT_MIN" ||
                uKey=="CUTOFF_ACCESS_LAT_ABS_MIN") {
         p.cutoff.accessAbsLatMin_deg=std::stod(val);
@@ -3593,6 +3605,20 @@ if (ToUpper(p.field.model)=="DIPOLE") {
       exit(__LINE__,__FILE__,
            "CUTOFF_DIRECT_ACCESS_ADAPTIVE_GUARD_DEPTH must be in [0,max depth]");
     }
+    if (!std::isfinite(p.cutoff.directAccessAdaptiveTolerance_GV) ||
+        p.cutoff.directAccessAdaptiveTolerance_GV<0.0) {
+      exit(__LINE__,__FILE__,
+           "CUTOFF_DIRECT_ACCESS_ADAPTIVE_TOLERANCE_GV must be finite and >= 0");
+    }
+    if (!std::isfinite(p.cutoff.directAccessAdaptiveRelativeTolerance) ||
+        p.cutoff.directAccessAdaptiveRelativeTolerance<0.0) {
+      exit(__LINE__,__FILE__,
+           "CUTOFF_DIRECT_ACCESS_ADAPTIVE_RELATIVE_TOLERANCE must be finite and >= 0");
+    }
+    if (p.cutoff.directAccessAdaptiveMaxSamples<0) {
+      exit(__LINE__,__FILE__,
+           "CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_SAMPLES must be >= 0 (0 means tree limit)");
+    }
     if (p.cutoff.directAccessAdaptive &&
         p.cutoff.searchAlgorithm != "DIRECT_ACCESS") {
       exit(__LINE__,__FILE__,
@@ -3610,6 +3636,13 @@ if (ToUpper(p.field.model)=="DIPOLE") {
                "CUTOFF_RIGIDITY_LIST_GV values must be strictly increasing");
         }
       }
+    }
+    if (p.cutoff.directAccessAdaptive &&
+        p.cutoff.directAccessAdaptiveMaxSamples>0 &&
+        p.cutoff.directAccessAdaptiveMaxSamples<
+            static_cast<int>(p.cutoff.rigidityList_GV.size())) {
+      exit(__LINE__,__FILE__,
+           "CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_SAMPLES cannot be smaller than the rigidity seed count");
     }
     if (p.cutoff.searchAlgorithm=="RIGIDITY_LIST" &&
         !(p.cutoff.accessAbsLatMin_deg>=0.0 &&

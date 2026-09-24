@@ -3,7 +3,8 @@
 This directory contains executable regression/validation tests for the AMPS
 Earth SEP/geospace backward products.  Each test is stored in its own directory
 (`C1`, `C2`, ..., `C6`, `C11`, `C14`, `F1`, `F2`, `F3`, `F4`, `F5`, `F11`, `F12`, `F15`, `F16`,
-`UFluxNumerics`, `UFieldProvider`, `UTrajectoryCore`, ...).  Test scripts are intended to be executed
+`UFluxNumerics`, `UFieldProvider`, `UTrajectoryCore`, `UDirectionalAccess`,
+`UTestRunner`, ...). Test scripts are intended to be executed
 from the directory containing the `amps` executable, not from inside the test
 subdirectory.
 
@@ -62,12 +63,106 @@ an analytic interpolation reference. U-F13 checks distinct bounded retry/extensi
 paths, prohibits distance-cap relaxation, and closes counts over the full termination
 taxonomy. See `UTrajectoryCore/README.md` for the exact gates.
 
-`test/list` schedules the Step 2, Step 3, and Step 4 suites as its first independent `P`
+## UDirectionalAccess: strict Step 5 suite
+
+The complete saved directional-access product and adaptive rigidity sampler have a
+dependency-free C++/Python suite:
+
+```bash
+./srcEarth/test/UDirectionalAccess/run_test.sh
+```
+
+U-F14 compares adaptive refinement with analytic step, hidden-pocket, and oscillatory
+access functions and checks exact `4*pi` angular closure, absolute/relative convergence,
+determinism, response-weighted unresolved support, and explicit hard-limit failure.
+U-F15 reconstructs cutoff/penumbra quantities and conservative unresolved bounds from
+saved rows and compares them with hand-derived references. U-F16 sends valid and
+corrupted Step-5 rows through the production C19 observation reader. Missing boundary
+states, inconsistent weights, nonphysical phase space, partial schemas, and internally
+inconsistent convergence reports must fail. U-F17 compiles the production CLI parser
+and verifies the new error-control options, no-override defaults, help text, and invalid
+value rejection. U-F18 runs the production C8 parser/auditor self-test against legacy,
+corrected Step-5, and historical named Step-5 schemas; it also enforces complete polar
+coverage, C8-G11, exact `4*pi` weighting, and the pre-reduction complete-cube guard.
+
+The suite does not replace full trajectory or observational validation. UTrajectoryCore
+retains mover references, C/F tests retain field/cutoff comparisons, and C8/C9/C10/C19
+retain observation-facing gates.
+
+`test/list` schedules the Step 2 through Step 5 suites as independent `P`
 entries. Each has its own `last pass:` record, so the main runner reports and commits
 their provenance separately. No pre-existing C/F command, expected status, input,
 reference file, tolerance, mover, trajectory limit, or last-pass record was modified;
 the existing tests remain independent validation tools rather than being adjusted to
 accommodate the new abstraction.
+
+## UTestRunner: runner regression suite
+
+The main test runner supports explicit serialization for validations whose
+replicated AMR meshes have a large delayed peak-memory footprint:
+
+```text
+! runner: exclusive
+P srcEarth/test/C19/run_C19.py <unchanged validation options>
+last pass: <unchanged provenance>
+```
+
+The directive is consumed only by `test_runner.py`; it is never passed to the
+test wrapper or AMPS executable. An exclusive test waits until the runner-owned
+process pool is empty, and no other test launches until it finishes. The normal
+`-j` limit, memory gate, command, P/F expectation, timeout, reporting, and
+`last pass:` behavior remain active and unchanged. Placing the directive before
+a loop marks every expansion exclusive.
+
+For the active C19 entry the runner additionally exports
+`AMPS_TEST_RUNNER_EXCLUSIVE=1`, and the wrapper requires that provenance through
+`--require-runner-exclusive`. Ordinary children always have the variable
+removed, including when a parent shell supplied a stale value. Thus a mixed
+installation with a new `test/list` but an obsolete runner fails immediately
+with an actionable message, before AMPS allocates the C19 mesh. Every test log
+records both `Exclusive scheduling:` and `Exclusive environment marker:` so the
+protection can be audited from the artifact alone.
+
+The focused dependency-free regression suite is:
+
+```bash
+./srcEarth/test/UTestRunner/run_test.sh
+```
+
+UTR-F01 checks strict parsing, command preservation, loop propagation, and
+`last pass:` updates. UTR-F02 exercises actual asynchronous scheduling: ordinary
+jobs must overlap, an exclusive job must wait for both, and subsequent work must
+wait for the exclusive job. UTR-F03 exercises marker propagation through real
+child processes, and UTR-F04 freezes the active C19 isolation and CPU-fan-out
+contract. UTR-F05 checks deferred `last pass:` persistence and stale-list
+rejection. See `UTestRunner/README.md` for the exact gates.
+
+Unless `--update-last-pass` is present, a completed run writes a hidden
+`.list.last-pass-results.json` cache beside the test list without editing that
+list. Apply the saved actual results later, without rerunning the tests, with:
+
+```bash
+srcEarth/test/test_runner.py --commit-last-pass
+```
+
+For a nonstandard list, pass its path after `--commit-last-pass`. The runner
+fingerprints the list before execution and rejects a deferred commit if the
+list changed, so source-line and loop-variant provenance cannot be applied to a
+different command. `--update-last-pass` remains the immediate-update mode and
+removes any now-stale pending cache only after its list update succeeds.
+
+The active gridded C19 entry is marked exclusive because its field initialization
+can reserve tens of GiB after launch; an instantaneous `MemAvailable` threshold
+cannot predict that delayed peak. This scheduling protection does not modify any
+C19 physics input, observation, mesh resolution, trajectory setting, reference
+solution, or acceptance threshold.
+
+The same entry uses `-np 4 -nt 8`. Because the field initializer adds the
+calling thread to eight temporary workers, this produces 36 participants across
+four MPI ranks on the 36-CPU validation allocation. The earlier `-nt 33` setting
+created 136 participants in that cpuset. Bounding execution parallelism removes
+CPU oversubscription without changing the computed grid, trajectory set,
+detector fold, observational comparison, or any acceptance gate.
 
 ## C6 gridless and gridded external-reference validation
 

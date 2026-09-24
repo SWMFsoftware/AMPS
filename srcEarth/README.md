@@ -1,6 +1,6 @@
 # SEP-in-geospace model: compact global fields in Mode3D
 
-## Roadmap Step 4 implemented: common trajectory contract
+## Roadmap Steps 4 and 5 implemented: trajectories and directional access
 
 Step 4 adds `util/TrajectoryContract.h`, a dependency-free request/result layer shared
 by direct gridless tracing and compact-field Mode3D/SWMF tracing. A request now states
@@ -26,18 +26,49 @@ Released production characteristics remain frozen-snapshot and magnetic-only.
 `STATIC_MAGNETIC_SAME_CHARGE` preserves archived AMPS behavior. The contract names
 `PHYSICAL_BACKWARD_TIME` for future E(x,t),B(x,t) work, but gridless and Mode3D/SWMF
 currently reject that request explicitly rather than silently substituting the
-static-field shortcut. Adaptive directional-access refinement remains Roadmap Step 5.
+static-field shortcut.
 
-Run the strict Step 4 suite from `srcEarth`:
+Step 5 promotes directional access to a complete saved product, `A(E,Omega)`. Both
+gridless and Mode3D/SWMF `DIRECT_ACCESS` paths now write, for every realized rigidity
+and sky cell:
+
+- the exact three-state classification (`ALLOWED`, `PHYSICAL_FORBIDDEN`, or
+  `UNRESOLVED`) and stable termination/retry provenance;
+- the exact spherical-cell solid-angle weight and weighted binary access;
+- the complete Step-4 outer-boundary phase-space state for every allowed trajectory;
+- adaptive refinement counts, transition-bracket/error support, response-weighted
+  unresolved support, and explicit target/depth/sample-budget status; and
+- ordered rigidity rows sufficient to reconstruct lower, effective, and upper cutoff
+  plus penumbra without rerunning the mover.
+
+Adaptive energy refinement is independent of the directional-map angular resolution.
+All user seed rigidities are mandatory; guard probes can expose non-monotone access
+pockets; visible state-change and unresolved brackets are refined to the requested
+absolute/relative target. Exhausting the hard depth or sample budget is serialized as
+non-convergence and is never converted into physical shielding.
+
+```text
+CUTOFF_DIRECT_ACCESS_ADAPTIVE                    T
+CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_DEPTH          10
+CUTOFF_DIRECT_ACCESS_ADAPTIVE_GUARD_DEPTH        1
+CUTOFF_DIRECT_ACCESS_ADAPTIVE_TOLERANCE_GV       0.001
+CUTOFF_DIRECT_ACCESS_ADAPTIVE_RELATIVE_TOLERANCE 0.0001
+CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_SAMPLES        0  # 0 = candidate-tree limit
+```
+
+Run the strict Step 4 and Step 5 suites from `srcEarth`:
 
 ```bash
 ./test/UTrajectoryCore/run_test.sh
+./test/UDirectionalAccess/run_test.sh
 ```
 
-It compares BORIS and RK4 with the closed-form relativistic uniform-B helix, exercises
-negative request and snapshot cases, checks the analytic outer-event phase-space state,
-and verifies bounded retry/extension accounting. Existing C/F tolerances, reference
-files, movers, trace limits, and acceptance gates were not relaxed.
+The trajectory suite compares BORIS and RK4 with the closed-form relativistic uniform-B
+helix and checks request, snapshot, boundary-event, and retry contracts. The directional
+suite uses analytic step, hidden-pocket, and oscillatory access functions; exact
+`4*pi` angular closure; hand-derived cutoff/unresolved-bound references; strict negative
+schema cases; and the production C19 reader. Existing C/F tolerances, references,
+movers, trace limits, expected outcomes, and acceptance gates were not relaxed.
 
 ## Roadmap Step 3 reimplemented from the Step 2 baseline
 
@@ -172,11 +203,19 @@ Mode3D now keeps the standard distributed AMPS mesh and replicates only compact 
 - `util/FluxNumerics.h`
 - `util/FieldProvider.h`
 - `util/TrajectoryContract.h`
+- `util/AdaptiveDirectAccess.h`
+- `util/DirectionalAccess.h`
 - `util/amps_param_parser.cpp`
 - `util/amps_param_parser.h`
+- `util/cutoff_cli.cpp`
+- `util/cutoff_cli.h`
+- `main.cpp`
 - `3d_forward_swmf/Mode3DForwardSWMF.cpp`
 - `3d_forward_swmf/Mode3DForwardSWMF.h`
 - `test/UTrajectoryCore/*`
+- `test/UDirectionalAccess/*`
+- `test/C8/run_C8.py`
+- `test/C19/run_C19.py`
 - `test/list`
 
 ## Global cell indexing
@@ -704,9 +743,13 @@ The current GRIDDED command includes the fine mesh defaults, while both GRIDDED 
 GRIDLESS generated inputs contain the identical adaptive seed rigidity list used to
 produce `A(E,Omega)`.  Both solvers call the shared `util/AdaptiveDirectAccess.h`
 algorithm: all seeds are evaluated, guard midpoints probe hidden structure, and only
-visible state-changing intervals are recursively refined to the configured maximum
-depth.  Realized internal nodes may therefore differ by direction, but the algorithm,
-seed/support contract, and post-processing are identical.
+visible state-changing intervals are recursively refined toward the configured
+absolute/relative error target subject to explicit depth and sample budgets. Realized
+internal nodes may therefore differ by direction, but the algorithm, seed/support
+contract, and post-processing are identical. Each row carries exact solid angle,
+complete allowed exit phase space, and convergence/unresolved-support metadata; C19
+rejects incomplete or internally inconsistent Step-5 schemas without changing its
+physical observation-comparison thresholds.
 
 GRIDDED batching uses the existing Mode3D multi-snapshot lifecycle but adds explicit
 irregular epochs and epoch-scoped locations. `amps_init_mesh()`, `amps_init()`, and

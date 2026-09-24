@@ -429,7 +429,7 @@ The default result directory is `test_output/C8_directional_access`.
 | `C8_result.json` | full machine-readable configuration, runs, cases, and verdict |
 | `C8_coverage_summary.csv` | per-case/per-point grid, state/reason, and pole-degeneracy audit |
 | `C8_directional_access_summary.csv` | FOV/EAST/WEST/CENTER weighted access fractions |
-| `C8_model_comparison.csv` | T96/T05 resolved-pair mismatch counts |
+| `C8_model_comparison.csv` | T96/T05 resolved-pair counts and solid-angle-weighted mismatch fractions |
 | `C8_east_west_comparison.csv` | charge-odd East–West statistics by model/rigidity |
 | `C8_asymptotic_comparison.csv` | optional per-sample exit-direction differences |
 | `reference_C8_*.csv` | exact source/reference contracts used by the run |
@@ -445,6 +445,9 @@ columns now reflect the full 312-direction (ROUTINE) contract instead of the
 `C8_result.json` gained `requested_pole_direction_tasks_per_point` and
 `requested_full_direction_tasks_per_point` alongside the unchanged
 `requested_direction_tasks_per_point` (still the regular-grid count).
+Runner schema version 2 also records each case's `auditable` state and observed
+`schema_layouts`; the coverage CSV records the layout per point, so recovery of
+a historical shifted Step-5 file is visible rather than silent.
 `reference_C8_acceptance_contract.csv` now lists 11 gates (`C8-G01`..`C8-G11`)
 instead of 10.
 
@@ -456,6 +459,22 @@ Confirm the input contains `CUTOFF_SAMPLING VERTICAL`. The common parser require
 it for `DIRECT_ACCESS` and explicit rigidity lists. C8 intentionally avoids
 `CUTOFF_UNRESOLVED_EXTENSION_PASSES` and related optional C19 keywords because
 baseline AMPS parsers may reject them.
+
+If the failure names a raw DIRECT_ACCESS output file, inspect its `VARIABLES`
+declaration and first numeric row. C8 requires all 24 Step-4 core fields by name,
+requires normalized names to be unique, and requires every numeric row to have
+exactly the declared width with finite core values. It accepts the corrected
+24-column prefix plus the 21 append-only Step-5 fields. For recovery with
+`--skip-run`, it also accepts the brief historical 45-column Step-5 order that
+inserted `direction_weight_sr` and `weighted_access_sr` near the front, because
+those files are fully self-describing by name. This read compatibility does not
+change the producer ABI: U-F16 still requires both C++ writers to emit the exact
+24+21 append-only order.
+
+An incomplete or malformed cube is stopped before FOV reduction. C8 still writes
+its summary and empty comparison CSVs (a `status` header followed by `NO_ROWS`) with explicit structural
+failure messages; it never converts a blank fraction to zero and never evaluates a
+scientific comparison on partial samples.
 
 ### T05 says `DST` is missing
 
@@ -541,7 +560,7 @@ ephemeris/attitude data and a full detector response.
 
 ## 12. Errata and fix history (read before changing acceptance thresholds)
 
-This section documents two independent defects found by auditing a ROUTINE
+This section documents two independent physics/grid defects found by auditing a ROUTINE
 C8 run that failed with `T96/T05 has no informative rigidity with
 D(+)>=0.01 and D(-)<=-0.01`, and how each was fixed. **Neither fix relaxed an
 acceptance threshold or a hard gate's policy.** Both fixes correct the test's
@@ -655,9 +674,40 @@ in `build_parser()`, `reference_C8_expected_physics.csv`, or
 a strictly additional hard gate (`reference_C8_acceptance_contract.csv` now
 lists 11 gates instead of 10).
 
+### FIX 3 — named Step-5 schema recovery and complete-cube guard (2026-09-23)
+
+**Symptom.** All four AMPS cases completed and wrote their six directional
+files, but the runner later raised `ValueError: could not convert string to
+float: ''` while reading `fov_allowed_fraction`. No model or East–West
+comparison was produced.
+
+**Cause.** The initial Step-5 writer placed two new weight fields inside the
+legacy DIRECT_ACCESS column prefix. A positional C8 reader consequently mapped
+core values to the wrong meanings or discarded rows, leaving a partial sample
+map. The runner nevertheless passed that map into `reduce_fov`, which represented
+an empty lobe with `""`; the high-rigidity loop then attempted `float("")` and
+aborted before writing the comparison artifacts.
+
+**Fix.** Both C++ producers now retain the exact 24-column Step-4 prefix and
+append the 21 Step-5 values; U-F16 hard-gates both header and value order. C8's
+reader independently maps values by normalized `VARIABLES` name, requires all 24
+core names exactly once, enforces declared row width and finite core values, and
+accepts both the corrected 24+21 layout and already-generated historical named
+45-column files. `case_is_structurally_auditable()` blocks every reduction unless
+the full regular-plus-polar cube passes coverage, state/reason, fatal-termination,
+and C8-G11 checks. Failure summaries and `NO_ROWS` comparison CSVs are still
+written, so a parser or coverage failure can no longer erase the evidence.
+
+**What did not change.** No scientific threshold, reference value, field/mover
+configuration, trajectory budget, or pass criterion was relaxed. U-F18 proves
+that 24-column, corrected 45-column, and historical named 45-column synthetic
+cubes recover identical core samples and FOV reductions, while missing/duplicate
+columns, blank values, row-width errors, missing poles, and inconsistent polar
+duplicates remain hard failures.
+
 ### Verification performed
 
-Both fixes were validated with `python3 run_C8.py --self-test` and
+These fixes were validated with `python3 run_C8.py --self-test` and
 `--validate-references` (pure Python, no AMPS/MPI required), which now also
 exercise: the corrected direction-grid counts and exact `4*pi` sr
 conservation; an independent cross-check of the polar-cap solid-angle

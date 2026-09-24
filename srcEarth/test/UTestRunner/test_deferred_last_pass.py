@@ -31,7 +31,7 @@ class DeferredLastPassTests(unittest.TestCase):
         self.pending = self.root / ".list.last-pass-results.json"
         shutil.copy2(RUNNER, self.runner)
 
-        # Each launched command appends one label.  The exact number of lines
+        # Each launched command appends one label. The exact number of lines
         # lets the deferred-commit test prove that --commit-last-pass did not
         # silently schedule either command again.
         self.worker.write_text(
@@ -48,6 +48,7 @@ class DeferredLastPassTests(unittest.TestCase):
         worker = shlex.quote(str(self.worker))
         counter = shlex.quote(str(self.counter))
         self.original_list = (
+            "! runner: exclusive\n"
             f"P {python} {worker} {counter} scalar pass\n"
             "last pass: old-scalar\n"
             "for $outcome={pass,fail}\n"
@@ -102,6 +103,7 @@ class DeferredLastPassTests(unittest.TestCase):
         self.assertEqual(payload["commit_id"], "tested-commit")
         self.assertEqual(payload["test_count"], 3)
         self.assertEqual(payload["passing_count"], 2)
+        self.assertTrue(payload["results"][0]["exclusive"])
 
         # The runner copy and list share a directory, exactly reproducing the
         # requested no-positional `test_runner.py --commit-last-pass` form.

@@ -211,6 +211,7 @@
 #include "util/TrajectoryTrapDetector.h"
 #include "util/CutoffBandSearch.h"
 #include "util/AdaptiveDirectAccess.h"
+#include "util/DirectionalAccess.h"
 #include "DipoleInterface.h"
 #include "../util/FieldProvider.h"
 #include "../3d/Mode3DParallel.h" // shared MPI dynamic work-queue scheduler
@@ -2924,6 +2925,11 @@ static void WriteTecplotDirectionalAccess_Point(
   // the corresponding physical reason explicit for users reading the raw file.
   std::fprintf(f,
       "AUXDATA TERMINATION_REASON_CODES=\"0:OUTER_BOUNDARY_ALLOWED;1:INNER_BOUNDARY_FORBIDDEN;2:MAGNETICALLY_TRAPPED_FORBIDDEN;3:TIME_LIMIT;4:STEP_LIMIT;5:DISTANCE_LIMIT;6:INVALID_TIME_STEP;7:INVALID_FIELD;8:NUMERICAL_FAILURE;9:DRIFT_TRAPPED_FORBIDDEN\"\n");
+  // Backward-compatibility contract: the first 24 columns are the exact Step-4
+  // DIRECT_ACCESS schema consumed by C8 and other archived postprocessors.  Step-5
+  // quantities are append-only.  Inserting a new value into this prefix makes an old
+  // positional reader silently discard every row, which is more dangerous than an
+  // explicit parse failure because validation summaries can then be empty.
   std::fprintf(f,
       "VARIABLES=\"lon_deg\",\"lat_deg\",\"rigidity_GV\",\"energy_MeV\","
       "\"access_state\",\"allowed\",\"unresolved\",\"termination_code\","
@@ -2931,13 +2937,26 @@ static void WriteTecplotDirectionalAccess_Point(
       "\"primary_termination_code\",\"primary_trace_time_s\",\"trace_extension_count\","
       "\"initial_trace_limit_s\",\"final_trace_limit_s\","
       "\"mirror_points\",\"bounce_cycles\",\"drift_revolutions\",\"drift_angle_deg\","
-      "\"drift_mean_radius_change_Re\",\"trap_mechanism\",\"momentum_relative_spread\"\n");
+      "\"drift_mean_radius_change_Re\",\"trap_mechanism\",\"momentum_relative_spread\","
+      "\"direction_weight_sr\",\"weighted_access_sr\","
+      "\"exit_state_valid\",\"x_exit_m\",\"y_exit_m\",\"z_exit_m\","
+      "\"px_exit_SI\",\"py_exit_SI\",\"pz_exit_SI\","
+      "\"vx_exit_unit\",\"vy_exit_unit\",\"vz_exit_unit\","
+      "\"cos_alpha_exit\",\"trace_time_at_exit_s\",\"rigidity_at_exit_GV\","
+      "\"adaptive_refined_intervals\",\"adaptive_estimated_error_GV\","
+      "\"adaptive_max_ambiguous_width_GV\",\"adaptive_target_reached\","
+      "\"adaptive_max_samples_reached\",\"response_weighted_unresolved_support\"\n");
   std::fprintf(f,
-      "ZONE T=\"point=%d x_km=%g y_km=%g z_km=%g frame=SM coverage=%s adaptive=%c seed_n=%zu max_depth=%d guard_depth=%d\" I=%zu F=POINT\n",
+      "ZONE T=\"point=%d x_km=%g y_km=%g z_km=%g frame=SM coverage=%s adaptive=%c seed_n=%zu max_depth=%d guard_depth=%d abs_tol_GV=%g rel_tol=%g max_samples=%d\" I=%zu F=POINT\n",
       pointId,point_km.x,point_km.y,point_km.z,coverage.c_str(),
       adaptiveSparse ? 'T' : 'F',prm.cutoff.rigidityList_GV.size(),
       prm.cutoff.directAccessAdaptiveMaxDepth,
-      prm.cutoff.directAccessAdaptiveGuardDepth,nRows);
+      prm.cutoff.directAccessAdaptiveGuardDepth,
+      prm.cutoff.directAccessAdaptiveTolerance_GV,
+      prm.cutoff.directAccessAdaptiveRelativeTolerance,
+      prm.cutoff.directAccessAdaptiveMaxSamples,nRows);
+  std::fprintf(f,
+      "AUXDATA CUTOFF_RECONSTRUCTION=\"group rows by lon_deg,lat_deg; sort by rigidity_GV; reconstruct lower/effective/upper from access_state; angular integration uses direction_weight_sr\"\n");
 
   // The MPI gather sorts sparse diagnostics by their global flattened slot.  Walk that
   // sequence monotonically while rows are emitted, avoiding dense metadata arrays for
@@ -2955,6 +2974,9 @@ static void WriteTecplotDirectionalAccess_Point(
     const double lon_deg=lonRes_deg*iLon;
     double lat_deg=-90.0+latRes_deg*jLat;
     if (lat_deg>90.0) lat_deg=90.0;
+    const double directionWeight_sr=
+        Earth::DirectionalAccess::RegularLonLatCellWeightSr(
+            lonRes_deg,lat_deg,latRes_deg);
 
     for (int iRigidity=0;iRigidity<nRigidity;++iRigidity) {
       const std::size_t k=selectedCellId*(std::size_t)nRigidity+
@@ -2975,6 +2997,7 @@ static void WriteTecplotDirectionalAccess_Point(
       }
       const int allowed=(state==(int)EarthUtil::CutoffSampleState::Allowed) ? 1 : 0;
       const int unresolved=(state==(int)EarthUtil::CutoffSampleState::Unresolved) ? 1 : 0;
+      const double weightedAccess_sr=allowed*directionWeight_sr;
       const double rigidity=rigidityList_GV[(std::size_t)iRigidity];
       const double p=MomentumFromRigidity_GV(rigidity,qabs);
       const double energy=KineticEnergyFromMomentum_MeV(p,m0_kg);
@@ -2987,16 +3010,30 @@ static void WriteTecplotDirectionalAccess_Point(
             "Gridless directional access state lacks its trajectory diagnostic record.");
       }
       const auto& d=*diagnosticIt;
+      // Keep the values in the same append-only order as the VARIABLES declaration.
+      // The first fprintf is deliberately the unmodified Step-4 24-value record.
       std::fprintf(f,
           "%.15e %.15e %.15e %.15e %d %d %d %d "
           "%.15e %.15e %d %d %d %.15e %d %.15e %.15e "
-          "%d %d %d %.15e %.15e %d %.15e\n",
+          "%d %d %d %.15e %.15e %d %.15e",
           lon_deg,lat_deg,rigidity,energy,state,allowed,unresolved,
           d.terminationCode,d.traceTime_s,d.traceDistance_Re,d.steps,d.retryCount,
           d.primaryTerminationCode,d.primaryTraceTime_s,d.traceExtensionCount,
           d.initialTraceLimit_s,d.finalTraceLimit_s,
           d.mirrorPoints,d.bounceCycles,d.driftRevolutions,d.driftAngle_deg,
           d.driftMeanRadiusChange_Re,d.trapMechanism,d.momentumRelativeSpread);
+      std::fprintf(f,
+          " %.15e %.15e %d %.15e %.15e %.15e %.15e %.15e %.15e "
+          "%.15e %.15e %.15e %.15e %.15e %.15e "
+          "%d %.15e %.15e %d %d %.15e\n",
+          directionWeight_sr,weightedAccess_sr,
+          d.exitStateValid,d.xExit_m[0],d.xExit_m[1],d.xExit_m[2],
+          d.pExit_SI[0],d.pExit_SI[1],d.pExit_SI[2],
+          d.vExitUnit[0],d.vExitUnit[1],d.vExitUnit[2],d.cosAlphaExit,
+          d.traceTimeAtExit_s,d.rigidityAtExit_GV,
+          d.adaptiveRefinedIntervals,d.adaptiveEstimatedError_GV,
+          d.adaptiveMaxAmbiguousWidth_GV,d.adaptiveTargetReached,
+          d.adaptiveMaxSamplesReached,d.responseWeightedUnresolvedSupport);
       ++diagnosticIt;
     }
   }
@@ -3403,6 +3440,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     double driftMeanRadiusChange_m{0.0};
     int trapMechanism{0};
     double momentumRelativeSpread{0.0};
+    Earth::GridlessMode::TrajectoryExitState exitState{};
   };
 
   auto MakeDirectAccessDiagnostic = [&](std::uint64_t slot,
@@ -3426,15 +3464,32 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     out.driftMeanRadiusChange_Re=sample.driftMeanRadiusChange_m/_EARTH__RADIUS_;
     out.trapMechanism=sample.trapMechanism;
     out.momentumRelativeSpread=sample.momentumRelativeSpread;
+    out.exitStateValid=sample.exitState.valid ? 1 : 0;
+    if (sample.exitState.valid) {
+      for (int d=0;d<3;++d) {
+        out.xExit_m[d]=sample.exitState.x_exit_m[d];
+        out.pExit_SI[d]=sample.exitState.p_exit_SI[d];
+        out.vExitUnit[d]=sample.exitState.v_exit_unit[d];
+      }
+      out.cosAlphaExit=sample.exitState.cosAlpha;
+      out.traceTimeAtExit_s=sample.exitState.traceTimeAtExit_s;
+      out.rigidityAtExit_GV=sample.exitState.rigidityAtExit_GV;
+    }
     return out;
   };
 
   auto ClassifyCutoffSampleDetailed = [&](cFieldEvaluator& taskField,
                                           const V3& x0_m,
                                           const V3& v0,
-                                          double R_GV) -> CutoffSampleDiagnosticGridless_ {
+                                          double R_GV,
+                                          bool captureExitState)
+      -> CutoffSampleDiagnosticGridless_ {
+    // Capturing the complete boundary phase-space state has a measurable cost and is
+    // part of the Step-5 directional A(R,Omega) product only.  Scalar cutoff and
+    // PENUMBRA_SCAN callers explicitly pass false below, preserving their historical
+    // tracing path; every caller that persists a direct-access diagnostic passes true.
     const auto tr=TraceTrajectoryWithSingleRetry(
-        prm,taskField,x0_m,v0,R_GV,-1.0,false,GetDefaultMoverType(),
+        prm,taskField,x0_m,v0,R_GV,-1.0,captureExitState,GetDefaultMoverType(),
         CutoffTraceIntegrationPolicy(prm));
     CutoffSampleDiagnosticGridless_ out;
     out.termination=tr.termination;
@@ -3454,6 +3509,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     out.driftMeanRadiusChange_m=tr.driftMeanRadiusChange_m;
     out.trapMechanism=tr.trapMechanism;
     out.momentumRelativeSpread=tr.momentumRelativeSpread;
+    out.exitState=tr.exitState;
 
     if (tr.allowed()) out.state=EarthUtil::CutoffSampleState::Allowed;
     else if (Earth::GridlessMode::IsPhysicalForbiddenTermination(tr.termination))
@@ -3476,7 +3532,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
 
   auto ClassifyCutoffSample = [&](cFieldEvaluator& taskField, const V3& x0_m, const V3& v0, double R_GV)
       -> EarthUtil::CutoffSampleState {
-    return ClassifyCutoffSampleDetailed(taskField,x0_m,v0,R_GV).state;
+    return ClassifyCutoffSampleDetailed(
+        taskField,x0_m,v0,R_GV,false).state;
   };
 
   auto CutoffForDirectionPenumbraScan_GV = [&](cFieldEvaluator& taskField, const V3& x0_m,
@@ -3497,7 +3554,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     auto detailedAt=[&](double R_GV) -> CutoffSampleDiagnosticGridless_ {
       for (const auto& item:sampleCache) if (item.first==R_GV) return item.second;
       const CutoffSampleDiagnosticGridless_ d=
-          ClassifyCutoffSampleDetailed(taskField,x0_m,v0,R_GV);
+          ClassifyCutoffSampleDetailed(taskField,x0_m,v0,R_GV,false);
       sampleCache.emplace_back(R_GV,d);
       return d;
     };
@@ -4719,17 +4776,41 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
         const std::size_t base=(std::size_t)task.loc*perPoint+
                                (std::size_t)cellId*
                                (std::size_t)nDirectionalAccessStorageRigidities;
-        EarthUtil::EvaluateAdaptiveDirectAccessDirection(
-            adaptiveAccessGrid,prm.cutoff.directAccessAdaptiveGuardDepth,
-            DirAccessStates,base,
+        EarthUtil::AdaptiveDirectAccessControls controls;
+        controls.guardDepth=prm.cutoff.directAccessAdaptiveGuardDepth;
+        controls.absoluteTolerance_GV=
+            prm.cutoff.directAccessAdaptiveTolerance_GV;
+        controls.relativeTolerance=
+            prm.cutoff.directAccessAdaptiveRelativeTolerance;
+        controls.maximumSamples=prm.cutoff.directAccessAdaptiveMaxSamples;
+
+        // All diagnostics appended during this call belong to this one direction.
+        // Fill the common convergence report only after the recursive sampler has
+        // completed; this avoids duplicating mutable report state in the classifier.
+        const std::size_t diagnosticBegin=directDiagnostics.size();
+        const EarthUtil::AdaptiveDirectAccessReport report=
+            EarthUtil::EvaluateAdaptiveDirectAccessDirectionDetailed(
+            adaptiveAccessGrid,controls,DirAccessStates,base,
             [&](double rigidity_GV,std::size_t candidateIndex) -> int {
               const CutoffSampleDiagnosticGridless_ sample=
-                  ClassifyCutoffSampleDetailed(taskField,x0_m,v0,rigidity_GV);
+                  ClassifyCutoffSampleDetailed(
+                      taskField,x0_m,v0,rigidity_GV,true);
               directDiagnostics.push_back(MakeDirectAccessDiagnostic(
                   static_cast<std::uint64_t>(base+candidateIndex),sample));
               return static_cast<int>(sample.state);
             },
             static_cast<int>(EarthUtil::CutoffSampleState::Unresolved));
+        for (std::size_t i=diagnosticBegin;i<directDiagnostics.size();++i) {
+          EarthUtil::DirectAccessSampleDiagnostic& d=directDiagnostics[i];
+          d.adaptiveRefinedIntervals=report.refinedIntervals;
+          d.adaptiveEstimatedError_GV=report.estimatedError_GV;
+          d.adaptiveMaxAmbiguousWidth_GV=report.maxAmbiguousWidth_GV;
+          d.adaptiveTargetReached=report.targetReached ? 1 : 0;
+          d.adaptiveMaxSamplesReached=
+              report.maximumSamplesReached ? 1 : 0;
+          d.responseWeightedUnresolvedSupport=
+              report.responseWeightedUnresolvedSupport;
+        }
         // -2 tells AccumulateResultLocal that the adaptive worker already filled the
         // complete disjoint state slice.  No single-state accumulation is required.
         directAccessState=-2;
@@ -4738,7 +4819,7 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
         const int iRigidity=task.idx-cellId*nDirectionalAccessSeedRigidities;
         const CutoffSampleDiagnosticGridless_ sample=ClassifyCutoffSampleDetailed(
             taskField,x0_m,v0,
-            prm.cutoff.rigidityList_GV[(std::size_t)iRigidity]);
+            prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],true);
         directAccessState=static_cast<int>(sample.state);
         const std::size_t perPoint=(std::size_t)nDirMapCells*
                                    (std::size_t)nDirectionalAccessStorageRigidities;

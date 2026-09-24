@@ -169,6 +169,30 @@ struct DirectAccessSampleDiagnostic {
   double driftMeanRadiusChange_Re{0.0};
   int trapMechanism{0};       // 0=None, 1=Bounce, 2=Drift
   double momentumRelativeSpread{0.0};
+
+  // Complete outer-boundary state for an ALLOWED characteristic.  These members are
+  // deliberately stored in the sparse per-sample record rather than in a parallel
+  // array: MPI gathers DirectAccessSampleDiagnostic as raw bytes, and keeping the
+  // state beside its deterministic slot prevents an adaptive row from being matched
+  // to the wrong trajectory after rank reduction.  Non-allowed samples retain the
+  // zero initialization and exitStateValid==0.
+  int exitStateValid{0};
+  double xExit_m[3]{0.0,0.0,0.0};
+  double pExit_SI[3]{0.0,0.0,0.0};
+  double vExitUnit[3]{0.0,0.0,0.0};
+  double cosAlphaExit{0.0};
+  double traceTimeAtExit_s{0.0};
+  double rigidityAtExit_GV{0.0};
+
+  // Convergence metadata is repeated on every realized row in one direction.  This
+  // makes a saved A(E,Omega) curve self-describing even when rows are split, filtered,
+  // or consumed without the original input deck.  Dense runs use the defaults below.
+  int adaptiveRefinedIntervals{0};
+  double adaptiveEstimatedError_GV{0.0};
+  double adaptiveMaxAmbiguousWidth_GV{0.0};
+  int adaptiveTargetReached{1};
+  int adaptiveMaxSamplesReached{0};
+  double responseWeightedUnresolvedSupport{0.0};
 };
 
 // Diagnostics are gathered with MPI_BYTE rather than a custom MPI datatype.  Keep
@@ -176,6 +200,178 @@ struct DirectAccessSampleDiagnostic {
 // cannot silently make the byte-wise gather invalid.
 static_assert(std::is_trivially_copyable<DirectAccessSampleDiagnostic>::value,
               "DirectAccessSampleDiagnostic must remain trivially copyable");
+
+// Error-control policy for one sky direction.  Depth and sample count are hard work
+// bounds; the absolute/relative tolerances are scientific convergence targets.  A run
+// that exhausts a hard bound before reaching its target is reported as non-converged --
+// it is never silently promoted to a resolved access curve.
+struct AdaptiveDirectAccessControls {
+  int guardDepth{1};
+  double absoluteTolerance_GV{0.0};
+  double relativeTolerance{0.0};
+  int maximumSamples{0}; // 0 = no cap beyond the deterministic candidate tree
+
+  // Optional detector/spectrum weight for unresolved-support accounting.  It does not
+  // affect which trajectory states are computed and therefore cannot bias refinement
+  // toward a desired validation result.  Unity is used when no response is supplied.
+  std::function<double(double)> responseWeight;
+};
+
+struct AdaptiveDirectAccessReport {
+  int evaluations{0};
+  int refinedIntervals{0};
+  double estimatedError_GV{0.0};
+  double maxAmbiguousWidth_GV{0.0};
+  double responseWeightedUnresolvedSupport{0.0};
+  bool targetReached{true};
+  bool maximumSamplesReached{false};
+  bool maximumDepthReached{false};
+};
+
+// Detailed Step-5 sampler.  The state vector is a fixed candidate-tree slice whose
+// unevaluated entries remain -1.  The classifier receives both rigidity and candidate
+// index so production callers can attach diagnostics to the exact global slot without
+// a floating-point lookup.
+template<class Classifier>
+inline AdaptiveDirectAccessReport EvaluateAdaptiveDirectAccessDirectionDetailed(
+    const AdaptiveDirectAccessGrid& grid,
+    const AdaptiveDirectAccessControls& controls,
+    std::vector<int>& states,
+    std::size_t base,
+    Classifier classify,
+    int unresolvedState=2) {
+  if (controls.guardDepth<0 || controls.guardDepth>grid.maxDepth)
+    throw std::runtime_error("adaptive direct-access guard depth must be in [0,maxDepth]");
+  if (controls.maximumSamples>0 &&
+      controls.maximumSamples<static_cast<int>(grid.seedCandidateIndex.size()))
+    throw std::runtime_error(
+        "adaptive direct-access maximum samples cannot be smaller than the seed count");
+  if (controls.absoluteTolerance_GV<0.0 || controls.relativeTolerance<0.0 ||
+      !std::isfinite(controls.absoluteTolerance_GV) ||
+      !std::isfinite(controls.relativeTolerance))
+    throw std::runtime_error(
+        "adaptive direct-access tolerances must be finite and non-negative");
+  if (base+grid.candidate_GV.size()>states.size())
+    throw std::runtime_error("adaptive direct-access state slice exceeds output array");
+
+  AdaptiveDirectAccessReport report;
+  const auto canEvaluate=[&]() {
+    return controls.maximumSamples<=0 || report.evaluations<controls.maximumSamples;
+  };
+  const auto stateAt=[&](std::size_t idx) -> int {
+    int& slot=states[base+idx];
+    if (slot<0) {
+      if (!canEvaluate()) {
+        report.maximumSamplesReached=true;
+        // Do not write a synthetic state into the product.  The missing -1 slot is
+        // intentionally omitted by the sparse writer, while targetReached=false on
+        // every realized row records that the requested curve was not converged.
+        return unresolvedState;
+      }
+      slot=classify(grid.candidate_GV[idx],idx);
+      ++report.evaluations;
+    }
+    return slot;
+  };
+
+  // Coarse seeds establish common response support for every direction.  The parser
+  // prevents maximumSamples from being smaller than this mandatory set.
+  for (std::size_t idx:grid.seedCandidateIndex) (void)stateAt(idx);
+
+  std::function<void(double,std::size_t,double,std::size_t,int)> refine;
+  refine=[&](double a,std::size_t ia,double b,std::size_t ib,int depth) {
+    const int sa=stateAt(ia);
+    const int sb=stateAt(ib);
+    // Keep the explicit name `visibleAmbiguity`: C19's unchanged architecture gate
+    // verifies that refinement is driven only by a sampled state change and never by
+    // an assumed monotonic cutoff hidden from the saved access curve.
+    const bool visibleAmbiguity=(sa!=sb);
+    const bool guardProbe=(depth<controls.guardDepth);
+    if (!visibleAmbiguity && !guardProbe) return;
+
+    const double width=b-a;
+    const double tolerance=std::max(
+        controls.absoluteTolerance_GV,
+        controls.relativeTolerance*std::max(std::fabs(a),std::fabs(b)));
+    if (tolerance>0.0 && width<=tolerance) return;
+    if (depth>=grid.maxDepth) {
+      if (visibleAmbiguity) report.maximumDepthReached=true;
+      return;
+    }
+    if (!canEvaluate()) {
+      report.maximumSamplesReached=true;
+      return;
+    }
+
+    const double m=AdaptiveDirectAccessMidpointGV(a,b);
+    const std::size_t im=FindAdaptiveDirectAccessNode(grid.candidate_GV,m);
+    (void)stateAt(im);
+    ++report.refinedIntervals;
+
+    // Each child makes its own guard/ambiguity decision.  Consequently multiple
+    // allowed islands and non-monotone penumbrae survive; the algorithm never reduces
+    // the curve to a single assumed cutoff during trajectory generation.
+    refine(a,ia,m,im,depth+1);
+    refine(m,im,b,ib,depth+1);
+  };
+
+  for (std::size_t i=0;i+1<grid.seed_GV.size();++i) {
+    refine(grid.seed_GV[i],grid.seedCandidateIndex[i],
+           grid.seed_GV[i+1],grid.seedCandidateIndex[i+1],0);
+  }
+
+  // Construct conservative a-posteriori indicators from realized adjacent samples.
+  // Every unequal-state interval contributes its entire width to the access-error
+  // support.  Intervals touching UNRESOLVED additionally contribute their weighted
+  // width to the observable-specific unresolved fraction.
+  std::vector<std::size_t> realized;
+  realized.reserve(static_cast<std::size_t>(report.evaluations));
+  for (std::size_t i=0;i<grid.candidate_GV.size();++i)
+    if (states[base+i]>=0) realized.push_back(i);
+
+  double totalWeightedWidth=0.0;
+  double unresolvedWeightedWidth=0.0;
+  for (std::size_t k=0;k+1<realized.size();++k) {
+    const std::size_t ia=realized[k];
+    const std::size_t ib=realized[k+1];
+    const double a=grid.candidate_GV[ia];
+    const double b=grid.candidate_GV[ib];
+    const double width=b-a;
+    const int sa=states[base+ia];
+    const int sb=states[base+ib];
+
+    double weight=1.0;
+    if (controls.responseWeight) {
+      weight=controls.responseWeight(AdaptiveDirectAccessMidpointGV(a,b));
+      if (!(weight>=0.0) || !std::isfinite(weight))
+        throw std::runtime_error(
+            "adaptive direct-access response weight must be finite and non-negative");
+    }
+    totalWeightedWidth+=weight*width;
+    if (sa!=sb) {
+      report.estimatedError_GV+=width;
+      report.maxAmbiguousWidth_GV=std::max(report.maxAmbiguousWidth_GV,width);
+    }
+    if (sa==unresolvedState || sb==unresolvedState)
+      unresolvedWeightedWidth+=weight*width;
+  }
+  if (totalWeightedWidth>0.0)
+    report.responseWeightedUnresolvedSupport=
+        unresolvedWeightedWidth/totalWeightedWidth;
+
+  // The recursion itself uses a local relative tolerance.  Comparing the final width
+  // with the largest requested tolerance is safe here because any premature stop also
+  // sets one of the explicit hard-limit flags below.
+  const double globalTolerance=std::max(
+      controls.absoluteTolerance_GV,
+      controls.relativeTolerance*std::max(
+          std::fabs(grid.candidate_GV.front()),
+          std::fabs(grid.candidate_GV.back())));
+  report.targetReached=!report.maximumSamplesReached &&
+      !report.maximumDepthReached &&
+      (globalTolerance<=0.0 || report.maxAmbiguousWidth_GV<=globalTolerance);
+  return report;
+}
 
 template<class Classifier>
 inline int EvaluateAdaptiveDirectAccessDirection(
@@ -185,62 +381,13 @@ inline int EvaluateAdaptiveDirectAccessDirection(
     std::size_t base,
     Classifier classify,
     int unresolvedState=2) {
-  // `states` is a fixed-size candidate-tree slice owned by one sky direction.  A value
-  // of -1 means that candidate rigidity was not needed.  The caller guarantees unique
-  // ownership of this slice while the function runs, so no lock is required.
-  (void)unresolvedState; // retained in the API for explicit state-semantic documentation
-  if (guardDepth<0 || guardDepth>grid.maxDepth)
-    throw std::runtime_error("adaptive direct-access guard depth must be in [0,maxDepth]");
-  if (base+grid.candidate_GV.size()>states.size())
-    throw std::runtime_error("adaptive direct-access state slice exceeds output array");
-
-  int nEvaluations=0;
-  // The classifier receives both rigidity and the deterministic candidate index.
-  // The second argument lets callers attach termination/trace diagnostics to the same
-  // global sparse slot without searching the candidate grid again.
-  auto stateAt=[&](std::size_t idx) -> int {
-    int& slot=states[base+idx];
-    if (slot<0) {
-      slot=classify(grid.candidate_GV[idx],idx);
-      ++nEvaluations;
-    }
-    return slot;
-  };
-
-  // Always evaluate every coarse seed.  This establishes global coverage independent
-  // of the local access topology and guarantees common lower/upper support in every
-  // direction for the detector fold.
-  for (std::size_t idx:grid.seedCandidateIndex) (void)stateAt(idx);
-
-  std::function<void(double,std::size_t,double,std::size_t,int)> refine;
-  refine=[&](double a,std::size_t ia,double b,std::size_t ib,int depth) {
-    if (depth>=grid.maxDepth) return;
-    const int sa=stateAt(ia);
-    const int sb=stateAt(ib);
-
-    const bool guardProbe=(depth<guardDepth);
-    // Different states are the only evidence that a boundary lies inside this interval.
-    // In particular, UNRESOLVED<->resolved is refined, while UNRESOLVED<->UNRESOLVED
-    // stops after the mandatory guard probes instead of creating an expensive full tree.
-    const bool visibleAmbiguity=(sa!=sb);
-    if (!guardProbe && !visibleAmbiguity) return;
-
-    const double m=AdaptiveDirectAccessMidpointGV(a,b);
-    const std::size_t im=FindAdaptiveDirectAccessNode(grid.candidate_GV,m);
-    (void)stateAt(im);
-
-    // Re-enter both halves.  Each child independently decides whether another guard
-    // probe or ambiguity-driven refinement is warranted.  This detects multiple
-    // transitions rather than collapsing the interval to one monotonic cutoff.
-    refine(a,ia,m,im,depth+1);
-    refine(m,im,b,ib,depth+1);
-  };
-
-  for (std::size_t i=0;i+1<grid.seed_GV.size();++i) {
-    refine(grid.seed_GV[i],grid.seedCandidateIndex[i],
-           grid.seed_GV[i+1],grid.seedCandidateIndex[i+1],0);
-  }
-  return nEvaluations;
+  // Compatibility wrapper: zero tolerances preserve the historical depth/guard-only
+  // evaluation pattern.  Existing callers and C19 convergence gates therefore keep
+  // their exact sampling semantics until they opt into the Step-5 controls.
+  AdaptiveDirectAccessControls controls;
+  controls.guardDepth=guardDepth;
+  return EvaluateAdaptiveDirectAccessDirectionDetailed(
+      grid,controls,states,base,classify,unresolvedState).evaluations;
 }
 
 inline std::size_t CountAdaptiveDirectAccessSamples(const std::vector<int>& states,

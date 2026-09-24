@@ -52,6 +52,7 @@ import gzip
 import hashlib
 import json
 import math
+import os
 import re
 import shlex
 import shutil
@@ -89,6 +90,40 @@ PROFILE_STEP_MINUTES = {"SMOKE": None, "ROUTINE": 60, "FULL": 0}
 # spacing (360/N) is used in latitude.  N=144 therefore reproduces 2.5 deg.
 # The older degree-valued controls remain available for asymmetric-grid studies.
 DEFAULT_DIRMAP_RES_DEG = 2.5
+
+# test_runner.py owns this environment marker.  The active high-memory gridded
+# C19 entry requires it so an obsolete runner cannot silently ignore
+# ``! runner: exclusive`` and launch C19 beside another replicated AMR job.
+# Ordinary scientific/direct invocations do not request the check.
+RUNNER_EXCLUSIVE_ENV = "AMPS_TEST_RUNNER_EXCLUSIVE"
+RUNNER_EXCLUSIVE_ENV_VALUE = "1"
+
+
+def enforce_runner_exclusive_requirement(
+        required: bool,
+        environment: Optional[Mapping[str, str]] = None) -> None:
+    """Reject an unprotected runner-managed C19 launch before AMPS starts.
+
+    The marker is provenance, not a substitute for scheduling: the production
+    runner sets it only after parsing an exclusive entry and admitting that
+    entry into an empty runner-owned pool.  Accepting a mapping makes the check
+    deterministic in the dependency-free self-test without modifying the
+    process environment.
+    """
+
+    if not required:
+        return
+    env = os.environ if environment is None else environment
+    actual = env.get(RUNNER_EXCLUSIVE_ENV)
+    if actual != RUNNER_EXCLUSIVE_ENV_VALUE:
+        shown = "<unset>" if actual is None else repr(actual)
+        raise RuntimeError(
+            "--require-runner-exclusive was requested, but %s is %s (expected %r). "
+            "Refusing to launch the high-memory gridded C19 calculation because "
+            "the active test runner did not prove that it honored "
+            "'! runner: exclusive'. Update srcEarth/test/test_runner.py and rerun "
+            "C19 through the test list." % (
+                RUNNER_EXCLUSIVE_ENV, shown, RUNNER_EXCLUSIVE_ENV_VALUE))
 
 
 @dataclass(frozen=True)
@@ -210,6 +245,8 @@ class AccessSample:
     energy_mev: float
     rigidity_gv: float
     state: int              # 0=PhysicalForbidden, 1=Allowed, 2=Unresolved
+    direction_weight_sr: Optional[float] = None
+    weighted_access_sr: Optional[float] = None
     # New DIRECT_ACCESS producer columns.  They are optional so archived C19 cubes
     # with the historical seven-column schema remain readable for regression work.
     termination_code: Optional[int] = None
@@ -234,6 +271,25 @@ class AccessSample:
     drift_mean_radius_change_re: Optional[float] = None
     trap_mechanism: Optional[int] = None
     momentum_relative_spread: Optional[float] = None
+    exit_state_valid: Optional[int] = None
+    x_exit_m: Optional[float] = None
+    y_exit_m: Optional[float] = None
+    z_exit_m: Optional[float] = None
+    px_exit_si: Optional[float] = None
+    py_exit_si: Optional[float] = None
+    pz_exit_si: Optional[float] = None
+    vx_exit_unit: Optional[float] = None
+    vy_exit_unit: Optional[float] = None
+    vz_exit_unit: Optional[float] = None
+    cos_alpha_exit: Optional[float] = None
+    trace_time_at_exit_s: Optional[float] = None
+    rigidity_at_exit_gv: Optional[float] = None
+    adaptive_refined_intervals: Optional[int] = None
+    adaptive_estimated_error_gv: Optional[float] = None
+    adaptive_max_ambiguous_width_gv: Optional[float] = None
+    adaptive_target_reached: Optional[int] = None
+    adaptive_max_samples_reached: Optional[int] = None
+    response_weighted_unresolved_support: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -1924,6 +1980,8 @@ def parse_directional_access(path: Path) -> DirectionalAccessCube:
         key = (round(lon, 9), round(lat, 9))
         samples.setdefault(key, []).append(AccessSample(
             energy, rigidity, state,
+            direction_weight_sr=rec_optional_float("direction_weight_sr"),
+            weighted_access_sr=rec_optional_float("weighted_access_sr"),
             termination_code=termination_code, termination=termination,
             trace_time_s=rec_optional_float("trace_time_s"),
             trace_distance_re=rec_optional_float("trace_distance_Re"),
@@ -1942,11 +2000,145 @@ def parse_directional_access(path: Path) -> DirectionalAccessCube:
             drift_mean_radius_change_re=rec_optional_float("drift_mean_radius_change_Re"),
             trap_mechanism=rec_optional_int("trap_mechanism"),
             momentum_relative_spread=rec_optional_float("momentum_relative_spread"),
+            exit_state_valid=rec_optional_int("exit_state_valid"),
+            x_exit_m=rec_optional_float("x_exit_m"),
+            y_exit_m=rec_optional_float("y_exit_m"),
+            z_exit_m=rec_optional_float("z_exit_m"),
+            px_exit_si=rec_optional_float("px_exit_SI"),
+            py_exit_si=rec_optional_float("py_exit_SI"),
+            pz_exit_si=rec_optional_float("pz_exit_SI"),
+            vx_exit_unit=rec_optional_float("vx_exit_unit"),
+            vy_exit_unit=rec_optional_float("vy_exit_unit"),
+            vz_exit_unit=rec_optional_float("vz_exit_unit"),
+            cos_alpha_exit=rec_optional_float("cos_alpha_exit"),
+            trace_time_at_exit_s=rec_optional_float("trace_time_at_exit_s"),
+            rigidity_at_exit_gv=rec_optional_float("rigidity_at_exit_GV"),
+            adaptive_refined_intervals=rec_optional_int("adaptive_refined_intervals"),
+            adaptive_estimated_error_gv=rec_optional_float("adaptive_estimated_error_GV"),
+            adaptive_max_ambiguous_width_gv=rec_optional_float(
+                "adaptive_max_ambiguous_width_GV"),
+            adaptive_target_reached=rec_optional_int("adaptive_target_reached"),
+            adaptive_max_samples_reached=rec_optional_int(
+                "adaptive_max_samples_reached"),
+            response_weighted_unresolved_support=rec_optional_float(
+                "response_weighted_unresolved_support"),
         ))
     if not samples:
         raise ValueError("no direct access samples parsed from %s" % path)
     frozen = {key: tuple(sorted(value, key=lambda sample: sample.energy_mev))
               for key, value in samples.items()}
+
+    # Step-5 files are self-contained.  All energies in one sky cell must carry the
+    # same exact quadrature weight, weighted_access_sr must reproduce binary access,
+    # and an allowed characteristic must contain a complete finite boundary state.
+    # These checks are conditional so archived pre-Step-5 products remain readable;
+    # a partially populated new schema is never accepted.
+    for key, curve in frozen.items():
+        weights = [sample.direction_weight_sr for sample in curve
+                   if sample.direction_weight_sr is not None]
+        step5_schema = bool(weights)
+        if weights:
+            if len(weights) != len(curve) or any(weight <= 0.0 for weight in weights):
+                raise ValueError("invalid/incomplete direction_weight_sr at %s in %s" %
+                                 (key, path))
+            reference_weight = weights[0]
+            if any(abs(weight-reference_weight) >
+                   1.0e-12*max(1.0, abs(reference_weight)) for weight in weights[1:]):
+                raise ValueError("direction weight changes with energy at %s in %s" %
+                                 (key, path))
+        for sample in curve:
+            if step5_schema:
+                required_product_fields = (
+                    sample.weighted_access_sr, sample.exit_state_valid,
+                    sample.adaptive_refined_intervals,
+                    sample.adaptive_estimated_error_gv,
+                    sample.adaptive_max_ambiguous_width_gv,
+                    sample.adaptive_target_reached,
+                    sample.adaptive_max_samples_reached,
+                    sample.response_weighted_unresolved_support)
+                if any(value is None for value in required_product_fields):
+                    raise ValueError("incomplete Step-5 product schema at %s in %s" %
+                                     (key, path))
+            if sample.state == 1 and sample.exit_state_valid is not None and \
+                    sample.exit_state_valid != 1:
+                raise ValueError("allowed sample lacks valid exit state at %s in %s" %
+                                 (key, path))
+            if sample.state != 1 and sample.exit_state_valid not in (None, 0):
+                raise ValueError("non-allowed sample carries a valid exit state at %s in %s" %
+                                 (key, path))
+            if sample.direction_weight_sr is not None and \
+                    sample.weighted_access_sr is not None:
+                expected = sample.direction_weight_sr if sample.state == 1 else 0.0
+                if not math.isclose(sample.weighted_access_sr, expected,
+                                    rel_tol=1.0e-12, abs_tol=1.0e-15):
+                    raise ValueError("weighted access is inconsistent at %s in %s" %
+                                     (key, path))
+            if sample.state == 1 and sample.exit_state_valid == 1:
+                exit_values = (
+                    sample.x_exit_m, sample.y_exit_m, sample.z_exit_m,
+                    sample.px_exit_si, sample.py_exit_si, sample.pz_exit_si,
+                    sample.vx_exit_unit, sample.vy_exit_unit, sample.vz_exit_unit,
+                    sample.cos_alpha_exit, sample.trace_time_at_exit_s,
+                    sample.rigidity_at_exit_gv)
+                if any(value is None or not math.isfinite(value)
+                       for value in exit_values):
+                    raise ValueError("allowed exit state is incomplete at %s in %s" %
+                                     (key, path))
+                momentum_norm = math.sqrt(
+                    sample.px_exit_si**2 + sample.py_exit_si**2 + sample.pz_exit_si**2)
+                velocity_norm = math.sqrt(
+                    sample.vx_exit_unit**2 + sample.vy_exit_unit**2 +
+                    sample.vz_exit_unit**2)
+                aligned = (sample.px_exit_si*sample.vx_exit_unit +
+                           sample.py_exit_si*sample.vy_exit_unit +
+                           sample.pz_exit_si*sample.vz_exit_unit)
+                if not (momentum_norm > 0.0 and
+                        math.isclose(velocity_norm, 1.0, rel_tol=1.0e-10,
+                                     abs_tol=1.0e-10) and
+                        aligned > 0.0 and
+                        math.isclose(aligned/momentum_norm, 1.0,
+                                     rel_tol=1.0e-10, abs_tol=1.0e-10) and
+                        -1.0 <= sample.cos_alpha_exit <= 1.0 and
+                        sample.trace_time_at_exit_s >= 0.0 and
+                        sample.rigidity_at_exit_gv > 0.0):
+                    raise ValueError("allowed exit state is physically inconsistent at %s in %s" %
+                                     (key, path))
+
+        if step5_schema:
+            first = curve[0]
+            if (first.adaptive_refined_intervals < 0 or
+                    first.adaptive_estimated_error_gv < 0.0 or
+                    first.adaptive_max_ambiguous_width_gv < 0.0 or
+                    first.adaptive_target_reached not in (0, 1) or
+                    first.adaptive_max_samples_reached not in (0, 1) or
+                    not 0.0 <= first.response_weighted_unresolved_support <= 1.0 or
+                    (first.adaptive_target_reached == 1 and
+                     first.adaptive_max_samples_reached == 1)):
+                raise ValueError("invalid Step-5 convergence report at %s in %s" %
+                                 (key, path))
+            reference_report = (
+                first.adaptive_refined_intervals,
+                first.adaptive_estimated_error_gv,
+                first.adaptive_max_ambiguous_width_gv,
+                first.adaptive_target_reached,
+                first.adaptive_max_samples_reached,
+                first.response_weighted_unresolved_support)
+            for sample in curve[1:]:
+                report = (
+                    sample.adaptive_refined_intervals,
+                    sample.adaptive_estimated_error_gv,
+                    sample.adaptive_max_ambiguous_width_gv,
+                    sample.adaptive_target_reached,
+                    sample.adaptive_max_samples_reached,
+                    sample.response_weighted_unresolved_support)
+                if (report[0] != reference_report[0] or
+                        report[3] != reference_report[3] or
+                        report[4] != reference_report[4] or
+                        any(not math.isclose(report[index], reference_report[index],
+                                             rel_tol=1.0e-12, abs_tol=1.0e-15)
+                            for index in (1, 2, 5))):
+                    raise ValueError("Step-5 convergence report changes within %s in %s" %
+                                     (key, path))
 
     # Completeness contract for both dense and adaptive DIRECT_ACCESS.
     #
@@ -3316,7 +3508,15 @@ def fold_aperture_direct_access(
         # before the energy loop.  Using them here lets the long-trace statistics
         # carry the same detector/spectrum/source weighting as the final synthetic
         # signal rather than raw trajectory counts.
-        direction_weight = max(0.0, math.cos(math.radians(lat)))
+        # Step-5 products carry the exact spherical-cell weight, including polar-cap
+        # clipping.  Divide by the common cell scale because this fold historically
+        # stores a dimensionless latitude factor and applies cell_scale_sr separately.
+        # Archived products retain their original midpoint-cosine behavior.
+        saved_weight_sr = samples[0].direction_weight_sr
+        direction_weight = (
+            max(0.0, saved_weight_sr / cell_scale_sr)
+            if saved_weight_sr is not None and cell_scale_sr > 0.0
+            else max(0.0, math.cos(math.radians(lat))))
 
         static_allowed_min_int = 0.0
         static_allowed_max_int = 0.0
@@ -7297,6 +7497,28 @@ def write_gridded_batch_inputs(
 def self_test() -> int:
     manifest = json.loads(DEFAULT_MANIFEST.read_text())
 
+    # Runner-safety handshake: a required exclusive launch must accept only the
+    # exact marker exported by the current dispatcher.  Missing, stale, or
+    # user-invented values must fail before AMPS can allocate the C19 mesh.
+    enforce_runner_exclusive_requirement(False, {})
+    for invalid_environment in (
+            {}, {RUNNER_EXCLUSIVE_ENV: "0"},
+            {RUNNER_EXCLUSIVE_ENV: "true"}):
+        try:
+            enforce_runner_exclusive_requirement(True, invalid_environment)
+        except RuntimeError as exc:
+            if RUNNER_EXCLUSIVE_ENV not in str(exc):
+                raise AssertionError(
+                    "exclusive-runner failure omitted the marker name") from exc
+        else:
+            raise AssertionError(
+                "exclusive-runner requirement accepted missing/invalid provenance")
+    enforce_runner_exclusive_requirement(
+        True, {RUNNER_EXCLUSIVE_ENV: RUNNER_EXCLUSIVE_ENV_VALUE})
+    exclusive_cli = parse_args(["--require-runner-exclusive"])
+    if not exclusive_cli.require_runner_exclusive:
+        raise AssertionError("--require-runner-exclusive was not retained by argparse")
+
     # Protect both resolution-count interfaces against future runner refactors.
     # Angular N=288 must resolve to an isotropic 1.25-degree grid; the independent
     # energy option must remain accepted and preserve its requested value.
@@ -8475,6 +8697,12 @@ Examples:
               "per field model/search configuration and reuses its allocated mesh "
               "for all selected snapshot/location cases; OFF retains one AMPS "
               "process per spacecraft epoch for regression comparison"))
+    parser.add_argument(
+        "--require-runner-exclusive", action="store_true",
+        help=("runner-safety provenance check used by the active high-memory C19 "
+              "test-list entry: require AMPS_TEST_RUNNER_EXCLUSIVE=1 and fail "
+              "before launching AMPS if an obsolete runner ignored the exclusive "
+              "directive. This option changes no C19 physics or acceptance gate"))
     parser.add_argument("-np", type=int, default=4)
     parser.add_argument("-nt", type=int, default=16)
     parser.add_argument("--mpirun", default="mpirun")
@@ -8646,6 +8874,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     if args.self_test:
         return self_test()
+
+    # This check must precede path validation, output-directory creation, and
+    # every subprocess call.  Its purpose is to turn a mixed deployment (new
+    # test list plus obsolete runner) into a short, explicit validation failure
+    # instead of another SIGKILL after the large replicated mesh is allocated.
+    try:
+        enforce_runner_exclusive_requirement(args.require_runner_exclusive)
+    except RuntimeError as exc:
+        print("C19A runner-safety check failed: %s" % exc, file=sys.stderr)
+        return 2
 
     launch_dir = Path.cwd().resolve()
     reference_path = Path(args.reference).expanduser().resolve()

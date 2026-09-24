@@ -506,6 +506,15 @@ bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
     p.cutoff.directAccessAdaptiveMaxDepth=cli.cutoffDirectAccessAdaptiveMaxDepth;
   if (cli.cutoffDirectAccessAdaptiveGuardDepth>=0)
     p.cutoff.directAccessAdaptiveGuardDepth=cli.cutoffDirectAccessAdaptiveGuardDepth;
+  if (cli.cutoffDirectAccessAdaptiveTolerance_GV>=0.0)
+    p.cutoff.directAccessAdaptiveTolerance_GV=
+        cli.cutoffDirectAccessAdaptiveTolerance_GV;
+  if (cli.cutoffDirectAccessAdaptiveRelativeTolerance>=0.0)
+    p.cutoff.directAccessAdaptiveRelativeTolerance=
+        cli.cutoffDirectAccessAdaptiveRelativeTolerance;
+  if (cli.cutoffDirectAccessAdaptiveMaxSamples>=0)
+    p.cutoff.directAccessAdaptiveMaxSamples=
+        cli.cutoffDirectAccessAdaptiveMaxSamples;
   if (p.cutoff.directAccessAdaptiveGuardDepth>p.cutoff.directAccessAdaptiveMaxDepth) {
     std::cerr << "Error: DIRECT_ACCESS adaptive guard depth exceeds max depth for "
               << modeLabel << ".\n";
@@ -514,6 +523,23 @@ bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
   if (p.cutoff.directAccessAdaptive && p.cutoff.searchAlgorithm!="DIRECT_ACCESS") {
     std::cerr << "Error: adaptive direct access was requested for " << modeLabel
               << " but cutoff search is " << p.cutoff.searchAlgorithm << ".\n";
+    return false;
+  }
+  if (!std::isfinite(p.cutoff.directAccessAdaptiveTolerance_GV) ||
+      p.cutoff.directAccessAdaptiveTolerance_GV<0.0 ||
+      !std::isfinite(p.cutoff.directAccessAdaptiveRelativeTolerance) ||
+      p.cutoff.directAccessAdaptiveRelativeTolerance<0.0 ||
+      p.cutoff.directAccessAdaptiveMaxSamples<0) {
+    std::cerr << "Error: invalid DIRECT_ACCESS adaptive tolerance/sample budget for "
+              << modeLabel << ".\n";
+    return false;
+  }
+  if (p.cutoff.directAccessAdaptive &&
+      p.cutoff.directAccessAdaptiveMaxSamples>0 &&
+      p.cutoff.directAccessAdaptiveMaxSamples<
+          static_cast<int>(p.cutoff.rigidityList_GV.size())) {
+    std::cerr << "Error: DIRECT_ACCESS adaptive max samples is smaller than the "
+              << "rigidity seed count for " << modeLabel << ".\n";
     return false;
   }
 

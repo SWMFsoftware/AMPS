@@ -103,11 +103,12 @@
 //   -mode3d-mpi-dynamic-chunk <int>
 //       Number of dynamic MPI work items per fetch. Mode3D cutoff uses flattened trajectory tasks; Mode3D density/flux uses locations. 0 means automatic.
 //
-//   -cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|RIGIDITY_LIST|BINARY>
+//   -cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|DIRECT_ACCESS|RIGIDITY_LIST|BINARY>
 //       Select the cutoff-rigidity product. UPPER_SCAN returns the upper penumbra
-//       edge; PENUMBRA_SCAN evaluates the full access sequence; RIGIDITY_LIST is a
-//       Mode3D-only direct-access product at explicitly supplied rigidity values;
-//       BINARY is the legacy endpoint method.
+//       edge; PENUMBRA_SCAN evaluates the full access sequence; DIRECT_ACCESS writes
+//       the point/trajectory A(E,Omega) product; RIGIDITY_LIST is the historical
+//       Mode3D shell product at explicitly supplied rigidity values; BINARY is the
+//       legacy endpoint method.
 //       Mode-specific aliases are also accepted, including
 //       -mode3d-cutoff-search and -gridless-cutoff-search.
 //
@@ -116,7 +117,19 @@
 //       forbidden/allowed bisection.  If omitted, the solver reuses CUTOFF_NENERGY.
 //
 //   -cutoff-rigidity-list-gv <comma-separated-list>
-//       Explicit positive rigidity values traced by RIGIDITY_LIST, in GV.
+//       Explicit positive rigidity values traced by RIGIDITY_LIST, or mandatory
+//       coarse seeds for adaptive DIRECT_ACCESS, in GV.
+//
+//   -cutoff-direct-access-adaptive <T|F>
+//   -cutoff-direct-access-adaptive-max-depth <int>
+//   -cutoff-direct-access-adaptive-guard-depth <int>
+//   -cutoff-direct-access-adaptive-tolerance-gv <double>
+//   -cutoff-direct-access-adaptive-relative-tolerance <double>
+//   -cutoff-direct-access-adaptive-max-samples <int>
+//       Step-5 per-direction refinement controls. Visible state-change brackets target
+//       max(absolute,relative*R); depth and sample count are hard bounds whose
+//       exhaustion is written as non-convergence. A zero sample cap uses the complete
+//       deterministic candidate tree.
 //
 //   -cutoff-access-abs-lat-min/max <deg>
 //       Restrict the Mode3D RIGIDITY_LIST launch grid to a geodetic absolute-latitude
@@ -327,7 +340,7 @@ namespace EarthUtil {
     std::string cutoffDebugExitListFile{""};
     std::string cutoffDebugExitFile{""};
 
-    // -cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|BINARY>
+    // -cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|DIRECT_ACCESS|RIGIDITY_LIST|BINARY>
     // Optional override for #CUTOFF_RIGIDITY / CUTOFF_SEARCH_ALGORITHM.
     // UPPER_SCAN, PENUMBRA_SCAN, and BINARY are normalized and validated by
     // ApplyCommonBackwardCli() in srcEarth/main.cpp. PENUMBRA_SCAN must remain a
@@ -355,6 +368,9 @@ namespace EarthUtil {
     int cutoffDirectAccessAdaptive{-1};       // -1=no override, 0=off, 1=on
     int cutoffDirectAccessAdaptiveMaxDepth{-1};
     int cutoffDirectAccessAdaptiveGuardDepth{-1};
+    double cutoffDirectAccessAdaptiveTolerance_GV{-1.0};
+    double cutoffDirectAccessAdaptiveRelativeTolerance{-1.0};
+    int cutoffDirectAccessAdaptiveMaxSamples{-1};
 
     // Optional Mode3D RIGIDITY_LIST geodetic absolute-latitude band overrides.
     // Negative sentinels mean no CLI override; zero is a valid lower bound.

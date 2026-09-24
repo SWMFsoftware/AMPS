@@ -347,7 +347,45 @@ The default reference and driver paths are used automatically. Explicit equivale
 --driver srcEarth/test/C19/data/ts05_driver_may2012.txt
 ```
 
-### 8.3 Parallel Mode3D field initialization
+### 8.3 Test-runner isolation and bounded field-initialization fan-out
+
+The active C19 entry in `srcEarth/test/list` is a high-memory gridded batch and
+is intentionally marked with:
+
+```text
+! runner: exclusive
+P srcEarth/test/C19/run_C19.py ... --require-runner-exclusive
+```
+
+After the dispatcher has drained all earlier work and admitted the exclusive
+entry, it exports `AMPS_TEST_RUNNER_EXCLUSIVE=1` only to that child. The C19
+wrapper checks the exact marker before validating files, creating output, or
+launching AMPS. This catches a partially updated installation in which an old
+runner reads `! runner: exclusive` as an ordinary comment; it fails quickly
+instead of allowing the AMR process to be killed before producing model rows.
+Normal direct C19 runs do not need the option, and the handshake does not change
+the physics or observational acceptance logic.
+
+The test-list command uses `-np 4 -nt 8`. Parallel Mode3D initialization creates
+eight temporary workers plus the caller on every MPI rank, for
+`4 * (8 + 1) = 36` participants. This matches the 36 CPUs in the validation
+allocation. The previous `-nt 33` command created 136 participants and strongly
+oversubscribed the same cpuset. Only execution parallelism is bounded: mesh
+resolution, directional and energy sampling, trace budgets, detector folding,
+reference observations, and every numerical/observational pass gate remain
+unchanged.
+
+The protection is visible near the top of each runner log:
+
+```text
+# Exclusive scheduling: yes
+# Exclusive environment marker: AMPS_TEST_RUNNER_EXCLUSIVE=1
+```
+
+If either line is absent, the run did not use the protected runner path and
+must not be treated as a completed C19 validation.
+
+### 8.4 Parallel Mode3D field initialization
 
 ```bash
 python3 srcEarth/test/C19/run_C19.py \
@@ -384,7 +422,7 @@ infrastructure used by the cutoff scheduler.  Thus live background-field progres
 not change AMPS' MPI thread-level requirement and does not alter field values or the C19
 trajectory calculation.
 
-### 8.4 GRIDLESS/GRIDDED cross-solver run
+### 8.5 GRIDLESS/GRIDDED cross-solver run
 
 ```bash
 python3 srcEarth/test/C19/run_C19.py \
@@ -395,7 +433,7 @@ python3 srcEarth/test/C19/run_C19.py \
   -np 4 -nt 16
 ```
 
-### 8.5 Full five-minute comparison
+### 8.6 Full five-minute comparison
 
 ```bash
 python3 srcEarth/test/C19/run_C19.py \
@@ -414,7 +452,7 @@ folded independently in postprocessing. GRIDLESS remains one launch per selected
 `(epoch, spacecraft, field model)` because it does not allocate a persistent field
 mesh.
 
-### 8.6 GRIDDED mesh-reuse batching
+### 8.7 GRIDDED mesh-reuse batching
 
 The historical runner launched Mode3D separately for every spacecraft epoch. Each
 process repeated `PIC::InitMPI()`, `amps_init_mesh()`, `amps_init()`, sphere setup, and
@@ -473,7 +511,7 @@ python3 srcEarth/test/C19/run_C19.py ... --gridded-batch OFF
 behavior; batching is activated only by the explicit C19-generated `SNAPSHOT_LIST`
 deck.
 
-### 8.7 Custom cadence or time interval
+### 8.8 Custom cadence or time interval
 
 ```bash
 python3 srcEarth/test/C19/run_C19.py \
@@ -486,7 +524,7 @@ python3 srcEarth/test/C19/run_C19.py \
   --amps ./amps
 ```
 
-### 8.8 Direction-mapping diagnostic
+### 8.9 Direction-mapping diagnostic
 
 The AMPS cutoff implementation and the GOES detector geometry use two different
 vector meanings that must not be conflated:
@@ -518,7 +556,7 @@ clusters commonly appear near opposite longitudes; a FILE attitude can place the
 elsewhere and they need not be exactly antipodal.
 
 
-### 8.9 Single current workflow
+### 8.10 Single current workflow
 
 C19 no longer exposes P0/P1/P2 as alternate execution modes. Those names describe the
 development history only. The validated changes are integrated into every ordinary run.
@@ -1106,7 +1144,17 @@ The corresponding input directives are identical for GRIDDED and GRIDLESS:
 CUTOFF_DIRECT_ACCESS_ADAPTIVE              T
 CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_DEPTH    6
 CUTOFF_DIRECT_ACCESS_ADAPTIVE_GUARD_DEPTH  1
+CUTOFF_DIRECT_ACCESS_ADAPTIVE_TOLERANCE_GV       0.001
+CUTOFF_DIRECT_ACCESS_ADAPTIVE_RELATIVE_TOLERANCE 0.0001
+CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_SAMPLES        0
 ```
+
+The last three controls are Roadmap Step 5 convergence controls. Visible state-change
+and resolved/unresolved brackets must reach the larger of the absolute and relative
+rigidity widths unless the explicit depth/sample budget is exhausted. Exhaustion is
+written as `adaptive_target_reached=0` with the corresponding error/bracket fields; it
+is not reclassified as physical shielding and does not modify any C19 observational or
+numerical acceptance threshold.
 
 For each selected sky direction the shared C++ implementation (`util/AdaptiveDirectAccess.h`) performs the following steps:
 
@@ -1117,6 +1165,13 @@ For each selected sky direction the shared C++ implementation (`util/AdaptiveDir
 5. **Stop at the maximum depth.** The default depth 6 bounds both trajectory work and memory. No monotonic-cutoff assumption is used: if guard/refinement probes reveal multiple state changes, each visible transition is retained and refined independently.
 6. **Write only evaluated nodes.** Internally, every MPI rank builds the same deterministic candidate tree. Unvisited candidate slots retain sentinel `-1`, allowing the existing fixed-size `MPI_MAX` reduction. The Tecplot writer omits those `-1` slots, so each direction can contain a different number of actual rigidity samples while the public output schema remains unchanged. Dense mode continues to treat any `-1` state as a fatal producer error.
 7. **Fold the sparse samples with explicit uncertainty bounds.** `run_C19.py` sorts the realized samples independently for each direction. Equal `ALLOWED` endpoints transmit the complete interval, equal `PHYSICAL_FORBIDDEN` endpoints block it, and a sampled state change contributes a `[0, full interval]` finite-grid uncertainty bracket. Any interval touching `UNRESOLVED` is carried separately as trace-resolution uncertainty. Thus adaptation does not invent the unknown transition location.
+
+Every new Step-5 row additionally stores the exact spherical-cell weight,
+`weighted_access_sr`, the complete allowed outer-boundary phase-space state, and the
+per-direction adaptive convergence report. The C19 reader validates that these fields
+are complete and invariant within a direction and rejects inconsistent weights or
+nonphysical exit states. Archived pre-Step-5 seven-column products remain readable for
+regression comparisons, but a partially populated Step-5 schema is rejected.
 
 The deterministic candidate tree has
 

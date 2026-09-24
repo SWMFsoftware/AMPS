@@ -1,4 +1,4 @@
-# SWMF-coupled Step 3 field snapshot and Step 4 trajectories
+# SWMF-coupled field snapshots, trajectories, and directional access
 
 Before each requested backward-product callback,
 `PrepareGlobalSWMFCoupledMagneticFieldForCutoff()` gathers authoritative owner-cell
@@ -32,3 +32,23 @@ Although the coupled snapshot contains the derived electric field, the released 
 backtracer remains frozen magnetic-only. Electric or explicitly time-dependent
 characteristics and `PhysicalBackwardTime` requests fail fast; the code does not treat
 the presence of an E array as permission to use the static antiparticle shortcut.
+
+Roadmap Step 5 is coupled through the same Mode3D `DIRECT_ACCESS` driver; there is no
+SWMF-specific reconstruction path. For each current quasi-static SWMF snapshot, the
+writer saves exact solid-angle weights, the three-state `A(E,Omega)` classification,
+complete allowed exit states, and adaptive error/work-limit metadata. The snapshot
+fingerprint in each trajectory result is checked against the generation published for
+that SWMF callback, preventing access rows from two coupling times from being mixed.
+
+The Step-5 product remains instantaneous/quasi-static. It maps an incident boundary
+distribution through one magnetospheric state; it does not yet model acceleration,
+loss, or trapping evolution across a time sequence of SWMF snapshots. Adaptive
+refinement controls and the output schema are identical to standalone Mode3D and are
+documented in `../README.md` and `../3d/README.md`.
+
+The dependency-free shared contract tests are:
+
+```bash
+./srcEarth/test/UTrajectoryCore/run_test.sh
+./srcEarth/test/UDirectionalAccess/run_test.sh
+```

@@ -70,6 +70,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 
 
 namespace {
@@ -369,6 +370,38 @@ CliOptions ParseCli(int argc,char** argv) {
       opt.cutoffDirectAccessAdaptiveGuardDepth=std::stoi(argv[++i]);
       if (opt.cutoffDirectAccessAdaptiveGuardDepth<0 || opt.cutoffDirectAccessAdaptiveGuardDepth>20)
         exit(__LINE__,__FILE__,"-cutoff-direct-access-adaptive-guard-depth must be in [0,20]");
+    }
+    else if (a=="-cutoff-direct-access-adaptive-tolerance-gv" ||
+             a=="--cutoff-direct-access-adaptive-tolerance-gv") {
+      if (i+1>=argc)
+        exit(__LINE__,__FILE__,
+             "Missing value after -cutoff-direct-access-adaptive-tolerance-gv");
+      opt.cutoffDirectAccessAdaptiveTolerance_GV=std::stod(argv[++i]);
+      if (!std::isfinite(opt.cutoffDirectAccessAdaptiveTolerance_GV) ||
+          opt.cutoffDirectAccessAdaptiveTolerance_GV<0.0)
+        exit(__LINE__,__FILE__,
+             "-cutoff-direct-access-adaptive-tolerance-gv must be finite and >= 0");
+    }
+    else if (a=="-cutoff-direct-access-adaptive-relative-tolerance" ||
+             a=="--cutoff-direct-access-adaptive-relative-tolerance") {
+      if (i+1>=argc)
+        exit(__LINE__,__FILE__,
+             "Missing value after -cutoff-direct-access-adaptive-relative-tolerance");
+      opt.cutoffDirectAccessAdaptiveRelativeTolerance=std::stod(argv[++i]);
+      if (!std::isfinite(opt.cutoffDirectAccessAdaptiveRelativeTolerance) ||
+          opt.cutoffDirectAccessAdaptiveRelativeTolerance<0.0)
+        exit(__LINE__,__FILE__,
+             "-cutoff-direct-access-adaptive-relative-tolerance must be finite and >= 0");
+    }
+    else if (a=="-cutoff-direct-access-adaptive-max-samples" ||
+             a=="--cutoff-direct-access-adaptive-max-samples") {
+      if (i+1>=argc)
+        exit(__LINE__,__FILE__,
+             "Missing integer after -cutoff-direct-access-adaptive-max-samples");
+      opt.cutoffDirectAccessAdaptiveMaxSamples=std::stoi(argv[++i]);
+      if (opt.cutoffDirectAccessAdaptiveMaxSamples<0)
+        exit(__LINE__,__FILE__,
+             "-cutoff-direct-access-adaptive-max-samples must be >= 0");
     }
     else if (a=="-cutoff-access-abs-lat-min" || a=="--cutoff-access-abs-lat-min") {
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-access-abs-lat-min");
@@ -803,6 +836,9 @@ std::string HelpMessage(const char* progName) {
   out << "        --cutoff-direct-access-adaptive <T|F>  adapt DIRECT_ACCESS per direction\n";
   out << "        --cutoff-direct-access-adaptive-max-depth <N>  recursive refinement cap\n";
   out << "        --cutoff-direct-access-adaptive-guard-depth <N>  forced midpoint-probe levels\n";
+  out << "        --cutoff-direct-access-adaptive-tolerance-gv <GV>  absolute transition-width target\n";
+  out << "        --cutoff-direct-access-adaptive-relative-tolerance <f>  relative width target\n";
+  out << "        --cutoff-direct-access-adaptive-max-samples <N>  per-direction trajectory budget (0=tree limit)\n";
   out << "        --cutoff-access-abs-lat-min <deg>      selected geodetic |latitude| minimum\n";
   out << "        --cutoff-access-abs-lat-max <deg>      selected geodetic |latitude| maximum\n";
   out << "        --gridless-cutoff-search <...>  gridless-specific alias\n";
