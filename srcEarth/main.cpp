@@ -39,6 +39,7 @@
 // Gridless cutoff rigidity CLI/runner
 #include "util/cutoff_cli.h"
 #include "util/amps_param_parser.h"
+#include "util/StandaloneProductContract.h"
 #include "gridless/CutoffRigidityGridless.h"
 #include "gridless/DensityGridless.h"
 #include "gridless/GridlessParticleMovers.h"
@@ -47,6 +48,44 @@
 #include "3d_forward/ForwardParticleMovers.h"
 
 namespace {
+
+bool StandaloneDriverCoversRequestedEpochs(const EarthUtil::AmpsParam& prm,
+                                           std::string* detail) {
+  if (prm.temporal.driverTable.empty()) return true;
+
+#ifdef _NO_SPICE_CALLS_
+  if (detail!=nullptr)
+    *detail="a file-backed driver table requires SPICE UTC-to-ET conversion";
+  return false;
+#else
+  // POINTS and SHELLS use the global snapshot epoch.  TRAJECTORY carries one
+  // authoritative UTC per sample; validate every one here because the field,
+  // temporal boundary spectrum, ephemeris, and written row are all keyed by it.
+  std::vector<std::string> epochs;
+  if (EarthUtil::ToUpper(prm.output.mode)=="TRAJECTORY" &&
+      !prm.output.trajectories.empty()) {
+    for (const auto& trajectory:prm.output.trajectories)
+      for (const auto& sample:trajectory.samples) epochs.push_back(sample.timeUTC);
+  }
+  else epochs.push_back(prm.field.epoch);
+
+  for (const std::string& epoch:epochs) {
+    SpiceDouble et=0.0;
+    str2et_c(epoch.c_str(),&et);
+    if (!prm.temporal.driverTable.Covers(static_cast<double>(et))) {
+      if (detail!=nullptr) {
+        std::ostringstream message;
+        message << "requested epoch " << epoch << " is outside driver coverage ["
+                << prm.temporal.driverTable.FirstUtc() << ", "
+                << prm.temporal.driverTable.LastUtc() << "]";
+        *detail=message.str();
+      }
+      return false;
+    }
+  }
+  return true;
+#endif
+}
 
 void InitStandaloneSpiceBeforeParamParsing(const char* modeName) {
 #ifndef _NO_SPICE_CALLS_
@@ -2143,27 +2182,80 @@ int main(int argc,char **argv) {
         if (!ApplyCutoffMoverCli(cli)) return 1;
 
 
-        // Dispatch gridless workflows by CALC_TARGET.
-        // - CUTOFF_RIGIDITY   : existing gridless cutoff tool
-        // - DENSITY_SPECTRUM  : energy-grid transmissivity + density integration
-        const std::string target = EarthUtil::ToUpper(p.calc.target);
-        if (target=="CUTOFF_RIGIDITY") {
-          Earth::GridlessMode::RunCutoffRigidity(p);
-	  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-	  MPI_Finalize();
-	  return EXIT_SUCCESS;
-        }
-        if (target=="DENSITY_SPECTRUM") {
-          if (EarthUtil::ToUpper(p.calc.fieldEvalMethod)!="GRIDLESS") {
-            throw std::runtime_error("-mode gridless with CALC_TARGET=DENSITY_SPECTRUM requires FIELD_EVAL_METHOD=GRIDLESS");
-          }
-          Earth::GridlessMode::RunDensityAndSpectrum(p);
-	  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-	  MPI_Finalize();
-          return EXIT_SUCCESS;
+        // Roadmap Step 7: one validated standalone request can now produce cutoff
+        // only, flux/spectrum only, or both.  The two products are dispatched
+        // sequentially from this common plan and must retain the same immutable
+        // field identity.  No numerical tolerance or classification policy is
+        // changed by this orchestration layer.
+        namespace SP=Earth::StandaloneProducts;
+        if (EarthUtil::ToUpper(p.calc.fieldEvalMethod)!="GRIDLESS")
+          throw std::runtime_error(
+              "-mode gridless requires FIELD_EVAL_METHOD=GRIDLESS");
+
+        SP::RunPlan standalonePlan;
+        standalonePlan.fieldModel=p.field.model;
+        standalonePlan.outputMode=p.output.mode;
+        standalonePlan.products=SP::ParseProductSelection(p.calc.target);
+        standalonePlan.representation=SP::FieldRepresentation::Gridless;
+        standalonePlan.epochs.field=p.field.epoch;
+        standalonePlan.epochs.drivers=p.field.epoch;
+        standalonePlan.epochs.boundarySpectrum=p.field.epoch;
+        standalonePlan.epochs.ephemeris=p.field.epoch;
+        standalonePlan.epochs.output=p.field.epoch;
+
+        const bool fileBackedDrivers=!p.temporal.driverTable.empty();
+        standalonePlan.driverSource=fileBackedDrivers
+            ? p.temporal.driverTable.SourceFile() : std::string("INLINE");
+        standalonePlan.driverColumnsValidated=!fileBackedDrivers ||
+            p.temporal.driverTable.ColumnsValidated();
+        standalonePlan.driverUnitsValidated=!fileBackedDrivers ||
+            p.temporal.driverTable.UnitsValidated();
+        std::string driverCoverageDetail;
+        standalonePlan.driverEpochValidated=
+            StandaloneDriverCoversRequestedEpochs(p,&driverCoverageDetail);
+        if (!standalonePlan.driverEpochValidated)
+          throw std::runtime_error("Standalone driver epoch validation failed: "+
+                                   driverCoverageDetail);
+
+        // Constructing this metadata creates the same production field snapshot
+        // used by the movers.  Successful construction is therefore the startup
+        // evidence that Geopack RECALC/IGRF (when required) ran for this epoch.
+        const Earth::Field::SnapshotMetadata batchMetadata=
+            Earth::GridlessMode::FrozenFieldSnapshotMetadata(p);
+        standalonePlan.snapshotId=batchMetadata.snapshotId;
+        standalonePlan.geopackInitialized=
+            !SP::RequiresGeopackInitialization(standalonePlan.fieldModel) ||
+            (batchMetadata.valid && !batchMetadata.epochUTC.empty());
+        standalonePlan.fieldValidityValidated=batchMetadata.valid &&
+            batchMetadata.magneticFieldAvailable && batchMetadata.immutableDuringBatch;
+        standalonePlan.Validate(/*externalDriversAreInline=*/!fileBackedDrivers);
+
+        if (PIC::ThisThread==0) {
+          std::ofstream manifest("standalone_run_manifest.json");
+          if (!manifest)
+            throw std::runtime_error("Cannot write standalone_run_manifest.json");
+          manifest << SP::BuildManifestJson(standalonePlan);
         }
 
-        throw std::runtime_error("Unsupported CALC_TARGET for -mode gridless: '"+p.calc.target+"'");
+        int standaloneStatus=0;
+        if (standalonePlan.products.cutoff) {
+          const int status=Earth::GridlessMode::RunCutoffRigidity(p);
+          if (status!=0) standaloneStatus=status;
+          Earth::Field::RequireSameSnapshot(
+              batchMetadata,Earth::GridlessMode::FrozenFieldSnapshotMetadata(p),
+              "standalone gridless cutoff product");
+        }
+        if (standalonePlan.products.fluxSpectrum) {
+          const int status=Earth::GridlessMode::RunDensityAndSpectrum(p);
+          if (status!=0) standaloneStatus=status;
+          Earth::Field::RequireSameSnapshot(
+              batchMetadata,Earth::GridlessMode::FrozenFieldSnapshotMetadata(p),
+              "standalone gridless flux/spectrum product");
+        }
+
+	MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+	MPI_Finalize();
+        return standaloneStatus==0 ? EXIT_SUCCESS : EXIT_FAILURE;
       }
       if (m=="3D") {
         if (cli.inputFile.empty()) {

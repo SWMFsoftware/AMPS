@@ -24,6 +24,30 @@ benchmarking, and eventual user-facing Runs-on-Request style workflows where the
 inputs are specified in an AMPS parameter file.
 
 --------------------------------------------------------------------------------
+Roadmap Step 7: one standalone product invocation
+--------------------------------------------------------------------------------
+
+`CALC_TARGET` may request `CUTOFF_RIGIDITY`, `DENSITY_SPECTRUM`/`FLUX`, or both with
+`CUTOFF_RIGIDITY+DENSITY_SPECTRUM` (aliases `BOTH` and `ALL` are also accepted). The
+combined request calls the existing cutoff and Step-6 product solvers sequentially;
+both must retain the immutable field identity created before dispatch. Root rank writes
+`standalone_run_manifest.json` before tracing with the canonical model, authoritative
+epoch, snapshot ID, output mode, driver provenance, validation state, and products.
+
+The shared `../util/StandaloneProductContract.h` rejects unknown target/domain/model
+tokens and incomplete external-field provenance. For a file-backed T96/T01/T05/TA15/
+TA16 run, the parser validates the exact model-specific columns and native units, and
+the gridless driver checks every POINT/TRAJECTORY/SHELL epoch lies inclusively inside
+the table before any lookup. An out-of-range epoch is an input error; it is not clamped
+to a physically different field state. Inline drivers, DIPOLE, and IGRF retain their
+existing paths.
+
+The complete combined DIPOLE input and output list is in `../examples/README.md`.
+Use `./test/UStandaloneProducts/run_test.sh` for startup-contract and production-wiring
+checks. These checks add no shortcut to trajectory resolution and do not change an
+existing C/F threshold, reference, or expected status.
+
+--------------------------------------------------------------------------------
 Roadmap Step 6: physical fluxes and spectra
 --------------------------------------------------------------------------------
 

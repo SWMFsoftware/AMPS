@@ -1,5 +1,60 @@
 # SEP-in-geospace model: compact global fields in Mode3D
 
+## Roadmap Step 7 implemented: one standalone cutoff/flux/spectrum program
+
+The standalone `amps` executable now accepts one validated request and can produce
+cutoff rigidity, the saved directional access function, local energy spectra, number
+density, integral fluxes, energy-channel fluxes, and detector-response rates. Select
+`CUTOFF_RIGIDITY`, `DENSITY_SPECTRUM`/`FLUX`, or the combined
+`CUTOFF_RIGIDITY+DENSITY_SPECTRUM` target. The combined path executes the established
+Step-4 through Step-6 solvers sequentially against one immutable field snapshot; it
+does not change a mover, trajectory classification, convergence tolerance, or any
+existing validation gate.
+
+`util/StandaloneProductContract.h` is the common startup contract for both standalone
+field representations:
+
+| Contract item | Enforced before products are accepted |
+|---|---|
+| Fields | DIPOLE, IGRF, T96, T01, T05/TS05, TA15N, TA15B, TA16; `NONE` only for analytic validation |
+| Products | cutoff only, flux/spectrum only, or both; unknown target components fail |
+| Domains | POINTS, TRAJECTORY, or SHELLS |
+| Identity | deterministic immutable snapshot ID, checked again after every product |
+| Time | field, drivers, boundary spectrum, ephemeris, and output use one authoritative epoch |
+| Drivers | exact model-specific columns, native units, finite row values, strictly increasing times, and inclusive epoch coverage |
+| Field state | successful Geopack/IGRF initialization where required and a finite valid field snapshot |
+
+The driver requirements are intentionally model-specific: T96 consumes
+`BYIMF,BZIMF,PDYN,DST`; T01 adds `G1..G3`; T05 adds `W1..W6`; TA15N/B consumes
+`PDYN,BYIMF,BZIMF,XIND`; and TA16 consumes `BYIMF,PDYN,DST` (with corrected Sym-H
+accepted through the parser alias). Magnetic quantities are nT, pressure is nPa, and
+dimensionless indices are declared as `1`. JSON-headed files must declare units.
+Bracket-free legacy AMPS-wizard tables retain their documented fixed native schema;
+any explicit unit is always validated and a mismatch is fatal. Production code no
+longer silently clamps a requested epoch outside the driver interval.
+
+Gridless writes `standalone_run_manifest.json`; standalone Mode3D writes
+`standalone_mode3d_manifest[_snapshot].json`. The manifest records the canonical
+model, field representation, epoch, snapshot ID, driver source and validation state,
+output domain, and selected products. Mode3D now materializes T01 and TA15N/B fields
+in addition to the already supported models. Their includes, initialization, and calls
+remain inside the non-SWMF compile branch: Step 7 is a standalone release, while live
+coupled field selection and cadence integration remain Roadmap Steps 9–11.
+
+An executable combined-product input and output guide is in `examples/README.md`.
+Run the dependency-free Step-7 contract/wiring suite from `srcEarth`:
+
+```bash
+./test/UStandaloneProducts/run_test.sh
+```
+
+This suite contains positive and negative references for aliases, exact driver
+columns/units, Pa-versus-nPa rejection, target/domain parsing, epoch and snapshot
+coherence, manifest contents, production dispatch wiring, and SWMF isolation. It is an
+integration-contract suite, not a substitute for numerical physics validation. The
+existing analytic U-F suites, F tests, convergence tests, and observation-facing
+C8/C9/C10/C19 comparisons remain authoritative and their pass conditions are unchanged.
+
 ## Roadmap Step 6 implemented: boundary distributions and flux/spectrum products
 
 Step 6 turns the Step-5 access function into physical particle products through one

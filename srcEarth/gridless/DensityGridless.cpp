@@ -882,6 +882,18 @@ static EarthUtil::AmpsParam DensityGridless_BuildParamForPointLikeLocation(
 #ifndef _NO_SPICE_CALLS_
     SpiceDouble etPoint = 0.0;
     str2et_c(prmForPoint.field.epoch.c_str(), &etPoint);
+    if (!prmForPoint.temporal.driverTable.ColumnsValidated() ||
+        !prmForPoint.temporal.driverTable.UnitsValidated())
+      exit(__LINE__,__FILE__,
+           "Gridless density received an unvalidated driver table");
+    if (!prmForPoint.temporal.driverTable.Covers(static_cast<double>(etPoint))) {
+      std::ostringstream message;
+      message << "Gridless density epoch " << prmForPoint.field.epoch
+              << " is outside driver coverage ["
+              << prmForPoint.temporal.driverTable.FirstUtc() << ", "
+              << prmForPoint.temporal.driverTable.LastUtc() << "]";
+      exit(__LINE__,__FILE__,message.str().c_str());
+    }
     const EarthUtil::TsDriverRecord drec =
         prmForPoint.temporal.driverTable.Lookup(static_cast<double>(etPoint));
     EarthUtil::TsDriverTable::ApplyToField(drec, prmForPoint.field);

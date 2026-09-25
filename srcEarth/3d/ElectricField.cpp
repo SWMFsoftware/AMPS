@@ -19,6 +19,8 @@
 #if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
 #include "../../interface/T96Interface.h"
 #include "../../interface/T05Interface.h"
+#include "T01Interface.h"
+#include "TA15Interface.h"
 #include "../../interface/TA16Interface.h"
 #include "GeopackInterface.h"
 #endif
@@ -141,6 +143,12 @@ void EvaluateBackgroundMagneticFieldSI(double B[3],const double xGSM_SI[3],const
   // controlled validation runs and does not depend on either Tsyganenko/Geopack or
   // SWMF-coupler state.
   if (model=="DIPOLE") { EvalDipoleSI(B,xGSM_SI,prm); return; }
+  if (model=="NONE") {
+    // Exact manufactured zero field for I-F01/I-F02 and the existing F1/F2/F15/F16
+    // analytic references.  It is never advertised as a physical production model.
+    B[0]=B[1]=B[2]=0.0;
+    return;
+  }
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
   // Live SWMF-coupled path.
@@ -156,7 +164,8 @@ void EvaluateBackgroundMagneticFieldSI(double B[3],const double xGSM_SI[3],const
 #else
   // Standalone field coordinates are GSM.
   //
-  // ConfigureBackgroundFieldModel() initializes IGRF/T96/T05/TA16 explicitly
+  // ConfigureBackgroundFieldModel() initializes
+  // DIPOLE/IGRF/T96/T01/T05/TA15N/TA15B/TA16 explicitly
   // in GSM before the AMR mesh is populated.  The xGSM_SI position passed below
   // is therefore in the same frame expected by every standalone field wrapper.
   //
@@ -171,7 +180,12 @@ void EvaluateBackgroundMagneticFieldSI(double B[3],const double xGSM_SI[3],const
     return;
   }
   if (model=="T96") { ::T96::GetMagneticField(B,const_cast<double*>(xGSM_SI)); return; }
+  if (model=="T01") { ::T01::GetMagneticField(B,const_cast<double*>(xGSM_SI)); return; }
   if (model=="T05") { ::T05::GetMagneticField(B,const_cast<double*>(xGSM_SI)); return; }
+  if (model=="TA15N" || model=="TA15B") {
+    ::TA15::GetMagneticField(B,const_cast<double*>(xGSM_SI));
+    return;
+  }
   if (model=="TA16") { ::TA16::GetMagneticField(B,const_cast<double*>(xGSM_SI)); return; }
   B[0]=B[1]=B[2]=0.0;
 #endif

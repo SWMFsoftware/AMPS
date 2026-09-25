@@ -26,12 +26,14 @@ Timeouts and launch errors are treated as actual ``F`` results.
 1. Comments and blank lines
 -------------------------------------------------------------------------------
 
-A comment begins when the first non-whitespace character is ``!``::
+Except for the exact runner directive documented in section 9, a comment begins
+when the first non-whitespace character is ``!``::
 
     ! Run the analytic dipole cutoff tests.
         ! Leading whitespace before ! is allowed.
 
-Blank lines and comment lines are never executed.
+Blank lines and comment lines are never executed.  The exclusive directive is
+also never executed; it is parsed solely as dispatcher metadata.
 
 Blank lines may appear:
 
@@ -271,7 +273,49 @@ after ignoring blank lines.  Duplicate metadata lines for one source entry are
 rejected.
 
 -------------------------------------------------------------------------------
-9. Immediate and deferred ``last pass:`` updates
+9. Runner-only exclusive scheduling directive
+-------------------------------------------------------------------------------
+
+Some validation commands allocate a large replicated AMR mesh and cannot safely
+share a node with another large validation, even when the launch-time
+``MemAvailable`` value is still high.  Mark such an entry with the exact
+runner-only directive immediately before its test or loop declaration::
+
+    ! runner: exclusive
+    P srcEarth/test/C19/run_C19.py ...
+
+For a loop, one directive applies to every expansion::
+
+    ! runner: exclusive
+    for $m={RK4,HC4}
+    {P,P} command --mover $m
+
+An exclusive expansion starts only after all earlier runner-owned commands have
+finished.  Once it starts, the runner launches nothing else until that expansion
+finishes.  Loop expansions remain separate tests, so other work may run between
+exclusive entries only after the active exclusive expansion has completed. All
+expansions and later entries retain their normal source order, so consecutive
+exclusive loop variants cannot overlap or be interleaved by later work.
+
+The directive is scheduling metadata, not part of the shell command.  It never
+changes ``-np``, ``-nt``, inputs, numerical gates, expected P/F state, or
+``last pass:`` provenance.  Job-count and memory gates remain in force.  Blank
+lines are ignored around the directive; an intervening ordinary comment is
+accepted only when a loop declaration is already pending.  Unknown
+``! runner:`` directives, duplicates, and directives without a following test
+are errors rather than silently ignored misspellings.
+
+For one command that explicitly asks to verify this scheduling contract, the
+runner also exports ``AMPS_TEST_RUNNER_EXCLUSIVE=1``.  The marker is set only
+after the entry has been parsed as exclusive and admitted by the exclusive
+dispatcher.  It is removed from every ordinary command environment, even if it
+was present in the parent shell, so stale or user-supplied state cannot make a
+nonexclusive launch look protected.  C19 uses this handshake to fail before
+allocating its large AMR mesh when an obsolete runner silently treats the
+directive as a comment.
+
+-------------------------------------------------------------------------------
+10. Immediate and deferred ``last pass:`` updates
 -------------------------------------------------------------------------------
 
 After execution, ``--update-last-pass`` obtains the selected commit id and
@@ -320,7 +364,7 @@ For the standard ``srcEarth/test/list`` this is::
 
     srcEarth/test/.list.last-pass-results.json
 
-The deferred results replace any older pending results for the same list.  They
+The deferred results replace any older pending results for the same list. They
 are written even when one or more actual results differ from their expected P/F
 markers, because last-pass provenance follows actual P results independently of
 the expected marker.
@@ -330,30 +374,33 @@ test command::
 
     srcEarth/test/test_runner.py --commit-last-pass
 
-The no-positional form targets the standard list beside the runner.  For a
-different list, supply it as the positional argument.  ``--commit-last-pass``
+The no-positional form targets the standard list beside the runner. For a
+different list, supply it as the positional argument. ``--commit-last-pass``
 uses the commit id captured by the original run, updates only actual passes via
 the same scalar/loop logic as ``--update-last-pass``, and removes the pending
 file only after the list update succeeds.
 
 Before applying anything, commit-only mode verifies that the canonical list
 path, its byte-for-byte SHA-256 fingerprint, test count, source line, variant
-index, expected marker, and expanded command still match the saved run.  A list
+index, expected marker, and expanded command still match the saved run. A list
 edit or damaged/stale cache is rejected, leaving the pending file available for
-inspection.  ``--last-pass-results-file`` can select a non-default cache path,
+inspection. ``--last-pass-results-file`` can select a non-default cache path,
 and ``--commit-id`` can supply a tested revision when the original run was made
 outside a git work tree.
 
 -------------------------------------------------------------------------------
-10. Compact grammar summary
+11. Compact grammar summary
 -------------------------------------------------------------------------------
 
 The effective list grammar is::
 
     file          := { blank | comment | entry }
     comment       := optional-space "!" text
-    entry         := [ loop-declaration blank-or-comment* ] test-line
+    entry         := [ exclusive-directive blank* ]
+                     [ loop-declaration blank-or-comment* ]
+                     [ exclusive-directive blank* ] test-line
                      [ blank* last-pass-line ]
+    exclusive-directive := "! runner: exclusive"
     loop-decl     := "for" assignment { separator assignment }
     assignment    := "$" name "={" csv-values "}"
     test-line     := expected whitespace command
@@ -374,10 +421,11 @@ HOW LOOP ENTRIES ARE IMPLEMENTED
 The implementation deliberately expands loops at parse time instead of adding
 special cases to the scheduler or process runner.
 
-1. ``parse_test_file()`` reads source lines and maintains two temporary states:
+1. ``parse_test_file()`` reads source lines and maintains three temporary states:
    ``pending_loop`` for a declaration waiting for its command, and
    ``pending_metadata_tests`` for the just-created scalar test or variant group
-   that may receive a ``last pass:`` line.
+   that may receive a ``last pass:`` line, plus ``pending_exclusive_line_no``
+   for runner-only exclusivity awaiting that source entry.
 
 2. ``_parse_loop_declaration()`` validates assignments and their CSV value
    lists.  Duplicate names, empty lists, malformed separators, unexpected
@@ -398,7 +446,8 @@ special cases to the scheduler or process runner.
 6. Each expansion becomes an ordinary ``TestCase``.  In addition to the final
    command and expected result, it retains the source template, source line,
    loop line, ordered bindings, one-based variant index, and total variant
-   count.  Ordinary entries have empty bindings and variant count one.
+   count.  It also retains the exclusive flag without adding anything to the
+   command. Ordinary entries have empty bindings and variant count one.
 
 7. From that point forward, the dispatcher treats every variant like any other
    test.  There is no loop-aware subprocess path.  This ensures that timeouts,
@@ -438,6 +487,11 @@ Concurrency is governed by two independent mechanisms:
   commands.
 * Unless ``--no-memory-gate`` is used, a physical-memory ramp-up gate controls
   when another command may start.
+
+The per-entry ``! runner: exclusive`` directive is an additional ordering
+constraint: an exclusive test requires an empty runner-owned pool, and an active
+exclusive test prevents every other launch.  This constraint is orthogonal to
+the job and memory gates; it does not bypass or rewrite either one.
 
 The runner never changes a command's ``-np``, ``-nt``, mover, or other CLI
 arguments.  Parsed MPI-rank and thread counts are used only for reporting and,
@@ -546,6 +600,11 @@ class TestCase:
     variant_index: int = 1
     variant_count: int = 1
 
+    # Runner-only scheduling metadata.  This flag is never appended to or
+    # removed from ``command``; it only constrains when the dispatcher may
+    # launch this already-expanded test.
+    exclusive: bool = False
+
 
 @dataclass
 class TestResult:
@@ -572,6 +631,7 @@ class TestResult:
     loop_bindings: dict[str, str] = field(default_factory=dict)
     variant_index: int = 1
     variant_count: int = 1
+    exclusive: bool = False
 
 
 @dataclass
@@ -589,6 +649,14 @@ class TestPlan:
     np_nt_details: str
 
 
+# Environment provenance used by validation wrappers that must not run unless
+# the dispatcher has actually honored ``! runner: exclusive``.  This is not a
+# user-facing physics switch: the runner scrubs the name from ordinary command
+# environments and sets the exact value only for an exclusive TestPlan.
+RUNNER_EXCLUSIVE_ENV = "AMPS_TEST_RUNNER_EXCLUSIVE"
+RUNNER_EXCLUSIVE_ENV_VALUE = "1"
+
+
 LAST_PASS_RE = re.compile(r"^(?P<prefix>\s*last\s+pass\s*:\s*)(?P<value>.*)$", re.IGNORECASE)
 TEST_LINE_RE = re.compile(
     r"^\s*(?P<expected>P|F|\{[^{}]*\})\s+(?P<command>.+?)\s*$",
@@ -601,6 +669,9 @@ LOOP_ASSIGN_RE = re.compile(
 VARIABLE_REF_RE = re.compile(
     r"\$(?:\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}|"
     r"(?P<plain>[A-Za-z_][A-Za-z0-9_]*))"
+)
+RUNNER_DIRECTIVE_RE = re.compile(
+    r"^\s*!\s*runner\s*:\s*(?P<directive>.*?)\s*$", re.IGNORECASE
 )
 
 # The deferred-last-pass file is deliberately versioned.  It is temporary in
@@ -901,8 +972,37 @@ def set_thread_env(base_env: dict, nt: int, only_if_missing: bool) -> dict:
     return env
 
 
+def build_test_environment(
+    base_env: dict,
+    *,
+    nt: int,
+    set_thread_env_vars: bool,
+    preserve_thread_env: bool,
+    exclusive: bool,
+) -> dict:
+    """Build an isolated child environment with trustworthy runner provenance.
+
+    ``AMPS_TEST_RUNNER_EXCLUSIVE`` is deliberately controlled here, at the last
+    point before subprocess creation.  Copying ``base_env`` is mandatory even
+    when thread variables are disabled: mutating the shared runner environment
+    would otherwise leak the marker into a later ordinary test.  Removing a
+    parent-shell value for ordinary tests also prevents a stale exported marker
+    from defeating a wrapper's fail-fast safety check.
+    """
+
+    if set_thread_env_vars:
+        env = set_thread_env(base_env, nt, preserve_thread_env)
+    else:
+        env = base_env.copy()
+
+    env.pop(RUNNER_EXCLUSIVE_ENV, None)
+    if exclusive:
+        env[RUNNER_EXCLUSIVE_ENV] = RUNNER_EXCLUSIVE_ENV_VALUE
+    return env
+
+
 def parse_test_file(path: Path) -> List[TestCase]:
-    """Parse legacy P/F entries and optional one-entry loop declarations.
+    """Parse P/F entries, loops, and runner-only scheduling directives.
 
     Backward-compatible scalar entry::
 
@@ -925,6 +1025,7 @@ def parse_test_file(path: Path) -> List[TestCase]:
     pending_metadata_tests: Optional[List[TestCase]] = None
     pending_loop: Optional[List[tuple[str, List[str]]]] = None
     pending_loop_line_no: Optional[int] = None
+    pending_exclusive_line_no: Optional[int] = None
 
     with path.open("r", encoding="utf-8", errors="replace") as f:
         for line_no, raw in enumerate(f, start=1):
@@ -932,15 +1033,50 @@ def parse_test_file(path: Path) -> List[TestCase]:
 
             if not line:
                 # Blank lines are ignored. They may separate a loop declaration
-                # from its command or a command from its metadata.
+                # from its command, an exclusive directive from its entry, or a
+                # command from its metadata.
+                continue
+
+            runner_directive_match = RUNNER_DIRECTIVE_RE.match(raw.rstrip("\n"))
+            if runner_directive_match:
+                # A scheduling directive starts a new source entry, just like a
+                # loop declaration, so it closes the optional metadata window of
+                # the preceding command.  Keeping this state out of the command
+                # string is what guarantees that wrappers and numerical gates see
+                # exactly the authored command line.
+                pending_metadata_tests = None
+                directive = runner_directive_match.group("directive").strip().lower()
+                if directive != "exclusive":
+                    raise ValueError(
+                        f"Invalid test-list line {line_no}: unsupported runner "
+                        f"directive {directive!r}; expected '! runner: exclusive'"
+                    )
+                if pending_exclusive_line_no is not None:
+                    raise ValueError(
+                        f"Invalid test-list line {line_no}: duplicate exclusive "
+                        f"directive; directive from line {pending_exclusive_line_no} "
+                        "has no following test command"
+                    )
+                pending_exclusive_line_no = line_no
                 continue
 
             if line.startswith("!"):
                 # Preserve the historical rule that a comment ends the metadata
                 # association with the preceding command. A comment between a
                 # loop declaration and its command is allowed and does not discard
-                # the pending loop.
+                # the pending loop.  A direct exclusive directive must remain
+                # immediately associated with its entry; rejecting an intervening
+                # comment avoids silently attaching a costly scheduling constraint
+                # to an unintended later command.  Once a loop is pending, comments
+                # remain legal because the directive was immediately before that
+                # loop declaration.
                 pending_metadata_tests = None
+                if pending_exclusive_line_no is not None and pending_loop is None:
+                    raise ValueError(
+                        f"Invalid test-list line {line_no}: comment separates "
+                        f"exclusive directive on line {pending_exclusive_line_no} "
+                        "from its test or loop declaration"
+                    )
                 continue
 
             last_pass_match = LAST_PASS_RE.match(raw.rstrip("\n"))
@@ -1031,6 +1167,7 @@ def parse_test_file(path: Path) -> List[TestCase]:
                     loop_bindings=dict(bindings),
                     variant_index=variant_index,
                     variant_count=len(bindings_list),
+                    exclusive=(pending_exclusive_line_no is not None),
                 )
                 tests.append(test)
                 expanded_tests.append(test)
@@ -1038,11 +1175,17 @@ def parse_test_file(path: Path) -> List[TestCase]:
             pending_metadata_tests = expanded_tests
             pending_loop = None
             pending_loop_line_no = None
+            pending_exclusive_line_no = None
 
     if pending_loop is not None:
         raise ValueError(
             f"Invalid test list: loop declaration on line {pending_loop_line_no} "
             "has no following test command"
+        )
+    if pending_exclusive_line_no is not None:
+        raise ValueError(
+            f"Invalid test list: exclusive directive on line "
+            f"{pending_exclusive_line_no} has no following test command"
         )
 
     return tests
@@ -1150,7 +1293,16 @@ async def run_one_test(
     exit_code: Optional[int] = None
     timed_out = False
 
-    env = set_thread_env(base_env, plan.nt_value, preserve_thread_env) if set_thread_env_vars else base_env
+    # Construct a private environment for every child.  In addition to optional
+    # thread-count variables, this propagates the exclusive-dispatch handshake
+    # only for plans whose directive was parsed and honored by the scheduler.
+    env = build_test_environment(
+        base_env,
+        nt=plan.nt_value,
+        set_thread_env_vars=set_thread_env_vars,
+        preserve_thread_env=preserve_thread_env,
+        exclusive=test.exclusive,
+    )
 
     mem_fraction = (
         mem_available_bytes / mem_total_bytes
@@ -1172,9 +1324,10 @@ async def run_one_test(
             if test.loop_bindings
             else ""
         )
+        exclusive_note = "exclusive, " if test.exclusive else ""
         print(
             f"[START] #{test.index:03d} line {test.line_no}{loop_note}: "
-            f"{mem_note}command={test.command}",
+            f"{exclusive_note}{mem_note}command={test.command}",
             flush=True,
         )
 
@@ -1206,6 +1359,10 @@ async def run_one_test(
             f"# Command: {test.command}\n"
             f"# Workdir: {workdir}\n"
             f"# {plan.np_nt_details}\n"
+            f"# Exclusive scheduling: {'yes' if test.exclusive else 'no'}\n"
+            f"# Exclusive environment marker: "
+            f"{RUNNER_EXCLUSIVE_ENV}="
+            f"{env.get(RUNNER_EXCLUSIVE_ENV, '<unset>')}\n"
             f"{mem_line}"
             f"# Started: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
             f"{'=' * 80}\n"
@@ -1298,6 +1455,7 @@ async def run_one_test(
         loop_bindings=dict(test.loop_bindings),
         variant_index=test.variant_index,
         variant_count=test.variant_count,
+        exclusive=test.exclusive,
     )
 
 
@@ -1318,7 +1476,7 @@ async def run_all_tests(
     min_free_memory_fraction: float,
     memory_check_interval: float,
 ) -> List[TestResult]:
-    """Schedule tests behind a -j job-count cap and a physical-memory ramp-up gate.
+    """Schedule tests behind exclusivity, job-count, and memory constraints.
 
     A launch into an empty pool -- the first test of the run, or any later
     test that starts once nothing else is running -- always launches
@@ -1330,6 +1488,12 @@ async def run_all_tests(
     memory still available. Tests are launched in list order; there is no
     per-test resource estimate to reorder around, since every test is
     subject to exactly the same gate regardless of its own ``-np``/``-nt``.
+
+    Source order is retained for exclusive tests.  If the first pending plan is
+    exclusive, it waits for ``running`` to become empty.  If any running plan is
+    exclusive, no pending plan may launch.  These checks happen before the
+    ordinary job/memory gate, so they add an ordering constraint without
+    weakening the existing memory threshold or idle-pool launch rule.
     """
     log_dir.mkdir(parents=True, exist_ok=True)
     base_env = os.environ.copy()
@@ -1417,8 +1581,31 @@ async def run_all_tests(
             )
         return False
 
+    def exclusive_blocks_launch() -> bool:
+        """Return whether exclusivity, rather than memory pacing, blocks next.
+
+        Keeping this predicate separate also lets the wait path block on actual
+        task completion instead of waking at the memory-check cadence while an
+        exclusive entry is merely draining or owning the pool.
+        """
+        if not pending or not running:
+            return False
+        return (
+            pending[0].test.exclusive or
+            any(plan.test.exclusive for plan in running.values())
+        )
+
     while pending or running:
         while pending and len(running) < jobs:
+            # Exclusivity is deliberately explicit metadata rather than a
+            # command-name heuristic.  A high-memory validation may only start
+            # in an empty runner-owned pool, and the presence of a running
+            # exclusive plan blocks every subsequent launch.  The task is added
+            # to ``running`` synchronously before the loop iterates again, so no
+            # coroutine scheduling race can launch a neighbor beside it.
+            if exclusive_blocks_launch():
+                break
+
             if not try_gate():
                 break
             plan = pending.pop(0)
@@ -1455,7 +1642,8 @@ async def run_all_tests(
             await asyncio.sleep(memory_check_interval if memory_gate_enabled else 1.0)
             continue
 
-        if pending and len(running) < jobs and memory_gate_enabled and last_check_time is not None:
+        if (pending and len(running) < jobs and memory_gate_enabled and
+                last_check_time is not None and not exclusive_blocks_launch()):
             wait_timeout = max(0.1, memory_check_interval - (time.monotonic() - last_check_time))
         else:
             wait_timeout = None
@@ -1475,8 +1663,10 @@ async def run_all_tests(
                 if result.loop_bindings
                 else ""
             )
+            exclusive_note = " exclusive" if result.exclusive else ""
             print(
-                f"[{status}] #{result.index:03d} line {result.line_no}{loop_note}: "
+                f"[{status}] #{result.index:03d} line {result.line_no}"
+                f"{loop_note}{exclusive_note}: "
                 f"expected {result.expected}, actual {result.actual}, "
                 f"exit={result.exit_code}, {result.elapsed_s:.1f}s",
                 flush=True,
@@ -1526,6 +1716,7 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
         "loop_bindings",
         "variant_index",
         "variant_count",
+        "exclusive",
     ]
 
     def write_csv(path: Path, rows: List[TestResult]) -> None:
@@ -1561,6 +1752,11 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
                     if r.loop_bindings
                     else ""
                 )
+                scheduling_line = (
+                    "  scheduling: exclusive\n"
+                    if r.exclusive else
+                    "  scheduling: ordinary\n"
+                )
                 f.write(
                     f"#{r.index:03d} line {r.line_no}\n"
                     f"{loop_line}"
@@ -1571,6 +1767,7 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
                     f"  elapsed:  {r.elapsed_s:.3f} s\n"
                     f"  last pass: {(r.last_pass or '<empty>')}\n"
                     f"  {r.np_nt_details}\n"
+                    f"{scheduling_line}"
                     f"{mem_line}"
                     f"  log:      {r.log_file}\n"
                     f"  command:  {r.command}\n\n"
@@ -1659,9 +1856,9 @@ def write_pending_last_pass_results(
 ) -> None:
     """Atomically save one completed run for a later --commit-last-pass.
 
-    The test-list digest was captured before commands started.  Rechecking it
+    The test-list digest was captured before commands started. Rechecking it
     here prevents a concurrent edit from producing a cache whose result line
-    numbers no longer describe the file on disk.  A per-process temporary name
+    numbers no longer describe the file on disk. A per-process temporary name
     also prevents two writers from exposing a partially serialized JSON file.
     """
     current_digest = test_file_sha256(test_file)
@@ -1694,7 +1891,7 @@ def write_pending_last_pass_results(
             os.fsync(output.fileno())
         os.replace(temporary_file, pending_file)
     finally:
-        # os.replace() removes the source name on success.  On a serialization
+        # os.replace() removes the source name on success. On a serialization
         # or filesystem failure, do not leave a second misleading cache behind.
         try:
             temporary_file.unlink()
@@ -1785,10 +1982,10 @@ def commit_pending_last_pass_results(
     """Apply a saved run to its test list without executing any command.
 
     ``requested_test_file`` is optional so an explicitly supplied pending file
-    can carry its own list location.  When a list is supplied, it must resolve
-    to the same path recorded by the run.  The byte digest and every parsed test
+    can carry its own list location. When a list is supplied, it must resolve
+    to the same path recorded by the run. The byte digest and every parsed test
     identity are then checked before the existing atomic metadata updater is
-    called.  The pending file is deleted only after that update succeeds.
+    called. The pending file is deleted only after that update succeeds.
     """
     payload = read_pending_last_pass_results(pending_file)
     cached_test_file = Path(payload["test_file"]).expanduser().resolve()
@@ -1818,7 +2015,7 @@ def commit_pending_last_pass_results(
         raise RuntimeError(f"could not parse test list {test_file}: {exc}") from exc
     results = _restore_pending_test_results(payload, pending_file)
 
-    # The digest already protects the source bytes.  This second validation
+    # The digest already protects the source bytes. This second validation
     # catches a damaged or manually edited JSON cache before it can update any
     # metadata, including subtle scalar/loop variant mix-ups.
     if len(tests) != len(results):
@@ -1862,7 +2059,7 @@ def commit_pending_last_pass_results(
     try:
         pending_file.unlink()
     except OSError as exc:
-        # The important atomic mutation already succeeded.  Report cleanup as a
+        # The important atomic mutation already succeeded. Report cleanup as a
         # warning rather than claiming that the list update failed.
         print(
             f"WARNING: updated {test_file}, but could not remove deferred "
@@ -2307,7 +2504,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         args.commit_id = args.commit_id.strip()
 
     # Commit-only mode returns before any scheduler, memory, logging, or report
-    # setup.  Consequently no test command can be launched accidentally.  An
+    # setup. Consequently no test command can be launched accidentally. An
     # explicit cache may name its list internally; otherwise the no-positional
     # shorthand targets srcEarth/test/list as requested by the CLI contract.
     if args.commit_last_pass:
@@ -2406,6 +2603,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"{len(tests)} tests from {test_file}"
         )
     print(f"Concurrent jobs: {jobs}")
+    print(f"Exclusive tests: {sum(test.exclusive for test in tests)}")
     if memory_gate_enabled:
         print(
             f"Memory gate: start next test only when > {args.min_free_memory_fraction:.0%} "
@@ -2436,23 +2634,26 @@ def main(argv: Optional[List[str]] = None) -> int:
                 if t.loop_bindings
                 else ""
             )
+            scheduling = "; exclusive" if t.exclusive else ""
             print(
                 f"  #{t.index:03d} line {t.line_no}: expected {t.expected}{variant}: "
-                f"{plan.np_nt_details}: {t.command}{suffix}"
+                f"{plan.np_nt_details}{scheduling}: {t.command}{suffix}"
             )
         if memory_gate_enabled:
             print(
-                f"\nActual concurrency depends on runtime memory use and cannot be "
-                f"previewed here: once a test is already running, the next one only "
-                f"starts once > {args.min_free_memory_fraction:.0%} of physical memory "
-                f"is free, checked every {args.memory_check_interval:.0f}s (a launch "
-                f"into an idle pool always starts immediately)."
+                f"\nActual concurrency depends on exclusive-entry ordering and "
+                f"runtime memory use and cannot be fully previewed here. An exclusive "
+                f"entry drains and owns the runner pool. Otherwise, once a test is "
+                f"already running, the next one only starts once > "
+                f"{args.min_free_memory_fraction:.0%} of physical memory is free, "
+                f"checked every {args.memory_check_interval:.0f}s (a launch into an "
+                f"idle pool always starts immediately)."
             )
         return 0
 
-    # Resolve the provenance revision before executing any test.  This avoids
+    # Resolve the provenance revision before executing any test. This avoids
     # recording a later HEAD if a long validation run overlaps a checkout or
-    # commit.  Non-git runs remain usable: their results are cached with no
+    # commit. Non-git runs remain usable: their results are cached with no
     # revision and can later be committed with an explicit --commit-id.
     run_commit_id = args.commit_id
     if run_commit_id is None:
@@ -2540,7 +2741,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"in {test_file} to commit {run_commit_id}"
         )
         # Any older deferred cache now describes the pre-update list and cannot
-        # be valid.  Remove it after, never before, the immediate update.
+        # be valid. Remove it after, never before, the immediate update.
         try:
             pending_file.unlink()
         except FileNotFoundError:

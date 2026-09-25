@@ -1,5 +1,18 @@
 # SWMF-coupled field snapshots, trajectories, and directional access
 
+## Step 7 scope boundary
+
+Roadmap Step 7 is the standalone executable release. Its DIPOLE/IGRF/T96/T01/T05/
+TA15/TA16 selection, strict external-driver contract, and standalone manifests are not
+used to choose a field in an SWMF-coupled build. The empirical includes and evaluation
+calls are compile-time guarded out; coupled Mode3D continues to consume the field state
+published by SWMF. Live field selection, cadence synchronization, and coupled product
+orchestration are Roadmap Steps 9–11.
+
+This boundary is checked by `../test/UStandaloneProducts/run_test.sh`. It does not
+disable the already shared Step-4 through Step-6 trajectory, access, or spectrum
+kernels below, and it changes no coupled validation gate.
+
 Before each requested backward-product callback,
 `PrepareGlobalSWMFCoupledMagneticFieldForCutoff()` gathers authoritative owner-cell
 magnetic field and plasma velocity into the compact Mode3D arrays. Electric field is

@@ -1,5 +1,36 @@
 # Shared numerical utilities
 
+## `StandaloneProductContract.h` — Roadmap Step 7
+
+`StandaloneProductContract.h` is the dependency-free contract used by both standalone
+dispatchers before either launches trajectories. It canonicalizes field aliases,
+strictly parses single or combined product targets, validates POINTS/TRAJECTORY/SHELLS,
+defines the exact external-driver columns and native units for each released field
+model, binds all inputs and outputs to one epoch, and builds the machine-readable run
+manifest. Unknown model, product, or domain tokens are rejected rather than accepted by
+substring matching.
+
+`RunPlan::Validate()` is intentionally separate from the numerical and scientific
+acceptance gates. It proves startup provenance: immutable snapshot identity, driver
+schema and unit validation, inclusive driver coverage of the requested epoch, required
+Geopack initialization, and field validity. `RequireSameSnapshot()` from
+`FieldProvider.h` is then called after every requested product. Neither routine alters
+cutoff tolerances, unresolved classification, mover budgets, quadrature, or spectra.
+
+`TsDriverTable` carries the provenance consumed by this plan. JSON metadata propagates
+`UNIT`/`UNITS` to scalar and vector elements. Simple AMPS-wizard headers may write
+bracketed units such as `By[nT]` and `Pdyn[nPa]`; old bracket-free files are accepted
+only as the fixed documented wizard schema. Required row values must be complete finite
+numbers, rows must have strictly increasing epochs, and production callers test
+inclusive table coverage before interpolation. A wrong declared unit, missing or
+malformed model driver, duplicate timestamp, or uncovered epoch fails.
+
+Run the strict positive/negative contract and source-wiring references with:
+
+```bash
+./test/UStandaloneProducts/run_test.sh
+```
+
 ## `BoundaryProducts.h` — Roadmap Step 6
 
 `BoundaryProducts.h` is a header-only C++11 production kernel between trajectory

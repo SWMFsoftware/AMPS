@@ -4,7 +4,7 @@ This directory contains executable regression/validation tests for the AMPS
 Earth SEP/geospace backward products.  Each test is stored in its own directory
 (`C1`, `C2`, ..., `C6`, `C11`, `C14`, `F1`, `F2`, `F3`, `F4`, `F5`, `F11`, `F12`, `F15`, `F16`,
 `UFluxNumerics`, `UFieldProvider`, `UTrajectoryCore`, `UDirectionalAccess`,
-`UTestRunner`, ...). Test scripts are intended to be executed
+`UBoundaryProducts`, `UStandaloneProducts`, `UTestRunner`, ...). Test scripts are intended to be executed
 from the directory containing the `amps` executable, not from inside the test
 subdirectory.
 
@@ -120,12 +120,37 @@ reference, input, expected status, mover, or trace limit is changed. F1, F2, F4,
 F11, F12, F15, F16 and C8/C9/C10/C19 remain the end-to-end and observation-facing
 validation gates.
 
-`test/list` schedules the Step 2 through Step 6 suites as independent `P`
+`test/list` schedules the Step 2 through Step 7 suites as independent `P`
 entries. Each has its own `last pass:` record, so the main runner reports and commits
 their provenance separately. No pre-existing C/F command, expected status, input,
 reference file, tolerance, mover, trajectory limit, or last-pass record was modified;
 the existing tests remain independent validation tools rather than being adjusted to
 accommodate the new abstraction.
+
+## UStandaloneProducts: strict Step 7 suite
+
+Run the standalone startup and product-orchestration references with:
+
+```bash
+./srcEarth/test/UStandaloneProducts/run_test.sh
+```
+
+The compiled test uses the exact production `StandaloneProductContract.h`. It compares
+canonical aliases and model-specific driver requirements with explicit expected
+vectors; accepts correct nT/nPa/dimensionless declarations; rejects a Pa-for-nPa error;
+checks single and combined product parsing and all output domains; and exercises
+positive and negative epoch, snapshot, Geopack, driver-provenance, and field-validity
+gates. It also compares the generated manifest with fixed schema/value expectations.
+
+The companion source-wiring test proves that both standalone backends consume the
+shared contract, dispatch the established cutoff and flux/spectrum solvers, verify the
+snapshot after each product, wire T01 and TA15 in Mode3D, and keep those empirical
+interfaces inside the non-SWMF compile guard. These are concrete contract references,
+not smoke-only assertions, but they do not replace physics comparisons. UFluxNumerics,
+UFieldProvider, UTrajectoryCore, UDirectionalAccess, and UBoundaryProducts retain the
+analytic/numerical references; F and C cases retain end-to-end and observational gates.
+No existing command, expected P/F state, tolerance, reference, or last-pass value was
+changed for Step 7.
 
 ## UTestRunner: runner regression suite
 

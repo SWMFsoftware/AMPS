@@ -1581,8 +1581,41 @@ namespace EarthUtil {
     inline bool empty() const { return records_.empty(); }
     inline std::size_t size() const { return records_.size(); }
 
-    // Add a record (must be called in chronological order).
-    void push_back(const TsDriverRecord& r) { records_.push_back(r); }
+    // Step-7 startup provenance.  These flags are set only by the production
+    // loader after model-specific column and native-unit checks complete.  A
+    // programmatically assembled table therefore cannot accidentally claim that
+    // it passed the file-ingestion gates.
+    inline bool ColumnsValidated() const { return columnsValidated_; }
+    inline bool UnitsValidated() const { return unitsValidated_; }
+    inline const std::string& SourceFile() const { return sourceFile_; }
+
+    // Inclusive time coverage used by standalone startup validation.  Lookup()
+    // retains the historical clamping behavior for compatibility, but Step 7
+    // calls Covers() before a production snapshot is launched so clamping cannot
+    // silently substitute the wrong driver record.
+    inline bool Covers(double et) const {
+      return !records_.empty() && et>=records_.front().et && et<=records_.back().et;
+    }
+    inline double FirstEt() const { return records_.empty() ? 0.0 : records_.front().et; }
+    inline double LastEt() const { return records_.empty() ? 0.0 : records_.back().et; }
+    inline const std::string& FirstUtc() const {
+      static const std::string empty;
+      return records_.empty() ? empty : records_.front().timeUTC;
+    }
+    inline const std::string& LastUtc() const {
+      static const std::string empty;
+      return records_.empty() ? empty : records_.back().timeUTC;
+    }
+
+    // Add a record in strictly increasing time order.  Duplicate/reversed rows
+    // make interpolation ambiguous and therefore fail while the file is loaded,
+    // before any trajectory can consume a wrong driver state.
+    void push_back(const TsDriverRecord& r) {
+      if (!records_.empty() && !(r.et>records_.back().et))
+        throw std::invalid_argument(
+            "Tsyganenko driver timestamps must be strictly increasing");
+      records_.push_back(r);
+    }
 
     // Linear interpolation at ephemeris time et [s].
     // Clamps to the table endpoints when et is out of range.
@@ -1594,10 +1627,21 @@ namespace EarthUtil {
     // epoch to the trajectory-point timestamp before calling Geopack::Init).
     static void ApplyToField(const TsDriverRecord& rec, BackgroundField& field);
 
+    inline void SetValidationProvenance(const std::string& sourceFile,
+                                        bool columnsValidated,
+                                        bool unitsValidated) {
+      sourceFile_=sourceFile;
+      columnsValidated_=columnsValidated;
+      unitsValidated_=unitsValidated;
+    }
+
   private:
     std::vector<TsDriverRecord> records_;
     mutable bool clampWarnedLow_{false};
     mutable bool clampWarnedHigh_{false};
+    std::string sourceFile_;
+    bool columnsValidated_{false};
+    bool unitsValidated_{false};
   };
 
 

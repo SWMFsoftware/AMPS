@@ -5,6 +5,7 @@
 #include "GlobalMagneticField.h"
 #include "Mode3DParallel.h"
 #include "../gridless/DipoleInterface.h"
+#include "../util/StandaloneProductContract.h"
 
 #include <cstdio>
 #include <cmath>
@@ -34,6 +35,8 @@
 #if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
 #include "../../interface/T96Interface.h"
 #include "../../interface/T05Interface.h"
+#include "T01Interface.h"
+#include "TA15Interface.h"
 #include "../../interface/TA16Interface.h"
 #include "GeopackInterface.h"
 #endif
@@ -84,18 +87,15 @@ constexpr const char* kStandaloneMode3DFieldFrame = "GSM";
 //   CALC_TARGET  DENSITY_SPECTRUM                -> density + flux only
 //   CALC_TARGET  CUTOFF_RIGIDITY+DENSITY_SPECTRUM -> both products from one field snapshot
 //
-// We use substring tests rather than a rigid enum so separators such as '+', ',', or
-// whitespace (if preserved by an input reader) all work.  The solver still fails below if
-// neither recognized product is requested.
+// The shared parser tokenizes '+', ',', '|', ';', or whitespace and rejects every
+// unrecognized component.  This is deliberately stricter than the former substring
+// checks: a misspelled product must not run a partial calculation successfully.
 static bool Mode3DTargetRequestsCutoff(const EarthUtil::AmpsParam& prm) {
-  const std::string t = EarthUtil::ToUpper(prm.calc.target);
-  return t.find("CUTOFF") != std::string::npos || t=="ALL" || t=="BOTH";
+  return Earth::StandaloneProducts::ParseProductSelection(prm.calc.target).cutoff;
 }
 
 static bool Mode3DTargetRequestsDensityFlux(const EarthUtil::AmpsParam& prm) {
-  const std::string t = EarthUtil::ToUpper(prm.calc.target);
-  return t.find("DENSITY") != std::string::npos || t.find("FLUX") != std::string::npos ||
-         t=="ALL" || t=="BOTH";
+  return Earth::StandaloneProducts::ParseProductSelection(prm.calc.target).fluxSpectrum;
 }
 
 
@@ -188,6 +188,29 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
     ::T05::SetW(Earth::T05::W[0],Earth::T05::W[1],Earth::T05::W[2],Earth::T05::W[3],Earth::T05::W[4],Earth::T05::W[5]);
     ::T05::Init(prm.field.epoch.c_str(),kStandaloneMode3DFieldFrame);
   }
+  else if (model=="T01") {
+    // Initialize Geopack RECALC and the wrapper's GSM frame matrices before
+    // copying the complete T01 PARMOD vector.  Setters accept AMPS SI values;
+    // G1..G3 are model coefficients and are copied in their native form.
+    ::T01::Init(prm.field.epoch.c_str(),kStandaloneMode3DFieldFrame);
+    ::T01::SetSolarWindPressure(prm.field.pdyn_nPa*_NANO_);
+    ::T01::SetDST(prm.field.dst_nT*_NANO_);
+    ::T01::SetBYIMF(prm.field.imfBy_nT*_NANO_);
+    ::T01::SetBZIMF(prm.field.imfBz_nT*_NANO_);
+    for (int i=0;i<3;++i) ::T01::PARMOD[4+i]=prm.field.g[i];
+    for (int i=7;i<11;++i) ::T01::PARMOD[i]=0.0;
+  }
+  else if (model=="TA15N" || model=="TA15B") {
+    // TA15N and TA15B share a four-driver interface but call distinct fitted
+    // Fortran models.  Select the variant before field materialization, then
+    // freeze PDYN/BY/BZ/XIND once for all initialization workers.
+    ::TA15::SetVersion(model=="TA15N" ? ::TA15::Version_N : ::TA15::Version_B);
+    ::TA15::Init(prm.field.epoch.c_str(),kStandaloneMode3DFieldFrame);
+    ::TA15::SetSolarWindPressure(prm.field.pdyn_nPa*_NANO_);
+    ::TA15::SetBYIMF(prm.field.imfBy_nT*_NANO_);
+    ::TA15::SetBZIMF(prm.field.imfBz_nT*_NANO_);
+    ::TA15::SetXIND(prm.field.xind);
+  }
   else if (model=="TA16") {
     // TA16 does not use BackgroundMagneticFieldModelType — it is driven
     // entirely through _PIC_COUPLER_MODE__TA16_ compile-time guards,
@@ -205,7 +228,8 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
   }
 
   if (PIC::ThisThread==0 &&
-      (model=="DIPOLE" || model=="IGRF" || model=="T96" || model=="T05" || model=="TA16")) {
+      (model=="DIPOLE" || model=="IGRF" || model=="T96" || model=="T01" ||
+       model=="T05" || model=="TA15N" || model=="TA15B" || model=="TA16")) {
     std::cout << "[Mode3D] Mesh coordinate frame: "
               << kStandaloneMode3DFieldFrame << "\n";
     std::cout << "[Mode3D] " << model << " interface frame: "
@@ -219,7 +243,8 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
 // following the same ghost-cell-inclusive iteration pattern used by
 // Earth::InitMagneticField in Earth.cpp.  Unlike that function, this version:
 //   - uses EvaluateBackgroundMagneticFieldSI / EvaluateElectricFieldSI so all
-//     standalone models (IGRF, T96, T05, TA16, DIPOLE) are handled uniformly, and
+//     standalone models (DIPOLE, IGRF, T96, T01, T05, TA15N/B, TA16) are handled
+//     uniformly, and
 //   - initialises E from the configured electric-field model instead of
 //     unconditionally writing zero.
 //
@@ -1247,6 +1272,20 @@ EarthUtil::AmpsParam Mode3DBuildSnapshotParam(const EarthUtil::AmpsParam& base,
          "_NO_SPICE_CALLS_ defined. Cannot convert snapshot UTC to ET.");
 #else
     const double et = Mode3DEpochToEtOrExit(epochUTC,"sampling the Mode3D Tsyganenko driver table");
+    if (!snap.temporal.driverTable.ColumnsValidated() ||
+        !snap.temporal.driverTable.UnitsValidated()) {
+      exit(__LINE__,__FILE__,
+           "[Mode3D] Driver table reached snapshot construction without passing "
+           "the Step-7 column/unit validation gates.");
+    }
+    if (!snap.temporal.driverTable.Covers(et)) {
+      std::ostringstream message;
+      message << "[Mode3D] Snapshot epoch " << epochUTC
+              << " is outside driver coverage ["
+              << snap.temporal.driverTable.FirstUtc() << ", "
+              << snap.temporal.driverTable.LastUtc() << "].";
+      exit(__LINE__,__FILE__,message.str().c_str());
+    }
     const EarthUtil::TsDriverRecord rec = snap.temporal.driverTable.Lookup(et);
     EarthUtil::TsDriverTable::ApplyToField(rec,snap.field);
 #endif
@@ -1270,11 +1309,12 @@ Earth::Field::SnapshotMetadata Mode3DBuildFieldMetadata_(
   metadata.electricFieldAvailable=electricFieldAvailable;
   metadata.immutableDuringBatch=true;
 
-  // Do not expand the set of field implementations as part of the provider work.
-  // Step 3 describes and freezes the backends already present in the Step-2 tree;
-  // adding T01/TA15 here previously introduced unrelated compile/link regressions.
+  // Step 7 completes the standalone representation set.  This list is deliberately
+  // explicit: an unsupported selector must yield invalid metadata and stop before
+  // the mesh can be mistaken for a valid all-zero field.
   metadata.valid=(model=="NONE" || model=="DIPOLE" || model=="IGRF" ||
-                  model=="T96" || model=="T05" || model=="TA16");
+                  model=="T96" || model=="T01" || model=="T05" ||
+                  model=="TA15N" || model=="TA15B" || model=="TA16");
   if (!metadata.valid)
     metadata.validityMessage="unsupported standalone Mode3D field model: "+model;
 
@@ -1618,6 +1658,48 @@ int Run(const EarthUtil::AmpsParam& prm) {
         batchFieldProvider->CreateSnapshot(batchFieldRequest);
     const Earth::Field::SnapshotMetadata batchFieldMetadata=
         batchFieldSnapshot->Metadata();
+
+    // Apply exactly the same standalone startup contract as the gridless path.
+    // The only intentional difference is fieldRepresentation=MESH.  Product
+    // selection, aliases, driver provenance, and epoch binding cannot diverge
+    // between the two backends.
+    namespace SP=Earth::StandaloneProducts;
+    SP::RunPlan standalonePlan;
+    standalonePlan.fieldModel=snap.field.model;
+    standalonePlan.outputMode=snap.output.mode;
+    standalonePlan.products=SP::ParseProductSelection(snap.calc.target);
+    standalonePlan.representation=SP::FieldRepresentation::Mesh;
+    standalonePlan.epochs.field=snap.field.epoch;
+    standalonePlan.epochs.drivers=snap.field.epoch;
+    standalonePlan.epochs.boundarySpectrum=snap.field.epoch;
+    standalonePlan.epochs.ephemeris=snap.field.epoch;
+    standalonePlan.epochs.output=snap.field.epoch;
+    standalonePlan.snapshotId=batchFieldMetadata.snapshotId;
+
+    const bool fileBackedDrivers=!snap.temporal.driverTable.empty();
+    standalonePlan.driverSource=fileBackedDrivers
+        ? snap.temporal.driverTable.SourceFile() : std::string("INLINE");
+    standalonePlan.driverColumnsValidated=!fileBackedDrivers ||
+        snap.temporal.driverTable.ColumnsValidated();
+    standalonePlan.driverUnitsValidated=!fileBackedDrivers ||
+        snap.temporal.driverTable.UnitsValidated();
+    // Mode3DBuildSnapshotParam performed the inclusive table-coverage check
+    // immediately before interpolation; reaching this point proves success.
+    standalonePlan.driverEpochValidated=true;
+    standalonePlan.geopackInitialized=
+        !SP::RequiresGeopackInitialization(standalonePlan.fieldModel) ||
+        (batchFieldMetadata.valid && !batchFieldMetadata.epochUTC.empty());
+    standalonePlan.fieldValidityValidated=batchFieldMetadata.valid &&
+        batchFieldMetadata.magneticFieldAvailable &&
+        batchFieldMetadata.immutableDuringBatch;
+    standalonePlan.Validate(/*externalDriversAreInline=*/!fileBackedDrivers);
+
+    if (PIC::ThisThread==0) {
+      const std::string manifestName="standalone_mode3d_manifest"+suffix+".json";
+      std::ofstream manifest(manifestName.c_str());
+      if (!manifest) throw std::runtime_error("Cannot write "+manifestName);
+      manifest << SP::BuildManifestJson(standalonePlan);
+    }
 
     //------------------------------------------------------------------------
     // Requested physics products for this snapshot

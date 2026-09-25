@@ -113,6 +113,7 @@
 //======================================================================================
 
 #include "amps_param_parser.h"
+#include "StandaloneProductContract.h"
 #include "../boundary/spectrum.h"  // cSpectrum + global spectrum init
 #include "specfunc.h"
 
@@ -1432,10 +1433,9 @@ void BuildTsParmod(const BackgroundField& field,
     //   PARMOD(2) = SymHc  [nT]            — already filled above (field.dst_nT as SymHc proxy)
     //   PARMOD(3) = XIND   [dimensionless] — Newell optimal coupling index
     //   PARMOD(4) = BYIMF  [nT]
-    //   PARMOD(5..10) = W1..W6             — storm-time history integrals (same as T05)
+    //   PARMOD(5..10) = unused by the released TA16 wrapper
     parmod[2] = field.xind;
     parmod[3] = field.imfBy_nT;
-    for (int i = 0; i < 6; ++i) parmod[4 + i] = field.w[i];
   }
   else if (m == "TA15N" || m == "TA15B") {
     // TA15 uses the direct Fortran parameter layout exposed by TA15Interface:
@@ -1456,7 +1456,7 @@ EarthUtil::TsDriverRecord EarthUtil::TsDriverTable::Lookup(double et) const {
   if (records_.empty())
     exit(__LINE__,__FILE__,"TsDriverTable::Lookup called on an empty table");
 
-  if (et <= records_.front().et) {
+  if (et < records_.front().et) {
     if (!clampWarnedLow_) {
       std::cerr << "[TsDriverTable] WARNING: time before table start ("
                 << records_.front().timeUTC << "); clamping.\n";
@@ -1464,7 +1464,7 @@ EarthUtil::TsDriverRecord EarthUtil::TsDriverTable::Lookup(double et) const {
     }
     return records_.front();
   }
-  if (et >= records_.back().et) {
+  if (et > records_.back().et) {
     if (!clampWarnedHigh_) {
       std::cerr << "[TsDriverTable] WARNING: time after table end ("
                 << records_.back().timeUTC << "); clamping.\n";
@@ -1472,6 +1472,8 @@ EarthUtil::TsDriverRecord EarthUtil::TsDriverTable::Lookup(double et) const {
     }
     return records_.back();
   }
+  if (et==records_.front().et) return records_.front();
+  if (et==records_.back().et) return records_.back();
 
   // Binary search: records_[lo].et <= et < records_[lo+1].et
   std::size_t lo = 0, hi = records_.size() - 1;
@@ -1630,6 +1632,7 @@ static std::string NormalizeTsModelName(const std::string& raw) {
 //   TsColMap is a plain std::map<std::string,int>; it is built once by the parser
 //   (single-threaded) and then used read-only by all MPI ranks/threads.
 using TsColMap = std::map<std::string, int>;
+using TsUnitMap = std::map<std::string, std::string>;
 
 //======================================================================================
 // ParseTsDriverHeader
@@ -1669,7 +1672,8 @@ using TsColMap = std::map<std::string, int>;
 //   • If a variable block lacks a START_COLUMN it is silently skipped.
 //   • If a variable block lacks ELEMENT_NAMES it is treated as a scalar.
 static TsColMap ParseTsDriverHeader(std::istream& fin,
-                                    const std::string& fileName) {
+                                    const std::string& fileName,
+                                    TsUnitMap* unitsOut) {
   TsColMap colMap;
 
   // ── Per-variable accumulator ──────────────────────────────────────────────
@@ -1679,6 +1683,7 @@ static TsColMap ParseTsDriverHeader(std::istream& fin,
   std::string currentName;             // text of the most recent "NAME" value
   int         currentStartCol = -1;    // value of "START_COLUMN" (-1 = not yet seen)
   std::vector<std::string> currentElements; // contents of "ELEMENT_NAMES" (empty = scalar)
+  std::string currentUnit;             // optional native unit from the JSON metadata
 
   bool inJsonBlock = false; // true after "# {" has been seen
   bool headerDone  = false; // true once we have left the header section
@@ -1701,18 +1706,23 @@ static TsColMap ParseTsDriverHeader(std::istream& fin,
     if (currentElements.empty()) {
       // Scalar: single column entry.
       colMap[uName] = currentStartCol;
+      if (unitsOut!=nullptr && !currentUnit.empty()) (*unitsOut)[uName]=currentUnit;
     } else {
       // Vector: one entry per named element at consecutive columns.
       for (int k = 0; k < static_cast<int>(currentElements.size()); ++k) {
-        colMap[ToUpper(currentElements[k])] = currentStartCol + k;
+        const std::string element=ToUpper(currentElements[k]);
+        colMap[element] = currentStartCol + k;
+        if (unitsOut!=nullptr && !currentUnit.empty()) (*unitsOut)[element]=currentUnit;
       }
       // Base name also maps to the first element (column startCol + 0).
       colMap[uName] = currentStartCol;
+      if (unitsOut!=nullptr && !currentUnit.empty()) (*unitsOut)[uName]=currentUnit;
     }
     // Reset for the next variable.
     currentName.clear();
     currentStartCol = -1;
     currentElements.clear();
+    currentUnit.clear();
   };
 
   // ── Lambda: extractQuotedValue ────────────────────────────────────────────
@@ -1819,8 +1829,15 @@ static TsColMap ParseTsDriverHeader(std::istream& fin,
       // If present, commitCurrent will create one map entry per element.
       currentElements = extractStringArray(stripped);
     }
-    // All other JSON keys (TITLE, LABEL, UNITS, DIMENSION, DESCRIPTION,
-    // VALUES, ...) are ignored.
+    else if (ustripped.find("\"UNITS\"") != std::string::npos ||
+             ustripped.find("\"UNIT\"") != std::string::npos) {
+      // Preserve the declared native unit so the model-specific conversion
+      // contract can reject, for example, a Pa column passed as nPa.  The
+      // production loader does not perform an undocumented magnitude guess.
+      currentUnit=extractQuotedValue(stripped);
+    }
+    // All other JSON keys (TITLE, LABEL, DIMENSION, DESCRIPTION, VALUES, ...)
+    // are irrelevant to the numerical loader.
   }
 
   // Commit any variable whose closing brace may have been the end-of-file.
@@ -1839,7 +1856,8 @@ static TsColMap ParseTsDriverHeader(std::istream& fin,
 // Fallback for AMPS wizard style plain-text tables whose second comment line is a
 // whitespace-separated list of column names, for example:
 //   # YYYY-MM-DDTHH:MM:SS Bx By Bz Vx Vy Vz Np Temp SYM-H IMFflag SWflag Tilt Pdyn W1 ...
-static TsColMap ParseSimpleTsDriverHeader(const std::string& fileName) {
+static TsColMap ParseSimpleTsDriverHeader(const std::string& fileName,
+                                          TsUnitMap* unitsOut) {
   std::ifstream fin(fileName);
   if (!fin.is_open()) return {};
 
@@ -1866,34 +1884,55 @@ static TsColMap ParseSimpleTsDriverHeader(const std::string& fileName) {
       const std::string base = (brk != std::string::npos) ? raw.substr(0, brk) : raw;
       const std::string u    = ToUpper(base);
 
+      std::string declaredUnit;
+      if (brk!=std::string::npos) {
+        const std::size_t close=raw.find(']',brk+1);
+        if (close==std::string::npos || close==brk+1) {
+          std::ostringstream message;
+          message << "Malformed unit suffix '" << raw << "' in TS_INPUT_FILE '"
+                  << fileName << "'";
+          exit(__LINE__,__FILE__,message.str().c_str());
+        }
+        declaredUnit=raw.substr(brk+1,close-brk-1);
+      }
+
+      // Keep column and unit aliases synchronized.  Without this helper it is easy
+      // to map, for example, By -> BYIMF while leaving its unit under the unused BY
+      // spelling, which would make the subsequent unit gate ineffective.
+      const auto addColumn = [&](const std::string& canonical) {
+        colMap[canonical]=i;
+        if (unitsOut!=nullptr && !declaredUnit.empty())
+          (*unitsOut)[canonical]=declaredUnit;
+      };
+
       if (u == "YYYY-MM-DDTHH:MM:SS") {
-        colMap["DATETIME"] = i;
-        colMap["ISODATETIME"] = i;
+        addColumn("DATETIME");
+        addColumn("ISODATETIME");
       }
       // IMF components — ViRBO alias (By/Bz) and AMPS wizard direct names (ByIMF/BzIMF).
-      else if (u == "BY" || u == "BYIMF") colMap["BYIMF"] = i;
-      else if (u == "BZ" || u == "BZIMF") colMap["BZIMF"] = i;
+      else if (u == "BY" || u == "BYIMF") addColumn("BYIMF");
+      else if (u == "BZ" || u == "BZIMF") addColumn("BZIMF");
       // Solar wind speed — ViRBO uses the x-component "Vx"; AMPS wizard writes
       // the scalar magnitude "Vsw".  Both map to the internal key VSW.
-      else if (u == "VX" || u == "VSW") colMap["VSW"] = i;
+      else if (u == "VX" || u == "VSW") addColumn("VSW");
       // Proton density.
-      else if (u == "NP") colMap["DEN_P"] = i;
+      else if (u == "NP" || u == "DEN_P") addColumn("DEN_P");
       // Dst index — AMPS wizard writes "Dst" directly; ViRBO files use SYM-H/SYMH.
       // Plain SYM-H is mapped to DST.  The corrected SymH value (SymHc) that
       // TA16 needs as PARMOD(2) is kept under its own key so the loader can
       // prefer it over the raw DST when both are present.
-      else if (u == "DST" || u == "SYM-H" || u == "SYMH") colMap["DST"] = i;
-      else if (u == "SYMHC") colMap["SYMHC"] = i;
-      else if (u == "PDYN") colMap["PDYN"] = i;
+      else if (u == "DST" || u == "SYM-H" || u == "SYMH") addColumn("DST");
+      else if (u == "SYMHC") addColumn("SYMHC");
+      else if (u == "PDYN") addColumn("PDYN");
       // N-index is the Newell optimal solar-wind coupling index, written as
       // "N-index" by the AMPS wizard.  It maps to XIND (TA15/TA16 PARMOD slot).
       // The hyphen in "N-index" survives ToUpper as "N-INDEX".
-      else if (u == "N-INDEX" || u == "NINDEX" || u == "XIND") colMap["XIND"] = i;
+      else if (u == "N-INDEX" || u == "NINDEX" || u == "XIND") addColumn("XIND");
       else if (u == "G1" || u == "G2" || u == "G3" ||
                u == "W1" || u == "W2" || u == "W3" || u == "W4" || u == "W5" || u == "W6" ||
                u == "BZ1" || u == "BZ2" || u == "BZ3" || u == "BZ4" || u == "BZ5" || u == "BZ6" ||
                u == "XIND") {
-        colMap[u] = i;
+        addColumn(u);
       }
     }
     return colMap;
@@ -1937,98 +1976,10 @@ static TsColMap ParseSimpleTsDriverHeader(const std::string& fileName) {
 //   4. Add the Fortran call in cFieldEvaluator::GetB_T.
 //   5. Update PARMOD loading in cFieldEvaluator constructor and ReinitGeopack.
 static std::vector<std::string> RequiredColumnsForModel(const std::string& model) {
-  // Shared by all external Tsyganenko models: IMF, solar wind, Dst.
-  // These are the minimum inputs needed to call any T96/T01/T05/TA15/TA16
-  // Fortran routine.
-  static const std::vector<std::string> swBase = {
-    "BYIMF",  // IMF By [nT]
-    "BZIMF",  // IMF Bz [nT]
-    "VSW",    // Solar wind speed [km/s] (positive magnitude in file)
-    "DEN_P",  // Solar wind proton density [cm^-3]
-    "PDYN",   // Solar wind dynamic pressure [nPa]
-    "DST"     // Dst index [nT]
-  };
-
-  // W1..W6: storm-time history integrals introduced by T05.
-  // They encode the time-integrated energy injection into each internal current
-  // system (ring current, partial ring current, field-aligned, Chapman-Ferraro,
-  // tail) and are also required by TA15 and TA16.
-  static const std::vector<std::string> wIntegrals = {
-    "W1", "W2", "W3", "W4", "W5", "W6"
-  };
-
-  const std::string m = ToUpper(Trim(model));
-
-  // DIPOLE and IGRF are internal-field-only models.  Neither consumes a
-  // time-dependent solar-wind/Tsyganenko driver table.
-  if (m == "DIPOLE" || m == "IGRF") return {};
-
-  // T96: driven by [Pdyn, Dst, By, Bz] only.
-  // PARMOD: [0]=Pdyn [1]=Dst [2]=By [3]=Bz [4..10]=0
-  // VSW and DEN_P are NOT arguments to the T96 Fortran routine; do not include
-  // them in the required set.  AMPS wizard T96 driver files legitimately omit
-  // those columns, and requiring them produces a spurious fatal validation error.
-  if (m == "T96") return {"BYIMF", "BZIMF", "PDYN", "DST"};
-
-  // T01: same as T96 plus the G-indices G1, G2, G3 that capture the recent
-  // history of strong southward Bz intervals and their effect on the ring current.
-  // PARMOD: [0]=Pdyn [1]=Dst [2]=By [3]=Bz [4]=G1 [5]=G2 [6]=G3 [7..10]=0
-  if (m == "T01") {
-    std::vector<std::string> req = swBase;
-    req.insert(req.end(), {"G1", "G2", "G3"});
-    return req;
-  }
-
-  // T05: adds the six W storm-time integrals to the base set.
-  // PARMOD: [0]=Pdyn [1]=Dst [2]=By [3]=Bz [4]=W1 .. [9]=W6 [10]=0
-  if (m == "T05") {
-    std::vector<std::string> req = swBase;
-    req.insert(req.end(), wIntegrals.begin(), wIntegrals.end());
-    return req;
-  }
-
-  // TA15 (Tsyganenko-Andreeva 2015): two sub-variants (northward / southward IMF).
-  // In addition to the W-integrals it needs BZ1..BZ6 — the mean |Bz_south| over
-  // 1, 2, 3, 4, 5, 6 hours before the observation epoch — and XIND, the
-  // Newell-type dimensionless coupling index that maps directly to PARMOD(4) in
-  // the TA15 Fortran call (see BuildTsParmod: parmod[3] = field.xind).
-  //
-  // WHY XIND MUST BE VALIDATED HERE
-  // ---------------------------------
-  // ExtractColumn() returns 0.0 (its default) whenever a column is absent from
-  // the column map.  For XIND this means a missing column silently produces
-  // parmod[3] = 0 for every time step -- a physically wrong value for any
-  // geomagnetically active interval, with no diagnostic to alert the user.
-  // Including XIND in the required set converts this silent wrong-value condition
-  // into a descriptive fatal error at load time, consistent with how all other
-  // required columns are handled throughout this function.
-  if (m == "TA15N" || m == "TA15B") {
-    std::vector<std::string> req = swBase;
-    req.insert(req.end(), wIntegrals.begin(), wIntegrals.end());
-    req.insert(req.end(), {"BZ1", "BZ2", "BZ3", "BZ4", "BZ5", "BZ6"});
-    req.push_back("XIND");   // Newell coupling index -> parmod[3] in BuildTsParmod
-    return req;
-  }
-
-  // TA16 (Tsyganenko-Andreeva 2016).
-  // PARMOD layout: [PDYN, SymHc, XIND, BYIMF].  Only the first 4 PARMOD slots
-  // are used — W1..W6 (PARMOD 5..10) are a T05 concept and are NOT read by TA16.
-  // Required: PDYN, BYIMF, and either SYMHC (preferred, corrected SymH) or DST
-  //   (raw SYM-H, acceptable proxy).
-  // Optional: XIND (Newell coupling index) — defaults to 0.0 if the column is
-  //   absent, which is physically reasonable for quiet-time runs.
-  if (m == "TA16") {
-    // We cannot express "SYMHC or DST" as a hard requirement in this function,
-    // so we require DST which covers both: ParseSimpleTsDriverHeader maps both
-    // the raw SYM-H and SymHc columns to usable keys, and the loader prefers
-    // SYMHC when present (see LoadTsDriverFile).
-    return {"PDYN", "BYIMF", "DST"};
-  }
-
-  // Unknown model — skip validation and let the solver report the problem.
-  std::cerr << "[TsDriverTable] WARNING: no required-column definition for model '"
-            << model << "'. Column validation will be skipped.\n";
-  return {};
+  // One authoritative Step-7 mapping is shared by the production loader and the
+  // dependency-free contract tests.  Keeping this forwarding function preserves
+  // the parser's local call sites while preventing backend-specific drift.
+  return Earth::StandaloneProducts::RequiredDriverColumns(model);
 }
 //======================================================================================
 // ValidateTsDriverColumns
@@ -2074,6 +2025,33 @@ static void ValidateTsDriverColumns(const TsColMap& colMap,
   _m << "Available columns detected in file header:";
   for (const auto& kv : colMap) _m << " " << kv.first;
   exit(__LINE__,__FILE__,_m.str().c_str());
+}
+
+// Validate the native units before numeric records are accepted.  JSON/Qin-Denton
+// headers must declare units for dimensional columns.  The historical AMPS-wizard
+// one-line header is a fixed schema: an omitted suffix means its documented native
+// unit, while an explicit suffix is still checked and can never be ignored.
+static void ValidateTsDriverUnits(const TsUnitMap& units,
+                                  const std::string& model,
+                                  const std::string& fileName,
+                                  bool fixedLegacySchema) {
+  TsUnitMap effectiveUnits=units;
+  if (effectiveUnits.find("DST")==effectiveUnits.end()) {
+    const auto symhc=effectiveUnits.find("SYMHC");
+    if (symhc!=effectiveUnits.end()) effectiveUnits["DST"]=symhc->second;
+  }
+
+  try {
+    Earth::StandaloneProducts::ValidateDriverUnits(
+        model,effectiveUnits,fixedLegacySchema);
+  }
+  catch (const std::exception& error) {
+    std::ostringstream message;
+    message << "TS_INPUT_FILE '" << fileName
+            << "' failed native-unit validation for FIELD_MODEL=" << model
+            << ": " << error.what();
+    exit(__LINE__,__FILE__,message.str().c_str());
+  }
 }
 //======================================================================================
 // ExtractColumn
@@ -2177,21 +2155,30 @@ static EarthUtil::TsDriverTable LoadTsDriverFile(const std::string& fileName,
   // Pass 1: Build the column map from the file header.
   // -----------------------------------------------------------------------
   TsColMap colMap;
+  TsUnitMap unitMap;
+  bool fixedLegacySchema=false;
   {
     std::ifstream hdr(fileName);
     if (!hdr.is_open()) {
       std::ostringstream _m; _m << "Cannot open TS_INPUT_FILE: " << fileName;
       exit(__LINE__,__FILE__,_m.str().c_str());
     }
-    colMap = ParseTsDriverHeader(hdr, fileName);
+    colMap = ParseTsDriverHeader(hdr, fileName, &unitMap);
     // hdr is closed here (RAII).
   }
-  if (colMap.empty()) colMap = ParseSimpleTsDriverHeader(fileName);
+  if (colMap.empty()) {
+    // The AMPS-wizard plain-text header is a versioned fixed-unit schema.  It
+    // remains supported for all checked-in C/F driver files; bracketed units,
+    // when present, override the implicit schema declaration and are validated.
+    fixedLegacySchema=true;
+    colMap = ParseSimpleTsDriverHeader(fileName,&unitMap);
+  }
 
   // Validate that every column required by this model is present before
   // reading a single data row.  Fails with a descriptive error listing the
   // missing columns and all available columns from the header.
   ValidateTsDriverColumns(colMap, modelName, fileName);
+  ValidateTsDriverUnits(unitMap,modelName,fileName,fixedLegacySchema);
 
   // Resolve the 0-based column index for the ISO-8601 timestamp.
   // Try standard ViRBO name variants in priority order.
@@ -2218,6 +2205,7 @@ static EarthUtil::TsDriverTable LoadTsDriverFile(const std::string& fileName,
   }
 
   EarthUtil::TsDriverTable table;
+  const std::vector<std::string> requiredColumns=RequiredColumnsForModel(modelName);
   std::string line;
   int lineNo = 0, loaded = 0, skipped = 0;
 
@@ -2254,6 +2242,35 @@ static EarthUtil::TsDriverTable LoadTsDriverFile(const std::string& fileName,
     // rows that survived comment stripping because they had no comment prefix).
     // ISO-8601 requires a 'T' separator between date and time.
     if (timeUTC.find('T') == std::string::npos) { ++skipped; continue; }
+
+    // Header validation proves that each required model driver has a column, but it
+    // does not prove that every row contains a complete finite number.  Validate the
+    // actual token now, before ExtractColumn's legacy optional-column fallback can
+    // turn malformed physics input into zero.  Corrected Sym-H satisfies the canonical
+    // DST slot when that alias was accepted by the header gate.
+    for (const std::string& required:requiredColumns) {
+      std::string actual=required;
+      if (required=="DST" && colMap.find("DST")==colMap.end() &&
+          colMap.find("SYMHC")!=colMap.end()) actual="SYMHC";
+      const auto column=colMap.find(actual);
+      if (column==colMap.end() || column->second<0 ||
+          column->second>=static_cast<int>(toks.size())) {
+        std::ostringstream message;
+        message << "TS_INPUT_FILE '" << fileName << "' line " << lineNo
+                << " has no value for required column " << actual;
+        exit(__LINE__,__FILE__,message.str().c_str());
+      }
+      try {
+        (void)Earth::StandaloneProducts::ParseFiniteDriverValue(
+            actual,toks[static_cast<std::size_t>(column->second)]);
+      }
+      catch (const std::exception& error) {
+        std::ostringstream message;
+        message << "TS_INPUT_FILE '" << fileName << "' line " << lineNo
+                << " failed driver-value validation: " << error.what();
+        exit(__LINE__,__FILE__,message.str().c_str());
+      }
+    }
 
     // Convert ISO-8601 to SPICE ET (seconds past J2000).
     // We need ET for two purposes:
@@ -2321,6 +2338,10 @@ static EarthUtil::TsDriverTable LoadTsDriverFile(const std::string& fileName,
        << "' (lines=" << lineNo << ", skipped=" << skipped << ")";
     exit(__LINE__,__FILE__,_m.str().c_str());
   }
+
+  // Set these flags only after both header gates and the complete data-row pass
+  // succeed.  Standalone startup consumes them; hand-built tables default false.
+  table.SetValidationProvenance(fileName,true,true);
 
   std::cout << "[TsDriverTable] Loaded " << loaded << " records from '"
             << fileName << "'"
@@ -3397,7 +3418,24 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
   if (inDetectorResponsesBlock)
     exit(__LINE__,__FILE__,"Unterminated DR_BEGIN block");
 
-  
+  // Roadmap Step 7 fail-fast selector.  Apply this only when a backward product
+  // was explicitly requested: legacy coupled-forward inputs inherit the historical
+  // default CALC_TARGET string but do not select the standalone path.
+  if (p.calc.targetExplicit) {
+    try {
+      (void)Earth::StandaloneProducts::ParseProductSelection(p.calc.target);
+      if (!Earth::StandaloneProducts::IsSupportedFieldModel(p.field.model)) {
+        std::ostringstream message;
+        message << "Unsupported standalone FIELD_MODEL='" << p.field.model
+                << "'. Production models: DIPOLE, IGRF, T96, T01, T05/TS05, "
+                   "TA15N, TA15B, TA16; NONE is validation-only.";
+        exit(__LINE__,__FILE__,message.str().c_str());
+      }
+    }
+    catch (const std::exception& error) {
+      exit(__LINE__,__FILE__,error.what());
+    }
+  }
 
 // Validate dipole-specific background field settings if requested.
 if (ToUpper(p.field.model)=="DIPOLE") {

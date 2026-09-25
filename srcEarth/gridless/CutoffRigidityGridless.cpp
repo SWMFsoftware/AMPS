@@ -654,16 +654,25 @@ public:
       str2et_c(epoch.c_str(), &etSpice);
       const double et = static_cast<double>(etSpice);
 #else
-      // When SPICE is disabled we have no robust UTC->ET conversion here.
-      // Using et=0 forces Lookup() to clamp to the start of the table.  That is
-      // intentionally conservative: it keeps the code path alive for builds
-      // without SPICE while making the degraded behavior obvious in the output.
+      // A file-backed table cannot be loaded without SPICE, so this value is never
+      // accepted by the coverage gate below.  Keep the branch compilable for
+      // _NO_SPICE_CALLS_ configurations, but fail closed instead of silently
+      // clamping to the first physical driver record.
       const double et = 0.0;
 #endif
 
       // Interpolate the full driver state for this exact point time.  The
       // returned record contains both the common T96/T05-style quantities and
       // the extra model-specific blocks (G, W, BZ averages).
+      if (!driverTable->ColumnsValidated() || !driverTable->UnitsValidated())
+        throw std::runtime_error(
+            "Gridless driver table was not validated before field initialization");
+      if (!driverTable->Covers(et)) {
+        std::ostringstream message;
+        message << "Gridless field epoch " << epoch << " is outside driver coverage ["
+                << driverTable->FirstUtc() << ", " << driverTable->LastUtc() << "]";
+        throw std::runtime_error(message.str());
+      }
       const EarthUtil::TsDriverRecord rec = driverTable->Lookup(et);
 
       // Copy the interpolated snapshot into the mutable BackgroundField block.
@@ -676,7 +685,7 @@ public:
       // This is the key step that removes the old T05-only assumption:
       //   • T96 gets [Pdyn,Dst,By,Bz,...]
       //   • T01 additionally receives G1..G3
-      //   • T05/TA16 receive W1..W6
+      //   • T05 receives W1..W6; TA16 uses PDYN, corrected Sym-H, XIND, and BY
       //   • TA15 receives [Pdyn,By,Bz,XIND] in the direct Fortran layout
       // The field evaluator then consumes the same PARMOD array it always did,
       // but now its contents are refreshed through a uniform model-agnostic API.

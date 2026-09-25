@@ -15,6 +15,27 @@ Energy/rigidity conversion, energy coordinates, angular sampling, channel clippi
 quadrature, transmission diagnostics, and unresolved bounds come from
 `../util/FluxNumerics.h` in both backends.
 
+## Step 7 standalone product orchestration
+
+Standalone Mode3D now accepts cutoff-only, density/flux/spectrum-only, and combined
+targets. For every requested epoch it materializes one compact field generation,
+validates a shared `StandaloneProducts::RunPlan`, writes
+`standalone_mode3d_manifest[_snapshot].json`, executes the selected products, and
+checks that the published snapshot ID is unchanged after each one. The manifest and all
+product suffixes therefore refer to the same epoch and field generation.
+
+The standalone field list is DIPOLE, IGRF, T96, T01, T05/TS05, TA15N, TA15B, and
+TA16. Step 7 adds explicit Mode3D initialization and evaluation for T01 and both TA15
+variants: T01 receives PDYN, DST, BY, BZ and G1..G3; TA15 receives PDYN, BY, BZ and
+XIND after selecting its N or B coefficient set. Driver columns, units, monotonic time,
+and inclusive epoch coverage are checked before interpolation and mesh construction.
+
+All empirical wrappers remain in the existing non-SWMF compile-time branch. An SWMF
+build obtains its field from the coupler and cannot accidentally link or dispatch a
+standalone T01/TA15 model. Step 7 makes no change to coupled cadence or coupled physics.
+Run `./test/UStandaloneProducts/run_test.sh` for the common startup and isolation
+contract, then retain the existing Mode3D C/F tests for linked numerical validation.
+
 ## Step 6 common boundary and product kernel
 
 `DensityMode3D.cpp` now sends the complete access curve to
