@@ -8,7 +8,10 @@
  *
  *   double cSpectrum::GetSpectrum(double E_J) const;
  *
- * where E_J is kinetic energy (per nucleon, if applicable) in Joules.
+ * where E_J is the declared energy coordinate expressed in joule-equivalent units:
+ * particle kinetic energy for PER_PARTICLE or kinetic energy per nucleon for
+ * PER_NUCLEON. BoundaryProducts converts that coordinate to total particle energy
+ * whenever rigidity or speed is required.
  *
  * Notes on units:
  * - Many user-facing spectra are specified as differential flux per (MeV/n):
@@ -38,6 +41,7 @@
 #include <vector>
 
 #include "specfunc.h"
+#include "../util/BoundaryProducts.h"
 
 class cSpectrum {
 public:
@@ -142,9 +146,10 @@ public:
    * @brief Table spectrum loaded from either a legacy 2-column file or a
    *        time-dependent file with one timestamp row and many energy columns.
    *
-   * For time-dependent files, reference_epoch_utc determines which time row is
-   * selected. The nearest row in time is used. If reference_epoch_utc is empty
-   * or cannot be parsed, the first valid time row is used.
+   * For time-dependent files, reference_epoch_utc selects an exact row or a
+   * log-intensity interpolation between adjacent rows.  Step-6 gap and out-of-range
+   * policies are applied after metadata parsing; an empty/unparseable epoch retains
+   * the first row for legacy compatibility.
    */
   static cSpectrum MakeTable(std::string table_file,
                             double Emin_MeV, double Emax_MeV,
@@ -190,45 +195,59 @@ public:
     const double Emax = ParseDoubleOrThrow(get("SPEC_EMAX"), "SPEC_EMAX");
 
     if (type_s == "POWER_LAW") {
-      return MakePowerLaw(
+      cSpectrum result = MakePowerLaw(
           ParseDoubleOrThrow(get("SPEC_J0"), "SPEC_J0"),
           ParseDoubleOrThrow(get("SPEC_GAMMA"), "SPEC_GAMMA"),
           ParseDoubleOrThrow(get("SPEC_E0"), "SPEC_E0"),
           Emin, Emax);
+      result.ConfigureCommonMetadata_(get);
+      return result;
     }
 
     if (type_s == "POWER_LAW_CUTOFF") {
-      return MakePowerLawCutoff(
+      cSpectrum result = MakePowerLawCutoff(
           ParseDoubleOrThrow(get("SPEC_J0"), "SPEC_J0"),
           ParseDoubleOrThrow(get("SPEC_GAMMA"), "SPEC_GAMMA"),
           ParseDoubleOrThrow(get("SPEC_E0"), "SPEC_E0"),
           ParseDoubleOrThrow(get("SPEC_EC"), "SPEC_EC"),
           Emin, Emax);
+      result.ConfigureCommonMetadata_(get);
+      return result;
     }
 
     if (type_s == "LIS_FORCE_FIELD") {
-      return MakeLisForceField(
+      cSpectrum result = MakeLisForceField(
           ParseDoubleOrThrow(get("SPEC_LIS_J0"), "SPEC_LIS_J0"),
           ParseDoubleOrThrow(get("SPEC_LIS_GAMMA"), "SPEC_LIS_GAMMA"),
           ParseDoubleOrThrow(get("SPEC_E0"), "SPEC_E0"),
           ParseDoubleOrThrow(get("SPEC_PHI"), "SPEC_PHI"),
           Emin, Emax);
+      result.ConfigureCommonMetadata_(get);
+      return result;
     }
 
     if (type_s == "BAND") {
-      return MakeBand(
+      cSpectrum result = MakeBand(
           ParseDoubleOrThrow(get("SPEC_J0"), "SPEC_J0"),
           ParseDoubleOrThrow(get("SPEC_GAMMA1"), "SPEC_GAMMA1"),
           ParseDoubleOrThrow(get("SPEC_GAMMA2"), "SPEC_GAMMA2"),
           ParseDoubleOrThrow(get("SPEC_E0"), "SPEC_E0"),
           Emin, Emax);
+      result.ConfigureCommonMetadata_(get);
+      return result;
     }
 
     if (type_s == "TABLE") {
       std::string f = Trim(get("SPEC_TABLE_FILE"));
       if (f.empty()) exit(__LINE__,__FILE__,"Missing required key SPEC_TABLE_FILE for SPECTRUM_TYPE=TABLE");
       const std::string refEpochUTC = Trim(get("SPEC_TABLE_REFERENCE_EPOCH_UTC"));
-      return MakeTable(f, Emin, Emax, refEpochUTC);
+      cSpectrum result = MakeTable(f, Emin, Emax, refEpochUTC);
+      result.ConfigureCommonMetadata_(get);
+      // MakeTable must load the file before the common temporal policy is known.
+      // Re-selecting the requested epoch here applies the declared interpolation,
+      // gap, and out-of-range policy rather than the historical nearest-row rule.
+      if (!refEpochUTC.empty()) result.SetEvaluationEpochUTC(refEpochUTC);
+      return result;
     }
 
     std::ostringstream oss;
@@ -261,9 +280,79 @@ public:
   std::size_t TableSnapshotCount() const noexcept { return table_snapshots_.size(); }
   const std::string& ActiveTableEpochUTC() const noexcept { return selected_table_epoch_utc_; }
 
+  // Step-6 metadata is explicit because "MeV" and "MeV/nucleon" are different
+  // integration coordinates.  Keeping the basis with the spectrum prevents a caller
+  // from guessing from the species name or from an output-column spelling.
+  Earth::BoundaryProducts::EnergyBasis EnergyCoordinateBasis() const noexcept {
+    return energy_basis_;
+  }
+  double MassNumber() const noexcept { return mass_number_; }
+  const std::string& IntensityUnitLabel() const noexcept { return intensity_unit_label_; }
+  double RelativeUncertainty() const noexcept { return relative_uncertainty_; }
+  Earth::BoundaryProducts::TemporalStatus LastTemporalStatus() const noexcept {
+    return last_temporal_status_;
+  }
+  bool LastTemporalSelectionCrossedGap() const noexcept { return last_temporal_gap_; }
+  double LastTemporalInterpolationFraction() const noexcept {
+    return last_temporal_fraction_;
+  }
+
+  Earth::BoundaryProducts::SpectrumUnits Units() const {
+    Earth::BoundaryProducts::SpectrumUnits units;
+    units.energyBasis = energy_basis_;
+    units.massNumber = mass_number_;
+    units.intensityLabel = intensity_unit_label_;
+    return units;
+  }
+
+  // Return the boundary-spectrum uncertainty interval in the same coordinate units as
+  // GetSpectrumPerMeV().  This uncertainty is independent of access uncertainty;
+  // BoundaryProducts combines the two only after the trajectory result is known.
+  Earth::BoundaryProducts::Bounds GetSpectrumPerMeVBounds(double E_MeV) const {
+    const double value = GetSpectrumPerMeV(E_MeV);
+    return Earth::BoundaryProducts::Bounds(
+        value,
+        value * std::max(0.0, 1.0 - relative_uncertainty_),
+        value * (1.0 + relative_uncertainty_));
+  }
+
   void SetEvaluationUnixSeconds(double unixTime) {
     if (!table_is_time_dependent_ || table_snapshots_.empty() || !std::isfinite(unixTime)) return;
-    ActivateTimeDependentSnapshotByIndex_(FindNearestTimeDependentSnapshotIndex_(unixTime));
+
+    // Interpolate the full spectrum vector in log-intensity space.  This is
+    // deterministic for identical inputs and preserves a power-law-like positive
+    // spectrum between snapshots.  Gap and out-of-range handling are explicit
+    // policies; neither silently falls back to nearest-row behavior.
+    std::vector<Earth::BoundaryProducts::TemporalSpectrumRow> rows;
+    rows.reserve(table_snapshots_.size());
+    for (const TableSnapshot& snapshot : table_snapshots_) {
+      Earth::BoundaryProducts::TemporalSpectrumRow row;
+      row.time_s = snapshot.unixTime_s;
+      row.epochUTC = snapshot.epochUTC;
+      row.intensity = snapshot.J_perMeV;
+      rows.push_back(row);
+    }
+    const Earth::BoundaryProducts::TemporalSpectrumSelection selection =
+        Earth::BoundaryProducts::SelectTemporalSpectrum(
+            rows, unixTime, maximum_time_gap_s_, time_out_of_range_policy_,
+            time_gap_policy_);
+    table_E_MeV_ = table_snapshots_.front().E_MeV;
+    table_J_perMeV_ = selection.intensity;
+    last_temporal_status_ = selection.status;
+    last_temporal_gap_ = selection.gapFlag;
+    last_temporal_fraction_ = selection.interpolationFraction;
+    active_snapshot_index_ = static_cast<int>(selection.leftIndex);
+
+    if (selection.leftIndex == selection.rightIndex) {
+      selected_table_epoch_utc_ = table_snapshots_[selection.leftIndex].epochUTC;
+    }
+    else {
+      std::ostringstream label;
+      label << table_snapshots_[selection.leftIndex].epochUTC << ".."
+            << table_snapshots_[selection.rightIndex].epochUTC << "@"
+            << std::setprecision(17) << selection.interpolationFraction;
+      selected_table_epoch_utc_ = label.str();
+    }
   }
 
   void SetEvaluationEpochUTC(const std::string& epochUTC) {
@@ -271,6 +360,23 @@ public:
     double unixTime = 0.0;
     if (!ParseIsoUtcToUnixSeconds_(epochUTC, unixTime)) return;
     SetEvaluationUnixSeconds(unixTime);
+  }
+
+  // Coupled models commonly expose an absolute reference epoch plus a simulation-time
+  // offset rather than formatting a second ISO timestamp. Keep the arithmetic here,
+  // beside the exact parser used by TABLE rows, so an SWMF adapter never has to
+  // duplicate calendar logic. An invalid base is an explicit error because silently
+  // selecting the reference row would combine two different physical times.
+  void SetEvaluationEpochUTCOffset(const std::string& referenceEpochUTC,
+                                   double offset_s) {
+    if (!table_is_time_dependent_ || table_snapshots_.empty()) return;
+    double unixTime=0.0;
+    if (!std::isfinite(offset_s) ||
+        !ParseIsoUtcToUnixSeconds_(referenceEpochUTC,unixTime)) {
+      throw std::invalid_argument(
+          "Time-dependent spectrum requires a valid reference UTC and finite offset");
+    }
+    SetEvaluationUnixSeconds(unixTime+offset_s);
   }
 
   /**
@@ -287,8 +393,8 @@ public:
 
   // ---------- Main API ----------
   /**
-   * @brief Differential spectrum at kinetic energy E_J (Joules).
-   * @return dF/dE_J  (same physical flux as user inputs, but per Joule).
+   * @brief Differential spectrum at coordinate energy E_J (joule-equivalent units).
+   * @return dF/dE_coordinate_J (same physical flux as input, but per coordinate J).
    */
   double GetSpectrum(double E_J) const {
     if (!(E_J > 0.0)) return 0.0;
@@ -341,6 +447,131 @@ public:
   }
 
 private:
+  /**
+   * Parse the Step-6 metadata shared by every analytic and tabulated spectrum.
+   *
+   * The legacy defaults remain PER_PARTICLE, per-MeV, mass number one, zero
+   * uncertainty, unlimited temporal gap, log-intensity interpolation, and endpoint
+   * clamping.  Therefore an existing input deck follows its previous numerical path.
+   * New inputs can state the coordinate and temporal policy explicitly, and invalid or
+   * contradictory unit declarations fail before any trajectory is launched.
+   */
+  template<class Getter>
+  void ConfigureCommonMetadata_(const Getter& get) {
+    const std::string basis = ToUpper(Trim(get("SPEC_ENERGY_BASIS")));
+    const std::string unit = ToUpper(Trim(get("SPEC_INTENSITY_UNIT")));
+
+    if (!basis.empty()) {
+      if (basis == "PER_PARTICLE" || basis == "PARTICLE" || basis == "MEV") {
+        energy_basis_ = Earth::BoundaryProducts::EnergyBasis::PerParticle;
+      }
+      else if (basis == "PER_NUCLEON" || basis == "MEV_PER_NUCLEON" ||
+               basis == "MEV/N" || basis == "MEV_N") {
+        energy_basis_ = Earth::BoundaryProducts::EnergyBasis::PerNucleon;
+      }
+      else {
+        throw std::invalid_argument(
+            "SPEC_ENERGY_BASIS must be PER_PARTICLE or PER_NUCLEON");
+      }
+    }
+
+    if (!unit.empty()) {
+      if (unit == "PER_MEV" || unit == "M^-2_S^-1_SR^-1_MEV^-1") {
+        intensity_unit_label_ = "m^-2 s^-1 sr^-1 MeV^-1";
+        if (!basis.empty() &&
+            energy_basis_ == Earth::BoundaryProducts::EnergyBasis::PerNucleon) {
+          throw std::invalid_argument(
+              "SPEC_INTENSITY_UNIT=PER_MEV conflicts with PER_NUCLEON energy basis");
+        }
+      }
+      else if (unit == "PER_MEV_PER_NUCLEON" || unit == "PER_MEV_N" ||
+               unit == "M^-2_S^-1_SR^-1_(MEV/N)^-1") {
+        intensity_unit_label_ = "m^-2 s^-1 sr^-1 (MeV/nucleon)^-1";
+        if (!basis.empty() &&
+            energy_basis_ == Earth::BoundaryProducts::EnergyBasis::PerParticle) {
+          throw std::invalid_argument(
+              "SPEC_INTENSITY_UNIT=PER_MEV_PER_NUCLEON conflicts with PER_PARTICLE basis");
+        }
+        energy_basis_ = Earth::BoundaryProducts::EnergyBasis::PerNucleon;
+      }
+      else {
+        throw std::invalid_argument(
+            "SPEC_INTENSITY_UNIT must be PER_MEV or PER_MEV_PER_NUCLEON");
+      }
+    }
+    if (energy_basis_ == Earth::BoundaryProducts::EnergyBasis::PerNucleon &&
+        unit.empty()) {
+      intensity_unit_label_ = "m^-2 s^-1 sr^-1 (MeV/nucleon)^-1";
+    }
+
+    const std::string mass = Trim(get("SPEC_MASS_NUMBER"));
+    if (!mass.empty()) mass_number_ = ParseDoubleOrThrow(mass, "SPEC_MASS_NUMBER");
+    if (!(mass_number_ > 0.0) || !std::isfinite(mass_number_)) {
+      throw std::invalid_argument("SPEC_MASS_NUMBER must be finite and > 0");
+    }
+
+    const std::string uncertainty = Trim(get("SPEC_RELATIVE_UNCERTAINTY"));
+    if (!uncertainty.empty()) {
+      relative_uncertainty_ =
+          ParseDoubleOrThrow(uncertainty, "SPEC_RELATIVE_UNCERTAINTY");
+    }
+    if (!(relative_uncertainty_ >= 0.0) || !std::isfinite(relative_uncertainty_)) {
+      throw std::invalid_argument(
+          "SPEC_RELATIVE_UNCERTAINTY must be finite and >= 0");
+    }
+
+    const std::string interpolation =
+        ToUpper(Trim(get("SPEC_TIME_INTERPOLATION")));
+    if (!interpolation.empty() && interpolation != "LOG_INTENSITY" &&
+        interpolation != "LOG_LINEAR") {
+      throw std::invalid_argument(
+          "SPEC_TIME_INTERPOLATION currently supports LOG_INTENSITY only");
+    }
+
+    const std::string maximumGap = Trim(get("SPEC_TIME_MAX_GAP_S"));
+    if (!maximumGap.empty()) {
+      maximum_time_gap_s_ =
+          ParseDoubleOrThrow(maximumGap, "SPEC_TIME_MAX_GAP_S");
+    }
+    if (!(maximum_time_gap_s_ >= 0.0) || !std::isfinite(maximum_time_gap_s_)) {
+      throw std::invalid_argument("SPEC_TIME_MAX_GAP_S must be finite and >= 0");
+    }
+
+    const std::string gap = ToUpper(Trim(get("SPEC_TIME_GAP_POLICY")));
+    if (!gap.empty()) {
+      if (gap == "INTERPOLATE_FLAG" || gap == "INTERPOLATE_AND_FLAG") {
+        time_gap_policy_ = Earth::BoundaryProducts::GapPolicy::InterpolateAndFlag;
+      }
+      else if (gap == "HOLD_NEAREST") {
+        time_gap_policy_ = Earth::BoundaryProducts::GapPolicy::HoldNearest;
+      }
+      else if (gap == "FAIL") {
+        time_gap_policy_ = Earth::BoundaryProducts::GapPolicy::Fail;
+      }
+      else {
+        throw std::invalid_argument(
+            "SPEC_TIME_GAP_POLICY must be INTERPOLATE_FLAG, HOLD_NEAREST, or FAIL");
+      }
+    }
+
+    const std::string outside = ToUpper(Trim(get("SPEC_TIME_OUT_OF_RANGE")));
+    if (!outside.empty()) {
+      if (outside == "CLAMP") {
+        time_out_of_range_policy_ = Earth::BoundaryProducts::OutOfRangePolicy::Clamp;
+      }
+      else if (outside == "ZERO") {
+        time_out_of_range_policy_ = Earth::BoundaryProducts::OutOfRangePolicy::Zero;
+      }
+      else if (outside == "FAIL") {
+        time_out_of_range_policy_ = Earth::BoundaryProducts::OutOfRangePolicy::Fail;
+      }
+      else {
+        throw std::invalid_argument(
+            "SPEC_TIME_OUT_OF_RANGE must be CLAMP, ZERO, or FAIL");
+      }
+    }
+  }
+
   /**
    * @brief Accept an energy inside the configured spectrum support, allowing
    *        only a floating-point roundoff-sized excursion at either endpoint.
@@ -783,7 +1014,17 @@ private:
               << " of '" << table_file_ << "'";
           exit(__LINE__,__FILE__,oss.str().c_str());
         }
-        if (!(v > 0.0) || !std::isfinite(v)) continue;
+        // Log-intensity interpolation is undefined for zero or negative samples.
+        // Reject the complete table instead of shortening only this row: shortening
+        // would destroy the rectangular energy/time mapping and could interpolate
+        // different energy bins against one another.
+        if (!(v > 0.0) || !std::isfinite(v)) {
+          std::ostringstream oss;
+          oss << "Time-dependent TABLE intensity must be positive for log "
+                 "interpolation; got '" << toks[i] << "' at line " << lineno
+              << " of '" << table_file_ << "'";
+          throw std::runtime_error(oss.str());
+        }
         rowE.push_back(energyGrid[i-1]);
         rowJ.push_back(v);
       }
@@ -821,8 +1062,22 @@ private:
                 return a.unixTime_s < b.unixTime_s;
               });
 
-    const std::size_t i0 = haveRef ? FindNearestTimeDependentSnapshotIndex_(refTime) : std::size_t(0);
-    ActivateTimeDependentSnapshotByIndex_(i0);
+    // The file format declares one common ENERGY_MEV header.  Keep the invariant
+    // explicit so later format extensions cannot accidentally admit ragged rows or
+    // duplicate epochs into the log-interpolation kernel.
+    for (std::size_t i = 1; i < table_snapshots_.size(); ++i) {
+      if (!(table_snapshots_[i].unixTime_s > table_snapshots_[i-1].unixTime_s)) {
+        throw std::runtime_error(
+            "Time-dependent TABLE contains duplicate/non-increasing UTC rows");
+      }
+      if (table_snapshots_[i].E_MeV != table_snapshots_.front().E_MeV) {
+        throw std::runtime_error(
+            "Time-dependent TABLE snapshots do not share one energy grid");
+      }
+    }
+
+    if (haveRef) SetEvaluationUnixSeconds(refTime);
+    else ActivateTimeDependentSnapshotByIndex_(0);
   }
 
   void LoadTableOrThrow() {
@@ -924,6 +1179,27 @@ private:
   // ---------- Stored definition ----------
   Type type_ = Type::Unknown;
 
+  // Explicit Step-6 coordinate and uncertainty metadata.  Defaults reproduce every
+  // historical proton spectrum deck: energy per particle, intensity per MeV, mass
+  // number one, and no boundary-spectrum uncertainty.
+  Earth::BoundaryProducts::EnergyBasis energy_basis_ =
+      Earth::BoundaryProducts::EnergyBasis::PerParticle;
+  double mass_number_ = 1.0;
+  std::string intensity_unit_label_{"m^-2 s^-1 sr^-1 MeV^-1"};
+  double relative_uncertainty_ = 0.0;
+
+  // Time-table policy and last-selection provenance.  maximum_time_gap_s_=0 disables
+  // the large-gap classification without disabling ordinary interpolation.
+  double maximum_time_gap_s_ = 0.0;
+  Earth::BoundaryProducts::GapPolicy time_gap_policy_ =
+      Earth::BoundaryProducts::GapPolicy::InterpolateAndFlag;
+  Earth::BoundaryProducts::OutOfRangePolicy time_out_of_range_policy_ =
+      Earth::BoundaryProducts::OutOfRangePolicy::Clamp;
+  Earth::BoundaryProducts::TemporalStatus last_temporal_status_ =
+      Earth::BoundaryProducts::TemporalStatus::Exact;
+  bool last_temporal_gap_ = false;
+  double last_temporal_fraction_ = 0.0;
+
   // Bounds (MeV/n)
   double spec_emin_MeV_ = 0.0;
   double spec_emax_MeV_ = 0.0;
@@ -1018,6 +1294,3 @@ void InitGlobalSpectrumFromKeyValueMap(
 void WriteSpectrumInputTecplot(const std::string& filename,
                                const cSpectrum& s,
                                int n_analytic = 200);
-
-
-

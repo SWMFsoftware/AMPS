@@ -14,7 +14,7 @@
 // Unit contract
 // -------------
 //   energy coordinate in public tables             MeV or MeV/nucleon (declared)
-//   kinetic energy passed to spectrum callables     J per particle
+//   energy passed to spectrum callables             J in the declared coordinate
 //   differential intensity passed to integrators    m^-2 s^-1 sr^-1 J^-1
 //   differential spectra stored in ProductSet       m^-2 s^-1 sr^-1 MeV^-1
 //   omnidirectional integral flux                    m^-2 s^-1
@@ -66,6 +66,20 @@ struct SpectrumUnits {
     return coordinateEnergy_MeV*factor*kMeVToJ;
   }
 
+  double ParticleEnergyMeV(double coordinateEnergy_MeV) const {
+    if (!(coordinateEnergy_MeV >= 0.0) || !(massNumber > 0.0))
+      throw std::invalid_argument("SpectrumUnits: invalid energy or mass number");
+    return coordinateEnergy_MeV*
+        ((energyBasis==EnergyBasis::PerNucleon) ? massNumber : 1.0);
+  }
+
+  double CoordinateEnergyMeVFromParticle(double particleEnergy_MeV) const {
+    if (!(particleEnergy_MeV >= 0.0) || !(massNumber > 0.0))
+      throw std::invalid_argument("SpectrumUnits: invalid energy or mass number");
+    return particleEnergy_MeV/
+        ((energyBasis==EnergyBasis::PerNucleon) ? massNumber : 1.0);
+  }
+
   // Convert dJ/d(coordinate MeV) to dJ/d(particle joule).  For a MeV/nucleon
   // coordinate, dE_particle=A*dE_n, hence the additional 1/A factor.
   double PerCoordinateMeVToPerParticleJ(double intensity) const {
@@ -82,6 +96,31 @@ struct SpectrumUnits {
     return intensity*factor*kMeVToJ;
   }
 };
+
+// Build an energy-coordinate grid while preserving the physical meaning of a
+// rigidity scan.  FluxNumerics operates on particle kinetic energy; for a spectrum
+// tabulated in MeV/nucleon, the endpoints are therefore converted to particle MeV,
+// the equal-log-rigidity grid is built there, and the result is converted back to the
+// declared coordinate.  LINEAR/LOG coordinate grids pass through the same path and
+// retain their exact configured endpoints.
+inline std::vector<double> BuildEnergyCoordinateGridMeV(
+    double Emin_MeV,double Emax_MeV,int legacyPointCount,
+    Earth::FluxNumerics::EnergySpacing spacing,bool rigidityScan,
+    int rigidityScanPointCount,int maximumPointCount,double absoluteCharge_C,
+    double restMass_kg,const SpectrumUnits& units) {
+  const double particleEmin=units.ParticleEnergyMeV(Emin_MeV);
+  const double particleEmax=units.ParticleEnergyMeV(Emax_MeV);
+  std::vector<double> result=Earth::FluxNumerics::BuildEnergyGridMeV(
+      particleEmin,particleEmax,legacyPointCount,spacing,rigidityScan,
+      rigidityScanPointCount,maximumPointCount,absoluteCharge_C,restMass_kg);
+  for (double& particleEnergy:result)
+    particleEnergy=units.CoordinateEnergyMeVFromParticle(particleEnergy);
+  // Pin in coordinate space as well.  This avoids a divide-by-A roundoff at channel
+  // edges and maintains the exact endpoint contract of FluxNumerics.
+  result.front()=Emin_MeV;
+  result.back()=Emax_MeV;
+  return result;
+}
 
 struct Bounds {
   double nominal{0.0};
@@ -103,6 +142,29 @@ inline Bounds OrderedBounds(double nominal,double lower,double upper) {
 
 inline Bounds MultiplyNonNegative(const Bounds& a,const Bounds& b) {
   return OrderedBounds(a.nominal*b.nominal,a.lower*b.lower,a.upper*b.upper);
+}
+
+// Convert the three-state trajectory classification into a multiplicative access
+// interval.  An unresolved direction has no defensible nominal value: its lower bound
+// is physical blocking and its upper bound is the largest configured boundary factor.
+// Keeping NaN here prevents a downstream consumer from interpreting numerical
+// non-resolution as a zero flux.
+inline Bounds DirectionalAccessBounds(bool allowed,bool unresolved,
+                                      double allowedBoundaryFactor=1.0,
+                                      double maximumBoundaryFactor=1.0) {
+  if (!(allowedBoundaryFactor>=0.0) || !std::isfinite(allowedBoundaryFactor) ||
+      !(maximumBoundaryFactor>=0.0) || !std::isfinite(maximumBoundaryFactor))
+    throw std::invalid_argument(
+        "DirectionalAccessBounds requires finite non-negative boundary factors");
+  if (allowed && unresolved)
+    throw std::invalid_argument(
+        "DirectionalAccessBounds cannot be both allowed and unresolved");
+  if (allowed)
+    return Bounds(allowedBoundaryFactor,allowedBoundaryFactor,allowedBoundaryFactor);
+  if (unresolved)
+    return Bounds(std::numeric_limits<double>::quiet_NaN(),0.0,
+                  maximumBoundaryFactor);
+  return Bounds(0.0,0.0,0.0);
 }
 
 enum class CharacteristicMapping { StaticMagnetic, GeneralPhaseSpace };
@@ -522,6 +584,33 @@ inline double IntegrateDensityWithUnits(const std::vector<double>& energy_MeV,
   return result;
 }
 
+// Apply access and boundary-spectrum uncertainty to a density integral in one place.
+// This helper is also used for the per-energy-interval shell density products, so the
+// total and its partition cannot diverge through different MeV/nucleon conversions.
+template<class SpectrumEvaluator>
+inline Bounds IntegrateDensityBounds(
+    const std::vector<double>& energy_MeV,
+    const std::vector<double>& nominalAccess,
+    const std::vector<double>& lowerAccess,
+    const std::vector<double>& upperAccess,
+    double particleMass_kg,SpectrumEvaluator boundarySpectrumPerCoordinateJ,
+    double boundaryRelativeUncertainty=0.0,
+    const SpectrumUnits& units=SpectrumUnits()) {
+  if (!(boundaryRelativeUncertainty>=0.0) ||
+      !std::isfinite(boundaryRelativeUncertainty))
+    throw std::invalid_argument(
+        "IntegrateDensityBounds: boundary uncertainty must be finite and non-negative");
+  const double lowerScale=std::max(0.0,1.0-boundaryRelativeUncertainty);
+  const double upperScale=1.0+boundaryRelativeUncertainty;
+  return OrderedBounds(
+      IntegrateDensityWithUnits(energy_MeV,nominalAccess,particleMass_kg,
+                                boundarySpectrumPerCoordinateJ,units),
+      lowerScale*IntegrateDensityWithUnits(energy_MeV,lowerAccess,particleMass_kg,
+                                           boundarySpectrumPerCoordinateJ,units),
+      upperScale*IntegrateDensityWithUnits(energy_MeV,upperAccess,particleMass_kg,
+                                           boundarySpectrumPerCoordinateJ,units));
+}
+
 template<class SpectrumEvaluator>
 inline ProductSet EvaluateIsotropicProducts(
     const std::vector<double>& energy_MeV,
@@ -563,10 +652,9 @@ inline ProductSet EvaluateIsotropicProducts(
     out.spectrum.push_back(p);
   }
 
-  out.numberDensity_m3=Bounds(
-      IntegrateDensityWithUnits(energy_MeV,nominalAccess,particleMass_kg,boundarySpectrumPerJ,units),
-      spectrumLowerScale*IntegrateDensityWithUnits(energy_MeV,lowerAccess,particleMass_kg,boundarySpectrumPerJ,units),
-      spectrumUpperScale*IntegrateDensityWithUnits(energy_MeV,upperAccess,particleMass_kg,boundarySpectrumPerJ,units));
+  out.numberDensity_m3=IntegrateDensityBounds(
+      energy_MeV,nominalAccess,lowerAccess,upperAccess,particleMass_kg,
+      boundarySpectrumPerJ,boundaryRelativeUncertainty,units);
   out.omnidirectionalFlux_m2_s=Bounds(
       Earth::FluxNumerics::IntegrateFlux(energy_MeV,nominalAccess,energy_MeV.front(),energy_MeV.back(),boundarySpectrumPerJ),
       spectrumLowerScale*Earth::FluxNumerics::IntegrateFlux(energy_MeV,lowerAccess,energy_MeV.front(),energy_MeV.back(),boundarySpectrumPerJ),

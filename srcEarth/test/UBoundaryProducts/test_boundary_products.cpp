@@ -8,6 +8,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace BP=Earth::BoundaryProducts;
@@ -42,12 +43,29 @@ int main() {
   ionUnits.energyBasis=BP::EnergyBasis::PerNucleon;
   ionUnits.massNumber=4.0;
   const double inputPerMeVn=37.25;
-  Check(Near(ionUnits.PerParticleJToPerCoordinateMeV(
-                 ionUnits.PerCoordinateMeVToPerParticleJ(inputPerMeVn)),inputPerMeVn,
-             1.0e-13),
+  const double inputPerParticleJ=
+      ionUnits.PerCoordinateMeVToPerParticleJ(inputPerMeVn);
+  Check(Near(inputPerParticleJ,inputPerMeVn/(4.0*FN::kMeVToJ),1.0e-13) &&
+        Near(ionUnits.PerParticleJToPerCoordinateMeV(inputPerParticleJ),
+             inputPerMeVn,1.0e-13),
         "U-F01 per-MeV/nucleon and per-particle-J round trip");
   Check(Near(ionUnits.ParticleEnergyJ(10.0),40.0*FN::kMeVToJ,1.0e-14),
         "U-F01 per-nucleon coordinate maps to total particle energy");
+  const std::vector<double> ionScan=BP::BuildEnergyCoordinateGridMeV(
+      1.0,100.0,3,FN::EnergySpacing::Log,true,3,0,
+      FN::kElementaryCharge_C,4.0*FN::kAtomicMassUnit_kg,ionUnits);
+  const double r0=FN::RigidityFromEnergyGV(
+      ionUnits.ParticleEnergyJ(ionScan.front()),FN::kElementaryCharge_C,
+      4.0*FN::kAtomicMassUnit_kg);
+  const double r1=FN::RigidityFromEnergyGV(
+      ionUnits.ParticleEnergyJ(ionScan[1]),FN::kElementaryCharge_C,
+      4.0*FN::kAtomicMassUnit_kg);
+  const double r2=FN::RigidityFromEnergyGV(
+      ionUnits.ParticleEnergyJ(ionScan.back()),FN::kElementaryCharge_C,
+      4.0*FN::kAtomicMassUnit_kg);
+  Check(Near(ionScan.front(),1.0) && Near(ionScan.back(),100.0) &&
+        Near(r1,std::sqrt(r0*r2),2.0e-14),
+        "U-F01 per-nucleon rigidity scan preserves coordinate endpoints and log-R midpoint");
 
   const cSpectrum power=cSpectrum::MakePowerLaw(100.0,2.0,10.0,1.0,1000.0);
   Check(Near(power.GetSpectrumPerMeV(20.0),25.0,2.0e-14),
@@ -73,6 +91,43 @@ int main() {
   const cSpectrum table=cSpectrum::MakeTable(tableFile,1.0,100.0);
   Check(Near(table.GetSpectrumPerMeV(std::sqrt(10.0)),std::sqrt(1000.0),2.0e-13),
         "U-F01 TABLE log-log interpolation reference");
+
+  // Exercise the production key/value adapter as well as the lower-level factories.
+  // This catches metadata that is numerically correct in BoundaryProducts but not
+  // actually reachable from AMPS_PARAM.in.  The uncertainty interval is an explicit
+  // 20 percent reference, and a contradictory coordinate/unit declaration must fail.
+  std::unordered_map<std::string,std::string> ionInput{
+      {"SPECTRUM_TYPE","POWER_LAW"}, {"SPEC_EMIN","1"},
+      {"SPEC_EMAX","1000"}, {"SPEC_J0","100"}, {"SPEC_GAMMA","2"},
+      {"SPEC_E0","10"}, {"SPEC_ENERGY_BASIS","PER_NUCLEON"},
+      {"SPEC_INTENSITY_UNIT","PER_MEV_PER_NUCLEON"},
+      {"SPEC_MASS_NUMBER","4"}, {"SPEC_RELATIVE_UNCERTAINTY","0.2"}};
+  const cSpectrum configuredIon=cSpectrum::FromKeyValueMap(ionInput);
+  const BP::Bounds configuredBounds=configuredIon.GetSpectrumPerMeVBounds(20.0);
+  Check(configuredIon.EnergyCoordinateBasis()==BP::EnergyBasis::PerNucleon &&
+        Near(configuredIon.MassNumber(),4.0) &&
+        Near(configuredBounds.nominal,25.0) && Near(configuredBounds.lower,20.0) &&
+        Near(configuredBounds.upper,30.0),
+        "U-F01 production parser preserves per-nucleon units and uncertainty");
+  const std::string spectrumOutputFile=
+      "/tmp/amps_u_boundary_products_spectrum_output.dat";
+  WriteSpectrumInputTecplot(spectrumOutputFile,configuredIon,3);
+  {
+    std::ifstream input(spectrumOutputFile.c_str());
+    const std::string text((std::istreambuf_iterator<char>(input)),
+                           std::istreambuf_iterator<char>());
+    Check(text.find("SPECTRUM_ENERGY_BASIS=\"PER_NUCLEON\"")!=
+              std::string::npos &&
+          text.find("SPECTRUM_MASS_NUMBER=\"4")!=std::string::npos &&
+          text.find("SPECTRUM_RELATIVE_UNCERTAINTY=\"0.2")!=
+              std::string::npos,
+          "U-F01 spectrum_input output preserves Step-6 unit provenance");
+  }
+  CheckThrows([&]() {
+      auto contradictory=ionInput;
+      contradictory["SPEC_INTENSITY_UNIT"]="PER_MEV";
+      (void)cSpectrum::FromKeyValueMap(contradictory);
+    },"U-F01 contradictory energy and intensity units are rejected");
 
   // U-F07 -- analytic full-sphere means for raw and normalized PAD/spatial models.
   // Midpoint quadrature in mu converges rapidly; compare the discrete mean with the
@@ -128,6 +183,42 @@ int main() {
       rows,5.0,2.0,BP::OutOfRangePolicy::Clamp,BP::GapPolicy::Fail); },
       "U-F08 gap FAIL policy");
 
+  // Repeat the temporal reference through cSpectrum's actual TABLE loader.  The
+  // midpoint is deliberately across a declared gap, so status/provenance and values
+  // are tested together instead of accepting a numerically right value with the wrong
+  // data-quality flag.
+  const std::string timeTableFile="/tmp/amps_u_boundary_products_time_table.dat";
+  {
+    std::ofstream out(timeTableFile.c_str());
+    out << "ENERGY_MEV: 1 10\n"
+        << "2000-01-01T00:00:00 10 100\n"
+        << "2000-01-01T00:00:10 100 10\n";
+  }
+  std::unordered_map<std::string,std::string> tableInput{
+      {"SPECTRUM_TYPE","TABLE"}, {"SPEC_EMIN","1"}, {"SPEC_EMAX","10"},
+      {"SPEC_TABLE_FILE",timeTableFile},
+      {"SPEC_TABLE_REFERENCE_EPOCH_UTC","2000-01-01T00:00:05"},
+      {"SPEC_TIME_MAX_GAP_S","2"},
+      {"SPEC_TIME_GAP_POLICY","INTERPOLATE_FLAG"},
+      {"SPEC_TIME_OUT_OF_RANGE","ZERO"}};
+  cSpectrum timeTable=cSpectrum::FromKeyValueMap(tableInput);
+  Check(timeTable.LastTemporalStatus()==BP::TemporalStatus::GapInterpolated &&
+        timeTable.LastTemporalSelectionCrossedGap() &&
+        Near(timeTable.LastTemporalInterpolationFraction(),0.5) &&
+        Near(timeTable.GetSpectrumPerMeV(1.0),std::sqrt(1000.0),1.0e-13),
+        "U-F08 production TABLE loader exposes gap-flagged log interpolation");
+  timeTable.SetEvaluationEpochUTC("1999-12-31T23:59:59");
+  Check(timeTable.LastTemporalStatus()==BP::TemporalStatus::ZeroBefore &&
+        Near(timeTable.GetSpectrumPerMeV(1.0),0.0),
+        "U-F08 production TABLE loader applies explicit out-of-range ZERO policy");
+  timeTable.SetEvaluationEpochUTCOffset("2000-01-01T00:00:00",5.0);
+  Check(timeTable.LastTemporalStatus()==BP::TemporalStatus::GapInterpolated &&
+        Near(timeTable.GetSpectrumPerMeV(1.0),std::sqrt(1000.0),1.0e-13),
+        "U-F08 reference-epoch plus coupled-time offset selects the same midpoint");
+  CheckThrows([&]() {
+      timeTable.SetEvaluationEpochUTCOffset("NOT_A_UTC",5.0);
+    },"U-F08 invalid coupled reference epoch is rejected");
+
   // U-F05/U-F09 plus F1/F15/F16-style numerical references.  A constant boundary
   // intensity and constant access make trapezoidal values exact.  The top-hat response
   // rate is J*G*DeltaE, the triangular response is J*G*base/2.
@@ -161,16 +252,78 @@ int main() {
   Check(Near(blocked.omnidirectionalFlux_m2_s.nominal,0.0) &&
         Near(blocked.numberDensity_m3.nominal,0.0),
         "F16 all-blocked access produces zero products");
+  const std::vector<double> one{1.0,1.0,1.0};
+  const BP::ProductSet uncertain=BP::EvaluateIsotropicProducts(
+      energy,half,zero,one,FN::kAtomicMassUnit_kg,unitPerJ,
+      std::vector<BP::EnergyChannel>(),std::vector<BP::DetectorResponse>(),0.2);
+  Check(Near(uncertain.omnidirectionalFlux_m2_s.nominal,expectedOmni) &&
+        Near(uncertain.omnidirectionalFlux_m2_s.lower,0.0) &&
+        Near(uncertain.omnidirectionalFlux_m2_s.upper,
+             4.0*FN::kPi*1.2*2.0*FN::kMeVToJ),
+        "U-F05 spectrum and unresolved-access uncertainty bounds combine analytically");
+
+  // Per-nucleon density conversion reference.  At fixed MeV/nucleon, multiplying
+  // both particle kinetic energy and rest mass by A leaves speed unchanged.  Equal
+  // coordinate-intensity curves must therefore integrate to the same density.  This
+  // comparison fails by a factor of A if dE_n is accidentally treated as dE_particle.
+  BP::SpectrumUnits protonUnits;
+  BP::SpectrumUnits alphaUnits;
+  alphaUnits.energyBasis=BP::EnergyBasis::PerNucleon;
+  alphaUnits.massNumber=4.0;
+  const double protonDensity=BP::IntegrateDensityWithUnits(
+      energy,half,FN::kAtomicMassUnit_kg,unitPerJ,protonUnits);
+  const double alphaDensity=BP::IntegrateDensityWithUnits(
+      energy,half,4.0*FN::kAtomicMassUnit_kg,unitPerJ,alphaUnits);
+  Check(Near(alphaDensity,protonDensity,2.0e-14),
+        "U-F01 per-nucleon density Jacobian matches analytic A-scaling reference");
+
+  // Exact two-node angular quadrature.  Each node represents one 2-pi hemisphere;
+  // cos(theta)=+/-1/2 makes the incoming planar projection exactly pi while the
+  // omnidirectional support is 4*pi.  The unresolved node has no nominal value but
+  // retains the strict [blocked, maximum-factor] interval.
+  std::vector<BP::DirectionalAccessSample> directions(2);
+  directions[0].z=-0.5;
+  directions[0].solidAngleWeight_sr=2.0*FN::kPi;
+  directions[0].access=BP::DirectionalAccessBounds(true,false,1.0,1.0);
+  directions[1].z=0.5;
+  directions[1].solidAngleWeight_sr=2.0*FN::kPi;
+  directions[1].access=BP::DirectionalAccessBounds(true,false,1.0,1.0);
+  const BP::DirectionalDifferentialProduct angular=
+      BP::FoldDirectionalDifferential(directions,BP::Bounds(2.0,1.6,2.4),
+                                      BP::CharacteristicMapping::StaticMagnetic);
+  Check(Near(angular.omnidirectionalPerMeV.nominal,8.0*FN::kPi) &&
+        Near(angular.oneWayPlanarPerMeV.nominal,2.0*FN::kPi),
+        "U-F09 exact directional fold reproduces isotropic omni/planar reference");
+  const BP::Bounds unresolved=BP::DirectionalAccessBounds(false,true,1.0,3.0);
+  Check(std::isnan(unresolved.nominal) && Near(unresolved.lower,0.0) &&
+        Near(unresolved.upper,3.0),
+        "U-F05 unresolved characteristic preserves strict lower/upper bounds");
+  CheckThrows([&]() { (void)BP::DirectionalAccessBounds(true,true); },
+              "U-F05 contradictory access states are rejected");
 
   // Written-spectrum closure: trapezoid the stored omnidirectional differential
   // spectrum in per-MeV units and recover the reported integral exactly.
-  double reconstructed=0.0;
-  for (std::size_t i=0;i+1<products.spectrum.size();++i)
-    reconstructed+=0.5*(products.spectrum[i].omnidirectionalPerMeV.nominal+
-                        products.spectrum[i+1].omnidirectionalPerMeV.nominal)*
-                   (products.spectrum[i+1].energy_MeV-products.spectrum[i].energy_MeV);
-  Check(Near(reconstructed,products.omnidirectionalFlux_m2_s.nominal,2.0e-14),
-        "F4 written differential spectrum reconstructs integral");
+  BP::Bounds reconstructed;
+  for (std::size_t i=0;i+1<uncertain.spectrum.size();++i) {
+    const double dE=uncertain.spectrum[i+1].energy_MeV-
+                    uncertain.spectrum[i].energy_MeV;
+    reconstructed.nominal+=0.5*dE*(
+        uncertain.spectrum[i].omnidirectionalPerMeV.nominal+
+        uncertain.spectrum[i+1].omnidirectionalPerMeV.nominal);
+    reconstructed.lower+=0.5*dE*(
+        uncertain.spectrum[i].omnidirectionalPerMeV.lower+
+        uncertain.spectrum[i+1].omnidirectionalPerMeV.lower);
+    reconstructed.upper+=0.5*dE*(
+        uncertain.spectrum[i].omnidirectionalPerMeV.upper+
+        uncertain.spectrum[i+1].omnidirectionalPerMeV.upper);
+  }
+  Check(Near(reconstructed.nominal,
+             uncertain.omnidirectionalFlux_m2_s.nominal,2.0e-14) &&
+        Near(reconstructed.lower,
+             uncertain.omnidirectionalFlux_m2_s.lower,2.0e-14) &&
+        Near(reconstructed.upper,
+             uncertain.omnidirectionalFlux_m2_s.upper,2.0e-14),
+        "F4 written nominal/lower/upper spectra reconstruct every integral bound");
 
   // General phase-space branch reference: p_local/p_boundary=2 multiplies j by 4.
   const BP::Bounds phase=BP::MapBoundaryIntensity(
@@ -180,6 +333,8 @@ int main() {
         "Step-6 j/p^2 phase-space mapping reference");
 
   std::remove(tableFile.c_str());
+  std::remove(timeTableFile.c_str());
+  std::remove(spectrumOutputFile.c_str());
   if (failures!=0) {
     std::cerr << failures << " BoundaryProducts test(s) failed\n";
     return EXIT_FAILURE;

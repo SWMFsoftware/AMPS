@@ -240,7 +240,8 @@ static const std::vector<std::string>& RecognizedAmpsParamSections() {
     "#BOUNDARY_ANISOTROPY",
     "#OUTPUT_OPTIONS",
     "#TEMPORAL",
-    "#ENERGY_CHANNELS"
+    "#ENERGY_CHANNELS",
+    "#DETECTOR_RESPONSES"
   };
   return sections;
 }
@@ -274,7 +275,14 @@ static const std::vector<std::string>& RecognizedSpectrumKeys() {
     // by the parser after it resolves the event time, but accepting it in the file
     // keeps the strict validator compatible with explicit expert inputs.
     "SPEC_TABLE_FILE", "TABLE_FILE", "SPECTRUM_FILE", "FILE",
-    "SPEC_TABLE_REFERENCE_EPOCH_UTC"
+    "SPEC_TABLE_REFERENCE_EPOCH_UTC",
+
+    // Step-6 coordinate/uncertainty declarations and deterministic temporal-table
+    // selection policy.  These names are accepted by the strict parser and consumed
+    // by cSpectrum; misspellings still fail as unknown keys.
+    "SPEC_ENERGY_BASIS", "SPEC_INTENSITY_UNIT", "SPEC_MASS_NUMBER",
+    "SPEC_RELATIVE_UNCERTAINTY", "SPEC_TIME_INTERPOLATION",
+    "SPEC_TIME_MAX_GAP_S", "SPEC_TIME_GAP_POLICY", "SPEC_TIME_OUT_OF_RANGE"
   };
   return keys;
 }
@@ -2437,6 +2445,7 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
   std::string section;
   bool inPointsBlock=false;
   bool inChannelsBlock=false;
+  bool inDetectorResponsesBlock=false;
 
   std::string line;
   int lineNo=0;
@@ -2477,12 +2486,39 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
     }
 
     // Block delimiters for POINTS
-    if (ToUpper(line)=="POINTS_BEGIN") { inPointsBlock=true; continue; }
-    if (ToUpper(line)=="POINTS_END") { inPointsBlock=false; continue; }
+    if (ToUpper(line)=="POINTS_BEGIN") {
+      if (inPointsBlock || inChannelsBlock || inDetectorResponsesBlock)
+        exit(__LINE__,__FILE__,"Nested/duplicate POINTS_BEGIN block");
+      inPointsBlock=true; continue;
+    }
+    if (ToUpper(line)=="POINTS_END") {
+      if (!inPointsBlock) exit(__LINE__,__FILE__,"POINTS_END without POINTS_BEGIN");
+      inPointsBlock=false; continue;
+    }
 
     // Block delimiters for ENERGY_CHANNELS
-    if (ToUpper(line)=="CH_BEGIN") { inChannelsBlock=true; continue; }
-    if (ToUpper(line)=="CH_END")   { inChannelsBlock=false; continue; }
+    if (ToUpper(line)=="CH_BEGIN") {
+      if (inPointsBlock || inChannelsBlock || inDetectorResponsesBlock)
+        exit(__LINE__,__FILE__,"Nested/duplicate CH_BEGIN block");
+      inChannelsBlock=true; continue;
+    }
+    if (ToUpper(line)=="CH_END") {
+      if (!inChannelsBlock) exit(__LINE__,__FILE__,"CH_END without CH_BEGIN");
+      inChannelsBlock=false; continue;
+    }
+
+    // Step-6 detector-response block.  Each row is an exactly specified top-hat
+    // energy response; malformed rows fail here, before a field or trajectory batch
+    // is allocated.
+    if (ToUpper(line)=="DR_BEGIN") {
+      if (inPointsBlock || inChannelsBlock || inDetectorResponsesBlock)
+        exit(__LINE__,__FILE__,"Nested/duplicate DR_BEGIN block");
+      inDetectorResponsesBlock=true; continue;
+    }
+    if (ToUpper(line)=="DR_END") {
+      if (!inDetectorResponsesBlock) exit(__LINE__,__FILE__,"DR_END without DR_BEGIN");
+      inDetectorResponsesBlock=false; continue;
+    }
 
     if (inPointsBlock) {
       // Accept both the original bare format "x y z" and the newer "POINT x y z"
@@ -2546,6 +2582,47 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
           exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
       }
       p.fluxChannels.push_back(ch);
+      continue;
+    }
+
+    if (inDetectorResponsesBlock) {
+      std::istringstream iss(line);
+      DetectorResponseChannel response;
+      std::string extra;
+      if (!(iss >> response.name >> response.E1_MeV >> response.E2_MeV
+                >> response.geometricFactor_m2_sr) || (iss >> extra)) {
+        std::ostringstream msg;
+        msg << "Malformed detector-response line " << lineNo
+            << ": expected NAME E1_MeV E2_MeV GEOMETRIC_FACTOR_m2_sr, got: "
+            << line;
+        exit(__LINE__,__FILE__,msg.str().c_str());
+      }
+      if (response.name.empty() || !(response.E1_MeV > 0.0) ||
+          !(response.E2_MeV > response.E1_MeV) ||
+          !(response.geometricFactor_m2_sr >= 0.0) ||
+          !std::isfinite(response.geometricFactor_m2_sr)) {
+        std::ostringstream msg;
+        msg << "Invalid detector response '" << response.name << "' at line "
+            << lineNo << ": require 0<E1<E2 and finite geometric factor >=0";
+        exit(__LINE__,__FILE__,msg.str().c_str());
+      }
+      for (char c:response.name) {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c!='_') {
+          std::ostringstream msg;
+          msg << "Detector response name '" << response.name << "' at line "
+              << lineNo << " may contain only letters, digits, and underscores";
+          exit(__LINE__,__FILE__,msg.str().c_str());
+        }
+      }
+      for (const DetectorResponseChannel& existing:p.detectorResponses) {
+        if (existing.name==response.name) {
+          std::ostringstream msg;
+          msg << "Duplicate detector response name '" << response.name
+              << "' at line " << lineNo;
+          exit(__LINE__,__FILE__,msg.str().c_str());
+        }
+      }
+      p.detectorResponses.push_back(response);
       continue;
     }
 
@@ -3261,9 +3338,19 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
     else if (section=="#BOUNDARY_ANISOTROPY") {
       if      (uKey=="BA_PAD_MODEL")        p.anisotropy.padModel        = ToUpper(val);
       else if (uKey=="BA_PAD_EXPONENT")     p.anisotropy.padExponent     = std::stod(val);
+      else if (uKey=="BA_PAD_NORMALIZATION")
+        p.anisotropy.padNormalization = ToUpper(val);
       else if (uKey=="BA_SPATIAL_MODEL")    p.anisotropy.spatialModel    = ToUpper(val);
       else if (uKey=="BA_DAYSIDE_FACTOR")   p.anisotropy.daysideFactor   = std::stod(val);
       else if (uKey=="BA_NIGHTSIDE_FACTOR") p.anisotropy.nightsideFactor = std::stod(val);
+      else if (uKey=="BA_SPATIAL_NORMALIZATION")
+        p.anisotropy.spatialNormalization = ToUpper(val);
+      else if (uKey=="BA_NORMALIZATION") {
+        // Convenience alias applies the same declared convention to both factors.
+        // Separate keywords remain available when only one factor is normalized.
+        p.anisotropy.padNormalization = ToUpper(val);
+        p.anisotropy.spatialNormalization = ToUpper(val);
+      }
       else rejectUnknownKeyword();
     }
     else if (section=="#OUTPUT_OPTIONS") {
@@ -3301,6 +3388,14 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       rejectUnknownKeyword();
     }
   }
+
+  // An unterminated block used to consume every subsequent KEY VALUE line as data.
+  // Fail at EOF instead: a partially parsed detector response must never reach the
+  // product integrator with an apparently valid but incomplete instrument contract.
+  if (inPointsBlock) exit(__LINE__,__FILE__,"Unterminated POINTS_BEGIN block");
+  if (inChannelsBlock) exit(__LINE__,__FILE__,"Unterminated CH_BEGIN block");
+  if (inDetectorResponsesBlock)
+    exit(__LINE__,__FILE__,"Unterminated DR_BEGIN block");
 
   
 
@@ -3915,12 +4010,28 @@ if (ToUpper(p.field.model)=="DIPOLE") {
       if (p.anisotropy.padExponent < 0.0) {
         exit(__LINE__,__FILE__,"BA_PAD_EXPONENT must be >= 0");
       }
+      const std::string pn = ToUpper(p.anisotropy.padNormalization);
+      if (pn!="RAW" && pn!="UNIT_MEAN" && pn!="NORMALIZED") {
+        exit(__LINE__,__FILE__,
+             "BA_PAD_NORMALIZATION must be RAW or UNIT_MEAN");
+      }
       const std::string sm = ToUpper(p.anisotropy.spatialModel);
       if (sm!="UNIFORM" && sm!="DAYSIDE_NIGHTSIDE") {
         { std::ostringstream _exit_msg; _exit_msg << "BA_SPATIAL_MODEL must be UNIFORM|DAYSIDE_NIGHTSIDE (got '"+p.anisotropy.spatialModel+"')"; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
       }
       if (p.anisotropy.daysideFactor < 0.0 || p.anisotropy.nightsideFactor < 0.0) {
         exit(__LINE__,__FILE__,"BA_DAYSIDE_FACTOR and BA_NIGHTSIDE_FACTOR must be >= 0");
+      }
+      const std::string sn = ToUpper(p.anisotropy.spatialNormalization);
+      if (sn!="RAW" && sn!="UNIT_MEAN" && sn!="NORMALIZED") {
+        exit(__LINE__,__FILE__,
+             "BA_SPATIAL_NORMALIZATION must be RAW or UNIT_MEAN");
+      }
+      if ((sn=="UNIT_MEAN" || sn=="NORMALIZED") &&
+          sm=="DAYSIDE_NIGHTSIDE" &&
+          !(p.anisotropy.daysideFactor+p.anisotropy.nightsideFactor>0.0)) {
+        exit(__LINE__,__FILE__,
+             "Normalized DAYSIDE_NIGHTSIDE factors cannot both be zero");
       }
     }
   }

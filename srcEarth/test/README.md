@@ -82,14 +82,45 @@ states, inconsistent weights, nonphysical phase space, partial schemas, and inte
 inconsistent convergence reports must fail. U-F17 compiles the production CLI parser
 and verifies the new error-control options, no-override defaults, help text, and invalid
 value rejection. U-F18 runs the production C8 parser/auditor self-test against legacy,
-corrected Step-5, and historical named Step-5 schemas; it also enforces complete polar
+corrected Step-5, current 54-column Step-6, and historical named Step-5 schemas; it also enforces complete polar
 coverage, C8-G11, exact `4*pi` weighting, and the pre-reduction complete-cube guard.
 
 The suite does not replace full trajectory or observational validation. UTrajectoryCore
 retains mover references, C/F tests retain field/cutoff comparisons, and C8/C9/C10/C19
 retain observation-facing gates.
 
-`test/list` schedules the Step 2 through Step 5 suites as independent `P`
+## UBoundaryProducts: strict Step 6 suite
+
+Run the field-independent boundary-distribution and product references with:
+
+```bash
+./srcEarth/test/UBoundaryProducts/run_test.sh
+```
+
+The first target compiles the production `BoundaryProducts.h`, `cSpectrum`, and
+`spectrum.cpp`. U-F01 checks every spectrum family against its defining equation,
+per-particle/per-nucleon coordinate conversions, a physical log-rigidity ion grid, the
+density Jacobian, production metadata parsing, uncertainty intervals, and contradictory
+unit rejection. U-F05 checks exact channel edges and unresolved access bounds. U-F07
+compares PAD/spatial normalization with analytic sphere/hemisphere means and separately
+compiles the production `AnisotropicSpectrum.cpp` adapter. U-F08 compares exact,
+log-interpolated, gap-held, gap-failed, and zero-outside temporal selections and repeats
+the gap case through the production time-table loader. U-F09 checks analytic
+omnidirectional/planar and top-hat/triangular detector folds.
+
+Limiting references cover fully blocked access, exact directional quadrature, general
+`j/p^2` mapping, and reintegration of written differential-spectrum nodes back to the
+reported integral. These comparisons have numerical expected values; they are not
+nonzero/smoke assertions.
+
+The suite also enforces the append-only `DIRECT_ACCESS` contract through
+UDirectionalAccess: the original 45 columns must remain exact and the nine Step-6
+columns must have their exact names and value order. No existing F/C threshold,
+reference, input, expected status, mover, or trace limit is changed. F1, F2, F4, F5,
+F11, F12, F15, F16 and C8/C9/C10/C19 remain the end-to-end and observation-facing
+validation gates.
+
+`test/list` schedules the Step 2 through Step 6 suites as independent `P`
 entries. Each has its own `last pass:` record, so the main runner reports and commits
 their provenance separately. No pre-existing C/F command, expected status, input,
 reference file, tolerance, mover, trajectory limit, or last-pass record was modified;

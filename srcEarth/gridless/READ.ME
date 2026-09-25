@@ -24,6 +24,46 @@ benchmarking, and eventual user-facing Runs-on-Request style workflows where the
 inputs are specified in an AMPS parameter file.
 
 --------------------------------------------------------------------------------
+Roadmap Step 6: physical fluxes and spectra
+--------------------------------------------------------------------------------
+
+DensityGridless.cpp now hands every nominal/lower/upper access curve to the shared
+`../util/BoundaryProducts.h` kernel. It no longer owns a separate production formula
+for density, total flux, configured channels, planar flux, or detector folds. The
+energy grid is the spectrum's declared coordinate: MeV/particle by default or
+MeV/nucleon when explicitly configured. Before a trajectory is launched, that
+coordinate is converted to total particle energy for rigidity; density likewise uses
+total particle energy for speed while integrating over the declared coordinate.
+
+For POINTS/TRAJECTORY, the historical density/flux/spectrum fields stay in their
+original positions. Step 6 appends boundary uncertainty, omnidirectional and planar
+differential spectra, planar integral flux, and detector rates. Time-dependent
+trajectory spectra write one zone per sample with that sample's temporal selection
+status and interpolation provenance.
+
+For SHELLS, the historical `gridless_shell_*km_density_channels.dat` schema is left
+unchanged. Two new files are written:
+
+  gridless_shell_*km_flux.dat
+  gridless_shell_*km_spectrum.dat
+
+The spectrum contains every energy node and lower/upper curve required to reconstruct
+the corresponding trapezoidal integrals. `AUXDATA` identifies energy basis, mass
+number, intensity unit, boundary uncertainty, temporal status, static-magnetic
+mapping, and the isotropic-equivalent `F_planar=F_omni/4` convention.
+
+`DIRECT_ACCESS` keeps its 45-column legacy/Step-5 prefix exactly and appends nine
+fields: boundary intensity bounds, boundary access-factor bounds, and local directional
+intensity bounds. Allowed rows use their saved boundary pitch/spatial factor, forbidden
+rows are zero, and unresolved rows retain no nominal value plus conservative lower and
+upper limits. Normalized PAD/spatial modes use their analytic maxima in that upper
+limit; they are not capped at the raw maximum of one.
+
+The compact input syntax and validation tests are documented in `../README.md`,
+`../boundary/README.md`, and `../test/UBoundaryProducts/README.md`. Existing cutoff and
+F-test thresholds were not changed.
+
+--------------------------------------------------------------------------------
 1. What “gridless” means here
 --------------------------------------------------------------------------------
 

@@ -45,6 +45,20 @@ void WriteSpectrumInputTecplot(const std::string& filename,
 
   // Header
   out << "TITLE=\"Spectrum parsed from input\"\n";
+  // Keep the historical two-column schema while making the coordinate and
+  // differential-intensity unit machine-readable.  This matters for ions: a column
+  // named E [MeV] alone cannot distinguish MeV/particle from MeV/nucleon.
+  out << "AUXDATA SPECTRUM_ENERGY_BASIS=\""
+      << (s.EnergyCoordinateBasis()==Earth::BoundaryProducts::EnergyBasis::PerNucleon
+          ? "PER_NUCLEON" : "PER_PARTICLE") << "\"\n"
+      << "AUXDATA SPECTRUM_MASS_NUMBER=\"" << s.MassNumber() << "\"\n"
+      << "AUXDATA SPECTRUM_INTENSITY_UNIT=\"" << s.IntensityUnitLabel() << "\"\n"
+      << "AUXDATA SPECTRUM_RELATIVE_UNCERTAINTY=\""
+      << s.RelativeUncertainty() << "\"\n"
+      << "AUXDATA SPECTRUM_TEMPORAL_STATUS=\""
+      << Earth::BoundaryProducts::TemporalStatusName(s.LastTemporalStatus()) << "\"\n"
+      << "AUXDATA SPECTRUM_TEMPORAL_GAP=\""
+      << (s.LastTemporalSelectionCrossedGap() ? 1 : 0) << "\"\n";
   out << "VARIABLES=\"E [MeV]\",\"J_perMeV\"\n";
 
   std::vector<double> E;

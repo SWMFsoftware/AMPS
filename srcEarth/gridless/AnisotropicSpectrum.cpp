@@ -75,6 +75,7 @@
 //======================================================================================
 
 #include "AnisotropicSpectrum.h"
+#include "../util/BoundaryProducts.h"
 
 #include <cmath>
 #include <stdexcept>
@@ -165,6 +166,20 @@ double EvalAnisotropyFactor(const EarthUtil::AnisotropyParam& par,
       "'. Supported: ISOTROPIC | SINALPHA_N | COSALPHA_N | BIDIRECTIONAL");
   }
 
+  // Step-6 normalization is applied only after the raw PAD value has been
+  // calculated. PadRawMean is the analytic full-sphere mean, so UNIT_MEAN
+  // preserves the angular shape while fixing its mean to exactly one. RAW is
+  // the backward-compatible default and leaves existing validation decks unchanged.
+  const std::string padNorm=EarthUtil::ToUpper(par.padNormalization);
+  if (padNorm=="UNIT_MEAN" || padNorm=="NORMALIZED") {
+    Earth::BoundaryProducts::PadModel model=
+        Earth::BoundaryProducts::PadModel::Isotropic;
+    if (pm=="SINALPHA_N") model=Earth::BoundaryProducts::PadModel::SinAlphaN;
+    else if (pm=="COSALPHA_N") model=Earth::BoundaryProducts::PadModel::CosAlphaN;
+    else if (pm=="BIDIRECTIONAL") model=Earth::BoundaryProducts::PadModel::Bidirectional;
+    f_pad/=Earth::BoundaryProducts::PadRawMean(model,n);
+  }
+
   //===========================================================================
   // 2. Spatial modulation factor  f_spatial(x_exit)
   //===========================================================================
@@ -189,6 +204,20 @@ double EvalAnisotropyFactor(const EarthUtil::AnisotropyParam& par,
     throw std::runtime_error(
       "EvalAnisotropyFactor: unknown BA_SPATIAL_MODEL '" + sm +
       "'. Supported: UNIFORM | DAYSIDE_NIGHTSIDE");
+  }
+
+  // The reference boundary measure assigns equal solid angle to the day and night
+  // hemispheres. Thus their analytic mean is (day+night)/2. PAD and spatial
+  // normalization remain independent and multiply only after both raw factors exist.
+  const std::string spatialNorm=EarthUtil::ToUpper(par.spatialNormalization);
+  if ((spatialNorm=="UNIT_MEAN" || spatialNorm=="NORMALIZED") &&
+      sm=="DAYSIDE_NIGHTSIDE") {
+    const double mean=0.5*(par.daysideFactor+par.nightsideFactor);
+    if (!(mean>0.0)) {
+      throw std::runtime_error(
+          "EvalAnisotropyFactor: cannot normalize zero dayside+nightside factors");
+    }
+    f_spatial/=mean;
   }
 
   return f_pad * f_spatial;

@@ -23,14 +23,19 @@ contains two groups of tests:
   Tecplot rows through the production C19 reader. It rejects inconsistent angular
   weights, incomplete or nonphysical exit states, partial schemas, and convergence
   metadata that changes within one direction; it also requires both production writers
-  to expose the same schema and shared adaptive-control markers. Archived pre-Step-5
-  seven-column files remain explicitly readable.
+  to expose the same schema and shared adaptive-control markers. Its source gate now
+  requires the exact 45-column legacy/Step-5 prefix plus the exact nine-column Step-6
+  boundary/access/local-intensity suffix and verifies matching `fprintf` value order;
+  the current 54-column fixture must produce the same C19 comparison inputs as its
+  45-column prefix rather than an empty comparison.
+  Archived pre-Step-5 seven-column files remain explicitly readable.
 - **U-F17 — CLI contract:** compiles the production `cutoff_cli.cpp` and verifies every
   new convergence option, no-override default, help entry, and negative/non-finite
   rejection. Only the AMPS fatal-exit hook is replaced by an exception for the test.
 - **U-F18 — C8 schema and complete-cube guard:** runs the production C8 self-test. It
-  proves that the legacy 24-column, corrected append-only 45-column, and historical
-  named 45-column layouts recover identical core samples and reductions; malformed
+  proves that the legacy 24-column, corrected append-only 45-column, current
+  append-only 54-column, and historical named 45-column layouts recover identical core
+  samples and reductions; malformed
   widths/names/blanks fail explicitly; full polar coverage and C8-G11 are enforced;
   and a partial cube cannot reach the FOV/comparison reductions that consume numeric
   fractions. The physical and sign-mirrored East–West references remain discriminating.

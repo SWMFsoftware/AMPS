@@ -108,6 +108,17 @@ DIRECT_ACCESS_STEP5_COLUMNS = (
     "adaptive_max_samples_reached", "response_weighted_unresolved_support",
 )
 
+# Step 6 appends physical intensity bounds without changing either compatibility
+# block. C8 does not use these values in its access comparison, but the self-test must
+# prove that a current 54-column production file still reaches the same reductions.
+DIRECT_ACCESS_STEP6_COLUMNS = (
+    "j_boundary_permev", "j_boundary_lower_permev",
+    "j_boundary_upper_permev", "boundary_factor",
+    "boundary_factor_lower", "boundary_factor_upper",
+    "j_directional_local_permev", "j_directional_local_lower_permev",
+    "j_directional_local_upper_permev",
+)
+
 # Initial Step-5 builds emitted these same 45 named values in a shifted order.
 # The producer has since restored the stable prefix, but C8 keeps read-only
 # support so completed multi-hour runs can be re-audited with ``--skip-run``.
@@ -1217,7 +1228,7 @@ def validate_reference_files(script_dir):
 
 
 def synthetic_access_record(dkey, rigidity, state):
-    """Return one fully numeric 45-field DIRECT_ACCESS self-test record."""
+    """Return one fully numeric 54-field DIRECT_ACCESS self-test record."""
     code = {0: 1, 1: 0, 2: 3}[int(state)]
     weight = 0.25
     record = {
@@ -1245,6 +1256,15 @@ def synthetic_access_record(dkey, rigidity, state):
         "adaptive_max_ambiguous_width_gv": 0.0,
         "adaptive_target_reached": 1, "adaptive_max_samples_reached": 0,
         "response_weighted_unresolved_support": 0.0,
+        "j_boundary_permev": 2.0,
+        "j_boundary_lower_permev": 1.8,
+        "j_boundary_upper_permev": 2.2,
+        "boundary_factor": 1.0 if state == 1 else 0.0,
+        "boundary_factor_lower": 1.0 if state == 1 else 0.0,
+        "boundary_factor_upper": 1.0 if state != 0 else 0.0,
+        "j_directional_local_permev": 2.0 if state == 1 else 0.0,
+        "j_directional_local_lower_permev": 1.8 if state == 1 else 0.0,
+        "j_directional_local_upper_permev": 2.2 if state != 0 else 0.0,
     }
     return record
 
@@ -1351,14 +1371,17 @@ def self_test(script_dir):
         rigidities = [1.0, 50.0]
         state_function = lambda dkey, rigidity: int(rigidity >= 50.0)
 
-        # A Step-4 file, the corrected 45-field Step-5 file, and the historical
-        # shifted 45-field file must recover identical core samples.  This is
+        # A Step-4 file, the corrected 45-field Step-5 file, the current 54-field
+        # Step-6 file, and the historical shifted 45-field file must recover
+        # identical core samples. This is
         # the regression for the real C8 failure: positional indexing either
         # discarded these rows or shifted state fields into unrelated columns.
         schema_paths = []
         schema_columns = (
             DIRECT_ACCESS_CORE_COLUMNS,
             DIRECT_ACCESS_CORE_COLUMNS + DIRECT_ACCESS_STEP5_COLUMNS,
+            DIRECT_ACCESS_CORE_COLUMNS + DIRECT_ACCESS_STEP5_COLUMNS +
+            DIRECT_ACCESS_STEP6_COLUMNS,
             DIRECT_ACCESS_HISTORICAL_STEP5_COLUMNS,
         )
         for index, columns in enumerate(schema_columns):
@@ -1370,15 +1393,16 @@ def self_test(script_dir):
                           for path in schema_paths]
         if not all(item["samples"] == parsed_schemas[0]["samples"]
                    for item in parsed_schemas[1:]):
-            raise AssertionError("24/45-column named schemas changed core samples")
+            raise AssertionError("24/45/54-column named schemas changed core samples")
         expected_layouts = ("legacy_prefix_append_only",
+                            "legacy_prefix_append_only",
                             "legacy_prefix_append_only",
                             "historical_step5_shifted")
         if tuple(item["schema_layout"] for item in parsed_schemas) != \
                 expected_layouts:
             raise AssertionError("DIRECT_ACCESS schema provenance changed")
 
-        # The three schemas must also produce identical physical reductions,
+        # All four schemas must also produce identical physical reductions,
         # not merely the same row count.
         reduced_rows = []
         for parsed in parsed_schemas:
@@ -1392,8 +1416,8 @@ def self_test(script_dir):
             if errors:
                 raise AssertionError("Valid schema reduction failed: %s" % errors)
             reduced_rows.append(rows)
-        if reduced_rows[1:] != [reduced_rows[0], reduced_rows[0]]:
-            raise AssertionError("24/45-column schemas reduced differently")
+        if any(rows != reduced_rows[0] for rows in reduced_rows[1:]):
+            raise AssertionError("24/45/54-column schemas reduced differently")
 
         def assert_parse_failure(path, expected_fragment):
             try:

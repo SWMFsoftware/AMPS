@@ -213,7 +213,10 @@
 #include "util/AdaptiveDirectAccess.h"
 #include "util/DirectionalAccess.h"
 #include "DipoleInterface.h"
+#include "AnisotropicSpectrum.h"
 #include "../util/FieldProvider.h"
+#include "../util/BoundaryProducts.h"
+#include "../boundary/spectrum.h"
 #include "../3d/Mode3DParallel.h" // shared MPI dynamic work-queue scheduler
 
 //--------------------------------------------------------------------------------------
@@ -2879,6 +2882,38 @@ static void WriteTecplotDirectionalMap_Point(const std::string& fileName,
 // for ONE observation point.  The selected cell maps back to the original full-sphere
 // grid through fullGridCellIds, preserving identical lon/lat labels between
 // VECTOR_APERTURES and FULL_SPHERE runs.
+static double DirectAccessMaximumBoundaryFactor_(const EarthUtil::AmpsParam& prm) {
+  if (EarthUtil::ToUpper(prm.densitySpectrum.boundaryMode)!="ANISOTROPIC") return 1.0;
+  namespace BP=Earth::BoundaryProducts;
+  const std::string pad=EarthUtil::ToUpper(prm.anisotropy.padModel);
+  const BP::PadModel padModel=pad=="SINALPHA_N" ? BP::PadModel::SinAlphaN :
+      (pad=="COSALPHA_N" ? BP::PadModel::CosAlphaN :
+       (pad=="BIDIRECTIONAL" ? BP::PadModel::Bidirectional : BP::PadModel::Isotropic));
+  const BP::NormalizationMode padNorm=
+      EarthUtil::ToUpper(prm.anisotropy.padNormalization)=="RAW"
+      ? BP::NormalizationMode::Raw : BP::NormalizationMode::UnitMean;
+  const BP::SpatialModel spatial=
+      EarthUtil::ToUpper(prm.anisotropy.spatialModel)=="DAYSIDE_NIGHTSIDE"
+      ? BP::SpatialModel::DaysideNightside : BP::SpatialModel::Uniform;
+  const BP::NormalizationMode spatialNorm=
+      EarthUtil::ToUpper(prm.anisotropy.spatialNormalization)=="RAW"
+      ? BP::NormalizationMode::Raw : BP::NormalizationMode::UnitMean;
+  return BP::MaximumPadWeight(padModel,prm.anisotropy.padExponent,padNorm)*
+         BP::MaximumSpatialWeight(spatial,prm.anisotropy.daysideFactor,
+                                  prm.anisotropy.nightsideFactor,spatialNorm);
+}
+
+static double DirectAccessAllowedBoundaryFactor_(
+    const EarthUtil::AmpsParam& prm,
+    const EarthUtil::DirectAccessSampleDiagnostic& diagnostic) {
+  if (EarthUtil::ToUpper(prm.densitySpectrum.boundaryMode)!="ANISOTROPIC") return 1.0;
+  if (!diagnostic.exitStateValid)
+    throw std::runtime_error(
+        "Allowed DIRECT_ACCESS row lacks a valid boundary state for anisotropy");
+  return EvalAnisotropyFactor(prm.anisotropy,diagnostic.cosAlphaExit,
+                              diagnostic.xExit_m);
+}
+
 static void WriteTecplotDirectionalAccess_Point(
                                              const std::string& fileName,
                                              int pointId,
@@ -2925,9 +2960,26 @@ static void WriteTecplotDirectionalAccess_Point(
   // the corresponding physical reason explicit for users reading the raw file.
   std::fprintf(f,
       "AUXDATA TERMINATION_REASON_CODES=\"0:OUTER_BOUNDARY_ALLOWED;1:INNER_BOUNDARY_FORBIDDEN;2:MAGNETICALLY_TRAPPED_FORBIDDEN;3:TIME_LIMIT;4:STEP_LIMIT;5:DISTANCE_LIMIT;6:INVALID_TIME_STEP;7:INVALID_FIELD;8:NUMERICAL_FAILURE;9:DRIFT_TRAPPED_FORBIDDEN\"\n");
+  std::fprintf(f,"AUXDATA STEP6_CHARACTERISTIC_MAPPING=\"STATIC_MAGNETIC\"\n");
+  std::fprintf(f,"AUXDATA SPECTRUM_ENERGY_BASIS=\"%s\"\n",
+      ::gSpectrum.EnergyCoordinateBasis()==Earth::BoundaryProducts::EnergyBasis::PerNucleon
+      ? "PER_NUCLEON" : "PER_PARTICLE");
+  std::fprintf(f,"AUXDATA SPECTRUM_MASS_NUMBER=\"%.17g\"\n",
+      ::gSpectrum.MassNumber());
+  std::fprintf(f,"AUXDATA SPECTRUM_INTENSITY_UNIT=\"%s\"\n",
+      ::gSpectrum.IntensityUnitLabel().c_str());
+  std::fprintf(f,"AUXDATA SPECTRUM_RELATIVE_UNCERTAINTY=\"%.17g\"\n",
+      ::gSpectrum.RelativeUncertainty());
+  std::fprintf(f,"AUXDATA SPECTRUM_TEMPORAL_STATUS=\"%s\"\n",
+      Earth::BoundaryProducts::TemporalStatusName(::gSpectrum.LastTemporalStatus()));
+  std::fprintf(f,"AUXDATA SPECTRUM_TEMPORAL_GAP=\"%d\"\n",
+      ::gSpectrum.LastTemporalSelectionCrossedGap() ? 1 : 0);
+  std::fprintf(f,"AUXDATA SPECTRUM_TEMPORAL_FRACTION=\"%.17g\"\n",
+      ::gSpectrum.LastTemporalInterpolationFraction());
   // Backward-compatibility contract: the first 24 columns are the exact Step-4
   // DIRECT_ACCESS schema consumed by C8 and other archived postprocessors.  Step-5
-  // quantities are append-only.  Inserting a new value into this prefix makes an old
+  // quantities are append-only, followed by the exact Step-6 intensity block. Inserting
+  // a new value into either historical block makes an old
   // positional reader silently discard every row, which is more dangerous than an
   // explicit parse failure because validation summaries can then be empty.
   std::fprintf(f,
@@ -2945,7 +2997,11 @@ static void WriteTecplotDirectionalAccess_Point(
       "\"cos_alpha_exit\",\"trace_time_at_exit_s\",\"rigidity_at_exit_GV\","
       "\"adaptive_refined_intervals\",\"adaptive_estimated_error_GV\","
       "\"adaptive_max_ambiguous_width_GV\",\"adaptive_target_reached\","
-      "\"adaptive_max_samples_reached\",\"response_weighted_unresolved_support\"\n");
+      "\"adaptive_max_samples_reached\",\"response_weighted_unresolved_support\","
+      "\"J_boundary_perMeV\",\"J_boundary_lower_perMeV\",\"J_boundary_upper_perMeV\","
+      "\"boundary_factor\",\"boundary_factor_lower\",\"boundary_factor_upper\","
+      "\"J_directional_local_perMeV\",\"J_directional_local_lower_perMeV\","
+      "\"J_directional_local_upper_perMeV\"\n");
   std::fprintf(f,
       "ZONE T=\"point=%d x_km=%g y_km=%g z_km=%g frame=SM coverage=%s adaptive=%c seed_n=%zu max_depth=%d guard_depth=%d abs_tol_GV=%g rel_tol=%g max_samples=%d\" I=%zu F=POINT\n",
       pointId,point_km.x,point_km.y,point_km.z,coverage.c_str(),
@@ -2966,6 +3022,7 @@ static void WriteTecplotDirectionalAccess_Point(
       [](const EarthUtil::DirectAccessSampleDiagnostic& item,std::uint64_t slot) {
         return item.slot<slot;
       });
+  const double maximumBoundaryFactor=DirectAccessMaximumBoundaryFactor_(prm);
 
   for (std::size_t selectedCellId=0;selectedCellId<fullGridCellIds.size();++selectedCellId) {
     const int fullCellId=fullGridCellIds[selectedCellId];
@@ -3000,7 +3057,10 @@ static void WriteTecplotDirectionalAccess_Point(
       const double weightedAccess_sr=allowed*directionWeight_sr;
       const double rigidity=rigidityList_GV[(std::size_t)iRigidity];
       const double p=MomentumFromRigidity_GV(rigidity,qabs);
-      const double energy=KineticEnergyFromMomentum_MeV(p,m0_kg);
+      // The mover returns total particle energy.  Spectrum lookup/output use the
+      // declared coordinate, which may be MeV/nucleon for an ion distribution.
+      const double energy=::gSpectrum.Units().CoordinateEnergyMeVFromParticle(
+          KineticEnergyFromMomentum_MeV(p,m0_kg));
       const std::uint64_t globalSlot=diagnosticBaseSlot+static_cast<std::uint64_t>(k);
       while (diagnosticIt!=diagnostics.end() && diagnosticIt->slot<globalSlot)
         ++diagnosticIt;
@@ -3010,8 +3070,20 @@ static void WriteTecplotDirectionalAccess_Point(
             "Gridless directional access state lacks its trajectory diagnostic record.");
       }
       const auto& d=*diagnosticIt;
+      const double allowedBoundaryFactor=allowed
+          ? DirectAccessAllowedBoundaryFactor_(prm,d) : 0.0;
+      const Earth::BoundaryProducts::Bounds boundaryFactor=
+          Earth::BoundaryProducts::DirectionalAccessBounds(
+              allowed!=0,unresolved!=0,allowedBoundaryFactor,maximumBoundaryFactor);
+      const Earth::BoundaryProducts::Bounds boundaryIntensity=
+          ::gSpectrum.GetSpectrumPerMeVBounds(energy);
+      const Earth::BoundaryProducts::Bounds directionalIntensity=
+          Earth::BoundaryProducts::MapBoundaryIntensity(
+              boundaryFactor,boundaryIntensity,
+              Earth::BoundaryProducts::CharacteristicMapping::StaticMagnetic);
       // Keep the values in the same append-only order as the VARIABLES declaration.
-      // The first fprintf is deliberately the unmodified Step-4 24-value record.
+      // The first two fprintf calls are deliberately the unmodified Step-4 and Step-5
+      // records; the third is the exact Step-6 intensity block.
       std::fprintf(f,
           "%.15e %.15e %.15e %.15e %d %d %d %d "
           "%.15e %.15e %d %d %d %.15e %d %.15e %.15e "
@@ -3025,7 +3097,7 @@ static void WriteTecplotDirectionalAccess_Point(
       std::fprintf(f,
           " %.15e %.15e %d %.15e %.15e %.15e %.15e %.15e %.15e "
           "%.15e %.15e %.15e %.15e %.15e %.15e "
-          "%d %.15e %.15e %d %d %.15e\n",
+          "%d %.15e %.15e %d %d %.15e",
           directionWeight_sr,weightedAccess_sr,
           d.exitStateValid,d.xExit_m[0],d.xExit_m[1],d.xExit_m[2],
           d.pExit_SI[0],d.pExit_SI[1],d.pExit_SI[2],
@@ -3034,6 +3106,12 @@ static void WriteTecplotDirectionalAccess_Point(
           d.adaptiveRefinedIntervals,d.adaptiveEstimatedError_GV,
           d.adaptiveMaxAmbiguousWidth_GV,d.adaptiveTargetReached,
           d.adaptiveMaxSamplesReached,d.responseWeightedUnresolvedSupport);
+      std::fprintf(f,
+          " %.15e %.15e %.15e %.15e %.15e %.15e %.15e %.15e %.15e\n",
+          boundaryIntensity.nominal,boundaryIntensity.lower,boundaryIntensity.upper,
+          boundaryFactor.nominal,boundaryFactor.lower,boundaryFactor.upper,
+          directionalIntensity.nominal,directionalIntensity.lower,
+          directionalIntensity.upper);
       ++diagnosticIt;
     }
   }
@@ -3047,6 +3125,14 @@ namespace Earth {
 namespace GridlessMode {
 
 int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
+  // Cutoff itself is spectrum independent, but Step-6 DIRECT_ACCESS rows append the
+  // boundary/local intensity at this frozen field epoch. Select it once up front;
+  // TRAJECTORY output selects each sample again immediately before its writer call.
+  if (prm.densitySpectrum.spectrumEpochOffsetActive)
+    ::gSpectrum.SetEvaluationEpochUTCOffset(
+        prm.field.epoch,prm.densitySpectrum.spectrumEpochOffset_s);
+  else
+    ::gSpectrum.SetEvaluationEpochUTC(prm.field.epoch);
   // Preserve the pre-Step-3 diagnostic contract without making field snapshots
   // mutable.  Several analytical Størmer-reporting helpers below read the legacy
   // Dipole::gParams axis.  Before Step 3 it happened to be initialized as a side
@@ -5660,6 +5746,15 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
           }
 
           if (saveDirectionalAccessStates) {
+            if (EarthUtil::ToUpper(prm.output.mode)=="TRAJECTORY" &&
+                !prm.output.trajectories.empty() &&
+                ip<prm.output.trajectories[0].size()) {
+              ::gSpectrum.SetEvaluationEpochUTC(
+                  prm.output.trajectories[0].samples[ip].timeUTC);
+            }
+            else {
+              ::gSpectrum.SetEvaluationEpochUTC(prm.field.epoch);
+            }
             char accessName[256];
             std::snprintf(accessName,sizeof(accessName),
                           "cutoff_gridless_dir_access_point_%04zu.dat",ip);

@@ -15,6 +15,38 @@ Energy/rigidity conversion, energy coordinates, angular sampling, channel clippi
 quadrature, transmission diagnostics, and unresolved bounds come from
 `../util/FluxNumerics.h` in both backends.
 
+## Step 6 common boundary and product kernel
+
+`DensityMode3D.cpp` now sends the complete access curve to
+`../util/BoundaryProducts.h`, the same production integrator used by gridless mode.
+The result contains number density; total, configured-channel, and
+isotropic-equivalent one-way planar flux; optional detector-response rates; and the
+differential boundary/local/omnidirectional/planar spectra with nominal/lower/upper
+bounds. Boundary uncertainty and unresolved access are combined monotonically without
+changing the underlying trajectory classification.
+
+Energy is interpreted in the spectrum's declared coordinate. For a per-nucleon ion
+spectrum, the grid and channel bounds remain MeV/nucleon, whereas rigidity and speed
+receive total particle kinetic energy. Rigidity-scan grids are constructed uniformly
+in physical log rigidity and converted back to the declared output coordinate. The
+legacy per-particle behavior is unchanged by default.
+
+Point spectrum and flux outputs append Step-6 fields after their historical prefixes.
+Shell density/flux output appends planar and detector products, and each shell also
+writes `mode3d_shell_*km_spectrum.dat`, with one structured zone per energy. These rows
+are sufficient to reproduce every reported trapezoidal integral. All files include
+`AUXDATA` for mapping, energy basis, mass number, differential-intensity unit,
+uncertainty, temporal selection, and planar convention.
+
+Mode3D `DIRECT_ACCESS` likewise retains the exact 45-column legacy/Step-5 prefix and
+appends nine boundary-factor/intensity fields. Static magnetic characteristics use
+`J_local=A*J_boundary`. The shared phase-space mapping is tested but is not selected by
+production until the electric/time-dependent mover is validated.
+
+Input keys and detector blocks are documented in `../README.md` and
+`../boundary/README.md`. Run `./test/UBoundaryProducts/run_test.sh` for the focused
+closed-form references; existing F/C gates are unchanged.
+
 ## Step 4 common trajectory request/result
 
 `TraceTrajectoryMesh(prm, request)` consumes the same `TrajectoryRequest` and returns

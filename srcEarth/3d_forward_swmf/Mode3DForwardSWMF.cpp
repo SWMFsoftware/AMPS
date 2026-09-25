@@ -844,6 +844,12 @@ void amps_cutoff_time_step() {
         batchFieldProvider->CreateSnapshot(batchFieldRequest);
     const Earth::Field::SnapshotMetadata batchFieldMetadata=
         batchFieldSnapshot->Metadata();
+    // Use a value-owned parameter block with the authoritative PT offset. This selects
+    // the matching Step-6 boundary-table row without changing the epoch used for field
+    // rotations, trajectory behavior, or snapshot identity.
+    EarthUtil::AmpsParam batchProductPrm=s_prm;
+    batchProductPrm.densitySpectrum.spectrumEpochOffsetActive=true;
+    batchProductPrm.densitySpectrum.spectrumEpochOffset_s=tSim_s;
 
     // Run the products requested by CALC_TARGET.  Both products intentionally share
     // the same compact SWMF B/E snapshot prepared above, so cutoff, directional maps,
@@ -851,14 +857,14 @@ void amps_cutoff_time_step() {
     // suffix.  This mirrors the standalone Mode3D time-series driver, except that the
     // magnetic snapshot comes from live SWMF coupling instead of a Tsyganenko driver file.
     if (TargetRequestsCutoff_(s_prm)) {
-      Earth::Mode3D::RunCutoffRigidity(s_prm,true);
+      Earth::Mode3D::RunCutoffRigidity(batchProductPrm,true);
       Earth::Field::RequireSameSnapshot(
           batchFieldMetadata,
           Earth::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata(),
           "SWMF-coupled cutoff product");
     }
     if (TargetRequestsDensityFlux_(s_prm)) {
-      Earth::Mode3D::RunDensityAndFlux(s_prm);
+      Earth::Mode3D::RunDensityAndFlux(batchProductPrm);
       Earth::Field::RequireSameSnapshot(
           batchFieldMetadata,
           Earth::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata(),

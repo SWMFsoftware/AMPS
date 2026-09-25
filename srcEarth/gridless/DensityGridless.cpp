@@ -246,6 +246,7 @@
 #include "AnisotropicSpectrum.h"      // EvalAnisotropyFactor for ANISOTROPIC boundary mode
 #include "../3d/Mode3DParallel.h"    // shared MPI dynamic work-queue scheduler
 #include "../util/FluxNumerics.h"     // shared units, grids, quadrature, and access accounting
+#include "../util/BoundaryProducts.h" // shared Step-6 product integrator
 
 #include "../boundary/spectrum.h"  // ::gSpectrum and spectrum metadata writers
 
@@ -266,6 +267,31 @@
 #ifdef _OPENMP
 #include <omp.h>
 #endif
+
+// Maximum possible anisotropy multiplier is needed only for the conservative
+// unresolved upper bound. UNIT_MEAN PADs can exceed one, so the historical
+// "all PAD maxima are one" shortcut is not valid once Step-6 normalization is used.
+static double DensityGridless_MaximumAllowedWeight(
+    const EarthUtil::AmpsParam& prm,bool anisotropic) {
+  if (!anisotropic) return 1.0;
+  namespace BP=Earth::BoundaryProducts;
+  const std::string pad=EarthUtil::ToUpper(prm.anisotropy.padModel);
+  const BP::PadModel padModel=pad=="SINALPHA_N" ? BP::PadModel::SinAlphaN :
+      (pad=="COSALPHA_N" ? BP::PadModel::CosAlphaN :
+       (pad=="BIDIRECTIONAL" ? BP::PadModel::Bidirectional : BP::PadModel::Isotropic));
+  const BP::NormalizationMode padNorm=
+      EarthUtil::ToUpper(prm.anisotropy.padNormalization)=="RAW"
+      ? BP::NormalizationMode::Raw : BP::NormalizationMode::UnitMean;
+  const BP::SpatialModel spatial=
+      EarthUtil::ToUpper(prm.anisotropy.spatialModel)=="DAYSIDE_NIGHTSIDE"
+      ? BP::SpatialModel::DaysideNightside : BP::SpatialModel::Uniform;
+  const BP::NormalizationMode spatialNorm=
+      EarthUtil::ToUpper(prm.anisotropy.spatialNormalization)=="RAW"
+      ? BP::NormalizationMode::Raw : BP::NormalizationMode::UnitMean;
+  return BP::MaximumPadWeight(padModel,prm.anisotropy.padExponent,padNorm)*
+         BP::MaximumSpatialWeight(spatial,prm.anisotropy.daysideFactor,
+                                  prm.anisotropy.nightsideFactor,spatialNorm);
+}
 
 // --- Field model dependencies (match CutoffRigidityGridless.cpp) ----------------------
 // We intentionally use the *same* access pattern as the gridless cutoff solver to avoid
@@ -526,14 +552,15 @@ static std::vector<double> BuildEnergyGrid_MeV(const EarthUtil::AmpsParam& prm) 
   const std::string mode=EarthUtil::ToUpper(prm.densitySpectrum.transmissionMode);
   const bool scan=(mode=="SCAN" || mode=="ADAPTIVE");
   try {
-    return Earth::FluxNumerics::BuildEnergyGridMeV(
+    return Earth::BoundaryProducts::BuildEnergyCoordinateGridMeV(
         Emin,Emax,nLegacy,
         prm.densitySpectrum.spacing==EarthUtil::DensitySpectrumParam::Spacing::LOG
           ? Earth::FluxNumerics::EnergySpacing::Log
           : Earth::FluxNumerics::EnergySpacing::Linear,
         scan,prm.densitySpectrum.transmissionScanN,
         prm.densitySpectrum.transmissionMaxN,
-        std::abs(prm.species.charge_e)*QE,prm.species.mass_amu*AMU);
+        std::abs(prm.species.charge_e)*QE,prm.species.mass_amu*AMU,
+        ::gSpectrum.Units());
   }
   catch (const std::exception& e) { exit(__LINE__,__FILE__,e.what()); }
   return std::vector<double>();
@@ -623,6 +650,58 @@ static double FluxIntegrateChannel(
       [](double E_J) { return ::gSpectrum.GetSpectrum(E_J); });
 }
 
+// Backend-neutral Step-6 product fold.  Existing analytic comparison helpers retain
+// FluxIntegrateTotal/Channel as an independent check, while production POINTS,
+// TRAJECTORY, and SHELLS results all use this single implementation.
+static Earth::BoundaryProducts::ProductSet DensityGridless_EvaluateProducts(
+    const EarthUtil::AmpsParam& prm,const std::vector<double>& E_MeV,
+    const std::vector<double>& T,const std::vector<double>& TLower,
+    const std::vector<double>& TUpper) {
+  namespace BP=Earth::BoundaryProducts;
+  std::vector<BP::EnergyChannel> channels;
+  channels.reserve(prm.fluxChannels.size());
+  for (const EarthUtil::EnergyChannel& channel:prm.fluxChannels) {
+    channels.push_back(BP::EnergyChannel(
+        channel.name,channel.E1_MeV,channel.E2_MeV));
+  }
+  std::vector<BP::DetectorResponse> responses;
+  responses.reserve(prm.detectorResponses.size());
+  for (const EarthUtil::DetectorResponseChannel& input:prm.detectorResponses) {
+    BP::DetectorResponse response;
+    response.name=input.name;
+    response.energy_MeV={input.E1_MeV,input.E2_MeV};
+    response.relativeResponse={1.0,1.0};
+    response.geometricFactor_m2_sr=input.geometricFactor_m2_sr;
+    responses.push_back(response);
+  }
+  return BP::EvaluateIsotropicProducts(
+      E_MeV,T,TLower,TUpper,prm.species.mass_amu*AMU,
+      [](double E_J) { return ::gSpectrum.GetSpectrum(E_J); },channels,responses,
+      ::gSpectrum.RelativeUncertainty(),::gSpectrum.Units());
+}
+
+static std::vector<Earth::BoundaryProducts::Bounds>
+DensityGridless_EvaluateDensityIntervals(
+    const EarthUtil::AmpsParam& prm,const std::vector<double>& E_MeV,
+    const std::vector<double>& T,const std::vector<double>& TLower,
+    const std::vector<double>& TUpper) {
+  namespace BP=Earth::BoundaryProducts;
+  std::vector<BP::Bounds> result;
+  if (E_MeV.size()<2) return result;
+  result.reserve(E_MeV.size()-1);
+  const auto spectrum=[](double E_J) { return ::gSpectrum.GetSpectrum(E_J); };
+  for (std::size_t i=0;i+1<E_MeV.size();++i) {
+    const std::vector<double> energy{E_MeV[i],E_MeV[i+1]};
+    const std::vector<double> nominal{T[i],T[i+1]};
+    const std::vector<double> lower{TLower[i],TLower[i+1]};
+    const std::vector<double> upper{TUpper[i],TUpper[i+1]};
+    result.push_back(BP::IntegrateDensityBounds(
+        energy,nominal,lower,upper,prm.species.mass_amu*AMU,spectrum,
+        ::gSpectrum.RelativeUncertainty(),::gSpectrum.Units()));
+  }
+  return result;
+}
+
 
 //====================================================================================
 // Transmission diagnostics for density/flux output
@@ -636,8 +715,13 @@ using TransmissionDiagnostics = Earth::FluxNumerics::TransmissionDiagnostics;
 static TransmissionDiagnostics ComputeTransmissionDiagnostics(const EarthUtil::AmpsParam& prm,
                                                               const std::vector<double>& E_MeV,
                                                               const std::vector<double>& T) {
+  std::vector<double> particleEnergy_MeV(E_MeV.size(),0.0);
+  const Earth::BoundaryProducts::SpectrumUnits units=::gSpectrum.Units();
+  for (std::size_t i=0;i<E_MeV.size();++i)
+    particleEnergy_MeV[i]=units.ParticleEnergyMeV(E_MeV[i]);
   return Earth::FluxNumerics::ComputeTransmissionDiagnostics(
-      E_MeV,T,std::abs(prm.species.charge_e)*QE,prm.species.mass_amu*AMU);
+      particleEnergy_MeV,T,std::abs(prm.species.charge_e)*QE,
+      prm.species.mass_amu*AMU);
 }
 
 //====================================================================================
@@ -839,6 +923,30 @@ static void DensityGridless_WritePointLikeRowPrefix(TStream& out,
   if (DensityGridless_PointLikeHasPerSampleTime(prm)) {
     out << "\"" << DensityGridless_PointLikeSampleTimeUTC(prm, idx) << "\" ";
   }
+}
+
+// Write identical Step-6 provenance for gridless and Mode3D products.  AUXDATA is
+// deliberately used instead of inserting columns into historical schemas; all current
+// F-test readers already ignore AUXDATA while Tecplot and new readers retain it.
+template<class TStream>
+static void DensityGridless_WriteStep6Metadata(TStream& out) {
+  const char* basis=(::gSpectrum.EnergyCoordinateBasis()==
+      Earth::BoundaryProducts::EnergyBasis::PerNucleon)
+      ? "PER_NUCLEON" : "PER_PARTICLE";
+  out << "AUXDATA STEP6_CHARACTERISTIC_MAPPING=\"STATIC_MAGNETIC\"\n"
+      << "AUXDATA SPECTRUM_ENERGY_BASIS=\"" << basis << "\"\n"
+      << "AUXDATA SPECTRUM_MASS_NUMBER=\"" << ::gSpectrum.MassNumber() << "\"\n"
+      << "AUXDATA SPECTRUM_INTENSITY_UNIT=\"" << ::gSpectrum.IntensityUnitLabel() << "\"\n"
+      << "AUXDATA SPECTRUM_RELATIVE_UNCERTAINTY=\""
+      << ::gSpectrum.RelativeUncertainty() << "\"\n"
+      << "AUXDATA SPECTRUM_TEMPORAL_STATUS=\""
+      << Earth::BoundaryProducts::TemporalStatusName(::gSpectrum.LastTemporalStatus())
+      << "\"\n"
+      << "AUXDATA SPECTRUM_TEMPORAL_GAP=\""
+      << (::gSpectrum.LastTemporalSelectionCrossedGap() ? 1 : 0) << "\"\n"
+      << "AUXDATA SPECTRUM_TEMPORAL_FRACTION=\""
+      << ::gSpectrum.LastTemporalInterpolationFraction() << "\"\n"
+      << "AUXDATA PLANAR_FLUX_CONVENTION=\"ISOTROPIC_EQUIVALENT_PI_J\"\n";
 }
 
 
@@ -1051,10 +1159,8 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
 
   // Branch selection: resolved once per run (CLI override already applied by caller).
   const bool doAnisotropic = (EarthUtil::ToUpper(prm.densitySpectrum.boundaryMode) == "ANISOTROPIC");
-  const double maximumAllowedWeight=doAnisotropic &&
-      EarthUtil::ToUpper(prm.anisotropy.spatialModel)=="DAYSIDE_NIGHTSIDE"
-      ? std::max(0.0,std::max(prm.anisotropy.daysideFactor,prm.anisotropy.nightsideFactor))
-      : 1.0;
+  const double maximumAllowedWeight=
+      DensityGridless_MaximumAllowedWeight(prm,doAnisotropic);
   if (mpiRank==0) {
     std::cout << "Boundary mode    : " << (doAnisotropic ? "ANISOTROPIC" : "ISOTROPIC") << "\n";
     if (doAnisotropic) {
@@ -1074,11 +1180,17 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
   std::vector<double> density_lower_m3(nPoints,0.0),density_upper_m3(nPoints,0.0);
   std::vector<double> flux_tot_m2s1(nPoints, 0.0);
   std::vector<double> flux_tot_lower_m2s1(nPoints,0.0),flux_tot_upper_m2s1(nPoints,0.0);
+  std::vector<double> flux_planar_m2s1(nPoints,0.0);
+  std::vector<double> flux_planar_lower_m2s1(nPoints,0.0),flux_planar_upper_m2s1(nPoints,0.0);
   const int nCh = (int)prm.fluxChannels.size();
+  const int nDetector = (int)prm.detectorResponses.size();
   // flux_ch[ic][ip] = integral flux in channel ic at point ip  [m^-2 s^-1]
   std::vector< std::vector<double> > flux_ch(nCh, std::vector<double>(nPoints, 0.0));
   std::vector< std::vector<double> > flux_ch_lower(nCh,std::vector<double>(nPoints,0.0));
   std::vector< std::vector<double> > flux_ch_upper(nCh,std::vector<double>(nPoints,0.0));
+  std::vector< std::vector<double> > detector_rate(nDetector,std::vector<double>(nPoints,0.0));
+  std::vector< std::vector<double> > detector_rate_lower(nDetector,std::vector<double>(nPoints,0.0));
+  std::vector< std::vector<double> > detector_rate_upper(nDetector,std::vector<double>(nPoints,0.0));
   std::vector< std::vector<double> > T_byPoint;
   std::vector< std::vector<double> > T_lower_byPoint,T_upper_byPoint;
   std::vector< std::array<int,kTerminationCount> > terminationByPointEnergy;
@@ -1131,7 +1243,9 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
 #pragma omp parallel for default(none) shared(T, TLower, TUpper, blockResults, E_MeV, prmForPoint, x0_m, dirsUse, doAnisotropic, nE) firstprivate(maximumAllowedWeight) if(nE > 1) schedule(dynamic)
 #endif
       for (int ie=0; ie<nE; ++ie) {
-        const double Ej = E_MeV[ie]*MEV_TO_J;
+        // The solver grid is the declared spectrum coordinate.  Rigidity depends on
+        // total particle energy, so MeV/nucleon is converted by the declared A here.
+        const double Ej=::gSpectrum.Units().ParticleEnergyJ(E_MeV[ie]);
         const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prmForPoint.species.charge_e)*QE, prmForPoint.species.mass_amu*AMU);
         const double maxTraceTime_s = (prmForPoint.densitySpectrum.maxTrajTime_s > 0.0)
                                         ? prmForPoint.densitySpectrum.maxTrajTime_s
@@ -1157,27 +1271,26 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
         retriedByPointEnergy[flat]=blockResults[(size_t)ie].retried;
       }
 
-      const auto spectrum=[](double E_J) { return ::gSpectrum.GetSpectrum(E_J); };
-      density_m3[ip]=Earth::FluxNumerics::IntegrateDensity(
-          E_MeV,T,prm.species.mass_amu*AMU,spectrum);
-      density_lower_m3[ip]=Earth::FluxNumerics::IntegrateDensity(
-          E_MeV,TLower,prm.species.mass_amu*AMU,spectrum);
-      density_upper_m3[ip]=Earth::FluxNumerics::IntegrateDensity(
-          E_MeV,TUpper,prm.species.mass_amu*AMU,spectrum);
-      // ---- Integral flux (total and per channel) ----
-      // F_tot = 4pi * int T(E)*Jb(E) dE  [m^-2 s^-1]  (no 1/v weight)
-      flux_tot_m2s1[ip] = FluxIntegrateTotal(E_MeV, T);
-      flux_tot_lower_m2s1[ip]=FluxIntegrateTotal(E_MeV,TLower);
-      flux_tot_upper_m2s1[ip]=FluxIntegrateTotal(E_MeV,TUpper);
+      const Earth::BoundaryProducts::ProductSet products=
+          DensityGridless_EvaluateProducts(prmForPoint,E_MeV,T,TLower,TUpper);
+      density_m3[ip]=products.numberDensity_m3.nominal;
+      density_lower_m3[ip]=products.numberDensity_m3.lower;
+      density_upper_m3[ip]=products.numberDensity_m3.upper;
+      flux_tot_m2s1[ip]=products.omnidirectionalFlux_m2_s.nominal;
+      flux_tot_lower_m2s1[ip]=products.omnidirectionalFlux_m2_s.lower;
+      flux_tot_upper_m2s1[ip]=products.omnidirectionalFlux_m2_s.upper;
+      flux_planar_m2s1[ip]=products.oneWayPlanarFlux_m2_s.nominal;
+      flux_planar_lower_m2s1[ip]=products.oneWayPlanarFlux_m2_s.lower;
+      flux_planar_upper_m2s1[ip]=products.oneWayPlanarFlux_m2_s.upper;
       for (int ic = 0; ic < nCh; ++ic) {
-        flux_ch[ic][ip] = FluxIntegrateChannel(
-            E_MeV, T,
-            prm.fluxChannels[ic].E1_MeV,
-            prm.fluxChannels[ic].E2_MeV);
-        flux_ch_lower[ic][ip]=FluxIntegrateChannel(E_MeV,TLower,
-            prm.fluxChannels[ic].E1_MeV,prm.fluxChannels[ic].E2_MeV);
-        flux_ch_upper[ic][ip]=FluxIntegrateChannel(E_MeV,TUpper,
-            prm.fluxChannels[ic].E1_MeV,prm.fluxChannels[ic].E2_MeV);
+        flux_ch[ic][ip]=products.channelFlux_m2_s[(std::size_t)ic].nominal;
+        flux_ch_lower[ic][ip]=products.channelFlux_m2_s[(std::size_t)ic].lower;
+        flux_ch_upper[ic][ip]=products.channelFlux_m2_s[(std::size_t)ic].upper;
+      }
+      for (int id=0;id<nDetector;++id) {
+        detector_rate[id][ip]=products.detectorRate_s[(std::size_t)id].nominal;
+        detector_rate_lower[id][ip]=products.detectorRate_s[(std::size_t)id].lower;
+        detector_rate_upper[id][ip]=products.detectorRate_s[(std::size_t)id].upper;
       }
       T_byPoint[ip] = std::move(T);
       T_lower_byPoint[ip]=std::move(TLower);
@@ -1278,7 +1391,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       // not shared across ranks.
       EarthUtil::AmpsParam prmForPoint = DensityGridless_BuildParamForPointLikeLocation(prm, idx);
 
-      const double Ej = E_MeV[ie]*MEV_TO_J;
+      const double Ej=::gSpectrum.Units().ParticleEnergyJ(E_MeV[ie]);
       const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prmForPoint.species.charge_e)*QE,
                                                prmForPoint.species.mass_amu*AMU);
       const double maxTraceTime_s = (prmForPoint.densitySpectrum.maxTrajTime_s > 0.0)
@@ -1452,24 +1565,26 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
         }
 
         DensityGridless_SetSpectrumForPointLikeLocation(prm, ip);
-        const auto spectrum=[](double E_J) { return ::gSpectrum.GetSpectrum(E_J); };
-        density_m3[(size_t)ip]=Earth::FluxNumerics::IntegrateDensity(
-            E_MeV,T,prm.species.mass_amu*AMU,spectrum);
-        density_lower_m3[(size_t)ip]=Earth::FluxNumerics::IntegrateDensity(
-            E_MeV,TLower,prm.species.mass_amu*AMU,spectrum);
-        density_upper_m3[(size_t)ip]=Earth::FluxNumerics::IntegrateDensity(
-            E_MeV,TUpper,prm.species.mass_amu*AMU,spectrum);
-        flux_tot_m2s1[(size_t)ip] = FluxIntegrateTotal(E_MeV, T);
-        flux_tot_lower_m2s1[(size_t)ip]=FluxIntegrateTotal(E_MeV,TLower);
-        flux_tot_upper_m2s1[(size_t)ip]=FluxIntegrateTotal(E_MeV,TUpper);
+        const Earth::BoundaryProducts::ProductSet products=
+            DensityGridless_EvaluateProducts(prm,E_MeV,T,TLower,TUpper);
+        density_m3[(size_t)ip]=products.numberDensity_m3.nominal;
+        density_lower_m3[(size_t)ip]=products.numberDensity_m3.lower;
+        density_upper_m3[(size_t)ip]=products.numberDensity_m3.upper;
+        flux_tot_m2s1[(size_t)ip]=products.omnidirectionalFlux_m2_s.nominal;
+        flux_tot_lower_m2s1[(size_t)ip]=products.omnidirectionalFlux_m2_s.lower;
+        flux_tot_upper_m2s1[(size_t)ip]=products.omnidirectionalFlux_m2_s.upper;
+        flux_planar_m2s1[(size_t)ip]=products.oneWayPlanarFlux_m2_s.nominal;
+        flux_planar_lower_m2s1[(size_t)ip]=products.oneWayPlanarFlux_m2_s.lower;
+        flux_planar_upper_m2s1[(size_t)ip]=products.oneWayPlanarFlux_m2_s.upper;
         for (int ic = 0; ic < nCh; ++ic) {
-          flux_ch[ic][(size_t)ip] = FluxIntegrateChannel(E_MeV, T,
-                                                          prm.fluxChannels[ic].E1_MeV,
-                                                          prm.fluxChannels[ic].E2_MeV);
-          flux_ch_lower[ic][(size_t)ip]=FluxIntegrateChannel(E_MeV,TLower,
-              prm.fluxChannels[ic].E1_MeV,prm.fluxChannels[ic].E2_MeV);
-          flux_ch_upper[ic][(size_t)ip]=FluxIntegrateChannel(E_MeV,TUpper,
-              prm.fluxChannels[ic].E1_MeV,prm.fluxChannels[ic].E2_MeV);
+          flux_ch[ic][(size_t)ip]=products.channelFlux_m2_s[(std::size_t)ic].nominal;
+          flux_ch_lower[ic][(size_t)ip]=products.channelFlux_m2_s[(std::size_t)ic].lower;
+          flux_ch_upper[ic][(size_t)ip]=products.channelFlux_m2_s[(std::size_t)ic].upper;
+        }
+        for (int id=0;id<nDetector;++id) {
+          detector_rate[id][(size_t)ip]=products.detectorRate_s[(std::size_t)id].nominal;
+          detector_rate_lower[id][(size_t)ip]=products.detectorRate_s[(std::size_t)id].lower;
+          detector_rate_upper[id][(size_t)ip]=products.detectorRate_s[(std::size_t)id].upper;
         }
       }
 
@@ -1581,6 +1696,8 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       // Preserve every double needed by downstream reconstruction and regression tests.
       DensityGridless_ConfigureLosslessAsciiOutput(out);
       out << "TITLE=\"Gridless energetic particle density (POINTS/TRAJECTORY)\"\n";
+      DensityGridless_SetSpectrumEpochUTC(prm.field.epoch);
+      DensityGridless_WriteStep6Metadata(out);
       DensityGridless_WritePointLikeVariablePrefix(out, prm);
       out << "\"X_km\" \"Y_km\" \"Z_km\" \"N_m^-3\" \"N_lower_m^-3\" \"N_upper_m^-3\" "
           << "\"N_cm^-3\" \"N_lower_cm^-3\" \"N_upper_cm^-3\" "
@@ -1609,13 +1726,17 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       out << "TITLE=\"Gridless energetic particle spectrum (POINTS/TRAJECTORY)\"\n";
       out << "VARIABLES=\"E_MeV\" \"T\" \"T_lower\" \"T_upper\" \"unresolved_fraction\" "
           << "\"N_sampled\" \"N_resolved\" \"J_boundary_perMeV\" \"J_local_perMeV\" "
-          << "\"J_local_lower_perMeV\" \"J_local_upper_perMeV\"\n";
+          << "\"J_local_lower_perMeV\" \"J_local_upper_perMeV\" "
+          << "\"J_boundary_lower_perMeV\" \"J_boundary_upper_perMeV\" "
+          << "\"J_omni_perMeV\" \"J_omni_lower_perMeV\" \"J_omni_upper_perMeV\" "
+          << "\"J_planar_perMeV\" \"J_planar_lower_perMeV\" \"J_planar_upper_perMeV\"\n";
 
       // Record spectrum definition for provenance.
       for (int ip=0; ip<nPoints; ++ip) {
         DensityGridless_SetSpectrumForPointLikeLocation(prm, ip);
         out << "ZONE T=\"" << DensityGridless_PointLikeZoneLabel(prm, ip)
             << "\" I=" << nE << " F=POINT\n";
+        DensityGridless_WriteStep6Metadata(out);
         for (int ie=0; ie<nE; ++ie) {
           const double T = T_byPoint[ip][ie];
           const double TLower=T_lower_byPoint[ip][ie],TUpper=T_upper_byPoint[ip][ie];
@@ -1623,12 +1744,23 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
           const double unresolved=sampledByPointEnergy[flat]>0
               ? double(sampledByPointEnergy[flat]-resolvedByPointEnergy[flat])/
                 double(sampledByPointEnergy[flat]) : 1.0;
-          const double Jb_perMeV = ::gSpectrum.GetSpectrumPerMeV(E_MeV[ie]);
-          const double Jloc_perMeV = T*Jb_perMeV;
+          const Earth::BoundaryProducts::Bounds Jb=
+              ::gSpectrum.GetSpectrumPerMeVBounds(E_MeV[ie]);
+          const Earth::BoundaryProducts::Bounds local=
+              Earth::BoundaryProducts::MapBoundaryIntensity(
+                  Earth::BoundaryProducts::Bounds(T,TLower,TUpper),Jb,
+                  Earth::BoundaryProducts::CharacteristicMapping::StaticMagnetic);
           out << E_MeV[ie] << " " << T << " " << TLower << " " << TUpper << " " << unresolved
               << " " << sampledByPointEnergy[flat] << " " << resolvedByPointEnergy[flat]
-              << " " << Jb_perMeV << " " << Jloc_perMeV
-              << " " << TLower*Jb_perMeV << " " << TUpper*Jb_perMeV << "\n";
+              << " " << Jb.nominal << " " << local.nominal
+              << " " << local.lower << " " << local.upper
+              << " " << Jb.lower << " " << Jb.upper
+              << " " << 4.0*Earth::FluxNumerics::kPi*local.nominal
+              << " " << 4.0*Earth::FluxNumerics::kPi*local.lower
+              << " " << 4.0*Earth::FluxNumerics::kPi*local.upper
+              << " " << Earth::FluxNumerics::kPi*local.nominal
+              << " " << Earth::FluxNumerics::kPi*local.lower
+              << " " << Earth::FluxNumerics::kPi*local.upper << "\n";
         }
       }
     }
@@ -1658,6 +1790,8 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       // Preserve every double needed by downstream reconstruction and regression tests.
       DensityGridless_ConfigureLosslessAsciiOutput(out);
       out << "TITLE=\"Gridless omnidirectional integral flux (POINTS/TRAJECTORY)\"\n";
+      DensityGridless_SetSpectrumEpochUTC(prm.field.epoch);
+      DensityGridless_WriteStep6Metadata(out);
 
       // Build variable list header dynamically.
       DensityGridless_WritePointLikeVariablePrefix(out, prm);
@@ -1666,6 +1800,12 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
         out << " \"F_" << prm.fluxChannels[ic].name << "_m2s1\""
             << " \"F_" << prm.fluxChannels[ic].name << "_lower_m2s1\""
             << " \"F_" << prm.fluxChannels[ic].name << "_upper_m2s1\"";
+      }
+      out << " \"F_planar_m2s1\" \"F_planar_lower_m2s1\" \"F_planar_upper_m2s1\"";
+      for (int id=0;id<nDetector;++id) {
+        out << " \"R_" << prm.detectorResponses[(std::size_t)id].name << "_s1\""
+            << " \"R_" << prm.detectorResponses[(std::size_t)id].name << "_lower_s1\""
+            << " \"R_" << prm.detectorResponses[(std::size_t)id].name << "_upper_s1\"";
       }
       out << "\n";
 
@@ -1688,6 +1828,14 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
         for (int ic = 0; ic < nCh; ++ic) {
           out << " " << flux_ch[ic][ip] << " " << flux_ch_lower[ic][ip]
               << " " << flux_ch_upper[ic][ip];
+        }
+        out << " " << flux_planar_m2s1[ip]
+            << " " << flux_planar_lower_m2s1[ip]
+            << " " << flux_planar_upper_m2s1[ip];
+        for (int id=0;id<nDetector;++id) {
+          out << " " << detector_rate[id][ip]
+              << " " << detector_rate_lower[id][ip]
+              << " " << detector_rate_upper[id][ip];
         }
         out << "\n";
       }
@@ -1803,10 +1951,8 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
 
   // Branch selection (mirrors POINTS driver).
   const bool doAnisotropic = (EarthUtil::ToUpper(prm.densitySpectrum.boundaryMode) == "ANISOTROPIC");
-  const double maximumAllowedWeight=doAnisotropic &&
-      EarthUtil::ToUpper(prm.anisotropy.spatialModel)=="DAYSIDE_NIGHTSIDE"
-      ? std::max(0.0,std::max(prm.anisotropy.daysideFactor,prm.anisotropy.nightsideFactor))
-      : 1.0;
+  const double maximumAllowedWeight=
+      DensityGridless_MaximumAllowedWeight(prm,doAnisotropic);
 
   if (mpiRank==0) {
     std::cout << "================ Gridless density & spectrum (SHELLS) ================\n";
@@ -1894,8 +2040,11 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
     std::vector<double> nTot_m3,nTotLower_m3,nTotUpper_m3;
     std::vector< std::vector<double> > nChan_m3,nChanLower_m3,nChanUpper_m3; // [interval][point]
     std::vector<double> flux_tot_m2s1,fluxTotLower_m2s1,fluxTotUpper_m2s1;
+    std::vector<double> fluxPlanar_m2s1,fluxPlanarLower_m2s1,fluxPlanarUpper_m2s1;
     const int nFluxCh = (int)prm.fluxChannels.size();
+    const int nDetector = (int)prm.detectorResponses.size();
     std::vector< std::vector<double> > flux_ch,fluxChLower,fluxChUpper;
+    std::vector< std::vector<double> > detectorRate,detectorRateLower,detectorRateUpper;
     std::vector< std::vector<double> > T_byPoint,TLower_byPoint,TUpper_byPoint;
     std::vector<double> unresolvedByPointEnergy;
     if (mpiRank==0) {
@@ -1908,9 +2057,15 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
       flux_tot_m2s1.assign(nPts, 0.0);
       fluxTotLower_m2s1.assign(nPts,0.0);
       fluxTotUpper_m2s1.assign(nPts,0.0);
+      fluxPlanar_m2s1.assign(nPts,0.0);
+      fluxPlanarLower_m2s1.assign(nPts,0.0);
+      fluxPlanarUpper_m2s1.assign(nPts,0.0);
       flux_ch.assign(nFluxCh, std::vector<double>(nPts, 0.0));
       fluxChLower.assign(nFluxCh,std::vector<double>(nPts,0.0));
       fluxChUpper.assign(nFluxCh,std::vector<double>(nPts,0.0));
+      detectorRate.assign(nDetector,std::vector<double>(nPts,0.0));
+      detectorRateLower.assign(nDetector,std::vector<double>(nPts,0.0));
+      detectorRateUpper.assign(nDetector,std::vector<double>(nPts,0.0));
       T_byPoint.assign(nPts, std::vector<double>(nE, 0.0));
       TLower_byPoint.assign(nPts,std::vector<double>(nE,0.0));
       TUpper_byPoint.assign(nPts,std::vector<double>(nE,0.0));
@@ -1949,7 +2104,7 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
 #pragma omp parallel for default(none) shared(blocks, E_MeV, prm, x0_m, dirsUse, doAnisotropic, nE) if(nE > 1) schedule(dynamic)
 #endif
         for (int ie=0; ie<nE; ++ie) {
-          const double Ej = E_MeV[ie]*MEV_TO_J;
+          const double Ej=::gSpectrum.Units().ParticleEnergyJ(E_MeV[ie]);
           const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE,
                                                    prm.species.mass_amu*AMU);
           const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
@@ -1970,10 +2125,13 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
         std::vector<double> g(nE,0.0),gLower(nE,0.0),gUpper(nE,0.0);
         std::vector<double> EjGrid(nE,0.0);
         for (int ie=0; ie<nE; ++ie) {
-          const double Ej = E_MeV[ie]*MEV_TO_J;
-          EjGrid[ie]=Ej;
-          const double v = SpeedFromEnergy(Ej, prm.species.mass_amu*AMU);
-          const double Jb = ::gSpectrum.GetSpectrum(Ej);
+          const double coordinateEnergy_J=E_MeV[ie]*MEV_TO_J;
+          const double particleEnergy_J=
+              ::gSpectrum.Units().ParticleEnergyJ(E_MeV[ie]);
+          EjGrid[ie]=coordinateEnergy_J;
+          const double v=SpeedFromEnergy(particleEnergy_J,
+                                         prm.species.mass_amu*AMU);
+          const double Jb=::gSpectrum.GetSpectrum(coordinateEnergy_J);
           const double Jloc = T[ie]*Jb;
           g[ie] = (v>0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
           gLower[ie]=(v>0.0) ? (4.0*M_PI*TLower[ie]*Jb/v) : 0.0;
@@ -1988,17 +2146,33 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
           nChanLower_m3[ic][(size_t)idx]=0.5*(gLower[ic]+gLower[ic+1])*dE;
           nChanUpper_m3[ic][(size_t)idx]=0.5*(gUpper[ic]+gUpper[ic+1])*dE;
         }
-        flux_tot_m2s1[(size_t)idx] = FluxIntegrateTotal(E_MeV, T);
-        fluxTotLower_m2s1[(size_t)idx]=FluxIntegrateTotal(E_MeV,TLower);
-        fluxTotUpper_m2s1[(size_t)idx]=FluxIntegrateTotal(E_MeV,TUpper);
+        const Earth::BoundaryProducts::ProductSet products=
+            DensityGridless_EvaluateProducts(prm,E_MeV,T,TLower,TUpper);
+        const std::vector<Earth::BoundaryProducts::Bounds> intervalDensity=
+            DensityGridless_EvaluateDensityIntervals(prm,E_MeV,T,TLower,TUpper);
+        nTot_m3[(size_t)idx]=products.numberDensity_m3.nominal;
+        nTotLower_m3[(size_t)idx]=products.numberDensity_m3.lower;
+        nTotUpper_m3[(size_t)idx]=products.numberDensity_m3.upper;
+        flux_tot_m2s1[(size_t)idx]=products.omnidirectionalFlux_m2_s.nominal;
+        fluxTotLower_m2s1[(size_t)idx]=products.omnidirectionalFlux_m2_s.lower;
+        fluxTotUpper_m2s1[(size_t)idx]=products.omnidirectionalFlux_m2_s.upper;
+        fluxPlanar_m2s1[(size_t)idx]=products.oneWayPlanarFlux_m2_s.nominal;
+        fluxPlanarLower_m2s1[(size_t)idx]=products.oneWayPlanarFlux_m2_s.lower;
+        fluxPlanarUpper_m2s1[(size_t)idx]=products.oneWayPlanarFlux_m2_s.upper;
+        for (int ic=0;ic<nIntervals;++ic) {
+          nChan_m3[ic][(size_t)idx]=intervalDensity[(std::size_t)ic].nominal;
+          nChanLower_m3[ic][(size_t)idx]=intervalDensity[(std::size_t)ic].lower;
+          nChanUpper_m3[ic][(size_t)idx]=intervalDensity[(std::size_t)ic].upper;
+        }
         for (int icf=0; icf<nFluxCh; ++icf) {
-          flux_ch[icf][(size_t)idx] = FluxIntegrateChannel(E_MeV, T,
-                                                           prm.fluxChannels[icf].E1_MeV,
-                                                           prm.fluxChannels[icf].E2_MeV);
-          fluxChLower[icf][(size_t)idx]=FluxIntegrateChannel(E_MeV,TLower,
-              prm.fluxChannels[icf].E1_MeV,prm.fluxChannels[icf].E2_MeV);
-          fluxChUpper[icf][(size_t)idx]=FluxIntegrateChannel(E_MeV,TUpper,
-              prm.fluxChannels[icf].E1_MeV,prm.fluxChannels[icf].E2_MeV);
+          flux_ch[icf][(size_t)idx]=products.channelFlux_m2_s[(std::size_t)icf].nominal;
+          fluxChLower[icf][(size_t)idx]=products.channelFlux_m2_s[(std::size_t)icf].lower;
+          fluxChUpper[icf][(size_t)idx]=products.channelFlux_m2_s[(std::size_t)icf].upper;
+        }
+        for (int id=0;id<nDetector;++id) {
+          detectorRate[id][(size_t)idx]=products.detectorRate_s[(std::size_t)id].nominal;
+          detectorRateLower[id][(size_t)idx]=products.detectorRate_s[(std::size_t)id].lower;
+          detectorRateUpper[id][(size_t)idx]=products.detectorRate_s[(std::size_t)id].upper;
         }
         T_byPoint[(size_t)idx] = std::move(T);
         TLower_byPoint[(size_t)idx]=std::move(TLower);
@@ -2082,7 +2256,7 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
         const auto& pk = shellPts_km[idx];
         const V3 x0_m{pk.x*1000.0, pk.y*1000.0, pk.z*1000.0};
 
-        const double Ej = E_MeV[ie]*MEV_TO_J;
+        const double Ej=::gSpectrum.Units().ParticleEnergyJ(E_MeV[ie]);
         const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE,
                                                  prm.species.mass_amu*AMU);
         const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
@@ -2232,10 +2406,13 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
           std::vector<double> g(nE,0.0),gLower(nE,0.0),gUpper(nE,0.0);
           std::vector<double> EjGrid(nE,0.0);
           for (int ie=0; ie<nE; ++ie) {
-            const double Ej = E_MeV[ie]*MEV_TO_J;
-            EjGrid[ie]=Ej;
-            const double v = SpeedFromEnergy(Ej, prm.species.mass_amu*AMU);
-            const double Jb = ::gSpectrum.GetSpectrum(Ej);
+            const double coordinateEnergy_J=E_MeV[ie]*MEV_TO_J;
+            const double particleEnergy_J=
+                ::gSpectrum.Units().ParticleEnergyJ(E_MeV[ie]);
+            EjGrid[ie]=coordinateEnergy_J;
+            const double v=SpeedFromEnergy(particleEnergy_J,
+                                           prm.species.mass_amu*AMU);
+            const double Jb=::gSpectrum.GetSpectrum(coordinateEnergy_J);
             const double Jloc = T[(size_t)ie]*Jb;
             g[ie] = (v>0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
             gLower[ie]=(v>0.0) ? (4.0*M_PI*TLower[(size_t)ie]*Jb/v) : 0.0;
@@ -2250,17 +2427,33 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
             nChanLower_m3[ic][(size_t)idx]=0.5*(gLower[ic]+gLower[ic+1])*dE;
             nChanUpper_m3[ic][(size_t)idx]=0.5*(gUpper[ic]+gUpper[ic+1])*dE;
           }
-          flux_tot_m2s1[(size_t)idx] = FluxIntegrateTotal(E_MeV, T);
-          fluxTotLower_m2s1[(size_t)idx]=FluxIntegrateTotal(E_MeV,TLower);
-          fluxTotUpper_m2s1[(size_t)idx]=FluxIntegrateTotal(E_MeV,TUpper);
+          const Earth::BoundaryProducts::ProductSet products=
+              DensityGridless_EvaluateProducts(prm,E_MeV,T,TLower,TUpper);
+          const std::vector<Earth::BoundaryProducts::Bounds> intervalDensity=
+              DensityGridless_EvaluateDensityIntervals(prm,E_MeV,T,TLower,TUpper);
+          nTot_m3[(size_t)idx]=products.numberDensity_m3.nominal;
+          nTotLower_m3[(size_t)idx]=products.numberDensity_m3.lower;
+          nTotUpper_m3[(size_t)idx]=products.numberDensity_m3.upper;
+          flux_tot_m2s1[(size_t)idx]=products.omnidirectionalFlux_m2_s.nominal;
+          fluxTotLower_m2s1[(size_t)idx]=products.omnidirectionalFlux_m2_s.lower;
+          fluxTotUpper_m2s1[(size_t)idx]=products.omnidirectionalFlux_m2_s.upper;
+          fluxPlanar_m2s1[(size_t)idx]=products.oneWayPlanarFlux_m2_s.nominal;
+          fluxPlanarLower_m2s1[(size_t)idx]=products.oneWayPlanarFlux_m2_s.lower;
+          fluxPlanarUpper_m2s1[(size_t)idx]=products.oneWayPlanarFlux_m2_s.upper;
+          for (int ic=0;ic<nIntervals;++ic) {
+            nChan_m3[ic][(size_t)idx]=intervalDensity[(std::size_t)ic].nominal;
+            nChanLower_m3[ic][(size_t)idx]=intervalDensity[(std::size_t)ic].lower;
+            nChanUpper_m3[ic][(size_t)idx]=intervalDensity[(std::size_t)ic].upper;
+          }
           for (int icf=0; icf<nFluxCh; ++icf) {
-            flux_ch[icf][(size_t)idx] = FluxIntegrateChannel(E_MeV, T,
-                                                               prm.fluxChannels[icf].E1_MeV,
-                                                               prm.fluxChannels[icf].E2_MeV);
-            fluxChLower[icf][(size_t)idx]=FluxIntegrateChannel(E_MeV,TLower,
-                prm.fluxChannels[icf].E1_MeV,prm.fluxChannels[icf].E2_MeV);
-            fluxChUpper[icf][(size_t)idx]=FluxIntegrateChannel(E_MeV,TUpper,
-                prm.fluxChannels[icf].E1_MeV,prm.fluxChannels[icf].E2_MeV);
+            flux_ch[icf][(size_t)idx]=products.channelFlux_m2_s[(std::size_t)icf].nominal;
+            fluxChLower[icf][(size_t)idx]=products.channelFlux_m2_s[(std::size_t)icf].lower;
+            fluxChUpper[icf][(size_t)idx]=products.channelFlux_m2_s[(std::size_t)icf].upper;
+          }
+          for (int id=0;id<nDetector;++id) {
+            detectorRate[id][(size_t)idx]=products.detectorRate_s[(std::size_t)id].nominal;
+            detectorRateLower[id][(size_t)idx]=products.detectorRate_s[(std::size_t)id].lower;
+            detectorRateUpper[id][(size_t)idx]=products.detectorRate_s[(std::size_t)id].upper;
           }
         }
 
@@ -2307,6 +2500,7 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
       // also be used in strict numerical comparisons without serialization noise.
       DensityGridless_ConfigureLosslessAsciiOutput(out);
       out << "TITLE=\"Gridless energetic particle density (SHELL alt=" << alt_km << " km)\"\n";
+      DensityGridless_WriteStep6Metadata(out);
       // Match the structured (I,J) Tecplot layout used by the cutoff-rigidity tool.
       // We write lon/lat grids (not X/Y/Z) because Tecplot structured grids are
       // naturally indexed in 2D. The underlying physical shell is still a sphere
@@ -2364,6 +2558,111 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
                 << " " << nChanUpper_m3[ic][(size_t)k] << " " << n_cm3 << " " << unresolvedMax
                 << " " << td.RcLower_GV << " " << td.RcEffective_GV << " " << td.RcUpper_GV
                 << " " << td.PenumbraWidth_GV << " " << td.THigh << "\n";
+          }
+        }
+      }
+
+      // Step-6 integral products are written separately so the historical shell
+      // density-channel schema remains byte-position compatible.  The appended
+      // product contains omnidirectional, isotropic-equivalent one-way planar,
+      // configured-channel, and detector-response-folded bounds.
+      {
+        std::ostringstream fluxName;
+        fluxName << "gridless_shell_" << (int)std::round(alt_km)
+                 << "km_flux.dat";
+        std::ofstream fluxOut(fluxName.str());
+        DensityGridless_ConfigureLosslessAsciiOutput(fluxOut);
+        fluxOut << "TITLE=\"Gridless shell flux products\"\n";
+        DensityGridless_WriteStep6Metadata(fluxOut);
+        fluxOut << "VARIABLES=\"lon_deg\" \"lat_deg\" \"F_tot_m2s1\" "
+                << "\"F_tot_lower_m2s1\" \"F_tot_upper_m2s1\"";
+        for (int ic=0;ic<nFluxCh;++ic) {
+          fluxOut << " \"F_" << prm.fluxChannels[(std::size_t)ic].name << "_m2s1\""
+                  << " \"F_" << prm.fluxChannels[(std::size_t)ic].name << "_lower_m2s1\""
+                  << " \"F_" << prm.fluxChannels[(std::size_t)ic].name << "_upper_m2s1\"";
+        }
+        fluxOut << " \"F_planar_m2s1\" \"F_planar_lower_m2s1\" \"F_planar_upper_m2s1\"";
+        for (int id=0;id<nDetector;++id) {
+          fluxOut << " \"R_" << prm.detectorResponses[(std::size_t)id].name << "_s1\""
+                  << " \"R_" << prm.detectorResponses[(std::size_t)id].name << "_lower_s1\""
+                  << " \"R_" << prm.detectorResponses[(std::size_t)id].name << "_upper_s1\"";
+        }
+        fluxOut << "\nZONE T=\"flux\" I=" << nLon << " J=" << nLat << " F=POINT\n";
+        for (int j=0;j<nLat;++j) {
+          double lat=-90.0+prm.output.shellRes_deg*j;
+          if (lat>90.0) lat=90.0;
+          for (int i=0;i<nLon;++i) {
+            const int k=i+nLon*j;
+            fluxOut << prm.output.shellRes_deg*i << " " << lat
+                    << " " << flux_tot_m2s1[(std::size_t)k]
+                    << " " << fluxTotLower_m2s1[(std::size_t)k]
+                    << " " << fluxTotUpper_m2s1[(std::size_t)k];
+            for (int ic=0;ic<nFluxCh;++ic) {
+              fluxOut << " " << flux_ch[ic][(std::size_t)k]
+                      << " " << fluxChLower[ic][(std::size_t)k]
+                      << " " << fluxChUpper[ic][(std::size_t)k];
+            }
+            fluxOut << " " << fluxPlanar_m2s1[(std::size_t)k]
+                    << " " << fluxPlanarLower_m2s1[(std::size_t)k]
+                    << " " << fluxPlanarUpper_m2s1[(std::size_t)k];
+            for (int id=0;id<nDetector;++id) {
+              fluxOut << " " << detectorRate[id][(std::size_t)k]
+                      << " " << detectorRateLower[id][(std::size_t)k]
+                      << " " << detectorRateUpper[id][(std::size_t)k];
+            }
+            fluxOut << "\n";
+          }
+        }
+      }
+
+      // One structured zone per energy makes the shell spectrum directly
+      // reintegrable and supplies the exact lower/upper unresolved products without
+      // rerunning the trajectory solver.
+      {
+        std::ostringstream spectrumName;
+        spectrumName << "gridless_shell_" << (int)std::round(alt_km)
+                     << "km_spectrum.dat";
+        std::ofstream spectrumOut(spectrumName.str());
+        DensityGridless_ConfigureLosslessAsciiOutput(spectrumOut);
+        spectrumOut << "TITLE=\"Gridless shell differential spectra\"\n";
+        DensityGridless_WriteStep6Metadata(spectrumOut);
+        spectrumOut << "VARIABLES=\"lon_deg\" \"lat_deg\" \"E_MeV\" \"T\" "
+                    << "\"T_lower\" \"T_upper\" \"unresolved_fraction\" "
+                    << "\"J_boundary_perMeV\" \"J_local_perMeV\" "
+                    << "\"J_local_lower_perMeV\" \"J_local_upper_perMeV\" "
+                    << "\"J_omni_perMeV\" \"J_omni_lower_perMeV\" \"J_omni_upper_perMeV\" "
+                    << "\"J_planar_perMeV\" \"J_planar_lower_perMeV\" \"J_planar_upper_perMeV\"\n";
+        for (int ie=0;ie<nE;++ie) {
+          const Earth::BoundaryProducts::Bounds boundary=
+              ::gSpectrum.GetSpectrumPerMeVBounds(E_MeV[(std::size_t)ie]);
+          spectrumOut << "ZONE T=\"E_" << E_MeV[(std::size_t)ie]
+                      << "MeV\" I=" << nLon << " J=" << nLat << " F=POINT\n";
+          for (int j=0;j<nLat;++j) {
+            double lat=-90.0+prm.output.shellRes_deg*j;
+            if (lat>90.0) lat=90.0;
+            for (int i=0;i<nLon;++i) {
+              const int k=i+nLon*j;
+              const double t=T_byPoint[(std::size_t)k][(std::size_t)ie];
+              const double tl=TLower_byPoint[(std::size_t)k][(std::size_t)ie];
+              const double tu=TUpper_byPoint[(std::size_t)k][(std::size_t)ie];
+              const Earth::BoundaryProducts::Bounds local=
+                  Earth::BoundaryProducts::MapBoundaryIntensity(
+                      Earth::BoundaryProducts::Bounds(t,tl,tu),boundary,
+                      Earth::BoundaryProducts::CharacteristicMapping::StaticMagnetic);
+              spectrumOut << prm.output.shellRes_deg*i << " " << lat
+                          << " " << E_MeV[(std::size_t)ie]
+                          << " " << t << " " << tl << " " << tu
+                          << " " << unresolvedByPointEnergy[
+                              (std::size_t)k*(std::size_t)nE+(std::size_t)ie]
+                          << " " << boundary.nominal
+                          << " " << local.nominal << " " << local.lower << " " << local.upper
+                          << " " << 4.0*Earth::FluxNumerics::kPi*local.nominal
+                          << " " << 4.0*Earth::FluxNumerics::kPi*local.lower
+                          << " " << 4.0*Earth::FluxNumerics::kPi*local.upper
+                          << " " << Earth::FluxNumerics::kPi*local.nominal
+                          << " " << Earth::FluxNumerics::kPi*local.lower
+                          << " " << Earth::FluxNumerics::kPi*local.upper << "\n";
+            }
           }
         }
       }
@@ -2782,9 +3081,13 @@ static DipoleAnalyticReference BuildDipoleAnalyticReference(const EarthUtil::Amp
     // The reference is evaluated on the *same* discrete energy nodes as the production
     // solver.  This is deliberate: if analytic and numerical results differ, we want the
     // difference to reflect transmissivity physics, not different quadrature grids.
-    const double E_J = E_MeV[i] * MEV_TO_J;
-    Ej[i] = E_J;
-    const double R_GV = RigidityFromEnergy_GV(E_J, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
+    const double coordinateEnergy_J=E_MeV[i]*MEV_TO_J;
+    const double particleEnergy_J=
+        ::gSpectrum.Units().ParticleEnergyJ(E_MeV[i]);
+    Ej[i]=coordinateEnergy_J;
+    const double R_GV=RigidityFromEnergy_GV(
+        particleEnergy_J,std::abs(prm.species.charge_e)*QE,
+        prm.species.mass_amu*AMU);
     // Hard-cutoff approximation:
     //   below Rc_vert -> inaccessible  -> T_ref = 0
     //   above Rc_vert -> accessible    -> T_ref = open-sky factor
@@ -2793,8 +3096,8 @@ static DipoleAnalyticReference BuildDipoleAnalyticReference(const EarthUtil::Amp
     // the detailed penumbra is collapsed into a step function in rigidity.
     const double Tref = (R_GV >= ref.Rc_vert_GV) ? ref.T_weighted : 0.0;
     ref.T_ref[i] = Tref;
-    const double v = SpeedFromEnergy(E_J, prm.species.mass_amu*AMU);
-    const double Jb = ::gSpectrum.GetSpectrum(E_J);
+    const double v=SpeedFromEnergy(particleEnergy_J,prm.species.mass_amu*AMU);
+    const double Jb=::gSpectrum.GetSpectrum(coordinateEnergy_J);
     const double Jloc = Tref * Jb;
     g[i] = (v > 0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
   }

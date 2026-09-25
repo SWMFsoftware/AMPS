@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Strict schema tests for the observation-facing Step-5 C19 reader."""
+"""Strict schema tests for the observation-facing Step-5/6 C19 contract."""
 
 from __future__ import annotations
 
@@ -60,6 +60,18 @@ STEP5_DIRECT_ACCESS_SUFFIX = [
     "response_weighted_unresolved_support",
 ]
 
+# Step 6 is also append-only.  These fields turn each access row into a physical
+# directional-intensity sample while retaining lower/upper uncertainty bounds for
+# unresolved characteristics.  Keeping this as a separate exact inventory makes the
+# compatibility rule explicit: neither the legacy nor Step-5 blocks may move, and the
+# Step-6 block may not silently lose, rename, or reorder a physical quantity.
+STEP6_DIRECT_ACCESS_SUFFIX = [
+    "J_boundary_perMeV", "J_boundary_lower_perMeV", "J_boundary_upper_perMeV",
+    "boundary_factor", "boundary_factor_lower", "boundary_factor_upper",
+    "J_directional_local_perMeV", "J_directional_local_lower_perMeV",
+    "J_directional_local_upper_perMeV",
+]
+
 
 def producer_direct_access_columns(source: str):
     """Extract the Step-5 DIRECT_ACCESS VARIABLES declaration from C++ source."""
@@ -102,6 +114,15 @@ def record(*, allowed: bool, overrides=None):
         "adaptive_target_reached": 1,
         "adaptive_max_samples_reached": 0,
         "response_weighted_unresolved_support": 0.0,
+        "J_boundary_perMeV": 2.0,
+        "J_boundary_lower_perMeV": 1.8,
+        "J_boundary_upper_perMeV": 2.2,
+        "boundary_factor": 1.0 if allowed else 0.0,
+        "boundary_factor_lower": 1.0 if allowed else 0.0,
+        "boundary_factor_upper": 1.0 if allowed else 0.0,
+        "J_directional_local_perMeV": 2.0 if allowed else 0.0,
+        "J_directional_local_lower_perMeV": 1.8 if allowed else 0.0,
+        "J_directional_local_upper_perMeV": 2.2 if allowed else 0.0,
     }
     if overrides:
         values.update(overrides)
@@ -135,12 +156,17 @@ def main() -> int:
                      "3d/CutoffRigidityMode3D.cpp"):
         source_path = src_earth / relative
         source = source_path.read_text(errors="replace")
-        expected_columns = LEGACY_DIRECT_ACCESS_PREFIX + STEP5_DIRECT_ACCESS_SUFFIX
+        step5_columns = LEGACY_DIRECT_ACCESS_PREFIX + STEP5_DIRECT_ACCESS_SUFFIX
         actual_columns = producer_direct_access_columns(source)
-        if actual_columns != expected_columns:
+        if actual_columns[:len(step5_columns)] != step5_columns:
             raise AssertionError(
-                "%s changed the append-only DIRECT_ACCESS column ABI:\nexpected %s\nactual   %s" %
-                (relative, expected_columns, actual_columns))
+                "%s changed the legacy/Step-5 DIRECT_ACCESS prefix:\nexpected %s\nactual   %s" %
+                (relative, step5_columns, actual_columns[:len(step5_columns)]))
+        if actual_columns[len(step5_columns):] != STEP6_DIRECT_ACCESS_SUFFIX:
+            raise AssertionError(
+                "%s changed the exact Step-6 DIRECT_ACCESS suffix:\nexpected %s\nactual   %s" %
+                (relative, STEP6_DIRECT_ACCESS_SUFFIX,
+                 actual_columns[len(step5_columns):]))
         for name in VARIABLES:
             if '\\"%s\\"' % name not in source:
                 raise AssertionError("%s writer is missing Step-5 column %s" %
@@ -176,8 +202,14 @@ def main() -> int:
             "d.adaptiveEstimatedError_GV,d.adaptiveMaxAmbiguousWidth_GV,"
             "d.adaptiveTargetReached,d.adaptiveMaxSamplesReached,"
             "d.responseWeightedUnresolvedSupport")
+        step6_values = (
+            "boundaryIntensity.nominal,boundaryIntensity.lower,boundaryIntensity.upper,"
+            "boundaryFactor.nominal,boundaryFactor.lower,boundaryFactor.upper,"
+            "directionalIntensity.nominal,directionalIntensity.lower,"
+            "directionalIntensity.upper")
         for label, values in (("legacy prefix", legacy_values),
-                              ("Step-5 suffix", step5_values)):
+                              ("Step-5 suffix", step5_values),
+                              ("Step-6 suffix", step6_values)):
             if values not in compact:
                 raise AssertionError("%s writer has mismatched %s value order" %
                                      (relative, label))
@@ -226,6 +258,17 @@ def main() -> int:
         assert curve[1].weighted_access_sr == 0.25
         assert curve[1].exit_state_valid == 1
         assert curve[1].adaptive_target_reached == 1
+
+        # The observation reader must consume the current 54-column producer output,
+        # not merely tolerate its source declaration. This guards the prior C19
+        # failure mode where a schema mismatch yielded no comparison at all.
+        valid_step6 = root / "valid_step6.dat"
+        write_cube(valid_step6,[record(allowed=False),record(allowed=True)],
+                   variables=VARIABLES+STEP6_DIRECT_ACCESS_SUFFIX)
+        cube_step6=c19.parse_directional_access(valid_step6)
+        if cube_step6.samples != cube.samples:
+            raise AssertionError(
+                "Step-6 suffix changed C19 access samples or suppressed comparison input")
 
         bad_weight = root / "bad_weight.dat"
         write_cube(bad_weight, [

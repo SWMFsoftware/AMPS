@@ -15,6 +15,26 @@ offset, GSM/SI units, domain, derived-E interpolation mode, and a deterministic
 generation ID. Cutoff and density/flux retain that ID and fail if a replacement is
 published between products.
 
+Roadmap Step 6 requires no SWMF-specific spectrum implementation. After the current
+coupler state is frozen and published, `Mode3DForwardSWMF.cpp` calls
+`Earth::Mode3D::RunDensityAndFlux()`. That path uses the same
+`BoundaryProducts.h` kernel as standalone Mode3D and gridless runs, including explicit
+MeV/particle or MeV/nucleon coordinates, log-intensity time-table selection, boundary
+uncertainty, normalized/raw PAD and spatial modes, differential spectra, density,
+omnidirectional and planar flux, channels, detector rates, and unresolved bounds.
+
+This is an instantaneous quasi-static fold at each published SWMF snapshot. It does
+not yet transport a distribution across changing coupled states or enable electric
+acceleration. Even though the compact snapshot includes derived `E=-v×B`, production
+Step 6 deliberately selects the static-magnetic `J_local=A*J_boundary` mapping; the
+general `j/p^2` mapping remains a tested kernel for the later electromagnetic mover.
+Full cadence synchronization and time-history products remain Roadmap Step 11 work.
+
+The coupled output schemas and append-only compatibility rules are those documented in
+`../3d/README.md`. Validate the backend-independent product physics with
+`./srcEarth/test/UBoundaryProducts/run_test.sh`; retain the existing coupled and C/F
+tests for field assembly, trajectory access, and observation comparisons.
+
 Assembly rejects unavailable buffers, incomplete/duplicate ownership, and non-finite
 owner or reduced values. Those errors are not mapped to forbidden particle access.
 Step 3 does not change the coupled field values, AMR interpolation, trajectory mover,

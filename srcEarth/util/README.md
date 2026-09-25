@@ -1,5 +1,56 @@
 # Shared numerical utilities
 
+## `BoundaryProducts.h` — Roadmap Step 6
+
+`BoundaryProducts.h` is a header-only C++11 production kernel between trajectory
+access and science products. It has no AMPS, MPI, SPICE, field-model, or mesh types, so
+gridless, standalone Mode3D, and SWMF-coupled Mode3D cannot acquire different spectrum
+normalizations or quadrature rules.
+
+The unit contract is explicit:
+
+| Quantity | Unit/convention |
+|---|---|
+| public energy coordinate | MeV/particle or MeV/nucleon, declared by `SpectrumUnits` |
+| spectrum callback energy | coordinate energy converted to joule-equivalent units |
+| callback intensity | m^-2 s^-1 sr^-1 per coordinate joule |
+| saved differential intensity | m^-2 s^-1 sr^-1 per declared coordinate MeV |
+| omnidirectional/planar integral flux | m^-2 s^-1 |
+| number density | m^-3 |
+| detector geometric factor | m2 sr |
+| detector folded rate | s^-1 |
+
+`BuildEnergyCoordinateGridMeV()` performs rigidity scans in total particle energy and
+returns nodes in the declared coordinate. `IntegrateDensityWithUnits()` integrates over
+that coordinate but evaluates relativistic speed from total particle energy. This is
+the required Jacobian for MeV/nucleon spectra; treating the coordinate as particle MeV
+would shift ion access and density by factors involving mass number.
+
+`SelectTemporalSpectrum()` requires a rectangular, strictly increasing time table with
+positive finite intensities and interpolates their logarithms. It reports exact,
+interpolated, gap-interpolated, gap-held, clamped, or zero-outside status. Gap and
+out-of-range choices are explicit; the caller can choose a deterministic earlier row
+on an exact HOLD_NEAREST tie or fail.
+
+`PadWeight()` and `SpatialWeight()` support `Raw` and `UnitMean`; their analytic
+normalizers are also used when constructing conservative unresolved upper bounds.
+`DirectionalAccessBounds()` maps allowed/forbidden/unresolved states to exact or bounded
+access without inventing a nominal value for unresolved trajectories.
+
+`EvaluateIsotropicProducts()` emits one `ProductSet`: density, omnidirectional and
+isotropic-equivalent one-way planar flux, clipped channels, detector rates, and every
+differential sample needed to reproduce the integrals. `FoldDirectionalDifferential()`
+performs an explicit solid-angle and projected-area fold when directional samples are
+available. Static production uses `J_local=A*J_boundary`; the separately tested general
+phase-space branch multiplies by `(p_local/p_boundary)^2` for a future validated
+electromagnetic mover.
+
+Run its strict references with:
+
+```bash
+./test/UBoundaryProducts/run_test.sh
+```
+
 ## `TrajectoryContract.h` — Roadmap Step 4
 
 `TrajectoryContract.h` owns the common gridless/Mode3D/SWMF characteristic interface.

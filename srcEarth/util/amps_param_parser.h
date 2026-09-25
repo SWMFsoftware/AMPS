@@ -695,9 +695,10 @@ namespace EarthUtil {
   // Notes:
   // - DS_NINTERVALS is stored as "intervals" (not points) because this is the
   //   most robust way to define a grid: Npoints = Nintervals + 1.
-  // - Energies are kinetic energy. For PROTON this is MeV per particle.
-  //   For ions, MeV/n is commonly used; we keep the unit label but do not
-  //   apply any per-nucleon conversion inside the parser.
+  // - Values are the explicit spectrum coordinate. They are MeV/particle by legacy
+  //   default or MeV/nucleon when SPEC_ENERGY_BASIS=PER_NUCLEON. The parser stores
+  //   them unchanged; BoundaryProducts applies the required total-particle conversion
+  //   only for rigidity and speed.
   struct DensitySpectrumParam {
     double Emin_MeV{1.0};
     double Emax_MeV{1000.0};
@@ -801,6 +802,13 @@ namespace EarthUtil {
     // warning.  Validation runs should set this true so excessive unresolved sampling
     // cannot pass as a physically shielded (zero-flux) result.
     bool failOnUnresolved{false};      // DS_FAIL_ON_UNRESOLVED
+
+    // Internal coupled-run override, not an AMPS_PARAM.in keyword. SWMF publishes a
+    // field generation as reference UTC + authoritative PT time. The product adapters
+    // use this offset only to select a time-dependent boundary table; field rotations,
+    // snapshot identity, and trajectory behavior continue to use the existing epoch.
+    bool spectrumEpochOffsetActive{false};
+    double spectrumEpochOffset_s{0.0};
   };
 
   //====================================================================================
@@ -833,11 +841,18 @@ namespace EarthUtil {
     // Pitch angle distribution
     std::string padModel{"ISOTROPIC"};   // BA_PAD_MODEL
     double padExponent{2.0};             // BA_PAD_EXPONENT  (n in sin^n or |cos|^n)
+    // RAW preserves the entered amplitude. UNIT_MEAN divides by the analytic
+    // full-sphere mean.  Keeping this explicit prevents a change in PAD shape from
+    // silently changing the boundary-integrated intensity.
+    std::string padNormalization{"RAW"}; // BA_PAD_NORMALIZATION RAW|UNIT_MEAN
 
     // Spatial flux modulation
     std::string spatialModel{"UNIFORM"}; // BA_SPATIAL_MODEL
     double daysideFactor{1.0};           // BA_DAYSIDE_FACTOR   (GSM x > 0 multiplier)
     double nightsideFactor{1.0};         // BA_NIGHTSIDE_FACTOR (GSM x <= 0 multiplier)
+    // PAD and spatial normalization are independent by design.  This lets a user
+    // preserve the absolute amplitude of one factor while normalizing the other.
+    std::string spatialNormalization{"RAW"}; // BA_SPATIAL_NORMALIZATION
   };
 
   struct Species {
@@ -1468,13 +1483,23 @@ namespace EarthUtil {
   //
   //   NAME    — identifier string used in output column headings (F_NAME_m2s1).
   //             Allowed characters: letters, digits, underscores.
-  //   E1_MeV  — lower channel boundary [MeV], must be > 0.
-  //   E2_MeV  — upper channel boundary [MeV], must be > E1_MeV.
+  //   E1_MeV  — lower boundary in the declared MeV coordinate, must be > 0.
+  //   E2_MeV  — upper boundary in the declared MeV coordinate, must be > E1_MeV.
   //====================================================================================
   struct EnergyChannel {
     std::string name;       // identifier  (e.g. "CH1", "P10_100")
-    double E1_MeV{0.0};    // lower bound [MeV]
-    double E2_MeV{0.0};    // upper bound [MeV]
+    double E1_MeV{0.0};    // lower bound [declared coordinate MeV]
+    double E2_MeV{0.0};    // upper bound [declared coordinate MeV]
+  };
+
+  // Compact top-hat detector response used by the input-file interface.  The
+  // geometric factor is already angular-integrated effective area*solid-angle
+  // [m^2 sr].  More detailed tabulated responses call BoundaryProducts directly.
+  struct DetectorResponseChannel {
+    std::string name;
+    double E1_MeV{0.0};    // declared spectrum coordinate
+    double E2_MeV{0.0};
+    double geometricFactor_m2_sr{0.0};
   };
 
   //====================================================================================
@@ -1654,6 +1679,11 @@ namespace EarthUtil {
     // User-defined integral-flux channels.  Empty when #ENERGY_CHANNELS is absent;
     // in that case only the total integral flux F_tot is written to the output files.
     std::vector<EnergyChannel> fluxChannels;
+
+    // Optional detector-response folds parsed from #DETECTOR_RESPONSES.  Empty by
+    // default, so existing output files and numerical paths remain unchanged except
+    // for append-only Step-6 columns.
+    std::vector<DetectorResponseChannel> detectorResponses;
 
     // Retained for ABI/source compatibility with older parser clients.
     // The strict parser no longer populates this map: unknown input sections or

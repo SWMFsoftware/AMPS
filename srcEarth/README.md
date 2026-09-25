@@ -1,5 +1,81 @@
 # SEP-in-geospace model: compact global fields in Mode3D
 
+## Roadmap Step 6 implemented: boundary distributions and flux/spectrum products
+
+Step 6 turns the Step-5 access function into physical particle products through one
+field-backend-independent kernel, `util/BoundaryProducts.h`. Gridless, standalone
+Mode3D, and the SWMF-coupled Mode3D callback now use the same equations and numerical
+quadrature for:
+
+- boundary, local directional, omnidirectional, and isotropic-equivalent one-way
+  planar differential spectra;
+- number density, total and configured-band integral flux;
+- top-hat detector-response folded count rates; and
+- nominal/lower/upper products combining declared spectrum uncertainty with unresolved
+  trajectory bounds.
+
+The released characteristic is still static magnetic. It uses
+`J_local=A*J_boundary`. The shared kernel also implements and directly tests the
+Liouville mapping `J_local=A*(p_local/p_boundary)^2*J_boundary`, but production
+electric/time-dependent tracing remains fail-fast until its Step-4 mover contract is
+released. Existing cutoff, mover, reference, and C/F acceptance gates are unchanged.
+
+All five spectrum families (`POWER_LAW`, `POWER_LAW_CUTOFF`, `LIS_FORCE_FIELD`,
+`BAND`, and `TABLE`) accept explicit coordinate and uncertainty metadata:
+
+```text
+#SPECTRUM
+SPEC_ENERGY_BASIS          PER_NUCLEON
+SPEC_INTENSITY_UNIT        PER_MEV_PER_NUCLEON
+SPEC_MASS_NUMBER           4
+SPEC_RELATIVE_UNCERTAINTY  0.15
+SPEC_TIME_INTERPOLATION    LOG_INTENSITY
+SPEC_TIME_MAX_GAP_S        900
+SPEC_TIME_GAP_POLICY       INTERPOLATE_FLAG
+SPEC_TIME_OUT_OF_RANGE     FAIL
+```
+
+`PER_PARTICLE`, `PER_MEV`, mass number 1, zero uncertainty, endpoint clamping, and an
+unlimited interpolation gap remain the legacy defaults. A per-nucleon grid is converted
+to total particle energy before rigidity and speed evaluation and back to its declared
+coordinate for spectra and channel integration. Contradictory unit declarations,
+nonpositive time-table intensities, duplicate epochs, invalid gaps, and malformed
+detector definitions fail before tracing.
+
+PAD and dayside/nightside factors can retain their historical raw amplitude or be
+normalized to unit full-sphere/hemispheric mean:
+
+```text
+#BOUNDARY_ANISOTROPY
+BA_PAD_NORMALIZATION      UNIT_MEAN
+BA_SPATIAL_NORMALIZATION  UNIT_MEAN
+
+#DETECTOR_RESPONSES
+DR_BEGIN
+P5  40  80  0.01   ! name, coordinate-energy bounds, geometric factor [m2 sr]
+DR_END
+```
+
+New spectrum and integral-product fields are append-only. The first 24 legacy and next
+21 Step-5 `DIRECT_ACCESS` columns retain their exact names, positions, and value order;
+Step 6 appends nine boundary/access/local-intensity columns. Density/spectrum files
+carry `AUXDATA` for energy basis, intensity units, mass number, uncertainty, temporal
+selection status, gap flag, interpolation fraction, characteristic mapping, and planar
+flux convention. Shell runs add independently reintegrable `*_spectrum.dat` and
+`*_flux.dat` products.
+
+Run the focused Step-6 reference suite from `srcEarth`:
+
+```bash
+./test/UBoundaryProducts/run_test.sh
+```
+
+It uses closed-form spectrum, unit/Jacobian, analytic PAD, temporal interpolation,
+channel-edge, detector-response, directional-fold, all-blocked, phase-space, and
+written-spectrum reintegration references. `test/list` schedules it independently;
+the existing F1, F2, F4, F5, F11, F12, F15, F16 and observation-facing C8/C9/C10/C19
+gates remain authoritative end-to-end validation and were not relaxed.
+
 ## Roadmap Steps 4 and 5 implemented: trajectories and directional access
 
 Step 4 adds `util/TrajectoryContract.h`, a dependency-free request/result layer shared
@@ -201,6 +277,7 @@ Mode3D now keeps the standard distributed AMPS mesh and replicates only compact 
 - `3d/Mode3DParallel.cpp`
 - `3d/Mode3DParallel.h`
 - `util/FluxNumerics.h`
+- `util/BoundaryProducts.h`
 - `util/FieldProvider.h`
 - `util/TrajectoryContract.h`
 - `util/AdaptiveDirectAccess.h`
@@ -210,10 +287,14 @@ Mode3D now keeps the standard distributed AMPS mesh and replicates only compact 
 - `util/cutoff_cli.cpp`
 - `util/cutoff_cli.h`
 - `main.cpp`
+- `boundary/spectrum.h`
+- `boundary/spectrum.cpp`
+- `boundary/README.md`
 - `3d_forward_swmf/Mode3DForwardSWMF.cpp`
 - `3d_forward_swmf/Mode3DForwardSWMF.h`
 - `test/UTrajectoryCore/*`
 - `test/UDirectionalAccess/*`
+- `test/UBoundaryProducts/*`
 - `test/C8/run_C8.py`
 - `test/C19/run_C19.py`
 - `test/list`

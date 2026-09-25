@@ -8,7 +8,9 @@ trap 'rm -rf "$build_dir"' EXIT
 
 "${CXX:-c++}" -std=c++11 -Wall -Wextra -Werror -pedantic \
   -I"$script_dir" \
-  "$script_dir/test_boundary_products.cpp" -o "$build_dir/test_boundary_products"
+  "$script_dir/test_boundary_products.cpp" \
+  "$source_root/boundary/spectrum.cpp" \
+  -o "$build_dir/test_boundary_products"
 "$build_dir/test_boundary_products"
 
 # Compile and execute the production anisotropy adapter as a separate focused
