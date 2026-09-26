@@ -1,5 +1,112 @@
 # SWMF-coupled field snapshots, trajectories, and directional access
 
+## Roadmap Step 11: coupled flux/spectrum callback
+
+The backward-product callback now completes flux and spectrum products from the same
+immutable snapshot used by coupled cutoff/access. Once Step 9 has assembled and frozen
+the current SWMF B/u arrays, the callback makes a value-owned parameter block at the
+snapshot's absolute UTC and calls `Earth::Mode3D::RunDensityAndFlux()` directly. This
+is the shared Step-6 backward-characteristic product integrator. The forward
+`cDensity3D` and `cSphereFlux3D` samplers remain confined to historical forward mode
+and are not used to validate or fill a Step-11 result.
+
+### Time, ephemeris, and control synchronization
+
+For POINTS and SHELLS, the configured geometry is evaluated at the frozen field UTC.
+For TRAJECTORY, `BuildSynchronizedCoupledProductParam_()` retains only spacecraft
+samples matching that UTC within 1 ms, rebuilds the flattened GSM point list, and
+remaps LOCATION-qualified directional apertures. No match is fatal; the code never
+forms an unintended field-epoch × trajectory-time Cartesian product.
+
+Before any trajectory collective, every rank independently fingerprints and compares:
+
+- species charge and mass;
+- energy range, spacing, access scan, and direction budget;
+- the raw boundary-spectrum definition, basis, units, mass number, and uncertainty;
+- ordered integral-flux channels and detector-response support/geometric factors; and
+- coordinate frame plus selected point/trajectory/shell state and ephemeris UTC.
+
+The boundary spectrum is then selected once at the final snapshot UTC. Every numeric
+file records that requested UTC, the active/interpolated table epoch, temporal status,
+gap flag/fraction, and the complete product/response/observation fingerprints.
+
+### Fail-closed completion
+
+Coupled mode requires the termination summary even if an input would normally suppress
+that optional diagnostic; this does not change trajectory outcomes or thresholds. The
+Mode3D writer records files only after flush and close. Rank zero then requires a local
+spectrum, density plus flux (or a combined shell density/flux file), termination
+summary, exact termination-count closure, nonempty artifacts, matching snapshot and
+spectrum epochs, and the configured unresolved tolerance. It writes
+`swmf_flux_spectrum_manifest<SUFFIX>.json` only after those checks. The frozen field is
+released and `swmf_product_status<SUFFIX>.json` changes to PASS only after the manifest
+itself closes successfully.
+
+Run the portable tests with:
+
+```bash
+./srcEarth/test/USWMFCoupledProducts/run_test.sh
+```
+
+Use `../examples/swmf_step11_flux_spectrum.in.template` for live runs and the Step-9
+snapshot replay template for the offline reference. Exact multi-artifact comparison,
+1x1/2x8/8x16 and scheduler matrices, response closure, and O3 requirements are in
+`../test/USWMFCoupledProducts/README.md`. This path is Phase-1 quasi-static and
+magnetic-only; enabling experimental E does not release a time-dependent product map.
+
+## Roadmap Step 10: production cutoff/access callback
+
+The cutoff/access hook is now a collective, content-identified transaction rather than
+a rank-local callback counter. After `ReadyForBackwardProductCalculation()` confirms a
+complete receive, `ShouldRunBackwardProductCalculation()` compares the authoritative PT
+time, configured `FIELD_UPDATE_DT`, and last-completed scheduler state on every MPI
+rank. All ranks either skip or run. An in-process clock rollback or divergent cadence
+state is fatal; a skipped callback never enters a solver collective and never consumes
+the cadence slot. The current epoch is committed only after every requested product
+returns successfully. A newly started/restarted process evaluates its first complete
+epoch again, which provides the required restart-parity result.
+
+Final cutoff/access filenames are constructed only after Step-9 B/u assembly creates
+the content-derived snapshot ID:
+
+```text
+.swmf_t0000003600.000000000s_sidfield-v1-...
+```
+
+Callback number, MPI decomposition, and thread count are deliberately absent from this
+scientific identity. The diagnostic mesh dump uses exactly the same suffix. Every
+cutoff/access Tecplot file embeds `AUXDATA` for snapshot ID, absolute epoch, mesh
+revision, content fingerprint, and boundary policy. Rank zero records files only after
+`fclose` succeeds, verifies that each is nonempty, and writes
+`swmf_cutoff_access_manifest*.json`. The manifest has `RESULT: PASS` only after the
+complete artifact set exists. The older fail-closed `swmf_product_status*.json` remains
+`FAILED` until all requested products finish. Before field assembly can determine a
+snapshot ID, a clearly labelled `swmf_attempt_n...` status protects early fatal exits;
+after assembly the final snapshot-named FAILED status is durably written before that
+provisional marker is removed.
+
+Step 10 activates the parsed outer-boundary policy:
+
+- `BOUNDARY_TYPE BOX` preserves the historical six-face physical escape box.
+- `BOUNDARY_TYPE SHUE` uses the Shue magnetopause and `DOMAIN_X_MIN` nightside tail
+  cap. `SHUE_R0 AUTO` and `SHUE_ALPHA AUTO` use configured PDYN [nPa] and IMF Bz [nT].
+  Numeric r0 is in Re and alpha is dimensionless.
+
+For SHUE, a particle that reaches another computational face while still inside the
+magnetopause terminates as `INVALID_FIELD`; it is not counted as allowed access. An
+in-domain missing AMR leaf or incomplete compact interpolation row receives the same
+unresolved termination. BOX follows its pre-Step-10 event code unchanged.
+
+`POINTS`, `TRAJECTORY`, and `SHELLS` continue to call the common Mode3D movers,
+adaptive/fixed access searches, termination accounting, and MPI schedulers. Progress
+and filesystem writes remain root-only. Phase-1 output is instantaneous/quasi-static:
+the frozen B snapshot does not represent a time-dependent characteristic.
+
+Use `../examples/swmf_step10_cutoff_access.in.template` for the live configuration and
+`../examples/standalone_step9_swmf_replay.in.template` for exact offline replay. The
+numerical tests, live/replay comparator, linked 1x1/2x8/8x16 acceptance matrix, and
+failure cases are specified in `../test/USWMFCoupledAccess/README.md`.
+
 ## Roadmap Step 9: coherent live state, freeze, export, and replay
 
 Before every requested backward-product callback,

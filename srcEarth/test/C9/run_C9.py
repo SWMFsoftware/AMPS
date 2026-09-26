@@ -609,6 +609,39 @@ def normalize_tecplot_variable_name(name: str) -> str:
     return name.strip().lower().replace("-", "_").replace(" ", "_")
 
 
+_TECPLOT_AUXDATA_RECORD = re.compile(
+    r'^AUXDATA\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*"[^"]*"\s*$',
+    re.IGNORECASE,
+)
+
+
+def is_tecplot_non_data_record(text: str, path: Path, line_number: int) -> bool:
+    """Identify validated Tecplot header records that are not numeric rows.
+
+    Roadmap Step 10 added snapshot and outer-boundary provenance as standard
+    Tecplot ``AUXDATA`` records.  C9 previously skipped only ``TITLE`` and
+    ``ZONE`` and therefore attempted to convert the new provenance line to
+    floats, aborting before ``C9_comparison.csv`` could be written.
+
+    This helper deliberately does *not* ignore arbitrary nonnumeric text.  It
+    accepts only the two legacy header records and a syntactically complete
+    ``AUXDATA KEY="value"`` record.  A truncated or unquoted AUXDATA record is
+    rejected, and every existing VARIABLES, row-width, access-state, and
+    scientific comparison gate remains active.
+    """
+    upper = text.upper()
+    if upper.startswith(("TITLE", "ZONE")):
+        return True
+    if upper.startswith("AUXDATA"):
+        if _TECPLOT_AUXDATA_RECORD.fullmatch(text) is None:
+            raise ValueError(
+                "%s line %d has malformed Tecplot AUXDATA: %s" %
+                (path, line_number, text)
+            )
+        return True
+    return False
+
+
 def parse_tecplot_shell_penumbra(path: Path) -> List[ShellRow]:
     """Read common cutoff columns from either GRIDLESS or GRIDDED output.
 
@@ -638,7 +671,7 @@ def parse_tecplot_shell_penumbra(path: Path) -> List[ShellRow]:
                     for value in re.findall(r'"([^"]+)"', text)
                 ]
                 continue
-            if upper.startswith(("TITLE", "ZONE")):
+            if is_tecplot_non_data_record(text, path, line_number):
                 continue
             try:
                 values = [float(token) for token in text.split()]
@@ -716,7 +749,7 @@ def parse_tecplot_shell_access(path: Path) -> List[AccessRow]:
                 variables = [normalize_tecplot_variable_name(value)
                              for value in re.findall(r'"([^"]+)"', text)]
                 continue
-            if upper.startswith(("TITLE", "ZONE")):
+            if is_tecplot_non_data_record(text, path, line_number):
                 continue
             try:
                 numeric_rows.append(

@@ -1,5 +1,72 @@
 # Shared numerical utilities
 
+## `SWMFCoupledProductsContract.h` — Roadmap Step 11
+
+This dependency-free header defines the scientific identity and completion contract
+for live SWMF density, local-spectrum, integral-flux/channel, detector-rate, and
+termination products. Production and tests use the same functions; the suite does not
+mock the rules in a separate implementation.
+
+`ProductControl` contains every setting that changes the Step-6 fold: output mode,
+species, energy/access sampling, boundary mode, raw spectrum key/value definition,
+energy basis and units, spectrum uncertainty, ordered energy channels, detector
+support/geometric factors, coordinate frame, ephemeris/point state, and shell geometry.
+Canonical fingerprints sort only the map-shaped spectrum keys; channel, response, and
+observation order is retained because it changes output schema and row meaning.
+Dedicated channel, response, and observation fingerprints make a mismatch diagnosable
+without weakening the complete control identity.
+
+`ProductRunSummary` carries the actual spectrum evaluation and active-table epochs,
+temporal interpolation status, location/energy/direction sizes, sampled/retried/
+resolved/allowed counts, the complete termination vector, maximum unresolved fraction,
+the configured unresolved tolerance, and the close-verified artifact inventory.
+`ValidateRunSummary()` requires counts to close and, for a PASS transaction, requires
+spectrum, density, flux, and termination roles plus the existing unresolved gate.
+`BuildProductsManifestJson()` additionally requires complete Step-9 provenance, an
+exact time/snapshot suffix, valid BOX/SHUE policy, and equality between field UTC and
+boundary-spectrum evaluation UTC. It emits the explicitly limited
+`INSTANTANEOUS_QUASI_STATIC`/`STATIC_MAGNETIC` schema.
+
+Run the analytic, fixed-contract, negative, and exact-replay tests with:
+
+```bash
+./test/USWMFCoupledProducts/run_test.sh
+```
+
+The companion `compare_flux_products.py` validates a complete manifest-enrolled set,
+including units and response/observation identity, before numeric comparison. Its
+default tolerance is exact; any nonzero campaign tolerance must be passed explicitly.
+The linked F6/F7/F13/F17, I-F03/I-F06/I-F07/I-F10, and O3 procedures remain separate
+release evidence and are documented in the test README.
+
+## `SWMFCoupledAccessContract.h` — Roadmap Step 10
+
+This dependency-free header defines the decisions that must be identical in the live
+SWMF component, standalone replay, and numerical tests:
+
+- `CadenceGate` schedules distinct authoritative PT epochs, skips duplicates, rejects
+  an in-process time rollback, and advances only after a successful product commit.
+- `BuildProductSuffix()` binds nine-decimal simulation time and the complete Step-9
+  snapshot ID into a restart/layout-independent filename.
+- `BoundaryPolicy` separates a physical BOX or Shue+tail-cap escape from unavailable
+  computational data. The Shue AUTO coefficients use explicit PDYN and IMF Bz inputs;
+  missing AMR coverage inside the physical surface is never allowed access.
+- `BuildAccessManifestJson()` emits the self-identifying, quasi-static Step-10 artifact
+  transaction with an explicit `RESULT`. A PASS requires complete field provenance,
+  finite time, a matching time/snapshot suffix, a valid domain/policy, and at least one
+  distinct nonempty closed artifact.
+
+The production Mode3D tracer calls these functions directly; the test harness does not
+copy their formulas. Run:
+
+```bash
+./test/USWMFCoupledAccess/run_test.sh
+```
+
+The companion comparator requires identical snapshot/content/mesh provenance before
+it compares numeric cutoff/access rows. Its default numeric tolerance is exact; a
+campaign tolerance must be supplied explicitly and does not alter any C/F gate.
+
 ## `SWMFSnapshotContract.h` — Roadmap Step 9
 
 `SWMFSnapshotContract.h` is the dependency-free interchange and lifecycle contract

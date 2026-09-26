@@ -516,6 +516,19 @@ All commands below are one-line commands run from the C10 directory.
 python3 -m py_compile poes_sem2.py download_poes_sem2.py build_poes_reference.py run_C10.py && python3 -m unittest discover -s tests -v
 ```
 
+The Step-10 compatibility suite additionally feeds the real C9 and C10 readers
+production-ordered Tecplot files containing snapshot `AUXDATA`:
+
+```bash
+./srcEarth/test/USWMFCoupledAccess/run_test.sh
+```
+
+C10 validates and skips only well-formed `AUXDATA KEY="value"` header records. It
+continues to reject malformed metadata, missing variables, wrong row widths, and
+inconsistent access-state flags before applying the unchanged P6/P7 observational
+RMSE, bias, correlation, and expansion gates. Thus the repair restores comparison
+artifact generation without making the scientific test easier to pass.
+
 ```bash
 python3 run_C10.py --validate-references --reference reference_C10_poes_meped_boundary.csv.gz
 ```

@@ -15,6 +15,69 @@ Energy/rigidity conversion, energy coordinates, angular sampling, channel clippi
 quadrature, transmission diagnostics, and unresolved bounds come from
 `../util/FluxNumerics.h` in both backends.
 
+## Step 11 SWMF density/flux/spectrum transaction
+
+`DensityMode3D.cpp` remains the single Mode3D product implementation for standalone
+and coupled operation. The SWMF bridge calls `RunDensityAndFlux()` directly after
+freezing the Step-9 field; no second integrator and no forward-Monte-Carlo reference
+has been introduced. `EvaluateProductSet_()` continues to delegate density, local
+spectrum, total/planar flux, channel clipping, and detector response folds to
+`BoundaryProducts::EvaluateIsotropicProducts()`.
+
+Step 11 adds publication guarantees around that unchanged physics kernel:
+
+- `DescribeDensityFluxProductControl()` provides a value-owned description of the
+  species, energy/access grid, boundary spectrum, units/uncertainty, ordered channels,
+  detector responses, and selected observation state. Coupled ranks compare its
+  fingerprint before entering trajectory collectives.
+- The final field UTC is passed to `cSpectrum` exactly once per frozen batch. Every
+  output records both the requested evaluation UTC and the active/interpolated table
+  epoch, temporal status/gap/fraction, and the same field snapshot identity.
+- Every `ofstream` is explicitly opened, flushed, and closed. A filename is appended
+  to `gLastDensityFluxArtifactFiles` only after closure succeeds, so a partial or
+  delayed filesystem failure cannot enter a PASS manifest.
+- `ProductRunSummary` aggregates sampled/retried/resolved/allowed counts and every
+  termination category directly from the arrays used by the writer. Categories must
+  sum exactly to sampled trajectories. Unresolved values retain the existing nominal,
+  lower, and upper behavior; the coupled manifest applies the configured tolerance
+  unchanged.
+- `GetLastDensityFluxArtifactFiles()` and `GetLastDensityFluxRunSummary()` expose only
+  this transaction evidence to the bridge. They do not calculate or alter a product
+  and are cleared at the start of every call.
+
+For POINTS/TRAJECTORY, a complete coupled set contains separate density, spectrum,
+flux, and termination files. For SHELLS, each shell has a combined density/flux file
+and a differential-spectrum file, plus the common termination summary. All carry the
+full Step-9/Step-11 AUXDATA contract. Run
+`../test/USWMFCoupledProducts/run_test.sh` for analytic open/blocked, channel/response,
+uncertainty-bound, manifest, comparator, and negative-wiring references. Linked
+live/replay and parallel/convergence gates are documented in that test directory.
+
+## Step 10 SWMF cutoff/access production path
+
+Live SWMF and standalone `SWMF_SNAPSHOT` replay now execute the same Mode3D cutoff and
+directional-access writers against the same immutable content ID. Coupled product names
+contain nanosecond-formatted PT simulation time plus the complete snapshot ID; callback
+count and MPI/thread layout do not affect the name. The writer adds snapshot epoch,
+mesh revision, content fingerprint, and outer-boundary policy as Tecplot `AUXDATA` and
+records an artifact only after the file closes successfully. The coupled bridge then
+verifies the root-owned list and writes a PASS manifest before releasing the field
+generation.
+
+The outer boundary is no longer an unconsumed parser hint. `BOX` retains the exact
+historical Cartesian classifier. `SHUE` evaluates the analytic Shue surface with an
+explicit XMIN tail cap. In the latter mode, leaving the computational mesh before
+reaching the physical magnetopause is `INVALID_FIELD`, as is a missing used AMR leaf or
+compact interpolation row. These cases remain unresolved and can trigger the existing
+`DS_FAIL_ON_UNRESOLVED`/cutoff validation policy; they are never remapped to allowed or
+forbidden access.
+
+Run `../test/USWMFCoupledAccess/run_test.sh` for cadence, naming, Shue-reference,
+escape-versus-missing-data, manifest, comparator, and source-wiring tests. A configured
+SWMF tree must additionally run the linked live/export/replay matrix documented in that
+test directory for 1x1, 2x8, and default 8x16 layouts. Existing C/F thresholds are
+unchanged.
+
 ## Step 9 synchronized SWMF snapshot/replay path
 
 The coupled backend now turns each accepted SWMF receive into a self-identifying,

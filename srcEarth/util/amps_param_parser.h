@@ -340,13 +340,13 @@ namespace EarthUtil {
     double zMin{-20.0}, zMax{20.0};
     double rInner{2.0}; // [km] inner loss sphere radius
 
-    // Runs-on-Request / CCMC-style inputs may describe the outer boundary with
-    // magnetopause-oriented keywords such as BOUNDARY_TYPE=SHUE, SHUE_R0=AUTO,
-    // and SHUE_ALPHA=AUTO.  The standalone Mode3D code in this source tree still
-    // uses the rectangular/capped domain above for particle classification, but
-    // keeping these tokens in the parsed configuration lets the strict parser
-    // accept RoR files without silently discarding what the user requested.
-    // A future Shue-boundary implementation can consume the stored values here.
+    // Roadmap Step 10 makes this an active Mode3D trajectory-classification policy.
+    // BOX uses all six computational faces as physical escape surfaces. SHUE uses the
+    // Shue et al. magnetopause plus DOMAIN_X_MIN as its nightside tail cap; reaching
+    // another computational face while still inside the magnetopause is INVALID_FIELD,
+    // not allowed access. SHUE_R0 is AUTO or a positive value in Re, and SHUE_ALPHA is
+    // AUTO or a positive dimensionless value. AUTO is resolved deterministically from
+    // the configured PDYN [nPa] and IMF_BZ [nT].
     std::string boundaryType{"BOX"};
     std::string shueR0Token;
     std::string shueAlphaToken;

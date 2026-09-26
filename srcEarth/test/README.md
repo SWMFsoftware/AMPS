@@ -5,6 +5,7 @@ Earth SEP/geospace backward products.  Each test is stored in its own directory
 (`C1`, `C2`, ..., `C6`, `C11`, `C14`, `F1`, `F2`, `F3`, `F4`, `F5`, `F11`, `F12`, `F15`, `F16`,
 `UFluxNumerics`, `UFieldProvider`, `UTrajectoryCore`, `UDirectionalAccess`,
 `UBoundaryProducts`, `UStandaloneProducts`, `UStandaloneCampaign`, `USWMFSnapshot`,
+`USWMFCoupledAccess`, `USWMFCoupledProducts`,
 `UTestRunner`, ...). Test scripts are intended to be executed
 from the directory containing the `amps` executable, not from inside the test
 subdirectory.
@@ -122,7 +123,7 @@ reference, input, expected status, mover, or trace limit is changed. F1, F2, F4,
 F11, F12, F15, F16 and C8/C9/C10/C19 remain the end-to-end and observation-facing
 validation gates.
 
-`test/list` schedules the Step 2 through Step 9 suites as independent `P`
+`test/list` schedules the Step 2 through Step 11 suites as independent `P`
 entries. Each has its own `last pass:` record, so the main runner reports and commits
 their provenance separately. No pre-existing C/F command, expected status, input,
 reference file, tolerance, mover, trajectory limit, or last-pass record was modified;
@@ -215,6 +216,75 @@ pointwise comparison of all requested products, restart reproducibility, and 1x1
 2x8, and default 8x16 layout comparisons using the already specified I-F02 and
 I-F04–I-F07 gates. No test threshold, reference, expected state, trajectory budget, or
 last-pass record is relaxed.
+
+## USWMFCoupledAccess: strict Step 10 suite
+
+Run the dependency-free contract and replay references with:
+
+```bash
+./srcEarth/test/USWMFCoupledAccess/run_test.sh
+```
+
+S10-U01 checks RUN/SKIP/DUPLICATE/STALE cadence decisions, commit-after-success, and
+restart-at-the-same-epoch behavior against explicit expected states. S10-U02 compares
+the full time/snapshot suffix with a fixed string. S10-U03 compares Shue AUTO
+parameters and subsolar/terminator radii with fixed numerical references. S10-U04
+checks exact manufactured crossing fractions for BOX, Shue nose, the nightside tail
+cap, and an unavailable Y-face. S10-U05 validates the complete manifest contract and
+rejects an invalid result state.
+
+The Python half supplies the Step-10 reference comparison. S10-U06 requires exact
+pointwise agreement between live and offline-replay cutoff/access tables by default.
+S10-U07 proves a changed cutoff value fails and that any nonzero tolerance must be
+explicit. S10-U08 rejects missing or different snapshot ID, content fingerprint, mesh
+revision, epoch, or boundary policy before comparing numbers. The source audit also
+requires collective cadence before the product call, commit after success, root-owned
+artifact closure/manifest writing, active physical-boundary classification, and the
+unchanged F4, C9, and C19 gate strings.
+
+These portable tests do not replace linked integration. Final acceptance runs the
+same live snapshot and exact standalone replay at 1x1, 2x8, and default 8x16; repeats
+the epoch after restart; executes I-F02 and I-F04--I-F07; and retains all applicable
+C tests. Every requested epoch must have a complete manifest/artifact set or an
+explicit FAILED status. Forward Monte Carlo density and sphere samplers are not a
+reference solution for this gate.
+
+## USWMFCoupledProducts: strict Step 11 suite
+
+Run the coupled density/flux/spectrum contract and replay references with:
+
+```bash
+./srcEarth/test/USWMFCoupledProducts/run_test.sh
+```
+
+The compiled target uses the production `SWMFCoupledProductsContract.h` and
+`BoundaryProducts.h`. S11-U01 proves that spectrum-map insertion order is irrelevant
+while any detector factor, channel bound, or spacecraft position changes the coupled
+control identity. S11-U02 builds the production manifest and rejects a field/spectrum
+epoch mismatch, missing termination artifact, non-closing category counts, or a value
+even slightly above the retained unresolved tolerance. S11-U03 compares open and
+blocked access with closed-form local spectra, omnidirectional/planar flux, clipped
+channel flux, and top-hat detector rate. S11-U04 compares conservative unresolved
+lower/nominal/upper integrals with fixed analytic values.
+
+The Python target compares an entire manifest-enrolled live/replay set. S11-U05
+requires exact agreement for manufactured density, differential spectrum, flux/channel/
+response, and termination files. S11-U06 proves exact comparison is the default and a
+tolerance is honored only when explicitly supplied. S11-U07 rejects missing boundary-
+spectrum time or configured detector output even when other values match. S11-U08
+proves a manifest above its unchanged unresolved limit cannot pass. The source audit
+requires the shared Step-6 kernel, one-millisecond ephemeris selection, collective
+spectrum/channel/response/observation identity, close-before-manifest and
+manifest-before-PASS ordering, and the unchanged F4/C9/C19 gate strings.
+
+This portable suite is necessary but not sufficient for release. A linked AMPS/SWMF
+campaign must export and replay the identical field for POINTS/TRAJECTORY/SHELLS, run
+F6/F7/F13/F17 and I-F03/I-F06/I-F07/I-F10 at their existing thresholds, cover 1x1,
+2x8, 8x16 and STATIC/DYNAMIC/BLOCK_CYCLIC, and execute the preregistered O3 observation
+comparison with archived GOES-16 SGPS and Van Allen Probes REPT inputs. The complete
+matrix and commands are in `USWMFCoupledProducts/README.md`. Forward Monte Carlo
+density/sphere sampling is not a reference, and Step 11 remains quasi-static and
+magnetic-only.
 
 ## UTestRunner: runner regression suite
 

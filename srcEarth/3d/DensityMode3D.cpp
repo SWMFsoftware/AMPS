@@ -36,6 +36,7 @@
 #include "CutoffRigidityMode3D.h"  // TraceAllowedMesh/Ex and TrajectoryExitState
 #include "Mode3D.h"
 #include "Mode3DParallel.h"
+#include "GlobalMagneticField.h"
 
 #include "pic.h"
 #include "Earth.h"
@@ -46,6 +47,7 @@
 #include "../util/amps_param_parser.h"
 #include "../util/FluxNumerics.h"                // common units, grids, quadrature, access accounting
 #include "../util/BoundaryProducts.h"            // shared Step-6 product integrator
+#include "../util/SWMFCoupledProductsContract.h" // Step-11 identity and manifest accounting
 
 #include "constants.h"
 #include "constants.PlanetaryData.h"
@@ -68,6 +70,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <mutex>
 #include <sstream>
 #include <stdexcept>
@@ -136,9 +139,116 @@ static double RigidityFromEnergy_GV_(double E_J, double qabs_C, double m0_kg) {
 // Output naming
 //--------------------------------------------------------------------------------------
 static std::string gDensityOutputFileSuffix;
+static std::vector<std::string> gLastDensityFluxArtifactFiles;
+static Earth::SWMFCoupledProducts::ProductRunSummary gLastDensityFluxRunSummary;
 
 static std::string DensityOutputFileName_(const char* stem) {
   return std::string(stem) + gDensityOutputFileSuffix + ".dat";
+}
+
+static std::ofstream OpenDensityArtifact_(const std::string& fileName) {
+  std::ofstream out(fileName.c_str(),std::ios::out|std::ios::trunc);
+  if (!out)
+    throw std::runtime_error("Cannot open Mode3D density/flux artifact: "+fileName);
+  return out;
+}
+
+static void CloseAndRecordDensityArtifact_(std::ofstream& out,
+                                           const std::string& fileName) {
+  // ostream errors can be delayed until the userspace buffer is flushed.  A coupled
+  // snapshot must never advertise PASS merely because construction of an ofstream
+  // succeeded, so explicitly flush and close before enrolling the file in the Step-11
+  // transaction.  Duplicate enrollment is rejected rather than silently hidden.
+  out.flush();
+  if (!out)
+    throw std::runtime_error("Failed while flushing Mode3D product: "+fileName);
+  out.close();
+  if (out.fail())
+    throw std::runtime_error("Failed while closing Mode3D product: "+fileName);
+  if (std::find(gLastDensityFluxArtifactFiles.begin(),
+                gLastDensityFluxArtifactFiles.end(),fileName)!=
+      gLastDensityFluxArtifactFiles.end())
+    throw std::runtime_error("Mode3D product was recorded twice: "+fileName);
+  gLastDensityFluxArtifactFiles.push_back(fileName);
+}
+
+static Earth::SWMFCoupledProducts::ProductControl BuildProductControl_(
+    const EarthUtil::AmpsParam& prm) {
+  namespace CP=Earth::SWMFCoupledProducts;
+  CP::ProductControl control;
+  control.outputMode=EarthUtil::ToUpper(prm.output.mode);
+  control.speciesName=prm.species.name;
+  control.charge_e=prm.species.charge_e;
+  control.mass_amu=prm.species.mass_amu;
+  control.boundaryMode=EarthUtil::ToUpper(prm.densitySpectrum.boundaryMode);
+  control.transmissionMode=EarthUtil::ToUpper(prm.densitySpectrum.transmissionMode);
+  control.minimumEnergy_MeV=prm.densitySpectrum.Emin_MeV;
+  control.maximumEnergy_MeV=prm.densitySpectrum.Emax_MeV;
+  control.energyIntervals=prm.densitySpectrum.nIntervals;
+  control.transmissionScanPoints=prm.densitySpectrum.transmissionScanN;
+  control.maximumParticlesPerPoint=prm.densitySpectrum.maxParticlesPerPoint;
+  control.energySpacing=(prm.densitySpectrum.spacing==
+      EarthUtil::DensitySpectrumParam::Spacing::LOG) ? "LOG" : "LINEAR";
+  control.spectrumType=prm.particleSpectrum.typeName.empty()
+      ? std::string("UNKNOWN") : prm.particleSpectrum.typeName;
+  control.energyBasis=(::gSpectrum.EnergyCoordinateBasis()==
+      Earth::BoundaryProducts::EnergyBasis::PerNucleon)
+      ? "PER_NUCLEON" : "PER_PARTICLE";
+  control.spectrumMassNumber=::gSpectrum.MassNumber();
+  control.intensityUnit=::gSpectrum.IntensityUnitLabel();
+  control.spectrumRelativeUncertainty=::gSpectrum.RelativeUncertainty();
+  for (std::map<std::string,std::string>::const_iterator it=prm.spectrum.begin();
+       it!=prm.spectrum.end();++it)
+    control.spectrumKeyValues.push_back(*it);
+  control.spectrumTableEnergy_MeV=::gSpectrum.TableEnergy_MeV();
+  control.spectrumTableIntensityPerMeV=::gSpectrum.TableFlux_perMeV();
+  for (std::size_t i=0;i<prm.fluxChannels.size();++i) {
+    CP::EnergyChannelDefinition channel;
+    channel.name=prm.fluxChannels[i].name;
+    channel.lower_MeV=prm.fluxChannels[i].E1_MeV;
+    channel.upper_MeV=prm.fluxChannels[i].E2_MeV;
+    control.channels.push_back(channel);
+  }
+  for (std::size_t i=0;i<prm.detectorResponses.size();++i) {
+    CP::DetectorResponseDefinition response;
+    response.name=prm.detectorResponses[i].name;
+    response.lower_MeV=prm.detectorResponses[i].E1_MeV;
+    response.upper_MeV=prm.detectorResponses[i].E2_MeV;
+    response.geometricFactor_m2_sr=prm.detectorResponses[i].geometricFactor_m2_sr;
+    control.detectorResponses.push_back(response);
+  }
+  control.coordinateFrame=(control.outputMode=="TRAJECTORY")
+      ? prm.output.trajFrame : prm.output.coords;
+  if (control.outputMode=="TRAJECTORY") {
+    // Preserve ephemeris time and position together.  The flattened points alone are
+    // insufficient: two spacecraft samples can occupy the same cell at different UTCs
+    // while selecting different field/spectrum snapshots in a later campaign.
+    for (std::size_t it=0;it<prm.output.trajectories.size();++it) {
+      const EarthUtil::SpacecraftTrajectory& trajectory=prm.output.trajectories[it];
+      for (std::size_t is=0;is<trajectory.samples.size();++is) {
+        CP::ObservationDefinition observation;
+        observation.epochUTC=trajectory.samples[is].timeUTC;
+        observation.x_km=trajectory.samples[is].xGSM_m.x/1000.0;
+        observation.y_km=trajectory.samples[is].xGSM_m.y/1000.0;
+        observation.z_km=trajectory.samples[is].xGSM_m.z/1000.0;
+        control.observations.push_back(observation);
+      }
+    }
+  }
+  else if (control.outputMode=="POINTS") {
+    for (std::size_t i=0;i<prm.output.points.size();++i) {
+      CP::ObservationDefinition observation;
+      observation.x_km=prm.output.points[i].x;
+      observation.y_km=prm.output.points[i].y;
+      observation.z_km=prm.output.points[i].z;
+      control.observations.push_back(observation);
+    }
+  }
+  control.shellAltitude_km=prm.output.shellAlt_km;
+  control.shellResolution_deg=prm.output.shellRes_deg;
+  control.shellGeometry=prm.output.shellGeometry;
+  CP::ValidateProductControl(control);
+  return control;
 }
 
 static std::string FormatEnergyBoundForName_(double E_MeV) {
@@ -399,6 +509,54 @@ struct DensityResultBuffers {
   std::vector<int> sampled_flat,resolved_flat,allowed_flat,retried_flat;
   std::vector<int> termination_flat; // [loc][energy][TrajectoryTermination]
 };
+
+static Earth::SWMFCoupledProducts::ProductRunSummary BuildRunSummary_(
+    const EarthUtil::AmpsParam& prm,int nLoc,int nE,int nDirections,
+    const DensityResultBuffers& result) {
+  namespace CP=Earth::SWMFCoupledProducts;
+  CP::ProductRunSummary summary;
+  summary.control=BuildProductControl_(prm);
+  summary.spectrumEvaluationEpochUTC=prm.field.epoch;
+  summary.activeSpectrumTableEpochUTC=::gSpectrum.ActiveTableEpochUTC();
+  // Analytic spectra do not own a table row.  Recording the requested evaluation UTC
+  // in both fields avoids an empty provenance token while still allowing tabulated
+  // spectra to report the exact/interpolated source rows selected by cSpectrum.
+  if (summary.activeSpectrumTableEpochUTC.empty())
+    summary.activeSpectrumTableEpochUTC=prm.field.epoch;
+  summary.spectrumTemporalStatus=Earth::BoundaryProducts::TemporalStatusName(
+      ::gSpectrum.LastTemporalStatus());
+  summary.spectrumTemporalGap=::gSpectrum.LastTemporalSelectionCrossedGap();
+  summary.spectrumTemporalFraction=::gSpectrum.LastTemporalInterpolationFraction();
+  summary.locationCount=nLoc;
+  summary.energyCount=nE;
+  summary.directionCount=nDirections;
+  summary.terminationCounts.assign(
+      static_cast<std::size_t>(Earth::FluxNumerics::kTerminationCount),0);
+  summary.maximumUnresolvedFraction=0.0;
+  summary.unresolvedTolerance=prm.densitySpectrum.unresolvedTolerance;
+
+  const std::size_t nBins=static_cast<std::size_t>(nLoc)*
+                          static_cast<std::size_t>(nE);
+  for (std::size_t flat=0;flat<nBins;++flat) {
+    summary.sampled+=result.sampled_flat[flat];
+    summary.retried+=result.retried_flat[flat];
+    summary.resolved+=result.resolved_flat[flat];
+    summary.allowed+=result.allowed_flat[flat];
+    summary.maximumUnresolvedFraction=std::max(
+        summary.maximumUnresolvedFraction,result.unresolved_fraction_flat[flat]);
+    for (int it=0;it<Earth::FluxNumerics::kTerminationCount;++it)
+      summary.terminationCounts[static_cast<std::size_t>(it)]+=
+          result.termination_flat[
+              flat*static_cast<std::size_t>(Earth::FluxNumerics::kTerminationCount)+
+              static_cast<std::size_t>(it)];
+  }
+  summary.valid=true;
+  // Artifact completeness is validated only after every writer has closed.  At this
+  // stage validate the physics/provenance/count portion independently so a closure
+  // defect is distinguishable from a bad trajectory accounting defect.
+  CP::ValidateRunSummary(summary,false);
+  return summary;
+}
 
 static double MaximumAllowedWeight_(const EarthUtil::AmpsParam& prm,bool anisotropic) {
   if (!anisotropic) return 1.0;
@@ -1043,6 +1201,80 @@ static void WriteStep6ProductMetadata_(Stream& out) {
       << "AUXDATA PLANAR_FLUX_CONVENTION=\"ISOTROPIC_EQUIVALENT_PI_J\"\n";
 }
 
+static std::string DensityTecplotAuxValue_(std::string value) {
+  std::replace(value.begin(),value.end(),'"','\'');
+  std::replace(value.begin(),value.end(),'\n',' ');
+  std::replace(value.begin(),value.end(),'\r',' ');
+  return value;
+}
+
+template<class Stream>
+static void WriteStep11ProductMetadata_(Stream& out,
+                                        const EarthUtil::AmpsParam& prm) {
+  namespace CP=Earth::SWMFCoupledProducts;
+  const Earth::Field::SnapshotMetadata& metadata=
+      Earth::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata();
+  const CP::ProductControl& control=gLastDensityFluxRunSummary.control;
+
+  // These fields deliberately duplicate the coupled manifest's identity in every
+  // numeric artifact.  A file copied away from its manifest remains self-describing,
+  // and the strict replay comparator can reject a stale field, spectrum table,
+  // channel definition, or instrument response before looking at numeric rows.
+  out << "AUXDATA PHASE_1_INTERPRETATION=\"INSTANTANEOUS_QUASI_STATIC\"\n"
+      << "AUXDATA SNAPSHOT_ID=\""
+      << DensityTecplotAuxValue_(metadata.snapshotId) << "\"\n"
+      << "AUXDATA SNAPSHOT_EPOCH_UTC=\""
+      << DensityTecplotAuxValue_(metadata.epochUTC) << "\"\n"
+      << "AUXDATA SNAPSHOT_MESH_REVISION=\""
+      << DensityTecplotAuxValue_(
+             Earth::Mode3D::GlobalMagneticField::CurrentMeshRevision()) << "\"\n"
+      << "AUXDATA SNAPSHOT_CONTENT_FINGERPRINT=\""
+      << DensityTecplotAuxValue_(
+             Earth::Mode3D::GlobalMagneticField::CurrentContentFingerprint()) << "\"\n"
+      << "AUXDATA BOUNDARY_SPECTRUM_EVALUATION_EPOCH_UTC=\""
+      << DensityTecplotAuxValue_(
+             gLastDensityFluxRunSummary.spectrumEvaluationEpochUTC) << "\"\n"
+      << "AUXDATA ACTIVE_SPECTRUM_TABLE_EPOCH_UTC=\""
+      << DensityTecplotAuxValue_(
+             gLastDensityFluxRunSummary.activeSpectrumTableEpochUTC) << "\"\n"
+      << "AUXDATA PRODUCT_CONTROL_FINGERPRINT=\""
+      << CP::ProductControlFingerprint(control) << "\"\n"
+      << "AUXDATA BOUNDARY_SPECTRUM_FINGERPRINT=\""
+      << CP::BoundarySpectrumFingerprint(control) << "\"\n"
+      << "AUXDATA CHANNEL_SCHEMA_FINGERPRINT=\""
+      << CP::ChannelSchemaFingerprint(control) << "\"\n"
+      << "AUXDATA DETECTOR_RESPONSE_FINGERPRINT=\""
+      << CP::DetectorResponseFingerprint(control) << "\"\n"
+      << "AUXDATA OBSERVATION_STATE_FINGERPRINT=\""
+      << CP::ObservationStateFingerprint(control) << "\"\n"
+      << "AUXDATA MAXIMUM_UNRESOLVED_FRACTION=\""
+      << gLastDensityFluxRunSummary.maximumUnresolvedFraction << "\"\n"
+      << "AUXDATA RESPONSE_WEIGHTED_UNRESOLVED_UPPER_BOUND=\""
+      << gLastDensityFluxRunSummary.maximumUnresolvedFraction << "\"\n"
+      << "AUXDATA UNRESOLVED_TOLERANCE=\""
+      << gLastDensityFluxRunSummary.unresolvedTolerance << "\"\n";
+
+  const std::string boundary=EarthUtil::ToUpper(prm.domain.boundaryType.empty()
+      ? std::string("BOX") : prm.domain.boundaryType);
+  out << "AUXDATA OUTER_BOUNDARY_POLICY=\"" << boundary << "\"\n";
+  if (boundary=="SHUE") {
+    const Earth::SWMFCoupledAccess::ShueParameters shue=
+        Earth::SWMFCoupledAccess::ResolveShueParameters(
+            prm.domain.shueR0Token,prm.domain.shueAlphaToken,
+            prm.field.pdyn_nPa,prm.field.imfBz_nT,_EARTH__RADIUS_,
+            1000.0*prm.domain.xMin);
+    out << "AUXDATA SHUE_R0_RE=\"" << shue.r0_Re << "\"\n"
+        << "AUXDATA SHUE_ALPHA=\"" << shue.alpha << "\"\n"
+        << "AUXDATA SHUE_TAIL_CAP_X_M=\"" << shue.tailCapX_m << "\"\n";
+  }
+}
+
+template<class Stream>
+static void WriteProductMetadata_(Stream& out,const EarthUtil::AmpsParam& prm) {
+  WriteStep6ProductMetadata_(out);
+  WriteStep11ProductMetadata_(out,prm);
+}
+
 static void WritePointOutputs_(const EarthUtil::AmpsParam& prm,
                                const std::vector<double>& E_MeV,
                                const DensityResultBuffers& res) {
@@ -1052,10 +1284,11 @@ static void WritePointOutputs_(const EarthUtil::AmpsParam& prm,
   const int nDetector = (int)prm.detectorResponses.size();
 
   {
-    std::ofstream out(DensityOutputFileName_("mode3d_points_density"));
+    const std::string fileName=DensityOutputFileName_("mode3d_points_density");
+    std::ofstream out=OpenDensityArtifact_(fileName);
     out << std::setprecision(std::numeric_limits<double>::max_digits10);
     out << "TITLE=\"Mode3D mesh-field energetic particle density\"\n";
-    WriteStep6ProductMetadata_(out);
+    WriteProductMetadata_(out,prm);
     out << "VARIABLES=\"X_km\" \"Y_km\" \"Z_km\" \"N_m^-3\" \"N_lower_m^-3\" \"N_upper_m^-3\" "
         << "\"N_cm^-3\" \"N_lower_cm^-3\" \"N_upper_cm^-3\" "
         << "\"Rc_lower_GV\" \"Rc_effective_GV\" \"Rc_upper_GV\" \"PenumbraWidth_GV\" \"T_high\"\n";
@@ -1076,13 +1309,15 @@ static void WritePointOutputs_(const EarthUtil::AmpsParam& prm,
           << " " << td.RcLower_GV << " " << td.RcEffective_GV << " " << td.RcUpper_GV
           << " " << td.PenumbraWidth_GV << " " << td.THigh << "\n";
     }
+    CloseAndRecordDensityArtifact_(out,fileName);
   }
 
   {
-    std::ofstream out(DensityOutputFileName_("mode3d_points_spectrum"));
+    const std::string fileName=DensityOutputFileName_("mode3d_points_spectrum");
+    std::ofstream out=OpenDensityArtifact_(fileName);
     out << std::setprecision(std::numeric_limits<double>::max_digits10);
     out << "TITLE=\"Mode3D mesh-field local energetic particle spectrum\"\n";
-    WriteStep6ProductMetadata_(out);
+    WriteProductMetadata_(out,prm);
     out << "VARIABLES=\"E_MeV\" \"T\" \"T_lower\" \"T_upper\" "
         << "\"unresolved_fraction\" \"N_sampled\" \"N_resolved\" \"N_allowed\" "
         << "\"J_boundary_perMeV\" \"J_local_perMeV\" \"J_local_lower_perMeV\" \"J_local_upper_perMeV\" "
@@ -1116,13 +1351,15 @@ static void WritePointOutputs_(const EarthUtil::AmpsParam& prm,
             << " " << Earth::FluxNumerics::kPi*local.upper << "\n";
       }
     }
+    CloseAndRecordDensityArtifact_(out,fileName);
   }
 
   {
-    std::ofstream out(DensityOutputFileName_("mode3d_points_flux"));
+    const std::string fileName=DensityOutputFileName_("mode3d_points_flux");
+    std::ofstream out=OpenDensityArtifact_(fileName);
     out << std::setprecision(std::numeric_limits<double>::max_digits10);
     out << "TITLE=\"Mode3D mesh-field omnidirectional integral flux\"\n";
-    WriteStep6ProductMetadata_(out);
+    WriteProductMetadata_(out,prm);
     out << "VARIABLES=\"X_km\" \"Y_km\" \"Z_km\" \"F_tot_m2s1\" \"F_tot_lower_m2s1\" \"F_tot_upper_m2s1\"";
     for (int ic=0; ic<nCh; ++ic) out << " \"F_" << prm.fluxChannels[(std::size_t)ic].name << "_m2s1\""
         << " \"F_" << prm.fluxChannels[(std::size_t)ic].name << "_lower_m2s1\""
@@ -1156,6 +1393,7 @@ static void WritePointOutputs_(const EarthUtil::AmpsParam& prm,
       }
       out << "\n";
     }
+    CloseAndRecordDensityArtifact_(out,fileName);
   }
 }
 
@@ -1172,12 +1410,13 @@ static void WriteShellOutputs_(const EarthUtil::AmpsParam& prm,
   for (int s=0; s<nShells; ++s) {
     const std::string altLabel = FormatEnergyBoundForName_(prm.output.shellAlt_km[(std::size_t)s]);
     const std::string stem = "mode3d_shell_" + altLabel + "km_density_flux";
-    std::ofstream out(DensityOutputFileName_(stem.c_str()));
+    const std::string fileName=DensityOutputFileName_(stem.c_str());
+    std::ofstream out=OpenDensityArtifact_(fileName);
     out << std::setprecision(std::numeric_limits<double>::max_digits10);
 
     out << "TITLE=\"Mode3D mesh-field density and flux shell alt="
         << prm.output.shellAlt_km[(std::size_t)s] << " km\"\n";
-    WriteStep6ProductMetadata_(out);
+    WriteProductMetadata_(out,prm);
     out << "VARIABLES=\"Lon_deg\" \"Lat_deg\" \"N_m^-3\" \"N_lower_m^-3\" \"N_upper_m^-3\" "
         << "\"N_cm^-3\" \"F_tot_m2s1\" \"F_tot_lower_m2s1\" \"F_tot_upper_m2s1\" "
         << "\"Rc_lower_GV\" \"Rc_effective_GV\" \"Rc_upper_GV\" \"PenumbraWidth_GV\" \"T_high\"";
@@ -1229,15 +1468,17 @@ static void WriteShellOutputs_(const EarthUtil::AmpsParam& prm,
         out << "\n";
       }
     }
+    CloseAndRecordDensityArtifact_(out,fileName);
 
     // A shell spectrum is a new Step-6 artifact, so it need not alter the historical
     // combined density/flux schema.  One structured zone per energy makes every
     // reported integral independently reconstructable from emitted rows.
     const std::string spectrumStem="mode3d_shell_"+altLabel+"km_spectrum";
-    std::ofstream spectrumOut(DensityOutputFileName_(spectrumStem.c_str()));
+    const std::string spectrumFileName=DensityOutputFileName_(spectrumStem.c_str());
+    std::ofstream spectrumOut=OpenDensityArtifact_(spectrumFileName);
     spectrumOut << std::setprecision(std::numeric_limits<double>::max_digits10);
     spectrumOut << "TITLE=\"Mode3D shell differential spectra\"\n";
-    WriteStep6ProductMetadata_(spectrumOut);
+    WriteProductMetadata_(spectrumOut,prm);
     spectrumOut << "VARIABLES=\"Lon_deg\" \"Lat_deg\" \"E_MeV\" \"T\" "
                 << "\"T_lower\" \"T_upper\" \"unresolved_fraction\" "
                 << "\"J_boundary_perMeV\" \"J_local_perMeV\" "
@@ -1276,19 +1517,22 @@ static void WriteShellOutputs_(const EarthUtil::AmpsParam& prm,
         }
       }
     }
+    CloseAndRecordDensityArtifact_(spectrumOut,spectrumFileName);
   }
 }
 
-static double WriteTerminationSummary_(const EarthUtil::AmpsParam& prm,
-                                       const std::vector<double>& E_MeV,
-                                       int nLoc,const DensityResultBuffers& res) {
+static void WriteTerminationSummary_(const EarthUtil::AmpsParam& prm,
+                                     const std::vector<double>& E_MeV,
+                                     int nLoc,const DensityResultBuffers& res) {
   const int nE=static_cast<int>(E_MeV.size());
-  double maximumUnresolved=0.0;
   std::ofstream out;
+  std::string fileName;
   if (prm.densitySpectrum.saveTerminationSummary) {
-    out.open(DensityOutputFileName_("mode3d_termination_summary"));
+    fileName=DensityOutputFileName_("mode3d_termination_summary");
+    out=OpenDensityArtifact_(fileName);
     out << std::setprecision(std::numeric_limits<double>::max_digits10);
     out << "TITLE=\"Mode3D trajectory termination summary\"\n";
+    WriteProductMetadata_(out,prm);
     out << "VARIABLES=\"location_index\" \"E_MeV\" \"N_sampled\" \"N_retried\" "
         << "\"N_resolved\" \"N_allowed\" \"T\" \"T_lower\" \"T_upper\" "
         << "\"unresolved_fraction\"";
@@ -1302,7 +1546,6 @@ static double WriteTerminationSummary_(const EarthUtil::AmpsParam& prm,
   for (int loc=0;loc<nLoc;++loc) {
     for (int ie=0;ie<nE;++ie) {
       const std::size_t flat=(std::size_t)loc*(std::size_t)nE+(std::size_t)ie;
-      maximumUnresolved=std::max(maximumUnresolved,res.unresolved_fraction_flat[flat]);
       if (!out.is_open()) continue;
       out << loc << " " << E_MeV[(std::size_t)ie] << " " << res.sampled_flat[flat]
           << " " << res.retried_flat[flat] << " " << res.resolved_flat[flat]
@@ -1315,7 +1558,7 @@ static double WriteTerminationSummary_(const EarthUtil::AmpsParam& prm,
       out << "\n";
     }
   }
-  return maximumUnresolved;
+  if (out.is_open()) CloseAndRecordDensityArtifact_(out,fileName);
 }
 
 } // anonymous namespace
@@ -1327,10 +1570,22 @@ void SetDensityOutputFileSuffix(const std::string& suffix) {
   gDensityOutputFileSuffix = suffix;
 }
 
+Earth::SWMFCoupledProducts::ProductControl DescribeDensityFluxProductControl(
+    const EarthUtil::AmpsParam& prm) {
+  return BuildProductControl_(prm);
+}
+
 int RunDensityAndFlux(const EarthUtil::AmpsParam& prm) {
   int mpiRank=0, mpiSize=1;
   MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&mpiRank);
   MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR,&mpiSize);
+
+  // Begin a new output transaction before validation or trajectory work.  If this call
+  // fails, callers cannot accidentally retrieve the closed files or PASS-ready summary
+  // from an earlier standalone/coupled field epoch.
+  gLastDensityFluxArtifactFiles.clear();
+  gLastDensityFluxRunSummary=
+      Earth::SWMFCoupledProducts::ProductRunSummary();
 
   // Start a new sample-weighted magnetic-field accuracy diagnostic for this density/flux
   // calculation.  ResetDipoleMagneticFieldErrorStatistics() enables collection only for
@@ -1432,8 +1687,18 @@ int RunDensityAndFlux(const EarthUtil::AmpsParam& prm) {
 
   DensityResultBuffers res = ComputeAllLocations_(prm,nLoc,nLon,nLat,res_deg,nPtsShell,E_MeV,dirsUse);
 
+  int outputSucceeded=1;
+  std::string outputError;
   if (mpiRank==0) {
-    const double maximumUnresolved=WriteTerminationSummary_(prm,E_MeV,nLoc,res);
+    try {
+    // Construct and validate the trajectory accounting before the first product file
+    // is opened.  All writers below then embed exactly the same summary/fingerprints;
+    // no writer is allowed to reconstruct provenance independently.
+    gLastDensityFluxRunSummary=BuildRunSummary_(
+        prm,nLoc,nE,static_cast<int>(dirsUse.size()),res);
+    WriteTerminationSummary_(prm,E_MeV,nLoc,res);
+    const double maximumUnresolved=
+        gLastDensityFluxRunSummary.maximumUnresolvedFraction;
     std::cout << "[mode3d-density][termination] max unresolved fraction = "
               << std::setprecision(17) << maximumUnresolved << " (tolerance="
               << prm.densitySpectrum.unresolvedTolerance << ")\n";
@@ -1454,8 +1719,41 @@ int RunDensityAndFlux(const EarthUtil::AmpsParam& prm) {
       std::cout << "Wrote: " << prm.output.shellAlt_km.size()
                 << " Mode3D shell density/flux file(s).\n";
     }
+    // Publish the artifact inventory only after every stream has been explicitly
+    // closed.  The coupled bridge will apply the stronger complete-artifact and
+    // unresolved-tolerance checks before it writes its PASS manifest.
+    gLastDensityFluxRunSummary.artifacts=gLastDensityFluxArtifactFiles;
+    Earth::SWMFCoupledProducts::ValidateRunSummary(
+        gLastDensityFluxRunSummary,false);
     std::cout.flush();
+    }
+    catch (const std::exception& error) {
+      outputSucceeded=0;
+      outputError=error.what();
+    }
+    catch (...) {
+      outputSucceeded=0;
+      outputError="unknown Mode3D density/flux output exception";
+    }
   }
+
+  // Output is root-owned but the caller and all remaining diagnostics are collective.
+  // Propagate a close/manifest-accounting exception before any rank enters the next
+  // reduction or barrier; otherwise rank zero could unwind while its peers wait
+  // forever.  This synchronization changes no numerical gate or product value.
+  MPI_Bcast(&outputSucceeded,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+  int outputErrorLength=(mpiRank==0) ? static_cast<int>(outputError.size()) : 0;
+  MPI_Bcast(&outputErrorLength,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+  if (outputErrorLength<0)
+    throw std::runtime_error("invalid collective Mode3D output error length");
+  if (mpiRank!=0)
+    outputError.assign(static_cast<std::size_t>(outputErrorLength),'\0');
+  if (outputErrorLength>0)
+    MPI_Bcast(&outputError[0],outputErrorLength,MPI_CHAR,0,
+              MPI_GLOBAL_COMMUNICATOR);
+  if (!outputSucceeded)
+    throw std::runtime_error("Mode3D density/flux output transaction failed: "+
+                             outputError);
 
   // Every TraceAllowedMesh() call has returned, so all per-trajectory field evaluators
   // have merged their local DIPOLE samples.  Perform one global reduction and print the
@@ -1464,6 +1762,14 @@ int RunDensityAndFlux(const EarthUtil::AmpsParam& prm) {
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   return 0;
+}
+
+std::vector<std::string> GetLastDensityFluxArtifactFiles() {
+  return gLastDensityFluxArtifactFiles;
+}
+
+Earth::SWMFCoupledProducts::ProductRunSummary GetLastDensityFluxRunSummary() {
+  return gLastDensityFluxRunSummary;
 }
 
 } // namespace Mode3D

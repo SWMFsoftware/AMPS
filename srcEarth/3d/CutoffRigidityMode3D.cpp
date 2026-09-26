@@ -27,8 +27,9 @@
 //
 //   3. For each direction, launch the mathematically reversed particle in the
 //      opposite direction and integrate it through the mesh field.
-//        * Escape through the outer Mode3D box means the rigidity/direction is
-//          ALLOWED.
+//        * Escape through the configured BOX or Shue+tail-cap physical boundary
+//          means the rigidity/direction is ALLOWED. Reaching an AMR/data limit before
+//          that physical boundary is INVALID_FIELD and remains unresolved.
 //        * Contact with the inner Earth-loss sphere means FORBIDDEN.
 //        * IMPORTANT: the legacy Boolean UPPER_SCAN/BINARY wrappers map time, step,
 //          and path-length safety limits to FORBIDDEN.  The structured PENUMBRA_SCAN
@@ -239,6 +240,7 @@
 #include "../util/AdaptiveDirectAccess.h"
 #include "../util/DirectionalAccess.h"
 #include "../util/BoundaryProducts.h"
+#include "../util/SWMFCoupledAccessContract.h"
 #include "../boundary/spectrum.h"
 
 // Standard library
@@ -507,6 +509,12 @@ struct DomainBox3D {
     double yMin, yMax;
     double zMin, zMax;
     double rInner; // inner loss sphere radius [m]
+
+    // Shared Step-10 outer-escape policy.  The rectangular bounds above always remain
+    // the computational-data extent.  For BOX they are also the physical escape
+    // surface. For SHUE only the empirical magnetopause and the XMIN tail cap are
+    // physical; another mesh-face hit is unavailable field data.
+    Earth::SWMFCoupledAccess::BoundaryPolicy outerBoundary;
 };
 
 static inline bool InsideBox3D(const V3& x, const DomainBox3D& b) {
@@ -518,6 +526,35 @@ static inline bool InsideBox3D(const V3& x, const DomainBox3D& b) {
 static inline bool LostInnerSphere3D(const V3& x, double rInner) {
     const double r2 = x.x*x.x + x.y*x.y + x.z*x.z;
     return (r2 <= rInner * rInner);
+}
+
+static Earth::SWMFCoupledAccess::BoundaryPolicy BuildOuterBoundaryPolicy3D_(
+    const EarthUtil::AmpsParam& prm,const DomainBox3D& box) {
+    namespace CA=Earth::SWMFCoupledAccess;
+    CA::BoundaryPolicy policy;
+    policy.computationalBox.minimum_m={{box.xMin,box.yMin,box.zMin}};
+    policy.computationalBox.maximum_m={{box.xMax,box.yMax,box.zMax}};
+
+    const std::string selector=EarthUtil::ToUpper(prm.domain.boundaryType);
+    if (selector.empty() || selector=="BOX") {
+        policy.kind=CA::OuterBoundaryKind::Box;
+    }
+    else if (selector=="SHUE") {
+        policy.kind=CA::OuterBoundaryKind::Shue;
+        policy.shue=CA::ResolveShueParameters(
+            prm.domain.shueR0Token,prm.domain.shueAlphaToken,
+            prm.field.pdyn_nPa,prm.field.imfBz_nT,_EARTH__RADIUS_,box.xMin);
+    }
+    else {
+        throw std::runtime_error(
+            "Mode3D cutoff: BOUNDARY_TYPE must be BOX or SHUE after parsing");
+    }
+    CA::ValidateBoundaryPolicy(policy);
+    return policy;
+}
+
+static inline std::array<double,3> BoundaryPoint3D_(const V3& x) {
+    return {{x.x,x.y,x.z}};
 }
 
 //======================================================================================
@@ -696,6 +733,7 @@ class cMode3DMeshFieldEval : public IGridlessFieldEvaluator {
 public:
     explicit cMode3DMeshFieldEval(const EarthUtil::AmpsParam& prm)
       : prm_(prm), lastNode_(nullptr),
+        fieldSampleAvailable_(true),
         sampleDipoleFieldError_(
             gDipoleFieldErrorSamplingActive_.load(std::memory_order_acquire) &&
             EarthUtil::ToUpper(prm.field.model)=="DIPOLE" &&
@@ -711,6 +749,18 @@ public:
 
     cMode3DMeshFieldEval(const cMode3DMeshFieldEval&)=delete;
     cMode3DMeshFieldEval& operator=(const cMode3DMeshFieldEval&)=delete;
+
+    // The mover interface historically returns only B, so availability is carried as
+    // evaluator state and checked immediately after every mover/timestep operation.
+    // Reset is explicit: a missing interpolation row may never be hidden by a later
+    // successful sample in the same numerical step.
+    void ResetFieldSampleStatus() const {
+        fieldSampleAvailable_=true;
+        fieldSampleFailure_.clear();
+    }
+
+    bool FieldSamplesAvailable() const { return fieldSampleAvailable_; }
+    const std::string& FieldSampleFailure() const { return fieldSampleFailure_; }
 
     // Evaluate B [Tesla] at x_m [m].  The optional analytic path is retained for
     // diagnostic comparisons.  The production mesh path uses the compact global B
@@ -784,9 +834,23 @@ public:
         lastNode_ = node;
 
         if (node == nullptr) {
-            // Outside the used AMR domain.  The trajectory geometry check classifies
-            // the outer-boundary escape; returning zero here preserves the historical
-            // evaluator contract for a point sampled just beyond the box.
+            // A sample outside the configured computational box is expected during a
+            // boundary-crossing chord and is classified geometrically by the tracer.
+            // A null leaf *inside* that box is different: it is an AMR coverage hole.
+            // Returning zero while setting the sticky status lets the shared mover
+            // finish its current stack frame, after which the trajectory is classified
+            // INVALID_FIELD rather than as a physically forbidden/allowed orbit.
+            const bool insideConfiguredBox=
+                xArr[0]>=1000.0*prm_.domain.xMin &&
+                xArr[0]<=1000.0*prm_.domain.xMax &&
+                xArr[1]>=1000.0*prm_.domain.yMin &&
+                xArr[1]<=1000.0*prm_.domain.yMax &&
+                xArr[2]>=1000.0*prm_.domain.zMin &&
+                xArr[2]<=1000.0*prm_.domain.zMax;
+            if (insideConfiguredBox) {
+                fieldSampleAvailable_=false;
+                fieldSampleFailure_="no used AMR leaf covers an in-domain field sample";
+            }
             B_T.x = B_T.y = B_T.z = 0.0;
             return;
         }
@@ -797,10 +861,14 @@ public:
                 xArr,node,B);
 
         if (!ok) {
-            // A valid used leaf must always produce a row.  Treat failure as a setup
-            // error rather than advancing a trajectory through an artificial zero field.
-            exit(__LINE__,__FILE__,
-                 "[Mode3D] failed to construct a compact-array magnetic-field interpolation row.");
+            // A used leaf without a complete compact-array row is unavailable data, not
+            // a zero magnetic field.  Preserve that distinction in the trajectory
+            // termination instead of aborting the whole MPI batch from one worker.
+            fieldSampleAvailable_=false;
+            fieldSampleFailure_=
+                "compact-array interpolation row is incomplete for a used AMR leaf";
+            B_T.x = B_T.y = B_T.z = 0.0;
+            return;
         }
 
         B_T.x = B[0];
@@ -822,6 +890,11 @@ private:
     // Mutable so a logically const field evaluation can update the tree-search hint.
     // The hint points only into the replicated tree and is private to this evaluator.
     mutable cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* lastNode_;
+
+    // Sticky within one numerical operation; see ResetFieldSampleStatus().  These are
+    // private to a per-thread evaluator, so no synchronization is required.
+    mutable bool fieldSampleAvailable_;
+    mutable std::string fieldSampleFailure_;
 
     // Sampling is fixed when the evaluator is constructed.  Reset/report operations are
     // performed only before worker creation and after all workers join, respectively.
@@ -1189,14 +1262,19 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
         if (chordLength>0.0)
             insetFraction=std::min(a,std::max(1.0,prm.numerics.boundaryEventTolerance_m)/chordLength);
         const V3 xEval=add(xBefore,mul(std::max(0.0,a-insetFraction),chord));
+        field.ResetFieldSampleStatus();
         V3 Bexit; field.GetB_T(xEval,Bexit);
+        if (!field.FieldSamplesAvailable()) return false;
         const double bExitArray[3]={Bexit.x,Bexit.y,Bexit.z};
         return Earth::Trajectory::CompleteExitPitchAngle(
             result.exitState,bExitArray);
     };
 
     if (trapConfig.enabled) {
+        field.ResetFieldSampleStatus();
         V3 B0; field.GetB_T(x,B0);
+        if (!field.FieldSamplesAvailable())
+            return Finalize(TrajectoryTermination::InvalidField);
         const double xTrap[3]={x.x,x.y,x.z};
         const double pTrap[3]={p.x,p.y,p.z};
         const double bTrap[3]={B0.x,B0.y,B0.z};
@@ -1212,8 +1290,31 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
         if (Earth::TrajectoryBoundary::InsideInnerSphere(
                 xArr,boundaryBox,0.0))
             return Finalize(TrajectoryTermination::InnerBoundaryForbidden);
-        if (!Earth::TrajectoryBoundary::InsideBox(
-                xArr,boundaryBox,0.0)) {
+
+        const bool shueBoundary=
+            box.outerBoundary.kind==Earth::SWMFCoupledAccess::OuterBoundaryKind::Shue;
+        if (shueBoundary) {
+            const Earth::SWMFCoupledAccess::PositionDisposition disposition=
+                Earth::SWMFCoupledAccess::ClassifyPosition(
+                    box.outerBoundary,BoundaryPoint3D_(x),true,
+                    prm.numerics.boundaryEventTolerance_m);
+            if (disposition==Earth::SWMFCoupledAccess::PositionDisposition::Invalid ||
+                disposition==Earth::SWMFCoupledAccess::PositionDisposition::MeshUnavailable)
+                return Finalize(TrajectoryTermination::InvalidField);
+            if (disposition==Earth::SWMFCoupledAccess::PositionDisposition::PhysicalEscape) {
+                Earth::TrajectoryBoundary::Event event;
+                event.type=EventType::OuterBox;
+                event.fraction=0.0;
+                event.position[0]=x.x; event.position[1]=x.y; event.position[2]=x.z;
+                if (!PopulateExit(event,x,x,p,p,0.0))
+                    return Finalize(TrajectoryTermination::InvalidField);
+                return Finalize(TrajectoryTermination::OuterBoundaryAllowed);
+            }
+        }
+        else if (!Earth::TrajectoryBoundary::InsideBox(
+                     xArr,boundaryBox,0.0)) {
+            // Preserve the historical BOX classifier exactly.  Step 10 changes no
+            // established cutoff gate when BOUNDARY_TYPE remains at its BOX default.
             Earth::TrajectoryBoundary::Event event;
             event.type=EventType::OuterBox;
             event.fraction=0.0;
@@ -1224,20 +1325,30 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
         }
 
         const double timeRemaining=maxTraceTime_s-tTrace;
+        field.ResetFieldSampleStatus();
         bool useGuidingCenterForThisStep=false;
         if (mover==MoverType::GC2 || mover==MoverType::GC4 || mover==MoverType::GC6)
             useGuidingCenterForThisStep=true;
         else if (mover==MoverType::HYBRID)
             useGuidingCenterForThisStep=HybridPrepareStepUseGuidingCenter(x,p,qTrace,field);
+        if (!field.FieldSamplesAvailable())
+            return Finalize(TrajectoryTermination::InvalidField);
 
         const double dt=SelectTraceDt3D(prm,field,x,p,qTrace,m0_kg,box,timeRemaining,
                                         useGuidingCenterForThisStep,integrationPolicy);
+        if (!field.FieldSamplesAvailable())
+            return Finalize(TrajectoryTermination::InvalidField);
         if (!(dt>0.0) || !std::isfinite(dt))
             return Finalize(TrajectoryTermination::InvalidTimeStep);
 
         const V3 xPrev=x;
         const V3 pPrev=p;
-        if (!StepParticleChecked(mover,x,p,qTrace,m0_kg,dt,field,box.rInner))
+        field.ResetFieldSampleStatus();
+        const bool stepAccepted=
+            StepParticleChecked(mover,x,p,qTrace,m0_kg,dt,field,box.rInner);
+        if (!field.FieldSamplesAvailable())
+            return Finalize(TrajectoryTermination::InvalidField);
+        if (!stepAccepted)
             return Finalize(TrajectoryTermination::InnerBoundaryForbidden);
 
         const double xPrevArr[3]={xPrev.x,xPrev.y,xPrev.z};
@@ -1247,16 +1358,47 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
             return Finalize(TrajectoryTermination::NumericalFailure);
 
         Earth::TrajectoryBoundary::Event event;
-        if (integrationPolicy==TraceIntegrationPolicy3D::StructuredAccurate) {
+        if (integrationPolicy==TraceIntegrationPolicy3D::StructuredAccurate ||
+            shueBoundary) {
             event=Earth::TrajectoryBoundary::FindFirstEvent(
                 xPrevArr,xArrAfter,boundaryBox,prm.numerics.boundaryEventTolerance_m);
+        }
+        Earth::SWMFCoupledAccess::SegmentResult outerEvent;
+        if (shueBoundary) {
+            outerEvent=Earth::SWMFCoupledAccess::ClassifySegment(
+                box.outerBoundary,BoundaryPoint3D_(xPrev),BoundaryPoint3D_(x));
         }
         const double ds=v3norm(sub(x,xPrev));
         if (std::isfinite(ds)) sDist+=ds;
         tTrace+=dt;
         ++nSteps;
 
-        if (integrationPolicy==TraceIntegrationPolicy3D::StructuredAccurate) {
+        if (shueBoundary) {
+            // Inner loss and outer escape can occur on the same long user-selected
+            // chord.  Compare their exact fractions and apply the first physical event.
+            if (event.type==EventType::InnerSphere &&
+                (outerEvent.disposition==Earth::SWMFCoupledAccess::SegmentDisposition::NoExit ||
+                 event.fraction<=outerEvent.fraction))
+                return Finalize(TrajectoryTermination::InnerBoundaryForbidden);
+            if (outerEvent.disposition==
+                    Earth::SWMFCoupledAccess::SegmentDisposition::PhysicalEscape) {
+                Earth::TrajectoryBoundary::Event physicalEvent;
+                physicalEvent.type=EventType::OuterBox;
+                physicalEvent.fraction=outerEvent.fraction;
+                physicalEvent.position[0]=outerEvent.position_m[0];
+                physicalEvent.position[1]=outerEvent.position_m[1];
+                physicalEvent.position[2]=outerEvent.position_m[2];
+                if (!PopulateExit(physicalEvent,xPrev,x,pPrev,p,dt))
+                    return Finalize(TrajectoryTermination::InvalidField);
+                return Finalize(TrajectoryTermination::OuterBoundaryAllowed);
+            }
+            if (outerEvent.disposition==
+                    Earth::SWMFCoupledAccess::SegmentDisposition::MeshUnavailable ||
+                outerEvent.disposition==
+                    Earth::SWMFCoupledAccess::SegmentDisposition::Invalid)
+                return Finalize(TrajectoryTermination::InvalidField);
+        }
+        else if (integrationPolicy==TraceIntegrationPolicy3D::StructuredAccurate) {
             if (event.type==EventType::InnerSphere)
                 return Finalize(TrajectoryTermination::InnerBoundaryForbidden);
             if (event.type==EventType::OuterBox) {
@@ -1267,7 +1409,10 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
         }
 
         if (trapConfig.enabled) {
+            field.ResetFieldSampleStatus();
             V3 Btrap; field.GetB_T(x,Btrap);
+            if (!field.FieldSamplesAvailable())
+                return Finalize(TrajectoryTermination::InvalidField);
             const double xTrap[3]={x.x,x.y,x.z};
             const double pTrap[3]={p.x,p.y,p.z};
             const double bTrap[3]={Btrap.x,Btrap.y,Btrap.z};
@@ -2542,9 +2687,59 @@ static V3 LocationToVerticalArrivalDir3D_(const EarthUtil::AmpsParam& prm,
 //======================================================================================
 
 static std::string gCutoffOutputFileSuffix;
+static std::vector<std::string> gLastCutoffArtifactFiles;
 
 static std::string CutoffOutputFileName(const char* stem) {
     return std::string(stem) + gCutoffOutputFileSuffix + ".dat";
+}
+
+static std::string TecplotAuxValue_(std::string value) {
+    // Tecplot AUXDATA strings are quote-delimited.  Snapshot IDs are already safe,
+    // but epoch/source text is sanitized defensively so provenance can never corrupt
+    // the numeric product syntax.
+    std::replace(value.begin(),value.end(),'"','\'');
+    std::replace(value.begin(),value.end(),'\n',' ');
+    std::replace(value.begin(),value.end(),'\r',' ');
+    return value;
+}
+
+static void WriteActiveSnapshotAuxData_(FILE* f,const EarthUtil::AmpsParam& prm) {
+    if (f==nullptr) throw std::invalid_argument("null cutoff output stream");
+    const Earth::Field::SnapshotMetadata& metadata=
+        Earth::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata();
+    std::fprintf(f,"AUXDATA SNAPSHOT_ID=\"%s\"\n",
+                 TecplotAuxValue_(metadata.snapshotId).c_str());
+    std::fprintf(f,"AUXDATA SNAPSHOT_EPOCH_UTC=\"%s\"\n",
+                 TecplotAuxValue_(metadata.epochUTC).c_str());
+    std::fprintf(f,"AUXDATA SNAPSHOT_MESH_REVISION=\"%s\"\n",
+                 TecplotAuxValue_(
+                     Earth::Mode3D::GlobalMagneticField::CurrentMeshRevision()).c_str());
+    std::fprintf(f,"AUXDATA SNAPSHOT_CONTENT_FINGERPRINT=\"%s\"\n",
+                 TecplotAuxValue_(
+                     Earth::Mode3D::GlobalMagneticField::CurrentContentFingerprint()).c_str());
+    const std::string boundary=EarthUtil::ToUpper(prm.domain.boundaryType.empty()
+        ? std::string("BOX") : prm.domain.boundaryType);
+    std::fprintf(f,"AUXDATA OUTER_BOUNDARY_POLICY=\"%s\"\n",boundary.c_str());
+    if (boundary=="SHUE") {
+        const Earth::SWMFCoupledAccess::ShueParameters shue=
+            Earth::SWMFCoupledAccess::ResolveShueParameters(
+                prm.domain.shueR0Token,prm.domain.shueAlphaToken,
+                prm.field.pdyn_nPa,prm.field.imfBz_nT,_EARTH__RADIUS_,
+                1000.0*prm.domain.xMin);
+        std::fprintf(f,"AUXDATA SHUE_R0_RE=\"%.17g\"\n",shue.r0_Re);
+        std::fprintf(f,"AUXDATA SHUE_ALPHA=\"%.17g\"\n",shue.alpha);
+        std::fprintf(f,"AUXDATA SHUE_TAIL_CAP_X_M=\"%.17g\"\n",shue.tailCapX_m);
+    }
+}
+
+static void CloseAndRecordCutoffArtifact_(FILE* f,const std::string& fileName) {
+    // A returned RunCutoffRigidity() is a production success signal.  Check fclose so
+    // delayed filesystem errors cannot produce PASS with a truncated artifact.
+    if (f==nullptr || std::fclose(f)!=0)
+        throw std::runtime_error("Failed while finalizing cutoff artifact: "+fileName);
+    if (std::find(gLastCutoffArtifactFiles.begin(),gLastCutoffArtifactFiles.end(),
+                  fileName)==gLastCutoffArtifactFiles.end())
+        gLastCutoffArtifactFiles.push_back(fileName);
 }
 
 //======================================================================================
@@ -3494,6 +3689,7 @@ static void WriteTecplot3DPoints(const EarthUtil::AmpsParam& prm,
                           !prm.output.trajectories.empty());
 
     std::fprintf(f, "TITLE=\"Mode3D Cutoff Rigidity (POINTS/TRAJECTORY)\"\n");
+    WriteActiveSnapshotAuxData_(f,prm);
     std::fprintf(f, "VARIABLES=");
     if (hasTraj) std::fprintf(f, "\"TimeUTC\" ");
     std::fprintf(f, "\"id\",\"x_km\",\"y_km\",\"z_km\","
@@ -3513,7 +3709,7 @@ static void WriteTecplot3DPoints(const EarthUtil::AmpsParam& prm,
         std::fprintf(f, "%d %e %e %e %e %e %e %e\n",
                      i, P.x, P.y, P.z, lon, lat, Rc[(size_t)i], Emin[(size_t)i]);
     }
-    std::fclose(f);
+    CloseAndRecordCutoffArtifact_(f,fname);
 }
 
 static void WriteTecplot3DPoints_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
@@ -3526,6 +3722,7 @@ static void WriteTecplot3DPoints_DipoleAnalyticCompare(const EarthUtil::AmpsPara
     EnsureDipoleAnalyticState3D(prm);
 
     std::fprintf(f, "TITLE=\"Mode3D Dipole Cutoff Rigidity: Numeric vs Analytic Vertical\"\n");
+    WriteActiveSnapshotAuxData_(f,prm);
     std::fprintf(f, "VARIABLES=\"id\",\"x\",\"y\",\"z\",\"Rc_num_GV\",\"Rc_vert_GV\",\"rel_err\"\n");
     std::fprintf(f, "ZONE T=\"points\" I=%d F=POINT\n", nLoc);
 
@@ -3543,7 +3740,7 @@ static void WriteTecplot3DPoints_DipoleAnalyticCompare(const EarthUtil::AmpsPara
                      i, P.x, P.y, P.z, Rc_num, Rc_vert, rel);
     }
 
-    std::fclose(f);
+    CloseAndRecordCutoffArtifact_(f,fname);
 }
 
 static void WriteTecplot3DShells(const EarthUtil::AmpsParam& prm,
@@ -3557,6 +3754,7 @@ static void WriteTecplot3DShells(const EarthUtil::AmpsParam& prm,
     if (!f) throw std::runtime_error("Cannot write " + fname);
 
     std::fprintf(f, "TITLE=\"Mode3D Cutoff Rigidity (SHELLS)\"\n");
+    WriteActiveSnapshotAuxData_(f,prm);
     std::fprintf(f, "VARIABLES=\"lon_deg\",\"lat_deg\",\"Rc_GV\",\"Emin_MeV\"\n");
 
     for (size_t s = 0; s < prm.output.shellAlt_km.size(); ++s) {
@@ -3578,7 +3776,7 @@ static void WriteTecplot3DShells(const EarthUtil::AmpsParam& prm,
                          EminShell[s][(size_t)k]);
         }
     }
-    std::fclose(f);
+    CloseAndRecordCutoffArtifact_(f,fname);
 }
 
 // Write the complete vertical-cutoff band diagnostics produced by the Mode3D
@@ -3648,6 +3846,7 @@ static void WriteTecplot3DShells_Penumbra(
     requireSize(upperAboveRange.size(),"upper_above_range");
 
     std::fprintf(f,"TITLE=\"Mode3D Vertical Cutoff Penumbra Diagnostics\"\n");
+    WriteActiveSnapshotAuxData_(f,prm);
     std::fprintf(f,
         "VARIABLES=\"lon_deg\",\"lat_deg\",\"x_km\",\"y_km\",\"z_km\","
         "\"Rc_lower_GV\",\"Rc_effective_GV\",\"Rc_upper_GV\","
@@ -3701,7 +3900,7 @@ static void WriteTecplot3DShells_Penumbra(
         }
     }
 
-    std::fclose(f);
+    CloseAndRecordCutoffArtifact_(f,fname);
 }
 
 // Write the compact direct-access product produced by RIGIDITY_LIST.
@@ -3747,6 +3946,7 @@ static void WriteTecplot3DShells_AccessList(
     }
 
     std::fprintf(f,"TITLE=\"%s\"\n",productLabel.c_str());
+    WriteActiveSnapshotAuxData_(f,prm);
     std::fprintf(f,
         "VARIABLES=\"shell_index\",\"lon_deg\",\"lat_deg\","
         "\"x_km\",\"y_km\",\"z_km\",\"rigidity_GV\","
@@ -3786,7 +3986,7 @@ static void WriteTecplot3DShells_AccessList(
         }
     }
 
-    std::fclose(f);
+    CloseAndRecordCutoffArtifact_(f,fname);
 }
 
 // P1.4 -- write the direct three-state access cube A(R,Omega) for one observation
@@ -3876,6 +4076,7 @@ static void WriteTecplot3DDirectionalAccess_Location(
     if (!f) throw std::runtime_error("Cannot write "+fname);
 
     std::fprintf(f,"TITLE=\"Mode3D direct directional rigidity access (location %d)\"\n",locId);
+    WriteActiveSnapshotAuxData_(f,prm);
     // Numeric Tecplot rows carry a stable termination code; this AUXDATA makes
     // the corresponding physical reason explicit for users reading the raw file.
     std::fprintf(f,
@@ -4031,7 +4232,7 @@ static void WriteTecplot3DDirectionalAccess_Location(
             ++diagnosticIt;
         }
     }
-    std::fclose(f);
+    CloseAndRecordCutoffArtifact_(f,fname);
 }
 
 static void WriteTecplot3DDirectionalMap_Location(
@@ -4058,6 +4259,7 @@ static void WriteTecplot3DDirectionalMap_Location(
     const double z_km = x0_m.z / 1000.0;
 
     std::fprintf(f, "TITLE=\"Mode3D directional cutoff rigidity sky-map (location %d)\"\n", locId);
+    WriteActiveSnapshotAuxData_(f,prm);
     if (penumbra) {
         std::fprintf(f,
             "VARIABLES=\"lon_deg\",\"lat_deg\",\"Rc_GV\",\"Emin_MeV\"," 
@@ -4135,7 +4337,7 @@ static void WriteTecplot3DDirectionalMap_Location(
             penumbra->maxTraceTime_s[k],penumbra->maxTraceDistance_Re[k],
             penumbra->maxTraceSteps[k],rcStormer);
     }
-    std::fclose(f);
+    CloseAndRecordCutoffArtifact_(f,fname);
 }
 
 
@@ -4152,6 +4354,7 @@ static void WriteTecplot3DShells_DipoleAnalyticCompare(
     EnsureDipoleAnalyticState3D(prm);
 
     std::fprintf(f, "TITLE=\"Mode3D Dipole Cutoff Rigidity (Shells): Numeric vs Analytic Vertical\"\n");
+    WriteActiveSnapshotAuxData_(f,prm);
     std::fprintf(f, "VARIABLES=\"lon_deg\",\"lat_deg\",\"x_km\",\"y_km\",\"z_km\","
                     "\"Rc_num_GV\",\"Rc_vert_GV\",\"rel_err\"\n");
 
@@ -4194,7 +4397,7 @@ static void WriteTecplot3DShells_DipoleAnalyticCompare(
         }
     }
 
-    std::fclose(f);
+    CloseAndRecordCutoffArtifact_(f,fname);
 }
 
 } // end anonymous namespace
@@ -4351,7 +4554,16 @@ void SetCutoffOutputFileSuffix(const std::string& suffix) {
     gCutoffOutputFileSuffix = suffix;
 }
 
+std::vector<std::string> GetLastCutoffArtifactFiles() {
+    return gLastCutoffArtifactFiles;
+}
+
 int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar) {
+
+    // The list is a per-call transaction log used by the coupled Step-10 manifest.
+    // Clear it before any validation/output so a failed new calculation cannot expose
+    // artifacts from an older successful SWMF epoch.
+    gLastCutoffArtifactFiles.clear();
 
     // DIRECT_ACCESS appends physical boundary/local intensities to the access cube.
     // Pin the time-dependent boundary table to the same frozen epoch as this Mode3D
@@ -4470,6 +4682,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         throw std::runtime_error(
             "Mode3D cutoff: invalid R_INNER in #DOMAIN_BOUNDARY; value must be positive.");
     }
+    box.outerBoundary=BuildOuterBoundaryPolicy3D_(prm,box);
 
     //==================================================================================
     // 14.5 — Direction grid (Fibonacci sphere)
@@ -6350,6 +6563,7 @@ Earth::GridlessMode::TrajectoryResult TraceTrajectoryMesh(
     box.zMin=Earth::Mode3D::ParsedDomainMin[2];
     box.zMax=Earth::Mode3D::ParsedDomainMax[2];
     box.rInner=_EARTH__RADIUS_;
+    box.outerBoundary=BuildOuterBoundaryPolicy3D_(prm,box);
 
     // Apply request-owned integration budgets through a private parameter copy.  The
     // active compact field and run-wide configuration remain immutable.
@@ -6387,6 +6601,7 @@ bool TraceAllowedMeshEx(const EarthUtil::AmpsParam& prm,
     box.yMin=Earth::Mode3D::ParsedDomainMin[1]; box.yMax=Earth::Mode3D::ParsedDomainMax[1];
     box.zMin=Earth::Mode3D::ParsedDomainMin[2]; box.zMax=Earth::Mode3D::ParsedDomainMax[2];
     box.rInner=_EARTH__RADIUS_;
+    box.outerBoundary=BuildOuterBoundaryPolicy3D_(prm,box);
     cMode3DMeshFieldEval field(prm);
     const V3 x0_m{x0_m_arr[0],x0_m_arr[1],x0_m_arr[2]};
     const V3 v0_unit=v3unit(V3{v0_unit_arr[0],v0_unit_arr[1],v0_unit_arr[2]});

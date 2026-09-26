@@ -59,19 +59,25 @@
 #include "../boundary/spectrum.h"
 #include "../util/amps_param_parser.h"
 #include "../util/SWMFSnapshotContract.h"
+#include "../util/SWMFCoupledAccessContract.h"
+#include "../util/SWMFCoupledProductsContract.h"
 #include "../Earth.h"
 
 #include "pic.h"
 
 #include <iostream>
+#include <fstream>
 #include <stdexcept>
 #include <sstream>
 #include <iomanip>
 #include <cmath>
 #include <algorithm>
 #include <vector>
+#include <map>
 #include <limits>
 #include <cstring>
+#include <cstdio>
+#include <cerrno>
 #include <memory>
 
 #ifndef _NO_SPICE_CALLS_
@@ -91,6 +97,7 @@ namespace Mode3DForwardSWMF {
 static EarthUtil::AmpsParam s_prm;
 static bool                 s_pre_initialized = false;
 static long int             s_cutoff_call_counter = 0;
+static Earth::SWMFCoupledAccess::CadenceGate s_coupled_access_cadence_gate;
 
 // Suffix used by the most recent SWMF-coupled cutoff-rigidity output.
 //
@@ -246,20 +253,31 @@ double CurrentCutoffOutputTimeSeconds_() {
   return std::max(0.0,tSim_s);
 }
 
-std::string FormatCutoffOutputSuffix_(long int callIndex) {
+std::string FormatAttemptOutputSuffix_(long int callIndex) {
   const double tSim_s = CurrentCutoffOutputTimeSeconds_();
 
   std::ostringstream ss;
 
-  // Keep the call counter in the suffix even though the physical time is now
-  // taken from PIC::SimulationTime::TimeCounter.  The counter guarantees unique
-  // names if two coupling callbacks occur at the same simulation time, while
-  // the TimeCounter part preserves the physically meaningful snapshot time.
-  ss << ".swmf_n" << std::setw(6) << std::setfill('0') << callIndex
+  // Before compact B/u assembly there is no content-derived snapshot ID, yet a fatal
+  // gather/validation exit must still leave a FAILED marker. Label that marker as an
+  // attempt so it cannot be mistaken for a completed scientific product identity.
+  // Once assembly succeeds, the code first writes the final snapshot-named FAILED
+  // status and then removes this provisional marker. The counter therefore exists
+  // only for pre-identity failure diagnosis and never names a scientific artifact.
+  ss << ".swmf_attempt_n" << std::setw(6) << std::setfill('0') << callIndex
      << "_t" << std::setw(12) << std::setfill('0')
      << std::fixed << std::setprecision(3) << tSim_s << "s";
 
   return ss.str();
+}
+
+std::string FormatCutoffOutputSuffix_(
+    const Earth::Field::SnapshotMetadata& metadata,double simulationTime_s) {
+  // Scientific product identity is independent of callback count, MPI layout, and
+  // restart position. The exact PT time plus the content-derived Step-9 snapshot ID
+  // makes the name both human-readable and collision resistant.
+  return Earth::SWMFCoupledAccess::BuildProductSuffix(
+      simulationTime_s,metadata.snapshotId);
 }
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
@@ -307,6 +325,80 @@ std::string CurrentCoupledEpochUTC_() {
 #endif
 }
 
+bool CoupledEpochsMatch_(const std::string& sampleUTC,
+                         const std::string& snapshotUTC) {
+  const double matchTolerance_s=1.0e-3;
+#ifdef _NO_SPICE_CALLS_
+  // A no-SPICE build is permitted only at zero PT offset by CurrentCoupledEpochUTC_().
+  // Accept the common optional trailing Z difference, but do not attempt calendar
+  // arithmetic or silently associate a different timestamp with the field snapshot.
+  const auto normalize=[](std::string value) {
+    if (!value.empty() && (value.back()=='Z' || value.back()=='z')) value.pop_back();
+    return value;
+  };
+  (void)matchTolerance_s;
+  return normalize(sampleUTC)==normalize(snapshotUTC);
+#else
+  SpiceDouble sampleEt=0.0,snapshotEt=0.0;
+  str2et_c(sampleUTC.c_str(),&sampleEt);
+  str2et_c(snapshotUTC.c_str(),&snapshotEt);
+  return std::fabs(static_cast<double>(sampleEt-snapshotEt))<=matchTolerance_s;
+#endif
+}
+
+EarthUtil::AmpsParam BuildSynchronizedCoupledProductParam_(
+    const EarthUtil::AmpsParam& source,const std::string& snapshotUTC) {
+  EarthUtil::AmpsParam synchronized=source;
+  synchronized.field.epoch=snapshotUTC;
+  if (EarthUtil::ToUpper(source.output.mode)!="TRAJECTORY") return synchronized;
+
+  // A live coupled field epoch must not be multiplied by every point in a multi-time
+  // ephemeris.  Select only samples whose own UTC identifies this snapshot, mirroring
+  // standalone SNAPSHOT_LIST replay.  This turns the requested timestamp/ephemeris
+  // equality into construction rather than a post-hoc label in the output.
+  synchronized.output.trajectories.clear();
+  std::map<int,int> globalToLocal;
+  int globalIndex=0,localIndex=0;
+  for (std::size_t it=0;it<source.output.trajectories.size();++it) {
+    const EarthUtil::SpacecraftTrajectory& input=source.output.trajectories[it];
+    EarthUtil::SpacecraftTrajectory selected;
+    selected.name=input.name;
+    selected.sourceFrame=input.sourceFrame;
+    for (std::size_t is=0;is<input.samples.size();++is,++globalIndex) {
+      if (!CoupledEpochsMatch_(input.samples[is].timeUTC,snapshotUTC)) continue;
+      selected.samples.push_back(input.samples[is]);
+      globalToLocal[globalIndex]=localIndex++;
+    }
+    if (!selected.samples.empty())
+      synchronized.output.trajectories.push_back(selected);
+  }
+  if (localIndex==0)
+    throw std::runtime_error(
+        "SWMF-coupled TRAJECTORY products require at least one ephemeris sample "
+        "matching the frozen field epoch within 1 ms");
+  synchronized.output.RebuildFlattenedPointsFromTrajectories();
+
+  // LOCATION-qualified directional apertures use flattened global trajectory indices.
+  // Remap only the selected epoch's apertures so a combined cutoff+flux callback keeps
+  // the same spatial product domain.  Unqualified apertures remain available at every
+  // selected location exactly as in the standalone snapshot-list adapter.
+  std::vector<EarthUtil::DirectionalAperture> selectedApertures;
+  for (std::size_t i=0;i<source.cutoff.dirMapApertures.size();++i) {
+    EarthUtil::DirectionalAperture aperture=source.cutoff.dirMapApertures[i];
+    if (aperture.locationIndex<0) selectedApertures.push_back(aperture);
+    else {
+      const std::map<int,int>::const_iterator found=
+          globalToLocal.find(aperture.locationIndex);
+      if (found!=globalToLocal.end()) {
+        aperture.locationIndex=found->second;
+        selectedApertures.push_back(aperture);
+      }
+    }
+  }
+  synchronized.cutoff.dirMapApertures.swap(selectedApertures);
+  return synchronized;
+}
+
 unsigned long long StableControlStringHash_(const std::string& value,
                                              unsigned long long seed) {
   // Local FNV-1a is sufficient here: the value is compared only among ranks in this
@@ -320,6 +412,24 @@ unsigned long long StableControlStringHash_(const std::string& value,
   hash^=0xffU;
   hash*=1099511628211ULL;
   return hash;
+}
+
+void RequireCollectiveCoupledProductControl_(const EarthUtil::AmpsParam& prm) {
+  const Earth::SWMFCoupledProducts::ProductControl control=
+      Earth::Mode3D::DescribeDensityFluxProductControl(prm);
+  const std::string fingerprint=
+      Earth::SWMFCoupledProducts::ProductControlFingerprint(control);
+  unsigned long long local=StableControlStringHash_(
+      fingerprint,14695981039346656037ULL);
+  unsigned long long minimum=0,maximum=0;
+  MPI_Allreduce((void*)&local,&minimum,1,MPI_UNSIGNED_LONG_LONG,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&local,&maximum,1,MPI_UNSIGNED_LONG_LONG,MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  if (minimum!=maximum)
+    throw std::runtime_error(
+        "synchronized SWMF spectrum/channel/response/ephemeris controls differ "
+        "across MPI ranks");
 }
 
 void ValidateLiveSWMFStateCoherence_() {
@@ -399,6 +509,17 @@ void ValidateLiveSWMFStateCoherence_() {
   localControlHash=StableControlStringHash_(
       s_prm.field.swmfSnapshotExportPrefix,localControlHash);
   localControlHash=StableControlStringHash_(s_prm.calc.target,localControlHash);
+  if (TargetRequestsDensityFlux_(s_prm)) {
+    // Field coherence alone is not sufficient for Step 11.  Every rank must also fold
+    // access with the identical species, energy grid, boundary spectrum, configured
+    // channels, and detector responses.  Hash the same value-owned control object that
+    // DensityMode3D later embeds in each artifact and in the coupled manifest.
+    const Earth::SWMFCoupledProducts::ProductControl productControl=
+        Earth::Mode3D::DescribeDensityFluxProductControl(s_prm);
+    localControlHash=StableControlStringHash_(
+        Earth::SWMFCoupledProducts::ProductControlFingerprint(productControl),
+        localControlHash);
+  }
   unsigned long long minimumControlHash=0,maximumControlHash=0;
   MPI_Allreduce((void*)&localControlHash,&minimumControlHash,1,
                 MPI_UNSIGNED_LONG_LONG,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
@@ -406,7 +527,7 @@ void ValidateLiveSWMFStateCoherence_() {
                 MPI_UNSIGNED_LONG_LONG,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
   if (minimumControlHash!=maximumControlHash)
     throw std::runtime_error(
-        "SWMF epoch, export prefix, or product target differs across MPI ranks");
+        "SWMF epoch, export prefix, product target, or flux-product controls differ across MPI ranks");
   lastAcceptedTime_s=localTime;
 }
 
@@ -440,8 +561,8 @@ Earth::Field::SnapshotMetadata BuildSWMFFieldSnapshotMetadata_() {
   // This is a provisional identity used only while validating the gather request.  The
   // compact-array publisher replaces it with the Step-9 content-derived identity after
   // B/u have been reduced and validated.  Thus restarts and different MPI layouts get
-  // the same final ID for the same epoch/data, while the call number remains only an
-  // output-name discriminator.
+  // the same final ID for the same epoch/data. The call number below is provisional
+  // validation context only; no final scientific output name depends on it.
   std::ostringstream state;
   state << std::setprecision(17)
         << "call=" << s_cutoff_call_counter
@@ -465,6 +586,32 @@ std::string CoupledSnapshotStatusFile_(const std::string& suffix) {
   return "swmf_product_status"+suffix+".json";
 }
 
+std::string CoupledAccessManifestFile_(const std::string& suffix) {
+  return "swmf_cutoff_access_manifest"+suffix+".json";
+}
+
+std::string CoupledProductsManifestFile_(const std::string& suffix) {
+  return "swmf_flux_spectrum_manifest"+suffix+".json";
+}
+
+void RemoveSupersededAttemptStatus_(const std::string& attemptFile,
+                                    const std::string& finalFile) {
+  // Keep status publication transactional. The content-identified FAILED file is
+  // written and collectively acknowledged before the provisional marker is removed.
+  // Consequently a crash can leave one or two explicit failures, but it can never
+  // leave neither. On a successful batch only the unambiguous snapshot-named status
+  // remains, avoiding a stale FAILED attempt beside a valid PASS transaction.
+  int removeSucceeded=1;
+  std::string removeError;
+  if (PIC::ThisThread==0 && attemptFile!=finalFile &&
+      std::remove(attemptFile.c_str())!=0) {
+    removeSucceeded=0;
+    removeError="cannot remove superseded SWMF attempt status '"+attemptFile+"': "+
+        std::strerror(errno);
+  }
+  RequireCollectiveStatusWriteSuccess_(removeSucceeded,removeError);
+}
+
 void WriteCoupledSnapshotStatus_(const std::string& fileName,
                                  const std::string& status,
                                  const Earth::Field::SnapshotMetadata& metadata,
@@ -480,6 +627,120 @@ void WriteCoupledSnapshotStatus_(const std::string& fileName,
           Earth::SWMFSnapshot::BuildProductStatusJson(
               status,metadata.snapshotId,metadata.epochUTC,suffix,exportedSnapshot,
               TargetRequestsCutoff_(s_prm),TargetRequestsDensityFlux_(s_prm),message));
+    }
+    catch (const std::exception& error) {
+      writeSucceeded=0;
+      writeError=error.what();
+    }
+    catch (...) {
+      writeSucceeded=0;
+      writeError="unknown exception";
+    }
+  }
+  RequireCollectiveStatusWriteSuccess_(writeSucceeded,writeError);
+}
+
+void VerifyAndWriteCoupledAccessManifest_(
+    const Earth::Field::SnapshotMetadata& metadata,double simulationTime_s,
+    const std::string& suffix) {
+  // The Mode3D cutoff writer records files only after their fclose succeeds. Verify those
+  // root-owned records once more at the transaction boundary, then publish one manifest
+  // that binds the complete artifact set to the frozen SWMF snapshot.  Other ranks do
+  // not touch the filesystem; they receive the root result before proceeding to any
+  // later product collective.
+  int writeSucceeded=1;
+  std::string writeError;
+  if (PIC::ThisThread==0) {
+    try {
+      const std::vector<std::string> artifacts=
+          Earth::Mode3D::GetLastCutoffArtifactFiles();
+      if (artifacts.empty())
+        throw std::runtime_error(
+            "coupled cutoff/access completed without a recorded output artifact");
+      for (std::vector<std::string>::const_iterator it=artifacts.begin();
+          it!=artifacts.end();++it) {
+        std::ifstream input(it->c_str(),std::ios::in|std::ios::binary|std::ios::ate);
+        if (!input || input.tellg()<=0)
+          throw std::runtime_error("missing or empty coupled cutoff artifact: "+*it);
+      }
+
+      const std::string fileName=CoupledAccessManifestFile_(suffix);
+      std::ofstream output(fileName.c_str(),std::ios::out|std::ios::trunc);
+      if (!output)
+        throw std::runtime_error("cannot write coupled cutoff manifest: "+fileName);
+      output << Earth::SWMFCoupledAccess::BuildAccessManifestJson(
+          "PASS",metadata.snapshotId,
+          Earth::Mode3D::GlobalMagneticField::CurrentContentFingerprint(),
+          Earth::Mode3D::GlobalMagneticField::CurrentMeshRevision(),
+          metadata.epochUTC,simulationTime_s,s_prm.output.mode,
+          EarthUtil::ToUpper(s_prm.domain.boundaryType),suffix,artifacts,
+          "cutoff/access artifacts completed from one immutable SWMF snapshot");
+      output.flush();
+      if (!output)
+        throw std::runtime_error("failed while writing coupled cutoff manifest: "+fileName);
+    }
+    catch (const std::exception& error) {
+      writeSucceeded=0;
+      writeError=error.what();
+    }
+    catch (...) {
+      writeSucceeded=0;
+      writeError="unknown exception";
+    }
+  }
+  RequireCollectiveStatusWriteSuccess_(writeSucceeded,writeError);
+}
+
+void VerifyAndWriteCoupledProductsManifest_(
+    const Earth::Field::SnapshotMetadata& metadata,double simulationTime_s,
+    const std::string& suffix) {
+  // DensityMode3D is the shared Step-6 standalone/coupled integrator.  It records an
+  // artifact only after flush+close succeeds, then exposes the same trajectory counts
+  // used in its termination file.  This adapter performs no numerical recomputation:
+  // it checks that inventory, applies the existing unresolved gate, and binds the
+  // complete set to the frozen SWMF field before the enclosing status may become PASS.
+  int writeSucceeded=1;
+  std::string writeError;
+  if (PIC::ThisThread==0) {
+    try {
+      const std::vector<std::string> artifacts=
+          Earth::Mode3D::GetLastDensityFluxArtifactFiles();
+      Earth::SWMFCoupledProducts::ProductRunSummary summary=
+          Earth::Mode3D::GetLastDensityFluxRunSummary();
+      if (summary.artifacts!=artifacts)
+        throw std::runtime_error(
+            "coupled flux/spectrum run summary and closed-artifact inventory differ");
+      Earth::SWMFCoupledProducts::ValidateRunSummary(summary,true);
+      for (std::vector<std::string>::const_iterator it=artifacts.begin();
+          it!=artifacts.end();++it) {
+        std::ifstream input(it->c_str(),std::ios::in|std::ios::binary|std::ios::ate);
+        if (!input || input.tellg()<=0)
+          throw std::runtime_error(
+              "missing or empty coupled density/flux/spectrum artifact: "+*it);
+      }
+
+      const std::string fileName=CoupledProductsManifestFile_(suffix);
+      std::ofstream output(fileName.c_str(),std::ios::out|std::ios::trunc);
+      if (!output)
+        throw std::runtime_error(
+            "cannot write coupled density/flux/spectrum manifest: "+fileName);
+      output << Earth::SWMFCoupledProducts::BuildProductsManifestJson(
+          "PASS",metadata.snapshotId,
+          Earth::Mode3D::GlobalMagneticField::CurrentContentFingerprint(),
+          Earth::Mode3D::GlobalMagneticField::CurrentMeshRevision(),
+          metadata.epochUTC,simulationTime_s,
+          EarthUtil::ToUpper(s_prm.domain.boundaryType.empty()
+              ? std::string("BOX") : s_prm.domain.boundaryType),suffix,summary,
+          "density, local spectra, integral flux/channels, detector rates, and "
+          "termination accounting completed from one immutable SWMF snapshot");
+      output.flush();
+      if (!output)
+        throw std::runtime_error(
+            "failed while flushing coupled density/flux/spectrum manifest: "+fileName);
+      output.close();
+      if (output.fail())
+        throw std::runtime_error(
+            "failed while closing coupled density/flux/spectrum manifest: "+fileName);
     }
     catch (const std::exception& error) {
       writeSucceeded=0;
@@ -841,6 +1102,109 @@ double GetCoupledCalculationCadenceSeconds() {
 #endif
 }
 
+bool ShouldRunBackwardProductCalculation(bool verbose) {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  return false;
+#else
+  if (!s_pre_initialized || !IsBackwardProductTarget_(s_prm)) return false;
+
+  // Scheduling is itself a collective contract.  If one rank skipped while another
+  // entered the cutoff solver, the first product MPI reduction would deadlock. Check
+  // not only the clock/cadence but also the retained gate state before branching.
+  const double localTime=PIC::SimulationTime::TimeCounter;
+  const double localCadence=BackwardProductCadenceSecondsFromPrm_(s_prm);
+  const int localHasCompleted=s_coupled_access_cadence_gate.HasCompletedEpoch() ? 1 : 0;
+  const double localLast=s_coupled_access_cadence_gate.LastCompletedTimeSeconds();
+
+  double minTime=0.0,maxTime=0.0,minCadence=0.0,maxCadence=0.0;
+  double minLast=0.0,maxLast=0.0;
+  int minHas=0,maxHas=0;
+  MPI_Allreduce((void*)&localTime,&minTime,1,MPI_DOUBLE,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localTime,&maxTime,1,MPI_DOUBLE,MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localCadence,&minCadence,1,MPI_DOUBLE,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localCadence,&maxCadence,1,MPI_DOUBLE,MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localHasCompleted,&minHas,1,MPI_INT,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localHasCompleted,&maxHas,1,MPI_INT,MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localLast,&minLast,1,MPI_DOUBLE,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localLast,&maxLast,1,MPI_DOUBLE,MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  if (!std::isfinite(localTime) || localTime<0.0 || minTime!=maxTime ||
+      minCadence!=maxCadence || minHas!=maxHas || minLast!=maxLast) {
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] Coupled cutoff cadence state differs across MPI ranks.");
+  }
+
+  Earth::SWMFCoupledAccess::CadenceDecision decision;
+  try {
+    decision=s_coupled_access_cadence_gate.Evaluate(localTime,localCadence);
+  }
+  catch (const std::exception& error) {
+    exit(__LINE__,__FILE__,error.what());
+  }
+  const int localAction=static_cast<int>(decision.action);
+  int minAction=0,maxAction=0;
+  MPI_Allreduce((void*)&localAction,&minAction,1,MPI_INT,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localAction,&maxAction,1,MPI_INT,MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  if (minAction!=maxAction)
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] Coupled cutoff cadence decision differs across ranks.");
+  if (decision.action==Earth::SWMFCoupledAccess::CadenceAction::RejectStaleTime)
+    exit(__LINE__,__FILE__,decision.reason.c_str());
+
+  if (verbose && PIC::ThisThread==0) {
+    if (decision.action==Earth::SWMFCoupledAccess::CadenceAction::Run) {
+      std::cout << "[Mode3DForwardSWMF] Running cutoff/access products at PT time "
+                << std::setprecision(17) << localTime << " s: "
+                << decision.reason << ".\n";
+    }
+    else {
+      // Report a skipped callback only once for each next-due epoch.  Some SWMF
+      // configurations call PT frequently, and repeating this line at every receive
+      // would bury the rank-zero product progress without adding information.
+      static double lastReportedNextDue=-std::numeric_limits<double>::infinity();
+      if (decision.nextDueTime_s!=lastReportedNextDue) {
+        std::cout << "[Mode3DForwardSWMF] Skipping PT time "
+                  << std::setprecision(17) << localTime
+                  << " s; next cutoff/access epoch is "
+                  << decision.nextDueTime_s << " s.\n";
+        lastReportedNextDue=decision.nextDueTime_s;
+      }
+    }
+    std::cout.flush();
+  }
+  return decision.action==Earth::SWMFCoupledAccess::CadenceAction::Run;
+#endif
+}
+
+void MarkBackwardProductCalculationComplete() {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  const double localTime=PIC::SimulationTime::TimeCounter;
+  s_coupled_access_cadence_gate.CommitCompleted(localTime);
+
+  // This final agreement check is intentionally after all product collectives.  It
+  // proves every rank committed the same completed epoch before the next callback can
+  // make a skip/run decision.
+  const double localLast=s_coupled_access_cadence_gate.LastCompletedTimeSeconds();
+  double minLast=0.0,maxLast=0.0;
+  MPI_Allreduce((void*)&localLast,&minLast,1,MPI_DOUBLE,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localLast,&maxLast,1,MPI_DOUBLE,MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  if (minLast!=maxLast)
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] Completed cutoff/access epoch differs across ranks.");
+#endif
+}
+
 bool ReadyForBackwardProductCalculation(bool verbose) {
 #if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
   return false;
@@ -1008,25 +1372,12 @@ void amps_cutoff_time_step() {
 
   const long int callIndex = s_cutoff_call_counter;
   const double   tSim_s    = CurrentCutoffOutputTimeSeconds_();
-  const std::string suffix = FormatCutoffOutputSuffix_(callIndex);
-
-  // Save the suffix before the cutoff calculation starts.  The cutoff products
-  // and the diagnostic coupled-mesh dump written by main_lib.cpp must carry the
-  // same stamp, because they describe the same SWMF/PT coupled snapshot.
-  s_last_cutoff_output_suffix = suffix;
-  s_last_cutoff_output_suffix_valid = true;
-
-  Earth::Mode3D::SetCutoffOutputFileSuffix(suffix);
-  Earth::Mode3D::SetDensityOutputFileSuffix(suffix);
-
-  if (PIC::ThisThread == 0) {
-    std::cout << "[Mode3DForwardSWMF] cutoff snapshot " << callIndex
-              << ": t_sim=" << tSim_s << " s, suffix='" << suffix << "'.\n";
-    std::cout.flush();
-  }
-
-  const std::string exportedSnapshot=CoupledSnapshotExportFile_(suffix);
-  const std::string statusFile=CoupledSnapshotStatusFile_(suffix);
+  const std::string attemptSuffix=FormatAttemptOutputSuffix_(callIndex);
+  std::string suffix=attemptSuffix;
+  std::string exportedSnapshot;
+  const std::string attemptStatusFile=CoupledSnapshotStatusFile_(attemptSuffix);
+  std::string statusFile=attemptStatusFile;
+  s_last_cutoff_output_suffix_valid=false;
   Earth::Field::SnapshotMetadata batchFieldMetadata;
   batchFieldMetadata.sourceId="PIC::CPLR:SWMF";
   batchFieldMetadata.modelName="SWMF";
@@ -1059,6 +1410,33 @@ void amps_cutoff_time_step() {
         batchFieldProvider->CreateSnapshot(batchFieldRequest);
     batchFieldMetadata=batchFieldSnapshot->Metadata();
 
+    // The final filename can be constructed only after compact B/u assembly has
+    // produced its content-derived snapshot ID.  Unlike the old call-counter suffix,
+    // this identity is invariant under restart and MPI/thread layout.
+    suffix=FormatCutoffOutputSuffix_(batchFieldMetadata,tSim_s);
+    exportedSnapshot=CoupledSnapshotExportFile_(suffix);
+    statusFile=CoupledSnapshotStatusFile_(suffix);
+    Earth::Mode3D::SetCutoffOutputFileSuffix(suffix);
+    Earth::Mode3D::SetDensityOutputFileSuffix(suffix);
+    s_last_cutoff_output_suffix=suffix;
+    s_last_cutoff_output_suffix_valid=true;
+
+    // Replace the provisional fail-closed record with precise identity before any
+    // export or trajectory work.  A later fatal exit therefore names the exact state
+    // that did not produce a complete artifact set.
+    WriteCoupledSnapshotStatus_(
+        statusFile,"FAILED",batchFieldMetadata,suffix,exportedSnapshot,
+        "validated snapshot has not completed its requested products");
+    RemoveSupersededAttemptStatus_(attemptStatusFile,statusFile);
+
+    if (PIC::ThisThread==0) {
+      std::cout << "[Mode3DForwardSWMF] cutoff/access snapshot " << callIndex
+                << ": t_sim=" << std::setprecision(17) << tSim_s
+                << " s, snapshot_id='" << batchFieldMetadata.snapshotId
+                << "', suffix='" << suffix << "'.\n";
+      std::cout.flush();
+    }
+
     // Freeze before export or trajectories. SWMF serializes PT callbacks, naturally
     // queueing the next receive until this callback returns; the compact-array lease
     // also rejects any accidental reassembly initiated from inside this batch.
@@ -1082,10 +1460,26 @@ void amps_cutoff_time_step() {
     // the boundary spectrum; that could synchronize the spectrum while leaving frame
     // rotations/ephemerides at the wrong time.  Step 9 binds every consumer to the
     // same actual UTC, so no secondary offset is applied.
-    EarthUtil::AmpsParam batchProductPrm=s_prm;
+    EarthUtil::AmpsParam batchProductPrm=
+        TargetRequestsDensityFlux_(s_prm)
+        ? BuildSynchronizedCoupledProductParam_(s_prm,batchFieldMetadata.epochUTC)
+        : s_prm;
     batchProductPrm.field.epoch=batchFieldMetadata.epochUTC;
     batchProductPrm.densitySpectrum.spectrumEpochOffsetActive=false;
     batchProductPrm.densitySpectrum.spectrumEpochOffset_s=0.0;
+    if (TargetRequestsDensityFlux_(batchProductPrm)) {
+      // The termination table is mandatory evidence for a coupled Step-11 PASS.  This
+      // internal transaction requirement does not change DS_UNRESOLVED_TOL or any
+      // trajectory classification; it only prevents an otherwise optional writer
+      // toggle from removing the accounting needed to audit the existing gate.
+      batchProductPrm.densitySpectrum.saveTerminationSummary=true;
+      // Select a time-dependent TABLE before fingerprinting the control so rank
+      // agreement covers the actual energy/intensity nodes folded at this field UTC,
+      // not only a common filename. RunDensityAndFlux repeats this idempotent selection
+      // at its public boundary, preserving the standalone/coupled shared contract.
+      ::gSpectrum.SetEvaluationEpochUTC(batchProductPrm.field.epoch);
+      RequireCollectiveCoupledProductControl_(batchProductPrm);
+    }
 
     // Run the products requested by CALC_TARGET. Both products share the compact SWMF
     // B snapshot (and explicitly experimental E, if enabled), so cutoff, directional
@@ -1097,6 +1491,7 @@ void amps_cutoff_time_step() {
           batchFieldMetadata,
           Earth::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata(),
           "SWMF-coupled cutoff product");
+      VerifyAndWriteCoupledAccessManifest_(batchFieldMetadata,tSim_s,suffix);
     }
     if (TargetRequestsDensityFlux_(s_prm)) {
       Earth::Mode3D::RunDensityAndFlux(batchProductPrm);
@@ -1104,6 +1499,8 @@ void amps_cutoff_time_step() {
           batchFieldMetadata,
           Earth::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata(),
           "SWMF-coupled density/flux/spectrum product");
+      VerifyAndWriteCoupledProductsManifest_(
+          batchFieldMetadata,tSim_s,suffix);
     }
 
     Earth::Mode3D::GlobalMagneticField::EndFrozenFieldBatch(
@@ -1111,7 +1508,8 @@ void amps_cutoff_time_step() {
 
     WriteCoupledSnapshotStatus_(
         statusFile,"PASS",batchFieldMetadata,suffix,exportedSnapshot,
-        "all requested products completed from one immutable SWMF B/u snapshot");
+        "all requested cutoff/access/flux/spectrum products completed from one "
+        "immutable SWMF B/u snapshot");
   }
   catch (const std::exception& e) {
     // FAILED was written collectively before field assembly. Do not start another MPI

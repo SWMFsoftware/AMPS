@@ -23,6 +23,7 @@
 #include "../util/amps_param_parser.h"
 #include "../gridless/CutoffRigidityGridless.h"
 #include <string>
+#include <vector>
 
 namespace Earth {
 namespace Mode3D {
@@ -49,10 +50,19 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 //   cutoff_3d_shells.dat
 //
 // SWMF-coupled runs call amps_time_step() multiple times for successive MHD
-// snapshots.  In that case the coupling bridge sets a suffix such as
-//   .swmf_n000003_t000600.000s
-// before each cutoff calculation so every snapshot writes a distinct file.
+// snapshots. In that case the coupling bridge sets a suffix such as
+//   .swmf_t0000000600.125000000s_sidfield-v1-...
+// before each cutoff calculation. The suffix binds exact simulation time and the
+// complete content-derived field identity, so different snapshots cannot overwrite
+// one another and restart/MPI-layout comparisons retain the same artifact names.
 void SetCutoffOutputFileSuffix(const std::string& suffix);
+
+// Return the files successfully closed by the most recent RunCutoffRigidity() on this
+// rank. Output is root-owned, so a coupled caller uses this list on rank zero to write
+// the Step-10 artifact manifest. Files are recorded only after fclose succeeds; an
+// empty list after a requested cutoff is therefore a production failure, not a valid
+// zero-product result.
+std::vector<std::string> GetLastCutoffArtifactFiles();
 
 
 //--------------------------------------------------------------------------------------

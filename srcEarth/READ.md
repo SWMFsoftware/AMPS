@@ -1,5 +1,109 @@
 # AMPS Earth Energetic-Particle Model
 
+## SWMF-coupled flux and spectra (Roadmap Step 11)
+
+Step 11 connects the live SWMF callback to the established Step-6
+backward-characteristic integrator. At every accepted field epoch the same frozen
+Mode3D snapshot now yields cutoff/directional access (when requested), local
+differential spectra, density, omnidirectional and one-way planar flux, configured
+energy channels, detector-response rates, uncertainty bounds, and explicit trajectory
+termination counts. The forward `3d_forward` density and sphere-flux samplers solve a
+different population problem and are not used as validation references.
+
+Synchronization is enforced before physics rather than inferred afterward. The final
+snapshot UTC becomes the boundary-spectrum evaluation UTC; timestamped trajectory
+samples must match it within 1 ms; and all MPI ranks compare one fingerprint covering
+species, energy/access grid, raw spectrum definition, units, uncertainty, ordered
+channels, detector responses, and selected observation geometry. This same identity is
+written into every product and the coupled manifest.
+
+The output transaction is fail closed. Each stream is flushed and closed before it is
+recorded. `swmf_flux_spectrum_manifest<SUFFIX>.json` is emitted only when spectrum,
+density, flux, and termination roles exist and are nonempty, termination categories sum
+to all sampled trajectories, the field and spectrum epochs are equal, and the existing
+`DS_UNRESOLVED_TOL` is satisfied. The outer status changes to `PASS` only after the
+manifest closes; no numerical threshold is relaxed.
+
+Portable tests and exact manufactured references:
+
+```bash
+./srcEarth/test/USWMFCoupledProducts/run_test.sh
+```
+
+Live configuration, replay, and comparison:
+
+```bash
+# Resolve all REPLACE_* fields first.
+srcEarth/examples/swmf_step11_flux_spectrum.in.template
+srcEarth/examples/standalone_step9_swmf_replay.in.template
+
+python3 srcEarth/test/USWMFCoupledProducts/compare_flux_products.py \
+  --live-manifest coupled/swmf_flux_spectrum_manifest.swmf_t..._sid....json \
+  --replay-dir replay --json step11_comparison.json
+```
+
+The exact linked F6/F7/F13/F17 and I-F03/I-F06/I-F07/I-F10 matrix, including 1x1,
+2x8, 8x16, STATIC/DYNAMIC/BLOCK_CYCLIC and O3 observation requirements, is documented
+in `test/USWMFCoupledProducts/README.md`. Step 11 is still the Phase-1 frozen,
+static-magnetic mapping; no time-dependent/electric characteristic is claimed.
+
+## SWMF-coupled cutoff and access (Roadmap Step 10)
+
+Step 10 invokes the established Mode3D cutoff/directional-access solver inside the
+SWMF/PT callback at a collective physical cadence. After a complete field receive and
+before a later receive may change the field, every MPI rank compares the authoritative
+PT time, cadence, and last successfully completed epoch. All ranks take the same RUN,
+SKIP, DUPLICATE, or STALE path. A skipped callback enters no product collective; a
+stale clock or divergent state is fatal; and the cadence advances only after all
+requested products complete. A fresh restarted process evaluates its first saved epoch
+again to make restart parity testable.
+
+The field is then frozen by the Step-9 lease. Its content-derived snapshot ID and the
+PT time at nine decimal places create a common suffix for field export,
+cutoff/directional-access output, diagnostic mesh output, fail-closed status, and
+manifest. Callback number, MPI layout, and thread count are not part of the suffix.
+Each Tecplot product carries `AUXDATA` for snapshot ID, absolute epoch, mesh revision,
+content fingerprint, and physical boundary policy. Rank zero records a product only
+after `fclose` succeeds, verifies every listed file is nonempty, and writes
+`swmf_cutoff_access_manifest<SUFFIX>.json` with explicit `RESULT: PASS`.
+Before field assembly can produce a snapshot ID, a labelled `swmf_attempt_n...` FAILED
+status covers early fatal exits. Once identity exists, the final snapshot-named FAILED
+status is written before the provisional marker is removed.
+
+The active physical escape choices are:
+
+```text
+#DOMAIN_BOUNDARY
+BOUNDARY_TYPE BOX
+
+! or
+BOUNDARY_TYPE SHUE
+SHUE_R0    AUTO       ! or a positive value in Re
+SHUE_ALPHA AUTO       ! or a positive dimensionless value
+```
+
+`BOX` keeps the historical six-face behavior. `SHUE` uses the Shue magnetopause plus
+`DOMAIN_X_MIN` as the nightside tail cap. The AUTO coefficients are resolved from the
+configured PDYN [nPa] and IMF Bz [nT]. For SHUE, a non-tail Cartesian face reached
+while still inside the magnetopause, an in-domain missing AMR leaf, or an incomplete
+interpolation row is `INVALID_FIELD`, not physical escape. Unavailable mesh data can
+therefore never increase calculated access.
+
+Use `examples/swmf_step10_cutoff_access.in.template` for a live configuration and
+`examples/standalone_step9_swmf_replay.in.template` for its exact replay. Run portable
+fixed-reference and negative tests with:
+
+```bash
+./srcEarth/test/USWMFCoupledAccess/run_test.sh
+```
+
+Linked acceptance repeats live export and exact standalone replay for POINTS,
+TRAJECTORY, and SHELLS at 1x1, 2x8, and default 8x16; repeats a saved epoch after
+restart; and retains I-F02, I-F04--I-F07, and applicable C tests without changing any
+gate. The forward Monte Carlo density/sphere samplers are not a reference for this
+comparison. Step 10 remains instantaneous/quasi-static magnetic access; it does not
+release a time-dependent electric characteristic.
+
 ## SWMF field ingestion and synchronization (Roadmap Step 9)
 
 Step 9 connects the already released standalone product kernels to a coherent live
@@ -167,6 +271,10 @@ srcEarth/util/amps_param_parser.cpp
 srcEarth/util/SWMFSnapshotContract.h
     Dependency-free Step-9 GSM/SI field-state schema, deterministic mesh/content
     identity, strict serialization, quantitative comparison, and lifecycle model.
+
+srcEarth/util/SWMFCoupledAccessContract.h
+    Dependency-free Step-10 collective-cadence, deterministic product-identity,
+    BOX/Shue physical-boundary, and artifact-manifest contract.
 
 srcEarth/util/cutoff_cli.h
 srcEarth/util/cutoff_cli.cpp
@@ -477,19 +585,21 @@ MPI rank, and `DENSITY_THREADS` sets the worker count.
 
 At every accepted coupled snapshot, the bridge:
 
-1. uses the current SWMF/PT magnetic field in the AMPS coupler buffers;
-2. materializes the global cell-centered B field on every MPI rank;
-3. runs the requested Mode3D backward products;
-4. writes files with a SWMF simulation-time suffix.
+1. makes a collective cadence decision from the authoritative SWMF/PT clock;
+2. materializes and freezes the current content-identified B/u field on every rank;
+3. runs the requested common Mode3D backward products;
+4. records cutoff/access files only after successful close; and
+5. writes a complete manifest using the common time-and-snapshot suffix.
 
 Example coupled output names:
 
 ```text
-cutoff_3d_points.swmf_n000000_t000000000.000s.dat
-mode3d_points_density.swmf_n000000_t000000000.000s.dat
-mode3d_points_spectrum.swmf_n000000_t000000000.000s.dat
-mode3d_points_flux.swmf_n000000_t000000000.000s.dat
-amps_coupled_data.swmf_n000000_t000000000.000s.dat
+cutoff_3d_points.swmf_t0000000600.125000000s_sidfield-v1-....dat
+mode3d_points_density.swmf_t0000000600.125000000s_sidfield-v1-....dat
+mode3d_points_spectrum.swmf_t0000000600.125000000s_sidfield-v1-....dat
+mode3d_points_flux.swmf_t0000000600.125000000s_sidfield-v1-....dat
+amps_coupled_data.swmf_t0000000600.125000000s_sidfield-v1-....dat
+swmf_cutoff_access_manifest.swmf_t0000000600.125000000s_sidfield-v1-....json
 ```
 
 The coupled cadence is controlled by:
@@ -499,7 +609,13 @@ The coupled cadence is controlled by:
 FIELD_UPDATE_DT  <minutes, floating point allowed>
 ```
 
-In the coupled case, `FIELD_UPDATE_DT` means: run the expensive backward products approximately every requested number of minutes of SWMF/PT simulation time, using `PIC::SimulationTime::TimeCounter` for the file stamp. Fractional minutes are accepted, for example `FIELD_UPDATE_DT 0.5` requests a 30-second cadence.
+In the coupled case, `FIELD_UPDATE_DT` means: run the expensive backward products at
+the requested number of minutes of authoritative SWMF/PT simulation time. Fractional
+minutes are accepted, for example `FIELD_UPDATE_DT 0.5` requests a 30-second cadence.
+The schedule is collective and completion-based: a failed calculation does not advance
+it, a duplicate callback is skipped, an in-process time rollback fails, and a newly
+started process reruns its first complete epoch. The scientific filename binds the
+time to the content-derived snapshot ID instead of a callback counter.
 
 ---
 
@@ -1113,7 +1229,8 @@ R_INNER        1 Re
 
 Lengths can be provided using inline units where supported by the parser, for example `Re` or `km`. The solver internally uses SI meters.
 
-The outer box defines escape. `R_INNER` defines the absorbing loss sphere.
+For `BOUNDARY_TYPE BOX`, the outer box defines escape. `R_INNER` defines the absorbing
+loss sphere for either policy.
 
 Additional CCMC/Runs-on-Request boundary keywords are accepted by the parser:
 
@@ -1124,7 +1241,12 @@ SHUE_ALPHA      AUTO or numeric token
 DOMAIN_X_TAIL   <length>   # mapped to DOMAIN_XMIN with nightside sign
 ```
 
-In the current standalone Mode3D implementation, `SHUE_*` values are stored for provenance/future use; the active trajectory-classification boundary remains the parsed Mode3D box/cap unless a Shue-boundary implementation is added later.
+The Mode3D tracer actively consumes this policy. With `SHUE`, the magnetopause and
+negative-X tail cap are physical escape surfaces. Other Cartesian faces only delimit
+available mesh data: reaching one while inside the Shue surface is `INVALID_FIELD`.
+The same failure applies to a missing in-domain AMR leaf or incomplete interpolation
+row. Numeric Shue parameters are validated; AUTO parameters require finite positive
+PDYN and finite IMF Bz and are resolved deterministically before tracing.
 
 ### 8.7 `#OUTPUT_DOMAIN`
 
@@ -1869,9 +1991,14 @@ mode3d_shell_<ALT>km_density_flux.dat
 ### Mode3D SWMF-coupled snapshots
 
 ```text
-*.swmf_n000000_t000000000.000s.dat
-*.swmf_n000001_t000000900.000s.dat
+*.swmf_t0000000000.000000000s_sidfield-v1-....dat
+*.swmf_t0000000900.000000000s_sidfield-v1-....dat
+swmf_cutoff_access_manifest.swmf_t0000000900.000000000s_sidfield-v1-....json
 ```
+
+The full snapshot ID is part of each real name; the ellipsis above is documentation
+shorthand only. Every accepted cutoff/access epoch is either a complete, nonempty
+artifact transaction with a PASS manifest or an explicit FAILED product status.
 
 ### 3d_forward
 

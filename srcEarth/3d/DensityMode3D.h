@@ -24,7 +24,9 @@
 #define _SRC_EARTH_3D_DENSITYMODE3D_H_
 
 #include "../util/amps_param_parser.h"
+#include "../util/SWMFCoupledProductsContract.h"
 #include <string>
+#include <vector>
 
 namespace Earth {
 namespace Mode3D {
@@ -52,8 +54,25 @@ int RunDensityAndFlux(const EarthUtil::AmpsParam& prm);
 //
 // Non-empty suffix is used for time-series and SWMF-coupled snapshots:
 //   mode3d_points_density_snapshot_000001_....dat
-//   mode3d_points_density.swmf_n000001_t0003600.000s.dat
+//   mode3d_points_density.swmf_t0000003600.000000000s_sidfield-v1-....dat
+// The coupled suffix binds authoritative PT time and complete content-derived field
+// identity; it deliberately excludes callback order and MPI/thread layout.
 void SetDensityOutputFileSuffix(const std::string& suffix);
+
+// Construct the canonical Step-11 physics-control description without launching any
+// trajectories.  The SWMF bridge fingerprints this value collectively before ranks
+// enter the solver, preventing mismatched channel/response/spectrum settings from
+// sending an apparently coherent field snapshot through different product folds.
+Earth::SWMFCoupledProducts::ProductControl DescribeDensityFluxProductControl(
+    const EarthUtil::AmpsParam& prm);
+
+// Return the close-verified artifact inventory and numerical accounting from the most
+// recent RunDensityAndFlux() call.  These accessors do not create another physics path:
+// the live SWMF bridge uses them only after the shared Step-6 integrator has returned.
+// The per-call state is cleared before each calculation, so a failed new epoch can
+// never publish files or counts retained from an older successful epoch.
+std::vector<std::string> GetLastDensityFluxArtifactFiles();
+Earth::SWMFCoupledProducts::ProductRunSummary GetLastDensityFluxRunSummary();
 
 } // namespace Mode3D
 } // namespace Earth

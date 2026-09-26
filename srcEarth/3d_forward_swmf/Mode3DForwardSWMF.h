@@ -63,6 +63,18 @@ bool IsCutoffRigidityMode();
 // non-positive return value means "run every SWMF/PT callback".
 double GetCoupledCalculationCadenceSeconds();
 
+// Evaluate the Step-10 cadence gate collectively after a complete SWMF receive.
+// Every rank compares the authoritative PT time, cadence, and its last-completed
+// scheduler state before the function returns. A stale clock or divergent rank state
+// is fatal; a normal skipped epoch returns false on every rank without entering any
+// product collective.
+bool ShouldRunBackwardProductCalculation(bool verbose=true);
+
+// Commit the current PT epoch only after amps_cutoff_time_step() completed on all
+// ranks. Skips never advance the gate, and a fresh process naturally re-evaluates its
+// first restart epoch for exact replay/parity validation.
+void MarkBackwardProductCalculationComplete();
+
 // Return true only after the SWMF-coupled backtracing products have everything
 // needed to use a valid coupled MHD snapshot.  main_lib.cpp calls this before
 // applying the cutoff/density cadence gate, so early PT callbacks that occur
@@ -106,19 +118,19 @@ void RedefineSWMFCoupledMagneticFieldToAnalyticDipole();
 // density/flux only from the current SWMF mesh-field snapshot.
 void amps_cutoff_time_step();
 
-// Return a file name that uses the same stamp as the most recent
-// SWMF-coupled cutoff-rigidity output.
+// Return a file name that uses the same scientific suffix as the most recent
+// SWMF-coupled backward-product transaction.
 //
-// The stamp is created in amps_cutoff_time_step() from
-// PIC::SimulationTime::TimeCounter and passed to
-// Earth::Mode3D::SetCutoffOutputFileSuffix() before the cutoff products are
-// written.  main_lib.cpp uses this helper immediately afterward to name the
-// diagnostic AMPS mesh dump as, for example,
+// Step 10 creates the suffix only after compact-field assembly has produced the
+// content-derived snapshot ID. It binds the authoritative PT time at nine decimal
+// places to that complete ID and intentionally excludes callback/MPI/thread counters.
+// The exact suffix is passed to Earth::Mode3D::SetCutoffOutputFileSuffix() before the
+// cutoff products are written. main_lib.cpp uses this helper immediately afterward to
+// name the diagnostic AMPS mesh dump as, for example,
 //
-//   amps_coupled_data.swmf_n000003_t000600.000s.dat
+//   amps_coupled_data.swmf_t0000000600.125000000s_sidfield-v1-....dat
 //
-// so it is easy to identify which amps_coupled_data file belongs to which
-// cutoff snapshot.
+// so every member of a snapshot transaction has an unambiguous common identity.
 std::string GetLastCutoffOutputFileName(const char* stem,const char* extension);
 
 } // namespace Mode3DForwardSWMF

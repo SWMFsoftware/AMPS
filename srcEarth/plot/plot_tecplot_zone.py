@@ -3,7 +3,7 @@
 Plot one zone from a Tecplot ASCII POINT-format file.
 
 This script was written for AMPS cutoff shell files such as:
-  cutoff_3d_shells.swmf_n000000_t00000000.000s.dat
+  cutoff_3d_shells.swmf_t0000000600.125000000s_sidfield-v1-18530916da122c7a.dat
 
 Supported Tecplot subset:
   TITLE=...
@@ -220,25 +220,25 @@ outputs such as cutoff_3d_shells*.dat.
     examples = """
 Examples:
   List all variables and zones:
-    ./plot_tecplot_zone.py -f cutoff_3d_shells.swmf_n000000_t00000000.000s.dat --list-zones
+    ./plot_tecplot_zone.py -f cutoff_3d_shells.swmf_t0000000600.125000000s_sidfield-v1-18530916da122c7a.dat --list-zones
 
   Plot zone 0 using the default variable Rc_GV:
-    ./plot_tecplot_zone.py -f cutoff_3d_shells.swmf_n000000_t00000000.000s.dat -z 0
+    ./plot_tecplot_zone.py -f cutoff_3d_shells.swmf_t0000000600.125000000s_sidfield-v1-18530916da122c7a.dat -z 0
 
   Plot the zone whose title contains alt_km=7000:
-    ./plot_tecplot_zone.py -f cutoff_3d_shells.swmf_n000000_t00000000.000s.dat -z alt_km=7000 --var Emin_MeV
+    ./plot_tecplot_zone.py -f cutoff_3d_shells.swmf_t0000000600.125000000s_sidfield-v1-18530916da122c7a.dat -z alt_km=7000 --var Emin_MeV
 
   Save a plot without opening an interactive window:
-    ./plot_tecplot_zone.py -f cutoff_3d_shells.swmf_n000000_t00000000.000s.dat -z 1 --var Rc_GV -o Rc_zone1.png --no-show
+    ./plot_tecplot_zone.py -f cutoff_3d_shells.swmf_t0000000600.125000000s_sidfield-v1-18530916da122c7a.dat -z 1 --var Rc_GV -o Rc_zone1.png --no-show
 
   Use filled contours instead of pcolormesh:
-    ./plot_tecplot_zone.py -f cutoff_3d_shells.swmf_n000000_t00000000.000s.dat -z 1 --var Rc_GV --contour --levels 40
+    ./plot_tecplot_zone.py -f cutoff_3d_shells.swmf_t0000000600.125000000s_sidfield-v1-18530916da122c7a.dat -z 1 --var Rc_GV --contour --levels 40
 
   Select a Matplotlib colormap:
-    ./plot_tecplot_zone.py -f cutoff_3d_shells.swmf_n000000_t00000000.000s.dat -z 1 --var Rc_GV --cmap plasma
+    ./plot_tecplot_zone.py -f cutoff_3d_shells.swmf_t0000000600.125000000s_sidfield-v1-18530916da122c7a.dat -z 1 --var Rc_GV --cmap plasma
 
   Reverse a colormap by adding the _r suffix:
-    ./plot_tecplot_zone.py -f cutoff_3d_shells.swmf_n000000_t00000000.000s.dat -z 1 --var Rc_GV --cmap coolwarm_r
+    ./plot_tecplot_zone.py -f cutoff_3d_shells.swmf_t0000000600.125000000s_sidfield-v1-18530916da122c7a.dat -z 1 --var Rc_GV --cmap coolwarm_r
 
 Common colormap names:
   viridis, plasma, inferno, magma, cividis, coolwarm, seismic, jet

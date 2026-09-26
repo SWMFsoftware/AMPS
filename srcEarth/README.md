@@ -1,5 +1,95 @@
 # SEP-in-geospace model: compact global fields in Mode3D
 
+## Roadmap Step 11 implemented: SWMF-coupled flux and spectra
+
+The coupled callback now completes the same backward-characteristic product path as
+standalone Mode3D. For each accepted frozen SWMF B/u snapshot it invokes the shared
+Step-6 `RunDensityAndFlux()` integrator and writes local differential spectra, particle
+density, total omnidirectional and isotropic-equivalent planar flux, configured energy
+channels, optional detector-response rates, conservative lower/upper bounds, and the
+full trajectory-termination summary. No forward Monte-Carlo density or sphere sampler
+is used as a reference or as a substitute calculation.
+
+Field, boundary spectrum, response configuration, and observation state are now one
+transaction. The bridge sets the spectrum evaluation UTC from the final Step-9
+snapshot metadata. For `TRAJECTORY`, it selects only ephemeris samples matching that
+UTC within 1 ms and remaps location-qualified apertures; an epoch with no match fails.
+Every MPI rank must have the same deterministic fingerprint of species, energy/access
+grid, raw spectrum parameters, units and uncertainty, ordered channels, detector
+responses, and selected point/trajectory/shell geometry before tracing begins.
+
+Each numeric artifact carries the snapshot/content/mesh identities; field and spectrum
+epochs; temporal table-selection status; static-magnetic/quasi-static label; spectrum
+units and uncertainty; physical outer-boundary policy; control, channel, response, and
+observation fingerprints; and unresolved accounting. Files enter the per-call
+inventory only after an explicit flush and close. A coupled `PASS` additionally
+requires spectrum, density, flux, and termination roles, nonempty files, termination
+counts that close exactly to the sampled count, and the existing configured
+`DS_UNRESOLVED_TOL` without modification. Only then is
+`swmf_flux_spectrum_manifest<SUFFIX>.json` written and the enclosing status changed
+from its fail-closed `FAILED` state to `PASS`.
+
+Run the portable analytic, negative, exact-replay, and production-wiring tests with:
+
+```bash
+./test/USWMFCoupledProducts/run_test.sh
+```
+
+Use `examples/swmf_step11_flux_spectrum.in.template` for the live configuration and
+`examples/standalone_step9_swmf_replay.in.template` for offline replay. The complete
+linked release matrix—F6, F7, F13, F17, I-F03, I-F06, I-F07, I-F10, and observational
+O3—is specified in `test/USWMFCoupledProducts/README.md`. The portable suite does not
+claim those external-data/SWMF results. Step 11 remains instantaneous/quasi-static and
+magnetic-only; it does not release electric acceleration, time-dependent
+characteristics, or long-duration trapping across snapshots.
+
+## Roadmap Step 10 implemented: coupled cutoff and directional access
+
+The SWMF/PT callback now schedules the established Mode3D cutoff/access solver as one
+collective, fail-closed transaction. Cadence is evaluated from the authoritative PT
+simulation time after a complete field receive. Every rank must agree whether an epoch
+is RUN, SKIP, DUPLICATE, or STALE; only a successful product batch commits the cadence
+state. A callback duplicate is skipped in-process, while a restarted process evaluates
+the saved epoch again so restart reproducibility can be tested rather than assumed.
+
+Every accepted epoch freezes the Step-9 field generation and uses one content-derived
+suffix for the snapshot, cutoff/access files, diagnostic mesh output, status, and
+manifest. The suffix contains nine-decimal simulation time and the complete snapshot
+ID, but no callback counter, rank count, or thread count. Thus POINTS, TRAJECTORY, and
+SHELLS results cannot overwrite a different physical state and preserve the same names
+across 1x1, 2x8, and 8x16 layouts. The root rank writes
+`swmf_cutoff_access_manifest<SUFFIX>.json` only after all requested cutoff/access files
+close successfully; the manifest records the epoch, snapshot/content/mesh identities,
+boundary policy, artifact inventory, quasi-static interpretation, and explicit
+`RESULT: PASS`. If validation fails before a content identity exists, a labelled
+`swmf_attempt_n...` FAILED status remains; after identity creation the final status uses
+the same scientific suffix as the products.
+
+The outer-boundary contract is now active rather than metadata-only:
+
+- `BOUNDARY_TYPE BOX` preserves the historical six-face physical escape boundary.
+- `BOUNDARY_TYPE SHUE` uses the Shue magnetopause and `DOMAIN_X_MIN` tail cap as
+  physical escape. A missing AMR leaf or a non-tail computational face reached while
+  still inside that physical boundary is `INVALID_FIELD`, never an allowed particle.
+- `SHUE_R0` and `SHUE_ALPHA` accept validated numeric values or deterministic `AUTO`
+  values from the configured upstream dynamic pressure and IMF Bz.
+
+Phase 1 remains an instantaneous/quasi-static magnetic characteristic. It does not
+claim time-dependent electric acceleration. The focused suite contains fixed cadence,
+suffix, Shue, escape-fraction, manifest, exact live/replay, negative-provenance, and
+production-wiring references:
+
+```bash
+./test/USWMFCoupledAccess/run_test.sh
+```
+
+Use `examples/swmf_step10_cutoff_access.in.template` for the coupled half and
+`examples/standalone_step9_swmf_replay.in.template` for the exact offline replay.
+Complete acceptance still requires linked SWMF runs at 1x1, 2x8, and default 8x16,
+restart at the same epoch, I-F02 and I-F04--I-F07, and all applicable unchanged C
+tests. The forward Monte Carlo density/sphere samplers are not a cutoff/access
+reference and are not used to make this gate pass.
+
 ## Roadmap Step 9 implemented: synchronized SWMF snapshots
 
 The coupled backward-product callback now validates and freezes one coherent SWMF

@@ -629,6 +629,23 @@ PASS requires both the PAMELA comparison and the configured access-state gate.
 The exact driver, generated input, command line, and comparison settings are
 therefore archived with every run.
 
+### Step-10 provenance compatibility
+
+Mode3D cutoff artifacts now place field-snapshot and outer-boundary provenance in
+standard Tecplot `AUXDATA` records between `TITLE` and `VARIABLES`. Both C9 shell
+readers validate the exact `AUXDATA KEY="value"` syntax and then exclude those
+metadata records from the numeric table. They do not ignore arbitrary text: malformed
+metadata, missing required variables, a wrong numeric row width, or inconsistent
+`access_state`/`allowed`/`unresolved` flags remains a hard failure. This preserves the
+Step-10/11 provenance contract while allowing C9 to reach its unchanged PAMELA
+comparison gates and write `C9_comparison.csv` and the configured plot formats.
+
+The producer/consumer regression is exercised without launching AMPS by:
+
+```bash
+./srcEarth/test/USWMFCoupledAccess/run_test.sh
+```
+
 ## 12. Interpretation and limitations
 
 C9 answers this question:

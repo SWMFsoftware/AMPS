@@ -122,6 +122,7 @@
 
 #include "amps_param_parser.h"
 #include "StandaloneProductContract.h"
+#include "SWMFCoupledAccessContract.h"
 #include "../boundary/spectrum.h"  // cSpectrum + global spectrum init
 #include "specfunc.h"
 
@@ -3065,19 +3066,19 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         p.domain.xMin = (xTail_km <= 0.0) ? xTail_km : -xTail_km;
       }
       else if (uKey=="BOUNDARY_TYPE") {
-        // Recognize SHUE/BOX declarations. SHUE is stored for provenance and
-        // future use; current standalone Mode3D cutoff still uses the parsed
-        // rectangular/capped bounds for trajectory classification.
+        // Store the selector during the single-pass parse.  Post-parse validation
+        // normalizes aliases and the Mode3D tracer consumes BOX/SHUE through the shared
+        // Step-10 boundary contract.
         p.domain.boundaryType=ToUpper(Trim(val));
       }
       else if (uKey=="SHUE_R0") {
-        // May be a number or AUTO. Keep as a token because the present domain
-        // object has no Shue implementation yet.
+        // Keep the original token so AUTO versus an explicit r0 [Re] remains visible
+        // in provenance; both forms are validated after all PDYN/Bz input is known.
         p.domain.shueR0Token=Trim(val);
       }
       else if (uKey=="SHUE_ALPHA") {
-        // May be a number or AUTO. Keep as a token because the present domain
-        // object has no Shue implementation yet.
+        // As for r0, defer AUTO resolution until the complete field-driver record has
+        // been parsed.
         p.domain.shueAlphaToken=Trim(val);
       }
       else {
@@ -3481,6 +3482,42 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
               "SWMF_SNAPSHOT" && p.field.swmfSnapshotFile.empty())
         exit(__LINE__,__FILE__,
              "FIELD_MODEL=SWMF_SNAPSHOT requires SWMF_SNAPSHOT_FILE");
+    }
+    catch (const std::exception& error) {
+      exit(__LINE__,__FILE__,error.what());
+    }
+  }
+
+  // Roadmap Step 10 outer-escape policy.  Earlier revisions accepted the RoR
+  // BOUNDARY_TYPE/SHUE_* tokens but always traced against the rectangular box.  That
+  // made a coupled run appear to support a requested magnetopause while silently using
+  // different physics.  Normalize and validate the policy here, before mesh or coupler
+  // initialization.  The production Mode3D tracer resolves the same parameters through
+  // SWMFCoupledAccessContract, so parser acceptance and runtime behavior cannot drift.
+  {
+    std::string boundary=ToUpper(Trim(p.domain.boundaryType));
+    if (boundary.empty()) boundary="BOX";
+    if (boundary=="DOMAIN" || boundary=="DOMAIN_BOX" || boundary=="COMPUTATIONAL_BOX")
+      boundary="BOX";
+    if (boundary=="MAGNETOPAUSE" || boundary=="SHUE98") boundary="SHUE";
+    if (boundary!="BOX" && boundary!="SHUE")
+      exit(__LINE__,__FILE__,
+           "BOUNDARY_TYPE must be BOX or SHUE (aliases: DOMAIN_BOX, MAGNETOPAUSE)");
+    p.domain.boundaryType=boundary;
+
+    Earth::SWMFCoupledAccess::Box box;
+    box.minimum_m={{1000.0*p.domain.xMin,1000.0*p.domain.yMin,1000.0*p.domain.zMin}};
+    box.maximum_m={{1000.0*p.domain.xMax,1000.0*p.domain.yMax,1000.0*p.domain.zMax}};
+    try {
+      Earth::SWMFCoupledAccess::ValidateBox(box);
+      if (boundary=="SHUE") {
+        // AUTO uses the explicitly configured upstream PDYN/IMF_BZ values.  This is
+        // deterministic and reproducible; it does not guess a surface from a mutable
+        // MHD contour.  Numeric SHUE_R0 is in Re and SHUE_ALPHA is dimensionless.
+        (void)Earth::SWMFCoupledAccess::ResolveShueParameters(
+            p.domain.shueR0Token,p.domain.shueAlphaToken,
+            p.field.pdyn_nPa,p.field.imfBz_nT,6371200.0,1000.0*p.domain.xMin);
+      }
     }
     catch (const std::exception& error) {
       exit(__LINE__,__FILE__,error.what());

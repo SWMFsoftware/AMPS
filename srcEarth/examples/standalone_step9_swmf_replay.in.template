@@ -22,6 +22,9 @@
   SWMF_DERIVED_ELECTRIC_FIELD OFF
   ! Copy the exact epoch_utc metadata value from the exported snapshot.
   EPOCH REPLACE_WITH_EXPORTED_EPOCH_UTC
+  ! Required only when the live Step-10 boundary used SHUE AUTO parameters.
+  PDYN REPLACE_WITH_LIVE_DYNAMIC_PRESSURE_NPA
+  IMF_BZ REPLACE_WITH_LIVE_IMF_BZ_NT
 
 #ELECTRIC_FIELD
   ! The generic standalone electric model stays disabled. In OFF mode, u is retained
@@ -43,6 +46,11 @@
   DOMAIN_Z_MIN REPLACE_WITH_LIVE_ZMIN_KM
   DOMAIN_Z_MAX REPLACE_WITH_LIVE_ZMAX_KM
   R_INNER REPLACE_WITH_LIVE_RINNER_KM
+  ! Step-10 parity requires the identical physical escape policy. For SHUE also
+  ! copy SHUE_R0/SHUE_ALPHA and the PDYN/IMF_BZ values used to resolve AUTO.
+  BOUNDARY_TYPE REPLACE_WITH_LIVE_BOX_OR_SHUE
+  !SHUE_R0 REPLACE_WITH_LIVE_VALUE_OR_AUTO
+  !SHUE_ALPHA REPLACE_WITH_LIVE_VALUE_OR_AUTO
 
 #MODE3D_MESH
   ! Copy every live AMR-resolution control. The leaf topology and all cell centres
@@ -63,20 +71,41 @@
   CUTOFF_TRACE_LIMIT_POLICY UNRESOLVED
 
 #DENSITY_SPECTRUM
-  ! Copy the live grid, convergence, retry, and unresolved controls exactly.
+  ! Step 11: copy the live grid, convergence, retry, and unresolved controls exactly.
+  ! The termination summary is mandatory comparison evidence for the coupled product
+  ! set; do not omit it from replay or reduce the retained unresolved gate.
   DS_EMIN REPLACE_WITH_LIVE_VALUE
   DS_EMAX REPLACE_WITH_LIVE_VALUE
   DS_NINTERVALS REPLACE_WITH_LIVE_VALUE
   DS_ENERGY_SPACING LOG
   DS_UNRESOLVED_TOL REPLACE_WITH_UNCHANGED_LIVE_GATE
+  DS_RETRY_UNRESOLVED REPLACE_WITH_UNCHANGED_LIVE_VALUE
+  DS_SAVE_TERMINATION_SUMMARY T
   DS_FAIL_ON_UNRESOLVED T
 
 #SPECTRUM
-  ! Copy the same boundary spectrum/table and time-selection controls used live.
+  ! Copy the same boundary spectrum/table, units, uncertainty, and time-selection
+  ! controls used live. The product comparator requires the evaluation epoch, selected
+  ! table epoch/rows, interpolation status, and complete control fingerprint to match.
   SPECTRUM_TYPE REPLACE_WITH_LIVE_VALUE
 
+#ENERGY_CHANNELS
+  ! Copy the complete ordered live channel schema; order is part of VARIABLES and of
+  ! the product-control fingerprint.
+  CH_BEGIN
+    REPLACE_NAME REPLACE_E1_MEV REPLACE_E2_MEV
+  CH_END
+
+#DETECTOR_RESPONSES
+  ! Copy every live response name, support, and geometric factor [m2 sr].
+  DR_BEGIN
+    REPLACE_NAME REPLACE_E1_MEV REPLACE_E2_MEV REPLACE_GEOMETRIC_FACTOR_M2_SR
+  DR_END
+
 #OUTPUT_DOMAIN
-  ! Copy the live points/trajectory/shell definition and coordinate frame.
+  ! Copy the live points/trajectory/shell definition and coordinate frame. For a
+  ! timestamped trajectory, each replay sample must have the same field epoch used by
+  ! the live callback; the bridge selects matches within 1 ms and fails if none exist.
   OUTPUT_MODE REPLACE_WITH_LIVE_VALUE
 
 #NUMERICAL
