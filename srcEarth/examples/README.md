@@ -44,3 +44,37 @@ mpirun -np 4 ./amps -mode 3d \
 For meaningful gridless/Mode3D comparison, explicitly set a Mode3D mesh-resolution
 profile and run the three-resolution I-F04 convergence study. Step 7 is standalone-only;
 the SWMF-coupled product path is developed in Roadmap Steps 9–11.
+
+## Step 8 event-campaign example
+
+`standalone_step8_campaign/` packages the Step-7 analytic dipole case as a frozen,
+restartable three-epoch workflow. Its manifest includes every required resource class,
+provenance statement, SHA-256 digest, exact units, expected Tecplot variable order and
+row count, and the unchanged unresolved-support gate. The synthetic identical
+east/west responses and unity observation are an analytic orchestration reference;
+they are not a production O1/O2 validation result.
+
+Check the complete package without an AMPS executable or network access:
+
+```bash
+python3 srcEarth/standalone_campaign/run_campaign.py \
+  --manifest srcEarth/examples/standalone_step8_campaign/campaign.json \
+  --output-dir test_output/step8_preflight \
+  --validate-only
+```
+
+Render all epoch inputs without executing them:
+
+```bash
+python3 srcEarth/standalone_campaign/run_campaign.py \
+  --manifest srcEarth/examples/standalone_step8_campaign/campaign.json \
+  --amps ./amps \
+  --output-dir test_output/step8_dry_run \
+  --dry-run
+```
+
+For a real run, replace `--dry-run` with `--restart`. A previous run is skipped only
+when its fingerprint and every recorded artifact hash still match. Production event
+manifests must replace the synthetic resource files with independently archived O1,
+O2, or preregistered holdout resources while retaining the same fail-closed schema and
+validation gates.

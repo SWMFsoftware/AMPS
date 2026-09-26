@@ -1,5 +1,31 @@
 # AMPS Earth Energetic-Particle Model
 
+## Standalone event workflow (Roadmap Step 8)
+
+The Step-7 standalone solver can now be executed as a frozen multi-epoch validation
+campaign with `standalone_campaign/run_campaign.py`. The runner verifies local
+driver, boundary-spectrum, ephemeris, attitude, response, and observation files by
+SHA-256; preserves their provenance; renders one input and result directory per field
+model/epoch; streams logs; and resumes only hash-verified PASS runs. It never downloads
+mutable scoring data or applies platform-specific normalization.
+
+PAMELA, POES/MetOp MEPED, GOES EPEAD, and REPT adapters produce one unit-explicit
+observation schema. Snapshot predictions are averaged over actual exposure windows
+without extrapolation. Required missing comparisons fail. The unresolved-support
+limit remains 0.01; frozen validation/holdout manifests also require 0.02 energy and
+angular convergence. `standalone_campaign/release_gate.py` requires complete O1/O2
+PASS evidence and a hash-verified frozen O4 holdout before reporting a Step-8 release
+PASS.
+
+Commands, manifest fields, outputs, exact observation gates, and restart behavior are
+in `standalone_campaign/README.md`. The analytic package in
+`examples/standalone_step8_campaign/` supports `--validate-only`, `--dry-run`, and
+full `--restart` execution. Run the independent unit/reference gate with:
+
+```bash
+./srcEarth/test/UStandaloneCampaign/run_test.sh
+```
+
 
 ## Selecting the background-field epoch
 

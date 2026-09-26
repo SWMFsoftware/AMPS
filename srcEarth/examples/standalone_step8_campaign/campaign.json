@@ -1,0 +1,162 @@
+{
+  "schema_version": "earth-standalone-campaign/v1",
+  "campaign_id": "STEP8_ANALYTIC_DIPOLE_SMOKE",
+  "event_id": "STEP8_SMOKE",
+  "role": "SMOKE",
+  "frozen": true,
+  "normalization_policy": "SHARED_EVENT_BOUNDARY_NO_PLATFORM_SCALE",
+  "event": {
+    "start_utc": "2020-01-01T00:00:00Z",
+    "end_utc": "2020-01-01T00:10:00Z",
+    "field_cadence_seconds": 300
+  },
+  "models": [
+    "DIPOLE"
+  ],
+  "products": [
+    "cutoff",
+    "directional_access",
+    "spectrum",
+    "density",
+    "flux",
+    "detector_rate"
+  ],
+  "exclusions": [],
+  "resources": [
+    {
+      "id": "input_template",
+      "kind": "input_template",
+      "path": "amps_template.in",
+      "sha256": "76d8477ba5bcdc7aeeb38c2e7e6d80ad856f062f43f01fba1c2b47d276223504",
+      "provenance": "Version-controlled Step-8 analytic smoke input"
+    },
+    {
+      "id": "driver",
+      "kind": "driver",
+      "path": "data/driver_descriptor.txt",
+      "sha256": "020d8bfeb0f5d1bd0258df0adcec20d03606219f8f67f6b7d913de490cb77441",
+      "provenance": "Version-controlled analytic dipole driver descriptor"
+    },
+    {
+      "id": "boundary_spectrum",
+      "kind": "boundary_spectrum",
+      "path": "data/boundary_spectrum.csv",
+      "sha256": "549f20163aa3e1cf040067df519058f99f4fe5f32fc3dd9a8cb60fd3e9f514d3",
+      "provenance": "Analytic power-law boundary values generated for this smoke case"
+    },
+    {
+      "id": "ephemeris",
+      "kind": "ephemeris",
+      "path": "data/ephemeris.csv",
+      "sha256": "12edce84ce19b38babe002d3fdbad41e11770f48b99bba06c7dbae1b40732751",
+      "provenance": "Synthetic fixed GSM point used by the analytic smoke case"
+    },
+    {
+      "id": "attitude",
+      "kind": "attitude",
+      "path": "data/attitude.csv",
+      "sha256": "8545f90d430e9d595b40fb70d2fe4f516a797e3d741fe2b35a178b934bd6ffca",
+      "provenance": "Synthetic identity quaternion used by the analytic smoke case"
+    },
+    {
+      "id": "goes_response",
+      "kind": "instrument_response",
+      "path": "data/goes_p5_response.csv",
+      "sha256": "8e175d21fd629da8f1caabfbb346da13e0c5fe70279d92099c761409b5b0faf9",
+      "provenance": "Synthetic identical east/west top-hat response for an exact ratio reference"
+    },
+    {
+      "id": "goes_observation",
+      "kind": "observation",
+      "path": "data/goes_ratio_observation.csv",
+      "sha256": "1c5489788707b94365abe7b2bfd8177188cb1611f1ca626701036601730cbfc5",
+      "provenance": "Synthetic unity east/west ratio for an analytic smoke comparison"
+    }
+  ],
+  "instruments": [
+    {
+      "id": "GOES_SYNTH_EPEAD",
+      "adapter": "GOES_EPEAD_DIRECTIONAL",
+      "observation_resource": "goes_observation",
+      "response_resource": "goes_response",
+      "cadence_seconds": 300,
+      "quantity": "directional_ratio",
+      "units": "1",
+      "comparison_required": true
+    }
+  ],
+  "execution": {
+    "input_template_resource": "input_template",
+    "command": [
+      "mpirun",
+      "-np",
+      "{mpi_ranks}",
+      "{amps}",
+      "-mode",
+      "gridless",
+      "-i",
+      "{input}",
+      "-gridless-threads",
+      "{threads}"
+    ],
+    "mpi_ranks": 4,
+    "threads": 16,
+    "expected_artifacts": [
+      "standalone_run_manifest.json",
+      "gridless_points_density.dat",
+      "gridless_points_spectrum.dat",
+      "gridless_points_flux.dat",
+      "gridless_termination_summary.dat",
+      "campaign_prediction.csv"
+    ],
+    "prediction_artifact": "campaign_prediction.csv",
+    "prediction_extractors": [
+      {
+        "instrument_id": "GOES_SYNTH_EPEAD",
+        "artifact": "gridless_points_flux.dat",
+        "row_index": 0,
+        "operation": "RATIO",
+        "numerator_column": "R_GOES_P5_E_s1",
+        "denominator_column": "R_GOES_P5_W_s1",
+        "platform": "GOES_SYNTH",
+        "channel": "P5",
+        "direction": "EAST_OVER_WEST",
+        "quantity": "directional_ratio",
+        "units": "1",
+        "expected_variables": [
+          "X_km",
+          "Y_km",
+          "Z_km",
+          "F_tot_m2s1",
+          "F_tot_lower_m2s1",
+          "F_tot_upper_m2s1",
+          "F_P5_m2s1",
+          "F_P5_lower_m2s1",
+          "F_P5_upper_m2s1",
+          "F_planar_m2s1",
+          "F_planar_lower_m2s1",
+          "F_planar_upper_m2s1",
+          "R_GOES_P5_E_s1",
+          "R_GOES_P5_E_lower_s1",
+          "R_GOES_P5_E_upper_s1",
+          "R_GOES_P5_W_s1",
+          "R_GOES_P5_W_lower_s1",
+          "R_GOES_P5_W_upper_s1"
+        ],
+        "expected_row_count": 1
+      }
+    ]
+  },
+  "validation": {
+    "numerical_gates": [
+      {
+        "id": "unresolved_support",
+        "source": "termination_summary",
+        "metric": "max_unresolved_fraction",
+        "operator": "<=",
+        "threshold": 0.01,
+        "required": true
+      }
+    ]
+  }
+}

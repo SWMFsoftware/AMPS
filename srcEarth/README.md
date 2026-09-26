@@ -1,5 +1,56 @@
 # SEP-in-geospace model: compact global fields in Mode3D
 
+## Roadmap Step 8 implemented: reproducible standalone event campaigns
+
+Step 8 wraps the unchanged Step-7 standalone cutoff/flux/spectrum program in a
+fail-closed event workflow. The new standard-library Python package in
+`standalone_campaign/` validates a frozen campaign manifest, verifies and caches
+every scientific input by SHA-256, renders one input per `(field model, epoch)`,
+streams the existing `amps` executable, and records restartable machine-readable
+evidence. It does not duplicate a trajectory solver or change a C/F/U-F gate.
+
+The manifest explicitly records the event and campaign IDs; driver and boundary
+population; ephemeris and attitude; instrument response and observations; field
+cadence; requested cutoff, access, spectrum, density, flux, and rate products;
+preregistered exclusions; execution artifacts; and numerical gates. Every resource
+also has a human-reviewable provenance statement. Network URLs and platform-specific
+post-hoc normalization are rejected during scoring.
+
+Observation adapters are provided for PAMELA cutoff intervals, POES/MetOp MEPED
+cutoff boundaries, GOES EPEAD physical east/west ratios, and Van Allen Probes REPT
+proton spectra. Model snapshots are integrated over each measurement's true exposure
+window with piecewise-linear trapezoidal integration; extrapolation is forbidden.
+Predictions and observations match only when instrument, platform, channel,
+direction, quantity, and units all agree.
+
+The Step-8 gates are additive and fail closed:
+
+- unresolved trajectory support remains at most 0.01 for every campaign;
+- validation and holdout campaigns require energy and angular relative change at
+  most 0.02;
+- every retained observation requires model coverage;
+- amplitude, cutoff-latitude, directional-asymmetry, uncertainty-coverage, and
+  per-instrument/pooled factor-of-two thresholds follow the validation plan; and
+- missing artifacts, evidence, comparisons, or changed restart outputs are failures.
+
+`release_gate.py` combines completed frozen O1 and O2 campaign summaries with a
+hash-verified, untouched O4 holdout manifest. It cannot convert `NOT_RUN`, a missing
+comparison, or a failed numerical gate into release PASS. The included analytic
+example demonstrates the workflow but is not a claim that production O1/O2 ensembles
+have run.
+
+Run the focused Step-8 suite from `srcEarth`:
+
+```bash
+./test/UStandaloneCampaign/run_test.sh
+```
+
+The suite has analytic cadence and ratio references, parses the committed C9/C10/C19
+observation assets, exercises complete and incomplete release evidence, and verifies
+that a modified artifact is rerun instead of restart-skipped. Full usage, manifest
+fields, result layout, commands, gates, and test references are documented in
+`standalone_campaign/README.md` and `test/UStandaloneCampaign/README.md`.
+
 ## Roadmap Step 7 implemented: one standalone cutoff/flux/spectrum program
 
 The standalone `amps` executable now accepts one validated request and can produce

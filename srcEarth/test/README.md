@@ -4,7 +4,7 @@ This directory contains executable regression/validation tests for the AMPS
 Earth SEP/geospace backward products.  Each test is stored in its own directory
 (`C1`, `C2`, ..., `C6`, `C11`, `C14`, `F1`, `F2`, `F3`, `F4`, `F5`, `F11`, `F12`, `F15`, `F16`,
 `UFluxNumerics`, `UFieldProvider`, `UTrajectoryCore`, `UDirectionalAccess`,
-`UBoundaryProducts`, `UStandaloneProducts`, `UTestRunner`, ...). Test scripts are intended to be executed
+`UBoundaryProducts`, `UStandaloneProducts`, `UStandaloneCampaign`, `UTestRunner`, ...). Test scripts are intended to be executed
 from the directory containing the `amps` executable, not from inside the test
 subdirectory.
 
@@ -120,7 +120,7 @@ reference, input, expected status, mover, or trace limit is changed. F1, F2, F4,
 F11, F12, F15, F16 and C8/C9/C10/C19 remain the end-to-end and observation-facing
 validation gates.
 
-`test/list` schedules the Step 2 through Step 7 suites as independent `P`
+`test/list` schedules the Step 2 through Step 8 suites as independent `P`
 entries. Each has its own `last pass:` record, so the main runner reports and commits
 their provenance separately. No pre-existing C/F command, expected status, input,
 reference file, tolerance, mover, trajectory limit, or last-pass record was modified;
@@ -151,6 +151,35 @@ UFieldProvider, UTrajectoryCore, UDirectionalAccess, and UBoundaryProducts retai
 analytic/numerical references; F and C cases retain end-to-end and observational gates.
 No existing command, expected P/F state, tolerance, reference, or last-pass value was
 changed for Step 7.
+
+## UStandaloneCampaign: strict Step 8 suite
+
+Run the event-workflow and release-evidence references with:
+
+```bash
+./srcEarth/test/UStandaloneCampaign/run_test.sh
+```
+
+This Python-standard-library suite checks immutable SHA-256/provenance inputs,
+no-network scoring, exact Tecplot schema and row-count extraction, explicit units,
+all four observation adapters, analytic cadence averaging without extrapolation,
+machine-readable comparisons, and artifact-hash restart behavior. A deterministic
+fake Step-7 executable supplies three epochs so the runner, not a mocked helper, is
+exercised end to end.
+
+The numerical references include an exact linear exposure mean of 2, an exact 6/3
+detector ratio, zero directional log error for an identical observation, and the
+committed C9 PAMELA, C10 POES/MetOp, and C19 GOES tables. Negative cases require the
+unchanged unresolved limit of 0.01 and validation/holdout energy/angular convergence
+limits of 0.02; reject missing comparison coverage, incompatible units, relaxed
+gates, unregistered exclusions, and modified restart artifacts; and prove that dry
+runs cannot become scientific PASS.
+
+The suite also aggregates complete synthetic O1/O2 summaries with a validated frozen
+O4 manifest, then removes required O2 comparison evidence and requires release FAIL.
+See `UStandaloneCampaign/README.md` for the complete reference and failure table.
+Existing C/F/U-F commands, tolerances, references, expected states, and last-pass
+values are not modified.
 
 ## UTestRunner: runner regression suite
 
