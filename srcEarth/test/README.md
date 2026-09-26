@@ -4,7 +4,8 @@ This directory contains executable regression/validation tests for the AMPS
 Earth SEP/geospace backward products.  Each test is stored in its own directory
 (`C1`, `C2`, ..., `C6`, `C11`, `C14`, `F1`, `F2`, `F3`, `F4`, `F5`, `F11`, `F12`, `F15`, `F16`,
 `UFluxNumerics`, `UFieldProvider`, `UTrajectoryCore`, `UDirectionalAccess`,
-`UBoundaryProducts`, `UStandaloneProducts`, `UStandaloneCampaign`, `UTestRunner`, ...). Test scripts are intended to be executed
+`UBoundaryProducts`, `UStandaloneProducts`, `UStandaloneCampaign`, `USWMFSnapshot`,
+`UTestRunner`, ...). Test scripts are intended to be executed
 from the directory containing the `amps` executable, not from inside the test
 subdirectory.
 
@@ -105,7 +106,8 @@ unit rejection. U-F05 checks exact channel edges and unresolved access bounds. U
 compares PAD/spatial normalization with analytic sphere/hemisphere means and separately
 compiles the production `AnisotropicSpectrum.cpp` adapter. U-F08 compares exact,
 log-interpolated, gap-held, gap-failed, and zero-outside temporal selections and repeats
-the gap case through the production time-table loader. U-F09 checks analytic
+the gap case through the production time-table loader, including a fractional absolute
+UTC reference that must retain the Step-9 PT subsecond offset. U-F09 checks analytic
 omnidirectional/planar and top-hat/triangular detector folds.
 
 Limiting references cover fully blocked access, exact directional quadrature, general
@@ -120,7 +122,7 @@ reference, input, expected status, mover, or trace limit is changed. F1, F2, F4,
 F11, F12, F15, F16 and C8/C9/C10/C19 remain the end-to-end and observation-facing
 validation gates.
 
-`test/list` schedules the Step 2 through Step 8 suites as independent `P`
+`test/list` schedules the Step 2 through Step 9 suites as independent `P`
 entries. Each has its own `last pass:` record, so the main runner reports and commits
 their provenance separately. No pre-existing C/F command, expected status, input,
 reference file, tolerance, mover, trajectory limit, or last-pass record was modified;
@@ -180,6 +182,39 @@ O4 manifest, then removes required O2 comparison evidence and requires release F
 See `UStandaloneCampaign/README.md` for the complete reference and failure table.
 Existing C/F/U-F commands, tolerances, references, expected states, and last-pass
 values are not modified.
+
+## USWMFSnapshot: strict Step 9 suite
+
+Run the synchronized SWMF state and replay-contract references with:
+
+```bash
+./srcEarth/test/USWMFSnapshot/run_test.sh
+```
+
+The C++ target compiles the exact production `SWMFSnapshotContract.h` with warnings as
+errors. S9-U01 compares the mesh revision, content fingerprint, and complete snapshot
+ID with fixed known answers. S9-U02 compares ideal-MHD E with an analytic `-u x B`
+vector and proves that magnetic-only and explicitly experimental snapshots have
+different identities. S9-U03 requires an exact cell round trip and byte-identical
+write/read/write output. S9-U04 permutes records to prove decomposition/order
+invariance, and S9-U05 checks restart identity while independently perturbing field and
+geometry.
+
+The negative gates remain scientifically important. S9-U06 rejects corrupt hashes,
+wrong GSM/SI metadata, invalid mode/time, missing, duplicate, non-finite, and truncated
+records. S9-U07 applies independent position/B/u/E tolerances, reports pointwise maxima,
+and contains perturbations that must fail. S9-U08 proves unavailable, stale, and
+corrupt states cannot fall back to an older valid field; it also checks queueing behind
+a frozen batch and fail-closed status output. The companion source audit requires the
+same coherence, owner-parity, freeze, export, and strict-replay ordering in production
+and verifies representative F4, C9, and C19 gate strings byte-for-byte.
+
+This portable suite is not a claim of coupled product agreement. Final Step-9
+acceptance requires a linked SWMF run, exact standalone replay of its exported state,
+pointwise comparison of all requested products, restart reproducibility, and 1x1,
+2x8, and default 8x16 layout comparisons using the already specified I-F02 and
+I-F04–I-F07 gates. No test threshold, reference, expected state, trajectory budget, or
+last-pass record is relaxed.
 
 ## UTestRunner: runner regression suite
 

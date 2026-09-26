@@ -211,6 +211,11 @@ int main() {
   Check(timeTable.LastTemporalStatus()==BP::TemporalStatus::ZeroBefore &&
         Near(timeTable.GetSpectrumPerMeV(1.0),0.0),
         "U-F08 production TABLE loader applies explicit out-of-range ZERO policy");
+  timeTable.SetEvaluationEpochUTC("2000-01-01T00:00:05.500000000Z");
+  Check(timeTable.LastTemporalStatus()==BP::TemporalStatus::GapInterpolated &&
+        Near(timeTable.LastTemporalInterpolationFraction(),0.55) &&
+        Near(timeTable.GetSpectrumPerMeV(1.0),std::pow(10.0,1.55),1.0e-13),
+        "U-F08 fractional absolute UTC retains the Step-9 PT subsecond offset");
   timeTable.SetEvaluationEpochUTCOffset("2000-01-01T00:00:00",5.0);
   Check(timeTable.LastTemporalStatus()==BP::TemporalStatus::GapInterpolated &&
         Near(timeTable.GetSpectrumPerMeV(1.0),std::sqrt(1000.0),1.0e-13),

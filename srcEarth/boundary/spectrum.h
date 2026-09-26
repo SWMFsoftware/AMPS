@@ -755,21 +755,41 @@ private:
   }
 
   static bool ParseIsoUtcToUnixSeconds_(const std::string& s, double& unixOut) {
-    std::tm tm = {};
-    std::istringstream iss(s);
-    iss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
-    if (iss.fail()) {
-      std::istringstream iss2(s);
-      iss2 >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
-      if (iss2.fail()) return false;
+    // Accept the canonical Step-9 absolute epoch
+    //   YYYY-MM-DDTHH:MM:SS[.fraction][Z]
+    // without discarding fractional PT time. std::get_time commonly accepts the
+    // integer prefix and leaves ".sssZ" unread, which previously made a valid
+    // 00:00:05.500 snapshot select the 00:00:05.000 spectrum state silently.
+    std::string text=Trim(s);
+    if (!text.empty() && text[text.size()-1]=='Z') text.resize(text.size()-1);
+    double fractionalSecond=0.0;
+    const std::size_t tPosition=text.find('T');
+    const std::size_t decimal=text.find('.',tPosition==std::string::npos ? 0 : tPosition);
+    if (decimal!=std::string::npos) {
+      if (decimal+1>=text.size()) return false;
+      double place=0.1;
+      for (std::size_t i=decimal+1;i<text.size();++i) {
+        const unsigned char c=static_cast<unsigned char>(text[i]);
+        if (!std::isdigit(c)) return false;
+        fractionalSecond+=static_cast<double>(c-'0')*place;
+        place*=0.1;
+      }
+      text.resize(decimal);
     }
+
+    std::tm tm = {};
+    std::istringstream iss(text);
+    iss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
+    if (iss.fail()) return false;
+    iss >> std::ws;
+    if (!iss.eof()) return false;
 #if defined(_WIN32)
     std::time_t tt = _mkgmtime(&tm);
 #else
     std::time_t tt = timegm(&tm);
 #endif
     if (tt == static_cast<std::time_t>(-1)) return false;
-    unixOut = static_cast<double>(tt);
+    unixOut = static_cast<double>(tt)+fractionalSecond;
     return true;
   }
 

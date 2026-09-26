@@ -15,6 +15,57 @@ Energy/rigidity conversion, energy coordinates, angular sampling, channel clippi
 quadrature, transmission diagnostics, and unresolved bounds come from
 `../util/FluxNumerics.h` in both backends.
 
+## Step 9 synchronized SWMF snapshot/replay path
+
+The coupled backend now turns each accepted SWMF receive into a self-identifying,
+immutable field generation.  Only authoritative owner cells are packed; ghost values
+are never used as independent samples.  Before publication the code checks the B and
+bulk-velocity offsets, owner coverage, duplicate/missing contributions, finite SI
+values, the GSM frame, authoritative PT simulation time, and exact parity between the
+compact arrays and the source owner cells.  MPI ranks must independently obtain the
+same content fingerprint before any particle product can start.
+
+The publication has two distinct identities:
+
+- `mesh_revision` hashes the AMR block/cell keys and SI cell centres, and therefore
+  changes when topology or geometry changes; and
+- `content_fingerprint` hashes the mesh revision, absolute epoch, simulation time,
+  B/u values, domain, units, and the declared derived-E convention/mode.
+
+The field generation is leased by `BeginFrozenFieldBatch()` across the complete
+cutoff/access/flux/spectrum batch.  A field clear, overwrite, import, or analytic debug
+replacement is rejected while that lease is active.  In the live scheduler a receive
+that arrives during a calculation is consequently processed only by the next callback;
+rows from two MHD epochs cannot be combined in one product set.  The generation ID is
+still rechecked after every product, so the Step-3 invariant remains an independent
+guard.
+
+Phase 1 is deliberately magnetic-only.  Plasma velocity is retained in every snapshot
+for provenance and numerical comparison, but trajectories see no electric field unless
+the input explicitly selects `SWMF_DERIVED_ELECTRIC_FIELD EXPERIMENTAL`.  That opt-in
+stores and verifies the ideal-MHD convention `E=-u x B`; it does not release the
+time-dependent electromagnetic mover or weaken the Step-4 fail-fast checks.
+
+With `SWMF_SNAPSHOT_EXPORT T`, rank zero writes the exact frozen compact generation in
+the strict `sep-in-geospace/swmf-field-snapshot/v1` CSV form before products run.  Standalone Mode3D can
+replay it with `FIELD_MODEL SWMF_SNAPSHOT` and `SWMF_SNAPSHOT_FILE`.  Import is exact,
+not interpolation: schema, GSM/SI units, time, mode, domain, block dimensions, leaf
+count, cell keys, cell centres, mesh revision, content fingerprint, and snapshot ID
+must all match the constructed mesh.  This provides a reproducible live-versus-replay
+test without substituting a phenomenological field.
+
+Run the dependency-free numerical and production-wiring references with:
+
+```bash
+./test/USWMFSnapshot/run_test.sh
+```
+
+The linked acceptance procedure additionally exports one live state, replays the file,
+compares cutoff/access/flux/spectrum artifacts at the existing gates, repeats after a
+restart, and checks 1x1, 2x8, and default 8x16 decompositions.  No established C/F
+reference, tolerance, trajectory budget, expected status, or last-pass record is
+changed by Step 9.
+
 ## Step 7 standalone product orchestration
 
 Standalone Mode3D now accepts cutoff-only, density/flux/spectrum-only, and combined

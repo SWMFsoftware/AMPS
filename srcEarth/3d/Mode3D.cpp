@@ -25,6 +25,7 @@
 #include <chrono>
 #include <thread>
 #include <memory>
+#include <limits>
 
 #ifndef _NO_SPICE_CALLS_
 #include "SpiceUsr.h"
@@ -149,6 +150,11 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
     // frozen state only; it must not call the setters concurrently from workers.
     Earth::GridlessMode::Dipole::SetMomentScale(prm.field.dipoleMoment_Me);
     Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
+  }
+  else if (model=="SWMF_SNAPSHOT") {
+    // The Step-9 replay adapter publishes already sampled cell-centred B/u arrays.
+    // Calling an empirical or analytic initializer here would silently replace the
+    // coupled state and invalidate the required live-versus-standalone comparison.
   }
   else if (model=="IGRF") {
     // Pure internal-field initialization used by the gridded C6 validation.
@@ -1366,6 +1372,59 @@ Earth::Field::SnapshotMetadata Mode3DBuildFieldMetadata_(
 void Mode3DPrepareMagneticFieldSnapshot(const EarthUtil::AmpsParam& snap,
                                          const std::string& suffix,
                                          bool verbose) {
+  const std::string model=EarthUtil::ToUpper(snap.field.model);
+  if (model=="SWMF_SNAPSHOT") {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+    exit(__LINE__,__FILE__,
+         "[Mode3D] FIELD_MODEL=SWMF_SNAPSHOT is an offline replay source and "
+         "cannot replace the live field in an SWMF-coupled executable.");
+#else
+    if (snap.field.swmfSnapshotFile.empty())
+      exit(__LINE__,__FILE__,
+           "[Mode3D] FIELD_MODEL=SWMF_SNAPSHOT requires SWMF_SNAPSHOT_FILE.");
+
+    const Earth::Mode3D::GlobalMagneticField::MaterializationStats stats=
+        Earth::Mode3D::GlobalMagneticField::ImportSWMFSnapshot(
+            snap.field.swmfSnapshotFile,snap.field.epoch,
+            snap.field.swmfDerivedElectricFieldExperimental,verbose);
+    const Earth::Field::SnapshotMetadata& metadata=
+        Earth::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata();
+
+    // The domain controls trajectory escape and is therefore part of the physical
+    // calculation. Refuse clipping or resampling: replay must reproduce the live box.
+    const double requestedMinimum_m[3]={
+      1000.0*snap.domain.xMin,1000.0*snap.domain.yMin,1000.0*snap.domain.zMin};
+    const double requestedMaximum_m[3]={
+      1000.0*snap.domain.xMax,1000.0*snap.domain.yMax,1000.0*snap.domain.zMax};
+    for (int d=0;d<3;++d) {
+      const double scale=std::max(
+          1.0,std::max(std::fabs(requestedMinimum_m[d]),
+                       std::fabs(requestedMaximum_m[d])));
+      const double tolerance=64.0*std::numeric_limits<double>::epsilon()*scale;
+      if (std::fabs(metadata.domain.minimum_m[d]-requestedMinimum_m[d])>tolerance ||
+          std::fabs(metadata.domain.maximum_m[d]-requestedMaximum_m[d])>tolerance)
+        exit(__LINE__,__FILE__,
+             "[Mode3D] SWMF_SNAPSHOT_FILE domain differs from #DOMAIN_BOUNDARY.");
+    }
+    if (stats.contentFingerprint.empty() || stats.meshRevision.empty() ||
+        stats.contentFingerprint!=
+            Earth::Mode3D::GlobalMagneticField::CurrentContentFingerprint() ||
+        stats.meshRevision!=
+            Earth::Mode3D::GlobalMagneticField::CurrentMeshRevision())
+      exit(__LINE__,__FILE__,
+           "[Mode3D] Imported SWMF snapshot identity was not published intact.");
+
+    // This legacy dump reads DATAFILE buffers; replay intentionally bypasses them and
+    // uses immutable compact arrays. The portable CSV is the authoritative field file.
+    if (snap.mode3d.outputInitializedFile)
+      exit(__LINE__,__FILE__,
+           "[Mode3D] OUTPUT_INITIALIZED_FILE is unsupported for SWMF_SNAPSHOT replay; "
+           "use the validated SWMF_SNAPSHOT_FILE artifact.");
+    (void)suffix;
+    return;
+#endif
+  }
+
   // Reinitialize the selected standalone field backend for this snapshot.  For
   // Tsyganenko models this updates the model parameters and Geopack epoch before
   // any cell-centered field values are evaluated.  For DIPOLE this is cheap and
@@ -1677,8 +1736,10 @@ int Run(const EarthUtil::AmpsParam& prm) {
     standalonePlan.snapshotId=batchFieldMetadata.snapshotId;
 
     const bool fileBackedDrivers=!snap.temporal.driverTable.empty();
-    standalonePlan.driverSource=fileBackedDrivers
-        ? snap.temporal.driverTable.SourceFile() : std::string("INLINE");
+    standalonePlan.driverSource=(EarthUtil::ToUpper(snap.field.model)=="SWMF_SNAPSHOT")
+        ? std::string("SWMF_SNAPSHOT_FILE:")+snap.field.swmfSnapshotFile
+        : (fileBackedDrivers ? snap.temporal.driverTable.SourceFile() :
+                               std::string("INLINE"));
     standalonePlan.driverColumnsValidated=!fileBackedDrivers ||
         snap.temporal.driverTable.ColumnsValidated();
     standalonePlan.driverUnitsValidated=!fileBackedDrivers ||
@@ -1720,6 +1781,12 @@ int Run(const EarthUtil::AmpsParam& prm) {
           << "and CUTOFF_RIGIDITY+DENSITY_SPECTRUM.";
       throw std::runtime_error(msg.str());
     }
+
+    // Hold a generation lease across all requested products. Any internal attempt to
+    // publish another field fails immediately; the identity checks below remain as a
+    // second, independent guard and none of their scientific thresholds is changed.
+    Earth::Mode3D::GlobalMagneticField::BeginFrozenFieldBatch(
+        batchFieldMetadata.snapshotId);
 
     if (doCutoff) {
       if (PIC::ThisThread == 0) {
@@ -1764,6 +1831,8 @@ int Run(const EarthUtil::AmpsParam& prm) {
         std::cout.flush();
       }
     }
+    Earth::Mode3D::GlobalMagneticField::EndFrozenFieldBatch(
+        batchFieldMetadata.snapshotId);
   }
 
   // Reset the global suffix so a future in-process caller starts from the legacy

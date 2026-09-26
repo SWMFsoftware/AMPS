@@ -42,8 +42,38 @@ mpirun -np 4 ./amps -mode 3d \
 ```
 
 For meaningful gridless/Mode3D comparison, explicitly set a Mode3D mesh-resolution
-profile and run the three-resolution I-F04 convergence study. Step 7 is standalone-only;
-the SWMF-coupled product path is developed in Roadmap Steps 9–11.
+profile and run the three-resolution I-F04 convergence study.
+
+## Step 9 SWMF snapshot replay
+
+`standalone_step9_swmf_replay.in.template` is the offline half of the Step-9
+live/replay comparison.  First run the coupled case with
+`SWMF_SNAPSHOT_EXPORT T`, `SWMF_SNAPSHOT_EXPORT_PREFIX <stem>`, and the default
+`SWMF_DERIVED_ELECTRIC_FIELD OFF`.  Preserve the emitted CSV, product status JSON,
+input, executable revision, and all live product files together.
+
+Copy the template and replace every `REPLACE_*` token with the corresponding live
+value.  In particular, reproduce the exact absolute epoch, Cartesian domain, AMR
+resolution controls, product domain, particle/spectrum definition, energy and angular
+grids, mover budgets, and unchanged failure thresholds.  `SWMF_SNAPSHOT_FILE` must
+name the exported CSV.  Do not use gridless mode: replay is intentionally an exact
+Mode3D mesh-state comparison rather than refitting the SWMF state to an analytic field.
+
+Run the replay from the repository root, for example:
+
+```bash
+mpirun -np 4 ./amps -mode 3d \
+  -i srcEarth/examples/my_step9_swmf_replay.in \
+  -mode3d-threads 16
+```
+
+Startup fails before tracing if the constructed mesh differs in block dimensions,
+leaf count, cell keys, centres, or mesh revision, or if schema, GSM/SI units, domain,
+epoch, electric mode, content fingerprint, or snapshot ID is inconsistent.  Acceptance
+requires pointwise comparison of cutoff, directional access, differential spectra, and
+integral flux against the live products at the existing plan thresholds, then a repeat
+after restart and across 1x1, 2x8, and default 8x16 rank/thread layouts.  Missing output
+or a non-PASS status is a failure; it is never an excluded observation.
 
 ## Step 8 event-campaign example
 

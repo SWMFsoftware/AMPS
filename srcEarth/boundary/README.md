@@ -58,10 +58,12 @@ Interpolation is linear in time and logarithmic in intensity. All rows must have
 same number of columns, UTC epochs must be unique, and intensities must be positive and
 finite. `HOLD_NEAREST` resolves an exact midpoint tie to the earlier row. Every product
 records the resulting status, gap flag, and interpolation fraction in `AUXDATA`; each
-gridless trajectory spectrum zone records its own selection. SWMF supplies its
-authoritative PT simulation-time offset to `SetEvaluationEpochUTCOffset()`, so the
-boundary row advances with the coupled snapshot without changing the field epoch or
-trajectory coordinate-transform contract.
+gridless trajectory spectrum zone records its own selection. Step 9 converts the SWMF
+reference epoch plus authoritative PT clock into one absolute UTC used by the field,
+coordinate transforms, ephemerides, and boundary spectrum. Fractional seconds through
+nanosecond text precision are parsed rather than truncated. The lower-level
+`SetEvaluationEpochUTCOffset()` API remains covered as an equivalent reference, but the
+coupled adapter does not apply a second offset to the already absolute epoch.
 
 `spectrum_input.dat` retains its historical two data columns and adds `AUXDATA` for
 energy basis, mass number, intensity unit, uncertainty, temporal status, and gap flag.

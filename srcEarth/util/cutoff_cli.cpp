@@ -1049,7 +1049,12 @@ std::string HelpMessage(const char* progName) {
   out << "    BA_NIGHTSIDE_FACTOR <double>  tailward multiplier   (default 1.0)\n\n";
 
   out << "  #BACKGROUND_FIELD\n";
-  out << "    FIELD_MODEL        T96 | T05 | DIPOLE\n";
+  out << "    FIELD_MODEL        DIPOLE | IGRF | T96 | T01 | T05/TS05 | TA15N | TA15B | TA16\n";
+  out << "                       SWMF_SNAPSHOT is restricted to -mode 3d / GRID_3D replay\n";
+  out << "    SWMF_SNAPSHOT_FILE <path>  strict GSM/SI B/u replay artifact\n";
+  out << "    SWMF_SNAPSHOT_EXPORT T|F   coupled frozen-state export (default T)\n";
+  out << "    SWMF_SNAPSHOT_EXPORT_PREFIX <stem> coupled export file stem\n";
+  out << "    SWMF_DERIVED_ELECTRIC_FIELD OFF | EXPERIMENTAL (default OFF)\n";
   out << "    EPOCH              <UTC datetime>    e.g. 2010-01-01T00:00:00\n";
   out << "                       Selects the Geopack/IGRF coefficient epoch,\n";
   out << "                       Tsyganenko dipole tilt, and time-dependent frame\n";

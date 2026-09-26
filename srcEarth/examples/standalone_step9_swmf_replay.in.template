@@ -1,0 +1,88 @@
+!===============================================================================
+! Roadmap Step 9 standalone Mode3D replay template.
+!
+! This file is not a generic runnable example: all REPLACE_* values must reproduce
+! the live coupled request and exported snapshot.  The importer intentionally refuses
+! interpolation/resampling onto a different AMR topology because that would invalidate
+! the live-versus-replay comparison.
+!===============================================================================
+
+#RUN_INFO
+  RUN_ID step9_swmf_snapshot_replay
+
+#CALCULATION_MODE
+  CALC_TARGET CUTOFF_RIGIDITY+DENSITY_SPECTRUM
+  FIELD_EVAL_METHOD GRID_3D
+
+#BACKGROUND_FIELD
+  FIELD_MODEL SWMF_SNAPSHOT
+  SWMF_SNAPSHOT_FILE REPLACE_WITH_EXPORTED_SWMF_SNAPSHOT.csv
+  ! Released Step-9 calculations are magnetic-only. Use EXPERIMENTAL only when the
+  ! exported file records that exact mode; the importer rejects a mode mismatch.
+  SWMF_DERIVED_ELECTRIC_FIELD OFF
+  ! Copy the exact epoch_utc metadata value from the exported snapshot.
+  EPOCH REPLACE_WITH_EXPORTED_EPOCH_UTC
+
+#ELECTRIC_FIELD
+  ! The generic standalone electric model stays disabled. In OFF mode, u is retained
+  ! for provenance/comparison but E is not exposed to trajectories. EXPERIMENTAL uses
+  ! the snapshot's explicitly labelled ideal-MHD E=-u x B convention.
+  EFIELD_MODEL NONE
+
+#PARTICLE_SPECIES
+  SPECIES PROTON
+  CHARGE 1
+  MASS_AMU 1.007276466621
+
+#DOMAIN_BOUNDARY
+  ! These six values must equal the exported domain after conversion to metres.
+  DOMAIN_X_MIN REPLACE_WITH_LIVE_XMIN_KM
+  DOMAIN_X_MAX REPLACE_WITH_LIVE_XMAX_KM
+  DOMAIN_Y_MIN REPLACE_WITH_LIVE_YMIN_KM
+  DOMAIN_Y_MAX REPLACE_WITH_LIVE_YMAX_KM
+  DOMAIN_Z_MIN REPLACE_WITH_LIVE_ZMIN_KM
+  DOMAIN_Z_MAX REPLACE_WITH_LIVE_ZMAX_KM
+  R_INNER REPLACE_WITH_LIVE_RINNER_KM
+
+#MODE3D_MESH
+  ! Copy every live AMR-resolution control. The leaf topology and all cell centres
+  ! are checked against the snapshot before any trajectory is launched.
+  MODE3D_MESH_RESOLUTION_EARTH_KM REPLACE_WITH_LIVE_VALUE
+  MODE3D_MESH_RESOLUTION_BOUNDARY_KM REPLACE_WITH_LIVE_VALUE
+  MODE3D_MESH_OUTER_RADIUS_KM REPLACE_WITH_LIVE_VALUE
+  MODE3D_MESH_COARSENING REPLACE_WITH_LIVE_VALUE
+  MODE3D_MESH_EXPONENT REPLACE_WITH_LIVE_VALUE
+
+#CUTOFF_RIGIDITY
+  ! Copy the complete live cutoff/access block without changing its gates.
+  CUTOFF_EMIN REPLACE_WITH_LIVE_VALUE
+  CUTOFF_EMAX REPLACE_WITH_LIVE_VALUE
+  CUTOFF_NENERGY REPLACE_WITH_LIVE_VALUE
+  CUTOFF_SAMPLING REPLACE_WITH_LIVE_VALUE
+  CUTOFF_SEARCH_ALGORITHM REPLACE_WITH_LIVE_VALUE
+  CUTOFF_TRACE_LIMIT_POLICY UNRESOLVED
+
+#DENSITY_SPECTRUM
+  ! Copy the live grid, convergence, retry, and unresolved controls exactly.
+  DS_EMIN REPLACE_WITH_LIVE_VALUE
+  DS_EMAX REPLACE_WITH_LIVE_VALUE
+  DS_NINTERVALS REPLACE_WITH_LIVE_VALUE
+  DS_ENERGY_SPACING LOG
+  DS_UNRESOLVED_TOL REPLACE_WITH_UNCHANGED_LIVE_GATE
+  DS_FAIL_ON_UNRESOLVED T
+
+#SPECTRUM
+  ! Copy the same boundary spectrum/table and time-selection controls used live.
+  SPECTRUM_TYPE REPLACE_WITH_LIVE_VALUE
+
+#OUTPUT_DOMAIN
+  ! Copy the live points/trajectory/shell definition and coordinate frame.
+  OUTPUT_MODE REPLACE_WITH_LIVE_VALUE
+
+#NUMERICAL
+  ! Copy the complete live mover/time-step/budget/event controls exactly.
+  DT_TRACE REPLACE_WITH_LIVE_VALUE
+  ADAPTIVE_DT REPLACE_WITH_LIVE_VALUE
+  MAX_STEPS REPLACE_WITH_LIVE_VALUE
+  MAX_TRACE_TIME REPLACE_WITH_LIVE_VALUE
+  MAX_TRACE_DISTANCE REPLACE_WITH_LIVE_VALUE

@@ -1,5 +1,57 @@
 # SEP-in-geospace model: compact global fields in Mode3D
 
+## Roadmap Step 9 implemented: synchronized SWMF snapshots
+
+The coupled backward-product callback now validates and freezes one coherent SWMF
+state before running cutoff, directional access, flux, or spectrum products. Every MPI
+rank must agree on the finite nonnegative PT time, B/u buffer offsets, callback
+generation, domain, and electric-field mode. Exactly one owner contribution per
+interior cell is reduced into compact arrays; missing, duplicate, non-finite, or
+owner-versus-compact mismatches are fatal. The exact topology and cell centres form a
+`mesh_revision`; epoch, simulation time, domain, mesh revision, B, u, and field mode
+form a decomposition-independent content fingerprint and snapshot ID.
+
+Released Phase-1 products remain magnetic-only. Bulk velocity is retained for
+provenance and replay, but E is not exposed unless the input explicitly says:
+
+```text
+SWMF_DERIVED_ELECTRIC_FIELD EXPERIMENTAL
+```
+
+That mode derives `E=-u x B`, labels the file and identity as experimental, and must
+match on replay. It does not claim the later U-F11/I-F09 electric-acceleration gates.
+No existing trajectory, unresolved-support, observation, or F/C passing threshold was
+changed.
+
+By default a coupled callback writes `swmf_field_snapshot<SUFFIX>.csv` and
+`swmf_product_status<SUFFIX>.json`. The status is `FAILED` before globalization and
+becomes `PASS` only after every requested product completes from the frozen generation.
+The next SWMF callback stays queued by the coupled scheduler until the batch releases
+its lease. Configure provenance output in `#BACKGROUND_FIELD` with:
+
+```text
+SWMF_SNAPSHOT_EXPORT          T
+SWMF_SNAPSHOT_EXPORT_PREFIX   swmf_field_snapshot
+SWMF_DERIVED_ELECTRIC_FIELD   OFF
+```
+
+Standalone Mode3D replays the exact state with `FIELD_MODEL SWMF_SNAPSHOT` and
+`SWMF_SNAPSHOT_FILE <csv>`. The importer rejects wrong schema/units/frame, stale or
+corrupt identity, epoch/domain/block/topology/cell-centre mismatch, incomplete cells,
+and a magnetic-only/experimental-mode mismatch. Gridless replay is forbidden because
+it would no longer be the exported gridded field. See
+`examples/standalone_step9_swmf_replay.in.template` and run:
+
+```bash
+./test/USWMFSnapshot/run_test.sh
+```
+
+The focused suite contains fixed hash references, analytic ideal-MHD E, byte-stable
+serialization, restart/layout invariance, corruption and lifecycle negatives, and
+quantitative pass/fail comparison tolerances. Full acceptance still requires a linked
+live export/replay comparison at 1x1, 2x8, and default 8x16 layouts plus the unchanged
+I-F02, I-F04–I-F07, and applicable observation-facing C-test gates.
+
 ## Roadmap Step 8 implemented: reproducible standalone event campaigns
 
 Step 8 wraps the unchanged Step-7 standalone cutoff/flux/spectrum program in a
@@ -67,7 +119,7 @@ field representations:
 
 | Contract item | Enforced before products are accepted |
 |---|---|
-| Fields | DIPOLE, IGRF, T96, T01, T05/TS05, TA15N, TA15B, TA16; `NONE` only for analytic validation |
+| Fields | DIPOLE, IGRF, T96, T01, T05/TS05, TA15N, TA15B, TA16; Mode3D also accepts strict `SWMF_SNAPSHOT` replay; `NONE` only for analytic validation |
 | Products | cutoff only, flux/spectrum only, or both; unknown target components fail |
 | Domains | POINTS, TRAJECTORY, or SHELLS |
 | Identity | deterministic immutable snapshot ID, checked again after every product |
@@ -89,8 +141,9 @@ Gridless writes `standalone_run_manifest.json`; standalone Mode3D writes
 model, field representation, epoch, snapshot ID, driver source and validation state,
 output domain, and selected products. Mode3D now materializes T01 and TA15N/B fields
 in addition to the already supported models. Their includes, initialization, and calls
-remain inside the non-SWMF compile branch: Step 7 is a standalone release, while live
-coupled field selection and cadence integration remain Roadmap Steps 9–11.
+remain inside the non-SWMF compile branch. Step 9 adds live SWMF ingestion and offline
+replay without linking an empirical field model into the coupled component; fully
+time-dependent characteristics remain later roadmap work.
 
 An executable combined-product input and output guide is in `examples/README.md`.
 Run the dependency-free Step-7 contract/wiring suite from `srcEarth`:
@@ -266,7 +319,7 @@ status. Production adapters cover:
 |---|---|
 | Gridless standalone | owned direct DIPOLE/IGRF/Tsyganenko evaluator; analytic dipole parameters are value-owned, not process-global |
 | Standalone Mode3D | compact replicated B/E arrays and metadata published as one generation |
-| SWMF-coupled Mode3D | owner-cell B plus `E=-v×B`, compactly replicated and tagged with PT time |
+| SWMF-coupled Mode3D | owner-cell B/u, magnetic-only by default; optional experimental `E=-u×B`; content-derived mesh/state identity and authoritative PT time |
 
 The particle mover interface and numerical policies are unchanged. In particular, Step
 3 does not alter mover selection, time/step/distance limits, trapping criteria,
@@ -550,16 +603,23 @@ Earth::Mode3D::GlobalMagneticField::AssembleCellCenteredFieldsForCutoff(
     PIC::CPLR::SWMF::MagneticFieldOffset,
     -1,
     PIC::CPLR::SWMF::BulkVelocityOffset,
-    true);
+    BuildSWMFFieldSnapshotMetadata_(),
+    true,
+    PIC::SimulationTime::TimeCounter);
 ```
 
-For each owner cell, the compact electric field is calculated as
+Both offsets and completion of the first SWMF coupling receive are checked before
+assembly. B and u are always retained in the frozen compact generation. The released
+default sets E to zero and advertises it as unavailable. Only
+`SWMF_DERIVED_ELECTRIC_FIELD EXPERIMENTAL` derives
 
 ```text
-E = -v x B
+E = -u x B
 ```
 
-Both offsets and completion of the first SWMF coupling receive are checked before assembly.
+The mode is recorded in the fingerprint/export and does not bypass the magnetic-only
+trajectory gate. Owner-versus-compact B/u and diagnostic E are checked before
+publication; all ranks must agree on the final content identity.
 
 ## Row-stencil interpolation
 
@@ -1017,12 +1077,15 @@ The following comparisons should be run before removing any legacy reference bra
 3. **AMR coarse/fine faces, edges, and corners:** compare every physical row entry and final B.
 4. **MPI decomposition invariance:** run the same snapshot with 1, 2, 4, and 8 ranks and compare fields and cutoff products bitwise where reduction order permits, otherwise to roundoff.
 5. **Standalone DIPOLE:** compare interpolated B and cutoff maps with the former replicated-block implementation.
-6. **SWMF snapshot:** compare compact B and derived E against direct owner-cell values.
+6. **SWMF snapshot:** compare compact B/u and diagnostic `-u×B` against direct
+   owner-cell values; repeat export/replay across rank/thread layouts.
 7. **Time series:** verify that `Temp_ID` is reset and arrays are rebuilt for every field snapshot.
 8. **Snapshot-list batching:** prove mesh initialization occurs once, each trajectory
    row matches exactly one snapshot, shared-epoch spacecraft use one field fill, and
    batched products equal independent-case products.
-9. **Memory scaling:** confirm that increasing MPI rank count does not allocate additional global AMPS blocks and that per-rank growth is limited to compact B/E/presence arrays.
+9. **Memory scaling:** confirm that increasing MPI rank count does not allocate
+   additional global AMPS blocks and that per-rank growth is limited to compact
+   B/E/u/presence arrays.
 
 ## Mode3D DIPOLE magnetic-field interpolation error statistics
 

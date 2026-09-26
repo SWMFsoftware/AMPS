@@ -1,5 +1,46 @@
 # Shared numerical utilities
 
+## `SWMFSnapshotContract.h` — Roadmap Step 9
+
+`SWMFSnapshotContract.h` is the dependency-free interchange and lifecycle contract
+shared by live SWMF publication, coupled export, standalone Mode3D replay, and the
+Step-9 unit suite.  It defines the strict
+`sep-in-geospace/swmf-field-snapshot/v1` CSV schema in GSM/SI:
+position in metres, B in tesla, plasma bulk velocity in metre/second, and optional
+experimental ideal-MHD E in volt/metre.  The default `MAGNETIC_ONLY` mode retains u for
+provenance but makes E unavailable; `EXPERIMENTAL_IDEAL_MHD` must be selected
+explicitly and requires every stored E vector to equal `-u x B` within the declared
+numerical contract.
+
+Identity is intentionally content-derived.  Canonical sorting by `(block,i,j,k)` makes
+the mesh revision and state fingerprint independent of MPI decomposition or record
+order.  The mesh revision covers topology and exact SI cell centres.  The content
+fingerprint additionally covers epoch, authoritative simulation time, domain, units,
+mode, B, u, and the derived-E convention; the final snapshot ID binds both. Readers
+recompute all three and
+reject metadata-only edits, stale geometry, missing/duplicate cells, non-finite values,
+wrong units/frame/mode, negative time, and truncated files.
+
+`Compare()` supplies the live-versus-replay numerical comparison with separate
+position, B, u, and E tolerances and reports maxima instead of a boolean smoke result.
+`PublicationQueue` models the fail-closed lifecycle: unavailable/stale/corrupt receives
+cannot reuse the previous state, a valid receive behind a frozen batch is queued, and
+release promotes only that validated next state.  `BuildProductStatusJson()` records a
+machine-readable PASS/FAILED result for every attempted product batch.
+
+The production parser includes `pic.h` directly before evaluating coupler-mode macros;
+this is required so standalone and SWMF translation units cannot obtain different
+preprocessor meanings through accidental include order.  Its Step-9 controls are
+`SWMF_SNAPSHOT_FILE`, `SWMF_SNAPSHOT_EXPORT`, `SWMF_SNAPSHOT_EXPORT_PREFIX`, and the
+strict `SWMF_DERIVED_ELECTRIC_FIELD OFF|EXPERIMENTAL` selector.
+
+Run the fixed numerical identities, analytic `-u x B`, serialization, corruption,
+tolerance, lifecycle, and production-wiring gates with:
+
+```bash
+./test/USWMFSnapshot/run_test.sh
+```
+
 ## `StandaloneProductContract.h` — Roadmap Step 7
 
 `StandaloneProductContract.h` is the dependency-free contract used by both standalone

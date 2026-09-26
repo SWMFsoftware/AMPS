@@ -80,7 +80,10 @@
 //   (3) If DS_ENERGY_SPACING is neither LOG nor LINEAR: warning on stderr,
 //       silently fall back to LOG.
 //
-//   (4) If FIELD_MODEL is not in {T96, T05, DIPOLE}: std::runtime_error.
+//   (4) If FIELD_MODEL is not one of the released phenomenological models, the
+//       validation-only NONE model, or the strict Mode3D SWMF_SNAPSHOT replay source:
+//       terminate with a diagnostic.  Live FIELD_MODEL=SWMF is accepted only in an
+//       SWMF-coupled compile.
 //
 // Physical range checks (e.g., Emin < Emax, rInner > 0) are mostly delegated to
 // post-parse validation or solver startup.  Structural validation is strict: an
@@ -111,6 +114,11 @@
 //       keywords are rejected before the downstream initializer is called.
 //
 //======================================================================================
+
+// The parser evaluates AMPS-generated coupler-mode macros during final validation.
+// Include pic.h directly so those symbols never depend on transitive include order or
+// on a compiler command line that may differ between standalone and SWMF builds.
+#include "pic.h"
 
 #include "amps_param_parser.h"
 #include "StandaloneProductContract.h"
@@ -2992,6 +3000,36 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         //   3) all parser errors are reported from a single finalization stage.
         p.field.driverFile = Trim(val);
       }
+      else if (uKey=="SWMF_SNAPSHOT_FILE") {
+        // Store the path here; the importer later validates schema, declared SI/GSM
+        // units, epoch, mesh revision, cell coverage, and content-derived identity.
+        p.field.swmfSnapshotFile=Trim(val);
+        if (p.field.swmfSnapshotFile.empty())
+          exit(__LINE__,__FILE__,"SWMF_SNAPSHOT_FILE requires a non-empty path");
+      }
+      else if (uKey=="SWMF_SNAPSHOT_EXPORT") {
+        // This switch controls only the replay/provenance artifact. It cannot change
+        // the compact arrays, a trajectory, or an existing numerical acceptance gate.
+        p.field.swmfSnapshotExport=ToBool(val);
+      }
+      else if (uKey=="SWMF_SNAPSHOT_EXPORT_PREFIX") {
+        p.field.swmfSnapshotExportPrefix=Trim(val);
+        if (p.field.swmfSnapshotExportPrefix.empty())
+          exit(__LINE__,__FILE__,
+               "SWMF_SNAPSHOT_EXPORT_PREFIX requires a non-empty stem");
+      }
+      else if (uKey=="SWMF_DERIVED_ELECTRIC_FIELD") {
+        // OFF is the released Step-9 default. EXPERIMENTAL is deliberately spelled
+        // out in the input and snapshot metadata so ideal-MHD E cannot be enabled by
+        // a permissive boolean typo before U-F11/I-F09 are complete.
+        const std::string mode=ToUpper(Trim(val));
+        if (mode=="OFF") p.field.swmfDerivedElectricFieldExperimental=false;
+        else if (mode=="EXPERIMENTAL")
+          p.field.swmfDerivedElectricFieldExperimental=true;
+        else
+          exit(__LINE__,__FILE__,
+               "SWMF_DERIVED_ELECTRIC_FIELD must be OFF or EXPERIMENTAL");
+      }
       else {
         p.field.raw[uKey]=val;
         rejectUnknownKeyword();
@@ -3424,13 +3462,25 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
   if (p.calc.targetExplicit) {
     try {
       (void)Earth::StandaloneProducts::ParseProductSelection(p.calc.target);
-      if (!Earth::StandaloneProducts::IsSupportedFieldModel(p.field.model)) {
+      bool supportedFieldModel=
+          Earth::StandaloneProducts::IsSupportedFieldModel(p.field.model);
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+      // FIELD_MODEL=SWMF names the live coupler source, not a phenomenological model.
+      // It is legal only in a coupled executable; standalone builds still reject it.
+      supportedFieldModel=supportedFieldModel ||
+          Earth::StandaloneProducts::CanonicalFieldModel(p.field.model)=="SWMF";
+#endif
+      if (!supportedFieldModel) {
         std::ostringstream message;
         message << "Unsupported standalone FIELD_MODEL='" << p.field.model
                 << "'. Production models: DIPOLE, IGRF, T96, T01, T05/TS05, "
-                   "TA15N, TA15B, TA16; NONE is validation-only.";
+                   "TA15N, TA15B, TA16, SWMF_SNAPSHOT; NONE is validation-only.";
         exit(__LINE__,__FILE__,message.str().c_str());
       }
+      if (Earth::StandaloneProducts::CanonicalFieldModel(p.field.model)==
+              "SWMF_SNAPSHOT" && p.field.swmfSnapshotFile.empty())
+        exit(__LINE__,__FILE__,
+             "FIELD_MODEL=SWMF_SNAPSHOT requires SWMF_SNAPSHOT_FILE");
     }
     catch (const std::exception& error) {
       exit(__LINE__,__FILE__,error.what());

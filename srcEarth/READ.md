@@ -1,5 +1,90 @@
 # AMPS Earth Energetic-Particle Model
 
+## SWMF field ingestion and synchronization (Roadmap Step 9)
+
+Step 9 connects the already released standalone product kernels to a coherent live
+SWMF field state; it does not add a second cutoff or flux solver. At each accepted PT
+callback the coupled bridge performs this fail-closed sequence:
+
+1. require the first complete SWMF receive, valid B/u offsets, an initialized AMR tree,
+   and exact rank agreement on PT time, offsets, generation, domain, and field mode;
+2. assign deterministic dense IDs to every used leaf and copy only owner interior B/u;
+3. collectively require one contribution per cell, finite values, and exact pointwise
+   equality between every direct owner value and the reduced compact value;
+4. calculate a topology/cell-centre `mesh_revision` and a content fingerprint covering
+   epoch, simulation time, GSM/SI declarations, domain, mesh, B, u, and E mode;
+5. require the same fingerprint on every MPI rank, then publish metadata and arrays as
+   one immutable field-provider generation;
+6. freeze that generation, export it if requested, run all selected products, and check
+   the identity after each product; and
+7. release the generation and write `PASS`. The status file is written as `FAILED`
+   before step 1, so termination cannot masquerade as a complete calculation.
+
+SWMF/PT serializes component callbacks; therefore the next receive remains in the
+coupler schedule while the current callback owns the frozen generation. Internal code
+also rejects clear/reassembly/redefinition while the lease is active. An older PT time
+is stale and fails; an equal time is allowed so an exact restart can reproduce the same
+identity.
+
+### Magnetic-only release and experimental E
+
+The default and released setting is:
+
+```text
+#BACKGROUND_FIELD
+SWMF_DERIVED_ELECTRIC_FIELD OFF
+```
+
+B is used for the Phase-1 frozen characteristic and u is retained for provenance and
+cross-path comparison. `EXPERIMENTAL` derives `E=-u x B` in SI, advertises it in the
+field provider, and includes the mode in physical identity. A replay must request the
+same mode recorded in the file. This explicit opt-in does not assert electric
+acceleration, time-dependent characteristics, trapping/loss evolution, or completion
+of the later U-F11/I-F09 release gates.
+
+### Export and standalone replay
+
+Live controls in `#BACKGROUND_FIELD` are:
+
+```text
+SWMF_SNAPSHOT_EXPORT          T
+SWMF_SNAPSHOT_EXPORT_PREFIX   swmf_field_snapshot
+SWMF_DERIVED_ELECTRIC_FIELD   OFF
+```
+
+Each callback writes `swmf_field_snapshot<SUFFIX>.csv` and
+`swmf_product_status<SUFFIX>.json`. Replay uses standalone Mode3D:
+
+```text
+#CALCULATION_MODE
+FIELD_EVAL_METHOD GRID_3D
+
+#BACKGROUND_FIELD
+FIELD_MODEL                    SWMF_SNAPSHOT
+SWMF_SNAPSHOT_FILE             /path/to/swmf_field_snapshot<SUFFIX>.csv
+SWMF_DERIVED_ELECTRIC_FIELD    OFF
+EPOCH                          <exact epoch_utc from the CSV>
+```
+
+The input domain and AMR controls must reconstruct the exported mesh exactly. Import
+validates the strict v1 schema, GSM, metres/tesla/m/s, finite values, cell count and
+keys, byte-stable identity, epoch, domain, compiled block dimensions, mesh revision,
+and all cell centres before publishing. It never calls an IGRF/Tsyganenko/dipole
+evaluator and never silently resamples. `OUTPUT_INITIALIZED_FILE` is rejected because
+that legacy path reads DATAFILE buffers rather than the replayed compact arrays.
+
+Run the local references with:
+
+```bash
+./srcEarth/test/USWMFSnapshot/run_test.sh
+```
+
+Then run a linked live/export/replay acceptance case at 1x1, 2x8, and default 8x16
+MPI/thread layouts and after restart. Compare B/u/diagnostic E and every requested
+cutoff/access/flux/spectrum artifact at the unchanged I-F02 and I-F04–I-F07 tolerances,
+and retain all applicable observation-facing C-test gates. Missing artifacts,
+non-`PASS` status, unresolved excess, or a changed restart identity are failures.
+
 ## Standalone event workflow (Roadmap Step 8)
 
 The Step-7 standalone solver can now be executed as a frozen multi-epoch validation
@@ -79,6 +164,10 @@ srcEarth/util/amps_param_parser.h
 srcEarth/util/amps_param_parser.cpp
     Strict AMPS_PARAM.in parser used by the gridless, Mode3D, and 3d_forward paths.
 
+srcEarth/util/SWMFSnapshotContract.h
+    Dependency-free Step-9 GSM/SI field-state schema, deterministic mesh/content
+    identity, strict serialization, quantitative comparison, and lifecycle model.
+
 srcEarth/util/cutoff_cli.h
 srcEarth/util/cutoff_cli.cpp
     Command-line option parser and help text.
@@ -98,9 +187,9 @@ srcEarth/3d/Mode3DParallel.h
 srcEarth/3d/ElectricField.cpp
 srcEarth/3d/GlobalMagneticField.cpp
     Mesh-backed 3-D backward products: cutoff, directional cutoff maps,
-    density/flux, standalone time snapshots, field initialization, global
-    replicated B-field materialization, and the shared OpenMP/THREADS/SERIAL
-    backend selector used by both cutoff and density/flux.
+    density/flux, standalone time snapshots, field initialization, global replicated
+    B/u field materialization, SWMF export/replay and frozen-batch ownership, and the
+    shared OpenMP/THREADS/SERIAL backend selector used by both cutoff and density/flux.
 
 srcEarth/3d_forward/Mode3DForward.cpp
 srcEarth/3d_forward/ForwardParticleMovers.cpp
@@ -112,7 +201,12 @@ srcEarth/3d_forward/SphereFlux3D.cpp
 srcEarth/3d_forward_swmf/Mode3DForwardSWMF.cpp
 srcEarth/3d_forward_swmf/Mode3DForwardSWMF.h
     SWMF-coupled bridge. In coupled builds it supports both historical forward
-    injection and the newer Mode3D backward products driven by live SWMF fields.
+    injection and Mode3D backward products driven by synchronized live SWMF fields.
+
+srcEarth/examples/standalone_step9_swmf_replay.in.template
+srcEarth/test/USWMFSnapshot/
+    Exact offline replay template and independent Step-9 numerical/source-contract
+    suite. Linked live/replay and observation comparisons remain separate gates.
 
 parallel_affinity.h
 parallel_affinity.cpp
@@ -597,9 +691,14 @@ Standalone Mode3D initializes the magnetic field on the AMPS AMR mesh. Supported
 
 ```text
 DIPOLE
+IGRF
 T96
+T01
 T05
+TA15N
+TA15B
 TA16
+SWMF_SNAPSHOT   ! strict offline Mode3D replay only
 ```
 
 The field is first written into owner-rank DATAFILE cell buffers. Then `GlobalMagneticField::AssembleCellCenteredFieldsForCutoff()` resets and assigns dense `node->Temp_ID` values, gathers owner-cell B/E values into compact global arrays, and verifies exactly one owner contribution per physical cell. No nonlocal AMR blocks or ghost-cell state vectors are allocated. Field evaluation uses the decomposition-independent AMPS row stencil.
@@ -608,7 +707,13 @@ The field is first written into owner-rank DATAFILE cell buffers. Then `GlobalMa
 
 In coupled mode, the field comes from the SWMF coupler data buffer, not from standalone Tsyganenko/DIPOLE initialization.
 
-The same compact global-field helper is used. B is read from `PIC::CPLR::SWMF::MagneticFieldOffset`; E is reconstructed from `PIC::CPLR::SWMF::BulkVelocityOffset` as `E = -v x B`.
+The same compact global-field helper is used. B is read from
+`PIC::CPLR::SWMF::MagneticFieldOffset` and u from
+`PIC::CPLR::SWMF::BulkVelocityOffset`. Both are retained and owner-parity checked.
+The released `SWMF_DERIVED_ELECTRIC_FIELD OFF` mode keeps E unavailable and zero;
+explicit `EXPERIMENTAL` derives `E=-u x B`, records that convention in the state
+identity, and still does not enable an electromagnetic backward mover. The exact
+frozen B/u state can be exported and replayed with `FIELD_MODEL SWMF_SNAPSHOT`.
 
 ### 5.4 Electric field options
 
@@ -633,7 +738,7 @@ Gridless mode does not need a field mesh. Work is distributed over observation l
 
 ### 6.2 Standalone Mode3D
 
-Standalone Mode3D no longer uses independent private MPI domains for cutoff calculations. It uses the normal distributed AMPS mesh initialization and then assembles compact global B/E arrays for tracing.
+Standalone Mode3D no longer uses independent private MPI domains for cutoff calculations. It uses the normal distributed AMPS mesh initialization and then assembles compact global B/E arrays for tracing; SWMF replay additionally retains u for provenance and comparison.
 
 The intended sequence is:
 
@@ -650,7 +755,11 @@ This gives all ranks access to global B/E values through row-stencil interpolati
 
 ### 6.3 SWMF coupled
 
-In coupled mode, compact B/E assembly is repeated for every accepted SWMF/PT snapshot before the backward products are computed.
+In coupled mode, compact B/u (and optional explicitly experimental derived-E) assembly
+is repeated for every accepted SWMF/PT state. The generation is frozen across export
+and all requested backward products, then released before the next callback. Collective
+coherence, owner parity, content identity, and fail-closed status gates run before a
+product can pass.
 
 ### 6.4 Intra-rank shared-memory backends for Mode3D backward products
 

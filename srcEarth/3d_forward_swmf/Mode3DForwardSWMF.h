@@ -76,17 +76,23 @@ double GetCoupledCalculationCadenceSeconds();
 //   * PIC::CPLR::SWMF::FirstCouplingOccured is true on every rank.
 bool ReadyForBackwardProductCalculation(bool verbose=true);
 
-// Assemble compact global SWMF B/E arrays before a backward-product calculation.
+// Assemble one coherent compact global SWMF B/u/E generation before a
+// backward-product calculation.
 //
 // The routine resets and assigns deterministic node->Temp_ID values over the global
-// AMR tree, gathers owner interior-cell B and plasma velocity, derives E=-v x B, and
-// MPI-replicates only the compact physical arrays.  No nonlocal cDataBlockAMR objects
-// or ghost-cell state vectors are allocated.  Mode3D field evaluation subsequently
-// uses cRowStencil entries to address remote cells by (node->Temp_ID,i,j,k).
+// AMR tree, gathers owner interior-cell B and plasma velocity, and MPI-replicates only
+// the compact physical arrays.  No nonlocal cDataBlockAMR objects or ghost-cell state
+// vectors are allocated.  A direct owner-cell parity pass detects a wrong offset,
+// ghost selection, or receive-buffer mutation before publication.  Mode3D field
+// evaluation subsequently uses cRowStencil entries to address remote cells by
+// (node->Temp_ID,i,j,k).
 //
-// Step-3 provenance is published with the compact arrays: source PIC::CPLR:SWMF,
-// configured reference epoch plus PT time, GSM/SI units, E=-v×B capability, and one
-// immutable generation ID checked after cutoff and density/flux products.
+// Step-9 provenance is published atomically with the arrays: source PIC::CPLR:SWMF,
+// authoritative PT time and absolute UTC epoch, GSM/SI units, mesh revision, complete
+// content fingerprint, declared magnetic-only or explicitly experimental E=-u x B
+// mode, and one immutable generation ID.  The caller freezes that generation across
+// export plus cutoff/access/flux/spectrum products; a later coupler receive is handled
+// by the next callback and can never be mixed into the active batch.
 void PrepareGlobalSWMFCoupledMagneticFieldForCutoff(bool verbose=true);
 
 // Replace the SWMF-coupled cell-centered magnetic field with the analytic dipole

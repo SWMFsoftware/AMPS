@@ -1,0 +1,2 @@
+Analytic DIPOLE smoke case: no empirical solar-wind driver is consumed.
+The file exists to make the campaign's driver provenance category explicit.

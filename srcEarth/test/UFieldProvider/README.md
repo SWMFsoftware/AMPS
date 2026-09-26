@@ -39,5 +39,6 @@ Backend-linked validation still requires a configured AMPS tree:
 
 - existing C/F cases for cutoff, flux, spectra, and external references;
 - direct-versus-compact point comparisons for standalone Mode3D;
-- owner-cell versus compact-array comparisons for SWMF B and `E=-v×B`; and
+- owner-cell versus compact-array comparisons for SWMF B/u and the diagnostic
+  `E=-u×B` convention (E is exposed only in explicitly experimental mode); and
 - a combined cutoff+density run confirming that one snapshot ID survives both products.

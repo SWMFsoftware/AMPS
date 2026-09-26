@@ -52,8 +52,11 @@ inline std::string CanonicalFieldModel(const std::string& input) {
 // Production standalone models named by the Step-7 release plan.
 inline bool IsReleasedFieldModel(const std::string& input) {
   const std::string model=CanonicalFieldModel(input);
+  // SWMF_SNAPSHOT is a released *standalone replay source*, not an analytic field
+  // family. RunPlan::Validate below therefore accepts it only with the mesh backend.
   return model=="DIPOLE" || model=="IGRF" || model=="T96" || model=="T01" ||
-         model=="T05" || model=="TA15N" || model=="TA15B" || model=="TA16";
+         model=="T05" || model=="TA15N" || model=="TA15B" || model=="TA16" ||
+         model=="SWMF_SNAPSHOT";
 }
 
 // NONE is retained only as the exact zero-field reference used by F1/F2/F12/F15/F16
@@ -75,7 +78,9 @@ inline bool IsExternalFieldModel(const std::string& input) {
 
 inline bool RequiresGeopackInitialization(const std::string& input) {
   const std::string model=CanonicalFieldModel(input);
-  return model!="DIPOLE" && model!="NONE";
+  // Replay already carries GSM cell centres and B/u samples from the live run; invoking
+  // Geopack would create an unrelated field state and invalidate the comparison.
+  return model!="DIPOLE" && model!="NONE" && model!="SWMF_SNAPSHOT";
 }
 
 // The returned names are the canonical quantities consumed by each wrapper.  Do not
@@ -84,7 +89,8 @@ inline bool RequiresGeopackInitialization(const std::string& input) {
 // inventing a missing physical driver.
 inline std::vector<std::string> RequiredDriverColumns(const std::string& input) {
   const std::string model=CanonicalFieldModel(input);
-  if (model=="DIPOLE" || model=="IGRF" || model=="NONE") return {};
+  if (model=="DIPOLE" || model=="IGRF" || model=="NONE" ||
+      model=="SWMF_SNAPSHOT") return {};
   if (model=="T96") return {"BYIMF","BZIMF","PDYN","DST"};
   if (model=="T01") return {"BYIMF","BZIMF","PDYN","DST","G1","G2","G3"};
   if (model=="T05")
@@ -259,8 +265,12 @@ struct RunPlan {
     if (!IsSupportedFieldModel(fieldModel))
       throw std::invalid_argument(
           "Unsupported standalone FIELD_MODEL; supported production models are "
-          "DIPOLE, IGRF, T96, T01, T05/TS05, TA15N, TA15B, and TA16 "
+          "DIPOLE, IGRF, T96, T01, T05/TS05, TA15N, TA15B, TA16, and "
+          "SWMF_SNAPSHOT "
           "(NONE is reserved for analytic validation)");
+    if (fieldModel=="SWMF_SNAPSHOT" && representation!=FieldRepresentation::Mesh)
+      throw std::invalid_argument(
+          "FIELD_MODEL=SWMF_SNAPSHOT requires the Mode3D MESH representation");
     if (!products.cutoff && !products.fluxSpectrum)
       throw std::invalid_argument("Standalone run plan requests no product");
     RequireOneEpoch(epochs);

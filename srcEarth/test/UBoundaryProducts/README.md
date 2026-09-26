@@ -20,7 +20,7 @@ These are reference comparisons, not only “finite/nonzero” smoke checks:
 | U-F05 | analytically clipped constant-integrand energy channel; unresolved `[0,max]` access interval and contradictory-state rejection |
 | U-F07 | beta-function means for `sin²(alpha)` and `cos²(alpha)`; normalized sphere/hemisphere mean exactly one |
 | U-F07 adapter | production `EvalAnisotropyFactor`: raw and unit-mean `sin²`/`cos²`, normalized day/night factors, NaN fallback, and invalid-model rejection |
-| U-F08 | geometric-mean log-intensity interpolation, exact-row selection, gap tie-breaking, ZERO/FAIL policies, and the same checks through the production TABLE loader |
+| U-F08 | geometric-mean log-intensity interpolation, exact-row selection, gap tie-breaking, ZERO/FAIL policies, fractional absolute UTC retention, and the same checks through the production TABLE loader |
 | U-F09 | analytic top-hat and triangular detector folds, an exact two-node directional quadrature, and isotropic `F_planar=F_omni/4` |
 | F1/F16 kernel | fully allowed/blocked limiting behavior |
 | F4 kernel | reintegration of emitted nominal/lower/upper differential-spectrum samples reproduces every reported integral bound |

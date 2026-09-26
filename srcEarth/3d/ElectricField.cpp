@@ -3,6 +3,7 @@
 #include <cmath>
 #include <algorithm>
 #include <string>
+#include <stdexcept>
 
 #include "pic.h"
 
@@ -148,6 +149,15 @@ void EvaluateBackgroundMagneticFieldSI(double B[3],const double xGSM_SI[3],const
     // analytic references.  It is never advertised as a physical production model.
     B[0]=B[1]=B[2]=0.0;
     return;
+  }
+  if (model=="SWMF_SNAPSHOT") {
+    // Step-9 replay is already sampled on the exact Mode3D AMR mesh. There is no
+    // analytic point evaluator: returning zero here would turn a representation wiring
+    // error into artificial particle access. The normal replay path bypasses this
+    // function and publishes the validated compact B/u generation directly.
+    throw std::runtime_error(
+        "FIELD_MODEL=SWMF_SNAPSHOT cannot be evaluated analytically; "
+        "use the Mode3D MESH replay path");
   }
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_

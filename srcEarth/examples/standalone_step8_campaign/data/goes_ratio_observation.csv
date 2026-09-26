@@ -1,0 +1,2 @@
+utc,spacecraft,channel,east_west_ratio,east_quality_flag,west_quality_flag,quality_status
+2020-01-01T00:05:00Z,GOES_SYNTH,P5,1.0,0,0,VALID

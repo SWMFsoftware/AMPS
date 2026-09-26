@@ -4,14 +4,16 @@
 //
 // PURPOSE
 // -------
-// Self-contained, dependency-free parser for the AMPS_PARAM.in format used by
-// the CCMC Runs-on-Request interface for the Geospace energetic particle tools.
-// Populates EarthUtil::AmpsParam from a text file; used by both the gridless
-// cutoff-rigidity solver and the gridless density/spectrum solver.
+// Parser for the AMPS_PARAM.in format used by the CCMC Runs-on-Request interface for
+// the Geospace energetic-particle tools. It populates EarthUtil::AmpsParam for the
+// gridless, Mode3D, and coupled solvers. The data structures remain ordinary C++;
+// amps_param_parser.cpp includes pic.h directly only to obtain the generated coupler-
+// mode constants used by its final live-SWMF versus standalone validation.
 //
 // DESIGN PRINCIPLES
 // -----------------
-//   (1) No PIC framework dependencies. This parser can be built and tested standalone.
+//   (1) No PIC types appear in the public parameter contract. A standalone parser test
+//       may supply the normal AMPS pic.h configuration stub for coupler-mode macros.
 //   (2) Fail-fast validation: unknown sections/keywords terminate execution through
 //       exit(__LINE__,__FILE__,msg) instead of being silently ignored.
 //   (3) New sections and keys must be added explicitly to the parser before they can
@@ -128,7 +130,13 @@
 //     SPECIES_MASS_AMU        <double>   ! mass in atomic mass units
 //
 //   #BACKGROUND_FIELD
-//     FIELD_MODEL             IGRF | T96 | T01 | T05 | TA15N | TA15B | TA16 | DIPOLE
+//     FIELD_MODEL             IGRF | T96 | T01 | T05 | TA15N | TA15B | TA16 |
+//                             DIPOLE | SWMF_SNAPSHOT
+//     SWMF_SNAPSHOT_FILE      <path>  ! required by standalone SWMF_SNAPSHOT replay
+//     SWMF_SNAPSHOT_EXPORT    T|F     ! coupled provenance export; default T
+//     SWMF_SNAPSHOT_EXPORT_PREFIX <path/stem> ! default swmf_field_snapshot
+//     SWMF_DERIVED_ELECTRIC_FIELD OFF | EXPERIMENTAL
+//                                      ! default OFF; Phase-1 release is B-only
 //     EPOCH                   <UTC datetime>   ! recommended: 2010-01-01T00:00:00
 //                                              ! initializes Geopack/IGRF, Tsyganenko
 //                                              ! dipole tilt, and frame rotations;
@@ -879,6 +887,7 @@ namespace EarthUtil {
     //   "TA16"    "TA16RBF"               Tsyganenko-Andreeva (2016)
     //   "IGRF"                             Geopack internal field only (no external model)
     //   "DIPOLE"                           Analytic centered dipole (internal only)
+    //   "SWMF_SNAPSHOT"                    Frozen Step-9 SWMF B/u replay (Mode3D only)
     std::string model{"T96"};
 
     // --- Dipole-only parameters (FIELD_MODEL = DIPOLE) ---
@@ -981,6 +990,24 @@ namespace EarthUtil {
     //
     // Precedence rules are implemented in amps_param_parser.cpp.
     std::string driverFile;
+
+    // Roadmap Step 9 live-export/standalone-replay controls. The snapshot file is a
+    // strict GSM/SI cell-centred B/u state produced from the exact compact generation
+    // used by the coupled backward products. It is meaningful only for standalone
+    // FIELD_MODEL=SWMF_SNAPSHOT and is rejected by the gridless representation.
+    std::string swmfSnapshotFile;
+
+    // Coupled runs export the frozen field state by default so a live calculation can
+    // be replayed and audited without reconstructing a phenomenological field. The
+    // prefix changes only the artifact name; neither option changes the physical ID.
+    bool swmfSnapshotExport{true};
+    std::string swmfSnapshotExportPrefix{"swmf_field_snapshot"};
+
+    // Phase-1 products are released in magnetic-only mode. Setting the corresponding
+    // keyword to EXPERIMENTAL makes the compact provider expose E=-u×B and records that
+    // mode in the snapshot identity/file. A replay input must request the same mode;
+    // there is no silent promotion from OFF to experimental electric acceleration.
+    bool swmfDerivedElectricFieldExperimental{false};
 
     // Raw key/value store for forward compatibility.
     std::map<std::string,std::string> raw;
