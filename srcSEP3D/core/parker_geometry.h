@@ -28,8 +28,27 @@ struct ParkerSpiralGeometry {
 Status ValidateParkerGeometry(const ParkerSpiralGeometry& geometry);
 
 // Point on the field line that leaves the source sphere at the configured
-// longitude/colatitude.  The returned vector has norm radiusM.
+// longitude/colatitude.  The returned vector has norm radiusM.  The azimuth
+// is the analytic integral of the same B_phi/B_r law used by SWCME and by
+// ParkerLocalTangent(); this is important because a merely Archimedean curve
+// is not an integral curve when the field contains the usual (r-r0) source-
+// surface correction.
 Vec3 ParkerCurvePoint(double radiusM, const ParkerSpiralGeometry& geometry);
+
+// Arc length measured outwards from the source sphere to radiusM.  Invalid
+// geometry or a radius inside the source sphere returns NaN.  Keeping this
+// operation in the geometry authority lets mesh masks and visualization use
+// exact equal-arc stations without integrating a second, drifting curve.
+double ParkerCurveArcLengthM(
+    double radiusM, const ParkerSpiralGeometry& geometry);
+
+// Invert ParkerCurveArcLengthM on the monotonically increasing outward
+// branch.  A safeguarded Newton/bisection solve is used so zero rotation,
+// polar field lines, and tightly wound equatorial lines share one contract.
+// The result is committed only on success.
+Status ParkerCurveRadiusAtArcLengthM(
+    double arcLengthM, const ParkerSpiralGeometry& geometry,
+    double* radiusM);
 
 // Unit tangent in the increasing-radius direction.  This direction is the
 // positive-polarity Parker field direction; callers apply magnetic polarity

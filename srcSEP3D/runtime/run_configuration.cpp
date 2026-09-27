@@ -696,18 +696,43 @@ Core::Status RunConfiguration3D::Create(
                      "buffer_blocks must be positive");
     }
     // A corridor narrower than the requested refinement tube would discard
-    // blocks that the mesh explicitly refined for transport.  Reject that
-    // contradiction before AMPS creates or deactivates any tree node.
-    const double activeAtReference =
-        normalized.activeTubeRadiusAtReferenceM;
-    double refinedAtActiveReference = normalized.tubeRadiusAtReferenceM;
-    if (normalized.tubeRadiusMode == TubeRadiusMode::ConstantAngularWidth)
-      refinedAtActiveReference *= normalized.activeTubeReferenceRadiusM /
-          normalized.tubeReferenceRadiusM;
-    if (normalized.enableTubeRefinement &&
-        activeAtReference < refinedAtActiveReference) {
-      return Invalid("active Parker corridor is narrower than the refined "
-                     "Parker tube at the active reference radius");
+    // blocks that the mesh explicitly refined for transport. Both supported
+    // radius laws are affine in heliocentric radius (constant or proportional
+    // to r), so checking both finite-line endpoints proves containment over
+    // the complete interval. The former single-reference test was insufficient
+    // when the refinement and active tubes selected different radius modes.
+    if (normalized.enableTubeRefinement) {
+      const double outerLineLengthM = Core::ParkerCurveArcLengthM(
+          normalized.outerRadiusM, declaredGeometry);
+      const double finiteLineLengthM = std::min(
+          normalized.parkerSpiralLengthM, outerLineLengthM);
+      double terminalRadiusM = 0.0;
+      const Core::Status terminalStatus =
+          Core::ParkerCurveRadiusAtArcLengthM(
+              finiteLineLengthM, declaredGeometry, &terminalRadiusM);
+      if (!terminalStatus.ok()) return terminalStatus;
+      const double endpointRadii[] = {
+          normalized.innerRadiusM, terminalRadiusM};
+      for (double radiusM : endpointRadii) {
+        const double activeRadiusM =
+            normalized.activeTubeRadiusMode ==
+                    TubeRadiusMode::PhysicalConstant
+                ? normalized.activeTubeRadiusAtReferenceM
+                : normalized.activeTubeRadiusAtReferenceM * radiusM /
+                      normalized.activeTubeReferenceRadiusM;
+        const double refinementRadiusM =
+            normalized.tubeRadiusMode == TubeRadiusMode::PhysicalConstant
+                ? normalized.tubeRadiusAtReferenceM
+                : normalized.tubeRadiusAtReferenceM * radiusM /
+                      normalized.tubeReferenceRadiusM;
+        const double toleranceM = 64.0 *
+            std::numeric_limits<double>::epsilon() *
+            std::max({1.0, activeRadiusM, refinementRadiusM});
+        if (activeRadiusM + toleranceM < refinementRadiusM) {
+          return Invalid("active Parker corridor is narrower than the "
+                         "refined Parker tube on the finite line");
+        }
+      }
     }
   } else if (normalized.inputSchemaVersion >= 4 &&
              (normalized.activeTubeRadiusAtReferenceM != 0.0 ||
@@ -1118,25 +1143,52 @@ Core::Status RunConfiguration3D::Create(
       const Core::Vec3 relative =
           observerPoint - normalized.coordinateOriginM;
       const double observerRadiusM = relative.Norm();
-      const Core::Vec3 centreline =
-          Core::ParkerCurvePoint(observerRadiusM, declaredGeometry);
-      const Core::Vec3 observerDirection = relative.Normalized();
-      const Core::Vec3 centrelineDirection = centreline.Normalized();
-      const double transverseDistanceM = observerRadiusM * std::atan2(
-          observerDirection.Cross(centrelineDirection).Norm(),
-          std::max(-1.0, std::min(
-              1.0, observerDirection.Dot(centrelineDirection))));
+      const double outerLineLengthM = Core::ParkerCurveArcLengthM(
+          normalized.outerRadiusM, declaredGeometry);
+      const double finiteLineLengthM = std::min(
+          normalized.parkerSpiralLengthM, outerLineLengthM);
+      double terminalRadiusM = 0.0;
+      const Core::Status terminalStatus =
+          Core::ParkerCurveRadiusAtArcLengthM(
+              finiteLineLengthM, declaredGeometry, &terminalRadiusM);
+      if (!terminalStatus.ok()) return terminalStatus;
+
+      double distanceToFiniteTubeM = 0.0;
+      double tubeRadiusEvaluationM = observerRadiusM;
+      if (observerRadiusM <= terminalRadiusM) {
+        // Within the finite line's radial range, retain the same-radius
+        // transverse metric used for input validation. The whole-mesh planner
+        // subsequently applies the stronger exact segment/AABB test per leaf.
+        const Core::Vec3 centreline =
+            Core::ParkerCurvePoint(observerRadiusM, declaredGeometry);
+        const Core::Vec3 observerDirection = relative.Normalized();
+        const Core::Vec3 centrelineDirection = centreline.Normalized();
+        distanceToFiniteTubeM = observerRadiusM * std::atan2(
+            observerDirection.Cross(centrelineDirection).Norm(),
+            std::max(-1.0, std::min(
+                1.0, observerDirection.Dot(centrelineDirection))));
+      } else {
+        // The active mask has a finite end cap. An observer radially beyond it
+        // can be accepted only when its collection sphere overlaps that cap;
+        // comparing with an infinite analytic continuation would place the
+        // observer in storage that the mask intentionally deactivates.
+        const Core::Vec3 terminalPoint = normalized.coordinateOriginM +
+            Core::ParkerCurvePoint(terminalRadiusM, declaredGeometry);
+        distanceToFiniteTubeM = (observerPoint - terminalPoint).Norm();
+        tubeRadiusEvaluationM = terminalRadiusM;
+      }
       const double activeRadiusM =
           normalized.activeTubeRadiusMode == TubeRadiusMode::PhysicalConstant
               ? normalized.activeTubeRadiusAtReferenceM
-              : normalized.activeTubeRadiusAtReferenceM * observerRadiusM /
+              : normalized.activeTubeRadiusAtReferenceM *
+                    tubeRadiusEvaluationM /
                     normalized.activeTubeReferenceRadiusM;
-      if (!std::isfinite(transverseDistanceM) ||
-          transverseDistanceM > activeRadiusM +
+      if (!std::isfinite(distanceToFiniteTubeM) ||
+          distanceToFiniteTubeM > activeRadiusM +
               observer.collectionRadiusM) {
         return Invalid("observer '" + observer.id +
-                       "' does not intersect the configured Parker active "
-                       "corridor");
+                       "' does not intersect the configured finite Parker "
+                       "active corridor");
       }
     }
 
@@ -1237,6 +1289,13 @@ Core::Status RunConfiguration3D::Create(
           << Name(normalized.activeTubeRadiusMode)
           << ";active_tube_buffer_blocks="
           << normalized.activeTubeBufferBlocks
+          // Mask semantics affect the allocated physical domain and therefore
+          // restart compatibility even when every user-facing scalar is
+          // unchanged. Bump this literal whenever intersection, topology, or
+          // cavity rules change; old evidence must not masquerade as the new
+          // hole-free algorithm.
+          << ";active_mask_algorithm="
+          << kActiveRegionAlgorithmName
           << ";mesh_cells_per_block=" << normalized.meshCellsPerBlockEdge
           << ";mesh_max_level=" << normalized.maximumMeshLevel
           << ";mesh_block_overhead=" << normalized.meshBlockOverheadBytes

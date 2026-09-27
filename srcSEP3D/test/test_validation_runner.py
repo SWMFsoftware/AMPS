@@ -205,6 +205,16 @@ class ValidationRunnerTests(unittest.TestCase):
             self.assertIn("phase_space_power_index = 5", deck)
             self.assertIn("mean_free_path_model = radial-rigidity-power-law", deck)
             self.assertNotIn("[observer.inner]", deck)
+            # Identity coordinates plus the fixture Omega/wind must reproduce
+            # the exact source-surface-corrected Parker longitude. This catches
+            # a return to the old Archimedean Omega*(r-r0)/V approximation in
+            # either the campaign preparer or its parameter manifest.
+            source_longitude = next(
+                float(line.split("=", 1)[1])
+                for line in deck.splitlines()
+                if line.strip().startswith("source_longitude_rad ="))
+            self.assertAlmostEqual(
+                source_longitude, 2.298837508046333, places=14)
 
             model = root / "prepared-model.csv"
             reference = root / "prepared-reference.csv"

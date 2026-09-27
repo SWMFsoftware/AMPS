@@ -18,6 +18,7 @@
 #include <fstream>
 #include <limits>
 #include <memory>
+#include <queue>
 #include <sstream>
 #include <vector>
 
@@ -65,6 +66,37 @@ RM::StorageLayout Layout() {
   std::shared_ptr<const RM::RunConfiguration3D> configuration;
   if (!RM::RunConfiguration3D::Create(options, &configuration).ok()) return {};
   return configuration->storage_layout();
+}
+
+SEP3D::Core::ParkerSpiralGeometry ParkerGeometry(
+    const M::ResolutionConfiguration& configuration) {
+  SEP3D::Core::ParkerSpiralGeometry geometry;
+  geometry.sourceRadiusM = configuration.innerRadiusM;
+  geometry.sourceLongitudeRad = configuration.tubeLongitudeRad;
+  geometry.sourceColatitudeRad = configuration.tubeColatitudeRad;
+  geometry.solarWindSpeedMPerS = configuration.solarWindSpeedMPerS;
+  geometry.solarRotationRateRadPerS =
+      configuration.solarRotationRateRadPerS;
+  geometry.rotationAxis = configuration.rotationAxis;
+  return geometry;
+}
+
+bool Active(M::ActiveLeafClass value) {
+  return value != M::ActiveLeafClass::Inactive;
+}
+
+bool Contains(const M::LeafBlock& leaf, const SEP3D::Core::Vec3& point,
+              double tolerance) {
+  const double p[] = {point.x, point.y, point.z};
+  const double lower[] = {
+      leaf.minimumM.x, leaf.minimumM.y, leaf.minimumM.z};
+  const double upper[] = {
+      leaf.maximumM.x, leaf.maximumM.y, leaf.maximumM.z};
+  for (int axis = 0; axis < 3; ++axis) {
+    if (p[axis] < lower[axis] - tolerance ||
+        p[axis] > upper[axis] + tolerance) return false;
+  }
+  return true;
 }
 
 Result RunMSH3D01() {
@@ -351,12 +383,24 @@ Result RunMSH3D10() {
       !(points.front() == configuration.parkerInitialPointM)) {
     return Fail("finite Parker centreline count or initial point is wrong");
   }
-  double polylineLength = 0.0;
-  for (std::size_t i = 1; i < points.size(); ++i)
-    polylineLength += (points[i] - points[i - 1]).Norm();
-  if (std::fabs(polylineLength - configuration.parkerLengthM) >
-      1.0e-12 * configuration.parkerLengthM) {
-    return Fail("sampled Parker polyline did not preserve the configured arc length");
+  const SEP3D::Core::ParkerSpiralGeometry geometry =
+      ParkerGeometry(configuration);
+  const double arcStepM = configuration.parkerLengthM /
+      static_cast<double>(points.size() - 1);
+  for (std::size_t i = 0; i < points.size(); ++i) {
+    const double radiusM = (points[i] - configuration.originM).Norm();
+    const double observedArcM = SEP3D::Core::ParkerCurveArcLengthM(
+        radiusM, geometry);
+    const double expectedArcM = (i + 1 == points.size())
+        ? configuration.parkerLengthM : i * arcStepM;
+    const SEP3D::Core::Vec3 exact = configuration.originM +
+        SEP3D::Core::ParkerCurvePoint(radiusM, geometry);
+    if (std::fabs(observedArcM - expectedArcM) >
+            2.0e-12 * configuration.parkerLengthM ||
+        (points[i] - exact).Norm() >
+            2.0e-13 * configuration.outerRadiusM) {
+      return Fail("finite Parker output is not on its exact equal-arc station");
+    }
   }
 
   const SEP3D::Core::Vec3 shift(3.0e9, -4.0e9, 2.0e9);
@@ -370,7 +414,7 @@ Result RunMSH3D10() {
       1.0e-12 * configuration.backgroundCellSizeM) {
     return Fail("translated domain changed the Parker-tube resolution law");
   }
-  return Pass("finite Parker sampling preserves point count/length and mesh refinement is origin-relative");
+  return Pass("finite Parker sampling uses exact equal-arc field-line stations and mesh refinement is origin-relative");
 }
 
 Result RunMSH3D11() {
@@ -417,16 +461,6 @@ Result RunMSH3D12() {
     return Fail("a remote opposite-longitude block was retained");
   }
 
-  // This block is outside the physical tube but inside the declared AMR
-  // neighbour halo required by coefficient stencils and ghost exchange.
-  const SEP3D::Core::Vec3 haloCentre = centreline +
-      SEP3D::Core::Vec3(0.0, 0.0,
-          configuration.activeTubeRadiusAtReferenceM + 2.0 * halfSideM);
-  if (!M::BlockIntersectsActiveRegion(
-          haloCentre - half, haloCentre + half, configuration)) {
-    return Fail("configured active-block halo was not retained");
-  }
-
   M::ResolutionConfiguration angular = configuration;
   angular.activeTubeRadiusMode = RM::TubeRadiusMode::ConstantAngularWidth;
   const double innerWidth = M::ActiveTubeRadiusM(
@@ -443,7 +477,181 @@ Result RunMSH3D12() {
           opposite - half, opposite + half, configuration)) {
     return Fail("full-domain mode unexpectedly deactivated a block");
   }
-  return Pass("Parker corridor retains centreline/intersection/halo blocks, rejects remote blocks, and preserves full-domain mode");
+  return Pass("finite Parker capsule retains intersected blocks, rejects remote blocks, and preserves full-domain mode");
+}
+
+Result RunMSH3D13() {
+  M::ResolutionConfiguration configuration = Baseline();
+  configuration.tubeLongitudeRad = 0.37;
+  configuration.tubeColatitudeRad = 1.13;
+  configuration.rotationAxis =
+      SEP3D::Core::Vec3(0.21, -0.32, 0.91).Normalized();
+  const SEP3D::Core::ParkerSpiralGeometry geometry =
+      ParkerGeometry(configuration);
+  double worstAngularError = 0.0;
+  double worstArcRoundTrip = 0.0;
+  for (int i = 1; i <= 200; ++i) {
+    const double radiusM = configuration.innerRadiusM +
+        (configuration.outerRadiusM - configuration.innerRadiusM) * i / 200.0;
+    const double stepM = 1.0e-6 * radiusM;
+    const SEP3D::Core::Vec3 derivative =
+        (SEP3D::Core::ParkerCurvePoint(radiusM + stepM, geometry) -
+         SEP3D::Core::ParkerCurvePoint(radiusM - stepM, geometry)) /
+        (2.0 * stepM);
+    const SEP3D::Core::Vec3 tangent =
+        SEP3D::Core::ParkerCurveTangent(radiusM, geometry);
+    const double angularError =
+        derivative.Normalized().Cross(tangent).Norm();
+    if (derivative.Dot(tangent) <= 0.0)
+      return Fail("exact Parker curve derivative points against the IMF tangent");
+    worstAngularError = std::max(worstAngularError, angularError);
+
+    const double arcM = SEP3D::Core::ParkerCurveArcLengthM(radiusM, geometry);
+    double recoveredRadiusM = 0.0;
+    if (!SEP3D::Core::ParkerCurveRadiusAtArcLengthM(
+            arcM, geometry, &recoveredRadiusM).ok()) {
+      return Fail("Parker arc-length inversion failed");
+    }
+    worstArcRoundTrip = std::max(
+        worstArcRoundTrip, std::fabs(recoveredRadiusM - radiusM));
+  }
+  if (worstAngularError > 2.0e-10 ||
+      worstArcRoundTrip > 2.0e-12 * configuration.outerRadiusM) {
+    return Fail("Parker curve, tangent, and arc-length inverse are inconsistent");
+  }
+  Result result = Pass(
+      "exact Parker curve is tangent to the initialized-field law for a rotated axis and arc length round-trips");
+  result.metrics.push_back({"maximum_tangent_cross_norm", worstAngularError,
+                            2.0e-10, "<=", ""});
+  result.metrics.push_back({"maximum_arc_roundtrip_m", worstArcRoundTrip,
+                            2.0e-12 * configuration.outerRadiusM, "<=", "m"});
+  return result;
+}
+
+Result RunMSH3D14() {
+  M::ResolutionConfiguration configuration = Baseline();
+  configuration.enableTubeRefinement = true;
+  configuration.tubeReferenceRadiusM = SEP3D::Core::Const::AU;
+  configuration.tubeRadiusAtReferenceM =
+      0.03 * SEP3D::Core::Const::AU;
+  configuration.tubeRadiusMode = RM::TubeRadiusMode::ConstantAngularWidth;
+  configuration.tubeCellSizeM = configuration.minimumCellSizeM;
+  configuration.parkerLengthM = 2.0 * SEP3D::Core::Const::AU;
+  configuration.parkerPointCount = 401;
+  configuration.activeRegion = RM::ActiveRegionMode::ParkerTube;
+  configuration.activeTubeReferenceRadiusM = SEP3D::Core::Const::AU;
+  configuration.activeTubeRadiusAtReferenceM =
+      0.05 * SEP3D::Core::Const::AU;
+  configuration.activeTubeRadiusMode =
+      RM::TubeRadiusMode::ConstantAngularWidth;
+  configuration.activeTubeBufferBlocks = 0;
+
+  RM::RunConfiguration3DOptions domainOptions;
+  domainOptions.innerRadiusM = configuration.innerRadiusM;
+  domainOptions.outerRadiusMode = RM::OuterRadiusMode::Explicit;
+  domainOptions.outerRadiusM = configuration.outerRadiusM;
+  const M::DomainBounds domain = M::MakeDomain(domainOptions);
+  M::StandaloneOctree mesh;
+  if (!mesh.Build(domain, configuration, Layout(), 4).ok())
+    return Fail("could not construct active-mask regression octree");
+  M::LeafNeighbourGraph graph;
+  if (!M::BuildGeometricLeafNeighbourGraph(mesh.leaves(), &graph).ok())
+    return Fail("could not construct active-mask regression neighbor graph");
+
+  M::ActiveRegionPlan plans[3];
+  for (unsigned layers = 0; layers < 3; ++layers) {
+    configuration.activeTubeBufferBlocks = layers;
+    const SEP3D::Core::Status status = M::BuildActiveRegionPlan(
+        mesh.leaves(), graph, configuration, &plans[layers]);
+    if (!status.ok())
+      return Fail("hole-free active-region planner rejected the AMR fixture: " +
+                  status.message);
+    if (plans[layers].cavityLeafCount != 0)
+      return Fail("well-resolved Parker fixture unexpectedly required cavity filling");
+  }
+  const std::size_t total = mesh.leaves().size();
+  if (plans[0].coreLeafCount == 0 || plans[0].inactiveLeafCount == 0 ||
+      plans[0].coreLeafCount >= total)
+    return Fail("physical Parker tube did not prune a strict subset of leaves");
+
+  // Exact neighbor-layer semantics: every newly active leaf at N=1 is a
+  // touching neighbor of the N=0 set, and similarly for N=2. This catches the
+  // former candidate-local block-diagonal inflation at coarse/fine interfaces.
+  for (unsigned layers = 1; layers < 3; ++layers) {
+    for (std::size_t index = 0; index < total; ++index) {
+      if (!Active(plans[layers].leafClass[index]) ||
+          Active(plans[layers - 1].leafClass[index])) continue;
+      bool hasPreviousNeighbour = false;
+      for (std::size_t neighbour : graph.full[index]) {
+        if (Active(plans[layers - 1].leafClass[neighbour])) {
+          hasPreviousNeighbour = true;
+          break;
+        }
+      }
+      if (!hasPreviousNeighbour)
+        return Fail("buffer_blocks retained a leaf beyond its topological layer");
+    }
+    for (std::size_t index = 0; index < total; ++index) {
+      if (Active(plans[layers - 1].leafClass[index]) &&
+          !Active(plans[layers].leafClass[index]))
+        return Fail("increasing buffer_blocks removed an active leaf");
+    }
+  }
+
+  // A dense, independent sampling of the exact field line must always land
+  // in an active physical-core leaf. This is the direct no-hole invariant.
+  const SEP3D::Core::ParkerSpiralGeometry geometry =
+      ParkerGeometry(configuration);
+  const double effectiveLengthM = std::min(
+      configuration.parkerLengthM,
+      SEP3D::Core::ParkerCurveArcLengthM(
+          configuration.outerRadiusM, geometry));
+  const double toleranceM = 1.0e-12 * configuration.outerRadiusM;
+  for (int station = 0; station <= 2000; ++station) {
+    double radiusM = 0.0;
+    if (!SEP3D::Core::ParkerCurveRadiusAtArcLengthM(
+            effectiveLengthM * station / 2000.0,
+            geometry, &radiusM).ok())
+      return Fail("dense Parker coverage oracle could not invert arc length");
+    const SEP3D::Core::Vec3 point = configuration.originM +
+        SEP3D::Core::ParkerCurvePoint(radiusM, geometry);
+    bool covered = false;
+    for (std::size_t index = 0; index < total; ++index) {
+      if (plans[0].leafClass[index] == M::ActiveLeafClass::Core &&
+          Contains(mesh.leaves()[index], point, toleranceM)) {
+        covered = true;
+        break;
+      }
+    }
+    if (!covered)
+      return Fail("finite Parker centreline crosses an inactive AMR leaf");
+  }
+
+  // The finite line ends at the physical outer sphere in this fixture. A box
+  // on the analytic continuation well beyond that endpoint must not be kept;
+  // this proves the Cartesian cube corners cannot grow an unintended branch.
+  const double remoteRadiusM = 1.35 * configuration.outerRadiusM;
+  const SEP3D::Core::Vec3 remote = configuration.originM +
+      SEP3D::Core::ParkerCurvePoint(remoteRadiusM, geometry);
+  const SEP3D::Core::Vec3 remoteHalf(
+      0.005 * SEP3D::Core::Const::AU,
+      0.005 * SEP3D::Core::Const::AU,
+      0.005 * SEP3D::Core::Const::AU);
+  if (M::BlockIntersectsActiveRegion(
+          remote - remoteHalf, remote + remoteHalf, configuration))
+    return Fail("finite active tube retained its analytic continuation");
+
+  Result result = Pass(
+      "finite Parker capsule covers every dense line station, prunes the cube, and grows by exact AMR-neighbor layers without cavities");
+  result.metrics.push_back({"total_leaves", static_cast<double>(total),
+                            1.0, ">=", "leaves"});
+  result.metrics.push_back({"core_leaves",
+                            static_cast<double>(plans[0].coreLeafCount),
+                            1.0, ">=", "leaves"});
+  result.metrics.push_back({"inactive_leaves",
+                            static_cast<double>(plans[0].inactiveLeafCount),
+                            1.0, ">=", "leaves"});
+  return result;
 }
 
 }  // namespace
@@ -473,6 +681,8 @@ std::vector<SEP3D::Testing::Descriptor> RegisterMeshTests() {
       make("MSH3D09", "Refinement gradients", "Mixed-spacing gradient reconstruction.", RunMSH3D09),
       make("MSH3D10", "Finite Parker initialization", "Point-count, arc-length, and translated-origin identities.", RunMSH3D10),
       make("MSH3D11", "Initialization Tecplot", "Finite Parker-line visualization output.", RunMSH3D11),
-      make("MSH3D12", "Active Parker corridor", "Conservative AMR block deactivation and halo contract.", RunMSH3D12),
+      make("MSH3D12", "Active Parker corridor", "Finite capsule single-block classifier contract.", RunMSH3D12),
+      make("MSH3D13", "Parker geometry authority", "Exact curve/tangent/arc-length identity for a rotated axis.", RunMSH3D13),
+      make("MSH3D14", "Hole-free active mask", "Finite-tube coverage, pruning, cavity, and topological halo contract.", RunMSH3D14),
   };
 }

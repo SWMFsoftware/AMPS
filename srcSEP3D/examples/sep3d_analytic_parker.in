@@ -81,11 +81,17 @@ transverse_exponent = 1
 [mesh.active_region]
 # full-domain preserves the enclosing Cartesian cube. To allocate only the
 # Sun-to-observer corridor, select parker-tube, set a positive width at the
-# reference radius, and retain at least one complete-block halo. The active
-# radius must be no narrower than [mesh.tube]'s refinement radius. A constant-
-# angular width grows linearly with heliocentric distance; physical-constant
-# keeps the same SI radius. Shock patches outside the active corridor are
-# recorded as disconnected and are not passed to AMPS particle allocation.
+# reference radius, and retain at least one complete-block halo. The physical
+# seed follows the finite [parker_spiral] curve and uses conservative
+# curve-capsule/leaf-box intersection. buffer_blocks is an exact count of AMR
+# touching-neighbour layers (including coarse/fine face, edge, and corner
+# contacts), not a multiple of each leaf's diagonal. Bounded inactive cavities
+# are filled and source-to-endpoint face connectivity is checked before block
+# allocation. The active radius must be no narrower than [mesh.tube]'s
+# refinement radius. A constant-angular width grows linearly with heliocentric
+# distance; physical-constant keeps the same SI radius. Shock patches outside
+# the active corridor are recorded as disconnected and are not passed to AMPS
+# particle allocation.
 mode = full-domain
 reference_radius_m = 1.495978707e11
 radius_at_reference_m = 0

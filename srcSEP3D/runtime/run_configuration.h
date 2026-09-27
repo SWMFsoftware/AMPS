@@ -90,6 +90,13 @@ enum class TubeRadiusMode { PhysicalConstant, ConstantAngularWidth };
 // cells.  FullDomain preserves the historical enclosing cube; ParkerTube keeps
 // only blocks conservatively intersecting a configured transport corridor.
 enum class ActiveRegionMode { FullDomain, ParkerTube };
+
+// This identifier is part of the frozen physics fingerprint because mask
+// semantics determine which physical cells can contain fields and particles.
+// Keep it independent of mesh_model.h: the runtime contract is an L0 input to
+// the mesh model and must not acquire a reverse include dependency.
+constexpr const char* kActiveRegionAlgorithmName =
+    "finite-parker-capsule-topological-v2";
 enum class PopulationControlMode { Off, SplitMerge };
 // Coefficient choices are deliberately independent of mover selection.  A
 // compatibility check in RunConfiguration3D::Create rejects circular or unused

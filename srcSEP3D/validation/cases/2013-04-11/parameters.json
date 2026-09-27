@@ -1,0 +1,197 @@
+{
+  "schema": "srcsep3d-validation-parameter-manifest-v1",
+  "case_id": "OV3D01",
+  "execution_status": "blueprint-needs-event-fit",
+  "fit_template": "event_fit.template.json",
+  "preparation_tool": "prepare_case.py",
+  "event": {
+    "name": "2013 April 11 near-Earth proton event",
+    "model_epoch_utc": "2013-04-11T07:24:00Z",
+    "fluence_interval_s": 259200.0,
+    "coordinate_authority": "Carrington/HGR values at the event epoch; transform into the declared srcSEP3D Cartesian frame before constructing an input deck"
+  },
+  "published_parameters": [
+    {
+      "name": "cme_speed_m_per_s",
+      "value": 675000.0,
+      "source": "liu-2025-table-1",
+      "srcsep3d_mapping": "swcme.cme.launch_speed"
+    },
+    {
+      "name": "cme_carrington_longitude_deg",
+      "value": 69.5,
+      "source": "liu-2025-section-3",
+      "srcsep3d_mapping": "transform with cme_carrington_latitude_deg into swcme.geometry.cme_direction_[xyz]"
+    },
+    {
+      "name": "cme_carrington_latitude_deg",
+      "value": 14.5,
+      "source": "liu-2025-section-3",
+      "srcsep3d_mapping": "transform with cme_carrington_longitude_deg into swcme.geometry.cme_direction_[xyz]"
+    },
+    {
+      "name": "earth_carrington_longitude_deg",
+      "value": 85.3,
+      "source": "liu-2025-table-2",
+      "srcsep3d_mapping": "transform with Earth latitude and radius into observer Cartesian position"
+    },
+    {
+      "name": "earth_carrington_latitude_deg",
+      "value": -5.9,
+      "source": "liu-2025-table-2",
+      "srcsep3d_mapping": "transform with Earth longitude and radius into observer Cartesian position"
+    },
+    {
+      "name": "earth_radius_m",
+      "value": 149597870700.0,
+      "source": "liu-2025-table-2",
+      "srcsep3d_mapping": "observer position radius and domain outer radius"
+    },
+    {
+      "name": "pre_event_earth_wind_speed_m_per_s",
+      "value": 363000.0,
+      "source": "liu-2025-table-2",
+      "srcsep3d_mapping": "background.parker.solar_wind_speed_m_per_s and swcme.ambient.wind_speed"
+    },
+    {
+      "name": "nominal_photospheric_footpoint_carrington_longitude_deg",
+      "value": 154.0,
+      "source": "liu-2025-table-2",
+      "srcsep3d_mapping": "connectivity cross-check only; do not copy directly to the 20-R_sun resolved Parker start"
+    },
+    {
+      "name": "resolved_20_rsun_parker_start_longitude_deg",
+      "value": 131.7136869974263,
+      "source": "reference derivation from liu-2025-table-2, Omega=2.865e-6 rad/s, and the exact source-surface-corrected srcSEP3D Parker equation",
+      "srcsep3d_mapping": "documented reference only; prepare_case.py recomputes mesh.tube.source_longitude_rad from the reviewed Earth longitude, fitted rotation rate, and wind speed"
+    },
+    {
+      "name": "mean_free_path_reference_m",
+      "value": 44879361210.0,
+      "source": "liu-2025-equation-15",
+      "srcsep3d_mapping": "transport.mean_free_path_reference_m"
+    },
+    {
+      "name": "mean_free_path_reference_radius_m",
+      "value": 149597870700.0,
+      "source": "liu-2025-equation-15",
+      "srcsep3d_mapping": "transport.mean_free_path_reference_radius_m"
+    },
+    {
+      "name": "mean_free_path_reference_rigidity_v",
+      "value": 1000000000.0,
+      "source": "liu-2025-equation-15",
+      "srcsep3d_mapping": "transport.mean_free_path_reference_rigidity_v"
+    },
+    {
+      "name": "mean_free_path_radial_exponent",
+      "value": 1.0,
+      "source": "liu-2025-equation-15",
+      "srcsep3d_mapping": "transport.mean_free_path_radial_exponent"
+    },
+    {
+      "name": "mean_free_path_rigidity_exponent",
+      "value": 0.3333333333333333,
+      "source": "liu-2025-equation-15",
+      "srcsep3d_mapping": "transport.mean_free_path_rigidity_exponent"
+    },
+    {
+      "name": "seed_injection_energy_j",
+      "value": 1.602176634e-15,
+      "source": "liu-2025-equation-21",
+      "srcsep3d_mapping": "source.minimum_energy_j"
+    },
+    {
+      "name": "seed_momentum_power_law_index",
+      "value": -5.0,
+      "source": "liu-2025-equation-21",
+      "srcsep3d_mapping": "source.spectrum_model=fixed-phase-space-power-law and source.phase_space_power_index=5; the input stores positive q in f(p) proportional to p^(-q)"
+    },
+    {
+      "name": "seed_injection_coefficient",
+      "value": 1.0,
+      "source": "liu-2025-equation-22",
+      "srcsep3d_mapping": "publication phase-space-density normalization metadata; not interchangeable with source.injection_efficiency or a number rate"
+    },
+    {
+      "name": "published_flux_scale",
+      "value": 1.2,
+      "source": "liu-2025-section-2.3.5",
+      "srcsep3d_mapping": "comparison-level amplitude metadata only; never assign to the probability-valued source.injection_efficiency"
+    },
+    {
+      "name": "earth_cobpoint_compression_ratio_at_24_min",
+      "value": 1.5,
+      "source": "liu-2025-section-4.3",
+      "srcsep3d_mapping": "diagnostic target for the local Earth-connected shock flank, not a direct SWCME input"
+    },
+    {
+      "name": "earth_cobpoint_theta_bn_deg_at_24_min",
+      "value": 30.0,
+      "source": "liu-2025-section-4.3",
+      "srcsep3d_mapping": "diagnostic target; the current spherical SWCME surrogate does not accept theta_Bn as an input"
+    }
+  ],
+  "unresolved_inputs": [
+    {
+      "name": "coordinate_transform",
+      "required_action": "freeze a documented Carrington-to-model-frame transform at 2013-04-11T07:24:00Z and record the resulting Cartesian vectors"
+    },
+    {
+      "name": "ambient_density_temperature_field_and_polarity",
+      "required_action": "derive from quality-screened pre-event OMNI data over the declared averaging interval; do not use an example-deck default"
+    },
+    {
+      "name": "dbm_drag_and_shock_arrival",
+      "required_action": "fit cme.drag_coefficient against an independently selected shock/ICME arrival marker and keep that marker out of the SEP score"
+    },
+    {
+      "name": "spherical_swcme_widths_and_smoothing",
+      "required_action": "calibrate sheath/ejecta thickness and numerical smoothing to the in-situ plasma/MAG time series; the cited MHD study does not determine these surrogate parameters"
+    },
+    {
+      "name": "source_rate_and_macroparticle_weight",
+      "required_action": "choose from a particle-count convergence study, then allow only the registry's one-global-amplitude observation normalization"
+    },
+    {
+      "name": "active_corridor_radius",
+      "required_action": "increase radius and block halo until all registered observables are insensitive within the XM3D05 convergence tolerance"
+    },
+    {
+      "name": "seed_boundary_rate_mapping",
+      "required_action": "define and validate a boundary-flux or source-volume operator that maps the published Equation-21 phase-space density to srcSEP3D's physical_particle_rate_per_s; do not infer a rate from density and temperature alone"
+    }
+  ],
+  "observations": [
+    {
+      "product": "near-Earth proton time-intensity",
+      "instrument": "SOHO/ERNE",
+      "channels_mev": [[2.0, 2.5], [20.0, 25.0]],
+      "primary": true,
+      "data_source": "SOHO_ERNE-HED_L2-1MIN and SOHO_ERNE-LED_L2-1MIN as channel coverage requires"
+    },
+    {
+      "product": "near-Earth event-integrated proton fluence spectrum",
+      "instrument": "SOHO/ERNE + GOES-13/EPEAD + ACE/EPAM LEMS120",
+      "energy_fit_range_mev": [1.0, 50.0],
+      "integration_interval_s": 259200.0,
+      "primary": true,
+      "data_source": "CDAWeb/NOAA products with native quality flags and published GOES effective-energy calibration"
+    },
+    {
+      "product": "STEREO-B transport diagnostic",
+      "instrument": "STEREO-B LET/HET",
+      "channels_mev": [[1.8, 3.6], [20.6, 23.8]],
+      "primary": false,
+      "data_source": "mission science products used by the cited event studies"
+    }
+  ],
+  "sources": {
+    "liu-2025": "https://arxiv.org/html/2412.07581v2",
+    "lario-2014": "https://doi.org/10.1088/0004-637X/797/1/8",
+    "omni": "https://omniweb.gsfc.nasa.gov/",
+    "soho-erne": "https://cdaweb.gsfc.nasa.gov/misc/NotesS.html#SOHO_ERNE-HED_L2-1MIN",
+    "ace-epam": "https://cdaweb.gsfc.nasa.gov/misc/NotesA.html#AC_H2_EPM",
+    "goes-13": "https://www.ncei.noaa.gov/products/goes-1-15/space-weather-instruments"
+  }
+}

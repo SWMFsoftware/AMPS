@@ -30,6 +30,22 @@ mpiexec -n 4 ./amps \
 ./amps --input srcSEP3D/examples/sep3d_analytic_parker.in
 ```
 
+`sep3d_analytic_parker.in` deliberately keeps `mode = full-domain` as the
+unpruned reference. To exercise the hole-free Parker-tube mask and its two
+field-connected observers, use:
+
+```sh
+mpiexec -n 4 ./amps \
+  --input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in \
+  --initialization-only \
+  --initialization-output-dir sep3d_active_tube_preview
+```
+
+Rank zero prints the mask algorithm name, core/halo/cavity/inactive leaf
+counts, active leaf and block-volume fractions, finite segment count, and
+effective line length. A zero inactive count is reported as a warning because
+that selection provides no allocation benefit.
+
 The first command parses, canonically resolves, validates, fingerprints, and
 resource-preflights the request without allocating AMPS. The production command
 repeats the same parser on initialization; no cached parse result or generated
@@ -70,11 +86,11 @@ between `[turbulence]` and `[transport]`.
 |---|---|---|
 | `[run]` | `schema_version`, `intent`, `transport`, `time_step_s`, `maximum_time_steps`, `campaign_seed`, `background_cadence_steps`, `injection_cadence_steps` | Schema is `4`; intent is `shock-injection`; transport is `parker`, `focused-diffusion`, or `focused-scattering`. Time step is positive SI seconds, seed and step counts are nonzero, and injection cadence is one because `samples_per_step` is the exact per-step count. Older mover spellings remain parser aliases, but the resolved manifest uses canonical names. |
 | `[domain]` | `preset`, `inner_radius_m`, `inner_boundary`, `outer_radius_mode`, `outer_radius_m`, `outer_boundary`, `coordinate_frame`, `origin_x_m`, `origin_y_m`, `origin_z_m` | Presets are `solar`, `one-au`, or `mars`; outer mode is `preset` or `explicit`. The current heliocentric implementation requires the declared origin `(0,0,0)`, absorbing inner boundary, and a domain containing fixed observers and mesh references. |
-| `[parker_spiral]` | `origin_x_m`, `origin_y_m`, `origin_z_m`, `start_mode`, `initial_x_m`, `initial_y_m`, `initial_z_m`, `length_m`, `point_count` | Finite diagnostic/refinement centreline. `start_mode=explicit` uses the reviewed Cartesian point independently. `start_mode=cme-launch-point` requires that point, the inner radius, and the mesh-tube direction to equal the canonical SWCME launch apex defined by `cme.launch_radius` and normalized `geometry.cme_direction_*`. Length is positive arc length and count includes both endpoints. |
+| `[parker_spiral]` | `origin_x_m`, `origin_y_m`, `origin_z_m`, `start_mode`, `initial_x_m`, `initial_y_m`, `initial_z_m`, `length_m`, `point_count` | Finite diagnostic/active-mask centreline. `start_mode=explicit` uses the reviewed Cartesian point independently. `start_mode=cme-launch-point` requires that point, the inner radius, and the mesh-tube direction to equal the canonical SWCME launch apex defined by `cme.launch_radius` and normalized `geometry.cme_direction_*`. Length is positive arc length and count includes both endpoints. Refinement uses the same analytic curve continued through the physical domain; `length_m` bounds line output and `parker-tube` activation, not the pointwise refinement law. |
 | `[mesh]` | `global_cell_size_m`, `minimum_cell_size_m`, `cells_per_block_edge`, `maximum_level`, `memory_budget_bytes`, `block_overhead_bytes` | Global/floor resolution, AMPS block shape, realizable AMR depth, and pre-allocation resource ceiling. |
 | `[mesh.solar]` | `enabled`, `surface_cell_size_m`, `transition_outer_radius_m`, `profile`, `exponent` | Resolution at the Sun and its radial degradation to the global value. Profiles are `linear`, `power-law`, or `smoothstep`; exponent is positive. |
 | `[mesh.tube]` | `enabled`, `source_longitude_rad`, `source_colatitude_rad`, `reference_radius_m`, `radius_at_reference_m`, `radius_mode`, `center_cell_size_m`, `transverse_profile`, `transverse_exponent` | Parker-centreline location, physical/angular tube radius, centre resolution, and degradation in the perpendicular plane. Radius mode is `physical-constant` or `constant-angular-width`; profile choices match `[mesh.solar]`. |
-| `[mesh.active_region]` | `mode`, `reference_radius_m`, `radius_at_reference_m`, `radius_mode`, `buffer_blocks` | `full-domain` retains every AMR leaf and requires zero inactive tube values. `parker-tube` disables complete leaves that cannot intersect the independently declared transport corridor. Its physical radius must contain the refinement tube; at least one block of halo is required for stencils and crossings. Every fixed observer collection sphere must intersect the corridor. Moving/field-connected observers require a future dynamic reactivation contract and are rejected with this static mask. |
+| `[mesh.active_region]` | `mode`, `reference_radius_m`, `radius_at_reference_m`, `radius_mode`, `buffer_blocks` | `full-domain` retains every AMR leaf and requires zero inactive tube values. `parker-tube` conservatively intersects complete leaves with the finite configured Parker capsule, then adds exactly `buffer_blocks` coarse/fine-aware touching-neighbour layers. Its physical radius must contain the refinement tube over the complete finite active line; at least one halo layer is required for stencils and crossings. Bounded inactive cavities are filled and source-to-endpoint face connectivity is mandatory. Every fixed observer collection sphere must intersect the finite corridor, including its end cap. Moving/field-connected observers require a future dynamic reactivation contract and are rejected with this static mask. |
 | `[memory]` | `base_cell_bytes`, `base_node_bytes`, `block_structure_bytes`, `communication_bytes_per_block`, `particle_bytes`, `particles_per_cell`, `halo_fraction`, `safety_margin_fraction` | Explicit build-dependent coefficients used by the allocation-free memory preflight; fractions are finite and nonnegative. |
 
 The near-Sun interpolation is
@@ -188,13 +204,17 @@ cadence_steps = 1
 
 At each block's radius, `constant-angular-width` evaluates
 `R_active(r)=R_ref*r/r_ref`; `physical-constant` uses `R_ref` unchanged. The
-classifier retains a block when its centre or a corner lies in the tube and
-also retains a conservative half-diagonal intersection envelope. The declared
-`buffer_blocks` adds complete local block diagonals. This construction may
-retain extra blocks but cannot intentionally cut a hole through the sampled
-Parker curve. AMPS exposes activation only at leaf-block granularity, so the
-word “cell disabling” here means all cells in a disabled leaf have
-`IsUsedInCalculationFlag=false` and no block storage is allocated.
+classifier uses the finite `[parker_spiral].length_m` curve (clipped at the
+physical outer sphere), exact segment-to-leaf-box distance, and a conservative
+curve-to-chord envelope. It therefore retains crossings that miss the block
+centre and corners. The declared `buffer_blocks` adds exact AMR neighbour
+layers after physical classification; a layer includes face, edge, and corner
+contacts across coarse/fine interfaces and never scales with a leaf diagonal.
+The planner fills bounded inactive cavities and rejects any detached active
+component or missing face-connected source-to-endpoint path. AMPS exposes
+activation only at leaf-block granularity, so the word “cell disabling” here
+means all cells in a disabled leaf have `IsUsedInCalculationFlag=false` and no
+block storage is allocated.
 
 Population limits are per allocated AMR cell and per compiled species. That is
 the finest scope at which AMPS owns an independent linked particle list; a
@@ -1150,7 +1170,7 @@ halo-exchanged before the final data-bearing initialization writer is called.
 | `LIFE3D01–04` | immutable configuration and complete lifecycle transition matrix |
 | `R3D01–07` | mover hook, subcycling, transactional snapshots, clock/events, source, observers, complete restart |
 | `CFG3D01–11` | input/CLI, typed contracts, domains, shared Parker geometry, mesh/memory preflight, finite-line/schema-4 contracts, AMPS species binding, background/turbulence selection, CME/Parker linkage, active corridor, population limits, and mover/coefficient compatibility |
-| `MSH3D01–12` | resolution bounds/laws, tube geometry, balance, octrees, memory, ownership, presets, gradients, finite-line/output identities, and conservative active-corridor classification |
+| `MSH3D01–14` | resolution bounds/laws, exact Parker geometry, balance, octrees, memory, ownership, presets, gradients, finite-line/output identities, conservative capsule intersection, exact topological halo layers, and hole-free connectivity |
 | `BGP3D01–07` | analytic Parker identities, component laws, focusing, wind derivatives, polar limits, SWCME Leblanc/multi-species closure |
 | `SNAP3D01–08` | completeness, finite values, units, epochs, atomicity, interpolation, batch status, frame |
 | `TUR3D01–06` | spectrum normalization, AWSoM mapping, resonance range, missing-data policy, selectable slopes/amplitude laws/cross helicity, mandatory Tecplot wave energy |
@@ -1246,16 +1266,19 @@ version-2 files remain accepted for archived campaigns and typed SWMF-host
 construction; new standalone shock-injection runs should use schema 4.
 
 During standalone initialization the input is parsed before the runtime
-lifecycle enters mesh setup.  The finite line is materialized with a
-second-order midpoint tangent integration and appears in the dry-run summary.
-The production AMPS `localResolution()` callback continues to use the same
-analytic Parker geometry, so line sampling density cannot imprint artificial
-facets on the refined tube.  The origin is carried through the mesh law and all
-radial/tube distances are origin-relative.  The current analytic/SWMF physics
-contract still requires a heliocentric zero origin; a nonzero production
-origin fails validation rather than being only partially honored.
+lifecycle enters mesh setup. The finite line is materialized at exact
+equal-arc stations by inverting the closed Parker arc-length law. The same
+analytic field-line geometry drives `localResolution()`, the active capsule,
+and the initialized Parker magnetic field, so diagnostic `point_count` cannot
+imprint facets or shift the allocation mask. The origin is carried through the
+mesh law and all radial/tube distances are origin-relative. The current
+analytic/SWMF physics contract still requires a heliocentric zero origin; a
+nonzero production origin fails validation rather than being only partially
+honored.
 
 `CFG3D06` enforces the complete version-2 input and source consistency;
-`MSH3D10` enforces point count, arc length, and origin-relative AMR invariance.
-`CFG3D07` enforces the AMPS/configuration proton binding. All three are part of
-the normal `test/run_tests.py --all` manifest.
+`MSH3D10` enforces point count, arc length, and origin-relative AMR invariance;
+`MSH3D13` enforces curve/tangent agreement; and `MSH3D14` exercises a complete
+octree for dense centerline coverage, exact halo depth, pruning, cavity
+elimination, and face connectivity. `CFG3D07` enforces the compiled AMPS
+species binding. All are part of the normal `test/run_tests.py --all` manifest.

@@ -83,9 +83,13 @@ transverse_exponent = 1
 # enclosing Cartesian cube.  AMPS disables complete AMR leaves, so every cell
 # in a rejected leaf is omitted from allocation.  The physical active radius is
 # 0.05 AU at 1 AU, wider than the 0.03-AU refinement tube above.  With constant
-# angular width it scales linearly with heliocentric radius.  One complete-block
-# buffer is the minimum accepted halo for ghost exchange, coefficient stencils,
-# and a particle crossing the physical tube boundary during one update.
+# angular width it scales linearly with heliocentric radius. The physical seed
+# is the finite [parker_spiral] field line, clipped at the outer sphere, and is
+# classified with conservative curve-capsule/leaf-box intersection.
+# buffer_blocks=1 adds exactly one coarse/fine-aware AMR touching-neighbour
+# layer (face, edge, or corner); it is not multiplied by each leaf's diagonal.
+# The planner also fills bounded inactive cavities and requires one
+# face-connected source-to-endpoint component before allocating AMPS blocks.
 mode = parker-tube
 reference_radius_m = 1.495978707e11
 radius_at_reference_m = 7.479893535e9
@@ -267,8 +271,8 @@ normalization = differential-intensity
 # The observer is placed on the configured Parker centreline at exactly 1 AU.
 # Keeping it on the centreline makes the static active corridor and observer
 # collection sphere geometrically consistent without enlarging the corridor.
-position_x_m = 8.434093337299539e10
-position_y_m = -1.2355618105034596e11
+position_x_m = 1.1096225266380298e11
+position_y_m = -1.0033394939774008e11
 position_z_m = 0
 follows_trajectory = false
 velocity_x_m_per_s = 0
@@ -300,8 +304,8 @@ products = flux,spectrum,anisotropy
 kind = fixed-cartesian
 normalization = differential-intensity
 # This position is the same Parker centreline evaluated at exactly 0.30 AU.
-position_x_m = 4.378005863160611e10
-position_y_m = -9.872361866887974e9
+position_x_m = 4.463181234418467e10
+position_y_m = -4.70726985535542e9
 position_z_m = 0
 follows_trajectory = false
 velocity_x_m_per_s = 0

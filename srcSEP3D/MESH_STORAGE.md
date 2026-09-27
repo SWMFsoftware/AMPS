@@ -40,11 +40,19 @@ declared positive exponent. It equals the surface target at the inner sphere
 and joins the global target continuously at the declared transition radius.
 
 The optional Parker-tube centerline has a configured longitude and colatitude
-at the inner radius. Its longitude winds by
+at the inner radius. It is the integral curve of the same SWCME Parker field
+that initializes the background. For source radius \(r_0\), its longitude is
 
 \[
-\Delta\phi=-\Omega_\odot(r-r_{\rm in})/V_{\rm sw}.
+\Delta\phi=-\frac{\Omega_\odot}{V_{\rm sw}}
+\left[(r-r_0)-r_0\ln\left(\frac{r}{r_0}\right)\right].
 \]
+
+This follows from
+\(B_\phi/B_r=-\Omega_\odot(r-r_0)\sin\theta/V_{\rm sw}\) and
+\(r\sin\theta\,d\phi/dr=B_\phi/B_r\).  The older
+`-Omega*(r-r0)/V` angle was not an integral curve of the initialized field and
+could displace the 1-AU mask by more than its requested width.
 
 Magnetic polarity is absent from geometry: reversing polarity changes the
 analytic field and pitch orientation, not the refined tube. `TubeDistanceM` uses
@@ -77,23 +85,31 @@ R_a(r)=R_{a,ref}\,r/r_{a,ref-radius},
 
 for `physical-constant` and `constant-angular-width`, respectively. The active
 radius and reference are independent of the refinement radius, but validation
-requires the active tube to contain the refined tube.
+requires the active tube to contain the refined tube at both endpoints and
+therefore everywhere along the finite active line for the supported constant
+and linearly radius-scaled width laws.
 
-The block classifier is deliberately conservative:
+The active-mask planner uses the *finite* `[parker_spiral]` line, clipped at the
+physical outer sphere.  It subdivides the exact analytic curve independently
+of diagnostic `point_count`, expands every chord by the physical tube radius
+plus a rigorous curve-to-chord bound, and evaluates the exact Euclidean
+segment-to-axis-aligned-box distance.  Consequently a curve that crosses a
+leaf is retained even when it misses the leaf centre and all eight corners.
+Malformed boxes remain active so AMPS' structural validator, rather than the
+pruning pass, supplies the authoritative diagnostic.
 
-- accept when the block centre or any corner lies within the physical tube
-  plus the configured complete-block halo;
-- otherwise accept when the centre distance is no larger than the largest
-  sampled tube radius plus the block half diagonal and halo;
-- retain malformed boxes for AMPS' structural validator rather than hiding
-  them by deactivation.
+`buffer_blocks=N` now means exactly `N` complete AMR touching-neighbour layers
+(faces, edges, and corners), using AMPS' native coarse/fine neighbour links.
+It is never converted to a candidate leaf's physical diagonal.  This is
+important at resolution transitions: diagonal scaling gave coarse leaves an
+oversized halo while rejecting intervening fine leaves, producing the holes
+and detached rectangular islands visible in active-mesh plots.
 
-Distance to a set is 1-Lipschitz, so the half-diagonal test prevents a curved
-centreline from passing through a coarse block while all sampled corners lie
-outside. `buffer_blocks` is converted to local full block diagonals and exists
-for ghost exchange, coefficient-gradient stencils, and a particle crossing
-the physical tube boundary within one accepted step. It is a numerical halo,
-not an undocumented increase of the physical corridor radius.
+After halo dilation, the planner flood-fills inactive leaves from the
+Cartesian boundary and promotes any bounded inactive cavity to a safety halo.
+It then requires one face-connected active component from the source leaf to
+the finite-line endpoint.  A disconnected core, detached halo, or missing
+endpoint stops initialization before any AMPS block storage is allocated.
 
 The replicated leaf list is partitioned deterministically by ordinal modulo
 MPI rank before calling `SetTreeNodeActiveUseFlag`; every node ID is submitted
@@ -251,8 +267,10 @@ zero gradient.
 | `MSH3D07` | five octrees, exact histograms/memory, owner-only storage |
 | `MSH3D08` | Earth/Mars preset extents |
 | `MSH3D09` | coarse/fine linear exactness and rank-deficient rejection |
-| `MSH3D10–11` | finite-line arc length/origin invariance and Tecplot initialization output |
-| `MSH3D12` | centreline/corner/half-diagonal/halo retention, remote rejection, and full-domain identity |
+| `MSH3D10–11` | exact equal-arc finite line/origin invariance and Tecplot initialization output |
+| `MSH3D12` | conservative finite capsule/box intersection and full-domain identity |
+| `MSH3D13` | analytic curve derivative agrees with the Parker tangent and arc-length inversion round-trips |
+| `MSH3D14` | whole-octree core coverage, exact topological halo depth, pruning, cavity elimination, and connectivity |
 | `CFG3D03–05` | normalized domains, shared Parker geometry, composite preflight and whole-run memory |
 
 Run `test/run_tests.py --suite phase-m --rebuild`.

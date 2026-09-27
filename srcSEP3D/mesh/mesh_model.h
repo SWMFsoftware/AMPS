@@ -127,18 +127,20 @@ double RequestedCellSizeM(const Core::Vec3& positionM,
 double ActiveTubeRadiusM(double radiusM,
                          const ResolutionConfiguration& configuration);
 
-// Conservative block classifier shared by the AMPS adapter and standalone
-// tests.  ``true`` means the leaf must remain allocated.  The test uses the
-// block centre/corners plus a complete-block Lipschitz envelope and the
-// configured block halo, so it may retain extra blocks but must not remove a
-// block intersected by the declared Parker corridor.
+// Conservative *physical-tube* classifier shared by the whole-mesh planner
+// and focused unit tests. ``true`` means the finite Parker capsule intersects
+// the leaf. The function intentionally does not apply buffer_blocks: a number
+// of AMR blocks is a topological layer count and cannot be represented by an
+// isolated box predicate. BuildActiveRegionPlan applies those layers after it
+// has classified all leaves.
 bool BlockIntersectsActiveRegion(
     const Core::Vec3& minimumM, const Core::Vec3& maximumM,
     const ResolutionConfiguration& configuration);
 
-// Generate pointCount points separated by uniform requested arc length.  A
-// midpoint tangent step is used instead of a first-order Euler step so a
-// coarse diagnostic line remains faithful to the analytic Parker curve.
+// Generate pointCount points separated by uniform requested arc length. The
+// closed arc-length law is inverted at every station and the exact analytic
+// Parker point is evaluated, so no ODE integration drift can separate the
+// diagnostic line from the refinement, mask, or initialized magnetic field.
 Core::Status BuildParkerCenterline(
     const ResolutionConfiguration& configuration,
     std::vector<Core::Vec3>* points);
@@ -158,6 +160,62 @@ struct LeafBlock {
   std::uint64_t firstCell = 0;
   int ownerRank = 0;
 };
+
+// AMR leaf adjacency is split into two graphs because the two uses have
+// different physical meanings. ``face`` is used to prove a particle can move
+// from the source to the terminal field-line point without crossing an
+// inactive face. ``full`` also includes edge/corner contacts and is used for
+// ghost/interpolation halo layers. Every row is sorted and duplicate-free.
+struct LeafNeighbourGraph {
+  std::vector<std::vector<std::size_t>> face;
+  std::vector<std::vector<std::size_t>> full;
+};
+
+enum class ActiveLeafClass : unsigned char {
+  Inactive = 0,
+  Halo = 1,
+  Core = 2
+};
+
+// Deterministic output of the finite-tube mask planner. The class vector has
+// exactly one entry per caller-supplied leaf and is safe to pair with either
+// the standalone octree order or AMPS' replicated BranchBottomNodeList order.
+// Volumes describe Cartesian AMR blocks; they are diagnostics, not spherical
+// physical-domain integrals.
+struct ActiveRegionPlan {
+  std::vector<ActiveLeafClass> leafClass;
+  std::size_t coreLeafCount = 0;
+  std::size_t haloLeafCount = 0;
+  std::size_t cavityLeafCount = 0;
+  std::size_t inactiveLeafCount = 0;
+  std::size_t segmentCount = 0;
+  double effectiveLineLengthM = 0.0;
+  double totalBlockVolumeM3 = 0.0;
+  double activeBlockVolumeM3 = 0.0;
+};
+
+// Stable name included in diagnostics and the frozen physics fingerprint.
+// Changing mask semantics without changing this identifier is a restart and
+// reproducibility error.
+const char* ActiveRegionAlgorithmName();
+
+// Portable O(N^2) graph builder used by the standalone verifier and small
+// offline tools. The production AMPS boundary builds the same graph from the
+// native coarse/fine neighbor API, avoiding quadratic startup work on large
+// meshes, then passes it to BuildActiveRegionPlan.
+Core::Status BuildGeometricLeafNeighbourGraph(
+    const std::vector<LeafBlock>& leaves, LeafNeighbourGraph* graph);
+
+// Construct a hole-free static mask in four explicit phases: conservative
+// finite Parker capsule intersection, exact full-neighbor halo dilation,
+// bounded inactive-cavity filling, and source-to-terminal face-connectivity
+// validation. The configured finite line is clipped at the physical outer
+// sphere so Cartesian corner padding cannot create a second Parker branch.
+Core::Status BuildActiveRegionPlan(
+    const std::vector<LeafBlock>& leaves,
+    const LeafNeighbourGraph& neighbours,
+    const ResolutionConfiguration& configuration,
+    ActiveRegionPlan* plan);
 
 struct MeshSummary {
   std::uint64_t leafCount = 0;

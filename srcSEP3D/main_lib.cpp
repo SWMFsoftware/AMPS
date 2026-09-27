@@ -153,6 +153,12 @@ bool gStorageCallbacksRegistered = false;
 // it is deliberately reset during each background refresh.
 bool gNativeAmpsBackgroundReady = false;
 std::unordered_map<PIC::Mesh::cDataCenterNode*, std::size_t> gCellSampleIndex;
+// Static active-region expectations captured before AMPS allocates blocks.
+// They are checked immediately after allocation so an API or ordering change
+// cannot silently turn a correct flag plan into a partially resident mesh.
+bool gActiveRegionPlanInstalled = false;
+std::size_t gPlannedActiveLeafCount = 0;
+std::size_t gPlannedInactiveLeafCount = 0;
 
 const SEP3D::RuntimeModel::RunConfiguration3D& Configuration() {
   const auto& configuration = SEP3D::ApplicationRuntime().configuration();
@@ -2286,31 +2292,105 @@ double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
 void ApplyActiveRegionMask(
     const SEP3D::Mesh::ResolutionConfiguration& resolution) {
   using Node = cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>;
+  gActiveRegionPlanInstalled = false;
+  gPlannedActiveLeafCount = 0;
+  gPlannedInactiveLeafCount = 0;
   if (resolution.activeRegion ==
       SEP3D::RuntimeModel::ActiveRegionMode::FullDomain) {
     return;
   }
 
-  // BranchBottomNodeList is replicated on every MPI rank after buildMesh().
-  // Give each leaf to exactly one rank by its deterministic list ordinal;
-  // SetTreeNodeActiveUseFlag then gathers those disjoint ID lists and
-  // broadcasts the resulting flag changes to every replica of the tree.
-  std::list<Node*> inactive;
-  std::uint64_t ordinal = 0;
+  // BranchBottomNodeList and all neighbor links are replicated after
+  // buildMesh(). Preserve that deterministic list order in both vectors so
+  // the AMPS node and AMPS-independent physical box at index i remain paired.
+  std::vector<Node*> nodes;
+  std::vector<SEP3D::Mesh::LeafBlock> leaves;
   for (Node* node = PIC::Mesh::mesh->BranchBottomNodeList;
-       node != nullptr; node = node->nextBranchBottomNode, ++ordinal) {
-    if (ordinal % static_cast<std::uint64_t>(PIC::nTotalThreads) !=
-        static_cast<std::uint64_t>(PIC::ThisThread)) {
+       node != nullptr; node = node->nextBranchBottomNode) {
+    nodes.push_back(node);
+    SEP3D::Mesh::LeafBlock leaf;
+    leaf.minimumM = SEP3D::Core::Vec3(
+        node->xmin[0], node->xmin[1], node->xmin[2]);
+    leaf.maximumM = SEP3D::Core::Vec3(
+        node->xmax[0], node->xmax[1], node->xmax[2]);
+    leaf.level = static_cast<unsigned>(node->RefinmentLevel);
+    leaf.globalLeaf = leaves.size();
+    leaves.push_back(leaf);
+  }
+  if (nodes.empty()) {
+    StopWithStatus("active Parker corridor", SEP3D::Core::Status(
+        SEP3D::Core::StatusCode::ConfigurationConflict,
+        "AMPS finalized an empty leaf list before active-region planning"));
+  }
+
+  // Construct the two graph views from AMPS' own coarse/fine-aware neighbor
+  // API. A face has four sub-neighbor slots in 3-D, an edge has two, and a
+  // corner has one. Deduplication is essential because same-level neighbors
+  // legitimately appear in more than one sub-slot.
+  std::unordered_map<Node*, std::size_t> index;
+  index.reserve(nodes.size());
+  for (std::size_t i = 0; i < nodes.size(); ++i) index[nodes[i]] = i;
+  SEP3D::Mesh::LeafNeighbourGraph graph;
+  graph.face.resize(nodes.size());
+  graph.full.resize(nodes.size());
+  auto addNeighbour = [&](std::size_t from, Node* neighbour,
+                          bool isFace) {
+    if (neighbour == nullptr) return;
+    const auto found = index.find(neighbour);
+    if (found == index.end()) {
+      StopWithStatus("active Parker corridor", SEP3D::Core::Status(
+          SEP3D::Core::StatusCode::LayoutMismatch,
+          "AMPS neighbor API returned a node outside BranchBottomNodeList"));
+    }
+    const std::size_t to = found->second;
+    if (to == from) return;
+    graph.full[from].push_back(to);
+    graph.full[to].push_back(from);
+    if (isFace) {
+      graph.face[from].push_back(to);
+      graph.face[to].push_back(from);
+    }
+  };
+  for (std::size_t from = 0; from < nodes.size(); ++from) {
+    Node* node = nodes[from];
+    for (int face = 0; face < 6; ++face)
+      for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+          addNeighbour(from,
+              node->GetNeibFace(face, i, j, PIC::Mesh::mesh), true);
+    for (int edge = 0; edge < 12; ++edge)
+      for (int i = 0; i < 2; ++i)
+        addNeighbour(from,
+            node->GetNeibEdge(edge, i, PIC::Mesh::mesh), false);
+    for (int corner = 0; corner < 8; ++corner)
+      addNeighbour(from,
+          node->GetNeibCorner(corner, PIC::Mesh::mesh), false);
+  }
+  for (auto* rows : {&graph.face, &graph.full}) {
+    for (std::vector<std::size_t>& row : *rows) {
+      std::sort(row.begin(), row.end());
+      row.erase(std::unique(row.begin(), row.end()), row.end());
+    }
+  }
+
+  SEP3D::Mesh::ActiveRegionPlan plan;
+  const SEP3D::Core::Status planned = SEP3D::Mesh::BuildActiveRegionPlan(
+      leaves, graph, resolution, &plan);
+  if (!planned.ok()) StopWithStatus("active Parker corridor", planned);
+  gPlannedActiveLeafCount = plan.coreLeafCount + plan.haloLeafCount;
+  gPlannedInactiveLeafCount = plan.inactiveLeafCount;
+
+  // Give each inactive leaf to exactly one rank by deterministic ordinal;
+  // SetTreeNodeActiveUseFlag gathers those disjoint ID lists and broadcasts
+  // the resulting changes to every replica of the AMR tree.
+  std::list<Node*> inactive;
+  for (std::size_t ordinal = 0; ordinal < nodes.size(); ++ordinal) {
+    if (ordinal % static_cast<std::size_t>(PIC::nTotalThreads) !=
+        static_cast<std::size_t>(PIC::ThisThread)) {
       continue;
     }
-    const SEP3D::Core::Vec3 minimum(
-        node->xmin[0], node->xmin[1], node->xmin[2]);
-    const SEP3D::Core::Vec3 maximum(
-        node->xmax[0], node->xmax[1], node->xmax[2]);
-    if (!SEP3D::Mesh::BlockIntersectsActiveRegion(
-            minimum, maximum, resolution)) {
-      inactive.push_back(node);
-    }
+    if (plan.leafClass[ordinal] == SEP3D::Mesh::ActiveLeafClass::Inactive)
+      inactive.push_back(nodes[ordinal]);
   }
 
   // Match the MPI datatype exactly.  std::uint64_t is not required to be an
@@ -2322,7 +2402,13 @@ void ApplyActiveRegionMask(
   unsigned long long globalInactive = 0;
   MPI_Allreduce(&localInactive, &globalInactive, 1, MPI_UNSIGNED_LONG_LONG,
                 MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
-  if (globalInactive >= ordinal) {
+  if (globalInactive !=
+      static_cast<unsigned long long>(gPlannedInactiveLeafCount)) {
+    StopWithStatus("active Parker corridor", SEP3D::Core::Status(
+        SEP3D::Core::StatusCode::LayoutMismatch,
+        "MPI inactive-leaf partition disagrees with the replicated mask plan"));
+  }
+  if (globalInactive >= nodes.size()) {
     StopWithStatus("active Parker corridor", SEP3D::Core::Status(
         SEP3D::Core::StatusCode::ConfigurationConflict,
         "active-region mask would deactivate every AMR leaf block"));
@@ -2330,10 +2416,81 @@ void ApplyActiveRegionMask(
 
   PIC::Mesh::mesh->SetTreeNodeActiveUseFlag(
       &inactive, nullptr, false, nullptr);
+  for (std::size_t i = 0; i < nodes.size(); ++i) {
+    const bool expected =
+        plan.leafClass[i] != SEP3D::Mesh::ActiveLeafClass::Inactive;
+    if (nodes[i]->IsUsedInCalculationFlag != expected) {
+      StopWithStatus("active Parker corridor", SEP3D::Core::Status(
+          SEP3D::Core::StatusCode::LayoutMismatch,
+          "AMPS active-use flags disagree with the installed mask plan"));
+    }
+  }
+  gActiveRegionPlanInstalled = true;
   if (PIC::ThisThread == 0) {
-    std::cout << "[srcSEP3D] active Parker corridor retained "
-              << (ordinal - globalInactive) << " of " << ordinal
-              << " AMR leaf blocks; disabled=" << globalInactive << '\n';
+    const double activeFraction = static_cast<double>(
+        gPlannedActiveLeafCount) / static_cast<double>(nodes.size());
+    const double volumeFraction = plan.activeBlockVolumeM3 /
+        plan.totalBlockVolumeM3;
+    std::cout << "[srcSEP3D] active Parker corridor algorithm="
+              << SEP3D::Mesh::ActiveRegionAlgorithmName()
+              << " core=" << plan.coreLeafCount
+              << " halo=" << plan.haloLeafCount
+              << " cavities_filled=" << plan.cavityLeafCount
+              << " active=" << gPlannedActiveLeafCount
+              << " inactive=" << gPlannedInactiveLeafCount
+              << " total=" << nodes.size()
+              << " active_leaf_fraction=" << activeFraction
+              << " active_volume_fraction=" << volumeFraction
+              << " finite_segments=" << plan.segmentCount
+              << " finite_length_m=" << plan.effectiveLineLengthM << '\n';
+    if (gPlannedInactiveLeafCount == 0) {
+      std::cout << "[srcSEP3D] WARNING: parker-tube mode retained every leaf; "
+                   "the selected width/halo provides no memory pruning\n";
+    }
+  }
+}
+
+void VerifyActiveRegionAllocation() {
+  using Node = cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>;
+  if (!gActiveRegionPlanInstalled) return;
+  unsigned long long localOwnedActive = 0;
+  std::size_t replicatedActive = 0;
+  std::size_t replicatedInactive = 0;
+  for (Node* node = PIC::Mesh::mesh->BranchBottomNodeList;
+       node != nullptr; node = node->nextBranchBottomNode) {
+    if (!node->IsUsedInCalculationFlag) {
+      ++replicatedInactive;
+      if (node->block != nullptr) {
+        StopWithStatus("active Parker allocation", SEP3D::Core::Status(
+            SEP3D::Core::StatusCode::LayoutMismatch,
+            "inactive AMR leaf unexpectedly owns allocated block storage"));
+      }
+      continue;
+    }
+    ++replicatedActive;
+    if (node->Thread == PIC::ThisThread) {
+      if (node->block == nullptr) {
+        StopWithStatus("active Parker allocation", SEP3D::Core::Status(
+            SEP3D::Core::StatusCode::LayoutMismatch,
+            "owner-local active AMR leaf has no allocated block storage"));
+      }
+      ++localOwnedActive;
+    }
+  }
+  if (replicatedActive != gPlannedActiveLeafCount ||
+      replicatedInactive != gPlannedInactiveLeafCount) {
+    StopWithStatus("active Parker allocation", SEP3D::Core::Status(
+        SEP3D::Core::StatusCode::LayoutMismatch,
+        "replicated active/inactive counts changed after load distribution"));
+  }
+  unsigned long long globalOwnedActive = 0;
+  MPI_Allreduce(&localOwnedActive, &globalOwnedActive, 1,
+                MPI_UNSIGNED_LONG_LONG, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+  if (globalOwnedActive !=
+      static_cast<unsigned long long>(gPlannedActiveLeafCount)) {
+    StopWithStatus("active Parker allocation", SEP3D::Core::Status(
+        SEP3D::Core::StatusCode::LayoutMismatch,
+        "allocated owner-block count disagrees with the active-region plan"));
   }
 }
 
@@ -2424,6 +2581,11 @@ void amps_init_mesh() {
   }
   PIC::Mesh::mesh->AllowBlockAllocation = true;
   PIC::Mesh::mesh->AllocateTreeBlocks();
+  // Verify the static mask at the first point where allocation is observable.
+  // This check is intentionally before any background, weight, or time-step
+  // initialization so an inactive resident block cannot receive plausible
+  // physics data and hide an activation-order regression.
+  VerifyActiveRegionAllocation();
 
   // AllocateTreeBlocks() materializes the blocks referenced by the final
   // parallel distribution list, but it does not populate AMPS' cached

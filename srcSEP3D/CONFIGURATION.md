@@ -207,12 +207,19 @@ buffer_blocks = 0                 # at least 1 for parker-tube
 
 `parker-tube` uses the same polarity-independent centreline as refinement and
 the analytic Parker field. Its radius is an independent, normally wider,
-physical boundary. Configuration rejects a radius narrower than the
-refinement tube at the active reference radius. A fixed observer is accepted
-when its collection sphere intersects the physical active tube. Because AMPS
-freezes block activation before allocation, a moving or coupled
-field-connected observer is incompatible with a static active tube until a
-reviewed dynamic reactivation/initialization protocol exists.
+physical boundary. Configuration checks both endpoints and rejects a radius
+narrower than the refinement tube anywhere on the finite active line, including
+mixed constant-width/angular-width selections. The physical seed is the
+finite `[parker_spiral]` curve, clipped at the physical outer sphere, and uses
+conservative curve-capsule/leaf-box intersection. `buffer_blocks` is an exact
+count of coarse/fine-aware touching-neighbour layers; it is not a distance in
+units of each leaf's diagonal. Bounded inactive cavities are filled, and the
+final active leaves must form one face-connected source-to-endpoint component.
+A fixed observer is accepted when its collection sphere intersects the finite
+physical active tube or its end cap. Because AMPS freezes block activation before allocation,
+a moving or coupled field-connected observer is incompatible with a static
+active tube until a reviewed dynamic reactivation/initialization protocol
+exists.
 
 Transport selection uses `run.transport` plus explicit coefficient choices:
 
@@ -389,8 +396,21 @@ rotation axis \(\hat{a}\), source radius \(r_0\), rotation rate \(\Omega\), and
 wind speed \(V\), the curve rotates the source direction by
 
 \[
-\Delta\phi(r)=-\Omega\max(0,r-r_0)/V.
+\Delta\phi(r)=-\frac{\Omega}{V}
+\left[(r-r_0)-r_0\ln\left(\frac r{r_0}\right)\right],\qquad r\ge r_0.
 \]
+
+This is the exact integral curve of the initialized SWCME field ratio
+\(B_\phi/B_r=-\Omega(r-r_0)\sin\theta/V\). Its arc-length derivative is
+
+\[
+\frac{ds}{dr}=\sqrt{1+
+\left[\frac{\Omega\sin\theta}{V}(r-r_0)\right]^2}.
+\]
+
+Initialization inverts the corresponding analytic arc-length expression, so
+`length_m` and the finite active mask share one geometry and do not depend on
+the visualization `point_count`.
 
 Its local outward tangent is
 
@@ -485,7 +505,9 @@ identity/conservation, and resolved observer geometry plus commit-only reset.
 | `CFG3D07` | complete generated table, mixed signed charges, count/index/symbol/mass/charge failures, observer bounds, and fingerprint identity |
 | `CFG3D08` | complete schema-3 SWCME input plus missing-field, weight, and per-step-cadence rejection |
 | `CFG3D11` | schema-4 active corridor/observer, population hysteresis, fixed/local source spectra, mover/coefficient compatibility, and dry-run fields |
-| `MSH3D12` | conservative full-block Parker-corridor and halo classification |
+| `MSH3D12` | conservative finite Parker-capsule/block intersection |
+| `MSH3D13` | exact Parker curve/tangent and arc-length agreement |
+| `MSH3D14` | hole-free whole-octree mask and exact AMR-neighbour halo layers |
 | `MSH3D11` | deterministic unit-labeled initialization Parker Tecplot output |
 | `R3D08` | canonical source-surface preflight and exact per-species, per-step particle allocation |
 

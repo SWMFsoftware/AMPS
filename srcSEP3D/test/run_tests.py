@@ -107,6 +107,8 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("MSH3D10", "MSH3D", "Finite Parker line and origin-relative AMR", "cpp"),
     TestDefinition("MSH3D11", "MSH3D", "Initialization Tecplot output", "cpp"),
     TestDefinition("MSH3D12", "MSH3D", "Active Parker corridor", "cpp"),
+    TestDefinition("MSH3D13", "MSH3D", "Parker geometry authority", "cpp"),
+    TestDefinition("MSH3D14", "MSH3D", "Hole-free active mask", "cpp"),
     TestDefinition("BGP3D01", "BGP3D", "Divergence-free Parker field", "cpp"),
     TestDefinition("BGP3D02", "BGP3D", "Parker component laws", "cpp"),
     TestDefinition("BGP3D03", "BGP3D", "Field-line tangency", "cpp"),
@@ -714,8 +716,10 @@ def _check_active_population_wiring(definition: TestDefinition) -> Result:
 
     required_by_file = {
         "main_lib.cpp": (
-            "BlockIntersectsActiveRegion(",
+            "BuildActiveRegionPlan(",
             "SetTreeNodeActiveUseFlag(",
+            "GetNeibFace(",
+            "VerifyActiveRegionAllocation();",
             "PIC::ParticleSplitting::SetMode(PIC::ParticleSplitting::_disactivated);",
             "node != nullptr && node->IsUsedInCalculationFlag",
             "ApplyPopulationControlAtBoundary();",
@@ -852,6 +856,7 @@ def _check_active_population_wiring(definition: TestDefinition) -> Result:
             init_mesh.index("PIC::Mesh::mesh->SetParallelLoadMeasure("),
             init_mesh.index("PIC::Mesh::mesh->CreateNewParallelDistributionLists();"),
             init_mesh.index("PIC::Mesh::mesh->AllocateTreeBlocks();"),
+            init_mesh.index("VerifyActiveRegionAllocation();"),
         ]
         time_step = main_lib[main_lib.index("int amps_time_step()") :]
         boundary_order = [
@@ -879,7 +884,8 @@ def _check_active_population_wiring(definition: TestDefinition) -> Result:
         return Result(
             definition.test_id, definition.group, "FAIL",
             "active-use flags must be applied after AMR construction and before "
-            "load measurement, distribution, and block allocation",
+            "load measurement and distribution, with allocation verified "
+            "immediately after block creation",
             time.monotonic() - started, [])
     if boundary_order != sorted(boundary_order):
         return Result(
@@ -898,7 +904,8 @@ def _check_active_population_wiring(definition: TestDefinition) -> Result:
 
     return Result(
         definition.test_id, definition.group, "PASS",
-        "the Parker-corridor mask uses AMPS active-use flags before distribution; "
+        "the finite Parker-corridor planner uses native AMR neighbours and "
+        "AMPS active-use flags before distribution, then audits allocation; "
         "inactive source patches are rejected; the legacy automatic splitter is "
         "disabled; SEP-aware relativistic resampling runs after injection and "
         "before observers/checkpoints; resampling keys are independent of MPI "

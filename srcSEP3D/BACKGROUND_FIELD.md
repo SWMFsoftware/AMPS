@@ -132,8 +132,20 @@ The curve and tangent are not duplicated here. `core/parker_geometry.cpp` owns
 the same source geometry, wind, rotation rate, and rotation axis used by
 Phase-M tube refinement. Polarity reverses `B` and the focused-transport pitch
 orientation while leaving the mesh centerline and tube distance unchanged.
-`CFG3D04` verifies that identity. `BGP3D07` proves exact one-AU normalization,
-the near-Sun Leblanc correction, and multi-species pressure/Alfvén speed.
+Because SWCME uses
+\(B_\phi/B_r=-\Omega(r-r_0)\sin\theta/V\), its exact field-line angle is
+
+\[
+\phi(r)-\phi(r_0)=-\frac{\Omega}{V}
+\left[(r-r_0)-r_0\ln(r/r_0)\right].
+\]
+
+This expression is shared by refinement, finite-line output, and the active
+mask. The mask cannot silently follow the older Archimedean approximation
+while particles follow the initialized field. `CFG3D04` verifies the shared
+authority, and `MSH3D13` verifies the analytic curve derivative against the
+local field tangent. `BGP3D07` proves exact one-AU normalization, the near-Sun
+Leblanc correction, and multi-species pressure/Alfvén speed.
 
 ## Reserved Python interpolation provider
 

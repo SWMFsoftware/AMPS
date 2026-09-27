@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iomanip>
 #include <limits>
+#include <queue>
 #include <sstream>
 
 namespace SEP3D {
@@ -411,6 +412,279 @@ double RequestedCellSizeM(const Core::Vec3& positionM,
                configuration.backgroundCellSizeM);
 }
 
+namespace {
+
+struct TubeSegment {
+  Core::Vec3 firstM;
+  Core::Vec3 secondM;
+  // The envelope contains the complete curved centreline interval, not only
+  // its chord.  See BuildFiniteTubeSegments for the rigorous half-arc bound.
+  double envelopeRadiusM = 0.0;
+};
+
+bool ValidBox(const Core::Vec3& minimumM, const Core::Vec3& maximumM) {
+  for (int axis = 0; axis < 3; ++axis) {
+    if (!std::isfinite(Component(minimumM, axis)) ||
+        !std::isfinite(Component(maximumM, axis)) ||
+        Component(maximumM, axis) <= Component(minimumM, axis)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+double MinimumSide(const Core::Vec3& minimumM, const Core::Vec3& maximumM) {
+  return std::min({maximumM.x - minimumM.x,
+                   maximumM.y - minimumM.y,
+                   maximumM.z - minimumM.z});
+}
+
+double BoxVolume(const LeafBlock& leaf) {
+  return (leaf.maximumM.x - leaf.minimumM.x) *
+         (leaf.maximumM.y - leaf.minimumM.y) *
+         (leaf.maximumM.z - leaf.minimumM.z);
+}
+
+double SquaredDistanceToBox(const Core::Vec3& point,
+                            const Core::Vec3& minimumM,
+                            const Core::Vec3& maximumM) {
+  double result = 0.0;
+  for (int axis = 0; axis < 3; ++axis) {
+    const double value = Component(point, axis);
+    double difference = 0.0;
+    if (value < Component(minimumM, axis))
+      difference = value - Component(minimumM, axis);
+    else if (value > Component(maximumM, axis))
+      difference = value - Component(maximumM, axis);
+    result += difference * difference;
+  }
+  return result;
+}
+
+double SquaredDistanceSegmentToBox(
+    const Core::Vec3& firstM, const Core::Vec3& secondM,
+    const Core::Vec3& minimumM, const Core::Vec3& maximumM) {
+  // Distance from p(t)=p0+t*d to a box is a continuous piecewise quadratic.
+  // Its active quadratic changes only when one coordinate crosses a box face.
+  // Enumerating those at most six breakpoints and the stationary point in
+  // each interval gives the exact segment/AABB distance without center/corner
+  // sampling or an invalid Lipschitz assumption.
+  const Core::Vec3 direction = secondM - firstM;
+  std::vector<double> breakpoints;
+  breakpoints.reserve(8);
+  breakpoints.push_back(0.0);
+  breakpoints.push_back(1.0);
+  for (int axis = 0; axis < 3; ++axis) {
+    const double delta = Component(direction, axis);
+    if (delta == 0.0) continue;
+    const double first =
+        (Component(minimumM, axis) - Component(firstM, axis)) / delta;
+    const double second =
+        (Component(maximumM, axis) - Component(firstM, axis)) / delta;
+    if (first > 0.0 && first < 1.0) breakpoints.push_back(first);
+    if (second > 0.0 && second < 1.0) breakpoints.push_back(second);
+  }
+  std::sort(breakpoints.begin(), breakpoints.end());
+  breakpoints.erase(std::unique(breakpoints.begin(), breakpoints.end()),
+                    breakpoints.end());
+
+  auto pointAt = [&](double parameter) {
+    return firstM + parameter * direction;
+  };
+  double best = std::min(SquaredDistanceToBox(firstM, minimumM, maximumM),
+                         SquaredDistanceToBox(secondM, minimumM, maximumM));
+  for (std::size_t interval = 0; interval + 1 < breakpoints.size();
+       ++interval) {
+    const double lower = breakpoints[interval];
+    const double upper = breakpoints[interval + 1];
+    const double middle = 0.5 * (lower + upper);
+    const Core::Vec3 middlePoint = pointAt(middle);
+    double quadratic = 0.0;
+    double linear = 0.0;
+    for (int axis = 0; axis < 3; ++axis) {
+      const double value = Component(middlePoint, axis);
+      double boundary = value;
+      if (value < Component(minimumM, axis))
+        boundary = Component(minimumM, axis);
+      else if (value > Component(maximumM, axis))
+        boundary = Component(maximumM, axis);
+      else
+        continue;
+      const double delta = Component(direction, axis);
+      const double offset = Component(firstM, axis) - boundary;
+      quadratic += delta * delta;
+      linear += delta * offset;
+    }
+    if (quadratic > 0.0) {
+      const double stationary = Clamp(-linear / quadratic, lower, upper);
+      best = std::min(best, SquaredDistanceToBox(
+          pointAt(stationary), minimumM, maximumM));
+    }
+    best = std::min(best, SquaredDistanceToBox(
+        pointAt(lower), minimumM, maximumM));
+    best = std::min(best, SquaredDistanceToBox(
+        pointAt(upper), minimumM, maximumM));
+  }
+  return best;
+}
+
+Core::Status BuildFiniteTubeSegments(
+    const ResolutionConfiguration& configuration, double spatialScaleM,
+    std::vector<TubeSegment>* segments, double* effectiveLengthM) {
+  if (segments == nullptr || effectiveLengthM == nullptr)
+    return Invalid("active-region segment output is null");
+  if (!std::isfinite(spatialScaleM) || spatialScaleM <= 0.0)
+    return Invalid("active-region spatial scale must be positive");
+
+  const Core::ParkerSpiralGeometry geometry = Geometry(configuration);
+  const Core::Status geometryStatus = Core::ValidateParkerGeometry(geometry);
+  if (!geometryStatus.ok()) return geometryStatus;
+  const double outerLengthM = Core::ParkerCurveArcLengthM(
+      configuration.outerRadiusM, geometry);
+  if (!std::isfinite(outerLengthM) || outerLengthM <= 0.0)
+    return Invalid("physical outer sphere has invalid Parker arc length");
+  const double lengthM = std::min(configuration.parkerLengthM, outerLengthM);
+
+  double terminalRadiusM = 0.0;
+  const Core::Status terminalStatus = Core::ParkerCurveRadiusAtArcLengthM(
+      lengthM, geometry, &terminalRadiusM);
+  if (!terminalStatus.ok()) return terminalStatus;
+  const double firstRadiusM = ActiveTubeRadiusM(
+      configuration.innerRadiusM, configuration);
+  const double lastRadiusM = ActiveTubeRadiusM(
+      terminalRadiusM, configuration);
+  const double narrowestTubeM = std::min(firstRadiusM, lastRadiusM);
+  if (!std::isfinite(narrowestTubeM) || narrowestTubeM <= 0.0)
+    return Invalid("active Parker tube has an invalid finite-line radius");
+
+  // The mask is independent of the visualization point_count.  A segment is
+  // no longer than one quarter of either the narrowest physical tube or the
+  // smallest leaf scale.  More importantly, every curved arc of length ds is
+  // guaranteed to lie within ds/2 of one of its endpoints (which is on the
+  // stored chord). Inflating the chord capsule by ds/2 is therefore a strict
+  // no-false-negative bound even without assuming a curvature model.
+  const double maximumArcStepM =
+      0.25 * std::min(spatialScaleM, narrowestTubeM);
+  const double rawSegmentCount = std::ceil(lengthM / maximumArcStepM);
+  if (!std::isfinite(rawSegmentCount) || rawSegmentCount < 1.0 ||
+      rawSegmentCount > 2000000.0) {
+    return Invalid("active Parker tube requires an unreasonable segment count");
+  }
+  const std::size_t segmentCount =
+      static_cast<std::size_t>(rawSegmentCount);
+  const double arcStepM = lengthM / static_cast<double>(segmentCount);
+  const double roundoffM = 256.0 * std::numeric_limits<double>::epsilon() *
+      std::max(1.0, configuration.outerRadiusM);
+
+  std::vector<TubeSegment> candidate;
+  candidate.reserve(segmentCount);
+  double firstStationRadiusM = configuration.innerRadiusM;
+  Core::Vec3 firstPointM = configuration.originM +
+      Core::ParkerCurvePoint(firstStationRadiusM, geometry);
+  for (std::size_t index = 0; index < segmentCount; ++index) {
+    const double secondArcM =
+        (index + 1 == segmentCount) ? lengthM : (index + 1) * arcStepM;
+    double secondStationRadiusM = 0.0;
+    const Core::Status radiusStatus = Core::ParkerCurveRadiusAtArcLengthM(
+        secondArcM, geometry, &secondStationRadiusM);
+    if (!radiusStatus.ok()) return radiusStatus;
+    const Core::Vec3 secondPointM = configuration.originM +
+        Core::ParkerCurvePoint(secondStationRadiusM, geometry);
+    TubeSegment segment;
+    segment.firstM = firstPointM;
+    segment.secondM = secondPointM;
+    segment.envelopeRadiusM = std::max(
+        ActiveTubeRadiusM(firstStationRadiusM, configuration),
+        ActiveTubeRadiusM(secondStationRadiusM, configuration));
+    segment.envelopeRadiusM += 0.5 * (secondArcM - index * arcStepM) +
+                               roundoffM;
+    candidate.push_back(segment);
+    firstStationRadiusM = secondStationRadiusM;
+    firstPointM = secondPointM;
+  }
+  segments->swap(candidate);
+  *effectiveLengthM = lengthM;
+  return Core::Status::OK();
+}
+
+bool SegmentEnvelopeIntersectsBox(
+    const TubeSegment& segment, const Core::Vec3& minimumM,
+    const Core::Vec3& maximumM) {
+  for (int axis = 0; axis < 3; ++axis) {
+    const double segmentMinimum = std::min(
+        Component(segment.firstM, axis), Component(segment.secondM, axis));
+    const double segmentMaximum = std::max(
+        Component(segment.firstM, axis), Component(segment.secondM, axis));
+    if (segmentMaximum + segment.envelopeRadiusM <
+            Component(minimumM, axis) ||
+        segmentMinimum - segment.envelopeRadiusM >
+            Component(maximumM, axis)) {
+      return false;
+    }
+  }
+  return SquaredDistanceSegmentToBox(
+      segment.firstM, segment.secondM, minimumM, maximumM) <=
+      segment.envelopeRadiusM * segment.envelopeRadiusM;
+}
+
+bool PointInsideBox(const Core::Vec3& point, const LeafBlock& leaf,
+                    double tolerance) {
+  for (int axis = 0; axis < 3; ++axis) {
+    if (Component(point, axis) < Component(leaf.minimumM, axis) - tolerance ||
+        Component(point, axis) > Component(leaf.maximumM, axis) + tolerance)
+      return false;
+  }
+  return true;
+}
+
+bool BoxesTouch(const LeafBlock& left, const LeafBlock& right,
+                double tolerance) {
+  for (int axis = 0; axis < 3; ++axis) {
+    if (Component(left.maximumM, axis) <
+            Component(right.minimumM, axis) - tolerance ||
+        Component(right.maximumM, axis) <
+            Component(left.minimumM, axis) - tolerance) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void AddUndirected(std::size_t left, std::size_t right,
+                   std::vector<std::vector<std::size_t>>* rows) {
+  if (left == right) return;
+  (*rows)[left].push_back(right);
+  (*rows)[right].push_back(left);
+}
+
+void CanonicalizeRows(std::vector<std::vector<std::size_t>>* rows) {
+  for (std::vector<std::size_t>& row : *rows) {
+    std::sort(row.begin(), row.end());
+    row.erase(std::unique(row.begin(), row.end()), row.end());
+  }
+}
+
+Core::Status ValidateGraph(const LeafNeighbourGraph& graph,
+                           std::size_t leafCount) {
+  if (graph.face.size() != leafCount || graph.full.size() != leafCount)
+    return Invalid("active-region neighbor graph size does not match leaves");
+  for (const auto* rows : {&graph.face, &graph.full}) {
+    for (std::size_t from = 0; from < rows->size(); ++from) {
+      for (std::size_t to : (*rows)[from]) {
+        if (to >= leafCount || to == from)
+          return Invalid("active-region neighbor graph contains an invalid index");
+      }
+    }
+  }
+  return Core::Status::OK();
+}
+
+}  // namespace
+
+const char* ActiveRegionAlgorithmName() {
+  return RuntimeModel::kActiveRegionAlgorithmName;
+}
+
 bool BlockIntersectsActiveRegion(
     const Core::Vec3& minimumM, const Core::Vec3& maximumM,
     const ResolutionConfiguration& configuration) {
@@ -418,58 +692,270 @@ bool BlockIntersectsActiveRegion(
       RuntimeModel::ActiveRegionMode::FullDomain) {
     return true;
   }
+  if (!ValidBox(minimumM, maximumM)) {
+    // Retain malformed boxes so AMPS' structural validator, rather than the
+    // pruning pass, remains the authoritative source of the mesh diagnostic.
+    return true;
+  }
+  std::vector<TubeSegment> segments;
+  double effectiveLengthM = 0.0;
+  const Core::Status built = BuildFiniteTubeSegments(
+      configuration, MinimumSide(minimumM, maximumM), &segments,
+      &effectiveLengthM);
+  (void)effectiveLengthM;
+  if (!built.ok()) return true;
+  for (const TubeSegment& segment : segments) {
+    if (SegmentEnvelopeIntersectsBox(segment, minimumM, maximumM)) return true;
+  }
+  return false;
+}
 
-  const double minimum[] = {minimumM.x, minimumM.y, minimumM.z};
-  const double maximum[] = {maximumM.x, maximumM.y, maximumM.z};
-  for (int axis = 0; axis < 3; ++axis) {
-    if (!std::isfinite(minimum[axis]) || !std::isfinite(maximum[axis]) ||
-        maximum[axis] <= minimum[axis]) {
-      // A malformed AMR box is retained so the caller's normal mesh checks
-      // can issue the authoritative diagnostic.  Removing it here would hide
-      // the structural problem behind an apparently successful domain mask.
-      return true;
+Core::Status BuildGeometricLeafNeighbourGraph(
+    const std::vector<LeafBlock>& leaves, LeafNeighbourGraph* graph) {
+  if (graph == nullptr) return Invalid("leaf-neighbor graph output is null");
+  if (leaves.empty()) return Invalid("leaf-neighbor graph requires leaves");
+  double scaleM = 0.0;
+  for (const LeafBlock& leaf : leaves) {
+    if (!ValidBox(leaf.minimumM, leaf.maximumM))
+      return Invalid("leaf-neighbor graph contains a malformed box");
+    scaleM = std::max(scaleM,
+        (leaf.maximumM - leaf.minimumM).Norm());
+  }
+  const double toleranceM = 128.0 *
+      std::numeric_limits<double>::epsilon() * std::max(1.0, scaleM);
+  LeafNeighbourGraph candidate;
+  candidate.face.resize(leaves.size());
+  candidate.full.resize(leaves.size());
+  for (std::size_t left = 0; left < leaves.size(); ++left) {
+    for (std::size_t right = left + 1; right < leaves.size(); ++right) {
+      if (FaceNeighbours(leaves[left], leaves[right], toleranceM))
+        AddUndirected(left, right, &candidate.face);
+      if (BoxesTouch(leaves[left], leaves[right], toleranceM))
+        AddUndirected(left, right, &candidate.full);
+    }
+  }
+  CanonicalizeRows(&candidate.face);
+  CanonicalizeRows(&candidate.full);
+  *graph = std::move(candidate);
+  return Core::Status::OK();
+}
+
+Core::Status BuildActiveRegionPlan(
+    const std::vector<LeafBlock>& leaves,
+    const LeafNeighbourGraph& neighbours,
+    const ResolutionConfiguration& configuration,
+    ActiveRegionPlan* plan) {
+  if (plan == nullptr) return Invalid("active-region plan output is null");
+  if (leaves.empty()) return Invalid("active-region plan requires leaves");
+  const Core::Status graphStatus = ValidateGraph(neighbours, leaves.size());
+  if (!graphStatus.ok()) return graphStatus;
+
+  ActiveRegionPlan candidate;
+  candidate.leafClass.assign(leaves.size(), ActiveLeafClass::Inactive);
+  double minimumLeafSideM = std::numeric_limits<double>::infinity();
+  Core::Vec3 domainMinimum = leaves.front().minimumM;
+  Core::Vec3 domainMaximum = leaves.front().maximumM;
+  for (const LeafBlock& leaf : leaves) {
+    if (!ValidBox(leaf.minimumM, leaf.maximumM))
+      return Invalid("active-region plan contains a malformed leaf box");
+    minimumLeafSideM = std::min(
+        minimumLeafSideM, MinimumSide(leaf.minimumM, leaf.maximumM));
+    candidate.totalBlockVolumeM3 += BoxVolume(leaf);
+    for (int axis = 0; axis < 3; ++axis) {
+      SetComponent(&domainMinimum, axis, std::min(
+          Component(domainMinimum, axis), Component(leaf.minimumM, axis)));
+      SetComponent(&domainMaximum, axis, std::max(
+          Component(domainMaximum, axis), Component(leaf.maximumM, axis)));
     }
   }
 
-  const Core::Vec3 centre = 0.5 * (minimumM + maximumM);
-  const Core::Vec3 halfSize = 0.5 * (maximumM - minimumM);
-  const double halfDiagonalM = halfSize.Norm();
-  const double fullDiagonalM = 2.0 * halfDiagonalM;
-  const double configuredHaloM =
-      static_cast<double>(configuration.activeTubeBufferBlocks) *
-      fullDiagonalM;
+  if (configuration.activeRegion ==
+      RuntimeModel::ActiveRegionMode::FullDomain) {
+    std::fill(candidate.leafClass.begin(), candidate.leafClass.end(),
+              ActiveLeafClass::Core);
+    candidate.coreLeafCount = leaves.size();
+    candidate.activeBlockVolumeM3 = candidate.totalBlockVolumeM3;
+    *plan = std::move(candidate);
+    return Core::Status::OK();
+  }
 
-  // First retain every block whose centre or corner is explicitly inside the
-  // declared tube.  This inexpensive path handles the overwhelming majority
-  // of accepted blocks and also makes boundary behaviour easy to audit.
-  double maximumTubeRadiusM = 0.0;
-  for (int corner = -1; corner < 8; ++corner) {
-    Core::Vec3 point = centre;
-    if (corner >= 0) {
-      point.x = (corner & 1) ? maximumM.x : minimumM.x;
-      point.y = (corner & 2) ? maximumM.y : minimumM.y;
-      point.z = (corner & 4) ? maximumM.z : minimumM.z;
-    }
-    const double radiusM = (point - configuration.originM).Norm();
-    const double tubeRadiusM = ActiveTubeRadiusM(radiusM, configuration);
-    if (std::isfinite(tubeRadiusM)) {
-      maximumTubeRadiusM = std::max(maximumTubeRadiusM, tubeRadiusM);
-      if (TubeDistanceM(point, configuration) <=
-          tubeRadiusM + configuredHaloM) {
-        return true;
+  std::vector<TubeSegment> segments;
+  const Core::Status segmentStatus = BuildFiniteTubeSegments(
+      configuration, minimumLeafSideM, &segments,
+      &candidate.effectiveLineLengthM);
+  if (!segmentStatus.ok()) return segmentStatus;
+  candidate.segmentCount = segments.size();
+  for (std::size_t leafIndex = 0; leafIndex < leaves.size(); ++leafIndex) {
+    for (const TubeSegment& segment : segments) {
+      if (SegmentEnvelopeIntersectsBox(
+              segment, leaves[leafIndex].minimumM,
+              leaves[leafIndex].maximumM)) {
+        candidate.leafClass[leafIndex] = ActiveLeafClass::Core;
+        break;
       }
     }
   }
 
-  // A curved centreline can cross a coarse Cartesian block without approaching
-  // any sampled corner.  Distance to a set is 1-Lipschitz, hence a block can
-  // be safely rejected only when its centre is farther than a complete
-  // half-diagonal from the largest corner/centre tube radius.  The additional
-  // full-block halo keeps neighbour blocks allocated for AMPS ghost exchange
-  // and finite-difference stencils.  This criterion intentionally errs on the
-  // side of retaining blocks; it must never create a hole in the corridor.
-  return TubeDistanceM(centre, configuration) <=
-      maximumTubeRadiusM + halfDiagonalM + configuredHaloM;
+  std::vector<std::size_t> sourceLeaves;
+  std::vector<unsigned char> terminalLeaf(leaves.size(), 0);
+  const double pointToleranceM = 256.0 *
+      std::numeric_limits<double>::epsilon() *
+      std::max(1.0, configuration.outerRadiusM);
+  const Core::Vec3 sourcePointM = segments.front().firstM;
+  const Core::Vec3 terminalPointM = segments.back().secondM;
+  for (std::size_t index = 0; index < leaves.size(); ++index) {
+    if (candidate.leafClass[index] != ActiveLeafClass::Core) continue;
+    if (PointInsideBox(sourcePointM, leaves[index], pointToleranceM))
+      sourceLeaves.push_back(index);
+    if (PointInsideBox(terminalPointM, leaves[index], pointToleranceM))
+      terminalLeaf[index] = 1;
+  }
+  if (sourceLeaves.empty() ||
+      std::find(terminalLeaf.begin(), terminalLeaf.end(), 1) ==
+          terminalLeaf.end()) {
+    return Invalid("finite Parker tube does not retain its source/end-point leaf");
+  }
+
+  // A continuous capsule must form one component in the full (26-neighbor)
+  // leaf graph. Rejecting a split here catches an under-resolved segment plan
+  // before a partial AMPS domain can be allocated.
+  std::vector<unsigned char> reached(leaves.size(), 0);
+  std::queue<std::size_t> queue;
+  for (std::size_t source : sourceLeaves) {
+    if (!reached[source]) {
+      reached[source] = 1;
+      queue.push(source);
+    }
+  }
+  while (!queue.empty()) {
+    const std::size_t from = queue.front();
+    queue.pop();
+    for (std::size_t to : neighbours.full[from]) {
+      if (!reached[to] &&
+          candidate.leafClass[to] == ActiveLeafClass::Core) {
+        reached[to] = 1;
+        queue.push(to);
+      }
+    }
+  }
+  for (std::size_t index = 0; index < leaves.size(); ++index) {
+    if (candidate.leafClass[index] == ActiveLeafClass::Core &&
+        !reached[index]) {
+      return Invalid("finite Parker tube core is topologically disconnected");
+    }
+  }
+
+  // buffer_blocks now means exactly this many complete AMR touching-neighbor
+  // layers. It no longer scales with the candidate block diagonal, which was
+  // the source of coarse islands separated from fine leaves in the old mask.
+  std::vector<std::size_t> frontier;
+  for (std::size_t index = 0; index < leaves.size(); ++index) {
+    if (candidate.leafClass[index] == ActiveLeafClass::Core)
+      frontier.push_back(index);
+  }
+  for (unsigned layer = 0; layer < configuration.activeTubeBufferBlocks;
+       ++layer) {
+    std::vector<std::size_t> next;
+    for (std::size_t from : frontier) {
+      for (std::size_t to : neighbours.full[from]) {
+        if (candidate.leafClass[to] == ActiveLeafClass::Inactive) {
+          candidate.leafClass[to] = ActiveLeafClass::Halo;
+          next.push_back(to);
+        }
+      }
+    }
+    std::sort(next.begin(), next.end());
+    next.erase(std::unique(next.begin(), next.end()), next.end());
+    frontier.swap(next);
+    if (frontier.empty()) break;
+  }
+
+  // Flood inactive leaves inward from the Cartesian domain boundary. Any
+  // inactive leaf not reached is a bounded cavity enclosed by active blocks;
+  // retain it as a safety halo. This removes the rectangular internal holes
+  // seen in active-mesh plots while leaving the exterior pruned.
+  std::fill(reached.begin(), reached.end(), 0);
+  const double boundaryToleranceM = 256.0 *
+      std::numeric_limits<double>::epsilon() *
+      std::max(1.0, (domainMaximum - domainMinimum).Norm());
+  for (std::size_t index = 0; index < leaves.size(); ++index) {
+    if (candidate.leafClass[index] != ActiveLeafClass::Inactive) continue;
+    bool boundary = false;
+    for (int axis = 0; axis < 3; ++axis) {
+      boundary = boundary || std::fabs(
+          Component(leaves[index].minimumM, axis) -
+          Component(domainMinimum, axis)) <= boundaryToleranceM;
+      boundary = boundary || std::fabs(
+          Component(leaves[index].maximumM, axis) -
+          Component(domainMaximum, axis)) <= boundaryToleranceM;
+    }
+    if (boundary) {
+      reached[index] = 1;
+      queue.push(index);
+    }
+  }
+  while (!queue.empty()) {
+    const std::size_t from = queue.front();
+    queue.pop();
+    for (std::size_t to : neighbours.face[from]) {
+      if (!reached[to] &&
+          candidate.leafClass[to] == ActiveLeafClass::Inactive) {
+        reached[to] = 1;
+        queue.push(to);
+      }
+    }
+  }
+  for (std::size_t index = 0; index < leaves.size(); ++index) {
+    if (candidate.leafClass[index] == ActiveLeafClass::Inactive &&
+        !reached[index]) {
+      candidate.leafClass[index] = ActiveLeafClass::Halo;
+      ++candidate.cavityLeafCount;
+    }
+  }
+
+  // Face connectivity is the relevant final invariant for a mover crossing
+  // block boundaries. Check the complete active set, not only the centreline,
+  // so a detached coarse halo island cannot pass initialization silently.
+  std::fill(reached.begin(), reached.end(), 0);
+  for (std::size_t source : sourceLeaves) {
+    reached[source] = 1;
+    queue.push(source);
+  }
+  while (!queue.empty()) {
+    const std::size_t from = queue.front();
+    queue.pop();
+    for (std::size_t to : neighbours.face[from]) {
+      if (!reached[to] &&
+          candidate.leafClass[to] != ActiveLeafClass::Inactive) {
+        reached[to] = 1;
+        queue.push(to);
+      }
+    }
+  }
+  bool terminalReached = false;
+  for (std::size_t index = 0; index < leaves.size(); ++index) {
+    if (terminalLeaf[index] && reached[index]) terminalReached = true;
+    if (candidate.leafClass[index] != ActiveLeafClass::Inactive &&
+        !reached[index]) {
+      return Invalid("active Parker tube contains a detached leaf component");
+    }
+  }
+  if (!terminalReached)
+    return Invalid("active Parker tube has no face-connected source-to-end path");
+
+  for (std::size_t index = 0; index < leaves.size(); ++index) {
+    switch (candidate.leafClass[index]) {
+      case ActiveLeafClass::Core: ++candidate.coreLeafCount; break;
+      case ActiveLeafClass::Halo: ++candidate.haloLeafCount; break;
+      case ActiveLeafClass::Inactive: ++candidate.inactiveLeafCount; break;
+    }
+    if (candidate.leafClass[index] != ActiveLeafClass::Inactive)
+      candidate.activeBlockVolumeM3 += BoxVolume(leaves[index]);
+  }
+  if (candidate.coreLeafCount == 0)
+    return Invalid("active Parker tube retained no core leaves");
+  *plan = std::move(candidate);
+  return Core::Status::OK();
 }
 
 Core::Status BuildParkerCenterline(
@@ -481,21 +967,29 @@ Core::Status BuildParkerCenterline(
 
   std::vector<Core::Vec3> candidate;
   candidate.reserve(static_cast<std::size_t>(configuration.parkerPointCount));
-  Core::Vec3 point = configuration.parkerInitialPointM;
-  candidate.push_back(point);
-  const double step = configuration.parkerLengthM /
-      static_cast<double>(configuration.parkerPointCount - 1);
   const Core::ParkerSpiralGeometry geometry = Geometry(configuration);
-  for (std::uint64_t i = 1; i < configuration.parkerPointCount; ++i) {
-    const Core::Vec3 relative = point - configuration.originM;
-    const Core::Vec3 first = Core::ParkerLocalTangent(relative, geometry);
-    if (first.Norm() == 0.0)
-      return Invalid("Parker tangent vanished while sampling centreline");
-    const Core::Vec3 midpoint = relative + 0.5 * step * first;
-    const Core::Vec3 tangent = Core::ParkerLocalTangent(midpoint, geometry);
-    if (tangent.Norm() == 0.0)
-      return Invalid("Parker midpoint tangent vanished while sampling centreline");
-    point += step * tangent;
+  const double arcStepM = configuration.parkerLengthM /
+      static_cast<double>(configuration.parkerPointCount - 1);
+  for (std::uint64_t i = 0; i < configuration.parkerPointCount; ++i) {
+    // Equal-arc stations are inverted against the closed Parker arc-length
+    // law and then evaluated on the exact analytic field line. The previous
+    // midpoint ODE march accumulated a visible transverse drift and, before
+    // the geometry correction, did not even follow the curve used by AMR.
+    const double arcLengthM = (i + 1 == configuration.parkerPointCount)
+        ? configuration.parkerLengthM
+        : static_cast<double>(i) * arcStepM;
+    double radiusM = 0.0;
+    const Core::Status radiusStatus = Core::ParkerCurveRadiusAtArcLengthM(
+        arcLengthM, geometry, &radiusM);
+    if (!radiusStatus.ok()) return radiusStatus;
+    const Core::Vec3 point = (i == 0)
+        ? configuration.parkerInitialPointM
+        : configuration.originM +
+            Core::ParkerCurvePoint(radiusM, geometry);
+    if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
+        !std::isfinite(point.z)) {
+      return Invalid("Parker centreline produced a non-finite point");
+    }
     candidate.push_back(point);
   }
   points->swap(candidate);

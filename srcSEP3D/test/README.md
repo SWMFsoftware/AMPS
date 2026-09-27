@@ -97,7 +97,7 @@ The runner adds
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
 | `R3D` | `R3D01`–`R3D09` | mover hook, requested-time loop, snapshot transaction, tick/events, source, observers, restart, canonical initialization source, finite empty-cell output |
 | `CFG3D` | `CFG3D01`–`CFG3D11` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line/schema-3 initialization, complete compiled AMPS species binding, turbulence selection, CME/Parker linkage, schema-4 mover/coefficient and fixed/local source choices, active-corridor connectivity, and population bounds |
-| `MSH3D` | `MSH3D01`–`MSH3D12` | resolution, tube geometry, balance, octree budget/ownership, presets, gradients, finite line, initialization Tecplot output, and conservative active-corridor classification |
+| `MSH3D` | `MSH3D01`–`MSH3D14` | resolution, exact Parker geometry, balance, octree budget/ownership, presets, gradients, finite line, initialization Tecplot output, conservative active-corridor classification, and hole-free AMR topology |
 | `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
 | `SNAP3D` | `SNAP3D01`–`SNAP3D08` | snapshot completeness, coupling conversion, atomicity, interpolation, batch/frame policy |
 | `TUR3D` | `TUR3D01`–`TUR3D06` | spectrum, AWSoM convention, resonance, missing-data policy, selectable spectral/amplitude closures, and mandatory Tecplot energy |
@@ -254,10 +254,12 @@ positive directional variance survives the same weighted interpolation. A config
 
 This routine source gate verifies the lifecycle facts that portable geometry
 and conservation tests cannot establish alone. It requires the Parker-corridor
-classifier to feed AMPS `SetTreeNodeActiveUseFlag` after `buildMesh()` and
-before load measurement, distribution, and block allocation. It also requires
-inactive shock patches to be excluded, the legacy automatic AMPS splitter to
-remain disabled, and the SEP-aware relativistic controller to run after shock
+whole-mesh planner to consume AMPS' coarse/fine face/edge/corner links and feed
+`SetTreeNodeActiveUseFlag` after `buildMesh()` and before load measurement,
+distribution, and block allocation. It also requires an allocation audit after
+`AllocateTreeBlocks()` so inactive leaves cannot retain storage. Inactive shock
+patches must be excluded, the legacy automatic AMPS splitter must remain
+disabled, and the SEP-aware relativistic controller must run after shock
 injection but before observers and checkpoints. Finally, it checks the generic
 controller's semantic ordinal is scoped to one cell/species population so MPI
 block repartitioning cannot change post-resampling histories. It also checks
@@ -384,9 +386,11 @@ python3 test/run_tests.py --suite improvements-c --rebuild \
 | `MSH3D07` | five octrees reproduce exact leaf/memory counts and reject non-owner writes |
 | `MSH3D08` | Earth and Mars domains enclose exact declared outer spheres |
 | `MSH3D09` | mixed coarse/fine gradients are linear-exact and rank-deficient stencils fail |
-| `MSH3D10` | finite Parker line preserves configured count/arc length and origin-relative refinement |
+| `MSH3D10` | exact equal-arc Parker line preserves configured count/arc length and origin-relative refinement |
 | `MSH3D11` | initialization Parker line is deterministic unit-labeled Tecplot data |
-| `MSH3D12` | conservative active Parker corridor retains centreline/intersection/halo leaves and preserves full-domain mode |
+| `MSH3D12` | conservative finite Parker capsule intersects complete leaves and preserves full-domain mode |
+| `MSH3D13` | analytic Parker derivative is parallel to the field tangent and arc-length inversion round-trips |
+| `MSH3D14` | whole-octree mask covers a dense finite line, applies exact halo layers, prunes exterior leaves, fills cavities, and remains face-connected |
 
 ```bash
 python3 test/run_tests.py --suite phase-m --rebuild \
@@ -545,7 +549,7 @@ equations, algorithms, case roles, and evidence schemas.
 | `improvements-c` | CFG3D01–CFG3D11 production configuration, preflight, finite-line/schema-3 initialization, species/turbulence/source selection, CME linkage, mover/coefficient selection, active-corridor, and population-control gates |
 | `improvements-r` | R3D01–R3D09 production runtime integration gates |
 | `improvements-v` | V1D01–05 controlled physics, V2D01 true parity, and V5D01 governance |
-| `phase-m` | MSH3D01–MSH3D12 mesh/storage, active-corridor, and initialization-output gates |
+| `phase-m` | MSH3D01–MSH3D14 mesh/storage, finite active-corridor, hole-free topology, and initialization-output gates |
 | `phase-b` | BGP3D01–06 and SNAP3D01–08 background/snapshot gates |
 | `phase-t` | TUR3D01–06, COEF3D01–02, and COEF3D06–07 turbulence/coefficient gates |
 | `phase-p` | COEF3D03–05, PRK3D01–08, FTE3D01–09, RNG3D01–03, and POP3D01 |
@@ -630,7 +634,7 @@ invoke that exact linked callback, following the srcSEP pattern.
 | unknown test/group | use `--list`; unknown selectors are usage errors |
 | report missing after a C++ test | treat as ERROR; inspect verbose subprocess output |
 
-`CFG3D06`–`CFG3D10`, `TUR3D05`–`TUR3D06`, `MSH3D10`–`MSH3D11`, and `R3D08`–`R3D09` are routine C++ entries
+`CFG3D06`–`CFG3D10`, `TUR3D05`–`TUR3D06`, `MSH3D10`–`MSH3D14`, and `R3D08`–`R3D09` are routine C++ entries
 in the runner manifest.
 `CFG3D06` uses live negative controls for an omitted version-2 key and an
 initial point inconsistent with the inner sphere. `MSH3D10` constructs the
@@ -646,6 +650,10 @@ extend the gates; none of the earlier CFG3D/MSH3D thresholds or negative
 controls was relaxed.
 `CFG3D08` exercises complete canonical input and three live schema-3 negative
 controls. `MSH3D11` creates, verifies, and removes a real Tecplot product.
+`MSH3D13` catches any future split between Parker points and tangents;
+`MSH3D14` builds a mixed-level octree and rejects centerline gaps, approximate
+halo depth, bounded inactive cavities, detached components, and continuation
+beyond the configured finite line.
 `CFG3D09` and `TUR3D06` exercise both pre-existing turbulence-amplitude
 prescriptions and the public total wave-energy output contract. `CFG3D10`
 changes CME radius/direction independently to prove the optional launch-apex

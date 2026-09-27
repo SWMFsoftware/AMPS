@@ -875,6 +875,55 @@ Result RunCFG3D11() {
     return Fail("canonical schema-4 selectors did not parse exactly");
   }
 
+  // Parse the shipped active-tube example itself, rather than proving only
+  // that a string synthesized by this test would be accepted. This prevents
+  // documentation/example drift from reintroducing the old observer
+  // coordinates, which followed a curve different from the initialized IMF.
+  std::ifstream activeInput(
+      "examples/sep3d_analytic_parker_active_tube.in");
+  std::ostringstream activeBuffer;
+  activeBuffer << activeInput.rdbuf();
+  RM::RunConfiguration3DOptions activeOptions;
+  const SEP3D::Core::Status activeStatus = RM::ParseConfigurationText(
+      activeBuffer.str(), &activeOptions);
+  const double observerToleranceM = 1.0;
+  if (!activeInput || !activeStatus.ok() ||
+      activeOptions.activeRegion != RM::ActiveRegionMode::ParkerTube ||
+      activeOptions.activeTubeBufferBlocks != 1 ||
+      activeOptions.observers.size() != 2 ||
+      activeOptions.observers[0].id != "earth" ||
+      activeOptions.observers[1].id != "inner" ||
+      std::fabs(activeOptions.observers[0].positionM.x -
+                1.1096225266380298e11) > observerToleranceM ||
+      std::fabs(activeOptions.observers[0].positionM.y +
+                1.0033394939774008e11) > observerToleranceM ||
+      std::fabs(activeOptions.observers[1].positionM.x -
+                4.463181234418467e10) > observerToleranceM ||
+      std::fabs(activeOptions.observers[1].positionM.y +
+                4.70726985535542e9) > observerToleranceM) {
+    return Fail("shipped active-tube example is not a valid field-connected schema-4 deck");
+  }
+  SEP3D::Core::ParkerSpiralGeometry activeGeometry;
+  activeGeometry.sourceRadiusM = activeOptions.innerRadiusM;
+  activeGeometry.sourceLongitudeRad = activeOptions.tubeLongitudeRad;
+  activeGeometry.sourceColatitudeRad = activeOptions.tubeColatitudeRad;
+  activeGeometry.solarWindSpeedMPerS =
+      activeOptions.parker.solarWindSpeedMPerS;
+  activeGeometry.solarRotationRateRadPerS =
+      activeOptions.parker.solarRotationRateRadPerS;
+  activeGeometry.rotationAxis = activeOptions.parker.rotationAxis;
+  for (const RM::ObserverOptions& observer : activeOptions.observers) {
+    const SEP3D::Core::Vec3 relative =
+        observer.positionM - activeOptions.coordinateOriginM;
+    const SEP3D::Core::Vec3 expected = activeOptions.coordinateOriginM +
+        SEP3D::Core::ParkerCurvePoint(relative.Norm(), activeGeometry);
+    if ((observer.positionM - expected).Norm() > observerToleranceM ||
+        std::fabs(relative.Norm() - observer.shellRadiusM) >
+            observerToleranceM) {
+      return Fail("shipped active-tube observer is not on the exact finite Parker line");
+    }
+  }
+
   // A fixed phase-space law names q in f(p) proportional to p^(-q).  The
   // input therefore uses positive q=5 for the published p^-5 seed shape; the
   // sampling adapter, not the user, performs the dN/dp exponent conversion.
@@ -921,10 +970,10 @@ Result RunCFG3D11() {
                    "radius_at_reference_m = 7.479893535e9\nradius_mode = constant-angular-width\nbuffer_blocks = 1") ||
       !replaceOnce(&corridor,
                    "position_x_m = 1.495978707e11\nposition_y_m = 0",
-                   "position_x_m = 8.434093337299539e10\nposition_y_m = -1.2355618105034596e11") ||
+                   "position_x_m = 1.10962252663803e11\nposition_y_m = -1.00333949397740e11") ||
       !replaceOnce(&corridor,
                    "position_x_m = 4.487936121e10\nposition_y_m = 0",
-                   "position_x_m = 4.378005863160611e10\nposition_y_m = -9.872361866887974e9") ||
+                   "position_x_m = 4.46318123441847e10\nposition_y_m = -4.70726985535542e9") ||
       !RM::ParseConfigurationText(corridor, &options).ok() ||
       options.activeRegion != RM::ActiveRegionMode::ParkerTube ||
       options.activeTubeBufferBlocks != 1) {
@@ -936,12 +985,25 @@ Result RunCFG3D11() {
       RM::ParseConfigurationText(narrow, &options).ok()) {
     return Fail("active corridor narrower than the refinement tube was accepted");
   }
+  std::string mixedRadiusModes = corridor;
+  if (!replaceOnce(&mixedRadiusModes,
+                   "radius_mode = constant-angular-width",
+                   "radius_mode = physical-constant") ||
+      RM::ParseConfigurationText(mixedRadiusModes, &options).ok()) {
+    return Fail("active corridor accepted endpoint under-coverage from mixed radius modes");
+  }
   std::string disconnectedObserver = corridor;
   if (!replaceOnce(&disconnectedObserver,
-                   "position_x_m = 8.434093337299539e10\nposition_y_m = -1.2355618105034596e11",
+                   "position_x_m = 1.10962252663803e11\nposition_y_m = -1.00333949397740e11",
                    "position_x_m = 1.495978707e11\nposition_y_m = 0") ||
       RM::ParseConfigurationText(disconnectedObserver, &options).ok()) {
     return Fail("observer outside the stationary active corridor was accepted");
+  }
+  std::string truncatedBeforeObserver = corridor;
+  if (!replaceOnce(&truncatedBeforeObserver, "length_m = 2.0e11",
+                   "length_m = 1.0e10") ||
+      RM::ParseConfigurationText(truncatedBeforeObserver, &options).ok()) {
+    return Fail("observer beyond the finite active-corridor end cap was accepted");
   }
 
   std::string controlled = complete;

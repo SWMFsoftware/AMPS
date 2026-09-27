@@ -1,0 +1,84 @@
+{
+  "schema": "srcsep3d-ov3d01-event-fit-v1",
+  "case_id": "OV3D01",
+  "coordinate_transform": {
+    "name": null,
+    "model_from_event_frozen_carrington": null,
+    "provenance": null
+  },
+  "ambient": {
+    "number_density_at_one_au_m3": null,
+    "magnetic_field_magnitude_at_one_au_t": null,
+    "proton_temperature_k": null,
+    "magnetic_polarity": null,
+    "averaging_start_utc": null,
+    "averaging_end_utc": null,
+    "source_file": null,
+    "source_sha256": null
+  },
+  "swcme": {
+    "solar_rotation_rate_rad_per_s": null,
+    "adiabatic_index": null,
+    "thermodynamic_closure": null,
+    "alpha_to_proton_ratio": null,
+    "electron_temperature_k": null,
+    "alpha_temperature_k": null,
+    "drag_coefficient_per_km": null,
+    "sheath_thickness_at_one_au_m": null,
+    "ejecta_thickness_at_one_au_m": null,
+    "shock_smoothing_width_at_one_au_m": null,
+    "leading_edge_smoothing_width_at_one_au_m": null,
+    "trailing_edge_smoothing_width_at_one_au_m": null,
+    "sheath_ramp_power": null,
+    "leading_edge_speed_factor": null,
+    "ejecta_density_factor": null,
+    "ejecta_speed_factor": null,
+    "valid_from_s": null,
+    "valid_until_s": null,
+    "fit_provenance": null
+  },
+  "source": {
+    "physical_particle_rate_per_s": null,
+    "injection_efficiency": null,
+    "maximum_energy_j": null,
+    "reference_energy_mev": null,
+    "samples_per_step_per_species": null,
+    "relative_source_weight_per_area": null,
+    "normalization_provenance": null
+  },
+  "mesh": {
+    "global_cell_size_m": null,
+    "minimum_cell_size_m": null,
+    "maximum_level": null,
+    "memory_budget_bytes": null,
+    "solar_surface_cell_size_m": null,
+    "solar_transition_outer_radius_m": null,
+    "refinement_tube_radius_at_reference_m": null,
+    "refinement_tube_center_cell_size_m": null,
+    "active_tube_radius_at_reference_m": null,
+    "active_tube_buffer_blocks": null,
+    "observer_collection_radius_m": null,
+    "convergence_provenance": null
+  },
+  "population_control": {
+    "mode": null,
+    "minimum_particles_per_cell_per_species": null,
+    "target_particles_per_cell_per_species": null,
+    "maximum_particles_per_cell_per_species": null,
+    "cadence_steps": null,
+    "convergence_provenance": null
+  },
+  "turbulence": {
+    "delta_b_over_b": null,
+    "correlation_length_m": null,
+    "provenance": null
+  },
+  "run": {
+    "time_step_s": null,
+    "duration_s": null,
+    "campaign_seed": null,
+    "observer_cadence_s": null,
+    "observer_energy_bins": null,
+    "provenance": null
+  }
+}
