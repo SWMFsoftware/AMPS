@@ -96,6 +96,62 @@ verify ballistic motion, focusing and mirroring, Legendre eigenmode rates,
 bounded strong scattering, momentum characteristics, the strong-scattering
 Parker limit, and bitwise identity of the zero-perpendicular hooks.
 
+## Event-driven focused scattering
+
+`focused-scattering` uses the same deterministic focused characteristics but
+replaces the continuous Dμμ Wiener process with discrete isotropization events.
+For local parallel mean free path `lambda_parallel`, the event hazard is
+
+\[
+\nu=v/\lambda_\parallel.
+\]
+
+Each particle stores residual optical depth `tau=-ln(U)`. During a frozen-local
+substep it consumes `nu*dt`; when the residual reaches zero, an event is
+processed, the event index is incremented, and a new optical depth is drawn
+from a semantic keyed stream. Carrying optical depth—not a waiting time—across
+AMR/substep boundaries prevents the event sequence from being redrawn when the
+same requested interval is partitioned differently. A positive configured
+event budget prevents a malformed state from trapping an AMPS mover call.
+
+Two scattering frames are implemented:
+
+- `plasma-frame-isotropic` draws uniform `mu in (-1,1)` at unchanged momentum
+  magnitude, hence conserves kinetic energy in the local plasma frame;
+- `alfven-wave-frame-isotropic` chooses the `+B` or `-B` propagating frame
+  using the initialized directional turbulence fractions, Lorentz-transforms
+  the particle velocity into that frame, isotropizes its pitch at unchanged
+  frame speed, and transforms it back. It therefore permits the physically
+  required plasma-frame energy exchange while conserving exact energy in the
+  selected wave frame.
+
+The implementation is gyrotropic, so no artificial scattering azimuth is
+stored. Discrete scattering currently requires `perpendicular_diffusion=none`;
+accepting a transverse Wiener operator before its event-partition invariance is
+validated would make two equivalent substep partitions define different
+models. `FTE3D08` verifies carried optical depth/event identity, and `FTE3D09`
+verifies energy conservation in both supported frames.
+
+## Mover and coefficient selection
+
+The runtime selector and the coefficient selector are separate. The following
+quantities are evaluated at every accepted AMR substep:
+
+| Mover | Consumed coefficient | Available model |
+|---|---|---|
+| `parker` | `kappa_parallel` | selected correlation/constant/radial–rigidity MFP (`kappa=v lambda/3`) or adaptive integral of the selected Dμμ |
+| `focused-diffusion` | `D_mumu`, `dD_mumu/dmu` | Jokipii-1966 slab, Florinskiy, or explicit constant SI rate |
+| `focused-scattering` | `lambda_parallel` | turbulence/correlation closure, explicit constant SI length, or explicit radial–rigidity power law |
+
+The pitch-angle integral uses the declared absolute/relative tolerances and
+maximum recursion. A resonance gap is a typed failure rather than an implicit
+floor. Conversely, a coefficient not consumed by the selected mover is not
+evaluated: for example, a Jokipii `mu=0` resonance cannot invalidate a discrete
+mean-free-path step. The radial–rigidity law computes `R=p*c/abs(q)` for the
+actual AMPS species before applying its declared SI reference scales and
+exponents. `COEF3D07` checks this isolation, charge scaling, and the analytic
+constant-MFP, radial–rigidity, and constant-Dμμ limits.
+
 ## Named timestep limits
 
 `SelectTimeStep` reports the exact minimum of requested, cell-crossing,

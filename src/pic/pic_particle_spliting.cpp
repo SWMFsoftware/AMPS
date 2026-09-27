@@ -1,6 +1,5 @@
 
-
-
+#include <cstddef>
 #include <list>
 #include <algorithm> 
 
@@ -1893,6 +1892,14 @@ PIC::ParticleBuffer::SetX(x0,pnew);*/
 void PIC::ParticleSplitting::MergeParticleList(int spec,long int& FirstParticle,int nRequestedParticleNumber) { 
 namespace PB = PIC::ParticleBuffer;
 
+  // A target of zero (or a negative value propagated from an invalid input)
+  // has no physically meaningful merge state.  More importantly, allowing it
+  // into the unsigned size comparisons below can convert the negative value
+  // to a very large size_t and can hide the caller error behind accidental
+  // control flow.  Treat every non-positive target as an explicit no-op before
+  // traversing or modifying the AMPS linked list.
+  if (nRequestedParticleNumber < 1) return;
+
   // Structure to hold particle information
   struct ParticleInfo {
     long int index;
@@ -1927,10 +1934,22 @@ namespace PB = PIC::ParticleBuffer;
     particleIndex = PB::GetNext(particleIndex);
   }
 
-  // Early exit if no merging is needed
-  if (particles.size() <= nRequestedParticleNumber) {
+  // The velocity-bin initialization below dereferences particles[0].  Keep an
+  // explicit empty-list guard at that boundary, even though the target test
+  // also covers an empty vector for every valid (positive) target.  The
+  // explicit form documents and protects the actual memory-safety invariant.
+  // Cast the already validated target to the vector's unsigned size type so a
+  // signed/unsigned comparison cannot change the intended ordering.
+  if (particles.empty() || particles.size() <=
+      static_cast<std::size_t>(nRequestedParticleNumber)) {
     return;
   }
+
+  // This algorithm reduces three records to two.  Two particles cannot be
+  // merged by that conservative operation, even when the requested target is
+  // one, and proceeding would leave the first bin list empty before an
+  // iterator successor is queried.
+  if (particles.size() < 3) return;
 
   int nTotalActiveParticles=particles.size();
 
@@ -2015,6 +2034,16 @@ namespace PB = PIC::ParticleBuffer;
     binList.sort([](const BinNode& a, const BinNode& b) {
       return a.binSize > b.binSize;
     });
+
+    // At a fine velocity-space resolution every occupied bin may contain
+    // fewer than the three particles required by the 3-to-2 merge.  In that
+    // case begin() equals end(), so std::next(begin()) is not a valid query.
+    // Retry at the next coarser resolution; eventually a viable population is
+    // grouped, or the outer loop terminates without mutating the list.
+    if (binList.empty()) {
+      nBinsPerDimension /= 2;
+      continue;
+    }
 
     // Step 7: Merge particles in bins while conserving weight, momentum, and energy
     auto currentBinIt = binList.begin();
@@ -2271,6 +2300,12 @@ namespace PB = PIC::ParticleBuffer;
 void PIC::ParticleSplitting::SplitParticleList(int spec,long int& FirstParticle,int nRequestedParticleNumber) { 
 namespace PB = PIC::ParticleBuffer;
 
+  // Validate the public API argument before using it as vector capacity.  A
+  // negative int passed to reserve() would otherwise be converted to a huge
+  // size_t and could raise length_error/bad_alloc; a zero target requires no
+  // population change.  Both cases are therefore defined as safe no-ops.
+  if (nRequestedParticleNumber < 1) return;
+
   // Structure to hold particle information
   struct ParticleInfo {
     long int index;
@@ -2314,6 +2349,11 @@ namespace PB = PIC::ParticleBuffer;
   
     particleIndex = PB::GetNext(particleIndex);
   }
+
+  // The conservative 2-to-3 construction needs two source particles.  This
+  // guard also protects particles[0] and the later std::next() call when the
+  // cell contains no selected species or only one selected particle.
+  if (particles.size() < 2) return;
 
   // Set the minimum value of the particle weigh below which no splitting is done
   double SplitWeightThrehold=1.0E-4*WeightMax;
@@ -2401,6 +2441,14 @@ namespace PB = PIC::ParticleBuffer;
     binList.sort([](const BinNode& a, const BinNode& b) {
       return a.binSize < b.binSize;
     });
+
+    // A fine binning can separate every eligible pair.  Do not ask for the
+    // successor of end(); coarsen the velocity grid and retry exactly as the
+    // normal outer-loop fallback intends.
+    if (binList.empty()) {
+      nBinsPerDimension -= 2;
+      continue;
+    }
 
     // Step 7: Split particles in bins while conserving weight, momentum, and energy
     auto currentBinIt = binList.begin();
@@ -2551,5 +2599,3 @@ namespace PB = PIC::ParticleBuffer;
     }      
   }
 }
-
-

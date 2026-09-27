@@ -55,6 +55,56 @@ radius (constant angular width). A named transverse profile joins `h_tube` on
 the centerline to `h_global` exactly at the tube boundary. The final request is
 the finer of radial and tube requests, clipped to declared bounds.
 
+## Active Parker transport corridor
+
+AMPS represents activity with
+`cTreeNodeAMR::IsUsedInCalculationFlag` on a complete leaf block. Its public
+`SetTreeNodeActiveUseFlag` gathers selected AMR node IDs from every MPI rank,
+broadcasts the common flag change, and suppresses block allocation and load for
+inactive leaves. Movers that enter an inactive leaf follow AMPS' ordinary
+left-domain path. There is no public per-finite-volume-cell allocation switch;
+therefore `[mesh.active_region]` intentionally describes a block mask even
+though every cell in the block is disabled together.
+
+`mode = full-domain` preserves historical behavior. For
+`mode = parker-tube`, the physical active radius is
+
+\[
+R_a(r)=R_{a,ref}
+\quad\hbox{or}\quad
+R_a(r)=R_{a,ref}\,r/r_{a,ref-radius},
+\]
+
+for `physical-constant` and `constant-angular-width`, respectively. The active
+radius and reference are independent of the refinement radius, but validation
+requires the active tube to contain the refined tube.
+
+The block classifier is deliberately conservative:
+
+- accept when the block centre or any corner lies within the physical tube
+  plus the configured complete-block halo;
+- otherwise accept when the centre distance is no larger than the largest
+  sampled tube radius plus the block half diagonal and halo;
+- retain malformed boxes for AMPS' structural validator rather than hiding
+  them by deactivation.
+
+Distance to a set is 1-Lipschitz, so the half-diagonal test prevents a curved
+centreline from passing through a coarse block while all sampled corners lie
+outside. `buffer_blocks` is converted to local full block diagonals and exists
+for ghost exchange, coefficient-gradient stencils, and a particle crossing
+the physical tube boundary within one accepted step. It is a numerical halo,
+not an undocumented increase of the physical corridor radius.
+
+The replicated leaf list is partitioned deterministically by ordinal modulo
+MPI rank before calling `SetTreeNodeActiveUseFlag`; every node ID is submitted
+exactly once. The call occurs after `buildMesh()` and before parallel load
+measurement, distribution-list creation, or block allocation. Configuration
+also rejects fixed observers whose collection spheres do not intersect the
+physical tube and rejects moving/field-connected observers with a static mask.
+Shock source patches outside the active leaves receive explicit disconnected
+ledger rows; the exact per-species macro count is apportioned only over
+connected physical patches.
+
 ## Standalone octree and ownership
 
 `StandaloneOctree::Build` recursively refines blocks whose cell width exceeds
@@ -130,17 +180,19 @@ duplicates/switches sampling buffers according to its sampling configuration.
 4. register srcSEP3D static/sampling byte callbacks;
 5. let AMPS freeze its complete center-node layout;
 6. build the tree with the tested `localResolution()` function;
-7. partition the tree and create owner lists;
-8. for schema 3, write the final distributed tree with AMPS'
+7. apply the active-use mask through AMPS' public node-ID synchronization API;
+8. install an active-only load measure, partition the retained tree, and
+   create owner lists;
+9. for schema 3 or 4, write the final distributed tree with AMPS'
    `outputMeshTECPLOT` and write the finite Parker centreline once on rank zero;
-9. allocate blocks and initialize cell measures;
-10. bind the exact frozen `StorageLayout` to `Runtime`.
+10. allocate active blocks and initialize cell measures;
+11. bind the exact frozen `StorageLayout` to `Runtime`.
 
 Changing or appending fields after step 5 is a layout error. Background filling
 iterates `DomainBlockDecomposition::BlockTable`, so each rank writes only cells
 in blocks assigned to that rank.
 
-The two schema-3 paths are explicit input fields. The centreline writer builds
+The two schema-3/schema-4 paths are explicit input fields. The centreline writer builds
 and validates the entire ordered curve before opening its output and records
 arc length, Cartesian position, heliocentric radius, and requested cell size in
 metres. A write failure is fatal; these are initialization products, not
@@ -164,7 +216,7 @@ best-effort diagnostics.
    `outputMeshDataTECPLOT` for `sep3d-initialization-data.dat` as the final
    operation of `amps_init()`.
 
-The separation between steps 8–9 of `amps_init_mesh()` and this sequence is
+The separation between steps 9–10 of `amps_init_mesh()` and this sequence is
 intentional: `outputMeshTECPLOT` needs only the finalized octree, whereas
 `outputMeshDataTECPLOT` must not observe the native buffer before Parker/SWCME
 and turbulence installation have completed on every rank.
@@ -200,6 +252,7 @@ zero gradient.
 | `MSH3D08` | Earth/Mars preset extents |
 | `MSH3D09` | coarse/fine linear exactness and rank-deficient rejection |
 | `MSH3D10–11` | finite-line arc length/origin invariance and Tecplot initialization output |
+| `MSH3D12` | centreline/corner/half-diagonal/halo retention, remote rejection, and full-domain identity |
 | `CFG3D03–05` | normalized domains, shared Parker geometry, composite preflight and whole-run memory |
 
 Run `test/run_tests.py --suite phase-m --rebuild`.

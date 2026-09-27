@@ -571,16 +571,16 @@ Result RunCFG3D08() {
   const SEP3D::Core::Status loaded = RM::LoadConfigurationFile(
       "examples/sep3d_analytic_parker.in", &options);
   if (!loaded.ok())
-    return Fail("complete schema-version-3 initialization input did not resolve: " +
+    return Fail("complete schema-version-4 initialization input did not resolve: " +
                 loaded.message);
   if (
-      options.inputSchemaVersion != 3 ||
+      options.inputSchemaVersion != 4 ||
       options.injectionCadenceSteps != 1 ||
       options.source.samplesPerStep != 1000 ||
       options.swcmeAssignments.empty() ||
       options.swcmeConfigurationFingerprint.empty() ||
       options.swcmeResolvedManifest.empty()) {
-    return Fail("schema-version-3 initialization metadata is incomplete");
+    return Fail("schema-version-4 initialization metadata is incomplete");
   }
 
   std::ifstream input("examples/sep3d_analytic_parker.in");
@@ -694,7 +694,7 @@ Result RunCFG3D08() {
   if (!RM::ParseConfigurationText(movedSource, &options).ok())
     return Fail("schema version 3 retained a hidden 20-R_sun source assumption");
 
-  return Pass("schema version 3 resolves complete SWCME physics, honors explicit Parker references/source radii, and rejects missing or inconsistent physics");
+  return Pass("schema version 4 retains the complete schema-3 SWCME physics contract, honors explicit Parker references/source radii, and rejects missing or inconsistent physics");
 }
 
 Result RunCFG3D09() {
@@ -841,6 +841,197 @@ Result RunCFG3D10() {
       "input explicitly links the Parker start to the canonical SWCME launch apex and rejects radius/direction mismatches");
 }
 
+Result RunCFG3D11() {
+  std::ifstream input("examples/sep3d_analytic_parker.in");
+  std::ostringstream buffer;
+  buffer << input.rdbuf();
+  const std::string complete = buffer.str();
+  if (!input || complete.empty())
+    return Fail("could not read the schema-4 transport/control fixture");
+
+  auto replaceOnce = [](std::string* text, const std::string& from,
+                        const std::string& to) -> bool {
+    if (text == nullptr) return false;
+    const std::size_t at = text->find(from);
+    if (at == std::string::npos) return false;
+    text->replace(at, from.size(), to);
+    return true;
+  };
+
+  RM::RunConfiguration3DOptions options;
+  if (!RM::ParseConfigurationText(complete, &options).ok() ||
+      options.inputSchemaVersion != 4 ||
+      options.transport != RM::TransportModel::Parker3D ||
+      options.activeRegion != RM::ActiveRegionMode::FullDomain ||
+      options.populationControl != RM::PopulationControlMode::Off ||
+      options.source.spectrumModel !=
+          RM::SourceSpectrumModel::LocalCompressionDsa ||
+      options.source.fixedPhaseSpacePowerIndex != 0.0 ||
+      options.spatialDiffusionModel !=
+          RM::SpatialDiffusionModel::CorrelationMeanFreePath ||
+      options.pitchAngleDiffusionModel !=
+          RM::PitchAngleDiffusionModel::Jokipii1966 ||
+      options.meanFreePathModel != RM::MeanFreePathModel::Correlation) {
+    return Fail("canonical schema-4 selectors did not parse exactly");
+  }
+
+  // A fixed phase-space law names q in f(p) proportional to p^(-q).  The
+  // input therefore uses positive q=5 for the published p^-5 seed shape; the
+  // sampling adapter, not the user, performs the dN/dp exponent conversion.
+  std::string fixedSource = complete;
+  if (!replaceOnce(&fixedSource,
+                   "spectrum_model = local-compression-dsa",
+                   "spectrum_model = fixed-phase-space-power-law") ||
+      !replaceOnce(&fixedSource, "phase_space_power_index = 0",
+                   "phase_space_power_index = 5") ||
+      !RM::ParseConfigurationText(fixedSource, &options).ok() ||
+      options.source.spectrumModel !=
+          RM::SourceSpectrumModel::FixedPhaseSpacePowerLaw ||
+      options.source.fixedPhaseSpacePowerIndex != 5.0) {
+    return Fail("fixed p^-5 phase-space source did not parse exactly");
+  }
+  std::string signedIndex = fixedSource;
+  if (!replaceOnce(&signedIndex, "phase_space_power_index = 5",
+                   "phase_space_power_index = -5") ||
+      RM::ParseConfigurationText(signedIndex, &options).ok()) {
+    return Fail("fixed source accepted signed -5 instead of positive q=5");
+  }
+  std::string dormantIndex = complete;
+  if (!replaceOnce(&dormantIndex, "phase_space_power_index = 0",
+                   "phase_space_power_index = 5") ||
+      RM::ParseConfigurationText(dormantIndex, &options).ok()) {
+    return Fail("local DSA source accepted a dormant fixed phase-space index");
+  }
+  std::string missingSourceModel = complete;
+  const std::string modelLine =
+      "spectrum_model = local-compression-dsa\n";
+  const std::size_t modelLineAt = missingSourceModel.find(modelLine);
+  if (modelLineAt == std::string::npos)
+    return Fail("schema-4 fixture lost its explicit source spectrum model");
+  missingSourceModel.erase(modelLineAt, modelLine.size());
+  if (RM::ParseConfigurationText(missingSourceModel, &options).ok())
+    return Fail("schema version 4 accepted a missing source spectrum model");
+
+  // A useful active corridor must contain the separately configured refined
+  // tube and must retain a complete-block stencil halo.  This positive case
+  // uses a wider one-AU radius than the 0.03-AU refinement tube.
+  std::string corridor = complete;
+  if (!replaceOnce(&corridor, "mode = full-domain", "mode = parker-tube") ||
+      !replaceOnce(&corridor, "radius_at_reference_m = 0\nradius_mode = constant-angular-width\nbuffer_blocks = 0",
+                   "radius_at_reference_m = 7.479893535e9\nradius_mode = constant-angular-width\nbuffer_blocks = 1") ||
+      !replaceOnce(&corridor,
+                   "position_x_m = 1.495978707e11\nposition_y_m = 0",
+                   "position_x_m = 8.434093337299539e10\nposition_y_m = -1.2355618105034596e11") ||
+      !replaceOnce(&corridor,
+                   "position_x_m = 4.487936121e10\nposition_y_m = 0",
+                   "position_x_m = 4.378005863160611e10\nposition_y_m = -9.872361866887974e9") ||
+      !RM::ParseConfigurationText(corridor, &options).ok() ||
+      options.activeRegion != RM::ActiveRegionMode::ParkerTube ||
+      options.activeTubeBufferBlocks != 1) {
+    return Fail("valid Parker active corridor did not parse");
+  }
+  std::string narrow = corridor;
+  if (!replaceOnce(&narrow, "radius_at_reference_m = 7.479893535e9",
+                   "radius_at_reference_m = 1e9") ||
+      RM::ParseConfigurationText(narrow, &options).ok()) {
+    return Fail("active corridor narrower than the refinement tube was accepted");
+  }
+  std::string disconnectedObserver = corridor;
+  if (!replaceOnce(&disconnectedObserver,
+                   "position_x_m = 8.434093337299539e10\nposition_y_m = -1.2355618105034596e11",
+                   "position_x_m = 1.495978707e11\nposition_y_m = 0") ||
+      RM::ParseConfigurationText(disconnectedObserver, &options).ok()) {
+    return Fail("observer outside the stationary active corridor was accepted");
+  }
+
+  std::string controlled = complete;
+  if (!replaceOnce(&controlled, "mode = off\nminimum_particles_per_cell_per_species = 0\ntarget_particles_per_cell_per_species = 0\nmaximum_particles_per_cell_per_species = 0",
+                   "mode = split-merge\nminimum_particles_per_cell_per_species = 16\ntarget_particles_per_cell_per_species = 24\nmaximum_particles_per_cell_per_species = 32") ||
+      !RM::ParseConfigurationText(controlled, &options).ok() ||
+      options.populationControl != RM::PopulationControlMode::SplitMerge ||
+      options.minimumParticlesPerCellPerSpecies != 16 ||
+      options.targetParticlesPerCellPerSpecies != 24 ||
+      options.maximumParticlesPerCellPerSpecies != 32) {
+    return Fail("valid split/merge population limits did not parse exactly");
+  }
+  std::string inverted = controlled;
+  if (!replaceOnce(&inverted, "maximum_particles_per_cell_per_species = 32",
+                   "maximum_particles_per_cell_per_species = 20") ||
+      RM::ParseConfigurationText(inverted, &options).ok()) {
+    return Fail("population limits outside minimum <= target <= maximum were accepted");
+  }
+
+  std::string events = complete;
+  if (!replaceOnce(&events, "transport = parker",
+                   "transport = focused-scattering") ||
+      !RM::ParseConfigurationText(events, &options).ok() ||
+      options.transport != RM::TransportModel::FocusedScattering3D) {
+    return Fail("focused-scattering mover with a correlation MFP did not parse");
+  }
+  std::string invalidTransverseEvents = events;
+  if (!replaceOnce(&invalidTransverseEvents, "perpendicular_diffusion = none",
+                   "perpendicular_diffusion = constant") ||
+      !replaceOnce(&invalidTransverseEvents,
+                   "constant_kappa_perpendicular_m2_per_s = 0",
+                   "constant_kappa_perpendicular_m2_per_s = 1e16") ||
+      RM::ParseConfigurationText(invalidTransverseEvents, &options).ok()) {
+    return Fail("unvalidated perpendicular diffusion with discrete scattering was accepted");
+  }
+
+  // The event-validation law is species-general in rigidity. All reference
+  // values and exponents are explicit SI inputs; no proton-only energy
+  // shortcut or hidden 1-AU/1-GV normalization is permitted by the parser.
+  std::string powerLaw = complete;
+  if (!replaceOnce(&powerLaw, "mean_free_path_model = correlation",
+                   "mean_free_path_model = radial-rigidity-power-law") ||
+      !replaceOnce(&powerLaw, "mean_free_path_reference_m = 0",
+                   "mean_free_path_reference_m = 4.487936121e10") ||
+      !replaceOnce(&powerLaw, "mean_free_path_reference_radius_m = 0",
+                   "mean_free_path_reference_radius_m = 1.495978707e11") ||
+      !replaceOnce(&powerLaw, "mean_free_path_reference_rigidity_v = 0",
+                   "mean_free_path_reference_rigidity_v = 1e9") ||
+      !replaceOnce(&powerLaw, "mean_free_path_radial_exponent = 0",
+                   "mean_free_path_radial_exponent = 1") ||
+      !replaceOnce(&powerLaw, "mean_free_path_rigidity_exponent = 0",
+                   "mean_free_path_rigidity_exponent = 0.3333333333333333") ||
+      !RM::ParseConfigurationText(powerLaw, &options).ok() ||
+      options.meanFreePathModel !=
+          RM::MeanFreePathModel::RadialRigidityPowerLaw ||
+      options.meanFreePathReferenceRigidityV != 1.0e9) {
+    return Fail("radial-rigidity power-law MFP did not parse exactly");
+  }
+  std::string invalidPowerLaw = powerLaw;
+  if (!replaceOnce(&invalidPowerLaw,
+                   "mean_free_path_reference_rigidity_v = 1e9",
+                   "mean_free_path_reference_rigidity_v = 0") ||
+      RM::ParseConfigurationText(invalidPowerLaw, &options).ok()) {
+    return Fail("power-law MFP accepted a non-positive reference rigidity");
+  }
+
+  std::shared_ptr<const RM::RunConfiguration3D> configuration;
+  if (!RM::ParseConfigurationText(controlled, &options).ok() ||
+      !RM::RunConfiguration3D::Create(options, &configuration).ok()) {
+    return Fail("valid schema-4 fixture could not be frozen");
+  }
+  std::string summary;
+  if (!RM::BuildDryRunSummary(*configuration, &summary).ok() ||
+      summary.find("active_region_mode=full-domain") == std::string::npos ||
+      summary.find("population_control_mode=split-merge") ==
+          std::string::npos ||
+      summary.find("transport_model=parker") == std::string::npos ||
+      summary.find("spatial_diffusion_model=mean-free-path") ==
+          std::string::npos ||
+      summary.find("source_spectrum_model=local-compression-dsa") ==
+          std::string::npos ||
+      summary.find("source_phase_space_power_index=0") ==
+          std::string::npos) {
+    return Fail("dry-run omitted schema-4 active-region or transport controls");
+  }
+
+  return Pass(
+      "schema-4 corridor, population hysteresis, fixed/DSA source spectra, mover/coefficient compatibility including radial-rigidity MFP, and dry-run contracts passed");
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
@@ -873,5 +1064,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
       make("CFG3D08", "Complete initialization", "Schema-v3 canonical SWCME and exact per-step source contract.", RunCFG3D08),
       make("CFG3D09", "Background/turbulence selection", "Named prescribed slopes and reserved Python source.", RunCFG3D09),
       make("CFG3D10", "CME/Parker start linkage", "Canonical launch-apex linkage and fail-closed geometry checks.", RunCFG3D10),
+      make("CFG3D11", "Transport/control schema", "Active corridor, population limits, mover coefficients, and dry-run output.", RunCFG3D11),
   };
 }

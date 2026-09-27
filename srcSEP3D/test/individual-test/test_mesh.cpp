@@ -393,6 +393,59 @@ Result RunMSH3D11() {
   return Pass("initialized finite Parker line is written as deterministic unit-labeled Tecplot data");
 }
 
+Result RunMSH3D12() {
+  M::ResolutionConfiguration configuration = Baseline();
+  configuration.activeRegion = RM::ActiveRegionMode::ParkerTube;
+  configuration.activeTubeReferenceRadiusM = SEP3D::Core::Const::AU;
+  configuration.activeTubeRadiusAtReferenceM =
+      0.04 * SEP3D::Core::Const::AU;
+  configuration.activeTubeRadiusMode = RM::TubeRadiusMode::PhysicalConstant;
+  configuration.activeTubeBufferBlocks = 1;
+  const double radiusM = 0.7 * SEP3D::Core::Const::AU;
+  const SEP3D::Core::Vec3 centreline =
+      radiusM * M::ParkerTubeDirection(radiusM, configuration);
+  const double halfSideM = 0.005 * SEP3D::Core::Const::AU;
+  const SEP3D::Core::Vec3 half(halfSideM, halfSideM, halfSideM);
+  if (!M::BlockIntersectsActiveRegion(
+          centreline - half, centreline + half, configuration)) {
+    return Fail("a block centred on the Parker line was deactivated");
+  }
+
+  const SEP3D::Core::Vec3 opposite = -1.0 * centreline;
+  if (M::BlockIntersectsActiveRegion(
+          opposite - half, opposite + half, configuration)) {
+    return Fail("a remote opposite-longitude block was retained");
+  }
+
+  // This block is outside the physical tube but inside the declared AMR
+  // neighbour halo required by coefficient stencils and ghost exchange.
+  const SEP3D::Core::Vec3 haloCentre = centreline +
+      SEP3D::Core::Vec3(0.0, 0.0,
+          configuration.activeTubeRadiusAtReferenceM + 2.0 * halfSideM);
+  if (!M::BlockIntersectsActiveRegion(
+          haloCentre - half, haloCentre + half, configuration)) {
+    return Fail("configured active-block halo was not retained");
+  }
+
+  M::ResolutionConfiguration angular = configuration;
+  angular.activeTubeRadiusMode = RM::TubeRadiusMode::ConstantAngularWidth;
+  const double innerWidth = M::ActiveTubeRadiusM(
+      0.5 * SEP3D::Core::Const::AU, angular);
+  const double outerWidth = M::ActiveTubeRadiusM(
+      SEP3D::Core::Const::AU, angular);
+  if (std::fabs(2.0 * innerWidth - outerWidth) >
+      1.0e-14 * outerWidth) {
+    return Fail("constant-angular active radius did not scale linearly");
+  }
+
+  configuration.activeRegion = RM::ActiveRegionMode::FullDomain;
+  if (!M::BlockIntersectsActiveRegion(
+          opposite - half, opposite + half, configuration)) {
+    return Fail("full-domain mode unexpectedly deactivated a block");
+  }
+  return Pass("Parker corridor retains centreline/intersection/halo blocks, rejects remote blocks, and preserves full-domain mode");
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterMeshTests() {
@@ -420,5 +473,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterMeshTests() {
       make("MSH3D09", "Refinement gradients", "Mixed-spacing gradient reconstruction.", RunMSH3D09),
       make("MSH3D10", "Finite Parker initialization", "Point-count, arc-length, and translated-origin identities.", RunMSH3D10),
       make("MSH3D11", "Initialization Tecplot", "Finite Parker-line visualization output.", RunMSH3D11),
+      make("MSH3D12", "Active Parker corridor", "Conservative AMR block deactivation and halo contract.", RunMSH3D12),
   };
 }

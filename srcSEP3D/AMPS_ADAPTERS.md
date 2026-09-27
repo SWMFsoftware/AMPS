@@ -9,12 +9,13 @@ bookkeeping, and conservation accounting only.
 ## Production mover path
 
 `AMPS::Movers::MoveParticle` is the sole AMPS mover entry point. The immutable
-run configuration selects exactly one of two registered cores:
+run configuration selects exactly one of three registered cores:
 
 | Canonical name | Configuration | Core |
 |---|---|---|
-| `parker3d-tensor` | `TransportModel::Parker3D` | `AdvanceParker` |
-| `focused3d-split` | `TransportModel::Focused3D` | `AdvanceFocused` |
+| `parker` | `TransportModel::Parker3D` | `AdvanceParker` |
+| `focused-diffusion` | `TransportModel::FocusedDiffusion3D` | `AdvanceFocused` |
+| `focused-scattering` | `TransportModel::FocusedScattering3D` | `AdvanceFocusedScattering` |
 
 The path for one particle is:
 
@@ -42,8 +43,10 @@ The local resolver is explicit because a coupled run must never read mutable
 SWMF arrays while mover workers are active. For a Parker run it must provide
 `kappaParallelM2PerS` and the full field-aligned derivative
 `dKappaParallelDsMPerS`; setting the derivative to zero is valid only for a
-physically constant coefficient. For focused transport it supplies both
-`D_mumu` and `dD_mumu/dmu` from the shared coefficient bridge.
+physically constant coefficient. For focused diffusion it supplies both
+`D_mumu` and `dD_mumu/dmu`; for focused scattering it supplies
+`lambda_parallel` and the directional turbulence fractions. All are produced
+by the shared coefficient bridge under the immutable input selectors.
 
 ### Persistent particle schema
 
@@ -54,7 +57,9 @@ particle buffer is frozen. The extension contains:
 - stable particle ID;
 - completed global step and transport substep;
 - last crossed shock generation;
-- total relativistic momentum, pitch cosine, and gyrophase.
+- total relativistic momentum, pitch cosine, and gyrophase;
+- residual exponential scattering optical depth and next scattering-event
+  index.
 
 All access uses `memcpy`; AMPS extension offsets are not assumed to satisfy C++
 structure alignment. AMPS's own particle restart therefore carries the same
@@ -103,10 +108,21 @@ f(p)\propto p^{-q},\qquad \frac{dN}{dp}\propto p^2f(p)
 \]
 
 Therefore the shared `sep_common` linear-momentum spectrum receives
-`powerIndex=q-2`. The minimum and maximum kinetic energies are converted to
-relativistic SI momentum by the common SWCME helper. `SampleInjectedParticle`
-then uses independent keyed streams for momentum, pitch angle, gyrophase, and
-stable ID. Isotropic launch uses `mu=2u-1` and `phi=2 pi u`.
+`powerIndex=q-2`. In `local-compression-dsa` mode, q is the patch-local value
+published by SWCME. In `fixed-phase-space-power-law` mode,
+`ConfigureSpeciesSpectrum` replaces only that shape with the reviewed positive
+q from `[source].phase_space_power_index`; shock position, normal, generation,
+patch weight, and compression diagnostics remain provider-owned. This is how a
+published \(f(p)\propto p^{-5}\) boundary is represented without pretending
+that its slope came from a compression ratio.
+
+The minimum and maximum kinetic energies are converted to relativistic SI
+momentum separately with every compiled species mass.
+`SampleInjectedParticle` then uses independent keyed streams for momentum,
+pitch angle, gyrophase, and stable ID. Isotropic launch uses `mu=2u-1` and
+`phi=2 pi u`. The spectrum selector does not derive an absolute birth rate
+from a boundary phase-space density; the source-number contract remains
+explicit and auditable.
 
 Each macroparticle represents
 
@@ -130,7 +146,7 @@ empty active source, or insufficient computational sample count before AMPS
 mesh allocation. Before `event.valid_from` it publishes a valid inactive state;
 it does not invent a shock.
 
-For schema 3, `source.samples_per_step` is an exact integer for each compiled
+For schemas 3 and 4, `source.samples_per_step` is an exact integer for each compiled
 AMPS species, not an independent expectation for every patch. For each species,
 `AllocateExactPatchMacroparticles` reserves one representative for each
 positive-weight active patch, apportions the remaining integer samples in
@@ -176,6 +192,78 @@ with `MPI_Allreduce` and imported only if the global row closes exactly. This
 ordering makes ordinary rank migration invisible to conservation while still
 detecting an invalid final-list insertion or an unaccounted deletion.
 
+## Particle splitting and merging
+
+### AMPS-core audit
+
+AMPS supplies two population-control layers in
+`src/pic/pic_particle_spliting.cpp`:
+
+- the legacy global `ParticleSplitting::Mode`, called automatically near the
+  end of `PIC::TimeStep`; and
+- the newer `MergeParticleList(spec, head, target)` and
+  `SplitParticleList(spec, head, target)` linked-list routines.
+
+The generic routines are useful allocation/list mechanisms, but they are not a
+safe complete SEP resampler without application callbacks. The audit found:
+
+1. historical empty-bin/list paths could dereference `particles[0]` or call
+   `std::next(end)`; guards now return for non-positive targets, empty merge
+   lists, and split lists with fewer than two particles;
+2. `CloneParticle` correctly preserves AMPS `next`/`prev` links, but it copies
+   every application extension byte, including srcSEP3D stable identity and
+   residual scattering state;
+3. the generic 3-to-2 merge conserves a nonrelativistic weighted `v^2`
+   moment. SEP particles may be relativistic, so that is not conservation of
+   their kinetic energy;
+4. the generic merge uses process-order `rnd()` and does not update
+   application momentum, pitch, gyrophase, shock-generation, or semantic RNG
+   fields after changing Cartesian velocity.
+
+The recommended core-level completion is a registered application resampling
+policy with callbacks for (a) energy/momentum reconstruction, (b) extension
+state after split/merge, and (c) semantic random direction. Until such a policy
+exists, srcSEP3D disables the automatic legacy mode immediately after
+`PIC::Init_BeforeParser()` and does not call the generic high-level merge.
+
+### SEP-aware boundary controller
+
+`ApplyPopulationControl` still uses the tested AMPS primitives
+`GetNewParticle(head)`, `CloneParticle`, and `DeleteParticle(ptr, head)` so list
+ownership remains in AMPS. The application layer supplies the missing physics:
+
+- split the current heaviest representative into an original and clone with
+  exactly half the input individual weight;
+- merge three deterministic low-weight representatives into two equal-weight
+  outputs at their weighted position centroid;
+- solve the output momentum displacement by bisection against exact
+  relativistic energy
+  `sqrt(p^2 c^2 + m^2 c^4)-m c^2`, while conserving vector momentum and total
+  statistical weight;
+- resolve the magnetic direction at the actual output centroid and recompute
+  pitch, gyrophase, and Cartesian velocity from each new momentum;
+- assign semantic stable IDs to merge products, a distinct ID to the split
+  child, reset event optical depth under the new histories, and retain the
+  maximum last-shock generation;
+- restart the semantic operation ordinal independently within each physical
+  cell/species population, so changing MPI block ownership cannot change a
+  merge direction or post-resampling stable ID; and
+- report maximum relative weight, momentum, and relativistic-energy residuals.
+
+Hysteresis is per active cell and compiled species. An empty cell is never
+populated. If a nonempty count is below `minimum` or above `maximum`, repeated
+operations drive it to `target`; a count inside the band is untouched. The
+controller runs only at a joined iteration boundary, after shock injection and
+before observer publication/checkpointing. Thus no mover, source allocator, or
+MPI list exchange can run concurrently, and the controlled representation is
+the one that enters the next `PIC::TimeStep`.
+
+The limits are deliberately not one global particle count. Moving weight
+between spatial cells merely to satisfy a global target changes density and
+the phase-space distribution. Per-cell/per-species maxima provide a concrete
+upper bound proportional to the occupied active mesh, while local minima
+protect statistics only where a represented population already exists.
+
 ## Production configuration requirement
 
 Run the hook after configuring AMPS and before compiling `pic_mover.cpp`:
@@ -201,7 +289,9 @@ position, avoiding replicated physical totals at checkpoint gather.
 
 ## Evidence
 
-- `ADP3D01`: exact two-entry registry and validating dispatch.
+- `ADP3D01`: exact three-entry registry and validating dispatch.
+- `POP3D01`: relativistic 3-to-2 weight, momentum, energy, and position
+  centroid conservation.
 - `NAT3D04`: inner, outer, and invalid-background dispositions.
 - `NAT3D05`: exact ledger closure and transactional mismatch.
 - `NAT3D08`: first moving-shock root and generation de-duplication.

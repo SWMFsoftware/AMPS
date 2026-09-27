@@ -171,7 +171,8 @@
       "name": "2013 April 11 near-Earth event",
       "evidence_class": "series",
       "role": "release-gate",
-      "description": "ACE/EPAM, GOES-13/EPEAD, and SOHO/ERNE comparison with reviewed provenance.",
+      "description": "ACE/EPAM, GOES-13/EPEAD, and SOHO/ERNE comparison with reviewed provenance and an explicit no-guesses setup blueprint.",
+      "parameter_manifest": "cases/2013-04-11/parameters.json",
       "acceptance": {
         "normalization": "one-global-amplitude",
         "minimum_coverage": 0.9,

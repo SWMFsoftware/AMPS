@@ -14,9 +14,12 @@ physics is the Parker or focused transport equation in an analytic Parker or
 coupled SWMF/AWSoM background, with Alfvén-turbulence scattering and SWCME
 shock/source parameters.
 
-## Complete standalone initialization input (schema 3)
+## Complete standalone initialization input (schema 4)
 
-New standalone shock-injection runs use the strict schema-3 deck:
+New standalone shock-injection runs use the strict schema-4 deck. Schema 4
+retains the complete schema-3 SWCME initialization contract and adds the
+active Parker corridor, particle-population control, and explicit
+mover/coefficient selections:
 
 ```sh
 ./amps --input srcSEP3D/examples/sep3d_analytic_parker.in --dry-run
@@ -52,11 +55,11 @@ The file is INI syntax. Section/key names are case-insensitive, `#` begins a
 comment, and each assignment is `key = value`. Application dimensional keys
 are bare SI values with the unit in the key. Values inside `[swcme]` retain
 their unit token and are resolved by the canonical model-owned parser. Schema
-3 requires even mode-inactive application fields so a later mode edit cannot
+4 requires even mode-inactive application fields so a later mode edit cannot
 silently revive a C++ default. The only deliberately excluded model values are
 deprecated compatibility parameters that no longer affect SWCME physics.
 Assignments before a section header are invalid. In particular, a legacy flat
-line such as `scattering = ...` is not a schema-3 srcSEP3D field and is not
+line such as `scattering = ...` is not a schema-4 srcSEP3D field and is not
 silently mapped to turbulence or pitch-angle transport. The authoritative
 example begins with `[run]`; scattering-related choices are explicitly split
 between `[turbulence]` and `[transport]`.
@@ -65,12 +68,13 @@ between `[turbulence]` and `[transport]`.
 
 | Section | Required keys | Contract |
 |---|---|---|
-| `[run]` | `schema_version`, `intent`, `transport`, `time_step_s`, `maximum_time_steps`, `campaign_seed`, `background_cadence_steps`, `injection_cadence_steps` | Schema is `3`; intent is `shock-injection`; transport is `parker3d` or `focused3d`. Time step is positive SI seconds, seed and step counts are nonzero, and injection cadence must be exactly one because `samples_per_step` is a count for every simulation step. |
+| `[run]` | `schema_version`, `intent`, `transport`, `time_step_s`, `maximum_time_steps`, `campaign_seed`, `background_cadence_steps`, `injection_cadence_steps` | Schema is `4`; intent is `shock-injection`; transport is `parker`, `focused-diffusion`, or `focused-scattering`. Time step is positive SI seconds, seed and step counts are nonzero, and injection cadence is one because `samples_per_step` is the exact per-step count. Older mover spellings remain parser aliases, but the resolved manifest uses canonical names. |
 | `[domain]` | `preset`, `inner_radius_m`, `inner_boundary`, `outer_radius_mode`, `outer_radius_m`, `outer_boundary`, `coordinate_frame`, `origin_x_m`, `origin_y_m`, `origin_z_m` | Presets are `solar`, `one-au`, or `mars`; outer mode is `preset` or `explicit`. The current heliocentric implementation requires the declared origin `(0,0,0)`, absorbing inner boundary, and a domain containing fixed observers and mesh references. |
 | `[parker_spiral]` | `origin_x_m`, `origin_y_m`, `origin_z_m`, `start_mode`, `initial_x_m`, `initial_y_m`, `initial_z_m`, `length_m`, `point_count` | Finite diagnostic/refinement centreline. `start_mode=explicit` uses the reviewed Cartesian point independently. `start_mode=cme-launch-point` requires that point, the inner radius, and the mesh-tube direction to equal the canonical SWCME launch apex defined by `cme.launch_radius` and normalized `geometry.cme_direction_*`. Length is positive arc length and count includes both endpoints. |
 | `[mesh]` | `global_cell_size_m`, `minimum_cell_size_m`, `cells_per_block_edge`, `maximum_level`, `memory_budget_bytes`, `block_overhead_bytes` | Global/floor resolution, AMPS block shape, realizable AMR depth, and pre-allocation resource ceiling. |
 | `[mesh.solar]` | `enabled`, `surface_cell_size_m`, `transition_outer_radius_m`, `profile`, `exponent` | Resolution at the Sun and its radial degradation to the global value. Profiles are `linear`, `power-law`, or `smoothstep`; exponent is positive. |
 | `[mesh.tube]` | `enabled`, `source_longitude_rad`, `source_colatitude_rad`, `reference_radius_m`, `radius_at_reference_m`, `radius_mode`, `center_cell_size_m`, `transverse_profile`, `transverse_exponent` | Parker-centreline location, physical/angular tube radius, centre resolution, and degradation in the perpendicular plane. Radius mode is `physical-constant` or `constant-angular-width`; profile choices match `[mesh.solar]`. |
+| `[mesh.active_region]` | `mode`, `reference_radius_m`, `radius_at_reference_m`, `radius_mode`, `buffer_blocks` | `full-domain` retains every AMR leaf and requires zero inactive tube values. `parker-tube` disables complete leaves that cannot intersect the independently declared transport corridor. Its physical radius must contain the refinement tube; at least one block of halo is required for stencils and crossings. Every fixed observer collection sphere must intersect the corridor. Moving/field-connected observers require a future dynamic reactivation contract and are rejected with this static mask. |
 | `[memory]` | `base_cell_bytes`, `base_node_bytes`, `block_structure_bytes`, `communication_bytes_per_block`, `particle_bytes`, `particles_per_cell`, `halo_fraction`, `safety_margin_fraction` | Explicit build-dependent coefficients used by the allocation-free memory preflight; fractions are finite and nonnegative. |
 
 The near-Sun interpolation is
@@ -105,11 +109,104 @@ deliberately sub-cell tube and checks every sampled centreline segment.
 | `[background]` | `provider`, `external_script` | Implemented standalone authority is `analytic-parker`. `python-interpolator` is a recognized, typed, reserved future authority and stops before AMPS initialization; it never falls through to Parker/SWMF. The legacy Boolean must remain false. A coupled SWMF host uses the parser-free typed interface. |
 | `[background.parker]` | `reference_radius_m`, `radial_field_at_reference_t`, `solar_rotation_rate_rad_per_s`, `solar_wind_speed_m_per_s`, `magnetic_polarity`, `number_density_at_one_au_m3`, `temperature_k`, `validity_cadence_s` | SI cross-check of the Parker/SWCME ambient state. Magnetic Br may use any valid reference radius; electron density is unambiguously at one AU. Wind, rotation, source radius, field, density, temperature, and polarity must agree with `[swcme]`; the typed provider then receives canonical SWCME values, including its thermodynamic closure/composition. |
 | `[turbulence]` | `authority`, `model`, `amplitude_model`, `delta_b_over_b`, `wave_energy_density_at_reference_j_per_m3`, `wave_energy_density_radial_exponent`, `normalized_cross_helicity`, `reference_radius_m`, `k_min_per_m`, `k_max_per_m`, `k_min_radial_exponent`, `k_max_radial_exponent`, `spectral_index`, `correlation_length_m`, `correlation_length_radial_exponent`, `validity_cadence_s`, `missing_data`, `resonance_range`, `self_consistent_3d` | Standalone authority is `prescribed`. Spectral `model` is `kolmogorov`, `kraichnan`, or `power-law`; named models require exactly their documented slope. `amplitude_model` independently selects `constant-delta-b-over-b` or `wave-energy-power-law`. Exactly one amplitude normalization is active and the other must be zero. Cross helicity explicitly partitions directional energy. Self-consistent 3-D is false. Missing-data policy is `fail` or `ballistic`; resonance policy is `reject` or `power-law-extension`. |
-| `[transport]` | `cell_crossing_fraction`, `diffusion_fraction`, `focusing_fraction`, `cooling_fraction`, `field_variation_fraction`, `shock_crossing_fraction`, `minimum_substep_s`, `maximum_substeps`, `pitch_angle_scheme`, `perpendicular_diffusion`, `constant_kappa_perpendicular_m2_per_s`, `kappa_perpendicular_to_parallel_ratio`, `drifts` | Positive timestep limiters. Pitch scheme is `reflecting-milstein` or `reflecting-euler-maruyama`. Perpendicular mode is `none`, `constant`, or `constant-ratio`; drift is `none`, `gradient-b`, `curvature`, or `gradient-curvature`. Selected extensions require their positive coefficient/storage. |
-| `[shock]` | `authority` | Must be `swcme`. Schema 3 rejects the retired constant-radius/speed/compression surrogate fields. |
-| `[source]` | `enabled`, `physical_particle_rate_per_s`, `injection_efficiency`, `minimum_energy_j`, `maximum_energy_j`, `samples_per_step` | All values apply independently to every species compiled by AMPS `SpeciesList`. Rate is the per-species physical seed rate before efficiency and patch partition; energies are total kinetic-energy bounds; `samples_per_step` is the exact per-species computational count over the complete shock. Each patch's canonical compression ratio determines its DSA slope. |
+| `[transport]` | `cell_crossing_fraction`, `diffusion_fraction`, `focusing_fraction`, `cooling_fraction`, `field_variation_fraction`, `shock_crossing_fraction`, `minimum_substep_s`, `maximum_substeps`, `pitch_angle_scheme`, `spatial_diffusion_model`, `pitch_angle_diffusion_model`, `mean_free_path_model`, `constant_dmumu_per_s`, `constant_mean_free_path_m`, `mean_free_path_reference_m`, `mean_free_path_reference_radius_m`, `mean_free_path_reference_rigidity_v`, `mean_free_path_radial_exponent`, `mean_free_path_rigidity_exponent`, `spatial_quadrature_absolute_tolerance_m2_per_s`, `spatial_quadrature_relative_tolerance`, `spatial_quadrature_maximum_recursion`, `focused_scattering_frame`, `maximum_scattering_events_per_substep`, `perpendicular_diffusion`, `constant_kappa_perpendicular_m2_per_s`, `kappa_perpendicular_to_parallel_ratio`, `drifts` | Parker consumes `mean-free-path` or `pitch-angle-integral` spatial diffusion. Focused diffusion consumes `jokipii-1966`, `florinskiy`, or `constant` Dμμ. Focused scattering consumes `correlation`, `constant`, or `radial-rigidity-power-law` mean free path and scatters isotropically in `plasma-frame-isotropic` or `alfven-wave-frame-isotropic`. Constant/reference selectors require positive SI values when active; inactive model parameters are zero. Discrete scattering currently requires perpendicular diffusion `none`. |
+| `[shock]` | `authority` | Must be `swcme`. Schemas 3 and 4 reject the retired constant-radius/speed/compression surrogate fields. |
+| `[source]` | `enabled`, `physical_particle_rate_per_s`, `injection_efficiency`, `minimum_energy_j`, `maximum_energy_j`, `spectrum_model`, `phase_space_power_index`, `samples_per_step` | All values apply independently to every species compiled by AMPS `SpeciesList`. Rate is the per-species physical seed rate before efficiency and patch partition; energies are total kinetic-energy bounds; `samples_per_step` is the exact per-species computational count over the complete shock. `local-compression-dsa` derives the phase-space index from each canonical shock patch and requires a zero inactive index. `fixed-phase-space-power-law` uses the declared positive \(q>2\) in \(f(p)\propto p^{-q}\). |
 | `[species]` | `macroparticle_weight` | Post-compile input owns only the positive common base AMPS statistical weight. Count, order, symbols, masses, and charges come exclusively from the compiled AMPS table and cannot be redefined here. |
 | `[storage]` | `magnetic_gradient`, `velocity_gradient`, `sampling_bytes_per_cell` | Explicit associated-data layout. Required transport choices may force a gradient on before the layout fingerprint freezes. |
+| `[population_control]` | `mode`, `minimum_particles_per_cell_per_species`, `target_particles_per_cell_per_species`, `maximum_particles_per_cell_per_species`, `cadence_steps` | `off` requires three zero limits. `split-merge` requires `2 <= minimum <= target <= maximum` and positive cadence. Each occupied owner-local cell/species outside the hysteresis band is driven to target; empty cells stay empty. Control runs after shock injection and before observer/checkpoint publication. |
+
+For the radial–rigidity mean-free-path closure, the implemented equation is
+
+\[
+\lambda_\parallel(r,p,q)=\lambda_0
+\left(\frac{r}{r_0}\right)^{a}
+\left(\frac{pc/|q|}{\mathcal R_0}\right)^{b}.
+\]
+
+`mean_free_path_reference_m`, `mean_free_path_reference_radius_m`, and
+`mean_free_path_reference_rigidity_v` are respectively
+\(\lambda_0\), \(r_0\), and \(\mathcal R_0\) in metres, metres, and volts;
+the two exponent keys are \(a\) and \(b\). Rigidity is evaluated from each
+compiled species' actual momentum and signed charge, so a multi-species run
+does not reuse a proton kinetic-energy approximation. The 2013-04-11
+M-FLAMPA setup is expressed by `lambda_0=0.3 AU`, `r_0=1 AU`,
+`R_0=1 GV`, `a=1`, and `b=1/3`. With `spatial_diffusion_model =
+mean-free-path`, either focused-scattering or Parker transport consumes the
+same selected \(\lambda_\parallel\); Parker converts it using
+\(\kappa_\parallel=v\lambda_\parallel/3\). The legacy spelling
+`correlation-mean-free-path` is accepted as a parser alias for
+`mean-free-path`, but manifests and dry-run output always use the canonical
+name.
+
+The publication-backed 2013 April 11 OV3D01 mapping, including the distinct
+CME-apex and Earth-connected Parker-start coordinates, observation products,
+and parameters that must still be fitted rather than guessed, is documented in
+[`validation/cases/2013-04-11/README.md`](validation/cases/2013-04-11/README.md).
+Its machine-readable companion is validated whenever the Phase-V registry is
+loaded; it is a setup blueprint, not a falsely complete executable deck.
+
+The source-spectrum selector deliberately distinguishes phase-space density
+from the distribution actually sampled by macroparticles. For an isotropic
+fixed law
+
+\[
+f(p)\propto p^{-q},\qquad
+\frac{dN}{dp}=4\pi p^2f(p)\propto p^{-(q-2)}.
+\]
+
+Thus the published spelling “\(p^{-5}\)” is entered as
+`phase_space_power_index = 5`; the adapter samples `dN/dp` with exponent 3.
+The index controls shape only. `physical_particle_rate_per_s` remains the
+explicit number-rate normalization, because converting a boundary
+phase-space density such as Liu et al. Equation 21 into a Monte Carlo birth
+rate requires a separately declared boundary-flux/volume contract. The code
+does not silently infer that missing mapping from density, temperature, or a
+dimensionless coefficient.
+
+### Parker corridor and population-control examples
+
+The refinement tube and active tube are intentionally separate. Refinement
+chooses cell size; activation chooses whether an entire finalized AMR leaf is
+allocated at all. A practical narrow-domain setup is:
+
+```ini
+[mesh.active_region]
+mode = parker-tube
+reference_radius_m = 1.495978707e11
+radius_at_reference_m = 7.479893535e9
+radius_mode = constant-angular-width
+buffer_blocks = 1
+
+[population_control]
+mode = split-merge
+minimum_particles_per_cell_per_species = 16
+target_particles_per_cell_per_species = 24
+maximum_particles_per_cell_per_species = 32
+cadence_steps = 1
+```
+
+At each block's radius, `constant-angular-width` evaluates
+`R_active(r)=R_ref*r/r_ref`; `physical-constant` uses `R_ref` unchanged. The
+classifier retains a block when its centre or a corner lies in the tube and
+also retains a conservative half-diagonal intersection envelope. The declared
+`buffer_blocks` adds complete local block diagonals. This construction may
+retain extra blocks but cannot intentionally cut a hole through the sampled
+Parker curve. AMPS exposes activation only at leaf-block granularity, so the
+word “cell disabling” here means all cells in a disabled leaf have
+`IsUsedInCalculationFlag=false` and no block storage is allocated.
+
+Population limits are per allocated AMR cell and per compiled species. That is
+the finest scope at which AMPS owns an independent linked particle list; a
+global count controller would have to transfer statistical weight between
+unrelated phase-space cells and would change the represented distribution.
+Splitting clones the heaviest particle with two exact half weights. Merging
+maps three low-weight particles to two equal-weight particles while conserving
+statistical weight, vector momentum, relativistic kinetic energy, and the
+weighted position centroid. New stochastic identities and scattering optical
+depths prevent cloned histories from sharing future random events. The
+controller reports global operation counts and maximum conservation residuals
+at every applied cadence.
 
 ### Initialized Parker, solar-wind, and turbulence physics
 
@@ -242,7 +339,7 @@ the same all-rank transaction used by Parker/SWMF succeeds. Python will never
 be called from a particle mover or used as an unvalidated point-by-point
 fallback.
 
-For schema 3 the base AMPS weight must satisfy
+For schemas 3 and 4 the base AMPS weight must satisfy
 
 \[
 W_0=\frac{\dot N_\mathrm{seed}\,\epsilon\,
@@ -531,7 +628,7 @@ surface.phi_points = 24
 `cme.data_radii`; the pair is forbidden otherwise. The canonical resolver
 validates all units and model combinations, then emits a normalized manifest
 and fingerprint. The standalone AMPS crossing operator is currently spherical,
-so schema 3 deliberately accepts only `geometry.shape = sphere`,
+so schemas 3 and 4 deliberately accept only `geometry.shape = sphere`,
 `shock.region_mode = shock_only`, and `shock.acceleration_mode = source`.
 Ellipsoid or SSE input is rejected rather than approximated by a sphere.
 `source.normalization` must be `relative_only` because the application-owned
@@ -775,6 +872,14 @@ normalization, policies, and the shared-kernel boundary.
 - The focused core advances full gyrotropic focusing and flow coefficients
   with a symmetric split, reflecting pitch boundaries, and a declared
   Milstein or Euler–Maruyama stochastic scheme.
+- The event-driven focused core carries exponential scattering optical depth
+  across AMR substeps, uses `nu=v/lambda_parallel`, and isotropizes either in
+  the plasma frame or in a directionally selected Alfvén-wave frame. The
+  latter uses the initialized `w+`/`w-` partition and exact Lorentz transforms.
+- Spatial, pitch-angle, and mean-free-path coefficient selectors are
+  independent input fields. The resolver evaluates only quantities consumed
+  by the selected mover, so an unused ninety-degree resonance cannot veto a
+  mean-free-path event step.
 - Cell crossing, diffusion, focusing, cooling, background variation, shock
   crossing, and snapshot validity are separate named timestep limits.
 - Counter-based random streams are keyed by campaign, particle, step,
@@ -795,11 +900,15 @@ algorithm, reproducibility contract, and Phase-P acceptance tests.
 
 ### Phase A: AMPS mover and SWCME source adapters
 
-- One AMPS particle-buffer entry point validates and dispatches exactly the
-  tensor Parker or split focused core selected by immutable configuration.
+- One AMPS particle-buffer entry point validates and dispatches exactly one of
+  the tensor Parker, continuous focused-diffusion, or discrete
+  focused-scattering cores selected by immutable configuration.
 - A packed particle extension persists stable ID, stochastic step/substep,
-  shock generation, momentum, pitch cosine, and gyrophase through migration
-  and AMPS checkpointing.
+  shock generation, momentum, pitch cosine, gyrophase, residual scattering
+  optical depth, and next event index through migration and checkpointing.
+- The legacy AMPS automatic splitter is disabled. The joined-boundary
+  SEP-aware controller uses AMPS allocation/clone/delete list primitives but
+  owns relativistic moment conservation and application metadata updates.
 - The adapter performs deterministic gyrotropic-to-Cartesian velocity
   reconstruction, exact destination-list insertion, and explicit terminal
   deletion/return-code mapping.
@@ -975,6 +1084,7 @@ test/run_tests.py --suite improvements-r --rebuild
 
 # Configured Phase-V executable and independently owned evidence.
 test/run_tests.py --suite phase-v --amps ../amps \
+  --validation-input /path/to/reviewed-sep3d.in \
   --validation-data /path/to/evidence \
   --validation-launch-prefix "mpiexec -n 8" \
   --output-dir test_output/phase-v
@@ -1039,14 +1149,14 @@ halo-exchanged before the final data-bearing initialization writer is called.
 | `HARN`, `RUNNER`, `LAY`, `BLD`, `UTIL` | runner, layering, binary boundary, frozen common kernels |
 | `LIFE3D01–04` | immutable configuration and complete lifecycle transition matrix |
 | `R3D01–07` | mover hook, subcycling, transactional snapshots, clock/events, source, observers, complete restart |
-| `CFG3D01–10` | input/CLI, typed contracts, domains, shared Parker geometry, mesh/memory preflight, finite-line/schema-3 contracts, AMPS species binding, background/turbulence selection, CME/Parker launch-apex linkage |
-| `MSH3D01–10` | resolution bounds/laws, tube geometry, balance, octrees, memory, ownership, presets, gradients, finite-line/origin identities |
+| `CFG3D01–11` | input/CLI, typed contracts, domains, shared Parker geometry, mesh/memory preflight, finite-line/schema-4 contracts, AMPS species binding, background/turbulence selection, CME/Parker linkage, active corridor, population limits, and mover/coefficient compatibility |
+| `MSH3D01–12` | resolution bounds/laws, tube geometry, balance, octrees, memory, ownership, presets, gradients, finite-line/output identities, and conservative active-corridor classification |
 | `BGP3D01–07` | analytic Parker identities, component laws, focusing, wind derivatives, polar limits, SWCME Leblanc/multi-species closure |
 | `SNAP3D01–08` | completeness, finite values, units, epochs, atomicity, interpolation, batch status, frame |
 | `TUR3D01–06` | spectrum normalization, AWSoM mapping, resonance range, missing-data policy, selectable slopes/amplitude laws/cross helicity, mandatory Tecplot wave energy |
-| `COEF3D01–02`, `COEF3D06` | six-decade conversions, bitwise shared-kernel identity, and nonzero field-aligned kappa-gradient stencils |
+| `COEF3D01–02`, `COEF3D06–07` | six-decade conversions, bitwise shared-kernel identity, nonzero field-aligned kappa-gradient stencils, and selected-model analytic limits |
 | `COEF3D03–05`, `PRK3D01–08` | tensor assembly/Itô drift and Parker transport behavior |
-| `FTE3D01–07`, `RNG3D01–03` | focused transport, pitch boundaries, strong-scattering limit, keyed reproducibility |
+| `FTE3D01–09`, `RNG3D01–03`, `POP3D01` | continuous/discrete focused transport, pitch boundaries, strong-scattering limit, frame-energy conservation, keyed reproducibility, and relativistic merge conservation |
 | `ADP3D01`, `NAT3D04–05/08`, `SHK3D01–04` | mover dispatch, boundaries, ledger, moving shocks, common SWCME source |
 | `NAT3D06–07`, `RST3D01–03` | sampling isolation, transactional output/schema, complete restart |
 | `INT3D01–03`, `VFY3D01–05` | deterministic rank audit, scientific metrics, analytical Parker/focused/source validation |
@@ -1130,10 +1240,10 @@ required after every production-boundary change.
 ## Historical schema-version-2 Parker initialization
 
 Schema version 2 introduced the required `[parker_spiral]` section that is also
-present in the current schema-3 example. It supplies the origin, initial point,
+present in the current schema-4 example. It supplies the origin, initial point,
 physical arc length, and total number of points in SI units. Version-1 and
 version-2 files remain accepted for archived campaigns and typed SWMF-host
-construction; new standalone shock-injection runs should use schema 3.
+construction; new standalone shock-injection runs should use schema 4.
 
 During standalone initialization the input is parsed before the runtime
 lifecycle enters mesh setup.  The finite line is materialized with a

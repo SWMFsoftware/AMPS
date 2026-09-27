@@ -30,6 +30,15 @@ enum class RandomPurpose : std::uint64_t {
   // cannot change the Parker-parallel or focused-pitch random history.
   PerpendicularFirst = 8,
   PerpendicularSecond = 9,
+  // Event-driven focused scattering keys by nextEventIndex rather than by
+  // numerical substep.  Changing AMR/snapshot subcycling therefore cannot
+  // shift the physical event sequence.
+  ScatteringOpticalDepth = 10,
+  ScatteringBranch = 11,
+  ScatteringPitch = 12,
+  // Population resampling is similarly isolated from transport histories.
+  PopulationMergeDirection = 13,
+  PopulationSplitIdentity = 14,
   ReservedFuturePhysics = 1024
 };
 

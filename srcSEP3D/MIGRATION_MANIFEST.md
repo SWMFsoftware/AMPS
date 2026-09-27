@@ -269,7 +269,7 @@ boundary policy are registered as `COEF3D06` and run in `phase-t`.
 
 | File | Ownership and invariant |
 |---|---|
-| `adapters/transport_adapter.{h,cpp}` | complete-record validation, exact two-core dispatch, named substep, boundaries, and expanding-shock crossing |
+| `adapters/transport_adapter.{h,cpp}` | complete-record validation, exact three-core dispatch (Parker, focused diffusion, focused scattering), named substep, boundaries, and expanding-shock crossing |
 | `adapters/particle_ledger.{h,cpp}` | exact integer particle conservation per step/species |
 | `adapters/swcme_source_adapter.{h,cpp}` | canonical SWCME source to shared DSA sampler; dimension-independent semantic keys |
 | `amps/amps_particle_adapter.{h,cpp}` | packed AMPS particle state, ABI return mapping, deterministic velocity reconstruction, and destination-list insertion |

@@ -74,6 +74,13 @@ struct ResolutionConfiguration {
   RuntimeModel::RefinementProfile tubeTransverseProfile =
       RuntimeModel::RefinementProfile::Smoothstep;
   double tubeTransverseExponent = 1.0;
+  RuntimeModel::ActiveRegionMode activeRegion =
+      RuntimeModel::ActiveRegionMode::FullDomain;
+  double activeTubeReferenceRadiusM = Core::Const::AU;
+  double activeTubeRadiusAtReferenceM = 0.0;
+  RuntimeModel::TubeRadiusMode activeTubeRadiusMode =
+      RuntimeModel::TubeRadiusMode::ConstantAngularWidth;
+  unsigned activeTubeBufferBlocks = 0;
   double solarWindSpeedMPerS = Core::Const::V_sw_default;
   double solarRotationRateRadPerS = Core::Const::Omega_sun;
   Core::Vec3 rotationAxis = {0.0, 0.0, 1.0};
@@ -113,6 +120,21 @@ double TubeDistanceM(const Core::Vec3& positionM,
                      const ResolutionConfiguration& configuration);
 double RequestedCellSizeM(const Core::Vec3& positionM,
                           const ResolutionConfiguration& configuration);
+
+// Return the physical radius of the *active* transport corridor.  This is
+// intentionally separate from TubeRadiusM(): refinement and allocation masks
+// serve different purposes and need not have the same width.
+double ActiveTubeRadiusM(double radiusM,
+                         const ResolutionConfiguration& configuration);
+
+// Conservative block classifier shared by the AMPS adapter and standalone
+// tests.  ``true`` means the leaf must remain allocated.  The test uses the
+// block centre/corners plus a complete-block Lipschitz envelope and the
+// configured block halo, so it may retain extra blocks but must not remove a
+// block intersected by the declared Parker corridor.
+bool BlockIntersectsActiveRegion(
+    const Core::Vec3& minimumM, const Core::Vec3& maximumM,
+    const ResolutionConfiguration& configuration);
 
 // Generate pointCount points separated by uniform requested arc length.  A
 // midpoint tangent step is used instead of a first-order Euler step so a

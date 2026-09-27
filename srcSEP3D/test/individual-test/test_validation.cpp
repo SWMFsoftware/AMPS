@@ -14,6 +14,7 @@
 
 #include "focused_transport.h"
 #include "parker_transport.h"
+#include "source_runtime.h"
 #include "swcme_source_adapter.h"
 #include "validation_metrics.h"
 
@@ -380,6 +381,65 @@ Result RunVFY3D05() {
   return result;
 }
 
+Result RunVFY3D06() {
+  constexpr std::uint64_t count = 30000;
+  A::ShockSourceRecord source =
+      A::MakeShockSourceRecord(Source(), 23, 887, count, 0.2);
+  if (!source.status.ok()) return Fail(source.status.message);
+
+  // Deliberately start with a q=4 local DSA source, then request fixed q=5.
+  // This proves the configured event law, rather than the provider's local
+  // compression, owns the final probability distribution.
+  const C::Status configured = A::ConfigureSpeciesSpectrum(
+      &source, C::Const::m_p, 1.602176634e-15, 1.602176634e-11,
+      SEP3D::RuntimeModel::SourceSpectrumModel::FixedPhaseSpacePowerLaw,
+      5.0);
+  if (!configured.ok()) return Fail(configured.message);
+  if (source.injection.spectrum.measure !=
+          SEP::Injection::Measure::Momentum ||
+      source.injection.spectrum.powerIndex != 3.0 ||
+      source.sourceFingerprint.find("fixed-phase-space-power-law:5") ==
+          std::string::npos) {
+    return Fail("fixed f(p)~p^-5 was not converted to dN/dp~p^-3");
+  }
+
+  std::vector<double> samples;
+  samples.reserve(count);
+  for (std::uint64_t i = 0; i < count; ++i) {
+    const A::InjectedParticle particle =
+        A::SampleInjectedParticle(source, i, 0);
+    if (!particle.status.ok()) return Fail(particle.status.message);
+    samples.push_back(particle.particle.momentumKgMPerS);
+  }
+  std::sort(samples.begin(), samples.end());
+
+  // For dN/dp proportional to p^-3, F(p) has exponent 1-3=-2.  Evaluate the
+  // analytic quantile directly instead of calling the production InverseCdf,
+  // so an identical defect in the implementation cannot make the test pass.
+  const double lo = source.injection.spectrum.minimum;
+  const double hi = source.injection.spectrum.maximum;
+  const double loPower = std::pow(lo, -2.0);
+  const double hiPower = std::pow(hi, -2.0);
+  double maximumCdfError = 0.0;
+  for (double probability : {0.1, 0.25, 0.5, 0.75, 0.9}) {
+    const double quantile = std::pow(
+        loPower + probability * (hiPower - loPower), -0.5);
+    const double empirical = static_cast<double>(
+        std::upper_bound(samples.begin(), samples.end(), quantile) -
+        samples.begin()) / static_cast<double>(count);
+    maximumCdfError = std::max(
+        maximumCdfError, std::fabs(empirical - probability));
+  }
+  if (maximumCdfError > 0.012)
+    return Fail("fixed phase-space source misses its independent p^-3 CDF");
+
+  Result result = Pass(
+      "fixed q=5 phase-space seed produces the independently checked dN/dp~p^-3 ensemble");
+  result.metrics.push_back(Metric{"maximum_cdf_error", maximumCdfError,
+                                  0.012, "<=", "fraction"});
+  return result;
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterValidationTests() {
@@ -412,5 +472,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterValidationTests() {
       make("VFY3D03", "VFY3D", "Parker Green-function validation", RunVFY3D03),
       make("VFY3D04", "VFY3D", "Focused characteristic convergence", RunVFY3D04),
       make("VFY3D05", "VFY3D", "SWCME DSA source distribution", RunVFY3D05),
+      make("VFY3D06", "VFY3D", "Fixed phase-space source distribution", RunVFY3D06),
   };
 }

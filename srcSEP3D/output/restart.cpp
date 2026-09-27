@@ -14,8 +14,8 @@ namespace Output {
 namespace {
 
 namespace fs = std::filesystem;
-constexpr char kMagic[8] = {'S','E','P','3','D','R','0','2'};
-constexpr std::uint32_t kSchema = 2;
+constexpr char kMagic[8] = {'S','E','P','3','D','R','0','3'};
+constexpr std::uint32_t kSchema = 3;
 constexpr std::uint64_t kMaximumRecords = UINT64_C(1000000000);
 
 Core::Status Error(const std::string& message) {
@@ -108,6 +108,8 @@ void WriteParticle(Writer* out, const Adapters::ParticleRecord& p) {
   out->Double(p.momentumKgMPerS); out->Double(p.mu); out->Double(p.gyrophaseRad);
   out->Double(p.statisticalWeight); out->U64(p.completedStep);
   out->U64(p.substep); out->U64(p.lastShockGeneration);
+  out->Double(p.remainingScatteringOpticalDepth);
+  out->U64(p.nextScatteringEvent);
 }
 
 bool ReadParticle(Reader* in, Adapters::ParticleRecord* p) {
@@ -117,7 +119,9 @@ bool ReadParticle(Reader* in, Adapters::ParticleRecord* p) {
       !in->Double(&p->positionM.z) || !in->Double(&p->momentumKgMPerS) ||
       !in->Double(&p->mu) || !in->Double(&p->gyrophaseRad) ||
       !in->Double(&p->statisticalWeight) || !in->U64(&p->completedStep) ||
-      !in->U64(&p->substep) || !in->U64(&p->lastShockGeneration)) return false;
+      !in->U64(&p->substep) || !in->U64(&p->lastShockGeneration) ||
+      !in->Double(&p->remainingScatteringOpticalDepth) ||
+      !in->U64(&p->nextScatteringEvent)) return false;
   p->species = species; return true;
 }
 
@@ -230,7 +234,10 @@ Core::Status Validate(const RestartState& state) {
         !std::isfinite(p.positionM.z) || !std::isfinite(p.momentumKgMPerS) ||
         p.momentumKgMPerS < 0.0 || !std::isfinite(p.mu) || p.mu < -1.0 ||
         p.mu > 1.0 || !std::isfinite(p.statisticalWeight) ||
-        p.statisticalWeight <= 0.0)
+        p.statisticalWeight <= 0.0 ||
+        (!std::isnan(p.remainingScatteringOpticalDepth) &&
+         (!std::isfinite(p.remainingScatteringOpticalDepth) ||
+          p.remainingScatteringOpticalDepth <= 0.0)))
       return Error("restart particle table is invalid or not canonically sorted");
     previousId = p.stableId;
   }

@@ -18,6 +18,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -35,15 +36,23 @@ struct ParticleRecord {
   std::uint64_t completedStep = 0;
   std::uint64_t substep = 0;
   std::uint64_t lastShockGeneration = 0;
+  // Event-driven focused-scattering state.  NaN denotes a new particle whose
+  // first unit-exponential optical depth has not yet been drawn.
+  double remainingScatteringOpticalDepth =
+      std::numeric_limits<double>::quiet_NaN();
+  std::uint64_t nextScatteringEvent = 0;
 };
 
 struct LocalTransportRecord {
   Background::BackgroundSample background;
   double cellSizeM = 0.0;
   double kappaParallelM2PerS = 0.0;
+  double meanFreePathM = 0.0;
   double dKappaParallelDsMPerS = 0.0;
   double dMuMuPerS = 0.0;
   double dDmuMuDmuPerS = 0.0;
+  double plusWaveFraction = 0.5;
+  double minusWaveFraction = 0.5;
   double fractionalFieldVariationPerS = 0.0;
   double timeToSnapshotBoundaryS = 0.0;
 };
@@ -87,6 +96,9 @@ struct MoverInput {
   double constantKappaPerpendicularM2PerS = 0.0;
   double kappaPerpendicularToParallelRatio = 0.0;
   RuntimeModel::DriftMode drift = RuntimeModel::DriftMode::None;
+  RuntimeModel::FocusedScatteringFrame focusedScatteringFrame =
+      RuntimeModel::FocusedScatteringFrame::PlasmaFrameIsotropic;
+  std::uint64_t maximumScatteringEventsPerSubstep = 100000;
 };
 
 struct MoverResult {

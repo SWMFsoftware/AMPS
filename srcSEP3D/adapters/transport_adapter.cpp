@@ -119,7 +119,7 @@ ShockIntersection FirstShockIntersection(
 
 const std::vector<std::string>& ProductionMoverRegistry::CanonicalNames() {
   static const std::vector<std::string> names = {
-      "parker3d-tensor", "focused3d-split"};
+      "parker", "focused-diffusion", "focused-scattering"};
   return names;
 }
 
@@ -127,7 +127,8 @@ Core::Status ProductionMoverRegistry::Validate(
     RuntimeModel::TransportModel selected) {
   switch (selected) {
     case RuntimeModel::TransportModel::Parker3D:
-    case RuntimeModel::TransportModel::Focused3D:
+    case RuntimeModel::TransportModel::FocusedDiffusion3D:
+    case RuntimeModel::TransportModel::FocusedScattering3D:
       return Core::Status::OK();
   }
   return Invalid("transport selection is not in the production mover registry");
@@ -196,7 +197,7 @@ MoverResult AdvanceParticle(const MoverInput& input) {
   physics.kappaParallelM2PerS = input.model == RuntimeModel::TransportModel::Parker3D
       ? input.local.kappaParallelM2PerS : 0.0;
   physics.kappaPerpendicularM2PerS = kappaPerpendicularM2PerS;
-  physics.focusingRatePerS = input.model == RuntimeModel::TransportModel::Focused3D
+  physics.focusingRatePerS = input.model != RuntimeModel::TransportModel::Parker3D
       ? std::fabs(Transport::FocusedPitchDriftPerS(
             particle.mu, speed, [&]() {
               Transport::FocusedLocalState local;
@@ -278,7 +279,8 @@ MoverResult AdvanceParticle(const MoverInput& input) {
     if (!moved.status.ok()) return Failed(input, moved.status);
     result.particle.positionM = moved.state.positionM;
     result.particle.momentumKgMPerS = moved.state.momentumKgMPerS;
-  } else {
+  } else if (input.model ==
+             RuntimeModel::TransportModel::FocusedDiffusion3D) {
     key.purpose = Transport::RandomPurpose::FocusedPitch;
     Transport::KeyedRandomStream random(key);
     key.purpose = Transport::RandomPurpose::PerpendicularFirst;
@@ -315,6 +317,43 @@ MoverResult AdvanceParticle(const MoverInput& input) {
     result.particle.positionM = moved.state.positionM;
     result.particle.momentumKgMPerS = moved.state.momentumKgMPerS;
     result.particle.mu = moved.state.mu;
+  } else {
+    Transport::FocusedScatteringState state;
+    state.particle.positionM = particle.positionM;
+    state.particle.momentumKgMPerS = particle.momentumKgMPerS;
+    state.particle.mu = particle.mu;
+    state.remainingOpticalDepth =
+        particle.remainingScatteringOpticalDepth;
+    state.nextEventIndex = particle.nextScatteringEvent;
+    Transport::FocusedScatteringLocalState local;
+    local.deterministic.bulkVelocityMPerS = background.U;
+    local.deterministic.bHat = background.bHat;
+    local.deterministic.divBhatPerM = background.divBhat;
+    local.deterministic.divUPerS = background.divU;
+    local.deterministic.fieldAlignedStrainPerS =
+        background.fieldAlignedStrain;
+    local.deterministic.driftVelocityMPerS = guidingCenterDrift;
+    local.meanFreePathM = input.local.meanFreePathM;
+    local.alfvenSpeedMPerS = background.alfvenSpeedMpS;
+    local.plusWaveFraction = input.local.plusWaveFraction;
+    local.minusWaveFraction = input.local.minusWaveFraction;
+    local.frame = input.focusedScatteringFrame ==
+            RuntimeModel::FocusedScatteringFrame::PlasmaFrameIsotropic
+        ? Transport::FocusedScatteringFrame::PlasmaFrameIsotropic
+        : Transport::FocusedScatteringFrame::AlfvenWaveFrameIsotropic;
+    const Transport::FocusedScatteringStepResult moved =
+        Transport::AdvanceFocusedScattering(
+            state, local, input.speciesMassKg, dtS, input.campaignSeed,
+            particle.stableId, particle.completedStep,
+            input.maximumScatteringEventsPerSubstep);
+    if (!moved.status.ok()) return Failed(input, moved.status);
+    result.particle.positionM = moved.state.particle.positionM;
+    result.particle.momentumKgMPerS =
+        moved.state.particle.momentumKgMPerS;
+    result.particle.mu = moved.state.particle.mu;
+    result.particle.remainingScatteringOpticalDepth =
+        moved.state.remainingOpticalDepth;
+    result.particle.nextScatteringEvent = moved.state.nextEventIndex;
   }
 
   ++result.particle.substep;

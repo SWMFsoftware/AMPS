@@ -121,6 +121,8 @@ O::RestartState State() {
   p.momentumKgMPerS = 1.0e-19; p.mu = 0.3; p.gyrophaseRad = 0.4;
   p.statisticalWeight = 5.0; p.completedStep = 8; p.substep = 13;
   p.lastShockGeneration = 79;
+  p.remainingScatteringOpticalDepth = 0.625;
+  p.nextScatteringEvent = 17;
   A::ParticleRecord q = p; q.stableId = 4; q.mu = -0.2;
   state.particles = {p, q};  // writer must canonicalize this deliberately
   A::LedgerRow row; row.key = {7, 0}; row.activeStart = 2; row.injected = 1;
@@ -200,6 +202,8 @@ Result RunRST3D01() {
   fs::remove_all(root);
   if (!written.ok() || !read.ok() || loaded.particles.size() != 2 ||
       loaded.particles[0].stableId != 4 || loaded.particles[1].stableId != 7 ||
+      loaded.particles[1].remainingScatteringOpticalDepth != 0.625 ||
+      loaded.particles[1].nextScatteringEvent != 17 ||
       loaded.runtimeCounters.completedSteps != 8 ||
       loaded.samplingState.observationsProcessed != 20)
     return Fail("complete restart state did not round-trip canonically");

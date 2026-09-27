@@ -266,3 +266,63 @@ The AMR multiblock interpolation algorithm retains its existing assumptions:
 - the SWMF external interpolation library obeys its existing block-index contract.
 
 The row stencil capacity is `2*nMaxStencilLength`, allowing the current maximum 64-entry multiblock row to be blended with an additional fine-grid stencil without changing the legacy stencil capacity.
+
+## 9. Application use of particle splitting and merging
+
+The generic linked-list helpers are declared in `pic.h` and implemented in
+`pic_particle_spliting.cpp`:
+
+```cpp
+PIC::ParticleSplitting::MergeParticleList(spec, firstParticle, target);
+PIC::ParticleSplitting::SplitParticleList(spec, firstParticle, target);
+```
+
+They operate on one AMPS particle list and one species. The implementation now
+returns without mutation for a non-positive target, an empty merge list, or a
+split list containing fewer than two particles. These guards are required:
+the bin algorithms otherwise have no valid `particles[0]` or iterator
+successor. A caller must still invoke them only when particle movement/list
+exchange is quiescent and must pass the actual cell-list head by reference.
+
+The complete no-op contract at the public entry points is:
+
+| Routine | Condition | Reason no mutation is permitted |
+|---|---|---|
+| both | `target <= 0` | The requested population is invalid/no-op, and a negative `int` must not be converted to a large vector capacity or unsigned count. |
+| merge | selected population is empty or already `<= target` | There is no reduction to perform and no valid first velocity record. |
+| merge | selected population contains fewer than three records | The conservative implementation is specifically a 3-to-2 operation. |
+| split | selected population contains fewer than two records | The conservative implementation is specifically a 2-to-3 operation. |
+| both | no velocity bin contains a viable tuple at the current resolution | The routine coarsens the binning before retrying; it never advances an end iterator. |
+
+These are core precondition guards, not an alternative population-control
+policy. A positive target is still only a stopping bound: the tuple size,
+weight threshold, and conservation constraints can prevent an exact requested
+count from being reached.
+
+These routines conserve the generic AMPS record they know about; they cannot
+infer every application's phase-space representation. In particular:
+
+- `CloneParticle` preserves AMPS `next`/`prev` links but copies every
+  application-requested extension byte. An application storing a unique ID,
+  random-stream state, collision history, or optical depth must assign valid
+  child metadata after cloning.
+- The current generic merge reconstructs Cartesian velocity from weighted
+  momentum and a weighted nonrelativistic `v^2` energy moment. Relativistic
+  applications must not interpret that as conservation of
+  `sqrt(p^2 c^2 + m^2 c^4)-m c^2`.
+- Generic random directions use the AMPS process RNG. Applications requiring
+  rank/order/restart invariant histories need a semantic keyed-random callback
+  or an application-owned reconstruction.
+- If an application stores momentum/pitch separately from Cartesian velocity,
+  all representations must be updated together after a merge.
+
+The recommended core extension is a resampling-policy interface supplied by
+the application. The policy should provide (1) a split-extension callback,
+(2) a merge reconstruction callback with the application's energy definition,
+and (3) an optional deterministic/keyed direction source. The existing list
+allocation/deletion and bin-selection code can then remain shared without
+silently imposing a nonrelativistic or metadata-free model. Until that
+interface exists, applications with such state should disable the automatic
+`ParticleSplitting::Mode` and call an application-aware boundary controller
+that uses `GetNewParticle`, `CloneParticle`, and `DeleteParticle` only for list
+mechanics.

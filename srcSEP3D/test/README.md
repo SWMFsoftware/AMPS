@@ -25,6 +25,7 @@ python3 test/run_tests.py --suite phase-m --suite phase-b --suite phase-t
 python3 test/run_tests.py --suite phase-p --suite phase-a --suite phase-o
 python3 test/run_tests.py --suite phase-v --rebuild
 python3 test/run_tests.py --suite phase-v --amps /path/to/amps \
+  --validation-input /path/to/reviewed-sep3d.in \
   --validation-data /path/to/evidence \
   --validation-launch-prefix "mpiexec -n 8"
 python3 test/run_tests.py --group HARN --group BLDL3D \
@@ -69,11 +70,12 @@ for a shell-independent command.
 | `--suite NAME` | runs one dependency/evidence class; repeatable |
 | `--output-dir DIR` | writes the complete report bundle below `DIR` |
 | `--amps PATH` | supplies the configured linked executable for Phase-V native cases |
+| `--validation-input PATH` | supplies the immutable complete input deck used to construct linked native state |
 | `--timeout SEC` | applies a per-command timeout |
 
 Additional setup options are `--amps-source`, `--make-config`,
-`--sep-common-dir`, `--sep-common-archive`, `--validation-data`, and
-`--validation-launch-prefix`.
+`--sep-common-dir`, `--sep-common-archive`, `--validation-data`,
+`--validation-input`, and `--validation-launch-prefix`.
 
 ## Evidence classes
 
@@ -94,24 +96,25 @@ The runner adds
 | `UTIL` | `UTIL02` | byte-exact shared-kernel reference record |
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
 | `R3D` | `R3D01`–`R3D09` | mover hook, requested-time loop, snapshot transaction, tick/events, source, observers, restart, canonical initialization source, finite empty-cell output |
-| `CFG3D` | `CFG3D01`–`CFG3D10` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line/schema-3 initialization, complete compiled AMPS species binding, turbulence selection, and CME/Parker linkage |
-| `MSH3D` | `MSH3D01`–`MSH3D11` | resolution, tube geometry, balance, octree budget/ownership, presets, gradients, finite line, and initialization Tecplot output |
+| `CFG3D` | `CFG3D01`–`CFG3D11` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line/schema-3 initialization, complete compiled AMPS species binding, turbulence selection, CME/Parker linkage, schema-4 mover/coefficient and fixed/local source choices, active-corridor connectivity, and population bounds |
+| `MSH3D` | `MSH3D01`–`MSH3D12` | resolution, tube geometry, balance, octree budget/ownership, presets, gradients, finite line, initialization Tecplot output, and conservative active-corridor classification |
 | `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
 | `SNAP3D` | `SNAP3D01`–`SNAP3D08` | snapshot completeness, coupling conversion, atomicity, interpolation, batch/frame policy |
 | `TUR3D` | `TUR3D01`–`TUR3D06` | spectrum, AWSoM convention, resonance, missing-data policy, selectable spectral/amplitude closures, and mandatory Tecplot energy |
-| `COEF3D` | `COEF3D01`–`COEF3D06` | conversion/shared identity, tensor assembly, Itô drift, rejection, and field-aligned gradient stencil |
+| `COEF3D` | `COEF3D01`–`COEF3D07` | conversion/shared identity, tensor assembly, Itô drift, rejection, field-aligned gradient stencil, and selected-model/required-quantity isolation |
 | `PRK3D` | `PRK3D01`–`PRK3D08` | Parker moments, characteristics, PDE/first passage, and named limits |
-| `FTE3D` | `FTE3D01`–`FTE3D07` | focused streaming, focusing, pitch scattering/boundaries, momentum, strong-scattering limit |
+| `FTE3D` | `FTE3D01`–`FTE3D09` | focused streaming, focusing, pitch diffusion/boundaries, event-driven scattering, frame-energy invariants, momentum, and strong-scattering limit |
+| `POP3D` | `POP3D01` | relativistic three-to-two weight, momentum, total-energy, and centroid conservation |
 | `RNG3D` | `RNG3D01`–`RNG3D03` | worker/order independence and random-purpose isolation |
 | `V1D` | `V1D01`–`V1D05` | V01 tensor, cross-field moments, drift, focused invariance, and timestep |
 | `V2D` | `V2D01` | distinct compiled srcSEP/srcSEP3D production-core parity |
 | `V5D` | `V5D01` | native profiles, deferred-R8 campaign block, and release governance |
-| `ADP3D` | `ADP3D01` | exact two-core production registry and one validating dispatch |
+| `ADP3D` | `ADP3D01` | exact three-core production registry and one validating dispatch |
 | `NAT3D` | `NAT3D04`–`NAT3D08` | boundary outcomes, ledger closure, sampling isolation, output schema, shock crossing |
 | `SHK3D` | `SHK3D01`–`SHK3D04` | common source identity, moving-sphere geometry, guards, and normalization |
 | `RST3D` | `RST3D01`–`RST3D03` | full round trip, transactional rejection, and snapshot policy |
 | `INT3D` | `INT3D01`–`INT3D03` | stable-ID rank merge, global conservation, and resource budgets |
-| `VFY3D` | `VFY3D01`–`VFY3D05` | comparison metrics and analytical Parker/focused/SWCME validation |
+| `VFY3D` | `VFY3D01`–`VFY3D06` | comparison metrics and analytical Parker/focused/SWCME/fixed-source validation |
 | `RUNNER` | `RUN3D01` | Python selector, de-duplication, usage-error, JSON, and JUnit contract |
 
 `HARN02-EXITCODE` and `HARN03-EXITCODE` are shell-level probes. They launch the
@@ -247,6 +250,48 @@ from AMPS' temporary Tecplot vertex node. `TUR3D06` numerically checks that a
 positive directional variance survives the same weighted interpolation. A configured
 `BLDL3D01` run remains the compile/link authority for the AMPS API itself.
 
+#### BLDL3D09 — active-region and population-control wiring
+
+This routine source gate verifies the lifecycle facts that portable geometry
+and conservation tests cannot establish alone. It requires the Parker-corridor
+classifier to feed AMPS `SetTreeNodeActiveUseFlag` after `buildMesh()` and
+before load measurement, distribution, and block allocation. It also requires
+inactive shock patches to be excluded, the legacy automatic AMPS splitter to
+remain disabled, and the SEP-aware relativistic controller to run after shock
+injection but before observers and checkpoints. Finally, it checks the generic
+controller's semantic ordinal is scoped to one cell/species population so MPI
+block repartitioning cannot change post-resampling histories. It also checks
+the generic AMPS split/merge entry points for the repaired non-positive-target,
+empty-list, no-op, and singleton guards. `BLDL3D01` remains the configured
+compile/link authority.
+
+The guard audit is order-sensitive: the target check must precede linked-list
+traversal/vector reservation, the population-size checks must precede the
+first-record dereference, and an empty velocity-bin list must be handled before
+requesting an iterator successor. A guard-looking token in a comment or after
+the unsafe operation does not pass this gate.
+
+The guarded core implementation is a required source-release member at
+`src/pic/pic_particle_spliting.cpp`, not merely a prerequisite assumed to be
+present in the destination checkout. Run the AMPS-level package audit before
+publishing an overlay; it verifies that the exact file checked here is carried
+with the SEP applications and prevents an older unguarded core implementation
+from surviving installation.
+
+The package policy therefore distinguishes **allowed** AMPS-level files from
+**required** AMPS-level files. `TOP_LEVEL_ALLOWED` controls what may be copied;
+`TOP_LEVEL_REQUIRED` additionally makes absence of the guarded splitter a
+`missing-required` audit error. `BLDL3D09` parses that literal required-member
+declaration rather than passing on a filename that appears only in a comment or
+permissive allowlist. The hygiene self-test removes the fixture splitter and
+requires the audit to fail, providing a negative control for this exact
+packaging regression.
+
+Because the policy is stored at the AMPS root, install a source archive from
+the AMPS root and retain its `tools/` and `src/` members. Copying only
+`srcSEP3D/` leaves both the old policy and potentially the old core splitter in
+place, which is intentionally reported by this gate.
+
 ### Phase R1 shared-library gates
 
 `ARCH3D02` runs both canonical archives' `verify` targets, compares exact `ar`
@@ -319,6 +364,7 @@ env MAKEFLAGS="-j16" srcSEP3D/test/run_tests.py --all \
 | `CFG3D08` | complete schema-3 SWCME input resolves while a missing canonical field, inconsistent weight, or skipped-step injection fails closed |
 | `CFG3D09` | spectral and amplitude turbulence models parse only with consistent slopes and exactly one active amplitude normalization; Python background remains reserved |
 | `CFG3D10` | `cme-launch-point` resolves the canonical SWCME launch apex and rejects radius/direction mismatches; explicit mode remains independent |
+| `CFG3D11` | schema-4 active corridor/observer connectivity, population hysteresis, fixed/local source spectra, mover/coefficient compatibility, and dry-run output |
 
 ```bash
 python3 test/run_tests.py --suite improvements-c --rebuild \
@@ -340,6 +386,7 @@ python3 test/run_tests.py --suite improvements-c --rebuild \
 | `MSH3D09` | mixed coarse/fine gradients are linear-exact and rank-deficient stencils fail |
 | `MSH3D10` | finite Parker line preserves configured count/arc length and origin-relative refinement |
 | `MSH3D11` | initialization Parker line is deterministic unit-labeled Tecplot data |
+| `MSH3D12` | conservative active Parker corridor retains centreline/intersection/halo leaves and preserves full-domain mode |
 
 ```bash
 python3 test/run_tests.py --suite phase-m --rebuild \
@@ -375,14 +422,15 @@ python3 test/run_tests.py --suite phase-b --rebuild \
 | `COEF3D01` | Dmumu/mean-free-path/kappa conversions round-trip below 1e-12 over six decades |
 | `COEF3D02` | srcSEP3D bridge and direct `sep_common` Jokipii calls are bitwise identical |
 | `COEF3D06` | centered and both one-sided stencils recover an exact nonzero linear `dKappa_parallel/ds`; no usable neighbor fails closed |
+| `COEF3D07` | selector dispatch isolates unused physics and reproduces analytic constant-MFP, species-charge-aware radial-rigidity MFP, and constant-Dmumu limits |
 
 ```bash
 python3 test/run_tests.py --suite phase-t --rebuild \
   --output-dir test_output/phase-t
 ```
 
-`phase-t` deliberately contains `COEF3D01–02` and the host-neutral `COEF3D06`
-stencil test; the later tensor/drift
+`phase-t` deliberately contains `COEF3D01–02` and the host-neutral
+`COEF3D06–07` selector/stencil tests; the later tensor/drift
 coefficient tests belong to Phase P even though they share the `COEF3D` group.
 
 ### Phase P transport gates
@@ -392,7 +440,9 @@ coefficient tests belong to Phase P even though they share the `COEF3D` group.
 | `COEF3D03–05` | rank-one tensor assembly, complete numerical/analytic Itô divergence, invalid/reserved coefficient rejection |
 | `PRK3D01–08` | diffusion moments, advection/rotation, nonuniform equilibrium, cooling, first passage, radial PDE, all named limits |
 | `FTE3D01–07` | ballistic characteristic, focusing, eigenmodes, reflecting boundaries, momentum, Parker limit, zero-perpendicular guard |
+| `FTE3D08–09` | carried optical-depth event sequence and energy conservation in plasma/Alfvén scattering frames |
 | `RNG3D01–03` | worker partition, list order, and future-purpose changes cannot alter keyed histories |
+| `POP3D01` | relativistic 3-to-2 resampling conserves weight, momentum, energy, and position centroid |
 
 ```bash
 python3 test/run_tests.py --suite phase-p --rebuild \
@@ -403,7 +453,7 @@ python3 test/run_tests.py --suite phase-p --rebuild \
 
 | ID | Acceptance contract |
 |---|---|
-| `ADP3D01` | registry contains only Parker tensor and focused split; both pass one validator |
+| `ADP3D01` | registry contains Parker, focused diffusion, and focused scattering; all pass one validator/dispatch boundary |
 | `NAT3D04` | inner absorption, outer escape, and invalid background remain distinct |
 | `NAT3D05` | integer particle ledger closes exactly and mismatch is transactional |
 | `NAT3D08` | first expanding-sphere root is recorded once per generation |
@@ -446,11 +496,12 @@ release evidence; their statuses must be interpreted separately.
 | `VFY3D03` | 3-D Parker projections reproduce the independent one-dimensional Gaussian Green function |
 | `VFY3D04` | focused transport converges at second order to the exact focusing characteristic |
 | `VFY3D05` | sampled SWCME/DSA momentum CDF and total represented event weight agree with their declared laws |
+| `VFY3D06` | fixed phase-space q=5 overrides a q=4 shock patch and the sampled ensemble agrees with the independent `dN/dp proportional to p^-3` CDF |
 | `NAT3D01–03/09–12` | configured AMPS mesh, storage, gradients, balance, budgets, coupled cadence, and output grammar |
 | `MPI3D01–02` | multi-rank sampling and restart continuation are decomposition independent |
 | `XM3D01–06` | checksum-owned cross-model profiles, exact source identity, convergence, and independent PDE evidence |
 | `OV3D01–04` | reviewed event comparisons, with release-gate and diagnostic roles retained in reports |
-| `VALRUN3D01` | runner lists all classes, preserves SKIP, verifies checksums, and evaluates convergence bundles |
+| `VALRUN3D01` | runner lists all classes, preserves SKIP, verifies checksums, evaluates convergence bundles, validates the OV3D01 known/unresolved-parameter blueprint, and proves that the native matrix rejects missing callbacks while hashing its exact input/executable |
 
 ```bash
 # Runs controlled prerequisites now and records unavailable external work as SKIP.
@@ -464,13 +515,15 @@ python3 test/run_tests.py --suite phase-v \
 
 # Adds native tests from a configured linked application.
 python3 test/run_tests.py --suite phase-v --amps /path/to/amps \
+  --validation-input /path/to/reviewed-sep3d.in \
   --validation-launch-prefix "mpiexec -n 8" \
   --output-dir test_output/phase-v-linked
 ```
 
 The launch prefix is parsed into process arguments and is never passed to a
-shell. A linked binary must advertise the requested ID through `--list-tests`;
-a stale binary is `ERROR`. Scientific evidence must use the templates under
+shell. A linked binary must advertise the requested ID through `--list-tests`
+and receives the deck only through `--test-input`; a missing deck, ordinary
+production driver, or stale binary is `ERROR`. Scientific evidence must use the templates under
 `validation/templates/`, remain inside `EVIDENCE_ROOT/CASE_ID`, and match every
 declared SHA-256. Missing evidence is `SKIP`; checksum/schema/provenance failure
 is `ERROR`; a valid metric outside tolerance is `FAIL`.
@@ -489,17 +542,17 @@ equations, algorithms, case roles, and evidence schemas.
 | `r0` | R0 source/ABI/production gates plus RUN3D01, LAY01, and BLD01 |
 | `r1` | canonical shared-archive audit, relocated SWCME suite, and frozen common kernels |
 | `r2` | LIFE3D01–LIFE3D04 immutable configuration and lifecycle gates |
-| `improvements-c` | CFG3D01–CFG3D10 production configuration, preflight, finite-line/schema-3 initialization, species/turbulence selection, and CME linkage gates |
+| `improvements-c` | CFG3D01–CFG3D11 production configuration, preflight, finite-line/schema-3 initialization, species/turbulence/source selection, CME linkage, mover/coefficient selection, active-corridor, and population-control gates |
 | `improvements-r` | R3D01–R3D09 production runtime integration gates |
 | `improvements-v` | V1D01–05 controlled physics, V2D01 true parity, and V5D01 governance |
-| `phase-m` | MSH3D01–MSH3D11 mesh/storage and initialization-output gates |
+| `phase-m` | MSH3D01–MSH3D12 mesh/storage, active-corridor, and initialization-output gates |
 | `phase-b` | BGP3D01–06 and SNAP3D01–08 background/snapshot gates |
-| `phase-t` | TUR3D01–06, COEF3D01–02, and COEF3D06 turbulence/coefficient gates |
-| `phase-p` | COEF3D03–05, PRK3D01–08, FTE3D01–07, RNG3D01–03 |
+| `phase-t` | TUR3D01–06, COEF3D01–02, and COEF3D06–07 turbulence/coefficient gates |
+| `phase-p` | COEF3D03–05, PRK3D01–08, FTE3D01–09, RNG3D01–03, and POP3D01 |
 | `phase-a` | ADP3D01, NAT3D04–05/08, SHK3D01–04 |
 | `phase-o` | NAT3D06–07 and RST3D01–03 |
 | `phase-v` | INT3D/VFY3D prerequisites, external NAT3D/MPI3D/XM3D/OV3D cases, and VALRUN3D01 |
-| `production` | BLDL3D01–08 |
+| `production` | BLDL3D01–09 |
 
 Suites can be repeated. Overlapping IDs are de-duplicated in stable order.
 
@@ -568,7 +621,8 @@ invoke that exact linked callback, following the srcSEP pattern.
 | `main_lib.cpp` reports `sep_injection_spectrum.h: No such file or directory` | install the updated srcSEP3D makefile in the source tree and refresh the copied `build/main`; `BLDL3D06` verifies that the fixed generic recipe receives the target-scoped canonical model search path |
 | final link reports undefined `Mesh::MakeDomain(RunConfiguration3DOptions)` or `BuildRefinementPreflight` | stale pre-C03/C05 `mesh_model.o`; install the updated makefile, run `make clean`, and rebuild. BLDL3D07 prevents recurrence |
 | standalone compile failure | rerun with `--rebuild --verbose` |
-| Phase-V linked case `SKIP` | supply `--amps`; use `--validation-launch-prefix` when MPI launch arguments are required |
+| Phase-V linked case `SKIP` | supply `--amps`; also supply `--validation-input`, and use `--validation-launch-prefix` when MPI launch arguments are required |
+| Phase-V linked case reports that `--test-input` is required | pass the reviewed complete deck with `--validation-input`; hidden callback defaults are intentionally forbidden |
 | `V5D01` cannot open `release/generate_release_evidence.py` | restore the complete `srcSEP3D/release/` source set (`generate_release_evidence.py`, `profiles.json`, `capabilities.json`, `README.md`, and `checklist.md`). These files are required test/governance inputs declared by `SOURCE_MANIFEST.json`, not generated build products. |
 | XM3D/OV3D case `SKIP` | supply `--validation-data` containing `CASE_ID/manifest.json` and its declared artifacts |
 | Phase-V checksum `ERROR` | regenerate the SHA-256 only after reviewing the changed evidence; never edit a hash merely to silence the gate |

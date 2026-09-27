@@ -116,7 +116,8 @@ bool NearlyEqual(double left, double right) {
 
 bool KnownSection(const std::string& section) {
   static const std::set<std::string> fixed = {
-      "run", "domain", "parker_spiral", "mesh", "mesh.solar", "mesh.tube", "memory",
+      "run", "domain", "parker_spiral", "mesh", "mesh.solar", "mesh.tube",
+      "mesh.active_region", "memory", "population_control",
       "background", "background.parker", "turbulence", "transport",
       "shock", "source", "species", "storage", "output", "restart",
       "swcme"};
@@ -164,7 +165,7 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
 
   if (field == "run.schema_version") {
     std::uint64_t version = 0;
-    if (!ParseUnsigned64(value, &version) || version < 1 || version > 3)
+    if (!ParseUnsigned64(value, &version) || version < 1 || version > 4)
       return invalidValue();
     o->inputSchemaVersion = static_cast<unsigned>(version);
     return Core::Status::OK();
@@ -181,8 +182,14 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
                            {"shock-injection", RunIntent::ShockInjection}},
                    &o->intent)) return invalidValue();
   } else if (field == "run.transport") {
-    if (!ParseEnum(value, {{"parker3d", TransportModel::Parker3D},
-                           {"focused3d", TransportModel::Focused3D}},
+    if (!ParseEnum(value, {{"parker", TransportModel::Parker3D},
+                           {"parker3d", TransportModel::Parker3D},
+                           {"focused-diffusion",
+                            TransportModel::FocusedDiffusion3D},
+                           {"focused3d",
+                            TransportModel::FocusedDiffusion3D},
+                           {"focused-scattering",
+                            TransportModel::FocusedScattering3D}},
                    &o->transport)) return invalidValue();
   } else if (field == "run.time_step_s") {
     if (!ParseDouble(value, &o->requestedTimeStepS)) return invalidValue();
@@ -294,6 +301,25 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
                    &o->tubeTransverseProfile)) return invalidValue();
   } else if (field == "mesh.tube.transverse_exponent") {
     if (!ParseDouble(value, &o->tubeTransverseExponent)) return invalidValue();
+  } else if (field == "mesh.active_region.mode") {
+    if (!ParseEnum(value,
+        {{"full-domain", ActiveRegionMode::FullDomain},
+         {"parker-tube", ActiveRegionMode::ParkerTube}},
+        &o->activeRegion)) return invalidValue();
+  } else if (field == "mesh.active_region.reference_radius_m") {
+    if (!ParseDouble(value, &o->activeTubeReferenceRadiusM))
+      return invalidValue();
+  } else if (field == "mesh.active_region.radius_at_reference_m") {
+    if (!ParseDouble(value, &o->activeTubeRadiusAtReferenceM))
+      return invalidValue();
+  } else if (field == "mesh.active_region.radius_mode") {
+    if (!ParseEnum(value,
+        {{"physical-constant", TubeRadiusMode::PhysicalConstant},
+         {"constant-angular-width", TubeRadiusMode::ConstantAngularWidth}},
+        &o->activeTubeRadiusMode)) return invalidValue();
+  } else if (field == "mesh.active_region.buffer_blocks") {
+    if (!ParseUnsigned(value, &o->activeTubeBufferBlocks))
+      return invalidValue();
   } else if (field == "memory.base_cell_bytes") {
     if (!ParseSize(value, &o->memoryModel.baseCellBytes)) return invalidValue();
   } else if (field == "memory.base_node_bytes") {
@@ -428,6 +454,66 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
          {"reflecting-euler-maruyama",
           PitchAngleSchemeMode::ReflectingEulerMaruyama}},
         &o->pitchAngleScheme)) return invalidValue();
+  } else if (field == "transport.spatial_diffusion_model") {
+    if (!ParseEnum(value,
+        {{"mean-free-path",
+              SpatialDiffusionModel::CorrelationMeanFreePath},
+         {"correlation-mean-free-path",
+              SpatialDiffusionModel::CorrelationMeanFreePath},
+         {"pitch-angle-integral",
+              SpatialDiffusionModel::PitchAngleIntegral}},
+        &o->spatialDiffusionModel)) return invalidValue();
+  } else if (field == "transport.pitch_angle_diffusion_model") {
+    if (!ParseEnum(value,
+        {{"jokipii-1966", PitchAngleDiffusionModel::Jokipii1966},
+         {"florinskiy", PitchAngleDiffusionModel::Florinskiy},
+         {"constant", PitchAngleDiffusionModel::Constant}},
+        &o->pitchAngleDiffusionModel)) return invalidValue();
+  } else if (field == "transport.mean_free_path_model") {
+    if (!ParseEnum(value,
+        {{"correlation", MeanFreePathModel::Correlation},
+         {"constant", MeanFreePathModel::Constant},
+         {"radial-rigidity-power-law",
+              MeanFreePathModel::RadialRigidityPowerLaw}},
+        &o->meanFreePathModel)) return invalidValue();
+  } else if (field == "transport.constant_dmumu_per_s") {
+    if (!ParseDouble(value, &o->constantDmumuPerS)) return invalidValue();
+  } else if (field == "transport.constant_mean_free_path_m") {
+    if (!ParseDouble(value, &o->constantMeanFreePathM)) return invalidValue();
+  } else if (field == "transport.mean_free_path_reference_m") {
+    if (!ParseDouble(value, &o->meanFreePathReferenceM)) return invalidValue();
+  } else if (field == "transport.mean_free_path_reference_radius_m") {
+    if (!ParseDouble(value, &o->meanFreePathReferenceRadiusM))
+      return invalidValue();
+  } else if (field == "transport.mean_free_path_reference_rigidity_v") {
+    if (!ParseDouble(value, &o->meanFreePathReferenceRigidityV))
+      return invalidValue();
+  } else if (field == "transport.mean_free_path_radial_exponent") {
+    if (!ParseDouble(value, &o->meanFreePathRadialExponent))
+      return invalidValue();
+  } else if (field == "transport.mean_free_path_rigidity_exponent") {
+    if (!ParseDouble(value, &o->meanFreePathRigidityExponent))
+      return invalidValue();
+  } else if (field ==
+             "transport.spatial_quadrature_absolute_tolerance_m2_per_s") {
+    if (!ParseDouble(value, &o->spatialQuadratureAbsoluteToleranceM2PerS))
+      return invalidValue();
+  } else if (field == "transport.spatial_quadrature_relative_tolerance") {
+    if (!ParseDouble(value, &o->spatialQuadratureRelativeTolerance))
+      return invalidValue();
+  } else if (field == "transport.spatial_quadrature_maximum_recursion") {
+    if (!ParseUnsigned(value, &o->spatialQuadratureMaximumRecursion))
+      return invalidValue();
+  } else if (field == "transport.focused_scattering_frame") {
+    if (!ParseEnum(value,
+        {{"plasma-frame-isotropic",
+              FocusedScatteringFrame::PlasmaFrameIsotropic},
+         {"alfven-wave-frame-isotropic",
+              FocusedScatteringFrame::AlfvenWaveFrameIsotropic}},
+        &o->focusedScatteringFrame)) return invalidValue();
+  } else if (field == "transport.maximum_scattering_events_per_substep") {
+    if (!ParseUnsigned64(value, &o->maximumScatteringEventsPerSubstep))
+      return invalidValue();
   } else if (field == "transport.perpendicular_diffusion") {
     if (!ParseEnum(value,
         {{"none", PerpendicularDiffusionMode::None},
@@ -457,6 +543,26 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
       if (!ParseBool(value, &legacy) || legacy) return invalidValue();
       o->drift = DriftMode::None;
     }
+  } else if (field == "population_control.mode") {
+    if (!ParseEnum(value,
+        {{"off", PopulationControlMode::Off},
+         {"split-merge", PopulationControlMode::SplitMerge}},
+        &o->populationControl)) return invalidValue();
+  } else if (field ==
+             "population_control.minimum_particles_per_cell_per_species") {
+    if (!ParseUnsigned(value, &o->minimumParticlesPerCellPerSpecies))
+      return invalidValue();
+  } else if (field ==
+             "population_control.target_particles_per_cell_per_species") {
+    if (!ParseUnsigned(value, &o->targetParticlesPerCellPerSpecies))
+      return invalidValue();
+  } else if (field ==
+             "population_control.maximum_particles_per_cell_per_species") {
+    if (!ParseUnsigned(value, &o->maximumParticlesPerCellPerSpecies))
+      return invalidValue();
+  } else if (field == "population_control.cadence_steps") {
+    if (!ParseUnsigned64(value, &o->populationControlCadenceSteps))
+      return invalidValue();
   } else if (field == "shock.authority") {
     if (!ParseEnum(value, {{"none", ShockAuthority::None},
                            {"swcme", ShockAuthority::Swcme}}, &o->shock))
@@ -483,6 +589,16 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     if (!ParseDouble(value, &o->source.minimumEnergyJ)) return invalidValue();
   } else if (field == "source.maximum_energy_j") {
     if (!ParseDouble(value, &o->source.maximumEnergyJ)) return invalidValue();
+  } else if (field == "source.spectrum_model") {
+    if (!ParseEnum(value,
+        {{"local-compression-dsa",
+          SourceSpectrumModel::LocalCompressionDsa},
+         {"fixed-phase-space-power-law",
+          SourceSpectrumModel::FixedPhaseSpacePowerLaw}},
+        &o->source.spectrumModel)) return invalidValue();
+  } else if (field == "source.phase_space_power_index") {
+    if (!ParseDouble(value, &o->source.fixedPhaseSpacePowerIndex))
+      return invalidValue();
   } else if (field == "source.spectral_index") {
     if (!ParseDouble(value, &o->source.spectralIndex)) return invalidValue();
   } else if (field == "source.samples_per_step") {
@@ -764,6 +880,50 @@ Core::Status ParseConfigurationText(
     for (const char* required : requiredLineFields) {
       if (assigned.count(required) == 0)
         return Invalid("schema version 2 is missing required key '" +
+                       std::string(required) + "'");
+    }
+  }
+  if (candidate.inputSchemaVersion >= 4) {
+    // Schema 4 adds three complete contracts.  Keeping them in dedicated
+    // sections makes review straightforward and prevents a parser default from
+    // silently enabling domain pruning or changing particle statistics.
+    const char* requiredVersion4Sections[] = {
+        "mesh.active_region", "population_control"};
+    for (const char* required : requiredVersion4Sections) {
+      if (sections.count(required) == 0)
+        return Invalid("schema version 4 requires configuration section '[" +
+                       std::string(required) + "]'");
+    }
+    const char* requiredVersion4Fields[] = {
+        "mesh.active_region.mode",
+        "mesh.active_region.reference_radius_m",
+        "mesh.active_region.radius_at_reference_m",
+        "mesh.active_region.radius_mode",
+        "mesh.active_region.buffer_blocks",
+        "transport.spatial_diffusion_model",
+        "transport.pitch_angle_diffusion_model",
+        "transport.mean_free_path_model",
+        "transport.constant_dmumu_per_s",
+        "transport.constant_mean_free_path_m",
+        "transport.mean_free_path_reference_m",
+        "transport.mean_free_path_reference_radius_m",
+        "transport.mean_free_path_reference_rigidity_v",
+        "transport.mean_free_path_radial_exponent",
+        "transport.mean_free_path_rigidity_exponent",
+        "transport.spatial_quadrature_absolute_tolerance_m2_per_s",
+        "transport.spatial_quadrature_relative_tolerance",
+        "transport.spatial_quadrature_maximum_recursion",
+        "transport.focused_scattering_frame",
+        "transport.maximum_scattering_events_per_substep",
+        "population_control.mode",
+        "population_control.minimum_particles_per_cell_per_species",
+        "population_control.target_particles_per_cell_per_species",
+        "population_control.maximum_particles_per_cell_per_species",
+        "population_control.cadence_steps", "source.spectrum_model",
+        "source.phase_space_power_index"};
+    for (const char* required : requiredVersion4Fields) {
+      if (assigned.count(required) == 0)
+        return Invalid("schema version 4 is missing required key '" +
                        std::string(required) + "'");
     }
   }
@@ -1211,6 +1371,12 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
   resolution.tubeCellSizeM = options.tubeCellSizeM;
   resolution.tubeTransverseProfile = options.tubeTransverseProfile;
   resolution.tubeTransverseExponent = options.tubeTransverseExponent;
+  resolution.activeRegion = options.activeRegion;
+  resolution.activeTubeReferenceRadiusM = options.activeTubeReferenceRadiusM;
+  resolution.activeTubeRadiusAtReferenceM =
+      options.activeTubeRadiusAtReferenceM;
+  resolution.activeTubeRadiusMode = options.activeTubeRadiusMode;
+  resolution.activeTubeBufferBlocks = options.activeTubeBufferBlocks;
   resolution.solarWindSpeedMPerS = options.parker.solarWindSpeedMPerS;
   resolution.solarRotationRateRadPerS = options.parker.solarRotationRateRadPerS;
   resolution.parkerInitialPointM = options.parkerSpiralInitialPointM;
@@ -1259,11 +1425,52 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
          << "compiled_species_authority=AMPS-SpeciesList\n"
          << "time_step_s=" << options.requestedTimeStepS << '\n'
          << "base_particle_weight=" << options.species.macroparticleWeight << '\n'
+         << "transport_model=" << Name(options.transport) << '\n'
+         << "spatial_diffusion_model="
+         << Name(options.spatialDiffusionModel) << '\n'
+         << "pitch_angle_diffusion_model="
+         << Name(options.pitchAngleDiffusionModel) << '\n'
+         << "mean_free_path_model=" << Name(options.meanFreePathModel) << '\n'
+         << "mean_free_path_reference_m="
+         << options.meanFreePathReferenceM << '\n'
+         << "mean_free_path_reference_radius_m="
+         << options.meanFreePathReferenceRadiusM << '\n'
+         << "mean_free_path_reference_rigidity_v="
+         << options.meanFreePathReferenceRigidityV << '\n'
+         << "mean_free_path_radial_exponent="
+         << options.meanFreePathRadialExponent << '\n'
+         << "mean_free_path_rigidity_exponent="
+         << options.meanFreePathRigidityExponent << '\n'
+         << "focused_scattering_frame="
+         << Name(options.focusedScatteringFrame) << '\n'
+         << "active_region_mode=" << Name(options.activeRegion) << '\n'
+         << "active_tube_reference_radius_m="
+         << options.activeTubeReferenceRadiusM << '\n'
+         << "active_tube_radius_at_reference_m="
+         << options.activeTubeRadiusAtReferenceM << '\n'
+         << "active_tube_radius_mode="
+         << Name(options.activeTubeRadiusMode) << '\n'
+         << "active_tube_buffer_blocks="
+         << options.activeTubeBufferBlocks << '\n'
+         << "population_control_mode="
+         << Name(options.populationControl) << '\n'
+         << "population_control_minimum_per_cell_species="
+         << options.minimumParticlesPerCellPerSpecies << '\n'
+         << "population_control_target_per_cell_species="
+         << options.targetParticlesPerCellPerSpecies << '\n'
+         << "population_control_maximum_per_cell_species="
+         << options.maximumParticlesPerCellPerSpecies << '\n'
+         << "population_control_cadence_steps="
+         << options.populationControlCadenceSteps << '\n'
          << "observer_count=" << options.observers.size() << '\n'
          << "initialization_data_tecplot_base="
          << options.initializationDataTecplotFile << '\n'
          << "source_samples_per_compiled_species="
          << options.source.samplesPerStep << '\n'
+         << "source_spectrum_model="
+         << Name(options.source.spectrumModel) << '\n'
+         << "source_phase_space_power_index="
+         << options.source.fixedPhaseSpacePowerIndex << '\n'
          << "minimum_requested_cell_m=" << preflight.minimumRequestedCellM << '\n'
          << "maximum_requested_cell_m=" << preflight.maximumRequestedCellM << '\n'
          << "tube_radius_at_reference_m=" << preflight.tubeRadiusAtReferenceM << '\n'

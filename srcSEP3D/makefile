@@ -122,7 +122,8 @@ TRANSPORT_SRC := \
     transport/time_step.cpp \
     transport/perpendicular_transport.cpp \
     transport/parker_transport.cpp \
-    transport/focused_transport.cpp
+    transport/focused_transport.cpp \
+    transport/population_control.cpp
 RUNTIME_SRC := \
     runtime/run_configuration.cpp \
     runtime/configuration_io.cpp \

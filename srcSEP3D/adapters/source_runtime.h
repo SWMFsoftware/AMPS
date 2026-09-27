@@ -124,6 +124,17 @@ Core::Status ConfigureSpeciesSpectrum(
     ShockSourceRecord* patch, double speciesMassKg,
     double minimumKineticEnergyJ, double maximumKineticEnergyJ);
 
+// Extended schema-4 overload.  LocalCompressionDsa preserves the provider's
+// patch-local q.  FixedPhaseSpacePowerLaw replaces only the spectral shape
+// with the explicitly declared f(p) proportional to p^(-q); it does not
+// reinterpret the independently declared physical source rate as an Equation
+// 21 phase-space-density normalization.
+Core::Status ConfigureSpeciesSpectrum(
+    ShockSourceRecord* patch, double speciesMassKg,
+    double minimumKineticEnergyJ, double maximumKineticEnergyJ,
+    RuntimeModel::SourceSpectrumModel model,
+    double fixedPhaseSpacePowerIndex);
+
 // Use a host-prescribed exact count when present; otherwise apply deterministic
 // stochastic rounding with a semantic (campaign,event,patch,species,step) key.
 // Then sample a complete position/momentum/pitch record for every accepted

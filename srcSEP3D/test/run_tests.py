@@ -21,6 +21,7 @@ cannot satisfy the AMPS production-build acceptance gate.
 from __future__ import annotations
 
 import argparse
+import ast
 import datetime as _datetime
 from dataclasses import asdict, dataclass
 import json
@@ -93,6 +94,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("CFG3D08", "CFG3D", "Complete schema-3 initialization", "cpp"),
     TestDefinition("CFG3D09", "CFG3D", "Background and turbulence selection", "cpp"),
     TestDefinition("CFG3D10", "CFG3D", "CME and Parker start linkage", "cpp"),
+    TestDefinition("CFG3D11", "CFG3D", "Transport/control schema", "cpp"),
     TestDefinition("MSH3D01", "MSH3D", "Resolution bounds", "cpp"),
     TestDefinition("MSH3D02", "MSH3D", "Radial closed forms", "cpp"),
     TestDefinition("MSH3D03", "MSH3D", "Parker tube centreline", "cpp"),
@@ -104,6 +106,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("MSH3D09", "MSH3D", "Refinement-boundary gradients", "cpp"),
     TestDefinition("MSH3D10", "MSH3D", "Finite Parker line and origin-relative AMR", "cpp"),
     TestDefinition("MSH3D11", "MSH3D", "Initialization Tecplot output", "cpp"),
+    TestDefinition("MSH3D12", "MSH3D", "Active Parker corridor", "cpp"),
     TestDefinition("BGP3D01", "BGP3D", "Divergence-free Parker field", "cpp"),
     TestDefinition("BGP3D02", "BGP3D", "Parker component laws", "cpp"),
     TestDefinition("BGP3D03", "BGP3D", "Field-line tangency", "cpp"),
@@ -131,6 +134,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("COEF3D04", "COEF3D", "Complete Ito drift", "cpp"),
     TestDefinition("COEF3D05", "COEF3D", "Invalid coefficient status", "cpp"),
     TestDefinition("COEF3D06", "COEF3D", "Parallel coefficient gradient", "cpp"),
+    TestDefinition("COEF3D07", "COEF3D", "Selectable coefficient models", "cpp"),
     TestDefinition("PRK3D01", "PRK3D", "Parallel diffusion moments", "cpp"),
     TestDefinition("PRK3D02", "PRK3D", "Advection", "cpp"),
     TestDefinition("PRK3D03", "PRK3D", "Orientation invariance", "cpp"),
@@ -146,6 +150,8 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("FTE3D05", "FTE3D", "Momentum characteristic", "cpp"),
     TestDefinition("FTE3D06", "FTE3D", "Strong-scattering reduction", "cpp"),
     TestDefinition("FTE3D07", "FTE3D", "Zero perpendicular identity", "cpp"),
+    TestDefinition("FTE3D08", "FTE3D", "Event-driven mean-free-path scattering", "cpp"),
+    TestDefinition("FTE3D09", "FTE3D", "Scattering-frame energy", "cpp"),
     TestDefinition("RNG3D01", "RNG3D", "Thread reproducibility", "cpp"),
     TestDefinition("RNG3D02", "RNG3D", "Order independence", "cpp"),
     TestDefinition("RNG3D03", "RNG3D", "Purpose isolation", "cpp"),
@@ -154,6 +160,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("V1D03", "V1D", "Guiding-centre drift direction", "cpp"),
     TestDefinition("V1D04", "V1D", "Focused perpendicular transport", "cpp"),
     TestDefinition("V1D05", "V1D", "Tensor diffusion timestep", "cpp"),
+    TestDefinition("POP3D01", "POP3D", "Relativistic split/merge conservation", "cpp"),
     TestDefinition("V2D01", "V2D", "Distinct 1-D/3-D production-core parity", "source"),
     TestDefinition("V5D01", "V5D", "Validation/release governance contracts", "source"),
     TestDefinition("ADP3D01", "ADP3D", "Production mover dispatch", "cpp"),
@@ -177,6 +184,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("VFY3D03", "VFY3D", "Parker Green-function validation", "cpp"),
     TestDefinition("VFY3D04", "VFY3D", "Focused convergence", "cpp"),
     TestDefinition("VFY3D05", "VFY3D", "SWCME DSA distribution", "cpp"),
+    TestDefinition("VFY3D06", "VFY3D", "Fixed phase-space distribution", "cpp"),
     TestDefinition("UTIL02", "UTIL", "Shared-kernel frozen record", "cpp"),
     TestDefinition("HARN02-EXITCODE", "HARN_SHELL", "Outer failure exit code", "shell", False),
     TestDefinition("HARN03-EXITCODE", "HARN_SHELL", "Outer skip exit code", "shell", False),
@@ -190,6 +198,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("BLDL3D06", "BLDL3D", "Production transitive-header boundary", "source"),
     TestDefinition("BLDL3D07", "BLDL3D", "Application-object ABI freshness", "source"),
     TestDefinition("BLDL3D08", "BLDL3D", "Initialized native background output ordering", "source"),
+    TestDefinition("BLDL3D09", "BLDL3D", "Active-region and population-control wiring", "source"),
     TestDefinition("ARCH3D02", "ARCH3D", "Canonical shared-archive ownership", "source"),
     TestDefinition("SWCME3D01", "SWCME3D", "Relocated SWCME common runner", "source"),
     # Linked and external-evidence cases are intentionally non-routine.  They
@@ -227,7 +236,7 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                         if item.kind in ("cpp", "shell") or
                         item.test_id in ("RUN3D01", "VALRUN3D01")),
     "r0": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04", "BLDL3D05",
-           "BLDL3D06", "BLDL3D07", "BLDL3D08",
+           "BLDL3D06", "BLDL3D07", "BLDL3D08", "BLDL3D09",
            "RUN3D01", "LAY01", "BLD01"),
     "r1": ("ARCH3D02", "SWCME3D01", "UTIL02"),
     "r2": ("LIFE3D01", "LIFE3D02", "LIFE3D03", "LIFE3D04"),
@@ -242,10 +251,12 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                      if item.group in ("BGP3D", "SNAP3D")),
     "phase-t": tuple(item.test_id for item in TESTS
                      if item.group == "TUR3D" or
-                     item.test_id in ("COEF3D01", "COEF3D02", "COEF3D06")),
+                     item.test_id in ("COEF3D01", "COEF3D02", "COEF3D06",
+                                      "COEF3D07")),
     "phase-p": tuple(item.test_id for item in TESTS
                      if item.group in ("PRK3D", "FTE3D", "RNG3D") or
-                     item.test_id in ("COEF3D03", "COEF3D04", "COEF3D05")),
+                     item.test_id in ("COEF3D03", "COEF3D04", "COEF3D05",
+                                      "POP3D01")),
     "phase-a": tuple(item.test_id for item in TESTS
                      if item.group in ("ADP3D", "SHK3D") or
                      item.test_id in ("NAT3D04", "NAT3D05", "NAT3D08")),
@@ -257,7 +268,8 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                      (item.group == "NAT3D" and item.kind == "validation") or
                      item.test_id == "VALRUN3D01"),
     "production": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04",
-                   "BLDL3D05", "BLDL3D06", "BLDL3D07", "BLDL3D08"),
+                   "BLDL3D05", "BLDL3D06", "BLDL3D07", "BLDL3D08",
+                   "BLDL3D09"),
 }
 
 
@@ -301,6 +313,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--validation-data", type=Path,
                         default=os.environ.get("SEP3D_VALIDATION_DATA"),
                         help="root containing CASE_ID/manifest.json evidence bundles")
+    parser.add_argument(
+        "--validation-input", type=Path,
+        default=os.environ.get("SEP3D_VALIDATION_INPUT"),
+        help="complete immutable input deck for Phase-V linked cases")
     parser.add_argument("--validation-launch-prefix", default="",
                         help="optional argv prefix for linked cases, e.g. 'mpiexec -n 8'")
     parser.add_argument("--amps-source", type=Path,
@@ -669,6 +685,227 @@ def _check_initialized_native_background(definition: TestDefinition) -> Result:
         time.monotonic() - started, [])
 
 
+def _check_active_population_wiring(definition: TestDefinition) -> Result:
+    """Guard AMPS lifecycle placement and split/merge safety invariants.
+
+    This source test complements the portable geometry and conservation unit
+    tests.  It deliberately checks the production driver because neither an
+    isolated classifier test nor an isolated relativistic merge test can prove
+    that AMPS consumes those implementations at a safe, globally joined point.
+    A configured BLDL3D01 run remains the authority for the concrete AMPS ABI.
+    """
+    started = time.monotonic()
+    main_lib = (ROOT / "main_lib.cpp").read_text(encoding="utf-8")
+    mesh_model = (ROOT / "mesh" / "mesh_model.cpp").read_text(
+        encoding="utf-8")
+    adapter = (ROOT / "amps" / "amps_particle_adapter.cpp").read_text(
+        encoding="utf-8")
+    population = (ROOT / "transport" / "population_control.cpp").read_text(
+        encoding="utf-8")
+    core_split_path = (ROOT.parent / "src" / "pic" /
+                       "pic_particle_spliting.cpp")
+    if not core_split_path.is_file():
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            "required AMPS core source is absent from the tested tree: "
+            "src/pic/pic_particle_spliting.cpp",
+            time.monotonic() - started, [])
+    core_split = core_split_path.read_text(encoding="utf-8")
+
+    required_by_file = {
+        "main_lib.cpp": (
+            "BlockIntersectsActiveRegion(",
+            "SetTreeNodeActiveUseFlag(",
+            "PIC::ParticleSplitting::SetMode(PIC::ParticleSplitting::_disactivated);",
+            "node != nullptr && node->IsUsedInCalculationFlag",
+            "ApplyPopulationControlAtBoundary();",
+        ),
+        "mesh/mesh_model.cpp": (
+            "double ActiveTubeRadiusM(",
+            "bool BlockIntersectsActiveRegion(",
+        ),
+        "amps/amps_particle_adapter.cpp": (
+            "MergeRelativisticThreeToTwo(",
+            "NewPopulationStableId(",
+            "ResolvePopulationMagneticDirection(",
+            "PIC::ParticleBuffer::CloneParticle(",
+        ),
+        "transport/population_control.cpp": (
+            "RelativisticTotalEnergyJ(",
+            "MergeRelativisticThreeToTwo(",
+        ),
+    }
+    texts = {
+        "main_lib.cpp": main_lib,
+        "mesh/mesh_model.cpp": mesh_model,
+        "amps/amps_particle_adapter.cpp": adapter,
+        "transport/population_control.cpp": population,
+    }
+    missing: List[str] = []
+    for name, tokens in required_by_file.items():
+        missing.extend(f"{name}: {token}" for token in tokens
+                       if token not in texts[name])
+
+    # These checks are intentionally scoped to the two public functions and
+    # validate ordering as well as spelling.  A matching token in a comment,
+    # or a guard placed after reserve(), particles[0], or std::next(end()),
+    # would not repair the undefined-behaviour path that this gate protects.
+    try:
+        merge_start = core_split.index(
+            "void PIC::ParticleSplitting::MergeParticleList(")
+        split_start = core_split.index(
+            "void PIC::ParticleSplitting::SplitParticleList(", merge_start)
+        merge_body = core_split[merge_start:split_start]
+        split_body = core_split[split_start:]
+
+        merge_target = merge_body.index(
+            "if (nRequestedParticleNumber < 1) return;")
+        merge_traversal = merge_body.index("while (particleIndex != -1)")
+        merge_empty = merge_body.index(
+            "if (particles.empty() || particles.size() <=")
+        merge_first_record = merge_body.index(
+            "double vMin[3] = {particles[0]")
+        merge_tuple = merge_body.index("if (particles.size() < 3) return;")
+        merge_empty_bin = merge_body.index("if (binList.empty())")
+        merge_successor = merge_body.index("if (std::next(currentBinIt)")
+
+        split_target = split_body.index(
+            "if (nRequestedParticleNumber < 1) return;")
+        split_reserve = split_body.index("particles.reserve(")
+        split_tuple = split_body.index("if (particles.size() < 2) return;")
+        split_first_record = split_body.index(
+            "double vMin[3] = {particles[0]")
+        split_empty_bin = split_body.index("if (binList.empty())")
+        split_successor = split_body.index("if (std::next(currentBinIt)")
+    except ValueError as error:
+        missing.append(
+            "pic_particle_spliting.cpp: incomplete guarded entry points "
+            f"({error})")
+    else:
+        if merge_target > merge_traversal or split_target > split_reserve:
+            missing.append(
+                "pic_particle_spliting.cpp: non-positive target guards must "
+                "precede list traversal/reserve")
+        if merge_empty > merge_first_record:
+            missing.append(
+                "pic_particle_spliting.cpp: empty/no-op merge guard must "
+                "precede particles[0]")
+        if merge_tuple > merge_successor or merge_empty_bin > merge_successor:
+            missing.append(
+                "pic_particle_spliting.cpp: merge tuple/bin guards must "
+                "precede iterator successor access")
+        if split_tuple > split_first_record or split_empty_bin > split_successor:
+            missing.append(
+                "pic_particle_spliting.cpp: split tuple/bin guards must "
+                "precede record/iterator access")
+
+    # The core fix must travel with the SEP overlay.  Previously the README
+    # and this test described the guarded implementation while the release
+    # allowlist silently omitted the actual .cpp, leaving an old destination
+    # copy active after installation.
+    package_policy = ROOT.parent / "tools" / "sep_package_hygiene.py"
+    required_release_members: Tuple[str, ...] = ()
+    if package_policy.is_file():
+        # Read the literal policy declaration instead of accepting the path
+        # anywhere in the file.  A path mentioned only in a comment or in the
+        # permissive allowlist does not prove that a missing member fails the
+        # package audit (the defect this gate is intended to prevent).
+        try:
+            policy_tree = ast.parse(
+                package_policy.read_text(encoding="utf-8"),
+                filename=str(package_policy))
+            for statement in policy_tree.body:
+                target = None
+                value = None
+                if isinstance(statement, ast.AnnAssign):
+                    target = statement.target
+                    value = statement.value
+                elif isinstance(statement, ast.Assign) and \
+                     len(statement.targets) == 1:
+                    target = statement.targets[0]
+                    value = statement.value
+                if isinstance(target, ast.Name) and \
+                   target.id == "TOP_LEVEL_REQUIRED" and value is not None:
+                    literal = ast.literal_eval(value)
+                    if isinstance(literal, tuple) and \
+                       all(isinstance(item, str) for item in literal):
+                        required_release_members = literal
+                    break
+        except (OSError, SyntaxError, ValueError):
+            required_release_members = ()
+    if "src/pic/pic_particle_spliting.cpp" not in required_release_members:
+        missing.append(
+            "sep_package_hygiene.py: guarded AMPS core source is not a "
+            "required release member")
+    if missing:
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            "active-region/population integration is incomplete: " +
+            "; ".join(missing), time.monotonic() - started, [])
+
+    try:
+        init_mesh = main_lib[main_lib.index("void amps_init_mesh()"):
+                             main_lib.index("void amps_init()")]
+        init_order = [
+            init_mesh.index("PIC::Mesh::mesh->buildMesh();"),
+            init_mesh.index("ApplyActiveRegionMask(resolution);"),
+            init_mesh.index("PIC::Mesh::mesh->SetParallelLoadMeasure("),
+            init_mesh.index("PIC::Mesh::mesh->CreateNewParallelDistributionLists();"),
+            init_mesh.index("PIC::Mesh::mesh->AllocateTreeBlocks();"),
+        ]
+        time_step = main_lib[main_lib.index("int amps_time_step()") :]
+        boundary_order = [
+            time_step.index("SEP3D::AMPS::Movers::InjectParticles(plan);"),
+            time_step.index("ApplyPopulationControlAtBoundary();"),
+            time_step.index("PublishObserversAtBoundary();"),
+            time_step.index("WriteCheckpointAtBoundary();"),
+        ]
+        population_function = adapter[
+            adapter.index("PopulationControlReport ApplyPopulationControl("):
+            adapter.index("int MoveParticle(")]
+        species_loop = population_function.index(
+            "for (int species = 0; species < PIC::nTotalSpecies; ++species)")
+        semantic_ordinal = population_function.index(
+            "std::uint64_t operationIndex = 0;")
+        first_population_action = population_function.index(
+            "const bool mergeTriggered")
+    except ValueError as error:
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            f"cannot identify production lifecycle boundary: {error}",
+            time.monotonic() - started, [])
+
+    if init_order != sorted(init_order):
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            "active-use flags must be applied after AMR construction and before "
+            "load measurement, distribution, and block allocation",
+            time.monotonic() - started, [])
+    if boundary_order != sorted(boundary_order):
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            "population control must follow shock injection and precede observer "
+            "publication and checkpointing",
+            time.monotonic() - started, [])
+    if not (species_loop < semantic_ordinal < first_population_action) or \
+       population_function.count("std::uint64_t operationIndex = 0;") != 1:
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            "resampling operation ordinals must restart inside each physical "
+            "cell/species population so MPI block ownership cannot change "
+            "post-resampling random keys",
+            time.monotonic() - started, [])
+
+    return Result(
+        definition.test_id, definition.group, "PASS",
+        "the Parker-corridor mask uses AMPS active-use flags before distribution; "
+        "inactive source patches are rejected; the legacy automatic splitter is "
+        "disabled; SEP-aware relativistic resampling runs after injection and "
+        "before observers/checkpoints; resampling keys are independent of MPI "
+        "block traversal; and generic AMPS empty/singleton guards are present",
+        time.monotonic() - started, [])
+
+
 def _find_pic_header(args: argparse.Namespace) -> Optional[Path]:
     roots: List[Path] = []
     if args.amps_source is not None:
@@ -984,7 +1221,7 @@ def _check_makefile_relocation(definition: TestDefinition,
         "parker_geometry.o mesh_model.o "
         "bg_provider.o bg_parker.o bg_swmf.o background_snapshot.o "
         "turbulence_models.o keyed_random.o time_step.o perpendicular_transport.o "
-        "parker_transport.o focused_transport.o "
+        "parker_transport.o focused_transport.o population_control.o "
         "run_configuration.o configuration_io.o runtime.o runtime_adapters.o "
         "transport_adapter.o particle_ledger.o swcme_source_adapter.o source_runtime.o "
         "sampling.o observer_runtime.o publication.o restart.o output_coordinator.o "
@@ -1288,6 +1525,8 @@ def _run_source(definition: TestDefinition, args: argparse.Namespace,
         return _check_application_object_freshness(definition)
     if definition.test_id == "BLDL3D08":
         return _check_initialized_native_background(definition)
+    if definition.test_id == "BLDL3D09":
+        return _check_active_population_wiring(definition)
     if definition.test_id == "ARCH3D02":
         return _check_shared_archives(definition, args)
     if definition.test_id == "SWCME3D01":
@@ -1354,6 +1593,9 @@ def _run_validation(definition: TestDefinition, args: argparse.Namespace,
     if args.validation_data is not None:
         command.extend(("--evidence-root",
                         str(args.validation_data.expanduser().resolve())))
+    if args.validation_input is not None:
+        command.extend(("--test-input",
+                        str(args.validation_input.expanduser().resolve())))
     if args.validation_launch_prefix:
         command.extend(("--launch-prefix", args.validation_launch_prefix))
     code, output, elapsed = _run_command(

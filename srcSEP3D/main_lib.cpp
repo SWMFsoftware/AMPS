@@ -37,6 +37,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <list>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -227,6 +228,16 @@ SEP3D::Mesh::ResolutionConfiguration ResolutionConfiguration() {
   result.tubeCellSizeM = options.tubeCellSizeM;
   result.tubeTransverseProfile = options.tubeTransverseProfile;
   result.tubeTransverseExponent = options.tubeTransverseExponent;
+  // The active-domain corridor deliberately has its own width law.  A user
+  // may refine a narrow core while retaining a wider particle-transport halo;
+  // silently reusing the refinement width here could deactivate blocks that
+  // are needed by an observer, shock source, or finite-difference stencil.
+  result.activeRegion = options.activeRegion;
+  result.activeTubeReferenceRadiusM = options.activeTubeReferenceRadiusM;
+  result.activeTubeRadiusAtReferenceM =
+      options.activeTubeRadiusAtReferenceM;
+  result.activeTubeRadiusMode = options.activeTubeRadiusMode;
+  result.activeTubeBufferBlocks = options.activeTubeBufferBlocks;
   result.solarWindSpeedMPerS = options.parker.solarWindSpeedMPerS;
   result.solarRotationRateRadPerS = options.parker.solarRotationRateRadPerS;
   result.parkerInitialPointM = options.parkerSpiralInitialPointM;
@@ -417,6 +428,73 @@ void CloseParticleLedgerCollectively(std::uint64_t step) {
     const Core::Status status = gParticleLedger.ImportClosed(row);
     if (!status.ok()) StopWithStatus("global particle ledger closure", status);
     gClosedParticleLedger.push_back(row);
+  }
+}
+
+void ApplyPopulationControlAtBoundary() {
+  using namespace SEP3D;
+  const RuntimeModel::RunConfiguration3DOptions& options =
+      Configuration().options();
+  if (options.populationControl !=
+      RuntimeModel::PopulationControlMode::SplitMerge) {
+    return;
+  }
+  const std::uint64_t step = ApplicationRuntime().counters().currentTick;
+  if (step % options.populationControlCadenceSteps != 0) return;
+
+  AMPS::Movers::PopulationControlRequest request;
+  request.step = step;
+  request.campaignSeed = options.campaignSeed;
+  request.minimumParticlesPerCellPerSpecies =
+      options.minimumParticlesPerCellPerSpecies;
+  request.targetParticlesPerCellPerSpecies =
+      options.targetParticlesPerCellPerSpecies;
+  request.maximumParticlesPerCellPerSpecies =
+      options.maximumParticlesPerCellPerSpecies;
+  const AMPS::Movers::PopulationControlReport local =
+      AMPS::Movers::ApplyPopulationControl(request);
+  if (!local.status.ok()) {
+    std::cerr << "[srcSEP3D] rank " << PIC::ThisThread
+              << " population control failed: "
+              << local.status.message << '\n';
+  }
+  int localOK = local.status.ok() ? 1 : 0;
+  int globalOK = 0;
+  MPI_Allreduce(&localOK, &globalOK, 1, MPI_INT, MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  if (globalOK == 0) {
+    StopWithStatus("population control", Core::Status(
+        Core::StatusCode::Error,
+        "one or more MPI ranks rejected SEP-aware split/merge"));
+  }
+
+  const unsigned long long localCounts[5] = {
+      static_cast<unsigned long long>(local.occupiedCellSpecies),
+      static_cast<unsigned long long>(local.splitOperations),
+      static_cast<unsigned long long>(local.mergeOperations),
+      static_cast<unsigned long long>(local.particlesBefore),
+      static_cast<unsigned long long>(local.particlesAfter)};
+  unsigned long long globalCounts[5] = {};
+  MPI_Allreduce(localCounts, globalCounts, 5, MPI_UNSIGNED_LONG_LONG,
+                MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+  const double localResiduals[3] = {
+      local.maximumRelativeWeightResidual,
+      local.maximumRelativeMomentumResidual,
+      local.maximumRelativeEnergyResidual};
+  double globalResiduals[3] = {};
+  MPI_Allreduce(localResiduals, globalResiduals, 3, MPI_DOUBLE, MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  if (PIC::ThisThread == 0) {
+    std::cout << "[srcSEP3D] population control step=" << step
+              << " occupied_cell_species=" << globalCounts[0]
+              << " split_operations=" << globalCounts[1]
+              << " merge_operations=" << globalCounts[2]
+              << " particles_before=" << globalCounts[3]
+              << " particles_after=" << globalCounts[4]
+              << " max_weight_residual=" << globalResiduals[0]
+              << " max_momentum_residual=" << globalResiduals[1]
+              << " max_relativistic_energy_residual="
+              << globalResiduals[2] << '\n';
   }
 }
 
@@ -653,27 +731,26 @@ void PrintInitializationCellData(
   }
 }
 
-SEP3D::Core::Status ResolveLocalTransportImpl(
-    const SEP3D::Core::Vec3& positionM, int species,
-    double momentumKgMPerS, double mu,
+SEP3D::Core::Status ResolveStoredBackground(
+    const SEP3D::Core::Vec3& positionM,
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
-    SEP3D::Adapters::LocalTransportRecord* local,
-    bool evaluateParallelGradient) {
+    SEP3D::Background::BackgroundSample* resolved,
+    PIC::Mesh::cDataCenterNode** resolvedCell) {
   using namespace SEP3D;
-  if (node == nullptr || node->block == nullptr || local == nullptr)
+  if (node == nullptr || node->block == nullptr || resolved == nullptr)
     return Core::Status(Core::StatusCode::NotFound,
-                        "local transport lookup has no allocated AMR block");
+                        "background lookup has no allocated AMR block");
   double position[3]; positionM.CopyTo(position);
   int i = 0, j = 0, k = 0;
   const int localCell = PIC::Mesh::mesh->FindCellIndex(
       position, i, j, k, node, false);
   if (localCell < 0)
     return Core::Status(Core::StatusCode::NotFound,
-                        "particle position has no AMR center cell");
+                        "position has no AMR center cell");
   PIC::Mesh::cDataCenterNode* cell = node->block->GetCenterNode(localCell);
   if (cell == nullptr)
     return Core::Status(Core::StatusCode::BackgroundInvalid,
-                        "particle entered an uninitialized AMR center cell");
+                        "position has an uninitialized AMR center cell");
 
   const RuntimeModel::StorageLayout& layout = Configuration().storage_layout();
   Background::BackgroundSample background;
@@ -685,41 +762,86 @@ SEP3D::Core::Status ResolveLocalTransportImpl(
     // while it is being filled for the next coupled generation.
     background = gInstalledBackground->samples()[mapped->second];
   } else {
-  double magnetic[3], velocity[3], curvature[3];
-  LoadBytes(cell, layout.magneticFieldOffset, magnetic, sizeof(magnetic));
-  LoadBytes(cell, layout.bulkVelocityOffset, velocity, sizeof(velocity));
-  LoadBytes(cell, layout.curvatureOffset, curvature, sizeof(curvature));
-  background.B = Core::Vec3(magnetic);
-  background.U = Core::Vec3(velocity);
-  background.curvature = Core::Vec3(curvature);
-  background.absB = background.B.Norm();
-  background.bHat = background.B.Normalized();
-  LoadBytes(cell, layout.numberDensityOffset, &background.numberDensityM3,
-            sizeof(double));
-  LoadBytes(cell, layout.velocityDivergenceOffset, &background.divU,
-            sizeof(double));
-  LoadBytes(cell, layout.temperatureOffset, &background.temperatureK,
-            sizeof(double));
-  LoadBytes(cell, layout.pressureOffset, &background.pressurePa,
-            sizeof(double));
-  LoadBytes(cell, layout.alfvenSpeedOffset, &background.alfvenSpeedMpS,
-            sizeof(double));
-  LoadBytes(cell, layout.divBhatOffset, &background.divBhat, sizeof(double));
-  LoadBytes(cell, layout.focusingLengthOffset, &background.focusingLenM,
-            sizeof(double));
-  LoadBytes(cell, layout.fieldAlignedStrainOffset,
-            &background.fieldAlignedStrain, sizeof(double));
-  if (layout.magneticGradientOffset != RuntimeModel::kNoOffset)
-    LoadBytes(cell, layout.magneticGradientOffset, background.gradB.m,
-              sizeof(background.gradB.m));
-  background.valid = std::isfinite(background.absB) && background.absB > 0.0;
-  background.status = background.valid
-      ? Core::Status::OK()
-      : Core::Status(Core::StatusCode::BackgroundInvalid,
-                     "stored AMR magnetic field is invalid");
+    double magnetic[3], velocity[3], curvature[3];
+    LoadBytes(cell, layout.magneticFieldOffset, magnetic, sizeof(magnetic));
+    LoadBytes(cell, layout.bulkVelocityOffset, velocity, sizeof(velocity));
+    LoadBytes(cell, layout.curvatureOffset, curvature, sizeof(curvature));
+    background.B = Core::Vec3(magnetic);
+    background.U = Core::Vec3(velocity);
+    background.curvature = Core::Vec3(curvature);
+    background.absB = background.B.Norm();
+    background.bHat = background.B.Normalized();
+    LoadBytes(cell, layout.numberDensityOffset, &background.numberDensityM3,
+              sizeof(double));
+    LoadBytes(cell, layout.velocityDivergenceOffset, &background.divU,
+              sizeof(double));
+    LoadBytes(cell, layout.temperatureOffset, &background.temperatureK,
+              sizeof(double));
+    LoadBytes(cell, layout.pressureOffset, &background.pressurePa,
+              sizeof(double));
+    LoadBytes(cell, layout.alfvenSpeedOffset, &background.alfvenSpeedMpS,
+              sizeof(double));
+    LoadBytes(cell, layout.divBhatOffset, &background.divBhat, sizeof(double));
+    LoadBytes(cell, layout.focusingLengthOffset, &background.focusingLenM,
+              sizeof(double));
+    LoadBytes(cell, layout.fieldAlignedStrainOffset,
+              &background.fieldAlignedStrain, sizeof(double));
+    if (layout.magneticGradientOffset != RuntimeModel::kNoOffset)
+      LoadBytes(cell, layout.magneticGradientOffset, background.gradB.m,
+                sizeof(background.gradB.m));
+    background.valid =
+        std::isfinite(background.absB) && background.absB > 0.0;
+    background.status = background.valid
+        ? Core::Status::OK()
+        : Core::Status(Core::StatusCode::BackgroundInvalid,
+                       "stored AMR magnetic field is invalid");
   }
   if (!background.status.ok()) return background.status;
+  *resolved = background;
+  if (resolvedCell != nullptr) *resolvedCell = cell;
+  return Core::Status::OK();
+}
+
+SEP3D::Core::Status ResolvePopulationMagneticDirection(
+    const SEP3D::Core::Vec3& positionM,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+    SEP3D::Core::Vec3* bHat) {
+  if (bHat == nullptr)
+    return SEP3D::Core::Status(SEP3D::Core::StatusCode::InvalidInput,
+                              "magnetic-direction output is null");
+  SEP3D::Background::BackgroundSample background;
+  const SEP3D::Core::Status status = ResolveStoredBackground(
+      positionM, node, &background, nullptr);
+  if (!status.ok()) return status;
+  if (!std::isfinite(background.bHat.x) ||
+      !std::isfinite(background.bHat.y) ||
+      !std::isfinite(background.bHat.z) ||
+      std::fabs(background.bHat.Norm() - 1.0) > 1.0e-12) {
+    return SEP3D::Core::Status(
+        SEP3D::Core::StatusCode::BackgroundInvalid,
+        "stored background has no unit magnetic direction");
+  }
+  *bHat = background.bHat;
+  return SEP3D::Core::Status::OK();
+}
+
+SEP3D::Core::Status ResolveLocalTransportImpl(
+    const SEP3D::Core::Vec3& positionM, int species,
+    double momentumKgMPerS, double mu,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+    SEP3D::Adapters::LocalTransportRecord* local,
+    bool evaluateParallelGradient) {
+  using namespace SEP3D;
+  if (local == nullptr)
+    return Core::Status(Core::StatusCode::InvalidInput,
+                        "local transport output is null");
+  Background::BackgroundSample background;
+  PIC::Mesh::cDataCenterNode* cell = nullptr;
+  const Core::Status backgroundStatus = ResolveStoredBackground(
+      positionM, node, &background, &cell);
+  if (!backgroundStatus.ok()) return backgroundStatus;
   local->background = background;
+  const RuntimeModel::StorageLayout& layout = Configuration().storage_layout();
   const double dx = (node->xmax[0] - node->xmin[0]) / _BLOCK_CELLS_X_;
   const double dy = (node->xmax[1] - node->xmin[1]) / _BLOCK_CELLS_Y_;
   const double dz = (node->xmax[2] - node->xmin[2]) / _BLOCK_CELLS_Z_;
@@ -739,14 +861,63 @@ SEP3D::Core::Status ResolveLocalTransportImpl(
   waves.deltaBMinus2T2 = variance[1];
   waves.deltaB2T2 = variance[0] + variance[1];
   if (!waves.status.usable() || !waves.valid) return waves.status;
+  if (waves.deltaB2T2 > 0.0) {
+    local->plusWaveFraction = waves.deltaBPlus2T2 / waves.deltaB2T2;
+    local->minusWaveFraction = waves.deltaBMinus2T2 / waves.deltaB2T2;
+  } else {
+    // A zero-variance ballistic sample has no physical branch preference.
+    // The event rate is also zero/infinite-MFP, so this symmetric partition is
+    // an inert but finite sentinel rather than an assumed turbulence model.
+    local->plusWaveFraction = 0.5;
+    local->minusWaveFraction = 0.5;
+  }
+  const auto& coefficientOptions = Configuration().options();
+  Turbulence::CoefficientSelection coefficientSelection;
+  coefficientSelection.spatial = coefficientOptions.spatialDiffusionModel;
+  coefficientSelection.pitchAngle =
+      coefficientOptions.pitchAngleDiffusionModel;
+  coefficientSelection.meanFreePath = coefficientOptions.meanFreePathModel;
+  coefficientSelection.constantDmumuPerS =
+      coefficientOptions.constantDmumuPerS;
+  coefficientSelection.constantMeanFreePathM =
+      coefficientOptions.constantMeanFreePathM;
+  coefficientSelection.meanFreePathReferenceM =
+      coefficientOptions.meanFreePathReferenceM;
+  coefficientSelection.meanFreePathReferenceRadiusM =
+      coefficientOptions.meanFreePathReferenceRadiusM;
+  coefficientSelection.meanFreePathReferenceRigidityV =
+      coefficientOptions.meanFreePathReferenceRigidityV;
+  coefficientSelection.meanFreePathRadialExponent =
+      coefficientOptions.meanFreePathRadialExponent;
+  coefficientSelection.meanFreePathRigidityExponent =
+      coefficientOptions.meanFreePathRigidityExponent;
+  coefficientSelection.quadratureAbsoluteToleranceM2PerS =
+      coefficientOptions.spatialQuadratureAbsoluteToleranceM2PerS;
+  coefficientSelection.quadratureRelativeTolerance =
+      coefficientOptions.spatialQuadratureRelativeTolerance;
+  coefficientSelection.quadratureMaximumRecursion =
+      coefficientOptions.spatialQuadratureMaximumRecursion;
+  const bool parkerMover = coefficientOptions.transport ==
+      RuntimeModel::TransportModel::Parker3D;
+  const bool focusedDiffusionMover = coefficientOptions.transport ==
+      RuntimeModel::TransportModel::FocusedDiffusion3D;
+  const bool focusedScatteringMover = coefficientOptions.transport ==
+      RuntimeModel::TransportModel::FocusedScattering3D;
+  coefficientSelection.requireSpatialDiffusion = parkerMover ||
+      coefficientOptions.perpendicularDiffusion ==
+          RuntimeModel::PerpendicularDiffusionMode::ConstantRatio;
+  coefficientSelection.requirePitchAngleDiffusion =
+      focusedDiffusionMover;
+  coefficientSelection.requireMeanFreePath = focusedScatteringMover;
   const Turbulence::LocalScatteringCoefficients coefficients =
       Turbulence::EvaluateLocalScattering(
           waves, background, positionM, species,
           PIC::MolecularData::GetMass(species),
           PIC::MolecularData::GetElectricCharge(species),
-          momentumKgMPerS, mu);
+          momentumKgMPerS, mu, coefficientSelection);
   if (!coefficients.status.ok()) return coefficients.status;
   local->kappaParallelM2PerS = coefficients.kappaParallelM2PerS;
+  local->meanFreePathM = coefficients.meanFreePathM;
   local->dMuMuPerS = coefficients.dMuMuPerS;
   local->dDmuMuDmuPerS = coefficients.dDmuMuDmuPerS;
 
@@ -755,7 +926,7 @@ SEP3D::Core::Status ResolveLocalTransportImpl(
   // spacing in both field-aligned directions.  The spacing is enlarged by the
   // largest b component so at least one Cartesian coordinate crosses a cell
   // centre spacing even when the field is oblique to the AMR axes.
-  if (evaluateParallelGradient) {
+  if (evaluateParallelGradient && parkerMover) {
     // Do not prefill the production derivative with zero.  A successful
     // top-level resolution must write a value through the validated stencil;
     // every failure returns before the partially filled record can reach a
@@ -1607,6 +1778,8 @@ struct PackedObservation {
   std::int32_t species;
   double x, y, z, momentum, mass, mu, gyrophase, weight;
   std::uint64_t completedStep, substep, lastShockGeneration;
+  double remainingScatteringOpticalDepth;
+  std::uint64_t nextScatteringEvent;
 };
 
 struct PackedCell {
@@ -1686,7 +1859,9 @@ void PublishObserversAtBoundary() {
                 PIC::MolecularData::GetMass(particle.species), particle.mu,
                 particle.gyrophaseRad, particle.statisticalWeight,
                 particle.completedStep, particle.substep,
-                particle.lastShockGeneration});
+                particle.lastShockGeneration,
+                particle.remainingScatteringOpticalDepth,
+                particle.nextScatteringEvent});
             ptr = PIC::ParticleBuffer::GetNext(ptr);
           }
         }
@@ -1783,7 +1958,9 @@ void WriteCheckpointAtBoundary() {
                 PIC::MolecularData::GetMass(particle.species), particle.mu,
                 particle.gyrophaseRad, particle.statisticalWeight,
                 particle.completedStep, particle.substep,
-                particle.lastShockGeneration});
+                particle.lastShockGeneration,
+                particle.remainingScatteringOpticalDepth,
+                particle.nextScatteringEvent});
             ptr = PIC::ParticleBuffer::GetNext(ptr);
           }
         }
@@ -1838,6 +2015,9 @@ void WriteCheckpointAtBoundary() {
       particle.completedStep = packed.completedStep;
       particle.substep = packed.substep;
       particle.lastShockGeneration = packed.lastShockGeneration;
+      particle.remainingScatteringOpticalDepth =
+          packed.remainingScatteringOpticalDepth;
+      particle.nextScatteringEvent = packed.nextScatteringEvent;
       checkpoint.particles.push_back(particle);
       maximumId = std::max(maximumId, particle.stableId);
     }
@@ -2103,6 +2283,60 @@ double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   return node != nullptr && node->IsUsedInCalculationFlag ? 1.0 : 0.0;
 }
 
+void ApplyActiveRegionMask(
+    const SEP3D::Mesh::ResolutionConfiguration& resolution) {
+  using Node = cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>;
+  if (resolution.activeRegion ==
+      SEP3D::RuntimeModel::ActiveRegionMode::FullDomain) {
+    return;
+  }
+
+  // BranchBottomNodeList is replicated on every MPI rank after buildMesh().
+  // Give each leaf to exactly one rank by its deterministic list ordinal;
+  // SetTreeNodeActiveUseFlag then gathers those disjoint ID lists and
+  // broadcasts the resulting flag changes to every replica of the tree.
+  std::list<Node*> inactive;
+  std::uint64_t ordinal = 0;
+  for (Node* node = PIC::Mesh::mesh->BranchBottomNodeList;
+       node != nullptr; node = node->nextBranchBottomNode, ++ordinal) {
+    if (ordinal % static_cast<std::uint64_t>(PIC::nTotalThreads) !=
+        static_cast<std::uint64_t>(PIC::ThisThread)) {
+      continue;
+    }
+    const SEP3D::Core::Vec3 minimum(
+        node->xmin[0], node->xmin[1], node->xmin[2]);
+    const SEP3D::Core::Vec3 maximum(
+        node->xmax[0], node->xmax[1], node->xmax[2]);
+    if (!SEP3D::Mesh::BlockIntersectsActiveRegion(
+            minimum, maximum, resolution)) {
+      inactive.push_back(node);
+    }
+  }
+
+  // Match the MPI datatype exactly.  std::uint64_t is not required to be an
+  // alias of unsigned long long on every supported compiler, even when both
+  // happen to be 64 bits; using the exact C++ type avoids an ABI-dependent
+  // collective buffer mismatch.
+  const unsigned long long localInactive =
+      static_cast<unsigned long long>(inactive.size());
+  unsigned long long globalInactive = 0;
+  MPI_Allreduce(&localInactive, &globalInactive, 1, MPI_UNSIGNED_LONG_LONG,
+                MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+  if (globalInactive >= ordinal) {
+    StopWithStatus("active Parker corridor", SEP3D::Core::Status(
+        SEP3D::Core::StatusCode::ConfigurationConflict,
+        "active-region mask would deactivate every AMR leaf block"));
+  }
+
+  PIC::Mesh::mesh->SetTreeNodeActiveUseFlag(
+      &inactive, nullptr, false, nullptr);
+  if (PIC::ThisThread == 0) {
+    std::cout << "[srcSEP3D] active Parker corridor retained "
+              << (ordinal - globalInactive) << " of " << ordinal
+              << " AMR leaf blocks; disabled=" << globalInactive << '\n';
+  }
+}
+
 bool TrajectoryTrackingCondition(double* position, double* velocity, int spec,
                                  void* particleData) {
   (void)position;
@@ -2130,6 +2364,11 @@ void amps_init_mesh() {
   // PIC initializes MPI and its allocation registries.  srcSEP3D then adds
   // the frozen static/sampling requests before AMPS calculates final offsets.
   PIC::Init_BeforeParser();
+  // The legacy automatic splitter is nonrelativistic and copies application
+  // extension bytes verbatim.  Keep it disabled; the configured SEP-aware
+  // controller runs explicitly at a joined boundary after the transport
+  // ledger closes.
+  PIC::ParticleSplitting::SetMode(PIC::ParticleSplitting::_disactivated);
   // Capture and validate the complete generated species table immediately
   // after AMPS base initialization.  The table is read-only: its count,
   // symbols, masses, charges, and indices were fixed by SpeciesList when this
@@ -2158,6 +2397,11 @@ void amps_init_mesh() {
   PIC::Mesh::mesh->init(minimum, maximum, localResolution);
   PIC::Mesh::mesh->buildMesh();
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+  // AMPS' public active-use API must be called after the complete tree exists
+  // and before load measurement/distribution/block allocation.  Inactive
+  // leaves then consume neither center-cell storage nor particle lists, while
+  // movers see them through the normal DomainExit path.
+  ApplyActiveRegionMask(resolution);
   PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
   PIC::Mesh::mesh->CreateNewParallelDistributionLists();
   if (options.inputSchemaVersion >= 3) {
@@ -2241,6 +2485,7 @@ void amps_init() {
   FillAndPublishBackground();
   SEP3D::AMPS::Movers::Context mover;
   mover.resolveLocal = ResolveLocalTransport;
+  mover.resolveMagneticDirection = ResolvePopulationMagneticDirection;
   mover.ledger = &gParticleLedger;
   mover.maximumSubsteps = Configuration().options().maximumTransportSubsteps;
   if (gInstalledShock) {
@@ -2353,15 +2598,41 @@ int amps_time_step() {
     if (shock.active && Configuration().options().source.enabled &&
         runtime.EventDue(SEP3D::RuntimeModel::ScheduledEvent::Injection)) {
       const auto& options = Configuration().options();
+      // Domain pruning can remove most of a spherical SWCME front.  Determine
+      // connectivity from the replicated AMR active-use flag before allocating
+      // the exact macro count.  Counts are apportioned only over represented
+      // patches, while every omitted physical patch receives an explicit
+      // disconnected ledger row instead of failing later in InitiateParticle.
+      std::vector<std::size_t> connectedOrdinal(
+          shock.patches.size(), std::numeric_limits<std::size_t>::max());
+      std::vector<SEP3D::Adapters::ShockSourceRecord> connectedPatches;
+      connectedPatches.reserve(shock.patches.size());
+      for (std::size_t patchIndex = 0;
+           patchIndex < shock.patches.size(); ++patchIndex) {
+        double position[3];
+        shock.patches[patchIndex].positionM.CopyTo(position);
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
+            PIC::Mesh::mesh->findTreeNode(position);
+        if (node != nullptr && node->IsUsedInCalculationFlag) {
+          connectedOrdinal[patchIndex] = connectedPatches.size();
+          connectedPatches.push_back(shock.patches[patchIndex]);
+        }
+      }
+      if (connectedPatches.empty()) {
+        StopWithStatus("shock/corridor connectivity", SEP3D::Core::Status(
+            SEP3D::Core::StatusCode::ConfigurationConflict,
+            "no active SWCME source patch intersects the allocated Parker "
+            "corridor"));
+      }
       // `samples_per_step` is an exact count per compiled species.  Allocate
-      // it independently across the full shock surface so every SpeciesList
-      // entry is injected; sharing one count among species would invent an
-      // undeclared composition and could omit a low-index or low-mass species.
+      // it independently across the connected part of the shock surface so
+      // every SpeciesList entry is injected; sharing one count among species
+      // would invent an undeclared composition.
       for (const auto& compiled : gCompiledSpecies) {
         std::vector<std::uint64_t> exactPatchCounts;
         if (options.inputSchemaVersion >= 3) {
           status = SEP3D::Adapters::AllocateExactPatchMacroparticles(
-              shock.patches, options.source.samplesPerStep,
+              connectedPatches, options.source.samplesPerStep,
               &exactPatchCounts);
           if (!status.ok())
             StopWithStatus("exact per-species shock source allocation", status);
@@ -2377,7 +2648,8 @@ int amps_time_step() {
           // electron or heavy ion would inject the wrong energies.
           status = SEP3D::Adapters::ConfigureSpeciesSpectrum(
               &patch, compiled.massKg, options.source.minimumEnergyJ,
-              options.source.maximumEnergyJ);
+              options.source.maximumEnergyJ, options.source.spectrumModel,
+              options.source.fixedPhaseSpacePowerIndex);
           if (!status.ok())
             StopWithStatus("per-species source spectrum", status);
 
@@ -2396,8 +2668,13 @@ int amps_time_step() {
               options.source.injectionEfficiency *
               patch.relativePatchWeight;
           source.macroparticleWeight = options.species.macroparticleWeight;
+          const std::size_t allocationIndex =
+              connectedOrdinal[patchIndex];
+          source.connected = allocationIndex !=
+              std::numeric_limits<std::size_t>::max();
           if (options.inputSchemaVersion >= 3) {
-            source.prescribedMacroparticles = exactPatchCounts[patchIndex];
+            source.prescribedMacroparticles = source.connected
+                ? exactPatchCounts[allocationIndex] : 0;
             source.maximumMacroparticles = source.prescribedMacroparticles;
           } else {
             source.maximumMacroparticles = options.source.samplesPerStep;
@@ -2420,6 +2697,13 @@ int amps_time_step() {
       }
     }
   }
+  // Apply resampling after this boundary's source injection.  Running it
+  // before injection would let a strong shock source immediately exceed the
+  // declared maximum and carry that excess through the entire next transport
+  // step.  At this location all movers and source allocators are quiescent,
+  // while observers/checkpoints below see the controlled, weight-conserving
+  // representation that will enter the next iteration.
+  ApplyPopulationControlAtBoundary();
   // R06 ordering is intentional: observers see particles after both motion
   // and this boundary's shock injection.  Publication is globally gathered,
   // deterministic by stable ID, and its accumulator clears only on commit.

@@ -2,10 +2,14 @@
 
 #include "../SEP3D.h"
 #include "../adapters/source_runtime.h"
+#include "../transport/population_control.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
+#include <unordered_set>
+#include <vector>
 
 namespace SEP3D {
 namespace AMPS {
@@ -15,7 +19,7 @@ namespace {
 // Stored as raw bytes through memcpy: AMPS does not promise that an extension
 // offset is naturally aligned. The schema tag makes stale checkpoints fail
 // visibly instead of interpreting an older byte layout as valid state.
-constexpr std::uint64_t kParticleSchema = UINT64_C(0x5345503344413031);
+constexpr std::uint64_t kParticleSchema = UINT64_C(0x5345503344413032);
 struct PersistentState {
   std::uint64_t schema = kParticleSchema;
   std::uint64_t stableId = 0;
@@ -25,6 +29,9 @@ struct PersistentState {
   double momentumKgMPerS = 0.0;
   double mu = 0.0;
   double gyrophaseRad = 0.0;
+  double remainingScatteringOpticalDepth =
+      std::numeric_limits<double>::quiet_NaN();
+  std::uint64_t nextScatteringEvent = 0;
 };
 
 long int gParticleStateOffset = -1;
@@ -75,11 +82,182 @@ void RecordOutcome(const Adapters::MoverResult& moved, int species,
       step, species, moved.disposition, moved.shockIntersection.crossed);
 }
 
+struct PopulationParticle {
+  long int ptr = -1;
+  PersistentState persistent;
+  Core::Vec3 positionM;
+  Core::Vec3 momentumKgMPerS;
+  double weightCorrection = 0.0;
+};
+
+Core::Vec3 VelocityFromMomentum(const Core::Vec3& momentumKgMPerS,
+                                double massKg) {
+  const double magnitude = momentumKgMPerS.Norm();
+  if (magnitude == 0.0) return Core::Vec3();
+  const double speed = Transport::RelativisticSpeed(magnitude, massKg);
+  return momentumKgMPerS * (speed / magnitude);
+}
+
+Core::Status ReadPopulationParticle(long int ptr, double massKg,
+                                    PopulationParticle* output) {
+  if (output == nullptr || ptr < 0 || !std::isfinite(massKg) || massKg <= 0.0)
+    return Invalid("population particle read request is invalid");
+  PIC::ParticleBuffer::byte* data =
+      PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+  if (data == nullptr) return Invalid("population particle buffer is null");
+  PopulationParticle candidate;
+  candidate.ptr = ptr;
+  LoadPersistent(data, &candidate.persistent);
+  if (candidate.persistent.schema != kParticleSchema ||
+      candidate.persistent.stableId == 0 ||
+      !std::isfinite(candidate.persistent.momentumKgMPerS) ||
+      candidate.persistent.momentumKgMPerS < 0.0) {
+    return Invalid("population particle has invalid persistent state");
+  }
+  double x[3], v[3];
+  PIC::ParticleBuffer::GetX(x, data);
+  PIC::ParticleBuffer::GetV(v, data);
+  candidate.positionM = Core::Vec3(x);
+  const Core::Vec3 velocity(v);
+  const double speed = velocity.Norm();
+  candidate.momentumKgMPerS = speed > 0.0
+      ? velocity * (candidate.persistent.momentumKgMPerS / speed)
+      : Core::Vec3();
+  candidate.weightCorrection =
+      PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
+  if (!std::isfinite(candidate.weightCorrection) ||
+      candidate.weightCorrection <= 0.0) {
+    return Invalid("population particle weight correction is invalid");
+  }
+  *output = candidate;
+  return Core::Status::OK();
+}
+
+Core::Status ResolvePopulationMagneticDirection(
+    const PopulationParticle& particle, int species,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node, Core::Vec3* bHat) {
+  (void)species;
+  if (bHat == nullptr || gContext.resolveMagneticDirection == nullptr)
+    return Invalid("population magnetic-direction request is invalid");
+  const Core::Status resolved = gContext.resolveMagneticDirection(
+      particle.positionM, node, bHat);
+  if (!resolved.ok()) return resolved;
+  if (!std::isfinite(bHat->x) || !std::isfinite(bHat->y) ||
+      !std::isfinite(bHat->z) ||
+      std::fabs(bHat->Norm() - 1.0) > 1.0e-12) {
+    return Invalid("population control resolved an invalid magnetic direction");
+  }
+  return Core::Status::OK();
+}
+
+double GyrophaseFromMomentum(const Core::Vec3& momentum,
+                             const Core::Vec3& bHat) {
+  const double magnitude = momentum.Norm();
+  if (magnitude == 0.0) return 0.0;
+  const double ax = std::fabs(bHat.x);
+  const double ay = std::fabs(bHat.y);
+  const double az = std::fabs(bHat.z);
+  const Core::Vec3 reference = ax <= ay && ax <= az
+      ? Core::Vec3(1.0, 0.0, 0.0)
+      : (ay <= az ? Core::Vec3(0.0, 1.0, 0.0)
+                  : Core::Vec3(0.0, 0.0, 1.0));
+  const Core::Vec3 e1 = bHat.Cross(reference).Normalized();
+  const Core::Vec3 e2 = bHat.Cross(e1);
+  const Core::Vec3 direction = momentum / magnitude;
+  double phase = std::atan2(direction.Dot(e2), direction.Dot(e1));
+  if (phase < 0.0) phase += 2.0 * Core::Const::kPi;
+  return phase;
+}
+
+Core::Status WritePopulationParticle(
+    const PopulationParticle& original, const Core::Vec3& positionM,
+    const Core::Vec3& momentumKgMPerS, const Core::Vec3& bHat,
+    double weightCorrection, double massKg, std::uint64_t stableId,
+    std::uint64_t completedStep, std::uint64_t lastShockGeneration) {
+  if (original.ptr < 0 || stableId == 0 ||
+      !std::isfinite(weightCorrection) || weightCorrection <= 0.0)
+    return Invalid("population particle write request is invalid");
+  PIC::ParticleBuffer::byte* data =
+      PIC::ParticleBuffer::GetParticleDataPointer(original.ptr);
+  if (data == nullptr) return Invalid("population output buffer is null");
+  PersistentState state;
+  state.stableId = stableId;
+  state.completedStep = completedStep;
+  state.substep = 0;
+  state.lastShockGeneration = lastShockGeneration;
+  state.momentumKgMPerS = momentumKgMPerS.Norm();
+  state.mu = state.momentumKgMPerS > 0.0
+      ? std::max(-1.0, std::min(1.0,
+          momentumKgMPerS.Dot(bHat) / state.momentumKgMPerS))
+      : 0.0;
+  state.gyrophaseRad = GyrophaseFromMomentum(momentumKgMPerS, bHat);
+  // Population resampling creates a new stochastic history.  Drawing a fresh
+  // optical depth under the new stable ID is unbiased; copying the parent's
+  // residual would make split descendants collide at the same event time.
+  state.remainingScatteringOpticalDepth =
+      std::numeric_limits<double>::quiet_NaN();
+  state.nextScatteringEvent = 0;
+  StorePersistent(data, state);
+  double x[3], v[3];
+  positionM.CopyTo(x);
+  VelocityFromMomentum(momentumKgMPerS, massKg).CopyTo(v);
+  PIC::ParticleBuffer::SetX(x, data);
+  PIC::ParticleBuffer::SetV(v, data);
+  PIC::ParticleBuffer::SetIndividualStatWeightCorrection(
+      weightCorrection, data);
+  return Core::Status::OK();
+}
+
+std::uint64_t NewPopulationStableId(
+    const PopulationControlRequest& request, std::uint64_t parentIdentity,
+    std::uint64_t operationIndex, std::uint64_t childIndex,
+    std::unordered_set<std::uint64_t>* used) {
+  Transport::RandomKey key;
+  key.campaignSeed = request.campaignSeed;
+  key.particleId = parentIdentity;
+  key.step = request.step;
+  key.substep = operationIndex;
+  key.purpose = Transport::RandomPurpose::PopulationSplitIdentity;
+  std::uint64_t draw = childIndex;
+  for (;;) {
+    const std::uint64_t candidate =
+        Transport::KeyedRandomStream::Hash(key, draw++);
+    if (candidate != 0 && used->insert(candidate).second) return candidate;
+  }
+}
+
+std::vector<PopulationParticle> CollectPopulationSpecies(
+    long int firstParticle, int species, double massKg,
+    Core::Status* status) {
+  std::vector<PopulationParticle> particles;
+  for (long int ptr = firstParticle; ptr != -1;
+       ptr = PIC::ParticleBuffer::GetNext(ptr)) {
+    PIC::ParticleBuffer::byte* data =
+        PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+    if (PIC::ParticleBuffer::GetI(data) != species) continue;
+    PopulationParticle particle;
+    *status = ReadPopulationParticle(ptr, massKg, &particle);
+    if (!status->ok()) {
+      particles.clear();
+      return particles;
+    }
+    particles.push_back(particle);
+  }
+  *status = Core::Status::OK();
+  return particles;
+}
+
+double RelativeResidual(double observed, double reference) {
+  return std::fabs(observed - reference) /
+      std::max(std::fabs(reference), std::numeric_limits<double>::min());
+}
+
 }  // namespace
 
 Core::Status InstallContext(const Context& context) {
-  if (context.resolveLocal == nullptr)
-    return Invalid("AMPS mover context requires a local-state resolver");
+  if (context.resolveLocal == nullptr ||
+      context.resolveMagneticDirection == nullptr)
+    return Invalid("AMPS mover context requires local-state and magnetic-direction resolvers");
   if (context.maximumSubsteps == 0)
     return Invalid("AMPS mover context requires a positive substep cap");
   if (SEP3D::ApplicationRuntime().state() ==
@@ -142,6 +320,9 @@ Core::Status InitializeParticle(long int ptr,
   state.momentumKgMPerS = particle.momentumKgMPerS;
   state.mu = particle.mu;
   state.gyrophaseRad = particle.gyrophaseRad;
+  state.remainingScatteringOpticalDepth =
+      particle.remainingScatteringOpticalDepth;
+  state.nextScatteringEvent = particle.nextScatteringEvent;
   StorePersistent(data, state);
   return Core::Status::OK();
 }
@@ -169,6 +350,9 @@ Core::Status ReadParticle(long int ptr, Adapters::ParticleRecord* particle) {
   particle->completedStep = state.completedStep;
   particle->substep = state.substep;
   particle->lastShockGeneration = state.lastShockGeneration;
+  particle->remainingScatteringOpticalDepth =
+      state.remainingScatteringOpticalDepth;
+  particle->nextScatteringEvent = state.nextScatteringEvent;
   return Core::Status::OK();
 }
 
@@ -225,6 +409,266 @@ InjectionOutcome InjectParticles(const Adapters::InjectionPlan& plan) {
   return outcome;
 }
 
+PopulationControlReport ApplyPopulationControl(
+    const PopulationControlRequest& request) {
+  PopulationControlReport report;
+  if (!gStorageRequested || !gContextInstalled || request.step == 0 ||
+      request.campaignSeed == 0 ||
+      request.minimumParticlesPerCellPerSpecies < 2 ||
+      request.targetParticlesPerCellPerSpecies <
+          request.minimumParticlesPerCellPerSpecies ||
+      request.maximumParticlesPerCellPerSpecies <
+          request.targetParticlesPerCellPerSpecies) {
+    report.status = Invalid("population-control request is invalid");
+    return report;
+  }
+
+  std::unordered_set<std::uint64_t> usedStableIds;
+  // Seed the collision guard with every owner-local active ID.  Source IDs are
+  // already semantic hashes; retaining deleted IDs in this set also prevents
+  // an operation later in the same boundary from recycling an identity.
+  for (unsigned int blockIndex = 0;
+       blockIndex < PIC::DomainBlockDecomposition::nLocalBlocks;
+       ++blockIndex) {
+    auto* node = PIC::DomainBlockDecomposition::BlockTable[blockIndex];
+    if (node == nullptr || node->block == nullptr) continue;
+    for (int cell = 0;
+         cell < _BLOCK_CELLS_X_ * _BLOCK_CELLS_Y_ * _BLOCK_CELLS_Z_;
+         ++cell) {
+      for (long int ptr = node->block->FirstCellParticleTable[cell];
+           ptr != -1; ptr = PIC::ParticleBuffer::GetNext(ptr)) {
+        PersistentState state;
+        LoadPersistent(PIC::ParticleBuffer::GetParticleDataPointer(ptr),
+                       &state);
+        if (state.schema != kParticleSchema || state.stableId == 0 ||
+            !usedStableIds.insert(state.stableId).second) {
+          report.status = Invalid(
+              "population control found a missing or duplicate stable ID");
+          return report;
+        }
+        ++report.particlesBefore;
+      }
+    }
+  }
+
+  for (unsigned int blockIndex = 0;
+       blockIndex < PIC::DomainBlockDecomposition::nLocalBlocks;
+       ++blockIndex) {
+    auto* node = PIC::DomainBlockDecomposition::BlockTable[blockIndex];
+    if (node == nullptr || node->block == nullptr) continue;
+    for (int cell = 0;
+         cell < _BLOCK_CELLS_X_ * _BLOCK_CELLS_Y_ * _BLOCK_CELLS_Z_;
+         ++cell) {
+      long int& first = node->block->FirstCellParticleTable[cell];
+      for (int species = 0; species < PIC::nTotalSpecies; ++species) {
+        const double massKg = PIC::MolecularData::GetMass(species);
+        Core::Status status;
+        std::vector<PopulationParticle> particles =
+            CollectPopulationSpecies(first, species, massKg, &status);
+        if (!status.ok()) {
+          report.status = status;
+          return report;
+        }
+        if (particles.empty()) continue;
+        ++report.occupiedCellSpecies;
+
+        // This ordinal is local to one physical cell/species population.  It
+        // must not count operations in preceding owner-local blocks: those
+        // blocks change when the same mesh is repartitioned, which would make
+        // post-resampling IDs and merge directions depend on MPI ownership.
+        // Within one population, candidate ordering is stable-ID sorted and
+        // each count transition is deterministic, so this local ordinal is
+        // invariant to rank count, block traversal, and unrelated cells.
+        std::uint64_t operationIndex = 0;
+
+        const bool mergeTriggered = particles.size() >
+            request.maximumParticlesPerCellPerSpecies;
+        while (mergeTriggered && particles.size() >
+               request.targetParticlesPerCellPerSpecies) {
+          if (particles.size() < 3) {
+            report.status = Invalid(
+                "relativistic 3-to-2 merge cannot meet the requested target");
+            return report;
+          }
+          std::sort(particles.begin(), particles.end(),
+              [](const PopulationParticle& left,
+                 const PopulationParticle& right) {
+                if (left.weightCorrection != right.weightCorrection)
+                  return left.weightCorrection < right.weightCorrection;
+                return left.persistent.stableId < right.persistent.stableId;
+              });
+          const PopulationParticle a = particles[0];
+          const PopulationParticle b = particles[1];
+          const PopulationParticle c = particles[2];
+          const std::array<Transport::WeightedPhasePoint, 3> mergeInput = {{
+              {a.weightCorrection, a.positionM, a.momentumKgMPerS},
+              {b.weightCorrection, b.positionM, b.momentumKgMPerS},
+              {c.weightCorrection, c.positionM, c.momentumKgMPerS}}};
+
+          std::uint64_t ids[3] = {a.persistent.stableId,
+                                  b.persistent.stableId,
+                                  c.persistent.stableId};
+          std::sort(ids, ids + 3);
+          Transport::RandomKey identityKey;
+          identityKey.campaignSeed = request.campaignSeed;
+          identityKey.particleId = ids[0];
+          identityKey.step = ids[1];
+          identityKey.substep = ids[2];
+          identityKey.purpose =
+              Transport::RandomPurpose::PopulationMergeDirection;
+          const std::uint64_t parentIdentity =
+              Transport::KeyedRandomStream::Hash(identityKey, request.step);
+          Transport::RandomKey directionKey;
+          directionKey.campaignSeed = request.campaignSeed;
+          directionKey.particleId = parentIdentity;
+          directionKey.step = request.step;
+          directionKey.substep = operationIndex;
+          directionKey.purpose =
+              Transport::RandomPurpose::PopulationMergeDirection;
+          Transport::KeyedRandomStream directionRandom(directionKey);
+          const double cosine = 1.0 - 2.0 * directionRandom.UniformOpen01();
+          const double phi = 2.0 * Core::Const::kPi *
+              directionRandom.UniformOpen01();
+          const double sine = std::sqrt(std::max(0.0, 1.0 - cosine*cosine));
+          const Core::Vec3 direction(sine * std::cos(phi),
+                                     sine * std::sin(phi), cosine);
+
+          const Transport::RelativisticMergeResult merged =
+              Transport::MergeRelativisticThreeToTwo(
+                  mergeInput, massKg, direction);
+          if (!merged.status.ok()) {
+            report.status = merged.status;
+            return report;
+          }
+          // Both output particles are placed at the conserved weighted
+          // centroid.  Resolve B at that actual output point before converting
+          // their Cartesian momenta back to (mu, gyrophase); using B at one of
+          // the three input positions would be inconsistent on an AMR cell
+          // spanning a curved or strongly focusing field.
+          PopulationParticle outputLocation = a;
+          outputLocation.positionM = merged.outputPositionM;
+          outputLocation.momentumKgMPerS = merged.firstMomentumKgMPerS;
+          outputLocation.persistent.momentumKgMPerS =
+              merged.firstMomentumKgMPerS.Norm();
+          Core::Vec3 bHat;
+          status = ResolvePopulationMagneticDirection(
+              outputLocation, species, node, &bHat);
+          if (!status.ok()) {
+            report.status = status;
+            return report;
+          }
+          const std::uint64_t lastShock = std::max(
+              a.persistent.lastShockGeneration,
+              std::max(b.persistent.lastShockGeneration,
+                       c.persistent.lastShockGeneration));
+          const std::uint64_t idA = NewPopulationStableId(
+              request, parentIdentity, operationIndex, 0, &usedStableIds);
+          const std::uint64_t idB = NewPopulationStableId(
+              request, parentIdentity, operationIndex, 1, &usedStableIds);
+          status = WritePopulationParticle(
+              a, merged.outputPositionM, merged.firstMomentumKgMPerS, bHat,
+              merged.outputWeight, massKg,
+              idA, request.step, lastShock);
+          if (status.ok()) status = WritePopulationParticle(
+              b, merged.outputPositionM, merged.secondMomentumKgMPerS, bHat,
+              merged.outputWeight, massKg,
+              idB, request.step, lastShock);
+          if (!status.ok()) {
+            report.status = status;
+            return report;
+          }
+          PIC::ParticleBuffer::DeleteParticle(c.ptr, first);
+
+          report.maximumRelativeWeightResidual = std::max(
+              report.maximumRelativeWeightResidual,
+              merged.relativeWeightResidual);
+          report.maximumRelativeMomentumResidual = std::max(
+              report.maximumRelativeMomentumResidual,
+              merged.relativeMomentumResidual);
+          report.maximumRelativeEnergyResidual = std::max(
+              report.maximumRelativeEnergyResidual,
+              merged.relativeEnergyResidual);
+          ++report.mergeOperations;
+          ++operationIndex;
+          particles = CollectPopulationSpecies(
+              first, species, massKg, &status);
+          if (!status.ok()) {
+            report.status = status;
+            return report;
+          }
+        }
+
+        const bool splitTriggered = !particles.empty() &&
+            particles.size() < request.minimumParticlesPerCellPerSpecies;
+        while (splitTriggered && particles.size() <
+               request.targetParticlesPerCellPerSpecies) {
+          auto heaviest = std::max_element(
+              particles.begin(), particles.end(),
+              [](const PopulationParticle& left,
+                 const PopulationParticle& right) {
+                if (left.weightCorrection != right.weightCorrection)
+                  return left.weightCorrection < right.weightCorrection;
+                return left.persistent.stableId > right.persistent.stableId;
+              });
+          const PopulationParticle parent = *heaviest;
+          Core::Vec3 bHat;
+          status = ResolvePopulationMagneticDirection(
+              parent, species, node, &bHat);
+          if (!status.ok()) {
+            report.status = status;
+            return report;
+          }
+          const long int newPtr = PIC::ParticleBuffer::GetNewParticle(first);
+          if (newPtr < 0) {
+            report.status = Invalid(
+                "AMPS particle buffer could not allocate a split child");
+            return report;
+          }
+          PIC::ParticleBuffer::byte* childData =
+              PIC::ParticleBuffer::GetParticleDataPointer(newPtr);
+          PIC::ParticleBuffer::byte* parentData =
+              PIC::ParticleBuffer::GetParticleDataPointer(parent.ptr);
+          PIC::ParticleBuffer::CloneParticle(childData, parentData);
+          PopulationParticle child = parent;
+          child.ptr = newPtr;
+          const double childWeight = 0.5 * parent.weightCorrection;
+          const std::uint64_t childId = NewPopulationStableId(
+              request, parent.persistent.stableId, operationIndex, 0,
+              &usedStableIds);
+          status = WritePopulationParticle(
+              parent, parent.positionM, parent.momentumKgMPerS, bHat,
+              childWeight, massKg, parent.persistent.stableId,
+              request.step, parent.persistent.lastShockGeneration);
+          if (status.ok()) status = WritePopulationParticle(
+              child, child.positionM, child.momentumKgMPerS, bHat,
+              childWeight, massKg, childId, request.step,
+              parent.persistent.lastShockGeneration);
+          if (!status.ok()) {
+            PIC::ParticleBuffer::DeleteParticle(newPtr, first);
+            report.status = status;
+            return report;
+          }
+          report.maximumRelativeWeightResidual = std::max(
+              report.maximumRelativeWeightResidual,
+              RelativeResidual(2.0 * childWeight,
+                               parent.weightCorrection));
+          ++report.splitOperations;
+          ++operationIndex;
+          particles = CollectPopulationSpecies(
+              first, species, massKg, &status);
+          if (!status.ok()) {
+            report.status = status;
+            return report;
+          }
+        }
+        report.particlesAfter += particles.size();
+      }
+    }
+  }
+  report.status = Core::Status::OK();
+  return report;
+}
+
 int MoveParticle(long int ptr, double dtTotal,
                  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   if (!gStorageRequested || !gContextInstalled || ptr < 0 ||
@@ -261,6 +705,9 @@ int MoveParticle(long int ptr, double dtTotal,
   input.particle.completedStep = persistent.completedStep;
   input.particle.substep = persistent.substep;
   input.particle.lastShockGeneration = persistent.lastShockGeneration;
+  input.particle.remainingScatteringOpticalDepth =
+      persistent.remainingScatteringOpticalDepth;
+  input.particle.nextScatteringEvent = persistent.nextScatteringEvent;
   input.particle.statisticalWeight =
       PIC::ParticleWeightTimeStep::GlobalParticleWeight[species] *
       PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
@@ -279,6 +726,10 @@ int MoveParticle(long int ptr, double dtTotal,
   input.kappaPerpendicularToParallelRatio =
       configuration->options().kappaPerpendicularToParallelRatio;
   input.drift = configuration->options().drift;
+  input.focusedScatteringFrame =
+      configuration->options().focusedScatteringFrame;
+  input.maximumScatteringEventsPerSubstep =
+      configuration->options().maximumScatteringEventsPerSubstep;
   input.timeStepControls.cellCrossingFraction =
       configuration->options().cellCrossingFraction;
   input.timeStepControls.diffusionFraction =
@@ -343,6 +794,9 @@ int MoveParticle(long int ptr, double dtTotal,
   persistent.momentumKgMPerS = moved.particle.momentumKgMPerS;
   persistent.mu = moved.particle.mu;
   persistent.gyrophaseRad = moved.particle.gyrophaseRad;
+  persistent.remainingScatteringOpticalDepth =
+      moved.particle.remainingScatteringOpticalDepth;
+  persistent.nextScatteringEvent = moved.particle.nextScatteringEvent;
   StorePersistent(data, persistent);
   double finalPosition[3];
   moved.particle.positionM.CopyTo(finalPosition);

@@ -45,6 +45,7 @@ A::MoverInput BaseMover() {
   input.local.background.bHat = C::Vec3(1.0, 0.0, 0.0);
   input.local.background.U = C::Vec3(1.0, 0.0, 0.0);
   input.local.cellSizeM = 1.0e6;
+  input.local.meanFreePathM = 1.0e9;
   input.speciesMassKg = C::Const::m_p;
   input.requestedDtS = 1.0;
   input.innerRadiusM = 1.0;
@@ -74,19 +75,24 @@ swcme::sep::SEPSourceState Source() {
 Result RunADP3D01() {
   const std::vector<std::string>& names =
       A::ProductionMoverRegistry::CanonicalNames();
-  if (names.size() != 2 || names[0] != "parker3d-tensor" ||
-      names[1] != "focused3d-split")
-    return Fail("production registry is not the exact two-core Phase-A set");
+  if (names.size() != 3 || names[0] != "parker" ||
+      names[1] != "focused-diffusion" ||
+      names[2] != "focused-scattering")
+    return Fail("production registry is not the exact three-mover set");
   A::MoverInput parker = BaseMover();
   const A::MoverResult p = A::AdvanceParticle(parker);
   A::MoverInput focused = BaseMover();
   focused.model = R::TransportModel::Focused3D;
   const A::MoverResult f = A::AdvanceParticle(focused);
-  if (!p.status.ok() || !f.status.ok() ||
+  A::MoverInput scattering = BaseMover();
+  scattering.model = R::TransportModel::FocusedScattering3D;
+  const A::MoverResult s = A::AdvanceParticle(scattering);
+  if (!p.status.ok() || !f.status.ok() || !s.status.ok() ||
       p.disposition != A::ParticleDisposition::Active ||
-      f.disposition != A::ParticleDisposition::Active)
+      f.disposition != A::ParticleDisposition::Active ||
+      s.disposition != A::ParticleDisposition::Active)
     return Fail("one of the validating dispatch paths rejected a valid record");
-  return Pass("exactly two registered production cores dispatch through one validated record boundary");
+  return Pass("all three registered production movers dispatch through one validated record boundary");
 }
 
 Result RunNAT3D04() {

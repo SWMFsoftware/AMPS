@@ -185,10 +185,21 @@ const char* Name(ShockAuthority value) {
   return "unknown";
 }
 
+const char* Name(SourceSpectrumModel value) {
+  switch (value) {
+    case SourceSpectrumModel::LocalCompressionDsa:
+      return "local-compression-dsa";
+    case SourceSpectrumModel::FixedPhaseSpacePowerLaw:
+      return "fixed-phase-space-power-law";
+  }
+  return "unknown";
+}
+
 const char* Name(TransportModel value) {
   switch (value) {
-    case TransportModel::Parker3D: return "parker3d";
-    case TransportModel::Focused3D: return "focused3d";
+    case TransportModel::Parker3D: return "parker";
+    case TransportModel::FocusedDiffusion3D: return "focused-diffusion";
+    case TransportModel::FocusedScattering3D: return "focused-scattering";
   }
   return "unknown";
 }
@@ -236,6 +247,61 @@ const char* Name(TubeRadiusMode value) {
   switch (value) {
     case TubeRadiusMode::PhysicalConstant: return "physical-constant";
     case TubeRadiusMode::ConstantAngularWidth: return "constant-angular-width";
+  }
+  return "unknown";
+}
+
+const char* Name(ActiveRegionMode value) {
+  switch (value) {
+    case ActiveRegionMode::FullDomain: return "full-domain";
+    case ActiveRegionMode::ParkerTube: return "parker-tube";
+  }
+  return "unknown";
+}
+
+const char* Name(PopulationControlMode value) {
+  switch (value) {
+    case PopulationControlMode::Off: return "off";
+    case PopulationControlMode::SplitMerge: return "split-merge";
+  }
+  return "unknown";
+}
+
+const char* Name(SpatialDiffusionModel value) {
+  switch (value) {
+    case SpatialDiffusionModel::CorrelationMeanFreePath:
+      return "mean-free-path";
+    case SpatialDiffusionModel::PitchAngleIntegral:
+      return "pitch-angle-integral";
+  }
+  return "unknown";
+}
+
+const char* Name(PitchAngleDiffusionModel value) {
+  switch (value) {
+    case PitchAngleDiffusionModel::Jokipii1966: return "jokipii-1966";
+    case PitchAngleDiffusionModel::Florinskiy: return "florinskiy";
+    case PitchAngleDiffusionModel::Constant: return "constant";
+  }
+  return "unknown";
+}
+
+const char* Name(MeanFreePathModel value) {
+  switch (value) {
+    case MeanFreePathModel::Correlation: return "correlation";
+    case MeanFreePathModel::Constant: return "constant";
+    case MeanFreePathModel::RadialRigidityPowerLaw:
+      return "radial-rigidity-power-law";
+  }
+  return "unknown";
+}
+
+const char* Name(FocusedScatteringFrame value) {
+  switch (value) {
+    case FocusedScatteringFrame::PlasmaFrameIsotropic:
+      return "plasma-frame-isotropic";
+    case FocusedScatteringFrame::AlfvenWaveFrameIsotropic:
+      return "alfven-wave-frame-isotropic";
   }
   return "unknown";
 }
@@ -472,8 +538,8 @@ Core::Status RunConfiguration3D::Create(
       normalized.coordinateFrame.empty()) {
     return Invalid("the current Parker/SWMF contract requires a finite heliocentric origin and named frame");
   }
-  if (normalized.inputSchemaVersion < 1 || normalized.inputSchemaVersion > 3)
-    return Invalid("inputSchemaVersion must be 1, 2, or 3");
+  if (normalized.inputSchemaVersion < 1 || normalized.inputSchemaVersion > 4)
+    return Invalid("inputSchemaVersion must be 1, 2, 3, or 4");
   if (normalized.background == BackgroundAuthority::PythonInterpolator) {
     // The provider value is intentionally recognized before any AMPS state is
     // touched, but execution remains fail-closed until the Python process,
@@ -525,6 +591,7 @@ Core::Status RunConfiguration3D::Create(
   declaredGeometry.sourceColatitudeRad = normalized.tubeColatitudeRad;
   declaredGeometry.solarWindSpeedMPerS = normalized.parker.solarWindSpeedMPerS;
   declaredGeometry.solarRotationRateRadPerS = normalized.parker.solarRotationRateRadPerS;
+  declaredGeometry.rotationAxis = normalized.parker.rotationAxis;
   const Core::Vec3 declaredSource =
       Core::ParkerCurvePoint(normalized.innerRadiusM, declaredGeometry);
   if (std::fabs(sourceRadius - normalized.innerRadiusM) > geometryTolerance ||
@@ -586,7 +653,9 @@ Core::Status RunConfiguration3D::Create(
       normalized.solarRefinementOuterRadiusM,
       normalized.tubeLongitudeRad, normalized.tubeColatitudeRad,
       normalized.tubeReferenceRadiusM,
-      normalized.tubeRadiusAtReferenceM, normalized.tubeCellSizeM};
+      normalized.tubeRadiusAtReferenceM, normalized.tubeCellSizeM,
+      normalized.activeTubeReferenceRadiusM,
+      normalized.activeTubeRadiusAtReferenceM};
   for (double value : meshValues) {
     if (!std::isfinite(value)) return Invalid("mesh option is not finite");
   }
@@ -611,6 +680,40 @@ Core::Status RunConfiguration3D::Create(
        normalized.tubeColatitudeRad < 0.0 ||
        normalized.tubeColatitudeRad > Core::Const::kPi)) {
     return Invalid("Parker-tube refinement options are invalid");
+  }
+  if (normalized.activeRegion != ActiveRegionMode::FullDomain &&
+      normalized.activeRegion != ActiveRegionMode::ParkerTube)
+    return Invalid("active-region mode is unknown");
+  if (normalized.activeTubeRadiusMode != TubeRadiusMode::PhysicalConstant &&
+      normalized.activeTubeRadiusMode !=
+          TubeRadiusMode::ConstantAngularWidth)
+    return Invalid("active-region radius mode is unknown");
+  if (normalized.activeRegion == ActiveRegionMode::ParkerTube) {
+    if (normalized.activeTubeReferenceRadiusM <= normalized.innerRadiusM ||
+        normalized.activeTubeRadiusAtReferenceM <= 0.0 ||
+        normalized.activeTubeBufferBlocks == 0) {
+      return Invalid("Parker active-region radius, reference radius, and "
+                     "buffer_blocks must be positive");
+    }
+    // A corridor narrower than the requested refinement tube would discard
+    // blocks that the mesh explicitly refined for transport.  Reject that
+    // contradiction before AMPS creates or deactivates any tree node.
+    const double activeAtReference =
+        normalized.activeTubeRadiusAtReferenceM;
+    double refinedAtActiveReference = normalized.tubeRadiusAtReferenceM;
+    if (normalized.tubeRadiusMode == TubeRadiusMode::ConstantAngularWidth)
+      refinedAtActiveReference *= normalized.activeTubeReferenceRadiusM /
+          normalized.tubeReferenceRadiusM;
+    if (normalized.enableTubeRefinement &&
+        activeAtReference < refinedAtActiveReference) {
+      return Invalid("active Parker corridor is narrower than the refined "
+                     "Parker tube at the active reference radius");
+    }
+  } else if (normalized.inputSchemaVersion >= 4 &&
+             (normalized.activeTubeRadiusAtReferenceM != 0.0 ||
+              normalized.activeTubeBufferBlocks != 0)) {
+    return Invalid("full-domain active region requires zero inactive tube "
+                   "radius and buffer_blocks");
   }
   const double rootCellM = 2.0 * normalized.outerRadiusM /
       static_cast<double>(normalized.meshCellsPerBlockEdge);
@@ -729,6 +832,117 @@ Core::Status RunConfiguration3D::Create(
   if (normalized.maximumTransportSubsteps == 0) {
     return Invalid("maximumTransportSubsteps must be positive");
   }
+  if (normalized.transport != TransportModel::Parker3D &&
+      normalized.transport != TransportModel::FocusedDiffusion3D &&
+      normalized.transport != TransportModel::FocusedScattering3D)
+    return Invalid("transport mover is unknown");
+  if (normalized.spatialDiffusionModel !=
+          SpatialDiffusionModel::CorrelationMeanFreePath &&
+      normalized.spatialDiffusionModel !=
+          SpatialDiffusionModel::PitchAngleIntegral)
+    return Invalid("spatial-diffusion model is unknown");
+  if (normalized.pitchAngleDiffusionModel !=
+          PitchAngleDiffusionModel::Jokipii1966 &&
+      normalized.pitchAngleDiffusionModel !=
+          PitchAngleDiffusionModel::Florinskiy &&
+      normalized.pitchAngleDiffusionModel !=
+          PitchAngleDiffusionModel::Constant)
+    return Invalid("pitch-angle-diffusion model is unknown");
+  if (normalized.meanFreePathModel != MeanFreePathModel::Correlation &&
+      normalized.meanFreePathModel != MeanFreePathModel::Constant &&
+      normalized.meanFreePathModel !=
+          MeanFreePathModel::RadialRigidityPowerLaw)
+    return Invalid("mean-free-path model is unknown");
+  if (normalized.focusedScatteringFrame !=
+          FocusedScatteringFrame::PlasmaFrameIsotropic &&
+      normalized.focusedScatteringFrame !=
+          FocusedScatteringFrame::AlfvenWaveFrameIsotropic)
+    return Invalid("focused-scattering frame is unknown");
+  if (!std::isfinite(normalized.constantDmumuPerS) ||
+      normalized.constantDmumuPerS < 0.0 ||
+      !std::isfinite(normalized.constantMeanFreePathM) ||
+      normalized.constantMeanFreePathM < 0.0 ||
+      !std::isfinite(normalized.meanFreePathReferenceM) ||
+      normalized.meanFreePathReferenceM < 0.0 ||
+      !std::isfinite(normalized.meanFreePathReferenceRadiusM) ||
+      normalized.meanFreePathReferenceRadiusM < 0.0 ||
+      !std::isfinite(normalized.meanFreePathReferenceRigidityV) ||
+      normalized.meanFreePathReferenceRigidityV < 0.0 ||
+      !std::isfinite(normalized.meanFreePathRadialExponent) ||
+      !std::isfinite(normalized.meanFreePathRigidityExponent) ||
+      !std::isfinite(normalized.spatialQuadratureAbsoluteToleranceM2PerS) ||
+      normalized.spatialQuadratureAbsoluteToleranceM2PerS < 0.0 ||
+      !std::isfinite(normalized.spatialQuadratureRelativeTolerance) ||
+      normalized.spatialQuadratureRelativeTolerance <= 0.0 ||
+      normalized.spatialQuadratureMaximumRecursion == 0 ||
+      normalized.spatialQuadratureMaximumRecursion > 60 ||
+      normalized.maximumScatteringEventsPerSubstep == 0) {
+    return Invalid("parallel transport coefficient values or quadrature "
+                   "controls are invalid");
+  }
+  if (normalized.pitchAngleDiffusionModel ==
+          PitchAngleDiffusionModel::Constant &&
+      normalized.constantDmumuPerS <= 0.0)
+    return Invalid("constant pitch-angle diffusion requires "
+                   "constant_dmumu_per_s > 0");
+  if (normalized.pitchAngleDiffusionModel !=
+          PitchAngleDiffusionModel::Constant &&
+      normalized.inputSchemaVersion >= 4 && normalized.constantDmumuPerS != 0.0)
+    return Invalid("a non-constant pitch-angle model requires zero inactive "
+                   "constant_dmumu_per_s");
+  if (normalized.meanFreePathModel == MeanFreePathModel::Constant &&
+      normalized.constantMeanFreePathM <= 0.0)
+    return Invalid("constant mean-free-path model requires "
+                   "constant_mean_free_path_m > 0");
+  if (normalized.meanFreePathModel != MeanFreePathModel::Constant &&
+      normalized.inputSchemaVersion >= 4 &&
+      normalized.constantMeanFreePathM != 0.0)
+    return Invalid("a non-constant mean-free-path model requires zero inactive "
+                   "constant_mean_free_path_m");
+  const bool radialRigidity = normalized.meanFreePathModel ==
+      MeanFreePathModel::RadialRigidityPowerLaw;
+  if (radialRigidity &&
+      (normalized.meanFreePathReferenceM <= 0.0 ||
+       normalized.meanFreePathReferenceRadiusM <= 0.0 ||
+       normalized.meanFreePathReferenceRigidityV <= 0.0)) {
+    return Invalid("radial-rigidity-power-law mean free path requires positive "
+                   "reference length, radius, and rigidity");
+  }
+  if (!radialRigidity && normalized.inputSchemaVersion >= 4 &&
+      (normalized.meanFreePathReferenceM != 0.0 ||
+       normalized.meanFreePathReferenceRadiusM != 0.0 ||
+       normalized.meanFreePathReferenceRigidityV != 0.0 ||
+       normalized.meanFreePathRadialExponent != 0.0 ||
+       normalized.meanFreePathRigidityExponent != 0.0)) {
+    return Invalid("a non-power-law mean-free-path model requires zero inactive "
+                   "radial/rigidity power-law parameters");
+  }
+  if (normalized.transport == TransportModel::FocusedScattering3D &&
+      normalized.perpendicularDiffusion != PerpendicularDiffusionMode::None) {
+    return Invalid("focused-scattering currently requires perpendicular_"
+                   "diffusion=none; an event-partition-invariant transverse "
+                   "operator has not been validated");
+  }
+
+  if (normalized.populationControl != PopulationControlMode::Off &&
+      normalized.populationControl != PopulationControlMode::SplitMerge)
+    return Invalid("particle population-control mode is unknown");
+  if (normalized.populationControl == PopulationControlMode::SplitMerge) {
+    if (normalized.minimumParticlesPerCellPerSpecies < 2 ||
+        normalized.targetParticlesPerCellPerSpecies <
+            normalized.minimumParticlesPerCellPerSpecies ||
+        normalized.maximumParticlesPerCellPerSpecies <
+            normalized.targetParticlesPerCellPerSpecies ||
+        normalized.populationControlCadenceSteps == 0) {
+      return Invalid("split-merge population control requires 2 <= minimum "
+                     "<= target <= maximum and a positive cadence");
+    }
+  } else if (normalized.inputSchemaVersion >= 4 &&
+             (normalized.minimumParticlesPerCellPerSpecies != 0 ||
+              normalized.targetParticlesPerCellPerSpecies != 0 ||
+              normalized.maximumParticlesPerCellPerSpecies != 0)) {
+    return Invalid("disabled population control requires zero inactive limits");
+  }
 
   const ParkerPhysicsOptions& parker = normalized.parker;
   const double parkerValues[] = {
@@ -811,6 +1025,25 @@ Core::Status RunConfiguration3D::Create(
        source.samplesPerStep == 0)) {
     return Invalid("source spectrum, efficiency, or sampling controls are invalid");
   }
+  if (source.spectrumModel != SourceSpectrumModel::LocalCompressionDsa &&
+      source.spectrumModel !=
+          SourceSpectrumModel::FixedPhaseSpacePowerLaw) {
+    return Invalid("source spectrum model is unknown");
+  }
+  if (source.spectrumModel == SourceSpectrumModel::LocalCompressionDsa) {
+    if (source.fixedPhaseSpacePowerIndex != 0.0) {
+      return Invalid("local-compression-dsa source requires zero inactive "
+                     "phase_space_power_index");
+    }
+  } else if (!std::isfinite(source.fixedPhaseSpacePowerIndex) ||
+             source.fixedPhaseSpacePowerIndex <= 2.0) {
+    // The implementation samples dN/dp = 4*pi*p^2*f(p) over finite positive
+    // momentum bounds.  Requiring q>2 gives the intended decreasing number
+    // spectrum and rejects the common error of entering the signed exponent
+    // -5 instead of the positive q in f proportional to p^(-q).
+    return Invalid("fixed-phase-space-power-law source requires a finite "
+                   "phase_space_power_index greater than two");
+  }
   // The post-compile file owns only a common numerical weight.  Species
   // count, identity, mass, and charge are unavailable in this AMPS-independent
   // factory and are validated against the generated table at the AMPS
@@ -858,6 +1091,55 @@ Core::Status RunConfiguration3D::Create(
     if (std::find(observerIds.begin(), observerIds.end(), observer.id) !=
         observerIds.end()) return Invalid("observer IDs must be unique");
     observerIds.push_back(observer.id);
+
+    if (normalized.activeRegion == ActiveRegionMode::ParkerTube) {
+      // The active mask is a stationary tube frozen before AMPS allocates any
+      // block.  A trajectory supplied later by a moving or coupled observer
+      // could leave that tube without a corresponding mesh reactivation, so
+      // such a combination is rejected instead of silently publishing empty
+      // samples.  Fixed and fixed-heliographic observers are checked as
+      // finite collection spheres; a spherical-shell observer is resolved to
+      // the same directional point used by ObserverRuntime.
+      if (observer.followsTrajectory ||
+          observer.kind == ObserverKind::MovingCartesian ||
+          observer.kind == ObserverKind::FieldConnected) {
+        return Invalid("a stationary Parker active corridor requires fixed "
+                       "observers; moving/field-connected observers need a "
+                       "future dynamic mesh-reactivation contract");
+      }
+      Core::Vec3 observerPoint = observer.positionM;
+      if (observer.kind == ObserverKind::SphericalShell) {
+        Core::Vec3 direction = observer.positionM.Normalized();
+        if (direction.NormSq() == 0.0)
+          direction = Core::Vec3(1.0, 0.0, 0.0);
+        observerPoint = normalized.coordinateOriginM +
+            observer.shellRadiusM * direction;
+      }
+      const Core::Vec3 relative =
+          observerPoint - normalized.coordinateOriginM;
+      const double observerRadiusM = relative.Norm();
+      const Core::Vec3 centreline =
+          Core::ParkerCurvePoint(observerRadiusM, declaredGeometry);
+      const Core::Vec3 observerDirection = relative.Normalized();
+      const Core::Vec3 centrelineDirection = centreline.Normalized();
+      const double transverseDistanceM = observerRadiusM * std::atan2(
+          observerDirection.Cross(centrelineDirection).Norm(),
+          std::max(-1.0, std::min(
+              1.0, observerDirection.Dot(centrelineDirection))));
+      const double activeRadiusM =
+          normalized.activeTubeRadiusMode == TubeRadiusMode::PhysicalConstant
+              ? normalized.activeTubeRadiusAtReferenceM
+              : normalized.activeTubeRadiusAtReferenceM * observerRadiusM /
+                    normalized.activeTubeReferenceRadiusM;
+      if (!std::isfinite(transverseDistanceM) ||
+          transverseDistanceM > activeRadiusM +
+              observer.collectionRadiusM) {
+        return Invalid("observer '" + observer.id +
+                       "' does not intersect the configured Parker active "
+                       "corridor");
+      }
+    }
+
     // The generated AMPS table is intentionally not imported here.  Reject
     // negative indices now; ValidateCompiledSpeciesBinding performs the upper
     // bound check against the generated AMPS count during initialization.
@@ -894,7 +1176,7 @@ Core::Status RunConfiguration3D::Create(
   const StorageLayout layout = BuildLayout(normalized);
   std::ostringstream physics;
   physics << std::setprecision(17) << std::scientific
-          << "sep3d-physics-v6"
+          << "sep3d-physics-v7"
           << ";intent=" << Name(normalized.intent)
           << ";background=" << Name(normalized.background)
           << ";turbulence=" << Name(normalized.turbulence)
@@ -946,6 +1228,15 @@ Core::Status RunConfiguration3D::Create(
           << ";tube_cell_m=" << normalized.tubeCellSizeM
           << ";tube_profile=" << Name(normalized.tubeTransverseProfile)
           << ";tube_exponent=" << normalized.tubeTransverseExponent
+          << ";active_region=" << Name(normalized.activeRegion)
+          << ";active_tube_reference_m="
+          << normalized.activeTubeReferenceRadiusM
+          << ";active_tube_radius_reference_m="
+          << normalized.activeTubeRadiusAtReferenceM
+          << ";active_tube_radius_mode="
+          << Name(normalized.activeTubeRadiusMode)
+          << ";active_tube_buffer_blocks="
+          << normalized.activeTubeBufferBlocks
           << ";mesh_cells_per_block=" << normalized.meshCellsPerBlockEdge
           << ";mesh_max_level=" << normalized.maximumMeshLevel
           << ";mesh_block_overhead=" << normalized.meshBlockOverheadBytes
@@ -999,7 +1290,10 @@ Core::Status RunConfiguration3D::Create(
           << ";source_rate_s-1=" << source.physicalParticleRatePerS
           << ";source_efficiency=" << source.injectionEfficiency
           << ";source_min_J=" << source.minimumEnergyJ
-          << ";source_max_J=" << source.maximumEnergyJ;
+          << ";source_max_J=" << source.maximumEnergyJ
+          << ";source_spectrum_model=" << Name(source.spectrumModel)
+          << ";source_fixed_phase_space_q="
+          << source.fixedPhaseSpacePowerIndex;
   if (normalized.inputSchemaVersion < 3)
     physics << ";source_index=" << source.spectralIndex;
   else
@@ -1044,12 +1338,50 @@ Core::Status RunConfiguration3D::Create(
           << ";minimum_substep_s=" << normalized.minimumTransportSubstepS
           << ";maximum_substeps=" << normalized.maximumTransportSubsteps
           << ";pitch_scheme=" << Name(normalized.pitchAngleScheme)
+          << ";spatial_diffusion_model="
+          << Name(normalized.spatialDiffusionModel)
+          << ";pitch_angle_diffusion_model="
+          << Name(normalized.pitchAngleDiffusionModel)
+          << ";mean_free_path_model="
+          << Name(normalized.meanFreePathModel)
+          << ";constant_dmumu_s-1=" << normalized.constantDmumuPerS
+          << ";constant_mean_free_path_m="
+          << normalized.constantMeanFreePathM
+          << ";mean_free_path_reference_m="
+          << normalized.meanFreePathReferenceM
+          << ";mean_free_path_reference_radius_m="
+          << normalized.meanFreePathReferenceRadiusM
+          << ";mean_free_path_reference_rigidity_v="
+          << normalized.meanFreePathReferenceRigidityV
+          << ";mean_free_path_radial_exponent="
+          << normalized.meanFreePathRadialExponent
+          << ";mean_free_path_rigidity_exponent="
+          << normalized.meanFreePathRigidityExponent
+          << ";spatial_quadrature_absolute_m2_s="
+          << normalized.spatialQuadratureAbsoluteToleranceM2PerS
+          << ";spatial_quadrature_relative="
+          << normalized.spatialQuadratureRelativeTolerance
+          << ";spatial_quadrature_recursion="
+          << normalized.spatialQuadratureMaximumRecursion
+          << ";focused_scattering_frame="
+          << Name(normalized.focusedScatteringFrame)
+          << ";maximum_scattering_events_per_substep="
+          << normalized.maximumScatteringEventsPerSubstep
           << ";perpendicular_diffusion=" << Name(normalized.perpendicularDiffusion)
           << ";kappa_perpendicular_m2_s="
           << normalized.constantKappaPerpendicularM2PerS
           << ";kappa_perpendicular_ratio="
           << normalized.kappaPerpendicularToParallelRatio
           << ";drift=" << Name(normalized.drift)
+          << ";population_control=" << Name(normalized.populationControl)
+          << ";population_min_per_cell_species="
+          << normalized.minimumParticlesPerCellPerSpecies
+          << ";population_target_per_cell_species="
+          << normalized.targetParticlesPerCellPerSpecies
+          << ";population_max_per_cell_species="
+          << normalized.maximumParticlesPerCellPerSpecies
+          << ";population_cadence_steps="
+          << normalized.populationControlCadenceSteps
           << ";layout=" << layout.fingerprint;
   for (const ObserverOptions& observer : normalized.observers) {
     physics << ";observer=" << observer.id << ',' << observer.positionM.x

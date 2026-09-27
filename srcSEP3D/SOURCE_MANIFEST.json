@@ -31,14 +31,16 @@
     "test/*.cpp",
     "test/**/*.sh",
     "test/**/*.cpp",
-    "validation/*.py"
-    ,"release/*.py"
+    "validation/*.py",
+    "validation/**/*.py",
+    "release/*.py"
   ],
   "documentation_globs": [
     "*.md",
     "*.docx",
     "test/*.md",
     "validation/*.md",
+    "validation/**/*.md",
     "release/*.md"
   ],
   "retained_input_globs": [

@@ -11,6 +11,7 @@
 #include "../../core/sep3d_test_registry.h"
 #include "../../transport/focused_transport.h"
 #include "../../transport/parker_transport.h"
+#include "../../transport/population_control.h"
 #include "../../transport/time_step.h"
 
 #include <algorithm>
@@ -639,6 +640,130 @@ Result RunV1D05() {
   return Pass("diffusion substep is limited by max(kappa_parallel,kappa_perpendicular)");
 }
 
+Result RunFTE3D08() {
+  T::FocusedScatteringState initial;
+  initial.particle.positionM = {0.0, 0.0, 0.0};
+  initial.particle.momentumKgMPerS = 0.8 *
+      SEP3D::Core::Const::m_p * SEP3D::Core::Const::c;
+  initial.particle.mu = 0.35;
+  T::FocusedScatteringLocalState local;
+  local.deterministic = FocusedLocal({1.0, 0.0, 0.0});
+  local.meanFreePathM = 2.0e6;
+  local.frame = T::FocusedScatteringFrame::PlasmaFrameIsotropic;
+  constexpr std::uint64_t seed = 0x12345678ULL;
+  constexpr std::uint64_t particle = 917;
+  constexpr std::uint64_t step = 12;
+  const auto one = T::AdvanceFocusedScattering(
+      initial, local, SEP3D::Core::Const::m_p, 0.2,
+      seed, particle, step, 100000);
+  const auto first = T::AdvanceFocusedScattering(
+      initial, local, SEP3D::Core::Const::m_p, 0.07,
+      seed, particle, step, 100000);
+  if (!one.status.ok() || !first.status.ok())
+    return Fail("valid event-driven focused-scattering step failed");
+  const auto second = T::AdvanceFocusedScattering(
+      first.state, local, SEP3D::Core::Const::m_p, 0.13,
+      seed, particle, step, 100000);
+  if (!second.status.ok() || one.scatteringEvents == 0 ||
+      one.state.nextEventIndex != second.state.nextEventIndex ||
+      std::fabs(one.state.particle.mu - second.state.particle.mu) > 1.0e-13 ||
+      std::fabs(one.state.particle.momentumKgMPerS -
+                second.state.particle.momentumKgMPerS) > 1.0e-30 ||
+      (one.state.particle.positionM - second.state.particle.positionM).Norm() >
+          1.0e-7 ||
+      !std::isfinite(second.state.remainingOpticalDepth) ||
+      second.state.remainingOpticalDepth <= 0.0) {
+    return Fail("carried optical depth is not partition invariant");
+  }
+  return Pass("focused mean-free-path scattering carries optical depth and preserves the event sequence across subcycling");
+}
+
+Result RunFTE3D09() {
+  T::FocusedScatteringState initial;
+  const double mass = SEP3D::Core::Const::m_p;
+  const double c = SEP3D::Core::Const::c;
+  initial.particle.momentumKgMPerS = 0.8 * mass * c;
+  initial.particle.mu = 0.35;
+  initial.nextEventIndex = 9;
+
+  T::FocusedScatteringLocalState local;
+  local.deterministic = FocusedLocal({1.0, 0.0, 0.0});
+  local.meanFreePathM = 2.0e6;
+  local.alfvenSpeedMPerS = 5.0e5;
+  local.plusWaveFraction = 1.0;
+  local.minusWaveFraction = 0.0;
+  local.frame = T::FocusedScatteringFrame::AlfvenWaveFrameIsotropic;
+  const double interval = 0.01;
+  const double initialSpeed = T::RelativisticSpeed(
+      initial.particle.momentumKgMPerS, mass);
+  // Place one event exactly at the end of the interval. This avoids relying
+  // on a particular exponential draw while still exercising the complete
+  // event update and its semantic pitch/branch keys.
+  initial.remainingOpticalDepth =
+      initialSpeed / local.meanFreePathM * interval;
+  const auto scattered = T::AdvanceFocusedScattering(
+      initial, local, mass, interval, 771, 90210, 4, 1);
+  if (!scattered.status.ok() || scattered.scatteringEvents != 1 ||
+      scattered.state.nextEventIndex != initial.nextEventIndex + 1) {
+    return Fail("one prescribed Alfvén-wave-frame scattering event failed");
+  }
+
+  auto waveFrameEnergy = [mass, c](double momentum, double mu,
+                                    double waveSpeed) {
+    const double plasmaEnergy = std::hypot(momentum * c, mass * c * c);
+    const double betaWave = waveSpeed / c;
+    const double gammaWave = 1.0 / std::sqrt(1.0 - betaWave * betaWave);
+    return gammaWave * (plasmaEnergy - waveSpeed * momentum * mu);
+  };
+  const double before = waveFrameEnergy(
+      initial.particle.momentumKgMPerS, initial.particle.mu,
+      local.alfvenSpeedMPerS);
+  const double after = waveFrameEnergy(
+      scattered.state.particle.momentumKgMPerS,
+      scattered.state.particle.mu, local.alfvenSpeedMPerS);
+  if (Relative(before, after) > 2.0e-14)
+    return Fail("Alfvén-wave-frame scattering did not conserve wave-frame energy");
+
+  // Plasma-frame isotropization changes pitch but must leave the momentum
+  // magnitude exactly unchanged.  Reuse the same explicit event optical depth
+  // so both frame choices are compared at the same physical event time.
+  local.frame = T::FocusedScatteringFrame::PlasmaFrameIsotropic;
+  const auto plasma = T::AdvanceFocusedScattering(
+      initial, local, mass, interval, 771, 90210, 4, 1);
+  if (!plasma.status.ok() || plasma.scatteringEvents != 1 ||
+      plasma.state.particle.momentumKgMPerS !=
+          initial.particle.momentumKgMPerS) {
+    return Fail("plasma-frame scattering changed particle energy");
+  }
+  return Pass(
+      "discrete scattering conserves energy in the selected plasma or directional Alfvén-wave frame");
+}
+
+Result RunPOP3D01() {
+  const double mc = SEP3D::Core::Const::m_p * SEP3D::Core::Const::c;
+  const std::array<T::WeightedPhasePoint, 3> input = {{
+      {1.5, {1.0, 2.0, 3.0}, {0.8*mc, 0.1*mc, 0.0}},
+      {0.7, {4.0, 1.0, 2.0}, {-0.3*mc, 1.2*mc, 0.2*mc}},
+      {2.1, {-2.0, 3.0, 0.5}, {0.2*mc, -0.4*mc, 1.7*mc}}}};
+  const SEP3D::Core::Vec3 direction =
+      SEP3D::Core::Vec3(1.0, -2.0, 3.0).Normalized();
+  const T::RelativisticMergeResult merged =
+      T::MergeRelativisticThreeToTwo(
+          input, SEP3D::Core::Const::m_p, direction);
+  if (!merged.status.ok() || merged.relativeWeightResidual > 1.0e-15 ||
+      merged.relativeMomentumResidual > 2.0e-15 ||
+      merged.relativeEnergyResidual > 5.0e-14) {
+    return Fail("relativistic 3-to-2 merge did not conserve weighted moments");
+  }
+  const double totalWeight = 1.5 + 0.7 + 2.1;
+  const SEP3D::Core::Vec3 expectedPosition =
+      (1.5 * input[0].positionM + 0.7 * input[1].positionM +
+       2.1 * input[2].positionM) / totalWeight;
+  if ((merged.outputPositionM - expectedPosition).Norm() > 1.0e-14)
+    return Fail("relativistic merge did not preserve the position centroid");
+  return Pass("SEP-aware 3-to-2 merging conserves weight, momentum, relativistic energy, and position centroid");
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterTransportTests() {
@@ -673,6 +798,8 @@ std::vector<SEP3D::Testing::Descriptor> RegisterTransportTests() {
       make("FTE3D05", "FTE3D", "Momentum characteristic", RunFTE3D05),
       make("FTE3D06", "FTE3D", "Strong-scattering reduction", RunFTE3D06),
       make("FTE3D07", "FTE3D", "Zero-perpendicular identity", RunFTE3D07),
+      make("FTE3D08", "FTE3D", "Event-driven mean-free-path scattering", RunFTE3D08),
+      make("FTE3D09", "FTE3D", "Scattering-frame energy", RunFTE3D09),
       make("RNG3D01", "RNG3D", "Thread reproducibility", RunRNG3D01),
       make("RNG3D02", "RNG3D", "Order independence", RunRNG3D02),
       make("RNG3D03", "RNG3D", "Purpose isolation", RunRNG3D03),
@@ -681,5 +808,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterTransportTests() {
       make("V1D03", "V1D", "Guiding-centre drift direction", RunV1D03),
       make("V1D04", "V1D", "Focused perpendicular transport", RunV1D04),
       make("V1D05", "V1D", "Tensor diffusion timestep", RunV1D05),
+      make("POP3D01", "POP3D", "Relativistic split/merge conservation", RunPOP3D01),
   };
 }

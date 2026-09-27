@@ -74,9 +74,10 @@ Every dimensional file key includes its SI unit, for example
 `minimum_energy_j`. A key without the declared suffix is unknown. The parser
 does not guess whether a number is AU, solar radii, km/s, nT, or MeV.
 
-The required groups are `run`, `domain`, `mesh`, `mesh.solar`, `mesh.tube`,
-`memory`, `background`, `background.parker`, `turbulence`, `transport`,
-`shock`, `source`, `species`, `storage`, `output`, `restart`, and at least one
+The required schema-4 groups are `run`, `domain`, `mesh`, `mesh.solar`,
+`mesh.tube`, `mesh.active_region`, `memory`, `background`,
+`background.parker`, `turbulence`, `transport`, `population_control`, `shock`,
+`source`, `species`, `storage`, `output`, `restart`, and at least one
 `observer.ID`. A disabled feature still has a section, making the decision
 visible in code review. Duplicate keys, unknown keys, invalid enumerations,
 missing groups, non-finite values, and incompatible choices fail in the parser
@@ -91,7 +92,7 @@ with `[run]` and is exercised directly by `CFG3D01`.
 The complete commented example is
 [`examples/sep3d_analytic_parker.in`](examples/sep3d_analytic_parker.in).
 
-### Schema 3 initialization contract
+### Schema 3 initialization contract retained by schema 4
 
 Schema 3 adds the required `[parker_spiral]` section from schema 2, a complete
 canonical `[swcme]` section, explicit initialization Tecplot paths, complete
@@ -182,6 +183,113 @@ The full field-by-field tables and `[swcme]` key list are in the top-level
 [`README.md`](README.md); the annotated file is executable acceptance input,
 not pseudocode.
 
+### Schema 4 transport-domain and statistical controls
+
+Schema 4 adds three independent decisions that must not be inferred from one
+another:
+
+1. `[mesh.tube]` defines where AMR is refined.
+2. `[mesh.active_region]` defines which finalized leaf blocks participate in
+   the calculation.
+3. `[population_control]` defines how many computational particles represent
+   the physical distribution in each occupied cell/species.
+
+The active-region syntax is:
+
+```ini
+[mesh.active_region]
+mode = full-domain                 # or parker-tube
+reference_radius_m = 1.495978707e11
+radius_at_reference_m = 0         # positive for parker-tube
+radius_mode = constant-angular-width  # or physical-constant
+buffer_blocks = 0                 # at least 1 for parker-tube
+```
+
+`parker-tube` uses the same polarity-independent centreline as refinement and
+the analytic Parker field. Its radius is an independent, normally wider,
+physical boundary. Configuration rejects a radius narrower than the
+refinement tube at the active reference radius. A fixed observer is accepted
+when its collection sphere intersects the physical active tube. Because AMPS
+freezes block activation before allocation, a moving or coupled
+field-connected observer is incompatible with a static active tube until a
+reviewed dynamic reactivation/initialization protocol exists.
+
+Transport selection uses `run.transport` plus explicit coefficient choices:
+
+| Mover | Required local coefficient | Selectors |
+|---|---|---|
+| `parker` | spatial `kappa_parallel` and its field-aligned gradient | `spatial_diffusion_model = mean-free-path` uses the selected mean-free-path model and `kappa=v lambda/3`; `pitch-angle-integral` evaluates the selected Dμμ model with the declared adaptive-quadrature tolerances. The old `correlation-mean-free-path` spelling is an input-only alias. |
+| `focused-diffusion` | `D_mumu` and `dD_mumu/dmu` | `pitch_angle_diffusion_model = jokipii-1966`, `florinskiy`, or `constant` |
+| `focused-scattering` | `lambda_parallel` | `mean_free_path_model = correlation`, `constant`, or `radial-rigidity-power-law`; frame is `plasma-frame-isotropic` or `alfven-wave-frame-isotropic` |
+
+`constant` Dμμ requires positive `constant_dmumu_per_s`; constant mean free
+path requires positive `constant_mean_free_path_m`. Each inactive constant is
+zero in complete input. Discrete focused scattering currently rejects
+perpendicular diffusion because no event-partition-invariant transverse
+operator has passed validation. The resolver evaluates only the quantities the
+selected mover consumes.
+
+Source spectral shape is selected independently of the mover:
+
+```ini
+[source]
+spectrum_model = local-compression-dsa
+phase_space_power_index = 0
+```
+
+`local-compression-dsa` uses the canonical SWCME value
+`q=3*r/(r-1)` independently for every active shock patch and requires the
+fixed-index field to be the explicit zero sentinel. For an externally
+prescribed isotropic seed law, use:
+
+```ini
+[source]
+spectrum_model = fixed-phase-space-power-law
+phase_space_power_index = 5
+```
+
+Here the input is the positive \(q\) in \(f(p)\propto p^{-q}\), not the signed
+textual exponent `-5` and not the sampled `dN/dp` exponent. The adapter applies
+the spherical momentum-space Jacobian and samples
+`dN/dp proportional to p^(-(q-2))`. Both selectors retain the declared total
+kinetic-energy bounds and convert those bounds separately with every compiled
+AMPS species mass. The selector does not change source normalization:
+`physical_particle_rate_per_s`, `injection_efficiency`, patch weight, cadence,
+and the exact sample count retain their documented meanings.
+
+The radial–rigidity closure is
+`lambda=lambda_ref*(r/r_ref)^a*(R/R_ref)^b`, with
+`R=p*c/abs(q)` in volts. Its five keys are
+`mean_free_path_reference_m`, `mean_free_path_reference_radius_m`,
+`mean_free_path_reference_rigidity_v`,
+`mean_free_path_radial_exponent`, and
+`mean_free_path_rigidity_exponent`. The three reference values must be
+positive and all values finite when that model is selected. For either other
+MFP model all five are mandatory zero sentinels in schema 4. This rule makes
+the selected physics reviewable and prevents hidden reference scales from
+becoming active after a one-line model change.
+
+Population control syntax is:
+
+```ini
+[population_control]
+mode = off                         # or split-merge
+minimum_particles_per_cell_per_species = 0
+target_particles_per_cell_per_species = 0
+maximum_particles_per_cell_per_species = 0
+cadence_steps = 1
+```
+
+For `split-merge`, limits satisfy
+`2 <= minimum <= target <= maximum`; `off` requires all three limits to be
+zero. Counts are per allocated AMR cell and per compiled species. At a control
+boundary, a nonempty count below minimum is split to target and a count above
+maximum is merged to target; counts inside the band and empty cells are left
+unchanged. The controller runs after that boundary's shock injection, so the
+upper bound describes the representation entering the next transport step.
+The dry-run summary prints all selectors, active-tube values, and population
+limits alongside the resolved fingerprint.
+
 ## C02: typed run contract and fingerprints
 
 The parser produces `RunConfiguration3DOptions`, the same SI-only record a
@@ -193,11 +301,15 @@ The typed contract includes:
 
 - run intent, transport core, time step, maximum steps, random campaign, and
   integer background/injection/sampling/checkpoint cadences;
-- explicit domain, boundary, coordinate-frame, mesh, and storage choices;
+- explicit domain, boundary, coordinate-frame, refinement, active-block
+  corridor, and storage choices;
 - complete SWCME-backed analytic Parker/solar-wind parameters and a typed
   reserved Python-interpolator authority;
 - turbulence model, amplitude, cross helicity, radial scalings, spectrum,
   cadence, and out-of-range/missing-data policies;
+- one of three transport movers, independent spatial/pitch/MFP coefficient
+  selectors, scattering frame/event budget, and numerical quadrature values;
+- per-cell/per-species split-merge hysteresis and cadence;
 - legacy shock interval/radial/speed/compression for schemas 1–2, or the
   canonical SWCME3D manifest/fingerprint for schema 3;
 - source efficiency, physical particle rate, energy interval, spectrum, and
@@ -345,6 +457,8 @@ cadences:
 | `output.cadence_steps` | gather and publish observer products |
 | `output.checkpoint_cadence_steps` | write a complete R07 restart; zero disables periodic checkpoints |
 | `transport.maximum_substeps` | hard accepted-substep limit for one requested AMPS interval |
+| `transport.maximum_scattering_events_per_substep` | hard event budget inside one focused-scattering substep |
+| `population_control.cadence_steps` | apply split/merge after injection at this integer boundary cadence |
 | `source.physical_particle_rate_per_s` | physical source rate normalized over the injection interval |
 
 Observer sections additionally accept `kind`, Cartesian velocity, collection
@@ -370,6 +484,8 @@ identity/conservation, and resolved observer geometry plus commit-only reset.
 | `CFG3D06` | complete finite Parker-line input and fail-closed source consistency |
 | `CFG3D07` | complete generated table, mixed signed charges, count/index/symbol/mass/charge failures, observer bounds, and fingerprint identity |
 | `CFG3D08` | complete schema-3 SWCME input plus missing-field, weight, and per-step-cadence rejection |
+| `CFG3D11` | schema-4 active corridor/observer, population hysteresis, fixed/local source spectra, mover/coefficient compatibility, and dry-run fields |
+| `MSH3D12` | conservative full-block Parker-corridor and halo classification |
 | `MSH3D11` | deterministic unit-labeled initialization Parker Tecplot output |
 | `R3D08` | canonical source-surface preflight and exact per-species, per-step particle allocation |
 

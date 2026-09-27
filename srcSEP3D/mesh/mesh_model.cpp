@@ -225,6 +225,8 @@ Core::Status Validate(const ResolutionConfiguration& configuration) {
       configuration.tubeRadiusAtReferenceM,
       configuration.tubeCellSizeM,
       configuration.tubeTransverseExponent,
+      configuration.activeTubeReferenceRadiusM,
+      configuration.activeTubeRadiusAtReferenceM,
       configuration.solarWindSpeedMPerS,
       configuration.solarRotationRateRadPerS,
       configuration.rotationAxis.x, configuration.rotationAxis.y,
@@ -281,6 +283,19 @@ Core::Status Validate(const ResolutionConfiguration& configuration) {
       return Invalid("Parker tube parameters are outside their physical range");
     }
   }
+  if (configuration.activeRegion ==
+      RuntimeModel::ActiveRegionMode::ParkerTube) {
+    if (configuration.activeTubeReferenceRadiusM <= 0.0 ||
+        configuration.activeTubeRadiusAtReferenceM <= 0.0 ||
+        configuration.solarWindSpeedMPerS <= 0.0 ||
+        configuration.tubeColatitudeRad < 0.0 ||
+        configuration.tubeColatitudeRad > Core::Const::kPi ||
+        !Core::ValidateParkerGeometry(Geometry(configuration)).ok()) {
+      return Invalid(
+          "active Parker-corridor parameters are outside their physical "
+          "range");
+    }
+  }
   return Core::Status::OK();
 }
 
@@ -311,6 +326,20 @@ double TubeRadiusM(double radiusM,
   }
   return configuration.tubeRadiusAtReferenceM * radiusM /
          configuration.tubeReferenceRadiusM;
+}
+
+double ActiveTubeRadiusM(double radiusM,
+                         const ResolutionConfiguration& configuration) {
+  if (!std::isfinite(radiusM) || radiusM <= 0.0 ||
+      configuration.activeTubeReferenceRadiusM <= 0.0) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  if (configuration.activeTubeRadiusMode ==
+      RuntimeModel::TubeRadiusMode::PhysicalConstant) {
+    return configuration.activeTubeRadiusAtReferenceM;
+  }
+  return configuration.activeTubeRadiusAtReferenceM * radiusM /
+         configuration.activeTubeReferenceRadiusM;
 }
 
 Core::Vec3 ParkerTubeDirection(
@@ -380,6 +409,67 @@ double RequestedCellSizeM(const Core::Vec3& positionM,
   }
   return Clamp(requested, configuration.minimumCellSizeM,
                configuration.backgroundCellSizeM);
+}
+
+bool BlockIntersectsActiveRegion(
+    const Core::Vec3& minimumM, const Core::Vec3& maximumM,
+    const ResolutionConfiguration& configuration) {
+  if (configuration.activeRegion ==
+      RuntimeModel::ActiveRegionMode::FullDomain) {
+    return true;
+  }
+
+  const double minimum[] = {minimumM.x, minimumM.y, minimumM.z};
+  const double maximum[] = {maximumM.x, maximumM.y, maximumM.z};
+  for (int axis = 0; axis < 3; ++axis) {
+    if (!std::isfinite(minimum[axis]) || !std::isfinite(maximum[axis]) ||
+        maximum[axis] <= minimum[axis]) {
+      // A malformed AMR box is retained so the caller's normal mesh checks
+      // can issue the authoritative diagnostic.  Removing it here would hide
+      // the structural problem behind an apparently successful domain mask.
+      return true;
+    }
+  }
+
+  const Core::Vec3 centre = 0.5 * (minimumM + maximumM);
+  const Core::Vec3 halfSize = 0.5 * (maximumM - minimumM);
+  const double halfDiagonalM = halfSize.Norm();
+  const double fullDiagonalM = 2.0 * halfDiagonalM;
+  const double configuredHaloM =
+      static_cast<double>(configuration.activeTubeBufferBlocks) *
+      fullDiagonalM;
+
+  // First retain every block whose centre or corner is explicitly inside the
+  // declared tube.  This inexpensive path handles the overwhelming majority
+  // of accepted blocks and also makes boundary behaviour easy to audit.
+  double maximumTubeRadiusM = 0.0;
+  for (int corner = -1; corner < 8; ++corner) {
+    Core::Vec3 point = centre;
+    if (corner >= 0) {
+      point.x = (corner & 1) ? maximumM.x : minimumM.x;
+      point.y = (corner & 2) ? maximumM.y : minimumM.y;
+      point.z = (corner & 4) ? maximumM.z : minimumM.z;
+    }
+    const double radiusM = (point - configuration.originM).Norm();
+    const double tubeRadiusM = ActiveTubeRadiusM(radiusM, configuration);
+    if (std::isfinite(tubeRadiusM)) {
+      maximumTubeRadiusM = std::max(maximumTubeRadiusM, tubeRadiusM);
+      if (TubeDistanceM(point, configuration) <=
+          tubeRadiusM + configuredHaloM) {
+        return true;
+      }
+    }
+  }
+
+  // A curved centreline can cross a coarse Cartesian block without approaching
+  // any sampled corner.  Distance to a set is 1-Lipschitz, hence a block can
+  // be safely rejected only when its centre is farther than a complete
+  // half-diagonal from the largest corner/centre tube radius.  The additional
+  // full-block halo keeps neighbour blocks allocated for AMPS ghost exchange
+  // and finite-difference stencils.  This criterion intentionally errs on the
+  // side of retaining blocks; it must never create a hole in the corridor.
+  return TubeDistanceM(centre, configuration) <=
+      maximumTubeRadiusM + halfDiagonalM + configuredHaloM;
 }
 
 Core::Status BuildParkerCenterline(

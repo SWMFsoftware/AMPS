@@ -242,6 +242,16 @@ ShockState PublishedShockProvider::Evaluate(double timeS) const {
 Core::Status ConfigureSpeciesSpectrum(
     ShockSourceRecord* patch, double speciesMassKg,
     double minimumKineticEnergyJ, double maximumKineticEnergyJ) {
+  return ConfigureSpeciesSpectrum(
+      patch, speciesMassKg, minimumKineticEnergyJ, maximumKineticEnergyJ,
+      RuntimeModel::SourceSpectrumModel::LocalCompressionDsa, 0.0);
+}
+
+Core::Status ConfigureSpeciesSpectrum(
+    ShockSourceRecord* patch, double speciesMassKg,
+    double minimumKineticEnergyJ, double maximumKineticEnergyJ,
+    RuntimeModel::SourceSpectrumModel model,
+    double fixedPhaseSpacePowerIndex) {
   if (patch == nullptr)
     return Invalid("species spectrum patch is null");
   if (!patch->status.ok() || !patch->active ||
@@ -251,6 +261,19 @@ Core::Status ConfigureSpeciesSpectrum(
       minimumKineticEnergyJ <= 0.0 ||
       maximumKineticEnergyJ <= minimumKineticEnergyJ) {
     return Invalid("species spectrum mass or kinetic-energy interval is invalid");
+  }
+  if (model != RuntimeModel::SourceSpectrumModel::LocalCompressionDsa &&
+      model !=
+          RuntimeModel::SourceSpectrumModel::FixedPhaseSpacePowerLaw) {
+    return Invalid("species spectrum model is unknown");
+  }
+  if ((model == RuntimeModel::SourceSpectrumModel::LocalCompressionDsa &&
+       fixedPhaseSpacePowerIndex != 0.0) ||
+      (model ==
+           RuntimeModel::SourceSpectrumModel::FixedPhaseSpacePowerLaw &&
+       (!std::isfinite(fixedPhaseSpacePowerIndex) ||
+        fixedPhaseSpacePowerIndex <= 2.0))) {
+    return Invalid("species spectrum model and phase-space index disagree");
   }
 
   // Relativistic energy-momentum identity in SI:
@@ -272,6 +295,17 @@ Core::Status ConfigureSpeciesSpectrum(
       momentumFromKineticEnergy(minimumKineticEnergyJ);
   candidate.injection.spectrum.maximum =
       momentumFromKineticEnergy(maximumKineticEnergyJ);
+  if (model ==
+      RuntimeModel::SourceSpectrumModel::FixedPhaseSpacePowerLaw) {
+    // For an isotropic phase-space density f(p) proportional to p^(-q), the
+    // number distribution sampled by macroparticles is
+    //   dN/dp = 4*pi*p^2*f(p) proportional to p^(2-q).
+    // sep_common writes its density as p^(-powerIndex), hence q-2.  Keeping
+    // this conversion beside the momentum interval avoids confusing q=5 with
+    // either a signed exponent -5 or a dN/dp exponent 3.
+    candidate.injection.spectrum.powerIndex =
+        fixedPhaseSpacePowerIndex - 2.0;
+  }
   const SEP::Transport::Status valid =
       SEP::Injection::Validate(candidate.injection);
   if (!valid.ok())
@@ -284,7 +318,9 @@ Core::Status ConfigureSpeciesSpectrum(
   std::ostringstream identity;
   identity << candidate.sourceFingerprint << ":species-spectrum:"
            << std::setprecision(17) << speciesMassKg << ':'
-           << minimumKineticEnergyJ << ':' << maximumKineticEnergyJ;
+           << minimumKineticEnergyJ << ':' << maximumKineticEnergyJ << ':'
+           << RuntimeModel::Name(model) << ':'
+           << fixedPhaseSpacePowerIndex;
   candidate.sourceFingerprint = identity.str();
   *patch = std::move(candidate);
   return Core::Status::OK();

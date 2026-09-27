@@ -14,6 +14,7 @@
 #define SEP3D_TURBULENCE_MODELS_H
 
 #include "turbulence_provider.h"
+#include "../runtime/run_configuration.h"
 
 #include <cstddef>
 #include <vector>
@@ -189,9 +190,47 @@ class NormalizedPowerLawSpectrum {
 struct LocalScatteringCoefficients {
   Core::Status status;
   double kappaParallelM2PerS = 0.0;
+  // Retained explicitly for the event-driven focused-scattering mover.  It is
+  // not reconstructed from kappa because the selected spatial-diffusion model
+  // may be an independent pitch-angle integral.
+  double meanFreePathM = 0.0;
   double dMuMuPerS = 0.0;
   double dDmuMuDmuPerS = 0.0;
   std::uint64_t turbulenceGeneration = 0;
+};
+
+// Complete coefficient-selection record copied from the immutable run
+// configuration at the AMPS boundary.  Keeping it as a value object makes a
+// local coefficient evaluation auditable and lets component tests exercise
+// every model without constructing the full application runtime.
+struct CoefficientSelection {
+  RuntimeModel::SpatialDiffusionModel spatial =
+      RuntimeModel::SpatialDiffusionModel::CorrelationMeanFreePath;
+  RuntimeModel::PitchAngleDiffusionModel pitchAngle =
+      RuntimeModel::PitchAngleDiffusionModel::Jokipii1966;
+  RuntimeModel::MeanFreePathModel meanFreePath =
+      RuntimeModel::MeanFreePathModel::Correlation;
+  double constantDmumuPerS = 0.0;
+  double constantMeanFreePathM = 0.0;
+  // Parameters of lambda=lambda_ref*(r/r_ref)^a*(R/R_ref)^b.  Rigidity is
+  // evaluated from the actual AMPS species charge as R=p*c/|q| [V], so the
+  // same configuration has the correct charge dependence for ions and
+  // electrons rather than assuming every compiled species is a proton.
+  double meanFreePathReferenceM = 0.0;
+  double meanFreePathReferenceRadiusM = 0.0;
+  double meanFreePathReferenceRigidityV = 0.0;
+  double meanFreePathRadialExponent = 0.0;
+  double meanFreePathRigidityExponent = 0.0;
+  double quadratureAbsoluteToleranceM2PerS = 0.0;
+  double quadratureRelativeTolerance = 1.0e-6;
+  unsigned quadratureMaximumRecursion = 20;
+  // The resolver evaluates only quantities consumed by the selected mover.
+  // This prevents an unused resonance gap (for example D_mumu under the
+  // discrete mean-free-path mover) from invalidating otherwise complete
+  // physics. Defaults preserve the pre-schema-4 all-coefficient test surface.
+  bool requireSpatialDiffusion = true;
+  bool requirePitchAngleDiffusion = true;
+  bool requireMeanFreePath = true;
 };
 
 // Cell-centred stencil used to recover b-hat dot grad(kappa_parallel) at the
@@ -221,7 +260,8 @@ LocalScatteringCoefficients EvaluateLocalScattering(
     double speciesMassKg,
     double signedChargeC,
     double momentumKgMPerS,
-    double mu);
+    double mu,
+    const CoefficientSelection& selection = CoefficientSelection());
 
 }  // namespace Turbulence
 }  // namespace SEP3D

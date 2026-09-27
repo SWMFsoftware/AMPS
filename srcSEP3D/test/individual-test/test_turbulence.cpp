@@ -465,6 +465,121 @@ Result RunCOEF3D06() {
   return result;
 }
 
+Result RunCOEF3D07() {
+  const T::TurbulenceSample turbulence = PrescribedSample();
+  const B::BackgroundSample background = Background();
+  const SEP3D::Core::Vec3 position(SEP3D::Core::Const::AU, 0.0, 0.0);
+  const double momentum = 1.0e-19;
+  const double mc = SEP3D::Core::Const::m_p * SEP3D::Core::Const::c;
+  const double speed = SEP3D::Core::Const::c * momentum /
+      std::sqrt(momentum * momentum + mc * mc);
+
+  // The discrete-scattering mover consumes lambda, not D_mumu.  mu=0 is an
+  // unresolved slab resonance for the Jokipii model; successful evaluation
+  // therefore proves that an unused pitch-angle model is not evaluated and
+  // cannot incorrectly veto a physically complete MFP-driven step.
+  T::CoefficientSelection eventSelection;
+  eventSelection.pitchAngle =
+      SEP3D::RuntimeModel::PitchAngleDiffusionModel::Jokipii1966;
+  eventSelection.meanFreePath =
+      SEP3D::RuntimeModel::MeanFreePathModel::Constant;
+  eventSelection.constantMeanFreePathM = 2.5e10;
+  eventSelection.requireSpatialDiffusion = false;
+  eventSelection.requirePitchAngleDiffusion = false;
+  eventSelection.requireMeanFreePath = true;
+  const T::LocalScatteringCoefficients eventCoefficients =
+      T::EvaluateLocalScattering(
+          turbulence, background, position, 0, SEP3D::Core::Const::m_p,
+          SEP3D::Core::Const::e, momentum, 0.0, eventSelection);
+  if (!eventCoefficients.status.ok() ||
+      eventCoefficients.meanFreePathM != 2.5e10 ||
+      eventCoefficients.dMuMuPerS != 0.0 ||
+      eventCoefficients.kappaParallelM2PerS != 0.0) {
+    return Fail("MFP-only coefficient selection evaluated an unused resonance or changed lambda");
+  }
+
+  // Published event studies commonly parameterize lambda by radius and
+  // rigidity. At r=0.5 AU and R=2 GV, this fixture has the exact analytic
+  // value lambda=0.3 AU * 0.5 * 2^(1/3). Doubling |q| at the same momentum
+  // halves rigidity and recovers the 1-GV reference factor, which proves the
+  // implementation did not hard-code a proton energy conversion.
+  T::CoefficientSelection powerLaw = eventSelection;
+  powerLaw.meanFreePath =
+      SEP3D::RuntimeModel::MeanFreePathModel::RadialRigidityPowerLaw;
+  powerLaw.constantMeanFreePathM = 0.0;
+  powerLaw.meanFreePathReferenceM = 0.3 * SEP3D::Core::Const::AU;
+  powerLaw.meanFreePathReferenceRadiusM = SEP3D::Core::Const::AU;
+  powerLaw.meanFreePathReferenceRigidityV = 1.0e9;
+  powerLaw.meanFreePathRadialExponent = 1.0;
+  powerLaw.meanFreePathRigidityExponent = 1.0 / 3.0;
+  const SEP3D::Core::Vec3 halfAu(0.5 * SEP3D::Core::Const::AU, 0.0, 0.0);
+  const double twoGvMomentum =
+      2.0e9 * SEP3D::Core::Const::e / SEP3D::Core::Const::c;
+  const T::LocalScatteringCoefficients powerOneCharge =
+      T::EvaluateLocalScattering(
+          turbulence, background, halfAu, 0, SEP3D::Core::Const::m_p,
+          SEP3D::Core::Const::e, twoGvMomentum, 0.2, powerLaw);
+  const T::LocalScatteringCoefficients powerTwoCharge =
+      T::EvaluateLocalScattering(
+          turbulence, background, halfAu, 0, SEP3D::Core::Const::m_p,
+          2.0 * SEP3D::Core::Const::e, twoGvMomentum, 0.2, powerLaw);
+  const double expectedPowerOneCharge =
+      0.15 * SEP3D::Core::Const::AU * std::pow(2.0, 1.0 / 3.0);
+  const double expectedPowerTwoCharge = 0.15 * SEP3D::Core::Const::AU;
+  if (!powerOneCharge.status.ok() || !powerTwoCharge.status.ok() ||
+      !Relative(powerOneCharge.meanFreePathM, expectedPowerOneCharge,
+                1.0e-14) ||
+      !Relative(powerTwoCharge.meanFreePathM, expectedPowerTwoCharge,
+                1.0e-14)) {
+    return Fail("radial-rigidity MFP lost its analytic radius/charge scaling");
+  }
+
+  // Exercise both spatial-diffusion closures with analytic expectations.
+  // The MFP closure is kappa=v*lambda/3.  For a constant D_mumu=D0, the
+  // canonical integral gives kappa=(v^2/8D0)*int_-1^1(1-mu^2)^2 dmu
+  // =2v^2/(15D0).
+  T::CoefficientSelection mfpSpatial = eventSelection;
+  mfpSpatial.spatial =
+      SEP3D::RuntimeModel::SpatialDiffusionModel::CorrelationMeanFreePath;
+  mfpSpatial.requireSpatialDiffusion = true;
+  const T::LocalScatteringCoefficients fromMfp =
+      T::EvaluateLocalScattering(
+          turbulence, background, position, 0, SEP3D::Core::Const::m_p,
+          SEP3D::Core::Const::e, momentum, 0.25, mfpSpatial);
+  const double expectedMfpKappa = speed * 2.5e10 / 3.0;
+  if (!fromMfp.status.ok() ||
+      !Relative(fromMfp.kappaParallelM2PerS, expectedMfpKappa, 1.0e-14)) {
+    return Fail("constant-MFP spatial diffusion did not produce v*lambda/3");
+  }
+
+  T::CoefficientSelection pitchSpatial;
+  pitchSpatial.spatial =
+      SEP3D::RuntimeModel::SpatialDiffusionModel::PitchAngleIntegral;
+  pitchSpatial.pitchAngle =
+      SEP3D::RuntimeModel::PitchAngleDiffusionModel::Constant;
+  pitchSpatial.constantDmumuPerS = 0.2;
+  pitchSpatial.requireSpatialDiffusion = true;
+  pitchSpatial.requirePitchAngleDiffusion = true;
+  pitchSpatial.requireMeanFreePath = false;
+  pitchSpatial.quadratureAbsoluteToleranceM2PerS = 1.0;
+  pitchSpatial.quadratureRelativeTolerance = 1.0e-10;
+  pitchSpatial.quadratureMaximumRecursion = 30;
+  const T::LocalScatteringCoefficients fromPitch =
+      T::EvaluateLocalScattering(
+          turbulence, background, position, 0, SEP3D::Core::Const::m_p,
+          SEP3D::Core::Const::e, momentum, -0.4, pitchSpatial);
+  const double expectedPitchKappa = 2.0 * speed * speed / (15.0 * 0.2);
+  if (!fromPitch.status.ok() || fromPitch.dMuMuPerS != 0.2 ||
+      fromPitch.dDmuMuDmuPerS != 0.0 ||
+      !Relative(fromPitch.kappaParallelM2PerS, expectedPitchKappa,
+                1.0e-9)) {
+    return Fail("constant D_mumu selector or its spatial integral is incorrect");
+  }
+
+  return Pass(
+      "coefficient selectors isolate unused physics and reproduce analytic constant, radial-rigidity, and D_mumu-integral limits");
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterTurbulenceTests() {
@@ -515,5 +630,8 @@ std::vector<SEP3D::Testing::Descriptor> RegisterTurbulenceTests() {
       make("COEF3D06", "COEF3D", "Parallel coefficient gradient",
            "Recover field-aligned kappa gradients with centred and boundary stencils.",
            RunCOEF3D06),
+      make("COEF3D07", "COEF3D", "Selectable coefficient models",
+           "Isolate mover-required quantities and verify analytic constant-model limits.",
+           RunCOEF3D07),
   };
 }

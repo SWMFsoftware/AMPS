@@ -66,7 +66,7 @@ same equipartition convention used by the AWSoM adapter,
 their declared reference radius using `k_min_radial_exponent` and
 `k_max_radial_exponent`; parallel correlation length uses its separately
 declared radial exponent. All scale exponents and validity cadence are present
-in complete schema-3 input and in the physics fingerprint.
+in complete schema-3/schema-4 input and in the physics fingerprint.
 
 Three input models use the same normalized finite-band implementation:
 
@@ -157,9 +157,36 @@ historic AMPS `Makefile.conf` rules omit when compiling the copied
 production resolver. At every accepted particle substep it combines the
 currently pinned turbulence sample, background, species mass/charge, momentum,
 and pitch cosine, then delegates to `CoefficientBridge`. It returns
-`kappa_parallel`, `D_mumu`, and `dD_mumu/dmu` in one validated record. This is
-why cell crossing during one AMPS call cannot reuse coefficients from the
-starting cell.
+`kappa_parallel`, `lambda_parallel`, `D_mumu`, and `dD_mumu/dmu` in one typed
+record. A `CoefficientSelection` also declares which of those quantities is
+actually required. This is why cell crossing during one AMPS call cannot reuse
+coefficients from the starting cell, while an unused coefficient singularity
+cannot reject an otherwise complete mover input.
+
+### Selectable coefficient closures
+
+Schema 4 exposes three orthogonal selectors:
+
+- `spatial_diffusion_model = mean-free-path` evaluates the
+  selected MFP and applies `kappa_parallel=v lambda_parallel/3`;
+- `spatial_diffusion_model = pitch-angle-integral` evaluates
+  \(\kappa_\parallel=(v^2/8)\int_{-1}^{1}
+  (1-\mu^2)^2/D_{\mu\mu}\,d\mu\) with the declared adaptive quadrature;
+- `pitch_angle_diffusion_model` chooses `jokipii-1966`, `florinskiy`, or a
+  positive constant SI rate;
+- `mean_free_path_model` chooses the shared correlation closure, a positive
+  constant SI length, or the explicit radial–rigidity power law
+  `lambda_ref*(r/r_ref)^a*((p*c/abs(q))/R_ref)^b`. The latter uses metres and
+  volts and therefore applies correctly to every charged compiled species,
+  not only protons.
+
+The Parker mover requests spatial diffusion (and an MFP only when that spatial
+closure consumes it). Continuous focused transport requests pitch-angle
+diffusion. Discrete focused scattering requests only MFP. A
+constant-ratio perpendicular model additionally requests parallel spatial
+diffusion because it defines `kappa_perp` from `kappa_parallel`. Complete input
+sets inactive constant values to zero so the manifest cannot carry a
+plausible-looking number that is ignored by the selected model.
 
 ## Production storage
 
@@ -215,5 +242,6 @@ prescribed provider.
 | `TUR3D06` | selectable amplitude laws, radial wave-energy scaling, and mandatory Tecplot total/directional energy columns |
 | `COEF3D01` | Dμμ/mean-free-path/parallel-diffusion round trips over six decades |
 | `COEF3D02` | 3-D bridge and direct shared Jokipii kernel are bitwise identical |
+| `COEF3D07` | required-quantity isolation plus analytic constant-MFP, radial–rigidity/charge-scaling, and constant-Dμμ spatial limits |
 
 Run `test/run_tests.py --suite phase-t --rebuild`.

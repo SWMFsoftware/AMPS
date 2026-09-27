@@ -23,6 +23,70 @@ double AdvanceDeterministicMu(double mu, double speedMPerS,
       mu + intervalS * FocusedPitchDriftPerS(midpoint, speedMPerS, local));
 }
 
+Core::Status ScatterInWaveFrame(double speedMPerS, double mu,
+                                double waveSpeedMPerS,
+                                double isotropicMu,
+                                double* finalSpeedMPerS,
+                                double* finalMu) {
+  if (finalSpeedMPerS == nullptr || finalMu == nullptr ||
+      !std::isfinite(speedMPerS) || speedMPerS < 0.0 ||
+      speedMPerS >= Core::Const::c || !std::isfinite(mu) ||
+      std::fabs(mu) > 1.0 || !std::isfinite(waveSpeedMPerS) ||
+      std::fabs(waveSpeedMPerS) >= Core::Const::c ||
+      !std::isfinite(isotropicMu) || std::fabs(isotropicMu) >= 1.0) {
+    return Core::Status(Core::StatusCode::InvalidInput,
+                        "invalid Alfv\u00e9n-wave-frame scattering state");
+  }
+  const double betaParallel = speedMPerS * mu / Core::Const::c;
+  const double betaPerpendicular = speedMPerS *
+      std::sqrt(std::max(0.0, 1.0 - mu * mu)) / Core::Const::c;
+  const double betaWave = waveSpeedMPerS / Core::Const::c;
+  const double gammaWave = 1.0 / std::sqrt(1.0 - betaWave * betaWave);
+  const double intoWave = 1.0 - betaParallel * betaWave;
+  if (!(intoWave > 0.0))
+    return Core::Status(Core::StatusCode::InvalidInput,
+                        "invalid plasma-to-wave Lorentz denominator");
+  const double parallelWave = (betaParallel - betaWave) / intoWave;
+  const double perpendicularWave =
+      betaPerpendicular / (gammaWave * intoWave);
+  const double betaInWave = std::hypot(parallelWave, perpendicularWave);
+  if (!std::isfinite(betaInWave) || betaInWave >= 1.0)
+    return Core::Status(Core::StatusCode::InvalidInput,
+                        "invalid particle speed in the wave frame");
+
+  const double scatteredParallelWave = betaInWave * isotropicMu;
+  const double scatteredPerpendicularWave = betaInWave *
+      std::sqrt(std::max(0.0, 1.0 - isotropicMu * isotropicMu));
+  const double intoPlasma = 1.0 + scatteredParallelWave * betaWave;
+  if (!(intoPlasma > 0.0))
+    return Core::Status(Core::StatusCode::InvalidInput,
+                        "invalid wave-to-plasma Lorentz denominator");
+  const double parallel =
+      (scatteredParallelWave + betaWave) / intoPlasma;
+  const double perpendicular =
+      scatteredPerpendicularWave / (gammaWave * intoPlasma);
+  const double beta = std::hypot(parallel, perpendicular);
+  if (!std::isfinite(beta) || beta <= 0.0 || beta >= 1.0)
+    return Core::Status(Core::StatusCode::InvalidInput,
+                        "invalid scattered plasma-frame speed");
+  *finalSpeedMPerS = beta * Core::Const::c;
+  *finalMu = parallel / beta;
+  return Core::Status::OK();
+}
+
+double EventUniform(std::uint64_t campaignSeed, std::uint64_t particleId,
+                    std::uint64_t step, std::uint64_t eventIndex,
+                    RandomPurpose purpose) {
+  RandomKey key;
+  key.campaignSeed = campaignSeed;
+  key.particleId = particleId;
+  key.step = step;
+  key.substep = eventIndex;
+  key.purpose = purpose;
+  KeyedRandomStream random(key);
+  return random.UniformOpen01();
+}
+
 }  // namespace
 
 double RelativisticSpeed(double momentumKgMPerS, double massKg) {
@@ -185,6 +249,130 @@ FocusedStepResult AdvanceFocused(const FocusedParticleState& initial,
     result.status = Core::Status(Core::StatusCode::InvalidInput,
                                  "focused step produced an invalid state");
     return result;
+  }
+  result.status = Core::Status::OK();
+  return result;
+}
+
+FocusedScatteringStepResult AdvanceFocusedScattering(
+    const FocusedScatteringState& initial,
+    const FocusedScatteringLocalState& local,
+    double massKg, double dtS, std::uint64_t campaignSeed,
+    std::uint64_t stableParticleId, std::uint64_t completedStep,
+    std::uint64_t maximumEvents) {
+  FocusedScatteringStepResult result;
+  result.state = initial;
+  const double waveFractionSum =
+      local.plusWaveFraction + local.minusWaveFraction;
+  if ((!std::isfinite(local.meanFreePathM) &&
+       !std::isinf(local.meanFreePathM)) ||
+      local.meanFreePathM <= 0.0 ||
+      !std::isfinite(local.alfvenSpeedMPerS) ||
+      std::fabs(local.alfvenSpeedMPerS) >= Core::Const::c ||
+      !std::isfinite(local.plusWaveFraction) ||
+      !std::isfinite(local.minusWaveFraction) ||
+      local.plusWaveFraction < 0.0 || local.minusWaveFraction < 0.0 ||
+      std::fabs(waveFractionSum - 1.0) > 1.0e-12 ||
+      !std::isfinite(dtS) || dtS < 0.0 || campaignSeed == 0 ||
+      stableParticleId == 0 || maximumEvents == 0 ||
+      (!std::isnan(initial.remainingOpticalDepth) &&
+       (!std::isfinite(initial.remainingOpticalDepth) ||
+        initial.remainingOpticalDepth <= 0.0))) {
+    result.status = Core::Status(Core::StatusCode::InvalidInput,
+        "invalid event-driven focused-scattering input");
+    return result;
+  }
+
+  // The continuous D_mumu and perpendicular operators are absent from the
+  // event mover by definition.  Deterministic focusing/cooling remains shared.
+  FocusedLocalState deterministic = local.deterministic;
+  deterministic.dMuMuPerS = 0.0;
+  deterministic.dDmuMuDmuPerS = 0.0;
+  deterministic.kappaPerpendicularM2PerS = 0.0;
+
+  if (std::isnan(result.state.remainingOpticalDepth)) {
+    result.state.remainingOpticalDepth = -std::log(EventUniform(
+        campaignSeed, stableParticleId, completedStep,
+        result.state.nextEventIndex,
+        RandomPurpose::ScatteringOpticalDepth));
+  }
+
+  double elapsedS = 0.0;
+  while (elapsedS < dtS) {
+    const double speed = RelativisticSpeed(
+        result.state.particle.momentumKgMPerS, massKg);
+    if (!std::isfinite(speed)) {
+      result.status = Core::Status(Core::StatusCode::InvalidInput,
+                                   "event-driven speed is invalid");
+      return result;
+    }
+    const double ratePerS = speed / local.meanFreePathM;
+    const double remainingS = dtS - elapsedS;
+    const bool eventOccurs = ratePerS > 0.0 &&
+        result.state.remainingOpticalDepth <= ratePerS * remainingS;
+    const double intervalS = eventOccurs
+        ? result.state.remainingOpticalDepth / ratePerS : remainingS;
+
+    FocusedRandomStreams noRandom;
+    const FocusedStepResult advanced = AdvanceFocused(
+        result.state.particle, deterministic, massKg, intervalS, noRandom);
+    if (!advanced.status.ok()) {
+      result.status = advanced.status;
+      return result;
+    }
+    result.state.particle = advanced.state;
+    result.displacementM += advanced.displacementM;
+    elapsedS += intervalS;
+
+    if (!eventOccurs) {
+      result.state.remainingOpticalDepth -= ratePerS * intervalS;
+      if (!(result.state.remainingOpticalDepth > 0.0) ||
+          !std::isfinite(result.state.remainingOpticalDepth)) {
+        result.status = Core::Status(Core::StatusCode::InvalidInput,
+            "residual scattering optical depth became invalid");
+        return result;
+      }
+      break;
+    }
+
+    if (result.scatteringEvents >= maximumEvents) {
+      result.status = Core::Status(Core::StatusCode::StepUnderflow,
+          "focused-scattering event budget was exceeded");
+      return result;
+    }
+    const double isotropicMu = -1.0 + 2.0 * EventUniform(
+        campaignSeed, stableParticleId, completedStep,
+        result.state.nextEventIndex, RandomPurpose::ScatteringPitch);
+    if (local.frame == FocusedScatteringFrame::PlasmaFrameIsotropic) {
+      result.state.particle.mu = isotropicMu;
+    } else {
+      const bool plus = EventUniform(
+          campaignSeed, stableParticleId, completedStep,
+          result.state.nextEventIndex, RandomPurpose::ScatteringBranch) <
+          local.plusWaveFraction;
+      double scatteredSpeed = 0.0;
+      double scatteredMu = 0.0;
+      const Core::Status scattered = ScatterInWaveFrame(
+          RelativisticSpeed(result.state.particle.momentumKgMPerS, massKg),
+          result.state.particle.mu,
+          (plus ? 1.0 : -1.0) * std::fabs(local.alfvenSpeedMPerS),
+          isotropicMu, &scatteredSpeed, &scatteredMu);
+      if (!scattered.ok()) {
+        result.status = scattered;
+        return result;
+      }
+      const double beta = scatteredSpeed / Core::Const::c;
+      const double gamma = 1.0 / std::sqrt(1.0 - beta * beta);
+      result.state.particle.momentumKgMPerS =
+          gamma * massKg * scatteredSpeed;
+      result.state.particle.mu = scatteredMu;
+    }
+    ++result.scatteringEvents;
+    ++result.state.nextEventIndex;
+    result.state.remainingOpticalDepth = -std::log(EventUniform(
+        campaignSeed, stableParticleId, completedStep,
+        result.state.nextEventIndex,
+        RandomPurpose::ScatteringOpticalDepth));
   }
   result.status = Core::Status::OK();
   return result;

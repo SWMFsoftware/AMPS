@@ -50,6 +50,52 @@ def _read_json(path: Path) -> Dict[str, Any]:
     return value
 
 
+def _verify_parameter_manifest(case_id: str, relative: Any) -> None:
+    """Validate a versioned, repository-owned event setup blueprint.
+
+    A parameter manifest is deliberately different from an evidence bundle:
+    it describes what is known, what must still be fitted, and how published
+    quantities map into srcSEP3D. Qualification data remain external and
+    checksum-owned. Checking this small repository artifact while loading the
+    registry prevents a renamed/missing blueprint or an accidentally labelled
+    ready-to-run case from surviving unnoticed until a production campaign.
+    """
+    if not isinstance(relative, str) or not relative:
+        raise EvidenceError(f"{case_id} parameter_manifest path is absent")
+    root = REGISTRY_PATH.parent.resolve()
+    path = (root / relative).resolve()
+    if path != root and root not in path.parents:
+        raise EvidenceError(
+            f"{case_id} parameter_manifest escapes validation directory: {path}")
+    if not path.is_file():
+        raise EvidenceError(f"{case_id} parameter_manifest is absent: {path}")
+
+    payload = _read_json(path)
+    if payload.get("schema") != "srcsep3d-validation-parameter-manifest-v1":
+        raise EvidenceError(f"unsupported parameter manifest schema: {path}")
+    if str(payload.get("case_id", "")).upper() != case_id:
+        raise EvidenceError(f"parameter manifest case ID does not match {case_id}")
+    # A blueprint with unresolved physics must never advertise itself as an
+    # executable deck. The eventual complete state gets a new reviewed token
+    # and validation rule rather than silently changing this token's meaning.
+    if payload.get("execution_status") != "blueprint-needs-event-fit":
+        raise EvidenceError(
+            f"{case_id} parameter manifest has an unreviewed execution_status")
+    for key in ("fit_template", "preparation_tool"):
+        relative_support = payload.get(key)
+        if not isinstance(relative_support, str) or not relative_support:
+            raise EvidenceError(f"{case_id} parameter manifest requires {key}")
+        support = (path.parent / relative_support).resolve()
+        if root not in support.parents or not support.is_file():
+            raise EvidenceError(
+                f"{case_id} {key} is absent or escapes validation directory: {support}")
+    for key in ("published_parameters", "unresolved_inputs", "observations"):
+        if not isinstance(payload.get(key), list) or not payload[key]:
+            raise EvidenceError(f"{case_id} parameter manifest requires {key}")
+    if not isinstance(payload.get("sources"), dict) or not payload["sources"]:
+        raise EvidenceError(f"{case_id} parameter manifest requires sources")
+
+
 def _write_json_atomic(path: Path, value: Dict[str, Any]) -> None:
     """Publish reports with rename so an interrupted write is never evidence."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -95,6 +141,8 @@ def _registry() -> List[Dict[str, Any]]:
             raise EvidenceError(f"unsupported evidence class for {case_id}")
         seen.add(case_id)
         case["id"] = case_id
+        if "parameter_manifest" in case:
+            _verify_parameter_manifest(case_id, case["parameter_manifest"])
         result.append(case)
     return sorted(result, key=lambda item: str(item["id"]))
 
@@ -389,14 +437,24 @@ def _run_convergence(case: Dict[str, Any], evidence_root: Optional[Path]) -> Dic
 
 
 def _run_linked(case: Dict[str, Any], executable: Optional[Path],
-                launch_prefix: str, output_dir: Path,
-                timeout: float) -> Dict[str, Any]:
+                test_input: Optional[Path], launch_prefix: str,
+                output_dir: Path, timeout: float) -> Dict[str, Any]:
     case_id = str(case["id"])
     if executable is None:
         return _result(case, "SKIP", "provide --amps with a configured linked executable")
     executable = executable.expanduser().resolve()
     if not executable.is_file() or not os.access(executable, os.X_OK):
         raise EvidenceError(f"linked executable is missing or not executable: {executable}")
+    # Native callbacks inspect a fully configured AMPS mesh/runtime. Requiring
+    # the exact deck at the evidence boundary prevents a callback from falling
+    # back to private defaults that are absent from the recorded command.
+    if test_input is None:
+        raise EvidenceError(
+            "linked cases require --test-input with a complete immutable input deck")
+    test_input = test_input.expanduser().resolve()
+    if not test_input.is_file():
+        raise EvidenceError(
+            f"linked test input is missing or not a file: {test_input}")
     prefix = shlex.split(launch_prefix)
 
     def execute(arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -420,13 +478,24 @@ def _run_linked(case: Dict[str, Any], executable: Optional[Path],
             f"linked executable does not advertise {case_id}; rebuild it from this Phase-V tree")
     native_report = output_dir / case_id / "native.json"
     native_report.parent.mkdir(parents=True, exist_ok=True)
-    completed = execute(["--test", case_id, "--test-json", str(native_report),
-                         "--artifact-directory", str(native_report.parent)])
+    # Never allow an interrupted earlier invocation to satisfy this run. The
+    # linked callback must recreate the report after receiving the exact deck.
+    native_report.unlink(missing_ok=True)
+    native_arguments = [
+        "--test", case_id,
+        "--test-input", str(test_input),
+        "--test-json", str(native_report),
+        "--artifact-directory", str(native_report.parent),
+    ]
+    completed = execute(native_arguments)
     if not native_report.is_file():
         raise EvidenceError(
             f"linked case wrote no JSON report (exit {completed.returncode}): "
             f"{completed.stdout[-2000:]}")
     payload = _read_json(native_report)
+    if not isinstance(payload, dict) or \
+            payload.get("schema") != "srcsep-component-tests-v1":
+        raise EvidenceError("linked JSON report has an unsupported schema")
     records = payload.get("results")
     if not isinstance(records, list):
         raise EvidenceError("linked JSON report contains no results array")
@@ -436,11 +505,24 @@ def _run_linked(case: Dict[str, Any], executable: Optional[Path],
         raise EvidenceError(f"linked JSON report does not contain {case_id}")
     status = str(record.get("status", "ERROR")).upper()
     if status not in ("PASS", "FAIL", "SKIP", "ERROR"):
-        status = "ERROR"
+        raise EvidenceError(f"linked JSON report has invalid status '{status}'")
+    expected_exit = 2 if status == "ERROR" else (1 if status == "FAIL" else 0)
+    if completed.returncode != expected_exit:
+        raise EvidenceError(
+            f"linked status {status} requires process exit {expected_exit}, "
+            f"observed {completed.returncode}")
+    metrics = record.get("metrics", [])
+    artifacts = record.get("artifacts", [])
+    if not isinstance(metrics, list) or not isinstance(artifacts, list):
+        raise EvidenceError("linked report metrics/artifacts must be arrays")
     result = _result(case, status, str(record.get("message", "")))
-    result["metrics"] = record.get("metrics", [])
-    result["artifacts"] = [str(native_report), *record.get("artifacts", [])]
-    result["command"] = [*prefix, str(executable), "--test", case_id]
+    result["metrics"] = metrics
+    result["artifacts"] = [str(native_report), *artifacts]
+    result["native_report_sha256"] = _sha256(native_report)
+    result["command"] = [*prefix, str(executable), *native_arguments]
+    result["executable_sha256"] = _sha256(executable)
+    result["test_input"] = str(test_input)
+    result["test_input_sha256"] = _sha256(test_input)
     return result
 
 
@@ -502,6 +584,9 @@ def _parser() -> argparse.ArgumentParser:
     selectors.add_argument("--all", action="store_true")
     parser.add_argument("--amps", type=Path,
                         help="configured linked srcSEP3D/AMPS executable")
+    parser.add_argument(
+        "--test-input", type=Path,
+        help="complete immutable input deck required by linked native cases")
     parser.add_argument("--launch-prefix", default="",
                         help="optional direct argv prefix, e.g. 'mpiexec -n 8'")
     parser.add_argument("--evidence-root", type=Path,
@@ -539,8 +624,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         try:
             kind = case["evidence_class"]
             if kind == "linked":
-                result = _run_linked(case, args.amps, args.launch_prefix,
-                                     output_dir, args.timeout)
+                result = _run_linked(case, args.amps, args.test_input,
+                                     args.launch_prefix, output_dir,
+                                     args.timeout)
             elif kind == "series":
                 result = _run_series(case, evidence_root)
             elif kind == "convergence":

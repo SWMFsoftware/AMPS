@@ -578,7 +578,8 @@ LocalScatteringCoefficients EvaluateLocalScattering(
     double speciesMassKg,
     double signedChargeC,
     double momentumKgMPerS,
-    double mu) {
+    double mu,
+    const CoefficientSelection& selection) {
   namespace CP = SEP::Transport::CoefficientPhysics;
   LocalScatteringCoefficients result;
   result.turbulenceGeneration = turbulence.generation;
@@ -606,36 +607,150 @@ LocalScatteringCoefficients EvaluateLocalScattering(
   spectrum.kMinRadialExponent = 0.0;
   spectrum.kMaxRadialExponent = 0.0;
   spectrum.spectralIndex = turbulence.spectralIndex;
-  const CP::PitchAngleResult pitch = CoefficientBridge::JokipiiDmumu(
-      turbulence, background, positionM.Norm(), spectrum, species, speed, mu);
-  if (!pitch.status.ok()) {
-    result.status = Invalid("shared D_mumu evaluation failed: " +
-                            pitch.status.message);
-    return result;
-  }
-  result.dMuMuPerS = pitch.dMuMuPerS;
-  result.dDmuMuDmuPerS = pitch.dDmuMuDmuPerS;
-
   const auto local = CoefficientBridge::ToSharedInput(
       turbulence, background, positionM.Norm());
-  const CP::MeanFreePathResult meanFreePath =
-      CP::EvaluateCorrelationMeanFreePath(
+  auto evaluatePitch = [&](double pitchMu) {
+    switch (selection.pitchAngle) {
+      case RuntimeModel::PitchAngleDiffusionModel::Jokipii1966:
+        return CoefficientBridge::JokipiiDmumu(
+            turbulence, background, positionM.Norm(), spectrum, species,
+            speed, pitchMu);
+      case RuntimeModel::PitchAngleDiffusionModel::Florinskiy: {
+        CP::FlorinskiyParameters parameters;
+        parameters.spectralIndex = turbulence.spectralIndex;
+        parameters.parallelCorrelationLengthM =
+            turbulence.parallelCorrelationLengthM;
+        return CP::EvaluateFlorinskiySlab(
+            local, parameters, species, speed, pitchMu);
+      }
+      case RuntimeModel::PitchAngleDiffusionModel::Constant:
+        return CP::EvaluateConstantDmumu(
+            selection.constantDmumuPerS, pitchMu);
+    }
+    return CoefficientError("unknown pitch-angle diffusion model");
+  };
+
+  const bool needPitch = selection.requirePitchAngleDiffusion ||
+      (selection.requireSpatialDiffusion && selection.spatial ==
+          RuntimeModel::SpatialDiffusionModel::PitchAngleIntegral);
+  if (needPitch) {
+    const CP::PitchAngleResult pitch = evaluatePitch(mu);
+    if (!pitch.status.ok()) {
+      result.status = Invalid("shared D_mumu evaluation failed: " +
+                              pitch.status.message);
+      return result;
+    }
+    result.dMuMuPerS = pitch.dMuMuPerS;
+    result.dDmuMuDmuPerS = pitch.dDmuMuDmuPerS;
+  }
+
+  CP::MeanFreePathResult meanFreePath;
+  const bool needMeanFreePath = selection.requireMeanFreePath ||
+      (selection.requireSpatialDiffusion && selection.spatial ==
+          RuntimeModel::SpatialDiffusionModel::CorrelationMeanFreePath);
+  if (needMeanFreePath) {
+    if (selection.meanFreePath ==
+        RuntimeModel::MeanFreePathModel::Correlation) {
+      meanFreePath = CP::EvaluateCorrelationMeanFreePath(
           local, species, momentumKgMPerS,
           turbulence.parallelCorrelationLengthM, positionM.Norm());
-  if (!meanFreePath.status.ok()) {
-    result.status = Invalid("shared mean-free-path evaluation failed: " +
-                            meanFreePath.status.message);
+    } else if (selection.meanFreePath ==
+               RuntimeModel::MeanFreePathModel::Constant) {
+      if (!FinitePositive(selection.constantMeanFreePathM)) {
+        result.status = Invalid("constant mean-free path is not positive");
+        return result;
+      }
+      meanFreePath.status = SEP::Transport::Status::Ok();
+      meanFreePath.valueState = CP::ValueState::Finite;
+      meanFreePath.lambdaParallelM = selection.constantMeanFreePathM;
+    } else if (selection.meanFreePath ==
+               RuntimeModel::MeanFreePathModel::RadialRigidityPowerLaw) {
+      // Rigidity R=pc/|q| is in volts because momentum*c is energy [J]
+      // and J/C=V.  This formulation is valid for every charged AMPS species;
+      // the frequently quoted proton expression pc/(1 GeV) is exactly the
+      // special case |q|=e and R_ref=1 GV.
+      if (!FinitePositive(selection.meanFreePathReferenceM) ||
+          !FinitePositive(selection.meanFreePathReferenceRadiusM) ||
+          !FinitePositive(selection.meanFreePathReferenceRigidityV) ||
+          !std::isfinite(selection.meanFreePathRadialExponent) ||
+          !std::isfinite(selection.meanFreePathRigidityExponent)) {
+        result.status = Invalid(
+            "radial-rigidity mean-free-path parameters are invalid");
+        return result;
+      }
+      const double rigidityV =
+          momentumKgMPerS * Core::Const::c / std::fabs(signedChargeC);
+      if (!FinitePositive(rigidityV)) {
+        result.status = Invalid(
+            "radial-rigidity mean-free-path requires positive rigidity");
+        return result;
+      }
+      const double radialFactor = std::pow(
+          positionM.Norm() / selection.meanFreePathReferenceRadiusM,
+          selection.meanFreePathRadialExponent);
+      const double rigidityFactor = std::pow(
+          rigidityV / selection.meanFreePathReferenceRigidityV,
+          selection.meanFreePathRigidityExponent);
+      const double lambda = selection.meanFreePathReferenceM *
+          radialFactor * rigidityFactor;
+      if (!FinitePositive(radialFactor) || !FinitePositive(rigidityFactor) ||
+          !FinitePositive(lambda)) {
+        result.status = Invalid(
+            "radial-rigidity mean-free-path evaluation overflowed");
+        return result;
+      }
+      meanFreePath.status = SEP::Transport::Status::Ok();
+      meanFreePath.valueState = CP::ValueState::Finite;
+      meanFreePath.lambdaParallelM = lambda;
+    } else {
+      result.status = Invalid("unknown mean-free-path model");
+      return result;
+    }
+    if (!meanFreePath.status.ok()) {
+      result.status = Invalid("shared mean-free-path evaluation failed: " +
+                              meanFreePath.status.message);
+      return result;
+    }
+    result.meanFreePathM = meanFreePath.lambdaParallelM;
+  }
+
+  if (!selection.requireSpatialDiffusion) {
+    result.kappaParallelM2PerS = 0.0;
+  } else if (selection.spatial ==
+      RuntimeModel::SpatialDiffusionModel::CorrelationMeanFreePath) {
+    const SEP::Transport::ScalarResult kappa =
+        CoefficientBridge::KappaFromMeanFreePath(
+            meanFreePath.lambdaParallelM, speed);
+    if (!kappa.status.ok()) {
+      result.status = Invalid("shared kappa evaluation failed: " +
+                              kappa.status.message);
+      return result;
+    }
+    result.kappaParallelM2PerS = kappa.value;
+  } else if (selection.spatial ==
+             RuntimeModel::SpatialDiffusionModel::PitchAngleIntegral) {
+    CP::SpatialQuadratureConfiguration quadrature;
+    quadrature.absoluteToleranceM2PerS =
+        selection.quadratureAbsoluteToleranceM2PerS;
+    quadrature.relativeTolerance = selection.quadratureRelativeTolerance;
+    quadrature.maximumRecursion =
+        static_cast<int>(selection.quadratureMaximumRecursion);
+    // A finite transport coefficient is required by the Parker SDE.  An
+    // unresolved ninety-degree resonance is therefore a configuration error,
+    // never an implicit numerical floor or silent ballistic substitution.
+    quadrature.gapPolicy = CP::ResonanceGapPolicy::Reject;
+    const CP::SpatialDiffusionResult integrated =
+        CP::IntegrateSpatialDiffusion(speed, evaluatePitch, quadrature);
+    if (!integrated.status.ok()) {
+      result.status = Invalid("shared pitch-angle integral failed: " +
+                              integrated.status.message);
+      return result;
+    }
+    result.kappaParallelM2PerS = integrated.kappaParallelM2PerS;
+  } else {
+    result.status = Invalid("unknown spatial-diffusion model");
     return result;
   }
-  const SEP::Transport::ScalarResult kappa =
-      CoefficientBridge::KappaFromMeanFreePath(
-          meanFreePath.lambdaParallelM, speed);
-  if (!kappa.status.ok()) {
-    result.status = Invalid("shared kappa evaluation failed: " +
-                            kappa.status.message);
-    return result;
-  }
-  result.kappaParallelM2PerS = kappa.value;
   result.status = Core::Status::OK();
   return result;
 }

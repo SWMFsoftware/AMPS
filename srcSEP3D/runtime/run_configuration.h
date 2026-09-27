@@ -55,7 +55,28 @@ enum class ParkerSpiralStartMode { Explicit, CmeLaunchPoint };
 // validated the complete input layer.
 enum class SolarWindThermodynamicClosure { ProtonOnly, MultiSpecies };
 enum class ShockAuthority { None, Swcme };
-enum class TransportModel { Parker3D, Focused3D };
+// The shock provider always supplies geometry and compression, but the seed
+// spectrum need not always be the test-particle DSA spectrum implied by that
+// compression.  FixedPhaseSpacePowerLaw represents an explicitly prescribed
+// isotropic phase-space distribution f(p) proportional to p^(-q).  The
+// distinction is essential for event studies such as 2013-04-11, whose
+// published low-energy boundary uses q=5 independently of the local shock
+// compression.  This selector controls spectral *shape* only; physical source
+// rate remains the separately declared number-rate contract below.
+enum class SourceSpectrumModel {
+  LocalCompressionDsa,
+  FixedPhaseSpacePowerLaw
+};
+// The three production movers correspond to three different stochastic
+// equations.  Focused3D is retained as a source-level alias for the released
+// continuous-D_mumu mover; text input uses the unambiguous canonical name
+// ``focused-diffusion`` in schema 4.
+enum class TransportModel {
+  Parker3D,
+  FocusedDiffusion3D,
+  Focused3D = FocusedDiffusion3D,
+  FocusedScattering3D
+};
 // Domain presets are physical choices, not shorthand for a hidden numeric
 // default.  ``Earth`` remains an input spelling retained for compatibility;
 // normalization maps it to the one-AU preset before fingerprinting.
@@ -65,6 +86,40 @@ enum class InnerBoundaryMode { Absorb };
 enum class OuterBoundaryMode { Escape, ImportedCoverage };
 enum class RefinementProfile { Linear, PowerLaw, Smoothstep };
 enum class TubeRadiusMode { PhysicalConstant, ConstantAngularWidth };
+// AMPS deactivates complete leaf blocks rather than individual finite-volume
+// cells.  FullDomain preserves the historical enclosing cube; ParkerTube keeps
+// only blocks conservatively intersecting a configured transport corridor.
+enum class ActiveRegionMode { FullDomain, ParkerTube };
+enum class PopulationControlMode { Off, SplitMerge };
+// Coefficient choices are deliberately independent of mover selection.  A
+// compatibility check in RunConfiguration3D::Create rejects circular or unused
+// combinations instead of silently selecting a coefficient for the user.
+enum class SpatialDiffusionModel {
+  CorrelationMeanFreePath,
+  // Canonical schema-4 name.  The older enumerator remains an equal-valued
+  // source alias so typed hosts compiled against the first schema-4 draft do
+  // not change ABI or behavior.
+  MeanFreePath = CorrelationMeanFreePath,
+  PitchAngleIntegral
+};
+enum class PitchAngleDiffusionModel {
+  Jokipii1966,
+  Florinskiy,
+  Constant
+};
+// RadialRigidityPowerLaw is the species-general form
+//   lambda=lambda_ref*(r/r_ref)^a*(R/R_ref)^b,
+// where rigidity R=p*c/|q| is expressed in volts.  For protons the published
+// M-FLAMPA law (pc/1 GeV)^(1/3) is recovered by R_ref=1 GV and b=1/3.
+enum class MeanFreePathModel {
+  Correlation,
+  Constant,
+  RadialRigidityPowerLaw
+};
+enum class FocusedScatteringFrame {
+  PlasmaFrameIsotropic,
+  AlfvenWaveFrameIsotropic
+};
 enum class RunIntent { TransportOnly, ShockInjection };
 enum class MissingTurbulenceMode { Fail, Ballistic };
 enum class ResonanceRangeMode { Reject, PowerLawExtension };
@@ -91,6 +146,7 @@ const char* Name(PrescribedTurbulenceAmplitudeModel value);
 const char* Name(ParkerSpiralStartMode value);
 const char* Name(SolarWindThermodynamicClosure value);
 const char* Name(ShockAuthority value);
+const char* Name(SourceSpectrumModel value);
 const char* Name(TransportModel value);
 const char* Name(DomainPreset value);
 const char* Name(OuterRadiusMode value);
@@ -98,6 +154,12 @@ const char* Name(InnerBoundaryMode value);
 const char* Name(OuterBoundaryMode value);
 const char* Name(RefinementProfile value);
 const char* Name(TubeRadiusMode value);
+const char* Name(ActiveRegionMode value);
+const char* Name(PopulationControlMode value);
+const char* Name(SpatialDiffusionModel value);
+const char* Name(PitchAngleDiffusionModel value);
+const char* Name(MeanFreePathModel value);
+const char* Name(FocusedScatteringFrame value);
 const char* Name(RunIntent value);
 const char* Name(MissingTurbulenceMode value);
 const char* Name(ResonanceRangeMode value);
@@ -173,6 +235,17 @@ struct SourceOptions {
   // mass, which is essential for mixed electron/ion tables.
   double minimumEnergyJ = 1.0e4 * Core::Const::e;
   double maximumEnergyJ = 1.0e8 * Core::Const::e;
+  // LocalCompressionDsa obtains q=3r/(r-1) from every canonical SWCME shock
+  // patch.  FixedPhaseSpacePowerLaw instead uses fixedPhaseSpacePowerIndex for
+  // f(p) proportional to p^(-q).  A zero q is the mandatory inactive sentinel
+  // in local-DSA mode, preventing a dormant value from silently becoming
+  // physics after a later mode edit.
+  SourceSpectrumModel spectrumModel =
+      SourceSpectrumModel::LocalCompressionDsa;
+  double fixedPhaseSpacePowerIndex = 0.0;
+  // Legacy schema-1/2 dN/dp exponent.  Schema 3 and later use the unambiguous
+  // spectrumModel/fixedPhaseSpacePowerIndex contract above and normalize this
+  // old field to zero before fingerprinting.
   double spectralIndex = 5.0;
   // Exact number of computational particles injected per active time step,
   // per compiled species, over the complete active shock surface.
@@ -263,7 +336,9 @@ struct RunConfiguration3DOptions {
   // retained for existing campaigns; version 2 additionally requires an
   // explicit finite Parker centreline definition.  Version 3 is the complete
   // standalone initialization contract: every application value, observer,
-  // output path, and canonical SWCME3D parameter must be explicit.  Parser-
+  // output path, and canonical SWCME3D parameter must be explicit. Version 4
+  // adds the active Parker corridor, AMPS particle population control, and the
+  // complete mover/coefficient selection contract. Parser-
   // free programmatic SWMF hosts may keep the default and install equivalent
   // validated providers through the typed interface.
   unsigned inputSchemaVersion = 1;
@@ -331,6 +406,17 @@ struct RunConfiguration3DOptions {
   double tubeCellSizeM = 0.01 * Core::Const::AU;
   RefinementProfile tubeTransverseProfile = RefinementProfile::Smoothstep;
   double tubeTransverseExponent = 1.0;
+  // Optional computational-domain pruning.  The radius is evaluated with the
+  // same two physical laws as mesh refinement but remains an independent,
+  // normally wider corridor.  bufferBlocks retains complete neighboring leaf
+  // blocks for coefficient stencils and particle crossings; it is a numerical
+  // halo count, not an addition to the declared physical radius.
+  ActiveRegionMode activeRegion = ActiveRegionMode::FullDomain;
+  double activeTubeReferenceRadiusM = Core::Const::AU;
+  double activeTubeRadiusAtReferenceM = 0.0;
+  TubeRadiusMode activeTubeRadiusMode =
+      TubeRadiusMode::ConstantAngularWidth;
+  unsigned activeTubeBufferBlocks = 0;
   unsigned meshCellsPerBlockEdge = 4;
   unsigned maximumMeshLevel = 7;
   std::size_t meshBlockOverheadBytes = 1024;
@@ -406,6 +492,33 @@ struct RunConfiguration3DOptions {
   PitchAngleSchemeMode pitchAngleScheme =
       PitchAngleSchemeMode::ReflectingMilstein;
 
+  // Parallel transport coefficients.  The legacy schema-1..3 values reproduce
+  // the released implementation: Parker kappa is derived from the correlation
+  // mean free path and focused diffusion uses Jokipii-1966 D_mumu.  Schema 4
+  // requires every selector and inactive numeric value explicitly.
+  SpatialDiffusionModel spatialDiffusionModel =
+      SpatialDiffusionModel::CorrelationMeanFreePath;
+  PitchAngleDiffusionModel pitchAngleDiffusionModel =
+      PitchAngleDiffusionModel::Jokipii1966;
+  MeanFreePathModel meanFreePathModel = MeanFreePathModel::Correlation;
+  double constantDmumuPerS = 0.0;
+  double constantMeanFreePathM = 0.0;
+  // Parameters used only by RadialRigidityPowerLaw.  Schema 4 requires all
+  // five values to be written explicitly and requires zero sentinels when a
+  // different model is active; this prevents a later selector edit from
+  // reviving an invisible default.
+  double meanFreePathReferenceM = 0.0;
+  double meanFreePathReferenceRadiusM = 0.0;
+  double meanFreePathReferenceRigidityV = 0.0;
+  double meanFreePathRadialExponent = 0.0;
+  double meanFreePathRigidityExponent = 0.0;
+  double spatialQuadratureAbsoluteToleranceM2PerS = 0.0;
+  double spatialQuadratureRelativeTolerance = 1.0e-6;
+  unsigned spatialQuadratureMaximumRecursion = 20;
+  FocusedScatteringFrame focusedScatteringFrame =
+      FocusedScatteringFrame::PlasmaFrameIsotropic;
+  std::uint64_t maximumScatteringEventsPerSubstep = 100000;
+
   // V01 controlled extensions.  The coefficient is isotropic in the plane
   // perpendicular to B. ConstantRatio evaluates k_perp=ratio*k_parallel in
   // each immutable local background; Constant uses the explicit SI value.
@@ -417,6 +530,17 @@ struct RunConfiguration3DOptions {
   double constantKappaPerpendicularM2PerS = 0.0;
   double kappaPerpendicularToParallelRatio = 0.0;
   DriftMode drift = DriftMode::None;
+
+  // AMPS population control is applied after shock injection and before
+  // observers/checkpoints at the same joined timestep boundary. Limits are
+  // per active AMR cell and per compiled species, which matches the granularity
+  // of AMPS' linked-list split/merge primitives and avoids transporting
+  // particles between unrelated spatial cells merely to meet a global count.
+  PopulationControlMode populationControl = PopulationControlMode::Off;
+  unsigned minimumParticlesPerCellPerSpecies = 0;
+  unsigned targetParticlesPerCellPerSpecies = 0;
+  unsigned maximumParticlesPerCellPerSpecies = 0;
+  std::uint64_t populationControlCadenceSteps = 1;
 
   // Frozen pre-mesh storage choices.  Offsets are derived by the factory in a
   // canonical order; adapters may not append fields after Configure().

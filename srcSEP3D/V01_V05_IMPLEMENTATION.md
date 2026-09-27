@@ -42,9 +42,11 @@ searches for or assumes a sibling application tree.
 
 `validation/native_profiles.json` defines small, medium, and production
 rank/thread matrices. `run_native_matrix.py` launches the real linked AMPS
-binary, recording argv, thread count, executable SHA-256, wall time, native
-reports, and output tail. It never emulates MPI and errors when a prerequisite
-is absent.
+binary after a one-rank capability probe, recording argv, rank/thread count,
+executable and immutable-input SHA-256, wall time, native reports, and complete
+stdout logs. It removes the exact prior per-cell JSON report before launch,
+never emulates MPI, and errors when a callback, launcher rank field, input deck,
+report schema, or prerequisite is absent.
 
 ## V04 — scientific validation ladder
 

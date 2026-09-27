@@ -91,6 +91,7 @@ The AMPS-free `phase-v` suite validates the machinery using production kernels:
 | `VFY3D03` | projects the 3-D Parker SDE along three field orientations and compares empirical CDFs with the 1-D Gaussian Green function |
 | `VFY3D04` | demonstrates second-order convergence of focused transport to the exact focusing characteristic `mu=tanh(atanh(mu0)+at)` |
 | `VFY3D05` | compares sampled SWCME/DSA momenta with the independent truncated-power-law CDF and closes total event weight |
+| `VFY3D06` | replaces a q=4 compression-derived patch with fixed q=5 and independently verifies the resulting `dN/dp proportional to p^-3` ensemble |
 
 These are scientific verification prerequisites. They do not satisfy an
 `XM3D` or `OV3D` release gate by themselves.
@@ -147,7 +148,7 @@ both release criteria.
 | `XM3D04` | exact common SWCME source plus transported spectrum; release gate |
 | `XM3D05` | mesh/timestep convergence; release gate |
 | `XM3D06` | independent 3-D finite-volume reference; extended |
-| `OV3D01` | 2013-04-11 ACE/GOES/SOHO comparison; release gate |
+| `OV3D01` | 2013-04-11 ACE/GOES/SOHO comparison; release gate; reviewed setup blueprint in `validation/cases/2013-04-11/` |
 | `OV3D02` | 2020-05-29 PSP/STEREO-A comparison; release gate |
 | `OV3D03` | 2014-01-06 PAMELA connection-sensitive diagnostic |
 | `OV3D04` | near-relativistic multi-spacecraft electron diagnostic |
@@ -156,6 +157,10 @@ The observational manifests must name the publication/dataset, instrument,
 processing, uncertainty treatment, coordinate epoch/frame, and model
 configuration fingerprint. The generic template contains the minimum fields;
 event-specific provenance may add more fields without changing the parser.
+OV3D01 additionally separates publication-fixed parameters from unresolved
+SWCME-surrogate and numerical controls in
+`validation/cases/2013-04-11/parameters.json`; none of the unresolved controls
+may be filled from the generic example deck.
 
 ## 6. Physical scope of interpretation
 
@@ -180,15 +185,21 @@ test/run_tests.py --suite phase-v --validation-data /path/to/evidence \
 
 # Linked native cases. The prefix is argv, not a shell command.
 test/run_tests.py --suite phase-v --amps ../amps \
+  --validation-input /path/to/reviewed-sep3d.in \
   --validation-launch-prefix "mpiexec -n 8" \
   --output-dir test_output/phase-v-linked
 
 # Run only the external campaign interface.
 validation/run_validation.py --all --amps ../amps \
+  --test-input /path/to/reviewed-sep3d.in \
   --evidence-root /path/to/evidence \
   --output-dir test_output/phase-v-campaign
 ```
 
-The linked executable must advertise a requested case through `--list-tests`
-and emit the standard test JSON. An executable from an older source tree is an
-`ERROR`, not a skipped or passing integration result.
+The linked executable must advertise a requested case through `--list-tests`,
+accept the explicit immutable deck through `--test-input`, and emit the
+standard test JSON. An ordinary production driver or an executable from an
+older source tree is an `ERROR`, not a skipped or passing integration result.
+The test input and linked executable are SHA-256 owned by the report; native
+evidence is therefore tied to the configuration that constructed the actual
+AMPS mesh, storage, mover, and population-control state.
