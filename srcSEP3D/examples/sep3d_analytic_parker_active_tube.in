@@ -1,0 +1,410 @@
+# srcSEP3D active Parker-tube/SWCME initialization example — schema version 4
+#
+# Every dimensional key states its SI unit in the key name.  Bare alternatives
+# such as "inner_radius" are deliberately invalid: this prevents a value in AU,
+# R_sun, km/s, nT, or MeV from being silently interpreted as SI.
+
+[run]
+schema_version = 4
+intent = shock-injection
+transport = parker
+time_step_s = 1
+maximum_time_steps = 100000
+campaign_seed = 4701
+background_cadence_steps = 100
+# Schemas 3 and 4 inject the explicitly configured global sample count on every
+# active simulation step; a cadence other than one is rejected.
+injection_cadence_steps = 1
+
+[domain]
+# Presets are solar (0.30 AU), one-au, and mars (1.666 AU).  With mode=preset,
+# outer_radius_m is ignored and the resolved preset value is fingerprinted.
+preset = one-au
+inner_radius_m = 1.3914e10
+inner_boundary = absorb
+outer_radius_mode = preset
+outer_radius_m = 1.495978707e11
+outer_boundary = escape
+coordinate_frame = HCI-like-inertial
+origin_x_m = 0
+origin_y_m = 0
+origin_z_m = 0
+
+[parker_spiral]
+# The origin must currently equal the domain origin.  The initial point lies
+# on inner_radius_m and must agree with the source longitude/colatitude below.
+# cme-launch-point additionally makes this point the canonical SWCME launch
+# apex: cme.launch_radius times normalized geometry.cme_direction. A mismatch
+# in radius, direction, or explicit Cartesian cross-check is a fatal error.
+# Select explicit only when the line is intentionally independent of the CME.
+# length_m is arc length, not radial extent; point_count includes both ends.
+origin_x_m = 0
+origin_y_m = 0
+origin_z_m = 0
+start_mode = cme-launch-point
+initial_x_m = 1.3914e10
+initial_y_m = 0
+initial_z_m = 0
+length_m = 2.0e11
+point_count = 4001
+
+[mesh]
+global_cell_size_m = 3.7399467675e10
+minimum_cell_size_m = 1.495978707e9
+cells_per_block_edge = 4
+maximum_level = 7
+memory_budget_bytes = 68719476736
+block_overhead_bytes = 1024
+
+[mesh.solar]
+# Resolution degrades continuously from surface_cell_size_m at inner_radius_m
+# to the global size at transition_outer_radius_m.
+enabled = true
+surface_cell_size_m = 1.495978707e9
+transition_outer_radius_m = 3.7399467675e10
+profile = smoothstep
+exponent = 1
+
+[mesh.tube]
+# The tube follows the same polarity-independent Parker curve used by the
+# analytic background.  At its boundary the requested size is exactly global.
+enabled = true
+source_longitude_rad = 0
+source_colatitude_rad = 1.5707963267948966
+reference_radius_m = 1.495978707e11
+radius_at_reference_m = 4.487936121e9
+radius_mode = constant-angular-width
+center_cell_size_m = 1.495978707e9
+transverse_profile = smoothstep
+transverse_exponent = 1
+
+[mesh.active_region]
+# This variant exercises AMPS leaf-block deactivation rather than retaining the
+# enclosing Cartesian cube.  AMPS disables complete AMR leaves, so every cell
+# in a rejected leaf is omitted from allocation.  The physical active radius is
+# 0.05 AU at 1 AU, wider than the 0.03-AU refinement tube above.  With constant
+# angular width it scales linearly with heliocentric radius.  One complete-block
+# buffer is the minimum accepted halo for ghost exchange, coefficient stencils,
+# and a particle crossing the physical tube boundary during one update.
+mode = parker-tube
+reference_radius_m = 1.495978707e11
+radius_at_reference_m = 7.479893535e9
+radius_mode = constant-angular-width
+buffer_blocks = 1
+
+[memory]
+# These are explicit planning coefficients.  Calibrate them from a native AMPS
+# build when exact production memory, rather than a conservative plan, matters.
+base_cell_bytes = 256
+base_node_bytes = 128
+block_structure_bytes = 4096
+communication_bytes_per_block = 2048
+particle_bytes = 160
+particles_per_cell = 2
+halo_fraction = 0.20
+safety_margin_fraction = 0.25
+
+[background]
+# The implemented standalone source is analytic-parker. The parser also
+# recognizes python-interpolator as the reserved future source, but selecting
+# it stops before AMPS initialization until its batch/units/provenance protocol
+# is implemented and validated.
+provider = analytic-parker
+# Deprecated compatibility guard. A true value is never interpreted as an
+# instruction to execute a process; use provider=python-interpolator once that
+# provider is released.
+external_script = false
+
+[background.parker]
+reference_radius_m = 1.495978707e11
+# SWCME specifies total |B|=5 nT at the equatorial 1-AU reference.  With the
+# explicit 20-R_sun source radius, wind, and rotation below this is the exactly
+# corresponding radial component used by AnalyticParkerProvider.
+radial_field_at_reference_t = 3.585667175612118e-9
+solar_rotation_rate_rad_per_s = 2.865e-6
+solar_wind_speed_m_per_s = 400000
+magnetic_polarity = 1
+# Density has its own unambiguous SWCME reference. It remains n_e(1 AU) even
+# when reference_radius_m above is changed to express Br at another radius.
+number_density_at_one_au_m3 = 5e6
+temperature_k = 1e5
+validity_cadence_s = 3600
+
+[turbulence]
+authority = prescribed
+# Named closures are kolmogorov (q=5/3), kraichnan (q=3/2), and power-law
+# (any explicitly validated q>1). A named closure and spectral_index must
+# agree; the parser never silently replaces a contradictory value.
+model = kolmogorov
+# The amplitude law is independent of the spectral slope. This example keeps
+# a fixed local deltaB/|B|. To prescribe total wave energy directly instead,
+# select wave-energy-power-law, set delta_b_over_b=0, and provide positive
+# wave_energy_density_at_reference_j_per_m3 plus its explicit radial exponent.
+amplitude_model = constant-delta-b-over-b
+delta_b_over_b = 0.3
+# Zero values are required sentinels for the inactive amplitude branch; they
+# cannot be mistaken for an applied wave-energy normalization.
+wave_energy_density_at_reference_j_per_m3 = 0
+wave_energy_density_radial_exponent = 0
+# sigma_c=(deltaB_+^2-deltaB_-^2)/deltaB^2. Zero is explicitly balanced.
+normalized_cross_helicity = 0
+reference_radius_m = 1.495978707e11
+k_min_per_m = 1e-10
+k_max_per_m = 1e-7
+k_min_radial_exponent = 2
+k_max_radial_exponent = 2
+spectral_index = 1.6666666666666667
+correlation_length_m = 4.487936121e9
+correlation_length_radial_exponent = 1
+validity_cadence_s = 60
+missing_data = fail
+resonance_range = reject
+self_consistent_3d = false
+
+[transport]
+cell_crossing_fraction = 0.4
+diffusion_fraction = 0.2
+focusing_fraction = 0.2
+cooling_fraction = 0.2
+field_variation_fraction = 0.2
+shock_crossing_fraction = 0.5
+minimum_substep_s = 1e-12
+# A malformed limiter cannot trap one AMPS mover call indefinitely.
+maximum_substeps = 100000
+pitch_angle_scheme = reflecting-milstein
+# The three mover names are parker, focused-diffusion (continuous D_mumu SDE),
+# and focused-scattering (discrete events with nu=v/lambda_parallel). Parker's
+# spatial coefficient can come from the selected mean free path or from the
+# error-controlled D_mumu integral. Focused-diffusion uses the selected pitch-
+# angle model; focused-scattering uses the selected mean-free-path model.
+spatial_diffusion_model = mean-free-path
+pitch_angle_diffusion_model = jokipii-1966
+mean_free_path_model = correlation
+# Exactly one constant is active only when its matching model is selected.
+constant_dmumu_per_s = 0
+constant_mean_free_path_m = 0
+# The next five zeroes are mandatory inactive sentinels. Select
+# mean_free_path_model=radial-rigidity-power-law to activate
+# lambda=lambda_ref*(r/r_ref)^radial_exponent*(R/R_ref)^rigidity_exponent,
+# where R=p*c/|q| is rigidity in volts for the actual compiled AMPS species.
+mean_free_path_reference_m = 0
+mean_free_path_reference_radius_m = 0
+mean_free_path_reference_rigidity_v = 0
+mean_free_path_radial_exponent = 0
+mean_free_path_rigidity_exponent = 0
+spatial_quadrature_absolute_tolerance_m2_per_s = 1
+spatial_quadrature_relative_tolerance = 1e-6
+spatial_quadrature_maximum_recursion = 20
+# Alfvén-wave-frame scattering chooses +/- branches from the initialized
+# directional turbulence energy. Plasma-frame scattering conserves particle
+# energy in the local plasma frame.
+focused_scattering_frame = plasma-frame-isotropic
+maximum_scattering_events_per_substep = 100000
+# V01 controlled extensions. "none" preserves the parallel-only baseline.
+# Select "constant" or "constant-ratio" only with the matching positive
+# coefficient. Drift accepts gradient-b, curvature, or their sum; current-
+# sheet drift remains unsupported until a sheet-geometry contract exists.
+perpendicular_diffusion = none
+constant_kappa_perpendicular_m2_per_s = 0
+kappa_perpendicular_to_parallel_ratio = 0
+drifts = none
+
+[population_control]
+# split-merge enforces hysteretic per-cell, per-compiled-species limits after
+# the transport ledger closes: counts below minimum or above maximum are
+# driven to target. Empty cells are never populated. The SEP-aware path uses
+# exact equal-weight splitting and relativistic 3-to-2 merging; the legacy
+# nonrelativistic automatic AMPS splitter remains disabled.
+mode = off
+minimum_particles_per_cell_per_species = 0
+target_particles_per_cell_per_species = 0
+maximum_particles_per_cell_per_species = 0
+cadence_steps = 1
+
+[shock]
+# Schema 3 forbids the former constant-speed spherical surrogate parameters.
+# Geometry, kinematics, and compression are owned by canonical [swcme].
+authority = swcme
+
+[source]
+enabled = true
+# All source fields apply independently to every species compiled into AMPS by
+# SpeciesList.  Thus samples_per_step=1000 injects exactly 1000 H_PLUS macros
+# and 1000 ELECTRON macros in a two-species build; it is not silently divided
+# between them.  Energy limits are total kinetic energies and are converted to
+# momentum with each entry's immutable PIC::MolecularData mass.
+physical_particle_rate_per_s = 1e30
+injection_efficiency = 1e-4
+minimum_energy_j = 1.602176634e-15
+maximum_energy_j = 1.602176634e-11
+# local-compression-dsa derives f(p)~p^-q independently on every SWCME patch,
+# with q=3r/(r-1) from the solved compression ratio.  Select
+# fixed-phase-space-power-law only when an external physical model prescribes
+# q directly (for example q=5 means f(p)~p^-5).  The positive q is entered,
+# not the signed textual exponent.  The fixed index controls spectral shape;
+# physical_particle_rate_per_s remains the separate normalization authority.
+spectrum_model = local-compression-dsa
+phase_space_power_index = 0
+samples_per_step = 1000
+
+[species]
+# This post-compile section cannot redefine AMPS species.  Count, order,
+# chemical symbols, masses, and charges come only from SpeciesList in the AMPS
+# build input and are read through PIC::nTotalSpecies/GetChemSymbol/GetMass/
+# GetElectricCharge.  The base weight below is initialized for every compiled
+# species and for every allocated local block.
+# Derived identity: 1e30 s^-1 * 1e-4 * (1 step * 1 s) / 1000 = 1e23.
+macroparticle_weight = 1e23
+
+[storage]
+magnetic_gradient = false
+velocity_gradient = false
+sampling_bytes_per_cell = 0
+
+[observer.earth]
+kind = fixed-cartesian
+normalization = differential-intensity
+# The observer is placed on the configured Parker centreline at exactly 1 AU.
+# Keeping it on the centreline makes the static active corridor and observer
+# collection sphere geometrically consistent without enlarging the corridor.
+position_x_m = 8.434093337299539e10
+position_y_m = -1.2355618105034596e11
+position_z_m = 0
+follows_trajectory = false
+velocity_x_m_per_s = 0
+velocity_y_m_per_s = 0
+velocity_z_m_per_s = 0
+collection_radius_m = 1.495978707e9
+shell_radius_m = 1.495978707e11
+cadence_s = 60
+energy_bins = 48
+# Channel edges are geometric for logarithmic and uniformly spaced in joules
+# for linear. Both include the declared minimum and maximum as exact endpoints.
+energy_spacing = logarithmic
+pitch_angle_bins = 24
+minimum_energy_j = 1.602176634e-15
+maximum_energy_j = 1.602176634e-11
+minimum_mu = -1
+maximum_mu = 1
+# Select the complete immutable SpeciesList of the executable.  This wildcard
+# is resolved only after AMPS exposes PIC::nTotalSpecies, so the same runtime
+# file works for one-species, electron-only, and mixed-species builds.  Use an
+# explicit comma-separated list such as 0,2 only when a subset is intentional.
+species = all
+products = flux,spectrum,anisotropy
+
+# A second observer demonstrates that [observer.ID] is repeatable. It samples
+# a narrow inner-heliosphere interval with linearly spaced energy channels;
+# each observer owns its position, cadence, species selection, and binning.
+[observer.inner]
+kind = fixed-cartesian
+normalization = differential-intensity
+# This position is the same Parker centreline evaluated at exactly 0.30 AU.
+position_x_m = 4.378005863160611e10
+position_y_m = -9.872361866887974e9
+position_z_m = 0
+follows_trajectory = false
+velocity_x_m_per_s = 0
+velocity_y_m_per_s = 0
+velocity_z_m_per_s = 0
+collection_radius_m = 1.495978707e9
+shell_radius_m = 4.487936121e10
+cadence_s = 20
+energy_bins = 20
+energy_spacing = linear
+pitch_angle_bins = 16
+minimum_energy_j = 1.602176634e-15
+maximum_energy_j = 8.01088317e-15
+minimum_mu = -1
+maximum_mu = 1
+species = all
+products = flux,spectrum,anisotropy
+
+[output]
+cadence_steps = 100
+# Zero disables periodic checkpointing; choose a positive tick cadence for a
+# production continuation campaign.
+checkpoint_cadence_steps = 0
+directory = output/analytic-parker-active-tube
+prefix = sep3d-active-tube
+# --initialization-output-dir changes only the parents of the next three files;
+# --initialization-only writes them and exits before the first particle step.
+initialization_mesh_tecplot_file = sep3d-initialization-mesh.dat
+initialization_parker_line_tecplot_file = sep3d-initialization-parker-line.dat
+# Native AMPS data output. Mixed-species builds insert `.species-N` before the
+# extension so each compiled species has its own local dt/weight columns.
+initialization_data_tecplot_file = sep3d-initialization-data.dat
+
+[restart]
+# Use the explicit token none for a fresh run; --restart PATH overrides it.
+input_path = none
+output_path = restart/sep3d-active-tube.chk
+
+[swcme]
+# Complete canonical model layer.  Common fields use the same unit-aware keys
+# as SWCME1D; genuinely 3-D geometry values name their SI/dimensionless units
+# in the key.  The current AMPS crossing operator is spherical, so schemas 3+
+# rejects ellipsoid/SSE instead of approximating them as a sphere.
+preset = fast
+ambient.wind_speed = 400 km/s
+ambient.density_1au = 5 cm^-3
+ambient.magnetic_field_1au = 5 nT
+ambient.proton_temperature = 1e5 K
+ambient.adiabatic_index = 1.6666666666666667
+ambient.alpha_to_proton_ratio = 0
+ambient.electron_temperature = 1e5 K
+ambient.alpha_temperature = 1e5 K
+ambient.thermodynamic_closure = proton_only
+parker.radial_polarity = 1
+parker.sin_theta = 1
+parker.source_radius = 20 Rs
+parker.solar_rotation_rate_rad_per_s = 2.865e-6
+cme.kinematics = dbm
+cme.launch_radius = 20 Rs
+cme.launch_speed = 1000 km/s
+cme.drag_coefficient = 8e-8 1/km
+cme.extrapolation = outside_time
+geometry.shape = sphere
+geometry.axis_ratio_y = 1
+geometry.axis_ratio_z = 1
+geometry.half_width_rad = 1.5707963267948966
+geometry.cme_direction_x = 1
+geometry.cme_direction_y = 0
+geometry.cme_direction_z = 0
+geometry.solar_rotation_axis_x = 0
+geometry.solar_rotation_axis_y = 0
+geometry.solar_rotation_axis_z = 1
+geometry.sheath_thickness_1au = 0.12 AU
+geometry.ejecta_thickness_1au = 0.22 AU
+smoothing.shock_width_1au = 0.010 AU
+smoothing.leading_edge_width_1au = 0.020 AU
+smoothing.trailing_edge_width_1au = 0.030 AU
+shock.region_mode = shock_only
+shock.acceleration_mode = source
+shock.relative_source_weight_per_area = 1
+sheath.ramp_power = 2
+sheath.leading_edge_speed_factor = 1.12
+ejecta.density_factor = 0.5
+ejecta.speed_factor = 0.8
+event.launch_epoch = 0 s
+# Injection begins only once this explicit example state passes the canonical
+# MHD fast-shock/source solve over the complete configured surface.
+event.valid_from = 3600 s
+event.valid_until = 86400 s
+# SWCME still requires a reference spectrum to construct its canonical source
+# state.  srcSEP3D does not use this field to redefine AMPS molecular data:
+# before injection it reconstructs the momentum interval from [source]'s
+# kinetic-energy limits and each compiled AMPS species mass.
+source.particle_mass = 1.67262192369e-27 kg
+source.charge_number = 1
+source.energy_min = 0.01 MeV
+source.energy_max = 100 MeV
+source.reference_energy = 10 MeV
+source.injection_efficiency = 1e-4
+source.normalization = relative_only
+source.reference_intensity_si = 1 si
+# An odd interval count avoids placing a surface vertex exactly on either
+# Parker magnetic pole, where azimuth is undefined; the canonical preflight
+# below still validates every node and source patch before AMPS allocation.
+surface.theta_intervals = 13
+surface.phi_points = 24
