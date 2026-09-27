@@ -1,0 +1,15 @@
+{
+  "schema": "sep-in-geospace/build-provenance/v1",
+  "build_kind": "REPLACE_STANDALONE_OR_SWMF_COUPLED",
+  "common_physics_tag": "sep-in-geospace-phase1-static-characteristics-v1",
+  "common_physics_source_sha256": "REPLACE_64_HEX_SHA256",
+  "source_revision": "REPLACE_GIT_REVISION",
+  "dirty": false,
+  "compiler": "REPLACE_COMPILER_AND_FLAGS",
+  "dependencies": {
+    "AMPS": "REPLACE_REVISION",
+    "MPI": "REPLACE_IMPLEMENTATION_VERSION",
+    "SWMF": "REPLACE_REVISION_OR_NOT_LINKED"
+  },
+  "executable_sha256": "REPLACE_64_HEX_SHA256"
+}

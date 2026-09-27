@@ -48,6 +48,7 @@
 #include "../util/FluxNumerics.h"                // common units, grids, quadrature, access accounting
 #include "../util/BoundaryProducts.h"            // shared Step-6 product integrator
 #include "../util/SWMFCoupledProductsContract.h" // Step-11 identity and manifest accounting
+#include "../util/CommonPhysicsRelease.h"        // Step-12 cross-build physics identity
 
 #include "constants.h"
 #include "constants.PlanetaryData.h"
@@ -1220,7 +1221,11 @@ static void WriteStep11ProductMetadata_(Stream& out,
   // numeric artifact.  A file copied away from its manifest remains self-describing,
   // and the strict replay comparator can reject a stale field, spectrum table,
   // channel definition, or instrument response before looking at numeric rows.
-  out << "AUXDATA PHASE_1_INTERPRETATION=\"INSTANTANEOUS_QUASI_STATIC\"\n"
+  out << "AUXDATA COMMON_PHYSICS_TAG=\""
+      << Earth::CommonPhysicsRelease::kTag << "\"\n"
+      << "AUXDATA COMMON_PHYSICS_SCOPE=\""
+      << Earth::CommonPhysicsRelease::kScope << "\"\n"
+      << "AUXDATA PHASE_1_INTERPRETATION=\"INSTANTANEOUS_QUASI_STATIC\"\n"
       << "AUXDATA SNAPSHOT_ID=\""
       << DensityTecplotAuxValue_(metadata.snapshotId) << "\"\n"
       << "AUXDATA SNAPSHOT_EPOCH_UTC=\""

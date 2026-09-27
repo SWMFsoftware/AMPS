@@ -1021,7 +1021,7 @@ std::string HelpMessage(const char* progName) {
   out << "Input file sections (AMPS_PARAM format):\n\n";
 
   out << "  #CALCULATION_MODE\n";
-  out << "    CALC_TARGET        CUTOFF_RIGIDITY | DENSITY_SPECTRUM\n";
+  out << "    CALC_TARGET        CUTOFF_RIGIDITY | DENSITY_SPECTRUM | CUTOFF_RIGIDITY+DENSITY_SPECTRUM\n";
   out << "    FIELD_EVAL_METHOD  GRIDLESS | GRID_3D\n\n";
 
   out << "  #DENSITY_SPECTRUM   (required when CALC_TARGET = DENSITY_SPECTRUM)\n";
@@ -1095,6 +1095,23 @@ std::string HelpMessage(const char* progName) {
   out << "    gridless_points_spectrum.dat         per-point spectrum (one ZONE each)\n";
   out << "    gridless_shell_<A>km_density_channels.dat  (SHELLS mode)\n";
   out << "    Variables: E_MeV  T  J_boundary_perMeV  J_local_perMeV  N_m3  N_cm3\n\n";
+
+  // -----------------------------------------------------------------------
+  out << "Phase-1 release and reproducible command forms (Roadmap Step 12):\n\n";
+  out << "  Standalone cutoff only (input CALC_TARGET=CUTOFF_RIGIDITY):\n";
+  out << "    mpirun -np 8 " << progName << " -mode gridless -i standalone_cutoff.in -nt 16\n";
+  out << "  Standalone cutoff + flux/spectrum (combined CALC_TARGET):\n";
+  out << "    mpirun -np 8 " << progName << " -mode 3d -i standalone_products.in -nt 16\n";
+  out << "  Offline replay of a frozen SWMF export:\n";
+  out << "    mpirun -np 8 " << progName << " -mode 3d -i swmf_replay.in -nt 16\n";
+  out << "  Coupled cutoff-only and combined calculations are launched by the site's\n";
+  out << "  normal SWMF command using the Step-10/Step-11 input templates; archive the\n";
+  out << "  resolved command, build manifest, field export, and product manifests.\n\n";
+  out << "  Final release is evaluated separately with:\n";
+  out << "    python3 srcEarth/release_validation/run_release.py --manifest release.json --output summary.json\n";
+  out << "  The released characteristic is instantaneous/quasi-static and magnetic.\n";
+  out << "  Dynamic E/B acceleration, long-duration trapping, local acceleration, and\n";
+  out << "  physical loss evolution are unsupported Phase-1 capabilities.\n\n";
 
   // -----------------------------------------------------------------------
   out << "Notes:\n";

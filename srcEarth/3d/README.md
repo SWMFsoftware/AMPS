@@ -1,5 +1,16 @@
 # Mode3D cutoff, flux, and spectrum backend
 
+## Step 12 artifact identity
+
+Every Mode3D cutoff/access and density/flux/spectrum artifact now carries
+`COMMON_PHYSICS_TAG` and `COMMON_PHYSICS_SCOPE` in Tecplot `AUXDATA`. These values come
+from `../util/CommonPhysicsRelease.h`, the same header used by standalone and coupled
+manifests. The fields do not prove numerical parity by themselves; the Step-12 release
+campaign also hashes the shared source and compares field, trajectory, access, cutoff,
+spectrum, density, and detector rows. Run `../test/UStep12Release/run_test.sh` for the
+portable fail-closed contract tests and follow `../release_validation/README.md` for
+the linked campaign.
+
 `DensityMode3D.cpp` computes backward-access transmission, local differential spectra,
 number density, total omnidirectional flux, and configured energy-channel fluxes using
 the compact AMR magnetic/electric-field snapshot.

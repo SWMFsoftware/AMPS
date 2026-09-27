@@ -16,6 +16,8 @@
 // Roadmap Step 9 and is not represented by this contract.
 //======================================================================================
 
+#include "CommonPhysicsRelease.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -311,6 +313,10 @@ inline std::string BuildManifestJson(const RunPlan& plan) {
   std::ostringstream out;
   out << "{\n"
       << "  \"schema\": \"sep-in-geospace/standalone-products/v1\",\n"
+      << "  \"common_physics_tag\": \""
+      << CommonPhysicsRelease::kTag << "\",\n"
+      << "  \"common_physics_scope\": \""
+      << CommonPhysicsRelease::kScope << "\",\n"
       << "  \"field_model\": \"" << JsonEscape(plan.fieldModel) << "\",\n"
       << "  \"validation_only_field\": "
       << (IsValidationOnlyFieldModel(plan.fieldModel) ? "true" : "false") << ",\n"

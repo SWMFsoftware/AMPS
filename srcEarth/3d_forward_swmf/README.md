@@ -1,5 +1,20 @@
 # SWMF-coupled field snapshots, trajectories, and directional access
 
+## Roadmap Step 12: common-physics and release parity
+
+Coupled cutoff and flux/spectrum manifests now include the same compile-time
+`common_physics_tag` and static-magnetic scope as standalone manifests. The numeric
+Mode3D artifacts carry the tag as `AUXDATA` as well. Final release still requires the
+tagged source SHA-256 and a row-by-row live SWMF versus offline snapshot replay; a tag
+match alone cannot hide changed integration or product code.
+
+The Step-12 evaluator also compares a directly evaluated analytic/phenomenological
+field with its AMR representation and requires the complete U/I/C/F/O evidence matrix,
+frozen O4 outcome, provenance, capability limits, resources, and operational hooks.
+See `../release_validation/README.md`. The coupled callback remains Phase-1
+instantaneous/quasi-static and does not claim dynamic E/B acceleration or trapping/loss
+evolution.
+
 ## Roadmap Step 11: coupled flux/spectrum callback
 
 The backward-product callback now completes flux and spectrum products from the same

@@ -36,6 +36,8 @@
 // Shue et al. parameterization.
 //======================================================================================
 
+#include "CommonPhysicsRelease.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -583,6 +585,10 @@ inline std::string BuildAccessManifestJson(
   out << "{\n"
       << "  \"schema\": \"sep-in-geospace/swmf-coupled-access/v1\",\n"
       << "  \"RESULT\": \"" << result << "\",\n"
+      << "  \"common_physics_tag\": \""
+      << Earth::CommonPhysicsRelease::kTag << "\",\n"
+      << "  \"common_physics_scope\": \""
+      << Earth::CommonPhysicsRelease::kScope << "\",\n"
       << "  \"phase_1_interpretation\": \"INSTANTANEOUS_QUASI_STATIC\",\n"
       << "  \"snapshot_id\": \"" << JsonEscape(snapshotId) << "\",\n"
       << "  \"content_fingerprint\": \"" << JsonEscape(contentFingerprint) << "\",\n"

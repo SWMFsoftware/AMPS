@@ -1,5 +1,25 @@
 # Shared numerical utilities
 
+## `CommonPhysicsRelease.h` — Roadmap Step 12
+
+This dependency-free header is compiled into the standalone product contract and both
+SWMF coupled contracts. Its tag identifies the shared static-magnetic particle
+physics, units, characteristic mapping, and output semantics. Standalone/coupled
+executables may acquire their field differently, but a Step-12 release cannot accept
+different tags or different SHA-256 digests of the common physics source set.
+
+The tag is also copied to cutoff and density/spectrum Tecplot `AUXDATA`, allowing a
+detached numeric artifact to fail identity checks before comparison. Increment the tag
+whenever a shared physical convention changes and rerun the complete validation
+matrix. Do not increment it merely for a field-source adapter, and never treat it as a
+cryptographic substitute for the source digest recorded by
+`release_validation/run_release.py`.
+
+The header deliberately uses only C++11-compatible internal-linkage constants because
+the focused utility tests compile production contracts without AMPS/SWMF dependencies.
+It also states the Phase-1 limitation: dynamic E/B characteristics, multi-snapshot
+trapping, acceleration, and loss modelling are not implied.
+
 ## `SWMFCoupledProductsContract.h` — Roadmap Step 11
 
 This dependency-free header defines the scientific identity and completion contract

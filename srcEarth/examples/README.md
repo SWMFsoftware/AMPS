@@ -1,5 +1,14 @@
 # Standalone and coupled product examples
 
+## Step 12 release package
+
+`step12_release/` contains build/evidence record templates, the Phase-1 capability
+matrix, illustrative resource-estimate rows, and concrete cutoff-only/combined command
+forms. Generate the full fixed gate and parity registry with
+`release_validation/make_manifest_skeleton.py`; the skeleton intentionally contains
+placeholders and zero digests, so the release evaluator rejects it until real archived
+artifacts replace every value. See `step12_release/README.md` for the exact workflow.
+
 ## Step 11 coupled flux and spectra
 
 `swmf_step11_flux_spectrum.in.template` is the live coupled configuration for the

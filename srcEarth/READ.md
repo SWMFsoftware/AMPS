@@ -1,5 +1,32 @@
 # AMPS Earth Energetic-Particle Model
 
+## Cross-path validation and release packaging (Roadmap Step 12)
+
+Standalone and SWMF-coupled builds now expose one common Phase-1 physics tag from
+`util/CommonPhysicsRelease.h`. Step 12 verifies that tag plus a shared source digest,
+then evaluates two independent campaigns: analytic/phenomenological field versus its
+AMR sample, and live SWMF versus the exported offline replay. Both campaigns must
+compare field values, complete trajectory outcomes, directional access, cutoffs,
+spectra, density, and detector products without ignored columns or non-finite values.
+
+The release evaluator consumes immutable U/I/C/F/O evidence rather than rerunning an
+unknown subset. It requires explicit PASS/exit status, complete run provenance and
+termination counts, artifact hashes, nonzero observation comparisons, the frozen O4
+no-retuning record, supported/unsupported capability declarations, measured resource
+estimates, and concrete standalone/SWMF/CCMC commands. It will not relax an existing
+test gate or infer PASS from a dry run.
+
+```bash
+python3 srcEarth/release_validation/run_release.py \
+  --manifest release/step12_release.json \
+  --output release/step12_release_summary.json
+```
+
+See `release_validation/README.md` for the schema and `test/UStep12Release/README.md`
+for exact positive and negative checks. Phase 1 remains a frozen or quasi-static
+magnetic calculation; time-dependent electric acceleration, trapping evolution, and
+loss physics are outside this release.
+
 ## SWMF-coupled flux and spectra (Roadmap Step 11)
 
 Step 11 connects the live SWMF callback to the established Step-6

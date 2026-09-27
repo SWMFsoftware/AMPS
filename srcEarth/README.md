@@ -1,5 +1,43 @@
 # SEP-in-geospace model: compact global fields in Mode3D
 
+## Roadmap Step 12 implemented: cross-path validation and release packaging
+
+Step 12 adds a fail-closed release decision around the completed standalone and
+SWMF-coupled product paths. Both builds now compile the same
+`util/CommonPhysicsRelease.h` identity and write its tag into manifests and numeric
+cutoff/density/spectrum artifacts. A release must additionally record the same clean
+source revision and SHA-256 of the common physics source set; matching a readable tag
+alone is not sufficient.
+
+Two hash-pinned parity campaigns are mandatory. The first compares a direct analytic
+or phenomenological field with that field sampled on the AMR mesh. The second compares
+a live frozen SWMF state with its exported standalone replay. Each compares field
+samples, individual trajectory outcomes, directional access, cutoff, spectrum,
+density, and detector products. Keys and discrete outcomes are exact, every CSV column
+must be classified, NaN/Inf is rejected, live/replay is limited to kernel precision,
+and the documented 2% integrated/5% mesh or detector ceilings cannot be raised.
+
+`release_validation/run_release.py` also requires hash-verified PASS records for the
+fixed Phase-1 U/I/C/F/O matrix, a frozen O4 result with no retuning, capabilities and
+resource estimates, build/run provenance, CCMC/SWMF hooks, and reproducible cutoff-only
+and combined-product commands. Missing comparisons—including a solver run that wrote
+no C9/C10/C19 observation table—are failures. `--restart` reuses a prior PASS only
+after every referenced file rehashes to the same input fingerprint.
+
+Generate a complete non-runnable skeleton and run the focused negative/reference suite:
+
+```bash
+python3 srcEarth/release_validation/make_manifest_skeleton.py \
+  --output release/step12_release.json
+./srcEarth/test/UStep12Release/run_test.sh
+```
+
+The portable tests validate the gate evaluator; they do not claim that production
+SWMF or observation gates have run. Full schemas, commands, restart behavior, Phase-1
+limitations, and review procedure are in `release_validation/README.md` and
+`examples/step12_release/README.md`. Dynamic E/B characteristics, long-duration
+trapping, acceleration, and loss physics remain explicitly unsupported.
+
 ## Roadmap Step 11 implemented: SWMF-coupled flux and spectra
 
 The coupled callback now completes the same backward-characteristic product path as

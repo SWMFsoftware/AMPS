@@ -1,0 +1,10 @@
+{
+  "schema": "sep-in-geospace/resource-estimates/v1",
+  "estimates": [
+    {"case": "STANDALONE_CUTOFF", "mpi_ranks": 8, "threads": 16, "memory_gib": 32, "wall_minutes": 30, "disk_gib": 2, "basis": "Illustrative only; replace with a measured production case and host"},
+    {"case": "STANDALONE_COMBINED", "mpi_ranks": 8, "threads": 16, "memory_gib": 48, "wall_minutes": 90, "disk_gib": 8, "basis": "Illustrative only; replace with a measured production case and host"},
+    {"case": "SWMF_CUTOFF", "mpi_ranks": 8, "threads": 16, "memory_gib": 64, "wall_minutes": 45, "disk_gib": 4, "basis": "Illustrative only; replace with a measured production case and host"},
+    {"case": "SWMF_COMBINED", "mpi_ranks": 8, "threads": 16, "memory_gib": 80, "wall_minutes": 120, "disk_gib": 12, "basis": "Illustrative only; replace with a measured production case and host"},
+    {"case": "CROSS_PATH_PARITY", "mpi_ranks": 8, "threads": 16, "memory_gib": 96, "wall_minutes": 180, "disk_gib": 24, "basis": "Illustrative only; replace with both measured parity campaigns and host"}
+  ]
+}

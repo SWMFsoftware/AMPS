@@ -5,7 +5,7 @@ Earth SEP/geospace backward products.  Each test is stored in its own directory
 (`C1`, `C2`, ..., `C6`, `C11`, `C14`, `F1`, `F2`, `F3`, `F4`, `F5`, `F11`, `F12`, `F15`, `F16`,
 `UFluxNumerics`, `UFieldProvider`, `UTrajectoryCore`, `UDirectionalAccess`,
 `UBoundaryProducts`, `UStandaloneProducts`, `UStandaloneCampaign`, `USWMFSnapshot`,
-`USWMFCoupledAccess`, `USWMFCoupledProducts`,
+`USWMFCoupledAccess`, `USWMFCoupledProducts`, `UStep12Release`,
 `UTestRunner`, ...). Test scripts are intended to be executed
 from the directory containing the `amps` executable, not from inside the test
 subdirectory.
@@ -123,12 +123,36 @@ reference, input, expected status, mover, or trace limit is changed. F1, F2, F4,
 F11, F12, F15, F16 and C8/C9/C10/C19 remain the end-to-end and observation-facing
 validation gates.
 
-`test/list` schedules the Step 2 through Step 11 suites as independent `P`
+`test/list` schedules the Step 2 through Step 12 suites as independent `P`
 entries. Each has its own `last pass:` record, so the main runner reports and commits
 their provenance separately. No pre-existing C/F command, expected status, input,
 reference file, tolerance, mover, trajectory limit, or last-pass record was modified;
 the existing tests remain independent validation tools rather than being adjusted to
 accommodate the new abstraction.
+
+## UStep12Release: strict Step 12 suite
+
+Run the final cross-path/release decision tests with:
+
+```bash
+./srcEarth/test/UStep12Release/run_test.sh
+```
+
+The suite builds complete temporary evidence for every fixed Phase-1 U/I/C/F/O gate
+and both mandatory parity campaigns. Each campaign contains field, trajectory,
+directional-access, cutoff, spectrum, density, and detector CSVs with real SHA-256
+relationships. Exact inputs pass; numeric changes, terminal-state changes, omitted
+columns/roles/gates, relaxed mesh or replay tolerances, mismatched common-physics
+builds, dry runs, missing observation comparisons, retuned O4, placeholders, missing
+capabilities, and mutated restart inputs must fail.
+
+The companion source audit checks manifest and Tecplot identity wiring, `-h` release
+commands and limitations, complete documentation/templates, and registration in
+`test/list`. It reconstructs the pre-Step-12 list and compares its SHA-256 with a fixed
+reference, so no existing expected P/F state, command, scientific threshold, or
+`last pass:` value can be edited as part of this implementation. The manufactured
+suite validates the evaluator only; a release PASS still requires actual linked and
+observation evidence listed in `UStep12Release/README.md`.
 
 ## UStandaloneProducts: strict Step 7 suite
 

@@ -1,0 +1,15 @@
+{
+  "schema": "sep-in-geospace/capabilities/v1",
+  "capabilities": [
+    {"id": "STANDALONE_CUTOFF", "status": "SUPPORTED", "basis": "Step-7 standalone product path plus required release evidence"},
+    {"id": "STANDALONE_FLUX_SPECTRUM", "status": "SUPPORTED", "basis": "Step-6/7 backward-characteristic product path plus required release evidence"},
+    {"id": "SWMF_CUTOFF", "status": "SUPPORTED", "basis": "Step-9/10 frozen SWMF snapshot path plus required release evidence"},
+    {"id": "SWMF_FLUX_SPECTRUM", "status": "SUPPORTED", "basis": "Step-9/11 frozen SWMF snapshot path plus required release evidence"},
+    {"id": "OFFLINE_SWMF_REPLAY", "status": "SUPPORTED", "basis": "Step-9 strict snapshot import and Step-12 live/replay comparison"},
+    {"id": "DYNAMIC_EB_CHARACTERISTICS", "status": "UNSUPPORTED", "basis": "U-F11 and I-F09 are outside the Phase-1 static magnetic release"},
+    {"id": "LONG_DURATION_TRAPPING", "status": "UNSUPPORTED", "basis": "No multi-snapshot trapping/loss evolution is released"},
+    {"id": "LOCAL_ACCELERATION", "status": "UNSUPPORTED", "basis": "Static magnetic characteristics do not model local energization"},
+    {"id": "LOSS_PHYSICS", "status": "UNSUPPORTED", "basis": "Atmospheric/wave/collisional loss evolution is not in Phase 1"},
+    {"id": "FORWARD_TRAPPED_FLUX", "status": "UNSUPPORTED", "basis": "Forward sampling is not the reference for released backward products"}
+  ]
+}

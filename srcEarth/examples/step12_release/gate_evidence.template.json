@@ -1,0 +1,60 @@
+{
+  "schema": "sep-in-geospace/gate-evidence/v1",
+  "gate_id": "REPLACE_GATE_ID",
+  "status": "PASS",
+  "result_line": "RESULT: PASS",
+  "exit_code": 0,
+  "dry_run": false,
+  "command": "REPLACE_EXACT_COMMAND",
+  "source_revision": "REPLACE_GIT_REVISION",
+  "dirty": false,
+  "compiler": "REPLACE_COMPILER_AND_FLAGS",
+  "dependencies": {
+    "AMPS": "REPLACE_REVISION",
+    "MPI": "REPLACE_IMPLEMENTATION_VERSION"
+  },
+  "common_physics_tag": "sep-in-geospace-phase1-static-characteristics-v1",
+  "executable_sha256": "REPLACE_64_HEX_SHA256",
+  "input_sha256": "REPLACE_64_HEX_SHA256",
+  "field_id": "REPLACE_FIELD_MODEL_OR_DATASET",
+  "snapshot_id": "REPLACE_SNAPSHOT_ID",
+  "boundary_sha256": "REPLACE_64_HEX_SHA256",
+  "response_sha256": "REPLACE_64_HEX_SHA256",
+  "species": "PROTON",
+  "epoch_utc": "REPLACE_ABSOLUTE_UTC",
+  "frame": "GSM",
+  "mover": "BORIS",
+  "integrator_tolerances": {
+    "gyro_angle_rad": 0.15,
+    "boundary_m": 10.0
+  },
+  "grid_history": [
+    {
+      "level": 0,
+      "energy_nodes": 80,
+      "angular_nodes": 144
+    }
+  ],
+  "mpi_ranks": 8,
+  "threads": 16,
+  "scheduler": "STATIC",
+  "random_seeds": [1729],
+  "wall_time_s": 0.0,
+  "termination_counts": {
+    "sampled": 0,
+    "allowed": 0,
+    "forbidden": 0,
+    "unresolved": 0
+  },
+  "artifacts": [
+    {
+      "path": "REPLACE_CLOSED_RESULT_PATH",
+      "sha256": "REPLACE_64_HEX_SHA256"
+    }
+  ],
+  "observation_comparison_count": 0,
+  "normalization_policy": "SHARED_EVENT_BOUNDARY_NO_PLATFORM_SCALE",
+  "frozen": false,
+  "retuned": false,
+  "reported_outcome": "REPLACE_O4_ONLY"
+}

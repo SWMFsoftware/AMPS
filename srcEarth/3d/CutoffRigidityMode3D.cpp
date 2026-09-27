@@ -241,6 +241,7 @@
 #include "../util/DirectionalAccess.h"
 #include "../util/BoundaryProducts.h"
 #include "../util/SWMFCoupledAccessContract.h"
+#include "../util/CommonPhysicsRelease.h" // Step-12 cross-build physics identity
 #include "../boundary/spectrum.h"
 
 // Standard library
@@ -2707,6 +2708,13 @@ static void WriteActiveSnapshotAuxData_(FILE* f,const EarthUtil::AmpsParam& prm)
     if (f==nullptr) throw std::invalid_argument("null cutoff output stream");
     const Earth::Field::SnapshotMetadata& metadata=
         Earth::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata();
+    // The tag is intentionally repeated in every numeric artifact, rather than only
+    // in the sidecar manifest.  The Step-12 parity gate can therefore detect a file
+    // copied from an incompatible executable before comparing a single trajectory.
+    std::fprintf(f,"AUXDATA COMMON_PHYSICS_TAG=\"%s\"\n",
+                 Earth::CommonPhysicsRelease::kTag);
+    std::fprintf(f,"AUXDATA COMMON_PHYSICS_SCOPE=\"%s\"\n",
+                 Earth::CommonPhysicsRelease::kScope);
     std::fprintf(f,"AUXDATA SNAPSHOT_ID=\"%s\"\n",
                  TecplotAuxValue_(metadata.snapshotId).c_str());
     std::fprintf(f,"AUXDATA SNAPSHOT_EPOCH_UTC=\"%s\"\n",
