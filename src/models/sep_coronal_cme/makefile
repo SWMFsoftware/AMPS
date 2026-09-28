@@ -12,7 +12,8 @@ LIB_OBJECTS := $(patsubst src/%.cpp,$(BUILD)/%.o,$(LIB_SOURCES))
 TEST_SOURCES := $(wildcard test/*.cpp)
 TEST_OBJECTS := $(patsubst test/%.cpp,$(BUILD)/test_%.o,$(TEST_SOURCES))
 
-.PHONY: all lib test test-stage0 test-stage1 test-stage2 check-architecture clean
+.PHONY: all lib test test-stage0 test-stage1 test-stage2 test-stage3 \
+	test-stage4 test-stage5 test-stage6 check-architecture clean
 
 all: lib
 
@@ -37,16 +38,28 @@ check-architecture: $(BUILD)/libsep_coronal_cme.a
 	$(PYTHON) tools/check_architecture.py
 
 test-stage0: $(BUILD)/sep_coronal_cme_tests
-	$(PYTHON) test/run_tests.py --stage 0
+	$(PYTHON) test/run_tests.py --stage 0 --expect-count 13
 
 test-stage1: $(BUILD)/sep_coronal_cme_tests
-	$(PYTHON) test/run_tests.py --stage 1
+	$(PYTHON) test/run_tests.py --stage 1 --expect-count 22
 
 test-stage2: $(BUILD)/sep_coronal_cme_tests
-	$(PYTHON) test/run_tests.py --stage 2
+	$(PYTHON) test/run_tests.py --stage 2 --expect-count 53
+
+test-stage3: $(BUILD)/sep_coronal_cme_tests
+	$(PYTHON) test/run_tests.py --stage 3 --expect-count 82
+
+test-stage4: $(BUILD)/sep_coronal_cme_tests
+	$(PYTHON) test/run_tests.py --stage 4 --expect-count 96
+
+test-stage5: $(BUILD)/sep_coronal_cme_tests
+	$(PYTHON) test/run_tests.py --stage 5 --expect-count 106
+
+test-stage6: $(BUILD)/sep_coronal_cme_tests
+	$(PYTHON) test/run_tests.py --stage 6 --expect-count 117
 
 test: $(BUILD)/sep_coronal_cme_tests
-	$(PYTHON) test/run_tests.py --all
+	$(PYTHON) test/run_tests.py --all --expect-count 117
 
 clean:
 	rm -rf $(BUILD)

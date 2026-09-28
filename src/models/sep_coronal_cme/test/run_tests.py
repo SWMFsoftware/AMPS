@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one SCCM test or a cumulative Stage 0--2 release gate."""
+"""Run one SCCM test or a cumulative Stage 0--6 release gate."""
 
 # Passion and several NASA HEC environments still provide Python 3.8.  With
 # postponed annotations, expressions such as ``list[str]`` are stored as text
@@ -34,7 +34,76 @@ TESTS = [
     *[Test(f"WND3D{number:02d}", 2) for number in range(1, 21)],
     *[Test(f"CLS3D{number:02d}", 2) for number in range(1, 11)],
     Test("STR3D01", 2),
+    *[Test(f"SCS3D{number:02d}", 3) for number in range(1, 10)],
+    *[Test(f"HCS3D{number:02d}", 3) for number in range(1, 4)],
+    *[Test(f"CPL3D{number:02d}", 3)
+      for number in (*range(1, 10), 11, 12)],
+    *[Test(f"PLS3D{number:02d}", 3) for number in range(1, 5)],
+    Test("OFX3D01", 3), Test("LOS3D01", 3),
+    *[Test(f"TUR3D{number:02d}", 4) for number in range(1, 8)],
+    *[Test(f"MFP3D{number:02d}", 4) for number in range(1, 8)],
+    *[Test(f"ELL3D{number:02d}", 5) for number in range(1, 11)],
+    *[Test(f"RH3D{number:02d}", 6) for number in range(1, 12)],
 ]
+
+# These are release-contract values, not counts inferred from TESTS.  Keeping
+# an independent expectation is intentional: if a partial source update leaves
+# a Stage 0--2 runner beside Stage 3--6 model code, a nominal Stage 6 command
+# must fail instead of silently reporting the old 53-test suite as complete.
+# Each value is cumulative because every stage gate re-runs all earlier stages.
+EXPECTED_CUMULATIVE_COUNTS = {
+    0: 13,
+    1: 22,
+    2: 53,
+    3: 82,
+    4: 96,
+    5: 106,
+    6: 117,
+}
+
+# A terminal test ID makes the diagnostic more useful than a count alone.  It
+# catches a registry with the right cardinality but the wrong stage contents.
+EXPECTED_STAGE_TERMINALS = {
+    0: "RST3D05",
+    1: "PFSS3D09",
+    2: "STR3D01",
+    3: "LOS3D01",
+    4: "MFP3D07",
+    5: "ELL3D10",
+    6: "RH3D11",
+}
+
+
+def validate_registry() -> tuple[bool, str]:
+    """Validate the hand-authored release registry before selecting tests.
+
+    The runner is itself part of the release evidence.  Duplicate identifiers,
+    a missing late-stage family, or an accidental stage reassignment would make
+    its summary misleading, so those conditions are hard errors before any
+    potentially expensive test is launched.
+    """
+
+    identifiers = [test.identifier for test in TESTS]
+    if len(identifiers) != len(set(identifiers)):
+        duplicates = sorted({identifier for identifier in identifiers
+                             if identifiers.count(identifier) > 1})
+        return False, "duplicate test ID(s): " + ", ".join(duplicates)
+
+    for stage, expected_count in EXPECTED_CUMULATIVE_COUNTS.items():
+        cumulative = [test for test in TESTS if test.stage <= stage]
+        if len(cumulative) != expected_count:
+            return False, (
+                f"Stage {stage} registry contains {len(cumulative)} tests; "
+                f"the release contract requires {expected_count}"
+            )
+        terminal = EXPECTED_STAGE_TERMINALS[stage]
+        if not any(test.identifier == terminal and test.stage == stage
+                   for test in TESTS):
+            return False, (
+                f"Stage {stage} registry is missing terminal test {terminal}"
+            )
+
+    return True, ""
 
 def command_for(test: Test) -> list[str]:
     if test.kind == "cpp":
@@ -89,11 +158,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     select = parser.add_mutually_exclusive_group(required=True)
     select.add_argument("--all", action="store_true")
-    select.add_argument("--stage", type=int, choices=(0, 1, 2))
+    select.add_argument("--stage", type=int, choices=tuple(range(0, 7)))
     select.add_argument("--test")
     select.add_argument("--list", action="store_true")
     parser.add_argument("--output-dir", default="build/test-results")
+    parser.add_argument(
+        "--expect-count", type=int,
+        help=("fail unless the selected gate contains this many tests; Make "
+              "targets use this to detect a stale or partially copied runner"),
+    )
     args = parser.parse_args(argv)
+
+    registry_ok, registry_error = validate_registry()
+    if not registry_ok:
+        print(f"TEST REGISTRY ERROR: {registry_error}", file=sys.stderr)
+        return 2
+
     if args.list:
         for test in TESTS:
             print(f"{test.identifier}\tstage={test.stage}\t{test.kind}")
@@ -107,6 +187,28 @@ def main(argv: list[str] | None = None) -> int:
         selected = TESTS
     else:
         selected = [test for test in TESTS if test.stage <= args.stage]
+
+    if args.expect_count is not None and len(selected) != args.expect_count:
+        print(
+            "TEST SELECTION ERROR: selected "
+            f"{len(selected)} tests but --expect-count requires "
+            f"{args.expect_count}",
+            file=sys.stderr,
+        )
+        return 2
+
+    # Print the selection before running it.  This gives batch logs an
+    # unambiguous indication that a Stage 6 invocation selected all 117 tests,
+    # even if a later compile, scheduler, or test failure interrupts the run.
+    if args.test:
+        selection_name = f"test={args.test}"
+    elif args.all:
+        selection_name = "all"
+    else:
+        selection_name = f"stage={args.stage}"
+    print(f"SELECTION: {selection_name}; tests={len(selected)}; "
+          f"registry-total={len(TESTS)}")
+
     binary = ROOT / "build" / "sep_coronal_cme_tests"
     if any(test.kind == "cpp" for test in selected) and not binary.exists():
         build = subprocess.run(["make", str(binary.relative_to(ROOT))], cwd=ROOT)

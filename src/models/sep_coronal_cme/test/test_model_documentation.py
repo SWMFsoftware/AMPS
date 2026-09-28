@@ -24,6 +24,20 @@ MODEL_ROOT = Path(__file__).resolve().parents[1]
 GENERATOR = MODEL_ROOT / "tools" / "generate_model.py"
 
 
+def write_text_lf(path: Path, content: str) -> None:
+    """Write deterministic UTF-8/LF text on every supported Python version.
+
+    ``Path.write_text`` did not gain its ``newline`` keyword until after
+    Python 3.8.  NASA HEC systems still provide Python 3.8, while
+    ``Path.open`` has accepted the corresponding argument for much longer.
+    Keeping this compatibility shim in the test prevents a negative fixture
+    from failing before the documentation validator receives the mutation.
+    """
+
+    with path.open("w", encoding="utf-8", newline="\n") as stream:
+        stream.write(content)
+
+
 class DocumentationGenerationTests(unittest.TestCase):
     """Exercise the complete model-neutral ``DOCSCCM01`` release gate."""
 
@@ -76,13 +90,42 @@ class DocumentationGenerationTests(unittest.TestCase):
             self.assertEqual(generated.returncode, 0, generated.stdout)
             self.assertEqual(output.read_bytes(), (MODEL_ROOT / "model.md").read_bytes())
 
+    def test_stage6_runner_registry_is_complete(self) -> None:
+        """The aggregate release gate must expose all 117 Stage 0--6 tests.
+
+        This specifically prevents a partially updated package from accepting
+        the historical 53-test Stage 0--2 registry as a successful Stage 6
+        validation.  The Makefile count is checked independently so replacing
+        only one of the two files also produces an immediate hard failure.
+        """
+
+        listed = subprocess.run(
+            [sys.executable, str(MODEL_ROOT / "test" / "run_tests.py"),
+             "--list"],
+            cwd=MODEL_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertEqual(listed.returncode, 0, listed.stdout)
+        entries = [line for line in listed.stdout.splitlines() if line.strip()]
+        self.assertEqual(len(entries), 117, listed.stdout)
+        self.assertTrue(entries[-1].startswith("RH3D11\tstage=6\t"),
+                        entries[-1])
+
+        makefile = (MODEL_ROOT / "makefile").read_text(encoding="utf-8")
+        self.assertIn(
+            "test/run_tests.py --stage 6 --expect-count 117", makefile)
+        self.assertIn(
+            "test/run_tests.py --all --expect-count 117", makefile)
+
     def test_dirty_canonical_document_is_rejected(self) -> None:
         """Direct edits to generated ``model.md`` must never become authority."""
 
         def mutate(root: Path) -> None:
             path = root / "model.md"
-            path.write_text(path.read_text(encoding="utf-8") + "direct edit\n",
-                            encoding="utf-8")
+            write_text_lf(path, path.read_text(encoding="utf-8") + "direct edit\n")
 
         self.assert_rejected(mutate, "not generated-clean")
 
@@ -91,10 +134,9 @@ class DocumentationGenerationTests(unittest.TestCase):
 
         def mutate(root: Path) -> None:
             path = root / "model" / "architecture_exchange.md"
-            path.write_text(
+            write_text_lf(path, 
                 path.read_text(encoding="utf-8")
-                + "\n## 3. Illegally duplicated ownership\n\nnegative fixture\n",
-                encoding="utf-8")
+                + "\n## 3. Illegally duplicated ownership\n\nnegative fixture\n")
 
         self.assert_rejected(mutate, "duplicate numbered sections")
 
@@ -105,8 +147,7 @@ class DocumentationGenerationTests(unittest.TestCase):
             path = root / "model" / "requirements.yaml"
             payload = json.loads(path.read_text(encoding="utf-8"))
             payload["requirements"][1]["id"] = payload["requirements"][0]["id"]
-            path.write_text(json.dumps(payload, indent=2) + "\n",
-                            encoding="utf-8")
+            write_text_lf(path, json.dumps(payload, indent=2) + "\n")
 
         self.assert_rejected(mutate, "duplicate requirement ID")
 
@@ -117,8 +158,7 @@ class DocumentationGenerationTests(unittest.TestCase):
             path = root / "model" / "requirements.yaml"
             payload = json.loads(path.read_text(encoding="utf-8"))
             payload["requirements"][0]["status"] = "specified-ish"
-            path.write_text(json.dumps(payload, indent=2) + "\n",
-                            encoding="utf-8")
+            write_text_lf(path, json.dumps(payload, indent=2) + "\n")
 
         self.assert_rejected(mutate, "is not a schema-1 status")
 
@@ -129,8 +169,7 @@ class DocumentationGenerationTests(unittest.TestCase):
             path = root / "model" / "requirements.yaml"
             payload = json.loads(path.read_text(encoding="utf-8"))
             payload["requirements"][0]["review_sources"] = ["review-two:R1"]
-            path.write_text(json.dumps(payload, indent=2) + "\n",
-                            encoding="utf-8")
+            write_text_lf(path, json.dumps(payload, indent=2) + "\n")
 
         self.assert_rejected(malformed, "review_sources has invalid values")
 
@@ -138,8 +177,7 @@ class DocumentationGenerationTests(unittest.TestCase):
             path = root / "model" / "requirements.yaml"
             payload = json.loads(path.read_text(encoding="utf-8"))
             payload["requirements"][0]["review_sources"] = ["review-3:N2"]
-            path.write_text(json.dumps(payload, indent=2) + "\n",
-                            encoding="utf-8")
+            write_text_lf(path, json.dumps(payload, indent=2) + "\n")
 
         self.assert_rejected(missing_primary, "must include 'review-2:R1'")
 
@@ -147,8 +185,7 @@ class DocumentationGenerationTests(unittest.TestCase):
             path = root / "model" / "requirements.yaml"
             payload = json.loads(path.read_text(encoding="utf-8"))
             payload["requirements"][0]["review_sources"].append("review-3:N2")
-            path.write_text(json.dumps(payload, indent=2) + "\n",
-                            encoding="utf-8")
+            write_text_lf(path, json.dumps(payload, indent=2) + "\n")
 
         self.assert_rejected(stale_backlink, "does not link back to the requirement")
 
@@ -159,8 +196,7 @@ class DocumentationGenerationTests(unittest.TestCase):
             path = root / "model" / "requirements.yaml"
             payload = json.loads(path.read_text(encoding="utf-8"))
             payload["requirements"][0]["statuz"] = "specified"
-            path.write_text(json.dumps(payload, indent=2) + "\n",
-                            encoding="utf-8")
+            write_text_lf(path, json.dumps(payload, indent=2) + "\n")
 
         self.assert_rejected(requirement_member, "unknown members ['statuz']")
 
@@ -168,8 +204,7 @@ class DocumentationGenerationTests(unittest.TestCase):
             path = root / "model" / "requirements.yaml"
             payload = json.loads(path.read_text(encoding="utf-8"))
             payload["review_findings"][0]["requirement_id"] = []
-            path.write_text(json.dumps(payload, indent=2) + "\n",
-                            encoding="utf-8")
+            write_text_lf(path, json.dumps(payload, indent=2) + "\n")
 
         self.assert_rejected(review_member, "unknown members ['requirement_id']")
 
@@ -181,8 +216,7 @@ class DocumentationGenerationTests(unittest.TestCase):
             payload = json.loads(path.read_text(encoding="utf-8"))
             links = payload["requirements"][0]["config_keys"]
             links.append(links[0])
-            path.write_text(json.dumps(payload, indent=2) + "\n",
-                            encoding="utf-8")
+            write_text_lf(path, json.dumps(payload, indent=2) + "\n")
 
         self.assert_rejected(requirement_link, "contains duplicate values")
 
@@ -192,8 +226,7 @@ class DocumentationGenerationTests(unittest.TestCase):
             finding = next(
                 item for item in payload["review_findings"] if item["id"] == "R1")
             finding["requirement_ids"].append(finding["requirement_ids"][0])
-            path.write_text(json.dumps(payload, indent=2) + "\n",
-                            encoding="utf-8")
+            write_text_lf(path, json.dumps(payload, indent=2) + "\n")
 
         self.assert_rejected(review_link, "contains duplicate values")
 
@@ -204,8 +237,7 @@ class DocumentationGenerationTests(unittest.TestCase):
             path = root / "model" / "requirements.yaml"
             payload = json.loads(path.read_text(encoding="utf-8"))
             payload["requirements"][0]["id"] = "SCCM-R2-SCS-RADIALIZATION"
-            path.write_text(json.dumps(payload, indent=2) + "\n",
-                            encoding="utf-8")
+            write_text_lf(path, json.dumps(payload, indent=2) + "\n")
 
         self.assert_rejected(mutate, "ID series does not match review_item")
 
@@ -219,8 +251,7 @@ class DocumentationGenerationTests(unittest.TestCase):
                 item for item in payload["requirements"]
                 if item["review_item"] != "P8"
             ]
-            path.write_text(json.dumps(payload, indent=2) + "\n",
-                            encoding="utf-8")
+            write_text_lf(path, json.dumps(payload, indent=2) + "\n")
 
         self.assert_rejected(
             mutate,
@@ -234,8 +265,7 @@ class DocumentationGenerationTests(unittest.TestCase):
             path = root / "model" / "requirements.yaml"
             payload = json.loads(path.read_text(encoding="utf-8"))
             payload["requirements"][0]["test_ids"] = ["NO-SUCH-TEST99"]
-            path.write_text(json.dumps(payload, indent=2) + "\n",
-                            encoding="utf-8")
+            write_text_lf(path, json.dumps(payload, indent=2) + "\n")
 
         self.assert_rejected(mutate, "references unknown canonical test")
 
@@ -252,7 +282,7 @@ class DocumentationGenerationTests(unittest.TestCase):
                 "## 17. Testing and validation campaign",
                 1,
             )
-            path.write_text(text, encoding="utf-8")
+            write_text_lf(path, text)
 
         self.assert_rejected(mutate, "roadmap references unknown canonical tests")
 
@@ -266,7 +296,7 @@ class DocumentationGenerationTests(unittest.TestCase):
                 "| 1 | `PFSS3D01--99` |",
                 1,
             )
-            path.write_text(text, encoding="utf-8")
+            write_text_lf(path, text)
 
         self.assert_rejected(mutate, "roadmap references unknown canonical tests")
 
@@ -280,7 +310,7 @@ class DocumentationGenerationTests(unittest.TestCase):
                 ", `LOS3D01`",
                 1,
             )
-            path.write_text(text, encoding="utf-8")
+            write_text_lf(path, text)
 
         self.assert_rejected(mutate, "canonical tests have no roadmap stage")
 
@@ -294,7 +324,7 @@ class DocumentationGenerationTests(unittest.TestCase):
                 "",
                 1,
             )
-            path.write_text(text, encoding="utf-8")
+            write_text_lf(path, text)
 
         self.assert_rejected(
             mutate,
@@ -311,7 +341,7 @@ class DocumentationGenerationTests(unittest.TestCase):
                 "Stage 14A includes `SRC3D19`",
                 1,
             )
-            path.write_text(text, encoding="utf-8")
+            write_text_lf(path, text)
 
         self.assert_rejected(mutate, "must be explicit")
 
@@ -320,9 +350,8 @@ class DocumentationGenerationTests(unittest.TestCase):
 
         def mutate(root: Path) -> None:
             path = root / "model" / "physics.md"
-            path.write_text(path.read_text(encoding="utf-8")
-                            + "{{GENERATED:UNREGISTERED_TABLE}}\n",
-                            encoding="utf-8")
+            write_text_lf(path, path.read_text(encoding="utf-8")
+                            + "{{GENERATED:UNREGISTERED_TABLE}}\n")
 
         self.assert_rejected(mutate, "unknown generated placeholders")
 

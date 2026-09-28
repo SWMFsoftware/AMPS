@@ -1,0 +1,6 @@
+{
+  "id": "WND3D19",
+  "first_stage": 2,
+  "expected": "pass",
+  "tolerance_authority": "model/testing_validation.md"
+}

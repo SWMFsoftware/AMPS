@@ -1,0 +1,6 @@
+{
+  "id": "TUR3D06",
+  "first_stage": 4,
+  "expected": "pass",
+  "tolerance_authority": "model/testing_validation.md"
+}

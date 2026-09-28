@@ -1,0 +1,6 @@
+{
+  "id": "CPL3D12",
+  "first_stage": 3,
+  "expected": "pass",
+  "tolerance_authority": "model/testing_validation.md"
+}
