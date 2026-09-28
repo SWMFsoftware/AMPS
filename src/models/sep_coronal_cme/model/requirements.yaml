@@ -1,0 +1,572 @@
+{
+  "schema_version": 1,
+  "document": {
+    "canonical_output": "model.md",
+    "section_order": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+    "modules": [
+      {
+        "id": "physics",
+        "path": "model/physics.md",
+        "owns_preamble": true,
+        "sections": [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 18, 19]
+      },
+      {
+        "id": "architecture_exchange",
+        "path": "model/architecture_exchange.md",
+        "owns_preamble": false,
+        "sections": [3, 15]
+      },
+      {
+        "id": "configuration_validation",
+        "path": "model/configuration_validation.md",
+        "owns_preamble": false,
+        "sections": [14]
+      },
+      {
+        "id": "testing_validation",
+        "path": "model/testing_validation.md",
+        "owns_preamble": false,
+        "sections": [16, 17, 20]
+      }
+    ],
+    "generated_placeholders": {
+      "REVIEW_DISPOSITION": "physics",
+      "REQUIREMENT_REGISTRY": "architecture_exchange"
+    }
+  },
+  "requirements": [
+    {
+      "id": "SCCM-R1-SCS-RADIALIZATION",
+      "review_item": "R1",
+      "title": "Quantified SCS radialization",
+      "subject": "quantitative SCS attenuation and latitude flatness",
+      "status": "specified",
+      "review_sources": ["review-2:R1"],
+      "sections": ["6.2", "14", "17.3"],
+      "config_keys": ["current_sheet.radialization_gate", "current_sheet.maximum_outer_zonal_nonmonopole_power_fraction"],
+      "api_records": ["BackgroundRegionState"],
+      "test_ids": ["SCS3D09"]
+    },
+    {
+      "id": "SCCM-R2-WIND-BOUNDS",
+      "review_item": "R2",
+      "title": "Physically bounded structured wind",
+      "subject": "physically bounded structured-wind branches and D7",
+      "status": "specified",
+      "review_sources": ["review-2:R2", "review-3:N2"],
+      "sections": ["5.5", "13.2", "14", "17.3"],
+      "config_keys": ["solar_wind.model", "solar_wind.mass_flux_model", "solar_wind.kinematic_profile_manifest_file", "solar_wind.d7_qualification_asset_file", "solar_wind.d7_qualification_data_use_role"],
+      "api_records": ["SolarWindModel", "MassFluxAuthority"],
+      "test_ids": ["WND3D13", "WND3D15"]
+    },
+    {
+      "id": "SCCM-R3-OPEN-FLUX",
+      "review_item": "R3",
+      "title": "Absolute open-flux calibration",
+      "subject": "absolute composite open flux and two-pass calibration",
+      "status": "specified",
+      "review_sources": ["review-2:R3", "review-3:N5"],
+      "sections": ["13.1", "14", "17.3", "17.8"],
+      "config_keys": ["open_flux_calibration.model", "open_flux_calibration.construction_reference_asset_file", "open_flux_calibration.construction_data_use_role", "open_flux_calibration.qualification_reference_asset_file", "open_flux_calibration.qualification_data_use_role"],
+      "api_records": ["ImmutableInputAsset"],
+      "test_ids": ["OFX3D01", "CAL3D01"]
+    },
+    {
+      "id": "SCCM-R4-TRANSITION-TOPOLOGY",
+      "review_item": "R4",
+      "title": "Topology-safe PFSS to SCS transition",
+      "subject": "topology-safe PFSS/SCS transition and D9-background",
+      "status": "specified",
+      "review_sources": ["review-2:R4"],
+      "sections": ["6.4", "11.4", "14", "17.3"],
+      "config_keys": ["current_sheet.transition_hcs_policy", "current_sheet.transition_hcs_clearance_m"],
+      "api_records": ["TransitionSheetPolicy", "TransitionSheetState"],
+      "test_ids": ["CPL3D09", "CPL3D12", "SRC3D09"]
+    },
+    {
+      "id": "SCCM-R5-SEPARATRIX-STRESS",
+      "review_item": "R5",
+      "title": "Typed open-closed interface balance",
+      "subject": "typed interface policy, hard topology/kinematic gates, sharp mass-flux/full-vector-traction jumps, and smooth volume momentum residual",
+      "status": "specified",
+      "review_sources": ["review-2:R5", "review-3:N3"],
+      "sections": ["4.6", "14", "17.3"],
+      "config_keys": ["open_closed_interface.policy", "open_closed_interface.maximum_absolute_mass_flux_jump_kg_per_m2_per_s", "open_closed_interface.maximum_absolute_traction_jump_pa", "open_closed_interface.maximum_absolute_volume_momentum_residual_n_per_m3"],
+      "api_records": ["OpenClosedInterfacePolicy", "InterfaceBalanceDiagnostic"],
+      "test_ids": ["CLS3D08", "CLS3D09", "CLS3D10"]
+    },
+    {
+      "id": "SCCM-R6-WAVE-FORCE",
+      "review_item": "R6",
+      "title": "Force-based turbulence validity",
+      "subject": "force-based uncoupled-turbulence validity",
+      "status": "specified",
+      "review_sources": ["review-2:R6"],
+      "sections": ["7.5", "14", "17.3"],
+      "config_keys": ["turbulence.maximum_wave_force_fraction", "turbulence.maximum_absolute_wave_acceleration_m_per_s2"],
+      "api_records": ["BackgroundRegionState"],
+      "test_ids": ["TUR3D07"]
+    },
+    {
+      "id": "SCCM-R7-CRITICAL-COVERAGE",
+      "review_item": "R7",
+      "title": "Typed critical-Mach coverage",
+      "subject": "typed critical-Mach coverage and exclusion budgets",
+      "status": "specified",
+      "review_sources": ["review-2:R7"],
+      "sections": ["9.4", "14", "17.3"],
+      "config_keys": ["shock.critical_mach_out_of_domain_policy", "shock.maximum_criticality_excluded_area_fraction"],
+      "api_records": ["CriticalMachOutOfDomainPolicy"],
+      "test_ids": ["RH3D11"]
+    },
+    {
+      "id": "SCCM-R8-ROTATION-AUTHORITY",
+      "review_item": "R8",
+      "title": "Single solar-rotation authority",
+      "subject": "one resolved solar-rotation authority",
+      "status": "specified",
+      "review_sources": ["review-2:R8"],
+      "sections": ["2.1", "14", "15.2"],
+      "config_keys": ["solar_rotation.model", "solar_rotation.input_rate_convention"],
+      "api_records": ["SolarRotationModel"],
+      "test_ids": ["CFG3D19"]
+    },
+    {
+      "id": "SCCM-R9-RELEASE-SEMANTICS",
+      "review_item": "R9",
+      "title": "Finite-surface upstream release semantics",
+      "subject": "finite-surface net-first-passage upstream population and return-event semantics",
+      "status": "specified",
+      "review_sources": ["review-2:R9", "review-3:N1"],
+      "sections": ["10.3", "10.4", "14", "17.2"],
+      "config_keys": ["source.population_semantics", "source.release_boundary", "source.shock_reentry_policy", "source.placement_kernel_support", "source.minimum_conormal_diffusivity_m2_per_s"],
+      "api_records": ["SourcePopulationSemantics", "SourceReleaseBoundary", "ShockReentryPolicy", "SourceBoundaryLedgerTerm"],
+      "test_ids": ["SRC3D12", "SRC3D13"]
+    },
+    {
+      "id": "SCCM-R10-DOC-AUTHORITY",
+      "review_item": "R10",
+      "title": "Executable modular documentation authority",
+      "subject": "generated modular specification and consistency gate",
+      "status": "implemented",
+      "review_sources": ["review-2:R10", "review-3:N7"],
+      "sections": ["15", "16", "17.2"],
+      "config_keys": [],
+      "api_records": [],
+      "test_ids": ["DOCSCCM01"]
+    },
+    {
+      "id": "SCCM-N1-SOURCE-BOUNDARY",
+      "review_item": "N1",
+      "title": "Mover-independent finite release boundary",
+      "subject": "fixed-distance reference-surface release, signed focused escape support, conormal sensitivity, and absorbing verification branch",
+      "status": "specified",
+      "review_sources": ["review-3:N1"],
+      "sections": ["10.3", "10.4", "14", "15.2", "17.2"],
+      "config_keys": ["source.release_boundary", "source.shock_reentry_policy", "source.reference_surface_distance_m", "source.focused_release_phase_space", "source.focused_release_mu_c_minimum_abs_bdotn", "source.focused_release_pitch_root_absolute_tolerance", "source.focused_release_support_root_relative_momentum_tolerance", "source.focused_release_support_root_time_tolerance_s", "source.focused_release_normal_flux_quadrature_absolute_tolerance_m_per_s", "source.focused_release_normal_flux_quadrature_relative_tolerance", "source.placement_kernel_support", "source.minimum_conormal_diffusivity_m2_per_s"],
+      "api_records": ["SourceReleaseBoundary", "ShockReentryPolicy", "FocusedReleasePhaseSpace", "FocusedEscapeStatus", "FocusedEscapeAdmissibility", "SourceBoundaryLedgerTerm"],
+      "test_ids": ["SRC3D14", "SRC3D15", "SRC3D16", "SRC3D17", "SRC3D18"]
+    },
+    {
+      "id": "SCCM-N2-TWO-ZONE-WIND",
+      "review_item": "N2",
+      "title": "Observation-constrained two-zone wind",
+      "subject": "density-constrained inner wind, velocity-constrained outer wind, one mass-per-flux authority, `C2` overlap, composition/covariance, and physical-measure D7 gates",
+      "status": "specified",
+      "review_sources": ["review-3:N2"],
+      "sections": ["5.5", "13.2", "14", "16", "17.2"],
+      "config_keys": ["solar_wind.kinematic_profile_manifest_file", "solar_wind.kinematic_profile_manifest_schema", "solar_wind.kinematic_interpolation", "solar_wind.inner_outer_blend_inner_radius_m", "solar_wind.inner_outer_blend_outer_radius_m"],
+      "api_records": ["SolarWindModel", "MassFluxAuthority", "RequiredConsumerCoveragePolicy"],
+      "test_ids": ["WND3D16", "WND3D17", "WND3D18", "WND3D20"]
+    },
+    {
+      "id": "SCCM-N3-INTERFACE-BALANCE",
+      "review_item": "N3",
+      "title": "Honest open-closed interface policies",
+      "subject": "typed open-closed and open-open diagnostic/bounded/equilibrium policies, open-closed tangential-interface gates, sharp mass-flux/full-vector traction, and smooth volume momentum residual",
+      "status": "specified",
+      "review_sources": ["review-3:N3"],
+      "sections": ["4.6", "6.7", "14", "16", "17.2"],
+      "config_keys": ["open_closed_interface.representation", "open_closed_interface.policy", "open_closed_interface.maximum_absolute_normal_field_tesla", "open_closed_interface.maximum_relative_normal_field", "open_closed_interface.maximum_absolute_relative_normal_velocity_m_per_s", "open_closed_interface.maximum_relative_normal_velocity_fast_mach", "open_closed_interface.maximum_absolute_mass_flux_jump_kg_per_m2_per_s", "open_open_interface.model", "open_open_interface.representation", "open_open_interface.policy", "open_open_interface.maximum_absolute_mass_flux_jump_kg_per_m2_per_s", "plasma_sheet.balance_policy"],
+      "api_records": ["InterfaceRepresentationCode", "OpenClosedInterfacePolicy", "OpenOpenInterfaceOptions", "InterfaceClassCode", "InterfaceBalanceDiagnosticKind", "InterfaceBalanceDiagnostic"],
+      "test_ids": ["CLS3D08", "CLS3D09", "CLS3D10", "STR3D01"]
+    },
+    {
+      "id": "SCCM-N4-CONSUMER-BUDGETS",
+      "review_item": "N4",
+      "title": "Quantified transition and front-return impacts",
+      "subject": "explicit transition/source-return impact denominators, represented-weight ledgers, and preregistered event-grade caps",
+      "status": "specified",
+      "review_sources": ["review-3:N4"],
+      "sections": ["6.4", "10.3", "14", "16", "17.3"],
+      "config_keys": ["consumer_acceptance_budgets.model", "consumer_acceptance_budgets.cohort_partition", "consumer_acceptance_budgets.maximum_front_return_represented_number_loss_fraction", "consumer_acceptance_budgets.maximum_front_return_represented_birth_energy_loss_fraction"],
+      "api_records": ["SourceBoundaryLedgerTerm"],
+      "test_ids": ["LOS3D01", "LOS3D02"]
+    },
+    {
+      "id": "SCCM-N5-JOINT-CALIBRATION",
+      "review_item": "N5",
+      "title": "Joint magnetic-wind-front discrimination",
+      "subject": "joint magnetic/wind/front candidate product evaluated with D6, topology, D1/D2, and event-specific formation constraints",
+      "status": "specified",
+      "review_sources": ["review-3:N5"],
+      "sections": ["9.5", "13.1", "14", "17.8"],
+      "config_keys": ["formation_height_validation.model", "formation_height_validation.product_axes", "formation_height_validation.event_formation_constraint_representation", "formation_height_validation.event_formation_data_use_role", "formation_height_validation.density_conditioning", "formation_height_validation.sep_output_selection"],
+      "api_records": ["ImmutableInputAsset"],
+      "test_ids": ["CAL3D01", "OFX3D01"]
+    },
+    {
+      "id": "SCCM-N6-PROFILE-COORDINATES",
+      "review_item": "N6",
+      "title": "Explicit wind-profile coordinates",
+      "subject": "per-channel velocity component/reference frame, radial-projection guard, disjoint deterministic consumer routing, profile-abscissa identity, exact certified interpolation, line/background binding, stable rejected-ID census, and required-consumer coverage",
+      "status": "specified",
+      "review_sources": ["review-3:N6"],
+      "sections": ["5.5", "13.2", "14", "15.2", "17.2"],
+      "config_keys": ["solar_wind.kinematic_profile_manifest_file", "solar_wind.kinematic_profile_manifest_schema", "solar_wind.kinematic_interpolation", "solar_wind.d7_qualification_data_use_role", "solar_wind.d7_withheld_validation_data_use_role"],
+      "api_records": ["KinematicVelocityComponent", "KinematicVelocityReferenceFrame", "KinematicChannelSelectorKind", "KinematicProfileAbscissa"],
+      "test_ids": ["WND3D19", "WND3D20"]
+    },
+    {
+      "id": "SCCM-N7-GENERATED-SPEC",
+      "review_item": "N7",
+      "title": "Generated shared specification",
+      "subject": "four authoritative modules, structured trace registry, deterministic generation, and byte-identity/negative tests",
+      "status": "implemented",
+      "review_sources": ["review-3:N7"],
+      "sections": ["15", "16", "17.2"],
+      "config_keys": [],
+      "api_records": [],
+      "test_ids": ["DOCSCCM01", "ARCHSCCM01"]
+    },
+    {
+      "id": "SCCM-P1-REFERENCE-SURFACE-DIAGNOSTIC",
+      "review_item": "P1",
+      "title": "Calibrated finite release surface and return accounting",
+      "subject": "fixed-distance schema-5 release, integrated release-depth Peclet diagnostic, calibration fingerprint, and finite-horizon no-front-return accounting; momentum-dependent surfaces and return renewal remain future capabilities",
+      "status": "specified-diagnostic; future-options-not-implemented",
+      "review_sources": ["review-4:P1"],
+      "sections": ["10.3", "14", "15.8", "16", "17.2", "17.3", "17.12"],
+      "config_keys": ["run.transport", "run.transport_frame", "run.start_time_s", "run.end_time_s", "source.release_boundary", "source.shock_reentry_policy", "source.reference_surface_distance_m"],
+      "api_records": ["ReferenceSurfaceCalibrationRecord", "ReferenceSurfaceFamilyRecord", "ReturnRenewalKernelRecord"],
+      "test_ids": ["SRC3D19", "SRC3D21", "SRC3D22"]
+    },
+    {
+      "id": "SCCM-P2-SELF-GENERATED-WAVES",
+      "review_item": "P2",
+      "title": "Post-reference self-generated-wave limitation",
+      "subject": "explicit schema-5 omission of SEP-driven wave growth plus distinct future empirical-proxy and coupled spectral particle-wave closure contracts with complete D/E streaming-limit campaign evidence",
+      "status": "documented-limitation; future-capability-not-implemented",
+      "review_sources": ["review-4:P2"],
+      "sections": ["7.6", "10.5", "11", "14", "15.8", "16", "17.2", "17.3", "17.9", "17.10"],
+      "config_keys": ["turbulence.open_field_model", "transport_coefficients.parallel_mfp_model"],
+      "api_records": ["ForeshockCalibrationCouplingKind", "ForeshockCalibrationAsset"],
+      "test_ids": ["TUR3D08", "MFP3D08", "SLM3D01"]
+    },
+    {
+      "id": "SCCM-P3-GUIDING-CENTER-DRIFT",
+      "review_item": "P3",
+      "title": "Coherent drift and energy operator roadmap",
+      "subject": "explicit no-drift schema-5 baseline and a future ordered smooth-region guiding-center or antisymmetric-transport operator with unified energy evolution and weak-field/HCS guards",
+      "status": "documented-limitation; future-capability-not-implemented",
+      "review_sources": ["review-4:P3"],
+      "sections": ["11.1", "11.2", "12.5", "14", "15.8", "16", "17.2", "17.3"],
+      "config_keys": ["transport_coefficients.drift_model"],
+      "api_records": ["CoherentGuidingCenterTransportProvider"],
+      "test_ids": ["FTE3D10", "FTE3D11"]
+    },
+    {
+      "id": "SCCM-P4-DYNAMIC-CME-TRAJECTORY",
+      "review_item": "P4",
+      "title": "Independent CME deflection and rotation histories",
+      "subject": "fixed schema-5 CME direction/attitude with event-covariance sensitivities and a future nonradial center-path plus smooth SO(3) attitude contract",
+      "status": "documented-limitation; future-capability-not-implemented",
+      "review_sources": ["review-4:P4"],
+      "sections": ["8.2", "8.4", "14", "15.8", "16", "17.2", "17.12"],
+      "config_keys": ["shock_geometry.direction_longitude_rad", "shock_geometry.direction_latitude_rad", "shock_geometry.orientation_evolution", "shock_geometry.evolution"],
+      "api_records": ["CenterPathState", "AttitudeState"],
+      "test_ids": ["ELL3D11"]
+    },
+    {
+      "id": "SCCM-P5-INDEPENDENT-EVENT",
+      "review_item": "P5",
+      "title": "Independent-event SEP transfer validation",
+      "subject": "second-event prediction with the declared transferable calibration frozen and event-specific inputs prepared independently; 2012 May 17 is a stress test unless its magnetic-cloud background is represented",
+      "status": "specified-validation-protocol; evidence-not-yet-produced",
+      "review_sources": ["review-4:P5"],
+      "sections": ["13.6", "16", "17.2", "17.10"],
+      "config_keys": [],
+      "api_records": ["ImmutableInputAsset"],
+      "test_ids": ["EVT3D01"]
+    },
+    {
+      "id": "SCCM-P6-MHD-STRUCTURAL-BENCHMARK",
+      "review_item": "P6",
+      "title": "Matched external-MHD structural benchmark",
+      "subject": "same-event and same-front offline comparison of analytic and external thermodynamic-MHD background samples as structural model-form uncertainty, never tuning, observational truth, or runtime-provider coverage",
+      "status": "specified-offline-benchmark; evidence-not-yet-produced",
+      "review_sources": ["review-4:P6"],
+      "sections": ["13.1", "13.2", "14", "15.8", "16", "17.2", "17.11"],
+      "config_keys": ["background.authority"],
+      "api_records": ["ImportedMhdBackgroundManifest"],
+      "test_ids": ["XMD3D01"]
+    },
+    {
+      "id": "SCCM-P7-FLARE-ATTRIBUTION",
+      "review_item": "P7",
+      "title": "Optional flare-associated source attribution",
+      "subject": "future independently ledgered impulsive open-field source for attribution sensitivities, with explicit moving-front encounter semantics, ancestry and shock-work closure, isolated from shock-source calibration and excluded from the schema-5 shock-only baseline",
+      "status": "documented-optional-extension; not-implemented",
+      "review_sources": ["review-4:P7"],
+      "sections": ["10.7", "14", "15.8", "16", "17.2", "17.12"],
+      "config_keys": ["source.release_model"],
+      "api_records": ["ImpulsiveSourceProvider"],
+      "test_ids": ["SRC3D20"]
+    },
+    {
+      "id": "SCCM-P8-WIND-PLAUSIBILITY-ENVELOPE",
+      "review_item": "P8",
+      "title": "Continuous inner-wind plausibility envelope",
+      "subject": "retain schema-5 positivity, compatibility, mass-flux, and momentum-residual gates while defining a future versioned full-support speed/acceleration envelope with frame, topology, uncertainty, and data-use semantics",
+      "status": "current-gates-specified; continuous-envelope-not-implemented",
+      "review_sources": ["review-4:P8"],
+      "sections": ["5.5", "14", "15.8", "16", "17.2", "17.3", "17.12"],
+      "config_keys": ["solar_wind.maximum_normalized_momentum_residual", "solar_wind.maximum_absolute_momentum_residual_m_per_s2"],
+      "api_records": ["WindPlausibilityEnvelopeChannel", "WindPlausibilityEnvelopeGate", "WindPlausibilityEnvelopeAsset"],
+      "test_ids": ["WND3D21"]
+    }
+  ],
+  "review_findings": [
+    {
+      "id": "F1",
+      "label": "F1: one adiabatic index used for two physical roles",
+      "status": "resolved",
+      "requirement_ids": [],
+      "resolution": "Separate `gamma_w`, `gamma_ad`, and `gamma_c` govern the effective wind, rapid MHD response/shock EOS, and optional closed-plasma polytrope (Sections 2, 4, 5, and 9)."
+    },
+    {
+      "id": "F2",
+      "label": "F2: no authoritative closed-field upstream state",
+      "status": "resolved",
+      "requirement_ids": [],
+      "resolution": "A composition-aware gravity-plus-centrifugal hydrostatic provider owns every closed-field plasma query; separatrix quadrature is one-sided (Section 4)."
+    },
+    {
+      "id": "F3",
+      "label": "F3: zero-field HCS and unrealistic latitude structure",
+      "status": "resolved",
+      "requirement_ids": [],
+      "resolution": "A finite-shell, nonnegative-qualified SCS solution restores discrete polarity and supplies a one-sided HCS; a separately normalized plasma sheet is optional (Section 6)."
+    },
+    {
+      "id": "F4",
+      "label": "F4: nearly uniform polytropic wind",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-R2-WIND-BOUNDS"],
+      "resolution": "A target-speed polytrope remains a D7-qualified sensitivity branch. The recommended event branch combines versioned inner-density and outer-velocity/temperature products through one resolution-invariant mass-loading authority and reports compatibility, coverage, and momentum residuals (Sections 5, 13, and 17)."
+    },
+    {
+      "id": "F5",
+      "label": "F5: missing longitude-map Jacobian",
+      "status": "resolved",
+      "requirement_ids": [],
+      "resolution": "The outer map advances the forward/inverse Jacobian, preserves magnetic flux, and fails on characteristic folding (Section 6)."
+    },
+    {
+      "id": "F6",
+      "label": "F6: forced initial shock",
+      "status": "resolved",
+      "requirement_ids": [],
+      "resolution": "The candidate front may initialize entirely sub-fast; shock and source activation are local, delayed, and time-rooted (Sections 9 and 14)."
+    },
+    {
+      "id": "F7",
+      "label": "F7: under-specified front geometry",
+      "status": "resolved",
+      "requirement_ids": [],
+      "resolution": "Center translation and three semiaxes have independent histories; direction and tilt are explicit but fixed in schema 5, and apex state is derived (Section 8)."
+    },
+    {
+      "id": "S1--S7",
+      "label": "S1--S7: criticality, switch-on, PFSS truncation, scattering, source end, zero-source status, and rotation/provenance",
+      "status": "resolved",
+      "requirement_ids": [],
+      "resolution": "Bounded critical-Mach tables and near-parallel branches, qualified spectral filtering, broken-MFP/collision models, smooth latched termination, non-lossy root/line status, and explicit frame/rotation metadata are specified in Sections 2, 4, 6--11, and 13--17."
+    },
+    {
+      "id": "R1",
+      "label": "R1: a thin SCS shell may leave the latitude structure unchanged",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-R1-SCS-RADIALIZATION"],
+      "resolution": "Finite-shell attenuation is evaluated analytically and numerically; all-mode attenuation remains diagnostic, while production must pass the absolute outer zonal-power and longitude-averaged latitude-flatness gates. `R_scs=2.5 R_sun` has no automatic exemption (Sections 6, 14, and 17)."
+    },
+    {
+      "id": "R2",
+      "label": "R2: target-speed polytropes can produce unrealistic density or mass flux",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-R2-WIND-BOUNDS"],
+      "resolution": "`tube-from-target-speed` is a qualified sensitivity branch. The event branch combines an inner observed-density zone with an outer observed-velocity zone, derives velocity everywhere from one independently constrained mass-per-flux authority, and publishes overlap, momentum-residual, density, and mass-flux diagnostics (Sections 5, 13, 14, and 17)."
+    },
+    {
+      "id": "R3",
+      "label": "R3: no absolute open-flux calibration",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-R3-OPEN-FLUX"],
+      "resolution": "A same-rotation in-situ open-flux comparison, nested-sphere closure test, optional one-time magnetogram scaling from a construction-role asset, and a disjoint qualification-role D6 product are mandatory for event work. One observation or covariance partition cannot both determine the scale and qualify/weight its candidate (Sections 4, 13, 14, and 17)."
+    },
+    {
+      "id": "R4",
+      "label": "R4: the SCS HCS is not automatically a flux surface of the PFSS/SCS transition",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-R4-TRANSITION-TOPOLOGY"],
+      "resolution": "The transition distinguishes solenoidality from topology. Its signed-field vector potential and gauge are specified, and schema-5 production excludes a convergence-qualified transition-sheet band from source, transport, observers, and export; a constructed common flux surface remains a future capability (Sections 6, 11--14, and 17)."
+    },
+    {
+      "id": "R5",
+      "label": "R5: an arbitrary separatrix pressure jump violates a stationary tangential-interface interpretation",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-R5-SEPARATRIX-STRESS"],
+      "resolution": "The interface contract now distinguishes a diagnostic kinematic construction, a bounded event approximation, and a true stationary tangential-discontinuity state. All retain hard topology/kinematic gates; sharp interfaces gate the mass-flux jump and report the full vector MHD traction jump, whereas smooth transitions report a volume momentum residual. Pointwise values, quantiles, and maxima are retained, and a global mean can never establish balance (Sections 4, 14, and 17)."
+    },
+    {
+      "id": "R6",
+      "label": "R6: `p_w/p` is not the omitted wave-force error",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-R6-WAVE-FORCE"],
+      "resolution": "Wave/thermal and `delta B/B` ratios remain diagnostics, while the normative uncoupled-wind gate uses the wave-pressure-gradient acceleration relative to retained momentum terms and remains closure specific (Sections 7, 14, and 17)."
+    },
+    {
+      "id": "R7",
+      "label": "R7: one critical-Mach table miss can abort an otherwise diagnostic calculation",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-R7-CRITICAL-COVERAGE"],
+      "resolution": "EOS/convention mismatch remains fatal. Domain misses use an explicit policy: diagnostic inapplicability for a fast-only source, or preflight failure/budgeted source exclusion when criticality controls injection (Sections 9, 14, and 17)."
+    },
+    {
+      "id": "R8",
+      "label": "R8: two configuration sections own the same rotation rate",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-R8-ROTATION-AUTHORITY"],
+      "resolution": "`[solar_rotation]` is the sole physical authority; closed plasma, mapping, observers, and field-line export consume its resolved sidereal value read-only (Sections 2 and 14)."
+    },
+    {
+      "id": "R9",
+      "label": "R9: moving-source normalization does not say which population is represented",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-R9-RELEASE-SEMANTICS"],
+      "resolution": "`eta*g(p)` is explicitly the empirical **net first-passage flux through a finite physical upstream reference surface**, not gross shock emission or the total downstream DSA population. A front conormal-flux/no-through-flow boundary is a named sensitivity branch, while the former shock-adjacent absorbing construction is verification-only because its surviving population vanishes with placement distance (Sections 10, 14, and 17)."
+    },
+    {
+      "id": "R10",
+      "label": "R10: a monolithic specification risks cross-section drift",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-R10-DOC-AUTHORITY"],
+      "resolution": "The canonical document is generated deterministically from four nonoverlapping physics, configuration/validation, architecture/exchange, and testing/validation modules. Stable requirement records own the review-disposition, schema/API/test trace, and document links. R10 is satisfied only when the checked-in registry, generator, and generation test exist and pass; this prose alone cannot satisfy it (Sections 15--17)."
+    },
+    {
+      "id": "N1",
+      "label": "N1: an absorbing shock plus a placement layer sent to zero makes release mover- and resolution-dependent",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-R9-RELEASE-SEMANTICS", "SCCM-N1-SOURCE-BOUNDARY"],
+      "resolution": "Event production now uses a finite physical upstream net-first-passage reference surface whose distance is held fixed during placement/mesh convergence. Focused release uses sign-certified root partitioning and error-controlled positive-normal-flux quadrature whose numerical tolerances never redefine exact Z=0, explicit tangent-field handling, upstream-only placement, and typed no-escape versus unresolved-numerics states. DelayedFrontReturn is the sole post-reference front-return ledger, and NetFirstPassageRelease remains distinct from time-dependent SurvivingUpstreamInventory; Parker conormal/no-through-flow is sensitivity-only, and gross shock-adjacent emission is verification-only (Sections 10, 14, 15, and 17)."
+    },
+    {
+      "id": "N2",
+      "label": "N2: a speed-only empirical wind cannot determine low-coronal density or mass loading",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-R2-WIND-BOUNDS", "SCCM-N2-TWO-ZONE-WIND"],
+      "resolution": "The event branch now uses independently coordinated and supported observed inner-density, outer-velocity, and species-temperature channels in a checksummed manifest, exact certified quintic-Hermite C2 interpolation, and one independently supported eta_m; it includes composition/charge-state conversion, covariance-aware mismatch gates, distinct data-use roles, and physical-measure D7 coverage (Sections 5, 13, 14, 16, and 17)."
+    },
+    {
+      "id": "N3",
+      "label": "N3: independent open/closed closures cannot generally satisfy a universal stationary tangential-discontinuity gate",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-R5-SEPARATRIX-STRESS", "SCCM-N3-INTERFACE-BALANCE"],
+      "resolution": "The interface now has three typed open/closed policies and diagnostic/bounded generic open/open policies. Hard normal-field and interface-relative normal-flow gates apply to the open/closed tangential separatrix and are typed not applicable for generic open/open or plasma-sheet structure; sharp interfaces gate mass-flux jump and use the full vector MHD traction jump, while smooth open/closed, open/open, or plasma-sheet transitions use a volume momentum residual. Fitted normalizations are sensitivities, not equilibrium solvers (Sections 4, 6, 14, 16, and 17)."
+    },
+    {
+      "id": "N4",
+      "label": "N4: transition-clearance and absorbing-front losses had no acceptance caps",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-N4-CONSUMER-BUDGETS"],
+      "resolution": "Preregistered consumer budgets now cap otherwise-source-eligible area, counterfactual number/energy source rate, finite-footprint magnetic flux, represented runtime number loss, and lost birth-energy fraction with explicit denominators. Event-time energy/momentum impact remains an unbounded dimensional diagnostic. Zero caps are legal; point observers use typed valid/rejected states, and front-loss caps activate only for a removing boundary policy (Sections 6, 10, 14, 16, and 17)."
+    },
+    {
+      "id": "N5",
+      "label": "N5: open-flux scaling and source-surface radii were not jointly discriminated with shock-formation constraints",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-R3-OPEN-FLUX", "SCCM-N5-JOINT-CALIBRATION"],
+      "resolution": "Campaign C now evaluates the full preregistered magnetogram/scale/radius/wind/front candidate product against independent-qualification D6, coronal topology, D1, D2, and a density-conditioned event-specific type-II/EUV likelihood, never SEP output. Construction, qualification, and withheld roles remain separate; pre-inferred heights carry their density-model covariance. Radius changes rebuild both topology and field magnitude (Sections 9, 13, 14, and 17)."
+    },
+    {
+      "id": "N6",
+      "label": "N6: radial velocity can be misapplied to nonradial or field-aligned profile coordinates",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-N6-PROFILE-COORDINATES"],
+      "resolution": "Each checksummed profile channel independently declares velocity component/reference frame, a channel-local radial-projection guard, deterministic disjoint consumer selector, radius/arc-length abscissa, spatial frame/epoch/origin, support, line IDs, background fingerprint, provenance, role, and covariance. Radius support is split where r(s) is nonmonotone; D7 retains stable rejected tube/line IDs and reasons, and missing required consumer support is fatal for event-nominal use (Sections 5, 13--17)."
+    },
+    {
+      "id": "N7",
+      "label": "N7: the canonical specification was described as generated but had no generator or maintained modules",
+      "status": "resolved",
+      "requirement_ids": ["SCCM-R10-DOC-AUTHORITY", "SCCM-N7-GENERATED-SPEC"],
+      "resolution": "The shared model now has four nonoverlapping maintained modules, a structured requirement/review registry, a deterministic generator, and executable byte-identity and negative validation tests under the model-neutral `DOCSCCM01` gate (Sections 15--17)."
+    },
+    {
+      "id": "P1",
+      "label": "P1: the finite reference distance lacks an inference rule and delayed returns are removed",
+      "status": "documented",
+      "requirement_ids": ["SCCM-N1-SOURCE-BOUNDARY", "SCCM-P1-REFERENCE-SURFACE-DIAGNOSTIC"],
+      "resolution": "The fixed finite distance remains the schema-5 baseline and must be bound to its calibration, coefficient, mean-free-path, selected-mover, return-policy, frame, support, and exact calibration-horizon fingerprints. D10 gains the integrated release-depth Péclet diagnostic `integral(u_1n^in/kappa_nn,dd)` and finite-horizon no-front-return accounting; `P<1` means inside one constant-planar diffusion length and is not a return probability. A momentum-dependent fixed-Péclet surface is a nonseparable future source-family capability, and simple re-emission or redrawing from `g(p)` is rejected because physical renewal requires residence, downstream-transfer, pitch/momentum, and shock-work closure (Sections 10, 14--17)."
+    },
+    {
+      "id": "P2",
+      "label": "P2: shock-generated turbulence is absent from post-reference scattering",
+      "status": "documented",
+      "requirement_ids": ["SCCM-P2-SELF-GENERATED-WAVES"],
+      "resolution": "The omission is correct and is now explicit. Schema 5 retains prescribed/WKB turbulence or direct mean free paths and must not advertise a nonexistent `srcSEP` self-excited-wave solver. A versioned empirical foreshock scattering proxy is future sensitivity-only; a physical self-generated-wave branch instead requires a coupled spectral wave equation, growth/damping/cascade, wave-to-scattering closure, particle-wave conservation, and wind coupling whenever wave forces or heating cease to be negligible. Campaigns D/E own a separate complete, non-release streaming-limit evidence record; agreement cannot promote an ambient or empirical-proxy branch into a coupled-wave model (Sections 7, 10, 11, and 14--17)."
+    },
+    {
+      "id": "P3",
+      "label": "P3: gradient and curvature drift are absent from the three-dimensional movers",
+      "status": "documented",
+      "requirement_ids": ["SCCM-P3-GUIDING-CENTER-DRIFT"],
+      "resolution": "The omission is real, but a drift velocity and an extra `q E dot v_d` term cannot be appended independently to the present focused mover without risking double-counted energy evolution. Schema 5 keeps drift disabled. A future ordered operator must evolve position and energy coherently, demonstrate guiding-center validity, guard weak-field/separatrix regions, treat finite-thickness HCS drift separately, recover the no-drift result, and compare with full-orbit trajectories before drift-sensitive perpendicular-diffusion inference (Sections 11, 12, and 14--17)."
+    },
+    {
+      "id": "P4",
+      "label": "P4: the CME front cannot dynamically deflect or rotate",
+      "status": "documented",
+      "requirement_ids": ["SCCM-P4-DYNAMIC-CME-TRAJECTORY"],
+      "resolution": "Schema 5 retains a fixed propagation direction and attitude, while the sensitivity campaign uses event-reconstruction covariance rather than a universal angle scan. A future capability must represent nonradial center translation and smooth SO(3) attitude as independent histories, derive center velocity and angular velocity analytically, and include both terms in front normal speed; componentwise quaternion interpolation is forbidden (Sections 8 and 14--17)."
+    },
+    {
+      "id": "P5",
+      "label": "P5: SEP transport validation relies on one event",
+      "status": "documented",
+      "requirement_ids": ["SCCM-P5-INDEPENDENT-EVENT"],
+      "resolution": "The validation plan now requires an out-of-sample event with the equations, inference procedure, and parameters claimed transferable frozen while event-specific magnetic, wind, front, and observer inputs are prepared independently. The 2012 May 17 GLE is classified as a difficult stress test unless its pre-existing magnetic-cloud connectivity is represented; failure is reported as a model-form or transferability finding rather than tuned away (Sections 13, 16, and 17)."
+    },
+    {
+      "id": "P6",
+      "label": "P6: the analytic background has no matched MHD structural comparison",
+      "status": "documented",
+      "requirement_ids": ["SCCM-P6-MHD-STRUCTURAL-BENCHMARK"],
+      "resolution": "A matched offline benchmark now evaluates identical event support and the identical prescribed front on analytic and external thermodynamic-MHD samples, comparing density, temperature, pressure, vector magnetic field and velocity, characteristic speeds, topology/connectivity, fast-Mach number, obliquity, and activation products. It is explicitly an inter-model structural-uncertainty comparison, never observational truth, a tuning asset, or evidence that a runtime imported-MHD provider exists; that provider/bundle integration remains future work (Sections 13--17)."
+    },
+    {
+      "id": "P7",
+      "label": "P7: a shock-only baseline cannot test flare-associated onset attribution",
+      "status": "documented",
+      "requirement_ids": ["SCCM-P7-FLARE-ATTRIBUTION"],
+      "resolution": "This is a valid limitation, not a defect in the declared shock-only baseline. A future optional impulsive open-field source must have observation-owned location/time support, its own spectrum and provenance, completely separate number/energy ledgers, and no contribution to shock-source efficiency calibration. It must also classify births relative to the moving front and define terminal encounter versus validated transfer/reacceleration while preserving impulsive ancestry and shock-work ledgers without creating a second shock first-passage birth. Mixed-source runs remain attribution sensitivities until independently validated (Sections 10 and 14--17)."
+    },
+    {
+      "id": "P8",
+      "label": "P8: the derived inner wind lacks a continuous full-support plausibility envelope",
+      "status": "documented",
+      "requirement_ids": ["SCCM-R2-WIND-BOUNDS", "SCCM-N2-TWO-ZONE-WIND", "SCCM-P8-WIND-PLAUSIBILITY-ENVELOPE"],
+      "resolution": "The review is partly stale: schema 5 already enforces positivity, observed-zone compatibility, one mass-per-flux authority, and pointwise momentum-residual gates. The genuine remaining gap is a continuous event-specific envelope that can detect an interior speed spike or excessive acceleration/deceleration between comparison radii. One future versioned asset contains distinct single-quantity velocity and acceleration channels plus explicit gate pairings; every channel declares its component/frame, topology/selector, full support, units, interpolant, extrema certificate/tolerance, and uncertainty, while the asset binds covariance, provenance, and construction/qualification role. No speed envelope is reused for acceleration, and no universal monotonic-wind rule or undocumented speed cap is introduced (Sections 5 and 14--17)."
+    }
+  ]
+}
