@@ -1,0 +1,6 @@
+{
+  "id": "SHK3D05",
+  "first_stage": 7,
+  "expected": "pass",
+  "tolerance_authority": "model/testing_validation.md"
+}

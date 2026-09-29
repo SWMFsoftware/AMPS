@@ -125,13 +125,13 @@ shared physics layer.
 ## Implemented staged build
 
 The implementation follows the roadmap as cumulative hard gates. Run
-`make test-stage0` through `make test-stage6`; a later gate
+`make test-stage0` through `make test-stage10`; a later gate
 always includes every earlier test. Individual canonical launchers live under
 `test/individual/ID/`, and JSON/JUnit evidence is written under `build/` so it
 cannot leak into a source archive.
 
 `make test` (or `python3 test/run_tests.py --all`) is the single aggregate
-Stage 0--6 gate.
+Stage 0--10 gate (196 canonical tests).
 
 Detailed implementation notes live in `docs/`. They explain the physics-to-
 code mapping while leaving `model.md` as the normative equation and acceptance
@@ -148,3 +148,18 @@ Stage 5 is described in
 [`docs/STAGE5_ELLIPSOID_AND_PISTON.md`](docs/STAGE5_ELLIPSOID_AND_PISTON.md).
 Stage 6 is described in
 [`docs/STAGE6_OBLIQUE_MHD_JUMP.md`](docs/STAGE6_OBLIQUE_MHD_JUMP.md).
+
+Stage 7 adds the immutable transactional shock provider described in
+[`docs/STAGE7_TRANSACTIONAL_SHOCK_PROVIDER.md`](docs/STAGE7_TRANSACTIONAL_SHOCK_PROVIDER.md).
+
+Stage 8 defines the AMPS-facing runtime, mesh, population, initialization, and
+observer contracts in
+[`docs/STAGE8_RUNTIME_MESH_AND_OBSERVERS.md`](docs/STAGE8_RUNTIME_MESH_AND_OBSERVERS.md).
+
+Stage 9 implements normalized moving-shock release, allocation, and immutable
+cohort accounting as documented in
+[`docs/STAGE9_MOVING_SHOCK_SOURCE.md`](docs/STAGE9_MOVING_SHOCK_SOURCE.md).
+
+Stage 10 provides the neutral 3-D-to-1-D field-line exchange, transactional
+bundle, reduction kernels, and thin application adapters described in
+[`docs/STAGE10_FIELD_LINE_EXCHANGE.md`](docs/STAGE10_FIELD_LINE_EXCHANGE.md).

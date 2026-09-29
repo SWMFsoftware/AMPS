@@ -1,0 +1,6 @@
+{
+  "id": "POP3D02",
+  "first_stage": 8,
+  "expected": "pass",
+  "tolerance_authority": "model/testing_validation.md"
+}

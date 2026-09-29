@@ -90,11 +90,11 @@ class DocumentationGenerationTests(unittest.TestCase):
             self.assertEqual(generated.returncode, 0, generated.stdout)
             self.assertEqual(output.read_bytes(), (MODEL_ROOT / "model.md").read_bytes())
 
-    def test_stage6_runner_registry_is_complete(self) -> None:
-        """The aggregate release gate must expose all 117 Stage 0--6 tests.
+    def test_stage10_runner_registry_is_complete(self) -> None:
+        """The aggregate release gate must expose all 196 Stage 0--10 tests.
 
         This specifically prevents a partially updated package from accepting
-        the historical 53-test Stage 0--2 registry as a successful Stage 6
+        a historical partial registry as a successful aggregate
         validation.  The Makefile count is checked independently so replacing
         only one of the two files also produces an immediate hard failure.
         """
@@ -110,15 +110,15 @@ class DocumentationGenerationTests(unittest.TestCase):
         )
         self.assertEqual(listed.returncode, 0, listed.stdout)
         entries = [line for line in listed.stdout.splitlines() if line.strip()]
-        self.assertEqual(len(entries), 117, listed.stdout)
-        self.assertTrue(entries[-1].startswith("RH3D11\tstage=6\t"),
+        self.assertEqual(len(entries), 196, listed.stdout)
+        self.assertTrue(entries[-1].startswith("XM3D02\tstage=10\t"),
                         entries[-1])
 
         makefile = (MODEL_ROOT / "makefile").read_text(encoding="utf-8")
         self.assertIn(
-            "test/run_tests.py --stage 6 --expect-count 117", makefile)
+            "test/run_tests.py --stage 10 --expect-count 196", makefile)
         self.assertIn(
-            "test/run_tests.py --all --expect-count 117", makefile)
+            "test/run_tests.py --all --expect-count 196", makefile)
 
     def test_dirty_canonical_document_is_rejected(self) -> None:
         """Direct edits to generated ``model.md`` must never become authority."""

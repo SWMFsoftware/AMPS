@@ -44,6 +44,27 @@ TESTS = [
     *[Test(f"MFP3D{number:02d}", 4) for number in range(1, 8)],
     *[Test(f"ELL3D{number:02d}", 5) for number in range(1, 11)],
     *[Test(f"RH3D{number:02d}", 6) for number in range(1, 12)],
+    *[Test(f"SHK3D{number:02d}", 7) for number in range(5, 15)],
+    Test("SNAP3D09", 7),
+    *[Test(f"BND3D{number:02d}", 8) for number in range(1, 3)],
+    Test("MESH3D01", 8),
+    *[Test(f"COR3D{number:02d}", 8) for number in range(1, 4)],
+    *[Test(f"TIM3D{number:02d}", 8) for number in range(1, 3)],
+    *[Test(f"POP3D{number:02d}", 8) for number in range(1, 4)],
+    Test("MPI3D01", 8),
+    *[Test(f"INIT3D{number:02d}", 8) for number in range(1, 5)],
+    Test("NAT3D13", 8), Test("RUN3D02", 8),
+    *[Test(f"OBS3D{number:02d}", 8) for number in range(1, 8)],
+    *[Test(f"SRC3D{number:02d}", 9) for number in range(1, 20)],
+    Test("LOS3D02", 9),
+    Test("HCS3D07", 10),
+    *[Test(f"FLX3D{number:02d}", 10) for number in range(1, 10)],
+    *[Test(f"FLX1D{number:02d}", 10) for number in range(1, 4)],
+    *[Test(f"OBS1D{number:02d}", 10) for number in range(1, 3)],
+    Test("NAT1D01", 10), Test("TIM1D01", 10),
+    *[Test(f"POP1D{number:02d}", 10) for number in range(1, 3)],
+    Test("RUN1D01", 10), Test("RST1D01", 10),
+    *[Test(f"XM3D{number:02d}", 10) for number in range(1, 3)],
 ]
 
 # These are release-contract values, not counts inferred from TESTS.  Keeping
@@ -59,6 +80,10 @@ EXPECTED_CUMULATIVE_COUNTS = {
     4: 96,
     5: 106,
     6: 117,
+    7: 128,
+    8: 153,
+    9: 173,
+    10: 196,
 }
 
 # A terminal test ID makes the diagnostic more useful than a count alone.  It
@@ -71,6 +96,10 @@ EXPECTED_STAGE_TERMINALS = {
     4: "MFP3D07",
     5: "ELL3D10",
     6: "RH3D11",
+    7: "SNAP3D09",
+    8: "OBS3D07",
+    9: "LOS3D02",
+    10: "XM3D02",
 }
 
 
@@ -158,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     select = parser.add_mutually_exclusive_group(required=True)
     select.add_argument("--all", action="store_true")
-    select.add_argument("--stage", type=int, choices=tuple(range(0, 7)))
+    select.add_argument("--stage", type=int, choices=tuple(range(0, 11)))
     select.add_argument("--test")
     select.add_argument("--list", action="store_true")
     parser.add_argument("--output-dir", default="build/test-results")

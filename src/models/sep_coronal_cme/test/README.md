@@ -2,7 +2,7 @@
 
 The test system mirrors the staged release gates in
 `model/testing_validation.md`. Every canonical identifier can run alone, while
-a stage gate is cumulative: Stage 6 always re-runs Stages 0 through 5.
+a stage gate is cumulative: Stage 10 always re-runs Stages 0 through 9.
 
 ```sh
 make test
@@ -13,24 +13,29 @@ make test-stage3
 make test-stage4
 make test-stage5
 make test-stage6
+make test-stage7
+make test-stage8
+make test-stage9
+make test-stage10
 python3 test/run_tests.py --test PFSS3D01
 python3 test/run_tests.py --all
 python3 test/run_tests.py --list
 ```
 
-The cumulative release-gate sizes are fixed by contract: Stages 0 through 6
-select 13, 22, 53, 82, 96, 106, and 117 tests, respectively.  Every Make
+The cumulative release-gate sizes are fixed by contract: Stages 0 through 10
+select 13, 22, 53, 82, 96, 106, 117, 128, 153, 173, and 196 tests,
+respectively. Every Make
 target passes the corresponding value through `--expect-count`, while the
 runner independently validates its registry before executing anything.  Thus
 a partial update cannot misreport the old 53-test Stage 0--2 registry as a
-successful Stage 6 run.  A correct Stage 6 log starts with:
+successful later-stage run. A correct Stage 10 log starts with:
 
 ```text
-SELECTION: stage=6; tests=117; registry-total=117
+SELECTION: stage=10; tests=196; registry-total=196
 ```
 
 To diagnose a copied source tree, `python3 test/run_tests.py --list | wc -l`
-must print `117`, and the last listed identifier must be `RH3D11`.  If it does
+must print `196`, and the last listed identifier must be `XM3D02`. If it does
 not, replace the complete model package (at minimum both `makefile` and
 `test/run_tests.py`) instead of mixing files from different release stages.
 

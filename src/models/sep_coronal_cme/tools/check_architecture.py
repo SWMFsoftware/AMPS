@@ -24,7 +24,7 @@ def main() -> int:
                 if line.lstrip().startswith("#include") and FORBIDDEN.search(line):
                     return fail(f"forbidden include {path.relative_to(ROOT)}:{number}: {line}")
     common = ROOT.parent / "sep_common"
-    for path in sorted(common.glob("sep_status*")):
+    for path in sorted(common.glob("sep_*")):
         if "sep_coronal_cme" in path.read_text(encoding="utf-8"):
             return fail(f"neutral dependency points upward: {path.name}")
     archive = ROOT / "build" / "libsep_coronal_cme.a"
@@ -40,18 +40,26 @@ def main() -> int:
     consumer = '''#include "sep_coronal_cme/configuration_parser.h"
 #include "sep_coronal_cme/constants.h"
 #include "sep_coronal_cme/ellipsoid_geometry.h"
+#include "sep_coronal_cme/field_line_reduction.h"
 #include "sep_coronal_cme/mhd_jump_solver.h"
 #include "sep_coronal_cme/model_configuration.h"
+#include "sep_coronal_cme/particle_source.h"
+#include "sep_coronal_cme/runtime_integration.h"
+#include "sep_coronal_cme/shock_provider.h"
 #include "sep_coronal_cme/source_surface_coupling.h"
 #include "sep_coronal_cme/turbulence_transport.h"
+#include "sep_field_line_bundle_io.h"
+#include "sep_field_line_exchange.h"
 int main() {
   SEP::CoronalCME::ModelConfiguration c;
   SEP::CoronalCME::MhdPrimitiveState plasma;
   SEP::CoronalCME::DirectionalWaveState wave;
   SEP::CoronalCME::SurfacePatch patch;
   SEP::CoronalCME::LongitudeMap map;
+  SEP::FieldLine::FieldLineSet lines;
   return c.schemaVersion + static_cast<int>(plasma.massDensityKgM3 +
-      wave.totalJPerM3 + patch.areaM2 + map.forwardJacobian) - 1;
+      wave.totalJPerM3 + patch.areaM2 + map.forwardJacobian +
+      lines.lines.size()) - 1;
 }
 '''
     with tempfile.TemporaryDirectory(prefix="sccm-architecture-") as directory:

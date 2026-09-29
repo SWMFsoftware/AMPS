@@ -9,11 +9,19 @@ CPPFLAGS := -Iinclude -I../sep_common -Isrc
 BUILD := build
 LIB_SOURCES := $(wildcard src/*.cpp)
 LIB_OBJECTS := $(patsubst src/%.cpp,$(BUILD)/%.o,$(LIB_SOURCES))
+COMMON_SOURCES := ../sep_common/sep_field_line_exchange.cpp \
+	../sep_common/sep_field_line_bundle_io.cpp
+COMMON_OBJECTS := $(BUILD)/common_sep_field_line_exchange.o \
+	$(BUILD)/common_sep_field_line_bundle_io.o
 TEST_SOURCES := $(wildcard test/*.cpp)
 TEST_OBJECTS := $(patsubst test/%.cpp,$(BUILD)/test_%.o,$(TEST_SOURCES))
+ADAPTER_OBJECTS := $(BUILD)/adapter_field_line_export.o \
+	$(BUILD)/adapter_field_line_bundle.o
 
 .PHONY: all lib test test-stage0 test-stage1 test-stage2 test-stage3 \
-	test-stage4 test-stage5 test-stage6 check-architecture clean
+	test-stage4 test-stage5 test-stage6 test-stage7 test-stage8 test-stage9 \
+	test-stage10 \
+	check-architecture check-adapters clean
 
 all: lib
 
@@ -25,17 +33,35 @@ $(BUILD):
 $(BUILD)/%.o: src/%.cpp | $(BUILD)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
+$(BUILD)/common_%.o: ../sep_common/%.cpp | $(BUILD)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
 $(BUILD)/test_%.o: test/%.cpp | $(BUILD)
 	$(CXX) $(CPPFLAGS) -Itest $(CXXFLAGS) -c $< -o $@
 
-$(BUILD)/libsep_coronal_cme.a: $(LIB_OBJECTS)
+# Compile the two application boundaries without linking them into the shared
+# archive.  This proves that the adapters consume only the installed public
+# APIs while preserving the architecture rule that srcSEP never links SCCM.
+$(BUILD)/adapter_field_line_export.o: \
+		../../../srcSEP3D/adapters/field_line_export_adapter.cpp | $(BUILD)
+	$(CXX) $(CPPFLAGS) -I../../../srcSEP3D/adapters $(CXXFLAGS) -c $< -o $@
+
+$(BUILD)/adapter_field_line_bundle.o: \
+		../../../srcSEP/adapters/field_line_bundle_adapter.cpp | $(BUILD)
+	$(CXX) $(CPPFLAGS) -I../../../srcSEP/adapters $(CXXFLAGS) -c $< -o $@
+
+$(BUILD)/libsep_coronal_cme.a: $(LIB_OBJECTS) $(COMMON_OBJECTS)
 	$(AR) rcs $@ $^
 
-$(BUILD)/sep_coronal_cme_tests: $(TEST_OBJECTS) $(BUILD)/libsep_coronal_cme.a
-	$(CXX) $(CXXFLAGS) $(TEST_OBJECTS) $(BUILD)/libsep_coronal_cme.a -o $@
+$(BUILD)/sep_coronal_cme_tests: $(TEST_OBJECTS) $(BUILD)/libsep_coronal_cme.a \
+		$(BUILD)/adapter_field_line_bundle.o
+	$(CXX) $(CXXFLAGS) $(TEST_OBJECTS) $(BUILD)/adapter_field_line_bundle.o \
+		$(BUILD)/libsep_coronal_cme.a -o $@
 
 check-architecture: $(BUILD)/libsep_coronal_cme.a
 	$(PYTHON) tools/check_architecture.py
+
+check-adapters: $(ADAPTER_OBJECTS)
 
 test-stage0: $(BUILD)/sep_coronal_cme_tests
 	$(PYTHON) test/run_tests.py --stage 0 --expect-count 13
@@ -58,8 +84,20 @@ test-stage5: $(BUILD)/sep_coronal_cme_tests
 test-stage6: $(BUILD)/sep_coronal_cme_tests
 	$(PYTHON) test/run_tests.py --stage 6 --expect-count 117
 
-test: $(BUILD)/sep_coronal_cme_tests
-	$(PYTHON) test/run_tests.py --all --expect-count 117
+test-stage7: $(BUILD)/sep_coronal_cme_tests
+	$(PYTHON) test/run_tests.py --stage 7 --expect-count 128
+
+test-stage8: $(BUILD)/sep_coronal_cme_tests
+	$(PYTHON) test/run_tests.py --stage 8 --expect-count 153
+
+test-stage9: $(BUILD)/sep_coronal_cme_tests
+	$(PYTHON) test/run_tests.py --stage 9 --expect-count 173
+
+test-stage10: $(BUILD)/sep_coronal_cme_tests
+	$(PYTHON) test/run_tests.py --stage 10 --expect-count 196
+
+test: $(BUILD)/sep_coronal_cme_tests check-adapters
+	$(PYTHON) test/run_tests.py --all --expect-count 196
 
 clean:
 	rm -rf $(BUILD)

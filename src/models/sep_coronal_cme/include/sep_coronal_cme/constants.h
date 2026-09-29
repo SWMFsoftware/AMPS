@@ -17,6 +17,7 @@ constexpr double kProtonMassKg = 1.67262192369e-27;
 constexpr double kElectronMassKg = 9.1093837015e-31;
 constexpr double kAlphaMassKg = 6.6446573357e-27;
 constexpr double kElementaryChargeC = 1.602176634e-19;
+constexpr double kSpeedOfLightMPerS = 299792458.0;
 
 }  // namespace Constants
 }  // namespace CoronalCME

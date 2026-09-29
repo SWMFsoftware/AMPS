@@ -38,6 +38,10 @@ void RegisterStage3(Registry* tests);
 void RegisterStage4(Registry* tests);
 void RegisterStage5(Registry* tests);
 void RegisterStage6(Registry* tests);
+void RegisterStage7(Registry* tests);
+void RegisterStage8(Registry* tests);
+void RegisterStage9(Registry* tests);
+void RegisterStage10(Registry* tests);
 
 }  // namespace SCCMTest
 
