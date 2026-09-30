@@ -21,10 +21,60 @@ resolves one of the named values before fingerprinting, while
 Observer, shock, and reference locations are checked against those resolved
 bounds before AMPS initialization.
 
-The inner sphere is a physical boundary, not a reason to change the Cartesian
-allocation. Production background filling excludes cell centers inside the
-inner radius; their allocated storage remains zero-initialized until a later
-boundary phase defines its behavior.
+Two radii have intentionally different responsibilities:
+
+- `Core::Const::R_sun = 6.957e8 m` is the physical photosphere. srcSEP3D
+  registers it as a solid AMPS internal sphere and never reads its radius from
+  the input deck.
+- `domain.inner_radius_m` is the Parker-background source surface, canonical
+  SWCME/CME launch radius, injection surface, and custom-transport cutoff. It
+  must be at or above the photosphere and is 20 solar radii in the supplied
+  examples.
+
+Production background filling excludes cell centers below the configurable
+source shell. Consequently cells in the annulus between the photosphere and a
+larger source shell have valid geometric volume but deliberately carry
+`background_valid=0`; particles cannot enter that annulus because the
+transport shell absorbs them first.
+
+## AMPS solar internal boundary
+
+`RegisterSolarSurfaceBoundary()` mirrors the mature Venus application:
+
+1. call `PIC::Init_BeforeParser()` so AMPS owns initialized registries;
+2. call `PIC::BC::InternalBoundary::Sphere::Init()`;
+3. call `RegisterInternalSphere()` exactly once on every MPI rank (the AMPS
+   helper itself inserts the descriptor into the mesh);
+4. set center `(0,0,0)` through the validated coordinate origin and radius
+   `Core::Const::R_sun`;
+5. attach `localResolution`, null injection hooks, and the absorbing particle
+   callback; and
+6. only then freeze center-node storage and construct the root tree.
+
+The callback returns `_PARTICLE_DELETED_ON_THE_FACE_` and does not call
+`PIC::ParticleBuffer::DeleteParticle`: AMPS performs that deletion after
+interpreting the return value. Rank min/max reductions verify identical sphere
+geometry before registration. The current runtime validation requires the
+origin to be exactly heliocentric zero; this also avoids a known limitation in
+the AMPS analytic sphere-volume implementation, whose cut-volume algebra does
+not translate coordinates before its octant reduction.
+
+AMPS' `BlockIntersection` correctly tags sphere-intersecting leaves, but the
+configured KEEP policy retains leaves completely inside an internal body.
+srcSEP3D unions those fully solid leaves with its optional Parker-corridor
+inactive set before load distribution, so they receive no block allocation.
+For active blocks that intersect the photosphere, AMPS computes fractional
+cut-cell volumes. Its legacy fast path returns a full cell volume for the
+`_AMR_BLOCK_OUTSIDE_DOMAIN_` case; after `InitCellMeasure()` the application
+therefore uses the same AMPS-independent farthest-corner predicate to zero
+only cells proven wholly inside the sphere. Ghost center nodes are corrected
+with physical nodes, while fractional cut-cell measures are never overwritten.
+
+The physical sphere is not forcibly activated in `parker-tube` mode. With the
+standard line beginning at 20 solar radii, doing so would create an isolated
+allocated island unrelated to SEP transport. The sphere remains registered in
+the replicated AMPS tree, and full-domain configurations retain its active cut
+cells normally.
 
 ## Resolution law
 
@@ -74,7 +124,8 @@ left-domain path. There is no public per-finite-volume-cell allocation switch;
 therefore `[mesh.active_region]` intentionally describes a block mask even
 though every cell in the block is disabled together.
 
-`mode = full-domain` preserves historical behavior. For
+`mode = full-domain` retains every AMR leaf outside the solid photosphere; the
+only deactivated leaves are boxes proven wholly inside the registered Sun. For
 `mode = parker-tube`, the physical active radius is
 
 \[
@@ -194,17 +245,21 @@ duplicates/switches sampling buffers according to its sampling configuration.
 2. validate the Phase-M resolution configuration;
 3. initialize AMPS allocation registries;
 4. register srcSEP3D static/sampling byte callbacks;
-5. let AMPS freeze its complete center-node layout;
-6. build the tree with the tested `localResolution()` function;
-7. apply the active-use mask through AMPS' public node-ID synchronization API;
-8. install an active-only load measure, partition the retained tree, and
+5. register the fixed `R_sun` AMPS internal sphere on every rank;
+6. let AMPS freeze its complete center-node layout;
+7. build the tree with the tested `localResolution()` function;
+8. apply the union of the optional Parker mask and fully solid solar leaves
+   through AMPS' public node-ID synchronization API;
+9. install an active-only load measure, partition the retained tree, and
    create owner lists;
-9. for schema 3 or 4, write the final distributed tree with AMPS'
+10. for schema 3 or 4, write the final distributed tree with AMPS'
    `outputMeshTECPLOT` and write the finite Parker centreline once on rank zero;
-10. allocate active blocks and initialize cell measures;
-11. bind the exact frozen `StorageLayout` to `Runtime`.
+11. allocate active blocks, initialize AMPS cut-cell measures, and set measures
+    of geometrically proven fully photospheric cells (including ghosts) to
+    zero while preserving fractional surface cells; and
+12. bind the exact frozen `StorageLayout` to `Runtime`.
 
-Changing or appending fields after step 5 is a layout error. Background filling
+Changing or appending fields after step 6 is a layout error. Background filling
 iterates `DomainBlockDecomposition::BlockTable`, so each rank writes only cells
 in blocks assigned to that rank.
 
@@ -232,7 +287,7 @@ best-effort diagnostics.
    `outputMeshDataTECPLOT` for `sep3d-initialization-data.dat` as the final
    operation of `amps_init()`.
 
-The separation between steps 9–10 of `amps_init_mesh()` and this sequence is
+The separation between steps 10–11 of `amps_init_mesh()` and this sequence is
 intentional: `outputMeshTECPLOT` needs only the finalized octree, whereas
 `outputMeshDataTECPLOT` must not observe the native buffer before Parker/SWCME
 and turbulence installation have completed on every rank.
@@ -271,6 +326,8 @@ zero gradient.
 | `MSH3D12` | conservative finite capsule/box intersection and full-domain identity |
 | `MSH3D13` | analytic curve derivative agrees with the Parker tangent and arc-length inversion round-trips |
 | `MSH3D14` | whole-octree core coverage, exact topological halo depth, pruning, cavity elimination, and connectivity |
-| `CFG3D03–05` | normalized domains, shared Parker geometry, composite preflight and whole-run memory |
+| `MSH3D15` | fixed `R_sun` photosphere, source-shell separation, conservative solid-box classification, and surface-resolution clamp |
+| `CFG3D03–05` | normalized domains, photosphere/source-shell ordering, shared Parker geometry, composite preflight and whole-run memory |
+| `BLDL3D10` | one all-rank AMPS sphere registration, lifecycle ordering, safe absorption callback, composed leaf mask, and post-cut-cell correction |
 
 Run `test/run_tests.py --suite phase-m --rebuild`.

@@ -24,10 +24,10 @@
 namespace SEP3D {
 namespace Mesh {
 
-// The AMPS mesh is Cartesian, while the physical domain is a heliocentric
-// shell.  The cube below exactly encloses the requested outer sphere; the
-// inner sphere is retained as physical boundary metadata and is not silently
-// removed from the Cartesian allocation.
+// The AMPS mesh is Cartesian, while the initialized heliospheric background
+// is a shell.  The cube below exactly encloses the requested outer sphere;
+// innerRadiusM records the Parker/CME source and custom-transport cutoff.  The
+// separate SolarBoundaryGeometry below owns the solid AMPS photosphere.
 struct DomainBounds {
   Core::Vec3 minimumM;
   Core::Vec3 maximumM;
@@ -38,6 +38,16 @@ struct DomainBounds {
       RuntimeModel::InnerBoundaryMode::Absorb;
   RuntimeModel::OuterBoundaryMode outerBoundary =
       RuntimeModel::OuterBoundaryMode::Escape;
+};
+
+// Geometry of the physical solar photosphere registered with AMPS as an
+// internal spherical boundary.  This is deliberately distinct from
+// DomainBounds::innerRadiusM: the latter is the configurable Parker/CME source
+// and transport cutoff (20 R_sun in the supplied cases), whereas the solid
+// Sun always has the reviewed physical radius Core::Const::R_sun.
+struct SolarBoundaryGeometry {
+  Core::Vec3 centerM;
+  double radiusM = Core::Const::R_sun;
 };
 
 struct ResolutionConfiguration {
@@ -103,6 +113,21 @@ struct ResolutionConfiguration {
 Core::Status Validate(const ResolutionConfiguration& configuration);
 DomainBounds MakeDomain(
     const RuntimeModel::RunConfiguration3DOptions& configuration);
+
+// Build the one authoritative photospheric geometry used by AMPS boundary
+// registration, block deactivation, cell-volume correction, and portable
+// tests.  No input field duplicates the solar radius.
+SolarBoundaryGeometry MakeSolarBoundary(
+    const RuntimeModel::RunConfiguration3DOptions& configuration);
+
+// Return true only when every point of an axis-aligned box lies on or inside
+// the solar sphere.  For a convex box/sphere pair it is sufficient to test the
+// farthest box corner, selected independently on each axis.  Malformed or
+// non-finite boxes fail closed (false), so they remain available to AMPS'
+// structural diagnostics instead of being accidentally pruned.
+bool AxisAlignedBoxEntirelyInsideSolarBoundary(
+    const Core::Vec3& minimumM, const Core::Vec3& maximumM,
+    const SolarBoundaryGeometry& boundary);
 
 // Return the physical radius of the refined tube at a given heliocentric
 // radius.  ConstantAngularWidth scales linearly with radius; PhysicalConstant

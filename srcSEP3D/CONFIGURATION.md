@@ -74,6 +74,15 @@ Every dimensional file key includes its SI unit, for example
 `minimum_energy_j`. A key without the declared suffix is unknown. The parser
 does not guess whether a number is AU, solar radii, km/s, nT, or MeV.
 
+`domain.inner_radius_m` does **not** set the radius of the Sun. It controls the
+Parker/CME source surface, injection/transport cutoff, and beginning of the
+configured finite field line. srcSEP3D separately registers the physical
+photosphere in AMPS at the fixed reviewed constant
+`Core::Const::R_sun = 6.957e8 m`, centered on the validated domain origin.
+There is deliberately no duplicate photospheric-radius input key. The source
+shell may equal `R_sun` but may not lie below it; the shipped standalone
+examples retain their physically separate 20-solar-radius source shell.
+
 The required schema-4 groups are `run`, `domain`, `mesh`, `mesh.solar`,
 `mesh.tube`, `mesh.active_region`, `memory`, `background`,
 `background.parker`, `turbulence`, `transport`, `population_control`, `shock`,
@@ -339,6 +348,14 @@ resume the same physics, while a species weight, observer, mesh, shock, or
 transport change cannot masquerade as the same run. Restart loading compares
 the frozen physics/layout identities transactionally.
 
+The photospheric radius is not an input option, but the resolved manifest and
+physics fingerprint explicitly record
+`solar_boundary=amps-absorbing-sphere-v1` and the fixed SI
+`solar_radius_m`. Introducing the AMPS cut-cell boundary changes mesh/transport
+semantics, so the fingerprint domain is `sep3d-physics-v8`; checkpoints
+produced before this boundary contract cannot be resumed as though their
+geometry were identical.
+
 ### Complete compiled AMPS binding
 
 Immediately after `PIC::Init_BeforeParser()`, production enumerates
@@ -382,11 +399,13 @@ SWMF frame. Observers, shock initial radius, shock maximum radius, Parker
 reference radius, and tube reference radius are validated against the
 normalized domain before mesh initialization.
 
-The inner sphere is absorbing. An outward segment that crosses the outer
-sphere returns `DomainExit`; the message distinguishes ordinary escape from
-leaving imported SWMF coverage. Direction matters: a segment entering the
-outer sphere is not an escape, and a segment moving outward across the inner
-sphere is not solar absorption.
+The configured Parker/CME transport source shell is absorbing. An outward
+segment that crosses the outer sphere returns `DomainExit`; the message
+distinguishes ordinary escape from leaving imported SWMF coverage. Direction
+matters: a segment entering the outer sphere is not an escape, and a segment
+moving outward across the source shell is not inward absorption. This
+transport classifier is separate from the fixed AMPS photosphere described
+above.
 
 ## C04: one Parker geometry
 
@@ -498,7 +517,7 @@ identity/conservation, and resolved observer geometry plus commit-only reset.
 |---|---|
 | `CFG3D01` | schema, CLI, early errors, typed/file fingerprint parity, and dry-run |
 | `CFG3D02` | typed groups, field classification, compatibility, and SWMF/analytic factory parity |
-| `CFG3D03` | presets, explicit override, containment, and directional boundary status |
+| `CFG3D03` | presets, explicit override, photosphere/source-shell ordering, containment, and directional transport-boundary status |
 | `CFG3D04` | shared tangent and polarity-independent tube geometry |
 | `CFG3D05` | monotone composite profiles, tube scaling, AMR levels, memory categories, and level rejection |
 | `CFG3D06` | complete finite Parker-line input and fail-closed source consistency |
@@ -508,7 +527,9 @@ identity/conservation, and resolved observer geometry plus commit-only reset.
 | `MSH3D12` | conservative finite Parker-capsule/block intersection |
 | `MSH3D13` | exact Parker curve/tangent and arc-length agreement |
 | `MSH3D14` | hole-free whole-octree mask and exact AMR-neighbour halo layers |
+| `MSH3D15` | fixed photospheric geometry, source-shell separation, and conservative solid-cell classification |
 | `MSH3D11` | deterministic unit-labeled initialization Parker Tecplot output |
+| `BLDL3D10` | AMPS sphere registration, absorption callback, active-mask composition, and cell-measure ordering |
 | `R3D08` | canonical source-surface preflight and exact per-species, per-step particle allocation |
 
 ## Version 2 finite Parker-line section

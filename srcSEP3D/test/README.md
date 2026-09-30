@@ -97,7 +97,7 @@ The runner adds
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
 | `R3D` | `R3D01`–`R3D09` | mover hook, requested-time loop, snapshot transaction, tick/events, source, observers, restart, canonical initialization source, finite empty-cell output |
 | `CFG3D` | `CFG3D01`–`CFG3D11` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line/schema-3 initialization, complete compiled AMPS species binding, turbulence selection, CME/Parker linkage, schema-4 mover/coefficient and fixed/local source choices, active-corridor connectivity, and population bounds |
-| `MSH3D` | `MSH3D01`–`MSH3D14` | resolution, exact Parker geometry, balance, octree budget/ownership, presets, gradients, finite line, initialization Tecplot output, conservative active-corridor classification, and hole-free AMR topology |
+| `MSH3D` | `MSH3D01`–`MSH3D15` | resolution, exact Parker geometry, balance, octree budget/ownership, presets, gradients, finite line, initialization Tecplot output, conservative active-corridor classification, hole-free AMR topology, and fixed solar-boundary geometry |
 | `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
 | `SNAP3D` | `SNAP3D01`–`SNAP3D08` | snapshot completeness, coupling conversion, atomicity, interpolation, batch/frame policy |
 | `TUR3D` | `TUR3D01`–`TUR3D06` | spectrum, AWSoM convention, resonance, missing-data policy, selectable spectral/amplitude closures, and mandatory Tecplot energy |
@@ -230,8 +230,10 @@ The production makefile therefore forces every srcSEP3D-owned object to be
 recompiled whenever its `lib` or `amps` target runs. It recreates indexed
 archives, verifies exactly one copy of every application/shared member, and
 uses `nm -C` to require the current `MakeDomain(RunConfiguration3DOptions)` and
-`BuildRefinementPreflight` definitions before AMPS reaches `mpif90`. BLDL3D07
-protects that makefile contract without requiring a configured host.
+`BuildRefinementPreflight` definitions plus the fixed-sphere
+`MakeSolarBoundary(RunConfiguration3DOptions)` definition before AMPS reaches
+`mpif90`. BLDL3D07 protects that makefile contract without requiring a
+configured host.
 
 #### BLDL3D08 — initialized native-background output ordering
 
@@ -293,6 +295,28 @@ Because the policy is stored at the AMPS root, install a source archive from
 the AMPS root and retain its `tools/` and `src/` members. Copying only
 `srcSEP3D/` leaves both the old policy and potentially the old core splitter in
 place, which is intentionally reported by this gate.
+
+#### BLDL3D10 — solar internal-boundary wiring
+
+This routine source gate covers the AMPS-only part of the photospheric
+boundary that the dependency-light C++ registry cannot link. It requires
+internal-boundary support and user-defined spherical callbacks at compile
+time; exactly one all-rank
+`Sphere::Init()`/`RegisterInternalSphere()` sequence after
+`PIC::Init_BeforeParser()` and before mesh construction; the application
+resolution callback; null injection hooks; and an absorbing callback that
+returns `_PARTICLE_DELETED_ON_THE_FACE_` without double-deleting the particle.
+It rejects a redundant direct `mesh->RegisterInternalBoundary()` call because
+`RegisterInternalSphere()` already performs that registration.
+
+The gate also requires one fixed `Core::Const::R_sun` geometry authority that
+does not read `innerRadiusM`, rank agreement on center/radius, union of fully
+solid leaves with the active-use mask, and post-`InitCellMeasure()` correction
+of physical and ghost cells proven wholly inside the sphere. It checks that the
+physics identity is `sep3d-physics-v8` and explicitly contains the
+`amps-absorbing-sphere-v1` contract plus the fixed SI radius. `MSH3D15`
+provides the numerical geometry/negative-control tests, while `BLDL3D01`
+remains the configured AMPS compile/link authority.
 
 ### Phase R1 shared-library gates
 
@@ -358,7 +382,7 @@ env MAKEFLAGS="-j16" srcSEP3D/test/run_tests.py --all \
 |---|---|
 | `CFG3D01` | complete versioned input parses; file and typed construction have one fingerprint; documented CLI, early-error, and dry-run contracts hold |
 | `CFG3D02` | output-only changes preserve physics identity; physical changes alter it; invalid shock/source intent fails; SWMF uses the same factory |
-| `CFG3D03` | solar, one-AU, Mars, and explicit radii normalize exactly; invalid observers fail; boundary status respects crossing direction |
+| `CFG3D03` | solar, one-AU, Mars, and explicit radii normalize exactly; invalid observers fail; the source shell may equal but not undercut the photosphere; transport-boundary status respects crossing direction |
 | `CFG3D04` | mesh centerline/tangent and analytic field use one Parker geometry; polarity reverses `B` without moving the tube |
 | `CFG3D05` | composite profiles are monotone, tube width scales from its reference, all memory categories/levels report, and an impossible level cap fails |
 | `CFG3D06` | schema version 2 requires the complete finite Parker line and rejects a source-inconsistent initial point |
@@ -391,6 +415,7 @@ python3 test/run_tests.py --suite improvements-c --rebuild \
 | `MSH3D12` | conservative finite Parker capsule intersects complete leaves and preserves full-domain mode |
 | `MSH3D13` | analytic Parker derivative is parallel to the field tangent and arc-length inversion round-trips |
 | `MSH3D14` | whole-octree mask covers a dense finite line, applies exact halo layers, prunes exterior leaves, fills cavities, and remains face-connected |
+| `MSH3D15` | the internal sphere uses the fixed physical `R_sun`, remains distinct from the source shell, classifies solid boxes conservatively, and receives the clamped surface resolution |
 
 ```bash
 python3 test/run_tests.py --suite phase-m --rebuild \
@@ -549,14 +574,14 @@ equations, algorithms, case roles, and evidence schemas.
 | `improvements-c` | CFG3D01–CFG3D11 production configuration, preflight, finite-line/schema-3 initialization, species/turbulence/source selection, CME linkage, mover/coefficient selection, active-corridor, and population-control gates |
 | `improvements-r` | R3D01–R3D09 production runtime integration gates |
 | `improvements-v` | V1D01–05 controlled physics, V2D01 true parity, and V5D01 governance |
-| `phase-m` | MSH3D01–MSH3D14 mesh/storage, finite active-corridor, hole-free topology, and initialization-output gates |
+| `phase-m` | MSH3D01–MSH3D15 mesh/storage, finite active-corridor, hole-free topology, fixed photosphere, and initialization-output gates |
 | `phase-b` | BGP3D01–06 and SNAP3D01–08 background/snapshot gates |
 | `phase-t` | TUR3D01–06, COEF3D01–02, and COEF3D06–07 turbulence/coefficient gates |
 | `phase-p` | COEF3D03–05, PRK3D01–08, FTE3D01–09, RNG3D01–03, and POP3D01 |
 | `phase-a` | ADP3D01, NAT3D04–05/08, SHK3D01–04 |
 | `phase-o` | NAT3D06–07 and RST3D01–03 |
 | `phase-v` | INT3D/VFY3D prerequisites, external NAT3D/MPI3D/XM3D/OV3D cases, and VALRUN3D01 |
-| `production` | BLDL3D01–09 |
+| `production` | BLDL3D01–10 |
 
 Suites can be repeated. Overlapping IDs are de-duplicated in stable order.
 
@@ -623,7 +648,7 @@ invoke that exact linked callback, following the srcSEP pattern.
 | `BLDL3D03 SKIP` | pass `--amps-source` pointing to a tree containing `src/pic/pic.h` |
 | `build/main` cannot find `../Makefile.conf` | run `make print-layout-paths`; `AMPS_CONFIG` must resolve to the absolute `AMPS/Makefile.conf` path |
 | `main_lib.cpp` reports `sep_injection_spectrum.h: No such file or directory` | install the updated srcSEP3D makefile in the source tree and refresh the copied `build/main`; `BLDL3D06` verifies that the fixed generic recipe receives the target-scoped canonical model search path |
-| final link reports undefined `Mesh::MakeDomain(RunConfiguration3DOptions)` or `BuildRefinementPreflight` | stale pre-C03/C05 `mesh_model.o`; install the updated makefile, run `make clean`, and rebuild. BLDL3D07 prevents recurrence |
+| final link reports undefined `Mesh::MakeDomain(RunConfiguration3DOptions)`, `BuildRefinementPreflight`, or `MakeSolarBoundary` | stale application `mesh_model.o`; install the updated makefile, run `make clean`, and rebuild. BLDL3D07 prevents recurrence |
 | standalone compile failure | rerun with `--rebuild --verbose` |
 | Phase-V linked case `SKIP` | supply `--amps`; also supply `--validation-input`, and use `--validation-launch-prefix` when MPI launch arguments are required |
 | Phase-V linked case reports that `--test-input` is required | pass the reviewed complete deck with `--validation-input`; hidden callback defaults are intentionally forbidden |
@@ -634,7 +659,7 @@ invoke that exact linked callback, following the srcSEP pattern.
 | unknown test/group | use `--list`; unknown selectors are usage errors |
 | report missing after a C++ test | treat as ERROR; inspect verbose subprocess output |
 
-`CFG3D06`–`CFG3D10`, `TUR3D05`–`TUR3D06`, `MSH3D10`–`MSH3D14`, and `R3D08`–`R3D09` are routine C++ entries
+`CFG3D06`–`CFG3D10`, `TUR3D05`–`TUR3D06`, `MSH3D10`–`MSH3D15`, and `R3D08`–`R3D09` are routine C++ entries
 in the runner manifest.
 `CFG3D06` uses live negative controls for an omitted version-2 key and an
 initial point inconsistent with the inner sphere. `MSH3D10` constructs the
@@ -654,6 +679,9 @@ controls. `MSH3D11` creates, verifies, and removes a real Tecplot product.
 `MSH3D14` builds a mixed-level octree and rejects centerline gaps, approximate
 halo depth, bounded inactive cavities, detached components, and continuation
 beyond the configured finite line.
+`MSH3D15` separates the fixed physical photosphere from the configurable
+Parker/CME source shell and supplies live inside/surface/outside/malformed-box
+controls for the predicate used by production leaf and cell masking.
 `CFG3D09` and `TUR3D06` exercise both pre-existing turbulence-amplitude
 prescriptions and the public total wave-energy output contract. `CFG3D10`
 changes CME radius/direction independently to prove the optional launch-apex

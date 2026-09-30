@@ -526,8 +526,11 @@ Core::Status RunConfiguration3D::Create(
             std::cos(normalized.tubeColatitudeRad));
   }
 
-  if (!std::isfinite(normalized.innerRadiusM) || normalized.innerRadiusM <= 0.0) {
-    return Invalid("innerRadiusM must be finite and positive");
+  if (!std::isfinite(normalized.innerRadiusM) ||
+      normalized.innerRadiusM < Core::Const::R_sun) {
+    return Invalid(
+        "innerRadiusM must be finite and at or above the physical solar "
+        "surface (Core::Const::R_sun)");
   }
   if (!std::isfinite(normalized.outerRadiusM) ||
       normalized.outerRadiusM <= normalized.innerRadiusM) {
@@ -1228,7 +1231,7 @@ Core::Status RunConfiguration3D::Create(
   const StorageLayout layout = BuildLayout(normalized);
   std::ostringstream physics;
   physics << std::setprecision(17) << std::scientific
-          << "sep3d-physics-v7"
+          << "sep3d-physics-v8"
           << ";intent=" << Name(normalized.intent)
           << ";background=" << Name(normalized.background)
           << ";turbulence=" << Name(normalized.turbulence)
@@ -1238,6 +1241,13 @@ Core::Status RunConfiguration3D::Create(
           << ";outer_mode=" << Name(normalized.outerRadiusMode)
           << ";inner_boundary=" << Name(normalized.innerBoundary)
           << ";outer_boundary=" << Name(normalized.outerBoundary)
+          // The physical photosphere is an unconditional AMPS mesh boundary,
+          // not an input-selectable transport option.  Record both its
+          // implementation contract and exact SI radius nonetheless: restart
+          // evidence created before sphere registration must never compare as
+          // physics-identical to a run containing the solid solar body.
+          << ";solar_boundary=amps-absorbing-sphere-v1"
+          << ";solar_radius_m=" << Core::Const::R_sun
           << ";frame=" << normalized.coordinateFrame
           << ";parker_line_start_mode="
           << Name(normalized.parkerSpiralStartMode)

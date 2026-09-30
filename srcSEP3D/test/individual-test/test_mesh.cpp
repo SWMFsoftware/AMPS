@@ -654,6 +654,88 @@ Result RunMSH3D14() {
   return result;
 }
 
+Result RunMSH3D15() {
+  RM::RunConfiguration3DOptions options;
+  options.coordinateOriginM = {
+      3.0 * SEP3D::Core::Const::R_sun,
+      -2.0 * SEP3D::Core::Const::R_sun,
+      0.5 * SEP3D::Core::Const::R_sun};
+  options.innerRadiusM = 20.0 * SEP3D::Core::Const::R_sun;
+  const M::SolarBoundaryGeometry boundary = M::MakeSolarBoundary(options);
+  if (boundary.centerM.x != options.coordinateOriginM.x ||
+      boundary.centerM.y != options.coordinateOriginM.y ||
+      boundary.centerM.z != options.coordinateOriginM.z ||
+      boundary.radiusM != SEP3D::Core::Const::R_sun ||
+      !(boundary.radiusM < options.innerRadiusM)) {
+    return Fail(
+        "solar sphere does not use the exact origin/R_sun authority or was "
+        "conflated with the Parker source shell");
+  }
+
+  const double radius = boundary.radiusM;
+  const SEP3D::Core::Vec3 insideHalf(0.25 * radius, 0.25 * radius,
+                                     0.25 * radius);
+  if (!M::AxisAlignedBoxEntirelyInsideSolarBoundary(
+          boundary.centerM - insideHalf,
+          boundary.centerM + insideHalf, boundary)) {
+    return Fail("a compact box inside the photosphere was not classified solid");
+  }
+  const SEP3D::Core::Vec3 surfacePoint =
+      boundary.centerM + SEP3D::Core::Vec3(radius, 0.0, 0.0);
+  if (!M::AxisAlignedBoxEntirelyInsideSolarBoundary(
+          surfacePoint, surfacePoint, boundary)) {
+    return Fail("a point on the photosphere was not classified inside/on");
+  }
+  const SEP3D::Core::Vec3 outsidePoint = boundary.centerM +
+      SEP3D::Core::Vec3(1.001 * radius, 0.0, 0.0);
+  if (M::AxisAlignedBoxEntirelyInsideSolarBoundary(
+          outsidePoint, outsidePoint, boundary) ||
+      M::AxisAlignedBoxEntirelyInsideSolarBoundary(
+          boundary.centerM + SEP3D::Core::Vec3(1.0, 0.0, 0.0),
+          boundary.centerM - SEP3D::Core::Vec3(1.0, 0.0, 0.0),
+          boundary)) {
+    return Fail("outside or malformed solar boxes were classified solid");
+  }
+
+  // Invalid geometry must fail closed.  This protects the production mask
+  // from treating a NaN/Inf comparison as an interior block and silently
+  // removing an arbitrary part of the AMR tree.
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const double infinity = std::numeric_limits<double>::infinity();
+  M::SolarBoundaryGeometry invalidBoundary = boundary;
+  invalidBoundary.centerM.x = nan;
+  if (M::AxisAlignedBoxEntirelyInsideSolarBoundary(
+          boundary.centerM, boundary.centerM, invalidBoundary)) {
+    return Fail("a NaN solar-boundary center was accepted");
+  }
+  invalidBoundary = boundary;
+  invalidBoundary.radiusM = infinity;
+  if (M::AxisAlignedBoxEntirelyInsideSolarBoundary(
+          boundary.centerM, boundary.centerM, invalidBoundary) ||
+      M::AxisAlignedBoxEntirelyInsideSolarBoundary(
+          {-infinity, 0.0, 0.0}, boundary.centerM, boundary)) {
+    return Fail("non-finite solar-boundary geometry was accepted");
+  }
+
+  M::ResolutionConfiguration resolution = Baseline();
+  const double photosphericRequest = M::RequestedCellSizeM(
+      resolution.originM +
+          SEP3D::Core::Vec3(SEP3D::Core::Const::R_sun, 0.0, 0.0),
+      resolution);
+  if (photosphericRequest != resolution.solarSurfaceCellSizeM) {
+    return Fail(
+        "the registered photosphere does not receive the clamped solar "
+        "surface resolution");
+  }
+  resolution.innerRadiusM = 0.5 * SEP3D::Core::Const::R_sun;
+  if (M::Validate(resolution).ok()) {
+    return Fail("a Parker/transport source shell below the Sun was accepted");
+  }
+  return Pass(
+      "the fixed R_sun photosphere, source-shell separation, box classifier, "
+      "and surface-resolution clamp are exact");
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterMeshTests() {
@@ -684,5 +766,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterMeshTests() {
       make("MSH3D12", "Active Parker corridor", "Finite capsule single-block classifier contract.", RunMSH3D12),
       make("MSH3D13", "Parker geometry authority", "Exact curve/tangent/arc-length identity for a rotated axis.", RunMSH3D13),
       make("MSH3D14", "Hole-free active mask", "Finite-tube coverage, pruning, cavity, and topological halo contract.", RunMSH3D14),
+      make("MSH3D15", "Solar internal-boundary geometry", "Fixed photospheric sphere, source-shell separation, and solid-box classification.", RunMSH3D15),
   };
 }

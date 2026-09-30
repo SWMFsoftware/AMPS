@@ -235,6 +235,11 @@ lib: $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE) $(MAINLIBOBJ)
 	    echo "ERROR: mainlib.a contains a stale mesh_model.o without the C05 preflight ABI" >&2; \
 	    exit 1; \
 	  }
+	@nm -C --defined-only mainlib.a | \
+	  grep -Fq 'SEP3D::Mesh::MakeSolarBoundary(SEP3D::RuntimeModel::RunConfiguration3DOptions const&)' || { \
+	    echo "ERROR: mainlib.a contains a stale mesh_model.o without the solar-boundary ABI" >&2; \
+	    exit 1; \
+	  }
 	@echo "[srcSEP3D] mainlib.a built from application + shared model objects"
 
 amps: $(MAINOBJ)
@@ -308,6 +313,10 @@ audit-production-symbols:
 	@nm -C --defined-only $(PRODUCTION_ARCHIVE_DIR)/mainlib.a | \
 	  grep -Fq 'SEP3D::Mesh::BuildRefinementPreflight(' || { \
 	    echo "ERROR: production mainlib.a has the stale pre-C05 mesh ABI" >&2; exit 1; \
+	  }
+	@nm -C --defined-only $(PRODUCTION_ARCHIVE_DIR)/mainlib.a | \
+	  grep -Fq 'SEP3D::Mesh::MakeSolarBoundary(SEP3D::RuntimeModel::RunConfiguration3DOptions const&)' || { \
+	    echo "ERROR: production mainlib.a has the stale solar-boundary mesh ABI" >&2; exit 1; \
 	  }
 	@echo "[srcSEP3D] enclosing AMPS build and production archive audit passed."
 

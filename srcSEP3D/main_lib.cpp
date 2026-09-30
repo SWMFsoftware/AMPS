@@ -44,6 +44,17 @@
 #include <unordered_map>
 #include <vector>
 
+// srcSEP3D registers the photosphere through AMPS' internal-boundary manager;
+// compiling that manager out would otherwise leave a source-compatible call
+// that aborts only at run time.  Fail at compilation with the actual contract.
+#if _INTERNAL_BOUNDARY_MODE_ != _INTERNAL_BOUNDARY_MODE_ON_
+#error "srcSEP3D requires AMPS internal-boundary support for the solar surface"
+#endif
+#if _USER_DEFINED_INTERNAL_BOUNDARY_SPHERE_MODE_ != \
+    _USER_DEFINED_INTERNAL_BOUNDARY_SPHERE_MODE_ON_
+#error "srcSEP3D requires AMPS user-defined sphere callbacks for solar absorption"
+#endif
+
 namespace {
 
 namespace fs = std::filesystem;
@@ -153,12 +164,20 @@ bool gStorageCallbacksRegistered = false;
 // it is deliberately reset during each background refresh.
 bool gNativeAmpsBackgroundReady = false;
 std::unordered_map<PIC::Mesh::cDataCenterNode*, std::size_t> gCellSampleIndex;
-// Static active-region expectations captured before AMPS allocates blocks.
-// They are checked immediately after allocation so an API or ordering change
-// cannot silently turn a correct flag plan into a partially resident mesh.
-bool gActiveRegionPlanInstalled = false;
+// The registered AMPS object is owned by Sphere::InternalSpheres for the
+// process lifetime.  This non-owning pointer is retained only to prove that
+// registration occurred exactly once before mesh construction.
+cInternalSphericalData* gSolarSurfaceBoundary = nullptr;
+
+// Static leaf-mask expectations captured before AMPS allocates blocks.  The
+// mask is the union of the optional Parker transport corridor and leaves that
+// lie wholly inside the solid solar photosphere.  It is checked immediately
+// after allocation so an API or ordering change cannot silently turn a
+// correct replicated flag plan into a partially resident mesh.
+bool gStaticLeafMaskInstalled = false;
 std::size_t gPlannedActiveLeafCount = 0;
 std::size_t gPlannedInactiveLeafCount = 0;
+std::size_t gPlannedSolarInteriorLeafCount = 0;
 
 const SEP3D::RuntimeModel::RunConfiguration3D& Configuration() {
   const auto& configuration = SEP3D::ApplicationRuntime().configuration();
@@ -339,12 +358,13 @@ std::vector<AmpsCellReference> CollectOwnedPhysicalCells() {
               node->xmin[0] + (i + 0.5) * dx[0],
               node->xmin[1] + (j + 0.5) * dx[1],
               node->xmin[2] + (k + 0.5) * dx[2]);
-          // Both spherical boundaries delimit the physical background domain.
-          // The enclosing Cartesian cube also allocates cells inside the Sun
-          // and outside the requested heliocentric radius; those padding cells
-          // stay zero-initialized and are explicitly marked background_valid=0
-          // in Tecplot output.  Measure radius from the configured heliocentric
-          // origin rather than silently assuming an origin at (0,0,0).
+          // Background coverage begins at the configurable Parker/CME source
+          // shell (normally 20 R_sun), outside the registered 1-R_sun solid
+          // photosphere.  The enclosing Cartesian cube also contains padding
+          // inside that source shell and beyond the outer heliocentric sphere;
+          // those cells stay zero-initialized and are explicitly marked
+          // background_valid=0 in Tecplot output.  Measure radius from the
+          // configured heliocentric origin rather than assuming (0,0,0).
           const double radiusM = (position - originM).Norm();
           if (radiusM >= innerRadiusM && radiusM <= outerRadiusM)
             result.push_back({cell, position, StableCellId(position),
@@ -2285,6 +2305,108 @@ double localResolution(double* position) {
       SEP3D::Core::Vec3(position), resolution);
 }
 
+// AMPS owns particle deletion after an internal-boundary callback returns
+// _PARTICLE_DELETED_ON_THE_FACE_.  Calling DeleteParticle here as well would
+// double-release the particle-buffer slot, so this callback intentionally has
+// no side effect and returns only the disposition code.
+int AbsorbParticleAtSolarSurface(int species, long int particle,
+                                 double* position, double* velocity,
+                                 double& remainingTimeS, void* node,
+                                 void* sphere) {
+  (void)species;
+  (void)particle;
+  (void)position;
+  (void)velocity;
+  (void)remainingTimeS;
+  (void)node;
+  (void)sphere;
+  return _PARTICLE_DELETED_ON_THE_FACE_;
+}
+
+void RegisterSolarSurfaceBoundary() {
+  if (gSolarSurfaceBoundary != nullptr) {
+    StopWithStatus("solar internal-boundary registration",
+        SEP3D::Core::Status(
+            SEP3D::Core::StatusCode::InvalidTransition,
+            "the solar photosphere was registered more than once"));
+  }
+
+  const SEP3D::Mesh::SolarBoundaryGeometry geometry =
+      SEP3D::Mesh::MakeSolarBoundary(Configuration().options());
+  const double localGeometry[4] = {
+      geometry.centerM.x, geometry.centerM.y, geometry.centerM.z,
+      geometry.radiusM};
+  double minimumGeometry[4] = {};
+  double maximumGeometry[4] = {};
+  MPI_Allreduce(localGeometry, minimumGeometry, 4, MPI_DOUBLE, MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(localGeometry, maximumGeometry, 4, MPI_DOUBLE, MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  for (int component = 0; component < 4; ++component) {
+    if (!std::isfinite(localGeometry[component]) ||
+        minimumGeometry[component] != maximumGeometry[component]) {
+      StopWithStatus("solar internal-boundary registration",
+          SEP3D::Core::Status(
+              SEP3D::Core::StatusCode::ConfigurationConflict,
+              "MPI ranks disagree on the finite solar-boundary geometry"));
+    }
+  }
+  if (!(geometry.radiusM > 0.0)) {
+    StopWithStatus("solar internal-boundary registration",
+        SEP3D::Core::Status(SEP3D::Core::StatusCode::InvalidInput,
+                           "the physical solar radius is not positive"));
+  }
+
+  // This is the Venus registration sequence, placed after
+  // PIC::Init_BeforeParser() but before the AMPS mesh exists.  The returned
+  // descriptor is already inserted into PIC::Mesh::mesh by
+  // RegisterInternalSphere(); a second explicit registration would duplicate
+  // the surface in every cut-cell query.
+  PIC::BC::InternalBoundary::Sphere::Init();
+  const cInternalBoundaryConditionsDescriptor descriptor =
+      PIC::BC::InternalBoundary::Sphere::RegisterInternalSphere();
+  if (descriptor.BondaryType != _INTERNAL_BOUNDARY_TYPE_SPHERE_) {
+    StopWithStatus("solar internal-boundary registration",
+        SEP3D::Core::Status(SEP3D::Core::StatusCode::LayoutMismatch,
+                           "AMPS returned a non-spherical boundary descriptor"));
+  }
+  gSolarSurfaceBoundary = static_cast<cInternalSphericalData*>(
+      descriptor.BoundaryElement);
+  if (gSolarSurfaceBoundary == nullptr) {
+    StopWithStatus("solar internal-boundary registration",
+        SEP3D::Core::Status(SEP3D::Core::StatusCode::LayoutMismatch,
+                           "AMPS returned a null spherical boundary"));
+  }
+
+  double centerM[3] = {
+      geometry.centerM.x, geometry.centerM.y, geometry.centerM.z};
+  gSolarSurfaceBoundary->SetSphereGeometricalParameters(
+      centerM, geometry.radiusM);
+  // Use the exact application resolution callback at the surface.  For the
+  // present refinement law r=R_sun is below the configurable source shell and
+  // therefore clamps safely to mesh.solar.surface_cell_size_m.
+  gSolarSurfaceBoundary->localResolution = localResolution;
+  gSolarSurfaceBoundary->InjectionRate = nullptr;
+  gSolarSurfaceBoundary->faceat = 0;
+  gSolarSurfaceBoundary->ParticleSphereInteraction =
+      AbsorbParticleAtSolarSurface;
+  gSolarSurfaceBoundary->InjectionBoundaryCondition = nullptr;
+
+  if (PIC::ThisThread == 0) {
+    // Format through a temporary stream so this diagnostic cannot change the
+    // caller's persistent std::cout precision/floatfield.
+    std::ostringstream message;
+    message << std::scientific << std::setprecision(17)
+            << "[srcSEP3D] registered absorbing AMPS solar photosphere "
+            << "center_m=(" << geometry.centerM.x << ','
+            << geometry.centerM.y << ',' << geometry.centerM.z << ')'
+            << " radius_m=" << geometry.radiusM
+            << "; domain.inner_radius_m remains the independent "
+               "Parker/CME transport source shell\n";
+    std::cout << message.str();
+  }
+}
+
 double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   return node != nullptr && node->IsUsedInCalculationFlag ? 1.0 : 0.0;
 }
@@ -2292,13 +2414,10 @@ double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
 void ApplyActiveRegionMask(
     const SEP3D::Mesh::ResolutionConfiguration& resolution) {
   using Node = cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>;
-  gActiveRegionPlanInstalled = false;
+  gStaticLeafMaskInstalled = false;
   gPlannedActiveLeafCount = 0;
   gPlannedInactiveLeafCount = 0;
-  if (resolution.activeRegion ==
-      SEP3D::RuntimeModel::ActiveRegionMode::FullDomain) {
-    return;
-  }
+  gPlannedSolarInteriorLeafCount = 0;
 
   // BranchBottomNodeList and all neighbor links are replicated after
   // buildMesh(). Preserve that deterministic list order in both vectors so
@@ -2318,9 +2437,9 @@ void ApplyActiveRegionMask(
     leaves.push_back(leaf);
   }
   if (nodes.empty()) {
-    StopWithStatus("active Parker corridor", SEP3D::Core::Status(
+    StopWithStatus("static AMPS leaf mask", SEP3D::Core::Status(
         SEP3D::Core::StatusCode::ConfigurationConflict,
-        "AMPS finalized an empty leaf list before active-region planning"));
+        "AMPS finalized an empty leaf list before boundary/mask planning"));
   }
 
   // Construct the two graph views from AMPS' own coarse/fine-aware neighbor
@@ -2377,8 +2496,37 @@ void ApplyActiveRegionMask(
   const SEP3D::Core::Status planned = SEP3D::Mesh::BuildActiveRegionPlan(
       leaves, graph, resolution, &plan);
   if (!planned.ok()) StopWithStatus("active Parker corridor", planned);
-  gPlannedActiveLeafCount = plan.coreLeafCount + plan.haloLeafCount;
-  gPlannedInactiveLeafCount = plan.inactiveLeafCount;
+
+  // AMPS keeps leaves that are wholly inside an internal sphere when its
+  // build-time outside-domain policy is KEEP.  They contain no computational
+  // plasma and must not consume block storage.  Compose that solid-body mask
+  // with (rather than replace) the optional Parker-corridor mask.  In
+  // parker-tube mode this never forces a disconnected photospheric island to
+  // become active: the union can only deactivate an already selected leaf.
+  const SEP3D::Mesh::SolarBoundaryGeometry solarBoundary =
+      SEP3D::Mesh::MakeSolarBoundary(Configuration().options());
+  std::vector<unsigned char> solarInterior(nodes.size(), 0);
+  double activeBlockVolumeM3 = 0.0;
+  for (std::size_t ordinal = 0; ordinal < nodes.size(); ++ordinal) {
+    solarInterior[ordinal] =
+        SEP3D::Mesh::AxisAlignedBoxEntirelyInsideSolarBoundary(
+            leaves[ordinal].minimumM, leaves[ordinal].maximumM,
+            solarBoundary)
+        ? 1
+        : 0;
+    if (solarInterior[ordinal] != 0)
+      ++gPlannedSolarInteriorLeafCount;
+    const bool tubeActive =
+        plan.leafClass[ordinal] != SEP3D::Mesh::ActiveLeafClass::Inactive;
+    if (tubeActive && solarInterior[ordinal] == 0) {
+      ++gPlannedActiveLeafCount;
+      const SEP3D::Core::Vec3 side =
+          leaves[ordinal].maximumM - leaves[ordinal].minimumM;
+      activeBlockVolumeM3 += side.x * side.y * side.z;
+    } else {
+      ++gPlannedInactiveLeafCount;
+    }
+  }
 
   // Give each inactive leaf to exactly one rank by deterministic ordinal;
   // SetTreeNodeActiveUseFlag gathers those disjoint ID lists and broadcasts
@@ -2389,7 +2537,8 @@ void ApplyActiveRegionMask(
         static_cast<std::size_t>(PIC::ThisThread)) {
       continue;
     }
-    if (plan.leafClass[ordinal] == SEP3D::Mesh::ActiveLeafClass::Inactive)
+    if (plan.leafClass[ordinal] == SEP3D::Mesh::ActiveLeafClass::Inactive ||
+        solarInterior[ordinal] != 0)
       inactive.push_back(nodes[ordinal]);
   }
 
@@ -2404,38 +2553,47 @@ void ApplyActiveRegionMask(
                 MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
   if (globalInactive !=
       static_cast<unsigned long long>(gPlannedInactiveLeafCount)) {
-    StopWithStatus("active Parker corridor", SEP3D::Core::Status(
+    StopWithStatus("static AMPS leaf mask", SEP3D::Core::Status(
         SEP3D::Core::StatusCode::LayoutMismatch,
         "MPI inactive-leaf partition disagrees with the replicated mask plan"));
   }
   if (globalInactive >= nodes.size()) {
-    StopWithStatus("active Parker corridor", SEP3D::Core::Status(
+    StopWithStatus("static AMPS leaf mask", SEP3D::Core::Status(
         SEP3D::Core::StatusCode::ConfigurationConflict,
-        "active-region mask would deactivate every AMR leaf block"));
+        "solar/active-region mask would deactivate every AMR leaf block"));
   }
 
-  PIC::Mesh::mesh->SetTreeNodeActiveUseFlag(
-      &inactive, nullptr, false, nullptr);
+  // All ranks make the same branch decision because globalInactive is an
+  // Allreduce result.  SetTreeNodeActiveUseFlag itself is collective, so it
+  // must either be entered by every rank or by none.
+  if (globalInactive != 0) {
+    PIC::Mesh::mesh->SetTreeNodeActiveUseFlag(
+        &inactive, nullptr, false, nullptr);
+  }
   for (std::size_t i = 0; i < nodes.size(); ++i) {
     const bool expected =
-        plan.leafClass[i] != SEP3D::Mesh::ActiveLeafClass::Inactive;
+        plan.leafClass[i] != SEP3D::Mesh::ActiveLeafClass::Inactive &&
+        solarInterior[i] == 0;
     if (nodes[i]->IsUsedInCalculationFlag != expected) {
-      StopWithStatus("active Parker corridor", SEP3D::Core::Status(
+      StopWithStatus("static AMPS leaf mask", SEP3D::Core::Status(
           SEP3D::Core::StatusCode::LayoutMismatch,
           "AMPS active-use flags disagree with the installed mask plan"));
     }
   }
-  gActiveRegionPlanInstalled = true;
+  gStaticLeafMaskInstalled = globalInactive != 0 ||
+      resolution.activeRegion ==
+          SEP3D::RuntimeModel::ActiveRegionMode::ParkerTube;
   if (PIC::ThisThread == 0) {
     const double activeFraction = static_cast<double>(
         gPlannedActiveLeafCount) / static_cast<double>(nodes.size());
-    const double volumeFraction = plan.activeBlockVolumeM3 /
+    const double volumeFraction = activeBlockVolumeM3 /
         plan.totalBlockVolumeM3;
-    std::cout << "[srcSEP3D] active Parker corridor algorithm="
+    std::cout << "[srcSEP3D] static leaf mask algorithm="
               << SEP3D::Mesh::ActiveRegionAlgorithmName()
               << " core=" << plan.coreLeafCount
               << " halo=" << plan.haloLeafCount
               << " cavities_filled=" << plan.cavityLeafCount
+              << " solar_interior=" << gPlannedSolarInteriorLeafCount
               << " active=" << gPlannedActiveLeafCount
               << " inactive=" << gPlannedInactiveLeafCount
               << " total=" << nodes.size()
@@ -2443,7 +2601,9 @@ void ApplyActiveRegionMask(
               << " active_volume_fraction=" << volumeFraction
               << " finite_segments=" << plan.segmentCount
               << " finite_length_m=" << plan.effectiveLineLengthM << '\n';
-    if (gPlannedInactiveLeafCount == 0) {
+    if (resolution.activeRegion ==
+            SEP3D::RuntimeModel::ActiveRegionMode::ParkerTube &&
+        gPlannedInactiveLeafCount == 0) {
       std::cout << "[srcSEP3D] WARNING: parker-tube mode retained every leaf; "
                    "the selected width/halo provides no memory pruning\n";
     }
@@ -2452,7 +2612,7 @@ void ApplyActiveRegionMask(
 
 void VerifyActiveRegionAllocation() {
   using Node = cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>;
-  if (!gActiveRegionPlanInstalled) return;
+  if (!gStaticLeafMaskInstalled) return;
   unsigned long long localOwnedActive = 0;
   std::size_t replicatedActive = 0;
   std::size_t replicatedInactive = 0;
@@ -2461,7 +2621,7 @@ void VerifyActiveRegionAllocation() {
     if (!node->IsUsedInCalculationFlag) {
       ++replicatedInactive;
       if (node->block != nullptr) {
-        StopWithStatus("active Parker allocation", SEP3D::Core::Status(
+        StopWithStatus("static leaf-mask allocation", SEP3D::Core::Status(
             SEP3D::Core::StatusCode::LayoutMismatch,
             "inactive AMR leaf unexpectedly owns allocated block storage"));
       }
@@ -2470,7 +2630,7 @@ void VerifyActiveRegionAllocation() {
     ++replicatedActive;
     if (node->Thread == PIC::ThisThread) {
       if (node->block == nullptr) {
-        StopWithStatus("active Parker allocation", SEP3D::Core::Status(
+        StopWithStatus("static leaf-mask allocation", SEP3D::Core::Status(
             SEP3D::Core::StatusCode::LayoutMismatch,
             "owner-local active AMR leaf has no allocated block storage"));
       }
@@ -2479,7 +2639,7 @@ void VerifyActiveRegionAllocation() {
   }
   if (replicatedActive != gPlannedActiveLeafCount ||
       replicatedInactive != gPlannedInactiveLeafCount) {
-    StopWithStatus("active Parker allocation", SEP3D::Core::Status(
+    StopWithStatus("static leaf-mask allocation", SEP3D::Core::Status(
         SEP3D::Core::StatusCode::LayoutMismatch,
         "replicated active/inactive counts changed after load distribution"));
   }
@@ -2488,9 +2648,88 @@ void VerifyActiveRegionAllocation() {
                 MPI_UNSIGNED_LONG_LONG, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
   if (globalOwnedActive !=
       static_cast<unsigned long long>(gPlannedActiveLeafCount)) {
-    StopWithStatus("active Parker allocation", SEP3D::Core::Status(
+    StopWithStatus("static leaf-mask allocation", SEP3D::Core::Status(
         SEP3D::Core::StatusCode::LayoutMismatch,
         "allocated owner-block count disagrees with the active-region plan"));
+  }
+}
+
+void CorrectSolarInteriorCellMeasures() {
+  if (gSolarSurfaceBoundary == nullptr) {
+    StopWithStatus("solar cell-measure correction",
+        SEP3D::Core::Status(SEP3D::Core::StatusCode::InvalidTransition,
+                           "the AMPS solar sphere is not registered"));
+  }
+  const SEP3D::Mesh::SolarBoundaryGeometry boundary =
+      SEP3D::Mesh::MakeSolarBoundary(Configuration().options());
+  if (gSolarSurfaceBoundary->Radius != boundary.radiusM ||
+      gSolarSurfaceBoundary->OriginPosition[0] != boundary.centerM.x ||
+      gSolarSurfaceBoundary->OriginPosition[1] != boundary.centerM.y ||
+      gSolarSurfaceBoundary->OriginPosition[2] != boundary.centerM.z) {
+    StopWithStatus("solar cell-measure correction",
+        SEP3D::Core::Status(
+            SEP3D::Core::StatusCode::LayoutMismatch,
+            "registered AMPS sphere differs from the authoritative solar geometry"));
+  }
+
+  // AMPS' analytic spherical-volume routine correctly evaluates cut cells,
+  // but its early _AMR_BLOCK_OUTSIDE_DOMAIN_ branch returns a full Cartesian
+  // volume for a cell wholly inside the solid sphere.  Preserve every
+  // fractional cut-cell value and repair only boxes proven wholly interior.
+  // Ghost measures are repaired too so interpolation/movers cannot recover a
+  // positive-volume interior cell through a neighboring block's halo.
+  unsigned long long localCorrectedPhysicalCells = 0;
+  for (unsigned int blockIndex = 0;
+       blockIndex < PIC::DomainBlockDecomposition::nLocalBlocks;
+       ++blockIndex) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
+        PIC::DomainBlockDecomposition::BlockTable[blockIndex];
+    if (node == nullptr || node->block == nullptr) continue;
+    const double spacingM[3] = {
+        (node->xmax[0] - node->xmin[0]) / _BLOCK_CELLS_X_,
+        (node->xmax[1] - node->xmin[1]) / _BLOCK_CELLS_Y_,
+        (node->xmax[2] - node->xmin[2]) / _BLOCK_CELLS_Z_};
+    for (int k = -_GHOST_CELLS_Z_;
+         k < _BLOCK_CELLS_Z_ + _GHOST_CELLS_Z_; ++k) {
+      for (int j = -_GHOST_CELLS_Y_;
+           j < _BLOCK_CELLS_Y_ + _GHOST_CELLS_Y_; ++j) {
+        for (int i = -_GHOST_CELLS_X_;
+             i < _BLOCK_CELLS_X_ + _GHOST_CELLS_X_; ++i) {
+          PIC::Mesh::cDataCenterNode* cell = node->block->GetCenterNode(
+              PIC::Mesh::mesh->getCenterNodeLocalNumber(i, j, k));
+          if (cell == nullptr) continue;
+          const SEP3D::Core::Vec3 cellMinimumM(
+              node->xmin[0] + i * spacingM[0],
+              node->xmin[1] + j * spacingM[1],
+              node->xmin[2] + k * spacingM[2]);
+          const SEP3D::Core::Vec3 cellMaximumM(
+              cellMinimumM.x + spacingM[0],
+              cellMinimumM.y + spacingM[1],
+              cellMinimumM.z + spacingM[2]);
+          if (!SEP3D::Mesh::AxisAlignedBoxEntirelyInsideSolarBoundary(
+                  cellMinimumM, cellMaximumM, boundary)) {
+            continue;
+          }
+          const bool physical =
+              i >= 0 && i < _BLOCK_CELLS_X_ &&
+              j >= 0 && j < _BLOCK_CELLS_Y_ &&
+              k >= 0 && k < _BLOCK_CELLS_Z_;
+          if (physical && cell->Measure != 0.0)
+            ++localCorrectedPhysicalCells;
+          cell->Measure = 0.0;
+        }
+      }
+    }
+  }
+  unsigned long long globalCorrectedPhysicalCells = 0;
+  MPI_Allreduce(&localCorrectedPhysicalCells,
+                &globalCorrectedPhysicalCells, 1,
+                MPI_UNSIGNED_LONG_LONG, MPI_SUM,
+                MPI_GLOBAL_COMMUNICATOR);
+  if (PIC::ThisThread == 0) {
+    std::cout << "[srcSEP3D] solar cell measures: corrected_fully_inside="
+              << globalCorrectedPhysicalCells
+              << " (fractional AMPS cut-cell measures preserved)\n";
   }
 }
 
@@ -2532,6 +2771,11 @@ void amps_init_mesh() {
   // executable was built and cannot be redefined by the runtime SEP deck.
   BindCompiledSpeciesTable();
   SEP3D::Init_BeforeParser();
+  // Internal surfaces must be registered after AMPS creates its global
+  // registries and before mesh->init() creates the root tree.  The sphere is
+  // the physical 1-R_sun photosphere, not the independently configurable
+  // Parker/CME source shell at domain.inner_radius_m.
+  RegisterSolarSurfaceBoundary();
   PIC::Mesh::initCellSamplingDataBuffer();
   if (gStaticCellDataOffset < 0) {
     StopWithStatus("mesh storage freeze", SEP3D::Core::Status(
@@ -2599,6 +2843,7 @@ void amps_init_mesh() {
   PIC::DomainBlockDecomposition::UpdateBlockTable();
 
   PIC::Mesh::mesh->InitCellMeasure();
+  CorrectSolarInteriorCellMeasures();
   PIC::Mesh::mesh->memoryAllocationReport();
   PIC::Mesh::mesh->GetMeshTreeStatistics();
 

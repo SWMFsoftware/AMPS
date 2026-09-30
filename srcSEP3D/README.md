@@ -85,13 +85,61 @@ between `[turbulence]` and `[transport]`.
 | Section | Required keys | Contract |
 |---|---|---|
 | `[run]` | `schema_version`, `intent`, `transport`, `time_step_s`, `maximum_time_steps`, `campaign_seed`, `background_cadence_steps`, `injection_cadence_steps` | Schema is `4`; intent is `shock-injection`; transport is `parker`, `focused-diffusion`, or `focused-scattering`. Time step is positive SI seconds, seed and step counts are nonzero, and injection cadence is one because `samples_per_step` is the exact per-step count. Older mover spellings remain parser aliases, but the resolved manifest uses canonical names. |
-| `[domain]` | `preset`, `inner_radius_m`, `inner_boundary`, `outer_radius_mode`, `outer_radius_m`, `outer_boundary`, `coordinate_frame`, `origin_x_m`, `origin_y_m`, `origin_z_m` | Presets are `solar`, `one-au`, or `mars`; outer mode is `preset` or `explicit`. The current heliocentric implementation requires the declared origin `(0,0,0)`, absorbing inner boundary, and a domain containing fixed observers and mesh references. |
+| `[domain]` | `preset`, `inner_radius_m`, `inner_boundary`, `outer_radius_mode`, `outer_radius_m`, `outer_boundary`, `coordinate_frame`, `origin_x_m`, `origin_y_m`, `origin_z_m` | Presets are `solar`, `one-au`, or `mars`; outer mode is `preset` or `explicit`. The current heliocentric implementation requires the declared origin `(0,0,0)`, absorbing inner boundary, and a domain containing fixed observers and mesh references. `inner_radius_m` is the Parker/CME source and transport cutoff, must be at or above `R_sun`, and is not the radius of the solid Sun. |
 | `[parker_spiral]` | `origin_x_m`, `origin_y_m`, `origin_z_m`, `start_mode`, `initial_x_m`, `initial_y_m`, `initial_z_m`, `length_m`, `point_count` | Finite diagnostic/active-mask centreline. `start_mode=explicit` uses the reviewed Cartesian point independently. `start_mode=cme-launch-point` requires that point, the inner radius, and the mesh-tube direction to equal the canonical SWCME launch apex defined by `cme.launch_radius` and normalized `geometry.cme_direction_*`. Length is positive arc length and count includes both endpoints. Refinement uses the same analytic curve continued through the physical domain; `length_m` bounds line output and `parker-tube` activation, not the pointwise refinement law. |
 | `[mesh]` | `global_cell_size_m`, `minimum_cell_size_m`, `cells_per_block_edge`, `maximum_level`, `memory_budget_bytes`, `block_overhead_bytes` | Global/floor resolution, AMPS block shape, realizable AMR depth, and pre-allocation resource ceiling. |
-| `[mesh.solar]` | `enabled`, `surface_cell_size_m`, `transition_outer_radius_m`, `profile`, `exponent` | Resolution at the Sun and its radial degradation to the global value. Profiles are `linear`, `power-law`, or `smoothstep`; exponent is positive. |
+| `[mesh.solar]` | `enabled`, `surface_cell_size_m`, `transition_outer_radius_m`, `profile`, `exponent` | Near-Sun radial resolution. `surface_cell_size_m` is attained at `domain.inner_radius_m`; the law is clamped to that value farther inward, including at the registered photosphere. Profiles are `linear`, `power-law`, or `smoothstep`; exponent is positive. |
 | `[mesh.tube]` | `enabled`, `source_longitude_rad`, `source_colatitude_rad`, `reference_radius_m`, `radius_at_reference_m`, `radius_mode`, `center_cell_size_m`, `transverse_profile`, `transverse_exponent` | Parker-centreline location, physical/angular tube radius, centre resolution, and degradation in the perpendicular plane. Radius mode is `physical-constant` or `constant-angular-width`; profile choices match `[mesh.solar]`. |
-| `[mesh.active_region]` | `mode`, `reference_radius_m`, `radius_at_reference_m`, `radius_mode`, `buffer_blocks` | `full-domain` retains every AMR leaf and requires zero inactive tube values. `parker-tube` conservatively intersects complete leaves with the finite configured Parker capsule, then adds exactly `buffer_blocks` coarse/fine-aware touching-neighbour layers. Its physical radius must contain the refinement tube over the complete finite active line; at least one halo layer is required for stencils and crossings. Bounded inactive cavities are filled and source-to-endpoint face connectivity is mandatory. Every fixed observer collection sphere must intersect the finite corridor, including its end cap. Moving/field-connected observers require a future dynamic reactivation contract and are rejected with this static mask. |
+| `[mesh.active_region]` | `mode`, `reference_radius_m`, `radius_at_reference_m`, `radius_mode`, `buffer_blocks` | `full-domain` retains every AMR leaf outside the solid photosphere and requires zero inactive tube values. `parker-tube` conservatively intersects complete leaves with the finite configured Parker capsule, then adds exactly `buffer_blocks` coarse/fine-aware touching-neighbour layers. Its physical radius must contain the refinement tube over the complete finite active line; at least one halo layer is required for stencils and crossings. Bounded inactive cavities are filled and source-to-endpoint face connectivity is mandatory. Every fixed observer collection sphere must intersect the finite corridor, including its end cap. Moving/field-connected observers require a future dynamic reactivation contract and are rejected with this static mask. |
 | `[memory]` | `base_cell_bytes`, `base_node_bytes`, `block_structure_bytes`, `communication_bytes_per_block`, `particle_bytes`, `particles_per_cell`, `halo_fraction`, `safety_margin_fraction` | Explicit build-dependent coefficients used by the allocation-free memory preflight; fractions are finite and nonnegative. |
+
+### Solar photosphere internal boundary
+
+srcSEP3D always registers one AMPS `InternalBoundary::Sphere` centered at the
+validated heliocentric origin with the reviewed physical radius
+
+\[
+R_\odot=6.957\times10^8\ {\rm m}.
+\]
+
+The radius is a code-owned physical constant, not another input parameter.
+This prevents an input edit from changing the meaning of “the surface of the
+Sun” and prevents the photosphere from being confused with the independently
+configured Parker/CME source shell. The supplied decks use
+`domain.inner_radius_m = 20 R_sun`: background coverage, CME launch linkage,
+particle injection, and the custom SEP transport cutoff therefore begin at
+20 solar radii, while the AMPS solid sphere remains at one solar radius. A
+source shell exactly at `R_sun` is valid; a shell below it is rejected.
+The production build deliberately fails at compile time unless both AMPS
+internal boundaries and user-defined spherical interaction callbacks are
+enabled; silently compiling a geometric sphere with no absorbing callback is
+not a supported configuration.
+
+Registration follows the AMPS/Venus lifecycle exactly: after
+`PIC::Init_BeforeParser()`, before center-node layout freeze and before
+`mesh->init()`, every MPI rank initializes the sphere manager, calls
+`RegisterInternalSphere()` once, and configures the returned object. The
+sphere uses `localResolution`, has no injection rate or injection boundary
+condition, and installs an absorbing interaction callback. The callback only
+returns `_PARTICLE_DELETED_ON_THE_FACE_`; AMPS owns deletion of the particle
+buffer entry, so the callback must not call `DeleteParticle` itself.
+
+The sphere participates in AMPS block intersection and cut-cell volume
+construction. Leaves wholly inside the solid Sun are added to the same
+replicated active-use mask that implements an optional Parker corridor and are
+not allocated. AMPS' analytic spherical-volume implementation has a legacy
+early branch that can assign full Cartesian volume to a cell wholly inside a
+sphere; immediately after `InitCellMeasure()` srcSEP3D therefore sets only
+geometrically proven fully interior physical and ghost cells to zero measure.
+Fractional measures computed by AMPS for cells cut by the photosphere are
+preserved. In `parker-tube` mode the code does not create a disconnected active
+island around the Sun: the photospheric rule only removes solid leaves from
+the already selected corridor.
+
+No additional input keys are required. AMPS' ordinary sphere sampling files
+remain available during time-dependent runs, but the initialization volume
+Tecplot file is still the mesh/background product; it does not append a
+separate analytic surface zone.
 
 The near-Sun interpolation is
 
@@ -806,7 +854,8 @@ coupled-host contract, and C01–C05 acceptance evidence.
 ### Phase M: mesh and storage
 
 - Earth and Mars heliospheric domain presets are represented as Cartesian
-  cubes containing a physical inner sphere and requested outer sphere.
+  cubes containing the fixed AMPS photosphere, configurable Parker/CME source
+  shell, and requested outer sphere.
 - One resolution law provides named near-Sun degradation and an optional
   finite-width Parker-spiral tube with a continuous transverse profile.
 - The same AMPS-independent law drives the standalone octree verifier and the
@@ -817,9 +866,10 @@ coupled-host contract, and C01–C05 acceptance evidence.
 - The complete static/sampling byte layout is frozen in `RunConfiguration3D`
   before AMPS initializes its cell buffer. AMPS requests those exact bytes
   through its model allocation callbacks.
-- Production cell population iterates only owner-local blocks. The physical
-  cells inside the inner boundary remain allocated and zero-initialized; they
-  are not presented as valid heliospheric background cells.
+- Production cell population iterates only owner-local blocks. Leaves wholly
+  inside the photosphere are disabled; allocated cells between that surface
+  and the configurable source shell remain zero-initialized and are not
+  presented as valid heliospheric background cells.
 - Least-squares scalar/vector gradients support mixed coarse/fine neighbor
   distances and reject rank-deficient stencils.
 
@@ -1156,10 +1206,13 @@ archive invocation. Deterministic release archives use normalized timestamps;
 without this guard, overlaying a new package can retain an older
 `mesh_model.o` whose unchanged symbols resolve but whose C03/C05 ABI does not.
 The archive step also verifies every required member and the current
-normalized-domain/preflight definitions before the final Fortran-driver link.
+normalized-domain, preflight, and solar-boundary definitions before the final
+Fortran-driver link.
 `BLDL3D07` enforces this freshness contract. `BLDL3D08` independently enforces
 that the validated background is copied into AMPS' native DATAFILE fields and
 halo-exchanged before the final data-bearing initialization writer is called.
+`BLDL3D10` guards the one-time all-rank photospheric-sphere registration,
+absorbing callback, solid-leaf composition, and post-cut-cell measure repair.
 
 ## Implemented acceptance groups
 
@@ -1170,7 +1223,7 @@ halo-exchanged before the final data-bearing initialization writer is called.
 | `LIFE3D01–04` | immutable configuration and complete lifecycle transition matrix |
 | `R3D01–07` | mover hook, subcycling, transactional snapshots, clock/events, source, observers, complete restart |
 | `CFG3D01–11` | input/CLI, typed contracts, domains, shared Parker geometry, mesh/memory preflight, finite-line/schema-4 contracts, AMPS species binding, background/turbulence selection, CME/Parker linkage, active corridor, population limits, and mover/coefficient compatibility |
-| `MSH3D01–14` | resolution bounds/laws, exact Parker geometry, balance, octrees, memory, ownership, presets, gradients, finite-line/output identities, conservative capsule intersection, exact topological halo layers, and hole-free connectivity |
+| `MSH3D01–15` | resolution bounds/laws, exact Parker geometry, balance, octrees, memory, ownership, presets, gradients, finite-line/output identities, conservative capsule intersection, exact topological halo layers, hole-free connectivity, and fixed photospheric geometry |
 | `BGP3D01–07` | analytic Parker identities, component laws, focusing, wind derivatives, polar limits, SWCME Leblanc/multi-species closure |
 | `SNAP3D01–08` | completeness, finite values, units, epochs, atomicity, interpolation, batch status, frame |
 | `TUR3D01–06` | spectrum normalization, AWSoM mapping, resonance range, missing-data policy, selectable slopes/amplitude laws/cross helicity, mandatory Tecplot wave energy |
@@ -1278,7 +1331,10 @@ honored.
 
 `CFG3D06` enforces the complete version-2 input and source consistency;
 `MSH3D10` enforces point count, arc length, and origin-relative AMR invariance;
-`MSH3D13` enforces curve/tangent agreement; and `MSH3D14` exercises a complete
+`MSH3D13` enforces curve/tangent agreement; `MSH3D14` exercises a complete
 octree for dense centerline coverage, exact halo depth, pruning, cavity
-elimination, and face connectivity. `CFG3D07` enforces the compiled AMPS
-species binding. All are part of the normal `test/run_tests.py --all` manifest.
+elimination, and face connectivity; and `MSH3D15` verifies that the
+photosphere is exactly `R_sun`, distinct from `inner_radius_m`, and uses a
+conservative solid-box classifier. `BLDL3D10` guards the AMPS-only registration
+and cell-measure lifecycle. `CFG3D07` enforces the compiled AMPS species
+binding. All are part of the normal `test/run_tests.py --all` manifest.

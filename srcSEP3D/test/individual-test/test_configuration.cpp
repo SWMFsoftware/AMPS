@@ -407,6 +407,36 @@ Result RunCFG3D03() {
   if (RM::RunConfiguration3D::Create(invalid, &explicitRun).ok())
     return Fail("observer outside the domain was accepted");
 
+  // The photosphere is a fixed physical AMPS boundary, while innerRadiusM is
+  // the independently configured Parker/CME source and transport shell.  The
+  // source shell may coincide with the photosphere, but it cannot be placed
+  // inside the solid Sun.
+  RM::RunConfiguration3DOptions atSolarSurface;
+  atSolarSurface.innerRadiusM = SEP3D::Core::Const::R_sun;
+  if (!RM::RunConfiguration3D::Create(atSolarSurface, &explicitRun).ok())
+    return Fail("a source shell exactly on the photosphere was rejected");
+  const std::string& solarManifest = explicitRun->resolved_manifest();
+  const std::string radiusKey = ";solar_radius_m=";
+  const std::size_t radiusOffset = solarManifest.find(radiusKey);
+  if (solarManifest.find(
+          ";solar_boundary=amps-absorbing-sphere-v1") ==
+          std::string::npos ||
+      radiusOffset == std::string::npos) {
+    return Fail(
+        "resolved physics identity omits the fixed AMPS solar boundary");
+  }
+  const double manifestSolarRadiusM = std::stod(
+      solarManifest.substr(radiusOffset + radiusKey.size()));
+  if (manifestSolarRadiusM != SEP3D::Core::Const::R_sun) {
+    return Fail("resolved physics identity records the wrong solar radius");
+  }
+  RM::RunConfiguration3DOptions belowSolarSurface = atSolarSurface;
+  belowSolarSurface.innerRadiusM = std::nextafter(
+      SEP3D::Core::Const::R_sun, 0.0);
+  if (RM::RunConfiguration3D::Create(
+          belowSolarSurface, &explicitRun).ok())
+    return Fail("a source shell below the physical photosphere was accepted");
+
   const M::DomainBounds domain = M::MakeDomain(earth->options());
   const double inner = domain.innerRadiusM;
   const double outer = domain.outerRadiusM;
@@ -420,7 +450,7 @@ Result RunCFG3D03() {
                                    {0.9 * outer, 0, 0}, domain).ok()) {
     return Fail("boundary crossing status ignored surface or travel direction");
   }
-  return Pass("solar, one-AU, Mars, explicit-domain, containment, and directional boundary contracts passed");
+  return Pass("solar, one-AU, Mars, explicit-domain, photospheric-source ordering, containment, and directional boundary contracts passed");
 }
 
 Result RunCFG3D04() {

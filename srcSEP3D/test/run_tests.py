@@ -109,6 +109,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("MSH3D12", "MSH3D", "Active Parker corridor", "cpp"),
     TestDefinition("MSH3D13", "MSH3D", "Parker geometry authority", "cpp"),
     TestDefinition("MSH3D14", "MSH3D", "Hole-free active mask", "cpp"),
+    TestDefinition("MSH3D15", "MSH3D", "Solar internal-boundary geometry", "cpp"),
     TestDefinition("BGP3D01", "BGP3D", "Divergence-free Parker field", "cpp"),
     TestDefinition("BGP3D02", "BGP3D", "Parker component laws", "cpp"),
     TestDefinition("BGP3D03", "BGP3D", "Field-line tangency", "cpp"),
@@ -201,6 +202,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("BLDL3D07", "BLDL3D", "Application-object ABI freshness", "source"),
     TestDefinition("BLDL3D08", "BLDL3D", "Initialized native background output ordering", "source"),
     TestDefinition("BLDL3D09", "BLDL3D", "Active-region and population-control wiring", "source"),
+    TestDefinition("BLDL3D10", "BLDL3D", "Solar internal-boundary wiring", "source"),
     TestDefinition("ARCH3D02", "ARCH3D", "Canonical shared-archive ownership", "source"),
     TestDefinition("SWCME3D01", "SWCME3D", "Relocated SWCME common runner", "source"),
     # Linked and external-evidence cases are intentionally non-routine.  They
@@ -238,7 +240,7 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                         if item.kind in ("cpp", "shell") or
                         item.test_id in ("RUN3D01", "VALRUN3D01")),
     "r0": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04", "BLDL3D05",
-           "BLDL3D06", "BLDL3D07", "BLDL3D08", "BLDL3D09",
+           "BLDL3D06", "BLDL3D07", "BLDL3D08", "BLDL3D09", "BLDL3D10",
            "RUN3D01", "LAY01", "BLD01"),
     "r1": ("ARCH3D02", "SWCME3D01", "UTIL02"),
     "r2": ("LIFE3D01", "LIFE3D02", "LIFE3D03", "LIFE3D04"),
@@ -271,7 +273,7 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                      item.test_id == "VALRUN3D01"),
     "production": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04",
                    "BLDL3D05", "BLDL3D06", "BLDL3D07", "BLDL3D08",
-                   "BLDL3D09"),
+                   "BLDL3D09", "BLDL3D10"),
 }
 
 
@@ -913,6 +915,172 @@ def _check_active_population_wiring(definition: TestDefinition) -> Result:
         time.monotonic() - started, [])
 
 
+def _check_solar_boundary_wiring(definition: TestDefinition) -> Result:
+    """Guard the AMPS solar-sphere registration and cut-cell lifecycle.
+
+    Portable MSH3D15 owns the geometry arithmetic.  This source gate checks
+    the AMPS-only API and ordering that cannot be linked by the standalone
+    test binary; BLDL3D01 remains the final concrete-ABI authority.
+    """
+    started = time.monotonic()
+    main_lib = (ROOT / "main_lib.cpp").read_text(encoding="utf-8")
+    mesh_header = (ROOT / "mesh" / "mesh_model.h").read_text(
+        encoding="utf-8")
+    mesh_model = (ROOT / "mesh" / "mesh_model.cpp").read_text(
+        encoding="utf-8")
+    run_configuration = (ROOT / "runtime" / "run_configuration.cpp").read_text(
+        encoding="utf-8")
+
+    required_main = (
+        "#if _INTERNAL_BOUNDARY_MODE_ != _INTERNAL_BOUNDARY_MODE_ON_",
+        "_USER_DEFINED_INTERNAL_BOUNDARY_SPHERE_MODE_ !=",
+        "_USER_DEFINED_INTERNAL_BOUNDARY_SPHERE_MODE_ON_",
+        "void RegisterSolarSurfaceBoundary()",
+        "PIC::BC::InternalBoundary::Sphere::Init();",
+        "PIC::BC::InternalBoundary::Sphere::RegisterInternalSphere();",
+        "SetSphereGeometricalParameters(",
+        "gSolarSurfaceBoundary->localResolution = localResolution;",
+        "gSolarSurfaceBoundary->InjectionRate = nullptr;",
+        "gSolarSurfaceBoundary->InjectionBoundaryCondition = nullptr;",
+        "gSolarSurfaceBoundary->ParticleSphereInteraction =",
+        "return _PARTICLE_DELETED_ON_THE_FACE_;",
+        "MPI_Allreduce(localGeometry, minimumGeometry",
+        "MPI_Allreduce(localGeometry, maximumGeometry",
+        "AxisAlignedBoxEntirelyInsideSolarBoundary(",
+        "cell->Measure = 0.0;",
+        "-_GHOST_CELLS_X_",
+        "-_GHOST_CELLS_Y_",
+        "-_GHOST_CELLS_Z_",
+    )
+    required_mesh = (
+        "struct SolarBoundaryGeometry",
+        "SolarBoundaryGeometry MakeSolarBoundary(",
+        "result.radiusM = Core::Const::R_sun;",
+        "bool AxisAlignedBoxEntirelyInsideSolarBoundary(",
+    )
+    missing = [f"main_lib.cpp: {token}" for token in required_main
+               if token not in main_lib]
+    combined_mesh = mesh_header + "\n" + mesh_model
+    missing.extend(f"mesh_model: {token}" for token in required_mesh
+                   if token not in combined_mesh)
+    if "normalized.innerRadiusM < Core::Const::R_sun" not in run_configuration:
+        missing.append("run_configuration.cpp: source shell below R_sun guard")
+    if "sep3d-physics-v8" not in run_configuration:
+        missing.append("run_configuration.cpp: solar-boundary physics identity")
+    for token in (";solar_boundary=amps-absorbing-sphere-v1",
+                  ";solar_radius_m=", "Core::Const::R_sun"):
+        if token not in run_configuration:
+            missing.append(
+                f"run_configuration.cpp: solar-boundary provenance {token}")
+    singleton_calls = (
+        "PIC::BC::InternalBoundary::Sphere::Init();",
+        "PIC::BC::InternalBoundary::Sphere::RegisterInternalSphere();",
+        "RegisterSolarSurfaceBoundary();",
+    )
+    for call in singleton_calls:
+        if main_lib.count(call) != 1:
+            missing.append(f"main_lib.cpp: exactly one call to {call}")
+    if "PIC::Mesh::mesh->RegisterInternalBoundary" in main_lib:
+        missing.append("main_lib.cpp: duplicate direct internal-boundary registration")
+
+    try:
+        callback = main_lib[
+            main_lib.index("int AbsorbParticleAtSolarSurface("):
+            main_lib.index("void RegisterSolarSurfaceBoundary()")]
+        registration = main_lib[
+            main_lib.index("void RegisterSolarSurfaceBoundary()"):
+            main_lib.index("double InitLoadMeasure(")]
+        init_mesh = main_lib[main_lib.index("void amps_init_mesh()"):
+                             main_lib.index("void amps_init()")]
+        correction = main_lib[
+            main_lib.index("void CorrectSolarInteriorCellMeasures()"):
+            main_lib.index("bool TrajectoryTrackingCondition(")]
+        active_mask = main_lib[
+            main_lib.index("void ApplyActiveRegionMask("):
+            main_lib.index("void VerifyActiveRegionAllocation()")]
+        geometry = mesh_model[
+            mesh_model.index("SolarBoundaryGeometry MakeSolarBoundary("):
+            mesh_model.index("double TubeRadiusM(")]
+        call_site = init_mesh[
+            init_mesh.index("SEP3D::Init_BeforeParser();"):
+            init_mesh.index("PIC::Mesh::initCellSamplingDataBuffer();")]
+        init_order = [
+            init_mesh.index("PIC::Init_BeforeParser();"),
+            init_mesh.index("SEP3D::Init_BeforeParser();"),
+            init_mesh.index("RegisterSolarSurfaceBoundary();"),
+            init_mesh.index("PIC::Mesh::initCellSamplingDataBuffer();"),
+            init_mesh.index("PIC::Mesh::mesh->init("),
+            init_mesh.index("PIC::Mesh::mesh->buildMesh();"),
+            init_mesh.index("ApplyActiveRegionMask(resolution);"),
+            init_mesh.index("PIC::Mesh::mesh->AllocateTreeBlocks();"),
+            init_mesh.index("VerifyActiveRegionAllocation();"),
+            init_mesh.index(
+                "PIC::DomainBlockDecomposition::UpdateBlockTable();"),
+            init_mesh.index("PIC::Mesh::mesh->InitCellMeasure();"),
+            init_mesh.index("CorrectSolarInteriorCellMeasures();"),
+        ]
+    except ValueError as error:
+        missing.append(f"production boundary/lifecycle slice: {error}")
+    else:
+        if "DeleteParticle" in callback:
+            missing.append("absorbing callback must not delete the particle twice")
+        if "PIC::ThisThread == 0" in registration.split(
+                "PIC::BC::InternalBoundary::Sphere::Init();")[0]:
+            missing.append("sphere registration is incorrectly rank-zero-only")
+        if "PIC::ThisThread" in call_site or "if (" in call_site:
+            missing.append(
+                "sphere registration call site is conditionally rank-local")
+        if init_order != sorted(init_order):
+            missing.append("sphere/cut-cell initialization calls are out of order")
+        if "innerRadiusM" in geometry:
+            missing.append("physical solar radius is coupled to innerRadiusM")
+        registration_authority = (
+            "SEP3D::Mesh::MakeSolarBoundary(Configuration().options())")
+        if registration_authority not in registration or \
+                "centerM, geometry.radiusM" not in registration or \
+                "geometry.centerM.x" not in registration:
+            missing.append(
+                "sphere registration bypasses authoritative center/radius")
+        active_contract = (
+            "SEP3D::Mesh::MakeSolarBoundary(Configuration().options())",
+            "AxisAlignedBoxEntirelyInsideSolarBoundary(",
+            "solarInterior[ordinal]",
+            "plan.leafClass[ordinal] == "
+            "SEP3D::Mesh::ActiveLeafClass::Inactive ||",
+            "plan.leafClass[i] != SEP3D::Mesh::ActiveLeafClass::Inactive &&",
+            "solarInterior[i] == 0",
+        )
+        for token in active_contract:
+            if token not in active_mask:
+                missing.append(
+                    f"active mask omits solar/tube composition: {token}")
+        if "AxisAlignedBoxEntirelyInsideSolarBoundary(" not in correction or \
+                "cell->Measure = 0.0;" not in correction:
+            missing.append("fully interior AMPS cell measures are not corrected")
+        else:
+            predicate = correction.index(
+                "AxisAlignedBoxEntirelyInsideSolarBoundary(")
+            preserve = correction.index("continue;", predicate)
+            zero = correction.index("cell->Measure = 0.0;")
+            if not predicate < preserve < zero:
+                missing.append(
+                    "fractional cut-cell measures are not preserved before "
+                    "fully-interior zeroing")
+
+    if missing:
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            "solar internal-boundary integration is incomplete: " +
+            "; ".join(missing), time.monotonic() - started, [])
+    return Result(
+        definition.test_id, definition.group, "PASS",
+        "the fixed R_sun sphere is registered once on every rank before mesh "
+        "construction, uses the application surface resolution and absorbing "
+        "callback without double deletion, composes with leaf pruning, and "
+        "repairs only fully solid AMPS cell measures after cut-cell setup",
+        time.monotonic() - started, [])
+
+
 def _find_pic_header(args: argparse.Namespace) -> Optional[Path]:
     roots: List[Path] = []
     if args.amps_source is not None:
@@ -1194,7 +1362,10 @@ def _check_makefile_relocation(definition: TestDefinition,
         "struct DomainBounds {};\n"
         "struct ResolutionConfiguration {};\n"
         "struct RefinementPreflight {};\n"
+        "struct SolarBoundaryGeometry {};\n"
         "DomainBounds MakeDomain(\n"
+        "    const RuntimeModel::RunConfiguration3DOptions&) { return {}; }\n"
+        "SolarBoundaryGeometry MakeSolarBoundary(\n"
         "    const RuntimeModel::RunConfiguration3DOptions&) { return {}; }\n"
         "int BuildRefinementPreflight(\n"
         "    const DomainBounds&, const ResolutionConfiguration&,\n"
@@ -1500,6 +1671,7 @@ def _check_application_object_freshness(definition: TestDefinition) -> Result:
         "$(notdir $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS))",
         "MakeDomain(SEP3D::RuntimeModel::RunConfiguration3DOptions const&)",
         "SEP3D::Mesh::BuildRefinementPreflight(",
+        "MakeSolarBoundary(SEP3D::RuntimeModel::RunConfiguration3DOptions const&)",
     )
     missing = [token for token in required if token not in makefile]
     if missing:
@@ -1510,7 +1682,8 @@ def _check_application_object_freshness(definition: TestDefinition) -> Result:
     return Result(
         definition.test_id, definition.group, "PASS",
         "production rebuilds application-owned objects and audits every "
-        "mainlib member plus the normalized-domain/C05 mesh ABI before link",
+        "mainlib member plus the domain/preflight/solar-boundary mesh ABIs "
+        "before link",
         time.monotonic() - started, [])
 
 
@@ -1534,6 +1707,8 @@ def _run_source(definition: TestDefinition, args: argparse.Namespace,
         return _check_initialized_native_background(definition)
     if definition.test_id == "BLDL3D09":
         return _check_active_population_wiring(definition)
+    if definition.test_id == "BLDL3D10":
+        return _check_solar_boundary_wiring(definition)
     if definition.test_id == "ARCH3D02":
         return _check_shared_archives(definition, args)
     if definition.test_id == "SWCME3D01":

@@ -361,7 +361,8 @@ MoverResult AdvanceParticle(const MoverInput& input) {
   if (radius < input.innerRadiusM) {
     result.disposition = ParticleDisposition::Absorbed;
     result.status = Core::Status(Core::StatusCode::InnerBoundary,
-                                 "particle crossed the inner boundary");
+                                 "particle crossed the Parker/CME transport "
+                                 "source shell");
     return result;
   }
   if (radius > input.outerRadiusM) {

@@ -20,6 +20,9 @@ injection_cadence_steps = 1
 # Presets are solar (0.30 AU), one-au, and mars (1.666 AU).  With mode=preset,
 # outer_radius_m is ignored and the resolved preset value is fingerprinted.
 preset = one-au
+# This is the Parker/CME source and absorbing transport shell (20 R_sun), not
+# the solid Sun. srcSEP3D independently registers the AMPS photosphere at the
+# fixed physical radius R_sun=6.957e8 m; this value may equal but not undercut it.
 inner_radius_m = 1.3914e10
 inner_boundary = absorb
 outer_radius_mode = preset
@@ -57,8 +60,10 @@ memory_budget_bytes = 68719476736
 block_overhead_bytes = 1024
 
 [mesh.solar]
-# Resolution degrades continuously from surface_cell_size_m at inner_radius_m
-# to the global size at transition_outer_radius_m.
+# Resolution degrades continuously from surface_cell_size_m at the configured
+# source shell (inner_radius_m) to the global size at transition_outer_radius_m.
+# Inward of that shell, including on the registered photosphere, it is clamped
+# to surface_cell_size_m.
 enabled = true
 surface_cell_size_m = 1.495978707e9
 transition_outer_radius_m = 3.7399467675e10

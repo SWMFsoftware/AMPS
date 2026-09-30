@@ -235,9 +235,11 @@ Core::Status Validate(const ResolutionConfiguration& configuration) {
   for (double value : values) {
     if (!std::isfinite(value)) return Invalid("mesh configuration contains a non-finite value");
   }
-  if (configuration.innerRadiusM <= 0.0 ||
+  if (configuration.innerRadiusM < Core::Const::R_sun ||
       configuration.outerRadiusM <= configuration.innerRadiusM) {
-    return Invalid("mesh radii must be positive and ordered");
+    return Invalid(
+        "mesh radii must be ordered and the Parker/transport inner radius "
+        "must not lie below the physical solar surface");
   }
   if (configuration.minimumCellSizeM <= 0.0 ||
       configuration.backgroundCellSizeM < configuration.minimumCellSizeM ||
@@ -313,6 +315,42 @@ DomainBounds MakeDomain(
   result.maximumM = result.originM +
       Core::Vec3(result.outerRadiusM, result.outerRadiusM, result.outerRadiusM);
   return result;
+}
+
+SolarBoundaryGeometry MakeSolarBoundary(
+    const RuntimeModel::RunConfiguration3DOptions& configuration) {
+  SolarBoundaryGeometry result;
+  result.centerM = configuration.coordinateOriginM;
+  result.radiusM = Core::Const::R_sun;
+  return result;
+}
+
+bool AxisAlignedBoxEntirelyInsideSolarBoundary(
+    const Core::Vec3& minimumM, const Core::Vec3& maximumM,
+    const SolarBoundaryGeometry& boundary) {
+  if (!std::isfinite(boundary.centerM.x) ||
+      !std::isfinite(boundary.centerM.y) ||
+      !std::isfinite(boundary.centerM.z) ||
+      !std::isfinite(boundary.radiusM) || boundary.radiusM <= 0.0) {
+    return false;
+  }
+
+  // The squared distance from the sphere centre is separable by Cartesian
+  // axis.  Selecting the farther endpoint on every axis therefore identifies
+  // a farthest corner without enumerating all eight corner combinations.
+  double farthestSquaredM2 = 0.0;
+  for (int axis = 0; axis < 3; ++axis) {
+    const double lower = Component(minimumM, axis);
+    const double upper = Component(maximumM, axis);
+    const double center = Component(boundary.centerM, axis);
+    if (!std::isfinite(lower) || !std::isfinite(upper) || lower > upper)
+      return false;
+    const double displacement = std::max(
+        std::fabs(lower - center), std::fabs(upper - center));
+    farthestSquaredM2 += displacement * displacement;
+  }
+  return std::isfinite(farthestSquaredM2) &&
+      farthestSquaredM2 <= boundary.radiusM * boundary.radiusM;
 }
 
 double TubeRadiusM(double radiusM,
@@ -1266,7 +1304,8 @@ Core::Status ClassifyBoundaryCrossing(const Core::Vec3& previousM,
   if (previousRadius >= domain.innerRadiusM &&
       currentRadius < domain.innerRadiusM) {
     return Core::Status(Core::StatusCode::InnerBoundary,
-                        "particle crossed inward through the absorbing solar boundary");
+                        "particle crossed inward through the absorbing "
+                        "Parker/CME transport source shell");
   }
   if (previousRadius <= domain.outerRadiusM &&
       currentRadius > domain.outerRadiusM) {

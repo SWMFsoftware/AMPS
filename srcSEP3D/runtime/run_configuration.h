@@ -96,7 +96,7 @@ enum class ActiveRegionMode { FullDomain, ParkerTube };
 // Keep it independent of mesh_model.h: the runtime contract is an L0 input to
 // the mesh model and must not acquire a reverse include dependency.
 constexpr const char* kActiveRegionAlgorithmName =
-    "finite-parker-capsule-topological-v2";
+    "finite-parker-capsule-topological-solar-boundary-v3";
 enum class PopulationControlMode { Off, SplitMerge };
 // Coefficient choices are deliberately independent of mover selection.  A
 // compatibility check in RunConfiguration3D::Create rejects circular or unused
@@ -381,6 +381,9 @@ struct RunConfiguration3DOptions {
   double parkerSpiralLengthM = 0.0;
   std::uint64_t parkerSpiralPointCount = 0;
 
+  // Parker/CME source and custom-transport cutoff.  This is not the solid
+  // solar radius: production registers a separate AMPS internal sphere at the
+  // invariant Core::Const::R_sun and validation forbids this shell below it.
   double innerRadiusM = 20.0 * Core::Const::R_sun;
   // ``outerRadiusM`` is normalized to a resolved SI value by Create().  The
   // input value is consulted only when outerRadiusMode is Explicit.

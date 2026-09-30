@@ -46,8 +46,8 @@ one canonical solar-wind state, so a DATAFILE layout with `nIonFluids != 1`
 fails before output instead of assigning undocumented fluid identities.
 
 Before physical cells are copied, every owner-local native record is zeroed.
-Cells inside the inner boundary or outside the spherical outer boundary remain
-finite placeholders and are marked `background_valid=0`. After the background
+Cells inside the Parker/CME source shell or outside the spherical outer
+boundary remain finite placeholders and are marked `background_valid=0`. After the background
 and directional turbulence values are complete, AMPS exchanges block halos;
 only then is the native background marked ready. The same bridge and halo
 boundary run on subsequent background generations, so AMPS-native accessors do
@@ -223,7 +223,7 @@ There is no temporal extrapolation.
 
 The standalone driver configures SWCME-backed analytic authority. During
 `amps_init()`, the
-application gathers owner-local cell centers outside the inner sphere, builds
+application gathers owner-local cell centers outside the configurable source shell, builds
 one immutable Parker snapshot, writes every complete field at the Phase-M
 offset, and publishes it with `StandaloneAdapter`.
 
