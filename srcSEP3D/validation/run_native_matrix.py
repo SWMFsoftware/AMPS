@@ -316,6 +316,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "--test-input", str(test_input),
                     "--test-json", str(report),
                     "--artifact-directory", str(artifact_dir),
+                    # The launcher template is an external process boundary.
+                    # Make the application confirm the intended rank count so
+                    # a site launcher that silently ignores `-n` cannot
+                    # fabricate multi-rank SCCM3D07 evidence.
+                    "--expect-mpi-ranks", str(ranks),
                 ]
                 environment = dict(os.environ)
                 environment["OMP_NUM_THREADS"] = str(threads)

@@ -74,11 +74,20 @@ void SRC3D07() {
       {"proton", 0, "H+", Constants::kProtonMassKg,
        Constants::kElementaryChargeC, 1, true},
       {"alpha", 1, "He++", Constants::kAlphaMassKg,
-       2.0 * Constants::kElementaryChargeC, 4, true}};
-  Require(ValidateSourceSpecies(species, 2).ok(),
-          "all compiled charged species did not bind exactly once");
+       2.0 * Constants::kElementaryChargeC, 4, true},
+      // A=0 is an explicit not-applicable value for leptons. Source identity
+      // needs the real compiled mass and charge, but must not invent a proton-
+      // like mass number merely to admit an electron to a multi-species run.
+      {"electron", 2, "ELECTRON", Constants::kElectronMassKg,
+       -Constants::kElementaryChargeC, 0, true}};
+  Require(ValidateSourceSpecies(species, 3).ok(),
+          "all compiled charged ion/electron species did not bind exactly once");
+  species[2].nucleonCount = -1;
+  Require(!ValidateSourceSpecies(species, 3).ok(),
+          "a negative/invalid source mass number was accepted");
+  species[2].nucleonCount = 0;
   species[1].chargeC = 0.0;
-  Require(!ValidateSourceSpecies(species, 2).ok(),
+  Require(!ValidateSourceSpecies(species, 3).ok(),
           "neutral source species was accepted");
   Require(ValidateSourceBudget({5.0, 100.0, 0.1, 2.0, 100.0, 0.1}).ok() &&
           !ValidateSourceBudget({20.0, 100.0, 0.1, 2.0, 100.0, 0.1}).ok(),

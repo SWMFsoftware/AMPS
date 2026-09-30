@@ -78,9 +78,14 @@ by campaign, stream, generation, tick, species, patch, and sample; adding a
 new pitch or diagnostic draw cannot perturb a momentum stream.
 
 Every compiled species retains stable semantic ID, compiled slot, chemical
-symbol, mass, charge, and integer nucleon count.  All compiled entries are
-validated; a source-enabled neutral is rejected.  Number-flux and nonthermal
-energy budgets are independent.  Closed-field diagnose-only and
+symbol, mass, charge, and an integer nucleon count when that concept applies.
+The explicit value zero means “not applicable” for a lepton; source binding
+and per-particle kinetic-energy injection accept it, while an
+energy-per-nucleon consumer must separately require a positive mass number.
+This avoids the physically incorrect convention of assigning an electron
+`A=1`. All compiled entries are validated; a source-enabled neutral is
+rejected. Number-flux and nonthermal energy budgets are independent.
+Closed-field diagnose-only and
 transition-clearance patches preserve diagnostics but return exactly zero
 eligible rate.
 

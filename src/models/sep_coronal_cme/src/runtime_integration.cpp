@@ -7,6 +7,7 @@
 #include <limits>
 #include <queue>
 #include <set>
+#include <sstream>
 
 namespace SEP { namespace CoronalCME { namespace {
 
@@ -316,9 +317,45 @@ void MarkInitialized(InitializationLedger* ledger,
 Core::Status ValidateInitializationForOutput(
     const InitializationLedger& ledger) {
   constexpr std::uint32_t all = (1U << 10) - 1U;
-  if (ledger.completedMask != all)
+  if (ledger.completedMask != all) {
+    // Keep the ten-stage gate strict, but report its exact missing stages.
+    // An aggregate failure previously hid the distinction between an
+    // unprepared provider and a physically inactive, prepared shock.
+    struct StageName {
+      InitializationCondition condition;
+      const char* name;
+    };
+    constexpr StageName stages[] = {
+        {InitializationCondition::Mesh, "Mesh"},
+        {InitializationCondition::Boundary, "Boundary"},
+        {InitializationCondition::Background, "Background"},
+        {InitializationCondition::Turbulence, "Turbulence"},
+        {InitializationCondition::Shock, "Shock"},
+        {InitializationCondition::Halo, "Halo"},
+        {InitializationCondition::Species, "Species"},
+        {InitializationCondition::TimeStep, "TimeStep"},
+        {InitializationCondition::Observers, "Observers"},
+        {InitializationCondition::OutputDictionary, "OutputDictionary"}};
+    std::ostringstream message;
+    message << "initialization output requested before all ten stages: missing=";
+    bool first = true;
+    for (const StageName& stage : stages) {
+      if ((ledger.completedMask &
+           static_cast<std::uint32_t>(stage.condition)) != 0)
+        continue;
+      if (!first) message << ',';
+      message << stage.name;
+      first = false;
+    }
+    if (first) message << "none";
+    message << "; completed_mask=0x" << std::hex << ledger.completedMask
+            << "; expected_mask=0x" << all;
+    const std::uint32_t unexpected = ledger.completedMask & ~all;
+    if (unexpected != 0)
+      message << "; unexpected_mask_bits=0x" << unexpected;
     return Core::Status::Failure(Core::StatusCode::InvalidState,
-                                "initialization output requested before all ten stages");
+                                message.str());
+  }
   if (ledger.backgroundGeneration == 0 ||
       ledger.shockBackgroundGeneration != ledger.backgroundGeneration)
     return Core::Status::Failure(Core::StatusCode::InvalidState,

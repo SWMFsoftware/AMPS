@@ -57,6 +57,16 @@ SEP_COMMON_OBJECTS := \
 SWCME_DIR ?= $(AMPS_ROOT)/src/models/swcme
 SWCME_ARCHIVE ?= $(SWCME_DIR)/swcme.a
 SWCME_OBJECTS := $(SWCME_DIR)/build/swcme3d.o
+SEP_CORONAL_CME_DIR ?= $(AMPS_ROOT)/src/models/sep_coronal_cme
+SEP_CORONAL_CME_ARCHIVE ?= $(SEP_CORONAL_CME_DIR)/build/libsep_coronal_cme.a
+# The enclosing AMPS linker consumes application archives, not nested static
+# archives.  Enumerate the canonical model members so mainlib.a contains each
+# implementation object directly and normal archive extraction semantics work.
+SEP_CORONAL_CME_OBJECTS := $(patsubst \
+    $(SEP_CORONAL_CME_DIR)/src/%.cpp,$(SEP_CORONAL_CME_DIR)/build/%.o,\
+    $(wildcard $(SEP_CORONAL_CME_DIR)/src/*.cpp)) \
+    $(SEP_CORONAL_CME_DIR)/build/common_sep_field_line_exchange.o \
+    $(SEP_CORONAL_CME_DIR)/build/common_sep_field_line_bundle_io.o
 
 # Dependency-light goals must remain usable in a source-only archive.  All
 # production goals deliberately fail during makefile parsing if AMPS_CONFIG is
@@ -80,7 +90,8 @@ CXX ?= g++
 # Makefile.conf owns most production flags, but shared model headers are not
 # part of every historic AMPS include list.  Use absolute paths resolved from
 # the active makefile so these work identically from srcSEP3D and build/main.
-MODEL_INCLUDE_FLAGS := -I$(SEP_COMMON_DIR) -I$(SWCME_DIR)
+MODEL_INCLUDE_FLAGS := -I$(SEP_COMMON_DIR) -I$(SWCME_DIR) \
+                       -I$(SEP_CORONAL_CME_DIR)/include
 CPPFLAGS += $(MODEL_INCLUDE_FLAGS)
 CXXFLAGS += $(MODEL_INCLUDE_FLAGS)
 # Historic AMPS Makefile.conf revisions name their include accumulator INCLUDE
@@ -101,7 +112,7 @@ INCLUDE += $(MODEL_INCLUDE_FLAGS)
 # generic PIC, mesh, and interface translation units retain their normal AMPS
 # include boundary.  Preserve a caller-provided suffix so site-local compiler
 # installations continue to work.
-SEP3D_MODEL_CPLUS_INCLUDE_PATH := $(SEP_COMMON_DIR):$(SWCME_DIR)
+SEP3D_MODEL_CPLUS_INCLUDE_PATH := $(SEP_COMMON_DIR):$(SWCME_DIR):$(SEP_CORONAL_CME_DIR)/include
 ifneq ($(strip $(CPLUS_INCLUDE_PATH)),)
 SEP3D_MODEL_CPLUS_INCLUDE_PATH := $(SEP3D_MODEL_CPLUS_INCLUDE_PATH):$(CPLUS_INCLUDE_PATH)
 endif
@@ -141,6 +152,10 @@ OUTPUT_SRC := \
     output/restart.cpp \
     output/output_coordinator.cpp
 VALIDATION_SRC := validation/validation_metrics.cpp
+# This evaluator consumes the public coronal-CME API and is linked only into
+# the full AMPS application.  Keeping it out of VALIDATION_SRC preserves the
+# dependency-light Stage-1 binary's no-model/no-MPI contract.
+CORONAL_CME_VALIDATION_SRC := validation/coronal_cme_application_test.cpp
 
 # L3 AMPS application sources.  Retired prototype sources must never be added
 # here.  BLDL3D02 also rejects them if they reappear elsewhere in production.
@@ -155,12 +170,13 @@ RUNTIME_OBJ := $(RUNTIME_SRC:.cpp=.o)
 ADAPTER_OBJ := $(ADAPTER_SRC:.cpp=.o)
 OUTPUT_OBJ := $(OUTPUT_SRC:.cpp=.o)
 VALIDATION_OBJ := $(VALIDATION_SRC:.cpp=.o)
+CORONAL_CME_VALIDATION_OBJ := $(CORONAL_CME_VALIDATION_SRC:.cpp=.o)
 AMPS_OBJ := $(AMPS_SRC:.cpp=.o)
 DRIVER_OBJ := $(DRIVER_SRC:.cpp=.o)
 
 MAINLIBOBJ := $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) \
               $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(VALIDATION_OBJ) \
-              $(AMPS_OBJ)
+              $(CORONAL_CME_VALIDATION_OBJ) $(AMPS_OBJ)
 MAINOBJ := $(DRIVER_OBJ)
 
 # Target-specific exported variables are inherited by the recipe selected for
@@ -211,15 +227,28 @@ STAGE1_CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -Werror -O2 \
 
 .PHONY: lib amps prepare-production strict-production audit-production-symbols
 
-lib: $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE) $(MAINLIBOBJ)
+# Build the shared model through its own makefile so it remains independently
+# testable and never acquires an AMPS header dependency.  The resulting object
+# list is flattened into mainlib.a by the lib recipe below.
+.PHONY: sep-coronal-cme
+sep-coronal-cme:
+	$(MAKE) -C $(SEP_CORONAL_CME_DIR) lib
+
+# Keep the submake live even when an archive from an earlier overlay already
+# exists; the model makefile owns its own header/source dependency graph.
+$(SEP_CORONAL_CME_ARCHIVE): sep-coronal-cme
+
+lib: $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE) $(SEP_CORONAL_CME_ARCHIVE) $(MAINLIBOBJ)
 	# Keep the enclosing AMPS link contract unchanged: common objects are built
 	# once in their canonical model directories and inserted into this
 	# application's archive. Recreate the archive so ar cannot retain a retired
 	# member from a previous application version.
 	rm -f mainlib.a
-	ar -rcs mainlib.a $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS)
+	ar -rcs mainlib.a $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS) \
+		$(SEP_CORONAL_CME_OBJECTS)
 	@members=$$(ar t mainlib.a); \
-	for member in $(notdir $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS)); do \
+	for member in $(notdir $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS) \
+		$(SEP_CORONAL_CME_OBJECTS)); do \
 	  count=$$(printf '%s\n' "$$members" | awk -v expected="$$member" \
 	    '$$0 == expected { found++ } END { print found + 0 }'); \
 	  test "$$count" -eq 1 || { \
@@ -238,6 +267,11 @@ lib: $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE) $(MAINLIBOBJ)
 	@nm -C --defined-only mainlib.a | \
 	  grep -Fq 'SEP3D::Mesh::MakeSolarBoundary(SEP3D::RuntimeModel::RunConfiguration3DOptions const&)' || { \
 	    echo "ERROR: mainlib.a contains a stale mesh_model.o without the solar-boundary ABI" >&2; \
+	    exit 1; \
+	  }
+	@nm -C --defined-only mainlib.a | \
+	  grep -Fq 'SEP::CoronalCME::ValidateInitializationForOutput(' || { \
+	    echo "ERROR: mainlib.a does not contain the shared coronal-CME runtime API" >&2; \
 	    exit 1; \
 	  }
 	@echo "[srcSEP3D] mainlib.a built from application + shared model objects"
@@ -297,7 +331,8 @@ audit-production-symbols:
 	  exit 1; \
 	fi
 	@members=$$(ar t $(PRODUCTION_ARCHIVE_DIR)/mainlib.a); \
-	for member in $(notdir $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS)); do \
+	for member in $(notdir $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS) \
+		$(SEP_CORONAL_CME_OBJECTS)); do \
 	  count=$$(printf '%s\n' "$$members" | \
 	    awk -v expected="$$member" '$$0 == expected { found++ } \
 	      END { print found + 0 }'); \
@@ -317,6 +352,10 @@ audit-production-symbols:
 	@nm -C --defined-only $(PRODUCTION_ARCHIVE_DIR)/mainlib.a | \
 	  grep -Fq 'SEP3D::Mesh::MakeSolarBoundary(SEP3D::RuntimeModel::RunConfiguration3DOptions const&)' || { \
 	    echo "ERROR: production mainlib.a has the stale solar-boundary mesh ABI" >&2; exit 1; \
+	  }
+	@nm -C --defined-only $(PRODUCTION_ARCHIVE_DIR)/mainlib.a | \
+	  grep -Fq 'SEP::CoronalCME::ValidateInitializationForOutput(' || { \
+	    echo "ERROR: production mainlib.a omits the shared coronal-CME runtime API" >&2; exit 1; \
 	  }
 	@echo "[srcSEP3D] enclosing AMPS build and production archive audit passed."
 
@@ -458,3 +497,4 @@ print-layout-paths:
 	@echo "AMPS_CONFIG=$(AMPS_CONFIG)"
 	@echo "SEP_COMMON_DIR=$(SEP_COMMON_DIR)"
 	@echo "SWCME_DIR=$(SWCME_DIR)"
+	@echo "SEP_CORONAL_CME_DIR=$(SEP_CORONAL_CME_DIR)"

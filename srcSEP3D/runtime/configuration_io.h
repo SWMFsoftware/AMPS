@@ -39,6 +39,15 @@ struct StandaloneCommandLine {
   bool listTests = false;
   bool allTests = false;
   std::vector<std::string> tests;
+  // Native linked tests use the normal production initialization path.  The
+  // separate spelling prevents a validation command from being mistaken for
+  // a production run in provenance, while BuildStandaloneRunRequest still
+  // resolves both paths through the same immutable configuration factory.
+  std::string testInputPath;
+  std::string testJsonPath = "test_output/native/native.json";
+  std::string testArtifactDirectory = "test_output/native/artifacts";
+  std::uint64_t testSteps = 1;
+  int expectedMpiRanks = 0;
   LogVerbosity verbosity = LogVerbosity::Normal;
 };
 

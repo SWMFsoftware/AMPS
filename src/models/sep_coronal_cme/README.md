@@ -163,3 +163,20 @@ cohort accounting as documented in
 Stage 10 provides the neutral 3-D-to-1-D field-line exchange, transactional
 bundle, reduction kernels, and thin application adapters described in
 [`docs/STAGE10_FIELD_LINE_EXCHANGE.md`](docs/STAGE10_FIELD_LINE_EXCHANGE.md).
+
+## Linked AMPS host qualification
+
+The 196 model tests above remain the authoritative dependency-light physics
+and API suite. A configured `srcSEP3D` executable supplies the complementary
+host evidence: its `SCCM3D01–07` callbacks initialize the real AMPS mesh and
+generated species table, then call the public Stage-8/9 validation APIs on a
+read-only collective snapshot of the production state. This checks the ten-
+condition initialization ledger, all-species weights and time steps, source
+identity binding, solar/active mesh setup, background/shock generation
+coherence, finite initialization products, and MPI identity.
+
+The application test boundary lives under
+`srcSEP3D/validation/CORONAL_CME_NATIVE_TESTS.md`, not in this dependency-light
+library. Keeping it there preserves the architecture rule that no model source
+includes AMPS or MPI while still making the concrete linked application a
+repeatable release test rather than an undocumented manual demonstration.

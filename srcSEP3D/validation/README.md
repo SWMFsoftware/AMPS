@@ -21,6 +21,13 @@ linked host to advertise every profile case. An ordinary production `amps`
 driver, the AMPS-independent `test/stage1`, or a stale linked host therefore
 fails before any evidence is accepted.
 
+The small profile includes the shared initialization ledger, all-species
+numerics, and MPI identity. Medium adds source binding, mesh/boundary, and
+provider-generation checks. Production includes all `SCCM3D01–07`, including
+finite initialization products, together with the existing native/runtime
+cases. Thus a matrix advertised as production qualification cannot omit the
+shared coronal-CME host boundary.
+
 Each matrix invocation receives the same explicit `--test-input`. The summary
 hashes that deck, the executable, the profile registry, every native JSON
 report, and every stdout log. Existing per-case `native.json` files are removed
@@ -37,7 +44,10 @@ observational cases.
 ## Evidence ownership
 
 - srcSEP3D owns the registry, thresholds, parsers, metrics, and reports.
-- A linked AMPS executable owns native `NAT3D`/`MPI3D` callbacks.
+- A linked srcSEP3D/AMPS executable owns native `NAT3D`/`MPI3D` callbacks and
+  the `SCCM3D01–07` checks of the shared `sep_coronal_cme` contracts. These
+  callbacks observe the ordinary production lifecycle; they do not construct
+  a test-only mesh or provider state.
 - The producer of a cross-model reference owns its exported bytes and
   provenance. The runner never searches for another application checkout.
 - The observational-data preparer owns digitization, uncertainty, instrument
@@ -76,6 +86,12 @@ validation/run_validation.py --all --amps ../native-test-amps \
   --test-input /path/to/reviewed-sep3d.in \
   --evidence-root /path/to/evidence --output-dir test_output/phase-v
 ```
+
+For the shared-model integration boundary, replace `NAT3D01` with any
+`SCCM3D01` through `SCCM3D07`. The executable may also be invoked directly
+with `--list-tests`, `--test`, or `--all-tests`; see
+[CORONAL_CME_NATIVE_TESTS.md](CORONAL_CME_NATIVE_TESTS.md) for the exact CLI,
+state-capture rules, build linkage, and interpretation of every case.
 
 Selectors are mutually exclusive. Repeated `--case` values are
 case-insensitive, de-duplicated, and executed in stable ID order. The optional

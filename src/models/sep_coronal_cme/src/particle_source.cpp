@@ -152,7 +152,7 @@ Core::Status ValidateSourceSpecies(
   for (const auto& item : species) {
     if (item.stableId.empty() || item.chemicalSymbol.empty() ||
         item.compiledSlot < 0 || item.compiledSlot >= count ||
-        !(item.massKg > 0.0) || item.nucleonCount <= 0 ||
+        !(item.massKg > 0.0) || item.nucleonCount < 0 ||
         !slots.insert(item.compiledSlot).second ||
         !ids.insert(item.stableId).second ||
         (item.sourceEnabled && item.chargeC == 0.0))

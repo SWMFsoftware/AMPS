@@ -57,6 +57,10 @@ struct CompiledSpeciesIdentity {
   std::string chemicalSymbol;
   double massKg = 0.0;
   double chargeC = 0.0;
+  // Nuclear mass number used only by quantities explicitly defined per
+  // nucleon. Zero is the physically correct not-applicable sentinel for
+  // leptons. Source binding accepts zero; an energy-per-nucleon consumer must
+  // separately require a positive value instead of inventing A=1.
   int nucleonCount = 0;
   bool sourceEnabled = true;
 };

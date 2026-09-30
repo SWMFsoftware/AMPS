@@ -28,6 +28,9 @@ python3 test/run_tests.py --suite phase-v --amps /path/to/amps \
   --validation-input /path/to/reviewed-sep3d.in \
   --validation-data /path/to/evidence \
   --validation-launch-prefix "mpiexec -n 8"
+python3 test/run_tests.py --test SCCM3D01 --amps /path/to/amps \
+  --validation-input /path/to/reviewed-sep3d.in \
+  --validation-launch-prefix "mpiexec -n 4"
 python3 test/run_tests.py --group HARN --group BLDL3D \
   --amps-source /path/to/AMPS
 python3 test/run_tests.py --all --amps-source /path/to/AMPS \
@@ -136,7 +139,8 @@ make -f makefile strict-production \
 That target invokes the top-level `make amps`, which owns generated headers,
 include paths, compile definitions, libraries, and the final executable link.
 It then audits `AMPS/build/main/mainlib.a` and `main.a` with `nm`/`ar`, including
-exactly one member for each shared kernel and SWCME. A direct
+exactly one member for each shared kernel, SWCME, and `sep_coronal_cme`
+implementation object. A direct
 `make lib` from `AMPS/srcSEP3D` is not production evidence because it does not
 inherit the enclosing include configuration and cannot reliably locate
 `build/pic/pic.h`. If the real configuration is absent, the result is SKIP. A
@@ -317,6 +321,20 @@ physics identity is `sep3d-physics-v8` and explicitly contains the
 `amps-absorbing-sphere-v1` contract plus the fixed SI radius. `MSH3D15`
 provides the numerical geometry/negative-control tests, while `BLDL3D01`
 remains the configured AMPS compile/link authority.
+
+#### BLDL3D11 — coronal-CME native-test wiring
+
+This fast source gate requires the executable test CLI, immutable test-deck
+loading, normal `amps_init_mesh()`/`amps_init()`/`amps_time_step()` calls,
+collective read-only state capture, all seven `SCCM3D` evaluators, public
+`sep_coronal_cme` validation calls, runner-compatible JSON, and flattened
+model objects in `mainlib.a`. It also guards the physically correct
+`nucleonCount = 0` source-identity representation used for electrons.
+
+`BLDL3D11` cannot prove the generated AMPS ABI or MPI runtime. `BLDL3D01`
+proves compilation/linkage, and `SCCM3D01–07` prove the initialized numerical
+state on the configured executable. The detailed division of responsibility
+is in `../validation/CORONAL_CME_NATIVE_TESTS.md`.
 
 ### Phase R1 shared-library gates
 
@@ -528,6 +546,7 @@ release evidence; their statuses must be interpreted separately.
 | `VFY3D06` | fixed phase-space q=5 overrides a q=4 shock patch and the sampled ensemble agrees with the independent `dN/dp proportional to p^-3` CDF |
 | `NAT3D01–03/09–12` | configured AMPS mesh, storage, gradients, balance, budgets, coupled cadence, and output grammar |
 | `MPI3D01–02` | multi-rank sampling and restart continuation are decomposition independent |
+| `SCCM3D01–07` | shared-model initialization ledger, all compiled species' weights/time steps and source identities, solar/active mesh contract, provider generations, finite AMPS products, and collective identity |
 | `XM3D01–06` | checksum-owned cross-model profiles, exact source identity, convergence, and independent PDE evidence |
 | `OV3D01–04` | reviewed event comparisons, with release-gate and diagnostic roles retained in reports |
 | `VALRUN3D01` | runner lists all classes, preserves SKIP, verifies checksums, evaluates convergence bundles, validates the OV3D01 known/unresolved-parameter blueprint, and proves that the native matrix rejects missing callbacks while hashing its exact input/executable |

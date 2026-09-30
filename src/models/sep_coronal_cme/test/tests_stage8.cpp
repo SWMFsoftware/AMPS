@@ -172,6 +172,40 @@ void INIT3D01() {
   auto ledger = CompleteLedger();
   Require(ValidateInitializationForOutput(ledger).ok(),
           "complete ordered initialization was rejected");
+
+  // Exercise every incomplete stage independently, including the Shock bit
+  // missing from the reported pre-activation native run (0x3ef).  Diagnostics
+  // must identify the actual absent stage without relaxing acceptance.
+  const char* names[] = {"Mesh", "Boundary", "Background", "Turbulence",
+                        "Shock", "Halo", "Species", "TimeStep", "Observers",
+                        "OutputDictionary"};
+  for (std::uint32_t bit = 0; bit < 10; ++bit) {
+    auto incomplete = CompleteLedger();
+    incomplete.completedMask &= ~(1U << bit);
+    const auto result = ValidateInitializationForOutput(incomplete);
+    Require(!result.ok() &&
+                result.message.find(std::string("missing=") + names[bit] +
+                                    ";") != std::string::npos,
+            "missing initialization stage was accepted or not identified");
+  }
+  auto multiple = CompleteLedger();
+  multiple.completedMask &= ~static_cast<std::uint32_t>(
+      InitializationCondition::Halo);
+  multiple.completedMask &= ~static_cast<std::uint32_t>(
+      InitializationCondition::Observers);
+  const auto multipleResult = ValidateInitializationForOutput(multiple);
+  Require(!multipleResult.ok() &&
+              multipleResult.message.find("missing=Halo,Observers;") !=
+                  std::string::npos,
+          "multiple missing stages were not reported in initialization order");
+  auto unknown = CompleteLedger();
+  unknown.completedMask |= (1U << 10);
+  const auto unknownResult = ValidateInitializationForOutput(unknown);
+  Require(!unknownResult.ok() &&
+              unknownResult.message.find("unexpected_mask_bits=0x400") !=
+                  std::string::npos,
+          "unknown initialization bits were accepted or not diagnosed");
+
   ledger.shockBackgroundGeneration = 3;
   Require(!ValidateInitializationForOutput(ledger).ok(),
           "stale shock generation passed initialization");

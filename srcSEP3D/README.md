@@ -14,6 +14,133 @@ physics is the Parker or focused transport equation in an analytic Parker or
 coupled SWMF/AWSoM background, with Alfvén-turbulence scattering and SWCME
 shock/source parameters.
 
+## Coupled SEP + coronal-CME native validation: quick start
+
+The commands in this section validate the **coupled application formed by the
+AMPS `srcSEP3D` SEP-transport host and the shared
+`src/models/sep_coronal_cme` background/CME/shock model**.  These are linked
+native integration tests: they build the real distributed AMPS mesh, execute
+the production srcSEP3D initialization path, and inspect the coronal-CME state
+that the SEP mover and source consume.  They are not only standalone unit
+tests of `sep_coronal_cme`.
+
+Run the following commands from the AMPS root directory after rebuilding the
+`amps` executable with `srcSEP3D` selected as the application.
+
+First, verify that the executable contains the coupled-model native tests:
+
+```bash
+./amps --list-tests | grep SCCM3D
+```
+
+The executable must list `SCCM3D01` through `SCCM3D07`.  If it does not, the
+binary is stale or was built with another AMPS application.
+
+### Validate coupled initialization
+
+This is the shortest useful coupled SEP + coronal-CME test.  It performs the
+complete production initialization without advancing a particle time step:
+
+```bash
+mpiexec -n 4 ./amps \
+  --test SCCM3D01 \
+  --test-input srcSEP3D/examples/sep3d_analytic_parker.in \
+  --test-steps 0 \
+  --expect-mpi-ranks 4 \
+  --test-json test_output/coupled-sep-corona/SCCM3D01.json \
+  --artifact-directory test_output/coupled-sep-corona/SCCM3D01-artifacts
+```
+
+Equivalent copy-and-run one-liner:
+
+```bash
+mpiexec -n 4 ./amps --test SCCM3D01 --test-input srcSEP3D/examples/sep3d_analytic_parker.in --test-steps 0 --expect-mpi-ranks 4 --test-json test_output/coupled-sep-corona/SCCM3D01.json --artifact-directory test_output/coupled-sep-corona/SCCM3D01-artifacts
+```
+
+### Validate all coupled SEP + coronal-CME contracts
+
+This command runs only the seven shared-model integration contracts.  Setting
+`--test-steps 1` also advances the application through one real production
+`amps_time_step()` before the read-only validation snapshot is taken:
+
+```bash
+mpiexec -n 4 ./amps \
+  --test SCCM3D01 \
+  --test SCCM3D02 \
+  --test SCCM3D03 \
+  --test SCCM3D04 \
+  --test SCCM3D05 \
+  --test SCCM3D06 \
+  --test SCCM3D07 \
+  --test-input srcSEP3D/examples/sep3d_analytic_parker.in \
+  --test-steps 1 \
+  --expect-mpi-ranks 4 \
+  --test-json test_output/coupled-sep-corona/native.json \
+  --artifact-directory test_output/coupled-sep-corona/artifacts
+```
+
+Equivalent copy-and-run one-liner:
+
+```bash
+mpiexec -n 4 ./amps --test SCCM3D01 --test SCCM3D02 --test SCCM3D03 --test SCCM3D04 --test SCCM3D05 --test SCCM3D06 --test SCCM3D07 --test-input srcSEP3D/examples/sep3d_analytic_parker.in --test-steps 1 --expect-mpi-ranks 4 --test-json test_output/coupled-sep-corona/native.json --artifact-directory test_output/coupled-sep-corona/artifacts
+```
+
+The selected cases verify, respectively, the complete initialization ledger,
+all compiled species' particle weights and time steps, exact source/species
+identity, the solar boundary and active AMR mesh, background/shock generation
+coherence, finite initialization Tecplot products, and deterministic
+collective state across all MPI ranks.
+
+### Validate through the srcSEP3D global runner
+
+From `AMPS/srcSEP3D`, the runner performs discovery, rejects stale output,
+launches the linked executable, validates its JSON schema and exit status, and
+hashes the executable, input, report, and artifacts:
+
+```bash
+python3 test/run_tests.py \
+  --test SCCM3D01 \
+  --amps ../amps \
+  --validation-input examples/sep3d_analytic_parker.in \
+  --validation-launch-prefix "mpiexec -n 4" \
+  --output-dir test_output/coupled-sep-corona/SCCM3D01
+```
+
+Equivalent copy-and-run one-liner:
+
+```bash
+python3 test/run_tests.py --test SCCM3D01 --amps ../amps --validation-input examples/sep3d_analytic_parker.in --validation-launch-prefix "mpiexec -n 4" --output-dir test_output/coupled-sep-corona/SCCM3D01
+```
+
+### Run the coupled MPI qualification matrix
+
+From `AMPS/srcSEP3D`, use the production native profile to run all seven
+coupled-model contracts at the MPI process counts declared by the profile:
+
+```bash
+python3 validation/run_native_matrix.py \
+  --amps ../amps \
+  --test-input examples/sep3d_analytic_parker.in \
+  --profile production \
+  --launcher "mpiexec -n {ranks}" \
+  --output-dir test_output/coupled-sep-corona/production-matrix
+```
+
+Equivalent copy-and-run one-liner:
+
+```bash
+python3 validation/run_native_matrix.py --amps ../amps --test-input examples/sep3d_analytic_parker.in --profile production --launcher "mpiexec -n {ranks}" --output-dir test_output/coupled-sep-corona/production-matrix
+```
+
+Successful direct execution prints one line such as `[SCCM3D01] PASS` for
+each selected case and then prints `native_test_json=PATH`.  Exit status `0`
+means PASS, `1` means that a physical/integration acceptance condition failed,
+and `2` means command-line, configuration, MPI state-capture, or evidence-
+publication error.  The detailed meaning of every case, expected artifacts,
+and troubleshooting guidance are provided in
+[Running the native coronal-CME tests](#running-the-native-coronal-cme-tests)
+and [validation/CORONAL_CME_NATIVE_TESTS.md](validation/CORONAL_CME_NATIVE_TESTS.md).
+
 ## Complete standalone initialization input (schema 4)
 
 New standalone shock-injection runs use the strict schema-4 deck. Schema 4

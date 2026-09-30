@@ -203,6 +203,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("BLDL3D08", "BLDL3D", "Initialized native background output ordering", "source"),
     TestDefinition("BLDL3D09", "BLDL3D", "Active-region and population-control wiring", "source"),
     TestDefinition("BLDL3D10", "BLDL3D", "Solar internal-boundary wiring", "source"),
+    TestDefinition("BLDL3D11", "BLDL3D", "Coronal-CME native-test wiring", "source"),
     TestDefinition("ARCH3D02", "ARCH3D", "Canonical shared-archive ownership", "source"),
     TestDefinition("SWCME3D01", "SWCME3D", "Relocated SWCME common runner", "source"),
     # Linked and external-evidence cases are intentionally non-routine.  They
@@ -217,6 +218,13 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("NAT3D12", "NAT3D", "Production product grammar", "validation", False),
     TestDefinition("MPI3D01", "MPI3D", "Multi-rank sampling reproducibility", "validation", False),
     TestDefinition("MPI3D02", "MPI3D", "Multi-rank restart continuation", "validation", False),
+    TestDefinition("SCCM3D01", "SCCM3D", "Coronal-CME initialization ledger", "validation", False),
+    TestDefinition("SCCM3D02", "SCCM3D", "Coronal-CME species numerics", "validation", False),
+    TestDefinition("SCCM3D03", "SCCM3D", "Coronal-CME source species binding", "validation", False),
+    TestDefinition("SCCM3D04", "SCCM3D", "Coronal-CME mesh boundary", "validation", False),
+    TestDefinition("SCCM3D05", "SCCM3D", "Coronal-CME provider generations", "validation", False),
+    TestDefinition("SCCM3D06", "SCCM3D", "Coronal-CME initialization output", "validation", False),
+    TestDefinition("SCCM3D07", "SCCM3D", "Coronal-CME MPI identity", "validation", False),
     TestDefinition("XM3D01", "XM3D", "Parker cross-model profiles", "validation", False),
     TestDefinition("XM3D02", "XM3D", "Focused cross-model profiles", "validation", False),
     TestDefinition("XM3D03", "XM3D", "Longitudinal displacement diagnostic", "validation", False),
@@ -241,6 +249,7 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                         item.test_id in ("RUN3D01", "VALRUN3D01")),
     "r0": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04", "BLDL3D05",
            "BLDL3D06", "BLDL3D07", "BLDL3D08", "BLDL3D09", "BLDL3D10",
+           "BLDL3D11",
            "RUN3D01", "LAY01", "BLD01"),
     "r1": ("ARCH3D02", "SWCME3D01", "UTIL02"),
     "r2": ("LIFE3D01", "LIFE3D02", "LIFE3D03", "LIFE3D04"),
@@ -268,12 +277,12 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                      if item.group == "RST3D" or
                      item.test_id in ("NAT3D06", "NAT3D07")),
     "phase-v": tuple(item.test_id for item in TESTS
-                     if item.group in ("V1D", "V2D", "V5D", "INT3D", "VFY3D", "MPI3D", "XM3D", "OV3D", "SWMF3D") or
+                     if item.group in ("V1D", "V2D", "V5D", "INT3D", "VFY3D", "MPI3D", "SCCM3D", "XM3D", "OV3D", "SWMF3D") or
                      (item.group == "NAT3D" and item.kind == "validation") or
                      item.test_id == "VALRUN3D01"),
     "production": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04",
                    "BLDL3D05", "BLDL3D06", "BLDL3D07", "BLDL3D08",
-                   "BLDL3D09", "BLDL3D10"),
+                   "BLDL3D09", "BLDL3D10", "BLDL3D11"),
 }
 
 
@@ -421,8 +430,12 @@ def _build_standalone(args: argparse.Namespace) -> None:
     # Use the application makefile instead of one monolithic compiler command.
     # This keeps the runner and documented build manifest identical and lets
     # GNU Make honor inherited MAKEFLAGS=-jN for independent object files.
+    # Resolve SWCME from the explicitly supplied AMPS root as well.  Relying on
+    # the process environment here makes an otherwise detached srcSEP3D tree
+    # accidentally search its incomplete sibling layout during --all.
+    _, swcme = _canonical_model_dirs(args)
     variables = [f"CXX={compiler}", f"SEP_COMMON_DIR={source}",
-                 f"SEP_COMMON_ARCHIVE={archive}"]
+                 f"SEP_COMMON_ARCHIVE={archive}", f"SWCME_DIR={swcme}"]
     commands: List[List[str]] = []
     if args.rebuild:
         commands.append([make, "-C", str(ROOT), "clean-standalone", *variables])
@@ -1081,6 +1094,100 @@ def _check_solar_boundary_wiring(definition: TestDefinition) -> Result:
         time.monotonic() - started, [])
 
 
+def _check_coronal_cme_native_wiring(definition: TestDefinition) -> Result:
+    """Audit the linked test boundary without claiming an AMPS execution.
+
+    BLDL3D01 and SCCM3D01..07 remain the concrete build/runtime authorities.
+    This fast source gate prevents the executable CLI, production archive, and
+    read-only lifecycle probe from drifting apart in a source-only checkout.
+    """
+    started = time.monotonic()
+    files = {
+        "main.cpp": ROOT / "main.cpp",
+        "main_lib.cpp": ROOT / "main_lib.cpp",
+        "configuration_io.cpp": ROOT / "runtime" / "configuration_io.cpp",
+        "native evaluator": ROOT / "validation" /
+            "coronal_cme_application_test.cpp",
+        "makefile": ROOT / "makefile",
+    }
+    model_root = ROOT.parent / "src" / "models" / "sep_coronal_cme"
+    files["coronal-CME particle source"] = model_root / "src" / "particle_source.cpp"
+    missing_files = [f"{name}: {path}" for name, path in files.items()
+                     if not path.is_file()]
+    if missing_files:
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            "coronal-CME native integration file is absent: " +
+            "; ".join(missing_files), time.monotonic() - started, [])
+
+    text = {name: path.read_text(encoding="utf-8")
+            for name, path in files.items()}
+    required = {
+        "main.cpp": (
+            "CoronalCmeNativeTests()",
+            "SelectCoronalCmeNativeTests(",
+            "CaptureNativeApplicationState(",
+            "EvaluateCoronalCmeNativeTests(",
+            "WriteNativeTestJson(",
+            "amps_time_step()",
+            "MPI_Barrier(MPI_GLOBAL_COMMUNICATOR)",
+        ),
+        "main_lib.cpp": (
+            "CaptureNativeApplicationState(",
+            "ValidateCompleteSample(sample, capabilities)",
+            "GetLocalTimeStep(species.ampsIndex)",
+            "GetLocalParticleWeight(species.ampsIndex)",
+            "FileHasOnlyFiniteNumericTokens(path)",
+            "MPI_Allreduce(&localFingerprint",
+        ),
+        "configuration_io.cpp": (
+            'argument == "--test-input"',
+            'argument == "--test-json"',
+            'argument == "--artifact-directory"',
+            'argument == "--test-steps"',
+            'argument == "--expect-mpi-ranks"',
+            "nativeTestRun ? candidate.commandLine.testInputPath",
+        ),
+        "native evaluator": (
+            "srcsep-component-tests-v1",
+            '"SCCM3D01"', '"SCCM3D02"', '"SCCM3D03"',
+            '"SCCM3D04"', '"SCCM3D05"', '"SCCM3D06"',
+            '"SCCM3D07"',
+            "ValidateInitializationForOutput(",
+            "ValidateAllSpeciesWeights(",
+            "ValidateSourceSpecies(",
+        ),
+        "makefile": (
+            "SEP_CORONAL_CME_DIR",
+            "SEP_CORONAL_CME_OBJECTS",
+            "CORONAL_CME_VALIDATION_OBJ",
+            "SEP::CoronalCME::ValidateInitializationForOutput(",
+        ),
+        "coronal-CME particle source": (
+            "item.nucleonCount < 0",
+        ),
+    }
+    missing = [f"{name}: {token}" for name, tokens in required.items()
+               for token in tokens if token not in text[name]]
+    if missing:
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            "coronal-CME native integration is incomplete: " +
+            "; ".join(missing), time.monotonic() - started, [])
+    if "no simulation was started" in text["main.cpp"]:
+        return Result(
+            definition.test_id, definition.group, "FAIL",
+            "main.cpp still rejects native linked tests before AMPS starts",
+            time.monotonic() - started, [])
+    return Result(
+        definition.test_id, definition.group, "PASS",
+        "srcSEP3D discovers and executes named linked tests through the normal "
+        "AMPS lifecycle, captures finite collective state without mutation, "
+        "evaluates public coronal-CME contracts, and emits runner-compatible "
+        "JSON evidence from the production archive",
+        time.monotonic() - started, [])
+
+
 def _find_pic_header(args: argparse.Namespace) -> Optional[Path]:
     roots: List[Path] = []
     if args.amps_source is not None:
@@ -1329,10 +1436,12 @@ def _check_makefile_relocation(definition: TestDefinition,
     build_dir = fixture / "build" / "main"
     common_dir = fixture / "src" / "models" / "sep_common"
     swcme_dir = fixture / "src" / "models" / "swcme"
+    coronal_cme_dir = fixture / "src" / "models" / "sep_coronal_cme"
     source_dir.mkdir(parents=True)
     build_dir.mkdir(parents=True)
     common_dir.mkdir(parents=True)
     swcme_dir.mkdir(parents=True)
+    (coronal_cme_dir / "build").mkdir(parents=True)
     (source_dir / "amps").mkdir(parents=True)
     (fixture / "build" / "pic").mkdir(parents=True)
     (fixture / "Makefile.conf").write_text(
@@ -1373,6 +1482,14 @@ def _check_makefile_relocation(definition: TestDefinition,
         "  return 0;\n"
         "}\n"
         "}\n"
+        "}\n"
+        "namespace SEP {\n"
+        "namespace CoronalCME {\n"
+        "struct InitializationLedger {};\n"
+        "int ValidateInitializationForOutput(const InitializationLedger&) {\n"
+        "  return 0;\n"
+        "}\n"
+        "}\n"
         "}\n",
         encoding="utf-8")
 
@@ -1403,12 +1520,14 @@ def _check_makefile_relocation(definition: TestDefinition,
         "run_configuration.o configuration_io.o runtime.o runtime_adapters.o "
         "transport_adapter.o particle_ledger.o swcme_source_adapter.o source_runtime.o "
         "sampling.o observer_runtime.o publication.o restart.o output_coordinator.o "
-        "validation_metrics.o main_lib.o amps_particle_adapter.o")
+        "validation_metrics.o coronal_cme_application_test.o main_lib.o "
+        "amps_particle_adapter.o")
     shared_members = (
         "sep_transport_common.o sep_coefficient_physics.o "
         "sep_coefficient_registry.o sep_background_snapshot.o "
         "sep_test_registry.o sep_injection_spectrum.o sep_species_source.o "
-        "swcme3d.o")
+        "swcme3d.o common_sep_field_line_exchange.o "
+        "common_sep_field_line_bundle_io.o")
     (fixture / "Makefile").write_text(
         f"APPLICATION_MEMBERS := {application_members}\n"
         f"SHARED_MEMBERS := {shared_members}\n"
@@ -1439,12 +1558,15 @@ def _check_makefile_relocation(definition: TestDefinition,
         f"AMPS_CONFIG={(fixture / 'Makefile.conf').resolve()}",
         f"SEP_COMMON_DIR={common_dir.resolve()}",
         f"SWCME_DIR={swcme_dir.resolve()}",
+        f"SEP_CORONAL_CME_DIR={coronal_cme_dir.resolve()}",
     }
     for location in (source_dir, build_dir):
         # Deliberately run from the fixture root, not from either makefile
         # directory.  A relative-to-CWD implementation would fail this probe.
         command = [make, "--no-print-directory", "-f",
-                   str(location / "makefile"), "print-layout-paths"]
+                   str(location / "makefile"), "print-layout-paths",
+                   f"SWCME_DIR={swcme_dir.resolve()}",
+                   f"SEP_CORONAL_CME_DIR={coronal_cme_dir.resolve()}"]
         code, output, duration = _run_command(
             command, fixture, args.timeout, args.verbose)
         commands.extend([f"cwd={fixture}", *command])
@@ -1469,6 +1591,8 @@ def _check_makefile_relocation(definition: TestDefinition,
         make, "--no-print-directory", "-f", str(source_dir / "makefile"),
         "strict-production", f"AMPS_ROOT={fixture.resolve()}",
         f"AMPS_CONFIG={(fixture / 'Makefile.conf').resolve()}",
+        f"SWCME_DIR={swcme_dir.resolve()}",
+        f"SEP_CORONAL_CME_DIR={coronal_cme_dir.resolve()}",
     ]
     code, output, duration = _run_command(
         production_command, output_dir, args.timeout, args.verbose)
@@ -1484,8 +1608,8 @@ def _check_makefile_relocation(definition: TestDefinition,
     return Result(
         definition.test_id, definition.group, "PASS",
         "source srcSEP3D and copied build/main makefiles resolve the same "
-        "AMPS root, Makefile.conf, sep_common, and SWCME directories; production "
-        "orchestration delegates to enclosing make amps",
+        "AMPS root, Makefile.conf, sep_common, SWCME, and sep_coronal_cme "
+        "directories; production orchestration delegates to enclosing make amps",
         elapsed, commands)
 
 
@@ -1668,7 +1792,7 @@ def _check_application_object_freshness(definition: TestDefinition) -> Result:
         ".PHONY: FORCE_SEP3D_APPLICATION_OBJECTS",
         "$(MAINLIBOBJ) $(MAINOBJ): FORCE_SEP3D_APPLICATION_OBJECTS",
         "ar -rcs mainlib.a",
-        "$(notdir $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS))",
+        "$(SEP_CORONAL_CME_OBJECTS)",
         "MakeDomain(SEP3D::RuntimeModel::RunConfiguration3DOptions const&)",
         "SEP3D::Mesh::BuildRefinementPreflight(",
         "MakeSolarBoundary(SEP3D::RuntimeModel::RunConfiguration3DOptions const&)",
@@ -1709,6 +1833,8 @@ def _run_source(definition: TestDefinition, args: argparse.Namespace,
         return _check_active_population_wiring(definition)
     if definition.test_id == "BLDL3D10":
         return _check_solar_boundary_wiring(definition)
+    if definition.test_id == "BLDL3D11":
+        return _check_coronal_cme_native_wiring(definition)
     if definition.test_id == "ARCH3D02":
         return _check_shared_archives(definition, args)
     if definition.test_id == "SWCME3D01":

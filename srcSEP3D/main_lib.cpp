@@ -27,8 +27,10 @@
 #include "output/sampling.h"
 #include "runtime/runtime_adapters.h"
 #include "turbulence/turbulence_models.h"
+#include "validation/coronal_cme_application_test.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -121,6 +123,44 @@ std::string InitializationDataPath(const std::string& base, int species,
   return (path.parent_path() / name).string();
 }
 
+// Scan a published text product token by token and reject only values that
+// parse as floating-point numbers but are non-finite.  Header words containing
+// character sequences such as "inf" are not numbers and therefore cannot
+// produce a false failure.  The native test calls this only after every rank
+// has returned from the collective AMPS writer.
+bool FileHasOnlyFiniteNumericTokens(const std::string& path) {
+  std::FILE* input = std::fopen(path.c_str(), "r");
+  if (input == nullptr) return false;
+  char rawToken[1024];
+  bool finite = true;
+  while (std::fscanf(input, "%1023s", rawToken) == 1) {
+    std::string token(rawToken);
+    while (!token.empty() &&
+           (token.back() == ',' || token.back() == ';')) token.pop_back();
+    if (token.empty()) continue;
+    char* end = nullptr;
+    errno = 0;
+    const double value = std::strtod(token.c_str(), &end);
+    if (end != token.c_str() && *end == '\0' &&
+        (errno == ERANGE || !std::isfinite(value))) {
+      finite = false;
+      break;
+    }
+  }
+  const bool readSucceeded = std::ferror(input) == 0;
+  std::fclose(input);
+  return finite && readSucceeded;
+}
+
+std::uint64_t Fnv1a64(const std::string& text) {
+  std::uint64_t value = UINT64_C(1469598103934665603);
+  for (unsigned char c : text) {
+    value ^= c;
+    value *= UINT64_C(1099511628211);
+  }
+  return value;
+}
+
 std::shared_ptr<const SEP3D::Background::BackgroundSnapshot>
     gInstalledBackground;
 std::shared_ptr<const SEP3D::Background::BackgroundSnapshot>
@@ -175,6 +215,11 @@ cInternalSphericalData* gSolarSurfaceBoundary = nullptr;
 // after allocation so an API or ordering change cannot silently turn a
 // correct replicated flag plan into a partially resident mesh.
 bool gStaticLeafMaskInstalled = false;
+// Installation describes a verified plan, including a full-domain identity
+// plan.  Pruning and subsequent block-allocation verification are independent
+// facts; zero removed leaves must not make a valid plan look uninstalled.
+bool gStaticLeafMaskPruningApplied = false;
+bool gActiveRegionAllocationVerified = false;
 std::size_t gPlannedActiveLeafCount = 0;
 std::size_t gPlannedInactiveLeafCount = 0;
 std::size_t gPlannedSolarInteriorLeafCount = 0;
@@ -2415,6 +2460,8 @@ void ApplyActiveRegionMask(
     const SEP3D::Mesh::ResolutionConfiguration& resolution) {
   using Node = cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>;
   gStaticLeafMaskInstalled = false;
+  gStaticLeafMaskPruningApplied = false;
+  gActiveRegionAllocationVerified = false;
   gPlannedActiveLeafCount = 0;
   gPlannedInactiveLeafCount = 0;
   gPlannedSolarInteriorLeafCount = 0;
@@ -2580,9 +2627,12 @@ void ApplyActiveRegionMask(
           "AMPS active-use flags disagree with the installed mask plan"));
     }
   }
-  gStaticLeafMaskInstalled = globalInactive != 0 ||
-      resolution.activeRegion ==
-          SEP3D::RuntimeModel::ActiveRegionMode::ParkerTube;
+  // Every leaf flag has matched the composed corridor/solar-interior plan.
+  // Installation is complete even when full-domain mode removed no leaves.
+  // The Parker-tube planner, halo/cavity rules and solar exclusion above are
+  // unchanged: this flag records successful verification, not a new mask.
+  gStaticLeafMaskPruningApplied = globalInactive != 0;
+  gStaticLeafMaskInstalled = true;
   if (PIC::ThisThread == 0) {
     const double activeFraction = static_cast<double>(
         gPlannedActiveLeafCount) / static_cast<double>(nodes.size());
@@ -2612,7 +2662,12 @@ void ApplyActiveRegionMask(
 
 void VerifyActiveRegionAllocation() {
   using Node = cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>;
-  if (!gStaticLeafMaskInstalled) return;
+  gActiveRegionAllocationVerified = false;
+  if (!gStaticLeafMaskInstalled) {
+    StopWithStatus("static leaf-mask allocation", SEP3D::Core::Status(
+        SEP3D::Core::StatusCode::InvalidTransition,
+        "block allocation was reached before active-region plan installation"));
+  }
   unsigned long long localOwnedActive = 0;
   std::size_t replicatedActive = 0;
   std::size_t replicatedInactive = 0;
@@ -2650,8 +2705,9 @@ void VerifyActiveRegionAllocation() {
       static_cast<unsigned long long>(gPlannedActiveLeafCount)) {
     StopWithStatus("static leaf-mask allocation", SEP3D::Core::Status(
         SEP3D::Core::StatusCode::LayoutMismatch,
-        "allocated owner-block count disagrees with the active-region plan"));
+            "allocated owner-block count disagrees with the active-region plan"));
   }
+  gActiveRegionAllocationVerified = true;
 }
 
 void CorrectSolarInteriorCellMeasures() {
@@ -2956,6 +3012,310 @@ void amps_init() {
   // mover installation, optional restart restoration, and all species
   // numerical initialization have completed.
   WriteInitializationDataTecplotAfterBackground();
+}
+
+SEP3D::Core::Status SEP3D::Validation::CaptureNativeApplicationState(
+    int expectedMpiRanks, NativeApplicationState* state) {
+  using SEP3D::Core::Status;
+  using SEP3D::Core::StatusCode;
+
+  if (state == nullptr) {
+    return Status(StatusCode::InvalidInput,
+                  "native AMPS application-state output is null");
+  }
+
+  // This routine is deliberately a read-only, collective observation made at
+  // a joined application boundary.  It does not call a provider's Prepare(),
+  // rebuild the mesh, alter particles, or advance an RNG.  Consequently the
+  // evidence describes the same state that a production time step consumes.
+  NativeApplicationState captured;
+  MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &captured.mpiRankCount);
+  captured.expectedMpiRanks = expectedMpiRanks;
+  captured.configurationFingerprint = Configuration().physics_fingerprint();
+  captured.plannedActiveLeaves = gPlannedActiveLeafCount;
+  captured.plannedInactiveLeaves = gPlannedInactiveLeafCount;
+  captured.plannedSolarInteriorLeaves = gPlannedSolarInteriorLeafCount;
+  captured.activeRegionMode = RuntimeModel::Name(
+      Configuration().options().activeRegion);
+  captured.solarBoundaryRegistered = gSolarSurfaceBoundary != nullptr;
+  captured.activeMaskInstalled = gStaticLeafMaskInstalled;
+  captured.activeRegionPruningApplied = gStaticLeafMaskPruningApplied;
+  captured.activeRegionAllocationVerified = gActiveRegionAllocationVerified;
+  captured.backgroundReady = gInstalledBackground != nullptr;
+  captured.turbulenceReady = gInstalledTurbulence != nullptr &&
+      gInstalledTurbulence->PreparedMetadata() != nullptr;
+  captured.sourceEnabled = Configuration().options().source.enabled;
+  captured.shockRequired =
+      Configuration().options().shock != RuntimeModel::ShockAuthority::None ||
+      captured.sourceEnabled;
+  captured.restartConfigured =
+      !Configuration().options().restartInputPath.empty();
+  captured.completedSteps = ApplicationRuntime().counters().completedSteps;
+
+  const unsigned long long localBlockCount =
+      static_cast<unsigned long long>(
+          PIC::DomainBlockDecomposition::nLocalBlocks);
+  unsigned long long globalBlockCount = 0;
+  MPI_Allreduce(&localBlockCount, &globalBlockCount, 1,
+                MPI_UNSIGNED_LONG_LONG, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+  captured.globalAllocatedBlocks = globalBlockCount;
+
+  unsigned long long localPhysicalCellCount = 0;
+  bool localBackgroundFinite = captured.backgroundReady;
+  bool localDerivativeFinite = captured.backgroundReady;
+  bool localTurbulenceFinite = captured.turbulenceReady;
+  if (gInstalledBackground) {
+    localPhysicalCellCount = static_cast<unsigned long long>(
+        gInstalledBackground->samples().size());
+    const auto& positions = gInstalledBackground->positions();
+    const auto& samples = gInstalledBackground->samples();
+    const auto& capabilities = gInstalledBackground->capabilities();
+    if (positions.size() != samples.size()) {
+      localBackgroundFinite = false;
+      localDerivativeFinite = false;
+      localTurbulenceFinite = false;
+    }
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+      const Background::BackgroundSample& sample = samples[i];
+      localBackgroundFinite = localBackgroundFinite &&
+          Background::ValidateCompleteSample(sample, capabilities).ok();
+
+      // Validate the full derivative record, including fields not advertised
+      // as analytic.  Numerical AMR reconstruction may populate those fields;
+      // a non-finite value is never acceptable to a focused-transport mover.
+      bool derivativesFinite =
+          std::isfinite(sample.divBhat) &&
+          std::isfinite(sample.focusingLenM) &&
+          std::isfinite(sample.curvature.x) &&
+          std::isfinite(sample.curvature.y) &&
+          std::isfinite(sample.curvature.z) &&
+          std::isfinite(sample.divU) &&
+          std::isfinite(sample.fieldAlignedStrain);
+      for (int row = 0; row < 3; ++row) {
+        for (int column = 0; column < 3; ++column) {
+          derivativesFinite = derivativesFinite &&
+              std::isfinite(sample.gradB(row, column)) &&
+              std::isfinite(sample.gradU(row, column));
+        }
+      }
+      localDerivativeFinite = localDerivativeFinite && derivativesFinite;
+
+      if (gInstalledTurbulence && i < positions.size()) {
+        const Turbulence::TurbulenceSample waves =
+            gInstalledTurbulence->Evaluate(positions[i], sample);
+        // Ballistic is a valid explicit missing-data policy.  In that case all
+        // numerical fields must still be finite zeros; NaN is never used as a
+        // sentinel in either production output or native test evidence.
+        const double values[] = {
+            waves.deltaB2T2, waves.deltaBPlus2T2,
+            waves.deltaBMinus2T2, waves.deltaBOutward2T2,
+            waves.deltaBInward2T2, waves.waveEnergyPlusJPerM3,
+            waves.waveEnergyMinusJPerM3, waves.kMinPerM, waves.kMaxPerM,
+            waves.spectralIndex, waves.parallelCorrelationLengthM};
+        bool finite = waves.status.usable() &&
+            (waves.valid || waves.ballistic);
+        for (double value : values) finite = finite && std::isfinite(value);
+        if (!waves.ballistic) {
+          finite = finite && waves.valid && waves.deltaB2T2 > 0.0 &&
+              waves.kMinPerM > 0.0 &&
+              waves.kMaxPerM > waves.kMinPerM &&
+              waves.parallelCorrelationLengthM > 0.0 &&
+              waves.generation > 0;
+        }
+        localTurbulenceFinite = localTurbulenceFinite && finite;
+      } else {
+        localTurbulenceFinite = false;
+      }
+    }
+  }
+  unsigned long long globalPhysicalCellCount = 0;
+  MPI_Allreduce(&localPhysicalCellCount, &globalPhysicalCellCount, 1,
+                MPI_UNSIGNED_LONG_LONG, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+  captured.globalPhysicalCells = globalPhysicalCellCount;
+
+  auto CollectiveAnd = [](bool local) {
+    int input = local ? 1 : 0;
+    int output = 0;
+    MPI_Allreduce(&input, &output, 1, MPI_INT, MPI_MIN,
+                  MPI_GLOBAL_COMMUNICATOR);
+    return output != 0;
+  };
+  captured.finiteBackgroundAndTurbulence =
+      CollectiveAnd(localBackgroundFinite && localTurbulenceFinite);
+  captured.finiteBackgroundDerivatives =
+      CollectiveAnd(localDerivativeFinite);
+  captured.backgroundReady = CollectiveAnd(captured.backgroundReady);
+  captured.turbulenceReady = CollectiveAnd(captured.turbulenceReady);
+  captured.solarBoundaryRegistered =
+      CollectiveAnd(captured.solarBoundaryRegistered);
+  captured.activeMaskInstalled =
+      CollectiveAnd(captured.activeMaskInstalled);
+  captured.activeRegionPruningApplied =
+      CollectiveAnd(captured.activeRegionPruningApplied);
+  captured.activeRegionAllocationVerified =
+      CollectiveAnd(captured.activeRegionAllocationVerified);
+
+  bool localSpeciesNumericsReady =
+      PIC::ParticleWeightTimeStep::GlobalTimeStepInitialized &&
+      gCompiledSpecies.size() == static_cast<std::size_t>(PIC::nTotalSpecies);
+  captured.species.reserve(gCompiledSpecies.size());
+  for (const auto& species : gCompiledSpecies) {
+    NativeSpeciesState item;
+    item.compiledSlot = species.ampsIndex;
+    item.chemicalSymbol = species.symbol;
+    item.massKg = species.massKg;
+    item.chargeC = species.chargeC;
+    item.timeStepS =
+        PIC::ParticleWeightTimeStep::GlobalTimeStep[species.ampsIndex];
+    item.particleWeight =
+        PIC::ParticleWeightTimeStep::GlobalParticleWeight[species.ampsIndex];
+    localSpeciesNumericsReady = localSpeciesNumericsReady &&
+        item.compiledSlot >= 0 && !item.chemicalSymbol.empty() &&
+        std::isfinite(item.massKg) && item.massKg > 0.0 &&
+        std::isfinite(item.chargeC) && item.chargeC != 0.0 &&
+        std::isfinite(item.timeStepS) && item.timeStepS > 0.0 &&
+        std::isfinite(item.particleWeight) && item.particleWeight > 0.0;
+    captured.species.push_back(item);
+  }
+  for (unsigned int blockIndex = 0;
+       blockIndex < PIC::DomainBlockDecomposition::nLocalBlocks;
+       ++blockIndex) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
+        PIC::DomainBlockDecomposition::BlockTable[blockIndex];
+    if (node == nullptr || node->block == nullptr) continue;
+    for (const auto& species : gCompiledSpecies) {
+      const double localStep =
+          node->block->GetLocalTimeStep(species.ampsIndex);
+      const double localWeight =
+          node->block->GetLocalParticleWeight(species.ampsIndex);
+      localSpeciesNumericsReady = localSpeciesNumericsReady &&
+          std::isfinite(localStep) && localStep > 0.0 &&
+          std::isfinite(localWeight) && localWeight > 0.0 &&
+          localStep ==
+              PIC::ParticleWeightTimeStep::GlobalTimeStep[species.ampsIndex] &&
+          localWeight == PIC::ParticleWeightTimeStep::GlobalParticleWeight[
+                             species.ampsIndex];
+    }
+  }
+  const bool speciesNumericsReady = CollectiveAnd(localSpeciesNumericsReady);
+
+  captured.backgroundGeneration = gInstalledBackground
+      ? gInstalledBackground->metadata().generation : 0;
+  bool localShockReady = !captured.shockRequired;
+  if (gInstalledShock) {
+    const Adapters::ShockState shock =
+        gInstalledShock->Evaluate(ApplicationRuntime().CurrentTimeS());
+    // Provider readiness is distinct from physical shock activation.  Before
+    // event.valid_from the canonical SWCME provider deliberately publishes a
+    // valid inactive state with generation=0: there is no shock to generate
+    // yet.  That state still closes the Shock initialization stage.  Require
+    // identity, time coverage and finite fields in either branch so missing
+    // or stale provider data cannot pass merely because active=false.
+    localShockReady =
+        shock.status.ok() &&
+        shock.Covers(ApplicationRuntime().CurrentTimeS()) &&
+        !shock.providerIdentity.empty() &&
+        !shock.configurationFingerprint.empty() &&
+        std::isfinite(shock.epochS) &&
+        std::isfinite(shock.validUntilS) &&
+        std::isfinite(shock.centerM.x) &&
+        std::isfinite(shock.centerM.y) &&
+        std::isfinite(shock.centerM.z) &&
+        std::isfinite(shock.radiusM) &&
+        std::isfinite(shock.radialSpeedMPerS) &&
+        (!shock.active ||
+         (shock.generation > 0 && shock.radiusM > 0.0));
+  }
+  captured.shockReady = CollectiveAnd(localShockReady);
+  // The application installs/evaluates the shock only after the current
+  // background has been published.  Capturing both at this joined boundary is
+  // therefore the authoritative generation pairing, including the explicit
+  // no-shock transport-only case required by the common initialization ledger.
+  captured.shockBackgroundGeneration = captured.shockReady
+      ? captured.backgroundGeneration : 0;
+
+  std::vector<Output::VirtualSpacecraftDefinition> observers;
+  const Status observerStatus = Output::BuildObserverDefinitions(
+      Configuration(), ApplicationRuntime().CurrentTimeS(), &observers);
+  const bool observersReady = CollectiveAnd(observerStatus.ok());
+  const bool outputDictionaryReady = CollectiveAnd(
+      gStaticCellDataOffset >= 0 &&
+      (Configuration().storage_layout().samplingBytesPerCell == 0 ||
+       gSamplingDataOffset >= 0) &&
+      gStorageCallbacksRegistered);
+  const bool haloReady = CollectiveAnd(gNativeAmpsBackgroundReady);
+
+  if (captured.globalAllocatedBlocks > 0) captured.initializationMask |= 1U << 0;
+  if (captured.solarBoundaryRegistered) captured.initializationMask |= 1U << 1;
+  if (captured.backgroundReady) captured.initializationMask |= 1U << 2;
+  if (captured.turbulenceReady) captured.initializationMask |= 1U << 3;
+  if (captured.shockReady) captured.initializationMask |= 1U << 4;
+  if (haloReady) captured.initializationMask |= 1U << 5;
+  if (!captured.species.empty()) captured.initializationMask |= 1U << 6;
+  if (speciesNumericsReady) captured.initializationMask |= 1U << 7;
+  if (observersReady) captured.initializationMask |= 1U << 8;
+  if (outputDictionaryReady) captured.initializationMask |= 1U << 9;
+
+  int productsExist = 1;
+  int productsFinite = 1;
+  if (PIC::ThisThread == 0) {
+    std::vector<std::string> paths = {
+        Configuration().options().initializationMeshTecplotFile,
+        Configuration().options().initializationParkerLineTecplotFile};
+    for (const auto& species : gCompiledSpecies) {
+      paths.push_back(InitializationDataPath(
+          Configuration().options().initializationDataTecplotFile,
+          species.ampsIndex, static_cast<int>(gCompiledSpecies.size())));
+    }
+    for (const std::string& path : paths) {
+      std::error_code error;
+      const bool exists = fs::is_regular_file(path, error) && !error &&
+          fs::file_size(path, error) > 0 && !error;
+      productsExist = productsExist && exists;
+      productsFinite = productsFinite && exists &&
+          FileHasOnlyFiniteNumericTokens(path);
+    }
+  }
+  MPI_Bcast(&productsExist, 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
+  MPI_Bcast(&productsFinite, 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
+  captured.initializationProductsExist = productsExist != 0;
+  captured.initializationProductsFinite = productsFinite != 0;
+
+  // Hash only collective or immutable values.  Rank-local ownership is
+  // represented by the globally reduced counts, so a valid decomposition can
+  // differ between ranks without creating a false mismatch.
+  std::ostringstream identity;
+  identity << captured.configurationFingerprint << '|'
+           << captured.backgroundGeneration << '|'
+           << captured.globalAllocatedBlocks << '|'
+           << captured.globalPhysicalCells << '|'
+           << captured.plannedActiveLeaves << '|'
+           << captured.plannedInactiveLeaves << '|'
+           << captured.plannedSolarInteriorLeaves << '|'
+           << captured.activeRegionMode << '|'
+           << captured.activeMaskInstalled << '|'
+           << captured.activeRegionPruningApplied << '|'
+           << captured.activeRegionAllocationVerified << '|'
+           << captured.initializationMask;
+  identity << std::setprecision(17);
+  for (const NativeSpeciesState& species : captured.species) {
+    identity << '|' << species.compiledSlot << ':' << species.chemicalSymbol
+             << ':' << species.massKg << ':' << species.chargeC
+             << ':' << species.timeStepS << ':' << species.particleWeight;
+  }
+  const unsigned long long localFingerprint =
+      static_cast<unsigned long long>(Fnv1a64(identity.str()));
+  unsigned long long minimumFingerprint = 0;
+  unsigned long long maximumFingerprint = 0;
+  MPI_Allreduce(&localFingerprint, &minimumFingerprint, 1,
+                MPI_UNSIGNED_LONG_LONG, MPI_MIN, MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&localFingerprint, &maximumFingerprint, 1,
+                MPI_UNSIGNED_LONG_LONG, MPI_MAX, MPI_GLOBAL_COMMUNICATOR);
+  captured.mpiFingerprintConsistent =
+      minimumFingerprint == maximumFingerprint;
+
+  *state = std::move(captured);
+  return Status::OK();
 }
 
 int amps_time_step() {

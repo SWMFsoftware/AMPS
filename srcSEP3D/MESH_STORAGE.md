@@ -172,6 +172,26 @@ Shock source patches outside the active leaves receive explicit disconnected
 ledger rows; the exact per-species macro count is apportioned only over
 connected physical patches.
 
+Plan installation, actual pruning, and allocation verification are separate
+states. After every replicated leaf flag matches the composed corridor/solar
+plan, installation is complete even if no leaves were removed. Full-domain
+identity plans therefore receive the same post-allocation checks as pruned
+corridors: inactive leaves have no resident blocks, every owner-local active
+leaf has a block, replicated counts match the plan, and the global owner-block
+count equals the planned active count. Native JSON and the human-readable
+state artifact report the mode, all three states, and active/inactive/solar-
+interior counts. `SCCM3D04` rejects missing verification or inconsistent counts
+without requiring a nonzero pruning count in either mode.
+
+Portable evaluator and geometry regressions can be run from the AMPS root:
+
+```bash
+python3 srcSEP3D/test/run_native_boundary_regression.py
+```
+
+These component tests exercise the production evaluator and shared geometry;
+actual MPI allocation remains a linked native qualification step.
+
 ## Standalone octree and ownership
 
 `StandaloneOctree::Build` recursively refines blocks whose cell width exceeds

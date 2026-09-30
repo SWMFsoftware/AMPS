@@ -269,6 +269,35 @@ Result RunCFG3D01() {
     return Fail("dry-run and initialization-only modes were not rejected");
   }
 
+  // Linked tests are a first-class executable mode.  They must carry an
+  // explicit immutable deck plus deterministic evidence locations; these
+  // switches are parsed here without importing AMPS or starting MPI.
+  const char* native[] = {
+      "srcSEP3D", "--all-tests", "--test-input", "run.in",
+      "--test-json", "evidence.json", "--artifact-directory", "artifacts",
+      "--test-steps", "2", "--expect-mpi-ranks", "4"};
+  if (!RM::ParseStandaloneCommandLine(
+          12, const_cast<char**>(native), &cli).ok() ||
+      !cli.allTests || cli.testInputPath != "run.in" ||
+      cli.testJsonPath != "evidence.json" ||
+      cli.testArtifactDirectory != "artifacts" || cli.testSteps != 2 ||
+      cli.expectedMpiRanks != 4) {
+    return Fail("native linked-test CLI options did not normalize correctly");
+  }
+  const char* orphanEvidence[] = {
+      "srcSEP3D", "--test-json", "evidence.json"};
+  if (RM::ParseStandaloneCommandLine(
+          3, const_cast<char**>(orphanEvidence), &cli).ok()) {
+    return Fail("native evidence options were accepted without a test selector");
+  }
+  const char* conflictingDecks[] = {
+      "srcSEP3D", "--test", "SCCM3D01", "--input", "a.in",
+      "--test-input", "b.in"};
+  if (RM::ParseStandaloneCommandLine(
+          7, const_cast<char**>(conflictingDecks), &cli).ok()) {
+    return Fail("native test accepted two different immutable input decks");
+  }
+
   std::string bad = CompleteInput();
   bad += "\n[output]\nunknown_key = x\n";
   if (RM::ParseConfigurationText(bad, &parsed).ok())

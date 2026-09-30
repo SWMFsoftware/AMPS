@@ -321,24 +321,33 @@ class ValidationRunnerTests(unittest.TestCase):
             test_input.write_text("schema_version = 4\n", encoding="utf-8")
             launcher_template = (
                 f"{sys.executable} {launcher} --ranks {{ranks}}")
+            profile_payload = json.loads(
+                (ROOT / "validation" / "native_profiles.json").read_text(
+                    encoding="utf-8"))
+            small_cases = tuple(next(
+                item["required_cases"] for item in profile_payload["profiles"]
+                if item["name"] == "small"))
 
             # A host missing one required callback must be rejected before any
             # matrix cell is accepted or a summary is published.
-            write_host(("MPI3D01",))
+            write_host((small_cases[0],))
             rejected_output = root / "rejected"
             rejected = self.run_native_matrix(
                 "--amps", str(host), "--test-input", str(test_input),
                 "--profile", "small", "--launcher", launcher_template,
                 "--output-dir", str(rejected_output), "--timeout", "10")
             self.assertEqual(rejected.returncode, 2, rejected.stdout)
-            self.assertIn("does not advertise required native case(s): MPI3D02",
+            self.assertIn("does not advertise required native case(s):",
                           rejected.stdout)
+            self.assertIn(small_cases[1], rejected.stdout)
             self.assertFalse((rejected_output / "native-matrix.json").exists())
 
             # A protocol-complete host exercises all 2-rank x 2-thread x
-            # 2-case cells in the small profile. The resulting hashes prove
+            # N-case cells in the current small profile. Deriving N from the
+            # registry keeps this negative-control test valid when a new
+            # mandatory native model contract is added. The resulting hashes prove
             # the summary owns the exact input and executable it launched.
-            write_host(("MPI3D01", "MPI3D02"))
+            write_host(small_cases)
             accepted_output = root / "accepted"
             accepted = self.run_native_matrix(
                 "--amps", str(host), "--test-input", str(test_input),
@@ -352,8 +361,9 @@ class ValidationRunnerTests(unittest.TestCase):
                              "srcsep3d-native-matrix-v2")
             self.assertEqual(summary["test_input_sha256"], sha256(test_input))
             self.assertEqual(summary["executable_sha256"], sha256(host))
-            self.assertEqual(summary["totals"]["PASS"], 8)
-            self.assertEqual(len(summary["records"]), 8)
+            expected_records = 2 * 2 * len(small_cases)
+            self.assertEqual(summary["totals"]["PASS"], expected_records)
+            self.assertEqual(len(summary["records"]), expected_records)
             self.assertEqual(
                 {row["ranks"] for row in summary["records"]}, {1, 2})
             self.assertEqual(

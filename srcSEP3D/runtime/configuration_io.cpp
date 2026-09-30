@@ -760,6 +760,29 @@ Core::Status ParseStandaloneCommandLine(
       std::string id;
       if (!requireValue("--test", &id)) return Invalid("--test requires an ID");
       candidate.tests.push_back(id);
+    } else if (argument == "--test-input") {
+      if (!requireValue("--test-input", &candidate.testInputPath))
+        return Invalid("--test-input requires a path");
+    } else if (argument == "--test-json") {
+      if (!requireValue("--test-json", &candidate.testJsonPath))
+        return Invalid("--test-json requires a path");
+    } else if (argument == "--artifact-directory") {
+      if (!requireValue("--artifact-directory",
+                        &candidate.testArtifactDirectory))
+        return Invalid("--artifact-directory requires a path");
+    } else if (argument == "--test-steps") {
+      std::string value;
+      if (!requireValue("--test-steps", &value) ||
+          !ParseUnsigned64(value, &candidate.testSteps))
+        return Invalid("--test-steps requires a non-negative integer");
+    } else if (argument == "--expect-mpi-ranks") {
+      std::string value;
+      std::uint64_t ranks = 0;
+      if (!requireValue("--expect-mpi-ranks", &value) ||
+          !ParseUnsigned64(value, &ranks) || ranks == 0 ||
+          ranks > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
+        return Invalid("--expect-mpi-ranks requires a positive integer");
+      candidate.expectedMpiRanks = static_cast<int>(ranks);
     } else if (argument == "--log-level") {
       std::string value;
       if (!requireValue("--log-level", &value) ||
@@ -789,6 +812,30 @@ Core::Status ParseStandaloneCommandLine(
   }
   if (candidate.initializationOnly && selectionModes != 0) {
     return Invalid("--initialization-only cannot be combined with test selection");
+  }
+  const bool nativeTestRun = candidate.allTests || !candidate.tests.empty();
+  const bool hasNativeTestOptions = !candidate.testInputPath.empty() ||
+      candidate.testJsonPath != "test_output/native/native.json" ||
+      candidate.testArtifactDirectory != "test_output/native/artifacts" ||
+      candidate.testSteps != 1 || candidate.expectedMpiRanks != 0;
+  if (candidate.listTests && hasNativeTestOptions)
+    return Invalid("--list-tests does not initialize AMPS and cannot be "
+                   "combined with native-test execution options");
+  if (!nativeTestRun && !candidate.listTests && hasNativeTestOptions)
+    return Invalid("--test-input, --test-json, --artifact-directory, "
+                   "--test-steps, and --expect-mpi-ranks require --test or "
+                   "--all-tests");
+  if (nativeTestRun) {
+    if (!candidate.inputPath.empty() && !candidate.testInputPath.empty() &&
+        candidate.inputPath != candidate.testInputPath)
+      return Invalid("--input and --test-input name different decks");
+    if (candidate.testInputPath.empty())
+      candidate.testInputPath = candidate.inputPath;
+    if (candidate.testInputPath.empty())
+      return Invalid("a linked native test requires --test-input PATH");
+    if (candidate.dryRun)
+      return Invalid("native tests require AMPS initialization and cannot be "
+                     "combined with --dry-run");
   }
   if (candidate.inputPath.empty() && selectionModes == 0)
     return Invalid("a standalone production run requires --input PATH");
@@ -1324,13 +1371,17 @@ Core::Status BuildStandaloneRunRequest(
   Core::Status status = ParseStandaloneCommandLine(
       argc, argv, &candidate.commandLine);
   if (!status.ok()) return status;
-  if (candidate.commandLine.listTests || candidate.commandLine.allTests ||
-      !candidate.commandLine.tests.empty()) {
+  if (candidate.commandLine.listTests) {
     *result = candidate;
     return Core::Status::OK();
   }
+  const bool nativeTestRun = candidate.commandLine.allTests ||
+      !candidate.commandLine.tests.empty();
   RunConfiguration3DOptions options;
-  status = LoadConfigurationFile(candidate.commandLine.inputPath, &options);
+  status = LoadConfigurationFile(
+      nativeTestRun ? candidate.commandLine.testInputPath
+                    : candidate.commandLine.inputPath,
+      &options);
   if (!status.ok()) return status;
   if (!candidate.commandLine.initializationOutputDirectory.empty()) {
     status = ApplyInitializationOutputDirectory(
@@ -1343,6 +1394,10 @@ Core::Status BuildStandaloneRunRequest(
     options.restartInputPath = candidate.commandLine.restartPath;
   status = RunConfiguration3D::Create(options, &candidate.configuration);
   if (!status.ok()) return status;
+  if (nativeTestRun &&
+      candidate.commandLine.testSteps > options.maximumTimeSteps)
+    return Invalid("--test-steps exceeds run.maximum_time_steps in the "
+                   "immutable test input");
   *result = candidate;
   return Core::Status::OK();
 }

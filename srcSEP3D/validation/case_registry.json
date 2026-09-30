@@ -65,6 +65,55 @@
       "description": "Compare uninterrupted and restarted particle/sampling state in a linked decomposition."
     },
     {
+      "id": "SCCM3D01",
+      "name": "Coronal-CME initialization ledger",
+      "evidence_class": "linked",
+      "role": "release-gate",
+      "description": "Require all ten shared coronal-CME initialization conditions and a joined background/shock generation."
+    },
+    {
+      "id": "SCCM3D02",
+      "name": "Coronal-CME species numerics",
+      "evidence_class": "linked",
+      "role": "release-gate",
+      "description": "Validate positive global and block-local AMPS time steps and statistical weights for every compiled species."
+    },
+    {
+      "id": "SCCM3D03",
+      "name": "Coronal-CME source species binding",
+      "evidence_class": "linked",
+      "role": "release-gate",
+      "description": "Bind every immutable generated AMPS species identity to the shared coronal-CME source contract without assuming slot zero is a proton."
+    },
+    {
+      "id": "SCCM3D04",
+      "name": "Coronal-CME mesh and boundary",
+      "evidence_class": "linked",
+      "role": "release-gate",
+      "description": "Verify the solar internal sphere, active-use mask, and nonempty allocated transport domain in the real AMPS mesh."
+    },
+    {
+      "id": "SCCM3D05",
+      "name": "Coronal-CME provider generations",
+      "evidence_class": "linked",
+      "role": "release-gate",
+      "description": "Require a current finite background generation and shock/no-shock state observed at the same joined lifecycle boundary."
+    },
+    {
+      "id": "SCCM3D06",
+      "name": "Coronal-CME initialization output",
+      "evidence_class": "linked",
+      "role": "release-gate",
+      "description": "Require all declared AMPS initialization Tecplot products to exist and contain no non-finite numeric tokens."
+    },
+    {
+      "id": "SCCM3D07",
+      "name": "Coronal-CME MPI identity",
+      "evidence_class": "linked",
+      "role": "release-gate",
+      "description": "Require all ranks to agree on immutable configuration, generations, global mesh counts, initialization gates, and species numerics."
+    },
+    {
       "id": "XM3D01",
       "name": "Parker 3-D versus field-line reference",
       "evidence_class": "series",

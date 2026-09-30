@@ -15,11 +15,15 @@
 #include "adapters/source_runtime.h"
 #include "output/output_coordinator.h"
 #include "runtime/configuration_io.h"
+#include "validation/coronal_cme_application_test.h"
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
+#include <vector>
 
 void amps_init();
 void amps_init_mesh();
@@ -35,15 +39,30 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  // Test discovery/execution uses test/stage1 for AMPS-independent cases and
-  // test/run_tests.py for linked/validation cases.  The parser recognizes the
-  // common spelling so accidental use fails before AMPS starts, rather than
-  // being mistaken for a production simulation.
-  if (request.commandLine.listTests || request.commandLine.allTests ||
-      !request.commandLine.tests.empty()) {
-    std::cerr << "srcSEP3D test selection is provided by test/stage1 and "
-                 "test/run_tests.py; no simulation was started\n";
-    return 2;
+  // Discovery is intentionally allocation-free: CI can query the linked
+  // executable without starting MPI or constructing a mesh.  Execution below
+  // is different—it follows the exact production initialization path before
+  // a read-only native probe observes AMPS state at a collective boundary.
+  if (request.commandLine.listTests) {
+    for (const auto& test : SEP3D::Validation::CoronalCmeNativeTests()) {
+      std::cout << test.id << " | " << test.name << " | "
+                << test.description << '\n';
+    }
+    return EXIT_SUCCESS;
+  }
+
+  const bool nativeTestMode = request.commandLine.allTests ||
+      !request.commandLine.tests.empty();
+  std::vector<SEP3D::Validation::NativeTestDescriptor> nativeTests;
+  if (nativeTestMode) {
+    status = SEP3D::Validation::SelectCoronalCmeNativeTests(
+        request.commandLine.allTests, request.commandLine.tests,
+        &nativeTests);
+    if (!status.ok()) {
+      std::cerr << "srcSEP3D native-test selection failed: "
+                << status.message << '\n';
+      return 2;
+    }
   }
 
   if (request.commandLine.dryRun) {
@@ -111,6 +130,112 @@ int main(int argc, char** argv) {
 
   amps_init_mesh();
   amps_init();
+
+  if (nativeTestMode) {
+    // --test-steps is a small integration horizon, not a second simulation
+    // loop.  It invokes the same amps_time_step() used by a production run and
+    // stops immediately if the application's normal termination condition is
+    // reached.  Zero is allowed for initialization-only native cases.
+    for (std::uint64_t iteration = 0;
+         iteration < request.commandLine.testSteps; ++iteration) {
+      if (amps_time_step() == _PIC_TIMESTEP_RETURN_CODE__END_SIMULATION_) break;
+    }
+    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+
+    SEP3D::Validation::NativeApplicationState applicationState;
+    status = SEP3D::Validation::CaptureNativeApplicationState(
+        request.commandLine.expectedMpiRanks, &applicationState);
+    int exitCode = status.ok() ? 0 : 2;
+    if (PIC::ThisThread == 0 && status.ok()) {
+      namespace fs = std::filesystem;
+      std::error_code directoryError;
+      fs::create_directories(request.commandLine.testArtifactDirectory,
+                             directoryError);
+      if (directoryError) {
+        std::cerr << "srcSEP3D cannot create native-test artifact directory: "
+                  << directoryError.message() << '\n';
+        exitCode = 2;
+      }
+
+      std::vector<SEP3D::Validation::NativeTestResult> results;
+      if (exitCode == 0) {
+        results = SEP3D::Validation::EvaluateCoronalCmeNativeTests(
+            applicationState, nativeTests);
+
+        // Keep a compact human-readable state record next to the machine JSON.
+        // It contains identities and counts only; large Tecplot products stay
+        // at their declared paths and are referenced rather than duplicated.
+        const fs::path statePath = fs::path(
+            request.commandLine.testArtifactDirectory) /
+            "coronal-cme-application-state.txt";
+        std::ofstream stateFile(statePath);
+        if (!stateFile) {
+          std::cerr << "srcSEP3D cannot open native-test state artifact\n";
+          exitCode = 2;
+        } else {
+          stateFile << "configuration_fingerprint="
+                    << applicationState.configurationFingerprint << '\n'
+                    << "mpi_ranks=" << applicationState.mpiRankCount << '\n'
+                    << "allocated_blocks="
+                    << applicationState.globalAllocatedBlocks << '\n'
+                    << "physical_cells="
+                    << applicationState.globalPhysicalCells << '\n'
+                    << "active_region_mode=" << applicationState.activeRegionMode
+                    << '\n' << "active_region_plan_installed="
+                    << applicationState.activeMaskInstalled << '\n'
+                    << "active_region_pruning_applied="
+                    << applicationState.activeRegionPruningApplied << '\n'
+                    << "active_region_allocation_verified="
+                    << applicationState.activeRegionAllocationVerified << '\n'
+                    << "planned_active_leaves="
+                    << applicationState.plannedActiveLeaves << '\n'
+                    << "planned_inactive_leaves="
+                    << applicationState.plannedInactiveLeaves << '\n'
+                    << "planned_solar_interior_leaves="
+                    << applicationState.plannedSolarInteriorLeaves << '\n'
+                    << "background_generation="
+                    << applicationState.backgroundGeneration << '\n'
+                    << "completed_steps="
+                    << applicationState.completedSteps << '\n'
+                    << "initialization_mask="
+                    << applicationState.initializationMask << '\n';
+          stateFile.close();
+          if (!stateFile) {
+            std::cerr << "srcSEP3D failed to close native-test state artifact\n";
+            exitCode = 2;
+          } else {
+            for (auto& result : results)
+              result.artifacts.push_back(statePath.string());
+          }
+        }
+
+        if (exitCode == 0) {
+          status = SEP3D::Validation::WriteNativeTestJson(
+              request.commandLine.testJsonPath, applicationState, results);
+          if (!status.ok()) {
+            std::cerr << "srcSEP3D native-test JSON failed: "
+                      << status.message << '\n';
+            exitCode = 2;
+          } else {
+            exitCode = SEP3D::Validation::NativeTestExitCode(results);
+            for (const auto& result : results) {
+              std::cout << '[' << result.id << "] "
+                        << SEP3D::Validation::Name(result.status) << " - "
+                        << result.message << '\n';
+            }
+            std::cout << "native_test_json="
+                      << request.commandLine.testJsonPath << '\n';
+          }
+        }
+      }
+    } else if (PIC::ThisThread == 0 && !status.ok()) {
+      std::cerr << "srcSEP3D native state capture failed: "
+                << status.message << '\n';
+    }
+    MPI_Bcast(&exitCode, 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
+    MPI_Finalize();
+    return exitCode;
+  }
 
   // Initialization-only mode is a completed AMPS initialization, not a dry
   // parser pass: the distributed mesh has been built and decomposed, blocks,
