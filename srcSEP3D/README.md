@@ -1029,9 +1029,15 @@ file schemas, atomicity, restart contents, and lifecycle rules.
   policies; shape-only results cannot be reported as absolute-flux validation.
 - Controlled validation calls the production Parker, focused, and SWCME source
   kernels against independent analytical distributions and characteristics.
-- Linked `NAT3D`/`MPI3D`, cross-model `XM3D`, and observational `OV3D` cases
-  share the public CLI. Missing prerequisites are `SKIP`; malformed or
-  checksum-invalid evidence is `ERROR`.
+- Linked `NAT3D`/`MPI3D` and shared-model `SCCM3D` cases, cross-model `XM3D`,
+  and observational `OV3D` cases share the public CLI. Missing prerequisites
+  are `SKIP`; malformed or checksum-invalid evidence is `ERROR`.
+- The linked executable now owns native discovery and execution itself.
+  `--list-tests` is allocation-free; `--test`/`--all-tests` require an explicit
+  `--test-input`, follow the ordinary production AMPS initialization and
+  timestep path, and emit `srcsep-component-tests-v1` JSON. State capture is
+  collective and read-only, so production physics is neither forked nor
+  replaced by a test-only initialization.
 - Scientific cross-model results are immutable exported evidence. The bounded
   V2D01 development gate deliberately compiles distinct cores from both source
   trees; the scientific validation runner itself never searches for srcSEP.
@@ -1040,6 +1046,9 @@ See
 [INTEGRATION_SCIENTIFIC_VALIDATION.md](INTEGRATION_SCIENTIFIC_VALIDATION.md)
 and [validation/README.md](validation/README.md) for algorithms, metrics,
 schemas, case roles, commands, and physical limitations.
+The complete coronal-CME host contract, CLI, test meanings, state-capture
+boundary, and species rules are documented in
+[validation/CORONAL_CME_NATIVE_TESTS.md](validation/CORONAL_CME_NATIVE_TESTS.md).
 
 ## Current limitations
 
@@ -1159,6 +1168,12 @@ test/run_tests.py --suite phase-v --amps ../amps \
   --validation-launch-prefix "mpiexec -n 8" \
   --output-dir test_output/phase-v
 
+# One shared coronal-CME contract on the real AMPS/MPI application.
+test/run_tests.py --test SCCM3D01 --amps ../amps \
+  --validation-input /path/to/reviewed-sep3d.in \
+  --validation-launch-prefix "mpiexec -n 4" \
+  --output-dir test_output/SCCM3D01
+
 # Complete source and configured-production evidence.
 env MAKEFLAGS="-j16" test/run_tests.py --all \
   --amps-source .. --make-config ../Makefile.conf \
@@ -1182,6 +1197,249 @@ test/run_tests.py --routine \
 
 See [test/README.md](test/README.md) for the complete evidence catalog,
 selection rules, exit codes, and troubleshooting.
+
+## Running the native coronal-CME tests
+
+The `SCCM3D01--07` cases test `src/models/sep_coronal_cme` through the real
+`srcSEP3D`/AMPS executable.  They are not substitutes for the dependency-free
+unit tests in `src/models/sep_coronal_cme`.  A native test parses a complete
+runtime input deck, constructs the ordinary immutable srcSEP3D configuration,
+calls the production `amps_init_mesh()` and `amps_init()` functions, optionally
+calls the production `amps_time_step()`, and then captures the joined AMPS
+state without changing it.  The resulting evidence therefore covers the
+generated species table, distributed AMR mesh, MPI decomposition, center-node
+storage, solar boundary, background and shock providers, particle numerics,
+halo exchange, observers, and initialization Tecplot output.
+
+### Prerequisite: verify the linked executable
+
+Install `srcSEP3D`, `src/models/sep_common`, and
+`src/models/sep_coronal_cme` in the same configured AMPS tree and rebuild the
+normal `amps` executable.  Then query the executable before allocating an MPI
+mesh:
+
+```bash
+./amps --list-tests | grep SCCM3D
+```
+
+The output must advertise `SCCM3D01` through `SCCM3D07`.  No MPI launcher,
+input parsing, mesh allocation, or output directory is used for
+`--list-tests`.  Missing IDs mean that `amps` is stale or was linked from a
+different application tree; native evidence from that executable must not be
+accepted.
+
+### Run the primary initialization contract
+
+From the AMPS run directory, execute:
+
+```bash
+mpiexec -n 4 ./amps \
+  --test SCCM3D01 \
+  --test-input srcSEP3D/examples/sep3d_analytic_parker.in \
+  --test-steps 0 \
+  --expect-mpi-ranks 4 \
+  --test-json test_output/SCCM3D01/native.json \
+  --artifact-directory test_output/SCCM3D01/artifacts
+```
+
+Equivalent copy-and-run one-liner:
+
+```bash
+mpiexec -n 4 ./amps --test SCCM3D01 --test-input srcSEP3D/examples/sep3d_analytic_parker.in --test-steps 0 --expect-mpi-ranks 4 --test-json test_output/SCCM3D01/native.json --artifact-directory test_output/SCCM3D01/artifacts
+```
+
+`--test-steps 0` means complete physical initialization with no particle
+advance.  It is intentionally different from `--initialization-only`: native
+test mode must reach its collective read-only state-capture callback, so
+`--test`/`--all-tests` cannot be combined with `--initialization-only` or
+`--dry-run`.
+
+The input after `--test-input` must be a complete reviewed srcSEP3D runtime
+deck.  The runner never supplies hidden mesh, source, transport, species,
+observer, or population-control defaults.  A positive `--test-steps N` calls
+the same `amps_time_step()` used in production exactly `N` times unless the
+normal end-of-simulation condition is reached first.  `N` cannot exceed
+`run.maximum_time_steps` in the deck.
+
+### Run all seven shared-model contracts
+
+`--test` is repeatable.  The following command selects only the seven
+coronal-CME integration cases and executes one real production time step:
+
+```bash
+mpiexec -n 4 ./amps \
+  --test SCCM3D01 \
+  --test SCCM3D02 \
+  --test SCCM3D03 \
+  --test SCCM3D04 \
+  --test SCCM3D05 \
+  --test SCCM3D06 \
+  --test SCCM3D07 \
+  --test-input srcSEP3D/examples/sep3d_analytic_parker.in \
+  --test-steps 1 \
+  --expect-mpi-ranks 4 \
+  --test-json test_output/coronal-cme/native.json \
+  --artifact-directory test_output/coronal-cme/artifacts
+```
+
+Equivalent copy-and-run one-liner:
+
+```bash
+mpiexec -n 4 ./amps --test SCCM3D01 --test SCCM3D02 --test SCCM3D03 --test SCCM3D04 --test SCCM3D05 --test SCCM3D06 --test SCCM3D07 --test-input srcSEP3D/examples/sep3d_analytic_parker.in --test-steps 1 --expect-mpi-ranks 4 --test-json test_output/coronal-cme/native.json --artifact-directory test_output/coronal-cme/artifacts
+```
+
+To execute the complete linked native registry, including the existing
+`NAT3D`, `MPI3D`, and `SCCM3D` cases, use `--all-tests`:
+
+```bash
+mpiexec -n 4 ./amps \
+  --all-tests \
+  --test-input srcSEP3D/examples/sep3d_analytic_parker.in \
+  --test-steps 1 \
+  --expect-mpi-ranks 4 \
+  --test-json test_output/native-all.json \
+  --artifact-directory test_output/native-all
+```
+
+Equivalent copy-and-run one-liner:
+
+```bash
+mpiexec -n 4 ./amps --all-tests --test-input srcSEP3D/examples/sep3d_analytic_parker.in --test-steps 1 --expect-mpi-ranks 4 --test-json test_output/native-all.json --artifact-directory test_output/native-all
+```
+
+`--expect-mpi-ranks` is optional but strongly recommended.  It converts a
+launcher or scheduler mistake into a deterministic test failure instead of
+allowing a one-rank execution to be recorded as the requested multi-rank
+matrix row.  The expected value must match the `mpiexec -n` value.  All ranks
+participate in initialization and state capture; only rank zero publishes the
+JSON and compact state artifact.
+
+### Meaning of the native coronal-CME cases
+
+| ID | Production state examined | Passing condition |
+|---|---|---|
+| `SCCM3D01` | Mesh, solar sphere, background, turbulence, shock/no-shock state, halo exchange, compiled species, block numerics, observers, and output dictionary | All ten mandatory initialization-ledger conditions are complete and the shock state is joined to the current background generation. |
+| `SCCM3D02` | Every generated AMPS species and its global and owner-local block values | Particle weight and time step are positive and finite for every compiled slot; no species-zero or proton assumption is used. |
+| `SCCM3D03` | Compiled slot, AMPS chemical symbol, mass, charge, nucleon applicability, and source-enabled state | Every compiled species has a valid source identity.  Electrons use nucleon count zero to mean not applicable rather than the physically incorrect value `A=1`. |
+| `SCCM3D04` | Registered `R_sun` internal sphere, replicated active-use plan, and allocated active leaves | The spherical boundary, active-cell plan, and physical AMR allocation satisfy the shared mesh contract. |
+| `SCCM3D05` | Published background generation and shock-provider state | Background and shock generations are coherent.  An explicitly configured no-shock transport state is complete and may pass; it is not treated as missing data. |
+| `SCCM3D06` | Mesh, Parker-line, and all per-species initialization Tecplot products | Every required product exists, is nonempty, and contains no numeric `NaN` or infinity token. |
+| `SCCM3D07` | Configuration identity, collective mesh counts, generation, initialization mask, and all-species numerics on every rank | All ranks produce the same deterministic fingerprint, and the actual rank count matches `--expect-mpi-ranks` when supplied. |
+
+The test capture is strictly read-only.  It does not call a provider
+`Prepare()` method, rebuild background or shock state, change a cell, inject
+or resample particles, clear sampling, advance a random stream, or rewrite an
+initialization product.  A PASS therefore describes the state used by the
+production application rather than a separately constructed test state.
+
+### Expected terminal output, files, and exit status
+
+A successful single-case run has the following form; the explanatory message
+may contain additional metrics:
+
+```text
+[SCCM3D01] PASS - complete AMPS initialization state satisfies the coronal-CME contract
+native_test_json=test_output/SCCM3D01/native.json
+```
+
+The explicit command above produces:
+
+```text
+test_output/SCCM3D01/native.json
+test_output/SCCM3D01/artifacts/coronal-cme-application-state.txt
+```
+
+The JSON uses schema `srcsep-component-tests-v1` and records the
+configuration fingerprint, actual MPI rank count, per-case status and
+message, numerical metrics, and artifact paths.  The compact state file
+records the configuration fingerprint, allocated block and physical-cell
+counts, background generation, completed time steps, and initialization mask.
+The ordinary initialization Tecplot products are also generated because the
+test uses the production initialization path.  In particular, `SCCM3D06`
+checks those already-closed products rather than creating test-only files.
+
+The executable exit codes are:
+
+| Code | Meaning |
+|---:|---|
+| `0` | All selected cases passed, or any remaining cases were explicitly skipped. |
+| `1` | At least one selected case completed but failed its physical or integration acceptance condition. |
+| `2` | Command-line, configuration, state-capture, JSON publication, or other infrastructure error. |
+
+The native run allocates the same mesh and initializes the same providers as a
+production run using the selected deck.  Its initialization time and memory
+should therefore be expected to be comparable to production.  A nonzero
+`--test-steps` value additionally incurs the cost of the requested real time
+steps.
+
+### Run through the global test runner
+
+The preferred automated single-case invocation from `AMPS/srcSEP3D` is:
+
+```bash
+python3 test/run_tests.py \
+  --test SCCM3D01 \
+  --amps ../amps \
+  --validation-input examples/sep3d_analytic_parker.in \
+  --validation-launch-prefix "mpiexec -n 4" \
+  --output-dir test_output/SCCM3D01
+```
+
+Equivalent copy-and-run one-liner:
+
+```bash
+python3 test/run_tests.py --test SCCM3D01 --amps ../amps --validation-input examples/sep3d_analytic_parker.in --validation-launch-prefix "mpiexec -n 4" --output-dir test_output/SCCM3D01
+```
+
+The runner first verifies that `--list-tests` advertises the requested ID,
+removes stale JSON, passes the explicit deck through `--test-input`, checks the
+report schema and process exit status, and hashes the executable, input deck,
+JSON, and artifacts.  Supplying `--amps` for a linked case without
+`--validation-input` is an error rather than permission to invent a default
+configuration.
+
+### Run the MPI qualification matrix
+
+Use the native-matrix runner when the same cases must be repeated at the rank
+counts declared by a qualification profile:
+
+```bash
+python3 validation/run_native_matrix.py \
+  --amps ../amps \
+  --test-input examples/sep3d_analytic_parker.in \
+  --profile production \
+  --launcher "mpiexec -n {ranks}" \
+  --output-dir test_output/native-production
+```
+
+Equivalent copy-and-run one-liner:
+
+```bash
+python3 validation/run_native_matrix.py --amps ../amps --test-input examples/sep3d_analytic_parker.in --profile production --launcher "mpiexec -n {ranks}" --output-dir test_output/native-production
+```
+
+The literal `{ranks}` placeholder is required; the matrix replaces it with
+the process count declared for each row and also supplies the matching
+`--expect-mpi-ranks` value.  The `small` profile covers the initialization
+ledger, all-species numerics, and MPI identity.  `medium` adds source binding,
+mesh/boundary, and provider-generation checks.  `production` includes all
+`SCCM3D01--07`, including validation of finite initialization products, along
+with the other native/runtime cases required by that profile.
+
+Common interpretations of unsuccessful runs are:
+
+- `unknown srcSEP3D option '--test'` or missing `SCCM3D` discovery output:
+  rebuild the configured AMPS executable from the updated srcSEP3D sources;
+- `--test-input is required`: supply a complete runtime deck explicitly;
+- expected rank mismatch: make `mpiexec -n N` and `--expect-mpi-ranks N`
+  agree and verify that the batch launcher did not change the allocation;
+- `SCCM3D06` failure: inspect the reported initialization product for a
+  missing/empty file or a numeric `NaN`/infinity token;
+- native state-capture error: treat it as an initialization/infrastructure
+  error, not as scientific FAIL evidence;
+- source-only checkout: portable tests and `BLDL3D11` can pass, but linked
+  `SCCM3D01--07` evidence requires a configured AMPS executable and MPI
+  runtime.
 
 ## Production build gate
 
@@ -1213,6 +1471,9 @@ that the validated background is copied into AMPS' native DATAFILE fields and
 halo-exchanged before the final data-bearing initialization writer is called.
 `BLDL3D10` guards the one-time all-rank photospheric-sphere registration,
 absorbing callback, solid-leaf composition, and post-cut-cell measure repair.
+`BLDL3D11` guards the linked coronal-CME CLI, public-model calls, collective
+state capture, production archive membership, and runner-compatible JSON
+contract. It is a source gate; `SCCM3D01–07` remain the real linked evidence.
 
 ## Implemented acceptance groups
 
@@ -1234,6 +1495,7 @@ absorbing callback, solid-leaf composition, and post-cut-cell measure repair.
 | `NAT3D06–07`, `RST3D01–03` | sampling isolation, transactional output/schema, complete restart |
 | `INT3D01–03`, `VFY3D01–05` | deterministic rank audit, scientific metrics, analytical Parker/focused/source validation |
 | `NAT3D01–03/09–12`, `MPI3D01–02` | registered configured-host integration and multi-rank gates |
+| `SCCM3D01–07` | shared coronal-CME initialization, all-species numerics/source binding, mesh/boundary, provider generations, finite output, and collective identity on real AMPS |
 | `XM3D01–06`, `OV3D01–04` | checksum-owned cross-model and observational campaign gates |
 
 ## Compiled AMPS species ownership
