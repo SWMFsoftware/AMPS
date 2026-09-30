@@ -138,6 +138,7 @@ TRANSPORT_SRC := \
 RUNTIME_SRC := \
     runtime/run_configuration.cpp \
     runtime/configuration_io.cpp \
+    runtime/standalone_command_line.cpp \
     runtime/runtime.cpp \
     runtime/runtime_adapters.cpp
 ADAPTER_SRC := \

@@ -38,6 +38,8 @@ struct StandaloneCommandLine {
   bool dryRun = false;
   bool listTests = false;
   bool allTests = false;
+  // Select every current/future descriptor registered in this native suite.
+  std::string testSuite;
   std::vector<std::string> tests;
   // Native linked tests use the normal production initialization path.  The
   // separate spelling prevents a validation command from being mistaken for

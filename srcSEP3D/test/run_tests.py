@@ -1106,6 +1106,7 @@ def _check_coronal_cme_native_wiring(definition: TestDefinition) -> Result:
         "main.cpp": ROOT / "main.cpp",
         "main_lib.cpp": ROOT / "main_lib.cpp",
         "configuration_io.cpp": ROOT / "runtime" / "configuration_io.cpp",
+        "standalone CLI": ROOT / "runtime" / "standalone_command_line.cpp",
         "native evaluator": ROOT / "validation" /
             "coronal_cme_application_test.cpp",
         "makefile": ROOT / "makefile",
@@ -1140,12 +1141,15 @@ def _check_coronal_cme_native_wiring(definition: TestDefinition) -> Result:
             "FileHasOnlyFiniteNumericTokens(path)",
             "MPI_Allreduce(&localFingerprint",
         ),
-        "configuration_io.cpp": (
+        "standalone CLI": (
+            'argument == "--test-suite"',
             'argument == "--test-input"',
             'argument == "--test-json"',
             'argument == "--artifact-directory"',
             'argument == "--test-steps"',
             'argument == "--expect-mpi-ranks"',
+        ),
+        "configuration_io.cpp": (
             "nativeTestRun ? candidate.commandLine.testInputPath",
         ),
         "native evaluator": (
@@ -1517,7 +1521,7 @@ def _check_makefile_relocation(definition: TestDefinition,
         "bg_provider.o bg_parker.o bg_swmf.o background_snapshot.o "
         "turbulence_models.o keyed_random.o time_step.o perpendicular_transport.o "
         "parker_transport.o focused_transport.o population_control.o "
-        "run_configuration.o configuration_io.o runtime.o runtime_adapters.o "
+        "run_configuration.o configuration_io.o standalone_command_line.o runtime.o runtime_adapters.o "
         "transport_adapter.o particle_ledger.o swcme_source_adapter.o source_runtime.o "
         "sampling.o observer_runtime.o publication.o restart.o output_coordinator.o "
         "validation_metrics.o coronal_cme_application_test.o main_lib.o "

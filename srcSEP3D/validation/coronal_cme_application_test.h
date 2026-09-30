@@ -6,7 +6,7 @@
 // initialized it; coronal_cme_application_test.cpp then evaluates named tests
 // through public sep_coronal_cme APIs and writes portable JSON evidence.
 // Production execution never enters this boundary unless --test or
-// --all-tests was explicitly selected.
+// --all-tests or --test-suite was explicitly selected.
 // ============================================================================
 
 #ifndef SEP3D_VALIDATION_CORONAL_CME_APPLICATION_TEST_H
@@ -27,6 +27,8 @@ struct NativeTestDescriptor {
   std::string id;
   std::string name;
   std::string description;
+  // Explicit membership makes future suite selection independent of ID naming.
+  std::string suite = "amps";
 };
 
 struct NativeSpeciesState {
@@ -92,7 +94,8 @@ Core::Status CaptureNativeApplicationState(
     int expectedMpiRanks, NativeApplicationState* state);
 Core::Status SelectCoronalCmeNativeTests(
     bool allTests, const std::vector<std::string>& requested,
-    std::vector<NativeTestDescriptor>* selected);
+    std::vector<NativeTestDescriptor>* selected,
+    const std::string& suite = "");
 std::vector<NativeTestResult> EvaluateCoronalCmeNativeTests(
     const NativeApplicationState& state,
     const std::vector<NativeTestDescriptor>& selected);

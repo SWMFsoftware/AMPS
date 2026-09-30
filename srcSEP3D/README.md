@@ -59,31 +59,26 @@ mpiexec -n 4 ./amps --test SCCM3D01 --test-input srcSEP3D/examples/sep3d_analyti
 
 ### Validate all coupled SEP + coronal-CME contracts
 
-This command runs only the seven shared-model integration contracts.  Setting
-`--test-steps 1` also advances the application through one real production
-`amps_time_step()` before the read-only validation snapshot is taken:
+Use the suite selector to run every coupled SEP + corona test registered in
+this executable, including future additions. The same command stays valid
+when the suite grows; there is no need to list individual IDs. This corridor
+example checks initialization without advancing particles:
 
 ```bash
-mpiexec -n 4 ./amps \
-  --test SCCM3D01 \
-  --test SCCM3D02 \
-  --test SCCM3D03 \
-  --test SCCM3D04 \
-  --test SCCM3D05 \
-  --test SCCM3D06 \
-  --test SCCM3D07 \
-  --test-input srcSEP3D/examples/sep3d_analytic_parker.in \
-  --test-steps 1 \
-  --expect-mpi-ranks 4 \
-  --test-json test_output/coupled-sep-corona/native.json \
-  --artifact-directory test_output/coupled-sep-corona/artifacts
+mpiexec -n 4 ./amps --test-suite sep-corona --test-input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --test-steps 0 --expect-mpi-ranks 4 --test-json test_output/coupled-sep-corona/native.json --artifact-directory test_output/coupled-sep-corona/artifacts
 ```
 
-Equivalent copy-and-run one-liner:
+Use `sep3d_analytic_parker.in` for the full-domain reference. To exercise particle
+stepping, choose a positive `--test-steps` horizon within the input deck's
+`run.maximum_time_steps`. Full AMPS stepping still needs verification in your
+configured build. `--all-tests` selects the complete native registry, including
+general AMPS/MPI/restart checks with their own prerequisites.
 
-```bash
-mpiexec -n 4 ./amps --test SCCM3D01 --test SCCM3D02 --test SCCM3D03 --test SCCM3D04 --test SCCM3D05 --test SCCM3D06 --test SCCM3D07 --test-input srcSEP3D/examples/sep3d_analytic_parker.in --test-steps 1 --expect-mpi-ranks 4 --test-json test_output/coupled-sep-corona/native.json --artifact-directory test_output/coupled-sep-corona/artifacts
-```
+Suite membership comes from the `suite` field of `CoronalCmeNativeTests()`.
+Register a future coupled descriptor with `suite="sep-corona"` and implement
+its evaluator; the suite selector automatically includes it after rebuilding.
+`./amps --list-tests` also displays suite membership. See
+[validation/COUPLED_SUITE_CLI.md](validation/COUPLED_SUITE_CLI.md) for details.
 
 The selected cases verify, respectively, the complete initialization ledger,
 all compiled species' particle weights and time steps, exact source/species
@@ -133,8 +128,8 @@ python3 validation/run_native_matrix.py --amps ../amps --test-input examples/sep
 ```
 
 Successful direct execution prints one line such as `[SCCM3D01] PASS` for
-each selected case and then prints `native_test_json=PATH`.  Exit status `0`
-means PASS, `1` means that a physical/integration acceptance condition failed,
+each selected case, prints PASS/FAIL/SKIP/ERROR totals, and then prints
+`native_test_json=PATH`. Exit status `0` means no FAIL/ERROR (inspect SKIP totals), `1` means that a physical/integration acceptance condition failed,
 and `2` means command-line, configuration, MPI state-capture, or evidence-
 publication error.  The detailed meaning of every case, expected artifacts,
 and troubleshooting guidance are provided in
@@ -1160,7 +1155,7 @@ file schemas, atomicity, restart contents, and lifecycle rules.
   and observational `OV3D` cases share the public CLI. Missing prerequisites
   are `SKIP`; malformed or checksum-invalid evidence is `ERROR`.
 - The linked executable now owns native discovery and execution itself.
-  `--list-tests` is allocation-free; `--test`/`--all-tests` require an explicit
+  `--list-tests` is allocation-free; `--test`/`--all-tests`/`--test-suite` require an explicit
   `--test-input`, follow the ordinary production AMPS initialization and
   timestep path, and emit `srcsep-component-tests-v1` JSON. State capture is
   collective and read-only, so production physics is neither forked nor

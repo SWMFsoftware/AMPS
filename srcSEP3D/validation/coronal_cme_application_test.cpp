@@ -261,29 +261,41 @@ const std::vector<NativeTestDescriptor>& CoronalCmeNativeTests() {
       {"NAT3D12", "Production product grammar", "finite initialization products"},
       {"MPI3D01", "Multi-rank state reproducibility", "rank identity agreement"},
       {"MPI3D02", "Multi-rank restart continuation", "restart advancement"},
-      {"SCCM3D01", "SCCM initialization ledger", "all ten initialization gates"},
-      {"SCCM3D02", "SCCM species numerics", "all-species weights and steps"},
-      {"SCCM3D03", "SCCM source species binding", "compiled AMPS table coverage"},
-      {"SCCM3D04", "SCCM mesh boundary", "sphere and active-region contract"},
-      {"SCCM3D05", "SCCM provider generations", "background/shock coherence"},
-      {"SCCM3D06", "SCCM initialization output", "finite populated products"},
-      {"SCCM3D07", "SCCM MPI identity", "collective fingerprint agreement"},
+      {"SCCM3D01", "SCCM initialization ledger", "all ten initialization gates", "sep-corona"},
+      {"SCCM3D02", "SCCM species numerics", "all-species weights and steps", "sep-corona"},
+      {"SCCM3D03", "SCCM source species binding", "compiled AMPS table coverage", "sep-corona"},
+      {"SCCM3D04", "SCCM mesh boundary", "sphere and active-region contract", "sep-corona"},
+      {"SCCM3D05", "SCCM provider generations", "background/shock coherence", "sep-corona"},
+      {"SCCM3D06", "SCCM initialization output", "finite populated products", "sep-corona"},
+      {"SCCM3D07", "SCCM MPI identity", "collective fingerprint agreement", "sep-corona"},
   };
   return tests;
 }
 
 Core::Status SelectCoronalCmeNativeTests(
     bool allTests, const std::vector<std::string>& requested,
-    std::vector<NativeTestDescriptor>* selected) {
+    std::vector<NativeTestDescriptor>* selected,
+    const std::string& suite) {
   if (selected == nullptr)
     return Core::Status(Core::StatusCode::InvalidInput,
                         "native test selection output is null");
+  if (!suite.empty() && (allTests || !requested.empty()))
+    return Core::Status(Core::StatusCode::InvalidInput,
+                        "native suite and individual/all selectors conflict");
+  if (!suite.empty() && suite != "sep-corona")
+    return Core::Status(Core::StatusCode::InvalidInput,
+                        "unknown native test suite '" + suite + "'");
   std::map<std::string, NativeTestDescriptor> known;
   for (const auto& descriptor : CoronalCmeNativeTests())
     known.emplace(descriptor.id, descriptor);
   std::vector<NativeTestDescriptor> candidate;
   if (allTests) {
     candidate = CoronalCmeNativeTests();
+  } else if (!suite.empty()) {
+    // Iterate the authoritative registry on every invocation. No fixed ID
+    // range, count, Python catalogue or input-deck list controls membership.
+    for (const auto& descriptor : CoronalCmeNativeTests())
+      if (descriptor.suite == suite) candidate.push_back(descriptor);
   } else {
     for (const std::string& raw : requested) {
       const auto found = known.find(Upper(raw));

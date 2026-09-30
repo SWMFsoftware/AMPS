@@ -714,135 +714,6 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
 
 }  // namespace
 
-const char* Name(LogVerbosity value) {
-  switch (value) {
-    case LogVerbosity::Quiet: return "quiet";
-    case LogVerbosity::Normal: return "normal";
-    case LogVerbosity::Verbose: return "verbose";
-  }
-  return "unknown";
-}
-
-Core::Status ParseStandaloneCommandLine(
-    int argc, char* const argv[], StandaloneCommandLine* result) {
-  if (result == nullptr) return Invalid("command-line output is null");
-  StandaloneCommandLine candidate;
-  for (int i = 1; i < argc; ++i) {
-    const std::string argument(argv[i]);
-    auto requireValue = [&](const char* option, std::string* value) {
-      if (i + 1 >= argc) return false;
-      *value = argv[++i];
-      return !value->empty() && value->rfind("--", 0) != 0 && *value != option;
-    };
-    if (argument == "--input") {
-      if (!requireValue("--input", &candidate.inputPath))
-        return Invalid("--input requires a path");
-    } else if (argument == "--initialization-only") {
-      candidate.initializationOnly = true;
-    } else if (argument == "--initialization-output-dir") {
-      if (!requireValue("--initialization-output-dir",
-                        &candidate.initializationOutputDirectory)) {
-        return Invalid("--initialization-output-dir requires a path");
-      }
-    } else if (argument == "--output-dir") {
-      if (!requireValue("--output-dir", &candidate.outputDirectoryOverride))
-        return Invalid("--output-dir requires a path");
-    } else if (argument == "--restart") {
-      if (!requireValue("--restart", &candidate.restartPath))
-        return Invalid("--restart requires a path");
-    } else if (argument == "--dry-run") {
-      candidate.dryRun = true;
-    } else if (argument == "--list-tests") {
-      candidate.listTests = true;
-    } else if (argument == "--all-tests") {
-      candidate.allTests = true;
-    } else if (argument == "--test") {
-      std::string id;
-      if (!requireValue("--test", &id)) return Invalid("--test requires an ID");
-      candidate.tests.push_back(id);
-    } else if (argument == "--test-input") {
-      if (!requireValue("--test-input", &candidate.testInputPath))
-        return Invalid("--test-input requires a path");
-    } else if (argument == "--test-json") {
-      if (!requireValue("--test-json", &candidate.testJsonPath))
-        return Invalid("--test-json requires a path");
-    } else if (argument == "--artifact-directory") {
-      if (!requireValue("--artifact-directory",
-                        &candidate.testArtifactDirectory))
-        return Invalid("--artifact-directory requires a path");
-    } else if (argument == "--test-steps") {
-      std::string value;
-      if (!requireValue("--test-steps", &value) ||
-          !ParseUnsigned64(value, &candidate.testSteps))
-        return Invalid("--test-steps requires a non-negative integer");
-    } else if (argument == "--expect-mpi-ranks") {
-      std::string value;
-      std::uint64_t ranks = 0;
-      if (!requireValue("--expect-mpi-ranks", &value) ||
-          !ParseUnsigned64(value, &ranks) || ranks == 0 ||
-          ranks > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
-        return Invalid("--expect-mpi-ranks requires a positive integer");
-      candidate.expectedMpiRanks = static_cast<int>(ranks);
-    } else if (argument == "--log-level") {
-      std::string value;
-      if (!requireValue("--log-level", &value) ||
-          !ParseEnum(value, {{"quiet", LogVerbosity::Quiet},
-                             {"normal", LogVerbosity::Normal},
-                             {"verbose", LogVerbosity::Verbose}},
-                     &candidate.verbosity)) {
-        return Invalid("--log-level accepts quiet, normal, or verbose");
-      }
-    } else {
-      return Invalid("unknown srcSEP3D option '" + argument + "'");
-    }
-  }
-  const int selectionModes = static_cast<int>(candidate.listTests) +
-      static_cast<int>(candidate.allTests) +
-      static_cast<int>(!candidate.tests.empty());
-  if (selectionModes > 1)
-    return Invalid("--list-tests, --all-tests, and --test are mutually exclusive");
-  if (candidate.initializationOnly && candidate.dryRun) {
-    return Invalid("--initialization-only and --dry-run are mutually exclusive: "
-                   "the former builds the AMPS mesh, while the latter forbids "
-                   "AMPS allocation");
-  }
-  if (!candidate.initializationOutputDirectory.empty() &&
-      !candidate.initializationOnly) {
-    return Invalid("--initialization-output-dir requires --initialization-only");
-  }
-  if (candidate.initializationOnly && selectionModes != 0) {
-    return Invalid("--initialization-only cannot be combined with test selection");
-  }
-  const bool nativeTestRun = candidate.allTests || !candidate.tests.empty();
-  const bool hasNativeTestOptions = !candidate.testInputPath.empty() ||
-      candidate.testJsonPath != "test_output/native/native.json" ||
-      candidate.testArtifactDirectory != "test_output/native/artifacts" ||
-      candidate.testSteps != 1 || candidate.expectedMpiRanks != 0;
-  if (candidate.listTests && hasNativeTestOptions)
-    return Invalid("--list-tests does not initialize AMPS and cannot be "
-                   "combined with native-test execution options");
-  if (!nativeTestRun && !candidate.listTests && hasNativeTestOptions)
-    return Invalid("--test-input, --test-json, --artifact-directory, "
-                   "--test-steps, and --expect-mpi-ranks require --test or "
-                   "--all-tests");
-  if (nativeTestRun) {
-    if (!candidate.inputPath.empty() && !candidate.testInputPath.empty() &&
-        candidate.inputPath != candidate.testInputPath)
-      return Invalid("--input and --test-input name different decks");
-    if (candidate.testInputPath.empty())
-      candidate.testInputPath = candidate.inputPath;
-    if (candidate.testInputPath.empty())
-      return Invalid("a linked native test requires --test-input PATH");
-    if (candidate.dryRun)
-      return Invalid("native tests require AMPS initialization and cannot be "
-                     "combined with --dry-run");
-  }
-  if (candidate.inputPath.empty() && selectionModes == 0)
-    return Invalid("a standalone production run requires --input PATH");
-  *result = candidate;
-  return Core::Status::OK();
-}
-
 Core::Status ParseConfigurationText(
     const std::string& text, RunConfiguration3DOptions* result) {
   if (result == nullptr) return Invalid("configuration output is null");
@@ -1376,6 +1247,7 @@ Core::Status BuildStandaloneRunRequest(
     return Core::Status::OK();
   }
   const bool nativeTestRun = candidate.commandLine.allTests ||
+      !candidate.commandLine.testSuite.empty() ||
       !candidate.commandLine.tests.empty();
   RunConfiguration3DOptions options;
   status = LoadConfigurationFile(

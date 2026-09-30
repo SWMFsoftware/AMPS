@@ -70,11 +70,11 @@ installing the updated sources, not after extracting those sources.
 
 The existing complete `sep3d_analytic_parker_active_tube.in` example selects
 `parker-tube`, an active width of 0.05 AU at 1 AU, and one block halo. Its
-observers are aligned with the configured field-line corridor. Run all seven
+observers are aligned with the configured field-line corridor. Run all registered coupled
 native initialization checks from the AMPS root, without particle stepping:
 
 ```bash
-mpiexec -n 4 ./amps --test SCCM3D01 --test SCCM3D02 --test SCCM3D03 --test SCCM3D04 --test SCCM3D05 --test SCCM3D06 --test SCCM3D07 --test-input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --test-steps 0 --expect-mpi-ranks 4 --test-json test_output/corridor-init/native.json --artifact-directory test_output/corridor-init/artifacts
+mpiexec -n 4 ./amps --test-suite sep-corona --test-input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --test-steps 0 --expect-mpi-ranks 4 --test-json test_output/corridor-init/native.json --artifact-directory test_output/corridor-init/artifacts
 ```
 
 For the unpruned reference, use the same command with
@@ -92,10 +92,11 @@ separate and unchanged.
 python3 srcSEP3D/test/run_native_boundary_regression.py
 ```
 
-This compiles the actual native evaluator and shared geometry. Its 24 checks
+This compiles the actual native evaluator and shared geometry. Its 45 checks
 cover full-domain zero pruning, solar-only pruning, normal and wide corridors,
 missing installation/allocation, incorrect counts, inconsistent pruning,
-unsupported modes, solar-exclusion evidence, real finite-line core/halo/pruning
+unsupported modes, suite selection and CLI conflicts, solar-exclusion evidence,
+real finite-line core/halo/pruning
 geometry, and cut-cell/exterior preservation. The runner also verifies the new
 JSON evidence round-trip. Those checks passed when preparing this package.
 

@@ -46,18 +46,19 @@ int main(int argc, char** argv) {
   if (request.commandLine.listTests) {
     for (const auto& test : SEP3D::Validation::CoronalCmeNativeTests()) {
       std::cout << test.id << " | " << test.name << " | "
-                << test.description << '\n';
+                << test.description << " | suite=" << test.suite << '\n';
     }
     return EXIT_SUCCESS;
   }
 
   const bool nativeTestMode = request.commandLine.allTests ||
+      !request.commandLine.testSuite.empty() ||
       !request.commandLine.tests.empty();
   std::vector<SEP3D::Validation::NativeTestDescriptor> nativeTests;
   if (nativeTestMode) {
     status = SEP3D::Validation::SelectCoronalCmeNativeTests(
         request.commandLine.allTests, request.commandLine.tests,
-        &nativeTests);
+        &nativeTests, request.commandLine.testSuite);
     if (!status.ok()) {
       std::cerr << "srcSEP3D native-test selection failed: "
                 << status.message << '\n';
@@ -223,6 +224,19 @@ int main(int argc, char** argv) {
                         << SEP3D::Validation::Name(result.status) << " - "
                         << result.message << '\n';
             }
+            unsigned passed = 0, failed = 0, skipped = 0, errors = 0;
+            for (const auto& result : results) {
+              using SEP3D::Validation::NativeTestStatus;
+              switch (result.status) {
+                case NativeTestStatus::Pass: ++passed; break;
+                case NativeTestStatus::Fail: ++failed; break;
+                case NativeTestStatus::Skip: ++skipped; break;
+                case NativeTestStatus::Error: ++errors; break;
+              }
+            }
+            std::cout << "native_test_summary: total=" << results.size()
+                      << " pass=" << passed << " fail=" << failed
+                      << " skip=" << skipped << " error=" << errors << '\n';
             std::cout << "native_test_json="
                       << request.commandLine.testJsonPath << '\n';
           }

@@ -32,6 +32,17 @@ The linked executable provides allocation-free discovery:
 ./amps --list-tests
 ```
 
+Run every current/future coupled SEP + corona test without listing IDs:
+
+```bash
+mpiexec -n 4 ./amps --test-suite sep-corona --test-input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --test-steps 0 --expect-mpi-ranks 4 --test-json test_output/coupled-sep-corona/native.json --artifact-directory test_output/coupled-sep-corona/artifacts
+```
+
+The selector reads native descriptor suite membership directly. It currently
+selects SCCM3D01–07 and includes future `suite="sep-corona"` descriptors after
+rebuilding. Discovery displays suite membership. Results print one status per
+case plus total PASS/FAIL/SKIP/ERROR counts. See [COUPLED_SUITE_CLI.md](COUPLED_SUITE_CLI.md).
+
 Run one test or the complete native registry with an explicit immutable input:
 
 ```bash
@@ -52,8 +63,9 @@ mpiexec -n 4 ./amps \
   --artifact-directory test_output/native-all
 ```
 
-`--test` is repeatable. It is mutually exclusive with `--all-tests` and
-`--list-tests`. `--test-input` is mandatory for execution; `--input` may be
+`--test` is repeatable. `--test`, `--test-suite`, `--all-tests` and
+`--list-tests` are mutually exclusive. `--test-suite` accepts `sep-corona`
+(case insensitive), exactly once; missing/unknown names are usage errors. `--test-input` is mandatory for execution; `--input` may be
 given as an alias only when both paths are textually identical. Test execution
 cannot be combined with `--dry-run` or `--initialization-only`, because the
 native callback must observe a completed real AMPS initialization. A zero
