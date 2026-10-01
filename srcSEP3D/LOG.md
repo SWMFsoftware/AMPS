@@ -21,6 +21,8 @@ python3 srcSEP3D/test/run_coupled_sep_corona.py --amps ./amps --ranks 4 --test-i
 other 3D  tests: 
 env MAKEFLAGS="-j16" test/run_tests.py --all --amps-source .. --make-config ../Makefile.conf --output-dir test_output/all --rebuild
 
+another runner
+srcSEP3D/test/run_tests.py --all
 
 srcSEP:
 test/run_tests.py --amps ../amps --all --output-dir test_output/all
