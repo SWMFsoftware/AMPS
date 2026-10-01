@@ -331,7 +331,11 @@ This source gate protects the boundary between srcSEP3D's application-owned
 background cache and AMPS' separate DATAFILE cache. It requires the production
 driver to zero native padding, copy the validated density/velocity/temperature/
 pressure/B/E/gradient fields, exchange block halos, and mark the installation
-complete before the final `outputMeshDataTECPLOT` call. It also requires the
+complete before the final `OutputDistributedDataTECPLOT` call. The call must
+enable data printing for each compiled species and assemble the rank-local
+cut-cell fragments into the requested initialization filename. This gate
+prevents reverting to the whole-brick writer, which does not clip the solar
+surface. It also requires the
 physical-cell selection to enforce both spherical radii, unconditional wave
 storage, immediate center-node turbulence write/readback, the registered AMPS
 `InterpolateCenterNode` hook for application-owned bytes, and mandatory

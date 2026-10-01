@@ -273,7 +273,9 @@ duplicates/switches sampling buffers according to its sampling configuration.
 9. install an active-only load measure, partition the retained tree, and
    create owner lists;
 10. for schema 3 or 4, write the final distributed tree with AMPS'
-   `outputMeshTECPLOT` and write the finite Parker centreline once on rank zero;
+   `outputMeshTECPLOT` and write the finite Parker centreline once on rank zero.
+   This early mesh product shows the Cartesian octree, not clipped solar-surface
+   cells, because the blocks and cut-cell measures are not yet allocated;
 11. allocate active blocks, initialize AMPS cut-cell measures, and set measures
     of geometrically proven fully photospheric cells (including ghosts) to
     zero while preserving fractional surface cells; and
@@ -304,16 +306,25 @@ best-effort diagnostics.
    exchange its neighbor-dependent derived fields);
 6. publish/install runtime and mover state, including an optional restart; and
 7. verify the active snapshot and every species numerical value, then call
-   `outputMeshDataTECPLOT` for `sep3d-initialization-data.dat` as the final
+   `OutputDistributedDataTECPLOT(path, true, species)` for
+   `sep3d-initialization-data.dat` as the final
    operation of `amps_init()`.
 
 The separation between steps 10–11 of `amps_init_mesh()` and this sequence is
 intentional: `outputMeshTECPLOT` needs only the finalized octree, whereas
-`outputMeshDataTECPLOT` must not observe the native buffer before Parker/SWCME
+`OutputDistributedDataTECPLOT` must not observe the native buffer before Parker/SWCME
 and turbulence installation have completed on every rank.
 
-`outputMeshDataTECPLOT` represents a FEBRICK at its vertices. AMPS creates a
-temporary center node for each vertex and calls the registered center-node
+The initialization data writer removes solar-interior cells and invokes AMPS'
+`GetCutcellTetrahedronMesh` for cells intersecting the registered sphere. Whole
+cells form FEBRICK zones; boundary cells form tetrahedral zones. All MPI ranks
+must enter the writer: each prints owner-local data fragments, and
+`SetAssembleDistributedOutputFileFlag(true)` makes AMPS gather/assemble them
+into the requested filename. The explicit initialization call is independent
+of `_PIC_OUTPUT_MODE_`, which selects ordinary sampling output. Every compiled
+species retains its existing filename and local time-step/weight columns.
+
+AMPS creates a temporary center node for output vertices and calls the registered center-node
 interpolators before printing it. Static bytes requested by an application are
 not included by AMPS' built-in interpolation. srcSEP3D consequently registers
 `InterpolateInitializationCellData` alongside its print callbacks before layout

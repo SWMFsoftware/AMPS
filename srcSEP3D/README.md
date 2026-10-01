@@ -826,11 +826,20 @@ void PrintUserData(FILE* output, int dataSetNumber, CMPI_channel* pipe,
 }
 ```
 
-Rank zero must not dereference a remote rank's center-node buffer. Conversely,
-the remote owner must not print to the shared file. Do not add an MPI
+With a non-null channel, rank zero must not dereference a remote rank's
+center-node buffer, and the remote owner sends its row through that channel.
+The cut-cell initialization writer `OutputDistributedDataTECPLOT()` instead
+passes a null channel: each owner prints to its rank-local fragment, and AMPS
+assembles the fragments after traversal. Do not add an MPI
 collective inside a per-node callback: ranks can be at different positions in
 the distributed mesh traversal, so such a collective can deadlock. Perform
-global validation and halo exchange before entering `outputMeshDataTECPLOT()`.
+global validation and halo exchange before entering `OutputDistributedDataTECPLOT()`.
+srcSEP3D calls it with `PrintMeshData=true` on every rank, after allocation and
+cut-cell measure initialization, and enables assembled output to retain the
+requested `sep3d-initialization-data.dat` filename. This produces whole-cell
+brick zones and solar-boundary tetrahedral zones, omitting interior cells. The
+early `sep3d-initialization-mesh.dat` remains the preallocation octree diagnostic.
+Regular sampled output continues to follow AMPS' `_PIC_OUTPUT_MODE_` setting.
 
 The interpolation callback is mandatory for application-owned center-node
 state. AMPS automatically interpolates its built-in sampled quantities and the

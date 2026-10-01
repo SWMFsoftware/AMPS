@@ -593,8 +593,9 @@ void LoadBytes(PIC::Mesh::cDataCenterNode* cell, std::size_t offset,
               bytes);
 }
 
-// AMPS writes a FEBRICK zone at mesh vertices.  Its writer obtains every
-// vertex value by creating a temporary cDataCenterNode and calling
+// AMPS writes whole cells as FEBRICK zones and boundary cut cells as
+// tetrahedral zones. Its writers obtain vertex values by creating a temporary
+// cDataCenterNode and calling
 // cDataCenterNode::Interpolate() with the surrounding physical centre nodes.
 // That AMPS method knows how to interpolate built-in particle sampling and
 // DATAFILE fields, but deliberately knows nothing about static bytes requested
@@ -1748,12 +1749,23 @@ void WriteInitializationDataTecplotAfterBackground() {
   // from entering the distributed AMPS writer while another rank is still
   // checking species numerics.
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+  // This initialization product must use AMPS' cut-cell-aware writer: the
+  // single-file brick writer emits complete Cartesian cells across the solar
+  // surface even when their physical measures exclude the solid interior.
+  // All ranks write their owner-local fragments, then AMPS assembles the
+  // complete FEBRICK/tetrahedron zones into the requested filename. This
+  // explicit call is independent of _PIC_OUTPUT_MODE_, which controls regular
+  // sampling output. Allocation, cut-cell measures and halo exchange have
+  // already completed; this writer must never run during preallocation mesh
+  // output or inside a rank-zero-only branch. PrintMeshData must be true so
+  // initialized background, turbulence and species numerics are emitted.
+  PIC::Mesh::mesh->SetAssembleDistributedOutputFileFlag(true);
   for (const auto& species : gCompiledSpecies) {
     const std::string path = InitializationDataPath(
         Configuration().options().initializationDataTecplotFile,
         species.ampsIndex, PIC::nTotalSpecies);
-    PIC::Mesh::mesh->outputMeshDataTECPLOT(
-        path.c_str(), species.ampsIndex);
+    PIC::Mesh::mesh->OutputDistributedDataTECPLOT(
+        path.c_str(), true, species.ampsIndex);
   }
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 }
@@ -2351,8 +2363,8 @@ void SEP3D::Init_BeforeParser() {
     PIC::Mesh::PrintVariableListCenterNode.push_back(
         PrintInitializationVariableList);
     PIC::Mesh::PrintDataCenterNode.push_back(PrintInitializationCellData);
-    // outputMeshDataTECPLOT prints vertex records through temporary
-    // center-node objects.  This hook is therefore as essential as the print
+    // OutputDistributedDataTECPLOT prints brick and cut-cell vertex records
+    // through temporary center-node objects. This hook is as essential as the print
     // callback: it copies the initialized application-owned background and
     // turbulence slice into those objects before PrintInitializationCellData
     // reads it.

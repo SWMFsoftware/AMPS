@@ -592,7 +592,7 @@ def _check_retired_sources(definition: TestDefinition) -> Result:
                 errors.append(f"{path.relative_to(ROOT)} contains retired token {token}")
 
     main_lib = (ROOT / "main_lib.cpp").read_text(encoding="utf-8")
-    # outputMeshDataTECPLOT is now the required native AMPS initialization
+    # OutputDistributedDataTECPLOT is the cut-cell-aware native initialization
     # evidence path. Prepopulation and binary mesh saves remain retired
     # prototype operations and must not return to the production driver.
     for call in ("PrepopulateDomain", "saveMeshFile"):
@@ -640,7 +640,7 @@ def _check_initialized_native_background(definition: TestDefinition) -> Result:
         "PIC::Mesh::InterpolateCenterNode.push_back(",
         "InterpolateInitializationCellData",
         "WriteInitializationDataTecplotAfterBackground();",
-        "outputMeshDataTECPLOT(",
+        "OutputDistributedDataTECPLOT(",
         "radiusM >= innerRadiusM && radiusM <= outerRadiusM",
         "TurbulenceTecplotVariableList()",
         "PrepareTurbulenceTecplotPresentation(",
@@ -695,11 +695,14 @@ def _check_initialized_native_background(definition: TestDefinition) -> Result:
             definition.test_id, definition.group, "FAIL",
             "application/native zero/fill/turbulence/halo sequence or final writer call is out of order",
             time.monotonic() - started, [])
-    if "gNativeAmpsBackgroundReady" not in writer or \
-       "outputMeshDataTECPLOT(" not in writer:
+    if ("gNativeAmpsBackgroundReady" not in writer or
+            not re.search(r"PIC::Mesh::mesh->OutputDistributedDataTECPLOT\(\s*"
+                          r"path\.c_str\(\),\s*true,\s*species\.ampsIndex\s*\)", writer) or
+            "SetAssembleDistributedOutputFileFlag(true);" not in writer):
         return Result(
             definition.test_id, definition.group, "FAIL",
-            "initialization writer does not enforce the completed native-background boundary",
+            "initialization writer must assemble cut-cell data for every species "
+            "after the completed native-background boundary",
             time.monotonic() - started, [])
 
     return Result(
@@ -707,7 +710,7 @@ def _check_initialized_native_background(definition: TestDefinition) -> Result:
         "validated background/turbulence are stored at physical center nodes, "
         "the application slice participates in AMPS vertex interpolation, wave "
         "energy is emitted as mandatory total/directional SI columns, halos are "
-        "exchanged, and completion is checked before initialization output",
+        "exchanged, and completion is checked before assembled cut-cell initialization output",
         time.monotonic() - started, [])
 
 
