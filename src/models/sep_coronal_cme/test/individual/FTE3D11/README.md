@@ -1,0 +1,7 @@
+# FTE3D11
+
+reserved, non-release unified drift/energy test. The derived focused and Parker operators reproduce their independent invariants and timestep convergence without double counting plasma-frame adiabatic energy change; enabling drift changes the expected energy and cross-field motion, while disabling it recovers the current mover bit for bit. Runtime products emitted only after transport distinguish, in a declared reporting frame, vector net coherent drift `integral v_d dt`, its signed projections onto declared report axes, and noncancelling pathwise exposure `integral |v_d| dt`. They also identify the diffusion denominator as either one-axis `sqrt(2*integral e_i dot K_perp dot e_i dt)` for a declared perpendicular unit axis `e_i`, or total-plane `sqrt(2*integral trace(K_perp) dt)`; a scalar isotropic two-dimensional denominator therefore uses `sqrt(4*integral kappa_perp dt)`. A test that silently interchanges these widths or replaces net displacement with pathwise exposure fails.
+
+Run from any directory with `python3 test.py`. The launcher delegates to the global registry, so individual and cumulative gates execute the identical implementation.
+
+Implementation: `test/test_stage14.py` calls public research kernels and immutable offline producers, with synthetic independent references and negative fixtures. [The Stage-14 guide](../../../docs/STAGE14_RESEARCH_EXTENSIONS.md) records the implemented domains and outstanding host/campaign gates. A software PASS is not an observational-campaign or production-adapter qualification.

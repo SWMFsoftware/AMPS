@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one SCCM test or a cumulative Stage 0--12 release gate."""
+"""Run one SCCM test or a cumulative Stage 0--14 software verification gate."""
 
 # Passion and several NASA HEC environments still provide Python 3.8.  With
 # postponed annotations, expressions such as ``list[str]`` are stored as text
@@ -69,6 +69,13 @@ TESTS = [
     *[Test(f"SHEATH3D{number:02d}", 11) for number in range(1, 4)],
     *[Test(f"PROV3D{number:02d}", 12, "preprocessing") for number in range(1, 4)],
     Test("CAL3D01", 12, "preprocessing"),
+    *[Test(f"REL3D{number:02d}", 13, "release") for number in range(1, 4)],
+    # Stage 14 is independently enabled, versioned research. These synthetic
+    # protocol/kernel checks do not turn EVT/XMD/SLM into observed-campaign PASS
+    # evidence, nor make them dependencies of the Stage-13 release profile.
+    *[Test(identifier, 14, "research") for identifier in (
+        "CPL3D10", "TUR3D08", "MFP3D08", "SLM3D01", "FTE3D10", "FTE3D11",
+        "ELL3D11", "SRC3D20", "SRC3D21", "SRC3D22", "WND3D21", "EVT3D01", "XMD3D01")],
 ]
 
 # These are release-contract values, not counts inferred from TESTS.  Keeping
@@ -90,6 +97,8 @@ EXPECTED_CUMULATIVE_COUNTS = {
     10: 196,
     11: 202,
     12: 206,
+    13: 209,
+    14: 222,
 }
 
 # A terminal test ID makes the diagnostic more useful than a count alone.  It
@@ -108,6 +117,8 @@ EXPECTED_STAGE_TERMINALS = {
     10: "XM3D02",
     11: "SHEATH3D03",
     12: "CAL3D01",
+    13: "REL3D03",
+    14: "XMD3D01",
 }
 
 
@@ -147,6 +158,10 @@ def command_for(test: Test) -> list[str]:
         return [str(ROOT / "build" / "sep_coronal_cme_tests"), "--test", test.identifier]
     if test.kind == "preprocessing":
         return [sys.executable, str(ROOT / "test" / "test_stage12.py"), "--test", test.identifier]
+    if test.kind == "release":
+        return [sys.executable, str(ROOT / "test" / "test_stage13.py"), "--test", test.identifier]
+    if test.kind == "research":
+        return [sys.executable, str(ROOT / "test" / "test_stage14.py"), "--test", test.identifier]
     if test.kind == "architecture":
         # Run adversarial source/artifact fixtures before the same production
         # archive/public-ABI audit. They belong to ARCHSCCM01, not DOCSCCM01.
@@ -172,22 +187,30 @@ def documentation_generated_checks() -> tuple[bool, str]:
             return False, output
     return True, output
 
-def write_reports(results: list[dict[str, object]], output: Path) -> None:
+def write_reports(results: list[dict[str, object]], output: Path, require_no_skips=False) -> None:
     output.mkdir(parents=True, exist_ok=True)
-    passed = sum(bool(item["passed"]) for item in results)
+    passed = sum(item["status"]=="PASS" for item in results)
+    failed = sum(item["status"]=="FAIL" for item in results)
+    skipped = sum(item["status"]=="SKIP" for item in results)
     document = {"suite": "sep_coronal_cme",
+        "evidence_kind": "software-verification",
+        "production_qualified": False,
+        "observational_campaign_qualified": False,
+        "require_no_skips":require_no_skips,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
-        "total": len(results), "passed": passed, "failed": len(results) - passed,
+        "total": len(results), "passed": passed, "failed": failed, "skipped": skipped,
         "tests": results}
     (output / "results.json").write_text(json.dumps(document, indent=2) + "\n",
                                          encoding="utf-8")
     suite = ET.Element("testsuite", name="sep_coronal_cme",
-        tests=str(len(results)), failures=str(len(results) - passed),
+        tests=str(len(results)), failures=str(failed), skipped=str(skipped),
         time=f"{sum(float(x['seconds']) for x in results):.6f}")
     for item in results:
         case = ET.SubElement(suite, "testcase", name=str(item["id"]),
             classname=f"stage{item['stage']}", time=f"{float(item['seconds']):.6f}")
-        if not item["passed"]:
+        if item["status"]=="SKIP":
+            ET.SubElement(case,"skipped",message=str(item.get("message","campaign evidence missing")))
+        elif not item["passed"]:
             failure = ET.SubElement(case, "failure", message="test failed")
             failure.text = str(item["output"])
         system = ET.SubElement(case, "system-out")
@@ -199,10 +222,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     select = parser.add_mutually_exclusive_group(required=True)
     select.add_argument("--all", action="store_true")
-    select.add_argument("--stage", type=int, choices=tuple(range(0, 13)))
+    select.add_argument("--stage", type=int, choices=tuple(EXPECTED_CUMULATIVE_COUNTS))
     select.add_argument("--test")
     select.add_argument("--list", action="store_true")
     parser.add_argument("--output-dir", default="build/test-results")
+    parser.add_argument("--require-no-skips",action="store_true",help="fail when a selected campaign lacks its evidence")
     parser.add_argument(
         "--expect-count", type=int,
         help=("fail unless the selected gate contains this many tests; Make "
@@ -251,7 +275,8 @@ def main(argv: list[str] | None = None) -> int:
           f"registry-total={len(TESTS)}")
 
     binary = ROOT / "build" / "sep_coronal_cme_tests"
-    if any(test.kind == "cpp" for test in selected) and not binary.exists():
+    research_cpp = {"MFP3D08","FTE3D10","FTE3D11","ELL3D11","SRC3D20","SRC3D21","SRC3D22"}
+    if any(test.kind == "cpp" or test.identifier in research_cpp for test in selected) and not binary.exists():
         build = subprocess.run(["make", str(binary.relative_to(ROOT))], cwd=ROOT)
         if build.returncode:
             return build.returncode
@@ -265,15 +290,27 @@ def main(argv: list[str] | None = None) -> int:
             passed, generated = documentation_generated_checks()
             output += generated
         elapsed = time.monotonic() - start
-        print(f"[{test.identifier}] {'PASS' if passed else 'FAIL'} ({elapsed:.3f}s)")
-        if not passed:
+        status="PASS" if passed else "FAIL";message="";verification_passed=passed
+        if passed and test.identifier in {"EVT3D01","XMD3D01","SLM3D01"}:
+            markers=[line.split("=",1)[1] for line in output.splitlines() if line.startswith("research_gate_status=")]
+            try:
+                marker=json.loads(markers[0]) if len(markers)==1 else {}
+                if marker.get("id")!=test.identifier or marker.get("status")!="SKIP" or marker.get("verification_passed") is not True:
+                    raise ValueError("missing/invalid campaign evidence disposition")
+                status="SKIP";message=marker["reason"]
+            except (ValueError,KeyError,TypeError) as error:
+                status="FAIL";output+="\n"+str(error);verification_passed=False
+        passed=status=="PASS"
+        print(f"[{test.identifier}] {status} ({elapsed:.3f}s)"+(" "+message if message else ""))
+        if status=="FAIL":
             print(output.rstrip())
         results.append({"id": test.identifier, "stage": test.stage,
-            "passed": passed, "seconds": elapsed, "output": output})
-    write_reports(results, ROOT / args.output_dir)
-    failures = sum(not bool(item["passed"]) for item in results)
-    print(f"SUMMARY: {len(results) - failures}/{len(results)} passed; evidence={ROOT / args.output_dir}")
-    return 1 if failures else 0
+            "passed": passed, "status": status, "verification_passed": verification_passed,
+            "executed": status!="SKIP", "message":message,"seconds": elapsed, "output": output})
+    write_reports(results, ROOT / args.output_dir,args.require_no_skips)
+    failures = sum(item["status"]=="FAIL" for item in results);skipped=sum(item["status"]=="SKIP" for item in results)
+    print(f"SUMMARY: total={len(results)} pass={len(results)-failures-skipped} fail={failures} skip={skipped}; evidence={ROOT / args.output_dir}")
+    return 1 if failures or (args.require_no_skips and skipped) else 0
 
 if __name__ == "__main__":
     raise SystemExit(main())

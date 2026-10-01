@@ -173,7 +173,7 @@ To run the shared gates and live host checks together from the AMPS root:
 python3 srcSEP3D/test/run_coupled_sep_corona.py --amps ./amps --ranks 4 --test-input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --test-steps 0
 ```
 
-The aggregate currently selects 206 shared gates plus 7 native checks and
+The aggregate currently selects 222 shared gates plus 7 native checks and
 keeps their scopes distinct. The supplied deck selects legacy analytic
 Parker/SWCME. Its native initialization passes do not activate or qualify
 PFSS/SCS coronal providers or the optional Stage-11 mover; the complete host
@@ -206,3 +206,15 @@ frozen transfer/comparison manifests. See
 and the runnable [synthetic example](examples/stage12/README.md). These assets
 are prepared outside the cell/particle loops. Their neutral JSON schemas do not
 add a runtime imported-MHD provider or change the schema-5 application grammar.
+
+Stage 13 adds checked source/package manifests, explicit independent application
+invocation, frozen release profiles and last-pass protection. See
+[release qualification](docs/STAGE13_RELEASE_QUALIFICATION.md) and the
+[deliberately incomplete templates](release/README.md). Production qualification
+needs actual clean owning-app builds, D1--D10 and campaign/MPI evidence.
+
+Stage 14 adds independently versioned research kernels and offline producers,
+with thirteen owning verification IDs. See
+[implemented domains and remaining qualification](docs/STAGE14_RESEARCH_EXTENSIONS.md)
+and [runnable synthetic jobs](examples/stage14/README.md). These schema-6
+products and family bundle major 4 do not add selectors to schema-5 input.

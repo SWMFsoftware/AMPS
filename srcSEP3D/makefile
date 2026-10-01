@@ -66,7 +66,8 @@ SEP_CORONAL_CME_OBJECTS := $(patsubst \
     $(SEP_CORONAL_CME_DIR)/src/%.cpp,$(SEP_CORONAL_CME_DIR)/build/%.o,\
     $(wildcard $(SEP_CORONAL_CME_DIR)/src/*.cpp)) \
     $(SEP_CORONAL_CME_DIR)/build/common_sep_field_line_exchange.o \
-    $(SEP_CORONAL_CME_DIR)/build/common_sep_field_line_bundle_io.o
+    $(SEP_CORONAL_CME_DIR)/build/common_sep_field_line_bundle_io.o \
+    $(SEP_CORONAL_CME_DIR)/build/common_sep_coherent_transport.o
 
 # Dependency-light goals must remain usable in a source-only archive.  All
 # production goals deliberately fail during makefile parsing if AMPS_CONFIG is

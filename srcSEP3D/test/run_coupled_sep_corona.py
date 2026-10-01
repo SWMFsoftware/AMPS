@@ -255,11 +255,14 @@ def read_shared(report, registry, code):
         require(type(row.get("passed")) is bool and row.get("stage") == test["stage"] and
                 isinstance(row.get("seconds"), (int, float)) and math.isfinite(row["seconds"]) and row["seconds"] >= 0,
                 "invalid shared result/stage/duration")
-        rows.append(dict(row, scope="shared-model", status="PASS" if row["passed"] else "FAIL", executed=True))
+        status=row.get("status","PASS" if row["passed"] else "FAIL")
+        require(status in {"PASS","FAIL","SKIP"} and row["passed"]==(status=="PASS"),"shared status/boolean disagreement")
+        rows.append(dict(row, scope="shared-model", status=status, executed=status!="SKIP"))
     passed = sum(r["status"] == "PASS" for r in rows)
+    failed = sum(r["status"] == "FAIL" for r in rows);skipped=sum(r["status"]=="SKIP" for r in rows)
     require(data.get("total") == len(rows) and data.get("passed") == passed and
-            data.get("failed") == len(rows)-passed, "shared report totals disagree with rows")
-    require(code == (0 if passed == len(rows) else 1), "shared report/process exit disagree")
+            data.get("failed") == failed and data.get("skipped",0)==skipped, "shared report totals disagree with rows")
+    require(code == (1 if failed or (data.get("require_no_skips",False) and skipped) else 0), "shared report/process exit disagree")
     return rows
 
 
@@ -495,6 +498,9 @@ def main(argv=None):
     code = 2 if errors or counts["error"] else (1 if counts["fail"] or (args.require_no_skips and counts["skip"]) else 0)
     failure_text = failure_summary(run, results, errors, operations, args.require_no_skips)
     report = {"schema": "sep-corona-aggregate-v1", "run_directory": str(run),
+              "evidence_kind": "shared-software-and-generic-native-host",
+              "production_release_qualified": False,
+              "observational_campaign_qualified": False,
               "scope": "shared-model-only" if args.model_only else "shared-model-and-native-amps",
               "counts": totals, "registries": registries, "results": results, "runner_errors": errors,
               "operations": operations, "ownership": ownership, "native_state": native_state,

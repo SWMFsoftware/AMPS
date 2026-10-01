@@ -1526,12 +1526,15 @@ def _check_makefile_relocation(definition: TestDefinition,
         "sampling.o observer_runtime.o publication.o restart.o output_coordinator.o "
         "validation_metrics.o coronal_cme_application_test.o main_lib.o "
         "amps_particle_adapter.o")
+    # Stage 14 adds the coherent-transport kernel to the coronal archive.
+    # Include its flattened object explicitly here as in the production
+    # makefile; the layout probe must exercise the current archive contract.
     shared_members = (
         "sep_transport_common.o sep_coefficient_physics.o "
         "sep_coefficient_registry.o sep_background_snapshot.o "
         "sep_test_registry.o sep_injection_spectrum.o sep_species_source.o "
         "swcme3d.o common_sep_field_line_exchange.o "
-        "common_sep_field_line_bundle_io.o")
+        "common_sep_field_line_bundle_io.o common_sep_coherent_transport.o")
     (fixture / "Makefile").write_text(
         f"APPLICATION_MEMBERS := {application_members}\n"
         f"SHARED_MEMBERS := {shared_members}\n"

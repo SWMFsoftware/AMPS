@@ -58,6 +58,21 @@ def implementation_notes(test) -> str:
                 "inference assumptions, immutable metadata and role ownership. "
                 "The [synthetic CLI example](../../../examples/stage12/README.md) "
                 "provides a complete runnable asset/selection workflow.\n")
+    if test.stage == 13:
+        return ("\nImplementation: `test/test_stage13.py` verifies the release "
+                "machinery in [the Stage-13 guide](../../../docs/STAGE13_RELEASE_QUALIFICATION.md). "
+                "Actual production qualification additionally requires clean owning-app "
+                "builds, MPI/convergence/campaign evidence and D1--D10.\n")
+    if test.stage == 14:
+        disposition=(" The canonical campaign result is SKIP until actual "
+                     "independently registered evidence is available; the synthetic "
+                     "contract verification is retained separately." if test.identifier in {"EVT3D01","XMD3D01","SLM3D01"} else "")
+        return ("\nImplementation: `test/test_stage14.py` calls public research kernels "
+                "and immutable offline producers, with synthetic independent references "
+                "and negative fixtures. [The Stage-14 guide]"
+                "(../../../docs/STAGE14_RESEARCH_EXTENSIONS.md) records the implemented "
+                "domains and outstanding host/campaign gates. A software PASS is not "
+                "an observational-campaign or production-adapter qualification."+disposition+"\n")
     return ""
 
 def main() -> int:
@@ -80,8 +95,9 @@ def main() -> int:
             "Run from any directory with `python3 test.py`. The launcher delegates "
             "to the global registry, so individual and cumulative gates execute "
             "the identical implementation.\n" + implementation_notes(test), encoding="utf-8")
+        expected="skip-without-actual-campaign-evidence" if identifier in {"EVT3D01","XMD3D01","SLM3D01"} else "pass"
         (folder / "reference.json").write_text(f'{{\n  "id": "{identifier}",\n  "first_stage": {stage},\n'
-            '  "expected": "pass",\n  "tolerance_authority": "model/testing_validation.md"\n}\n', encoding="utf-8")
+            f'  "expected": "{expected}",\n  "tolerance_authority": "model/testing_validation.md"\n}}\n', encoding="utf-8")
     print(f"generated {len(selected)} individual test launchers")
     return 0
 

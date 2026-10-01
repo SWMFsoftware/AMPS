@@ -9,8 +9,8 @@ python3 srcSEP3D/test/run_coupled_sep_corona.py --amps ./amps --ranks 4 --test-i
 
 Run this Python command once from the AMPS root; it launches MPI itself. It
 builds the shared test binary/adapters, runs every shared gate (including
-Stage-12 offline Python), then launches the requested live suite. Currently
-there are 206 shared and 7 native cases, totaling 213. The actual shared
+Stage-12 observation preprocessing and Stage-13/14 release/research Python), then launches the requested live suite. Currently
+there are 222 shared and 7 native cases, totaling 229. The actual shared
 `--list` and executable `--list-tests` outputs own selection; this driver
 maintains no copied ID catalogue or fixed count.
 
@@ -36,7 +36,7 @@ unbuffered output. Each recognized result advances a phase-local counter, with
 the discovered total, percentage and elapsed seconds:
 
 ```text
-[progress] shared-model-tests completed=200/206 (97.1%) elapsed=5.7s result=SHEATH3D01 PASS
+[progress] shared-model-tests completed=200/222 (90.1%) elapsed=5.7s result=SHEATH3D01 PASS
 ```
 
 Every 15 seconds, including during quiet compilation or AMPS initialization,
@@ -201,3 +201,16 @@ boundary/geometry checks), native JSON provider/active-region evidence, and 29
 SEP3D Python runner tests (including ten aggregate-runner regressions).
 The real shared aggregate passed 206/206. These are component checks, not a substitute
 for executing the linked command above.
+
+Stage-13 release machinery and Stage-14 research/protocol cases are discovered
+from the same shared registry. A model-only run now verifies 222 canonical
+records. These are portable software checks; the production release profile
+separately requires coronal runtime, clean application/core, MPI/convergence,
+D1--D10 and registered campaign evidence. Synthetic EVT/XMD/SLM checks do not
+mean that an observational campaign passed. See the shared Stage-13/14 guides.
+
+Reserved campaign records EVT3D01, XMD3D01 and SLM3D01 now retain passing
+synthetic contract verification but report SKIP for absent actual campaign
+evidence. Shared full selection is 222: 219 PASS, 3 SKIP, 0 FAIL. The
+aggregate preserves shared SKIPs and enforces `--require-no-skips` across both
+scopes. The Stage-13 baseline remains 209 PASS.

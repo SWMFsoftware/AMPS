@@ -200,6 +200,14 @@ and exports the normalized-domain and C05 mesh-preflight ABI names required by
 the production audit. It therefore exercises the strict archive contract while
 leaving real AMPS compilation coverage to BLDL3D01.
 
+The fixture manifest is intentionally explicit and must be updated with the
+production member list when a shared kernel is added. Stage 14 requires
+`common_sep_coherent_transport.o` in this synthetic `mainlib.a`, matching the
+coronal model archive that the application flattens into its production
+archive. A missing-member failure under `BLDL3D05-layout/build/main` diagnoses
+this fixture, not the real enclosing AMPS build. Retain the production audit:
+it must still reject an archive with a missing or duplicated required member.
+
 #### BLDL3D06 — production transitive-header boundary
 
 Every generic AMPS translation unit reaches `SEP3D.h` through generated
@@ -756,3 +764,15 @@ intact. Failure-summary coverage includes complete shared output, native
 metrics/artifact references, generated-log paths, infrastructure errors,
 strict SKIPs and replacing the latest summary while preserving older runs.
 Those fixtures are never MPI/physical qualification evidence.
+
+The current shared registry has 222 IDs through Stage 14; with the seven native
+initialization checks the aggregate has 229. The baseline Stage-13 subset has
+209. Research campaign-protocol and portable kernel passes remain distinct
+from actual observed-campaign/native-MPI qualification. No explicit test-ID
+list is required to include future registered cases.
+
+Reserved campaign records EVT3D01, XMD3D01 and SLM3D01 now retain passing
+synthetic contract verification but report SKIP for absent actual campaign
+evidence. Shared full selection is 222: 219 PASS, 3 SKIP, 0 FAIL. The
+aggregate preserves shared SKIPs and enforces `--require-no-skips` across both
+scopes. The Stage-13 baseline remains 209 PASS.

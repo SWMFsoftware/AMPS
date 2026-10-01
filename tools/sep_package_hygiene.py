@@ -27,6 +27,17 @@ TOP_LEVEL_REQUIRED: Tuple[str, ...] = (
     "srcSEP3D/makefile",
     "srcSEP3D/validation/coronal_cme_application_test.cpp",
     "srcSEP3D/validation/coronal_cme_application_test.h",
+    "src/models/sep_common/sep_coherent_transport.h",
+    "src/models/sep_common/sep_coherent_transport.cpp",
+    "src/models/sep_coronal_cme/include/sep_coronal_cme/research_extensions.h",
+    "src/models/sep_coronal_cme/src/research_extensions.cpp",
+    "src/models/sep_coronal_cme/test/test_stage13.py",
+    "src/models/sep_coronal_cme/test/test_stage14.py",
+    "src/models/sep_coronal_cme/tools/release/qualification.py",
+    "src/models/sep_coronal_cme/tools/qualify_release.py",
+    "src/models/sep_coronal_cme/tools/research_stage14.py",
+    "src/models/sep_coronal_cme/docs/STAGE13_RELEASE_QUALIFICATION.md",
+    "src/models/sep_coronal_cme/docs/STAGE14_RESEARCH_EXTENSIONS.md",
 )
 
 FORBIDDEN_DIRECTORY_NAMES: Tuple[str, ...] = (

@@ -52,7 +52,7 @@ if "--list" in sys.argv:
 output=Path(sys.argv[sys.argv.index("--output-dir")+1]); output.mkdir(parents=True)
 reported=rows[:-1] if config["mode"] == "shared-missing" else rows
 for index,row in enumerate(reported):
-    print("["+row["id"]+"] "+("PASS" if row["passed"] else "FAIL"))
+    print("["+row["id"]+"] "+row.get("status",("PASS" if row["passed"] else "FAIL")))
     if config["mode"]=="slow-progress" and index==0:
         # No explicit flush: the driver must make this visible before exit.
         import time
@@ -60,8 +60,10 @@ for index,row in enumerate(reported):
         deadline=time.monotonic()+8
         while not release.exists() and time.monotonic()<deadline: time.sleep(0.02)
 passed=sum(r["passed"] for r in reported)
-(output/"results.json").write_text(json.dumps(dict(suite="sep_coronal_cme",total=len(reported),passed=passed,failed=len(reported)-passed,tests=reported)))
-raise SystemExit(0 if passed==len(reported) else 1)
+skipped=sum(r.get("status")=="SKIP" for r in reported)
+failed=len(reported)-passed-skipped
+(output/"results.json").write_text(json.dumps(dict(suite="sep_coronal_cme",total=len(reported),passed=passed,failed=failed,skipped=skipped,tests=reported)))
+raise SystemExit(1 if failed else 0)
 ''')
         self.amps = self.root/"fixture-amps"
         self.amps.write_text("#!"+sys.executable+'''\nfrom pathlib import Path
@@ -227,6 +229,20 @@ raise SystemExit(0 if config["mode"]=="exit-mismatch" else code)
         self.assertIn("failed_test_summary: fail=0 error=0 runner_errors=1", process.stdout)
         self.assertIn("runner_error native-amps: linked --amps executable is missing/nonexecutable", process.stdout)
         self.assertNotIn("phase_log native-amps-tests=", process.stdout)
+
+    def test_shared_campaign_skip_retains_protocol_verification_and_strict_policy(self):
+        self.fixture['shared'][1].update(status='SKIP',passed=False,verification_passed=True,
+            message='Actual campaign absent; synthetic protocol checks passed')
+        self.save()
+        process,report=self.run_suite()
+        self.assertEqual(process.returncode,0,process.stdout)
+        self.assertEqual(report['counts']['skip'],1)
+        case=next(r for r in report['results'] if r['id']=='PROVDEMO01')
+        self.assertFalse(case['executed']);self.assertTrue(case['verification_passed'])
+        self.assertEqual(case['status'],'SKIP')
+        process,report=self.run_suite('--require-no-skips')
+        self.assertEqual(process.returncode,1,process.stdout)
+        self.assertIn('SKIP shared-model/PROVDEMO01',process.stdout)
 
     def test_live_progress_precedes_child_exit_and_heartbeat(self):
         self.fixture["mode"] = "slow-progress"; self.save()

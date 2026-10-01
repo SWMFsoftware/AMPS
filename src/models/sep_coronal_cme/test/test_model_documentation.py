@@ -109,7 +109,10 @@ class DocumentationGenerationTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(listed.returncode, 0, listed.stdout)
-        entries = [line for line in listed.stdout.splitlines() if line.strip()]
+        # Later optional stages may extend --all, but the immutable baseline
+        # Stage-0--12 surface must remain complete and ordered.
+        entries = [line for line in listed.stdout.splitlines() if line.strip()
+                   and int(line.split("\t")[1].split("=")[1]) <= 12]
         self.assertEqual(len(entries), 206, listed.stdout)
         self.assertTrue(entries[-1].startswith("CAL3D01\tstage=12\t"),
                         entries[-1])
@@ -122,7 +125,11 @@ class DocumentationGenerationTests(unittest.TestCase):
         self.assertIn(
             "test/run_tests.py --stage 12 --expect-count 206", makefile)
         self.assertIn(
-            "test/run_tests.py --all --expect-count 206", makefile)
+            "test/run_tests.py --stage 13 --expect-count 209", makefile)
+        self.assertIn(
+            "test/run_tests.py --stage 14 --expect-count 222", makefile)
+        self.assertEqual(len(listed.stdout.splitlines()),222)
+        self.assertTrue(listed.stdout.splitlines()[-1].startswith("XMD3D01\tstage=14\t"))
 
     def test_dirty_canonical_document_is_rejected(self) -> None:
         """Direct edits to generated ``model.md`` must never become authority."""

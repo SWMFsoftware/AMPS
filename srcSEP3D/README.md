@@ -21,7 +21,7 @@ against shared coronal-model API contracts. The example decks select
 **analytic Parker background and SWCME shock**; `SCCM3D01--07` are generic
 host-contract checks and do not demonstrate that the PFSS/SCS background or
 Stage-11 providers are active. The current application authority enums do not
-select those coronal providers. Shared Stage-0--12 verification remains a
+select those coronal providers. Shared Stage-0--14 software verification remains a
 separate authority.
 
 Run the following commands from the AMPS root directory after rebuilding the
@@ -67,7 +67,7 @@ launches MPI itself:
 python3 srcSEP3D/test/run_coupled_sep_corona.py --amps ./amps --ranks 4 --test-input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --test-steps 0
 ```
 
-Currently this selects **206 shared-model gates plus 7 native host checks**.
+Currently this selects **222 shared-model gates plus 7 native host checks (229 total)**.
 Counts grow with the two registries, without listing IDs. Each result retains
 its evidence scope. `test_output/coupled-sep-corona/summary.json` and `junit.xml`
 combine results; fresh per-run directories retain original reports/logs.
@@ -1743,3 +1743,10 @@ photosphere is exactly `R_sun`, distinct from `inner_radius_m`, and uses a
 conservative solid-box classifier. `BLDL3D10` guards the AMPS-only registration
 and cell-measure lifecycle. `CFG3D07` enforces the compiled AMPS species
 binding. All are part of the normal `test/run_tests.py --all` manifest.
+
+Stage 13/14 details are in the shared model
+[release guide](../src/models/sep_coronal_cme/docs/STAGE13_RELEASE_QUALIFICATION.md)
+and [research guide](../src/models/sep_coronal_cme/docs/STAGE14_RESEARCH_EXTENSIONS.md).
+The aggregate discovers the new IDs automatically. Shared research/protocol
+verification does not qualify the native coronal adapter or observed campaigns.
+The existing outside-Sun active corridor configuration is retained.

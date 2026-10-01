@@ -17,25 +17,30 @@ make test-stage7
 make test-stage8
 make test-stage9
 make test-stage10
+make test-stage11
+make test-stage12
+make test-stage13
+make test-stage14
 python3 test/run_tests.py --test PFSS3D01
 python3 test/run_tests.py --all
 python3 test/run_tests.py --list
 ```
 
-The cumulative release-gate sizes are fixed by contract: Stages 0 through 10
-select 13, 22, 53, 82, 96, 106, 117, 128, 153, 173, and 196 tests,
-respectively. Every Make
+The cumulative software-gate sizes are fixed by contract: Stages 0 through 14
+select 13, 22, 53, 82, 96, 106, 117, 128, 153, 173, 196, 202, 206, 209 and 222
+tests, respectively. Stage 13 covers baseline release machinery; Stage 14
+adds non-release research/protocol verification. Every Make
 target passes the corresponding value through `--expect-count`, while the
 runner independently validates its registry before executing anything.  Thus
 a partial update cannot misreport the old 53-test Stage 0--2 registry as a
 successful later-stage run. A correct Stage 10 log starts with:
 
 ```text
-SELECTION: stage=10; tests=196; registry-total=196
+SELECTION: stage=10; tests=196; registry-total=222
 ```
 
 To diagnose a copied source tree, `python3 test/run_tests.py --list | wc -l`
-must print `196`, and the last listed identifier must be `XM3D02`. If it does
+must print `222`, and the last listed identifier must be `XMD3D01`. If it does
 not, replace the complete model package (at minimum both `makefile` and
 `test/run_tests.py`) instead of mixing files from different release stages.
 
@@ -68,3 +73,20 @@ Documentation tests are launched with `unittest discover -s test` rather than
 by converting a file path to a dotted module name. This avoids both the missing
 `test/__init__.py` failure and collisions with Python's own `test` package on
 Python 3.8 installations.
+
+Stage 13 documentation: [release qualification](../docs/STAGE13_RELEASE_QUALIFICATION.md).
+Stage 14 documentation: [research domains and open qualification gates](../docs/STAGE14_RESEARCH_EXTENSIONS.md).
+Shared JSON labels its evidence as software verification and explicitly
+reports production/observational qualification false. Campaign protocol tests
+on synthetic assets do not close the observed-event gates.
+
+Incremental C++ builds now emit `.d` dependencies for model, neutral, test and
+adapter objects. A public header change triggers all affected recompilations;
+`make clean` remains appropriate when replacing an older archive whose objects
+were built before dependency tracking was introduced.
+
+Reserved campaign records EVT3D01, XMD3D01 and SLM3D01 now retain passing
+synthetic contract verification but report SKIP for absent actual campaign
+evidence. Shared full selection is 222: 219 PASS, 3 SKIP, 0 FAIL. The
+aggregate preserves shared SKIPs and enforces `--require-no-skips` across both
+scopes. The Stage-13 baseline remains 209 PASS.

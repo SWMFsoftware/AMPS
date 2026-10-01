@@ -1,0 +1,6 @@
+{
+  "id": "EVT3D01",
+  "first_stage": 14,
+  "expected": "skip-without-actual-campaign-evidence",
+  "tolerance_authority": "model/testing_validation.md"
+}
