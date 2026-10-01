@@ -69,6 +69,48 @@ Status ValidateParkerGeometry(const ParkerSpiralGeometry& geometry) {
   return Status::OK();
 }
 
+Status ParkerCurveBoundsM(double endRadiusM,
+                          const ParkerSpiralGeometry& geometry,
+                          double paddingM, Vec3* minimumM, Vec3* maximumM) {
+  const Status valid = ValidateParkerGeometry(geometry);
+  if (!valid.ok()) return valid;
+  if (!minimumM || !maximumM || !std::isfinite(endRadiusM) ||
+      endRadiusM < geometry.sourceRadiusM || !std::isfinite(paddingM) ||
+      paddingM < 0.0)
+    return Status(StatusCode::InvalidInput, "invalid Parker curve enclosure");
+  Vec3 lower(std::numeric_limits<double>::infinity(),
+             std::numeric_limits<double>::infinity(),
+             std::numeric_limits<double>::infinity());
+  Vec3 upper = -1.0 * lower;
+  const double winding = TransverseWindingPerM(geometry);
+  constexpr int intervals = 512;
+  for (int i = 0; i < intervals; ++i) {
+    const double a = geometry.sourceRadiusM +
+        (endRadiusM - geometry.sourceRadiusM) * i / intervals;
+    const double b = geometry.sourceRadiusM +
+        (endRadiusM - geometry.sourceRadiusM) * (i + 1) / intervals;
+    const Vec3 middle = ParkerCurvePoint(0.5 * (a + b), geometry);
+    // The speed in radial coordinates is monotone on the outward branch.
+    // The mean-value inequality bounds every point by this midpoint ball.
+    const double speed = std::hypot(1.0,
+        winding * (b - geometry.sourceRadiusM));
+    const double roundoff = 128.0 * std::numeric_limits<double>::epsilon() *
+        std::max(1.0, endRadiusM);
+    const double width = paddingM + 0.5 * (b - a) * speed + roundoff;
+    if (!std::isfinite(width))
+      return Status(StatusCode::InvalidInput, "Parker enclosure overflow");
+    lower.x = std::min(lower.x, middle.x - width);
+    lower.y = std::min(lower.y, middle.y - width);
+    lower.z = std::min(lower.z, middle.z - width);
+    upper.x = std::max(upper.x, middle.x + width);
+    upper.y = std::max(upper.y, middle.y + width);
+    upper.z = std::max(upper.z, middle.z + width);
+  }
+  *minimumM = lower;
+  *maximumM = upper;
+  return Status::OK();
+}
+
 Vec3 ParkerCurvePoint(double radiusM,
                       const ParkerSpiralGeometry& geometry) {
   if (!ValidateParkerGeometry(geometry).ok() || !std::isfinite(radiusM) ||

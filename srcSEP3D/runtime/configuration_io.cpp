@@ -214,10 +214,26 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
                    &o->innerBoundary)) return invalidValue();
   } else if (field == "domain.outer_radius_mode") {
     if (!ParseEnum(value, {{"preset", OuterRadiusMode::Preset},
-                           {"explicit", OuterRadiusMode::Explicit}},
+                           {"explicit", OuterRadiusMode::Explicit},
+                           {"field-line-endpoint", OuterRadiusMode::FieldLineEndpoint}},
                    &o->outerRadiusMode)) return invalidValue();
   } else if (field == "domain.outer_radius_m") {
     if (!ParseDouble(value, &o->outerRadiusM)) return invalidValue();
+  } else if (field == "domain.box_geometry") {
+    if (!ParseEnum(value, {{"sun-centered-cube", DomainBoxGeometry::SunCenteredCube},
+                           {"field-line-corner-cube", DomainBoxGeometry::FieldLineCornerCube},
+                           {"field-line-xy-corner-cube", DomainBoxGeometry::FieldLineXYCornerCube}},
+                   &o->domainBoxGeometry)) return invalidValue();
+  } else if (field == "domain.corner_direction_x") {
+    if (!ParseDouble(value, &o->domainCornerDirection.x)) return invalidValue();
+  } else if (field == "domain.corner_direction_y") {
+    if (!ParseDouble(value, &o->domainCornerDirection.y)) return invalidValue();
+  } else if (field == "domain.corner_direction_z") {
+    if (!ParseDouble(value, &o->domainCornerDirection.z)) return invalidValue();
+  } else if (field == "domain.corner_margin_m") {
+    if (!ParseDouble(value, &o->domainCornerMarginM)) return invalidValue();
+  } else if (field == "parker_spiral.end_radius_m") {
+    if (!ParseDouble(value, &o->parkerSpiralEndRadiusM)) return invalidValue();
   } else if (field == "domain.outer_boundary") {
     if (!ParseEnum(value, {{"escape", OuterBoundaryMode::Escape},
                            {"imported-coverage", OuterBoundaryMode::ImportedCoverage}},
@@ -275,6 +291,10 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
                            {"power-law", RefinementProfile::PowerLaw},
                            {"smoothstep", RefinementProfile::Smoothstep}},
                    &o->solarRefinementProfile)) return invalidValue();
+  } else if (field == "mesh.solar.anchor") {
+    if (!ParseEnum(value, {{"source-shell", SolarRefinementAnchor::SourceShell},
+                           {"photosphere", SolarRefinementAnchor::Photosphere}},
+                   &o->solarRefinementAnchor)) return invalidValue();
   } else if (field == "mesh.solar.exponent") {
     if (!ParseDouble(value, &o->solarRefinementExponent)) return invalidValue();
   } else if (field == "mesh.tube.enabled") {
@@ -320,6 +340,8 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
   } else if (field == "mesh.active_region.buffer_blocks") {
     if (!ParseUnsigned(value, &o->activeTubeBufferBlocks))
       return invalidValue();
+  } else if (field == "mesh.active_region.solar_sphere_radius_m") {
+    if (!ParseDouble(value, &o->activeSolarSphereRadiusM)) return invalidValue();
   } else if (field == "memory.base_cell_bytes") {
     if (!ParseSize(value, &o->memoryModel.baseCellBytes)) return invalidValue();
   } else if (field == "memory.base_node_bytes") {
@@ -845,6 +867,19 @@ Core::Status ParseConfigurationText(
                        std::string(required) + "'");
     }
   }
+  if (candidate.domainBoxGeometry == DomainBoxGeometry::FieldLineCornerCube ||
+      candidate.domainBoxGeometry == DomainBoxGeometry::FieldLineXYCornerCube) {
+    // Additive opt-in contract: legacy decks retain their original defaults.
+    // A corner deck explicitly owns every new geometry/refinement control.
+    const char* cornerFields[] = {"domain.outer_radius_mode", "domain.box_geometry",
+        "domain.corner_direction_x", "domain.corner_direction_y",
+        "domain.corner_direction_z", "domain.corner_margin_m",
+        "parker_spiral.end_radius_m", "parker_spiral.length_m",
+        "mesh.solar.anchor", "mesh.active_region.solar_sphere_radius_m"};
+    for (const char* field : cornerFields)
+      if (assigned.count(field) == 0)
+        return Invalid("corner geometry is missing explicit key '" + std::string(field) + "'");
+  }
   if (candidate.inputSchemaVersion >= 3) {
     if (sections.count("swcme") == 0)
       return Invalid("schema version 3 requires a complete [swcme] section");
@@ -1285,6 +1320,8 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
   resolution.minimumCellSizeM = options.minimumCellSizeM;
   resolution.backgroundCellSizeM = options.backgroundCellSizeM;
   resolution.enableRadialRefinement = options.enableRadialRefinement;
+  resolution.solarRefinementAnchor = options.solarRefinementAnchor;
+  resolution.activeSolarSphereRadiusM = options.activeSolarSphereRadiusM;
   resolution.solarSurfaceCellSizeM = options.solarSurfaceCellSizeM;
   resolution.solarRefinementOuterRadiusM = options.solarRefinementOuterRadiusM;
   resolution.solarRefinementProfile = options.solarRefinementProfile;
@@ -1306,6 +1343,7 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
   resolution.activeTubeBufferBlocks = options.activeTubeBufferBlocks;
   resolution.solarWindSpeedMPerS = options.parker.solarWindSpeedMPerS;
   resolution.solarRotationRateRadPerS = options.parker.solarRotationRateRadPerS;
+  resolution.rotationAxis = options.parker.rotationAxis;
   resolution.parkerInitialPointM = options.parkerSpiralInitialPointM;
   resolution.parkerLengthM = options.parkerSpiralLengthM;
   resolution.parkerPointCount = options.parkerSpiralPointCount;
@@ -1329,6 +1367,12 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
          << "srcSEP3D dry-run configuration\n"
          << "physics_fingerprint=" << configuration.physics_fingerprint() << '\n'
          << "domain_preset=" << Name(options.domain) << '\n'
+         << "domain_box_geometry=" << Name(options.domainBoxGeometry) << '\n'
+         << "domain_min_m=" << domain.minimumM.x << ',' << domain.minimumM.y << ',' << domain.minimumM.z << '\n'
+         << "domain_max_m=" << domain.maximumM.x << ',' << domain.maximumM.y << ',' << domain.maximumM.z << '\n'
+         << "domain_side_m=" << domain.maximumM.x - domain.minimumM.x << '\n'
+         << "solar_sphere_radius_m=" << options.activeSolarSphereRadiusM << '\n'
+         << "solar_refinement_anchor=" << Name(options.solarRefinementAnchor) << '\n'
          << "inner_radius_m=" << options.innerRadiusM << '\n'
          << "outer_radius_m=" << options.outerRadiusM << '\n'
          << "background_provider=" << Name(options.background) << '\n'
@@ -1347,6 +1391,7 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
          << Name(options.parkerSpiralStartMode) << '\n'
          << "parker_spiral_point_count=" << centreline.size() << '\n'
          << "parker_spiral_length_m=" << options.parkerSpiralLengthM << '\n'
+         << "parker_spiral_end_radius_m=" << options.parkerSpiralEndRadiusM << '\n'
          << "parker_spiral_end_m=" << lineEnd.x << ',' << lineEnd.y << ','
          << lineEnd.z << '\n'
          << "compiled_species_authority=AMPS-SpeciesList\n"

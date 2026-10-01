@@ -19,6 +19,14 @@ from typing import Iterable, Tuple
 # differs from an allowlist entry: its absence must fail packaging because an
 # old destination copy would otherwise remain active after overlay extraction.
 TOP_LEVEL_REQUIRED: Tuple[str, ...] = (
+    "srcSEP3D/core/domain_geometry.h",
+    "srcSEP3D/core/domain_geometry.cpp",
+    "srcSEP3D/test/individual-test/domain_geometry_probe.cpp",
+    "srcSEP3D/test/individual-test/output_boundary_probe.cpp",
+    "src/pic/pic.h",
+    "src/pic/ecsim/domain_bc.h",
+    "tools/test_pic_header_guards.py",
+    "srcSEP3D/examples/sep3d_analytic_parker_corner_sphere.in",
     "src/pic/pic_particle_spliting.cpp",
     "src/models/sep_coronal_cme/README.md",
     "src/models/sep_coronal_cme/makefile",

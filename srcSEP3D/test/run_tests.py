@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import ast
 import datetime as _datetime
+import hashlib
 from dataclasses import asdict, dataclass
 import json
 import os
@@ -95,6 +96,13 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("CFG3D09", "CFG3D", "Background and turbulence selection", "cpp"),
     TestDefinition("CFG3D10", "CFG3D", "CME and Parker start linkage", "cpp"),
     TestDefinition("CFG3D11", "CFG3D", "Transport/control schema", "cpp"),
+    TestDefinition("CFG3D12", "CFG3D", "Corner/sphere input and endpoint normalization", "cpp"),
+    TestDefinition("DOM3D01", "DOM3D", "Whole-corridor corner bounds", "source"),
+    TestDefinition("DOM3D02", "DOM3D", "Solar sphere and photospheric coarsening", "source"),
+    TestDefinition("DOM3D03", "DOM3D", "Connected sphere/corridor AMR allocation", "source"),
+    TestDefinition("DOM3D04", "DOM3D", "X-y corner with Sun-centered z and complete corridor", "source"),
+    TestDefinition("OUT3D01", "OUT3D", "Empty output stencil and byte-slice safety", "source"),
+    TestDefinition("OUT3D02", "OUT3D", "Excluded-volume output rows and MPI callback branches", "source"),
     TestDefinition("MSH3D01", "MSH3D", "Resolution bounds", "cpp"),
     TestDefinition("MSH3D02", "MSH3D", "Radial closed forms", "cpp"),
     TestDefinition("MSH3D03", "MSH3D", "Parker tube centreline", "cpp"),
@@ -204,6 +212,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("BLDL3D09", "BLDL3D", "Active-region and population-control wiring", "source"),
     TestDefinition("BLDL3D10", "BLDL3D", "Solar internal-boundary wiring", "source"),
     TestDefinition("BLDL3D11", "BLDL3D", "Coronal-CME native-test wiring", "source"),
+    TestDefinition("BLDL3D12", "BLDL3D", "Permanent PIC source/build header guards", "source"),
     TestDefinition("ARCH3D02", "ARCH3D", "Canonical shared-archive ownership", "source"),
     TestDefinition("SWCME3D01", "SWCME3D", "Relocated SWCME common runner", "source"),
     # Linked and external-evidence cases are intentionally non-routine.  They
@@ -259,7 +268,7 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                             if item.group == "CFG3D"),
     "improvements-v": tuple(item.test_id for item in TESTS
                             if item.group in ("V1D", "V2D", "V5D")),
-    "phase-m": tuple(item.test_id for item in TESTS if item.group == "MSH3D"),
+    "phase-m": tuple(item.test_id for item in TESTS if item.group in ("MSH3D", "DOM3D")),
     "phase-b": tuple(item.test_id for item in TESTS
                      if item.group in ("BGP3D", "SNAP3D")),
     "phase-t": tuple(item.test_id for item in TESTS
@@ -274,7 +283,7 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                      if item.group in ("ADP3D", "SHK3D") or
                      item.test_id in ("NAT3D04", "NAT3D05", "NAT3D08")),
     "phase-o": tuple(item.test_id for item in TESTS
-                     if item.group == "RST3D" or
+                     if item.group in ("RST3D", "OUT3D") or
                      item.test_id in ("NAT3D06", "NAT3D07")),
     "phase-v": tuple(item.test_id for item in TESTS
                      if item.group in ("V1D", "V2D", "V5D", "INT3D", "VFY3D", "MPI3D", "SCCM3D", "XM3D", "OV3D", "SWMF3D") or
@@ -282,7 +291,7 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                      item.test_id == "VALRUN3D01"),
     "production": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04",
                    "BLDL3D05", "BLDL3D06", "BLDL3D07", "BLDL3D08",
-                   "BLDL3D09", "BLDL3D10", "BLDL3D11"),
+                   "BLDL3D09", "BLDL3D10", "BLDL3D11", "BLDL3D12"),
 }
 
 
@@ -1517,7 +1526,7 @@ def _check_makefile_relocation(definition: TestDefinition,
     # relocation fixture as well, otherwise the archive audit should fail and
     # expose the disagreement rather than silently accepting a partial build.
     application_members = (
-        "parker_geometry.o mesh_model.o "
+        "parker_geometry.o domain_geometry.o mesh_model.o "
         "bg_provider.o bg_parker.o bg_swmf.o background_snapshot.o "
         "turbulence_models.o keyed_random.o time_step.o perpendicular_transport.o "
         "parker_transport.o focused_transport.o population_control.o "
@@ -1784,6 +1793,107 @@ def _check_production_build(definition: TestDefinition,
                   elapsed, command)
 
 
+def _check_domain_geometry(definition: TestDefinition, args: argparse.Namespace,
+                           output_dir: Path) -> Result:
+    """Compile real geometry/AMR kernels without missing host/model headers.
+
+    All geometry IDs share one content-addressed probe. Its source/header hash
+    makes archive overlays safe even when source timestamps are normalized.
+    Results describe portable geometry verification, not an MPI host run.
+    """
+    sources = [ROOT / name for name in (
+        "core/parker_geometry.cpp", "core/domain_geometry.cpp",
+        "mesh/mesh_model.cpp", "test/individual-test/domain_geometry_probe.cpp")]
+    headers = [ROOT / name for name in (
+        "core/parker_geometry.h", "core/domain_geometry.h", "core/sep3d_types.h",
+        "mesh/mesh_model.h", "runtime/run_configuration.h")]
+    work = output_dir / "domain-geometry-probe"
+    work.mkdir(parents=True, exist_ok=True)
+    executable = work / "probe"
+    signature = work / "source.sha256"
+    digest = hashlib.sha256()
+    digest.update(str(args.cxx).encode("utf-8"))
+    for path in sources + headers:
+        digest.update(path.relative_to(ROOT).as_posix().encode("utf-8"))
+        digest.update(path.read_bytes())
+    identity = digest.hexdigest()
+    elapsed = 0.0
+    commands = []
+    if not executable.is_file() or not signature.is_file() or signature.read_text().strip() != identity:
+        command = [args.cxx, "-std=c++17", "-O2", "-Wall", "-Wextra",
+                   "-Wpedantic", "-Werror", *map(str, sources), "-o", str(executable)]
+        code, output, duration = _run_command(command, ROOT, args.timeout, args.verbose)
+        elapsed += duration
+        commands.extend(command)
+        if code != 0:
+            return Result(definition.test_id, definition.group, "ERROR",
+                          "portable production-kernel compilation failed:\n" + output[-4000:],
+                          elapsed, commands)
+        signature.write_text(identity + "\n", encoding="utf-8")
+    command = [str(executable), definition.test_id]
+    code, output, duration = _run_command(command, ROOT, args.timeout, args.verbose)
+    elapsed += duration
+    commands.extend(command)
+    return Result(definition.test_id, definition.group, "PASS" if code == 0 else "FAIL",
+                  output.strip(), elapsed, commands)
+
+
+def _check_output_boundary(definition: TestDefinition, args: argparse.Namespace,
+                           output_dir: Path) -> Result:
+    """Compile the actual native callbacks with portable host-service doubles.
+
+    Extraction keeps the crash regression tied to main_lib.cpp, including its
+    input guards and owner/root control flow. This is not a native MPI run.
+    """
+    work = output_dir / "output-boundary-probe"
+    work.mkdir(parents=True, exist_ok=True)
+    native = (ROOT / "main_lib.cpp").read_text(encoding="utf-8")
+    callbacks = []
+    for name in ("InterpolateInitializationCellData", "PrintInitializationCellData"):
+        match = re.search(r"^void " + name + r"\s*\(", native, re.M)
+        if match is None:
+            raise RunnerError(f"missing native output callback {name}")
+        start = native.index("{", match.start())
+        # These functions have balanced braces and no brace-containing strings.
+        # Stop at their closing brace, never at an unrelated later declaration.
+        depth, end = 1, start + 1
+        while depth and end < len(native):
+            depth += (native[end] == "{") - (native[end] == "}")
+            end += 1
+        if depth:
+            raise RunnerError(f"unclosed native output callback {name}")
+        callbacks.append(native[match.start():end])
+    extracted = "\n\n".join(callbacks) + "\n"
+    (work / "native_output_callbacks.inc").write_text(extracted, encoding="utf-8")
+    sources = [ROOT / "output/sampling.cpp",
+               ROOT / "test/individual-test/output_boundary_probe.cpp"]
+    digest = hashlib.sha256(str(args.cxx).encode() + extracted.encode())
+    # Include transitive headers so a portable probe cannot survive a stale ABI.
+    for path in sorted(set(sources + list(ROOT.rglob("*.h")))):
+        digest.update(path.relative_to(ROOT).as_posix().encode())
+        digest.update(path.read_bytes())
+    identity = digest.hexdigest()
+    executable, signature = work / "probe", work / "source.sha256"
+    elapsed, commands = 0.0, []
+    if (not executable.is_file() or not signature.is_file() or
+            signature.read_text().strip() != identity):
+        command = [args.cxx, "-std=c++17", "-O2", "-Wall", "-Wextra",
+                   "-Wpedantic", "-Werror", "-I", str(work),
+                   *map(str, sources), "-o", str(executable)]
+        code, output, duration = _run_command(command, ROOT, args.timeout, args.verbose)
+        elapsed += duration
+        commands.extend(command)
+        if code != 0:
+            return Result(definition.test_id, definition.group, "ERROR",
+                          "portable output-callback compilation failed:\n" + output[-4000:],
+                          elapsed, commands)
+        signature.write_text(identity + "\n", encoding="utf-8")
+    command = [str(executable), definition.test_id]
+    code, output, duration = _run_command(command, ROOT, args.timeout, args.verbose)
+    return Result(definition.test_id, definition.group, "PASS" if code == 0 else "FAIL",
+                  output.strip(), elapsed + duration, commands + command)
+
+
 def _check_application_object_freshness(definition: TestDefinition) -> Result:
     """Protect the copied build/main tree from timestamp-stale C++ ABIs.
 
@@ -1818,12 +1928,160 @@ def _check_application_object_freshness(definition: TestDefinition) -> Result:
         time.monotonic() - started, [])
 
 
+def _header_guard_range(text: str, macro: str) -> Tuple[int, int, int]:
+    """Locate a macro guard's matching endif despite nested conditionals."""
+    offset, depth = 0, 0
+    start = None
+    for line in text.splitlines(keepends=True):
+        if start is None:
+            if re.match(r"\s*#\s*ifndef\s+" + re.escape(macro) + r"\b", line):
+                start, depth = offset, 1
+        else:
+            directive = re.match(r"\s*#\s*(if|ifdef|ifndef|endif)\b", line)
+            if directive:
+                depth += -1 if directive.group(1) == "endif" else 1
+                if depth == 0:
+                    return start, offset, offset + len(line)
+        offset += len(line)
+    raise ValueError(f"missing or unclosed permanent guard {macro}")
+
+
+def _check_pic_header_guards(definition: TestDefinition,
+                             args: argparse.Namespace,
+                             output_dir: Path) -> Result:
+    """Verify permanent source guards without any separately shipped script.
+
+    Use the same AMPS-source discovery as the ABI gates. Compile the actual
+    domain declaration and PIC model-header tail through distinct source/build
+    copies: pragma once alone cannot protect those copies. Dependency stubs
+    reproduce recursive halo/gyro includes without requiring MPI or a full PIC
+    build. Each negative control removes one correction and must be rejected.
+    Generated probes remain in the report directory for failure inspection.
+    """
+    started = time.monotonic()
+    pic_header = _find_pic_header(args)
+    if pic_header is None:
+        return Result(definition.test_id, definition.group, "SKIP",
+                      "AMPS pic.h not found; provide --amps-source to verify guards",
+                      time.monotonic() - started, [])
+    domain_header = pic_header.parent / "ecsim/domain_bc.h"
+    domain_guard = "AMPS_PIC_ECSIM_DOMAIN_BC_H_INCLUDED"
+    command: List[str] = []
+    try:
+        domain = domain_header.read_text(encoding="utf-8", errors="replace")
+        pic = pic_header.read_text(encoding="utf-8", errors="replace")
+        start, end, _ = _header_guard_range(domain, domain_guard)
+        if (not start < domain.index("class cDomainBC") < end or
+                not re.search(r"^\s*#\s*define\s+" + domain_guard + r"\b",
+                              domain[start:end], re.M)):
+            raise ValueError("cDomainBC is not enclosed by its permanent macro guard")
+        start, end, _ = _header_guard_range(pic, "_PIC_")
+        marker = pic.index("//include headers for individual physical models")
+        if not start < marker < end:
+            raise ValueError("PIC model-header tail lies outside _PIC_")
+        for include in ('#include "ecsim/domain_bc.h"',
+                        '#include "gyro/gyro_mover.h"'):
+            if include not in pic[marker:end]:
+                raise ValueError(f"guarded PIC model-header tail is missing {include}")
+        tail = pic[marker:]
+        work = (output_dir / "pic-header-guards-probe").resolve()
+        work.mkdir(parents=True, exist_ok=True)
+        translation = work / "probe.cpp"
+        command = [args.cxx, "-std=c++17", "-Wall", "-Wextra", "-Werror",
+                   "-fsyntax-only", str(translation)]
+
+        def compile_probe(label: str, success: bool,
+                          diagnostic: Optional[str] = None) -> None:
+            code, output, _ = _run_command(command, ROOT, args.timeout, args.verbose)
+            (work / f"{label}.log").write_text(output, encoding="utf-8")
+            if (code == 0) != success or (diagnostic and diagnostic not in output):
+                raise ValueError(f"{label} compile contract failed (exit={code}); "
+                                 f"log={work / (label + '.log')}:\n" + output[-4000:])
+
+        prefix = "#ifndef _PIC_\n#define _PIC_\nstruct PicBodyMarker {};\n"
+        trees = ("src/pic", "build/pic")
+        for tree in trees:
+            directory = work / tree
+            (directory / "ecsim").mkdir(parents=True, exist_ok=True)
+            (directory / "pic.h").write_text(prefix + tail, encoding="utf-8")
+            (directory / "ecsim/domain_bc.h").write_text(
+                domain + f"\n// physical copy: {tree}\n", encoding="utf-8")
+            # Distinct file contents prevent compiler pragma-once shortcuts.
+            # Only halo/gyro stubs recurse; the declarations expose an early
+            # PIC guard endpoint even when the domain's own guard is correct.
+            for relative in ("mesh/domain_boundary_bc_collectors.h",
+                             "ecsim/halo_sync.h", "parallel/halo_sync.h",
+                             "gyro/drift_velocity.h", "gyro/gyro_mover.h"):
+                path = directory / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                content = f"#pragma once\n// physical copy: {tree}\n"
+                if relative == "ecsim/halo_sync.h":
+                    content += (f'#include "{work / "build/pic/pic.h"}"\n'
+                                "void SyncJ(int tag=43000);\n")
+                elif relative == "gyro/gyro_mover.h":
+                    content += (f'#include "{work / "build/pic/pic.h"}"\n'
+                                "void GyroMover(int order=1);\n")
+                elif relative == "parallel/halo_sync.h":
+                    content += "class HaloManager {};\n"
+                path.write_text(content, encoding="utf-8")
+
+        fixture = (
+            "#include <vector>\n"
+            "namespace PIC { namespace Mesh { struct cBoundaryCellInfo {}; "
+            "struct cBoundaryCornerNodeInfo {}; } }\n"
+            "#define _PIC_MODEL__DUST__MODE_ 0\n"
+            "#define _PIC_MODEL__DUST__MODE__ON_ 1\n"
+        )
+        translation.write_text(fixture + '#include "src/pic/pic.h"\n'
+                               '#include "build/pic/pic.h"\n', encoding="utf-8")
+        compile_probe("guarded-model-tail", True)
+
+        # Reproduce the historical premature _PIC_ endif; the actual guarded
+        # domain remains unchanged so repeated defaults independently expose it.
+        _, tail_end, tail_after = _header_guard_range(prefix + tail, "_PIC_")
+        broken = (prefix + "#endif\n" +
+                  (prefix + tail)[len(prefix):tail_end] + (prefix + tail)[tail_after:])
+        for tree in trees:
+            (work / tree / "pic.h").write_text(broken, encoding="utf-8")
+        compile_probe("unguarded-model-tail", False, "default argument")
+        for tree in trees:
+            (work / tree / "pic.h").write_text(prefix + tail, encoding="utf-8")
+        compile_probe("restored-model-tail", True)
+
+        translation.write_text(fixture + '#include "src/pic/ecsim/domain_bc.h"\n'
+                               '#include "build/pic/ecsim/domain_bc.h"\n',
+                               encoding="utf-8")
+        compile_probe("guarded-domain", True)
+        domain_start, domain_end, domain_after = _header_guard_range(domain, domain_guard)
+        # Remove just the outer macro pair and define, preserving pragma once
+        # and every nested conditional in the production declaration.
+        unguarded = domain[:domain_start] + domain[
+            domain.index("\n", domain_start) + 1:domain_end] + domain[domain_after:]
+        unguarded = re.sub(r"^\s*#\s*define\s+" + domain_guard + r"[^\n]*\n",
+                           "", unguarded, flags=re.M)
+        for tree in trees:
+            (work / tree / "ecsim/domain_bc.h").write_text(
+                unguarded + f"\n// physical copy: {tree}\n", encoding="utf-8")
+        compile_probe("unguarded-domain", False, "redefinition")
+    except (OSError, ValueError) as error:
+        return Result(definition.test_id, definition.group, "FAIL", str(error),
+                      time.monotonic() - started, command)
+    return Result(definition.test_id, definition.group, "PASS",
+                  "permanent domain/PIC guards compile through source/build copies; "
+                  f"both negative controls fail; probe logs={work}",
+                  time.monotonic() - started, command)
+
+
 def _run_source(definition: TestDefinition, args: argparse.Namespace,
                 output_dir: Path) -> Result:
     if definition.test_id == "BLDL3D01":
         return _check_production_build(definition, args)
     if definition.test_id == "BLDL3D02":
         return _check_retired_sources(definition)
+    if definition.group == "DOM3D":
+        return _check_domain_geometry(definition, args, output_dir)
+    if definition.group == "OUT3D":
+        return _check_output_boundary(definition, args, output_dir)
     if definition.test_id == "BLDL3D03":
         return _check_return_codes(definition, args)
     if definition.test_id == "BLDL3D04":
@@ -1842,6 +2100,8 @@ def _run_source(definition: TestDefinition, args: argparse.Namespace,
         return _check_solar_boundary_wiring(definition)
     if definition.test_id == "BLDL3D11":
         return _check_coronal_cme_native_wiring(definition)
+    if definition.test_id == "BLDL3D12":
+        return _check_pic_header_guards(definition, args, output_dir)
     if definition.test_id == "ARCH3D02":
         return _check_shared_archives(definition, args)
     if definition.test_id == "SWCME3D01":

@@ -218,8 +218,20 @@ const char* Name(OuterRadiusMode value) {
   switch (value) {
     case OuterRadiusMode::Preset: return "preset";
     case OuterRadiusMode::Explicit: return "explicit";
+    case OuterRadiusMode::FieldLineEndpoint: return "field-line-endpoint";
   }
   return "unknown";
+}
+
+const char* Name(DomainBoxGeometry value) {
+  return value == DomainBoxGeometry::SunCenteredCube ? "sun-centered-cube" :
+      (value == DomainBoxGeometry::FieldLineCornerCube ? "field-line-corner-cube" :
+       (value == DomainBoxGeometry::FieldLineXYCornerCube ? "field-line-xy-corner-cube" : "unknown"));
+}
+
+const char* Name(SolarRefinementAnchor value) {
+  return value == SolarRefinementAnchor::SourceShell ? "source-shell" :
+      (value == SolarRefinementAnchor::Photosphere ? "photosphere" : "unknown");
 }
 
 const char* Name(InnerBoundaryMode value) {
@@ -494,6 +506,10 @@ Core::Status RunConfiguration3D::Create(
   // succeeds.  Preset resolution therefore becomes part of the immutable
   // configuration rather than a late mesh-builder side effect.
   RunConfiguration3DOptions normalized = options;
+  if (normalized.outerRadiusMode != OuterRadiusMode::Preset &&
+      normalized.outerRadiusMode != OuterRadiusMode::Explicit &&
+      normalized.outerRadiusMode != OuterRadiusMode::FieldLineEndpoint)
+    return Invalid("unknown outer radius mode");
   // Schema 3 obtains the momentum index from each canonical MHD shock state.
   // Zero is an explicit "provider-owned DSA" sentinel; it prevents the legacy
   // constant SourceOptions default from entering the physics fingerprint as if
@@ -505,6 +521,32 @@ Core::Status RunConfiguration3D::Create(
   }
   if (normalized.domain == DomainPreset::Earth) {
     normalized.domain = DomainPreset::OneAu;
+  }
+  if (normalized.outerRadiusMode == OuterRadiusMode::FieldLineEndpoint) {
+    if (!std::isfinite(normalized.parkerSpiralEndRadiusM) ||
+        normalized.parkerSpiralEndRadiusM <= normalized.innerRadiusM)
+      return Invalid("field-line endpoint radius must exceed the source radius");
+    Core::ParkerSpiralGeometry geometry;
+    geometry.sourceRadiusM = normalized.innerRadiusM;
+    geometry.sourceLongitudeRad = normalized.tubeLongitudeRad;
+    geometry.sourceColatitudeRad = normalized.tubeColatitudeRad;
+    geometry.solarWindSpeedMPerS = normalized.parker.solarWindSpeedMPerS;
+    geometry.solarRotationRateRadPerS = normalized.parker.solarRotationRateRadPerS;
+    geometry.rotationAxis = normalized.parker.rotationAxis;
+    const double length = Core::ParkerCurveArcLengthM(
+        normalized.parkerSpiralEndRadiusM, geometry);
+    if (!std::isfinite(length) || length <= 0.0)
+      return Invalid("field-line endpoint has invalid Parker arc length");
+    // Zero selects derivation in a raw deck. A resolved options record may
+    // carry the matching derived value through parser/factory round trips.
+    if (normalized.parkerSpiralLengthM != 0.0 &&
+        (!std::isfinite(normalized.parkerSpiralLengthM) ||
+         std::fabs(normalized.parkerSpiralLengthM - length) > 1.0e-10 * length))
+      return Invalid("length_m conflicts with the selected field-line endpoint; use zero for derivation");
+    normalized.outerRadiusM = normalized.parkerSpiralEndRadiusM;
+    normalized.parkerSpiralLengthM = length;
+  } else if (normalized.parkerSpiralEndRadiusM != 0.0) {
+    return Invalid("end_radius_m requires outer_radius_mode=field-line-endpoint");
   }
   normalized.parker.sourceRadiusM = normalized.innerRadiusM;
   normalized.parker.sourceLongitudeRad = normalized.tubeLongitudeRad;
@@ -666,7 +708,9 @@ Core::Status RunConfiguration3D::Create(
       normalized.backgroundCellSizeM < normalized.minimumCellSizeM ||
       normalized.solarSurfaceCellSizeM < normalized.minimumCellSizeM ||
       normalized.solarSurfaceCellSizeM > normalized.backgroundCellSizeM ||
-      normalized.solarRefinementOuterRadiusM <= normalized.innerRadiusM ||
+      normalized.solarRefinementOuterRadiusM <=
+          (normalized.solarRefinementAnchor == SolarRefinementAnchor::Photosphere
+              ? Core::Const::R_sun : normalized.innerRadiusM) ||
       normalized.solarRefinementOuterRadiusM > normalized.outerRadiusM ||
       !ValidProfileExponent(normalized.solarRefinementExponent) ||
       !ValidProfileExponent(normalized.tubeTransverseExponent) ||
@@ -675,6 +719,31 @@ Core::Status RunConfiguration3D::Create(
       normalized.meshMemoryBudgetBytes == 0) {
     return Invalid("mesh sizes, level, block width, or memory budget are invalid");
   }
+  if (normalized.solarRefinementAnchor != SolarRefinementAnchor::SourceShell &&
+      normalized.solarRefinementAnchor != SolarRefinementAnchor::Photosphere)
+    return Invalid("unknown solar refinement anchor");
+  if (!std::isfinite(normalized.activeSolarSphereRadiusM) ||
+      normalized.activeSolarSphereRadiusM < 0.0 ||
+      (normalized.activeSolarSphereRadiusM > 0.0 &&
+       (normalized.activeRegion != ActiveRegionMode::ParkerTube ||
+        normalized.activeSolarSphereRadiusM < normalized.innerRadiusM ||
+        normalized.activeSolarSphereRadiusM >= normalized.outerRadiusM)))
+    return Invalid("active solar sphere must connect to the corridor source and lie inside the endpoint radius");
+  if (!std::isfinite(normalized.domainCornerMarginM) || normalized.domainCornerMarginM < 0.0 ||
+      !FiniteVector(normalized.domainCornerDirection))
+    return Invalid("corner margin/direction must be finite and margin nonnegative");
+  if ((normalized.domainBoxGeometry == DomainBoxGeometry::FieldLineCornerCube ||
+       normalized.domainBoxGeometry == DomainBoxGeometry::FieldLineXYCornerCube) &&
+      (normalized.outerRadiusMode != OuterRadiusMode::FieldLineEndpoint ||
+       normalized.activeRegion != ActiveRegionMode::ParkerTube ||
+       normalized.activeSolarSphereRadiusM == 0.0))
+    return Invalid("corner cube requires an endpoint-derived active corridor plus solar sphere");
+  if (normalized.domainBoxGeometry == DomainBoxGeometry::SunCenteredCube &&
+      (normalized.domainCornerMarginM != 0.0 || normalized.domainCornerDirection.Norm() != 0.0))
+    return Invalid("corner controls require a field-line corner geometry");
+  if (normalized.domainBoxGeometry == DomainBoxGeometry::FieldLineXYCornerCube &&
+      normalized.domainCornerDirection.z != 0.0)
+    return Invalid("x-y corner geometry requires corner_direction_z=0");
   if (normalized.enableTubeRefinement &&
       (normalized.tubeReferenceRadiusM <= normalized.innerRadiusM ||
        normalized.tubeRadiusAtReferenceM <= 0.0 ||
@@ -743,7 +812,11 @@ Core::Status RunConfiguration3D::Create(
     return Invalid("full-domain active region requires zero inactive tube "
                    "radius and buffer_blocks");
   }
-  const double rootCellM = 2.0 * normalized.outerRadiusM /
+  Core::Vec3 domainMinimumM, domainMaximumM;
+  const Core::Status boundsStatus = ResolveDomainBoundsM(
+      normalized, &domainMinimumM, &domainMaximumM);
+  if (!boundsStatus.ok()) return boundsStatus;
+  const double rootCellM = (domainMaximumM.x - domainMinimumM.x) /
       static_cast<double>(normalized.meshCellsPerBlockEdge);
   const double finestAvailableM = rootCellM /
       std::pow(2.0, static_cast<double>(normalized.maximumMeshLevel));
@@ -1186,9 +1259,10 @@ Core::Status RunConfiguration3D::Create(
               : normalized.activeTubeRadiusAtReferenceM *
                     tubeRadiusEvaluationM /
                     normalized.activeTubeReferenceRadiusM;
-      if (!std::isfinite(distanceToFiniteTubeM) ||
-          distanceToFiniteTubeM > activeRadiusM +
-              observer.collectionRadiusM) {
+      const bool intersectsSolarSphere = normalized.activeSolarSphereRadiusM > 0.0 &&
+          observerRadiusM <= normalized.activeSolarSphereRadiusM + observer.collectionRadiusM;
+      if (!intersectsSolarSphere && (!std::isfinite(distanceToFiniteTubeM) ||
+          distanceToFiniteTubeM > activeRadiusM + observer.collectionRadiusM)) {
         return Invalid("observer '" + observer.id +
                        "' does not intersect the configured finite Parker "
                        "active corridor");
@@ -1229,6 +1303,24 @@ Core::Status RunConfiguration3D::Create(
   if (reserved != nullptr) return Core::Status::Reserved(reserved);
 
   const StorageLayout layout = BuildLayout(normalized);
+  // Default legacy profiles retain their existing physical identity. The
+  // opt-in extension hashes all new controls and actual shifted root bounds.
+  std::ostringstream geometryIdentity;
+  geometryIdentity << std::setprecision(17) << std::scientific;
+  if (normalized.domainBoxGeometry != DomainBoxGeometry::SunCenteredCube ||
+      normalized.parkerSpiralEndRadiusM != 0.0 ||
+      normalized.activeSolarSphereRadiusM != 0.0 ||
+      normalized.solarRefinementAnchor != SolarRefinementAnchor::SourceShell) {
+    geometryIdentity << ";domain_geometry=" << Name(normalized.domainBoxGeometry)
+          << ";domain_corner_direction=" << normalized.domainCornerDirection.x << ','
+          << normalized.domainCornerDirection.y << ',' << normalized.domainCornerDirection.z
+          << ";domain_corner_margin_m=" << normalized.domainCornerMarginM
+          << ";domain_min_m=" << domainMinimumM.x << ',' << domainMinimumM.y << ',' << domainMinimumM.z
+          << ";domain_max_m=" << domainMaximumM.x << ',' << domainMaximumM.y << ',' << domainMaximumM.z
+          << ";line_end_radius_m=" << normalized.parkerSpiralEndRadiusM
+          << ";active_solar_sphere_m=" << normalized.activeSolarSphereRadiusM
+          << ";solar_anchor=" << Name(normalized.solarRefinementAnchor);
+  }
   std::ostringstream physics;
   physics << std::setprecision(17) << std::scientific
           << "sep3d-physics-v8"
@@ -1277,6 +1369,7 @@ Core::Status RunConfiguration3D::Create(
           << ";mesh_min_m=" << normalized.minimumCellSizeM
           << ";mesh_background_m=" << normalized.backgroundCellSizeM
           << ";mesh_radial=" << normalized.enableRadialRefinement
+          << geometryIdentity.str()
           << ";solar_cell_m=" << normalized.solarSurfaceCellSizeM
           << ";solar_transition_m=" << normalized.solarRefinementOuterRadiusM
           << ";solar_profile=" << Name(normalized.solarRefinementProfile)
@@ -1305,7 +1398,8 @@ Core::Status RunConfiguration3D::Create(
           // cavity rules change; old evidence must not masquerade as the new
           // hole-free algorithm.
           << ";active_mask_algorithm="
-          << kActiveRegionAlgorithmName
+          << (normalized.activeSolarSphereRadiusM > 0.0
+                  ? kSolarSphereActiveRegionAlgorithmName : kActiveRegionAlgorithmName)
           << ";mesh_cells_per_block=" << normalized.meshCellsPerBlockEdge
           << ";mesh_max_level=" << normalized.maximumMeshLevel
           << ";mesh_block_overhead=" << normalized.meshBlockOverheadBytes

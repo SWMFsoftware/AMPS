@@ -31,6 +31,23 @@ double Clamp(double value, double lower, double upper) {
   return std::max(lower, std::min(value, upper));
 }
 
+// Exact closest-point sphere/AABB intersection. Unlike center/corner probes,
+// this keeps a leaf whose face intersects a small solar neighbourhood.
+bool IntersectsSolarNeighbourhood(const Core::Vec3& lower,
+                                 const Core::Vec3& upper,
+                                 const ResolutionConfiguration& c) {
+  if (c.activeSolarSphereRadiusM <= 0.0) return false;
+  double distanceSquared = 0.0;
+  for (int axis = 0; axis < 3; ++axis) {
+    const double origin = Component(c.originM, axis);
+    const double nearest = Clamp(origin, Component(lower, axis),
+                                 Component(upper, axis));
+    distanceSquared += (nearest - origin) * (nearest - origin);
+  }
+  return distanceSquared <=
+      c.activeSolarSphereRadiusM * c.activeSolarSphereRadiusM;
+}
+
 double ProfileFraction(double coordinate,
                        RuntimeModel::RefinementProfile profile,
                        double exponent) {
@@ -82,6 +99,18 @@ double RequestedInBlock(const LeafBlock& block,
   // for a thin curved tube: the Parker centreline can cross a coarse block
   // without passing close to any of those nine points.
   double requested = RequestedCellSizeM(BlockCenter(block), configuration);
+  if (configuration.enableRadialRefinement &&
+      configuration.solarRefinementAnchor ==
+          RuntimeModel::SolarRefinementAnchor::Photosphere) {
+    // The Sun need not lie on the root's sampling lattice in a corner box.
+    // The closest point gives the exact minimum radius in this block; the
+    // monotone radial law therefore cannot miss a small photospheric target.
+    const Core::Vec3 nearest(
+        Clamp(configuration.originM.x, block.minimumM.x, block.maximumM.x),
+        Clamp(configuration.originM.y, block.minimumM.y, block.maximumM.y),
+        Clamp(configuration.originM.z, block.minimumM.z, block.maximumM.z));
+    requested = std::min(requested, RequestedCellSizeM(nearest, configuration));
+  }
   const unsigned n = configuration.cellsPerBlockEdge;
   for (unsigned k = 0; k <= n; ++k)
     for (unsigned j = 0; j <= n; ++j)
@@ -228,6 +257,7 @@ Core::Status Validate(const ResolutionConfiguration& configuration) {
       configuration.tubeTransverseExponent,
       configuration.activeTubeReferenceRadiusM,
       configuration.activeTubeRadiusAtReferenceM,
+      configuration.activeSolarSphereRadiusM,
       configuration.solarWindSpeedMPerS,
       configuration.solarRotationRateRadPerS,
       configuration.rotationAxis.x, configuration.rotationAxis.y,
@@ -247,7 +277,9 @@ Core::Status Validate(const ResolutionConfiguration& configuration) {
       configuration.solarSurfaceCellSizeM >
           configuration.backgroundCellSizeM ||
       configuration.solarRefinementOuterRadiusM <=
-          configuration.innerRadiusM ||
+          (configuration.solarRefinementAnchor ==
+                  RuntimeModel::SolarRefinementAnchor::Photosphere
+              ? Core::Const::R_sun : configuration.innerRadiusM) ||
       configuration.solarRefinementExponent <= 0.0 ||
       configuration.tubeTransverseExponent <= 0.0) {
     return Invalid("mesh cell sizes must be positive and ordered");
@@ -274,6 +306,11 @@ Core::Status Validate(const ResolutionConfiguration& configuration) {
   if (configuration.memoryBudgetBytes == 0) {
     return Invalid("mesh memory budget must be positive");
   }
+  if (configuration.solarRefinementAnchor !=
+          RuntimeModel::SolarRefinementAnchor::SourceShell &&
+      configuration.solarRefinementAnchor !=
+          RuntimeModel::SolarRefinementAnchor::Photosphere)
+    return Invalid("unknown solar refinement anchor");
   if (configuration.enableTubeRefinement) {
     if (configuration.tubeReferenceRadiusM <= configuration.innerRadiusM ||
         configuration.tubeRadiusAtReferenceM <= 0.0 ||
@@ -288,6 +325,11 @@ Core::Status Validate(const ResolutionConfiguration& configuration) {
   }
   if (configuration.activeRegion ==
       RuntimeModel::ActiveRegionMode::ParkerTube) {
+    if (configuration.activeSolarSphereRadiusM < 0.0 ||
+        (configuration.activeSolarSphereRadiusM > 0.0 &&
+         (configuration.activeSolarSphereRadiusM < configuration.innerRadiusM ||
+          configuration.activeSolarSphereRadiusM >= configuration.outerRadiusM)))
+      return Invalid("solar neighbourhood must join the finite corridor and lie inside the outer radius");
     if (configuration.activeTubeReferenceRadiusM <= 0.0 ||
         configuration.activeTubeRadiusAtReferenceM <= 0.0 ||
         configuration.solarWindSpeedMPerS <= 0.0 ||
@@ -310,10 +352,15 @@ DomainBounds MakeDomain(
   result.originM = configuration.coordinateOriginM;
   result.innerBoundary = configuration.innerBoundary;
   result.outerBoundary = configuration.outerBoundary;
-  result.minimumM = result.originM -
-      Core::Vec3(result.outerRadiusM, result.outerRadiusM, result.outerRadiusM);
-  result.maximumM = result.originM +
-      Core::Vec3(result.outerRadiusM, result.outerRadiusM, result.outerRadiusM);
+  // The immutable factory has already validated these bounds. The same
+  // resolver is used there for refinement feasibility, here for AMPS init,
+  // and by the CLI; a translated corner root cannot use a centered estimate.
+  const Core::Status status = RuntimeModel::ResolveDomainBoundsM(
+      configuration, &result.minimumM, &result.maximumM);
+  if (!status.ok()) {
+    const double invalid = std::numeric_limits<double>::quiet_NaN();
+    result.minimumM = result.maximumM = Core::Vec3(invalid, invalid, invalid);
+  }
   return result;
 }
 
@@ -413,9 +460,12 @@ double RequestedCellSizeM(const Core::Vec3& positionM,
   const double radius = (positionM - configuration.originM).Norm();
   double requested = configuration.backgroundCellSizeM;
   if (configuration.enableRadialRefinement) {
-    const double fraction = (radius - configuration.innerRadiusM) /
+    const double anchorRadiusM = configuration.solarRefinementAnchor ==
+        RuntimeModel::SolarRefinementAnchor::Photosphere
+        ? Core::Const::R_sun : configuration.innerRadiusM;
+    const double fraction = (radius - anchorRadiusM) /
         (configuration.solarRefinementOuterRadiusM -
-         configuration.innerRadiusM);
+         anchorRadiusM);
     const double radial = configuration.solarSurfaceCellSizeM +
         ProfileFraction(fraction, configuration.solarRefinementProfile,
                         configuration.solarRefinementExponent) *
@@ -723,6 +773,12 @@ const char* ActiveRegionAlgorithmName() {
   return RuntimeModel::kActiveRegionAlgorithmName;
 }
 
+const char* ActiveRegionAlgorithmName(const ResolutionConfiguration& configuration) {
+  return configuration.activeSolarSphereRadiusM > 0.0
+      ? RuntimeModel::kSolarSphereActiveRegionAlgorithmName
+      : RuntimeModel::kActiveRegionAlgorithmName;
+}
+
 bool BlockIntersectsActiveRegion(
     const Core::Vec3& minimumM, const Core::Vec3& maximumM,
     const ResolutionConfiguration& configuration) {
@@ -735,6 +791,8 @@ bool BlockIntersectsActiveRegion(
     // pruning pass, remains the authoritative source of the mesh diagnostic.
     return true;
   }
+  if (IntersectsSolarNeighbourhood(minimumM, maximumM, configuration))
+    return true;
   std::vector<TubeSegment> segments;
   double effectiveLengthM = 0.0;
   const Core::Status built = BuildFiniteTubeSegments(
@@ -824,6 +882,11 @@ Core::Status BuildActiveRegionPlan(
   if (!segmentStatus.ok()) return segmentStatus;
   candidate.segmentCount = segments.size();
   for (std::size_t leafIndex = 0; leafIndex < leaves.size(); ++leafIndex) {
+    if (IntersectsSolarNeighbourhood(leaves[leafIndex].minimumM,
+                                    leaves[leafIndex].maximumM, configuration)) {
+      candidate.leafClass[leafIndex] = ActiveLeafClass::Core;
+      continue;
+    }
     for (const TubeSegment& segment : segments) {
       if (SegmentEnvelopeIntersectsBox(
               segment, leaves[leafIndex].minimumM,
@@ -1073,7 +1136,11 @@ Core::Status StandaloneOctree::Build(
   const double sideX = domain.maximumM.x - domain.minimumM.x;
   const double sideY = domain.maximumM.y - domain.minimumM.y;
   const double sideZ = domain.maximumM.z - domain.minimumM.z;
-  if (!(sideX > 0.0) || sideX != sideY || sideX != sideZ) {
+  const double cubicTolerance = 128.0 *
+      std::numeric_limits<double>::epsilon() * std::max(1.0, sideX);
+  if (!std::isfinite(sideX) || !std::isfinite(sideY) || !std::isfinite(sideZ) ||
+      !(sideX > 0.0) || std::fabs(sideX - sideY) > cubicTolerance ||
+      std::fabs(sideX - sideZ) > cubicTolerance) {
     return Invalid("standalone octree requires a finite cubic domain");
   }
 
@@ -1219,8 +1286,11 @@ Core::Status BuildRefinementPreflight(
   // AMPS mesh and therefore remains safe for a CLI --dry-run summary.
   constexpr int kRadialSamples = 512;
   for (int i = 0; i <= kRadialSamples; ++i) {
-    const double radius = resolution.innerRadiusM +
-        (resolution.outerRadiusM - resolution.innerRadiusM) * i /
+    const double anchorRadiusM = resolution.solarRefinementAnchor ==
+        RuntimeModel::SolarRefinementAnchor::Photosphere
+        ? Core::Const::R_sun : resolution.innerRadiusM;
+    const double radius = anchorRadiusM +
+        (resolution.outerRadiusM - anchorRadiusM) * i /
         static_cast<double>(kRadialSamples);
     const Core::Vec3 probes[] = {
         domain.originM + Core::Vec3(radius, 0.0, 0.0),
@@ -1247,7 +1317,7 @@ Core::Status BuildRefinementPreflight(
   // request each level.  Native mesh-count gates compare this planning value
   // with the actual AMPS tree; it is not presented as an exact allocator.
   candidate.estimatedBlocksByLevel.assign(resolution.maximumLevel + 1, 0);
-  const double rootCell = 2.0 * domain.outerRadiusM /
+  const double rootCell = (domain.maximumM.x - domain.minimumM.x) /
       resolution.cellsPerBlockEdge;
   constexpr int kVolumeSamplesPerAxis = 17;
   std::uint64_t sampleCounts[20] = {};
@@ -1255,12 +1325,12 @@ Core::Status BuildRefinementPreflight(
   for (int iz = 0; iz < kVolumeSamplesPerAxis; ++iz) {
     for (int iy = 0; iy < kVolumeSamplesPerAxis; ++iy) {
       for (int ix = 0; ix < kVolumeSamplesPerAxis; ++ix) {
-        const auto coordinate = [&](int index) {
-          return -domain.outerRadiusM + 2.0 * domain.outerRadiusM * index /
+        const auto coordinate = [&](int axis, int index) {
+          return Component(domain.minimumM, axis) +
+              (Component(domain.maximumM, axis) - Component(domain.minimumM, axis)) * index /
               static_cast<double>(kVolumeSamplesPerAxis - 1);
         };
-        const Core::Vec3 point = domain.originM +
-            Core::Vec3(coordinate(ix), coordinate(iy), coordinate(iz));
+        const Core::Vec3 point(coordinate(0, ix), coordinate(1, iy), coordinate(2, iz));
         const double requested = RequestedCellSizeM(point, resolution);
         unsigned level = 0;
         while (level < resolution.maximumLevel &&

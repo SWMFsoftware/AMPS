@@ -1153,6 +1153,83 @@ Result RunCFG3D11() {
       "schema-4 corridor, population hysteresis, fixed/DSA source spectra, mover/coefficient compatibility including radial-rigidity MFP, and dry-run contracts passed");
 }
 
+Result RunCFG3D12() {
+  std::string input = CompleteInput();
+  const std::string old = "outer_radius_mode = preset";
+  const auto at = input.find(old);
+  if (at == std::string::npos) return Fail("missing domain fixture");
+  input.replace(at, old.size(),
+      "outer_radius_mode = field-line-endpoint\n"
+      "box_geometry = field-line-corner-cube\n"
+      "corner_direction_x = 0\ncorner_direction_y = 0\ncorner_direction_z = 0\n"
+      "corner_margin_m = 1.495978707e9");
+  input += "\n[parker_spiral]\nend_radius_m = 1.495978707e11\nlength_m = 0\n"
+      "[mesh.active_region]\nmode = parker-tube\nreference_radius_m = 1.495978707e11\n"
+      "radius_at_reference_m = 1.1967829656e11\nradius_mode = constant-angular-width\n"
+      "buffer_blocks = 1\nsolar_sphere_radius_m = 2.0871e10\n";
+  // Add the new anchor inside the existing solar section, without creating
+  // a duplicate section that the strict INI grammar must reject.
+  const auto solar = input.find("[mesh.solar]");
+  if (solar == std::string::npos) return Fail("missing solar fixture");
+  input.insert(solar + std::string("[mesh.solar]").size(), "\nanchor = photosphere");
+  RM::RunConfiguration3DOptions parsed;
+  const auto status = RM::ParseConfigurationText(input, &parsed);
+  if (!status.ok()) return Fail("corner input rejected: " + status.message);
+  SEP3D::Core::ParkerSpiralGeometry geometry;
+  geometry.sourceRadiusM = parsed.innerRadiusM;
+  geometry.sourceLongitudeRad = parsed.tubeLongitudeRad;
+  geometry.sourceColatitudeRad = parsed.tubeColatitudeRad;
+  geometry.solarWindSpeedMPerS = parsed.parker.solarWindSpeedMPerS;
+  geometry.solarRotationRateRadPerS = parsed.parker.solarRotationRateRadPerS;
+  const double arc = SEP3D::Core::ParkerCurveArcLengthM(parsed.parkerSpiralEndRadiusM, geometry);
+  if (parsed.outerRadiusM != parsed.parkerSpiralEndRadiusM ||
+      parsed.parkerSpiralLengthM != arc ||
+      parsed.solarRefinementAnchor != RM::SolarRefinementAnchor::Photosphere)
+    return Fail("endpoint radius did not normalize the physical extent/arc length/anchor");
+  std::shared_ptr<const RM::RunConfiguration3D> frozen, changed;
+  if (!RM::RunConfiguration3D::Create(parsed, &frozen).ok())
+    return Fail("normalized corner options cannot round trip through the factory");
+  auto edited = parsed;
+  edited.activeSolarSphereRadiusM += SEP3D::Core::Const::R_sun;
+  if (!RM::RunConfiguration3D::Create(edited, &changed).ok() ||
+      frozen->physics_fingerprint() == changed->physics_fingerprint())
+    return Fail("solar sphere is absent from immutable physics identity");
+  for (int bad = 0; bad < 4; ++bad) {
+    edited = parsed;
+    if (bad == 0) edited.parkerSpiralLengthM = 1.0;
+    if (bad == 1) edited.activeSolarSphereRadiusM = 0.5 * parsed.innerRadiusM;
+    if (bad == 2) edited.domainCornerDirection.x = 2.0;
+    if (bad == 3) edited.maximumMeshLevel = 0;
+    if (RM::RunConfiguration3D::Create(edited, &changed).ok())
+      return Fail("invalid/conflicting corner geometry was accepted");
+  }
+  std::string report;
+  if (!RM::BuildDryRunSummary(*frozen, &report).ok() ||
+      report.find("domain_box_geometry=field-line-corner-cube") == std::string::npos ||
+      report.find("solar_refinement_anchor=photosphere") == std::string::npos)
+    return Fail("dry run does not expose the resolved corner/sphere geometry");
+  // The x-y variant centers z on the Sun and changes the immutable geometry
+  // identity. Keep the original three-axis mode covered above for old decks.
+  std::string xyInput = input;
+  const std::string mode = "field-line-corner-cube";
+  xyInput.replace(xyInput.find(mode), mode.size(), "field-line-xy-corner-cube");
+  RM::RunConfiguration3DOptions xy;
+  const auto xyStatus = RM::ParseConfigurationText(xyInput, &xy);
+  if (!xyStatus.ok()) return Fail("x-y corner input rejected: " + xyStatus.message);
+  if (xy.domainBoxGeometry != RM::DomainBoxGeometry::FieldLineXYCornerCube ||
+      !RM::RunConfiguration3D::Create(xy, &changed).ok() ||
+      frozen->physics_fingerprint() == changed->physics_fingerprint())
+    return Fail("centered-z mode was not parsed or fingerprinted independently");
+  SEP3D::Core::Vec3 low, high;
+  if (!RM::ResolveDomainBoundsM(xy, &low, &high).ok() ||
+      std::fabs(low.z + high.z) > 1e-12 * (high.z - low.z))
+    return Fail("x-y input did not produce symmetric z bounds");
+  xy.domainCornerDirection.z = 1.0;
+  if (RM::RunConfiguration3D::Create(xy, &changed).ok())
+    return Fail("x-y corner mode accepted a conflicting z corner direction");
+  return Pass("both corner modes parse/fingerprint, endpoint extent normalizes, z is centered in x-y mode, and conflicting controls fail closed");
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
@@ -1186,5 +1263,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
       make("CFG3D09", "Background/turbulence selection", "Named prescribed slopes and reserved Python source.", RunCFG3D09),
       make("CFG3D10", "CME/Parker start linkage", "Canonical launch-apex linkage and fail-closed geometry checks.", RunCFG3D10),
       make("CFG3D11", "Transport/control schema", "Active corridor, population limits, mover coefficients, and dry-run output.", RunCFG3D11),
+      make("CFG3D12", "Corner/sphere geometry", "Endpoint extent, input controls, identity and corner validation.", RunCFG3D12),
   };
 }

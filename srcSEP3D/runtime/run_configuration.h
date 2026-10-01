@@ -10,6 +10,7 @@
 #define SEP3D_RUNTIME_RUN_CONFIGURATION_H
 
 #include "../core/sep3d_types.h"
+#include "../core/domain_geometry.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -81,7 +82,11 @@ enum class TransportModel {
 // default.  ``Earth`` remains an input spelling retained for compatibility;
 // normalization maps it to the one-AU preset before fingerprinting.
 enum class DomainPreset { Solar, OneAu, Earth, Mars };
-enum class OuterRadiusMode { Preset, Explicit };
+enum class OuterRadiusMode { Preset, Explicit, FieldLineEndpoint };
+enum class DomainBoxGeometry {
+  SunCenteredCube, FieldLineCornerCube, FieldLineXYCornerCube
+};
+enum class SolarRefinementAnchor { SourceShell, Photosphere };
 enum class InnerBoundaryMode { Absorb };
 enum class OuterBoundaryMode { Escape, ImportedCoverage };
 enum class RefinementProfile { Linear, PowerLaw, Smoothstep };
@@ -97,6 +102,8 @@ enum class ActiveRegionMode { FullDomain, ParkerTube };
 // the mesh model and must not acquire a reverse include dependency.
 constexpr const char* kActiveRegionAlgorithmName =
     "finite-parker-capsule-topological-solar-boundary-v3";
+constexpr const char* kSolarSphereActiveRegionAlgorithmName =
+    "finite-parker-capsule-topological-solar-sphere-corner-v4";
 enum class PopulationControlMode { Off, SplitMerge };
 // Coefficient choices are deliberately independent of mover selection.  A
 // compatibility check in RunConfiguration3D::Create rejects circular or unused
@@ -157,6 +164,8 @@ const char* Name(SourceSpectrumModel value);
 const char* Name(TransportModel value);
 const char* Name(DomainPreset value);
 const char* Name(OuterRadiusMode value);
+const char* Name(DomainBoxGeometry value);
+const char* Name(SolarRefinementAnchor value);
 const char* Name(InnerBoundaryMode value);
 const char* Name(OuterBoundaryMode value);
 const char* Name(RefinementProfile value);
@@ -388,6 +397,17 @@ struct RunConfiguration3DOptions {
   // ``outerRadiusM`` is normalized to a resolved SI value by Create().  The
   // input value is consulted only when outerRadiusMode is Explicit.
   double outerRadiusM = Core::Const::AU;
+  // Opt-in corner layout: a full solar neighbourhood remains inside the box.
+  // Zero direction components select a corner automatically from the line;
+  // +/-1 select the direction into the domain on each Cartesian axis.
+  // FieldLineXYCornerCube uses x/y selections and centers z on the Sun;
+  // its z direction must be zero because it has no selected z corner face.
+  DomainBoxGeometry domainBoxGeometry = DomainBoxGeometry::SunCenteredCube;
+  Core::Vec3 domainCornerDirection = {0.0, 0.0, 0.0};
+  double domainCornerMarginM = 0.0;
+  // Endpoint is heliocentric distance, not arc length. With endpoint mode,
+  // outerRadiusM and parkerSpiralLengthM are derived from this single value.
+  double parkerSpiralEndRadiusM = 0.0;
   double requestedTimeStepS = 1.0;
   std::uint64_t maximumTimeSteps = 100000001;
   std::uint64_t campaignSeed = 1;
@@ -407,6 +427,8 @@ struct RunConfiguration3DOptions {
   double solarRefinementOuterRadiusM = 0.25 * Core::Const::AU;
   RefinementProfile solarRefinementProfile = RefinementProfile::Smoothstep;
   double solarRefinementExponent = 1.0;
+  SolarRefinementAnchor solarRefinementAnchor =
+      SolarRefinementAnchor::SourceShell;
   bool enableTubeRefinement = false;
   double tubeLongitudeRad = 0.0;
   double tubeColatitudeRad = 0.5 * Core::Const::kPi;
@@ -427,6 +449,10 @@ struct RunConfiguration3DOptions {
   TubeRadiusMode activeTubeRadiusMode =
       TubeRadiusMode::ConstantAngularWidth;
   unsigned activeTubeBufferBlocks = 0;
+  // Union of the finite corridor and a complete spherical neighbourhood.
+  // Zero disables this addition. The solid photosphere is still excluded by
+  // AMPS' internal boundary; this is an allocation radius, not another Sun.
+  double activeSolarSphereRadiusM = 0.0;
   unsigned meshCellsPerBlockEdge = 4;
   unsigned maximumMeshLevel = 7;
   std::size_t meshBlockOverheadBytes = 1024;
@@ -623,6 +649,42 @@ struct StorageLayout {
 
 bool operator==(const StorageLayout& left, const StorageLayout& right);
 bool operator!=(const StorageLayout& left, const StorageLayout& right);
+
+// Resolve the Cartesian root independently of AMPS and mesh_model.h. Callers
+// pass normalized options; the immutable factory uses this same operation for
+// maximum-level feasibility, and mesh/CLI/native initialization use its bounds.
+inline Core::Status ResolveDomainBoundsM(
+    const RunConfiguration3DOptions& options,
+    Core::Vec3* minimumM, Core::Vec3* maximumM) {
+  if (options.domainBoxGeometry != DomainBoxGeometry::SunCenteredCube &&
+      options.domainBoxGeometry != DomainBoxGeometry::FieldLineCornerCube &&
+      options.domainBoxGeometry != DomainBoxGeometry::FieldLineXYCornerCube)
+    return Core::Status(Core::StatusCode::InvalidInput, "unknown domain box geometry");
+  Core::DomainGeometryParameters p;
+  p.cornerCube = options.domainBoxGeometry != DomainBoxGeometry::SunCenteredCube;
+  p.centerZ = options.domainBoxGeometry == DomainBoxGeometry::FieldLineXYCornerCube;
+  p.originM = options.coordinateOriginM;
+  p.cornerDirection = options.domainCornerDirection;
+  p.endpointRadiusM = options.outerRadiusM;
+  p.solarSphereRadiusM = options.activeSolarSphereRadiusM;
+  p.cornerMarginM = options.domainCornerMarginM;
+  p.parker.sourceRadiusM = options.innerRadiusM;
+  p.parker.sourceLongitudeRad = options.tubeLongitudeRad;
+  p.parker.sourceColatitudeRad = options.tubeColatitudeRad;
+  p.parker.solarWindSpeedMPerS = options.parker.solarWindSpeedMPerS;
+  p.parker.solarRotationRateRadPerS = options.parker.solarRotationRateRadPerS;
+  p.parker.rotationAxis = options.parker.rotationAxis;
+  const double active = options.activeTubeRadiusAtReferenceM *
+      (options.activeTubeRadiusMode == TubeRadiusMode::PhysicalConstant
+           ? 1.0 : options.outerRadiusM / options.activeTubeReferenceRadiusM);
+  const double refined = options.enableTubeRefinement
+      ? options.tubeRadiusAtReferenceM *
+          (options.tubeRadiusMode == TubeRadiusMode::PhysicalConstant
+               ? 1.0 : options.outerRadiusM / options.tubeReferenceRadiusM)
+      : 0.0;
+  p.corridorPaddingM = active > refined ? active : refined;
+  return Core::BuildDomainBoundsM(p, minimumM, maximumM);
+}
 
 class RunConfiguration3D final {
  public:

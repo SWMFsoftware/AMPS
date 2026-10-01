@@ -284,6 +284,8 @@ SEP3D::Mesh::ResolutionConfiguration ResolutionConfiguration() {
   result.minimumCellSizeM = options.minimumCellSizeM;
   result.backgroundCellSizeM = options.backgroundCellSizeM;
   result.enableRadialRefinement = options.enableRadialRefinement;
+  result.solarRefinementAnchor = options.solarRefinementAnchor;
+  result.activeSolarSphereRadiusM = options.activeSolarSphereRadiusM;
   result.solarSurfaceCellSizeM = options.solarSurfaceCellSizeM;
   result.solarRefinementOuterRadiusM =
       options.solarRefinementOuterRadiusM;
@@ -310,6 +312,7 @@ SEP3D::Mesh::ResolutionConfiguration ResolutionConfiguration() {
   result.activeTubeBufferBlocks = options.activeTubeBufferBlocks;
   result.solarWindSpeedMPerS = options.parker.solarWindSpeedMPerS;
   result.solarRotationRateRadPerS = options.parker.solarRotationRateRadPerS;
+  result.rotationAxis = options.parker.rotationAxis;
   result.parkerInitialPointM = options.parkerSpiralInitialPointM;
   result.parkerLengthM = options.parkerSpiralLengthM;
   result.parkerPointCount = options.parkerSpiralPointCount;
@@ -611,16 +614,28 @@ void InterpolateInitializationCellData(
   const std::size_t bytes =
       Configuration().storage_layout().cellAssociatedBytes;
   if (gStaticCellDataOffset < 0 || bytes == 0 ||
-      bytes % sizeof(double) != 0 || interpolationList == nullptr ||
-      interpolationCoefficients == nullptr || interpolationCount <= 0 ||
-      destinationNode == nullptr) {
+      bytes % sizeof(double) != 0 || destinationNode == nullptr) {
     StopWithStatus("srcSEP3D center-node interpolation",
         SEP3D::Core::Status(SEP3D::Core::StatusCode::LayoutMismatch,
             "AMPS requested interpolation before the frozen srcSEP3D "
             "static center-node layout was available"));
   }
+  if (interpolationCount < 0 ||
+      (interpolationCount > 0 &&
+       (interpolationList == nullptr || interpolationCoefficients == nullptr))) {
+    StopWithStatus("srcSEP3D center-node interpolation",
+        SEP3D::Core::Status(SEP3D::Core::StatusCode::InvalidInput,
+            "AMPS supplied an invalid center-node interpolation stencil"));
+  }
 
   const std::size_t valueCount = bytes / sizeof(double);
+  // Internal-sphere/corridor output vertices can have no positive-volume
+  // donors. AMPS intentionally permits count==0 with internal boundaries.
+  // The shared interpolator then writes a finite zero placeholder into the
+  // entire application slice, including optional gradients and turbulence.
+  // Do not skip PrintData: every MPI owner must still send the expected row.
+  // Positive density and temperature distinguish populated background below;
+  // an empty stencil must never be presented as a physical zero-density wind.
   // The byte offset is owned by AMPS and is not assumed to satisfy C++ double
   // alignment.  Copy each slice into aligned vector storage before doing
   // floating-point arithmetic; StoreBytes/LoadBytes use memcpy for the same
@@ -691,8 +706,8 @@ void PrintInitializationVariableList(FILE* output, int dataSetNumber) {
   std::fprintf(output, "%s",
                SEP3D::Output::TurbulenceTecplotVariableList());
   // These flags make the two independent empty-data cases machine-readable:
-  // background_valid=0 identifies padding cells outside the heliocentric
-  // shell, while particle_sample_present=0 identifies a cell/species with no
+  // background_valid=0 identifies padding or vertices without physical
+  // background donors, while particle_sample_present=0 identifies a cell/species with no
   // sampled macroparticles.  particle_sampling_window_valid=0 additionally
   // identifies initialization output written before the first sample window.
   std::fprintf(output,
@@ -781,10 +796,21 @@ void PrintInitializationCellData(
         PIC::Mesh::DatumParticleNumber, dataSetNumber);
     std::vector<double> storedBackground(values.begin(),
                                          values.begin() + cursor);
+    // Validated background snapshots require positive density and temperature.
+    // Their interpolated values therefore identify initialized donors without
+    // changing the frozen storage/restart ABI. A no-donor stencil is all zero
+    // even when its vertex lies inside the radial shell (e.g. a corridor edge).
+    double numberDensityM3 = 0.0, temperatureK = 0.0;
+    LoadBytes(centerNode, layout.numberDensityOffset, &numberDensityM3,
+              sizeof(numberDensityM3));
+    LoadBytes(centerNode, layout.temperatureOffset, &temperatureK,
+              sizeof(temperatureK));
+    const bool backgroundStateAvailable =
+        numberDensityM3 > 0.0 && temperatureK > 0.0;
     const SEP3D::Output::TecplotCellPresentation presentation =
         SEP3D::Output::PrepareTecplotCellPresentation(
             storedBackground, insidePhysicalShell, PIC::LastSampleLength,
-            sampledParticleNumber);
+            sampledParticleNumber, backgroundStateAvailable);
     std::copy(presentation.backgroundValues.begin(),
               presentation.backgroundValues.end(), values.begin());
     values[cursor++] = presentation.backgroundValid;
@@ -2639,7 +2665,7 @@ void ApplyActiveRegionMask(
     const double volumeFraction = activeBlockVolumeM3 /
         plan.totalBlockVolumeM3;
     std::cout << "[srcSEP3D] static leaf mask algorithm="
-              << SEP3D::Mesh::ActiveRegionAlgorithmName()
+              << SEP3D::Mesh::ActiveRegionAlgorithmName(resolution)
               << " core=" << plan.coreLeafCount
               << " halo=" << plan.haloLeafCount
               << " cavities_filled=" << plan.cavityLeafCount
@@ -2846,6 +2872,17 @@ void amps_init_mesh() {
       domain.minimumM.x, domain.minimumM.y, domain.minimumM.z};
   double maximum[3] = {
       domain.maximumM.x, domain.maximumM.y, domain.maximumM.z};
+  if (PIC::ThisThread == 0) {
+    std::printf("[srcSEP3D] domain geometry=%s minimum_m=(%.9e,%.9e,%.9e) "
+                "maximum_m=(%.9e,%.9e,%.9e) outer_radius_m=%.9e "
+                "selected_endpoint_radius_m=%.9e "
+                "active_solar_sphere_radius_m=%.9e solar_refinement_anchor=%s\n",
+        SEP3D::RuntimeModel::Name(options.domainBoxGeometry),
+        minimum[0], minimum[1], minimum[2], maximum[0], maximum[1], maximum[2],
+        options.outerRadiusM, options.parkerSpiralEndRadiusM,
+        options.activeSolarSphereRadiusM,
+        SEP3D::RuntimeModel::Name(options.solarRefinementAnchor));
+  }
 
   // Build and partition the AMR tree before block allocation.  This is the
   // same ordering used by mature AMPS applications and guarantees that each

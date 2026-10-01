@@ -10091,8 +10091,6 @@ double SampleRhsScalar(const RhsEntry &sg);
 }
 }
 
-#endif
-
 //include headers for individual physical models
 #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_ 
 #include "Dust.h"
@@ -10105,4 +10103,7 @@ double SampleRhsScalar(const RhsEntry &sg);
 #include "gyro/drift_velocity.h"
 #include "gyro/gyro_mover.h"
 
-
+// ECSIM halo/gyro headers include pic.h recursively. Keep this complete
+// model-header tail inside _PIC_ so different source/build copies cannot
+// revisit class definitions or repeat default-argument declarations.
+#endif  // _PIC_

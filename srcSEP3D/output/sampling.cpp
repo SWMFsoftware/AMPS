@@ -123,11 +123,13 @@ Core::Status PrepareTurbulenceTecplotPresentation(
 Core::Status InterpolateStaticCenterState(
     const double* const* stencilValues, const double* coefficients,
     std::size_t stencilSize, std::size_t valueCount, double* result) {
-  if (stencilValues == nullptr || coefficients == nullptr || result == nullptr)
-    return Invalid("static center-state interpolation received a null buffer");
-  if (stencilSize == 0 || valueCount == 0)
-    return Invalid("static center-state interpolation received an empty stencil");
+  if (result == nullptr || valueCount == 0)
+    return Invalid("static center-state interpolation received an invalid output buffer or size");
+  if (stencilSize != 0 && (stencilValues == nullptr || coefficients == nullptr))
+    return Invalid("static center-state interpolation received a null stencil");
 
+  // An excluded-volume output vertex may have no donors. Its placeholder
+  // overwrites recycled temporary-node data and never dereferences a stencil.
   std::fill(result, result + valueCount, 0.0);
   for (std::size_t stencilIndex = 0; stencilIndex < stencilSize;
        ++stencilIndex) {
@@ -155,19 +157,20 @@ Core::Status InterpolateStaticCenterState(
 TecplotCellPresentation PrepareTecplotCellPresentation(
     const std::vector<double>& storedBackgroundValues,
     bool insidePhysicalShell, long int particleSamplingWindowLength,
-    double sampledParticleNumber) {
+    double sampledParticleNumber, bool backgroundStateAvailable) {
   TecplotCellPresentation result;
   result.backgroundValues = storedBackgroundValues;
 
   // A published background row is valid only when its cell belongs to the
-  // physical heliocentric shell and every stored quantity is finite.  The
+  // physical heliocentric shell, has initialized donors, and every stored quantity is finite. The
   // production snapshot validator normally guarantees the latter condition;
   // repeating the check here keeps a diagnostic file parseable even if an
   // output-only storage fault is encountered.
   const bool finiteBackground = std::all_of(
       result.backgroundValues.begin(), result.backgroundValues.end(),
       [](double value) { return std::isfinite(value); });
-  const bool backgroundValid = insidePhysicalShell && finiteBackground;
+  const bool backgroundValid = insidePhysicalShell && backgroundStateAvailable &&
+      finiteBackground;
   if (!backgroundValid) {
     // Tecplot and common post-processing packages propagate NaN through
     // contour limits and derived expressions.  Zero is only a serialization

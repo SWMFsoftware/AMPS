@@ -114,5 +114,72 @@ class ApplicationIsolationTests(unittest.TestCase):
         self.assertNotIn("ROOT.parent / 'srcSEP'", source)
 
 
+class PicHeaderGuardTests(unittest.TestCase):
+    def make_fixture(self, directory: Path):
+        """Only source headers are installed: no tools directory or helper."""
+        pic = directory / "src/pic"
+        (pic / "ecsim").mkdir(parents=True)
+        (pic / "pic.h").write_text(
+            "#ifndef _PIC_\n#define _PIC_\n"
+            "//include headers for individual physical models\n"
+            '#include "ecsim/domain_bc.h"\n'
+            '#include "gyro/gyro_mover.h"\n'
+            "#endif // _PIC_\n", encoding="utf-8")
+        (pic / "ecsim/domain_bc.h").write_text(
+            "#ifndef AMPS_PIC_ECSIM_DOMAIN_BC_H_INCLUDED\n"
+            "#define AMPS_PIC_ECSIM_DOMAIN_BC_H_INCLUDED\n"
+            "#pragma once\n"
+            "class cDomainBC {};\n"
+            "#endif // AMPS_PIC_ECSIM_DOMAIN_BC_H_INCLUDED\n", encoding="utf-8")
+        args = runner._parser().parse_args([
+            "--test", "BLDL3D12", "--amps-source", str(directory)])
+        return pic, args
+
+    def test_inline_check_uses_selected_source_without_external_tool(self):
+        with tempfile.TemporaryDirectory(prefix="srcsep3d-guards-") as tmp:
+            directory = Path(tmp)
+            pic, args = self.make_fixture(directory)
+            outcomes = [(0, "", 0.01), (1, "default argument", 0.01),
+                        (0, "", 0.01), (0, "", 0.01), (1, "redefinition", 0.01)]
+            # Only compiler execution is mocked. Source discovery, guard
+            # analysis, fixture creation and both negative controls are real.
+            with mock.patch.object(runner, "_run_command", side_effect=outcomes) as call:
+                result = runner._run_source(runner.BY_ID["BLDL3D12"], args,
+                                            directory / "reports")
+            self.assertEqual(result.status, "PASS", result.message)
+            self.assertFalse((directory / "tools").exists())
+            self.assertEqual(call.call_count, 5)
+            for item in call.call_args_list:
+                self.assertEqual(item.args[0][0], args.cxx)
+                self.assertIn("-fsyntax-only", item.args[0])
+            work = directory / "reports/pic-header-guards-probe"
+            self.assertEqual((work / "unguarded-domain.log").read_text(), "redefinition")
+            self.assertIn("class cDomainBC", (pic / "ecsim/domain_bc.h").read_text())
+
+    def test_early_pic_guard_is_rejected_before_compilation(self):
+        with tempfile.TemporaryDirectory(prefix="srcsep3d-guards-") as tmp:
+            directory = Path(tmp)
+            pic, args = self.make_fixture(directory)
+            text = (pic / "pic.h").read_text()
+            text = text.replace("//include headers", "#endif\n//include headers")
+            (pic / "pic.h").write_text(text)
+            with mock.patch.object(runner, "_run_command") as call:
+                result = runner._run_source(runner.BY_ID["BLDL3D12"], args,
+                                            directory / "reports")
+            self.assertEqual(result.status, "FAIL")
+            self.assertIn("tail lies outside _PIC_", result.message)
+            call.assert_not_called()
+
+    def test_negative_control_cannot_silently_pass(self):
+        with tempfile.TemporaryDirectory(prefix="srcsep3d-guards-") as tmp:
+            directory = Path(tmp)
+            _, args = self.make_fixture(directory)
+            with mock.patch.object(runner, "_run_command", return_value=(0, "", 0.01)):
+                result = runner._run_source(runner.BY_ID["BLDL3D12"], args,
+                                            directory / "reports")
+            self.assertEqual(result.status, "FAIL")
+            self.assertIn("unguarded-model-tail compile contract failed", result.message)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -67,6 +67,8 @@ MoverIntegratorMode=GuidingCenter
   NastranSurfaceUserData=on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
 
+  OutputMode=DistributedFiles !!SingleFile !SingleFile,DistributedFiles
+
   TrajectoryTracing=on
   MaxSampledTrajectoryNumber=300
 

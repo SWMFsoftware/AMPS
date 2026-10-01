@@ -122,6 +122,7 @@ endif
 # tracking in the enclosing AMPS build determines when they trigger rebuilds.
 CORE_SRC := \
     core/parker_geometry.cpp \
+    core/domain_geometry.cpp \
     mesh/mesh_model.cpp
 BG_SRC := \
     background/bg_provider.cpp \

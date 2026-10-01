@@ -1,4 +1,11 @@
+// A macro guard protects this declaration even when source and generated
+// build headers are distinct physical files reached through different paths.
+#ifndef AMPS_PIC_ECSIM_DOMAIN_BC_H_INCLUDED
+#define AMPS_PIC_ECSIM_DOMAIN_BC_H_INCLUDED
+
 #pragma once
+
+#include <vector>
 
 // Domain boundary-condition (BC) policy for electromagnetic fields.
 
@@ -58,3 +65,5 @@ namespace Electromagnetic {
 } // namespace Electromagnetic
 } // namespace FieldSolver
 } // namespace PIC
+
+#endif  // AMPS_PIC_ECSIM_DOMAIN_BC_H_INCLUDED

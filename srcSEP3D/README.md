@@ -16,6 +16,21 @@ shock/source parameters.
 
 ## Coupled SEP + coronal-CME native validation: quick start
 
+For a finite field-line corridor plus a complete near-Sun active sphere, use
+`examples/sep3d_analytic_parker_corner_sphere.in`. Its input selects an x-y corner
+cube with the Sun at the z midplane and inset from the x/y faces far enough to
+contain the complete sphere, an endpoint distance
+that determines the box extent, and photospheric refinement that coarsens to
+the global target through a configurable profile. Existing input decks keep
+their centered geometry. See [docs/DOMAIN_GEOMETRY.md](docs/DOMAIN_GEOMETRY.md)
+for every control, the distinction between allocation and physical solar
+boundaries, and portable/native verification commands.
+
+`box_geometry=field-line-xy-corner-cube` and `corner_direction_z=0` select
+this symmetric z layout. The Sun remains at `(0,0,0)` while the box z bounds
+are equal and opposite. The earlier `field-line-corner-cube` spelling still
+selects a corner in all three axes; rebuilding is required for the new mode.
+
 The native commands validate **live AMPS `srcSEP3D` initialization state**
 against shared coronal-model API contracts. The example decks select
 **analytic Parker background and SWCME shock**; `SCCM3D01--07` are generic
@@ -248,11 +263,15 @@ R_\odot=6.957\times10^8\ {\rm m}.
 The radius is a code-owned physical constant, not another input parameter.
 This prevents an input edit from changing the meaning of “the surface of the
 Sun” and prevents the photosphere from being confused with the independently
-configured Parker/CME source shell. The supplied decks use
+configured Parker/CME source shell. The original analytic decks use
 `domain.inner_radius_m = 20 R_sun`: background coverage, CME launch linkage,
 particle injection, and the custom SEP transport cutoff therefore begin at
 20 solar radii, while the AMPS solid sphere remains at one solar radius. A
-source shell exactly at `R_sun` is valid; a shell below it is rejected.
+source shell exactly at `R_sun` is valid; a shell below it is rejected. The
+corner/sphere example selects that photospheric inner boundary and a 1.1-AU
+outer cutoff. Its explicit Parker start is independent of the CME event's
+20-R_sun launch radius; the full input cross-checks the new Parker source and
+one-AU field normalization consistently.
 The production build deliberately fails at compile time unless both AMPS
 internal boundaries and user-defined spherical interaction callbacks are
 enabled; silently compiling a geometric sphere with no absorbing callback is
@@ -664,6 +683,22 @@ frozen application state—background, enabled gradients, and
 plasma/IMF columns can be nonzero while all srcSEP3D turbulence columns are
 zero, even though the physical cell centers were initialized correctly.
 
+An internal boundary can leave an output vertex with no positive-volume donor
+cells. AMPS permits an interpolation count of zero in this case. The srcSEP3D
+callback overwrites the complete application slice with finite zeros and still
+participates in the normal owner-send/root-receive output protocol. It does not
+restore solar-interior volume or borrow values from the solid object. Output
+requires positive interpolated background density and temperature, as required
+by the accepted snapshot contract, in addition to shell membership and finite
+values. Consequently a no-donor vertex has `background_valid=0` even if it lies
+inside the radial shell. Particle-window availability remains independent.
+
+The portable `OUT3D01–02` regressions compile the actual callback bodies from
+`main_lib.cpp` with byte-buffer/channel test doubles and the production output
+kernel. They check empty stencils, optional gradient slices, unaligned offsets,
+finite rows, availability flags, and both MPI callback branches. A configured
+multi-rank AMPS output run is still required to verify the native mesh writer.
+
 During `amps_init()`, both static storage regions are zeroed first, the selected
 turbulence provider is prepared, and background plus directional turbulence
 variance are prescribed in one pass to every owner-local physical center node.
@@ -672,6 +707,45 @@ physical cell must have positive total variance; an MPI-reduced count and
 minimum/maximum `deltaB^2` are printed before Runtime publication and halo
 exchange. A zero coupled value remains possible only through the explicitly
 configured AWSoM ballistic/missing-data path; no fallback amplitude is guessed.
+
+### Permanent ECSIM and PIC include guards
+
+An error reporting two definitions of
+`PIC::FieldSolver::Electromagnetic::cDomainBC`, one through `ecsim/domain_bc.h`
+and another through `build/pic/ecsim/domain_bc.h`, is an AMPS include-path
+problem. It can occur independently of the selected mesh output procedure.
+Some core revisions close the `_PIC_` guard before the model-header tail of
+`pic.h`; the halo and gyro headers recursively include `pic.h`. A header using
+only `#pragma once` may then be read through distinct physical source/build
+copies. Both the enclosing `pic.h` guard and a shared macro guard on
+`domain_bc.h` should cover the declarations.
+
+The source package includes the corrected headers directly:
+
+- `src/pic/ecsim/domain_bc.h` encloses the complete declaration in
+  `AMPS_PIC_ECSIM_DOMAIN_BC_H_INCLUDED` and includes its `<vector>` dependency.
+- `src/pic/pic.h` keeps the complete model-header tail inside `_PIC_`, including
+  the ECSIM halo, parallel halo and gyro headers that can include `pic.h` again.
+
+Configure/rebuild AMPS normally so the corrected source headers populate the
+configured `build/pic` tree. From the AMPS root:
+
+```bash
+make amps
+```
+
+Running `fix_pic_header_guards.py` is no longer a build or installation step.
+It remains available only for migrating older checkouts. Both source headers
+are mandatory release members, so later packages cannot omit the permanent
+fix. `BLDL3D12` compiles the shipped `cDomainBC` declaration and the actual PIC
+model-header tail through distinct source/build copies without any repair
+call. Narrow dependency stubs supply mesh metadata types and recursive halo
+includes; this is not a full MPI build. Removing either correction must fail
+its negative control on class redefinition or repeated default arguments.
+The verification is implemented inside `test/run_tests.py` and uses
+`--amps-source` to locate the headers. No separate header-test script is
+required or distributed. Probe compiler logs are retained under the selected
+output directory in `pic-header-guards-probe/`.
 
 ### Adding a user-side AMPS center-node output procedure
 

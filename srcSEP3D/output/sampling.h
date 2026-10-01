@@ -181,6 +181,10 @@ Core::Status PrepareTurbulenceTecplotPresentation(
 // slice as one state vector guarantees that background primitives, optional
 // gradients, and the two directional turbulence variances use the identical
 // AMPS stencil and cannot become spatially misregistered in the output.
+// A zero-size stencil is legal for excluded-volume vertices: result must be
+// non-null with a positive valueCount; the complete result is overwritten with
+// zeros and the two unused input arrays may be null. Nonempty stencils retain
+// strict pointer/finite-value checks. The caller marks this placeholder invalid.
 Core::Status InterpolateStaticCenterState(
     const double* const* stencilValues, const double* coefficients,
     std::size_t stencilSize, std::size_t valueCount, double* result);
@@ -189,10 +193,13 @@ Core::Status InterpolateStaticCenterState(
 // Undefined background values are represented by zeros and backgroundValid=0
 // rather than NaN.  Particle absence is represented independently by
 // particleSamplePresent=0; it never invalidates the background record.
+// backgroundStateAvailable=false also invalidates an in-shell vertex with no
+// initialized donors. The native callback derives availability from positive
+// density and temperature, both required by the accepted snapshot contract.
 TecplotCellPresentation PrepareTecplotCellPresentation(
     const std::vector<double>& storedBackgroundValues,
     bool insidePhysicalShell, long int particleSamplingWindowLength,
-    double sampledParticleNumber);
+    double sampledParticleNumber, bool backgroundStateAvailable = true);
 
 SamplingSnapshot Sample(const SamplingRequest& request);
 

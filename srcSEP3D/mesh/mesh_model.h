@@ -25,7 +25,8 @@ namespace SEP3D {
 namespace Mesh {
 
 // The AMPS mesh is Cartesian, while the initialized heliospheric background
-// is a shell.  The cube below exactly encloses the requested outer sphere;
+// is a shell. Legacy cubes enclose the outer sphere; corner cubes instead
+// enclose the complete selected field-line corridor and near-Sun sphere.
 // innerRadiusM records the Parker/CME source and custom-transport cutoff.  The
 // separate SolarBoundaryGeometry below owns the solid AMPS photosphere.
 struct DomainBounds {
@@ -62,7 +63,7 @@ struct ResolutionConfiguration {
   double backgroundCellSizeM = 0.25 * Core::Const::AU;
 
   // The surface target and transition radius define an explicit degradation
-  // region.  The selected named profile is monotone on [inner,transition] and
+  // region. The named profile is monotone on [anchor,transition] and
   // equals the global size outside it.
   bool enableRadialRefinement = true;
   double solarSurfaceCellSizeM = 0.01 * Core::Const::AU;
@@ -70,6 +71,8 @@ struct ResolutionConfiguration {
   RuntimeModel::RefinementProfile solarRefinementProfile =
       RuntimeModel::RefinementProfile::Smoothstep;
   double solarRefinementExponent = 1.0;
+  RuntimeModel::SolarRefinementAnchor solarRefinementAnchor =
+      RuntimeModel::SolarRefinementAnchor::SourceShell;
 
   // Optional Parker-spiral tube.  tubeLongitudeRad is the centreline
   // longitude at innerRadiusM; tubeColatitudeRad is measured from +Z.
@@ -91,6 +94,7 @@ struct ResolutionConfiguration {
   RuntimeModel::TubeRadiusMode activeTubeRadiusMode =
       RuntimeModel::TubeRadiusMode::ConstantAngularWidth;
   unsigned activeTubeBufferBlocks = 0;
+  double activeSolarSphereRadiusM = 0.0;
   double solarWindSpeedMPerS = Core::Const::V_sw_default;
   double solarRotationRateRadPerS = Core::Const::Omega_sun;
   Core::Vec3 rotationAxis = {0.0, 0.0, 1.0};
@@ -223,6 +227,7 @@ struct ActiveRegionPlan {
 // Changing mask semantics without changing this identifier is a restart and
 // reproducibility error.
 const char* ActiveRegionAlgorithmName();
+const char* ActiveRegionAlgorithmName(const ResolutionConfiguration& configuration);
 
 // Portable O(N^2) graph builder used by the standalone verifier and small
 // offline tools. The production AMPS boundary builds the same graph from the

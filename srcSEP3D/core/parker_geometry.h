@@ -56,6 +56,13 @@ Status ParkerCurveRadiusAtArcLengthM(
 Vec3 ParkerCurveTangent(double radiusM,
                         const ParkerSpiralGeometry& geometry);
 
+// Certified enclosure of the complete outward curve and a surrounding ball
+// of radius paddingM. Bounds use the analytic |dx/dr| on each radial interval,
+// not the diagnostic point count, so a bend between plotted points is retained.
+Status ParkerCurveBoundsM(double endRadiusM,
+                          const ParkerSpiralGeometry& geometry,
+                          double paddingM, Vec3* minimumM, Vec3* maximumM);
+
 // Unit Parker tangent through an arbitrary heliocentric position.  On the
 // configured centreline it is identical to ParkerCurveTangent().
 Vec3 ParkerLocalTangent(const Vec3& positionM,

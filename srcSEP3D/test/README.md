@@ -208,6 +208,82 @@ archive. A missing-member failure under `BLDL3D05-layout/build/main` diagnoses
 this fixture, not the real enclosing AMPS build. Retain the production audit:
 it must still reject an archive with a missing or duplicated required member.
 
+#### OUT3D01–02 and BLDL3D12 — excluded-volume output and header reentrancy
+
+`OUT3D01` compiles the real `InterpolateInitializationCellData` body extracted
+from `main_lib.cpp`, together with `output/sampling.cpp`. It exercises legal
+zero-donor stencils, null unused arrays, optional gradient storage, unaligned
+application offsets, canaries on neighbouring AMPS bytes, and malformed-input
+rejection. `OUT3D02` additionally compiles the real print callback and checks
+finite in-shell excluded rows, solar-interior rows, populated background with
+empty/occupied particle windows, and owner-send/root-receive callback branches.
+The host node/channel services are portable test doubles; these cases do not
+claim native MPI transport or cut-cell geometry qualification. They are
+selected by `--all`, `--group OUT3D`, and `--suite phase-o`.
+
+`BLDL3D12` reads the permanent `src/pic/pic.h` and
+`src/pic/ecsim/domain_bc.h` guards and compiles the actual PIC model-header
+tail and `cDomainBC` declaration through distinct source/build copies. It makes
+no repair-script call. Mesh metadata and recursive dependency stubs keep the
+test portable; it is not a full PIC/MPI compilation. Negative controls remove
+each guard correction and require class/default-argument compilation failures.
+The package hygiene check requires both fixed headers. This case runs in
+`--all`, `--group BLDL3D`, and `--suite production`.
+The check lives inside `run_tests.py`; it does not require a separate script in
+the AMPS `tools/` directory. `--amps-source` selects the checkout to inspect.
+Generated probes and individual compiler logs remain in
+`<output-dir>/pic-header-guards-probe/` for diagnosing failures.
+
+```bash
+python3 srcSEP3D/test/run_tests.py --group OUT3D --test BLDL3D12 --no-build --output-dir test_output/output-boundary
+```
+
+Run that command from the AMPS root. After applying the header repair and
+rebuilding AMPS, repeat the multi-rank initialization output that originally
+aborted. The seven native SCCM initialization contracts keep their existing IDs;
+the new portable output cases belong to the application runner.
+
+#### DOM3D01–04 and CFG3D12 — corner cube, solar neighbourhood and corridor
+
+`DOM3D01` encloses densely sampled bent Parker curves and their complete
+cross-sections under automatic/all eight explicit corners, translated origins,
+rotated axes and strong winding. It checks endpoint scaling, plot-count
+independence, complete solar-sphere containment and invalid controls.
+`DOM3D02` checks off-corridor sphere/box intersection, face tangency, sphere
+disablement and independent photospheric coarsening identities for all three
+profiles. `DOM3D03` builds a balanced corner octree, proves dense line and
+full sphere-surface coverage in physical-core leaves, checks a connected union,
+retains topological halos and verifies pruning and photospheric preflight.
+
+`DOM3D04` verifies the x-y corner mode with the Sun on the z midplane. It checks
+automatic and all four x/y selections, whole tilted/polar corridors and their
+cross-sections, full solar-sphere clearance, cubic extents, and rejection of a
+conflicting z corner direction. For the equatorial case, it also builds the
+real balanced mesh and active plan and checks reflected-z leaf bounds and
+core/halo/inactive classes. It retains the complete sphere and source-to-endpoint
+corridor while pruning unused leaves.
+
+These four portable tests compile the actual `domain_geometry`, Parker and
+mesh kernels without AMPS, MPI or replacement shared-model headers. Their
+content-addressed executable lives under the runner output directory. They
+are included by `--all`, `--group DOM3D`, and `--suite phase-m`.
+`CFG3D12` additionally exercises the real input parser and immutable factory,
+endpoint/arc-length normalization, geometry fingerprints, negative inputs and
+dry-run reporting in the complete application Stage-1 build. It additionally
+parses the x-y variant, checks its symmetric z bounds and distinct identity,
+and rejects a nonzero z corner direction. The uploaded
+overlay lacks canonical legacy sep_common/SWCME dependencies, so this latter
+gate and a real linked MPI initialization require the enclosing AMPS checkout.
+
+From `srcSEP3D`, the portable-only command is:
+
+```sh
+env MAKEFLAGS="-j16" python3 test/run_tests.py --group DOM3D --no-build --output-dir test_output/domain-geometry
+```
+
+See [`docs/DOMAIN_GEOMETRY.md`](../docs/DOMAIN_GEOMETRY.md) and the complete
+`examples/sep3d_analytic_parker_corner_sphere.in` input for controls and usage.
+
 #### BLDL3D06 — production transitive-header boundary
 
 Every generic AMPS translation unit reaches `SEP3D.h` through generated
