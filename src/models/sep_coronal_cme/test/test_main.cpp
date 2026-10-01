@@ -18,6 +18,7 @@ int main(int argc, char** argv) {
   SCCMTest::RegisterStage8(&tests);
   SCCMTest::RegisterStage9(&tests);
   SCCMTest::RegisterStage10(&tests);
+  SCCMTest::RegisterStage11(&tests);
 
   std::string selected;
   bool list = false;

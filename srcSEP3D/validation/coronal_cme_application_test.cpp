@@ -358,6 +358,10 @@ Core::Status WriteNativeTestJson(
       << "  \"configuration_fingerprint\": "
       << JsonString(state.configurationFingerprint) << ",\n"
       << "  \"mpi_ranks\": " << state.mpiRankCount << ",\n"
+      << "  \"completed_steps\": " << state.completedSteps << ",\n"
+      << "  \"providers\": {\"input_schema_version\": " << state.inputSchemaVersion
+      << ", \"background\": " << JsonString(state.backgroundAuthority)
+      << ", \"shock\": " << JsonString(state.shockAuthority) << "},\n"
       // Additive evidence preserves the existing report schema/runner ABI.
       << "  \"active_region\": {\"mode\": "
       << JsonString(state.activeRegionMode)

@@ -3032,6 +3032,9 @@ SEP3D::Core::Status SEP3D::Validation::CaptureNativeApplicationState(
   MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &captured.mpiRankCount);
   captured.expectedMpiRanks = expectedMpiRanks;
   captured.configurationFingerprint = Configuration().physics_fingerprint();
+  captured.inputSchemaVersion = Configuration().options().inputSchemaVersion;
+  captured.backgroundAuthority = RuntimeModel::Name(Configuration().options().background);
+  captured.shockAuthority = RuntimeModel::Name(Configuration().options().shock);
   captured.plannedActiveLeaves = gPlannedActiveLeafCount;
   captured.plannedInactiveLeaves = gPlannedInactiveLeafCount;
   captured.plannedSolarInteriorLeaves = gPlannedSolarInteriorLeafCount;
@@ -3286,6 +3289,9 @@ SEP3D::Core::Status SEP3D::Validation::CaptureNativeApplicationState(
   // differ between ranks without creating a false mismatch.
   std::ostringstream identity;
   identity << captured.configurationFingerprint << '|'
+           << captured.inputSchemaVersion << '|'
+           << captured.backgroundAuthority << '|'
+           << captured.shockAuthority << '|'
            << captured.backgroundGeneration << '|'
            << captured.globalAllocatedBlocks << '|'
            << captured.globalPhysicalCells << '|'

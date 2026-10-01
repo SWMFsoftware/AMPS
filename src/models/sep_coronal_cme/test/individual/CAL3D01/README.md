@@ -1,0 +1,7 @@
+# CAL3D01
+
+the complete Cartesian candidate product over magnetogram, scale/mode, `(R_b,R_i,R_scs)`, wind/density, and front members is realized exactly once. Independent-qualification D6, topology/coronal-hole, D1/D2, and event-specific type-II/EUV likelihood values and preregistered weights reproduce a manufactured reference. The preferred frequency--time case recomputes plasma frequency for each density member with fundamental/ harmonic covariance. A pre-inferred-height case declares and jointly conditions on its density-model covariance rather than pretending to be independent across related members. Missing tuples, construction assets reused for qualification/weighting, withheld-validation gating, universal- height-window shortcuts, and any SEP-output-dependent selection fail.
+
+Run from any directory with `python3 test.py`. The launcher delegates to the global registry, so individual and cumulative gates execute the identical implementation.
+
+Implementation: the identically named unittest class in `test/test_stage12.py` exercises `tools/preprocessing/`. It uses synthetic maps, geometry, covariance and candidate products; no event observation is hardcoded in C++. The [Stage-12 guide](../../../docs/STAGE12_OBSERVATION_PREPROCESSING.md) explains inference assumptions, immutable metadata and role ownership. The [synthetic CLI example](../../../examples/stage12/README.md) provides a complete runnable asset/selection workflow.

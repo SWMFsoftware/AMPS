@@ -16,13 +16,13 @@ shock/source parameters.
 
 ## Coupled SEP + coronal-CME native validation: quick start
 
-The commands in this section validate the **coupled application formed by the
-AMPS `srcSEP3D` SEP-transport host and the shared
-`src/models/sep_coronal_cme` background/CME/shock model**.  These are linked
-native integration tests: they build the real distributed AMPS mesh, execute
-the production srcSEP3D initialization path, and inspect the coronal-CME state
-that the SEP mover and source consume.  They are not only standalone unit
-tests of `sep_coronal_cme`.
+The native commands validate **live AMPS `srcSEP3D` initialization state**
+against shared coronal-model API contracts. The example decks select
+**analytic Parker background and SWCME shock**; `SCCM3D01--07` are generic
+host-contract checks and do not demonstrate that the PFSS/SCS background or
+Stage-11 providers are active. The current application authority enums do not
+select those coronal providers. Shared Stage-0--12 verification remains a
+separate authority.
 
 Run the following commands from the AMPS root directory after rebuilding the
 `amps` executable with `srcSEP3D` selected as the application.
@@ -57,12 +57,27 @@ Equivalent copy-and-run one-liner:
 mpiexec -n 4 ./amps --test SCCM3D01 --test-input srcSEP3D/examples/sep3d_analytic_parker.in --test-steps 0 --expect-mpi-ranks 4 --test-json test_output/coupled-sep-corona/SCCM3D01.json --artifact-directory test_output/coupled-sep-corona/SCCM3D01-artifacts
 ```
 
-### Validate all coupled SEP + coronal-CME contracts
+### Run all shared-model and native SEP + corona tests
 
-Use the suite selector to run every coupled SEP + corona test registered in
-this executable, including future additions. The same command stays valid
-when the suite grows; there is no need to list individual IDs. This corridor
-example checks initialization without advancing particles:
+The aggregate runner discovers both registries and runs the complete shared
+suite followed by the live native suite. Run it once from the AMPS root; it
+launches MPI itself:
+
+```bash
+python3 srcSEP3D/test/run_coupled_sep_corona.py --amps ./amps --ranks 4 --test-input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --test-steps 0
+```
+
+Currently this selects **206 shared-model gates plus 7 native host checks**.
+Counts grow with the two registries, without listing IDs. Each result retains
+its evidence scope. `test_output/coupled-sep-corona/summary.json` and `junit.xml`
+combine results; fresh per-run directories retain original reports/logs.
+See [validation/COUPLED_SUITE_CLI.md](validation/COUPLED_SUITE_CLI.md).
+
+### Validate the native initialization suite
+
+Use the native selector to run every host check registered with
+`suite="sep-corona"` in this executable. This corridor command checks
+initialization without advancing particles:
 
 ```bash
 mpiexec -n 4 ./amps --test-suite sep-corona --test-input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --test-steps 0 --expect-mpi-ranks 4 --test-json test_output/coupled-sep-corona/native.json --artifact-directory test_output/coupled-sep-corona/artifacts
@@ -73,6 +88,12 @@ stepping, choose a positive `--test-steps` horizon within the input deck's
 `run.maximum_time_steps`. Full AMPS stepping still needs verification in your
 configured build. `--all-tests` selects the complete native registry, including
 general AMPS/MPI/restart checks with their own prerequisites.
+
+This native command currently prints seven results. It does not call the
+shared-model C++/documentation/architecture or Stage-12 offline Python tests.
+Increasing `--test-steps` advances the configured host; it does not add those
+tests or activate an absent coronal provider. Native JSON now records the
+configured background/shock authorities and completed steps.
 
 Suite membership comes from the `suite` field of `CoronalCmeNativeTests()`.
 Register a future coupled descriptor with `suite="sep-corona"` and implement

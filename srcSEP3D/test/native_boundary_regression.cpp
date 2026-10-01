@@ -22,6 +22,9 @@ void Require(bool condition, const std::string& description) {
 }
 V::NativeApplicationState FullDomain() {
   V::NativeApplicationState state;
+  state.inputSchemaVersion = 4;
+  state.backgroundAuthority = "analytic-parker";
+  state.shockAuthority = "swcme";
   state.solarBoundaryRegistered = true;
   state.activeMaskInstalled = true;
   state.activeRegionAllocationVerified = true;

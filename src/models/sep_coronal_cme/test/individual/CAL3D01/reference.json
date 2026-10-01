@@ -1,0 +1,6 @@
+{
+  "id": "CAL3D01",
+  "first_stage": 12,
+  "expected": "pass",
+  "tolerance_authority": "model/testing_validation.md"
+}

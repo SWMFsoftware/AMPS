@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one SCCM test or a cumulative Stage 0--6 release gate."""
+"""Run one SCCM test or a cumulative Stage 0--12 release gate."""
 
 # Passion and several NASA HEC environments still provide Python 3.8.  With
 # postponed annotations, expressions such as ``list[str]`` are stored as text
@@ -65,6 +65,10 @@ TESTS = [
     *[Test(f"POP1D{number:02d}", 10) for number in range(1, 3)],
     Test("RUN1D01", 10), Test("RST1D01", 10),
     *[Test(f"XM3D{number:02d}", 10) for number in range(1, 3)],
+    *[Test(f"HCS3D{number:02d}", 11) for number in range(4, 7)],
+    *[Test(f"SHEATH3D{number:02d}", 11) for number in range(1, 4)],
+    *[Test(f"PROV3D{number:02d}", 12, "preprocessing") for number in range(1, 4)],
+    Test("CAL3D01", 12, "preprocessing"),
 ]
 
 # These are release-contract values, not counts inferred from TESTS.  Keeping
@@ -84,6 +88,8 @@ EXPECTED_CUMULATIVE_COUNTS = {
     8: 153,
     9: 173,
     10: 196,
+    11: 202,
+    12: 206,
 }
 
 # A terminal test ID makes the diagnostic more useful than a count alone.  It
@@ -100,6 +106,8 @@ EXPECTED_STAGE_TERMINALS = {
     8: "OBS3D07",
     9: "LOS3D02",
     10: "XM3D02",
+    11: "SHEATH3D03",
+    12: "CAL3D01",
 }
 
 
@@ -137,8 +145,12 @@ def validate_registry() -> tuple[bool, str]:
 def command_for(test: Test) -> list[str]:
     if test.kind == "cpp":
         return [str(ROOT / "build" / "sep_coronal_cme_tests"), "--test", test.identifier]
+    if test.kind == "preprocessing":
+        return [sys.executable, str(ROOT / "test" / "test_stage12.py"), "--test", test.identifier]
     if test.kind == "architecture":
-        return [sys.executable, str(ROOT / "tools" / "check_architecture.py")]
+        # Run adversarial source/artifact fixtures before the same production
+        # archive/public-ABI audit. They belong to ARCHSCCM01, not DOCSCCM01.
+        return [sys.executable, str(ROOT / "test" / "test_architecture.py")]
     # File-path invocation is not portable across Python versions: Python 3.8
     # converts ``test/test_model_documentation.py`` to the dotted import
     # ``test.test_model_documentation``, which fails because this test tree is
@@ -187,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     select = parser.add_mutually_exclusive_group(required=True)
     select.add_argument("--all", action="store_true")
-    select.add_argument("--stage", type=int, choices=tuple(range(0, 11)))
+    select.add_argument("--stage", type=int, choices=tuple(range(0, 13)))
     select.add_argument("--test")
     select.add_argument("--list", action="store_true")
     parser.add_argument("--output-dir", default="build/test-results")

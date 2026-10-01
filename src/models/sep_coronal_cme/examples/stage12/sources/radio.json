@@ -1,0 +1,1 @@
+{"frequency_covariance_hz2":[[100,20],[20,100]],"frequency_hz":[4489.33141024362,2992.8876068290797],"harmonic_hypotheses":[{"harmonic":1,"prior_probability":0.8},{"harmonic":2,"prior_probability":0.2}],"time_s":[1,2]}

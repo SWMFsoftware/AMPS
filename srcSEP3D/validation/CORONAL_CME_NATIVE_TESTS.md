@@ -2,9 +2,11 @@
 
 ## Purpose and scope
 
-`srcSEP3D` is both a production SEP transport application and the three-
-dimensional AMPS integration host for the shared
-`src/models/sep_coronal_cme` model. The native test mode does not substitute a
+`srcSEP3D` is a production SEP application with native checks of shared
+`src/models/sep_coronal_cme` initialization/API contracts. They observe the
+selected production providers and do not install a coronal background. The
+supplied decks select analytic Parker/SWCME; current host selectors do not
+activate PFSS/SCS or Stage-11 providers. The native test mode does not substitute a
 small mock mesh or a second physics driver. It parses one complete srcSEP3D
 input deck, constructs the ordinary immutable configuration, executes
 `amps_init_mesh()` and `amps_init()`, optionally executes the requested number
@@ -13,10 +15,11 @@ state without mutating it.
 
 This distinction is important. The standalone model tests prove equations,
 units, parsers, and deterministic algorithms without AMPS. The tests in this
-document prove that those contracts survive the real generated species table,
+document inspect generic host contracts on the real generated species table,
 AMR allocation, MPI decomposition, center-node storage, spherical boundary,
 source provider, particle numerics, halo exchange, and Tecplot writer. Neither
-class of evidence replaces the other.
+class of evidence replaces the other. Native initialization PASS is not full
+coronal-provider or Stage-11 mover integration evidence.
 
 Normal production commands are unchanged:
 
@@ -32,7 +35,7 @@ The linked executable provides allocation-free discovery:
 ./amps --list-tests
 ```
 
-Run every current/future coupled SEP + corona test without listing IDs:
+Run every currently registered native SEP + corona host check without IDs:
 
 ```bash
 mpiexec -n 4 ./amps --test-suite sep-corona --test-input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --test-steps 0 --expect-mpi-ranks 4 --test-json test_output/coupled-sep-corona/native.json --artifact-directory test_output/coupled-sep-corona/artifacts
@@ -42,6 +45,18 @@ The selector reads native descriptor suite membership directly. It currently
 selects SCCM3D01–07 and includes future `suite="sep-corona"` descriptors after
 rebuilding. Discovery displays suite membership. Results print one status per
 case plus total PASS/FAIL/SKIP/ERROR counts. See [COUPLED_SUITE_CLI.md](COUPLED_SUITE_CLI.md).
+
+To include all shared-model Stage-0--12 tests in the same invocation, use:
+
+```bash
+python3 srcSEP3D/test/run_coupled_sep_corona.py --amps ./amps --ranks 4 --test-input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --test-steps 0
+```
+
+This runs both authorities and combines their reports (currently 206 shared
+plus 7 native cases). Rebuild after updating the native report boundary:
+`providers` and `completed_steps` must be captured from production state. An
+obsolete report fails the aggregate runner rather than receiving an inferred
+provider identity.
 
 Run one test or the complete native registry with an explicit immutable input:
 

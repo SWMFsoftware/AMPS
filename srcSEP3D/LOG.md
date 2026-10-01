@@ -15,6 +15,9 @@ PBS r3i3n3 124> mpiexec -n 4 ./amps --test SCCM3D01 --test SCCM3D02 --test SCCM3
 
 mpiexec -n 4 ./amps --test-suite sep-corona --test-input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --test-steps 0 --expect-mpi-ranks 4 --test-json test_output/coupled-sep-corona/native.json --artifact-directory test_output/coupled-sep-corona/artifacts
 
+
+python3 srcSEP3D/test/run_coupled_sep_corona.py --amps ./amps --ranks 4 --test-input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --test-steps 0 --output-dir test_output/coupled-sep-corona-all
+
 other 3D  tests: 
 env MAKEFLAGS="-j16" test/run_tests.py --all --amps-source .. --make-config ../Makefile.conf --output-dir test_output/all --rebuild
 

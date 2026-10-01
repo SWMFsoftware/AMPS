@@ -44,6 +44,16 @@ The runner writes JSON and JUnit evidence below `build/test-results/`. Each
 description, and reference metadata. The launchers delegate to the global
 registry, avoiding a second implementation that could drift.
 
+`ARCHSCCM01` runs five source-audit regressions before the actual built
+archive/public-header audit. Compiled `sep_*.o` files beside neutral sources
+are not UTF-8 text: only regular C/C++ source/header files enter the text scan.
+Invalid encoding in a genuine source remains a named failure. Nested source
+checks, forbidden includes, upward neutral dependencies, archive symbol checks
+and the external C++17 consumer remain enforced. See
+[`individual/ARCHSCCM01/README.md`](individual/ARCHSCCM01/README.md) for the
+failure cause and a one-case rerun command. These regressions are internal to
+the existing canonical gate, so the Stage-12 aggregate still has 206 shared IDs.
+
 The Python entry points support Python 3.7 and newer. In particular, type
 annotations are postponed so the runner imports correctly on Python 3.8-based
 NASA HEC software stacks, where evaluating `list[str]` directly would raise

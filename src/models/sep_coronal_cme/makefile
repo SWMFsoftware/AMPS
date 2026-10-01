@@ -20,7 +20,7 @@ ADAPTER_OBJECTS := $(BUILD)/adapter_field_line_export.o \
 
 .PHONY: all lib test test-stage0 test-stage1 test-stage2 test-stage3 \
 	test-stage4 test-stage5 test-stage6 test-stage7 test-stage8 test-stage9 \
-	test-stage10 \
+	test-stage10 test-stage11 test-stage12 \
 	check-architecture check-adapters clean
 
 all: lib
@@ -59,7 +59,7 @@ $(BUILD)/sep_coronal_cme_tests: $(TEST_OBJECTS) $(BUILD)/libsep_coronal_cme.a \
 		$(BUILD)/libsep_coronal_cme.a -o $@
 
 check-architecture: $(BUILD)/libsep_coronal_cme.a
-	$(PYTHON) tools/check_architecture.py
+	$(PYTHON) test/test_architecture.py
 
 check-adapters: $(ADAPTER_OBJECTS)
 
@@ -96,8 +96,14 @@ test-stage9: $(BUILD)/sep_coronal_cme_tests
 test-stage10: $(BUILD)/sep_coronal_cme_tests
 	$(PYTHON) test/run_tests.py --stage 10 --expect-count 196
 
+test-stage11: $(BUILD)/sep_coronal_cme_tests
+	$(PYTHON) test/run_tests.py --stage 11 --expect-count 202
+
+test-stage12: $(BUILD)/sep_coronal_cme_tests
+	$(PYTHON) test/run_tests.py --stage 12 --expect-count 206
+
 test: $(BUILD)/sep_coronal_cme_tests check-adapters
-	$(PYTHON) test/run_tests.py --all --expect-count 196
+	$(PYTHON) test/run_tests.py --all --expect-count 206
 
 clean:
 	rm -rf $(BUILD)

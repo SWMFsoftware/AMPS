@@ -59,6 +59,8 @@ def main() -> int:
                 "planned_solar_interior_leaves": 8, "allocated_blocks": 100}
     if data.get("active_region") != expected:
         raise RuntimeError("native JSON lost active-region qualification evidence")
+    if data.get("providers") != {"input_schema_version": 4, "background": "analytic-parker", "shock": "swcme"} or data.get("completed_steps") != 0:
+        raise RuntimeError("native JSON lost provider or completed-step evidence")
     if data.get("schema") != "srcsep-component-tests-v1" or \
             data["results"][0]["status"] != "PASS":
         raise RuntimeError("native JSON schema/status regression")

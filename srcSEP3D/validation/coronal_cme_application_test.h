@@ -73,6 +73,13 @@ struct NativeApplicationState {
   bool mpiFingerprintConsistent = false;
   bool restartConfigured = false;
   std::string configurationFingerprint;
+  // Captured from the configured production authorities. Generic readiness
+  // checks cannot prove that a particular coronal model was selected: the
+  // provider names must accompany the evidence instead of being inferred
+  // from the SCCM test prefix or an input filename.
+  int inputSchemaVersion = 0;
+  std::string backgroundAuthority = "unreported";
+  std::string shockAuthority = "unreported";
   std::string activeRegionMode;
   std::vector<NativeSpeciesState> species;
 };

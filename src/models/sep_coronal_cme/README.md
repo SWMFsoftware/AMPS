@@ -125,13 +125,14 @@ shared physics layer.
 ## Implemented staged build
 
 The implementation follows the roadmap as cumulative hard gates. Run
-`make test-stage0` through `make test-stage10`; a later gate
+`make test-stage0` through `make test-stage12`; a later gate
 always includes every earlier test. Individual canonical launchers live under
 `test/individual/ID/`, and JSON/JUnit evidence is written under `build/` so it
 cannot leak into a source archive.
 
 `make test` (or `python3 test/run_tests.py --all`) is the single aggregate
-Stage 0--10 gate (196 canonical tests).
+Stage 0--12 gate (206 canonical tests). Stage 11 first closes its independent
+202-test gate; Stage 12 adds the four canonical offline preprocessing gates.
 
 Detailed implementation notes live in `docs/`. They explain the physics-to-
 code mapping while leaving `model.md` as the normative equation and acceptance
@@ -166,7 +167,19 @@ bundle, reduction kernels, and thin application adapters described in
 
 ## Linked AMPS host qualification
 
-The 196 model tests above remain the authoritative dependency-light physics
+To run the shared gates and live host checks together from the AMPS root:
+
+```sh
+python3 srcSEP3D/test/run_coupled_sep_corona.py --amps ./amps --ranks 4 --test-input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --test-steps 0
+```
+
+The aggregate currently selects 206 shared gates plus 7 native checks and
+keeps their scopes distinct. The supplied deck selects legacy analytic
+Parker/SWCME. Its native initialization passes do not activate or qualify
+PFSS/SCS coronal providers or the optional Stage-11 mover; the complete host
+adapter remains separate work. Native reports capture actual provider names.
+
+The cumulative model tests above remain the authoritative dependency-light physics
 and API suite. A configured `srcSEP3D` executable supplies the complementary
 host evidence: its `SCCM3D01–07` callbacks initialize the real AMPS mesh and
 generated species table, then call the public Stage-8/9 validation APIs on a
@@ -180,3 +193,16 @@ The application test boundary lives under
 library. Keeping it there preserves the architecture rule that no model source
 includes AMPS or MPI while still making the concrete linked application a
 repeatable release test rather than an undocumented manual demonstration.
+
+Stage 11 adds independently selected finite exterior HCS/full-orbit and finite
+moving planar downstream-sheath providers, with conservative event/frame and
+ledger contracts. Their supplied families and integration limits are detailed
+in [`docs/STAGE11_DISCONTINUITY_TRANSPORT.md`](docs/STAGE11_DISCONTINUITY_TRANSPORT.md).
+
+Stage 12 adds deterministic offline observation inference, immutable provenance,
+complete formation-height candidate products, reviewed observer requests, and
+frozen transfer/comparison manifests. See
+[`docs/STAGE12_OBSERVATION_PREPROCESSING.md`](docs/STAGE12_OBSERVATION_PREPROCESSING.md)
+and the runnable [synthetic example](examples/stage12/README.md). These assets
+are prepared outside the cell/particle loops. Their neutral JSON schemas do not
+add a runtime imported-MHD provider or change the schema-5 application grammar.

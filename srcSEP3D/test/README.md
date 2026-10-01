@@ -1,6 +1,8 @@
 # srcSEP3D Testing Procedure
 
-`test/run_tests.py` is the single user-facing test interface. Its selectors
+`test/run_tests.py` is the general application test interface. For combined
+SEP/corona shared-model and native coverage, use `test/run_coupled_sep_corona.py`
+as described at the end of this document. The general runner's selectors
 match `srcSEP/test/run_tests.py` so the two applications can use the same
 automation habits. The runner combines R0/R1/R2 foundation evidence with
 Phase-M mesh, Phase-B background, Phase-T turbulence/coefficient, Phase-P
@@ -710,3 +712,47 @@ full surface, and proves deterministic exact-count allocation plus downstream
 no-cap behavior.
 `R3D09` verifies finite serialization and the independent background,
 sampling-window, and particle-occupancy flags for empty and occupied cells.
+# Aggregate shared-model and live SEP + corona testing
+
+From the AMPS root, after rebuilding the native executable:
+
+```sh
+python3 srcSEP3D/test/run_coupled_sep_corona.py --amps ./amps --ranks 4 --test-input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --test-steps 0
+```
+
+This runs both registries without naming individual tests (currently 206
+shared-model plus 7 native cases), verifies complete fresh reports and writes
+combined JSON/JUnit totals. `--list` discovers cases; `--model-only` explicitly
+runs shared verification; `--require-no-skips` fails on unexercised prerequisites.
+The supplied native deck uses Parker/SWCME, so generic host initialization PASS
+does not establish the coronal runtime provider. See the
+[coverage/CLI guide](../validation/COUPLED_SUITE_CLI.md).
+
+The runner streams build/test output, prints each phase's start/end and counts
+completed tests against the discovered registry, including percentages and
+elapsed seconds. A heartbeat every 15 seconds keeps quiet phases visible;
+append `--progress-interval 5` for more frequent updates. During MPI
+initialization, this reports elapsed/idle time rather than estimating mesh
+completion. Original subprocess logs and checked JSON remain authoritative.
+Updating this Python progress reporting alone does not require rebuilding AMPS.
+
+The final failure summary lists FAIL/ERROR cases by scope and ID, with a short
+reason, a per-case diagnostic file and the execution log. It also prints all
+generated phase-log paths and source-report paths. `failures.txt` beside the
+latest `summary.json` is replaced each run; `runs/TIMESTAMP-ID/failures.txt`
+and `failures/SCOPE/ID.log` preserve each invocation's summary and complete
+failure details. Native case diagnostics contain messages/metrics/artifact
+references, while full MPI output remains in `native.log`. Strict SKIPs and
+infrastructure failures remain explicit. No AMPS rebuild is needed for this
+Python reporting change. See the CLI guide for the complete log-path table
+and a command to diagnose older reports without rerunning tests.
+
+`test_coupled_sep_corona_runner.py` tests orchestration with deliberately
+synthetic process fixtures: dynamic future membership, mixed suite exits,
+missing/duplicate/extra/stale reports, provider/rank ownership, explicit scope
+and SKIP policy. It also verifies that test progress appears before child exit,
+quiet phases emit heartbeats, timeouts remain bounded and raw child logs remain
+intact. Failure-summary coverage includes complete shared output, native
+metrics/artifact references, generated-log paths, infrastructure errors,
+strict SKIPs and replacing the latest summary while preserving older runs.
+Those fixtures are never MPI/physical qualification evidence.

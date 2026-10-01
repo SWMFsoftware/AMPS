@@ -9,6 +9,47 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN = re.compile(r"(?i)(\bmpi\b|mpi\.h|tecplot|\bpic(?:::|/|\.h)|amps|srcsep|swcme)")
+# AMPS builds may leave sep_*.o next to the neutral module's sources. Only
+# C/C++ source/header files belong to the text audit; archive dependencies
+# still receive the separate nm check below. Never decode object/archive bytes
+# as text or mask invalid UTF-8 in a genuine source with errors='ignore'.
+SOURCE_SUFFIXES = {".h", ".hpp", ".hh", ".hxx", ".c", ".cc", ".cpp",
+                   ".cxx", ".inc", ".ipp", ".tpp", ".ixx", ".cppm"}
+
+
+def source_files(folder: Path, pattern: str = "*"):
+    """Select regular source files, including future nested neutral sources."""
+    return (path for path in sorted(folder.rglob(pattern))
+            if path.is_file() and path.suffix.lower() in SOURCE_SUFFIXES)
+
+
+def source_dependency_error(root: Path):
+    """Return a source-boundary violation, or None when the text audit closes.
+
+    Keeping this filesystem audit separate from linking permits regressions
+    with binary build artifacts and forbidden sources in isolated temporary
+    trees. The production gate still performs all symbol and public ABI checks.
+    """
+    common = root.parent / "sep_common"
+    scans = ((root/"include", "*", False), (root/"src", "*", False),
+             (common, "sep_*", True))
+    for folder, pattern, neutral in scans:
+        for path in source_files(folder, pattern):
+            label = str(path.relative_to(common if neutral else root))
+            if neutral:
+                label = "sep_common/"+label
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as error:
+                return f"cannot read UTF-8 source {label}: {error}"
+            if neutral:
+                if "sep_coronal_cme" in text:
+                    return f"neutral dependency points upward: {label}"
+            else:
+                for number, line in enumerate(text.splitlines(), 1):
+                    if line.lstrip().startswith("#include") and FORBIDDEN.search(line):
+                        return f"forbidden include {label}:{number}: {line}"
+    return None
 
 def fail(message: str) -> int:
     print(f"[ARCHSCCM01] FAIL {message}", file=sys.stderr)
@@ -16,17 +57,10 @@ def fail(message: str) -> int:
 
 def main() -> int:
     # Catch compile-time dependencies at their source with a file/line result.
-    for folder in (ROOT / "include", ROOT / "src"):
-        for path in sorted(folder.rglob("*")):
-            if path.suffix not in {".h", ".hpp", ".cpp", ".inc"}:
-                continue
-            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-                if line.lstrip().startswith("#include") and FORBIDDEN.search(line):
-                    return fail(f"forbidden include {path.relative_to(ROOT)}:{number}: {line}")
+    violation = source_dependency_error(ROOT)
+    if violation:
+        return fail(violation)
     common = ROOT.parent / "sep_common"
-    for path in sorted(common.glob("sep_*")):
-        if "sep_coronal_cme" in path.read_text(encoding="utf-8"):
-            return fail(f"neutral dependency points upward: {path.name}")
     archive = ROOT / "build" / "libsep_coronal_cme.a"
     if not archive.exists():
         return fail("library archive is absent; run make lib first")
@@ -38,6 +72,7 @@ def main() -> int:
     # A clean external translation unit detects application-only types leaked
     # through the public ABI.
     consumer = '''#include "sep_coronal_cme/configuration_parser.h"
+#include "sep_coronal_cme/discontinuity_transport.h"
 #include "sep_coronal_cme/constants.h"
 #include "sep_coronal_cme/ellipsoid_geometry.h"
 #include "sep_coronal_cme/field_line_reduction.h"

@@ -176,6 +176,9 @@ int main(int argc, char** argv) {
         } else {
           stateFile << "configuration_fingerprint="
                     << applicationState.configurationFingerprint << '\n'
+                    << "input_schema_version=" << applicationState.inputSchemaVersion << '\n'
+                    << "background_authority=" << applicationState.backgroundAuthority << '\n'
+                    << "shock_authority=" << applicationState.shockAuthority << '\n'
                     << "mpi_ranks=" << applicationState.mpiRankCount << '\n'
                     << "allocated_blocks="
                     << applicationState.globalAllocatedBlocks << '\n'
