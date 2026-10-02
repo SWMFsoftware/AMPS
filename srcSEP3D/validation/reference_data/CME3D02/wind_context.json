@@ -1,0 +1,18 @@
+{
+  "downstream": {
+    "end_utc": "2012-07-14T19:39:09.000Z",
+    "proton_bulk_speed_m_s": null,
+    "proton_density_m3": null,
+    "proton_temperature_k": null,
+    "samples": 0,
+    "start_utc": "2012-07-14T17:44:09.000Z"
+  },
+  "upstream": {
+    "end_utc": "2012-07-14T17:34:09.000Z",
+    "proton_bulk_speed_m_s": 368000.0,
+    "proton_density_m3": 3910000.0,
+    "proton_temperature_k": 59723.30084914386,
+    "samples": 53,
+    "start_utc": "2012-07-14T15:39:09.000Z"
+  }
+}

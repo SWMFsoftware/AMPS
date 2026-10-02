@@ -15,7 +15,8 @@ namespace {
 
 namespace fs = std::filesystem;
 constexpr char kMagic[8] = {'S','E','P','3','D','R','0','3'};
-constexpr std::uint32_t kSchema = 3;
+// Schema 4 persists finite geometry. Schema 3 remains readable as Sphere.
+constexpr std::uint32_t kSchema = 4;
 constexpr std::uint64_t kMaximumRecords = UINT64_C(1000000000);
 
 Core::Status Error(const std::string& message) {
@@ -181,7 +182,8 @@ void WriteSnapshot(Writer* out, const RuntimeModel::SnapshotDescriptor& value) {
 
 bool ReadSnapshot(Reader* in, RuntimeModel::SnapshotDescriptor* value) {
   std::uint32_t authority = 0;
-  if (!in->U32(&authority) || authority > 1 ||
+  if (!in->U32(&authority) || authority > static_cast<std::uint32_t>(
+          RuntimeModel::BackgroundAuthority::RuntimeModel) ||
       !in->Double(&value->epochS) || !in->Double(&value->validFromS) ||
       !in->Double(&value->validUntilS) || !in->U64(&value->generation) ||
       !in->Bool(&value->complete) || !in->String(&value->coordinateFrame) ||
@@ -197,24 +199,40 @@ void WriteShock(Writer* out, const Adapters::ShockState& value) {
   out->Double(value.centerM.x); out->Double(value.centerM.y);
   out->Double(value.centerM.z); out->Double(value.radiusM);
   out->Double(value.radialSpeedMPerS); out->Double(value.compressionRatio);
+  out->U32(static_cast<std::uint32_t>(value.geometry));
+  out->Double(value.cmeDirection.x); out->Double(value.cmeDirection.y);
+  out->Double(value.cmeDirection.z); out->Double(value.halfWidthRad);
   out->String(value.providerIdentity);
   out->String(value.configurationFingerprint);
 }
 
-bool ReadShock(Reader* in, Adapters::ShockState* value) {
+bool ReadShock(Reader* in, Adapters::ShockState* value, std::uint32_t schema) {
   if (!in->Bool(&value->active) || !in->U64(&value->generation) ||
       !in->Double(&value->epochS) || !in->Double(&value->validUntilS) ||
       !in->Double(&value->centerM.x) || !in->Double(&value->centerM.y) ||
       !in->Double(&value->centerM.z) || !in->Double(&value->radiusM) ||
       !in->Double(&value->radialSpeedMPerS) ||
-      !in->Double(&value->compressionRatio) ||
-      !in->String(&value->providerIdentity) ||
+      !in->Double(&value->compressionRatio)) return false;
+  // Older files cannot contain SSE: the old application accepted only spheres.
+  // Decode into the default Sphere record, without consuming nonexistent bytes.
+  if (schema>=4) {
+    std::uint32_t geometry=0;
+    if (!in->U32(&geometry)||geometry>1||
+        !in->Double(&value->cmeDirection.x)||!in->Double(&value->cmeDirection.y)||
+        !in->Double(&value->cmeDirection.z)||!in->Double(&value->halfWidthRad)) return false;
+    value->geometry=static_cast<Adapters::ShockGeometryKind>(geometry);
+  }
+  if (!in->String(&value->providerIdentity)||
       !in->String(&value->configurationFingerprint)) return false;
   value->status = Core::Status::OK();
   return true;
 }
 
 Core::Status Validate(const RestartState& state) {
+  if (state.shockState.active || state.shockState.radiusM>0) {
+    const auto geometry=Adapters::ValidateShockGeometry(state.shockState.MoverGeometry());
+    if (!geometry.ok()) return geometry;
+  }
   if (state.configurationFingerprint.empty() ||
       state.resolvedConfigurationManifest.empty() ||
       state.storageLayoutFingerprint.empty() || state.codeIdentity.empty() ||
@@ -386,7 +404,7 @@ Core::Status ReadRestart(const std::string& path,
   Reader in(bytes.data() + 16, static_cast<std::size_t>(payloadSize));
   RestartState candidate;
   std::uint32_t schema = 0;
-  if (!in.U32(&schema) || schema != kSchema ||
+  if (!in.U32(&schema) || (schema != 3 && schema != kSchema) ||
       !in.String(&candidate.configurationFingerprint) ||
       !in.String(&candidate.resolvedConfigurationManifest) ||
       !in.String(&candidate.storageLayoutFingerprint) ||
@@ -408,7 +426,7 @@ Core::Status ReadRestart(const std::string& path,
       !in.U64(&candidate.sourceGeneration) || !in.U64(&candidate.campaignSeed) ||
       !in.U64(&candidate.nextStableParticleId) ||
       !in.U64(&candidate.savedRankCount) ||
-      !ReadShock(&in, &candidate.shockState) ||
+      !ReadShock(&in, &candidate.shockState, schema) ||
       !in.U64(&candidate.samplingState.completedSamplings) ||
       !in.U64(&candidate.samplingState.observationsProcessed) ||
       !in.U64(&candidate.samplingState.pendingWindows) ||

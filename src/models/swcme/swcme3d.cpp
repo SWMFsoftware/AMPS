@@ -1473,6 +1473,7 @@ void Model::local_oblique_rc(const StepState& S, const double u[3], const double
 // radius rather than an apex-sized absolute distance.
 struct RegionalSample3D {
   double n_m3 = 0.0;
+  double pressure_Pa = 0.0; // Total pressure, same regional blend as n/U/B.
   double velocity_m_s[3] = {0.0,0.0,0.0};
   double magnetic_T[3] = {0.0,0.0,0.0};
 };
@@ -1481,6 +1482,8 @@ static inline void ambient_sample_3d(const swcme3d::StepState& S,
                                      const double u[3], double r_m,
                                      bool need_B, RegionalSample3D& out) {
   out.n_m3=swcme::solarwind::density_m3(S.common.solar_wind,r_m);
+  out.pressure_Pa=swcme::solarwind::thermodynamic_state(
+      S.common.solar_wind,out.n_m3).pressure_Pa;
   out.velocity_m_s[0]=S.V_sw_ms*u[0];
   out.velocity_m_s[1]=S.V_sw_ms*u[1];
   out.velocity_m_s[2]=S.V_sw_ms*u[2];
@@ -1516,6 +1519,8 @@ static inline void evaluate_region_sample_3d(
     // used by 1-D, eliminating dimension-dependent numerical acceleration.
     if (shock.has_shock && shock.solver_converged) {
       out.n_m3=swcme::regions::lerp(out.n_m3,shock.downstream_n_m3,loc.blend);
+      out.pressure_Pa=swcme::regions::lerp(
+          out.pressure_Pa,shock.downstream.pressure_Pa,loc.blend);
       // Use the container's unsigned index type at the boundary between the
       // legacy C arrays and std::array shock primitives.  The loop bounds make
       // the conversion safe, but avoiding it entirely keeps that proof local.
@@ -1544,6 +1549,15 @@ static inline void evaluate_region_sample_3d(
         S.common.solar_wind,b.R_le_m);
     state.n_m3=swcme::regions::log_lerp_positive(
         shock.downstream_n_m3,n_le,w);
+    // Extend the existing sheath closure to pressure: RH heating at the shock
+    // relaxes to ambient pressure at the leading edge using the same positive
+    // logarithmic profile as density. This is a prescribed ICME, not an energy
+    // equation solver. Exporting this value prevents adapters from inventing
+    // an ambient temperature behind a heated MHD shock.
+    const double p_le=swcme::solarwind::thermodynamic_state(
+        S.common.solar_wind,n_le).pressure_Pa;
+    state.pressure_Pa=swcme::regions::log_lerp_positive(
+        shock.downstream.pressure_Pa,p_le,w);
 
     const double V2_rad=shock.downstream.velocity_m_s[0]*u[0]
                        +shock.downstream.velocity_m_s[1]*u[1]
@@ -1569,6 +1583,7 @@ static inline void evaluate_region_sample_3d(
   auto ejecta_state = [&](double rr, RegionalSample3D& state) {
     ambient_sample_3d(S,u,rr,need_B,state);
     state.n_m3=S.region_config.f_ME*state.n_m3;
+    state.pressure_Pa*=S.region_config.f_ME; // Ejecta retains ambient temperature.
     state.velocity_m_s[0]=S.region_config.V_ME_factor*S.V_sw_ms*u[0];
     state.velocity_m_s[1]=S.region_config.V_ME_factor*S.V_sw_ms*u[1];
     state.velocity_m_s[2]=S.region_config.V_ME_factor*S.V_sw_ms*u[2];
@@ -1586,6 +1601,7 @@ static inline void evaluate_region_sample_3d(
     sheath_state(r_m,sheath);
     ejecta_state(r_m,ejecta);
     out.n_m3=swcme::regions::lerp(sheath.n_m3,ejecta.n_m3,loc.blend);
+    out.pressure_Pa=swcme::regions::lerp(sheath.pressure_Pa,ejecta.pressure_Pa,loc.blend);
     for (int k=0;k<3;++k) {
       out.velocity_m_s[k]=swcme::regions::lerp(
           sheath.velocity_m_s[k],ejecta.velocity_m_s[k],loc.blend);
@@ -1603,6 +1619,7 @@ static inline void evaluate_region_sample_3d(
     ejecta_state(r_m,ejecta);
     ambient_sample_3d(S,u,r_m,need_B,ambient);
     out.n_m3=swcme::regions::lerp(ejecta.n_m3,ambient.n_m3,loc.blend);
+    out.pressure_Pa=swcme::regions::lerp(ejecta.pressure_Pa,ambient.pressure_Pa,loc.blend);
     for (int k=0;k<3;++k) {
       out.velocity_m_s[k]=swcme::regions::lerp(
           ejecta.velocity_m_s[k],ambient.velocity_m_s[k],loc.blend);
@@ -1611,6 +1628,43 @@ static inline void evaluate_region_sample_3d(
     }
   }
   // PostICME and Upstream retain the ambient state initialized above.
+}
+
+swcme::ModelStatus Model::background_is_ambient_after_validation(
+    const StepState& S,const double u[3],double radius_m,
+    bool& ambient_only) const {
+  // The owner and sample coordinates have already been authenticated by the
+  // enclosing field kernel. This helper does geometry only: it must never
+  // catch an RH failure and substitute an ambient state inside the ICME.
+  // In particular, a remote ambient mesh cell on a marginal SSE flank must
+  // not fail merely because a shock diagnostics query on that ray is weak.
+  ambient_only=S.region_config.mode==swcme::regions::Mode::ShockOnly;
+  if (ambient_only) return swcme::ModelStatus::success();
+  double front=0,normal[3]={0,0,0};
+  try {
+    if (!shape_radius_normal_after_validation(
+            S,u[0],u[1],u[2],front,normal)) {
+      ambient_only=true; // No finite front in this direction; ambient by definition.
+      return swcme::ModelStatus::success();
+    }
+  } catch (const std::exception&) {
+    return swcme::ModelStatus::make(swcme::StatusCode::GeometryFailure,
+                                  "swcme3d::background support geometry");
+  }
+  if (!std::isfinite(front) || front<swcme::solarwind::MIN_RADIUS_M) {
+    return swcme::ModelStatus::make_value(
+        front<swcme::solarwind::MIN_RADIUS_M
+            ? swcme::StatusCode::OutsideModelDomain
+            : swcme::StatusCode::GeometryFailure,
+        "swcme3d::background support surface radius",front);
+  }
+  const auto bounds=swcme::regions::make_boundaries(front,S.region_config);
+  // Include the complete smoothing transitions. Boundary equality stays on
+  // the full regional path; no finite part of a compressed/heated layer is
+  // skipped. SSE uses its LOCAL ray radius, not the apex or generating sphere.
+  ambient_only=(radius_m>bounds.R_sh_m+0.5*bounds.smooth_shock_width_m ||
+                radius_m<bounds.R_te_m-0.5*bounds.smooth_te_width_m);
+  return swcme::ModelStatus::success();
 }
 
 // n, V evaluator (allocation-free; vectorization-friendly)
@@ -1671,10 +1725,16 @@ swcme::ModelStatus Model::evaluate_cartesian_fast_after_validation(
     const double invr=1.0/r;
     const double u[3]={x*invr,y*invr,z*invr};
 
+    bool ambient_only=false;
+    const auto support=background_is_ambient_after_validation(S,u,r,ambient_only);
+    if (support.failure()) {
+      auto out=support; out.sample_index=i; return out;
+    }
     LocalShockState shock;
-    const swcme::ModelStatus shock_status=
-        shock_state_direction_after_validation(S,u,shock);
-    const bool surface_exists=shock_status.ok();
+    const swcme::ModelStatus shock_status=ambient_only
+        ? swcme::ModelStatus::success()
+        : shock_state_direction_after_validation(S,u,shock);
+    const bool surface_exists=!ambient_only && shock_status.ok();
     if (shock_status.failure()) {
       swcme::ModelStatus out=shock_status;
       out.sample_index=i;
@@ -1721,11 +1781,30 @@ swcme::ModelStatus Model::evaluate_cartesian_with_B_checked(
       S,x_m,y_m,z_m,n_m3,Vx_ms,Vy_ms,Vz_ms,Bx_T,By_T,Bz_T,N);
 }
 
+swcme::ModelStatus Model::evaluate_cartesian_primitive_checked(
+    const StepState& S,const double* x_m,const double* y_m,const double* z_m,
+    double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
+    double* Bx_T,double* By_T,double* Bz_T,double* rho_kg_m3,
+    double* pressure_Pa,std::size_t N) const {
+  // Authenticate model ownership/configuration before touching any output.
+  // The shared vector kernel validates all other arrays and each sample;
+  // keeping one kernel prevents pressure export from drifting from n/U/B.
+  const auto ownership=validate_prepared_state(S,"swcme3d::primitive");
+  if (!ownership.ok()) return ownership;
+  if (N && (!rho_kg_m3 || !pressure_Pa))
+    return swcme::ModelStatus::make(swcme::StatusCode::NullPointer,
+                                  "swcme3d::primitive thermodynamics");
+  return evaluate_cartesian_with_B_after_validation(
+      S,x_m,y_m,z_m,n_m3,Vx_ms,Vy_ms,Vz_ms,Bx_T,By_T,Bz_T,N,
+      rho_kg_m3,pressure_Pa);
+}
+
 swcme::ModelStatus Model::evaluate_cartesian_with_B_after_validation(
     const StepState& S,
     const double* x_m,const double* y_m,const double* z_m,
     double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
-    double* Bx_T,double* By_T,double* Bz_T,std::size_t N) const {
+    double* Bx_T,double* By_T,double* Bz_T,std::size_t N,
+    double* rho_kg_m3,double* pressure_Pa) const {
   // As in the fast kernel, validation is deliberately outside the sample loop.
   // Magnetic evaluation retains all numerical checks and exact output order.
   if (N==0) return swcme::ModelStatus::success();
@@ -1756,10 +1835,20 @@ swcme::ModelStatus Model::evaluate_cartesian_with_B_after_validation(
     const double invr=1.0/r;
     const double u[3]={x*invr,y*invr,z*invr};
 
+    // All vector/thermodynamic interfaces use the same geometric support
+    // decision as the n/V interface. Finite SSE flanks require local bounds;
+    // the former sphere-only shortcut left remote SSE ambient cells exposed
+    // to an irrelevant weak-shock failure during mesh derivative sampling.
+    bool ambient_only=false;
+    const auto support=background_is_ambient_after_validation(S,u,r,ambient_only);
+    if (support.failure()) {
+      auto out=support; out.sample_index=i; return out;
+    }
     LocalShockState shock;
-    const swcme::ModelStatus shock_status=
-        shock_state_direction_after_validation(S,u,shock);
-    const bool surface_exists=shock_status.ok();
+    const swcme::ModelStatus shock_status=ambient_only
+        ? swcme::ModelStatus::success()
+        : shock_state_direction_after_validation(S,u,shock);
+    const bool surface_exists=!ambient_only && shock_status.ok();
     if (shock_status.failure()) {
       swcme::ModelStatus out=shock_status;
       out.sample_index=i;
@@ -1774,7 +1863,8 @@ swcme::ModelStatus Model::evaluate_cartesian_with_B_after_validation(
         !std::isfinite(sample.velocity_m_s[2]) ||
         !std::isfinite(sample.magnetic_T[0]) ||
         !std::isfinite(sample.magnetic_T[1]) ||
-        !std::isfinite(sample.magnetic_T[2])) {
+        !std::isfinite(sample.magnetic_T[2]) ||
+        (pressure_Pa && (!std::isfinite(sample.pressure_Pa) || sample.pressure_Pa<=0))) {
       return swcme::ModelStatus::make(
           swcme::StatusCode::NonFiniteResult,
           "swcme3d::evaluate_cartesian_with_B regional state",i);
@@ -1786,6 +1876,12 @@ swcme::ModelStatus Model::evaluate_cartesian_with_B_after_validation(
     Bx_T[i]=sample.magnetic_T[0];
     By_T[i]=sample.magnetic_T[1];
     Bz_T[i]=sample.magnetic_T[2];
+    // Composition is fixed by configuration, so rho follows regional n_e even
+    // when RH/sheath pressure implies heating. Do not recompute pressure here
+    // from ambient T: the regional sample already carries heated total p.
+    if (rho_kg_m3) rho_kg_m3[i]=swcme::solarwind::thermodynamic_state(
+        S.common.solar_wind,sample.n_m3).mass_density_kg_m3;
+    if (pressure_Pa) pressure_Pa[i]=sample.pressure_Pa;
   }
   return swcme::ModelStatus::success();
 }

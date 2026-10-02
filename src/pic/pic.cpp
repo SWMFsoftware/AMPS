@@ -303,12 +303,18 @@ if (_PIC_GLOBAL_TIME_COUNTER_MODE_ == _PIC_MODE_ON_) {
   //#endif
 
 if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_) { 
-  //update data
-  if (PIC::CPLR::DATAFILE::MULTIFILE::ReachedLastFile==true) {
-    if (PIC::CPLR::DATAFILE::MULTIFILE::BreakAtLastFile==true) return _PIC_TIMESTEP_RETURN_CODE__END_SIMULATION_;
-  }
-  else if (PIC::CPLR::DATAFILE::MULTIFILE::IsTimeToUpdate()==true) {
-    PIC::CPLR::DATAFILE::MULTIFILE::UpdateDataFile();
+  // DATAFILE names the native field layout, not necessarily the update source.
+  // Runtime providers publish after a completed application step and never
+  // create a file schedule. Gate the whole file lifecycle, including EOF-based
+  // termination; gating IsTimeToUpdate alone would still allow stale EOF flags
+  // to stop a runtime run. Simulation time and field-line updates stay active.
+  if (PIC::CPLR::DATAFILE::UsesFileSchedule()) {
+    if (PIC::CPLR::DATAFILE::MULTIFILE::ReachedLastFile==true) {
+      if (PIC::CPLR::DATAFILE::MULTIFILE::BreakAtLastFile==true) return _PIC_TIMESTEP_RETURN_CODE__END_SIMULATION_;
+    }
+    else if (PIC::CPLR::DATAFILE::MULTIFILE::IsTimeToUpdate()==true) {
+      PIC::CPLR::DATAFILE::MULTIFILE::UpdateDataFile();
+    }
   }
 if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
   // update field lines

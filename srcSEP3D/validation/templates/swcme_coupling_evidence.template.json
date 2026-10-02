@@ -1,0 +1,40 @@
+{
+  "schema": "srcsep3d-swcme-coupling-evidence-v1",
+  "case_id": "CME3D02",
+  "event_name": "2012 July 12 CME: shock propagation to Wind",
+  "reference_kind": "observations",
+  "producer": "srcSEP3D-native",
+  "feature": "shock-front",
+  "geometry": "sun-centered-sphere",
+  "source_enabled": false,
+  "fit_used_holdout": false,
+  "launch_epoch_utc": null,
+  "calibration_end_utc": null,
+  "time_step_s": 60,
+  "mpi_ranks": 4,
+  "command": null,
+  "executable_sha256": null,
+  "parameter_provenance": null,
+  "input": {"file": "sep3d-propagation.in", "sha256": null},
+  "execution_log": {"file": "native.log", "sha256": null},
+  "model": {"file": "history.csv", "sha256": null},
+  "observations": {"file": "shock-track.csv", "sha256": null, "provenance": null},
+  "arrival": {
+    "spacecraft": "Wind",
+    "feature": "shock",
+    "role": "validation",
+    "time_utc": null,
+    "heliocentric_radius_m": null,
+    "uncertainty_s": null,
+    "provenance": null
+  },
+  "acceptance": {
+    "maximum_arrival_error_s": 21600,
+    "maximum_radius_normalized_rmse": 2,
+    "minimum_holdout_points": 5,
+    "minimum_holdout_coverage": 0.9,
+    "maximum_history_gap_s": 300,
+    "maximum_mpi_radius_spread_m": 1,
+    "maximum_mpi_clock_spread_s": 1e-9
+  }
+}

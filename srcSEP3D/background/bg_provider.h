@@ -79,7 +79,7 @@ struct BackgroundSample {
   // Precomputed scalars derived from the field (optional; the provider
   // may supply analytic values more accurate than the central-difference
   // stencil would produce)
-  double divBhat      = 0.0;  // ∇·b̂  = -1/L_B  [1/m]
+  double divBhat      = 0.0;  // ∇·b̂ [equals +1/L_B only when ∇·B=0]  [1/m]
   double focusingLenM = 0.0;  // L_B = -(dln|B|/ds)^-1 [m]; +inf for uniform B
   Core::Vec3 curvature;       // (b̂·∇)b̂  [1/m]
 
@@ -114,16 +114,21 @@ struct ProviderCapabilities {
   bool hasAnalyticDivBhat = false; // ∇·b̂ and L_B computed analytically
   bool hasAnalyticCurvature = false; // (b̂·∇)b̂ computed analytically
   bool hasAnalyticDivU    = false; // ∇·U computed analytically
-  bool hasFieldAlignedStrain = false; // b̂b̂:∇U computed analytically
+  bool hasFieldAlignedStrain = false; // b̂b̂:∇U is available
   bool hasPlasmaState     = false; // n, T, p, v_A filled
   bool supportsBatchEval  = false; // EvaluateBatch() is implemented
+  // Availability is separate from analytic provenance. Numerical derivatives
+  // must be validated just as strictly, without claiming analytic accuracy.
+  bool hasGradB = false, hasDivBhat = false, hasCurvature = false, hasGradU = false;
 };
 
 // PythonInterpolator is a reserved provenance value for the future batched
 // external-model bridge.  No current provider may publish it; recognizing it
 // in the type system prevents a future implementation from masquerading as an
 // analytic or coupled snapshot while its protocol is being introduced.
-enum class ProviderKind { AnalyticParker, PythonInterpolator, SwmfAwsom };
+enum class ProviderKind { AnalyticParker, PythonInterpolator, SwmfAwsom, Swcme, RuntimeModel };
+// New provenance values are appended so existing serialized enum tags retain
+// their meaning. RuntimeModel identifies an extension, not a Python bridge.
 enum class StorageOwnership { ModelOwned, ImportedReadOnly };
 
 // Metadata are frozen by Prepare() and copied into every snapshot.  Keeping
@@ -171,6 +176,13 @@ public:
   // their previous metadata and values unchanged when a new candidate fails.
   virtual const SnapshotMetadata* PreparedMetadata() const = 0;
 
+  // Optional restart hook: a reproducible provider may restore its generation
+  // counter after Prepare has reconstructed the checkpoint epoch. Models that
+  // cannot reconstruct a checkpoint must reject rather than publish old tags.
+  virtual Core::Status RestorePreparedGeneration(std::uint64_t) {
+    return Core::Status::Reserved("provider restart-generation restoration");
+  }
+
   // Evaluate the background at one point x [m] in the heliocentric frame.
   // Returns immediately; the caller must have called Prepare() first.
   virtual BackgroundSample Evaluate(const Core::Vec3& x) const = 0;
@@ -202,6 +214,15 @@ public:
   // Returns the set of capabilities this provider fills.
   virtual ProviderCapabilities Capabilities() const = 0;
 };
+
+// Derive transport quantities from the actual vector Jacobians. This helper is
+// reusable by other model adapters, including models that supply numerical or
+// imported gradients. No assumption that the prescribed field is solenoidal.
+// Preconditions: non-null sample, finite nonzero B, and complete gradB/gradU
+// with tensor convention (i,j)=partial(component i)/partial(coordinate j).
+// This algebraic helper does not validate or set status/valid/generation;
+// providers run ValidateCompleteSample before exposing its result.
+void CompleteVectorDerivatives(BackgroundSample* sample);
 
 } // namespace Background
 } // namespace SEP3D

@@ -58,6 +58,7 @@
 #include "picGlobal.dfn" 
 
 #include "global.h"
+#include "pic_background_update_mode.h"
 #include "FluidPicInterface.h"
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -7837,6 +7838,11 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
 
         //check whether it is time to load the next file
         inline bool IsTimeToUpdate() {
+          // A runtime provider has no MULTIFILE schedule. Check ownership
+          // before reading any next-file index; storage initialization alone
+          // leaves Schedule empty and iFileLoadNext at -1. This also protects
+          // callers outside PIC::TimeStep from the same invalid dereference.
+          if (!PIC::CPLR::DATAFILE::UsesFileSchedule()) return false;
           bool res=false;
 
           if (ReachedLastFile==false) switch (_PIC_DATAFILE__TIME_INTERPOLATION_MODE_) {
@@ -8003,21 +8009,28 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
         for (int i=0;i<DataVectorLength;i++) DataVector[i]=offset[i];
 
         #if  _PIC_DATAFILE__TIME_INTERPOLATION_MODE_ == _PIC_MODE_ON_
-        if (isfinite(Time)==false) Time = PIC::SimulationTime::Get();
+        // Runtime publication supplies a complete current snapshot. Hold that
+        // snapshot until the next application cadence; file times must never
+        // be used to blend it. In particular, ReachedLastFile alone is not a
+        // safe bypass: the legacy EOF branch also indexes MULTIFILE::Schedule.
+        // Keeping the debug checks below active validates both ownership modes.
+        if (UsesFileSchedule()) {
+          if (isfinite(Time)==false) Time = PIC::SimulationTime::Get();
 
-        offset = (double*)(DataOffsetBegin+MULTIFILE::NextDataFileOffset+CenterNodeAssociatedDataOffsetBegin+cell->GetAssociatedDataBufferPointer());
+          offset = (double*)(DataOffsetBegin+MULTIFILE::NextDataFileOffset+CenterNodeAssociatedDataOffsetBegin+cell->GetAssociatedDataBufferPointer());
 
-        if (MULTIFILE::ReachedLastFile==false) {
-           //interpolation weight
-           double alpha=(MULTIFILE::Schedule[MULTIFILE::iFileLoadNext-1].Time-Time)/(MULTIFILE::Schedule[MULTIFILE::iFileLoadNext-1].Time-MULTIFILE::Schedule[MULTIFILE::iFileLoadNext-2].Time);
+          if (MULTIFILE::ReachedLastFile==false) {
+             //interpolation weight
+             double alpha=(MULTIFILE::Schedule[MULTIFILE::iFileLoadNext-1].Time-Time)/(MULTIFILE::Schedule[MULTIFILE::iFileLoadNext-1].Time-MULTIFILE::Schedule[MULTIFILE::iFileLoadNext-2].Time);
 
-           for (int i=0;i<DataVectorLength;i++)  DataVector[i]=DataVector[i]*alpha+offset[i]*(1-alpha);
-        }
-        else {
-          double alpha=(MULTIFILE::Schedule[MULTIFILE::nFile-1].Time-Time)/(MULTIFILE::Schedule[MULTIFILE::nFile-1].Time-MULTIFILE::Schedule[MULTIFILE::nFile-2].Time);
+             for (int i=0;i<DataVectorLength;i++)  DataVector[i]=DataVector[i]*alpha+offset[i]*(1-alpha);
+          }
+          else {
+            double alpha=(MULTIFILE::Schedule[MULTIFILE::nFile-1].Time-Time)/(MULTIFILE::Schedule[MULTIFILE::nFile-1].Time-MULTIFILE::Schedule[MULTIFILE::nFile-2].Time);
 
-          if (alpha<1.0) for (int i=0;i<DataVectorLength;i++)  DataVector[i]=DataVector[i]*alpha+offset[i]*(1-alpha);
-          else for (int i=0;i<DataVectorLength;i++) DataVector[i]=offset[i];
+            if (alpha<1.0) for (int i=0;i<DataVectorLength;i++) DataVector[i]=DataVector[i]*alpha+offset[i]*(1-alpha);
+            else for (int i=0;i<DataVectorLength;i++) DataVector[i]=offset[i];
+          }
         }
         #endif//_PIC_DATAFILE__TIME_INTERPOLATION_MODE_ == _PIC_MODE_ON_
 

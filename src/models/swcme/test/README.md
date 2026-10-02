@@ -2082,8 +2082,12 @@ Normal builds never regenerate the fixture.
 state.  Positive Mach excesses through the published binary64 limit of `1e-6`
 return `NUMERICALLY_UNRESOLVED_WEAK_SHOCK`, `has_shock=true`, and
 `solver_converged=false`; they never become `NO_SHOCK` and never contain NaN or
-infinite payload values.  A near-singular scan that can reach only a
-discontinuous outer root receives the same explicit unresolved status.
+infinite payload values. If a near-singular scan misses the fast branch, a
+refinement on the regular fast interval precedes numerical rejection. Two
+one-degree, low-beta cases now match independent 80-digit compression roots
+`1.0185276877932058` and `1.2031994039402317` within `5e-10`, with all existing
+conservation/characteristic thresholds enforced. A discontinuous outer root
+is still rejected; this test no longer pins the old scan limitation.
 Well-conditioned points from `1e-5` to order unity return `SOLVED`, converge in
 at most 120 iterations, contract the bracket to the declared tolerance,
 approach compression one monotonically, and match every frozen downstream
@@ -2129,7 +2133,7 @@ branch is accepted.  `SHK16` follows `SHK12` in priority and in `SMOKE`.
 
 **What is tested.** `SHK15` executes exactly 100,000 deterministic physically
 valid inputs in four explicit strata: 25,000 sub-fast states, 25,000
-super-fast states within the published weak-shock resolution, 49,900 resolved
+near-identity super-fast states with excesses `1e-10`–`1e-6`, 49,900 stronger resolved
 random shocks, and 100 determinant-conditioned shocks.  The matrix spans
 log-uniform density from 0.01 to 100 cm^-3, magnetic strength from 0.1 to
 100 nT, beta from `1e-3` to 100, the resulting temperature range, arbitrary
@@ -2145,8 +2149,8 @@ selection of a non-evolutionary branch while remaining exactly reproducible.
 **How it is tested.** A local SplitMix64 sequence with seed
 `0x53484b31355f7631` and an explicit 53-bit floating conversion avoids
 implementation-dependent standard-library distributions.  All geometric
-frames are constructed by stable cross products.  Sub-fast and weak-limit
-strata have exact expected statuses; resolved cases may return only `SOLVED`
+frames are constructed by stable cross products.  Sub-fast and near-identity weak
+strata must return `NO_SHOCK` and `SOLVED`, respectively; resolved cases may return only `SOLVED`
 or a documented numerical-limit rejection.  Conditioned cases deliberately
 place a determinant zero on a production scan node.  Any unexpected outcome
 prints its full index, stratum, normal, primitives, gamma, requested Mach,
@@ -3479,3 +3483,23 @@ Run the focused gate with:
 ```sh
 ./output/test_swcme --test V6
 ```
+
+
+### Resolved weak jumps and the SSE runtime regression (2026-10-02)
+
+The former `1e-6` weak-Mach numerical guard is superseded by stable
+fast-interval cubic evaluation about `compression=1`. SHK12's 32-family
+positive-excess matrix (`1e-12`, `1e-10`, `1e-8`, `1e-7`, `1e-6`) now
+requires conserved evolutionary `SOLVED` jumps with no compression floor.
+It separately tests positive excesses inside `128*epsilon(double)`, which
+remain explicitly `NUMERICALLY_UNRESOLVED_WEAK_SHOCK`. The independent
+80-digit SHK12 fixture and near-parallel reference roots remain unchanged.
+
+SHK15's 25,000 near-identity random cases now require `SOLVED`; retaining their
+old wholesale unresolved classification would hide this runtime defect.
+SHK11 adds an explicit roundoff-scale input to continue exercising numerical
+rejection while independently checking all newly resolved weak primitives.
+The complete stress population remains 100,000 cases with the same seed and
+physical input ranges. See SEP3D `SSE3D08/09` for exact failed coordinates,
+actual-layer sampling, three-shape support checks and transactional rejection
+of genuinely unresolved in-CME queries.

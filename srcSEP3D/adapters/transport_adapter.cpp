@@ -66,55 +66,72 @@ const char* Name(ParticleDisposition disposition) {
 ShockIntersection FirstShockIntersection(
     const Core::Vec3& initialPositionM,
     const Core::Vec3& finalPositionM,
-    double dtS,
-    const ExpandingSphericalShock& shock,
+    double dtS, const ExpandingShock& shock,
     std::uint64_t lastShockGeneration) {
   ShockIntersection result;
-  result.generation = shock.generation;
-  if (!shock.active || shock.generation == 0 ||
-      shock.generation == lastShockGeneration) {
-    result.status = Core::Status::OK();
-    return result;
+  result.generation=shock.generation;
+  if (!shock.active||shock.generation==0||shock.generation==lastShockGeneration) {
+    result.status=Core::Status::OK(); return result;
   }
-  if (!Finite(initialPositionM) || !Finite(finalPositionM) ||
-      !Finite(shock.centerM) || !std::isfinite(dtS) || dtS <= 0.0 ||
-      !std::isfinite(shock.radiusAtStepStartM) ||
-      shock.radiusAtStepStartM <= 0.0 ||
-      !std::isfinite(shock.radialSpeedMPerS)) {
-    result.status = Invalid("expanding-shock intersection input is invalid");
-    return result;
+  result.status=ValidateShockGeometry(shock);
+  if (!result.status.ok()) return result;
+  if (!Finite(initialPositionM)||!Finite(finalPositionM)||
+      !std::isfinite(dtS)||dtS<=0||
+      !std::isfinite(shock.radiusAtStepStartM+shock.radialSpeedMPerS*dtS)||
+      shock.radiusAtStepStartM+shock.radialSpeedMPerS*dtS<=0) {
+    result.status=Invalid("expanding-shock intersection input is invalid"); return result;
   }
-
-  const Core::Vec3 relative = initialPositionM - shock.centerM;
-  const Core::Vec3 segment = finalPositionM - initialPositionM;
-  const double radiusChange = shock.radialSpeedMPerS * dtS;
-  // |r+u*d|^2=(R+u*dR)^2 produces a quadratic in the substep fraction u.
-  const double a = segment.Dot(segment) - radiusChange * radiusChange;
-  const double b = 2.0 * (relative.Dot(segment) -
-                          shock.radiusAtStepStartM * radiusChange);
-  const double c = relative.Dot(relative) -
-                   shock.radiusAtStepStartM * shock.radiusAtStepStartM;
-  const double scale = std::max(1.0, std::fabs(b) + std::fabs(c));
-  double root = std::numeric_limits<double>::infinity();
-  if (std::fabs(a) <= 16.0 * std::numeric_limits<double>::epsilon() * scale) {
-    if (b != 0.0) root = -c / b;
+  const auto sphere=ShockGeneratingSphere(shock);
+  const auto segment=finalPositionM-initialPositionM;
+  const auto relative=initialPositionM-sphere.centerM;
+  const auto relativeSegment=segment-sphere.centerVelocityMPerS*dtS;
+  const double radiusChange=sphere.radiusSpeedMPerS*dtS;
+  // |p0-C0+f*(dp-dC)|^2=(a0+f*da)^2. Scale lengths before forming
+  // coefficients so heliospheric distances do not overflow the discriminant,
+  // and use the cancellation-resistant q formula for a root near an endpoint.
+  const double length=std::max({1.0,relative.Norm(),relativeSegment.Norm(),
+      sphere.radiusM,std::fabs(radiusChange)});
+  if (!std::isfinite(length)) {
+    result.status=Invalid("shock-relative segment is not representable");return result;
+  }
+  const auto r=relative/length, d=relativeSegment/length;
+  const double radius=sphere.radiusM/length, change=radiusChange/length;
+  const double a=d.Dot(d)-change*change;
+  const double b=2*(r.Dot(d)-radius*change);
+  const double c=r.Dot(r)-radius*radius;
+  const double eps=64*std::numeric_limits<double>::epsilon();
+  double roots[2]={std::numeric_limits<double>::infinity(),
+                   std::numeric_limits<double>::infinity()};
+  if (std::fabs(a)<=eps*std::max({std::fabs(b),std::fabs(c),1e-300})) {
+    if (b!=0) roots[0]=-c/b;
   } else {
-    const double discriminant = b * b - 4.0 * a * c;
-    if (discriminant >= 0.0) {
-      const double squareRoot = std::sqrt(discriminant);
-      const double first = (-b - squareRoot) / (2.0 * a);
-      const double second = (-b + squareRoot) / (2.0 * a);
-      if (first >= 0.0 && first <= 1.0) root = first;
-      if (second >= 0.0 && second <= 1.0) root = std::min(root, second);
+    double discriminant=b*b-4*a*c;
+    const double allowance=eps*(b*b+std::fabs(4*a*c));
+    if (discriminant>=-allowance) {
+      discriminant=std::max(0.0,discriminant);
+      const double q=-0.5*(b+std::copysign(std::sqrt(discriminant),b));
+      if (q==0) roots[0]=-b/(2*a);
+      else { roots[0]=q/a; roots[1]=c/q; }
     }
   }
-  if (std::isfinite(root)) {
-    result.crossed = true;
-    result.stepFraction = root;
-    result.positionM = initialPositionM + segment * root;
+  std::sort(roots,roots+2);
+  for (double f:roots) {
+    if (!std::isfinite(f)||f<-eps||f>1+eps) continue;
+    f=std::max(0.0,std::min(1.0,f));
+    auto at=sphere;
+    at.centerM+=sphere.centerVelocityMPerS*(dtS*f);
+    at.radiusM+=radiusChange*f;
+    const auto point=initialPositionM+segment*f;
+    // Checking only the cone would also accept the rear sphere intersection.
+    // Reject it, then continue to the second quadratic root if it is physical.
+    if (!OnOutwardShockCap(shock,point,at)) continue;
+    result.crossed=true; result.stepFraction=f; result.positionM=point;
+    result.outwardNormal=(point-at.centerM).Normalized();
+    result.normalSpeedMPerS=sphere.centerVelocityMPerS.Dot(result.outwardNormal)+
+        sphere.radiusSpeedMPerS;
+    break;
   }
-  result.status = Core::Status::OK();
-  return result;
+  result.status=Core::Status::OK(); return result;
 }
 
 const std::vector<std::string>& ProductionMoverRegistry::CanonicalNames() {
@@ -212,21 +229,28 @@ MoverResult AdvanceParticle(const MoverInput& input) {
   physics.fractionalFieldVariationPerS =
       input.local.fractionalFieldVariationPerS;
   physics.timeToSnapshotBoundaryS = input.local.timeToSnapshotBoundaryS;
-  // The exact expanding-sphere intersection is evaluated after a trial move,
-  // but the selector still needs a conservative pre-move shock time scale.
-  // Divide the shortest radial gap by the largest possible closing speed: the
-  // particle speed, plasma advection, and shock expansion.  This bound may
-  // subcycle earlier than necessary for a tangential trajectory, but it can
-  // never step deliberately over a nearby moving surface.  A zero value means
-  // "not applicable" to SelectTimeStep, as for every other named limiter.
-  if (input.shock.active && input.shock.radiusAtStepStartM > 0.0) {
-    const double gapM = std::fabs(
-        (particle.positionM - input.shock.centerM).Norm() -
-        input.shock.radiusAtStepStartM);
-    const double closingSpeedMPerS = speed + background.U.Norm() +
+  // Distance to the full generating sphere is a lower bound on distance to
+  // its finite outward cap. Using it may subcycle early outside the SSE cone,
+  // but never uses a fabricated Sun-centered flank. Center translation plus
+  // radius growth is bounded by |V_apex| for SSE, as for the spherical case.
+  if (input.shock.active) {
+    const auto valid=ValidateShockGeometry(input.shock);
+    if (!valid.ok()) return Failed(input,valid);
+    const auto sphere=ShockGeneratingSphere(input.shock);
+    const double gapM=std::fabs((particle.positionM-sphere.centerM).Norm()-sphere.radiusM);
+    const double closingSpeedMPerS=speed+background.U.Norm()+
         std::fabs(input.shock.radialSpeedMPerS);
-    if (gapM > 0.0 && closingSpeedMPerS > 0.0)
-      physics.timeToShockCrossingS = gapM / closingSpeedMPerS;
+    if (gapM>0&&closingSpeedMPerS>0) {
+      const double arrivalS=gapM/closingSpeedMPerS;
+      // A particle can start on, or asymptotically approach, the exact surface.
+      // Do not halve a purely geometric gap below the numerical time floor:
+      // that would make an injected particle fail before its first move.
+      // The analytic post-step intersection resolves this final approach;
+      // all cell/diffusion/cooling/field/snapshot bounds remain in force.
+      if (input.timeStepControls.shockCrossingFraction*arrivalS>=
+          input.timeStepControls.minimumSubstepS)
+        physics.timeToShockCrossingS=arrivalS;
+    }
   }
   MoverResult result;
   result.particle = particle;

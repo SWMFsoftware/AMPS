@@ -1082,6 +1082,24 @@ public:
                                  double* Bx_T,double* By_T,double* Bz_T,
                                  std::size_t N) const;
 
+  // Complete regional primitive state for mesh-background consumers. n is
+  // electron density; rho follows the fixed configured composition; pressure
+  // includes RH heating and the canonical finite-layer/sheath/ejecta closure.
+  // Ownership is checked once per batch, before any output is touched. As in
+  // the other checked batch APIs, a later point failure may leave an evaluated
+  // prefix; transactional consumers must evaluate into candidate storage.
+  // x/y/z are model-local heliocentric coordinates [m]. All input/output
+  // arrays have length N: n [m^-3], velocity [m/s], B [T], rho [kg/m^3],
+  // pressure [Pa]. N=0 permits null arrays; N>0 requires every listed array.
+  // Use prepare_step once per epoch and retain its owner-authenticated state.
+  // This API does not allocate outputs, update a mesh or advance model time.
+  // Pressure is total thermal pressure, not a new species heating partition.
+  swcme::ModelStatus evaluate_cartesian_primitive_checked(
+      const StepState& S,const double* x_m,const double* y_m,const double* z_m,
+      double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
+      double* Bx_T,double* By_T,double* Bz_T,double* rho_kg_m3,
+      double* pressure_Pa,std::size_t N) const;
+
   swcme::ModelStatus evaluate_cartesian_with_B_div_checked(
                                      const StepState& S,
                                      const double* x_m,const double* y_m,const double* z_m,
@@ -1248,6 +1266,12 @@ private:
       double& Rdir_m,double n_hat[3]) const;
   swcme::ModelStatus shock_state_direction_after_validation(
       const StepState& S,const double u[3],LocalShockState& state) const;
+  // Geometry-only support test for the field kernels. An ambient point must
+  // not require a surface RH solve on the same ray. Shock/source diagnostics
+  // still call the full solver, with its explicit numerical-failure contract.
+  swcme::ModelStatus background_is_ambient_after_validation(
+      const StepState& S,const double u[3],double radius_m,
+      bool& ambient_only) const;
   swcme::ModelStatus evaluate_cartesian_fast_after_validation(
       const StepState& S,const double* x_m,const double* y_m,const double* z_m,
       double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
@@ -1255,7 +1279,8 @@ private:
   swcme::ModelStatus evaluate_cartesian_with_B_after_validation(
       const StepState& S,const double* x_m,const double* y_m,const double* z_m,
       double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
-      double* Bx_T,double* By_T,double* Bz_T,std::size_t N) const;
+      double* Bx_T,double* By_T,double* Bz_T,std::size_t N,
+      double* rho_kg_m3=nullptr,double* pressure_Pa=nullptr) const;
   swcme::ModelStatus compute_divV_cartesian_after_validation(
       const StepState& S,const double* x_m,const double* y_m,const double* z_m,
       double* divV,std::size_t N,double dr_frac) const;

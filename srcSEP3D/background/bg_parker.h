@@ -49,6 +49,9 @@ class AnalyticParkerProvider final : public BackgroundProvider {
   }
   Core::Status Validate() const override;
   Core::Status Prepare(double timeS) override;
+  // Reconstruct the epoch with Prepare first; then seed the live counter from
+  // the checkpoint so later refreshes advance beyond the restored snapshot.
+  Core::Status RestorePreparedGeneration(std::uint64_t generation) override;
   const SnapshotMetadata* PreparedMetadata() const override;
   BackgroundSample Evaluate(const Core::Vec3& positionM) const override;
   std::string ResolvedManifest() const override;

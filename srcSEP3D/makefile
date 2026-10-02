@@ -124,9 +124,12 @@ CORE_SRC := \
     core/parker_geometry.cpp \
     core/domain_geometry.cpp \
     mesh/mesh_model.cpp
+# Concrete runtime providers link the single canonical SWCME implementation;
+# AMPS-facing headers remain provider-neutral and do not duplicate model code.
 BG_SRC := \
     background/bg_provider.cpp \
     background/bg_parker.cpp \
+    background/bg_swcme.cpp \
     background/bg_swmf.cpp \
     background/background_snapshot.cpp
 TURBULENCE_SRC := turbulence/turbulence_models.cpp
@@ -137,11 +140,13 @@ TRANSPORT_SRC := \
     transport/parker_transport.cpp \
     transport/focused_transport.cpp \
     transport/population_control.cpp
+# The factory selects a model; publication remains in the common AMPS adapter.
 RUNTIME_SRC := \
     runtime/run_configuration.cpp \
     runtime/configuration_io.cpp \
     runtime/standalone_command_line.cpp \
     runtime/runtime.cpp \
+    runtime/background_factory.cpp \
     runtime/runtime_adapters.cpp
 ADAPTER_SRC := \
     adapters/transport_adapter.cpp \
@@ -219,7 +224,10 @@ STAGE1_TEST_SRC := \
     test/individual-test/test_adapters.cpp \
     test/individual-test/test_output.cpp \
     test/individual-test/test_runtime_improvements.cpp \
-    test/individual-test/test_validation.cpp
+    test/individual-test/test_validation.cpp \
+    test/individual-test/test_shock_propagation.cpp \
+    test/individual-test/test_swcme_background.cpp \
+    test/individual-test/test_sse.cpp
 STAGE1_TEST_OBJ := $(STAGE1_TEST_SRC:.cpp=.o)
 
 SEP_COMMON_INCLUDES := -I$(SEP_COMMON_DIR)
@@ -375,43 +383,47 @@ swcme:
 $(SWCME_ARCHIVE): swcme
 
 test/stage1.o: test/stage1.cpp
-	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+	$(CXX) $(STAGE1_CXXFLAGS) -MMD -MP -c -o $@ $<
 
 test/individual-test/%.o: test/individual-test/%.cpp
-	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+	$(CXX) $(STAGE1_CXXFLAGS) -MMD -MP -c -o $@ $<
 
 core/%.o: core/%.cpp
-	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+	$(CXX) $(STAGE1_CXXFLAGS) -MMD -MP -c -o $@ $<
 
 background/%.o: background/%.cpp
-	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+	$(CXX) $(STAGE1_CXXFLAGS) -MMD -MP -c -o $@ $<
 
 runtime/%.o: runtime/%.cpp
-	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+	$(CXX) $(STAGE1_CXXFLAGS) -MMD -MP -c -o $@ $<
 
 mesh/%.o: mesh/%.cpp
-	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+	$(CXX) $(STAGE1_CXXFLAGS) -MMD -MP -c -o $@ $<
 
 turbulence/%.o: turbulence/%.cpp
-	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+	$(CXX) $(STAGE1_CXXFLAGS) -MMD -MP -c -o $@ $<
 
 transport/%.o: transport/%.cpp
-	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+	$(CXX) $(STAGE1_CXXFLAGS) -MMD -MP -c -o $@ $<
 
 adapters/%.o: adapters/%.cpp
-	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+	$(CXX) $(STAGE1_CXXFLAGS) -MMD -MP -c -o $@ $<
 
 output/%.o: output/%.cpp
-	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+	$(CXX) $(STAGE1_CXXFLAGS) -MMD -MP -c -o $@ $<
 
 validation/%.o: validation/%.cpp
-	$(CXX) $(STAGE1_CXXFLAGS) -c -o $@ $<
+	$(CXX) $(STAGE1_CXXFLAGS) -MMD -MP -c -o $@ $<
 
 test/stage1: check-layering $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(VALIDATION_OBJ) $(STAGE1_TEST_OBJ) \
              $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE)
 	$(CXX) -o $@ $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(VALIDATION_OBJ) $(STAGE1_TEST_OBJ) \
 	  $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE)
 	@echo "[srcSEP3D] standalone test binary built: test/stage1"
+
+# Generated dependency files make additions to public option/provider records
+# trigger a complete ABI-consistent standalone rebuild.
+-include $(CORE_OBJ:.o=.d) $(BG_OBJ:.o=.d) $(TURBULENCE_OBJ:.o=.d) $(TRANSPORT_OBJ:.o=.d) $(RUNTIME_OBJ:.o=.d) $(ADAPTER_OBJ:.o=.d) $(OUTPUT_OBJ:.o=.d) $(VALIDATION_OBJ:.o=.d) $(STAGE1_TEST_OBJ:.o=.d)
 
 .PHONY: test-stage1 test-harn-unit test-lay-unit test-bld-unit test-util-unit \
         test-life-unit test-configuration-unit test-mesh-unit test-background-unit test-turbulence-unit \

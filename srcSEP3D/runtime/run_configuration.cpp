@@ -129,6 +129,8 @@ const char* Name(BackgroundAuthority value) {
     case BackgroundAuthority::AnalyticParker: return "analytic-parker";
     case BackgroundAuthority::PythonInterpolator: return "python-interpolator";
     case BackgroundAuthority::Swmf: return "swmf";
+    case BackgroundAuthority::Swcme: return "swcme";
+    case BackgroundAuthority::RuntimeModel: return "runtime-model";
   }
   return "unknown";
 }
@@ -322,6 +324,7 @@ const char* Name(RunIntent value) {
   switch (value) {
     case RunIntent::TransportOnly: return "transport-only";
     case RunIntent::ShockInjection: return "shock-injection";
+    case RunIntent::ShockPropagation: return "shock-propagation";
   }
   return "unknown";
 }
@@ -676,22 +679,48 @@ Core::Status RunConfiguration3D::Create(
        normalized.swcmeResolvedManifest.empty())) {
     return Invalid("schema version 3 requires validated SWCME and initialization Tecplot outputs");
   }
+  const bool propagation = normalized.intent == RunIntent::ShockPropagation;
   if (normalized.inputSchemaVersion >= 3 &&
-      (normalized.intent != RunIntent::ShockInjection ||
-       normalized.shock != ShockAuthority::Swcme ||
-       !normalized.source.enabled)) {
-    return Invalid("schema version 3 requires an enabled canonical SWCME shock source");
+      (normalized.shock != ShockAuthority::Swcme ||
+       (!propagation && (normalized.intent != RunIntent::ShockInjection ||
+                        !normalized.source.enabled)))) {
+    return Invalid("canonical SWCME requires shock-injection or shock-propagation intent");
+  }
+  if (!std::isfinite(normalized.stopShockRadiusM) || normalized.stopShockRadiusM < 0.0 ||
+      (normalized.stopShockRadiusM > 0.0 &&
+       (!propagation || normalized.stopShockRadiusM <= normalized.shockModel.initialRadiusM ||
+        normalized.stopShockRadiusM > normalized.outerRadiusM))) {
+    return Invalid("run.stop_shock_radius_m requires propagation and a target above launch within the outer boundary");
+  }
+  if (propagation && (normalized.inputSchemaVersion < 4 ||
+      normalized.shock != ShockAuthority::Swcme || normalized.source.enabled ||
+      normalized.populationControl != PopulationControlMode::Off ||
+      !normalized.restartInputPath.empty())) {
+    return Invalid("shock-propagation requires schema 4, canonical SWCME, source.enabled=false, population control off and a fresh run");
   }
   if (normalized.inputSchemaVersion >= 3 &&
       normalized.injectionCadenceSteps != 1) {
     return Invalid("schema version 3 requires source injection on every time step");
   }
   if (normalized.inputSchemaVersion >= 3 &&
-      (normalized.background != BackgroundAuthority::AnalyticParker ||
+      ((normalized.background != BackgroundAuthority::AnalyticParker &&
+        !(normalized.inputSchemaVersion >= 4 &&
+          (normalized.background == BackgroundAuthority::Swcme ||
+           normalized.background == BackgroundAuthority::RuntimeModel))) ||
        normalized.turbulence != TurbulenceAuthority::Prescribed)) {
     return Invalid("standalone schema version 3 requires analytic Parker "
                    "background and prescribed turbulence");
   }
+  // The SWCME background and shock share one canonical event configuration.
+  // Reject a missing canonical shock owner before factories or AMPS allocation.
+  if (normalized.background == BackgroundAuthority::Swcme &&
+      (normalized.inputSchemaVersion < 4 || normalized.shock != ShockAuthority::Swcme))
+    return Invalid("SWCME background requires schema 4 and canonical SWCME runtime");
+  // Require exactly the authority/ID pairing, including parser-free hosts.
+  // An unused model_id would otherwise make input provenance ambiguous.
+  if ((normalized.background == BackgroundAuthority::RuntimeModel) !=
+      !normalized.backgroundModelId.empty())
+    return Invalid("background.model_id is required only for runtime-model authority");
   const double meshValues[] = {
       normalized.minimumCellSizeM, normalized.backgroundCellSizeM,
       normalized.solarSurfaceCellSizeM,
@@ -1447,6 +1476,10 @@ Core::Status RunConfiguration3D::Create(
     // would falsely make them look like reviewed physics inputs.
     physics << ";shock_model=canonical-swcme3d";
   }
+  // Extension selection affects physics even before its provider manifest is
+  // available; the common publication boundary also checks that manifest.
+  if (normalized.background == BackgroundAuthority::RuntimeModel)
+    physics << ";background_model_id=" << normalized.backgroundModelId;
   physics << ";swcme_fingerprint="
           << normalized.swcmeConfigurationFingerprint
           << ";source_enabled=" << source.enabled
@@ -1546,6 +1579,9 @@ Core::Status RunConfiguration3D::Create(
           << ";population_cadence_steps="
           << normalized.populationControlCadenceSteps
           << ";layout=" << layout.fingerprint;
+  // Preserve legacy injection/transport fingerprints when the new option is
+  // inactive. A propagation target is part of its actual physics identity.
+  if (propagation) physics << ";stop_shock_radius_m=" << normalized.stopShockRadiusM;
   for (const ObserverOptions& observer : normalized.observers) {
     physics << ";observer=" << observer.id << ',' << observer.positionM.x
             << ',' << observer.positionM.y << ',' << observer.positionM.z

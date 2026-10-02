@@ -1,6 +1,6 @@
 # Phase B Background Providers and Snapshots
 
-Phase B separates ambient-field acquisition from AMPS storage. Providers and
+Phase B separates model-field acquisition from AMPS storage. Providers and
 snapshots are AMPS/MPI-free; `main_lib.cpp` is the only layer that copies a
 validated sample into an AMPS center-node buffer.
 
@@ -8,7 +8,7 @@ validated sample into an AMPS center-node buffer.
 
 Every published sample is SI and contains:
 
-- magnetic field, magnitude, unit direction, and optional analytic gradient;
+- magnetic field, magnitude, unit direction, and advertised analytic or numerical gradient;
 - `div(b_hat)`, focusing length, and curvature;
 - plasma velocity, gradient, divergence, and field-aligned strain;
 - number density, temperature, pressure, and Alfvén speed;
@@ -221,11 +221,13 @@ There is no temporal extrapolation.
 
 ## Production and coupling path
 
-The standalone driver configures SWCME-backed analytic authority. During
-`amps_init()`, the
-application gathers owner-local cell centers outside the configurable source shell, builds
-one immutable Parker snapshot, writes every complete field at the Phase-M
-offset, and publishes it with `StandaloneAdapter`.
+The standalone driver selects analytic Parker, canonical SWCME, or a registered
+runtime-model authority. During `amps_init()`, the application gathers
+deterministic owner-local physical cell centers, prepares the selected provider,
+builds an immutable snapshot, validates background/turbulence collectively and
+writes both application and native fields. `StandaloneAdapter` publishes the
+initial descriptor; the final halo operation sets readiness before output or
+transport may consume the initialized state.
 
 A coupled host configures SWMF authority and calls
 `InstallBackgroundSnapshot()` with a complete read-only snapshot in the same
@@ -236,7 +238,7 @@ through `SwmfAdapter`. Both adapters invoke the same `Runtime` transition from
 
 ## R03 joined-boundary update transaction
 
-Subsequent coupled or analytic generations use a separate update state:
+Subsequent imported or runtime-model generations use a separate update state:
 
 `Idle -> Requested -> Filling -> Staged -> Idle`.
 
@@ -247,15 +249,22 @@ complete descriptor without replacing the active descriptor; and
 enters `Failed`. `AcknowledgeSnapshotFailure` returns to `Idle`, leaving the
 previous active generation and its validity interval unchanged.
 
-`main_lib.cpp` builds the candidate background and evaluates the matching
-turbulence provider at every owner-local physical cell. An `MPI_Allreduce` of
-the readiness flag precedes publication. Only after all ranks agree does the
-application swap both immutable shared pointers. The AMPS associated-data
-bytes are a cache/diagnostic copy; mover resolution reads the immutable active
-snapshot, so partially filled next-generation cache bytes are never physics
-authority. Snapshot provenance records provider, frame, configuration digest,
-epoch, validity interval, and monotonically increasing generation and is
-written into every R07 checkpoint.
+`main_lib.cpp` first builds the candidate and evaluates matching turbulence in
+scratch. All ranks join readiness, compare metadata identity/generation and
+prove positive global coverage before any live buffer write. Empty owner ranks
+are legal and still participate. The Runtime descriptor is then staged and its
+validation joined. Both application storage and allocated DATAFILE time slots
+receive identical samples; halo exchange and enabled guiding-center auxiliary
+work complete before Runtime commit and active shared-pointer replacement.
+
+Owner movers resolve the immutable snapshot; native AMPS consumers and remote
+resolution also use the published center-node bytes. Both paths must agree.
+A malformed candidate or rejected stage aborts before bytes change. Although
+the generic Runtime API supports failure acknowledgement, native application
+recovery after a write/MPI failure is not implemented. Provenance records frame,
+configuration, epoch, validity and advancing generation. Parker restart also
+restores its live provider counter; the source-free SWCME control requires a
+fresh run.
 
 ## Evidence
 
@@ -270,3 +279,34 @@ written into every R07 checkpoint.
 | `R3D03` | requested/filling/staged/failed transitions and collective atomic publication |
 
 Run `test/run_tests.py --suite phase-b --rebuild`.
+
+## SWCME runtime mesh provider
+
+Schema 4 also supports `background.provider=swcme`. The selected canonical
+[swcme] configuration is re-resolved against its frozen shock fingerprint.
+Prepare freezes one epoch; a bounded scratch batch reconstructs full vector
+gradients from the actual regional U/B field. Numerical derivative availability
+is separate from the legacy analytic flags, and both are validated.
+
+FULL_ICME/RESOLVED_COMPRESSION is accepted for the source-free propagation
+control; combining it with the existing DSA injection source is rejected.
+SHOCK_ONLY continues to return ambient solar wind/IMF, as required by its
+canonical mode. The complete primitive API retains RH total-pressure heating,
+with a declared fixed Te/Tp and Ta/Tp heating partition in the application.
+
+An explicit matching ambient continuation supplies the physical shell below
+SWCME's 1.05-Rs minimum, and preparation rejects CME overlap with that handoff.
+This is not a coronal solution. Regional IMF is prescribed, with no flux rope
+or global induction solve. See the [extension/update guide](../SWCME_MESH_BACKGROUND_CHANGES.md)
+for configuration, atomic MPI publication, cadence accuracy and tests.
+
+`SWBG3D01–06` run in the ordinary application catalog and phase-b suite.
+`SWBGAMPS01–03` belong to the live native sep-corona suite and are discovered
+by `run_coupled_sep_corona.py`; a SWCME input and nonzero step horizon exercise
+updates, while at least two MPI ranks and received remote blocks exercise halos.
+
+For the sample units, tensor formulas and numerical stencil rationale, see
+[background/README.md](background/README.md). For factory registration,
+ownership and the exact collective update order, see
+[runtime/README.md](runtime/README.md). Both describe contracts that apply to
+future model adapters, rather than SWCME-specific mesh procedures.

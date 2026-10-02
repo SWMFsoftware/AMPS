@@ -55,15 +55,15 @@ namespace shock {
 
 using Vec3 = std::array<double, 3>;
 
-// The scalar compression scan begins at r-1=1e-9.  A fast-Mach excess below
-// 1e-8 produces a physical compression jump of the same order and cannot be
-// bracketed with a reliable separation from the trivial r=1 solution in
-// binary64.  Empirical cross-checks against the 80-digit SHK12 fixture show
-// that a 1e-6 Mach guard is needed to keep roundoff in the divided energy
-// residual from producing intermittent brackets.  Exposing this policy lets
-// validation and downstream callers
-// distinguish a supported numerical limit from an ordinary physical no-shock.
-inline constexpr double WEAK_SHOCK_MACH_RESOLUTION = 1.0e-6;
+// The divided-flux scan cannot resolve very weak jumps reliably. Such jumps
+// now use the analytically deflated cubic in refined_fast_candidate instead,
+// so its former 1e-6 Mach guard is no longer a physical/numerical cutoff.
+// Retain an explicit roundoff margin for classification/reconstruction from
+// binary64 primitive inputs. Below it we cannot distinguish the jump safely
+// from uncertainty in the wave-speed calculation, even with a wider root type.
+// Positive unresolved excesses still report a failure, never physical NoShock.
+inline constexpr double WEAK_SHOCK_MACH_RESOLUTION =
+    128.0*std::numeric_limits<double>::epsilon();
 
 struct PrimitiveState {
   double rho_kg_m3 = 0.0;
@@ -344,6 +344,117 @@ inline double relative_residual(double a, double b, double scale_floor) {
   return std::abs(a-b)/std::max({std::abs(a),std::abs(b),scale_floor});
 }
 
+// Recover the fast branch when the fixed compression scan misses its narrow
+// admissible interval immediately below the normal-Alfven determinant pole.
+// Eliminate the tangential jumps in the upstream tangential-flow frame and
+// multiply the energy equation by its squared denominator, dividing out r-1
+// analytically. With A=Bn^2/(mu0*rho*U^2), T=Bt^2/(mu0*rho*U^2), and
+// P=p/(rho*U^2), the remaining dimensionless cubic is
+//
+// [(g+1)-(g-1+2*g*P)*r]*(1-A*r)^2
+//   + T*r*[-g+(g-2+(g+1)*A)*r-(g-1)*A*r^2] = 0.
+//
+// For a super-fast inflow it changes sign between 1 and min(rmax,1/A).
+// Bisection in this interval cannot cross the Alfven pole or select an
+// intermediate branch. Long double preserves the small (1-A*r) difference;
+// reconstruction and all public conservation/admissibility gates still use
+// the actual supplied binary64 primitives. No ambient fallback is introduced.
+inline Candidate refined_fast_candidate(const PrimitiveState& upstream,
+                                        const Vec3& n, double Vsh_n,
+                                        double gamma, double& compression,
+                                        double& lower, double& upper,
+                                        int& iterations) {
+  const double mu0=constants::VACUUM_PERMEABILITY_N_A2;
+  const Vec3 u1=subtract(upstream.velocity_m_s,scale(n,Vsh_n));
+  const double un=dot(u1,n), Bn=dot(upstream.magnetic_T,n);
+  const Vec3 B1t=tangential(upstream.magnetic_T,n);
+  const long double ram=static_cast<long double>(upstream.rho_kg_m3)*un*un;
+  const long double A=static_cast<long double>(Bn)*Bn/(mu0*ram);
+  const long double T=static_cast<long double>(dot(B1t,B1t))/(mu0*ram);
+  const long double P=upstream.pressure_Pa/ram, g=gamma;
+  const long double rmax=(g+1)/(g-1);
+  const long double hydro=(g+1)/(g-1+2*g*P);
+  const double parallel_tolerance=64*std::numeric_limits<double>::epsilon();
+  const bool parallel=norm(B1t)<=parallel_tolerance*norm(upstream.magnetic_T);
+
+  if (parallel && A>0 && 1/A<hydro) {
+    // At exactly parallel incidence, the rational tangential inverse loses
+    // the switch-on solution: det=0 and B1t=0 together. The RH limit instead
+    // fixes r=M_An^2, total pressure, and the generated |B2t| analytically.
+    // Its downstream normal-Alfven Mach number is exactly one. Tangential
+    // Galilean velocity is retained, rather than requiring zero upstream ut.
+    const long double r=1/A;
+    const long double p2=(g*r-(g-1))*upstream.pressure_Pa+
+        (g-1)*ram*(r-1)*(r-1)/(2*r);
+    const long double magnetic_pressure=ram*(1-1/r)+upstream.pressure_Pa-p2;
+    if (!(r>1 && r<=rmax && p2>0 && magnetic_pressure>0)) return Candidate{};
+
+    // The exact parallel RH equations do not determine a transverse azimuth.
+    // Select a reproducible member of that degenerate family by projecting
+    // the least-aligned Cartesian axis into the tangent plane. This explicit
+    // convention is only for the roundoff-level parallel limit; every finite
+    // oblique field retains its own transverse direction. Magnetic reversal
+    // reverses the generated field too, preserving the velocity solution.
+    std::size_t axis=0;
+    for (std::size_t j=1;j<3;++j)
+      if (std::abs(n[j])<std::abs(n[axis])) axis=j;
+    Vec3 seed{{0,0,0}}; seed[axis]=1;
+    const Vec3 direction=normalized(tangential(seed,n));
+    const Vec3 B2t=scale(direction,std::copysign(
+        std::sqrt(static_cast<double>(2*mu0*magnetic_pressure)),Bn));
+    const Vec3 u2t=add(tangential(u1,n),
+        scale(B2t,Bn/(mu0*upstream.rho_kg_m3*un)));
+    Candidate candidate;
+    candidate.valid=true;
+    candidate.tangential_determinant_relative=0;
+    candidate.downstream.rho_kg_m3=static_cast<double>(r*upstream.rho_kg_m3);
+    candidate.downstream.pressure_Pa=static_cast<double>(p2);
+    candidate.downstream.magnetic_T=add(scale(n,Bn),B2t);
+    candidate.u2=add(scale(n,un/static_cast<double>(r)),u2t);
+    candidate.downstream.velocity_m_s=add(candidate.u2,scale(n,Vsh_n));
+    candidate.energy_residual=total_energy_flux_normal(candidate.downstream,
+        candidate.u2,n,gamma)-total_energy_flux_normal(upstream,u1,n,gamma);
+    compression=lower=upper=static_cast<double>(r); iterations=0;
+    return candidate;
+  }
+
+  // If the parallel gas-dynamic solution is evolutionary, retain that exact
+  // limit. Otherwise a genuinely oblique field uses the regular cubic; no
+  // nonzero transverse field is discarded to bypass conditioning checks.
+  if (parallel) {
+    compression=lower=upper=static_cast<double>(hydro); iterations=0;
+    return candidate_for_compression(upstream,n,Vsh_n,gamma,compression);
+  }
+  // Evaluate the SAME cubic in delta=r-1. Expanding about the identity state
+  // avoids subtracting O(1) fluxes (and then dividing by the tiny jump). The
+  // factored constant coefficient also avoids cancellation of two large
+  // polynomial terms near the fast characteristic. This matters at finite
+  // SSE flanks, where the local fast Mach number crosses one continuously.
+  const long double d0=1-A, h0=2*(1-g*P), h1=g-1+2*g*P;
+  const long double c0=2*d0*((1-g*P)*d0-T);
+  const long double c1=-2*h0*d0*A-h1*d0*d0+T*(g-4+(5-g)*A);
+  const long double c2=h0*A*A+2*h1*d0*A+T*(g-2+(4-2*g)*A);
+  const long double c3=-h1*A*A-(g-1)*A*T;
+  auto polynomial=[&](long double r) {
+    const long double delta=r-1;
+    return ((c3*delta+c2)*delta+c1)*delta+c0;
+  };
+  long double lo=1, hi=A>0 ? std::min(rmax,1/A) : rmax;
+  if (!(hi>lo && polynomial(lo)>0 && polynomial(hi)<0)) return Candidate{};
+  iterations=0;
+  for (int i=0;i<160;++i) {
+    const long double mid=(lo+hi)/2;
+    if (mid==lo || mid==hi) break;
+    const long double value=polynomial(mid);
+    ++iterations;
+    if (value==0) { lo=hi=mid; break; }
+    if (value>0) lo=mid; else hi=mid;
+  }
+  compression=static_cast<double>((lo+hi)/2);
+  lower=static_cast<double>(lo); upper=static_cast<double>(hi);
+  return candidate_for_compression(upstream,n,Vsh_n,gamma,compression);
+}
+
 }  // namespace detail
 
 inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
@@ -404,16 +515,10 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
   }
 
   result.has_shock = true;
-  // A mathematically super-fast state can lie closer to M_fast=1 than the
-  // binary64 compression bracket can resolve.  Reporting that condition as
-  // NoShock would erase the distinction between physical classification and
-  // numerical resolution; attempting the ordinary scan can instead latch
-  // onto an unrelated finite-compression branch.  The published 1e-6 guard is
-  // tied to the solver's 1e-9 minimum compression offset and the independently
-  // observed binary64 cancellation range of the divided energy residual.
-  // The returned primitive payload remains the finite upstream state, while
-  // has_shock=true and the explicit status tell callers why no downstream
-  // jump is available.
+  // Only roundoff-scale excesses are rejected before attempting a solve.
+  // Weak, representable jumps bypass the cancellation-prone divided-flux scan
+  // below and use the deflated fast-interval cubic. They must still satisfy
+  // every downstream characteristic, conserved-flux and admissibility gate.
   const double relative_fast_excess =
       (U1n-result.fast_speed_m_s)/result.fast_speed_m_s;
   if (relative_fast_excess<=WEAK_SHOCK_MACH_RESOLUTION*
@@ -465,7 +570,12 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
     return candidate;
   };
 
-  for (int i=0;i<=scan_points;++i) {
+  // Near Mach one the regular scan's first point is already r-1=1e-9 and its
+  // divided residual amplifies cancellation. Do not let an accidental noisy
+  // scan bracket preempt the stable weak root. The threshold selects a root
+  // algorithm; it is NOT a Mach/angle cutoff or an imposed compression floor.
+  const bool prefer_refined_fast=relative_fast_excess<=1.0e-4;
+  for (int i=0;!prefer_refined_fast && i<=scan_points;++i) {
     const double x=static_cast<double>(i)/static_cast<double>(scan_points);
     const double delta=eps_r + (rmax-1.0-eps_r)*x*x;
     const double r=1.0+delta;
@@ -498,19 +608,6 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
     }
     have_previous=true;
     r_prev=r; q_prev=q;
-  }
-
-  if (bracket_count==0) {
-    result.solver_converged=false;
-    // A detected pole is an actionable numerical classification, whereas
-    // NoPhysicalBracket means the scalar function was regular throughout the
-    // supported compression interval.  This distinction lets callers retry a
-    // singular family with higher precision without treating it as absent
-    // shock physics.
-    result.status=result.encountered_tangential_singularity
-        ? SolveStatus::NumericallySingular
-        : SolveStatus::NoPhysicalBracket;
-    return result;
   }
 
   detail::Candidate accepted;
@@ -582,11 +679,31 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
     selected_evolutionary_root=true;
   }
 
+  if (!selected_evolutionary_root) {
+    // Dense AMPS background sampling reaches quasi-parallel Parker directions
+    // absent from an equatorial source fixture. Before rejecting a missing or
+    // wrong scan root, resolve the regular fast interval and its exact parallel
+    // switch-on limit. The candidate must pass the SAME characteristic and
+    // independent conserved-flux gates as every ordinary scan root below.
+    double refined_compression=1, lower=0, upper=0; int iterations=0;
+    const auto candidate=detail::refined_fast_candidate(upstream,n,
+        shock_normal_speed_m_s,gamma,refined_compression,lower,upper,iterations);
+    if (candidate.valid && candidate_is_evolutionary_fast(candidate)) {
+      accepted=candidate; compression=refined_compression;
+      result.root_iterations=iterations;
+      result.root_bracket_lower_compression=lower;
+      result.root_bracket_upper_compression=upper;
+      result.root_bracket_width=upper-lower;
+      selected_evolutionary_root=true;
+    }
+  }
+
   if(!selected_evolutionary_root) {
     result.solver_converged=false;
     result.status=result.encountered_tangential_singularity
         ? SolveStatus::NumericallySingular
-        : (relative_fast_excess<=0.2
+        : (bracket_count==0 ? SolveStatus::NoPhysicalBracket
+           : relative_fast_excess<=0.2
                ? SolveStatus::NumericallyUnresolvedWeakShock
                : (encountered_valid_root ? SolveStatus::WrongBranch
                                          : SolveStatus::InvalidAcceptedState));
@@ -618,7 +735,12 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
   const Vec3 Et1=detail::tangential(detail::cross(u1,upstream.magnetic_T),n);
   const Vec3 Et2=detail::tangential(detail::cross(u2,result.downstream.magnetic_T),n);
   result.electric_residual=detail::norm(detail::subtract(Et1,Et2)) /
-      std::max({detail::norm(Et1),detail::norm(Et2),1.0e-30});
+      // At parallel incidence E_t is zero analytically. Normalizing solely by
+      // its cancellation noise fabricates O(1) failures at magnetic poles.
+      // Use the physical induction-flux scale |u| |B| as an additional floor;
+      // the absolute jump and the existing 1e-8 acceptance threshold remain.
+      std::max({detail::norm(Et1),detail::norm(Et2),detail::norm(u1)*Bmag,
+                detail::norm(u2)*detail::norm(result.downstream.magnetic_T),1.0e-30});
 
   auto momentum_flux=[&](const PrimitiveState& s,const Vec3& u)->Vec3 {
     const double un=detail::dot(u,n);

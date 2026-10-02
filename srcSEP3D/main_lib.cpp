@@ -25,7 +25,9 @@
 #include "output/publication.h"
 #include "output/restart.h"
 #include "output/sampling.h"
+#include "output/shock_history.h"
 #include "runtime/runtime_adapters.h"
+#include "runtime/background_factory.h"
 #include "turbulence/turbulence_models.h"
 #include "validation/coronal_cme_application_test.h"
 
@@ -165,8 +167,12 @@ std::shared_ptr<const SEP3D::Background::BackgroundSnapshot>
     gInstalledBackground;
 std::shared_ptr<const SEP3D::Background::BackgroundSnapshot>
     gStagedBackground;
-std::shared_ptr<SEP3D::Background::AnalyticParkerProvider>
-    gAnalyticBackgroundProvider;
+// Model ownership is generic; no SWCME-specific switch belongs in cell writes.
+// The live provider may already have prepared a candidate while movers still
+// resolve the previous immutable gInstalledBackground. Update boundaries are
+// joined, so no particle phase overlaps preparation/publication.
+std::shared_ptr<SEP3D::Background::BackgroundProvider>
+    gRuntimeBackgroundProvider;
 std::shared_ptr<SEP3D::Turbulence::TurbulenceProvider>
     gInstalledTurbulence;
 std::shared_ptr<SEP3D::Turbulence::TurbulenceProvider>
@@ -203,6 +209,9 @@ bool gStorageCallbacksRegistered = false;
 // output callback.  This flag records completion of that collective boundary;
 // it is deliberately reset during each background refresh.
 bool gNativeAmpsBackgroundReady = false;
+// Counts completed refreshes only: initial fill is generation setup, not an
+// update. Increment after halo completion AND Runtime commit for native evidence.
+std::uint64_t gBackgroundPublishedUpdates = 0;
 std::unordered_map<PIC::Mesh::cDataCenterNode*, std::size_t> gCellSampleIndex;
 // The registered AMPS object is owned by Sphere::InternalSpheres for the
 // process lifetime.  This non-owning pointer is retained only to prove that
@@ -887,6 +896,17 @@ SEP3D::Core::Status ResolveStoredBackground(
     if (layout.magneticGradientOffset != RuntimeModel::kNoOffset)
       LoadBytes(cell, layout.magneticGradientOffset, background.gradB.m,
                 sizeof(background.gradB.m));
+    // Remote/ghost resolution needs the same strain/compression tensor as
+    // owner snapshots when its optional application storage was requested.
+    if (layout.velocityGradientOffset != RuntimeModel::kNoOffset)
+      LoadBytes(cell, layout.velocityGradientOffset, background.gradU.m,
+                sizeof(background.gradU.m));
+    if (gInstalledBackground) {
+      background.generation=gInstalledBackground->metadata().generation;
+      // Ghost data carry the same generation after the joined halo exchange.
+      background.configurationDigest=gInstalledBackground->samples().empty()?0:
+          gInstalledBackground->samples().front().configurationDigest;
+    }
     background.valid =
         std::isfinite(background.absB) && background.absB > 0.0;
     background.status = background.valid
@@ -1237,37 +1257,50 @@ double StoreTurbulenceAtCellCenter(
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
 
-void ValidateNativeAmpsBackgroundLayout() {
+// Validate offsets without writing or aborting, so every rank can join the
+// candidate gate even when its native layout is invalid. One sample represents
+// one plasma fluid; a multifluid build needs an explicit future physics mapping.
+SEP3D::Core::Status NativeAmpsBackgroundLayoutStatus() {
   using namespace PIC::CPLR::DATAFILE;
-  if (CenterNodeAssociatedDataOffsetBegin < 0 ||
-      MULTIFILE::CurrDataFileOffset < 0 ||
-      nTotalBackgroundVariables <= 0) {
-    StopWithStatus("native AMPS background layout",
-        SEP3D::Core::Status(SEP3D::Core::StatusCode::LayoutMismatch,
-            "DATAFILE center-node storage was not allocated before the "
-            "srcSEP3D background fill"));
+  using namespace SEP3D::Core;
+  auto invalid=[](const std::string& message) {
+    return Status(StatusCode::LayoutMismatch,message);
+  };
+  if (CenterNodeAssociatedDataOffsetBegin<0 || MULTIFILE::CurrDataFileOffset<0 ||
+      nTotalBackgroundVariables<=0 || nIonFluids!=1)
+    return invalid("runtime backgrounds require allocated one-fluid DATAFILE storage");
+  const cOffsetElement* fields[]={&Offset::PlasmaNumberDensity,&Offset::PlasmaBulkVelocity,
+      &Offset::PlasmaTemperature,&Offset::PlasmaIonPressure,&Offset::PlasmaDivU,
+      &Offset::MagneticField,&Offset::ElectricField,&Offset::MagneticFieldGradient,
+      &Offset::Current,&Offset::PlasmaElectronPressure};
+  const int components[]={1,3,1,1,1,3,3,9,3,1};
+  // RelativeOffset is bytes; nVars and nTotalBackgroundVariables count doubles.
+  // Keep this list in step with StoreNativeAmpsBackground: validating only B/U
+  // could permit a later pressure/current write to overrun an allocated slice.
+  for (std::size_t i=0;i<sizeof(fields)/sizeof(fields[0]);++i) {
+    const auto& field=*fields[i];
+    // U/B/n/T are mandatory; remaining fields are checked if allocated. Catch
+    // every layout error before a first field can be written on ANY rank.
+    const bool mandatory=i==0 || i==1 || i==2 || i==5;
+    if ((mandatory && !field.allocate) || (field.allocate &&
+        (field.RelativeOffset<0 || field.nVars!=components[i] ||
+         static_cast<std::size_t>(field.RelativeOffset)+components[i]*sizeof(double)>
+             static_cast<std::size_t>(nTotalBackgroundVariables)*sizeof(double))))
+      return invalid("invalid DATAFILE field layout: "+std::string(field.VarList));
   }
-
-  // BackgroundSample represents one canonical solar-wind state.  Replicating
-  // it into an arbitrary number of AMPS ion-fluid slots would silently assign
-  // identities/compositions that are not present in the input contract.  The
-  // current standalone interface therefore supports the one-fluid DATAFILE
-  // layout used by srcSEP3D and fails closed for a different AMPS build.
-  if (nIonFluids != 1) {
-    StopWithStatus("native AMPS background layout",
-        SEP3D::Core::Status(
-            SEP3D::Core::StatusCode::ConfigurationConflict,
-            "srcSEP3D has one canonical solar-wind state but the AMPS "
-            "DATAFILE layout declares " + std::to_string(nIonFluids) +
-            " ion fluids; an explicit fluid-to-physics mapping is required"));
-  }
+  return Status::OK();
+}
+void ValidateNativeAmpsBackgroundLayout() {
+  const auto status=NativeAmpsBackgroundLayoutStatus();
+  if (!status.ok()) StopWithStatus("native AMPS background layout",status);
 }
 
 // Return the current DATAFILE storage slot and, when AMPS has initialized a
-// distinct time-interpolation slot, that slot as well.  Initializing both
-// avoids a later interpolation between a valid Parker state and uninitialized
-// bytes.  DATAFILE leaves NextDataFileOffset negative when interpolation is
-// not in use, so no speculative schedule or offset is constructed here.
+// distinct next slot, that slot as well. Runtime-owned getters deliberately
+// bypass FILE time interpolation: both allocated slots mirror the same
+// complete epoch for native output/readback compatibility, not a pair of file
+// epochs to blend. DATAFILE may leave NextDataFileOffset negative; do not invent
+// a second slot or file schedule when the allocator has not supplied one.
 int NativeAmpsDataSlots(int slots[2]) {
   slots[0] = PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset;
   const int next = PIC::CPLR::DATAFILE::MULTIFILE::NextDataFileOffset;
@@ -1394,8 +1427,11 @@ void StoreNativeAmpsBackground(
       Configuration().options().parker;
   if (parker.thermodynamicClosure ==
       SEP3D::RuntimeModel::SolarWindThermodynamicClosure::MultiSpecies) {
+    // The provider reports proton T after total-pressure heating. Its explicit
+    // partition preserves Te/Tp, so electron pressure must use that same scale,
+    // not the unheated configured Te. n is electron density in both closures.
     electronPressurePa = sample.numberDensityM3 * SEP3D::Core::Const::k_B *
-        parker.electronTemperatureK;
+        parker.electronTemperatureK * (sample.temperatureK / parker.temperatureK);
   }
   StoreNativeAmpsField(cell, Offset::PlasmaElectronPressure,
                        &electronPressurePa, 1);
@@ -1432,6 +1468,7 @@ void CompleteNativeAmpsBackgroundInstallation() {
 // SWMF-coupler builds own their native AMPS field buffers outside DATAFILE.
 // srcSEP3D still fills its application cache and publishes the immutable
 // snapshot, while this no-op keeps the initialization boundary uniform.
+SEP3D::Core::Status NativeAmpsBackgroundLayoutStatus() { return SEP3D::Core::Status::OK(); }
 void ZeroNativeAmpsBackgroundOnOwnedCells() {}
 void StoreNativeAmpsBackground(
     PIC::Mesh::cDataCenterNode*,
@@ -1496,6 +1533,12 @@ MakePrescribedTurbulence() {
       new SEP3D::Turbulence::PrescribedKolmogorovProvider(model));
 }
 
+SEP3D::Core::Status ValidateBackgroundCandidateCollectively(
+    const std::shared_ptr<const SEP3D::Background::BackgroundSnapshot>&,
+    const std::vector<AmpsCellReference>&,
+    const std::shared_ptr<SEP3D::Turbulence::TurbulenceProvider>&,
+    SEP3D::Core::Status,std::vector<SEP3D::Turbulence::TurbulenceSample>*);
+
 void FillAndPublishBackground() {
   using namespace SEP3D;
   gNativeAmpsBackgroundReady = false;
@@ -1507,48 +1550,33 @@ void FillAndPublishBackground() {
   std::shared_ptr<const Background::BackgroundSnapshot> snapshot =
       gInstalledBackground;
   if (!snapshot) {
-    if (Configuration().options().background !=
-        RuntimeModel::BackgroundAuthority::AnalyticParker) {
-      StopWithStatus("background initialization", Core::Status(
-          Core::StatusCode::SnapshotUnavailable,
-          "SWMF authority requires InstallBackgroundSnapshot before amps_init"));
-    }
-    Background::ParkerConfiguration parker;
-    const RuntimeModel::ParkerPhysicsOptions& configured =
-        Configuration().options().parker;
-    parker.sourceRadiusM = configured.sourceRadiusM;
-    parker.sourceLongitudeRad = configured.sourceLongitudeRad;
-    parker.sourceColatitudeRad = configured.sourceColatitudeRad;
-    parker.referenceRadiusM = configured.referenceRadiusM;
-    parker.radialFieldAtReferenceT = configured.radialFieldAtReferenceT;
-    parker.numberDensityAtReferenceM3 = configured.numberDensityAtReferenceM3;
-    parker.densityReferenceRadiusM = configured.densityReferenceRadiusM;
-    parker.temperatureK = configured.temperatureK;
-    parker.adiabaticIndex = configured.adiabaticIndex;
-    parker.thermodynamicClosure =
-        configured.thermodynamicClosure ==
-                RuntimeModel::SolarWindThermodynamicClosure::MultiSpecies
-            ? swcme::solarwind::ThermodynamicClosure::MultiSpecies
-            : swcme::solarwind::ThermodynamicClosure::ProtonOnly;
-    parker.alphaToProtonRatio = configured.alphaToProtonRatio;
-    parker.electronTemperatureK = configured.electronTemperatureK;
-    parker.alphaTemperatureK = configured.alphaTemperatureK;
-    parker.referenceSinColatitude = configured.referenceSinColatitude;
-    parker.solarWindSpeedMPerS = configured.solarWindSpeedMPerS;
-    parker.solarRotationRateRadPerS = configured.solarRotationRateRadPerS;
-    parker.rotationAxis = configured.rotationAxis;
-    parker.magneticPolarity = configured.magneticPolarity;
-    parker.validityCadenceS = configured.validityCadenceS;
-    parker.coordinateFrame = configured.coordinateFrame;
-    gAnalyticBackgroundProvider.reset(
-        new Background::AnalyticParkerProvider(parker));
+    // A typed host may install a provider first; otherwise the named factory
+    // selects one. The rest of initialization uses only BackgroundProvider.
+    Core::Status status;
+    if (!gRuntimeBackgroundProvider)
+      status = RuntimeModel::CreateBackgroundProvider(Configuration(),
+                                                       &gRuntimeBackgroundProvider);
     const double initialEpochS = ApplicationRuntime().CurrentTimeS();
-    Core::Status status = gAnalyticBackgroundProvider->Prepare(initialEpochS);
-    if (!status.ok()) StopWithStatus("Parker preparation", status);
-    Background::BackgroundSnapshotBuilder builder;
-    status = builder.Build(*gAnalyticBackgroundProvider, positions, &snapshot);
-    if (!status.ok()) StopWithStatus("Parker snapshot build", status);
+    if (status.ok()) status = gRuntimeBackgroundProvider->Prepare(initialEpochS);
+    if (status.ok()) {
+      Background::BackgroundSnapshotBuilder builder;
+      status = builder.Build(*gRuntimeBackgroundProvider, positions, &snapshot);
+    }
+    // Join provider/build failures before dereferencing the candidate. The
+    // complete turbulence/grid validation follows after both are prepared.
+    int local=status.ok()?1:0,global=0;
+    MPI_Allreduce(&local,&global,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+    if (!global) StopWithStatus("runtime background initialization",status.ok()?
+        Core::Status(Core::StatusCode::SnapshotUnavailable,"another rank rejected initial background"):status);
     if (gPendingRestart) {
+      // Reconstruct numerical fields, then synchronize the provider counter
+      // with the checkpoint before exposing restored snapshot tags. Unsupported
+      // model restart hooks reject collectively rather than relabeling old data.
+      status=gRuntimeBackgroundProvider->RestorePreparedGeneration(gPendingRestart->backgroundGeneration);
+      int localRestore=status.ok()?1:0,globalRestore=0;
+      MPI_Allreduce(&localRestore,&globalRestore,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+      if (!globalRestore) StopWithStatus("background restart generation",status.ok()?
+          Core::Status(Core::StatusCode::SnapshotUnavailable,"another rank rejected background restoration"):status);
       Background::SnapshotMetadata restored = snapshot->metadata();
       restored.epochS = gPendingRestart->activeSnapshot.epochS;
       restored.validFromS = gPendingRestart->activeSnapshot.validFromS;
@@ -1602,7 +1630,11 @@ void FillAndPublishBackground() {
   } else {
     status = turbulence->Prepare(snapshot->metadata().epochS);
   }
-  if (!status.ok()) StopWithStatus("turbulence preparation", status);
+  // The common gate below joins preparation failures on all MPI ranks.
+
+  std::vector<Turbulence::TurbulenceSample> initialWaves;
+  status=ValidateBackgroundCandidateCollectively(snapshot,cells,turbulence,status,&initialWaves);
+  if (!status.ok()) StopWithStatus("initial background collective validation",status);
 
   // The application slice and AMPS' DATAFILE slice are independent regions of
   // each center node.  Clear both before one joined physical-cell pass.  That
@@ -1618,15 +1650,7 @@ void FillAndPublishBackground() {
   double localMinimumVariance = std::numeric_limits<double>::infinity();
   double localMaximumVariance = 0.0;
   for (std::size_t i = 0; i < cells.size(); ++i) {
-    if (!SamePosition(snapshot->positions()[i], cells[i].positionM)) {
-      StopWithStatus("background cell mapping", Core::Status(
-          Core::StatusCode::LayoutMismatch,
-          "snapshot positions are not in deterministic owner-cell order"));
-    }
-    const Turbulence::TurbulenceSample waves = turbulence->Evaluate(
-        cells[i].positionM, snapshot->samples()[i]);
-    if (!waves.status.usable() || !waves.valid)
-      StopWithStatus("turbulence cell evaluation", waves.status);
+    const Turbulence::TurbulenceSample& waves = initialWaves[i];
 
     // Prescribe background and turbulence to the same physical center-node
     // object before it can be consumed by either movers or Tecplot.  Keeping
@@ -1689,8 +1713,8 @@ void FillAndPublishBackground() {
   // checks.  The subsequent halo exchange then makes precisely this published
   // generation available to neighboring AMPS blocks and output interpolation.
   RuntimeModel::Runtime& runtime = ApplicationRuntime();
-  if (Configuration().options().background ==
-      RuntimeModel::BackgroundAuthority::AnalyticParker) {
+  if (Configuration().options().background !=
+      RuntimeModel::BackgroundAuthority::Swmf) {
     RuntimeModel::StandaloneAdapter adapter;
     status = adapter.Initialize(&runtime);
     if (status.ok()) status = adapter.PublishSnapshot(&runtime, *snapshot);
@@ -1770,117 +1794,284 @@ void WriteInitializationDataTecplotAfterBackground() {
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 }
 
+// This gate is shared by initial publication and every subsequent provider.
+// All ranks enter it even when their candidate failed or their pruned mesh owns
+// no physical cells. Numerical/identity failure occurs BEFORE any live cell is
+// written. Thus a late bad cell cannot leave a half-new/half-old background.
+SEP3D::Core::Status ValidateBackgroundCandidateCollectively(
+    const std::shared_ptr<const SEP3D::Background::BackgroundSnapshot>& candidate,
+    const std::vector<AmpsCellReference>& cells,
+    const std::shared_ptr<SEP3D::Turbulence::TurbulenceProvider>& turbulence,
+    SEP3D::Core::Status status,
+    std::vector<SEP3D::Turbulence::TurbulenceSample>* waves) {
+  using namespace SEP3D;
+  if (status.ok() && (!candidate || !turbulence ||
+      candidate->positions().size()!=cells.size() || candidate->samples().size()!=cells.size()))
+    status=Core::Status(Core::StatusCode::LayoutMismatch,"candidate owner-cell grid is incomplete");
+  if (status.ok() && (!RuntimeModel::BackgroundAuthorityMatches(
+      Configuration().options().background,candidate->metadata().provider) ||
+      candidate->metadata().coordinateFrame!=Configuration().options().coordinateFrame ||
+      !candidate->Covers(ApplicationRuntime().CurrentTimeS())))
+    status=Core::Status(Core::StatusCode::ConfigurationConflict,"background authority or time coverage mismatch");
+  if (status.ok())status=NativeAmpsBackgroundLayoutStatus();
+  if (status.ok()) {
+    // Turbulence is part of the same candidate. Evaluate into scratch, prove
+    // directional variances are nonnegative and sum to the total, and require
+    // positive prescribed support unless ballistic transport was explicit.
+    // No Store* call is legal inside this validation pass.
+    waves->reserve(cells.size());
+    for (std::size_t i=0;i<cells.size();++i) {
+      if (!SamePosition(cells[i].positionM,candidate->positions()[i]) || !cells[i].cell) {
+        status=Core::Status(Core::StatusCode::LayoutMismatch,"background cell order/pointer changed");break;
+      }
+      status=Background::ValidateCompleteSample(candidate->samples()[i],candidate->capabilities());
+      if (!status.ok())break;
+      auto w=turbulence->Evaluate(cells[i].positionM,candidate->samples()[i]);
+      const double total=w.deltaBPlus2T2+w.deltaBMinus2T2;
+      const double scale=std::max(std::numeric_limits<double>::min(),std::max(std::fabs(total),std::fabs(w.deltaB2T2)));
+      if (!w.status.usable() || !w.valid || !std::isfinite(total) ||
+          w.deltaBPlus2T2<0 || w.deltaBMinus2T2<0 || !std::isfinite(w.deltaB2T2) ||
+          std::fabs(total-w.deltaB2T2)>128*std::numeric_limits<double>::epsilon()*scale ||
+          (Configuration().options().turbulence==RuntimeModel::TurbulenceAuthority::Prescribed && !w.ballistic && total<=0)) {
+        status=Core::Status(Core::StatusCode::BackgroundInvalid,"candidate directional turbulence is incomplete");break;
+      }
+      waves->push_back(w);
+    }
+  }
+  // All ranks reach this readiness reduction, including failed providers and
+  // ranks with zero owned cells. Stop here collectively before dereferencing
+  // metadata or entering the later reductions if any local candidate failed.
+  int local=status.ok()?1:0,global=0;
+  MPI_Allreduce(&local,&global,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  if (!global) return status.ok()?Core::Status(Core::StatusCode::SnapshotUnavailable,
+      "another MPI rank rejected the background candidate"):status;
+  const auto& m=candidate->metadata();
+  // Compare a compact deterministic metadata hash plus the exact generation.
+  // Cell arrays differ by MPI ownership and must not enter this identity hash.
+  // Seventeen digits preserve double-valued epochs/intervals in the encoding.
+  std::ostringstream identity;identity<<std::setprecision(17)<<m.epochS<<'|'<<m.validFromS<<'|'<<m.validUntilS
+      <<'|'<<m.coordinateFrame<<'|'<<m.providerIdentity<<'|'<<m.configurationFingerprint
+      <<'|'<<Configuration().physics_fingerprint();
+  unsigned long long send[2]={m.generation,Fnv1a64(identity.str())},lo[2]={},hi[2]={};
+  MPI_Allreduce(send,lo,2,MPI_UNSIGNED_LONG_LONG,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(send,hi,2,MPI_UNSIGNED_LONG_LONG,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+  unsigned long long localCells=cells.size(),globalCells=0;
+  MPI_Allreduce(&localCells,&globalCells,1,MPI_UNSIGNED_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  if (!globalCells || lo[0]!=hi[0] || lo[1]!=hi[1])
+    return Core::Status(Core::StatusCode::ConfigurationConflict,"MPI background coverage, epoch or identity disagree");
+  return Core::Status::OK();
+}
+
+// Native tests read the SAME bytes consumed by AMPS, including both DATAFILE
+// slots. They never call Store* or Prepare. Optional primitive/transport/E
+// slots listed below are checked when allocated; U/B/density/temperature are
+// mandatory. Derived native current/electron-pressure slots are filled by the
+// bridge but are not separately compared by this readback helper.
+bool MeshBackgroundBytesMatch(PIC::Mesh::cDataCenterNode* cell,
+    const SEP3D::Background::BackgroundSample& s) {
+  using namespace SEP3D;
+  const auto& layout=Configuration().storage_layout();
+  bool matches=true;
+  auto application=[&](std::size_t offset,const double* expected,std::size_t n) {
+    // Optional application tensors may be disabled by [storage]. Check every
+    // allocated component; immutable snapshots retain the complete sample.
+    if (offset==RuntimeModel::kNoOffset)return;
+    std::vector<double> actual(n);LoadBytes(cell,offset,actual.data(),n*sizeof(double));
+    matches=matches&&std::memcmp(actual.data(),expected,n*sizeof(double))==0;
+  };
+  double B[3],U[3],curvature[3];s.B.CopyTo(B);s.U.CopyTo(U);s.curvature.CopyTo(curvature);
+  application(layout.magneticFieldOffset,B,3);application(layout.bulkVelocityOffset,U,3);
+  application(layout.numberDensityOffset,&s.numberDensityM3,1);
+  application(layout.temperatureOffset,&s.temperatureK,1);application(layout.pressureOffset,&s.pressurePa,1);
+  application(layout.alfvenSpeedOffset,&s.alfvenSpeedMpS,1);application(layout.velocityDivergenceOffset,&s.divU,1);
+  application(layout.magneticGradientOffset,&s.gradB.m[0][0],9);application(layout.velocityGradientOffset,&s.gradU.m[0][0],9);
+  application(layout.divBhatOffset,&s.divBhat,1);application(layout.focusingLengthOffset,&s.focusingLenM,1);
+  application(layout.curvatureOffset,curvature,3);application(layout.fieldAlignedStrainOffset,&s.fieldAlignedStrain,1);
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
+  using namespace PIC::CPLR::DATAFILE;
+  auto native=[&](const cOffsetElement& field,const double* expected,int n,bool required=false) {
+    // Byte equality is appropriate for publication evidence: these are direct
+    // copies, not a numerical-fit test. Verify both allocated time slots so
+    // stale next-slot data cannot hide behind a correct current-slot value.
+    if (!field.allocate) { if(required)matches=false;return; }
+    if (field.nVars!=n || field.RelativeOffset<0) {matches=false;return;}
+    int slots[2];const int count=NativeAmpsDataSlots(slots);
+    for (int k=0;k<count;++k) {
+      const char* bytes=cell->GetAssociatedDataBufferPointer()+CenterNodeAssociatedDataOffsetBegin+slots[k]+field.RelativeOffset;
+      matches=matches&&std::memcmp(bytes,expected,static_cast<std::size_t>(n)*sizeof(double))==0;
+    }
+  };
+  const auto electric=s.U.Cross(s.B)*(-1);double E[3];electric.CopyTo(E);
+  native(Offset::MagneticField,B,3,true);native(Offset::PlasmaBulkVelocity,U,3,true);
+  native(Offset::PlasmaNumberDensity,&s.numberDensityM3,1,true);
+  native(Offset::PlasmaTemperature,&s.temperatureK,1,true);
+  native(Offset::PlasmaIonPressure,&s.pressurePa,1);
+  native(Offset::ElectricField,E,3);native(Offset::PlasmaDivU,&s.divU,1);
+  native(Offset::MagneticFieldGradient,&s.gradB.m[0][0],9);
+#else
+  matches=false;
+#endif
+  return matches;
+}
+// Read-only local evidence capture; its caller reduces flags/counts over MPI.
+// Ghost coverage is one physical center per received active block, not every
+// ghost cell. Absence of received blocks remains a test prerequisite SKIP.
+void CaptureRuntimeMeshBackground(bool* owned,bool* ghosts,bool* provider,
+                                  unsigned long long* ghostCount) {
+  using namespace SEP3D;
+  *owned=*ghosts=*provider=true;*ghostCount=0;
+  if (!gInstalledBackground || !gRuntimeBackgroundProvider) {*owned=*provider=false;return;}
+  const auto cells=CollectOwnedPhysicalCells();const auto& samples=gInstalledBackground->samples();
+  if(cells.size()!=samples.size()){*owned=*provider=false;return;}
+  for (std::size_t i=0;i<cells.size();++i)
+    *owned=*owned&&MeshBackgroundBytesMatch(cells[i].cell,samples[i]);
+  const auto* prepared=gRuntimeBackgroundProvider->PreparedMetadata();
+  *provider=prepared && prepared->epochS==gInstalledBackground->metadata().epochS &&
+      prepared->generation==gInstalledBackground->metadata().generation && gNativeAmpsBackgroundReady;
+  // A remote block may allocate interior centers that were NEVER sent to this
+  // rank. AMPS InitLayerBlock sends only selected face/edge/corner layers.
+  // Walk the actual receive plan and honor its center-node mask; selecting the
+  // first allocated center instead would falsely report a stale halo on the
+  // positive faces. Do not initiate another exchange to hide a missed epoch.
+  // RecvNodeTableLength is a per-round work counter and is reset after unpack;
+  // GlobalSendTable retains the complete per-sender receive block count.
+  const auto& exchange=PIC::Mesh::mesh->ParallelBlockDataExchangeData;
+  bool reportedMismatch=false;
+  if (exchange.GlobalSendTable && exchange.RecvNodeTable) {
+    for(int from=0;from<PIC::nTotalThreads;++from) {
+      if(from==PIC::ThisThread)continue;
+      const int count=exchange.GlobalSendTable[PIC::ThisThread+from*PIC::nTotalThreads];
+      if(count>0 && !exchange.RecvNodeTable[from]) { *ghosts=false;continue; }
+      for(int block=0;block<count;++block) {
+        auto* node=exchange.RecvNodeTable[from][block];
+        if(!node || !node->block || !node->IsUsedInCalculationFlag)continue;
+        unsigned char* mask=nullptr;
+        if(exchange.RecvCenterNodePackingTable && exchange.RecvCenterNodePackingTable[from] &&
+           exchange.BlockCenterNodeSendMaskLength>0)
+          mask=exchange.RecvCenterNodePackingTable[from]+block*exchange.BlockCenterNodeSendMaskLength;
+        bool checked=false;
+        for(int k=0;k<_BLOCK_CELLS_Z_ && !checked;++k)
+          for(int j=0;j<_BLOCK_CELLS_Y_ && !checked;++j)
+            for(int i=0;i<_BLOCK_CELLS_X_ && !checked;++i) {
+              if(mask && !PIC::Mesh::BlockElementSendMask::CenterNode::Test(i,j,k,mask))continue;
+              Core::Vec3 at(node->xmin[0]+(i+0.5)*((node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_),
+                  node->xmin[1]+(j+0.5)*((node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_),
+                  node->xmin[2]+(k+0.5)*((node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_));
+              const double r=(at-Configuration().options().coordinateOriginM).Norm();
+              if(r<Configuration().options().innerRadiusM || r>Configuration().options().outerRadiusM)continue;
+              auto* cell=node->block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k));
+              if(!cell)continue;
+              const auto expected=gRuntimeBackgroundProvider->Evaluate(at);
+              const bool matches=expected.valid&&MeshBackgroundBytesMatch(cell,expected);
+              *ghosts=*ghosts&&matches; ++*ghostCount;checked=true;
+              if(!matches && !reportedMismatch) {
+                reportedMismatch=true;
+                std::cerr<<"[srcSEP3D] received background mismatch: rank="<<PIC::ThisThread
+                    <<" owner="<<from<<" block="<<block<<" cell=("<<i<<','<<j<<','<<k<<')'
+                    <<" epoch_s="<<(prepared?prepared->epochS:-1)<<" generation="<<(prepared?prepared->generation:0)
+                    <<" expected_valid="<<expected.valid<<" status="<<expected.status.message<<'\n';
+              }
+            }
+      }
+    }
+  }
+  // A nonempty owner rank also checks a freshly evaluated representative,
+  // detecting a snapshot that is merely self-consistent but at a stale epoch.
+  if (!cells.empty()) {
+    const auto expected=gRuntimeBackgroundProvider->Evaluate(cells.front().positionM);
+    *provider=*provider&&expected.valid&&MeshBackgroundBytesMatch(cells.front().cell,expected);
+  }
+}
+
+// Provider-neutral cadence transaction. The active snapshot remains mover
+// authority until validation, descriptor staging, all writes and halo work
+// finish. Typed candidate/staging failures abort before live bytes change;
+// this is not a recover-and-continue rollback after a write/MPI failure.
 void RefreshBackgroundAtBoundary() {
   using namespace SEP3D;
-  RuntimeModel::Runtime& runtime = ApplicationRuntime();
+  RuntimeModel::Runtime& runtime=ApplicationRuntime();
   if (!runtime.EventDue(RuntimeModel::ScheduledEvent::Background)) return;
-
-  gNativeAmpsBackgroundReady = false;
-
-  const std::vector<AmpsCellReference> cells = CollectOwnedPhysicalCells();
-  std::vector<Core::Vec3> positions;
-  positions.reserve(cells.size());
-  for (const AmpsCellReference& cell : cells) positions.push_back(cell.positionM);
+  const auto cells=CollectOwnedPhysicalCells();
+  std::vector<Core::Vec3> positions;positions.reserve(cells.size());
+  for (const auto& cell:cells)positions.push_back(cell.positionM);
   std::shared_ptr<const Background::BackgroundSnapshot> candidate;
   std::shared_ptr<Turbulence::TurbulenceProvider> turbulence;
   Core::Status status;
-  const double epochS = runtime.CurrentTimeS();
-
-  if (Configuration().options().background ==
-      RuntimeModel::BackgroundAuthority::AnalyticParker) {
-    if (!gAnalyticBackgroundProvider)
-      StopWithStatus("analytic snapshot update", Core::Status(
-          Core::StatusCode::SnapshotUnavailable,
-          "analytic provider ownership was lost after initialization"));
-    status = gAnalyticBackgroundProvider->Prepare(epochS);
-    if (status.ok()) {
-      Background::BackgroundSnapshotBuilder builder;
-      status = builder.Build(*gAnalyticBackgroundProvider, positions, &candidate);
+  const double epochS=runtime.CurrentTimeS();
+  if (Configuration().options().background!=RuntimeModel::BackgroundAuthority::Swmf) {
+    // Runtime models own Prepare/Evaluate; a coupled SWMF host instead stages
+    // its next complete snapshot/turbulence pair before reaching this boundary.
+    if (!gRuntimeBackgroundProvider)
+      status=Core::Status(Core::StatusCode::SnapshotUnavailable,"runtime background provider ownership was lost");
+    else {
+      status=gRuntimeBackgroundProvider->Prepare(epochS);
+      if (status.ok()) {
+        Background::BackgroundSnapshotBuilder builder;
+        status=builder.Build(*gRuntimeBackgroundProvider,positions,&candidate);
+      }
     }
-    turbulence = gInstalledTurbulence;
+    turbulence=gInstalledTurbulence;
   } else {
-    candidate = gStagedBackground;
-    turbulence = gStagedTurbulence;
+    candidate=gStagedBackground;turbulence=gStagedTurbulence;
     if (!candidate || !turbulence)
-      status = Core::Status(
-          Core::StatusCode::SnapshotUnavailable,
-          "SWMF cadence reached without staged background and turbulence");
+      status=Core::Status(Core::StatusCode::SnapshotUnavailable,"SWMF cadence has no staged complete state");
   }
-  if (!status.ok()) StopWithStatus("background update fill", status);
-  if (!candidate || candidate->positions().size() != cells.size() ||
-      candidate->samples().size() != cells.size())
-    StopWithStatus("background update grid", Core::Status(
-        Core::StatusCode::LayoutMismatch,
-        "staged snapshot does not match deterministic owner-cell order"));
-
-  const Background::SnapshotMetadata& metadata = candidate->metadata();
-  status = runtime.RequestSnapshotUpdate(metadata.epochS, metadata.generation);
-  if (status.ok()) status = runtime.BeginSnapshotFill();
-  if (!status.ok()) StopWithStatus("Runtime snapshot update begin", status);
-
+  if (status.ok())status=turbulence->Prepare(epochS);
+  std::vector<Turbulence::TurbulenceSample> waves;
+  status=ValidateBackgroundCandidateCollectively(candidate,cells,turbulence,status,&waves);
+  if (!status.ok())StopWithStatus("collective background candidate",status);
+  const auto& m=candidate->metadata();
+  const auto& previous=gInstalledBackground->metadata();
+  // A cadence update may advance time/generation but cannot switch physical
+  // authority, ownership or frozen configuration halfway through a run.
+  if (m.provider!=previous.provider || m.ownership!=previous.ownership ||
+      m.providerIdentity!=previous.providerIdentity ||
+      m.configurationFingerprint!=previous.configurationFingerprint ||
+      m.epochS!=epochS || m.generation<=previous.generation)
+    StopWithStatus("background identity continuity",Core::Status(
+        Core::StatusCode::ConfigurationConflict,"background changed identity or did not advance epoch/generation"));
+  status=runtime.RequestSnapshotUpdate(m.epochS,m.generation);
+  if (status.ok())status=runtime.BeginSnapshotFill();
   RuntimeModel::SnapshotDescriptor descriptor;
-  descriptor.authority = Configuration().options().background;
-  descriptor.epochS = metadata.epochS;
-  descriptor.validFromS = metadata.validFromS;
-  descriptor.validUntilS = metadata.validUntilS;
-  descriptor.generation = metadata.generation;
-  descriptor.complete = true;
-  descriptor.coordinateFrame = metadata.coordinateFrame;
-  descriptor.providerIdentity = metadata.providerIdentity;
-  descriptor.configurationFingerprint = Configuration().physics_fingerprint();
-  status = runtime.StageSnapshot(descriptor);
-  if (!status.ok()) {
-    (void)runtime.FailSnapshotUpdate(status.message);
-    StopWithStatus("Runtime snapshot staging", status);
+  descriptor.authority=Configuration().options().background;
+  descriptor.epochS=m.epochS;descriptor.validFromS=m.validFromS;descriptor.validUntilS=m.validUntilS;
+  descriptor.generation=m.generation;descriptor.complete=true;
+  descriptor.coordinateFrame=m.coordinateFrame;descriptor.providerIdentity=m.providerIdentity;
+  descriptor.configurationFingerprint=Configuration().physics_fingerprint();
+  if (status.ok())status=runtime.StageSnapshot(descriptor);
+  // Stage validation is rank-local too; join it before touching the live cache.
+  int local=status.ok()?1:0,global=0;
+  MPI_Allreduce(&local,&global,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  if (!global) {
+    (void)runtime.FailSnapshotUpdate("collective Runtime staging rejected");
+    StopWithStatus("background staging",status.ok()?Core::Status(
+        Core::StatusCode::SnapshotUnavailable,"another rank rejected Runtime staging"):status);
   }
-
-  status = turbulence->Prepare(epochS);
-  if (!status.ok()) {
-    (void)runtime.FailSnapshotUpdate(status.message);
-    StopWithStatus("turbulence update preparation", status);
+  gNativeAmpsBackgroundReady=false;
+  // All fallible numerical/layout/staging checks have joined. Write the two
+  // independent center-node slices and matching waves from the same candidate.
+  for (std::size_t i=0;i<cells.size();++i) {
+    StoreBackground(cells[i].cell,candidate->samples()[i]);
+    StoreNativeAmpsBackground(cells[i].cell,candidate->samples()[i]);
+    (void)StoreTurbulenceAtCellCenter(cells[i].cell,waves[i]);
   }
-  for (std::size_t index = 0; index < cells.size(); ++index) {
-    if (!SamePosition(candidate->positions()[index], cells[index].positionM)) {
-      status = Core::Status(Core::StatusCode::LayoutMismatch,
-                            "staged snapshot position order changed");
-      break;
-    }
-    const Turbulence::TurbulenceSample waves = turbulence->Evaluate(
-        cells[index].positionM, candidate->samples()[index]);
-    if (!waves.status.usable() || !waves.valid) { status = waves.status; break; }
-    // Cell storage is a diagnostic/cache copy. The immutable shared_ptr above
-    // remains the mover authority and is not swapped until collective commit.
-    StoreBackground(cells[index].cell, candidate->samples()[index]);
-    StoreNativeAmpsBackground(cells[index].cell,
-                              candidate->samples()[index]);
-    // Use the identical validated center-node write/readback path as initial
-    // publication so a later analytic/SWMF generation cannot reintroduce the
-    // zero-turbulence output defect.
-    (void)StoreTurbulenceAtCellCenter(cells[index].cell, waves);
-  }
-  int localReady = status.ok() ? 1 : 0;
-  int globallyReady = 0;
-  MPI_Allreduce(&localReady, &globallyReady, 1, MPI_INT, MPI_MIN,
-                MPI_GLOBAL_COMMUNICATOR);
-  if (!status.ok() || globallyReady == 0) {
-    (void)runtime.FailSnapshotUpdate(
-        status.ok() ? "another rank rejected the staged snapshot" : status.message);
-    StopWithStatus("collective snapshot validation",
-                   status.ok() ? Core::Status(
-                       Core::StatusCode::SnapshotUnavailable,
-                       "another rank rejected the staged snapshot") : status);
-  }
-  status = runtime.PublishStagedSnapshot(true);
-  if (!status.ok()) StopWithStatus("collective snapshot publication", status);
-  gInstalledBackground = candidate;
-  gInstalledTurbulence = turbulence;
-  gStagedBackground.reset();
-  gStagedTurbulence.reset();
-  // Publish the committed generation to AMPS ghost cells as one final
-  // collective operation.  The native buffer can now be consumed by the next
-  // particle phase and by any later AMPS data output.
+  // Both DATAFILE slots receive the identical frozen epoch. AMPS must not
+  // temporally interpolate a new magnetic field with an old plasma velocity.
+  // Ghost exchange and any derived guiding-centre fields complete before the
+  // Runtime or a mover may advertise/consume the new generation.
   CompleteNativeAmpsBackgroundInstallation();
+  status=runtime.PublishStagedSnapshot(true);
+  if (!status.ok())StopWithStatus("background commit",status);
+  gInstalledBackground=candidate;gInstalledTurbulence=turbulence;
+  gStagedBackground.reset();gStagedTurbulence.reset();
+  ++gBackgroundPublishedUpdates;
+  if (PIC::ThisThread==0)
+    std::cout<<"[srcSEP3D] background mesh update: provider="<<m.providerIdentity
+             <<" tick="<<runtime.counters().currentTick<<" time_s="<<m.epochS
+             <<" generation="<<m.generation<<" halo=ready\n";
 }
+
+
 
 struct PackedObservation {
   std::uint64_t stableId, cellId;
@@ -1931,6 +2122,11 @@ void PublishObserversAtBoundary() {
   using namespace SEP3D;
   RuntimeModel::Runtime& runtime = ApplicationRuntime();
   if (!runtime.EventDue(RuntimeModel::ScheduledEvent::Sampling)) return;
+  // The source-free control normally has no particle observers. Its native
+  // shock telemetry is published by the driver after every completed step;
+  // avoid gathering the entire AMR volume for an empty observer request.
+  if (Configuration().options().intent == RuntimeModel::RunIntent::ShockPropagation &&
+      Configuration().options().observers.empty()) return;
 
   std::vector<PackedCell> localCells;
   std::vector<PackedObservation> localParticles;
@@ -2213,6 +2409,24 @@ SEP3D::Core::Status SEP3D::ConfigureApplication(
   return ApplicationRuntime().Configure(configuration);
 }
 
+SEP3D::Core::Status SEP3D::InstallBackgroundProvider(
+    const std::shared_ptr<Background::BackgroundProvider>& provider) {
+  using namespace SEP3D;
+  // Host injection is legal after immutable configuration (and optionally
+  // mesh binding), before acquisition. Retain shared ownership for subsequent
+  // cadence preparation; an imported SWMF snapshot follows its separate API.
+  const auto state=ApplicationRuntime().state();
+  if (!provider || !ApplicationRuntime().configuration() ||
+      (state!=RuntimeModel::LifecycleState::Configured && state!=RuntimeModel::LifecycleState::MeshReady))
+    return Core::Status(Core::StatusCode::InvalidTransition,"install a non-null background provider before acquisition");
+  if (Configuration().options().background==RuntimeModel::BackgroundAuthority::Swmf)
+    return Core::Status(Core::StatusCode::ConfigurationConflict,"SWMF authority uses host-installed snapshots");
+  const auto status=provider->Validate();if(!status.ok())return status;
+  if (gInstalledBackground || gRuntimeBackgroundProvider)
+    return Core::Status(Core::StatusCode::InvalidTransition,"background ownership was already installed");
+  gRuntimeBackgroundProvider=provider;return Core::Status::OK();
+}
+
 SEP3D::Core::Status SEP3D::InstallBackgroundSnapshot(
     const std::shared_ptr<const Background::BackgroundSnapshot>& snapshot) {
   if (!snapshot) {
@@ -2231,18 +2445,13 @@ SEP3D::Core::Status SEP3D::InstallBackgroundSnapshot(
         Core::StatusCode::InvalidTransition,
         "background installation is legal before acquisition or at a joined snapshot boundary");
   }
-  const bool analytic =
-      snapshot->metadata().provider == Background::ProviderKind::AnalyticParker;
-  const bool expectedAnalytic =
-      ApplicationRuntime().configuration()->options().background ==
-      RuntimeModel::BackgroundAuthority::AnalyticParker;
-  if (analytic != expectedAnalytic) {
+  if (!RuntimeModel::BackgroundAuthorityMatches(
+          Configuration().options().background,snapshot->metadata().provider)) {
     return Core::Status(Core::StatusCode::ConfigurationConflict,
                         "installed snapshot authority differs from configuration");
   }
   const Background::SnapshotMetadata& metadata = snapshot->metadata();
-  if (snapshot->positions().empty() ||
-      snapshot->positions().size() != snapshot->samples().size() ||
+  if (snapshot->positions().size() != snapshot->samples().size() ||
       metadata.coordinateFrame != "HCI-like-inertial" ||
       !std::isfinite(metadata.epochS) ||
       !std::isfinite(metadata.validFromS) ||
@@ -2837,6 +3046,15 @@ bool TrajectoryTrackingCondition(double* position, double* velocity, int spec,
 }
 
 void amps_init_mesh() {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__DATAFILE_
+  // Reject an unsupported native coupler before allocating AMR storage; the
+  // runtime bridge has an explicit one-fluid DATAFILE mapping, not a generic
+  // assumption about buffers owned by another AMPS coupler.
+  if (Configuration().options().background==SEP3D::RuntimeModel::BackgroundAuthority::Swcme ||
+      Configuration().options().background==SEP3D::RuntimeModel::BackgroundAuthority::RuntimeModel)
+    StopWithStatus("runtime mesh background",SEP3D::Core::Status(
+        SEP3D::Core::StatusCode::ConfigurationConflict,"runtime mesh providers require the one-fluid AMPS DATAFILE buffer layout"));
+#endif
   if (SEP3D::ApplicationRuntime().state() ==
       SEP3D::RuntimeModel::LifecycleState::Created) {
     std::cerr
@@ -2961,6 +3179,26 @@ void amps_init_mesh() {
 
 void amps_init() {
   PIC::Init_AfterParser();
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
+  // DATAFILE is the native center-node buffer ABI for this application, while
+  // SEP3D's BackgroundProvider/Runtime owns the complete field snapshots. Claim
+  // that ownership on EVERY rank before FillAndPublishBackground or any native
+  // getter can run. Parker, SWCME and registered runtime models all use this
+  // same publication path; hard-coding a SWCME-only coupler would duplicate it.
+  //
+  // Do not call MULTIFILE::Init or invent a Schedule entry: that file loader
+  // resets the simulation clock and can replace the provider's validated data.
+  // The core ownership policy disables file scheduling, EOF termination and
+  // file time interpolation, without changing any allocated offsets. Ordinary
+  // DATAFILE applications retain their default FileSchedule policy. The policy
+  // remains fixed during transport; RefreshBackgroundAtBoundary publishes the
+  // next complete snapshot and exchanges ghosts at the configured cadence.
+  PIC::CPLR::DATAFILE::BackgroundUpdatePolicy =
+      PIC::CPLR::DATAFILE::BackgroundUpdateMode::RuntimeProvider;
+  if (PIC::ThisThread == 0)
+    std::cout << "[srcSEP3D] native background updates: runtime-provider"
+              << " (DATAFILE storage; file scheduling/interpolation disabled)\n";
+#endif
   // BindCompiledSpeciesTable() already captured and validated the generated
   // AMPS table in amps_init_mesh().  No molecular-data setter is called: AMPS
   // remains the sole authority for the immutable species identity and physics.
@@ -3004,11 +3242,9 @@ void amps_init() {
     const SEP3D::Adapters::ShockState shock =
         gInstalledShock->Evaluate(SEP3D::ApplicationRuntime().CurrentTimeS());
     if (!shock.status.ok()) StopWithStatus("initial shock state", shock.status);
-    mover.shock.active = shock.active;
-    mover.shock.centerM = shock.centerM;
-    mover.shock.radiusAtStepStartM = shock.radiusM;
-    mover.shock.radialSpeedMPerS = shock.radialSpeedMPerS;
-    mover.shock.generation = shock.generation;
+    // Preserve finite shape/axis/width together with the epoch's apex state.
+    // Rebuilding this record from radius alone would silently restore a sphere.
+    mover.shock = shock.MoverGeometry();
   } else if (Configuration().options().source.enabled) {
     StopWithStatus("source initialization", SEP3D::Core::Status(
         SEP3D::Core::StatusCode::SnapshotUnavailable,
@@ -3192,6 +3428,21 @@ SEP3D::Core::Status SEP3D::Validation::CaptureNativeApplicationState(
                   MPI_GLOBAL_COMMUNICATOR);
     return output != 0;
   };
+  if (Configuration().options().background==RuntimeModel::BackgroundAuthority::Swcme) {
+    // Capture at the actual production boundary. The denominator below counts
+    // due cadence events from tick zero; gBackgroundPublishedUpdates counts
+    // completed commits independently, so a missed refresh becomes a failure.
+    bool owned=false,ghosts=false,provider=false;unsigned long long localGhosts=0,globalGhosts=0;
+    CaptureRuntimeMeshBackground(&owned,&ghosts,&provider,&localGhosts);
+    captured.runtimeMeshOwnedFieldsMatch=CollectiveAnd(owned);
+    captured.runtimeMeshGhostFieldsMatch=CollectiveAnd(ghosts);
+    captured.runtimeMeshProviderMatch=CollectiveAnd(provider);
+    MPI_Allreduce(&localGhosts,&globalGhosts,1,MPI_UNSIGNED_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+    captured.runtimeMeshGhostCellsChecked=globalGhosts;
+    captured.runtimeMeshPublishedUpdates=gBackgroundPublishedUpdates;
+    captured.runtimeMeshExpectedUpdates=ApplicationRuntime().counters().currentTick/
+        Configuration().options().backgroundCadenceSteps;
+  }
   captured.finiteBackgroundAndTurbulence =
       CollectiveAnd(localBackgroundFinite && localTurbulenceFinite);
   captured.finiteBackgroundDerivatives =
@@ -3341,7 +3592,11 @@ SEP3D::Core::Status SEP3D::Validation::CaptureNativeApplicationState(
            << captured.inputSchemaVersion << '|'
            << captured.backgroundAuthority << '|'
            << captured.shockAuthority << '|'
-           << captured.backgroundGeneration << '|'
+           << captured.runtimeMeshPublishedUpdates << '|'
+           << captured.runtimeMeshExpectedUpdates << '|'
+           << captured.runtimeMeshOwnedFieldsMatch << '|'
+           << captured.runtimeMeshGhostFieldsMatch << '|'
+           << captured.backgroundGeneration << '|' 
            << captured.globalAllocatedBlocks << '|'
            << captured.globalPhysicalCells << '|'
            << captured.plannedActiveLeaves << '|'
@@ -3373,6 +3628,58 @@ SEP3D::Core::Status SEP3D::Validation::CaptureNativeApplicationState(
   return Status::OK();
 }
 
+SEP3D::Core::Status SEP3D::CaptureNativeShockHistorySample(
+    Output::ShockHistorySample* sample) {
+  using Core::Status;
+  using Core::StatusCode;
+  const auto& runtime=ApplicationRuntime();
+  const auto& options=Configuration().options();
+  Adapters::ShockState shock;
+  if (gInstalledShock) shock=gInstalledShock->Evaluate(runtime.CurrentTimeS());
+  int localOK=sample!=nullptr && gInstalledShock && shock.status.ok() &&
+      options.intent==RuntimeModel::RunIntent::ShockPropagation && !options.source.enabled &&
+      shock.Covers(runtime.CurrentTimeS()) && Adapters::ValidateShockGeometry(shock.MoverGeometry()).ok();
+  int allOK=0;
+  MPI_Allreduce(&localOK,&allOK,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  if (!allOK) return Status(StatusCode::InvalidInput,"a rank could not capture installed propagation state");
+
+  const std::vector<std::uint64_t> owned=CountLocalParticlesBySpecies();
+  unsigned long long localCounts[2]={0,0}, globalCounts[2]={0,0};
+  for (std::uint64_t count:owned) localCounts[0]+=count;
+  // Source ledger rows are retained on the rank that actually allocated the
+  // patch. This sum includes particles that have already escaped or been lost.
+  for (const auto& row:gSourceLedger) localCounts[1]+=row.macroparticles;
+  MPI_Allreduce(localCounts,globalCounts,2,MPI_UNSIGNED_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  double values[7]={runtime.CurrentTimeS(),shock.radiusM,shock.radialSpeedMPerS,
+      shock.cmeDirection.x,shock.cmeDirection.y,shock.cmeDirection.z,shock.halfWidthRad}, minimum[7],maximum[7];
+  MPI_Allreduce(values,minimum,7,MPI_DOUBLE,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(values,maximum,7,MPI_DOUBLE,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+  unsigned long long identity[5]={runtime.counters().currentTick,shock.generation,
+      static_cast<unsigned long long>(shock.active),Fnv1a64(shock.providerIdentity+"|"+shock.configurationFingerprint+"|"+Configuration().physics_fingerprint()),static_cast<unsigned long long>(shock.geometry)};
+  unsigned long long lo[5],hi[5];
+  MPI_Allreduce(identity,lo,5,MPI_UNSIGNED_LONG_LONG,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(identity,hi,5,MPI_UNSIGNED_LONG_LONG,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+  for (int i=0;i<5;++i) if (lo[i]!=hi[i])
+    return Status(StatusCode::ConfigurationConflict,"MPI ranks disagree on propagation clock/generation/active state/provider identity");
+  for(int i=3;i<7;++i) if(maximum[i]!=minimum[i])
+    return Status(StatusCode::ConfigurationConflict,"MPI ranks disagree on finite shock axis/half width");
+  if (maximum[2]-minimum[2]>1e-6 ||
+      std::fabs(PIC::SimulationTime::Get()-runtime.CurrentTimeS())>1e-9) localOK=0;
+  MPI_Allreduce(&localOK,&allOK,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  if (!allOK) return Status(StatusCode::ConfigurationConflict,"native propagation PIC/runtime clocks or rank speeds disagree");
+  Output::ShockHistorySample result;
+  // Use identical reduced values on every rank. In particular the radius-stop
+  // branch in main.cpp must never diverge for a target within roundoff spread.
+  result.timeS=minimum[0]; result.tick=identity[0]; result.radiusM=minimum[1]; result.speedMPerS=minimum[2];
+  result.active=shock.active; result.generation=shock.generation;
+  result.particles=globalCounts[0]; result.injections=globalCounts[1];
+  result.mpiRadiusSpreadM=maximum[1]-minimum[1]; result.mpiClockSpreadS=maximum[0]-minimum[0];
+  result.providerIdentity=shock.providerIdentity; result.configurationFingerprint=shock.configurationFingerprint;
+  Status status=Output::CheckShockHistorySample(result,options.requestedTimeStepS);
+  if (status.ok()) *sample=std::move(result);
+  return status;
+}
+
 int amps_time_step() {
   // Pin one immutable background generation for the whole AMPS particle
   // phase. All workers therefore observe identical coefficients even if a
@@ -3402,12 +3709,7 @@ int amps_time_step() {
     const SEP3D::Adapters::ShockState shock =
         gInstalledShock->Evaluate(runtime.CurrentTimeS());
     if (!shock.status.ok()) StopWithStatus("shock update", shock.status);
-    SEP3D::Adapters::ExpandingSphericalShock moverShock;
-    moverShock.active = shock.active;
-    moverShock.centerM = shock.centerM;
-    moverShock.radiusAtStepStartM = shock.radiusM;
-    moverShock.radialSpeedMPerS = shock.radialSpeedMPerS;
-    moverShock.generation = shock.generation;
+    const SEP3D::Adapters::ExpandingShock moverShock=shock.MoverGeometry();
     status = SEP3D::AMPS::Movers::UpdateShock(moverShock);
     if (!status.ok()) StopWithStatus("mover shock update", status);
 

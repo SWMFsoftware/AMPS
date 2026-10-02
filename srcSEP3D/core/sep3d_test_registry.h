@@ -180,4 +180,12 @@ std::vector<SEP3D::Testing::Descriptor> RegisterRuntimeImprovementTests();
 // Reproducibility across MPI configurations (configured AMPS binary only).
 // std::vector<SEP3D::Testing::Descriptor> RegisterReproducibilityTests();
 
+// Source-free propagation prerequisites; native execution stays external.
+std::vector<SEP3D::Testing::Descriptor> RegisterShockPropagationTests();
+// SWBG3D portable provider/field gates; SWBGAMPS native evidence has its own
+// live registry and cannot be replaced by these dependency-light callbacks.
+std::vector<SEP3D::Testing::Descriptor> RegisterSwcmeBackgroundTests();
+// Finite-SSE parser, geometry, mesh, particle, source and restart regression.
+std::vector<SEP3D::Testing::Descriptor> RegisterSseTests();
+
 #endif // SEP3D_CORE_SEP3D_TEST_REGISTRY_H

@@ -1,0 +1,153 @@
+{
+  "cfa_wind_event.html": {
+    "bytes": 51421,
+    "retrieval_time_basis": "local cache file modification time",
+    "retrieved_utc": "2026-10-01T20:34:21.001Z",
+    "sha256": "381e28e0a6e00a4aaf20f08606547d9581371e196f0a7f36bcd3fef20595cd8a",
+    "url": "https://lweb.cfa.harvard.edu/shocks/wi_data/00525/wi_00525.html"
+  },
+  "helcats_higeocat.html": {
+    "bytes": 23302,
+    "retrieval_time_basis": "local cache file modification time",
+    "retrieved_utc": "2026-10-01T20:32:56.384Z",
+    "sha256": "559d564103c3a135558b3bd09d03fefdf820914a069edc9691ba4001b8f78ea6",
+    "url": "https://www.helcats-fp7.eu/catalogues/wp3_cat.html"
+  },
+  "helcats_higeocat.json": {
+    "bytes": 684329,
+    "retrieval_time_basis": "local cache file modification time",
+    "retrieved_utc": "2026-10-01T20:34:20.997Z",
+    "sha256": "c214ce9efbe9704280b6e482837cd8a2d4ae4717b8cdf110f685b53b5971c962",
+    "url": "https://www.helcats-fp7.eu/catalogues/data/HCME_WP3_V06.json"
+  },
+  "helcats_te_profiles.tar.gz": {
+    "bytes": 2789466,
+    "retrieval_time_basis": "local cache file modification time",
+    "retrieved_utc": "2026-10-01T20:35:48.194Z",
+    "sha256": "c1bf8f43e897ef3704386a169ae2083a60f8475bd08ce4c44b50aff580f75e19",
+    "url": "https://www.helcats-fp7.eu/catalogues/data/tracks/HCME_WP3_V06_TE_PROFILES.tar.gz"
+  },
+  "ipshocks_database.csv": {
+    "bytes": 1112192,
+    "retrieval_time_basis": "local cache file modification time",
+    "retrieved_utc": "2026-10-01T20:32:54.721Z",
+    "sha256": "93c9be1f9d66408401e18395a17326846dce14db95d37aa02e7358009ef081b8",
+    "url": "https://zenodo.org/records/19730292/files/ipshocks_database.csv?download=1"
+  },
+  "stereo_a_info.json": {
+    "bytes": 5023,
+    "retrieval_time_basis": "local cache file modification time",
+    "retrieved_utc": "2026-10-01T20:35:46.645Z",
+    "sha256": "d866b56823745e10cf0af9546f23393aa8142e92ec835bc325b8c92e70712e28",
+    "url": "https://cdaweb.gsfc.nasa.gov/hapi/info?id=STA_COHO1HR_MERGED_MAG_PLASMA"
+  },
+  "stereo_a_positions.json": {
+    "bytes": 6111,
+    "retrieval_time_basis": "local cache file modification time",
+    "retrieved_utc": "2026-10-01T20:38:47.090Z",
+    "sha256": "02f98abbab04c82762284ec2812fdffc3098b038871ea3f72faaa4423df4b0cb",
+    "url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=STA_COHO1HR_MERGED_MAG_PLASMA&parameters=radialDistance%2CheliographicLatitude%2CheliographicLongitude&time.min=2012-07-12T00%3A00%3A00Z&time.max=2012-07-17T00%3A00%3A00Z&format=json"
+  },
+  "stereo_b_info.json": {
+    "bytes": 5023,
+    "retrieval_time_basis": "local cache file modification time",
+    "retrieved_utc": "2026-10-01T20:35:46.704Z",
+    "sha256": "0a4bc0ae3a5487a8b6954da29316b96c343cd3bee4c22f2e9510ecccff543473",
+    "url": "https://cdaweb.gsfc.nasa.gov/hapi/info?id=STB_COHO1HR_MERGED_MAG_PLASMA"
+  },
+  "stereo_b_positions.json": {
+    "bytes": 6203,
+    "retrieval_time_basis": "local cache file modification time",
+    "retrieved_utc": "2026-10-01T20:38:44.894Z",
+    "sha256": "b3bc35acb873312966946b11d075d55750f41d9187a69088e193ae3627bf5d01",
+    "url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=STB_COHO1HR_MERGED_MAG_PLASMA&parameters=radialDistance%2CheliographicLatitude%2CheliographicLongitude&time.min=2012-07-12T00%3A00%3A00Z&time.max=2012-07-17T00%3A00%3A00Z&format=json"
+  },
+  "wind_mfi_0_info.json": {
+    "bytes": 2411,
+    "retrieval_time_basis": "local cache file modification time",
+    "retrieved_utc": "2026-10-01T20:35:46.704Z",
+    "sha256": "59ae3df8aea7497f60c56f85b3016f486ec4f25ea6098b4823e6d2b9ada34ffa",
+    "url": "https://cdaweb.gsfc.nasa.gov/hapi/info?id=WI_H0_MFI%400"
+  },
+  "wind_mfi_1_info.json": {
+    "bytes": 1421,
+    "retrieval_time_basis": "local cache file modification time",
+    "retrieved_utc": "2026-10-01T20:35:46.613Z",
+    "sha256": "b80cb2be0c95b68cae520c25e215c043377008067efa0e9c12cfb44039c54ad7",
+    "url": "https://cdaweb.gsfc.nasa.gov/hapi/info?id=WI_H0_MFI%401"
+  },
+  "wind_mfi_1min_data.json": {
+    "bytes": 926471,
+    "retrieval_time_basis": "local cache file modification time",
+    "retrieved_utc": "2026-10-01T20:38:48.674Z",
+    "sha256": "ceceac6b58ed6913b12798951d21b82444f5cecc45d679da5d8ee0f3af93d8a3",
+    "url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=WI_H0_MFI%400&parameters=BF1%2CBGSE%2CPGSE&time.min=2012-07-12T00%3A00%3A00Z&time.max=2012-07-17T00%3A00%3A00Z&format=json"
+  },
+  "wind_mfi_3sec_shock_data.json": {
+    "bytes": 516238,
+    "retrieval_time_basis": "local cache file modification time",
+    "retrieved_utc": "2026-10-01T20:38:48.465Z",
+    "sha256": "46e32196b8e70bdf1739cdbd2dbe0eda0385c67384bc8ea0c02586c9661ecc36",
+    "url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=WI_H0_MFI%401&parameters=B3F1%2CB3GSE&time.min=2012-07-14T15%3A00%3A00Z&time.max=2012-07-14T20%3A00%3A00Z&format=json"
+  },
+  "wind_orbit_data.json": {
+    "bytes": 141785,
+    "final_url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=WI_OR_PRE&parameters=GSE_POS%2CSUN_VECTOR%2CHEC_POS&time.min=2012-07-12T00%3A00%3A00Z&time.max=2012-07-17T00%3A00%3A00Z&format=json",
+    "headers": {
+      "Content-Type": "application/json",
+      "ETag": null,
+      "Last-Modified": null
+    },
+    "retrieval_time_basis": "HTTP retrieval",
+    "retrieved_utc": "2026-10-01T20:53:15.599Z",
+    "sha256": "c1c86e88674daa59e27337edbe9a39337540b688ed5761e1234a0ac3be1a8179",
+    "url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=WI_OR_PRE&parameters=GSE_POS%2CSUN_VECTOR%2CHEC_POS&time.min=2012-07-12T00%3A00%3A00Z&time.max=2012-07-17T00%3A00%3A00Z&format=json"
+  },
+  "wind_orbit_hapi_info.json": {
+    "bytes": 2896,
+    "final_url": "https://cdaweb.gsfc.nasa.gov/hapi/info?id=WI_OR_PRE",
+    "headers": {
+      "Content-Type": "application/json",
+      "ETag": null,
+      "Last-Modified": null
+    },
+    "retrieval_time_basis": "HTTP retrieval",
+    "retrieved_utc": "2026-10-01T20:53:15.378Z",
+    "sha256": "d6c10c39d3eab6781625639d2f5a937a1ce4ce169a18326b052feccce5321ed4",
+    "url": "https://cdaweb.gsfc.nasa.gov/hapi/info?id=WI_OR_PRE"
+  },
+  "wind_plsp_data.json": {
+    "bytes": 1096015,
+    "final_url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=WI_PLSP_3DP&parameters=MOM.P.DENSITY%2CMOM.P.AVGTEMP%2CMOM.P.VELOCITY%2CMOM.P.VALID&time.min=2012-07-12T00%3A00%3A00Z&time.max=2012-07-17T00%3A00%3A00Z&format=json",
+    "headers": {
+      "Content-Type": "application/json",
+      "ETag": null,
+      "Last-Modified": null
+    },
+    "retrieval_time_basis": "HTTP retrieval",
+    "retrieved_utc": "2026-10-01T20:50:39.072Z",
+    "sha256": "e80c7d5fd2981f9d01a86043299ce2f0b6f4adc77fbf0c8eca8c0d6d0b4a5f91",
+    "url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=WI_PLSP_3DP&parameters=MOM.P.DENSITY%2CMOM.P.AVGTEMP%2CMOM.P.VELOCITY%2CMOM.P.VALID&time.min=2012-07-12T00%3A00%3A00Z&time.max=2012-07-17T00%3A00%3A00Z&format=json"
+  },
+  "wind_plsp_info.json": {
+    "bytes": 8361,
+    "retrieval_time_basis": "local cache file modification time",
+    "retrieved_utc": "2026-10-01T20:46:29.462Z",
+    "sha256": "c9d7edb84e8d4dab72a01614d4b93e0c2cdfbe8514c7fd13ba68370dc048c749",
+    "url": "https://cdaweb.gsfc.nasa.gov/hapi/info?id=WI_PLSP_3DP"
+  },
+  "wind_swe_data.json": {
+    "bytes": 615913,
+    "retrieval_time_basis": "local cache file modification time",
+    "retrieved_utc": "2026-10-01T20:34:23.169Z",
+    "sha256": "0b1edf7324ecf3c123dc006bf88210465d5be1a8de7f353928f2b9d1de5c6003",
+    "url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=WI_H1_SWE&parameters=fit_flag%2CProton_V_nonlin%2CProton_VX_nonlin%2CProton_VY_nonlin%2CProton_VZ_nonlin%2CProton_W_nonlin%2CProton_Np_nonlin%2CBX%2CBY%2CBZ%2Cxgse%2Cygse%2Czgse&time.min=2012-07-12T00%3A00%3A00Z&time.max=2012-07-17T00%3A00%3A00Z&format=json"
+  },
+  "wind_swe_hapi_info.json": {
+    "bytes": 12743,
+    "retrieval_time_basis": "local cache file modification time",
+    "retrieved_utc": "2026-10-01T20:32:50.102Z",
+    "sha256": "1961209b5f9e685c772436f275a08f37fa5b47c75a34569ab3172732787e632d",
+    "url": "https://cdaweb.gsfc.nasa.gov/hapi/info?id=WI_H1_SWE"
+  }
+}

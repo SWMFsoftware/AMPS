@@ -5,7 +5,9 @@
 // determined by campaignSeed plus each particle's stableId/completedStep/
 // substep/purpose tuple. Those fields, all lifecycle/output counters, source
 // and snapshot generations, sampling counters, and the particle ledger are
-// serialized explicitly in a versioned little-endian format.
+// serialized explicitly in a versioned little-endian format. Schema 4 also
+// persists Sphere/SSE geometry, normalized propagation axis and angular width;
+// schema-3 checkpoints decode as spheres under the same identity policy.
 // ============================================================================
 
 #ifndef SEP3D_OUTPUT_RESTART_H

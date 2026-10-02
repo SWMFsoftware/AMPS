@@ -26,9 +26,12 @@ namespace RuntimeModel {
 // with a precise "not implemented" status; it must never fall through to the
 // SWMF branch or silently reuse the analytic Parker provider.
 enum class BackgroundAuthority {
+  // Append future values: existing persisted tags must retain their meaning.
   AnalyticParker,
   PythonInterpolator,
-  Swmf
+  Swmf,
+  Swcme,
+  RuntimeModel // A registered model; AMPS publication is provider-independent.
 };
 enum class TurbulenceAuthority { Prescribed, Swmf };
 // A prescribed authority still needs a spectral closure.  Keeping this choice
@@ -134,7 +137,9 @@ enum class FocusedScatteringFrame {
   PlasmaFrameIsotropic,
   AlfvenWaveFrameIsotropic
 };
-enum class RunIntent { TransportOnly, ShockInjection };
+// Propagation observes the canonical shock in a real AMPS lifecycle without
+// creating source patches or particles. It is distinct from particle transport.
+enum class RunIntent { TransportOnly, ShockInjection, ShockPropagation };
 enum class MissingTurbulenceMode { Fail, Ballistic };
 enum class ResonanceRangeMode { Reject, PowerLawExtension };
 enum class PitchAngleSchemeMode { ReflectingMilstein, ReflectingEulerMaruyama };
@@ -359,6 +364,10 @@ struct RunConfiguration3DOptions {
   // validated providers through the typed interface.
   unsigned inputSchemaVersion = 1;
   BackgroundAuthority background = BackgroundAuthority::AnalyticParker;
+  // Used only by runtime-model. Register its factory before parsing/initializing.
+  // Included in physics identity; a runtime source cannot be selected by an
+  // unrecorded callback or silently substituted for a built-in authority.
+  std::string backgroundModelId;
   TurbulenceAuthority turbulence = TurbulenceAuthority::Prescribed;
   PrescribedTurbulenceModel prescribedTurbulenceModel =
       PrescribedTurbulenceModel::Kolmogorov;
@@ -410,6 +419,9 @@ struct RunConfiguration3DOptions {
   double parkerSpiralEndRadiusM = 0.0;
   double requestedTimeStepS = 1.0;
   std::uint64_t maximumTimeSteps = 100000001;
+  // Zero retains the step budget. A positive target stops after the first
+  // completed native tick whose front reaches it; the bracketing row is kept.
+  double stopShockRadiusM = 0.0;
   std::uint64_t campaignSeed = 1;
   std::uint64_t backgroundCadenceSteps = 1;
   // All runtime schedules are expressed as integer global ticks.  Zero is

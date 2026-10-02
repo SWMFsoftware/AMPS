@@ -72,6 +72,14 @@ struct NativeApplicationState {
   bool initializationProductsFinite = false;
   bool mpiFingerprintConsistent = false;
   bool restartConfigured = false;
+  // Read from the live provider, actual center-node bytes and received remote
+  // blocks. These are collective checks, never synthetic mesh evidence.
+  bool runtimeMeshOwnedFieldsMatch = false; // All owner cells, compared fields.
+  bool runtimeMeshGhostFieldsMatch = false; // One center per received block.
+  bool runtimeMeshProviderMatch = false; // Prepared epoch/tag and live readiness.
+  std::uint64_t runtimeMeshGhostCellsChecked = 0; // Global representative count.
+  std::uint64_t runtimeMeshPublishedUpdates = 0; // Completed refresh commits.
+  std::uint64_t runtimeMeshExpectedUpdates = 0; // tick/backgroundCadenceSteps.
   std::string configurationFingerprint;
   // Captured from the configured production authorities. Generic readiness
   // checks cannot prove that a particular coronal model was selected: the

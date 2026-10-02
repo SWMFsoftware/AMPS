@@ -1,0 +1,8 @@
+{
+  "schema": "srcsep3d-swcme-event-fit-v1",
+  "input_sha256": null,
+  "launch_epoch_utc": null,
+  "calibration_end_utc": null,
+  "parameter_provenance": null,
+  "fit_used_holdout": false
+}

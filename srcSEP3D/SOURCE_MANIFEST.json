@@ -38,6 +38,8 @@
   "documentation_globs": [
     "*.md",
     "*.docx",
+    "background/*.md",
+    "runtime/*.md",
     "test/*.md",
     "validation/*.md",
     "validation/**/*.md",

@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -136,7 +137,7 @@ def _registry() -> List[Dict[str, Any]]:
         case_id = str(case["id"]).upper()
         if case_id in seen:
             raise EvidenceError(f"duplicate Phase-V case ID: {case_id}")
-        if case["evidence_class"] not in ("linked", "series", "convergence",
+        if case["evidence_class"] not in ("linked", "series", "convergence", "cme-kinematics",
                                           "reserved"):
             raise EvidenceError(f"unsupported evidence class for {case_id}")
         seen.add(case_id)
@@ -526,6 +527,38 @@ def _run_linked(case: Dict[str, Any], executable: Optional[Path],
     return result
 
 
+def _run_cme_kinematics(case: Dict[str, Any], evidence_root: Optional[Path],
+                        output_dir: Path) -> Dict[str, Any]:
+    """Dispatch the dedicated shock-history consumer without substituting SEP curves.
+
+    The external case remains SKIP until native history and measured shock data
+    exist. A fresh child directory prevents old figures from appearing to belong
+    to a failed later campaign. Loading by filename also supports relocated use.
+    """
+    if evidence_root is None:
+        # Downloaded data are installed separately from the source overlay.
+        # Automatic discovery is scoped to the repository-owned reference path;
+        # never scan unrelated directories or select arbitrary scientific data.
+        candidate = Path(__file__).resolve().parent / "reference_data"
+        if (candidate / str(case["id"]) / "manifest.json").is_file():
+            evidence_root = candidate
+        else:
+            return _result(case, "SKIP", "provide --evidence-root with reviewed SWCME/native shock evidence")
+    path = Path(__file__).with_name("run_swcme_coupling_validation.py")
+    spec = importlib.util.spec_from_file_location("swcme_validation_consumer", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    import uuid
+    destination = output_dir / str(case["id"]) / ("figures-" + uuid.uuid4().hex[:12])
+    try:
+        record = module.evaluate(evidence_root / str(case["id"]), destination)
+    except (module.EvidenceError, OSError, TypeError, KeyError, OverflowError) as error:
+        raise EvidenceError(str(error)) from error
+    result = _result(case, record["status"], record["message"])
+    result.update(record)
+    return result
+
+
 def _result(case: Dict[str, Any], status: str, message: str) -> Dict[str, Any]:
     return {
         "id": str(case["id"]),
@@ -631,6 +664,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 result = _run_series(case, evidence_root)
             elif kind == "convergence":
                 result = _run_convergence(case, evidence_root)
+            elif kind == "cme-kinematics":
+                result = _run_cme_kinematics(case, evidence_root, output_dir)
             else:
                 result = _result(case, "SKIP", str(case["skip_reason"]))
         except EvidenceError as error:

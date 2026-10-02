@@ -100,6 +100,29 @@ a shell. Supplying `--amps` for a linked case also requires `--test-input`;
 neither the validation runner nor a native callback may choose hidden mesh,
 transport, source, or population-control defaults.
 
+## SWCME propagation without SEP particles
+
+The [20-Rsun to 1-AU case design](SWCME_COUPLING_VALIDATION.md) specifies the
+12 July 2012 event, source-disabled native prerequisites, independently frozen
+launch parameters, withheld shock tracks and spacecraft arrival. The dedicated
+`run_swcme_coupling_validation.py` consumer generates 600-dpi PNG and vector EPS
+comparison figures with calibration/holdout labels and unshifted UTC. `CME3D01`
+checks consumer mechanics; `CME3D02` is discovered by this runner and the standard
+`test/run_tests.py --all`. The separately distributed July 2012 reference archive
+installs under `validation/reference_data/CME3D02/` and is found automatically.
+It contains measured Wind plasma/IMF, orbit, shock arrival and raw HELCATS
+brightness tracks, with provenance, quality flags and SHA256 checksums. See
+[`cases/2012-07-12/README.md`](cases/2012-07-12/README.md) for installation,
+reacquisition and the instrument/feature limits. References alone yield SKIP
+with `reference_ready=true` after verification; corrupt references yield ERROR.
+An attached `native-manifest.json` enables an arrival-only diagnostic, without
+relabeling brightness tracks as measured radial shock fronts. Explicit evidence
+root flags override this default. Native source-off input and history export
+are implemented; use the launch commands below with a rebuilt executable.
+The earlier SHOCK_ONLY control is kinematic. The new FULL_ICME mesh control
+also exercises evolving fields, but neither publication checks nor control
+figures establish an observational fit of sheath/ejecta plasma or IMF.
+
 ## Outputs
 
 Each case writes `CASE_ID/result.json`. The run also writes
@@ -127,3 +150,27 @@ insufficient overlap before interpreting scientific metrics.
 See [../INTEGRATION_SCIENTIFIC_VALIDATION.md](../INTEGRATION_SCIENTIFIC_VALIDATION.md)
 for equations, algorithms, case roles, physical limitations, and release-gate
 interpretation.
+
+## Mesh-field publication control
+
+The new `../examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in` selects SWCME
+FULL_ICME/RESOLVED_COMPRESSION as the mesh background while keeping particles
+off. It can be passed as `--input` to the native propagation validation runner.
+Its native history/PNG/EPS provenance and independent event-fit requirements
+are unchanged; a successful field publication is not an observational fit.
+Use the coupled runner with that deck and `--test-steps 2` to execute the new
+owner/native-buffer, scheduled-update and received-ghost gates.
+
+From the AMPS root, after rebuilding:
+
+```sh
+python3 srcSEP3D/test/run_coupled_sep_corona.py --amps ./amps --ranks 4 --test-input srcSEP3D/examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in --test-steps 2
+python3 srcSEP3D/validation/run_swcme_coupling_validation.py --amps ./amps --ranks 10 --input srcSEP3D/examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in --output-dir test_output/swcme-mesh-control
+```
+
+The first command observes the native update boundary; the second runs the
+long source-free propagation control and produces its history/figures. The
+input contains illustrative launch/drag parameters, not a reviewed event fit.
+Use the [native-case guide](CORONAL_CME_NATIVE_TESTS.md) to interpret the
+SWCME readback prerequisites and the [background README](../background/README.md)
+for the pressure/heating/inner-shell assumptions.

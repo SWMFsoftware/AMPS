@@ -82,7 +82,7 @@ launches MPI itself:
 python3 srcSEP3D/test/run_coupled_sep_corona.py --amps ./amps --ranks 4 --test-input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --test-steps 0
 ```
 
-Currently this selects **222 shared-model gates plus 7 native host checks (229 total)**.
+Currently this selects **222 shared-model gates plus 10 native host checks (232 total)**.
 Counts grow with the two registries, without listing IDs. Each result retains
 its evidence scope. `test_output/coupled-sep-corona/summary.json` and `junit.xml`
 combine results; fresh per-run directories retain original reports/logs.
@@ -104,7 +104,10 @@ stepping, choose a positive `--test-steps` horizon within the input deck's
 configured build. `--all-tests` selects the complete native registry, including
 general AMPS/MPI/restart checks with their own prerequisites.
 
-This native command currently prints seven results. It does not call the
+This native command currently prints ten results: seven generic initialization
+checks and three SWCME mesh checks. The analytic input skips those three; use
+`sep3d_swcme_sphere_mesh_background_20rs_1au.in` and `--test-steps 2` to exercise them.
+It does not call the
 shared-model C++/documentation/architecture or Stage-12 offline Python tests.
 Increasing `--test-steps` advances the configured host; it does not add those
 tests or activate an absent coronal provider. Native JSON now records the
@@ -921,10 +924,12 @@ surface.phi_points = 24
 `cme.kinematics = data_driven` additionally requires both `cme.data_times` and
 `cme.data_radii`; the pair is forbidden otherwise. The canonical resolver
 validates all units and model combinations, then emits a normalized manifest
-and fingerprint. The standalone AMPS crossing operator is currently spherical,
-so schemas 3 and 4 deliberately accept only `geometry.shape = sphere`,
-`shock.region_mode = shock_only`, and `shock.acceleration_mode = source`.
-Ellipsoid or SSE input is rejected rather than approximated by a sphere.
+and fingerprint. Schemas 3 and 4 support `geometry.shape = sphere` or `sse`
+with `shock.region_mode = shock_only` and `shock.acceleration_mode = source`.
+Schema 4 additionally supports a source-free SWCME mesh background with
+`full_icme`/`resolved_compression`. Ellipsoid crossing remains unsupported.
+Finite-SSE geometry is preserved in native mover updates and restart files;
+see [the SSE implementation and run guide](SSE.md).
 `source.normalization` must be `relative_only` because the application-owned
 physical rate supplies absolute population normalization.
 
@@ -1211,8 +1216,8 @@ algorithm, reproducibility contract, and Phase-P acceptance tests.
 - Inner absorption, outer escape, invalid background, and failed transport are
   distinct semantic outcomes. Per-step/species integer ledgers require exact
   closure of active, injected, escaped, absorbed, and failed counts.
-- Moving spherical shock crossings use the first analytic segment/surface root
-  and are de-duplicated by shock generation.
+- Moving sphere/SSE crossings use the first valid analytic segment/surface root,
+  reject the SSE rear sphere and out-of-cap hits, and retain generation de-duplication.
 - The SWCME adapter consumes the canonical common `SEPSourceState`, maps the
   DSA law to the shared `sep_common` injection sampler, and uses independent
   semantic random streams for momentum, pitch, gyrophase, and stable identity.
@@ -1410,6 +1415,16 @@ env MAKEFLAGS="-j16" test/run_tests.py --all \
 AMPS build. Tests themselves remain intentionally sequential. Every run writes
 JSON and JUnit summaries. A missing real `Makefile.conf` makes `BLDL3D01`
 **SKIP**, never PASS.
+
+The SWCME spherical control is now named
+`examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in`; the `SWBG3D` C++
+fixtures and the commands below use that explicit name. Install the renamed
+input and rebuild the test executable when updating an existing checkout.
+`SSE3D05` creates its required injection observer on the configured finite
+Parker curve, so the SSE example can retain `parker-tube` allocation without
+importing an unrelated Earth position. The production observer-containment
+validation remains active. See [test/README.md](test/README.md#finite-sse-application-acceptance)
+for the test probe, negative control and allocation details.
 
 For a detached application directory, provide the canonical shared dependency
 explicitly:
@@ -1833,3 +1848,213 @@ and [research guide](../src/models/sep_coronal_cme/docs/STAGE14_RESEARCH_EXTENSI
 The aggregate discovers the new IDs automatically. Shared research/protocol
 verification does not qualify the native coronal adapter or observed campaigns.
 The existing outside-Sun active corridor configuration is retained.
+
+
+## Source-free SWCME propagation control
+
+`examples/sep3d_swcme_20rs_1au.in` is a schema-4 native control. Rebuild AMPS
+before using `run.intent=shock-propagation`; changing the input alone cannot
+upgrade an older executable. The mode requires a disabled particle source,
+population control off, launch time zero, validity through the step budget,
+and a fresh run. In this spherical reference, SWCME owns front kinematics;
+the solar-wind/IMF background remains analytic Parker. Disabled injection
+also bypasses full source-patch construction and injection-derived particle
+weight closure; positive AMPS species weights/time steps still initialize.
+
+```sh
+python3 srcSEP3D/validation/run_swcme_coupling_validation.py --amps ./amps --ranks 10 --output-dir test_output/swcme-native-control
+```
+
+Run this from the AMPS root. The runner launches the normal native time loop,
+retains the frozen input/checksums/raw log and renders PNG/EPS front histories.
+The example stops at the first native tick reaching 1.05 AU or after five days,
+whichever occurs first. Each history row records actual installed-provider
+geometry, clock, generation, physical activity, owned particle population,
+cumulative injections and MPI spreads. A completed runtime JSON appears only
+after the stream closes. A fresh output path prevents accidental stale-history
+reuse. `CME3D03/04` are portable regression tests in the normal application
+catalog; native MPI execution and observation fits are separate campaign gates.
+See [the validation guide](validation/SWCME_COUPLING_VALIDATION.md) for direct
+execution, artifact paths and independently reviewed event-fit requirements.
+
+## Evolving SWCME solar wind and IMF
+
+Select `background.provider=swcme` in schema 4 to publish canonical SWCME fields
+to AMPS owner cells, application transport storage and native DATAFILE slots at
+every background cadence. `examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in`
+is a source-free FULL_ICME/RESOLVED_COMPRESSION control with 60-s updates.
+Rebuild AMPS and the canonical SWCME archive before running it. The earlier
+SHOCK_ONLY example continues to prescribe shock geometry on an ambient mesh.
+
+The common publication boundary validates all background/turbulence candidates
+and MPI identities before writing, then exchanges ghosts before transport
+resumes. See [the background contract](BACKGROUND_FIELD.md) and
+[implementation, extension and test instructions](../SWCME_MESH_BACKGROUND_CHANGES.md).
+Future sources implement `BackgroundProvider` and register a named factory,
+then select `runtime-model` with `background.model_id`; the AMPS mesh update
+code does not need a separate loop for each model.
+
+The [background module README](background/README.md) documents preparation,
+batch failure semantics, SI units, derivative conventions and the explicit
+inner-shell/heating assumptions. The [runtime module README](runtime/README.md)
+documents factory ownership, collective staging, native time slots, restart
+limits and the order of publication. Detailed comments beside these APIs and
+the AMPS adapter explain the invariants that future model sources must preserve.
+
+The new control uses the configured one-fluid DATAFILE mapping. Its complete
+snapshot always contains derivatives; `[storage]` switches select additional
+application cache tensors, independently of allocated native DATAFILE fields.
+SHOCK_ONLY returns ambient U/B; select FULL_ICME/RESOLVED_COMPRESSION with the
+disabled source to exercise evolving mesh plasma and IMF. The 1..1.05-Rs shell
+is an ambient continuation, not an active coronal solution. Check spatial/time
+convergence before using the finite shock layer for a production SEP study.
+
+## Runtime ownership of native background updates (SIGSEGV correction)
+
+The native `DATAFILE` coupling selection supplies AMPS' allocated one-fluid
+center-node field layout. It does not mean that SEP3D's background comes from a
+file sequence. `BackgroundProvider` supplies the physical state and SEP3D's
+runtime owns publication. SWCME, analytic Parker and future registered models
+use the same native storage bridge and the same update policy.
+
+### Why the first time step could crash
+
+`DATAFILE::Init()` allocates the field layout and initializes the current byte
+offset. It does not initialize `DATAFILE::MULTIFILE::Schedule` or its next-file
+index. Their initial values are an empty vector and `iFileLoadNext=-1`. Before
+this correction, `PIC::TimeStep()` still called `MULTIFILE::IsTimeToUpdate()`,
+which indexed that empty vector at the first step. Background and turbulence
+initialization could therefore succeed immediately before a SIGSEGV.
+
+Setting `ReachedLastFile=true` alone is not a complete fix. The file EOF branch
+can terminate a run if `BreakAtLastFile` remains true. When file interpolation
+is compiled ON, the native field getter also indexes the schedule in its EOF
+branch. Dummy schedule entries likewise give file times an authority they do
+not have for a runtime provider.
+
+### The corrected ownership contract
+
+The core header `src/pic/pic_background_update_mode.h` declares
+`PIC::CPLR::DATAFILE::BackgroundUpdateMode` and `BackgroundUpdatePolicy`:
+
+| Policy | Background update and native read behavior |
+| --- | --- |
+| `FileSchedule` | Existing file loading, file-epoch interpolation and file EOF termination; the default for other AMPS applications. |
+| `RuntimeProvider` | Read the complete current native snapshot; bypass file loading, file scheduling, file EOF termination and file time interpolation. |
+
+`amps_init()` claims `RuntimeProvider` ownership on every MPI rank immediately
+after `PIC::Init_AfterParser()` and before the first field publication or native
+getter. The policy stays fixed while particles or device kernels are active.
+The managed policy variable uses the same host/device storage convention as
+the current native field offset. CUDA execution has not been validated by the
+portable check described below.
+
+The core scheduler gates the entire file lifecycle, leaving simulation-time
+advancement and field-line updates active. `IsTimeToUpdate()` also returns false
+for runtime ownership, protecting direct callers. Accidental direct calls to
+`MULTIFILE::Init()` or `UpdateDataFile()` fail with an explicit runtime-ownership
+diagnostic before changing file offsets, loading files or resetting the clock.
+The allocator `DATAFILE::Init()` remains available and unchanged.
+
+The native `GetBackgroundValue()` first reads the current field slice. With
+runtime ownership it skips the file interpolation block, even if
+`_PIC_DATAFILE__TIME_INTERPOLATION_MODE_` is ON. Finite-value debug checks remain
+active. If a distinct next slice has been allocated, the existing publication
+bridge still mirrors the complete epoch into it for native readback/output
+compatibility. Neither a next slice nor a schedule is fabricated.
+
+`RefreshBackgroundAtBoundary()` remains the sole application update path after
+each completed step. It prepares the provider at the scheduled epoch, validates
+the complete MPI candidate, copies the native/application fields, exchanges
+ghost data and publishes the new generation before transport resumes. Getters
+hold that complete epoch between background cadences; this fix does not add
+temporal interpolation between SWCME snapshots. For the supplied 60-s SWCME
+control, initialization publishes epoch 0 and the first two background
+boundaries publish epochs 60 and 120 s. Choose cadence through the existing
+runtime input controls and check temporal convergence for production studies.
+
+Keep the compile-time coupling selection `DATAFILE` for the native buffer ABI;
+keep `background.provider=swcme` for SWCME physics. No new input keyword or
+SWCME-specific compile-time coupling constant is required. Future models
+implement/register `BackgroundProvider`; they inherit this ownership policy
+without adding another mesh loop or file scheduler.
+
+### Install and rebuild
+
+The source overlay `SEP3D_runtime_background_sources_20261002.tar.gz` contains
+the five directly modified files from `all(20261002-090501).tar` and two new
+project files: the core policy header and the portable regression check. All
+paths are relative to the AMPS root. It contains no installer, patch-application
+script, generated executable or verification-output directory. The source
+comments and this README describe the complete implementation.
+
+The modified existing files are `src/pic/pic.h`, `src/pic/pic.cpp`,
+`src/pic/pic_datafile.cpp`, `srcSEP3D/main_lib.cpp` and `srcSEP3D/README.md`.
+The new files are `src/pic/pic_background_update_mode.h` and
+`srcSEP3D/test/test_runtime_background_coupling.py`. Existing SWCME polar-shock
+source files remain as installed; this correction does not change their solver.
+
+Extract the overlay into the same AMPS checkout whose five files were supplied,
+then rebuild:
+
+```bash
+cd /nobackupp17/vtenishe/Mars1/AMPS
+tar -xzf /path/to/SEP3D_runtime_background_sources_20261002.tar.gz
+env MAKEFLAGS="-j16" make amps
+```
+
+The code was edited against those supplied current files, retaining their
+unrelated contents. Since the core inline header changes, ensure both the
+native PIC objects and the application archive are rebuilt and relinked.
+If the local build copies sources into a generated build tree, refresh that
+tree through the checkout's usual configuration/preparation procedure. If the
+make rules do not track header dependencies, use the checkout's clean/reconfigure
+rebuild procedure. Rebuilding only the SWCME archive does not compile this fix.
+
+### Regression checks and native rerun
+
+Run the portable check from the patched AMPS root:
+
+```bash
+python3 srcSEP3D/test/test_runtime_background_coupling.py --amps-root . --sanitize --output test_output/runtime-background-coupling.json
+```
+
+This check extracts and compiles the production scheduler, field getter,
+ownership definition and file loader bodies with interpolation both OFF and ON.
+It checks empty schedules, `iFileLoadNext=-1`, all file-EOF flag combinations,
+two consecutive steps, visibility of a newly published current snapshot,
+poisoned/unallocated next-slot reads, runtime clock progression, retained
+field-line updates, finite-value checks and rejected direct file loader calls.
+It also checks the historical file loader/interpolation/EOF path. Mesh, MPI and
+file I/O are fixture stubs; passing it is not evidence of a native MPI run.
+
+Then rerun the original four-rank control with fresh output paths:
+
+```bash
+mpiexec -n 4 ./amps --test-suite sep-corona --test-input srcSEP3D/examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in --test-steps 2 --expect-mpi-ranks 4 --test-json test_output/runtime-background-fix/native.json --artifact-directory test_output/runtime-background-fix/artifacts
+```
+
+Initialization must print `native background updates: runtime-provider`.
+Confirm the native report completes two steps and that the background history
+has the expected epochs/generations and synchronized owner/ghost fields. Native
+MPI execution, the full AMPS build and CUDA execution require the target
+environment and were not executed by the portable regression check.
+
+## Finite-SSE fronts
+
+`examples/sep3d_swcme_sse_mesh_background_20rs_1au.in` is the finite-width
+variant: 40-degree half width, +X propagation and Parker-corridor allocation
+with a 30-Rs solar neighborhood. The input comments give complete recipes for
+switching between `parker-tube` and `full-domain` allocation.
+The canonical geometry drives mesh fields, finite source patches and the native
+particle intersection operator. Detailed equations, installation/run commands,
+configuration constraints, resolution limits and `SSE3D01–09` acceptance tests
+are documented in [SSE.md](SSE.md). The spherical example remains an independent
+verification control. This extension supplies prescribed CME-front geometry;
+`FULL_ICME` still has no flux-rope magnetic ejecta or global MHD evolution.
+
+
+The October 2 finite-SSE runtime weak-shock correction and its verification
+are described in [SSE_WEAK_SHOCK_FIX.md](SSE_WEAK_SHOCK_FIX.md). It resolves
+representable weak surface jumps and samples ambient regions without an
+irrelevant shock solve; genuine unresolved in-CME states remain explicit.

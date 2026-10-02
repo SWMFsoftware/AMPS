@@ -106,16 +106,24 @@ Core::Status ValidateCompleteSample(
       !(sample.alfvenSpeedMpS > 0.0) || sample.generation == 0) {
     return Invalid("background sample has a missing/non-finite required primitive");
   }
-  if (capabilities.hasAnalyticGradB && !FiniteTensor(sample.gradB))
+  // Legacy analytic flags imply availability. New numerical/imported sources
+  // declare availability separately and receive the identical finite checks.
+  if ((capabilities.hasAnalyticGradB || capabilities.hasGradB) && !FiniteTensor(sample.gradB))
     return Invalid("background sample magnetic gradient is non-finite");
-  if (capabilities.hasAnalyticDivBhat &&
+  // +infinity is a valid focusing length only for an exactly zero directional
+  // |B| derivative with a finite gradient. This narrow allowance preserves the
+  // uniform-field limit without accepting arbitrary NaN/infinite model output.
+  if ((capabilities.hasAnalyticDivBhat || capabilities.hasDivBhat) &&
       (!std::isfinite(sample.divBhat) ||
-       !std::isfinite(sample.focusingLenM))) {
+       (std::isnan(sample.focusingLenM) ||
+        (std::isinf(sample.focusingLenM) &&
+         (sample.focusingLenM<0 || !FiniteTensor(sample.gradB) ||
+          sample.bHat.Dot(sample.gradB.Apply(sample.bHat))!=0.0))))) {
     return Invalid("background sample focusing quantities are non-finite");
   }
-  if (capabilities.hasAnalyticCurvature && !FiniteVec(sample.curvature))
+  if ((capabilities.hasAnalyticCurvature || capabilities.hasCurvature) && !FiniteVec(sample.curvature))
     return Invalid("background sample curvature is non-finite");
-  if (capabilities.hasAnalyticDivU &&
+  if ((capabilities.hasAnalyticDivU || capabilities.hasGradU) &&
       (!FiniteTensor(sample.gradU) || !std::isfinite(sample.divU)))
     return Invalid("background sample velocity derivatives are non-finite");
   if (capabilities.hasFieldAlignedStrain &&
@@ -142,7 +150,9 @@ Core::Status BackgroundSnapshotBuilder::Build(
     const std::vector<Core::Vec3>& positions,
     std::shared_ptr<const BackgroundSnapshot>* output) const {
   if (output == nullptr) return Invalid("snapshot output pointer is null");
-  if (positions.empty()) return Invalid("snapshot requires at least one point");
+  // An MPI rank can own no physical cells after corridor pruning. It still
+  // publishes the same epoch/identity and participates in collective commit.
+  // The AMPS adapter enforces nonempty GLOBAL coverage, not rank-local size.
   const SnapshotMetadata* metadata = provider.PreparedMetadata();
   if (metadata == nullptr) return Invalid("background provider is not prepared");
   const Core::Status metadataStatus = ValidateMetadata(*metadata);

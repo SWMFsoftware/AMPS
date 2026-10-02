@@ -15,6 +15,7 @@
 #include "../transport/focused_transport.h"
 #include "../transport/parker_transport.h"
 #include "../transport/time_step.h"
+#include "shock_geometry.h"
 
 #include <cstdint>
 #include <cstddef>
@@ -57,19 +58,15 @@ struct LocalTransportRecord {
   double timeToSnapshotBoundaryS = 0.0;
 };
 
-struct ExpandingSphericalShock {
-  Core::Vec3 centerM;
-  double radiusAtStepStartM = 0.0;
-  double radialSpeedMPerS = 0.0;
-  std::uint64_t generation = 0;
-  bool active = false;
-};
-
 struct ShockIntersection {
   Core::Status status;
   bool crossed = false;
   double stepFraction = 0.0;
   Core::Vec3 positionM;
+  // Geometry at the accepted crossing, including SSE's local normal speed.
+  // These values do not assert that a geometric flank is super-fast.
+  Core::Vec3 outwardNormal;
+  double normalSpeedMPerS = 0.0;
   std::uint64_t generation = 0;
 };
 
@@ -81,7 +78,7 @@ struct MoverInput {
   RuntimeModel::TransportModel model = RuntimeModel::TransportModel::Parker3D;
   ParticleRecord particle;
   LocalTransportRecord local;
-  ExpandingSphericalShock shock;
+  ExpandingShock shock;
   double speciesMassKg = 0.0;
   double speciesChargeC = 0.0;
   double requestedDtS = 0.0;
@@ -133,14 +130,15 @@ struct RequestedTimeAdvance {
 };
 
 // Solve the first intersection between a straight particle substep and a
-// sphere whose radius changes linearly over the same interval. The result is
-// the smallest root in [0,1]. A generation already recorded by the particle
+// Sphere or finite SSE front with linearly evolving apex over the interval.
+// Both quadratic roots are checked: an SSE rear-sphere hit is rejected before
+// selecting the first outward-cap root. A generation recorded by the particle
 // is suppressed so a trajectory cannot inject twice on one shock surface.
 ShockIntersection FirstShockIntersection(
     const Core::Vec3& initialPositionM,
     const Core::Vec3& finalPositionM,
     double dtS,
-    const ExpandingSphericalShock& shock,
+    const ExpandingShock& shock,
     std::uint64_t lastShockGeneration);
 
 class ProductionMoverRegistry final {

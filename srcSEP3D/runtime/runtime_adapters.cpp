@@ -45,16 +45,20 @@ Core::Status CandidateFromSnapshot(
   const bool authorityMatches =
       (expectedAuthority == BackgroundAuthority::AnalyticParker &&
        metadata.provider == Background::ProviderKind::AnalyticParker) ||
+      (expectedAuthority == BackgroundAuthority::Swcme &&
+       metadata.provider == Background::ProviderKind::Swcme) ||
+      (expectedAuthority == BackgroundAuthority::RuntimeModel &&
+       metadata.provider == Background::ProviderKind::RuntimeModel) ||
       (expectedAuthority == BackgroundAuthority::Swmf &&
        metadata.provider == Background::ProviderKind::SwmfAwsom);
   if (!authorityMatches) {
     return Core::Status(Core::StatusCode::ConfigurationConflict,
                         "snapshot provider does not match the Runtime adapter");
   }
-  if (snapshot.samples().empty()) {
-    return Core::Status(Core::StatusCode::SnapshotUnavailable,
-                        "cannot publish an empty physical snapshot");
-  }
+  // A pruned MPI rank may have zero samples. Local shape must still agree;
+  // main_lib.cpp proves positive global coverage and collective metadata.
+  if (snapshot.samples().size() != snapshot.positions().size())
+    return Core::Status(Core::StatusCode::LayoutMismatch,"snapshot grid mismatch");
   *result = Candidate(runtime, expectedAuthority, metadata.epochS,
                       metadata.validUntilS, metadata.generation, true,
                       metadata.providerIdentity.c_str());
@@ -83,9 +87,11 @@ Core::Status StandaloneAdapter::PublishSnapshot(
     Runtime* runtime,
     const Background::BackgroundSnapshot& snapshot) const {
   if (runtime == nullptr) return MissingRuntime();
+  // Use configured authority instead of hard-coding Parker: this adapter
+  // publishes any validated runtime provider through the same state machine.
   SnapshotDescriptor candidate;
   const Core::Status converted = CandidateFromSnapshot(
-      *runtime, snapshot, BackgroundAuthority::AnalyticParker, &candidate);
+      *runtime, snapshot, runtime->configuration()->options().background, &candidate);
   return converted.ok() ? runtime->PublishSnapshot(candidate) : converted;
 }
 

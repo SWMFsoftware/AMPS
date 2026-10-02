@@ -7,6 +7,12 @@ targets, preserves their structured reports, and visualizes those reports.  It
 never reimplements a mover or computes an "expected" value by calling the
 production numerical routine.
 
+This is the srcSEP FIELD-LINE runner. Native --amps/--all execution reuses the
+supplied linked executable; it must not request the srcSEP3D-only test/stage1
+target. Source-only checks use SOURCE_SUITES, and an explicitly requested
+native --rebuild enters the enclosing configured AMPS build. Keep this file
+under srcSEP/test when installing overlays for both independent applications.
+
 Two plot inputs are supported:
 
 1. A test artifact CSV containing an independent coordinate plus numerical and
@@ -319,7 +325,9 @@ Examples:
          --output-dir test_output/all-tests
 
      --all can be substantially more expensive than --routine. The runner
-     discovers every ID with --list-tests, rejects the printed table header,
+     reuses the supplied --amps binary without compiling test/stage1; that
+     standalone target belongs to srcSEP3D, not the field-line application.
+     It discovers every ID with --list-tests, rejects the printed table header,
      and executes each ID in its own process. A crash, timeout, FAIL, or ERROR
      is printed immediately and does not prevent later tests from running.
      The native catalog includes D01, D02, and D03PRE; the latter is a linked
@@ -1360,7 +1368,7 @@ def _parser() -> argparse.ArgumentParser:
         epilog=HELP_EPILOG)
     parser.add_argument("--amps", default=os.environ.get(
         "SEP_EXECUTABLE", str(ROOT.parent / "amps")),
-        help="linked srcSEP/AMPS executable")
+        help="linked srcSEP/AMPS executable; reused unless --rebuild is requested")
     parser.add_argument("--list", action="store_true",
                         help="list registered native tests and exit")
     parser.add_argument("--test", dest="tests", action="append", default=[],
@@ -1507,6 +1515,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         junit_path = output_dir / "srcsep-tests.xml"
         if args.all:
             build_commands: List[List[str]] = []
+            # --amps PATH --all is a native test run, not a standalone build.
+            # srcSEP has focused source-suite targets rather than srcSEP3D's
+            # test/stage1. Preserve reuse of PATH unless the caller explicitly
+            # requests the configured enclosing AMPS clean/build route.
             if args.rebuild:
                 build_commands = _rebuild_linked_application(args, log_path)
             exit_code, report_path, native_commands = _run_all_tests(

@@ -62,6 +62,10 @@ class StandaloneSwcmeShockProvider final : public ShockProvider {
     result.providerIdentity = CanonicalName();
     result.configurationFingerprint = model_.fingerprint;
     result.centerM = application_.coordinateOriginM;
+    result.geometry=model_.model.shape==swcme3d::ShockShape::SSE
+        ? ShockGeometryKind::FiniteSSE : ShockGeometryKind::Sphere;
+    result.cmeDirection=Core::Vec3(model_.model.cme_dir).Normalized();
+    result.halfWidthRad=model_.model.half_width_rad;
     if (!std::isfinite(timeS)) {
       result.status = Invalid("SWCME shock evaluation time is not finite");
       return result;
@@ -100,6 +104,16 @@ class StandaloneSwcmeShockProvider final : public ShockProvider {
         return result;
       }
       result.generation = 1 + static_cast<std::uint64_t>(std::llround(tick));
+
+      // A propagation run observes this installed canonical state, including
+      // the physical has_shock diagnostic. Do not require a full source-surface
+      // solve or instantiate any particle patches when injection is disabled.
+      // A front that later becomes sub-fast remains inactive in the exported
+      // history; it must not be relabeled as a physical shock to make a test pass.
+      if (!application_.source.enabled) {
+        result.status = Core::Status::OK();
+        return result;
+      }
 
       swcme::sep::SourceSurface surface;
       const swcme::ModelStatus surfaceStatus =
@@ -149,6 +163,15 @@ class StandaloneSwcmeShockProvider final : public ShockProvider {
 };
 
 }  // namespace
+
+ExpandingShock ShockState::MoverGeometry() const {
+  ExpandingShock result;
+  result.centerM=centerM; result.radiusAtStepStartM=radiusM;
+  result.radialSpeedMPerS=radialSpeedMPerS; result.generation=generation;
+  result.active=active; result.geometry=geometry;
+  result.cmeDirection=cmeDirection; result.halfWidthRad=halfWidthRad;
+  return result;
+}
 
 bool ShockState::Covers(double timeS) const {
   return status.ok() && std::isfinite(timeS) &&
@@ -211,7 +234,8 @@ Core::Status PublishedShockProvider::Publish(const ShockState& state) {
       !std::isfinite(state.radiusM) || state.radiusM <= 0.0 ||
       !std::isfinite(state.radialSpeedMPerS) ||
       !std::isfinite(state.compressionRatio) ||
-      state.compressionRatio <= 1.0 ||
+      (state.active ? state.compressionRatio <= 1.0 : state.compressionRatio < 1.0) ||
+      !ValidateShockGeometry(state.MoverGeometry()).ok() ||
       state.configurationFingerprint.empty())
     return Invalid("published shock state is incomplete or invalid");
   if (available_ && state.generation <= published_.generation)
@@ -567,7 +591,15 @@ Core::Status CreateStandaloneSwcmeShockProvider(
   const ShockState initial =
       candidate->Evaluate(resolved.configuration.valid_from_s);
   if (!initial.status.ok()) return initial.status;
-  if (!initial.active || initial.patches.empty())
+  if (!initial.active)
+    return Invalid("canonical SWCME launch has no physical fast shock at event.valid_from");
+  if (!options.source.enabled) {
+    if (options.intent != RuntimeModel::RunIntent::ShockPropagation || !initial.patches.empty())
+      return Invalid("source-off SWCME requires propagation intent and no source patches");
+    *provider = std::move(candidate);
+    return Core::Status::OK();
+  }
+  if (initial.patches.empty())
     return Invalid("canonical SWCME source has no active patches at event.valid_from");
   std::vector<std::uint64_t> preflightCounts;
   const Core::Status allocation = AllocateExactPatchMacroparticles(

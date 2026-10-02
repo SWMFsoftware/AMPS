@@ -429,6 +429,36 @@ volume reference and generates both case-specific and common PNG/EPS overlays.
 The advanced cases additionally retain modal leakage, event/front statistics,
 censored arrival histories, spectral fits, per-bin wave state, and energy ledgers.
 
+### Application runner and build ownership
+
+`srcSEP/test/run_tests.py` is the field-line application runner. Installing the
+3-D application's identically named script here produces the reported
+`No rule to make target 'test/stage1'` or, with `--rebuild`,
+`No rule to make target 'clean-standalone'`. Those targets are intentionally
+absent from srcSEP. Restore this application's runner; do not add no-op targets
+or use `--no-build` to bypass the error in a mismatched harness.
+
+The supported native command is:
+
+```sh
+test/run_tests.py --amps ../amps --all --output-dir test_output/all
+```
+
+Without `--rebuild`, it launches `../amps --list-tests` and then one native
+process per discovered ID; it does not invoke `make`. With an explicit
+`--rebuild`, it validates the enclosing AMPS root and `Makefile.conf`, calls
+`make -C <AMPS-root> clean`, and invokes this application's `strict-production`
+target with absolute `AMPS_ROOT`/`AMPS_CONFIG`. That target enters the enclosing
+`make amps` build and audits the shared model archive before registry discovery.
+Use this only when the configured AMPS checkout builds srcSEP; an executable
+built for srcSEP3D is not interchangeable with the field-line application.
+
+Source-only work uses `--suite python-runner`, `--suite cli` or the documented
+focused Make targets. It has no monolithic `test/stage1` executable. The
+subprocess regression in `test_python_test_runner.py` runs the public native
+CLI with a literal protocol fixture and checks both build ownership and report
+retention. This is an orchestration test, not evidence of native AMPS physics.
+
 `--routine` forwards the native `--all-tests` policy and therefore excludes
 extended cases. `--all` first calls `--list-tests`, accepts only identifier
 tokens containing a digit (so the printed `ID | ...` heading can never become

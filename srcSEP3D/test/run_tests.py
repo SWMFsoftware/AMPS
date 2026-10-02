@@ -16,6 +16,13 @@ interchangeable:
 Missing production configuration is reported as SKIP, never as PASS.  That
 distinction keeps a source-only development run useful while ensuring it
 cannot satisfy the AMPS production-build acceptance gate.
+
+The C++ SWBG3D fixtures use
+``examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in``; the explicit
+``sphere`` name distinguishes the control from its finite-SSE counterpart.
+SSE3D05 constructs its own fixed probe on the configured finite Parker curve
+instead of importing an unrelated Earth's Cartesian position. The runner
+executes both groups from this application's root, including under --all.
 """
 
 from __future__ import annotations
@@ -24,6 +31,7 @@ import argparse
 import ast
 import datetime as _datetime
 import hashlib
+import importlib.util
 from dataclasses import asdict, dataclass
 import json
 import os
@@ -201,6 +209,29 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("HARN03-EXITCODE", "HARN_SHELL", "Outer skip exit code", "shell", False),
     TestDefinition("RUN3D01", "RUNNER", "Python runner CLI contract", "source"),
     TestDefinition("VALRUN3D01", "RUNNER", "Phase-V evidence runner contract", "source"),
+    # Portable canonical-provider gates. These are selected by --all/phase-b;
+    # the aggregate SEP+corona runner separately discovers SWBGAMPS native IDs
+    # from the executable, so no local Python list can manufacture MPI evidence.
+    TestDefinition("SWBG3D01", "SWBG3D", "Spherical SWCME background input/identity", "cpp"),
+    TestDefinition("SWBG3D02", "SWBG3D", "MHD vector and heated plasma closure", "cpp"),
+    TestDefinition("SWBG3D03", "SWBG3D", "Moving mesh background snapshots", "cpp"),
+    TestDefinition("SWBG3D04", "SWBG3D", "Full vector compression derivatives", "cpp"),
+    TestDefinition("SWBG3D05", "SWBG3D", "Rejected and empty-rank snapshots", "cpp"),
+    TestDefinition("SWBG3D06", "SWBG3D", "Future model registration/publication", "cpp"),
+    TestDefinition("SWBG3D07", "SWBG3D", "Polar mesh snapshot regression", "cpp"),
+    TestDefinition("SWBG3D08", "SWBG3D", "Parallel switch-on RH limit", "cpp"),
+    TestDefinition("SSE3D01", "SSE3D", "Finite input and inner handoff", "cpp"),
+    TestDefinition("SSE3D02", "SSE3D", "Canonical geometry handoff", "cpp"),
+    TestDefinition("SSE3D03", "SSE3D", "Finite mesh background and gradients", "cpp"),
+    TestDefinition("SSE3D04", "SSE3D", "Moving finite-cap particle crossings", "cpp"),
+    TestDefinition("SSE3D05", "SSE3D", "Finite source injection and in-corridor probe", "cpp"),
+    TestDefinition("SSE3D06", "SSE3D", "Finite restart and schema-3 migration", "cpp"),
+    TestDefinition("SSE3D07", "SSE3D", "Finite requested-time mover subcycling", "cpp"),
+    TestDefinition("SSE3D08", "SSE3D", "Reported weak-flank runtime regression", "cpp"),
+    TestDefinition("SSE3D09", "SSE3D", "Ambient support and unresolved-layer rejection", "cpp"),
+    TestDefinition("CME3D03", "CME3D", "Propagation configuration/canonical provider", "cpp"),
+    TestDefinition("CME3D04", "CME3D", "Native telemetry publication contract", "cpp"),
+    TestDefinition("CME3D01", "CME3D", "SWCME comparison/PNG/EPS consumer mechanics", "source"),
     TestDefinition("BLDL3D01", "BLDL3D", "Configured enclosing AMPS build", "source"),
     TestDefinition("BLDL3D02", "BLDL3D", "Retired production-symbol exclusion", "source"),
     TestDefinition("BLDL3D03", "BLDL3D", "AMPS mover return-code mapping", "source"),
@@ -244,6 +275,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("OV3D02", "OV3D", "2020 May 29 PSP/STEREO-A event", "validation", False),
     TestDefinition("OV3D03", "OV3D", "2014 January 6 PAMELA diagnostic", "validation", False),
     TestDefinition("OV3D04", "OV3D", "Electron multi-spacecraft diagnostic", "validation", False),
+    TestDefinition("CME3D02", "CME3D", "SWCME native shock/observation comparison", "validation", False),
     TestDefinition("SWMF3D01", "SWMF3D", "Live SWMF coupling replay (blocked by R8)", "validation", False),
 )
 
@@ -255,7 +287,7 @@ for _item in TESTS:
 SUITES: Dict[str, Tuple[str, ...]] = {
     "standalone": tuple(item.test_id for item in TESTS
                         if item.kind in ("cpp", "shell") or
-                        item.test_id in ("RUN3D01", "VALRUN3D01")),
+                        item.test_id in ("RUN3D01", "VALRUN3D01", "CME3D01")),
     "r0": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04", "BLDL3D05",
            "BLDL3D06", "BLDL3D07", "BLDL3D08", "BLDL3D09", "BLDL3D10",
            "BLDL3D11",
@@ -270,7 +302,7 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                             if item.group in ("V1D", "V2D", "V5D")),
     "phase-m": tuple(item.test_id for item in TESTS if item.group in ("MSH3D", "DOM3D")),
     "phase-b": tuple(item.test_id for item in TESTS
-                     if item.group in ("BGP3D", "SNAP3D")),
+                     if item.group in ("BGP3D", "SNAP3D", "SWBG3D", "SSE3D")),
     "phase-t": tuple(item.test_id for item in TESTS
                      if item.group == "TUR3D" or
                      item.test_id in ("COEF3D01", "COEF3D02", "COEF3D06",
@@ -280,15 +312,15 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                      item.test_id in ("COEF3D03", "COEF3D04", "COEF3D05",
                                       "POP3D01")),
     "phase-a": tuple(item.test_id for item in TESTS
-                     if item.group in ("ADP3D", "SHK3D") or
+                     if item.group in ("ADP3D", "SHK3D", "SSE3D") or
                      item.test_id in ("NAT3D04", "NAT3D05", "NAT3D08")),
     "phase-o": tuple(item.test_id for item in TESTS
                      if item.group in ("RST3D", "OUT3D") or
                      item.test_id in ("NAT3D06", "NAT3D07")),
     "phase-v": tuple(item.test_id for item in TESTS
-                     if item.group in ("V1D", "V2D", "V5D", "INT3D", "VFY3D", "MPI3D", "SCCM3D", "XM3D", "OV3D", "SWMF3D") or
+                     if item.group in ("V1D", "V2D", "V5D", "INT3D", "VFY3D", "MPI3D", "SCCM3D", "XM3D", "OV3D", "CME3D", "SWMF3D") or
                      (item.group == "NAT3D" and item.kind == "validation") or
-                     item.test_id == "VALRUN3D01"),
+                     item.test_id in ("VALRUN3D01", "CME3D01")),
     "production": ("BLDL3D01", "BLDL3D02", "BLDL3D03", "BLDL3D04",
                    "BLDL3D05", "BLDL3D06", "BLDL3D07", "BLDL3D08",
                    "BLDL3D09", "BLDL3D10", "BLDL3D11", "BLDL3D12"),
@@ -1530,10 +1562,10 @@ def _check_makefile_relocation(definition: TestDefinition,
     # expose the disagreement rather than silently accepting a partial build.
     application_members = (
         "parker_geometry.o domain_geometry.o mesh_model.o "
-        "bg_provider.o bg_parker.o bg_swmf.o background_snapshot.o "
+        "bg_provider.o bg_parker.o bg_swcme.o bg_swmf.o background_snapshot.o "
         "turbulence_models.o keyed_random.o time_step.o perpendicular_transport.o "
         "parker_transport.o focused_transport.o population_control.o "
-        "run_configuration.o configuration_io.o standalone_command_line.o runtime.o runtime_adapters.o "
+        "run_configuration.o configuration_io.o standalone_command_line.o runtime.o background_factory.o runtime_adapters.o "
         "transport_adapter.o particle_ledger.o swcme_source_adapter.o source_runtime.o "
         "sampling.o observer_runtime.o publication.o restart.o output_coordinator.o "
         "validation_metrics.o coronal_cme_application_test.o main_lib.o "
@@ -2117,9 +2149,13 @@ def _run_source(definition: TestDefinition, args: argparse.Namespace,
                       "PASS" if code == 0 else "FAIL",
                       output.strip() or f"runner unit test exited {code}",
                       elapsed, command)
-    if definition.test_id == "VALRUN3D01":
+    if definition.test_id in ("VALRUN3D01", "CME3D01"):
+        if definition.test_id == "CME3D01" and importlib.util.find_spec("matplotlib") is None:
+            return Result(definition.test_id, definition.group, "SKIP",
+                          "CME figure mechanics require optional Matplotlib/NumPy", 0.0, [])
         command = [sys.executable,
-                   str(ROOT / "test" / "test_validation_runner.py")]
+                   str(ROOT / "test" / ("test_swcme_coupling_validation.py"
+                       if definition.test_id == "CME3D01" else "test_validation_runner.py"))]
         code, output, elapsed = _run_command(
             command, ROOT, args.timeout, args.verbose)
         return Result(definition.test_id, definition.group,

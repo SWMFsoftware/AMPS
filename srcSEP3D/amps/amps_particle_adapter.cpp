@@ -264,6 +264,10 @@ Core::Status InstallContext(const Context& context) {
       RuntimeModel::LifecycleState::Running)
     return Core::Status(Core::StatusCode::InvalidTransition,
                         "cannot replace mover context during PIC::TimeStep");
+  if (context.shock.active) {
+    const auto geometry=Adapters::ValidateShockGeometry(context.shock);
+    if (!geometry.ok()) return geometry;
+  }
   gContext = context;
   gContextInstalled = true;
   return Core::Status::OK();
@@ -271,7 +275,7 @@ Core::Status InstallContext(const Context& context) {
 
 bool ContextInstalled() { return gContextInstalled; }
 
-Core::Status UpdateShock(const Adapters::ExpandingSphericalShock& shock) {
+Core::Status UpdateShock(const Adapters::ExpandingShock& shock) {
   if (!gContextInstalled)
     return Invalid("AMPS mover context is not installed");
   if (SEP3D::ApplicationRuntime().state() ==
@@ -283,6 +287,12 @@ Core::Status UpdateShock(const Adapters::ExpandingSphericalShock& shock) {
       shock.radiusAtStepStartM <= 0.0 ||
       !std::isfinite(shock.radialSpeedMPerS)))
     return Invalid("active AMPS shock state is invalid");
+  // Reject an unknown shape or malformed SSE axis before replacing live
+  // context; failure leaves the previous published epoch intact.
+  if (shock.active) {
+    const auto geometry=Adapters::ValidateShockGeometry(shock);
+    if (!geometry.ok()) return geometry;
+  }
   gContext.shock = shock;
   return Core::Status::OK();
 }

@@ -14,6 +14,7 @@
 #include "SEP3D.h"
 #include "adapters/source_runtime.h"
 #include "output/output_coordinator.h"
+#include "output/shock_history.h"
 #include "runtime/configuration_io.h"
 #include "validation/coronal_cme_application_test.h"
 
@@ -22,6 +23,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iomanip>
+#include <sstream>
 #include <memory>
 #include <vector>
 
@@ -277,10 +280,109 @@ int main(int argc, char** argv) {
     return EXIT_SUCCESS;
   }
 
-  const std::uint64_t maximumSteps =
-      request.configuration->options().maximumTimeSteps;
-  for (std::uint64_t iteration = 0; iteration < maximumSteps; ++iteration) {
-    if (amps_time_step() == _PIC_TIMESTEP_RETURN_CODE__END_SIMULATION_) break;
+  const auto& options = request.configuration->options();
+  const bool propagation = options.intent ==
+      SEP3D::RuntimeModel::RunIntent::ShockPropagation;
+  SEP3D::Output::ShockHistoryWriter history;
+  SEP3D::Output::ShockHistorySample sample;
+  int propagationExit = 0;
+  std::string stopReason = "step-budget";
+  const std::filesystem::path nativeDirectory(options.outputDirectory);
+
+  // Capture is collective; only rank zero owns the stream. Broadcast every
+  // write result before another step can begin so an I/O failure cannot leave
+  // the remaining ranks waiting in a later AMPS collective. Tick zero is an
+  // observed provider state, not an independently reconstructed trajectory.
+  auto publishHistory = [&]() {
+    status = SEP3D::CaptureNativeShockHistorySample(&sample);
+    propagationExit = status.ok() ? 0 : 2;
+    if (PIC::ThisThread == 0 && status.ok()) {
+      status = history.Append(sample);
+      propagationExit = status.ok() ? 0 : 2;
+    }
+    if (PIC::ThisThread == 0 && !status.ok())
+      std::cerr << "srcSEP3D propagation capture/write failed: " << status.message << '\n';
+    MPI_Bcast(&propagationExit, 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
+  };
+  if (propagation) {
+    if (PIC::ThisThread == 0) {
+      // Existing telemetry is never silently overwritten, including incomplete
+      // telemetry from an interrupted invocation. Use a fresh --output-dir.
+      status = history.Open(nativeDirectory / "shock-history.csv", options.requestedTimeStepS);
+      propagationExit = status.ok() ? 0 : 2;
+      if (!status.ok()) std::cerr << "srcSEP3D propagation output failed: " << status.message << '\n';
+    }
+    MPI_Bcast(&propagationExit, 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
+    if (!propagationExit) publishHistory();
+  }
+  for (std::uint64_t iteration = 0;
+       !propagationExit && iteration < options.maximumTimeSteps; ++iteration) {
+    const int stepCode = amps_time_step();
+    if (propagation) {
+      publishHistory();
+      if (propagationExit) break;
+      if (PIC::ThisThread == 0 && (sample.tick == 1 || sample.tick % 60 == 0))
+        std::cout << "[propagation] tick=" << sample.tick << " time_s=" << sample.timeS
+                  << " radius_au=" << sample.radiusM / SEP3D::Core::Const::AU
+                  << " speed_m_s=" << sample.speedMPerS << " shock_active=" << sample.active
+                  << " particles=" << sample.particles << std::endl;
+      // Write the first row beyond the target before stopping: consumers can
+      // interpolate a crossing inside the last two real native time samples.
+      if (options.stopShockRadiusM > 0 && sample.radiusM >= options.stopShockRadiusM) {
+        stopReason = "shock-radius";
+        break;
+      }
+    }
+    if (stepCode == _PIC_TIMESTEP_RETURN_CODE__END_SIMULATION_) {
+      stopReason = "amps-termination";
+      break;
+    }
+  }
+  if (propagation && !propagationExit) {
+    if (PIC::ThisThread == 0) {
+      status = history.Close();
+      // This is a completed-runtime record, not an observational evidence
+      // manifest. The runner owns executable/input checksums, launcher logs
+      // and any independently reviewed absolute launch epoch.
+      if (status.ok()) {
+        int ranks = 0;
+        MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &ranks);
+        std::ofstream manifest(nativeDirectory / "native-runtime.json");
+        manifest << std::setprecision(17)
+                 << "{\n  \"schema\": \"srcsep3d-native-shock-runtime-v1\",\n"
+                 << "  \"producer\": \"srcSEP3D-native\",\n"
+                 << "  \"run_intent\": \"shock-propagation\",\n  \"source_enabled\": false,\n"
+                 << "  \"mpi_ranks\": " << ranks << ",\n  \"time_step_s\": " << options.requestedTimeStepS
+                 << ",\n  \"maximum_time_steps\": " << options.maximumTimeSteps
+                 << ",\n  \"completed_steps\": " << sample.tick << ",\n  \"final_time_s\": " << sample.timeS
+                 << ",\n  \"final_radius_m\": " << sample.radiusM
+                 << ",\n  \"stop_shock_radius_m\": " << options.stopShockRadiusM
+                 << ",\n  \"stop_reason\": \"" << stopReason << "\",\n"
+                 << "  \"history_file\": \"shock-history.csv\",\n"
+                 << "  \"provider_identity\": " << std::quoted(sample.providerIdentity) << ",\n"
+                 << "  \"provider_configuration_fingerprint\": " << std::quoted(sample.configurationFingerprint) << ",\n"
+                 // Shock history can advance more often than the mesh cadence.
+                 // Record the actual installed descriptor's epoch/generation,
+                 // not the final shock time, to preserve that distinction.
+                 << "  \"mesh_background_authority\": " << std::quoted(SEP3D::RuntimeModel::Name(options.background)) << ",\n"
+                 << "  \"mesh_background_cadence_steps\": " << options.backgroundCadenceSteps << ",\n"
+                 << "  \"mesh_background_epoch_s\": " << SEP3D::ApplicationRuntime().active_snapshot()->epochS << ",\n"
+                 << "  \"mesh_background_generation\": " << SEP3D::ApplicationRuntime().active_snapshot()->generation << ",\n"
+                 << "  \"application_configuration_fingerprint\": " << std::quoted(request.configuration->physics_fingerprint()) << "\n}\n";
+        manifest.close();
+        if (!manifest) status = SEP3D::Core::Status(SEP3D::Core::StatusCode::Error, "native runtime manifest write/close failed");
+      }
+      propagationExit = status.ok() ? 0 : 2;
+      if (!status.ok()) std::cerr << "srcSEP3D propagation close failed: " << status.message << '\n';
+      else std::cout << "native_shock_history=" << (nativeDirectory / "shock-history.csv").string()
+                     << "\nnative_runtime_manifest=" << (nativeDirectory / "native-runtime.json").string()
+                     << "\npropagation_stop=" << stopReason << " tick=" << sample.tick << std::endl;
+    }
+    MPI_Bcast(&propagationExit, 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
+  }
+  if (propagationExit) {
+    MPI_Finalize();
+    return propagationExit;
   }
 
   if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) {

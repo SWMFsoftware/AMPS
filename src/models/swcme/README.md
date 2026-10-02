@@ -142,9 +142,10 @@ compatibility members with no effect on current physics are not exposed as
 textual inputs.
 
 The resolver does not impose application-specific geometry. For example,
-srcSEP3D currently restricts its standalone schema to a sphere because its
-AMPS crossing operator is spherical, while the canonical resolver and model
-continue to support sphere, ellipsoid, and SSE for other hosts.
+srcSEP3D supports Sphere and finite SSE in its standalone schema and preserves
+finite-cap geometry through the native mover handoff. Ellipsoid remains
+unsupported by that application's crossing operator; the canonical resolver
+and model support all three geometries for other hosts.
 
 ## Build and quick start
 
@@ -713,6 +714,49 @@ Array evaluators use structure-of-arrays inputs and outputs. Arrays must contain
 at least `N` elements and may not be null when `N>0`. Callers should provide
 distinct input and output storage; overlapping arrays are not part of the API
 contract. The first invalid sample is returned in `ModelStatus::sample_index`.
+
+### Complete 3-D primitives for mesh consumers
+
+`Model::evaluate_cartesian_primitive_checked` exports the same regional n/U/B
+as `evaluate_cartesian_with_B_checked`, plus fixed-composition mass density
+and total thermal pressure. Use one `prepare_step(t)` state for the entire
+batch; ownership/configuration authentication occurs once before outputs are
+touched. Each Cartesian coordinate and output array has length N:
+
+| Arrays | Units and interpretation |
+|---|---|
+| x, y, z | Model-local heliocentric coordinates [m] |
+| n | Electron density [m^-3] |
+| Vx, Vy, Vz | Full plasma velocity vector [m/s] |
+| Bx, By, Bz | Full regional IMF vector [T] |
+| rho | Mass density [kg/m^3] using the configured composition at regional n |
+| pressure | Total thermal pressure [Pa], including the prescribed RH/sheath/ejecta closure |
+
+N=0 permits null arrays; N>0 requires all arrays. A failed ownership or pointer
+check precedes writes, but a later sample error can leave an evaluated prefix.
+Mesh consumers therefore evaluate into scratch, inspect the returned status,
+and publish only a complete validated candidate. The API never advances model
+time, owns AMPS buffers or performs MPI operations. Rebuild the canonical
+archive after updating this interface; older compiled archives lack its symbol.
+
+SHOCK_ONLY returns ambient primitives. FULL_ICME pressure follows the same
+boundaries and smoothing weights as the vector state: exact RH pressure at the
+shock's downstream endpoint, positive logarithmic relaxation through the sheath
+to leading-edge ambient pressure, ambient temperature with the ejecta density
+factor, and existing leading/trailing transition blends. This is a prescribed
+regional pressure field, not a time-evolved energy equation. Individual species
+heating is not determined by the RH total pressure and remains a declared
+consumer closure. Ejecta B remains Parker; this API adds no flux rope or global
+induction solve.
+
+Canonical evaluation still starts at `solarwind::MIN_RADIUS_M` (1.05 Rs).
+Any lower-domain continuation must be explicit in a consumer and must not hide
+an invalid model sample. The srcSEP3D adapter supplies a matching ambient shell
+and rejects CME support overlapping that handoff. It derives full Cartesian
+vector gradients and preserves configured temperature ratios to partition
+heating; those consumer policies enter its manifest. See the
+[srcSEP3D background README](../../../srcSEP3D/background/README.md) and
+[publication README](../../../srcSEP3D/runtime/README.md).
 
 ## SEP and AMPS-facing API
 
@@ -2609,14 +2653,22 @@ running the generator deliberately and reviewing the new versioned fixture.
 
 Priority test `SHK12` validates the two-sided limit at `M_fast=1`.  States at
 or below the fast-mode speed return the physical `NO_SHOCK` classification.
-A representably super-fast state whose Mach excess is at or below the published
-binary64 resolution `WEAK_SHOCK_MACH_RESOLUTION=1e-6` instead returns
+A super-fast state within the binary64 uncertainty margin
+`WEAK_SHOCK_MACH_RESOLUTION=128*epsilon(double)` (about `2.84e-14`) returns
 `NUMERICALLY_UNRESOLVED_WEAK_SHOCK`: `has_shock` remains true,
 `solver_converged` is false, and the finite primitive payload is retained.
 This prevents a physical weak shock from masquerading as an ordinary no-shock
 state and prevents an unresolved jump from entering SEP source calculations.
 
-For resolved shocks the scalar scan retains every sign-changing bracket inside
+Representable weak shocks with `M_fast-1 <= 1e-4` bypass the divided-flux
+scan and use the analytically deflated fast-interval cubic, evaluated in
+`delta=compression-1` with long-double intermediates. The algorithm threshold
+is neither a physical Mach cutoff nor a compression floor. Accepted weak
+states pass the same conservation, entropy and evolutionary-characteristic
+gates as stronger shocks. SHK12 now resolves its 32-family sweep down to
+`1e-12`, while still rejecting deliberately roundoff-scale positive excesses.
+
+For stronger shocks the scalar scan retains every sign-changing bracket inside
 each continuous valid compression segment.  Candidate roots are solved in
 ascending compression order and independently tested against downstream fast
 and normal-Alfven characteristic inequalities; only an evolutionary fast root
@@ -2640,6 +2692,28 @@ beta/angle/gamma families, including near-singular one-degree geometries.
 
 ### Near-singular tangential-system contract
 
+If the fixed compression scan misses the narrow near-parallel fast branch,
+the solver refines the analytically eliminated RH cubic on
+`1 < r < min((gamma+1)/(gamma-1), M_An^2)`. This interval stays on the upstream
+side of the normal-Alfven pole. Reconstruction and independent conservation,
+entropy and characteristic checks retain their existing acceptance thresholds.
+The Mach-excess resolution guard of `1e-6` is unchanged.
+
+At roundoff-level parallel incidence the ordinary tangential inverse cannot
+represent a switch-on shock. When the gas-dynamic root is not evolutionary,
+the analytic RH limit supplies `r=M_An^2`, pressure and transverse-field
+magnitude. Its azimuth is degenerate: the implementation explicitly projects
+the least-aligned Cartesian axis into the tangent plane and follows magnetic
+polarity. Finite oblique fields retain their actual transverse direction.
+This convention defines an exact-pole sample; it does not provide a smooth
+global magnetic topology or a new MHD evolution model.
+
+Tangential-electric continuity uses `|u||B|` as an additional normalization
+scale. Dividing by the almost-zero tangential electric field alone produces
+false conservation failures at parallel incidence. The absolute flux jump and
+the `1e-8` acceptance threshold are unchanged. The srcSEP3D polar initialization
+regressions are documented in [the fix guide](../../../SWCME_POLAR_SHOCK_FIX.md).
+
 Priority test `SHK16` treats the determinant pole in the oblique tangential
 jump equations as a discontinuity in the scalar compression domain.  Invalid
 or singular candidates reset the scan history, so residual signs from opposite
@@ -2661,7 +2735,7 @@ characteristic inequalities; otherwise the result is rejected explicitly as
 ### High-count deterministic shock stress
 
 Priority test `SHK15` runs 100,000 fixed-seed physical inputs across sub-fast,
-sub-resolution weak, ordinary resolved, and deliberately determinant-
+near-identity weak, ordinary resolved, and deliberately determinant-
 conditioned strata.  Density, magnetic strength, beta, implied temperature,
 field angle and polarity, arbitrary Cartesian orientation, tangential flow,
 gamma, and fast Mach number all vary.  The random bit stream and floating
@@ -3338,3 +3412,25 @@ writing a sanitized surrogate.  `ERR01`-`ERR05` protect outside-domain behavior,
 non-finite batch input, explicit RH outcomes, degenerate-vector rejection, and
 writer rejection of corrupt mesh data.  See `NUMERICAL_STATUS_FIX_NOTES.md` and
 `test/README.md` for the complete status semantics and validation fixtures.
+
+
+### Finite-SSE weak-flank mesh update correction (2026-10-02)
+
+SEP3D's ten-step finite-SSE run exposed the old `1e-6` weak-Mach rejection
+at `t=180 s`, `M_fast=1.000000867696212`. The stable deflated cubic now
+recovers compression `1.0000011572267356`; it matches an independent
+80-digit direct conserved-flux solve. No ambient replacement is made at that
+physical shock surface.
+
+All three-dimensional Cartesian field interfaces (`n/V`, `n/V/B`, and full
+primitives) now classify geometric radial support before attempting an RH
+solve. This applies to Sphere, SSE and Ellipsoid. Bounds use the local ray
+front and include the complete shock and trailing smoothing transitions.
+Outside that support, or outside the finite cap, the prescribed field is
+ambient independently of a shock solver on the same ray. Inside it, a real
+solver failure remains explicit. Direct shock and acceleration diagnostics
+retain their full solve and failure semantics. Prepared-state provenance and
+per-point input validation still precede sampling and writes.
+
+See the application [failure analysis](../../../srcSEP3D/SSE_WEAK_SHOCK_FIX.md)
+and `SSE3D08/09` for the exact-coordinate and fail-closed regression tests.

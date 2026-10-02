@@ -30,10 +30,10 @@
 // include directories.  Concrete provider/source/restart headers therefore
 // belong in main_lib.cpp or main.cpp, never in this transitive public header.
 namespace SEP3D {
-namespace Background { class BackgroundSnapshot; }
+namespace Background { class BackgroundSnapshot; class BackgroundProvider; }
 namespace Turbulence { class TurbulenceProvider; }
 namespace Adapters { class ShockProvider; }
-namespace Output { struct RestartState; }
+namespace Output { struct RestartState; struct ShockHistorySample; }
 }
 
 namespace SEP3D {
@@ -46,11 +46,20 @@ RuntimeModel::Runtime& ApplicationRuntime();
 Core::Status ConfigureApplication(
     const std::shared_ptr<const RuntimeModel::RunConfiguration3D>& configuration);
 
+// Optional host-owned runtime provider. Install after ConfigureApplication
+// (optionally after mesh binding), before acquisition in amps_init. Ownership
+// may be installed once, not changed between generations. Metadata must match
+// configured authority/frame at fill. SWMF hosts use imported snapshots instead.
+// Future sources may also register a factory in runtime/background_factory.h;
+// common code owns cadence, validation, cell writes and halo exchange.
+Core::Status InstallBackgroundProvider(
+    const std::shared_ptr<Background::BackgroundProvider>& provider);
+
 // Coupled hosts install initial imported data before amps_init(). At a later
-// joined SnapshotReady boundary the same calls stage the next candidate; the
+// joined SnapshotReady boundary these calls stage the next candidate; the
 // R03 coordinator validates background and turbulence together and swaps them
-// only after collective readiness. A standalone Parker run may omit both
-// calls: amps_init() builds the corresponding immutable analytic providers.
+// only after collective readiness. Standalone runtime sources may omit these
+// calls: amps_init() builds the providers selected by the frozen configuration.
 Core::Status InstallBackgroundSnapshot(
     const std::shared_ptr<const Background::BackgroundSnapshot>& snapshot);
 Core::Status InstallTurbulenceProvider(
@@ -62,6 +71,9 @@ Core::Status InstallShockProvider(
 // retains the particle/provider/observer payload until amps_init() can restore
 // AMPS ownership without changing any stochastic identity.
 Core::Status InstallRestartState(const Output::RestartState& state);
+// Collective read-only capture at a joined boundary. Count only owned physical
+// cell lists; compare the installed provider, configuration and clock on ranks.
+Core::Status CaptureNativeShockHistorySample(Output::ShockHistorySample* sample);
 
 // AMPS calls this before its legacy parser.  srcSEP3D intentionally performs
 // no argument or AMPS_PARAM.in parsing here: a standalone driver or the SWMF

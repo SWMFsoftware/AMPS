@@ -1,0 +1,485 @@
+<!DOCTYPE HTML>
+<!--
+    Monochromed by TEMPLATED
+    templated.co @templatedco
+    Released for free under the Creative Commons Attribution 3.0 license (templated.co/license)
+-->
+<html>
+  <head>
+    <title>HELCATS WP3 Catalogue</title>
+    <meta name="description" content="HELCATS Schedule" />
+    <meta name="keywords" content="" />
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<meta name="dcterms.creator" content="STFC, Rutherford Appleton Laboratory, RAL Space, HELCATS, support@helcats-fp7.eu">
+<meta name="dcterms.subject" content="eGMS.IPSV:Astronomy and Space">
+<meta name="dcterms.publisher" content="HELCATS, Rutherford Appleton Laboratory, Chilton, Didcot, OX11 0QX. Tel 01235 446624. support@helcats-fp7.eu">
+<link rel="icon" href="/images/favicon.ico" type="image/x-icon" />
+<link href='https://fonts.googleapis.com/css?family=Oxygen:400,300,700' rel='stylesheet' type='text/css'>
+<link rel="stylesheet" href="/css/skel-noscript.css" />
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" media="screen and (max-width:480px)"
+      href="/css/style-mobile.css" />
+<link rel="stylesheet" media="all and (min-width:481px)"
+      href="/css/style-desktop.css" />
+<!-- <link rel="stylesheet" media="screen and (min-width:1200px)"
+      href="/css/style-1000px" /> -->
+<style type="text/css">
+</style>
+<!--[if lte IE 8]><link rel="stylesheet" href="/css/ie/v8.css" /><![endif]-->
+<!--[if lte IE 9]><link rel="stylesheet" href="/css/ie/v9.css" /><![endif]-->
+
+<link rel="stylesheet" type="text/css" href="css/smoothness/jquery-ui.min.css">
+<link rel="stylesheet" type="text/css" href="css/jquery.dataTables.css">
+	<link rel="stylesheet" type="text/css" href="css/dataTables.jqueryui.css">
+	<link rel="stylesheet" type="text/css" href="css/dataTables.tableTools.css">
+	<link rel="stylesheet" type="text/css" href="css/dataTables.colVis.css">
+	<link rel="stylesheet" type="text/css" href="css/dataTables.fixedHeader.css">
+	<style type="text/css" class="init">
+		
+	</style>
+	<script type="text/javascript" language="javascript" src="js/jquery-1.11.2.min.js"></script>
+	<script type="text/javascript" language="javascript" src="js/jquery-ui.min.js"></script>
+	<script type="text/javascript" language="javascript" src="js/jquery.dataTables.min.js"></script>
+        <script type="text/javascript" language="javascript" src="js/dataTables.jqueryui.js"></script>
+        <script type="text/javascript" language="javascript" src="js/dataTables.tableTools.min.js"></script>
+        <script type="text/javascript" language="javascript" src="js/dataTables.colVis.min.js"></script>
+	<script type="text/javascript" language="javascript" src="js/dataTables.fixedHeader.js"></script>
+
+<script type="text/javascript" class="init">
+
+
+$.fn.dataTable.ext.search.push(
+    function( settings, data, dataIndex ) {
+   
+        var sses_min = $( "#sses_range" ).slider( "values", 0 ) ;
+        var sses_max = $( "#sses_range" ).slider( "values", 1 ) ;
+        var sselon_min = $( "#sselon_range" ).slider( "values", 0 ) ;
+        var sselon_max = $( "#sselon_range" ).slider( "values", 1 ) ;
+	var sselat_min = $( "#sselat_range" ).slider( "values", 0 ) ;
+        var sselat_max = $( "#sselat_range" ).slider( "values", 1 ) ;
+	var d1  = $("#from").datepicker("getDate");
+        var s1  = d1.toISOString();
+        var d2  = $("#to").datepicker( "getDate");
+	var s2  = d2.toISOString();
+
+	if ( data[7] == "poor" ) return false;   
+
+        var sses = parseInt( data[17] ); 
+	var sselon = parseInt( data[21] );
+	var sselat = parseInt( data[22] );
+
+        if ( ( sses_min <= sses && sses <= sses_max ) &&
+             ( sselon_min <= sselon && sselon <= sselon_max ) && 
+	     ( sselat_min <= sselat && sselat <= sselat_max ) && 
+             ( s1 <= data[24] && data[24] <= s2 ))
+        {
+            return true;
+        }
+        return false;
+    }
+
+);
+
+$(document).ready(function() {
+
+    var table = $('#example').DataTable( {
+
+        dom: 'C<"clear">lfrtipT<"clear">',
+	    lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+		columnDefs: [{"targets": [ 1, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 25, 26, 27, 28, 29, 30, 31, 32 ], "visible": false }],
+        tableTools: { "sSwfPath": 'swf/copy_csv_xls_pdf.swf',
+		      "sRowSelect": "multi" ,
+                      "aButtons":   [
+                                   {
+                                     "sExtends": "collection",
+                                     "sButtonText": "Select",
+                                     "aButtons":    [ 
+                                       {
+					"sExtends": "select_all",
+					"sButtonText": "Select Filtered",
+					"fnClick": function (nButton, oConfig, oFlash){
+						var oTT = TableTools.fnGetInstance('example');
+                                                oTT.fnSelectAll(true);
+					 }
+					},
+					{
+					"sExtends": "select_none",
+					"sButtonText": "Deselect Filtered",
+					"fnClick": function (nButton, oConfig, oFlash){
+						var oTT = TableTools.fnGetInstance('example');
+                                                oTT.fnSelectNone(true);
+					 }
+					},							
+					 "select_all", 
+					 "select_none" ]
+				   },
+				   "copy",
+                                   {
+                                     "sExtends": "collection",
+                                     "sButtonText": "Save",
+                                     "aButtons":    [ "csv" ]
+				   },
+				   "print" ]
+                    },
+	ajax: 'data/HCME_WP3_V06.json',
+        order: [[ 1, "asc" ]],
+        colVis: {
+            restore: "Restore",
+            showAll: "Show all",
+            showNone: "Show none"
+        }
+
+    } );
+
+    $('#example tbody').on( 'click', 'tr', function () {
+	   var nTds = $('td', this);
+	   var sBrowser = $(nTds[0]).text();
+           window.open("http://www.helcats-fp7.eu/catalogues/event_page.html?id="+ sBrowser);
+	
+    } );
+
+    $("#sses_range").slider({
+       range: true,
+       min: 50,
+       max: 3600,
+       values: [ 50, 3600 ],
+       slide: function( event, ui ) {$( "#sses_label" ).val( ui.values[ 0 ] + 
+       " to " + ui.values[ 1 ] + " kms-1" );
+       $(this).slider("values", ui.values);
+       table.draw(); },
+    });
+
+    $( "#sses_label" ).val( $( "#sses_range" ).slider( "values", 0 ) +
+      " to " + $( "#sses_range" ).slider( "values", 1 ) + " kms-1" );
+
+    $("#sselon_range").slider({
+       range: true,
+       min: -180,
+       max: 180,
+       values: [ -180, 180 ],
+       slide: function( event, ui ) {$( "#sselon_label" ).val( ui.values[ 0 ] + 
+       " to " + ui.values[ 1 ] + " degrees" ); 
+       $(this).slider("values", ui.values);
+       table.draw(); }
+    });
+
+    $( "#sselon_label" ).val( $( "#sselon_range" ).slider( "values", 0 ) +
+      " to " + $( "#sselon_range" ).slider( "values", 1 ) + " degrees" );
+	  
+	$("#sselat_range").slider({
+       range: true,
+       min: -45,
+       max: 45,
+       values: [ -45, 45 ],
+       slide: function( event, ui ) {$( "#sselat_label" ).val( ui.values[ 0 ] + 
+       " to " + ui.values[ 1 ] + " degrees" ); 
+       $(this).slider("values", ui.values);
+       table.draw(); }
+    });
+
+    $( "#sselat_label" ).val( $( "#sselat_range" ).slider( "values", 0 ) +
+      " to " + $( "#sselat_range" ).slider( "values", 1 ) + " degrees" );
+
+    $( "#from" ).datepicker({
+      dateFormat: "yy-mm-dd",
+      defaultDate: "2007-01-01",
+      changeMonth: true,
+      changeYear: true,
+      numberOfMonths: 1,
+      onClose: function( selectedDate ) {
+        $( "#to" ).datepicker( "option", "minDate", selectedDate );
+        table.draw();
+      }
+
+    });
+
+    $( "#to" ).datepicker({
+      dateFormat: "yy-mm-dd",
+      defaultDate: "2026-08-01",
+      changeMonth: true,
+      changeYear: true,
+      numberOfMonths: 1,
+      onClose: function( selectedDate ) {
+        $( "#from" ).datepicker( "option", "maxDate", selectedDate );
+	table.draw();
+      }
+    });
+   
+   $("#from").datepicker( "setDate", "2007-01-01");
+   $("#to").datepicker( "setDate", "2026-08-01");
+   
+
+} );
+
+
+	</script>  
+  </head>
+  <body>
+
+    <!-- Header -->
+    <!-- Header -->
+
+<div id="header">
+  <div class="container"> 
+    <!-- Logo -->
+    
+    <div id="logo"> <img src="/images/helcats_badge.png" width="120"> <br/>
+      <br/>
+      <h1><a href="#">HELCATS</a></h1>
+      <span>Heliospheric Cataloguing, Analysis and Techniques Service</span> </div>
+    <!-- Nav -->
+    <nav id="nav" style="text-align:center;">
+      <ul>
+        <li><a href="/index.html">Home</a></li>
+        <li><a href="/activities.html">Overview</a>
+          <ul>
+            <li><a href="/activities.html">Activities</a> </li>
+            <li><a href="/overview/schedule.html">Schedule</a> </li>
+            <li><a href="/overview/deliverables.html">Deliverables</a></li>
+          </ul>
+        </li>
+        <li><a href="/consortium.html">Partners</a>
+        <li><a href="/products.html">Products</a><ul>
+            <li><a href="/catalogues/wp2_cat.html">WP2: HICAT - CME Identification</a></li>
+	     <li><a href="/catalogues/wp2_joincat.html">WP2: HIJoinCAT - Link between STEREO A & B events</a></li>
+            <li><a href="http://sidc.be/cactus/hi">WP2: CACTusCAT - Automated CME Identification...</a></li>
+            <li><a href="/catalogues/wp3_cat.html">WP3: HIGeoCAT - CME Kinematics</a></li>
+            <li><a href="http://data.rosseobservatory.ie/helcats/lowcat/">WP3: LOWCAT - Low corona events correlated with HI CMEs...</a></li>
+	     <li><a href="/catalogues/wp4_arrcat.html">WP3: ARRCAT - predicted CME arrival</a></li>
+            <li><a href="/catalogues/wp3_kincat.html">WP3: KINCAT - CME Properties</a></li>
+	     <li><a href="https://figshare.com/articles/HELCATS_CORHITCAT/4903241">WP4: CORHITCAT - Coronagraph based CME...</a></li>
+	     <li><a href="/catalogues/wp4_icmecat.html">WP4: ICMECAT - in-situ CME observation</a></li>
+            <li><a href="/catalogues/wp4_cat.html">WP4: LINKCAT - linked solar, heliospher and in-situ</a></li>
+            <li><a href="/catalogues/wp5_cat.html">WP5: CIRCAT - CIR Identification</a></li>
+            <li><a href="https://stormsweb.irap.omp.eu/doku.php?id=windmaptable">WP6: SIMCAT (Solar Wind)...</a></li>
+	     <li><a href="http://helioweather.net/archive">WP6: SIMCAT (Solar Wind/fast CMEs (> 400 km/s))...</a></li>
+            <li><a href="https://ccmc.gsfc.nasa.gov/community/HELCATS/">WP6: SIMCAT (Solar Wind/all CMEs)...</a></li>
+            <li><a href="/catalogues/wp7_cat.html">WP7: RADCAT - Type II Radio Bursts</a></li>
+            <li><a href="/catalogues/wp7_ipscat.html">WP7: IPSCAT - IPS events catalogue</a></li>
+          </ul></li>
+        <li><a href="/tools.html">Tools</a><ul>
+            <li><a href="http://propagationtool.cdpp.eu/">CDPP Propagation Tool...</a></li>
+            <li><a href="http://www.star.bris.ac.uk/~mbt/topcat/sun253/sun253.html">TOPCAT...</a></li>
+          </ul></li>
+        <li><a href="/news/news.html">News</a> 
+        <ul>
+            <li><a href="/news/news.html">Latest News</a></li>
+            <li><a href="/events/events.html">Events</a></li>
+            <li><a href="/meetings/meetings.html">Meetings</a></li>
+          </ul>
+        </li>
+        <li><a href="/outreach.html">Outreach</a>
+           <ul>
+            <li><a href="/press/press.html">Press</a></li>
+            <li><a href="/presentations/presentations.html">Presentations</a></li>
+            <li><a href="/publications/publications.html">Publications</a></li>
+            <li><a href="/calendar.html">Calendar</a></li>
+            <li><a href="/gallery.html">Gallery</a></li>
+          </ul></li>
+      </ul>
+    </nav>
+  </div>
+</div>
+<!-- Header --> 
+
+    <!-- Header -->
+    
+    <!-- Main -->
+    <div id="main">
+      <div class="container">
+	<div class="row">
+	  <!-- Content -->
+	  <div id="sidebar" class="1u">
+	    &nbsp;
+	  </div>
+	  <div id="content" class="10u skel-cell-important">
+	    <div id="contact" style="text-align: right;float: right;">
+  <a href="https://www.facebook.com/eu.helcats">
+    <img src="/images/facebook.png"
+	 width="17"
+	 height="16"
+	 alt="HELCATS on Facebook" border=0></a>
+  <a href="http://twitter.com/EU_HELCATS/">
+    <img src="/images/twitter.png"
+	 width="17"
+	 height="16"
+	 alt="HELCATS on Twitter"
+	 border=0></a>
+  <a href="http://www.youtube.com/user/EUHELCATS">
+    <img src="/images/youtube.png"
+	 width="17"
+	 height="16"
+	 alt="HELCATS on YouTube"
+	 border=0></a>
+  &nbsp;
+  <span style="font-size: 10pt;">
+    <a href="https://www.helcats-fp7.eu/trac">Project Wiki</a>
+    |
+    <a href="/contact.html">Contact Us</a>
+    &nbsp;&nbsp;
+  </span>
+</div>
+
+	    <section>
+	      <header>
+		<h2>WP3 Catalogue</h2>
+		<span class="byline"> CME KINEMATICS Catalogue</span>
+	      </header>
+          <p>This catalogue builds on the <a href="wp2_cat.html">HI identified CME catalogue</a> produced under <a href="../overview/activities_WP2.html">WP2</a>. Where possible, time elongation tracks are extracted for each CME along a defined position angle corresponding approximately to the apex of the CME. Single spacecraft geometric fitting techniques (see Davies et al., 2012; <a href="http://dx.doi.org/10.1088/0004-637X/777/2/167">doi:10.1088/0004-637X/777/2/167</a>) are used to determine the kinemtatic properties (direction, speed and launch time) for three different simple assumptions of the CME morphology. The result is a super-set of the WP2 catalogue containing both the observed parmeters and the derived kinematics. Please see Barnes et al., 2019 (<a href="https://doi.org/10.1007/s11207-019-1444-4"target="_blank">doi:10.1007/s11207-019-1444-4</a>) for further information and caveats related to this catalogue.</p>
+          <p><strong>This is version: 06 of the catalogue, released 2019-03-18, last updated 2026-08-25.</strong>
+          The catalogue is based on version 6 of the WP2 catalogue. The latest version includes events to the end of July 2026 on STEREO-A. Note that there is a gap of approximately 1 year in STEREO-A data from October 2014 when the spacecraft passed behind the Sun. Data from STEREO-B are not available after Septmeber 2014 since contact with the spacecraft has yet to be re-established. </p>
+          <p>The catalogue can be downloaded in several formats (<a href="data/HCME_WP3_V06.txt">Fixed format ASCII</a>, <a href="data/HCME_WP3_V06.json">JSON</a>, <a href="data/HCME_WP3_V06.vot">VoTable XML</a>). </p>
+        
+	<table >
+        <tr>
+	    <td>SSE launch date range</td>
+            <td> 
+                 <label for="sses_label">SSE speed:</label>
+                 <input type="text" id="sses_label" readonly style="border:0; font-weight:bold; background:none;">
+           </td>
+<td> 
+                 <label for="sselon_label">SSE HEEQ Lon:</label>
+                 <input type="text" id="sselon_label" readonly style="border:0; font-weight:bold; background:none;">
+           </td>
+           <td> 
+                 <label for="sselat_label">SSE HEEQ Lat:</label>
+                 <input type="text" id="sselat_label" readonly style="border:0; font-weight:bold; background:none;">
+           </td>
+       </tr>
+       <tr>
+           <td><label for="from">From</label>
+           <input type="text" id="from" name="from" size="10">
+           <label for="to">to</label>
+           <input type="text" id="to" name="to" size="10">
+           </td>
+           <td><div id="sses_range"></div></td>
+	   <td><div id="sselon_range"></div></td>
+       <td><div id="sselat_range"></div></td>
+       </tr>
+       </table>
+
+       <table id="example" class="display" cellspacing="0" width="100%">
+					<thead>
+						<tr>
+							<th>ID</th>
+							<th>Date<br/>[UTC]</th>
+							<th>SC</th>
+							<th>L-N</th>
+							<th>PA-N<br/>[deg]</th>
+							<th>L-S</th>
+							<th>PA-S<br/>[deg]</th>
+							<th>Quality</th>
+                            <th>PA-fit</th>
+                            <th>FP speed<br/>[kms-1]</th>
+                            <th>FP speed Err<br/>[kms-1]</th>
+                            <th>FP Phi<br/>[deg]</th>
+                            <th>FP Phi Err<br/>[deg]</th>
+                            <th>FP HEEQ Long<br/>[deg]</th>
+                            <th>FP HEEQ Lat<br/>[deg]</th>
+                            <th>FP Carr Long<br/>[deg]</th>
+                            <th>FP Launch<br/>[UTC]</th>
+                            <th>SSE speed<br/>[kms-1]</th>
+                            <th>SSE speed Err<br/>[kms-1]</th>
+                            <th>SSE Phi<br/>[deg]</th>
+                            <th>SSE Phi Err<br/>[deg]</th>
+                            <th>SSE HEEQ Long<br/>[deg]</th>
+                            <th>SSE HEEQ Lat<br/>[deg]</th>
+                            <th>SSE Carr Long<br/>[deg]</th>
+                            <th>SSE Launch<br/>[UTC]</th>
+                            <th>HM speed<br/>[kms-1]</th>
+                            <th>HM speed Err<br/>[kms-1]</th>
+                            <th>HM Phi<br/>[deg]</th>
+                            <th>HM Phi Err<br/>[deg]</th>
+                            <th>HM HEEQ Long<br/>[deg]</th>
+                            <th>HM HEEQ Lat<br/>[deg]</th>
+                            <th>HM Carr Long<br/>[deg]</th>
+                            <th>HM Launch<br/>[UTC]</th>
+						</tr>
+					</thead>
+
+		</table>
+        <p>The time-elongation profiles used for the fitting for all events can be downloaded as a .tar.gz file (<a href="data/tracks/HCME_WP3_V06_TE_PROFILES.tar.gz">HCME_WP3_V06_TE_PROFILES.tar.gz</a>)                        
+                <p> catalogue contains the following columns <strong>(by default only a subset are shown above but all will be included when you copy or download the data. Use the Show/hide columns option to display the required selection. Events with quality classification of "poor" are not shown)</strong>:
+        <table class="tstyle1">
+          <thead><tr><th>Column</th><th>Description</th></tr></thead>
+          <tr><td>ID</td><td>The unique identifer for the observed CME.</td></tr>
+          <tr><td>Date [UTC]</td><td> The date and time of the first observation of the CME in HI1 camera.</td></tr>
+          <tr><td>SC</td><td>The observing STEREO spacecraft, (A=Ahead or B=Behind).</td></tr>
+          <tr><td>L-N</td><td> Indicator that CME extends beyond the northern edge of the field-of-view (< for sc A, > sc B, blank if edge within FOV).</td></tr>
+          <tr><td>PA-N [deg]</td><td> The most northern position angle of the CME span.</td></tr>
+          <tr><td>L-S</td><td> Indicator that CME extends beyond the southern edge of the feld-of-view (> for sc A, < for sc B, blank if edge within FOV).</td></tr>
+          <tr><td>PA-S [deg]</td><td> The most southern position angle of the CME span.</td></tr>
+          <tr><td height="79">Quality</td><td> <p>A measure of "good", "fair" or "poor", that indicates the quality of the CME observation and confidence that the eruption is by definition a CME. It is recommended that Poor events are not used for CME based studies.</p></td></tr>
+          <tr><td>PA-fit [deg]</td><td>The postion angle used in the time-elongation fitting</td></tr>
+          <tr><td>FP Speed [kms-1]</td><td>CME speed using on Fixed-Phi fitting</td></tr>
+          <tr><td>FP Speed Err [kms-1]</td><td>Uncertainty in Speed using Fixed-Phi fitting</td></tr>
+          <tr><td>FP Phi [deg]</td><td>Spacecraft-Sun-CME angle phi in degrees using Fixed-Phi fitting</td></tr>
+          <tr><td>FP Phi Err [deg]</td><td>Uncertainty in phi using Fixed-Phi fitting</td></tr>
+          <tr><td>FP HEEQ Long [deg]</td><td>CME HEEQ Longitude using on Fixed-Phi fitting</td></tr>
+          <tr><td>FP HEEQ Lat [deg]</td><td>CME HEEQ Latitude using on Fixed-Phi fitting</td></tr>
+          <tr><td>FP Carr Long [deg]</td><td>CME Carrington Longitude using Fixed-Phi fitting</td></tr>
+          <tr><td>FP Launch [UTC]</td><td>CME Launch time (r=0) using Fixed-Phi fitting</td></tr>
+                    
+          <tr><td>SSE Speed [kms-1]</td><td>CME speed using on Self-Similar Expansion fitting</td></tr>
+          <tr><td>SSE Speed Err [kms-1]</td><td>Uncertainty in speed using Self-Similar Expansion fitting</td></tr>
+          <tr><td>SSE Phi [deg]</td><td>Spacecraft-Sun-CME angle phi in degrees using Self-Similar Expansion fitting</td></tr>
+          <tr><td>SSE Phi Err [deg]</td><td>Uncertainty in phi using Self-Similar Expansion fitting</td></tr>
+          <tr><td>SSE HEEQ Long [deg]</td><td>CME HEEQ Longitude using on Self-Similar Expansion fitting</td></tr>
+          <tr><td>SSE HEEQ Lat [deg]</td><td>CME HEEQ Latitude using on Self-Similar Expansion fitting</td></tr>
+          <tr><td>SSE Carr Long [deg]</td><td>CME Carrington Longitude using Self-Similar Expansion fitting</td></tr>
+          <tr><td>SSE Launch [UTC]</td><td>CME Launch time (r=0) using Self-Similar Expansion fitting</td></tr>
+          
+          <tr><td>HM Speed [kms-1]</td><td>CME speed using on Harmonic-Mean fitting</td></tr>
+          <tr><td>HM Speed Err [kms-1]</td><td>Uncertainty in speed using Harmonic-Mean fitting</td></tr>
+          <tr><td>HM Phi [deg]</td><td>Spacecraft-Sun-CME angle phi in degrees using Harmonic-Mean fitting</td></tr>
+          <tr><td>HM Phi Err [deg]</td><td>Uncertainty in phi using Harmonic-Mean fitting</td></tr>
+          <tr><td>HM HEEQ Long [deg]</td><td>CME HEEQ Longitude using on Harmonic-Mean fitting</td></tr>
+          <tr><td>HM Carr Long [deg]</td><td>CME Carrington Longitude using Harmonic-Mean fitting</td></tr>
+          <tr><td>HM HEEQ Lat [deg]</td><td>CME HEEQ Latitude using on Harmonic-Mean fitting</td></tr>
+          <tr><td>FP Launch [UTC]</td><td>CME Launch time (r=0) using Harmonic-Mean fitting</td></tr>          
+          
+        </table>
+          </p>   	      
+	  </div>
+	  <!-- /Content -->
+	</div>
+      </div>
+    </div>
+
+    <div id="dialog" title="Event Information">
+	<p>This is where we will display additional event information such as images.</p>
+    </div>
+
+
+    <!-- Main -->
+
+    <!-- Footer -->
+    <!-- Footer -->
+<div id="footer">
+  <div class="container">
+    <img src="/images/HELCATS_banner.jpg" width="100%">
+  </div>
+</div>
+<!-- Footer -->
+<!-- EU project information -->
+<div id="acknowledgement">
+  <div class="container">
+    <ul class="style1">
+      <li class="first">
+        <img src="/images/flag_yellow_low.jpg" alt="EU" height=50>
+        <p>This project has received funding from the European Union's Seventh Framework Programme for research, technological development and demonstration under grant agreement no 606692.</p>
+      </li>
+    </ul>
+  </div>
+<!-- Copyright -->
+  <div id="copyright">
+    <div class="container"> Design: <a href="http://templated.co">TEMPLATED</a>;
+  Adapted by the HELCATS consortium; <em>Last updated Tuesday, 25-Aug-2026 14:04:35 BST</em>
+    </div>
+  </div>
+</div>
+
+
+  </body>
+</html>
+

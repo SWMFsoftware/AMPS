@@ -13,10 +13,12 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import textwrap
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -109,6 +111,122 @@ PARK01 | parker | duplicate
 """
         self.assertEqual(runner._parse_list_output(listing),
                          ["FTED08", "PARK01"])
+
+    def test_native_all_cli_uses_only_requested_configured_build(self):
+        """Regress both native commands that reached 3-D-only Make targets.
+
+        Launch the installed runner as a separate process, rather than mocking
+        its native helper. A tiny protocol fixture advertises one deterministic
+        test and writes literal JSON; it verifies orchestration, not transport
+        physics. A recording make on PATH rejects implicit builds and accepts
+        only the enclosing clean/strict-production route under --rebuild.
+        Substituting the 3-D runner must fail for both test/stage1 and
+        clean-standalone; no real configured AMPS build occurs in this fixture.
+        """
+        with tempfile.TemporaryDirectory(prefix="srcsep-native-all-cli-") as tmp:
+            temporary = Path(tmp)
+            executable = temporary / "amps"
+            calls = temporary / "native-calls.jsonl"
+            make_called = temporary / "make-called"
+            amps_source = temporary / "AMPS"
+            application_makefile = amps_source / "srcSEP" / "makefile"
+            application_makefile.parent.mkdir(parents=True)
+            application_makefile.write_text("# protocol fixture\n", encoding="utf-8")
+            make_config = amps_source / "Makefile.conf"
+            make_config.write_text("# protocol fixture\n", encoding="utf-8")
+            # sys.executable is the interpreter actually running this test;
+            # it avoids assuming a particular Python alias on the host.
+            executable.write_text("#!" + sys.executable + "\n" + textwrap.dedent('''\
+                import json
+                import os
+                from pathlib import Path
+                import sys
+                args = sys.argv[1:]
+                with Path(os.environ["SRCSEP_RUNNER_FIXTURE_CALLS"]).open("a") as log:
+                    log.write(json.dumps(args) + "\\n")
+                if args == ["--list-tests"]:
+                    print("Registered srcSEP standalone component tests")
+                    print("ID | group | class | description")
+                    print("PCLI01 | cli | deterministic | protocol fixture")
+                    raise SystemExit(0)
+                if "--test" not in args or args[args.index("--test") + 1] != "PCLI01":
+                    raise SystemExit("unexpected native fixture command")
+                report = {
+                    "schema": "srcsep-component-tests-v1", "exit_code": 0,
+                    "totals": {"passed": 1, "failed": 0, "skipped": 0, "errors": 0},
+                    "results": [{"id": "PCLI01", "status": "PASS",
+                        "message": "runner protocol fixture; no physics claim",
+                        "elapsed_seconds": 0.0, "seed": None,
+                        "configuration": [], "metrics": [], "artifacts": []}],
+                }
+                Path(args[args.index("--test-json") + 1]).write_text(json.dumps(report))
+                Path(args[args.index("--test-junit") + 1]).write_text(
+                    '<testsuite tests="1" failures="0" errors="0"/>')
+                '''), encoding="utf-8")
+            executable.chmod(0o755)
+            make = temporary / "make"
+            make.write_text("#!" + sys.executable + "\n" + textwrap.dedent('''\
+                import json
+                import os
+                from pathlib import Path
+                import sys
+                args = sys.argv[1:]
+                with Path(os.environ["SRCSEP_RUNNER_FIXTURE_MAKE_CALLED"]).open("a") as log:
+                    log.write(json.dumps(args) + "\\n")
+                for target in ("test/stage1", "clean-standalone"):
+                    if target in args:
+                        print("make: *** No rule to make target '" + target + "'. Stop.")
+                        raise SystemExit(2)
+                if os.environ["SRCSEP_RUNNER_FIXTURE_ALLOW_REBUILD"] == "1":
+                    root = Path(os.environ["SRCSEP_RUNNER_FIXTURE_AMPS_ROOT"])
+                    if args == ["-C", str(root), "clean"]:
+                        raise SystemExit(0)
+                    if args == ["--no-print-directory", "-f", str(root / "srcSEP/makefile"),
+                                "strict-production", "AMPS_ROOT=" + str(root),
+                                "AMPS_CONFIG=" + str(root / "Makefile.conf")]:
+                        raise SystemExit(0)
+                print("unexpected implicit or misrouted make command: " + str(args))
+                raise SystemExit(2)
+                '''), encoding="utf-8")
+            make.chmod(0o755)
+            environment = dict(os.environ)
+            environment.update({
+                "PATH": str(temporary) + os.pathsep + environment.get("PATH", ""),
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "SRCSEP_RUNNER_FIXTURE_CALLS": str(calls),
+                "SRCSEP_RUNNER_FIXTURE_MAKE_CALLED": str(make_called),
+                "SRCSEP_RUNNER_FIXTURE_AMPS_ROOT": str(amps_source),
+            })
+            for rebuild in (False, True):
+                with self.subTest(rebuild=rebuild):
+                    calls.unlink(missing_ok=True)
+                    make_called.unlink(missing_ok=True)
+                    environment["SRCSEP_RUNNER_FIXTURE_ALLOW_REBUILD"] = str(int(rebuild))
+                    output = temporary / "test_output" / ("rebuilt" if rebuild else "all")
+                    command = [sys.executable, str(RUNNER), "--amps", str(executable),
+                               "--all", "--output-dir", str(output)]
+                    if rebuild:
+                        command.extend(["--rebuild", "--amps-source", str(amps_source),
+                                        "--make-config", str(make_config)])
+                    completed = subprocess.run(command,
+                        cwd=str(ROOT), env=environment, text=True,
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        timeout=30, check=False)
+                    self.assertEqual(completed.returncode, 0, completed.stdout)
+                    self.assertEqual(make_called.exists(), rebuild, completed.stdout)
+                    native_calls = [json.loads(line) for line in calls.read_text().splitlines()]
+                    self.assertEqual(len(native_calls), 2)
+                    self.assertEqual(native_calls[0], ["--list-tests"])
+                    self.assertEqual(native_calls[1][:2], ["--test", "PCLI01"])
+                    report = json.loads((output / "srcsep-tests.json").read_text())
+                    self.assertEqual(report["totals"], {
+                        "passed": 1, "failed": 0, "skipped": 0, "errors": 0})
+                    manifest = json.loads((output / "run_manifest.json").read_text())
+                    self.assertEqual(len(manifest["command"]), 3 if rebuild else 1)
+                    self.assertEqual(manifest["command"][-1][0], str(executable))
+                    if rebuild:
+                        make_calls = [json.loads(line) for line in make_called.read_text().splitlines()]
+                        self.assertEqual(make_calls, [item[1:] for item in manifest["command"][:2]])
 
     def test_all_rebuild_uses_enclosing_configured_build_commands(self):
         """Make newly linked registry IDs visible before --all discovery.

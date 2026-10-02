@@ -194,6 +194,17 @@ Core::Status AnalyticParkerProvider::Prepare(double timeS) {
   return Core::Status::OK();
 }
 
+Core::Status AnalyticParkerProvider::RestorePreparedGeneration(std::uint64_t generation) {
+  // A checkpoint restores both the snapshot's tag and the live provider's
+  // counter after reconstructing its epoch. Otherwise the next Prepare would
+  // restart at generation two and violate the active snapshot's monotonicity.
+  // This restores identity only; coordinates/configuration were checked earlier.
+  if (!prepared_ || generation==0)
+    return Invalid("prepare Parker before restoring a positive checkpoint generation");
+  metadata_.generation=generation;
+  return Core::Status::OK();
+}
+
 const SnapshotMetadata* AnalyticParkerProvider::PreparedMetadata() const {
   return prepared_ ? &metadata_ : nullptr;
 }

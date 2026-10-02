@@ -46,7 +46,7 @@ struct Context {
   LocalRecordResolver resolveLocal = nullptr;
   MagneticDirectionResolver resolveMagneticDirection = nullptr;
   Adapters::ParticleLedger* ledger = nullptr;
-  Adapters::ExpandingSphericalShock shock;
+  Adapters::ExpandingShock shock;
   // Hard failure guard for a malformed local limiter.  This is deliberately
   // part of the frozen context instead of a file-scope magic number so it can
   // be fingerprinted and restored with the run configuration.
@@ -57,7 +57,7 @@ struct Context {
 // host-owned and must outlive the AMPS run; the other context data are copied.
 Core::Status InstallContext(const Context& context);
 bool ContextInstalled();
-Core::Status UpdateShock(const Adapters::ExpandingSphericalShock& shock);
+Core::Status UpdateShock(const Adapters::ExpandingShock& shock);
 
 // Request exactly one packed persistent record before AMPS freezes its
 // particle-buffer layout. AMPS checkpoint/restart then carries stochastic

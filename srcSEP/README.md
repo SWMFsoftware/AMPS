@@ -834,6 +834,23 @@ configuration, metrics, messages, durations, and artifact paths.
 
 ### Python campaign runner and analytical figures
 
+Keep the two application runners in their own directories. The field-line
+runner is `srcSEP/test/run_tests.py`; `srcSEP3D/test/run_tests.py` uses a
+different standalone build and must not replace it. A normal native command
+such as `test/run_tests.py --amps ../amps --all --output-dir test_output/all`
+uses the supplied linked srcSEP executable: it lists its registry and launches
+each test separately. It does not invoke `make` or build `test/stage1`.
+That target and `clean-standalone` belong to srcSEP3D. Only an explicit
+`--rebuild` requests the configured enclosing AMPS clean/build route.
+Source-only checks use the documented `--suite`/Make targets instead.
+
+If either native command reports `No rule to make target 'test/stage1'` or
+`'clean-standalone'`, restore the field-line runner under `srcSEP/test`.
+Adding dummy targets to the srcSEP makefile does not restore the application-
+specific registry, validation case routing or evidence contract. See
+[RUNNER_RESTORE_20261002.md](RUNNER_RESTORE_20261002.md) for installation and
+verification.
+
 `test/run_tests.py` is the single orchestration interface for selecting one,
 several, a group, the bounded routine set, or every registered test. It calls
 the production registry rather than duplicating test selection or physics in

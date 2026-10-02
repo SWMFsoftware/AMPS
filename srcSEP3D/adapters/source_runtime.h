@@ -31,11 +31,19 @@ struct ShockState {
   double radiusM = 0.0;
   double radialSpeedMPerS = 0.0;
   double compressionRatio = 1.0;
+  // For SSE, radiusM/radialSpeedMPerS are apex diagnostics; centerM remains
+  // the solar origin. Carry shape explicitly so a host cannot reconstruct a
+  // Sun-centered sphere from the same scalar kinematics by accident.
+  ShockGeometryKind geometry = ShockGeometryKind::Sphere;
+  Core::Vec3 cmeDirection = {1.0, 0.0, 0.0};
+  double halfWidthRad = Core::Const::kPi / 2.0;
   std::string providerIdentity;
   std::string configurationFingerprint;
   std::vector<ShockSourceRecord> patches;
 
   bool Covers(double timeS) const;
+  // One shared conversion for native initialization, epoch updates and tests.
+  ExpandingShock MoverGeometry() const;
 };
 
 class ShockProvider {

@@ -12,6 +12,13 @@
 #include "pic.h"
 //#include <algorithm>
 
+// Preserve legacy behavior for applications that actually load background
+// files. Runtime applications explicitly claim publication ownership during
+// initialization; allocation of DATAFILE storage does not change this policy.
+PIC::CPLR::DATAFILE::BackgroundUpdateMode _TARGET_DEVICE_ _CUDA_MANAGED_
+    PIC::CPLR::DATAFILE::BackgroundUpdatePolicy =
+        PIC::CPLR::DATAFILE::BackgroundUpdateMode::FileSchedule;
+
 //number of file to be loaded
 int PIC::CPLR::DATAFILE::MULTIFILE::nFile=0;
 
@@ -70,6 +77,13 @@ PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::MagneticFluxFun
 
 //==============================================================================
 void PIC::CPLR::DATAFILE::MULTIFILE::Init(bool BreakAtLastFileIn,int  FileNumberFirst) {
+  // This API initializes a real file sequence and resets the simulation clock
+  // from its first epoch. It is not the allocator DATAFILE::Init(). Calling it
+  // after a runtime provider claims ownership is a configuration error, not a
+  // request to fabricate a dummy schedule or overwrite the runtime clock.
+  if (!PIC::CPLR::DATAFILE::UsesFileSchedule())
+    exit(__LINE__,__FILE__,
+        "DATAFILE::MULTIFILE::Init cannot initialize files for a runtime-owned background");
   //load schedule from file
   GetSchedule();
   iFileLoadNext = FileNumberFirst;
@@ -219,6 +233,11 @@ double PIC::CPLR::DATAFILE::MULTIFILE::GetFileTime(const char* FileName) {
 
 //=============================================================================
 void PIC::CPLR::DATAFILE::MULTIFILE::UpdateDataFile() {
+  // PIC::TimeStep already gates this call. Reject an accidental direct loader
+  // call as well, before it can swap the runtime buffer slots or import files.
+  if (!PIC::CPLR::DATAFILE::UsesFileSchedule())
+    exit(__LINE__,__FILE__,
+        "DATAFILE::MULTIFILE::UpdateDataFile cannot load files for a runtime-owned background");
   if (MULTIFILE::ReachedLastFile==false) {
     if (_PIC_DATAFILE__TIME_INTERPOLATION_MODE_ == _PIC_MODE_ON_) {
       //swap data offsets

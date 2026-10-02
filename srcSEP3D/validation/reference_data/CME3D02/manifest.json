@@ -1,0 +1,239 @@
+{
+  "acknowledgements": [
+    "NASA/GSFC Space Physics Data Facility and Wind MFI/SWE teams.",
+    "This paper uses data from the Heliospheric Shock Database, generated and maintained at the University of Helsinki.",
+    "HELCATS consortium and STEREO/SECCHI teams; cite Barnes et al. (2019), doi:10.1007/s11207-019-1444-4.",
+    "CfA Interplanetary Shock Database, Michael L. Stevens and Justin C. Kasper."
+  ],
+  "arrival": {
+    "feature": "shock",
+    "heliocentric_radius_m": 150754716694.03116,
+    "position_hec_m": [
+      58032841628.0662,
+      -139137224611.6972,
+      -81396704.50203656
+    ],
+    "provenance": "IPShocks Zenodo v1 Wind event at 17:39:09 UTC; timing uncertainty 20 s from independent CfA Wind event 00525 (17:39:07.5 +/-20 s). Radius from linear Cartesian interpolation of NASA WI_OR_PRE (Predicted Orbit) HEC_POS, not an assumed 1 AU. Definitive Orbit did not provide a usable response for this interval.",
+    "role": "validation",
+    "spacecraft": "Wind",
+    "time_utc": "2012-07-14T17:39:09.000Z",
+    "timing_uncertainty_provenance": "CfA event 00525; adopted analysis uncertainty, not an uncertainty column provided by IPShocks",
+    "uncertainty_s": 20.0
+  },
+  "case_id": "CME3D02",
+  "comparison_scope": "arrival-only",
+  "counts": {
+    "helcats_time_elongation_records": 109,
+    "wind_magnetic_1min_records": 7200,
+    "wind_proton_good": 3503,
+    "wind_proton_records": 4193
+  },
+  "event_name": "2012 July 12 CME: shock arrival at Wind",
+  "files": [
+    {
+      "bytes": 10148,
+      "file": "README.md",
+      "sha256": "dd778bb200412822ed589b963860e389b24b5cda5be0bd340f2d2486eb9cc255"
+    },
+    {
+      "bytes": 744,
+      "file": "arrival.json",
+      "sha256": "5b02e46db13ddf41c458cc2290933a42a8472be972afc9dd48ed980e481db54b"
+    },
+    {
+      "bytes": 61067,
+      "file": "helcats-elongation-reference.eps",
+      "sha256": "8eb5f03cd4ce8f5a88ab55bd255fd6b08d528cddc5234f2e7b68bd83de07df19"
+    },
+    {
+      "bytes": 482423,
+      "file": "helcats-elongation-reference.png",
+      "sha256": "22f3f08ecaf5158db6492d7651ff53b6253db6b0a46970649cba10f2ddba6fdf"
+    },
+    {
+      "bytes": 2337,
+      "file": "helcats_event_catalog.json",
+      "sha256": "e215445609152f6d5d3b277b40e0b2f41a6df2b124a6f1aa597ff13c8353c222"
+    },
+    {
+      "bytes": 13972,
+      "file": "helcats_time_elongation.csv",
+      "sha256": "56b483c6e6854e84d463b35812a8abb0ac66001215f6b8a466ff69dcbeb16914"
+    },
+    {
+      "bytes": 4239,
+      "file": "ipshocks_wind_event.json",
+      "sha256": "c04410c90c85f273e279399bbd71900f2e20bd4e0ce7988736bfcb9221ffa91e"
+    },
+    {
+      "bytes": 2898,
+      "file": "raw/HCME_A__20120712_02_PA075.dat",
+      "sha256": "db34532530da6fdf40d4292dd1985704df2e782dd463c37dffc7ed4b7268a340"
+    },
+    {
+      "bytes": 3969,
+      "file": "raw/HCME_B__20120712_01_PA260.dat",
+      "sha256": "073e12bf465ef5ec8376a1a196d84bbc0976bf40dc32779570b5774beb84ebff"
+    },
+    {
+      "bytes": 51421,
+      "file": "raw/cfa_wind_event.html",
+      "sha256": "381e28e0a6e00a4aaf20f08606547d9581371e196f0a7f36bcd3fef20595cd8a"
+    },
+    {
+      "bytes": 8005,
+      "file": "raw/download_receipt.json",
+      "sha256": "5ae4c0aa5347943aad65ea16e7d641e4da5048639ef582d3d99a2ba0f168a739"
+    },
+    {
+      "bytes": 23302,
+      "file": "raw/helcats_higeocat.html",
+      "sha256": "559d564103c3a135558b3bd09d03fefdf820914a069edc9691ba4001b8f78ea6"
+    },
+    {
+      "bytes": 684329,
+      "file": "raw/helcats_higeocat.json",
+      "sha256": "c214ce9efbe9704280b6e482837cd8a2d4ae4717b8cdf110f685b53b5971c962"
+    },
+    {
+      "bytes": 2789466,
+      "file": "raw/helcats_te_profiles.tar.gz",
+      "sha256": "c1bf8f43e897ef3704386a169ae2083a60f8475bd08ce4c44b50aff580f75e19"
+    },
+    {
+      "bytes": 1112192,
+      "file": "raw/ipshocks_database.csv",
+      "sha256": "93c9be1f9d66408401e18395a17326846dce14db95d37aa02e7358009ef081b8"
+    },
+    {
+      "bytes": 5023,
+      "file": "raw/stereo_a_info.json",
+      "sha256": "d866b56823745e10cf0af9546f23393aa8142e92ec835bc325b8c92e70712e28"
+    },
+    {
+      "bytes": 6111,
+      "file": "raw/stereo_a_positions.json",
+      "sha256": "02f98abbab04c82762284ec2812fdffc3098b038871ea3f72faaa4423df4b0cb"
+    },
+    {
+      "bytes": 5023,
+      "file": "raw/stereo_b_info.json",
+      "sha256": "0a4bc0ae3a5487a8b6954da29316b96c343cd3bee4c22f2e9510ecccff543473"
+    },
+    {
+      "bytes": 6203,
+      "file": "raw/stereo_b_positions.json",
+      "sha256": "b3bc35acb873312966946b11d075d55750f41d9187a69088e193ae3627bf5d01"
+    },
+    {
+      "bytes": 2411,
+      "file": "raw/wind_mfi_0_info.json",
+      "sha256": "59ae3df8aea7497f60c56f85b3016f486ec4f25ea6098b4823e6d2b9ada34ffa"
+    },
+    {
+      "bytes": 1421,
+      "file": "raw/wind_mfi_1_info.json",
+      "sha256": "b80cb2be0c95b68cae520c25e215c043377008067efa0e9c12cfb44039c54ad7"
+    },
+    {
+      "bytes": 926471,
+      "file": "raw/wind_mfi_1min_data.json",
+      "sha256": "ceceac6b58ed6913b12798951d21b82444f5cecc45d679da5d8ee0f3af93d8a3"
+    },
+    {
+      "bytes": 516238,
+      "file": "raw/wind_mfi_3sec_shock_data.json",
+      "sha256": "46e32196b8e70bdf1739cdbd2dbe0eda0385c67384bc8ea0c02586c9661ecc36"
+    },
+    {
+      "bytes": 141785,
+      "file": "raw/wind_orbit_data.json",
+      "sha256": "c1c86e88674daa59e27337edbe9a39337540b688ed5761e1234a0ac3be1a8179"
+    },
+    {
+      "bytes": 2896,
+      "file": "raw/wind_orbit_hapi_info.json",
+      "sha256": "d6c10c39d3eab6781625639d2f5a937a1ce4ce169a18326b052feccce5321ed4"
+    },
+    {
+      "bytes": 1096015,
+      "file": "raw/wind_plsp_data.json",
+      "sha256": "e80c7d5fd2981f9d01a86043299ce2f0b6f4adc77fbf0c8eca8c0d6d0b4a5f91"
+    },
+    {
+      "bytes": 8361,
+      "file": "raw/wind_plsp_info.json",
+      "sha256": "c9d7edb84e8d4dab72a01614d4b93e0c2cdfbe8514c7fd13ba68370dc048c749"
+    },
+    {
+      "bytes": 615913,
+      "file": "raw/wind_swe_data.json",
+      "sha256": "0b1edf7324ecf3c123dc006bf88210465d5be1a8de7f353928f2b9d1de5c6003"
+    },
+    {
+      "bytes": 12743,
+      "file": "raw/wind_swe_hapi_info.json",
+      "sha256": "1961209b5f9e685c772436f275a08f37fa5b47c75a34569ab3172732787e632d"
+    },
+    {
+      "bytes": 6192,
+      "file": "stereo_a_positions.csv",
+      "sha256": "e7edcb20eba902a8d5c32c123bff3e53b53f064c45bd83c75fb355c9e3b360a5"
+    },
+    {
+      "bytes": 6284,
+      "file": "stereo_b_positions.csv",
+      "sha256": "647f717e8442949969b1d8e42c40a4cf6e879c0b107b215c83b43e378a3dc569"
+    },
+    {
+      "bytes": 294465,
+      "file": "wind-reference.eps",
+      "sha256": "78aa83f127b49472a9f743e3efb5303f703ff4668282219ca81546645a2382ce"
+    },
+    {
+      "bytes": 723714,
+      "file": "wind-reference.png",
+      "sha256": "ae206ccf39124abe39215271316ecf6cd093a5b419437fd83b4056fc02e505f9"
+    },
+    {
+      "bytes": 480,
+      "file": "wind_context.json",
+      "sha256": "a6c566f43d8feb4ac8d6683308de93e536214edf26417f7f947838c0537570cb"
+    },
+    {
+      "bytes": 724228,
+      "file": "wind_magnetic_1min.csv",
+      "sha256": "bb0142b9b6d3dcd6daf711bc150f7d8fec293ec0b41ecc4353da629890cdb7e8"
+    },
+    {
+      "bytes": 603104,
+      "file": "wind_magnetic_3sec_shock.csv",
+      "sha256": "3738f9f13af74f3638d643054704d9b46d6125f0b7629ef06dd30d4e17f085b6"
+    },
+    {
+      "bytes": 71374,
+      "file": "wind_orbit.csv",
+      "sha256": "6295f768d0e4f00ac5d9b9e1fb1461e5efa80224ab8ec6a0ff2175d9268dae4e"
+    },
+    {
+      "bytes": 1591918,
+      "file": "wind_pesa_ion_moments.csv",
+      "sha256": "bf0f96148b1029c6a210fa9889837644457d86394d5e83c804fd8374091b0ce8"
+    },
+    {
+      "bytes": 282355,
+      "file": "wind_protons.csv",
+      "sha256": "07abcd8b7ef33a6f2befda011e38995acd5548260410226977ad1f6c700a64dc"
+    }
+  ],
+  "limitations": [
+    "Native source-off support and installed-provider history exporter are still required.",
+    "HELCATS brightness tracks are not independently classified radial shock observations; do not use their full-track fit to generate holdout shock radii.",
+    "Wind plasma and IMF are reference context; current Parker-background coupling cannot validate CME plasma/ejecta fields."
+  ],
+  "native_manifest": "native-manifest.json",
+  "reference_kind": "observations",
+  "reference_status": "ready-for-arrival-diagnostic",
+  "schema": "srcsep3d-swcme-reference-v1",
+  "shock_radius_track_available": false
+}

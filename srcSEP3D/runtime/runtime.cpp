@@ -142,8 +142,13 @@ Core::Status Runtime::BeginBackgroundAcquisition(AdapterKind adapter) {
       LifecycleState::MeshReady, "BeginBackgroundAcquisition");
   if (!order.ok()) return order;
   const BackgroundAuthority expected = configuration_->options().background;
+  // AdapterKind describes acquisition ownership, not the specific model.
+  // All runtime-evaluated sources use Standalone; SWMF remains externally
+  // imported. Provider provenance is checked separately at publication.
   const bool matches =
-      (expected == BackgroundAuthority::AnalyticParker &&
+      ((expected == BackgroundAuthority::AnalyticParker ||
+        expected == BackgroundAuthority::Swcme ||
+        expected == BackgroundAuthority::RuntimeModel) &&
        adapter == AdapterKind::Standalone) ||
       (expected == BackgroundAuthority::Swmf && adapter == AdapterKind::Swmf);
   if (!matches) {

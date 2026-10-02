@@ -218,7 +218,7 @@ const char* stress_stratum_name(StressStratum stratum){
 // tests consume these exact serialized results, so the full suite pays the
 // 100,000 nonlinear solves only once while each focused invocation remains
 // independently executable.  The four strata guarantee substantial no-shock,
-// sub-resolution weak, ordinary resolved, and determinant-conditioned cover.
+// near-identity weak, ordinary resolved, and determinant-conditioned cover.
 const std::vector<StressCase>& shock_stress_cases(){
   static const std::vector<StressCase> cases=[] {
     constexpr std::size_t count=100000;
@@ -1270,6 +1270,21 @@ void test_shk11(swcme_test::Context& context){
     }
   }
 
+  // Keep an explicit unresolved case even though the campaign's former
+  // 1e-10..1e-6 weak-limit stratum is now fully resolved. This probes the
+  // remaining binary64 uncertainty boundary without preserving an obsolete
+  // solver defect as an expected numerical rejection.
+  Primitive roundoff=fixture(45.0);
+  roundoff.velocity_m_s={{0,2e4,-1e4}};
+  const Vec3 roundoff_normal={{1,0,0}};
+  const double roundoff_speed=reference_fast_speed(roundoff,roundoff_normal,GAMMA)*
+      (1+0.25*swcme::shock::WEAK_SHOCK_MACH_RESOLUTION);
+  const auto roundoff_result=swcme::shock::solve_ideal_mhd_fast_shock(
+      roundoff,roundoff_normal,roundoff_speed,GAMMA);
+  context.expect_true(check_case(roundoff,roundoff_result,roundoff_normal,
+      roundoff_speed,GAMMA,"roundoff-scale critical limit"),
+      "SHK11 explicit roundoff-scale outcome retains its independent contract");
+
   std::cout<<"  campaign_passed="<<campaign_passed
            <<" solved="<<solved<<" no_shock="<<no_shock
            <<" numerical_limit="<<numerical_limit
@@ -1282,7 +1297,7 @@ void test_shk11(swcme_test::Context& context){
                       "SHK11 all named reference roots are uniquely evolutionary fast");
   context.expect_true(rejected_generic==0,
                       "SHK11 has no generic or silently substituted rejected root");
-  context.expect_true(solved>=49000 && no_shock==25000 && numerical_limit>=25000,
+  context.expect_true(solved>=74900 && no_shock==25000 && numerical_limit>=1,
                       "SHK11 exercises solved, no-shock, and explicit numerical limits");
 }
 
@@ -1397,8 +1412,9 @@ void test_shk12(swcme_test::Context& context){
 
   // Sweep both sides of Mfast=1 down to 1e-12 for every beta/angle/gamma
   // family.  Subcritical and exactly critical states are physical NoShock;
-  // small positive excesses are physical shocks that are explicitly marked
-  // numerically unresolved, never silently folded into NoShock.
+  // Representable positive excesses now use the deflated cubic rather than
+  // the former 1e-6 guard. Roundoff-scale positive excesses still receive the
+  // explicit unresolved status, never silently folded into physical NoShock.
   for(double beta : {0.01,0.1,1.0,10.0}){
     for(double theta : {1.0,30.0,60.0,89.0}){
       for(double gamma : {1.4,5.0/3.0}){
@@ -1416,20 +1432,39 @@ void test_shk12(swcme_test::Context& context){
           const auto result=swcme::shock::solve_ideal_mhd_fast_shock(
               upstream,n,(1.0+excess)*fast,gamma);
           context.expect_true(
-              result.status==swcme::shock::SolveStatus::NumericallyUnresolvedWeakShock &&
-                  result.has_shock && !result.solver_converged &&
+              result.status==swcme::shock::SolveStatus::Solved &&
+                  result.has_shock && result.solver_converged &&
+                  result.evolutionary_fast_branch &&
+                  result.compression>1.0 &&
+                  result.compression-1.0<8.0*excess &&
+                  result.energy_residual<=1e-8 &&
                   std::isfinite(result.downstream.rho_kg_m3) &&
                   std::isfinite(result.downstream.pressure_Pa),
-              "SHK12 sub-resolution supercritical state is explicitly unresolved");
+              "SHK12 representable weak jump is solved without a compression floor");
         }
+        // This is deliberately above one yet well inside the published
+        // binary64 uncertainty margin. It remains a numerical rejection.
+        const auto unresolved=swcme::shock::solve_ideal_mhd_fast_shock(
+            upstream,n,(1.0+0.25*swcme::shock::WEAK_SHOCK_MACH_RESOLUTION)*fast,gamma);
+        context.expect_true(unresolved.has_shock && !unresolved.solver_converged &&
+            unresolved.status==swcme::shock::SolveStatus::NumericallyUnresolvedWeakShock,
+            "SHK12 roundoff-scale supercritical state stays explicitly unresolved");
       }
     }
   }
 
   // These low-beta, nearly parallel points expose a near-singular tangential
-  // system.  The old outermost-root rule returned a discontinuous r~4--6
-  // state.  They must retain a finite diagnostic candidate but carry the
-  // unresolved status so downstream SEP physics cannot consume that branch.
+  // system. The old outermost-root rule returned a discontinuous r~4--6 state;
+  // the fixed 800-point scan rejected it but missed the actual small jump.
+  // The fast-interval refinement must now recover the reference branch rather
+  // than pinning that obsolete scan limitation as an expected result. These
+  // frozen roots were generated with 80-digit Decimal bisection of the direct
+  // mass/momentum/induction/energy flux equations in the zero-ut frame, using
+  // the physical primitives below, not the production multiplied cubic.
+  const std::array<double,2> parallel_references={{
+      1.0185276877932058247543151105718782,
+      1.2031994039402316765808478079155938}};
+  std::size_t parallel_index=0;
   for(const auto parameters :
       {std::array<double,3>{{0.01,1.4,1.0e-2}},
        std::array<double,3>{{0.01,5.0/3.0,1.0e-1}}}){
@@ -1438,12 +1473,16 @@ void test_shk12(swcme_test::Context& context){
     const auto result=swcme::shock::solve_ideal_mhd_fast_shock(
         upstream,n,(1.0+parameters[2])*fast,parameters[1]);
     context.expect_true(
-        result.status==swcme::shock::SolveStatus::NumericallyUnresolvedWeakShock &&
-            result.has_shock && !result.solver_converged &&
+        result.status==swcme::shock::SolveStatus::Solved &&
+            result.has_shock && result.solver_converged && result.evolutionary_fast_branch &&
+            std::abs(result.compression-parallel_references[parallel_index++])<5e-10 &&
+            result.mass_residual<=1e-9 && result.normal_B_residual<=1e-10 &&
+            result.electric_residual<=1e-8 && result.momentum_residual<=1e-8 &&
+            result.energy_residual<=1e-8 &&
             std::isfinite(result.compression) &&
             std::isfinite(result.downstream.rho_kg_m3) &&
             std::isfinite(result.downstream.pressure_Pa),
-        std::string("SHK12 discontinuous near-singular branch is explicitly unresolved; status=")+
+        std::string("SHK12 near-parallel jump matches independent 80-digit root; status=")+
             swcme::shock::solve_status_name(result.status)+
             " compression="+std::to_string(result.compression));
   }
@@ -1549,9 +1588,12 @@ void test_shk15(swcme_test::Context& context){
       expected=item.result.status==swcme::shock::SolveStatus::NoShock &&
           !item.result.has_shock && item.result.solver_converged;
     } else if(item.stratum==StressStratum::WeakLimit){
-      expected=item.result.status==
-          swcme::shock::SolveStatus::NumericallyUnresolvedWeakShock &&
-          item.result.has_shock && !item.result.solver_converged;
+      // These 25,000 cases have excesses 1e-10..1e-6. The old divided-flux
+      // resolution guard rejected them wholesale; all must now resolve to a
+      // conserved evolutionary near-identity jump through the stable cubic.
+      expected=item.result.status==swcme::shock::SolveStatus::Solved &&
+          item.result.has_shock && item.result.solver_converged &&
+          item.result.evolutionary_fast_branch;
     } else {
       // Resolved and determinant-conditioned inputs may either produce the
       // verified evolutionary fast branch or one of the two documented

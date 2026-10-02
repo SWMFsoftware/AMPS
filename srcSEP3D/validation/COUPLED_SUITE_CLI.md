@@ -10,7 +10,7 @@ python3 srcSEP3D/test/run_coupled_sep_corona.py --amps ./amps --ranks 4 --test-i
 Run this Python command once from the AMPS root; it launches MPI itself. It
 builds the shared test binary/adapters, runs every shared gate (including
 Stage-12 observation preprocessing and Stage-13/14 release/research Python), then launches the requested live suite. Currently
-there are 222 shared and 7 native cases, totaling 229. The actual shared
+there are 222 shared and 10 native cases, totaling 232. The actual shared
 `--list` and executable `--list-tests` outputs own selection; this driver
 maintains no copied ID catalogue or fixed count.
 
@@ -96,8 +96,8 @@ and print their stored diagnostics without rerunning the suite:
 python3 -c 'import json; d=json.load(open("test_output/coupled-sep-corona-all/summary.json")); print("logs:",d["run_directory"]); [print(r["scope"],r["id"],r["status"],r.get("message") or r.get("output") or "",sep="\n") for r in d["results"] if r["status"] in ("FAIL","ERROR")]'
 ```
 
-Adjust that JSON path to the selected `--output-dir`. If all seven native cases
-pass but the aggregate reports one FAIL, that failure belongs to the shared
+Adjust that JSON path to the selected `--output-dir`. If every selected native case
+passes or skips but the aggregate reports one FAIL, that failure belongs to the shared
 suite; its ID and captured assertion/traceback are in `summary.json`, with the
 original output in the run's `shared.log` and `shared/results.json`.
 
@@ -138,7 +138,7 @@ mpiexec -n 4 ./amps --test-suite sep-corona --test-input srcSEP3D/examples/sep3d
 ```
 
 This selects only descriptors registered in the native `sep-corona` suite.
-Today it selects SCCM3D01–07; the command automatically grows with the registry.
+Today it selects SCCM3D01–07 and SWBGAMPS01–03; the command automatically grows with the registry.
 It initializes the real distributed AMPS application once, captures state at a
 collective boundary, evaluates every selected case, writes the existing native
 JSON format and state artifact, and prints per-case results and totals. It
@@ -214,3 +214,12 @@ synthetic contract verification but report SKIP for absent actual campaign
 evidence. Shared full selection is 222: 219 PASS, 3 SKIP, 0 FAIL. The
 aggregate preserves shared SKIPs and enforces `--require-no-skips` across both
 scopes. The Stage-13 baseline remains 209 PASS.
+
+### SWCME mesh-field update prerequisites
+
+The three new native field gates are discovered automatically. Use
+`--test-input srcSEP3D/examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in` and
+`--test-steps 2` with at least two ranks to exercise owner/native storage,
+cadence refresh and received ghost blocks. The analytic input intentionally
+skips these SWCME-specific gates. They are additional to the shared-model
+software checks and do not imply an observational CME fit.

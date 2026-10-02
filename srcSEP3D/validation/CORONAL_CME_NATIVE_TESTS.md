@@ -42,18 +42,19 @@ mpiexec -n 4 ./amps --test-suite sep-corona --test-input srcSEP3D/examples/sep3d
 ```
 
 The selector reads native descriptor suite membership directly. It currently
-selects SCCM3D01–07 and includes future `suite="sep-corona"` descriptors after
+selects SCCM3D01–07 and SWBGAMPS01–03, and includes future `suite="sep-corona"` descriptors after
 rebuilding. Discovery displays suite membership. Results print one status per
 case plus total PASS/FAIL/SKIP/ERROR counts. See [COUPLED_SUITE_CLI.md](COUPLED_SUITE_CLI.md).
 
-To include all shared-model Stage-0--12 tests in the same invocation, use:
+To include the shared-model registry through Stage 14 in the same invocation, use:
 
 ```bash
 python3 srcSEP3D/test/run_coupled_sep_corona.py --amps ./amps --ranks 4 --test-input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --test-steps 0
 ```
 
-This runs both authorities and combines their reports (currently 206 shared
-plus 7 native cases). Rebuild after updating the native report boundary:
+This runs both authorities and combines their reports (currently 222 shared
+plus 10 native cases). The analytic input skips SWCME-specific mesh checks;
+use the evolving-field command below to exercise them. Rebuild after updating the native report boundary:
 `providers` and `completed_steps` must be captured from production state. An
 obsolete report fails the aggregate runner rather than receiving an inferred
 provider identity.
@@ -118,6 +119,26 @@ schema and exit status, and hashes the executable, deck, JSON, and artifacts.
 | `SCCM3D05` | immutable background generation and shock state observed after publication at one joined boundary | background/shock generation coherence; explicit no-shock transport is a complete state, not missing data |
 | `SCCM3D06` | mesh, Parker-line, and all per-species AMPS initialization Tecplot products | every product exists, is nonempty, and contains no numeric NaN or infinity token |
 | `SCCM3D07` | configuration identity, collective mesh counts, generation, initialization mask, and all species numerics | identical deterministic fingerprint on every rank; optional exact rank-count assertion |
+| `SWBGAMPS01` | every owner physical cell's mapped application/native primitive, transport and E fields, both allocated DATAFILE slots, prepared epoch/generation and readiness | exact copied values and current runtime provider agree |
+| `SWBGAMPS02` | completed refresh count versus due cadence events, plus current owner/provider readback | each due update commits before transport resumes |
+| `SWBGAMPS03` | one physical representative per received active remote block and collective identity | received allocated fields match the prepared SWCME epoch without a test-time fill or extra exchange |
+
+For evolving-field publication evidence, rebuild and run from the AMPS root:
+
+```sh
+python3 srcSEP3D/test/run_coupled_sep_corona.py --amps ./amps --ranks 4 --test-input srcSEP3D/examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in --test-steps 2
+```
+
+All three SWBGAMPS cases require `background.provider=swcme`; otherwise they
+SKIP. SWBGAMPS02 also requires a horizon crossing a background cadence.
+SWBGAMPS03 requires at least two ranks and received remote physical blocks;
+launching multiple ranks alone does not prove ghost coverage. The JSON
+`runtime_mesh_background` object records update counts, representative count
+and collective readback flags. Checks cover allocated fields, not optional
+application tensors disabled by `[storage]`. Native current/electron pressure
+are filled by the bridge but are not separately compared in this readback gate.
+Publication PASS is separate
+from spatial/time convergence and observational CME validation.
 
 The pre-existing linked `NAT3D01–03/09–12` and `MPI3D01–02` IDs are exposed
 by the same executable registry. This removes the former disconnect in which
@@ -146,6 +167,14 @@ It performs only reads and MPI reductions:
    the result;
 6. each rank hashes only immutable or globally reduced quantities, and MPI
    minimum/maximum equality proves cross-rank identity.
+
+For SWCME authority, capture additionally reads owner/native bytes and evaluates
+the already prepared source at remote representatives. It uses the same cell
+coordinate arithmetic as owner construction for exact direct-copy comparisons.
+No preparation or field write occurs during this observation. Ghost coverage
+is a representative check per received block, not an exhaustive every-ghost-cell
+comparison. The committed-update counter excludes initial fill and is compared
+with `currentTick/backgroundCadenceSteps` for the fresh-run control.
 
 The capture never calls `Prepare()`, rebuilds a provider, changes a cell,
 injects or resamples a particle, clears sampling, advances a random stream, or
@@ -178,4 +207,8 @@ A source-only checkout can run the portable model and srcSEP3D tests, including
 `BLDL3D11`, but it cannot claim native AMPS evidence. `BLDL3D01` reports `SKIP`
 when no configured `Makefile.conf`, generated PIC headers, and linked AMPS
 executable are present. Final qualification requires running `SCCM3D01–07` on
-the target AMPS/MPI toolchain with a reviewed complete deck.
+the target AMPS/MPI toolchain with a reviewed complete deck. Qualifying the
+SWCME mesh bridge additionally requires SWBGAMPS01–03 on an evolving-field deck
+and the stated update/remote-block prerequisites. See the
+[background](../background/README.md) and [runtime](../runtime/README.md)
+module guides for the physical closure and publication contracts.

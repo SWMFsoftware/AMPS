@@ -155,8 +155,26 @@ class ValidationRunnerTests(unittest.TestCase):
         completed = self.run_runner("--list")
         self.assertEqual(completed.returncode, 0, completed.stdout)
         for case_id in ("NAT3D01", "MPI3D01", "XM3D01", "XM3D05",
-                        "OV3D01", "OV3D04"):
+                        "OV3D01", "OV3D04", "CME3D02"):
             self.assertIn(case_id, completed.stdout)
+
+    def test_cme_case_skips_missing_evidence_and_errors_on_corrupt_bundle(self) -> None:
+        """Scientific discovery must not turn absent/broken data into PASS."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            completed = self.run_runner("--case", "CME3D02", "--output-dir", str(root / "missing"))
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            record = json.loads((root / "missing/CME3D02/result.json").read_text())
+            self.assertEqual(record["status"], "SKIP")
+            case = root / "evidence/CME3D02"
+            case.mkdir(parents=True)
+            (case / "manifest.json").write_text('{"schema":"broken"}\n')
+            completed = self.run_runner("--case", "CME3D02", "--evidence-root", str(case.parent),
+                                        "--output-dir", str(root / "corrupt"))
+            self.assertEqual(completed.returncode, 2, completed.stdout)
+            record = json.loads((root / "corrupt/CME3D02/result.json").read_text())
+            self.assertEqual(record["status"], "ERROR")
+            self.assertFalse(list((root / "corrupt").rglob("*.png")))
 
     def test_ov3d01_blueprint_separates_known_and_unresolved_physics(self) -> None:
         """Guard the event law and the explicit no-guesses campaign boundary."""

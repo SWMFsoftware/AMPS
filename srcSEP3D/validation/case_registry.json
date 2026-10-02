@@ -289,6 +289,13 @@
       }
     },
     {
+      "id": "CME3D02",
+      "name": "SWCME shock propagation from 20 solar radii to 1 AU",
+      "evidence_class": "cme-kinematics",
+      "role": "diagnostic",
+      "description": "Compare an installed native SWCME shock history with withheld shock-track and spacecraft-arrival observations; write PNG/EPS figures. Native source-off mode and telemetry are prerequisites, not established by this evidence consumer."
+    },
+    {
       "id": "SWMF3D01",
       "name": "Live SWMF coupling scientific replay",
       "evidence_class": "reserved",

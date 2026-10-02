@@ -244,6 +244,34 @@ NativeTestResult EvaluateOne(const NativeTestDescriptor& descriptor,
         ? NativeTestStatus::Pass : NativeTestStatus::Fail,
         "SCCM identity and collective state agree on every MPI rank");
   }
+  if (id == "SWBGAMPS01" || id == "SWBGAMPS02" || id == "SWBGAMPS03") {
+    // These callbacks only classify already captured production evidence.
+    // A missing prerequisite is SKIP; it must not be converted to PASS by
+    // preparing fields, writing buffers or exchanging halos in the test.
+    if (state.backgroundAuthority != "swcme")
+      return Result(descriptor,NativeTestStatus::Skip,"requires background.provider=swcme");
+    if (id == "SWBGAMPS01")
+      return Result(descriptor,state.runtimeMeshOwnedFieldsMatch && state.runtimeMeshProviderMatch
+          ? NativeTestStatus::Pass : NativeTestStatus::Fail,
+          "SWCME primitives/derivatives agree with owner-cell and native DATAFILE buffers");
+    if (id == "SWBGAMPS02") {
+      // Distinguish a requested horizon that never crosses a cadence (SKIP)
+      // from a missed due update or stale published epoch (FAIL).
+      if (!state.completedSteps || !state.runtimeMeshExpectedUpdates)
+        return Result(descriptor,NativeTestStatus::Skip,"advance through at least one background cadence");
+      return Result(descriptor,state.runtimeMeshPublishedUpdates==state.runtimeMeshExpectedUpdates &&
+          state.runtimeMeshOwnedFieldsMatch && state.runtimeMeshProviderMatch
+          ? NativeTestStatus::Pass : NativeTestStatus::Fail,
+          "scheduled SWCME epochs are published before the next particle phase");
+    }
+    // One rank or no received physical blocks cannot test remote propagation.
+    // Count records coverage; collective byte-readback flags determine PASS.
+    if (state.mpiRankCount<2 || !state.runtimeMeshGhostCellsChecked)
+      return Result(descriptor,NativeTestStatus::Skip,"requires received remote physical blocks on at least two ranks");
+    return Result(descriptor,state.runtimeMeshGhostFieldsMatch && state.mpiFingerprintConsistent
+        ? NativeTestStatus::Pass : NativeTestStatus::Fail,
+        "received AMPS ghost primitives/derivatives agree with the prepared SWCME epoch");
+  }
   return Result(descriptor, NativeTestStatus::Error,
                 "native test has no evaluation callback");
 }
@@ -268,6 +296,11 @@ const std::vector<NativeTestDescriptor>& CoronalCmeNativeTests() {
       {"SCCM3D05", "SCCM provider generations", "background/shock coherence", "sep-corona"},
       {"SCCM3D06", "SCCM initialization output", "finite populated products", "sep-corona"},
       {"SCCM3D07", "SCCM MPI identity", "collective fingerprint agreement", "sep-corona"},
+      // Suite membership is the aggregate runner's discovery contract. Future
+      // native provider checks join this suite without hard-coded runner IDs.
+      {"SWBGAMPS01", "SWCME owner/native buffer readback", "canonical mesh fields", "sep-corona"},
+      {"SWBGAMPS02", "SWCME scheduled mesh refresh", "actual update count and epoch", "sep-corona"},
+      {"SWBGAMPS03", "SWCME remote ghost readback", "received MPI block fields", "sep-corona"},
   };
   return tests;
 }
@@ -363,6 +396,12 @@ Core::Status WriteNativeTestJson(
       << ", \"background\": " << JsonString(state.backgroundAuthority)
       << ", \"shock\": " << JsonString(state.shockAuthority) << "},\n"
       // Additive evidence preserves the existing report schema/runner ABI.
+      << "  \"runtime_mesh_background\": {\"published_updates\": " << state.runtimeMeshPublishedUpdates
+      << ", \"expected_updates\": " << state.runtimeMeshExpectedUpdates
+      << ", \"ghost_cells_checked\": " << state.runtimeMeshGhostCellsChecked
+      << ", \"owner_fields_match\": " << (state.runtimeMeshOwnedFieldsMatch ? "true" : "false")
+      << ", \"ghost_fields_match\": " << (state.runtimeMeshGhostFieldsMatch ? "true" : "false")
+      << ", \"provider_matches\": " << (state.runtimeMeshProviderMatch ? "true" : "false") << "},\n"
       << "  \"active_region\": {\"mode\": "
       << JsonString(state.activeRegionMode)
       << ", \"plan_installed\": " << (state.activeMaskInstalled ? "true" : "false")

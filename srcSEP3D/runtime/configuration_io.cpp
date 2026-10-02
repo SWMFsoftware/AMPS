@@ -2,6 +2,7 @@
 
 #include "../mesh/mesh_model.h"
 #include "swcme3d_input.hpp"
+#include "background_factory.h"
 
 #include <algorithm>
 #include <cctype>
@@ -179,7 +180,8 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
   }
   if (field == "run.intent") {
     if (!ParseEnum(value, {{"transport-only", RunIntent::TransportOnly},
-                           {"shock-injection", RunIntent::ShockInjection}},
+                           {"shock-injection", RunIntent::ShockInjection},
+                           {"shock-propagation", RunIntent::ShockPropagation}},
                    &o->intent)) return invalidValue();
   } else if (field == "run.transport") {
     if (!ParseEnum(value, {{"parker", TransportModel::Parker3D},
@@ -195,6 +197,8 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     if (!ParseDouble(value, &o->requestedTimeStepS)) return invalidValue();
   } else if (field == "run.maximum_time_steps") {
     if (!ParseUnsigned64(value, &o->maximumTimeSteps)) return invalidValue();
+  } else if (field == "run.stop_shock_radius_m") {
+    if (!ParseDouble(value, &o->stopShockRadiusM)) return invalidValue();
   } else if (field == "run.campaign_seed") {
     if (!ParseUnsigned64(value, &o->campaignSeed)) return invalidValue();
   } else if (field == "run.background_cadence_steps") {
@@ -362,8 +366,14 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     if (!ParseEnum(value,
         {{"analytic-parker", BackgroundAuthority::AnalyticParker},
          {"python-interpolator", BackgroundAuthority::PythonInterpolator},
-         {"swmf", BackgroundAuthority::Swmf}}, &o->background))
+         {"swmf", BackgroundAuthority::Swmf},
+         {"swcme", BackgroundAuthority::Swcme},
+         {"runtime-model", BackgroundAuthority::RuntimeModel}}, &o->background))
       return invalidValue();
+  } else if (field == "background.model_id") {
+    // Preserve the exact factory key; immutable configuration validation later
+    // requires it for runtime-model and forbids it for every built-in authority.
+    o->backgroundModelId = value;
   } else if (field == "background.external_script") {
     if (!ParseBool(value, &o->enableExternalScriptBackground)) return invalidValue();
   } else if (field == "background.parker.reference_radius_m") {
@@ -984,7 +994,13 @@ Core::Status ParseConfigurationText(
     if (candidate.background == BackgroundAuthority::PythonInterpolator)
       return Core::Status::Reserved(
           "Python heliospheric-model interpolation background");
-    if (candidate.background != BackgroundAuthority::AnalyticParker ||
+    // Schema 3 keeps its original Parker-only standalone contract. Schema 4
+    // adds native runtime sources through the same prescribed-turbulence path;
+    // SWMF still requires its typed host rather than a standalone input alias.
+    if ((candidate.background != BackgroundAuthority::AnalyticParker &&
+         !(candidate.inputSchemaVersion >= 4 &&
+           (candidate.background == BackgroundAuthority::Swcme ||
+            candidate.background == BackgroundAuthority::RuntimeModel))) ||
         candidate.turbulence != TurbulenceAuthority::Prescribed)
       return Invalid("standalone schema version 3 requires analytic-parker "
                      "background and prescribed turbulence; coupled SWMF "
@@ -1015,17 +1031,39 @@ Core::Status ParseConfigurationText(
     const swcme3d::Params& model = resolved.configuration.model;
     const swcme::sep::SpectrumConfig& spectrum =
         resolved.configuration.spectrum;
-    if (candidate.intent != RunIntent::ShockInjection ||
-        candidate.shock != ShockAuthority::Swcme ||
-        !candidate.source.enabled)
-      return Invalid("schema version 3 requires shock-injection intent, "
-                     "shock.authority=swcme, and source.enabled=true");
-    if (model.shape != swcme3d::ShockShape::Sphere ||
-        model.region_mode != swcme::regions::Mode::ShockOnly ||
-        model.shock_acceleration_mode != swcme::acceleration::Mode::Source)
+    const bool propagation = candidate.intent == RunIntent::ShockPropagation;
+    if (candidate.shock != ShockAuthority::Swcme ||
+        (propagation ? (candidate.inputSchemaVersion < 4 || candidate.source.enabled)
+                     : (candidate.intent != RunIntent::ShockInjection || !candidate.source.enabled)))
+      return Invalid("canonical SWCME requires injection with source enabled, or schema-4 shock-propagation with source disabled");
+    if (propagation) {
+      // Launch-to-arrival telemetry must contain tick zero and have declared
+      // temporal coverage through the step budget, even if a radius stop fires.
+      const long double horizon = static_cast<long double>(candidate.requestedTimeStepS) * candidate.maximumTimeSteps;
+      if (resolved.configuration.launch_epoch_s != 0.0 ||
+          resolved.configuration.valid_from_s != 0.0 ||
+          resolved.configuration.valid_until_s < horizon)
+        return Invalid("shock-propagation requires event.launch_epoch=0, event.valid_from=0 and validity through the complete run horizon");
+    }
+    // A resolved compression is carried by the mesh. The existing DSA
+    // particle source must remain off to avoid counting the same shock twice.
+    // This exception is deliberately confined to the source-free propagation
+    // control. Finite SSE crossing uses its own moving generating sphere and
+    // cap test; this does not qualify an under-resolved compression layer.
+    const bool resolvedMesh = candidate.background == BackgroundAuthority::Swcme &&
+        propagation && !candidate.source.enabled &&
+        model.region_mode == swcme::regions::Mode::FullICME &&
+        model.shock_acceleration_mode == swcme::acceleration::Mode::ResolvedCompression;
+    // The canonical library validates the SSE axis and angular width. The
+    // application now preserves that geometry throughout the mover boundary.
+    // Ellipsoid remains reserved until an exact ellipsoid crossing is supplied.
+    if ((model.shape != swcme3d::ShockShape::Sphere &&
+         model.shape != swcme3d::ShockShape::SSE) ||
+        (!resolvedMesh && (model.region_mode != swcme::regions::Mode::ShockOnly ||
+         model.shock_acceleration_mode != swcme::acceleration::Mode::Source)))
       return Invalid("srcSEP3D currently supports canonical SWCME only as a "
-                     "spherical SHOCK_ONLY/SOURCE provider; other geometries "
-                     "would require a non-spherical AMPS crossing operator");
+                     "Sphere/SSE SHOCK_ONLY/SOURCE, or source-free FULL_ICME/"
+                     "RESOLVED_COMPRESSION mesh background; ellipsoid crossing is unsupported");
     const char* retiredShockFields[] = {
         "shock.active_from_s", "shock.active_until_s",
         "shock.initial_radius_m", "shock.maximum_radius_m",
@@ -1189,20 +1227,26 @@ Core::Status ParseConfigurationText(
         model.solar_rotation_axis[0], model.solar_rotation_axis[1],
         model.solar_rotation_axis[2]};
 
-    const long double representedPerEvent =
-        static_cast<long double>(candidate.source.physicalParticleRatePerS) *
-        static_cast<long double>(candidate.source.injectionEfficiency) *
-        static_cast<long double>(model.relative_source_weight_per_area) *
-        static_cast<long double>(candidate.requestedTimeStepS) *
-        static_cast<long double>(candidate.injectionCadenceSteps);
-    const double derivedWeight = static_cast<double>(
-        representedPerEvent /
-        static_cast<long double>(candidate.source.samplesPerStep));
-    if (!std::isfinite(derivedWeight) || derivedWeight <= 0.0 ||
-        !NearlyEqual(derivedWeight, candidate.species.macroparticleWeight))
-      return Invalid("species.macroparticle_weight must equal "
-                     "rate*efficiency*relative_source_weight*cadence_dt/"
-                     "source.samples_per_step");
+    if (candidate.source.enabled) {
+      const long double representedPerEvent =
+          static_cast<long double>(candidate.source.physicalParticleRatePerS) *
+          static_cast<long double>(candidate.source.injectionEfficiency) *
+          static_cast<long double>(model.relative_source_weight_per_area) *
+          static_cast<long double>(candidate.requestedTimeStepS) *
+          static_cast<long double>(candidate.injectionCadenceSteps);
+      const double derivedWeight = static_cast<double>(
+          representedPerEvent /
+          static_cast<long double>(candidate.source.samplesPerStep));
+      if (!std::isfinite(derivedWeight) || derivedWeight <= 0.0 ||
+          !NearlyEqual(derivedWeight, candidate.species.macroparticleWeight))
+        return Invalid("species.macroparticle_weight must equal "
+                       "rate*efficiency*relative_source_weight*cadence_dt/"
+                       "source.samples_per_step");
+    }
+    // Keep the legacy typed diagnostic consistent with the sole canonical
+    // launch authority; radius-stop validation must use the actual launch.
+    if (propagation)
+      candidate.shockModel.initialRadiusM = model.r0_Rs * swcme::constants::SOLAR_RADIUS_M;
     candidate.swcmeConfigurationFingerprint =
         resolved.configuration.fingerprint;
     candidate.swcmeResolvedManifest =
@@ -1212,7 +1256,9 @@ Core::Status ParseConfigurationText(
   for (const std::string& present : sections) {
     if (present.rfind("observer.", 0) == 0) observerSectionSeen = true;
   }
-  if (!observerSectionSeen)
+  if (!observerSectionSeen && candidate.intent == RunIntent::ShockPropagation)
+    candidate.observers.clear();  // No energetic-particle products in an empty run.
+  else if (!observerSectionSeen)
     return Invalid("at least one [observer.ID] section is required");
   // Parsing alone does not expose a half-valid options record.  Invoke the
   // immutable factory as the schema's single normalization/validation gate,
@@ -1301,6 +1347,21 @@ Core::Status BuildStandaloneRunRequest(
     options.restartInputPath = candidate.commandLine.restartPath;
   status = RunConfiguration3D::Create(options, &candidate.configuration);
   if (!status.ok()) return status;
+  if (options.background==BackgroundAuthority::Swcme ||
+      options.background==BackgroundAuthority::RuntimeModel) {
+    // Resolve/prepare the selected runtime before expensive AMR allocation.
+    // This temporary provider proves launch-time metadata/coverage only; the
+    // production owner-cell provider is created/installed at acquisition and
+    // must pass the collective fill gate with its actual samples again.
+    std::shared_ptr<Background::BackgroundProvider> provider;
+    status=CreateBackgroundProvider(*candidate.configuration,&provider);
+    if (status.ok())status=provider->Prepare(0.0);
+    if (status.ok() && (!provider->PreparedMetadata() ||
+        !BackgroundAuthorityMatches(options.background,provider->PreparedMetadata()->provider) ||
+        provider->PreparedMetadata()->coordinateFrame!=options.coordinateFrame))
+      return Invalid("runtime background factory returned incompatible provider metadata");
+    if (!status.ok())return status;
+  }
   if (nativeTestRun &&
       candidate.commandLine.testSteps > options.maximumTimeSteps)
     return Invalid("--test-steps exceeds run.maximum_time_steps in the "
@@ -1365,6 +1426,10 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
   std::ostringstream output;
   output << std::setprecision(17) << std::scientific
          << "srcSEP3D dry-run configuration\n"
+         << "run_intent=" << Name(options.intent) << '\n'
+         << "source_enabled=" << (options.source.enabled ? "true" : "false") << '\n'
+         << "stop_shock_radius_m=" << options.stopShockRadiusM << '\n'
+         << "maximum_time_steps=" << options.maximumTimeSteps << '\n'
          << "physics_fingerprint=" << configuration.physics_fingerprint() << '\n'
          << "domain_preset=" << Name(options.domain) << '\n'
          << "domain_box_geometry=" << Name(options.domainBoxGeometry) << '\n'
@@ -1376,7 +1441,11 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
          << "inner_radius_m=" << options.innerRadiusM << '\n'
          << "outer_radius_m=" << options.outerRadiusM << '\n'
          << "background_provider=" << Name(options.background) << '\n'
-         << "solar_wind_model=canonical-swcme-parker-leblanc\n"
+         // Distinguish an evolving regional mesh source from a Parker ambient
+         // source even when both use SWCME for shock geometry.
+         << "solar_wind_model=" << (options.background==BackgroundAuthority::Swcme
+             ? "canonical-swcme3d-regional-background" : "canonical-swcme-parker-leblanc") << '\n'
+         << "background_model_id=" << options.backgroundModelId << '\n' 
          << "solar_wind_thermodynamic_closure="
          << Name(options.parker.thermodynamicClosure) << '\n'
          << "prescribed_turbulence_model="

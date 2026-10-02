@@ -304,3 +304,26 @@ position, avoiding replicated physical totals at checkpoint gather.
   normalization, cap/disconnection policy, and unique cadence identity.
 - `R3D08`: canonical provider preflight, delayed activation, deterministic
   largest-remainder allocation, exact per-species count, and no downstream cap.
+
+## Finite-SSE geometry at the native boundary
+
+`ShockState` now carries `ShockGeometryKind`, a unit `cmeDirection` and
+`halfWidthRad`. `radiusM` and `radialSpeedMPerS` are the SSE **apex** distance
+and speed. `centerM` remains the solar origin. `MoverGeometry()` copies the
+complete record during initialization and every epoch update. The legacy
+`ExpandingSphericalShock` spelling aliases `ExpandingShock` for existing hosts.
+
+For SSE, the generating sphere center translates as
+`C = origin + axis * R_apex/(1+sin(lambda))`, and its radius grows as
+`a = R_apex*sin(lambda)/(1+sin(lambda))`. `FirstShockIntersection` solves the
+relative-motion quadratic, tests both roots in time order, rejects the rear
+sphere and enforces the finite angular cap. It returns local normal and normal
+speed. These are geometric diagnostics; canonical SWCME still decides whether
+a flank is a physical fast shock and creates only active source patches.
+
+The pre-step distance to the complete generating sphere is a conservative
+lower bound on distance to its outward cap. It can cause extra subcycling
+outside the cap. Accepted substeps advance the apex consistently, including
+center translation and radius growth. No extra DSA acceleration is applied at
+a geometric particle intersection; resolved compression and source injection
+retain their existing mutually exclusive configuration contracts.

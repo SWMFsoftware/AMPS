@@ -808,8 +808,8 @@ From the AMPS root, after rebuilding the native executable:
 python3 srcSEP3D/test/run_coupled_sep_corona.py --amps ./amps --ranks 4 --test-input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --test-steps 0
 ```
 
-This runs both registries without naming individual tests (currently 206
-shared-model plus 7 native cases), verifies complete fresh reports and writes
+This runs both registries without naming individual tests (currently 222
+shared-model plus 10 native cases), verifies complete fresh reports and writes
 combined JSON/JUnit totals. `--list` discovers cases; `--model-only` explicitly
 runs shared verification; `--require-no-skips` fails on unexercised prerequisites.
 The supplied native deck uses Parker/SWCME, so generic host initialization PASS
@@ -845,8 +845,8 @@ metrics/artifact references, generated-log paths, infrastructure errors,
 strict SKIPs and replacing the latest summary while preserving older runs.
 Those fixtures are never MPI/physical qualification evidence.
 
-The current shared registry has 222 IDs through Stage 14; with the seven native
-initialization checks the aggregate has 229. The baseline Stage-13 subset has
+The current shared registry has 222 IDs through Stage 14; with seven generic
+initialization and three SWCME mesh checks the aggregate has 232. The baseline Stage-13 subset has
 209. Research campaign-protocol and portable kernel passes remain distinct
 from actual observed-campaign/native-MPI qualification. No explicit test-ID
 list is required to include future registered cases.
@@ -856,3 +856,149 @@ synthetic contract verification but report SKIP for absent actual campaign
 evidence. Shared full selection is 222: 219 PASS, 3 SKIP, 0 FAIL. The
 aggregate preserves shared SKIPs and enforces `--require-no-skips` across both
 scopes. The Stage-13 baseline remains 209 PASS.
+
+
+### Source-free shock propagation prerequisites
+
+The standard runner automatically discovers `CME3D03` (schema-4 source-off
+parser/factory, temporal-coverage conflicts, radius-stop boundaries and canonical
+DBM versus an independent drag oracle) and `CME3D04` (contiguous telemetry,
+clock/identity/MPI/source-off rejection and explicit close/overwrite behavior).
+`CME3D01` includes launcher/input/checksum/raw-log protocol fixtures and PNG/EPS
+rendering. They run with `--all` and `--suite phase-v`; no per-case names are
+needed. They are portable software prerequisites, not evidence of native MPI
+propagation. `CME3D02` remains the externally reviewed observational campaign.
+
+Launch a native control through
+`validation/run_swcme_coupling_validation.py --amps ../amps --ranks 10` from
+srcSEP3D, or use the AMPS-root command in the validation README. The separate
+`run_coupled_sep_corona.py` discovers shared coronal-model/native initialization
+tests; it does not run this time-dependent SWCME observational campaign.
+
+## SWCME mesh-background gates
+
+The public application catalog includes eight `SWBG3D` portable cases: input and
+frozen identity, exact RH vector/heated plasma endpoints and the inner handoff,
+field evolution across a fixed cell, independent Cartesian derivative checks,
+transactional invalid/empty-owner snapshots, future-model registration, polar
+region snapshots and an independent analytic parallel RH limit.
+They run with `--all`, `--group SWBG3D`, or `--suite phase-b`.
+
+The portable `SWBG3D01–07` fixtures load
+`examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in`. The former name
+without `sphere` has been retired. Both the provider fixture and the parser's
+text-mutation checks use one path constant in `test_swcme_background.cpp`;
+`SWBG3D01` also verifies the canonical shape is `Sphere`. Install the renamed
+example together with the test sources and rebuild `test/stage1`. These gates
+test the spherical control, so substituting the finite-SSE deck changes their
+intended geometry. `SWBG3D08` constructs its analytic RH control directly and
+does not load either example.
+
+The native sep-corona registry also contains `SWBGAMPS01–03`. Use
+`examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in`, four ranks and
+`--test-steps 2` with the coupled runner to check actual owner/native buffers,
+cadence publication and received ghost blocks. These tests do not prepare or
+write model fields during observation. The runner discovers them automatically;
+an analytic-Parker input explicitly skips the SWCME-specific gates.
+See [the update guide](../../SWCME_MESH_BACKGROUND_CHANGES.md) for full commands.
+
+| Case | Oracle/evidence and prerequisite |
+|---|---|
+| `SWBG3D01` | Real schema-4 parser/factory; reject conflicting acceleration/source modes and a foreign canonical fingerprint |
+| `SWBG3D02` | Exact canonical RH vector/pressure endpoint, declared heating partition and continuous ambient handoff; coupling verification, not an independent MHD solve |
+| `SWBG3D03` | Fixed cell sampled before/after front passage; old snapshot stays immutable while U/B and generation advance |
+| `SWBG3D04` | Smaller independent Cartesian stencil of canonical vectors and exact ambient `divU=2U/r` limit |
+| `SWBG3D05` | Sentinel/pointer preservation on rejection, mixed valid/invalid points, empty owner snapshot and restored Parker counter |
+| `SWBG3D06` | Registered extension constructed and published through the actual provider/builder/Runtime interfaces; duplicate/built-in protection |
+| `SWBG3D07` | 1632 polar/oblique layer, sheath and ejecta samples at 0/60/120/4000 s through the actual snapshot builder, including Cartesian derivative stencils |
+| `SWBG3D08` | Independent analytic switch-on compression/pressure/transverse-field magnitude; magnetic polarity and tangential boosts; conserved tangential fluxes |
+| `SWBGAMPS01` | Live owner/application/native byte readback; requires SWCME mesh authority |
+| `SWBGAMPS02` | Actual committed refreshes and installed epoch; additionally requires a crossed cadence |
+| `SWBGAMPS03` | Live received-block representatives; additionally requires multiple ranks and received physical blocks |
+
+Native checks cover mapped primitive/transport/E fields that are allocated and
+both allocated DATAFILE time slots. Native current/electron-pressure slots are
+filled but are not separately compared by these readback gates.
+Remote coverage samples one physical center per received active block; it does
+not claim exhaustive coverage of every ghost cell. The aggregate runner
+discovers native descriptors after rebuilding the executable; portable SWBG3D
+callbacks belong to the separate application `--all`/phase-b catalog.
+
+```sh
+python3 srcSEP3D/test/run_tests.py --suite phase-b --rebuild --output-dir test_output/background
+python3 srcSEP3D/test/run_coupled_sep_corona.py --amps ./amps --ranks 4 --test-input srcSEP3D/examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in --test-steps 2
+```
+
+See [background/README.md](../background/README.md) for the stencil and units,
+[runtime/README.md](../runtime/README.md) for publication ordering, and the
+[native guide](../validation/CORONAL_CME_NATIVE_TESTS.md) for evidence limits.
+
+## Finite-SSE application acceptance
+
+`python3 srcSEP3D/test/run_tests.py --group SSE3D --rebuild` builds and executes
+the real application parser/providers/mover/checkpoint code without AMPS/MPI.
+The nine cases are also included in the standalone, phase-b and phase-a suites.
+
+| ID | Acceptance |
+| --- | --- |
+| SSE3D01 | Finite input, malformed axes/width, unsupported ellipsoid, tangent-flank inner handoff |
+| SSE3D02 | 543 rotated/translated directions at three epochs against canonical radii/normals/speeds |
+| SSE3D03 | Evolving canonical mesh primitives, ambient outside the cap and finite Cartesian derivatives |
+| SSE3D04 | Rear/outside/duplicate rejection, moving center, oblique flank, tangent and SI-scale crossings |
+| SSE3D05 | Actual canonical source preparation, physical patches confined to the cap, and a fixed probe inside the configured corridor |
+| SSE3D06 | Schema-4 SSE geometry round trip and valid schema-3 spherical migration |
+| SSE3D07 | Complete requested-time mover, expanding-cap subcycling and outside-cap exclusion |
+| SSE3D08 | Exact mirrored failed coordinates and true weak layer through ten 60-s updates, including full derivative stencils |
+| SSE3D09 | All canonical shapes: ambient support bypasses irrelevant RH; genuinely unresolved in-CME queries still reject without output writes |
+
+`SSE3D05` converts the source-free propagation example into an injection
+fixture. Injection requires an observer, but a fixed Earth position imported
+from the analytic-Parker example need not lie inside this example's finite
+active corridor. The fixture therefore computes a **test probe** at half the
+configured Parker arc length, using the normalized source angles, inner
+radius, rotation axis, wind speed and rotation rate. It adds the coordinate
+origin and writes the fixed Cartesian position with 17-digit precision before
+parsing the injection deck. This fixture works with both `parker-tube` and
+`full-domain` allocation; it does not alter a real Earth's location or widen
+the production corridor. With the default narrow corridor, a second probe in
+the opposite direction must still be rejected by the configuration factory.
+
+The propagation input remains source-free and needs no observers. For a real
+injection campaign, choose the corridor's source angles and width to include
+the actual fixed observer, or use `full-domain`; do not move an observational
+position merely to satisfy an allocation check. The input's comments describe
+how to switch the allocation mode independently of tube refinement.
+
+To rerun just these fixtures from `AMPS/srcSEP3D`:
+
+```sh
+test/run_tests.py --group SSE3D --group SWBG3D --rebuild --output-dir test_output/swcme-fixtures
+```
+
+These are portable prerequisites. Re-run the native `sep-corona` suite on the
+new SSE example to verify owner buffers, epoch scheduling and the actual MPI
+receive halo. A portable PASS does not establish that native campaign, mesh
+convergence or observational agreement.
+
+The standalone halo-mask fixture can be run with
+`python3 srcSEP3D/test/test_received_background_mask.py`. It compiles the actual
+AMPS mask generator and native evidence-capture function, accepts current
+received face layers in all six orientations, rejects stale received data, and
+checks the null-mask full-block case. It does not start MPI. This specifically
+regresses the earlier SWBGAMPS03 false failure caused by selecting an allocated
+remote center whose packing-mask bit was zero.
+
+
+SSE3D08 pins the failed `epoch_s=180` direction and a compression obtained
+independently with 80-digit Decimal direct flux equations. Run the audit-only
+reference verifier from the AMPS root:
+
+```sh
+python3 srcSEP3D/test/reference/verify_sse_weak_flank.py
+```
+
+This verifies a frozen reference and does not install or modify sources.
+SSE3D09 deliberately retains a genuinely unresolved roundoff-scale jump;
+ambient field sampling must succeed while the actual ICME layer and direct
+shock diagnostic still fail. These tests complement the native ten-step MPI
+run, which must be executed on the configured target build.

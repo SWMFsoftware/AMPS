@@ -1,0 +1,414 @@
+# SPHERICAL SWCME MESH BACKGROUND CONTROL: rebuild AMPS before using this input.
+# The explicit "sphere" filename is the portable SWBG3D01-07 fixture. Its
+# canonical shock.shape remains Sphere; use the separately named SSE input
+# for a finite CME cap. The tests load this installed file directly, without
+# an alias or fallback to the retired filename without "sphere".
+# Source-free FULL_ICME; same launch/drag/stop as the older geometry-only control.
+# The static mesh is suitable for coupling mechanics. Resolved SEP acceleration
+# needs a spatial/time convergence study across the 0.010-AU-at-1AU shock layer.
+# srcSEP3D native SWCME propagation-only input: 20 R_sun to 1 AU.
+# Native schema-4 propagation control. Rebuild AMPS with the accompanying
+# sources before using this intent. shock-history.csv and native-runtime.json
+# are written in [output].directory (or a fresh --output-dir override).
+# No native propagation result or observational PASS is supplied with this file.
+#
+# Launch speed, ambient wind and drag below are EXAMPLE CONTROL PARAMETERS,
+# not an independently fitted 2012 July 12 shock launch. Relative time starts
+# at the shock crossing 20 R_sun. A reviewed absolute launch UTC, calibration
+# cutoff and parameter provenance belong in the native evidence manifest.
+# Do not infer those values from the withheld Wind arrival.
+#
+# AMPS uses canonical SWCME solar-wind/IMF values in this setup.
+# SWCME prescribes spherical shock kinematics; AMPS does not solve CME MHD
+# advection. The SWCME runtime publishes evolving sheath/ejecta U and IMF
+# on owner cells and exchanges them to AMPS ghosts at every 60-second tick.
+# Geometry retains the active Parker corridor plus a near-Sun sphere, the
+# physical absorbing 1-R_sun Sun, and the x-y corner / z-centered box.
+# All application dimensional keys use SI; canonical [swcme] keys name units.
+
+[run]
+schema_version = 4
+# Record the installed SWCME front; no injection patches/particles are created.
+intent = shock-propagation
+transport = parker
+# 7200 * 60 = 432000 s = 5 days. Increase duration if the actual native front
+# does not cross both 1 AU and the Wind reference radius within this interval.
+time_step_s = 60
+maximum_time_steps = 7200
+# Stop just beyond the reference spacecraft (Wind: about 1.00773 AU).
+# The first step at or beyond 1.05 AU is included for crossing interpolation.
+# The five-day step budget is an independent hard limit if this is not reached.
+stop_shock_radius_m = 1.57077764235e11
+campaign_seed = 4701
+# Refresh the installed background/geometry every native time step.
+background_cadence_steps = 1
+# Positive inactive scheduling sentinel; source.enabled=false must bypass
+# injection irrespective of this cadence. It does not enable a particle source.
+injection_cadence_steps = 1
+
+[domain]
+# Presets are solar (0.30 AU), one-au, and mars (1.666 AU).  With mode=preset,
+# outer_radius_m is ignored and the resolved preset value is fingerprinted.
+preset = one-au
+# The absorbing transport boundary and Parker source are at 1 R_sun, equal to
+# the fixed AMPS photosphere. The CME event still launches separately at 20
+# R_sun; the explicit Parker start below does not move that event to the Sun.
+inner_radius_m = 6.957e8
+inner_boundary = absorb
+# Endpoint radius below owns the physical outer cutoff and finite arc length.
+outer_radius_mode = field-line-endpoint
+box_geometry = field-line-xy-corner-cube
+# x/y: 0 chooses the corner automatically; +/-1 choose direction into the box.
+# z: zero is required; the box is symmetric about the Sun's z=0 midplane.
+corner_direction_x = 0
+corner_direction_y = 0
+corner_direction_z = 0
+corner_margin_m = 1.495978707e9
+outer_radius_m = 1.6455765777e11
+outer_boundary = escape
+coordinate_frame = HCI-like-inertial
+origin_x_m = 0
+origin_y_m = 0
+origin_z_m = 0
+
+[parker_spiral]
+# The origin must currently equal the domain origin.  The initial point lies
+# on inner_radius_m and must agree with the source longitude/colatitude below.
+# cme-launch-point additionally makes this point the canonical SWCME launch
+# apex: cme.launch_radius times normalized geometry.cme_direction. A mismatch
+# in radius, direction, or explicit Cartesian cross-check is a fatal error.
+# Select explicit only when the line is intentionally independent of the CME.
+# length_m is arc length, not radial extent; point_count includes both ends.
+origin_x_m = 0
+origin_y_m = 0
+origin_z_m = 0
+start_mode = explicit
+initial_x_m = 6.957e8
+initial_y_m = 0
+initial_z_m = 0
+# Heliocentric endpoint distance (1.1 AU), not arc length. Zero length requests
+# exact derivation from the canonical Parker geometry; a conflicting length fails.
+end_radius_m = 1.6455765777e11
+length_m = 0
+point_count = 4001
+
+[mesh]
+global_cell_size_m = 3.7399467675e10
+minimum_cell_size_m = 3.4785e8
+cells_per_block_edge = 4
+maximum_level = 9
+memory_budget_bytes = 68719476736
+block_overhead_bytes = 1024
+
+[mesh.solar]
+# The finest target is anchored at the physical 1-R_sun photosphere.
+# Global resolution is reached at 20 R_sun. Larger exponents keep a fine mesh
+# farther out; smaller positive exponents degrade it sooner. This is independent
+# of the transport/source shell and the active solar-neighbourhood radius.
+anchor = photosphere
+enabled = true
+surface_cell_size_m = 3.4785e8
+transition_outer_radius_m = 1.3914e10
+profile = smoothstep
+exponent = 1
+
+[mesh.tube]
+# The tube follows the same polarity-independent Parker curve used by the
+# analytic background.  At its boundary the requested size is exactly global.
+enabled = true
+source_longitude_rad = 0
+source_colatitude_rad = 1.5707963267948966
+reference_radius_m = 1.495978707e11
+radius_at_reference_m = 4.487936121e9
+radius_mode = constant-angular-width
+center_cell_size_m = 1.495978707e9
+transverse_profile = smoothstep
+transverse_exponent = 1
+
+[mesh.active_region]
+# A complete 30-R_sun neighbourhood remains active in addition to the finite
+# corridor, which starts at the 1-R_sun photosphere. Fully solar-
+# interior blocks remain inactive. The box is inset to contain this whole sphere.
+solar_sphere_radius_m = 2.0871e10
+# This variant exercises AMPS leaf-block deactivation rather than retaining the
+# enclosing Cartesian cube.  AMPS disables complete AMR leaves, so every cell
+# in a rejected leaf is omitted from allocation.  The physical active radius is
+# 0.05 AU at 1 AU, wider than the 0.03-AU refinement tube above.  With constant
+# angular width it scales linearly with heliocentric radius. The physical seed
+# is the finite [parker_spiral] field line, clipped at the outer sphere, and is
+# classified with conservative curve-capsule/leaf-box intersection.
+# buffer_blocks=1 adds exactly one coarse/fine-aware AMR touching-neighbour
+# layer (face, edge, or corner); it is not multiplied by each leaf's diagonal.
+# The planner also fills bounded inactive cavities and requires one
+# face-connected source-to-endpoint component before allocating AMPS blocks.
+mode = parker-tube
+reference_radius_m = 1.495978707e11
+radius_at_reference_m = 7.479893535e9
+radius_mode = constant-angular-width
+buffer_blocks = 1
+
+[memory]
+# These are explicit planning coefficients.  Calibrate them from a native AMPS
+# build when exact production memory, rather than a conservative plan, matters.
+base_cell_bytes = 256
+base_node_bytes = 128
+block_structure_bytes = 4096
+communication_bytes_per_block = 2048
+particle_bytes = 160
+particles_per_cell = 0
+halo_fraction = 0.20
+safety_margin_fraction = 0.25
+
+[background]
+# SWCME supplies the resolved vector plasma/IMF and its derivatives.
+# [background.parker] declares the matching ambient state and the explicit
+# photosphere-to-1.05-Rs continuation where the CME model is not defined.
+provider = swcme
+# Deprecated compatibility guard. A true value is never interpreted as an
+# instruction to execute a process; use provider=python-interpolator once that
+# provider is released.
+external_script = false
+
+[background.parker]
+reference_radius_m = 1.495978707e11
+# SWCME specifies total |B|=5 nT at the equatorial 1-AU reference.  With the
+# explicit 1-R_sun source radius, wind, and rotation below this is the exactly
+# corresponding radial component used by AnalyticParkerProvider.
+radial_field_at_reference_t = 3.4199699085703274e-9
+solar_rotation_rate_rad_per_s = 2.865e-6
+solar_wind_speed_m_per_s = 400000
+magnetic_polarity = 1
+# Density has its own unambiguous SWCME reference. It remains n_e(1 AU) even
+# when reference_radius_m above is changed to express Br at another radius.
+number_density_at_one_au_m3 = 5e6
+temperature_k = 1e5
+validity_cadence_s = 3600
+
+[turbulence]
+authority = prescribed
+# Named closures are kolmogorov (q=5/3), kraichnan (q=3/2), and power-law
+# (any explicitly validated q>1). A named closure and spectral_index must
+# agree; the parser never silently replaces a contradictory value.
+model = kolmogorov
+# The amplitude law is independent of the spectral slope. This example keeps
+# a fixed local deltaB/|B|. To prescribe total wave energy directly instead,
+# select wave-energy-power-law, set delta_b_over_b=0, and provide positive
+# wave_energy_density_at_reference_j_per_m3 plus its explicit radial exponent.
+amplitude_model = constant-delta-b-over-b
+delta_b_over_b = 0.3
+# Zero values are required sentinels for the inactive amplitude branch; they
+# cannot be mistaken for an applied wave-energy normalization.
+wave_energy_density_at_reference_j_per_m3 = 0
+wave_energy_density_radial_exponent = 0
+# sigma_c=(deltaB_+^2-deltaB_-^2)/deltaB^2. Zero is explicitly balanced.
+normalized_cross_helicity = 0
+reference_radius_m = 1.495978707e11
+k_min_per_m = 1e-10
+k_max_per_m = 1e-7
+k_min_radial_exponent = 2
+k_max_radial_exponent = 2
+spectral_index = 1.6666666666666667
+correlation_length_m = 4.487936121e9
+correlation_length_radial_exponent = 1
+validity_cadence_s = 60
+missing_data = fail
+resonance_range = reject
+self_consistent_3d = false
+
+[transport]
+cell_crossing_fraction = 0.4
+diffusion_fraction = 0.2
+focusing_fraction = 0.2
+cooling_fraction = 0.2
+field_variation_fraction = 0.2
+shock_crossing_fraction = 0.5
+minimum_substep_s = 1e-12
+# A malformed limiter cannot trap one AMPS mover call indefinitely.
+maximum_substeps = 100000
+pitch_angle_scheme = reflecting-milstein
+# The three mover names are parker, focused-diffusion (continuous D_mumu SDE),
+# and focused-scattering (discrete events with nu=v/lambda_parallel). Parker's
+# spatial coefficient can come from the selected mean free path or from the
+# error-controlled D_mumu integral. Focused-diffusion uses the selected pitch-
+# angle model; focused-scattering uses the selected mean-free-path model.
+spatial_diffusion_model = mean-free-path
+pitch_angle_diffusion_model = jokipii-1966
+mean_free_path_model = correlation
+# Exactly one constant is active only when its matching model is selected.
+constant_dmumu_per_s = 0
+constant_mean_free_path_m = 0
+# The next five zeroes are mandatory inactive sentinels. Select
+# mean_free_path_model=radial-rigidity-power-law to activate
+# lambda=lambda_ref*(r/r_ref)^radial_exponent*(R/R_ref)^rigidity_exponent,
+# where R=p*c/|q| is rigidity in volts for the actual compiled AMPS species.
+mean_free_path_reference_m = 0
+mean_free_path_reference_radius_m = 0
+mean_free_path_reference_rigidity_v = 0
+mean_free_path_radial_exponent = 0
+mean_free_path_rigidity_exponent = 0
+spatial_quadrature_absolute_tolerance_m2_per_s = 1
+spatial_quadrature_relative_tolerance = 1e-6
+spatial_quadrature_maximum_recursion = 20
+# Alfvén-wave-frame scattering chooses +/- branches from the initialized
+# directional turbulence energy. Plasma-frame scattering conserves particle
+# energy in the local plasma frame.
+focused_scattering_frame = plasma-frame-isotropic
+maximum_scattering_events_per_substep = 100000
+# V01 controlled extensions. "none" preserves the parallel-only baseline.
+# Select "constant" or "constant-ratio" only with the matching positive
+# coefficient. Drift accepts gradient-b, curvature, or their sum; current-
+# sheet drift remains unsupported until a sheet-geometry contract exists.
+perpendicular_diffusion = none
+constant_kappa_perpendicular_m2_per_s = 0
+kappa_perpendicular_to_parallel_ratio = 0
+drifts = none
+
+[population_control]
+# split-merge enforces hysteretic per-cell, per-compiled-species limits after
+# the transport ledger closes: counts below minimum or above maximum are
+# driven to target. Empty cells are never populated. The SEP-aware path uses
+# exact equal-weight splitting and relativistic 3-to-2 merging; the legacy
+# nonrelativistic automatic AMPS splitter remains disabled.
+mode = off
+minimum_particles_per_cell_per_species = 0
+target_particles_per_cell_per_species = 0
+maximum_particles_per_cell_per_species = 0
+cadence_steps = 1
+
+[shock]
+# Schema 3 forbids the former constant-speed spherical surrogate parameters.
+# Geometry, kinematics, and compression are owned by canonical [swcme].
+authority = swcme
+
+[source]
+# Required propagation-only behavior: no shock injection and no initial/restart
+# particles. Native telemetry must show zero particle and injection counts.
+enabled = false
+# Retained complete schema fields: all are INACTIVE when enabled=false. Their
+# positive efficiency and energies agree with the canonical [swcme] reference
+# spectrum so no second set of source parameters is silently introduced.
+physical_particle_rate_per_s = 1e30
+injection_efficiency = 1e-4
+minimum_energy_j = 1.602176634e-15
+maximum_energy_j = 1.602176634e-11
+spectrum_model = local-compression-dsa
+phase_space_power_index = 0
+samples_per_step = 1000
+
+[species]
+# Immutable species still come from the AMPS build SpeciesList. Keep a positive
+# initialization weight for every compiled species even with an empty population.
+# This is an inactive numerical weight, not an injection normalization at dt=60 s.
+macroparticle_weight = 1e23
+
+[storage]
+# The immutable provider snapshot always includes complete numerical tensors.
+# These switches control additional application center-node cache slots, not
+# whether the provider computes gradients. Enable them when a production mover
+# needs ghost-cell tensor readback; allocated native DATAFILE gradB is filled
+# independently. Native tests check every allocated cache field.
+magnetic_gradient = false
+velocity_gradient = false
+sampling_bytes_per_cell = 0
+
+# No SEP intensity observers are requested in a particle-free kinematic case.
+# The comparison consumer uses the observed Wind radius from the checksum-owned
+# arrival.json (about 1.00773304 AU) and reports a separate exact-1-AU crossing.
+# It does not substitute a Parker-centerline point for the actual Wind position.
+# A spatial observer campaign additionally requires a reviewed coordinate mapping
+# and proof that the point lies inside the allocated active region.
+
+[output]
+# Inactive particle sampling cadence. Without intensity observers, the native
+# control skips gathering particle products; shock history still records every tick.
+cadence_steps = 60
+checkpoint_cadence_steps = 0
+directory = test_output/swcme-propagation-control/native
+prefix = sep3d-swcme-propagation-control
+initialization_mesh_tecplot_file = sep3d-initialization-mesh.dat
+initialization_parker_line_tecplot_file = sep3d-initialization-parker-line.dat
+# Keep the cut-cell distributed AMPS initialization output for geometry checks.
+initialization_data_tecplot_file = sep3d-initialization-data.dat
+# Native export includes collective MPI checks and cumulative injection counts.
+# shock-propagation automatically records every native tick in shock-history.csv;
+# native-runtime.json marks successful stream close and reports the stop reason.
+
+[restart]
+# Use the explicit token none for a fresh run; --restart PATH overrides it.
+input_path = none
+output_path = restart/sep3d-swcme-propagation-control.chk
+
+[swcme]
+# Complete canonical model layer.  Common fields use the same unit-aware keys
+# as SWCME1D; genuinely 3-D geometry values name their SI/dimensionless units
+# in the key.  The current AMPS crossing operator is spherical, so schemas 3+
+# rejects ellipsoid/SSE instead of approximating them as a sphere.
+preset = fast
+ambient.wind_speed = 400 km/s
+ambient.density_1au = 5 cm^-3
+ambient.magnetic_field_1au = 5 nT
+ambient.proton_temperature = 1e5 K
+ambient.adiabatic_index = 1.6666666666666667
+ambient.alpha_to_proton_ratio = 0
+ambient.electron_temperature = 1e5 K
+ambient.alpha_temperature = 1e5 K
+ambient.thermodynamic_closure = proton_only
+parker.radial_polarity = 1
+parker.sin_theta = 1
+parker.source_radius = 1 Rs
+parker.solar_rotation_rate_rad_per_s = 2.865e-6
+cme.kinematics = dbm
+# The launch radius is an event parameter, independent of the photospheric
+# boundary because parker_spiral.start_mode=explicit.
+cme.launch_radius = 20 Rs
+# Illustrative control values, NOT a reviewed July 2012 shock fit.
+cme.launch_speed = 1000 km/s
+# 1e-8 km^-1 = 1e-11 m^-1. This low-drag mechanics control retains
+# a fast-mode shock beyond 1 AU; replace with independently fitted event data.
+cme.drag_coefficient = 1e-8 1/km
+cme.extrapolation = outside_time
+geometry.shape = sphere
+geometry.axis_ratio_y = 1
+geometry.axis_ratio_z = 1
+geometry.half_width_rad = 1.5707963267948966
+geometry.cme_direction_x = 1
+geometry.cme_direction_y = 0
+geometry.cme_direction_z = 0
+geometry.solar_rotation_axis_x = 0
+geometry.solar_rotation_axis_y = 0
+geometry.solar_rotation_axis_z = 1
+geometry.sheath_thickness_1au = 0.12 AU
+geometry.ejecta_thickness_1au = 0.22 AU
+smoothing.shock_width_1au = 0.010 AU
+smoothing.leading_edge_width_1au = 0.020 AU
+smoothing.trailing_edge_width_1au = 0.030 AU
+shock.region_mode = full_icme
+shock.acceleration_mode = resolved_compression
+shock.relative_source_weight_per_area = 1
+sheath.ramp_power = 2
+sheath.leading_edge_speed_factor = 1.12
+ejecta.density_factor = 0.5
+ejecta.speed_factor = 0.8
+event.launch_epoch = 0 s
+# Cover launch tick zero through the complete five-day run. The source-off
+# provider must obtain canonical kinematics without constructing source patches.
+event.valid_from = 0 s
+event.valid_until = 432000 s
+# SWCME still requires a reference spectrum to construct its canonical source
+# state.  srcSEP3D does not use this field to redefine AMPS molecular data:
+# before injection it reconstructs the momentum interval from [source]'s
+# kinetic-energy limits and each compiled AMPS species mass.
+source.particle_mass = 1.67262192369e-27 kg
+source.charge_number = 1
+source.energy_min = 0.01 MeV
+source.energy_max = 100 MeV
+source.reference_energy = 10 MeV
+source.injection_efficiency = 1e-4
+source.normalization = relative_only
+source.reference_intensity_si = 1 si
+# Retain explicit source-surface resolution fields for the complete canonical
+# configuration. They are inactive for a propagation-only provider that does
+# not construct source patches; injection mode uses the odd theta interval count
+# to avoid placing surface vertices exactly on Parker magnetic poles.
+surface.theta_intervals = 13
+surface.phi_points = 24

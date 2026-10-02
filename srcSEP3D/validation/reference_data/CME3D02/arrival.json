@@ -1,0 +1,15 @@
+{
+  "feature": "shock",
+  "heliocentric_radius_m": 150754716694.03116,
+  "position_hec_m": [
+    58032841628.0662,
+    -139137224611.6972,
+    -81396704.50203656
+  ],
+  "provenance": "IPShocks Zenodo v1 Wind event at 17:39:09 UTC; timing uncertainty 20 s from independent CfA Wind event 00525 (17:39:07.5 +/-20 s). Radius from linear Cartesian interpolation of NASA WI_OR_PRE (Predicted Orbit) HEC_POS, not an assumed 1 AU. Definitive Orbit did not provide a usable response for this interval.",
+  "role": "validation",
+  "spacecraft": "Wind",
+  "time_utc": "2012-07-14T17:39:09.000Z",
+  "timing_uncertainty_provenance": "CfA event 00525; adopted analysis uncertainty, not an uncertainty column provided by IPShocks",
+  "uncertainty_s": 20.0
+}
