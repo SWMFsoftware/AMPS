@@ -332,7 +332,7 @@ FixedOrientationEllipsoid::Tessellate(
             evaluation.status.code, evaluation.status.message);
       }
       patches.push_back({
-          static_cast<std::uint64_t>(polarIndex) *
+          1U + static_cast<std::uint64_t>(polarIndex) *
               static_cast<std::uint64_t>(azimuthCells) +
               static_cast<std::uint64_t>(azimuthIndex),
           center, evaluation.value.outwardNormal,

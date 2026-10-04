@@ -1,11 +1,154 @@
-# Roadmap: shared low-coronal CME launch for srcSEP and srcSEP3D
+# Roadmap: complete CME plasma/background evolution, then SEP particles
 
-**Revision:** 2026-10-03, plan 1.2 — qualified launch-review corrections  
+**Revision:** 2026-10-03 (America/Chicago), plan 1.3 — spatial CME background first; srcSEP3D before srcSEP; particles deferred  
 **Status:** implementation and validation plan; the work described below is not newly implemented by this document.  
-**Code baseline audited:** `SEP3D_corona_coupling_compile_fix_20261003.tar.gz`.  
+**Historical code baseline audited (not the latest local Codex checkout):** `SEP3D_corona_coupling_compile_fix_20261003.tar.gz`.  
 **Suggested repository location:** `src/models/sep_coronal_cme/docs/CME_SURFACE_LAUNCH_ROADMAP.md`. The repository uses `src/models`, plural. Application READMEs should link to this shared roadmap.
 
+## 0. Active development sequence — background before particles
+
+**Revision 1.3 scope decision, 2026-10-03 (America/Chicago).** This section supersedes the earlier interleaved implementation order and both-consumer requirements for the *first* milestone. It changes scheduling and acceptance scope, not physical equations. The maintained coronal specification owns ambient/EOS/local-shock physics; the composite design at `src/models/sep_corona_swcme/model.md` owns continuous handoff and spatial disturbance closure. Their necessary amendments must be made explicitly, with synchronized derived documents and tests.
+
+**A front alone is insufficient.** The first deliverable is a spatial, time-dependent CME plasma and magnetic-field provider: ambient, shock interface, sheath, ejecta, and any wake/transition region included in the computational domain. It must also determine shock location and local parameters. Ambient-plus-front output is an intermediate diagnostic, not completion of the background milestone. Local downstream jump states do not define the entire downstream volume. No requested CME interior region may silently return quiet ambient or an unlabelled interpolation.
+
+The model remains prescribed and analytical/semi-empirical. Inputs determine eruption motion, expansion, composition, thermodynamics and magnetic structure; the implementation does not derive an eruption from an instability or solve global MHD. Full spatial coverage means a declared and validated closure for every sampled plasma region, not an unrestricted claim of self-consistent fluid dynamics. Prescribed force/heating/work and physical-model residuals must be recorded separately from numerical error. A spheromak is not mandatory; whichever magnetic topology is selected must meet its own boundary and time-evolution contracts.
+
+### 0.1 Four milestones, in mandatory order
+
+| Milestone | Work allowed and required | Exit gate before the next milestone |
+|---|---|---|
+| G1 — full background in srcSEP3D | Shared low-coronal CME launch; spatial plasma/IMF, shock/sheath/ejecta closures; continuous matched SWCME continuation; native mesh/halo updates; zero-particle launch-to-1-AU validation | Actual evolving 1-/4-rank runs; independent spatial-state, shock and conservation checks; pre/inside/post-handoff evidence; complete required region coverage; converged low-corona-to-1-AU campaign |
+| G2 — background coupling in srcSEP | Thin live field-line adapter to the same already-qualified shared background; native line/node publication and representation validation, still zero particles | Actual independent srcSEP build and multi-epoch 1-/4-rank runs; canonical identical-point agreement with G1; line metric/polarity and MPI tests; background-only 1-AU case |
+| G3 — particle modeling in srcSEP3D | Physical source/release measures, native allocation, supported transport through the qualified background, boundaries, ledgers, restart and requested wave physics | Native nonzero-particle correctness, independent transport/source oracles, mesh/time/statistical convergence, MPI/restart and region/capability checks |
+| G4 — particle modeling in srcSEP | Shared sources and field-aligned projection/allocation, native field-line transport, ownership and restart | Independent srcSEP particle qualification, finite-tube number/energy closure and matched srcSEP/srcSEP3D limits within common dimensional capabilities |
+
+G2 begins only after G1 passes. G3 begins only after G2 passes. G4 begins only after G3 passes. Shared interfaces are designed for both consumers from the start, but this does not authorize early srcSEP implementation or early particle work. Tests/documentation needed for each active milestone are implemented with it. Existing baseline particle behavior and tests remain intact throughout G1/G2.
+
+All four gates are initially **OPEN / not qualified by this revision**. The latest local Codex checkout and receipts have not been inspected here. Previous portable or initialization results are historical evidence, not completion of the new spatial-background milestone.
+
+### 0.2 Working tree, scope and ownership
+
+- Develop in the verified baseline installation `~/Mars2/AMPS`. Preserve `~/Mars1/AMPS` as a read-only reference to the earlier L0–L7 attempt. Record source/archive/commit fingerprints; a directory name alone is not a baseline identity.
+- First build/test the Mars2 baseline. Transfer independently verified background algorithms selectively, with new regression results in Mars2. Avoid either rewriting every good kernel or importing entire mixed particle/background files.
+- Existing particle-only files match the baseline. In mixed files, preserve baseline particle sections and retain only required background edits. Audit newly added files, build rules, registries, inputs and API dependencies. Do not disguise unfinished particle work as a background prerequisite.
+- Coronal history/plasma/local shocks stay in `src/models/sep_coronal_cme`; legacy outer algorithms stay in `src/models/swcme`; the composite orchestration and regional CME volume closure are owned by `src/models/sep_corona_swcme`. An existing public facade under `sep_coronal_cme` may expose the composite without duplicating its state or equations. Neutral records/utilities belong in `sep_common` only if provider independent.
+- Public background libraries must work without PIC, MPI, either application's headers, particle storage or particle initialization. Native storage, collectives and application clocks belong in thin adapters. Generic PIC and legacy SWCME behavior must remain functional.
+- Use one composite runtime authority and event identity over the run. Component provenance is retained; ownership handoff does not select a new native background provider, reconstruct a second event, reset speed/radius, or start a new generation sequence.
+
+### 0.3 Background contract to freeze before integration
+
+| Contract | Required contents and validation |
+|---|---|
+| Geometry/history | Center, complete axes/surface, orientation, angular support, attachment/detachment policy, shock/contact/ejecta identities, dense-time positions and normal velocities; SI units and explicit frame |
+| Ambient | Density/composition, velocity, pressure/species temperatures, magnetic vector, EOS and gamma, required derivatives, coverage and sector/topology categories, with valid radial support through and beyond 1 AU |
+| Regional CME volume | Explicit ambient/shock/sheath/contact/ejecta/wake classification; spatial rho/U/p/T/B and derivatives for every sampled supported region; model/closure identity and interface-sided validity |
+| Shock | Surface position/normal, surface normal speed, upstream-relative inflow, local fast speed/Mach number, obliquity, compression, both sided states, local conservation residuals and typed admissibility |
+| Evolution | Coronal history, matched crossing state, continuous transition, outer propagation/integrator state, regional material/map state as required, one event lineage and immutable epoch bindings |
+| Native publication | Prepared values, layout/mesh revision, actual current/previous slots, owner readback, received ghosts, collective readiness and published identity; no particle/wave callback is required to prepare a background |
+| Evidence | Multiple epochs, region/surface coverage, conservation/induction/interface residuals, rejected samples, shock classification, rank-independent probes and complete commands/input/binary identities |
+
+Shock geometry and ejecta geometry are distinct physical features. A finite SSE front alone is not a closed three-dimensional ejecta body. A subfast part of the candidate surface remains geometry with a typed no-fast-shock disposition; the code cannot manufacture compression to keep a sheath fixture active. Field/wind coverage, solar clipping and numerical resolution are independent bounds.
+
+The background epoch contains all required geometry/plasma/shock/region identities and owning handles, plus a fixed prescribed wave field only if explicitly part of the plasma closure. Source plans, random particle state, finite-release reference surfaces and particle feedback are optional later attachments. One-way background evolution must not depend on them. Baseline host initialization routines may still execute to maintain AMPS invariants, but both allocated particle count and injection count must remain zero and no new particle algorithm is introduced.
+
+### 0.4 G1 implementation stages: srcSEP3D background only
+
+| Stage | Detailed implementation work | Required tests and exit evidence |
+|---|---|---|
+| BG3D-0 — baseline and contract audit | Identify exact Mars1/Mars2 sources; preserve current work; reproduce baseline portable/native builds; classify retained changes; reconcile coronal/composite coverage and spatial-state contracts; freeze supported closures and numerical tolerances | Legacy sphere/SSE/corona/PIC compatibility; particle-only file hashes and mixed-file review; public-header consumer without applications/MPI; explicit supported-profile matrix |
+| BG3D-1 — owning background input and launch | Resolve complete histories, shape, composition/EOS, ambient, regional closures, outer law, handoff interval and full-run coverage; preserve checksummed assets; distinguish solar surface, first valid plasma radius and launch/front boundaries; certify history between knots | Parser/checksum/capability negatives; independent launch kinematics, clipping, attachment/detachment/extrema tests; no unsupported extrapolation; initial zero particles |
+| BG3D-2 — ambient and low-coronal plasma | Assemble canonical rho/U/p/T/B over the selected computational support, including closed/open branches and required one-sided derivatives; qualify thermodynamic/wind compatibility and magnetic flux | Independent EOS, manufactured gradients, signed sector/PFSS cases, wind/mass-flux and magnetic-flux checks; radial coverage to >1 AU; typed null/interface/coverage dispositions |
+| BG3D-3 — complete geometry and local shock | Construct finite front/contact/ejecta geometry; evaluate complete local normal motion; solve admissible local shocks using the canonical upstream/EOS; retain stable patch/feature identity and weak/subfast distinctions | Independent surface normals/velocities/area; manufactured planar/oblique shock and high-precision weak-shock oracles; jump residuals; Mach-crossing classifications and no compression floor |
+| BG3D-4 — spatial sheath closure | Implement the composite design's selected analytical shock-fed material/map closure; initialize a compatible sheath inventory or valid zero-inventory initial state; use shock admission rho1*w1*dA*dt and downstream mapping; account for contact/lateral/outer exits and prescribed work | Exact planar and expanding reference cases; shock boundary limit agrees with local downstream state; independent mass inventory and flux budgets, positive Jacobian, no duplicate parcels/holes, interface consistency and time refinement |
+| BG3D-5 — ejecta and remaining regional closure | Supply a closed ejecta/body model distinct from the shock cap; declare composition, mass, thermodynamics and magnetic topology/assets; qualify all other covered wake/transition regions; match contact and outer flux/stress/velocity constraints | Independent material-map mass and flux tests; for an ideal reference map verify rho=rho0/J and B=F*B0/J with F=dX/da, J=det(F)>0; U follows the same map; EOS/thermal law, normal-field/contact constraints and induction residuals; invalid topology/map/coverage rejects |
+| BG3D-6 — continuous SWCME handoff | Locate the actual crossing from dense coronal history; retain complete surface/material state; initialize outer law from that state; differentiate a single regular transition construction; continue regional plasma consistently with geometry | Exact matched direct handoff; incompatible equal-apex/SSE negative; transition derivative term test; positive surface/volume Jacobians and bounded outward motion throughout; no resets or spurious regional plasma jump |
+| BG3D-7 — native mesh lifecycle | Install composite authority through existing runtime-provider DATAFILE mechanism; write/read actual temporal slots, derivatives and categories; exchange actual halos; publish only after readiness; decouple source/particle obligations | Actual 1-/4-rank zero-particle initialization and advancing runs; prepared-versus-owner-versus-received-ghost agreement in every supported region; candidate failure, layout and stale-slot negatives; mesh/repartition identities |
+| BG3D-8 — short handoff gate and background restart | Deliver a short manufactured handoff deck; retain pre/inside/post transition epochs; add background-only checkpoint state where outer integration/material inventory requires it; preserve legacy particle restart format/behavior | Short case really crosses its configured band; one-rank/four-rank probe and phase agreement; rejected candidate leaves committed state or fail-stops as declared; background restart across transition without relaunch or lost inventory |
+| BG3D-9 — complete low-corona-to-1-AU campaign | Deliver a separate full-duration launch deck with sufficient coverage and resolved regional plasma; track nose and flank/shock/contact/ejecta features to their actual crossing times; quantify time, mesh, surface/material and outer-integrator convergence | Recorded low-coronal initial state and actual 1-AU crossing; finite supported spatial plasma through all epochs; bounded physical residuals and convergent numerical error; 1-/4-rank equivalence and background restart; diagnostics/READMEs/source inventory complete |
+
+Steps BG3D-0 through BG3D-9 are sequential, with unit tests added at each step. Ambient-plus-front completion at BG3D-3 is only intermediate. Neither a local jump PASS nor owner/ghost equality proves a valid sheath/ejecta closure. G1 cannot close while BG3D-4/5 lack the selected full spatial plasma coverage.
+
+**Handoff mathematics.** Preserve the complete coronal reference surface and its point velocities. Direct heliocentric self-similar continuation scales center and axes together; it is admissible only when the full surface velocity matches that continuation, not merely the nose. Otherwise use a regular finite transition with differentiated position and velocity, including time-dependent blending terms, as specified in composite Section 6.2.1. Where C2 motion is claimed, match/validate acceleration as well. Material-state transfer must preserve integrated mass, magnetic flux and appropriate internal-energy/work accounting. Independent interpolation of B or thermodynamic quantities is not a physical matching procedure.
+
+**Regional physics.** The map identities above apply to the declared ideal material-reference construction, not automatically to an arbitrary shock-fed state. A sheath fed by the shock requires its own admission time/labels and mass/flux accounting. If an adiabatic ejecta law p=p0*J^(-gamma) is selected, use its declared composition/gamma and record any added heating; a different closure needs its own equations and validation. Positive J and solenoidal B alone do not establish momentum/energy balance. Freeze allowed sustaining force/heat/work discrepancy and report raw dimensional residuals. No prescribed analytical field should be labelled a global dynamical solution.
+
+### 0.5 G2 stages: srcSEP background only, after G1
+
+| Stage | Work | Exit evidence |
+|---|---|---|
+| BGSEP-0 | Independently select/build srcSEP, preserve its CLI/library/legacy semantics; consume the same composite configuration and capability identity | Real application build; help/preflight negatives; no dependency on srcSEP3D headers/artifacts |
+| BGSEP-1 | Query actual traced line/node coordinates and install plasma/regions/one-sided derivatives; preserve signed B, outward arc tangent, metrics, topology and moving geometry capability | Identical-point independent canonical checks in ambient/sheath/ejecta; both polarities; no line-intersection surrogate for a full volume state |
+| BGSEP-2 | Stage native current/previous line data and categories; complete ownership/readback/MPI readiness before publication; qualify an explicit frozen or moving line profile | Actual 1-/4-rank advancing and failure/repartition tests; no stale fields; moving metric transfer only if implemented and independently verified; zero particle allocation |
+| BGSEP-3 | Run independent background-only launch/handoff/1-AU decks, restart and cross-representation probes | Same physical event/ambient/regions and canonical probe values as G1 at matched epochs; line resolution convergence; native srcSEP receipts and documentation |
+
+Particle-coordinate remapping, finite-tube particle injection and particle streaming are not prerequisites for the zero-particle frozen-line profile. If the physical field/flow demands moving lines for a requested consumer operation, advertise that operation as unavailable until implemented; do not silently pretend a frozen-line approximation is exact. G2 acceptance states which line representation is qualified.
+
+### 0.6 G3/G4 stages: particle work explicitly deferred
+
+| Milestone/stage | Later work and independent gates |
+|---|---|
+| P3D-0 | Freeze supported particle equations, frames, coefficient/wave prescriptions, inner/interface/outer boundaries and compatibility with each qualified plasma region. Baseline behavior remains a separate regression. |
+| P3D-1 | Assemble physical reference/release measures, activation histories, interval source and spectra. Validate absolute number/energy before native counts; preserve calibrated source termination independently of handoff. |
+| P3D-2 | Allocate nonzero native particles with causal births, deterministic ownership/random identities, correct species/weights and duplicate-call protection. |
+| P3D-3 | Qualify srcSEP3D movers, scattering, front/solar/interface contacts and supported downstream transport using independent analytical/manufactured oracles; complete time/mesh/statistical convergence. |
+| P3D-4 | Qualify particle MPI/repartition/checkpoint and number/energy/loss ledgers. Add requested wave feedback only with a separate physical closure, energy accounting and acceptance tests. |
+| PSEP-0 | After G3 closes, implement the same physical sources projected through independently qualified finite tubes, including partial/tangent/overlapping footprints. |
+| PSEP-1 | Native srcSEP births, streaming/scattering/contact callbacks and coordinate-generation handling; validate sources and transport independently. |
+| PSEP-2 | Particle ownership/repartition/restart and number/energy/source/loss closure; moving line/particle coordinates only with explicit qualification. |
+| PSEP-3 | Matched Parker/focused srcSEP/srcSEP3D campaigns in their common dimensional limits; independent tube/transport oracles. No claim of general 3-D perpendicular transport from line agreement. |
+
+The original L6–L9 particle requirements and L7 release measures remain open until their full later gates pass. Earlier particle-related implementation may remain preserved in Mars1, but is not imported into G1/G2 by default. Restore existing particle sections to the Mars2 baseline. Do not remove baseline tests or relabel a required particle test as a background PASS.
+
+### 0.7 Dedicated background validation registry and evidence
+
+The following names are **proposed**, not claims of registered or executed tests. Reconcile them with any actual CMBG registry in the current checkout before adding IDs; never create aliases that grade the same receipt twice. Retain existing CMLU/CMLN/CMLF/CSWC identities and their original full assertions. Reuse applicable kernels while registering a separate scoped background suite.
+
+| Proposed IDs | Assertions |
+|---|---|
+| CMBGU01–03 | Typed/checksummed background configuration and unsupported requests; independent launch geometry/history; ambient/EOS/coverage and branch-aware derivative oracles |
+| CMBGU04–06 | Independent fast/weak/subfast local shocks; planar/curved sheath spatial closure and mass inventory; ejecta/material-map magnetic flux, thermodynamics and interface constraints |
+| CMBGU07–09 | Complete shape/material handoff and deliberate missing-derivative/reset negatives; dense outer trajectory/integrator and actual 1-AU crossing; finite-region coverage plus dimensional force/heat/work and numerical residual separation |
+| CMBGU10–11 | Source/particle-free epoch construction with owning lifetime and failure controls; background serialization/restart and private material/integrator state |
+| CMBGN01–03 | Actual srcSEP3D zero-particle dispatch/init; multi-epoch prepared/owner/received-ghost plasma/derivatives/categories; complete pre/inside/post transition receipts at 1/4 ranks |
+| CMBGN04–06 | Collective rejection/stale-slot/late-write policy; background repartition/restart; full launch-to-1-AU spatial-state and convergence campaign |
+| CMBGN07–08 | Baseline particle/PIC/legacy SWCME compatibility; changed-file scope and independent public-library build |
+| CMBGF01–04 | After G1 only: actual srcSEP initialization/coordinates; native multi-epoch state/metrics/received ownership; failure/repartition/restart; matched background probes and 1-AU zero-particle campaign |
+
+Each native receipt records source/binary/input/closure fingerprints, event and phase, exact physical time and generation bindings, mesh/line revision, region coverage and interface side, feature positions, local shock parameters, plasma and derivative probes, actual native/ghost readback, residual metrics, MPI size and global allocated/injected particle counts. Receipts retain multiple epochs; a final epoch cannot replace evidence inside the handoff. Particle counts must be zero at every recorded G1/G2 epoch, not merely at initialization.
+
+Freeze numerical tolerances, physical residual budgets and observational targets before grading. Use absolute scales for near-zero components and exact categorical/identity agreement. At least three refinement levels are needed where convergence is claimed; separate temporal, spatial, surface/material-map and outer-integrator errors. Physical sensitivity to handoff radius, initial attitude, mass/flux/thermal inputs and drag is a separate study, not a tolerance relaxation. Mismatched interface or inadmissible closure negatives must fail visibly.
+
+### 0.8 Inputs, execution and output requirements
+
+Deliver documented assets for quiet-background regression, attached low-coronal launch, weak/subfast shock classification, sheath/ejecta closure fixtures, a manufactured short handoff smoke case, and a **separate full low-corona-to-1-AU case**. The long case needs histories/assets covering its actual duration, including initial regional inventories/fields and thermal/work closures. Derive its duration from the trajectory, not from an arbitrary ten-step run. Test-step count must cover the end time under the actual background clock.
+
+Use background-specific configuration records owning launch, ambient, regional plasma/field, handoff, outer law, clock/domain/output and checksummed assets. Do not require a calibrated SEP source or particle spectrum for a background run. Preserve existing native schemas and mover behavior; compile-time species/application selection remain unchanged. Unsupported new fields reject before allocation, rather than being ignored.
+
+At each joined background boundary: resolve requested time -> prepare geometry/regional plasma/shock privately -> independently validate coverage/state -> join candidate readiness -> stage/write native slots and complete actual halo/readback -> join publication readiness -> publish one background epoch -> export diagnostics/checkpoint -> advance to the next required epoch. No source planning, birth allocation, particle movement or feedback is part of this contract. A failed candidate cannot advance time with stale published fields; a late native failure must follow the declared tested rollback or fail-stop policy.
+
+Only in `~/Mars2/AMPS`, confirm the root and remove generated `build/` before every native rebuild; regenerate the selected application's configuration/production hooks and then compile through the installation's established workflow with parallelism such as `-j16`. Preserve site configuration/libraries and fingerprint binaries before application switches. Inspect actual available scripts/decks; this plan does not invent a srcSEP compile selector or treat an old executable as current evidence. Use an allocated compute node for native MPI runs.
+
+G1 documentation must explain the physics and meaning of regional fields, shock versus ejecta geometry, launch/expansion input, ambient validity, material labels, normal-speed and shock calculations, thermal/work closure, full-shape handoff, native time slots, MPI readiness, domain choices, numerical limits and exact reproduction commands. Provide region-labelled plasma/IMF plots, shock/contact/ejecta histories, shock maps and independent residual/convergence figures. A front outline alone is not the background validation product.
+
+### 0.9 Mapping the original launch work packages
+
+| Historical requirements | New scheduling |
+|---|---|
+| L0–L5 background/configuration/geometry/local-shock/epoch portions | G1 first, then srcSEP-specific portions in G2 |
+| L5 source/turbulence/particle coupling portions; L6 mover/contact hooks; L7–L8 physical release/allocation | G3 first, then srcSEP portions in G4 |
+| L9 | Background/material/integrator restart and MPI qualification in G1/G2; particle restart/random streams/ledgers in G3/G4 |
+| L10 | Background decks/diagnostics/docs/tests with G1/G2; particle products with G3/G4 |
+| L11 | Background physics/convergence/launch/arrival evidence with G1/G2; particle and observational response qualification later |
+| L12 | srcSEP background representation in G2; finite source tubes/particle coordinates/transport in G4 |
+| L13 | Background identical-point and common-state agreement in G2; matched particle transport in G4 |
+| Composite S0–S7 and analytical Level B | Background prerequisites selected for G1, including full requested regional plasma; particle-dependent S8+ assertions remain deferred |
+
+This mapping does not rename the original tests, collapse their assertions or mark L0–L7 complete. Report implementation status and validation status separately for each new gate. Preserve historical findings/results with source/time identity; do not present them as inspection of the current local Codex implementation.
+
+
 ## 1. Deliverable and physical scope
+
+**Active delivery order:** G1 full spatial CME background in srcSEP3D; G2 the same background in srcSEP; G3 particles in srcSEP3D; G4 particles in srcSEP. Section 0 is authoritative for scheduling and active acceptance. The detailed historical launch requirements below remain applicable to their assigned later gates.
 
 The deliverable is one shared, input-driven coronal-CME model that both `srcSEP` and `srcSEP3D` can construct independently. It initializes a finite candidate front just above the photosphere, advances its prescribed three-dimensional shape and motion, evaluates local shock states using the same coronal upstream authority supplied to either transport application, and writes complete diagnostics. Each application then adds physically normalized SEP release and its native transport, with ownership, restart and conservation accounting.
 
@@ -17,7 +160,7 @@ This is a stand-alone, prescribed-front model. Launch direction, shape, and acce
 
 Solar clipping, valid plasma coverage, particle-transport support and qualified source support have separate bounds. In particular, the r4 minimum qualified source radius `R_in` is not the background's inner boundary. A dome with apex exactly at `R_in` may have zero qualified initial source area while its exposed geometry and permitted guard-shell transport remain valid. Section 4.3 defines these contracts; an initialization test must not force a nonzero source by changing the launch physics.
 
-Four completion claims must remain separate. A and B require evidence from both application consumers before shared availability is declared complete:
+The following A–D labels are retained as historical capability labels, not the new execution order. In revision 1.3, spatial capability D is developed first for srcSEP3D (G1) and then srcSEP (G2); A is an intermediate front diagnostic. Particle capability B is deferred to G3/G4. A and B still require evidence from both consumers before shared availability is declared complete:
 
 | Milestone | Required observable result | Permitted claim |
 |---|---|---|
@@ -26,13 +169,13 @@ Four completion claims must remain separate. A and B require evidence from both 
 | C: event qualification | B plus qualified event background, reconstructed front history, independent data and response metrics | The specified event model passes its stated observational tests. |
 | D: disturbed plasma provider | Independently specified shared spatial sheath/ejecta closure, regional fields, line/mesh consumers, conservation and validity tests | Both consumers can query spatial plasma and magnetic fields modified by the CME within supported regions. |
 
-Milestone D is additional shared-model work. Local downstream jump values at a front do not define a spatially resolved CME sheath or ejecta. A/B can operate with an upstream-only transport policy and an explicit front-return boundary. Their plasma output must clearly label the ambient field and the separate surface jump diagnostics; it must not display the ambient field behind the front as a computed downstream solution.
+Milestone D is required shared-model work for the new background-first sequence; its srcSEP3D portion precedes particles. A front-plus-ambient milestone cannot substitute for it. Local downstream jump values at a front do not define a spatially resolved CME sheath or ejecta. A/B can operate with an upstream-only transport policy and an explicit front-return boundary. Their plasma output must clearly label the ambient field and the separate surface jump diagnostics; it must not display the ambient field behind the front as a computed downstream solution.
 
 Application-specific progress may be recorded as A-SEP, A-SEP3D, B-SEP or B-SEP3D. Completion of one consumer is useful partial progress, but it does not close the requirement that both consumers have access. Cross-application agreement is required only in matched physical limits; general 3-D transport with perpendicular diffusion or drift is outside a field-aligned production mover's dimensional scope.
 
 ## 2. What the source audit established
 
-The audit inspected the delivered source files and compiled a small consumer of the actual schema-5 parser. It did not execute a native NASA HPE MPT run. The following are concrete code findings, not assumptions about a remote installation.
+This is the historical revision-1.2 audit, preserved for traceability. It is not an inventory of the latest Mars1 or Mars2 source tree; BG3D-0 must reconcile it with the actual checkout before making implementation claims. The audit inspected the delivered source files and compiled a small consumer of the actual schema-5 parser. It did not execute a native NASA HPE MPT run. The following are concrete code findings, not assumptions about a remote installation.
 
 | Existing component | Reusable implementation | Remaining connection or hardening |
 |---|---|---|
@@ -110,7 +253,7 @@ The audited baseline specification explicitly prohibits srcSEP from linking or i
 - **Live shared-provider mode:** either application resolves the same model configuration and advances its own immutable epochs. srcSEP obtains field-line reductions directly from the shared model, without a preceding srcSEP3D run.
 - **Bundle replay mode:** srcSEP may retain the existing checksummed neutral import path for frozen-state comparison and offline reproduction. A bundle-only build can remain independent of the coronal/SWCME archives. Replay must declare its time coverage and cannot silently act as an evolving live provider.
 
-Backend choice and transport-equation choice remain independent. The generic consumer contract carries explicit capabilities, provenance and validity. Unavailable combinations fail before allocation; selecting Parker or focused transport cannot quietly select a different background or alter source normalization. A future continuous corona-to-SWCME provider may occupy a separate proposed `src/models/sep_corona_swcme` sibling, compose the two backends through their public contracts and serve both applications. That handoff is a separate roadmap milestone, not functionality implemented by this document.
+Backend choice and transport-equation choice remain independent. The generic consumer contract carries explicit capabilities, provenance and validity. Unavailable combinations fail before allocation; selecting Parker or focused transport cannot quietly select a different background or alter source normalization. The background-first work now implements the continuous corona-to-SWCME provider in the `src/models/sep_corona_swcme` sibling, compose the two backends through their public contracts and serve both applications. That handoff and the complete regional spatial plasma closure are now G1 prerequisites; this document still describes work rather than claiming it is implemented.
 
 ### 3.3 Normative ownership and review traceability
 
@@ -280,7 +423,7 @@ A later capability must distinguish center-path deflection, `c=d_c e_r(t)` with 
 
 ## 5. Implementation stages and exit gates
 
-Stages L0–L13 below are supplemental launch tasks, not replacements for the canonical Stage 0–14 numbering. Their numbers identify work packages rather than a compulsory serial schedule. L12 adds the field-aligned consumer and begins as soon as shared configuration/geometry are available; it must not wait until 3-D event qualification. L13 qualifies joint availability. L10 supplies tests and output throughout development.
+Stages L0–L13 below retain their original scientific work-package definitions and test identities; they are not the active chronological sequence. Revision 1.3 assigns their background portions to G1/G2 and their particle portions to G3/G4 using Section 0.9. In particular, native srcSEP work begins only after G1 passes, and particle work begins only after G2 passes. L10 background documentation/tests accompany G1/G2; particle products remain deferred. Historical both-consumer gates must not block the deliberately narrower first srcSEP3D milestone, and a partial background result must not close a full particle assertion.
 
 ### L0 — Rebaseline capabilities and reproduce interface failures
 
@@ -643,7 +786,9 @@ The diagram is a dependency contract. Background geometry/shock/source candidate
 
 **Exit:** A/B can be declared available to both applications only after each required native gate executes and the matched physical-limit evidence passes. An unsupported or unexecuted consumer remains explicitly incomplete.
 
-## 6. Source and native phase order
+## 6. Deferred particle/source native phase order
+
+**G3/G4 only.** G1/G2 use the background-only publication order in Section 0.8. The particle phase contract below is preserved for later implementation and does not require source, particle or feedback initialization in a background-only run.
 
 Initialization must establish input/coverage, model tables, front history, native line/AMR domain, node/owner-cell background, turbulence, local shock/source support, all-species weights/time steps, ownership/halo readiness, observers and output dictionaries before exposing a ready epoch. A valid zero-source candidate satisfies the shock initialization condition through its prepared geometry/classification; it does not need fabricated active patches.
 
@@ -911,22 +1056,22 @@ mpiexec -n 4 ./amps-sep --test CMLF06 --test-input srcSEP/examples/sep_corona_cm
 
 Twenty steps is a smoke-test length, not a guarantee that a particular prescribed CME has become fast or reached an observer. The deck and selected tests must declare their event coverage. Initialization testing can use zero steps; release validation must include a nonzero, independently predicted source interval. Use unique output directories for separate mesh/provider cases.
 
-## 11. Milestone acceptance and recommended implementation order
+## 11. Milestone acceptance and implementation order
 
-| Milestone | Blocking work | Required evidence |
+The mandatory sequence is **G1 -> G2 -> G3 -> G4**, as specified in Section 0.1. The original A–D capability labels do not define execution order. A remains a front diagnostic, B a particle capability, C an event/response qualification, and D a full spatial background capability. Develop D-SEP3D before D-SEP, then B-SEP3D before B-SEP.
+
+| Active gate | Required result | Insufficient substitute |
 |---|---|---|
-| A | L0–L5; applicable L10 diagnostics; L12 live line initialization and L13 independent consumer build/state checks | Complete common input → declared attached/detached dome → authoritative upstream/local shock → native line or mesh/halo epoch → finite artifacts, in both consumers at 1 and 4 ranks. Geometry, guard coverage and qualified-source masks remain distinct; zero initial source area is valid. |
-| B | A plus L6–L9, source/transport parts of L10/L12, basic L11 convergence and L13 matched limits | Real native particles in both applications; causal births; fixed-reference calibration/measure closure; finite-tube measures; qualified solar-boundary/transport approximation and distinct loss ledgers; no unsupported downstream transport; MPI/restart and matched-limit evidence. |
-| C | B plus full L11 event profile, assets and withheld response metrics; qualified consumer scope from L13 | A separately scoped observational report with V17–V19 applicability/evidence, frozen uncertainty/coverage, direction/tilt sensitivity and dimensional/capability limits. Missing required observations leave C incomplete. |
-| D | A/B plus the separately owned composite/volume-state closure and corresponding line/mesh consumers, tracked in Section 12 | Spatial CME plasma/field semantics, supported field-line reduction and independent conservation/coverage tests; no claim from local jump values alone. |
+| G1 | Selected complete spatial plasma/IMF model, shock/sheath/ejecta state, continuous coronal launch/handoff/1-AU evolution, actual srcSEP3D native updates and MPI/convergence evidence with zero particles | A front outline, quiet fields behind it, a jump solver alone, zero-step initialization, or a short outer-only trajectory |
+| G2 | Independent srcSEP live background integration, actual canonical line-state/MPI/restart and matched background evidence with zero particles | A portable preflight, srcSEP3D receipts, or new particle/source callbacks |
+| G3 | Native srcSEP3D source/particle/transport qualification against the already-qualified background | G1/G2 receipts or source planning without native nonzero allocation |
+| G4 | Native srcSEP particle qualification and matched dimensional-limit campaigns | Line background equality without finite-tube sources/transport |
 
-Implement shared L1 and L2 first, with L0/L10 tests already present. Start both thin factories and the L12 field-line binding at that point. Connect a source-free diagnostic front to each consumer before changing particle injection. Next assemble shared L3/L4 and atomic L5 publication, with separate host storage readiness. Then generalize shared contact geometry and add finite-reference release/allocation, including finite-line projection. Restart and repartition qualification precede long production runs. Execute L13 matched cases before declaring both-consumer availability. Keep event calibration and Stage-14 research features outside the critical path for the first native launch.
-
-For each stage, the completion record must list changed source/contracts, passing shared checks, executed native checks, artifact locations, open failures and unsupported capabilities. Do not assign a calendar estimate until the required native build, MPI environment and validation assets are available.
+First reconcile the clean baseline and shared contracts. Implement launch/ambient/local shock, selected full regional spatial closures, matched handoff and outer continuation. Install and qualify srcSEP3D background updates and the full low-corona-to-1-AU case. Only then implement/qualify the srcSEP background adapter. After both background gates close, resume srcSEP3D source/allocation/transport, then srcSEP particle work. Each stage adds its independent tests, negative controls, detailed comments and documentation. Event-grade claims still require independent observations and frozen response/coverage criteria; background completion does not grant those claims.
 
 ## 12. Additional work for spatial CME plasma and magnetic fields
 
-The front-plus-upstream release model does not itself update the plasma state behind the CME. The separately owned composite design, revision 1.2, proposed at `src/models/sep_corona_swcme/model.md`, specifies continuous corona-to-SWCME handoff and its optional analytical regional disturbance. Its Level A retains one ambient authority and an independently prescribed front; its optional Level B owns the selected sheath/ejecta closure. Launch milestones A/B must not be confused with those composite levels.
+**Required in G1/G2, not postponed until particles.** The front-plus-upstream release model does not itself update the plasma state behind the CME. The separately owned composite design, revision 1.2, proposed at `src/models/sep_corona_swcme/model.md`, specifies continuous corona-to-SWCME handoff and its optional analytical regional disturbance. Its Level A retains one ambient authority and an independently prescribed front; its analytical Level B owns the selected sheath/ejecta closure. For the active user requirement, Level A is an intermediate checkpoint and a qualified spatial Level B profile is required for background completion. Launch milestones A/B must not be confused with those composite levels.
 
 This section tracks the launch model's interface dependencies rather than defining another volume model:
 
@@ -939,7 +1084,7 @@ This section tracks the launch model's interface dependencies rather than defini
 | Native line/mesh publication and supported transport operators | Use L5/L9 readiness/identity mechanisms; require qualified one-sided interpolation and, where requested, moving-line coordinates before downstream use. |
 | Spatial state, conservation, observer, MPI/restart and handoff validation | Execute the composite's independent gates and record their exact evidence. A launch/front test or jump-solver pass cannot close them. |
 
-Normative changes to these closures belong in the composite design and referenced physics modules, with explicit revisions and regenerated derived documents. This roadmap only records the consuming stages and milestone D evidence. The work remains a prescribed analytical replacement model; it does not block a correctly scoped upstream SEP launch or require a global MHD runtime.
+Normative changes to these closures belong in the composite design and referenced physics modules, with explicit revisions and regenerated derived documents. This roadmap only records the consuming stages and milestone D evidence. The work remains a prescribed analytical replacement model without a global MHD runtime. For this user-selected sequence, it does block the start of new particle work until G1/G2 pass. All claimed spatial regions and prescribed force/heating/work limitations must be explicit.
 
 ## 13. References and implementation evidence
 

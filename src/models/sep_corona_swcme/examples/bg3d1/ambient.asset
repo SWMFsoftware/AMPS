@@ -1,0 +1,13 @@
+# BG3D-1 typed input record; BG3D-2 owns provider implementation/qualification.
+profile=pfss-parker-isothermal-v1
+source_surface_radius_m=1739250000
+reference_radius_m=149597870700
+electron_density_at_reference_m3=5000000
+closed_base_electron_density_m3=1e14
+rotation_rate_rad_per_s=2.86533e-6
+minimum_magnetic_field_t=1e-12
+trace_step_m=10000000
+gradient_relative_step=1e-5
+trace_maximum_steps=10000
+wind_table_points=1025
+harmonics=1,0,0.0002,0

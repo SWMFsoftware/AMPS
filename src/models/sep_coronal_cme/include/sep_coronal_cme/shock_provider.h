@@ -46,6 +46,10 @@ struct ShockPatchInput {
   double shockNormalSpeedMPerS = 0.0;
   double incidentNumberRatePerS = 0.0;
   double incidentKineticEnergyRateW = 0.0;
+  // Defaults to the legacy source-capable behavior.  Background-only clients
+  // must explicitly disable this flag so a diagnostic shock cannot be
+  // mistaken for an enabled particle source merely because its rates are zero.
+  bool sourceEnabled = true;
   bool intersectsTransitionClearance = false;
   bool sourceTerminated = false;
   PatchInterfaceEvidence interface;
@@ -97,6 +101,9 @@ struct ShockSurfaceSnapshot {
 };
 
 struct ShockPreparationOptions {
+  // The shock uses the same frozen EOS as its upstream/background event.
+  // The default preserves every legacy caller that historically used 5/3.
+  double gammaAdiabatic = 5.0 / 3.0;
   bool productionIntent = false;
   bool requireSupercritical = false;
   double criticalFastMach = 0.0;

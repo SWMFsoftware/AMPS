@@ -27,6 +27,12 @@ Core::Status ValidateConfiguration(const ModelConfiguration& configuration);
 std::string ComputePhysicsFingerprint(
     const std::map<std::string, std::string>& normalizedAssignments);
 
+// Cryptographic identity for bytes acquired by an application-owned asset
+// reader.  Exposing the maintained implementation prevents sibling analytical
+// models from substituting a path name or a non-cryptographic runtime hash for
+// a required content checksum.  This function performs no file-system I/O.
+std::string ComputeContentChecksum(const std::string& bytes);
+
 // Stable semantic comparison used by restart gates.  A mismatch returns a
 // DataIntegrityFailure before a provider, AMPS node, or particle is allocated.
 Core::Status CheckRestartIdentity(const std::string& expectedFingerprint,

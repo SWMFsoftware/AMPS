@@ -632,6 +632,10 @@ std::string ComputePhysicsFingerprint(
   return Internal::Sha256Hex(bytes);
 }
 
+std::string ComputeContentChecksum(const std::string& bytes) {
+  return Internal::Sha256Hex(bytes);
+}
+
 Core::Status CheckRestartIdentity(const std::string& expectedFingerprint,
                                   const std::string& actualFingerprint,
                                   const std::string& identityCategory) {

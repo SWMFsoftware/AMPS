@@ -37,5 +37,20 @@ test/run_tests.py --amps ../amps --all --output-dir test_output/all
 
 
 
+------------------------------------------------------------------------------------
+Test of the background model 
+• Run the new shared-model tests from the Mars2 root:
+
+  cd /home/vtenishe/Mars2/AMPS
+  make -C src/models/sep_corona_swcme -j16 test
+
+  make -C src/models/sep_corona_swcme -j16 build/test_bg3d4
+  cd src/models/sep_corona_swcme
+  ./build/test_bg3d4
+
+  Run the maintained coronal regression separately:
+
+  cd /home/vtenishe/Mars2/AMPS
+  make -C src/models/sep_coronal_cme -j16 test
 
 

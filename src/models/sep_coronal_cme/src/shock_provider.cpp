@@ -113,6 +113,7 @@ TransactionalShockProvider::Prepare(
     const std::vector<ShockPatchInput>& inputs,
     const ShockPreparationOptions& options) {
   if (!Finite(timeS) || backgroundGeneration == 0 || inputs.empty() ||
+      !Finite(options.gammaAdiabatic) || options.gammaAdiabatic <= 1.0 ||
       options.minimumFastAreaFraction < 0.0 ||
       options.minimumFastAreaFraction > 1.0) {
     return Core::Result<std::shared_ptr<const ShockSurfaceSnapshot>>::Failure(
@@ -145,7 +146,7 @@ TransactionalShockProvider::Prepare(
     }
 
     auto characteristics = EvaluateMhdCharacteristics(
-        input.upstream, input.outwardNormal, 5.0 / 3.0);
+        input.upstream, input.outwardNormal, options.gammaAdiabatic);
     if (!characteristics.ok()) {
       return Core::Result<std::shared_ptr<const ShockSurfaceSnapshot>>::Failure(
           characteristics.status.code, characteristics.status.message);
@@ -176,7 +177,7 @@ TransactionalShockProvider::Prepare(
     if (patch.fast) {
       candidate.measures.fastAreaM2 += input.areaM2;
       auto jump = SolveObliqueFastShock(input.upstream, normal,
-          input.shockNormalSpeedMPerS, 5.0 / 3.0);
+          input.shockNormalSpeedMPerS, options.gammaAdiabatic);
       if (!jump.ok()) {
         return Core::Result<std::shared_ptr<const ShockSurfaceSnapshot>>::Failure(
             jump.status.code, jump.status.message);
@@ -187,8 +188,8 @@ TransactionalShockProvider::Prepare(
     }
     if (patch.supercritical) candidate.measures.supercriticalAreaM2 += input.areaM2;
 
-    patch.sourceEligibleBeforeClearance = patch.fast && patch.supercritical &&
-        !input.sourceTerminated;
+    patch.sourceEligibleBeforeClearance = input.sourceEnabled && patch.fast &&
+        patch.supercritical && !input.sourceTerminated;
     if (patch.sourceEligibleBeforeClearance) {
       candidate.measures.counterfactualAreaM2 += input.areaM2;
       candidate.measures.counterfactualNumberRatePerS +=

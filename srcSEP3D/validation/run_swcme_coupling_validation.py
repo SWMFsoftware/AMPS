@@ -185,9 +185,13 @@ def plot_comparison(output, manifest, model, observations, arrival_s, metrics):
     with plt.rc_context({"font.family": "DejaVu Sans", "font.size": 9,
                          "axes.linewidth": 0.8, "ps.fonttype": 42}):
         arrival_only = manifest.get("comparison_scope") == "arrival-only"
-        fig, axes = plt.subplots(2 if arrival_only else 3, 1,
-                                 figsize=(7.2, 5.3 if arrival_only else 7.5), sharex=True,
-                                 layout="constrained")
+        # ``layout=`` is unavailable in the older Matplotlib shipped on some
+        # supported AMPS systems.  The long-standing keyword produces the same
+        # constrained layout without changing model data or scored metrics.
+        fig, axes = plt.subplots(
+            2 if arrival_only else 3, 1,
+            figsize=(7.2, 5.3 if arrival_only else 7.5), sharex=True,
+            constrained_layout=True)
         axes[0].plot(times, [r["shock_radius_m"] / AU_M for r in model],
                      color="#0072B2", label="Synthetic front" if synthetic else "SWCME front in srcSEP3D")
         axes[1].plot(times, [r["shock_speed_m_s"] / 1000 for r in model],

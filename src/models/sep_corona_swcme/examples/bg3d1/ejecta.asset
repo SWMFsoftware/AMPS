@@ -1,0 +1,14 @@
+# BG3D-1 typed input record; BG3D-4/5 own map implementation/qualification.
+profile=vector-potential-material-map-v1
+vector_potential_model=axisymmetric-polynomial-a-v1
+sheath_admission_start_s=0
+contact_apex_fraction=0.99
+ejecta_reference_density_kg_m3=1e-13
+ejecta_reference_pressure_pa=1e-3
+axial_flux_wb=1e13
+poloidal_flux_wb=5e12
+minimum_jacobian=1e-6
+maximum_integrated_force_ratio=2
+maximum_local_force_ratio_p99=5
+maximum_force_work_ratio=2
+added_heating=zero
