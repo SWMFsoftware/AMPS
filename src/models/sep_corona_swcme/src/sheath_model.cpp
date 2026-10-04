@@ -17,6 +17,7 @@ using CoronalCME::Norm;
 using CoronalCME::Vec3;
 
 constexpr double kPi=3.141592653589793238462643383279502884;
+constexpr double kMu0=1.25663706212e-6;
 
 struct BirthState {
   FixedOrientationEllipsoid front;
@@ -122,6 +123,10 @@ Core::Result<Vec3> OneSidedDerivative(double x,double step,double lower,double u
   if(minus2.ok()&&minus.ok()&&plus.ok()&&plus2.ok())return Return::Success(
       (minus2.value-8*minus.value+8*plus.value-plus2.value)/(12*step));
   if(minus.ok()&&plus.ok())return Return::Success((plus.value-minus.value)/(2*step));
+  if(plus.ok()&&plus2.ok())return Return::Success(
+      (-3*center+4*plus.value-plus2.value)/(2*step));
+  if(minus.ok()&&minus2.ok())return Return::Success(
+      (3*center-4*minus.value+minus2.value)/(2*step));
   if(plus.ok())return Return::Success((plus.value-center)/step);
   if(minus.ok())return Return::Success((center-minus.value)/step);
   return Return::Failure(Core::StatusCode::UnsupportedCapability,
@@ -132,36 +137,52 @@ double Relative(double a,double b) {
   return std::abs(a-b)/std::max({std::abs(a),std::abs(b),1e-300});
 }
 
+// Post-shock material retains the exact RH relative drift at age zero, then
+// relaxes smoothly toward a nonzero frozen fraction.  L(0)=0 and L'(0)=1
+// preserve the shock position and velocity limits; L'>=kappa>0 avoids the
+// singular old-cohort volume produced by a fully arrested drift.  The implied
+// acceleration is a declared sustaining-force contribution and is graded
+// separately from numerical mass/induction residuals.
+double DriftTime(const EventConfiguration& event,double ageS) {
+  const double kappa=event.regional.sheathDriftAsymptoteFraction;
+  const double relaxation=event.regional.sheathDriftRelaxationTimeS;
+  return kappa*ageS+(1-kappa)*relaxation*(-std::expm1(-ageS/relaxation));
+}
+
+double DriftRate(const EventConfiguration& event,double ageS) {
+  const double kappa=event.regional.sheathDriftAsymptoteFraction;
+  return kappa+(1-kappa)*std::exp(-ageS/
+      event.regional.sheathDriftRelaxationTimeS);
+}
+
+Core::Result<Vec3> EvaluateMapPosition(const EventConfiguration& event,
+    const AmbientModel& ambient,const SheathMaterialLabel& label,double time) {
+  const auto flow=EvaluateBirth(event,ambient,label.polarRad,label.azimuthRad,time);
+  if(!flow.ok())return Core::Result<Vec3>::Failure(
+      flow.status.code,flow.status.message);
+  return Core::Result<Vec3>::Success(flow.value.position+
+      DriftTime(event,time-label.crossingTimeS)*flow.value.deficit);
+}
+
 struct PositionClassification {
   Vec3 position;
-  double contactSigned=0.0; // positive in the sheath, zero at contact
   double solarSigned=0.0;   // positive outside the physical Sun
   double outerSigned=0.0;   // positive inside the shock front
 };
 
 Core::Result<PositionClassification> ClassifyPosition(
-    const EventConfiguration& event,const BirthState& birth,
+    const EventConfiguration& event,const AmbientModel& ambient,
     const SheathMaterialLabel& label,double time) {
   using Return=Core::Result<PositionClassification>;
-  const auto evolution=event.At(time);
-  if(!evolution.ok())return Return::Failure(evolution.status.code,evolution.status.message);
-  const auto front=FixedOrientationEllipsoid::FromCenter(event.basis,
-      evolution.value.ellipsoid,event.support.solarRadiusM);
-  const auto contactKinematics=ContactKinematics(event,evolution.value.ellipsoid);
-  const auto contact=contactKinematics.ok()?FixedOrientationEllipsoid::FromCenter(
-      event.basis,contactKinematics.value,event.support.solarRadiusM):
-      Core::Result<FixedOrientationEllipsoid>::Failure(
-          contactKinematics.status.code,contactKinematics.status.message);
-  if(!front.ok()||!contact.ok())return Return::Failure(Core::StatusCode::InvalidState,
-      !front.ok()?front.status.message:contact.status.message);
+  const auto flow=EvaluateBirth(event,ambient,label.polarRad,label.azimuthRad,time);
+  if(!flow.ok())return Return::Failure(flow.status.code,flow.status.message);
+  const auto position=EvaluateMapPosition(event,ambient,label,time);
+  if(!position.ok())return Return::Failure(position.status.code,position.status.message);
   PositionClassification result;
-  result.position=front.value.Point(label.polarRad,label.azimuthRad)+
-      (time-label.crossingTimeS)*birth.deficit;
-  const auto frontValue=front.value.Evaluate(result.position);
-  const auto contactValue=contact.value.Evaluate(result.position);
-  if(!frontValue.ok()||!contactValue.ok())return Return::Failure(
+  result.position=position.value;
+  const auto frontValue=flow.value.front.Evaluate(result.position);
+  if(!frontValue.ok())return Return::Failure(
       Core::StatusCode::InvalidState,"cannot evaluate a sheath boundary event function");
-  result.contactSigned=contactValue.value.implicitValue;
   result.solarSigned=Norm(result.position)-event.support.solarRadiusM;
   result.outerSigned=-frontValue.value.implicitValue;
   return Return::Success(result);
@@ -173,7 +194,7 @@ struct LocatedDisposition {
 };
 
 Core::Result<LocatedDisposition> LocateFirstDisposition(
-    const EventConfiguration& event,const BirthState& birth,
+    const EventConfiguration& event,const AmbientModel& ambient,
     const SheathMaterialLabel& label,double epoch) {
   using Return=Core::Result<LocatedDisposition>;
   // These are geometric event functions, independent of F/J.  Locating an
@@ -184,27 +205,26 @@ Core::Result<LocatedDisposition> LocateFirstDisposition(
   const double epsilon=std::max(event.support.rootToleranceS,
       1e-9*std::max(1.0,epoch-begin));
   double previousTime=std::min(epoch,begin+epsilon);
-  auto previous=ClassifyPosition(event,birth,label,previousTime);
+  auto previous=ClassifyPosition(event,ambient,label,previousTime);
   if(!previous.ok())return Return::Failure(previous.status.code,previous.status.message);
   auto scalar=[](const PositionClassification& state,
       SheathCellDisposition kind) {
-    if(kind==SheathCellDisposition::ContactExit)return state.contactSigned;
     if(kind==SheathCellDisposition::SolarExit)return state.solarSigned;
     return state.outerSigned;
   };
   for(int i=1;i<=intervals;++i) {
     const double time=begin+(epoch-begin)*i/intervals;
     if(time<=previousTime)continue;
-    const auto current=ClassifyPosition(event,birth,label,time);
+    const auto current=ClassifyPosition(event,ambient,label,time);
     if(!current.ok())return Return::Failure(current.status.code,current.status.message);
-    for(const auto kind:{SheathCellDisposition::ContactExit,
-        SheathCellDisposition::SolarExit,SheathCellDisposition::OuterExit}) {
+    for(const auto kind:{SheathCellDisposition::SolarExit,
+        SheathCellDisposition::OuterExit}) {
       if(scalar(previous.value,kind)>0&&scalar(current.value,kind)<=0) {
         double lower=previousTime,upper=time;
         for(int iteration=0;iteration<80&&upper-lower>event.support.rootToleranceS;
             ++iteration) {
           const double middle=0.5*(lower+upper);
-          const auto state=ClassifyPosition(event,birth,label,middle);
+          const auto state=ClassifyPosition(event,ambient,label,middle);
           if(!state.ok())return Return::Failure(state.status.code,state.status.message);
           if(scalar(state.value,kind)>0)lower=middle;else upper=middle;
         }
@@ -227,7 +247,7 @@ Core::Result<std::shared_ptr<ShockFedSheathModel>> ShockFedSheathModel::Create(
   if(event->physicsFingerprint!=ambient->Event().physicsFingerprint)
     return Return::Failure(Core::StatusCode::DataIntegrityFailure,
         "sheath and ambient authorities have different event identities");
-  if(event->sheathModel!="rh-ballistic-material-map-v1")return Return::Failure(
+  if(event->sheathModel!="rh-relaxing-material-map-v1")return Return::Failure(
       Core::StatusCode::UnsupportedCapability,"unsupported analytical sheath model");
   auto model=std::shared_ptr<ShockFedSheathModel>(new ShockFedSheathModel);
   model->event_=std::move(event);model->ambient_=std::move(ambient);
@@ -252,7 +272,13 @@ Core::Result<SheathMappedState> ShockFedSheathModel::Evaluate(
   const auto nowShape=FixedOrientationEllipsoid::FromCenter(event_->basis,
       nowKinematics.value.ellipsoid,event_->support.solarRadiusM);
   if(!nowShape.ok())return Return::Failure(nowShape.status.code,nowShape.status.message);
+  const auto currentFlow=epochS==label.crossingTimeS?birth:
+      EvaluateBirth(*event_,*ambient_,label.polarRad,label.azimuthRad,epochS);
+  if(!currentFlow.ok())return Return::Failure(currentFlow.status.code,
+      "current sheath-driving state unavailable: "+currentFlow.status.message);
   const double age=epochS-label.crossingTimeS;
+  const double driftTime=DriftTime(*event_,age);
+  const double driftRate=DriftRate(*event_,age);
   SheathMappedState result;result.label=label;result.eventIdentity=event_->physicsFingerprint;
   result.upstreamRelativeNormalSpeedMPerS=birth.value.w1;
   result.downstreamRelativeNormalSpeedMPerS=birth.value.w2;
@@ -260,16 +286,31 @@ Core::Result<SheathMappedState> ShockFedSheathModel::Evaluate(
   result.birthAreaDensityM2PerRad2=Norm(Cross(
       PointPolarDerivative(birth.value.front,label.polarRad,label.azimuthRad),
       PointAzimuthDerivative(birth.value.front,label.polarRad,label.azimuthRad)));
-  result.positionM=nowShape.value.Point(label.polarRad,label.azimuthRad)+
-      age*birth.value.deficit;
-  result.primitive.velocityMPerS=nowShape.value.SurfaceVelocity(
-      label.polarRad,label.azimuthRad)+birth.value.deficit;
+  const auto mappedPosition=EvaluateMapPosition(*event_,*ambient_,label,epochS);
+  if(!mappedPosition.ok())return Return::Failure(mappedPosition.status.code,
+      mappedPosition.status.message);
+  result.positionM=mappedPosition.value;
+  // This is the centre basis of a finite physical reference prism
+  // X0(theta,phi,s)=X_sh(theta,phi,tau)-s*deficit(theta,phi,tau).
+  // Its determinant is dA_sh/dtheta/dphi times the downstream shock-frame
+  // crossing speed w2.  It supplies a real 3-D reference volume; the angular
+  // and admission-time labels are not treated as Cartesian identity axes.
+  const std::array<Vec3,3> birthBasis={
+      PointPolarDerivative(birth.value.front,label.polarRad,label.azimuthRad),
+      PointAzimuthDerivative(birth.value.front,label.polarRad,label.azimuthRad),
+      -1.0*birth.value.deficit};
+  const double birthDet=Determinant(birthBasis);
+  const double birthScale=std::max(1.0,
+      Norm(birthBasis[0])*Norm(birthBasis[1])*Norm(birthBasis[2]));
+  if(!(std::isfinite(birthDet)&&birthDet>1e-14*birthScale))return Return::Failure(
+      Core::StatusCode::InvalidState,
+      "shock-fed cohort reference prism is singular or reversed");
+  result.referenceDerivativeColumns=birthBasis;
+  result.referenceVolumeDensityM3PerRad2S=birthDet;
   if(age<=event_->support.rootToleranceS*1e-6) {
     result.jacobian=1;result.deformationColumns={Vec3{1,0,0},Vec3{0,1,0},Vec3{0,0,1}};
-    result.labelDerivativeColumns={
-        PointPolarDerivative(birth.value.front,label.polarRad,label.azimuthRad),
-        PointAzimuthDerivative(birth.value.front,label.polarRad,label.azimuthRad),
-        -1.0*birth.value.deficit};
+    result.labelDerivativeColumns=birthBasis;
+    result.currentVolumeDensityM3PerRad2S=birthDet;
     result.primitive=birth.value.jump.downstream;
     return Return::Success(std::move(result));
   }
@@ -277,16 +318,16 @@ Core::Result<SheathMappedState> ShockFedSheathModel::Evaluate(
   const double angularStep=5e-4;
   auto polarSample=[&](double value) {
     const auto sample=EvaluateBirth(*event_,*ambient_,value,label.azimuthRad,
-        label.crossingTimeS);
+        epochS);
     return sample.ok()?Core::Result<Vec3>::Success(sample.value.deficit):
         Core::Result<Vec3>::Failure(sample.status.code,sample.status.message);
   };
   const auto dPolar=OneSidedDerivative(label.polarRad,angularStep,1e-8,kPi-1e-8,
-      birth.value.deficit,polarSample);
+      currentFlow.value.deficit,polarSample);
   auto azimuthSample=[&](double value) {
     value=std::fmod(value+2*kPi,2*kPi);
     const auto sample=EvaluateBirth(*event_,*ambient_,label.polarRad,value,
-        label.crossingTimeS);
+        epochS);
     return sample.ok()?Core::Result<Vec3>::Success(sample.value.deficit):
         Core::Result<Vec3>::Failure(sample.status.code,sample.status.message);
   };
@@ -300,39 +341,47 @@ Core::Result<SheathMappedState> ShockFedSheathModel::Evaluate(
   const Vec3 dAzimuth=azMinus2.ok()&&azMinus.ok()&&azPlus.ok()&&azPlus2.ok()?
       (azMinus2.value-8*azMinus.value+8*azPlus.value-azPlus2.value)/(12*angularStep):
       azMinus.ok()&&azPlus.ok()?(azPlus.value-azMinus.value)/(2*angularStep):
-      (azPlus.ok()?(azPlus.value-birth.value.deficit)/angularStep:
-          (birth.value.deficit-azMinus.value)/angularStep);
+      (azPlus.ok()?(azPlus.value-currentFlow.value.deficit)/angularStep:
+          (currentFlow.value.deficit-azMinus.value)/angularStep);
+  // The RH deficit is obtained through several nonlinear characteristic and
+  // jump operations.  A 0.5-s fourth-order stencil avoids subtractive loss at
+  // heliospheric times while remaining far below the 100-s handoff scale.
+  // Where both centered stencils fit, Richardson extrapolation of h and h/2
+  // removes their leading fourth-order term.  Near coverage endpoints the
+  // one-sided h/2 result is retained rather than assuming centered support.
   const double timeStep=std::max(0.5,500*event_->support.rootToleranceS);
-  auto timeSample=[&](double value) {
-    const auto sample=EvaluateBirth(*event_,*ambient_,label.polarRad,
-        label.azimuthRad,value);
-    return sample.ok()?Core::Result<Vec3>::Success(sample.value.deficit):
-        Core::Result<Vec3>::Failure(sample.status.code,sample.status.message);
+  auto positionSample=[&](double value) {
+    return EvaluateMapPosition(*event_,*ambient_,label,value);
   };
-  const auto dTime=OneSidedDerivative(label.crossingTimeS,timeStep,
-      std::max(event_->support.startS,event_->regional.sheathAdmissionStartS),
-      event_->support.endS,birth.value.deficit,timeSample);
-  if(!dTime.ok())return Return::Failure(dTime.status.code,dTime.status.message);
+  const double timeLower=std::max(event_->support.startS,label.crossingTimeS);
+  const auto velocityCoarse=OneSidedDerivative(epochS,timeStep,timeLower,
+      event_->support.endS,result.positionM,positionSample);
+  const auto velocityFine=OneSidedDerivative(epochS,0.5*timeStep,timeLower,
+      event_->support.endS,result.positionM,positionSample);
+  if(!velocityCoarse.ok()||!velocityFine.ok())return Return::Failure(
+      !velocityCoarse.ok()?velocityCoarse.status.code:velocityFine.status.code,
+      !velocityCoarse.ok()?velocityCoarse.status.message:velocityFine.status.message);
+  result.primitive.velocityMPerS=velocityFine.value;
+  if(epochS-2*timeStep>=timeLower&&
+      epochS+2*timeStep<=event_->support.endS)
+    result.primitive.velocityMPerS=(16*velocityFine.value-velocityCoarse.value)/15;
 
-  const std::array<Vec3,3> birthBasis={
-      PointPolarDerivative(birth.value.front,label.polarRad,label.azimuthRad),
-      PointAzimuthDerivative(birth.value.front,label.polarRad,label.azimuthRad),
-      -1.0*birth.value.deficit};
   const std::array<Vec3,3> currentBasis={
-      PointPolarDerivative(nowShape.value,label.polarRad,label.azimuthRad)+age*dPolar.value,
-      PointAzimuthDerivative(nowShape.value,label.polarRad,label.azimuthRad)+age*dAzimuth,
-      -1.0*birth.value.deficit+age*dTime.value};
-  const double birthDet=Determinant(birthBasis),currentDet=Determinant(currentBasis);
-  const double scale=std::max(1.0,Norm(birthBasis[0])*Norm(birthBasis[1])*Norm(birthBasis[2]));
-  if(!(std::isfinite(birthDet)&&std::isfinite(currentDet)&&birthDet>1e-14*scale))
-    return Return::Failure(Core::StatusCode::InvalidState,
-        "shock-fed birth map has singular or reversed crossing volume");
+      PointPolarDerivative(nowShape.value,label.polarRad,label.azimuthRad)+
+          driftTime*dPolar.value,
+      PointAzimuthDerivative(nowShape.value,label.polarRad,label.azimuthRad)+
+          driftTime*dAzimuth,
+      -driftRate*currentFlow.value.deficit};
+  const double currentDet=Determinant(currentBasis);
+  if(!std::isfinite(currentDet))return Return::Failure(
+      Core::StatusCode::NumericalFailure,"shock-fed current volume metric is nonfinite");
   result.jacobian=currentDet/birthDet;
   if(!(std::isfinite(result.jacobian)&&result.jacobian>=event_->regional.minimumJacobian))
     return Return::Failure(Core::StatusCode::InvalidState,
-        "shock-fed ballistic map folded or crossed its minimum Jacobian");
+        "shock-fed relaxing map folded or crossed its minimum Jacobian");
   result.deformationColumns=CartesianMapColumns(currentBasis,birthBasis);
   result.labelDerivativeColumns=currentBasis;
+  result.currentVolumeDensityM3PerRad2S=currentDet;
   result.primitive.massDensityKgM3=birth.value.jump.downstream.massDensityKgM3/result.jacobian;
   result.primitive.pressurePa=birth.value.jump.downstream.pressurePa*
       std::pow(result.jacobian,-event_->composition.gammaAdiabatic);
@@ -342,6 +391,53 @@ Core::Result<SheathMappedState> ShockFedSheathModel::Evaluate(
       Finite(result.positionM)&&Finite(result.primitive.velocityMPerS)&&
       Finite(result.primitive.magneticFieldT)))return Return::Failure(
       Core::StatusCode::NumericalFailure,"shock-fed material state is nonfinite");
+  return Return::Success(std::move(result));
+}
+
+Core::Result<SheathContactState> ShockFedSheathModel::EvaluateContact(
+    double polarRad,double azimuthRad,double epochS) const {
+  using Return=Core::Result<SheathContactState>;
+  const double start=std::max(event_->support.startS,
+      event_->regional.sheathAdmissionStartS);
+  if(!(std::isfinite(polarRad)&&std::isfinite(azimuthRad)&&
+      std::isfinite(epochS)&&epochS>=start&&epochS<=event_->support.endS))
+    return Return::Failure(Core::StatusCode::OutOfDomain,
+        "material contact query is outside event support");
+  // One global oldest cohort is selected.  Failure at the global start is an
+  // unsupported contact patch; it must not be replaced by a later local
+  // first-fast time because that would reset material inventory.
+  SheathMaterialLabel label{polarRad,azimuthRad,start,0};
+  const auto mapped=Evaluate(label,epochS);
+  if(!mapped.ok())return Return::Failure(mapped.status.code,mapped.status.message);
+  Vec3 areaVector=Cross(mapped.value.labelDerivativeColumns[0],
+      mapped.value.labelDerivativeColumns[1]);
+  const double area=Norm(areaVector);
+  if(!(std::isfinite(area)&&area>0))return Return::Failure(
+      Core::StatusCode::InvalidState,"material contact has a singular surface metric");
+  Vec3 normal=areaVector/area;
+  const auto eventState=event_->At(epochS);
+  if(!eventState.ok())return Return::Failure(eventState.status.code,
+      eventState.status.message);
+  const Vec3 center=eventState.value.ellipsoid.centerDistanceM.value*
+      event_->basis.radial;
+  if(Dot(normal,mapped.value.positionM-center)<0)
+    normal=-1.0*normal;
+  SheathContactState result;
+  result.label=label;result.positionM=mapped.value.positionM;
+  result.outwardNormal=normal;result.velocityMPerS=mapped.value.primitive.velocityMPerS;
+  result.primitive=mapped.value.primitive;result.areaDensityM2PerRad2=area;
+  result.normalSpeedMPerS=Dot(result.velocityMPerS,normal);
+  // The contact is the image of a fixed material-label surface, so its
+  // parameterization velocity is exactly U.  Keeping the dimensional value
+  // explicit allows independent finite-difference boundary-velocity tests.
+  result.relativeMassFluxKgM2S=result.primitive.massDensityKgM3*
+      Dot(result.primitive.velocityMPerS-result.velocityMPerS,normal);
+  result.normalMagneticFieldT=Dot(result.primitive.magneticFieldT,normal);
+  const double totalPressure=result.primitive.pressurePa+
+      Dot(result.primitive.magneticFieldT,result.primitive.magneticFieldT)/(2*kMu0);
+  result.tractionPa=totalPressure*normal-
+      (result.normalMagneticFieldT/kMu0)*result.primitive.magneticFieldT;
+  result.eventIdentity=event_->physicsFingerprint;
   return Return::Success(std::move(result));
 }
 
@@ -396,6 +492,22 @@ Core::Result<SheathMappedState> ShockFedSheathModel::EvaluateAtPosition(
       "spatial sheath inverse exceeded its iteration budget");
 }
 
+Core::Result<SheathMappedState> ShockFedSheathModel::QueryCommitted(
+    const SheathMaterialLabel& label) const {
+  using Return=Core::Result<SheathMappedState>;
+  if(!current_)return Return::Failure(Core::StatusCode::InvalidState,
+      "material query requires a committed sheath inventory");
+  for(const auto& cell:current_->cells) {
+    if(cell.label.shockPatchLineage==label.shockPatchLineage&&
+        cell.label.crossingTimeS==label.crossingTimeS&&
+        cell.label.polarRad==label.polarRad&&
+        cell.label.azimuthRad==label.azimuthRad)
+      return Return::Success(cell.state);
+  }
+  return Return::Failure(Core::StatusCode::OutOfDomain,
+      "material label is absent from the committed sheath inventory");
+}
+
 Core::Result<std::shared_ptr<const SheathInventory>>
 ShockFedSheathModel::PrepareInventory(double epochS,
     std::uint64_t backgroundGeneration,int polarCells,int azimuthCells,
@@ -404,14 +516,24 @@ ShockFedSheathModel::PrepareInventory(double epochS,
   const double begin=std::max(event_->support.startS,
       event_->regional.sheathAdmissionStartS);
   if(!(backgroundGeneration>0&&polarCells>=2&&azimuthCells>=3&&
-      admissionTimeCells>=1&&epochS>begin&&epochS<=event_->support.endS))
+      admissionTimeCells>=1&&epochS>=begin&&epochS<=event_->support.endS))
     return Return::Failure(Core::StatusCode::InvalidConfiguration,
         "invalid sheath inventory epoch, generation, or resolution");
   auto candidate=std::shared_ptr<SheathInventory>(new SheathInventory);
   candidate->epochS=epochS;candidate->backgroundGeneration=backgroundGeneration;
   candidate->eventIdentity=event_->physicsFingerprint;
   candidate->minimumJacobian=std::numeric_limits<double>::infinity();
+  candidate->zeroVolumeStartup=epochS==begin;
+  if(epochS==begin) {
+    // The selected manufactured/event startup is a limiting zero-volume
+    // sheath.  No 3-D inverse or density/J floor is attempted at this epoch.
+    candidate->minimumJacobian=1.0;
+    current_=candidate;
+    return Return::Success(std::move(candidate));
+  }
   const double dt=(epochS-begin)/admissionTimeCells;
+  const double dPolar=kPi/polarCells;
+  const double dAzimuth=2*kPi/azimuthCells;
   std::set<std::tuple<std::uint64_t,int>> identities;
   for(int it=0;it<admissionTimeCells;++it) {
     const double crossing=begin+(it+0.5)*dt;
@@ -431,10 +553,15 @@ ShockFedSheathModel::PrepareInventory(double epochS,
         }
         return Return::Failure(birth.status.code,birth.status.message);
       }
+      const auto globalContact=EvaluateBirth(*event_,*ambient_,
+          patch.polarParameterRad,patch.azimuthParameterRad,begin);
+      if(!globalContact.ok())return Return::Failure(
+          Core::StatusCode::UnsupportedCapability,
+          "fast sheath patch lacks a compatible globally initialized material contact");
       candidate->fastAreaTimeM2S+=patch.areaM2*dt;
       SheathMaterialLabel label{patch.polarParameterRad,patch.azimuthParameterRad,
           crossing,patch.physicalId};
-      const auto located=LocateFirstDisposition(*event_,birth.value,label,epochS);
+      const auto located=LocateFirstDisposition(*event_,*ambient_,label,epochS);
       if(!located.ok())return Return::Failure(located.status.code,
           "sheath patch "+std::to_string(patch.physicalId)+": "+located.status.message);
       const auto state=Evaluate(label,located.value.time);
@@ -442,29 +569,46 @@ ShockFedSheathModel::PrepareInventory(double epochS,
           "sheath patch "+std::to_string(patch.physicalId)+": "+state.status.message);
       if(!identities.insert({patch.physicalId,it}).second)return Return::Failure(
           Core::StatusCode::DataIntegrityFailure,"duplicate sheath admission lineage/time cell");
+      // Midpoint integration uses the exact curved surface metric at the
+      // admitted label.  The corresponding current volume uses det(A), not an
+      // unweighted normal column.  Refinement, rather than a density floor or
+      // rescaled shell thickness, controls the quadrature error.
+      const double birthAreaM2=state.value.birthAreaDensityM2PerRad2*
+          dPolar*dAzimuth;
       const double upstreamMass=birth.value.upstream.massDensityKgM3*birth.value.w1*
-          patch.areaM2*dt;
+          birthAreaM2*dt;
       const double downstreamMass=birth.value.jump.downstream.massDensityKgM3*
-          birth.value.w2*patch.areaM2*dt;
+          birth.value.w2*birthAreaM2*dt;
       candidate->maximumAdmissionMassResidual=std::max(
           candidate->maximumAdmissionMassResidual,Relative(upstreamMass,downstreamMass));
       SheathAdmissionCell cell;cell.label=label;cell.intervalS=dt;
       cell.evaluationTimeS=located.value.time;
-      cell.birthAreaM2=patch.areaM2;cell.admittedMassKg=downstreamMass;
-      cell.currentVolumeM3=state.value.jacobian*birth.value.w2*patch.areaM2*dt;
+      cell.birthAreaM2=birthAreaM2;cell.admittedMassKg=downstreamMass;
+      cell.currentVolumeM3=state.value.currentVolumeDensityM3PerRad2S*
+          dPolar*dAzimuth*dt;
       cell.state=state.value;
       cell.disposition=located.value.disposition;
       if(cell.disposition==SheathCellDisposition::SolarExit) {
         candidate->solarExitMassKg+=cell.admittedMassKg;
       } else if(cell.disposition==SheathCellDisposition::OuterExit) {
         candidate->outerExitMassKg+=cell.admittedMassKg;
-      } else if(cell.disposition==SheathCellDisposition::ContactExit) {
-        candidate->contactExitMassKg+=cell.admittedMassKg;
       } else {
+        const auto contact=EvaluateContact(label.polarRad,label.azimuthRad,
+            located.value.time);
+        if(!contact.ok())return Return::Failure(contact.status.code,
+            "retained sheath cell has no material rear boundary: "+contact.status.message);
+        const double ordered=Dot(state.value.positionM-contact.value.positionM,
+            contact.value.outwardNormal);
+        if(!(ordered>=-1e-10*std::max(1.0,Norm(state.value.positionM))))
+          return Return::Failure(Core::StatusCode::InvalidState,
+              "shock-fed map crossed its oldest-cohort material contact");
         candidate->retainedMassKg+=cell.admittedMassKg;
       }
       const double reconstructed=state.value.primitive.massDensityKgM3*
           cell.currentVolumeM3;
+      candidate->maximumInventoryMassAbsoluteResidualKg=std::max(
+          candidate->maximumInventoryMassAbsoluteResidualKg,
+          std::abs(cell.admittedMassKg-reconstructed));
       candidate->maximumInventoryMassResidual=std::max(
           candidate->maximumInventoryMassResidual,
           Relative(cell.admittedMassKg,reconstructed));
@@ -474,13 +618,13 @@ ShockFedSheathModel::PrepareInventory(double epochS,
       candidate->cells.push_back(std::move(cell));
     }
   }
-  const double closed=candidate->retainedMassKg+candidate->contactExitMassKg+
+  const double closed=candidate->initialMassKg+candidate->retainedMassKg+
       candidate->solarExitMassKg+candidate->outerExitMassKg;
   candidate->maximumInventoryMassResidual=std::max(
       candidate->maximumInventoryMassResidual,Relative(candidate->admittedMassKg,closed));
-  if(candidate->cells.empty()||!(candidate->minimumJacobian>=
-      event_->regional.minimumJacobian))return Return::Failure(
-      Core::StatusCode::InvalidState,"sheath inventory has no admissible positive-J parcels");
+  if(candidate->cells.empty())candidate->minimumJacobian=1.0;
+  if(!(candidate->minimumJacobian>=event_->regional.minimumJacobian))return Return::Failure(
+      Core::StatusCode::InvalidState,"sheath inventory contains a nonpositive-J parcel");
   current_=candidate;
   return Return::Success(std::move(candidate));
 }
@@ -488,7 +632,6 @@ ShockFedSheathModel::PrepareInventory(double epochS,
 const char* Name(SheathCellDisposition value) noexcept {
   switch(value) {
     case SheathCellDisposition::Retained:return "retained";
-    case SheathCellDisposition::ContactExit:return "contact-exit";
     case SheathCellDisposition::SolarExit:return "solar-exit";
     case SheathCellDisposition::OuterExit:return "outer-exit";
   }

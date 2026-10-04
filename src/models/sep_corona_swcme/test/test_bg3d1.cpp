@@ -53,6 +53,9 @@ std::string EjectaAsset() {
   return "profile=vector-potential-material-map-v1\n"
       "vector_potential_model=axisymmetric-polynomial-a-v1\n"
       "sheath_admission_start_s=0\n"
+      "sheath_startup_model=zero-volume-global-start-v1\n"
+      "sheath_contact_model=oldest-global-cohort-v1\n"
+      "sheath_reference_map_model=shock-fed-cohort-prism-v1\n"
       "contact_apex_fraction=0.82\n"
       "ejecta_reference_density_kg_m3=1e-13\n"
       "ejecta_reference_pressure_pa=1e-3\n"
@@ -62,11 +65,18 @@ std::string EjectaAsset() {
       "maximum_integrated_force_ratio=2\n"
       "maximum_local_force_ratio_p99=5\n"
       "maximum_force_work_ratio=2\n"
-      "added_heating=zero\n";
+      "added_heating=zero\n"
+      "contact_flux_absolute_tolerance_kg_m2_s=1e-20\n"
+      "contact_flux_relative_tolerance=1e-10\n"
+      "contact_flux_reference_kg_m2_s=1e-7\n"
+      "inventory_mass_absolute_tolerance_kg=1e-3\n"
+      "contact_normal_velocity_numerical_tolerance=1e-8\n"
+      "sheath_drift_asymptote_fraction=0.25\n"
+      "sheath_drift_relaxation_time_s=25\n";
 }
 
 std::string Configuration(const std::map<std::string,std::string>& assets,
-    const std::string& sheath="rh-ballistic-material-map-v1") {
+    const std::string& sheath="rh-relaxing-material-map-v1") {
   const auto checksum=[&](const std::string& key) {
     return SEP::CoronalCME::ComputeContentChecksum(assets.at(key));
   };

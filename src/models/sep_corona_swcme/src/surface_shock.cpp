@@ -4,6 +4,16 @@
 
 namespace SEP { namespace CoronaSwcme {
 
+const char* Name(ContactAuthorityQualification value) noexcept {
+  switch(value) {
+    case ContactAuthorityQualification::FixedFractionReferenceUnqualified:
+      return "fixed-fraction-reference-unqualified";
+    case ContactAuthorityQualification::SharedMaterialAuthority:
+      return "shared-material-authority";
+  }
+  return "unknown";
+}
+
 Core::Result<CoronalCME::EllipsoidKinematics> ContactKinematics(
     const EventConfiguration& event,
     const CoronalCME::EllipsoidKinematics& front) {
@@ -88,6 +98,8 @@ Core::Result<std::shared_ptr<const SurfaceShockEpoch>> SurfaceShockModel::Prepar
   candidate->front=front.value;
   candidate->contact=contact.value;
   candidate->contactPatches=contactPatches.value;
+  candidate->contactAuthority=
+      ContactAuthorityQualification::FixedFractionReferenceUnqualified;
   candidate->backgroundGeneration=backgroundGeneration;
   candidate->eventIdentity=event_->physicsFingerprint;
   candidate->frontPatches.reserve(frontPatches.value.size());

@@ -459,14 +459,24 @@ $$
 
 Its cross term, compatible normal flux, geometry, gauge and outer support are required. It is not a force-balance proof and cannot erase a physical discontinuity. Time-dependent construction also needs $\mathbf E=-\partial_t\mathbf A-\nabla\phi$ and Faraday consistency. An ideal branch additionally requires $\mathbf E=-\mathbf U\times\mathbf B$; a nonideal branch declares and budgets its electric field. Solenoidal snapshots alone do not establish induction.
 
-A material map $\mathbf x(\mathbf a,t)$ with $F=\partial\mathbf x/\partial\mathbf a$ and $J=\det F>0$ provides
+A material map $\mathbf x(\mathbf a,t)$ with a regular physical reference map
+$\mathbf X_0(\mathbf a)$ defines
 
 $$
-\rho=\rho_0/J,\qquad \mathbf B=F\mathbf B_0/J,\qquad
+A=\frac{\partial\mathbf x}{\partial\mathbf a},\qquad
+A_0=\frac{\partial\mathbf X_0}{\partial\mathbf a},\qquad
+F_{\rm rel}=AA_0^{-1},\qquad J_{\rm rel}=\det F_{\rm rel}>0.
+$$
+
+It then provides
+
+$$
+\rho=\rho_0/J_{\rm rel},\qquad
+\mathbf B=F_{\rm rel}\mathbf B_0/J_{\rm rel},\qquad
 \mathbf U=\partial_t\mathbf x.
 $$
 
-For compatible divergence-free reference fields and a regular map, these are kinematic mass/flux-freezing identities. They do not determine momentum, pressure, or driver forces. The reference, boundary fluxes, thermodynamics and physical discrepancy must be specified independently. Piecewise maps need interface checks; separate solenoidal patches do not guarantee one globally admissible field.
+For compatible divergence-free reference fields and a regular map, these are kinematic mass/flux-freezing identities.  Angular coordinates and admission time are not automatically an identity reference: in arbitrary labels the mass form is `rho*det(A)=rho0*det(A0)`.  A shock boundary point is only two-dimensional and must be extended into a regular admitted reference volume before these identities are used. They do not determine momentum, pressure, or driver forces. The reference, curved-volume metric, boundary fluxes, thermodynamics and physical discrepancy must be specified independently. Piecewise maps need interface checks; separate solenoidal patches do not guarantee one globally admissible field.  The authoritative BG3D-4 corrections are in `../sep_coronal_cme/docs/BG3D4_CODEX_REVIEW_AND_CORRECTIONS.md`.
 
 #### 6.4.1 Analytical sheath/layer closure and implementation sequence
 

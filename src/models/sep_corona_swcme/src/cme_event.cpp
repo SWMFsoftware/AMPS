@@ -162,7 +162,13 @@ Core::Result<RegionalInput> ParseRegionalAsset(const std::string& bytes) {
       "ejecta_reference_density_kg_m3","ejecta_reference_pressure_pa",
       "axial_flux_wb","poloidal_flux_wb","minimum_jacobian",
       "maximum_integrated_force_ratio","maximum_local_force_ratio_p99",
-      "maximum_force_work_ratio","added_heating"};
+      "maximum_force_work_ratio","added_heating","sheath_startup_model",
+      "sheath_contact_model","sheath_reference_map_model",
+      "contact_flux_absolute_tolerance_kg_m2_s",
+      "contact_flux_relative_tolerance","contact_flux_reference_kg_m2_s",
+      "inventory_mass_absolute_tolerance_kg",
+      "contact_normal_velocity_numerical_tolerance",
+      "sheath_drift_asymptote_fraction","sheath_drift_relaxation_time_s"};
   for(const auto& key:required)if(!v.count(key))return Bad<RegionalInput>(
       "ejecta asset missing key: "+key);
   for(const auto& item:v)if(!required.count(item.first))return Bad<RegionalInput>(
@@ -172,6 +178,9 @@ Core::Result<RegionalInput> ParseRegionalAsset(const std::string& bytes) {
   RegionalInput out;
   out.vectorPotentialModel=v.at("vector_potential_model");
   out.addedHeating=v.at("added_heating");
+  out.sheathStartupModel=v.at("sheath_startup_model");
+  out.sheathContactModel=v.at("sheath_contact_model");
+  out.sheathReferenceMapModel=v.at("sheath_reference_map_model");
   const std::vector<std::pair<std::string,double*>> numbers={
       {"sheath_admission_start_s",&out.sheathAdmissionStartS},
       {"contact_apex_fraction",&out.contactApexFraction},
@@ -181,7 +190,17 @@ Core::Result<RegionalInput> ParseRegionalAsset(const std::string& bytes) {
       {"minimum_jacobian",&out.minimumJacobian},
       {"maximum_integrated_force_ratio",&out.maximumIntegratedForceRatio},
       {"maximum_local_force_ratio_p99",&out.maximumLocalForceRatioP99},
-      {"maximum_force_work_ratio",&out.maximumForceWorkRatio}};
+      {"maximum_force_work_ratio",&out.maximumForceWorkRatio},
+      {"contact_flux_absolute_tolerance_kg_m2_s",
+          &out.contactFluxAbsoluteToleranceKgM2S},
+      {"contact_flux_relative_tolerance",&out.contactFluxRelativeTolerance},
+      {"contact_flux_reference_kg_m2_s",&out.contactFluxReferenceKgM2S},
+      {"inventory_mass_absolute_tolerance_kg",
+          &out.inventoryMassAbsoluteToleranceKg},
+      {"contact_normal_velocity_numerical_tolerance",
+          &out.contactNormalVelocityNumericalTolerance},
+      {"sheath_drift_asymptote_fraction",&out.sheathDriftAsymptoteFraction},
+      {"sheath_drift_relaxation_time_s",&out.sheathDriftRelaxationTimeS}};
   for(const auto& item:numbers)if(!Number(v.at(item.first),item.second))
     return Bad<RegionalInput>("ejecta asset invalid number: "+item.first);
   return Core::Result<RegionalInput>::Success(std::move(out));
@@ -419,7 +438,7 @@ Core::Status ValidateEventConfiguration(const EventConfiguration& c) {
   };
   if(c.profile!="pfss-parker-shock-fed-map-v1"||c.coordinateFrame!="inertial-hci"||
       c.ambientProfile!="pfss-parker-isothermal-v1"||
-      c.sheathModel!="rh-ballistic-material-map-v1"||
+      c.sheathModel!="rh-relaxing-material-map-v1"||
       c.ejectaModel!="vector-potential-material-map-v1"||
       c.outerEvolution!="swcme-dbm-constant-wind-v1"||
       c.attachmentPolicy!="attached-then-detached")
@@ -457,7 +476,18 @@ Core::Status ValidateEventConfiguration(const EventConfiguration& c) {
       r.minimumJacobian>0&&r.maximumIntegratedForceRatio==2&&
       r.maximumLocalForceRatioP99==5&&r.maximumForceWorkRatio==2&&
       r.vectorPotentialModel=="axisymmetric-polynomial-a-v1"&&
-      r.addedHeating=="zero"))return fail(
+      r.addedHeating=="zero"&&
+      r.sheathStartupModel=="zero-volume-global-start-v1"&&
+      r.sheathContactModel=="oldest-global-cohort-v1"&&
+      r.sheathReferenceMapModel=="shock-fed-cohort-prism-v1"&&
+      r.contactFluxAbsoluteToleranceKgM2S>0&&
+      r.contactFluxRelativeTolerance>0&&r.contactFluxRelativeTolerance<=1e-8&&
+      r.contactFluxReferenceKgM2S>0&&
+      r.inventoryMassAbsoluteToleranceKg>0&&
+      r.contactNormalVelocityNumericalTolerance>0&&
+      r.contactNormalVelocityNumericalTolerance<=1e-8&&
+      r.sheathDriftAsymptoteFraction>0&&r.sheathDriftAsymptoteFraction<=1&&
+      r.sheathDriftRelaxationTimeS>0))return fail(
           "regional asset is incomplete or differs from the frozen closure budgets");
   for(const auto& h:c.components) {
     if(h.knots.size()!=c.components[0].knots.size()||h.knots.size()<2||

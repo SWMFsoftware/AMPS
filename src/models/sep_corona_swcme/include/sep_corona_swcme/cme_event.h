@@ -58,6 +58,10 @@ struct AmbientInput {
 // family, rather than a spheromak requirement, owns the reference fluxes.
 struct RegionalInput {
   double sheathAdmissionStartS = 0.0;
+  // The geometrical fraction belongs to the future ejecta reference body.
+  // BG3D-4 must not reinterpret it as a material sheath contact: a surface
+  // prescribed as a fixed fraction of a shock generally has nonzero relative
+  // mass flux.
   double contactApexFraction = 0.0;
   double ejectaReferenceDensityKgM3 = 0.0;
   double ejectaReferencePressurePa = 0.0;
@@ -67,8 +71,27 @@ struct RegionalInput {
   double maximumIntegratedForceRatio = 0.0;
   double maximumLocalForceRatioP99 = 0.0;
   double maximumForceWorkRatio = 0.0;
+  // Contact leakage is graded with an absolute SI term plus a relative term
+  // times this finite, independently frozen case scale.  It is not normalized
+  // by a local shock flux, which may vanish on sub-fast patches.
+  double contactFluxAbsoluteToleranceKgM2S = 0.0;
+  double contactFluxRelativeTolerance = 0.0;
+  double contactFluxReferenceKgM2S = 0.0;
+  // Zero-inventory/startup budgets require a dimensional kg term; dividing by
+  // initial mass would be singular for the selected limiting construction.
+  double inventoryMassAbsoluteToleranceKg = 0.0;
+  double contactNormalVelocityNumericalTolerance = 0.0;
+  // Lagrangian post-shock drift L(age)*D_birth uses
+  // L'=kappa+(1-kappa)exp(-age/T).  Kappa>0 prevents a singular old-cohort
+  // volume while T controls the prescribed relaxation from the exact RH
+  // boundary velocity.  These are physical closure parameters, not solvers.
+  double sheathDriftAsymptoteFraction = 0.0;
+  double sheathDriftRelaxationTimeS = 0.0;
   std::string vectorPotentialModel;
   std::string addedHeating;
+  std::string sheathStartupModel;
+  std::string sheathContactModel;
+  std::string sheathReferenceMapModel;
 };
 
 struct HandoffLaw {

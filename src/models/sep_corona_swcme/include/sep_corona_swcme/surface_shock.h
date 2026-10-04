@@ -15,6 +15,15 @@ struct GeometryPatchState {
   AmbientPrimitive upstream;
 };
 
+// BG3D-3 independently qualifies the front and shock state, but its nested
+// fixed-fraction surface is not the material contact used by BG3D-4.  Carrying
+// this status in the epoch prevents a geometrically complete legacy reference
+// from being mistaken for a cross-stage interface authority.
+enum class ContactAuthorityQualification {
+  FixedFractionReferenceUnqualified,
+  SharedMaterialAuthority
+};
+
 struct SurfaceShockEpoch {
   EventKinematics event;
   CoronalCME::FixedOrientationEllipsoid front;
@@ -22,6 +31,8 @@ struct SurfaceShockEpoch {
   std::vector<GeometryPatchState> frontPatches;
   std::vector<CoronalCME::SurfacePatch> contactPatches;
   std::shared_ptr<const CoronalCME::ShockSurfaceSnapshot> shocks;
+  ContactAuthorityQualification contactAuthority =
+      ContactAuthorityQualification::FixedFractionReferenceUnqualified;
   std::uint64_t backgroundGeneration = 0;
   std::string eventIdentity;
 };
@@ -53,6 +64,8 @@ class SurfaceShockModel final {
 // is not an independent reset radius or a radial shell subtraction.
 Core::Result<CoronalCME::EllipsoidKinematics> ContactKinematics(
     const EventConfiguration&,const CoronalCME::EllipsoidKinematics& front);
+
+const char* Name(ContactAuthorityQualification) noexcept;
 
 } } // namespace SEP::CoronaSwcme
 

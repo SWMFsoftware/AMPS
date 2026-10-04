@@ -5,6 +5,16 @@ claim that BG3D-1 through BG3D-9 are implemented or qualified.  The normative
 physics details remain in `model.md`, the maintained `sep_coronal_cme/model/`
 documents, and revision 1.3 of the launch roadmap.
 
+**BG3D-4 correction, 2026-10-04.**
+`../sep_coronal_cme/docs/BG3D4_CODEX_REVIEW_AND_CORRECTIONS.md` is the
+authoritative addendum for the sheath stage.  It supersedes any wording below
+that could be read as treating angular/admission labels as an identity
+reference deformation, an unweighted normal column as curved volume, a signed
+contact integral as sufficient leakage evidence, or local first-fast time as
+a general zero-inventory reset.  Numerical and physical residuals remain
+separate, and a conservative map is not qualified plasma unless its smooth
+equations, interfaces, coverage and convergence also meet their frozen gates.
+
 ## Provenance and preservation
 
 The writable checkout is `/home/vtenishe/Mars2/AMPS` at Git object
@@ -98,13 +108,22 @@ the actual shock area and the relative upstream/downstream normal flux:
 `dM = rho1*w1*dA(tau)*d(tau) = rho2*w2*dA(tau)*d(tau)`.
 
 The selected motion is a prescribed regular downstream characteristic map
-`x(a1,a2,tau,t)`, initialized from the RH downstream state.  Its deformation
-gradient is measured relative to the crossing basis, not a current-area
-surrogate.  Density and magnetic field are evaluated by the material laws
+`x(a1,a2,tau,t)`, initialized from the RH downstream state.  Its physical
+label-space volume metric is `|det(partial x/partial(a1,a2,tau))|`; curved
+volume integrals use that metric rather than an unweighted column.  A
+deformation gradient may be formed only against a documented, regular
+three-dimensional reference map `X0(a)`, using
+`F_rel=A(t)*inverse(A0)` and `J_rel=det(F_rel)`.  Density and magnetic field
+are evaluated by the material laws
 
 `rho = rho2/J`, `B = F*B2/J`, `U = partial_t x`, `J = det(F) > 0`,
 
 with the reference crossing-volume factor included explicitly in `F`/`J`.
+At a shock-born boundary, the RH downstream state initializes the admitted
+cohort; a two-dimensional boundary point alone is not an invertible reference
+volume.  Arbitrary-label mass is checked independently through
+`rho*det(A)=rho0*det(A0)`, and magnetic claims additionally require a compatible
+spatial reference flux rather than unrelated per-point vectors.
 Pressure follows the declared species-composition adiabatic law
 `p = p2*J^(-gamma)` unless a checksummed nonzero heating asset is selected.
 The G1 profile selects zero added heating.  The map must reproduce the RH state

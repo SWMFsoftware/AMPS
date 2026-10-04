@@ -39,7 +39,8 @@ $(BUILD)/test_bg3d3: test/test_bg3d3.cpp $(BUILD)/libsep_corona_swcme.a coronal-
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
 		$(CORONAL_ARCHIVE) -o $@
 
-$(BUILD)/test_bg3d4: test/test_bg3d4.cpp $(BUILD)/libsep_corona_swcme.a coronal-lib
+$(BUILD)/test_bg3d4: test/test_bg3d4.cpp test/bg3d4_reference_fixtures.h \
+		$(BUILD)/libsep_corona_swcme.a coronal-lib
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
 		$(CORONAL_ARCHIVE) -o $@
 

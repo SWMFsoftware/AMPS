@@ -12,8 +12,9 @@ and this file documents the implemented surface of the current stage.
 |---|---|---|
 | BG3D-1 input, launch and outer trajectory | Yes | Yes: `CMBGU01`–`02` |
 | BG3D-2 ambient plasma/IMF | Yes | Yes: `CMBGU03` |
-| BG3D-3 surfaces and local shocks | Yes | Yes: `CMBGU04` plus maintained RH/ellipsoid suites |
-| BG3D-4 shock-fed spatial sheath | Partial | No: interior/map tests pass, but the rear boundary is permeable and fails the required material-contact contract |
+| BG3D-3 front and local shocks | Yes | Yes: `CMBGU04` plus maintained RH/ellipsoid suites |
+| BG3D-3 shared contact/interface | Fixed-fraction reference only | No: reopened because it is not the BG3D-4 material contact authority |
+| BG3D-4 shock-fed spatial sheath | Partial | No: the empirical map and component identities are diagnostic only; a compatible finite initial state and common contact authority are absent |
 | BG3D-5 ejecta/remaining regions | No | No |
 | BG3D-6 material handoff | No | No |
 | BG3D-7/8 native storage, MPI and restart | No | No |
@@ -107,12 +108,15 @@ downstream states; Rankine--Hugoniot residuals; stable physical IDs; epoch and
 background generation. A failed preparation leaves the last committed epoch
 unchanged.
 
-The contact/ejecta boundary is a rear-aligned nested ellipsoid derived from the
-front. The configured `contact_apex_fraction` is retained for input
+The legacy contact/ejecta reference is a rear-aligned nested ellipsoid derived
+from the front. The configured `contact_apex_fraction` is retained for input
 compatibility but is interpreted as the fraction of the front's rear-to-apex
 span: all semiaxes are scaled by that fraction and the rear support point is
-shared. It is therefore a complete nested shape, not an independently reset
-apex or radius. BG3D-4 will use it as the material-map boundary.
+shared. It is a complete nested reference shape, not an independently reset
+apex or radius, but it is **not qualified as the shared material contact**.
+BG3D-4 currently uses the oldest material cohort instead. The resulting
+cross-stage mismatch is retained as a failing physical qualification rather
+than hidden by `contact_apex_fraction=0.99`.
 
 This model is background-only. It explicitly disables particle-source
 eligibility on every diagnostic shock patch and leaves all number and energy
@@ -122,20 +126,24 @@ their baseline behavior.
 
 ### BG3D-4 shock-fed sheath
 
-The selected `rh-ballistic-material-map-v1` is a prescribed analytical map,
-not a fluid evolution solver. A parcel label is `(theta,phi,tau)`: two complete
-front coordinates and its unique shock-crossing time. At birth the canonical
-RH solution supplies `rho2,p2,U2,B2`, the actual front supplies its
-parameterized velocity `d_t X`, and
+The implemented `rh-relaxing-material-map-v1` is an **experimental prescribed
+map**, not a fluid evolution solver or a qualified production closure. A parcel
+label is `(theta,phi,tau)`: two complete front coordinates and its unique
+shock-crossing time. Define the current RH/front velocity deficit
+`D(q,t)=U2(q,t)-d_t X(q,t)`, age `a=t-tau`, and
 
 ```text
-x(theta,phi,tau,t) = X(theta,phi,t)
-                     + (t-tau) [U2(theta,phi,tau)-d_t X(theta,phi,tau)].
+L(a)  = kappa*a + (1-kappa)*T*[1-exp(-a/T)],
+L'(a) = kappa + (1-kappa)*exp(-a/T),
+x(q,tau,t) = X(q,t) + L(t-tau)*D(q,t).
 ```
 
-Consequently `x=X` and `U=U2` as `t -> tau+`; shock compression is applied
-once. The derivative bases with respect to `(theta,phi,tau)` at birth and at
-the requested epoch define `F` and `J=det(F)`. The returned material state is
+The frozen example uses `kappa=0.25` and `T=25 s`. Consequently `x=X` and
+`U=U2` as `t -> tau+`; shock compression is applied once. The constants avoid
+the singular old-cohort volume of complete drift arrest, but they are empirical
+and do not follow from momentum balance, a piston solution, or an ejecta model.
+The derivative bases with respect to `(theta,phi,tau)` at birth and at the
+requested epoch define `F_rel=A*A0^-1` and `J=det(F_rel)`. The returned state is
 
 ```text
 rho = rho2/J,   p = p2 J^(-gamma),
@@ -144,7 +152,8 @@ B = F B2/J,     U = partial_t x,     J > minimum_jacobian.
 
 This is the Cauchy ideal-induction construction with zero added heating. It
 kinematically preserves mass, flux and adiabatic pressure; it does not by
-itself prove momentum balance or observational accuracy. Fourth-order centred
+itself prove momentum balance, energy balance, or observational accuracy.
+Fourth-order centred
 derivatives evaluate the smooth birth-deficit field, with explicit one-sided
 stencils at physical support boundaries. If no stencil stays on the same fast
 branch, if the crossing-volume basis is singular, or if `J` falls below the
@@ -157,34 +166,66 @@ Inventory quadrature uses the actual shock area at each birth epoch:
 dM = rho1 w1 dA dtau = rho2 w2 dA dtau.
 ```
 
-Every patch/time cell has a unique lineage. First rear-boundary, photospheric
-and outer-front exits are found from signed geometric event functions with
-bounded bisection to `root_tolerance_s`; exited material is ledgered at that
-time and is never extrapolated into a later map fold. The closed angular domain
-has no unrecorded lateral edge. Fast/sub-fast support is recorded separately.
+Every patch/time cell has a unique lineage. Photospheric and outer-front exits
+are found from signed geometric event functions with bounded bisection to
+`root_tolerance_s`; exited material is ledgered at that time and is never
+extrapolated into a later map fold. The closed angular domain has no unrecorded
+lateral edge. Fast/sub-fast support is recorded separately. A sub-fast
+candidate is not relabeled as a solved compression wave: candidate preparation
+fails transactionally, while `QueryCommitted` continues to return the stored
+material cells from the last complete epoch without re-running current RH
+admission. No compression-region state is claimed.
 
-Important qualification boundary: the implemented ballistic map currently
-transfers nonzero mass through the geometric surface previously called the
-contact (`2.08416e11 kg` in the 200-s diagnostic). It is therefore a permeable
-rear boundary, not the required sheath/ejecta material contact. Its passing
-mass ledger does not qualify BG3D-4. A compatible time-dependent contact and
-initial sheath inventory, or a separately authorized non-material interface
-closure, is required before this stage can pass. The code and tests retain the
-result as a diagnosed limitation rather than masking it.
+The current startup is a declared zero-volume limiting fixture. It is useful
+for admission tests but is not a justified finite production inventory or
+prehistory. Running the same empirical relaxation for longer would not repair
+that deficiency. A replacement evolution law will require a separately
+reviewed closed mathematical construction with unknowns, equations, compatible
+finite initial data, contact and shock boundary conditions, and a determinate
+solution procedure.
 
-The example uses `contact_apex_fraction=0.99`, meaning 99% of the front's
-rear-to-apex span, not 99% of heliocentric radius. This narrow contact is part
-of the closure identity: the former 0.82 value is a retained negative fixture
-because the ballistic map folds before reaching that contact. Changing this
-fraction, the history, EOS, ambient or map changes the event identity and
-invalidates prior evidence.
+The example's `contact_apex_fraction=0.99` describes only the unqualified
+fixed-fraction BG3D-3/ejecta reference. It is not used to define the BG3D-4
+oldest-cohort material surface. The cross-authority regression currently
+measures a maximum relative position mismatch of approximately `1e-2`, so the
+shared contact/interface contract is explicitly open.
 
 Current validity is deliberately limited to admitted fast patches and their
-first rear-boundary exit. Sub-fast compression-layer plasma, the ejecta interior,
-post-event recovery, momentum/force/work budgets, full-run material handoff,
-and native spatial lookup remain BG3D-5 through BG3D-9 work. A local RH state
-or retained parcel inventory must not be used to fill those regions with
-quiet ambient.
+first physical solar/outer exit. Sub-fast compression-layer plasma, the ejecta
+interior, post-event recovery, a qualified contact, full-run material handoff,
+and native publication remain missing. A local RH state or retained parcel
+inventory must not be used to fill those regions with quiet ambient.
+
+### Independent fixtures and production residual diagnostics
+
+`test/bg3d4_reference_fixtures.h` contains two manufactured solutions that do
+not call the production map for their expected values:
+
+- a finite planar slab with an initial material inventory, material piston,
+  constant-speed Mach-3 shock, exact ideal-MHD jump, nonzero uniform normal
+  magnetic field, and independently balanced moving-control-volume energy;
+- a finite spherical shell with `X=lambda(t)*a`, `lambda=1+alpha*t`,
+  `rho=rho0/lambda^3`, `p=p0/lambda^(3 gamma)`, and a uniform Cartesian
+  `B=B0/lambda^2`. The field is divergence-free and threads a declared
+  transverse-field contact; it is not a closed flux rope. With linear lambda,
+  acceleration, pressure gradient, curl(B), gravity and manufactured body
+  forcing are zero. Pressure and Maxwell boundary work exactly account for the
+  internal and magnetic energy changes.
+
+`sheath_diagnostics.{h,cpp}` samples the actual public production map. Smooth
+fourth-order material-coordinate/time stencils independently form inertia,
+pressure-gradient, Lorentz and solar-gravity force densities, their residual,
+and the conservative ideal-MHD total-energy residual. Volume integration uses
+the production map's curved physical cell volumes and reports absolute force,
+volume-weighted local P99, signed/absolute energy residual, resolved work terms,
+and signed/absolute residual-force work. The current distributed result is
+stable under the three tested time steps near an integrated force ratio of
+`0.646`; it is therefore evidence of persistent approximation/model error, not
+a demonstrated discretization error. Conversely, the integrated independently
+differentiated contact-leakage estimates do not converge and have comparable
+derivative uncertainty. That is a numerical verification failure: it neither
+proves a resolved physical leak nor permits the identically zero self-reported
+flux to qualify the interface. These diagnostics do not qualify the map.
 
 ## Inputs and commented example
 
@@ -228,15 +269,18 @@ This is a standalone shared-library build, not a native AMPS rebuild. It runs:
   momentum, winding and angular-momentum identities, typed null/coverage
   failures, a separate five-point tensor oracle, divergence, and three sphere
   resolutions for signed magnetic flux;
-- `CMBGU04`: complete front/contact geometry, stable identities, analytical
-  versus finite-difference normal motion, three-level area convergence,
+- `CMBGU04`: complete front and fixed-fraction reference geometry, stable
+  identities, analytical versus finite-difference normal motion, three-level area convergence,
   sub-fast classification, both-sided fast-shock states, Mach/compression/
   obliquity and RH residuals, transaction failure integrity, and zero particle
   eligibility/rates/measures;
-- `CMBGU05`: exact RH boundary limit, positive-J Cauchy sheath state,
-  three-level admission-time mass convergence, unique parcel inventory,
-  first contact/solar/outer exit closure, incompatible-contact rejection,
-  and independent material mass/adiabatic/induction residuals;
+- `CMBGU05`: exact finite-inventory planar shock/piston and homologous curved
+  fixtures; exact RH boundary limit and positive-J Cauchy state; three-level
+  curved-volume, admission-time and material-identity checks; explicit
+  cross-stage contact mismatch; independently differentiated absolute leakage;
+  transactional sub-fast rejection with committed-material readback; and
+  distributed production momentum/energy/work diagnostics. Passing this test
+  validates the diagnostics and manufactured solutions, not BG3D-4 physics;
 - `ARCHCSWC01`: source dependency scan, external public-header compile, and
 archive-symbol audit excluding AMPS, PIC, and MPI dependencies.
 
@@ -254,12 +298,14 @@ sheath and weak/oblique/sub-fast RH references, is:
 make -C src/models/sep_coronal_cme -j16 test
 ```
 
-Expected outputs are named `CMBGU*-EVIDENCE`, `CMBGU*-DIFFERENTIAL` and
-`CMBGU*-REFINEMENT`; they report dimensional inventory values separately from
-normalized numerical residuals. Qualification uses the frozen budgets in
-`BG3D0_CONTRACT.md`: RH residual <=1e-9, positive configured J, manufactured
-mass/flux error <=1e-8, smooth induction L-infinity <=1e-6, and zero added
-heating. Required campaign skips remain skips, not passes.
+Expected outputs are named `CMBGU*-EVIDENCE`, `*-REFERENCE`,
+`*-CONTACT-AUTHORITY`, `*-CONTACT-INTEGRAL`, `*-SUBFAST-TRANSACTION`,
+`*-DIFFERENTIAL`, and `*-DISTRIBUTED*`. They report dimensional inventory,
+force, leakage, energy and work values separately from normalized numerical
+residuals. Qualification uses the frozen budgets in `BG3D0_CONTRACT.md` and the
+pre-implementation BG3D-4 criteria in `CODEX_CME_PLAN.md`; a diagnostic test
+passes when it correctly exposes an unqualified physical construction. Required
+campaign skips and failed physical gates remain open rather than becoming PASS.
 
 ## Ownership, epochs and native boundary
 
