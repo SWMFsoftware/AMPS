@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """Interactive 3-D viewer for srcSEP3D reduced-front Tecplot surfaces.
 
-The maintained front writer uses a small ASCII FEQUADRILATERAL subset of the
-Tecplot format.  Some VisIt installations do not recognize that surface as a
+The maintained writer uses an ASCII FETRIANGLE zone with nodal geometry and
+cell-centred shock state.  The reader also accepts historical POINT-packed
+FEQUADRILATERAL evidence so changing the production topology does not make old
+qualification products unreadable. Some VisIt installations do not recognize
+either standalone surface as a
 standalone database, so this tool reads the file directly and displays it with
 Matplotlib.  It is a visualization utility: it does not reconstruct a sheath,
 ejecta, or any spatial downstream CME volume.
 
-Face values are arithmetic means of the four node samples, but only within one
-classification.  A quad whose four vertices do not agree on ``shock_accepted``
-is drawn neutral gray in the complete view and is removed by the accepted-only
-filter.  This prevents the renderer from inventing intermediate Mach numbers
-or compression across the physical shock/no-shock classification boundary.
+New triangle values are already face-centred and are never averaged across a
+classification boundary. For a legacy quad, values are arithmetic means of
+the four nodes only when their ``shock_accepted`` classification agrees; a
+mixed legacy quad remains neutral gray and is removed by accepted-only mode.
 """
 
 from __future__ import annotations
@@ -46,7 +48,10 @@ class FrontSurface:
     title: str
     variables: Tuple[str, ...]
     data: np.ndarray
-    quads: np.ndarray
+    faces: np.ndarray
+    cell_data: np.ndarray
+    cell_centered: Tuple[bool, ...]
+    zone_type: str
     auxiliary: Dict[str, str]
 
     def column(self, name: str) -> np.ndarray:
@@ -56,7 +61,14 @@ class FrontSurface:
             raise FrontFormatError(
                 f"unknown variable {name!r}; use --list-variables"
             ) from error
-        return self.data[:, index]
+        return self.cell_data[:, index] if self.cell_centered[index] \
+            else self.data[:, index]
+
+    @property
+    def quads(self) -> np.ndarray:
+        """Compatibility alias for callers that predate triangular output."""
+
+        return self.faces
 
 
 def _parse_variables(line: str) -> Tuple[str, ...]:
@@ -73,7 +85,7 @@ def _parse_variables(line: str) -> Tuple[str, ...]:
 
 
 def load_front(path: Path) -> FrontSurface:
-    """Parse one POINT-packed FEQUADRILATERAL zone with strict dimensions.
+    """Parse one maintained triangle zone or historical quadrilateral zone.
 
     The geometry is not guessed from row ordering.  Connectivity is read from
     the file and converted from Tecplot's one-based node indices to NumPy's
@@ -83,98 +95,130 @@ def load_front(path: Path) -> FrontSurface:
 
     path = path.expanduser().resolve()
     try:
-        stream = path.open("r", encoding="utf-8", errors="strict")
+        lines = path.read_text(encoding="utf-8", errors="strict").splitlines()
     except OSError as error:
         raise FrontFormatError(f"cannot open {path}: {error}") from error
+    if len(lines) < 4:
+        raise FrontFormatError("surface file is truncated before its data zone")
+    title_line = lines[0]
+    variables = _parse_variables(lines[1])
+    zone_line = lines[2].strip()
+    if not title_line.startswith("TITLE="):
+        raise FrontFormatError("line 1 must begin with TITLE=")
+    is_triangle = "ZONETYPE=FETRIANGLE" in zone_line
+    is_legacy_quad = "ZONETYPE=FEQUADRILATERAL" in zone_line
+    block = "DATAPACKING=BLOCK" in zone_line
+    point = "DATAPACKING=POINT" in zone_line
+    if not ((is_triangle and block) or (is_legacy_quad and point)):
+        raise FrontFormatError(
+            "ZONE must be BLOCK/FETRIANGLE or legacy POINT/FEQUADRILATERAL"
+        )
+    node_match = re.search(r"(?:^|[, ])N=(\d+)(?:,| |$)", zone_line)
+    element_match = re.search(r"(?:^|[, ])E=(\d+)(?:,| |$)", zone_line)
+    if not node_match or not element_match:
+        raise FrontFormatError("ZONE does not declare integer N and E")
+    node_count = int(node_match.group(1))
+    element_count = int(element_match.group(1))
+    if node_count <= 0 or element_count <= 0:
+        raise FrontFormatError("ZONE N and E must both be positive")
 
-    with stream:
-        title_line = stream.readline().rstrip("\n")
-        variables = _parse_variables(stream.readline().rstrip("\n"))
-        zone_line = stream.readline().strip()
-        if not title_line.startswith("TITLE="):
-            raise FrontFormatError("line 1 must begin with TITLE=")
-        if "DATAPACKING=POINT" not in zone_line or \
-                "ZONETYPE=FEQUADRILATERAL" not in zone_line:
-            raise FrontFormatError(
-                "ZONE must use DATAPACKING=POINT and ZONETYPE=FEQUADRILATERAL"
-            )
-        node_match = re.search(r"(?:^|[, ])N=(\d+)(?:,| |$)", zone_line)
-        element_match = re.search(r"(?:^|[, ])E=(\d+)(?:,| |$)", zone_line)
-        if not node_match or not element_match:
-            raise FrontFormatError("ZONE does not declare integer N and E")
-        node_count = int(node_match.group(1))
-        element_count = int(element_match.group(1))
-        if node_count <= 0 or element_count <= 0:
-            raise FrontFormatError("ZONE N and E must both be positive")
-
-        auxiliary: Dict[str, str] = {}
-        rows = []
-        first_data_line = ""
-        for line in stream:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            if stripped.startswith("AUXDATA"):
-                match = re.fullmatch(r'AUXDATA\s+([^=\s]+)="(.*)"', stripped)
-                if not match:
-                    raise FrontFormatError(f"malformed AUXDATA record: {stripped}")
-                auxiliary[match.group(1)] = match.group(2)
-                continue
-            first_data_line = stripped
+    auxiliary: Dict[str, str] = {}
+    line_index = 3
+    while line_index < len(lines):
+        stripped = lines[line_index].strip()
+        if not stripped:
+            line_index += 1
+            continue
+        if not stripped.startswith("AUXDATA"):
             break
-        if not first_data_line:
-            raise FrontFormatError("ZONE contains no point records")
+        match = re.fullmatch(r'AUXDATA\s+([^=\s]+)="(.*)"', stripped)
+        if not match:
+            raise FrontFormatError(f"malformed AUXDATA record: {stripped}")
+        auxiliary[match.group(1)] = match.group(2)
+        line_index += 1
+    tokens = " ".join(lines[line_index:]).split()
+    if not tokens:
+        raise FrontFormatError("ZONE contains no numerical data")
 
-        line = first_data_line
-        for node in range(node_count):
-            if node:
-                line = stream.readline().strip()
-            words = line.split()
-            if len(words) != len(variables):
-                raise FrontFormatError(
-                    f"node {node + 1} has {len(words)} values; "
-                    f"expected {len(variables)}"
-                )
+    variable_count = len(variables)
+    data = np.full((node_count, variable_count), np.nan, dtype=float)
+    cell_data = np.full((element_count, variable_count), np.nan, dtype=float)
+    cell_centered = [False] * variable_count
+    cursor = 0
+    if is_triangle:
+        location = re.search(
+            r"VARLOCATION=\(\[4-(\d+)\]=CELLCENTERED\)", zone_line
+        )
+        if not location or int(location.group(1)) != variable_count:
+            raise FrontFormatError(
+                "triangle zone must declare variables 4..N as CELLCENTERED"
+            )
+        cell_centered[3:] = [True] * (variable_count - 3)
+        for variable in range(variable_count):
+            count = element_count if cell_centered[variable] else node_count
             try:
-                rows.append([float(word) for word in words])
+                values = [float(word) for word in tokens[cursor:cursor + count]]
             except ValueError as error:
                 raise FrontFormatError(
-                    f"node {node + 1} contains a non-numeric value"
+                    f"variable block {variables[variable]!r} is non-numeric"
                 ) from error
-
-        connectivity = []
-        for element in range(element_count):
-            line = stream.readline().strip()
-            words = line.split()
-            if len(words) != 4:
+            if len(values) != count:
                 raise FrontFormatError(
-                    f"element {element + 1} has {len(words)} indices; expected 4"
+                    f"variable block {variables[variable]!r} is truncated"
                 )
-            try:
-                quad = [int(word) - 1 for word in words]
-            except ValueError as error:
-                raise FrontFormatError(
-                    f"element {element + 1} has a non-integer node index"
-                ) from error
-            if any(index < 0 or index >= node_count for index in quad):
-                raise FrontFormatError(
-                    f"element {element + 1} references a node outside 1..{node_count}"
-                )
-            connectivity.append(quad)
+            if cell_centered[variable]:
+                cell_data[:, variable] = values
+            else:
+                data[:, variable] = values
+            cursor += count
+        nodes_per_face = 3
+        zone_type = "FETRIANGLE"
+    else:
+        value_count = node_count * variable_count
+        try:
+            values = [float(word) for word in tokens[:value_count]]
+        except ValueError as error:
+            raise FrontFormatError("legacy point records contain non-numeric data") from error
+        if len(values) != value_count:
+            raise FrontFormatError("legacy point records are truncated")
+        data[:, :] = np.asarray(values).reshape(node_count, variable_count)
+        cursor = value_count
+        nodes_per_face = 4
+        zone_type = "FEQUADRILATERAL"
 
-    data = np.asarray(rows, dtype=float)
-    quads = np.asarray(connectivity, dtype=np.int64)
+    connectivity = []
+    for element in range(element_count):
+        words = tokens[cursor:cursor + nodes_per_face]
+        if len(words) != nodes_per_face:
+            raise FrontFormatError(f"element {element + 1} connectivity is truncated")
+        try:
+            face = [int(word) - 1 for word in words]
+        except ValueError as error:
+            raise FrontFormatError(
+                f"element {element + 1} has a non-integer node index"
+            ) from error
+        if any(index < 0 or index >= node_count for index in face):
+            raise FrontFormatError(
+                f"element {element + 1} references a node outside 1..{node_count}"
+            )
+        connectivity.append(face)
+        cursor += nodes_per_face
+    if cursor != len(tokens):
+        raise FrontFormatError("unexpected values follow surface connectivity")
+
+    faces = np.asarray(connectivity, dtype=np.int64)
     for coordinate in ("x_m", "y_m", "z_m", "shock_accepted"):
         if coordinate not in variables:
             raise FrontFormatError(f"required variable {coordinate!r} is absent")
     geometry = data[:, [variables.index(name) for name in ("x_m", "y_m", "z_m")]]
     if not np.all(np.isfinite(geometry)):
         raise FrontFormatError("surface coordinates contain NaN or infinity")
-    return FrontSurface(path, title_line, variables, data, quads, auxiliary)
+    return FrontSurface(path, title_line, variables, data, faces, cell_data,
+                        tuple(cell_centered), zone_type, auxiliary)
 
 
 def classify_faces(surface: FrontSurface) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return accepted, non-shock, and mixed-boundary masks per quad.
+    """Return accepted, non-shock, and legacy mixed-boundary face masks.
 
     ``shock_accepted`` is authoritative.  Status codes are deliberately not
     decoded here because their integer values are an implementation detail and
@@ -183,7 +227,10 @@ def classify_faces(surface: FrontSurface) -> Tuple[np.ndarray, np.ndarray, np.nd
     """
 
     node_accepted = surface.column("shock_accepted") >= 0.5
-    face_nodes = node_accepted[surface.quads]
+    if node_accepted.shape[0] == surface.faces.shape[0]:
+        accepted = node_accepted
+        return accepted, ~accepted, np.zeros_like(accepted, dtype=bool)
+    face_nodes = node_accepted[surface.faces]
     accepted = np.all(face_nodes, axis=1)
     nonshock = np.all(~face_nodes, axis=1)
     boundary = ~(accepted | nonshock)
@@ -191,10 +238,12 @@ def classify_faces(surface: FrontSurface) -> Tuple[np.ndarray, np.ndarray, np.nd
 
 
 def face_values(surface: FrontSurface, variable: str) -> np.ndarray:
-    """Average one node field over each quad without repairing invalid data."""
+    """Return face data directly, or average a historical nodal field."""
 
     values = surface.column(variable)
-    return np.mean(values[surface.quads], axis=1)
+    if values.shape[0] == surface.faces.shape[0]:
+        return values
+    return np.mean(values[surface.faces], axis=1)
 
 
 def _length_scale(unit: str) -> Tuple[float, str]:
@@ -296,9 +345,15 @@ def _shock_axis_direction(surface: FrontSurface) -> np.ndarray:
             raise FrontFormatError(
                 f"{surface.path.name}: quadrature areas must be finite and positive"
             )
+        # Production triangle areas are cell-centred, so weight chord
+        # centroids. Historical quadrilateral products stored one area per
+        # node and retain their original node-weighted estimate.
+        points = np.mean(xyz[surface.faces], axis=1) \
+            if weights.shape[0] == surface.faces.shape[0] else xyz
     else:
-        weights = np.ones(xyz.shape[0])
-    centroid = np.average(xyz, axis=0, weights=weights)
+        points = xyz
+        weights = np.ones(points.shape[0])
+    centroid = np.average(points, axis=0, weights=weights)
     magnitude = float(np.linalg.norm(centroid))
     if not np.isfinite(magnitude) or magnitude == 0.0:
         raise FrontFormatError(
@@ -438,7 +493,7 @@ def _draw_frame(axis, surface: FrontSurface, variable: str,
 
     axis.cla()
     coordinates = _coordinates(surface, scale)
-    polygons = coordinates[surface.quads]
+    polygons = coordinates[surface.faces]
     values = face_values(surface, variable)
     accepted, nonshock, boundary = classify_faces(surface)
     homogeneous = accepted | nonshock
@@ -451,9 +506,8 @@ def _draw_frame(axis, surface: FrontSurface, variable: str,
             antialiased=True,
         )
         axis.add_collection3d(colored)
-    # A mixed quad has no single accepted state.  Neutral gray preserves the
-    # geometry in the complete view without averaging a diagnostic across the
-    # classification boundary; accepted-only mode removes it entirely.
+    # Only historical nodal quads can be mixed. New triangles carry one
+    # authoritative face classification and therefore never enter this path.
     if not accepted_only and np.any(boundary):
         transition = Poly3DCollection(
             polygons[boundary], facecolors=(0.55, 0.55, 0.55, 0.40),
@@ -477,7 +531,7 @@ def _draw_frame(axis, surface: FrontSurface, variable: str,
     axis.set_title(
         f"{surface.path.name}\n"
         f"t={surface_time(surface):g} s; generation={surface_generation(surface)}; "
-        f"{variable}; {mode}; shown quads={int(np.count_nonzero(visible))}"
+        f"{variable}; {mode}; shown faces={int(np.count_nonzero(visible))}"
     )
     return (int(np.count_nonzero(accepted)), int(np.count_nonzero(nonshock)),
             int(np.count_nonzero(boundary)), int(np.count_nonzero(visible)))
@@ -557,9 +611,10 @@ def render(surface: FrontSurface, variable: str, accepted_only: bool,
     nonshock_count = int(np.count_nonzero(nonshock))
     boundary_count = int(np.count_nonzero(boundary))
     print(
-        f"nodes={surface.data.shape[0]} quads={surface.quads.shape[0]} "
-        f"accepted_quads={accepted_count} nonshock_quads={nonshock_count} "
-        f"mixed_boundary_quads={boundary_count} variable={variable} "
+        f"nodes={surface.data.shape[0]} faces={surface.faces.shape[0]} "
+        f"zone_type={surface.zone_type} accepted_faces={accepted_count} "
+        f"nonshock_faces={nonshock_count} mixed_boundary_faces={boundary_count} "
+        f"variable={variable} "
         f"range=[{lower:.17g},{upper:.17g}]"
     )
     if save is not None:
@@ -676,15 +731,20 @@ def render_movie(surfaces: Sequence[FrontSurface], variable: str,
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "View or animate srcSEP3D reduced-front FEQUADRILATERAL files.\n\n"
-            "The surface is colored by one named node variable. Values are "
-            "averaged only over quads whose four nodes agree on shock "
-            "acceptance; mixed boundaries are gray or hidden."
+            "View or animate srcSEP3D reduced-front FETRIANGLE files (and "
+            "historical FEQUADRILATERAL files).\n\nThe production surface uses "
+            "nodal geometry and authoritative face-centred shock variables. "
+            "Legacy nodal values are averaged only over quads whose nodes "
+            "agree on shock acceptance; mixed legacy boundaries are gray "
+            "or hidden."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples
 --------
+Find the available front snapshots in a native-output directory:
+  find OUTPUT_DIRECTORY -maxdepth 1 -name '*-front.dat' -print | sort
+
 Inspect the variables stored in a front file:
   python3 srcSEP3D/examples/shock-front/view_front.py FRONT.dat --list-variables
 
@@ -700,6 +760,13 @@ Choose a colormap and a fixed physical color interval:
   python3 srcSEP3D/examples/shock-front/view_front.py FRONT.dat \\
     --variable theta_Bn_rad --cmap plasma --vmin 0 --vmax 1.5707963268
 
+List every colormap installed in the current Matplotlib environment:
+  python3 -c "import matplotlib.pyplot as p; print(*p.colormaps(), sep=chr(10))"
+
+View a signed IMF component from a fixed HCI camera direction, with axes in AU:
+  python3 srcSEP3D/examples/shock-front/view_front.py FRONT.dat \\
+    --variable b1z_T --cmap seismic --elev 20 --azim 135 --length-unit au
+
 Save a headless still image on a compute node:
   python3 srcSEP3D/examples/shock-front/view_front.py FRONT.dat \\
     --variable magnetic_compression --accepted-only \\
@@ -710,6 +777,12 @@ Make a GIF from every *-front.dat file in one output directory:
     --variable fast_mach --accepted-only \\
     --show-sun --show-distance-axis \\
     --elev 24 --azim -58 --fps 3 --movie front.gif
+
+Make an MP4 with a reproducible view, physical range, and rendering quality:
+  python3 srcSEP3D/examples/shock-front/view_front.py OUTPUT_DIRECTORY \\
+    --variable density_compression --accepted-only --cmap plasma \\
+    --vmin 1 --vmax 4 --elev 20 --azim 135 \\
+    --show-sun --show-distance-axis --fps 12 --dpi 170 --movie front.mp4
 
 The movie input may instead be a quoted pattern or an explicit file list:
   python3 srcSEP3D/examples/shock-front/view_front.py \\
@@ -725,6 +798,8 @@ and press the `v` key. The terminal prints reusable camera arguments:
 Copy those values into the movie command. The selected elevation, azimuth,
 global HCI bounds, ruler extent, and color normalization are then identical in
 every frame. Use --vmin/--vmax when movies must share a prescribed color scale.
+Elevation is measured above the HCI x-y plane; azimuth rotates about HCI +z.
+These camera options change only the view, never the stored geometry or normals.
 
 Variables and colormaps
 -----------------------
@@ -736,7 +811,9 @@ components. Use shock_accepted/downstream_valid to interpret RH-limit fields.
 --cmap accepts an installed Matplotlib colormap name. Portable examples include
 viridis (default), plasma, inferno, magma, cividis, coolwarm, and seismic.
 Sequential maps suit positive magnitudes; diverging maps such as coolwarm or
-seismic suit signed vector components. Invalid names fail explicitly.
+seismic suit signed vector components. --vmin and --vmax retain the same
+physical color meaning across snapshots; omitting them uses the range over all
+input frames. Invalid colormap names and inverted color limits fail explicitly.
 
 Movie format and physical meaning
 ---------------------------------
@@ -755,7 +832,7 @@ front and front-local RH limits; it does not create sheath/ejecta volume data.
     parser.add_argument("--list-variables", action="store_true",
                         help="print variables in the file and exit")
     parser.add_argument("--accepted-only", action="store_true",
-                        help="initially hide every quad not unanimously accepted")
+                        help="initially hide every face not classified as an accepted shock")
     parser.add_argument("--show-sun", action="store_true",
                         help="draw the one-solar-radius Sun at the HCI origin")
     parser.add_argument(
@@ -769,13 +846,17 @@ front and front-local RH limits; it does not create sheath/ejecta volume data.
         help="Matplotlib colormap (e.g. viridis, plasma, coolwarm; default: viridis)",
     )
     parser.add_argument("--vmin", type=float,
-                        help="fixed color scale minimum shared by all movie frames")
+                        help=("fixed physical color-scale minimum shared by all "
+                              "movie frames (default: minimum over all inputs)"))
     parser.add_argument("--vmax", type=float,
-                        help="fixed color scale maximum shared by all movie frames")
+                        help=("fixed physical color-scale maximum shared by all "
+                              "movie frames (default: maximum over all inputs)"))
     parser.add_argument("--elev", type=float, default=24.0,
-                        help="camera elevation in degrees; frozen for every movie frame")
+                        help=("camera elevation above the HCI x-y plane in degrees; "
+                              "frozen for every movie frame"))
     parser.add_argument("--azim", type=float, default=-58.0,
-                        help="camera azimuth in degrees; frozen for every movie frame")
+                        help=("camera azimuth about HCI +z in degrees; frozen for "
+                              "every movie frame"))
     parser.add_argument("--save", type=Path, help="also save a PNG/PDF/SVG image")
     parser.add_argument(
         "--movie", type=Path,

@@ -232,22 +232,43 @@ Core::Result<TrajectoryState> EvaluateQuadraticDrag(double epoch,
 
 AreaLedger SummarizeAreas(const std::vector<ShockRecord>& records) noexcept {
   AreaLedger out;
+  // Surface refinements contain thousands of exactly weighted patches.  A
+  // naive left-to-right sum accumulates O(N epsilon) roundoff and can obscure
+  // the analytical cap-area identity even though every patch has the correct
+  // measure.  Neumaier compensation is used independently for each physical
+  // category; it changes neither classification nor tolerance and makes the
+  // absolute ledger insensitive to record ordering.
+  struct Sum {
+    double value=0,correction=0;
+    void Add(double x) noexcept {
+      const double next=value+x;
+      if(std::abs(value)>=std::abs(x))correction+=(value-next)+x;
+      else correction+=(x-next)+value;
+      value=next;
+    }
+    double Total() const noexcept {return value+correction;}
+  } geometric,below,superfast,accepted,numerical;
   for(const auto& record:records) {
     const double area=std::isfinite(record.geometry.areaM2)&&
         record.geometry.areaM2>0?record.geometry.areaM2:0;
-    out.geometricSupportM2+=area;
+    geometric.Add(area);
     if(record.status==FrontStatus::BelowPhysicalInnerBoundary)
-      out.belowInnerBoundaryM2+=area;
+      below.Add(area);
     if(record.fastMach>1&&(record.status==FrontStatus::SolvedFastShock||
         record.status==FrontStatus::NumericallyUnresolvedWeakShock||
         record.status==FrontStatus::WrongBranch||
-        record.status==FrontStatus::InvalidJump))out.superfastCandidateM2+=area;
-    if(record.status==FrontStatus::SolvedFastShock)out.acceptedShockM2+=area;
+        record.status==FrontStatus::InvalidJump))superfast.Add(area);
+    if(record.status==FrontStatus::SolvedFastShock)accepted.Add(area);
     if(record.status==FrontStatus::AmbientUnavailable||
         record.status==FrontStatus::NumericallyUnresolvedWeakShock||
         record.status==FrontStatus::WrongBranch||
-        record.status==FrontStatus::InvalidJump)out.numericalFailureM2+=area;
+        record.status==FrontStatus::InvalidJump)numerical.Add(area);
   }
+  out.geometricSupportM2=geometric.Total();
+  out.belowInnerBoundaryM2=below.Total();
+  out.superfastCandidateM2=superfast.Total();
+  out.acceptedShockM2=accepted.Total();
+  out.numericalFailureM2=numerical.Total();
   return out;
 }
 
@@ -474,81 +495,197 @@ Core::Result<std::shared_ptr<const Epoch>> Provider::Prepare(
   const double sine=std::sin(configuration_->halfWidthRad);
   const double center=trajectory.value.apexRadiusM/(1+sine);
   const double sphereRadius=center*sine;
-  // Uniform bins in mu=n.d give equal exact generating-sphere area.  Samples
-  // are cell centroids; area is not inferred from heliocentric radial angles,
-  // whose metric is singular at the tangent support edge.
+  // The front is parameterized by the outward normal of its generating
+  // sphere, not by heliocentric ray angle.  With mu=n.d the exact metric is
+  //
+  //     dA = a^2 dmu dphi,
+  //
+  // where a is the generating-sphere radius.  This chart is nonsingular at
+  // the heliocentric tangent edge.  Boundary rings, rather than quadrature
+  // centroids, are used as vertices so the discrete surface reaches both the
+  // exact support rim and the apex.  The mu=1 ring collapses analytically to
+  // one vertex; storing it once prevents coincident pole vertices and closes
+  // the artificial hole in the former quadrilateral output.
   const double muMinimum=-sine;
   const double dmu=(1-muMinimum)/configuration_->polarCells;
   const double dphi=2*kPi/configuration_->azimuthCells;
-  const double area=sphereRadius*sphereRadius*dmu*dphi;
-  candidate->records.reserve(static_cast<std::size_t>(configuration_->polarCells)*
-      configuration_->azimuthCells);
-  for(int i=0;i<configuration_->polarCells;++i)for(int j=0;
-      j<configuration_->azimuthCells;++j) {
-    const double mu=muMinimum+(i+0.5)*dmu;
-    const double phi=(j+0.5)*dphi;
-    const auto normal=About(configuration_->direction,mu,phi);
-    ShockRecord record;record.geometry.stableId=
-        static_cast<std::uint64_t>(i)*configuration_->azimuthCells+j+1;
-    record.geometry.outwardNormal=normal;
-    record.geometry.positionM=center*configuration_->direction+sphereRadius*normal;
-    record.geometry.normalSpeedMPerS=trajectory.value.apexSpeedMPerS*(mu+sine)/(1+sine);
-    record.geometry.areaM2=area;
-    record.geometry.supportEdge=i==0;
-    candidate->area.geometricSupportM2+=area;
-    if(CoronalCME::Norm(record.geometry.positionM)<configuration_->physicalInnerRadiusM) {
-      record.status=FrontStatus::BelowPhysicalInnerBoundary;
-      record.reason="supported mathematical front is below the physical ambient boundary";
-      candidate->area.belowInnerBoundaryM2+=area;
-      candidate->records.push_back(std::move(record));continue;
+  const int nPolar=configuration_->polarCells;
+  const int nAzimuth=configuration_->azimuthCells;
+  const std::size_t ringVertexCount=static_cast<std::size_t>(nPolar)*nAzimuth;
+  const std::size_t triangleCount=static_cast<std::size_t>(2*nPolar-1)*nAzimuth;
+  candidate->vertices.reserve(ringVertexCount+1);
+  candidate->triangles.reserve(triangleCount);
+  candidate->records.reserve(triangleCount);
+
+  for(int i=0;i<nPolar;++i)for(int j=0;j<nAzimuth;++j) {
+    const double mu=muMinimum+i*dmu;
+    const double phi=j*dphi;
+    SurfaceVertex vertex;
+    vertex.stableId=static_cast<std::uint64_t>(i)*nAzimuth+j+1;
+    vertex.positionM=center*configuration_->direction+
+        sphereRadius*About(configuration_->direction,mu,phi);
+    vertex.supportEdge=i==0;
+    candidate->vertices.push_back(vertex);
+  }
+  SurfaceVertex apexVertex;
+  apexVertex.stableId=ringVertexCount+1;
+  apexVertex.positionM=trajectory.value.apexRadiusM*configuration_->direction;
+  apexVertex.apex=true;
+  candidate->vertices.push_back(apexVertex);
+
+  auto classify=[&](ShockRecord* record) {
+    const double radius=CoronalCME::Norm(record->geometry.positionM);
+    if(radius<configuration_->physicalInnerRadiusM) {
+      record->status=FrontStatus::BelowPhysicalInnerBoundary;
+      record->reason="supported mathematical front is below the physical ambient boundary";
+      return;
     }
-    const auto upstream=ambient_->Evaluate(record.geometry.positionM,epoch);
+    const auto upstream=ambient_->Evaluate(record->geometry.positionM,epoch);
     if(!upstream.ok()) {
-      record.status=FrontStatus::AmbientUnavailable;record.reason=upstream.status.message;
-      candidate->area.numericalFailureM2+=area;
-      candidate->records.push_back(std::move(record));continue;
+      record->status=FrontStatus::AmbientUnavailable;
+      record->reason=upstream.status.message;
+      return;
     }
-    record.upstream=upstream.value;
+    record->upstream=upstream.value;
     CoronalCME::MhdPrimitiveState primitive{upstream.value.plasma.massDensityKgM3,
         upstream.value.plasma.pressurePa,upstream.value.velocityMPerS,
         upstream.value.magneticFieldT};
-    const auto local=EvaluateLocalJump(primitive,normal,
-        record.geometry.normalSpeedMPerS,
+    const auto local=EvaluateLocalJump(primitive,record->geometry.outwardNormal,
+        record->geometry.normalSpeedMPerS,
         configuration_->ambient.composition.gammaAdiabatic,
         configuration_->weakMachTolerance,configuration_->rhResidualTolerance,
         configuration_->ambient.ambient.minimumMagneticFieldT);
     if(!local.ok()) {
-      record.status=FrontStatus::InvalidJump;record.reason=local.status.message;
-      candidate->area.numericalFailureM2+=area;
-      candidate->records.push_back(std::move(record));continue;
+      record->status=FrontStatus::InvalidJump;
+      record->reason=local.status.message;
+      return;
     }
-    record.characteristics=local.value.characteristics;
-    record.inflowMPerS=local.value.inflowMPerS;
-    record.fastSpeedMarginMPerS=local.value.fastSpeedMarginMPerS;
-    record.fastMach=local.value.fastMach;
-    record.signedMagneticNormalCosine=local.value.signedMagneticNormalCosine;
-    record.magneticDirectionValid=local.value.magneticDirectionValid;
-    record.downstreamValid=local.value.downstreamValid;
-    record.jump=local.value.jump;record.diagnostics=local.value.diagnostics;
-    record.status=local.value.status;record.reason=local.value.reason;
+    record->characteristics=local.value.characteristics;
+    record->inflowMPerS=local.value.inflowMPerS;
+    record->fastSpeedMarginMPerS=local.value.fastSpeedMarginMPerS;
+    record->fastMach=local.value.fastMach;
+    record->signedMagneticNormalCosine=local.value.signedMagneticNormalCosine;
+    record->magneticDirectionValid=local.value.magneticDirectionValid;
+    record->downstreamValid=local.value.downstreamValid;
+    record->jump=local.value.jump;
+    record->diagnostics=local.value.diagnostics;
+    record->status=local.value.status;
+    record->reason=local.value.reason;
+  };
+
+  bool validMesh=true;
+  auto appendTriangle=[&](std::array<std::uint32_t,3> vertex,double mu,
+      double phi,double exactArea,bool touchesSupportEdge) {
+    const std::uint64_t id=candidate->triangles.size()+1;
+    const auto normal=About(configuration_->direction,mu,phi);
+    const auto& x0=candidate->vertices[vertex[0]].positionM;
+    const auto& x1=candidate->vertices[vertex[1]].positionM;
+    const auto& x2=candidate->vertices[vertex[2]].positionM;
+    auto chordNormal=CoronalCME::Cross(x1-x0,x2-x0);
+    // Connectivity, not a renderer option, owns orientation.  Swap the final
+    // two indices when necessary so every chord normal points toward the
+    // analytical exterior.  Future crossing/injection code can then consume
+    // a triangle without guessing winding from the event direction.
+    if(CoronalCME::Dot(chordNormal,normal)<0) {
+      std::swap(vertex[1],vertex[2]);
+      chordNormal=-1*chordNormal;
+    }
+    const double planarArea=0.5*CoronalCME::Norm(chordNormal);
+    if(!std::isfinite(planarArea)||planarArea<=0||
+        !std::isfinite(exactArea)||exactArea<=0) {
+      validMesh=false;
+      return;
+    }
+    SurfaceTriangle triangle;
+    triangle.stableId=id;
+    triangle.vertex=vertex;
+    triangle.curvedAreaM2=exactArea;
+    triangle.planarAreaM2=planarArea;
+    candidate->triangles.push_back(triangle);
+
+    ShockRecord record;
+    record.geometry.stableId=id;
+    record.geometry.positionM=center*configuration_->direction+sphereRadius*normal;
+    record.geometry.outwardNormal=normal;
+    record.geometry.normalSpeedMPerS=
+        trajectory.value.apexSpeedMPerS*(mu+sine)/(1+sine);
+    record.geometry.areaM2=exactArea;
+    // A face touching the finite-width rim is marked even though its
+    // area-representative point lies strictly inside the supported cap.
+    record.geometry.supportEdge=touchesSupportEdge;
+    classify(&record);
     candidate->records.push_back(std::move(record));
+  };
+
+  const auto vertexIndex=[&](int ring,int azimuth) {
+    const int wrapped=(azimuth+nAzimuth)%nAzimuth;
+    return static_cast<std::uint32_t>(ring*nAzimuth+wrapped);
+  };
+  const double cellArea=sphereRadius*sphereRadius*dmu*dphi;
+  // Every non-apex (mu,phi) rectangle is divided on a deterministic
+  // checkerboard diagonal.  Because dA is constant in this chart, each child
+  // owns exactly half the curved cell area; the alternating diagonal reduces
+  // a purely visual directional bias without changing the physical measure.
+  for(int i=0;i<nPolar-1;++i)for(int j=0;j<nAzimuth;++j) {
+    const double mu0=muMinimum+i*dmu,mu1=mu0+dmu;
+    const double phi0=j*dphi,phi1=(j+1)*dphi;
+    const auto a=vertexIndex(i,j),b=vertexIndex(i,j+1);
+    const auto c=vertexIndex(i+1,j),d=vertexIndex(i+1,j+1);
+    if((i+j)%2==0) {
+      appendTriangle({a,b,d},(2*mu0+mu1)/3,(phi0+2*phi1)/3,
+          0.5*cellArea,i==0);
+      appendTriangle({a,d,c},(mu0+2*mu1)/3,(2*phi0+phi1)/3,
+          0.5*cellArea,i==0);
+    } else {
+      appendTriangle({a,b,c},(2*mu0+mu1)/3,(2*phi0+phi1)/3,
+          0.5*cellArea,i==0);
+      appendTriangle({b,d,c},(mu0+2*mu1)/3,(phi0+2*phi1)/3,
+          0.5*cellArea,i==0);
+    }
   }
-  // Recompute from immutable records rather than relying on branch-local
-  // increments.  This is the single accounting authority used by output and
-  // by disconnected/unknown-area tests; physical no-shock area remains in the
-  // geometric denominator and is never confused with numerical unknown.
+  // The last chart cell collapses its mu=1 edge to one physical point.  One
+  // fan triangle per azimuth sector therefore covers the complete apex band
+  // without zero-area elements or duplicated pole vertices.  Its exact curved
+  // area is the full chart-cell area, not its smaller flat chord area.
+  const std::uint32_t apexIndex=static_cast<std::uint32_t>(ringVertexCount);
+  const double apexMu0=muMinimum+(nPolar-1)*dmu;
+  for(int j=0;j<nAzimuth;++j)appendTriangle(
+      {vertexIndex(nPolar-1,j),vertexIndex(nPolar-1,j+1),apexIndex},
+      0.5*(apexMu0+1),(j+0.5)*dphi,cellArea,false);
+
+  if(!validMesh||candidate->vertices.size()!=ringVertexCount+1||
+      candidate->triangles.size()!=triangleCount||
+      candidate->records.size()!=triangleCount)
+    return Return::Failure(Core::StatusCode::NumericalFailure,
+        "triangular SSE cap contains a degenerate or incomplete element");
+
+  // Recompute the complete ledger from immutable face records.  This keeps
+  // scientific no-shock and numerical-unknown areas in the denominator and
+  // makes a future source sum the same exact curved measure as diagnostics.
   candidate->area=SummarizeAreas(candidate->records);
+  const double analyticalArea=2*kPi*sphereRadius*sphereRadius*(1-muMinimum);
+  if(std::abs(candidate->area.geometricSupportM2-analyticalArea)>
+      64*std::numeric_limits<double>::epsilon()*analyticalArea)
+    return Return::Failure(Core::StatusCode::NumericalFailure,
+        "triangular SSE curved areas do not close to the analytical cap area");
+
+  /*
+   * Do not classify apex acceptance from the nearest finite-area patch.  The
+   * endpoint observer is located at the exact apex in the selected profile,
+   * and a patch-centroid decision can change under angular refinement.  This
+   * zero-area query supplies only the exact point decision; it is deliberately
+   * excluded from all surface-area ledgers.
+   */
+  const auto apexRecord=EvaluateFrontPoint(apexVertex.positionM,epoch,UINT64_MAX);
+  // An exact point can coincide with a declared magnetic null even when every
+  // finite-area patch is evaluable (the equatorial smoke fixture is such a
+  // case).  Report-only epochs must retain that scientific absence rather
+  // than fail their complete surface.  If accepted apex coverage is required
+  // at the endpoint, the policy below rejects the false value transactionally.
+  candidate->apexShockAccepted=apexRecord.ok()&&
+      apexRecord.value.status==FrontStatus::SolvedFastShock;
   const auto endpoint=EndpointTimeS();
   candidate->geometricEndpointReached=endpoint.ok()&&epoch>=endpoint.value-1e-7;
-  // The apex is stable sample 1 only in a separate exact query; use the
-  // closest normal-centroid ring here and keep this aggregate explicitly an
-  // approximation for receipts. Observer qualification evaluates its root.
-  const auto best=std::max_element(candidate->records.begin(),candidate->records.end(),
-      [&](const ShockRecord& a,const ShockRecord& b){return
-        CoronalCME::Dot(a.geometry.outwardNormal,configuration_->direction)<
-        CoronalCME::Dot(b.geometry.outwardNormal,configuration_->direction);});
-  candidate->apexShockAccepted=best!=candidate->records.end()&&
-      best->status==FrontStatus::SolvedFastShock;
   if(configuration_->validityPolicy==TrajectoryValidityPolicy::RequireDeclaredShockCoverage&&
       (candidate->area.numericalFailureM2>0||
        (configuration_->requireFastShockAtObserver&&

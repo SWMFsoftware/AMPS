@@ -219,7 +219,8 @@ Core::Result<std::shared_ptr<const Configuration>> ResolveConfiguration(
     "handoff.outer_model","handoff.drag_gamma_m_inv",
     "handoff.effective_wind_speed_m_s","handoff.trajectory_validity_policy",
     "diagnostics.criticality_model","numerics.polar_cells",
-    "numerics.azimuth_cells","numerics.weak_mach_tolerance",
+    "numerics.azimuth_cells","numerics.surface_topology",
+    "numerics.weak_mach_tolerance",
     "numerics.rh_residual_tolerance","endpoint.apex_radius_m",
     "endpoint.observer_position_hci_m","endpoint.require_fast_shock_at_observer",
     "assets.harmonics_file","assets.harmonics_sha256"};
@@ -278,6 +279,7 @@ Core::Result<std::shared_ptr<const Configuration>> ResolveConfiguration(
   SF_NUMBER("handoff.effective_wind_speed_m_s",out->effectiveTrajectoryWindMPerS);
   SF_INTEGER("numerics.polar_cells",out->polarCells);
   SF_INTEGER("numerics.azimuth_cells",out->azimuthCells);
+  SF_TEXT("numerics.surface_topology",out->surfaceTopology);
   SF_NUMBER("numerics.weak_mach_tolerance",out->weakMachTolerance);
   SF_NUMBER("numerics.rh_residual_tolerance",out->rhResidualTolerance);
   SF_NUMBER("endpoint.apex_radius_m",out->endpointRadiusM);
@@ -338,6 +340,7 @@ Core::Result<std::shared_ptr<const Configuration>> ResolveConfiguration(
       out->accelerationDurationS>0&&out->handoffApexRadiusM>out->initialApexRadiusM&&
       out->dragGammaPerM>=0&&out->effectiveTrajectoryWindMPerS>=0&&
       out->backgroundDtS>0&&out->polarCells>=2&&out->azimuthCells>=4&&
+      out->surfaceTopology=="triangular-sse-cap-v1"&&
       out->weakMachTolerance>0&&out->rhResidualTolerance>0&&
       out->endpointRadiusM>=out->handoffApexRadiusM&&
       out->endpointRadiusM<=out->ambient.support.coverageRadiusM;

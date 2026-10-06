@@ -4,6 +4,7 @@
 #include "sep_corona_swcme/ambient_state.h"
 #include "sep_coronal_cme/mhd_jump_solver.h"
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -112,6 +113,11 @@ struct Configuration {
   double backgroundDtS = 0.0;
   int polarCells = 0;
   int azimuthCells = 0;
+  // The topology spelling is part of the event fingerprint.  A front mesh is
+  // not a presentation-only choice once its facets can become independently
+  // weighted source patches: changing the tessellation changes quadrature,
+  // stable labels and therefore future stochastic identities.
+  std::string surfaceTopology;
   double weakMachTolerance = 0.0;
   double rhResidualTolerance = 0.0;
   double endpointRadiusM = 0.0;
@@ -141,6 +147,30 @@ struct GeometrySample {
   double normalSpeedMPerS = 0.0;
   double areaM2 = 0.0;
   bool supportEdge = false;
+};
+
+// Vertices describe only the piecewise-planar embedding used by surface
+// consumers.  Plasma and shock classifications intentionally do not live at
+// vertices: those fields can be discontinuous where a super-fast portion of
+// the prescribed front meets a sub-fast or non-forward portion.
+struct SurfaceVertex {
+  std::uint64_t stableId = 0;
+  CoronalCME::Vec3 positionM;
+  bool supportEdge = false;
+  bool apex = false;
+};
+
+// One triangle is one physical quadrature/source patch.  vertex contains
+// zero-based indices into Epoch::vertices.  curvedAreaM2 is the exact area of
+// the associated patch in the generating-sphere (mu,phi) chart and is the only
+// area used by physics ledgers.  planarAreaM2 is the chord-triangle area; it is
+// retained solely to measure geometric approximation error and must never be
+// substituted into a source normalization.
+struct SurfaceTriangle {
+  std::uint64_t stableId = 0;
+  std::array<std::uint32_t,3> vertex{{0,0,0}};
+  double curvedAreaM2 = 0.0;
+  double planarAreaM2 = 0.0;
 };
 
 // Complete finite-SSE instantaneous kinematics.  Direction and its derivative
@@ -223,6 +253,12 @@ struct Epoch {
   std::uint64_t generation = 0;
   std::uint64_t ambientGeneration = 0;
   std::string eventIdentity;
+  // The finite SSE cap is a topological disk.  Rings include the exact
+  // finite-support boundary and terminate in one shared apex vertex, so the
+  // azimuth seam and pole are closed without inventing a rear cap.  records
+  // and triangles are one-to-one and have identical stable IDs.
+  std::vector<SurfaceVertex> vertices;
+  std::vector<SurfaceTriangle> triangles;
   std::vector<ShockRecord> records;
   AreaLedger area;
   HandoffReceipt handoff;

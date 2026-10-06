@@ -272,8 +272,24 @@ Core::Result<MhdShockSolution> SolveObliqueFastShock(
           "fast-shock bracket crossed a singular/nonphysical branch");
     }
     const double fMiddle = root.energyResidual / energyScale;
-    if (std::abs(fMiddle) <= residualTolerance * 0.1 ||
-        right - left <= 1.0e-12 * middle) {
+    /*
+     * Do not terminate the nonlinear solve merely because the energy-flux
+     * residual is small in absolute normalized units.  At M_f -> 1 the
+     * physical compressive root approaches the ever-present identity root
+     * X=1, and the energy residual is correspondingly flat.  An
+     * O(residualTolerance) test can then stop between the two roots: the
+     * flux residual looks acceptable, but entropy and downstream
+     * characteristic ordering correctly reject that intermediate state.
+     *
+     * Bracket width is the independent error estimator for bisection.  Drive
+     * it to a few ulps of X and apply the caller's RH residual tolerance only
+     * to the completed state below.  This changes no physical admission
+     * threshold and does not turn the deliberately unresolved M_f-1=1e-10
+     * case into a shock, because that root remains below lowerCompression.
+     */
+    if (fMiddle == 0.0 || right - left <=
+        32.0 * std::numeric_limits<double>::epsilon() *
+            std::max(1.0, middle)) {
       left = right = middle;
       break;
     }

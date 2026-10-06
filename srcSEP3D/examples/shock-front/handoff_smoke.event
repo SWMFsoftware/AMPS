@@ -45,6 +45,9 @@ handoff.trajectory_validity_policy=report-only
 diagnostics.criticality_model=none
 numerics.polar_cells=12
 numerics.azimuth_cells=24
+# The cap uses exact boundary rings and one shared apex vertex.  Each triangle
+# is an independently classified, exact-curved-area patch; no rear cap is made.
+numerics.surface_topology=triangular-sse-cap-v1
 numerics.weak_mach_tolerance=1e-6
 numerics.rh_residual_tolerance=1e-8
 endpoint.apex_radius_m=14200000000

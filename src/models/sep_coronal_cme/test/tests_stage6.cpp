@@ -80,9 +80,20 @@ void RH3D05() {
       upstream, {1.0, 0.0, 0.0}, 5.0 / 3.0);
   auto solution = SolveObliqueFastShock(upstream, {1.0, 0.0, 0.0},
       1.01 * characteristics.value.fastSpeedMPerS, 5.0 / 3.0, 1.0e-8);
+  // The closer reference guards against confusing a small energy residual
+  // with convergence to the physical root.  The compressive solution at
+  // M_f=1.001 is distinct from the identity state but has only an O(1e-9)
+  // entropy increase, so premature residual-based termination used to fail
+  // the independent entropy/characteristic admission checks.
+  auto closer = SolveObliqueFastShock(upstream, {1.0, 0.0, 0.0},
+      1.001 * characteristics.value.fastSpeedMPerS, 5.0 / 3.0, 1.0e-8);
   Require(solution.ok() && solution.value.compressionRatio > 1.0 &&
-          solution.value.compressionRatio < 1.1,
-          "weak fast shock did not approach unit compression");
+          solution.value.compressionRatio < 1.1 && closer.ok() &&
+          closer.value.compressionRatio > 1.0 &&
+          closer.value.compressionRatio < solution.value.compressionRatio &&
+          closer.value.entropyLogIncrement > 0.0 &&
+          closer.value.residuals.maximum < 1.0e-8,
+          "weak fast shocks did not converge to the physical unit-compression limit");
 }
 
 void RH3D06() {

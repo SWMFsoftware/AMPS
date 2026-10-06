@@ -46,6 +46,9 @@ handoff.trajectory_validity_policy=report-only
 diagnostics.criticality_model=none
 numerics.polar_cells=12
 numerics.azimuth_cells=24
+# Provider-owned triangular disk: exact SSE flank ring, periodic azimuth seam,
+# and one nonduplicated apex.  The topology enters the event fingerprint.
+numerics.surface_topology=triangular-sse-cap-v1
 numerics.weak_mach_tolerance=1e-6
 numerics.rh_residual_tolerance=1e-8
 endpoint.apex_radius_m=149597870700

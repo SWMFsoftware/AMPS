@@ -3921,6 +3921,17 @@ SEP3D::Core::Status SEP3D::Validation::CaptureNativeApplicationState(
       frontState << std::hexfloat << epoch->trajectory.apexRadiusM << '|'
           << epoch->trajectory.apexSpeedMPerS << '|'
           << static_cast<int>(epoch->trajectory.phase);
+      // Surface topology is part of native restart/rank equivalence.  Hash
+      // every shared vertex and facet before its face-centred state so a pole
+      // duplication, changed diagonal, winding reversal, or curved/chord-area
+      // substitution cannot hide behind identical physical sample values.
+      for(const auto& vertex:epoch->vertices)frontState<<"|v:"
+          <<vertex.stableId<<':'<<vertex.positionM.x<<':'<<vertex.positionM.y
+          <<':'<<vertex.positionM.z<<':'<<vertex.supportEdge<<':'<<vertex.apex;
+      for(const auto& triangle:epoch->triangles)frontState<<"|f:"
+          <<triangle.stableId<<':'<<triangle.vertex[0]<<':'<<triangle.vertex[1]
+          <<':'<<triangle.vertex[2]<<':'<<triangle.curvedAreaM2<<':'
+          <<triangle.planarAreaM2;
       for(const auto& record:epoch->records) {
         frontState << '|' << record.geometry.stableId << ':'
             << record.geometry.positionM.x << ':'

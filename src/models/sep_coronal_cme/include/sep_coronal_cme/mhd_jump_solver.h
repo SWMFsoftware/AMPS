@@ -50,9 +50,13 @@ struct MhdShockSolution {
   std::string branch;
 };
 
-// Solves the regular compressive fast branch.  Failure returns no downstream
-// state: a sub-fast front, inadmissible root, or residual failure cannot leak a
-// partially constructed primitive state to a source provider.
+// Solves the regular compressive fast branch.  The internal root search uses
+// bracket width, rather than the requested flux-residual tolerance, as its
+// stopping error: near M_f=1 the energy equation is flat beside the identity
+// root and a residual-only stop can return a non-entropic intermediate state.
+// Failure returns no downstream state: a sub-fast front, inadmissible root, or
+// residual failure cannot leak a partially constructed primitive state to a
+// source provider.
 Core::Result<MhdShockSolution> SolveObliqueFastShock(
     const MhdPrimitiveState& upstream, Vec3 outwardNormal,
     double shockNormalSpeedMPerS, double gammaAdiabatic,

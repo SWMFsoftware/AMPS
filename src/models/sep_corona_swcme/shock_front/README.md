@@ -43,7 +43,14 @@ magnetic-flux jumps, tangential electric and momentum jumps, normal momentum,
 and total-energy flux.  A positive Mach excess whose nontrivial compression
 root cannot be separated from `X=1` is `numerically-unresolved-weak-shock`, not
 `subfast-front`.  The first profile uses no Mach, speed, field, or compression
-floor.
+floor.  The maintained RH solve brackets the nontrivial compressive root and
+converges on bracket width.  It does not stop merely because the normalized
+energy residual is small: close to `Mf=1` that residual is flat between the
+identity and physical roots, so an early residual-only stop can satisfy the
+flux tolerance while failing entropy or downstream-characteristic ordering.
+The final reconstructed state must still pass the configured conservative
+residual, compression, entropy and branch checks.  A root below the declared
+minimum resolvable compression remains a typed unresolved weak shock.
 
 For an accepted jump the additional diagnostics are
 
@@ -60,10 +67,48 @@ compression nor direction.  Both remain valid hydrodynamic/MHD jump limits
 with an explicitly absent diagnostic.  Near perpendicularity reports the
 small normal-field cosine and large incident speed without an obliquity floor.
 
+### Triangular surface and physical patch measure
+
 Surface quadrature is uniform in the generating-sphere normal coordinate
 `mu=d.n`, whose area element is `a^2 dmu dphi`.  This avoids the singular
-heliocentric-ray metric at SSE tangency.  Angular refinement and accepted-patch
-coverage still require convergence evidence.
+heliocentric-ray metric at SSE tangency.  The maintained
+`triangular-sse-cap-v1` topology uses `polar_cells` intervals between
+`mu_min=-sin(lambda)` and `mu=1`, and `azimuth_cells` periodic sectors.  It
+stores every interval boundary through the last finite ring and stores the
+`mu=1` apex exactly once.  Thus the front is a topological disk with one
+physical boundary at the finite-width flank: its azimuth seam and apex are
+closed, but no fictitious rear or side shock is added.
+
+Every non-apex chart rectangle is split on a deterministic alternating
+diagonal.  Its two triangles each own the exact curved area
+
+```text
+A_triangle = 0.5 a^2 Delta(mu) Delta(phi).
+```
+
+An apex fan triangle owns the full final chart-cell area because the complete
+`mu=1` edge maps to the one apex point.  The exact areas sum, with compensated
+accumulation, to `2 pi a^2 (1+sin(lambda))`.  The smaller planar chord area is
+stored separately only to measure visualization-geometry convergence; it is
+never used in an area ledger or physical normalization.
+
+Coordinates are vertices, but shock state is face-centred.  Each triangle has
+one stable ID, exact area, analytical representative position/normal/speed,
+ambient query, status and optional RH state.  A super-fast/sub-fast boundary
+is therefore never manufactured by averaging vertex flags.  This structure is
+suitable for later deterministic injection weighting and surface sampling,
+but this reduced task still allocates and injects zero particles.  Any later
+source must sample the curved `(mu,phi)` patch and use its exact area; ordinary
+barycentric sampling on the flat chord would place particles inside the
+analytical surface and bias the measure.
+
+Independent tests reconstruct edge incidence, orientation, connectivity,
+Euler characteristic, analytical area closure and chord-area convergence.
+Angular refinement and accepted-patch coverage still require convergence
+evidence because a near-critical face can change physical classification.
+The production positive-event regression also crosses a complete face ring at
+`Mf=1.00106`: it requires a resolved weak jump before the crossing and a
+physical `subfast-front` result afterward, with zero numerical-unknown area.
 
 ## Connectivity, observers, outputs, and restart
 
@@ -81,8 +126,9 @@ coverage still require convergence evidence.
   relative speed is `Vn-vobs.n`.  A geometric hit retains its local status, so
   an accepted shock hit, sub-fast hit, numerical unknown, graze, and finite-
   support miss are distinguishable.
-- JSON epoch metadata and CSV surface records include SI units in column names,
-  stable identifiers, absolute area ledgers, status and validity.  CSV leaves
+- JSON epoch metadata includes vertex/triangle counts. CSV surface records
+  include triangle connectivity, exact curved and planar chord areas, SI units,
+  stable identifiers, absolute area ledgers, status and validity. CSV leaves
   absent downstream values empty; it never serializes them as physical zeros.
 - A background-only restart binds the event/asset fingerprint, committed clock
   and generation, phase, and exact handoff state.  Restore re-evaluates the
@@ -120,7 +166,10 @@ The input groups are deliberately explicit:
 - `history.*` owns the prescribed low-coronal apex motion.  `handoff.*` owns
   the continuous analytical outer trajectory and the policy for scientifically
   valid sub-fast/non-forward states.
-- `numerics.*` owns surface quadrature and weak/RH residual tolerances.
+- `numerics.*` owns surface resolution, the required
+  `surface_topology=triangular-sse-cap-v1`, and weak/RH residual tolerances.
+  The topology spelling enters the normalized event fingerprint because its
+  facets and stable IDs are future source identities, not an output preference.
   `endpoint.*` owns the geometric target and observer, without implying that
   a shock must survive there.
 

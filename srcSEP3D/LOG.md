@@ -80,4 +80,68 @@ Test of the background model
   cd /home/vtenishe/Mars2/AMPS
   make -C src/models/sep_coronal_cme -j16 test
 
+------------------------------------------------------------------------------------
+visualization of the shock shapetest:
+
+passion:~/Mars2/AMPS/test_output/reduced-front/positive-1au-triangular-20261006-final/rank-1-cadence-60/products> ~/Mars2/AMPS/srcSEP3D/test/test_shock_front_viewer.py positive-1au-tick-00000003-front.dat --variable density_compression --show-sun --show-distance-axis
+passion:~/Mars2/AMPS/test_output/reduced-front/positive-1au-triangular-20261006-final/rank-1-cadence-60/products> pwd
+/home/vtenishe/Mars2/AMPS/test_output/reduced-front/positive-1au-triangular-20261006-final/rank-1-cadence-60/products
+
+  ### Re-run the complete native qualification
+
+  From the AMPS root, using a new output directory:
+
+  cd ~/Mars2/AMPS
+
+  python3 srcSEP3D/test/validate_positive_shock_example.py \
+    --output-root test_output/reduced-front/positive-1au-recheck
+
+  This runs:
+
+  - One-rank, normal cadence
+  - Four-rank, normal cadence
+  - Four-rank, refined cadence
+  - Accepted-shock arrival and MPI-agreement checks
+  - Zero-particle checks
+  - Surface topology and output checks
+
+  It takes approximately 13 minutes on the qualification host. Results are written to:
+
+  test_output/reduced-front/positive-1au-recheck/summary.txt
+  test_output/reduced-front/positive-1au-recheck/summary.json
+
+  Visualize one resulting snapshot:
+
+  python3 srcSEP3D/examples/shock-front/view_front.py \
+    test_output/reduced-front/positive-1au-recheck/rank-1-cadence-60/products/positive-1au-tick-00000206-front.dat \
+    --variable fast_mach --accepted-only \
+    --show-sun --show-distance-axis
+
+  ### Run only one four-rank production case
+
+  cd ~/Mars2/AMPS
+
+  mpiexec -n 4 ./amps \
+    --input srcSEP3D/examples/shock-front/positive_1au.in \
+    --output-dir test_output/reduced-front/positive-1au-run
+
+  Use a fresh output directory.
+
+  ### Run only the viewer tests
+
+  This does not run AMPS or regenerate the CME propagation:
+
+  cd ~/Mars2/AMPS
+  python3 srcSEP3D/test/test_shock_front_viewer.py
+
+  Expected result:
+
+  Ran 8 tests
+  OK
+
+  Passing a .dat file to that same script invokes the viewer instead:
+
+  srcSEP3D/test/test_shock_front_viewer.py \
+    FRONT.dat --variable fast_mach --accepted-only
+
 

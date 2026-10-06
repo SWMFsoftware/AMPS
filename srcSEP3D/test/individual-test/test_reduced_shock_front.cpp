@@ -207,9 +207,18 @@ Result PositiveProductionExample() {
       std::fabs(handoff.value-10200.0)<1e-8&&
       std::fabs(endpoint.value-124200.0)<1e-6&&epoch&&
       epoch->trajectory.phase==SF::Phase::SwcmeOuter&&observer.ok()&&
+      epoch->vertices.size()==static_cast<std::size_t>(
+          shared->Event().polarCells*shared->Event().azimuthCells+1)&&
+      epoch->triangles.size()==static_cast<std::size_t>(
+          (2*shared->Event().polarCells-1)*shared->Event().azimuthCells)&&
+      epoch->records.size()==epoch->triangles.size()&&
       observer.value.status==SF::FrontStatus::SolvedFastShock&&
       observer.value.fastMach>1&&observer.value.downstreamValid&&
-      surface.find("ZONETYPE=FEQUADRILATERAL")!=std::string::npos&&
+      surface.find("ZONETYPE=FETRIANGLE")!=std::string::npos&&
+      surface.find("DATAPACKING=BLOCK")!=std::string::npos&&
+      surface.find("VARLOCATION=([4-39]=CELLCENTERED)")!=std::string::npos&&
+      surface.find("\"triangle_stable_id\"")!=std::string::npos&&
+      surface.find("\"planar_chord_area_m2\"")!=std::string::npos&&
       surface.find("\"theta_Bn_rad\"")!=std::string::npos&&
       surface.find("\"theta_Bn_valid\"")!=std::string::npos&&
       surface.find("\"magnetic_compression_valid\"")!=std::string::npos&&

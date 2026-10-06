@@ -1106,11 +1106,11 @@ Absence of a shock is a physical classification; inability to solve an identifie
 
 ### 12.3 Weak shocks
 
-The trivial no-jump root `X=1` exists algebraically. A solver must not return it as the compressive solution merely because a weak physical root lies nearby. Use the maintained deflated/bracketed formulation and verified special limits rather than an unconstrained root search from an arbitrary initial guess.
+The trivial no-jump root `X=1` exists algebraically. A solver must not return it as the compressive solution merely because a weak physical root lies nearby. Use the maintained deflated/bracketed formulation and verified special limits rather than an unconstrained root search from an arbitrary initial guess.  The selected implementation terminates bisection from the independently known compression-bracket width, not from a small energy residual.  Near `Mf=1` the scalar energy equation is too flat for a residual-only stop to distinguish the physical compressive root from an intermediate state adjacent to `X=1`; conservative residuals are instead evaluated after the bracket has converged.
 
 Publish upstream Mach excess, bracket, root iteration count, conditioning, and conservative residuals. Classification thresholds must reflect input uncertainty and arithmetic resolution, not a desired minimum source strength. Never manufacture `Mf>1` or `X>1` with a numerical floor.
 
-The earlier `SHOCK_SOLVER_FAILURE` reports motivate coverage of near-perpendicular, parallel, oblique, and numerically unresolved weak shocks. This document does not claim that all such cases in the user's latest local source have been fixed.
+The earlier `SHOCK_SOLVER_FAILURE` reports motivate coverage of near-perpendicular, parallel, oblique, and numerically unresolved weak shocks.  Independent references cover `Mf=1.01` and `Mf=1.001`, and the actual triangular production surface crosses a ring at `Mf=1.00106`.  These tests qualify those stated cases; they do not establish arbitrary-precision resolution as `Mf-1` tends to zero.  A nontrivial root below the declared compression bracket remains `NUMERICALLY_UNRESOLVED_WEAK_SHOCK`, never a fabricated unit-compression jump.
 
 ### 12.4 Residual normalization
 
@@ -1128,6 +1128,18 @@ Evaluate residuals from the reconstructed primitive states independently of the 
 ### 12.5 Front discretization
 
 The analytical surface is the geometric authority. A visualization/diagnostic mesh approximates it. Its vertices, triangle orientation, area weights, and error bounds must be reproducible.
+
+The selected fixed-SSE implementation uses `triangular-sse-cap-v1`.  It lays
+vertex rings on the exact generating-sphere `mu` interval from the finite
+support edge to the last pre-apex boundary and represents `mu=1` by one shared
+apex vertex.  Non-apex chart cells are split deterministically into two
+triangles; the final band is an apex fan.  The only mesh boundary is therefore
+the physical finite-support rim, not an artificial pole hole or rear cap.
+Shock status, upstream/downstream limits and exact curved area are
+cell-centred.  The exact measure `a^2 dmu dphi`, rather than planar chord area,
+controls all ledgers and any future source weight.  The topology spelling and
+resolution enter the event fingerprint.  Chord areas and orientations are
+retained as approximation diagnostics and must converge under refinement.
 
 Do not interpolate compression across a support edge, across an accepted/sub-fast boundary, or across a failed jump. Interpolate primitive/history inputs consistently and reevaluate the local jump where needed. A thin high-Mach patch must not disappear solely because a coarse angular mesh missed it; quantify angular convergence and resolved coverage.
 

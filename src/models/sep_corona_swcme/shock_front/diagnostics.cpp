@@ -285,6 +285,8 @@ std::string SerializeEpochJson(const Epoch& epoch) {
      <<",\"numerical_unknown\":"<<epoch.area.numericalFailureM2
      <<"},\"counts\":{\"solved\":"<<solved<<",\"subfast\":"<<subfast
      <<",\"nonforward\":"<<nonforward<<",\"numerical_unknown\":"<<numerical
+     <<"},\"mesh\":{\"vertices\":"<<epoch.vertices.size()
+     <<",\"triangles\":"<<epoch.triangles.size()
      <<"},\"geometric_endpoint_reached\":"
      <<(epoch.geometricEndpointReached?"true":"false")
      <<",\"apex_shock_accepted\":"<<(epoch.apexShockAccepted?"true":"false")
@@ -294,16 +296,25 @@ std::string SerializeEpochJson(const Epoch& epoch) {
 
 std::string SerializeSurfaceCsv(const Epoch& epoch) {
   std::ostringstream out;out<<std::setprecision(17);
-  out<<"time_s,generation,stable_id,x_m,y_m,z_m,nx,ny,nz,vn_m_s,area_m2,status,"
+  out<<"time_s,generation,stable_id,vertex0,vertex1,vertex2,x_m,y_m,z_m,"
+      "nx,ny,nz,vn_m_s,curved_area_m2,planar_area_m2,status,"
       "rho1_kg_m3,p1_pa,u1x_m_s,u1y_m_s,u1z_m_s,b1x_t,b1y_t,b1z_t,mf,"
       "downstream_valid,compression,rho2_kg_m3,p2_pa,cb_valid,cb,ht_status\n";
-  for(const auto& record:epoch.records) {
+  for(std::size_t face=0;face<epoch.records.size();++face) {
+    const auto& record=epoch.records[face];
+    const SurfaceTriangle* triangle=face<epoch.triangles.size()?
+        &epoch.triangles[face]:nullptr;
     out<<epoch.trajectory.timeS<<','<<epoch.generation<<','
-       <<record.geometry.stableId<<','<<record.geometry.positionM.x<<','
+       <<record.geometry.stableId<<',';
+    if(triangle)out<<triangle->vertex[0]<<','<<triangle->vertex[1]<<','
+       <<triangle->vertex[2]<<',';
+    else out<<",,,";
+    out<<record.geometry.positionM.x<<','
        <<record.geometry.positionM.y<<','<<record.geometry.positionM.z<<','
        <<record.geometry.outwardNormal.x<<','<<record.geometry.outwardNormal.y<<','
        <<record.geometry.outwardNormal.z<<','<<record.geometry.normalSpeedMPerS<<','
-       <<record.geometry.areaM2<<','<<Name(record.status)<<',';
+       <<record.geometry.areaM2<<','
+       <<(triangle?triangle->planarAreaM2:0)<<','<<Name(record.status)<<',';
     if(record.status==FrontStatus::BelowPhysicalInnerBoundary||
        record.status==FrontStatus::AmbientUnavailable)out<<",,,,,,,,";
     else out<<record.upstream.plasma.massDensityKgM3<<','

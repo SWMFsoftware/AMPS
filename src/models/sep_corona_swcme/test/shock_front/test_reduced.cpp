@@ -10,6 +10,8 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 
@@ -94,6 +96,7 @@ int main() {
     const auto examples=root/"srcSEP3D/examples/shock-front";
     const auto smoke=Load(examples/"handoff_smoke.event");
     const auto longEvent=Load(examples/"corona_to_1au.event");
+    const auto positiveEvent=Load(examples/"positive_1au.event");
     Check(smoke->physicsFingerprint.size()==64&&longEvent->physicsFingerprint.size()==64&&
         smoke->physicsFingerprint!=longEvent->physicsFingerprint&&
         smoke->initialApexRadiusM==13844430000.0&&
@@ -840,7 +843,130 @@ int main() {
     const auto failed=provider->Prepare(-1,2);
     Check(first.ok()&&!failed.ok()&&provider->Current()==prior&&
         provider->Current()->generation==1,"RSH24",
-        "failed candidate retains committed epoch and generation");
+        "failed candidate retains committed epoch and generation first_status="+
+        first.status.message);
+    // The production surface is a triangulated topological disk, not a set of
+    // quadrature centroids connected only for plotting.  Reconstruct edge
+    // incidence independently from connectivity: the finite SSE support rim
+    // is the only boundary loop, the shared apex is interior, every chord is
+    // outward, and physical records are in one-to-one correspondence with
+    // exact-curved-area facets.
+    bool triangleTopology=first.ok();
+    std::map<std::pair<std::uint32_t,std::uint32_t>,int> edgeIncidence;
+    std::vector<std::vector<std::uint32_t>> adjacency;
+    std::set<std::uint32_t> boundaryVertices;
+    std::size_t apexVertices=0;
+    long double triangleArea=0;
+    if(first.ok()) {
+      const auto& mesh=*first.value;
+      adjacency.resize(mesh.vertices.size());
+      triangleTopology=mesh.vertices.size()==
+          static_cast<std::size_t>(smoke->polarCells*smoke->azimuthCells+1)&&
+          mesh.triangles.size()==static_cast<std::size_t>(
+              (2*smoke->polarCells-1)*smoke->azimuthCells)&&
+          mesh.records.size()==mesh.triangles.size();
+      const double meshSine=std::sin(smoke->halfWidthRad);
+      const double meshCenter=smoke->initialApexRadiusM/(1+meshSine);
+      const double meshRadius=meshCenter*meshSine;
+      const CME::Vec3 meshOrigin=meshCenter*smoke->direction;
+      for(const auto& vertex:mesh.vertices) {
+        apexVertices+=vertex.apex;
+        triangleTopology=triangleTopology&&
+            Near(CME::Norm(vertex.positionM-meshOrigin),meshRadius,4e-14);
+      }
+      for(std::size_t face=0;face<mesh.triangles.size();++face) {
+        const auto& triangle=mesh.triangles[face];
+        const auto& record=mesh.records[face];
+        triangleTopology=triangleTopology&&triangle.stableId==face+1&&
+            record.geometry.stableId==triangle.stableId&&
+            record.geometry.areaM2==triangle.curvedAreaM2&&
+            triangle.vertex[0]<mesh.vertices.size()&&
+            triangle.vertex[1]<mesh.vertices.size()&&
+            triangle.vertex[2]<mesh.vertices.size()&&
+            triangle.vertex[0]!=triangle.vertex[1]&&
+            triangle.vertex[1]!=triangle.vertex[2]&&
+            triangle.vertex[2]!=triangle.vertex[0];
+        if(!triangleTopology)break;
+        const auto& x0=mesh.vertices[triangle.vertex[0]].positionM;
+        const auto& x1=mesh.vertices[triangle.vertex[1]].positionM;
+        const auto& x2=mesh.vertices[triangle.vertex[2]].positionM;
+        const auto cross=CME::Cross(x1-x0,x2-x0);
+        triangleTopology=triangleTopology&&
+            CME::Dot(cross,record.geometry.outwardNormal)>0&&
+            Near(0.5*CME::Norm(cross),triangle.planarAreaM2,3e-15);
+        triangleArea+=triangle.curvedAreaM2;
+        for(int edge=0;edge<3;++edge) {
+          const std::uint32_t a=triangle.vertex[edge];
+          const std::uint32_t b=triangle.vertex[(edge+1)%3];
+          edgeIncidence[std::minmax(a,b)]++;
+          adjacency[a].push_back(b);adjacency[b].push_back(a);
+        }
+      }
+      for(const auto& edge:edgeIncidence) {
+        triangleTopology=triangleTopology&&
+            (edge.second==1||edge.second==2);
+        if(edge.second==1) {
+          boundaryVertices.insert(edge.first.first);
+          boundaryVertices.insert(edge.first.second);
+        }
+      }
+      std::vector<bool> visited(mesh.vertices.size(),false);
+      std::vector<std::uint32_t> pending{0};visited[0]=true;
+      for(std::size_t at=0;at<pending.size();++at)
+        for(std::uint32_t next:adjacency[pending[at]])if(!visited[next]) {
+          visited[next]=true;pending.push_back(next);
+        }
+      const std::size_t boundaryEdges=std::count_if(edgeIncidence.begin(),
+          edgeIncidence.end(),[](const auto& item){return item.second==1;});
+      const auto apexIndex=static_cast<std::uint32_t>(mesh.vertices.size()-1);
+      triangleTopology=triangleTopology&&apexVertices==1&&
+          boundaryEdges==static_cast<std::size_t>(smoke->azimuthCells)&&
+          boundaryVertices.size()==static_cast<std::size_t>(smoke->azimuthCells)&&
+          !boundaryVertices.count(apexIndex)&&
+          std::all_of(visited.begin(),visited.end(),[](bool value){return value;})&&
+          static_cast<long long>(mesh.vertices.size())-
+              static_cast<long long>(edgeIncidence.size())+
+              static_cast<long long>(mesh.triangles.size())==1&&
+          Near(static_cast<double>(triangleArea),
+              mesh.area.geometricSupportM2,3e-15);
+    }
+    Check(triangleTopology,"RSH23",
+        "triangular SSE disk has one apex, one finite-support boundary, outward nondegenerate faces, exact patch/record ownership and Euler characteristic one");
+
+    // At this production epoch one complete azimuthal face ring is only
+    // M_f-1 ~= 1.06e-3 above the fast characteristic.  Triangular face
+    // centroids sample that ring whereas the retired quadrilateral centers
+    // did not.  Exercise the real positive event across the transition so a
+    // flat-residual RH root cannot masquerade as topology-dependent coverage
+    // loss.  The last epoch must change those faces to a physical sub-fast
+    // classification, not retain or fabricate a downstream state.
+    const auto positiveProvider=SF::Provider::Create(positiveEvent);
+    const auto weakBefore=positiveProvider.ok()?
+        positiveProvider.value->Prepare(56400,95):
+        SEP::Core::Result<std::shared_ptr<const SF::Epoch>>::Failure(
+          SEP::Core::StatusCode::NumericalFailure,"positive provider unavailable");
+    const auto weakCrossing=positiveProvider.ok()?
+        positiveProvider.value->Prepare(57000,96):
+        SEP::Core::Result<std::shared_ptr<const SF::Epoch>>::Failure(
+          SEP::Core::StatusCode::NumericalFailure,"positive provider unavailable");
+    const auto weakAfter=positiveProvider.ok()?
+        positiveProvider.value->Prepare(57600,97):
+        SEP::Core::Result<std::shared_ptr<const SF::Epoch>>::Failure(
+          SEP::Core::StatusCode::NumericalFailure,"positive provider unavailable");
+    const auto acceptedCount=[](const std::shared_ptr<const SF::Epoch>& epoch) {
+      return std::count_if(epoch->records.begin(),epoch->records.end(),
+          [](const SF::ShockRecord& record) {
+            return record.status==SF::FrontStatus::SolvedFastShock;
+          });
+    };
+    Check(positiveProvider.ok()&&weakBefore.ok()&&weakCrossing.ok()&&
+        weakAfter.ok()&&weakBefore.value->area.numericalFailureM2==0&&
+        weakCrossing.value->area.numericalFailureM2==0&&
+        weakAfter.value->area.numericalFailureM2==0&&
+        acceptedCount(weakBefore.value)==1344&&
+        acceptedCount(weakCrossing.value)==1344&&
+        acceptedCount(weakAfter.value)==1296,"RSH23",
+        "actual triangular production faces resolve the weak-shock ring and then classify its physical sub-fast transition without unknown area");
     auto strictRhConfiguration=std::make_shared<SF::Configuration>(*longEvent);
     strictRhConfiguration->rhResidualTolerance=1e-30;
     strictRhConfiguration->validityPolicy=
@@ -1065,9 +1191,9 @@ int main() {
       Check(Near(first.value->area.geometricSupportM2,exact,2e-15),"RSH23",
           "curved SSE cap area uses exact generating-sphere metric");
     }
-    std::vector<double> acceptedFractions;
+    std::vector<double> acceptedFractions,planarAreaErrors;
     bool refinedAreas=true;
-    for(int n:{6,12,24}) {
+    for(int n:{12,24,48}) {
       auto refinedConfiguration=std::make_shared<SF::Configuration>(*longEvent);
       refinedConfiguration->polarCells=n;refinedConfiguration->azimuthCells=2*n;
       const auto refinedProvider=SF::Provider::Create(refinedConfiguration);
@@ -1075,14 +1201,20 @@ int main() {
           SEP::Core::Result<std::shared_ptr<const SF::Epoch>>::Failure(
             SEP::Core::StatusCode::NumericalFailure,"refined provider unavailable");
       if(!refined.ok()){refinedAreas=false;continue;}
-      double recordArea=0;
-      for(const auto& record:refined.value->records)recordArea+=record.geometry.areaM2;
-      refinedAreas=refinedAreas&&Near(recordArea,
+      long double recordArea=0,planarArea=0;
+      for(const auto& record:refined.value->records)
+        recordArea+=record.geometry.areaM2;
+      for(const auto& triangle:refined.value->triangles)
+        planarArea+=triangle.planarAreaM2;
+      refinedAreas=refinedAreas&&Near(static_cast<double>(recordArea),
           refined.value->area.geometricSupportM2,3e-15)&&
           refined.value->area.acceptedShockM2<=refined.value->area.superfastCandidateM2&&
           refined.value->area.superfastCandidateM2<=refined.value->area.geometricSupportM2&&
           refined.value->area.numericalFailureM2<=refined.value->area.geometricSupportM2;
       acceptedFractions.push_back(refined.value->area.acceptedShockM2/
+          refined.value->area.geometricSupportM2);
+      planarAreaErrors.push_back(std::abs(static_cast<double>(planarArea)-
+          refined.value->area.geometricSupportM2)/
           refined.value->area.geometricSupportM2);
     }
     std::vector<SF::ShockRecord> disconnected(6);
@@ -1099,13 +1231,21 @@ int main() {
         std::abs(acceptedFractions[1]-acceptedFractions[0]):1;
     const double fineChange=acceptedFractions.size()==3?
         std::abs(acceptedFractions[2]-acceptedFractions[1]):1;
+    std::ostringstream refinementDetail;
+    refinementDetail<<" refined="<<refinedAreas<<" fractions=";
+    for(double value:acceptedFractions)refinementDetail<<value<<',';
+    refinementDetail<<" changes="<<coarseChange<<','<<fineChange;
+    const bool chordConverges=planarAreaErrors.size()==3&&
+        planarAreaErrors[0]/planarAreaErrors[1]>3.5&&
+        planarAreaErrors[1]/planarAreaErrors[2]>3.5;
     Check(refinedAreas&&acceptedFractions.size()==3&&acceptedFractions[2]>0&&
-        acceptedFractions[2]<1&&fineChange<=coarseChange+1e-14&&
+        acceptedFractions[2]<1&&fineChange<=coarseChange+1e-14&&chordConverges&&
         disconnectedArea.geometricSupportM2==5&&
         disconnectedArea.superfastCandidateM2==3&&
         disconnectedArea.acceptedShockM2==2&&
         disconnectedArea.numericalFailureM2==1,"RSH23",
-        "actual curved area/accepted footprint refines at three angular levels; disconnected, unknown and zero-area accounting stays absolute");
+        "actual curved area/accepted footprint refines at three angular levels; disconnected, unknown and zero-area accounting stays absolute"+
+        refinementDetail.str());
 
     const auto finalEpoch=longProvider->Prepare(endpoint.value,100);
     bool anyNonForward=false,anyFalseDownstream=false;

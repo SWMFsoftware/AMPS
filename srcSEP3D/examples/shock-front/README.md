@@ -77,7 +77,8 @@ remain inside the represented domain. Outer cells are 20 Gm; through the first
 five solar radii the requested cell scale is 1.25 Gm (about 1.8 solar radii),
 which the cubic hierarchy realizes as approximately 1.21 Gm. No
 heliospheric transport tube is refined because particles are disabled and the
-front is represented by its own surface quadrature. The fine spherical
+front is represented by its own triangular surface mesh with exact curved
+patch weights. The fine spherical
 transition deliberately ends below handoff: the volume is an ambient
 reference, while front geometry and RH limits come from the independent
 surface quadrature. Refining ambient-only cells throughout a 20-solar-radius
@@ -149,8 +150,8 @@ python3 srcSEP3D/test/validate_positive_shock_example.py \
 
 The runner creates relocated decks so the three runs cannot overwrite one
 another, invokes the same public `amps --input ... --output-dir ...` CLI shown
-above, and writes `summary.txt` and `summary.json`.  It reads an actual valid
-native volume row and every front node, in addition to auditing receipts,
+above, and writes `summary.txt` and `summary.json`. It reads an actual valid
+native volume row and every front triangle, in addition to auditing receipts,
 epochs, owner/ghost hashes, particle counts and cadence.  A failed check is
 named in both summaries and points to its exact `execution.log`; the runner
 does not reuse old receipts or turn a missing native run into PASS.
@@ -164,9 +165,12 @@ For each scheduled tick `NNNNNNNN`, the production output directory contains:
   installed `B`, `U`, electron number density, mass density, pressure,
   temperature, time, ambient generation, and front generation. Validity flags
   distinguish physical cells from interpolation padding.
-- `positive-1au-tick-NNNNNNNN-front.dat`: FEQUADRILATERAL visualization mesh
-  over the provider's supported equal-area surface samples. It includes
-  position, outward normal, normal speed, typed status code, accepted flag,
+- `positive-1au-tick-NNNNNNNN-front.dat`: `FETRIANGLE` surface with nodal HCI
+  coordinates and cell-centred physical values. The exact SSE support-edge
+  ring is the only open boundary; periodic azimuth connectivity and one shared
+  apex vertex close the former pole hole without constructing a rear cap.
+  Each triangle includes exact curved area, diagnostic planar chord area,
+  stable ID, outward normal, normal speed, typed status code, accepted flag,
   fast Mach number, `theta_Bn`, density/magnetic compression, and immediate
   upstream/downstream `rho,p,U,B`. The Tecplot encoding is deliberately
   finite. When `shock_accepted=0`, it writes `fast_mach=0`, both compression
@@ -208,7 +212,7 @@ series by grouping filenames in tick order.
 
 In Tecplot 360, load the ambient and matching front file into one frame. Use
 the ambient FEBRICK zones for slices/isosurfaces and show the front
-FEQUADRILATERAL zone as a translucent mesh. Apply a value blanking condition
+FETRIANGLE zone as a translucent mesh. Apply a value blanking condition
 `shock_accepted < 0.5` when only accepted patches are desired. Do not blank on
 `fast_mach` alone because non-forward and numerical states have separate
 meaning.
@@ -227,6 +231,26 @@ The built-in help contains copyable examples for discovering and selecting
 variables, choosing sequential or diverging color maps, fixing color limits,
 filtering accepted shocks, adding the Sun/ruler, saving headless images,
 selecting a camera, and encoding GIF/MP4 movies.
+
+The adjacent viewer regression entry point exposes the same complete guide
+after its test-running examples. This is useful when starting from the test
+directory and, because it reuses the production argument parser, it cannot
+silently diverge from the viewer CLI:
+
+```bash
+python3 srcSEP3D/test/test_shock_front_viewer.py --help
+```
+
+For convenience, that test entry point also forwards a front file, directory,
+or quoted glob to the production viewer. Thus the following is equivalent to
+running `view_front.py` directly; invoking it without a front input still runs
+the regression suite:
+
+```bash
+python3 srcSEP3D/test/test_shock_front_viewer.py FRONT.dat --list-variables
+python3 srcSEP3D/test/test_shock_front_viewer.py FRONT.dat \
+  --variable fast_mach --accepted-only
+```
 
 ```bash
 python3 srcSEP3D/examples/shock-front/view_front.py \
@@ -260,12 +284,11 @@ when the Cartesian axes use metres or AU.  This inferred axis is display-only:
 it does not replace or feed back into provider geometry, normals, or shock
 classification.
 
-The filter uses `shock_accepted`, not Mach or the integer status code.  A quad
-is accepted only when all four vertices have `shock_accepted=1`.  In the full
-view, quads with four non-shock vertices use their finite output values and
-mixed classification-boundary quads are neutral gray.  In accepted-only mode,
-both kinds are hidden.  This conservative rule avoids inventing a physical
-value by averaging across the accepted/non-shock boundary.
+The filter uses the triangle's cell-centred `shock_accepted`, not Mach or the
+integer status code. No new triangle is mixed: classification and every RH
+quantity belong to that physical patch and are displayed without nodal
+averaging. The viewer retains the older unanimous-node/gray-boundary behavior
+only when opening historical `FEQUADRILATERAL` evidence.
 
 List every plottable column with:
 
@@ -281,12 +304,11 @@ python3 srcSEP3D/examples/shock-front/view_front.py FRONT.dat \
   --save front-theta-bn.png --no-show
 ```
 
-Axes default to solar radii and remain in the file's HCI frame.  Select metres
+Axes default to solar radii and remain in the file's HCI frame. Select metres
 or AU with `--length-unit m` or `--length-unit au`; use `--vmin`, `--vmax`,
-`--cmap`, `--elev`, and `--azim` to control the presentation.  Node values are
-averaged over homogeneous quads for visualization only.  They remain
-front-local samples and must not be interpreted as a volumetric downstream
-sheath or ejecta reconstruction.
+`--cmap`, `--elev`, and `--azim` to control the presentation. Production
+physical values are face-centred. They remain front-local samples and must not
+be interpreted as a volumetric downstream sheath or ejecta reconstruction.
 
 ### Movies and a fixed user-selected viewpoint
 
@@ -345,11 +367,13 @@ block/cell counts, output volume, command lines, and receipts are recorded in
 `CODEX_REDUCED_SHOCK_PLAN.md` after execution.
 
 The qualified full-domain mesh allocated 736 leaf blocks and 106,208 physical
-cells.  On the qualification host, AMPS reported a peak of about 278 MB for
-the one-rank run and 669 MB total (about 167 MB/rank) for the four-rank run.
-One-/four-rank default-cadence campaigns took 444/145 s and occupied 2.3/2.4
-GiB; an arrival ambient file was 167,920,092/176,709,641 bytes respectively.
-The doubled-output-cadence run took 151 s and occupied 2.9 GiB.  These are
+cells.  On the qualification host, AMPS reported a peak of about 280 MB for
+the one-rank run and 657 MB total (about 164 MB/rank) for the four-rank run.
+The final triangular one-/four-rank default-cadence campaigns took
+456.75/154.61 s and occupied 2.3/2.4 GiB; an arrival ambient file was
+167,920,092/176,709,641 bytes respectively, and the 2,256-face front file was
+1,339,755 bytes in either MPI layout.  The doubled-output-cadence run took
+164.54 s and occupied 2.9 GiB.  These are
 measurements, not portable limits: plan for four MPI ranks, the deck's
 conservative 16-GiB memory budget, at least 3 GiB per default run, and about 8
 GiB for the complete three-run qualification.  A one-rank run is supported
@@ -364,6 +388,9 @@ for agreement evidence but is slower and cannot exercise received MPI ghosts.
   and native generations still evolve coherently.
 - Independent surface patches do not construct a solenoidal downstream
   volume, and the axial-dipole field is synthetic.
+- Straight triangle edges are a visualization/intersection approximation to
+  the analytical curved SSE cap. Exact curved areas and analytical face
+  normals remain authoritative; chord-area error is refinement-tested.
 - A positive synthetic shock is not evidence that a particular observed CME
   would retain a shock at 1 AU.
 - Particle injection, particle transport, srcSEP coupling, and BG3D-4 remain
