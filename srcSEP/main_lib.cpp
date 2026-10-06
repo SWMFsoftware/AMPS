@@ -30,6 +30,8 @@
 #include "constants.h"
 #include "sep.h"
 #include "adapters/swcme1d_adapter.h"
+#include "adapters/reduced_shock_background_adapter.h"
+#include "util/sep_background_runtime.h"
 #include "transport_common.h"
 #include "turbulence_production_adapter.h"
 #include "util/sep_run_configuration.h"
@@ -56,6 +58,8 @@ const double dxMinGlobal=DebugRunMultiplier*2.0,dxMaxGlobal=DebugRunMultiplier*1
 const double dxMinSphere=DebugRunMultiplier*4.0*1.0/100/2.5,dxMaxSphere=DebugRunMultiplier*2.0/10.0;
 
 const double MarkNotUsedRadiusLimit=100.0;
+
+void install_reduced_background_on_field_lines(double epochS);
 
 namespace {
 
@@ -208,7 +212,13 @@ void amps_init_mesh() {
 
   SEP::Init();
 
-  PIC::BC::UserDefinedParticleInjectionFunction=SEP::FieldLine::InjectParticles;
+  // The reduced provider is being coupled as a background-only authority.
+  // Leaving the historical callback installed would create ordinary baseline
+  // SEP particles even though the event fingerprint says particle_mode is
+  // disabled.  This conditional changes no legacy path: the exact historical
+  // injection function remains installed whenever no reduced event is active.
+  PIC::BC::UserDefinedParticleInjectionFunction=SEP::ReducedShock::Enabled()
+      ? NULL : SEP::FieldLine::InjectParticles;
 
   // Every srcSEP build uses field lines, so reserve the complete current and
   // previous vertex state without retaining a dead Cartesian-mode branch.
@@ -320,7 +330,9 @@ void amps_init_mesh() {
     Sphere->faceat=0;
     Sphere->ParticleSphereInteraction=ParticleSphereInteraction;
 
-    if ((_DOMAIN_GEOMETRY_!=_DOMAIN_GEOMETRY_BOX_)&&(_SPHERICAL_SHOCK_INJECTION_!=_PIC_MODE_ON_)) {
+    if (!SEP::ReducedShock::Enabled()&&
+        (_DOMAIN_GEOMETRY_!=_DOMAIN_GEOMETRY_BOX_)&&
+        (_SPHERICAL_SHOCK_INJECTION_!=_PIC_MODE_ON_)) {
       Sphere->InjectionBoundaryCondition=SEP::ParticleSource::InnerBoundary::sphereParticleInjection;
     }
 
@@ -699,7 +711,8 @@ void amps_init() {
   }
 
   //create the list of mesh nodes where the injection boundary conditinos are applied
-  if (_DOMAIN_GEOMETRY_==_DOMAIN_GEOMETRY_BOX_) {
+  if (_DOMAIN_GEOMETRY_==_DOMAIN_GEOMETRY_BOX_&&
+      !SEP::ReducedShock::Enabled()) {
     PIC::BC::BlockInjectionBCindicatior=SEP::BoundingBoxInjection::InjectionIndicator;
     PIC::BC::userDefinedBoundingBlockInjectionFunction=SEP::BoundingBoxInjection::InjectionProcessor;
     PIC::BC::InitBoundingBoxInjectionBlockList();
@@ -805,6 +818,13 @@ void amps_init() {
     InitMagneticField(PIC::Mesh::mesh->rootTree);
   }
 
+  // Field-line data, unlike Cartesian AMR display cells, are the native
+  // background consumed by srcSEP movers.  Install generation one before the
+  // initialization data product is written so a preview cannot claim reduced
+  // coupling while retaining the legacy Parker values on its actual line.
+  install_reduced_background_on_field_lines(
+      SEP::Background::SimulationTimeSeconds());
+
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
 
@@ -838,6 +858,162 @@ void amps_init() {
   PIC::DistributionFunctionSample::nSampledFunctionPoints=500;
 
   PIC::DistributionFunctionSample::Init(SampleLocations,nSamplePoints);*/
+}
+
+// Stage and publish one shared-provider realization into native srcSEP vertex
+// storage.  The staging vector is not an optimization: it is the transaction
+// boundary that prevents a failed query near the end of a line from leaving a
+// mixture of old and new epochs in the mover-visible AMPS arrays.
+void install_reduced_background_on_field_lines(double epochS) {
+  if(!SEP::ReducedShock::Enabled())return;
+  std::string error;
+  if(!SEP::ReducedShock::Prepare(epochS,&error))
+    exit(__LINE__,__FILE__,error.c_str());
+
+  const SEP::ReducedShock::EpochMetadata& metadata=
+      SEP::ReducedShock::Metadata();
+  const std::shared_ptr<const SEP::Background::BackgroundSnapshot> current=
+      SEP::Background::SnapshotStore::Instance().Current();
+  if(current&&current->provider()==SEP::Background::Provider::ReducedShock&&
+      current->epoch_seconds()==metadata.epochS&&
+      current->field_line_generation()==metadata.generation)return;
+
+  struct PendingVertex {
+    PIC::FieldLine::cFieldLineVertex* vertex;
+    SEP::ReducedShock::AmbientSample sample;
+  };
+  std::vector<PendingVertex> pending;
+  for(int line=0;line<PIC::FieldLine::nFieldLine;++line) {
+    PIC::FieldLine::cFieldLine& fieldLine=PIC::FieldLine::FieldLinesAll[line];
+    const int vertexCount=fieldLine.GetTotalSegmentNumber()+1;
+    for(int index=0;index<vertexCount;++index) {
+      PIC::FieldLine::cFieldLineVertex* vertex=fieldLine.GetVertex(index);
+      if(vertex==NULL)exit(__LINE__,__FILE__,
+          "reduced background encountered a missing field-line vertex");
+      const double* x=vertex->GetX();
+      PendingVertex staged;
+      staged.vertex=vertex;
+      if(!SEP::ReducedShock::EvaluateAmbient({{x[0],x[1],x[2]}},
+          &staged.sample,&error))exit(__LINE__,__FILE__,error.c_str());
+      pending.push_back(staged);
+    }
+  }
+  if(pending.empty())exit(__LINE__,__FILE__,
+      "reduced background found no native field-line vertices");
+
+  // Publication is forbidden while a mover read phase is active.  Check that
+  // contract before replacing native arrays, then preserve the outgoing state
+  // in AMPS' previous-epoch datums.  At generation one the new realization is
+  // copied to both slots: there is no physical epoch before event start from
+  // which a derivative could legitimately be inferred.
+  SEP::Background::SnapshotStore::Instance().AssertProviderMayWrite(
+      SEP::Background::Provider::ReducedShock);
+  const bool firstGeneration=!current;
+  for(PendingVertex& item:pending) {
+    PIC::FieldLine::cFieldLineVertex* vertex=item.vertex;
+    double oldB[3],oldU[3],oldN=0.0,oldT=0.0,oldP=0.0;
+    vertex->GetMagneticField(oldB);
+    vertex->GetPlasmaVelocity(oldU);
+    vertex->GetPlasmaDensity(oldN);
+    vertex->GetPlasmaTemperature(oldT);
+    vertex->GetPlasmaPressure(oldP);
+    double newB[3]={item.sample.magneticFieldT[0],
+                    item.sample.magneticFieldT[1],
+                    item.sample.magneticFieldT[2]};
+    double newU[3]={item.sample.velocityMPerS[0],
+                    item.sample.velocityMPerS[1],
+                    item.sample.velocityMPerS[2]};
+    const double* previousB=firstGeneration?newB:oldB;
+    const double* previousU=firstGeneration?newU:oldU;
+    vertex->SetDatum(PIC::FieldLine::DatumAtVertexPrevious::
+        DatumAtVertexMagneticField,const_cast<double*>(previousB));
+    vertex->SetDatum(PIC::FieldLine::DatumAtVertexPrevious::
+        DatumAtVertexPlasmaVelocity,const_cast<double*>(previousU));
+    vertex->SetDatum(PIC::FieldLine::DatumAtVertexPrevious::
+        DatumAtVertexPlasmaDensity,
+        firstGeneration?item.sample.numberDensityM3:oldN);
+    vertex->SetDatum(PIC::FieldLine::DatumAtVertexPrevious::
+        DatumAtVertexPlasmaTemperature,
+        firstGeneration?item.sample.protonTemperatureK:oldT);
+    vertex->SetDatum(PIC::FieldLine::DatumAtVertexPrevious::
+        DatumAtVertexPlasmaPressure,
+        firstGeneration?item.sample.pressurePa:oldP);
+    vertex->SetMagneticField(newB);
+    vertex->SetPlasmaVelocity(newU);
+    vertex->SetPlasmaDensity(item.sample.numberDensityM3);
+    vertex->SetPlasmaTemperature(item.sample.protonTemperatureK);
+    vertex->SetPlasmaPressure(item.sample.pressurePa);
+
+    // Read the application-owned storage back through the same accessors used
+    // by movers.  Comparing only the provider's staging buffer would prove MPI
+    // determinism but not the coupling itself: an incorrect datum offset or a
+    // setter wired to legacy storage could still go unnoticed.  Setters and
+    // getters operate on the same double-valued native record, so this is an
+    // exact representation check rather than a floating-point approximation.
+    double installedB[3],installedU[3];
+    double installedN=0.0,installedT=0.0,installedP=0.0;
+    vertex->GetMagneticField(installedB);
+    vertex->GetPlasmaVelocity(installedU);
+    vertex->GetPlasmaDensity(installedN);
+    vertex->GetPlasmaTemperature(installedT);
+    vertex->GetPlasmaPressure(installedP);
+    bool matches=installedN==item.sample.numberDensityM3&&
+        installedT==item.sample.protonTemperatureK&&
+        installedP==item.sample.pressurePa;
+    for(int component=0;component<3;++component)
+      matches=matches&&
+          installedB[component]==item.sample.magneticFieldT[component]&&
+          installedU[component]==item.sample.velocityMPerS[component];
+    if(!matches)exit(__LINE__,__FILE__,
+        "reduced background native field-line readback differs from provider");
+  }
+
+  SEP::Background::PublishModelOwnedSnapshot(
+      SEP::Background::Provider::ReducedShock,metadata.epochS,
+      metadata.validUntilS,
+      "shared corona/SWCME reduced front and ambient on native srcSEP vertices",
+      metadata.generation);
+
+  // Every rank holds the line geometry and provider inputs.  Reread the native
+  // endpoint (not the staging object) and require the complete installed state
+  // to agree before a mover may consume it.  Min/max checks are stronger than
+  // comparing rank-zero log text and catch a non-deterministic asset,
+  // coordinate interpretation, or rank-specific storage failure.
+  const PendingVertex& endpoint=pending.back();
+  double endpointB[3],endpointU[3];
+  double endpointN=0.0,endpointT=0.0,endpointP=0.0;
+  endpoint.vertex->GetMagneticField(endpointB);
+  endpoint.vertex->GetPlasmaVelocity(endpointU);
+  endpoint.vertex->GetPlasmaDensity(endpointN);
+  endpoint.vertex->GetPlasmaTemperature(endpointT);
+  endpoint.vertex->GetPlasmaPressure(endpointP);
+  const double localCheck[9]={endpointB[0],endpointB[1],endpointB[2],
+      endpointU[0],endpointU[1],endpointU[2],endpointN,endpointT,endpointP};
+  double minima[9],maxima[9];
+  MPI_Allreduce(localCheck,minima,9,MPI_DOUBLE,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(localCheck,maxima,9,MPI_DOUBLE,MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  for(int i=0;i<9;++i)if(minima[i]!=maxima[i])exit(__LINE__,__FILE__,
+      "reduced native field-line state differs between MPI ranks");
+  if(PIC::ThisThread==0) {
+    const SEP::ReducedShock::FrontSummary front=
+        SEP::ReducedShock::CurrentFrontSummary();
+    std::cout<<"REDUCED_BACKGROUND epoch_s="<<metadata.epochS
+             <<" generation="<<metadata.generation
+             <<" vertices="<<pending.size()
+             <<" apex_radius_m="<<front.apexRadiusM
+             <<" accepted_area_m2="<<front.acceptedShockAreaM2
+             <<" apex_shock_accepted="<<(front.apexShockAccepted?1:0)
+             <<" endpoint_b_t="<<endpointB[0]<<','<<endpointB[1]<<','
+             <<endpointB[2]
+             <<" endpoint_u_m_s="<<endpointU[0]<<','<<endpointU[1]<<','
+             <<endpointU[2]
+             <<" endpoint_n_m3="<<endpointN
+             <<" endpoint_t_k="<<endpointT
+             <<" endpoint_p_pa="<<endpointP
+             <<" event="<<metadata.eventIdentity<<std::endl;
+  }
 }
 
 
@@ -932,13 +1108,29 @@ start:
     // particle read phase has ended, so provider publication and turbulence
     // mutation cannot overlap an immutable mover snapshot.
     const double currentShockRadiusM = CurrentShockRadiusM();
-    const SEP::Transport::Status turbulenceStatus =
-        SEP::Turbulence::PICAdapter::Advance(
-            PIC::ParticleWeightTimeStep::GlobalTimeStep[0],
-            shockHistory.previousRadiusM, currentShockRadiusM);
-    if (!turbulenceStatus.ok())
-      exit(__LINE__, __FILE__, turbulenceStatus.message.c_str());
+    if(!SEP::ReducedShock::Enabled()) {
+      const SEP::Transport::Status turbulenceStatus =
+          SEP::Turbulence::PICAdapter::Advance(
+              PIC::ParticleWeightTimeStep::GlobalTimeStep[0],
+              shockHistory.previousRadiusM, currentShockRadiusM);
+      if (!turbulenceStatus.ok())
+        exit(__LINE__, __FILE__, turbulenceStatus.message.c_str());
+    }
     shockHistory.previousRadiusM = currentShockRadiusM;
+
+    // Zero particles is a physical mode invariant, not merely an input label.
+    // Check the actual allocated AMPS population after every native step and
+    // reduce it across ranks so an injection on a non-root owner cannot hide.
+    if(SEP::ReducedShock::Enabled()) {
+      const long int localParticles=PIC::ParticleBuffer::GetAllPartNum();
+      long int globalParticles=0;
+      MPI_Allreduce(&localParticles,&globalParticles,1,MPI_LONG,MPI_SUM,
+                    MPI_GLOBAL_COMMUNICATOR);
+      if(globalParticles!=0)exit(__LINE__,__FILE__,
+          "reduced background-only run created particles");
+      if(PIC::ThisThread==0)std::cout<<"REDUCED_PARTICLES count=0 epoch_s="
+          <<SEP::Background::SimulationTimeSeconds()<<std::endl;
+    }
 
 //    PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(50,100); //(SEP::MinParticleLimit,SEP::MaxParticleLimit);
 

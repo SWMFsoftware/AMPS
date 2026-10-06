@@ -30,6 +30,7 @@
     "*.md",
     "*.docx",
     "test/*.md",
+    "examples/**/*.md",
     "validation/*.md",
     "validation/**/*.md"
   ],
@@ -37,6 +38,9 @@
     "PARAM.in",
     "PARAM*.example",
     "examples/*.in",
+    "examples/**/*.in",
+    "examples/**/*.event",
+    "examples/**/*.csv",
     "test/native_integration_manifest.example.json",
     "*.pl",
     "validation/**/*.json",

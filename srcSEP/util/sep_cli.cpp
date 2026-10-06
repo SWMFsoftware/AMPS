@@ -251,6 +251,9 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "                               AMPS initialization. If omitted, the legacy\n"
       << "                               hard-coded srcSEP mesh is preserved.\n"
       << "  --input=<path>              Equivalent equals-sign form.\n"
+      << "  --reduced-shock-event <path> Couple the shared HCI reduced front and\n"
+      << "                               ambient provider to native field-line state.\n"
+      << "                               Requires --input; runs with zero particles.\n"
       << "  --initialization-only       Complete AMPS/model initialization, write the\n"
       << "                               configured mesh and field-line Tecplot files,\n"
       << "                               then finalize MPI before the first time step.\n"
@@ -485,6 +488,16 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
                           options.inputPath, err)) return false;
       if (options.inputPath.empty()) {
         err << "ERROR: option '--input' requires a non-empty path.\n";
+        return false;
+      }
+      continue;
+    }
+
+    if (option_name == "--reduced-shock-event") {
+      if (!GetOptionValue(argc, argv, i, option_name, value_from_equals,
+                          options.reducedShockEventPath, err)) return false;
+      if (options.reducedShockEventPath.empty()) {
+        err << "ERROR: option '--reduced-shock-event' requires a non-empty path.\n";
         return false;
       }
       continue;
@@ -1141,6 +1154,11 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
   if (options.initializationOnly && options.inputPath.empty()) {
     err << "ERROR: --initialization-only requires --input so the mesh and "
            "field-line output contract is explicit.\n";
+    return false;
+  }
+  if (!options.reducedShockEventPath.empty() && options.inputPath.empty()) {
+    err << "ERROR: --reduced-shock-event requires --input so the native "
+           "field-line geometry and timestep are explicit.\n";
     return false;
   }
   if (!options.initializationOutputDirectory.empty() &&

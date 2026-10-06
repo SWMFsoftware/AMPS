@@ -71,6 +71,13 @@ void TestCli01(const SEP::Testing::Registry& registry) {
   Check(Parse({"sep", "--input=examples/sep_parker_mesh.in"}, input, error) &&
             input.inputPath == "examples/sep_parker_mesh.in",
         "CLI01", "--input must preserve its production initialization path");
+  SEP::Util::CLI::Options reduced;
+  Check(Parse({"sep", "--input", "examples/sep_parker_mesh.in",
+               "--reduced-shock-event", "examples/reduced-shock/event.in"},
+              reduced, error) &&
+            reduced.reducedShockEventPath ==
+                "examples/reduced-shock/event.in",
+        "CLI01", "reduced event must preserve its production asset path");
   SEP::Util::CLI::Options initializationOnly;
   Check(Parse({"sep", "--input", "examples/sep_parker_mesh.in",
                "--initialization-only", "--initialization-output-dir",
@@ -132,6 +139,9 @@ void TestCli04(const SEP::Testing::Registry& registry) {
   options = SEP::Util::CLI::Options();
   Check(!Parse({"sep", "--initialization-only"}, options, error),
         "CLI04", "initialization-only mode must require an explicit input");
+  options = SEP::Util::CLI::Options();
+  Check(!Parse({"sep", "--reduced-shock-event", "event.in"}, options, error),
+        "CLI04", "reduced coupling must require an explicit field-line input");
   options = SEP::Util::CLI::Options();
   Check(!Parse({"sep", "--input", "run.in",
                 "--initialization-output-dir", "preview"}, options, error),
@@ -357,10 +367,16 @@ int main() {
   TestStructuredReportsAndHiddenFailures();
 
   if (failures != 0) {
-    std::cerr << "Step 1 focused tests: " << failures << " failure(s)\n";
+    std::cerr << "Step 1 focused summary: PASS=0 FAIL=" << failures
+              << " SKIP=0 ERROR=0 (unexpected outer assertion failures)\n";
     return EXIT_FAILURE;
   }
   std::cout << "CLI01 PASS\nCLI02 PASS\nCLI03 PASS\nCLI04 PASS\nCLI05 PASS\n"
-            << "REGISTRY PASS\nREFINE PASS\nHIDDEN PASS\nREPORT PASS\n";
+            << "REGISTRY PASS\nREFINE PASS\nHIDDEN PASS\nREPORT PASS\n"
+            << "Negative control HIDDEN01: EXPECTED INTERNAL FAIL observed; "
+               "the framework correctly rejected a callback that falsely "
+               "reported PASS.\n"
+            << "Step 1 focused summary: PASS=9 FAIL=0 SKIP=0 ERROR=0 "
+               "(HIDDEN01 is expected behavior, not an outer failure)\n";
   return EXIT_SUCCESS;
 }

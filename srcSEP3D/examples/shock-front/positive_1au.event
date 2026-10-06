@@ -1,0 +1,86 @@
+# Synthetic positive reduced-front event for the production-style srcSEP3D
+# example.  This is a plausibility/qualification fixture, not an observed CME.
+# SI units and HCI coordinates are used throughout.  The +Z polar direction
+# avoids the exact equatorial null of the bundled axial dipole and provides a
+# clean open-field ambient reference from the low corona through 1 AU.
+schema=shock-front-ambient-v1.1
+profile=fixed-sse-pfss-parker-drag-v1
+run.reference_epoch=2026-10-06T00:00:00Z
+run.time_scale=UTC-resolved-to-elapsed-SI-seconds
+run.coordinate_frame=HCI
+run.start_s=0
+run.end_s=129600
+run.background_dt_s=600
+run.particle_mode=disabled
+
+# The maintained ambient authority is evaluated from the photosphere through
+# 2 AU.  Density is electron density; mass density and total pressure follow
+# from the declared proton/electron composition without empirical floors.
+domain.solar_radius_m=695700000
+domain.first_valid_plasma_radius_m=695700000
+domain.coverage_radius_m=299195741400
+ambient.source_surface_radius_m=1739250000
+ambient.reference_radius_m=149597870700
+ambient.electron_density_at_reference_m3=7000000
+ambient.closed_base_electron_density_m3=100000000000000
+ambient.rotation_rate_rad_per_s=2.86533e-6
+ambient.minimum_magnetic_field_t=1e-15
+ambient.trace_step_m=10000000
+ambient.gradient_relative_step=1e-5
+ambient.trace_maximum_steps=10000
+ambient.wind_table_points=1025
+ambient.open_wind_density_model=spherical-radial-mass-flux
+plasma.gamma_adiabatic=1.6666666666666667
+plasma.electron_temperature_k=1400000
+plasma.proton_temperature_k=1400000
+plasma.alpha_temperature_k=1400000
+plasma.alpha_to_proton_number_ratio=0
+plasma.include_electron_mass=false
+
+# A 45-degree fixed-width SSE is broad enough to exercise a resolved curved
+# front while retaining a finite support.  It is a prescribed leading surface,
+# not a sheath/ejecta boundary and not a global MHD solution.
+geometry.model=finite-sse-fixed-width
+geometry.direction_hci=0,0,1
+geometry.half_width_rad=0.7853981633974483
+geometry.physical_inner_radius_m=695700000
+
+# C2 quintic velocity pulse: 100 -> 1400 km/s over 1800 s.  The initial apex
+# is 804 Mm (1.1557 solar radii).  The maximum acceleration is about
+# 1.354 km/s^2 and the apex reaches the 20-Rsun handoff at exactly 10200 s.
+history.model=quintic-pulse-then-constant
+history.initial_apex_radius_m=804000000
+history.initial_apex_speed_m_s=100000
+history.final_pulse_speed_m_s=1400000
+history.acceleration_duration_s=1800
+
+# The existing matched handoff preserves radius and speed.  The post-handoff
+# quadratic-drag proxy uses a 400 km/s effective wind and gamma=5.03735e-12
+# m^-1.  This weak-drag fast-CME case reaches 1 AU at exactly 124200 s, which
+# places the analytical passage on a 600-s native output boundary.  That last
+# digit is an output-synchronization choice, not an observational fit.
+handoff.apex_radius_m=13914000000
+handoff.outer_model=quadratic-drag
+handoff.drag_gamma_m_inv=5.037350032041981e-12
+handoff.effective_wind_speed_m_s=400000
+handoff.trajectory_validity_policy=require-declared-shock-coverage
+
+diagnostics.criticality_model=none
+numerics.polar_cells=24
+numerics.azimuth_cells=48
+# Triangles, rather than output-only quadrilaterals, are the authoritative
+# surface patches.  Their exact curved areas are suitable for a later source,
+# although particle allocation remains disabled in this example.
+numerics.surface_topology=triangular-sse-cap-v1
+numerics.weak_mach_tolerance=1e-6
+numerics.rh_residual_tolerance=1e-8
+
+endpoint.apex_radius_m=149597870700
+endpoint.observer_position_hci_m=0,0,149597870700
+endpoint.require_fast_shock_at_observer=true
+
+# The magnetic asset is repository-local and checksummed.  It is a deliberately
+# simple synthetic axial dipole used to qualify plumbing and equations; it is
+# not a synoptic magnetogram or event reconstruction.
+assets.harmonics_file=assets/synthetic_dipole.harmonics.csv
+assets.harmonics_sha256=b5f864f33b85034125a8c8ad162c3880d82985c1a97aafa8c7745a9737c751f9

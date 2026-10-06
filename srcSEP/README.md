@@ -7,6 +7,24 @@ providers, SWCME, or an SWMF coupling.  The source also contains the
 self-consistent Alfvén-turbulence subsystem, including integrated and
 wave-number-resolved representations and particle-wave coupling.
 
+## Reduced corona/SWCME background-only mode
+
+`--reduced-shock-event PATH` selects the shared reduced shock-front plus
+ambient provider for a schema-3 native run. The thin application adapter
+installs the provider's time-dependent HCI ambient magnetic field, velocity,
+electron density, total thermal pressure and proton temperature on every
+native field-line vertex, publishes coherent immutable generations, checks
+MPI agreement and enforces a zero-particle population after every step. It
+does not paint immediate RH downstream values into the volume.
+
+The complete commented positive 1-AU example, mandatory clean build sequence,
+one-/four-rank commands, equations, test commands, evidence interpretation and
+limitations are in
+[`examples/reduced-shock/README.md`](examples/reduced-shock/README.md). This
+mode does not qualify the deferred BG3D-4 sheath/ejecta model and does not
+change any baseline particle mover or generic PIC behavior when the option is
+absent.
+
 ## Complete initialization input (schema 3)
 
 Use the initialization contract on every new standalone run:

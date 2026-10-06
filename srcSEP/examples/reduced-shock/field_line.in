@@ -1,0 +1,119 @@
+# Native srcSEP schema-3 line for the reduced background-only example.
+# The line starts at the maintained 20-Rsun Parker source surface and ends at
+# the declared +Z 1-AU observer.  The shared provider itself begins at the
+# low-coronal launch radius; srcSEP samples it only where this line exists.
+[run]
+schema_version = 3
+# This configured PIC step is 300 s.  The maintained standalone srcSEP build
+# advances its authoritative application clock in two AMPS update hooks per
+# outer driver iteration, so the provider sees exactly its declared 600-s
+# epoch cadence.  The runtime refuses off-cadence epochs rather than rounding
+# a mismatched application clock onto a different physical realization.
+time_step_s = 300
+
+[injection]
+# Schema 3 retains the baseline positive source count.  The reduced event's
+# particle_mode=disabled removes every native injection callback, and runtime
+# checks require the actual AMPS population to remain zero.
+macroparticles_per_step = 1
+
+[species]
+particle_weight = 1e30
+
+[observer.earth]
+heliocentric_radius_m = 1.495978707e11
+minimum_energy_j = 1.602176634e-15
+maximum_energy_j = 8.01088317e-11
+energy_channels = 70
+energy_spacing = logarithmic
+pitch_angle_bins = 24
+
+[output]
+mesh_tecplot_file = srcsep-reduced-mesh.dat
+field_line_tecplot_file = srcsep-reduced-field-line.dat
+data_tecplot_file = srcsep-reduced-native-data.dat
+
+[parker_spiral]
+origin_x_m = 0
+origin_y_m = 0
+origin_z_m = 0
+initial_x_m = 0
+initial_y_m = 0
+initial_z_m = 1.3914e10
+length_m = 1.356838707e11
+point_count = 513
+
+[domain]
+inner_radius_m = 1.3914e10
+outer_radius_m = 1.495978707e11
+
+[mesh]
+global_cell_size_m = 3.7399467675e10
+minimum_cell_size_m = 2.991957414e9
+maximum_level = 6
+
+[mesh.solar]
+enabled = true
+surface_cell_size_m = 2.991957414e9
+transition_outer_radius_m = 3.7399467675e10
+profile = smoothstep
+exponent = 1
+
+[mesh.tube]
+enabled = true
+reference_radius_m = 1.495978707e11
+radius_at_reference_m = 5.983914828e9
+radius_mode = constant-angular-width
+center_cell_size_m = 2.991957414e9
+transverse_profile = smoothstep
+transverse_exponent = 1
+
+[background.parker]
+solar_wind_speed_m_per_s = 400000
+solar_rotation_rate_rad_per_s = 2.86533e-6
+
+# This legacy section remains required by schema 3 and fixes the Parker-line
+# geometry.  It is not the selected volume provider when --reduced-shock-event
+# is present; the shared corona/SWCME ambient overwrites every native vertex.
+[swcme]
+preset = fast
+ambient.wind_speed = 400 km/s
+ambient.density_1au = 6 cm^-3
+ambient.magnetic_field_1au = 5 nT
+ambient.proton_temperature = 1.2e5 K
+ambient.adiabatic_index = 1.6666666666666667
+ambient.alpha_to_proton_ratio = 0.04
+ambient.electron_temperature = 1.2e5 K
+ambient.alpha_temperature = 4.8e5 K
+ambient.thermodynamic_closure = proton_only
+parker.radial_polarity = 1
+parker.sin_theta = 0
+parker.source_radius = 20 Rs
+cme.kinematics = dbm
+cme.launch_radius = 20 Rs
+cme.launch_speed = 1900 km/s
+cme.drag_coefficient = 8e-8 1/km
+cme.extrapolation = outside_time
+shock.region_mode = shock_only
+shock.acceleration_mode = source
+shock.relative_source_weight_per_area = 1
+geometry.sheath_thickness_1au = 0.12 AU
+geometry.ejecta_thickness_1au = 0.22 AU
+smoothing.shock_width_1au = 0.010 AU
+smoothing.leading_edge_width_1au = 0.020 AU
+smoothing.trailing_edge_width_1au = 0.030 AU
+sheath.ramp_power = 2
+sheath.leading_edge_speed_factor = 1.12
+ejecta.density_factor = 0.50
+ejecta.speed_factor = 0.80
+event.launch_epoch = 0 s
+event.valid_from = 0 s
+event.valid_until = 604800 s
+source.particle_mass = 1 mp
+source.charge_number = 1
+source.energy_min = 0.1 MeV
+source.energy_max = 500 MeV
+source.reference_energy = 10 MeV
+source.injection_efficiency = 3.4e-4
+source.normalization = relative_only
+source.reference_intensity_si = 1 si

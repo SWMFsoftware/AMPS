@@ -1,0 +1,64 @@
+# Synthetic background-only reduced-front event for srcSEP.  This is the same
+# checksummed physics profile as the qualified srcSEP3D positive case; it is
+# not observational validation.  SI units and HCI coordinates are mandatory.
+schema=shock-front-ambient-v1.1
+profile=fixed-sse-pfss-parker-drag-v1
+run.reference_epoch=2026-10-06T00:00:00Z
+run.time_scale=UTC-resolved-to-elapsed-SI-seconds
+run.coordinate_frame=HCI
+run.start_s=0
+run.end_s=129600
+run.background_dt_s=600
+run.particle_mode=disabled
+
+domain.solar_radius_m=695700000
+domain.first_valid_plasma_radius_m=695700000
+domain.coverage_radius_m=299195741400
+ambient.source_surface_radius_m=1739250000
+ambient.reference_radius_m=149597870700
+ambient.electron_density_at_reference_m3=7000000
+ambient.closed_base_electron_density_m3=100000000000000
+ambient.rotation_rate_rad_per_s=2.86533e-6
+ambient.minimum_magnetic_field_t=1e-15
+ambient.trace_step_m=10000000
+ambient.gradient_relative_step=1e-5
+ambient.trace_maximum_steps=10000
+ambient.wind_table_points=1025
+ambient.open_wind_density_model=spherical-radial-mass-flux
+plasma.gamma_adiabatic=1.6666666666666667
+plasma.electron_temperature_k=1400000
+plasma.proton_temperature_k=1400000
+plasma.alpha_temperature_k=1400000
+plasma.alpha_to_proton_number_ratio=0
+plasma.include_electron_mass=false
+
+# A polar axis is used because both the finite SSE apex and the Parker line
+# lie on +Z.  The axial synthetic dipole is open and non-null there.
+geometry.model=finite-sse-fixed-width
+geometry.direction_hci=0,0,1
+geometry.half_width_rad=0.7853981633974483
+geometry.physical_inner_radius_m=695700000
+history.model=quintic-pulse-then-constant
+history.initial_apex_radius_m=804000000
+history.initial_apex_speed_m_s=100000
+history.final_pulse_speed_m_s=1400000
+history.acceleration_duration_s=1800
+
+# C1 handoff at 20 solar radii followed by the prescribed quadratic-drag proxy.
+handoff.apex_radius_m=13914000000
+handoff.outer_model=quadratic-drag
+handoff.drag_gamma_m_inv=5.037350032041981e-12
+handoff.effective_wind_speed_m_s=400000
+handoff.trajectory_validity_policy=require-declared-shock-coverage
+
+diagnostics.criticality_model=none
+numerics.polar_cells=24
+numerics.azimuth_cells=48
+numerics.surface_topology=triangular-sse-cap-v1
+numerics.weak_mach_tolerance=1e-6
+numerics.rh_residual_tolerance=1e-8
+endpoint.apex_radius_m=149597870700
+endpoint.observer_position_hci_m=0,0,149597870700
+endpoint.require_fast_shock_at_observer=true
+assets.harmonics_file=assets/synthetic_dipole.harmonics.csv
+assets.harmonics_sha256=b5f864f33b85034125a8c8ad162c3880d82985c1a97aafa8c7745a9737c751f9

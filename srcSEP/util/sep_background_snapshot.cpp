@@ -24,10 +24,11 @@ void ValidateOwnership(Provider provider, Ownership ownership) {
         "a locally evolved imported background must use handoff-copy ownership");
   }
 
-  if ((provider == Provider::Analytic || provider == Provider::Swcme) &&
+  if ((provider == Provider::Analytic || provider == Provider::Swcme ||
+       provider == Provider::ReducedShock) &&
       ownership != Ownership::ModelOwned) {
     throw std::invalid_argument(
-        "analytic and SWCME backgrounds must be model-owned");
+        "analytic, SWCME, and reduced-shock backgrounds must be model-owned");
   }
 }
 
@@ -37,6 +38,7 @@ const char* ProviderName(Provider provider) {
   switch (provider) {
     case Provider::Analytic: return "analytic";
     case Provider::Swcme: return "swcme";
+    case Provider::ReducedShock: return "reduced-shock";
     case Provider::Swmf: return "swmf";
     case Provider::LocalEvolution: return "local-evolution";
   }

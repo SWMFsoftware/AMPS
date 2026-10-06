@@ -1,0 +1,5 @@
+# Synthetic numerical-verification asset, not an observed magnetogram.
+# basis=real_orthonormal; coefficient_role=photospheric_Br; units=T
+# Y_10=sqrt(3/(4*pi))*cos(theta); the coefficient gives B_pole=1e-4 T.
+degree,order,cosine_T,sine_T
+1,0,0.0002046653415892977,0

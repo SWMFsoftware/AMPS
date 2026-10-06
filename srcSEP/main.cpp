@@ -33,6 +33,7 @@
 #include "constants.h"
 #include "sep.h"
 #include "adapters/swcme1d_adapter.h"
+#include "adapters/reduced_shock_background_adapter.h"
 #include "transport_common.h"
 #include "turbulence_production_adapter.h"
 #include "util/sep_cli.h"
@@ -46,6 +47,7 @@
 void amps_init();
 void amps_init_mesh();
 void amps_time_step();
+void install_reduced_background_on_field_lines(double epochS);
 
 /**
  * Prepare and publish SWCME at the one authoritative PIC clock epoch.
@@ -246,6 +248,24 @@ int main(int argc,char **argv) {
         cli_options.injectionParticlesPerIteration = static_cast<int>(
             initialization.macroparticlesPerStep);
     }
+  }
+
+
+  // Resolve the reduced event before any run fingerprint or native allocation.
+  // The adapter reads repository-local assets and delegates schema, checksum,
+  // units, and physics validation to the shared provider.  A failure therefore
+  // leaves neither an AMPS mesh nor a partially configured background behind.
+  if(!cli_options.reducedShockEventPath.empty()) {
+    std::string reducedError;
+    if(!SEP::ReducedShock::Configure(cli_options.reducedShockEventPath,
+                                    &reducedError)) {
+      if(PIC::ThisThread==0)std::cerr<<"ERROR: "<<reducedError<<'\n';
+      return 1;
+    }
+    if(PIC::ThisThread==0)
+      std::cout<<"Reduced shock background event="
+               <<cli_options.reducedShockEventPath
+               <<" identity="<<SEP::ReducedShock::EventIdentity()<<'\n';
   }
 
 
@@ -704,9 +724,16 @@ int main(int argc,char **argv) {
     TestManager();
   }
 
-  const long int TotalIterations=(_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_)
-      ? static_cast<long int>(PIC::RequiredSampleLength+10)
-      : static_cast<long int>(frozenRun.get().totalIterations.value);
+  // A reduced-background campaign has no Monte-Carlo convergence target, so
+  // its requested iteration count is authoritative even in an executable
+  // compiled with AMPS nightly mode.  Otherwise nightly mode would replace a
+  // two-epoch coupling check with RequiredSampleLength+10 unrelated particle
+  // steps.  Every legacy particle run retains the historical nightly policy.
+  const long int TotalIterations=SEP::ReducedShock::Enabled()
+      ? static_cast<long int>(frozenRun.get().totalIterations.value)
+      : ((_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_)
+          ? static_cast<long int>(PIC::RequiredSampleLength+10)
+          : static_cast<long int>(frozenRun.get().totalIterations.value));
 
   // Initialize wave storage only for a source that is locally owned from the
   // beginning of the run.  Prescribed and SWMF-read-only providers remain
@@ -975,6 +1002,11 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
         SEP::Background::Provider::Swcme) {
       publish_sw1d_for_particle_step(
           SEP::Background::SimulationTimeSeconds(), global_dt, niter);
+    }
+    else if(SEP::Background::ConfiguredProvider()==
+            SEP::Background::Provider::ReducedShock) {
+      install_reduced_background_on_field_lines(
+          SEP::Background::SimulationTimeSeconds());
     }
 
     if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag &&

@@ -26,14 +26,17 @@ Provider ConfiguredProvider();
 // the particle operator, never the solar-wind/IMF/shock/turbulence authority.
 std::string CurrentConfigurationFingerprint();
 
-// Publish a model-owned analytic or SWCME state.  Repeated calls may advance
-// the state epoch but retain the same field-line generation when geometry has
-// not been regenerated.  valid_until_seconds is the last clock value for which
-// the state may be consumed.
+// Publish a model-owned analytic, SWCME, or reduced-front ambient state.
+// Analytic/SWCME calls retain the field-line geometry generation; the reduced
+// provider passes its explicit physical generation so native current/previous
+// vertex values and front metadata cannot acquire different epoch identities.
+// valid_until_seconds is the last clock value for which the state may be
+// consumed.
 void PublishModelOwnedSnapshot(Provider provider,
                                double epoch_seconds,
                                double valid_until_seconds,
-                               const std::string& provenance);
+                               const std::string& provenance,
+                               std::uint64_t explicit_generation = 0);
 
 // Inspect the configured provider immediately before PIC::TimeStep().  For an
 // SWMF run this publishes a new read-only generation whenever a new coupling

@@ -1,6 +1,7 @@
 #include "sep_background_runtime.h"
 
 #include "../sep.h"
+#include "../adapters/reduced_shock_background_adapter.h"
 #include "../adapters/swcme1d_adapter.h"
 #include "sep_run_configuration.h"
 
@@ -45,6 +46,12 @@ Provider ConfiguredProvider() {
   if (PIC::CPLR::SWMF::BlCouplingFlag) return Provider::Swmf;
 #endif
 
+  // The reduced event is an explicit application selection and therefore
+  // precedes the legacy particle-source shock switch.  Keeping these controls
+  // orthogonal is essential: this background-only stage must not reinterpret
+  // a baseline SWCME/analytic particle source as a reduced-front source.
+  if (SEP::ReducedShock::Enabled()) return Provider::ReducedShock;
+
   return SEP::ShockModelType == SEP::cShockModelType::SwCme1d
              ? Provider::Swcme
              : Provider::Analytic;
@@ -65,6 +72,8 @@ std::string CurrentConfigurationFingerprint() {
   // included, preserving identical provider state in cross-mover comparisons.
   canonical << "schema=srcsep-background-v2"
             << ";provider=" << ProviderName(ConfiguredProvider())
+            << ";reduced-event="
+            << (ReducedShock::Enabled() ? ReducedShock::EventIdentity() : "none")
             << ";domain=" << SEP::DomainType
             << ";imf=" << SEP::ModeIMF
             << ";shock="
@@ -92,10 +101,12 @@ std::string CurrentConfigurationFingerprint() {
 
 void PublishModelOwnedSnapshot(Provider provider, double epoch_seconds,
                                double valid_until_seconds,
-                               const std::string& provenance) {
-  if (provider != Provider::Analytic && provider != Provider::Swcme) {
+                               const std::string& provenance,
+                               std::uint64_t explicit_generation) {
+  if (provider != Provider::Analytic && provider != Provider::Swcme &&
+      provider != Provider::ReducedShock) {
     throw std::invalid_argument(
-        "model-owned publication accepts only analytic or SWCME providers");
+        "model-owned publication accepts only analytic, SWCME, or reduced-shock providers");
   }
 
   if (ConfiguredProvider() != provider) {
@@ -109,8 +120,12 @@ void PublishModelOwnedSnapshot(Provider provider, double epoch_seconds,
   // Analytic and SWCME profile updates do not rebuild field-line geometry, so
   // they retain its generation.  The first imported/constructed line set is
   // generation 1; zero remains reserved as an invalid/uninitialized sentinel.
-  const std::uint64_t generation =
-      current ? current->field_line_generation() : UINT64_C(1);
+  // Analytic/SWCME updates historically retain one geometry generation.  The
+  // reduced provider has an event-defined physical generation even though its
+  // line topology stays fixed, so its caller supplies that nonzero identity.
+  const std::uint64_t generation=explicit_generation!=0
+      ? explicit_generation
+      : (current?current->field_line_generation():UINT64_C(1));
 
   BackgroundSnapshot snapshot(
       provider, Ownership::ModelOwned, epoch_seconds, epoch_seconds,
@@ -153,9 +168,10 @@ void PrepareSnapshotForParticleStep() {
       // run a static analytic background.  SWCME, however, must publish its
       // prepared StepState explicitly so metadata and physical state share the
       // same epoch.
-      if (configured_provider == Provider::Swcme) {
+      if (configured_provider == Provider::Swcme ||
+          configured_provider == Provider::ReducedShock) {
         throw std::logic_error(
-            "SWCME particle step requested before its prepared state was published");
+            "time-dependent model particle step requested before its prepared state was published");
       }
 
       store.Publish(BackgroundSnapshot(

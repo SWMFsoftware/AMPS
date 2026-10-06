@@ -1121,6 +1121,13 @@ and exercises:
 - `REPORT`: JSON/JUnit schema, outcome, metric, and artifact preservation;
 - registry completeness: required metadata, callbacks, and unique IDs.
 
+`HIDDEN01` is an intentional inner negative control: its fixture falsely marks
+itself `PASS` while reporting one failed assertion. The registry must print
+that inner result as `FAIL`; the outer `HIDDEN PASS` then confirms that the
+contradiction was detected. The script's final summary labels this expected
+internal failure explicitly and reports only unexpected outer failures in its
+`FAIL` count.
+
 The linked-host targets are still required for final evidence that early exits
 precede real AMPS initialization and that test-only execution never enters the
 production loop.  A source-only archive cannot substitute static scans for that

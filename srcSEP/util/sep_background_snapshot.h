@@ -17,6 +17,10 @@ namespace Background {
 enum class Provider {
   Analytic,
   Swcme,
+  // Prescribed reduced front plus the shared coronal/Parker ambient.  This is
+  // intentionally distinct from legacy SWCME1D: it owns a time-dependent
+  // surface but supplies no spatial downstream CME volume.
+  ReducedShock,
   Swmf,
   LocalEvolution
 };

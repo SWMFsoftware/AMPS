@@ -40,6 +40,27 @@ SWCME_DIR ?= $(AMPS_ROOT)/src/models/swcme
 SWCME_ARCHIVE ?= $(SWCME_DIR)/swcme.a
 SWCME_OBJECTS := $(SWCME_DIR)/build/swcme3d.o
 
+# The reduced srcSEP adapter consumes the same canonical coronal ambient and
+# corona/SWCME composite as srcSEP3D.  AMPS links application archives but does
+# not recursively extract nested archives, so enumerate the maintained model
+# objects and flatten exactly one copy into mainlib.a.
+SEP_CORONAL_CME_DIR ?= $(AMPS_ROOT)/src/models/sep_coronal_cme
+SEP_CORONAL_CME_ARCHIVE ?= $(SEP_CORONAL_CME_DIR)/build/libsep_coronal_cme.a
+SEP_CORONAL_CME_OBJECTS := $(patsubst \
+    $(SEP_CORONAL_CME_DIR)/src/%.cpp,$(SEP_CORONAL_CME_DIR)/build/%.o,\
+    $(wildcard $(SEP_CORONAL_CME_DIR)/src/*.cpp)) \
+    $(SEP_CORONAL_CME_DIR)/build/common_sep_field_line_exchange.o \
+    $(SEP_CORONAL_CME_DIR)/build/common_sep_field_line_bundle_io.o \
+    $(SEP_CORONAL_CME_DIR)/build/common_sep_coherent_transport.o
+SEP_CORONA_SWCME_DIR ?= $(AMPS_ROOT)/src/models/sep_corona_swcme
+SEP_CORONA_SWCME_ARCHIVE ?= $(SEP_CORONA_SWCME_DIR)/build/libsep_corona_swcme.a
+SEP_CORONA_SWCME_OBJECTS := $(patsubst \
+    $(SEP_CORONA_SWCME_DIR)/src/%.cpp,$(SEP_CORONA_SWCME_DIR)/build/%.o,\
+    $(wildcard $(SEP_CORONA_SWCME_DIR)/src/*.cpp)) \
+    $(patsubst \
+    $(SEP_CORONA_SWCME_DIR)/shock_front/%.cpp,$(SEP_CORONA_SWCME_DIR)/build/shock_front_%.o,\
+    $(wildcard $(SEP_CORONA_SWCME_DIR)/shock_front/*.cpp))
+
 # The parser/registry unit target is intentionally dependency-light and can run
 # from a source-only archive.  Every production build target still requires the
 # enclosing AMPS configuration exactly as before.
@@ -64,6 +85,7 @@ STANDALONE_GOALS := test-cli-unit test-state-unit test-geometry-source-unit \
                     test-swcme-relocation-unit test-sep-common-ownership-unit \
                     test-swcme-fail-closed-unit \
                     test-swcme-configuration-unit \
+                    test-reduced-shock-background-unit \
                     test-d03-native-integration \
                     test-d03-runner-unit \
                     test-stage1-stage2-contracts \
@@ -81,7 +103,10 @@ endif
 # does, so canonical SEP-common and SWCME headers resolve identically in srcSEP
 # and in the copied build/main tree.  Application-local duplicate headers are
 # deliberately absent, making include-order ambiguity impossible.
-MODEL_INCLUDE_FLAGS := -I$(SEP_COMMON_DIR) -I$(SWCME_DIR)
+MODEL_INCLUDE_FLAGS := -I$(SEP_COMMON_DIR) -I$(SWCME_DIR) \
+                       -I$(SEP_CORONAL_CME_DIR)/include \
+                       -I$(SEP_CORONA_SWCME_DIR)/include \
+                       -I$(SEP_CORONA_SWCME_DIR)/shock_front
 CPPFLAGS += $(MODEL_INCLUDE_FLAGS)
 CXXFLAGS += $(MODEL_INCLUDE_FLAGS)
 INCLUDE += $(MODEL_INCLUDE_FLAGS)
@@ -93,9 +118,9 @@ INCLUDE += $(MODEL_INCLUDE_FLAGS)
 # those variables to find swcme1d_input.hpp. Keeping this list private also
 # leaves sep.h and every unrelated AMPS translation unit independent of SWCME.
 SWCME_CONSUMER_CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -O3 \
-                           -Iadapters -Iutil -I$(SEP_COMMON_DIR) -I$(SWCME_DIR)
+                           -Iadapters -Iutil $(MODEL_INCLUDE_FLAGS)
 
-MAINLIBOBJ = exosphere_module.o  main_lib.o inner_boundary_injection.o outer_boundary_injection.o mesh.o mover_state.o production_mover_runtime.o transport_common.o coefficient_providers.o parker_mover.o focused_transport_dmumu.o focused_transport_mfp.o turbulence_production_adapter.o parker.o scattering.o sep.o field_line.o flux_tube_geometry.o sampling.o diffusion.o shock_injection.o BoundaryInjection.o BoundaryInjection_GCR.o GCR_Badavi2011ASR.o parser.o diffusion_dxx.o tests.o component_tests.o validation/cases/CV01/cv01_model.o validation/cases/controlled_transport_models.o validation/cases/advanced_validation_models.o util/sep_acceptance_cases.o util/sep_scientific_validation.o util/sep_mover_validation.o util/sep_swcme_validation.o util/sep_turbulence_validation.o util/sep_background_runtime.o util/sep_flux_tube_geometry_core.o util/sep_sampling_products.o util/sep_shock_source_core.o util/sep_transactional_output.o util/sep_run_configuration.o util/sep_population_control.o util/sep_configuration_matrix.o util/sep_evidence.o util/sep_system_ledger.o util/sep_validation_tools.o util/sep_observation_forward_model.o util/sep_production_mover.o util/sep_parker_core.o util/sep_focused_transport_core.o util/sep_focused_transport_mfp_core.o util/sep_turbulence_core.o util/sep_reproducible_reduction.o util/sep_initialization.o util/sep_initialization_validation.o shock_analytical_model.o diffusion_dmumu.o DLT.o QLT.o cooling.o QLT1.o sampling_output.o output_fl_background.o shock_analytical_model2D.o solar_wind.o alfven_turbulence.o parker_streaming_calculator.o turbulence_advection_kolmogorov.o wave_energy_initialization.o test_wave_energy_initialization.o wave_particle_coupling_kolmogorov.o growth_rate_validation_test.o kolmogorov.o kolmogorov_scatter.o shock1d_vertex_distance.o adapters/swcme1d_adapter.o turbulence_cascade_kolmogorov.o turbulence_reflection_kolmogorov.o turbulence_wave_number_resolved/turbulence_wave_number_resolved.o
+MAINLIBOBJ = exosphere_module.o  main_lib.o inner_boundary_injection.o outer_boundary_injection.o mesh.o mover_state.o production_mover_runtime.o transport_common.o coefficient_providers.o parker_mover.o focused_transport_dmumu.o focused_transport_mfp.o turbulence_production_adapter.o parker.o scattering.o sep.o field_line.o flux_tube_geometry.o sampling.o diffusion.o shock_injection.o BoundaryInjection.o BoundaryInjection_GCR.o GCR_Badavi2011ASR.o parser.o diffusion_dxx.o tests.o component_tests.o validation/cases/CV01/cv01_model.o validation/cases/controlled_transport_models.o validation/cases/advanced_validation_models.o util/sep_acceptance_cases.o util/sep_scientific_validation.o util/sep_mover_validation.o util/sep_swcme_validation.o util/sep_turbulence_validation.o util/sep_background_runtime.o util/sep_flux_tube_geometry_core.o util/sep_sampling_products.o util/sep_shock_source_core.o util/sep_transactional_output.o util/sep_run_configuration.o util/sep_population_control.o util/sep_configuration_matrix.o util/sep_evidence.o util/sep_system_ledger.o util/sep_validation_tools.o util/sep_observation_forward_model.o util/sep_production_mover.o util/sep_parker_core.o util/sep_focused_transport_core.o util/sep_focused_transport_mfp_core.o util/sep_turbulence_core.o util/sep_reproducible_reduction.o util/sep_initialization.o util/sep_initialization_validation.o shock_analytical_model.o diffusion_dmumu.o DLT.o QLT.o cooling.o QLT1.o sampling_output.o output_fl_background.o shock_analytical_model2D.o solar_wind.o alfven_turbulence.o parker_streaming_calculator.o turbulence_advection_kolmogorov.o wave_energy_initialization.o test_wave_energy_initialization.o wave_particle_coupling_kolmogorov.o growth_rate_validation_test.o kolmogorov.o kolmogorov_scatter.o shock1d_vertex_distance.o adapters/swcme1d_adapter.o adapters/reduced_shock_background_adapter.o turbulence_cascade_kolmogorov.o turbulence_reflection_kolmogorov.o turbulence_wave_number_resolved/turbulence_wave_number_resolved.o
 # Integrated IV01-IV06 model stages are linked into the same application-level
 # registry as CV01-CV12; they are not standalone substitutes for AMPS.
 MAINLIBOBJ += validation/cases/integrated_validation_models.o
@@ -109,14 +134,17 @@ MAINLIBOBJ += validation/cases/cross_model_validation_models.o
 # independent of the CLI.
 MAINOBJ = main.o util/sep_cli.o debug/sep_debug_fieldline_datum.o
 
-lib: $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE) $(MAINLIBOBJ)
+lib: $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE) $(SEP_CORONAL_CME_ARCHIVE) \
+     $(SEP_CORONA_SWCME_ARCHIVE) $(MAINLIBOBJ)
 	# Recreate the application archive. Plain `ar -r` would retain a stale
 	# shared member after a manifest change and could silently introduce a
 	# second shared-kernel or SWCME definition.
 	rm -f mainlib.a
-	ar -rc mainlib.a $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS)
+	ar -rc mainlib.a $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS) \
+	  $(SEP_CORONAL_CME_OBJECTS) $(SEP_CORONA_SWCME_OBJECTS)
 	@members=$$(ar t mainlib.a); \
-	for member in $(notdir $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS)); do \
+	for member in $(notdir $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS) \
+	    $(SEP_CORONAL_CME_OBJECTS) $(SEP_CORONA_SWCME_OBJECTS)); do \
 	  count=$$(printf '%s\n' "$$members" | awk -v expected="$$member" \
 	    '$$0 == expected { found++ } END { print found + 0 }'); \
 	  test "$$count" -eq 1 || { \
@@ -129,7 +157,7 @@ lib: $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE) $(MAINLIBOBJ)
 # Phony prerequisites are intentional: the application archive consumes the
 # canonical objects rather than nesting .a files, so both build directories
 # must exist after an independent clean of either shared model.
-.PHONY: sep-common swcme
+.PHONY: sep-common swcme sep-coronal-cme sep-corona-swcme
 sep-common:
 	$(MAKE) -C $(SEP_COMMON_DIR)
 
@@ -139,6 +167,16 @@ swcme:
 	$(MAKE) -C $(SWCME_DIR)
 
 $(SWCME_ARCHIVE): swcme
+
+sep-coronal-cme:
+	$(MAKE) -C $(SEP_CORONAL_CME_DIR)
+
+$(SEP_CORONAL_CME_ARCHIVE): sep-coronal-cme
+
+sep-corona-swcme:
+	$(MAKE) -C $(SEP_CORONA_SWCME_DIR)
+
+$(SEP_CORONA_SWCME_ARCHIVE): sep-corona-swcme
 
 amps : $(MAINOBJ)
 	ar -rc main.a $(MAINOBJ)
@@ -176,7 +214,8 @@ audit-production-shared-models:
 	  exit 1; \
 	}
 	@members=$$(ar t "$(PRODUCTION_MAINLIB)"); \
-	for member in $(notdir $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS)); do \
+	for member in $(notdir $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS) \
+	    $(SEP_CORONAL_CME_OBJECTS) $(SEP_CORONA_SWCME_OBJECTS)); do \
 	  count=$$(printf '%s\n' "$$members" | awk -v expected="$$member" \
 	    '$$0 == expected { found++ } END { print found + 0 }'); \
 	  test "$$count" -eq 1 || { \
@@ -204,7 +243,7 @@ audit-production-swcme: audit-production-shared-models
 # real production CLI; selector semantics are never reimplemented in Make.
 SEP_EXECUTABLE ?= ../amps
 
-.PHONY: test-cli-unit test-initialization-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-wp42-wp64-experimental test-wp59-wp64-native test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit test-iv01-iv06-unit test-xm01-xm03-unit test-ov01-ov05-unit test-ev01-ev02-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat test-swcme-relocation-unit test-sep-common-ownership-unit test-swcme-fail-closed-unit test-swcme-configuration-unit test-d03-native-integration test-d03-runner-unit test-stage1-stage2-contracts test-stage3-contracts test-package-hygiene-unit require-sep-executable test-cli test-list test-case \
+.PHONY: test-cli-unit test-initialization-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-wp42-wp64-experimental test-wp59-wp64-native test-python-runner-unit test-cv01-unit test-cv02-cv05-unit test-cv06-cv12-unit test-iv01-iv06-unit test-xm01-xm03-unit test-ov01-ov05-unit test-ev01-ev02-unit print-configuration-matrix test-acceptance-unit test-documentation-unit test-controlled-analytical test-scientific-validation test-native-amps-validation test-swmf-validation test-observational-validation test-sanitizer test-stochastic-repeat test-swcme-relocation-unit test-sep-common-ownership-unit test-swcme-fail-closed-unit test-swcme-configuration-unit test-reduced-shock-background-unit test-d03-native-integration test-d03-runner-unit test-stage1-stage2-contracts test-stage3-contracts test-package-hygiene-unit require-sep-executable test-cli test-list test-case \
 	test-group test-turbulence test-stress test-mpi test
 
 # Source-only audit for the Stage 1–2 integration boundaries.  It stays
@@ -237,6 +276,9 @@ test-swcme-fail-closed-unit:
 
 test-swcme-configuration-unit:
 	./test/run_d02_tests.sh
+
+test-reduced-shock-background-unit:
+	./test/run_reduced_shock_background_tests.sh
 
 # D03PRE first compiles and executes the exact extended descriptor registered
 # in the linked application. The Python gate then owns external build/run
@@ -463,7 +505,7 @@ test-mpi: require-sep-executable
 # `make -j test`: component tests share initialized model/output state and must
 # not be launched concurrently.  The embedded SWCME suite retains its own
 # internal parallel build through its native target.
-test: test-swcme-relocation-unit test-cli-unit test-initialization-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-python-runner-unit test-cv01-unit test-acceptance-unit test-documentation-unit require-sep-executable
+test: test-swcme-relocation-unit test-cli-unit test-reduced-shock-background-unit test-initialization-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-python-runner-unit test-cv01-unit test-acceptance-unit test-documentation-unit require-sep-executable
 	@"$(SEP_EXECUTABLE)" --list-tests >/dev/null
 	@"$(SEP_EXECUTABLE)" --all-tests $(if $(JSON),--test-json "$(JSON)",) $(if $(JUNIT),--test-junit "$(JUNIT)",)
 	@PYTHONDONTWRITEBYTECODE=1 python3 "$(SWCME_DIR)/test/run_tests.py" \

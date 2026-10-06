@@ -28,7 +28,7 @@ records:
 
 | Field | Meaning |
 |---|---|
-| provider | `analytic`, `swcme`, `swmf`, or `local-evolution` authority |
+| provider | `analytic`, `swcme`, `reduced-shock`, `swmf`, or `local-evolution` authority |
 | ownership | model-owned, imported read-only, or an explicit handoff copy |
 | epoch | provider-state epoch in simulation seconds |
 | previous/current physical epochs | provider realization times used for temporal derivatives; never a particle substep |
@@ -63,7 +63,7 @@ continuing with a new snapshot.
 
 The store applies these rules before accepting a publication:
 
-- analytic and SWCME state must be `ModelOwned`;
+- analytic, SWCME, and reduced-shock state must be `ModelOwned`;
 - SWMF state must be `ImportedReadOnly`;
 - normal updates cannot change provider or configuration fingerprint;
 - epochs and field-line generations cannot move backwards;
@@ -143,6 +143,27 @@ is published between particle phases as a new imported, read-only field-line
 generation. The latest import remains valid until another coupling generation
 arrives. A missing, future, stale, or cross-provider state is fatal; srcSEP does
 not silently continue with unrelated arrays.
+
+### Reduced shock-front ambient publication
+
+With `--reduced-shock-event`, the application resolves the strict HCI event
+and its checksummed assets before native allocation. At each cadence-aligned
+epoch it prepares the shared front transactionally, stages ambient samples for
+every native field-line vertex, preserves the outgoing vertex state in the
+previous datums, installs the candidate, and publishes one `ReducedShock`
+snapshot using the provider's exact generation. A failed query changes neither
+the arrays nor snapshot metadata.
+
+This provider's spatial contract is ambient-only. Accepted shock records and
+their immediate upstream/downstream limits remain attached to the separate
+shared surface epoch; they are not a downstream volume and are never copied
+behind the front. Every rank evaluates the replicated line and exact MPI
+min/max agreement is required for an endpoint plasma/IMF record. The native
+post-step reduction independently requires zero actual AMPS particles.
+
+The implementation and runnable case are
+`adapters/reduced_shock_background_adapter.*` and
+[`examples/reduced-shock/README.md`](examples/reduced-shock/README.md).
 
 ## Public implementation surface
 

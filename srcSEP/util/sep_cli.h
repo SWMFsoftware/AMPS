@@ -26,6 +26,10 @@ struct Options {
   // hard-coded domain/field-line mesh.  A supplied path is parsed and frozen
   // before AMPS initializes MPI or allocates the mesh.
   std::string inputPath;
+  // Shared reduced-front event selected independently of the legacy particle
+  // shock model.  A nonempty value means background-only operation: srcSEP
+  // consumes ambient plasma/IMF and front epochs but injects no particles.
+  std::string reducedShockEventPath;
   // Build the actual AMPS mesh and complete application initialization, write
   // the declared mesh/field-line Tecplot products, and exit collectively
   // before the first particle step.  This mode requires a versioned --input
