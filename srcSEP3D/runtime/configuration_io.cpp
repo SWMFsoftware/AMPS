@@ -1258,10 +1258,17 @@ Core::Status ParseConfigurationText(
     candidate.swcmeResolvedManifest =
         resolved.configuration.normalized_manifest;
     } else {
-      if(candidate.inputSchemaVersion<4||candidate.intent!=RunIntent::TransportOnly||
+      // The reduced provider owns a diagnostic front even though the legacy
+      // particle-facing shock authority stays `none`.  Permit the production
+      // propagation driver to record that front; transport-only remains the
+      // mode used by native qualification probes.  Both retain the identical
+      // zero-source/zero-particle physics boundary.
+      const bool reducedIntent=candidate.intent==RunIntent::TransportOnly||
+          candidate.intent==RunIntent::ShockPropagation;
+      if(candidate.inputSchemaVersion<4||!reducedIntent||
           candidate.shock!=ShockAuthority::None||candidate.source.enabled||
           candidate.backgroundModelAssetPath.empty())
-        return Invalid("reduced shock-front runtime requires schema 4, transport-only, "
+        return Invalid("reduced shock-front runtime requires schema 4, transport-only or shock-propagation, "
                        "shock.authority=none, source.enabled=false and background.model_asset");
       if(!candidate.swcmeAssignments.empty())
         return Invalid("reduced shock-front runtime rejects inactive [swcme] assignments");

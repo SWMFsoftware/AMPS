@@ -13,6 +13,7 @@
 #include "run_configuration.h"
 #include "shock_front_background_adapter.h"
 #include "provider.h"
+#include "reduced_front_output.h"
 
 #include <cmath>
 #include <filesystem>
@@ -168,6 +169,59 @@ Result DeckPathResolution() {
   return Finish(good,status.ok()?"translated smoke and separate 1-AU decks resolve identical checksummed events from AMPS-root and srcSEP3D working directories":status.message);
 }
 
+Result PositiveProductionExample() {
+  std::filesystem::path deck;
+  for(const auto& base:{std::filesystem::path("."),std::filesystem::path("srcSEP3D"),
+      std::filesystem::path("../srcSEP3D")}) {
+    const auto candidate=base/"examples/shock-front/positive_1au.in";
+    if(std::filesystem::exists(candidate)) {deck=std::filesystem::canonical(candidate);break;}
+  }
+  if(deck.empty())return Finish(false,"cannot locate positive 1-AU example");
+  R::RunConfiguration3DOptions options;
+  auto status=R::LoadConfigurationFile(deck.string(),&options);
+  std::shared_ptr<const R::RunConfiguration3D> configuration;
+  if(status.ok())status=R::RunConfiguration3D::Create(options,&configuration);
+  std::shared_ptr<B::BackgroundProvider> background;
+  if(status.ok())status=R::CreateBackgroundProvider(*configuration,&background);
+  const auto adapter=std::dynamic_pointer_cast<A::ShockFrontBackgroundAdapter>(background);
+  const auto shared=adapter?adapter->SharedProvider():nullptr;
+  if(!status.ok()||!shared)return Finish(false,status.ok()?
+      "positive example did not select the shared reduced adapter":status.message);
+  const auto handoff=shared->HandoffTimeS();
+  const auto endpoint=shared->EndpointTimeS();
+  if(!handoff.ok()||!endpoint.ok())return Finish(false,
+      "positive example has no exact handoff/endpoint roots");
+  status=background->Prepare(endpoint.value);
+  const auto epoch=adapter->FrontEpoch();
+  const auto observer=shared->EvaluateFrontPoint(
+      shared->Event().observerPositionM,endpoint.value,UINT64_C(1));
+  const std::string surface=epoch?SEP3D::Output::SerializeReducedFrontTecplot(
+      *epoch,shared->Event()):std::string{};
+  const bool good=status.ok()&&configuration->options().intent==
+      R::RunIntent::ShockPropagation&&configuration->options().shock==
+      R::ShockAuthority::None&&!configuration->options().source.enabled&&
+      configuration->options().memoryModel.particlesPerCell==0&&
+      configuration->options().activeRegion==R::ActiveRegionMode::FullDomain&&
+      configuration->options().requestedTimeStepS==600&&
+      configuration->options().maximumTimeSteps==208&&
+      std::fabs(handoff.value-10200.0)<1e-8&&
+      std::fabs(endpoint.value-124200.0)<1e-6&&epoch&&
+      epoch->trajectory.phase==SF::Phase::SwcmeOuter&&observer.ok()&&
+      observer.value.status==SF::FrontStatus::SolvedFastShock&&
+      observer.value.fastMach>1&&observer.value.downstreamValid&&
+      surface.find("ZONETYPE=FEQUADRILATERAL")!=std::string::npos&&
+      surface.find("\"theta_Bn_rad\"")!=std::string::npos&&
+      surface.find("\"theta_Bn_valid\"")!=std::string::npos&&
+      surface.find("\"magnetic_compression_valid\"")!=std::string::npos&&
+      surface.find("\"rho2_kg_m3\"")!=std::string::npos&&
+      surface.find("no_shock_fill=\"upstream-ambient-visualization-placeholder\"")!=
+          std::string::npos&&surface.find("nan")==std::string::npos&&
+      surface.find("volume_role=\"ambient-reference-only\"")!=std::string::npos;
+  return Finish(good,good?
+      "positive full-domain zero-particle deck reaches an independently evaluated accepted 1-AU shock and exports validity-aware RH surface limits":
+      "positive example trajectory, acceptance, or surface contract is inconsistent");
+}
+
 } // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterReducedShockFrontTests() {
@@ -183,5 +237,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterReducedShockFrontTests() {
   };
   return {make("RSHAPP01","Reduced factory and ambient publication",FactoryAndAmbient),
       make("RSHAPP02","Reduced epoch handoff and rollback",EpochAndRollback),
-      make("RSHAPP03","Reduced deck path resolution",DeckPathResolution)};
+      make("RSHAPP03","Reduced deck path resolution",DeckPathResolution),
+      make("RSHAPP04","Positive production-style 1-AU example",PositiveProductionExample)};
 }

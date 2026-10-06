@@ -18,7 +18,6 @@
 #include "runtime/configuration_io.h"
 #include "validation/coronal_cme_application_test.h"
 
-#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -328,6 +327,14 @@ int main(int argc, char** argv) {
       std::cerr << "srcSEP3D propagation capture/write failed: " << status.message << '\n';
     MPI_Bcast(&propagationExit, 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
   };
+  auto publishReducedProducts = [&]() {
+    status = SEP3D::WriteReducedProductionOutputAtBoundary();
+    propagationExit = status.ok() ? 0 : 2;
+    if (PIC::ThisThread == 0 && !status.ok())
+      std::cerr << "srcSEP3D reduced background/front output failed: "
+                << status.message << '\n';
+    MPI_Bcast(&propagationExit, 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
+  };
   if (propagation) {
     if (PIC::ThisThread == 0) {
       // Existing telemetry is never silently overwritten, including incomplete
@@ -338,12 +345,15 @@ int main(int argc, char** argv) {
     }
     MPI_Bcast(&propagationExit, 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
     if (!propagationExit) publishHistory();
+    if (!propagationExit) publishReducedProducts();
   }
   for (std::uint64_t iteration = 0;
        !propagationExit && iteration < options.maximumTimeSteps; ++iteration) {
     const int stepCode = amps_time_step();
     if (propagation) {
       publishHistory();
+      if (propagationExit) break;
+      publishReducedProducts();
       if (propagationExit) break;
       if (PIC::ThisThread == 0 && (sample.tick == 1 || sample.tick % 60 == 0))
         std::cout << "[propagation] tick=" << sample.tick << " time_s=" << sample.timeS
@@ -410,10 +420,16 @@ int main(int argc, char** argv) {
   }
 
   if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) {
-    char fileName[400];
-    std::snprintf(fileName, sizeof(fileName), "%s/test_SEP3D.dat",
-                  PIC::OutputDataFileDirectory);
-    PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fileName);
+    // AMPS permits a substantially longer output-directory value than the
+    // former 400-byte local array.  A filesystem join preserves the complete
+    // user-selected path and avoids turning a successful long production run
+    // into a silently truncated timing-file write.  The string remains alive
+    // for the entire legacy call, whose interface still accepts `const char*`.
+    const std::string timingFile =
+        (std::filesystem::path(PIC::OutputDataFileDirectory) /
+         "test_SEP3D.dat").string();
+    PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(
+        timingFile.c_str());
   }
 
   MPI_Finalize();

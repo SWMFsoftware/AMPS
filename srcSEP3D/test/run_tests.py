@@ -1568,7 +1568,7 @@ def _check_makefile_relocation(definition: TestDefinition,
         "run_configuration.o configuration_io.o standalone_command_line.o runtime.o background_factory.o runtime_adapters.o "
         "transport_adapter.o particle_ledger.o shock_front_background_adapter.o "
         "swcme_source_adapter.o source_runtime.o "
-        "sampling.o observer_runtime.o publication.o restart.o output_coordinator.o "
+        "sampling.o observer_runtime.o publication.o restart.o output_coordinator.o reduced_front_output.o "
         "validation_metrics.o coronal_cme_application_test.o main_lib.o "
         "amps_particle_adapter.o")
     # Stage 14 adds the coherent-transport kernel to the coronal archive.

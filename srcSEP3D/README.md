@@ -1,5 +1,10 @@
 # srcSEP3D
 
+The runnable reduced-provider examples, including the positive synthetic
+low-corona-to-1-AU zero-particle case and its native volume/front output
+contract, are documented in
+[`examples/shock-front/README.md`](examples/shock-front/README.md).
+
 ## V01–V05 controlled extensions and evidence gates
 
 See `V01_V05_IMPLEMENTATION.md` for the algorithms, configuration, tests, and

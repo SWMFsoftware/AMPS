@@ -173,7 +173,8 @@ OUTPUT_SRC := \
     output/observer_runtime.cpp \
     output/publication.cpp \
     output/restart.cpp \
-    output/output_coordinator.cpp
+    output/output_coordinator.cpp \
+    output/reduced_front_output.cpp
 VALIDATION_SRC := validation/validation_metrics.cpp
 # This evaluator consumes the public coronal-CME API and is linked only into
 # the full AMPS application.  Keeping it out of VALIDATION_SRC preserves the

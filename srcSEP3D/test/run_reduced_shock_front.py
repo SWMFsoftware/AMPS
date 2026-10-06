@@ -107,7 +107,7 @@ def parser() -> argparse.ArgumentParser:
 def list_tests() -> None:
     print("shared-rsh: RSH00--RSH24, RSH28--RSH29, RSH31--RSH32, RSH36--RSH40 (54 assertions)")
     print("architecture: ARCHCSWC01")
-    print("portable-srcsep3d: RSHAPP01 RSHAPP02 RSHAPP03")
+    print("portable-srcsep3d: RSHAPP01 RSHAPP02 RSHAPP03 RSHAPP04")
     print("native-smoke-1: " + " ".join(SMOKE_IDS))
     print("native-smoke-4: " + " ".join(SMOKE_IDS))
     print("native-restart-reference-4: " + " ".join(SMOKE_IDS))
@@ -268,7 +268,7 @@ def parse_portable(text: str, operation: Operation) -> List[TestResult]:
     matches = re.findall(r"^\[(RSHAPP\d+)\]\s+(PASS|FAIL|SKIP|ERROR).*?message=\"(.*)\"$",
                          text, flags=re.MULTILINE)
     ids = [row[0] for row in matches]
-    expected_ids = ["RSHAPP01", "RSHAPP02", "RSHAPP03"]
+    expected_ids = ["RSHAPP01", "RSHAPP02", "RSHAPP03", "RSHAPP04"]
     if ids != expected_ids:
         raise RunnerError(f"portable RSHAPP results {ids!r} do not equal {expected_ids!r}")
     rows = [TestResult("portable-srcsep3d", test_id, status, message,

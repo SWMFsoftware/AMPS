@@ -25,6 +25,7 @@
 #include "output/observer_runtime.h"
 #include "output/publication.h"
 #include "output/restart.h"
+#include "output/reduced_front_output.h"
 #include "output/sampling.h"
 #include "output/shock_history.h"
 #include "runtime/runtime_adapters.h"
@@ -32,6 +33,7 @@
 #include "turbulence/turbulence_models.h"
 #include "validation/coronal_cme_application_test.h"
 #include "diagnostics.h"
+#include "sep_coronal_cme/constants.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -214,6 +216,10 @@ bool gNativeAmpsBackgroundReady = false;
 // Counts completed refreshes only: initial fill is generation setup, not an
 // update. Increment after halo completion AND Runtime commit for native evidence.
 std::uint64_t gBackgroundPublishedUpdates = 0;
+// The native propagation driver may ask for a cadence snapshot and a nearby
+// physics landmark on the same tick.  One process-wide tick guard prevents a
+// second collective AMPS write while preserving restart-independent naming.
+std::uint64_t gLastReducedOutputTick = UINT64_MAX;
 std::unordered_map<PIC::Mesh::cDataCenterNode*, std::size_t> gCellSampleIndex;
 // The registered AMPS object is owned by Sphere::InternalSpheres for the
 // process lifetime.  This non-owning pointer is retained only to prove that
@@ -682,6 +688,56 @@ void InterpolateInitializationCellData(
               interpolated.data(), bytes);
 }
 
+// Keep reduced-provider discovery and event-composition physics outside the
+// generic AMPS output callback.  The callback is also compiled by a portable
+// byte-slice/channel probe; embedding provider RTTI there would make a generic
+// interpolation safety test depend on the complete native runtime.  These
+// helpers form the narrow native seam, while the callback still owns row
+// sizing, ordering, and owner/root transport.
+bool ReducedProductionColumnsEnabled() {
+  const auto reduced=std::dynamic_pointer_cast<
+      SEP3D::Adapters::ShockFrontBackgroundAdapter>(gRuntimeBackgroundProvider);
+  return reduced&&Configuration().options().intent==
+      SEP3D::RuntimeModel::RunIntent::ShockPropagation;
+}
+
+void AppendReducedProductionColumns(
+    PIC::Mesh::cDataCenterNode* centerNode,
+    std::vector<double>* values,std::size_t* cursor) {
+  const auto reduced=std::dynamic_pointer_cast<
+      SEP3D::Adapters::ShockFrontBackgroundAdapter>(gRuntimeBackgroundProvider);
+  if(!centerNode||!values||!cursor||!reduced||
+      Configuration().options().intent!=
+          SEP3D::RuntimeModel::RunIntent::ShockPropagation||
+      *cursor+4>values->size()) {
+    StopWithStatus("reduced production output columns",
+        SEP3D::Core::Status(SEP3D::Core::StatusCode::LayoutMismatch,
+            "reduced output metadata is absent or its row layout is incomplete"));
+  }
+  double electronDensityM3=0.0;
+  LoadBytes(centerNode,Configuration().storage_layout().numberDensityOffset,
+      &electronDensityM3,sizeof(electronDensityM3));
+  const auto& composition=
+      reduced->SharedProvider()->Event().ambient.composition;
+  const double alpha=composition.alphaToProtonNumberRatio;
+  // Charge neutrality gives ne=np+2*nalpha.  Reconstruct the event's declared
+  // mass density from the actually installed electron density and frozen
+  // composition; do not substitute the common rho=mp*ne approximation, which
+  // is wrong when alpha particles or electron mass are enabled.
+  const double protonDensityM3=electronDensityM3/(1.0+2.0*alpha);
+  const double massDensityKgM3=protonDensityM3*(
+      SEP::CoronalCME::Constants::kProtonMassKg+
+      alpha*SEP::CoronalCME::Constants::kAlphaMassKg)+
+      (composition.includeElectronMass?electronDensityM3*
+       SEP::CoronalCME::Constants::kElectronMassKg:0.0);
+  const auto front=reduced->FrontEpoch();
+  const auto* active=SEP3D::ApplicationRuntime().active_snapshot();
+  (*values)[(*cursor)++]=massDensityKgM3;
+  (*values)[(*cursor)++]=SEP3D::ApplicationRuntime().CurrentTimeS();
+  (*values)[(*cursor)++]=active?static_cast<double>(active->generation):0.0;
+  (*values)[(*cursor)++]=front?static_cast<double>(front->generation):0.0;
+}
+
 // Append names for every initialized srcSEP3D macroscopic field stored in the
 // AMPS center-node buffer. The block object itself appends the selected
 // species' local time step and particle weight, so the resulting file is a
@@ -717,6 +773,17 @@ void PrintInitializationVariableList(FILE* output, int dataSetNumber) {
   }
   std::fprintf(output, "%s",
                SEP3D::Output::TurbulenceTecplotVariableList());
+  if(ReducedProductionColumnsEnabled()) {
+    // These values bind every plotted ambient vertex to the committed native
+    // epoch.  Mass density is reconstructed from the event's frozen species
+    // composition and the actually stored electron density; it is not an
+    // independent model or an assumed downstream CME density.
+    std::fprintf(output,
+        ", \"mass_density_kg_m-3\""
+        ", \"simulation_time_s\""
+        ", \"background_generation\""
+        ", \"front_generation\"");
+  }
   // These flags make the two independent empty-data cases machine-readable:
   // background_valid=0 identifies padding or vertices without physical
   // background donors, while particle_sample_present=0 identifies a cell/species with no
@@ -738,7 +805,8 @@ void PrintInitializationCellData(
   // Cells outside the declared heliocentric shell are allocated by the
   // enclosing Cartesian AMR cube but do not represent physical background
   // samples. Empty particle samples are valid and are marked independently.
-  std::size_t valueCount = 26;
+  const bool reducedPropagation=ReducedProductionColumnsEnabled();
+  std::size_t valueCount = 26+(reducedPropagation?4:0);
   if (layout.magneticGradientOffset != SEP3D::RuntimeModel::kNoOffset)
     valueCount += 9;
   if (layout.velocityGradientOffset != SEP3D::RuntimeModel::kNoOffset)
@@ -788,6 +856,9 @@ void PrintInitializationCellData(
     values[cursor++] = turbulence.waveEnergyJPerM3;
     values[cursor++] = turbulence.waveEnergyPlusJPerM3;
     values[cursor++] = turbulence.waveEnergyMinusJPerM3;
+
+    if(reducedPropagation)
+      AppendReducedProductionColumns(centerNode,&values,&cursor);
 
     double position[3] = {};
     centerNode->GetX(position);
@@ -2387,6 +2458,188 @@ void WriteCheckpointAtBoundary() {
         PIC::ThisThread == 0 ? failure : "root rank checkpoint write failed"));
 }
 
+SEP3D::Core::Status WriteReducedProductionOutputAtBoundaryImpl() {
+  using namespace SEP3D;
+  namespace SF=SEP::CoronaSwcme::ShockFront;
+  const auto& options=Configuration().options();
+  if(options.intent!=RuntimeModel::RunIntent::ShockPropagation||
+      options.background!=RuntimeModel::BackgroundAuthority::RuntimeModel||
+      options.backgroundModelId!="sep-corona-swcme-shock-front-v1")
+    return Core::Status::OK();
+
+  const auto reduced=std::dynamic_pointer_cast<
+      Adapters::ShockFrontBackgroundAdapter>(gRuntimeBackgroundProvider);
+  const auto epoch=reduced?reduced->FrontEpoch():nullptr;
+  const auto provider=reduced?reduced->SharedProvider():nullptr;
+  const auto* active=ApplicationRuntime().active_snapshot();
+  if(!reduced||!epoch||!provider||!active||!active->complete)
+    return Core::Status(Core::StatusCode::SnapshotUnavailable,
+        "reduced output requires committed front, ambient and runtime epochs");
+
+  const std::uint64_t tick=ApplicationRuntime().counters().currentTick;
+  const double timeS=ApplicationRuntime().CurrentTimeS();
+  const double dt=options.requestedTimeStepS;
+  const auto handoff=provider->HandoffTimeS();
+  const auto endpoint=provider->EndpointTimeS();
+  if(!handoff.ok()||!endpoint.ok())return Core::Status(
+      Core::StatusCode::BackgroundInvalid,"reduced output landmarks are unavailable");
+
+  // Regular cadence supplies heliospheric context.  Landmark windows add
+  // launch acceleration and one sample immediately before/at/after the exact
+  // handoff and observer passage.  This is output scheduling only: the front
+  // and ambient are always evaluated at the committed native epoch.
+  auto near=[&](double landmark,double radius) {
+    // Handoff/endpoint times are roots of an analytical trajectory, whereas
+    // native boundaries are integer multiples of dt.  A root can consequently
+    // lie a few ulps to one side of the mathematically exact boundary.  Use a
+    // relative 1e-9 clock tolerance (10.2 microseconds at this handoff), far
+    // below both the 600-s host step and any resolved physical time scale, so
+    // the requested symmetric pre/at/post window cannot lose only its earlier
+    // member through roundoff.  This tolerance selects output times only; it
+    // neither changes the trajectory nor admits a shock state.
+    const double clockTolerance=1.0e-9*std::max(1.0,std::fabs(landmark));
+    return std::fabs(timeS-landmark)<=radius*dt+clockTolerance;
+  };
+  const bool due=tick==0||tick%options.outputCadenceSteps==0||
+      near(0.5*provider->Event().accelerationDurationS,0.5)||
+      near(provider->Event().accelerationDurationS,0.5)||
+      near(handoff.value,1.0)||near(endpoint.value,1.0);
+  if(!due||gLastReducedOutputTick==tick)return Core::Status::OK();
+
+  // The surface and volume products are useful only when they describe the
+  // same immutable publication.  Check clocks/generations before entering the
+  // expensive AMPS writer; a mismatch is an error, never a best-effort file.
+  bool localIdentity=active->epochS==timeS&&active->generation==epoch->generation&&
+      epoch->ambientGeneration==epoch->generation&&
+      epoch->eventIdentity==provider->Event().physicsFingerprint;
+  int localOK=localIdentity?1:0,allOK=0;
+  MPI_Allreduce(&localOK,&allOK,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  if(!allOK)return Core::Status(Core::StatusCode::ConfigurationConflict,
+      "reduced front, ambient and native runtime epochs disagree");
+
+  bool owner=false,ghost=false,providerMatch=false;
+  unsigned long long localGhosts=0,localOwnerXor=0,localOwnerSum=0;
+  CaptureRuntimeMeshBackground(&owner,&ghost,&providerMatch,&localGhosts,
+      &localOwnerXor,&localOwnerSum);
+  int flags[3]={owner?1:0,ghost?1:0,providerMatch?1:0};
+  int globalFlags[3]={};
+  MPI_Allreduce(flags,globalFlags,3,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  unsigned long long globalGhosts=0,globalOwnerXor=0,globalOwnerSum=0;
+  MPI_Allreduce(&localGhosts,&globalGhosts,1,MPI_UNSIGNED_LONG_LONG,MPI_SUM,
+      MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&localOwnerXor,&globalOwnerXor,1,MPI_UNSIGNED_LONG_LONG,
+      MPI_BXOR,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&localOwnerSum,&globalOwnerSum,1,MPI_UNSIGNED_LONG_LONG,
+      MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  if(!globalFlags[0]||!globalFlags[1]||!globalFlags[2])return Core::Status(
+      Core::StatusCode::LayoutMismatch,
+      "native owner/received-ghost/provider readback failed before output");
+
+  const auto localBySpecies=CountLocalParticlesBySpecies();
+  unsigned long long localParticles=0,globalParticles=0;
+  for(auto count:localBySpecies)localParticles+=count;
+  MPI_Allreduce(&localParticles,&globalParticles,1,MPI_UNSIGNED_LONG_LONG,
+      MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  unsigned long long localInjected=0,globalInjected=0;
+  for(const auto& row:gSourceLedger)localInjected+=row.macroparticles;
+  MPI_Allreduce(&localInjected,&globalInjected,1,MPI_UNSIGNED_LONG_LONG,
+      MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  if(globalParticles!=0||globalInjected!=0)return Core::Status(
+      Core::StatusCode::ConfigurationConflict,
+      "reduced background output observed particles or source allocation");
+
+  std::ostringstream stem;
+  stem<<options.outputPrefix<<"-tick-"<<std::setw(8)<<std::setfill('0')<<tick;
+  const fs::path directory(options.outputDirectory);
+  int ioOK=1;
+  std::string failure;
+  if(PIC::ThisThread==0) {
+    std::error_code error;fs::create_directories(directory,error);
+    if(error) {ioOK=0;failure="cannot create reduced output directory: "+error.message();}
+  }
+  MPI_Bcast(&ioOK,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+  if(!ioOK)return Core::Status(Core::StatusCode::Error,
+      PIC::ThisThread==0?failure:"rank zero could not create output directory");
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+
+  // This maintained distributed writer traverses actual AMPS cells, invokes
+  // the registered application interpolation callback, and assembles owner
+  // fragments.  It therefore publishes installed native ambient values, not
+  // a second provider sampling performed solely for visualization.
+  PIC::Mesh::mesh->SetAssembleDistributedOutputFileFlag(true);
+  for(const auto& species:gCompiledSpecies) {
+    const std::string base=(directory/(stem.str()+"-ambient.dat")).string();
+    const std::string path=InitializationDataPath(base,species.ampsIndex,
+        PIC::nTotalSpecies);
+    PIC::Mesh::mesh->OutputDistributedDataTECPLOT(path.c_str(),true,
+        species.ampsIndex);
+  }
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+
+  if(PIC::ThisThread==0) {
+    const std::string surface=Output::SerializeReducedFrontTecplot(
+        *epoch,provider->Event());
+    if(surface.empty()) {ioOK=0;failure="front surface serializer rejected its quadrature layout";}
+    auto write=[&](const fs::path& path,const std::string& bytes) {
+      if(!ioOK)return;
+      std::ofstream output(path,std::ios::binary);
+      output<<bytes;output.close();
+      if(!output){ioOK=0;failure="cannot write/close '"+path.string()+"'";}
+    };
+    write(directory/(stem.str()+"-front.dat"),surface);
+    write(directory/(stem.str()+"-front.json"),SF::SerializeEpochJson(*epoch)+"\n");
+
+    std::string observerStatus="not-reached";
+    bool observerAccepted=false;
+    double observerMach=std::numeric_limits<double>::quiet_NaN();
+    if(timeS+1e-8>=endpoint.value) {
+      const auto passage=provider->EvaluateFrontPoint(
+          provider->Event().observerPositionM,endpoint.value,UINT64_C(1));
+      if(passage.ok()) {
+        observerStatus=SF::Name(passage.value.status);
+        observerAccepted=passage.value.status==SF::FrontStatus::SolvedFastShock;
+        observerMach=passage.value.fastMach;
+      } else {ioOK=0;failure="cannot evaluate exact observer passage: "+
+          passage.status.message;}
+    }
+    if(ioOK) {
+      std::ostringstream receipt;receipt<<std::setprecision(17)
+        <<"{\n  \"schema\": \"srcsep3d-reduced-background-output-v1\",\n"
+        <<"  \"time_s\": "<<timeS<<",\n  \"tick\": "<<tick
+        <<",\n  \"background_generation\": "<<active->generation
+        <<",\n  \"front_generation\": "<<epoch->generation
+        <<",\n  \"event_identity\": "<<std::quoted(epoch->eventIdentity)
+        <<",\n  \"phase\": "<<std::quoted(SF::Name(epoch->trajectory.phase))
+        <<",\n  \"apex_radius_m\": "<<epoch->trajectory.apexRadiusM
+        <<",\n  \"apex_speed_m_s\": "<<epoch->trajectory.apexSpeedMPerS
+        <<",\n  \"mesh_volume_role\": \"ambient-reference-only\",\n"
+        <<"  \"surface_downstream_role\": \"immediate-rh-limit-only\",\n"
+        <<"  \"owner_readback_match\": true,\n"
+        <<"  \"received_ghost_readback_match\": true,\n"
+        <<"  \"provider_epoch_match\": true,\n"
+        <<"  \"owner_fingerprint_xor\": "<<globalOwnerXor
+        <<",\n  \"owner_fingerprint_sum\": "<<globalOwnerSum
+        <<",\n  \"received_ghost_cells_checked\": "<<globalGhosts
+        <<",\n  \"particle_count\": "<<globalParticles
+        <<",\n  \"injected_particle_count\": "<<globalInjected
+        <<",\n  \"geometric_observer_arrival\": "
+        <<(timeS+1e-8>=endpoint.value?"true":"false")
+        <<",\n  \"exact_observer_arrival_time_s\": "<<endpoint.value
+        <<",\n  \"observer_shock_status\": "<<std::quoted(observerStatus)
+        <<",\n  \"observer_shock_accepted\": "
+        <<(observerAccepted?"true":"false")<<",\n  \"observer_fast_mach\": ";
+      if(std::isfinite(observerMach))receipt<<observerMach;else receipt<<"null";
+      receipt<<"\n}\n";
+      write(directory/(stem.str()+"-receipt.json"),receipt.str());
+    }
+  }
+  MPI_Bcast(&ioOK,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+  if(!ioOK)return Core::Status(Core::StatusCode::Error,
+      PIC::ThisThread==0?failure:"rank zero could not publish reduced products");
+  gLastReducedOutputTick=tick;
+  return Core::Status::OK();
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -2446,6 +2699,10 @@ SEP3D::RuntimeModel::Runtime& SEP3D::ApplicationRuntime() {
   // are encapsulated and change only through typed, transactional methods.
   static RuntimeModel::Runtime runtime;
   return runtime;
+}
+
+SEP3D::Core::Status SEP3D::WriteReducedProductionOutputAtBoundary() {
+  return WriteReducedProductionOutputAtBoundaryImpl();
 }
 
 SEP3D::Core::Status SEP3D::ConfigureApplication(
@@ -3814,9 +4071,29 @@ SEP3D::Core::Status SEP3D::CaptureNativeShockHistorySample(
   const auto& options=Configuration().options();
   Adapters::ShockState shock;
   if (gInstalledShock) shock=gInstalledShock->Evaluate(runtime.CurrentTimeS());
-  int localOK=sample!=nullptr && gInstalledShock && shock.status.ok() &&
-      options.intent==RuntimeModel::RunIntent::ShockPropagation && !options.source.enabled &&
-      shock.Covers(runtime.CurrentTimeS()) && Adapters::ValidateShockGeometry(shock.MoverGeometry()).ok();
+  const auto reduced=std::dynamic_pointer_cast<
+      Adapters::ShockFrontBackgroundAdapter>(gRuntimeBackgroundProvider);
+  const auto reducedEpoch=reduced?reduced->FrontEpoch():nullptr;
+  const auto reducedProvider=reduced?reduced->SharedProvider():nullptr;
+
+  // Normalize the two supported propagation authorities into the compact
+  // history record without manufacturing a legacy ShockState for the reduced
+  // provider.  In reduced mode `active` means the apex patch is an accepted
+  // fast shock; radius still records the geometric apex when that flag is
+  // false.  This preserves the model's essential geometric/physical-arrival
+  // distinction in every native row.
+  const bool reducedMode=static_cast<bool>(reduced&&reducedEpoch&&reducedProvider);
+  const bool legacyMode=static_cast<bool>(gInstalledShock);
+  const bool geometryOK=reducedMode?
+      (std::isfinite(reducedEpoch->trajectory.apexRadiusM)&&
+       reducedEpoch->trajectory.apexRadiusM>0&&
+       std::isfinite(reducedEpoch->trajectory.apexSpeedMPerS)&&
+       reducedEpoch->trajectory.apexSpeedMPerS>0):
+      (legacyMode&&shock.status.ok()&&shock.Covers(runtime.CurrentTimeS())&&
+       Adapters::ValidateShockGeometry(shock.MoverGeometry()).ok());
+  int localOK=sample!=nullptr && (reducedMode!=legacyMode) && geometryOK &&
+      options.intent==RuntimeModel::RunIntent::ShockPropagation &&
+      !options.source.enabled;
   int allOK=0;
   MPI_Allreduce(&localOK,&allOK,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
   if (!allOK) return Status(StatusCode::InvalidInput,"a rank could not capture installed propagation state");
@@ -3828,12 +4105,28 @@ SEP3D::Core::Status SEP3D::CaptureNativeShockHistorySample(
   // patch. This sum includes particles that have already escaped or been lost.
   for (const auto& row:gSourceLedger) localCounts[1]+=row.macroparticles;
   MPI_Allreduce(localCounts,globalCounts,2,MPI_UNSIGNED_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-  double values[7]={runtime.CurrentTimeS(),shock.radiusM,shock.radialSpeedMPerS,
-      shock.cmeDirection.x,shock.cmeDirection.y,shock.cmeDirection.z,shock.halfWidthRad}, minimum[7],maximum[7];
+  const double radiusM=reducedMode?reducedEpoch->trajectory.apexRadiusM:shock.radiusM;
+  const double speedMPerS=reducedMode?reducedEpoch->trajectory.apexSpeedMPerS:
+      shock.radialSpeedMPerS;
+  const Core::Vec3 direction=reducedMode?Core::Vec3(
+      reducedProvider->Event().direction.x,reducedProvider->Event().direction.y,
+      reducedProvider->Event().direction.z):shock.cmeDirection;
+  const double halfWidthRad=reducedMode?reducedProvider->Event().halfWidthRad:
+      shock.halfWidthRad;
+  const std::uint64_t generation=reducedMode?reducedEpoch->generation:shock.generation;
+  const bool active=reducedMode?reducedEpoch->apexShockAccepted:shock.active;
+  const std::string providerIdentity=reducedMode?reduced->CanonicalName():
+      shock.providerIdentity;
+  const std::string providerFingerprint=reducedMode?reducedEpoch->eventIdentity:
+      shock.configurationFingerprint;
+  double values[7]={runtime.CurrentTimeS(),radiusM,speedMPerS,
+      direction.x,direction.y,direction.z,halfWidthRad}, minimum[7],maximum[7];
   MPI_Allreduce(values,minimum,7,MPI_DOUBLE,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
   MPI_Allreduce(values,maximum,7,MPI_DOUBLE,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
-  unsigned long long identity[5]={runtime.counters().currentTick,shock.generation,
-      static_cast<unsigned long long>(shock.active),Fnv1a64(shock.providerIdentity+"|"+shock.configurationFingerprint+"|"+Configuration().physics_fingerprint()),static_cast<unsigned long long>(shock.geometry)};
+  unsigned long long identity[5]={runtime.counters().currentTick,generation,
+      static_cast<unsigned long long>(active),Fnv1a64(providerIdentity+"|"+
+      providerFingerprint+"|"+Configuration().physics_fingerprint()),
+      reducedMode?UINT64_C(2):static_cast<unsigned long long>(shock.geometry)};
   unsigned long long lo[5],hi[5];
   MPI_Allreduce(identity,lo,5,MPI_UNSIGNED_LONG_LONG,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
   MPI_Allreduce(identity,hi,5,MPI_UNSIGNED_LONG_LONG,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
@@ -3849,10 +4142,11 @@ SEP3D::Core::Status SEP3D::CaptureNativeShockHistorySample(
   // Use identical reduced values on every rank. In particular the radius-stop
   // branch in main.cpp must never diverge for a target within roundoff spread.
   result.timeS=minimum[0]; result.tick=identity[0]; result.radiusM=minimum[1]; result.speedMPerS=minimum[2];
-  result.active=shock.active; result.generation=shock.generation;
+  result.active=active; result.generation=generation;
   result.particles=globalCounts[0]; result.injections=globalCounts[1];
   result.mpiRadiusSpreadM=maximum[1]-minimum[1]; result.mpiClockSpreadS=maximum[0]-minimum[0];
-  result.providerIdentity=shock.providerIdentity; result.configurationFingerprint=shock.configurationFingerprint;
+  result.providerIdentity=providerIdentity;
+  result.configurationFingerprint=providerFingerprint;
   Status status=Output::CheckShockHistorySample(result,options.requestedTimeStepS);
   if (status.ok()) *sample=std::move(result);
   return status;

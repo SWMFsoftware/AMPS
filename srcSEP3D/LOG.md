@@ -33,6 +33,30 @@ srcSEP3D/test/run_tests.py --all
 reduced shock front runner:
 srcSEP3D/test/run_reduced_shock_front.py --rebuild-native --output-dir test_output/reduced-front/runner/20261005T-native-restart-qualification-02
 
+reduced shock front validation:
+python3 srcSEP3D/test/validate_positive_shock_example.py --amps ./amps --output-root test_output/reduced-front/positive-1au-manual-validation
+  Inspect the structured report:
+
+  python3 -m json.tool \
+    test_output/reduced-front/positive-1au-manual-validation/summary.json
+
+  Each native run has its own log:
+
+  positive-1au-manual-validation/
+  ├── rank-1-cadence-60/
+  │   ├── execution.log
+  │   └── products/
+  ├── rank-4-cadence-60/
+  │   ├── execution.log
+  │   └── products/
+  ├── rank-4-cadence-30/
+  │   ├── execution.log
+  │   └── products/
+  ├── summary.txt
+  └── summary.json
+
+the shock surface viwer is in srcSEP3D/examples/shock-front/view_front.py
+
 ------------------------------------------------------------------------------------
 srcSEP:
 make -j test_SEP--Parker_spiral--ParkerEq_compile

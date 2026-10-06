@@ -696,11 +696,22 @@ Core::Status RunConfiguration3D::Create(
         normalized.stopShockRadiusM > normalized.outerRadiusM))) {
     return Invalid("run.stop_shock_radius_m requires propagation and a target above launch within the outer boundary");
   }
+  // A propagation run needs a surface authority, but the authority need not
+  // be the legacy particle-facing SWCME adapter.  The reduced composite owns
+  // its front inside the runtime background provider and deliberately keeps
+  // [shock].authority=none so no particle crossing/source path can mistake
+  // its immediate RH limits for a downstream volume.  Admit exactly that
+  // frozen pairing; all other runtime-model/shock combinations remain
+  // rejected.  Restart remains excluded from this driver intent because its
+  // history writer requires a contiguous tick-zero file.
+  const bool propagationAuthority =
+      (!reducedShockFront && normalized.shock == ShockAuthority::Swcme) ||
+      (reducedShockFront && normalized.shock == ShockAuthority::None);
   if (propagation && (normalized.inputSchemaVersion < 4 ||
-      normalized.shock != ShockAuthority::Swcme || normalized.source.enabled ||
+      !propagationAuthority || normalized.source.enabled ||
       normalized.populationControl != PopulationControlMode::Off ||
       !normalized.restartInputPath.empty())) {
-    return Invalid("shock-propagation requires schema 4, canonical SWCME, source.enabled=false, population control off and a fresh run");
+    return Invalid("shock-propagation requires schema 4, a supported front authority, source.enabled=false, population control off and a fresh run");
   }
   if (normalized.inputSchemaVersion >= 3 &&
       normalized.injectionCadenceSteps != 1) {

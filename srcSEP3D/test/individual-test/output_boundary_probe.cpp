@@ -70,6 +70,21 @@ void LoadBytes(Node* node, std::size_t offset, void* target, std::size_t bytes) 
               gStaticCellDataOffset + offset, bytes);
 }
 
+// Provider/event physics remains in a native helper in main_lib.cpp.  This
+// deterministic double lets the portable probe verify the callback's optional
+// row sizing, column order, and owner/root transfer without replacing or
+// reimplementing the production mass-density calculation.
+bool reducedProductionColumns = false;
+bool ReducedProductionColumnsEnabled() { return reducedProductionColumns; }
+void AppendReducedProductionColumns(
+    Node*, std::vector<double>* values, std::size_t* cursor) {
+  if (values == nullptr || cursor == nullptr || *cursor + 4 > values->size())
+    throw std::runtime_error(
+        "reduced-column test double received an incomplete row");
+  for (double value : {101.0, 102.0, 103.0, 104.0})
+    (*values)[(*cursor)++] = value;
+}
+
 // Generated from main_lib.cpp by _check_output_boundary; do not maintain a
 // second implementation of either native callback in this probe.
 #include "native_output_callbacks.inc"
@@ -200,6 +215,27 @@ void ExcludedRows() {
     channel.ThisThread = PIC::ThisThread = 0;
     Node rootTemporary;
     Require(Print(rootTemporary, &channel, 6) == row, "root did not receive the owner row");
+
+    // The reduced production mode appends mass density, time, ambient
+    // generation, and front generation before the three validity flags.  Its
+    // optional columns must not shift or drop the generic flags, and the same
+    // row must still traverse the owner/root channel unchanged.
+    node.position[0] = 2.0;
+    node.sample = 0.0;
+    Fill(node, 2.0);
+    reducedProductionColumns = true;
+    const auto reducedRow = Print(node);
+    Require(reducedRow.size() == rowSize + 4,
+            "reduced metadata violated the variable-count contract");
+    const std::size_t reducedStart = rowSize - 3;
+    for (std::size_t index = 0; index < 4; ++index)
+      Require(reducedRow[reducedStart + index] == 101.0 + index,
+              "reduced metadata column order changed");
+    Require(reducedRow[reducedStart + 4] == 1.0 &&
+            reducedRow[reducedStart + 5] == 1.0 &&
+            reducedRow[reducedStart + 6] == 0.0,
+            "reduced metadata shifted the availability flags");
+    reducedProductionColumns = false;
   }
 }
 }  // namespace

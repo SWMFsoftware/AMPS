@@ -74,6 +74,10 @@ Core::Status InstallRestartState(const Output::RestartState& state);
 // Collective read-only capture at a joined boundary. Count only owned physical
 // cell lists; compare the installed provider, configuration and clock on ranks.
 Core::Status CaptureNativeShockHistorySample(Output::ShockHistorySample* sample);
+// Collective production output for the reduced front/ambient profile.  It is
+// a no-op for every other configuration and writes only at configured cadence
+// or declared acceleration/handoff/observer landmarks.
+Core::Status WriteReducedProductionOutputAtBoundary();
 
 // AMPS calls this before its legacy parser.  srcSEP3D intentionally performs
 // no argument or AMPS_PARAM.in parsing here: a standalone driver or the SWMF
