@@ -43,6 +43,93 @@ The runner does not accept an implicit mode. Choose exactly one of `--list`,
 `--test`/`--group`, `--routine`, `--all`, or `--suite`. This prevents an empty
 or misspelled selection from exiting successfully.
 
+### Reduced shock-front native gates
+
+Run the entire selected reduced-profile campaign through one orchestrator:
+
+```bash
+cd /home/vtenishe/Mars2/AMPS
+python3 srcSEP3D/test/run_reduced_shock_front.py
+```
+
+The default invocation uses the existing configured `./amps` and executes the
+shared 54-assertion RSH harness, `ARCHCSWC01`, `RSHAPP01--03`, one- and
+four-rank `RSH24--RSH27` smoke cases, and the separate four-rank
+`RSH24--RSH28` 1-AU campaign.  It creates a fresh directory below
+`test_output/reduced-front/runner/` and writes `summary.txt`, `summary.json`,
+one complete log per phase, native JSON receipts, products and artifacts.
+Every FAIL/ERROR in the final summary carries its log path.  The expected
+complete selected-profile aggregate is 71 PASS with no FAIL/SKIP/ERROR; IDs
+repeated at different layers/rank counts remain distinct evidence records.
+On the 2026-10-05 validation host, the native phases took approximately 57 s
+(one-rank smoke), 36 s (four-rank smoke), and 1,750 s (four-rank 1-AU), so the
+complete invocation required about 31 minutes.  The runner emits a heartbeat
+every 30 s by default and the growing `execution.log` records every committed
+native tick; a quiet console during the long phase is not evidence of a hang.
+
+Useful controls are:
+
+```bash
+python3 srcSEP3D/test/run_reduced_shock_front.py --list
+python3 srcSEP3D/test/run_reduced_shock_front.py --dry-run
+python3 srcSEP3D/test/run_reduced_shock_front.py --skip-native
+python3 srcSEP3D/test/run_reduced_shock_front.py --rebuild-native
+python3 srcSEP3D/test/run_reduced_shock_front.py \
+  --mpi-launch-prefix 'srun -n {ranks}' \
+  --output-dir test_output/reduced-front/runner/site-allocation-001
+```
+
+`--rebuild-native` is deliberately opt-in.  It requires execution from the
+exact Mars2 AMPS root, rejects an active make/compiler/MPI/AMPS process and a
+symlinked build target, removes only root `build` with `rm -rf -- build`, then
+regenerates the srcSEP3D configuration/hooks and builds `amps` with `-j16`.
+An existing output directory is rejected so older evidence cannot be
+overwritten or mistaken for a fresh result.  `--skip-native` records every
+omitted native ID as SKIP; it cannot produce the 71-PASS complete result.
+
+`RSHAPP01--03` are dependency-light application boundary tests.  Run their
+binary from the `srcSEP3D` directory because other application fixtures use
+paths relative to that documented working directory:
+
+```bash
+make -C srcSEP3D -j16 test/stage1
+cd srcSEP3D
+./test/stage1 --test-group RSHAPP
+./test/stage1 --all-tests
+```
+
+These portable tests prove factory/adapter construction, immutable epochs,
+rollback and deck/asset resolution from two working directories.  They cannot
+prove AMPS owner storage or MPI synchronization.
+
+The linked executable registers `RSH24--RSH28`.  `RSH24--RSH27` are members of
+the `sep-corona` smoke suite; `RSH28` is long-only so the short handoff case
+cannot accidentally pass or skip an arrival requirement.  Native acceptance
+requires:
+
+- `RSH24`: a rank-local injected candidate failure is rejected collectively
+  without replacing the committed provider/front epoch;
+- `RSH25`: actual owner fields and, on multiple ranks, received physical ghost
+  fields and derivatives agree with the shared ambient epoch;
+- `RSH26`: front/event identity, generation, apex state and absolute area
+  ledgers agree on every rank and between the one-/four-rank smoke runs;
+- `RSH27`: actual AMPS linked-list and source-ledger global counts remain zero;
+- `RSH28`: a committed native horizon passes the exact continuous-time 1-AU
+  observer root and reports geometric and accepted-shock arrival separately.
+
+Use a unique `--output-dir` for every MPI process group.  JSON/artifact options
+do not redirect observer products, and reusing the deck's default product path
+correctly fails rather than overwriting evidence.  Exact smoke/long commands
+and current result paths are in
+`../../src/models/sep_corona_swcme/shock_front/README.md` and
+`../../CODEX_REDUCED_SHOCK_PLAN.md`.
+
+The long polar sensitivity fixture is expected to reach 1 AU geometrically
+while returning `non-forward-inflow`; it must not be reported as accepted
+shock arrival.  All reduced decks keep sources disabled and request zero
+particle allocation.  None of these gates qualifies BG3D-4 downstream volume
+physics.
+
 ### Parallel production compilation
 
 The `BLDL3D01` gate delegates compilation to the enclosing AMPS GNU Make

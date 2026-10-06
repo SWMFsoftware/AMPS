@@ -18,6 +18,7 @@
 #include "background/bg_parker.h"
 #include "background/background_snapshot.h"
 #include "adapters/source_runtime.h"
+#include "adapters/shock_front_background_adapter.h"
 #include "amps/amps_mover_status.h"
 #include "amps/amps_particle_adapter.h"
 #include "mesh/mesh_model.h"
@@ -30,6 +31,7 @@
 #include "runtime/background_factory.h"
 #include "turbulence/turbulence_models.h"
 #include "validation/coronal_cme_application_test.h"
+#include "diagnostics.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -3428,7 +3430,8 @@ SEP3D::Core::Status SEP3D::Validation::CaptureNativeApplicationState(
                   MPI_GLOBAL_COMMUNICATOR);
     return output != 0;
   };
-  if (Configuration().options().background==RuntimeModel::BackgroundAuthority::Swcme) {
+  if (Configuration().options().background==RuntimeModel::BackgroundAuthority::Swcme ||
+      Configuration().options().background==RuntimeModel::BackgroundAuthority::RuntimeModel) {
     // Capture at the actual production boundary. The denominator below counts
     // due cadence events from tick zero; gBackgroundPublishedUpdates counts
     // completed commits independently, so a missed refresh becomes a failure.
@@ -3442,6 +3445,26 @@ SEP3D::Core::Status SEP3D::Validation::CaptureNativeApplicationState(
     captured.runtimeMeshPublishedUpdates=gBackgroundPublishedUpdates;
     captured.runtimeMeshExpectedUpdates=ApplicationRuntime().counters().currentTick/
         Configuration().options().backgroundCadenceSteps;
+
+    // Exercise the exact pre-write collective gate with an injected failure
+    // on one rank.  The candidate is the already committed immutable epoch;
+    // no Prepare/Store call occurs.  A correct gate makes every rank reject
+    // while the installed pointer/generation and native bytes remain intact.
+    // This supplies RSH24's rank-local rollback subgate without a test-only
+    // branch in production stepping.
+    const auto committedBefore=gInstalledBackground;
+    const auto generationBefore=committedBefore?committedBefore->metadata().generation:0;
+    std::vector<Turbulence::TurbulenceSample> injectedScratch;
+    Core::Status injectedStatus=PIC::ThisThread==0?
+        Core::Status(Core::StatusCode::BackgroundInvalid,
+          "intentional native rank-local candidate rejection"):
+        Core::Status::OK();
+    const auto rejected=ValidateBackgroundCandidateCollectively(
+        gInstalledBackground,CollectOwnedPhysicalCells(),gInstalledTurbulence,
+        injectedStatus,&injectedScratch);
+    captured.runtimeCollectiveRollbackVerified=!rejected.ok()&&
+        gInstalledBackground==committedBefore&&gInstalledBackground&&
+        gInstalledBackground->metadata().generation==generationBefore;
   }
   captured.finiteBackgroundAndTurbulence =
       CollectiveAnd(localBackgroundFinite && localTurbulenceFinite);
@@ -3537,6 +3560,62 @@ SEP3D::Core::Status SEP3D::Validation::CaptureNativeApplicationState(
   captured.shockBackgroundGeneration = captured.shockReady
       ? captured.backgroundGeneration : 0;
 
+  // Count actual AMPS particles after initialization/stepping.  A disabled
+  // source and particles_per_cell=0 are configuration claims; the global
+  // linked-list count is the independent native evidence that no restart,
+  // baseline seed path, population control or source produced a particle.
+  const std::vector<std::uint64_t> localParticleCounts=
+      CountLocalParticlesBySpecies();
+  unsigned long long localParticles=0,globalParticles=0;
+  for(std::uint64_t count:localParticleCounts)localParticles+=count;
+  MPI_Allreduce(&localParticles,&globalParticles,1,MPI_UNSIGNED_LONG_LONG,
+      MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  unsigned long long localInjected=0,globalInjected=0;
+  for(const auto& row:gSourceLedger)localInjected+=row.macroparticles;
+  MPI_Allreduce(&localInjected,&globalInjected,1,MPI_UNSIGNED_LONG_LONG,
+      MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  captured.globalParticleCount=globalParticles;
+  captured.globalInjectedParticleCount=globalInjected;
+  captured.zeroParticleAllocationRequested=
+      Configuration().options().memoryModel.particlesPerCell==0.0;
+
+  if(Configuration().options().background==
+      RuntimeModel::BackgroundAuthority::RuntimeModel) {
+    const auto reduced=std::dynamic_pointer_cast<
+        Adapters::ShockFrontBackgroundAdapter>(gRuntimeBackgroundProvider);
+    const auto epoch=reduced?reduced->FrontEpoch():nullptr;
+    const auto shared=reduced?reduced->SharedProvider():nullptr;
+    captured.reducedProviderSelected=static_cast<bool>(reduced&&epoch&&shared);
+    if(captured.reducedProviderSelected) {
+      captured.reducedFrontGeneration=epoch->generation;
+      captured.reducedAmbientGeneration=epoch->ambientGeneration;
+      captured.reducedEpochS=epoch->trajectory.timeS;
+      captured.reducedApexRadiusM=epoch->trajectory.apexRadiusM;
+      captured.reducedApexSpeedMPerS=epoch->trajectory.apexSpeedMPerS;
+      captured.reducedPhase=SEP::CoronaSwcme::ShockFront::Name(
+          epoch->trajectory.phase);
+      captured.reducedEventIdentity=epoch->eventIdentity;
+      captured.reducedAcceptedAreaM2=epoch->area.acceptedShockM2;
+      captured.reducedNumericalFailureAreaM2=epoch->area.numericalFailureM2;
+      captured.reducedGeometricEndpointReached=
+          epoch->geometricEndpointReached;
+      captured.reducedApexShockAccepted=epoch->apexShockAccepted;
+      const auto endpoint=shared->EndpointTimeS();
+      if(endpoint.ok()) {
+        captured.reducedEndpointTimeS=endpoint.value;
+        const auto record=shared->EvaluateFrontPoint(
+            shared->Event().observerPositionM,endpoint.value,UINT64_C(1));
+        if(record.ok()) {
+          captured.reducedEndpointObserverGeometricHit=true;
+          captured.reducedEndpointObserverStatus=
+              SEP::CoronaSwcme::ShockFront::Name(record.value.status);
+          captured.reducedEndpointObserverShockAccepted=
+              record.value.status==SEP::CoronaSwcme::ShockFront::FrontStatus::SolvedFastShock;
+        }
+      }
+    }
+  }
+
   std::vector<Output::VirtualSpacecraftDefinition> observers;
   const Status observerStatus = Output::BuildObserverDefinitions(
       Configuration(), ApplicationRuntime().CurrentTimeS(), &observers);
@@ -3596,6 +3675,7 @@ SEP3D::Core::Status SEP3D::Validation::CaptureNativeApplicationState(
            << captured.runtimeMeshExpectedUpdates << '|'
            << captured.runtimeMeshOwnedFieldsMatch << '|'
            << captured.runtimeMeshGhostFieldsMatch << '|'
+           << captured.runtimeCollectiveRollbackVerified << '|'
            << captured.backgroundGeneration << '|' 
            << captured.globalAllocatedBlocks << '|'
            << captured.globalPhysicalCells << '|'
@@ -3606,7 +3686,17 @@ SEP3D::Core::Status SEP3D::Validation::CaptureNativeApplicationState(
            << captured.activeMaskInstalled << '|'
            << captured.activeRegionPruningApplied << '|'
            << captured.activeRegionAllocationVerified << '|'
-           << captured.initializationMask;
+           << captured.initializationMask << '|'
+           << captured.globalParticleCount << '|'
+           << captured.globalInjectedParticleCount << '|'
+           << captured.reducedProviderSelected << '|'
+           << captured.reducedFrontGeneration << '|'
+           << captured.reducedAmbientGeneration << '|'
+           << captured.reducedEpochS << '|'
+           << captured.reducedApexRadiusM << '|'
+           << captured.reducedApexSpeedMPerS << '|'
+           << captured.reducedEventIdentity << '|'
+           << captured.reducedPhase;
   identity << std::setprecision(17);
   for (const NativeSpeciesState& species : captured.species) {
     identity << '|' << species.compiledSlot << ':' << species.chemicalSymbol

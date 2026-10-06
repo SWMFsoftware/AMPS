@@ -1,0 +1,29 @@
+# Generic BG3D-4 qualification piston.  This synthetic contact is independent
+# of examples/bg3d1/history.csv, which remains the Level-A prescribed shock.
+profile=generic-analytic-ellipsoid-contact-v1
+orientation_model=fixed-hci-v1
+attachment_policy=attached-then-detached
+velocity_reduction=radial-dynamics-passive-ambient-transverse
+start_s=0
+startup_ramp_duration_s=1200
+initial_center_m=500000000
+initial_radial_semiaxis_m=300000000
+initial_lateral1_semiaxis_m=260000000
+initial_lateral2_semiaxis_m=240000000
+center_rate_m_s=700000
+radial_rate_m_s=500000
+lateral1_rate_m_s=500000
+lateral2_rate_m_s=450000
+latitude_rad=0.1
+longitude_rad=-0.2
+lateral_tilt_rad=0.3
+handoff_apex_radius_m=13914000000
+handoff_transition_duration_s=600
+outer_ambient_speed_m_s=400000
+outer_drag_coefficient_per_m=1e-11
+minimum_contact_incidence=0.2
+launch_margin_m=30000000
+startup_mach_tolerance=0.01
+maximum_apex_acceleration_m_s2=2000
+minimum_final_apex_speed_m_s=800000
+maximum_final_apex_speed_m_s=1500000

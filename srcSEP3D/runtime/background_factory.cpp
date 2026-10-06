@@ -1,6 +1,7 @@
 #include "background_factory.h"
 #include "../background/bg_parker.h"
 #include "../background/bg_swcme.h"
+#include "../adapters/shock_front_background_adapter.h"
 #include "swcme3d_input.hpp"
 #include <map>
 #include <mutex>
@@ -92,6 +93,8 @@ Core::Status CreateBackgroundProvider(const RunConfiguration3D& configuration,
           Parker(configuration),options.requestedTimeStepS,
           options.requestedTimeStepS*options.backgroundCadenceSteps,options.coordinateOriginM));
     } else if(options.background==BackgroundAuthority::RuntimeModel) {
+      if(options.backgroundModelId=="sep-corona-swcme-shock-front-v1")
+        return Adapters::ShockFrontBackgroundAdapter::Create(configuration,output);
       BackgroundFactory factory;
       // Copy the callable while locked so registration cannot invalidate the
       // lookup. Construct outside the lock to permit dependency construction

@@ -1,8 +1,16 @@
 # Corona–SWCME composite plasma and magnetic-field provider
 
 **Document:** model.md  
-**Revision:** design 1.2, 2026-10-03; analytical replacement for MHD, incorporating both coupling reviews and the clarified scientific scope.  
-**Status:** implementation and validation roadmap; the proposed composite provider and new tests are not implemented by this document.  
+**Revision:** design 1.3, 2026-10-04; selects the reviewed BG3D-4
+ejecta-driven per-ray Lagrangian piston specification.
+
+**Status:** implementation and validation roadmap. BG3D-1 through the shock
+subset of BG3D-3 are implemented; the old BG3D-4 relaxation map is diagnostic.
+The selected piston closure now has a checksummed independent contact authority
+and a passing conservative planar gas-dynamic Lagrangian core.  Spherical/MHD
+ray evolution, projected ambient sources, computed 3-D shock and assembly
+remain unimplemented, so BG3D-4 remains unqualified.
+
 **Suggested repository location:** `src/models/sep_corona_swcme/model.md`.  
 **Application adapters:** `srcSEP3D` and a separately qualified field-aligned `srcSEP` adapter; the shared model must remain usable without AMPS or MPI.
 
@@ -14,16 +22,27 @@ The production target is a coronal ambient beginning at a declared radius such a
 
 The corona component supplies the **one ambient-plasma and IMF authority over the entire covered domain**. SWCME supplies finite shock/front geometry and analytical or observation-constrained propagation. Its local shock calculation receives that ambient as external upstream data. The composite owns event identity, handoff, region/capability classification, source provenance, and publication. Solving a trajectory ODE, a flux-tube wind ODE, a local jump system, or a potential-matching problem is permitted; none introduces global fluid evolution.
 
-**Scope decision:** no coronal or heliospheric MHD evolution solver, imported-MHD operating mode, solver-driven sheath, ALE solver dependency, or MHD-comparison prerequisite belongs to this roadmap. The retained local fast-wave and Rankine–Hugoniot equations are algebraic physical constraints for a magnetized shock. The coupled model does not import or solve global fluid evolution.
+**Scope decision:** no coronal or heliospheric global-MHD evolution solver,
+imported-MHD operating mode, ALE dependency, or MHD-comparison prerequisite
+belongs to this roadmap.  BG3D-4 may solve the selected independent per-ray
+quasi-one-dimensional Lagrangian conservation system.  That regional reduced
+solver has no cross-ray dynamics and is not an eruption-instability or global
+MHD calculation.  Level A retains algebraic local fast-wave and
+Rankine--Hugoniot diagnostics on its prescribed front.
 
 The model has two capability levels, with region-specific capabilities inside Level B:
 
 | Level | Delivered capability | Scientific qualification |
 | --- | --- | --- |
 | A: ambient plus prescribed front | One coronal ambient, continuous shock/front history, local upstream/downstream jump states, and source metadata | Analytical kinematics and local shock physics. No spatially resolved sheath, ejecta, or wake claim |
-| B: analytical disturbance | A declared analytical or semi-empirical sheath/layer, and optionally an independently prescribed ejecta field/flow | Qualify each region, transport operator, and observable with independent equations, mass/flux/induction/interface checks, bounded force/heat/work discrepancy, and observations. No global dynamical solution is claimed |
+| B: reduced regional disturbance | One reconstructed ejecta/contact body drives independent radial Lagrangian plasma tubes; their compression or shock is solved, with an optional separately qualified ejecta interior | Qualify the reduced equations, contact, ray assembly and each observable with independent piston solutions, conservation/interface checks, numerical convergence, validity diagnostics and observations. No global dynamical solution is claimed |
 
-A front-only event and an analytical shock/sheath event can both select **`ejecta_model=none`**. A spheromak is not needed for propagation, shock arrival, local jumps, or upstream SEP connectivity. An interior field prescription is needed only for requested magnetic-ejecta vector histories or particle transport inside that region. A spheromak is one optional detached reference field; a line-tied rope is a separate optional topology, not a mandatory implementation prerequisite.
+A Level A front-only event can select **`ejecta_model=none`**.  Production
+Level B requires a reconstructed geometric ejecta/contact piston, but its
+interior plasma/field model may remain unavailable until BG3D-5.  A spheromak
+is not needed for the piston, solved sheath/shock, or upstream connectivity.
+An interior field prescription is needed only for requested magnetic-ejecta
+histories or transport inside that region.
 
 Missing regions return explicit unsupported-capability results. Publishing the quiet ambient inside an unsupported CME region does not turn it into CME plasma. Level A may support a declared upstream source/transport approximation, but cannot silently enable an operator requiring unavailable downstream trajectories. Level B with a qualified sheath but no ejecta must still mask unsupported ejecta/wake histories. Capability qualification is per observable, not one all-purpose full-field flag.
 
@@ -37,7 +56,7 @@ The older component-coupling papers [R1, R4, R7, R8] are retained as bibliograph
 
 ### 1.2 Review disposition and first implementation choices
 
-Design 1.2 retains valid corrections from the design-1.0 review [R17], evaluates the design-1.1 review [R18], and applies the user's requirement that the model replace MHD. Both reviews are design inputs, not execution evidence. All listed new tests are **reserved proposed tests**, not registered or executed by this document update.
+Design 1.3 retains valid corrections from the design-1.0 review [R17], evaluates the design-1.1 review [R18], and applies the user's requirement that the model replace MHD. Both reviews are design inputs, not execution evidence. All listed new tests are **reserved proposed tests**, not registered or executed by this document update.
 
 | Topic | Adopted decision and qualification | Implementation and tests |
 | --- | --- | --- |
@@ -46,12 +65,16 @@ Design 1.2 retains valid corrections from the design-1.0 review [R17], evaluates
 | Shock versus ejecta | Preserve independently identified feature histories and local fast-shock admissibility. Nose standoff remains an applicability-limited diagnostic; no arbitrary near-Mach-one cap | Sections 6.3 and 6.3.1; S2/S4; CSWC0407–CSWC0410 |
 | Source scope | Keep r4 finite-reference semantics and coronal taper/latch. Extended injection needs its own calibrated differential release law; the handoff does not move source termination | Section 6.7; S8; CSWC0807–CSWC0809, CSWC0811–CSWC0812 |
 | Geometry and drag | Retain the complete coronal surface, differentiate the transition, and declare drag units/feature identity/added mass. Fixed-shape bias is checked analytically and observationally | Sections 6.1–6.2; S2/S3 |
-| Analytical sheath | Replace design-1.1's evolved sheath by an explicitly qualified analytical closure. Keep the prescribed shock as sole authority. Exact planar fixtures precede curved shock-fed maps | Section 6.4.1; S6; CSWC0610–CSWC0612, CSWC0615–CSWC0616 |
+| BG3D-4 sheath | Select the ejecta-driven per-ray Lagrangian piston closure. One reconstructed ejecta surface is the contact authority; the Level B shock is solved and the prescribed Level A shock is validation-only. The empirical relaxation map remains diagnostic | Section 6.4.1 and `docs/BG3D4_PISTON_CLOSURE.md`; S6 |
 | Optional ejecta field | Default to no interior field. Add a reference field only for requested ejecta observables. Detached and Sun-connected topologies advertise different capabilities | Section 6.4.2; S6; CSWC0607 optional, CSWC0613–CSWC0614 |
 | SEP scoring and connectivity | Qualify downstream use per region/history/operator; retain uncertainty and coverage masks and the epoch-aware connectivity cache | Section 12.4; S8/S9; CSWC0810, CSWC0907 |
 | MHD and moving-mesh recommendations | Outside this model's scope. Remove S10's imported-evolution path and its test prerequisites. Self-similar coordinates may simplify analytical maps but do not require a moving-mesh solver | S6 and revised S10 |
 
-The first release is **Level A with a jointly qualified ambient, independently prescribed shock, and an explicit source policy**. It can carry a front to 1 AU with injection disabled or already terminated. Level B is optional and remains analytical. No spheromak or sheath module blocks Level A.
+The first release is **Level A with a jointly qualified ambient, independently
+prescribed shock, and an explicit source policy**. It can carry a front to 1 AU
+with injection disabled or already terminated. Level B uses the selected
+reduced per-ray solver and does not change Level A behavior. No spheromak or
+sheath module blocks Level A.
 
 ### 1.3 What the review does and does not establish
 
@@ -129,7 +152,12 @@ flowchart TD
 
 ### 4.1 Proposed components
 
-The architecture diagram shows the Level A path. S6 adds optional analytical regional samples to the same epoch; the prescribed surface remains the sole shock authority. S10 qualifies the complete analytical release and adds no alternate evolution model.
+The architecture diagram shows the Level A path.  S6/active BG3D-4 adds the
+separate Level B path: the continuous event supplies a reconstructed contact
+piston, independent per-ray evolution computes the disturbance and shock, and
+the Level A prescribed shock is retained only for comparison.  Both paths use
+the same ambient and event identity, but they never publish two shock
+authorities in one capability epoch.
 
 | Component | Responsibility | Explicit exclusions |
 | --- | --- | --- |
@@ -138,12 +166,17 @@ The architecture diagram shows the Level A path. S6 adds optional analytical reg
 | `ContinuousCmeTrajectory` | One event history, handoff, outward continuation, and dense time evaluation | Does not create a second launch at $R_{\rm h}$ |
 | `CmeSurfaceProvider` | Ejecta and shock geometry, normals, velocities, and patch IDs | Does not assume all patches are shocks |
 | `ExternalUpstreamShockProvider` | Ambient sampling, characteristic classification, canonical RH solution, and source eligibility | Never reconstructs an internal Parker upstream in composite mode |
-| `CmeDisturbanceProvider` | Qualified analytical sheath/layer and optional ejecta/wake representation | May explicitly advertise no full-field capability |
+| `CmeDisturbanceProvider` | Qualified per-ray Lagrangian sheath/compression solution, 3-D assembly, and optional ejecta/wake representation | No cross-ray MHD; may explicitly advertise no interior/wake capability |
 | `CoronaSwcmeCompositeModel` | Immutable combined state, region classification, samples, derivatives, and ledgers | Owns no PIC storage or MPI communication |
 | `CoronaSwcmeBackgroundProvider` | SEP3D adapter and provenance mapping | Does not duplicate shared model physics |
 | `CompositePublicationCoordinator` | Collective prepare/write/halo/commit and source publication | Never publishes mixed generations |
 
-The coronal driver is an observation-constrained or analytical height–time/surface history. Both implement the same handoff contract. The analytical disturbance consumes that event; it does not launch or detect a second competing shock.
+The coronal driver is an observation-constrained or analytical
+height--time/surface history.  Level A interprets its front as the prescribed
+shock.  Level B requires the handoff history of the reconstructed ejecta
+surface and interprets it as the contact/piston; the reduced plasma evolution
+then detects one shock.  The two roles are distinct, fingerprinted, and cannot
+be enabled as competing production shocks.
 
 ### 4.2 Lifecycle
 
@@ -391,7 +424,13 @@ After fixed-shape qualification, a separate mode may evolve angular elements aga
 
 Evaluate the undisturbed ambient provider at the patch time and upstream side. Do not evaluate the composite disturbance recursively to obtain its own upstream. For a single CME in the first release, upstream is the ambient corona state; CME–CME interactions require a separate disturbed-upstream evolution contract.
 
-That rule applies to both capability levels for the first single-CME model. S6 constructs the downstream disturbance from the same upstream and prescribed shock; it does not replace the shock authority. A foreshock-modified or earlier-CME upstream is a separate explicit analytical extension with its own canonical state/epoch and validation. Never query a disturbance recursively as its own upstream.
+That ambient-authority rule applies to both capability levels for the first
+single-CME model. Level A samples it ahead of the prescribed front. Level B
+initializes and maintains its finite radial tubes from the same ambient and
+samples the settled state ahead of the computed shock. A foreshock-modified or
+earlier-CME upstream is a separate explicit extension with its own canonical
+state/epoch and validation. Never query a disturbance recursively as its own
+upstream.
 
 For outward normal $\mathbf n$, let $w_1=V_n-\mathbf U_1\cdot\mathbf n$. With
 
@@ -476,36 +515,75 @@ $$
 \mathbf U=\partial_t\mathbf x.
 $$
 
-For compatible divergence-free reference fields and a regular map, these are kinematic mass/flux-freezing identities.  Angular coordinates and admission time are not automatically an identity reference: in arbitrary labels the mass form is `rho*det(A)=rho0*det(A0)`.  A shock boundary point is only two-dimensional and must be extended into a regular admitted reference volume before these identities are used. They do not determine momentum, pressure, or driver forces. The reference, curved-volume metric, boundary fluxes, thermodynamics and physical discrepancy must be specified independently. Piecewise maps need interface checks; separate solenoidal patches do not guarantee one globally admissible field.  The authoritative BG3D-4 corrections are in `../sep_coronal_cme/docs/BG3D4_CODEX_REVIEW_AND_CORRECTIONS.md`.
+For compatible divergence-free reference fields and a regular map, these are kinematic mass/flux-freezing identities.  Angular coordinates and admission time are not automatically an identity reference: in arbitrary labels the mass form is `rho*det(A)=rho0*det(A0)`.  A shock boundary point is only two-dimensional and must be extended into a regular admitted reference volume before these identities are used. They do not determine momentum, pressure, or driver forces. The reference, curved-volume metric, boundary fluxes, thermodynamics and physical discrepancy must be specified independently. Piecewise maps need interface checks; separate solenoidal patches do not guarantee one globally admissible field.  The authoritative BG3D-4 corrections are in `docs/BG3D4_CODEX_REVIEW_AND_CORRECTIONS.md`.
 
 #### 6.4.1 Analytical sheath/layer closure and implementation sequence
 
-**No fluid-evolution solver is selected.** The prescribed shock surface and canonical local RH solution remain authoritative. A sheath closure must match those states on its shock boundary and any separately supplied contact/lateral boundaries. Arbitrarily prescribing both a shock and a contact can be incompatible; reject that candidate as `ANALYTIC_CLOSURE_INCOMPATIBLE` rather than switching to another model or concealing the mismatch.
+The selected production closure is the **ejecta-driven per-ray Lagrangian
+piston model** specified in
+[`docs/BG3D4_PISTON_CLOSURE.md`](docs/BG3D4_PISTON_CLOSURE.md).  This selection
+supersedes the empirical relaxing material map for production and changes the
+Level B authority relation:
 
-The first downstream implementation shall use an **exact moving planar shock in uniform plasma** as its reference. Use the independently computed constant upstream/downstream states and a front moving with their RH-compatible speed. A supported finite downstream observation layer needs no closed ejecta and no spheromak. Test interface fluxes, one-sided samples, derivatives, particle crossings and number/energy accounting before generalizing to a curved solar front. A collection of local planar fits is only a diagnostic approximation until its cross-patch, curvature and time-dependent compatibility have passed.
+1. A checksummed, differentiable, star-shaped ejecta reconstruction is the one
+   contact/piston authority through launch, handoff and outer propagation.
+2. Each supported HCI ray owns a finite ambient material column with physical
+   area $A_q=\Delta\Omega_q r^2$ and Lagrangian mass
+   $dm=\rho A_q\,dr$.
+3. The radial conservation equations evolve position, velocity, specific
+   volume, internal energy and transverse frozen-in field.  Gravity and the
+   frozen ambient-maintaining force/heating/induction sources are the only
+   volume sources; compression-only artificial viscosity supplies shock
+   dissipation.
+4. The piston launches a linear compression or a resolved shock.  Level B
+   shock position and speed are detected from that solution.  The Level A
+   prescribed/observed shock history is a validation target, not a boundary
+   condition or second authority.
+5. Three-dimensional state is assembled between neighboring supported rays
+   without interpolating across the contact or computed shock. Unsupported
+   flanks retain typed area/solid-angle budgets.
 
-For the subsequent curved analytical branch, use an explicitly parameterized **shock-fed material map** or a declared potential/stream-function construction. A proposed implementable shock-fed procedure is:
-
-1. Label admitted parcels by shock patch/lineage and crossing time $\tau$. Sample the canonical upstream and solve RH at that same epoch; keep the compression and downstream species-partition conventions.
-2. With $w_2=V_n-\mathbf U_2\cdot\mathbf n>0$, assign crossing mass from $dM=\rho_2w_2\,dA_{\rm shock}\,d\tau=\rho_1w_1\,dA_{\rm shock}\,d\tau$. Use the actual shock area at birth. This is swept plasma mass, not a particle-source rate or an accumulated volume inferred from current shell thickness.
-3. Prescribe the downstream parcel map/flow from a small frozen analytical or independently calibrated parameter set. Export analytic velocities and deformation derivatives; integrating parcel trajectories through that prescribed velocity is permitted. Maps must be positive-J, single-valued on their support, and regular across neighboring labels. Derive parcel density from its admitted mass and current physical volume.
-4. Initialize magnetic flux consistently with the RH state and neighboring patches, then transport it with the Cauchy map where the ideal branch is claimed. The initialization must close the *global* normal-flux/interface constraints; independent patch values are not sufficient. If no compatible reference/mapping exists, reject the field capability. A vector-potential alternative has the full electric/induction contract above.
-5. Prescribe species compression heating at birth and the subsequent adiabatic/heating/exchange law. An adiabatic material branch may use $p_s=p_{s,\rm birth}J_{\rm rel}^{-\gamma_{s,\rm adv}}$, with the map referenced to that parcel's birth configuration. Never apply the shock compression a second time. Treat empirical heating as an independently bounded asset.
-6. Account for material/flux exit through lateral support and the wake, not just entry through the nose. A finite cap or corridor requires these boundary ledgers. If an ejecta contact is supplied, impose its compatible motion/normal-flux/electric-field and stress/energy budgets; do not trap all admitted mass in an arbitrary closed shell.
-7. Freeze geometry, map, boundary/source and force/heat/work parameters before grading. Check the local jump limits, volume balances, induction, interfaces and observed profiles. Publish only the regions that pass; unavailable contact/wake/ejecta regions stay typed and masked.
-
-This procedure is a construction and qualification contract, not a proof that every fitted front/contact pair admits such a map. Exact uniform planar and manufactured expanding cases provide independent oracles. General solar-event closures remain unqualified until the specified evidence is present. A visually smooth radial interpolation is a possible diagnostic profile but does not establish conservation, induction, or particle-valid downstream fields.
-
-For a smooth claimed region, check
+In compact form, with $v=1/\rho$, $P=p+B_t^2/(2\mu_0)$ and
+$b_t=B_t/(\rho r)$, the per-ray equations are
 
 $$
-\partial_t\rho+\nabla\cdot(\rho\mathbf U)=S_\rho,\qquad
-\partial_t\mathbf B+\nabla\times\mathbf E=0.
+\partial_t r=u,\qquad
+\partial_t v=\partial_m(A_q u),
 $$
 
-For the ideal branch this reduces to $\partial_t\mathbf B-\nabla\times(\mathbf U\times\mathbf B)=0$. Include declared mass loading, nonideal terms, surface contributions, gravity, stress, heating and mechanical/electromagnetic work in the corresponding control-volume budgets. No omitted term is silently zero.
+$$
+\partial_t u=-A_q\partial_m(P+Q)
+-\frac{B_t^2}{\mu_0\rho r}-\frac{GM_\odot}{r^2}+f_{\rm amb},
+$$
 
-**Qualification policy:** numerical mass/normal-flux/divergence/induction and interface errors must converge to their declared budget. Momentum/energy discrepancies are reported separately as numerical error and independently bounded physical model discrepancy. This analytical model is not required to reproduce a global dynamical solution, but an observational or conservation claim cannot be bought by fitting force/work to the residual after the run. A closure exceeding the preregistered discrepancy budget loses the affected capability and remains diagnostic. Analytical fixtures and observations provide the required independent evidence; there is no MHD reference prerequisite.
+$$
+\partial_t e=-(p+Q)\partial_t v+h_{\rm amb}/\rho,
+\qquad
+\partial_t b_t=S_b.
+$$
+
+The complete source definitions, initial/boundary conditions, shock detector,
+assembly, configuration, independent fixtures and limitations are in the
+linked specification.  Its review also records issues that must be resolved
+in the reduced model: fixed-ray material dynamics evolve only the radial
+velocity, while the user-selected published state carries unevolved ambient
+transverse velocity and reports its omitted transport/contact slip;
+physical-normal rather than
+radial magnetic/obliquity diagnostics; the difference between the reduced
+compression characteristic and canonical MHD fast speed; absolute ray-area
+weights; complete source-energy accounting; and projection budgets.
+
+The existing `rh-relaxing-material-map-v1` and its manufactured Cauchy-map
+tests remain useful Level A+ diagnostics.  They do not implement this piston
+system and cannot contribute a production BG3D-4 PASS.
+
+**Qualification policy:** numerical mass, magnetic, shock, interface and
+energy errors must converge under mass, timestep and ray refinement. Reduced
+model error is graded separately with tangential-gradient, incidence,
+obliquity, normal-field, viscosity-localization and assembled-divergence
+diagnostics.  No parameter or tolerance is tuned to the Level A shock target.
+Missing required fixtures or unresolved review items leave BG3D-4 open; no MHD
+simulation is a prerequisite or fallback.
 
 #### 6.4.2 Optional ejecta field: why and when to add it
 
@@ -711,7 +789,11 @@ Changing the ambient normalization, handoff law, geometry, asset content, or sou
 
 ## 8. Implementation stages and dependencies
 
-All stages below are **planned**. A future PASS requires recorded execution evidence; this document implements neither the provider nor its tests. Design 1.2 reserves **95 active tests across 11 stages**. IDs are versioned requirements, not existing runner selectors.
+Unreached stages below are **planned**. A future PASS requires recorded
+execution evidence. Design 1.3 preserves earlier IDs and reserves additional
+BG3D-4 piston IDs; the registry count is intentionally not frozen until those
+tests are implemented. IDs are versioned requirements, not existing runner
+selectors.
 
 | Stage | Main deliverable | Dependencies | Release contribution |
 | --- | --- | --- | --- |
@@ -848,7 +930,12 @@ Stage readiness follows its dependencies: S5 needs S1–S4, native S7 needs actu
 3. Select one canonical jump solver, using thin type adapters rather than duplicate physics.
 4. Connect fast-crossing events, weak-shock classifications, supercritical-source policy, and exclusion ledgers.
 5. Implement and validate downstream species thermal partition.
-6. Bind the selected independent prescribed shock history as the sole authority at both capability levels. Implement optional diagnostic nose standoff only with its explicit applicability/curvature/weak-limit contract.
+6. Bind the independent prescribed shock history as the sole **Level A**
+   authority.  In Level B bind the reconstructed ejecta history as the contact
+   piston and admit only the shock computed by the per-ray solution.  Reject a
+   configuration that publishes the Level A front as a second Level B shock.
+   Nose standoff remains a validation diagnostic with an explicit
+   applicability/curvature/weak-limit contract.
 
 **Validation cases**
 
@@ -894,13 +981,28 @@ Stage readiness follows its dependencies: S5 needs S1–S4, native S7 needs actu
 
 **Implementation work**
 
-1. Implement the independent exact planar-shock/downstream reference in Section 6.4.1; keep Level A fully usable with `disturbance=none` and `ejecta_model=none`.
-2. Add the shock-fed material-map or separately declared potential/stream-function closure with crossing-mass, reference-flux, density, thermodynamic and lateral-boundary contracts.
-3. Preserve the prescribed shock and ambient authority; check local RH limits and global cross-patch/interface compatibility before publication.
-4. Implement the full derivatives/electric field required by each claimed induction/transport branch; expose invalid/unsupported domains rather than fabricating values.
-5. Add optional interior reference fields only for selected ejecta observables. An optional spheromak/reference map and a Sun-connected rope have distinct topology/support gates.
-6. Freeze force/heat/work laws and physical discrepancy bounds independently; evaluate differential/integral mass, flux, induction, momentum, energy and moving-interface ledgers at three resolutions.
-7. Validate solar-event disturbance profiles against frozen observations for each region/observable. No independent MHD comparison is required. Failure removes the affected qualification, not the already qualified front-only path.
+1. Keep Level A fully usable with `disturbance=none` and no ejecta interior.
+   Retain the exact planar/curved map fixtures as diagnostics, not piston proof.
+2. Implement the finite-inventory per-ray Lagrangian piston system in
+   `docs/BG3D4_PISTON_CLOSURE.md`, after resolving its recorded contact,
+   characteristic, normal-field, ray-area and energy-accounting review items.
+3. Add a checksummed contact-body history and continuous handoff.  The same
+   contact owns geometry, piston boundary, region classification, BG3D-5
+   matching and publication; its motion computes rather than prescribes the
+   Level B shock.
+4. Implement finite ambient ray columns, well-balanced sources, conservative
+   shock dissipation/detection, outer cell insertion and transactional epochs.
+5. Assemble the supported rays without crossing physical interfaces; expose
+   unsupported flanks and non-solenoidal/projection limitations explicitly.
+6. Add optional interior reference fields only for selected BG3D-5 ejecta
+   observables. Detached and Sun-connected topologies retain distinct gates.
+7. Freeze physical/numerical tolerances before tuning. Evaluate per-ray and 3-D
+   mass, flux, induction, momentum, energy, piston/source/boundary work,
+   interface and validity ledgers at three resolutions.
+8. Validate the computed solar-event shock against frozen Level A/observed
+   histories without using them to force the solution. No independent MHD
+   comparison is required. Failure removes the affected Level B qualification,
+   not the already qualified front-only path.
 
 **Validation cases**
 
@@ -919,6 +1021,20 @@ Stage readiness follows its dependencies: S5 needs S1–S4, native S7 needs actu
 | CSWC0614 | Optional Sun-connected reference with independently known footpoints, twist and flux under a compatible map | Claimed connectivity/flux and boundary motion agree; singular or incompatible footpoint maps fail. This is an optional capability |
 | CSWC0615 | Time-dependent analytical potentials/maps and independently evaluated Faraday/ideal-electric-field residuals | Both divergence and induction close under the selected branch; individually solenoidal but induction-inconsistent snapshots fail |
 | CSWC0616 | True heliocentric self-similar map, then translation/rotation/anisotropic departures | Full physical velocities and Jacobians agree; scalar expansion is used only in its declared regime and no moving-mesh solver is needed |
+| CSWC0620 | Independent Level-B contact and ray identity | Contact derivatives/handoff/support, startup compatibility, asset checksums/fingerprint and complete supported/unsupported solid-angle budgets are independent of the Level-A shock history |
+| CSWC0621 | Constant-speed planar gas piston | Computed shock speed and compression converge to the independent closed form; uniform translation and the piston/work energy ledger remain within frozen bounds |
+| CSWC0622 | Uniformly accelerating and small-amplitude planar gas pistons | Shock formation converges to the independent characteristic-intersection formula; density/velocity perturbations and propagation recover the independent linear limit |
+| CSWC0623 | Cold perpendicular and finite-beta MHD pistons | Cold result converges to the gamma-2 analogue; finite-beta settled states agree with the maintained RH oracle and transverse frozen flux is preserved |
+| CSWC0624 | Constant-speed expanding spherical piston and curved magnetic ledger | Exact spherical-sector metrics, shock-radius ratio and piston pressure converge to a separately implemented Taylor self-similar integration; a separate dynamic magnetic column converges in total energy while both signed frozen-flux components remain invariant |
+| CSWC0625 | Contact comoving with a nonuniform projected ambient | Actual PFSS/plasma density, velocity, pressure and signed magnetic state remain within frozen well-balance bounds; separate nonzero heating/induction data close the source-work ledger |
+| CSWC0626 | Finite ray control volumes with piston, ambient sources and appended outer cells | Mass/flux invariants and total energy close against piston work, all volume-source work/heat and boundary transport |
+| CSWC0627 | Contact-driven multi-ray production-interface smoke | The one analytical contact drives all supported tubes; ambient append, computed shock, regional query and all-ray transaction are exercised. Canonical RH discrepancies are graded only for quasi-perpendicular rays; the current quasi-parallel sample is reported as not applicable and does not qualify that physical subgate |
+| CSWC0628 | Three mass, timestep and ray refinements | Shock radius/compression/Mach, formation, contact pressure and assembled state demonstrate their preregistered convergence behavior |
+| CSWC0629 | Incidence, tangential-gradient, radial/normal-field, viscosity-localization and divergence diagnostics | Every claimed ray lies inside its frozen validity bounds; excluded physical area/solid angle is complete |
+| CSWC0630 | Neighbor-ray 3-D assembly with controlled contact/shock crossings | No interpolation crosses an interface; physical fitted normals and region-wise continuity converge; projection changes are ledgered |
+| CSWC0631 | Failure during a private ray solve, append, assembly and projection | The complete committed epoch/inventory/generation remains byte-stable and no partial Level B shock is published |
+| CSWC0632 | Sanitized shared build, architecture scan and maintained regressions | ASan/UBSan and dependency checks pass; ambient, Level A, legacy SWCME, generic PIC and baseline particles are unchanged |
+| CSWC0633 | Production piston compared with the frozen Level A/observed shock history | Standoff, Mach and compression differences are reported as validation/model error and cannot force or tune the Level B solution |
 
 **Exit gate:** Level B is qualified separately for sheath, interior and wake support, with exact capability/transport limits, convergent numerical checks, bounded physical discrepancy and applicable observation evidence. A planar or isolated reference PASS does not qualify the general curved solar-event closure. Unsupported requests remain explicit; no missing solver is introduced as a prerequisite or fallback.
 
@@ -1055,7 +1171,7 @@ Maintain the following small reproducible cases in addition to individual test f
 | C11 analytical downstream pulse | Exact moving planar shock and a manufactured prescribed flow/map | Local jump, induction, material/interface and transport checks without interior-field assumptions | S6, S8 |
 | C12 thermal/Mach sensitivity | One plasma/composition and front with independently selected isothermal and observed-like species temperatures | Detect false shock eligibility from a coronal temperature at 1 AU | S1, S4, S9 |
 | C13 split feature/source histories | Independent shock/ejecta motion and a coronal-only source that terminates before the front reaches 1 AU | Separate arrival identity, source termination, ownership continuity and restart | S2–S4, S8–S9 |
-| C14 analytical shock/sheath | Qualified shock-fed map, no interior field by default, frozen lateral/force/heat/work budgets and observed profiles | Analytical regional qualification without residual-fitted work, duplicate shock or solver dependency | S6–S9 |
+| C14 reduced piston shock/sheath | Reconstructed contact drives qualified per-ray tubes; no interior field by default; frozen source/work/validity budgets | Regional qualification without duplicate shock authority, residual-fitted sources or a global MHD dependency | S6–S9 |
 | C15 calibration incompatibility | Complete ambient/transport/reference/horizon mutation set | Numerical calibration cannot migrate silently between physical models | S0–S1, S8 |
 | C16 joint wind state | Reduced iso-poly and empirical slow/fast states with independent thermodynamic/flow oracles | Pressure correction does not retain an incompatible solved-wind claim | S1, S9 |
 
@@ -1329,11 +1445,17 @@ A source archive must be extracted into a clean directory and built there. Verif
 | G0 contracts | S0, baseline/contract identity and truthful analytical selectors | Composite design/interfaces available |
 | G1 continuous front | S1–S5, joint ambient/wind evidence, geometry/feature scope, external upstream and jump checks | Continuous prescribed shock/front over its actually tested range; event Mach/connectivity claims need quiet-wind qualification |
 | G2 native Level A | G1 plus actual S7–S8 publication/halo, calibration, source termination, cache/mask and restart evidence | Corona/SWCME front and supported SEP coupling for each tested application; extended injection is qualified separately |
-| G3 analytical regions | Applicable G1/G2 plus S6 regional map/flux/induction/interface, numerical and bounded physical-discrepancy evidence, then relevant S9 observations | Only the qualified analytical sheath/interior/wake and its supported transport observables; no required ejecta field |
+| G3 analytical regions | Applicable G1/G2 plus S6 piston/ray/assembly/interface, numerical and reduced-model validity evidence, then relevant S9 observations | Only the qualified computed sheath/compression and optional interior/wake observables; no required ejecta field topology |
 | G4 event validation | S9 frozen observations, fit/holdout separation and uncertainty for selected capability | Event-specific scientific performance |
 | G5 analytical release | Applicable gates plus S10 end-to-end, convergence/sensitivity, application evidence and reproducible source/data/plots | Documented analytical replacement within its validated scope; no global fluid-evolution claim |
 
-Implement S0–S5, then S7–S8 for Level A. Preserve the source-disabled and coronal-only cases first; qualify extended release separately. Use S9 to test complete quiet-wind states, shock/optional-ejecta features and supported SEP observables. Develop S6 only when spatial downstream observables are requested, starting with exact planar fixtures and compatible analytical maps. Add an optional interior reference only for its explicitly requested science case.
+Implement S0–S5, then S7–S8 for Level A. Preserve the source-disabled and
+coronal-only cases first; qualify extended release separately. For the active
+G1 spatial-background requirement, develop S6 from the exact planar piston,
+formation, well-balance and spherical fixtures into the reviewed per-ray
+production closure. Use S9 to compare its computed shock and regional profiles
+with frozen observations. Add an optional interior reference only for its
+explicitly requested science case.
 
 S10 packages and qualifies the resulting analytical release. No MHD solver, imported-evolution mode or comparison gate is introduced. Failure of an optional downstream closure does not invalidate an independently qualified ambient/front path, but it must prevent unsupported downstream claims.
 

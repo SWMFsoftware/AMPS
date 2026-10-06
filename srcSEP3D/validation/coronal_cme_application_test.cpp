@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -124,6 +125,89 @@ NativeTestResult EvaluateOne(const NativeTestDescriptor& descriptor,
                                   state.mpiFingerprintConsistent
         ? NativeTestStatus::Pass : NativeTestStatus::Fail,
         "restarted MPI state advanced with a consistent identity");
+  }
+  if(id=="RSH24") {
+    if(state.backgroundAuthority!="runtime-model")return Result(descriptor,
+        NativeTestStatus::Skip,"requires the reduced runtime-model background");
+    return Result(descriptor,state.runtimeCollectiveRollbackVerified?
+        NativeTestStatus::Pass:NativeTestStatus::Fail,
+        "an injected one-rank candidate failure is rejected collectively without changing the committed epoch");
+  }
+  if(id=="RSH25") {
+    if(state.backgroundAuthority!="runtime-model")return Result(descriptor,
+        NativeTestStatus::Skip,"requires the reduced runtime-model background");
+    const bool ghosts=state.mpiRankCount==1||
+        (state.runtimeMeshGhostCellsChecked>0&&state.runtimeMeshGhostFieldsMatch);
+    NativeTestResult result=Result(descriptor,
+        state.runtimeMeshOwnedFieldsMatch&&state.runtimeMeshProviderMatch&&ghosts?
+          NativeTestStatus::Pass:NativeTestStatus::Fail,
+        state.mpiRankCount==1?
+          "all owner/native fields match; one rank has no received remote block":
+          "owner and actual received-ghost primitives/derivatives match the reduced ambient epoch");
+    result.metrics={{"owner_fields_match",state.runtimeMeshOwnedFieldsMatch?1.0:0.0},
+        {"ghost_cells_checked",state.runtimeMeshGhostCellsChecked},
+        {"ghost_fields_match",state.runtimeMeshGhostFieldsMatch?1.0:0.0}};
+    return result;
+  }
+  if(id=="RSH26") {
+    if(state.backgroundAuthority!="runtime-model")return Result(descriptor,
+        NativeTestStatus::Skip,"requires the reduced runtime-model background");
+    const bool rankCount=state.expectedMpiRanks<=0||
+        state.expectedMpiRanks==state.mpiRankCount;
+    const bool good=state.reducedProviderSelected&&rankCount&&
+        state.mpiFingerprintConsistent&&state.reducedFrontGeneration>0&&
+        state.reducedFrontGeneration==state.reducedAmbientGeneration&&
+        state.reducedFrontGeneration==state.backgroundGeneration&&
+        !state.reducedEventIdentity.empty()&&!state.reducedPhase.empty()&&
+        std::isfinite(state.reducedEpochS)&&
+        std::isfinite(state.reducedApexRadiusM)&&state.reducedApexRadiusM>0&&
+        std::isfinite(state.reducedApexSpeedMPerS);
+    NativeTestResult result=Result(descriptor,good?NativeTestStatus::Pass:
+        NativeTestStatus::Fail,
+        "replicated front identity/generation and absolute area ledger agree collectively");
+    result.metrics={{"front_generation",static_cast<double>(state.reducedFrontGeneration)},
+        {"accepted_area_m2",state.reducedAcceptedAreaM2},
+        {"numerical_failure_area_m2",state.reducedNumericalFailureAreaM2},
+        {"apex_radius_m",state.reducedApexRadiusM},
+        {"apex_speed_m_s",state.reducedApexSpeedMPerS}};
+    return result;
+  }
+  if(id=="RSH27") {
+    if(state.backgroundAuthority!="runtime-model")return Result(descriptor,
+        NativeTestStatus::Skip,"requires the reduced runtime-model background");
+    const bool good=!state.sourceEnabled&&state.zeroParticleAllocationRequested&&
+        state.globalParticleCount==0&&state.globalInjectedParticleCount==0;
+    NativeTestResult result=Result(descriptor,good?NativeTestStatus::Pass:
+        NativeTestStatus::Fail,
+        "actual global AMPS particle/source counts remain zero through the requested native steps");
+    result.metrics={{"global_particles",static_cast<double>(state.globalParticleCount)},
+        {"global_injected",static_cast<double>(state.globalInjectedParticleCount)},
+        {"particles_per_cell_zero",state.zeroParticleAllocationRequested?1.0:0.0}};
+    return result;
+  }
+  if(id=="RSH28") {
+    if(state.backgroundAuthority!="runtime-model")return Result(descriptor,
+        NativeTestStatus::Skip,"requires the reduced runtime-model background");
+    const bool good=state.reducedProviderSelected&&
+        state.reducedGeometricEndpointReached&&
+        state.reducedEndpointObserverGeometricHit&&
+        !state.reducedEndpointObserverStatus.empty()&&
+        state.backgroundReady&&state.finiteBackgroundAndTurbulence&&
+        state.globalParticleCount==0;
+    NativeTestResult result=Result(descriptor,good?NativeTestStatus::Pass:
+        NativeTestStatus::Fail,
+        good?"native trajectory reached 1 AU geometrically; exact observer status="+
+          state.reducedEndpointObserverStatus+
+          (state.reducedEndpointObserverShockAccepted?" (accepted shock)":" (no accepted shock)"):
+          "native run did not commit and independently classify the configured 1-AU endpoint");
+    result.metrics={{"committed_time_s",state.reducedEpochS},
+        {"exact_endpoint_time_s",state.reducedEndpointTimeS},
+        {"apex_radius_m",state.reducedApexRadiusM},
+        {"geometric_arrival",state.reducedGeometricEndpointReached?1.0:0.0},
+        {"accepted_shock_arrival",state.reducedEndpointObserverShockAccepted?1.0:0.0},
+        {"accepted_area_m2",state.reducedAcceptedAreaM2},
+        {"numerical_failure_area_m2",state.reducedNumericalFailureAreaM2}};
+    return result;
   }
 
   if (id == "SCCM3D01") {
@@ -289,6 +373,14 @@ const std::vector<NativeTestDescriptor>& CoronalCmeNativeTests() {
       {"NAT3D12", "Production product grammar", "finite initialization products"},
       {"MPI3D01", "Multi-rank state reproducibility", "rank identity agreement"},
       {"MPI3D02", "Multi-rank restart continuation", "restart advancement"},
+      {"RSH24", "Reduced collective epoch transaction", "rank-local failure rollback", "sep-corona"},
+      {"RSH25", "Reduced owner and received-ghost fields", "native ambient epoch readback", "sep-corona"},
+      {"RSH26", "Reduced MPI front invariance", "collective identity/generation/areas", "sep-corona"},
+      {"RSH27", "Reduced zero-particle execution", "actual allocation/source/global count", "sep-corona"},
+      // RSH28 is selected explicitly only for the separate long deck.  Making
+      // it part of the smoke suite would turn a deliberately pre-endpoint run
+      // into a required SKIP or a false arrival claim.
+      {"RSH28", "Reduced actual 1-AU endpoint", "geometric versus accepted shock arrival"},
       {"SCCM3D01", "SCCM initialization ledger", "all ten initialization gates", "sep-corona"},
       {"SCCM3D02", "SCCM species numerics", "all-species weights and steps", "sep-corona"},
       {"SCCM3D03", "SCCM source species binding", "compiled AMPS table coverage", "sep-corona"},
@@ -402,6 +494,26 @@ Core::Status WriteNativeTestJson(
       << ", \"owner_fields_match\": " << (state.runtimeMeshOwnedFieldsMatch ? "true" : "false")
       << ", \"ghost_fields_match\": " << (state.runtimeMeshGhostFieldsMatch ? "true" : "false")
       << ", \"provider_matches\": " << (state.runtimeMeshProviderMatch ? "true" : "false") << "},\n"
+      << "  \"reduced_front\": {\"selected\": " << (state.reducedProviderSelected ? "true" : "false")
+      << ", \"event_identity\": " << JsonString(state.reducedEventIdentity)
+      << ", \"generation\": " << state.reducedFrontGeneration
+      << ", \"ambient_generation\": " << state.reducedAmbientGeneration
+      << ", \"epoch_s\": " << std::setprecision(17) << state.reducedEpochS
+      << ", \"phase\": " << JsonString(state.reducedPhase)
+      << ", \"apex_radius_m\": " << state.reducedApexRadiusM
+      << ", \"apex_speed_m_s\": " << state.reducedApexSpeedMPerS
+      << ", \"accepted_area_m2\": " << state.reducedAcceptedAreaM2
+      << ", \"numerical_failure_area_m2\": " << state.reducedNumericalFailureAreaM2
+      << ", \"geometric_endpoint_reached\": " << (state.reducedGeometricEndpointReached ? "true" : "false")
+      << ", \"apex_shock_accepted\": " << (state.reducedApexShockAccepted ? "true" : "false")
+      << ", \"endpoint_time_s\": " << state.reducedEndpointTimeS
+      << ", \"endpoint_observer_status\": " << JsonString(state.reducedEndpointObserverStatus)
+      << ", \"endpoint_observer_shock_accepted\": " << (state.reducedEndpointObserverShockAccepted ? "true" : "false")
+      << "},\n"
+      << "  \"particles\": {\"allocation_requested_zero\": "
+      << (state.zeroParticleAllocationRequested ? "true" : "false")
+      << ", \"global_count\": " << state.globalParticleCount
+      << ", \"global_injected\": " << state.globalInjectedParticleCount << "},\n"
       << "  \"active_region\": {\"mode\": "
       << JsonString(state.activeRegionMode)
       << ", \"plan_installed\": " << (state.activeMaskInstalled ? "true" : "false")

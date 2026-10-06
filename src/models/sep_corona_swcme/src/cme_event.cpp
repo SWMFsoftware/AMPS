@@ -116,6 +116,57 @@ Core::Result<std::array<ComponentHistory,4>> ParseHistory(
   return Return::Success(std::move(result));
 }
 
+Core::Result<PistonRayQuadrature> ParsePistonRays(const std::string& bytes) {
+  using Return=Core::Result<PistonRayQuadrature>;
+  std::istringstream input(bytes);
+  std::string line;
+  bool header=false;
+  PistonRayQuadrature out;
+  std::size_t lineNumber=0;
+  while(std::getline(input,line)) {
+    ++lineNumber;line=Trim(line);
+    if(line.empty()||line[0]=='#')continue;
+    if(!header) {
+      if(line!="id,qx,qy,qz,solid_angle_sr,lat_minus,lat_plus,lon_minus,lon_plus")
+        return Return::Failure(Core::StatusCode::InvalidConfiguration,
+            "piston ray line "+std::to_string(lineNumber)+
+            ": unexpected CSV header");
+      header=true;continue;
+    }
+    std::replace(line.begin(),line.end(),',',' ');
+    std::istringstream row(line);
+    long long id=0,latitudeMinus=0,latitudePlus=0,longitudeMinus=0,
+        longitudePlus=0;
+    PistonRayInput ray;
+    if(!(row>>id>>ray.direction.x>>ray.direction.y>>ray.direction.z>>
+        ray.solidAngleSr>>latitudeMinus>>latitudePlus>>longitudeMinus>>
+        longitudePlus)||id<0||id>10000000||latitudeMinus<-1||
+        latitudePlus<-1||longitudeMinus<0||longitudePlus<0||
+        latitudeMinus>10000000||latitudePlus>10000000||
+        longitudeMinus>10000000||longitudePlus>10000000||
+        !std::isfinite(ray.direction.x)||!std::isfinite(ray.direction.y)||
+        !std::isfinite(ray.direction.z)||!std::isfinite(ray.solidAngleSr))
+      return Return::Failure(Core::StatusCode::InvalidConfiguration,
+          "piston ray line "+std::to_string(lineNumber)+
+          ": invalid finite ray/topology record");
+    std::string trailing;
+    if(row>>trailing)return Return::Failure(
+        Core::StatusCode::InvalidConfiguration,
+        "piston ray line "+std::to_string(lineNumber)+": trailing field");
+    ray.id=static_cast<std::uint64_t>(id);
+    ray.latitudeMinus=static_cast<int>(latitudeMinus);
+    ray.latitudePlus=static_cast<int>(latitudePlus);
+    ray.longitudeMinus=static_cast<int>(longitudeMinus);
+    ray.longitudePlus=static_cast<int>(longitudePlus);
+    out.rays.push_back(ray);
+  }
+  if(!header||out.rays.size()<16)return Return::Failure(
+      Core::StatusCode::InvalidConfiguration,
+      "piston ray asset needs a header and at least sixteen cells");
+  out.enabled=true;
+  return Return::Success(std::move(out));
+}
+
 Core::Result<AmbientInput> ParseAmbientAsset(const std::string& bytes) {
   const auto parsed=ParseAssignments(bytes);
   if(!parsed.ok())return Core::Result<AmbientInput>::Failure(
@@ -204,6 +255,63 @@ Core::Result<RegionalInput> ParseRegionalAsset(const std::string& bytes) {
   for(const auto& item:numbers)if(!Number(v.at(item.first),item.second))
     return Bad<RegionalInput>("ejecta asset invalid number: "+item.first);
   return Core::Result<RegionalInput>::Success(std::move(out));
+}
+
+Core::Result<PistonContactInput> ParsePistonContactAsset(
+    const std::string& bytes) {
+  const auto parsed=ParseAssignments(bytes);
+  if(!parsed.ok())return Core::Result<PistonContactInput>::Failure(
+      parsed.status.code,"piston contact asset: "+parsed.status.message);
+  const auto& v=parsed.value;
+  const std::set<std::string> required={"profile","orientation_model",
+      "attachment_policy","velocity_reduction","start_s",
+      "startup_ramp_duration_s","initial_center_m",
+      "initial_radial_semiaxis_m","initial_lateral1_semiaxis_m",
+      "initial_lateral2_semiaxis_m","center_rate_m_s",
+      "radial_rate_m_s","lateral1_rate_m_s","lateral2_rate_m_s",
+      "latitude_rad","longitude_rad","lateral_tilt_rad",
+      "handoff_apex_radius_m","handoff_transition_duration_s",
+      "outer_ambient_speed_m_s","outer_drag_coefficient_per_m",
+      "minimum_contact_incidence","launch_margin_m",
+      "startup_mach_tolerance","maximum_apex_acceleration_m_s2",
+      "minimum_final_apex_speed_m_s","maximum_final_apex_speed_m_s"};
+  for(const auto& key:required)if(!v.count(key))return Bad<PistonContactInput>(
+      "piston contact asset missing key: "+key);
+  for(const auto& item:v)if(!required.count(item.first))
+    return Bad<PistonContactInput>("piston contact asset unknown key: "+item.first);
+
+  PistonContactInput out;
+  out.enabled=true;
+  out.profile=v.at("profile");
+  out.orientationModel=v.at("orientation_model");
+  out.attachmentPolicy=v.at("attachment_policy");
+  out.velocityReduction=v.at("velocity_reduction");
+  const std::vector<std::pair<std::string,double*>> numbers={
+      {"start_s",&out.startS},
+      {"startup_ramp_duration_s",&out.startupRampDurationS},
+      {"initial_center_m",&out.initialCenterDistanceM},
+      {"initial_radial_semiaxis_m",&out.initialRadialSemiAxisM},
+      {"initial_lateral1_semiaxis_m",&out.initialFirstLateralSemiAxisM},
+      {"initial_lateral2_semiaxis_m",&out.initialSecondLateralSemiAxisM},
+      {"center_rate_m_s",&out.centerRateMPerS},
+      {"radial_rate_m_s",&out.radialRateMPerS},
+      {"lateral1_rate_m_s",&out.firstLateralRateMPerS},
+      {"lateral2_rate_m_s",&out.secondLateralRateMPerS},
+      {"latitude_rad",&out.latitudeRad},{"longitude_rad",&out.longitudeRad},
+      {"lateral_tilt_rad",&out.lateralTiltRad},
+      {"handoff_apex_radius_m",&out.handoffApexRadiusM},
+      {"handoff_transition_duration_s",&out.handoffTransitionDurationS},
+      {"outer_ambient_speed_m_s",&out.outerAmbientSpeedMPerS},
+      {"outer_drag_coefficient_per_m",&out.outerDragCoefficientPerM},
+      {"minimum_contact_incidence",&out.minimumContactIncidence},
+      {"launch_margin_m",&out.launchMarginM},
+      {"startup_mach_tolerance",&out.startupMachTolerance},
+      {"maximum_apex_acceleration_m_s2",&out.maximumApexAccelerationMPerS2},
+      {"minimum_final_apex_speed_m_s",&out.minimumFinalApexSpeedMPerS},
+      {"maximum_final_apex_speed_m_s",&out.maximumFinalApexSpeedMPerS}};
+  for(const auto& item:numbers)if(!Number(v.at(item.first),item.second))
+    return Bad<PistonContactInput>("piston contact asset invalid number: "+item.first);
+  return Core::Result<PistonContactInput>::Success(std::move(out));
 }
 
 struct Cubic { double c0=0,c1=0,c2=0,c3=0,dt=0; };
@@ -436,9 +544,13 @@ Core::Status ValidateEventConfiguration(const EventConfiguration& c) {
   const auto fail=[](const std::string& message) {
     return Core::Status::Failure(Core::StatusCode::InvalidConfiguration,message);
   };
-  if(c.profile!="pfss-parker-shock-fed-map-v1"||c.coordinateFrame!="inertial-hci"||
+  const bool diagnostic=c.profile=="pfss-parker-shock-fed-map-v1"&&
+      c.sheathModel=="rh-relaxing-material-map-v1"&&!c.pistonContact.enabled;
+  const bool piston=c.profile=="pfss-parker-piston-sheath-v1"&&
+      c.sheathModel=="per-ray-lagrangian-piston-v1"&&c.pistonContact.enabled&&
+      c.pistonRays.enabled;
+  if((!diagnostic&&!piston)||c.coordinateFrame!="inertial-hci"||
       c.ambientProfile!="pfss-parker-isothermal-v1"||
-      c.sheathModel!="rh-relaxing-material-map-v1"||
       c.ejectaModel!="vector-potential-material-map-v1"||
       c.outerEvolution!="swcme-dbm-constant-wind-v1"||
       c.attachmentPolicy!="attached-then-detached")
@@ -538,12 +650,17 @@ Core::Status ValidateEventConfiguration(const EventConfiguration& c) {
       std::numeric_limits<double>::epsilon()*std::max(1.0,maxima[1]);
   if(maxima[1]+unresolved>s.maximumApexAccelerationMPerS2*(1+1e-12))
     return fail("continuous handoff exceeds the frozen apex acceleration bound");
-  if(c.assets.size()!=3)return fail("history, ambient, and ejecta assets are mandatory");
+  if(c.assets.size()!=(piston?5u:3u))return fail(
+      "event asset count does not match the selected sheath closure");
   std::set<std::string> roles;
   for(const auto& asset:c.assets)
     if(!roles.insert(asset.role).second||asset.path.empty()||asset.bytes==0||
         !LowerHexSha256(asset.sha256))return fail("invalid or duplicate asset identity");
-  if(roles!=std::set<std::string>({"ambient","ejecta_reference","history"}))
+  std::set<std::string> expected={"ambient","ejecta_reference","history"};
+  if(piston) {
+    expected.insert("piston_contact");expected.insert("piston_rays");
+  }
+  if(roles!=expected)
     return fail("incomplete asset role set");
   if(c.physicsFingerprint.empty()||c.manifest.empty())return fail("missing event identity");
   const auto initial=c.At(s.startS),final=c.At(s.endS);
@@ -554,6 +671,94 @@ Core::Status ValidateEventConfiguration(const EventConfiguration& c) {
       !initialExtent.value.intersectsSolarSurface||
       finalExtent.value.minimumRadiusM<=s.solarRadiusM)
     return fail("attached-then-detached policy does not match exact radial extrema");
+  if(piston) {
+    const auto& contact=c.pistonContact;
+    const auto& numerical=c.pistonNumerics;
+    const double apex0=contact.initialCenterDistanceM+
+        contact.initialRadialSemiAxisM;
+    const double apexRate=contact.centerRateMPerS+contact.radialRateMPerS;
+    if(contact.profile!="generic-analytic-ellipsoid-contact-v1"||
+        contact.orientationModel!="fixed-hci-v1"||
+        contact.attachmentPolicy!="attached-then-detached"||
+        contact.velocityReduction!=
+            "radial-dynamics-passive-ambient-transverse"||
+        contact.startS!=s.startS||!(contact.startupRampDurationS>0)||
+        !(contact.initialCenterDistanceM>0)||
+        !(contact.initialRadialSemiAxisM>0)||
+        !(contact.initialFirstLateralSemiAxisM>0)||
+        !(contact.initialSecondLateralSemiAxisM>0)||
+        !(contact.centerRateMPerS>=0)||!(contact.radialRateMPerS>=0)||
+        !(contact.firstLateralRateMPerS>=0)||
+        !(contact.secondLateralRateMPerS>=0)||!(apexRate>0)||
+        !(apex0>=s.firstValidPlasmaRadiusM+contact.launchMarginM)||
+        !(contact.handoffApexRadiusM>apex0)||
+        !(contact.handoffApexRadiusM<s.coverageRadiusM)||
+        !(contact.handoffTransitionDurationS>0)||
+        !(contact.outerAmbientSpeedMPerS>0)||
+        !(contact.outerDragCoefficientPerM>=0)||
+        !(contact.minimumContactIncidence>0&&
+          contact.minimumContactIncidence<1)||
+        !(contact.launchMarginM>=0)||
+        !(contact.startupMachTolerance>0&&
+          contact.startupMachTolerance<=0.1)||
+        !(contact.maximumApexAccelerationMPerS2>0)||
+        !(contact.minimumFinalApexSpeedMPerS>=800000)||
+        !(contact.maximumFinalApexSpeedMPerS<=1500000)||
+        !(contact.minimumFinalApexSpeedMPerS<=apexRate&&
+          apexRate<=contact.maximumFinalApexSpeedMPerS))
+      return fail("piston contact asset violates the selected Level-B contract");
+    if(!numerical.enabled||numerical.initialCells<32||
+        numerical.initialCells>1000000||!(numerical.initialBufferM>0)||
+        !(numerical.initialBufferM<s.coverageRadiusM-
+            s.firstValidPlasmaRadiusM)||
+        numerical.sourceTablePoints<65||
+        numerical.sourceTablePoints>10000000||
+        !(numerical.trajectoryMaximumStepS>0&&
+          numerical.trajectoryMaximumStepS<=s.endS-s.startS)||
+        !(numerical.bufferCheckIntervalS>0&&
+          numerical.bufferCheckIntervalS<=s.endS-s.startS)||
+        numerical.minimumBufferCells<4||numerical.appendCells<4||
+        numerical.minimumBufferCells>10000000||
+        numerical.appendCells>10000000||
+        !(numerical.disturbanceRelativeThreshold>0&&
+          numerical.disturbanceRelativeThreshold<1)||
+        !(numerical.cfl>0&&numerical.cfl<=0.8)||
+        numerical.artificialViscosity!="vnr"||
+        !(numerical.quadraticViscosity>=0)||
+        !(numerical.linearViscosity>=0)||
+        !(numerical.shockThreshold>0&&numerical.shockThreshold<1)||
+        numerical.wellBalancedSources!="on")
+      return fail("piston numerical controls violate the selected Level-B contract");
+    const auto& rays=c.pistonRays.rays;
+    double solidAngle=0;
+    for(std::size_t i=0;i<rays.size();++i) {
+      const auto& ray=rays[i];
+      const double norm=std::sqrt(ray.direction.x*ray.direction.x+
+          ray.direction.y*ray.direction.y+ray.direction.z*ray.direction.z);
+      const auto validNeighbor=[&](int neighbor) {
+        return neighbor==-1||
+            (neighbor>=0&&static_cast<std::size_t>(neighbor)<rays.size()&&
+             static_cast<std::size_t>(neighbor)!=i);
+      };
+      if(ray.id!=i||std::abs(norm-1)>2e-15||!(ray.solidAngleSr>0)||
+          !validNeighbor(ray.latitudeMinus)||!validNeighbor(ray.latitudePlus)||
+          !validNeighbor(ray.longitudeMinus)||!validNeighbor(ray.longitudePlus)||
+          ray.longitudeMinus<0||ray.longitudePlus<0)
+        return fail("piston ray asset has invalid direction, weight, ID or neighbor");
+      const auto reciprocal=[&](int neighbor,int PistonRayInput::*opposite) {
+        return neighbor==-1||rays[neighbor].*opposite==static_cast<int>(i);
+      };
+      if(!reciprocal(ray.latitudeMinus,&PistonRayInput::latitudePlus)||
+          !reciprocal(ray.latitudePlus,&PistonRayInput::latitudeMinus)||
+          !reciprocal(ray.longitudeMinus,&PistonRayInput::longitudePlus)||
+          !reciprocal(ray.longitudePlus,&PistonRayInput::longitudeMinus))
+        return fail("piston ray neighbor topology is not reciprocal");
+      solidAngle+=ray.solidAngleSr;
+    }
+    constexpr double pi=3.141592653589793238462643383279502884;
+    if(std::abs(solidAngle-4*pi)>2e-14)
+      return fail("piston ray solid-angle weights do not close 4*pi");
+  }
   return Core::Status::Success();
 }
 
@@ -564,7 +769,11 @@ Core::Result<std::shared_ptr<const EventConfiguration>> ResolveEventConfiguratio
   const auto parsed=ParseAssignments(inputBytes);
   if(!parsed.ok())return EventResult::Failure(parsed.status.code,parsed.status.message);
   auto values=parsed.value;
-  const std::set<std::string> required={
+  const bool pistonSelection=values.count("run.profile")&&
+      values.count("regions.sheath_model")&&
+      values.at("run.profile")=="pfss-parker-piston-sheath-v1"&&
+      values.at("regions.sheath_model")=="per-ray-lagrangian-piston-v1";
+  std::set<std::string> required={
     "run.profile","run.coordinate_frame","run.start_s","run.end_s",
     "domain.solar_radius_m","domain.first_valid_plasma_radius_m","domain.coverage_radius_m",
     "geometry.latitude_rad","geometry.longitude_rad","geometry.lateral_tilt_rad",
@@ -578,6 +787,26 @@ Core::Result<std::shared_ptr<const EventConfiguration>> ResolveEventConfiguratio
     "handoff.transition_begin_s","handoff.transition_end_s","handoff.ambient_speed_m_s",
     "handoff.drag_coefficient_per_m","numerics.root_tolerance_s",
     "numerics.maximum_apex_acceleration_m_s2"};
+  if(pistonSelection) {
+    required.insert("assets.piston_contact_file");
+    required.insert("assets.piston_contact_sha256");
+    required.insert("assets.piston_rays_file");
+    required.insert("assets.piston_rays_sha256");
+    required.insert("bg3d4.initial_cells");
+    required.insert("bg3d4.initial_buffer_m");
+    required.insert("bg3d4.source_table_points");
+    required.insert("bg3d4.trajectory_maximum_step_s");
+    required.insert("bg3d4.buffer_check_interval_s");
+    required.insert("bg3d4.minimum_buffer_cells");
+    required.insert("bg3d4.append_cells");
+    required.insert("bg3d4.disturbance_threshold");
+    required.insert("bg3d4.cfl");
+    required.insert("bg3d4.artificial_viscosity");
+    required.insert("bg3d4.quadratic_viscosity");
+    required.insert("bg3d4.linear_viscosity");
+    required.insert("bg3d4.shock_detection_threshold");
+    required.insert("bg3d4.well_balanced_sources");
+  }
   for(const auto& key:required)if(!values.count(key))return EventResult::Failure(
       Core::StatusCode::InvalidConfiguration,"missing event key: "+key);
   for(const auto& item:values)if(!required.count(item.first))return EventResult::Failure(
@@ -622,11 +851,45 @@ Core::Result<std::shared_ptr<const EventConfiguration>> ResolveEventConfiguratio
           Core::StatusCode::InvalidConfiguration,
           "plasma.include_electron_mass requires true or false");
   event->composition.includeElectronMass=values["plasma.include_electron_mass"]=="true";
+  if(pistonSelection) {
+    auto& numerical=event->pistonNumerics;
+    numerical.enabled=true;
+    if(!Integer(values["bg3d4.initial_cells"],&numerical.initialCells)||
+        !Integer(values["bg3d4.source_table_points"],
+            &numerical.sourceTablePoints)||
+        !Integer(values["bg3d4.minimum_buffer_cells"],
+            &numerical.minimumBufferCells)||
+        !Integer(values["bg3d4.append_cells"],&numerical.appendCells)||
+        !Number(values["bg3d4.initial_buffer_m"],
+            &numerical.initialBufferM)||
+        !Number(values["bg3d4.trajectory_maximum_step_s"],
+            &numerical.trajectoryMaximumStepS)||
+        !Number(values["bg3d4.buffer_check_interval_s"],
+            &numerical.bufferCheckIntervalS)||
+        !Number(values["bg3d4.disturbance_threshold"],
+            &numerical.disturbanceRelativeThreshold)||
+        !Number(values["bg3d4.cfl"],&numerical.cfl)||
+        !Number(values["bg3d4.quadratic_viscosity"],
+            &numerical.quadraticViscosity)||
+        !Number(values["bg3d4.linear_viscosity"],
+            &numerical.linearViscosity)||
+        !Number(values["bg3d4.shock_detection_threshold"],
+            &numerical.shockThreshold))return EventResult::Failure(
+            Core::StatusCode::InvalidConfiguration,
+            "invalid finite BG3D-4 piston numerical control");
+    numerical.artificialViscosity=values["bg3d4.artificial_viscosity"];
+    numerical.wellBalancedSources=values["bg3d4.well_balanced_sources"];
+  }
 
-  std::string historyBytes,ambientBytes,ejectaBytes;
-  for(const auto& request:std::vector<std::pair<std::string,std::string*>>{
+  std::string historyBytes,ambientBytes,ejectaBytes,contactBytes,rayBytes;
+  std::vector<std::pair<std::string,std::string*>> requests={
       {"history",&historyBytes},{"ambient",&ambientBytes},
-      {"ejecta_reference",&ejectaBytes}}) {
+      {"ejecta_reference",&ejectaBytes}};
+  if(pistonSelection) {
+    requests.push_back({"piston_rays",&rayBytes});
+    requests.push_back({"piston_contact",&contactBytes});
+  }
+  for(const auto& request:requests) {
     const auto asset=Acquire(request.first,values,reader,request.second);
     if(!asset.ok())return EventResult::Failure(asset.status.code,asset.status.message);
     event->assets.push_back(asset.value);
@@ -641,6 +904,15 @@ Core::Result<std::shared_ptr<const EventConfiguration>> ResolveEventConfiguratio
   const auto regional=ParseRegionalAsset(ejectaBytes);
   if(!regional.ok())return EventResult::Failure(regional.status.code,regional.status.message);
   event->regional=regional.value;
+  if(pistonSelection) {
+    const auto rays=ParsePistonRays(rayBytes);
+    if(!rays.ok())return EventResult::Failure(rays.status.code,rays.status.message);
+    event->pistonRays=rays.value;
+    const auto contact=ParsePistonContactAsset(contactBytes);
+    if(!contact.ok())return EventResult::Failure(
+        contact.status.code,contact.status.message);
+    event->pistonContact=contact.value;
+  }
   event->normalizedAssignments=values;
   event->physicsFingerprint=CoronalCME::ComputePhysicsFingerprint(values);
   std::ostringstream manifest;

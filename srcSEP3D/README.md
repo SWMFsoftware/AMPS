@@ -14,6 +14,38 @@ physics is the Parker or focused transport equation in an analytic Parker or
 coupled SWMF/AWSoM background, with Alfvén-turbulence scattering and SWCME
 shock/source parameters.
 
+## Reduced shock-front plus ambient profile
+
+The background-only reduced profile selects
+`background.provider=runtime-model` and
+`model_id=sep-corona-swcme-shock-front-v1`.  Its shared implementation and
+physics contract are documented in
+[`../src/models/sep_corona_swcme/shock_front/README.md`](../src/models/sep_corona_swcme/shock_front/README.md).
+The application adapter publishes the maintained PFSS/Parker plasma and IMF
+to native owner and received-ghost storage while carrying the finite front and
+one-sided RH records as separate diagnostics.  It does not publish a sheath,
+contact, ejecta or downstream volume.
+
+The two runnable zero-particle decks are:
+
+- `examples/shock-front/handoff_smoke.in`: 60 s host cadence, ten-step native
+  handoff test bracketing the exact 69.57 s crossing.
+- `examples/shock-front/corona_to_1au.in`: 600 s host cadence, 340-step native
+  campaign through the exact 1-AU observer root.
+
+After the mandatory clean native rebuild, run the smoke suite on one and four
+ranks, always assigning a unique `--output-dir` as well as unique JSON and
+artifact paths.  Run the long deck separately with explicit
+`RSH24`--`RSH28`; `RSH28` is intentionally absent from the short smoke suite.
+The complete commands, build preflight, hashes and current evidence paths are
+in `../CODEX_REDUCED_SHOCK_PLAN.md` and the shared README above.
+
+The 2026-10-04 long synthetic fixture committed 340/340 native background
+updates and reached 1 AU geometrically at `203884.49378697205 s`.  Its exact
+observer state is `non-forward-inflow`, not an accepted shock.  This distinction
+is part of the acceptance contract.  The run allocated/injected zero particles
+and does not qualify BG3D-4 or any full-volume CME plasma model.
+
 ## Coupled SEP + coronal-CME native validation: quick start
 
 For a finite field-line corridor plus a complete near-Sun active sphere, use

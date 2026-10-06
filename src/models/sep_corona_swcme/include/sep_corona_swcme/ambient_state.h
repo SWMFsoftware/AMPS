@@ -44,6 +44,20 @@ struct AmbientState {
   bool derivativesValid = false;
 };
 
+// Minimal immutable construction record for the canonical ambient authority.
+// The full-CME EventConfiguration remains a supported caller below, but a
+// reduced front must not manufacture inactive contact/sheath/ejecta inputs
+// merely to obtain rho, p, U and B.  All quantities are SI and the identity
+// binds the composition, PFSS/Parker inputs and radial/time support supplied by
+// the reduced event resolver.
+struct AmbientDefinition {
+  Composition composition;
+  AmbientInput ambient;
+  EventSupport support;
+  std::string coordinateFrame;
+  std::string physicsFingerprint;
+};
+
 // One immutable ambient authority from the physical Sun through declared
 // >1-AU coverage. The low corona uses maintained PFSS/topology/closed-plasma
 // kernels; open tubes and the exterior share one isothermal mass-flux/Parker
@@ -52,6 +66,8 @@ class AmbientModel final {
  public:
   static Core::Result<std::shared_ptr<const AmbientModel>> Create(
       std::shared_ptr<const EventConfiguration> event);
+  static Core::Result<std::shared_ptr<const AmbientModel>> Create(
+      const AmbientDefinition& definition);
 
   Core::Result<AmbientPrimitive> Evaluate(
       CoronalCME::Vec3 positionM,double epochS) const;
@@ -59,10 +75,16 @@ class AmbientModel final {
       CoronalCME::Vec3 positionM,double epochS,std::uint64_t generation) const;
 
   const EventConfiguration& Event() const { return *event_; }
+  const AmbientDefinition& Definition() const { return definition_; }
+  const std::string& Identity() const { return definition_.physicsFingerprint; }
   double MassFluxPerSteradianKgPerS() const { return massFluxPerSr_; }
 
  private:
+  static Core::Result<std::shared_ptr<const AmbientModel>> CreateResolved(
+      const AmbientDefinition& definition,
+      std::shared_ptr<const EventConfiguration> event);
   std::shared_ptr<const EventConfiguration> event_;
+  AmbientDefinition definition_;
   CoronalCME::PfssHarmonics pfss_;
   std::vector<CoronalCME::IonSpecies> ions_;
   std::vector<double> logRadius_,logSpeed_,slope_,winding_;

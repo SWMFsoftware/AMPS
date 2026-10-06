@@ -23,7 +23,10 @@ Core::Result<CoronalCME::EllipsoidKinematics> ContactKinematics(
       Core::StatusCode::InvalidConfiguration,"contact span fraction is invalid");
   const auto combine=[&](const CoronalCME::KinematicValue& center,
       const CoronalCME::KinematicValue& radial) {
-    // Rear + fraction*radial = center - (1-fraction)*radial.
+    // Rear + fraction*radial = center - (1-fraction)*radial.  This algebra
+    // preserves nesting for the Level A reference, but supplies no material
+    // boundary condition or piston dynamics.  It must not be reused as the
+    // Level B contact merely because its geometry is smooth.
     return CoronalCME::KinematicValue{
         center.value-(1-fraction)*radial.value,
         center.firstDerivative-(1-fraction)*radial.firstDerivative,
@@ -52,7 +55,7 @@ Core::Result<std::shared_ptr<SurfaceShockModel>> SurfaceShockModel::Create(
   using Return=Core::Result<std::shared_ptr<SurfaceShockModel>>;
   if(!event||!ambient)return Return::Failure(Core::StatusCode::InvalidConfiguration,
       "surface/shock model requires event and ambient authorities");
-  if(event->physicsFingerprint!=ambient->Event().physicsFingerprint)
+  if(event->physicsFingerprint!=ambient->Identity())
     return Return::Failure(Core::StatusCode::DataIntegrityFailure,
         "surface and ambient authorities have different event identities");
   std::shared_ptr<SurfaceShockModel> model(new SurfaceShockModel);
@@ -86,7 +89,9 @@ Core::Result<std::shared_ptr<const SurfaceShockEpoch>> SurfaceShockModel::Prepar
 
   // Same-parameter rear-aligned scaling is analytically nested. Retain an
   // independent direct implicit check so a later geometry change cannot turn
-  // the contact into a crossing surface without failing preparation.
+  // the reference into a crossing surface without failing preparation.  This
+  // proves only Level A geometric containment; it does not prove zero normal
+  // mass flux or compatibility with the future piston/contact authority.
   for(const auto& patch:contactPatches.value) {
     const auto inside=front.value.Evaluate(patch.centerM);
     if(!inside.ok()||inside.value.implicitValue>1e-10)return Return::Failure(

@@ -137,12 +137,17 @@ double Relative(double a,double b) {
   return std::abs(a-b)/std::max({std::abs(a),std::abs(b),1e-300});
 }
 
-// Post-shock material retains the exact RH relative drift at age zero, then
-// relaxes smoothly toward a nonzero frozen fraction.  L(0)=0 and L'(0)=1
-// preserve the shock position and velocity limits; L'>=kappa>0 avoids the
-// singular old-cohort volume produced by a fully arrested drift.  The implied
-// acceleration is a declared sustaining-force contribution and is graded
-// separately from numerical mass/induction residuals.
+// Diagnostic closure, not the selected production law.  Post-shock material
+// retains the exact RH relative drift at age zero, then relaxes smoothly
+// toward a nonzero frozen fraction.  L(0)=0 and L'(0)=1 preserve the shock
+// position and velocity limits; L'>=kappa>0 avoids the singular old-cohort
+// volume produced by a fully arrested drift.  Nothing in mass conservation or
+// the Cauchy induction identity selects kappa or T.  Their implied acceleration
+// is the large, measured sustaining-force residual of this empirical map, so
+// changing them to reduce a test residual would be model fitting rather than
+// numerical convergence.  The reviewed production replacement instead makes
+// a single ejecta contact the piston boundary and solves radial momentum and
+// energy on finite ambient mass cells; see docs/BG3D4_PISTON_CLOSURE.md.
 double DriftTime(const EventConfiguration& event,double ageS) {
   const double kappa=event.regional.sheathDriftAsymptoteFraction;
   const double relaxation=event.regional.sheathDriftRelaxationTimeS;
@@ -157,6 +162,13 @@ double DriftRate(const EventConfiguration& event,double ageS) {
 
 Core::Result<Vec3> EvaluateMapPosition(const EventConfiguration& event,
     const AmbientModel& ambient,const SheathMaterialLabel& label,double time) {
+  // This intentionally evaluates the RH deficit at the query epoch.  That is
+  // why the diagnostic cannot evolve old material after the prescribed front
+  // becomes sub-fast: no admissible current downstream state exists.  It would
+  // be incorrect to fall back to the birth deficit silently because that is a
+  // different evolution law.  The production piston model separates ongoing
+  // material evolution from shock admission and therefore does not use this
+  // helper.
   const auto flow=EvaluateBirth(event,ambient,label.polarRad,label.azimuthRad,time);
   if(!flow.ok())return Core::Result<Vec3>::Failure(
       flow.status.code,flow.status.message);
@@ -244,9 +256,13 @@ Core::Result<std::shared_ptr<ShockFedSheathModel>> ShockFedSheathModel::Create(
   using Return=Core::Result<std::shared_ptr<ShockFedSheathModel>>;
   if(!event||!ambient)return Return::Failure(Core::StatusCode::InvalidConfiguration,
       "shock-fed sheath requires event and ambient authorities");
-  if(event->physicsFingerprint!=ambient->Event().physicsFingerprint)
+  if(event->physicsFingerprint!=ambient->Identity())
     return Return::Failure(Core::StatusCode::DataIntegrityFailure,
         "sheath and ambient authorities have different event identities");
+  // Keep the selector closed.  The future per-ray-lagrangian-piston value must
+  // construct a different type with a finite ambient inventory, a checksummed
+  // ray quadrature and a contact/ejecta driver.  Accepting it here would falsely
+  // advertise the empirical front-driven map under a production identity.
   if(event->sheathModel!="rh-relaxing-material-map-v1")return Return::Failure(
       Core::StatusCode::UnsupportedCapability,"unsupported analytical sheath model");
   auto model=std::shared_ptr<ShockFedSheathModel>(new ShockFedSheathModel);
@@ -403,9 +419,13 @@ Core::Result<SheathContactState> ShockFedSheathModel::EvaluateContact(
       std::isfinite(epochS)&&epochS>=start&&epochS<=event_->support.endS))
     return Return::Failure(Core::StatusCode::OutOfDomain,
         "material contact query is outside event support");
-  // One global oldest cohort is selected.  Failure at the global start is an
-  // unsupported contact patch; it must not be replaced by a later local
-  // first-fast time because that would reset material inventory.
+  // Diagnostic-map rear boundary only.  One global oldest cohort is selected
+  // so inventory cannot reset at each local first-fast time.  It is material
+  // under this map, but it is not the production contact authority: BG3D-3's
+  // fixed-fraction surface disagrees with it and the replacement model uses
+  // the reconstructed ejecta surface directly.  Failure at the global start
+  // is therefore an unsupported diagnostic patch, never permission to choose
+  // a later cohort and erase the preceding physical inventory.
   SheathMaterialLabel label{polarRad,azimuthRad,start,0};
   const auto mapped=Evaluate(label,epochS);
   if(!mapped.ok())return Return::Failure(mapped.status.code,mapped.status.message);
@@ -525,8 +545,12 @@ ShockFedSheathModel::PrepareInventory(double epochS,
   candidate->minimumJacobian=std::numeric_limits<double>::infinity();
   candidate->zeroVolumeStartup=epochS==begin;
   if(epochS==begin) {
-    // The selected manufactured/event startup is a limiting zero-volume
-    // sheath.  No 3-D inverse or density/J floor is attempted at this epoch.
+    // Diagnostic admission limit only.  The old map has no finite material
+    // volume at its first admission time, so attempting to invert A0 or adding
+    // a density/J floor would manufacture mass.  This branch is not a valid
+    // production CME startup.  The replacement piston model instead starts
+    // with a finite ambient column adjacent to a velocity-compatible contact;
+    // the disturbed sheath and shock then form dynamically.
     candidate->minimumJacobian=1.0;
     current_=candidate;
     return Return::Success(std::move(candidate));

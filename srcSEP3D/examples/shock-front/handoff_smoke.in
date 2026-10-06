@@ -1,0 +1,220 @@
+# Synthetic reduced-front handoff smoke case.  This is a zero-particle
+# numerical-integration fixture, not an observed eruption.  The application
+# stores the canonical ambient reference everywhere; the shared provider owns
+# the finite front and its local RH diagnostics separately.  In particular,
+# cells geometrically behind the front are not sheath/ejecta cells.
+
+[run]
+schema_version = 4
+intent = transport-only
+transport = parker
+time_step_s = 60
+maximum_time_steps = 10
+campaign_seed = 4701
+background_cadence_steps = 1
+injection_cadence_steps = 1
+
+[domain]
+preset = solar
+inner_radius_m = 6.957e8
+inner_boundary = absorb
+outer_radius_mode = preset
+outer_radius_m = 4.487936121e10
+outer_boundary = escape
+# Exact provider metadata spelling: the reduced event and the application
+# publish the same heliocentric inertial frame identity.
+coordinate_frame = HCI
+origin_x_m = 0
+origin_y_m = 0
+origin_z_m = 0
+
+[parker_spiral]
+# A polar line avoids the genuine exterior null of the synthetic +Z dipole.
+origin_x_m = 0
+origin_y_m = 0
+origin_z_m = 0
+start_mode = explicit
+initial_x_m = 0
+initial_y_m = 0
+initial_z_m = 6.957e8
+length_m = 5.0e10
+point_count = 1001
+
+[mesh]
+global_cell_size_m = 5.0e9
+minimum_cell_size_m = 6.957e8
+cells_per_block_edge = 4
+maximum_level = 6
+memory_budget_bytes = 17179869184
+block_overhead_bytes = 1024
+
+[mesh.solar]
+enabled = true
+surface_cell_size_m = 6.957e8
+transition_outer_radius_m = 1.3914e10
+profile = smoothstep
+exponent = 1
+
+[mesh.tube]
+enabled = true
+source_longitude_rad = 0
+source_colatitude_rad = 0
+reference_radius_m = 4.487936121e10
+radius_at_reference_m = 1.5e9
+radius_mode = constant-angular-width
+center_cell_size_m = 6.957e8
+transverse_profile = smoothstep
+transverse_exponent = 1
+
+[mesh.active_region]
+mode = parker-tube
+reference_radius_m = 4.487936121e10
+radius_at_reference_m = 3.0e9
+radius_mode = constant-angular-width
+buffer_blocks = 1
+
+[memory]
+base_cell_bytes = 256
+base_node_bytes = 128
+block_structure_bytes = 4096
+communication_bytes_per_block = 2048
+particle_bytes = 160
+particles_per_cell = 0
+halo_fraction = 0.20
+safety_margin_fraction = 0.25
+
+[background]
+provider = runtime-model
+model_id = sep-corona-swcme-shock-front-v1
+model_asset = handoff_smoke.event
+external_script = false
+
+# This legacy application record remains explicit for schema completeness but
+# is not a second ambient authority.  The checksummed event above supplies the
+# actual PFSS/Parker/EOS state to the runtime adapter.
+[background.parker]
+reference_radius_m = 1.495978707e11
+radial_field_at_reference_t = 3.0e-9
+solar_rotation_rate_rad_per_s = 2.86533e-6
+solar_wind_speed_m_per_s = 400000
+magnetic_polarity = 1
+number_density_at_one_au_m3 = 7.0e6
+temperature_k = 1.4e6
+validity_cadence_s = 60
+
+[turbulence]
+authority = prescribed
+model = kolmogorov
+amplitude_model = constant-delta-b-over-b
+delta_b_over_b = 0.3
+wave_energy_density_at_reference_j_per_m3 = 0
+wave_energy_density_radial_exponent = 0
+normalized_cross_helicity = 0
+reference_radius_m = 1.495978707e11
+k_min_per_m = 1e-10
+k_max_per_m = 1e-7
+k_min_radial_exponent = 2
+k_max_radial_exponent = 2
+spectral_index = 1.6666666666666667
+correlation_length_m = 4.487936121e9
+correlation_length_radial_exponent = 1
+validity_cadence_s = 60
+missing_data = fail
+resonance_range = reject
+self_consistent_3d = false
+
+[transport]
+cell_crossing_fraction = 0.4
+diffusion_fraction = 0.2
+focusing_fraction = 0.2
+cooling_fraction = 0.2
+field_variation_fraction = 0.2
+shock_crossing_fraction = 0.5
+minimum_substep_s = 1e-12
+maximum_substeps = 100000
+pitch_angle_scheme = reflecting-milstein
+spatial_diffusion_model = mean-free-path
+pitch_angle_diffusion_model = jokipii-1966
+mean_free_path_model = correlation
+constant_dmumu_per_s = 0
+constant_mean_free_path_m = 0
+mean_free_path_reference_m = 0
+mean_free_path_reference_radius_m = 0
+mean_free_path_reference_rigidity_v = 0
+mean_free_path_radial_exponent = 0
+mean_free_path_rigidity_exponent = 0
+spatial_quadrature_absolute_tolerance_m2_per_s = 1
+spatial_quadrature_relative_tolerance = 1e-6
+spatial_quadrature_maximum_recursion = 20
+focused_scattering_frame = plasma-frame-isotropic
+maximum_scattering_events_per_substep = 100000
+perpendicular_diffusion = none
+constant_kappa_perpendicular_m2_per_s = 0
+kappa_perpendicular_to_parallel_ratio = 0
+drifts = none
+
+[population_control]
+mode = off
+minimum_particles_per_cell_per_species = 0
+target_particles_per_cell_per_species = 0
+maximum_particles_per_cell_per_species = 0
+cadence_steps = 1
+
+[shock]
+# `none` disables the legacy particle-crossing authority.  The reduced shared
+# front epoch is diagnostic and cannot inject particles in this campaign.
+authority = none
+
+[source]
+enabled = false
+physical_particle_rate_per_s = 1
+injection_efficiency = 1
+minimum_energy_j = 1.602176634e-15
+maximum_energy_j = 1.602176634e-11
+spectrum_model = fixed-phase-space-power-law
+phase_space_power_index = 5
+samples_per_step = 1
+
+[species]
+macroparticle_weight = 1
+
+[storage]
+magnetic_gradient = false
+velocity_gradient = false
+sampling_bytes_per_cell = 0
+
+[observer.polar]
+kind = fixed-cartesian
+normalization = differential-intensity
+position_x_m = 0
+position_y_m = 0
+position_z_m = 1.3914e10
+follows_trajectory = false
+velocity_x_m_per_s = 0
+velocity_y_m_per_s = 0
+velocity_z_m_per_s = 0
+collection_radius_m = 6.957e8
+shell_radius_m = 1.3914e10
+cadence_s = 60
+energy_bins = 8
+energy_spacing = logarithmic
+pitch_angle_bins = 8
+minimum_energy_j = 1.602176634e-15
+maximum_energy_j = 1.602176634e-11
+minimum_mu = -1
+maximum_mu = 1
+species = all
+products = flux
+
+[output]
+cadence_steps = 1
+checkpoint_cadence_steps = 0
+directory = test_output/reduced-front/handoff-smoke
+prefix = reduced-handoff
+initialization_mesh_tecplot_file = initialization-mesh.dat
+initialization_parker_line_tecplot_file = initialization-parker-line.dat
+initialization_data_tecplot_file = initialization-data.dat
+
+[restart]
+input_path = none
+output_path = test_output/reduced-front/handoff-smoke/restart.chk

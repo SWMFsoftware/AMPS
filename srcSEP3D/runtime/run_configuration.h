@@ -368,6 +368,10 @@ struct RunConfiguration3DOptions {
   // Included in physics identity; a runtime source cannot be selected by an
   // unrecorded callback or silently substituted for a built-in authority.
   std::string backgroundModelId;
+  // Checksummed reduced-model event resolved relative to the application deck
+  // before immutable construction.  It is active only for the registered
+  // sep-corona-swcme shock-front runtime model and enters the physics identity.
+  std::string backgroundModelAssetPath;
   TurbulenceAuthority turbulence = TurbulenceAuthority::Prescribed;
   PrescribedTurbulenceModel prescribedTurbulenceModel =
       PrescribedTurbulenceModel::Kolmogorov;

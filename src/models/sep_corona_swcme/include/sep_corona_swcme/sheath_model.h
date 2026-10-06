@@ -102,7 +102,17 @@ struct SheathInventory {
   bool zeroVolumeStartup = false;
 };
 
-// Experimental BG3D-4 shock-fed sheath.  For a parcel born at (q,tau), define
+// Level A+ diagnostic only: this class is the superseded experimental BG3D-4
+// shock-fed map.  Production BG3D-4 is specified by
+// docs/BG3D4_PISTON_CLOSURE.md as an ejecta/contact-driven per-ray Lagrangian
+// finite-volume model.  Do not extend this class into that solver or publish
+// its oldest cohort as the production contact: the two closures have different
+// unknowns and authorities.  In particular, this class treats the prescribed
+// front and its current RH state as inputs, whereas the replacement prescribes
+// one ejecta contact and obtains compression/shock motion from the plasma
+// evolution.
+//
+// For a parcel born at (q,tau), this diagnostic defines
 // D(q,t)=U2(q,t)-d_t X_front(q,t), age=t-tau and
 // L(age)=kappa*age+(1-kappa)*T*(1-exp(-age/T)).  The current map is
 //   x(q,tau,t)=X_front(q,t)+L(age) D(q,t).
@@ -116,8 +126,16 @@ struct SheathInventory {
 // [d_theta X_front,d_phi X_front,-deficit], whose determinant is the curved
 // shock area density times w2.  A(t), A0, F_rel=A A0^-1 and J_rel are retained
 // explicitly; rho, p and B use rho2/J_rel, p2*J_rel^-gamma and
-// F_rel*B2/J_rel.  This is a prescribed kinematic map, not an MHD solve or a
-// momentum/energy qualification by itself.
+// F_rel*B2/J_rel.  These Cauchy/adiabatic identities verify mass, ideal
+// induction and entropy along the chosen deformation; they do not determine
+// the deformation from momentum or energy.  The measured non-refining force
+// residual is therefore model discrepancy, not evidence that this diagnostic
+// is a fluid solution.
+//
+// The use of D(q,t) at query time also means an old parcel depends on a valid
+// *current* fast-shock RH state.  If a patch becomes sub-fast, a future
+// candidate is rejected and committed cells remain readable; this class does
+// not provide the replacement model's supported linear compression region.
 class ShockFedSheathModel final {
  public:
   static Core::Result<std::shared_ptr<ShockFedSheathModel>> Create(

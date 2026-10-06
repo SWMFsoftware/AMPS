@@ -80,6 +80,29 @@ struct NativeApplicationState {
   std::uint64_t runtimeMeshGhostCellsChecked = 0; // Global representative count.
   std::uint64_t runtimeMeshPublishedUpdates = 0; // Completed refresh commits.
   std::uint64_t runtimeMeshExpectedUpdates = 0; // tick/backgroundCadenceSteps.
+  bool runtimeCollectiveRollbackVerified = false;
+  // Reduced-provider evidence is captured from the same adapter/epoch that
+  // filled owner and received-ghost storage.  The front is replicated shared
+  // analytical state; plasma arrays remain the undisturbed ambient reference.
+  bool reducedProviderSelected = false;
+  bool reducedGeometricEndpointReached = false;
+  bool reducedApexShockAccepted = false;
+  bool reducedEndpointObserverGeometricHit = false;
+  bool reducedEndpointObserverShockAccepted = false;
+  std::uint64_t reducedFrontGeneration = 0;
+  std::uint64_t reducedAmbientGeneration = 0;
+  double reducedEpochS = 0.0;
+  double reducedApexRadiusM = 0.0;
+  double reducedApexSpeedMPerS = 0.0;
+  double reducedEndpointTimeS = 0.0;
+  double reducedAcceptedAreaM2 = 0.0;
+  double reducedNumericalFailureAreaM2 = 0.0;
+  std::string reducedEventIdentity;
+  std::string reducedPhase;
+  std::string reducedEndpointObserverStatus;
+  std::uint64_t globalParticleCount = 0;
+  std::uint64_t globalInjectedParticleCount = 0;
+  bool zeroParticleAllocationRequested = false;
   std::string configurationFingerprint;
   // Captured from the configured production authorities. Generic readiness
   // checks cannot prove that a particular coronal model was selected: the

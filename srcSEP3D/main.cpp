@@ -202,6 +202,30 @@ int main(int argc, char** argv) {
                     << applicationState.plannedSolarInteriorLeaves << '\n'
                     << "background_generation="
                     << applicationState.backgroundGeneration << '\n'
+                    << "reduced_event_identity="
+                    << applicationState.reducedEventIdentity << '\n'
+                    << "reduced_front_generation="
+                    << applicationState.reducedFrontGeneration << '\n'
+                    << "reduced_ambient_generation="
+                    << applicationState.reducedAmbientGeneration << '\n'
+                    << "reduced_epoch_s="
+                    << applicationState.reducedEpochS << '\n'
+                    << "reduced_phase="
+                    << applicationState.reducedPhase << '\n'
+                    << "reduced_apex_radius_m="
+                    << applicationState.reducedApexRadiusM << '\n'
+                    << "reduced_apex_speed_m_s="
+                    << applicationState.reducedApexSpeedMPerS << '\n'
+                    << "reduced_geometric_endpoint_reached="
+                    << applicationState.reducedGeometricEndpointReached << '\n'
+                    << "reduced_endpoint_observer_status="
+                    << applicationState.reducedEndpointObserverStatus << '\n'
+                    << "reduced_endpoint_observer_shock_accepted="
+                    << applicationState.reducedEndpointObserverShockAccepted << '\n'
+                    << "global_particle_count="
+                    << applicationState.globalParticleCount << '\n'
+                    << "global_injected_particle_count="
+                    << applicationState.globalInjectedParticleCount << '\n'
                     << "completed_steps="
                     << applicationState.completedSteps << '\n'
                     << "initialization_mask="

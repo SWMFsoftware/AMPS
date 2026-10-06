@@ -70,51 +70,94 @@ bool ValidAmbientRegionSector(AmbientRegion region,int sector) noexcept {
       (sector==-1||sector==1);
 }
 
-Core::Result<std::shared_ptr<const AmbientModel>> AmbientModel::Create(
+namespace {
+
+Core::Status ValidateDefinition(const AmbientDefinition& definition) {
+  const auto& c=definition.composition;
+  const auto& a=definition.ambient;
+  const auto& s=definition.support;
+  const bool composition=std::isfinite(c.gammaAdiabatic)&&c.gammaAdiabatic>1&&
+      std::isfinite(c.electronTemperatureK)&&c.electronTemperatureK>0&&
+      std::isfinite(c.protonTemperatureK)&&c.protonTemperatureK>0&&
+      std::isfinite(c.alphaTemperatureK)&&c.alphaTemperatureK>0&&
+      std::isfinite(c.alphaToProtonNumberRatio)&&
+      c.alphaToProtonNumberRatio>=0;
+  const bool ambient=std::isfinite(a.sourceSurfaceRadiusM)&&
+      std::isfinite(a.referenceRadiusM)&&
+      std::isfinite(a.electronDensityAtReferenceM3)&&
+      std::isfinite(a.closedBaseElectronDensityM3)&&
+      std::isfinite(a.rotationRateRadPerS)&&
+      std::isfinite(a.minimumMagneticFieldT)&&
+      std::isfinite(a.traceStepM)&&std::isfinite(a.gradientRelativeStep)&&
+      a.sourceSurfaceRadiusM>s.solarRadiusM&&
+      a.sourceSurfaceRadiusM<s.coverageRadiusM&&
+      a.referenceRadiusM>=a.sourceSurfaceRadiusM&&
+      a.referenceRadiusM<=s.coverageRadiusM&&
+      a.electronDensityAtReferenceM3>0&&a.closedBaseElectronDensityM3>0&&
+      a.minimumMagneticFieldT>=0&&a.traceStepM>0&&
+      a.gradientRelativeStep>0&&a.traceMaximumSteps>0&&
+      a.windTablePoints>=17&&!a.harmonics.empty();
+  const bool support=std::isfinite(s.startS)&&std::isfinite(s.endS)&&
+      std::isfinite(s.solarRadiusM)&&
+      std::isfinite(s.firstValidPlasmaRadiusM)&&
+      std::isfinite(s.coverageRadiusM)&&s.endS>s.startS&&
+      s.solarRadiusM>0&&s.firstValidPlasmaRadiusM>=s.solarRadiusM&&
+      s.firstValidPlasmaRadiusM<a.sourceSurfaceRadiusM&&
+      s.coverageRadiusM>a.sourceSurfaceRadiusM;
+  if(!composition||!ambient||!support||definition.coordinateFrame.empty()||
+      definition.physicsFingerprint.empty())
+    return Core::Status::Failure(Core::StatusCode::InvalidConfiguration,
+        "canonical ambient definition is incomplete or outside its physical domain");
+  return Core::Status::Success();
+}
+
+} // namespace
+
+Core::Result<std::shared_ptr<const AmbientModel>> AmbientModel::CreateResolved(
+    const AmbientDefinition& definition,
     std::shared_ptr<const EventConfiguration> event) {
   using Return=Core::Result<std::shared_ptr<const AmbientModel>>;
-  if(!event)return Return::Failure(Core::StatusCode::InvalidConfiguration,
-      "ambient model requires an immutable event");
-  const auto valid=ValidateEventConfiguration(*event);
+  const auto valid=ValidateDefinition(definition);
   if(!valid.ok())return Return::Failure(valid.code,valid.message);
-  const auto harmonics=Harmonics(event->ambient.harmonics);
+  const auto harmonics=Harmonics(definition.ambient.harmonics);
   if(!harmonics.ok())return Return::Failure(harmonics.status.code,harmonics.status.message);
-  const auto pfss=CoronalCME::PfssHarmonics::Create(event->support.solarRadiusM,
-      event->ambient.sourceSurfaceRadiusM,harmonics.value);
+  const auto pfss=CoronalCME::PfssHarmonics::Create(definition.support.solarRadiusM,
+      definition.ambient.sourceSurfaceRadiusM,harmonics.value);
   if(!pfss.ok())return Return::Failure(pfss.status.code,pfss.status.message);
 
   std::shared_ptr<AmbientModel> model(new AmbientModel);
   model->event_=std::move(event);
+  model->definition_=definition;
   model->pfss_=pfss.value;
-  const auto& c=model->event_->composition;
+  const auto& c=model->definition_.composition;
   model->ions_={{"H+",1,1,CoronalCME::Constants::kProtonMassKg,c.protonTemperatureK}};
   if(c.alphaToProtonNumberRatio>0)model->ions_.push_back({"He++",
       c.alphaToProtonNumberRatio,2,CoronalCME::Constants::kAlphaMassKg,
       c.alphaTemperatureK});
   const auto reference=CoronalCME::EvaluatePlasmaFromElectronDensity(
-      model->event_->ambient.electronDensityAtReferenceM3,c.electronTemperatureK,
+      model->definition_.ambient.electronDensityAtReferenceM3,c.electronTemperatureK,
       model->ions_,c.includeElectronMass,c.gammaAdiabatic,0);
   if(!reference.ok())return Return::Failure(reference.status.code,reference.status.message);
   model->soundSquared_=reference.value.pressurePa/reference.value.massDensityKgM3;
   model->criticalRadiusM_=CoronalCME::Constants::kSolarGravitationalParameterM3PerS2/
       (2*model->soundSquared_);
   const auto referenceWind=CoronalCME::SolveRadialIsothermalParker(
-      {model->event_->ambient.referenceRadiusM},std::sqrt(model->soundSquared_),
+      {model->definition_.ambient.referenceRadiusM},std::sqrt(model->soundSquared_),
       model->criticalRadiusM_,1);
   if(!referenceWind.ok())return Return::Failure(
       referenceWind.status.code,referenceWind.status.message);
-  const double referenceRadius=model->event_->ambient.referenceRadiusM;
+  const double referenceRadius=model->definition_.ambient.referenceRadiusM;
   model->massFluxPerSr_=reference.value.massDensityKgM3*
       referenceWind.value[0].speedMPerS*referenceRadius*referenceRadius;
 
-  const int count=model->event_->ambient.windTablePoints;
-  const double begin=std::log(model->event_->support.solarRadiusM);
-  const double end=std::log(model->event_->support.coverageRadiusM);
+  const int count=model->definition_.ambient.windTablePoints;
+  const double begin=std::log(model->definition_.support.solarRadiusM);
+  const double end=std::log(model->definition_.support.coverageRadiusM);
   std::vector<double> radii;
   radii.reserve(static_cast<std::size_t>(count));
   for(int i=0;i<count;++i)radii.push_back(std::exp(begin+(end-begin)*i/(count-1)));
-  radii.front()=model->event_->support.solarRadiusM;
-  radii.back()=model->event_->support.coverageRadiusM;
+  radii.front()=model->definition_.support.solarRadiusM;
+  radii.back()=model->definition_.support.coverageRadiusM;
   const auto wind=CoronalCME::SolveRadialIsothermalParker(radii,
       std::sqrt(model->soundSquared_),model->criticalRadiusM_,model->massFluxPerSr_);
   if(!wind.ok())return Return::Failure(wind.status.code,wind.status.message);
@@ -132,6 +175,27 @@ Core::Result<std::shared_ptr<const AmbientModel>> AmbientModel::Create(
   return Return::Success(std::move(model));
 }
 
+Core::Result<std::shared_ptr<const AmbientModel>> AmbientModel::Create(
+    std::shared_ptr<const EventConfiguration> event) {
+  using Return=Core::Result<std::shared_ptr<const AmbientModel>>;
+  if(!event)return Return::Failure(Core::StatusCode::InvalidConfiguration,
+      "ambient model requires an immutable event");
+  const auto valid=ValidateEventConfiguration(*event);
+  if(!valid.ok())return Return::Failure(valid.code,valid.message);
+  AmbientDefinition definition;
+  definition.composition=event->composition;
+  definition.ambient=event->ambient;
+  definition.support=event->support;
+  definition.coordinateFrame=event->coordinateFrame;
+  definition.physicsFingerprint=event->physicsFingerprint;
+  return CreateResolved(definition,std::move(event));
+}
+
+Core::Result<std::shared_ptr<const AmbientModel>> AmbientModel::Create(
+    const AmbientDefinition& definition) {
+  return CreateResolved(definition,nullptr);
+}
+
 double AmbientModel::WindSpeed(double radiusM) const {
   const double x=std::log(radiusM);
   auto upper=std::upper_bound(logRadius_.begin(),logRadius_.end(),x);
@@ -147,7 +211,7 @@ double AmbientModel::WindSpeed(double radiusM) const {
 }
 
 double AmbientModel::IntegrateWinding(double beginM,double endM) const {
-  const double source=event_->ambient.sourceSurfaceRadiusM;
+  const double source=definition_.ambient.sourceSurfaceRadiusM;
   if(endM<=source)return 0;
   beginM=std::max(beginM,source);
   static const double nodes[]={-0.8611363115940526,-0.3399810435848563,
@@ -157,7 +221,7 @@ double AmbientModel::IntegrateWinding(double beginM,double endM) const {
   double integral=0;
   for(int i=0;i<4;++i) {
     const double radius=0.5*(beginM+endM)+0.5*(endM-beginM)*nodes[i];
-    integral+=weights[i]*event_->ambient.rotationRateRadPerS*
+    integral+=weights[i]*definition_.ambient.rotationRateRadPerS*
         (1-std::pow(source/radius,2))/WindSpeed(radius);
   }
   return 0.5*(endM-beginM)*integral;
@@ -173,8 +237,8 @@ double AmbientModel::Winding(double radiusM) const {
 
 Core::Result<std::pair<FieldLineTopology,Vec3>> AmbientModel::Trace(Vec3 start) const {
   using Return=Core::Result<std::pair<FieldLineTopology,Vec3>>;
-  const auto& a=event_->ambient;
-  const double solar=event_->support.solarRadiusM;
+  const auto& a=definition_.ambient;
+  const double solar=definition_.support.solarRadiusM;
   const double epsilon=1e-6*solar;
   for(double sign:{1.0,-1.0}) {
     const double seedRadius=Norm(start);
@@ -222,9 +286,9 @@ Core::Result<std::pair<FieldLineTopology,Vec3>> AmbientModel::Trace(Vec3 start) 
 
 Core::Result<AmbientPrimitive> AmbientModel::Evaluate(Vec3 position,double epochS) const {
   using Return=Core::Result<AmbientPrimitive>;
-  const auto& support=event_->support;
-  const auto& ambient=event_->ambient;
-  const auto& composition=event_->composition;
+  const auto& support=definition_.support;
+  const auto& ambient=definition_.ambient;
+  const auto& composition=definition_.composition;
   const double radius=Norm(position);
   if(!std::isfinite(position.x)||!std::isfinite(position.y)||
       !std::isfinite(position.z)||!std::isfinite(epochS)||
@@ -271,9 +335,16 @@ Core::Result<AmbientPrimitive> AmbientModel::Evaluate(Vec3 position,double epoch
       if(std::abs(sourceRadial)<=ambient.minimumMagneticFieldT)
         return Return::Failure(Core::StatusCode::NumericalFailure,
             "open tube has unresolved source-surface flux");
-      const double massPerFlux=massFluxPerSr_/(ambient.sourceSurfaceRadiusM*
-          ambient.sourceSurfaceRadiusM*std::abs(sourceRadial));
-      density=massPerFlux*Norm(field.value)/speed;
+      if(ambient.sphericalOpenMassFlux) {
+        // Radial Parker reference: rho U r^2 is the prescribed invariant.
+        // This is a kinematic plasma closure and does not claim that a radial
+        // wind is force-balanced across a nonradial PFSS field.
+        density=massFluxPerSr_/(speed*radius*radius);
+      } else {
+        const double massPerFlux=massFluxPerSr_/(ambient.sourceSurfaceRadiusM*
+            ambient.sourceSurfaceRadiusM*std::abs(sourceRadial));
+        density=massPerFlux*Norm(field.value)/speed;
+      }
       out.magneticSector=sourceRadial>0?1:-1;
       out.region=AmbientRegion::PfssOpen;
       out.velocityMPerS=corotation+(out.magneticSector*speed)*Unit(out.magneticFieldT);
@@ -328,10 +399,10 @@ Core::Result<AmbientState> AmbientModel::EvaluateWithDerivatives(
   out.primitive=center.value;
   out.epochS=epochS;
   out.generation=generation;
-  out.eventIdentity=event_->physicsFingerprint;
+  out.eventIdentity=definition_.physicsFingerprint;
   const double radius=Norm(point);
   for(int axis=0;axis<3;++axis) {
-    double step=std::max(1.0,event_->ambient.gradientRelativeStep*radius);
+    double step=std::max(1.0,definition_.ambient.gradientRelativeStep*radius);
     bool resolved=false;
     for(int attempt=0;attempt<=12&&!resolved;++attempt,step*=0.5) {
       Vec3 delta;

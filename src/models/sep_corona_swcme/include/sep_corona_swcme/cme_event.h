@@ -5,6 +5,7 @@
 #include "sep_status.h"
 
 #include <array>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
@@ -51,6 +52,11 @@ struct AmbientInput {
   double gradientRelativeStep = 0.0;
   int traceMaximumSteps = 0;
   int windTablePoints = 0;
+  // Legacy/full-CME profiles default to field-aligned open-tube mass flux.
+  // The reduced model's documented radial Parker reference instead conserves
+  // rho U r^2 below the source surface as well.  This explicit switch avoids
+  // changing BG3D-2 semantics while making the density closure fingerprinted.
+  bool sphericalOpenMassFlux = false;
   std::string harmonics;
 };
 
@@ -81,17 +87,110 @@ struct RegionalInput {
   // initial mass would be singular for the selected limiting construction.
   double inventoryMassAbsoluteToleranceKg = 0.0;
   double contactNormalVelocityNumericalTolerance = 0.0;
+  // Inputs below configure only the retained Level A+ relaxation diagnostic.
+  // They are not parameters of the selected production piston closure.
   // Lagrangian post-shock drift L(age)*D_birth uses
   // L'=kappa+(1-kappa)exp(-age/T).  Kappa>0 prevents a singular old-cohort
   // volume while T controls the prescribed relaxation from the exact RH
   // boundary velocity.  These are physical closure parameters, not solvers.
   double sheathDriftAsymptoteFraction = 0.0;
   double sheathDriftRelaxationTimeS = 0.0;
+  // Per-ray piston controls live in their own typed record below.  They must
+  // not be mapped onto these legacy diagnostic scalars: that would make two
+  // physically different closures share an event identity.
   std::string vectorPotentialModel;
   std::string addedHeating;
   std::string sheathStartupModel;
   std::string sheathContactModel;
   std::string sheathReferenceMapModel;
+};
+
+// Immutable input for the BG3D-4 Level-B piston/contact authority.  This is
+// intentionally separate from ComponentHistory: the latter is the prescribed
+// Level-A shock/front used by the legacy RH regression, whereas this record is
+// an independently parameterized ejecta boundary which drives the computed
+// Level-B compression.  Keeping two typed records prevents a front fit from
+// being silently reinterpreted as a material piston.
+//
+// All values are SI and angles are in the inertial HCI frame.  The selected
+// qualification contact has fixed orientation (a C-infinity special case of
+// the required C2 orientation law).  Its four geometry rates are multiplied
+// by the same quintic startup function, so shape evolution is globally smooth
+// rather than blended independently on each ray.
+struct PistonContactInput {
+  bool enabled = false;
+  std::string profile;
+  std::string orientationModel;
+  std::string attachmentPolicy;
+  std::string velocityReduction;
+  double startS = 0.0;
+  double startupRampDurationS = 0.0;
+  double initialCenterDistanceM = 0.0;
+  double initialRadialSemiAxisM = 0.0;
+  double initialFirstLateralSemiAxisM = 0.0;
+  double initialSecondLateralSemiAxisM = 0.0;
+  double centerRateMPerS = 0.0;
+  double radialRateMPerS = 0.0;
+  double firstLateralRateMPerS = 0.0;
+  double secondLateralRateMPerS = 0.0;
+  double latitudeRad = 0.0;
+  double longitudeRad = 0.0;
+  double lateralTiltRad = 0.0;
+  double handoffApexRadiusM = 0.0;
+  double handoffTransitionDurationS = 0.0;
+  double outerAmbientSpeedMPerS = 0.0;
+  double outerDragCoefficientPerM = 0.0;
+  double minimumContactIncidence = 0.0;
+  double launchMarginM = 0.0;
+  double startupMachTolerance = 0.0;
+  double maximumApexAccelerationMPerS2 = 0.0;
+  double minimumFinalApexSpeedMPerS = 0.0;
+  double maximumFinalApexSpeedMPerS = 0.0;
+};
+
+struct PistonRayInput {
+  std::uint64_t id = 0;
+  CoronalCME::Vec3 direction;
+  double solidAngleSr = 0.0;
+  // -1 denotes the physical latitude edge of this cell.  Longitude neighbors
+  // are periodic and must always be present.  Explicit topology is part of
+  // the event identity because future transverse-gradient diagnostics and 3-D
+  // assembly must not infer neighbors from MPI ownership or array order.
+  int latitudeMinus = -1;
+  int latitudePlus = -1;
+  int longitudeMinus = -1;
+  int longitudePlus = -1;
+};
+
+struct PistonRayQuadrature {
+  bool enabled = false;
+  std::vector<PistonRayInput> rays;
+};
+
+// Immutable numerical and finite-domain choices for the Level-B per-ray
+// piston.  These values are parsed from the strict event deck and therefore
+// participate in the physics fingerprint.  They are background controls only:
+// no particle population, source cadence or random-stream setting may alter
+// them.  Length/time/pressure thresholds use SI units except the explicitly
+// dimensionless CFL, VNR coefficients and relative disturbance/shock ratios.
+struct PistonNumericsInput {
+  bool enabled = false;
+  int initialCells = 0;
+  double initialBufferM = 0.0;
+  int sourceTablePoints = 0;
+  double trajectoryMaximumStepS = 0.0;
+  // Absolute event-time cadence for deterministic buffer maintenance.  It is
+  // independent of how often an application requests/publishes epochs.
+  double bufferCheckIntervalS = 0.0;
+  int minimumBufferCells = 0;
+  int appendCells = 0;
+  double disturbanceRelativeThreshold = 0.0;
+  double cfl = 0.0;
+  std::string artificialViscosity;
+  double quadraticViscosity = 0.0;
+  double linearViscosity = 0.0;
+  double shockThreshold = 0.0;
+  std::string wellBalancedSources;
 };
 
 struct HandoffLaw {
@@ -146,6 +245,9 @@ struct EventConfiguration {
   Composition composition;
   AmbientInput ambient;
   RegionalInput regional;
+  PistonContactInput pistonContact;
+  PistonRayQuadrature pistonRays;
+  PistonNumericsInput pistonNumerics;
   HandoffLaw handoff;
   EventSupport support;
   std::vector<AssetIdentity> assets;

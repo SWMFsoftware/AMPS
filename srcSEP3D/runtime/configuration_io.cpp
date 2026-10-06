@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <filesystem>
 #include <iomanip>
 #include <limits>
 #include <map>
@@ -374,6 +375,8 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     // Preserve the exact factory key; immutable configuration validation later
     // requires it for runtime-model and forbids it for every built-in authority.
     o->backgroundModelId = value;
+  } else if (field == "background.model_asset") {
+    o->backgroundModelAssetPath = value;
   } else if (field == "background.external_script") {
     if (!ParseBool(value, &o->enableExternalScriptBackground)) return invalidValue();
   } else if (field == "background.parker.reference_radius_m") {
@@ -891,7 +894,9 @@ Core::Status ParseConfigurationText(
         return Invalid("corner geometry is missing explicit key '" + std::string(field) + "'");
   }
   if (candidate.inputSchemaVersion >= 3) {
-    if (sections.count("swcme") == 0)
+    const bool reducedShockFront=candidate.background==BackgroundAuthority::RuntimeModel&&
+        candidate.backgroundModelId=="sep-corona-swcme-shock-front-v1";
+    if (!reducedShockFront&&sections.count("swcme") == 0)
       return Invalid("schema version 3 requires a complete [swcme] section");
     // Schema 3 is the no-assumptions production surface.  Every application-
     // owned value is present even if its selected mode makes it inactive; this
@@ -1006,6 +1011,7 @@ Core::Status ParseConfigurationText(
                      "background and prescribed turbulence; coupled SWMF "
                      "hosts must use the parser-free typed interface");
 
+    if(!reducedShockFront) {
     std::vector<swcme::input3d::Assignment> assignments;
     assignments.reserve(candidate.swcmeAssignments.size());
     for (const SwcmeAssignment& raw : candidate.swcmeAssignments) {
@@ -1251,6 +1257,15 @@ Core::Status ParseConfigurationText(
         resolved.configuration.fingerprint;
     candidate.swcmeResolvedManifest =
         resolved.configuration.normalized_manifest;
+    } else {
+      if(candidate.inputSchemaVersion<4||candidate.intent!=RunIntent::TransportOnly||
+          candidate.shock!=ShockAuthority::None||candidate.source.enabled||
+          candidate.backgroundModelAssetPath.empty())
+        return Invalid("reduced shock-front runtime requires schema 4, transport-only, "
+                       "shock.authority=none, source.enabled=false and background.model_asset");
+      if(!candidate.swcmeAssignments.empty())
+        return Invalid("reduced shock-front runtime rejects inactive [swcme] assignments");
+    }
   }
   bool observerSectionSeen = false;
   for (const std::string& present : sections) {
@@ -1280,7 +1295,18 @@ Core::Status LoadConfigurationFile(
   text << input.rdbuf();
   if (!input.good() && !input.eof())
     return Invalid("failed while reading configuration file '" + path + "'");
-  return ParseConfigurationText(text.str(), result);
+  const Core::Status parsed=ParseConfigurationText(text.str(), result);
+  if(!parsed.ok())return parsed;
+  if(!result->backgroundModelAssetPath.empty()) {
+    std::filesystem::path asset(result->backgroundModelAssetPath);
+    if(asset.is_relative())asset=std::filesystem::path(path).parent_path()/asset;
+    std::error_code error;
+    asset=std::filesystem::weakly_canonical(asset,error);
+    if(error)return Invalid("cannot resolve background.model_asset relative to input: "+
+        error.message());
+    result->backgroundModelAssetPath=asset.string();
+  }
+  return Core::Status::OK();
 }
 
 Core::Status ApplyInitializationOutputDirectory(

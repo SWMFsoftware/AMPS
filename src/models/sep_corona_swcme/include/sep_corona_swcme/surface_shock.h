@@ -15,10 +15,14 @@ struct GeometryPatchState {
   AmbientPrimitive upstream;
 };
 
-// BG3D-3 independently qualifies the front and shock state, but its nested
-// fixed-fraction surface is not the material contact used by BG3D-4.  Carrying
-// this status in the epoch prevents a geometrically complete legacy reference
-// from being mistaken for a cross-stage interface authority.
+// BG3D-3/Level A independently qualifies a prescribed front and local shock
+// state, but its nested fixed-fraction surface is not the material contact used
+// by the old BG3D-4 map and is not the selected Level B piston.  Carrying this
+// status in the epoch prevents a geometrically complete legacy reference from
+// being mistaken for a cross-stage interface authority.  Under the reviewed
+// BG3D-4 replacement, a reconstructed ejecta body becomes the sole contact;
+// its per-ray plasma evolution computes the Level B shock.  This prescribed
+// front then remains a validation target, not a second production authority.
 enum class ContactAuthorityQualification {
   FixedFractionReferenceUnqualified,
   SharedMaterialAuthority
@@ -59,9 +63,12 @@ class SurfaceShockModel final {
   std::shared_ptr<const SurfaceShockEpoch> current_;
 };
 
-// The contact is a nested, rear-aligned ellipsoid. The frozen configuration's
-// contact fraction scales the rear-to-apex span and both lateral semiaxes; it
-// is not an independent reset radius or a radial shell subtraction.
+// Legacy/unqualified reference only.  The contact is a nested, rear-aligned
+// ellipsoid whose fraction scales the rear-to-apex span and both lateral
+// semiaxes; it is not an independent reset radius or a radial shell
+// subtraction.  Production piston geometry must instead come from the one
+// checksummed, differentiable ejecta/contact reconstruction and must pass
+// star-shaped, non-grazing and ambient-coverage gates ray by ray.
 Core::Result<CoronalCME::EllipsoidKinematics> ContactKinematics(
     const EventConfiguration&,const CoronalCME::EllipsoidKinematics& front);
 

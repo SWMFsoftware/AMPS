@@ -68,6 +68,18 @@ SEP_CORONAL_CME_OBJECTS := $(patsubst \
     $(SEP_CORONAL_CME_DIR)/build/common_sep_field_line_exchange.o \
     $(SEP_CORONAL_CME_DIR)/build/common_sep_field_line_bundle_io.o \
     $(SEP_CORONAL_CME_DIR)/build/common_sep_coherent_transport.o
+SEP_CORONA_SWCME_DIR ?= $(AMPS_ROOT)/src/models/sep_corona_swcme
+SEP_CORONA_SWCME_ARCHIVE ?= $(SEP_CORONA_SWCME_DIR)/build/libsep_corona_swcme.a
+# The reduced provider lives in the composite model and deliberately shares
+# its canonical ambient implementation.  Flatten its members into mainlib.a
+# for the same reason as the maintained coronal archive above: the enclosing
+# AMPS link does not recursively extract members from nested static archives.
+SEP_CORONA_SWCME_OBJECTS := $(patsubst \
+    $(SEP_CORONA_SWCME_DIR)/src/%.cpp,$(SEP_CORONA_SWCME_DIR)/build/%.o,\
+    $(wildcard $(SEP_CORONA_SWCME_DIR)/src/*.cpp)) \
+    $(patsubst \
+    $(SEP_CORONA_SWCME_DIR)/shock_front/%.cpp,$(SEP_CORONA_SWCME_DIR)/build/shock_front_%.o,\
+    $(wildcard $(SEP_CORONA_SWCME_DIR)/shock_front/*.cpp))
 
 # Dependency-light goals must remain usable in a source-only archive.  All
 # production goals deliberately fail during makefile parsing if AMPS_CONFIG is
@@ -92,7 +104,9 @@ CXX ?= g++
 # part of every historic AMPS include list.  Use absolute paths resolved from
 # the active makefile so these work identically from srcSEP3D and build/main.
 MODEL_INCLUDE_FLAGS := -I$(SEP_COMMON_DIR) -I$(SWCME_DIR) \
-                       -I$(SEP_CORONAL_CME_DIR)/include
+                       -I$(SEP_CORONAL_CME_DIR)/include \
+                       -I$(SEP_CORONA_SWCME_DIR)/include \
+                       -I$(SEP_CORONA_SWCME_DIR)/shock_front
 CPPFLAGS += $(MODEL_INCLUDE_FLAGS)
 CXXFLAGS += $(MODEL_INCLUDE_FLAGS)
 # Historic AMPS Makefile.conf revisions name their include accumulator INCLUDE
@@ -113,7 +127,7 @@ INCLUDE += $(MODEL_INCLUDE_FLAGS)
 # generic PIC, mesh, and interface translation units retain their normal AMPS
 # include boundary.  Preserve a caller-provided suffix so site-local compiler
 # installations continue to work.
-SEP3D_MODEL_CPLUS_INCLUDE_PATH := $(SEP_COMMON_DIR):$(SWCME_DIR):$(SEP_CORONAL_CME_DIR)/include
+SEP3D_MODEL_CPLUS_INCLUDE_PATH := $(SEP_COMMON_DIR):$(SWCME_DIR):$(SEP_CORONAL_CME_DIR)/include:$(SEP_CORONA_SWCME_DIR)/include:$(SEP_CORONA_SWCME_DIR)/shock_front
 ifneq ($(strip $(CPLUS_INCLUDE_PATH)),)
 SEP3D_MODEL_CPLUS_INCLUDE_PATH := $(SEP3D_MODEL_CPLUS_INCLUDE_PATH):$(CPLUS_INCLUDE_PATH)
 endif
@@ -151,6 +165,7 @@ RUNTIME_SRC := \
 ADAPTER_SRC := \
     adapters/transport_adapter.cpp \
     adapters/particle_ledger.cpp \
+    adapters/shock_front_background_adapter.cpp \
     adapters/swcme_source_adapter.cpp \
     adapters/source_runtime.cpp
 OUTPUT_SRC := \
@@ -227,13 +242,17 @@ STAGE1_TEST_SRC := \
     test/individual-test/test_validation.cpp \
     test/individual-test/test_shock_propagation.cpp \
     test/individual-test/test_swcme_background.cpp \
-    test/individual-test/test_sse.cpp
+    test/individual-test/test_sse.cpp \
+    test/individual-test/test_reduced_shock_front.cpp
 STAGE1_TEST_OBJ := $(STAGE1_TEST_SRC:.cpp=.o)
 
 SEP_COMMON_INCLUDES := -I$(SEP_COMMON_DIR)
 STAGE1_CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -Werror -O2 \
                    -Icore -Ibackground -Iruntime -Imesh -Iturbulence -Itransport \
                    -Iadapters -Ioutput -Ivalidation -I$(SWCME_DIR) \
+                   -I$(SEP_CORONAL_CME_DIR)/include \
+                   -I$(SEP_CORONA_SWCME_DIR)/include \
+                   -I$(SEP_CORONA_SWCME_DIR)/shock_front \
                    $(SEP_COMMON_INCLUDES)
 
 .PHONY: lib amps prepare-production strict-production audit-production-symbols
@@ -249,17 +268,24 @@ sep-coronal-cme:
 # exists; the model makefile owns its own header/source dependency graph.
 $(SEP_CORONAL_CME_ARCHIVE): sep-coronal-cme
 
-lib: $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE) $(SEP_CORONAL_CME_ARCHIVE) $(MAINLIBOBJ)
+.PHONY: sep-corona-swcme
+sep-corona-swcme:
+	$(MAKE) -C $(SEP_CORONA_SWCME_DIR) lib
+
+$(SEP_CORONA_SWCME_ARCHIVE): sep-corona-swcme
+
+lib: $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE) $(SEP_CORONAL_CME_ARCHIVE) \
+     $(SEP_CORONA_SWCME_ARCHIVE) $(MAINLIBOBJ)
 	# Keep the enclosing AMPS link contract unchanged: common objects are built
 	# once in their canonical model directories and inserted into this
 	# application's archive. Recreate the archive so ar cannot retain a retired
 	# member from a previous application version.
 	rm -f mainlib.a
 	ar -rcs mainlib.a $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS) \
-		$(SEP_CORONAL_CME_OBJECTS)
+		$(SEP_CORONAL_CME_OBJECTS) $(SEP_CORONA_SWCME_OBJECTS)
 	@members=$$(ar t mainlib.a); \
 	for member in $(notdir $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS) \
-		$(SEP_CORONAL_CME_OBJECTS)); do \
+		$(SEP_CORONAL_CME_OBJECTS) $(SEP_CORONA_SWCME_OBJECTS)); do \
 	  count=$$(printf '%s\n' "$$members" | awk -v expected="$$member" \
 	    '$$0 == expected { found++ } END { print found + 0 }'); \
 	  test "$$count" -eq 1 || { \
@@ -343,7 +369,7 @@ audit-production-symbols:
 	fi
 	@members=$$(ar t $(PRODUCTION_ARCHIVE_DIR)/mainlib.a); \
 	for member in $(notdir $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS) \
-		$(SEP_CORONAL_CME_OBJECTS)); do \
+		$(SEP_CORONAL_CME_OBJECTS) $(SEP_CORONA_SWCME_OBJECTS)); do \
 	  count=$$(printf '%s\n' "$$members" | \
 	    awk -v expected="$$member" '$$0 == expected { found++ } \
 	      END { print found + 0 }'); \
@@ -416,8 +442,10 @@ validation/%.o: validation/%.cpp
 	$(CXX) $(STAGE1_CXXFLAGS) -MMD -MP -c -o $@ $<
 
 test/stage1: check-layering $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(VALIDATION_OBJ) $(STAGE1_TEST_OBJ) \
+             $(SEP_CORONA_SWCME_ARCHIVE) $(SEP_CORONAL_CME_ARCHIVE) \
              $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE)
 	$(CXX) -o $@ $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(VALIDATION_OBJ) $(STAGE1_TEST_OBJ) \
+	  $(SEP_CORONA_SWCME_ARCHIVE) $(SEP_CORONAL_CME_ARCHIVE) \
 	  $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE)
 	@echo "[srcSEP3D] standalone test binary built: test/stage1"
 

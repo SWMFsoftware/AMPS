@@ -14,7 +14,7 @@ and this file documents the implemented surface of the current stage.
 | BG3D-2 ambient plasma/IMF | Yes | Yes: `CMBGU03` |
 | BG3D-3 front and local shocks | Yes | Yes: `CMBGU04` plus maintained RH/ellipsoid suites |
 | BG3D-3 shared contact/interface | Fixed-fraction reference only | No: reopened because it is not the BG3D-4 material contact authority |
-| BG3D-4 shock-fed spatial sheath | Partial | No: the empirical map and component identities are diagnostic only; a compatible finite initial state and common contact authority are absent |
+| BG3D-4 spatial sheath/compression | Diagnostic map implemented; ejecta-driven per-ray production closure specified only | No: the selected production equations, finite ambient ray inventory, common contact authority, computed shock and acceptance suite are not implemented |
 | BG3D-5 ejecta/remaining regions | No | No |
 | BG3D-6 material handoff | No | No |
 | BG3D-7/8 native storage, MPI and restart | No | No |
@@ -24,7 +24,7 @@ G1 is therefore open. In particular, the analytical trajectory reaching 1 AU
 is not a native propagation receipt, and no planned owner/ghost or temporal-slot
 behavior is described here as implemented.
 
-## Implemented physics: BG3D-1 through BG3D-4
+## Implemented and specified physics through active BG3D-4
 
 `cme_event.h` and `cme_event.cpp` resolve the background-only event envelope.
 The resolver accepts a closed `key=value` grammar, obtains bytes through an
@@ -125,6 +125,176 @@ shock-provider input remains source-capable, so existing particle users retain
 their baseline behavior.
 
 ### BG3D-4 shock-fed sheath
+
+#### Selected production replacement: per-ray Lagrangian piston
+
+The reviewed production direction is now
+[`docs/BG3D4_PISTON_CLOSURE.md`](docs/BG3D4_PISTON_CLOSURE.md).  It is a
+partially implemented capability: the independent contact authority,
+checksummed coarse ray quadrature, conservative planar gas/MHD core and
+spherical gas-dynamic geometry, curved magnetic energy/flux identities and a
+frozen projected-ambient source path are implemented and independently tested.
+Moving Parker-wind boundary transport, production ray initialization,
+computed 3-D shock and assembly are not yet qualified.  One differentiable
+ejecta/contact reconstruction is the piston and cross-stage contact authority.
+For each supported, non-grazing HCI ray, a finite ambient column with physical
+area `A_q=DeltaOmega_q*r^2` evolves in Lagrangian mass coordinates:
+
+```text
+partial_t r = u,
+partial_t v = partial_m(A_q u),
+partial_t u = -A_q partial_m(P+Q)
+              - |B_t|^2/(mu0 rho r) - GM_sun/r^2 + f_amb,
+partial_t e = -(p+Q) partial_t v + h_amb/rho,
+partial_t [B_t/(rho r)] = S_b.
+```
+
+Here `v=1/rho`, `P=p+|B_t|^2/(2mu0)`, and `Q` is compression-only shock
+dissipation.  The fixed ambient-maintaining sources make the projected
+undisturbed ambient a steady solution and are applied to shocked plasma as an
+explicit approximation.  The contact motion is prescribed; the compression
+region and Level B shock are computed.  The current prescribed front remains
+the Level A authority and becomes a Level B validation target, never a second
+production shock.
+
+The review identified pre-implementation issues that remain open:
+
+- fixed-ray Lagrangian dynamics evolve `u*q_hat`; by user decision the
+  published state adds unevolved ambient `U_t,a`, while omitted cross-ray
+  transport is reported through `epsilon_t` and full-normal contact slip;
+- `B_r/|B|` is not the physical `|B.n|/|B|` on a nonspherical contact or shock;
+- the reduced radial compression speed differs from the canonical oblique-MHD
+  fast speed when passive `B_r` is nonzero;
+- ray solid-angle weights, contact-history handoff and all ambient magnetic/
+  mechanical source work require explicit fingerprinted contracts; and
+- any 3-D divergence-cleaning projection changes magnetic energy and interface
+  flux and therefore needs a separate ledger.
+
+The strict `pfss-parker-piston-sheath-v1` event selector requires separate
+checksummed `assets.piston_contact_*` and `assets.piston_rays_*` records.  The example
+`examples/bg3d4_piston/contact.asset` supplies a fixed-HCI triaxial ellipsoid
+with a global 1200-s quintic rate ramp.  Its apex accelerates no faster than
+`1875 m/s2`, reaches the prescribed `1.2e6 m/s` coronal speed, crosses the
+`20 R_sun` handoff radius at `11528.3 s`, transitions without a position or
+velocity reset to self-similar DBM motion, and reaches `1.81242e11 m` by the
+end of the fixture.  `history.csv` remains a different, synthetic Level-A
+shock surface; comparing the two is not event validation.
+
+`examples/bg3d4_piston/rays.csv` is an explicit rotated 7-by-24 equal-solid-
+angle quadrature.  Its 168 HCI unit vectors, physical weights and reciprocal
+neighbor graph are parsed strictly and participate in the event fingerprint.
+The common rigid `0.037 rad` rotation about HCI `+y` preserves the quadrature
+and avoids putting qualification rays exactly on the analytical PFSS current-
+sheet null; no magnetic floor is introduced.  The weights close to `4*pi`
+steradians to parser precision.  At launch, four rays are supported
+(`0.299199 sr`) and 164 are typed unsupported (`12.2672 sr`).  This asset
+qualifies identity, parsing, complete unsupported-area accounting and the
+first multi-ray smoke only; it is not sufficient angular resolution for
+ray-count convergence or a cross-ray `epsilon_t` qualification.
+
+`PistonContactModel::EvaluateRay` selects the outermost positive ellipsoid
+intersection.  It computes the physical normal and `R_dot`, `R_ddot` by
+analytic implicit differentiation of `g_c(R q_hat,t)=0`; it never differences
+large heliocentric positions in production.  Rays below ambient support,
+without an intersection, or with `q_hat.n_c < mu_min` receive explicit typed
+dispositions.  `CheckStartupCompatibility` independently samples the ambient
+on a supplied ray set and applies the frozen `|u_a|/c_f,a` gate.
+
+`PlanarPistonSolver` is currently the reusable planar/spherical tube numerical
+core (the historical class name is retained while its interface is stabilized).  It owns
+immutable cell masses, staggered nodes, a moving material piston, an ambient-
+comoving coordinate representation, compression-only quadratic VNR pressure
+(`C2=2`, selected `C1=0`), RK4 time integration and a piston/outer work ledger.
+The comoving coordinate makes a uniformly translating ambient an exact steady
+discrete solution instead of repeatedly subtracting large translated node
+positions to recover small widths.  Candidate evolution is private until all
+cell volumes, densities, pressures and internal energies remain positive and
+finite.  Shock-zone admission from `Q/P` is separate from the later availability
+of two-sided plateau states.
+
+The planar reference uses an independently evaluated exact piston shock.  Its
+finest relative errors are `1.38e-4` in position, `2.28e-4` in compression and
+`1.36e-3` in jump-derived speed.  A fixed-mesh CFL study reduces the normalized
+energy/work residual from `6.87e-7` to a `1.3e-9` numerical floor.  The
+accelerating-piston detector uses the required vanishing threshold
+`epsilon_sh=2.6/N` for quadratic VNR because a shock is born at zero amplitude;
+a fixed nonzero threshold has no continuum formation time.  The 6400-cell
+formation result is within `0.33%` in time and `0.16%` in position.  The
+linear-pulse density/velocity and propagation-centroid errors converge to
+`5.64e-4` and `4.16e-4`.
+
+The same core now evolves both signed tangent-basis components of the
+transverse field, preserves their planar/spherical frozen-flux invariants and includes
+magnetic pressure.  The cold perpendicular `gamma=2` piston and an independent
+finite-beta canonical RH comparison pass at three resolutions; the finest
+shock-position errors are `9.92e-5` and `1.10e-4`, respectively.  Exact
+spherical-sector face areas and shell volumes are also implemented.  Starting
+from an independently integrated finite-time Taylor similarity state avoids
+misrepresenting the singular strong-shock solution as an ambient-only startup.
+At 150/300/600 cells, spherical shock-radius error decreases
+`6.93e-3, 3.43e-3, 2.04e-3`, piston-pressure error decreases
+`3.16e-2, 7.87e-3, 2.03e-3`, and the finest shock-speed error is `1.90e-2`.
+This manufactured initialized state is a reference/restart interface only;
+production still starts from compatible ambient material at the contact.
+For a dynamic spherical magnetic compression, normalized energy residuals
+decrease `7.55e-6, 3.79e-6, 1.90e-6`; both signed
+`B_t/(rho*r)` components remain invariant to less than `2.5e-16` relative.
+
+`PistonAmbientProjection` freezes one maintained 3-D ambient epoch on a fixed
+HCI ray and evaluates the declared `f_amb`, `h_amb` and two-component `S_b`
+formulas with branch-preserving radial stencils.  A deterministic source table
+avoids rerunning PFSS topology tracing at every RK stage.  It never
+interpolates across a topology/sector or PFSS/Parker branch change; those rare
+intervals fall back to a one-sided authority evaluation.  The solver applies
+body acceleration, volume heating and induction at every RK stage and records
+their work separately from piston and outer-boundary work.
+
+`CSWC0625` uses the actual nonuniform closed-corona PFSS/plasma profile over a
+spherical tube.  At 64/128/256 cells, the density, pressure, velocity and
+magnetic equilibrium errors decrease by approximately four per refinement;
+their finest values are `6.36e-7`, `1.06e-6`, `6.09e-7`, and `6.38e-7`.
+The fixture reports `max |f_amb|/|g|=0.559104`; its closed-ray heating is
+exactly zero.  A separate uniform manufactured source exercises nonzero
+heating and both induction components, closing the independent source-work
+ledger at `2.12e-15`.  The same test advects the actual Parker profile between
+independently integrated ambient material boundaries.  At 64/128/256 cells
+its finest density, pressure, velocity and full-field errors are `3.43e-9`,
+`4.75e-9`, `6.37e-9` and `9.59e-10`; its energy residual decreases
+`4.88e-7,2.44e-7,1.22e-7`, and `B_r r^2` closes to `4.02e-16`.
+
+`PlanarPistonSolver::AppendAmbient` transactionally extends the immutable
+material domain with complete ambient mass, momentum, thermal and magnetic
+state.  It records transported total energy and rejects a mismatched shared
+face without modifying committed state.  `CSWC0626` verifies this through the
+actual Parker projection; the finest post-append density, pressure, velocity
+and magnetic errors are `8.57e-9`, `9.12e-9`, `2.48e-8` and `2.40e-9`, with
+exact reported mass closure and decreasing energy error.
+
+`PistonSheathModel` is the first contact-driven collection of Level-B tubes.
+The checksummed generic contact is the only piston authority; Level-A
+`history.csv` is deliberately absent from its evolution.  It initializes
+finite ambient material, advances every supported ray privately, maintains an
+undisturbed outer buffer by transactional append, commits only when all ray
+solves succeed, detects the numerical shock, and queries typed ejecta-side,
+compression/sheath and ambient regions.  `CSWC0627` evolves four supported
+rays to `1800 s` and exercises these interfaces.  Its sampled ray has
+`R_c=2.13043e9 m`, `R_sh=2.59383e9 m`, compression `4.34277`, and 42 ambient
+buffer cells.  It is quasi-parallel (`theta_Bn=0.067924 rad`), so the
+quasi-perpendicular canonical-RH tolerance is explicitly not applicable; its
+compression/pressure/velocity discrepancies are still reported as model
+error.  This smoke PASS therefore does not qualify the production-RH subset,
+angular convergence, `epsilon_t`, 3-D assembly or BG3D-4.
+
+The detailed specification records SI units and HCI signs, unknowns, equations,
+initial/boundary conditions, shock detection, region assembly, strict inputs,
+fourteen independent acceptance cases and limitations.  Contact, ray and VNR
+finite-volume controls are now typed and fingerprinted.  The first production
+mass-refinement attempt remains failed because disjoint shock-zone count and
+jump/contact quantities do not converge; input identity alone does not qualify
+the closure.  Until the remaining convergence/validity/assembly tests pass,
+`BG3D-4` remains open.
+
+#### Retained relaxation diagnostic
 
 The implemented `rh-relaxing-material-map-v1` is an **experimental prescribed
 map**, not a fluid evolution solver or a qualified production closure. A parcel
@@ -229,8 +399,9 @@ flux to qualify the interface. These diagnostics do not qualify the map.
 
 ## Inputs and commented example
 
-`event.conf` is a closed grammar; unknown or duplicate keys fail. The three
-referenced assets are acquired by the host and SHA-256 checked before parsing.
+`event.conf` is a closed grammar; unknown or duplicate keys fail. The selected
+profile's three legacy or five piston assets are acquired by the host and
+SHA-256 checked before parsing.
 The principal input groups are:
 
 | Group | Meaning and constraints |
@@ -243,12 +414,22 @@ The principal input groups are:
 | regional asset | admission start, contact span fraction, ejecta reference state/fluxes, minimum J and force/heat/work caps |
 | `handoff.*` | transition endpoints, ambient wind and signed DBM drag; outer state is derived from the crossing |
 | `numerics.*` | root-time and maximum prescribed-acceleration gates; these are not physical floors |
+| `assets.piston_*` | independent contact and explicit HCI ray quadrature; both checksums join the event fingerprint |
+| `bg3d4.*` | finite ambient cells/buffer, source and trajectory resolution, append policy, disturbance/shock thresholds, CFL, VNR coefficients and well-balanced-source selector |
 
 Commented example fragments are in
 `examples/bg3d1/event.conf`, `history.csv`, `ambient.asset`, and
 `ejecta.asset`. The supplied event begins in the low corona, transitions from
 the checksummed Hermite history through 100–200 s, and its analytical apex is
 `1.59878e11 m` at 200000 s. That number verifies trajectory coverage only.
+
+The piston example in `examples/bg3d4_piston/event.conf` supplies the accepted
+`bg3d4.*` controls with comments.  They populate `PistonNumericsInput` and join
+the immutable fingerprint; `PistonSheathModel::Create` has no programmatic
+override.  Changing resolution or viscosity therefore resolves a distinct
+event.  The controls are not aliased to legacy relaxation or particle scalars.
+Validity/assembly tolerances not yet implemented remain absent rather than
+being accepted and ignored.
 
 ## Build and test
 
@@ -281,14 +462,55 @@ This is a standalone shared-library build, not a native AMPS rebuild. It runs:
   transactional sub-fast rejection with committed-material readback; and
   distributed production momentum/energy/work diagnostics. Passing this test
   validates the diagnostics and manufactured solutions, not BG3D-4 physics;
+- `CSWC0620`: independent Level-B contact asset/selector, separation from the
+  Level-A shock, checksum/fingerprint mutation, global C2 startup ramp,
+  attachment/detachment, smooth contact handoff, 1-AU coverage, outermost ray
+  intersection, analytic implicit derivatives versus independent history
+  differences, unsupported-flank typing and ambient startup compatibility;
+- `CSWC0621`: conservative staggered planar Lagrangian gas piston, exact
+  translating-ambient balance, independently evaluated piston-shock position/
+  compression/speed, mass and CFL refinement, energy/piston-work closure and
+  transactional failure;
+- `CSWC0622`: uniformly accelerating piston shock-formation time/height with a
+  vanishing quadratic-VNR detector, plus a small-amplitude sub-fast pulse's
+  density/velocity invariant and propagation-centroid convergence;
+- `CSWC0623`: cold perpendicular and finite-beta MHD piston references with
+  canonical RH comparison, signed transverse frozen flux and energy ledgers;
+- `CSWC0624`: independently integrated Taylor spherical-piston reference,
+  exact curved metrics and a separate spherical magnetic-work refinement;
+- `CSWC0625`: actual PFSS/closed-corona and Parker projected-ambient balance,
+  plus independent nonzero source-work and passive-radial-flux checks;
+- `CSWC0626`: transactional Parker ambient append, immutable material mass and
+  complete appended-energy transport;
+- `CSWC0627`: contact-driven multi-ray evolution, computed shock, maintained
+  buffer, regional query and all-ray transactional commit.  The sampled
+  production ray is outside the quasi-perpendicular RH acceptance subset and
+  is reported as `NOT-APPLICABLE`, not counted as that physical gate;
 - `ARCHCSWC01`: source dependency scan, external public-header compile, and
 archive-symbol audit excluding AMPS, PIC, and MPI dependencies.
+
+`CSWC0620`--`CSWC0627` are registered and passing for their explicitly bounded
+scopes. `CSWC0628`--`CSWC0633` remain reserved requirements covering
+mass/time/ray convergence, validity diagnostics, 3-D assembly, complete
+transactional failure, sanitizers/regressions and comparison with the Level A
+shock.  The unexercised quasi-perpendicular production-RH subgate also remains
+open.  Component PASS results must not be promoted to BG3D-4 qualification.
 
 Focused BG3D-4 execution is:
 
 ```text
 make -C src/models/sep_corona_swcme -j16 build/test_bg3d4
 (cd src/models/sep_corona_swcme && build/test_bg3d4)
+make -C src/models/sep_corona_swcme -j16 build/test_bg3d4_piston_contact
+(cd src/models/sep_corona_swcme && build/test_bg3d4_piston_contact)
+make -C src/models/sep_corona_swcme -j16 build/test_bg3d4_planar_piston \
+  build/test_bg3d4_planar_formation build/test_bg3d4_planar_mhd \
+  build/test_bg3d4_spherical_piston build/test_bg3d4_ambient_balance \
+  build/test_bg3d4_append build/test_bg3d4_piston_sheath
+(cd src/models/sep_corona_swcme && build/test_bg3d4_planar_piston && \
+  build/test_bg3d4_planar_formation && build/test_bg3d4_planar_mhd && \
+  build/test_bg3d4_spherical_piston && build/test_bg3d4_ambient_balance && \
+  build/test_bg3d4_append && build/test_bg3d4_piston_sheath)
 ```
 
 The maintained coronal regression, which includes the exact moving-planar

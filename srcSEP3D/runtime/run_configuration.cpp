@@ -670,7 +670,9 @@ Core::Status RunConfiguration3D::Create(
   if (normalized.outputDirectory.empty() || normalized.outputPrefix.empty()) {
     return Invalid("output directory and prefix must not be empty");
   }
-  if (normalized.inputSchemaVersion >= 3 &&
+  const bool reducedShockFront=normalized.background==BackgroundAuthority::RuntimeModel&&
+      normalized.backgroundModelId=="sep-corona-swcme-shock-front-v1";
+  if (normalized.inputSchemaVersion >= 3 && !reducedShockFront&&
       (normalized.initializationMeshTecplotFile.empty() ||
        normalized.initializationParkerLineTecplotFile.empty() ||
        normalized.initializationDataTecplotFile.empty() ||
@@ -680,7 +682,7 @@ Core::Status RunConfiguration3D::Create(
     return Invalid("schema version 3 requires validated SWCME and initialization Tecplot outputs");
   }
   const bool propagation = normalized.intent == RunIntent::ShockPropagation;
-  if (normalized.inputSchemaVersion >= 3 &&
+  if (normalized.inputSchemaVersion >= 3 && !reducedShockFront&&
       (normalized.shock != ShockAuthority::Swcme ||
        (!propagation && (normalized.intent != RunIntent::ShockInjection ||
                         !normalized.source.enabled)))) {
@@ -721,6 +723,10 @@ Core::Status RunConfiguration3D::Create(
   if ((normalized.background == BackgroundAuthority::RuntimeModel) !=
       !normalized.backgroundModelId.empty())
     return Invalid("background.model_id is required only for runtime-model authority");
+  if(reducedShockFront&&normalized.backgroundModelAssetPath.empty())
+    return Invalid("reduced shock-front runtime requires background.model_asset");
+  if(!reducedShockFront&&!normalized.backgroundModelAssetPath.empty())
+    return Invalid("background.model_asset is active only for the reduced shock-front runtime");
   const double meshValues[] = {
       normalized.minimumCellSizeM, normalized.backgroundCellSizeM,
       normalized.solarSurfaceCellSizeM,
@@ -1479,7 +1485,8 @@ Core::Status RunConfiguration3D::Create(
   // Extension selection affects physics even before its provider manifest is
   // available; the common publication boundary also checks that manifest.
   if (normalized.background == BackgroundAuthority::RuntimeModel)
-    physics << ";background_model_id=" << normalized.backgroundModelId;
+    physics << ";background_model_id=" << normalized.backgroundModelId
+            << ";background_model_asset=" << normalized.backgroundModelAssetPath;
   physics << ";swcme_fingerprint="
           << normalized.swcmeConfigurationFingerprint
           << ";source_enabled=" << source.enabled

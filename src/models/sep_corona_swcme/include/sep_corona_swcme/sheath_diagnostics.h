@@ -71,7 +71,15 @@ struct SheathResidualReport {
   double forceWorkRatio = 0.0;
 };
 
-// These diagnostics do not modify or qualify the prescribed map.  They form
+// These diagnostics do not modify or qualify the prescribed diagnostic map.
+// They are intentionally tied to a smooth material deformation and are not the
+// conservation algorithm for the selected per-ray finite-volume piston model.
+// That model requires face-flux/source/piston-work ledgers, shock-zone
+// convergence, well-balance tests and ray-assembly/divergence diagnostics from
+// docs/BG3D4_PISTON_CLOSURE.md.  Reusing a PASS here as piston evidence would
+// mix two different governing systems.
+//
+// For the current map, these routines form
 // every differential term from independent finite differences of the public
 // Evaluate interface, so exact Cauchy identities inside the implementation
 // cannot make the momentum or energy result pass by construction.

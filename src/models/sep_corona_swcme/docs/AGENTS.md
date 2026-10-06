@@ -1,5 +1,20 @@
 # AGENTS.md — AMPS CME background program
 
+## Active reduced shock-front campaign (2026-10-04 override)
+
+`CODEX_REDUCED_SHOCK_TASK.txt` and `docs/shock-front/model.md` version 1.1 are
+the active execution and physics authorities.  Implement S0--S7 under
+`sep_corona_swcme/shock_front/`, initially through a thin `srcSEP3D` adapter
+with zero particles, and record evidence in `CODEX_REDUCED_SHOCK_PLAN.md`.
+
+The full-volume BG3D-4 closure is **UNQUALIFIED and deferred**.  Preserve all
+of its sources, tests and failure evidence.  The reduced provider owns a finite
+prescribed front, canonical ambient reference, local one-sided RH records and
+continuous outer propagation; it owns no contact, sheath/ejecta volume or
+downstream material state.  A reduced result must never qualify BG3D-4.  The
+full-CME rules below remain preserved for future resumption but do not block
+this explicitly authorized reduced sequence.
+
 ## Applicability and precedence
 
 These instructions apply to the entire repository. More deeply nested
@@ -17,6 +32,12 @@ The normative execution and physics documents are:
   ambient, EOS, geometry, local shock, configuration, architecture, tests);
 - `src/models/sep_corona_swcme/model.md` (continuous Corona–SWCME handoff and
   regional spatial CME closure); and
+- `src/models/sep_corona_swcme/docs/BG3D4_CODEX_REVIEW_AND_CORRECTIONS.md`
+  (authoritative curved-volume, reference-map, nonsingular-flux and startup
+  corrections); and
+- `src/models/sep_corona_swcme/docs/BG3D4_PISTON_CLOSURE.md` (selected BG3D-4
+  production replacement under qualification; preserve the distinction
+  between implemented bounded subsets and open convergence/assembly gates);
 - the maintained public contracts under `src/models/swcme` and
   `src/models/sep_common`.
 
