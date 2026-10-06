@@ -309,9 +309,37 @@ fs::path TemporaryRestart() {
 Result RunR3D07() {
   const auto cfg = Configuration(2, 3, 2, 4);
   if (!cfg) return Fail("could not build restart configuration");
+
+  // A real resumed segment cannot have the same full manifest as its writer:
+  // it names the checkpoint as an input and should publish into a fresh
+  // directory.  Prove that only these non-evolution paths are relocatable;
+  // the full manifest must retain them for provenance, while the restart
+  // identity must retain the cadence clocks that control event semantics.
+  R::RunConfiguration3DOptions relocatedOptions = cfg->options();
+  relocatedOptions.outputDirectory = "relocated-restart-products";
+  relocatedOptions.outputPrefix = "resumed";
+  relocatedOptions.initializationMeshTecplotFile = "relocated-mesh.dat";
+  relocatedOptions.initializationParkerLineTecplotFile = "relocated-line.dat";
+  relocatedOptions.initializationDataTecplotFile = "relocated-data.dat";
+  relocatedOptions.restartInputPath = "checkpoint-to-read.chk";
+  relocatedOptions.restartOutputPath = "next-checkpoint.chk";
+  std::shared_ptr<const R::RunConfiguration3D> relocated;
+  if (!R::RunConfiguration3D::Create(relocatedOptions, &relocated).ok() ||
+      !relocated || cfg->resolved_manifest() == relocated->resolved_manifest() ||
+      cfg->restart_compatibility_manifest() !=
+          relocated->restart_compatibility_manifest())
+    return Fail("restart path relocation changed the compatibility identity");
+  R::RunConfiguration3DOptions changedClockOptions = relocatedOptions;
+  ++changedClockOptions.checkpointCadenceSteps;
+  std::shared_ptr<const R::RunConfiguration3D> changedClock;
+  if (!R::RunConfiguration3D::Create(changedClockOptions, &changedClock).ok() ||
+      !changedClock || cfg->restart_compatibility_manifest() ==
+          changedClock->restart_compatibility_manifest())
+    return Fail("changed checkpoint clock escaped restart compatibility identity");
+
   O::RestartState state;
   state.configurationFingerprint = cfg->physics_fingerprint();
-  state.resolvedConfigurationManifest = cfg->resolved_manifest();
+  state.resolvedConfigurationManifest = cfg->restart_compatibility_manifest();
   state.storageLayoutFingerprint = cfg->storage_layout().fingerprint;
   state.codeIdentity = "R07-test-code"; state.snapshotFingerprint = "snap-4";
   state.runtimeCounters = {4, 0, 2, 1, 4};
@@ -342,7 +370,8 @@ Result RunR3D07() {
   const C::Status written = O::WriteRestart(path.string(), state);
   O::RestartLoadOptions options;
   options.expectedConfigurationFingerprint = cfg->physics_fingerprint();
-  options.expectedResolvedConfigurationManifest = cfg->resolved_manifest();
+  options.expectedResolvedConfigurationManifest =
+      relocated->restart_compatibility_manifest();
   options.expectedStorageLayoutFingerprint = cfg->storage_layout().fingerprint;
   options.expectedCodeIdentity = "R07-test-code";
   options.expectedSnapshotFingerprint = "snap-4";
@@ -351,14 +380,22 @@ Result RunR3D07() {
   options.repartition = O::RepartitionPolicy::DeterministicByStableId;
   O::RestartState loaded;
   const C::Status read = O::ReadRestart(path.string(), options, &loaded);
+  O::RestartLoadOptions incompatibleClock = options;
+  incompatibleClock.expectedResolvedConfigurationManifest =
+      changedClock->restart_compatibility_manifest();
+  O::RestartState untouched;
+  untouched.codeIdentity = "transaction-sentinel";
+  const C::Status clockRejected =
+      O::ReadRestart(path.string(), incompatibleClock, &untouched);
   std::error_code ec; fs::remove(path, ec);
   if (!written.ok() || !read.ok() || loaded.runtimeCounters.currentTick != 4 ||
       loaded.eventSchedule.nextCheckpointTick != 8 ||
       loaded.samplingState.pendingRepresentedParticles != 7.0 ||
       loaded.sourceLedgerRows.size() != 1 ||
-      loaded.particles[0].substep != 12)
+      loaded.particles[0].substep != 12 || clockRejected.ok() ||
+      untouched.codeIdentity != "transaction-sentinel")
     return Fail("versioned complete restart state did not round-trip");
-  return Pass("restart round-trips clock, events, snapshots, shock, RNG tuple, ledgers, and pending sampling state");
+  return Pass("restart round-trips complete state, permits path relocation, and retains physics/layout/cadence identity");
 }
 
 Result RunR3D08() {

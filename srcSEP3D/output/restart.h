@@ -27,6 +27,12 @@ namespace Output {
 
 struct RestartState {
   std::string configurationFingerprint;
+  // Historical field name retained in the on-disk schema.  Production writes
+  // RunConfiguration3D::restart_compatibility_manifest(): resolved physical
+  // inputs and cadence clocks, excluding only filenames/directories that must
+  // relocate between uninterrupted and resumed process groups.  The full
+  // resolved manifest remains publication provenance and is not silently
+  // treated as restart-compatible.
   std::string resolvedConfigurationManifest;
   std::string storageLayoutFingerprint;
   std::string codeIdentity;

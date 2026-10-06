@@ -101,7 +101,7 @@ The restart file is not a memory dump. It contains:
 
 Schema 2 serializes:
 
-- physics fingerprint, resolved configuration manifest, code identity,
+- physics fingerprint, restart-compatibility manifest, code identity,
   storage-layout fingerprint, snapshot fingerprint, and saved MPI rank count;
 - authoritative current tick, completed steps, output/checkpoint counters, the
   base time step, and every persisted next-event tick;
@@ -124,7 +124,15 @@ Writing uses a sibling `.staging` file and a final rename. Reading builds a
 candidate and validates magic, length, schema, checksum, fingerprints, record
 limits, finite particle state, unique sorted IDs, and exact ledger closure.
 Caller output is changed only after all checks pass. Optional load expectations
-also verify the resolved manifest and storage layout. Rank-count mismatch is
+also verify the restart-compatibility manifest and storage layout.  The field's
+on-disk name remains `resolvedConfigurationManifest` for schema compatibility,
+but production fills it with resolved physics/assets and the output/checkpoint
+cadence clocks.  It deliberately excludes output, initialization and restart
+filenames: a resumed segment necessarily reads a path that the fresh segment
+did not, and must publish into a new non-overwriting directory.  The complete
+resolved manifest, including those paths, remains output provenance.  Physics
+and storage fingerprints are still checked separately, so relocation cannot
+admit a changed event, model, mesh record or cadence. Rank-count mismatch is
 either rejected or admitted only under the explicit deterministic repartition
 policy; particles are then reinserted on their spatial AMPS owner without
 changing their stochastic tuple.
@@ -153,6 +161,38 @@ simulation time, then inserts particles. This ordering makes a split run use
 the same next `(campaign,particle,step,substep,purpose)` random key as the
 uninterrupted run.
 
+### Native background-only qualification procedure
+
+The reduced-model runner exercises this production path rather than treating a
+codec round trip as native evidence.  Its generated `restart-smoke.in` uses a
+five-step checkpoint cadence.  A four-rank run advances from tick 0 to 10; an
+independent four-rank run writes the tick-5 checkpoint and a new four-rank
+process resumes it for five additional steps.  The sequence is repeated with a
+one-rank checkpoint and a four-rank resume.  Each process group has a distinct
+working/product directory, but all legs use identical physical input bytes.
+
+At tick 10, the runner compares exact event/configuration identity, reduced
+front geometry, normal speed, shock classification and provider epoch/
+generation.  Rank-independent XOR and modular-sum fingerprints cover actual
+owner-cell positions and the complete ambient plasma/IMF sample after native
+storage readback.  Four-rank receipts must also contain successfully checked
+received physical ghosts.  Runtime checkpoint sequence, source rank count,
+input tick/generation, owner/ghost coherence and actual global particle/source
+counts are explicit receipt fields.  The qualified changed-rank statement is
+limited to the background-only zero-particle fixture; it is not evidence for
+nonempty particle repartition.
+
+Run the complete matrix from the AMPS root:
+
+```bash
+python3 srcSEP3D/test/run_reduced_shock_front.py \
+  --output-dir test_output/reduced-front/runner/<fresh-evidence-name>
+```
+
+Use `--dry-run` to print every resolved MPI command.  `summary.txt` lists every
+failed test with its log, while each native phase retains `execution.log` and
+`native.json`; checkpoint-producing phases additionally retain `restart.chk`.
+
 ## Evidence
 
 - `NAT3D06`: repeated/reversed input produces identical products and caller
@@ -164,7 +204,11 @@ uninterrupted run.
 - `RST3D03`: explicit missing-snapshot reject/wait behavior.
 - `R3D06`: resolved observers, uncertainty, and commit-only window reset.
 - `R3D07`: complete schema-2 clock/event/provider/shock/RNG/ledger/sampling
-  round trip.
+  round trip, path relocation, and rejection of a changed cadence identity.
+- native `RSH29`: actual AMPS restart advancement, owner/received-ghost
+  reconstruction, coherent reduced-front epochs and exact zero-particle state;
+  the runner compares same-rank and one-to-four-rank resumes with an
+  uninterrupted run at the same tick.
 - `R3D09`: finite native Tecplot records for invalid background padding,
   not-yet-sampled cells, completed empty particle cells, and occupied cells.
 

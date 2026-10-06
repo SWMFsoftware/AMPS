@@ -54,16 +54,22 @@ python3 srcSEP3D/test/run_reduced_shock_front.py
 
 The default invocation uses the existing configured `./amps` and executes the
 shared 54-assertion RSH harness, `ARCHCSWC01`, `RSHAPP01--03`, one- and
-four-rank `RSH24--RSH27` smoke cases, and the separate four-rank
-`RSH24--RSH28` 1-AU campaign.  It creates a fresh directory below
+four-rank `RSH24--RSH27` smoke cases, an actual native uninterrupted/checkpoint/
+resume matrix, and the separate four-rank `RSH24--RSH28` 1-AU campaign.  The
+restart matrix compares four-rank uninterrupted with four-to-four resume, then
+repeats the checkpoint at one rank and resumes it at four ranks.  It creates a
+fresh directory below
 `test_output/reduced-front/runner/` and writes `summary.txt`, `summary.json`,
 one complete log per phase, native JSON receipts, products and artifacts.
 Every FAIL/ERROR in the final summary carries its log path.  The expected
-complete selected-profile aggregate is 71 PASS with no FAIL/SKIP/ERROR; IDs
+complete selected-profile aggregate is 93 PASS with no FAIL/SKIP/ERROR; IDs
 repeated at different layers/rank counts remain distinct evidence records.
-On the 2026-10-05 validation host, the native phases took approximately 57 s
-(one-rank smoke), 36 s (four-rank smoke), and 1,750 s (four-rank 1-AU), so the
-complete invocation required about 31 minutes.  The runner emits a heartbeat
+The 2026-10-05 native result is `93/0/0/0` under
+`test_output/reduced-front/runner/20261005T-native-restart-qualification-02/`.
+On the 2026-10-05 validation host, the non-restart native phases took
+approximately 57 s (one-rank smoke), 36 s (four-rank smoke), and 1,750 s
+(four-rank 1-AU).  The complete invocation therefore takes more than 30
+minutes.  The runner emits a heartbeat
 every 30 s by default and the growing `execution.log` records every committed
 native tick; a quiet console during the long phase is not evidence of a hang.
 
@@ -85,7 +91,45 @@ symlinked build target, removes only root `build` with `rm -rf -- build`, then
 regenerates the srcSEP3D configuration/hooks and builds `amps` with `-j16`.
 An existing output directory is rejected so older evidence cannot be
 overwritten or mistaken for a fresh result.  `--skip-native` records every
-omitted native ID as SKIP; it cannot produce the 71-PASS complete result.
+omitted native ID as SKIP; it cannot produce the 93-PASS complete result.
+
+#### Actual AMPS checkpoint/resume protocol
+
+The restart gate is not the dependency-light shared-provider serialization
+test.  The runner generates one evidence-local `restart-smoke.in` whose
+`[output] checkpoint_cadence_steps = 5` and whose `[restart] output_path =
+restart.chk`.  Every leg uses those same input bytes.  It then performs:
+
+1. an uninterrupted four-rank run from tick 0 through tick 10;
+2. a four-rank run through tick 5, which writes an actual AMPS checkpoint;
+3. a four-rank `--restart <checkpoint>` run for five additional steps;
+4. a one-rank checkpoint at tick 5; and
+5. a four-rank resume of that one-rank checkpoint for five additional steps.
+
+Each phase has its own working and output directory.  Relocation is necessary
+because native publication refuses to overwrite an earlier process group's
+products.  The checkpoint compatibility identity therefore freezes the
+physics fingerprint, checksummed event/asset manifest, native storage layout,
+output cadence and checkpoint cadence, while excluding only output,
+initialization and checkpoint path names.  The complete provenance manifest
+still records those path names.  A changed physical option, event asset,
+storage layout or cadence is rejected transactionally.
+
+At the common tick-10 boundary, `RSH29` and the Python comparator require exact
+event identity, reduced-front generation/epoch/phase, every-record front-state
+fingerprint, apex radius and normal speed, accepted/numerical area and shock
+classification.  They also compare rank-independent XOR and modular-sum
+fingerprints over actual owner-cell positions plus all ambient plasma/IMF
+values after native readback.  Four-rank resumes must inspect nonzero received
+physical ghosts, all owner/ghost/provider epoch checks must be true, and the
+actual AMPS particle lists and source ledger must remain exactly zero.
+Checkpoint source-rank count, input tick/generation, final checkpoint sequence
+and final completed tick are recorded in each native JSON receipt.
+
+The maintained loader selects deterministic stable-ID repartitioning.  The
+one-to-four-rank case qualifies that mechanism for this background-only,
+zero-particle profile.  It does not by itself qualify nonempty particle
+repartitioning, which remains outside the reduced-model scope.
 
 `RSHAPP01--03` are dependency-light application boundary tests.  Run their
 binary from the `srcSEP3D` directory because other application fixtures use
@@ -102,10 +146,11 @@ These portable tests prove factory/adapter construction, immutable epochs,
 rollback and deck/asset resolution from two working directories.  They cannot
 prove AMPS owner storage or MPI synchronization.
 
-The linked executable registers `RSH24--RSH28`.  `RSH24--RSH27` are members of
+The linked executable registers `RSH24--RSH29`.  `RSH24--RSH27` are members of
 the `sep-corona` smoke suite; `RSH28` is long-only so the short handoff case
-cannot accidentally pass or skip an arrival requirement.  Native acceptance
-requires:
+cannot accidentally pass or skip an arrival requirement, and `RSH29` is
+explicit-only so a fresh smoke run cannot masquerade as restart evidence.
+Native acceptance requires:
 
 - `RSH24`: a rank-local injected candidate failure is rejected collectively
   without replacing the committed provider/front epoch;
@@ -116,6 +161,10 @@ requires:
 - `RSH27`: actual AMPS linked-list and source-ledger global counts remain zero;
 - `RSH28`: a committed native horizon passes the exact continuous-time 1-AU
   observer root and reports geometric and accepted-shock arrival separately.
+- `RSH29`: the process was actually launched with `--restart`, advanced beyond
+  the serialized tick/generation, rebuilt owner and received-ghost state, and
+  retained zero particles; the runner then compares it with the independent
+  uninterrupted receipt at the identical final tick.
 
 Use a unique `--output-dir` for every MPI process group.  JSON/artifact options
 do not redirect observer products, and reusing the deck's default product path

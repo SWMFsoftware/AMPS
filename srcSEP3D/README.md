@@ -37,8 +37,13 @@ After the mandatory clean native rebuild, run the smoke suite on one and four
 ranks, always assigning a unique `--output-dir` as well as unique JSON and
 artifact paths.  Run the long deck separately with explicit
 `RSH24`--`RSH28`; `RSH28` is intentionally absent from the short smoke suite.
-The complete commands, build preflight, hashes and current evidence paths are
-in `../CODEX_REDUCED_SHOCK_PLAN.md` and the shared README above.
+The maintained `test/run_reduced_shock_front.py` orchestrator also creates an
+actual tick-5 checkpoint, resumes it to tick 10 at four ranks, repeats from one
+to four ranks, and compares both with an uninterrupted four-rank run.  Native
+`RSH29` is explicit-only and cannot be satisfied by the shared restart codec or
+by initialization alone.  The complete commands, build preflight, hashes and
+current evidence paths are in `../CODEX_REDUCED_SHOCK_PLAN.md` and the shared
+README above.
 
 The 2026-10-04 long synthetic fixture committed 340/340 native background
 updates and reached 1 AU geometrically at `203884.49378697205 s`.  Its exact
@@ -650,6 +655,28 @@ Every `[observer.ID]` requires all of these fields:
 `output_path`; the literal `none` selects a fresh run. Output/restart relocation
 does not change the physics fingerprint, while every mesh, observer, source,
 species, and canonical SWCME input does.
+
+For an actual native resume, set a positive `checkpoint_cadence_steps` and a
+writeable `output_path` in the fresh segment.  Launch the resumed process with
+the same physical deck plus `--restart /absolute/path/to/checkpoint`; that CLI
+option overrides `[restart] input_path`.  `--test-steps N`, when present, means
+`N` additional normal AMPS steps after the serialized tick, not an absolute
+target tick.  Use a fresh `--output-dir` for the resumed process group because
+publication is intentionally non-overwriting.
+
+Restart validation has three independent identities.  The physics fingerprint
+covers all trajectory-relevant inputs and checksummed model assets; the native
+storage fingerprint covers offsets and record sizes; and the restart-
+compatibility manifest covers resolved physical inputs plus output/checkpoint
+cadence.  The full resolved provenance manifest additionally records output,
+initialization and restart path names, which are allowed to relocate and thus
+are not used as evolution compatibility data.  The persisted integer tick,
+event schedule, checkpoint sequence and provider generations are restored
+before mesh creation.  The mesh is then rebuilt/decomposed, owner background is
+reconstructed at that epoch, halos are exchanged, and the ordinary time loop
+continues.  The maintained loader can repartition records by stable ID when
+the rank count changes; current reduced-model qualification covers one-to-four
+ranks only for a background-only state with zero particles.
 
 After final AMR refinement and decomposition, the initialization stage writes
 the actual distributed AMPS tree to `initialization_mesh_tecplot_file` and a
@@ -1271,6 +1298,11 @@ geometry, DSA spectrum mapping, conservation, and host configuration.
   than C++ object memory. It includes Runtime cadence/checkpoint counters,
   stochastic identity, all active particle state, snapshot/turbulence/source
   generations, sampling state, next stable ID, and closed ledger rows.
+- The serialized compatibility manifest intentionally omits only relocatable
+  filenames/directories.  It retains resolved event/model inputs and cadence
+  clocks; physics and storage-layout fingerprints are checked independently.
+  This permits a resumed segment to use the checkpoint as an input and publish
+  to a fresh directory without accepting a changed physical construction.
 - Snapshot mismatch has an explicit reject or bounded-wait policy. Failed
   checkpoint writes roll Runtime back to `SnapshotReady` without incrementing
   the checkpoint sequence.

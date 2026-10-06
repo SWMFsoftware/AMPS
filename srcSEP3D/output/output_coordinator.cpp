@@ -60,7 +60,7 @@ Core::Status WriteRestartAtBoundary(RuntimeModel::Runtime* runtime,
   state.configurationFingerprint =
       runtime->configuration()->physics_fingerprint();
   state.resolvedConfigurationManifest =
-      runtime->configuration()->resolved_manifest();
+      runtime->configuration()->restart_compatibility_manifest();
   state.storageLayoutFingerprint =
       runtime->configuration()->storage_layout().fingerprint;
   state.runtimeCounters = runtime->counters();

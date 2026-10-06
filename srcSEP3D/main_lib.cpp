@@ -1915,18 +1915,55 @@ bool MeshBackgroundBytesMatch(PIC::Mesh::cDataCenterNode* cell,
 #endif
   return matches;
 }
+
+// Produce a decomposition-independent value for one physical owner cell.
+// Hexadecimal floating-point text preserves the exact binary value while
+// avoiding structure padding and native endianness.  The corresponding native
+// center-node bytes are independently compared above; hashing the canonical
+// sample here is therefore equivalent to hashing those bytes after a PASS,
+// while remaining independent of AMPS storage offsets and MPI ownership.
+std::uint64_t BackgroundCellFingerprint(const AmpsCellReference& cell,
+    const SEP3D::Background::BackgroundSample& sample) {
+  std::ostringstream encoded;
+  encoded << std::hexfloat
+      << cell.positionM.x << '|' << cell.positionM.y << '|'
+      << cell.positionM.z << '|' << sample.B.x << '|' << sample.B.y << '|'
+      << sample.B.z << '|' << sample.U.x << '|' << sample.U.y << '|'
+      << sample.U.z << '|' << sample.numberDensityM3 << '|'
+      << sample.temperatureK << '|' << sample.pressurePa << '|'
+      << sample.alfvenSpeedMpS << '|' << sample.divU << '|'
+      << sample.divBhat << '|' << sample.focusingLenM << '|'
+      << sample.curvature.x << '|' << sample.curvature.y << '|'
+      << sample.curvature.z << '|' << sample.fieldAlignedStrain << '|'
+      << sample.generation << '|' << sample.configurationDigest;
+  for (int component=0;component<3;++component)
+    for (int coordinate=0;coordinate<3;++coordinate)
+      encoded << '|' << sample.gradB(component,coordinate);
+  for (int component=0;component<3;++component)
+    for (int coordinate=0;coordinate<3;++coordinate)
+      encoded << '|' << sample.gradU(component,coordinate);
+  return Fnv1a64(encoded.str());
+}
 // Read-only local evidence capture; its caller reduces flags/counts over MPI.
 // Ghost coverage is one physical center per received active block, not every
 // ghost cell. Absence of received blocks remains a test prerequisite SKIP.
 void CaptureRuntimeMeshBackground(bool* owned,bool* ghosts,bool* provider,
-                                  unsigned long long* ghostCount) {
+                                  unsigned long long* ghostCount,
+                                  unsigned long long* ownerFingerprintXor,
+                                  unsigned long long* ownerFingerprintSum) {
   using namespace SEP3D;
   *owned=*ghosts=*provider=true;*ghostCount=0;
+  *ownerFingerprintXor=*ownerFingerprintSum=0;
   if (!gInstalledBackground || !gRuntimeBackgroundProvider) {*owned=*provider=false;return;}
   const auto cells=CollectOwnedPhysicalCells();const auto& samples=gInstalledBackground->samples();
   if(cells.size()!=samples.size()){*owned=*provider=false;return;}
-  for (std::size_t i=0;i<cells.size();++i)
+  for (std::size_t i=0;i<cells.size();++i) {
     *owned=*owned&&MeshBackgroundBytesMatch(cells[i].cell,samples[i]);
+    const unsigned long long fingerprint=static_cast<unsigned long long>(
+        BackgroundCellFingerprint(cells[i],samples[i]));
+    *ownerFingerprintXor^=fingerprint;
+    *ownerFingerprintSum+=fingerprint;
+  }
   const auto* prepared=gRuntimeBackgroundProvider->PreparedMetadata();
   *provider=prepared && prepared->epochS==gInstalledBackground->metadata().epochS &&
       prepared->generation==gInstalledBackground->metadata().generation && gNativeAmpsBackgroundReady;
@@ -2282,7 +2319,12 @@ void WriteCheckpointAtBoundary() {
   if (PIC::ThisThread == 0) {
     Output::RestartState checkpoint;
     checkpoint.configurationFingerprint = Configuration().physics_fingerprint();
-    checkpoint.resolvedConfigurationManifest = Configuration().resolved_manifest();
+    // The serialized identity keeps resolved event/physics inputs and cadence
+    // semantics, but excludes output and checkpoint filenames.  A resumed
+    // native run must be able to write to a distinct evidence directory; the
+    // full resolved manifest remains available in publication provenance.
+    checkpoint.resolvedConfigurationManifest =
+        Configuration().restart_compatibility_manifest();
     checkpoint.storageLayoutFingerprint =
         Configuration().storage_layout().fingerprint;
     checkpoint.codeIdentity = "srcSEP3D-R01-R07";
@@ -3340,6 +3382,14 @@ SEP3D::Core::Status SEP3D::Validation::CaptureNativeApplicationState(
       captured.sourceEnabled;
   captured.restartConfigured =
       !Configuration().options().restartInputPath.empty();
+  captured.checkpointSequence=
+      ApplicationRuntime().counters().checkpointSequence;
+  if(gPendingRestart) {
+    captured.restartInputTick=gPendingRestart->runtimeCounters.currentTick;
+    captured.restartInputBackgroundGeneration=
+        gPendingRestart->backgroundGeneration;
+    captured.restartSourceRankCount=gPendingRestart->savedRankCount;
+  }
   captured.completedSteps = ApplicationRuntime().counters().completedSteps;
 
   const unsigned long long localBlockCount =
@@ -3435,13 +3485,23 @@ SEP3D::Core::Status SEP3D::Validation::CaptureNativeApplicationState(
     // Capture at the actual production boundary. The denominator below counts
     // due cadence events from tick zero; gBackgroundPublishedUpdates counts
     // completed commits independently, so a missed refresh becomes a failure.
-    bool owned=false,ghosts=false,provider=false;unsigned long long localGhosts=0,globalGhosts=0;
-    CaptureRuntimeMeshBackground(&owned,&ghosts,&provider,&localGhosts);
+    bool owned=false,ghosts=false,provider=false;
+    unsigned long long localGhosts=0,globalGhosts=0;
+    unsigned long long localOwnerXor=0,globalOwnerXor=0;
+    unsigned long long localOwnerSum=0,globalOwnerSum=0;
+    CaptureRuntimeMeshBackground(&owned,&ghosts,&provider,&localGhosts,
+        &localOwnerXor,&localOwnerSum);
     captured.runtimeMeshOwnedFieldsMatch=CollectiveAnd(owned);
     captured.runtimeMeshGhostFieldsMatch=CollectiveAnd(ghosts);
     captured.runtimeMeshProviderMatch=CollectiveAnd(provider);
     MPI_Allreduce(&localGhosts,&globalGhosts,1,MPI_UNSIGNED_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(&localOwnerXor,&globalOwnerXor,1,
+        MPI_UNSIGNED_LONG_LONG,MPI_BXOR,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(&localOwnerSum,&globalOwnerSum,1,
+        MPI_UNSIGNED_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
     captured.runtimeMeshGhostCellsChecked=globalGhosts;
+    captured.runtimeMeshOwnerFingerprintXor=globalOwnerXor;
+    captured.runtimeMeshOwnerFingerprintSum=globalOwnerSum;
     captured.runtimeMeshPublishedUpdates=gBackgroundPublishedUpdates;
     captured.runtimeMeshExpectedUpdates=ApplicationRuntime().counters().currentTick/
         Configuration().options().backgroundCadenceSteps;
@@ -3595,6 +3655,31 @@ SEP3D::Core::Status SEP3D::Validation::CaptureNativeApplicationState(
       captured.reducedPhase=SEP::CoronaSwcme::ShockFront::Name(
           epoch->trajectory.phase);
       captured.reducedEventIdentity=epoch->eventIdentity;
+      // The front epoch is replicated, but equality of its apex alone is not
+      // enough for restart equivalence.  Include every stable surface label,
+      // position, normal, speed, area and physical/numerical classification.
+      // This remains a diagnostic fingerprint: the independent RH and
+      // geometry tests establish correctness of the encoded values.
+      std::ostringstream frontState;
+      frontState << std::hexfloat << epoch->trajectory.apexRadiusM << '|'
+          << epoch->trajectory.apexSpeedMPerS << '|'
+          << static_cast<int>(epoch->trajectory.phase);
+      for(const auto& record:epoch->records) {
+        frontState << '|' << record.geometry.stableId << ':'
+            << record.geometry.positionM.x << ':'
+            << record.geometry.positionM.y << ':'
+            << record.geometry.positionM.z << ':'
+            << record.geometry.outwardNormal.x << ':'
+            << record.geometry.outwardNormal.y << ':'
+            << record.geometry.outwardNormal.z << ':'
+            << record.geometry.normalSpeedMPerS << ':'
+            << record.geometry.areaM2 << ':'
+            << static_cast<int>(record.status) << ':'
+            << record.inflowMPerS << ':' << record.fastMach << ':'
+            << record.signedMagneticNormalCosine << ':'
+            << record.downstreamValid;
+      }
+      captured.reducedFrontStateFingerprint=Fnv1a64(frontState.str());
       captured.reducedAcceptedAreaM2=epoch->area.acceptedShockM2;
       captured.reducedNumericalFailureAreaM2=epoch->area.numericalFailureM2;
       captured.reducedGeometricEndpointReached=
@@ -3673,6 +3758,8 @@ SEP3D::Core::Status SEP3D::Validation::CaptureNativeApplicationState(
            << captured.shockAuthority << '|'
            << captured.runtimeMeshPublishedUpdates << '|'
            << captured.runtimeMeshExpectedUpdates << '|'
+           << captured.runtimeMeshOwnerFingerprintXor << '|'
+           << captured.runtimeMeshOwnerFingerprintSum << '|'
            << captured.runtimeMeshOwnedFieldsMatch << '|'
            << captured.runtimeMeshGhostFieldsMatch << '|'
            << captured.runtimeCollectiveRollbackVerified << '|'
@@ -3692,6 +3779,7 @@ SEP3D::Core::Status SEP3D::Validation::CaptureNativeApplicationState(
            << captured.reducedProviderSelected << '|'
            << captured.reducedFrontGeneration << '|'
            << captured.reducedAmbientGeneration << '|'
+           << captured.reducedFrontStateFingerprint << '|'
            << captured.reducedEpochS << '|'
            << captured.reducedApexRadiusM << '|'
            << captured.reducedApexSpeedMPerS << '|'

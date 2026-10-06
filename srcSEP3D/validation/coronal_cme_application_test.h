@@ -72,6 +72,15 @@ struct NativeApplicationState {
   bool initializationProductsFinite = false;
   bool mpiFingerprintConsistent = false;
   bool restartConfigured = false;
+  // A resumed process retains the canonical pre-mesh checkpoint candidate in
+  // gPendingRestart.  These values identify the boundary from which the
+  // current native execution continued; they are zero on an uninterrupted
+  // run.  Rank count is evidence, not physics: the maintained deterministic
+  // repartition policy may restore a one-rank checkpoint on four ranks.
+  std::uint64_t restartInputTick = 0;
+  std::uint64_t restartInputBackgroundGeneration = 0;
+  std::uint64_t restartSourceRankCount = 0;
+  std::uint64_t checkpointSequence = 0;
   // Read from the live provider, actual center-node bytes and received remote
   // blocks. These are collective checks, never synthetic mesh evidence.
   bool runtimeMeshOwnedFieldsMatch = false; // All owner cells, compared fields.
@@ -80,6 +89,14 @@ struct NativeApplicationState {
   std::uint64_t runtimeMeshGhostCellsChecked = 0; // Global representative count.
   std::uint64_t runtimeMeshPublishedUpdates = 0; // Completed refresh commits.
   std::uint64_t runtimeMeshExpectedUpdates = 0; // tick/backgroundCadenceSteps.
+  // Rank-independent fingerprints cover the complete set of owner-cell
+  // positions and canonical ambient values.  XOR alone could cancel an even
+  // duplicate; the modular sum supplies an independent multiplicity check.
+  // Native byte equality is checked separately before these values are
+  // accepted, so equal fingerprints compare actual installed fields rather
+  // than merely two provider evaluations.
+  std::uint64_t runtimeMeshOwnerFingerprintXor = 0;
+  std::uint64_t runtimeMeshOwnerFingerprintSum = 0;
   bool runtimeCollectiveRollbackVerified = false;
   // Reduced-provider evidence is captured from the same adapter/epoch that
   // filled owner and received-ghost storage.  The front is replicated shared
@@ -91,6 +108,10 @@ struct NativeApplicationState {
   bool reducedEndpointObserverShockAccepted = false;
   std::uint64_t reducedFrontGeneration = 0;
   std::uint64_t reducedAmbientGeneration = 0;
+  // Hash of every deterministic surface sample's stable ID, geometry,
+  // classification and jump-validity scalars.  This catches a restart that
+  // restores the same apex but changes a flank branch or shock decision.
+  std::uint64_t reducedFrontStateFingerprint = 0;
   double reducedEpochS = 0.0;
   double reducedApexRadiusM = 0.0;
   double reducedApexSpeedMPerS = 0.0;

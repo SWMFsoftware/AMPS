@@ -209,6 +209,41 @@ NativeTestResult EvaluateOne(const NativeTestDescriptor& descriptor,
         {"numerical_failure_area_m2",state.reducedNumericalFailureAreaM2}};
     return result;
   }
+  if(id=="RSH29") {
+    if(state.backgroundAuthority!="runtime-model")return Result(descriptor,
+        NativeTestStatus::Skip,"requires the reduced runtime-model background");
+    if(!state.restartConfigured)return Result(descriptor,
+        NativeTestStatus::Skip,"requires an actual native --restart execution");
+    const bool ghosts=state.mpiRankCount==1||
+        (state.runtimeMeshGhostCellsChecked>0&&state.runtimeMeshGhostFieldsMatch);
+    const bool advanced=state.restartInputTick>0&&
+        state.completedSteps>state.restartInputTick;
+    const bool coherent=state.restartInputBackgroundGeneration>0&&
+        state.reducedProviderSelected&&state.reducedFrontGeneration>0&&
+        state.reducedFrontGeneration==state.reducedAmbientGeneration&&
+        state.reducedFrontGeneration==state.backgroundGeneration&&
+        state.runtimeMeshOwnerFingerprintXor!=0&&
+        state.runtimeMeshOwnerFingerprintSum!=0;
+    const bool zeroParticles=!state.sourceEnabled&&
+        state.zeroParticleAllocationRequested&&state.globalParticleCount==0&&
+        state.globalInjectedParticleCount==0;
+    const bool good=advanced&&coherent&&state.restartSourceRankCount>0&&
+        state.runtimeMeshOwnedFieldsMatch&&state.runtimeMeshProviderMatch&&
+        ghosts&&zeroParticles&&state.reducedFrontStateFingerprint!=0;
+    NativeTestResult result=Result(descriptor,good?NativeTestStatus::Pass:
+        NativeTestStatus::Fail,
+        good?"native checkpoint restored and advanced with coherent front/ambient storage; source ranks="+
+          std::to_string(state.restartSourceRankCount)+" current ranks="+
+          std::to_string(state.mpiRankCount):
+          "native reduced checkpoint did not restore a complete coherent background state");
+    result.metrics={{"restart_input_tick",static_cast<double>(state.restartInputTick)},
+        {"restart_input_generation",static_cast<double>(state.restartInputBackgroundGeneration)},
+        {"completed_steps",static_cast<double>(state.completedSteps)},
+        {"source_ranks",static_cast<double>(state.restartSourceRankCount)},
+        {"current_ranks",static_cast<double>(state.mpiRankCount)},
+        {"ghost_cells_checked",static_cast<double>(state.runtimeMeshGhostCellsChecked)}};
+    return result;
+  }
 
   if (id == "SCCM3D01") {
     SCCM::InitializationLedger ledger;
@@ -381,6 +416,9 @@ const std::vector<NativeTestDescriptor>& CoronalCmeNativeTests() {
       // it part of the smoke suite would turn a deliberately pre-endpoint run
       // into a required SKIP or a false arrival claim.
       {"RSH28", "Reduced actual 1-AU endpoint", "geometric versus accepted shock arrival"},
+      // Restart is explicit-only like RSH28.  Ordinary smoke runs have no
+      // restart input and must not acquire a required SKIP through the suite.
+      {"RSH29", "Reduced native restart equivalence", "checkpoint/resume and deterministic repartition"},
       {"SCCM3D01", "SCCM initialization ledger", "all ten initialization gates", "sep-corona"},
       {"SCCM3D02", "SCCM species numerics", "all-species weights and steps", "sep-corona"},
       {"SCCM3D03", "SCCM source species binding", "compiled AMPS table coverage", "sep-corona"},
@@ -491,13 +529,21 @@ Core::Status WriteNativeTestJson(
       << "  \"runtime_mesh_background\": {\"published_updates\": " << state.runtimeMeshPublishedUpdates
       << ", \"expected_updates\": " << state.runtimeMeshExpectedUpdates
       << ", \"ghost_cells_checked\": " << state.runtimeMeshGhostCellsChecked
+      << ", \"owner_fingerprint_xor\": " << state.runtimeMeshOwnerFingerprintXor
+      << ", \"owner_fingerprint_sum\": " << state.runtimeMeshOwnerFingerprintSum
       << ", \"owner_fields_match\": " << (state.runtimeMeshOwnedFieldsMatch ? "true" : "false")
       << ", \"ghost_fields_match\": " << (state.runtimeMeshGhostFieldsMatch ? "true" : "false")
       << ", \"provider_matches\": " << (state.runtimeMeshProviderMatch ? "true" : "false") << "},\n"
+      << "  \"restart\": {\"configured\": " << (state.restartConfigured ? "true" : "false")
+      << ", \"input_tick\": " << state.restartInputTick
+      << ", \"input_background_generation\": " << state.restartInputBackgroundGeneration
+      << ", \"source_ranks\": " << state.restartSourceRankCount
+      << ", \"checkpoint_sequence\": " << state.checkpointSequence << "},\n"
       << "  \"reduced_front\": {\"selected\": " << (state.reducedProviderSelected ? "true" : "false")
       << ", \"event_identity\": " << JsonString(state.reducedEventIdentity)
       << ", \"generation\": " << state.reducedFrontGeneration
       << ", \"ambient_generation\": " << state.reducedAmbientGeneration
+      << ", \"state_fingerprint\": " << state.reducedFrontStateFingerprint
       << ", \"epoch_s\": " << std::setprecision(17) << state.reducedEpochS
       << ", \"phase\": " << JsonString(state.reducedPhase)
       << ", \"apex_radius_m\": " << state.reducedApexRadiusM

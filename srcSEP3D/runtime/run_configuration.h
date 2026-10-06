@@ -715,17 +715,29 @@ class RunConfiguration3D final {
   const StorageLayout& storage_layout() const { return storageLayout_; }
   const std::string& physics_fingerprint() const { return physicsFingerprint_; }
   const std::string& resolved_manifest() const { return resolvedManifest_; }
+  // Checkpoint compatibility deliberately excludes filesystem destinations
+  // and the path used to locate the checkpoint being read.  Those values
+  // must change when a resumed segment writes into a fresh evidence
+  // directory, but they cannot change the evolved state.  The manifest still
+  // contains every resolved physical input plus the output/checkpoint clocks,
+  // so this is a narrower identity than the full provenance manifest rather
+  // than a replacement for physics or storage-layout validation.
+  const std::string& restart_compatibility_manifest() const {
+    return restartCompatibilityManifest_;
+  }
 
  private:
   RunConfiguration3D(const RunConfiguration3DOptions& options,
                      const StorageLayout& layout,
                      const std::string& physicsFingerprint,
-                     const std::string& resolvedManifest);
+                     const std::string& resolvedManifest,
+                     const std::string& restartCompatibilityManifest);
 
   const RunConfiguration3DOptions options_;
   const StorageLayout storageLayout_;
   const std::string physicsFingerprint_;
   const std::string resolvedManifest_;
+  const std::string restartCompatibilityManifest_;
 };
 
 }  // namespace RuntimeModel

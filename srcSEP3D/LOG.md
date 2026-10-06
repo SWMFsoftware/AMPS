@@ -30,6 +30,9 @@ env MAKEFLAGS="-j16" test/run_tests.py --all --amps-source .. --make-config ../M
 another runner
 srcSEP3D/test/run_tests.py --all
 
+reduced shock front runner:
+srcSEP3D/test/run_reduced_shock_front.py --rebuild-native --output-dir test_output/reduced-front/runner/20261005T-native-restart-qualification-02
+
 ------------------------------------------------------------------------------------
 srcSEP:
 make -j test_SEP--Parker_spiral--ParkerEq_compile

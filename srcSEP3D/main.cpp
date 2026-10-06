@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
     load.expectedConfigurationFingerprint =
         request.configuration->physics_fingerprint();
     load.expectedResolvedConfigurationManifest =
-        request.configuration->resolved_manifest();
+        request.configuration->restart_compatibility_manifest();
     load.expectedStorageLayoutFingerprint =
         request.configuration->storage_layout().fingerprint;
     load.expectedCodeIdentity = "srcSEP3D-R01-R07";

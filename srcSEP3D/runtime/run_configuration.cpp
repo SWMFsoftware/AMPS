@@ -492,11 +492,13 @@ Core::Status ValidateCompiledSpeciesBinding(
 RunConfiguration3D::RunConfiguration3D(
     const RunConfiguration3DOptions& options, const StorageLayout& layout,
     const std::string& physicsFingerprint,
-    const std::string& resolvedManifest)
+    const std::string& resolvedManifest,
+    const std::string& restartCompatibilityManifest)
     : options_(options),
       storageLayout_(layout),
       physicsFingerprint_(physicsFingerprint),
-      resolvedManifest_(resolvedManifest) {}
+      resolvedManifest_(resolvedManifest),
+      restartCompatibilityManifest_(restartCompatibilityManifest) {}
 
 Core::Status RunConfiguration3D::Create(
     const RunConfiguration3DOptions& options,
@@ -1613,12 +1615,22 @@ Core::Status RunConfiguration3D::Create(
   const std::string fingerprint =
       SEP::Background::FingerprintConfiguration(physics.str());
 
-  std::ostringstream manifest;
-  manifest << physics.str()
+  // A restart segment normally has a different --output-dir and necessarily
+  // has a non-empty restart input path.  Comparing the complete provenance
+  // manifest would therefore reject every real restart before mesh creation.
+  // Keep a separate compatibility identity: resolved physical inputs and the
+  // two integer event clocks remain frozen, while paths and output naming are
+  // allowed to relocate.  Physics and native storage are independently
+  // guarded by physicsFingerprint and StorageLayout::fingerprint.
+  std::ostringstream restartCompatibility;
+  restartCompatibility << physics.str()
            << ";swcme_resolved_manifest="
            << normalized.swcmeResolvedManifest
            << ";output_cadence=" << normalized.outputCadenceSteps
-           << ";checkpoint_cadence=" << normalized.checkpointCadenceSteps
+           << ";checkpoint_cadence=" << normalized.checkpointCadenceSteps;
+
+  std::ostringstream manifest;
+  manifest << restartCompatibility.str()
            << ";output_directory=" << normalized.outputDirectory
            << ";output_prefix=" << normalized.outputPrefix
            << ";initialization_mesh_tecplot="
@@ -1631,7 +1643,8 @@ Core::Status RunConfiguration3D::Create(
            << ";restart_output=" << normalized.restartOutputPath;
 
   configuration->reset(new RunConfiguration3D(
-      normalized, layout, fingerprint, manifest.str()));
+      normalized, layout, fingerprint, manifest.str(),
+      restartCompatibility.str()));
   return Core::Status::OK();
 }
 

@@ -87,6 +87,10 @@ coverage still require convergence evidence.
 - A background-only restart binds the event/asset fingerprint, committed clock
   and generation, phase, and exact handoff state.  Restore re-evaluates the
   analytical epoch and rejects a changed physical identity transactionally.
+  That shared serialization is a physics-kernel reference only.  Native
+  qualification additionally writes and reloads the AMPS application
+  checkpoint, reconstructs the mesh-owned provider state, exchanges received
+  ghosts and advances the normal AMPS time loop.
 - Connected derivatives require the same stable branch on three ordered
   epochs.  They differentiate values at the moving root, including
   `xdot.grad(F)` implicitly; mergers, grazes, selection changes, or invalid
@@ -158,13 +162,36 @@ python3 srcSEP3D/test/run_reduced_shock_front.py
 ```
 
 It runs the shared RSH/architecture gates, portable RSHAPP boundary, native
-one-/four-rank smoke cases and the separate four-rank 1-AU campaign.  Fresh
-phase logs, native receipts and `summary.{txt,json}` are written below
+one-/four-rank smoke cases, actual four-to-four and one-to-four checkpoint/
+resume comparisons, and the separate four-rank 1-AU campaign.  Fresh phase
+logs, native receipts and `summary.{txt,json}` are written below
 `test_output/reduced-front/runner/`; every FAIL/ERROR is printed with its log
-path.  The validated complete aggregate is 71/0/0/0.  On the 2026-10-05 host,
-the 340-step native phase took about 29 minutes, so this command is not a
+path.  The current validated aggregate is 93/0/0/0, with evidence under
+`test_output/reduced-front/runner/20261005T-native-restart-qualification-02/`.
+On the 2026-10-05 host,
+the 340-step native phase alone took about 29 minutes, so this command is not a
 routine short test.  Use `--list` or `--dry-run` to inspect coverage/commands,
 and `--skip-native` only when explicit native SKIPs are acceptable.
+
+The runner derives `restart-smoke.in` from the handoff fixture, enables a
+five-tick checkpoint cadence, and gives every process group a unique working
+directory.  A resumed segment necessarily names the checkpoint as an input
+and publishes into a different directory.  `RunConfiguration3D` therefore
+stores two related identities: the full resolved manifest for provenance and
+a restart-compatibility manifest containing all resolved physics/assets plus
+the output/checkpoint cadence clocks, but no relocatable filesystem path.  The
+physics fingerprint and native storage-layout fingerprint remain separate
+mandatory comparisons.  Removing paths from the restart comparison does not
+permit a changed event, model parameter, mesh layout or cadence.
+
+At final tick 10, the native comparator requires exact reduced-front/event
+identity, geometry, speed, per-record shock classification, epochs and
+generations.  It independently fingerprints the actual owner-cell ambient
+plasma/IMF values and checks received physical ghosts on four ranks, rollback,
+checkpoint sequence, zero allocation and zero injected/remaining particles.
+The four-to-four case qualifies same-rank restart; the one-to-four case
+qualifies deterministic repartition for this background-only zero-particle
+profile.  Nonempty particle repartition remains deliberately unclaimed.
 
 Shared development build (not native AMPS evidence):
 
