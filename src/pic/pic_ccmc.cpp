@@ -48,20 +48,22 @@ int PIC::CCMC::InternalBoundary::Sphere::SamplingMode=_PIC_MODE_OFF_;
 //read the control file
 void PIC::CCMC::Parser::LoadControlFile() {
   CiFileOperations ifile;
-  char str1[_MAX_STRING_LENGTH_PIC_],str[_MAX_STRING_LENGTH_PIC_],*endptr,fname[_MAX_STRING_LENGTH_PIC_];
+  char str1[_MAX_STRING_LENGTH_PIC_],str[_MAX_STRING_LENGTH_PIC_],*endptr;
   PIC::CCMC::ParticleInjection::cInjectionDescriptor InjectionBlock;
 
-  sprintf(fname,"%s/%s",PIC::UserModelInputDataPath,ControlFileName);
+  // The model-input directory and control filename are separate configured
+  // values; their joined length is not bounded by either input array alone.
+  const std::string fname=std::string(PIC::UserModelInputDataPath)+"/"+ControlFileName;
 
-  if (PIC::ThisThread==0) printf("$PREFIX:Trajectory Tracking Control File: %s\n",fname);
+  if (PIC::ThisThread==0) printf("$PREFIX:Trajectory Tracking Control File: %s\n",fname.c_str());
 
-  if (access(fname,R_OK)!=0) {
-  printf("Cannot find the input file:%s\n",fname);
+  if (access(fname.c_str(),R_OK)!=0) {
+  printf("Cannot find the input file:%s\n",fname.c_str());
   exit(__LINE__,__FILE__);
   }
 
   //read the file
-  ifile.openfile(fname);
+  ifile.openfile(fname.c_str());
 
   while (ifile.eof()==false) {
     ifile.GetInputStr(str,sizeof(str));
@@ -264,10 +266,11 @@ void PIC::CCMC::Parser::Read::CharacteristicSpeedTable(CiFileOperations& ifile) 
       spec=PIC::MolecularData::GetSpecieNumber(str1);
 
       if (spec==-1) {
-        char msg[100];
-
-        sprintf(msg,"Error: species %s is not defined in the input file",str1);
-        exit(__LINE__,__FILE__,msg);
+        // Species tokens can be much longer than the former 100-byte error
+        // buffer. Preserve the complete offending token in the diagnostic.
+        const std::string msg="Error: species "+std::string(str1)+
+          " is not defined in the input file";
+        exit(__LINE__,__FILE__,msg.c_str());
       }
 
       ifile.CutInputStr(str1,str);
@@ -696,7 +699,7 @@ void PIC::CCMC::LoadParticles() {
 //the main tracking procedure
 int PIC::CCMC::TraceParticles() {
   long int nTotalParticles;
-  char fname[_MAX_STRING_LENGTH_PIC_];
+  std::string fname;
   double TimeCounter[PIC::nTotalSpecies];
   int spec;
 
@@ -721,8 +724,9 @@ int PIC::CCMC::TraceParticles() {
     niter++;
 
     if (niter%nOutputStep==0) {
-      sprintf(fname,"%s/amps.TrajectoryTracking.out=%i",OutputDataFileDirectory,niter/nOutputStep);
-      PIC::ParticleTracker::OutputTrajectory(fname);
+      fname=std::string(OutputDataFileDirectory)+
+        "/amps.TrajectoryTracking.out="+std::to_string(niter/nOutputStep);
+      PIC::ParticleTracker::OutputTrajectory(fname.c_str());
     }
 
     MPI_Allreduce(&PIC::ParticleBuffer::NAllPart,&nTotalParticles,PIC::nTotalSpecies,MPI_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
@@ -782,8 +786,8 @@ int PIC::CCMC::TraceParticles() {
   }
 
   //output sampled trajectories
-  sprintf(fname,"%s/amps.TrajectoryTracking",OutputDataFileDirectory);
-  PIC::ParticleTracker::OutputTrajectory(fname);
+  fname=std::string(OutputDataFileDirectory)+"/amps.TrajectoryTracking";
+  PIC::ParticleTracker::OutputTrajectory(fname.c_str());
 
   //combine all trajectory files into a single reference file
   if ((_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_)&&(PIC::ThisThread==0)) {

@@ -5460,7 +5460,10 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
     void SampleDistributionFnction();
     void flushSamplingBuffers();
 
-    void printDistributionFunction(char *fname,int spec);
+    // The output stem is an input-only path.  Keeping it const allows callers
+    // to assemble arbitrarily long paths in std::string without copying them
+    // into a fixed writable buffer merely to satisfy this interface.
+    void printDistributionFunction(const char *fname,int spec);
   }
 
   //sample energy distribution in the relativistic case
@@ -5497,7 +5500,9 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
     void SampleDistributionFnction();
     void flushSamplingBuffers();
 
-    void printDistributionFunction(char *fname,int spec);
+    // fname is inspected while the rank-zero writer derives its per-probe
+    // filenames; the sampling routine never modifies the caller's path.
+    void printDistributionFunction(const char *fname,int spec);
   }
 
   //sample and output the particle's pitch angle distribution function
@@ -5535,7 +5540,9 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
     void SampleDistributionFnction();
     void flushSamplingBuffers();
 
-    void printDistributionFunction(char *fname,int spec);
+    // Treat the caller-owned output stem as immutable.  Besides documenting
+    // ownership, this makes dynamically sized path construction type-safe.
+    void printDistributionFunction(const char *fname,int spec);
   }
 
 
@@ -5577,8 +5584,10 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
     void SampleDistributionFnction();
     void flushSamplingBuffers();
 
-    void printDistributionFunction(char *fname,int spec);
-    void printMacroscopicParameters(char *fname,int spec);
+    // Both routines append local suffixes but do not modify the supplied stem.
+    // A const interface avoids reintroducing bounded intermediate path arrays.
+    void printDistributionFunction(const char *fname,int spec);
+    void printMacroscopicParameters(const char *fname,int spec);
   }
 
 

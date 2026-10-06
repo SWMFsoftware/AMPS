@@ -1046,7 +1046,6 @@ void ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::printDis
   FILE *fout=NULL;
   CMPI_channel pipe(1000000);
   double norm=0.0,c;
-  char str[_MAX_STRING_LENGTH_PIC_];
 
   if (PIC::Mesh::mesh->ThisThread==0) pipe.openRecvAll();
   else pipe.openSend(0);
@@ -1054,10 +1053,14 @@ void ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::printDis
 
   for (nProbe=0;nProbe<nSamplingLocations;nProbe++) {
     if (PIC::Mesh::mesh->ThisThread==0) {
-      sprintf(str,"%s/pic.DUST.SizeDistribution.out=%i.nSamplePoint=%i.dat",PIC::OutputDataFileDirectory,DataOutputFileNumber,nProbe);
-      fout=fopen(str,"w");
+      // Dynamic construction preserves the complete configured directory and
+      // both sampling indices without relying on a fixed formatting ceiling.
+      const std::string outputFile=std::string(PIC::OutputDataFileDirectory)+
+        "/pic.DUST.SizeDistribution.out="+std::to_string(DataOutputFileNumber)+
+        ".nSamplePoint="+std::to_string(nProbe)+".dat";
+      fout=fopen(outputFile.c_str(),"w");
 
-      fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........         ",str);
+      fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........         ",outputFile.c_str());
 
       fprintf(fout,"\"TITLE=Dust size distribution function at x=%e",SamplingLocations[nProbe][0]);
       for (idim=1;idim<DIM;idim++) fprintf(fout,", %e",SamplingLocations[nProbe][idim]);
@@ -1633,6 +1636,5 @@ void ElectricallyChargedDust::GrainVelocityGroup::AdjustParticleVelocityGroup() 
     }
   }
 }
-
 
 

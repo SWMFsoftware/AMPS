@@ -28,9 +28,12 @@ double PIC::CPLR::DATAFILE::ARMS::GetFileTime(const char *fname){
   double time=NAN;
   // get time using class CiFileOperations (see src/general/ifileopr.h)
   CiFileOperations fin;
-  char fullname[_MAX_STRING_LENGTH_PIC_];
-  sprintf(fullname,"%s/%s",PIC::CPLR::DATAFILE::path,fname);
-  fin.openfile(fullname);
+
+  // The configured directory and supplied filename are independently sized;
+  // joining them in another input-sized array could overflow by at least the
+  // separator. Keep ownership dynamic through the file-open boundary.
+  const std::string fullname=std::string(PIC::CPLR::DATAFILE::path)+"/"+fname;
+  fin.openfile(fullname.c_str());
   char str[_MAX_STRING_LENGTH_PIC_],str1[_MAX_STRING_LENGTH_PIC_];
 
   while (fin.eof()==false) {
@@ -69,9 +72,8 @@ void PIC::CPLR::DATAFILE::ARMS::LoadDataFile(const char *fname,cTreeNodeAMR<PIC:
   if (startNode==PIC::Mesh::mesh->rootTree) {
     // read data file using class CiFileOperations (see src/general/ifileopr.h)
     CiFileOperations fin;
-    char fullname[_MAX_STRING_LENGTH_PIC_];
-    sprintf(fullname,"%s/%s",PIC::CPLR::DATAFILE::path,fname);
-    fin.openfile(fullname);
+    const std::string fullname=std::string(PIC::CPLR::DATAFILE::path)+"/"+fname;
+    fin.openfile(fullname.c_str());
     
     // start reading: read size of the grid
     char str[_MAX_STRING_LENGTH_PIC_],str1[_MAX_STRING_LENGTH_PIC_];

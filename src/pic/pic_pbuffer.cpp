@@ -756,7 +756,11 @@ unsigned long PIC::ParticleBuffer::GetChecksum(const char *msg) {
   sum.add(ParticleDataBuffer,MaxNPart*ParticleDataLength);
 
   unsigned long int *buffer=new unsigned long int[TotalThreadsNumber];
-  char str[10*_MAX_STRING_LENGTH_PIC_];
+  // A checksum report contributes one hexadecimal value per MPI rank, so its
+  // required storage scales with the communicator.  Dynamic storage avoids
+  // both the fixed-rank ceiling and the undefined sprintf(str,"%s",str)
+  // overlap that previously occurred while appending each value.
+  std::string str;
 
   buffer[0]=sum.checksum();
 
@@ -766,16 +770,28 @@ unsigned long PIC::ParticleBuffer::GetChecksum(const char *msg) {
 
   if (ThisThread==0) {
     if (msg==NULL) {
-      sprintf(str,"Cdsmc::pbuffer CRC32 checksum: ");
+      str="Cdsmc::pbuffer CRC32 checksum: ";
     }
     else {
-      sprintf(str,"Cdsmc::pbuffer CRC32 checksum (msg=%s): ",msg);
+      str="Cdsmc::pbuffer CRC32 checksum (msg="+std::string(msg)+"): ";
     }
 
-    for (long int thread=0;thread<TotalThreadsNumber;thread++) sprintf(str,"%s 0x%lx ",str,buffer[thread]);
+    for (long int thread=0;thread<TotalThreadsNumber;thread++) {
+      char checksum[2+2*sizeof(unsigned long int)+1];
+      const int length=snprintf(checksum,sizeof(checksum),"0x%lx",buffer[thread]);
 
-    printf("$PREFIX:%s\n",str);
-    PrintErrorLog(str);
+      // sizeof(checksum) is derived from the maximum hexadecimal width of an
+      // unsigned long; failure therefore means the C library did not honor
+      // the formatting contract rather than a recoverable truncation.
+      if ((length<0)||(static_cast<std::size_t>(length)>=sizeof(checksum))) {
+        exit(__LINE__,__FILE__,"Error: cannot format the particle-buffer checksum");
+      }
+
+      str+=" "+std::string(checksum)+" ";
+    }
+
+    printf("$PREFIX:%s\n",str.c_str());
+    PrintErrorLog(str.c_str());
   }
 
   delete [] buffer;
@@ -1307,7 +1323,6 @@ void PIC::ParticleBuffer::CreateParticleTable() {
     #endif
 
 }
-
 
 
 

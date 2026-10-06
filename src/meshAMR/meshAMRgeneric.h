@@ -12745,21 +12745,33 @@ if (TmpAllocationCounter==2437) {
 
       //verify that all communications have been completed
       bool error_flag=false;
-      char msg[1000]="";
+
+      // This diagnostic can contain as many as two records per MPI rank.  Its
+      // size therefore follows the decomposition rather than a fixed local
+      // bound.  Keep it in dynamically sized storage so a communication
+      // failure cannot turn the reporting path into a buffer overflow.  In
+      // particular, do not append with sprintf(msg,"%s...",msg,...): using
+      // the same array as both the formatted input and output has undefined
+      // overlap semantics even when the eventual text would fit.
+      std::string msg;
 
       for (thread=0;thread<nTotalThreads;thread++) {
         if (RecvBlockDataBuffer[thread]!=NULL) {
-          sprintf(msg,"%sError: Recv operation from process %i was not completed by process %i\n",msg,thread,ThisThread);
+          msg+="Error: Recv operation from process "+std::to_string(thread)+
+            " was not completed by process "+std::to_string(ThisThread)+"\n";
           error_flag=true;
         }
 
         if (SendBlockDataBuffer[thread]!=NULL) {
-          sprintf(msg,"%sError: Send operation to process %i was not completed by process %i\n",msg,thread,ThisThread);
+          msg+="Error: Send operation to process "+std::to_string(thread)+
+            " was not completed by process "+std::to_string(ThisThread)+"\n";
           error_flag=true;
         }
       }
 
-      if (error_flag==true) exit(__LINE__,__FILE__,msg);
+      // exit() consumes the text synchronously before terminating the rank,
+      // so the pointer returned by c_str() remains valid for the whole call.
+      if (error_flag==true) exit(__LINE__,__FILE__,msg.c_str());
 
       //delete temporary buffers
       delete [] MoveOutRequestTable;
@@ -14698,4 +14710,3 @@ CutCell::cTriangleFaceDescriptor *cTreeNodeAMR<T>::neibFirstTriangleCutFace=NULL
 #include "allocate_block.hpp"
 
 #endif 
-

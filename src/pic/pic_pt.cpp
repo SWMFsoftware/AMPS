@@ -774,12 +774,17 @@ void PIC::ParticleTracker::Init() {
 
   //remove old and create new directory for temporary files
   if (PIC::ThisThread==0) {
-    char cmd[_MAX_STRING_LENGTH_PIC_];
-    sprintf(cmd,"rm -rf %s/ParticleTrackerTmp",PIC::OutputDataFileDirectory);
-    if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
+    // The configured output directory can fill a complete PIC string buffer;
+    // adding a command and tracker suffix therefore requires dynamic storage.
+    // Shell execution is retained here to preserve the legacy remove/create
+    // behavior and is given the complete, non-truncated command.
+    std::string cmd="rm -rf "+std::string(PIC::OutputDataFileDirectory)+
+      "/ParticleTrackerTmp";
+    if (system(cmd.c_str())==-1) exit(__LINE__,__FILE__,"Error: system failed");
 
-    sprintf(cmd,"mkdir -p %s/ParticleTrackerTmp",PIC::OutputDataFileDirectory);
-    if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
+    cmd="mkdir -p "+std::string(PIC::OutputDataFileDirectory)+
+      "/ParticleTrackerTmp";
+    if (system(cmd.c_str())==-1) exit(__LINE__,__FILE__,"Error: system failed");
   }
 }
 
@@ -818,7 +823,6 @@ void PIC::ParticleTracker::InitParticleID(void *ParticleData) {
 
 void PIC::ParticleTracker::cTrajectoryData::flush() {
   FILE *fout;
-  char fname[_MAX_STRING_LENGTH_PIC_];
 
   if (CurrentPosition!=0) {
     int threadOpenMP=0;
@@ -827,14 +831,19 @@ void PIC::ParticleTracker::cTrajectoryData::flush() {
     threadOpenMP=omp_get_thread_num();
 #endif
 
-    sprintf(fname,"%s/ParticleTrackerTmp/amps.ParticleTracker.thread=%i.out=%ld.TrajectoryData.pt",PIC::OutputDataFileDirectory,threadOpenMP+PIC::nTotalThreadsOpenMP*PIC::ThisThread,nfile);
-    fout=fopen(fname,"w");
+    // Tracker filenames include a configurable directory plus two counters.
+    // Constructing the full path dynamically keeps long but valid directory
+    // names from overflowing the former fixed-size filename array.
+    const std::string fname=std::string(PIC::OutputDataFileDirectory)+
+      "/ParticleTrackerTmp/amps.ParticleTracker.thread="+
+      std::to_string(threadOpenMP+PIC::nTotalThreadsOpenMP*PIC::ThisThread)+
+      ".out="+std::to_string(nfile)+".TrajectoryData.pt";
+    fout=fopen(fname.c_str(),"w");
 
     if (fout==NULL) {
-      char message[_MAX_STRING_LENGTH_PIC_];
-      sprintf(message,"Error: cannot open file %s/ParticleTrackerTmp/amps.ParticleTracker.thread=%i.out=%ld.TrajectoryData.pt for writting of the temporary trajectory data",PIC::OutputDataFileDirectory,threadOpenMP+PIC::nTotalThreadsOpenMP*PIC::ThisThread,nfile);
-
-      exit(__LINE__,__FILE__,message);
+      const std::string message="Error: cannot open file "+fname+
+        " for writing of the temporary trajectory data";
+      exit(__LINE__,__FILE__,message.c_str());
     }
 
     fwrite(&CurrentPosition,sizeof(unsigned long int),1,fout);
@@ -848,7 +857,6 @@ void PIC::ParticleTracker::cTrajectoryData::flush() {
 
 void PIC::ParticleTracker::cTrajectoryList::flush() {
   FILE *fout;
-  char fname[_MAX_STRING_LENGTH_PIC_];
 
   if (CurrentPosition!=0) {
     int threadOpenMP=0;
@@ -857,8 +865,11 @@ void PIC::ParticleTracker::cTrajectoryList::flush() {
     threadOpenMP=omp_get_thread_num();
 #endif
 
-    sprintf(fname,"%s/ParticleTrackerTmp/amps.ParticleTracker.thread=%i.out=%ld.TrajectoryList.pt",PIC::OutputDataFileDirectory,threadOpenMP+PIC::nTotalThreadsOpenMP*PIC::ThisThread,nfile);
-    fout=fopen(fname,"w");
+    const std::string fname=std::string(PIC::OutputDataFileDirectory)+
+      "/ParticleTrackerTmp/amps.ParticleTracker.thread="+
+      std::to_string(threadOpenMP+PIC::nTotalThreadsOpenMP*PIC::ThisThread)+
+      ".out="+std::to_string(nfile)+".TrajectoryList.pt";
+    fout=fopen(fname.c_str(),"w");
 
     fwrite(&CurrentPosition,sizeof(unsigned long int),1,fout);
     fwrite(buffer,sizeof(cTrajectoryListRecord),CurrentPosition,fout);
@@ -1102,8 +1113,13 @@ void PIC::ParticleTracker::OutputTrajectory(const char *fname) {
   FILE *fTemporatyTrajectoryList;
   unsigned long int length=0;
 
-  sprintf(str,"%s/ParticleTrackerTmp/amps.ParticleTracker.thread=%i.TemporaryTrajectoryList.pt",PIC::OutputDataFileDirectory,PIC::ThisThread);
-  fTemporatyTrajectoryList=fopen(str,"w");
+  // This path is independent of the scratch buffer used later in the output
+  // algorithm. Dynamic ownership also guarantees that fopen sees a complete
+  // rank-specific name rather than a truncated or overflowing array.
+  const std::string temporaryTrajectoryList=std::string(PIC::OutputDataFileDirectory)+
+    "/ParticleTrackerTmp/amps.ParticleTracker.thread="+
+    std::to_string(PIC::ThisThread)+".TemporaryTrajectoryList.pt";
+  fTemporatyTrajectoryList=fopen(temporaryTrajectoryList.c_str(),"w");
 
   //calculate the number of the particles that will be placed into the list
   for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) if (node->block!=NULL) {
@@ -1535,8 +1551,9 @@ void PIC::ParticleTracker::AssembleTrajectoryOutputFromSelected(const char *fnam
     TrajectoryCounter[spec]=0;
     if (fread(ChemSymbol,sizeof(char),_MAX_STRING_LENGTH_PIC_,fTrajectoryDataSet)!=_MAX_STRING_LENGTH_PIC_) exit(__LINE__,__FILE__,"Error: fread has failed");
 
-    sprintf(str,"%s.s=%i.%s.dat",fname,spec,ChemSymbol);
-    fout[spec]=fopen(str,"w");
+    const std::string speciesOutput=std::string(fname)+".s="+
+      std::to_string(spec)+"."+ChemSymbol+".dat";
+    fout[spec]=fopen(speciesOutput.c_str(),"w");
     fprintf(fout[spec],"VARIABLES=\"x\", \"y\", \"z\", \"spec\", \"Speed\", \"vx\", \"vy\", \"vz\", \"Kinetic Energy [eV]\"");
 
     if (_PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_) fprintf(fout[spec],", \"Electric Charge\", \"Particle Size\"");
@@ -1646,9 +1663,9 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
     TrajectoryCounter[spec]=0;
     if (fread(ChemSymbol,sizeof(char),_MAX_STRING_LENGTH_PIC_,fTrajectoryDataSet)!=_MAX_STRING_LENGTH_PIC_) exit(__LINE__,__FILE__,"Error: fread has failed"); 
 
-    sprintf(str,"%s.s=%i.%s.dat",fname,spec,ChemSymbol);
-
-    fout[spec]=fopen(str,"w");
+    const std::string speciesOutput=std::string(fname)+".s="+
+      std::to_string(spec)+"."+ChemSymbol+".dat";
+    fout[spec]=fopen(speciesOutput.c_str(),"w");
     fprintf(fout[spec],"VARIABLES=\"x\", \"y\", \"z\", \"spec\", \"Speed\", \"vx\", \"vy\", \"vz\", \"Kinetic Energy [eV]\"");
 
     if (_PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_) {
@@ -1697,14 +1714,16 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
   for (npass=0;npass<2;npass++) for (thread=0;thread<((npass==0) ? nMPIthread : nTotalThreads);thread++) for (nfile=0;nfile<((npass==0) ? 1 : nTrajectoryListFiles[thread]);nfile++) {
     //scroll through all trajectory lists inclusing the temporary lists that contain the trajectory information regarding particles that are still in the simulation
 
+    std::string trajectoryListFile=std::string(PIC::OutputDataFileDirectory)+
+      "/ParticleTrackerTmp/amps.ParticleTracker.thread="+std::to_string(thread);
     if (npass==0) {
-      sprintf(str,"%s/ParticleTrackerTmp/amps.ParticleTracker.thread=%i.TemporaryTrajectoryList.pt",PIC::OutputDataFileDirectory,thread);
+      trajectoryListFile+=".TemporaryTrajectoryList.pt";
     }
     else {
-      sprintf(str,"%s/ParticleTrackerTmp/amps.ParticleTracker.thread=%i.out=%i.TrajectoryList.pt",PIC::OutputDataFileDirectory,thread,nfile);
+      trajectoryListFile+=".out="+std::to_string(nfile)+".TrajectoryList.pt";
     }
 
-    if ((fTrajectoryList=fopen(str,"r"))==NULL) exit(__LINE__,__FILE__,"Error: cannot open file");
+    if ((fTrajectoryList=fopen(trajectoryListFile.c_str(),"r"))==NULL) exit(__LINE__,__FILE__,"Error: cannot open file");
     if (fread(&length,sizeof(unsigned long int),1,fTrajectoryList)!=1) exit(__LINE__,__FILE__,"Error: fread has failed"); 
 
     for (i=0;i<length;i++) {
@@ -1765,10 +1784,13 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
 
     for (thread=0;thread<nTotalThreads;thread++) {
       for (nfile=0;nfile<nTrajectoryDataFiles[thread];nfile++) {
-        sprintf(str,"%s/ParticleTrackerTmp/amps.ParticleTracker.thread=%i.out=%i.TrajectoryData.pt",PIC::OutputDataFileDirectory,thread,nfile);
+        const std::string trajectoryDataFile=std::string(PIC::OutputDataFileDirectory)+
+          "/ParticleTrackerTmp/amps.ParticleTracker.thread="+
+          std::to_string(thread)+".out="+std::to_string(nfile)+
+          ".TrajectoryData.pt";
 
         fTrajectoryData=NULL;
-        fTrajectoryData=fopen(str,"r");
+        fTrajectoryData=fopen(trajectoryDataFile.c_str(),"r");
         if (fTrajectoryData==NULL) exit(__LINE__,__FILE__,"Error: cannot open file");
 
         if (fread(&length,sizeof(unsigned long int),1,fTrajectoryData)!=1) exit(__LINE__,__FILE__,"Error: file reading error");
@@ -2054,7 +2076,6 @@ void PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(void* StartNodeVoid)
     }
   }
 }
-
 
 
 

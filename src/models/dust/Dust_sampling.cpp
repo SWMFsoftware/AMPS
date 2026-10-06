@@ -198,12 +198,15 @@ void ElectricallyChargedDust::Sampling::FluxMap::cSampleLocation::Sampling() {
 //============================================================================
 //output sampled data
 void ElectricallyChargedDust::Sampling::FluxMap::PrintSurfaceData(int nDataSet, bool PrintStateVectorFlag) {
-  char fname[_MAX_STRING_LENGTH_PIC_];
   int nSamplePoint;
 
   for (nSamplePoint=0;nSamplePoint<SampleLocations.size();nSamplePoint++) {
-    sprintf(fname,"%s/amps.dust.flux-map.nSampleLocation=%i.out=%i.dat",PIC::OutputDataFileDirectory,nSamplePoint,nDataSet);
-    SampleLocations[nSamplePoint].PrintSurfaceData(fname,PrintStateVectorFlag);
+    // The configured directory and generated leaf name have independent
+    // lengths, so retain the complete output path in dynamic storage.
+    const std::string fname=std::string(PIC::OutputDataFileDirectory)+
+      "/amps.dust.flux-map.nSampleLocation="+std::to_string(nSamplePoint)+
+      ".out="+std::to_string(nDataSet)+".dat";
+    SampleLocations[nSamplePoint].PrintSurfaceData(fname.c_str(),PrintStateVectorFlag);
   }
 }
 
@@ -515,6 +518,5 @@ double ElectricallyChargedDust::Sampling::FluxMap::cSampleLocation::GetSpeed(dou
 
   return Speed;
 }
-
 
 

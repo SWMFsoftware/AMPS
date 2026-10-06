@@ -173,7 +173,7 @@ void PIC::ParticleFluxDistributionSample::SampleDistributionFnction() {
 
 //====================================================
 //print macroscopic parameters into a file
-void PIC::ParticleFluxDistributionSample::printMacroscopicParameters(char *fname,int spec) {
+void PIC::ParticleFluxDistributionSample::printMacroscopicParameters(const char *fname,int spec) {
   int nProbe,thread;
 //  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
   FILE *fout=NULL;
@@ -325,7 +325,7 @@ void PIC::ParticleFluxDistributionSample::printMacroscopicParameters(char *fname
 
 //====================================================
 //print the distribution function into a file
-void PIC::ParticleFluxDistributionSample::printDistributionFunction(char *fname,int spec) {
+void PIC::ParticleFluxDistributionSample::printDistributionFunction(const char *fname,int spec) {
 
   /*
 
@@ -434,4 +434,3 @@ void PIC::ParticleFluxDistributionSample::printDistributionFunction(char *fname,
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 }
-

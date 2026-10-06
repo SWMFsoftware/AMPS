@@ -57,18 +57,25 @@ void PIC::TimeStepInternal::RecoverSamplingDataRestart() {
       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
       for (list<int>::iterator s=RecoveryEntry->second.begin();s!=RecoveryEntry->second.end();s++) {
-        char fname[_MAX_STRING_LENGTH_PIC_],ChemSymbol[40];
+        char ChemSymbol[40];
 
         PIC::MolecularData::GetChemSymbol(ChemSymbol,*s);
-        sprintf(fname,"RECOVERED.%s.%s.s=%i.dat",RecoveryEntry->first.c_str(),ChemSymbol,*s);
-        PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,*s);
+
+        // Restart names originate outside this routine and need not leave
+        // room in a fixed PIC string buffer for the recovered-file suffix.
+        // Build the complete name dynamically so no valid input is silently
+        // truncated or allowed to overrun a command buffer.
+        const std::string fname="RECOVERED."+RecoveryEntry->first+"."+
+          ChemSymbol+".s="+std::to_string(*s)+".dat";
+        PIC::Mesh::mesh->outputMeshDataTECPLOT(fname.c_str(),*s);
 
         //preplot the recovered file if needed
         if (Restart::SamplingData::PreplotRecoveredData==true) {
-          char cmd[_MAX_STRING_LENGTH_PIC_];
-
-          sprintf(cmd,"preplot %s",fname);
-          if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
+          // preplot is intentionally still launched through the legacy shell
+          // interface.  Dynamic storage removes the former 2000-byte command
+          // ceiling while retaining the established invocation semantics.
+          const std::string cmd="preplot "+fname;
+          if (system(cmd.c_str())==-1) exit(__LINE__,__FILE__,"Error: system failed");
         }
       }
     }
@@ -556,4 +563,3 @@ void PIC::TimeStepInternal::ExecutionTrackFieldSolverECSIM(double& ParticleMovin
   RunTimeSystemState::CumulativeTiming::FieldSolverTime+=FieldSolverTime;
 #endif //_PIC_FIELD_SOLVER_MODE_
 }
-

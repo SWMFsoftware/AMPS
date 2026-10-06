@@ -819,11 +819,16 @@ void PIC::CPLR::DATAFILE::TECPLOT::ImportData(const char* fname) {
 
   //create TECPLOT script and run TECPLOT
   int thread,nFileOutputs,nFileOutputsTable[PIC::nTotalThreads]; //the number of hte TECPLOT files that contain the contain the interpolated values
-  char command[_MAX_STRING_LENGTH_PIC_],ScriptBaseName[_MAX_STRING_LENGTH_PIC_],DataFileFullName[_MAX_STRING_LENGTH_PIC_];
 
-  sprintf(DataFileFullName,"%s/%s",PIC::CPLR::DATAFILE::path,fname);
-  sprintf(ScriptBaseName,"%s.AMPS.ImportData",DataFileFullName);
-  nFileOutputs=PIC::CPLR::DATAFILE::TECPLOT::CreateScript(ScriptBaseName,DataFileFullName);
+  // The configured data directory and caller-provided filename have
+  // independent lengths. Their concatenation, derived script names, and
+  // commands therefore cannot safely inherit either fixed input bound.
+  const std::string DataFileFullName=std::string(PIC::CPLR::DATAFILE::path)+
+    "/"+fname;
+  const std::string ScriptBaseName=DataFileFullName+".AMPS.ImportData";
+  std::string command;
+  nFileOutputs=PIC::CPLR::DATAFILE::TECPLOT::CreateScript(
+    ScriptBaseName.c_str(),DataFileFullName.c_str());
 
   //print the total number of the files that will be created
   MPI_Allgather(&nFileOutputs,1,MPI_INT,nFileOutputsTable,1,MPI_INT,MPI_GLOBAL_COMMUNICATOR);
@@ -844,8 +849,8 @@ void PIC::CPLR::DATAFILE::TECPLOT::ImportData(const char* fname) {
   //remove previous interpolated data if exists
   int TecplotInterpolationFinishFlag=false;
 
-  sprintf(command,"rm -f %s.AMPS.ImportData.thread=*.dat",DataFileFullName);
-  if (PIC::ThisThread==0) if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
+  command="rm -f "+DataFileFullName+".AMPS.ImportData.thread=*.dat";
+  if (PIC::ThisThread==0) if (system(command.c_str())==-1) exit(__LINE__,__FILE__,"Error: system failed");
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
   //extract the data with TECPLOT
@@ -853,8 +858,9 @@ void PIC::CPLR::DATAFILE::TECPLOT::ImportData(const char* fname) {
 
   for (int nTecplotCalls=0;nTecplotCalls<nTestTecplotCalls;nTecplotCalls++) {
     if (TecplotInterpolationFinishFlag==false) {
-      sprintf(command,"tec360 -b %s %s.thread=%i.mcr",DataFileFullName,ScriptBaseName,PIC::ThisThread);
-      if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
+      command="tec360 -b "+DataFileFullName+" "+ScriptBaseName+".thread="+
+        std::to_string(PIC::ThisThread)+".mcr";
+      if (system(command.c_str())==-1) exit(__LINE__,__FILE__,"Error: system failed");
     }
 
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
@@ -862,7 +868,6 @@ void PIC::CPLR::DATAFILE::TECPLOT::ImportData(const char* fname) {
     //check wether the interpolation procedure is finished
     if ((TecplotInterpolationFinishFlag==false)||(PIC::ThisThread==0)) {
       int nfile,FirstTestThread,LastTestThread;
-      char f[_MAX_STRING_LENGTH_PIC_];
 
       TecplotInterpolationFinishFlag=true;
 
@@ -875,10 +880,11 @@ void PIC::CPLR::DATAFILE::TECPLOT::ImportData(const char* fname) {
 
       for (thread=FirstTestThread;thread<=LastTestThread;thread++) {
         for (nfile=0;nfile<nFileOutputsTable[thread];nfile++) {
-          sprintf(f,"%s.AMPS.ImportData.thread=%i.%i.dat",DataFileFullName,thread,nfile);
+          const std::string f=DataFileFullName+".AMPS.ImportData.thread="+
+            std::to_string(thread)+"."+std::to_string(nfile)+".dat";
 
-          if (access(f,R_OK)!=0) {
-            if (PIC::ThisThread==0) printf("Error: TECPLOT interpolation is not finished: file=%s\n",f);
+          if (access(f.c_str(),R_OK)!=0) {
+            if (PIC::ThisThread==0) printf("Error: TECPLOT interpolation is not finished: file=%s\n",f.c_str());
             if (PIC::ThisThread==thread) TecplotInterpolationFinishFlag=false;
           }
         }
@@ -893,26 +899,31 @@ void PIC::CPLR::DATAFILE::TECPLOT::ImportData(const char* fname) {
   MPI_Gather(&TecplotInterpolationFinishFlag,1,MPI_INT,AllTecplotInterpolationFinishFlags,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
   if (PIC::ThisThread==0) {
-    char msg[5000]=""; 
+    // Up to one diagnostic is emitted per MPI rank. Dynamic storage makes
+    // that relationship explicit and avoids both a rank ceiling and the
+    // undefined self-overlap of sprintf(msg,"%s...",msg,...).
+    std::string msg;
 
     for (thread=0;thread<PIC::nTotalThreads;thread++) if (AllTecplotInterpolationFinishFlags[thread]==false) {
-      sprintf(msg,"%s\nTECPLOT interpolation is not finished (thread=%i)",msg,thread);
+      msg+="\nTECPLOT interpolation is not finished (thread="+
+        std::to_string(thread)+")";
       TecplotInterpolationFinishFlag=false;
     }
 
-    if (TecplotInterpolationFinishFlag==false) exit(__LINE__,__FILE__,msg);
+    if (TecplotInterpolationFinishFlag==false) exit(__LINE__,__FILE__,msg.c_str());
   }
 
   //read the data file
-  LoadDataFile(ScriptBaseName,nFileOutputs);
+  LoadDataFile(ScriptBaseName.c_str(),nFileOutputs);
 
   //remove the temporary files and scripts
-  sprintf(command,"rm -f %s.thread=%i.mcr",ScriptBaseName,PIC::ThisThread);
-  if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
+  command="rm -f "+ScriptBaseName+".thread="+
+    std::to_string(PIC::ThisThread)+".mcr";
+  if (system(command.c_str())==-1) exit(__LINE__,__FILE__,"Error: system failed");
 
-  sprintf(command,"rm -f %s.thread=%i.*.dat",ScriptBaseName,PIC::ThisThread);
-  if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
+  command="rm -f "+ScriptBaseName+".thread="+
+    std::to_string(PIC::ThisThread)+".*.dat";
+  if (system(command.c_str())==-1) exit(__LINE__,__FILE__,"Error: system failed");
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 }
-

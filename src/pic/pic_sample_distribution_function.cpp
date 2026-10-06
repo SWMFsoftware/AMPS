@@ -178,7 +178,7 @@ void PIC::DistributionFunctionSample::SampleDistributionFnction() {
 
 //====================================================
 //print the distribution function into a file
-void PIC::DistributionFunctionSample::printDistributionFunction(char *fname,int spec) {
+void PIC::DistributionFunctionSample::printDistributionFunction(const char *fname,int spec) {
   long int idim,nProbe,i,nVariable,thread,offset;
   FILE *fout=NULL;
   CMPI_channel pipe(1000000);
@@ -283,4 +283,3 @@ void PIC::DistributionFunctionSample::printDistributionFunction(char *fname,int 
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 }
-

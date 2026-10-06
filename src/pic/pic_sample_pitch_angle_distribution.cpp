@@ -135,7 +135,7 @@ void PIC::PitchAngleDistributionSample::SampleDistributionFnction() {
 
 //====================================================
 //print the distribution function into a file
-void PIC::PitchAngleDistributionSample::printDistributionFunction(char *fname,int spec) {
+void PIC::PitchAngleDistributionSample::printDistributionFunction(const char *fname,int spec) {
   long int idim,nProbe,i,nVariable,thread,offset;
   FILE *fout=NULL;
   CMPI_channel pipe(1000000);
@@ -213,4 +213,3 @@ void PIC::PitchAngleDistributionSample::printDistributionFunction(char *fname,in
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 }
-

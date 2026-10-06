@@ -26,7 +26,11 @@ bool PIC::ParallelFieldLines::StaticDecompositionSegmentNumberWindow(double Segm
     }
 
     if (FL::nFieldLine <= 0) {
-        printf("Warning: Invalid number of field lines: %d\n", FL::nFieldLine);
+        // nFieldLine is a long int because field-line collections can exceed
+        // the range of an int.  The printf conversion must match the promoted
+        // variadic argument exactly; a mismatched %d is undefined behavior,
+        // not merely a cosmetic diagnostic problem.
+        printf("Warning: Invalid number of field lines: %ld\n", FL::nFieldLine);
         return false;
     }
 

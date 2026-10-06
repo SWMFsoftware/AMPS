@@ -303,17 +303,18 @@ void Exosphere::Init_AfterParser() {
   //remove old and create header for the new the file that contains the orbital information of the planet's motion
 
   if (PIC::ThisThread==0) {
-    char OrbitalDataFileName[_MAX_STRING_LENGTH_PIC_];
+    // The output directory may legitimately exceed the old 200-byte command
+    // buffer. Keep both the shell commands and final filename dynamically
+    // sized so directory configuration cannot corrupt initialization state.
+    const std::string orbitalDataFile=std::string(PIC::OutputDataFileDirectory)+
+      "/pic.OrbitalData.dat";
+    std::string command="mkdir -p "+std::string(PIC::OutputDataFileDirectory);
+    if (system(command.c_str())==-1) exit(__LINE__,__FILE__,"Error: system failed");
 
-    char cmd[200];
-    sprintf(cmd,"mkdir -p %s",PIC::OutputDataFileDirectory);
-    if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed");
+    command="rm -f "+orbitalDataFile;
+    if (system(command.c_str())==-1) exit(__LINE__,__FILE__,"Error: system failed");
 
-    sprintf(OrbitalDataFileName,"rm -f %s/pic.OrbitalData.dat",PIC::OutputDataFileDirectory);
-    if (system(OrbitalDataFileName)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
-
-    sprintf(OrbitalDataFileName,"%s/pic.OrbitalData.dat",PIC::OutputDataFileDirectory);
-    FILE *fout=fopen(OrbitalDataFileName,"w");
+    FILE *fout=fopen(orbitalDataFile.c_str(),"w");
     fprintf(fout,"Variables: \"UTC\", \
          \"xObject(J2000)\", \"yObject(J2000)\", \"zObject(J2000)\", \
          \"xEarth(J2000)\", \"yEarth(J2000)\", \"zEarth(J2000)\", \
@@ -2796,4 +2797,3 @@ void Exosphere::Sampling::OutputSurfaceDataFile::flushCollectingSamplingBuffer(c
 void Exosphere::Sampling::OutputSurfaceDataFile::PrintTitle(FILE* fout) {
   fprintf(fout,"TITLE=\"SurfaceData:  TAA=%e [deg]\"",Exosphere::OrbitalMotion::GetTAA(Exosphere::OrbitalMotion::et)/Pi*180.0);
 }
-

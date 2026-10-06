@@ -1340,8 +1340,13 @@ void PIC::Sampling::Sampling() {
       Mover::Sampling::Errors::PrintData();
     }
 
-    //print output file
-    char fname[_MAX_STRING_LENGTH_PIC_],ChemSymbol[_MAX_STRING_LENGTH_PIC_];
+    // Output names combine a configurable directory, species names, and
+    // counters. No fixed-size buffer can be proven large enough merely from
+    // the size of one component, so retain the complete name dynamically and
+    // expose c_str() only at the legacy file/API boundary.
+    std::string fname;
+    char ChemSymbol[_MAX_STRING_LENGTH_PIC_];
+    const std::string outputDirectory=OutputDataFileDirectory;
 
     if (LastSampleLength>=minIterationNumberForDataOutput) {
 
@@ -1349,29 +1354,33 @@ void PIC::Sampling::Sampling() {
 
       #if _CUT_CELL__TRIANGULAR_FACE__USER_DATA__MODE_ == _ON_AMR_MESH_
       //output the data sampled on the triangulated cut-cells
-      sprintf(fname,"%s/amps.cut-cell.surface-data.out=%ld.dat",OutputDataFileDirectory,DataOutputFileNumber);
-      if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) CutCell::PrintSurfaceData(fname);
+      fname=outputDirectory+"/amps.cut-cell.surface-data.out="+
+        std::to_string(DataOutputFileNumber)+".dat";
+      if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) CutCell::PrintSurfaceData(fname.c_str());
       #endif
 
       #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
       //print sampled particle trajectories
-      sprintf(fname,"%s/amps.TrajectoryTracking.out=%ld",OutputDataFileDirectory,DataOutputFileNumber);
-      if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::ParticleTracker::OutputTrajectory(fname);
+      fname=outputDirectory+"/amps.TrajectoryTracking.out="+
+        std::to_string(DataOutputFileNumber);
+      if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::ParticleTracker::OutputTrajectory(fname.c_str());
       #endif
 
       if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
         //print sampled data along field lines
-        sprintf(fname,"%s/amps.FieldLines.out=%ld.dat",OutputDataFileDirectory,DataOutputFileNumber);
-        if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::FieldLine::Output(fname, false);
+        fname=outputDirectory+"/amps.FieldLines.out="+
+          std::to_string(DataOutputFileNumber)+".dat";
+        if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::FieldLine::Output(fname.c_str(), false);
       }
 
       //print the macroscopic parameters of the flow
       for (s=0;s<PIC::nTotalSpecies;s++) if (SaveOutputDataFile[s]==true) {
         PIC::MolecularData::GetChemSymbol(ChemSymbol,s);
-        sprintf(fname,"%s/pic.%s.s=%i.out=%ld.dat",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
+        fname=outputDirectory+"/pic."+ChemSymbol+".s="+std::to_string(s)+
+          ".out="+std::to_string(DataOutputFileNumber)+".dat";
 
         if (PIC::Mesh::mesh->ThisThread==0) {
-          fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname);
+          fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname.c_str());
           fflush(stdout);
         }
 
@@ -1388,11 +1397,11 @@ void PIC::Sampling::Sampling() {
 
                 switch (_PIC_OUTPUT_MODE_) {
                 case _PIC_OUTPUT_MODE_DISTRIBUTED_FILES_:
-                  PIC::Mesh::mesh->OutputDistributedDataTECPLOT(fname,true,s);
+                  PIC::Mesh::mesh->OutputDistributedDataTECPLOT(fname.c_str(),true,s);
                   break;
 
                 case _PIC_OUTPUT_MODE_SINGLE_FILE_: 
-                  PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,s);
+                  PIC::Mesh::mesh->outputMeshDataTECPLOT(fname.c_str(),s);
                   break;
                 case _PIC_OUTPUT_MODE_OFF_:
                   //do nothing 
@@ -1436,23 +1445,27 @@ void PIC::Sampling::Sampling() {
       //print the sampled distribution function into a file
 #if _SAMPLING_DISTRIBUTION_FUNCTION_MODE_ == _SAMPLING_DISTRIBUTION_FUNCTION_ON_
         if (PIC::DistributionFunctionSample::SamplingInitializedFlag==true) {
-          sprintf(fname,"%s/pic.distribution.%s.s=%i.out=%ld",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
-          if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::DistributionFunctionSample::printDistributionFunction(fname,s);
+          fname=outputDirectory+"/pic.distribution."+ChemSymbol+".s="+
+            std::to_string(s)+".out="+std::to_string(DataOutputFileNumber);
+          if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::DistributionFunctionSample::printDistributionFunction(fname.c_str(),s);
         }
 
         if (PIC::EnergyDistributionSampleRelativistic::SamplingInitializedFlag==true) {
-          sprintf(fname,"%s/pic.energy-distribution.%s.s=%i.out=%ld",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
-          if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::EnergyDistributionSampleRelativistic::printDistributionFunction(fname,s);
+          fname=outputDirectory+"/pic.energy-distribution."+ChemSymbol+".s="+
+            std::to_string(s)+".out="+std::to_string(DataOutputFileNumber);
+          if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::EnergyDistributionSampleRelativistic::printDistributionFunction(fname.c_str(),s);
         }
 
         if (PIC::ParticleFluxDistributionSample::SamplingInitializedFlag==true) {
-          sprintf(fname,"%s/pic.flux.%s.s=%i.out=%ld.dat",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
-          if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::ParticleFluxDistributionSample::printMacroscopicParameters(fname,s);
+          fname=outputDirectory+"/pic.flux."+ChemSymbol+".s="+
+            std::to_string(s)+".out="+std::to_string(DataOutputFileNumber)+".dat";
+          if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::ParticleFluxDistributionSample::printMacroscopicParameters(fname.c_str(),s);
         }
 
         if (PIC::PitchAngleDistributionSample::SamplingInitializedFlag==true) {
-          sprintf(fname,"%s/pic.pitch_angle.%s.s=%i.out=%ld.dat",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
-          if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::PitchAngleDistributionSample::printDistributionFunction(fname,s);
+          fname=outputDirectory+"/pic.pitch_angle."+ChemSymbol+".s="+
+            std::to_string(s)+".out="+std::to_string(DataOutputFileNumber)+".dat";
+          if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::PitchAngleDistributionSample::printDistributionFunction(fname.c_str(),s);
         }
 
 #endif
@@ -1460,8 +1473,9 @@ void PIC::Sampling::Sampling() {
 
       //save the sampling data restart file in case when the macroscopic data are downloaded from remote host for post-processing
       if (_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_==_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__SAMPLING_DATA_RESTART_FILE_) {
-        sprintf(fname,"%s/pic.SamplingDataRestart.out=%ld.dat",OutputDataFileDirectory,DataOutputFileNumber);
-        if ((SupressRestartFilesFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::Restart::SamplingData::Save(fname);
+        fname=outputDirectory+"/pic.SamplingDataRestart.out="+
+          std::to_string(DataOutputFileNumber)+".dat";
+        if ((SupressRestartFilesFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::Restart::SamplingData::Save(fname.c_str());
       }
 
       //print the sampled local data sets of the user defined functions
@@ -1500,14 +1514,16 @@ void PIC::Sampling::Sampling() {
 
       for (s=0;s<PIC::nTotalSpecies;s++) for (iSphericalSurface=0;iSphericalSurface<nTotalSphericalSurfaces;iSphericalSurface++) {
         PIC::MolecularData::GetChemSymbol(ChemSymbol,s);
-        sprintf(fname,"%s/pic.Sphere=%ld.%s.s=%i.out=%ld.dat",OutputDataFileDirectory,iSphericalSurface,ChemSymbol,s,DataOutputFileNumber);
+        fname=outputDirectory+"/pic.Sphere="+std::to_string(iSphericalSurface)+
+          "."+ChemSymbol+".s="+std::to_string(s)+".out="+
+          std::to_string(DataOutputFileNumber)+".dat";
 
         if (PIC::Mesh::mesh->ThisThread==0) {
-          fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname);
+          fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname.c_str());
           fflush(stdout);
         }
 
-        PIC::BC::InternalBoundary::Sphere::InternalSpheres.GetEntryPointer(iSphericalSurface)->PrintSurfaceData(fname,s);
+        PIC::BC::InternalBoundary::Sphere::InternalSpheres.GetEntryPointer(iSphericalSurface)->PrintSurfaceData(fname.c_str(),s);
 
         if (PIC::Mesh::mesh->ThisThread==0) {
           fprintf(PIC::DiagnospticMessageStream,"done.\n");
@@ -1944,10 +1960,12 @@ void PIC::Init_BeforeParser() {
   auto test_directory = [&] (const char *dir_name,const char *base) {
     bool res=false;
     DIR* dir;
-    char fullname[1000];
 
-    sprintf(fullname,"%s/%s",base,dir_name);
-    dir=opendir(fullname);
+    // Both components are externally configured and can individually be
+    // longer than the old 1000-byte temporary. Dynamic composition makes the
+    // existence test independent of an arbitrary formatting-buffer limit.
+    const std::string fullname=std::string(base)+"/"+dir_name;
+    dir=opendir(fullname.c_str());
 
     if (dir!=NULL) {
       res=true;
@@ -1959,8 +1977,6 @@ void PIC::Init_BeforeParser() {
 
   //set up the DiagnospticMessageStream
   if (strcmp(PIC::DiagnospticMessageStreamName,"stdout")!=0) {
-    char cmd[_MAX_STRING_LENGTH_PIC_];
-
     if (PIC::ThisThread==0) {
 
       /*
@@ -1998,27 +2014,35 @@ void PIC::Init_BeforeParser() {
         }
       }*/
 
-      //remove the content of the output directory
-      sprintf(cmd,"mkdir -p %s",PIC::DiagnospticMessageStreamName);
-      if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed");
+      // These legacy shell operations intentionally retain their historical
+      // wildcard behavior. The command is dynamically sized because a valid
+      // directory can already consume the complete PIC input buffer.
+      std::string cmd="mkdir -p "+std::string(PIC::DiagnospticMessageStreamName);
+      if (system(cmd.c_str())==-1) exit(__LINE__,__FILE__,"Error: system failed");
 
       if ((test_directory("restartOUT",PIC::DiagnospticMessageStreamName)==false)&&(test_directory("restartIN",PIC::DiagnospticMessageStreamName)==false)) {
-        sprintf(cmd,"rm -rf %s/*",PIC::DiagnospticMessageStreamName);
-        if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed");
+        cmd="rm -rf "+std::string(PIC::DiagnospticMessageStreamName)+"/*";
+        if (system(cmd.c_str())==-1) exit(__LINE__,__FILE__,"Error: system failed");
       }
     }
 
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
-    sprintf(PIC::DiagnospticMessageStreamName,"%s/thread=%i.log",PIC::DiagnospticMessageStreamName,PIC::ThisThread);
+    // Construct from a snapshot of the directory. Formatting directly back
+    // into DiagnospticMessageStreamName made the same array both the %s input
+    // and output, which is undefined even when the final name fits.
+    const std::string diagnosticFile=std::string(PIC::DiagnospticMessageStreamName)+
+      "/thread="+std::to_string(PIC::ThisThread)+".log";
+    if (diagnosticFile.size()>=sizeof(PIC::DiagnospticMessageStreamName)) {
+      exit(__LINE__,__FILE__,"Error: diagnostic stream path exceeds PIC storage");
+    }
+    memcpy(PIC::DiagnospticMessageStreamName,diagnosticFile.c_str(),diagnosticFile.size()+1);
     PIC::DiagnospticMessageStream=fopen(PIC::DiagnospticMessageStreamName,"w");
     PIC::Mesh::mesh->DiagnospticMessageStream=PIC::DiagnospticMessageStream;
   }
 
   //create the output directory if needed
   if (strcmp(PIC::OutputDataFileDirectory,".")!=0) {
-    char cmd[_MAX_STRING_LENGTH_PIC_];
-
     if (PIC::ThisThread==0) {
 /*
       struct stat s;
@@ -2057,14 +2081,15 @@ void PIC::Init_BeforeParser() {
       }
       */
 
-      //remove the content of the output directory
-      sprintf(cmd,"mkdir -p %s",PIC::OutputDataFileDirectory);
-      if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
+      // Preserve the established shell action while allowing the configured
+      // directory plus command text to exceed one legacy PIC string buffer.
+      std::string cmd="mkdir -p "+std::string(PIC::OutputDataFileDirectory);
+      if (system(cmd.c_str())==-1) exit(__LINE__,__FILE__,"Error: system failed");
       
       //check existance of the restart files directories. In case they are not present, clean the directory
       if ((test_directory("restartOUT","PT")==false)&&(test_directory("restartIN","PT")==false)) {
-        sprintf(cmd,"rm -rf %s/*",PIC::OutputDataFileDirectory);
-        if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
+        cmd="rm -rf "+std::string(PIC::OutputDataFileDirectory)+"/*";
+        if (system(cmd.c_str())==-1) exit(__LINE__,__FILE__,"Error: system failed");
       }
     }
   }
@@ -2415,7 +2440,5 @@ double PIC::Mesh::cDataBlockAMR::GetLocalTimeStep(int spec) {
 
 
 }
-
-
 
 

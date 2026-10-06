@@ -10,6 +10,29 @@
  */
 
 #include "pic.h"
+
+namespace {
+
+// Binary background filenames are persistent restart/cache identities, so the
+// hexadecimal mesh signature must retain its historical spelling.  Format
+// only that fixed-width integer in a buffer derived from the width of unsigned
+// long, then assemble the unbounded path and caller-owned base name in dynamic
+// storage.  This avoids the former 400-byte path ceiling without changing the
+// on-disk naming contract.
+std::string CenterNodeBackgroundFileName(const char* directory,
+    unsigned long int mesh_signature,const char* base_name) {
+  char signature[2*sizeof(unsigned long int)+1];
+  const int length=snprintf(signature,sizeof(signature),"%lx",mesh_signature);
+
+  if ((length<0)||(static_cast<std::size_t>(length)>=sizeof(signature))) {
+    exit(__LINE__,__FILE__,"Error: cannot format the mesh signature");
+  }
+
+  return std::string(directory)+"/amr.sig=0x"+signature+".f="+base_name+
+    ".CenterNodeBackgroundData.bin";
+}
+
+} // namespace
 //#include <algorithm>
 
 // Preserve legacy behavior for applications that actually load background
@@ -112,10 +135,10 @@ void PIC::CPLR::DATAFILE::MULTIFILE::Init(bool BreakAtLastFileIn,int  FileNumber
 
 //=============================================================================
 void PIC::CPLR::DATAFILE::MULTIFILE::GetSchedule() {
-  char fullname[_MAX_STRING_LENGTH_PIC_];
-
-  //compose full name of the file table file with path
-  sprintf(fullname,"%s/%s", PIC::CPLR::DATAFILE::path,PIC::CPLR::DATAFILE::MULTIFILE::FileTable);
+  // The configured directory and schedule filename are independently sized;
+  // their joined path is therefore held dynamically through the open call.
+  const std::string fullname=std::string(PIC::CPLR::DATAFILE::path)+"/"+
+    PIC::CPLR::DATAFILE::MULTIFILE::FileTable;
 
   //read the schedule; the format is the following:
   //---------------------------------------------------------------------------
@@ -135,7 +158,7 @@ void PIC::CPLR::DATAFILE::MULTIFILE::GetSchedule() {
   CiFileOperations fin;
   // containers for a line from file's contents
   char str[_MAX_STRING_LENGTH_PIC_], str1[_MAX_STRING_LENGTH_PIC_];
-  fin.openfile(fullname);
+  fin.openfile(fullname.c_str());
 
   // read the file's contents; first find number of files
   //---------------------------------------------------------------------------
@@ -586,10 +609,9 @@ void PIC::CPLR::DATAFILE::Init() {
 //save and load the binary data saved in the AMPS data structure
 bool PIC::CPLR::DATAFILE::BinaryFileExists(const char *fNameBase) {
   FILE *fData=NULL;
-  char fname[400];
-
-  sprintf(fname,"%s/amr.sig=0x%lx.f=%s.CenterNodeBackgroundData.bin",path,PIC::Mesh::mesh->getMeshSignature(),fNameBase);
-  fData=fopen(fname,"r");
+  const std::string fname=CenterNodeBackgroundFileName(path,
+    PIC::Mesh::mesh->getMeshSignature(),fNameBase);
+  fData=fopen(fname.c_str(),"r");
 
   if (fData!=NULL) {
     fclose(fData);
@@ -605,14 +627,14 @@ void PIC::CPLR::DATAFILE::SaveBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC:
   static FILE *fout=NULL;
 
   if (startNode==PIC::Mesh::mesh->rootTree) {
-    char fname[400];
-    sprintf(fname,"%s/amr.sig=0x%lx.f=%s.CenterNodeBackgroundData.bin",path,PIC::Mesh::mesh->getMeshSignature(),fNameBase);
+    const std::string fname=CenterNodeBackgroundFileName(path,
+      PIC::Mesh::mesh->getMeshSignature(),fNameBase);
 
     pipe.init(1000000);
 
     if (PIC::Mesh::mesh->ThisThread==0) {
       pipe.openRecvAll();
-      fout=fopen(fname,"w");
+      fout=fopen(fname.c_str(),"w");
     }
     else pipe.openSend(0);
   }
@@ -703,10 +725,10 @@ void PIC::CPLR::DATAFILE::LoadBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC:
   static FILE *fData=NULL;
 
   if (startNode==PIC::Mesh::mesh->rootTree) {
-    char fname[400];
-    sprintf(fname,"%s/amr.sig=0x%lx.f=%s.CenterNodeBackgroundData.bin",path,PIC::Mesh::mesh->getMeshSignature(),fNameBase);
+    const std::string fname=CenterNodeBackgroundFileName(path,
+      PIC::Mesh::mesh->getMeshSignature(),fNameBase);
 
-    fData=fopen(fname,"r");
+    fData=fopen(fname.c_str(),"r");
   }
 
   //loop through all points
@@ -1493,7 +1515,6 @@ void PIC::CPLR::DATAFILE::MULTIFILE::CopyCurrDataFile2NextDataFile(cTreeNodeAMR<
     else for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) CopyCurrDataFile2NextDataFile(startNode->downNode[nDownNode]);
   }
 }
-
 
 
 

@@ -171,7 +171,7 @@ void PIC::EnergyDistributionSampleRelativistic::SampleDistributionFnction() {
 
 //====================================================
 //print the distribution function into a file
-void PIC::EnergyDistributionSampleRelativistic::printDistributionFunction(char *fname,int spec) {
+void PIC::EnergyDistributionSampleRelativistic::printDistributionFunction(const char *fname,int spec) {
   long int iProbe,idim,i,j,thread,s;
   FILE *fout=NULL;
   CMPI_channel pipe(1000000);

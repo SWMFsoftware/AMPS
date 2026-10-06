@@ -204,11 +204,14 @@ public:
   _TARGET_HOST_ _TARGET_DEVICE_
   void exit(const long int nline, const char* fname,const char* msg=NULL) {
 #ifndef __CUDA_ARCH__
-    char str[1000];
     int mpiInitFlag,ThisThread;
 
-    if (msg==NULL) sprintf(str," exit: line=%ld, file=%s\n",nline,fname);
-    else sprintf(str," exit: line=%ld, file=%s, message=%s\n",nline,fname,msg);
+    // Report the caller-owned strings directly below.  A previous version
+    // first formatted them into an unused 1000-byte local array.  Besides
+    // doing no useful work, that copy could overflow when a diagnostic lists
+    // failures from many MPI ranks.  Avoiding the intermediate buffer keeps
+    // the fatal error path valid for diagnostics whose size is determined by
+    // the decomposition, while preserving the existing log/stdout contents.
 
     FILE* errorlog=fopen("$ERROR","a+");
 

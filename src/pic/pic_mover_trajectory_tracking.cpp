@@ -1020,8 +1020,10 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
   PIC::Mesh::cDataBlockAMR *block;
 
   if (PIC::Mesh::mesh->FindCellIndex(xFinal,i,j,k,newNode,false)==-1) {
-    printf("test 2 xFinal:%e,%e,%e, newNode->xmin:%e,%e,%e, newNode->xmax:%e,%e,%e,ptr:%d\n",xFinal[0],xFinal[1],xFinal[2],newNode->xmin[0],newNode->xmin[1],
-	   newNode->xmin[2], newNode->xmax[0],newNode->xmax[1],newNode->xmax[2],ptr);
+    // Particle-buffer handles are long ints.  Matching that type with %ld is
+    // required for a well-defined variadic call on both LP64 and ILP32 hosts.
+    printf("test 2 xFinal:%e,%e,%e, newNode->xmin:%e,%e,%e, newNode->xmax:%e,%e,%e,ptr:%ld\n",xFinal[0],xFinal[1],xFinal[2],newNode->xmin[0],newNode->xmin[1],
+		   newNode->xmin[2], newNode->xmax[0],newNode->xmax[1],newNode->xmax[2],ptr);
     exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
   }
   if ((block=newNode->block)==NULL) {
@@ -1555,4 +1557,3 @@ double vInit_debug[3]={vInit[0],vInit[1],vInit[2]};
 
   return _PARTICLE_MOTION_FINISHED_;
 }
-

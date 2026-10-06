@@ -271,17 +271,17 @@ namespace ElectricallyChargedDust {
       const int nOutputPoints=400;
 
       if (PIC::ThisThread==0) {
-        char fname[_MAX_STRING_LENGTH_PIC_];
-
-        //create the output directory in case its not exists
-        char cmd[_MAX_STRING_LENGTH_PIC_];
-
-        sprintf(cmd,"mkdir -p %s",PIC::OutputDataFileDirectory);
-        if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
+        // The output directory is configured in a full-size PIC array. Adding
+        // command or filename suffixes in another array of the same size can
+        // overflow, so preserve the complete strings dynamically.
+        const std::string cmd="mkdir -p "+
+          std::string(PIC::OutputDataFileDirectory);
+        if (system(cmd.c_str())==-1) exit(__LINE__,__FILE__,"Error: system failed");
 
         //create and save the file
-        sprintf(fname,"%s/DustGrainSizeDistribution.dat",PIC::OutputDataFileDirectory);
-        fout=fopen(fname,"w");
+        const std::string fname=std::string(PIC::OutputDataFileDirectory)+
+          "/DustGrainSizeDistribution.dat";
+        fout=fopen(fname.c_str(),"w");
         fprintf(fout,"VARIABLE=\"Grain Radius\", \"Normalized Distribution Function\" \n");
 
         double r,dLogR=(LogMaxDustGrainRadius-LogMinDustGrainRadius)/(nOutputPoints-1);
