@@ -13,7 +13,11 @@
 #include "mesh_model.h"
 #include "configuration_io.h"
 #include "application_input.h"
+#include "particle_normalization.h"
+#include "background_factory.h"
+#include "shock_front_background_adapter.h"
 #include "runtime.h"
+#include "sep_coronal_cme/constants.h"
 
 #include <cmath>
 #include <filesystem>
@@ -1256,8 +1260,17 @@ Result RunCFG3D13() {
              "#include \"parts/sep3d.in\"\n") ||
       !write(directory / "parts/sep3d.in",
              "#section begin: sep3d\n"
+             "shock_model = reduced-shock-surface\n"
+             "background_plasma_model = corona-swcme-ambient\n"
+             "source_model = accepted-shock-incident-flux\n"
              "particles_per_iteration = \\\n"
              "  37 ! joined to the prior physical line\n"
+             "maximum_particle_speed_m_s = 200000000\n"
+             "time_step_margin_factor = 0.25\n"
+             "source_normalization_radius_m = 13914000000\n"
+             "#subsection begin: reduced-shock-surface\n"
+             "schema = parser-fixture\n"
+             "#subsection end\n"
              "#section end\n")) {
     return Fail("could not write application-input fixtures");
   }
@@ -1266,7 +1279,14 @@ Result RunCFG3D13() {
   SEP3D::Core::Status status = RM::ParseSep3dApplicationInput(
       (directory / "amps.in").string(), &parsed);
   if (!status.ok() || parsed.particlesPerIteration != 37 ||
-      parsed.expandedFiles.size() != 2 || parsed.valueLine != 2 ||
+      parsed.expandedFiles.size() != 2 || parsed.valueLine != 5 ||
+      parsed.shockModel != "reduced-shock-surface" ||
+      parsed.backgroundPlasmaModel != "corona-swcme-ambient" ||
+      parsed.sourceModel != "accepted-shock-incident-flux" ||
+      parsed.maximumParticleSpeedMPerS != 2.0e8 ||
+      parsed.timeStepMarginFactor != 0.25 ||
+      parsed.sourceNormalizationRadiusM != 13914000000.0 ||
+      parsed.reducedShockConfiguration != "schema=parser-fixture\n" ||
       RM::Sep3dApplicationInputSummary(parsed).find(
           "particles_per_iteration=37") == std::string::npos) {
     return Fail("recursive include/comment/continuation input did not resolve: " +
@@ -1303,9 +1323,28 @@ Result RunCFG3D13() {
   std::shared_ptr<const RM::RunConfiguration3D> provisional, resolved;
   if (!RM::RunConfiguration3D::Create(options, &provisional).ok())
     return Fail("could not create provisional configuration");
+  options.inputSchemaVersion = 4;
+  options.background = RM::BackgroundAuthority::RuntimeModel;
+  options.backgroundModelId = "sep-corona-swcme-shock-front-v1";
+  options.backgroundModelInlineConfiguration =
+      parsed.reducedShockConfiguration;
+  options.backgroundModelAssetDirectory = parsed.reducedShockAssetDirectory;
+  options.coordinateFrame = "HCI";
+  options.parker.coordinateFrame = options.coordinateFrame;
   options.source.samplesPerStep = parsed.particlesPerIteration;
-  if (!RM::RunConfiguration3D::Create(options, &resolved).ok())
-    return Fail("could not create parsed immutable configuration");
+  options.particleNumerics.deriveFromMeshAndShock = true;
+  options.particleNumerics.sourceRateModel =
+      RM::SourceRateNormalizationModel::AcceptedShockIncidentFlux;
+  options.particleNumerics.maximumParticleSpeedMPerS =
+      parsed.maximumParticleSpeedMPerS;
+  options.particleNumerics.timeStepMarginFactor =
+      parsed.timeStepMarginFactor;
+  options.particleNumerics.sourceNormalizationRadiusM =
+      parsed.sourceNormalizationRadiusM;
+  status=RM::RunConfiguration3D::Create(options, &resolved);
+  if (!status.ok())
+    return Fail("could not create parsed immutable configuration: "+
+        status.message);
   RM::Runtime runtime;
   if (!runtime.Configure(provisional).ok() ||
       !runtime.ReplaceConfigurationBeforeMesh(resolved).ok() ||
@@ -1341,7 +1380,7 @@ Result RunCFG3D13() {
   }
 
   if (!write(directory / "unterminated.in",
-             "#section begin: sep3d\nparticles_per_iteration = 0\n"))
+             "#section begin: sep3d\nshock_model = reduced-shock-surface\n"))
     return Fail("could not write unterminated-section fixture");
   status = RM::ParseSep3dApplicationInput(
       (directory / "unterminated.in").string(), &parsed);
@@ -1350,8 +1389,127 @@ Result RunCFG3D13() {
     return Fail("unterminated section was not rejected");
   }
 
+  if (!write(directory / "missing-radius.in",
+             "#section begin: sep3d\n"
+             "shock_model=reduced-shock-surface\n"
+             "background_plasma_model=corona-swcme-ambient\n"
+             "source_model=accepted-shock-incident-flux\n"
+             "particles_per_iteration=10\n"
+             "maximum_particle_speed_m_s=1000\n"
+             "time_step_margin_factor=0.2\n"
+             "#subsection begin: reduced-shock-surface\n"
+             "schema=x\n#subsection end\n#section end\n"))
+    return Fail("could not write missing-radius fixture");
+  status = RM::ParseSep3dApplicationInput(
+      (directory / "missing-radius.in").string(), &parsed);
+  if (status.ok() ||
+      status.message.find("source_normalization_radius_m") ==
+          std::string::npos)
+    return Fail("missing source-normalization radius acquired a default");
+
   fs::remove_all(directory, cleanupError);
   return Pass("shared sep3d section resolves includes, comments, continuations, CLI defaults, immutable commit, and provenance-rich failures");
+}
+
+Result RunCFG3D14() {
+  double step=0;
+  if(!RM::CalculateMeshGlobalTimeStep(1200.0,300.0,0.25,&step).ok()||
+      step!=1.0)
+    return Fail("global dt does not equal margin*h_min/v_max");
+  if(RM::CalculateMeshGlobalTimeStep(1200.0,300.0,1.01,&step).ok())
+    return Fail("time-step calculation accepted a margin above one");
+  std::vector<RM::ObserverOptions> observers(2);
+  observers[0].id="unaligned";observers[0].cadenceS=60;
+  observers[1].id="already-aligned";observers[1].cadenceS=70;
+  if(!RM::AlignObserverCadencesToGlobalStep(7,&observers).ok()||
+      observers[0].cadenceS!=63||observers[1].cadenceS!=70)
+    return Fail("observer cadence did not align upward to exact global ticks");
+
+  SEP::CoronaSwcme::ShockFront::IncidentParticleFlux flux;
+  flux.protonRatePerS=4.0e20;
+  flux.electronRatePerS=5.0e20;
+  flux.alphaRatePerS=1.0e19;
+  std::vector<RM::CompiledSpeciesRecord> species={
+      {0,"ELECTRON",SEP3D::Core::Const::m_e,-SEP3D::Core::Const::e},
+      {1,"H_PLUS",SEP3D::Core::Const::m_p,SEP3D::Core::Const::e},
+      {2,"HE_PLUS_PLUS",SEP::CoronalCME::Constants::kAlphaMassKg,
+          2*SEP3D::Core::Const::e}};
+  std::vector<RM::SpeciesParticleNormalization> normalized;
+  if(!RM::CalculateSpeciesParticleNormalizations(
+      species,flux,2.0,100,&normalized).ok()||normalized.size()!=3||
+      normalized[0].macroparticleWeight!=1.0e19||
+      normalized[1].macroparticleWeight!=8.0e18||
+      normalized[2].macroparticleWeight!=2.0e17)
+    return Fail("electron/proton/alpha rate-to-weight normalization is wrong");
+  species.push_back({3,"O_PLUS",16*SEP3D::Core::Const::m_p,
+      SEP3D::Core::Const::e});
+  if(RM::CalculateSpeciesParticleNormalizations(
+      species,flux,2.0,100,&normalized).ok())
+    return Fail("unknown ambient species silently borrowed another rate");
+  return Pass("global dt and per-species W=Ndot*dt/N use independent inputs and unsupported composition fails closed");
+}
+
+Result RunCFG3D15() {
+  namespace fs=std::filesystem;
+  fs::path root;
+  for(const fs::path& candidate:{fs::path("."),fs::path(".."),
+      fs::path("../../")})
+    if(fs::exists(candidate/"srcSEP3D/examples/application-input/amps.in")) {
+      root=fs::canonical(candidate);break;
+    }
+  if(root.empty())return Fail("cannot locate the maintained shared-input example");
+
+  RM::Sep3dApplicationInput parsed;
+  SEP3D::Core::Status status=RM::ParseSep3dApplicationInput(
+      (root/"srcSEP3D/examples/application-input/amps.in").string(),&parsed);
+  if(!status.ok())return Fail("maintained shared input does not parse: "+
+      status.message);
+
+  // Mirror the production post-parser transaction, then ask the registered
+  // factory to resolve the real magnetic asset and construct the shared
+  // provider. This exercises the actual parser/configuration/adapter path;
+  // it is not a second reference-only event parser.
+  RM::RunConfiguration3DOptions options;
+  options.meshMemoryBudgetBytes=1000000000000000ULL;
+  options.inputSchemaVersion=4;
+  options.background=RM::BackgroundAuthority::RuntimeModel;
+  options.backgroundModelId="sep-corona-swcme-shock-front-v1";
+  options.backgroundModelInlineConfiguration=parsed.reducedShockConfiguration;
+  options.backgroundModelAssetDirectory=parsed.reducedShockAssetDirectory;
+  options.coordinateFrame="HCI";
+  options.parker.coordinateFrame=options.coordinateFrame;
+  options.shock=RM::ShockAuthority::None;
+  options.intent=RM::RunIntent::TransportOnly;
+  options.source.enabled=false;
+  options.source.samplesPerStep=parsed.particlesPerIteration;
+  options.particleNumerics.deriveFromMeshAndShock=true;
+  options.particleNumerics.sourceRateModel=
+      RM::SourceRateNormalizationModel::AcceptedShockIncidentFlux;
+  options.particleNumerics.maximumParticleSpeedMPerS=
+      parsed.maximumParticleSpeedMPerS;
+  options.particleNumerics.timeStepMarginFactor=
+      parsed.timeStepMarginFactor;
+  options.particleNumerics.sourceNormalizationRadiusM=
+      parsed.sourceNormalizationRadiusM;
+  std::shared_ptr<const RM::RunConfiguration3D> configuration;
+  status=RM::RunConfiguration3D::Create(options,&configuration);
+  if(!status.ok())return Fail("maintained parsed configuration is invalid: "+
+      status.message);
+  std::shared_ptr<BG::BackgroundProvider> background;
+  status=RM::CreateBackgroundProvider(*configuration,&background);
+  const auto adapter=std::dynamic_pointer_cast<
+      SEP3D::Adapters::ShockFrontBackgroundAdapter>(background);
+  if(!status.ok()||!adapter||!adapter->SharedProvider())
+    return Fail("maintained parsed reduced provider does not initialize: "+
+        status.message);
+  const auto flux=SEP::CoronaSwcme::ShockFront::
+      EvaluateIncidentParticleFluxAtApexRadius(*adapter->SharedProvider(),
+          parsed.sourceNormalizationRadiusM);
+  if(!flux.ok()||flux.value.acceptedAreaM2<=0||
+      flux.value.electronRatePerS<=0||
+      adapter->SharedProvider()->Current()!=nullptr)
+    return Fail("maintained model cannot derive its non-mutating accepted-shock source rate");
+  return Pass("maintained shared input resolves its magnetic asset, initializes one reduced provider, and derives a positive accepted-shock rate without advancing its epoch");
 }
 
 }  // namespace
@@ -1389,5 +1547,7 @@ std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
       make("CFG3D11", "Transport/control schema", "Active corridor, population limits, mover coefficients, and dry-run output.", RunCFG3D11),
       make("CFG3D12", "Corner/sphere geometry", "Endpoint extent, input controls, identity and corner validation.", RunCFG3D12),
       make("CFG3D13", "Shared application input", "Global section/include grammar, early immutable commit, and diagnostics.", RunCFG3D13),
+      make("CFG3D14", "Derived particle numerics", "Mesh CFL step and incident-flux per-species weight equations.", RunCFG3D14),
+      make("CFG3D15", "Parsed reduced model", "Maintained shared input initializes the real reduced provider and source normalization.", RunCFG3D15),
   };
 }

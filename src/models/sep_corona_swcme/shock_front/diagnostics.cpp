@@ -219,6 +219,91 @@ Core::Result<std::vector<ObserverPassage>> FindObserverPassages(
   return Return::Success(std::move(out));
 }
 
+Core::Result<IncidentParticleFlux> EvaluateIncidentParticleFluxAtApexRadius(
+    const Provider& provider,double requestedRadius) {
+  using Return=Core::Result<IncidentParticleFlux>;
+  if(!std::isfinite(requestedRadius)||requestedRadius<=0)
+    return Return::Failure(Core::StatusCode::InvalidConfiguration,
+        "incident-flux normalization radius must be finite and positive");
+
+  const auto& event=provider.Event();
+  double left=event.ambient.support.startS;
+  double right=event.ambient.support.endS;
+  const auto first=provider.Trajectory(left);
+  const auto last=provider.Trajectory(right);
+  if(!first.ok())return Return::Failure(first.status.code,first.status.message);
+  if(!last.ok())return Return::Failure(last.status.code,last.status.message);
+  if(last.value.apexRadiusM<first.value.apexRadiusM)
+    return Return::Failure(Core::StatusCode::InvalidState,
+        "incident-flux normalization requires a monotonically outward apex history");
+  const double radialScale=std::max({1.0,std::abs(first.value.apexRadiusM),
+      std::abs(last.value.apexRadiusM),std::abs(requestedRadius)});
+  const double radialTolerance=128*std::numeric_limits<double>::epsilon()*radialScale;
+  if(requestedRadius<first.value.apexRadiusM-radialTolerance||
+      requestedRadius>last.value.apexRadiusM+radialTolerance)
+    return Return::Failure(Core::StatusCode::OutOfDomain,
+        "incident-flux normalization radius is outside the front history");
+
+  // Bisection uses only the analytical trajectory, while the final flux uses
+  // the full curved surface.  Stop on a dimensional radius tolerance rather
+  // than a fixed iteration count alone so the root error is meaningful from
+  // the low corona through AU scales.
+  for(int iteration=0;iteration<256&&right-left>
+      16*std::numeric_limits<double>::epsilon()*
+      std::max({1.0,std::abs(left),std::abs(right)});++iteration) {
+    const double middle=0.5*(left+right);
+    const auto state=provider.Trajectory(middle);
+    if(!state.ok())return Return::Failure(state.status.code,state.status.message);
+    if(state.value.apexRadiusM<requestedRadius)left=middle;else right=middle;
+    if(std::abs(state.value.apexRadiusM-requestedRadius)<=radialTolerance) {
+      left=right=middle;
+      break;
+    }
+  }
+  const double epoch=0.5*(left+right);
+  const auto surface=provider.EvaluateEpoch(epoch,1);
+  if(!surface.ok())return Return::Failure(surface.status.code,
+      "cannot evaluate incident-flux surface: "+surface.status.message);
+
+  long double proton=0,electron=0;
+  for(const ShockRecord& record:surface.value->records) {
+    if(record.status!=FrontStatus::SolvedFastShock)continue;
+    if(!std::isfinite(record.inflowMPerS)||record.inflowMPerS<=0||
+        !std::isfinite(record.geometry.areaM2)||record.geometry.areaM2<=0||
+        !std::isfinite(record.upstream.plasma.protonNumberDensityM3)||
+        !std::isfinite(record.upstream.plasma.electronNumberDensityM3)||
+        record.upstream.plasma.protonNumberDensityM3<0||
+        record.upstream.plasma.electronNumberDensityM3<0)
+      return Return::Failure(Core::StatusCode::InvalidState,
+          "accepted shock record has an invalid upstream incident flux");
+    const long double measure=static_cast<long double>(record.inflowMPerS)*
+        static_cast<long double>(record.geometry.areaM2);
+    proton+=measure*record.upstream.plasma.protonNumberDensityM3;
+    electron+=measure*record.upstream.plasma.electronNumberDensityM3;
+  }
+  IncidentParticleFlux out;
+  out.epochS=epoch;
+  out.apexRadiusM=surface.value->trajectory.apexRadiusM;
+  out.acceptedAreaM2=surface.value->area.acceptedShockM2;
+  out.excludedPhysicalAreaM2=surface.value->area.geometricSupportM2-
+      surface.value->area.acceptedShockM2-
+      surface.value->area.numericalFailureM2;
+  out.numericalFailureAreaM2=surface.value->area.numericalFailureM2;
+  out.protonRatePerS=static_cast<double>(proton);
+  out.electronRatePerS=static_cast<double>(electron);
+  out.alphaRatePerS=event.ambient.composition.alphaToProtonNumberRatio*
+      out.protonRatePerS;
+  if(out.numericalFailureAreaM2>0)
+    return Return::Failure(Core::StatusCode::NumericalFailure,
+        "incident-flux normalization surface contains numerically unresolved area");
+  if(!std::isfinite(out.protonRatePerS)||!std::isfinite(out.electronRatePerS)||
+      !std::isfinite(out.alphaRatePerS)||out.protonRatePerS<=0||
+      out.electronRatePerS<=0||out.alphaRatePerS<0||out.acceptedAreaM2<=0)
+    return Return::Failure(Core::StatusCode::InvalidState,
+        "incident-flux normalization has no positive accepted-shock source");
+  return Return::Success(out);
+}
+
 Core::Result<ReducedRestartState> MakeRestartState(const Provider& provider) {
   using Return=Core::Result<ReducedRestartState>;
   const auto current=provider.Current();if(!current)return Return::Failure(

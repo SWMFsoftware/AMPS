@@ -47,11 +47,17 @@ files depends on AMPS or MPI.
 
 `./amps -input FILE` selects the shared section-based container documented in
 [`../src/INPUT_FILE.md`](../src/INPUT_FILE.md); omitting `-input` selects
-`./amps.in`. Its current srcSEP3D section sets only
-`particles_per_iteration`. Parsing occurs after `Init_BeforeParser`, and the
-resolved count is committed to the immutable configuration before mesh
-binding. The one-dash spelling is distinct from the complete schema interface
-below.
+`./amps.in`. Its srcSEP3D section explicitly selects the reduced shock surface,
+corona/SWCME ambient and accepted-shock incident-flux normalization; it also
+contains a strict complete reduced-model subsection, a positive per-species
+model-particle count, maximum speed, CFL margin and mandatory normalization
+radius. Parsing and provider construction occur after `Init_BeforeParser`.
+After block allocation, native code computes the actual global minimum cell
+scale, one common time step, and a separate electron/proton/alpha weight where
+that compiled population exists. These resolved values are committed before
+Runtime mesh binding and printed with the final fingerprint. See the shared
+input document for the governing equations and fail-closed species rules. The
+one-dash spelling is distinct from the complete schema interface below.
 
 The standalone executable accepts one versioned INI-style file:
 

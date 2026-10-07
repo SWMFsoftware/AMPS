@@ -5,11 +5,20 @@
 The new global-file interface is selected with `-input FILE`; with no
 `-input`, the executable reads `./amps.in`. The file may contain core and other
 application sections, while srcSEP3D consumes only the block from
-`#section begin: sep3d` through `#section end`. The current block has one key:
+`#section begin: sep3d` through `#section end`. The selected implementation
+requires explicit shock, background and rate authorities, particle numerics,
+and a complete reduced-model subsection:
 
 ```text
 #section begin: sep3d
-particles_per_iteration = 1000 ! per compiled species
+shock_model = reduced-shock-surface
+background_plasma_model = corona-swcme-ambient
+source_model = accepted-shock-incident-flux
+particles_per_iteration = 1000
+maximum_particle_speed_m_s = 2.0e8
+time_step_margin_factor = 0.30
+source_normalization_radius_m = 1.3914e10 ! required; no default
+#include "reduced-shock-surface.in"
 #section end
 ```
 
@@ -24,14 +33,23 @@ The parser runs collectively after `PIC::Init_BeforeParser()` and
 `SEP3D::Init_BeforeParser()` but before storage offsets and the mesh are
 frozen. Rank zero reads the file, broadcasts the resolved value, and all ranks
 replace the provisional configuration with one immutable, fingerprinted
-configuration having the same storage layout. Startup prints a resolved input
-summary. See [`../src/INPUT_FILE.md`](../src/INPUT_FILE.md) for the shared
-grammar and [`examples/application-input/`](examples/application-input/) for a
-runnable two-file example.
+configuration having the same storage layout. The reduced provider and its
+checksummed magnetic asset are initialized immediately after parsing. After
+AMPS allocates the distributed blocks, the application computes one global
+`dt=f h_min/v_max`, evaluates the accepted upstream incident particle rate at
+the required front-apex radius, and installs
+`W_s=Ndot_s dt/N_model` independently for every compiled species. Unsupported
+species and numerical-unknown front area fail closed. Startup prints the full
+input, event, mesh, rate, cadence and per-species weight receipt. See
+[`../src/INPUT_FILE.md`](../src/INPUT_FILE.md) for equations and the shared
+grammar and [`examples/application-input/README.md`](examples/application-input/README.md)
+for the runnable three-file example.
 
 The maintained `--input FILE` spelling still selects the complete schema-4
 srcSEP3D deck documented in `CONFIGURATION.md`; this preserves existing
-campaigns while the shared input grows beyond its current single setting.
+campaigns. The new source-rate calculation normalizes weights only: it does
+not silently enable the particle source, introduce an acceleration efficiency,
+or turn ambient volume values into downstream CME plasma.
 
 The runnable reduced-provider examples, including the positive synthetic
 low-corona-to-1-AU zero-particle case and its native volume/front output

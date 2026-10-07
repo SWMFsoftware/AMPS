@@ -110,6 +110,33 @@ The production positive-event regression also crosses a complete face ring at
 `Mf=1.00106`: it requires a resolved weak jump before the crossing and a
 physical `subfast-front` result afterward, with zero numerical-unknown area.
 
+### Accepted incident-flux normalization
+
+The shared diagnostics expose a side-effect-free normalization query at an
+explicit requested apex radius. It first brackets the unique time on the
+monotonically outward analytical trajectory, then calls the same production
+surface/RH path used for committed epochs without replacing `Current()`. For
+species population `s`, it evaluates
+
+```text
+Ndot_s = sum_{status=solved-fast-shock}
+         n_{s,1} (V_n - U_1 dot n) A_curved .
+```
+
+The sum uses each face's exact curved area and actual upstream EOS density.
+Sub-fast, non-forward and below-inner-boundary areas remain excluded physical
+area rather than being renormalized. Any numerical-failure area rejects the
+rate. Electron and proton rates are independent upstream populations; alpha
+uses the event's declared alpha/proton number ratio. This is the gross number
+of ambient particles swept through accepted front faces per second. It is not
+an acceleration efficiency, seed-selection law or downstream volume source.
+
+`srcSEP3D` combines this rate with its post-allocation global step and requested
+model-particle count as `W_s=Ndot_s dt/N_model`. The shared provider itself
+remains independent of particles and MPI. Test `RSH41` recomputes the face sum
+independently from a production epoch, checks radius-domain rejection, and
+proves that the query does not commit a generation.
+
 ## Connectivity, observers, outputs, and restart
 
 `diagnostics.h` operates on the same analytical provider and immutable epoch:

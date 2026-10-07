@@ -143,7 +143,7 @@ Core::Status Runtime::ReplaceConfigurationBeforeMesh(
       hasSnapshot_ || snapshotUpdateState_ != SnapshotUpdateState::Idle) {
     return Core::Status(
         Core::StatusCode::InvalidTransition,
-        "configuration replacement requires pristine pre-mesh runtime state");
+        "configuration replacement requires pristine pre-Runtime-mesh state");
   }
 
   // Commit all configuration-derived clocks together.  Although the first

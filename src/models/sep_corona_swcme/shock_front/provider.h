@@ -293,6 +293,13 @@ class Provider final {
   Core::Result<AmbientState> QueryAmbient(
       CoronalCME::Vec3 positionM,double epochS,std::uint64_t generation) const;
   Core::Status RequireCapability(VolumeCapability capability) const;
+  // Build a complete immutable surface epoch without changing Current().
+  // This is the production geometry/RH path, not a simplified diagnostic
+  // reconstruction.  Preflight calculations such as a particle-normalization
+  // rate may therefore inspect another physical radius without advancing the
+  // provider that owns the simulation epoch.
+  Core::Result<std::shared_ptr<const Epoch>> EvaluateEpoch(
+      double epochS,std::uint64_t generation) const;
   Core::Result<std::shared_ptr<const Epoch>> Prepare(
       double epochS,std::uint64_t generation);
 

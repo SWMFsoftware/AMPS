@@ -1566,7 +1566,7 @@ def _check_makefile_relocation(definition: TestDefinition,
         "bg_provider.o bg_parker.o bg_swcme.o bg_swmf.o background_snapshot.o "
         "turbulence_models.o keyed_random.o time_step.o perpendicular_transport.o "
         "parker_transport.o focused_transport.o population_control.o "
-        "run_configuration.o application_input.o configuration_io.o standalone_command_line.o runtime.o background_factory.o runtime_adapters.o "
+        "run_configuration.o application_input.o particle_normalization.o configuration_io.o standalone_command_line.o runtime.o background_factory.o runtime_adapters.o "
         "transport_adapter.o particle_ledger.o shock_front_background_adapter.o "
         "swcme_source_adapter.o source_runtime.o "
         "sampling.o observer_runtime.o publication.o restart.o output_coordinator.o reduced_front_output.o "

@@ -197,6 +197,16 @@ const char* Name(SourceSpectrumModel value) {
   return "unknown";
 }
 
+const char* Name(SourceRateNormalizationModel value) {
+  switch (value) {
+    case SourceRateNormalizationModel::ConfiguredConstant:
+      return "configured-constant";
+    case SourceRateNormalizationModel::AcceptedShockIncidentFlux:
+      return "accepted-shock-incident-flux";
+  }
+  return "unknown";
+}
+
 const char* Name(TransportModel value) {
   switch (value) {
     case TransportModel::Parker3D: return "parker";
@@ -470,6 +480,22 @@ Core::Status ValidateCompiledSpeciesBinding(
     }
   }
 
+  if (!configured.speciesParticleNormalizations.empty()) {
+    if (configured.speciesParticleNormalizations.size() != compiled.size())
+      return Core::Status(Core::StatusCode::ConfigurationConflict,
+          "derived particle normalization does not cover every compiled species");
+    for (std::size_t slot=0;slot<compiled.size();++slot) {
+      const SpeciesParticleNormalization& normalization=
+          configured.speciesParticleNormalizations[slot];
+      if(normalization.ampsIndex!=compiled[slot].ampsIndex||
+          NormalizedSpeciesSymbol(normalization.symbol)!=
+              NormalizedSpeciesSymbol(compiled[slot].symbol))
+        return Core::Status(Core::StatusCode::ConfigurationConflict,
+            "derived particle normalization species identity differs from the generated AMPS table at slot "+
+            std::to_string(slot));
+    }
+  }
+
   for (const ObserverOptions& observer : configured.observers) {
     // A wildcard has already been represented as an empty accepted-species
     // vector for the sampling layer.  It is valid for every positive compiled
@@ -736,10 +762,16 @@ Core::Status RunConfiguration3D::Create(
   if ((normalized.background == BackgroundAuthority::RuntimeModel) !=
       !normalized.backgroundModelId.empty())
     return Invalid("background.model_id is required only for runtime-model authority");
-  if(reducedShockFront&&normalized.backgroundModelAssetPath.empty())
-    return Invalid("reduced shock-front runtime requires background.model_asset");
-  if(!reducedShockFront&&!normalized.backgroundModelAssetPath.empty())
-    return Invalid("background.model_asset is active only for the reduced shock-front runtime");
+  const bool fileBackedReducedModel=!normalized.backgroundModelAssetPath.empty();
+  const bool inlineReducedModel=!normalized.backgroundModelInlineConfiguration.empty();
+  if(reducedShockFront&&(fileBackedReducedModel==inlineReducedModel))
+    return Invalid("reduced shock-front runtime requires exactly one file-backed or inline model configuration");
+  if(inlineReducedModel&&normalized.backgroundModelAssetDirectory.empty())
+    return Invalid("inline reduced shock-front configuration requires its asset directory");
+  if(!inlineReducedModel&&!normalized.backgroundModelAssetDirectory.empty())
+    return Invalid("background model asset directory is active only for inline configuration");
+  if(!reducedShockFront&&(fileBackedReducedModel||inlineReducedModel))
+    return Invalid("reduced shock-front model input is active only for its runtime authority");
   const double meshValues[] = {
       normalized.minimumCellSizeM, normalized.backgroundCellSizeM,
       normalized.solarSurfaceCellSizeM,
@@ -1200,6 +1232,56 @@ Core::Status RunConfiguration3D::Create(
   if (!std::isfinite(normalized.species.macroparticleWeight) ||
       normalized.species.macroparticleWeight <= 0.0)
     return Invalid("species.macroparticle_weight must be finite and positive");
+  const ParticleNumericsOptions& particleNumerics=normalized.particleNumerics;
+  if(particleNumerics.deriveFromMeshAndShock) {
+    if(!reducedShockFront||
+        particleNumerics.sourceRateModel!=
+            SourceRateNormalizationModel::AcceptedShockIncidentFlux||
+        !std::isfinite(particleNumerics.maximumParticleSpeedMPerS)||
+        particleNumerics.maximumParticleSpeedMPerS<=0||
+        particleNumerics.maximumParticleSpeedMPerS>Core::Const::c||
+        !std::isfinite(particleNumerics.timeStepMarginFactor)||
+        particleNumerics.timeStepMarginFactor<=0||
+        particleNumerics.timeStepMarginFactor>1||
+        !std::isfinite(particleNumerics.sourceNormalizationRadiusM)||
+        particleNumerics.sourceNormalizationRadiusM<=0||
+        !std::isfinite(particleNumerics.resolvedMinimumCellSizeM)||
+        particleNumerics.resolvedMinimumCellSizeM<0)
+      return Invalid("mesh/shock-derived particle numerics require a reduced front, accepted incident-flux model, positive SI speed/radius, and margin in (0,1]");
+    if(particleNumerics.resolvedMinimumCellSizeM>0) {
+      const double derived=particleNumerics.timeStepMarginFactor*
+          particleNumerics.resolvedMinimumCellSizeM/
+          particleNumerics.maximumParticleSpeedMPerS;
+      if(!NearlyEqual(derived,normalized.requestedTimeStepS))
+        return Invalid("global time step differs from margin*minimum_cell_size/maximum_particle_speed");
+    }
+  } else if(particleNumerics.sourceRateModel!=
+          SourceRateNormalizationModel::ConfiguredConstant||
+      particleNumerics.maximumParticleSpeedMPerS!=0||
+      particleNumerics.timeStepMarginFactor!=0||
+      particleNumerics.sourceNormalizationRadiusM!=0||
+      particleNumerics.resolvedMinimumCellSizeM!=0||
+      !normalized.speciesParticleNormalizations.empty()) {
+    return Invalid("inactive derived particle numerics must retain zero sentinels and no per-species records");
+  }
+  std::vector<int> normalizedSpeciesIndices;
+  for(const SpeciesParticleNormalization& item:
+      normalized.speciesParticleNormalizations) {
+    if(item.ampsIndex<0||item.symbol.empty()||
+        !std::isfinite(item.physicalSourceRatePerS)||
+        item.physicalSourceRatePerS<=0||
+        !std::isfinite(item.macroparticleWeight)||
+        item.macroparticleWeight<=0||
+        std::find(normalizedSpeciesIndices.begin(),normalizedSpeciesIndices.end(),
+            item.ampsIndex)!=normalizedSpeciesIndices.end())
+      return Invalid("per-species particle normalization is incomplete or duplicated");
+    const double expected=item.physicalSourceRatePerS*
+        normalized.requestedTimeStepS/
+        static_cast<double>(normalized.source.samplesPerStep);
+    if(!NearlyEqual(expected,item.macroparticleWeight))
+      return Invalid("per-species particle weight differs from rate*dt/particles_per_iteration");
+    normalizedSpeciesIndices.push_back(item.ampsIndex);
+  }
   std::vector<std::string> observerIds;
   for (const ObserverOptions& observer : normalized.observers) {
     const double radius = observer.positionM.Norm();
@@ -1499,7 +1581,12 @@ Core::Status RunConfiguration3D::Create(
   // available; the common publication boundary also checks that manifest.
   if (normalized.background == BackgroundAuthority::RuntimeModel)
     physics << ";background_model_id=" << normalized.backgroundModelId
-            << ";background_model_asset=" << normalized.backgroundModelAssetPath;
+            << ";background_model_asset=" << normalized.backgroundModelAssetPath
+            << ";background_model_inline_fingerprint="
+            << SEP::Background::FingerprintConfiguration(
+                normalized.backgroundModelInlineConfiguration)
+            << ";background_model_asset_directory="
+            << normalized.backgroundModelAssetDirectory;
   physics << ";swcme_fingerprint="
           << normalized.swcmeConfigurationFingerprint
           << ";source_enabled=" << source.enabled
@@ -1517,7 +1604,24 @@ Core::Status RunConfiguration3D::Create(
   physics << ";source_samples_per_compiled_species=" << source.samplesPerStep
           << ";compiled_species_authority=AMPS-SpeciesList"
           << ";species_weight=" << normalized.species.macroparticleWeight
-          << ";prescribed_turbulence_model="
+          << ";particle_source_rate_model="
+          << Name(normalized.particleNumerics.sourceRateModel)
+          << ";particle_numerics_derived="
+          << normalized.particleNumerics.deriveFromMeshAndShock
+          << ";maximum_particle_speed_m_s="
+          << normalized.particleNumerics.maximumParticleSpeedMPerS
+          << ";time_step_margin_factor="
+          << normalized.particleNumerics.timeStepMarginFactor
+          << ";source_normalization_radius_m="
+          << normalized.particleNumerics.sourceNormalizationRadiusM
+          << ";resolved_minimum_cell_size_m="
+          << normalized.particleNumerics.resolvedMinimumCellSizeM;
+  for(const SpeciesParticleNormalization& item:
+      normalized.speciesParticleNormalizations)
+    physics << ";species_normalization=" << item.ampsIndex << ','
+            << item.symbol << ',' << item.physicalSourceRatePerS << ','
+            << item.macroparticleWeight;
+  physics << ";prescribed_turbulence_model="
           << Name(normalized.prescribedTurbulenceModel)
           << ";prescribed_turbulence_amplitude_model="
           << Name(normalized.prescribedTurbulenceAmplitudeModel)

@@ -1,6 +1,25 @@
 #section begin: sep3d
-! Exact computational particles per active iteration and compiled species.
-! The continued spelling is intentional: it demonstrates logical-line joining.
+! The three selectors make authority explicit. The source model is a gross
+! accepted-shock incident-flux normalization; it is not an acceleration law.
+shock_model = reduced-shock-surface
+background_plasma_model = corona-swcme-ambient
+source_model = accepted-shock-incident-flux
+
+! Exact computational particles represented per iteration and compiled
+! species. The continued spelling demonstrates logical-line joining.
 particles_per_iteration = \
   1000
+
+! One global AMPS step permits a particle at v_max to cross at most 30% of
+! the smallest actually allocated characteristic cell length.
+maximum_particle_speed_m_s = 200000000
+time_step_margin_factor = 0.30
+
+! Required physical normalization location. This example uses the exact
+! 20-R_sun corona/SWCME handoff; there is intentionally no parser default.
+source_normalization_radius_m = 13914000000
+
+! The complete reduced model lives in a separate included input fragment so
+! the top-level application controls remain readable.
+#include "reduced-shock-surface.in"
 #section end

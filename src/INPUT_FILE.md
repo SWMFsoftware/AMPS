@@ -8,6 +8,9 @@ owned by another application.
 The first implementation is the `srcSEP3D` section parser in
 `srcSEP3D/runtime/application_input.{h,cpp}`. It runs after
 `Init_BeforeParser` and before AMPS freezes cell storage or builds the mesh.
+The selected reduced provider is resolved immediately after parsing, while
+the time step and statistical weights are finalized only after AMPS has
+allocated the actual distributed mesh.
 The shared syntax is application-independent even though other applications do
 not yet consume it.
 
@@ -53,19 +56,85 @@ The current srcSEP3D section is:
 
 ```text
 #section begin: sep3d
+shock_model = reduced-shock-surface
+background_plasma_model = corona-swcme-ambient
+source_model = accepted-shock-incident-flux
 particles_per_iteration = 1000
+maximum_particle_speed_m_s = 2.0e8
+time_step_margin_factor = 0.30
+source_normalization_radius_m = 1.3914e10
+
+#subsection begin: reduced-shock-surface
+schema = shock-front-ambient-v1.1
+! ...complete strict model-v1.1 assignments...
+handoff.apex_radius_m = 1.3914e10
+assets.harmonics_file = magnetic/pfss.harmonics.csv
+assets.harmonics_sha256 = <64 lowercase hexadecimal digits>
+#subsection end
 #section end
 ```
 
-`particles_per_iteration` is an unsigned decimal integer. It maps to the
-existing srcSEP3D exact `source.samplesPerStep` contract, which is a count per
-compiled AMPS species over the complete source surface on each injection
-iteration. Zero is accepted by the text parser and is meaningful for a
-source-disabled/background-only run; the immutable physics configuration still
-rejects zero if particle injection is enabled.
+All top-level values are mandatory; none of the physical or numerical values
+below acquires a parser default:
 
-No other srcSEP3D keys are implemented in the shared-section parser yet.
-Unknown or duplicate keys fail closed.
+- `shock_model=reduced-shock-surface` selects the finite prescribed front.
+- `background_plasma_model=corona-swcme-ambient` selects the provider's
+  maintained coronal/PFSS-to-Parker ambient plasma and IMF.
+- `source_model=accepted-shock-incident-flux` selects the gross upstream
+  particle flux through accepted fast-shock faces for statistical
+  normalization. It is not an SEP acceleration or injection-efficiency law.
+- `particles_per_iteration` is a positive unsigned model-particle count per
+  compiled AMPS species.
+- `maximum_particle_speed_m_s` is finite and in `(0,c]`.
+- `time_step_margin_factor` is dimensionless and in `(0,1]`.
+- `source_normalization_radius_m` is the required heliocentric apex radius at
+  which the front/source rate is evaluated. It has deliberately no default.
+
+The named reduced subsection is required and cannot be empty. Every assignment
+inside it is passed to the strict `shock-front-ambient-v1.1` resolver. This
+includes run support, ambient/PFSS normalization, plasma composition, geometry,
+launch/acceleration history, handoff radius, drag continuation, surface
+resolution, shock tolerances, observer endpoint, magnetic asset path and the
+asset checksum. Relative asset paths resolve from the file containing the
+subsection begin marker—not from the process directory. Unknown or missing
+model keys and changed asset bytes fail in the shared resolver.
+
+### Derived global time step
+
+After mesh allocation, all owner blocks participate in the global minimum of
+the actual AMPS characteristic cell length `h_min`. The one step shared by all
+species is
+
+```text
+dt = time_step_margin_factor * h_min / maximum_particle_speed_m_s .
+```
+
+Ghost blocks do not add an independent restriction. Existing observer
+cadences must be integer global ticks; shared-section mode moves each requested
+cadence upward to the first exact tick at or after it, so output is never made
+more frequent and the exact integer-cadence gate is not weakened. Startup
+prints both requested and resolved cadences.
+
+### Per-species particle weight
+
+At `source_normalization_radius_m`, a side-effect-free production epoch is
+constructed without advancing the committed background generation. For every
+accepted curved triangular face,
+
+```text
+Ndot_s = sum_faces n_s [V_n - U_1 dot n]_+ A_face
+W_s    = Ndot_s * dt / particles_per_iteration .
+```
+
+`A_face` is the exact curved SSE measure, not its planar visualization area.
+Sub-fast, non-forward and below-support faces contribute zero and retain their
+reported excluded area; numerical-unknown area makes normalization fail.
+Electron, proton and alpha populations come from the upstream EOS. A compiled
+species absent from that composition, or a compiled zero-abundance population,
+fails rather than borrowing another species' rate. The final rank-zero receipt
+prints the radius/time, accepted/excluded areas, physical rate and weight for
+each compiled species. This installs AMPS numerical weights but does not by
+itself enable the reduced provider as a particle injector.
 
 ## Comments
 
@@ -149,18 +218,29 @@ output_directory = output
 #include "input/sep3d.in"
 ```
 
-`input/sep3d.in`:
+`input/sep3d.in` (the complete maintained version is under
+`srcSEP3D/examples/application-input/`):
 
 ```text
 #section begin: sep3d
+shock_model = reduced-shock-surface
+background_plasma_model = corona-swcme-ambient
+source_model = accepted-shock-incident-flux
 particles_per_iteration = 1000
+maximum_particle_speed_m_s = 2.0e8
+time_step_margin_factor = 0.30
+source_normalization_radius_m = 1.3914e10
+#include "reduced-shock-surface.in"
 #section end
 ```
 
 At successful startup rank zero prints the resolved root file, every expanded
-file, the value and its source line, and the final immutable configuration
-fingerprint. Rank zero performs file I/O and broadcasts the resolved integer so
-all MPI ranks commit the same configuration.
+file, selectors and numerical values, the particle-count source line, resolved
+asset directory, provider event identity, derived mesh/time/rate/weight
+receipt, and final immutable configuration fingerprint. Rank zero performs
+file I/O and broadcasts the canonical parsed values; every rank independently
+resolves the same checksummed provider and the derived numerical values must be
+bit-identical across ranks.
 
 ## Current limitations
 
@@ -169,5 +249,13 @@ all MPI ranks commit the same configuration.
   `--initialization-only` execution. Allocation-free `--dry-run` and restart
   remain on the maintained complete `--input` schema path because they execute
   before the required native parser boundary.
-- The shared srcSEP3D section currently changes only the injection count. It
-  does not replace the full schema-4 physics/configuration surface.
+- Only the selected reduced shock/ambient/source-normalization combination is
+  implemented in shared-section mode. Other model selector values fail closed.
+- Particle species remain compile-time AMPS choices. The file cannot add or
+  relabel species.
+- The reduced model supplies ambient volume plus a prescribed surface and
+  one-sided shock limits. It supplies no sheath/ejecta/downstream volume and
+  does not qualify BG3D-4.
+- The accepted incident flux is only a normalization convention. Particle
+  acceleration efficiency and actual reduced-front injection remain separate
+  future physics choices.

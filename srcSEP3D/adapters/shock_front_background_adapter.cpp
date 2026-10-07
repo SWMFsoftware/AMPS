@@ -42,19 +42,26 @@ Core::Status ShockFrontBackgroundAdapter::Create(
     std::shared_ptr<Background::BackgroundProvider>* output) {
   if(!output)return Invalid("shock-front adapter output pointer is null");
   const auto& options=configuration.options();
-  if(options.backgroundModelId!="sep-corona-swcme-shock-front-v1"||
-      options.backgroundModelAssetPath.empty())return Invalid(
-          "shock-front adapter requires its frozen model id and event asset");
+  if(options.backgroundModelId!="sep-corona-swcme-shock-front-v1")
+    return Invalid("shock-front adapter requires its frozen model id");
+  const bool inlineModel=!options.backgroundModelInlineConfiguration.empty();
   const std::filesystem::path eventPath(options.backgroundModelAssetPath);
-  const std::string eventBytes=Read(eventPath);
-  if(eventBytes.empty())return Invalid("cannot read shock-front event asset '"+
-      eventPath.string()+"'");
+  const std::filesystem::path assetDirectory=inlineModel?
+      std::filesystem::path(options.backgroundModelAssetDirectory):
+      eventPath.parent_path();
+  const std::string eventBytes=inlineModel?
+      options.backgroundModelInlineConfiguration:Read(eventPath);
+  if(eventBytes.empty())return Invalid(inlineModel?
+      "inline shock-front model configuration is empty":
+      "cannot read shock-front event asset '"+eventPath.string()+"'");
   // The application owns filesystem policy only.  Resolve transitive assets
-  // beside the event deck, then hand their bytes to the dependency-light
-  // shared resolver, which verifies checksums/physics and forms one identity.
+  // beside the event deck (or the shared-input subsection), then hand their
+  // bytes to the dependency-light shared resolver. Both paths invoke the same
+  // strict schema/checksum/physics gate and therefore produce the same event
+  // identity for identical physical assignments and magnetic bytes.
   const auto resolved=SEP::CoronaSwcme::ShockFront::ResolveConfiguration(
       eventBytes,[&](const std::string& relative) {
-        const auto path=eventPath.parent_path()/relative;
+        const auto path=assetDirectory/relative;
         const std::string bytes=Read(path);
         if(bytes.empty())return SEP::Core::Result<std::string>::Failure(
             SEP::Core::StatusCode::OutOfDomain,

@@ -1185,6 +1185,53 @@ int main() {
         std::abs(forbiddenSurvivorRenormalization-
           ensemble.value.acceptedProbabilityLower)>0.1&&!badLabel.ok()&&!badWeight.ok(),
         "RSH40","ensemble measure retains no-shock/unknown weight and bounds probability without survivor renormalization");
+
+    // RSH41: particle normalization uses the production curved-face measure,
+    // upstream EOS populations and accepted-shock classification. Recompute
+    // the sum independently from the returned production epoch and verify
+    // that this preflight query cannot advance the provider's committed state.
+    const auto fluxProvider=SF::Provider::Create(positiveEvent);
+    const auto flux=fluxProvider.ok()?
+        SF::EvaluateIncidentParticleFluxAtApexRadius(
+            *fluxProvider.value,positiveEvent->handoffApexRadiusM):
+        SEP::Core::Result<SF::IncidentParticleFlux>::Failure(
+            SEP::Core::StatusCode::NumericalFailure,
+            "positive flux provider unavailable");
+    const auto fluxEpoch=fluxProvider.ok()&&flux.ok()?
+        fluxProvider.value->EvaluateEpoch(flux.value.epochS,411):
+        SEP::Core::Result<std::shared_ptr<const SF::Epoch>>::Failure(
+            SEP::Core::StatusCode::NumericalFailure,
+            "normalization epoch unavailable");
+    long double independentProtons=0,independentElectrons=0;
+    if(fluxEpoch.ok())for(const auto& record:fluxEpoch.value->records)
+      if(record.status==SF::FrontStatus::SolvedFastShock) {
+        const long double volumeRate=
+            static_cast<long double>(record.inflowMPerS)*
+            record.geometry.areaM2;
+        independentProtons+=volumeRate*
+            record.upstream.plasma.protonNumberDensityM3;
+        independentElectrons+=volumeRate*
+            record.upstream.plasma.electronNumberDensityM3;
+      }
+    const auto outsideFlux=fluxProvider.ok()?
+        SF::EvaluateIncidentParticleFluxAtApexRadius(
+            *fluxProvider.value,2*positiveEvent->endpointRadiusM):
+        SEP::Core::Result<SF::IncidentParticleFlux>::Failure(
+            SEP::Core::StatusCode::NumericalFailure,
+            "positive flux provider unavailable");
+    Check(fluxProvider.ok()&&flux.ok()&&fluxEpoch.ok()&&
+        fluxProvider.value->Current()==nullptr&&!outsideFlux.ok()&&
+        Near(flux.value.apexRadiusM,positiveEvent->handoffApexRadiusM,
+            3e-14)&&flux.value.acceptedAreaM2>0&&
+        flux.value.numericalFailureAreaM2==0&&
+        Near(flux.value.protonRatePerS,
+            static_cast<double>(independentProtons),3e-15)&&
+        Near(flux.value.electronRatePerS,
+            static_cast<double>(independentElectrons),3e-15)&&
+        Near(flux.value.alphaRatePerS,
+            positiveEvent->ambient.composition.alphaToProtonNumberRatio*
+            flux.value.protonRatePerS,3e-15),"RSH41",
+        "incident source rate independently closes over accepted curved faces and radius preflight is side-effect free");
     if(first.ok()) {
       const double s=std::sin(lambda);const double a=smoke->initialApexRadiusM*s/(1+s);
       const double exact=2*3.14159265358979323846*a*a*(1+s);

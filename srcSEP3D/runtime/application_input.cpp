@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -185,6 +186,17 @@ bool ParseUnsigned(const std::string& text, std::uint64_t* value) {
   return true;
 }
 
+bool ParseFiniteDouble(const std::string& text, double* value) {
+  if (text.empty() || value == nullptr) return false;
+  errno = 0;
+  char* end = nullptr;
+  const double parsed = std::strtod(text.c_str(), &end);
+  if (errno == ERANGE || end == text.c_str() || *end != '\0' ||
+      !std::isfinite(parsed)) return false;
+  *value = parsed;
+  return true;
+}
+
 }  // namespace
 
 Core::Status ParseSep3dApplicationInput(
@@ -207,9 +219,19 @@ Core::Status ParseSep3dApplicationInput(
   candidate.expandedFiles = files;
   bool insideSection = false;
   bool insideSep3d = false;
+  bool insideReducedShock = false;
   bool sawSep3d = false;
   bool sawValue = false;
+  bool sawShockModel = false;
+  bool sawBackgroundModel = false;
+  bool sawSourceModel = false;
+  bool sawMaximumSpeed = false;
+  bool sawMargin = false;
+  bool sawNormalizationRadius = false;
+  bool sawReducedShock = false;
+  std::vector<std::string> reducedKeys;
   LogicalLine sectionStart;
+  LogicalLine subsectionStart;
 
   for (const LogicalLine& line : lines) {
     const std::string lower = Lower(line.text);
@@ -238,8 +260,9 @@ Core::Status ParseSep3dApplicationInput(
         return Invalid(line, "unrecognized text follows '#section end'");
       if (!insideSection)
         return Invalid(line, "#section end has no matching #section begin");
-      if (insideSep3d && !sawValue)
-        return Invalid(line, "sep3d section is missing required particles_per_iteration");
+      if (insideReducedShock)
+        return Invalid(line,
+            "reduced-shock-surface subsection is missing '#subsection end'");
       insideSection = false;
       insideSep3d = false;
       continue;
@@ -248,33 +271,157 @@ Core::Status ParseSep3dApplicationInput(
       return Invalid(line, "unrecognized #section directive");
     if (!insideSep3d) continue;
 
+    const std::string subsectionBegin = "#subsection begin:";
+    if (lower.rfind(subsectionBegin, 0) == 0) {
+      if (insideReducedShock)
+        return Invalid(line, "nested #subsection begin is not allowed");
+      const std::string name = Lower(Trim(
+          line.text.substr(subsectionBegin.size())));
+      if (name != "reduced-shock-surface")
+        return Invalid(line, "unsupported srcSEP3D subsection '" + name + "'");
+      if (sawReducedShock)
+        return Invalid(line,
+            "duplicate reduced-shock-surface subsection is not allowed");
+      insideReducedShock = true;
+      sawReducedShock = true;
+      subsectionStart = line;
+      candidate.reducedShockAssetDirectory =
+          fs::path(line.file).parent_path().string();
+      continue;
+    }
+    if (lower.rfind("#subsection begin", 0) == 0)
+      return Invalid(line,
+          "expected '#subsection begin: reduced-shock-surface'");
+    if (lower.rfind("#subsection end", 0) == 0) {
+      if (lower != "#subsection end")
+        return Invalid(line,
+            "unrecognized text follows '#subsection end'");
+      if (!insideReducedShock)
+        return Invalid(line,
+            "#subsection end has no matching #subsection begin");
+      if (candidate.reducedShockConfiguration.empty())
+        return Invalid(line,
+            "reduced-shock-surface subsection contains no model parameters");
+      insideReducedShock = false;
+      continue;
+    }
+    if (lower.rfind("#subsection", 0) == 0)
+      return Invalid(line, "unrecognized #subsection directive");
+
     const std::size_t equal = line.text.find('=');
     if (equal == std::string::npos)
-      return Invalid(line, "expected 'particles_per_iteration = INTEGER'");
+      return Invalid(line, "expected 'NAME = VALUE'");
     const std::string key = Lower(Trim(line.text.substr(0, equal)));
     const std::string value = Trim(line.text.substr(equal + 1));
-    if (key != "particles_per_iteration")
+    if (key.empty() || value.empty())
+      return Invalid(line, "input assignment is missing its name or value");
+    if (insideReducedShock) {
+      if (std::find(reducedKeys.begin(), reducedKeys.end(), key) !=
+          reducedKeys.end())
+        return Invalid(line, "reduced shock parameter '" + key +
+            "' is specified more than once");
+      reducedKeys.push_back(key);
+      candidate.reducedShockConfiguration += key + "=" + value + "\n";
+      continue;
+    }
+
+    auto duplicate = [&](bool seen) {
+      return seen ? Invalid(line, key + " is specified more than once")
+                  : Core::Status::OK();
+    };
+    if (key == "particles_per_iteration") {
+      Core::Status unique = duplicate(sawValue);
+      if (!unique.ok()) return unique;
+      if (!ParseUnsigned(value, &candidate.particlesPerIteration) ||
+          candidate.particlesPerIteration == 0)
+        return Invalid(line,
+            "particles_per_iteration must be a positive unsigned integer");
+      sawValue = true;
+      candidate.valueFile = line.file;
+      candidate.valueLine = line.line;
+    } else if (key == "shock_model") {
+      Core::Status unique = duplicate(sawShockModel);
+      if (!unique.ok()) return unique;
+      candidate.shockModel = Lower(value);
+      if (candidate.shockModel != "reduced-shock-surface")
+        return Invalid(line,
+            "unsupported shock_model '" + candidate.shockModel + "'");
+      sawShockModel = true;
+    } else if (key == "background_plasma_model") {
+      Core::Status unique = duplicate(sawBackgroundModel);
+      if (!unique.ok()) return unique;
+      candidate.backgroundPlasmaModel = Lower(value);
+      if (candidate.backgroundPlasmaModel != "corona-swcme-ambient")
+        return Invalid(line, "unsupported background_plasma_model '" +
+            candidate.backgroundPlasmaModel + "'");
+      sawBackgroundModel = true;
+    } else if (key == "source_model") {
+      Core::Status unique = duplicate(sawSourceModel);
+      if (!unique.ok()) return unique;
+      candidate.sourceModel = Lower(value);
+      if (candidate.sourceModel != "accepted-shock-incident-flux")
+        return Invalid(line,
+            "unsupported source_model '" + candidate.sourceModel + "'");
+      sawSourceModel = true;
+    } else if (key == "maximum_particle_speed_m_s") {
+      Core::Status unique = duplicate(sawMaximumSpeed);
+      if (!unique.ok()) return unique;
+      if (!ParseFiniteDouble(value, &candidate.maximumParticleSpeedMPerS) ||
+          candidate.maximumParticleSpeedMPerS <= 0.0 ||
+          candidate.maximumParticleSpeedMPerS > Core::Const::c)
+        return Invalid(line,
+            "maximum_particle_speed_m_s must be in (0,c]");
+      sawMaximumSpeed = true;
+    } else if (key == "time_step_margin_factor") {
+      Core::Status unique = duplicate(sawMargin);
+      if (!unique.ok()) return unique;
+      if (!ParseFiniteDouble(value, &candidate.timeStepMarginFactor) ||
+          candidate.timeStepMarginFactor <= 0.0 ||
+          candidate.timeStepMarginFactor > 1.0)
+        return Invalid(line,
+            "time_step_margin_factor must be in (0,1]");
+      sawMargin = true;
+    } else if (key == "source_normalization_radius_m") {
+      Core::Status unique = duplicate(sawNormalizationRadius);
+      if (!unique.ok()) return unique;
+      if (!ParseFiniteDouble(value,
+              &candidate.sourceNormalizationRadiusM) ||
+          candidate.sourceNormalizationRadiusM <= 0.0)
+        return Invalid(line,
+            "source_normalization_radius_m must be finite and positive");
+      sawNormalizationRadius = true;
+    } else {
       return Invalid(line, "unrecognized srcSEP3D setting '" + key + "'");
-    if (sawValue)
-      return Invalid(line, "particles_per_iteration is specified more than once");
-    if (value.empty())
-      return Invalid(line, "particles_per_iteration is missing its integer value");
-    if (!ParseUnsigned(value, &candidate.particlesPerIteration))
-      return Invalid(line, "particles_per_iteration must be an unsigned integer");
-    sawValue = true;
-    candidate.valueFile = line.file;
-    candidate.valueLine = line.line;
+    }
   }
 
+  if (insideReducedShock)
+    return Invalid(subsectionStart,
+        "subsection reaches end of expanded input without '#subsection end'");
   if (insideSection)
     return Invalid(sectionStart, "section reaches end of expanded input without '#section end'");
   if (!sawSep3d)
     return InvalidFile(candidate.rootFile,
         "missing required '#section begin: sep3d' section");
-  if (!sawValue)
-    return InvalidFile(candidate.rootFile,
-        "sep3d section is missing required particles_per_iteration");
-
+  std::vector<std::string> missing;
+  if (!sawValue) missing.push_back("particles_per_iteration");
+  if (!sawShockModel) missing.push_back("shock_model");
+  if (!sawBackgroundModel) missing.push_back("background_plasma_model");
+  if (!sawSourceModel) missing.push_back("source_model");
+  if (!sawMaximumSpeed) missing.push_back("maximum_particle_speed_m_s");
+  if (!sawMargin) missing.push_back("time_step_margin_factor");
+  if (!sawNormalizationRadius)
+    missing.push_back("source_normalization_radius_m");
+  if (!sawReducedShock) missing.push_back("reduced-shock-surface subsection");
+  if (!missing.empty()) {
+    std::ostringstream reason;
+    reason << "sep3d section is missing required ";
+    for (std::size_t index=0;index<missing.size();++index) {
+      if (index!=0) reason << ", ";
+      reason << missing[index];
+    }
+    return InvalidFile(candidate.rootFile,reason.str());
+  }
   *result = std::move(candidate);
   return Core::Status::OK();
 }
@@ -289,6 +436,18 @@ std::string Sep3dApplicationInputSummary(
     summary << "  expanded_file=" << file << '\n';
   summary << "  particles_per_iteration=" << input.particlesPerIteration
           << " (per compiled species)\n"
+          << "  shock_model=" << input.shockModel << '\n'
+          << "  background_plasma_model=" << input.backgroundPlasmaModel
+          << '\n'
+          << "  source_model=" << input.sourceModel << '\n'
+          << "  maximum_particle_speed_m_s="
+          << input.maximumParticleSpeedMPerS << '\n'
+          << "  time_step_margin_factor=" << input.timeStepMarginFactor
+          << '\n'
+          << "  source_normalization_radius_m="
+          << input.sourceNormalizationRadiusM << '\n'
+          << "  reduced_shock_asset_directory="
+          << input.reducedShockAssetDirectory << '\n'
           << "  value_source=" << input.valueFile << ':' << input.valueLine
           << '\n';
   return summary.str();

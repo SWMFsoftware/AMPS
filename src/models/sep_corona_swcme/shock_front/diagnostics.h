@@ -47,6 +47,31 @@ Core::Result<std::vector<ObserverPassage>> FindObserverPassages(
     double endTimeS,double scanStepS,double timeToleranceS,
     double distanceToleranceM);
 
+// Gross incident particle flux through the portion of the prescribed front
+// that is an accepted fast shock.  It is a normalization diagnostic, not a
+// prediction of injection/acceleration efficiency.  Number rates use
+//   Ndot_s = integral n_s max(V_n-U_1.n,0) dA [s^-1]
+// with the production curved face areas and upstream EOS composition.  Area
+// that is sub-fast, below support, or numerically unresolved remains explicit
+// and is never renormalized into the accepted rate.
+struct IncidentParticleFlux {
+  double epochS = 0.0;
+  double apexRadiusM = 0.0;
+  double acceptedAreaM2 = 0.0;
+  double excludedPhysicalAreaM2 = 0.0;
+  double numericalFailureAreaM2 = 0.0;
+  double protonRatePerS = 0.0;
+  double electronRatePerS = 0.0;
+  double alphaRatePerS = 0.0;
+};
+
+// Locate the unique time at which the monotonically outward apex reaches the
+// requested heliocentric radius, then evaluate the actual production surface
+// without committing a provider generation.  No default radius is supplied:
+// callers must make the normalization location part of their input identity.
+Core::Result<IncidentParticleFlux> EvaluateIncidentParticleFluxAtApexRadius(
+    const Provider& provider,double apexRadiusM);
+
 struct ReducedRestartState {
   std::string eventIdentity;
   double epochS = 0.0;

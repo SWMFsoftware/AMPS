@@ -71,6 +71,14 @@ enum class SourceSpectrumModel {
   LocalCompressionDsa,
   FixedPhaseSpacePowerLaw
 };
+// This selector governs only the physical rate used to establish the base
+// Monte-Carlo weight. It is distinct from the momentum-spectrum model above.
+// AcceptedShockIncidentFlux is the gross upstream population swept through
+// accepted fast-shock faces; it contains no hidden acceleration efficiency.
+enum class SourceRateNormalizationModel {
+  ConfiguredConstant,
+  AcceptedShockIncidentFlux
+};
 // The three production movers correspond to three different stochastic
 // equations.  Focused3D is retained as a source-level alias for the released
 // continuous-D_mumu mover; text input uses the unambiguous canonical name
@@ -166,6 +174,7 @@ const char* Name(ParkerSpiralStartMode value);
 const char* Name(SolarWindThermodynamicClosure value);
 const char* Name(ShockAuthority value);
 const char* Name(SourceSpectrumModel value);
+const char* Name(SourceRateNormalizationModel value);
 const char* Name(TransportModel value);
 const char* Name(DomainPreset value);
 const char* Name(OuterRadiusMode value);
@@ -293,6 +302,34 @@ struct SpeciesOptions {
   double macroparticleWeight = 1.0;
 };
 
+// Derived normalization for one post-compile AMPS species. The input file
+// does not restate this identity: index/symbol/mass/charge come from the
+// generated SpeciesList, while rate and weight are calculated after the mesh
+// and reduced front are available. Retaining the result in the immutable run
+// record makes native output/restart provenance agree with the values actually
+// installed in AMPS' global and block-local arrays.
+struct SpeciesParticleNormalization {
+  int ampsIndex = -1;
+  std::string symbol;
+  double physicalSourceRatePerS = 0.0;
+  double macroparticleWeight = 0.0;
+};
+
+struct ParticleNumericsOptions {
+  bool deriveFromMeshAndShock = false;
+  SourceRateNormalizationModel sourceRateModel =
+      SourceRateNormalizationModel::ConfiguredConstant;
+  double maximumParticleSpeedMPerS = 0.0;
+  double timeStepMarginFactor = 0.0;
+  // No physical default exists for this radius. It remains the zero inactive
+  // sentinel unless the selected derived normalization requires it.
+  double sourceNormalizationRadiusM = 0.0;
+  // Zero means the AMPS mesh has not yet been allocated. The final immutable
+  // configuration stores the MPI-reduced minimum characteristic cell size so
+  // the installed dt can be rechecked from its defining equation.
+  double resolvedMinimumCellSizeM = 0.0;
+};
+
 // AMPS-facing code copies its generated table into these neutral records.  The
 // runtime layer can then validate the full compiled table without including
 // pic.h or depending on species macros such as _H_PLUS_SPEC_.  ampsIndex is
@@ -372,6 +409,11 @@ struct RunConfiguration3DOptions {
   // before immutable construction.  It is active only for the registered
   // sep-corona-swcme shock-front runtime model and enters the physics identity.
   std::string backgroundModelAssetPath;
+  // Shared-section input may carry the complete reduced-model assignment
+  // layer inline. Exactly one of this text or backgroundModelAssetPath is
+  // active. Relative PFSS/magnetic assets resolve from the recorded directory.
+  std::string backgroundModelInlineConfiguration;
+  std::string backgroundModelAssetDirectory;
   TurbulenceAuthority turbulence = TurbulenceAuthority::Prescribed;
   PrescribedTurbulenceModel prescribedTurbulenceModel =
       PrescribedTurbulenceModel::Kolmogorov;
@@ -484,6 +526,8 @@ struct RunConfiguration3DOptions {
   ShockOptions shockModel;
   SourceOptions source;
   SpeciesOptions species;
+  ParticleNumericsOptions particleNumerics;
+  std::vector<SpeciesParticleNormalization> speciesParticleNormalizations;
   std::vector<SwcmeAssignment> swcmeAssignments;
   // Filled only by the standalone parser after canonical resolution.  These
   // strings enter the immutable physics identity; textual spellings alone do

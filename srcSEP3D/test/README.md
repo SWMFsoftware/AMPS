@@ -45,6 +45,24 @@ or misspelled selection from exiting successfully.
 
 ### Reduced shock-front native gates
 
+The shared-input parser and derived-numerics unit gates are:
+
+```bash
+make -C srcSEP3D -j16 test/stage1
+srcSEP3D/test/stage1 --test CFG3D13 --test CFG3D14 --test CFG3D15
+make -C src/models/sep_corona_swcme -j16 shock-front-test
+```
+
+`CFG3D13` covers the global section/include/comment/continuation transaction
+and required/no-default inputs. `CFG3D14` covers the exact mesh-CFL equation,
+upward observer-cadence alignment, species-specific weight equation and
+unknown-species failure. `CFG3D15` parses the maintained example, resolves the
+real checksummed magnetic asset, constructs the actual adapter/provider and
+derives a positive non-mutating accepted-shock rate. Shared `RSH41`
+independently closes that rate over production curved faces. These portable
+tests do not replace the one-/four-rank native initialization commands in
+`examples/application-input/README.md`.
+
 Run the entire selected reduced-profile campaign through one orchestrator:
 
 ```bash
@@ -53,7 +71,7 @@ python3 srcSEP3D/test/run_reduced_shock_front.py
 ```
 
 The default invocation uses the existing configured `./amps` and executes the
-shared 54-assertion RSH harness, `ARCHCSWC01`, `RSHAPP01--03`, one- and
+shared 57-assertion RSH harness, `ARCHCSWC01`, `RSHAPP01--03`, one- and
 four-rank `RSH24--RSH27` smoke cases, an actual native uninterrupted/checkpoint/
 resume matrix, and the separate four-rank `RSH24--RSH28` 1-AU campaign.  The
 restart matrix compares four-rank uninterrupted with four-to-four resume, then

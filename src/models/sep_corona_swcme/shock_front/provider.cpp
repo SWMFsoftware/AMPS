@@ -478,8 +478,8 @@ Core::Status Provider::RequireCapability(VolumeCapability capability) const {
       "reduced shock-front mode has no physical downstream/sheath/ejecta volume");
 }
 
-Core::Result<std::shared_ptr<const Epoch>> Provider::Prepare(
-    double epoch,std::uint64_t generation) {
+Core::Result<std::shared_ptr<const Epoch>> Provider::EvaluateEpoch(
+    double epoch,std::uint64_t generation) const {
   using Return=Core::Result<std::shared_ptr<const Epoch>>;
   if(generation==0)return Return::Failure(Core::StatusCode::InvalidState,
       "shock-front generation zero is reserved");
@@ -692,8 +692,19 @@ Core::Result<std::shared_ptr<const Epoch>> Provider::Prepare(
         candidate->geometricEndpointReached&&!candidate->apexShockAccepted)))
     return Return::Failure(Core::StatusCode::InvalidState,
         "candidate violates declared numerical/shock coverage; committed epoch retained");
-  current_=candidate;
   return Return::Success(std::move(candidate));
+}
+
+Core::Result<std::shared_ptr<const Epoch>> Provider::Prepare(
+    double epoch,std::uint64_t generation) {
+  // Candidate construction is side-effect free.  Commit only after geometry,
+  // ambient sampling, local RH classification, curved-area closure and the
+  // requested endpoint-coverage policy have all succeeded.  A rejected epoch
+  // consequently cannot disturb the last state visible to native queries.
+  const auto candidate=EvaluateEpoch(epoch,generation);
+  if(!candidate.ok())return candidate;
+  current_=candidate.value;
+  return candidate;
 }
 
 } } } // namespace SEP::CoronaSwcme::ShockFront

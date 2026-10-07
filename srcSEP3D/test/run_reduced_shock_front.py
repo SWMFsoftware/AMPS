@@ -105,7 +105,7 @@ def parser() -> argparse.ArgumentParser:
 
 
 def list_tests() -> None:
-    print("shared-rsh: RSH00--RSH24, RSH28--RSH29, RSH31--RSH32, RSH36--RSH40 (54 assertions)")
+    print("shared-rsh: RSH00--RSH24, RSH28--RSH29, RSH31--RSH32, RSH36--RSH41 (57 assertions)")
     print("architecture: ARCHCSWC01")
     print("portable-srcsep3d: RSHAPP01 RSHAPP02 RSHAPP03 RSHAPP04")
     print("native-smoke-1: " + " ".join(SMOKE_IDS))
