@@ -1,0 +1,6 @@
+#section begin: sep3d
+! Exact computational particles per active iteration and compiled species.
+! The continued spelling is intentional: it demonstrates logical-line joining.
+particles_per_iteration = \
+  1000
+#section end

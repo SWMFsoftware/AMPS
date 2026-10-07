@@ -125,6 +125,14 @@ class Runtime final {
 
   Core::Status Configure(
       const std::shared_ptr<const RunConfiguration3D>& configuration);
+  // Replace the provisional standalone configuration after an application
+  // section has been parsed, but before AMPS freezes or binds mesh storage.
+  // The byte layout must remain identical: Init_BeforeParser may already have
+  // registered callbacks whose requested lengths came from the provisional
+  // object.  This narrow transaction avoids a second mutable input authority
+  // while preserving the required parser ordering.
+  Core::Status ReplaceConfigurationBeforeMesh(
+      const std::shared_ptr<const RunConfiguration3D>& configuration);
   Core::Status BindMesh(const MeshBinding& binding);
   Core::Status BeginBackgroundAcquisition(AdapterKind adapter);
   Core::Status PublishSnapshot(const SnapshotDescriptor& candidate);

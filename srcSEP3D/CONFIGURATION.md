@@ -43,6 +43,16 @@ files depends on AMPS or MPI.
 
 ## C01: input file and standalone CLI
 
+### Shared container mode
+
+`./amps -input FILE` selects the shared section-based container documented in
+[`../src/INPUT_FILE.md`](../src/INPUT_FILE.md); omitting `-input` selects
+`./amps.in`. Its current srcSEP3D section sets only
+`particles_per_iteration`. Parsing occurs after `Init_BeforeParser`, and the
+resolved count is committed to the immutable configuration before mesh
+binding. The one-dash spelling is distinct from the complete schema interface
+below.
+
 The standalone executable accepts one versioned INI-style file:
 
 ```bash
@@ -61,8 +71,9 @@ construction and complete application initialization, writes all three declared
 Tecplot products, synchronizes all MPI ranks, and exits before the first
 particle step. `--initialization-output-dir` requires that mode and changes
 only the parent directory of the three initialization filenames.
-Unknown options, conflicting test selectors, or a missing `--input` are usage
-errors and return code 2 before AMPS initialization.
+Unknown options and conflicting test selectors are usage errors. A missing
+explicit input now selects `./amps.in` shared-section mode; the complete schema
+mode still requires the explicit `--input FILE` spelling.
 
 The public test interface remains `test/run_tests.py`; it provides `--list`,
 `--test`, `--group`, `--routine`, `--all`, and `--suite`. The production

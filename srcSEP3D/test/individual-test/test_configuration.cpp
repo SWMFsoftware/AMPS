@@ -12,8 +12,11 @@
 #include "bg_parker.h"
 #include "mesh_model.h"
 #include "configuration_io.h"
+#include "application_input.h"
+#include "runtime.h"
 
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -1230,6 +1233,127 @@ Result RunCFG3D12() {
   return Pass("both corner modes parse/fingerprint, endpoint extent normalizes, z is centered in x-y mode, and conflicting controls fail closed");
 }
 
+Result RunCFG3D13() {
+  namespace fs = std::filesystem;
+  const fs::path directory = "test_output/cfg3d13-application-input";
+  std::error_code cleanupError;
+  fs::remove_all(directory, cleanupError);
+  cleanupError.clear();
+  fs::create_directories(directory / "parts", cleanupError);
+  if (cleanupError) return Fail("could not create application-input fixture directory");
+
+  const auto write = [](const fs::path& path, const std::string& text) {
+    std::ofstream stream(path);
+    stream << text;
+    stream.close();
+    return static_cast<bool>(stream);
+  };
+  if (!write(directory / "amps.in",
+             "! a different application is intentionally ignored\n"
+             "#section begin: core\n"
+             "unrelated = value\n"
+             "#section end\n"
+             "#include \"parts/sep3d.in\"\n") ||
+      !write(directory / "parts/sep3d.in",
+             "#section begin: sep3d\n"
+             "particles_per_iteration = \\\n"
+             "  37 ! joined to the prior physical line\n"
+             "#section end\n")) {
+    return Fail("could not write application-input fixtures");
+  }
+
+  RM::Sep3dApplicationInput parsed;
+  SEP3D::Core::Status status = RM::ParseSep3dApplicationInput(
+      (directory / "amps.in").string(), &parsed);
+  if (!status.ok() || parsed.particlesPerIteration != 37 ||
+      parsed.expandedFiles.size() != 2 || parsed.valueLine != 2 ||
+      RM::Sep3dApplicationInputSummary(parsed).find(
+          "particles_per_iteration=37") == std::string::npos) {
+    return Fail("recursive include/comment/continuation input did not resolve: " +
+                status.message);
+  }
+
+  // The new CLI spelling and no-argument default select shared-section mode;
+  // the maintained double-dash spelling remains the complete schema deck.
+  RM::StandaloneCommandLine cli;
+  const char* defaultArgv[] = {"amps"};
+  if (!RM::ParseStandaloneCommandLine(
+          1, const_cast<char**>(defaultArgv), &cli).ok() ||
+      cli.inputPath != "amps.in" || !cli.sectionInput) {
+    return Fail("no-argument CLI did not select ./amps.in section mode");
+  }
+  const char* sectionArgv[] = {"amps", "-input", "global.in"};
+  if (!RM::ParseStandaloneCommandLine(
+          3, const_cast<char**>(sectionArgv), &cli).ok() ||
+      cli.inputPath != "global.in" || !cli.sectionInput) {
+    return Fail("-input did not select shared-section mode");
+  }
+  const char* legacyArgv[] = {"amps", "--input", "schema.in"};
+  if (!RM::ParseStandaloneCommandLine(
+          3, const_cast<char**>(legacyArgv), &cli).ok() || cli.sectionInput) {
+    return Fail("maintained --input schema mode regressed");
+  }
+
+  // Commit the parsed value through the same immutable pre-mesh replacement
+  // used by production.  A changed fingerprint proves the setting is not an
+  // unfingerprinted mutable global, and layout equality proves parser timing
+  // cannot invalidate already registered AMPS byte requests.
+  RM::RunConfiguration3DOptions options;
+  options.meshMemoryBudgetBytes = 1000000000000000ULL;
+  std::shared_ptr<const RM::RunConfiguration3D> provisional, resolved;
+  if (!RM::RunConfiguration3D::Create(options, &provisional).ok())
+    return Fail("could not create provisional configuration");
+  options.source.samplesPerStep = parsed.particlesPerIteration;
+  if (!RM::RunConfiguration3D::Create(options, &resolved).ok())
+    return Fail("could not create parsed immutable configuration");
+  RM::Runtime runtime;
+  if (!runtime.Configure(provisional).ok() ||
+      !runtime.ReplaceConfigurationBeforeMesh(resolved).ok() ||
+      runtime.configuration()->options().source.samplesPerStep != 37 ||
+      runtime.configuration()->physics_fingerprint() ==
+          provisional->physics_fingerprint() ||
+      runtime.configuration()->storage_layout() !=
+          provisional->storage_layout()) {
+    return Fail("pre-mesh parser transaction did not replace one immutable authority");
+  }
+
+  if (!write(directory / "bad.in",
+             "#section begin: sep3d\n"
+             "unknown_setting = 4\n"
+             "#section end\n"))
+    return Fail("could not write malformed fixture");
+  status = RM::ParseSep3dApplicationInput(
+      (directory / "bad.in").string(), &parsed);
+  if (status.ok() || status.message.find("bad.in:2") == std::string::npos ||
+      status.message.find("unknown_setting = 4") == std::string::npos ||
+      status.message.find("unrecognized") == std::string::npos) {
+    return Fail("malformed setting did not report source line, text, and cause");
+  }
+
+  if (!write(directory / "cycle-a.in", "#include cycle-b.in\n") ||
+      !write(directory / "cycle-b.in", "#include cycle-a.in\n"))
+    return Fail("could not write recursive-include fixture");
+  status = RM::ParseSep3dApplicationInput(
+      (directory / "cycle-a.in").string(), &parsed);
+  if (status.ok() || status.message.find("cycle") == std::string::npos ||
+      status.message.find(":1:") == std::string::npos) {
+    return Fail("recursive include did not fail with directive provenance");
+  }
+
+  if (!write(directory / "unterminated.in",
+             "#section begin: sep3d\nparticles_per_iteration = 0\n"))
+    return Fail("could not write unterminated-section fixture");
+  status = RM::ParseSep3dApplicationInput(
+      (directory / "unterminated.in").string(), &parsed);
+  if (status.ok() || status.message.find("without '#section end'") ==
+                         std::string::npos) {
+    return Fail("unterminated section was not rejected");
+  }
+
+  fs::remove_all(directory, cleanupError);
+  return Pass("shared sep3d section resolves includes, comments, continuations, CLI defaults, immutable commit, and provenance-rich failures");
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
@@ -1264,5 +1388,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
       make("CFG3D10", "CME/Parker start linkage", "Canonical launch-apex linkage and fail-closed geometry checks.", RunCFG3D10),
       make("CFG3D11", "Transport/control schema", "Active corridor, population limits, mover coefficients, and dry-run output.", RunCFG3D11),
       make("CFG3D12", "Corner/sphere geometry", "Endpoint extent, input controls, identity and corner validation.", RunCFG3D12),
+      make("CFG3D13", "Shared application input", "Global section/include grammar, early immutable commit, and diagnostics.", RunCFG3D13),
   };
 }

@@ -4,11 +4,11 @@
 // Standard standalone AMPS application driver through Phases M/B/T/P/A/O.
 //
 // This executable is itself the standalone host.  It owns the one permitted
-// text boundary: argv selects a versioned input file, configuration_io parses
-// and normalizes it, and the AMPS-independent immutable factory validates the
-// complete request before any AMPS mesh or MPI lifecycle operation begins.
-// Coupled SWMF builds bypass this file parser and construct the same typed
-// RunConfiguration3DOptions record directly.
+// text boundary.  The maintained --input mode parses a complete versioned
+// schema before MPI, while the shared -input mode records only a path here and
+// parses its srcSEP3D section after Init_BeforeParser.  In both cases the
+// result is one immutable RunConfiguration3D before mesh binding. Coupled SWMF
+// builds bypass both file parsers and construct the same typed options record.
 // ============================================================================
 
 #include "SEP3D.h"
@@ -88,6 +88,16 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
+  if (request.commandLine.sectionInput) {
+    status = SEP3D::InstallApplicationInputFile(
+        request.commandLine.inputPath);
+    if (!status.ok()) {
+      std::cerr << "srcSEP3D application-input installation failed: "
+                << status.message << '\n';
+      return EXIT_FAILURE;
+    }
+  }
+
   if (request.configuration->options().inputSchemaVersion >= 3 &&
       request.configuration->options().shock ==
           SEP3D::RuntimeModel::ShockAuthority::Swcme) {
@@ -132,6 +142,11 @@ int main(int argc, char** argv) {
   }
 
   amps_init_mesh();
+  // Shared-section mode replaces the provisional immutable configuration
+  // inside amps_init_mesh after parsing.  Keep this driver's receipt pointer
+  // synchronized so output, stopping conditions, and provenance all observe
+  // the same final authority used by the Runtime and particle source.
+  request.configuration = SEP3D::ApplicationRuntime().configuration();
   amps_init();
 
   if (nativeTestMode) {

@@ -5,8 +5,9 @@
 //
 // The production boundary now owns the typed Runtime introduced in R2.  Both
 // standalone and coupled hosts install a validated immutable configuration and
-// use the same Runtime transitions; this file does not parse process arguments
-// or parameter files.  Phase M builds the Cartesian AMR mesh and freezes AMPS
+// use the same Runtime transitions. This file never parses process arguments;
+// in shared-file mode it does own the collective srcSEP3D section parse at the
+// required post-Init_BeforeParser boundary. Phase M builds the Cartesian AMR mesh and freezes AMPS
 // storage offsets.  Phase B publishes a complete immutable ambient snapshot,
 // and Phase T validates/fills the selected turbulence input.  Particle motion
 // is dispatched through the single Phase-A AMPS adapter. Phase-O coordinators
@@ -30,6 +31,7 @@
 #include "output/shock_history.h"
 #include "runtime/runtime_adapters.h"
 #include "runtime/background_factory.h"
+#include "runtime/application_input.h"
 #include "turbulence/turbulence_models.h"
 #include "validation/coronal_cme_application_test.h"
 #include "diagnostics.h"
@@ -68,6 +70,16 @@ namespace {
 namespace fs = std::filesystem;
 constexpr double kMagneticPermeabilityVacuum =
     4.0e-7 * SEP3D::Core::Const::kPi;
+
+// Empty for coupled hosts and maintained schema-4 ``--input`` runs.  In the
+// new shared-file mode main.cpp installs exactly one path before native
+// initialization; the file is deliberately not opened until both AMPS and
+// srcSEP3D have completed their Init_BeforeParser hooks.
+std::string gApplicationInputPath;
+
+// Defined below after the process-owned state declarations.  The early input
+// transaction uses the same fail-closed accessor as all later native paths.
+const SEP3D::RuntimeModel::RunConfiguration3D& Configuration();
 
 [[noreturn]] void StopWithStatus(const char* operation,
                                  const SEP3D::Core::Status& status) {
@@ -156,6 +168,63 @@ bool FileHasOnlyFiniteNumericTokens(const std::string& path) {
   const bool readSucceeded = std::ferror(input) == 0;
   std::fclose(input);
   return finite && readSucceeded;
+}
+
+// Parse the shared-file srcSEP3D section on rank zero and distribute the one
+// resolved setting, rather than allowing ranks to see different filesystem
+// contents during startup.  The provisional configuration exists only so
+// Init_BeforeParser can register its storage callbacks.  The replacement is
+// accepted only when its byte layout is identical, and it commits before the
+// first AMPS buffer offset is frozen or provider snapshot is constructed.
+void ParseInstalledApplicationInput() {
+  if (gApplicationInputPath.empty()) return;
+
+  SEP3D::RuntimeModel::Sep3dApplicationInput parsed;
+  SEP3D::Core::Status parseStatus = SEP3D::Core::Status::OK();
+  if (PIC::ThisThread == 0) {
+    parseStatus = SEP3D::RuntimeModel::ParseSep3dApplicationInput(
+        gApplicationInputPath, &parsed);
+  }
+
+  int parseOk = parseStatus.ok() ? 1 : 0;
+  MPI_Bcast(&parseOk, 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
+  if (parseOk == 0) {
+    std::string message = PIC::ThisThread == 0
+        ? parseStatus.message : std::string();
+    unsigned long long length =
+        static_cast<unsigned long long>(message.size());
+    MPI_Bcast(&length, 1, MPI_UNSIGNED_LONG_LONG, 0,
+              MPI_GLOBAL_COMMUNICATOR);
+    if (PIC::ThisThread != 0) message.resize(static_cast<std::size_t>(length));
+    if (length != 0) {
+      MPI_Bcast(message.data(), static_cast<int>(length), MPI_CHAR, 0,
+                MPI_GLOBAL_COMMUNICATOR);
+    }
+    StopWithStatus("application input parser", SEP3D::Core::Status(
+        SEP3D::Core::StatusCode::InvalidInput, message));
+  }
+
+  unsigned long long particles = PIC::ThisThread == 0
+      ? static_cast<unsigned long long>(parsed.particlesPerIteration) : 0ULL;
+  MPI_Bcast(&particles, 1, MPI_UNSIGNED_LONG_LONG, 0,
+            MPI_GLOBAL_COMMUNICATOR);
+
+  SEP3D::RuntimeModel::RunConfiguration3DOptions options =
+      Configuration().options();
+  options.source.samplesPerStep = static_cast<std::uint64_t>(particles);
+  std::shared_ptr<const SEP3D::RuntimeModel::RunConfiguration3D> resolved;
+  SEP3D::Core::Status status =
+      SEP3D::RuntimeModel::RunConfiguration3D::Create(options, &resolved);
+  if (status.ok())
+    status = SEP3D::ApplicationRuntime().ReplaceConfigurationBeforeMesh(
+        resolved);
+  if (!status.ok()) StopWithStatus("application input commit", status);
+
+  if (PIC::ThisThread == 0) {
+    std::cout << SEP3D::RuntimeModel::Sep3dApplicationInputSummary(parsed)
+              << "  configuration_fingerprint="
+              << resolved->physics_fingerprint() << '\n';
+  }
 }
 
 std::uint64_t Fnv1a64(const std::string& text) {
@@ -2710,6 +2779,23 @@ SEP3D::Core::Status SEP3D::ConfigureApplication(
   return ApplicationRuntime().Configure(configuration);
 }
 
+SEP3D::Core::Status SEP3D::InstallApplicationInputFile(
+    const std::string& path) {
+  if (path.empty())
+    return Core::Status(Core::StatusCode::InvalidInput,
+                        "application input path is empty");
+  if (ApplicationRuntime().state() !=
+      RuntimeModel::LifecycleState::Configured) {
+    return Core::Status(Core::StatusCode::InvalidTransition,
+                        "install application input after provisional configuration and before mesh setup");
+  }
+  if (!gApplicationInputPath.empty())
+    return Core::Status(Core::StatusCode::InvalidTransition,
+                        "application input path was already installed");
+  gApplicationInputPath = path;
+  return Core::Status::OK();
+}
+
 SEP3D::Core::Status SEP3D::InstallBackgroundProvider(
     const std::shared_ptr<Background::BackgroundProvider>& provider) {
   using namespace SEP3D;
@@ -2855,7 +2941,9 @@ void SEP3D::Init_BeforeParser() {
   // Register byte requests after PIC has created its request registries but
   // before initCellSamplingDataBuffer freezes the center-node layout.  The
   // callbacks return the exact sizes already fingerprinted by RunConfiguration.
-  // Coupled entry points still do not inspect argc/argv or AMPS_PARAM.in.
+  // The hook itself does not inspect argc/argv or open a file.  A standalone
+  // shared-file run invokes ParseInstalledApplicationInput only after this
+  // hook has completed; coupled entry points install typed options directly.
   (void)Configuration();
   const Core::Status particleStorage = AMPS::Movers::RequestParticleStorage();
   if (!particleStorage.ok())
@@ -3378,12 +3466,18 @@ void amps_init_mesh() {
   // controller runs explicitly at a joined boundary after the transport
   // ledger closes.
   PIC::ParticleSplitting::SetMode(PIC::ParticleSplitting::_disactivated);
-  // Capture and validate the complete generated species table immediately
-  // after AMPS base initialization.  The table is read-only: its count,
-  // symbols, masses, charges, and indices were fixed by SpeciesList when this
-  // executable was built and cannot be redefined by the runtime SEP deck.
-  BindCompiledSpeciesTable();
   SEP3D::Init_BeforeParser();
+  // The shared-file application parser belongs precisely at this boundary:
+  // MPI, AMPS registries, and srcSEP3D's pre-parser hooks exist, while the
+  // application species binding, sampling offsets, AMR tree, providers, and
+  // particles do not. Parser errors therefore terminate before any partially
+  // initialized model state can be mistaken for a valid run.
+  ParseInstalledApplicationInput();
+  // Capture and validate the complete generated species table only after the
+  // application parser has committed its immutable count. The table itself is
+  // read-only: count, symbols, masses, charges, and indices were fixed by
+  // SpeciesList and cannot be redefined by the runtime input file.
+  BindCompiledSpeciesTable();
   // Internal surfaces must be registered after AMPS creates its global
   // registries and before mesh->init() creates the root tree.  The sphere is
   // the physical 1-R_sun photosphere, not the independently configurable

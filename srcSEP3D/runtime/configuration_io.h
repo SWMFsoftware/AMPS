@@ -24,6 +24,11 @@ enum class LogVerbosity { Quiet, Normal, Verbose };
 
 struct StandaloneCommandLine {
   std::string inputPath;
+  // ``-input`` selects the shared global file whose srcSEP3D section is read
+  // after Init_BeforeParser.  The maintained ``--input`` spelling continues
+  // to select the complete legacy schema-4 deck so existing campaigns remain
+  // reproducible while applications converge on the shared container syntax.
+  bool sectionInput = false;
   std::string outputDirectoryOverride;
   // Initialization-only execution builds the real distributed AMPS mesh,
   // completes model initialization, writes the two declared Tecplot products,

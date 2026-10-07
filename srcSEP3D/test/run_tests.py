@@ -105,6 +105,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("CFG3D10", "CFG3D", "CME and Parker start linkage", "cpp"),
     TestDefinition("CFG3D11", "CFG3D", "Transport/control schema", "cpp"),
     TestDefinition("CFG3D12", "CFG3D", "Corner/sphere input and endpoint normalization", "cpp"),
+    TestDefinition("CFG3D13", "CFG3D", "Shared srcSEP3D application-input section", "cpp"),
     TestDefinition("DOM3D01", "DOM3D", "Whole-corridor corner bounds", "source"),
     TestDefinition("DOM3D02", "DOM3D", "Solar sphere and photospheric coarsening", "source"),
     TestDefinition("DOM3D03", "DOM3D", "Connected sphere/corridor AMR allocation", "source"),
@@ -1565,7 +1566,7 @@ def _check_makefile_relocation(definition: TestDefinition,
         "bg_provider.o bg_parker.o bg_swcme.o bg_swmf.o background_snapshot.o "
         "turbulence_models.o keyed_random.o time_step.o perpendicular_transport.o "
         "parker_transport.o focused_transport.o population_control.o "
-        "run_configuration.o configuration_io.o standalone_command_line.o runtime.o background_factory.o runtime_adapters.o "
+        "run_configuration.o application_input.o configuration_io.o standalone_command_line.o runtime.o background_factory.o runtime_adapters.o "
         "transport_adapter.o particle_ledger.o shock_front_background_adapter.o "
         "swcme_source_adapter.o source_runtime.o "
         "sampling.o observer_runtime.o publication.o restart.o output_coordinator.o reduced_front_output.o "

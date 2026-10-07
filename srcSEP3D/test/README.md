@@ -237,7 +237,7 @@ The runner adds
 | `UTIL` | `UTIL02` | byte-exact shared-kernel reference record |
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
 | `R3D` | `R3D01`–`R3D09` | mover hook, requested-time loop, snapshot transaction, tick/events, source, observers, restart, canonical initialization source, finite empty-cell output |
-| `CFG3D` | `CFG3D01`–`CFG3D11` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line/schema-3 initialization, complete compiled AMPS species binding, turbulence selection, CME/Parker linkage, schema-4 mover/coefficient and fixed/local source choices, active-corridor connectivity, and population bounds |
+| `CFG3D` | `CFG3D01`–`CFG3D13` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line/schema-3 initialization, complete compiled AMPS species binding, turbulence selection, CME/Parker linkage, schema-4 mover/coefficient and fixed/local source choices, active-corridor connectivity, corner geometry, and the shared application-section parser |
 | `MSH3D` | `MSH3D01`–`MSH3D15` | resolution, exact Parker geometry, balance, octree budget/ownership, presets, gradients, finite line, initialization Tecplot output, conservative active-corridor classification, hole-free AMR topology, and fixed solar-boundary geometry |
 | `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
 | `SNAP3D` | `SNAP3D01`–`SNAP3D08` | snapshot completeness, coupling conversion, atomicity, interpolation, batch/frame policy |
@@ -635,6 +635,8 @@ env MAKEFLAGS="-j16" srcSEP3D/test/run_tests.py --all \
 | `CFG3D09` | spectral and amplitude turbulence models parse only with consistent slopes and exactly one active amplitude normalization; Python background remains reserved |
 | `CFG3D10` | `cme-launch-point` resolves the canonical SWCME launch apex and rejects radius/direction mismatches; explicit mode remains independent |
 | `CFG3D11` | schema-4 active corridor/observer connectivity, population hysteresis, fixed/local source spectra, mover/coefficient compatibility, and dry-run output |
+| `CFG3D12` | corner-domain modes, endpoint normalization, photospheric refinement identity, and conflicting controls fail closed |
+| `CFG3D13` | shared sep3d sections, recursive includes, comments, continuations, CLI defaulting, immutable pre-mesh commit, and provenance-rich negative cases |
 
 ```bash
 python3 test/run_tests.py --suite improvements-c --rebuild \
@@ -816,7 +818,7 @@ equations, algorithms, case roles, and evidence schemas.
 | `r0` | R0 source/ABI/production gates plus RUN3D01, LAY01, and BLD01 |
 | `r1` | canonical shared-archive audit, relocated SWCME suite, and frozen common kernels |
 | `r2` | LIFE3D01–LIFE3D04 immutable configuration and lifecycle gates |
-| `improvements-c` | CFG3D01–CFG3D11 production configuration, preflight, finite-line/schema-3 initialization, species/turbulence/source selection, CME linkage, mover/coefficient selection, active-corridor, and population-control gates |
+| `improvements-c` | CFG3D01–CFG3D13 production configuration, preflight, finite-line/schema-3 initialization, species/turbulence/source selection, CME linkage, mover/coefficient selection, active-corridor, corner-domain, and shared-section parser gates |
 | `improvements-r` | R3D01–R3D09 production runtime integration gates |
 | `improvements-v` | V1D01–05 controlled physics, V2D01 true parity, and V5D01 governance |
 | `phase-m` | MSH3D01–MSH3D15 mesh/storage, finite active-corridor, hole-free topology, fixed photosphere, and initialization-output gates |

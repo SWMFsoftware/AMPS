@@ -124,6 +124,46 @@ Core::Status Runtime::Configure(
   return Core::Status::OK();
 }
 
+Core::Status Runtime::ReplaceConfigurationBeforeMesh(
+    const std::shared_ptr<const RunConfiguration3D>& configuration) {
+  const Core::Status order = RequireState(
+      LifecycleState::Configured, "ReplaceConfigurationBeforeMesh");
+  if (!order.ok()) return order;
+  if (!configuration) {
+    return Core::Status(Core::StatusCode::InvalidInput,
+                        "configuration replacement is null");
+  }
+  if (!configuration_ ||
+      configuration->storage_layout() != configuration_->storage_layout()) {
+    return Core::Status(
+        Core::StatusCode::LayoutMismatch,
+        "application input changes the storage layout after Init_BeforeParser");
+  }
+  if (counters_.completedSteps != 0 || counters_.currentTick != 0 ||
+      hasSnapshot_ || snapshotUpdateState_ != SnapshotUpdateState::Idle) {
+    return Core::Status(
+        Core::StatusCode::InvalidTransition,
+        "configuration replacement requires pristine pre-mesh runtime state");
+  }
+
+  // Commit all configuration-derived clocks together.  Although the first
+  // srcSEP3D section key changes only the particle count, keeping this update
+  // complete prevents later parser extensions from leaving an old cadence
+  // paired with a new immutable fingerprint.
+  configuration_ = configuration;
+  eventSchedule_.nextBackgroundTick =
+      configuration_->options().backgroundCadenceSteps;
+  eventSchedule_.nextInjectionTick =
+      configuration_->options().injectionCadenceSteps;
+  eventSchedule_.nextSamplingTick =
+      configuration_->options().outputCadenceSteps;
+  eventSchedule_.nextCheckpointTick =
+      configuration_->options().checkpointCadenceSteps == 0
+          ? UINT64_MAX
+          : configuration_->options().checkpointCadenceSteps;
+  return Core::Status::OK();
+}
+
 Core::Status Runtime::BindMesh(const MeshBinding& binding) {
   const Core::Status order = RequireState(LifecycleState::Configured, "BindMesh");
   if (!order.ok()) return order;

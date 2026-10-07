@@ -1,5 +1,38 @@
 # srcSEP3D
 
+## Shared application input parser
+
+The new global-file interface is selected with `-input FILE`; with no
+`-input`, the executable reads `./amps.in`. The file may contain core and other
+application sections, while srcSEP3D consumes only the block from
+`#section begin: sep3d` through `#section end`. The current block has one key:
+
+```text
+#section begin: sep3d
+particles_per_iteration = 1000 ! per compiled species
+#section end
+```
+
+`!` starts a comment, a final `\` continues the logical line, and
+`#include filename` recursively inserts another file at that location.
+Relative includes are resolved from the including file. Cycles, malformed or
+missing sections, unknown/duplicate settings, invalid integers, and dangling
+continuations terminate before mesh initialization with file, line, reason,
+and offending-line diagnostics.
+
+The parser runs collectively after `PIC::Init_BeforeParser()` and
+`SEP3D::Init_BeforeParser()` but before storage offsets and the mesh are
+frozen. Rank zero reads the file, broadcasts the resolved value, and all ranks
+replace the provisional configuration with one immutable, fingerprinted
+configuration having the same storage layout. Startup prints a resolved input
+summary. See [`../src/INPUT_FILE.md`](../src/INPUT_FILE.md) for the shared
+grammar and [`examples/application-input/`](examples/application-input/) for a
+runnable two-file example.
+
+The maintained `--input FILE` spelling still selects the complete schema-4
+srcSEP3D deck documented in `CONFIGURATION.md`; this preserves existing
+campaigns while the shared input grows beyond its current single setting.
+
 The runnable reduced-provider examples, including the positive synthetic
 low-corona-to-1-AU zero-particle case and its native volume/front output
 contract, are documented in

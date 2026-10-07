@@ -23,6 +23,7 @@
 #include "runtime/runtime.h"
 
 #include <memory>
+#include <string>
 
 // Keep this AMPS-facing umbrella dependency-light.  pic.h includes SEP3D.h in
 // every AMPS translation unit, including generic interface and mesh sources
@@ -45,6 +46,12 @@ namespace SEP3D {
 RuntimeModel::Runtime& ApplicationRuntime();
 Core::Status ConfigureApplication(
     const std::shared_ptr<const RuntimeModel::RunConfiguration3D>& configuration);
+
+// Select the shared global input tree for the standalone ``-input`` mode.
+// Installation only records the path; parsing occurs collectively inside
+// amps_init_mesh, immediately after Init_BeforeParser and before any mesh
+// storage is frozen.  Coupled hosts and maintained ``--input`` decks omit it.
+Core::Status InstallApplicationInputFile(const std::string& path);
 
 // Optional host-owned runtime provider. Install after ConfigureApplication
 // (optionally after mesh binding), before acquisition in amps_init. Ownership
@@ -79,9 +86,10 @@ Core::Status CaptureNativeShockHistorySample(Output::ShockHistorySample* sample)
 // or declared acceleration/handoff/observer landmarks.
 Core::Status WriteReducedProductionOutputAtBoundary();
 
-// AMPS calls this before its legacy parser.  srcSEP3D intentionally performs
-// no argument or AMPS_PARAM.in parsing here: a standalone driver or the SWMF
-// coupler resolves input and calls ConfigureApplication explicitly.
+// AMPS calls this before application input is interpreted. The hook registers
+// storage requests but does not read a file. In shared -input mode the native
+// boundary invokes the srcSEP3D section parser immediately after this returns;
+// coupled hosts and maintained --input runs already supply typed configuration.
 void Init_BeforeParser();
 
 } // namespace SEP3D

@@ -1364,11 +1364,25 @@ Core::Status BuildStandaloneRunRequest(
       !candidate.commandLine.testSuite.empty() ||
       !candidate.commandLine.tests.empty();
   RunConfiguration3DOptions options;
-  status = LoadConfigurationFile(
-      nativeTestRun ? candidate.commandLine.testInputPath
-                    : candidate.commandLine.inputPath,
-      &options);
-  if (!status.ok()) return status;
+  if (candidate.commandLine.sectionInput) {
+    // The application parser is required to execute after Init_BeforeParser,
+    // so this host boundary creates only a valid provisional typed object.
+    // amps_init_mesh replaces it transactionally after the section value has
+    // been parsed.  No file is opened on this earlier path.
+    if (candidate.commandLine.dryRun)
+      return Invalid("-input shared-section mode cannot use --dry-run because "
+                     "the application parser runs after Init_BeforeParser; "
+                     "use --initialization-only or a normal run");
+    if (!candidate.commandLine.restartPath.empty())
+      return Invalid("-input shared-section mode does not yet support restart; "
+                     "the final input fingerprint is established during native initialization");
+  } else {
+    status = LoadConfigurationFile(
+        nativeTestRun ? candidate.commandLine.testInputPath
+                      : candidate.commandLine.inputPath,
+        &options);
+    if (!status.ok()) return status;
+  }
   if (!candidate.commandLine.initializationOutputDirectory.empty()) {
     status = ApplyInitializationOutputDirectory(
         candidate.commandLine.initializationOutputDirectory, &options);

@@ -57,11 +57,14 @@ Core::Status ParseStandaloneCommandLine(
     auto requireValue = [&](const char* option, std::string* value) {
       if (i + 1 >= argc) return false;
       *value = argv[++i];
-      return !value->empty() && value->rfind("--", 0) != 0 && *value != option;
+      return !value->empty() && value->front() != '-' && *value != option;
     };
-    if (argument == "--input") {
+    if (argument == "-input" || argument == "--input") {
+      if (!candidate.inputPath.empty())
+        return Invalid("-input/--input may be specified only once");
       if (!requireValue("--input", &candidate.inputPath))
-        return Invalid("--input requires a path");
+        return Invalid(argument + " requires a path");
+      candidate.sectionInput = argument == "-input";
     } else if (argument == "--initialization-only") {
       candidate.initializationOnly = true;
     } else if (argument == "--initialization-output-dir") {
@@ -161,6 +164,8 @@ Core::Status ParseStandaloneCommandLine(
                    "--test-steps, and --expect-mpi-ranks require --test or "
                    "--all-tests or --test-suite");
   if (nativeTestRun) {
+    if (candidate.sectionInput)
+      return Invalid("linked native tests require the maintained --test-input/--input schema deck, not -input section mode");
     if (!candidate.inputPath.empty() && !candidate.testInputPath.empty() &&
         candidate.inputPath != candidate.testInputPath)
       return Invalid("--input and --test-input name different decks");
@@ -172,8 +177,15 @@ Core::Status ParseStandaloneCommandLine(
       return Invalid("native tests require AMPS initialization and cannot be "
                      "combined with --dry-run");
   }
-  if (candidate.inputPath.empty() && selectionModes == 0)
-    return Invalid("a standalone production run requires --input PATH");
+  // The shared runtime-file convention is intentionally useful without any
+  // command-line arguments: batch systems can stage ``amps.in`` in each run
+  // directory.  Native-test modes retain their explicit reviewed schema deck
+  // because they must never inherit an unrelated working-directory file.
+  if (candidate.inputPath.empty() && selectionModes == 0 &&
+      !candidate.listTests) {
+    candidate.inputPath = "amps.in";
+    candidate.sectionInput = true;
+  }
   *result = candidate;
   return Core::Status::OK();
 }

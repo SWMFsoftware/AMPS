@@ -1,0 +1,8 @@
+! Shared/global input example.  The srcSEP3D parser validates the section
+! structure but deliberately ignores assignments owned by other applications.
+#section begin: core
+example_note = ignored-by-srcSEP3D
+#section end
+
+! Relative include paths are resolved from this file's directory.
+#include "sep3d.in"
