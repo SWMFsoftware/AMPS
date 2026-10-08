@@ -13,6 +13,94 @@
 
 #include "pic.h"
 
+#include <algorithm>
+#include <array>
+#include <cstdio>
+#include <fstream>
+#include <string>
+#include <vector>
+
+namespace {
+
+// Concatenate the species-resolved CCMC trajectory products into the legacy
+// nightly-test receipt.  This operation is packaging only: OutputTrajectory()
+// has already completed all MPI collection, trajectory thinning and physical
+// sampling before this routine runs on rank zero.  In particular, copying the
+// bytes here must not reinterpret coordinates, reorder records within a
+// species, or change any particle state.
+void MergeCcmcNightlyTrajectoryFiles(const std::string& outputDirectory,
+    const std::string& trajectoryBase) {
+  std::vector<std::string> inputPaths;
+  inputPaths.reserve(PIC::nTotalSpecies);
+
+  // Create exactly the names emitted by
+  // PIC::ParticleTracker::CreateTrajectoryOutputFiles().  The former shell
+  // wildcard could also consume stale files from a prior run with a different
+  // species table.  Enumerating the currently compiled species makes the
+  // receipt belong to this executable/configuration only.  Sorting retains a
+  // deterministic, glob-like lexical order without depending on a shell or
+  // the process locale.
+  for (int spec=0;spec<PIC::nTotalSpecies;spec++) {
+    inputPaths.push_back(trajectoryBase+".s="+std::to_string(spec)+"."+
+        PIC::MolecularData::GetChemSymbol(spec)+".dat");
+  }
+  std::sort(inputPaths.begin(),inputPaths.end());
+
+  const std::string finalPath=outputDirectory+
+      "/test_CCMC-Individual_Trajectories.dat";
+  const std::string temporaryPath=finalPath+".tmp";
+  std::ofstream output(temporaryPath,
+      std::ios::binary|std::ios::out|std::ios::trunc);
+
+  // Keep the public reference file transactional.  All failure paths remove
+  // the temporary output and terminate with an explicit AMPS diagnostic,
+  // while a previously complete reference file remains untouched.  The
+  // temporary is in the destination directory so the final POSIX rename is
+  // atomic on the filesystem used by AMPS production and nightly runs.
+  auto fail=[&](const std::string& reason) {
+    output.close();
+    std::remove(temporaryPath.c_str());
+    const std::string message="Error: cannot assemble CCMC trajectory receipt: "+
+        reason;
+    exit(__LINE__,__FILE__,message.c_str());
+  };
+
+  if (!output.is_open()) fail("cannot open temporary output '"+
+      temporaryPath+"'");
+
+  // A bounded transfer buffer limits memory independently of configured path
+  // lengths or trajectory volume.  Binary mode makes this a byte-preserving
+  // concatenation on every supported host; it does not introduce numerical
+  // formatting, rounding, or platform newline conversion.
+  std::array<char,64*1024> buffer;
+  for (const std::string& inputPath:inputPaths) {
+    std::ifstream input(inputPath,std::ios::binary|std::ios::in);
+    if (!input.is_open()) fail("cannot open species product '"+inputPath+"'");
+
+    while (input) {
+      input.read(buffer.data(),buffer.size());
+      const std::streamsize count=input.gcount();
+      if (count>0) {
+        output.write(buffer.data(),count);
+        if (!output) fail("write failed for temporary output '"+
+            temporaryPath+"'");
+      }
+    }
+
+    // EOF is the only successful reason for the final short/zero read.  An
+    // I/O error must not be mistaken for a shorter but valid trajectory file.
+    if (!input.eof()) fail("read failed for species product '"+inputPath+"'");
+  }
+
+  output.close();
+  if (!output) fail("close failed for temporary output '"+temporaryPath+"'");
+
+  if (std::rename(temporaryPath.c_str(),finalPath.c_str())!=0)
+    fail("cannot atomically publish '"+finalPath+"'");
+}
+
+}  // namespace
+
 
 vector<PIC::CCMC::ParticleInjection::cInjectionDescriptor> PIC::CCMC::ParticleInjection::InjectionDescriptorList;
 char PIC::CCMC::Parser::ControlFileName[_MAX_STRING_LENGTH_PIC_]="ccmc.InjectionLocation.dat";
@@ -791,10 +879,7 @@ int PIC::CCMC::TraceParticles() {
 
   //combine all trajectory files into a single reference file
   if ((_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_)&&(PIC::ThisThread==0)) {
-    char cmd[_MAX_STRING_LENGTH_PIC_];
-
-    sprintf(cmd,"cat %s/amps.TrajectoryTracking.s=*.dat > %s/test_CCMC-Individual_Trajectories.dat",OutputDataFileDirectory,OutputDataFileDirectory);
-    if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
+    MergeCcmcNightlyTrajectoryFiles(OutputDataFileDirectory,fname);
   }
 
 

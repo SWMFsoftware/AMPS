@@ -326,3 +326,40 @@ interface exists, applications with such state should disable the automatic
 `ParticleSplitting::Mode` and call an application-aware boundary controller
 that uses `GetNewParticle`, `CloneParticle`, and `DeleteParticle` only for list
 mechanics.
+
+## 10. CCMC nightly trajectory receipt
+
+`PIC::CCMC::TraceParticles()` asks the particle tracker to write one final
+Tecplot trajectory file per compiled species. In nightly-test mode, rank zero
+then concatenates those already-complete files into
+`test_CCMC-Individual_Trajectories.dat` for the legacy reference comparison.
+This last operation is file packaging only: MPI collection, trajectory
+selection/thinning, coordinates, velocities, timestamps and particle state
+have already been finalized by `PIC::ParticleTracker::OutputTrajectory()`.
+
+The merge is implemented inside `pic_ccmc.cpp`; it does not invoke a shell.
+Input names are reconstructed from the same trajectory base, numerical species
+index and chemical symbol used by `CreateTrajectoryOutputFiles()`, then sorted
+lexically before copying. Consequently, a stale file belonging to a species
+that is not compiled into the current executable cannot enter the receipt.
+Paths may contain spaces or shell metacharacters. The configured output
+directory retains its existing `_MAX_STRING_LENGTH_PIC_` contract, but adding
+the input/output suffixes now uses dynamically sized strings instead of
+overflowing a second fixed-size command buffer.
+
+Rank zero writes a bounded-buffer, byte-for-byte concatenation to
+`test_CCMC-Individual_Trajectories.dat.tmp`. Every input-open, read, write and
+close operation is checked. Only after the complete temporary file closes
+successfully is it renamed over the public receipt in the same directory. On
+failure, the temporary file is removed and AMPS terminates; an older complete
+receipt is not truncated or presented as new evidence. The same-directory
+rename is atomic on the POSIX filesystems supported by native AMPS runs.
+
+The formatting regression can be checked without running the physics case by
+compiling `pic_ccmc.cpp` with the configured generated headers and
+`-Wformat=2 -Wformat-overflow=2`. End-to-end qualification remains the
+`CCMC-Individual_Trajectories` nightly case, whose reference comparison checks
+the merged bytes. A native rebuild must follow the repository preflight:
+confirm the Mars2 root and that no build/test process is active, remove only
+the root `build`, regenerate the selected application and production hooks,
+then compile through the top-level workflow with `-j16`.
