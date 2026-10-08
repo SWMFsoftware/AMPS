@@ -71,6 +71,17 @@ enum class SourceSpectrumModel {
   LocalCompressionDsa,
   FixedPhaseSpacePowerLaw
 };
+// ConstantStatisticalWeight is the first reduced-front production sampler:
+// every macro represents the same species-specific physical number W_s and
+// the live incident flux changes only the Poisson event rate.  The second
+// enumerator reserves the reviewed interface for a log-uniform momentum
+// proposal whose individual AMPS weight correction will be implemented and
+// qualified separately; selecting it currently produces a typed startup
+// failure at the native injection boundary.
+enum class SourceWeightingModel {
+  ConstantStatisticalWeight,
+  LogUniformMomentumImportance
+};
 // This selector governs only the physical rate used to establish the base
 // Monte-Carlo weight. It is distinct from the momentum-spectrum model above.
 // AcceptedShockIncidentFlux is the gross upstream population swept through
@@ -174,6 +185,7 @@ const char* Name(ParkerSpiralStartMode value);
 const char* Name(SolarWindThermodynamicClosure value);
 const char* Name(ShockAuthority value);
 const char* Name(SourceSpectrumModel value);
+const char* Name(SourceWeightingModel value);
 const char* Name(SourceRateNormalizationModel value);
 const char* Name(TransportModel value);
 const char* Name(DomainPreset value);
@@ -273,6 +285,8 @@ struct SourceOptions {
   SourceSpectrumModel spectrumModel =
       SourceSpectrumModel::LocalCompressionDsa;
   double fixedPhaseSpacePowerIndex = 0.0;
+  SourceWeightingModel weightingModel =
+      SourceWeightingModel::ConstantStatisticalWeight;
   // Legacy schema-1/2 dN/dp exponent.  Schema 3 and later use the unambiguous
   // spectrumModel/fixedPhaseSpacePowerIndex contract above and normalize this
   // old field to zero before fingerprinting.
@@ -280,6 +294,10 @@ struct SourceOptions {
   // Exact number of computational particles injected per active time step,
   // per compiled species, over the complete active shock surface.
   std::uint64_t samplesPerStep = 1000;
+  // A Poisson process is intentionally unbounded.  This input is therefore
+  // a fail-closed memory/runaway guard, never a cap: reaching it aborts the
+  // step instead of biasing the represented source or changing W_s.
+  std::uint64_t maximumMacroparticlesPerSpeciesPerStep = 1000000;
 };
 
 // Provider-neutral transport record for the standalone [swcme] section.  Key

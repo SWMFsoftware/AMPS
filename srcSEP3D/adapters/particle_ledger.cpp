@@ -1,6 +1,7 @@
 #include "particle_ledger.h"
 
 #include <limits>
+#include <sstream>
 
 namespace SEP3D {
 namespace Adapters {
@@ -12,6 +13,28 @@ Core::Status Invalid(const char* message) {
 
 bool AddWouldOverflow(std::uint64_t left, std::uint64_t right) {
   return right > std::numeric_limits<std::uint64_t>::max() - left;
+}
+
+// Ledger failures are conservation failures, so retain every independently
+// counted term in the diagnostic.  A generic "does not close" message cannot
+// distinguish a particle that bypassed the mover from an injection count that
+// was reduced twice or a particle that disappeared after movement.  The
+// values below are integer populations; printing them cannot alter a gate or
+// hide a floating-point tolerance because this invariant is exact.
+std::string ClosureMismatch(const char* prefix,const LedgerRow& row) {
+  std::ostringstream out;
+  out << prefix
+      << ": step=" << row.key.step
+      << " species=" << row.key.species
+      << " active_start=" << row.activeStart
+      << " injected=" << row.injected
+      << " advanced=" << row.advanced
+      << " active_end=" << row.activeEnd
+      << " escaped=" << row.escaped
+      << " absorbed=" << row.absorbed
+      << " failed=" << row.failed
+      << " shock_crossings=" << row.shockCrossings;
+  return out.str();
 }
 
 }  // namespace
@@ -97,7 +120,9 @@ Core::Status ParticleLedger::Close(std::uint64_t step, int species,
       candidate.absorbed + candidate.failed;
   if (left != right || candidate.advanced != candidate.activeEnd)
     return Core::Status(Core::StatusCode::Error,
-                        "particle ledger does not close exactly or active count differs");
+                        ClosureMismatch(
+                            "particle ledger does not close exactly or active "
+                            "count differs",candidate));
   candidate.closed = true;
   found->second = candidate;
   return Core::Status::OK();
@@ -119,7 +144,9 @@ Core::Status ParticleLedger::ImportClosed(const LedgerRow& row) {
       row.absorbed + row.failed;
   if (left != right || row.advanced != row.activeEnd)
     return Core::Status(Core::StatusCode::Error,
-                        "imported particle ledger does not close exactly");
+                        ClosureMismatch(
+                            "imported particle ledger does not close exactly",
+                            row));
   rows_.emplace(row.key, row);
   return Core::Status::OK();
 }

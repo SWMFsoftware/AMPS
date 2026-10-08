@@ -1263,11 +1263,19 @@ Result RunCFG3D13() {
              "shock_model = reduced-shock-surface\n"
              "background_plasma_model = corona-swcme-ambient\n"
              "source_model = accepted-shock-incident-flux\n"
+             "maximum_time_steps = 9\n"
              "particles_per_iteration = \\\n"
              "  37 ! joined to the prior physical line\n"
              "maximum_particle_speed_m_s = 200000000\n"
              "time_step_margin_factor = 0.25\n"
              "source_normalization_radius_m = 13914000000\n"
+             "#subsection begin: shock-particle-injection\n"
+             "statistical_weight_model=constant-statistical-weight\n"
+             "minimum_energy_j=1.602176634e-15\n"
+             "maximum_energy_j=1.602176634e-11\n"
+             "phase_space_power_model=compression-ratio\n"
+             "maximum_events_per_species_per_step=1000000\n"
+             "#subsection end\n"
              "#subsection begin: reduced-shock-surface\n"
              "schema = parser-fixture\n"
              "#subsection end\n"
@@ -1278,14 +1286,20 @@ Result RunCFG3D13() {
   RM::Sep3dApplicationInput parsed;
   SEP3D::Core::Status status = RM::ParseSep3dApplicationInput(
       (directory / "amps.in").string(), &parsed);
-  if (!status.ok() || parsed.particlesPerIteration != 37 ||
-      parsed.expandedFiles.size() != 2 || parsed.valueLine != 5 ||
+  if (!status.ok() || parsed.maximumTimeSteps != 9 ||
+      parsed.particlesPerIteration != 37 ||
+      parsed.expandedFiles.size() != 2 || parsed.valueLine != 6 ||
       parsed.shockModel != "reduced-shock-surface" ||
       parsed.backgroundPlasmaModel != "corona-swcme-ambient" ||
       parsed.sourceModel != "accepted-shock-incident-flux" ||
       parsed.maximumParticleSpeedMPerS != 2.0e8 ||
       parsed.timeStepMarginFactor != 0.25 ||
       parsed.sourceNormalizationRadiusM != 13914000000.0 ||
+      parsed.particleWeightingModel != "constant-statistical-weight" ||
+      parsed.momentumPowerLawModel != "compression-ratio" ||
+      parsed.minimumInjectionEnergyJ != 1.602176634e-15 ||
+      parsed.maximumInjectionEnergyJ != 1.602176634e-11 ||
+      parsed.maximumInjectionEventsPerSpeciesPerStep != 1000000 ||
       parsed.reducedShockConfiguration != "schema=parser-fixture\n" ||
       RM::Sep3dApplicationInputSummary(parsed).find(
           "particles_per_iteration=37") == std::string::npos) {
@@ -1324,6 +1338,7 @@ Result RunCFG3D13() {
   if (!RM::RunConfiguration3D::Create(options, &provisional).ok())
     return Fail("could not create provisional configuration");
   options.inputSchemaVersion = 4;
+  options.maximumTimeSteps = parsed.maximumTimeSteps;
   options.background = RM::BackgroundAuthority::RuntimeModel;
   options.backgroundModelId = "sep-corona-swcme-shock-front-v1";
   options.backgroundModelInlineConfiguration =
@@ -1331,7 +1346,17 @@ Result RunCFG3D13() {
   options.backgroundModelAssetDirectory = parsed.reducedShockAssetDirectory;
   options.coordinateFrame = "HCI";
   options.parker.coordinateFrame = options.coordinateFrame;
+  options.intent=RM::RunIntent::ShockInjection;
+  options.source.enabled=true;
   options.source.samplesPerStep = parsed.particlesPerIteration;
+  options.source.minimumEnergyJ=parsed.minimumInjectionEnergyJ;
+  options.source.maximumEnergyJ=parsed.maximumInjectionEnergyJ;
+  options.source.spectrumModel=RM::SourceSpectrumModel::LocalCompressionDsa;
+  options.source.fixedPhaseSpacePowerIndex=0;
+  options.source.weightingModel=
+      RM::SourceWeightingModel::ConstantStatisticalWeight;
+  options.source.maximumMacroparticlesPerSpeciesPerStep=
+      parsed.maximumInjectionEventsPerSpeciesPerStep;
   options.particleNumerics.deriveFromMeshAndShock = true;
   options.particleNumerics.sourceRateModel =
       RM::SourceRateNormalizationModel::AcceptedShockIncidentFlux;
@@ -1394,6 +1419,7 @@ Result RunCFG3D13() {
              "shock_model=reduced-shock-surface\n"
              "background_plasma_model=corona-swcme-ambient\n"
              "source_model=accepted-shock-incident-flux\n"
+             "maximum_time_steps=3\n"
              "particles_per_iteration=10\n"
              "maximum_particle_speed_m_s=1000\n"
              "time_step_margin_factor=0.2\n"
@@ -1472,6 +1498,7 @@ Result RunCFG3D15() {
   RM::RunConfiguration3DOptions options;
   options.meshMemoryBudgetBytes=1000000000000000ULL;
   options.inputSchemaVersion=4;
+  options.maximumTimeSteps=parsed.maximumTimeSteps;
   options.background=RM::BackgroundAuthority::RuntimeModel;
   options.backgroundModelId="sep-corona-swcme-shock-front-v1";
   options.backgroundModelInlineConfiguration=parsed.reducedShockConfiguration;
@@ -1479,9 +1506,19 @@ Result RunCFG3D15() {
   options.coordinateFrame="HCI";
   options.parker.coordinateFrame=options.coordinateFrame;
   options.shock=RM::ShockAuthority::None;
-  options.intent=RM::RunIntent::TransportOnly;
-  options.source.enabled=false;
+  options.intent=RM::RunIntent::ShockInjection;
+  options.source.enabled=true;
   options.source.samplesPerStep=parsed.particlesPerIteration;
+  options.source.minimumEnergyJ=parsed.minimumInjectionEnergyJ;
+  options.source.maximumEnergyJ=parsed.maximumInjectionEnergyJ;
+  options.source.spectrumModel=parsed.momentumPowerLawModel=="compression-ratio"
+      ? RM::SourceSpectrumModel::LocalCompressionDsa
+      : RM::SourceSpectrumModel::FixedPhaseSpacePowerLaw;
+  options.source.fixedPhaseSpacePowerIndex=parsed.fixedPhaseSpacePowerIndex;
+  options.source.weightingModel=
+      RM::SourceWeightingModel::ConstantStatisticalWeight;
+  options.source.maximumMacroparticlesPerSpeciesPerStep=
+      parsed.maximumInjectionEventsPerSpeciesPerStep;
   options.particleNumerics.deriveFromMeshAndShock=true;
   options.particleNumerics.sourceRateModel=
       RM::SourceRateNormalizationModel::AcceptedShockIncidentFlux;
@@ -1510,6 +1547,198 @@ Result RunCFG3D15() {
       adapter->SharedProvider()->Current()!=nullptr)
     return Fail("maintained model cannot derive its non-mutating accepted-shock source rate");
   return Pass("maintained shared input resolves its magnetic asset, initializes one reduced provider, and derives a positive accepted-shock rate without advancing its epoch");
+}
+
+Result RunCFG3D16() {
+  namespace fs=std::filesystem;
+  fs::path root;
+  for(const fs::path& candidate:{fs::path("."),fs::path(".."),
+      fs::path("../../")})
+    if(fs::exists(candidate/"srcSEP3D/examples/application-input/amps.in")) {
+      root=fs::canonical(candidate);break;
+    }
+  if(root.empty())return Fail("cannot locate maintained source fixture");
+  RM::Sep3dApplicationInput parsed;
+  auto status=RM::ParseSep3dApplicationInput(
+      (root/"srcSEP3D/examples/application-input/amps.in").string(),&parsed);
+  if(!status.ok())return Fail("maintained source fixture does not parse: "+
+      status.message);
+
+  RM::RunConfiguration3DOptions options;
+  options.meshMemoryBudgetBytes=1000000000000000ULL;
+  options.inputSchemaVersion=4;
+  options.maximumTimeSteps=parsed.maximumTimeSteps;
+  options.background=RM::BackgroundAuthority::RuntimeModel;
+  options.backgroundModelId="sep-corona-swcme-shock-front-v1";
+  options.backgroundModelInlineConfiguration=parsed.reducedShockConfiguration;
+  options.backgroundModelAssetDirectory=parsed.reducedShockAssetDirectory;
+  options.coordinateFrame="HCI";
+  options.parker.coordinateFrame="HCI";
+  options.shock=RM::ShockAuthority::None;
+  options.intent=RM::RunIntent::ShockInjection;
+  options.source.enabled=true;
+  options.source.minimumEnergyJ=parsed.minimumInjectionEnergyJ;
+  options.source.maximumEnergyJ=parsed.maximumInjectionEnergyJ;
+  options.source.spectrumModel=RM::SourceSpectrumModel::LocalCompressionDsa;
+  options.source.fixedPhaseSpacePowerIndex=0;
+  options.source.weightingModel=
+      RM::SourceWeightingModel::ConstantStatisticalWeight;
+  options.source.maximumMacroparticlesPerSpeciesPerStep=1000000;
+  options.particleNumerics.deriveFromMeshAndShock=true;
+  options.particleNumerics.sourceRateModel=
+      RM::SourceRateNormalizationModel::AcceptedShockIncidentFlux;
+  options.particleNumerics.maximumParticleSpeedMPerS=
+      parsed.maximumParticleSpeedMPerS;
+  options.particleNumerics.timeStepMarginFactor=parsed.timeStepMarginFactor;
+  options.particleNumerics.sourceNormalizationRadiusM=
+      parsed.sourceNormalizationRadiusM;
+  std::shared_ptr<const RM::RunConfiguration3D> configuration;
+  status=RM::RunConfiguration3D::Create(options,&configuration);
+  if(!status.ok())return Fail("source configuration is invalid: "+status.message);
+  std::shared_ptr<BG::BackgroundProvider> background;
+  status=RM::CreateBackgroundProvider(*configuration,&background);
+  const auto adapter=std::dynamic_pointer_cast<
+      SEP3D::Adapters::ShockFrontBackgroundAdapter>(background);
+  if(!status.ok()||!adapter||!adapter->SharedProvider())
+    return Fail("source provider initialization failed: "+status.message);
+  const auto provider=adapter->SharedProvider();
+  const auto flux=SEP::CoronaSwcme::ShockFront::
+      EvaluateIncidentParticleFluxAtApexRadius(
+          *provider,parsed.sourceNormalizationRadiusM);
+  if(!flux.ok())return Fail("reference incident flux failed: "+
+      flux.status.message);
+  const auto epoch=provider->EvaluateEpoch(flux.value.epochS,41);
+  if(!epoch.ok())return Fail("source epoch evaluation failed: "+
+      epoch.status.message);
+  const RM::CompiledSpeciesRecord electron={0,"ELECTRON",
+      SEP3D::Core::Const::m_e,-SEP3D::Core::Const::e};
+  RM::SurfaceParticleRateDistribution distribution;
+  status=RM::BuildSurfaceParticleRateDistribution(
+      *provider,*epoch.value,electron,&distribution);
+  const double rateScale=std::max(1.0,std::abs(flux.value.electronRatePerS));
+  if(!status.ok()||distribution.faces.empty()||
+      std::abs(distribution.physicalRatePerS-flux.value.electronRatePerS)>
+          2e-14*rateScale||
+      std::abs(distribution.acceptedAreaM2-flux.value.acceptedAreaM2)>
+          2e-14*flux.value.acceptedAreaM2)
+    return Fail("per-face source sum does not reproduce independent incident-flux diagnostic");
+
+  const double interval=2.0;
+  const double targetMean=64.0;
+  const double weight=distribution.physicalRatePerS*interval/targetMean;
+  RM::SurfaceInjectionBatch first,repeated;
+  status=RM::GenerateConstantWeightSurfaceInjectionBatch(
+      *provider,*epoch.value,electron,options.source,weight,interval,987654,7,
+      &first);
+  if(status.ok())status=RM::GenerateConstantWeightSurfaceInjectionBatch(
+      *provider,*epoch.value,electron,options.source,weight,interval,987654,7,
+      &repeated);
+  if(!status.ok()||first.events.empty()||
+      first.events.size()!=repeated.events.size())
+    return Fail("deterministic constant-weight Poisson batch failed: "+
+        status.message);
+  const long double c=SEP3D::Core::Const::c;
+  const long double mass=electron.massKg;
+  const auto momentum=[&](double energy) {
+    const long double k=energy;
+    return static_cast<double>(std::sqrt(k*(k+2*mass*c*c))/c);
+  };
+  const double pMin=momentum(options.source.minimumEnergyJ);
+  const double pMax=momentum(options.source.maximumEnergyJ);
+  for(std::size_t index=0;index<first.events.size();++index) {
+    const auto& event=first.events[index];
+    const auto& again=repeated.events[index];
+    if(event.stableId!=again.stableId||event.triangleStableId!=
+        again.triangleStableId||event.eventTimeS!=again.eventTimeS||
+        event.positionM.x!=again.positionM.x||
+        event.positionM.y!=again.positionM.y||
+        event.positionM.z!=again.positionM.z||
+        !(event.eventTimeS>=0&&event.eventTimeS<interval)||
+        !(event.remainingStepFraction>0&&
+          event.remainingStepFraction<=1)||
+        event.momentumKgMPerS<pMin||event.momentumKgMPerS>pMax)
+      return Fail("source event is non-deterministic or outside declared time/momentum bounds");
+    const auto& triangle=epoch.value->triangles[event.triangleIndex];
+    const SEP3D::Core::Vec3 a(
+        epoch.value->vertices[triangle.vertex[0]].positionM.x,
+        epoch.value->vertices[triangle.vertex[0]].positionM.y,
+        epoch.value->vertices[triangle.vertex[0]].positionM.z);
+    const SEP3D::Core::Vec3 b(
+        epoch.value->vertices[triangle.vertex[1]].positionM.x,
+        epoch.value->vertices[triangle.vertex[1]].positionM.y,
+        epoch.value->vertices[triangle.vertex[1]].positionM.z);
+    const SEP3D::Core::Vec3 d(
+        epoch.value->vertices[triangle.vertex[2]].positionM.x,
+        epoch.value->vertices[triangle.vertex[2]].positionM.y,
+        epoch.value->vertices[triangle.vertex[2]].positionM.z);
+    const double total=(b-a).Cross(d-a).Norm();
+    const double pieces=(b-event.positionM).Cross(d-event.positionM).Norm()+
+        (d-event.positionM).Cross(a-event.positionM).Norm()+
+        (a-event.positionM).Cross(b-event.positionM).Norm();
+    if(total<=0||std::abs(pieces-total)>2e-12*total)
+      return Fail("sampled source point is not inside its selected triangle");
+  }
+
+  std::uint64_t totalEvents=0;
+  constexpr std::uint64_t trials=512;
+  for(std::uint64_t trial=1;trial<=trials;++trial) {
+    RM::SurfaceInjectionBatch sample;
+    status=RM::GenerateConstantWeightSurfaceInjectionBatch(
+        *provider,*epoch.value,electron,options.source,weight,interval,987654,
+        100+trial,&sample);
+    if(!status.ok())return Fail("Poisson convergence sample failed: "+
+        status.message);
+    totalEvents+=sample.events.size();
+  }
+  const double measured=static_cast<double>(totalEvents)/trials;
+  const double standardError=std::sqrt(targetMean/trials);
+  if(std::abs(measured-targetMean)>8*standardError)
+    return Fail("Poisson sample mean is outside the preregistered eight-sigma bound");
+
+  // The production-like launch is intentionally sub-fast at t=0.  Parse the
+  // separate already-formed-front fixture and exercise the same factory and
+  // accepted-face sum at its initial epoch; this guards the exact positive
+  // condition used by the native one-/four-rank allocation smoke.
+  RM::Sep3dApplicationInput smoke;
+  status=RM::ParseSep3dApplicationInput((root/
+      "srcSEP3D/examples/application-input/amps-injection-smoke.in").string(),
+      &smoke);
+  if(!status.ok())return Fail("positive native source fixture does not parse: "+
+      status.message);
+  RM::RunConfiguration3DOptions smokeOptions=options;
+  smokeOptions.maximumTimeSteps=smoke.maximumTimeSteps;
+  smokeOptions.backgroundModelInlineConfiguration=
+      smoke.reducedShockConfiguration;
+  smokeOptions.backgroundModelAssetDirectory=smoke.reducedShockAssetDirectory;
+  smokeOptions.source.weightingModel=
+      RM::SourceWeightingModel::ConstantStatisticalWeight;
+  std::shared_ptr<const RM::RunConfiguration3D> smokeConfiguration;
+  std::shared_ptr<BG::BackgroundProvider> smokeBackground;
+  status=RM::RunConfiguration3D::Create(smokeOptions,&smokeConfiguration);
+  if(status.ok())status=RM::CreateBackgroundProvider(
+      *smokeConfiguration,&smokeBackground);
+  const auto smokeAdapter=std::dynamic_pointer_cast<
+      SEP3D::Adapters::ShockFrontBackgroundAdapter>(smokeBackground);
+  if(status.ok())status=smokeBackground->Prepare(0.0);
+  RM::SurfaceParticleRateDistribution smokeDistribution;
+  if(status.ok()&&smokeAdapter&&smokeAdapter->FrontEpoch())
+    status=RM::BuildSurfaceParticleRateDistribution(
+        *smokeAdapter->SharedProvider(),*smokeAdapter->FrontEpoch(),electron,
+        &smokeDistribution);
+  if(!status.ok()||!smokeAdapter||smokeDistribution.faces.empty()||
+      !(smokeDistribution.physicalRatePerS>0))
+    return Fail("positive native source fixture has no accepted tick-zero rate: "+
+        status.message);
+
+  RM::SurfaceInjectionBatch reserved;
+  options.source.weightingModel=
+      RM::SourceWeightingModel::LogUniformMomentumImportance;
+  status=RM::GenerateLogUniformMomentumImportanceBatch(
+      *provider,*epoch.value,electron,options.source,weight,interval,987654,7,
+      &reserved);
+  if(status.code!=SEP3D::Core::StatusCode::ReservedFeature)
+    return Fail("unimplemented momentum-importance mode did not fail explicitly");
+  return Pass("accepted triangular rates reproduce the reference flux; keyed Poisson time/face/barycentric/momentum samples are deterministic and statistically convergent; reserved weighting fails closed");
 }
 
 }  // namespace
@@ -1549,5 +1778,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
       make("CFG3D13", "Shared application input", "Global section/include grammar, early immutable commit, and diagnostics.", RunCFG3D13),
       make("CFG3D14", "Derived particle numerics", "Mesh CFL step and incident-flux per-species weight equations.", RunCFG3D14),
       make("CFG3D15", "Parsed reduced model", "Maintained shared input initializes the real reduced provider and source normalization.", RunCFG3D15),
+      make("CFG3D16", "Reduced-front particle source", "Accepted-face rate sum, Poisson timing, triangular position, local spectrum, determinism, and reserved weighting.", RunCFG3D16),
   };
 }

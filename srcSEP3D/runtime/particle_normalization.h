@@ -12,6 +12,7 @@
 #include "run_configuration.h"
 
 #include "diagnostics.h"
+#include "provider.h"
 
 #include <cstdint>
 #include <vector>
@@ -43,6 +44,76 @@ Core::Status CalculateSpeciesParticleNormalizations(
     const SEP::CoronaSwcme::ShockFront::IncidentParticleFlux& flux,
     double timeStepS,std::uint64_t particlesPerIteration,
     std::vector<SpeciesParticleNormalization>* normalizations);
+
+// One entry retains the physical triangle identity and its cumulative gross
+// incident population rate.  Only SolvedFastShock records contribute:
+//   Ndot_f,s = n_1,s (V_sh,n-U_1.n) A_f.
+// A_f is the provider's exact curved quadrature area, while particle positions
+// are sampled on the corresponding planar triangle carried by the epoch.
+struct SurfaceFaceParticleRate {
+  std::size_t triangleIndex = 0;
+  std::uint64_t stableId = 0;
+  double physicalRatePerS = 0.0;
+  double cumulativeRatePerS = 0.0;
+  double compressionRatio = 0.0;
+};
+
+struct SurfaceParticleRateDistribution {
+  std::uint64_t generation = 0;
+  double epochS = 0.0;
+  double acceptedAreaM2 = 0.0;
+  double physicalRatePerS = 0.0;
+  std::vector<SurfaceFaceParticleRate> faces;
+};
+
+// A dependency-light candidate event. All MPI ranks build the same ordered
+// list from semantic random keys. Native code subsequently allocates an event
+// only on the rank owning its sampled AMR point.
+struct SurfaceInjectionEvent {
+  std::uint64_t stableId = 0;
+  std::uint64_t triangleStableId = 0;
+  std::size_t triangleIndex = 0;
+  double eventTimeS = 0.0;
+  double remainingStepFraction = 0.0;
+  double momentumKgMPerS = 0.0;
+  double compressionRatio = 0.0;
+  Core::Vec3 positionM;
+};
+
+struct SurfaceInjectionBatch {
+  SurfaceParticleRateDistribution distribution;
+  std::vector<SurfaceInjectionEvent> events;
+};
+
+Core::Status BuildSurfaceParticleRateDistribution(
+    const SEP::CoronaSwcme::ShockFront::Provider& provider,
+    const SEP::CoronaSwcme::ShockFront::Epoch& epoch,
+    const CompiledSpeciesRecord& species,
+    SurfaceParticleRateDistribution* distribution);
+
+// Constant-W production sampler. Waiting times are exponential with
+// lambda=Ndot_total/W_s; conditional face probability is Ndot_f/Ndot_total.
+// Thus each face has the correct independent Poisson intensity without
+// changing a particle's species base weight. The finite maximum is a fatal
+// guard, not a truncation or renormalization.
+Core::Status GenerateConstantWeightSurfaceInjectionBatch(
+    const SEP::CoronaSwcme::ShockFront::Provider& provider,
+    const SEP::CoronaSwcme::ShockFront::Epoch& epoch,
+    const CompiledSpeciesRecord& species,
+    const SourceOptions& source,double macroparticleWeight,double intervalS,
+    std::uint64_t campaignSeed,std::uint64_t step,
+    SurfaceInjectionBatch* batch);
+
+// Reserved second representation. It is intentionally callable so the input
+// selection reaches a typed boundary, but it must not return particles until
+// its individual-weight correction and conservation tests are implemented.
+Core::Status GenerateLogUniformMomentumImportanceBatch(
+    const SEP::CoronaSwcme::ShockFront::Provider& provider,
+    const SEP::CoronaSwcme::ShockFront::Epoch& epoch,
+    const CompiledSpeciesRecord& species,
+    const SourceOptions& source,double macroparticleWeight,double intervalS,
+    std::uint64_t campaignSeed,std::uint64_t step,
+    SurfaceInjectionBatch* batch);
 
 } } // namespace SEP3D::RuntimeModel
 

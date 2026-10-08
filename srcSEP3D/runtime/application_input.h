@@ -22,6 +22,12 @@ namespace SEP3D {
 namespace RuntimeModel {
 
 struct Sep3dApplicationInput {
+  // A shared-section run must have a finite, explicit iteration horizon.
+  // RunConfiguration3D's large library default is useful to coupled hosts,
+  // but silently inheriting it in a standalone particle-producing job would
+  // make a typo look like an effectively unbounded source calculation.
+  std::uint64_t maximumTimeSteps = 0;
+
   // This maps to SourceOptions::samplesPerStep.  The existing srcSEP3D source
   // contract interprets the value per compiled species; the parser must not
   // silently change that established particle-accounting rule.
@@ -40,6 +46,18 @@ struct Sep3dApplicationInput {
   double maximumParticleSpeedMPerS = 0.0;
   double timeStepMarginFactor = 0.0;
   double sourceNormalizationRadiusM = 0.0;
+
+  // The particle-source subsection is explicit even though only the first
+  // statistical representation is currently executable.  Energies are total
+  // kinetic energy per particle [J].  ``compression-ratio`` derives the
+  // isotropic DSA phase-space exponent q=3X/(X-1) independently on every
+  // accepted triangle; ``constant`` uses fixedPhaseSpacePowerIndex.
+  std::string particleWeightingModel;
+  std::string momentumPowerLawModel;
+  double minimumInjectionEnergyJ = 0.0;
+  double maximumInjectionEnergyJ = 0.0;
+  double fixedPhaseSpacePowerIndex = 0.0;
+  std::uint64_t maximumInjectionEventsPerSpeciesPerStep = 0;
 
   // The reduced model's complete canonical v1.1 assignment layer is carried
   // in memory. Relative magnetic/PFSS assets resolve from the physical file

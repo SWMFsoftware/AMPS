@@ -106,6 +106,14 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("CFG3D11", "CFG3D", "Transport/control schema", "cpp"),
     TestDefinition("CFG3D12", "CFG3D", "Corner/sphere input and endpoint normalization", "cpp"),
     TestDefinition("CFG3D13", "CFG3D", "Shared srcSEP3D application-input section", "cpp"),
+    # Keep the aggregate manifest synchronized with the authoritative C++
+    # registry.  These post-allocation/source gates must participate in
+    # ``--all``: otherwise a clean aggregate could omit the equations that set
+    # the global step and weight, the real-provider preflight, and the actual
+    # constant-weight Poisson/triangle/momentum sampler.
+    TestDefinition("CFG3D14", "CFG3D", "Derived particle numerics", "cpp"),
+    TestDefinition("CFG3D15", "CFG3D", "Parsed reduced model", "cpp"),
+    TestDefinition("CFG3D16", "CFG3D", "Reduced-front particle source", "cpp"),
     TestDefinition("DOM3D01", "DOM3D", "Whole-corridor corner bounds", "source"),
     TestDefinition("DOM3D02", "DOM3D", "Solar sphere and photospheric coarsening", "source"),
     TestDefinition("DOM3D03", "DOM3D", "Connected sphere/corridor AMR allocation", "source"),
@@ -1604,7 +1612,12 @@ def _check_makefile_relocation(definition: TestDefinition,
         "#define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) "
         "PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_SecondOrder"
         "(ptr,LocalTimeStep,node);\n"
-        "#endif\n", encoding="utf-8")
+        "#endif\n"
+        "// Mimic the late input-derived override appended by ampsConfig.pl.\n"
+        "#undef _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_\n"
+        "#define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) "
+        "PIC::Mover::GuidingCenter::Mover_SecondOrder(ptr,LocalTimeStep,node)\n",
+        encoding="utf-8")
 
     expected = {
         f"AMPS_ROOT={fixture.resolve()}",
@@ -1662,7 +1675,8 @@ def _check_makefile_relocation(definition: TestDefinition,
         definition.test_id, definition.group, "PASS",
         "source srcSEP3D and copied build/main makefiles resolve the same "
         "AMPS root, Makefile.conf, sep_common, SWCME, and sep_coronal_cme "
-        "directories; production orchestration delegates to enclosing make amps",
+        "directories; production orchestration delegates to enclosing make amps "
+        "and keeps the srcSEP3D mover authoritative after late AMPS overrides",
         elapsed, commands)
 
 

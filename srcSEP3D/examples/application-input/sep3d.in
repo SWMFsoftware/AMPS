@@ -5,8 +5,13 @@ shock_model = reduced-shock-surface
 background_plasma_model = corona-swcme-ambient
 source_model = accepted-shock-incident-flux
 
-! Exact computational particles represented per iteration and compiled
-! species. The continued spelling demonstrates logical-line joining.
+! Explicit standalone stopping horizon. This short checked-in example is an
+! initialization/injection smoke case; increase it for physical campaigns.
+maximum_time_steps = 4
+
+! Expected computational particles per iteration and compiled species at the
+! required normalization radius. The live count is Poisson distributed and
+! changes with accepted incident flux while W_s stays constant.
 particles_per_iteration = \
   1000
 
@@ -18,6 +23,24 @@ time_step_margin_factor = 0.30
 ! Required physical normalization location. This example uses the exact
 ! 20-R_sun corona/SWCME handoff; there is intentionally no parser default.
 source_normalization_radius_m = 13914000000
+
+#subsection begin: shock-particle-injection
+! The implemented sampler assigns every particle of one species the same W_s.
+! The second accepted spelling, log-uniform-momentum-importance, is reserved
+! and terminates startup until its individual-weight correction is qualified.
+statistical_weight_model = constant-statistical-weight
+
+! Total kinetic-energy interval per particle: 10 keV through 100 MeV in SI.
+minimum_energy_j = 1.602176634e-15
+maximum_energy_j = 1.602176634e-11
+
+! q=3X/(X-1) is derived independently from each accepted triangle and the
+! sampled number density is dN/dp proportional to p^(2-q).
+phase_space_power_model = compression-ratio
+
+! Fatal runaway guard, not a cap or source-rate renormalization.
+maximum_events_per_species_per_step = 1000000
+#subsection end
 
 ! The complete reduced model lives in a separate included input fragment so
 ! the top-level application controls remain readable.

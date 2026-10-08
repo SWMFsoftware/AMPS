@@ -14,10 +14,18 @@ and a complete reduced-model subsection:
 shock_model = reduced-shock-surface
 background_plasma_model = corona-swcme-ambient
 source_model = accepted-shock-incident-flux
+maximum_time_steps = 4
 particles_per_iteration = 1000
 maximum_particle_speed_m_s = 2.0e8
 time_step_margin_factor = 0.30
 source_normalization_radius_m = 1.3914e10 ! required; no default
+#subsection begin: shock-particle-injection
+statistical_weight_model = constant-statistical-weight
+minimum_energy_j = 1.602176634e-15
+maximum_energy_j = 1.602176634e-11
+phase_space_power_model = compression-ratio
+maximum_events_per_species_per_step = 1000000
+#subsection end
 #include "reduced-shock-surface.in"
 #section end
 ```
@@ -47,9 +55,31 @@ for the runnable three-file example.
 
 The maintained `--input FILE` spelling still selects the complete schema-4
 srcSEP3D deck documented in `CONFIGURATION.md`; this preserves existing
-campaigns. The new source-rate calculation normalizes weights only: it does
-not silently enable the particle source, introduce an acceleration efficiency,
-or turn ambient volume values into downstream CME plasma.
+campaigns. The one-dash path above registers
+`PIC::BC::UserDefinedParticleInjectionFunction` after its complete immutable
+configuration has been committed. On every global step all ranks generate the
+same exponential waiting-time sequence at
+`lambda=Ndot_live/W_s`, select a face by its cumulative physical rate, and
+sample a planar triangle with square-root barycentric coordinates. Exactly the
+rank owning the active AMR leaf allocates the candidate, so the global source
+does not scale with MPI rank count.
+
+The implemented `constant-statistical-weight` mode samples the momentum-number
+density `dN/dp proportional to p^(2-q)` between the configured energy limits.
+Here `q` is either fixed or evaluated separately on each accepted face as
+`q=3X/(X-1)`. The momentum is directed anti-sunward and converted to the
+gyrotropic coordinates expected by the native mover using the installed local
+magnetic field. A sampled point outside the configured radial transport shell
+or without an active owner is reported as disconnected and is not reassigned.
+The reserved `log-uniform-momentum-importance` selector fails explicitly until
+its per-particle correction factor is implemented and qualified.
+
+This is a gross swept-up ambient seed source: it applies no hidden
+acceleration efficiency and does not turn ambient volume values into
+downstream CME plasma. Rank zero reports the accepted face count, physical
+rate, Poisson candidates, all-rank injected count, and disconnected count.
+The positive two-step native fixture and the low-coronal zero-rate fixture are
+documented in the application-input README linked above.
 
 The runnable reduced-provider examples, including the positive synthetic
 low-corona-to-1-AU zero-particle case and its native volume/front output

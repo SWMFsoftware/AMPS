@@ -197,6 +197,16 @@ const char* Name(SourceSpectrumModel value) {
   return "unknown";
 }
 
+const char* Name(SourceWeightingModel value) {
+  switch (value) {
+    case SourceWeightingModel::ConstantStatisticalWeight:
+      return "constant-statistical-weight";
+    case SourceWeightingModel::LogUniformMomentumImportance:
+      return "log-uniform-momentum-importance";
+  }
+  return "unknown";
+}
+
 const char* Name(SourceRateNormalizationModel value) {
   switch (value) {
     case SourceRateNormalizationModel::ConfiguredConstant:
@@ -1167,9 +1177,12 @@ Core::Status RunConfiguration3D::Create(
   }
 
   if (normalized.intent == RunIntent::ShockInjection) {
-    if (normalized.shock != ShockAuthority::Swcme || !normalized.source.enabled) {
+    const bool supportedInjectionAuthority =
+        normalized.shock == ShockAuthority::Swcme ||
+        (reducedShockFront && normalized.shock == ShockAuthority::None);
+    if (!supportedInjectionAuthority || !normalized.source.enabled) {
       return Core::Status(Core::StatusCode::ConfigurationConflict,
-                          "shock-injection intent requires SWCME shock and enabled source");
+                          "shock-injection intent requires a supported shock authority and enabled source");
     }
   } else if (normalized.source.enabled) {
     return Core::Status(Core::StatusCode::ConfigurationConflict,
@@ -1203,13 +1216,20 @@ Core::Status RunConfiguration3D::Create(
        source.minimumEnergyJ <= 0.0 ||
        source.maximumEnergyJ <= source.minimumEnergyJ ||
        (normalized.inputSchemaVersion < 3 && source.spectralIndex <= 0.0) ||
-       source.samplesPerStep == 0)) {
+       source.samplesPerStep == 0 ||
+       source.maximumMacroparticlesPerSpeciesPerStep == 0)) {
     return Invalid("source spectrum, efficiency, or sampling controls are invalid");
   }
   if (source.spectrumModel != SourceSpectrumModel::LocalCompressionDsa &&
       source.spectrumModel !=
           SourceSpectrumModel::FixedPhaseSpacePowerLaw) {
     return Invalid("source spectrum model is unknown");
+  }
+  if (source.weightingModel !=
+          SourceWeightingModel::ConstantStatisticalWeight &&
+      source.weightingModel !=
+          SourceWeightingModel::LogUniformMomentumImportance) {
+    return Invalid("source statistical-weight model is unknown");
   }
   if (source.spectrumModel == SourceSpectrumModel::LocalCompressionDsa) {
     if (source.fixedPhaseSpacePowerIndex != 0.0) {
@@ -1596,7 +1616,10 @@ Core::Status RunConfiguration3D::Create(
           << ";source_max_J=" << source.maximumEnergyJ
           << ";source_spectrum_model=" << Name(source.spectrumModel)
           << ";source_fixed_phase_space_q="
-          << source.fixedPhaseSpacePowerIndex;
+          << source.fixedPhaseSpacePowerIndex
+          << ";source_weighting_model=" << Name(source.weightingModel)
+          << ";source_max_macroparticles_per_species_step="
+          << source.maximumMacroparticlesPerSpeciesPerStep;
   if (normalized.inputSchemaVersion < 3)
     physics << ";source_index=" << source.spectralIndex;
   else

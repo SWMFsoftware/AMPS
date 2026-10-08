@@ -49,6 +49,11 @@ struct ShockSourceRecord {
 struct InjectedParticle {
   Core::Status status;
   ParticleRecord particle;
+  // Fraction of the current AMPS interval remaining after this particle's
+  // continuous Poisson birth time. Legacy boundary sources and restart loads
+  // retain the full-step default. The native adapter consumes this value
+  // exactly once on the first mover call.
+  double remainingFirstStepFraction = 1.0;
 };
 
 // Translate a common SWCME source exactly once. For an isotropic DSA source

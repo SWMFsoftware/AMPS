@@ -1,0 +1,4 @@
+! Native source-allocation verification fixture.  The production-like launch
+! remains amps.in; this separate file deliberately begins with an already
+! fast front so a two-step test exercises particle creation immediately.
+#include "sep3d-injection-smoke.in"

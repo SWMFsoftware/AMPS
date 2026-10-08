@@ -220,7 +220,9 @@ Core::Status ParseSep3dApplicationInput(
   bool insideSection = false;
   bool insideSep3d = false;
   bool insideReducedShock = false;
+  bool insideParticleInjection = false;
   bool sawSep3d = false;
+  bool sawMaximumTimeSteps = false;
   bool sawValue = false;
   bool sawShockModel = false;
   bool sawBackgroundModel = false;
@@ -229,6 +231,13 @@ Core::Status ParseSep3dApplicationInput(
   bool sawMargin = false;
   bool sawNormalizationRadius = false;
   bool sawReducedShock = false;
+  bool sawParticleInjection = false;
+  bool sawWeightingModel = false;
+  bool sawPowerModel = false;
+  bool sawMinimumEnergy = false;
+  bool sawMaximumEnergy = false;
+  bool sawFixedPowerIndex = false;
+  bool sawMaximumInjectionEvents = false;
   std::vector<std::string> reducedKeys;
   LogicalLine sectionStart;
   LogicalLine subsectionStart;
@@ -260,9 +269,9 @@ Core::Status ParseSep3dApplicationInput(
         return Invalid(line, "unrecognized text follows '#section end'");
       if (!insideSection)
         return Invalid(line, "#section end has no matching #section begin");
-      if (insideReducedShock)
+      if (insideReducedShock || insideParticleInjection)
         return Invalid(line,
-            "reduced-shock-surface subsection is missing '#subsection end'");
+            "srcSEP3D subsection is missing '#subsection end'");
       insideSection = false;
       insideSep3d = false;
       continue;
@@ -273,36 +282,72 @@ Core::Status ParseSep3dApplicationInput(
 
     const std::string subsectionBegin = "#subsection begin:";
     if (lower.rfind(subsectionBegin, 0) == 0) {
-      if (insideReducedShock)
+      if (insideReducedShock || insideParticleInjection)
         return Invalid(line, "nested #subsection begin is not allowed");
       const std::string name = Lower(Trim(
           line.text.substr(subsectionBegin.size())));
-      if (name != "reduced-shock-surface")
+      if (name != "reduced-shock-surface" &&
+          name != "shock-particle-injection")
         return Invalid(line, "unsupported srcSEP3D subsection '" + name + "'");
-      if (sawReducedShock)
-        return Invalid(line,
-            "duplicate reduced-shock-surface subsection is not allowed");
-      insideReducedShock = true;
-      sawReducedShock = true;
+      if (name == "reduced-shock-surface") {
+        if (sawReducedShock)
+          return Invalid(line,
+              "duplicate reduced-shock-surface subsection is not allowed");
+        insideReducedShock = true;
+        sawReducedShock = true;
+        candidate.reducedShockAssetDirectory =
+            fs::path(line.file).parent_path().string();
+      } else {
+        if (sawParticleInjection)
+          return Invalid(line,
+              "duplicate shock-particle-injection subsection is not allowed");
+        insideParticleInjection = true;
+        sawParticleInjection = true;
+      }
       subsectionStart = line;
-      candidate.reducedShockAssetDirectory =
-          fs::path(line.file).parent_path().string();
       continue;
     }
     if (lower.rfind("#subsection begin", 0) == 0)
       return Invalid(line,
-          "expected '#subsection begin: reduced-shock-surface'");
+          "expected '#subsection begin: reduced-shock-surface' or "
+          "'#subsection begin: shock-particle-injection'");
     if (lower.rfind("#subsection end", 0) == 0) {
       if (lower != "#subsection end")
         return Invalid(line,
             "unrecognized text follows '#subsection end'");
-      if (!insideReducedShock)
+      if (!insideReducedShock && !insideParticleInjection)
         return Invalid(line,
             "#subsection end has no matching #subsection begin");
-      if (candidate.reducedShockConfiguration.empty())
+      if (insideReducedShock && candidate.reducedShockConfiguration.empty())
         return Invalid(line,
             "reduced-shock-surface subsection contains no model parameters");
+      if (insideParticleInjection) {
+        std::vector<std::string> missing;
+        if (!sawWeightingModel) missing.push_back("statistical_weight_model");
+        if (!sawPowerModel) missing.push_back("phase_space_power_model");
+        if (!sawMinimumEnergy) missing.push_back("minimum_energy_j");
+        if (!sawMaximumEnergy) missing.push_back("maximum_energy_j");
+        if (!sawMaximumInjectionEvents)
+          missing.push_back("maximum_events_per_species_per_step");
+        if (candidate.momentumPowerLawModel == "constant" &&
+            !sawFixedPowerIndex)
+          missing.push_back("phase_space_power_index");
+        if (!missing.empty()) {
+          std::ostringstream reason;
+          reason << "shock-particle-injection subsection is missing required ";
+          for (std::size_t index = 0; index < missing.size(); ++index) {
+            if (index != 0) reason << ", ";
+            reason << missing[index];
+          }
+          return Invalid(line, reason.str());
+        }
+        if (candidate.momentumPowerLawModel == "compression-ratio" &&
+            sawFixedPowerIndex)
+          return Invalid(line, "phase_space_power_index is inactive and must "
+              "be omitted for phase_space_power_model=compression-ratio");
+      }
       insideReducedShock = false;
+      insideParticleInjection = false;
       continue;
     }
     if (lower.rfind("#subsection", 0) == 0)
@@ -324,12 +369,83 @@ Core::Status ParseSep3dApplicationInput(
       candidate.reducedShockConfiguration += key + "=" + value + "\n";
       continue;
     }
+    if (insideParticleInjection) {
+      auto duplicate = [&](bool seen) {
+        return seen ? Invalid(line, key + " is specified more than once")
+                    : Core::Status::OK();
+      };
+      if (key == "statistical_weight_model") {
+        Core::Status unique = duplicate(sawWeightingModel);
+        if (!unique.ok()) return unique;
+        candidate.particleWeightingModel = Lower(value);
+        if (candidate.particleWeightingModel !=
+                "constant-statistical-weight" &&
+            candidate.particleWeightingModel !=
+                "log-uniform-momentum-importance")
+          return Invalid(line, "unsupported statistical_weight_model '" +
+              candidate.particleWeightingModel + "'");
+        sawWeightingModel = true;
+      } else if (key == "phase_space_power_model") {
+        Core::Status unique = duplicate(sawPowerModel);
+        if (!unique.ok()) return unique;
+        candidate.momentumPowerLawModel = Lower(value);
+        if (candidate.momentumPowerLawModel != "constant" &&
+            candidate.momentumPowerLawModel != "compression-ratio")
+          return Invalid(line, "unsupported phase_space_power_model '" +
+              candidate.momentumPowerLawModel + "'");
+        sawPowerModel = true;
+      } else if (key == "minimum_energy_j") {
+        Core::Status unique = duplicate(sawMinimumEnergy);
+        if (!unique.ok()) return unique;
+        if (!ParseFiniteDouble(value, &candidate.minimumInjectionEnergyJ) ||
+            candidate.minimumInjectionEnergyJ <= 0.0)
+          return Invalid(line, "minimum_energy_j must be finite and positive");
+        sawMinimumEnergy = true;
+      } else if (key == "maximum_energy_j") {
+        Core::Status unique = duplicate(sawMaximumEnergy);
+        if (!unique.ok()) return unique;
+        if (!ParseFiniteDouble(value, &candidate.maximumInjectionEnergyJ) ||
+            candidate.maximumInjectionEnergyJ <= 0.0)
+          return Invalid(line, "maximum_energy_j must be finite and positive");
+        sawMaximumEnergy = true;
+      } else if (key == "phase_space_power_index") {
+        Core::Status unique = duplicate(sawFixedPowerIndex);
+        if (!unique.ok()) return unique;
+        if (!ParseFiniteDouble(value,
+                &candidate.fixedPhaseSpacePowerIndex) ||
+            candidate.fixedPhaseSpacePowerIndex <= 2.0)
+          return Invalid(line, "phase_space_power_index must be finite and "
+              "greater than two for f(p) proportional to p^(-q)");
+        sawFixedPowerIndex = true;
+      } else if (key == "maximum_events_per_species_per_step") {
+        Core::Status unique = duplicate(sawMaximumInjectionEvents);
+        if (!unique.ok()) return unique;
+        if (!ParseUnsigned(value,
+                &candidate.maximumInjectionEventsPerSpeciesPerStep) ||
+            candidate.maximumInjectionEventsPerSpeciesPerStep == 0)
+          return Invalid(line, "maximum_events_per_species_per_step must be "
+              "a positive unsigned integer");
+        sawMaximumInjectionEvents = true;
+      } else {
+        return Invalid(line, "unrecognized shock-particle-injection setting '" +
+            key + "'");
+      }
+      continue;
+    }
 
     auto duplicate = [&](bool seen) {
       return seen ? Invalid(line, key + " is specified more than once")
                   : Core::Status::OK();
     };
-    if (key == "particles_per_iteration") {
+    if (key == "maximum_time_steps") {
+      Core::Status unique = duplicate(sawMaximumTimeSteps);
+      if (!unique.ok()) return unique;
+      if (!ParseUnsigned(value, &candidate.maximumTimeSteps) ||
+          candidate.maximumTimeSteps == 0)
+        return Invalid(line,
+            "maximum_time_steps must be a positive unsigned integer");
+      sawMaximumTimeSteps = true;
+    } else if (key == "particles_per_iteration") {
       Core::Status unique = duplicate(sawValue);
       if (!unique.ok()) return unique;
       if (!ParseUnsigned(value, &candidate.particlesPerIteration) ||
@@ -395,7 +511,7 @@ Core::Status ParseSep3dApplicationInput(
     }
   }
 
-  if (insideReducedShock)
+  if (insideReducedShock || insideParticleInjection)
     return Invalid(subsectionStart,
         "subsection reaches end of expanded input without '#subsection end'");
   if (insideSection)
@@ -404,6 +520,7 @@ Core::Status ParseSep3dApplicationInput(
     return InvalidFile(candidate.rootFile,
         "missing required '#section begin: sep3d' section");
   std::vector<std::string> missing;
+  if (!sawMaximumTimeSteps) missing.push_back("maximum_time_steps");
   if (!sawValue) missing.push_back("particles_per_iteration");
   if (!sawShockModel) missing.push_back("shock_model");
   if (!sawBackgroundModel) missing.push_back("background_plasma_model");
@@ -413,6 +530,8 @@ Core::Status ParseSep3dApplicationInput(
   if (!sawNormalizationRadius)
     missing.push_back("source_normalization_radius_m");
   if (!sawReducedShock) missing.push_back("reduced-shock-surface subsection");
+  if (!sawParticleInjection)
+    missing.push_back("shock-particle-injection subsection");
   if (!missing.empty()) {
     std::ostringstream reason;
     reason << "sep3d section is missing required ";
@@ -422,6 +541,10 @@ Core::Status ParseSep3dApplicationInput(
     }
     return InvalidFile(candidate.rootFile,reason.str());
   }
+  if (candidate.maximumInjectionEnergyJ <=
+      candidate.minimumInjectionEnergyJ)
+    return InvalidFile(candidate.rootFile,
+        "maximum_energy_j must be greater than minimum_energy_j");
   *result = std::move(candidate);
   return Core::Status::OK();
 }
@@ -434,7 +557,8 @@ std::string Sep3dApplicationInputSummary(
           << "  expanded_file_count=" << input.expandedFiles.size() << '\n';
   for (const std::string& file : input.expandedFiles)
     summary << "  expanded_file=" << file << '\n';
-  summary << "  particles_per_iteration=" << input.particlesPerIteration
+  summary << "  maximum_time_steps=" << input.maximumTimeSteps << '\n'
+          << "  particles_per_iteration=" << input.particlesPerIteration
           << " (per compiled species)\n"
           << "  shock_model=" << input.shockModel << '\n'
           << "  background_plasma_model=" << input.backgroundPlasmaModel
@@ -446,6 +570,20 @@ std::string Sep3dApplicationInputSummary(
           << '\n'
           << "  source_normalization_radius_m="
           << input.sourceNormalizationRadiusM << '\n'
+          << "  statistical_weight_model="
+          << input.particleWeightingModel << '\n'
+          << "  phase_space_power_model="
+          << input.momentumPowerLawModel << '\n'
+          << "  minimum_injection_energy_j="
+          << input.minimumInjectionEnergyJ << '\n'
+          << "  maximum_injection_energy_j="
+          << input.maximumInjectionEnergyJ << '\n'
+          << "  phase_space_power_index="
+          << (input.momentumPowerLawModel == "constant"
+                  ? std::to_string(input.fixedPhaseSpacePowerIndex)
+                  : std::string("derived from local compression")) << '\n'
+          << "  maximum_events_per_species_per_step="
+          << input.maximumInjectionEventsPerSpeciesPerStep << '\n'
           << "  reduced_shock_asset_directory="
           << input.reducedShockAssetDirectory << '\n'
           << "  value_source=" << input.valueFile << ':' << input.valueLine

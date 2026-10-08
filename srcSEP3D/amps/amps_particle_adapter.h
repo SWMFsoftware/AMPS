@@ -69,7 +69,8 @@ long int ParticleStateOffset();
 // adapter. Existing uninitialized particles are rejected by MoveParticle;
 // synthesizing a stable ID from an allocation slot would break reproducibility.
 Core::Status InitializeParticle(long int ptr,
-                                const Adapters::ParticleRecord& particle);
+                                const Adapters::ParticleRecord& particle,
+                                double remainingFirstStepFraction = 1.0);
 Core::Status ReadParticle(long int ptr, Adapters::ParticleRecord* particle);
 
 struct InjectionOutcome {
@@ -83,6 +84,15 @@ struct InjectionOutcome {
 // is complete before this call, so no source decision depends on allocation
 // order or MPI traversal.
 InjectionOutcome InjectParticles(const Adapters::InjectionPlan& plan);
+
+// Convert a requested Cartesian unit direction into the (mu,gyrophase)
+// coordinates consumed by the maintained guiding-centre mover.  This is the
+// inverse of the adapter's deterministic basis construction and is used by
+// the reduced-front source to impose anti-sunward launch without bypassing
+// persistent particle state.
+Core::Status GyrotropicCoordinatesForDirection(
+    const Core::Vec3& direction,const Core::Vec3& bHat,
+    double* mu,double* gyrophaseRad);
 
 struct PopulationControlRequest {
   std::uint64_t step = 0;

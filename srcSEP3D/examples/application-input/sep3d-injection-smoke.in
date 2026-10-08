@@ -1,0 +1,26 @@
+#section begin: sep3d
+shock_model = reduced-shock-surface
+background_plasma_model = corona-swcme-ambient
+source_model = accepted-shock-incident-flux
+
+! Two native steps are sufficient to test callback invocation, owner-only
+! allocation, motion through the remainder of each birth step, and a changing
+! provider epoch.  This is a verification horizon, not a propagation case.
+maximum_time_steps = 2
+particles_per_iteration = 1000
+maximum_particle_speed_m_s = 200000000
+time_step_margin_factor = 0.30
+! 51 R_sun matches this fixture's deliberately later handoff. Its complete
+! 45-degree SSE cap is then outside srcSEP3D's fixed 20-R_sun source shell.
+source_normalization_radius_m = 35480700000
+
+#subsection begin: shock-particle-injection
+statistical_weight_model = constant-statistical-weight
+minimum_energy_j = 1.602176634e-15
+maximum_energy_j = 1.602176634e-11
+phase_space_power_model = compression-ratio
+maximum_events_per_species_per_step = 1000000
+#subsection end
+
+#include "reduced-shock-surface-injection-smoke.in"
+#section end

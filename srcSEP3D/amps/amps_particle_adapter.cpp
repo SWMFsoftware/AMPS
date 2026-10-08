@@ -19,7 +19,7 @@ namespace {
 // Stored as raw bytes through memcpy: AMPS does not promise that an extension
 // offset is naturally aligned. The schema tag makes stale checkpoints fail
 // visibly instead of interpreting an older byte layout as valid state.
-constexpr std::uint64_t kParticleSchema = UINT64_C(0x5345503344413032);
+constexpr std::uint64_t kParticleSchema = UINT64_C(0x5345503344413033);
 struct PersistentState {
   std::uint64_t schema = kParticleSchema;
   std::uint64_t stableId = 0;
@@ -32,6 +32,11 @@ struct PersistentState {
   double remainingScatteringOpticalDepth =
       std::numeric_limits<double>::quiet_NaN();
   std::uint64_t nextScatteringEvent = 0;
+  // This transient-looking value lives in the packed AMPS extension rather
+  // than a process map because particle movers may run concurrently. It is
+  // reset to one after the first move. Checkpoints are written only at joined
+  // post-move boundaries, so a committed checkpoint always carries one.
+  double remainingFirstStepFraction = 1.0;
 };
 
 long int gParticleStateOffset = -1;
@@ -71,6 +76,20 @@ Core::Vec3 GyrotropicVelocity(double speedMPerS, double mu,
   const double perpendicular = std::sqrt(std::max(0.0, 1.0 - mu * mu));
   return speedMPerS * (mu * bHat + perpendicular *
       (std::cos(gyrophaseRad) * e1 + std::sin(gyrophaseRad) * e2));
+}
+
+Core::Status GyrotropicBasis(const Core::Vec3& bHat,
+                             Core::Vec3* e1,Core::Vec3* e2) {
+  if(e1==nullptr||e2==nullptr||!std::isfinite(bHat.x)||
+      !std::isfinite(bHat.y)||!std::isfinite(bHat.z)||
+      std::fabs(bHat.Norm()-1.0)>1.0e-12)
+    return Invalid("gyrotropic basis requires a finite unit magnetic direction");
+  const double ax=std::fabs(bHat.x),ay=std::fabs(bHat.y),az=std::fabs(bHat.z);
+  const Core::Vec3 reference=ax<=ay&&ax<=az?Core::Vec3(1,0,0):
+      (ay<=az?Core::Vec3(0,1,0):Core::Vec3(0,0,1));
+  *e1=bHat.Cross(reference).Normalized();
+  *e2=bHat.Cross(*e1);
+  return Core::Status::OK();
 }
 
 void RecordOutcome(const Adapters::MoverResult& moved, int species,
@@ -313,11 +332,14 @@ Core::Status RequestParticleStorage() {
 long int ParticleStateOffset() { return gParticleStateOffset; }
 
 Core::Status InitializeParticle(long int ptr,
-                                const Adapters::ParticleRecord& particle) {
+                                const Adapters::ParticleRecord& particle,
+                                double remainingFirstStepFraction) {
   if (!gStorageRequested || ptr < 0 || particle.stableId == 0 ||
       particle.species < 0 || !std::isfinite(particle.momentumKgMPerS) ||
       particle.momentumKgMPerS < 0.0 || !std::isfinite(particle.mu) ||
-      particle.mu < -1.0 || particle.mu > 1.0)
+      particle.mu < -1.0 || particle.mu > 1.0 ||
+      !std::isfinite(remainingFirstStepFraction) ||
+      remainingFirstStepFraction <= 0.0 || remainingFirstStepFraction > 1.0)
     return Invalid("new AMPS particle or persistent state is invalid");
   PIC::ParticleBuffer::byte* data =
       PIC::ParticleBuffer::GetParticleDataPointer(ptr);
@@ -333,6 +355,7 @@ Core::Status InitializeParticle(long int ptr,
   state.remainingScatteringOpticalDepth =
       particle.remainingScatteringOpticalDepth;
   state.nextScatteringEvent = particle.nextScatteringEvent;
+  state.remainingFirstStepFraction=remainingFirstStepFraction;
   StorePersistent(data, state);
   return Core::Status::OK();
 }
@@ -404,7 +427,8 @@ InjectionOutcome InjectParticles(const Adapters::InjectionPlan& plan) {
         x, v, &correction, &species, nullptr,
         _PIC_INIT_PARTICLE_MODE__ADD2LIST_, static_cast<void*>(node));
     if (ptr < 0) { ++outcome.rejected; continue; }
-    const Core::Status initialized = InitializeParticle(ptr, particle);
+    const Core::Status initialized = InitializeParticle(
+        ptr, particle, injected.remainingFirstStepFraction);
     if (!initialized.ok()) {
       PIC::ParticleBuffer::DeleteParticle(ptr);
       ++outcome.rejected;
@@ -417,6 +441,24 @@ InjectionOutcome InjectParticles(const Adapters::InjectionPlan& plan) {
       : Core::Status(Core::StatusCode::Error,
                      "one or more planned source particles were rejected by AMPS");
   return outcome;
+}
+
+Core::Status GyrotropicCoordinatesForDirection(
+    const Core::Vec3& direction,const Core::Vec3& bHat,
+    double* mu,double* gyrophaseRad) {
+  if(mu==nullptr||gyrophaseRad==nullptr||!std::isfinite(direction.x)||
+      !std::isfinite(direction.y)||!std::isfinite(direction.z)||
+      std::fabs(direction.Norm()-1.0)>1.0e-12)
+    return Invalid("launch direction must be a finite Cartesian unit vector");
+  Core::Vec3 e1,e2;
+  Core::Status status=GyrotropicBasis(bHat,&e1,&e2);
+  if(!status.ok())return status;
+  *mu=std::max(-1.0,std::min(1.0,direction.Dot(bHat)));
+  const Core::Vec3 perpendicular=direction-*mu*bHat;
+  *gyrophaseRad=perpendicular.Norm()<=1.0e-14
+      ? 0.0 : std::atan2(perpendicular.Dot(e2),perpendicular.Dot(e1));
+  if(*gyrophaseRad<0)*gyrophaseRad+=2*Core::Const::kPi;
+  return Core::Status::OK();
 }
 
 PopulationControlReport ApplyPopulationControl(
@@ -696,6 +738,9 @@ int MoveParticle(long int ptr, double dtTotal,
   const auto& runtime = SEP3D::ApplicationRuntime();
   const auto& configuration = runtime.configuration();
   if (persistent.schema != kParticleSchema || persistent.stableId == 0 ||
+      !std::isfinite(persistent.remainingFirstStepFraction) ||
+      persistent.remainingFirstStepFraction<=0.0 ||
+      persistent.remainingFirstStepFraction>1.0 ||
       species < 0 || species >= PIC::nTotalSpecies || !configuration ||
       runtime.state() != RuntimeModel::LifecycleState::Running) {
     PIC::ParticleBuffer::DeleteParticle(ptr);
@@ -724,7 +769,12 @@ int MoveParticle(long int ptr, double dtTotal,
   input.shock = gContext.shock;
   input.speciesMassKg = PIC::MolecularData::GetMass(species);
   input.speciesChargeC = PIC::MolecularData::GetElectricCharge(species);
-  input.requestedDtS = dtTotal;
+  // The AMPS callback is invoked before this iteration's mover. A particle
+  // born at Poisson time tau therefore advances only dt-tau on its first
+  // call; subsequent calls use a full host interval. This preserves the
+  // continuous-time process rather than moving all births from the beginning
+  // of the step.
+  input.requestedDtS = dtTotal*persistent.remainingFirstStepFraction;
   input.innerRadiusM = configuration->options().innerRadiusM;
   input.outerRadiusM = configuration->options().outerRadiusM;
   input.campaignSeed = configuration->options().campaignSeed;
@@ -807,6 +857,7 @@ int MoveParticle(long int ptr, double dtTotal,
   persistent.remainingScatteringOpticalDepth =
       moved.particle.remainingScatteringOpticalDepth;
   persistent.nextScatteringEvent = moved.particle.nextScatteringEvent;
+  persistent.remainingFirstStepFraction=1.0;
   StorePersistent(data, persistent);
   double finalPosition[3];
   moved.particle.positionM.CopyTo(finalPosition);

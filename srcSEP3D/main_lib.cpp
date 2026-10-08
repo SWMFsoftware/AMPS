@@ -40,6 +40,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <climits>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -221,32 +222,55 @@ void ParseInstalledApplicationInput() {
         MPI_GLOBAL_COMMUNICATOR);
   };
 
-  unsigned long long particles = PIC::ThisThread == 0
-      ? static_cast<unsigned long long>(parsed.particlesPerIteration) : 0ULL;
-  MPI_Bcast(&particles, 1, MPI_UNSIGNED_LONG_LONG, 0,
+  unsigned long long integerInputs[3] = {
+      PIC::ThisThread == 0
+          ? static_cast<unsigned long long>(parsed.particlesPerIteration)
+          : 0ULL,
+      PIC::ThisThread == 0
+          ? static_cast<unsigned long long>(
+                parsed.maximumInjectionEventsPerSpeciesPerStep)
+          : 0ULL,
+      PIC::ThisThread == 0
+          ? static_cast<unsigned long long>(parsed.maximumTimeSteps)
+          : 0ULL};
+  MPI_Bcast(integerInputs, 3, MPI_UNSIGNED_LONG_LONG, 0,
             MPI_GLOBAL_COMMUNICATOR);
-  double numericalInputs[3]={parsed.maximumParticleSpeedMPerS,
-      parsed.timeStepMarginFactor,parsed.sourceNormalizationRadiusM};
-  MPI_Bcast(numericalInputs,3,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
+  double numericalInputs[6]={parsed.maximumParticleSpeedMPerS,
+      parsed.timeStepMarginFactor,parsed.sourceNormalizationRadiusM,
+      parsed.minimumInjectionEnergyJ,parsed.maximumInjectionEnergyJ,
+      parsed.fixedPhaseSpacePowerIndex};
+  MPI_Bcast(numericalInputs,6,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
   broadcastString(&parsed.shockModel);
   broadcastString(&parsed.backgroundPlasmaModel);
   broadcastString(&parsed.sourceModel);
+  broadcastString(&parsed.particleWeightingModel);
+  broadcastString(&parsed.momentumPowerLawModel);
   broadcastString(&parsed.reducedShockConfiguration);
   broadcastString(&parsed.reducedShockAssetDirectory);
   if(PIC::ThisThread!=0) {
-    parsed.particlesPerIteration=static_cast<std::uint64_t>(particles);
+    parsed.particlesPerIteration=
+        static_cast<std::uint64_t>(integerInputs[0]);
+    parsed.maximumInjectionEventsPerSpeciesPerStep=
+        static_cast<std::uint64_t>(integerInputs[1]);
+    parsed.maximumTimeSteps=static_cast<std::uint64_t>(integerInputs[2]);
     parsed.maximumParticleSpeedMPerS=numericalInputs[0];
     parsed.timeStepMarginFactor=numericalInputs[1];
     parsed.sourceNormalizationRadiusM=numericalInputs[2];
+    parsed.minimumInjectionEnergyJ=numericalInputs[3];
+    parsed.maximumInjectionEnergyJ=numericalInputs[4];
+    parsed.fixedPhaseSpacePowerIndex=numericalInputs[5];
   }
 
   SEP3D::RuntimeModel::RunConfiguration3DOptions options =
       Configuration().options();
   // The shared section owns the selected provider pair. The reduced provider
   // remains the sole front/ambient authority; `shock=none` deliberately keeps
-  // the legacy SWCME particle-facing shock adapter inactive. The separately
-  // selected incident-flux model below only normalizes statistical weights.
+  // the legacy SWCME adapter inactive.  ShockInjection is nevertheless a
+  // truthful intent because the new callback samples the same reduced
+  // provider's accepted triangular faces rather than constructing a second
+  // geometry authority.
   options.inputSchemaVersion=4;
+  options.maximumTimeSteps=parsed.maximumTimeSteps;
   options.background=
       SEP3D::RuntimeModel::BackgroundAuthority::RuntimeModel;
   options.backgroundModelId="sep-corona-swcme-shock-front-v1";
@@ -261,9 +285,33 @@ void ParseInstalledApplicationInput() {
   // Parker the selected background or copy any of its plasma values.
   options.parker.coordinateFrame=options.coordinateFrame;
   options.shock=SEP3D::RuntimeModel::ShockAuthority::None;
-  options.intent=SEP3D::RuntimeModel::RunIntent::TransportOnly;
-  options.source.enabled=false;
-  options.source.samplesPerStep = static_cast<std::uint64_t>(particles);
+  options.intent=SEP3D::RuntimeModel::RunIntent::ShockInjection;
+  options.source.enabled=true;
+  options.source.samplesPerStep =
+      static_cast<std::uint64_t>(integerInputs[0]);
+  options.source.minimumEnergyJ=parsed.minimumInjectionEnergyJ;
+  options.source.maximumEnergyJ=parsed.maximumInjectionEnergyJ;
+  options.source.maximumMacroparticlesPerSpeciesPerStep=
+      parsed.maximumInjectionEventsPerSpeciesPerStep;
+  if(parsed.momentumPowerLawModel=="compression-ratio") {
+    options.source.spectrumModel=
+        SEP3D::RuntimeModel::SourceSpectrumModel::LocalCompressionDsa;
+    options.source.fixedPhaseSpacePowerIndex=0.0;
+  } else {
+    options.source.spectrumModel=
+        SEP3D::RuntimeModel::SourceSpectrumModel::FixedPhaseSpacePowerLaw;
+    options.source.fixedPhaseSpacePowerIndex=
+        parsed.fixedPhaseSpacePowerIndex;
+  }
+  options.source.weightingModel=
+      parsed.particleWeightingModel=="constant-statistical-weight"
+          ? SEP3D::RuntimeModel::SourceWeightingModel::
+                ConstantStatisticalWeight
+          : SEP3D::RuntimeModel::SourceWeightingModel::
+                LogUniformMomentumImportance;
+  // AcceptedShockIncidentFlux already is the declared physical seed rate.
+  // No hidden efficiency is applied to the live per-face sum.
+  options.source.injectionEfficiency=1.0;
   options.particleNumerics.deriveFromMeshAndShock=true;
   options.particleNumerics.sourceRateModel=
       SEP3D::RuntimeModel::SourceRateNormalizationModel::
@@ -1338,6 +1386,206 @@ SEP3D::Core::Status ResolvePopulationMagneticDirection(
   }
   *bHat = background.bHat;
   return SEP3D::Core::Status::OK();
+}
+
+SEP3D::Adapters::ExpandingShock ReducedMoverShock(
+    const SEP::CoronaSwcme::ShockFront::Epoch& epoch,
+    const SEP::CoronaSwcme::ShockFront::Configuration& event) {
+  SEP3D::Adapters::ExpandingShock shock;
+  shock.centerM=SEP3D::Core::Vec3();
+  shock.radiusAtStepStartM=epoch.trajectory.apexRadiusM;
+  shock.radialSpeedMPerS=epoch.trajectory.apexSpeedMPerS;
+  shock.generation=epoch.generation;
+  shock.active=epoch.apexShockAccepted;
+  shock.geometry=SEP3D::Adapters::ShockGeometryKind::FiniteSSE;
+  shock.cmeDirection=SEP3D::Core::Vec3(
+      event.direction.x,event.direction.y,event.direction.z);
+  shock.halfWidthRad=event.halfWidthRad;
+  return shock;
+}
+
+double RelativisticKineticEnergyJ(double momentumKgMPerS,double massKg) {
+  const long double p=momentumKgMPerS;
+  const long double m=massKg;
+  const long double c=SEP3D::Core::Const::c;
+  return static_cast<double>(
+      (std::sqrt(p*p*c*c+m*m*c*c*c*c)-m*c*c));
+}
+
+// AMPS calls this function once per rank at the injection phase of every
+// PIC::TimeStep. All ranks reconstruct the same Poisson candidates from
+// (campaign,species,tick,generation) keys. The replicated AMR tree then
+// selects exactly one owner for each point, so MPI decomposition changes who
+// allocates a particle but not the stochastic physical source.
+long int InjectReducedShockSurfaceParticles() {
+  using namespace SEP3D;
+  const auto reduced=std::dynamic_pointer_cast<
+      Adapters::ShockFrontBackgroundAdapter>(gRuntimeBackgroundProvider);
+  const auto provider=reduced?reduced->SharedProvider():nullptr;
+  const auto epoch=reduced?reduced->FrontEpoch():nullptr;
+  if(!provider||!epoch)
+    StopWithStatus("reduced-front particle injection",Core::Status(
+        Core::StatusCode::SnapshotUnavailable,
+        "the committed reduced-front epoch is unavailable"));
+  const auto& options=Configuration().options();
+  const double dt=options.requestedTimeStepS;
+  const std::uint64_t particleStep=
+      ApplicationRuntime().counters().completedSteps;
+  unsigned long long localTotal=0;
+
+  for(const auto& species:gCompiledSpecies) {
+    RuntimeModel::SurfaceInjectionBatch batch;
+    Core::Status status;
+    if(options.source.weightingModel==
+        RuntimeModel::SourceWeightingModel::ConstantStatisticalWeight) {
+      status=RuntimeModel::GenerateConstantWeightSurfaceInjectionBatch(
+          *provider,*epoch,species,options.source,
+          ConfiguredParticleWeight(species.ampsIndex),dt,
+          options.campaignSeed,particleStep,&batch);
+    } else {
+      status=RuntimeModel::GenerateLogUniformMomentumImportanceBatch(
+          *provider,*epoch,species,options.source,
+          ConfiguredParticleWeight(species.ampsIndex),dt,
+          options.campaignSeed,particleStep,&batch);
+    }
+    if(!status.ok())StopWithStatus("reduced-front source sampling",status);
+
+    Adapters::InjectionPlan localPlan;
+    localPlan.status=Core::Status::OK();
+    std::uint64_t disconnected=0;
+    double localEnergyJ=0;
+    Core::Vec3 localMomentum;
+    for(const RuntimeModel::SurfaceInjectionEvent& event:batch.events) {
+      const double radius=event.positionM.Norm();
+      if(!std::isfinite(radius)||radius<=0)
+        StopWithStatus("reduced-front source direction",Core::Status(
+            Core::StatusCode::InvalidInput,
+            "a sampled shock point has no heliocentric direction"));
+      double x[3];event.positionM.CopyTo(x);
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=
+          PIC::Mesh::mesh->findTreeNode(x);
+      // A Cartesian AMR block can geometrically cover the solar interior or
+      // the deliberately excluded r<innerRadius transport region. Native
+      // background storage is undefined there even when the tree node exists.
+      // Connectivity therefore requires both radial physics support and an
+      // active AMR leaf. These predicates are replicated, so every rank adds
+      // the same event once to the global disconnected budget; the event is
+      // never moved to another face or used to renormalize the physical rate.
+      if(radius<options.innerRadiusM||radius>options.outerRadiusM||
+          node==nullptr||!node->IsUsedInCalculationFlag) {
+        ++disconnected;
+        continue;
+      }
+      if(node->Thread!=PIC::ThisThread)continue;
+      if(node->block==nullptr)
+        StopWithStatus("reduced-front source ownership",Core::Status(
+            Core::StatusCode::LayoutMismatch,
+            "the owning active AMR node has no allocated block"));
+
+      const Core::Vec3 antiSunward=event.positionM/radius;
+      Core::Vec3 bHat;
+      status=ResolvePopulationMagneticDirection(event.positionM,node,&bHat);
+      if(!status.ok())StopWithStatus("reduced-front source magnetic basis",status);
+      double mu=0,gyrophase=0;
+      status=AMPS::Movers::GyrotropicCoordinatesForDirection(
+          antiSunward,bHat,&mu,&gyrophase);
+      if(!status.ok())StopWithStatus("reduced-front source direction",status);
+
+      Adapters::InjectedParticle injected;
+      injected.status=Core::Status::OK();
+      injected.remainingFirstStepFraction=event.remainingStepFraction;
+      injected.particle.stableId=event.stableId;
+      injected.particle.species=species.ampsIndex;
+      injected.particle.positionM=event.positionM;
+      injected.particle.momentumKgMPerS=event.momentumKgMPerS;
+      injected.particle.mu=mu;
+      injected.particle.gyrophaseRad=gyrophase;
+      injected.particle.statisticalWeight=
+          ConfiguredParticleWeight(species.ampsIndex);
+      injected.particle.completedStep=particleStep;
+      // The particle is born on this generation. Marking it prevents the
+      // geometric intersection finder from treating the t=0 birth point as
+      // an additional crossing of the same shock.
+      injected.particle.lastShockGeneration=epoch->generation;
+      localPlan.particles.push_back(std::move(injected));
+    }
+
+    const AMPS::Movers::InjectionOutcome outcome=
+        AMPS::Movers::InjectParticles(localPlan);
+    if(!outcome.status.ok())
+      StopWithStatus("reduced-front AMPS particle allocation",outcome.status);
+    status=gParticleLedger.RecordInjection(
+        particleStep,species.ampsIndex,outcome.allocated);
+    if(!status.ok())StopWithStatus("reduced-front particle ledger",status);
+    if(outcome.allocated>static_cast<std::uint64_t>(LONG_MAX)||
+        PIC::BC::nInjectedParticles[species.ampsIndex]>
+            LONG_MAX-static_cast<long int>(outcome.allocated))
+      StopWithStatus("reduced-front injection counter",Core::Status(
+          Core::StatusCode::Error,"native injection counter overflow"));
+    PIC::BC::nInjectedParticles[species.ampsIndex]+=
+        static_cast<long int>(outcome.allocated);
+    PIC::BC::ParticleProductionRate[species.ampsIndex]+=
+        outcome.allocated*ConfiguredParticleWeight(species.ampsIndex)/dt;
+    PIC::BC::ParticleMassProductionRate[species.ampsIndex]+=
+        outcome.allocated*ConfiguredParticleWeight(species.ampsIndex)*
+        species.massKg/dt;
+    localTotal+=outcome.allocated;
+
+    for(const auto& injected:localPlan.particles) {
+      const double represented=ConfiguredParticleWeight(species.ampsIndex);
+      localEnergyJ+=represented*RelativisticKineticEnergyJ(
+          injected.particle.momentumKgMPerS,species.massKg);
+      localMomentum+=represented*injected.particle.momentumKgMPerS*
+          injected.particle.positionM.Normalized();
+    }
+    unsigned long long localCount=outcome.allocated,globalCount=0;
+    MPI_Allreduce(&localCount,&globalCount,1,MPI_UNSIGNED_LONG_LONG,MPI_SUM,
+        MPI_GLOBAL_COMMUNICATOR);
+    double localConserved[4]={localEnergyJ,localMomentum.x,localMomentum.y,
+        localMomentum.z},globalConserved[4]={};
+    MPI_Allreduce(localConserved,globalConserved,4,MPI_DOUBLE,MPI_SUM,
+        MPI_GLOBAL_COMMUNICATOR);
+    if(globalCount+disconnected!=batch.events.size())
+      StopWithStatus("reduced-front source MPI ownership",Core::Status(
+          Core::StatusCode::LayoutMismatch,
+          "Poisson candidates were not assigned exactly once to an owner or "
+          "the explicit disconnected budget"));
+
+    if(PIC::ThisThread==0) {
+      Adapters::SourceLedgerRow row;
+      row.step=particleStep;
+      row.species=species.ampsIndex;
+      row.shockGeneration=epoch->generation;
+      row.sourceId=Fnv1a64("reduced-front:"+
+          std::to_string(epoch->generation)+":"+
+          std::to_string(particleStep)+":"+
+          std::to_string(species.ampsIndex));
+      if(row.sourceId==0)row.sourceId=1;
+      row.representedParticles=globalCount*
+          ConfiguredParticleWeight(species.ampsIndex);
+      row.injectedEnergyJ=globalConserved[0];
+      row.injectedMomentumKgMPerS=Core::Vec3(
+          globalConserved[1],globalConserved[2],globalConserved[3]);
+      row.macroparticles=globalCount;
+      row.rejected=disconnected;
+      row.disconnectedPatches=disconnected==0?0:1;
+      gSourceLedger.push_back(row);
+      std::cout<<std::scientific<<std::setprecision(17)
+          <<"[srcSEP3D] reduced-front source step="<<particleStep
+          <<" generation="<<epoch->generation
+          <<" species="<<species.symbol
+          <<" accepted_faces="<<batch.distribution.faces.size()
+          <<" total_source_rate_s-1="
+          <<batch.distribution.physicalRatePerS
+          <<" poisson_candidates="<<batch.events.size()
+          <<" injected_all_ranks="<<globalCount
+          <<" disconnected="<<disconnected<<'\n';
+    }
+  }
+  if(localTotal>static_cast<unsigned long long>(LONG_MAX))
+    StopWithStatus("reduced-front injection return",Core::Status(
+        Core::StatusCode::Error,"rank-local injected count exceeds long int"));
+  return static_cast<long int>(localTotal);
 }
 
 SEP3D::Core::Status ResolveLocalTransportImpl(
@@ -3910,13 +4158,38 @@ void amps_init() {
     // Rebuilding this record from radius alone would silently restore a sphere.
     mover.shock = shock.MoverGeometry();
   } else if (Configuration().options().source.enabled) {
-    StopWithStatus("source initialization", SEP3D::Core::Status(
-        SEP3D::Core::StatusCode::SnapshotUnavailable,
-        "enabled shock source requires InstallShockProvider before mesh setup"));
+    const auto reduced=std::dynamic_pointer_cast<
+        SEP3D::Adapters::ShockFrontBackgroundAdapter>(
+            gRuntimeBackgroundProvider);
+    const auto epoch=reduced?reduced->FrontEpoch():nullptr;
+    const auto provider=reduced?reduced->SharedProvider():nullptr;
+    if(!epoch||!provider)
+      StopWithStatus("source initialization", SEP3D::Core::Status(
+          SEP3D::Core::StatusCode::SnapshotUnavailable,
+          "enabled reduced-front source has no committed surface epoch"));
+    mover.shock=ReducedMoverShock(*epoch,provider->Event());
   }
   const SEP3D::Core::Status installed =
       SEP3D::AMPS::Movers::InstallContext(mover);
   if (!installed.ok()) StopWithStatus("AMPS mover context installation", installed);
+  if(gHasParsedApplicationInput&&Configuration().options().source.enabled) {
+    if(Configuration().options().source.weightingModel!=
+        SEP3D::RuntimeModel::SourceWeightingModel::ConstantStatisticalWeight)
+      StopWithStatus("reduced-front source selection",
+          SEP3D::Core::Status::Reserved(
+              "log-uniform momentum importance weighting for reduced-front injection"));
+    if(PIC::BC::UserDefinedParticleInjectionFunction!=nullptr&&
+        PIC::BC::UserDefinedParticleInjectionFunction!=
+            InjectReducedShockSurfaceParticles)
+      StopWithStatus("reduced-front source callback",SEP3D::Core::Status(
+          SEP3D::Core::StatusCode::ConfigurationConflict,
+          "another application particle-injection callback is already installed"));
+    PIC::BC::UserDefinedParticleInjectionFunction=
+        InjectReducedShockSurfaceParticles;
+    if(PIC::ThisThread==0)
+      std::cout<<"[srcSEP3D] installed reduced-front constant-weight "
+          "particle source through PIC::BC::UserDefinedParticleInjectionFunction\n";
+  }
   if (gPendingRestart) {
     PIC::SimulationTime::SetInitialValue(
         SEP3D::ApplicationRuntime().CurrentTimeS());
@@ -4547,6 +4820,25 @@ int amps_time_step() {
   status = runtime.CompleteStep();
   if (!status.ok()) StopWithStatus("Runtime CompleteStep", status);
   RefreshBackgroundAtBoundary();
+
+  // The reduced provider owns both ambient and surface epochs.  After the
+  // joined background commit, update the mover's finite-SSE crossing geometry
+  // from that exact committed epoch before any source or population-control
+  // operation can observe the next step.  No legacy SWCME object is created.
+  if(!gInstalledShock&&Configuration().options().source.enabled) {
+    const auto reduced=std::dynamic_pointer_cast<
+        SEP3D::Adapters::ShockFrontBackgroundAdapter>(
+            gRuntimeBackgroundProvider);
+    const auto epoch=reduced?reduced->FrontEpoch():nullptr;
+    const auto provider=reduced?reduced->SharedProvider():nullptr;
+    if(!epoch||!provider)
+      StopWithStatus("reduced-front source epoch update",SEP3D::Core::Status(
+          SEP3D::Core::StatusCode::SnapshotUnavailable,
+          "committed reduced-front epoch disappeared after background refresh"));
+    status=SEP3D::AMPS::Movers::UpdateShock(
+        ReducedMoverShock(*epoch,provider->Event()));
+    if(!status.ok())StopWithStatus("reduced-front mover shock update",status);
+  }
 
   // R05 source creation is a joined-boundary operation.  The provider state,
   // stochastic rounding, AMPS allocation, and conservation ledger therefore

@@ -91,6 +91,19 @@ Result FactoryAndAmbient() {
 }
 
 Result EpochAndRollback() {
+  // A native particle CFL can be far shorter than run.background_dt_s.  Each
+  // forward surface state must nevertheless receive a fresh generation; the
+  // nominal cadence is only an absolute lower bound on that identity.
+  {
+    std::shared_ptr<const R::RunConfiguration3D> fineConfiguration;
+    std::shared_ptr<B::BackgroundProvider> fineProvider;
+    auto fineStatus=Fixture(&fineConfiguration,&fineProvider);
+    if(!fineStatus.ok()||!fineProvider->Prepare(0.0).ok()||
+        fineProvider->PreparedMetadata()->generation!=1||
+        !fineProvider->Prepare(2.0).ok()||
+        fineProvider->PreparedMetadata()->generation!=2)
+      return Finish(false,"sub-cadence forward epochs reused one generation");
+  }
   std::shared_ptr<const R::RunConfiguration3D> configuration;
   std::shared_ptr<B::BackgroundProvider> provider;
   auto status=Fixture(&configuration,&provider);

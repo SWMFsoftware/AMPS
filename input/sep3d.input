@@ -55,6 +55,14 @@ MoverIntegratorMode=GuidingCenter
 #endmesh
 
 #General
+  ! The reduced-front callback creates particles only after the native mesh and
+  ! provider are live, so AMPS still needs its ordinary per-rank particle
+  ! arena.  Leaving this at the core sentinel (-1) creates no arena at all:
+  ! the first otherwise-valid source event then fails as "particle buffer is
+  ! full".  This is capacity, not a source-rate limiter; source normalization
+  ! and the Poisson process remain controlled by the runtime srcSEP3D input.
+  RequestedParticleBufferLength=1500000
+
   ReferenceInjectionParticleNumber=2000
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=off !on,off

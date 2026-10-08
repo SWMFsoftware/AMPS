@@ -39,6 +39,15 @@ enum class RandomPurpose : std::uint64_t {
   // Population resampling is similarly isolated from transport histories.
   PopulationMergeDirection = 13,
   PopulationSplitIdentity = 14,
+  // Reduced-front source streams are separate from the released legacy
+  // SWCME source streams.  Event time, face, planar barycentric coordinate,
+  // spectrum and identity therefore remain invariant if any other draw is
+  // added or if the AMR surface is repartitioned across MPI ranks.
+  ReducedSourceWaitingTime = 15,
+  ReducedSourceFace = 16,
+  ReducedSourceBarycentric = 17,
+  ReducedSourceSpectrum = 18,
+  ReducedSourceIdentity = 19,
   ReservedFuturePhysics = 1024
 };
 

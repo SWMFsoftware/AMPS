@@ -59,10 +59,19 @@ The current srcSEP3D section is:
 shock_model = reduced-shock-surface
 background_plasma_model = corona-swcme-ambient
 source_model = accepted-shock-incident-flux
+maximum_time_steps = 4
 particles_per_iteration = 1000
 maximum_particle_speed_m_s = 2.0e8
 time_step_margin_factor = 0.30
 source_normalization_radius_m = 1.3914e10
+
+#subsection begin: shock-particle-injection
+statistical_weight_model = constant-statistical-weight
+minimum_energy_j = 1.602176634e-15
+maximum_energy_j = 1.602176634e-11
+phase_space_power_model = compression-ratio
+maximum_events_per_species_per_step = 1000000
+#subsection end
 
 #subsection begin: reduced-shock-surface
 schema = shock-front-ambient-v1.1
@@ -83,12 +92,29 @@ below acquires a parser default:
 - `source_model=accepted-shock-incident-flux` selects the gross upstream
   particle flux through accepted fast-shock faces for statistical
   normalization. It is not an SEP acceleration or injection-efficiency law.
+- `maximum_time_steps` is the positive standalone AMPS iteration horizon. It
+  is explicit so a particle-producing run cannot silently inherit the
+  library's intentionally large coupled-host default.
 - `particles_per_iteration` is a positive unsigned model-particle count per
   compiled AMPS species.
 - `maximum_particle_speed_m_s` is finite and in `(0,c]`.
 - `time_step_margin_factor` is dimensionless and in `(0,1]`.
 - `source_normalization_radius_m` is the required heliocentric apex radius at
   which the front/source rate is evaluated. It has deliberately no default.
+
+The `shock-particle-injection` subsection is also mandatory:
+
+- `statistical_weight_model=constant-statistical-weight` selects the currently
+  implemented sampler. `log-uniform-momentum-importance` is parsed and
+  fingerprinted but fails startup as an explicitly reserved feature.
+- `minimum_energy_j` and `maximum_energy_j` are positive total kinetic-energy
+  bounds per particle in SI, with maximum strictly greater than minimum.
+- `phase_space_power_model=compression-ratio` derives the local isotropic DSA
+  exponent `q=3X/(X-1)` from each accepted face. `constant` instead requires
+  `phase_space_power_index=q>2`; that index must be omitted in compression
+  mode.
+- `maximum_events_per_species_per_step` is a positive fatal runaway guard. It
+  never truncates, caps or renormalizes a Poisson realization.
 
 The named reduced subsection is required and cannot be empty. Every assignment
 inside it is passed to the strict `shock-front-ambient-v1.1` resolver. This
@@ -133,8 +159,24 @@ Electron, proton and alpha populations come from the upstream EOS. A compiled
 species absent from that composition, or a compiled zero-abundance population,
 fails rather than borrowing another species' rate. The final rank-zero receipt
 prints the radius/time, accepted/excluded areas, physical rate and weight for
-each compiled species. This installs AMPS numerical weights but does not by
-itself enable the reduced provider as a particle injector.
+each compiled species.
+
+At a live committed epoch, the same equation is evaluated on every accepted
+triangle and the constant-weight macro-event rate is
+
+```text
+lambda_s(t) = Ndot_s(t) / W_s .
+```
+
+Successive waiting intervals are `-log(U)/lambda_s`. Conditional face
+selection uses `Ndot_face/Ndot_total`, and the point on the chosen planar
+triangle uses square-root barycentric coordinates. Every rank generates the
+same keyed candidate list; only the owning rank allocates through
+`PIC::BC::UserDefinedParticleInjectionFunction`. A point outside the allocated
+finite domain, including the declared radial interval even if a Cartesian AMR
+leaf exists there, is counted as disconnected and is not renormalized onto
+another face. Momentum is anti-sunward. A birth at time `tau` is advanced for only
+`dt-tau` on its first mover call.
 
 ## Comments
 
@@ -230,6 +272,13 @@ particles_per_iteration = 1000
 maximum_particle_speed_m_s = 2.0e8
 time_step_margin_factor = 0.30
 source_normalization_radius_m = 1.3914e10
+#subsection begin: shock-particle-injection
+statistical_weight_model = constant-statistical-weight
+minimum_energy_j = 1.602176634e-15
+maximum_energy_j = 1.602176634e-11
+phase_space_power_model = compression-ratio
+maximum_events_per_species_per_step = 1000000
+#subsection end
 #include "reduced-shock-surface.in"
 #section end
 ```

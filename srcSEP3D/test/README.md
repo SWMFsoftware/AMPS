@@ -49,7 +49,7 @@ The shared-input parser and derived-numerics unit gates are:
 
 ```bash
 make -C srcSEP3D -j16 test/stage1
-srcSEP3D/test/stage1 --test CFG3D13 --test CFG3D14 --test CFG3D15
+srcSEP3D/test/stage1 --test CFG3D13 --test CFG3D14 --test CFG3D15 --test CFG3D16
 make -C src/models/sep_corona_swcme -j16 shock-front-test
 ```
 
@@ -60,8 +60,13 @@ unknown-species failure. `CFG3D15` parses the maintained example, resolves the
 real checksummed magnetic asset, constructs the actual adapter/provider and
 derives a positive non-mutating accepted-shock rate. Shared `RSH41`
 independently closes that rate over production curved faces. These portable
-tests do not replace the one-/four-rank native initialization commands in
-`examples/application-input/README.md`.
+tests do not replace the one-/four-rank native source commands in
+`examples/application-input/README.md`. `CFG3D16` exercises the production
+provider's accepted-face rates, an independent face sum, exponential event
+times, rate-weighted face choice, square-root barycentric positions,
+relativistic energy-to-momentum sampling, fixed and compression-derived
+phase-space slopes, statistical-count convergence, and the reserved
+importance-weight mode's explicit failure.
 
 Run the entire selected reduced-profile campaign through one orchestrator:
 
@@ -255,7 +260,7 @@ The runner adds
 | `UTIL` | `UTIL02` | byte-exact shared-kernel reference record |
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
 | `R3D` | `R3D01`–`R3D09` | mover hook, requested-time loop, snapshot transaction, tick/events, source, observers, restart, canonical initialization source, finite empty-cell output |
-| `CFG3D` | `CFG3D01`–`CFG3D13` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line/schema-3 initialization, complete compiled AMPS species binding, turbulence selection, CME/Parker linkage, schema-4 mover/coefficient and fixed/local source choices, active-corridor connectivity, corner geometry, and the shared application-section parser |
+| `CFG3D` | `CFG3D01`–`CFG3D16` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line/schema-3 initialization, complete compiled AMPS species binding, turbulence selection, CME/Parker linkage, schema-4 mover/coefficient and fixed/local source choices, active-corridor connectivity, corner geometry, shared application-section parsing, global CFL/weight normalization, real-provider preflight, and constant-weight shock-surface sampling |
 | `MSH3D` | `MSH3D01`–`MSH3D15` | resolution, exact Parker geometry, balance, octree budget/ownership, presets, gradients, finite line, initialization Tecplot output, conservative active-corridor classification, hole-free AMR topology, and fixed solar-boundary geometry |
 | `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
 | `SNAP3D` | `SNAP3D01`–`SNAP3D08` | snapshot completeness, coupling conversion, atomicity, interpolation, batch/frame policy |
@@ -361,6 +366,15 @@ coronal model archive that the application flattens into its production
 archive. A missing-member failure under `BLDL3D05-layout/build/main` diagnoses
 this fixture, not the real enclosing AMPS build. Retain the production audit:
 it must still reject an archive with a missing or duplicated required member.
+
+The fixture also reproduces the generated AMPS ordering in which a generic
+guiding-centre mover macro appears *after* the application template. The
+production hook installer must remove any stale prior selection and append the
+srcSEP3D injection-boundary mover as the final effective definition. This
+guards a subtle native failure where particles are allocated successfully but
+the generic mover bypasses the srcSEP3D ledger. The symbol audit invokes the
+installer's `--check` mode and therefore cannot PASS merely because an earlier,
+shadowed macro occurrence exists.
 
 #### OUT3D01–02 and BLDL3D12 — excluded-volume output and header reentrancy
 
@@ -655,6 +669,9 @@ env MAKEFLAGS="-j16" srcSEP3D/test/run_tests.py --all \
 | `CFG3D11` | schema-4 active corridor/observer connectivity, population hysteresis, fixed/local source spectra, mover/coefficient compatibility, and dry-run output |
 | `CFG3D12` | corner-domain modes, endpoint normalization, photospheric refinement identity, and conflicting controls fail closed |
 | `CFG3D13` | shared sep3d sections, recursive includes, comments, continuations, CLI defaulting, immutable pre-mesh commit, and provenance-rich negative cases |
+| `CFG3D14` | distributed mesh-CFL step, exact upward cadence alignment, per-species normalization weights, and unsupported-species rejection |
+| `CFG3D15` | maintained shared-input example, checksummed magnetic asset, actual reduced provider, and side-effect-free positive accepted-shock normalization |
+| `CFG3D16` | constant-weight Poisson source, independent accepted-face sum, face/position/momentum distributions, containment, count convergence, and explicit rejection of the reserved importance-weight mode |
 
 ```bash
 python3 test/run_tests.py --suite improvements-c --rebuild \
@@ -836,7 +853,7 @@ equations, algorithms, case roles, and evidence schemas.
 | `r0` | R0 source/ABI/production gates plus RUN3D01, LAY01, and BLD01 |
 | `r1` | canonical shared-archive audit, relocated SWCME suite, and frozen common kernels |
 | `r2` | LIFE3D01–LIFE3D04 immutable configuration and lifecycle gates |
-| `improvements-c` | CFG3D01–CFG3D13 production configuration, preflight, finite-line/schema-3 initialization, species/turbulence/source selection, CME linkage, mover/coefficient selection, active-corridor, corner-domain, and shared-section parser gates |
+| `improvements-c` | CFG3D01–CFG3D16 production configuration, preflight, finite-line/schema-3 initialization, species/turbulence/source selection, CME linkage, mover/coefficient selection, active-corridor, corner-domain, shared-section parser, derived numerics, provider preflight, and source-sampling gates |
 | `improvements-r` | R3D01–R3D09 production runtime integration gates |
 | `improvements-v` | V1D01–05 controlled physics, V2D01 true parity, and V5D01 governance |
 | `phase-m` | MSH3D01–MSH3D15 mesh/storage, finite active-corridor, hole-free topology, fixed photosphere, and initialization-output gates |

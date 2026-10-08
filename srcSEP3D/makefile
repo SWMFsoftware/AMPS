@@ -359,11 +359,8 @@ audit-production-symbols:
 	    exit 1; \
 	  }; \
 	done
-	@grep -Fq 'SEP3D::AMPS::Movers::MoveParticle(ptr,LocalTimeStep,node)' \
-	  "$(PIC_GLOBAL_DFN)" || { \
-	  echo "ERROR: generated picGlobal.dfn does not select the srcSEP3D mover" >&2; \
-	  exit 1; \
-	}
+	@python3 "$(SEP3D_MAKEFILE_DIR)/amps/install_mover_hook.py" \
+	  --check "$(PIC_GLOBAL_DFN)"
 	@if nm -A $(PRODUCTION_ARCHIVES) | grep -E \
 	  'Mover_Axisymmetric_SecondOrder|TotalParticleAcceleration|GlobalEnergyDistribution|inject_particle_onto_field_line' \
 	  >/dev/null; then \

@@ -97,10 +97,14 @@ one stable ID, exact area, analytical representative position/normal/speed,
 ambient query, status and optional RH state.  A super-fast/sub-fast boundary
 is therefore never manufactured by averaging vertex flags.  This structure is
 suitable for later deterministic injection weighting and surface sampling,
-but this reduced task still allocates and injects zero particles.  Any later
-source must sample the curved `(mu,phi)` patch and use its exact area; ordinary
-barycentric sampling on the flat chord would place particles inside the
-analytical surface and bias the measure.
+while the shared provider remains independent of particle allocation. The
+srcSEP3D application now uses each patch's exact curved area for its physical
+rate and square-root barycentric sampling on the corresponding maintained
+planar triangle for native AMR ownership. Thus the injected point lies on the
+discrete triangular shock representation, slightly inside the analytical SSE
+surface. This is a declared geometric approximation whose magnitude is
+measured by curved-versus-chord area convergence; it must not be described as
+exact uniform sampling of the analytical curved patch.
 
 Independent tests reconstruct edge incidence, orientation, connectivity,
 Euler characteristic, analytical area closure and chord-area convergence.
@@ -136,6 +140,15 @@ model-particle count as `W_s=Ndot_s dt/N_model`. The shared provider itself
 remains independent of particles and MPI. Test `RSH41` recomputes the face sum
 independently from a production epoch, checks radius-domain rejection, and
 proves that the query does not commit a generation.
+
+For the currently implemented constant-weight application source, every rank
+constructs the same keyed Poisson candidates at rate `Ndot_s/W_s`, but only the
+rank owning the sampled active leaf allocates a particle. Face choice is
+proportional to the per-face rate above. The momentum-number law is
+`dN/dp proportional to p^(2-q)`, with either a fixed configured `q` or the
+local test-particle DSA value `q=3X/(X-1)`, and the initial direction is
+anti-sunward. These are srcSEP3D policies, not new provider physics; in
+particular they do not add an efficiency model or a downstream plasma volume.
 
 ## Connectivity, observers, outputs, and restart
 

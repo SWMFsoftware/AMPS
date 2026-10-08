@@ -96,17 +96,37 @@ Core::Status ShockFrontBackgroundAdapter::Prepare(double timeS) {
   if(!std::isfinite(timeS)||timeS<event.ambient.support.startS||
       timeS>event.ambient.support.endS)return Invalid(
           "shock-front adapter epoch is outside event coverage");
-  // Generation is tied to the declared background cadence rather than an
-  // application call count.  Long-double arithmetic avoids losing a cadence
-  // at heliospheric absolute times; the half-step rounding admits only times
-  // that the host parser has already constrained to its cadence.
+  // The cadence-derived value is a deterministic lower bound, not the whole
+  // generation rule.  A particle CFL step can be much shorter than the
+  // provider's nominal background/output cadence, yet every distinct front
+  // geometry sampled by the live source must still have a distinct immutable
+  // generation.  Therefore a forward request advances by at least one from
+  // the committed generation.  Sparse 60/600-s background campaigns retain
+  // their historical absolute generations, while a 2-s particle campaign no
+  // longer attempts to publish many different epochs under generation one.
+  // This is an identity correction only: it neither interpolates nor changes
+  // the analytical trajectory, ambient state, or shock admission criteria.
+  // Long-double arithmetic keeps the absolute lower bound reproducible at
+  // heliospheric times and after restart.
   const long double raw=(static_cast<long double>(timeS)-
       event.ambient.support.startS)/event.backgroundDtS;
   if(raw<0||raw>static_cast<long double>(UINT64_MAX-1))return Invalid(
       "shock-front generation would overflow");
-  const std::uint64_t generation=1+static_cast<std::uint64_t>(std::floor(raw+0.5L));
-  if(prepared_&&generation<=metadata_.generation&&timeS!=metadata_.epochS)
-    return Invalid("shock-front epochs must advance monotonically");
+  std::uint64_t generation=1+
+      static_cast<std::uint64_t>(std::floor(raw+0.5L));
+  if(prepared_) {
+    if(timeS<metadata_.epochS)
+      return Invalid("shock-front epochs must advance monotonically");
+    if(timeS>metadata_.epochS) {
+      if(metadata_.generation==UINT64_MAX)
+        return Invalid("shock-front generation would overflow");
+      generation=std::max(generation,metadata_.generation+1);
+    } else {
+      // Exact-time preparation is idempotent and retains its identity.  This
+      // is useful for read-only rebuilding; it must never consume a generation.
+      generation=metadata_.generation;
+    }
+  }
   // Provider::Prepare is transactional.  Publish the application metadata
   // only after the immutable front/ambient candidate commits, so owner arrays,
   // ghost exchange, and the diagnostic surface cannot advertise different
