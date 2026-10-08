@@ -3,20 +3,29 @@
   "component": "src/models/sep_common",
   "production_source_globs": [
     "*.cpp",
-    "*.h"
+    "*.h",
+    "parallel_diffusion/parallel_diffusion.cpp",
+    "parallel_diffusion/parallel_diffusion.h"
   ],
-  "test_source_globs": [],
+  "test_source_globs": [
+    "parallel_diffusion/test_*.cpp"
+  ],
   "documentation_globs": [
-    "*.md"
+    "*.md",
+    "parallel_diffusion/*.md"
   ],
   "retained_input_globs": [],
   "support_globs": [
     ".gitignore",
     "SOURCE_MANIFEST.json",
-    "makefile"
+    "makefile",
+    "parallel_diffusion/.gitignore",
+    "parallel_diffusion/makefile"
   ],
   "generated_globs": [
     "build/**",
+    "parallel_diffusion/build/**",
+    "parallel_diffusion/*.a",
     "*.o",
     "*.d",
     "*.a"
