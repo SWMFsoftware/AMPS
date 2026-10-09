@@ -21,6 +21,8 @@
 #include <signal.h>
 #include <sstream>
 #include <string>
+#include <filesystem>
+#include <system_error>
 
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -30,6 +32,54 @@
 #include "FluidPicInterface.h"
 
 using namespace std;
+
+namespace {
+
+// Create a directory hierarchy without invoking a shell.  The SWMF restart
+// hook is entered by every AMPS rank, just as the historical ``mkdir -p``
+// calls were, so this routine must regard a directory created concurrently by
+// another rank as success.  std::filesystem::create_directories() provides
+// exactly that idempotent contract: it creates missing parents and returns
+// without an error when the complete hierarchy already exists.
+//
+// A successful return from create_directories() is followed by an explicit
+// type check.  This distinguishes an existing directory (valid restart
+// destination) from an existing regular file or another non-directory object.
+// The latter must fail before the restart writers run; otherwise their later
+// fopen failures would obscure the actual configuration/filesystem problem.
+// The error-code overloads are used so every failure is routed through AMPS'
+// debugger-interceptable exit(line,file,message) trap rather than through a
+// C++ filesystem exception or an ignored shell return status.
+void EnsureDirectoryExists(const std::filesystem::path& directory) {
+  std::error_code error;
+  std::filesystem::create_directories(directory,error);
+
+  if (error) {
+    const std::string message=
+        "Error: cannot create restart directory '"+directory.string()+
+        "': "+error.message();
+    exit(__LINE__,__FILE__,message.c_str());
+    // The AMPS trap terminates normal runs, but its declaration is not marked
+    // [[noreturn]].  Keep the helper safe if a debugger intercepts the trap
+    // and forces it to return.
+    return;
+  }
+
+  error.clear();
+  const std::filesystem::file_status status=
+      std::filesystem::status(directory,error);
+  if (error || !std::filesystem::is_directory(status)) {
+    const std::string detail=error ? error.message() :
+        "the path exists but is not a directory";
+    const std::string message=
+        "Error: invalid restart directory '"+directory.string()+
+        "': "+detail;
+    exit(__LINE__,__FILE__,message.c_str());
+    return;
+  }
+}
+
+} // namespace
 
 void amps_init();
 void amps_init_mesh();
@@ -248,27 +298,43 @@ extern "C" {
   void amps_save_restart_(){
     if(PIC::ThisThread == 0) printf("amps_save_restart start\n");
     //printf("amps_save_restart start\n");
-    
+
+    // Select only the SWMF component directory here; all path construction
+    // below is shared so PC and PT cannot acquire different creation or error
+    // handling behavior.  The component identifier is set by the coupler and
+    // an unknown value remains a fatal configuration error.
+    const char* componentDirectory=NULL;
     switch (AMPS2SWMF::ComponentID) {
     case _AMPS_SWMF_PC_:
-      system("mkdir -p PC");
-      system("mkdir -p PC/restartOUT"); 
-
-      PIC::Restart::SamplingData::Save("PC/restartOUT/restart_field.dat");
-      PIC::Restart::SaveParticleData("PC/restartOUT/restart_particle.dat");
+      componentDirectory="PC";
       break;
 
     case _AMPS_SWMF_PT_:
-      system("mkdir -p PT");
-      system("mkdir -p PT/restartOUT");
-
-      PIC::Restart::SamplingData::Save("PT/restartOUT/restart_field.dat");
-      PIC::Restart::SaveParticleData("PT/restartOUT/restart_particle.dat");
+      componentDirectory="PT";
       break;
 
     default:
-      exit(__LINE__,__FILE__,"Error: the option is unlnown"); 
+      exit(__LINE__,__FILE__,"Error: the SWMF component option is unknown");
+      // See EnsureDirectoryExists(): do not construct a filesystem::path from
+      // the still-null selector if a debugger makes the AMPS trap return.
+      return;
     }
+
+    // Use an owning path/string representation throughout.  Besides removing
+    // the shell dependency and its ignored result, this keeps the restart
+    // filenames independent of fixed C buffers.  c_str() remains valid for
+    // the complete synchronous Save() call because each owning std::string
+    // remains in scope until both writers return.
+    const std::filesystem::path restartDirectory=
+        std::filesystem::path(componentDirectory)/"restartOUT";
+    EnsureDirectoryExists(restartDirectory);
+
+    const std::string fieldRestartFile=
+        (restartDirectory/"restart_field.dat").string();
+    const std::string particleRestartFile=
+        (restartDirectory/"restart_particle.dat").string();
+    PIC::Restart::SamplingData::Save(fieldRestartFile.c_str());
+    PIC::Restart::SaveParticleData(particleRestartFile.c_str());
 
     if(PIC::ThisThread == 0) printf("amps_save_restart end\n");
     //printf("amps_save_restart end\n");
@@ -568,16 +634,20 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
   }
 
   void amps_finalize_() {
-    char fname[_MAX_STRING_LENGTH_PIC_];
-
     //print the executed time 
      AMPS2SWMF::ExecutionTimer.PrintSampledDataMPI();
 
-    //output the test run particle data
-    sprintf(fname,"%s/amps.dat",PIC::OutputDataFileDirectory);
-    
+    // OutputDataFileDirectory itself may occupy the complete legacy PIC
+    // character buffer.  Appending a suffix into another buffer of the same
+    // size therefore cannot be made safe merely by replacing sprintf() with
+    // snprintf(): truncation would silently redirect the output.  Build each
+    // complete path in dynamically sized storage and pass a temporary C view
+    // only to the synchronous legacy API.
     #if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_ 
-    PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
+    const std::string diagnosticFile=
+        std::string(PIC::OutputDataFileDirectory)+"/amps.dat";
+    PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(
+        diagnosticFile.c_str());
     #endif
 
     //call a user-defined function to finalize the application
@@ -585,8 +655,10 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
 
     //save particle trajectory file
     #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
-    sprintf(fname,"%s/amps.TrajectoryTracking.out=Final",PIC::OutputDataFileDirectory);
-    PIC::ParticleTracker::OutputTrajectory(fname);
+    const std::string trajectoryFile=
+        std::string(PIC::OutputDataFileDirectory)+
+        "/amps.TrajectoryTracking.out=Final";
+    PIC::ParticleTracker::OutputTrajectory(trajectoryFile.c_str());
    #endif
   }
 
@@ -1131,12 +1203,27 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
       UpdateSingleFieldLine(i);
     }
 
-    char fname[200];
+    // PIC::ThisThread and cnt are both int.  The former implementation passed
+    // ThisThread to a %ld conversion, which is undefined for a variadic call,
+    // and formatted the result into a 200-byte array even though the output
+    // directory alone may contain up to _MAX_STRING_LENGTH_PIC_-1 bytes.
+    // Owning strings remove both the format-type mismatch and the artificial
+    // filename limit without introducing silent snprintf() truncation.
+    const std::string fname=
+        std::string(PIC::OutputDataFileDirectory)+
+        "/exported-field-lines.thread="+std::to_string(PIC::ThisThread)+
+        ".cnt="+std::to_string(cnt)+".dat";
 
-    if (PIC::ThisThread==0) printf("AMPS: saved exported field line file: exported-field-lines.thread=:.cnt=%i.dat\n",cnt);
-    sprintf(fname,"%s/exported-field-lines.thread=%ld.cnt=%i.dat",PIC::OutputDataFileDirectory,PIC::ThisThread,cnt);    
+    if (cnt%AMPS2SWMF::bl_output_step==0) {
+      Output(fname.c_str(),true);
 
-    if (cnt%AMPS2SWMF::bl_output_step==0) Output(fname,true);
+      // Report a file only after the cadence condition actually writes it.
+      // Rank zero names its own rank-specific product; other ranks construct
+      // and write their corresponding names through the same expression.
+      if (PIC::ThisThread==0) {
+        printf("AMPS: saved exported field line file: %s\n",fname.c_str());
+      }
+    }
     cnt++;
   } 
 
@@ -1164,4 +1251,3 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
     }
   }
 }
-

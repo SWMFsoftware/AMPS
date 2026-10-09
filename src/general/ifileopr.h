@@ -18,9 +18,57 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <cstddef>
+#include <cstring>
+#include <string>
+
 #include "specfunc.h"
 
 #define init_str_maxlength 10000
+
+namespace CiFileOperationsDetail {
+  /*
+   * CiFileOperations::fname is a long-standing public fixed-size field.  Keep
+   * that representation for source/ABI compatibility, but never use sprintf
+   * (or a silently truncating snprintf) to populate it.  A truncated path can
+   * name a different file, so an input which does not fit is an explicit fatal
+   * configuration error rather than a recoverable shortening operation.
+   *
+   * The function returns false only for debugger/test configurations in which
+   * the AMPS exit(line,file,message) trap is intercepted and allowed to
+   * return.  Production exit handlers terminate at the call below.  Keeping
+   * the return value makes callers safe in both execution modes: no file I/O
+   * is attempted after a rejected name.
+   */
+  template <std::size_t DestinationSize>
+  inline bool StoreFileName(char (&destination)[DestinationSize],const char *source) {
+    if (source==NULL) {
+      exit(__LINE__,__FILE__,
+          "CiFileOperations received a null input-file name");
+      return false;
+    }
+
+    const std::size_t sourceLength=std::strlen(source);
+
+    // Reserve one byte for the terminating NUL required by fopen and by
+    // legacy clients that inspect the public fname character array.
+    if (sourceLength>=DestinationSize) {
+      const std::string message=
+          "Input-file name requires "+std::to_string(sourceLength)+
+          " characters, but CiFileOperations::fname can store at most "+
+          std::to_string(DestinationSize-1)+
+          "; refusing to truncate the path";
+
+      exit(__LINE__,__FILE__,message.c_str());
+      return false;
+    }
+
+    // The bounds check above proves that the complete name and its NUL fit.
+    // memmove also remains correct if a legacy caller passes fname itself.
+    std::memmove(destination,source,sourceLength+1);
+    return true;
+  }
+}
 
 class CiFileOperations {
 public:
@@ -29,17 +77,40 @@ public:
   long int line;
 
   CiFileOperations() {
+    fd=NULL;
+    fname[0]='\0';
     line=-1;
   };
 
   FILE* openfile(const char* ifile) {
-    sprintf(fname,"%s",ifile); 
-    line=0;
-    if ((fd=fopen(ifile,"r"))==NULL) {
-      char msg[1000];
+    /*
+     * Store the exact path before opening it.  StoreFileName validates the
+     * fixed legacy field and reports an overlength name without either a
+     * buffer overflow or ambiguous truncation.  The explicit return protects
+     * debugger builds whose AMPS exit trap may be intercepted and resumed.
+     */
+    if (CiFileOperationsDetail::StoreFileName(fname,ifile)==false) {
+      fd=NULL;
+      return NULL;
+    }
 
-      sprintf(msg,"FILE %s is not found\n",ifile);
-      exit(__LINE__,__FILE__,msg);
+    line=0;
+    if ((fd=fopen(fname,"r"))==NULL) {
+      // Capture errno immediately: constructing the dynamic diagnostic may
+      // call library routines that are permitted to change it.  std::string
+      // removes the second fixed-buffer overflow reported by fortified libc
+      // when a long (but otherwise valid) path cannot be opened.
+      const int openError=errno;
+      const std::string message=
+          "Cannot open input file '"+std::string(fname)+"': "+
+          std::strerror(openError);
+
+      exit(__LINE__,__FILE__,message.c_str());
+
+      // AMPS exit normally terminates.  Return NULL if a debugger intercepts
+      // the trap so that the caller cannot mistake the failed open for a
+      // usable stream.
+      return NULL;
     } 
      
     return fd;
@@ -72,9 +143,13 @@ public:
 
 
   void setfile(FILE* input_fd,long int input_line,char* InputFile) {
+    // Apply the same exact, non-truncating filename contract used by
+    // openfile().  Validate first so an intercepted failure leaves the
+    // existing FILE pointer and line number unchanged.
+    if (CiFileOperationsDetail::StoreFileName(fname,InputFile)==false) return;
+
     fd=input_fd;
     line=input_line;
-    sprintf(fname,"%s",InputFile);
   };
 
   long int& CurrentLine() {

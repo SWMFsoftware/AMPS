@@ -16,6 +16,7 @@
 #include <iostream>
 #include <fstream>
 #include <signal.h>
+#include <string>
 
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -28,6 +29,85 @@ using namespace std;
 #include "meshAMRcutcell.h"
 
 #include "pic.h"
+
+namespace {
+
+// Compose paths in dynamically sized storage.  The historical callers used
+// sprintf("%s/%s",...), so this helper deliberately preserves that exact
+// spelling, including a possible double slash when the supplied directory
+// already ends in '/'.  std::filesystem::path is not used here because its
+// treatment of absolute second operands would change the long-standing API
+// semantics by discarding the caller-supplied prefix.
+bool BuildSurfaceMeshPath(const char* directory,const char* fileName,
+                          std::string* result) {
+  if (directory==NULL || fileName==NULL || result==NULL) {
+    exit(__LINE__,__FILE__,
+         "Error: a null directory, mesh filename, or output path was supplied");
+    // The AMPS trap terminates a normal run but is not declared [[noreturn]].
+    // Return a status so a debugger that intercepts the trap cannot continue
+    // into std::string construction with a null pointer.
+    return false;
+  }
+
+  *result=std::string(directory)+"/"+fileName;
+  return true;
+}
+
+// cSurfaceMeshFile is a public legacy record whose MeshFileName member has a
+// fixed ABI-visible size.  Keep that layout unchanged, but centralize every
+// internal assignment and fail before copying when the complete terminating
+// NUL would not fit.  Truncation is not acceptable: two different surface
+// files can share the same truncated prefix, and silently opening the wrong
+// triangulation would corrupt geometry rather than merely affect a label.
+template <std::size_t Capacity>
+bool AssignSurfaceMeshFileName(char (&destination)[Capacity],
+                               const std::string& source) {
+  if (source.size()>=Capacity) {
+    const std::string message=
+        "Error: surface-mesh filename requires "+
+        std::to_string(source.size()+1)+" bytes including the terminating NUL, "
+        "but cSurfaceMeshFile::MeshFileName holds only "+
+        std::to_string(Capacity)+" bytes";
+    exit(__LINE__,__FILE__,message.c_str());
+
+    // Preserve a valid empty C string if the debugger forces the AMPS fatal
+    // trap to return.  The false result makes every caller stop before I/O.
+    destination[0]='\0';
+    return false;
+  }
+
+  // source.size()<Capacity proves that size()+1 bytes fit, including NUL.
+  // memcpy is used instead of strncpy so successful assignments are exact and
+  // never depend on padding or an implicit truncation convention.
+  memcpy(destination,source.c_str(),source.size()+1);
+  return true;
+}
+
+template <std::size_t Capacity>
+bool AssignSurfaceMeshFileName(char (&destination)[Capacity],
+                               const char* source) {
+  if (source==NULL) {
+    exit(__LINE__,__FILE__,"Error: a null surface-mesh filename was supplied");
+    destination[0]='\0';
+    return false;
+  }
+
+  return AssignSurfaceMeshFileName(destination,std::string(source));
+}
+
+template <std::size_t Capacity>
+bool AssignSurfaceMeshFileName(char (&destination)[Capacity],
+                               const char* directory,const char* fileName) {
+  std::string completePath;
+  if (!BuildSurfaceMeshPath(directory,fileName,&completePath)) {
+    destination[0]='\0';
+    return false;
+  }
+
+  return AssignSurfaceMeshFileName(destination,completePath);
+}
+
+} // namespace
 
 CutCell::cTriangleFace *CutCell::BoundaryTriangleFaces=NULL;
 int CutCell::nBoundaryTriangleFaces=0;
@@ -281,10 +361,13 @@ void CutCell::PrintSurfaceData(const char *fname) {
 
 
 void CutCell::PrintSurfaceTriangulationMesh(const char *fname,const char *path) {
-  char fullname[STRING_LENGTH];
+  // This overload is not constrained by cSurfaceMeshFile's legacy 600-byte
+  // storage.  Keep the complete requested path in dynamic storage instead of
+  // introducing another fixed-buffer overflow or silently truncated output.
+  std::string fullname;
+  if (!BuildSurfaceMeshPath(path,fname,&fullname)) return;
 
-  sprintf(fullname,"%s/%s",path,fname);
-  PrintSurfaceTriangulationMesh(fullname);
+  PrintSurfaceTriangulationMesh(fullname.c_str());
 }
 
 void CutCell::PrintSurfaceTriangulationMesh(const char *fname) {
@@ -367,7 +450,7 @@ void CutCell::ReadCEASurfaceMeshLongFormat(const char *fname,double UnitConversi
   cSurfaceMeshFile MeshFile;
   list<cSurfaceMeshFile> SurfaceMeshFileList;
 
-  sprintf(MeshFile.MeshFileName,"%s",fname);
+  if (!AssignSurfaceMeshFileName(MeshFile.MeshFileName,fname)) return;
   MeshFile.faceat=-1;
 
   SurfaceMeshFileList.push_back(MeshFile);
@@ -898,7 +981,7 @@ void CutCell::ReadNastranSurfaceMeshLongFormat(const char *fname,double UnitConv
   cSurfaceMeshFile MeshFile;
   list<cSurfaceMeshFile> MeshFileList;
 
-  sprintf(MeshFile.MeshFileName,"%s",fname);
+  if (!AssignSurfaceMeshFileName(MeshFile.MeshFileName,fname)) return;
   MeshFile.faceat=-1;
 
   MeshFileList.push_back(MeshFile);
@@ -912,7 +995,7 @@ void CutCell::ReadNastranSurfaceMeshLongFormat(const char *fname,const char *pat
   cSurfaceMeshFile MeshFile;
   list<cSurfaceMeshFile> MeshFileList;
 
-  sprintf(MeshFile.MeshFileName,"%s/%s",path,fname);
+  if (!AssignSurfaceMeshFileName(MeshFile.MeshFileName,path,fname)) return;
   MeshFile.faceat=-1;
 
   MeshFileList.push_back(MeshFile);
@@ -927,7 +1010,8 @@ void CutCell::ReadNastranSurfaceMeshLongFormat(list<cSurfaceMeshFile> SurfaceMes
   tempSurfaceMeshFileList=SurfaceMeshFileList;
 
   for (tempMeshFile=tempSurfaceMeshFileList.begin(),MeshFile=SurfaceMeshFileList.begin();tempMeshFile!=tempSurfaceMeshFileList.end();tempMeshFile++,MeshFile++) {
-    sprintf(tempMeshFile->MeshFileName,"%s/%s",path,MeshFile->MeshFileName);
+    if (!AssignSurfaceMeshFileName(tempMeshFile->MeshFileName,path,
+                                   MeshFile->MeshFileName)) return;
   }
 
   ReadNastranSurfaceMeshLongFormat(tempSurfaceMeshFileList,UnitConversitonFactor);
@@ -943,7 +1027,7 @@ void CutCell::ReadNastranSurfaceMeshLongFormat_km(const char *fname) {
   cSurfaceMeshFile MeshFile;
   list<cSurfaceMeshFile> MeshFileList;
 
-  sprintf(MeshFile.MeshFileName,"%s",fname);
+  if (!AssignSurfaceMeshFileName(MeshFile.MeshFileName,fname)) return;
   MeshFile.faceat=-1;
 
   MeshFileList.push_back(MeshFile);
@@ -957,7 +1041,7 @@ void CutCell::ReadNastranSurfaceMeshLongFormat_km(const char *fname,const char *
   cSurfaceMeshFile MeshFile;
   list<cSurfaceMeshFile> MeshFileList;
 
-  sprintf(MeshFile.MeshFileName,"%s/%s",path,fname);
+  if (!AssignSurfaceMeshFileName(MeshFile.MeshFileName,path,fname)) return;
   MeshFile.faceat=-1;
 
   MeshFileList.push_back(MeshFile);
@@ -972,7 +1056,8 @@ void CutCell::ReadNastranSurfaceMeshLongFormat_km(list<cSurfaceMeshFile> Surface
   tempSurfaceMeshFileList=SurfaceMeshFileList;
 
   for (tempMeshFile=tempSurfaceMeshFileList.begin(),MeshFile=SurfaceMeshFileList.begin();tempMeshFile!=tempSurfaceMeshFileList.end();tempMeshFile++,MeshFile++) {
-    sprintf(tempMeshFile->MeshFileName,"%s/%s",path,MeshFile->MeshFileName);
+    if (!AssignSurfaceMeshFileName(tempMeshFile->MeshFileName,path,
+                                   MeshFile->MeshFileName)) return;
   }
 
   ReadNastranSurfaceMeshLongFormat_km(tempSurfaceMeshFileList);
@@ -3267,6 +3352,5 @@ cout << "printed bloks: "<< NBLOCKS << endl;
 
     return connectivityLength;
   }
-
 
 
