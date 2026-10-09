@@ -470,15 +470,15 @@ bool TestParserAndDispatch(std::vector<TestRecord>* tests) {
       transactionPass ? "validated selection updates pointer; rejected input preserves it"
                       : "active dispatch transaction failed");
 
-  PD::ModelConfiguration unsupported;
-  const PD::Status unsupportedStatus = PD::BuildConfiguration(
-      "nlgce_f_2014", std::vector<PD::InputParameter>(), &unsupported);
-  const bool unsupportedPass =
-      unsupportedStatus.code == PD::StatusCode::UnsupportedModel;
-  Add(tests, "PD01-UNSUPPORTED", "nlgce_f_2014", unsupportedPass,
-      "roadmap stage gate and absent companion data",
-      unsupportedPass ? "reserved backend fails explicitly"
-                      : "unimplemented backend was not rejected");
+  PD::ModelConfiguration polynomial;
+  const PD::Status polynomialStatus = PD::BuildConfiguration(
+      "nlgce_f_2014", std::vector<PD::InputParameter>(), &polynomial);
+  const bool polynomialPass = polynomialStatus.ok() &&
+      polynomial.model == PD::ModelId::NlgceF2014;
+  Add(tests, "PD05-PARSER", "nlgce_f_2014", polynomialPass,
+      "fixed published coefficient-set schema",
+      polynomialPass ? "published NLGCE-F backend is selectable"
+                     : "implemented NLGCE-F backend was not selectable");
 
   PD::ModelConfiguration duplicate;
   const PD::Status duplicateStatus = PD::BuildConfiguration(
@@ -533,14 +533,19 @@ bool TestParserAndDispatch(std::vector<TestRecord>* tests) {
   first.constantLambda.lambdaParallelM = 1.0;
   PD::ModelConfiguration second = first;
   second.constantLambda.lambdaParallelM = 2.0;
-  const bool registryPass = unique && implemented == 5 &&
-      PD::ConfigurationFingerprint(first) !=
-          PD::ConfigurationFingerprint(second);
+  const std::string firstFingerprint = PD::ConfigurationFingerprint(first);
+  const bool shaShape = firstFingerprint.size() == 64 &&
+      firstFingerprint.find_first_not_of("0123456789abcdef") ==
+          std::string::npos &&
+      firstFingerprint ==
+          "a6b8179215917864f8e8913fd66f626dd4583ed8de2c67d6f1e100ce065a14ba";
+  const bool registryPass = unique && implemented == 16 && shaShape &&
+      firstFingerprint != PD::ConfigurationFingerprint(second);
   Add(tests, "PD01-REGISTRY-PROVENANCE", "registry", registryPass,
       "Section 3 complete stable-ID inventory and configuration identity",
-      registryPass ? "16 unique IDs, five implemented, parameter identity changes"
+      registryPass ? "16 unique IDs, all first-release backends implemented"
                    : "registry inventory or fingerprint sensitivity failed");
-  return transactionPass && unsupportedPass && duplicatePass && parserPass &&
+  return transactionPass && polynomialPass && duplicatePass && parserPass &&
       registryPass;
 }
 

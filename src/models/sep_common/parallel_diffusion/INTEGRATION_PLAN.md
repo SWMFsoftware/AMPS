@@ -1,8 +1,10 @@
 # Parker mover integration plan
 
 This plan records how the shared parallel-diffusion selector will enter the
-existing Parker paths after roadmap stages PD00--PD10 pass. It is a plan, not a
-claim that either application currently consumes the new library.
+existing Parker paths. The standalone revision-1.4 backends and batch API are
+implemented and qualified; D14 and PD11 are explicitly deferred by the user's
+2026-10-08 direction. It is a plan, not a claim that either application
+currently consumes the new library.
 
 ## Shared build and configuration boundary
 
@@ -15,7 +17,7 @@ claim that either application currently consumes the new library.
    species/background records to `ParticleState` and one coherent
    `LocalState`. Unit conversion happens there exactly once. PIC, MPI, mesh,
    and application headers remain outside this library.
-3. Add a `[parallel_diffusion]` section to the `srcSEP3D` INI parser and a
+3. After D14 is resumed, add a `[parallel_diffusion]` section to the `srcSEP3D` INI parser and a
    `ParallelDiffusion on` block to the legacy `srcSEP` parser. Both collect
    source-located string assignments, convert supported external units if the
    application syntax permits them, then call `BuildConfiguration` and
@@ -96,5 +98,6 @@ separation:
   parameters, background revision, and any future explicit fallback.
 
 Application binding is PD11 and remains pending until the standalone roadmap
-prerequisites pass. No current source deck selects this library.
-
+and D14 host contract are authorized. No current source deck selects this
+library. The latest approved direction deliberately leaves this work for a
+later task; no srcSEP3D source was changed by the standalone completion.

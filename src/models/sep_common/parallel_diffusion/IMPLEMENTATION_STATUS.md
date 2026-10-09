@@ -1,92 +1,117 @@
 # Parallel diffusion implementation status
 
-Updated: 2026-10-08. Working tree: uncommitted.
+Updated: 2026-10-08. Working tree: uncommitted; no commit or push performed.
 
 ## Input contract
 
 - Scientific specification: `PARALLEL_DIFFUSION_COEFFICIENT_MODEL.md`,
-  revision 1.3.
-- Required companion bundle: not present in the checkout, `/home/vtenishe/Mars2`,
-  `/tmp`, or the preserved `sources--100626--3am.tar` archive.
-- Expected coefficient digests from the specification:
+  revision 1.4.
+- Companion bundle: `parallel_diffusion_model_data/`, bundle revision 1.4.
+- Published NLGCE-F array identities:
   `7cdc5ab9cddda0c7295a25bfcaff4ba3422002da12ac1b4660a98dcc64eaa762`
   (parallel) and
   `7371b6557f40c5efa7a48460a5f1b2971374a2c43d0eb3e209f0a8e62670356a`
-  (perpendicular). They have not been verified against absent files.
+  (perpendicular).
 - Approved scientific departures: none.
+- User decision: D14 remains deferred. No srcSEP3D/srcSEP parser or mover
+  binding is part of this change.
 
 ## Repository decisions
 
-- Reusable core/API/tests: `src/models/sep_common/parallel_diffusion/`.
-- Language: repository-supported C++17.
-- Standalone archive: `libparallel_diffusion.a`; verification target:
-  `make -f makefile verify`.
-- Dependencies: C++ standard library only; no PIC, MPI, background, or
-  application headers.
-- Host adapters: planned in existing `srcSEP` and `srcSEP3D` adapter/provider
-  seams; not implemented in this stage.
+- Reusable API and implementation:
+  `src/models/sep_common/parallel_diffusion/`.
+- Language/dependencies: C++17 standard library only; fixture orchestration is
+  Python 3 standard library. The independent bundle verifier additionally
+  requires NumPy/SciPy.
+- Standalone archive: `libparallel_diffusion.a`.
+- NLGCE-F generation: `generate_nlgce_coefficients.py` validates exact CSV
+  index coverage and emits `nlgce_f_coefficients.inc` without refitting or
+  changing literals.
+- The established seven-member `sep_common.a` is unchanged until PD11 updates
+  both application ownership audits in one qualified host-integration change.
 
 ## Stage state
 
-| Stage | State | Evidence or blocker |
+| Stage | State | Evidence or remaining boundary |
 | --- | --- | --- |
-| PD00 | blocked | Repository/build/consumer map recorded, but the Section 22 companion bundle and its `SHA256SUMS` are absent, so the mandated reference-data import/digest gate cannot pass. |
-| PD01 | in progress | API, SI kinematics, statuses, complete registry, provenance, fingerprints, parser bridge, and active function pointer implemented and locally tested. Formal acceptance remains downstream of PD00 and lacks the full-precision `benchmark_points.json` fixture. |
-| PD02 | in progress | Five explicit prescriptions implemented with analytical rigidity slopes and focused tests. Formal stage acceptance remains downstream of incomplete PD00/PD01. |
-| PD03 | pending | Requires accepted PD01. |
-| PD04 | pending | Requires accepted PD02 and PD03. |
-| PD05 | pending | Requires accepted PD01/PD03 and the absent exact coefficient/reference assets. |
-| PD06 | pending | Requires accepted PD03/PD04 and independent backend fixtures. |
-| PD07 | pending | Requires accepted PD03/PD04. |
-| PD08 | pending | Requires accepted PD02--PD07 and supplied tables/assets. |
-| PD09 | pending | Requires accepted PD02/PD04--PD08. |
-| PD10 | pending | Requires accepted PD09. |
-| PD11 | pending | Host plan is in `INTEGRATION_PLAN.md`; no mover binding claimed. |
-| PD12 | pending | Release closure requires PD11. |
+| PD00 | complete | Bundle digests and default/audit/broadened verifier modes pass. |
+| PD01 | complete | SI state, statuses, registry, provenance, fingerprints, transactional manager and active function pointer tested. |
+| PD02 | complete | Five explicit prescriptions and their identities/limits tested. |
+| PD03 | complete | Canonical supplied-spectrum representation, all named Section 8.7 sidedness/component/unit/frozen-flow conversions, named tail/coverage policies, normalized smooth and Equation (35) multirange spectra (including the `s=1` limit), break-partitioned adaptive integration and immutable-state contract implemented. |
+| PD04 | complete | Pitch-angle conversion, prescribed shape, exact smooth-spectrum QLT, multirange/supplied-spectrum routes and inertial approximation implemented. Exact Eq. (30), independent multirange D-mu-mu, and divergent dissipation-tail checks pass. |
+| PD05 | complete | Both exact published arrays compiled from audited CSV, fit box enforced, Horner values and analytic derivatives implemented; A–G values pass. |
+| PD06 | complete | NLPA supplied-perpendicular, NLGC-E and NLGCE-N logarithmic solvers pass their independent A–G/selected fixture gates with residuals below 1e-8. |
+| PD07 | complete | Lorentzian constant/linear and Gaussian slab kernels, exact zero-width QLT branch, both resonances, and nested refinement controls implemented. Both finite-width kernel fixtures pass. |
+| PD08 | complete | Named turbulence-moment conversion, restricted balanced wave adapter and multidimensional table evaluator implemented and tested. Production provider choices remain required inputs, not defaults. |
+| PD09 | partial | Analytic rigidity derivatives are available for explicit models, exact/inertial smooth QLT and NLGCE-F. Spatial gradients are supplied for constants and, when all provider gradients exist, explicit power/broken/Bohm and NLGCE-F. Integral-closure gradients, table-knot derivative policies and complete tensor divergence remain absent pending D13/host needs; absence is typed and documented. |
+| PD10 | complete | Equal-length batch behavior, empty/mismatch/per-point status rules, scalar equivalence, deterministic concurrent direct calls, and changed-state sensitivity are tested. No cache is used, so stale-state reuse is impossible. |
+| PD11 | deferred | D14 and host decisions remain deferred by user direction; no srcSEP3D/srcSEP binding. |
+| PD12 | partial | Standalone build/tests/docs/data are packaged. Final release closure depends on PD11 and supported host build/run evidence. |
+
+The “partial” PD09 entry does not invent derivative inputs that D13 has not
+requested. A consumer needing an absent derivative must retain its coherent
+provider stencil or fail the derivative-dependent operation.
 
 ## Supported inventory
 
-Implemented and selectable: `constant_lambda`, `constant_kappa`,
-`power_law_lambda`, `broken_rigidity_kappa`, and `bohm`.
+All 16 first-release stable IDs are selectable:
 
-Registered and explicitly unavailable: `qlt_slab_spectrum`,
-`qlt_slab_inertial`, `prescribed_lambda_mu_shape`, `broadened_slab`,
-`nlpa_given_perp`, `nlgc_e`, `nlgce_n`, `nlgce_f_2014`,
-`turbulence_adapter`, `wave_spectrum_adapter`, and `tabulated_parallel`.
+- explicit eigenvalue models: `constant_lambda`, `constant_kappa`,
+  `power_law_lambda`, `broken_rigidity_kappa`, `bohm`;
+- pitch-angle/spectral models: `prescribed_lambda_mu_shape`,
+  `qlt_slab_spectrum`, `qlt_slab_inertial`, `broadened_slab`;
+- nonlinear pair models: `nlpa_given_perp`, `nlgc_e`, `nlgce_n`,
+  `nlgce_f_2014`;
+- provider/data adapters: `turbulence_adapter`, `wave_spectrum_adapter`,
+  `tabulated_parallel`.
 
-The implemented explicit models return the scalar pair and analytical
-log-rigidity slopes. Only constant models return an explicit zero spatial
-gradient. Perpendicular values, `D_mumu`, non-constant spatial gradients,
-batches, bounds, and fallbacks are unavailable.
+Complete SOQLT, complete composite WNLT, arbitrary directional/dynamical wave
+scattering, D_pp, and non-axisymmetric perpendicular dynamics are explicitly
+outside the first-release specification and are not presented as implemented.
 
 ## Acceptance evidence
 
-| Command | Outcome | Evidence/notes |
-| --- | --- | --- |
-| `cd src/models/sep_common/parallel_diffusion && make -f makefile verify` | PASS, 24/24 | Warning-clean C++17 build; readable records on stdout and machine-readable `build/test-report.json`. |
-| `g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined -fno-omit-frame-pointer parallel_diffusion.cpp test_parallel_diffusion.cpp -o /tmp/parallel_diffusion_sanitize` followed by `ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 /tmp/parallel_diffusion_sanitize --json /tmp/parallel_diffusion_sanitize.json` | PASS, 24/24 | Strict compilation plus AddressSanitizer and UndefinedBehaviorSanitizer completed with exit status zero. |
-| Same sanitizer binary with leak detection enabled | ERROR after 21/21 assertions | LeakSanitizer reports that it cannot operate under this environment's ptrace layer; this is not counted as a pass. |
-| `cd src/models/sep_common && make verify` | PASS, 1/1 | Existing `SEP_COMMON01` dependency/member/unique-symbol boundary remains clean. |
-| `python3 -m json.tool src/models/sep_common/SOURCE_MANIFEST.json` | PASS | Updated nested source/test/documentation manifest is valid JSON. |
-| `python3 srcSEP/test/check_stage3_contracts.py` | FAIL before this module is examined | Existing clean tracked `srcSEP/mover.cpp` is present while the repository probe declares it retired. The file is outside this work and was not modified or removed. |
+| Command | Outcome |
+| --- | --- |
+| `cd src/models/sep_common/parallel_diffusion && make -f makefile verify` | PASS: 24 base checks plus 32 fixture-driven advanced checks. Reports: `build/test-report.json`, `build/advanced-test-report.json`. |
+| `sha256sum -c parallel_diffusion_model_data/SHA256SUMS` | PASS for every bundle file. |
+| `python3 parallel_diffusion_model_data/reference_verification.py` | PASS, 85 checks, 0 failed. |
+| `python3 parallel_diffusion_model_data/reference_verification.py --audit` | PASS, 90 checks, 0 failed, including the 300-state audit. |
+| `python3 parallel_diffusion_model_data/reference_verification.py --broadened` | PASS, 101 checks, 0 failed. |
+| Strict `-Wall -Wextra -Wpedantic -Werror` `make -f makefile verify` | PASS, same 24+32 checks. |
+| Address/undefined sanitizer base suite plus advanced selfcheck, NLGCE-N B, and Gaussian 0.1 fixture (`detect_leaks=0`) | PASS; no sanitizer diagnostic. |
+| `cd src/models/sep_common && python3 -m json.tool SOURCE_MANIFEST.json >/dev/null && make verify` | PASS, `SEP_COMMON01`; established seven-member archive remains PIC/MPI-free with exact membership. |
 
-Primary repeat command:
+The recorded bundle-verifier counts above are from the supplied verifier: the
+`--audit` mode adds the audit work while retaining its 90 reported aggregate
+checks; `--broadened` reports 101. Re-run commands after any numerical edit.
 
-```sh
-cd src/models/sep_common/parallel_diffusion
-make -f makefile verify
-```
+Backend acceptance tolerances come from `benchmark_points.json`: QLT exact
+fixtures use 1e-10 relative, polynomial values 1e-11 relative, nonlinear
+values 5e-8 relative with residual below 1e-8, and broadened values 1e-7
+relative. The C++ advanced report records each measured discrepancy.
 
-The generated report is not source-controlled. These results qualify the
-implemented arithmetic and failure contracts only; they do not close PD00,
-the missing full-precision fixture comparison, later models, or host transport
-integration.
+The advanced API selfcheck also constructs Equation (35) independently at an
+`s=1` dissipation-range resonance and compares D_mu_mu at 2e-14 relative
+tolerance. It separately verifies that `s_d=2` produces
+`InfiniteMeanFreePath`; this is intentionally part of the aggregate advanced
+selfcheck rather than an invented external fixture. The same selfcheck maps
+unequal component/sign samples, cycles-per-metre data, frozen-flow frequency
+data, and both Qin–Zhang reduced conventions to one canonical power, and
+rejects frozen-flow input without its assumption identity.
 
-## Known gaps and next action
+## Remaining work
 
-The first unfinished prerequisite is PD00 reference-data import. Supply the
-exact `parallel_diffusion_model_data/` bundle described in Section 22, verify
-its `SHA256SUMS`, run its independent `reference_verification.py`, and record
-the environment/results here. Then close PD01/PD02 against the full-precision
-fixtures before starting PD03. Do not reconstruct the absent JSON/CSV audit
-bundle from rounded Markdown tables.
+1. Resolve D13–D16 for each actual consumer, including requested derivative
+   set, restart metadata, and mutual exclusion with focused D_mu_mu scattering.
+2. Resolve D14 and then implement the versioned srcSEP3D `[parallel_diffusion]`
+   syntax and legacy-policy decision. The current user instruction explicitly
+   postpones this item.
+3. Bind the shared evaluator to the existing coherent srcSEP3D coefficient
+   sampling path, retain its neighbour stencil for unavailable gradients, and
+   qualify scalar/batch/operator behavior in one- and four-rank native runs.
+4. Only after that evidence, promote the objects into canonical `sep_common.a`
+   and update both applications' exact-member/source-package audits.
+
+No current application input selects this library, and no current result is a
+claim of srcSEP3D Parker transport qualification.

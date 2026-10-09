@@ -33,13 +33,16 @@ The directory contains the canonical source and header for each shared kernel:
 | `sep_species_source` | Species/abundance/source properties |
 | `sep_test_registry` | Shared test descriptors, result records, and JSON/JUnit writers |
 
-The staged [`parallel_diffusion`](parallel_diffusion/README.md) library is a
-new dependency-free sibling within this ownership boundary. Its current PD01/
-PD02 archive is deliberately built and qualified in its own subdirectory;
-neither application consumes it yet. This prevents its incomplete later
-spectrum/nonlinear stages from silently changing the established seven-member
-`sep_common.a`. The application incorporation plan and exact qualification
-boundary are recorded beside the library.
+The [`parallel_diffusion`](parallel_diffusion/README.md) library is a
+dependency-free sibling within this ownership boundary. Its standalone
+revision-1.4 PD00–PD10 archive implements all 16 first-release identifiers,
+including spectral, pitch-angle, nonlinear, adapter, table and batch paths.
+It remains built in its own subdirectory because D14/PD11 application binding
+is deferred; neither application consumes it yet. This keeps the established
+seven-member `sep_common.a` and its exact-member audits unchanged until both
+host adapters can be qualified together. The application incorporation plan,
+test evidence, derivative limitations and exact qualification boundary are
+recorded beside the library.
 
 SWCME remains a separate sibling because it supplies one possible solar-wind,
 CME, and shock-background provider. `sep_common` must never include `pic.h`,

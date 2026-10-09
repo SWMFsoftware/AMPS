@@ -1,464 +1,406 @@
 # Parallel diffusion coefficient library
 
-This directory is the shared, application-independent home of parallel
-diffusion coefficients intended for the Parker equation in `srcSEP` and
-`srcSEP3D`. The scientific contract is
-[`PARALLEL_DIFFUSION_COEFFICIENT_MODEL.md`](PARALLEL_DIFFUSION_COEFFICIENT_MODEL.md),
-revision 1.3. The implementation uses C++17, SI units, and no PIC, MPI, mesh,
-or application headers.
+This directory contains the dependency-free C++17 implementation of
+`PARALLEL_DIFFUSION_COEFFICIENT_MODEL.md`, revision 1.4. It evaluates the
+parallel eigenvalue of the symmetric spatial diffusion tensor used by a Parker
+transport equation. It does not project that eigenvalue into radial or shock-
+normal directions, assemble the full tensor, add drifts, update turbulence, or
+infer momentum diffusion.
 
-The current code is the data-independent PD01/PD02 release slice. It provides
-the common particle/local-state API, validated model registry, parser-facing
-configuration bridge, active function pointer, relativistic conversions, and
-the five explicit analytical prescriptions from roadmap stage PD02. It is not
-yet wired into either application mover. Later spectrum, QLT, nonlinear,
-polynomial, table, gradient, batch, and provider stages remain unfinished.
+All public values are SI. Momentum is total particle momentum in kg m s^-1,
+charge is signed coulombs, rigidity is positive volts, magnetic field is
+tesla, lengths are metres, and diffusion coefficients are m^2 s^-1. Host
+adapters must convert external units exactly once before entering this API.
 
-## Physical scope and conventions
+## Delivered boundary
 
-The returned quantity is the parallel eigenvalue of the symmetric spatial
-diffusion tensor, not a diffusion coefficient in an arbitrary coordinate
-direction. Every successful result satisfies
+The standalone implementation now spans PD00–PD10. The parser-neutral manager,
+model-specific schemas, dispatch pointer, scalar and batch evaluation,
+pitch-angle interface, spectral closures, nonlinear closures, adapters, and
+table evaluator are present. The supplied revision-1.4 data bundle is retained
+under `parallel_diffusion_model_data/`, and the compiled NLGCE-F arrays are
+generated without changing their decimal literals or index order.
 
-```text
-kappa_parallel = v * lambda_parallel / 3.
-```
+PD11 application binding is not implemented. In particular, D14 remains
+deferred by user direction: neither srcSEP3D input path calls this library,
+and no srcSEP3D schema version or `[parallel_diffusion]` section has been added.
+`INTEGRATION_PLAN.md` records the later host work. A successful standalone test
+must not be reported as Parker-mover or MPI qualification.
 
-A host that needs radial diffusion, shock-normal diffusion, or a Cartesian
-tensor must combine this value with its magnetic-field direction and its
-separately selected perpendicular coefficient. Particle drift is an
-antisymmetric/advective contribution and remains outside this library. The
-library also does not infer momentum diffusion `D_pp`; doing so would require
-additional wave-frame, directional-wave, and scattering-center physics.
+The paper-specific extensions explicitly excluded by Section 3.1 remain out
+of scope: complete SOQLT, complete composite WNLT, arbitrary directional wave
+scattering, momentum diffusion, and a non-axisymmetric perpendicular tensor.
+The implemented `broadened_slab` model is exactly the stated slab model, not a
+claim to implement those broader theories.
 
-`ParticleState::momentumKgMPerS` is the positive magnitude of total particle
-momentum, not kinetic energy, momentum per nucleon, or one Cartesian
-component. `massKg` is total rest mass and `chargeC` is signed charge. The
-implemented scalar laws use the magnitude of charge in
-`rigidity = p*c/|q|`, but the sign is retained for future closures where wave
-direction or polarization can matter. Neutral particles, non-positive mass,
-and non-positive momentum are outside this charged-particle API.
+## Public API and manager
 
-Kinematics are exact relativistic quantities computed centrally:
+Include `parallel_diffusion.h` and use `SEP::ParallelDiffusion`.
 
-```text
-gamma = hypot(m*c, p)/(m*c)
-beta  = p/hypot(m*c, p)
-v     = c*beta
-R     = p*c/|q|
-T     = (p*c)^2 / (sqrt((m*c^2)^2 + (p*c)^2) + m*c^2).
-```
+`BuildConfiguration(model, assignments, &configuration)` is the semantic
+parser manager. The application retains ownership of file syntax and source
+locations. The manager selects the model-specific reader, rejects duplicate,
+unknown, missing, malformed, and inactive-model keys, validates a temporary
+typed configuration, and publishes it only on success. Parameter keys are
+case-sensitive; stable model IDs and enumerated values are case-insensitive.
+Numeric text must be finite and contain no unit suffix.
 
-The last form is algebraically equal to total energy minus rest energy but is
-numerically safer for nonrelativistic particles. Energy per nucleon is formed
-only when the caller supplies `ParticleState::nucleonCount`; the code never
-infers mass number from rest mass or charge state.
+Numerically integrated model readers accept `relative_tolerance` and
+`maximum_refinements`; nonlinear readers also accept `maximum_iterations`.
+These controls govern convergence only and never alter a spectrum, insert a
+physical cutoff, or replace a failed closure. Keys not consumed by the
+selected model are rejected, so parameters cannot silently survive a model
+change with a different meaning.
 
-`LocalState::positionM` is heliocentric Cartesian position. An adapter for a
-translated computational mesh must subtract the configured solar origin
-before constructing it. `meanFieldT` is the resolved mean field defining
-`B0`; it is not automatically an RMS or total field. The separately named
-`effectiveFieldMagnitudeT` is used only when the Bohm configuration explicitly
-selects that convention. All scalar inputs and outputs are SI. Host parsers
-must convert AU, GV, nT, MeV, or cgs coefficient values exactly once at the
-application boundary.
-
-The Parker diffusion approximation presumes a nearly isotropic distribution
-with scattering rapid relative to distribution/background evolution. A
-positive finite coefficient establishes numerical evaluation only; it does
-not establish small Knudsen number, weak focusing, or validity during early
-anisotropic SEP arrival and shock-precursor regimes. The present PD02 inputs
-do not contain the distribution/background length scales needed to compute
-those diagnostics, so the library does not manufacture them.
-
-## Implemented models
-
-No physical parameter below has a library default. Every scale or exponent
-used by an implemented model is supplied explicitly by a typed caller or the
-parser bridge.
-
-| Stable model ID | Implemented equation | Required configuration |
-| --- | --- | --- |
-| `constant_lambda` | Equation (11), `kappa=v*lambda/3` | `lambda_parallel_m > 0` |
-| `constant_kappa` | Equation (12), `lambda=3*kappa/v` | `kappa_parallel_m2_per_s > 0` |
-| `power_law_lambda` | Equations (13)--(15) | `lambda0_m`, `independent_variable`, its SI reference key, and `independent_exponent`; optional paired radial/field parameters and optional supplied time/region factors |
-| `broken_rigidity_kappa` | Equations (17)--(19) | `K_star_m2_per_s`, `rigidity0_V`, `break_rigidity_V`, `low_slope`, `high_slope`, `smoothness`; optional paired field parameters and optional supplied radial/region factors |
-| `bohm` | Equation (61) | `eta_B > 0` and explicit `field_definition = mean_field` or `effective_field` |
-
-The equations evaluated by these entries are:
-
-```text
-constant_lambda:
-  lambda = lambda0
-  kappa  = v*lambda0/3
-
-constant_kappa:
-  kappa  = kappa0
-  lambda = 3*kappa0/v
-
-power_law_lambda:
-  lambda = lambda0 * (X/X0)^a * (r/r0)^alpha
-                   * (B0/Bref)^(-eta) * g_time * g_region
-  kappa  = v*lambda/3
-
-broken_rigidity_kappa:
-  H(R)   = (R/R0)^a * [((R/R0)^h + (Rb/R0)^h)
-                       /(1 + (Rb/R0)^h)]^((b-a)/h)
-  kappa  = K_star*beta*(Bref/B0)^eta*H(R)*g_radial*g_region
-  lambda = 3*K_star/c*(Bref/B0)^eta*H(R)*g_radial*g_region
-
-bohm:
-  r_L    = p/(|q|*B)
-  lambda = eta_B*r_L
-  kappa  = v*lambda/3.
-```
-
-For `power_law_lambda`, `X` is exactly the configured independent variable;
-the library does not convert a published energy exponent into a rigidity
-exponent. At fixed species, such a conversion changes between the
-nonrelativistic and ultrarelativistic limits.
-
-`power_law_lambda.independent_variable` is one of `rigidity`,
-`total_kinetic_energy`, `energy_per_nucleon`, or `speed`. Its corresponding
-reference key is, respectively, `rigidity0_V`, `kinetic_energy0_J`,
-`energy_per_nucleon0_J`, or `speed0_m_per_s`. Energy per nucleon additionally
-requires an explicit positive particle nucleon count; charge and mass are
-never used to guess it.
-
-The optional power-law radial factor is enabled only by supplying both
-`radius0_m` and `radial_exponent`. The optional magnetic factor is enabled only
-by supplying both `field_reference_T` and `field_exponent`. `use_time_factor`
-and `use_region_factor` are `true`/`false`; when enabled, the local-state
-provider must supply a positive dimensionless value. Disabled factors are
-exactly unity and create no background requirement. Consistent with Equation
-(13), `field_exponent = 0` also makes the field factor exactly unity and does
-not require a local magnetic field.
-
-The broken law uses the speed-factored convention in Equation (17):
-`kappa(R0)=K_star*beta(R0)` at the reference field and factors, not `K_star`.
-`KStarFromReferenceKappa` is the explicit conversion for a caller whose input
-is the actual reference coefficient. A radial law is not specified by
-Equation (17), so enabling `use_radial_factor` requires the application to
-supply the already defined positive `radialFactor`; the library does not
-invent one.
-
-For Bohm scaling, `mean_field` uses the magnitude of `LocalState::meanFieldT`.
-`effective_field` uses `effectiveFieldMagnitudeT`. The field choice is retained
-in the configuration identity. Bohm is a requested comparison model only; it
-does not clamp or bound other models.
-
-### Parameter ownership and runtime requirements
-
-The parser bridge uses exact, case-sensitive parameter keys. Model IDs and
-enumerated values are case-insensitive. Numeric text must be finite and fully
-consumed; unit suffixes are not accepted by this SI-only bridge.
-
-| Configuration key | Model | Units/domain | Runtime `LocalState` requirement |
-| --- | --- | --- | --- |
-| `lambda_parallel_m` | constant lambda | m, positive | none |
-| `kappa_parallel_m2_per_s` | constant kappa | m² s⁻¹, positive | none |
-| `lambda0_m` | power law | m, positive | depends on enabled factors below |
-| `independent_variable` | power law | `rigidity`, `total_kinetic_energy`, `energy_per_nucleon`, or `speed` | selects exactly one reference key below |
-| `rigidity0_V` | power law or broken law | V, positive | none |
-| `kinetic_energy0_J` | power law | J, positive | none |
-| `energy_per_nucleon0_J` | power law | J per nucleon, positive | positive particle `nucleonCount` |
-| `speed0_m_per_s` | power law | m s⁻¹, positive | none |
-| `independent_exponent` | power law | dimensionless, finite | none |
-| `radius0_m`, `radial_exponent` | power law | m positive; exponent finite | finite positive norm of heliocentric `positionM` |
-| `field_reference_T`, `field_exponent` | power or broken law | T positive when active; exponent finite | finite nonzero `meanFieldT` when exponent is nonzero |
-| `use_time_factor` | power law | explicit Boolean | positive `timeFactor` when true |
-| `use_region_factor` | power or broken law | explicit Boolean | positive `regionFactor` when true |
-| `K_star_m2_per_s` | broken law | m² s⁻¹, positive | none beyond selected factors |
-| `break_rigidity_V` | broken law | V, positive | none |
-| `low_slope`, `high_slope` | broken law | dimensionless, finite | none |
-| `smoothness` | broken law | dimensionless, positive | none |
-| `use_radial_factor` | broken law | explicit Boolean | positive pre-evaluated `radialFactor` when true |
-| `eta_B` | Bohm | dimensionless, positive | selected field below |
-| `field_definition` | Bohm | `mean_field` or `effective_field` | matching positive field input |
-
-For the broken-rigidity law, the application owns the physical definition of
-`radialFactor` and `regionFactor`; this library only validates and multiplies
-them. For the power law, the radial factor is explicitly computed from
-heliocentric radius. `timeFactor`, `regionFactor`, and broken-law
-`radialFactor` must be positive because the multiplicative implementation is
-evaluated in logarithmic form. The provider must document discontinuities and
-whether a time variation is simultaneous, convected, or retarded.
-Omitted optional Boolean selectors are disabled. Required scale, exponent, and
-field-definition keys are never filled from physical defaults.
-
-## Reserved but unavailable models
-
-The registry contains every stable identifier in Section 3 so a misspelled,
-deferred, and implemented model remain distinguishable. Selection of the
-following identifiers currently returns `UnsupportedModel` rather than a
-substitute coefficient:
-
-- `qlt_slab_spectrum`, `qlt_slab_inertial`, and
-  `prescribed_lambda_mu_shape` (PD03/PD04);
-- `nlgce_f_2014` (PD05);
-- `nlpa_given_perp`, `nlgc_e`, and `nlgce_n` (PD06);
-- `broadened_slab` (PD07); and
-- `turbulence_adapter`, `wave_spectrum_adapter`, and `tabulated_parallel`
-  (PD08).
-
-Complete SOQLT, complete composite WNLT, arbitrary directional wave
-scattering, momentum diffusion, and non-axisymmetric perpendicular dynamics
-are later extensions in the specification and are not registered as
-implemented models.
-
-## API and active dispatch
-
-Include `parallel_diffusion.h` and use namespace
-`SEP::ParallelDiffusion`. A direct, side-effect-free evaluation is:
-
-```cpp
-ModelConfiguration configuration;
-configuration.model = ModelId::ConstantLambda;
-configuration.constantLambda.lambdaParallelM = 1.495978707e10;
-
-ParticleState particle;
-particle.massKg = 1.67262192369e-27;
-particle.chargeC = 1.602176634e-19;
-particle.momentumKgMPerS = /* total SI momentum supplied by the caller */;
-
-LocalState local;
-ParallelResult result = Evaluate(particle, local, configuration);
-```
-
-`ParallelResult` distinguishes status from optional values. A successful
-explicit model returns both `lambdaParallelM` and `kappaParallelM2PerS`, their
-analytic logarithmic rigidity slopes, provenance, and a configuration
-fingerprint. Constant models also return an explicit zero spatial gradient.
-Spatial gradients of non-constant laws remain absent and carry the
-`DerivativeUnavailable` diagnostic until PD09 connects coherent background
-gradients. A successful scalar value must not be read as a successful complete
-Parker drift.
-
-The public function pointer is:
+`SetActiveConfiguration` and `ConfigureActiveModel` install a validated
+configuration transactionally. They update this required public dispatch
+pointer only after validation succeeds:
 
 ```cpp
 extern ModelFunction ActiveModelFunction;
 ```
 
-Application parsers must not write it directly. They call
-`ConfigureActiveModel(model_id, parameters)` or construct a typed
-`ModelConfiguration` and call `SetActiveConfiguration`. Validation is
-transactional: configuration and pointer change only after the complete model
-schema passes, so rejected input preserves the previous selection. After
-initialization, movers call `EvaluateActive(particle, local)`.
+Configure it once during serial startup. Reconfiguration concurrent with
+evaluation is outside the contract. Direct `Evaluate` calls are reentrant;
+`EvaluateBatch` evaluates equal-length particle/state arrays with per-point
+statuses. The library deliberately uses no result cache, so a revision or
+local-state change cannot return a stale coefficient. A future cache must obey
+the complete key rules in specification Section 14.4.
 
-The active configuration is a process-global startup choice. Configure it
-once during serial initialization, before MPI worker or OpenMP mover activity;
-do not reconfigure it concurrently with evaluation. Direct `Evaluate` calls
-are reentrant because their configuration is an explicit value.
+Every result carries a SHA-256 configuration fingerprint computed from a
+canonical serialization of only the selected model's active schema. Dataset
+digests, requested/evaluated model IDs, and provider revisions remain separate
+provenance fields.
 
-`BuildConfiguration` is the preferred parser boundary when an application
-needs to retain the typed value rather than install global dispatch. It parses
-into a temporary candidate and writes the caller's output only after the full
-schema validates. `ConfigureActiveModel` adds the installation step. A failed
-call to either path does not leave a partially updated typed configuration;
-a failed active selection also preserves the prior function pointer.
+Typical parser-neutral setup:
 
-The public pointer is deliberately visible to satisfy the application
-dispatch requirement, but its lifetime is static and ownership remains with
-the library. Do not delete it, point it at a function with incompatible
-parameter semantics, or mutate it independently of the active configuration.
-There is no synchronization around active reconfiguration. Configure exactly
-once during serial startup, then treat the active configuration and pointer as
-immutable throughout MPI/OpenMP particle advancement.
+```cpp
+using namespace SEP::ParallelDiffusion;
 
-### Result, derivative, and failure contract
-
-On `Success`, both `lambdaParallelM` and `kappaParallelM2PerS` are present,
-finite, positive, and related by the exact computed particle speed. On any
-failure, those optionals remain absent. Failure is never encoded as a zero,
-NaN, infinity, clamp, or fallback coefficient.
-
-`dLnLambdaDLnRigidity` and `dLnKappaDLnRigidity` mean logarithmic derivatives
-at fixed species and fixed `LocalState`. They include the exact relativistic
-identity
-
-```text
-d ln(v) / d ln(R) = 1/gamma^2.
+Status configured = ConfigureActiveModel(
+    "power_law_lambda",
+    {{"lambda0_m", "1.495978707e10"},
+     {"independent_variable", "rigidity"},
+     {"rigidity0_V", "1.0e9"},
+     {"independent_exponent", "0.3333333333333333"},
+     {"radius0_m", "1.495978707e11"},
+     {"radial_exponent", "0.5"}});
 ```
 
-Consequently, constant lambda has a nonzero kappa rigidity slope, constant
-kappa has a nonzero lambda slope of the opposite sign, and the empirical laws
-include their configured independent-variable slope plus the speed term where
-appropriate. `gradKappaParallelMPerS` is a Cartesian derivative at fixed
-particle momentum and has units m s⁻¹. Constant models return an explicit
-zero vector. Non-constant PD02 models leave it absent and set
-`DerivativeUnavailable`, because their background factors do not yet carry
-coherent gradients. A mover must retain its provider-consistent stencil or
-reject a complete derivative-dependent operation; it must not replace absence
-with zero.
+These numbers illustrate syntax only; they are not installed defaults or a
+recommended calibration.
 
-| Status | Meaning in the current release |
+`ParallelResult` returns status separately from optional outputs. On scalar
+success, `lambdaParallelM` and `kappaParallelM2PerS` are both present and obey
+`kappa=v*lambda/3`. Coupled and fitted nonlinear models also return their
+internally consistent perpendicular pair. Missing derivatives remain absent
+and set `DerivativeUnavailable`; absence is never interpreted as zero.
+
+`EvaluatePitchAngleDiffusion(mu, ...)` returns D_mu_mu in s^-1 only for
+`qlt_slab_spectrum`, `prescribed_lambda_mu_shape`, `broadened_slab`, and an
+adapter whose selected underlying closure supplies D_mu_mu. Eigenvalue-only
+models return `UnsupportedModel` through this separate interface.
+
+## Runtime state
+
+`ParticleState` requires positive total rest mass and momentum and a finite,
+nonzero signed charge. `nucleonCount` is required only when an energy-per-
+nucleon variable is selected; it is never inferred from mass or charge.
+
+`LocalState::meanFieldT` is the resolved mean field that defines the local
+field-aligned basis. Canonical turbulence variances are total two-component
+magnetic variances in T^2. Bend-over lengths are spectral bend-over lengths,
+not silently substituted integral correlation lengths. Nonlinear models need
+both positive slab and 2D variances and lengths. Pure-component limit formulas
+are not invented.
+
+Provider generations are copied into provenance. Optional Jacobians and
+gradients must describe the same immutable snapshot. Explicit power laws,
+broken laws, Bohm, and NLGCE-F return spatial gradients when every gradient
+needed by their selected factors is available. Otherwise the scalar result is
+preserved and the gradient is absent.
+
+## Implemented models and parameters
+
+No physical parameter has a production default. Numerical tolerances default
+to the initial controls in Sections 10.5 and 14.4 and may be tightened.
+
+### `constant_lambda`
+
+Equation (11). Required key: `lambda_parallel_m` (positive). No background
+input is required. The spatial gradient is exactly zero.
+
+### `constant_kappa`
+
+Equation (12). Required key: `kappa_parallel_m2_per_s` (positive). No
+background input is required. This is distinct from constant mean free path.
+
+### `power_law_lambda`
+
+Equations (13)–(16). Required keys are `lambda0_m`,
+`independent_variable`, its matching reference, and `independent_exponent`.
+The variable and reference pairs are:
+
+| Variable | Reference key |
 | --- | --- |
-| `InvalidParticle` | Mass/momentum is non-positive, charge is zero/non-finite, or relativistic conversion is unrepresentable. |
-| `InvalidBackground` | A selected local value exists but is non-finite, zero, or negative where the physical decomposition requires positivity. |
-| `MissingInput` | A selected runtime factor, field, nucleon count, or required parser key is absent. |
-| `OutsideModelDomain` | Positive output overflows/underflows the representable finite domain; later models also use this for stated fit domains. |
-| `InvalidConfiguration` | A value, pair of keys, Boolean, duplicate key, or unknown key violates the selected schema. |
-| `UnsupportedModel` | The stable identifier is unknown or is registered but its roadmap backend is not implemented. |
+| `rigidity` | `rigidity0_V` |
+| `total_kinetic_energy` | `kinetic_energy0_J` |
+| `energy_per_nucleon` | `energy_per_nucleon0_J` |
+| `speed` | `speed0_m_per_s` |
 
-`InfiniteMeanFreePath`, `IntegrationFailed`, `NonlinearSolverFailed`, and
-`InconsistentSpectrum` are reserved for later scattering, quadrature,
-nonlinear, and spectrum stages. Numerical status and diagnostic bits are
-separate: future backends may return a successful finite coefficient together
-with a physical-validity warning. The current explicit models set only
-`DerivativeUnavailable`; they cannot diagnose the diffusion limit without
-additional host-provided scales.
+Supplying both `radius0_m` and `radial_exponent` enables the heliocentric
+radial factor. Supplying both `field_reference_T` and `field_exponent` enables
+the field factor, except that an exact zero exponent is canonical unity.
+`use_time_factor` and `use_region_factor` explicitly require their positive
+runtime factors when true.
 
-## Parser bridge and input examples
+### `broken_rigidity_kappa`
 
-`BuildConfiguration` and `ConfigureActiveModel` accept an exact model ID and a
-vector of `InputParameter{name,value}`. They reject duplicate keys, unknown
-keys, missing paired parameters, malformed numbers, non-finite values, and
-unsupported models. Unit conversions belong at the application input boundary;
-the bridge accepts only the SI-labelled keys documented above.
+Equations (17)–(19). Required keys are `K_star_m2_per_s`, `rigidity0_V`,
+`break_rigidity_V`, `low_slope`, `high_slope`, and `smoothness`. Optional
+paired field keys are `field_reference_T` and `field_exponent`.
+`use_radial_factor` and `use_region_factor` require already evaluated positive
+runtime factors. `K_star` is the speed-factored normalization, not the actual
+coefficient at the reference rigidity. Use `KStarFromReferenceKappa` for the
+explicit species-dependent conversion.
 
-The following is the planned `srcSEP3D` INI spelling. It documents the exact
-library keys, but it is not accepted by the application until the PD11 parser
-binding in `INTEGRATION_PLAN.md` is implemented:
+### `bohm`
 
-```ini
-[parallel_diffusion]
-model = power_law_lambda
-lambda0_m = 1.495978707e10
-independent_variable = rigidity
-rigidity0_V = 1.0e9
-independent_exponent = 0.3333333333333333
-radius0_m = 1.495978707e11
-radial_exponent = 0.5
-field_reference_T = 5.0e-9
-field_exponent = 1.0
-use_time_factor = false
-use_region_factor = false
-```
+Equation (61). Required keys are `eta_B` and `field_definition`, which is
+`mean_field` or `effective_field`. This comparison model never clamps another
+backend.
 
-The equivalent planned legacy `srcSEP` block is:
+### `prescribed_lambda_mu_shape`
+
+Equations (20)–(24). Required keys are `amplitude_mode`, `q_mu`, and `h_mu`.
+`target_lambda` mode additionally requires `target_lambda_m`; `fixed_amplitude`
+mode requires `D0_per_s`. The target mode recomputes D0 from the shape
+integral. A divergent unregularized integral reports `InfiniteMeanFreePath`;
+no pitch-angle cutoff or scattering floor is inserted.
+
+### `qlt_slab_spectrum`
+
+Equations (25)–(30) and (35), with the endpoint transformation in Equation
+(37). Required `spectrum_form` is `smooth_bendover`, `multirange`, or
+`supplied_log_log`. The smooth form reads B, slab variance, bend-over length,
+and inertial index from the runtime snapshot.
+
+The normalized `multirange` form additionally requires
+`energy_range_index` (`q_E>-1`), `dissipation_index` (`s_d>1`), and
+`dissipation_wavenumber_rad_per_m` (positive `k_d`). The runtime snapshot
+still supplies the slab variance, bend-over length `ell_s`, and inertial index
+`s`; evaluation requires `k_d*ell_s>1`. The normalization uses the exact
+three-range integral in Equation (35), including `ln(k_d*ell_s)` when `s=1`.
+For strict magnetostatic QLT, `s_d>=2` returns `InfiniteMeanFreePath` because
+the actual high-wavenumber inverse-scattering integral diverges. The library
+does not hide that divergence behind a finite integration cutoff.
+
+A supplied spectrum additionally requires comma-separated
+`spectrum_k_rad_per_m`, `spectrum_power_T2_m`, `spectrum_source_identity`, and
+`spectrum_declared_variance_T2`, plus explicit `low_k_policy` and
+`high_k_policy`. Each policy is `out_of_domain`,
+`zero`, or `power_law`; power-law policies require `<policy>_index`.
+
+The supplied spectrum is already canonical one-sided total-transverse power.
+Use these named Section 8.7 API conversions before building it:
+
+- `ConvertOneSidedComponentsToCanonical` sums independently supplied
+  transverse components;
+- `ConvertTwoSidedComponentsToCanonical` explicitly sums both signs of both
+  transverse components, without assuming evenness or axisymmetry;
+- `ConvertEvenTwoSidedTotalToCanonical` folds an explicitly even signed total
+  spectrum;
+- `ConvertOneSidedCyclesPerMToCanonical` applies the cycles-to-radians
+  coordinate Jacobian;
+- `ConvertFrozenFlowFrequencyToCanonical` applies Equation (36) only when a
+  positive sampling-velocity projection and nonempty assumption identity are
+  supplied; and
+- the two `ConvertQinZhang*ComponentToCanonical` functions apply the stated
+  factor four to the source's slab and reduced-radial 2D conventions.
+
+These functions preserve real zeros and reject negative or nonfinite power.
+They do not rescale an unidentified convention to force agreement with a
+variance. Zero resonant power is not confused with missing coverage. Before
+evaluation, the log-log segments and explicit tails are integrated and
+checked against the declared variance; divergent or inconsistent tails return
+`InconsistentSpectrum`.
+
+The following is a parser-neutral assignment example, not an approved
+srcSEP3D or srcSEP input-file block. It shows every model parameter for the
+multirange option; the four runtime quantities named in the comments must
+come from one coherent local provider snapshot.
 
 ```text
-ParallelDiffusion on
-model = power_law_lambda
-lambda0_m = 1.495978707e10
-independent_variable = rigidity
-rigidity0_V = 1.0e9
-independent_exponent = 0.3333333333333333
-radius0_m = 1.495978707e11
-radial_exponent = 0.5
-field_reference_T = 5.0e-9
-field_exponent = 1.0
-use_time_factor = false
-use_region_factor = false
+model = qlt_slab_spectrum
+spectrum_form = multirange
+energy_range_index = 0.0
+dissipation_index = 1.5
+dissipation_wavenumber_rad_per_m = 1.0e-8
+relative_tolerance = 1.0e-8
+maximum_refinements = 18
+
+# Runtime provider, not model-block parameters:
+# mean_B_T, slab_variance_T2, slab_bendover_length_m, inertial_index
 ```
 
-These numbers demonstrate syntax and SI units only. They are not calibrated
-defaults and are not asserted to describe any SEP population or event.
+The numbers are labeled mathematical syntax inputs only. They are not a
+physical calibration, and no application installs them as defaults. Once D14
+is resumed, the host parser will decide the surrounding section syntax and
+where any external-unit conversion occurs.
 
-Other complete parameter examples are:
+### `qlt_slab_inertial`
 
-```ini
-[parallel_diffusion]
-model = constant_lambda
-lambda_parallel_m = 1.495978707e10
+Equation (31). It has no physical configuration keys; B, slab variance,
+bend-over length, and index are runtime state. Its identity remains separate
+from exact Equation (30), and the library does not claim that a caller's r-star
+is in the inertial approximation's validity range.
+
+### `broadened_slab`
+
+Equations (39)–(42). It accepts the same spectrum schema as full QLT plus
+`kernel` and `width0_per_s`. Kernel values are `lorentzian_constant`,
+`lorentzian_linear`, and `gaussian`; the linear Lorentzian also requires
+`decorrelation_speed_m_per_s`. An exact zero width selects the exact QLT
+branch while retaining the requested broadened-slab model identity. Positive widths use nested,
+refinement-checked wavenumber and pitch-angle quadrature with both resonances.
+
+### `nlpa_given_perp`, `nlgc_e`, and `nlgce_n`
+
+Equations (45)–(51). Their physical turbulence inputs are runtime state;
+optional parser keys only tighten numerical controls. `nlpa_given_perp`
+additionally requires a positive runtime perpendicular coefficient plus its
+model identity and revision. All solves use positive logarithmic unknowns,
+dimensionless spectral integrals, simultaneous coupled residuals, and the
+maximum absolute logarithmic residual gate of 1e-8. Failed solves never return
+the last iterate as success.
+
+### `nlgce_f_2014`
+
+Equations (52)–(56). It uses the fixed
+`Qin_Zhang_2014_Tables_3_4` coefficient set, natural logarithms, published
+input box, and both 288-value arrays. Optional `coefficient_set` may only name
+that exact set. Both eigenvalues and the analytic rigidity derivative are
+returned. In-box success carries `SurrogateErrorUnbounded` because membership
+in the published box is not a certified local fit-error bound. Provenance
+contains both audited CSV SHA-256 values.
+
+### `turbulence_adapter`
+
+Equations (57) and (57b). Required keys are `energy_convention`,
+`residual_energy_convention`, `moment_source`, `underlying_closure`, and
+`vacuum_permeability_H_per_m`. The permeability is explicit because the
+post-2019 SI value is measured and the specification does not select a CODATA
+release; the library does not silently install the former exact SI value.
+`moment_source=input_parameters` additionally requires
+`provider_moment_m2_per_s2`, `residual_energy`, and `slab_fraction` in the
+model block; `moment_source=local_state` requires those three values from each
+immutable runtime snapshot, so transported provider updates reach the closure.
+Named energy conventions are
+`kinetic_plus_magnetic_variance`, `half_elsasser_sum`, `elsasser_sum`, and
+`specific_total_fluctuation_energy`; residual sign is
+`kinetic_minus_magnetic` or `magnetic_minus_kinetic`. Density remains a
+runtime input. The selected QLT or broadened closure's keys are also required.
+The adapter never infers slab fraction, spectral lengths, or directionality.
+
+### `wave_spectrum_adapter`
+
+Revision 1.4 implements only the explicitly admissible balanced,
+transverse-axisymmetric, plasma-frame reduction. Required declarations are
+`propagation=balanced`, `polarization=transverse_axisymmetric`, `frame=plasma`,
+and `underlying_closure`, followed by that QLT/broadened closure's keys.
+Directional, propagating, or imbalanced requests fail rather than being
+relabeled as magnetostatic scattering.
+
+### `tabulated_parallel`
+
+Required keys are `stored_quantity` (`lambda_parallel` or `kappa_parallel`),
+comma-separated `axes`, one `axis_N_values_SI` list per axis,
+`coefficient_values_SI`, and `generation_identity`. Supported axes are
+`rigidity`, `total_kinetic_energy`, `energy_per_nucleon`, `speed`,
+`heliocentric_radius`, `time`, and `mean_field_magnitude`. Values are flattened
+row-major with the final axis fastest. Positive axes and coefficients use
+multilinear log interpolation. A time axis additionally requires `time_rule`
+equal to `linear` (linear interpolation of the positive coefficient after the
+other axes) or `step_previous`; time is never logarithmically transformed.
+Boundaries are closed, but no extrapolation is performed outside them. Knot
+derivatives remain unavailable.
+
+Example parser-neutral table:
+
+```text
+model = tabulated_parallel
+stored_quantity = lambda_parallel
+axes = rigidity,time
+axis_0_values_SI = 1e8,1e9,1e10
+axis_1_values_SI = 0,86400
+time_rule = linear
+coefficient_values_SI = <six positive row-major values>
+generation_identity = <dataset name and checksum>
 ```
 
-```ini
-[parallel_diffusion]
-model = constant_kappa
-kappa_parallel_m2_per_s = 1.0e18
-```
+## Status and diagnostics
 
-```ini
-[parallel_diffusion]
-model = broken_rigidity_kappa
-K_star_m2_per_s = 1.0e18
-rigidity0_V = 1.0e9
-break_rigidity_V = 3.0e9
-low_slope = 0.3
-high_slope = 1.8
-smoothness = 2.0
-field_reference_T = 5.0e-9
-field_exponent = 1.0
-use_radial_factor = false
-use_region_factor = false
-```
+Important failures include `MissingInput`, `InvalidBackground`,
+`OutsideModelDomain`, `InfiniteMeanFreePath`, `IntegrationFailed`,
+`NonlinearSolverFailed`, `InconsistentSpectrum`, and `InvalidConfiguration`.
+No failure is converted to zero or a finite fallback. The default policies are
+no fallback, no bound, and no extrapolation.
 
-```ini
-[parallel_diffusion]
-model = bohm
-eta_B = 1.0
-field_definition = mean_field
-```
+Diagnostics do not turn a successful scalar into a failure.
+`QltWeakPerturbationConcern`, `SurrogateErrorUnbounded`, and
+`DerivativeUnavailable` identify limitations requiring consumer judgment.
+The host decides how to handle ballistic regimes and diagnostics.
 
-## Numerical implementation
-
-Particle speed, gamma, kinetic energy, and rigidity are calculated once from
-total momentum with the exact relativistic relations in Equations (7),(8).
-The kinetic-energy expression is algebraically rationalized to avoid
-nonrelativistic cancellation. Multiplicative laws are evaluated in logarithmic
-form. The broken-rigidity transition uses log-sum-exp rather than direct powers
-of rigidity. No scattering floor, coefficient clamp, extrapolation, fallback,
-or inferred turbulence quantity is present.
-
-The final exponential is still checked for a finite positive result, so the
-logarithmic formulation improves intermediate stability without pretending
-that an arbitrarily large physical coefficient fits in binary64. Magnetic
-vector magnitudes use nested `hypot`, and the broken-law derivative evaluates
-its logistic transition with a bounded exponent after reaching the
-double-precision asymptote. These transformations are algebraic; they do not
-change the configured model or add a numerical regularization parameter.
-
-The configuration fingerprint is a deterministic 64-bit FNV-1a identity of
-the active, canonical parameter values. It is deliberately named a
-fingerprint, not SHA-256. Later coefficient data sets retain their required
-SHA-256 identities separately.
-
-## Build and tests
+## Build and verification
 
 From this directory:
 
 ```sh
+make -f makefile clean
 make -f makefile verify
+make -f makefile CXXFLAGS='-O2 -std=c++17 -Wall -Wextra -Wpedantic -Werror' verify
+sha256sum -c parallel_diffusion_model_data/SHA256SUMS
+python3 parallel_diffusion_model_data/reference_verification.py
+python3 parallel_diffusion_model_data/reference_verification.py --audit
+python3 parallel_diffusion_model_data/reference_verification.py --broadened
 ```
 
-This builds `libparallel_diffusion.a`, runs the aggregate C++ test program, and
-writes `build/test-report.json`. Individual test groups are currently in one
-small executable; every record prints `PASS` or `FAIL` and records its model,
-fixture/identity, and reason in the JSON report. A required failure gives a
-nonzero process exit status.
+`verify` builds `libparallel_diffusion.a`, runs the original analytical and
+parser tests, and runs fixture-driven advanced tests. Expected advanced values
+are read from `benchmark_points.json`; they are not copied into the test.
+Reports are written to `build/test-report.json` and
+`build/advanced-test-report.json`.
 
-The PD01/PD02 checks cover relativistic units/species, both constant laws,
-reference normalization, separable power scaling, missing nucleon data,
-`H(R0)=1`, the exact `a=b` limit, the beta contribution to rigidity slope,
-equal-rigidity species behavior, Bohm scaling, selective field requirements,
-`K_star` conversion, duplicate/invalid input, transactional pointer selection,
-and explicit rejection of unavailable models. Mathematical test inputs are
-not observational calibrations.
+The instrumented API selfcheck used for the final standalone audit can be
+reproduced without changing the normal build:
 
-Coefficient expectations are constructed outside the selected production
-model evaluator, while the shared kinematic conversion they sometimes consume
-has its own independent fixture. The 10 MeV fixture constructs momentum from
-kinetic energy in long-double test arithmetic; constant and Bohm checks apply
-their defining identities directly; power-law checks use analytically chosen
-ratios; and the broken-law derivative is checked with refined centered
-differences plus Richardson cancellation. The tests therefore detect mistakes
-in normalization, beta ownership, and derivatives instead of merely
-reproducing implementation arithmetic.
+```sh
+g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+  -fsanitize=address,undefined -fno-omit-frame-pointer -pthread \
+  parallel_diffusion.cpp parallel_diffusion_advanced.cpp \
+  test_parallel_diffusion_advanced_driver.cpp \
+  -o /tmp/parallel_diffusion_advanced_sanitized
+ASAN_OPTIONS=detect_leaks=0 \
+  /tmp/parallel_diffusion_advanced_sanitized selfcheck
+```
 
-## Qualification status and limitations
+`reference_verification.py` requires NumPy and SciPy. The default library and
+tests require only the C++17 and Python standard libraries. The generated
+archive and reports are not source files.
 
-The companion `parallel_diffusion_model_data/` bundle named in Section 22 is
-absent from this checkout. Consequently PD00 cannot verify its SHA-256 sums,
-the full-precision `benchmark_points.json` fixture is unavailable, and the
-coefficient tables/audit inputs required by PD05--PD08 cannot be imported.
-Tests use independent algebraic identities and the printed Section 15.2
-values at a tolerance compatible with their twelve significant digits; they
-do not claim the unavailable full-precision-fixture gate.
+## Thread safety and numerical limits
 
-See `IMPLEMENTATION_STATUS.md` for exact stage state and evidence,
-`INTEGRATION_PLAN.md` for the planned `srcSEP`/`srcSEP3D` Parker bindings, and
-`info_request.md` for the missing assets, scientific choices, provider
-conventions, and calibration guidance still required for later stages.
+Direct evaluation uses only caller-owned immutable inputs and is reentrant.
+The active global configuration is startup-only. No MPI or PIC types enter the
+library. Adaptive quadrature uses float64 and reports failure when its error
+gate is not met. The nonlinear solver reports its iteration count and final
+maximum logarithmic residual.
+
+Spatial derivatives are returned only where the declared inputs determine
+them. Integral-closure spatial derivatives, complete tensor divergence,
+field-direction derivatives, table-knot policies, and consumer geometry are
+not fabricated. The srcSEP/srcSEP3D adapters must retain their coherent
+neighbour stencil wherever a required analytic derivative is absent.
+
+See `IMPLEMENTATION_STATUS.md` for exact evidence and open gates, and
+`INTEGRATION_PLAN.md` for the deferred Parker-consumer work.

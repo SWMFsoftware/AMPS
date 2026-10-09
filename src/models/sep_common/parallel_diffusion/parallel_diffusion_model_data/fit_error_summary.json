@@ -1,0 +1,150 @@
+{
+ "schema": "parallel_diffusion_fit_error_summary",
+ "bundle_revision": "1.4",
+ "generator": {
+  "library": "numpy.random.default_rng (PCG64)",
+  "seed": 20261008,
+  "call": "rng.uniform(low=ln(lower bounds), high=ln(upper bounds), size=(300, 4))",
+  "column_order": [
+   "r_L/ell_s",
+   "f_s",
+   "eps2_total",
+   "ell_s/ell_2"
+  ],
+  "box": {
+   "r_L/ell_s": [
+    1e-05,
+    6.3
+   ],
+   "f_s": [
+    0.001,
+    0.85
+   ],
+   "eps2_total": [
+    0.0001,
+    100.0
+   ],
+   "ell_s/ell_2": [
+    1,
+    1000.0
+   ]
+  },
+  "logarithm": "natural"
+ },
+ "conventions": {
+  "spectrum": "Eq. (46), nu = 5/6, one-sided total-variance P_a",
+  "L_c": "2 pi C(nu) ell_s (slab only)",
+  "a_x": "Eq. (45), multiplicative (xi/(1+xi))/eps",
+  "epsilon": "sqrt(total variance)/B0",
+  "closure": "NLGCE-N, Eqs. (48),(50),(51), Gamma_dec = 0",
+  "discrepancy": "e = |lambda_F/lambda_N - 1| (Eq. 53a)"
+ },
+ "solver": {
+  "unknowns": "ln(kappa/(v ell_s)) for parallel and perpendicular",
+  "method": "scipy.optimize.root(hybr), xtol 1e-15",
+  "acceptance": "max |log residual| < 1e-8",
+  "initial_guess": "NLGCE-F value (accepted only after residual check)",
+  "quadrature": "scipy.integrate.quad in u = ln(k ell_a) on [-40, 40], epsrel 1e-13, breakpoints at u=0 and the A=Omega, A=v^2/(3 kappa_z) wavenumbers",
+  "checks": {
+   "alternate_initial_guess": "both kappas divided by 1e4",
+   "refined_quadrature": "u in [-55, 55], epsrel 2e-14"
+  }
+ },
+ "environment": {
+  "python": "3.13.16",
+  "numpy": "2.5.3",
+  "scipy": "1.18.1",
+  "platform": "Linux-6.18.44-fc-v80-x86_64-with-glibc2.39"
+ },
+ "results": {
+  "states": 300,
+  "all_converged": true,
+  "max_abs_log_residual": 1.7763568394002505e-15,
+  "max_rel_change_alternate_initial_guess": 3.552713678800501e-15,
+  "max_rel_change_refined_quadrature": 3.204103649068202e-13,
+  "bins": [
+   {
+    "eps2_lower": 0.0001,
+    "eps2_upper": 0.001,
+    "upper_inclusive": false,
+    "states": 48,
+    "median_parallel_discrepancy": 0.18241726824148224,
+    "parallel_share_above_0_25": 0.2916666666666667,
+    "median_perpendicular_discrepancy": 0.10003944729782749,
+    "perpendicular_share_above_0_25": 0.3125
+   },
+   {
+    "eps2_lower": 0.001,
+    "eps2_upper": 0.01,
+    "upper_inclusive": false,
+    "states": 59,
+    "median_parallel_discrepancy": 0.16161491676633766,
+    "parallel_share_above_0_25": 0.3220338983050847,
+    "median_perpendicular_discrepancy": 0.11128998808068336,
+    "perpendicular_share_above_0_25": 0.288135593220339
+   },
+   {
+    "eps2_lower": 0.01,
+    "eps2_upper": 0.1,
+    "upper_inclusive": false,
+    "states": 49,
+    "median_parallel_discrepancy": 0.1018284478538296,
+    "parallel_share_above_0_25": 0.12244897959183673,
+    "median_perpendicular_discrepancy": 0.08607246826232617,
+    "perpendicular_share_above_0_25": 0.10204081632653061
+   },
+   {
+    "eps2_lower": 0.1,
+    "eps2_upper": 1,
+    "upper_inclusive": false,
+    "states": 42,
+    "median_parallel_discrepancy": 0.08596202390774327,
+    "parallel_share_above_0_25": 0.16666666666666666,
+    "median_perpendicular_discrepancy": 0.07749475150782048,
+    "perpendicular_share_above_0_25": 0.11904761904761904
+   },
+   {
+    "eps2_lower": 1,
+    "eps2_upper": 10,
+    "upper_inclusive": false,
+    "states": 48,
+    "median_parallel_discrepancy": 0.13179721420969015,
+    "parallel_share_above_0_25": 0.14583333333333334,
+    "median_perpendicular_discrepancy": 0.06460892443359678,
+    "perpendicular_share_above_0_25": 0.041666666666666664
+   },
+   {
+    "eps2_lower": 10,
+    "eps2_upper": 100,
+    "upper_inclusive": true,
+    "states": 54,
+    "median_parallel_discrepancy": 0.10746812027494063,
+    "parallel_share_above_0_25": 0.2222222222222222,
+    "median_perpendicular_discrepancy": 0.05037554644327896,
+    "perpendicular_share_above_0_25": 0.037037037037037035
+   }
+  ],
+  "overall": {
+   "median_parallel": 0.12394811669644945,
+   "p90_parallel": 0.3687591104678941,
+   "max_parallel": 29.97847988704889,
+   "median_perpendicular": 0.07715682289050296,
+   "p90_perpendicular": 0.6189918472132272,
+   "max_perpendicular": 1488.752352847213,
+   "states_above_1_parallel": 13,
+   "states_above_1_perpendicular": 26,
+   "states_above_1_either": 26,
+   "quantile_method": "numpy.quantile default (linear)"
+  },
+  "worst_state": {
+   "index": 173,
+   "r_L_over_ell_s": 5.984467297342151,
+   "f_s": 0.0034911927154858777,
+   "eps2_total": 0.00010152831089578258,
+   "ell_s_over_ell_2": 137.0182046862185,
+   "F_over_N_parallel": 30.97847988704889,
+   "F_over_N_perpendicular": 1489.752352847213
+  }
+ },
+ "interpretation": "Statistics of a defined log-uniform sample of the published input box; not a distribution of heliospheric states and not a local error bound."
+}

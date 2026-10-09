@@ -1,4 +1,5 @@
 #include "parallel_diffusion.h"
+#include "parallel_diffusion_advanced.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -13,8 +14,8 @@ namespace SEP {
 namespace ParallelDiffusion {
 namespace {
 
-constexpr const char* SpecificationVersion = "1.3";
-constexpr const char* SoftwareVersion = "parallel-diffusion-pd02-v1";
+constexpr const char* SpecificationVersion = "1.4";
+constexpr const char* SoftwareVersion = "parallel-diffusion-pd10-v1";
 
 // The active configuration is process-local state selected during serial
 // startup.  It is intentionally not protected by a mutex: the public contract
@@ -70,7 +71,7 @@ ParallelResult Failure(StatusCode code, const std::string& detail,
 ParallelResult Success(const ModelConfiguration& configuration,
                        const LocalState& local, double lambdaM,
                        double kappaM2PerS) {
-  // Every implemented PD02 law is a finite-scattering model with strictly
+  // Every caller of this helper is a finite-scattering model with strictly
   // positive lambda and kappa.  Infinity and underflow-to-zero therefore mean
   // that a mathematically valid-looking input left the representable domain;
   // neither value is clamped because that would add unconfigured physics.
@@ -116,6 +117,41 @@ Status MeanFieldMagnitude(const LocalState& local, double* magnitudeT) {
       ? Status::Success()
       : Status::Error(StatusCode::InvalidBackground,
                       "field-aligned diffusion requires |mean_B_T|>0");
+}
+
+Status MeanFieldMagnitudeGradient(const LocalState& local,
+                                  std::array<double, 3>* gradientTPerM) {
+  double magnitude = 0.0;
+  Status status = MeanFieldMagnitude(local, &magnitude);
+  if (!status.ok()) return status;
+  if (!local.dMeanFieldDxTPerM.has_value())
+    return Status::Error(StatusCode::MissingInput,
+                         "mean-field magnitude gradient requires dB_dx");
+  const auto& field = *local.meanFieldT;
+  const auto& jacobian = *local.dMeanFieldDxTPerM;
+  for (int j = 0; j < 3; ++j) {
+    (*gradientTPerM)[j] = 0.0;
+    for (int i = 0; i < 3; ++i) {
+      if (!std::isfinite(jacobian[i][j]))
+        return Status::Error(StatusCode::InvalidBackground,
+                             "dB_dx contains a non-finite component");
+      (*gradientTPerM)[j] += field[i] * jacobian[i][j] / magnitude;
+    }
+  }
+  return Status::Success();
+}
+
+bool AddLogFactorGradient(
+    const std::optional<double>& factor,
+    const std::optional<std::array<double, 3> >& gradient,
+    std::array<double, 3>* logGradient) {
+  if (!factor.has_value() || !FinitePositive(*factor) || !gradient.has_value())
+    return false;
+  for (int j = 0; j < 3; ++j) {
+    if (!std::isfinite((*gradient)[j])) return false;
+    (*logGradient)[j] += (*gradient)[j] / *factor;
+  }
+  return true;
 }
 
 Status RequiredFactor(const std::optional<double>& input,
@@ -300,16 +336,44 @@ ParallelResult EvaluatePowerLawLambda(
   ParallelResult result = Success(configuration, local, lambdaM,
                                   kinematics.speedMPerS * lambdaM / 3.0);
   if (result.status.ok()) {
-    // Enabled spatial factors can make grad(kappa) nonzero, but the current
-    // LocalState does not yet carry their coherent gradients.  Preserve the
-    // scalar and analytic rigidity slopes while explicitly withholding the
-    // spatial derivative needed by a complete stochastic drift.
     const double lambdaSlope =
         p.independentExponent * dLnIndependentDLnRigidity;
     result.dLnLambdaDLnRigidity = lambdaSlope;
     result.dLnKappaDLnRigidity = lambdaSlope +
         1.0 / (kinematics.gamma * kinematics.gamma);
-    result.diagnosticMask |= DerivativeUnavailable;
+    std::array<double, 3> logGradient{{0.0, 0.0, 0.0}};
+    bool gradientAvailable = true;
+    if (p.useRadialFactor) {
+      const double radiusM = Magnitude(local.positionM);
+      for (int j = 0; j < 3; ++j)
+        logGradient[j] += p.radialExponent * local.positionM[j] /
+                          (radiusM * radiusM);
+    }
+    if (p.useFieldFactor && p.fieldExponent != 0.0) {
+      double fieldT = 0.0;
+      std::array<double, 3> gradientTPerM;
+      const Status field = MeanFieldMagnitude(local, &fieldT);
+      const Status gradient = MeanFieldMagnitudeGradient(local,
+                                                          &gradientTPerM);
+      gradientAvailable = gradientAvailable && field.ok() && gradient.ok();
+      if (gradientAvailable)
+        for (int j = 0; j < 3; ++j)
+          logGradient[j] -= p.fieldExponent * gradientTPerM[j] / fieldT;
+    }
+    if (p.useTimeFactor)
+      gradientAvailable = gradientAvailable && AddLogFactorGradient(
+          local.timeFactor, local.gradTimeFactorPerM, &logGradient);
+    if (p.useRegionFactor)
+      gradientAvailable = gradientAvailable && AddLogFactorGradient(
+          local.regionFactor, local.gradRegionFactorPerM, &logGradient);
+    if (gradientAvailable) {
+      std::array<double, 3> gradient;
+      for (int j = 0; j < 3; ++j)
+        gradient[j] = *result.kappaParallelM2PerS * logGradient[j];
+      result.gradKappaParallelMPerS = gradient;
+    } else {
+      result.diagnosticMask |= DerivativeUnavailable;
+    }
   }
   return result;
 }
@@ -393,7 +457,33 @@ ParallelResult EvaluateBrokenRigidityKappa(
     result.dLnLambdaDLnRigidity = lambdaSlope;
     result.dLnKappaDLnRigidity = lambdaSlope +
         1.0 / (kinematics.gamma * kinematics.gamma);
-    result.diagnosticMask |= DerivativeUnavailable;
+    std::array<double, 3> logGradient{{0.0, 0.0, 0.0}};
+    bool gradientAvailable = true;
+    if (p.useFieldFactor && p.fieldExponent != 0.0) {
+      double fieldT = 0.0;
+      std::array<double, 3> gradientTPerM;
+      const Status field = MeanFieldMagnitude(local, &fieldT);
+      const Status gradient = MeanFieldMagnitudeGradient(local,
+                                                          &gradientTPerM);
+      gradientAvailable = field.ok() && gradient.ok();
+      if (gradientAvailable)
+        for (int j = 0; j < 3; ++j)
+          logGradient[j] -= p.fieldExponent * gradientTPerM[j] / fieldT;
+    }
+    if (p.useRadialFactor)
+      gradientAvailable = gradientAvailable && AddLogFactorGradient(
+          local.radialFactor, local.gradRadialFactorPerM, &logGradient);
+    if (p.useRegionFactor)
+      gradientAvailable = gradientAvailable && AddLogFactorGradient(
+          local.regionFactor, local.gradRegionFactorPerM, &logGradient);
+    if (gradientAvailable) {
+      std::array<double, 3> gradient;
+      for (int j = 0; j < 3; ++j)
+        gradient[j] = *result.kappaParallelM2PerS * logGradient[j];
+      result.gradKappaParallelMPerS = gradient;
+    } else {
+      result.diagnosticMask |= DerivativeUnavailable;
+    }
   }
   return result;
 }
@@ -439,7 +529,27 @@ ParallelResult EvaluateBohm(
     result.dLnLambdaDLnRigidity = 1.0;
     result.dLnKappaDLnRigidity = 1.0 +
         1.0 / (kinematics.gamma * kinematics.gamma);
-    result.diagnosticMask |= DerivativeUnavailable;
+    std::array<double, 3> fieldGradient;
+    bool gradientAvailable = false;
+    if (configuration.bohm.fieldDefinition == BohmFieldDefinition::MeanField) {
+      gradientAvailable =
+          MeanFieldMagnitudeGradient(local, &fieldGradient).ok();
+    } else if (local.gradEffectiveFieldMagnitudeTPerM.has_value()) {
+      fieldGradient = *local.gradEffectiveFieldMagnitudeTPerM;
+      gradientAvailable = std::all_of(fieldGradient.begin(), fieldGradient.end(),
+                                      [](double value) {
+                                        return std::isfinite(value);
+                                      });
+    }
+    if (gradientAvailable) {
+      std::array<double, 3> gradient;
+      for (int j = 0; j < 3; ++j)
+        gradient[j] = -*result.kappaParallelM2PerS *
+                      fieldGradient[j] / fieldT;
+      result.gradKappaParallelMPerS = gradient;
+    } else {
+      result.diagnosticMask |= DerivativeUnavailable;
+    }
   }
   return result;
 }
@@ -532,16 +642,89 @@ void FingerprintDouble(std::ostringstream* output, const char* name,
   *output << ';' << name << '=' << std::setprecision(17) << value;
 }
 
-std::uint64_t Fnv1a(const std::string& text) {
-  // This deterministic hash is a compact configuration identity, not a
-  // cryptographic checksum.  Future external tables retain independent
-  // SHA-256 provenance as required by the specification.
-  std::uint64_t hash = UINT64_C(1469598103934665603);
-  for (unsigned char value : text) {
-    hash ^= value;
-    hash *= UINT64_C(1099511628211);
+void FingerprintSpectrum(std::ostringstream* output,
+                         const SpectrumParameters& spectrum) {
+  *output << ";spectrum_form=" << static_cast<int>(spectrum.form)
+          << ";spectrum_source=" << spectrum.sourceIdentity
+          << ";low_k_policy=" << static_cast<int>(spectrum.lowKPolicy)
+          << ";high_k_policy=" << static_cast<int>(spectrum.highKPolicy);
+  FingerprintDouble(output, "low_k_index", spectrum.lowKPowerIndex);
+  FingerprintDouble(output, "high_k_index", spectrum.highKPowerIndex);
+  FingerprintDouble(output, "declared_variance_T2",
+                    spectrum.declaredVarianceT2);
+  FingerprintDouble(output, "energy_range_index",
+                    spectrum.energyRangeIndex);
+  FingerprintDouble(output, "dissipation_index",
+                    spectrum.dissipationIndex);
+  FingerprintDouble(output, "dissipation_wavenumber_rad_per_m",
+                    spectrum.dissipationWavenumberRadPerM);
+  for (double value : spectrum.wavenumberRadPerM)
+    FingerprintDouble(output, "k", value);
+  for (double value : spectrum.powerT2M)
+    FingerprintDouble(output, "P", value);
+}
+
+std::uint32_t RotateRight(std::uint32_t value, unsigned shift) {
+  return (value >> shift) | (value << (32u - shift));
+}
+
+std::string Sha256(const std::string& text) {
+  // Configuration identities cross restart/output boundaries, so revision
+  // 1.4 uses the SHA-256 named by Section 14.1 rather than a process-local or
+  // short non-cryptographic hash. This compact implementation follows the
+  // FIPS 180-4 message schedule and operates only on the canonical parameter
+  // serialization assembled below; it has no external-library dependency.
+  static constexpr std::uint32_t k[64] = {
+      0x428a2f98u,0x71374491u,0xb5c0fbcfu,0xe9b5dba5u,0x3956c25bu,0x59f111f1u,0x923f82a4u,0xab1c5ed5u,
+      0xd807aa98u,0x12835b01u,0x243185beu,0x550c7dc3u,0x72be5d74u,0x80deb1feu,0x9bdc06a7u,0xc19bf174u,
+      0xe49b69c1u,0xefbe4786u,0x0fc19dc6u,0x240ca1ccu,0x2de92c6fu,0x4a7484aau,0x5cb0a9dcu,0x76f988dau,
+      0x983e5152u,0xa831c66du,0xb00327c8u,0xbf597fc7u,0xc6e00bf3u,0xd5a79147u,0x06ca6351u,0x14292967u,
+      0x27b70a85u,0x2e1b2138u,0x4d2c6dfcu,0x53380d13u,0x650a7354u,0x766a0abbu,0x81c2c92eu,0x92722c85u,
+      0xa2bfe8a1u,0xa81a664bu,0xc24b8b70u,0xc76c51a3u,0xd192e819u,0xd6990624u,0xf40e3585u,0x106aa070u,
+      0x19a4c116u,0x1e376c08u,0x2748774cu,0x34b0bcb5u,0x391c0cb3u,0x4ed8aa4au,0x5b9cca4fu,0x682e6ff3u,
+      0x748f82eeu,0x78a5636fu,0x84c87814u,0x8cc70208u,0x90befffau,0xa4506cebu,0xbef9a3f7u,0xc67178f2u};
+  std::vector<unsigned char> message(text.begin(), text.end());
+  const std::uint64_t bitLength = static_cast<std::uint64_t>(message.size()) * 8u;
+  message.push_back(0x80u);
+  while ((message.size() % 64u) != 56u) message.push_back(0u);
+  for (int shift = 56; shift >= 0; shift -= 8)
+    message.push_back(static_cast<unsigned char>(bitLength >> shift));
+
+  std::uint32_t h[8] = {0x6a09e667u,0xbb67ae85u,0x3c6ef372u,0xa54ff53au,
+                        0x510e527fu,0x9b05688cu,0x1f83d9abu,0x5be0cd19u};
+  for (std::size_t offset = 0; offset < message.size(); offset += 64u) {
+    std::uint32_t w[64];
+    for (int i = 0; i < 16; ++i) {
+      const std::size_t p = offset + static_cast<std::size_t>(4 * i);
+      w[i] = (static_cast<std::uint32_t>(message[p]) << 24) |
+             (static_cast<std::uint32_t>(message[p + 1]) << 16) |
+             (static_cast<std::uint32_t>(message[p + 2]) << 8) |
+             static_cast<std::uint32_t>(message[p + 3]);
+    }
+    for (int i = 16; i < 64; ++i) {
+      const std::uint32_t s0 = RotateRight(w[i - 15], 7) ^
+          RotateRight(w[i - 15], 18) ^ (w[i - 15] >> 3);
+      const std::uint32_t s1 = RotateRight(w[i - 2], 17) ^
+          RotateRight(w[i - 2], 19) ^ (w[i - 2] >> 10);
+      w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+    }
+    std::uint32_t a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7];
+    for (int i = 0; i < 64; ++i) {
+      const std::uint32_t s1 = RotateRight(e,6)^RotateRight(e,11)^RotateRight(e,25);
+      const std::uint32_t ch = (e & f) ^ ((~e) & g);
+      const std::uint32_t t1 = hh + s1 + ch + k[i] + w[i];
+      const std::uint32_t s0 = RotateRight(a,2)^RotateRight(a,13)^RotateRight(a,22);
+      const std::uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
+      const std::uint32_t t2 = s0 + maj;
+      hh=g; g=f; f=e; e=d+t1; d=c; c=b; b=a; a=t1+t2;
+    }
+    h[0]+=a; h[1]+=b; h[2]+=c; h[3]+=d;
+    h[4]+=e; h[5]+=f; h[6]+=g; h[7]+=hh;
   }
-  return hash;
+  std::ostringstream result;
+  result << std::hex << std::setfill('0');
+  for (std::uint32_t value : h) result << std::setw(8) << value;
+  return result.str();
 }
 
 }  // namespace
@@ -556,27 +739,26 @@ Status Status::Error(StatusCode code, const std::string& detail) {
 }
 
 const std::vector<ModelDescriptor>& ModelRegistry() {
-  // Keep the complete v1.3 identifier inventory visible even when a backend
-  // is deferred.  This lets configuration handling distinguish a known but
-  // unavailable physical model from a misspelling and prevents an implicit
-  // fallback to the nearest implemented law.
+  // The revision-1.4 first-release inventory is fully registered.  A true
+  // value means the backend has a validated schema and evaluator; it does not
+  // imply that a production run has supplied its required physical state.
   static const std::vector<ModelDescriptor> models = {
       {ModelId::ConstantLambda, "constant_lambda", true, "lambda,kappa", "PD02"},
       {ModelId::ConstantKappa, "constant_kappa", true, "kappa,lambda", "PD02"},
       {ModelId::PowerLawLambda, "power_law_lambda", true, "lambda,kappa", "PD02"},
       {ModelId::BrokenRigidityKappa, "broken_rigidity_kappa", true, "kappa,lambda", "PD02"},
-      {ModelId::QltSlabSpectrum, "qlt_slab_spectrum", false, "D_mumu,lambda,kappa", "PD04"},
-      {ModelId::QltSlabInertial, "qlt_slab_inertial", false, "lambda,kappa", "PD04"},
-      {ModelId::PrescribedLambdaMuShape, "prescribed_lambda_mu_shape", false, "D_mumu,lambda,kappa", "PD04"},
-      {ModelId::BroadenedSlab, "broadened_slab", false, "D_mumu,lambda,kappa", "PD07"},
-      {ModelId::NlpaGivenPerp, "nlpa_given_perp", false, "kappa_parallel,lambda_parallel", "PD06"},
-      {ModelId::NlgcE, "nlgc_e", false, "parallel,perpendicular", "PD06"},
-      {ModelId::NlgceN, "nlgce_n", false, "parallel,perpendicular", "PD06"},
-      {ModelId::NlgceF2014, "nlgce_f_2014", false, "parallel,perpendicular", "PD05"},
-      {ModelId::TurbulenceAdapter, "turbulence_adapter", false, "selected closure", "PD08"},
-      {ModelId::WaveSpectrumAdapter, "wave_spectrum_adapter", false, "selected closure", "PD08"},
+      {ModelId::QltSlabSpectrum, "qlt_slab_spectrum", true, "D_mumu,lambda,kappa", "PD04"},
+      {ModelId::QltSlabInertial, "qlt_slab_inertial", true, "lambda,kappa", "PD04"},
+      {ModelId::PrescribedLambdaMuShape, "prescribed_lambda_mu_shape", true, "D_mumu,lambda,kappa", "PD04"},
+      {ModelId::BroadenedSlab, "broadened_slab", true, "D_mumu,lambda,kappa", "PD07"},
+      {ModelId::NlpaGivenPerp, "nlpa_given_perp", true, "kappa_parallel,lambda_parallel", "PD06"},
+      {ModelId::NlgcE, "nlgc_e", true, "parallel,perpendicular", "PD06"},
+      {ModelId::NlgceN, "nlgce_n", true, "parallel,perpendicular", "PD06"},
+      {ModelId::NlgceF2014, "nlgce_f_2014", true, "parallel,perpendicular", "PD05"},
+      {ModelId::TurbulenceAdapter, "turbulence_adapter", true, "selected closure", "PD08"},
+      {ModelId::WaveSpectrumAdapter, "wave_spectrum_adapter", true, "selected closure", "PD08"},
       {ModelId::Bohm, "bohm", true, "lambda,kappa", "PD02"},
-      {ModelId::TabulatedParallel, "tabulated_parallel", false, "lambda or kappa", "PD08"}};
+      {ModelId::TabulatedParallel, "tabulated_parallel", true, "lambda or kappa", "PD08"}};
   return models;
 }
 
@@ -694,9 +876,7 @@ Status ValidateConfiguration(const ModelConfiguration& configuration) {
           : Status::Error(StatusCode::InvalidConfiguration,
                           "bohm requires eta_B>0");
     default:
-      return Status::Error(StatusCode::UnsupportedModel,
-          std::string("model '") + ModelName(configuration.model) +
-          "' is specified but not implemented in the PD02 release slice");
+      return Internal::ValidateAdvancedConfiguration(configuration);
   }
 }
 
@@ -764,26 +944,133 @@ std::string ConfigurationFingerprint(const ModelConfiguration& configuration) {
       canonical << ";field_definition="
                 << static_cast<int>(configuration.bohm.fieldDefinition);
       break;
-    default:
+    case ModelId::QltSlabSpectrum:
+      FingerprintSpectrum(&canonical, configuration.qltSlab.spectrum);
+      FingerprintDouble(&canonical, "relative_tolerance",
+                        configuration.qltSlab.numerical.relativeTolerance);
+      canonical << ";maximum_refinements="
+                << configuration.qltSlab.numerical.maximumRefinements;
+      break;
+    case ModelId::QltSlabInertial:
+      break;
+    case ModelId::PrescribedLambdaMuShape:
+      canonical << ";amplitude_mode="
+                << static_cast<int>(configuration.prescribedLambdaMu.amplitudeMode);
+      FingerprintDouble(&canonical, "q_mu", configuration.prescribedLambdaMu.qMu);
+      FingerprintDouble(&canonical, "h_mu", configuration.prescribedLambdaMu.hMu);
+      FingerprintDouble(&canonical, "target_lambda_m",
+                        configuration.prescribedLambdaMu.targetLambdaM);
+      FingerprintDouble(&canonical, "D0_per_s",
+                        configuration.prescribedLambdaMu.fixedD0PerS);
+      FingerprintDouble(&canonical, "relative_tolerance",
+                        configuration.prescribedLambdaMu.numerical.relativeTolerance);
+      break;
+    case ModelId::BroadenedSlab:
+      FingerprintSpectrum(&canonical, configuration.broadenedSlab.spectrum);
+      canonical << ";kernel=" << static_cast<int>(configuration.broadenedSlab.kernel);
+      FingerprintDouble(&canonical, "width0_per_s",
+                        configuration.broadenedSlab.width0PerS);
+      FingerprintDouble(&canonical, "decorrelation_speed_m_per_s",
+                        configuration.broadenedSlab.decorrelationSpeedMPerS);
+      FingerprintDouble(&canonical, "relative_tolerance",
+                        configuration.broadenedSlab.numerical.relativeTolerance);
+      break;
+    case ModelId::NlpaGivenPerp:
+    case ModelId::NlgcE:
+    case ModelId::NlgceN:
+      FingerprintDouble(&canonical, "relative_tolerance",
+                        configuration.nonlinear.numerical.relativeTolerance);
+      canonical << ";maximum_iterations="
+                << configuration.nonlinear.numerical.maximumIterations
+                << ";maximum_refinements="
+                << configuration.nonlinear.numerical.maximumRefinements;
+      break;
+    case ModelId::NlgceF2014:
+      canonical << ";coefficient_set=" << configuration.nlgceF.coefficientSet;
+      break;
+    case ModelId::TurbulenceAdapter:
+      canonical << ";energy_convention="
+                << static_cast<int>(configuration.turbulenceAdapter.energyConvention)
+                << ";residual_convention="
+                << static_cast<int>(configuration.turbulenceAdapter.residualConvention)
+                << ";moment_source="
+                << static_cast<int>(configuration.turbulenceAdapter.momentSource)
+                << ";closure="
+                << static_cast<int>(configuration.turbulenceAdapter.closure);
+      FingerprintDouble(&canonical, "vacuum_permeability_H_per_m",
+                        configuration.turbulenceAdapter.vacuumPermeabilityHPerM);
+      if (configuration.turbulenceAdapter.providerMomentM2PerS2.has_value())
+        FingerprintDouble(&canonical, "provider_moment_m2_per_s2",
+                          *configuration.turbulenceAdapter.providerMomentM2PerS2);
+      if (configuration.turbulenceAdapter.residualEnergy.has_value())
+        FingerprintDouble(&canonical, "residual_energy",
+                          *configuration.turbulenceAdapter.residualEnergy);
+      if (configuration.turbulenceAdapter.slabFraction.has_value())
+        FingerprintDouble(&canonical, "slab_fraction",
+                          *configuration.turbulenceAdapter.slabFraction);
+      if (configuration.turbulenceAdapter.closure ==
+          AdapterClosure::QltSlabSpectrum) {
+        FingerprintSpectrum(&canonical,
+                            configuration.turbulenceAdapter.qlt.spectrum);
+      } else if (configuration.turbulenceAdapter.closure ==
+                 AdapterClosure::BroadenedSlab) {
+        FingerprintSpectrum(&canonical,
+                            configuration.turbulenceAdapter.broadened.spectrum);
+        FingerprintDouble(&canonical, "broadening_width0_per_s",
+                          configuration.turbulenceAdapter.broadened.width0PerS);
+      }
+      break;
+    case ModelId::WaveSpectrumAdapter:
+      canonical << ";propagation=" << configuration.waveSpectrumAdapter.propagation
+                << ";polarization=" << configuration.waveSpectrumAdapter.polarization
+                << ";frame=" << configuration.waveSpectrumAdapter.frame
+                << ";closure="
+                << static_cast<int>(configuration.waveSpectrumAdapter.closure);
+      if (configuration.waveSpectrumAdapter.closure ==
+          AdapterClosure::QltSlabSpectrum) {
+        FingerprintSpectrum(&canonical,
+                            configuration.waveSpectrumAdapter.qlt.spectrum);
+      } else if (configuration.waveSpectrumAdapter.closure ==
+                 AdapterClosure::BroadenedSlab) {
+        FingerprintSpectrum(&canonical,
+                            configuration.waveSpectrumAdapter.broadened.spectrum);
+        FingerprintDouble(&canonical, "broadening_width0_per_s",
+                          configuration.waveSpectrumAdapter.broadened.width0PerS);
+      }
+      break;
+    case ModelId::TabulatedParallel:
+      canonical << ";stored_quantity="
+                << static_cast<int>(configuration.table.storedCoefficient)
+                << ";time_rule="
+                << (configuration.table.timeInterpolation.has_value()
+                        ? static_cast<int>(*configuration.table.timeInterpolation)
+                        : -1)
+                << ";generation_identity=" << configuration.table.generationIdentity;
+      for (std::size_t a = 0; a < configuration.table.axes.size(); ++a) {
+        canonical << ";axis=" << static_cast<int>(configuration.table.axes[a]);
+        for (double value : configuration.table.axisSI[a])
+          FingerprintDouble(&canonical, "axis_value", value);
+      }
+      for (double value : configuration.table.coefficientSI)
+        FingerprintDouble(&canonical, "coefficient", value);
       break;
   }
-  const std::uint64_t hash = Fnv1a(canonical.str());
-  std::ostringstream result;
-  result << std::hex << std::setw(16) << std::setfill('0') << hash;
-  return result.str();
+  return Sha256(canonical.str());
 }
 
 ModelFunction FunctionForModel(ModelId model) {
-  // Returning nullptr for a registered-but-unimplemented ID is intentional.
-  // Evaluate and SetActiveConfiguration convert it to UnsupportedModel rather
-  // than selecting a numerically convenient substitute.
+  // Every first-release registry entry has an evaluator. A null return is
+  // still retained as a defensive guard against an invalid enum value; no
+  // numerically convenient substitute is ever selected.
   switch (model) {
     case ModelId::ConstantLambda: return &EvaluateConstantLambda;
     case ModelId::ConstantKappa: return &EvaluateConstantKappa;
     case ModelId::PowerLawLambda: return &EvaluatePowerLawLambda;
     case ModelId::BrokenRigidityKappa: return &EvaluateBrokenRigidityKappa;
     case ModelId::Bohm: return &EvaluateBohm;
-    default: return nullptr;
+    default:
+      return Internal::IsAdvancedModel(model) ? &Internal::EvaluateAdvanced
+                                               : nullptr;
   }
 }
 
@@ -842,6 +1129,9 @@ Status BuildConfiguration(const std::string& modelId,
   if (!ParseModelId(modelId, &model))
     return Status::Error(StatusCode::UnsupportedModel,
                          "unknown parallel-diffusion model '" + modelId + "'");
+  if (Internal::IsAdvancedModel(model))
+    return Internal::BuildAdvancedConfiguration(modelId, parameters,
+                                                configuration);
   // Parse into a local candidate and publish to *configuration only after all
   // keys, paired-option rules, numerical domains, and backend availability
   // validate.  Thus even a caller that reuses its output object sees
@@ -1001,6 +1291,37 @@ Status ConfigureActiveModel(const std::string& modelId,
   ModelConfiguration candidate;
   const Status built = BuildConfiguration(modelId, parameters, &candidate);
   return built.ok() ? SetActiveConfiguration(candidate) : built;
+}
+
+Status EvaluatePitchAngleDiffusion(double mu,
+                                   const ParticleState& particle,
+                                   const LocalState& local,
+                                   const ModelConfiguration& configuration,
+                                   double* dMuMuPerS) {
+  const Status valid = ValidateConfiguration(configuration);
+  if (!valid.ok()) return valid;
+  return Internal::EvaluateAdvancedPitchAngle(mu, particle, local,
+                                               configuration, dMuMuPerS);
+}
+
+Status EvaluateBatch(const std::vector<ParticleState>& particles,
+                     const std::vector<LocalState>& states,
+                     const ModelConfiguration& configuration,
+                     std::vector<ParallelResult>* results) {
+  if (!results)
+    return Status::Error(StatusCode::InvalidConfiguration,
+                         "null batch result output");
+  if (particles.size() != states.size())
+    return Status::Error(StatusCode::InvalidConfiguration,
+                         "particle, state, and result batch shapes must match");
+  const Status valid = ValidateConfiguration(configuration);
+  if (!valid.ok()) return valid;
+  std::vector<ParallelResult> candidate;
+  candidate.reserve(particles.size());
+  for (std::size_t i = 0; i < particles.size(); ++i)
+    candidate.push_back(Evaluate(particles[i], states[i], configuration));
+  *results = std::move(candidate);
+  return Status::Success();
 }
 
 Status KStarFromReferenceKappa(double referenceKappaM2PerS,

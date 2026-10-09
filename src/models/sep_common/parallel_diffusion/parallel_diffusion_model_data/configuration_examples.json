@@ -1,0 +1,83 @@
+{
+ "schema": "parallel_diffusion_configuration_examples",
+ "bundle_revision": "1.4",
+ "normative": false,
+ "note": "Parameterized templates from Section 14.6. Values in angle brackets must be supplied from the physical setup or a cited calibration; no physical default is implied.",
+ "templates": [
+  {
+   "model": "power_law_lambda",
+   "lambda0": {
+    "value": "<lambda0_AU>",
+    "unit": "AU"
+   },
+   "rigidity0": {
+    "value": "<rigidity0_GV>",
+    "unit": "GV"
+   },
+   "radius0": {
+    "value": "<radius0_AU>",
+    "unit": "AU"
+   },
+   "rigidity_exponent": "<delta>",
+   "radial_exponent": "<alpha>",
+   "field_exponent": "<eta>",
+   "normalization_factors": {
+    "time": "unity",
+    "region": "unity"
+   }
+  },
+  {
+   "model": "broken_rigidity_kappa",
+   "K_star": {
+    "value": "<K_star_m2_per_s>",
+    "unit": "m2/s"
+   },
+   "B_ref": {
+    "value": "<B_ref_nT>",
+    "unit": "nT"
+   },
+   "rigidity0": {
+    "value": "<rigidity0_GV>",
+    "unit": "GV"
+   },
+   "break_rigidity": {
+    "value": "<break_rigidity_GV>",
+    "unit": "GV"
+   },
+   "low_slope": "<a>",
+   "high_slope": "<b>",
+   "smoothness": "<h>",
+   "field_exponent": "<eta>",
+   "normalization_convention": "speed_factored_K_star"
+  },
+  {
+   "model": "qlt_slab_spectrum",
+   "spectrum": {
+    "form": "smooth_bendover",
+    "slab_variance": {
+     "value": "<slab_variance_nT2>",
+     "unit": "nT2"
+    },
+    "bendover_length": {
+     "value": "<slab_bendover_length_AU>",
+     "unit": "AU"
+    },
+    "inertial_index": "<s>",
+    "normalization": "one_sided_total_transverse_variance",
+    "wavenumber_unit": "rad/m",
+    "high_k_policy": "specified_analytic_tail"
+   },
+   "pitch_angle_regularization": "none"
+  },
+  {
+   "model": "nlgce_f_2014",
+   "spectrum_provider": "local_slab_2d_state",
+   "coefficient_set": "Qin_Zhang_2014_Tables_3_4",
+   "logarithm": "natural",
+   "out_of_domain": "error",
+   "return_perpendicular_pair": true,
+   "report_surrogate_diagnostics": true,
+   "inside_domain_backend_switch": "disabled"
+  }
+ ]
+}

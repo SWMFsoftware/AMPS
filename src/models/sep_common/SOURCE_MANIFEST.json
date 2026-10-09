@@ -4,23 +4,28 @@
   "production_source_globs": [
     "*.cpp",
     "*.h",
-    "parallel_diffusion/parallel_diffusion.cpp",
-    "parallel_diffusion/parallel_diffusion.h"
+    "parallel_diffusion/parallel_diffusion*.cpp",
+    "parallel_diffusion/parallel_diffusion*.h",
+    "parallel_diffusion/nlgce_f_coefficients.inc"
   ],
   "test_source_globs": [
-    "parallel_diffusion/test_*.cpp"
+    "parallel_diffusion/test_*.cpp",
+    "parallel_diffusion/test_*.py"
   ],
   "documentation_globs": [
     "*.md",
     "parallel_diffusion/*.md"
   ],
-  "retained_input_globs": [],
+  "retained_input_globs": [
+    "parallel_diffusion/parallel_diffusion_model_data/**"
+  ],
   "support_globs": [
     ".gitignore",
     "SOURCE_MANIFEST.json",
     "makefile",
     "parallel_diffusion/.gitignore",
-    "parallel_diffusion/makefile"
+    "parallel_diffusion/makefile",
+    "parallel_diffusion/generate_nlgce_coefficients.py"
   ],
   "generated_globs": [
     "build/**",

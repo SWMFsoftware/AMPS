@@ -1,8 +1,8 @@
 # Parallel diffusion coefficient models for SEP and GCR transport
 
 **File:** PARALLEL_DIFFUSION_COEFFICIENT_MODEL.md  
-**Specification version:** 1.3  
-**Revision date:** 8 October 2026  
+**Specification version:** 1.4  
+**Revision date:** 8 October 2026 (revision 1.4 supersedes revision 1.3 of the same date)  
 **Literature cutoff:** 7 October 2026; principal review interval: 2006–2026.  
 **Purpose:** a mathematical reference for implementing a reusable library of parallel spatial diffusion coefficients, and a source for the methods sections of publications.
 
@@ -14,7 +14,24 @@ Published theory, algebraic consequences of the stated conventions, and proposed
 
 **Numerical qualification:** NLGCE-F is the published polynomial approximation to the corrected NLGCE-N integral closure. Revision 1.2 corrects a transcription error in Equation (45): the source multiplies by 1/epsilon; earlier versions incorrectly exponentiated. All affected nonlinear benchmarks and discrepancy statistics have been regenerated. The 576 polynomial coefficients are unchanged and individually match the primary-source tables. Membership in the published input box remains distinct from a certified approximation-error bound.
 
-The document remains a single implementation and publication reference. Sections 17–18 supply publication reporting and citations; Section 19 is a dated bibliography-snapshot appendix; Sections 20–22 supply coefficient data, BibTeX additions, and reproducibility assets. Section 23 gives the staged Codex implementation roadmap. The snapshot audit is not a physical assumption of any model.
+**Revision 1.4:** this revision responds to the implementation information request recorded on 8 October 2026 (Section 24). It changes no model equation, published parameter, or coefficient. Instead it records an independent re-verification:
+
+- All 576 coefficients and the published fit bounds were compared again against Qin and Zhang (2014). The NLPA, a_x, NLGC, modified-closure, and NLGCE-F definitions were checked against the same source.
+- Every number printed in Sections 11.4 and 15 was recomputed by an independent implementation. All agree to their printed precision.
+- The 300-state audit was regenerated exactly from its stated seed.
+
+The revision also adds the following:
+
+- A regenerated companion bundle (Section 22.1). Its two coefficient files are byte-identical to the files whose digests were published in revisions 1.2–1.3.
+- New full-precision fixtures: electron and alpha-particle kinematics (Section 15.2); NLGC-E and NLPA with a supplied perpendicular coefficient; NLGCE-F and NLGCE-N derivatives; and broadened-slab references (Sections 15.6–15.8).
+- Explicit spectrum-convention conversion rules (Section 8.7).
+- The largest measured fit discrepancies in the audit (Section 11.4).
+- A verified published parameter example for the broken rigidity law (Section 6.1).
+- An information-request register that separates resolved items from decisions only the user or host application can make (Section 24).
+
+Section 22.4 lists exactly what was and was not re-verified.
+
+The document remains a single implementation and publication reference. Sections 17–18 supply publication reporting and citations; Section 19 is a dated bibliography-snapshot appendix; Sections 20–22 supply coefficient data, BibTeX additions, and reproducibility assets. Section 23 gives the staged Codex implementation roadmap, and Section 24 records the revision 1.4 information-request register. The snapshot audit is not a physical assumption of any model.
 
 ## Contents
 
@@ -41,6 +58,7 @@ The document remains a single implementation and publication reference. Sections
 21. [BibTeX additions](#21-bibtex-additions)
 22. [Reproducibility assets and revision record](#22-reproducibility-assets-and-revision-record)
 23. [Codex implementation roadmap](#23-codex-implementation-roadmap)
+24. [Information-request register (revision 1.4)](#24-information-request-register-revision-14)
 
 ## 1. Transport equation and scope
 
@@ -390,7 +408,7 @@ $$
 \lambda_\parallel
 =
 \lambda_0
-\left(\frac{v}{v_0}\right)^a_v
+\left(\frac{v}{v_0}\right)^{a_v}
 \left(\frac{r}{r_0}\right)^\alpha.
 \tag{15}
 $$
@@ -453,6 +471,31 @@ $$
 This convention allows the same mean free path for different species at equal rigidity while retaining their different speeds in kappa. If a user instead supplies the actual kappa at R0, the input converter must divide that value by beta(R0) to obtain K_star.
 
 Potgieter et al. (2014), Vos and Potgieter (2015), and Corti et al. (2019) use this class of phenomenological coefficients in Parker-equation modulation studies [R14,R15,R18]. Their fitted parameters and normalization conventions are study-specific.
+
+**Published parameter example (revision 1.4; not a default).** Potgieter et al. (2014), Equation (5) of the author preprint arXiv:1302.1284v3 (the latest arXiv version), writes
+
+$$
+K_\parallel=(K_\parallel)_0\,\beta\left(\frac{B_0}{B}\right)\left(\frac{P}{P_0}\right)^{a}
+\left(\frac{(P/P_0)^{c}+(P_k/P_0)^{c}}{1+(P_k/P_0)^{c}}\right)^{(b-a)/c}.
+$$
+
+This is Equation (17) with the identifications in the table below. Note the symbol clash: their B_0 is a fixed 1 nT reference value, whereas B0 in this document is the local mean-field magnitude, which is their B.
+
+| This document | Potgieter et al. (2014) | Printed value or definition |
+|---|---|---|
+| K_star | (K_∥)_0 | "a constant in units of 10^22 cm² s⁻¹", i.e. 10^18 m² s⁻¹; the preprint text does not list its numerical values |
+| R0 | P_0 | 1 GV |
+| B_ref, eta | B_0, exponent 1 | 1 nT; eta=1 |
+| B0 (local) | B, the HMF magnitude | Provider value |
+| a | a | 0.56, 0.48, 0.39, 0.28 for 2006, 2007, 2008, 2009 (their Table 1) |
+| b | b | 1.95 |
+| h | c | 3.0 |
+| R_b | P_k | 4.0, 4.0, 4.0, 4.2 GV for 2006–2009 (their Table 1) |
+| g_r, g_region | none | Unity; their spatial dependence of K_∥ enters through B |
+
+Their Table 1 also lists λ_∥ at Earth at 100 MV as 0.04, 0.06, 0.09 and 0.12 AU for 2006–2009, with B at Earth of 5.05, 4.50, 4.25 and 3.94 nT. Recovering (K_∥)_0 from those entries would require assumptions about how they were evaluated (species, field and projection), so this revision does not infer it. Their perpendicular choice, K_⊥r=0.02 K_∥, belongs to a separate perpendicular model.
+
+These values were checked against the arXiv text in revision 1.4; the journal version was not re-read. They apply to the 2006–2009 PAMELA proton study and its modulation model. They are an example of a cited calibration, not a library default or a parameter set valid for other species, epochs or regions.
 
 ### 6.2 Limits and derivatives
 
@@ -539,7 +582,7 @@ D_0(1-\mu^2)\left(|\mu|^{q_\mu-1}+h_\mu\right),
 \tag{22}
 $$
 
-Here q_mu is a scattering-shape spectral index and h_mu represents additional scattering near 90 degrees. The regularized shape is used in SEP focused-transport work, including Dröge et al. (2014) [R30]; q_mu and h_mu correspond to their shape index and 90-degree parameter, with amplitude differences absorbed in D0. This is a phenomenological prescription, not a complete nonlinear turbulence theory. The amplitude may depend on position and particle energy through a separately specified provider.
+Here q_mu is a scattering-shape spectral index and h_mu represents additional scattering near 90 degrees. The regularized shape is used in SEP focused-transport work, including Dröge et al. (2014) [R30]; q_mu and h_mu correspond to their shape index and 90-degree parameter, with amplitude differences absorbed in D0. The full text of Dröge et al. (2014) was not accessible for revision 1.4. This attribution was therefore not re-checked at equation level. No parameter value from that paper is transcribed here; reproducing that study requires taking its normalization and parameters from the paper itself. This is a phenomenological prescription, not a complete nonlinear turbulence theory. The amplitude may depend on position and particle energy through a separately specified provider.
 
 To enforce a supplied target mean free path, define
 
@@ -794,6 +837,22 @@ $$
 
 For general spectra, partition the mu integral at the values corresponding to spectral breaks, evaluate the logarithm of positive spectra when appropriate, and distinguish missing spectrum coverage from a genuine zero in wave power.
 
+### 8.7 Spectrum-convention conversions (revision 1.4)
+
+A provider spectrum reaches the closures only after conversion to the canonical P_s(k) of Equation (25): k≥0 in rad m⁻¹, one-sided, and normalized to the total transverse slab variance. The rules below are algebraic consequences of the stated normalizations, and each is a named conversion in the sense of the PD03 requirement. A spectrum whose declared normalization matches none of them needs its own derived rule. It must not be rescaled to match a variance without one.
+
+| Supplied quantity | Its normalization | Conversion to P_s(k), k>0 |
+|---|---|---|
+| Two-sided per-component S_ii(k), k real, i=x,y | ∫ S_ii dk over all k = ⟨δB_i²⟩ | P_s(k)=S_xx(k)+S_xx(−k)+S_yy(k)+S_yy(−k); axisymmetric and even: 4S_xx(k) |
+| One-sided per-component P_ii(k) | ∫₀^∞ P_ii dk = ⟨δB_i²⟩ | P_s=P_xx+P_yy; axisymmetric: 2P_xx |
+| Two-sided total S_T(k)=S_xx+S_yy | ∫ S_T dk over all k = δB_s² | P_s(k)=S_T(k)+S_T(−k); even: 2S_T(k) |
+| One-sided total in cycles per metre, P^(c)(k_c), k_c=k/2π | ∫₀^∞ P^(c) dk_c = δB_s² | P_s(k)=P^(c)(k/2π)/(2π) |
+| One-sided frequency PSD under frozen flow | Equation (36) | Equation (36), with its sampling assumptions |
+| Qin and Zhang (2014) S′_xx^slab, their Equations (2) and (4) | ∫ S′_xx^slab dk_∥ over all k_∥ = ⟨b²_slab⟩/2 | P_s=4S′_xx^slab |
+| Qin and Zhang (2014) S′_xx^2D, their Equations (2) and (3) | Tensor factor 2k_y²δ(k_∥)/(πk_⊥³); ∫d³k S_xx^2D = ⟨b²_2D⟩/2 | P_2=4S′_xx^2D for the reduced radial density of Equation (46) |
+
+The last two rows use the radial delta-function convention of the source, ∫d²k_⊥ δ(k_⊥)/(2πk_⊥)=1. Under that convention, ⟨b²_slab⟩ and ⟨b²_2D⟩ in Qin and Zhang (2014) are the total two-component variances δB_s² and δB_2² of this document. Section 10.2 uses this identification.
+
 ## 9. Resonance broadening and weakly nonlinear theory
 
 ### 9.1 Physical idea and precise scope
@@ -960,6 +1019,8 @@ L_c is not an independently adjustable composite length for this backend. A vari
 
 Equation (45) uses the multiplicative factor (xi/(1+xi)) times (1/epsilon), followed by epsilon/(2xi), as printed in Qin and Zhang (2014), Equation (6), restating the 2013 correction [R09,R10]. The first factor is not raised to the power 1/epsilon. Both occurrences use epsilon, not epsilon². Implement the denominator as (xi/(1+xi))/epsilon + epsilon/(2xi). Revision 1.2 corrects the exponentiation error in earlier versions of this specification and regenerates all affected numerical results; it does not refit the published parameter.
 
+**Source check (revision 1.4).** Equation (44) was compared with Qin and Zhang (2014), Equation (5). Equation (45) was compared with their Equation (6) as rendered from the arXiv LaTeX source, where it reads a_x=(1/2)√(Ẽ_s/{[ξ/(1+ξ)](1/b̃)+b̃/(2ξ)}). Their definitions are r̃=2πr_L/λ_c, b̃=b/B0, ξ=r̃/b̃, Ẽ_s=E_slab/E_total, λ_c=2πC(ν)λ_slab, and b=(⟨b²_slab⟩+⟨b²_2D⟩)^(1/2). These are identical to Equations (44), (45) and (45a) with b̃=epsilon, Ẽ_s=f_s, λ_c=L_c,s and λ_slab=ell_s. r_L is "the particle maximum gyro-radius", i.e. v/Ω of Equation (8). The expression (xi/(1+xi))/epsilon + epsilon/(2xi) that appears in some implementation notes is only the denominator inside the square root; it is not a_x.
+
 ### 10.2 Fully specified two-component reduction
 
 For each component a=s,2, use
@@ -1004,6 +1065,13 @@ P_2(k)\frac{A_2(k)}{\Omega^2+A_2(k)^2}\,dk
 $$
 
 The factors in Equation (48) follow from the one-sided, total-variance convention: each transverse component has half the total variance. This reduction provides an implementation check against the tensor equation.
+
+**Source-convention check (revision 1.4).** The source spectrum is S_xx=S′_xx^2D(k_⊥)2k_y²δ(k_∥)/(πk_⊥³)+S′_xx^slab(k_∥)δ(k_⊥)/(2πk_⊥) (Qin and Zhang 2014, Equations (2)–(4)). Both reduced spectra have the form C(ν)λ⟨b²⟩(1+k²λ²)^(−ν). With the conversions of Section 8.7:
+
+- ∫d³k S_xx F(k_⊥,k_∥) = ½∫₀^∞P_s(k)F(0,k)dk + ½∫₀^∞P_2(k)F(k,0)dk, with P_a=4S′_a. This holds for any F that is even in k_∥ and independent of the azimuth of k_⊥, as the integrands of Equations (44) and (49) are.
+- Their Equations (1), (5) and (8) therefore become Equations (49), (48) and (51) of this document.
+
+The text extraction of the arXiv v2 PDF shows the prefactor of their Equation (8) as a² instead of a′². The LaTeX source and the v1 PDF both show a′², which agrees with their description of the modified closure. Equation (51) uses a′².
 
 For nlpa_given_perp, supply a positive kappa_x from an independent prescription and solve Equation (48) for kappa_z. Report which perpendicular model was supplied.
 
@@ -1180,7 +1248,7 @@ Here F is Equation (53) with the printed coefficients and N solves Equations (48
 
 **Correction to earlier versions:** the former calculation exponentiated xi/(1+xi) by 1/epsilon instead of multiplying by 1/epsilon. Its weak-turbulence discrepancy claims and numerical tables were therefore calculations of a different, mistranscribed closure. They are replaced by the regenerated results below. This transcription error does not demonstrate an inconsistency in the published Qin models.
 
-The corrected numerical audit uses the same 300 states drawn uniformly in the four natural logarithms of Equation (52), within the published box. The generator is NumPy PCG64 through default_rng(20261008), with a 300 by 4 draw in the order r_L/ell_s, f_s, epsilon², ell_s/ell_2. The complete input/output CSV is authoritative for reproducing the sample.
+The corrected numerical audit uses the same 300 states drawn uniformly in the four natural logarithms of Equation (52), within the published box. The generator is NumPy PCG64 through default_rng(20261008), with a 300 by 4 draw in the order r_L/ell_s, f_s, epsilon², ell_s/ell_2. Explicitly, the call is rng.uniform(low=ln(lower bounds), high=ln(upper bounds), size=(300, 4)), with the bounds of Section 11.2 in that column order; revision 1.4 reproduced every drawn value bit for bit. The complete input/output CSV is authoritative for reproducing the sample.
 
 | Total epsilon² bin | States | Median parallel discrepancy | Parallel share >25% | Median perpendicular discrepancy | Perpendicular share >25% |
 |---|---:|---:|---:|---:|---:|
@@ -1194,6 +1262,21 @@ The corrected numerical audit uses the same 300 states drawn uniformly in the fo
 All 300 integral solves met a maximum absolute logarithmic residual below 10^-8. Component log-wavenumber quadrature used numerical intervals [-40,40]. At the three largest parallel discrepancies, extending the intervals to [-55,55], tightening quadrature, and reducing initial mean free paths by a factor of 10^4 changed both coefficients by less than 10^-12 relative. The measured changes are recorded in the companion summary. These finite intervals are refinement controls, not physical spectrum cutoffs.
 
 The table is a statistic of a defined log-uniform sample, not a probability distribution of heliospheric states or a local error bound. The largest discrepancies occur at particular four-dimensional inputs; medians conceal those outliers. The complete dataset permits analysis of their locations. A low median does not certify all states in a turbulence bin.
+
+**Revision 1.4 regeneration and outliers.** An independent implementation regenerated all 300 states. It reproduces every count, median and share in the table above exactly. The refinement and alternate-initial-guess checks were applied to all 300 states, not only the three largest discrepancies: extending the intervals to [−55,55] with tighter quadrature changed no coefficient by more than 3.2×10⁻¹³ relative, and dividing both initial coefficients by 10⁴ changed none by more than 3.6×10⁻¹⁵.
+
+Over the whole sample, the discrepancy e_α of Equation (53a) has these statistics (linear-interpolation quantiles):
+
+| Statistic over all 300 states | Parallel | Perpendicular |
+|---|---:|---:|
+| Median | 12.4% | 7.7% |
+| 90th percentile | 36.9% | 61.9% |
+| States with e_α > 100% | 13 | 26 |
+| Largest e_α | 2998% | 148875% |
+
+The largest discrepancies in both outputs occur at the same state: r_L/ell_s=5.984, f_s=3.49×10⁻³, epsilon²=1.015×10⁻⁴, ell_s/ell_2=137.0. There λ_F/λ_N is 31.0 for the parallel coefficient and 1490 for the perpendicular coefficient.
+
+In this sample, every state with e_α>100% in either output (26 states) has epsilon²≤0.154 and r_L/ell_s≥0.069, and in all 26 the polynomial overestimates λ_⊥. These are descriptions of the drawn sample, not validity thresholds: the published box contains states where the polynomial and the closure it fits differ by orders of magnitude, which is why surrogate_error_unbounded remains the in-box diagnostic. All values are in fit_error_summary.json and fit_error_samples.csv.
 
 For point F, r_L/ell_s=0.01, f_s=0.2, epsilon²=10^-4, and ell_s/ell_2=10, the corrected nonlinear parallel mean free path is 87716.3439308 ell_s and the polynomial gives 95850.8828433 ell_s. Their signed relative difference is +9.274%, rather than the enormous discrepancy obtained from the former exponentiation error. The other explicit checks are in Section 15.4.
 
@@ -1728,6 +1811,18 @@ For a proton of total kinetic energy 10 MeV, using m_p=1.67262192369×10^-27 kg,
 
 The proton mass is the [CODATA 2018 value archived by NIST](https://physics.nist.gov/cuu/Constants/ArchiveASCII/allascii_2018.txt), deliberately fixed for this regression example. The values of c and e are exact SI defining constants. These are calculated reference values for the defined 10 MeV and 0.1 AU inputs, not measurements or calibrated model parameters. The table rounds computed quantities to twelve significant digits; benchmark_points.json retains numerical reference values for comparisons at the declared tolerances. A later implementation using a different documented proton mass must regenerate the affected references.
 
+**Electron and alpha-particle fixtures (revision 1.4).** These test the electron branch and the separation of nucleon count from charge state. They use the CODATA 2018 electron mass 9.1093837015×10⁻³¹ kg and alpha-particle mass 6.6446573357×10⁻²⁷ kg, both checked against the NIST 2018 archive above, together with the same exact c, e and AU. The alpha particle has charge number Z=2 and nucleon count A=4. Its input is 10 MeV per nucleon, converted to a total kinetic energy of 40 MeV before Equation (7) is applied.
+
+| Quantity | Electron, T=1 MeV, Z=−1 | Alpha particle, 10 MeV/nucleon, Z=2, A=4 |
+|---|---:|---:|
+| gamma | 2.95695118357 | 1.01073140017 |
+| beta | 0.941079228028 | 0.145334749670 |
+| v | 2.82128454943×10⁸ m/s | 4.35702618365×10⁷ m/s |
+| Rigidity, pc/\|q\| | 1.42196972541×10⁶ V | 2.73765571490×10⁸ V |
+| kappa_parallel for lambda_parallel=0.1 AU | 1.40686053745×10¹⁸ m²/s | 2.17267279886×10¹⁷ m²/s |
+
+At equal energy per nucleon, the alpha particle and the 10 MeV proton have nearly equal speeds, but the alpha particle's rigidity is about twice the proton's because A/Z=2. A rigidity-based law therefore gives them different mean free paths, while a speed-based law gives nearly equal ones. benchmark_points.json holds the full-precision values, including momenta.
+
 ### 15.3 Spectrum and pitch-angle constants
 
 For the turbulence spectrum, s=5/3; for the regularized pitch-angle shape, q_mu=5/3:
@@ -1744,14 +1839,14 @@ These computed values were checked by gamma-function evaluation and numerical qu
 
 For the exact smooth-spectrum QLT expression, Equation (30), with epsilon_s²=0.04:
 
-| r_L / ell_s | lambda_parallel / ell_s |
-|---:|---:|
-| 0.001 | 12.9116445901 |
-| 0.01 | 27.8174715425 |
-| 1 | 137.17827805 |
-| 10 | 1472.16829464 |
+| r_L / ell_s | lambda_parallel / ell_s, Equation (30) | Equation (31) inertial value | Inertial / exact − 1 |
+|---:|---:|---:|---:|
+| 0.001 | 12.9116445901 | 12.9116437624 | −6.41×10⁻⁸ |
+| 0.01 | 27.8174715425 | 27.8172932271 | −6.41×10⁻⁶ |
+| 1 | 137.17827805 | 129.116437624 | −5.88×10⁻² |
+| 10 | 1472.16829464 | 278.172932271 | −8.11×10⁻¹ |
 
-No 90-degree regularization or dissipation cutoff is applied to this table. It is the mathematical analytic-spectrum model with s=5/3 continued to arbitrarily high k.
+No 90-degree regularization or dissipation cutoff is applied to this table. It is the mathematical analytic-spectrum model with s=5/3 continued to arbitrarily high k. The last two columns, added in revision 1.4, quantify the inertial approximation against the exact integral for this spectrum. The relative deficit grows approximately as r_*² at small r_*, reaching about 6% at r_L=ell_s. Choosing an acceptable deficit is an application decision, not a property fixed by this document.
 
 
 ### 15.4 NLGCE-F and nonlinear reference points
@@ -1792,9 +1887,9 @@ Point A corresponds to r_L/L_c=0.048 under Equation (28). E is an independently 
 
 These replace all affected nonlinear values in previous specification versions. A and C have epsilon=1 and are unchanged by the a_x correction; they cannot detect the multiplication-versus-exponentiation mistake. B and D–G must be included in source-parameter regression checks. Polynomial values are unchanged.
 
-The polynomial uses the printed decimal coefficients and is independently checked with fifty-digit decimal arithmetic. The integral results solve Equations (48),(50),(51) in positive logarithmic unknowns, with maximum absolute logarithmic residual below 10^-8. A second bounded-wavenumber quadrature, k ell_a=z/(1-z), uses logarithmic kappa unknowns and an alternate initial pair; its measured differences are supplied in the companion summary.
+The polynomial uses the printed decimal coefficients and is independently checked with fifty-digit decimal arithmetic. The integral results solve Equations (48),(50),(51) in positive logarithmic unknowns, with maximum absolute logarithmic residual below 10^-8. A second bounded-wavenumber quadrature, k ell_a=z/(1-z), uses logarithmic kappa unknowns and an alternate initial pair. In bundle revision 1.4 its measured differences for A–G are recorded in benchmark_points.json under "nonlinear_verification_evidence", not in fit_error_summary.json, which covers the 300-state audit. The largest difference was 1.7×10⁻¹⁵ relative.
 
-For D–F, increasing the log-wavenumber range, tightening quadrature and using an initial guess 1000 times smaller reproduces both coefficients to better than 10^-12 relative. These are checks of the selected roots, not a proof of global uniqueness or physical accuracy.
+For D–F, increasing the log-wavenumber range, tightening quadrature and using an initial guess 1000 times smaller reproduces both coefficients to better than 10^-12 relative. Revision 1.4 repeated this for all of A–G, with the range [−55,55], relative quadrature tolerance 2×10⁻¹⁴, and both initial coefficients divided by 10³. The largest change was 2.2×10⁻¹⁶ relative; it is recorded in the same JSON block. These are checks of the selected roots, not a proof of global uniqueness or physical accuracy.
 
 **Regression rule:** compare each implementation against its own backend fixture and its declared numerical tolerance. Numerical agreement of the two backends is a separate approximation check. A nonlinear evaluator must solve the correct equations and cannot report the polynomial as a converged integral solution. In particular, verify the multiplicative factor in Equation (45) at epsilon different from one.
 
@@ -1811,6 +1906,102 @@ Once a solver uses the library, coefficient verification should be supplemented 
 - a shock test should use the normal coefficient on each side, rather than a scalar parallel value regardless of obliquity.
 
 Observed SEP or GCR spectra constrain a combination of scattering, sources/boundaries, connectivity, convection, and other transport processes. Matching one flux profile cannot uniquely validate the coefficient in isolation.
+
+### 15.6 NLGC-E and NLPA-with-supplied-perpendicular references (revision 1.4)
+
+These references are generated from each backend's own equations; NLGCE-N values must not be used for them. NLGC-E uses states A–G of Section 15.4, and nlpa_given_perp uses states B, C, D and F. All use nu=5/6, zero dynamical decorrelation, the multiplicative a_x of Equation (45), and L_c=2πC(ν)ell_s. Each value satisfies its residual criterion of Section 10.5 to better than 10⁻¹⁵. Each value is reproduced to better than 2×10⁻¹⁵ relative by a second bounded quadrature, k ell_a=z/(1−z), with a distant initial guess. For nlpa_given_perp it is also reproduced by the refined quadrature of Section 15.4 with an initial guess 10³ times smaller. These differences are recorded in benchmark_points.json under "nonlinear_verification_evidence". The NLGCE-N columns are repeated from Section 15.4 for comparison only.
+
+| Point | NLGC-E lambda_parallel/ell_s, Eqs. (48),(49) | NLGC-E lambda_perp/ell_s | NLGCE-N lambda_parallel/ell_s | NLGCE-N lambda_perp/ell_s |
+|---|---:|---:|---:|---:|
+| A | 1.42445020537 | 0.0728638047692 | 1.48799747985 | 0.0543701824316 |
+| B | 2.62903858046 | 0.0324010719805 | 2.75584216326 | 0.0261431510994 |
+| C | 2.03919782809 | 0.169361550664 | 2.15782150015 | 0.0803778936919 |
+| D | 105.83939327 | 0.0138172585375 | 107.219513777 | 0.0128619686613 |
+| E | 247.50251106 | 0.00382995643583 | 249.130915739 | 0.00360439951257 |
+| F | 86463.407583 | 0.00633457852115 | 87716.3439308 | 0.00603380578468 |
+| G | 12.7180816155 | 0.0189605312624 | 13.0325174575 | 0.016749170539 |
+
+For nlpa_given_perp, the supplied coefficient is a defined verification input in units of v ell_s; it is not a perpendicular model. One supplied value per state equals the converged NLGCE-N kappa_perp. In that case Equation (48) must return the NLGCE-N lambda_parallel exactly, which gives an internal consistency identity. The two other values are arbitrary test inputs.
+
+| Point | Supplied kappa_perp/(v ell_s) | lambda_parallel/ell_s, Equation (48) |
+|---|---:|---:|
+| B | 0.0087143836998 (NLGCE-N value) | 2.75584216326 |
+| B | 0.001 | 4.31506366525 |
+| B | 0.1 | 1.6947584517 |
+| C | 0.0267926312306 (NLGCE-N value) | 2.15782150015 |
+| C | 0.001 | 2.54076284728 |
+| C | 0.1 | 1.94447143479 |
+| D | 0.0042873228871 (NLGCE-N value) | 107.219513777 |
+| D | 0.001 | 136.925466537 |
+| D | 0.1 | 61.4806232991 |
+| F | 0.00201126859489 (NLGCE-N value) | 87716.3439308 |
+| F | 0.001 | 107981.903057 |
+| F | 0.1 | 32189.6950001 |
+
+The printed supplied values are rounded; the identity test must supply the full-precision value from benchmark_points.json.
+
+### 15.7 Derivative references (revision 1.4)
+
+Analytical derivatives of the NLGCE-F polynomial with respect to its natural-log inputs, x_1=ln(r_L/ell_s), x_2=ln f_s, x_3=ln epsilon², x_4=ln(ell_s/ell_2), are given below. They were checked against 50-digit central differences of Equation (53); the largest difference was 1.3×10⁻¹⁴.
+
+| Point | ∂F_∥/∂x_1 | ∂F_∥/∂x_2 | ∂F_∥/∂x_3 | ∂F_∥/∂x_4 |
+|---|---:|---:|---:|---:|
+| A | 0.489212468658 | −0.494854105865 | −0.92709591816 | −0.161547295776 |
+| B | 0.428947251544 | −0.455548362734 | −0.906904020375 | −0.29255919679 |
+| C | 0.444291534739 | −0.81301654508 | −1.17528480217 | −0.183000059642 |
+| D | 0.88213806608 | −0.630187445472 | −1.22663950261 | −0.269823928917 |
+| E | 0.916706253672 | −0.912352989022 | −1.31444274991 | −0.181871022177 |
+| F | 0.813453942285 | −0.437792043029 | −1.78391792714 | −0.377567342005 |
+| G | 0.668583341208 | −0.547939635961 | −1.05959418985 | −0.283165094115 |
+
+| Point | ∂F_⊥/∂x_1 | ∂F_⊥/∂x_2 | ∂F_⊥/∂x_3 | ∂F_⊥/∂x_4 |
+|---|---:|---:|---:|---:|
+| A | 0.221691666757 | −0.395373941955 | 0.302615218734 | −0.39617456427 |
+| B | 0.207954549734 | −0.368744437119 | 0.30685041609 | −0.448656434159 |
+| C | 0.319528498369 | −1.0796410051 | 0.0715637010321 | −0.276332293667 |
+| D | 0.371343988239 | −0.399103056989 | 0.200509078379 | −0.51024067427 |
+| E | 0.411765080628 | −0.542559738093 | 0.146027948081 | −0.454764523555 |
+| F | 0.305766341097 | −0.263913938972 | 0.0290280216534 | −0.767276569695 |
+| G | 0.296907539888 | −0.385139505624 | 0.255070180816 | −0.476009449712 |
+
+For the integral NLGCE-N closure, the logarithmic derivatives of λ_∥ with respect to the same four inputs are listed below, rounded to nine significant digits. They were obtained from a five-point central difference of converged solves with step 10⁻³ in each natural-log input; the comparison tolerance is 10⁻⁶ absolute. The perpendicular derivatives are in benchmark_points.json. With Equation (56), a rigidity slope of kappa_parallel follows by adding 1/γ² to the x_1 entry.
+
+| Point | ∂lnλ_∥/∂x_1 | ∂lnλ_∥/∂x_2 | ∂lnλ_∥/∂x_3 | ∂lnλ_∥/∂x_4 |
+|---|---:|---:|---:|---:|
+| A | 0.322822214 | −0.461579774 | −0.721008977 | −0.244686496 |
+| B | 0.295039024 | −0.457991456 | −0.725872305 | −0.334686688 |
+| C | 0.494017533 | −0.800424669 | −1.05547184 | −0.132641622 |
+| D | 0.961052354 | −0.697358496 | −1.37234742 | −0.262238553 |
+| E | 0.974641499 | −0.898634465 | −1.29982082 | −0.16135317 |
+| F | 0.79769514 | −0.403411958 | −1.40861029 | −0.403390673 |
+| G | 0.783334929 | −0.558691068 | −1.20958451 | −0.293445186 |
+
+The polynomial and integral derivatives differ, sometimes in a way that matters for transport. At point F, for example, ∂lnλ_∥/∂x_3 is −1.784 for the polynomial and −1.409 for the closure. A diffusion drift computed from the polynomial inherits this surrogate discrepancy, in addition to the discrepancy in the value itself.
+
+### 15.8 Broadened-slab references (revision 1.4)
+
+These fixtures evaluate Equation (39) with the spectrum of Equation (27) (s=5/3), r_L/ell_s=0.01 and epsilon_s²=0.04. They use the same state as the second row of the QLT table in Section 15.3, whose exact QLT value is 27.8174715425. The Lorentzian kernel, Equation (40), uses a constant Γ_dec=g Ω; the Gaussian kernel, Equation (42), uses a constant Δ=g Ω. Both resonances are retained. The width ratio g is a defined numerical input, not an inferred decorrelation rate.
+
+| Width ratio g | Lorentzian lambda_parallel/ell_s | Relative to QLT | Gaussian lambda_parallel/ell_s | Relative to QLT |
+|---:|---:|---:|---:|---:|
+| 0.3 | 0.877564552185 | −96.85% | 22.5785364318 | −18.83% |
+| 0.1 | 2.20112589337 | −92.09% | 27.5051135765 | −1.123% |
+| 0.03 | 5.54823237945 | −80.05% | 27.7896287768 | −0.1001% |
+| 0.01 | 10.383667537 | −62.67% | 27.8143804511 | −0.01111% |
+| 0.003 | 16.0800432707 | −42.19% | 27.8171933703 | −0.001000% |
+| 0.001 | 20.2817318278 | −27.09% | 27.8174406347 | −0.0001111% |
+| 10⁻⁴ | 25.1939245876 | −9.431% | — | — |
+| 10⁻⁵ | 26.9631227322 | −3.071% | — | — |
+| 10⁻⁶ | 27.5448196737 | −0.9801% | — | — |
+| 10⁻⁷ | 27.7310028588 | −0.3108% | — | — |
+
+Each frequency kernel integrates to π. The pitch-angle coefficient was checked against an independent 25-digit evaluation at pitch-angle cosines from 10⁻⁹ to 0.95 for widths from 0.3 to 10⁻⁶; the largest difference was 8×10⁻¹⁰. Two different outer pitch-angle rules agree to 2×10⁻¹¹. The comparison tolerance is 10⁻⁷ relative.
+
+Both kernels approach the QLT value as g→0, but at very different rates. The Gaussian deficit falls as g², which is the regular limit of Section 9.2. The Lorentzian deficit falls much more slowly. From g=0.3 to 10⁻⁴ its successive ratios per decade are 1.05, 1.47, 2.31 and 2.87. Only below g≈10⁻⁴ do they approach √10 (3.07, 3.13, 3.15). Its algebraic tails supply scattering of order Γ_dec ε_s² near mu=0, where QLT gives D_mu_mu∝|mu|^(s−1). For an unbroken inertial spectrum this makes the deficit scale as g^((2−s)/(s−1)) as g→0, which is g^(1/2) for s=5/3. This exponent follows at leading order from Equations (20), (29) and (40), and the small-g rows of the table confirm it numerically.
+
+A PD07 test of the zero-width limit must therefore use the Gaussian kernel, or a Lorentzian width small enough for its slow approach. A Lorentzian at g=10⁻³ that disagrees with QLT by 27% is the correct result of Equation (39), not a numerical failure.
+
+A fixed or insufficiently refined wavenumber grid underestimates the Lorentzian tails. During the revision 1.4 calculation, an adaptive rule with only a few breakpoints around the resonance lost about 7% of the resonant area at g=10⁻⁶ while reporting a small error estimate. Geometric breakpoints spaced at 2^m Γ_dec from the resonance removed the loss. The reference values above use such breakpoints and the independent check described.
 
 ## 16. Model selection and scientific interpretation
 
@@ -2075,6 +2266,14 @@ These observations do not modify the supplied bibliography. Section 21 provides 
 The data below reproduce the numerical coefficients in Qin and Zhang (2014), Tables 3 and 4 [R10], as retrieved from arXiv:1401.1950v2. Each row contains j,k,l followed by d_0jkl through d_5jkl. Use these as **numeric data**, preserving the indices and scientific notation. Both tables have 48 rows and 288 coefficients.
 
 No coefficient has been re-fit. All 576 values were compared individually against the printed primary-source tables, rather than inferred from three benchmark evaluations. The companion CSV files preserve the exact indexed decimal data; their SHA-256 checksums are recorded in Section 22 and SHA256SUMS. The mathematical checks in Section 15 use these values. Cite the original paper when using this fit.
+
+**Revision 1.4 source comparison.** All 576 values were compared again, one by one, with a fresh text extraction of Tables 3 and 4 of arXiv:1401.1950v2, with no discrepancy. Several cells in that extraction carry typesetting artifacts, such as a split exponent written "E- $02$" or a stray space before "E"; these were normalized without changing any digit.
+
+One row needed a second source. In the v2 extraction, perpendicular row (j,k,l)=(0,0,1) is garbled: it carries a duplicated "(0 0 0)" label and an extra token, 0.45309413E-01, which is a digit-transposed copy of the (0,0,0), i=2 entry 0.43509413E-01. The v1 extraction, where the same table is numbered Table 3, prints that row cleanly with six values: −0.46386191E+00, −0.98573919E−01, 0.55008025E−02, 0.60611018E−02, 0.81158994E−03, 0.32584425E−04. These are the values below.
+
+The numerical evidence agrees. With 0.55008025E−02 the polynomial agrees with the independently solved NLGCE-N perpendicular coefficient at A, B and D–G to within 17%. Substituting 0.45309413E−01 would multiply the fitted λ_⊥ by 2.8 at A, 7.0 at B, D, F and G, and 79 at E. Point C, where ln(ell_s/ell_2)=0, is unaffected. The published journal tables were not accessible in this revision.
+
+**Recovering the exact files.** Each block below, written from its header line through its last row with LF line endings and a terminating newline, reproduces the corresponding companion CSV file byte for byte, and therefore its SHA-256 digest in Section 22.1. This was verified in revision 1.4.
 
 ### 20.1 Parallel coefficients
 
@@ -2364,17 +2563,39 @@ The following paper was not found in the same supplied bibliography snapshot. R3
 
 The downloadable PARALLEL_DIFFUSION_COEFFICIENT_MODEL_DATA.zip extracts to parallel_diffusion_model_data/. This is a numerical reference bundle for a future implementation; it is not the diffusion-coefficient library itself.
 
+**Bundle revision 1.4.** The revision 1.2/1.3 bundle files other than the two coefficient CSV files could not be located when implementation began, which blocked stage PD00. Revision 1.4 therefore supplies a regenerated bundle with the same name and layout:
+
+- The two coefficient files are byte-identical to the files whose digests were published in revisions 1.2 and 1.3. They can also be recovered from Section 20.
+- Every other file was regenerated by an independent implementation of Sections 7–11 and 15.
+- Every number printed in revision 1.3 agrees with the regenerated values to its printed precision.
+- The audit inputs reproduce the stated generator bit for bit.
+
+The regenerated JSON/CSV files have new digests (below). They supersede the absent earlier ones; they are not reconstructions of them from rounded tables. If the original revision 1.2 bundle is later found, its fixtures should agree with this bundle within the declared tolerances; any disagreement must be investigated, not resolved by choosing one file.
+
 | File | Contents and required use |
 |---|---|
 | NLGCE_F_2014_parallel.csv | 48 rows, 288 coefficients; j,k,l followed by i=0,...,5 |
 | NLGCE_F_2014_perpendicular.csv | Same indexing for the perpendicular polynomial |
-| benchmark_points.json | Species/unit, pitch-angle, QLT, and A–G nonlinear/polynomial reference values |
-| fit_error_samples.csv | All 300 input states, both backend pairs, errors, a_x, and nonlinear residuals |
-| fit_error_summary.json | Generator, spectrum/length conventions, solver settings, environment, and binned statistics |
+| benchmark_points.json | Declared comparison tolerances and full-precision fixtures: particle kinematics (proton, electron, alpha particle), spectrum and pitch-angle constants, QLT Equation (30) with the inertial approximation, NLGCE-F values and analytical derivatives at A–G, NLGCE-N values, a_x, a'^2 and finite-difference derivatives, NLGC-E values, NLPA with supplied perpendicular coefficients, broadened slab, and cross-method evidence |
+| fit_error_samples.csv | All 300 input states (drawn logarithms and ratios), a_x, a'^2, both backend pairs, signed discrepancies, residuals, alternate-initial-guess and refined-quadrature changes |
+| fit_error_summary.json | Generator call, conventions, solver settings, environment, six-bin statistics, overall quantiles and maxima, worst state |
 | configuration_examples.json | Parameterized, non-normative templates from Section 14.6; no invented physical defaults |
-| reference_verification.py | Standalone numerical verification and optional audit reproduction |
+| reference_verification.py | Standalone verification: digests, schema, every deterministic fixture recomputed from the equations; optional audit (--audit) and broadened-slab (--broadened) recomputation |
 | README.md | Data provenance, commands, dependencies, conventions, and interpretation |
 | SHA256SUMS | Digests of the other companion files |
+
+The bundle revision 1.4 digests are:
+
+~~~text
+7cdc5ab9cddda0c7295a25bfcaff4ba3422002da12ac1b4660a98dcc64eaa762  NLGCE_F_2014_parallel.csv
+7371b6557f40c5efa7a48460a5f1b2971374a2c43d0eb3e209f0a8e62670356a  NLGCE_F_2014_perpendicular.csv
+28566d881d335da98365cb0d866252ed76d8b78d2dbbd884968129648d86c0b9  README.md
+c343ce9e5e8836f6fbc99520fc78b28408935599a79c91f7ea48e7a668acde95  benchmark_points.json
+4c05fdd3d37cc243912b1498a5ce50230ef0c0ae86ee8a7471eb2cd6b6a02eaa  configuration_examples.json
+56d1b21973ca0cc3b9238a755f66284695903eac81e9848b4590a7d1d22512c9  fit_error_samples.csv
+311f672c50e6fb1d32259a7516bed677308e0fc8695cd7969d4d7b97056cff83  fit_error_summary.json
+5a301f00d9b721cfc1b18c98643185663eca55eebb2d19587e04fbd25b2e01f6  reference_verification.py
+~~~
 
 CSV coefficient rows have the exact header j,k,l,d_i0,d_i1,d_i2,d_i3,d_i4,d_i5. Construct d[i,j,k,l] explicitly; do not infer a Fortran memory layout from the row order. There are no duplicate or missing tuples in 0<=j<=3, 0<=k<=3, 0<=l<=2.
 
@@ -2392,9 +2613,12 @@ From the extracted directory, run:
 ~~~bash
 python3 reference_verification.py
 python3 reference_verification.py --audit
+python3 reference_verification.py --broadened
 ~~~
 
-The first command verifies checksums and deterministic reference values. The second also evaluates all supplied audit inputs, compares their recorded results, and prints the six-bin summary. Dependencies are NumPy and SciPy; the original evaluation environment and tolerances are recorded in fit_error_summary.json. Different compatible library versions may change the last floating-point digits.
+The first command verifies checksums and deterministic reference values. The second also evaluates all supplied audit inputs, compares their recorded results, and prints the six-bin summary. The third recomputes the broadened-slab fixtures, which takes a few minutes. Dependencies are NumPy and SciPy; the evaluation environment is recorded in fit_error_summary.json and the tolerances in benchmark_points.json. Different compatible library versions may change the last floating-point digits.
+
+In revision 1.4 the verifier was run on a freshly extracted copy of the zip with Python 3.13, NumPy 2.5.3 and SciPy 1.18.1: 90 checks passed with --audit and 101 with --broadened, with none failing. The verifier is independent numerical evidence for the bundle. It is not a production dependency, and a C++ implementation must still be compared independently against the imported fixtures.
 
 ### 22.2 Earlier review revisions and their correction
 
@@ -2424,11 +2648,53 @@ Computed values in printed benchmark tables are rounded to twelve significant di
 
 Revision 1.2 corrects the a_x transcription, regenerates all affected nonlinear benchmarks and error statistics, removes the unsupported turbulence-only diagnostic, and adds explicit constant sources, independent numerical checks and parameterized configuration templates. It also corrects the companion README's erratum DOI to 10.1088/0004-637X/774/1/91; the R09 reference and BibTeX in the main document already used that correct DOI. Published coefficients are unchanged; the nonlinear parameter is restored to its published expression rather than calibrated.
 
+### 22.4 Revision 1.4 verification record
+
+Revision 1.4 re-verified the specification against its sources and recomputed its numbers with a new implementation written for this revision without access to the revision 1.2 generator. The verification found no mathematical error in any equation, coefficient, bound or printed number of revision 1.3. The only correction is typographical: the exponent of Equation (15). All other changes in this revision are additions and clarifications, listed after the tables.
+
+| Item | Method | Result |
+|---|---|---|
+| Coefficient files, Section 20 | Wrote each Section 20 block with LF endings and computed SHA-256 | Both digests of Section 22.1 reproduced byte for byte |
+| 576 coefficients | Compared one by one with the arXiv:1401.1950v2 text of Tables 3 and 4; garbled perpendicular row (0,0,1) checked against v1 | No discrepancy; see Section 20 |
+| Fit bounds, Section 11.2 | Qin and Zhang (2014), Table 2 | Identical |
+| Fit form and variables, Equations (52),(53) | Qin and Zhang (2014), Equation (9) and its nested definitions | Identical; "ln" throughout; orders 5,3,3,2 |
+| NLPA, a_x, L_c, NLGC, a'^2, Equations (44),(45),(45a),(49)–(51) | Qin and Zhang (2014), Equations (1)–(8), including the LaTeX source of Equation (6) | Identical under the conventions of Section 8.7; multiplicative a_x confirmed |
+| Spectrum algebra, Equations (25)–(37) and (39)–(42) | Re-derived; normalizations checked by quadrature | Correct |
+| Broken rigidity law, Equation (17) | Potgieter et al. (2014), Equation (5), arXiv:1302.1284v3 | Same functional form; example in Section 6.1 |
+| Units and constants, Sections 2.2 and 15.2 | 50–60-digit arithmetic; CODATA 2018 masses checked against the NIST archive | All printed values reproduced |
+| Section 15.3 constants and QLT table | 60-digit quadrature | All printed values reproduced |
+| Section 15.4, A–G values, a_x, a'^2, signed differences | New nonlinear solver with two quadratures and distant initial guesses; 50-digit polynomial | Agreement within 3×10⁻¹², consistent with the 12-digit rounding |
+| Section 11.4 audit | Regenerated from default_rng(20261008) | Draw reproduced bit for bit; every count, median and share identical |
+
+| Item not re-verified in revision 1.4 | Reason | Consequence |
+|---|---|---|
+| Journal versions of Qin and Zhang (2014) and Potgieter et al. (2014) | Publisher pages not accessible; arXiv versions used | The coefficient tables, equations and parameters are verified as printed in the preprints |
+| Qin (2007) and the Qin (2013) erratum text | Not openly accessible | The erratum's bibliographic metadata were confirmed through Crossref. The corrected a_x is verified as restated by Qin and Zhang (2014), Equation (6), which is the closure used by NLGCE-N |
+| Dröge et al. (2014) | Full text not accessible | Attribution of Equation (22) not re-checked at equation level; no parameter of that paper is used (Section 7.3) |
+| Shalchi (2026), R27 metadata | Crossref request was rate-limited | The revision 1.3 metadata stand unchanged |
+| Other bibliographic metadata, Sections 18, 19 and 21 | Outside the numerical scope of this revision; R09 and R10 were re-confirmed through Crossref | The revision 1.3 checks stand |
+
+Revision 1.4 makes the following additions and clarifications:
+
+- The companion bundle was regenerated (Section 22.1).
+- Electron and alpha-particle kinematics fixtures were added (Section 15.2).
+- The accuracy of the inertial approximation was added to the QLT table (Section 15.3).
+- The spectrum-convention rules were added (Section 8.7), along with source-convention notes for Sections 10.1 and 10.2.
+- The full-sample discrepancy statistics and worst states were added (Section 11.4).
+- NLGC-E and NLPA-with-supplied-perpendicular references were added (Section 15.6), as were derivative references (Section 15.7).
+- Broadened-slab references were added, together with the convergence rates of the two kernels (Section 15.8).
+- The verified Potgieter et al. (2014) parameter example was added (Section 6.1).
+- The access status of the Dröge et al. (2014) source is now recorded (Section 7.3).
+- Equation (15) is now typeset with a_v as the exponent.
+- The information-request register was added (Section 24).
+
+Equation numbers (1)–(63) are unchanged.
+
 ## 23. Codex implementation roadmap
 
 ### 23.1 Implementation contract and scope
 
-This roadmap turns the mathematical specification into independently reviewable implementation stages. It is a development plan for Codex, not a statement that the library already exists. Sections 1–15 determine the model equations, units, domains, output contracts, and numerical checks; the steps below determine how to build and verify them. Revision 1.3 adds this roadmap without changing the equations, numerical tables, or companion data audited in revision 1.2.
+This roadmap turns the mathematical specification into independently reviewable implementation stages. It is a development plan for Codex, not a statement that the library already exists. Sections 1–15 determine the model equations, units, domains, output contracts, and numerical checks; the steps below determine how to build and verify them. Revision 1.3 adds this roadmap without changing the equations, numerical tables, or companion data audited in revision 1.2. Revision 1.4 changes no equation or published value. It replaces the unavailable non-coefficient bundle files with a regenerated, digest-recorded bundle (Section 22.1), adds fixtures for previously unreferenced backends, and records in Section 24 which inputs remain decisions for the user or host application.
 
 The first release implements the fully specified models in Section 3, together with the explicitly defined provider adapters. Its reusable core evaluates local coefficients and scattering functions. Background evolution, particle transport, mesh ownership, shock detection, wave growth, and MPI communication remain responsibilities of the application. The standalone core must be usable without an MHD simulation or a particular transport solver.
 
@@ -2488,7 +2754,7 @@ PD05 does not depend on a nonlinear solver: the polynomial is fully specified by
 
 - Read the applicable repository instructions and identify the supported compiler/language standard, build targets, dependency policy, test runner, installation rules, and application entry points. Record the chosen core and adapter paths before creating files.
 - Map every stable identifier in Section 3 to its equations, required inputs, outputs, and proposed source/test module. Mark paper-specific extensions from Section 3.1 as deferred. There must be no unexplained identifier whose implementation silently delegates to a different physical model.
-- Import the Section 22 data bundle without rewriting its decimal coefficient literals. Verify SHA256SUMS and the coefficient digests listed in Section 22.1. Parse j,k,l and the six i columns explicitly, checking unique indices and complete array coverage.
+- Import the Section 22 data bundle without rewriting its decimal coefficient literals. Verify SHA256SUMS and the coefficient digests listed in Section 22.1. Parse j,k,l and the six i columns explicitly, checking unique indices and complete array coverage. From revision 1.4 the required bundle is bundle revision 1.4, whose file digests are listed in Section 22.1. A copy whose SHA256SUMS differs from that list is not the referenced bundle.
 - Record this specification revision and the reference bundle's own metadata/digests separately. A data schema version is not the same quantity as a document revision or software release version.
 - Establish a standalone verification target and the stage/test manifest. The supplied Python reference verifier is independent numerical evidence and may support cross-checks; it is not the C++ library or a production runtime dependency by default.
 
@@ -2627,6 +2893,12 @@ Import the existing machine-readable references; do not transcribe rounded publi
 | Coupled nonlinear convergence | Maximum absolute logarithmic residual below 10^-8, plus quadrature convergence; Section 10.5 |
 | General pitch-angle quadrature | Initial recommended relative tolerance 10^-8; actual acceptance also uses error estimates/refinement; Section 14.4 |
 | Source coefficient import | Exact decimal/index coverage and digests for both arrays; Sections 20 and 22.1 |
+| Spectrum/pitch-angle constants and QLT Equation (30) fixtures (revision 1.4) | Relative tolerances 10^-12 and 10^-10 from benchmark_points.json |
+| Polynomial derivatives (revision 1.4) | Absolute tolerance 10^-10 on ∂F/∂x_a from benchmark_points.json |
+| a_x and a'^2 (revision 1.4) | Relative tolerance 10^-12 at A–G; both are closed-form |
+| NLGC-E and NLPA-with-supplied-perpendicular outputs (revision 1.4) | Relative tolerance 5×10^-8 against their own fixtures, never against NLGCE-N values (except the defined NLPA identity cases) |
+| NLGCE-N logarithmic derivatives (revision 1.4) | Absolute tolerance 10^-6 against the finite-difference fixtures; an analytical or implicit derivative must declare its own convergence evidence |
+| Broadened-slab outputs (revision 1.4) | Relative tolerance 10^-7 against the Section 15.8 fixtures; the zero-width comparison uses the measured convergence rates of Section 15.8, not a single universal tolerance |
 | Polynomial versus nonlinear closure | Report the measured discrepancy; do not substitute a numerical-regression tolerance or require backend equality |
 | New derivative, interpolation, or transport references | Declare the method, inputs, comparison rule, and convergence evidence before claiming a pass; no invented universal physical cutoff |
 
@@ -2668,3 +2940,84 @@ The fully specified standalone coefficient library is complete only when its dec
 - Public comments, README, numerical documentation, examples, installation, and publication reporting describe the same implemented behavior.
 
 **Codex handoff:** use this document and its verified companion bundle as the scientific contract; inspect the target repository; start at PD00; implement and verify the stages in dependency order; maintain IMPLEMENTATION_STATUS.md; and finish with the changed files, supported model inventory, actual build/test evidence, and any explicitly blocked or deferred work. Implement the library without filling missing physical inputs with invented numbers or changing the published closures to match one another.
+
+## 24. Information-request register (revision 1.4)
+
+### 24.1 Scope and status codes
+
+On 8 October 2026 the implementing agent recorded an information request against revision 1.3 and its PD01/PD02 implementation. The request covered missing reference data, scientific and configuration choices, and unfinished stages. This section answers each item. The status codes are:
+
+- **R:** resolved in this document.
+- **B:** resolved by bundle revision 1.4 data.
+- **U:** a decision for the user. These are scientific or configuration choices with no universal default, and the specification does not supply one.
+- **H:** depends on the host repository (srcSEP, srcSEP3D) and cannot be resolved from this document.
+- **X:** outside the library scope; confirmed.
+
+### 24.2 Items resolved by this revision
+
+| Request item | Status | Resolution |
+|---|---|---|
+| Companion bundle absent, so PD00 digest gate cannot pass | B | Bundle revision 1.4 (Section 22.1). The coefficient files are byte-identical to the files whose digests were published, and recoverable from Section 20. The other files were regenerated with recorded digests, and the verifier passes on a fresh extraction. |
+| Bundle must not be reconstructed from rounded Markdown tables | R | The coefficient CSV files are not reconstructions: the Section 20 blocks are the exact files, which the published SHA-256 digests prove. The other files are new full-precision computations from the equations. They are compared with the printed tables, not transcribed from them. |
+| Full-precision PD01 units/species fixture | B | benchmark_points.json, "particles": the proton of Section 15.2, plus an electron and an alpha particle given as energy per nucleon |
+| Fixed constants versus caller-supplied quantities | R | Confirmed. c, e and AU are exact. CODATA 2018 masses are fixed for fixtures only, never as runtime species defaults. |
+| Named conversion rules before a spectrum may be rescaled | R | Section 8.7 |
+| Independent QLT fixtures | B | Section 15.3 and "qlt_eq30", including the accuracy of the inertial approximation |
+| Exact NLGCE-F arrays, digests, original ratios and bounds | R, B | Sections 11.2, 20 and 22.1; re-verified against the source (Section 22.4) |
+| Full-precision A–G values for both NLGCE-F outputs | B | "nlgce_f_2014" and "nlgce_n" |
+| Independent interior derivative fixtures | B | Section 15.7; "dF_par_dx", "dF_perp_dx" |
+| 300-state audit data and summary | B | fit_error_samples.csv and fit_error_summary.json. Section 11.4 now also reports the worst states. |
+| Preservation of the corrected a_x | R | Section 10.1 source check. The line `a_x = (xi/(1+xi))/epsilon + epsilon/(2*xi)` in the request is the denominator of Equation (45), not a_x. Implement Equation (45). |
+| Independent fixtures for nlpa_given_perp and nlgc_e | B | Section 15.6 |
+| Kernel area and zero-width checks for broadened_slab | R, B | Section 15.8, with measured convergence rates: the Lorentzian kernel approaches QLT only as g^(1/2) |
+| Derivative fixtures for integral closures | B | NLGCE-N logarithmic derivatives, Section 15.7 |
+| Formal PD01/PD02 acceptance blocked by PD00 | R | Unblocked once PD00 passes against bundle revision 1.4 |
+| Physics outside the library | X | Confirmed as listed in the request and in Section 3.1; no change |
+
+### 24.3 Decisions required from the user
+
+Status U applies to every item in the table below. None of them has a universal answer. This document does not choose them, and an implementation must not fill them in with an invented number. A model that needs an undecided item fails selection with missing_input. Each decision is to be recorded, with its source, in the configuration and in IMPLEMENTATION_STATUS.md.
+
+The last column repeats defaults that this specification already fixes. "None" means selection must fail until the decision is made. Defined verification inputs (Sections 15.2–15.8) do not depend on these decisions, so stages PD03–PD08 can be implemented and verified before they are made.
+
+| ID | Decision | Needed by | Default if not decided |
+|---|---|---|---|
+| D01 | Particle populations: species, total rest mass and its source, signed charge state, nucleon count where energy per nucleon is used, energy or rigidity interval, and SEP, GCR or test context | All runtime evaluations | None |
+| D02 | Meaning of B0: averaging or filter scale, and whether the provider supplies the mean-field vector. For Bohm scaling, the mean field or an explicitly defined effective field | All field-dependent models | None for the averaging scale. Bohm uses the mean field (Section 13.1), or an effective field only if one is explicitly defined |
+| D03 | Identity of every empirical input (parallel, radial or shock-normal), the solar origin of position_m, the field direction or Parker-spiral angle and the shock normal and obliquity used in projections, and the perpendicular prescription used in projections | Geometry, PD09, PD11 | None; an unlabeled mean free path is rejected (Section 1.2) |
+| D04 | Model for each production run, every parameter with units and citation (for example lambda0, exponents and reference scales, K_star, R_b, h, eta, eta_B), and the region, epoch and reference state to which that calibration applies | Production use of PD02 models | None. Section 6.1 gives one verified published example; it does not make this decision. |
+| D05 | Meaning, normalization, temporal semantics (simultaneous, convected, retarded or steady sequence), and interface-derivative convention of any time, radial or regional factor | Equations (13) and (17) | Factors disabled (unity) |
+| D06 | How the diffusion-limit diagnostics of Section 2.3 are evaluated, and what the transport consumer does when they flag a concern | PD11 | Diagnostics reported; no automatic action |
+| D07 | Turbulence state for spectral closures: slab and 2D variances or slab fraction, bend-over lengths, spectral indices and breaks, energy and dissipation ranges, tail policy, and the provider's sidedness and component convention (Section 8.7 rule). For moment providers: the named energy convention (half-sum or unhalved Elsässer, specific or density form), the residual-energy sign, and whether rho is total or species density (Section 12.2) | QLT, NLPA/NLGC, broadened slab, adapters | None; an unknown moment convention is rejected (Section 12.2) |
+| D08 | For broadened_slab: kernel family, width or decorrelation model and its values, and intended validity range | PD07 | None |
+| D09 | For nlpa_given_perp: the perpendicular model that supplies kappa_perp, its revision, and later its gradient | PD06 | None |
+| D10 | Wave-provider conventions (direction, polarization, frame, normalization, imbalance) and the compatible closure, or confirmation that wave input is not needed now | PD08 | Wave adapter unavailable |
+| D11 | For supplied tables: stored quantity, axes and units, particle-axis type, interpolation order, time rule, boundary policy on each axis, knot behavior, and generation provenance and checksum | tabulated_parallel | Out of domain at every boundary; no extrapolation |
+| D12 | Out-of-domain, fallback, bound and extrapolation policies | All backends | Explicit failure, no fallback, no bound, no extrapolation (Section 14.5) |
+| D13 | Required outputs for each consumer: scalar pair, D_mu_mu, perpendicular pair, derivatives | PD09–PD11 | None. Regardless of the request, NLGCE-F and the coupled nonlinear backends return their perpendicular pair (Sections 11.3 and 14.1) |
+| D14 | Input syntax: approval of the [parallel_diffusion] block for srcSEP3D and the ParallelDiffusion block for srcSEP, backward-compatible keys, and where units are converted | PD11 | None; no binding |
+| D15 | Restart and output metadata, and the policy when a restart requests a different model or configuration | PD11 | None |
+| D16 | Transport consumer for each run, and confirmation that the same scattering is not applied through both D_mu_mu and kappa_parallel | PD11 | Never both (Section 7.3) |
+
+### 24.4 Items that depend on the host repository
+
+Status H applies to every item below. They require the actual srcSEP and srcSEP3D code and contracts, and are confirmed during PD11 with the evidence recorded in IMPLEMENTATION_STATUS.md:
+
+- conversion from host particle and species records to SI momentum, total rest mass, signed charge and nucleon count;
+- coherent sampling of position, mean field, provider factors and revisions, including the immutable-snapshot lifetimes and revision semantics needed for caching (Section 14.4);
+- mapping of library statuses to the existing StatusCode/ValueState without creating finite replacement values;
+- retention of the existing refined or neighbour stencils until PD09 supplies every required analytical derivative;
+- in srcSEP3D, how constant_ratio perpendicular diffusion derives from the selected parallel value exactly once, and who owns other perpendicular closures and the field-direction derivatives;
+- confirmation that srcSEP3D/transport/parker_transport.cpp remains coefficient-agnostic;
+- which existing focused D_mu_mu or event-mean-free-path modes are mutually exclusive with Parker spatial diffusion;
+- transport-test numerics (domain, time step, mesh or stencil, ensemble size, random streams, error measure and tolerance), set from each solver's own convergence evidence;
+- the existing failure of srcSEP/test/check_stage3_contracts.py, which concerns srcSEP/mover.cpp outside this library. It is not a specification question. It comes from the implementation status record (IMPLEMENTATION_STATUS.md), not from the request.
+
+### 24.5 Continuation order after revision 1.4
+
+1. Re-run PD00 against bundle revision 1.4: check SHA256SUMS against Section 22.1, run reference_verification.py with and without --audit, and record the environment and results.
+2. Close PD01 and PD02 against the "particles" fixtures and the identity checks of Sections 4–6 and 13.1.
+3. Implement and verify PD03–PD08 with the defined fixtures of Sections 15.3–15.8. Decisions D07–D11 are needed before production use, but not before verification.
+4. Continue with PD09–PD12 as in Section 23. Decisions D13–D16 and the host items of Section 24.4 must be resolved before PD11 acceptance.
+
+The specification remains the scientific contract. A user decision that introduces a new spectrum convention, a different closure or a calibrated preset is added to this document, with its source, before code depends on it (Section 23.6).
