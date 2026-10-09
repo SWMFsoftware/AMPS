@@ -1,0 +1,317 @@
+{
+  "schema_version": "2.1",
+  "retrieval_date_UTC": "2026-10-08",
+  "scope": "Equation/convention and source-transcription audit. No general accuracy certification or AMPS source-code audit.",
+  "reference_records": [
+    {
+      "key": "R01",
+      "reference_entry": "Potgieter (2013), *Solar Modulation of Cosmic Rays*, [arXiv:1306.4421v1](https://arxiv.org/abs/1306.4421v1), [DOI:10.12942/lrsp-2013-3](https://doi.org/10.12942/lrsp-2013-3). Diffusion/drift discussion and Equations (23)–(26).",
+      "equation_role": "Parker equation, normalized modulation family, perpendicular ratios and unresolved angular preset convention",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "db738596c7ebbd6dbb087d2255918edd342afac562a4ccb0eee22a6ae09f1971",
+      "extracted_text_sha256": "1005475357cce628805e9516d93635b8bb0d4ee484cd80fcab55982bdfae84b6",
+      "arxiv_version_header": "1306.4421v1"
+    },
+    {
+      "key": "R02",
+      "reference_entry": "Shalchi (2021), *Perpendicular Diffusion of Energetic Particles: A Complete Analytical Theory*, [arXiv:2109.07574v1](https://arxiv.org/abs/2109.07574v1), [DOI:10.3847/1538-4357/ac2363](https://doi.org/10.3847/1538-4357/ac2363). Definitions, spectra, field-line coefficients and Equations (85)–(98).",
+      "equation_role": "(S3)–(S9), (F2)–(F7), (U1), (D1)–(D8); (D9)–(D13) are explicitly derived consistency/tail consequences, not new source closures",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "feebaacbb68b04fb391f23ebe5aa5140d6817d88875bff4af3955d8985428f39",
+      "extracted_text_sha256": "5a17e9d58607a96c54a74b978e3ec87a8af2c7530563babe5e48008676ecadb9",
+      "arxiv_version_header": "2109.07574v1"
+    },
+    {
+      "key": "R03",
+      "reference_entry": "Shalchi and Kourakis (2007), *Analytical description of stochastic field-line wandering in magnetic turbulence*, [arXiv:astro-ph/0703366v2](https://arxiv.org/abs/astro-ph/0703366v2), [DOI:10.1063/1.2776905](https://doi.org/10.1063/1.2776905). Field-line correlation closure and flat-spectrum asymptotic.",
+      "equation_role": "Field-line normalization, (F1)–(F4), (C3)",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "fd57f7773aff1d9dcdb4f7eab2254d72043a09599c89731d1b0371f25c68a515",
+      "extracted_text_sha256": "a9c409bda10ea032c6b39cf2abd5826ec3e3cf3e0623d70ea09442b892615d2b",
+      "arxiv_version_header": "astro-ph/0703366v2"
+    },
+    {
+      "key": "R04",
+      "reference_entry": "Chhiber et al. (2017), *Cosmic-Ray Diffusion Coefficients throughout the Inner Heliosphere from a Global Solar Wind Simulation*, [arXiv:1703.10322v2](https://arxiv.org/abs/1703.10322v2), [DOI:10.3847/1538-4365/aa74d2](https://doi.org/10.3847/1538-4365/aa74d2). Spectra and RBD evaluation.",
+      "equation_role": "(S12), area-spectrum normalization and (B3)",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "25f00dfac5565889b53ea9a80ffb917622c754a19a29326b425545fad00b3b39",
+      "extracted_text_sha256": "455b9aea36237f7f2cef05dcba657353ad8b02f903be17f86dbf1f2ec243df0b",
+      "arxiv_version_header": "1703.10322v2"
+    },
+    {
+      "key": "R05",
+      "reference_entry": "Strauss and Fichtner (2015), *On Aspects Pertaining to the Perpendicular Diffusion of Solar Energetic Particles*, [arXiv:1804.03689v1](https://arxiv.org/abs/1804.03689v1), [DOI:10.1088/0004-637X/801/1/29](https://doi.org/10.1088/0004-637X/801/1/29). Pitch-angle prescriptions.",
+      "equation_role": "(P3) and averaging convention",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "24a65b79054d454c2a7c80d64183d39ad3d1e35ca9e5ffcda52838641b014430",
+      "extracted_text_sha256": "156a87bdf01e84fb630d6eceb17087911a7de76b3bec918de90ee7f9907ef92f",
+      "arxiv_version_header": "1804.03689v1"
+    },
+    {
+      "key": "R06",
+      "reference_entry": "Dresing et al. (2012), *The Large Longitudinal Spread of Solar Energetic Particles During the 17 January 2010 Solar Event*, [arXiv:1206.1520v1](https://arxiv.org/abs/1206.1520v1), [DOI:10.1007/s11207-012-0049-y](https://doi.org/10.1007/s11207-012-0049-y). Monte Carlo prescription.",
+      "equation_role": "(P5); (P6) is its pitch-angle average",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "65a6f83f6c217bf705d6e89bc9f2a34a9a16722f45a51ccea16a2bffb1510dc5",
+      "extracted_text_sha256": "965e3c993b09b6ad5b11a7a37103fac504510d94df24202c5908fbef5a2f5800",
+      "arxiv_version_header": "1206.1520v1"
+    },
+    {
+      "key": "R07",
+      "reference_entry": "Wijsen et al. (2019), *Modelling three-dimensional transport of solar energetic protons in a corotating interaction region generated with EUHFORIA*, [arXiv:1901.09596v1](https://arxiv.org/abs/1901.09596v1), [DOI:10.1051/0004-6361/201833958](https://doi.org/10.1051/0004-6361/201833958). Perpendicular tensor prescription.",
+      "equation_role": "(P7), parallel-contribution radial convention",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "0a3ce0c13359daccceef104ce0119c8d8158b9d41c9c094bafb308c299ea4c66",
+      "extracted_text_sha256": "e065ec653749e6b0f08829cc3e9ec467d543bdd1071feb11bb0629dd37e0f002",
+      "arxiv_version_header": "1901.09596v1"
+    },
+    {
+      "key": "R08",
+      "reference_entry": "Matthaeus et al. (2003), *Nonlinear Collisionless Perpendicular Diffusion of Charged Particles*, [DOI:10.1086/376613](https://doi.org/10.1086/376613). Foundational NLGC attribution; source equation also inspected in R09 and R11.",
+      "equation_role": "(N1) attribution; source equation checked in R09 and R11",
+      "inspection": "original paper metadata and NLGC kernel restated in primary R09/R11",
+      "original_journal_pdf_inspected": false
+    },
+    {
+      "key": "R09",
+      "reference_entry": "Shalchi and Hussein (2014), *Perpendicular Diffusion of Energetic Particles in Noisy Reduced Magnetohydrodynamic Turbulence*, [arXiv:1409.2470v1](https://arxiv.org/abs/1409.2470v1), [DOI:10.1088/0004-637X/794/1/56](https://doi.org/10.1088/0004-637X/794/1/56). Equations (1), (3), (4) and NRMHD reduction.",
+      "equation_role": "(N1), (U1), (U3)/(U4); explicit normalization checks",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "995bff81bbe5aa6c424d05a49a209e4a6b362189a29218b078602d63b1deaf03",
+      "extracted_text_sha256": "e01a35f2cd55c913238b2765ebd25b19ac22225af65b26b439957cddf299a2e1",
+      "arxiv_version_header": "1409.2470v1"
+    },
+    {
+      "key": "R10",
+      "reference_entry": "Shalchi (2006), *Extended nonlinear guiding center theory of perpendicular diffusion*, [DOI:10.1051/0004-6361:20065465](https://doi.org/10.1051/0004-6361:20065465). Original ENLGC attribution; source equations restated in inspected R12.",
+      "equation_role": "(N5)/(N6); (N7) limiting assumptions follow from the integral",
+      "inspection": "original publisher metadata; ENLGC formulas restated in primary R12",
+      "original_journal_pdf_inspected": false
+    },
+    {
+      "key": "R11",
+      "reference_entry": "Qin and Zhang (2014), *The Modification of the Nonlinear Guiding Center Theory*, [arXiv:1401.1950v2](https://arxiv.org/abs/1401.1950v2), [DOI:10.1088/0004-637X/787/1/12](https://doi.org/10.1088/0004-637X/787/1/12). Equations (1)–(8), Table 2 and coefficient Tables 3/4.",
+      "equation_role": "Complete paired model (E1)–(E9), corrected $a_x$, table assets and fit box",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "b1a9eb10e7e4475563769a3e7817804fe9ea7a9abc8753bf488982b9530dc0c8",
+      "extracted_text_sha256": "32538573efa79a182f62f71e85e336c810c10a0ac8641a16737c55c2f253f2c2",
+      "arxiv_version_header": "1401.1950v2"
+    },
+    {
+      "key": "R12",
+      "reference_entry": "Shalchi (2016), *The Implicit Contribution of Slab Modes to the Perpendicular Diffusion Coefficient of Particles Interacting with Two-component Turbulence*, [arXiv:1609.05227v1](https://arxiv.org/abs/1609.05227v1), [DOI:10.3847/0004-637X/830/2/130](https://doi.org/10.3847/0004-637X/830/2/130). Equations (30)–(33), (41)–(43), (55)–(58).",
+      "equation_role": "Slab-specific field-line coefficient, exact and rational kernels (U5)–(U9), ENLGC restatement",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "b4bd8ed6bc8b24be63c34fda1dc0094b623b1b3fc547235265d40f764da05ead",
+      "extracted_text_sha256": "cb27056296a00bd0b593c10de0203781ccf00f0ee1c84035cf476deaf9f46d4c",
+      "arxiv_version_header": "1609.05227v1"
+    },
+    {
+      "key": "R13",
+      "reference_entry": "Shalchi (2015), *Finite gyroradius corrections in the theory of perpendicular diffusion 1. Suppressed velocity diffusion*, [arXiv:1506.07169v1](https://arxiv.org/abs/1506.07169v1), [DOI:10.1016/j.asr.2015.06.018](https://doi.org/10.1016/j.asr.2015.06.018). Suppressed-velocity-diffusion equations and expansion.",
+      "equation_role": "(U10)/(U11); source gate for a full harmonic backend",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "6fe764cde32ae2730ceba77c6b961e8e62facf5dd7da1092ad68ccbf98617a4f",
+      "extracted_text_sha256": "92bd343c86c289ae41d229e7549a1a05745ac44e33198391cdb530f271eeab84",
+      "arxiv_version_header": "1506.07169v1"
+    },
+    {
+      "key": "R14",
+      "reference_entry": "Snodin, Jitsuk, Ruffolo and Matthaeus (2022), *Energetic Particle Perpendicular Diffusion: Simulations and Theory in Noisy Reduced Magnetohydrodynamic Turbulence*, [arXiv:2205.09225v1](https://arxiv.org/abs/2205.09225v1), [DOI:10.3847/1538-4357/ac6e6d](https://doi.org/10.3847/1538-4357/ac6e6d). Equations (18)–(27).",
+      "equation_role": "(B1)/(B2), corrected/plain kernels, source integral length (Equation 8), composite closed-form application",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "2b6d521e6371395a62b8e69d502edd7ee5f48d6a0cf18d6b2766c1f8f46abc96",
+      "extracted_text_sha256": "63eb359c09acd32bc38d8def527f39db7b8d4984157c59fe386cfdf17c681372",
+      "arxiv_version_header": "2205.09225v1"
+    },
+    {
+      "key": "R15",
+      "reference_entry": "Shalchi and Kourakis, *Nonlinear Field Line Random Walk and Generalized Compound Diffusion of Charged Particles*, ICRC 2007 proceedings published 2008, volume 1, pp. 405–408; [primary conference PDF](https://indico.nucleares.unam.mx/event/4/session/83/contribution/45/material/paper/0.pdf). Equations (2)–(6), (8)/(9), visually inspected. Related journal article: *A new theory for perpendicular transport of cosmic rays* (2007), [DOI:10.1051/0004-6361:20077260](https://doi.org/10.1051/0004-6361:20077260).",
+      "equation_role": "(C1)–(C6); recovered prefactor, explicit formula versus approximate-number discrepancy; conference version is the inspected primary equation source",
+      "inspection": "primary conference PDF, text and visual formula check",
+      "source_pdf_sha256": "717c29c18c877ba117c8c290198dd23c2e24bee46bb6b779539c7f5ad46463ee",
+      "journal_full_text_inspected": false,
+      "unresolved": "Compare any journal-version alternative before claiming journal-specific reproduction."
+    },
+    {
+      "key": "R16",
+      "reference_entry": "Laitinen, Kopp, Effenberger, Dalla and Marsh (2016), *Solar energetic particle access to distant longitudes through turbulent field-line meandering*, [arXiv:1508.03164v2](https://arxiv.org/abs/1508.03164v2), [DOI:10.1051/0004-6361/201527801](https://doi.org/10.1051/0004-6361/201527801). Field-line method and Appendix.",
+      "equation_role": "Persistent-line mechanism; line is generated before particle propagation",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "cda18e5316e63cb1909e2cce1f351fa8e2e221978226de4ae0864abf6c61f9d3",
+      "extracted_text_sha256": "8ead0c3e627e957218707dae21aa4d6d309ee59da6be6523089cfb7397d5f65c",
+      "arxiv_version_header": "1508.03164v2"
+    },
+    {
+      "key": "R17",
+      "reference_entry": "Laitinen and Dalla (2017), *Energetic particle transport across the mean magnetic field: before diffusion*, [arXiv:1611.05347v1](https://arxiv.org/abs/1611.05347v1), [DOI:10.3847/1538-4357/834/2/127](https://doi.org/10.3847/1538-4357/834/2/127). Return-plane definition, Equation (6) and fit discussion.",
+      "equation_role": "Uniform-field conditional median (C10); (C11) derived directly from Equation (6)",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "3f563424cf0ed8dff62933e1b9d0450777c1c4087590ca6c8377bc8031db1d54",
+      "extracted_text_sha256": "9c667e959cb3d5d282f67760c648f640594adaa96aa08f2600a0dfbd5edcd938",
+      "arxiv_version_header": "1611.05347v1"
+    },
+    {
+      "key": "R18",
+      "reference_entry": "Shalchi (2019), *Heuristic Description of Perpendicular Diffusion of Energetic Particles in Astrophysical Plasmas*, [arXiv:1908.00694v1](https://arxiv.org/abs/1908.00694v1), [DOI:10.3847/2041-8213/ab379d](https://doi.org/10.3847/2041-8213/ab379d). Heuristic regime estimates; composite expression also inspected in R14.",
+      "equation_role": "Regime interpretation, (F7) and attribution of (B5)/(B6)",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "f912737596b3d143d8b73697b302295f8b937f6a7abdd54c016bb7e40f6965f5",
+      "extracted_text_sha256": "6364741d52e8f0e19ed4c5fab2da35e776c41ef651e2b4b0496d695dfcf623dd",
+      "arxiv_version_header": "1908.00694v1"
+    },
+    {
+      "key": "R19",
+      "reference_entry": "Candia and Roulet (2004), *Diffusion and drift of cosmic rays in highly turbulent magnetic fields*, [arXiv:astro-ph/0408054v1](https://arxiv.org/abs/astro-ph/0408054v1), [DOI:10.1088/1475-7516/2004/10/007](https://doi.org/10.1088/1475-7516/2004/10/007). Equations (17)–(19), (22)/(23), Table 1 and domain discussion.",
+      "equation_role": "(I2), (I4)/(I5), (G10); exact parameter transcription and radius convention",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "9d9045dccc1b1912c496e64c0084d94c57650c3ee7723adbe5fba5516abc130b",
+      "extracted_text_sha256": "72e8a11ac9d94c3ef9e449b11f0d607189544880a5bbaa965fe730835baa5070",
+      "arxiv_version_header": "astro-ph/0408054v1"
+    },
+    {
+      "key": "R20",
+      "reference_entry": "IAU Resolution B2 (2012), *Re-definition of the astronomical unit of length*, [resolution text hosted by SYRTE, Observatoire de Paris](https://syrte.obspm.fr/IAU_resolutions/IAUResol_2012_0.html).",
+      "equation_role": "Exact au definition",
+      "inspection": "resolution text on SYRTE institutional page",
+      "verified_exact_au_m": "149597870700"
+    },
+    {
+      "key": "R21",
+      "reference_entry": "BIPM, *The International System of Units (SI Brochure)*, [official publication](https://www.bipm.org/en/publications/si-brochure).",
+      "equation_role": "Exact speed of light and SI conversions",
+      "inspection": "BIPM official SI publication and concise brochure summary",
+      "verified_exact_c_m_s": "299792458"
+    },
+    {
+      "key": "R22",
+      "reference_entry": "Snodin, Shukurov, Sarson, Bushby and Rodrigues (2016), *Global diffusion of cosmic rays in random magnetic fields*, [arXiv:1509.03766v2](https://arxiv.org/abs/1509.03766v2), [DOI:10.1093/mnras/stw217](https://doi.org/10.1093/mnras/stw217). Equations (7)/(8), (16), (20), (23), (26) and fit ranges.",
+      "equation_role": "(I3), Kolmogorov (I6)/(I7), shape-specific isotropic fits, peaked $k_b=5k_0$, isotropic field-line coefficient and total-field radius",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "d8b20c0806fc862a493d435146b4e8c5fc818f621e91829edc8d9550bdaf75c6",
+      "extracted_text_sha256": "0d313a6cb9cf7780afff60ca561c12342139d2424d82ac7db5fb1baa5f433b82",
+      "arxiv_version_header": "1509.03766v2"
+    },
+    {
+      "key": "R23",
+      "reference_entry": "Kuhlen, Mertsch and Phan (2025), *Diffusion of Relativistic Charged Particles and Field Lines in Isotropic Turbulence. II. Analytical Models*, [arXiv:2211.05882v3](https://arxiv.org/abs/2211.05882v3), [DOI:10.3847/1538-4357/adee94](https://doi.org/10.3847/1538-4357/adee94). Equations (4)/(5), (21)–(24), Table 1 and calibration discussion.",
+      "equation_role": "(I8)–(I13); exact running-parallel integral derived here; missing perpendicular calibration remains explicit",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "c772188ff6c902264bffa24a2c562050d9115c44e2a951f5d64176545dcde2ab",
+      "extracted_text_sha256": "3f8de7bf6c9c24f3cdad798ccc6a5b9128c1eba79c4fd0ee0d1f73008a54f517",
+      "arxiv_version_header": "2211.05882v3"
+    },
+    {
+      "key": "R24",
+      "reference_entry": "Casse, Lemoine and Pelletier (2002), *Transport of cosmic rays in chaotic magnetic fields*, [arXiv:astro-ph/0109223v1](https://arxiv.org/abs/astro-ph/0109223v1), [DOI:10.1103/PhysRevD.65.023002](https://doi.org/10.1103/PhysRevD.65.023002). Equation (19) and adjacent prefactor discussion.",
+      "equation_role": "Scaling comparison and source gate for an absolute named fit",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "0b1c0351ec003b18a619bc7d092b2ad32216ceb534e418bc76df99266afb6857",
+      "extracted_text_sha256": "567aa3441ff6a4dc0317f0dfd0a7b8e1b85dea395b3bf39274f6e7863e046f4f",
+      "arxiv_version_header": "astro-ph/0109223v1"
+    },
+    {
+      "key": "R25",
+      "reference_entry": "Yan and Lazarian (2008), *Cosmic Ray Propagation: Nonlinear Diffusion Parallel and Perpendicular to Mean Magnetic Field*, [arXiv:0710.2617v2](https://arxiv.org/abs/0710.2617v2), [DOI:10.1086/524771](https://doi.org/10.1086/524771). MHD perpendicular transport regimes.",
+      "equation_role": "(I16), regime and order-of-magnitude qualification",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "a246b29660e1d8d82e310985a59c5ba12f955a2e7cd153b5a04769ecf1630c21",
+      "extracted_text_sha256": "a4eff46ccce0b72e8b10622f877f1837a4003834fae482e754076dbfacbdedb7",
+      "arxiv_version_header": "0710.2617v2"
+    },
+    {
+      "key": "R26",
+      "reference_entry": "Corti et al. (2019), *Numerical modeling of galactic cosmic ray proton and helium observed by AMS-02 during the solar maximum of Solar Cycle 24*, [arXiv:1810.09640v3](https://arxiv.org/abs/1810.09640v3), [DOI:10.3847/1538-4357/aafac4](https://doi.org/10.3847/1538-4357/aafac4). Equations (9)–(11) and fixed-parameter discussion.",
+      "equation_role": "(G2), (G5), parameterized (G6), unresolved multiplier units in source Equation (11), and checked study-specific constants",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "da06b6b8cba714a1f9092cf61b00f942a9ee56da8b8dd93d8ca6525004e03aa5",
+      "extracted_text_sha256": "09c695a00950db5f9d5b0f65ef395e5db9c4fbd4fc13c57d041eaaf648fe9029",
+      "arxiv_version_header": "1810.09640v3"
+    },
+    {
+      "key": "R27",
+      "reference_entry": "Kuhlen, Mertsch and Phan (2025), *Diffusion of Relativistic Charged Particles and Field Lines in Isotropic Turbulence. I. Numerical Simulations*, [arXiv:2211.05881v3](https://arxiv.org/abs/2211.05881v3), [DOI:10.3847/1538-4357/adee9a](https://doi.org/10.3847/1538-4357/adee9a). Reduced-radius definition and Equation (7).",
+      "equation_role": "Total-rms-field radius and finite-band correlation convention for (I8)",
+      "inspection": "primary PDF and extracted text",
+      "source_pdf_sha256": "6a6f3d13dc5ef57fbd34474375711e15dbe683728004a69edf6dfc27abb476a0",
+      "extracted_text_sha256": "527c637b689736f60a9889dd7be837659086bad5615877bf423da7409f8aa1e0",
+      "arxiv_version_header": "2211.05881v3"
+    },
+    {
+      "key": "R28",
+      "reference_entry": "Ruffolo, Jitsuk, Pianpanit, Snodin, Matthaeus and Chuychai (2015), *Random ballistic interpretation of the nonlinear guiding center theory of perpendicular transport*, PoS(ICRC2015)197, [primary author conference PDF](https://pos.sissa.it/236/197/pdf). Equations (2.6)–(2.10).",
+      "equation_role": "Ordinary Gaussian time transform, erfcx, and explicit backtracking factor giving erfc in (B9); magnetostatic specialization",
+      "inspection": "primary author conference PDF and extracted text; explicit Equations 2.6-2.10 checked",
+      "source_pdf_sha256": "1675c88674498857ae7d09de520f2afdd31c013a3146df8776463236ddb76261",
+      "extracted_text_sha256": "62c9ccfd44ff264ffb3852dbf57b16b88a32d64386119f8817430de162b6da1e",
+      "source_url": "https://pos.sissa.it/236/197/pdf"
+    }
+  ],
+  "numerical_parameter_records": [
+    {
+      "source": "R11",
+      "checked": "Table 2 input box and all 576 Table 3/4 coefficients; separate NLGCE_source_audit.json and repeatable source_table_verification.py."
+    },
+    {
+      "source": "R19",
+      "checked": "Table 1 basic parallel/perpendicular and Hall parameters, radius convention, and overlapping fit ranges."
+    },
+    {
+      "source": "R22",
+      "checked": "Three isotropic kappa0 fits; Kolmogorov-only pair scope; approximate chi=2.35; source peaked kb=5*k0 with L=2*pi/k0; software domain distinguished from source calibration."
+    },
+    {
+      "source": "R23",
+      "checked": "Parallel fit Table 1 and field-line parameters after Equation 24; gamma_K and transverse decorrelation scale are not numerically supplied by that table."
+    },
+    {
+      "source": "R26",
+      "checked": "Equations 9-11, common perpendicular slopes, fixed 0.02/0.01, 4.3 GV and 2.2; K0 units. Source prints multiplier 8 with mixed angular notation; exact interpretation unresolved, not assigned as a radian default."
+    }
+  ],
+  "formula_version_discrepancies": [
+    {
+      "source": "R15",
+      "equation": "conference Equation 6 / specification C4",
+      "explicit_formula_at_s_5_over_3": 1.01024378252518,
+      "nearby_source_approximation": 0.5,
+      "resolution": "Use the explicit formula and independent Gaussian integral; retain discrepancy and journal-version gate."
+    },
+    {
+      "source": "R02",
+      "checked": "Retrieved 2021 arXiv source uses sqrt(3) in its FLPD quadratic; previous claim of a sqrt(2) typo withdrawn."
+    },
+    {
+      "source": "R23",
+      "checked": "Particle mean-free-path conversion is dimensionally kappa=v*lambda/3; the extracted source text contains an inverted conversion in nearby prose. Normative definition O2 is used."
+    }
+  ],
+  "unresolved_source_or_calibration_gates": [
+    "Kuhlen gamma_K and Lc_perp numerical presets/root-selection calibration",
+    "Journal-specific GCD alternative",
+    "Ambiguous historical NWU angle/sign convention",
+    "Exact HelMod polar/time preset",
+    "Casse absolute fit normalization and restricted-scattering absolute amplitude",
+    "General particle QLT, full finite-gyroradius harmonic backend, WNLT/SOQLT, dynamic/compressive extensions",
+    "Unresolved Burger-Visser/Minnie or band-limited drift fits",
+    "Corti source angular multiplier unit convention; required h_C is not assigned",
+    "Snodin non-Kolmogorov ordered-field pair definitions/calibration/domain",
+    "Candia-Roulet Hall calibrated-domain metadata; separately supplied software domains must be labeled"
+  ],
+  "input_document_sha256": "dd77c24bd5f12fc60f200246d743c8c853dee394eb9570f537236caebd146baa",
+  "input_review_sha256": "d5f60736efb5814da3e1a3060502d696ba924cc5b9120ca63e6679980586f539",
+  "physical_validation_claimed": false,
+  "AMPS_checkout_inspected": false,
+  "specification_version": "2.1",
+  "review_2_0_input_sha256": "f1f862ac63a61fcea3831ae31611a16c576d8df3b50c37ee395d93e6c2aa4330",
+  "parent_specification_2_0_sha256": "1ccfc51d91f87b94c6b67a7a8bc47ec49b38fb2c78aa2e4891f80cceafd777d0",
+  "review_assessment_sha256": "37d5fec04c59af8f1a1e93d334772394ee0fa36d0af4fb473e59856a1108ec57",
+  "revision_2_1_scope": "Supported review findings incorporated; inferred physical defaults and unsupported review extrapolations excluded.",
+  "implementation_choices_requiring_explicit_configuration": [
+    "Frozen-line independent/shared realization policy and coordinate",
+    "Signed Hall interpolation and zero/sign crossing behavior",
+    "Closed-form positive length and source-profile definition",
+    "Heuristic transverse-complexity scale when selecting that informational estimate"
+  ]
+}

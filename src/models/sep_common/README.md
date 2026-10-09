@@ -44,6 +44,16 @@ host adapters can be qualified together. The application incorporation plan,
 test evidence, derivative limitations and exact qualification boundary are
 recorded beside the library.
 
+The [`perpendicular_diffusion`](perpendicular_diffusion/README.md) library is
+the corresponding revision-2.1 host-neutral coefficient/statistics sibling.
+It implements every fully specified registry identity, delegates coupled
+NLGCE pairs to the parallel library's single numerical owner, and preserves
+incomplete literature closures as typed source gates. It is also built and
+verified in its own directory: neither application consumes it yet, so its
+standalone PASS does not alter the established seven-member `sep_common.a` or
+claim Parker-mover/native/MPI qualification. Its integration boundary and
+remaining transport work are recorded beside the library.
+
 SWCME remains a separate sibling because it supplies one possible solar-wind,
 CME, and shock-background provider. `sep_common` must never include `pic.h`,
 `mpi.h`, or an SWCME header. Coupling adapters belong in `srcSEP`, `srcSEP3D`,

@@ -1,0 +1,28 @@
+{
+  "schema_version": "2.0",
+  "retrieved_date_UTC": "2026-10-08",
+  "source_url": "https://arxiv.org/pdf/1401.1950v2",
+  "source_pdf_sha256": "b1a9eb10e7e4475563769a3e7817804fe9ea7a9abc8753bf488982b9530dc0c8",
+  "comparison_method": "All literal decimal coefficients in extracted primary Tables 3/4 compared with CSV by explicit (i,j,k,l), using Decimal equality. Scientific notation formatting need not match.",
+  "assets": [
+    {
+      "asset": "NLGCE_F_2014_parallel.csv",
+      "source_table": 3,
+      "rows": 48,
+      "coefficients": 288,
+      "all_entries_compared_by_explicit_index": true,
+      "literal_decimal_values_match": true,
+      "sha256": "7cdc5ab9cddda0c7295a25bfcaff4ba3422002da12ac1b4660a98dcc64eaa762"
+    },
+    {
+      "asset": "NLGCE_F_2014_perpendicular.csv",
+      "source_table": 4,
+      "rows": 48,
+      "coefficients": 288,
+      "all_entries_compared_by_explicit_index": true,
+      "literal_decimal_values_match": true,
+      "sha256": "7371b6557f40c5efa7a48460a5f1b2971374a2c43d0eb3e209f0a8e62670356a"
+    }
+  ],
+  "total_coefficients_checked": 576
+}

@@ -1,0 +1,1125 @@
+{
+  "state": "passed",
+  "specification_version": "2.1",
+  "checks_passed": 190,
+  "python": "3.12.14",
+  "numpy": "2.3.5",
+  "scipy": "1.17.0",
+  "mpmath": "1.4.1",
+  "precision_decimal_digits": 50,
+  "physical_validation_claimed": false,
+  "AMPS_tests_claimed": false,
+  "checks": [
+    {
+      "check": "D10 root q=1.5",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 1e-14,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "B8 integral length q=1.5",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 1e-14,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "D9 gamma identity q=1.5",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 1e-14,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "D3 fixed-point derivative q=1.5",
+      "state": "passed"
+    },
+    {
+      "check": "D2 tends to D10 q=1.5",
+      "absolute_error": 1.1852463455142015e-12,
+      "relative_error": 1.921722222027231e-11,
+      "relative_tolerance": 1e-08,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "D10 root q=2.0",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 1e-14,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "B8 integral length q=2.0",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 1e-14,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "D9 gamma identity q=2.0",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 1e-14,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "D3 fixed-point derivative q=2.0",
+      "state": "passed"
+    },
+    {
+      "check": "D2 tends to D10 q=2.0",
+      "absolute_error": 2.395625364748355e-12,
+      "relative_error": 3.0767683410018864e-11,
+      "relative_tolerance": 1e-08,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "D10 root q=3.0",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 1e-14,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "B8 integral length q=3.0",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 1e-14,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "D9 gamma identity q=3.0",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 1e-14,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "D3 fixed-point derivative q=3.0",
+      "state": "passed"
+    },
+    {
+      "check": "D2 tends to D10 q=3.0",
+      "absolute_error": 4.5563552930616424e-12,
+      "relative_error": 5.0314314786789546e-11,
+      "relative_tolerance": 1e-08,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "D13 convergent tail integral",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 1e-12,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "D13 scaled difference A=1e-8",
+      "state": "passed"
+    },
+    {
+      "check": "D13 scaled difference A=1e-10",
+      "state": "passed"
+    },
+    {
+      "check": "D13 approach to tail limit A=1e-10",
+      "state": "passed"
+    },
+    {
+      "check": "D13 local exponent A=1e-10",
+      "state": "passed"
+    },
+    {
+      "check": "D13 scaled difference A=1e-12",
+      "state": "passed"
+    },
+    {
+      "check": "D13 approach to tail limit A=1e-12",
+      "state": "passed"
+    },
+    {
+      "check": "D13 local exponent A=1e-12",
+      "state": "passed"
+    },
+    {
+      "check": "B9 direct Gaussian transform Q=0.2,V=0.4",
+      "absolute_error": 8.881784197001252e-16,
+      "relative_error": 5.670692659769667e-16,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "B9 backtracking factor Q=0.2,V=0.4",
+      "absolute_error": 4.440892098500626e-16,
+      "relative_error": 2.9807176448237665e-16,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "B9 finite-Q bound Q=0.2,V=0.4",
+      "state": "passed"
+    },
+    {
+      "check": "B9 direct Gaussian transform Q=1.3,V=0.7",
+      "absolute_error": 3.3306690738754696e-16,
+      "relative_error": 5.530216341755801e-16,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "B9 backtracking factor Q=1.3,V=0.7",
+      "absolute_error": 1.3877787807814457e-16,
+      "relative_error": 7.705243383687784e-16,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "B9 finite-Q bound Q=1.3,V=0.7",
+      "state": "passed"
+    },
+    {
+      "check": "B9 direct Gaussian transform Q=0.5,V=0.02",
+      "absolute_error": 2.220446049250313e-16,
+      "relative_error": 1.188533882642593e-16,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "B9 backtracking factor Q=0.5,V=0.02",
+      "absolute_error": 8.673617379884035e-19,
+      "relative_error": 2.404983569381724e-16,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "B9 finite-Q bound Q=0.5,V=0.02",
+      "state": "passed"
+    },
+    {
+      "check": "B3 corrected <= plain var=0.1,lp=100.0",
+      "state": "passed"
+    },
+    {
+      "check": "B3 corrected <= plain var=0.1,lp=1000.0",
+      "state": "passed"
+    },
+    {
+      "check": "B3 corrected <= plain var=0.4,lp=100.0",
+      "state": "passed"
+    },
+    {
+      "check": "B3 corrected <= plain var=0.4,lp=1000.0",
+      "state": "passed"
+    },
+    {
+      "check": "B3 corrected <= plain var=0.8,lp=100.0",
+      "state": "passed"
+    },
+    {
+      "check": "B3 corrected <= plain var=0.8,lp=1000.0",
+      "state": "passed"
+    },
+    {
+      "check": "B6 bound lp=0",
+      "state": "passed"
+    },
+    {
+      "check": "B6 bound lp=0.0001",
+      "state": "passed"
+    },
+    {
+      "check": "B5 residual lp=0.0001",
+      "absolute_error": 1.3877787807814457e-17,
+      "relative_error": 1.3877787807814457e-16,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "B6 bound lp=0.01",
+      "state": "passed"
+    },
+    {
+      "check": "B5 residual lp=0.01",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "B6 bound lp=1",
+      "state": "passed"
+    },
+    {
+      "check": "B5 residual lp=1",
+      "absolute_error": 1.3877787807814457e-17,
+      "relative_error": 1.3877787807814457e-16,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "B6 bound lp=100",
+      "state": "passed"
+    },
+    {
+      "check": "B5 residual lp=100",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "B6 bound lp=10000",
+      "state": "passed"
+    },
+    {
+      "check": "B5 residual lp=10000",
+      "absolute_error": 2.7755575615628914e-17,
+      "relative_error": 2.7755575615628914e-16,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "C12 derivative vs secant average",
+      "absolute_error": 1.1102230246251565e-16,
+      "relative_error": 1.6653345369377348e-16,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "G4/G6 folded identity theta=0.0",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "G4/G6 folded identity theta=0.4",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "G4/G6 folded identity theta=1.5707963267948966",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "G4/G6 folded identity theta=2.4",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "G4/G6 folded identity theta=3.141592653589793",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-13
+    },
+    {
+      "check": "E4 paired bound A",
+      "state": "passed"
+    },
+    {
+      "check": "E4 paired bound B",
+      "state": "passed"
+    },
+    {
+      "check": "E4 paired bound C",
+      "state": "passed"
+    },
+    {
+      "check": "E4 paired bound D",
+      "state": "passed"
+    },
+    {
+      "check": "E4 paired bound E",
+      "state": "passed"
+    },
+    {
+      "check": "E4 paired bound F",
+      "state": "passed"
+    },
+    {
+      "check": "E4 paired bound G",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.schema_version",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.specification_version",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.scope",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.precision_decimal_digits",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.constants keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.constants.C_s",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.constants.pi_C_s",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.constants.L_s_over_ell_s",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.constants.GCD_alpha",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.constants.GCD_secant_average_shape",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.constants.RBD_long_shape",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd length",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.short_flpd[0] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.short_flpd[0].q",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[0].alpha_fluid",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[0].alpha_D4",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[0].zeta",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[0].alpha_root",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[0].integral_length_over_ell_2",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[0].fixed_point_derivative",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[1] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.short_flpd[1].q",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[1].alpha_fluid",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[1].alpha_D4",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[1].zeta",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[1].alpha_root",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[1].integral_length_over_ell_2",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[1].fixed_point_derivative",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[2] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.short_flpd[2].q",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[2].alpha_fluid",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[2].alpha_D4",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[2].zeta",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[2].alpha_root",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[2].integral_length_over_ell_2",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.short_flpd[2].fixed_point_derivative",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail length",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[0] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[0].A",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[0].fixed_alpha",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[0].J_zero_minus_J_A",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[0].scaled_difference",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[0].asymptotic_scaled_limit",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[0].local_log_exponent",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[1] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[1].A",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[1].fixed_alpha",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[1].J_zero_minus_J_A",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[1].scaled_difference",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[1].asymptotic_scaled_limit",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[1].local_log_exponent",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[2] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[2].A",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[2].fixed_alpha",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[2].J_zero_minus_J_A",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[2].scaled_difference",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[2].asymptotic_scaled_limit",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.nonanalytic_tail[2].local_log_exponent",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc length",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[0] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[0].variance",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[0].lambda_parallel",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[0].corrected",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[0].plain",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[1] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[1].variance",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[1].lambda_parallel",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[1].corrected",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[1].plain",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[2] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[2].variance",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[2].lambda_parallel",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[2].corrected",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[2].plain",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[3] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[3].variance",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[3].lambda_parallel",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[3].corrected",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[3].plain",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[4] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[4].variance",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[4].lambda_parallel",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[4].corrected",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[4].plain",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[5] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[5].variance",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[5].lambda_parallel",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[5].corrected",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.rbd_plain_vs_bc[5].plain",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds length",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.closed_bounds[0] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.closed_bounds[0].lambda_parallel",
+      "absolute_error": 0.0,
+      "relative_error": null,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds[0].lambda_perp",
+      "absolute_error": 0.0,
+      "relative_error": null,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds[0].upper_bound",
+      "absolute_error": 0.0,
+      "relative_error": null,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds[1] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.closed_bounds[1].lambda_parallel",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds[1].lambda_perp",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds[1].upper_bound",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds[2] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.closed_bounds[2].lambda_parallel",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds[2].lambda_perp",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds[2].upper_bound",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds[3] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.closed_bounds[3].lambda_parallel",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds[3].lambda_perp",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds[3].upper_bound",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds[4] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.closed_bounds[4].lambda_parallel",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds[4].lambda_perp",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds[4].upper_bound",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds[5] keys",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.closed_bounds[5].lambda_parallel",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds[5].lambda_perp",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.closed_bounds[5].upper_bound",
+      "absolute_error": 0.0,
+      "relative_error": 0.0,
+      "relative_tolerance": 3e-10,
+      "absolute_tolerance": 1e-14
+    },
+    {
+      "check": "review_fixtures.synthetic_input_notes length",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.synthetic_input_notes[0]",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.synthetic_input_notes[1]",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.synthetic_input_notes[2]",
+      "state": "passed"
+    },
+    {
+      "check": "review_fixtures.synthetic_input_notes[3]",
+      "state": "passed"
+    },
+    {
+      "check": "Printed constant C(s)=0.118862354635443",
+      "state": "passed"
+    },
+    {
+      "check": "Correct rounding C(s)=0.118862354635443",
+      "state": "passed"
+    },
+    {
+      "check": "Printed constant \\pi C(s)=0.373417100111093",
+      "state": "passed"
+    },
+    {
+      "check": "Correct rounding \\pi C(s)=0.373417100111093",
+      "state": "passed"
+    },
+    {
+      "check": "Printed constant L_s/\\ell_s=0.746834200222187",
+      "state": "passed"
+    },
+    {
+      "check": "Correct rounding L_s/\\ell_s=0.746834200222187",
+      "state": "passed"
+    },
+    {
+      "check": "Printed GCD coefficient 1.01024378252518",
+      "state": "passed"
+    },
+    {
+      "check": "Printed GCD coefficient 1.73466066946129",
+      "state": "passed"
+    }
+  ]
+}

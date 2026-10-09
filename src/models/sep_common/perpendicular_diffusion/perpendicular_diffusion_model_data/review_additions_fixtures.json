@@ -1,0 +1,145 @@
+{
+  "schema_version": "1.0",
+  "specification_version": "2.1",
+  "scope": "Algebraic review additions; synthetic inputs, no physical calibration or AMPS tests.",
+  "precision_decimal_digits": 50,
+  "constants": {
+    "C_s": 0.11886235463544331,
+    "pi_C_s": 0.3734171001110934,
+    "L_s_over_ell_s": 0.7468342002221868,
+    "GCD_alpha": 1.0102437825251798,
+    "GCD_secant_average_shape": 1.734660669461286,
+    "RBD_long_shape": 0.15755145341382365
+  },
+  "short_flpd": [
+    {
+      "q": 1.5,
+      "alpha_fluid": 1.1547005383792515,
+      "alpha_D4": 2.340597644039373,
+      "zeta": 0.12335251493984195,
+      "alpha_root": 3.2877240918719903,
+      "integral_length_over_ell_2": 0.569655077936541,
+      "fixed_point_derivative": 0.3804739044009921
+    },
+    {
+      "q": 2.0,
+      "alpha_fluid": 0.816496580927726,
+      "alpha_D4": 1.4021821053254542,
+      "zeta": 0.1557234799138806,
+      "alpha_root": 2.0690801790317566,
+      "integral_length_over_ell_2": 0.47544941854177325,
+      "fixed_point_derivative": 0.36197240433407896
+    },
+    {
+      "q": 3.0,
+      "alpha_fluid": 0.5773502691896257,
+      "alpha_D4": 0.8926568527101867,
+      "zeta": 0.18111566508932972,
+      "alpha_root": 1.3566298390441962,
+      "integral_length_over_ell_2": 0.3734171001110934,
+      "fixed_point_derivative": 0.34939312071343537
+    }
+  ],
+  "nonanalytic_tail": [
+    {
+      "A": 1e-08,
+      "fixed_alpha": 1.3566298390441962,
+      "J_zero_minus_J_A": 2.528915162854478e-07,
+      "scaled_difference": 1.1738184381059387,
+      "asymptotic_scaled_limit": 1.2402930246440858,
+      "local_log_exponent": null
+    },
+    {
+      "A": 1e-10,
+      "fixed_alpha": 1.3566298390441962,
+      "J_zero_minus_J_A": 5.6137150525271e-09,
+      "scaled_difference": 1.2094382449118541,
+      "asymptotic_scaled_limit": 1.2402930246440858,
+      "local_log_exponent": 0.8268419479708748
+    },
+    {
+      "A": 1e-12,
+      "fixed_alpha": 1.3566298390441962,
+      "J_zero_minus_J_A": 1.2259715044356965e-10,
+      "scaled_difference": 1.2259715044356965,
+      "asymptotic_scaled_limit": 1.2402930246440858,
+      "local_log_exponent": 0.830384994275047
+    }
+  ],
+  "rbd_plain_vs_bc": [
+    {
+      "variance": 0.1,
+      "lambda_parallel": 100.0,
+      "corrected": 0.04487554793069449,
+      "plain": 0.0453317062419343
+    },
+    {
+      "variance": 0.1,
+      "lambda_parallel": 1000.0,
+      "corrected": 0.04932223700640692,
+      "plain": 0.04932807940523946
+    },
+    {
+      "variance": 0.4,
+      "lambda_parallel": 100.0,
+      "corrected": 0.09466060683415245,
+      "plain": 0.09491881568012896
+    },
+    {
+      "variance": 0.4,
+      "lambda_parallel": 1000.0,
+      "corrected": 0.09914431447728099,
+      "plain": 0.09914729482126969
+    },
+    {
+      "variance": 0.8,
+      "lambda_parallel": 100.0,
+      "corrected": 0.13592720559084392,
+      "plain": 0.13611743231585147
+    },
+    {
+      "variance": 0.8,
+      "lambda_parallel": 1000.0,
+      "corrected": 0.14041831775041663,
+      "plain": 0.1404204388786144
+    }
+  ],
+  "closed_bounds": [
+    {
+      "lambda_parallel": 0,
+      "lambda_perp": 0.0,
+      "upper_bound": 0.0
+    },
+    {
+      "lambda_parallel": 0.0001,
+      "lambda_perp": 9.999866668888851e-07,
+      "upper_bound": 1.0000000000000002e-06
+    },
+    {
+      "lambda_parallel": 0.01,
+      "lambda_perp": 9.986688847490199e-05,
+      "upper_bound": 0.00010000000000000002
+    },
+    {
+      "lambda_parallel": 1,
+      "lambda_perp": 0.008854273789940088,
+      "upper_bound": 0.010000000000000002
+    },
+    {
+      "lambda_parallel": 100,
+      "lambda_perp": 0.1020759981072769,
+      "upper_bound": 0.15000000000000002
+    },
+    {
+      "lambda_parallel": 10000,
+      "lambda_perp": 0.14430193580622333,
+      "upper_bound": 0.15000000000000002
+    }
+  ],
+  "synthetic_input_notes": [
+    "RBD transform Q,V, finite-path states, closed-form kappa_FL/ell=0.1, GCD amplitudes, and angular width h_C=1.7 rad^-1 are chosen equation tests.",
+    "The angular width test does not resolve the Corti source's multiplier 8.",
+    "Nonanalytic-tail points fix alpha at the q=3 short-path root; they are not full finite-A self-consistent roots.",
+    "All tolerances are engineering check budgets, not physical errors."
+  ]
+}

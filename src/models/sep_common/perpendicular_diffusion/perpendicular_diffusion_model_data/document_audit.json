@@ -1,0 +1,12 @@
+{
+  "state": "passed",
+  "sha256": "a92b12fd30b4decb969aa32c991b89497443f9c72ca2065ba0e3b34e4418bc6c",
+  "lines": 2549,
+  "unique_equation_tags": 148,
+  "display_math_blocks": 149,
+  "defined_references": 28,
+  "verified_contents_anchors": 20,
+  "verified_generated_tables": 12,
+  "checked_markdown_table_blocks": 26,
+  "scope": "Structural and fixture-table checks; source and numerical checks are separate."
+}
