@@ -9,6 +9,7 @@
 [run]
 schema_version = 4
 intent = shock-propagation
+particle_mover = parker
 transport = parker
 time_step_s = 600
 maximum_time_steps = 208

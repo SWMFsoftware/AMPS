@@ -67,7 +67,9 @@ times, rate-weighted face choice, square-root barycentric positions,
 relativistic energy-to-momentum sampling, fixed and compression-derived
 phase-space slopes, statistical-count convergence, and the reserved
 importance-weight mode's explicit failure.
-`CFG3D17` covers schema-5 `[parallel_diffusion]` parsing, model-specific key
+`CFG3D17` covers the required schema-5 `run.particle_mover` family selector,
+its consistency with the concrete transport flavor, `[parallel_diffusion]`
+parsing, model-specific key
 validation, immutable model and parameter identity, Runtime publication of the
 active function, Parker-only ownership, and typed rejection of unavailable
 turbulence/nucleon inputs.
@@ -373,12 +375,12 @@ it must still reject an archive with a missing or duplicated required member.
 
 The fixture also reproduces the generated AMPS ordering in which a generic
 guiding-centre mover macro appears *after* the application template. The
-production hook installer must remove any stale prior selection and append the
-srcSEP3D injection-boundary mover as the final effective definition. This
+production hook leaves that legacy macro intact but appends pointer dispatch
+as the final effective `_PIC_PARTICLE_MOVER_LEGACY_SETTINGS_` definition. This
 guards a subtle native failure where particles are allocated successfully but
-the generic mover bypasses the srcSEP3D ledger. The symbol audit invokes the
+generic PIC bypasses the srcSEP3D callback and ledger. The audit invokes the
 installer's `--check` mode and therefore cannot PASS merely because an earlier,
-shadowed macro occurrence exists.
+shadowed dispatch-mode occurrence exists.
 
 #### OUT3D01–02 and BLDL3D12 — excluded-volume output and header reentrancy
 
@@ -629,7 +631,7 @@ python3 test/run_tests.py --suite r2 --rebuild \
 
 | ID | Acceptance contract |
 |---|---|
-| `R3D01` | generated `picGlobal.dfn` hook names the exact mover signature and strict production depends on hook installation |
+| `R3D01` | generated `picGlobal.dfn` hook names the exact mover signature, strict production depends on hook installation, and the shared typed-status failure path uses the AMPS debugger trap rather than `std::abort()` |
 | `R3D02` | one AMPS request is consumed by multiple accepted substeps with fresh local resolution and exact final time |
 | `R3D03` | failed fill preserves the active generation; a collectively accepted staged pair commits atomically |
 | `R3D04` | integer clock/event schedule agrees with host time and restores without cadence drift |

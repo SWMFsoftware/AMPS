@@ -1934,7 +1934,7 @@ namespace FieldLine{
           if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated");
 
           LocalTimeStep=node->block->GetLocalTimeStep(spec);
-          _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
+          PIC::Mover::DispatchParticleMover(ptr,LocalTimeStep,node);
 
           ptr=ptr_next;
         }
@@ -2059,7 +2059,7 @@ int _process_mode=_process_by_segments;
       }
 
       LocalTimeStep=node->block->GetLocalTimeStep(spec); 
-      _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
+      PIC::Mover::DispatchParticleMover(ptr,LocalTimeStep,node);
     }
 
 
@@ -2107,7 +2107,7 @@ int _process_mode=_process_by_segments;
         exit(__LINE__,__FILE__,"Error: the option is unknown");
       }
 
-       _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
+       PIC::Mover::DispatchParticleMover(ptr,LocalTimeStep,node);
 
        ptr=ptr_next;
     }

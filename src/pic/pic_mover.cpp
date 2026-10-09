@@ -10,6 +10,13 @@
 PIC::Mover::fProcessOutsideDomainParticles PIC::Mover::ProcessOutsideDomainParticles=NULL;
 PIC::Mover::fProcessTriangleCutFaceIntersection PIC::Mover::ProcessTriangleCutFaceIntersection=NULL;
 
+// Pointer-mode begins with the same mover used by the canonical legacy macro.
+// This is initialization of the dispatch mechanism, not a physical-model
+// selection: applications may replace it explicitly during initialization.
+PIC::Mover::fSpeciesDependentParticleMover
+PIC::Mover::UserDefinedParticleMover =
+    PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_SecondOrder;
+
 int PIC::Mover::BackwardTimeIntegrationMode=_PIC_MODE_OFF_;
 
 
@@ -29,6 +36,38 @@ _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::Mover::cExternalBoundaryFace PIC::Mover::Ext
 
 int PIC::Mover::MoverDataLength=0;
 PIC::Datum::cDatumStored PIC::Mover::MoverData;
+
+//====================================================
+// Install the callback used by pointer-mode particle dispatch.  A null mover
+// cannot satisfy the list-ownership contract and would defer a configuration
+// error until the first particle is encountered, so reject it at setup time.
+void PIC::Mover::SetUserDefinedParticleMover(
+    fSpeciesDependentParticleMover mover) {
+  if (mover == NULL) {
+    exit(__LINE__, __FILE__,
+         "Error: a null user-defined particle mover cannot be installed");
+  }
+
+  UserDefinedParticleMover = mover;
+}
+
+//====================================================
+// Centralize every ordinary one-particle mover invocation.  The return value
+// of both legacy and callback movers is intentionally discarded here, exactly
+// as it was at all historical macro call sites: particle survival, deletion,
+// migration staging, and list insertion are performed by the mover itself.
+// This wrapper changes only how the mover function is selected.
+void PIC::Mover::DispatchParticleMover(
+    long int ptr, double localTimeStep,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+#if _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ == _PIC_MODE_ON_
+  _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr, localTimeStep, node);
+#else
+  // SetUserDefinedParticleMover() disallows null assignments, and the static
+  // default above makes the pointer valid before application initialization.
+  (void)UserDefinedParticleMover(ptr, localTimeStep, node);
+#endif
+}
 
 //====================================================
 //init the particle mover
@@ -751,7 +790,7 @@ if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_T
               ParticleList=PIC::ParticleBuffer::GetNext(ParticleList);
               s=PIC::ParticleBuffer::GetI(ptr);
               LocalTimeStep=block->GetLocalTimeStep(s);
-              _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
+              PIC::Mover::DispatchParticleMover(ptr,LocalTimeStep,node);
             }
 
           }
@@ -828,7 +867,7 @@ if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_T
         s=PIC::ParticleBuffer::GetI(ptr);
         LocalTimeStep=block->GetLocalTimeStep(s);
 
-        _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
+        PIC::Mover::DispatchParticleMover(ptr,LocalTimeStep,node);
       }
 
       if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
@@ -919,7 +958,7 @@ if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_T
                   PIC::Mover::SetBlock_B(node);
                 }
 
-                _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
+                PIC::Mover::DispatchParticleMover(ptr,LocalTimeStep,node);
               }
             }
           }
@@ -959,7 +998,7 @@ if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_T
           s=PIC::ParticleBuffer::GetI(ptr);
           LocalTimeStep=block->GetLocalTimeStep(s);
 
-          _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
+          PIC::Mover::DispatchParticleMover(ptr,LocalTimeStep,node);
 
           if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
             nTotalCalls++;
@@ -4674,4 +4713,3 @@ void PIC::Mover::CommitTempParticleMovingListsToFirstCellParticleTable() {
     commit_block(block);
   }
 }
-

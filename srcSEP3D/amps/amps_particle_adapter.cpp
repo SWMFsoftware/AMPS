@@ -895,6 +895,25 @@ int MoveParticle(long int ptr, double dtTotal,
   return _PARTICLE_MOTION_FINISHED_;
 }
 
+int MoveParkerParticle(
+    long int ptr, double dtTotal,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+  // Family/concrete-model consistency is established transactionally by
+  // RunConfiguration3D::Create().  Keeping this wrapper free of a second
+  // mutable selector ensures a restart cannot redirect an installed pointer
+  // independently of the fingerprinted configuration.
+  return MoveParticle(ptr, dtTotal, startNode);
+}
+
+int MoveFocusedTransportParticle(
+    long int ptr, double dtTotal,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+  // MoveParticle reads the immutable concrete transport selector.  Thus this
+  // family callback supports both released focused flavors without selecting
+  // one by an undocumented default.
+  return MoveParticle(ptr, dtTotal, startNode);
+}
+
 }  // namespace Movers
 }  // namespace AMPS
 }  // namespace SEP3D

@@ -1029,7 +1029,10 @@ int PIC::ParticleBuffer::InitiateParticle(double *x,double *v,double *WeightCorr
 
     break;
   case _PIC_INIT_PARTICLE_MODE__MOVE_:
-    _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,((cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)node)->block->GetLocalTimeStep(ptrSpec)*rnd(),(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)node);
+    PIC::Mover::DispatchParticleMover(
+        ptr,
+        ((cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)node)->block->GetLocalTimeStep(ptrSpec)*rnd(),
+        (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)node);
 
     break;
   default:
@@ -1323,7 +1326,6 @@ void PIC::ParticleBuffer::CreateParticleTable() {
     #endif
 
 }
-
 
 
 

@@ -8,14 +8,21 @@ bookkeeping, and conservation accounting only.
 
 ## Production mover path
 
-`AMPS::Movers::MoveParticle` is the sole AMPS mover entry point. The immutable
-run configuration selects exactly one of three registered cores:
+Generic PIC calls one of two family entry points selected by the immutable
+`run.particle_mover` value: `MoveParkerParticle` or
+`MoveFocusedTransportParticle`. Both enter the validating
+`AMPS::Movers::MoveParticle` dispatcher. The independent `run.transport`
+selector chooses exactly one of three registered cores:
 
-| Canonical name | Configuration | Core |
-|---|---|---|
-| `parker` | `TransportModel::Parker3D` | `AdvanceParker` |
-| `focused-diffusion` | `TransportModel::FocusedDiffusion3D` | `AdvanceFocused` |
-| `focused-scattering` | `TransportModel::FocusedScattering3D` | `AdvanceFocusedScattering` |
+| Mover family | Concrete transport | Configuration | Core |
+|---|---|---|---|
+| `parker` | `parker` | `TransportModel::Parker3D` | `AdvanceParker` |
+| `focused-transport` | `focused-diffusion` | `TransportModel::FocusedDiffusion3D` | `AdvanceFocused` |
+| `focused-transport` | `focused-scattering` | `TransportModel::FocusedScattering3D` | `AdvanceFocusedScattering` |
+
+The parser rejects a family/concrete-model mismatch. In particular,
+`focused-transport` is not an alias for either focused flavor and supplies no
+hidden physics default.
 
 The path for one particle is:
 
@@ -272,12 +279,14 @@ Run the hook after configuring AMPS and before compiling `pic_mover.cpp`:
 make -C srcSEP3D prepare-production
 ```
 
-`amps/install_mover_hook.py` inserts the exact declaration and maps the
-generated `_PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_` macro to
-`SEP3D::AMPS::Movers::MoveParticle`. It is idempotent and refuses to overwrite
-an unrelated mover. `strict-production` depends on this target and audits the
-result. During `amps_init()`, srcSEP3D installs the resolver, substep cap,
-ledger, and initial shock state as one immutable `AMPS::Movers::Context`; a
+`amps/install_mover_hook.py` leaves the generated legacy mover macro intact and
+appends `_PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ = _PIC_MODE_OFF_` as the effective
+selection after any late `ampsConfig.pl` definitions. It is idempotent and
+refuses a generated header that does not provide the generic PIC dispatch
+switch. `strict-production` depends on this target and audits the result.
+During `amps_init()`, srcSEP3D installs the resolver, substep cap, ledger, and
+initial shock state as one immutable `AMPS::Movers::Context`, then registers
+the family callback through `PIC::Mover::SetUserDefinedParticleMover`; a
 coupled host supplies providers, not a second mover context.
 
 Repeated source cadences under one physical shock generation receive distinct

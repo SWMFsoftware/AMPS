@@ -403,7 +403,8 @@ int PIC::BC::ExternalBoundary::OpenFlow::InjectBlock(int spec,cTreeNodeAMR<PIC::
           #endif
 
           //inject the particle into the system
-          _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newParticle,LocalTimeStep-TimeCounter,startNode);
+          PIC::Mover::DispatchParticleMover(
+              newParticle,LocalTimeStep-TimeCounter,startNode);
         }
       }
     }
@@ -506,7 +507,6 @@ int PIC::BC::ExternalBoundary::ExternalBoundaryFlowDirection(int spec, int nface
 
   return res;
 }
-
 
 
 

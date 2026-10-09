@@ -37,6 +37,16 @@ missing sections, unknown/duplicate settings, invalid integers, and dangling
 continuations terminate before mesh initialization with file, line, reason,
 and offending-line diagnostics.
 
+All typed fatal statuses at the native srcSEP3D application boundary first
+write the operation name and complete status message to `stderr`, then call
+AMPS' `exit(__LINE__, __FILE__)` trap. This intentionally avoids a direct
+`std::abort()` in `StopWithStatus`: a debugger can break on the AMPS overload
+`exit(long, const char*, const char*)` and inspect the wrapper's `operation`
+and `status` arguments, while an ordinary run continues to use AMPS' configured
+error-log and MPI termination policy. The reported source line identifies the
+central application trap; the preceding typed message identifies the failing
+operation and cause.
+
 The parser runs collectively after `PIC::Init_BeforeParser()` and
 `SEP3D::Init_BeforeParser()` but before storage offsets and the mesh are
 frozen. Rank zero reads the file, broadcasts the resolved value, and all ranks
@@ -468,6 +478,7 @@ deliberately sub-cell tube and checks every sampled centreline segment.
 
 | Section | Required keys | Contract |
 |---|---|---|
+| `[run]` | schema 5: `particle_mover` and `transport` (plus the existing run controls) | `particle_mover` selects the generic PIC callback family: `parker` or `focused-transport`. `transport` selects the concrete srcSEP3D equation: `parker`, `focused-diffusion`, or `focused-scattering`. Parker must pair with Parker; either focused flavor must pair with `focused-transport`. The parser rejects conflicts and never chooses a focused flavor implicitly. Schema 1--4 decks without the new key remain compatible by deriving only the family from their already explicit `transport`; schema 5 requires both keys. |
 | `[background]` | `provider`, `external_script` | Implemented standalone authority is `analytic-parker`. `python-interpolator` is a recognized, typed, reserved future authority and stops before AMPS initialization; it never falls through to Parker/SWMF. The legacy Boolean must remain false. A coupled SWMF host uses the parser-free typed interface. |
 | `[background.parker]` | `reference_radius_m`, `radial_field_at_reference_t`, `solar_rotation_rate_rad_per_s`, `solar_wind_speed_m_per_s`, `magnetic_polarity`, `number_density_at_one_au_m3`, `temperature_k`, `validity_cadence_s` | SI cross-check of the Parker/SWCME ambient state. Magnetic Br may use any valid reference radius; electron density is unambiguously at one AU. Wind, rotation, source radius, field, density, temperature, and polarity must agree with `[swcme]`; the typed provider then receives canonical SWCME values, including its thermodynamic closure/composition. |
 | `[turbulence]` | `authority`, `model`, `amplitude_model`, `delta_b_over_b`, `wave_energy_density_at_reference_j_per_m3`, `wave_energy_density_radial_exponent`, `normalized_cross_helicity`, `reference_radius_m`, `k_min_per_m`, `k_max_per_m`, `k_min_radial_exponent`, `k_max_radial_exponent`, `spectral_index`, `correlation_length_m`, `correlation_length_radial_exponent`, `validity_cadence_s`, `missing_data`, `resonance_range`, `self_consistent_3d` | Standalone authority is `prescribed`. Spectral `model` is `kolmogorov`, `kraichnan`, or `power-law`; named models require exactly their documented slope. `amplitude_model` independently selects `constant-delta-b-over-b` or `wave-energy-power-law`. Exactly one amplitude normalization is active and the other must be zero. Cross helicity explicitly partitions directional energy. Self-consistent 3-D is false. Missing-data policy is `fail` or `ballistic`; resonance policy is `reject` or `power-law-extension`. |
@@ -510,6 +521,7 @@ selector:
 ```ini
 [run]
 schema_version = 5
+particle_mover = parker
 transport = parker
 
 [transport]
@@ -525,8 +537,10 @@ The numeric value above is a syntax example, not a recommended calibration.
 The section's parameter keys retain case because suffixes such as `_V`, `_J`
 and `_T` are part of the shared schema. Numeric text is finite SI without unit
 suffixes. srcSEP3D calls the library reader during immutable construction and
-installs its validated function pointer during serial Runtime configuration,
-before mover threads can evaluate it.
+installs its validated diffusion-model function pointer during serial Runtime
+configuration. Separately, `amps_init()` registers the family-specific
+srcSEP3D particle callback with generic PIC. Both pointers are installed before
+mover workers can evaluate them.
 
 At each Parker substep the adapter supplies total rest mass, signed charge,
 total momentum, origin-relative heliocentric position, coordinate time, the
@@ -1908,8 +1922,10 @@ make -C srcSEP3D prepare-production
 make -C srcSEP3D strict-production
 ```
 
-`prepare-production` installs the idempotent mover declaration/macro in the
-already configured `build/pic/picGlobal.dfn`. The strict target then delegates
+`prepare-production` idempotently disables legacy mover dispatch in the
+already configured `build/pic/picGlobal.dfn`; the historical mover macro is
+left intact. At runtime `amps_init()` registers either the Parker or focused
+family callback selected by the immutable input. The strict target then delegates
 to the enclosing `make amps` workflow and
 audits `AMPS/build/main/mainlib.a` and `main.a`. This is required because AMPS
 copies `srcSEP3D` to `build/main`; a direct source-directory compile lacks the

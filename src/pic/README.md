@@ -7,6 +7,45 @@ Tecplot variable/data callbacks, MPI ownership, sampled-data buffers, and
 temporary output-node interpolation, see the core developer guide in
 [`../README.md`](../README.md).
 
+## Particle-mover selection
+
+Ordinary host-side single-particle advances now pass through
+`PIC::Mover::DispatchParticleMover(ptr, dt, node)`. The compile-time switch
+`_PIC_PARTICLE_MOVER_LEGACY_SETTINGS_` is defined next to the historical mover
+macro in `picGlobal.dfn` and defaults to `_PIC_MODE_ON_`. In that mode the
+dispatcher expands `_PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_`, preserving
+existing generated configurations exactly.
+
+An application that needs input-file selection must set the switch to
+`_PIC_MODE_OFF_` in its generated configuration and install a callback before
+the first particle advance:
+
+```cpp
+PIC::Mover::SetUserDefinedParticleMover(MyMover);
+```
+
+`MyMover` has type `PIC::Mover::fSpeciesDependentParticleMover`:
+
+```cpp
+int MyMover(long int particle, double dt,
+            cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+```
+
+The public pointer `PIC::Mover::UserDefinedParticleMover` defaults to
+`PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_SecondOrder`.
+The setter rejects null, so pointer mode cannot defer an empty-callback error
+until a populated timestep. The callback inherits the legacy ownership
+contract: it must perform any deletion, destination-list insertion, or
+migration staging required by the configured particle-list mode. PIC discards
+the integer result at these dispatch sites, as the prior macro call sites did.
+
+The dispatcher covers the normal block/cell/particle loops, field-line loops,
+open-flow remainder advance, and initialization mode `_MOVE_`. Specialized
+boundary-injection mover macros and accelerator-specific bulk kernels retain
+their own established selection paths. Changing the switch does not select a
+physics model by itself; model parsing and callback registration are
+application responsibilities.
+
 ## 1. Interpolation representations
 
 AMPS now provides two complementary representations of a cell-centered interpolation stencil.

@@ -85,11 +85,18 @@ bool gHasParsedApplicationInput = false;
 // transaction uses the same fail-closed accessor as all later native paths.
 const SEP3D::RuntimeModel::RunConfiguration3D& Configuration();
 
-[[noreturn]] void StopWithStatus(const char* operation,
-                                 const SEP3D::Core::Status& status) {
+void StopWithStatus(const char* operation,
+                    const SEP3D::Core::Status& status) {
+  // Preserve the typed srcSEP3D diagnostic before entering AMPS' common fatal
+  // path.  The AMPS ``exit(line,file)`` overload is deliberately used instead
+  // of ``std::abort()``: developers can put one breakpoint on that project-wide
+  // trap and inspect ``operation`` and ``status`` in this caller's frame, while
+  // production builds retain AMPS' configured error-log/MPI termination
+  // behavior.  The declaration of the legacy AMPS trap is not annotated
+  // ``[[noreturn]]``, so this wrapper also must not make that compiler promise.
   std::cerr << "[srcSEP3D] " << operation << " failed: "
             << status.message << '\n';
-  std::abort();
+  exit(__LINE__, __FILE__);
 }
 
 // Create all initialization-product parents once on rank zero, then publish the
@@ -4195,6 +4202,27 @@ void amps_init() {
   const SEP3D::Core::Status installed =
       SEP3D::AMPS::Movers::InstallContext(mover);
   if (!installed.ok()) StopWithStatus("AMPS mover context installation", installed);
+
+  // Generic PIC owns the particle-loop scheduling and list detachment; this
+  // application supplies exactly the single-particle callback.  Select a
+  // distinct family entry point from the immutable, fingerprinted input only
+  // after its required resolver/ledger context is valid.  The focused entry
+  // point deliberately does not choose continuous D_mumu versus discrete
+  // scattering: run.transport remains the explicit concrete selector.
+  switch (Configuration().options().particleMover) {
+    case SEP3D::RuntimeModel::ParticleMoverFamily::Parker:
+      PIC::Mover::SetUserDefinedParticleMover(
+          SEP3D::AMPS::Movers::MoveParkerParticle);
+      break;
+    case SEP3D::RuntimeModel::ParticleMoverFamily::FocusedTransport:
+      PIC::Mover::SetUserDefinedParticleMover(
+          SEP3D::AMPS::Movers::MoveFocusedTransportParticle);
+      break;
+    default:
+      StopWithStatus("AMPS particle mover selection", SEP3D::Core::Status(
+          SEP3D::Core::StatusCode::ConfigurationConflict,
+          "validated configuration contains an unknown particle-mover family"));
+  }
   if(gHasParsedApplicationInput&&Configuration().options().source.enabled) {
     if(Configuration().options().source.weightingModel!=
         SEP3D::RuntimeModel::SourceWeightingModel::ConstantStatisticalWeight)

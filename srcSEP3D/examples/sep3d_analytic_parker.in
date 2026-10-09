@@ -7,6 +7,7 @@
 [run]
 schema_version = 4
 intent = shock-injection
+particle_mover = parker
 transport = parker
 time_step_s = 1
 maximum_time_steps = 100000

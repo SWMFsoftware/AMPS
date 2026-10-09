@@ -210,6 +210,13 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
                            {"focused-scattering",
                             TransportModel::FocusedScattering3D}},
                    &o->transport)) return invalidValue();
+  } else if (field == "run.particle_mover") {
+    if (!ParseEnum(value,
+                   {{"parker", ParticleMoverFamily::Parker},
+                    {"focused-transport",
+                     ParticleMoverFamily::FocusedTransport}},
+                   &o->particleMover)) return invalidValue();
+    o->particleMoverExplicitlySelected = true;
   } else if (field == "run.time_step_s") {
     if (!ParseDouble(value, &o->requestedTimeStepS)) return invalidValue();
   } else if (field == "run.maximum_time_steps") {
@@ -1311,6 +1318,11 @@ Core::Status ParseConfigurationText(
         return Invalid("reduced shock-front runtime rejects inactive [swcme] assignments");
     }
   }
+  if (candidate.inputSchemaVersion >= 5 &&
+      assigned.count("run.particle_mover") == 0) {
+    return Invalid("schema version 5 requires explicit key "
+                   "'run.particle_mover'");
+  }
   bool observerSectionSeen = false;
   for (const std::string& present : sections) {
     if (present.rfind("observer.", 0) == 0) observerSectionSeen = true;
@@ -1550,6 +1562,7 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
          << "compiled_species_authority=AMPS-SpeciesList\n"
          << "time_step_s=" << options.requestedTimeStepS << '\n'
          << "base_particle_weight=" << options.species.macroparticleWeight << '\n'
+         << "particle_mover=" << Name(options.particleMover) << '\n'
          << "transport_model=" << Name(options.transport) << '\n'
          << "spatial_diffusion_model="
          << Name(options.spatialDiffusionModel) << '\n'

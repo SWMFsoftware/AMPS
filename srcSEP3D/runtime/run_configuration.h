@@ -100,6 +100,12 @@ enum class TransportModel {
   Focused3D = FocusedDiffusion3D,
   FocusedScattering3D
 };
+// Top-level AMPS mover family selected by the input deck.  ``transport``
+// remains the concrete physics-integrator selector because the focused family
+// already has continuous-D_mumu and discrete-scattering implementations.  The
+// two selectors are validated together; this enum never guesses which focused
+// flavor the user intended.
+enum class ParticleMoverFamily { Parker, FocusedTransport };
 // Domain presets are physical choices, not shorthand for a hidden numeric
 // default.  ``Earth`` remains an input spelling retained for compatibility;
 // normalization maps it to the one-AU preset before fingerprinting.
@@ -193,6 +199,7 @@ const char* Name(SourceSpectrumModel value);
 const char* Name(SourceWeightingModel value);
 const char* Name(SourceRateNormalizationModel value);
 const char* Name(TransportModel value);
+const char* Name(ParticleMoverFamily value);
 const char* Name(DomainPreset value);
 const char* Name(OuterRadiusMode value);
 const char* Name(DomainBoxGeometry value);
@@ -447,6 +454,13 @@ struct RunConfiguration3DOptions {
       PrescribedTurbulenceAmplitudeModel::ConstantDeltaBOverB;
   ShockAuthority shock = ShockAuthority::None;
   TransportModel transport = TransportModel::Parker3D;
+  ParticleMoverFamily particleMover = ParticleMoverFamily::Parker;
+  // File parsing sets this bit only for an explicit run.particle_mover key.
+  // It is intentionally excluded from the physics identity: after Create()
+  // normalization the selected family itself is the complete physical fact.
+  // Parser-free legacy callers may omit it and have the family derived from
+  // their already explicit concrete transport selector.
+  bool particleMoverExplicitlySelected = false;
   DomainPreset domain = DomainPreset::OneAu;
   OuterRadiusMode outerRadiusMode = OuterRadiusMode::Preset;
   InnerBoundaryMode innerBoundary = InnerBoundaryMode::Absorb;

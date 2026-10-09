@@ -227,6 +227,14 @@ const char* Name(TransportModel value) {
   return "unknown";
 }
 
+const char* Name(ParticleMoverFamily value) {
+  switch (value) {
+    case ParticleMoverFamily::Parker: return "parker";
+    case ParticleMoverFamily::FocusedTransport: return "focused-transport";
+  }
+  return "unknown";
+}
+
 const char* Name(DomainPreset value) {
   switch (value) {
     case DomainPreset::Solar: return "solar";
@@ -550,6 +558,28 @@ Core::Status RunConfiguration3D::Create(
   // succeeds.  Preset resolution therefore becomes part of the immutable
   // configuration rather than a late mesh-builder side effect.
   RunConfiguration3DOptions normalized = options;
+
+  // Older typed callers and schema-1--4 decks predate the family selector.
+  // Their concrete ``transport`` value already contains enough information to
+  // recover only the broad family, so normalization is lossless.  New schema-5
+  // text decks must spell out particle_mover (enforced by the parser below),
+  // and an explicit family is never silently rewritten.
+  if (!normalized.particleMoverExplicitlySelected) {
+    normalized.particleMover =
+        normalized.transport == TransportModel::Parker3D
+            ? ParticleMoverFamily::Parker
+            : ParticleMoverFamily::FocusedTransport;
+  }
+  if (normalized.particleMover != ParticleMoverFamily::Parker &&
+      normalized.particleMover != ParticleMoverFamily::FocusedTransport)
+    return Invalid("particle-mover family is unknown");
+  const bool parkerTransport =
+      normalized.transport == TransportModel::Parker3D;
+  if ((normalized.particleMover == ParticleMoverFamily::Parker) !=
+      parkerTransport) {
+    return Invalid("run.particle_mover and run.transport select different "
+                   "mover families");
+  }
 
   // D13--D16 srcSEP3D binding: build the model with the shared parser before
   // any configuration is published. The application keeps source text and the
@@ -1583,6 +1613,7 @@ Core::Status RunConfiguration3D::Create(
           << ";background=" << Name(normalized.background)
           << ";turbulence=" << Name(normalized.turbulence)
           << ";shock=" << Name(normalized.shock)
+          << ";particle_mover=" << Name(normalized.particleMover)
           << ";transport=" << Name(normalized.transport)
           << ";domain=" << Name(normalized.domain)
           << ";outer_mode=" << Name(normalized.outerRadiusMode)

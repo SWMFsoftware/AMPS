@@ -6044,6 +6044,27 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
     typedef int (*fSpeciesDependentParticleMover_BoundaryInjection) (long int,double,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,bool);
 
 
+    // Runtime-selectable single-particle mover.  This callback has the same
+    // ownership contract as the legacy mover macro: it must complete the
+    // requested interval (or apply the selected mover's documented terminal
+    // action) and place/delete the particle exactly as the active list mode
+    // requires.  The pointer is initialized to AMPS' historical second-order,
+    // no-force trajectory mover so pointer mode has a deterministic safe
+    // value even before an application installs its callback.
+    //
+    // The pointer is consulted only when
+    // _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ == _PIC_MODE_OFF_.  In legacy mode
+    // DispatchParticleMover() expands the existing
+    // _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_ macro instead, preserving
+    // generated application configurations and avoiding an ABI change in
+    // their selection path.
+    extern fSpeciesDependentParticleMover UserDefinedParticleMover;
+    void SetUserDefinedParticleMover(fSpeciesDependentParticleMover mover);
+    void DispatchParticleMover(
+        long int ptr, double localTimeStep,
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+
+
     //the vector containing the species specific particle moving procedures
 //    extern fSpeciesDependentParticleMover *MoveParticleTimeStep;
 //    extern fTotalParticleAcceleration TotalParticleAcceleration;

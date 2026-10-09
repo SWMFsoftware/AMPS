@@ -122,11 +122,22 @@ struct PopulationControlReport {
 PopulationControlReport ApplyPopulationControl(
     const PopulationControlRequest& request);
 
-// The single validating production dispatcher selected by the AMPS mover
-// macro. Runtime configuration chooses one of exactly three registered Phase-P
-// cores; there are no parallel legacy mover entry points.
+// The validating production dispatcher shared by the family-specific AMPS
+// callback entry points below. Runtime configuration chooses one of exactly
+// three registered transport cores.
 int MoveParticle(long int ptr, double dtTotal,
                  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+
+// Distinct callback addresses let main_lib.cpp bind generic PIC's runtime
+// pointer from run.particle_mover without pretending that the broad focused
+// family determines its concrete stochastic equation.  Both callbacks enter
+// MoveParticle(), where the independently validated run.transport selector
+// chooses focused-diffusion versus focused-scattering.
+int MoveParkerParticle(long int ptr, double dtTotal,
+                       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+int MoveFocusedTransportParticle(
+    long int ptr, double dtTotal,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
 }  // namespace Movers
 }  // namespace AMPS

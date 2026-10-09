@@ -134,17 +134,54 @@ swcme::sep::SEPSourceState CommonSource() {
 Result RunR3D01() {
   std::ifstream hook("amps/install_mover_hook.py");
   std::ifstream makefile("makefile");
-  std::ostringstream hookText, makeText;
+  std::ifstream mainLib("main_lib.cpp");
+  std::ifstream adapter("amps/amps_particle_adapter.h");
+  std::ifstream picDefinitions("../src/pic/picGlobal.dfn");
+  std::ifstream picHeader("../src/pic/pic.h");
+  std::ifstream picMover("../src/pic/pic_mover.cpp");
+  std::ostringstream hookText, makeText, mainText, adapterText,
+      definitionText, headerText, moverText;
   hookText << hook.rdbuf(); makeText << makefile.rdbuf();
+  mainText << mainLib.rdbuf(); adapterText << adapter.rdbuf();
+  definitionText << picDefinitions.rdbuf(); headerText << picHeader.rdbuf();
+  moverText << picMover.rdbuf();
   const std::string h = hookText.str(), m = makeText.str();
-  if (!hook || !makefile ||
-      h.find("SEP3D::AMPS::Movers::MoveParticle(ptr,LocalTimeStep,node)") ==
+  const std::string productionSource = mainText.str();
+  const std::size_t stopBegin = productionSource.find("void StopWithStatus");
+  const std::size_t stopEnd = productionSource.find(
+      "// Create all initialization-product parents", stopBegin);
+  // This is a source-level contract because invoking a deliberate fatal path
+  // would terminate the portable test process.  Limit the search to the
+  // StopWithStatus definition: another unrelated fatal site in main_lib.cpp
+  // must neither satisfy the AMPS-trap requirement nor hide an abort regression
+  // in the shared typed-status path.
+  const bool statusFailureUsesAmpsTrap =
+      stopBegin != std::string::npos && stopEnd != std::string::npos &&
+      stopEnd > stopBegin &&
+      productionSource.substr(stopBegin, stopEnd - stopBegin)
+              .find("exit(__LINE__, __FILE__);") != std::string::npos &&
+      productionSource.substr(stopBegin, stopEnd - stopBegin)
+              .find("std::abort();") == std::string::npos;
+  if (!hook || !makefile || !mainLib || !adapter || !picDefinitions ||
+      !picHeader || !picMover ||
+      h.find("_PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ _PIC_MODE_OFF_") ==
           std::string::npos ||
-      h.find("int MoveParticle(long int ptr, double dtTotal") ==
+      m.find("strict-production: prepare-production") == std::string::npos ||
+      definitionText.str().find(
+          "_PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ _PIC_MODE_ON_") ==
           std::string::npos ||
-      m.find("strict-production: prepare-production") == std::string::npos)
-    return Fail("generated picGlobal hook or signature declaration is absent");
-  return Pass("production build installs one declared SEP3D AMPS mover before pic_mover compilation");
+      headerText.str().find("SetUserDefinedParticleMover") ==
+          std::string::npos ||
+      moverText.str().find("UserDefinedParticleMover =") ==
+          std::string::npos ||
+      mainText.str().find("SetUserDefinedParticleMover(") ==
+          std::string::npos ||
+      !statusFailureUsesAmpsTrap ||
+      adapterText.str().find("MoveParkerParticle") == std::string::npos ||
+      adapterText.str().find("MoveFocusedTransportParticle") ==
+          std::string::npos)
+    return Fail("generic PIC mover dispatch or srcSEP3D AMPS fatal-trap contract is absent");
+  return Pass("generic PIC defaults to legacy macro dispatch; production srcSEP3D installs Parker/focused callbacks and routes typed fatal statuses through the AMPS debugger trap");
 }
 
 Result RunR3D02() {

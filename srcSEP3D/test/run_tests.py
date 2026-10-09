@@ -114,6 +114,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("CFG3D14", "CFG3D", "Derived particle numerics", "cpp"),
     TestDefinition("CFG3D15", "CFG3D", "Parsed reduced model", "cpp"),
     TestDefinition("CFG3D16", "CFG3D", "Reduced-front particle source", "cpp"),
+    TestDefinition("CFG3D17", "CFG3D", "Parallel diffusion and mover selection", "cpp"),
     TestDefinition("DOM3D01", "DOM3D", "Whole-corridor corner bounds", "source"),
     TestDefinition("DOM3D02", "DOM3D", "Solar sphere and photospheric coarsening", "source"),
     TestDefinition("DOM3D03", "DOM3D", "Connected sphere/corridor AMR allocation", "source"),
@@ -1588,6 +1589,7 @@ def _check_makefile_relocation(definition: TestDefinition,
         "sep_transport_common.o sep_coefficient_physics.o "
         "sep_coefficient_registry.o sep_background_snapshot.o "
         "sep_test_registry.o sep_injection_spectrum.o sep_species_source.o "
+        "parallel_diffusion.o parallel_diffusion_advanced.o "
         "swcme3d.o common_sep_field_line_exchange.o "
         "common_sep_field_line_bundle_io.o common_sep_coherent_transport.o")
     (fixture / "Makefile").write_text(
@@ -1610,6 +1612,7 @@ def _check_makefile_relocation(definition: TestDefinition,
     (fixture / "build" / "pic" / "picGlobal.dfn").write_text(
         "#ifndef _PIC_GLOBAL_DEFINITIONS_H_\n"
         "#define _PIC_GLOBAL_DEFINITIONS_H_\n"
+        "#define _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ _PIC_MODE_ON_\n"
         "#define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) "
         "PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_SecondOrder"
         "(ptr,LocalTimeStep,node);\n"

@@ -1091,7 +1091,9 @@ Result RunCFG3D11() {
   }
 
   std::string events = complete;
-  if (!replaceOnce(&events, "transport = parker",
+  if (!replaceOnce(&events, "particle_mover = parker",
+                   "particle_mover = focused-transport") ||
+      !replaceOnce(&events, "transport = parker",
                    "transport = focused-scattering") ||
       !RM::ParseConfigurationText(events, &options).ok() ||
       options.transport != RM::TransportModel::FocusedScattering3D) {
@@ -1793,6 +1795,8 @@ kappa_parallel_m2_per_s = 1.25e18
   RM::RunConfiguration3DOptions options;
   SEP3D::Core::Status status = RM::ParseConfigurationText(schema5, &options);
   if (!status.ok() || options.inputSchemaVersion != 5 ||
+      options.particleMover != RM::ParticleMoverFamily::Parker ||
+      !options.particleMoverExplicitlySelected ||
       options.spatialDiffusionModel !=
           RM::SpatialDiffusionModel::ParallelDiffusionLibrary ||
       options.parallelDiffusionModelId != "constant_kappa" ||
@@ -1802,6 +1806,17 @@ kappa_parallel_m2_per_s = 1.25e18
       options.parallelDiffusionConfigurationFingerprint.empty())
     return Fail("valid schema-5 parallel-diffusion section did not resolve: " +
                 status.message);
+
+  std::string missingMover = schema5;
+  if (!replaceOnce(&missingMover, "particle_mover = parker\n", "") ||
+      RM::ParseConfigurationText(missingMover, &options).ok())
+    return Fail("schema 5 accepted an implicit particle-mover family");
+
+  std::string conflictingMover = schema5;
+  if (!replaceOnce(&conflictingMover, "particle_mover = parker",
+                   "particle_mover = focused-transport") ||
+      RM::ParseConfigurationText(conflictingMover, &options).ok())
+    return Fail("particle_mover accepted a conflicting concrete transport");
 
   std::shared_ptr<const RM::RunConfiguration3D> configuration;
   status = RM::RunConfiguration3D::Create(options, &configuration);
@@ -1858,8 +1873,12 @@ kappa_parallel_m2_per_s = 1.25e18
     return Fail("inactive [parallel_diffusion] section was accepted");
 
   std::string focused = schema5;
-  if (!replaceOnce(&focused, "transport = parker", "transport = focused-diffusion") &&
-      !replaceOnce(&focused, "transport = parker3d", "transport = focused-diffusion"))
+  const bool focusedTransport =
+      replaceOnce(&focused, "transport = parker", "transport = focused-diffusion") ||
+      replaceOnce(&focused, "transport = parker3d", "transport = focused-diffusion");
+  if (!focusedTransport ||
+      !replaceOnce(&focused, "particle_mover = parker",
+                   "particle_mover = focused-transport"))
     return Fail("fixture lost its Parker mover spelling");
   if (RM::ParseConfigurationText(focused, &options).ok())
     return Fail("focused mover accepted the Parker spatial library");
@@ -1902,7 +1921,7 @@ kappa_parallel_m2_per_s = 1.25e18
       RM::ParseConfigurationText(nucleon, &options).ok())
     return Fail("srcSEP3D inferred an unavailable nucleon count");
 
-  return Pass("schema 5 calls the strict shared parser, freezes restart identity, installs one Parker-only active model, and rejects unavailable host state");
+  return Pass("schema 5 selects and cross-validates the mover family, calls the strict shared parser, freezes restart identity, installs one Parker-only active model, and rejects unavailable host state");
 }
 
 }  // namespace
