@@ -1,0 +1,510 @@
+{
+ "_note": "status: implementability from this document; runtime_state: Section 21.1 state when the inputs named in the source are supplied (the state is evaluated per configured run).",
+ "models": [
+  {
+   "id": "SEP-PATH09",
+   "section": "5.2",
+   "equation": "Eq. (2)",
+   "source": "Verkhoglyadova2009",
+   "status": "needs U-11",
+   "runtime_state": "REQUIRES_USER_DECISION",
+   "runtime_note": "quantity unspecified (U-11)"
+  },
+  {
+   "id": "SEP-EPREM10",
+   "section": "5.2",
+   "equation": "text",
+   "source": "Schwadron2010",
+   "status": "implementable at 1 AU; radial factor sign not legible",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "ready at r = 1 AU; the radial factor of Schwadron 2010 Eq. (2) has an unreadable exponent sign, so use away from 1 AU is REQUIRES_SOURCE_OR_CODE_AUDIT"
+  },
+  {
+   "id": "SEP-EPREM13",
+   "section": "5.2",
+   "equation": "Eqs. (2)-(3)",
+   "source": "Kozarev2013",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "the D_mumu operator convention is a separate choice (D-2, U-8)"
+  },
+  {
+   "id": "SEP-MFLAMPA19",
+   "section": "5.2",
+   "equation": "Eq. (6.7)",
+   "source": "Borovikov2019",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "lambda0 is a free parameter (0.1-0.4 AU) to be supplied"
+  },
+  {
+   "id": "SEP-MFLAMPA25",
+   "section": "5.2",
+   "equation": "Eqs. (14)-(16), Table 1",
+   "source": "Liu2025",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS"
+  },
+  {
+   "id": "SEP-SOFIE24",
+   "section": "5.2",
+   "equation": "text",
+   "source": "Zhao2024",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "parallel, as stated once in the source (Sect. 4.5)"
+  },
+  {
+   "id": "SEP-ZHANG23",
+   "section": "5.2",
+   "equation": "Eqs. (35), (37); Sect. 3.2; Fig. 7",
+   "source": "Zhang2023",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "lambda_r constant; lambda_par needs psi"
+  },
+  {
+   "id": "SEP-PARASOL25",
+   "section": "5.2",
+   "equation": "Eqs. (41)-(44)",
+   "source": "Afanasiev2025",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "background lambda only; shock-region fits are SHOCK-PARASOL"
+  },
+  {
+   "id": "SEP-SOLPENCO05",
+   "section": "5.2",
+   "equation": "input variable [4]",
+   "source": "Aran2005",
+   "status": "needs U-11",
+   "runtime_state": "REQUIRES_USER_DECISION",
+   "runtime_note": "quantity unspecified (U-11)"
+  },
+  {
+   "id": "SEP-SPARX15",
+   "section": "5.2",
+   "equation": "Sect. 3.2",
+   "source": "Marsh2015",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "isotropic scattering length (lambda_iso)"
+  },
+  {
+   "id": "SEP-MARSH13",
+   "section": "5.2",
+   "equation": "text",
+   "source": "Marsh2013",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "isotropic scattering length (lambda_iso)"
+  },
+  {
+   "id": "SEP-HE11",
+   "section": "5.2",
+   "equation": "Eqs. (4)-(6)",
+   "source": "He2011",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "lambda_r constant; equation reconstructed from a garbled PDF"
+  },
+  {
+   "id": "SEP-WANGQIN15",
+   "section": "5.2",
+   "equation": "Eqs. (3)-(4)",
+   "source": "WangQin2015",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS"
+  },
+  {
+   "id": "SEP-KUBO15",
+   "section": "5.2",
+   "equation": "Eqs. (6), (8)",
+   "source": "Kubo2015",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "lambda_r constant"
+  },
+  {
+   "id": "SEP-PARADISE19",
+   "section": "5.2",
+   "equation": "Eqs. (8), (10), (11); Sect. 4",
+   "source": "Wijsen2019",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "lambda_r constant"
+  },
+  {
+   "id": "SEP-LAITINEN16",
+   "section": "5.2",
+   "equation": "Eqs. (2), (4), (6), (13)-(14); Sect. 2.3",
+   "source": "Laitinen2016",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "needs the pinned PARALLEL rev. 1.4 QLT adapter; otherwise the implementation reports BLOCKED_DEPENDENCY (Section 21.10)"
+  },
+  {
+   "id": "SEP-LAITINEN18",
+   "section": "5.2",
+   "equation": "text",
+   "source": "Laitinen2018",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "needs the pinned PARALLEL rev. 1.4 QLT adapter; otherwise the implementation reports BLOCKED_DEPENDENCY (Section 21.10)"
+  },
+  {
+   "id": "SEP-STRAUSS17G",
+   "section": "5.2",
+   "equation": "Eqs. (8)-(11)",
+   "source": "Strauss2017GLE",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "lambda0 free in the source; must be supplied"
+  },
+  {
+   "id": "SEP-STRAUSS15",
+   "section": "5.2",
+   "equation": "Eqs. (2)-(8)",
+   "source": "StraussFichtner2015",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS"
+  },
+  {
+   "id": "SEP-DROGE16P",
+   "section": "5.2",
+   "equation": "Eqs. (3.3)-(3.4)",
+   "source": "Droge2016ICRC",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "event-specific values"
+  },
+  {
+   "id": "SEP-MINOSHIMA26",
+   "section": "5.2",
+   "equation": "Eqs. (8)-(9)",
+   "source": "Minoshima2026",
+   "status": "needs the Omega_n definition (D-29)",
+   "runtime_state": "REQUIRES_SOURCE_OR_CODE_AUDIT",
+   "runtime_note": "Omega_n undefined in the source (D-29)"
+  },
+  {
+   "id": "SEP-CHEN24",
+   "section": "5.2",
+   "equation": "Eq. (4)",
+   "source": "Chen2024",
+   "status": "kappa implementable; lambda derived after U-2",
+   "runtime_state": "READY_PUBLISHED_KAPPA_ONLY",
+   "runtime_note": "lambda_par = 3 kappa_par / v only after the species choice (U-2)"
+  },
+  {
+   "id": "PA-QFORM",
+   "section": "6.2",
+   "equation": "12, 13",
+   "source": "AguedaVainio2013 and users",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS"
+  },
+  {
+   "id": "PA-QFORM-LANG-PRINTED",
+   "section": "6.2",
+   "equation": "Lang2024 Eq. 3 as printed",
+   "source": "Lang2024; Lavasa2026",
+   "status": "variant only (U-5)",
+   "runtime_state": "READY_PUBLISHED_VARIANT",
+   "runtime_note": "printed (1-mu)^2 (D-3, U-5); no-flux boundary at mu = -1 must be imposed"
+  },
+  {
+   "id": "PA-EPS",
+   "section": "6.3",
+   "equation": "14",
+   "source": "Agueda2010; Wijsen2019",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS"
+  },
+  {
+   "id": "PA-EPS-PACHECO-PRINTED",
+   "section": "6.3",
+   "equation": "Pacheco2019 Eq. 4 as printed",
+   "source": "Pacheco2019",
+   "status": "variant only",
+   "runtime_state": "READY_PUBLISHED_VARIANT",
+   "runtime_note": "printed |mu|/(1-|mu|) (D-4)"
+  },
+  {
+   "id": "PA-DROGE-VA",
+   "section": "6.5",
+   "equation": "16",
+   "source": "Minoshima2026 (after Droge 2003)",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "nominal and effective lambda differ when V_A/v > 0"
+  },
+  {
+   "id": "PA-ISO",
+   "section": "6.6",
+   "equation": "isotropic D = (nu/2)(1-mu^2)",
+   "source": "standard",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS"
+  },
+  {
+   "id": "PA-EPREM",
+   "section": "6.6",
+   "equation": "Kozarev2013 Eq. 2 with HalfD operator",
+   "source": "Kozarev2013",
+   "status": "needs U-8",
+   "runtime_state": "READY_PUBLISHED_VARIANT",
+   "runtime_note": "half-D operator convention (D-2, U-8)"
+  },
+  {
+   "id": "PA-KOLMO",
+   "section": "6.7",
+   "equation": "17",
+   "source": "Borovikov2019",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS"
+  },
+  {
+   "id": "PA-AMPS-I..V",
+   "section": "6.7",
+   "equation": "Tenishev2022 Table 1",
+   "source": "Tenishev2022",
+   "status": "as printed; Type V via Qin & Wang 2015 form",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "Type V through the Qin & Wang 2015 form (D-6)"
+  },
+  {
+   "id": "MFP-FOCUS-HW13",
+   "section": "6.9",
+   "equation": "18",
+   "source": "HeWan2013",
+   "status": "explicit option",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "explicit option; small-x evaluation by Eq. (43)"
+  },
+  {
+   "id": "QLT-TS03-P",
+   "section": "7.2",
+   "equation": "21",
+   "source": "TS2003; EB2014; Lang2024",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "requires named turbulence inputs (U-9); otherwise REQUIRES_EXTERNAL_INPUT"
+  },
+  {
+   "id": "QLT-TS03-E-RS",
+   "section": "7.2",
+   "equation": "22, 23",
+   "source": "TS2003; EB2013b; Lang2024",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "requires named turbulence inputs (U-9); otherwise REQUIRES_EXTERNAL_INPUT"
+  },
+  {
+   "id": "QLT-TS03-E-DT",
+   "section": "7.2",
+   "equation": "22, 23",
+   "source": "TS2003; EB2013b; Lang2024",
+   "status": "variant flag required (U-7, D-1)",
+   "runtime_state": "READY_PUBLISHED_VARIANT",
+   "runtime_note": "variant flag required, no default (D-1, U-7)"
+  },
+  {
+   "id": "QLT-ZANK98",
+   "section": "7.5",
+   "equation": "24, 25",
+   "source": "Zank1998; Chhiber2017; Perri2020",
+   "status": "implementable with U-12",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "requires the variance convention (U-12); otherwise REQUIRES_USER_DECISION"
+  },
+  {
+   "id": "SHOCK-BOHM",
+   "section": "8.1",
+   "equation": "26",
+   "source": "Zhang2023",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "host shock coordinates required (Section 21.7)"
+  },
+  {
+   "id": "SHOCK-AFANASIEV15",
+   "section": "8.2",
+   "equation": "27",
+   "source": "Afanasiev2015",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "host shock coordinates required; u1 - V_A > 0 and x + x0 > 0"
+  },
+  {
+   "id": "SHOCK-PARASOL",
+   "section": "8.3",
+   "equation": "28, 29",
+   "source": "Afanasiev2025",
+   "status": "needs U-6",
+   "runtime_state": "REQUIRES_SOURCE_OR_CODE_AUDIT",
+   "runtime_note": "Lambda(E) and Delta x(E) not transcribed (U-6)"
+  },
+  {
+   "id": "SHOCK-MFLAMPA",
+   "section": "8.4",
+   "equation": "30, 31",
+   "source": "Liu2025",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "D_min is a numerical floor, not a physical bound"
+  },
+  {
+   "id": "GCR-NWU14",
+   "section": "9.2",
+   "equation": "33",
+   "source": "Potgieter2014 and group",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "named parameter set; (K_par)_0 printed as a unit only, normalization derived from the tabulated lambda_par; NWU variants with the D-9 printed exponents REQUIRES_USER_DECISION (U-10); state U-13 if the field B(r) is built from Eq. (42) with a published 1 AU value"
+  },
+  {
+   "id": "GCR-CORTI19",
+   "section": "9.2",
+   "equation": "34",
+   "source": "Corti2019",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "named Bartels-rotation parameter set (Table 2 partial); state U-13 if the field B(r) is built from Eq. (42) with a published 1 AU value"
+  },
+  {
+   "id": "GCR-LUO19",
+   "section": "9.2",
+   "equation": "not legible",
+   "source": "Luo2019",
+   "status": "data only",
+   "runtime_state": "REFERENCE_DATA_ONLY",
+   "runtime_note": "form not legible"
+  },
+  {
+   "id": "GCR-HELMOD17",
+   "section": "9.4",
+   "equation": "36, 37",
+   "source": "Boschini2018ASR; DellaTorre2016",
+   "status": "implementable with the D-21 numeric-use convention",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "needs SSN or NMCR and the D-21 numeric-use convention"
+  },
+  {
+   "id": "GCR-HELMOD19",
+   "section": "9.4",
+   "equation": "36 with (R_c + R/1AU); transition function",
+   "source": "Boschini2019",
+   "status": "implementable with the D-21 numeric-use convention",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "needs SSN or NMCR, tilt and the D-21 numeric-use convention"
+  },
+  {
+   "id": "GCR-BOBIK12",
+   "section": "9.4",
+   "equation": "Bobik2012 Eqs. 6, 13",
+   "source": "Bobik2012",
+   "status": "units not stated",
+   "runtime_state": "REQUIRES_SOURCE_OR_CODE_AUDIT",
+   "runtime_note": "units of K0 and K_F not stated"
+  },
+  {
+   "id": "GCR-STRAUSS11",
+   "section": "9.5",
+   "equation": "Strauss2011 Eq. 4",
+   "source": "Strauss2011",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS"
+  },
+  {
+   "id": "GCR-EFFENBERGER12",
+   "section": "9.5",
+   "equation": "Effenberger2012 Eqs. 22-24",
+   "source": "Effenberger2012",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "state U-13 if the field B(r) is built from Eq. (42) with a published 1 AU value"
+  },
+  {
+   "id": "GCR-WANG19",
+   "section": "9.5",
+   "equation": "Wang2019 Eq. 4",
+   "source": "Wang2019",
+   "status": "form implementable; B_c(t) only in figures",
+   "runtime_state": "REQUIRES_EXTERNAL_INPUT",
+   "runtime_note": "B_c(t) printed only in figures; state U-13 if the field B(r) is built from Eq. (42) with a published 1 AU value"
+  },
+  {
+   "id": "GCR-TOMASSETTI17",
+   "section": "9.5",
+   "equation": "Tomassetti2017 Sec. IV",
+   "source": "Tomassetti2017",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "needs the modulation potential phi(t); state U-13 if the field B(r) is built from Eq. (42) with a published 1 AU value"
+  },
+  {
+   "id": "GCR-PERUGIA21",
+   "section": "9.5",
+   "equation": "Fiandrini2021 Eq. 8",
+   "source": "Fiandrini2021",
+   "status": "form implementable; time-dependent values only in figures",
+   "runtime_state": "REQUIRES_EXTERNAL_INPUT",
+   "runtime_note": "K0(t), a(t), b(t) printed only in figures; state U-13 if the field B(r) is built from Eq. (42) with a published 1 AU value"
+  },
+  {
+   "id": "GCR-PERUGIA25",
+   "section": "9.5",
+   "equation": "Tomassetti2025 Eq. 5",
+   "source": "Tomassetti2025",
+   "status": "form implementable; time-dependent values only in figures",
+   "runtime_state": "REQUIRES_EXTERNAL_INPUT",
+   "runtime_note": "K0(t), a(t), b(t) printed only in figures; state U-13 if the field B(r) is built from Eq. (42) with a published 1 AU value"
+  },
+  {
+   "id": "GCR-JIANG23",
+   "section": "9.5",
+   "equation": "Jiang2023 Eq. 8",
+   "source": "Jiang2023",
+   "status": "implementable after the K0 unit interpretation",
+   "runtime_state": "REQUIRES_USER_DECISION",
+   "runtime_note": "K0 unit printed as cm^-2 s^-1 sr^-1 GeV^-1; reading 0.3e23 as cm^2 s^-1 is an interpretation the configuration must state; state U-13 if the field B(r) is built from Eq. (42) with a published 1 AU value"
+  },
+  {
+   "id": "GCR-DUAN25",
+   "section": "9.5",
+   "equation": "Duan2025 Eqs. 3.5-3.6",
+   "source": "Duan2025",
+   "status": "printed variant (D-33); fitted values only in figures",
+   "runtime_state": "REQUIRES_EXTERNAL_INPUT",
+   "runtime_note": "a, b, R_k, K0 only in Fig. 2; with supplied values READY_PUBLISHED_VARIANT (D-33); state U-13 if the field B(r) is built from Eq. (42) with a published 1 AU value"
+  },
+  {
+   "id": "GCR-QINSHEN17",
+   "section": "9.5",
+   "equation": "NLGCE-F (PARALLEL rev. 1.4 Section 11)",
+   "source": "QinShen2017; ShenQin2018",
+   "status": "implementable via PARALLEL",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "through the pinned PARALLEL rev. 1.4 NLGCE-F, otherwise BLOCKED_DEPENDENCY (Section 21.10)"
+  },
+  {
+   "id": "GCR-EB13",
+   "section": "9.5",
+   "equation": "21",
+   "source": "EB2013a; EB2014",
+   "status": "implementable",
+   "runtime_state": "READY_EXPLICIT_INPUTS",
+   "runtime_note": "requires the turbulence inputs; state U-13 if the field B(r) is built from Eq. (42) with a published 1 AU value"
+  },
+  {
+   "id": "Tenishev2005AIAA",
+   "section": "5.4",
+   "equation": "none found",
+   "source": "TenishevCombi2005",
+   "status": "not implementable (U-4)",
+   "runtime_state": "REQUIRES_SOURCE_OR_CODE_AUDIT",
+   "runtime_note": "no formula found (U-4)"
+  }
+ ]
+}

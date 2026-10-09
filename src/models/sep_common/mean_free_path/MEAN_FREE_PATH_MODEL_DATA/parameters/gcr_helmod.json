@@ -1,0 +1,212 @@
+{
+ "_note": "Transcriptions; every number is a string exactly as printed. 'status' gives the verification level of the source reading.",
+ "Boschini2018ASR": {
+  "equation": "K_par = (beta/3) K0 [P/1GV + g_low] (1 + r/1AU), P > 1 GV (Eq. 5)",
+  "K0_unit": "AU^2 GV^-1 s^-1",
+  "K0_SSN": {
+   "equation": "K0 = c0 + c1 SSN + c2 SSN^2 + c3 SSN^3 (Eq. 6), low activity (tilt below about 50 deg)",
+   "table": "Table 1",
+   "status": "VERIFIED-FULLTEXT x2",
+   "rows": {
+    "A<0 ascending": {
+     "c0": "0.0003059",
+     "c1": "-2.51e-6",
+     "c2": "1.284e-8",
+     "c3": "-2.838e-11",
+     "rms": "0.1097"
+    },
+    "A<0 descending": {
+     "c0": "0.0002876",
+     "c1": "-3.715e-6",
+     "c2": "2.534e-8",
+     "c3": "-5.689e-11",
+     "rms": "0.1400"
+    },
+    "A>0 ascending": {
+     "c0": "0.0002262",
+     "c1": "-5.058e-7",
+     "c2": null,
+     "c3": null,
+     "rms": "0.1153"
+    },
+    "A>0 descending": {
+     "c0": "0.0002267",
+     "c1": "-7.118e-7",
+     "c2": null,
+     "c3": null,
+     "rms": "0.1607"
+    }
+   },
+   "validity_as_printed": [
+    "2.2 <= SSN <= 266.9 (text)",
+    "about 10 <~ SSN <~ 165 (Fig. 1 caption)"
+   ]
+  },
+  "K0_NMCR": {
+   "equation": "K0 = p0 exp(p1 NMCR + p2 NMCR^2) (Eq. 7), high activity (tilt >= about 50 deg); McMurdo only used",
+   "table": "Table 2",
+   "status": "VERIFIED-FULLTEXT x2",
+   "rows": {
+    "MCMU": {
+     "p0": "0.003753",
+     "p1": "-0.04791",
+     "p2": "0.0001365",
+     "rms": "0.100"
+    },
+    "OULU": {
+     "p0": "0.001354",
+     "p1": "-0.10070",
+     "p2": "0.0007697",
+     "rms": "0.094"
+    }
+   },
+   "validity_as_printed": "about 210 <~ NMC <~ 300"
+  },
+  "g_low": "maximum 0.3 at low activity decreasing to 0 at high activity; empirical function not shown",
+  "rho_perp_over_par": "0.06",
+  "numeric_use_convention": "K_par [AU^2 s^-1] = (beta/3) K0 (P/GV + g_low)(1 + r/AU) with K0 inserted as the printed number; the printed unit AU^2 GV^-1 s^-1 is kept as metadata and K0 is not rescaled (D-21)",
+  "K0_t_citation_in_Boschini2019": "\"Boschini et al. 2018a\" (Eqs. 6-7) cited by HelMod v4 is this paper (ASR 62, 2859; arXiv:1704.03733)"
+ },
+ "DellaTorre2016": {
+  "equation": "same as Boschini2018ASR Eq. 5 (Eq. 2)",
+  "g_low": "0.2 at low activity, 0 at high activity",
+  "rho": "0.058",
+  "status": "VERIFIED-FULLTEXT x1"
+ },
+ "Boschini2017ApJ": {
+  "g_low": "0 at solar maximum, 0.3 at minimum (scan 0.0-0.5)",
+  "rho": "about 0.06 (scan 0.055-0.064)",
+  "low_activity_definition": "previous-year averaged tilt <= 50 deg",
+  "status": "VERIFIED-FULLTEXT x1",
+  "location": "running text (section not recorded)"
+ },
+ "Boschini2019": {
+  "equation": "K_par = (beta/3) K0 (P/1GV + g_low)(R_c + R/1AU) (Eq. 2, HelMod v4)",
+  "transition_function": "F(alpha_t) = (F_min + F_max)/2 - (F_min - F_max)/2 * tanh[(alpha_t - alpha_0)/s] (Eq. 21)",
+  "table": "Table 2",
+  "status": "VERIFIED-FULLTEXT x2 (values)",
+  "rows": [
+   {
+    "parameter": "P0,d (GV)",
+    "F_min": "0.5",
+    "F_max": "4",
+    "alpha0_asc": "73",
+    "s_asc": "1",
+    "alpha0_desc": "63",
+    "s_desc": "10"
+   },
+   {
+    "parameter": "P0,NS (GV)",
+    "F_min": "0.5",
+    "F_max": "SSN*/50",
+    "alpha0_asc": "73",
+    "s_asc": "1",
+    "alpha0_desc": "63",
+    "s_desc": "10"
+   },
+   {
+    "parameter": "K_c, q>0; A>0",
+    "F_min": "3",
+    "F_max": "1",
+    "alpha0_asc": "40",
+    "s_asc": "18",
+    "alpha0_desc": "53",
+    "s_desc": "5"
+   },
+   {
+    "parameter": "K_c, q>0; A<0",
+    "F_min": "1",
+    "F_max": "1",
+    "alpha0_asc": null,
+    "s_asc": null,
+    "alpha0_desc": null,
+    "s_desc": null
+   },
+   {
+    "parameter": "K_c, q<0; A<0",
+    "F_min": "3",
+    "F_max": "1",
+    "alpha0_asc": "40",
+    "s_asc": "18",
+    "alpha0_desc": "53",
+    "s_desc": "5"
+   },
+   {
+    "parameter": "K_c, q<0; A>0",
+    "F_min": "0.7",
+    "F_max": "1",
+    "alpha0_asc": "47",
+    "s_asc": "5.8",
+    "alpha0_desc": "58.4",
+    "s_desc": "5.8"
+   },
+   {
+    "parameter": "g_low, e+/e- (row label ambiguous: also read as 'K_c e+; e-')",
+    "F_min": "0.4",
+    "F_max": "0",
+    "alpha0_asc": "67",
+    "s_asc": "20",
+    "alpha0_desc": "45",
+    "s_desc": "10"
+   },
+   {
+    "parameter": "g_low, p; ions",
+    "F_min": "0.5",
+    "F_max": "0",
+    "alpha0_asc": "60",
+    "s_asc": "9",
+    "alpha0_desc": "45",
+    "s_desc": "10"
+   },
+   {
+    "parameter": "R_c",
+    "F_min": "4",
+    "F_max": "1",
+    "alpha0_asc": "60",
+    "s_asc": "9",
+    "alpha0_desc": "45",
+    "s_desc": "10"
+   }
+  ],
+  "rho": {
+   "protons_ions": "0.065",
+   "electrons_positrons": "0.05"
+  },
+  "heliosheath": "k_hs = 2.5e-5 * beta * P AU^2 s^-1, reduced by factor 50 in outermost 1-2 AU"
+ },
+ "Bobik2012": {
+  "equation": "K_par ~ beta k1(r,t) K_P(P,t) [B_earth/(3B)] (Eq. 6); K_F = c1 + c2 SSN^-1 + c3 SSN + c4 SSN^2 (Eq. 13), 10 <~ SSN <~ 165",
+  "units": "not stated in the paper",
+  "table": "Table 1",
+  "status": "VERIFIED-FULLTEXT x2",
+  "rows": {
+   "A<0 ascending": {
+    "c1": "+0.0001686",
+    "c2": "+0.001488",
+    "c3": null,
+    "c4": "-3.164e-9"
+   },
+   "A<0 descending": {
+    "c1": "+8.872e-5",
+    "c2": "+0.001874",
+    "c3": null,
+    "c4": null
+   },
+   "A>0 ascending": {
+    "c1": "+2.39708e-4",
+    "c2": null,
+    "c3": "-8.28987e-7",
+    "c4": null
+   },
+   "A>0 descending": {
+    "c1": "+2.28037e-4",
+    "c2": null,
+    "c3": "-1.00984e-6",
+    "c4": null
+   }
+  },
+  "rho_k": "0.05",
+  "polar": "K_perp_theta = 10 K_perp_r for theta <~ 30 deg or >~ 150 deg",
+  "warning": "different parameterization from Boschini2018ASR Eq. 6; do not mix"
+ }
+}

@@ -1,0 +1,179 @@
+{
+ "_note": "Transcriptions; numbers are strings as printed. UNIT = normalization unit only; VALUE = assigned number.",
+ "GCR-STRAUSS11": {
+  "source": "Strauss2011",
+  "location": "Eq. 4",
+  "form": "lambda_par = lambda0 (P/P0)(1 + r/r0) for P >= P0; lambda0 (1 + r/r0) for P < P0",
+  "lambda0": {
+   "value": "0.15",
+   "unit": "AU",
+   "kind": "VALUE"
+  },
+  "P0": "1 GV",
+  "r0": "1 AU",
+  "kappa_perp_over_kappa_par": "0.01 (theta and r)",
+  "species": "electrons",
+  "status": "VERIFIED-FULLTEXT x2",
+  "flags": [
+   "'>=' sign missing in extraction",
+   "kappa relation printed as 'kappa|| = v/3 lambda||'"
+  ]
+ },
+ "GCR-EFFENBERGER12": {
+  "source": "Effenberger2012",
+  "location": "Eqs. 22-24",
+  "form": "kappa_par = kappa_par0 beta (p/p0)(B_e/B)^a_par; kappa_perp1 = kappa_perp0 beta (p/p0)(B_e/B)^a_perp; kappa_perp2 = xi kappa_perp1",
+  "kappa_par0": {
+   "value": "0.9e22",
+   "unit": "cm^2 s^-1",
+   "kind": "VALUE"
+  },
+  "p0": "1 GeV/c",
+  "a_par": "0.75",
+  "a_perp": "0.97",
+  "kappa_perp0": "0.1 kappa_par0",
+  "xi": "2",
+  "kappa_A": "0",
+  "status": "VERIFIED-FULLTEXT x2"
+ },
+ "GCR-WANG19": {
+  "source": "Wang2019",
+  "location": "Eq. 4",
+  "form": "K_par = (1/30) k beta B_E/B for R < 0.1 GV; (1/3) k beta R B_E/B for R >= 0.1 GV",
+  "k": "k0 * 3.6e22 cm^2/s",
+  "k0": "(B_c/<B_E>)^n, n approximately 2 (B_c only in figures)",
+  "K_perp": "0.02 K_par",
+  "status": "VERIFIED-FULLTEXT x2"
+ },
+ "GCR-TOMASSETTI17": {
+  "source": "Tomassetti2017",
+  "location": "Sec. IV A-B, Table II",
+  "form": "K_par = kappa0 * 1e22 beta (R/GV)/(3B/B0) cm^2 s^-1; kappa0(t) = a/phi_d(t) + b",
+  "B0": "3.4 nT, \"sets the HMF at r0 = 1 AU\" (final arXiv v5); v1 printed \"3.4 nT AU^2\"",
+  "K_perp": "0.02 K_par",
+  "fit_interval": "January 2005 - January 2017",
+  "table_II": {
+   "NEWK": {
+    "a_MV": "697.5 +/- 4.5",
+    "b": "0.39 +/- 0.01",
+    "chi2": "2434.12"
+   },
+   "OULU": {
+    "a_MV": "680.3 +/- 4.8",
+    "b": "0.40 +/- 0.01",
+    "chi2": "2393.75"
+   },
+   "APTY": {
+    "a_MV": "709.8 +/- 4.6",
+    "b": "0.42 +/- 0.01",
+    "chi2": "2335.46"
+   },
+   "JUNG": {
+    "a_MV": "689.9 +/- 4.5",
+    "b": "0.38 +/- 0.01",
+    "chi2": "2426.4"
+   }
+  },
+  "status": "VERIFIED-FULLTEXT x2"
+ },
+ "GCR-PERUGIA21": {
+  "source": "Fiandrini2021",
+  "location": "Eq. 8",
+  "form": "K_par = K0 (beta/3)(R/R0)^a/(B/B0) [((R/R0)^h + (Rk/R0)^h)/(1 + (Rk/R0)^h)]^((b-a)/h)",
+  "K0_unit": "1e23 cm^2 s^-1 (v1: 'in units of'; v2: 'of the order of')",
+  "R0": "1 GV",
+  "Rk": "3 GV",
+  "h": "3",
+  "B0": "field at Earth",
+  "xi_perp_r": "0.02",
+  "xi_perp_theta": "0.02",
+  "R_A": "0.5 GV",
+  "K_A0": "1",
+  "grid": {
+   "alpha_deg": "5-75 step 10",
+   "B0_nT": "3-8 step 1",
+   "K0": "0.16-1.5e23 step 0.08e23",
+   "a_b": "0.45-1.65 step 0.05"
+  },
+  "results_v2": {
+   "a_average": "1.21 +/- 0.06",
+   "b_2006_2009": "0.74 +/- 0.03",
+   "b_max_average": "1.3 +/- 0.07",
+   "lambda_k": "0.05-0.3 AU"
+  },
+  "status": "VERIFIED-FULLTEXT x3",
+  "flags": [
+   "g(theta) printed with 'theta_A + pi/2'",
+   "results differ between arXiv versions",
+   "Tomassetti2023 (Rend. Lincei, Eq. 3) prints lambda_par = K0 (B0/B)(R0/R)^a [((R/R0)^h + (Rk/R0)^h)/(1 + (Rk/R0)^h)]^((b-a)/h) with K0 \"in units of 1e23 cm^2 s^-1\" and K_par = beta c lambda_par/3; the factor (R0/R)^a is inverted relative to Fiandrini2021 Eq. 8 and to the paper's own prose (D-23)"
+  ]
+ },
+ "GCR-PERUGIA25": {
+  "source": "Tomassetti2025",
+  "location": "Eq. 5",
+  "form": "as GCR-PERUGIA21",
+  "h": "0.01 ('h≡0.01')",
+  "Rk": "3 GV",
+  "K0": "of the order of 1e23 cm^2 s^-1",
+  "R_A": "0.5 GV",
+  "K_A0": "1",
+  "status": "VERIFIED-FULLTEXT x2"
+ },
+ "GCR-JIANG23": {
+  "source": "Jiang2023",
+  "location": "Eq. 8, Sec. 4.3",
+  "form": "K_par = K0 beta (B0/|B|)(R/R0)^a [((R/R0)^m + (Rk/R0)^m)/(1 + (Rk/R0)^m)]^((b-a)/m)",
+  "Rk": "3 GV",
+  "m": "3.0",
+  "R0": "1 GV",
+  "R_A": "0.5 GV",
+  "averages_sec4.3": {
+   "K0": "0.3e23",
+   "a": "1.80",
+   "b": "0.989",
+   "B0": "5 nT",
+   "alpha": "70 deg",
+   "K0_unit_as_printed": "cm^-2 s^-1 sr^-1 GeV^-1 (inconsistent with a diffusion coefficient)"
+  },
+  "K_perp": "0.02 K_par (r and theta x f)",
+  "status": "VERIFIED-FULLTEXT x2"
+ },
+ "GCR-DUAN25": {
+  "source": "Duan2025",
+  "location": "Eqs. 3.5-3.6",
+  "form": "K_par = K0 beta k1 k2; k1 = B_eq/B; k2 = (R/Rk)^a [1 + (R/Rk)^((b-a)/c)]^c (as printed, Eq. 3.6)",
+  "K0_unit": "1e20 cm^2 s^-1 (\"a constant with units 10^20 cm^2 s^-1\")",
+  "c": "2.2 (fixed)",
+  "K_perp_r": "0.02 K_par",
+  "status": "VERIFIED-FULLTEXT x5 (v1.0: 2; v1.2 check: 3, arXiv v1, v2 and HTML)",
+  "note": "a, b, R_k and K0 are given only as plotted points (Fig. 2); whether b > a for the fitted sets cannot be read",
+  "prose_as_printed": "\"a for rigidity below the turnover point R_k and b for rigidity above it\"",
+  "K_perp_theta": "(2 + tanh[8|theta - 90 deg| - 280 deg]) x K_perp_r (Eq. 3.5, as printed)",
+  "flags": [
+   "D-33: the printed k2 has limiting slopes a (low) and b (high) only for b > a; for b < a they are b (low) and a (high)"
+  ]
+ },
+ "GCR-QINSHEN17": {
+  "source": "QinShen2017; ShenQin2018",
+  "form": "NLGCE-F lambda_par (Qin & Zhang 2014 coefficients)",
+  "deltaB": "deltaB_1AU R^S (1 + sin^2 theta)/2; S = -1.56 + 0.09 ln(alpha/alpha_c), alpha_c = 1 deg",
+  "lambda_slab": "0.02 r",
+  "E_slab_over_E_total": "0.2",
+  "lambda_slab_over_lambda_2D": {
+   "QinShen2017": "10.0",
+   "ShenQin2018": "2.6"
+  },
+  "deltaB_1AU_test_run_2017": "3.0 nT",
+  "status": "VERIFIED-FULLTEXT x1 (2017), x2 (2018)",
+  "location": "running text of both papers (section numbers not recorded)"
+ },
+ "GCR-EB13": {
+  "source": "EB2013a; EB2014",
+  "form": "Eq. (21) of this specification",
+  "k_m": "1/lambda_sl (as extracted)",
+  "NLGC_a2": "1/3",
+  "lambda_out": "12.5 lambda_c,2D",
+  "status": "VERIFIED-FULLTEXT x3 (v1.0: 2; v1.2 check: 1, EB2013a Eq. 16, k_m, a^2 and lambda_out in the published version)",
+  "location": "EB2013a Eq. 16, definition of k_m after Eq. 1, a^2 and lambda_out after Eq. 17; EB2014 Eq. 9"
+ }
+}

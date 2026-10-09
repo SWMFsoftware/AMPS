@@ -56,6 +56,16 @@ standalone PASS does not alter the established seven-member `sep_common.a` or
 claim Parker-mover/native/MPI qualification. Its integration boundary and
 remaining transport work are recorded beside the library.
 
+The [`mean_free_path`](mean_free_path/README.md) library is the host-neutral
+focused-transport coefficient layer for `MEAN_FREE_PATH_MODEL.md` version 1.2.
+It supplies typed mean-free-path kinds, pitch-angle shapes, SEP and GCR
+prescriptions, shock closures, strict parser-neutral selection, provenance and
+source-incomplete gates. Its current delivery is standalone: `srcSEP3D` does
+not call it yet, and its
+[`INTEGRATION_PLAN.md`](mean_free_path/INTEGRATION_PLAN.md) records the future
+focused-mover binding. Standalone coefficient tests are not particle-mover,
+native, MPI or event validation.
+
 SWCME remains a separate sibling because it supplies one possible solar-wind,
 CME, and shock-background provider. `sep_common` must never include `pic.h`,
 `mpi.h`, or an SWCME header. Coupling adapters belong in `srcSEP`, `srcSEP3D`,

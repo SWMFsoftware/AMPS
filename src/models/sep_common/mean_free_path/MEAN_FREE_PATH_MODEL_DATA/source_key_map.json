@@ -1,0 +1,998 @@
+{
+ "equation_numbers": {
+  "lam-def": "1",
+  "lam-r": "2",
+  "lam-rr": "3",
+  "pc-R": "4",
+  "strauss-kd": "5",
+  "chen-fit": "6",
+  "chen-kappa": "7",
+  "chen-dmumu": "8",
+  "sep-generic": "9",
+  "liu-energy": "10",
+  "lam-dmumu": "11",
+  "qform": "12",
+  "qform-norm": "13",
+  "eps-form": "14",
+  "qw-lambda": "15",
+  "droge-va": "16",
+  "mflampa-shape": "17",
+  "hewan-focus": "18",
+  "lang-g0": "19",
+  "lang-lslab": "20",
+  "ts-proton": "21",
+  "ts-electron": "22",
+  "ts-K": "23",
+  "zank-fit": "24",
+  "zank-aux": "25",
+  "bohm": "26",
+  "afanasiev": "27",
+  "parasol-up": "28",
+  "parasol-down": "29",
+  "mflampa-down": "30",
+  "mflampa-floor": "31",
+  "gcr-tensor": "32",
+  "nwu": "33",
+  "corti": "34",
+  "corti-nwu": "35",
+  "helmod": "36",
+  "helmod-k0": "37",
+  "droge-perp": "38",
+  "paradise-perp": "39",
+  "dB2-from-Z2": "40",
+  "laitinen-W": "41",
+  "parker": "42",
+  "hewan-series": "43",
+  "zank-exact": "44",
+  "ts-exact": "45",
+  "ito-sde": "46",
+  "duan-slope": "47"
+ },
+ "references": {
+  "Palmer1982": {
+   "id": "M01",
+   "citation_key": "Palmer-1982-RG",
+   "in_supplied_bibliography": false,
+   "doi": "10.1029/RG020i002p00335",
+   "arxiv": null
+  },
+  "TautzShalchi2013": {
+   "id": "M02",
+   "citation_key": "Tautz-2013-JGRSP",
+   "in_supplied_bibliography": true,
+   "doi": "10.1002/jgra.50155",
+   "arxiv": "1301.7162"
+  },
+  "Chhiber2017": {
+   "id": "M03",
+   "citation_key": "Chhiber-2017-AJSS",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/1538-4365/aa74d2",
+   "arxiv": "1703.10322"
+  },
+  "Reames2013": {
+   "id": "M04",
+   "citation_key": "Reames-2013-SSR",
+   "in_supplied_bibliography": true,
+   "doi": "10.1007/s11214-013-9958-9",
+   "arxiv": "1306.3608"
+  },
+  "Lavasa2026": {
+   "id": "M05",
+   "citation_key": "Lavasa-2026-AA",
+   "in_supplied_bibliography": true,
+   "doi": "10.1051/0004-6361/202558094",
+   "arxiv": "2603.09839"
+  },
+  "Minoshima2026": {
+   "id": "M06",
+   "citation_key": "Minoshima-2026-EPS",
+   "in_supplied_bibliography": true,
+   "doi": "10.1186/s40623-026-02389-9",
+   "arxiv": "2602.00765"
+  },
+  "Subashchandar2025": {
+   "id": "M07",
+   "citation_key": "Subashchandar-2025-AJL",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/2041-8213/ae063f",
+   "arxiv": "2509.10648"
+  },
+  "Shalchi2006": {
+   "id": "M08",
+   "citation_key": "Shalchi-2006-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.1086/500728",
+   "arxiv": null
+  },
+  "Bieber1994": {
+   "id": "M09",
+   "citation_key": "Bieber-1994-AJ-420",
+   "in_supplied_bibliography": false,
+   "doi": "10.1086/173559",
+   "arxiv": null
+  },
+  "Engelbrecht2022": {
+   "id": "M10",
+   "citation_key": "Engelbrecht-2022-SSRv",
+   "in_supplied_bibliography": true,
+   "doi": "10.1007/s11214-022-00896-1",
+   "arxiv": null
+  },
+  "Chen2024": {
+   "id": "M11",
+   "citation_key": "Chen-2024-AJ-965",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/1538-4357/ad33c3",
+   "arxiv": "2403.08141"
+  },
+  "Lang2024": {
+   "id": "M12",
+   "citation_key": "Lang-2024-arXiv",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/1538-4357/ad55c3",
+   "arxiv": "2406.05765"
+  },
+  "Agueda2010": {
+   "id": "M13",
+   "citation_key": "Agueda-2010-AA",
+   "in_supplied_bibliography": false,
+   "doi": "10.1051/0004-6361/200913963",
+   "arxiv": null
+  },
+  "Agueda2014": {
+   "id": "M14",
+   "citation_key": "Agueda-2014-AA",
+   "in_supplied_bibliography": false,
+   "doi": "10.1051/0004-6361/201423549",
+   "arxiv": null
+  },
+  "AguedaLario2016": {
+   "id": "M15",
+   "citation_key": "Agueda-2016-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/0004-637X/829/2/131",
+   "arxiv": null
+  },
+  "Pacheco2019": {
+   "id": "M16",
+   "citation_key": "Pacheco-2019-AA",
+   "in_supplied_bibliography": false,
+   "doi": "10.1051/0004-6361/201834520",
+   "arxiv": "1902.06602"
+  },
+  "Droge2016": {
+   "id": "M17",
+   "citation_key": "Droge-2016-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/0004-637X/826/2/134",
+   "arxiv": null
+  },
+  "Agueda2008": {
+   "id": "M18",
+   "citation_key": "Agueda-2008-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.1086/527527",
+   "arxiv": null
+  },
+  "Droge2000": {
+   "id": "M19",
+   "citation_key": "Droge-2000-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.1086/309080",
+   "arxiv": null
+  },
+  "Battarbee2018": {
+   "id": "M20",
+   "citation_key": "Battarbee-2018-AA",
+   "in_supplied_bibliography": false,
+   "doi": "10.1051/0004-6361/201731451",
+   "arxiv": "1706.08458"
+  },
+  "Dalla2020": {
+   "id": "M21",
+   "citation_key": "Dalla-2020-AA",
+   "in_supplied_bibliography": true,
+   "doi": "10.1051/0004-6361/201937338",
+   "arxiv": "2002.00929"
+  },
+  "Houeibib2025": {
+   "id": "M22",
+   "citation_key": "Houeibib-2025-AA",
+   "in_supplied_bibliography": true,
+   "doi": "10.1051/0004-6361/202451436",
+   "arxiv": "2403.06706"
+  },
+  "DrogeKartavykh2009": {
+   "id": "M23",
+   "citation_key": "Droge-2009-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/0004-637X/693/1/69",
+   "arxiv": null
+  },
+  "Tan2011": {
+   "id": "M24",
+   "citation_key": "Tan-2011-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.1088/0004-637X/728/2/133",
+   "arxiv": null
+  },
+  "Strauss2020": {
+   "id": "M25",
+   "citation_key": "Strauss-2020-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/1538-4357/ab91b0",
+   "arxiv": "2005.03486"
+  },
+  "Zhong2024": {
+   "id": "M26",
+   "citation_key": "Zhong-2024-AJ-974",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/1538-4357/ad70aa",
+   "arxiv": null
+  },
+  "Cao2025": {
+   "id": "M27",
+   "citation_key": "Cao-2025-AA",
+   "in_supplied_bibliography": true,
+   "doi": "10.1051/0004-6361/202452591",
+   "arxiv": null
+  },
+  "Verkhoglyadova2009": {
+   "id": "M28",
+   "citation_key": "Verkhoglyadova-2009-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/0004-637X/693/1/894",
+   "arxiv": null
+  },
+  "Schwadron2010": {
+   "id": "M29",
+   "citation_key": "Schwadron-2010-SW",
+   "in_supplied_bibliography": true,
+   "doi": "10.1029/2009SW000523",
+   "arxiv": null
+  },
+  "Kozarev2013": {
+   "id": "M30",
+   "citation_key": "Kozarev2013",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/0004-637X/778/1/43",
+   "arxiv": "1406.2377"
+  },
+  "Borovikov2019": {
+   "id": "M31",
+   "citation_key": "Borovikov-2019-arXiv",
+   "in_supplied_bibliography": true,
+   "doi": null,
+   "arxiv": "1911.10165"
+  },
+  "Liu2025": {
+   "id": "M32",
+   "citation_key": "Liu-2025-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/1538-4357/adc4e3",
+   "arxiv": "2412.07581"
+  },
+  "Zhao2024": {
+   "id": "M33",
+   "citation_key": "Zhao-2024-SW",
+   "in_supplied_bibliography": true,
+   "doi": "10.1029/2023SW003729",
+   "arxiv": "2309.16903"
+  },
+  "Zhang2023": {
+   "id": "M34",
+   "citation_key": "Zhang-2023-AJSS",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/1538-4365/accb8e",
+   "arxiv": "2212.07259"
+  },
+  "Afanasiev2025": {
+   "id": "M35",
+   "citation_key": "Afanasiev-2025-JSWSC",
+   "in_supplied_bibliography": true,
+   "doi": "10.1051/swsc/2024039",
+   "arxiv": "2412.11852"
+  },
+  "Aran2005": {
+   "id": "M36",
+   "citation_key": "Aran-2005-AG",
+   "in_supplied_bibliography": true,
+   "doi": "10.5194/angeo-23-3047-2005",
+   "arxiv": null
+  },
+  "Marsh2015": {
+   "id": "M37",
+   "citation_key": "Marsh-2015-SW",
+   "in_supplied_bibliography": true,
+   "doi": "10.1002/2014SW001120",
+   "arxiv": null
+  },
+  "Marsh2013": {
+   "id": "M38",
+   "citation_key": "Marsh-2013-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.1088/0004-637X/774/1/4",
+   "arxiv": "1307.1585"
+  },
+  "He2011": {
+   "id": "M39",
+   "citation_key": "He-2011-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/0004-637X/734/2/74",
+   "arxiv": null
+  },
+  "WangQin2015": {
+   "id": "M40",
+   "citation_key": "Wang-2004-arXiv",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/0004-637X/799/1/111",
+   "arxiv": "1311.7469"
+  },
+  "Kubo2015": {
+   "id": "M41",
+   "citation_key": "Kubo-2015-EPS",
+   "in_supplied_bibliography": true,
+   "doi": "10.1186/s40623-015-0260-9",
+   "arxiv": "1506.00825"
+  },
+  "Wijsen2019": {
+   "id": "M42",
+   "citation_key": "Wijsen-2019-AA-A28",
+   "in_supplied_bibliography": true,
+   "doi": "10.1051/0004-6361/201833958",
+   "arxiv": "1901.09596"
+  },
+  "Laitinen2016": {
+   "id": "M43",
+   "citation_key": "Laitinen-2016-AA",
+   "in_supplied_bibliography": true,
+   "doi": "10.1051/0004-6361/201527801",
+   "arxiv": null
+  },
+  "Laitinen2018": {
+   "id": "M44",
+   "citation_key": "Laitinen-2018-JSWSC",
+   "in_supplied_bibliography": true,
+   "doi": "10.1051/swsc/2018001",
+   "arxiv": null
+  },
+  "Strauss2017GLE": {
+   "id": "M45",
+   "citation_key": "Strauss-2017-SP",
+   "in_supplied_bibliography": false,
+   "doi": "10.1007/s11207-017-1086-3",
+   "arxiv": "1703.05906"
+  },
+  "StraussFichtner2015": {
+   "id": "M46",
+   "citation_key": "Strauss-2015-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/0004-637X/801/1/29",
+   "arxiv": "1804.03689"
+  },
+  "Droge2016ICRC": {
+   "id": "M47",
+   "citation_key": "Droge-2016-ICRC",
+   "in_supplied_bibliography": false,
+   "doi": "10.22323/1.236.0206",
+   "arxiv": null
+  },
+  "Young2021": {
+   "id": "M48",
+   "citation_key": "Young-2021-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/1538-4357/abdf5f",
+   "arxiv": "2012.09078"
+  },
+  "HeWan2015": {
+   "id": "M49",
+   "citation_key": "He-2015-AJ-218",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/0067-0049/218/2/17",
+   "arxiv": "1502.02683"
+  },
+  "He2015": {
+   "id": "M50",
+   "citation_key": "He-2015-AJ-814",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/0004-637X/814/2/157",
+   "arxiv": "1512.00027"
+  },
+  "HeWan2019": {
+   "id": "M51",
+   "citation_key": "He-2019-AJL",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/2041-8213/ab50bd",
+   "arxiv": "1911.02787"
+  },
+  "TenishevCombi2005": {
+   "id": "M52",
+   "citation_key": "Tenishev-2005-AIAA-4832",
+   "in_supplied_bibliography": true,
+   "doi": "10.2514/6.2005-4832",
+   "arxiv": null
+  },
+  "Tenishev2022": {
+   "id": "M53",
+   "citation_key": "Tenishev-2022-arXiv",
+   "in_supplied_bibliography": true,
+   "doi": null,
+   "arxiv": "2209.09346"
+  },
+  "Shalchi2005": {
+   "id": "M54",
+   "citation_key": "Shalchi-2005-MNRAS",
+   "in_supplied_bibliography": false,
+   "doi": "10.1111/j.1365-2966.2004.08531.x",
+   "arxiv": "astro-ph/0411074"
+  },
+  "Wang2014": {
+   "id": "M55",
+   "citation_key": "Wang-2014-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/0004-637X/789/2/157",
+   "arxiv": "1403.6544"
+  },
+  "QinWang2015": {
+   "id": "M56",
+   "citation_key": "Qin-2015-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/0004-637X/809/2/177",
+   "arxiv": "1505.02974"
+  },
+  "Droge2010": {
+   "id": "M57",
+   "citation_key": "Droge-2010-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/0004-637X/709/2/912",
+   "arxiv": null
+  },
+  "AguedaVainio2013": {
+   "id": "M58",
+   "citation_key": "Agueda-2013-JSWSC",
+   "in_supplied_bibliography": false,
+   "doi": "10.1051/swsc/2013034",
+   "arxiv": null
+  },
+  "Kelly2012": {
+   "id": "M59",
+   "citation_key": "Kelly-2012-arXiv",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/0004-637X/750/1/47",
+   "arxiv": "1202.6010"
+  },
+  "Ding2022": {
+   "id": "M60",
+   "citation_key": "Ding-2022-AA",
+   "in_supplied_bibliography": true,
+   "doi": "10.1051/0004-6361/202244732",
+   "arxiv": "2210.16967"
+  },
+  "Afanasiev2015": {
+   "id": "M61",
+   "citation_key": "Afanasiev-2015-AA",
+   "in_supplied_bibliography": true,
+   "doi": "10.1051/0004-6361/201526750",
+   "arxiv": "1603.08857"
+  },
+  "Strauss2017": {
+   "id": "M62",
+   "citation_key": "Strauss-2017-AJ-837",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/1538-4357/aa5df5",
+   "arxiv": "1804.03693"
+  },
+  "HeWan2013": {
+   "id": "M63",
+   "citation_key": "He-2013-AA",
+   "in_supplied_bibliography": false,
+   "doi": "10.1051/0004-6361/201321025",
+   "arxiv": null
+  },
+  "TS2003": {
+   "id": "M64",
+   "citation_key": "Teufel-2003-AA",
+   "in_supplied_bibliography": false,
+   "doi": "10.1051/0004-6361:20021471",
+   "arxiv": null
+  },
+  "EB2013b": {
+   "id": "M65",
+   "citation_key": "Engelbrecht-2013-AJ-779",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/0004-637X/779/2/158",
+   "arxiv": null
+  },
+  "TS2002": {
+   "id": "M66",
+   "citation_key": "Teufel-2002-AA",
+   "in_supplied_bibliography": false,
+   "doi": "10.1051/0004-6361:20021046",
+   "arxiv": null
+  },
+  "Shalchi2008": {
+   "id": "M67",
+   "citation_key": "Shalchi-2008-MNRAS",
+   "in_supplied_bibliography": false,
+   "doi": "10.1111/j.1365-2966.2007.12590.x",
+   "arxiv": "0710.5418"
+  },
+  "EB2013a": {
+   "id": "M68",
+   "citation_key": "Engelbrecht-2013-AJ-772",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/0004-637X/772/1/46",
+   "arxiv": null
+  },
+  "Burger2008": {
+   "id": "M69",
+   "citation_key": "Burger-2008-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.1086/525039",
+   "arxiv": null
+  },
+  "EB2014": {
+   "id": "M70",
+   "citation_key": "Engelbrecht-2014-BJP",
+   "in_supplied_bibliography": false,
+   "doi": "10.1007/s13538-014-0241-7",
+   "arxiv": null
+  },
+  "Zank1998": {
+   "id": "M71",
+   "citation_key": "Zank-1998-JGR",
+   "in_supplied_bibliography": true,
+   "doi": "10.1029/97JA03013",
+   "arxiv": null
+  },
+  "Zank1999ICRC": {
+   "id": "M72",
+   "citation_key": "Zank-1999-ICRC",
+   "in_supplied_bibliography": false,
+   "doi": null,
+   "arxiv": null
+  },
+  "Perri2020": {
+   "id": "M73",
+   "citation_key": "Perri-2020-JSWSC",
+   "in_supplied_bibliography": true,
+   "doi": "10.1051/swsc/2020057",
+   "arxiv": "2010.01880"
+  },
+  "QuenbyWebber2015": {
+   "id": "M74",
+   "citation_key": "Quenby-2015-MNRAS",
+   "in_supplied_bibliography": false,
+   "doi": "10.1093/mnras/stv1482",
+   "arxiv": "1409.1105"
+  },
+  "Hussein2015": {
+   "id": "M75",
+   "citation_key": "Hussein-2015-JGRSP",
+   "in_supplied_bibliography": true,
+   "doi": "10.1002/2015JA021060",
+   "arxiv": "1505.05099"
+  },
+  "EngelbrechtStrauss2018": {
+   "id": "M76",
+   "citation_key": "Engelbrecht-2018-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/1538-4357/aab495",
+   "arxiv": null
+  },
+  "KozarevSchwadron2016": {
+   "id": "M77",
+   "citation_key": "Kozarev-2016-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/0004-637X/831/2/120",
+   "arxiv": "1608.00240"
+  },
+  "Battarbee2010": {
+   "id": "M78",
+   "citation_key": "Battarbee-2010-AIP",
+   "in_supplied_bibliography": true,
+   "doi": "10.1063/1.3395969",
+   "arxiv": "1303.4334"
+  },
+  "NgReames2008": {
+   "id": "M79",
+   "citation_key": "Ng-2008-AJL",
+   "in_supplied_bibliography": true,
+   "doi": "10.1086/592996",
+   "arxiv": null
+  },
+  "NgReamesTylka2012": {
+   "id": "M80",
+   "citation_key": "Ng-2012-AIP",
+   "in_supplied_bibliography": true,
+   "doi": "10.1063/1.4723610",
+   "arxiv": null
+  },
+  "Hu2017": {
+   "id": "M81",
+   "citation_key": "Hu-2017-JGR",
+   "in_supplied_bibliography": true,
+   "doi": "10.1002/2017JA024077",
+   "arxiv": null
+  },
+  "Ding2020": {
+   "id": "M82",
+   "citation_key": "Ding-2020-RAA",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/1674-4527/20/9/145",
+   "arxiv": "2005.02326"
+  },
+  "Luhmann2010": {
+   "id": "M83",
+   "citation_key": "Luhmann-2010-ASR",
+   "in_supplied_bibliography": true,
+   "doi": "10.1016/j.asr.2010.03.011",
+   "arxiv": null
+  },
+  "Potgieter2013": {
+   "id": "M84",
+   "citation_key": "Potgieter-2013-LRSP",
+   "in_supplied_bibliography": true,
+   "doi": "10.12942/lrsp-2013-3",
+   "arxiv": "1306.4421"
+  },
+  "Potgieter2014": {
+   "id": "M85",
+   "citation_key": "Potgieter-2014-SP",
+   "in_supplied_bibliography": false,
+   "doi": "10.1007/s11207-013-0324-6",
+   "arxiv": "1302.1284"
+  },
+  "Potgieter2015": {
+   "id": "M86",
+   "citation_key": "Potgieter-2015-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.1088/0004-637X/810/2/141",
+   "arxiv": null
+  },
+  "VosPotgieter2015": {
+   "id": "M87",
+   "citation_key": "Vos-2015-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/0004-637X/815/2/119",
+   "arxiv": null
+  },
+  "VosPotgieter2016": {
+   "id": "M88",
+   "citation_key": "Vos-2016-SP",
+   "in_supplied_bibliography": false,
+   "doi": "10.1007/s11207-016-0945-7",
+   "arxiv": "1608.01688"
+  },
+  "Aslam2019": {
+   "id": "M89",
+   "citation_key": "Aslam-2019-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/1538-4357/ab05e6",
+   "arxiv": "1811.10710"
+  },
+  "Aslam2023": {
+   "id": "M90",
+   "citation_key": "Aslam-2023-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/1538-4357/acc24a",
+   "arxiv": "2212.13397"
+  },
+  "Aslam2021": {
+   "id": "M91",
+   "citation_key": "Aslam-2021-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/1538-4357/abdd35",
+   "arxiv": "2011.02052"
+  },
+  "Raath2015": {
+   "id": "M92",
+   "citation_key": "Raath-2015-MSc",
+   "in_supplied_bibliography": false,
+   "doi": null,
+   "arxiv": null
+  },
+  "Corti2019": {
+   "id": "M93",
+   "citation_key": "Corti-2019-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/1538-4357/aafac4",
+   "arxiv": "1810.09640"
+  },
+  "Luo2019": {
+   "id": "M94",
+   "citation_key": "Luo-2019-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/1538-4357/ab1b2a",
+   "arxiv": null
+  },
+  "Boschini2018ASR": {
+   "id": "M95",
+   "citation_key": "Boschini-2018-ASR",
+   "in_supplied_bibliography": true,
+   "doi": "10.1016/j.asr.2017.04.017",
+   "arxiv": "1704.03733"
+  },
+  "DellaTorre2016": {
+   "id": "M96",
+   "citation_key": "DellaTorre-2016-ECRS",
+   "in_supplied_bibliography": false,
+   "doi": null,
+   "arxiv": "1612.08445"
+  },
+  "Boschini2019": {
+   "id": "M97",
+   "citation_key": "Boschini-2019-ASR",
+   "in_supplied_bibliography": false,
+   "doi": "10.1016/j.asr.2019.04.007",
+   "arxiv": "1903.07501"
+  },
+  "Boschini2017ApJ": {
+   "id": "M98",
+   "citation_key": "Boschini-2017-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/1538-4357/aa6e4f",
+   "arxiv": "1704.06337"
+  },
+  "Bobik2012": {
+   "id": "M99",
+   "citation_key": "Bobik-2012-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/0004-637X/745/2/132",
+   "arxiv": "1110.4315"
+  },
+  "Strauss2011": {
+   "id": "M100",
+   "citation_key": "Strauss-2011-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.1088/0004-637X/735/2/83",
+   "arxiv": null
+  },
+  "Effenberger2012": {
+   "id": "M101",
+   "citation_key": "Effenberger-2012-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.1088/0004-637X/750/2/108",
+   "arxiv": "1202.6319"
+  },
+  "Wang2019": {
+   "id": "M102",
+   "citation_key": "Wang-2019-PRD",
+   "in_supplied_bibliography": false,
+   "doi": "10.1103/PhysRevD.100.063006",
+   "arxiv": "1904.03747"
+  },
+  "Tomassetti2017": {
+   "id": "M103",
+   "citation_key": "Tomassetti-2017-PRD",
+   "in_supplied_bibliography": false,
+   "doi": "10.1103/PhysRevD.96.103005",
+   "arxiv": "1707.06917"
+  },
+  "Fiandrini2021": {
+   "id": "M104",
+   "citation_key": "Fiandrini-2021-PRD",
+   "in_supplied_bibliography": true,
+   "doi": "10.1103/PhysRevD.104.023012",
+   "arxiv": "2010.08649"
+  },
+  "Tomassetti2025": {
+   "id": "M105",
+   "citation_key": "Tomassetti-2025-Galaxies",
+   "in_supplied_bibliography": false,
+   "doi": "10.3390/galaxies13020023",
+   "arxiv": "2503.14025"
+  },
+  "Jiang2023": {
+   "id": "M106",
+   "citation_key": "Jiang-2023-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/1538-4357/acf719",
+   "arxiv": "2303.04460"
+  },
+  "Duan2025": {
+   "id": "M107",
+   "citation_key": "Duan-2025-JCAP",
+   "in_supplied_bibliography": false,
+   "doi": "10.1088/1475-7516/2025/10/049",
+   "arxiv": "2506.13352"
+  },
+  "QinShen2017": {
+   "id": "M108",
+   "citation_key": "Qin-2017-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/1538-4357/aa83ad",
+   "arxiv": "1705.04847"
+  },
+  "ShenQin2018": {
+   "id": "M109",
+   "citation_key": "Shen-2018-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/1538-4357/aaab64",
+   "arxiv": "1709.08017"
+  },
+  "Tomassetti2023": {
+   "id": "M110",
+   "citation_key": "Tomassetti-2023-RL",
+   "in_supplied_bibliography": false,
+   "doi": "10.1007/s12210-023-01149-1",
+   "arxiv": "2303.12239"
+  },
+  "DiFelice2017": {
+   "id": "M111",
+   "citation_key": "DiFelice-2017-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/1538-4357/834/1/89",
+   "arxiv": "1608.01301"
+  },
+  "MacBride2010": {
+   "id": "M112",
+   "citation_key": "MacBride-2010-JGR",
+   "in_supplied_bibliography": false,
+   "doi": "10.1029/2009JA014939",
+   "arxiv": null
+  },
+  "FaHe2026": {
+   "id": "M113",
+   "citation_key": "Fa-2026-AA",
+   "in_supplied_bibliography": false,
+   "doi": "10.1051/0004-6361/202556095",
+   "arxiv": "2505.12870"
+  },
+  "Zhao2022": {
+   "id": "M114",
+   "citation_key": "Zhao-2022-AJL",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/2041-8213/ac4415",
+   "arxiv": "2112.01711"
+  },
+  "Cheng2025": {
+   "id": "M115",
+   "citation_key": "Cheng-2025-AJL",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/2041-8213/adeb8a",
+   "arxiv": "2507.04288"
+  },
+  "Zhao2018": {
+   "id": "M116",
+   "citation_key": "Zhao-2018-AJ",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/1538-4357/aab362",
+   "arxiv": null
+  },
+  "Oughton2011": {
+   "id": "M117",
+   "citation_key": "Oughton-2011-JGR",
+   "in_supplied_bibliography": true,
+   "doi": "10.1029/2010JA016365",
+   "arxiv": null
+  },
+  "Adhikari2017": {
+   "id": "M118",
+   "citation_key": "Adhikari-2017-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/1538-4357/aa6f5d",
+   "arxiv": null
+  },
+  "Adhikari2020": {
+   "id": "M119",
+   "citation_key": "Adhikari-2020-AJSS",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/1538-4365/ab5852",
+   "arxiv": null
+  },
+  "Wiengarten2016": {
+   "id": "M120",
+   "citation_key": "Wiengarten-2016-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/0004-637X/833/1/17",
+   "arxiv": "1609.08271"
+  },
+  "Bieber1996": {
+   "id": "M121",
+   "citation_key": "Bieber-1996-JGR",
+   "in_supplied_bibliography": true,
+   "doi": "10.1029/95JA02588",
+   "arxiv": null
+  },
+  "Leamon2000": {
+   "id": "M122",
+   "citation_key": "Leamon-2000-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.1086/309059",
+   "arxiv": null
+  },
+  "Zank2017": {
+   "id": "M123",
+   "citation_key": "Zank-2017-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/1538-4357/835/2/147",
+   "arxiv": null
+  },
+  "Zank2020": {
+   "id": "M124",
+   "citation_key": "Zank-2020-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/1538-4357/abad30",
+   "arxiv": null
+  },
+  "Chhiber2022": {
+   "id": "M125",
+   "citation_key": "Chhiber-2022-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/1538-4357/ac9386",
+   "arxiv": "2205.14096"
+  },
+  "Zank1996": {
+   "id": "M126",
+   "citation_key": "Zank-1996-JGR",
+   "in_supplied_bibliography": false,
+   "doi": "10.1029/96JA01275",
+   "arxiv": null
+  },
+  "Smith2001": {
+   "id": "M127",
+   "citation_key": "Smith-2001-JGR",
+   "in_supplied_bibliography": true,
+   "doi": "10.1029/2000JA000366",
+   "arxiv": null
+  },
+  "Breech2008": {
+   "id": "M128",
+   "citation_key": "Breech-2008-JGR",
+   "in_supplied_bibliography": true,
+   "doi": "10.1029/2007JA012711",
+   "arxiv": null
+  },
+  "Usmanov2018": {
+   "id": "M129",
+   "citation_key": "Usmanov-2018-AJ",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/1538-4357/aad687",
+   "arxiv": null
+  },
+  "Cuesta2022": {
+   "id": "M130",
+   "citation_key": "Cuesta-2022-AJL",
+   "in_supplied_bibliography": false,
+   "doi": "10.3847/2041-8213/ac73fd",
+   "arxiv": "2205.00526"
+  },
+  "Ruiz2014": {
+   "id": "M131",
+   "citation_key": "Ruiz-2014-SP",
+   "in_supplied_bibliography": false,
+   "doi": "10.1007/s11207-014-0531-9",
+   "arxiv": "1404.2826"
+  },
+  "Weygand2011": {
+   "id": "M132",
+   "citation_key": "Weygand-2011-JGR",
+   "in_supplied_bibliography": false,
+   "doi": "10.1029/2011JA016621",
+   "arxiv": null
+  },
+  "ChenCHK2020": {
+   "id": "M133",
+   "citation_key": "Chen-2019-AJSS",
+   "in_supplied_bibliography": true,
+   "doi": "10.3847/1538-4365/ab60a3",
+   "arxiv": "1912.02348"
+  },
+  "Alexandrova2009": {
+   "id": "M134",
+   "citation_key": "Alexandrova-2009-PRL",
+   "in_supplied_bibliography": false,
+   "doi": "10.1103/PhysRevLett.103.165003",
+   "arxiv": null
+  },
+  "Raath2016": {
+   "id": "M135",
+   "citation_key": "Raath-2016-ASR",
+   "in_supplied_bibliography": true,
+   "doi": "10.1016/j.asr.2016.01.017",
+   "arxiv": "1506.07305"
+  }
+ }
+}

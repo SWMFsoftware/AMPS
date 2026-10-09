@@ -1,0 +1,1376 @@
+{
+ "specification": "MEAN_FREE_PATH_MODEL.md v1.2",
+ "constants": {
+  "c_m_s": 299792458,
+  "e_C": "1.602176634e-19",
+  "au_m": 149597870700,
+  "R_sun_nominal_m": 695700000.0,
+  "m_p_kg": "1.67262192369e-27",
+  "m_e_kg": "9.1093837015e-31",
+  "m_alpha_kg": "6.6446573357e-27"
+ },
+ "precision": "mpmath 40 digits; values printed to 15 significant digits",
+ "fixtures": [
+  {
+   "id": "F-KIN-01",
+   "title": "Proton, electron and alpha kinematics used in the checks",
+   "kind": "derived",
+   "inputs": {
+    "masses": "CODATA 2018 (kg) with exact c, e",
+    "m_p c^2 [MeV]": 938.27208816049,
+    "m_e c^2 [MeV]": 0.510998949996164,
+    "m_alpha c^2 [MeV]": 3727.37940665284
+   },
+   "outputs": {
+    "proton_1MeV_R_MV": 43.3306378480744,
+    "proton_1MeV_beta": 0.0461321467913892,
+    "proton_pc_1GeV_T_MeV": 432.988102839397,
+    "electron_0.094MeV_R_MV": 0.32388856509497,
+    "electron_0.94MeV_R_MV": 1.35804198241173,
+    "electron_R_0.324MV_T_MeV": 0.094059664434853,
+    "electron_2.0MeV_R_MV": 2.45845394506073,
+    "electron_2.5MeV_R_MV": 2.96732114035216,
+    "alpha_Z2_pc_1GeV_R_GV": 0.5,
+    "alpha_pc_1GeV_T_total_MeV": 131.81186110517
+   },
+   "reference": "Section 2; Section 4.3 (Lavasa rigidity checks); Section 5.3 (PARASOL R_ref)",
+   "note": "For |Z| != 1, pc/1 GeV and P/1 GV differ; for an alpha particle pc = 1 GeV is P = 0.5 GV."
+  },
+  {
+   "id": "F-SEP-01",
+   "title": "Code presets at r = 1 au and pc = 1 GeV (proton)",
+   "kind": "derived",
+   "inputs": {
+    "r_au": 1,
+    "pc_GeV": 1
+   },
+   "outputs": {
+    "SEP-PATH09_lambda_au": 0.8,
+    "SEP-EPREM13_lambda_par_au": 0.05,
+    "SEP-MFLAMPA25_lambda_par_au": 0.3,
+    "SEP-ZHANG23_lambda_r_au": 0.930093452192432,
+    "SEP-ZHANG23_200Rsun_m": 139140000000.0
+   },
+   "reference": "Section 5.5",
+   "note": "Zhang 2023 value converted with the IAU nominal solar radius 6.957e8 m; the paper does not state the conversion."
+  },
+  {
+   "id": "F-SEP-02",
+   "title": "Radial versus parallel mean free path",
+   "kind": "derived",
+   "inputs": {
+    "psi_deg_Lang2024": 45,
+    "Parker_example": {
+     "Omega_rad_s": 2.66e-06,
+     "V_sw_km_s": 400,
+     "r_sun_au": 0.005,
+     "r_au": 1,
+     "theta_deg": 90
+    }
+   },
+   "outputs": {
+    "lambda_par_over_lambda_r_at_psi45": 2.0,
+    "implied_cos2psi": {
+     "He2011/HeWan2015 (0.3, 0.67)": 0.447761194029851,
+     "He2015 (0.15, 0.34)": 0.441176470588235,
+     "HeWan2019 (0.25, 0.5)": 0.5,
+     "HeWan2019 (0.28, 0.56)": 0.5
+    },
+    "Parker_example_tan_psi": 0.989851710954225,
+    "Parker_example_psi_deg": 44.707792752984,
+    "Parker_example_cos2psi": 0.505099890126194
+   },
+   "reference": "Sections 4.2, 5.3",
+   "note": "Implied cos^2 psi are ratios of numbers printed by the authors. The Parker example uses the Raath et al. (2016) constants and is illustrative only."
+  },
+  {
+   "id": "F-SEP-03",
+   "title": "M-FLAMPA (Liu et al. 2025) Eq. 16 equals v*lambda/3 with Eq. 15",
+   "kind": "derived",
+   "inputs": {
+    "lambda0_au": 0.3,
+    "r_au": 1,
+    "species": "proton"
+   },
+   "outputs": {
+    "rows": [
+     {
+      "T_MeV": 0.1,
+      "lambda_par_au": 0.0717824445197828,
+      "D_par_m2_s_from_v_lambda_over_3": 1.56660313285309e+16,
+      "D_par_m2_s_Eq16": 1.56660313285309e+16,
+      "relative_difference": 2.3e-41
+     },
+     {
+      "T_MeV": 1.0,
+      "lambda_par_au": 0.105370639404624,
+      "D_par_m2_s_from_v_lambda_over_3": 7.26688254873663e+16,
+      "D_par_m2_s_Eq16": 7.26688254873663e+16,
+      "relative_difference": 0.0
+     },
+     {
+      "T_MeV": 10.0,
+      "lambda_par_au": 0.154786263973336,
+      "D_par_m2_s_from_v_lambda_over_3": 3.3516433607065e+17,
+      "D_par_m2_s_Eq16": 3.3516433607065e+17,
+      "relative_difference": 0.0
+     },
+     {
+      "T_MeV": 100.0,
+      "lambda_par_au": 0.228966709175088,
+      "D_par_m2_s_from_v_lambda_over_3": 1.46568042011215e+18,
+      "D_par_m2_s_Eq16": 1.46568042011215e+18,
+      "relative_difference": 2.3e-41
+     },
+     {
+      "T_MeV": 1000.0,
+      "lambda_par_au": 0.357766574475482,
+      "D_par_m2_s_from_v_lambda_over_3": 4.67999517377832e+18,
+      "D_par_m2_s_Eq16": 4.67999517377832e+18,
+      "relative_difference": 0.0
+     }
+    ]
+   },
+   "reference": "Section 5.3, Eq. (10)",
+   "note": ""
+  },
+  {
+   "id": "F-SEP-05",
+   "title": "PARASOL background mean free path",
+   "kind": "derived",
+   "inputs": {
+    "Rref_printed_MV": 43,
+    "q0": "5/3"
+   },
+   "outputs": {
+    "R_1MeV_proton_MV": 43.3306378480744,
+    "ratio_(R1/43)^(1/3)": 1.00255654261369,
+    "rows": [
+     {
+      "T_MeV": 0.1,
+      "R_MV": 13.6990663051209,
+      "lambda0_au_Rref43": 0.0682979241700928,
+      "lambda0_au_Rref_exact": 0.0681237628673178
+     },
+     {
+      "T_MeV": 1.0,
+      "R_MV": 43.3306378480744,
+      "lambda0_au_Rref43": 0.100255654261369,
+      "lambda0_au_Rref_exact": 0.1
+     },
+     {
+      "T_MeV": 10.0,
+      "R_MV": 137.35152625002,
+      "lambda0_au_Rref43": 0.147272506392694,
+      "lambda0_au_Rref_exact": 0.146896958059593
+     },
+     {
+      "T_MeV": 100.0,
+      "R_MV": 444.583420329749,
+      "lambda0_au_Rref43": 0.217852025593892,
+      "lambda0_au_Rref_exact": 0.217296497837366
+     }
+    ]
+   },
+   "reference": "Sections 5.3, 8.3",
+   "note": ""
+  },
+  {
+   "id": "F-SEP-06",
+   "title": "Chen et al. (2024) fit and derived proton lambda_par",
+   "kind": "derived (lambda requires the species choice U-2)",
+   "inputs": {
+    "fit": "kappa = 5.16e18 r^1.17 E^0.71 cm^2/s, central values",
+    "conversion": "lambda = 3 kappa / v (definition, Eq. 1; not printed by Chen et al.)",
+    "species": "proton (chosen for this fixture; not stated by Chen et al.)"
+   },
+   "outputs": {
+    "rows": [
+     {
+      "r_au": 0.1,
+      "E_keV": 100.0,
+      "kappa_par_cm2_s": 9.17592175580084e+18,
+      "derived_lambda_par_au_proton": 0.00420444770306362,
+      "MFLAMPA25_lambda_par_au": 0.00717824445197828
+     },
+     {
+      "r_au": 0.1,
+      "E_keV": 1000.0,
+      "kappa_par_cm2_s": 4.70597593107649e+19,
+      "derived_lambda_par_au_proton": 0.00682371965632652,
+      "MFLAMPA25_lambda_par_au": 0.0105370639404624
+     },
+     {
+      "r_au": 0.1,
+      "E_keV": 10000.0,
+      "kappa_par_cm2_s": 2.41351332904194e+20,
+      "derived_lambda_par_au_proton": 0.0111461355236049,
+      "MFLAMPA25_lambda_par_au": 0.0154786263973336
+     },
+     {
+      "r_au": 0.1,
+      "E_keV": 100000.0,
+      "kappa_par_cm2_s": 1.23779778621406e+21,
+      "derived_lambda_par_au_proton": 0.0193367177349586,
+      "MFLAMPA25_lambda_par_au": 0.0228966709175088
+     },
+     {
+      "r_au": 0.1,
+      "E_keV": 1000000.0,
+      "kappa_par_cm2_s": 6.34818685739189e+21,
+      "derived_lambda_par_au_proton": 0.0485293035946826,
+      "MFLAMPA25_lambda_par_au": 0.0357766574475482
+     },
+     {
+      "r_au": 0.3,
+      "E_keV": 100.0,
+      "kappa_par_cm2_s": 3.31803963614026e+19,
+      "derived_lambda_par_au_proton": 0.0152034035360259,
+      "MFLAMPA25_lambda_par_au": 0.0215347333559348
+     },
+     {
+      "r_au": 0.3,
+      "E_keV": 1000.0,
+      "kappa_par_cm2_s": 1.7016943999291e+20,
+      "derived_lambda_par_au_proton": 0.0246747660759937,
+      "MFLAMPA25_lambda_par_au": 0.0316111918213873
+     },
+     {
+      "r_au": 0.3,
+      "E_keV": 10000.0,
+      "kappa_par_cm2_s": 8.72733345077991e+20,
+      "derived_lambda_par_au_proton": 0.0403047458787797,
+      "MFLAMPA25_lambda_par_au": 0.0464358791920009
+     },
+     {
+      "r_au": 0.3,
+      "E_keV": 100000.0,
+      "kappa_par_cm2_s": 4.47591231212112e+21,
+      "derived_lambda_par_au_proton": 0.0699221261742866,
+      "MFLAMPA25_lambda_par_au": 0.0686900127525265
+     },
+     {
+      "r_au": 0.3,
+      "E_keV": 1000000.0,
+      "kappa_par_cm2_s": 2.29552258301843e+22,
+      "derived_lambda_par_au_proton": 0.175483354290424,
+      "MFLAMPA25_lambda_par_au": 0.107329972342645
+     },
+     {
+      "r_au": 0.5,
+      "E_keV": 100.0,
+      "kappa_par_cm2_s": 6.03176769158549e+19,
+      "derived_lambda_par_au_proton": 0.02763782483244,
+      "MFLAMPA25_lambda_par_au": 0.0358912222598914
+     },
+     {
+      "r_au": 0.5,
+      "E_keV": 1000.0,
+      "kappa_par_cm2_s": 3.09346072622093e+20,
+      "derived_lambda_par_au_proton": 0.0448555391543603,
+      "MFLAMPA25_lambda_par_au": 0.0526853197023122
+     },
+     {
+      "r_au": 0.5,
+      "E_keV": 10000.0,
+      "kappa_par_cm2_s": 1.5865165493726e+21,
+      "derived_lambda_par_au_proton": 0.0732688245677456,
+      "MFLAMPA25_lambda_par_au": 0.0773931319866682
+     },
+     {
+      "r_au": 0.5,
+      "E_keV": 100000.0,
+      "kappa_par_cm2_s": 8.13663073236436e+21,
+      "derived_lambda_par_au_proton": 0.127109398269767,
+      "MFLAMPA25_lambda_par_au": 0.114483354587544
+     },
+     {
+      "r_au": 0.5,
+      "E_keV": 1000000.0,
+      "kappa_par_cm2_s": 4.17296369842706e+22,
+      "derived_lambda_par_au_proton": 0.319006082775825,
+      "MFLAMPA25_lambda_par_au": 0.178883287237741
+     },
+     {
+      "r_au": 0.8,
+      "E_keV": 100.0,
+      "kappa_par_cm2_s": 1.04535785369053e+20,
+      "derived_lambda_par_au_proton": 0.0478987565914032,
+      "MFLAMPA25_lambda_par_au": 0.0574259556158263
+     },
+     {
+      "r_au": 0.8,
+      "E_keV": 1000.0,
+      "kappa_par_cm2_s": 5.36123675609967e+20,
+      "derived_lambda_par_au_proton": 0.0777385544903309,
+      "MFLAMPA25_lambda_par_au": 0.0842965115236995
+     },
+     {
+      "r_au": 0.8,
+      "E_keV": 10000.0,
+      "kappa_par_cm2_s": 2.74957130263865e+21,
+      "derived_lambda_par_au_proton": 0.126981251780328,
+      "MFLAMPA25_lambda_par_au": 0.123829011178669
+     },
+     {
+      "r_au": 0.8,
+      "E_keV": 100000.0,
+      "kappa_par_cm2_s": 1.4101489436542e+22,
+      "derived_lambda_par_au_proton": 0.220291653381385,
+      "MFLAMPA25_lambda_par_au": 0.183173367340071
+     },
+     {
+      "r_au": 0.8,
+      "E_keV": 1000000.0,
+      "kappa_par_cm2_s": 7.23210938876454e+22,
+      "derived_lambda_par_au_proton": 0.552865314209579,
+      "MFLAMPA25_lambda_par_au": 0.286213259580386
+     }
+    ]
+   },
+   "reference": "Sections 4.5, 5.3",
+   "note": "Only r = 0.1-0.8 au and E = 100 keV-1 GeV are inside the stated domain. Uncertainties of the fit coefficients are not propagated."
+  },
+  {
+   "id": "F-PA-01",
+   "title": "q-form normalization integral I(5/3, H)",
+   "kind": "derived",
+   "inputs": {
+    "q": "5/3"
+   },
+   "outputs": {
+    "I_exact_H0_18_over_7": 2.57142857142857,
+    "values": {
+     "0": {
+      "I": 2.57142857142857,
+      "D0_lambda_over_v": 1.92857142857143
+     },
+     "0.01": {
+      "I": 2.13599282779915,
+      "D0_lambda_over_v": 1.60199462084936
+     },
+     "0.05": {
+      "I": 1.69304051455562,
+      "D0_lambda_over_v": 1.26978038591672
+     },
+     "0.1": {
+      "I": 1.42360092824611,
+      "D0_lambda_over_v": 1.06770069618458
+     },
+     "0.2": {
+      "I": 1.11984426123316,
+      "D0_lambda_over_v": 0.839883195924871
+     }
+    }
+   },
+   "reference": "Section 6.2, Eq. (13)",
+   "note": ""
+  },
+  {
+   "id": "F-PA-02",
+   "title": "epsilon-form phi(eps) exact versus leading asymptote",
+   "kind": "derived",
+   "inputs": {},
+   "outputs": {
+    "values": {
+     "0.048": {
+      "phi_exact": 4.597261773672,
+      "asymptote_1.5_ln(1/eps)": 4.55483140211137,
+      "ratio_exact_over_asymptote": 1.00931546479217
+     },
+     "0.01": {
+      "phi_exact": 7.06953301508509,
+      "asymptote_1.5_ln(1/eps)": 6.90775527898214,
+      "ratio_exact_over_asymptote": 1.0234197260281
+     },
+     "0.001": {
+      "phi_exact": 10.5959156528127,
+      "asymptote_1.5_ln(1/eps)": 10.3616329184732,
+      "ratio_exact_over_asymptote": 1.02261059971752
+     }
+    }
+   },
+   "reference": "Section 6.3, Eq. (14)",
+   "note": ""
+  },
+  {
+   "id": "F-PA-03",
+   "title": "Droge (2003) V_A form: integral lambda over nominal lambda",
+   "kind": "derived",
+   "inputs": {
+    "q": "5/3",
+    "a = V_A/v": [
+     "0.001",
+     "0.01",
+     "0.1",
+     "0.3"
+    ]
+   },
+   "outputs": {
+    "ratio": {
+     "0.001": 0.912869772632396,
+     "0.01": 0.812321312578174,
+     "0.1": 0.5985115566934,
+     "0.3": 0.436445216654432
+    }
+   },
+   "reference": "Section 6.5, Eq. (16)",
+   "note": ""
+  },
+  {
+   "id": "F-PA-04",
+   "title": "EPREM operator: effective mean free path",
+   "kind": "derived",
+   "inputs": {
+    "D_mumu_printed": "(1-mu^2) v /(2 lambda)",
+    "operator": "d/dmu[(D/2) df/dmu]"
+   },
+   "outputs": {
+    "lambda_effective_over_lambda": 2.0
+   },
+   "reference": "Section 6.6",
+   "note": "Exact value 2. Valid only if the operator is as printed in the extraction (Section 14, D-2)."
+  },
+  {
+   "id": "F-PA-05",
+   "title": "M-FLAMPA |mu|^(2/3) shape and coefficients",
+   "kind": "derived",
+   "inputs": {},
+   "outputs": {
+    "lambda_xx_over_lambda_mumu_numeric": 1.92857142857142,
+    "exact_27_over_14": 1.92857142857143,
+    "printed_ratio_(54/7pi)/(4/pi)": 1.92857142857143,
+    "81/(7pi)": 3.68330011155529,
+    "lambda_xx_coeff_with_k0=2pi/Lmax_and_int_I=w": 1.08172581454567,
+    "lambda_mumu_coeff_same_assumptions": 0.560894866801457,
+    "printed_approximate_coefficients": [
+     0.9,
+     0.5
+    ]
+   },
+   "reference": "Sections 6.7, 8.4",
+   "note": "The two derived coefficients do not reproduce the printed 0.9 and 0.5; the convention behind those was not established (D-7)."
+  },
+  {
+   "id": "F-PA-06",
+   "title": "He & Wan (2013) focusing correction lambda/lambda0 versus x = lambda0/L",
+   "kind": "derived",
+   "inputs": {},
+   "outputs": {
+    "lambda_over_lambda0": {
+     "0.01": 0.999960001618982,
+     "0.1": 0.996016125132549,
+     "1": 0.715217532132705,
+     "3": 0.222771694034808,
+     "10": 0.0270000000123669
+    }
+   },
+   "reference": "Section 6.9, Eq. (18)",
+   "note": ""
+  },
+  {
+   "id": "F-QLT-01",
+   "title": "Teufel & Schlickeiser coefficients (lambda*(dB/B0)^2) for the Bieber et al. (1994) set",
+   "kind": "published-check",
+   "inputs": {
+    "B0_nT": 4.12,
+    "k_min_per_m": 1e-10,
+    "s": "5/3",
+    "P": "1 MV"
+   },
+   "outputs": {
+    "TS2002_mid_coeff_AU": 0.0106513761305924,
+    "printed_TS2002": 0.0106,
+    "TS2003_mid_coeff_AU": 0.0177522935509874,
+    "printed_TS2003": 0.018,
+    "TS2003_high_coeff_AU": 2.61511113193153e-10,
+    "printed_TS2003_high": 2.62e-10,
+    "P_at_R_eq_1_MV": 12351.4492696,
+    "printed_limit_MV": 12300.0
+   },
+   "reference": "Section 7.3",
+   "note": ""
+  },
+  {
+   "id": "F-QLT-02",
+   "title": "Zank et al. (1998) fit: constants and accuracy against exact slab QLT",
+   "kind": "derived",
+   "inputs": {
+    "nu": "5/6",
+    "spectrum": "g = C(nu) l dB^2 (1+k^2 l^2)^-nu / (2 pi), 8 pi int_0^inf g dk = dB^2"
+   },
+   "outputs": {
+    "C(5/6)": 0.118862354635443,
+    "2 pi C": 0.746834200222187,
+    "inertial_coeff_vs_l_total_variance": 5.16465750496608,
+    "coeff_vs_lambda_s_total_variance": 6.27420534071733,
+    "coeff_vs_lambda_s_per_component": 3.13710267035867,
+    "printed": {
+     "Zank1998_per_component": 3.1371,
+     "Chhiber2017_total": 6.2742,
+     "s_constant": 0.746834
+    },
+    "accuracy_vs_RL_over_l": {
+     "0.01": {
+      "exact_over_inertial": 1.00000641023673,
+      "zank_bracket_at_s_eq_x": 1.00000641027343,
+      "bracket_over_exact": 1.0000000000367
+     },
+     "0.1": {
+      "exact_over_inertial": 1.00064082923158,
+      "zank_bracket_at_s_eq_x": 1.00064119309802,
+      "bracket_over_exact": 1.00000036363341
+     },
+     "0.3": {
+      "exact_over_inertial": 1.00575357125595,
+      "zank_bracket_at_s_eq_x": 1.0057811280384,
+      "bracket_over_exact": 1.00002739913955
+     },
+     "1": {
+      "exact_over_inertial": 1.06243852893212,
+      "zank_bracket_at_s_eq_x": 1.0643480896859,
+      "bracket_over_exact": 1.00179733763581
+     },
+     "3": {
+      "exact_over_inertial": 1.50476879019729,
+      "zank_bracket_at_s_eq_x": 1.52838127606976,
+      "bracket_over_exact": 1.01569177007544
+     },
+     "4": {
+      "exact_over_inertial": 1.85307899511423,
+      "zank_bracket_at_s_eq_x": 1.88943965725741,
+      "bracket_over_exact": 1.01962175505688
+     },
+     "5": {
+      "exact_over_inertial": 2.27348356537764,
+      "zank_bracket_at_s_eq_x": 2.3219112597359,
+      "bracket_over_exact": 1.02130109717781
+     },
+     "6": {
+      "exact_over_inertial": 2.76006094572031,
+      "zank_bracket_at_s_eq_x": 2.81966094195422,
+      "bracket_over_exact": 1.02159372470609
+     },
+     "7": {
+      "exact_over_inertial": 3.30838443266991,
+      "zank_bracket_at_s_eq_x": 3.37827251377874,
+      "bracket_over_exact": 1.02112453450654
+     },
+     "8": {
+      "exact_over_inertial": 3.91498901793153,
+      "zank_bracket_at_s_eq_x": 3.99435681261127,
+      "bracket_over_exact": 1.02027280135812
+     },
+     "10": {
+      "exact_over_inertial": 5.29227729895767,
+      "zank_bracket_at_s_eq_x": 5.38852989350338,
+      "bracket_over_exact": 1.01818736795305
+     },
+     "100": {
+      "exact_over_inertial": 209.981365814403,
+      "zank_bracket_at_s_eq_x": 210.283848651051,
+      "bracket_over_exact": 1.00144052228385
+     },
+     "max": {
+      "R_L_over_l": 5.7867993,
+      "bracket_over_exact": 1.02161218522037
+     }
+    }
+   },
+   "reference": "Section 7.5",
+   "note": "x = R_L/l with l the bendover length. With l_slab the correlation length 2 pi C(5/6) l, Zank s = 0.746834 R_L/l_slab equals x, so the bracket is evaluated at s = x."
+  },
+  {
+   "id": "F-QLT-03",
+   "title": "Eq. (21) at Lang et al. (2024) Table 6 proton parameters",
+   "kind": "evaluation of printed formula",
+   "inputs": {
+    "B0_nT": "3.97",
+    "dB2_nT2": "1.03",
+    "s": "1.65",
+    "p": "3.57",
+    "kd_km": "0.12e-3",
+    "kmin_km": "2.28e-7",
+    "VA_kms": "79.36",
+    "aD": "0.5"
+   },
+   "outputs": {
+    "rows": [
+     {
+      "T_MeV": 1.0,
+      "lambda_par_au": 0.494342099662159
+     },
+     {
+      "T_MeV": 10.0,
+      "lambda_par_au": 0.740431692434917
+     },
+     {
+      "T_MeV": 100.0,
+      "lambda_par_au": 1.1186205988301
+     }
+    ]
+   },
+   "reference": "Section 7.2",
+   "note": "Not values published by Lang et al.; Table 6 is from a single fetch."
+  },
+  {
+   "id": "F-QLT-04",
+   "title": "Electron Eq. (22) at Lang et al. (2024) Table 6 parameters, three DT printings and RS",
+   "kind": "evaluation of printed formula",
+   "inputs": {
+    "DT": {
+     "B0_nT": "3.97",
+     "dB2_nT2": "5.33",
+     "s": "1.65",
+     "p": "3.57",
+     "kd_km": "8.44e-3",
+     "kmin_km": "2.28e-7",
+     "VA_kms": "56.77",
+     "aD": "0.5"
+    },
+    "RS": {
+     "B0_nT": "3.97",
+     "dB2_nT2": "5.33",
+     "s": "1.65",
+     "p": "2.61",
+     "kd_km": "8.44e-3",
+     "kmin_km": "3.50e-7",
+     "VA_kms": "79.36",
+     "aD": "1.0"
+    }
+   },
+   "outputs": {
+    "lambda_par_au_rows": [
+     {
+      "T_MeV": 0.04,
+      "DT_LANG24": 0.436753330932405,
+      "DT_TS-Q3MS": 0.538683294748157,
+      "DT_EB13": 0.473400613570831,
+      "RS": 0.63954752965154,
+      "no_dissipation_term_DTparams": 0.0146951836584622
+     },
+     {
+      "T_MeV": 0.07,
+      "DT_LANG24": 0.361828468498741,
+      "DT_TS-Q3MS": 0.523468488537479,
+      "DT_EB13": 0.416772998530405,
+      "RS": 0.620753781628175,
+      "no_dissipation_term_DTparams": 0.0162863533722689
+     },
+     {
+      "T_MeV": 0.11,
+      "DT_LANG24": 0.306354042191422,
+      "DT_TS-Q3MS": 0.504571063333878,
+      "DT_EB13": 0.370546478739915,
+      "RS": 0.597636987774561,
+      "no_dissipation_term_DTparams": 0.0177382016065418
+     },
+     {
+      "T_MeV": 0.18,
+      "DT_LANG24": 0.250425044983674,
+      "DT_TS-Q3MS": 0.475407791027408,
+      "DT_EB13": 0.319248587841899,
+      "RS": 0.562149893254147,
+      "no_dissipation_term_DTparams": 0.0195388376301799
+     },
+     {
+      "T_MeV": 0.31,
+      "DT_LANG24": 0.194585813587447,
+      "DT_TS-Q3MS": 0.431845590892703,
+      "DT_EB13": 0.262264681628268,
+      "RS": 0.509286338486776,
+      "no_dissipation_term_DTparams": 0.0218785889482699
+     },
+     {
+      "T_MeV": 0.52,
+      "DT_LANG24": 0.148797598263259,
+      "DT_TS-Q3MS": 0.380851192720469,
+      "DT_EB13": 0.210155917672964,
+      "RS": 0.447411459474956,
+      "no_dissipation_term_DTparams": 0.0245729983508376
+     }
+    ]
+   },
+   "reference": "Section 7.2",
+   "note": "Not values published by Lang et al. The DT columns differ only in the printed Q-power and 2F1 argument (Section 14, D-1)."
+  },
+  {
+   "id": "F-QLT-05",
+   "title": "Lang et al. (2024) Eq. 13 with Table 5 central values",
+   "kind": "published-check",
+   "inputs": {
+    "k_min_per_km": 2.28e-07,
+    "k_d_per_km": 0.00428,
+    "s": 1.69,
+    "p": 2.61
+   },
+   "outputs": {
+    "lambda_slab_km": 2813926.15656487,
+    "printed_Table5_lambda_slab_km": 2810000.0,
+    "k_min_to_k_d_term_limit_km": 2812855.45906903
+   },
+   "reference": "Section 7.1, Eq. (20)",
+   "note": ""
+  },
+  {
+   "id": "F-QLT-06",
+   "title": "Identities used to compare TS2003, EB2013b and Lang 2024 printings",
+   "kind": "derived",
+   "inputs": {},
+   "outputs": {
+    "values": {
+     "2.61": {
+      "2^(p-1) G((p+1)/2)/(sqrt(pi) G(p))": 1.11516972235828,
+      "1/G(p/2)": 1.11516972235828,
+      "f1_TS/pi": 2.86255260643034,
+      "f1_Lang(s=1.65)": 2.86255260643034
+     },
+     "3": {
+      "2^(p-1) G((p+1)/2)/(sqrt(pi) G(p))": 1.12837916709551,
+      "1/G(p/2)": 1.12837916709551,
+      "f1_TS/pi": 2.45553340770353,
+      "f1_Lang(s=1.65)": 2.45553340770353
+     },
+     "3.57": {
+      "2^(p-1) G((p+1)/2)/(sqrt(pi) G(p))": 1.07818119051245,
+      "1/G(p/2)": 1.07818119051245,
+      "f1_TS/pi": 2.22440393620702,
+      "f1_Lang(s=1.65)": 2.22440393620702
+     }
+    }
+   },
+   "reference": "Section 7.2",
+   "note": ""
+  },
+  {
+   "id": "F-QLT-07",
+   "title": "Eq. (21) compared with exact magnetostatic slab QLT for the TS2003 spectrum (s = 5/3, no dissipation range)",
+   "kind": "derived",
+   "inputs": {
+    "s": "5/3",
+    "normalization": "8 pi int_0^inf g dk = dB^2; D_mumu = 2 pi^2 Omega^2 (1-mu^2) g(k_res)/(v |mu| B^2)"
+   },
+   "outputs": {
+    "exact_over_form_vs_R": {
+     "0.001": 0.999999027778721,
+     "0.1": 0.99790978885189,
+     "0.5": 0.970286827807186,
+     "1": 0.911392405063289,
+     "2": 0.814981744342959,
+     "3": 0.79383170307179,
+     "5": 0.821150617539556,
+     "10": 0.900400683374662,
+     "100": 0.996243720450787,
+     "1000": 0.999907152406467
+    },
+    "minimum": {
+     "R": 3.0284426,
+     "exact_over_form": 0.793820697646137
+    }
+   },
+   "reference": "Section 7.2",
+   "note": "Eq. (21) is a sum of the R << 1 and R >> 1 asymptotes; the ratio tends to 1 in both limits."
+  },
+  {
+   "id": "F-SH-01",
+   "title": "Bohm limit example (proton)",
+   "kind": "derived",
+   "inputs": {
+    "B_nT": 5
+   },
+   "outputs": {
+    "rows": [
+     {
+      "T_MeV": 1.0,
+      "B_nT": 5,
+      "r_g_m": 28907090.0163035,
+      "r_g_au": 0.000193231961665237,
+      "kappa_Bohm_m2_s": 133262356384793.0
+     },
+     {
+      "T_MeV": 10.0,
+      "B_nT": 5,
+      "r_g_m": 91631075.155346,
+      "r_g_au": 0.000612515904983038,
+      "kappa_Bohm_m2_s": 1326303002324010.0
+     },
+     {
+      "T_MeV": 100.0,
+      "B_nT": 5,
+      "r_g_m": 296594132.684785,
+      "r_g_au": 0.00198260931988509,
+      "kappa_Bohm_m2_s": 1.26912408854396e+16
+     }
+    ]
+   },
+   "reference": "Section 8.1, Eq. (26)",
+   "note": ""
+  },
+  {
+   "id": "F-SH-02",
+   "title": "Afanasiev et al. (2015): steady-state wave intensity gives lambda = 3(u1-VA)(x+x0)/v",
+   "kind": "derived",
+   "inputs": {
+    "relation": "nu = pi Omega^2 I_w(k=Omega/v)/(v B^2)"
+   },
+   "outputs": {
+    "lambda_from_nu_over_printed_lambda": 1.0
+   },
+   "reference": "Section 8.2",
+   "note": "Exact algebra: pi Omega^2/(v B^2) * Omega B^2 (v/Omega)^3 /(3 pi (u1-VA)(x+x0)) = v^2/(3 (u1-VA)(x+x0))."
+  },
+  {
+   "id": "F-SH-03",
+   "title": "Subashchandar et al. (2025) inline relations with their printed numbers",
+   "kind": "derived",
+   "inputs": {
+    "W1_km_s": 286,
+    "V_sh_km_s": 556,
+    "theta_Bn_deg": 66
+   },
+   "outputs": {
+    "rows": [
+     {
+      "channel": "75 keV",
+      "Delta_t_min": 5.2,
+      "kappa_rr_cm2_s": 4.9612992e+17,
+      "kappa_par_cm2_s": 2.99894719508628e+18
+     },
+     {
+      "channel": "750 keV",
+      "Delta_t_min": 12,
+      "kappa_rr_cm2_s": 1.1449152e+18,
+      "kappa_par_cm2_s": 6.92064737327603e+18
+     }
+    ]
+   },
+   "reference": "Section 8.5",
+   "note": "The paper plots these values but does not print them."
+  },
+  {
+   "id": "F-SH-04",
+   "title": "M-FLAMPA numerical floor D_min = 0.1 R_s x 1e5 m/s",
+   "kind": "derived",
+   "inputs": {
+    "R_s_m": 695700000.0
+   },
+   "outputs": {
+    "D_min_m2_s": 6957000000000.0,
+    "D_min_cm2_s": 6.957e+16
+   },
+   "reference": "Section 8.4",
+   "note": "Uses the IAU nominal solar radius; the paper does not state its value of R_s."
+  },
+  {
+   "id": "F-GCR-01",
+   "title": "NWU rigidity factor G(P) properties (2006 parameters)",
+   "kind": "derived",
+   "inputs": {
+    "a": 0.56,
+    "b": 1.95,
+    "c": 3.0,
+    "P_k_GV": 4.0
+   },
+   "outputs": {
+    "G(1 GV)": 1.0,
+    "logarithmic_slope_at_P_GV": {
+     "1e-4": 0.56,
+     "1e4": 1.95
+    }
+   },
+   "reference": "Section 9.2",
+   "note": ""
+  },
+  {
+   "id": "F-GCR-02",
+   "title": "Potgieter et al. (2014): lambda_par(1 GV) implied by Table 1 and Eq. 5",
+   "kind": "derived (consistency check)",
+   "inputs": {
+    "relation": "lambda(1 GV) = lambda(100 MV)/G(0.1 GV) at fixed B; b = 1.95, c = 3.0"
+   },
+   "outputs": {
+    "by_year": {
+     "2006": {
+      "G(0.1 GV)": 0.273453410000496,
+      "implied_lambda_par_1GV_au": 0.146277203125488
+     },
+     "2007": {
+      "G(0.1 GV)": 0.3286275488525,
+      "implied_lambda_par_1GV_au": 0.182577511257068
+     },
+     "2008": {
+      "G(0.1 GV)": 0.404112393358312,
+      "implied_lambda_par_1GV_au": 0.222710318909225
+     },
+     "2009": {
+      "G(0.1 GV)": 0.520909141748596,
+      "implied_lambda_par_1GV_au": 0.23036646966337
+     }
+    },
+    "printed_text_Sec5": "arXiv v3 (final): increased by a factor of ~2.3, from ~0.13 AU in 2006, to ~0.3 AU in 2009; v1-v2 printed ~23 and ~30 AU"
+   },
+   "reference": "Section 9.3",
+   "note": "Derived under lambda = 3K/v (beta cancels)."
+  },
+  {
+   "id": "F-GCR-03",
+   "title": "Corti (2019) and NWU (2014) normalization identity, Eq. (35)",
+   "kind": "derived",
+   "inputs": {
+    "a": 0.8,
+    "b": 1.7,
+    "s=c": 2.2,
+    "R_k_GV": 4.3,
+    "(K_par)_0": 1
+   },
+   "outputs": {
+    "k0_Corti_over_K0_NWU": 3.16037378276087,
+    "rows": [
+     {
+      "R_GV": 0.5,
+      "NWU_shape": 0.56714610987823,
+      "Corti_shape_with_converted_k0": 0.56714610987823,
+      "rel_diff": 0.0
+     },
+     {
+      "R_GV": 1.0,
+      "NWU_shape": 1.0,
+      "Corti_shape_with_converted_k0": 1.0,
+      "rel_diff": 0.0
+     },
+     {
+      "R_GV": 4.3,
+      "NWU_shape": 4.19649862344652,
+      "Corti_shape_with_converted_k0": 4.19649862344652,
+      "rel_diff": 0.0
+     },
+     {
+      "R_GV": 20.0,
+      "NWU_shape": 43.7050630943363,
+      "Corti_shape_with_converted_k0": 43.7050630943363,
+      "rel_diff": 0.0
+     }
+    ]
+   },
+   "reference": "Section 9.2",
+   "note": ""
+  },
+  {
+   "id": "F-GCR-04",
+   "title": "Vos & Potgieter (2015): (K_par)_0 implied by lambda_par(1 GV) and B_e",
+   "kind": "derived (not published)",
+   "inputs": {
+    "relation": "(K_par)_0 = lambda(1 GV) c (B_e/1 nT)/3, from lambda = 3K/v and G(1 GV) = 1",
+    "B_e": "Table 1 year-end values"
+   },
+   "outputs": {
+    "by_period": {
+     "2006e": {
+      "implied_(K_par)_0_cm2_s": 5.49077900573229e+23,
+      "in_units_of_1e22": 54.9077900573229
+     },
+     "2007e": {
+      "implied_(K_par)_0_cm2_s": 5.78794393011342e+23,
+      "in_units_of_1e22": 57.8794393011342
+     },
+     "2008e": {
+      "implied_(K_par)_0_cm2_s": 5.95989236356909e+23,
+      "in_units_of_1e22": 59.5989236356909
+     },
+     "2009e": {
+      "implied_(K_par)_0_cm2_s": 7.03765713157057e+23,
+      "in_units_of_1e22": 70.3765713157057
+     }
+    }
+   },
+   "reference": "Section 9.3",
+   "note": "Assumes the 2015 paper uses the 2016 normalization B0 = 1 nT, P0 = 1 GV (illegible in the 2015 extraction)."
+  },
+  {
+   "id": "F-GCR-05",
+   "title": "HelMod K0 and K_par evaluations",
+   "kind": "derived",
+   "inputs": {
+    "K_par": "(beta/3) K0 (P/GV + g_low)(1 + r/AU) with K0 as a number in AU^2 GV^-1 s^-1",
+    "g_low_example": 0.3,
+    "r_au": 1,
+    "K0_example": "c0 of A<0 asc (SSN=0)"
+   },
+   "outputs": {
+    "1 AU^2/s in cm^2/s": 2.23795229179739e+26,
+    "c0_A<0asc_cm2_s_GV": 6.84589606060822e+22,
+    "K0_SSN_by_row_and_SSN": {
+     "A<0 asc": {
+      "0": 0.0003059,
+      "50": 0.0002089525,
+      "100": 0.00015492,
+      "150": 0.0001225175
+     },
+     "A<0 desc": {
+      "0": 0.0002876,
+      "50": 0.00015808875,
+      "100": 0.00011261,
+      "150": 0.00010849625
+     },
+     "A>0 asc": {
+      "0": 0.0002262,
+      "50": 0.00020091,
+      "100": 0.00017562,
+      "150": 0.00015033
+     },
+     "A>0 desc": {
+      "0": 0.0002267,
+      "50": 0.00019111,
+      "100": 0.00015552,
+      "150": 0.00011993
+     }
+    },
+    "K0_NMCR_MCMU": {
+     "210": 6.59476205650587e-05,
+     "250": 0.000119588992237769,
+     "300": 0.000465127145379235
+    },
+    "K_par_examples": [
+     {
+      "P_GV": 1.0,
+      "beta": 0.729256202844207,
+      "K_par_AU2_s": 0.000193335542790037,
+      "K_par_cm2_s": 4.32675721072857e+22
+     },
+     {
+      "P_GV": 10.0,
+      "beta": 0.995627079257409,
+      "K_par_AU2_s": 0.00209132795500791,
+      "K_par_cm2_s": 4.68029218980991e+23
+     }
+    ]
+   },
+   "reference": "Section 9.4",
+   "note": "SSN and NMCR values are illustrative inputs inside the stated ranges; outputs are not published values."
+  },
+  {
+   "id": "F-GCR-06",
+   "title": "Tomassetti (2017) kappa0 = a/phi + b (central values)",
+   "kind": "derived",
+   "inputs": {
+    "phi_MV": [
+     400,
+     600,
+     1000
+    ]
+   },
+   "outputs": {
+    "kappa0": {
+     "NEWK": {
+      "400": 2.13375,
+      "600": 1.5525,
+      "1000": 1.0875
+     },
+     "OULU": {
+      "400": 2.10075,
+      "600": 1.53383333333333,
+      "1000": 1.0803
+     },
+     "APTY": {
+      "400": 2.1945,
+      "600": 1.603,
+      "1000": 1.1298
+     },
+     "JUNG": {
+      "400": 2.10475,
+      "600": 1.52983333333333,
+      "1000": 1.0699
+     }
+    }
+   },
+   "reference": "Section 9.5",
+   "note": ""
+  },
+  {
+   "id": "F-GCR-07",
+   "title": "Strauss et al. (2011) lambda and Wang et al. (2019) branch continuity",
+   "kind": "derived",
+   "inputs": {},
+   "outputs": {
+    "Strauss2011": [
+     {
+      "P_GV": 0.1,
+      "r_au": 1.0,
+      "lambda_par_au": 0.3
+     },
+     {
+      "P_GV": 0.1,
+      "r_au": 10.0,
+      "lambda_par_au": 1.65
+     },
+     {
+      "P_GV": 1.0,
+      "r_au": 1.0,
+      "lambda_par_au": 0.3
+     },
+     {
+      "P_GV": 1.0,
+      "r_au": 10.0,
+      "lambda_par_au": 1.65
+     },
+     {
+      "P_GV": 10.0,
+      "r_au": 1.0,
+      "lambda_par_au": 3.0
+     },
+     {
+      "P_GV": 10.0,
+      "r_au": 10.0,
+      "lambda_par_au": 16.5
+     }
+    ],
+    "Wang2019_continuity_beta_B_factor_1": {
+     "R=0.1 GV low branch (k units)": 0.0333333333333333,
+     "R=0.1 GV high branch (k units)": 0.0333333333333333
+    }
+   },
+   "reference": "Section 9.5",
+   "note": ""
+  },
+  {
+   "id": "F-GCR-08",
+   "title": "Duan (2025) and Corti (2019) shapes for b > a: same limiting slopes, different transition",
+   "kind": "derived",
+   "inputs": {
+    "a": 0.8,
+    "b": 1.7,
+    "c=s": 2.2,
+    "R_k_GV": 4.3
+   },
+   "outputs": {
+    "log_slopes": {
+     "1e-12": {
+      "Duan": 0.80001,
+      "Corti": 0.8
+     },
+     "0.01": {
+      "Duan": 0.8695,
+      "Corti": 0.8
+     },
+     "1000": {
+      "Duan": 1.6126,
+      "Corti": 1.7
+     },
+     "1e14": {
+      "Duan": 1.7,
+      "Corti": 1.7
+     }
+    },
+    "value_at_Rk": {
+     "Duan": 4.59479341998814,
+     "Corti": 1.32784882798911
+    }
+   },
+   "reference": "Section 9.5",
+   "note": "Valid because b > a here; for b < a the printed Duan form reverses the limiting slopes (F-GCR-09, D-33)."
+  },
+  {
+   "id": "F-GCR-09",
+   "title": "Duan (2025) printed form with b < a: limiting slopes reversed relative to the prose and to Corti (2019)",
+   "kind": "derived",
+   "inputs": {
+    "a": 1.7,
+    "b": 0.8,
+    "c=s": 2.2,
+    "R_k_GV": 4.3
+   },
+   "outputs": {
+    "log_slopes": {
+     "1e-12": {
+      "Duan_numerical": 0.80001,
+      "Duan_slope_formula": 0.80001,
+      "Corti_numerical": 1.7
+     },
+     "0.01": {
+      "Duan_numerical": 0.8695,
+      "Duan_slope_formula": 0.8695,
+      "Corti_numerical": 1.7
+     },
+     "4.3": {
+      "Duan_numerical": 1.25,
+      "Duan_slope_formula": 1.25,
+      "Corti_numerical": 1.25
+     },
+     "1000": {
+      "Duan_numerical": 1.6126,
+      "Duan_slope_formula": 1.6126,
+      "Corti_numerical": 0.80001
+     },
+     "1e14": {
+      "Duan_numerical": 1.7,
+      "Duan_slope_formula": 1.7,
+      "Corti_numerical": 0.8
+     }
+    },
+    "limits": {
+     "Duan_low": 0.8,
+     "Duan_high": 1.7,
+     "Corti_low": 1.7,
+     "Corti_high": 0.8
+    },
+    "value_at_Rk": {
+     "Duan": 4.59479341998814,
+     "Corti": 0.753097776585306
+    }
+   },
+   "reference": "Section 9.5, Section 21.8, Eq. (47)",
+   "note": "Illustrative parameters (a and b of F-GCR-08 interchanged), not a published set. The printed Duan form has slope b below R_k and a above it when b < a (D-33)."
+  },
+  {
+   "id": "F-NUM-01",
+   "title": "Stable evaluation of Eqs. (18) and (25), and closed forms of the exact slab-QLT integrals",
+   "kind": "derived",
+   "inputs": {
+    "s_TS": "5/3",
+    "nu_Zank": "5/6"
+   },
+   "outputs": {
+    "hewan_series": {
+     "1e-8": {
+      "lambda_over_lambda0": 1.0,
+      "series_through_x8": 1.0,
+      "first_omitted_term": 1.0776e-82
+     },
+     "1e-6": {
+      "lambda_over_lambda0": 0.9999999999996,
+      "series_through_x8": 0.9999999999996,
+      "first_omitted_term": 1.0776e-62
+     },
+     "1e-4": {
+      "lambda_over_lambda0": 0.999999996,
+      "series_through_x8": 0.999999996,
+      "first_omitted_term": 1.0776e-42
+     },
+     "0.01": {
+      "lambda_over_lambda0": 0.999960001618982,
+      "series_through_x8": 0.999960001618982,
+      "first_omitted_term": 1.0776e-22
+     },
+     "0.05": {
+      "lambda_over_lambda0": 0.999001010880667,
+      "series_through_x8": 0.999001010880668,
+      "first_omitted_term": 1.0524e-15
+     },
+     "0.1": {
+      "lambda_over_lambda0": 0.996016125132549,
+      "series_through_x8": 0.996016125133622,
+      "first_omitted_term": 1.0776e-12
+     },
+     "0.5": {
+      "lambda_over_lambda0": 0.909188225759766,
+      "series_through_x8": 0.909197781385281,
+      "first_omitted_term": 1.0524e-05
+     }
+    },
+    "zank_aux_small_s": {
+     "1e-8": {
+      "A": 8.33333333333333e-17,
+      "q": 2.0,
+      "bracket": 1.0
+     },
+     "1e-4": {
+      "A": 8.33333332638889e-09,
+      "q": 1.99999999833333,
+      "bracket": 1.00000000064103
+     },
+     "0.01": {
+      "A": 8.33326389158936e-05,
+      "q": 1.99998333449065,
+      "bracket": 1.00000641027343
+     },
+     "0.1": {
+      "A": 0.00832641574969837,
+      "q": 1.99834481787068,
+      "bracket": 1.00064119309802
+     },
+     "1": {
+      "A": 0.781797436280679,
+      "q": 1.89925309037146,
+      "bracket": 1.0643480896859
+     },
+     "10": {
+      "A": 45.802366319806,
+      "q": 1.68619295892235,
+      "bracket": 5.38852989350338
+     }
+    },
+    "zank_q_limit_s_to_0": 2.0,
+    "zank_exact_over_inertial": {
+     "0.01": {
+      "2F1(-nu,1-nu;3-nu;-x^2)": 1.00000641023673,
+      "quadrature": 1.00000641023673
+     },
+     "0.1": {
+      "2F1(-nu,1-nu;3-nu;-x^2)": 1.00064082923158,
+      "quadrature": 1.00064082923158
+     },
+     "1": {
+      "2F1(-nu,1-nu;3-nu;-x^2)": 1.06243852893212,
+      "quadrature": 1.06243852893212
+     },
+     "5.7868": {
+      "2F1(-nu,1-nu;3-nu;-x^2)": 2.65101089534482,
+      "quadrature": 2.65101089534482
+     },
+     "100": {
+      "2F1(-nu,1-nu;3-nu;-x^2)": 209.981365814403,
+      "quadrature": 209.981365814403
+     }
+    },
+    "ts_exact_closed_form": {
+     "0.1": {
+      "J_tilde": 119.355141435757,
+      "exact_over_form_closed": 0.997909788851892,
+      "exact_over_form_quadrature": 0.99790978885189
+     },
+     "1": {
+      "J_tilde": 2.57142857142857,
+      "exact_over_form_closed": 0.911392405063291,
+      "exact_over_form_quadrature": 0.911392405063289
+     },
+     "3": {
+      "J_tilde": 0.525573192239859,
+      "exact_over_form_closed": 0.793831703071791,
+      "exact_over_form_quadrature": 0.79383170307179
+     },
+     "10": {
+      "J_tilde": 0.274982142857143,
+      "exact_over_form_closed": 0.900400683374662,
+      "exact_over_form_quadrature": 0.900400683374662
+     },
+     "1000": {
+      "J_tilde": 0.250002499999821,
+      "exact_over_form_closed": 0.999907152406467,
+      "exact_over_form_quadrature": 0.999907152406467
+     }
+    },
+    "ts_minimum_closed_form": {
+     "R": 3.0284426,
+     "exact_over_form": 0.793820697646137
+    }
+   },
+   "reference": "Section 21.4, Eqs. (43), (44), (45)",
+   "note": "Reference values at 40 digits. A float64 evaluation of 3(x - tanh x)/x^3 or of 1 + s^2 - (1 + s^2)^(1/6) at the smallest arguments fails by cancellation; the series and expm1/log1p forms of Section 21.4 reproduce these values."
+  },
+  {
+   "id": "F-PERP-01",
+   "title": "Droge Lambda_perp mu-average equals PARADISE kappa_perp",
+   "kind": "derived",
+   "inputs": {
+    "Lambda_perp(mu)": "alpha lambda_par (r/1AU)^2 cos psi sqrt(1-mu^2)",
+    "kappa_perp": "(1/2) int (v/3) Lambda_perp dmu"
+   },
+   "outputs": {
+    "<sqrt(1-mu^2)>": 0.785398163397448,
+    "pi/4": 0.785398163397448
+   },
+   "reference": "Section 10",
+   "note": "Then kappa_perp = (pi/12) alpha v lambda_par (r/1AU)^2 cos psi, which equals PARADISE (pi/12) alpha v lambda_par B0/B if B0/B = (r/1AU)^2 cos psi (Parker field, B0 the 1 AU radial field)."
+  }
+ ]
+}
