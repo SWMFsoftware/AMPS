@@ -333,6 +333,12 @@ void ParseInstalledApplicationInput() {
     std::cout << SEP3D::RuntimeModel::Sep3dApplicationInputSummary(parsed)
               << "  pre_mesh_configuration_fingerprint="
               << resolved->physics_fingerprint() << '\n';
+    if (!resolved->options().parallelDiffusionModelId.empty())
+      std::cout << "  parallel_diffusion_model="
+                << resolved->options().parallelDiffusionModelId << '\n'
+                << "  parallel_diffusion_configuration_fingerprint="
+                << resolved->options()
+                       .parallelDiffusionConfigurationFingerprint << '\n';
   }
 }
 
@@ -661,6 +667,12 @@ void FinalizeParticleNumericsAfterMeshAllocation() {
                 << options.observers[index].cadenceS << '\n';
     std::cout << "  final_configuration_fingerprint="
               << resolved->physics_fingerprint() << std::defaultfloat << '\n';
+    if (!resolved->options().parallelDiffusionModelId.empty())
+      std::cout << "  parallel_diffusion_model="
+                << resolved->options().parallelDiffusionModelId << '\n'
+                << "  parallel_diffusion_configuration_fingerprint="
+                << resolved->options()
+                       .parallelDiffusionConfigurationFingerprint << '\n';
   }
 }
 
@@ -1660,6 +1672,8 @@ SEP3D::Core::Status ResolveLocalTransportImpl(
       coefficientOptions.spatialQuadratureRelativeTolerance;
   coefficientSelection.quadratureMaximumRecursion =
       coefficientOptions.spatialQuadratureMaximumRecursion;
+  coefficientSelection.timeS = ApplicationRuntime().CurrentTimeS();
+  coefficientSelection.solarOriginM = coefficientOptions.coordinateOriginM;
   const bool parkerMover = coefficientOptions.transport ==
       RuntimeModel::TransportModel::Parker3D;
   const bool focusedDiffusionMover = coefficientOptions.transport ==
@@ -1683,6 +1697,11 @@ SEP3D::Core::Status ResolveLocalTransportImpl(
   local->meanFreePathM = coefficients.meanFreePathM;
   local->dMuMuPerS = coefficients.dMuMuPerS;
   local->dDmuMuDmuPerS = coefficients.dDmuMuDmuPerS;
+  local->parallelDiffusionDiagnosticMask =
+      coefficients.parallelDiagnosticMask;
+  local->parallelDiffusionModelId = coefficients.parallelModelId;
+  local->parallelDiffusionConfigurationFingerprint =
+      coefficients.parallelConfigurationFingerprint;
 
   // The Parker Ito drift requires b-hat dot grad(kappa_parallel), not merely
   // kappa itself.  Evaluate the same provider/coefficient chain one local-cell
@@ -2888,6 +2907,10 @@ void PublishObserversAtBoundary() {
       metadata.simulationTimeS = runtime.CurrentTimeS();
       metadata.snapshotGeneration = runtime.active_snapshot()->generation;
       metadata.configurationFingerprint = Configuration().physics_fingerprint();
+      metadata.parallelDiffusionModelId =
+          Configuration().options().parallelDiffusionModelId;
+      metadata.parallelDiffusionConfigurationFingerprint =
+          Configuration().options().parallelDiffusionConfigurationFingerprint;
       metadata.codeIdentity = "srcSEP3D-R01-R07";
       metadata.snapshotFingerprint =
           runtime.active_snapshot()->providerIdentity + ":" +

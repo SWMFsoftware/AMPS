@@ -87,6 +87,14 @@ int main(int argc, char** argv) {
               << status.message << '\n';
     return EXIT_FAILURE;
   }
+  if (!request.configuration->options().parallelDiffusionModelId.empty()) {
+    std::cout << "[srcSEP3D] parallel_diffusion_model="
+              << request.configuration->options().parallelDiffusionModelId
+              << " parallel_diffusion_configuration_fingerprint="
+              << request.configuration->options()
+                     .parallelDiffusionConfigurationFingerprint
+              << '\n';
+  }
 
   if (request.commandLine.sectionInput) {
     status = SEP3D::InstallApplicationInputFile(

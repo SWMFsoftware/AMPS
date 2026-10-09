@@ -119,6 +119,11 @@ PublicationResult Publish(const std::string& outputDirectory,
   PublicationResult result;
   if (!snapshot.status.ok() || !SafeToken(prefix) ||
       !SafeToken(metadata.configurationFingerprint) ||
+      (metadata.parallelDiffusionModelId.empty() !=
+       metadata.parallelDiffusionConfigurationFingerprint.empty()) ||
+      (!metadata.parallelDiffusionModelId.empty() &&
+       (!SafeToken(metadata.parallelDiffusionModelId) ||
+        !SafeToken(metadata.parallelDiffusionConfigurationFingerprint))) ||
       !SafeToken(metadata.codeIdentity) ||
       !SafeToken(metadata.snapshotFingerprint) ||
       !std::isfinite(metadata.simulationTimeS) ||
@@ -171,7 +176,13 @@ PublicationResult Publish(const std::string& outputDirectory,
            << "snapshot_generation=" << metadata.snapshotGeneration << '\n'
            << "configuration_fingerprint="
            << metadata.configurationFingerprint << '\n'
-           << "code_identity=" << metadata.codeIdentity << '\n'
+           << "code_identity=" << metadata.codeIdentity << '\n';
+  if (!metadata.parallelDiffusionModelId.empty())
+    manifest << "parallel_diffusion_model="
+             << metadata.parallelDiffusionModelId << '\n'
+             << "parallel_diffusion_configuration_fingerprint="
+             << metadata.parallelDiffusionConfigurationFingerprint << '\n';
+  manifest
            << "snapshot_fingerprint=" << metadata.snapshotFingerprint << '\n'
            << "sampling_completed=" << snapshot.nextState.completedSamplings << '\n'
            << "observations_processed="
@@ -237,6 +248,19 @@ Core::Status ParseAndVerifyPublication(const std::string& directory,
   }
   candidate.metadata.configurationFingerprint =
       values["configuration_fingerprint"];
+  const bool hasParallelModel =
+      values.find("parallel_diffusion_model") != values.end();
+  const bool hasParallelFingerprint =
+      values.find("parallel_diffusion_configuration_fingerprint") !=
+          values.end();
+  if (hasParallelModel != hasParallelFingerprint)
+    return Error("parallel-diffusion publication identity is incomplete");
+  if (hasParallelModel) {
+    candidate.metadata.parallelDiffusionModelId =
+        values["parallel_diffusion_model"];
+    candidate.metadata.parallelDiffusionConfigurationFingerprint =
+        values["parallel_diffusion_configuration_fingerprint"];
+  }
   candidate.metadata.codeIdentity = values["code_identity"];
   candidate.metadata.snapshotFingerprint = values["snapshot_fingerprint"];
   for (const auto& artifact : candidate.artifactHashes) {

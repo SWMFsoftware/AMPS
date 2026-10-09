@@ -163,6 +163,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("COEF3D05", "COEF3D", "Invalid coefficient status", "cpp"),
     TestDefinition("COEF3D06", "COEF3D", "Parallel coefficient gradient", "cpp"),
     TestDefinition("COEF3D07", "COEF3D", "Selectable coefficient models", "cpp"),
+    TestDefinition("COEF3D08", "COEF3D", "Shared parallel-diffusion library bridge", "cpp"),
     TestDefinition("PRK3D01", "PRK3D", "Parallel diffusion moments", "cpp"),
     TestDefinition("PRK3D02", "PRK3D", "Advection", "cpp"),
     TestDefinition("PRK3D03", "PRK3D", "Orientation invariance", "cpp"),
@@ -315,7 +316,7 @@ SUITES: Dict[str, Tuple[str, ...]] = {
     "phase-t": tuple(item.test_id for item in TESTS
                      if item.group == "TUR3D" or
                      item.test_id in ("COEF3D01", "COEF3D02", "COEF3D06",
-                                      "COEF3D07")),
+                                      "COEF3D07", "COEF3D08")),
     "phase-p": tuple(item.test_id for item in TESTS
                      if item.group in ("PRK3D", "FTE3D", "RNG3D") or
                      item.test_id in ("COEF3D03", "COEF3D04", "COEF3D05",

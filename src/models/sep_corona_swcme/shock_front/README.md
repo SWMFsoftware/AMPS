@@ -149,6 +149,11 @@ proportional to the per-face rate above. The momentum-number law is
 local test-particle DSA value `q=3X/(X-1)`, and the initial direction is
 anti-sunward. These are srcSEP3D policies, not new provider physics; in
 particular they do not add an efficiency model or a downstream plasma volume.
+Because provider and immutable epoch cross the application boundary as
+separate objects, the sampler requires the epoch event identity to equal the
+provider's transitive physics fingerprint before it reads composition or
+accumulates any face rate. A foreign or missing identity is a transactional
+configuration conflict, not a zero-rate source.
 
 ## Connectivity, observers, outputs, and restart
 

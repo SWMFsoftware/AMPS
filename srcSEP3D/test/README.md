@@ -49,7 +49,7 @@ The shared-input parser and derived-numerics unit gates are:
 
 ```bash
 make -C srcSEP3D -j16 test/stage1
-srcSEP3D/test/stage1 --test CFG3D13 --test CFG3D14 --test CFG3D15 --test CFG3D16
+srcSEP3D/test/stage1 --test CFG3D13 --test CFG3D14 --test CFG3D15 --test CFG3D16 --test CFG3D17
 make -C src/models/sep_corona_swcme -j16 shock-front-test
 ```
 
@@ -67,6 +67,10 @@ times, rate-weighted face choice, square-root barycentric positions,
 relativistic energy-to-momentum sampling, fixed and compression-derived
 phase-space slopes, statistical-count convergence, and the reserved
 importance-weight mode's explicit failure.
+`CFG3D17` covers schema-5 `[parallel_diffusion]` parsing, model-specific key
+validation, immutable model and parameter identity, Runtime publication of the
+active function, Parker-only ownership, and typed rejection of unavailable
+turbulence/nucleon inputs.
 
 Run the entire selected reduced-profile campaign through one orchestrator:
 
@@ -260,12 +264,12 @@ The runner adds
 | `UTIL` | `UTIL02` | byte-exact shared-kernel reference record |
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
 | `R3D` | `R3D01`–`R3D09` | mover hook, requested-time loop, snapshot transaction, tick/events, source, observers, restart, canonical initialization source, finite empty-cell output |
-| `CFG3D` | `CFG3D01`–`CFG3D16` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line/schema-3 initialization, complete compiled AMPS species binding, turbulence selection, CME/Parker linkage, schema-4 mover/coefficient and fixed/local source choices, active-corridor connectivity, corner geometry, shared application-section parsing, global CFL/weight normalization, real-provider preflight, and constant-weight shock-surface sampling |
+| `CFG3D` | `CFG3D01`–`CFG3D17` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line/schema-3 initialization, complete compiled AMPS species binding, turbulence selection, CME/Parker linkage, schema-4 mover/coefficient and fixed/local source choices, active-corridor connectivity, corner geometry, shared application-section parsing, global CFL/weight normalization, real-provider preflight, constant-weight shock-surface sampling, and the schema-5 parallel-diffusion binding |
 | `MSH3D` | `MSH3D01`–`MSH3D15` | resolution, exact Parker geometry, balance, octree budget/ownership, presets, gradients, finite line, initialization Tecplot output, conservative active-corridor classification, hole-free AMR topology, and fixed solar-boundary geometry |
 | `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
 | `SNAP3D` | `SNAP3D01`–`SNAP3D08` | snapshot completeness, coupling conversion, atomicity, interpolation, batch/frame policy |
 | `TUR3D` | `TUR3D01`–`TUR3D06` | spectrum, AWSoM convention, resonance, missing-data policy, selectable spectral/amplitude closures, and mandatory Tecplot energy |
-| `COEF3D` | `COEF3D01`–`COEF3D07` | conversion/shared identity, tensor assembly, Itô drift, rejection, field-aligned gradient stencil, and selected-model/required-quantity isolation |
+| `COEF3D` | `COEF3D01`–`COEF3D08` | conversion/shared identity, tensor assembly, Itô drift, rejection, field-aligned gradient stencil, selected-model isolation, and the schema-5 shared-library bridge |
 | `PRK3D` | `PRK3D01`–`PRK3D08` | Parker moments, characteristics, PDE/first passage, and named limits |
 | `FTE3D` | `FTE3D01`–`FTE3D09` | focused streaming, focusing, pitch diffusion/boundaries, event-driven scattering, frame-energy invariants, momentum, and strong-scattering limit |
 | `POP3D` | `POP3D01` | relativistic three-to-two weight, momentum, total-energy, and centroid conservation |
@@ -671,7 +675,8 @@ env MAKEFLAGS="-j16" srcSEP3D/test/run_tests.py --all \
 | `CFG3D13` | shared sep3d sections, recursive includes, comments, continuations, CLI defaulting, immutable pre-mesh commit, and provenance-rich negative cases |
 | `CFG3D14` | distributed mesh-CFL step, exact upward cadence alignment, per-species normalization weights, and unsupported-species rejection |
 | `CFG3D15` | maintained shared-input example, checksummed magnetic asset, actual reduced provider, and side-effect-free positive accepted-shock normalization |
-| `CFG3D16` | constant-weight Poisson source, independent accepted-face sum, face/position/momentum distributions, containment, count convergence, and explicit rejection of the reserved importance-weight mode |
+| `CFG3D16` | constant-weight Poisson source, independent accepted-face sum, transactional provider/epoch event-identity rejection, face/position/momentum distributions, containment, count convergence, and explicit rejection of the reserved importance-weight mode |
+| `CFG3D17` | schema-5 section/parser contract, Parker-only ownership, unavailable-state rejection, active-function installation, and model/parameter restart identity |
 
 ```bash
 python3 test/run_tests.py --suite improvements-c --rebuild \
@@ -733,6 +738,7 @@ python3 test/run_tests.py --suite phase-b --rebuild \
 | `COEF3D02` | srcSEP3D bridge and direct `sep_common` Jokipii calls are bitwise identical |
 | `COEF3D06` | centered and both one-sided stencils recover an exact nonzero linear `dKappa_parallel/ds`; no usable neighbor fails closed |
 | `COEF3D07` | selector dispatch isolates unused physics and reproduces analytic constant-MFP, species-charge-aware radial-rigidity MFP, and constant-Dmumu limits |
+| `COEF3D08` | srcSEP3D evaluates the active shared model, preserves its exact kappa/lambda pair and provenance, and does not also apply focused scattering |
 
 ```bash
 python3 test/run_tests.py --suite phase-t --rebuild \
@@ -740,7 +746,7 @@ python3 test/run_tests.py --suite phase-t --rebuild \
 ```
 
 `phase-t` deliberately contains `COEF3D01–02` and the host-neutral
-`COEF3D06–07` selector/stencil tests; the later tensor/drift
+`COEF3D06–08` selector/stencil/library tests; the later tensor/drift
 coefficient tests belong to Phase P even though they share the `COEF3D` group.
 
 ### Phase P transport gates
@@ -853,12 +859,12 @@ equations, algorithms, case roles, and evidence schemas.
 | `r0` | R0 source/ABI/production gates plus RUN3D01, LAY01, and BLD01 |
 | `r1` | canonical shared-archive audit, relocated SWCME suite, and frozen common kernels |
 | `r2` | LIFE3D01–LIFE3D04 immutable configuration and lifecycle gates |
-| `improvements-c` | CFG3D01–CFG3D16 production configuration, preflight, finite-line/schema-3 initialization, species/turbulence/source selection, CME linkage, mover/coefficient selection, active-corridor, corner-domain, shared-section parser, derived numerics, provider preflight, and source-sampling gates |
+| `improvements-c` | CFG3D01–CFG3D17 production configuration, preflight, finite-line/schema-3 initialization, species/turbulence/source selection, CME linkage, mover/coefficient selection, active-corridor, corner-domain, shared-section parser, derived numerics, provider preflight, source-sampling, and schema-5 parallel-diffusion gates |
 | `improvements-r` | R3D01–R3D09 production runtime integration gates |
 | `improvements-v` | V1D01–05 controlled physics, V2D01 true parity, and V5D01 governance |
 | `phase-m` | MSH3D01–MSH3D15 mesh/storage, finite active-corridor, hole-free topology, fixed photosphere, and initialization-output gates |
 | `phase-b` | BGP3D01–06 and SNAP3D01–08 background/snapshot gates |
-| `phase-t` | TUR3D01–06, COEF3D01–02, and COEF3D06–07 turbulence/coefficient gates |
+| `phase-t` | TUR3D01–06, COEF3D01–02, and COEF3D06–08 turbulence/coefficient gates |
 | `phase-p` | COEF3D03–05, PRK3D01–08, FTE3D01–09, RNG3D01–03, and POP3D01 |
 | `phase-a` | ADP3D01, NAT3D04–05/08, SHK3D01–04 |
 | `phase-o` | NAT3D06–07 and RST3D01–03 |

@@ -10,8 +10,8 @@ adding its own center-node write loop or halo protocol.
 
 | Entry point | Contract |
 |---|---|
-| `ParseConfigurationText` / `LoadConfigurationFile` | Parse explicit model selections and canonically resolve SWCME assignments |
-| `RunConfiguration3D::Create` | Freeze normalized options, storage layout and physics identity; check authority/ID pairing |
+| `ParseConfigurationText` / `LoadConfigurationFile` | Parse explicit model selections, preserve schema-5 case-sensitive parallel-model assignments, and canonically resolve SWCME assignments |
+| `RunConfiguration3D::Create` | Call the shared parallel-model reader when selected; freeze normalized options, storage layout, model fingerprint and physics identity; check authority/ID pairing |
 | `CreateBackgroundProvider` | Construct a built-in or registered candidate; validate before replacing the caller's output |
 | `RegisterBackgroundModel` | Register a nonempty unique extension ID on each rank before acquisition |
 | `BackgroundAuthorityMatches` | Check metadata provenance against the configured authority |
@@ -22,6 +22,15 @@ Schema 4 accepts `background.provider=swcme` for the canonical runtime, or
 Schema 3 retains its original standalone Parker contract. Prescribed turbulence
 remains required for these standalone inputs. SWMF import still uses its typed
 host. The reserved Python provider remains unimplemented.
+
+Schema 5 adds a Parker-only `parallel-diffusion-library` selector and requires
+`[parallel_diffusion]`. Runtime installation is transactional: the model's
+validated parameters are installed before the immutable configuration becomes
+active, and their fingerprint is checked against the value frozen by the
+factory. Replacement is legal only in the existing pristine pre-mesh state.
+Focused movers and inactive library sections are rejected. The complete model
+identity participates in restart compatibility, so a changed coefficient law
+cannot resume an old particle state.
 
 SWCME construction re-resolves the retained canonical assignments and compares
 both manifest and fingerprint with the frozen shock configuration. It never

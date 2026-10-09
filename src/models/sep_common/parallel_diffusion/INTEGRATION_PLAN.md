@@ -1,32 +1,30 @@
-# Parker mover integration plan
+# Parker mover integration record
 
-This plan records how the shared parallel-diffusion selector will enter the
-existing Parker paths. The standalone revision-1.4 backends and batch API are
-implemented and qualified; D14 and PD11 are explicitly deferred by the user's
-2026-10-08 direction. It is a plan, not a claim that either application
-currently consumes the new library.
+This record distinguishes the implemented srcSEP3D binding from the still-open
+srcSEP and native-qualification work. The standalone revision-1.4 backends and
+batch API remain shared and host-neutral. D13--D16 were approved for srcSEP3D
+on 2026-10-08; those decisions do not silently apply to srcSEP.
 
 ## Shared build and configuration boundary
 
-1. Promote `parallel_diffusion.o` into the canonical `sep_common.a` membership
-   only after updating both applications' exact shared-member audits and the
-   source manifest in one change. Until then the subdirectory builds a
-   standalone archive, preventing an unqualified backend from silently
-   replacing the seven established kernels.
+1. srcSEP3D builds the canonical standalone `libparallel_diffusion.a` and
+   flattens its two objects into `mainlib.a`; the seven-member `sep_common.a`
+   remains unchanged until both application ownership audits are updated.
 2. Add one application adapter per host. Each adapter converts existing host
    species/background records to `ParticleState` and one coherent
    `LocalState`. Unit conversion happens there exactly once. PIC, MPI, mesh,
    and application headers remain outside this library.
-3. After D14 is resumed, add a `[parallel_diffusion]` section to the `srcSEP3D` INI parser and a
-   `ParallelDiffusion on` block to the legacy `srcSEP` parser. Both collect
+3. srcSEP3D schema 5 now implements `[parallel_diffusion]`. The future
+   `ParallelDiffusion on` block in the legacy `srcSEP` parser will collect
    source-located string assignments, convert supported external units if the
    application syntax permits them, then call `BuildConfiguration` and
    `SetActiveConfiguration`. Unknown, duplicate, missing, and inactive-model
    keys fail before particle initialization. Preserve all existing input
    choices as explicit compatibility mappings; do not silently reinterpret an
    old coefficient name as a scientifically different new backend.
-4. Freeze the active configuration before mover threads start and publish the
-   stable model ID plus configuration fingerprint in startup/output metadata.
+4. srcSEP3D freezes the active configuration during serial Runtime setup and
+   includes the stable model ID, complete validated parameters, and library
+   fingerprint in its physics/restart manifest.
 
 ## `srcSEP` consumer
 
@@ -59,31 +57,30 @@ PIC adapter, not in the stochastic step:
 
 ## `srcSEP3D` consumer
 
-`ResolveLocalTransportImpl` in `srcSEP3D/main_lib.cpp` currently builds a
+`ResolveLocalTransportImpl` in `srcSEP3D/main_lib.cpp` builds a
 `CoefficientSelection`, calls `Turbulence::EvaluateLocalScattering`, assigns
 `LocalTransportRecord::kappaParallelM2PerS`, and obtains the parallel gradient
 from two neighbor evaluations. The shared binding should preserve that
 separation:
 
-1. Add a new explicit `SpatialDiffusionModel` selection in
+1. Implemented: a new explicit `SpatialDiffusionModel` selection in
    `srcSEP3D/runtime/run_configuration.h`; do not overload
    `CorrelationMeanFreePath` or `PitchAngleIntegral` with new meanings.
-2. In `Turbulence::EvaluateLocalScattering`, dispatch that selection through a
+2. Implemented: `Turbulence::EvaluateLocalScattering` dispatches through a
    small adapter that builds `ParticleState`/`LocalState` from the already
    coherent background, turbulence, position, species, charge, momentum, and
    generation arguments. Return the shared finite kappa and provenance.
-3. Keep `ResolveLocalTransportImpl`'s bounded neighbor stencil for
+3. Implemented: `ResolveLocalTransportImpl` keeps its bounded neighbor stencil for
    `dKappaParallelDsMPerS` until PD09 supplies and validates every required
    local/provider derivative. The Parker mover in
    `srcSEP3D/transport/parker_transport.cpp` remains coefficient-agnostic.
-4. For `constant_ratio` perpendicular diffusion, continue deriving
+4. Implemented: `constant_ratio` perpendicular diffusion continues deriving
    `kappa_perp` from the selected shared parallel value exactly once. Other
    perpendicular closures and field-direction derivatives retain their own
    existing ownership.
-5. Extend configuration fingerprints, restart compatibility, publication,
-   parser tests, COEF3D tests, transport tests, and one-/four-rank native
-   evidence. Verify the same shared configuration produces the same scalar
-   coefficient in both applications at identical SI states.
+5. Implemented component scope: configuration/restart fingerprints plus
+   `CFG3D17` and `COEF3D08`. Still required: native one-/four-rank evidence and
+   cross-application scalar parity after srcSEP obtains its own approved binding.
 
 ## Required transport acceptance before activation
 
@@ -97,7 +94,6 @@ separation:
 - configuration/restart provenance identifies requested/evaluated backend,
   parameters, background revision, and any future explicit fallback.
 
-Application binding is PD11 and remains pending until the standalone roadmap
-and D14 host contract are authorized. No current source deck selects this
-library. The latest approved direction deliberately leaves this work for a
-later task; no srcSEP3D source was changed by the standalone completion.
+PD11 is partial: srcSEP3D binding is implemented, while srcSEP binding and the
+native acceptance bullets above remain pending. No maintained production deck
+selects schema 5 yet.

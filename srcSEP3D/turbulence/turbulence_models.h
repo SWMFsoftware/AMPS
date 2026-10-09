@@ -197,6 +197,13 @@ struct LocalScatteringCoefficients {
   double dMuMuPerS = 0.0;
   double dDmuMuDmuPerS = 0.0;
   std::uint64_t turbulenceGeneration = 0;
+  // Present for the schema-5 library path. Diagnostics are reported exactly as
+  // returned; srcSEP3D never turns a concern bit into an undocumented clamp or
+  // fallback. Provenance is retained independently from the scalar so output
+  // and failure diagnostics can identify the evaluated closure.
+  std::uint32_t parallelDiagnosticMask = 0;
+  std::string parallelModelId;
+  std::string parallelConfigurationFingerprint;
 };
 
 // Complete coefficient-selection record copied from the immutable run
@@ -224,6 +231,11 @@ struct CoefficientSelection {
   double quadratureAbsoluteToleranceM2PerS = 0.0;
   double quadratureRelativeTolerance = 1.0e-6;
   unsigned quadratureMaximumRecursion = 20;
+  // Coordinate time [s] sampled from the same immutable Runtime state as the
+  // background/turbulence generation. It is used only when a selected shared
+  // table has an explicit time axis; no time multiplier is inferred from it.
+  double timeS = 0.0;
+  Core::Vec3 solarOriginM;
   // The resolver evaluates only quantities consumed by the selected mover.
   // This prevents an unused resonance gap (for example D_mumu under the
   // discrete mean-free-path mover) from invalidating otherwise complete

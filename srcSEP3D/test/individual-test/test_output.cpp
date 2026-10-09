@@ -167,6 +167,8 @@ Result RunNAT3D07() {
   metadata.sequence = 5; metadata.simulationTimeS = 60.0;
   metadata.snapshotGeneration = 77;
   metadata.configurationFingerprint = "cfg-123";
+  metadata.parallelDiffusionModelId = "constant_kappa";
+  metadata.parallelDiffusionConfigurationFingerprint = "pd-sha256-123";
   metadata.codeIdentity = "commit-abc";
   metadata.snapshotFingerprint = "snapshot-77";
   const O::PublicationResult published =
@@ -176,6 +178,9 @@ Result RunNAT3D07() {
   const C::Status verified = O::ParseAndVerifyPublication(
       published.directory, &parsed);
   if (!verified.ok() || parsed.metadata.sequence != 5 ||
+      parsed.metadata.parallelDiffusionModelId != "constant_kappa" ||
+      parsed.metadata.parallelDiffusionConfigurationFingerprint !=
+          "pd-sha256-123" ||
       parsed.artifactHashes.size() != 4) {
     fs::remove_all(root); return Fail("independent schema/hash parser rejected output");
   }

@@ -54,6 +54,11 @@ SEP_COMMON_OBJECTS := \
     $(SEP_COMMON_DIR)/build/sep_test_registry.o \
     $(SEP_COMMON_DIR)/build/sep_injection_spectrum.o \
     $(SEP_COMMON_DIR)/build/sep_species_source.o
+PARALLEL_DIFFUSION_DIR ?= $(SEP_COMMON_DIR)/parallel_diffusion
+PARALLEL_DIFFUSION_ARCHIVE ?= $(PARALLEL_DIFFUSION_DIR)/libparallel_diffusion.a
+PARALLEL_DIFFUSION_OBJECTS := \
+    $(PARALLEL_DIFFUSION_DIR)/build/parallel_diffusion.o \
+    $(PARALLEL_DIFFUSION_DIR)/build/parallel_diffusion_advanced.o
 SWCME_DIR ?= $(AMPS_ROOT)/src/models/swcme
 SWCME_ARCHIVE ?= $(SWCME_DIR)/swcme.a
 SWCME_OBJECTS := $(SWCME_DIR)/build/swcme3d.o
@@ -277,17 +282,20 @@ sep-corona-swcme:
 
 $(SEP_CORONA_SWCME_ARCHIVE): sep-corona-swcme
 
-lib: $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE) $(SEP_CORONAL_CME_ARCHIVE) \
+lib: $(SEP_COMMON_ARCHIVE) $(PARALLEL_DIFFUSION_ARCHIVE) \
+     $(SWCME_ARCHIVE) $(SEP_CORONAL_CME_ARCHIVE) \
      $(SEP_CORONA_SWCME_ARCHIVE) $(MAINLIBOBJ)
 	# Keep the enclosing AMPS link contract unchanged: common objects are built
 	# once in their canonical model directories and inserted into this
 	# application's archive. Recreate the archive so ar cannot retain a retired
 	# member from a previous application version.
 	rm -f mainlib.a
-	ar -rcs mainlib.a $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS) \
+	ar -rcs mainlib.a $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) \
+		$(PARALLEL_DIFFUSION_OBJECTS) $(SWCME_OBJECTS) \
 		$(SEP_CORONAL_CME_OBJECTS) $(SEP_CORONA_SWCME_OBJECTS)
 	@members=$$(ar t mainlib.a); \
-	for member in $(notdir $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS) \
+	for member in $(notdir $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) \
+		$(PARALLEL_DIFFUSION_OBJECTS) $(SWCME_OBJECTS) \
 		$(SEP_CORONAL_CME_OBJECTS) $(SEP_CORONA_SWCME_OBJECTS)); do \
 	  count=$$(printf '%s\n' "$$members" | awk -v expected="$$member" \
 	    '$$0 == expected { found++ } END { print found + 0 }'); \
@@ -368,7 +376,8 @@ audit-production-symbols:
 	  exit 1; \
 	fi
 	@members=$$(ar t $(PRODUCTION_ARCHIVE_DIR)/mainlib.a); \
-	for member in $(notdir $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS) \
+	for member in $(notdir $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) \
+		$(PARALLEL_DIFFUSION_OBJECTS) $(SWCME_OBJECTS) \
 		$(SEP_CORONAL_CME_OBJECTS) $(SEP_CORONA_SWCME_OBJECTS)); do \
 	  count=$$(printf '%s\n' "$$members" | \
 	    awk -v expected="$$member" '$$0 == expected { found++ } \
@@ -401,6 +410,16 @@ sep-common:
 	$(MAKE) -C $(SEP_COMMON_DIR)
 
 $(SEP_COMMON_ARCHIVE): sep-common
+
+# The parallel library remains an independently verifiable archive under its
+# shared-model directory. srcSEP3D flattens the two canonical objects into the
+# production application archive because the enclosing AMPS linker does not
+# recursively extract nested static archives. No private copy is compiled.
+.PHONY: parallel-diffusion
+parallel-diffusion:
+	$(MAKE) -C $(PARALLEL_DIFFUSION_DIR) -f makefile all
+
+$(PARALLEL_DIFFUSION_ARCHIVE): parallel-diffusion
 
 .PHONY: swcme
 swcme:
@@ -443,10 +462,10 @@ validation/%.o: validation/%.cpp
 
 test/stage1: check-layering $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(VALIDATION_OBJ) $(STAGE1_TEST_OBJ) \
              $(SEP_CORONA_SWCME_ARCHIVE) $(SEP_CORONAL_CME_ARCHIVE) \
-             $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE)
+             $(SEP_COMMON_ARCHIVE) $(PARALLEL_DIFFUSION_ARCHIVE) $(SWCME_ARCHIVE)
 	$(CXX) -o $@ $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(VALIDATION_OBJ) $(STAGE1_TEST_OBJ) \
 	  $(SEP_CORONA_SWCME_ARCHIVE) $(SEP_CORONAL_CME_ARCHIVE) \
-	  $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE)
+	  $(SEP_COMMON_ARCHIVE) $(PARALLEL_DIFFUSION_ARCHIVE) $(SWCME_ARCHIVE)
 	@echo "[srcSEP3D] standalone test binary built: test/stage1"
 
 # Generated dependency files make additions to public option/provider records
@@ -485,7 +504,8 @@ test-background-unit: test/stage1
 	./test/stage1 --test-group BGP3D --test-group SNAP3D
 
 test-turbulence-unit: test/stage1
-	./test/stage1 --test-group TUR3D --test COEF3D01 --test COEF3D02 --test COEF3D06
+	./test/stage1 --test-group TUR3D --test COEF3D01 --test COEF3D02 \
+	  --test COEF3D06 --test COEF3D07 --test COEF3D08
 
 test-transport-unit: test/stage1
 	./test/stage1 --test-group PRK3D --test-group FTE3D --test-group RNG3D

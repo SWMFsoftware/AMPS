@@ -21,11 +21,44 @@ table evaluator are present. The supplied revision-1.4 data bundle is retained
 under `parallel_diffusion_model_data/`, and the compiled NLGCE-F arrays are
 generated without changing their decimal literals or index order.
 
-PD11 application binding is not implemented. In particular, D14 remains
-deferred by user direction: neither srcSEP3D input path calls this library,
-and no srcSEP3D schema version or `[parallel_diffusion]` section has been added.
-`INTEGRATION_PLAN.md` records the later host work. A successful standalone test
-must not be reported as Parker-mover or MPI qualification.
+The approved srcSEP3D portion of PD11 is implemented. Schema 5 calls the same
+model-specific parser through `[parallel_diffusion]`, freezes its SHA-256
+configuration identity, installs the active function during serial Runtime
+configuration, and evaluates it through the existing Parker coefficient path.
+The Parker core remains coefficient-agnostic and retains its coherent
+field-aligned gradient stencil. The separate srcSEP binding and native one-/
+four-rank transport qualification remain pending; standalone or component-test
+success must not be reported as MPI qualification.
+
+The srcSEP3D syntax is:
+
+```ini
+[run]
+schema_version = 5
+transport = parker
+
+[transport]
+spatial_diffusion_model = parallel-diffusion-library
+
+[parallel_diffusion]
+model = constant_kappa
+kappa_parallel_m2_per_s = 1.0e18
+```
+
+The example value demonstrates syntax, not a calibrated production choice.
+All parameter names are case-sensitive and all numeric text is suffix-free SI.
+The section is required exactly when the library selector is active. Legacy
+schema-4 selectors retain their original meaning.
+
+srcSEP3D currently admits the library models whose runtime inputs it can supply
+without reinterpretation: `constant_lambda`, `constant_kappa`, supported
+variants of `power_law_lambda` and `broken_rigidity_kappa`, mean-field `bohm`,
+`prescribed_lambda_mu_shape`, and tables without an energy-per-nucleon axis.
+Selections requiring nucleon count, slab/2D variance, spectral bend-over
+lengths, an effective Bohm field, external region/time factors, or an external
+perpendicular closure fail explicitly. Total variance is not relabeled slab
+variance, and the existing correlation length is not relabeled a bend-over
+length.
 
 The paper-specific extensions explicitly excluded by Section 3.1 remain out
 of scope: complete SOQLT, complete composite WNLT, arbitrary directional wave
@@ -244,9 +277,10 @@ maximum_refinements = 18
 ```
 
 The numbers are labeled mathematical syntax inputs only. They are not a
-physical calibration, and no application installs them as defaults. Once D14
-is resumed, the host parser will decide the surrounding section syntax and
-where any external-unit conversion occurs.
+physical calibration, and no application installs them as defaults. The
+approved srcSEP3D schema-5 binding uses the surrounding section shown above
+and accepts suffix-free SI text only. The separate srcSEP parser syntax and
+any conversion at that future host boundary remain undecided.
 
 ### `qlt_slab_inertial`
 
@@ -359,7 +393,7 @@ From this directory:
 make -f makefile clean
 make -f makefile verify
 make -f makefile CXXFLAGS='-O2 -std=c++17 -Wall -Wextra -Wpedantic -Werror' verify
-sha256sum -c parallel_diffusion_model_data/SHA256SUMS
+(cd parallel_diffusion_model_data && sha256sum -c SHA256SUMS)
 python3 parallel_diffusion_model_data/reference_verification.py
 python3 parallel_diffusion_model_data/reference_verification.py --audit
 python3 parallel_diffusion_model_data/reference_verification.py --broadened
@@ -403,4 +437,5 @@ not fabricated. The srcSEP/srcSEP3D adapters must retain their coherent
 neighbour stencil wherever a required analytic derivative is absent.
 
 See `IMPLEMENTATION_STATUS.md` for exact evidence and open gates, and
-`INTEGRATION_PLAN.md` for the deferred Parker-consumer work.
+`INTEGRATION_PLAN.md` for the implemented srcSEP3D seam and remaining srcSEP/
+native qualification work.

@@ -121,6 +121,7 @@ bool KnownSection(const std::string& section) {
       "run", "domain", "parker_spiral", "mesh", "mesh.solar", "mesh.tube",
       "mesh.active_region", "memory", "population_control",
       "background", "background.parker", "turbulence", "transport",
+      "parallel_diffusion",
       "shock", "source", "species", "storage", "output", "restart",
       "swcme"};
   return fixed.count(section) != 0 ||
@@ -167,7 +168,7 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
 
   if (field == "run.schema_version") {
     std::uint64_t version = 0;
-    if (!ParseUnsigned64(value, &version) || version < 1 || version > 4)
+    if (!ParseUnsigned64(value, &version) || version < 1 || version > 5)
       return invalidValue();
     o->inputSchemaVersion = static_cast<unsigned>(version);
     return Core::Status::OK();
@@ -177,6 +178,21 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     assignment.key = key;
     assignment.value = value;
     o->swcmeAssignments.push_back(assignment);
+    return Core::Status::OK();
+  }
+  if (section == "parallel_diffusion") {
+    // D14: srcSEP3D owns INI syntax and source locations only. Preserve every
+    // model-specific value as text for the shared BuildConfiguration parser;
+    // accepting numeric fields here would duplicate its schema and could make
+    // the application accept parameters rejected by the library itself.
+    if (key == "model") {
+      o->parallelDiffusionModelId = value;
+    } else {
+      RunConfiguration3DOptions::ParallelDiffusionAssignment assignment;
+      assignment.name = key;
+      assignment.value = value;
+      o->parallelDiffusionParameters.push_back(std::move(assignment));
+    }
     return Core::Status::OK();
   }
   if (field == "run.intent") {
@@ -496,7 +512,9 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
          {"correlation-mean-free-path",
               SpatialDiffusionModel::CorrelationMeanFreePath},
          {"pitch-angle-integral",
-              SpatialDiffusionModel::PitchAngleIntegral}},
+              SpatialDiffusionModel::PitchAngleIntegral},
+         {"parallel-diffusion-library",
+              SpatialDiffusionModel::ParallelDiffusionLibrary}},
         &o->spatialDiffusionModel)) return invalidValue();
   } else if (field == "transport.pitch_angle_diffusion_model") {
     if (!ParseEnum(value,
@@ -780,7 +798,12 @@ Core::Status ParseConfigurationText(
     const std::size_t separator = line.find('=');
     if (separator == std::string::npos)
       return Invalid("expected key=value at line " + std::to_string(lineNumber));
-    const std::string key = Lower(Trim(line.substr(0, separator)));
+    const std::string sourceKey = Trim(line.substr(0, separator));
+    // Shared-library keys are case-sensitive because their suffixes encode SI
+    // units (V, J, T). Every other srcSEP3D key retains the historical
+    // case-insensitive grammar.
+    const std::string key = section == "parallel_diffusion"
+        ? sourceKey : Lower(sourceKey);
     const std::string value = Trim(line.substr(separator + 1));
     if (key.empty() || value.empty())
       return Invalid("empty key or value at line " + std::to_string(lineNumber));
@@ -805,6 +828,11 @@ Core::Status ParseConfigurationText(
     if (qualified == "run.schema_version") schemaSeen = true;
     if (section == "swcme" && !candidate.swcmeAssignments.empty())
       candidate.swcmeAssignments.back().line = lineNumber;
+    if (section == "parallel_diffusion" && key != "model" &&
+        !candidate.parallelDiffusionParameters.empty())
+      candidate.parallelDiffusionParameters.back().line = lineNumber;
+    if (section == "parallel_diffusion" && key == "model")
+      candidate.parallelDiffusionModelLine = lineNumber;
   }
   if (!schemaSeen) return Invalid("missing required run.schema_version");
   // C01 distinguishes file input from typed coupled construction.  A coupled
@@ -844,7 +872,7 @@ Core::Status ParseConfigurationText(
         "mesh.active_region", "population_control"};
     for (const char* required : requiredVersion4Sections) {
       if (sections.count(required) == 0)
-        return Invalid("schema version 4 requires configuration section '[" +
+        return Invalid("schema version 4 or later requires configuration section '[" +
                        std::string(required) + "]'");
     }
     const char* requiredVersion4Fields[] = {
@@ -876,10 +904,19 @@ Core::Status ParseConfigurationText(
         "source.phase_space_power_index"};
     for (const char* required : requiredVersion4Fields) {
       if (assigned.count(required) == 0)
-        return Invalid("schema version 4 is missing required key '" +
+        return Invalid("schema version 4 or later is missing required key '" +
                        std::string(required) + "'");
     }
   }
+  const bool parallelSection = sections.count("parallel_diffusion") != 0;
+  const bool parallelSelected = candidate.spatialDiffusionModel ==
+      SpatialDiffusionModel::ParallelDiffusionLibrary;
+  if (candidate.inputSchemaVersion < 5 && parallelSection)
+    return Invalid("[parallel_diffusion] requires run.schema_version=5");
+  if (parallelSelected && !parallelSection)
+    return Invalid("parallel-diffusion-library requires [parallel_diffusion]");
+  if (!parallelSelected && parallelSection)
+    return Invalid("[parallel_diffusion] is present but the library is not selected");
   if (candidate.domainBoxGeometry == DomainBoxGeometry::FieldLineCornerCube ||
       candidate.domainBoxGeometry == DomainBoxGeometry::FieldLineXYCornerCube) {
     // Additive opt-in contract: legacy decks retain their original defaults.

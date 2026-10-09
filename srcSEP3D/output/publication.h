@@ -24,6 +24,11 @@ struct PublicationMetadata {
   double simulationTimeS = 0.0;
   std::uint64_t snapshotGeneration = 0;
   std::string configurationFingerprint;
+  // Populated only by schema-5 shared parallel diffusion. Keeping these values
+  // separate from the aggregate srcSEP3D fingerprint lets an output consumer
+  // identify the exact coefficient backend without decoding the run manifest.
+  std::string parallelDiffusionModelId;
+  std::string parallelDiffusionConfigurationFingerprint;
   std::string codeIdentity;
   std::string snapshotFingerprint;
 };

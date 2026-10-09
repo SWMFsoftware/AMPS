@@ -26,6 +26,7 @@ namespace B = SEP3D::Background;
 namespace O = SEP3D::Output;
 namespace T = SEP3D::Turbulence;
 namespace CP = SEP::Transport::CoefficientPhysics;
+namespace PD = SEP::ParallelDiffusion;
 using Result = SEP3D::Testing::Result;
 
 Result Pass(const std::string& message) {
@@ -580,6 +581,51 @@ Result RunCOEF3D07() {
       "coefficient selectors isolate unused physics and reproduce analytic constant, radial-rigidity, and D_mumu-integral limits");
 }
 
+Result RunCOEF3D08() {
+  const double kappa = 1.25e18;
+  const PD::Status configured = PD::ConfigureActiveModel(
+      "constant_kappa", {{"kappa_parallel_m2_per_s", "1.25e18"}});
+  if (!configured.ok())
+    return Fail("could not configure shared constant-kappa model: " +
+                configured.detail);
+
+  const B::BackgroundSample background = Background();
+  const T::TurbulenceSample turbulence = PrescribedSample();
+  const double momentum = 2.0e-19;
+  const double mass = SEP3D::Core::Const::m_p;
+  const double mc = mass * SEP3D::Core::Const::c;
+  const double speed = SEP3D::Core::Const::c * momentum /
+      std::sqrt(momentum * momentum + mc * mc);
+  T::CoefficientSelection selection;
+  selection.spatial =
+      SEP3D::RuntimeModel::SpatialDiffusionModel::ParallelDiffusionLibrary;
+  selection.requireSpatialDiffusion = true;
+  selection.requirePitchAngleDiffusion = false;
+  selection.requireMeanFreePath = false;
+  selection.timeS = 123.0;
+
+  const T::LocalScatteringCoefficients evaluated =
+      T::EvaluateLocalScattering(
+          turbulence, background,
+          {SEP3D::Core::Const::AU, 0.0, 0.0}, 0, mass,
+          SEP3D::Core::Const::e, momentum, 0.37, selection);
+  const std::string fingerprint =
+      PD::ConfigurationFingerprint(PD::GetActiveConfiguration());
+  if (!evaluated.status.ok() || evaluated.kappaParallelM2PerS != kappa ||
+      !Relative(evaluated.meanFreePathM, 3.0 * kappa / speed, 1.0e-14) ||
+      evaluated.parallelModelId != "constant_kappa" ||
+      evaluated.parallelConfigurationFingerprint != fingerprint ||
+      evaluated.parallelDiagnosticMask != PD::DiagnosticNone)
+    return Fail("srcSEP3D bridge changed the shared scalar pair or provenance");
+
+  // The coefficient is the parallel eigenvalue only. Tensor assembly and the
+  // field-aligned derivative remain downstream owners; the bridge must not
+  // project it radially or add a perpendicular coefficient on its own.
+  if (evaluated.dMuMuPerS != 0.0 || evaluated.dDmuMuDmuPerS != 0.0)
+    return Fail("Parker library path also applied focused pitch-angle scattering");
+  return Pass("active shared function returns the exact Parker kappa/lambda pair with unchanged provenance and no duplicate focused scattering");
+}
+
 }  // namespace
 
 std::vector<SEP3D::Testing::Descriptor> RegisterTurbulenceTests() {
@@ -633,5 +679,8 @@ std::vector<SEP3D::Testing::Descriptor> RegisterTurbulenceTests() {
       make("COEF3D07", "COEF3D", "Selectable coefficient models",
            "Isolate mover-required quantities and verify analytic constant-model limits.",
            RunCOEF3D07),
+      make("COEF3D08", "COEF3D", "Parallel-diffusion library bridge",
+           "Evaluate the active shared model through the srcSEP3D Parker coefficient path.",
+           RunCOEF3D08),
   };
 }

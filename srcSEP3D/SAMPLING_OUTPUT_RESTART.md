@@ -78,13 +78,21 @@ Column names carry SI units (`_m`, `_J`, `_m-3`, `_m-2_s-1`, and so on). After
 each stream is closed, the writer computes a 64-bit FNV-1a artifact digest. It
 then writes `manifest.txt` with schema version, output sequence, simulation
 time, configuration fingerprint, code identity, snapshot generation and
-fingerprint, sampling counters, and artifact hashes. One directory rename is
-the publication commit. An existing sequence is never silently reused.
+fingerprint, sampling counters, and artifact hashes. When schema-5 shared
+parallel diffusion is active, it additionally records the stable coefficient
+model ID and the library's SHA-256 configuration fingerprint. These two fields
+are an all-or-none pair; a partial identity is rejected. One directory rename
+is the publication commit. An existing sequence is never silently reused.
 
 FNV-1a is an integrity and reproducibility checksum, not a cryptographic
 signature. `ParseAndVerifyPublication()` is independent of the writer path and
 checks required manifest keys, exact unit-bearing headers, artifact count, and
 every digest before replacing caller output.
+
+Restart compatibility is stricter than output parsing: the complete validated
+parallel-model parameters and fingerprint are part of srcSEP3D's resolved
+physics manifest. A changed model or active parameter therefore fails the
+existing configuration/manifest comparison before particle state is restored.
 
 `PublishIfDue()` derives cadence solely from `RuntimeCounters`: a completed
 step sets `stepsSinceOutput=0` exactly when it increments `outputSequence`.

@@ -64,6 +64,12 @@ sample a planar triangle with square-root barycentric coordinates. Exactly the
 rank owning the active AMR leaf allocates the candidate, so the global source
 does not scale with MPI rank count.
 
+The immutable surface epoch must carry the same transitive event fingerprint
+as the provider used for species composition. A missing or foreign identity is
+rejected as a configuration conflict before rates are accumulated or the
+caller's distribution is modified. This prevents a finite source assembled
+from one event's accepted geometry and another event's ambient composition.
+
 The implemented `constant-statistical-weight` mode samples the momentum-number
 density `dN/dp proportional to p^(2-q)` between the configured energy limits.
 Here `q` is either fixed or evaluated separately on each accepted face as
@@ -351,13 +357,17 @@ allocation and the cached owner table are separate AMPS operations; without
 the refresh, an allocated mesh can incorrectly produce an empty Parker
 snapshot during initialization.
 
-The file is INI syntax. Section/key names are case-insensitive, `#` begins a
-comment, and each assignment is `key = value`. Application dimensional keys
-are bare SI values with the unit in the key. Values inside `[swcme]` retain
-their unit token and are resolved by the canonical model-owned parser. Schema
-4 requires even mode-inactive application fields so a later mode edit cannot
-silently revive a C++ default. The only deliberately excluded model values are
-deprecated compatibility parameters that no longer affect SWCME physics.
+The file is INI syntax. Section and ordinary application-key names are
+case-insensitive, `#` begins a comment, and each assignment is `key = value`.
+The one exception is a selected model's parameter names inside
+`[parallel_diffusion]`: those are case-sensitive because unit suffixes such as
+`_V`, `_J`, and `_T` are part of the shared schema. Application dimensional
+keys are bare SI values with the unit in the key. Values inside `[swcme]`
+retain their unit token and are resolved by the canonical model-owned parser.
+Schema 4 requires even mode-inactive application fields so a later mode edit
+cannot silently revive a C++ default. The only deliberately excluded model
+values are deprecated compatibility parameters that no longer affect SWCME
+physics.
 Assignments before a section header are invalid. In particular, a legacy flat
 line such as `scattering = ...` is not a schema-4 srcSEP3D field and is not
 silently mapped to turbulence or pitch-angle transport. The authoritative
@@ -368,7 +378,7 @@ between `[turbulence]` and `[transport]`.
 
 | Section | Required keys | Contract |
 |---|---|---|
-| `[run]` | `schema_version`, `intent`, `transport`, `time_step_s`, `maximum_time_steps`, `campaign_seed`, `background_cadence_steps`, `injection_cadence_steps` | Schema is `4`; intent is `shock-injection`; transport is `parker`, `focused-diffusion`, or `focused-scattering`. Time step is positive SI seconds, seed and step counts are nonzero, and injection cadence is one because `samples_per_step` is the exact per-step count. Older mover spellings remain parser aliases, but the resolved manifest uses canonical names. |
+| `[run]` | `schema_version`, `intent`, `transport`, `time_step_s`, `maximum_time_steps`, `campaign_seed`, `background_cadence_steps`, `injection_cadence_steps` | Maintained shock decks remain schema `4`; schema `5` adds only the explicit shared parallel-diffusion binding described below. Intent is `shock-injection`; transport is `parker`, `focused-diffusion`, or `focused-scattering`. Time step is positive SI seconds, seed and step counts are nonzero, and injection cadence is one because `samples_per_step` is the exact per-step count. Older mover spellings remain parser aliases, but the resolved manifest uses canonical names. |
 | `[domain]` | `preset`, `inner_radius_m`, `inner_boundary`, `outer_radius_mode`, `outer_radius_m`, `outer_boundary`, `coordinate_frame`, `origin_x_m`, `origin_y_m`, `origin_z_m` | Presets are `solar`, `one-au`, or `mars`; outer mode is `preset` or `explicit`. The current heliocentric implementation requires the declared origin `(0,0,0)`, absorbing inner boundary, and a domain containing fixed observers and mesh references. `inner_radius_m` is the Parker/CME source and transport cutoff, must be at or above `R_sun`, and is not the radius of the solid Sun. |
 | `[parker_spiral]` | `origin_x_m`, `origin_y_m`, `origin_z_m`, `start_mode`, `initial_x_m`, `initial_y_m`, `initial_z_m`, `length_m`, `point_count` | Finite diagnostic/active-mask centreline. `start_mode=explicit` uses the reviewed Cartesian point independently. `start_mode=cme-launch-point` requires that point, the inner radius, and the mesh-tube direction to equal the canonical SWCME launch apex defined by `cme.launch_radius` and normalized `geometry.cme_direction_*`. Length is positive arc length and count includes both endpoints. Refinement uses the same analytic curve continued through the physical domain; `length_m` bounds line output and `parker-tube` activation, not the pointwise refinement law. |
 | `[mesh]` | `global_cell_size_m`, `minimum_cell_size_m`, `cells_per_block_edge`, `maximum_level`, `memory_budget_bytes`, `block_overhead_bytes` | Global/floor resolution, AMPS block shape, realizable AMR depth, and pre-allocation resource ceiling. |
@@ -461,7 +471,8 @@ deliberately sub-cell tube and checks every sampled centreline segment.
 | `[background]` | `provider`, `external_script` | Implemented standalone authority is `analytic-parker`. `python-interpolator` is a recognized, typed, reserved future authority and stops before AMPS initialization; it never falls through to Parker/SWMF. The legacy Boolean must remain false. A coupled SWMF host uses the parser-free typed interface. |
 | `[background.parker]` | `reference_radius_m`, `radial_field_at_reference_t`, `solar_rotation_rate_rad_per_s`, `solar_wind_speed_m_per_s`, `magnetic_polarity`, `number_density_at_one_au_m3`, `temperature_k`, `validity_cadence_s` | SI cross-check of the Parker/SWCME ambient state. Magnetic Br may use any valid reference radius; electron density is unambiguously at one AU. Wind, rotation, source radius, field, density, temperature, and polarity must agree with `[swcme]`; the typed provider then receives canonical SWCME values, including its thermodynamic closure/composition. |
 | `[turbulence]` | `authority`, `model`, `amplitude_model`, `delta_b_over_b`, `wave_energy_density_at_reference_j_per_m3`, `wave_energy_density_radial_exponent`, `normalized_cross_helicity`, `reference_radius_m`, `k_min_per_m`, `k_max_per_m`, `k_min_radial_exponent`, `k_max_radial_exponent`, `spectral_index`, `correlation_length_m`, `correlation_length_radial_exponent`, `validity_cadence_s`, `missing_data`, `resonance_range`, `self_consistent_3d` | Standalone authority is `prescribed`. Spectral `model` is `kolmogorov`, `kraichnan`, or `power-law`; named models require exactly their documented slope. `amplitude_model` independently selects `constant-delta-b-over-b` or `wave-energy-power-law`. Exactly one amplitude normalization is active and the other must be zero. Cross helicity explicitly partitions directional energy. Self-consistent 3-D is false. Missing-data policy is `fail` or `ballistic`; resonance policy is `reject` or `power-law-extension`. |
-| `[transport]` | `cell_crossing_fraction`, `diffusion_fraction`, `focusing_fraction`, `cooling_fraction`, `field_variation_fraction`, `shock_crossing_fraction`, `minimum_substep_s`, `maximum_substeps`, `pitch_angle_scheme`, `spatial_diffusion_model`, `pitch_angle_diffusion_model`, `mean_free_path_model`, `constant_dmumu_per_s`, `constant_mean_free_path_m`, `mean_free_path_reference_m`, `mean_free_path_reference_radius_m`, `mean_free_path_reference_rigidity_v`, `mean_free_path_radial_exponent`, `mean_free_path_rigidity_exponent`, `spatial_quadrature_absolute_tolerance_m2_per_s`, `spatial_quadrature_relative_tolerance`, `spatial_quadrature_maximum_recursion`, `focused_scattering_frame`, `maximum_scattering_events_per_substep`, `perpendicular_diffusion`, `constant_kappa_perpendicular_m2_per_s`, `kappa_perpendicular_to_parallel_ratio`, `drifts` | Parker consumes `mean-free-path` or `pitch-angle-integral` spatial diffusion. Focused diffusion consumes `jokipii-1966`, `florinskiy`, or `constant` Dμμ. Focused scattering consumes `correlation`, `constant`, or `radial-rigidity-power-law` mean free path and scatters isotropically in `plasma-frame-isotropic` or `alfven-wave-frame-isotropic`. Constant/reference selectors require positive SI values when active; inactive model parameters are zero. Discrete scattering currently requires perpendicular diffusion `none`. |
+| `[transport]` | `cell_crossing_fraction`, `diffusion_fraction`, `focusing_fraction`, `cooling_fraction`, `field_variation_fraction`, `shock_crossing_fraction`, `minimum_substep_s`, `maximum_substeps`, `pitch_angle_scheme`, `spatial_diffusion_model`, `pitch_angle_diffusion_model`, `mean_free_path_model`, `constant_dmumu_per_s`, `constant_mean_free_path_m`, `mean_free_path_reference_m`, `mean_free_path_reference_radius_m`, `mean_free_path_reference_rigidity_v`, `mean_free_path_radial_exponent`, `mean_free_path_rigidity_exponent`, `spatial_quadrature_absolute_tolerance_m2_per_s`, `spatial_quadrature_relative_tolerance`, `spatial_quadrature_maximum_recursion`, `focused_scattering_frame`, `maximum_scattering_events_per_substep`, `perpendicular_diffusion`, `constant_kappa_perpendicular_m2_per_s`, `kappa_perpendicular_to_parallel_ratio`, `drifts` | Parker consumes `mean-free-path`, `pitch-angle-integral`, or schema-5 `parallel-diffusion-library` spatial diffusion. The library selector is rejected for both focused movers. Focused diffusion consumes `jokipii-1966`, `florinskiy`, or `constant` Dμμ. Focused scattering consumes `correlation`, `constant`, or `radial-rigidity-power-law` mean free path. Constant/reference selectors require positive SI values when active; inactive model parameters are zero. Discrete scattering currently requires perpendicular diffusion `none`. |
+| `[parallel_diffusion]` | `model`, followed by the selected model's case-sensitive keys | Schema 5 requires this section exactly when `spatial_diffusion_model=parallel-diffusion-library`. Values are suffix-free SI text passed to the shared model-specific parser. Unknown, duplicate, missing, malformed, and inactive-model keys fail before Runtime/mesh initialization. |
 | `[shock]` | `authority` | Must be `swcme`. Schemas 3 and 4 reject the retired constant-radius/speed/compression surrogate fields. |
 | `[source]` | `enabled`, `physical_particle_rate_per_s`, `injection_efficiency`, `minimum_energy_j`, `maximum_energy_j`, `spectrum_model`, `phase_space_power_index`, `samples_per_step` | All values apply independently to every species compiled by AMPS `SpeciesList`. Rate is the per-species physical seed rate before efficiency and patch partition; energies are total kinetic-energy bounds; `samples_per_step` is the exact per-species computational count over the complete shock. `local-compression-dsa` derives the phase-space index from each canonical shock patch and requires a zero inactive index. `fixed-phase-space-power-law` uses the declared positive \(q>2\) in \(f(p)\propto p^{-q}\). |
 | `[species]` | `macroparticle_weight` | Post-compile input owns only the positive common base AMPS statistical weight. Count, order, symbols, masses, and charges come exclusively from the compiled AMPS table and cannot be redefined here. |
@@ -490,6 +501,62 @@ same selected \(\lambda_\parallel\); Parker converts it using
 `correlation-mean-free-path` is accepted as a parser alias for
 `mean-free-path`, but manifests and dry-run output always use the canonical
 name.
+
+### Schema-5 shared parallel diffusion
+
+Schema 5 activates the shared library without changing either legacy spatial
+selector:
+
+```ini
+[run]
+schema_version = 5
+transport = parker
+
+[transport]
+spatial_diffusion_model = parallel-diffusion-library
+# All existing transport controls and inactive legacy values remain explicit.
+
+[parallel_diffusion]
+model = constant_kappa
+kappa_parallel_m2_per_s = 1.0e18
+```
+
+The numeric value above is a syntax example, not a recommended calibration.
+The section's parameter keys retain case because suffixes such as `_V`, `_J`
+and `_T` are part of the shared schema. Numeric text is finite SI without unit
+suffixes. srcSEP3D calls the library reader during immutable construction and
+installs its validated function pointer during serial Runtime configuration,
+before mover threads can evaluate it.
+
+At each Parker substep the adapter supplies total rest mass, signed charge,
+total momentum, origin-relative heliocentric position, coordinate time, the
+resolved mean-field vector, and coherent background/turbulence generations.
+The library result supplies `kappa_parallel` and `lambda_parallel`; the existing
+neighbor stencil independently evaluates `b·grad(kappa_parallel)` from the same
+coefficient chain. `transport/parker_transport.cpp` therefore remains unaware
+of model IDs and continues consuming only the coefficient and derivative.
+
+Focused diffusion and focused event scattering cannot select this spatial
+library, preventing one scattering law from being applied simultaneously as
+both `D_mumu`/events and Parker diffusion. Existing perpendicular ownership is
+also unchanged: `constant-ratio` forms `kappa_perp=ratio*kappa_parallel` once,
+and any perpendicular pair returned by a coupled parallel backend is ignored.
+Diagnostics are retained but never used as an implicit clamp or fallback.
+
+The current AMPS species boundary does not provide authoritative nucleon count,
+and the current turbulence record does not distinguish slab/2D variances or
+spectral bend-over lengths. Schema-5 validation consequently rejects models or
+variants that require those inputs. It also rejects effective-field Bohm,
+external time/region factors, and energy-per-nucleon table axes. In particular,
+the adapter never estimates nucleon count as `mass/m_p`, treats total variance
+as slab variance, or treats the existing correlation length as a bend-over
+length.
+
+The stable model ID, sorted complete parameter text, and library SHA-256
+configuration fingerprint enter the srcSEP3D physics and restart manifests.
+Changing any active model parameter therefore causes the existing strict
+restart compatibility check to fail rather than silently continuing with a
+different diffusion law.
 
 The publication-backed 2013 April 11 OV3D01 mapping, including the distinct
 CME-apex and Earth-connected Parker-start coordinates, observation products,
@@ -1879,7 +1946,7 @@ contract. It is a source gate; `SCCM3D01–07` remain the real linked evidence.
 | `BGP3D01–07` | analytic Parker identities, component laws, focusing, wind derivatives, polar limits, SWCME Leblanc/multi-species closure |
 | `SNAP3D01–08` | completeness, finite values, units, epochs, atomicity, interpolation, batch status, frame |
 | `TUR3D01–06` | spectrum normalization, AWSoM mapping, resonance range, missing-data policy, selectable slopes/amplitude laws/cross helicity, mandatory Tecplot wave energy |
-| `COEF3D01–02`, `COEF3D06–07` | six-decade conversions, bitwise shared-kernel identity, nonzero field-aligned kappa-gradient stencils, and selected-model analytic limits |
+| `COEF3D01–02`, `COEF3D06–08` | six-decade conversions, bitwise shared-kernel identity, nonzero field-aligned kappa-gradient stencils, selected-model analytic limits, and the schema-5 parallel-library bridge |
 | `COEF3D03–05`, `PRK3D01–08` | tensor assembly/Itô drift and Parker transport behavior |
 | `FTE3D01–09`, `RNG3D01–03`, `POP3D01` | continuous/discrete focused transport, pitch boundaries, strong-scattering limit, frame-energy conservation, keyed reproducibility, and relativistic merge conservation |
 | `ADP3D01`, `NAT3D04–05/08`, `SHK3D01–04` | mover dispatch, boundaries, ledger, moving shocks, common SWCME source |

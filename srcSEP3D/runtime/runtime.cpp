@@ -1,4 +1,5 @@
 #include "runtime.h"
+#include "parallel_diffusion/parallel_diffusion.h"
 
 #include <algorithm>
 #include <cmath>
@@ -21,6 +22,39 @@ Core::Status InvalidTransition(LifecycleState actual,
 
 Core::Status InvalidSnapshot(const std::string& message) {
   return Core::Status(Core::StatusCode::SnapshotUnavailable, message);
+}
+
+Core::Status InstallParallelDiffusionConfiguration(
+    const RunConfiguration3D& configuration) {
+  const RunConfiguration3DOptions& options = configuration.options();
+  if (options.spatialDiffusionModel !=
+      SpatialDiffusionModel::ParallelDiffusionLibrary)
+    return Core::Status::OK();
+
+  // Configuration parsing and immutable construction have already validated
+  // this exact text. Rebuild it here at the serial Runtime transition so the
+  // shared library's active parameters and public function pointer become
+  // reachable atomically before any mover thread starts. Reconfiguration while
+  // particles are moving remains forbidden by the library contract.
+  std::vector<SEP::ParallelDiffusion::InputParameter> parameters;
+  parameters.reserve(options.parallelDiffusionParameters.size());
+  for (const auto& assignment : options.parallelDiffusionParameters)
+    parameters.push_back({assignment.name, assignment.value});
+  const SEP::ParallelDiffusion::Status installed =
+      SEP::ParallelDiffusion::ConfigureActiveModel(
+          options.parallelDiffusionModelId, parameters);
+  if (!installed.ok())
+    return Core::Status(Core::StatusCode::ConfigurationConflict,
+                        "cannot install parallel-diffusion model: " +
+                        installed.detail);
+  const SEP::ParallelDiffusion::ModelConfiguration active =
+      SEP::ParallelDiffusion::GetActiveConfiguration();
+  if (SEP::ParallelDiffusion::ConfigurationFingerprint(active) !=
+      options.parallelDiffusionConfigurationFingerprint)
+    return Core::Status(Core::StatusCode::ConfigurationConflict,
+                        "installed parallel-diffusion fingerprint differs "
+                        "from immutable srcSEP3D configuration");
+  return Core::Status::OK();
 }
 
 Core::Status ValidateSnapshotCandidate(
@@ -106,6 +140,9 @@ Core::Status Runtime::Configure(
     return Core::Status(Core::StatusCode::InvalidInput,
                         "Configure requires an immutable configuration");
   }
+  const Core::Status parallel =
+      InstallParallelDiffusionConfiguration(*configuration);
+  if (!parallel.ok()) return parallel;
 
   // Commit after all checks.  No layout buffer or provider object is allocated
   // here; the host may inspect the frozen layout before creating an AMPS mesh.
@@ -145,6 +182,9 @@ Core::Status Runtime::ReplaceConfigurationBeforeMesh(
         Core::StatusCode::InvalidTransition,
         "configuration replacement requires pristine pre-Runtime-mesh state");
   }
+  const Core::Status parallel =
+      InstallParallelDiffusionConfiguration(*configuration);
+  if (!parallel.ok()) return parallel;
 
   // Commit all configuration-derived clocks together.  Although the first
   // srcSEP3D section key changes only the particle count, keeping this update

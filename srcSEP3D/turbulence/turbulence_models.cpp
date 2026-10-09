@@ -25,6 +25,39 @@ Core::Status Unavailable(const std::string& message) {
   return Core::Status(Core::StatusCode::SnapshotUnavailable, message);
 }
 
+Core::Status ParallelFailure(
+    const SEP::ParallelDiffusion::Status& status) {
+  using Code = SEP::ParallelDiffusion::StatusCode;
+  Core::StatusCode mapped = Core::StatusCode::Error;
+  switch (status.code) {
+    case Code::Success:
+      return Core::Status::OK();
+    case Code::InvalidParticle:
+    case Code::OutsideModelDomain:
+    case Code::InfiniteMeanFreePath:
+      mapped = Core::StatusCode::InvalidInput;
+      break;
+    case Code::InvalidBackground:
+    case Code::MissingInput:
+    case Code::InconsistentSpectrum:
+      mapped = Core::StatusCode::SnapshotUnavailable;
+      break;
+    case Code::InvalidConfiguration:
+    case Code::UnsupportedModel:
+      mapped = Core::StatusCode::ConfigurationConflict;
+      break;
+    case Code::IntegrationFailed:
+    case Code::NonlinearSolverFailed:
+      mapped = Core::StatusCode::Error;
+      break;
+  }
+  // No failure is converted to a finite coefficient. In particular, an
+  // infinite mean free path is not the zero-kappa "ballistic" state used by a
+  // focused event mover: the Parker diffusion limit has ceased to supply a
+  // finite stochastic operator and must fail explicitly.
+  return Core::Status(mapped, "parallel-diffusion library: " + status.detail);
+}
+
 std::uint64_t Digest64(const std::string& text) {
   // FNV-1a is a deterministic provenance tag, not a security hash.  The
   // manifest string remains the authoritative human-readable configuration.
@@ -747,6 +780,35 @@ LocalScatteringCoefficients EvaluateLocalScattering(
       return result;
     }
     result.kappaParallelM2PerS = integrated.kappaParallelM2PerS;
+  } else if (selection.spatial ==
+             RuntimeModel::SpatialDiffusionModel::ParallelDiffusionLibrary) {
+    const SEP::ParallelDiffusion::ParallelResult evaluated =
+        CoefficientBridge::EvaluateActiveParallel(
+            background, positionM - selection.solarOriginM,
+            turbulence.generation, selection.timeS, speciesMassKg,
+            signedChargeC, momentumKgMPerS);
+    if (!evaluated.status.ok()) {
+      result.status = ParallelFailure(evaluated.status);
+      return result;
+    }
+    if (!evaluated.kappaParallelM2PerS.has_value() ||
+        !evaluated.lambdaParallelM.has_value() ||
+        !FinitePositive(*evaluated.kappaParallelM2PerS) ||
+        !FinitePositive(*evaluated.lambdaParallelM)) {
+      result.status = Invalid(
+          "parallel-diffusion library returned an incomplete finite scalar pair");
+      return result;
+    }
+    result.kappaParallelM2PerS = *evaluated.kappaParallelM2PerS;
+    result.meanFreePathM = *evaluated.lambdaParallelM;
+    result.parallelDiagnosticMask = evaluated.diagnosticMask;
+    result.parallelModelId = evaluated.provenance.evaluatedModelId;
+    result.parallelConfigurationFingerprint =
+        evaluated.provenance.configurationFingerprint;
+    // Coupled library backends may also return a perpendicular pair. D13
+    // explicitly leaves perpendicular ownership with srcSEP3D's existing
+    // none/constant/constant-ratio modes, so that pair is intentionally not
+    // copied. Constant-ratio is evaluated once later from this kappa_parallel.
   } else {
     result.status = Invalid("unknown spatial-diffusion model");
     return result;
@@ -824,6 +886,37 @@ CoefficientBridge::MeanFreePathFromIsotropicDmumu(
     double dmumuPerS, double speedMPerS, double mu) {
   return SEP::Transport::Coefficient::MeanFreePathFromIsotropicDmumu(
       dmumuPerS, speedMPerS, mu);
+}
+
+SEP::ParallelDiffusion::ParallelResult
+CoefficientBridge::EvaluateActiveParallel(
+    const Background::BackgroundSample& background,
+    const Core::Vec3& heliocentricPositionM,
+    std::uint64_t turbulenceGeneration,
+    double timeS, double speciesMassKg, double signedChargeC,
+    double momentumKgMPerS) {
+  SEP::ParallelDiffusion::ParticleState particle;
+  particle.massKg = speciesMassKg;
+  particle.chargeC = signedChargeC;
+  particle.momentumKgMPerS = momentumKgMPerS;
+  // nucleonCount deliberately remains absent. AMPS exposes mass and charge at
+  // this boundary but no authoritative isotope/mass number; mass/m_p is not an
+  // exact nucleon count and schema-5 validation rejects consumers that need it.
+
+  SEP::ParallelDiffusion::LocalState local;
+  local.timeS = timeS;
+  local.positionM = {{heliocentricPositionM.x,
+                      heliocentricPositionM.y,
+                      heliocentricPositionM.z}};
+  local.meanFieldT = std::array<double, 3>{{
+      background.B.x, background.B.y, background.B.z}};
+  local.backgroundRevision = background.generation;
+  local.turbulenceRevision = turbulenceGeneration;
+  // Do not populate LocalState::turbulence, effectiveFieldMagnitudeT,
+  // provider factors, or suppliedKappaPerpendicular. srcSEP3D has no approved
+  // source for those exact quantities. A future provider contract must add
+  // them explicitly and qualify their units, conventions, and snapshot life.
+  return SEP::ParallelDiffusion::EvaluateActive(particle, local);
 }
 
 }  // namespace Turbulence

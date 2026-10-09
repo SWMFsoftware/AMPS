@@ -32,6 +32,10 @@ DuePublicationResult PublishIfDue(RuntimeModel::Runtime* runtime,
   metadata.simulationTimeS = simulationTimeS;
   metadata.configurationFingerprint =
       runtime->configuration()->physics_fingerprint();
+  metadata.parallelDiffusionModelId =
+      runtime->configuration()->options().parallelDiffusionModelId;
+  metadata.parallelDiffusionConfigurationFingerprint =
+      runtime->configuration()->options().parallelDiffusionConfigurationFingerprint;
   metadata.codeIdentity = codeIdentity;
   metadata.snapshotFingerprint = snapshotFingerprint;
   const RuntimeModel::SnapshotDescriptor* active = runtime->active_snapshot();

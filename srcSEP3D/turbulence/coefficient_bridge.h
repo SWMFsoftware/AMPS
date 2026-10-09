@@ -23,6 +23,7 @@
 // and the standalone coefficient tests.
 #include "sep_coefficient_physics.h"
 #include "sep_coefficient_registry.h"
+#include "parallel_diffusion/parallel_diffusion.h"
 
 namespace SEP3D {
 namespace Turbulence {
@@ -59,6 +60,20 @@ class CoefficientBridge final {
       double lambdaM, double speedMPerS, double mu);
   static SEP::Transport::ScalarResult MeanFreePathFromIsotropicDmumu(
       double dmumuPerS, double speedMPerS, double mu);
+
+  // Construct the exact SI state approved by D13--D16 and call the active
+  // shared-library function. No turbulence decomposition is placed in the
+  // state: srcSEP3D currently owns only total variance and a correlation
+  // length, neither of which is a slab/2D variance or spectral bend-over
+  // length. Models requiring those quantities are rejected during immutable
+  // configuration and would still fail MissingInput here rather than receiving
+  // invented values.
+  static SEP::ParallelDiffusion::ParallelResult EvaluateActiveParallel(
+      const Background::BackgroundSample& background,
+      const Core::Vec3& heliocentricPositionM,
+      std::uint64_t turbulenceGeneration,
+      double timeS, double speciesMassKg, double signedChargeC,
+      double momentumKgMPerS);
 };
 
 }  // namespace Turbulence

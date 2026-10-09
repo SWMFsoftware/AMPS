@@ -52,6 +52,9 @@ struct LocalTransportRecord {
   double dKappaParallelDsMPerS = 0.0;
   double dMuMuPerS = 0.0;
   double dDmuMuDmuPerS = 0.0;
+  std::uint32_t parallelDiffusionDiagnosticMask = 0;
+  std::string parallelDiffusionModelId;
+  std::string parallelDiffusionConfigurationFingerprint;
   double plusWaveFraction = 0.5;
   double minusWaveFraction = 0.5;
   double fractionalFieldVariationPerS = 0.0;

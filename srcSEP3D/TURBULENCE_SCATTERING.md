@@ -165,7 +165,7 @@ cannot reject an otherwise complete mover input.
 
 ### Selectable coefficient closures
 
-Schema 4 exposes three orthogonal selectors:
+Schema 4 exposes three orthogonal legacy selectors:
 
 - `spatial_diffusion_model = mean-free-path` evaluates the
   selected MFP and applies `kappa_parallel=v lambda_parallel/3`;
@@ -187,6 +187,23 @@ constant-ratio perpendicular model additionally requests parallel spatial
 diffusion because it defines `kappa_perp` from `kappa_parallel`. Complete input
 sets inactive constant values to zero so the manifest cannot carry a
 plausible-looking number that is ignored by the selected model.
+
+Schema 5 adds `spatial_diffusion_model=parallel-diffusion-library` plus the
+required `[parallel_diffusion]` section. The INI layer preserves case-sensitive
+model keys and calls the library's strict reader; `Runtime::Configure` then
+installs the validated active function before any mover evaluation. Only the
+Parker mover may use this selector. The bridge supplies SI mass, signed charge,
+momentum, time, heliocentric position, mean B, and provider generations, and
+returns the library's finite kappa/lambda pair and provenance. It deliberately
+does not map total wave variance to slab variance, correlation length to a
+spectral bend-over length, or mass to nucleon count. Models needing those
+unavailable quantities fail during immutable configuration.
+
+The Parker derivative remains `ResolveLocalTransportImpl`'s bounded coherent
+neighbor stencil. Existing perpendicular modes remain authoritative; a
+library-returned perpendicular pair is ignored, while `constant-ratio` uses the
+selected parallel scalar exactly once. Diagnostic bits are retained without
+changing the coefficient or selecting a fallback.
 
 ## Production storage
 
@@ -243,5 +260,6 @@ prescribed provider.
 | `COEF3D01` | Dμμ/mean-free-path/parallel-diffusion round trips over six decades |
 | `COEF3D02` | 3-D bridge and direct shared Jokipii kernel are bitwise identical |
 | `COEF3D07` | required-quantity isolation plus analytic constant-MFP, radial–rigidity/charge-scaling, and constant-Dμμ spatial limits |
+| `COEF3D08` | schema-5 active shared function returns the exact kappa/lambda pair and provenance without also applying focused scattering |
 
 Run `test/run_tests.py --suite phase-t --rebuild`.

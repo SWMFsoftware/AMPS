@@ -190,6 +190,19 @@ Core::Status BuildSurfaceParticleRateDistribution(
   namespace SF=SEP::CoronaSwcme::ShockFront;
   if(distribution==nullptr)
     return Invalid("surface particle-rate output is null");
+  // ``epoch`` and ``provider`` are separate arguments because preflight can
+  // evaluate an immutable, uncommitted surface. They must nevertheless own
+  // one resolved physical event. Otherwise the face geometry/upstream state
+  // could come from event A while NumberDensity() below reads event B's
+  // electron/proton/alpha composition, producing a finite but physically
+  // false rate. The SHA-256 physics fingerprint includes the transitive
+  // assets, ambient EOS/composition, trajectory and surface topology. Reject
+  // a missing or unequal identity before accumulating any SI [s^-1] rate; the
+  // caller's output remains unchanged on this typed input failure.
+  if(epoch.eventIdentity.empty()||
+      epoch.eventIdentity!=provider.Event().physicsFingerprint)
+    return Core::Status(Core::StatusCode::ConfigurationConflict,
+        "reduced-front source epoch does not belong to the supplied provider event");
   if(epoch.triangles.size()!=epoch.records.size())
     return Invalid("reduced-front triangles and shock records are not one-to-one");
   if(epoch.area.numericalFailureM2>0)

@@ -136,7 +136,12 @@ enum class SpatialDiffusionModel {
   // source alias so typed hosts compiled against the first schema-4 draft do
   // not change ABI or behavior.
   MeanFreePath = CorrelationMeanFreePath,
-  PitchAngleIntegral
+  PitchAngleIntegral,
+  // Schema 5 selects the shared, model-specific library through this distinct
+  // value. It is deliberately not an alias for either legacy path: mapping an
+  // old name to a scientifically different closure would let an unchanged
+  // input deck acquire different transport physics.
+  ParallelDiffusionLibrary
 };
 enum class PitchAngleDiffusionModel {
   Jokipii1966,
@@ -414,7 +419,10 @@ struct RunConfiguration3DOptions {
   // standalone initialization contract: every application value, observer,
   // output path, and canonical SWCME3D parameter must be explicit. Version 4
   // adds the active Parker corridor, AMPS particle population control, and the
-  // complete mover/coefficient selection contract. Parser-
+  // complete mover/coefficient selection contract. Version 5 adds the strict
+  // [parallel_diffusion] binding. Its values remain strings here because the
+  // shared library is the sole authority that parses each model's schema;
+  // srcSEP3D must not duplicate or weaken those model-specific readers. Parser-
   // free programmatic SWMF hosts may keep the default and install equivalent
   // validated providers through the typed interface.
   unsigned inputSchemaVersion = 1;
@@ -612,6 +620,21 @@ struct RunConfiguration3DOptions {
   // requires every selector and inactive numeric value explicitly.
   SpatialDiffusionModel spatialDiffusionModel =
       SpatialDiffusionModel::CorrelationMeanFreePath;
+
+  struct ParallelDiffusionAssignment {
+    // Names and numeric text are preserved exactly as written. Library keys
+    // are case-sensitive and encode SI units (for example rigidity0_V), so the
+    // normal srcSEP3D lower-casing rule must not be applied to this section.
+    std::string name;
+    std::string value;
+    std::size_t line = 0;
+  };
+  std::string parallelDiffusionModelId;
+  std::size_t parallelDiffusionModelLine = 0;
+  std::vector<ParallelDiffusionAssignment> parallelDiffusionParameters;
+  // Derived only after the shared parser validates the complete candidate.
+  // It is included in physics/restart identity and never accepted from input.
+  std::string parallelDiffusionConfigurationFingerprint;
   PitchAngleDiffusionModel pitchAngleDiffusionModel =
       PitchAngleDiffusionModel::Jokipii1966;
   MeanFreePathModel meanFreePathModel = MeanFreePathModel::Correlation;

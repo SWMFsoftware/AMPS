@@ -1,6 +1,7 @@
 #include "run_configuration.h"
 
 #include "../core/parker_geometry.h"
+#include "parallel_diffusion/parallel_diffusion.h"
 #include "sep_background_snapshot.h"
 
 #include <algorithm>
@@ -307,6 +308,8 @@ const char* Name(SpatialDiffusionModel value) {
       return "mean-free-path";
     case SpatialDiffusionModel::PitchAngleIntegral:
       return "pitch-angle-integral";
+    case SpatialDiffusionModel::ParallelDiffusionLibrary:
+      return "parallel-diffusion-library";
   }
   return "unknown";
 }
@@ -547,6 +550,106 @@ Core::Status RunConfiguration3D::Create(
   // succeeds.  Preset resolution therefore becomes part of the immutable
   // configuration rather than a late mesh-builder side effect.
   RunConfiguration3DOptions normalized = options;
+
+  // D13--D16 srcSEP3D binding: build the model with the shared parser before
+  // any configuration is published. The application keeps source text and the
+  // resulting fingerprint but never reimplements a model's required keys,
+  // numerical domains, or inactive-parameter rules. This factory is also used
+  // by parser-free coupled hosts, so file and typed construction share exactly
+  // the same validation gate.
+  const bool sharedParallel = normalized.spatialDiffusionModel ==
+      SpatialDiffusionModel::ParallelDiffusionLibrary;
+  if (sharedParallel) {
+    if (normalized.inputSchemaVersion < 5)
+      return Invalid("parallel-diffusion-library requires schema version 5");
+    if (normalized.transport != TransportModel::Parker3D)
+      return Invalid("parallel-diffusion-library is available only to the "
+                     "Parker mover; focused movers already apply parallel "
+                     "scattering through D_mumu or event mean free paths");
+    if (normalized.parallelDiffusionModelId.empty())
+      return Invalid("[parallel_diffusion] requires a nonempty model key");
+
+    std::vector<SEP::ParallelDiffusion::InputParameter> parameters;
+    parameters.reserve(normalized.parallelDiffusionParameters.size());
+    for (const auto& assignment : normalized.parallelDiffusionParameters)
+      parameters.push_back({assignment.name, assignment.value});
+    SEP::ParallelDiffusion::ModelConfiguration candidate;
+    const SEP::ParallelDiffusion::Status parsed =
+        SEP::ParallelDiffusion::BuildConfiguration(
+            normalized.parallelDiffusionModelId, parameters, &candidate);
+    if (!parsed.ok()) {
+      std::size_t sourceLine = normalized.parallelDiffusionModelLine;
+      for (const auto& assignment : normalized.parallelDiffusionParameters) {
+        if (parsed.detail.find("'" + assignment.name + "'") !=
+            std::string::npos) {
+          sourceLine = assignment.line;
+          break;
+        }
+      }
+      return Invalid("invalid [parallel_diffusion] configuration" +
+          (sourceLine == 0 ? std::string() :
+           " at input line " + std::to_string(sourceLine)) +
+          ": " + parsed.detail);
+    }
+
+    // srcSEP3D does not currently carry an authoritative nucleon count or a
+    // slab/2D spectral decomposition. Reject models that necessarily consume
+    // those quantities at startup instead of fabricating A=mass/m_p, treating
+    // total variance as slab variance, or relabeling a correlation length as a
+    // spectral bend-over length. These are host-capability gates, not claims
+    // about the validity of the shared models in a complete host.
+    using SEP::ParallelDiffusion::ModelId;
+    const bool unavailableTurbulenceState =
+        candidate.model == ModelId::QltSlabSpectrum ||
+        candidate.model == ModelId::QltSlabInertial ||
+        candidate.model == ModelId::BroadenedSlab ||
+        candidate.model == ModelId::NlpaGivenPerp ||
+        candidate.model == ModelId::NlgcE ||
+        candidate.model == ModelId::NlgceN ||
+        candidate.model == ModelId::NlgceF2014 ||
+        candidate.model == ModelId::TurbulenceAdapter ||
+        candidate.model == ModelId::WaveSpectrumAdapter;
+    if (unavailableTurbulenceState)
+      return Invalid("selected parallel-diffusion model requires slab/2D "
+                     "variance, spectral bend-over length, or wave-convention "
+                     "state that srcSEP3D does not currently provide");
+    if (candidate.model == ModelId::PowerLawLambda) {
+      if (candidate.powerLawLambda.independentVariable ==
+          SEP::ParallelDiffusion::IndependentVariable::EnergyPerNucleon)
+        return Invalid("srcSEP3D cannot select an energy-per-nucleon parallel "
+                       "law because its species boundary has no authoritative "
+                       "nucleon count");
+      if (candidate.powerLawLambda.useTimeFactor ||
+          candidate.powerLawLambda.useRegionFactor)
+        return Invalid("srcSEP3D has no approved provider for parallel-"
+                       "diffusion time_factor or region_factor");
+    }
+    if (candidate.model == ModelId::BrokenRigidityKappa &&
+        (candidate.brokenRigidityKappa.useRadialFactor ||
+         candidate.brokenRigidityKappa.useRegionFactor))
+      return Invalid("srcSEP3D has no approved provider for externally "
+                     "evaluated radial_factor or region_factor");
+    if (candidate.model == ModelId::Bohm &&
+        candidate.bohm.fieldDefinition ==
+            SEP::ParallelDiffusion::BohmFieldDefinition::EffectiveField)
+      return Invalid("srcSEP3D supplies the resolved mean field but has no "
+                     "approved effective-field definition for Bohm diffusion");
+    if (candidate.model == ModelId::TabulatedParallel) {
+      for (const auto axis : candidate.table.axes)
+        if (axis == SEP::ParallelDiffusion::TableAxis::EnergyPerNucleon)
+          return Invalid("srcSEP3D cannot select an energy-per-nucleon table "
+                         "axis because nucleon count is unavailable");
+    }
+    normalized.parallelDiffusionModelId =
+        SEP::ParallelDiffusion::ModelName(candidate.model);
+    normalized.parallelDiffusionConfigurationFingerprint =
+        SEP::ParallelDiffusion::ConfigurationFingerprint(candidate);
+  } else if (!normalized.parallelDiffusionModelId.empty() ||
+             !normalized.parallelDiffusionParameters.empty() ||
+             !normalized.parallelDiffusionConfigurationFingerprint.empty()) {
+    return Invalid("[parallel_diffusion] is inactive unless transport."
+                   "spatial_diffusion_model=parallel-diffusion-library");
+  }
   if (normalized.outerRadiusMode != OuterRadiusMode::Preset &&
       normalized.outerRadiusMode != OuterRadiusMode::Explicit &&
       normalized.outerRadiusMode != OuterRadiusMode::FieldLineEndpoint)
@@ -624,8 +727,8 @@ Core::Status RunConfiguration3D::Create(
       normalized.coordinateFrame.empty()) {
     return Invalid("the current Parker/SWMF contract requires a finite heliocentric origin and named frame");
   }
-  if (normalized.inputSchemaVersion < 1 || normalized.inputSchemaVersion > 4)
-    return Invalid("inputSchemaVersion must be 1, 2, 3, or 4");
+  if (normalized.inputSchemaVersion < 1 || normalized.inputSchemaVersion > 5)
+    return Invalid("inputSchemaVersion must be 1, 2, 3, 4, or 5");
   if (normalized.background == BackgroundAuthority::PythonInterpolator) {
     // The provider value is intentionally recognized before any AMPS state is
     // touched, but execution remains fail-closed until the Python process,
@@ -1030,7 +1133,9 @@ Core::Status RunConfiguration3D::Create(
   if (normalized.spatialDiffusionModel !=
           SpatialDiffusionModel::CorrelationMeanFreePath &&
       normalized.spatialDiffusionModel !=
-          SpatialDiffusionModel::PitchAngleIntegral)
+          SpatialDiffusionModel::PitchAngleIntegral &&
+      normalized.spatialDiffusionModel !=
+          SpatialDiffusionModel::ParallelDiffusionLibrary)
     return Invalid("spatial-diffusion model is unknown");
   if (normalized.pitchAngleDiffusionModel !=
           PitchAngleDiffusionModel::Jokipii1966 &&
@@ -1726,6 +1831,24 @@ Core::Status RunConfiguration3D::Create(
           << ";population_cadence_steps="
           << normalized.populationControlCadenceSteps
           << ";layout=" << layout.fingerprint;
+  if (sharedParallel) {
+    physics << ";parallel_diffusion_model="
+            << normalized.parallelDiffusionModelId
+            << ";parallel_diffusion_fingerprint="
+            << normalized.parallelDiffusionConfigurationFingerprint;
+    auto canonicalParameters = normalized.parallelDiffusionParameters;
+    std::sort(canonicalParameters.begin(), canonicalParameters.end(),
+        [](const RunConfiguration3DOptions::ParallelDiffusionAssignment& left,
+           const RunConfiguration3DOptions::ParallelDiffusionAssignment& right) {
+          return left.name < right.name;
+        });
+    // Retain the complete validated SI parameter text beside its SHA-256
+    // identity. Sorting makes harmless input-line reordering restart-compatible
+    // while keeping archived output reviewable without the original deck.
+    for (const auto& assignment : canonicalParameters)
+      physics << ";parallel_diffusion_parameter."
+              << assignment.name << '=' << assignment.value;
+  }
   // Preserve legacy injection/transport fingerprints when the new option is
   // inactive. A propagation target is part of its actual physics identity.
   if (propagation) physics << ";stop_shock_radius_m=" << normalized.stopShockRadiusM;

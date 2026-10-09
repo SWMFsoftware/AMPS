@@ -17,6 +17,7 @@
 #include "background_factory.h"
 #include "shock_front_background_adapter.h"
 #include "runtime.h"
+#include "parallel_diffusion/parallel_diffusion.h"
 #include "sep_coronal_cme/constants.h"
 
 #include <cmath>
@@ -1623,6 +1624,24 @@ Result RunCFG3D16() {
           2e-14*flux.value.acceptedAreaM2)
     return Fail("per-face source sum does not reproduce independent incident-flux diagnostic");
 
+  // The production entry point receives provider and epoch separately so that
+  // normalization preflight need not mutate Provider::Current(). Prove that
+  // this flexibility cannot mix one event's accepted faces with another
+  // event's EOS/composition. Mutating only the immutable provenance label is
+  // an independent negative control; the destination sentinel also checks the
+  // documented transactional output contract.
+  auto foreignEpoch=*epoch.value;
+  foreignEpoch.eventIdentity="foreign-reduced-front-event";
+  RM::SurfaceParticleRateDistribution provenanceSentinel;
+  provenanceSentinel.generation=UINT64_C(0x123456789abcdef0);
+  provenanceSentinel.physicalRatePerS=17.0;
+  status=RM::BuildSurfaceParticleRateDistribution(
+      *provider,foreignEpoch,electron,&provenanceSentinel);
+  if(status.code!=SEP3D::Core::StatusCode::ConfigurationConflict||
+      provenanceSentinel.generation!=UINT64_C(0x123456789abcdef0)||
+      provenanceSentinel.physicalRatePerS!=17.0)
+    return Fail("surface source accepted a foreign epoch or mutated output on provenance failure");
+
   const double interval=2.0;
   const double targetMean=64.0;
   const double weight=distribution.physicalRatePerS*interval/targetMean;
@@ -1738,7 +1757,152 @@ Result RunCFG3D16() {
       &reserved);
   if(status.code!=SEP3D::Core::StatusCode::ReservedFeature)
     return Fail("unimplemented momentum-importance mode did not fail explicitly");
-  return Pass("accepted triangular rates reproduce the reference flux; keyed Poisson time/face/barycentric/momentum samples are deterministic and statistically convergent; reserved weighting fails closed");
+  return Pass("accepted triangular rates reproduce the reference flux; foreign event epochs fail transactionally; keyed Poisson time/face/barycentric/momentum samples are deterministic and statistically convergent; reserved weighting fails closed");
+}
+
+Result RunCFG3D17() {
+  std::ifstream input("examples/sep3d_analytic_parker.in");
+  std::ostringstream buffer;
+  buffer << input.rdbuf();
+  if (!input || buffer.str().empty())
+    return Fail("could not read the schema-4 fixture for schema-5 extension");
+
+  auto replaceOnce = [](std::string* text, const std::string& from,
+                        const std::string& to) {
+    const std::size_t at = text == nullptr ? std::string::npos : text->find(from);
+    if (at == std::string::npos) return false;
+    text->replace(at, from.size(), to);
+    return true;
+  };
+  std::string schema5 = buffer.str();
+  if (!replaceOnce(&schema5, "schema_version = 4", "schema_version = 5") ||
+      !replaceOnce(&schema5,
+          "spatial_diffusion_model = mean-free-path",
+          "spatial_diffusion_model = parallel-diffusion-library"))
+    return Fail("schema-4 fixture lost its version or spatial selector");
+  const std::string shockMarker = "\n[shock]\n";
+  const std::size_t shockAt = schema5.find(shockMarker);
+  if (shockAt == std::string::npos)
+    return Fail("schema-4 fixture lost its shock section");
+  schema5.insert(shockAt, R"SEP3D(
+[parallel_diffusion]
+model = constant_kappa
+kappa_parallel_m2_per_s = 1.25e18
+)SEP3D");
+
+  RM::RunConfiguration3DOptions options;
+  SEP3D::Core::Status status = RM::ParseConfigurationText(schema5, &options);
+  if (!status.ok() || options.inputSchemaVersion != 5 ||
+      options.spatialDiffusionModel !=
+          RM::SpatialDiffusionModel::ParallelDiffusionLibrary ||
+      options.parallelDiffusionModelId != "constant_kappa" ||
+      options.parallelDiffusionParameters.size() != 1 ||
+      options.parallelDiffusionParameters.front().name !=
+          "kappa_parallel_m2_per_s" ||
+      options.parallelDiffusionConfigurationFingerprint.empty())
+    return Fail("valid schema-5 parallel-diffusion section did not resolve: " +
+                status.message);
+
+  std::shared_ptr<const RM::RunConfiguration3D> configuration;
+  status = RM::RunConfiguration3D::Create(options, &configuration);
+  if (!status.ok() || !configuration ||
+      configuration->resolved_manifest().find(
+          "parallel_diffusion_model=constant_kappa") == std::string::npos ||
+      configuration->restart_compatibility_manifest().find(
+          options.parallelDiffusionConfigurationFingerprint) ==
+              std::string::npos)
+    return Fail("parallel model identity is absent from immutable/restart provenance");
+
+  std::string changedParameter = schema5;
+  if (!replaceOnce(&changedParameter,
+          "kappa_parallel_m2_per_s = 1.25e18",
+          "kappa_parallel_m2_per_s = 1.50e18"))
+    return Fail("schema-5 fixture lost its coefficient parameter");
+  RM::RunConfiguration3DOptions changedOptions;
+  std::shared_ptr<const RM::RunConfiguration3D> changedConfiguration;
+  if (!RM::ParseConfigurationText(changedParameter, &changedOptions).ok() ||
+      !RM::RunConfiguration3D::Create(
+          changedOptions, &changedConfiguration).ok() ||
+      !changedConfiguration ||
+      changedOptions.parallelDiffusionConfigurationFingerprint ==
+          options.parallelDiffusionConfigurationFingerprint ||
+      changedConfiguration->physics_fingerprint() ==
+          configuration->physics_fingerprint() ||
+      changedConfiguration->restart_compatibility_manifest() ==
+          configuration->restart_compatibility_manifest())
+    return Fail("parallel parameter change did not alter restart identity");
+
+  // Runtime::Configure is the serial publication point for the library's
+  // active configuration and model-specific function pointer. It must install
+  // the same fingerprint that the parser/factory froze.
+  RM::Runtime runtime;
+  status = runtime.Configure(configuration);
+  const auto active = SEP::ParallelDiffusion::GetActiveConfiguration();
+  if (!status.ok() || SEP::ParallelDiffusion::ActiveModelFunction == nullptr ||
+      SEP::ParallelDiffusion::ConfigurationFingerprint(active) !=
+          options.parallelDiffusionConfigurationFingerprint)
+    return Fail("Runtime did not install the validated shared model transactionally");
+
+  std::string missingSection = schema5;
+  const std::size_t sectionAt = missingSection.find("\n[parallel_diffusion]\n");
+  const std::size_t nextAt = missingSection.find("\n[shock]\n", sectionAt + 1);
+  missingSection.erase(sectionAt, nextAt - sectionAt);
+  if (RM::ParseConfigurationText(missingSection, &options).ok())
+    return Fail("library selector was accepted without [parallel_diffusion]");
+
+  std::string inactive = schema5;
+  if (!replaceOnce(&inactive,
+          "spatial_diffusion_model = parallel-diffusion-library",
+          "spatial_diffusion_model = mean-free-path") ||
+      RM::ParseConfigurationText(inactive, &options).ok())
+    return Fail("inactive [parallel_diffusion] section was accepted");
+
+  std::string focused = schema5;
+  if (!replaceOnce(&focused, "transport = parker", "transport = focused-diffusion") &&
+      !replaceOnce(&focused, "transport = parker3d", "transport = focused-diffusion"))
+    return Fail("fixture lost its Parker mover spelling");
+  if (RM::ParseConfigurationText(focused, &options).ok())
+    return Fail("focused mover accepted the Parker spatial library");
+
+  std::string unknown = schema5;
+  unknown.insert(unknown.find("\n[shock]\n"), "unknown_parameter = 7\n");
+  if (RM::ParseConfigurationText(unknown, &options).ok())
+    return Fail("shared model reader accepted an unknown parameter");
+
+  std::string missingTurbulence = schema5;
+  if (!replaceOnce(&missingTurbulence,
+          "model = constant_kappa\nkappa_parallel_m2_per_s = 1.25e18",
+          "model = qlt_slab_inertial") ||
+      RM::ParseConfigurationText(missingTurbulence, &options).ok())
+    return Fail("srcSEP3D accepted a spectral model without slab state");
+
+  std::string rigidity = schema5;
+  if (!replaceOnce(&rigidity,
+          "model = constant_kappa\nkappa_parallel_m2_per_s = 1.25e18",
+          "model = power_law_lambda\n"
+          "lambda0_m = 1e10\n"
+          "independent_variable = rigidity\n"
+          "rigidity0_V = 1e9\n"
+          "independent_exponent = 0.3333333333333333") ||
+      !RM::ParseConfigurationText(rigidity, &options).ok())
+    return Fail("case-sensitive SI rigidity key was not forwarded intact");
+  std::string wrongCase = rigidity;
+  if (!replaceOnce(&wrongCase, "rigidity0_V", "rigidity0_v") ||
+      RM::ParseConfigurationText(wrongCase, &options).ok())
+    return Fail("srcSEP3D lower-cased or accepted a misspelled library SI key");
+
+  std::string nucleon = schema5;
+  if (!replaceOnce(&nucleon,
+          "model = constant_kappa\nkappa_parallel_m2_per_s = 1.25e18",
+          "model = power_law_lambda\n"
+          "lambda0_m = 1e10\n"
+          "independent_variable = energy_per_nucleon\n"
+          "energy_per_nucleon0_J = 1e-12\n"
+          "independent_exponent = 0.3333333333333333") ||
+      RM::ParseConfigurationText(nucleon, &options).ok())
+    return Fail("srcSEP3D inferred an unavailable nucleon count");
+
+  return Pass("schema 5 calls the strict shared parser, freezes restart identity, installs one Parker-only active model, and rejects unavailable host state");
 }
 
 }  // namespace
@@ -1779,5 +1943,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
       make("CFG3D14", "Derived particle numerics", "Mesh CFL step and incident-flux per-species weight equations.", RunCFG3D14),
       make("CFG3D15", "Parsed reduced model", "Maintained shared input initializes the real reduced provider and source normalization.", RunCFG3D15),
       make("CFG3D16", "Reduced-front particle source", "Accepted-face rate sum, Poisson timing, triangular position, local spectrum, determinism, and reserved weighting.", RunCFG3D16),
+      make("CFG3D17", "Parallel-diffusion binding", "Schema-5 parser, provenance, Runtime installation, Parker-only ownership, and unavailable-state gates.", RunCFG3D17),
   };
 }

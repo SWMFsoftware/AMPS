@@ -37,11 +37,13 @@ The [`parallel_diffusion`](parallel_diffusion/README.md) library is a
 dependency-free sibling within this ownership boundary. Its standalone
 revision-1.4 PD00–PD10 archive implements all 16 first-release identifiers,
 including spectral, pitch-angle, nonlinear, adapter, table and batch paths.
-It remains built in its own subdirectory because D14/PD11 application binding
-is deferred; neither application consumes it yet. This keeps the established
-seven-member `sep_common.a` and its exact-member audits unchanged until both
-host adapters can be qualified together. The application incorporation plan,
-test evidence, derivative limitations and exact qualification boundary are
+It remains built in its own subdirectory. srcSEP3D schema 5 now consumes that
+canonical archive through its approved Parker-only D13--D16 binding and
+flattens the two objects into the AMPS application archive; srcSEP remains
+unbound. This keeps the established seven-member `sep_common.a` and both
+applications' existing exact-member audits unchanged until promotion is
+deliberately coordinated. The application incorporation record, component-test
+evidence, derivative limitations and native-qualification boundary are
 recorded beside the library.
 
 The [`perpendicular_diffusion`](perpendicular_diffusion/README.md) library is
