@@ -30,6 +30,24 @@
 
 namespace Geopack {
 
+  // Immutable state used by the reentrant IGRF evaluator.  RECALC still prepares
+  // this state serially, but field evaluations consume only these owned arrays and
+  // may therefore run concurrently for different epochs.
+  struct Context {
+    double g[105];
+    double h[105];
+    double rec[105];
+    double geoToGsw[9];
+    double dipoleTiltRad;
+    double userFrameToGSM[3][3];
+    double gsmToUserFrame[3][3];
+    bool rotateToGSM;
+    std::string epochUTC;
+    std::string userFrame;
+
+    Context();
+  };
+
   /*
    * SPICE/no-SPICE rotation helpers
    * --------------------------------
@@ -77,7 +95,13 @@ namespace Geopack {
   //IGRF mgnetoc field model
   namespace IGRF {
     void GetMagneticField(double *B,double *x);
+    void GetMagneticField(const Context& context,double *B,double *x);
   }
+
+  // Prepare one immutable epoch context.  The linked GEOPACK implementation uses
+  // legacy COMMON blocks during preparation, so callers must serialize calls to this
+  // function.  Once returned, Context is read-only and reentrant.
+  Context PrepareContext(const char* Epoch,std::string FrameNameIn);
 
   // Initialize the epoch-dependent GEOPACK state.
   //

@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <time.h>
 #include <strings.h>
+#include <cstring>
 #include <math.h>
 
 
@@ -40,12 +41,26 @@ bool Geopack::Rotate2GSE=false;
 
 extern "C"{
   void recalc_08_(int*,int*,int*,int*,int*,double*,double*,double*);
+  void igrf_prepare_context_08_(int*,int*,int*,int*,int*,double*,double*,double*,
+                                double*,double*,double*,double*,double*);
+  void igrf_gsw_08_ctx_(const double*,const double*,const double*,const double*,
+                        double*,double*,double*,double*,double*,double*);
   void sphcar_08_(double*,double*,double*,double*,double*,double*,int*);
   void bspcar_08_(double*,double*,double*,double*,double*,double*,double*,double*);
   void igrf_geo_08_(double*,double*,double*,double*,double*,double*);
   void igrf_gsw_08_(double*,double*,double*,double*,double*,double*);
 
   void gswgse_08_(double*,double*,double*,double*,double*,double*,int*);
+}
+
+Geopack::Context::Context()
+    : dipoleTiltRad(0.0),rotateToGSM(false) {
+  std::memset(g,0,sizeof(g));
+  std::memset(h,0,sizeof(h));
+  std::memset(rec,0,sizeof(rec));
+  std::memset(geoToGsw,0,sizeof(geoToGsw));
+  SetIdentityMatrix(userFrameToGSM);
+  SetIdentityMatrix(gsmToUserFrame);
 }
 
 
@@ -217,6 +232,24 @@ void Geopack::Init(const char* Epoch,std::string FrameNameIn) {
   recalc_08_(&Year,&DayOfYear,&Hour,&Minute,&Second,VGSE+0,VGSE+1,VGSE+2);
 }
 
+Geopack::Context Geopack::PrepareContext(const char* Epoch,std::string FrameNameIn) {
+  Context context;
+  context.epochUTC=Epoch ? Epoch : "";
+  context.userFrame=FrameNameIn;
+
+  SetFrameRotation(Epoch,FrameNameIn,"GSM",context.userFrameToGSM,
+                   context.gsmToUserFrame,context.rotateToGSM);
+
+  int Year=0,DayOfYear=0,Hour=0,Minute=0,Second=0;
+  ParseEpochForGeopack(Epoch,Year,DayOfYear,Hour,Minute,Second);
+  double VGSE[3]={-400.0,0.0,0.0};
+  igrf_prepare_context_08_(&Year,&DayOfYear,&Hour,&Minute,&Second,
+                           VGSE+0,VGSE+1,VGSE+2,
+                           context.g,context.h,context.rec,context.geoToGsw,
+                           &context.dipoleTiltRad);
+  return context;
+}
+
 
 void Geopack::IGRF::GetMagneticField(double *B,double *x) {
   /*
@@ -262,7 +295,27 @@ void Geopack::IGRF::GetMagneticField(double *B,double *x) {
 #endif
 }
 
+void Geopack::IGRF::GetMagneticField(const Context& context,double *B,double *x) {
+  double xLocal[3],xLocalGSM[3],bGSM[3];
+  for (int i=0;i<3;++i) xLocal[i]=x[i]/_EARTH__RADIUS_;
 
+  if (context.rotateToGSM)
+    MatrixVectorMultiply(context.userFrameToGSM,xLocal,xLocalGSM);
+  else
+    std::memcpy(xLocalGSM,xLocal,3*sizeof(double));
+
+  igrf_gsw_08_ctx_(context.g,context.h,context.rec,context.geoToGsw,
+                    xLocalGSM+0,xLocalGSM+1,xLocalGSM+2,
+                    bGSM+0,bGSM+1,bGSM+2);
+
+  if (context.rotateToGSM) {
+    MatrixVectorMultiply(context.gsmToUserFrame,bGSM,B);
+    for (int i=0;i<3;++i) B[i]*=_NANO_;
+  }
+  else {
+    for (int i=0;i<3;++i) B[i]=bGSM[i]*_NANO_;
+  }
+}
 
 
 
