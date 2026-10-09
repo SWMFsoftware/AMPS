@@ -543,7 +543,7 @@ This is the recommended first production run.  It evaluates the same four
 rigidities used by the reference and avoids the complete penumbra scan:
 
 ```bash
-python3 run_C10.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable ACCESS_T50 --profile ROUTINE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --output-root test_output/C10_direct --amps /home/vtenishe/T11/AMPS/amps --shell-lon-res-deg 15 --shell-lat-res-deg 2 --access-abs-lat-min-deg 45 --access-abs-lat-max-deg 85 --t50-grid-step-deg 0.25 --t50-min-resolved-profile-fraction 0.66 --t50-min-edge-margin-deg 1.0 --dynamic-chunk 32 -np 8 -nt 16
+python3 run_C10.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable ACCESS_T50 --profile ROUTINE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --output-root test_output/C10_direct --amps ../../../amps --shell-lon-res-deg 15 --shell-lat-res-deg 2 --access-abs-lat-min-deg 45 --access-abs-lat-max-deg 85 --t50-grid-step-deg 0.25 --t50-min-resolved-profile-fraction 0.66 --t50-min-edge-margin-deg 1.0 --dynamic-chunk 32 -np 8 -nt 16
 ```
 
 After a one-snapshot-per-window run is stable, repeat with
@@ -555,7 +555,7 @@ Run the complete scan into a separate output tree.  The optional consistency
 root compares every exact P6–P9 state against the prior direct run:
 
 ```bash
-python3 run_C10.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable ACCESS_T50 --profile ROUTINE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --output-root test_output/C10_full --access-consistency-root test_output/C10_direct --amps /home/vtenishe/T11/AMPS/amps --cutoff-scan-n 120 --shell-lon-res-deg 15 --shell-lat-res-deg 2 --access-abs-lat-min-deg 45 --access-abs-lat-max-deg 85 --t50-grid-step-deg 0.25 --t50-min-resolved-profile-fraction 0.66 --t50-min-edge-margin-deg 1.0 --min-access-state-agreement 0.999 --max-access-unresolved-fraction 0.01 --dynamic-chunk 32 -np 8 -nt 16
+python3 run_C10.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable ACCESS_T50 --profile ROUTINE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --output-root test_output/C10_full --access-consistency-root test_output/C10_direct --amps ../../../amps --cutoff-scan-n 120 --shell-lon-res-deg 15 --shell-lat-res-deg 2 --access-abs-lat-min-deg 45 --access-abs-lat-max-deg 85 --t50-grid-step-deg 0.25 --t50-min-resolved-profile-fraction 0.66 --t50-min-edge-margin-deg 1.0 --min-access-state-agreement 0.999 --max-access-unresolved-fraction 0.01 --dynamic-chunk 32 -np 8 -nt 16
 ```
 
 ### 9.4 Full GRIDLESS/GRIDDED diagnostic run
@@ -563,13 +563,13 @@ python3 run_C10.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-o
 This retains every `Rc_*` diagnostic and uses `ACCESS_T50` for pass/fail:
 
 ```bash
-python3 run_C10.py --solver BOTH --cutoff-evaluation FULL_SCAN --comparison-observable ALL --profile ROUTINE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --output-root test_output/C10_full_both --amps /home/vtenishe/T11/AMPS/amps --cutoff-scan-n 120 --dynamic-chunk 32 -np 8 -nt 16
+python3 run_C10.py --solver BOTH --cutoff-evaluation FULL_SCAN --comparison-observable ALL --profile ROUTINE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --output-root test_output/C10_full_both --amps ../../../amps --cutoff-scan-n 120 --dynamic-chunk 32 -np 8 -nt 16
 ```
 
 ### 9.5 Smoke test
 
 ```bash
-python3 run_C10.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable ACCESS_T50 --profile SMOKE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --output-root test_output/C10_direct_smoke --amps /home/vtenishe/T11/AMPS/amps --dynamic-chunk 32 -np 4 -nt 8
+python3 run_C10.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable ACCESS_T50 --profile SMOKE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --output-root test_output/C10_direct_smoke --amps ../../../amps --dynamic-chunk 32 -np 4 -nt 8
 ```
 
 ### 9.6 Reprocess existing outputs
@@ -577,11 +577,37 @@ python3 run_C10.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparis
 Use the same mode and output root that produced the raw files:
 
 ```bash
-python3 run_C10.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable ACCESS_T50 --profile ROUTINE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --skip-run --keep --output-root test_output/C10_direct --amps /home/vtenishe/T11/AMPS/amps -np 8 -nt 16
+python3 run_C10.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable ACCESS_T50 --profile ROUTINE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --skip-run --keep --output-root test_output/C10_direct --amps ../../../amps -np 8 -nt 16
 ```
 
 `--skip-run` can change postprocessing and plots, but it cannot add missing shell
 nodes, epochs, rigidities, or a missing full-scan companion access product.
+
+### 9.7 Executable identity and run provenance
+
+The commands in this section run from `srcEarth/test/C10`, so
+`--amps ../../../amps` selects the Earth executable in the same repository.
+The active `test/list` command runs from the repository root and equivalently
+uses `--amps ./amps`. Keeping the path relative to the checkout prevents a
+historical developer path from silently selecting a binary that was later
+rebuilt for another AMPS application.
+
+For a physical run, C10 probes only `<amps> -h` before MPI. The output must
+contain the Earth application banner, the Earth `-mode <3d|gridless>` option,
+and the documented no-solver help exit. The resolved path and SHA-256 digest
+are retained in the result provenance. A missing, non-executable, or
+wrong-application binary fails before physics; all P6/P7 scientific gates and
+P8/P9 diagnostic rules remain unchanged.
+
+`C10_run_status.json` is atomically replaced at each state transition. It
+records the exact arguments, execution mode, timestamps, executable identity,
+return code, and whether the top-level result is current. Before a new physical
+calculation, a preceding `C10_result.json` is moved to a unique
+`C10_result.previous-<UTC>.json` archive. Therefore an interrupted or rejected
+run has `result_current: false` and cannot inherit the appearance of success
+from an earlier result. `--dry-run` and `--skip-run` are explicitly labeled as
+`DRY_RUN` and `READBACK`; they do not pretend that a new physical launch
+occurred.
 
 ## 10. Runner outputs
 

@@ -24,7 +24,18 @@ observation evidence.
 | S12-U08 | Placeholder command and missing supported capability | Configuration fails before numeric comparison |
 | S12-U09 | CLI execution of complete, validate-only, and comparator modes | Explicit RESULT line and correct exit semantics |
 | S12-S01 | Production source/tag/manifest/AUXDATA/help/doc wiring | Required Step-12 interfaces present |
-| S12-S02 | Project current `test/list` back to Step 11 | SHA-256 equals the pre-Step-12 list, proving old commands/gates/hashes unchanged |
+| S12-S02 | Validate mutable provenance separately, require portable active paths, and hash the normalized approved `test/list` structure | Every scalar or looped `last pass:` item is empty or a full 40-hex commit; Step 12 remains an independent active gate; active commands contain no home-directory paths; C9/C10 select the checkout-local Earth executable; and the normalized structural SHA-256 matches |
+
+S12-S02 deliberately normalizes only the optional commit value following each
+active or commented `last pass:` marker. Those values are written by the test
+runner and must be allowed to advance after a successful validation. The marker
+itself, command text, P/F expectation, active/commented state, ordering, and all
+comments remain in the structural digest. This avoids the former
+self-invalidating behavior—where recording a successful Step-12 pass caused the
+next Step-12 run to fail—without permitting any validation entry or scientific
+gate to drift unnoticed. The portable C9/C10 path requirements additionally
+prevent an unrelated AMPS application in a developer-specific checkout from
+being launched under an Earth validation entry.
 
 The evaluator enforces the existing roadmap ceilings rather than fitting the synthetic
 data: exact identities, `1e-10` identical-kernel relative tolerance, 2% integrated

@@ -7,3 +7,4 @@ set -euo pipefail
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 python3 "$script_dir/test_exclusive_runner.py"
 python3 "$script_dir/test_deferred_last_pass.py"
+python3 "$script_dir/earth_test_runtime_test.py"

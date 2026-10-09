@@ -276,6 +276,43 @@ class ExclusiveEnvironmentTests(unittest.TestCase):
         # The shared base environment is never mutated by either launch.
         self.assertEqual(base_env[marker], "stale-parent-value")
 
+    def test_completion_heartbeat_preserves_timeout_cleanup(self):
+        # The heartbeat fixes unlimited waits, but it must not weaken an
+        # explicit runtime limit or leave the sleeping process group alive.
+        command = "%s -c %s" % (
+            shlex.quote(sys.executable),
+            shlex.quote("import time; time.sleep(30)"),
+        )
+
+        async def execute(plan, root):
+            return await runner.run_one_test(
+                plan,
+                workdir=root,
+                log_dir=root / "logs",
+                timeout_s=0.2,
+                use_shell=False,
+                base_env=os.environ.copy(),
+                set_thread_env_vars=False,
+                preserve_thread_env=True,
+                print_start=False,
+                mem_total_bytes=None,
+                mem_available_bytes=None,
+            )
+
+        with tempfile.TemporaryDirectory(prefix="earth-runner-timeout-") as tmp:
+            root = Path(tmp)
+            (root / "logs").mkdir()
+            test = runner.TestCase(1, 1, "F", command)
+            plan = runner.build_test_plan(test, default_np=1, default_nt=1)
+            started = time.monotonic()
+            result = asyncio.run(execute(plan, root))
+            elapsed = time.monotonic() - started
+
+        self.assertTrue(result.timed_out)
+        self.assertEqual(result.actual, "F")
+        self.assertTrue(result.matched_reference)
+        self.assertLess(elapsed, 5.0)
+
 
 class ActiveC19EntryTests(unittest.TestCase):
     """UTR-F04: C19 has isolation provenance and bounded CPU fan-out."""

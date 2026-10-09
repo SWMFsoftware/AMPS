@@ -79,6 +79,19 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
 
+TEST_ROOT = Path(__file__).resolve().parents[1]
+if str(TEST_ROOT) not in sys.path:
+    sys.path.insert(0, str(TEST_ROOT))
+
+from earth_test_runtime import (  # noqa: E402
+    EarthExecutableError,
+    archive_previous_result,
+    atomic_write_json,
+    finish_run_status,
+    initial_run_status,
+    probe_earth_executable,
+)
+
 TEST_ID = "C9"
 TEST_NAME = "PAMELA public-data global-shell cutoff-latitude validation"
 PROTON_MASS_AMU = 1.007276466621
@@ -2352,6 +2365,76 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not output_root.is_absolute():
         output_root = (launch_dir / output_root).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
+
+    # Write an authoritative invocation record before creating or consuming any
+    # branch products.  A top-level result from an older successful run is not
+    # evidence for this invocation; consumers must require result_current=true
+    # in C9_run_status.json before treating C9_result.json as current.
+    execution_mode = (
+        "DRY_RUN" if args.dry_run else ("READBACK" if args.skip_run else "PHYSICAL")
+    )
+    status_path = output_root / "C9_run_status.json"
+    run_status = initial_run_status(
+        schema="amps-earth-test-run-status-v1",
+        test_id=TEST_ID,
+        output_root=output_root,
+        argv=list(argv) if argv is not None else sys.argv[1:],
+        execution_mode=execution_mode,
+    )
+    atomic_write_json(status_path, run_status)
+
+    def finish(
+        return_code: int,
+        state: str,
+        message: str,
+        *,
+        result_current: bool = False,
+    ) -> int:
+        """Atomically close the invocation record on every handled exit path."""
+
+        atomic_write_json(
+            status_path,
+            finish_run_status(
+                run_status,
+                state=state,
+                return_code=return_code,
+                message=message,
+                result_current=result_current,
+            ),
+        )
+        return return_code
+
+    amps = Path(args.amps).expanduser()
+    if not amps.is_absolute():
+        amps = (launch_dir / amps).resolve()
+    executable_identity: Optional[Dict[str, object]] = None
+    if execution_mode == "PHYSICAL":
+        try:
+            executable_identity = probe_earth_executable(amps, cwd=launch_dir)
+        except EarthExecutableError as exc:
+            message = "C9 executable preflight failed: %s" % exc
+            print(message, file=sys.stderr)
+            return finish(2, "ERROR", message)
+
+        # Archive only after the executable has passed identity validation.  A
+        # rejected path never touches prior evidence; a real new physical run
+        # moves its predecessor to a timestamped, recoverable filename.
+        archived = archive_previous_result(
+            output_root / "C9_result.json",
+            run_started_utc=str(run_status["started_utc"]),
+        )
+        run_status["archived_previous_result"] = (
+            str(archived.resolve()) if archived is not None else None
+        )
+        run_status["executable"] = executable_identity
+        run_status["message"] = "Earth executable verified; physical run in progress"
+    elif execution_mode == "READBACK":
+        run_status["message"] = "postprocessing existing solver products"
+    else:
+        run_status["message"] = "generating inputs and command inventory only"
+    run_status["status"] = "RUNNING"
+    atomic_write_json(status_path, run_status)
+
     driver_copy = output_root / "driver" / "ts05_driver.txt"
     driver_copy.parent.mkdir(parents=True, exist_ok=True)
     if not args.skip_run:
@@ -2377,10 +2460,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     (output_root / "C9_driver_info.json").write_text(
         json.dumps(asdict(driver_info), indent=2) + "\n"
     )
-
-    amps = Path(args.amps).expanduser()
-    if not amps.is_absolute():
-        amps = (launch_dir / amps).resolve()
 
     branch_models: Dict[str, Dict[datetime, Dict[float, Dict[str, object]]]] = {}
     branch_metrics: Dict[str, Metrics] = {}
@@ -2440,9 +2519,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         command, sample_dir, sample_dir / "C9_amps.log"
                     )
                     if return_code != 0:
-                        print("AMPS failed with exit code %d in %s" %
-                              (return_code, sample_dir), file=sys.stderr)
-                        return return_code
+                        message = "AMPS failed with exit code %d in %s" % (
+                            return_code, sample_dir)
+                        print(message, file=sys.stderr)
+                        return finish(return_code, "ERROR", message)
                 if args.dry_run:
                     continue
 
@@ -2617,9 +2697,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         )
                     estimates = diagnostic_estimates[primary_observable]
                 except Exception as exc:
-                    print("C9 %s postprocessing failed in %s: %s" %
-                          (solver, sample_dir, exc), file=sys.stderr)
-                    return 2
+                    message = "C9 %s postprocessing failed in %s: %s" % (
+                        solver, sample_dir, exc)
+                    print(message, file=sys.stderr)
+                    return finish(2, "ERROR", message)
 
                 write_dict_rows(sample_dir / "C9_snapshot_boundaries.csv",
                                 [asdict(estimate) for estimate in estimates])
@@ -2822,6 +2903,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "mesh_exponent": args.mode3d_mesh_exponent,
             } if solver == "GRIDDED" else None),
             "driver": asdict(driver_info),
+            "executable": executable_identity,
             "acceptance": {
                 "min_valid_fraction": args.min_valid_fraction,
                 "max_rmse_deg": args.max_rmse_deg,
@@ -2903,7 +2985,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.dry_run:
         print("C9 dry run complete for %s: %s" %
               (", ".join(selected_solvers(args.solver)), output_root))
-        return 0
+        return finish(
+            0,
+            "DRY_RUN_COMPLETE",
+            "inputs and command inventory generated; no solver was launched",
+        )
 
     cross_rows, cross_diagnostics = compare_solver_branches(branch_models)
     if cross_rows:
@@ -2925,6 +3011,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ),
         "profile": args.profile,
         "driver": asdict(driver_info),
+        "executable": executable_identity,
         "branches": {
             solver: {
                 "output_directory": str((output_root / solver.lower()).resolve()),
@@ -2942,7 +3029,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     print("C9 selected branches -> %s" % ("PASS" if passed else "FAIL"))
     print("Results: %s" % output_root)
-    return 0 if passed else 1
+    return finish(
+        0 if passed else 1,
+        "PASS" if passed else "FAIL",
+        "all selected scientific gates passed" if passed else
+        "one or more selected scientific gates failed",
+        result_current=True,
+    )
 
 
 if __name__ == "__main__":

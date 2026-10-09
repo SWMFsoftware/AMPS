@@ -429,13 +429,13 @@ Custom Table-S1 midpoints can be selected with a comma-separated list:
 Run the efficient GRIDDED regression product at one midpoint per interval:
 
 ```bash
-python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable PAMELA_T50 --profile ROUTINE --interval-samples 1 --access-abs-lat-min-deg 35 --access-abs-lat-max-deg 75 --output-root test_output/C9_direct --amps /home/vtenishe/T11/AMPS/amps --shell-lon-res-deg 30 --shell-lat-res-deg 2 --t50-grid-step-deg 0.25 --t50-min-resolved-longitude-fraction 0.8 --dynamic-chunk 64 -np 4 -nt 16
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable PAMELA_T50 --profile ROUTINE --interval-samples 1 --access-abs-lat-min-deg 35 --access-abs-lat-max-deg 75 --output-root test_output/C9_direct --amps ./amps --shell-lon-res-deg 30 --shell-lat-res-deg 2 --t50-grid-step-deg 0.25 --t50-min-resolved-longitude-fraction 0.8 --dynamic-chunk 64 -np 4 -nt 16
 ```
 
 Run the complete GRIDDED penumbra scan with the same primary T50 observable:
 
 ```bash
-python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable PAMELA_T50 --profile ROUTINE --interval-samples 1 --output-root test_output/C9_full --amps /home/vtenishe/T11/AMPS/amps --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 --t50-grid-step-deg 0.25 --t50-min-resolved-longitude-fraction 0.8 --dynamic-chunk 64 -np 4 -nt 16
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable PAMELA_T50 --profile ROUTINE --interval-samples 1 --output-root test_output/C9_full --amps ./amps --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 --t50-grid-step-deg 0.25 --t50-min-resolved-longitude-fraction 0.8 --dynamic-chunk 64 -np 4 -nt 16
 ```
 
 Verify that the complete scan and direct product make the same raw access
@@ -444,7 +444,7 @@ decisions. The DIRECT_ACCESS output must already exist with the same timestamps,
 and trace policy:
 
 ```bash
-python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable PAMELA_T50 --profile ROUTINE --interval-samples 1 --output-root test_output/C9_full_verified --access-consistency-root test_output/C9_direct --amps /home/vtenishe/T11/AMPS/amps --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 --access-abs-lat-min-deg 35 --access-abs-lat-max-deg 75 --t50-grid-step-deg 0.25 --t50-min-resolved-longitude-fraction 0.8 --t50-min-edge-margin-deg 1.0 --min-access-state-agreement 0.999 --max-access-unresolved-fraction 0.01 --dynamic-chunk 64 -np 4 -nt 16
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable PAMELA_T50 --profile ROUTINE --interval-samples 1 --output-root test_output/C9_full_verified --access-consistency-root test_output/C9_direct --amps ./amps --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 --access-abs-lat-min-deg 35 --access-abs-lat-max-deg 75 --t50-grid-step-deg 0.25 --t50-min-resolved-longitude-fraction 0.8 --t50-min-edge-margin-deg 1.0 --min-access-state-agreement 0.999 --max-access-unresolved-fraction 0.01 --dynamic-chunk 64 -np 4 -nt 16
 ```
 
 The same check can be added while reprocessing an existing full-scan tree:
@@ -457,13 +457,13 @@ Write T50 plus all full-scan Rc diagnostics without changing the primary
 pass/fail observable:
 
 ```bash
-python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable ALL --profile ROUTINE --interval-samples 1 --output-root test_output/C9_all_observables --amps /home/vtenishe/T11/AMPS/amps --cutoff-scan-n 160 --dynamic-chunk 64 -np 4 -nt 16
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable ALL --profile ROUTINE --interval-samples 1 --output-root test_output/C9_all_observables --amps ./amps --cutoff-scan-n 160 --dynamic-chunk 64 -np 4 -nt 16
 ```
 
 Run a five-sample diagnostic of only the storm minimum interval:
 
 ```bash
-python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable PAMELA_T50 --timestamps 2006-12-15T03:03:00Z --interval-samples 5 --output-root test_output/C9_0303_5samples --amps /home/vtenishe/T11/AMPS/amps --dynamic-chunk 64 -np 4 -nt 16
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable PAMELA_T50 --timestamps 2006-12-15T03:03:00Z --interval-samples 5 --output-root test_output/C9_0303_5samples --amps ./amps --dynamic-chunk 64 -np 4 -nt 16
 ```
 
 Preview commands and the launch count without running AMPS:
@@ -474,6 +474,31 @@ python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_A
 
 Use `--skip-run --keep` with the same product, observable, sample count, and
 output root to reprocess existing raw files.
+
+### Executable identity and run provenance
+
+Physical runs should select the Earth executable built in the checkout being
+tested (`--amps ./amps` in the repository-root commands above). Do not put a
+developer-specific absolute executable path in `test/list`: the same pathname
+can later be rebuilt for SEP or another AMPS application while remaining an
+executable file.
+
+Before C9 starts MPI, it invokes only `<amps> -h` and requires the Earth banner,
+the Earth `-mode <3d|gridless>` option, and the documented no-solver help exit.
+It then records the resolved executable path and SHA-256 digest. A missing,
+non-executable, or wrong-application binary is rejected before any physical
+launch; this preflight does not replace any numerical or observational gate.
+
+Every invocation writes `C9_run_status.json` atomically. The file starts with
+`result_current: false`, records `PHYSICAL`, `READBACK`, or `DRY_RUN`, and is
+finished as `PASS`, `FAIL`, `ERROR`, or `DRY_RUN_COMPLETE`. Consumers should
+treat the top-level `C9_result.json` as belonging to the latest invocation only
+when the status file has `result_current: true`. Before a new physical run, an
+existing top-level result is moved to a unique
+`C9_result.previous-<UTC>.json` file so prior evidence remains recoverable but
+cannot be mistaken for the new result. Branch data are not silently presented
+as complete by this mechanism; the unchanged C9 parser and scientific gates
+still determine PASS or FAIL.
 
 ## 9. Numerical controls
 

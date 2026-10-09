@@ -263,6 +263,10 @@
 #include <array>
 #include <iostream>
 #include <limits>
+#include <thread>
+#include <atomic>
+#include <mutex>
+#include <exception>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -897,6 +901,13 @@ static EarthUtil::AmpsParam DensityGridless_BuildParamForPointLikeLocation(
     const EarthUtil::TsDriverRecord drec =
         prmForPoint.temporal.driverTable.Lookup(static_cast<double>(etPoint));
     EarthUtil::TsDriverTable::ApplyToField(drec, prmForPoint.field);
+
+    // This copy now represents one complete immutable field snapshot.  Clearing its
+    // table prevents worker-local field-provider construction from repeating UTC->ET
+    // conversion and interpolation through CSPICE.  CSPICE maintains process-global
+    // bookkeeping and must stay on the rank/main thread; all physical driver values
+    // needed by BuildTsParmod have already been copied into prmForPoint.field above.
+    prmForPoint.temporal.driverTable=EarthUtil::TsDriverTable();
 #endif
   }
 
@@ -1363,12 +1374,28 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     //===============================================================================
     const Earth::Mode3D::MpiScheduler gridlessScheduler =
         Earth::Mode3D::ResolveMpiScheduler(prm,"Gridless density POINTS");
+    Earth::Mode3D::ParallelBackend gridlessBackend =
+        Earth::Mode3D::ResolveParallelBackend(prm,"Gridless density POINTS");
+    int gridlessThreadCount=
+        Earth::Mode3D::ResolveParallelThreadCount(prm,gridlessBackend);
+    if (gridlessBackend==Earth::Mode3D::ParallelBackend::SERIAL)
+      gridlessThreadCount=1;
+    Earth::Mode3D::ApplyWideAffinityForDirectThreadsOnce(
+        gridlessBackend,gridlessThreadCount,"Gridless density POINTS");
+#ifdef _OPENMP
+    if (gridlessBackend==Earth::Mode3D::ParallelBackend::OPENMP)
+      omp_set_num_threads(gridlessThreadCount);
+#endif
     const long long gridlessChunk =
-        Earth::Mode3D::ResolveMpiDynamicChunk(prm,1,totalTasks);
+        Earth::Mode3D::ResolveMpiDynamicChunk(prm,gridlessThreadCount,totalTasks);
 
     if (mpiRank==0) {
       std::cout << "[gridless-density][MPI] scheduler     : "
                 << Earth::Mode3D::MpiSchedulerName(gridlessScheduler) << "\n";
+      std::cout << "[gridless-density] shared backend    : "
+                << Earth::Mode3D::ParallelBackendName(gridlessBackend) << "\n";
+      std::cout << "[gridless-density] workers/rank      : "
+                << gridlessThreadCount << "\n";
       if (gridlessScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
         std::cout << "[gridless-density][MPI] dynamic chunk : " << gridlessChunk
                   << " direction-block task(s) per atomic fetch\n";
@@ -1384,7 +1411,21 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     long long localTasks = 0;
     long long localTraj  = 0;
 
-    auto ProcessTaskId = [&](long long taskId) {
+    // Driver interpolation and SPICE UTC conversion are setup operations, not
+    // trajectory work.  Prepare one immutable parameter block per observation on the
+    // rank/main thread so workers never enter SPICE or rebuild driver state.
+    std::vector<EarthUtil::AmpsParam> pointParams;
+    pointParams.reserve((std::size_t)nPoints);
+    for (int idx=0;idx<nPoints;++idx)
+      pointParams.push_back(DensityGridless_BuildParamForPointLikeLocation(prm,idx));
+
+    struct DensityTaskResult_ {
+      std::size_t flat=0;
+      TrajectoryBlockResult block;
+      int batchCount=0;
+    };
+
+    auto ComputeTaskId = [&](long long taskId) -> DensityTaskResult_ {
       const long long perPoint = (long long)nE * (long long)nDirBlocks;
       const int idx = (int)(taskId / perPoint);
       const long long rem1 = taskId - (long long)idx * perPoint;
@@ -1401,7 +1442,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       // the sample-specific epoch and interpolated Tsyganenko drivers.  MPI ranks are
       // separate processes, so the copy and any thread-local field-evaluator cache are
       // not shared across ranks.
-      EarthUtil::AmpsParam prmForPoint = DensityGridless_BuildParamForPointLikeLocation(prm, idx);
+      const EarthUtil::AmpsParam& prmForPoint=pointParams[(std::size_t)idx];
 
       const double Ej=::gSpectrum.Units().ParticleEnergyJ(E_MeV[ie]);
       const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prmForPoint.species.charge_e)*QE,
@@ -1410,21 +1451,27 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
                                       ? prmForPoint.densitySpectrum.maxTrajTime_s
                                       : -1.0;
 
-      const TrajectoryBlockResult block = ComputeWeightBlockAtEnergy(
+      DensityTaskResult_ result;
+      result.block = ComputeWeightBlockAtEnergy(
           prmForPoint, x0_m, Rgv, dirsUse, idirBegin, idirEnd, maxTraceTime_s,
           doAnisotropic, prmForPoint.anisotropy);
+      result.flat=(size_t)idx*(size_t)nE+(size_t)ie;
+      result.batchCount=batchCount;
+      return result;
+    };
 
-      const size_t flat = (size_t)idx*(size_t)nE + (size_t)ie;
-      partialWeightLocal[flat] += block.weightSum;
-      dirsDoneLocal[flat] += block.sampled;
-      resolvedLocal[flat] += block.resolved;
-      retriedLocal[flat] += block.retried;
+    auto AccumulateTaskResult = [&](const DensityTaskResult_& result) {
+      const size_t flat=result.flat;
+      partialWeightLocal[flat] += result.block.weightSum;
+      dirsDoneLocal[flat] += result.block.sampled;
+      resolvedLocal[flat] += result.block.resolved;
+      retriedLocal[flat] += result.block.retried;
       for (int iterm=0; iterm<kTerminationCount; ++iterm) {
         terminationLocal[flat*(size_t)kTerminationCount+(size_t)iterm] +=
-            block.terminationCounts[(size_t)iterm];
+            result.block.terminationCounts[(size_t)iterm];
       }
       localTasks++;
-      localTraj += (long long)batchCount;
+      localTraj += (long long)result.batchCount;
     };
 
     // Live progress for the collective MPI scheduler.
@@ -1461,6 +1508,67 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       if (progressPending >= progressFlushEvery) FlushProgress(false);
     };
 
+    // Compute a compact rank-local scheduler range in parallel.  Each task writes one
+    // private result slot; accumulation happens serially in scheduler order after the
+    // workers join, avoiding races when several direction blocks share (point,energy).
+    auto ProcessMappedTaskRange = [&](long long beginIndex,long long endIndex,
+                                      auto&& taskIdFromIndex) {
+      if (endIndex<=beginIndex) return;
+      const long long nWork=endIndex-beginIndex;
+      std::vector<DensityTaskResult_> results((std::size_t)nWork);
+      std::exception_ptr workerError;
+      std::mutex workerErrorMutex;
+      std::atomic<bool> stopWorkers(false);
+
+      auto computeOne = [&](long long index) {
+        if (stopWorkers.load(std::memory_order_relaxed)) return;
+        try {
+          results[(std::size_t)(index-beginIndex)]=
+              ComputeTaskId(taskIdFromIndex(index));
+        }
+        catch (...) {
+          std::lock_guard<std::mutex> lock(workerErrorMutex);
+          if (!workerError) workerError=std::current_exception();
+          stopWorkers.store(true,std::memory_order_relaxed);
+        }
+      };
+
+      if (gridlessBackend==Earth::Mode3D::ParallelBackend::THREADS &&
+          gridlessThreadCount>1) {
+        const int nWorkers=(int)std::max(
+            1LL,std::min((long long)gridlessThreadCount,nWork));
+        std::atomic<long long> nextIndex(beginIndex);
+        std::vector<std::thread> workers;
+        workers.reserve((std::size_t)nWorkers);
+        for (int iw=0;iw<nWorkers;++iw) {
+          workers.emplace_back([&]() {
+            for (;;) {
+              if (stopWorkers.load(std::memory_order_relaxed)) break;
+              const long long index=nextIndex.fetch_add(1,std::memory_order_relaxed);
+              if (index>=endIndex) break;
+              computeOne(index);
+            }
+          });
+        }
+        for (std::thread& worker:workers) worker.join();
+      }
+      else if (gridlessBackend==Earth::Mode3D::ParallelBackend::OPENMP &&
+               gridlessThreadCount>1) {
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic,1) num_threads(gridlessThreadCount)
+        for (long long index=beginIndex;index<endIndex;++index) computeOne(index);
+#else
+        for (long long index=beginIndex;index<endIndex;++index) computeOne(index);
+#endif
+      }
+      else {
+        for (long long index=beginIndex;index<endIndex;++index) computeOne(index);
+      }
+
+      if (workerError) std::rethrow_exception(workerError);
+      for (const DensityTaskResult_& result:results) AccumulateTaskResult(result);
+    };
+
     if (totalTasks > 0) {
       if (gridlessScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
         Earth::Mode3D::DynamicMpiLocationScheduler sched(MPI_COMM_WORLD,
@@ -1471,23 +1579,25 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
           const long long startTask = sched.FetchNextChunkStart();
           if (startTask >= totalTasks) break;
           const long long endTask = std::min(startTask + sched.ChunkSize(), totalTasks);
-          for (long long taskId=startTask; taskId<endTask; ++taskId) ProcessTaskId(taskId);
+          ProcessMappedTaskRange(startTask,endTask,
+                                 [](long long index) { return index; });
           NoteProgress(endTask-startTask);
         }
       }
       else if (gridlessScheduler == Earth::Mode3D::MpiScheduler::BLOCK_CYCLIC) {
-        for (long long taskId=(long long)mpiRank; taskId<totalTasks; taskId+=(long long)mpiSize) {
-          ProcessTaskId(taskId);
-          NoteProgress(1);
-        }
+        const long long rankTaskCount=(totalTasks<=mpiRank) ? 0LL :
+            1LL+(totalTasks-1LL-(long long)mpiRank)/(long long)mpiSize;
+        ProcessMappedTaskRange(0,rankTaskCount,[&](long long index) {
+          return (long long)mpiRank+index*(long long)mpiSize;
+        });
+        NoteProgress(rankTaskCount);
       }
       else {
         const long long startTask = (totalTasks * (long long)mpiRank) / (long long)mpiSize;
         const long long endTask   = (totalTasks * (long long)(mpiRank+1)) / (long long)mpiSize;
-        for (long long taskId=startTask; taskId<endTask; ++taskId) {
-          ProcessTaskId(taskId);
-          NoteProgress(1);
-        }
+        ProcessMappedTaskRange(startTask,endTask,
+                               [](long long index) { return index; });
+        NoteProgress(endTask-startTask);
       }
     }
 

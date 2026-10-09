@@ -99,6 +99,19 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+TEST_ROOT = SCRIPT_DIR.parent
+if str(TEST_ROOT) not in sys.path:
+    sys.path.insert(0, str(TEST_ROOT))
+
+from earth_test_runtime import (  # noqa: E402
+    EarthExecutableError,
+    archive_previous_result,
+    atomic_write_json,
+    finish_run_status,
+    initial_run_status,
+    probe_earth_executable,
+)
+
 DEFAULT_REFERENCE = SCRIPT_DIR / "reference_C10_poes_meped_boundary.csv.gz"
 def _default_driver_path() -> Path:
     """Locate the checksum-verified C9 December-2006 TS05 driver.
@@ -2279,16 +2292,75 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not output_root.is_absolute():
         output_root = (launch_dir / output_root).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
+
+    # The status file is the authoritative statement about this invocation.
+    # It is written before any solver branch so a rejected executable or an
+    # interrupted calculation cannot make an older C10_result.json look new.
+    execution_mode = (
+        "DRY_RUN" if args.dry_run else ("READBACK" if args.skip_run else "PHYSICAL")
+    )
+    status_path = output_root / "C10_run_status.json"
+    run_status = initial_run_status(
+        schema="amps-earth-test-run-status-v1",
+        test_id="C10",
+        output_root=output_root,
+        argv=list(argv) if argv is not None else sys.argv[1:],
+        execution_mode=execution_mode,
+    )
+    atomic_write_json(status_path, run_status)
+
+    def finish(
+        return_code: int,
+        state: str,
+        message: str,
+        *,
+        result_current: bool = False,
+    ) -> int:
+        """Finalize the atomic run record without changing scientific gates."""
+
+        atomic_write_json(
+            status_path,
+            finish_run_status(
+                run_status,
+                state=state,
+                return_code=return_code,
+                message=message,
+                result_current=result_current,
+            ),
+        )
+        return return_code
+
     amps_path = Path(args.amps).expanduser()
     if not amps_path.is_absolute():
         amps_path = (launch_dir / amps_path).resolve()
-    if not args.dry_run and not args.skip_run:
-        if not amps_path.exists():
-            print("AMPS executable not found: %s" % amps_path, file=sys.stderr)
-            return 2
-        if not os.access(str(amps_path), os.X_OK):
-            print("AMPS executable is not executable: %s" % amps_path, file=sys.stderr)
-            return 2
+    executable_identity: Optional[Dict[str, object]] = None
+    if execution_mode == "PHYSICAL":
+        try:
+            executable_identity = probe_earth_executable(amps_path, cwd=launch_dir)
+        except EarthExecutableError as exc:
+            message = "C10 executable preflight failed: %s" % exc
+            print(message, file=sys.stderr)
+            return finish(2, "ERROR", message)
+
+        # Preserve completed evidence under a unique timestamp before starting
+        # new physics.  The archive remains inspectable, while result_current
+        # stays false until all selected C10 gates have produced a new result.
+        archived = archive_previous_result(
+            output_root / "C10_result.json",
+            run_started_utc=str(run_status["started_utc"]),
+        )
+        run_status["archived_previous_result"] = (
+            str(archived.resolve()) if archived is not None else None
+        )
+        run_status["executable"] = executable_identity
+        run_status["message"] = "Earth executable verified; physical run in progress"
+    elif execution_mode == "READBACK":
+        run_status["message"] = "postprocessing existing solver products"
+    else:
+        run_status["message"] = "generating inputs and command inventory only"
+    run_status["status"] = "RUNNING"
+    atomic_write_json(status_path, run_status)
+
     solvers = ("GRIDLESS", "GRIDDED") if args.solver == "BOTH" else (args.solver,)
 
     templates = {"GRIDLESS": DEFAULT_TEMPLATE_GRIDLESS, "GRIDDED": DEFAULT_TEMPLATE_MODE3D}
@@ -2335,8 +2407,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 if not args.skip_run:
                     rc = run_process(command, sample_dir, sample_dir / "C10_amps.log")
                     if rc != 0:
-                        print("AMPS failed (%d) in %s" % (rc, sample_dir), file=sys.stderr)
-                        return rc
+                        message = "AMPS failed (%d) in %s" % (rc, sample_dir)
+                        print(message, file=sys.stderr)
+                        return finish(rc, "ERROR", message)
                 diagnostic_estimates: Dict[str, List[BoundaryEstimate]] = {}
                 t50_profile_rows: List[Dict[str, object]] = []
                 if args.cutoff_evaluation == "DIRECT_ACCESS":
@@ -2347,9 +2420,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                    else "cutoff_3d_shells_pamela_access.dat")
                 access_path = sample_dir / access_name
                 if not access_path.exists():
-                    print("C10 exact-rigidity access output not found: %s" % access_path,
-                          file=sys.stderr)
-                    return 2
+                    message = "C10 exact-rigidity access output not found: %s" % access_path
+                    print(message, file=sys.stderr)
+                    return finish(2, "ERROR", message)
                 access_rows = select_common_access_band(
                     parse_tecplot_shell_access(access_path),
                     args.access_abs_lat_min_deg, args.access_abs_lat_max_deg)
@@ -2411,9 +2484,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                      else "cutoff_3d_shells_penumbra.dat")
                     penumbra_path = sample_dir / penumbra_name
                     if not penumbra_path.exists():
-                        print("C10 penumbra output not found: %s" % penumbra_path,
-                              file=sys.stderr)
-                        return 2
+                        message = "C10 penumbra output not found: %s" % penumbra_path
+                        print(message, file=sys.stderr)
+                        return finish(2, "ERROR", message)
                     shell_rows = parse_tecplot_shell_penumbra(penumbra_path)
                     add_aacgm_lat_mlt(shell_rows, epoch, args.altitude_km)
                     diagnostic_estimates["RC_LOWER"] = estimate_boundaries(
@@ -2546,6 +2619,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "sparse_or_cross_channel_outlier_diagnostics_remain_in_C10_diagnostic_flags_csv": True,
             },
             "metrics": asdict(metrics),
+            "executable": executable_identity,
             "reference_is_model": reference_is_model,
             "reference_is_archive": reference_is_archive,
         }, indent=2) + "\n")
@@ -2560,7 +2634,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     (output_root / "C10_commands.json").write_text(json.dumps(commands_inventory, indent=2) + "\n")
     if args.dry_run:
         print("C10 dry-run complete; inputs and commands generated.")
-        return 0
+        return finish(
+            0,
+            "DRY_RUN_COMPLETE",
+            "inputs and command inventory generated; no solver was launched",
+        )
 
     passed = bool(branch_metrics) and all(m.passed for m in branch_metrics.values())
     (output_root / "C10_result.json").write_text(json.dumps({
@@ -2570,6 +2648,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "reference": str(reference_path), "reference_is_model": reference_is_model,
         "reference_is_archive": reference_is_archive,
         "driver_verified": driver_info.verified_driver,
+        "executable": executable_identity,
         "validation_gate": "P6_P7_BACKGROUND_NORMALIZED_INDEPENDENT_WINDOWS;P8_P9_ROBUST_PAIRED_DIAGNOSTICS",
         "diagnostic_channels": ["P8", "P9"],
         "branches": {s: asdict(m) for s, m in branch_metrics.items()},
@@ -2577,7 +2656,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     }, indent=2) + "\n")
     print("C10 selected branches -> %s" % ("PASS" if passed else "FAIL"))
     print("Results: %s" % output_root)
-    return 0 if passed else 1
+    return finish(
+        0 if passed else 1,
+        "PASS" if passed else "FAIL",
+        "all selected scientific gates passed" if passed else
+        "one or more selected scientific gates failed",
+        result_current=True,
+    )
 
 
 def _estimate_row(e: BoundaryEstimate) -> Dict[str, object]:

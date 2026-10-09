@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
-"""Audit Step-12 production wiring and prove the old test list is unchanged.
+"""Audit Step-12 production wiring and the approved test-list structure.
 
-This is intentionally a source contract, not a substring-only physics test.  Numerical
-failure injection lives in test_release_validation.py; here we ensure all production
-surfaces publish the common identity and that registering Step 12 did not edit any
-pre-existing command, expected state, or last-pass hash.
+This is intentionally a source contract, not a substring-only physics test.
+Numerical failure injection lives in test_release_validation.py; here we ensure
+all production surfaces publish the common identity and that every reviewed test
+command, expected state, ordering rule, and comment remains frozen.
+
+``last pass:`` values are different: they are runner-owned mutable provenance.
+The production runner legitimately updates those hashes after a pass, so folding
+their current values into an immutable source digest makes a successful run break
+the next run.  This contract validates their syntax and placement, then normalizes
+only the optional hash before calculating the structural digest.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -20,12 +27,40 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SRC_EARTH = HERE.parents[1]
-PRE_STEP12_LIST_SHA256 = "24997e40773679968370ff3c927fe882327e6e160567e254597ef17f5a85a685"
-STEP12_LIST_BLOCK = "P srcEarth/test/UStep12Release/run_test.sh\nlast pass:\n"
+APPROVED_NORMALIZED_LIST_SHA256 = "e68727bf79510f78feac73c22e562e72354595b6bdc9a46d7d4b8e5bc52dcc13"
+STEP12_COMMAND = "P srcEarth/test/UStep12Release/run_test.sh"
+COMMIT_RE = r"[0-9a-f]{40}"
+# Looped list entries are rewritten by test_runner.py as a brace-delimited
+# value per expansion. Empty items preserve a variant with no passing commit.
+# Accept that production syntax while still rejecting every partial SHA.
+LOOP_COMMITS_RE = r"\{(?:%s)?(?:,(?:%s)?)*\}" % (COMMIT_RE, COMMIT_RE)
+LAST_PASS_RE = re.compile(
+    r"^(!?last pass:)(?:\s+(%s|%s))?\s*$" % (COMMIT_RE, LOOP_COMMITS_RE)
+)
 
 
 def text(relative: str) -> str:
     return (SRC_EARTH / relative).read_text(encoding="utf-8")
+
+
+def normalized_test_list(body: str) -> str:
+    """Remove only runner-written commit values from a validated list.
+
+    The active/commented marker remains part of the digest.  Consequently this
+    does not hide enabling, disabling, adding, removing, reordering, or editing
+    a test; it makes only a valid 40-hex provenance value non-structural.
+    """
+
+    normalized = []
+    for line in body.splitlines(keepends=True):
+        content = line.rstrip("\r\n")
+        ending = line[len(content):]
+        match = LAST_PASS_RE.fullmatch(content)
+        if match:
+            normalized.append(match.group(1) + ending)
+        else:
+            normalized.append(line)
+    return "".join(normalized)
 
 
 class Step12SourceContract(unittest.TestCase):
@@ -105,14 +140,64 @@ class Step12SourceContract(unittest.TestCase):
             self.assertTrue(all(len(campaign["pairs"]) == 7
                                 for campaign in manifest["cross_path_campaigns"]))
 
-    def test_test_list_addition_is_the_only_step12_list_change(self) -> None:
+    def test_test_list_provenance_and_approved_structure(self) -> None:
         current = text("test/list")
-        self.assertEqual(current.count(STEP12_LIST_BLOCK), 1)
+
+        # Every provenance line is either empty or a complete Git SHA-1. This
+        # fails explicitly for truncated/malformed values instead of relying on
+        # a less-informative whole-file digest mismatch.
+        lines = current.splitlines()
+        provenance_lines = [
+            (index, line) for index, line in enumerate(lines)
+            if line.startswith("last pass:") or line.startswith("!last pass:")
+        ]
+        self.assertTrue(provenance_lines)
+        for index, line in provenance_lines:
+            self.assertRegex(line, LAST_PASS_RE, "test/list line %d" % (index + 1))
+
+        # Prove the normalization has exactly the intended mutability: changing
+        # a valid scalar SHA or using the runner's loop-value syntax cannot
+        # perturb normalized structure, while a truncated SHA is never valid.
+        advanced = re.sub(
+            r"(?m)^last pass:\s+[0-9a-f]{40}$",
+            "last pass: " + "0" * 40,
+            current,
+            count=1,
+        )
+        self.assertEqual(normalized_test_list(current), normalized_test_list(advanced))
+        loop_provenance = "last pass: {%s,,%s}\n" % ("1" * 40, "2" * 40)
+        self.assertEqual(normalized_test_list(loop_provenance), "last pass:\n")
+        self.assertIsNone(LAST_PASS_RE.fullmatch("last pass: " + "a" * 39))
+
+        # Step 12 stays an independent active gate and owns exactly one adjacent
+        # active provenance record. A hash may be present after a successful run.
+        step12_indexes = [i for i, line in enumerate(lines) if line == STEP12_COMMAND]
+        self.assertEqual(len(step12_indexes), 1)
+        step12_index = step12_indexes[0]
+        self.assertLess(step12_index + 1, len(lines))
+        self.assertRegex(lines[step12_index + 1], r"^last pass:(?:\s+[0-9a-f]{40})?$")
         self.assertIn("Step 2 through Step 12", current)
-        projected = current.replace(STEP12_LIST_BLOCK, "", 1)
-        projected = projected.replace("Step 2 through Step 12", "Step 2 through Step 11", 1)
-        digest = hashlib.sha256(projected.encode("utf-8")).hexdigest()
-        self.assertEqual(digest, PRE_STEP12_LIST_SHA256)
+
+        # Active tests must be checkout-portable. In particular, C9/C10 must
+        # launch the Earth binary built by this checkout and write beneath this
+        # checkout, rather than a developer's historical home directory.
+        active_commands = [
+            line for line in lines if line.startswith("P ") or line.startswith("F ")
+        ]
+        for command in active_commands:
+            self.assertNotIn("/home/", command)
+            self.assertNotIn("~/", command)
+        c9_commands = [line for line in active_commands if "test/C9/run_C9.py" in line]
+        c10_commands = [line for line in active_commands if "test/C10/run_C10.py" in line]
+        self.assertTrue(c9_commands)
+        self.assertTrue(c10_commands)
+        self.assertTrue(all("--amps ./amps" in line for line in c9_commands + c10_commands))
+        self.assertTrue(all("--output-root test_output/" in line for line in c10_commands))
+
+        digest = hashlib.sha256(
+            normalized_test_list(current).encode("utf-8")
+        ).hexdigest()
+        self.assertEqual(digest, APPROVED_NORMALIZED_LIST_SHA256)
 
 
 if __name__ == "__main__":

@@ -75,6 +75,24 @@ The cached result also has to retain the scalar entry's `exclusive` provenance.
 This makes deferred persistence exercise the current runner schema without
 changing command text, expected P/F state, or validation behavior.
 
+These CLI tests intentionally use the runner's normal unlimited per-test
+runtime. They therefore also exercise the child-completion heartbeat: on hosts
+where an asyncio child-watcher notification is queued without waking the
+selector, an exited child must still produce the normal completion record
+promptly. The heartbeat never prints or streams child output; stdout/stderr
+remain in the per-test log, and the terminal continues to show only launch and
+completion progress.
+
+### UTR-F06 — Earth executable identity and transactional status
+
+The C9/C10 shared runtime guard is exercised with temporary executable scripts.
+An executable whose `-h` output carries the Earth application banner and command
+contract must be accepted and SHA-256 fingerprinted; an executable for another
+AMPS application must fail before MPI or physics starts.  The same test verifies
+that status JSON is replaced atomically and that a preceding top-level result is
+archived recoverably before a new physical invocation.  This is a provenance
+gate only: it never substitutes for, edits, or relaxes a scientific comparison.
+
 The suite does not weaken or replace any scientific validation. Exclusivity is
 runner-only scheduling metadata; AMPS commands, numerical inputs, observations,
 reference solutions, expected P/F states, and acceptance gates remain unchanged.

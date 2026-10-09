@@ -254,6 +254,7 @@
 #include <atomic>
 #include <chrono>
 #include <mutex>
+#include <map>
 #include <exception>
 #include <mpi.h>
 
@@ -305,6 +306,14 @@
 #include "T01Interface.h"
 #include "TA15Interface.h"
 #include "TA16Interface.h"
+
+extern "C" {
+  // T05.for is reentrant: every physical input is passed explicitly and all mutable
+  // working storage is local to the call.  Const qualifiers document the C++ side;
+  // they do not alter the Fortran ABI.
+  void t04_s_(int*,const double*,const double*,const double*,const double*,const double*,
+              double*,double*,double*);
+}
 #endif
 
 // Compute Stormer vertical-cutoff coefficient R0(M) in GV, using the *same* dipole moment
@@ -323,6 +332,25 @@ using Earth::GridlessMode::StormerVerticalCoeff_GV;
 
 
 namespace {
+
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+// GEOPACK context preparation deliberately uses legacy RECALC common blocks, whereas
+// context-based IGRF evaluation is reentrant.  Serialize and cache preparation once per
+// unique epoch/frame; worker trajectories subsequently share only immutable contexts.
+static std::shared_ptr<const Geopack::Context> GetGeopackContextCached_(
+    const std::string& epoch,const std::string& frame) {
+  static std::mutex cacheMutex;
+  static std::map<std::string,std::shared_ptr<const Geopack::Context>> cache;
+  const std::string key=epoch+"\n"+frame;
+  std::lock_guard<std::mutex> lock(cacheMutex);
+  const auto found=cache.find(key);
+  if (found!=cache.end()) return found->second;
+  const std::shared_ptr<const Geopack::Context> context(
+      new Geopack::Context(Geopack::PrepareContext(epoch.c_str(),frame)));
+  cache.emplace(key,context);
+  return context;
+}
+#endif
 
 // Shared-memory backend aliases.  Gridless cutoff intentionally reuses the exact
 // backend/thread-count/affinity resolver used by Mode3D.  The historical storage
@@ -475,7 +503,7 @@ public:
     // creating another worker cannot change this evaluator's field and concurrent
     // construction cannot introduce a data race.  The field formula is unchanged.
 
-    PS = 0.170481; // same default as interfaces
+    PS = 0.170481; // legacy-model default; T05/IGRF replace this from the epoch context
 
 #if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
     // For Tsyganenko models we need Geopack initialization.
@@ -494,7 +522,12 @@ public:
     // link-time dependencies and keeps the dipole test self-contained.  The
     // explicit NONE model is the zero-field validation backend used by F1; it
     // also needs no Geopack/Tsyganenko state.
-    if (Model()!="DIPOLE" && Model()!="NONE") {
+    if (Model()=="T05" || Model()=="IGRF") {
+      geopackContext_=GetGeopackContextCached_(prm.field.epoch,"GSM");
+      PS=geopackContext_->dipoleTiltRad;
+      currentEpoch_ = prm.field.epoch;
+    }
+    else if (Model()!="DIPOLE" && Model()!="NONE") {
       Geopack::Init(prm.field.epoch.c_str(),"GSM");
       currentEpoch_ = prm.field.epoch;
     }
@@ -703,7 +736,13 @@ public:
       // Both psi and the IGRF coefficients are stored in Geopack Fortran common
       // blocks and are used implicitly by every subsequent field evaluation until
       // RECALC is called again.
-      Geopack::Init(epoch.c_str(), "GSM");
+      if (Model()=="T05" || Model()=="IGRF") {
+        geopackContext_=GetGeopackContextCached_(epoch,"GSM");
+        PS=geopackContext_->dipoleTiltRad;
+      }
+      else {
+        Geopack::Init(epoch.c_str(), "GSM");
+      }
       currentEpoch_ = epoch;  // remember for the guard check on the next call
     }
 
@@ -823,7 +862,9 @@ public:
     if (Model()=="IGRF") {
       double x_arr[3]={x_m.x,x_m.y,x_m.z};
       double b_arr[3]={0.0,0.0,0.0};
-      Geopack::IGRF::GetMagneticField(b_arr,x_arr);
+      if (!geopackContext_)
+        throw std::runtime_error("Missing immutable GEOPACK context for IGRF evaluation");
+      Geopack::IGRF::GetMagneticField(*geopackContext_,b_arr,x_arr);
       B_T.x=b_arr[0]; B_T.y=b_arr[1]; B_T.z=b_arr[2];
       return;
     }
@@ -887,6 +928,28 @@ public:
 #else
     double x_arr[3]={x_m.x,x_m.y,x_m.z};
     double b_total[3]={0.0,0.0,0.0};
+
+    // T05 is evaluated through its reentrant Fortran entry point and the immutable
+    // GEOPACK IGRF context.  No namespace-global wrapper parameter or COMMON block is
+    // touched while trajectory workers are active, so different epochs may coexist.
+    if (Model()=="T05") {
+      if (!geopackContext_)
+        throw std::runtime_error("Missing immutable GEOPACK context for T05 evaluation");
+      double x_re[3]={x_m.x/_EARTH__RADIUS_,x_m.y/_EARTH__RADIUS_,x_m.z/_EARTH__RADIUS_};
+      const double r2=x_re[0]*x_re[0]+x_re[1]*x_re[1]+x_re[2]*x_re[2];
+      if (r2<1.0) {
+        B_T.x=0.0; B_T.y=0.0; B_T.z=0.0;
+        return;
+      }
+      int iopt=0;
+      double b_external_nT[3]={0.0,0.0,0.0};
+      t04_s_(&iopt,PARMOD,&PS,x_re+0,x_re+1,x_re+2,
+             b_external_nT+0,b_external_nT+1,b_external_nT+2);
+      Geopack::IGRF::GetMagneticField(*geopackContext_,b_total,x_arr);
+      for (int i=0;i<3;++i) b_total[i]+=b_external_nT[i]*_NANO_;
+      B_T.x=b_total[0]; B_T.y=b_total[1]; B_T.z=b_total[2];
+      return;
+    }
 
     // In serial mode preserve the historical behavior and refresh the wrapper
     // globals immediately before every evaluation.  In threaded frozen-snapshot mode
@@ -989,6 +1052,9 @@ private:
   std::string currentDriverEpoch_; // exact UTC of cached driver/PARMOD snapshot
   bool driverSnapshotInitialized_ = false;
   bool sharedModelStatePreinstalled_ = false;
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  std::shared_ptr<const Geopack::Context> geopackContext_;
+#endif
   Earth::Field::SnapshotMetadata metadata_;
 };
 
@@ -4759,6 +4825,12 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
     return TaskMsg{ TASK_DIRACCESS, pointId, (int)withinPoint, Rmin, Rmax };
   };
 
+  // CSPICE and legacy RECALC context preparation retain process-global bookkeeping.
+  // Serialize only the short per-task snapshot refresh; after it returns, each T05/IGRF
+  // evaluator owns immutable state and the expensive trajectory integration is fully
+  // concurrent.  Repeated tasks at one epoch take ReinitGeopack's no-op fast path.
+  std::mutex gridlessFieldSetupMutex;
+
   // Compute one decoded task and return the result.  This is the same trajectory work
   // that used to live in the worker loop, now factored out so both collective dynamic
   // and deterministic fallback schedulers share a single source of physics behavior.
@@ -4767,8 +4839,11 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
     // Update Geopack/Tsyganenko state for this location's epoch before tracing.  For
     // POINTS/SHELLS this is a no-op after the first call; for TRAJECTORY mode this is
     // what makes each sample use its own timestamp and driver-table values.
-    taskField.ReinitGeopack(CutoffGridless_PointLikeSampleEpochUTC(prm, task.loc),
-                        (prm.temporal.driverTable.empty() ? nullptr : &prm.temporal.driverTable));
+    {
+      std::lock_guard<std::mutex> setupLock(gridlessFieldSetupMutex);
+      taskField.ReinitGeopack(CutoffGridless_PointLikeSampleEpochUTC(prm, task.loc),
+                          (prm.temporal.driverTable.empty() ? nullptr : &prm.temporal.driverTable));
+    }
 
     const V3 x0_m = LocationToX0m(task.loc);
     double rc=-1.0;
@@ -5044,12 +5119,10 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   int gridlessThreadCount = ResolveGridlessThreadCount_(prm,gridlessBackend);
   if (gridlessBackend == GridlessParallelBackend_::SERIAL) gridlessThreadCount = 1;
 
-  // Geopack and the legacy Tsyganenko wrapper parameter blocks are process-global.
-  // Parallel GRIDLESS is therefore valid only when every task in this AMPS process uses
-  // one frozen epoch/driver snapshot.  POINTS, SHELLS, and the C19 one-epoch-per-process
-  // workflow satisfy this condition.  A TRAJECTORY file can contain different epochs;
-  // in that case MPI parallelism remains active, but intra-rank shared-memory execution
-  // is deliberately downgraded to SERIAL rather than racing process-global field state.
+  // Legacy empirical-model wrappers use process-global parameter blocks.  T05 and IGRF
+  // are exceptions in this evaluator: they use explicit immutable GEOPACK contexts and
+  // the reentrant T05 entry point, so different trajectory epochs can run concurrently.
+  // Keep the single-snapshot gate for models that still use the legacy wrappers.
   bool oneFrozenFieldSnapshot = true;
   std::string frozenEpoch;
   if (nLoc > 0) frozenEpoch = CutoffGridless_PointLikeSampleEpochUTC(prm,0);
@@ -5071,14 +5144,23 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   const bool directFieldThreadsSupported = true;
 #endif
 
+  const std::string threadedFieldModel=EarthUtil::ToUpper(prm.field.model);
+  const bool multiEpochFieldThreadsSupported =
+      threadedFieldModel=="T05" || threadedFieldModel=="TS05" ||
+      threadedFieldModel=="T05S" || threadedFieldModel=="T04S" ||
+      threadedFieldModel=="TS04" || threadedFieldModel=="IGRF" ||
+      threadedFieldModel=="DIPOLE" || threadedFieldModel=="NONE";
+
   if ((gridlessBackend != GridlessParallelBackend_::SERIAL) &&
       gridlessThreadCount > 1 &&
-      (!oneFrozenFieldSnapshot || !directFieldThreadsSupported)) {
+      ((!oneFrozenFieldSnapshot && !multiEpochFieldThreadsSupported) ||
+       !directFieldThreadsSupported)) {
     if (mpiRank==0) {
       std::cerr << "[gridless][threads] requested "
                 << GridlessParallelBackendName_(gridlessBackend) << " with "
                 << gridlessThreadCount << " worker(s)/rank, but direct-field "
-                << "threading requires one frozen field snapshot per process";
+                << "threading requires either an immutable per-epoch field context "
+                << "or one frozen field snapshot per process";
       if (!directFieldThreadsSupported) std::cerr << " and a standalone non-SWMF field evaluator";
       std::cerr << ". Falling back to SERIAL intra-rank execution; MPI scheduling "
                 << "remains enabled.\n";
@@ -5141,7 +5223,13 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
 
   const bool gridlessSharedThreadsActive =
       (gridlessBackend != GridlessParallelBackend_::SERIAL && gridlessThreadCount > 1);
-  if (gridlessSharedThreadsActive && !gridlessWorkerFields.empty()) {
+  const bool usesLegacySharedModelState =
+      !(threadedFieldModel=="T05" || threadedFieldModel=="TS05" ||
+        threadedFieldModel=="T05S" || threadedFieldModel=="T04S" ||
+        threadedFieldModel=="TS04" || threadedFieldModel=="IGRF" ||
+        threadedFieldModel=="DIPOLE" || threadedFieldModel=="NONE");
+  if (gridlessSharedThreadsActive && usesLegacySharedModelState &&
+      !gridlessWorkerFields.empty()) {
     const EarthUtil::TsDriverTable* driverTable =
         prm.temporal.driverTable.empty() ? nullptr : &prm.temporal.driverTable;
     for (auto& fieldPtr : gridlessWorkerFields)

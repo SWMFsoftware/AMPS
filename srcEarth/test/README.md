@@ -337,6 +337,14 @@ with an actionable message, before AMPS allocates the C19 mesh. Every test log
 records both `Exclusive scheduling:` and `Exclusive environment marker:` so the
 protection can be audited from the artifact alone.
 
+Child stdout/stderr is written only to its per-test log. The terminal reports
+the concise `[START]` and `[OK]`/`[MISMATCH]` records; it does not stream the
+child transcript. While waiting, a 0.25-second asyncio heartbeat services
+process-exit notifications on batch/container hosts where the child watcher can
+queue a completion without waking the selector. This heartbeat neither changes
+the configured timeout nor polls scientific output, and timeout cleanup still
+terminates the complete child process group.
+
 The focused dependency-free regression suite is:
 
 ```bash
@@ -349,7 +357,9 @@ jobs must overlap, an exclusive job must wait for both, and subsequent work must
 wait for the exclusive job. UTR-F03 exercises marker propagation through real
 child processes, and UTR-F04 freezes the active C19 isolation and CPU-fan-out
 contract. UTR-F05 checks deferred `last pass:` persistence and stale-list
-rejection. See `UTestRunner/README.md` for the exact gates.
+rejection, including prompt completion with the normal unlimited runtime.
+UTR-F06 checks Earth-executable identity, atomic C9/C10 status, and recoverable
+result archival. See `UTestRunner/README.md` for the exact gates.
 
 Unless `--update-last-pass` is present, a completed run writes a hidden
 `.list.last-pass-results.json` cache beside the test list without editing that

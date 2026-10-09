@@ -1265,6 +1265,53 @@ def build_test_plan(test: TestCase, *, default_np: int, default_nt: int) -> Test
     return TestPlan(test=test, np_value=np_value, nt_value=nt_value, np_nt_details=details)
 
 
+async def wait_for_process_completion(
+    proc: asyncio.subprocess.Process,
+    *,
+    timeout_s: Optional[float],
+    heartbeat_s: float = 0.25,
+) -> int:
+    """Wait for a child while periodically waking the asyncio event loop.
+
+    On some batch/container hosts the child-watcher callback is queued when the
+    process exits but does not itself wake the selector reliably. A single
+    unbounded ``await proc.wait()`` can then remain asleep forever even though
+    the child is already a zombie. A short timeout elsewhere used to mask this
+    by waking the loop only when that timeout expired; tests with the normal
+    unlimited runtime had no such wakeup.
+
+    This heartbeat does not poll files, inspect output, rewrite commands, or
+    impose a runtime limit. Child stdout/stderr stays in the per-test log. It
+    merely lets asyncio service its already-queued process-exit notification so
+    the existing terminal ``[OK]``/``[MISMATCH]`` completion record appears.
+    """
+
+    if heartbeat_s <= 0.0:
+        raise ValueError("process-wait heartbeat must be positive")
+
+    deadline = None if timeout_s is None else time.monotonic() + timeout_s
+    wait_task = asyncio.create_task(proc.wait())
+    try:
+        while True:
+            if deadline is None:
+                interval = heartbeat_s
+            else:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.0:
+                    raise asyncio.TimeoutError
+                interval = min(heartbeat_s, remaining)
+
+            done, _pending = await asyncio.wait({wait_task}, timeout=interval)
+            if done:
+                return wait_task.result()
+    finally:
+        # A timeout path performs a new wait after SIGTERM/SIGKILL below. Do not
+        # leave the original waiter task attached to the same Process object.
+        if not wait_task.done():
+            wait_task.cancel()
+            await asyncio.gather(wait_task, return_exceptions=True)
+
+
 async def run_one_test(
     plan: TestPlan,
     *,
@@ -1397,7 +1444,9 @@ async def run_one_test(
                 )
 
             try:
-                exit_code = await asyncio.wait_for(proc.wait(), timeout=timeout_s)
+                exit_code = await wait_for_process_completion(
+                    proc, timeout_s=timeout_s
+                )
             except asyncio.TimeoutError:
                 timed_out = True
                 try:
@@ -1405,13 +1454,13 @@ async def run_one_test(
                 except ProcessLookupError:
                     pass
                 try:
-                    await asyncio.wait_for(proc.wait(), timeout=10.0)
+                    await wait_for_process_completion(proc, timeout_s=10.0)
                 except asyncio.TimeoutError:
                     try:
                         os.killpg(proc.pid, signal.SIGKILL)
                     except ProcessLookupError:
                         pass
-                    await proc.wait()
+                    await wait_for_process_completion(proc, timeout_s=None)
                 exit_code = proc.returncode
 
         except Exception as exc:  # launch failure is also a failed test
