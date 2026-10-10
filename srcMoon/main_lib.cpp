@@ -4,9 +4,12 @@
 //the particle class
 #include "pic.h"
 #include "constants.h"
+#include "LunarSurface.h"
+#include "MoonInput.h"
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <algorithm>
 #include <vector>
 #include <string>
 #include <list>
@@ -905,6 +908,143 @@ InjectionTangentionalSpeed+=sqrt(v1);
 */
 
 
+namespace {
+
+// Adapt a candidate produced by the existing spherical source kernels to the
+// resolved terrain without duplicating any source-rate or velocity law.
+//
+// Inputs xBodyFixed/vBodyFixed are in the static LDEM body-fixed axes and SI
+// units.  The logical source grid supplies only a direction; this routine finds
+// the actual terrain radius, rotates the sampled emission distribution into
+// the local facet-normal frame, and updates MPI ownership after displacement.
+// Returning false tells the generic injector that this rank does not own the
+// final point; it is not a physical source rejection.
+bool ResolvedSurfaceInjectionAdapter(int spec,int sourceProcessId,
+    double *xSo,double *xBodyFixed,double *vSo,double *vBodyFixed,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &startNode) {
+  (void)spec;
+  (void)sourceProcessId;
+
+  // LDEM_4 topography is a single-valued radial displacement, so a ray from
+  // the lunar centre intersects the intended surface exactly once.  Normalize
+  // the logical-sphere position to retain only longitude/latitude direction.
+  double direction[3]={xBodyFixed[0],xBodyFixed[1],xBodyFixed[2]};
+  const double radius=sqrt(direction[0]*direction[0]+direction[1]*direction[1]+
+      direction[2]*direction[2]);
+  if (!(radius>0.0)) {
+    exit(__LINE__,__FILE__,"srcMoon: zero-radius surface source point");
+  }
+  for (int i=0;i<3;i++) direction[i]/=radius;
+
+  double origin[3]={0.0,0.0,0.0},intersection[3];
+  const int faceIndex=PIC::RayTracing::FindFistIntersectedFace(
+      origin,direction,intersection,false,NULL);
+  if (faceIndex<0) {
+    exit(__LINE__,__FILE__,
+        "srcMoon: radial ray did not intersect the loaded LOLA surface");
+  }
+
+  // The generator and loader guarantee outward winding.  Normalize again at
+  // the API boundary so the rotation and positional offset do not depend on a
+  // particular CutCell normal-magnitude convention.
+  const double *storedNormal=
+      PIC::Mesh::IrregularSurface::BoundaryTriangleFaces[faceIndex].ExternalNormal;
+  double normal[3]={storedNormal[0],storedNormal[1],storedNormal[2]};
+  const double normalLength=sqrt(normal[0]*normal[0]+normal[1]*normal[1]+
+      normal[2]*normal[2]);
+  if (!(normalLength>0.0)) {
+    exit(__LINE__,__FILE__,"srcMoon: LOLA face has a zero normal");
+  }
+  for (int i=0;i<3;i++) normal[i]/=normalLength;
+
+  // Rotate the velocity by the shortest rotation taking the logical radial
+  // normal into the resolved facet normal.  This preserves speed and the
+  // source kernel's polar/azimuthal distribution relative to the surface.
+  double axis[3]={
+      direction[1]*normal[2]-direction[2]*normal[1],
+      direction[2]*normal[0]-direction[0]*normal[2],
+      direction[0]*normal[1]-direction[1]*normal[0]};
+  const double sine=sqrt(axis[0]*axis[0]+axis[1]*axis[1]+axis[2]*axis[2]);
+  const double cosine=direction[0]*normal[0]+direction[1]*normal[1]+
+      direction[2]*normal[2];
+  if (sine>1.0e-14) {
+    for (int i=0;i<3;i++) axis[i]/=sine;
+    const double oldVelocity[3]={vBodyFixed[0],vBodyFixed[1],vBodyFixed[2]};
+    const double cross[3]={
+        axis[1]*oldVelocity[2]-axis[2]*oldVelocity[1],
+        axis[2]*oldVelocity[0]-axis[0]*oldVelocity[2],
+        axis[0]*oldVelocity[1]-axis[1]*oldVelocity[0]};
+    const double projection=axis[0]*oldVelocity[0]+axis[1]*oldVelocity[1]+
+        axis[2]*oldVelocity[2];
+    for (int i=0;i<3;i++) {
+      vBodyFixed[i]=oldVelocity[i]*cosine+cross[i]*sine+
+          axis[i]*projection*(1.0-cosine);
+    }
+  }
+  else if (cosine<0.0) {
+    exit(__LINE__,__FILE__,
+        "srcMoon: inward LOLA face normal encountered during injection");
+  }
+
+  // A point exactly on a triangle is ambiguous to a zero-tolerance inside/
+  // outside query.  Move by a scale tied to the AMR geometric tolerance, with
+  // a one-micrometre floor that remains negligible relative to LOLA relief.
+  const double offset=std::max(1.0e-6,10.0*PIC::Mesh::mesh->EPS);
+  for (int i=0;i<3;i++) {
+    xBodyFixed[i]=intersection[i]+offset*normal[i];
+    // Realistic mode is currently permitted only for the static body-fixed
+    // configuration, so the AMR/SO and body-fixed coordinates coincide.
+    xSo[i]=xBodyFixed[i];
+    vSo[i]=vBodyFixed[i];
+  }
+  // The radial displacement can cross an AMR block or MPI partition.  Always
+  // rediscover the owner from the final SO position before accepting it.
+  startNode=PIC::Mesh::mesh->findTreeNode(xSo,startNode);
+  return startNode!=NULL && startNode->block!=NULL &&
+      startNode->Thread==PIC::ThisThread;
+}
+
+double ResolvedSurfaceSourceRate(int spec) {
+  // PIC asks for a model-wide extra source rate because the logical sphere is
+  // not registered as a geometric boundary in terrain mode.  Dispatch to the
+  // unchanged production exosphere rate selector and logical inventory grid.
+  return Moon::SourceProcesses::totalProductionRate(spec,
+      _INTERNAL_BOUNDARY_TYPE_SPHERE_,Moon::Planet);
+}
+
+long int ResolvedSurfaceInjection() {
+  // Likewise, use the generic production boundary injector; its optional
+  // postprocessor above performs only the geometry adaptation.
+  return Moon::SourceProcesses::InjectionBoundaryModel(
+      _INTERNAL_BOUNDARY_TYPE_SPHERE_,Moon::Planet);
+}
+
+int ResolvedSurfaceInteraction(long int ptr,double *x,double *v,
+    CutCell::cTriangleFace *face,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+  // The CutCell mover provides the intersected facet and its outward normal.
+  // Reuse the same sticking/accommodation kernel as sphere mode, replacing
+  // only the normal.  Surface inventory remains indexed on Moon::Planet's
+  // logical 60x100 grid until a facet inventory model is implemented.
+  double unusedFlightTime=0.0;
+  const int spec=PIC::ParticleBuffer::GetI(ptr);
+  const int result=Moon::SurfaceInteraction::
+      ParticleSurfaceInteraction_SurfaceAccomodation(spec,ptr,x,v,
+          unusedFlightTime,startNode,Moon::Planet,face->ExternalNormal);
+  if (result!=_PARTICLE_DELETED_ON_THE_FACE_) {
+    // The cut-face mover places x exactly on the intersected triangle.  Move
+    // a re-emitted particle into the exterior by the same EPS convention used
+    // by the analytic-sphere mover; otherwise the subsequent zero-tolerance
+    // inside-surface guard can classify the boundary point as interior.
+    const double offset=std::max(1.0e-6,10.0*PIC::Mesh::mesh->EPS);
+    for (int dimension=0;dimension<3;dimension++)
+      x[dimension]+=offset*face->ExternalNormal[dimension];
+  }
+  return result;
+}
+
+}  // namespace
+
 void amps_init() {
   //  MPI_Init(&argc,&argv);
     PIC::InitMPI();
@@ -969,14 +1109,19 @@ void amps_init() {
 
     //output the PDS enerfy distribution function
     if (PIC::ThisThread==0) {
+      const std::string outputDirectory(PIC::OutputDataFileDirectory);
+
       for (int spec=0;spec<PIC::nTotalSpecies;spec++) {
-        char fname[200];
+        const std::string speciesName(PIC::MolecularData::GetChemSymbol(spec));
+        std::string fname=outputDirectory+
+            "/CumulativeEnergyDistribution-PSD.nspec="+
+            std::to_string(spec)+"."+speciesName+".dat";
 
-        sprintf(fname,"%s/CumulativeEnergyDistribution-PSD.nspec=%i.%s.dat",PIC::OutputDataFileDirectory,spec,PIC::MolecularData::GetChemSymbol(spec));
-        Moon::SourceProcesses::PhotonStimulatedDesorption::EnergyDistribution[spec].fPrintCumulativeDistributionFunction(fname);
+        Moon::SourceProcesses::PhotonStimulatedDesorption::EnergyDistribution[spec].fPrintCumulativeDistributionFunction(fname.c_str());
 
-        sprintf(fname,"%s/EnergyDistribution-PSD.nspec=%i.%s.dat",PIC::OutputDataFileDirectory,spec,PIC::MolecularData::GetChemSymbol(spec));
-        Moon::SourceProcesses::PhotonStimulatedDesorption::EnergyDistribution[spec].fPrintDistributionFunction(fname,&spec);
+        fname=outputDirectory+"/EnergyDistribution-PSD.nspec="+
+            std::to_string(spec)+"."+speciesName+".dat";
+        Moon::SourceProcesses::PhotonStimulatedDesorption::EnergyDistribution[spec].fPrintDistributionFunction(fname.c_str(),&spec);
       }
 
   //    cout << Moon::SourceProcesses::PhotonStimulatedDesorption::EnergyDistribution.DistributeVariable() << endl;
@@ -984,7 +1129,33 @@ void amps_init() {
 
 
 
-    //register the sphere
+    // Application input is optional solely for the historical regression.
+    // When present, surface preparation is collective: rank zero creates the
+    // files, all ranks load the same CEA surface, and any failure is fatal
+    // before AMR initialization can proceed with inconsistent geometry.
+    bool useResolvedLolaSurface=false;
+    if (Moon::Runtime::HasConfiguration()) {
+      const Moon::Runtime::Configuration& configuration=
+          Moon::Runtime::GetConfiguration();
+      std::string surfaceError;
+      if (!Moon::Surface::PrepareProductionSurface(configuration,&surfaceError)) {
+        exit(__LINE__,__FILE__,surfaceError.c_str());
+      }
+      useResolvedLolaSurface=Moon::Surface::RealisticSurfaceActive();
+      if (PIC::ThisThread==0) {
+        std::cout << "$PREFIX: srcMoon input=" << configuration.inputFile
+                  << ", SPICE root=" << configuration.spiceRoot
+                  << ", surface="
+                  << Moon::Runtime::SurfaceGeometryName(
+                         configuration.surfaceGeometry)
+                  << std::endl;
+      }
+    }
+
+    // The source/reservoir grids remain latitude/longitude grids in both
+    // modes.  In LOLA mode this object is deliberately not registered as an
+    // analytic geometric boundary; the loaded CEA triangulation is the sole
+    // collision boundary.
     {
       double sx0[3]={0.0,0.0,0.0};
       cInternalBoundaryConditionsDescriptor SphereDescriptor;
@@ -1002,8 +1173,34 @@ void amps_init() {
 
 
       PIC::BC::InternalBoundary::Sphere::Init(ReserveSamplingSpace,NULL);
-      SphereDescriptor=PIC::BC::InternalBoundary::Sphere::RegisterInternalSphere();
-      Sphere=(cInternalSphericalData*) SphereDescriptor.BoundaryElement;
+      if (useResolvedLolaSurface==false) {
+        SphereDescriptor=PIC::BC::InternalBoundary::Sphere::RegisterInternalSphere();
+        Sphere=(cInternalSphericalData*) SphereDescriptor.BoundaryElement;
+      }
+      else {
+        // The generic exosphere source, population, and output routines are
+        // implemented in terms of cInternalSphericalData.  Allocate that
+        // object as an unregistered logical grid, then register NastranSurface
+        // as the only geometric boundary seen by the mover/ray tracer.
+        Sphere=new cInternalSphericalData;
+        PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber=
+            Sphere->GetTotalSurfaceElementsNumber();
+        const long int samplingLength=2*
+            PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber*
+            PIC::BC::InternalBoundary::Sphere::TotalSampleSetLength;
+        Sphere->SamplingBuffer=new double[samplingLength]();
+        Sphere->maxIntersectedNodeTimeStep=new double[PIC::nTotalSpecies];
+        for (int spec=0;spec<PIC::nTotalSpecies;spec++)
+          Sphere->maxIntersectedNodeTimeStep[spec]=-1.0;
+
+        cInternalBoundaryConditionsDescriptor triangulationDescriptor=
+            PIC::BC::InternalBoundary::NastranSurface::
+                RegisterInternalNastranSurface();
+        cInternalNastranSurfaceData *triangulation=
+            static_cast<cInternalNastranSurfaceData*>(
+                triangulationDescriptor.BoundaryElement);
+        triangulation->localResolution=localSphericalSurfaceResolution;
+      }
       Sphere->SetSphereGeometricalParameters(sx0,rSphere);
 
 
@@ -1025,20 +1222,39 @@ void amps_init() {
       }
 
 
-      char fname[_MAX_STRING_LENGTH_PIC_];
+      // Construct output paths dynamically: OutputDataFileDirectory can already
+      // occupy the full legacy fixed buffer, so appending in-place is unsafe.
+      const std::string outputDirectory(PIC::OutputDataFileDirectory);
+      const std::string surfaceMeshFile=outputDirectory+"/Sphere.dat";
+      const std::string surfaceDataFile=outputDirectory+"/SpheraData.dat";
 
-      sprintf(fname,"%s/Sphere.dat",PIC::OutputDataFileDirectory);
-      Sphere->PrintSurfaceMesh(fname);
-
-      sprintf(fname,"%s/SpheraData.dat",PIC::OutputDataFileDirectory);
-      Sphere->PrintSurfaceData(fname,0);
+      Sphere->PrintSurfaceMesh(surfaceMeshFile.c_str());
+      // RegisterInternalSphere() supplies storage used by the legacy initial
+      // print.  The unregistered logical sphere receives the equivalent
+      // exosphere storage from Allocate() below, so defer only that mode.
+      if (useResolvedLolaSurface==false)
+        Sphere->PrintSurfaceData(surfaceDataFile.c_str(),0);
 
       Sphere->localResolution=localSphericalSurfaceResolution;
-      Sphere->InjectionRate=Moon::SourceProcesses::totalProductionRate;
       Sphere->faceat=0;
-      Sphere->ParticleSphereInteraction=Moon::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation;
-      Sphere->InjectionBoundaryCondition=Moon::SourceProcesses::InjectionBoundaryModel; ///sphereParticleInjection;
+      if (useResolvedLolaSurface) {
+        Sphere->InjectionRate=NULL;
+        Sphere->ParticleSphereInteraction=NULL;
+        Sphere->InjectionBoundaryCondition=NULL;
+      }
+      else {
+        Sphere->InjectionRate=Moon::SourceProcesses::totalProductionRate;
+        Sphere->ParticleSphereInteraction=
+            Moon::SurfaceInteraction::
+                ParticleSphereInteraction_SurfaceAccomodation;
+        Sphere->InjectionBoundaryCondition=static_cast<long int (*)(int,void*)>(
+            Moon::SourceProcesses::InjectionBoundaryModel);
+      }
 
+      // Preserve the legacy sphere order: its initial state print above uses
+      // the default callbacks installed by RegisterInternalSphere().  The
+      // unregistered LOLA logical sphere skips that print until Allocate()
+      // below has supplied the arrays used by these model callbacks.
       Sphere->PrintTitle=Moon::Sampling::OutputSurfaceDataFile::PrintTitle;
       Sphere->PrintVariableList=Moon::Sampling::OutputSurfaceDataFile::PrintVariableList;
       Sphere->PrintDataStateVector=Moon::Sampling::OutputSurfaceDataFile::PrintDataStateVector;
@@ -1046,7 +1262,23 @@ void amps_init() {
       //set up the planet pointer in Mercury model
       Moon::Planet=Sphere;
 
+      if (useResolvedLolaSurface) {
+        // A registered sphere would install these callbacks on its boundary.
+        // Terrain mode exposes the equivalent production dispatch through the
+        // PIC hooks associated with the registered triangulation instead.
+        PIC::ParticleWeightTimeStep::UserDefinedExtraSourceRate=
+            ResolvedSurfaceSourceRate;
+        PIC::BC::UserDefinedParticleInjectionFunction=
+            ResolvedSurfaceInjection;
+        PIC::Mover::ProcessTriangleCutFaceIntersection=
+            ResolvedSurfaceInteraction;
+        Moon::SourceProcesses::PostProcessSurfaceInjection=
+            ResolvedSurfaceInjectionAdapter;
+      }
+
       Sphere->Allocate<cInternalSphericalData>(PIC::nTotalSpecies,PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber,_EXOSPHERE__SOURCE_MAX_ID_VALUE_,Sphere);
+      if (useResolvedLolaSurface)
+        Sphere->PrintSurfaceData(surfaceDataFile.c_str(),0);
 /*
 
       //allocate the buffers for collecting the sodium surface density
@@ -1249,18 +1481,20 @@ void amps_init() {
   //  {
   //    VT_TRACER("name");
 
-   char fname[_MAX_STRING_LENGTH_PIC_];
+   // Keep constructed paths dynamically sized. The configured output directory
+   // may use all _MAX_STRING_LENGTH_PIC_ bytes before a filename is appended.
+   std::string fname;
 
 
-    sprintf(fname,"%s/mesh.msh",PIC::OutputDataFileDirectory);
+    fname=std::string(PIC::OutputDataFileDirectory)+"/mesh.msh";
     if (PIC::Mesh::mesh->ThisThread==0) {
       PIC::Mesh::mesh->buildMesh();
-      PIC::Mesh::mesh->saveMeshFile(fname);
+      PIC::Mesh::mesh->saveMeshFile(fname.c_str());
       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     }
     else {
       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-      PIC::Mesh::mesh->readMeshFile(fname);
+      PIC::Mesh::mesh->readMeshFile(fname.c_str());
     }
 
 
@@ -1305,8 +1539,8 @@ if (PIC::ThisThread==0) PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,"tetra_
 
   //  cout << __LINE__ << " rnd=" << rnd() << " " << PIC::Mesh::mesh->ThisThread << endl;
 
-    sprintf(fname,"%s/mesh.dat",PIC::OutputDataFileDirectory);
-    PIC::Mesh::mesh->outputMeshTECPLOT(fname);
+    fname=std::string(PIC::OutputDataFileDirectory)+"/mesh.dat";
+    PIC::Mesh::mesh->outputMeshTECPLOT(fname.c_str());
 
     PIC::Mesh::mesh->memoryAllocationReport();
     PIC::Mesh::mesh->GetMeshTreeStatistics();
@@ -1325,8 +1559,8 @@ if (PIC::ThisThread==0) PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,"tetra_
 
 test_cut_cell(PIC::Mesh::mesh->rootTree);
 
-sprintf(fname,"tetra_mesh.thread=%ld.dat",PIC::ThisThread); 
-PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,fname);
+fname="tetra_mesh.thread="+std::to_string(PIC::ThisThread)+".dat";
+PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,fname.c_str());
 
     PIC::Mesh::mesh->memoryAllocationReport();
     PIC::Mesh::mesh->GetMeshTreeStatistics();
@@ -1897,5 +2131,3 @@ void amps_time_step() {
     //make the time advance
      PIC::TimeStep();
 }
-
-

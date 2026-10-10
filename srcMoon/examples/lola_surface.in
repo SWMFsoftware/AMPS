@@ -1,0 +1,13 @@
+! Paths are resolved relative to this file.  The SPICE root is checked for the
+! same cspice/ and Kernels/ layout as /home/vtenishe/SPICE.  This setting does
+! not by itself change the compile-time SPICE=off selection in input/moon.input.
+#section begin: moon
+spice_path = /home/vtenishe/SPICE
+surface_geometry = lola
+surface_mesh_resolution_m = 100000
+lola_product_id = LDEM_4
+lola_image_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.IMG
+lola_label_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.LBL
+surface_cea_file = ../../test_output/srcMoon/surface/lola_surface.cea
+surface_tecplot_file = ../../test_output/srcMoon/surface/lola_surface.dat
+#section end

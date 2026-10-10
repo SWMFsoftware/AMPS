@@ -1,0 +1,31 @@
+{
+  "id": "U12",
+  "name": "Species sticking, residence-time, and re-emission distribution verification",
+  "purpose": "Verify compiled surface-temperature and sticking kernels while explicitly separating absent residence-time/inventory physics.",
+  "production_capability": "Exosphere::GetSurfaceTemperature, SodiumStickingProbability, ArgonStickingProbability, and surface interaction dispatch.",
+  "production_entry_points": ["Exosphere::GetSurfaceTemperature", "Exosphere::SurfaceInteraction::StickingProbability", "Exosphere::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation"],
+  "configuration": "Current Yakshinskiy2005SS Na mode generated from moon.input; analytical cosine temperature.",
+  "inputs": ["cosine values -0.25, 0, 0.0625, 1", "Na 100 K", "Ar 88/110/158 K"],
+  "independent_reference": "Closed-form cosine-temperature values and frozen tabulated/piecewise sticking control points.",
+  "units": "K and dimensionless probabilities/fractions",
+  "frame_time_convention": "Moon-centred solar-orbital frame; static non-eclipsed fixture.",
+  "deterministic_stochastic_controls": "Kernel calls are deterministic; stochastic Bernoulli/re-emission distributions remain for linked testing.",
+  "procedure": "Call compiled temperature and sticking kernels at breakpoints; do not claim residence-time or inventory verification.",
+  "metrics": ["temperature error", "sticking error", "reemission-fraction error"],
+  "acceptance_criteria": "Control values within 1e-14 relative or exact where integral; all probabilities in [0,1].",
+  "reference_values": {
+    "surface_temperature_K": {"cos=-0.25": 100.0, "cos=0": 100.0, "cos=0.0625": 240.0, "cos=1": 380.0},
+    "sodium_sticking_at_100K": 0.9983,
+    "argon_sticking": {"88K": 0.19054607179632474, "110K": 0.00630957344480193, "158K": 0.0001},
+    "reemission_fraction": 1.0
+  },
+  "expected_pass_result": "Available deterministic kernels match their frozen references.",
+  "expected_failure_modes": ["wrong generated sticking mode", "breakpoint error", "temperature shadow contamination", "probability outside bounds"],
+  "required_data": [],
+  "data_hashes": "none; the digitized Na table embedded in production is regression input, not observational validation",
+  "predecessor_gates": ["U02", "U05"],
+  "artifacts": ["result.json", "linked probe stdout"],
+  "status_semantics": "PASS covers only temperature/sticking kernels; residence time, inventory, and stochastic re-emission remain unverified and require I18/I19.",
+  "implementation": "linked-production-probe",
+  "probe_modes": ["temperature", "sticking"]
+}

@@ -1008,6 +1008,17 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*4.0E3;
     long int InjectionBoundaryModel(int BoundaryElementType,void *BoundaryElement);
     long int InjectionBoundaryModel(int spec,int BoundaryElementType,void *BoundaryElement);
 
+    // Optional production adapter used when a model samples its sources on a
+    // logical sphere but transports particles from a resolved triangulation.
+    // The callback may replace body/SO position, velocity, and owning mesh
+    // node after the normal source kernel has generated a complete candidate.
+    // It returns true only on the rank that owns the adapted final position.
+    // NULL preserves the legacy injection path byte-for-byte.
+    typedef bool (*fPostProcessSurfaceInjection)(int spec,int sourceProcessId,
+        double *xSo,double *xBodyFixed,double *vSo,double *vBodyFixed,
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &startNode);
+    extern fPostProcessSurfaceInjection PostProcessSurfaceInjection;
+
     long int InjectionBoundaryModelLimited(void *SphereDataPointer);
     long int InjectionBoundaryModelLimited(int spec,void *SphereDataPointer);
   }
@@ -1038,6 +1049,12 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*4.0E3;
 
     //model of the interaction between particles and the planetary surface
     int ParticleSphereInteraction_SurfaceAccomodation(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer);
+    // Shared physical accommodation/sticking kernel.  A NULL explicit normal
+    // selects the historical radial sphere normal; a non-NULL vector is a
+    // body-fixed outward facet normal supplied by a resolved surface mover.
+    int ParticleSurfaceInteraction_SurfaceAccomodation(int spec,long int ptr,
+        double *x,double *v,double &dtTotal,void *NodeDataPonter,
+        void *SphereDataPointer,const double *externalNormalBodyFixed);
   }
 
 

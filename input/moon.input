@@ -61,7 +61,7 @@ ParticleWeightCorrectionMode=off !on,off
 ! CutCellVolumeCalculationMaxRefinmentLevel=1
 
   NastranSurfaceUserData=on !!!on, off
-  ControlParticleInsideNastranSurface=off !!!on,of
+  ControlParticleInsideNastranSurface=on !!!on,off; required by srcMoon surface_geometry=lola
 
   SaveParticleRestartFile=on \\  !on,off
     file=ParticleData.restart=223 \\

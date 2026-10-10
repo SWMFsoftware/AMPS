@@ -22,7 +22,15 @@ void Exosphere::ExchangeSurfaceAreaDensity() {
     double TotalFlux_LOCAL[PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber];
     double TotalFlux_GLOBAL[PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber];
 
-    cInternalSphericalData *Sphere=(cInternalSphericalData*)(PIC::Mesh::mesh->InternalBoundaryList.begin()->BoundaryElement);
+    // Planet is the model's authoritative logical surface.  It is normally
+    // also the first registered analytic boundary, but resolved-surface
+    // applications can register a triangulation for collisions while keeping
+    // an unregistered spherical grid for inventories and source dispatch.
+    // Reading InternalBoundaryList.front() and casting it as a sphere is then
+    // invalid; use the explicitly initialized model pointer in both modes.
+    cInternalSphericalData *Sphere=Exosphere::Planet;
+    if (Sphere==NULL) exit(__LINE__,__FILE__,
+        "Error: the exosphere logical surface is not initialized");
 
     memcpy(TotalFlux_LOCAL,Sphere->SurfaceElementAdsorptionFluxDOWN[spec],PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber*sizeof(double));
     memcpy(TotalFlux_GLOBAL,Sphere->SurfaceElementDesorptionFluxUP[spec],PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber*sizeof(double));

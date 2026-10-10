@@ -1,0 +1,30 @@
+{
+  "id": "U02",
+  "name": "Legacy-target isolation and source-level guard",
+  "purpose": "Verify that the active configuration selects the Moon and connects Moon production callbacks.",
+  "production_capability": "Configuration preprocessing and production dispatch wiring.",
+  "production_entry_points": ["moon.input", "srcMoon/Moon.cpp", "srcMoon/main_lib.cpp"],
+  "configuration": "Source-tree configuration before generated-tree preprocessing.",
+  "inputs": ["moon.input", "Moon.cpp", "main_lib.cpp"],
+  "independent_reference": "Frozen Moon object/frame and callback contract documented in srcMoon/README.md.",
+  "units": "not applicable",
+  "frame_time_convention": "Object Moon; body frame IAU_MOON; solar-orbital frame LSO.",
+  "deterministic_stochastic_controls": "Deterministic text guard.",
+  "procedure": "Require the Moon target, source directory, force callback, spherical interaction callback, and production injection callback tokens.",
+  "metrics": ["required wiring tokens present"],
+  "acceptance_criteria": "Every required token is present; missing files are ERROR.",
+  "expected_pass_result": "The configured executable dispatches through srcMoon and production exosphere callbacks.",
+  "expected_failure_modes": ["wrong target", "wrong project source", "test-only callback", "missing production dispatch"],
+  "required_data": [],
+  "data_hashes": "none",
+  "predecessor_gates": [],
+  "artifacts": ["result.json"],
+  "status_semantics": "PASS is a source/configuration guard only and is not linked-runtime verification.",
+  "implementation": "source-guard",
+  "token_matching": "whitespace-normalized",
+  "required_tokens": {
+    "moon.input": ["ProjectSourceDirectory=srcMoon", "define _TARGET_ _MOON_", "Moon::TotalParticleAcceleration"],
+    "srcMoon/Moon.cpp": ["char Exosphere::ObjectName[_MAX_STRING_LENGTH_PIC_]=\"Moon\"", "char Exosphere::IAU_FRAME[_MAX_STRING_LENGTH_PIC_]=\"IAU_MOON\"", "char Exosphere::SO_FRAME[_MAX_STRING_LENGTH_PIC_]=\"LSO\""],
+    "srcMoon/main_lib.cpp": ["Sphere->ParticleSphereInteraction= Moon::SurfaceInteraction:: ParticleSphereInteraction_SurfaceAccomodation;", "Sphere->InjectionBoundaryCondition=static_cast<long int (*)(int,void*)>( Moon::SourceProcesses::InjectionBoundaryModel);"]
+  }
+}

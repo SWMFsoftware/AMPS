@@ -1122,7 +1122,20 @@ bool CutCell::CheckPointInsideDomain_default(double *x,CutCell::cTriangleFace* S
     //find intersections with the faces on the mesh
    double xLength,xTarget[3];
 
-   xLength=max(sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]),1.0); 
+   // The segment endpoint must be outside every internal surface for the
+   // even/odd intersection test to classify the starting point.  The old
+   // |x| length can terminate inside a body when x is just above its surface
+   // and the random direction points inward, producing a false "inside"
+   // result.  Twice the AMR-domain diagonal reaches beyond the containing
+   // box from any point in the domain and is independent of the coordinate
+   // origin or body radius.
+   xLength=0.0;
+   for (int idim=0;idim<3;idim++) {
+     const double extent=PIC::Mesh::mesh->xGlobalMax[idim]-
+         PIC::Mesh::mesh->xGlobalMin[idim];
+     xLength+=extent*extent;
+   }
+   xLength=max(2.0*sqrt(xLength),1.0);
    for (int idim=0;idim<3;idim++) xTarget[idim]=x[idim]+SearchDirection[idim]*xLength; 
 
    iIntersections=PIC::RayTracing::CountFaceIntersectionNumber(x,xTarget,-1,ParallelCheck,NULL);
@@ -3352,5 +3365,4 @@ cout << "printed bloks: "<< NBLOCKS << endl;
 
     return connectivityLength;
   }
-
 

@@ -5,14 +5,48 @@ One file may contain core settings and settings for several applications. Each
 application parser reads only its named section; it must not reinterpret keys
 owned by another application.
 
-The first implementation is the `srcSEP3D` section parser in
+The first implementation was the `srcSEP3D` section parser in
 `srcSEP3D/runtime/application_input.{h,cpp}`. It runs after
 `Init_BeforeParser` and before AMPS freezes cell storage or builds the mesh.
 The selected reduced provider is resolved immediately after parsing, while
 the time step and statistical weights are finalized only after AMPS has
 allocated the actual distributed mesh.
-The shared syntax is application-independent even though other applications do
-not yet consume it.
+The shared syntax is application-independent. `srcMoon` now consumes a strict
+top-level `moon` section before MPI/application initialization; it does not use
+the SEP3D subsections or defaults.
+
+### `srcMoon` section
+
+The native lunar executable uses the same one-dash selection syntax:
+
+```bash
+./amps -input srcMoon/examples/lola_surface.in
+```
+
+Omitting `-input` deliberately retains the historical analytic-sphere
+regression. The `moon` section has no implicit values; all keys below are
+required even when `surface_geometry=sphere`, so a run receipt remains
+complete and switching geometry cannot expose stale undeclared paths:
+
+```text
+#section begin: moon
+spice_path = /home/vtenishe/SPICE
+surface_geometry = lola
+surface_mesh_resolution_m = 100000
+lola_product_id = LDEM_4
+lola_image_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.IMG
+lola_label_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.LBL
+surface_cea_file = test_output/srcMoon/surface/lola_surface.cea
+surface_tecplot_file = test_output/srcMoon/surface/lola_surface.dat
+#section end
+```
+
+Relative paths are resolved against the file containing the section. The
+SPICE root must have `cspice/include/SpiceUsr.h`, `cspice/lib/cspice.a`, and
+`Kernels/`. `surface_mesh_resolution_m` is the maximum requested great-circle
+edge on the pre-topography reference sphere, not a latitude/longitude step or
+an AMR cell size. The CEA and Tecplot output paths must differ. Runtime path
+selection does not change the build-time SPICE mode.
 
 ## File selection
 

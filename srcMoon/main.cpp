@@ -6,6 +6,7 @@
 //the particle class
 #include "pic.h"
 #include "constants.h"
+#include "MoonInput.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,6 +33,31 @@ void amps_init();
 void amps_time_step();
 
 int main(int argc,char **argv) {
+  // Keep the historical no-argument invocation for the regression test.  A
+  // production input file is supplied explicitly so that srcMoon does not
+  // accidentally interpret an AMPS configuration file intended for another
+  // application.  Parse before PIC::InitMPI(): syntax/path failures then
+  // produce one deterministic diagnostic without partially initialized ranks.
+  if (argc != 1) {
+    if (argc != 3 || std::string(argv[1]) != "-input") {
+      std::cerr << "Usage: " << argv[0] << " [-input application.in]\n";
+      return EXIT_FAILURE;
+    }
+
+    Moon::Runtime::Configuration configuration;
+    std::string error;
+    if (!Moon::Runtime::ParseApplicationInput(argv[2], &configuration,
+                                               &error)) {
+      std::cerr << error << '\n';
+      return EXIT_FAILURE;
+    }
+    // Installation transfers the validated receipt to amps_init().  It is a
+    // one-shot operation so geometry cannot change after MPI/AMR startup.
+    if (!Moon::Runtime::InstallConfiguration(configuration, &error)) {
+      std::cerr << error << '\n';
+      return EXIT_FAILURE;
+    }
+  }
   
   clock_t runtime =-clock();
 
@@ -61,7 +87,8 @@ t.SwitchTimeSegment(__LINE__,"first switch");
 
     if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
       PIC::Debugger::LoggerData.erase();
-      sprintf(PIC::Debugger::LoggerData.msg,"line=%ld,iter=%i",__LINE__,Moon::nIterationCounter);
+      snprintf(PIC::Debugger::LoggerData.msg,sizeof(PIC::Debugger::LoggerData.msg),
+          "line=%d,iter=%d",__LINE__,Moon::nIterationCounter);
       PIC::Debugger::logger.add_data_point(__LINE__,&PIC::Debugger::LoggerData);
     }
 
@@ -92,10 +119,10 @@ t.SwitchTimeSegment(__LINE__);
 
 t.SwitchTimeSegment(__LINE__);
 
-  char fname[400];
-
-  sprintf(fname,"%s/test_Moon.dat",PIC::OutputDataFileDirectory);
-  PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
+  // OutputDataFileDirectory can be longer than the historical 400-byte local
+  // buffer, so retain the complete path instead of truncating or overflowing it.
+  const std::string fname=std::string(PIC::OutputDataFileDirectory)+"/test_Moon.dat";
+  PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname.c_str());
 
 t.SwitchTimeSegment(__LINE__);
 t.Stop(__LINE__);

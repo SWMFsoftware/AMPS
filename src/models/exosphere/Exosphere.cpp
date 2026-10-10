@@ -56,6 +56,9 @@ int Exosphere::nTotalSourceProcesses=0;
 //the sphere that representd the planet
 cInternalSphericalData *Exosphere::Planet=NULL;
 
+Exosphere::SourceProcesses::fPostProcessSurfaceInjection
+    Exosphere::SourceProcesses::PostProcessSurfaceInjection=NULL;
+
 //the total source rate values for specific source processes
 double Exosphere::SourceProcesses::PhotonStimulatedDesorption::SourceRate[PIC::nTotalSpecies],Exosphere::SourceProcesses::PhotonStimulatedDesorption::maxLocalSourceRate[PIC::nTotalSpecies];
 double Exosphere::SourceProcesses::ThermalDesorption::SourceRate[PIC::nTotalSpecies],Exosphere::SourceProcesses::ThermalDesorption::maxLocalSourceRate[PIC::nTotalSpecies];
@@ -2284,6 +2287,17 @@ long int Exosphere::SourceProcesses::InjectionBoundaryModel(int spec,int Boundar
      continue;
    }
 
+   // A generator may return false on a non-owning MPI rank before copying its
+   // local candidate into these output arrays.  Invoke an optional resolved-
+   // surface adapter only for a fully generated production candidate, then
+   // let it verify ownership again after changing the position.  Keeping this
+   // hook after the source generator preserves every production source law;
+   // keeping it before particle allocation prevents an unowned terrain point
+   // from entering a local particle buffer.
+   if (flag && PostProcessSurfaceInjection!=NULL) {
+     flag=PostProcessSurfaceInjection(spec,SourceProcessID,x_SO_OBJECT,
+         x_IAU_OBJECT,v_SO_OBJECT,v_IAU_OBJECT,startNode);
+   }
    if (flag==false) continue;
 
    //retrive the particle weight correction factor from what a 'GenerateParticleProperties' function could set
@@ -2399,6 +2413,13 @@ cout << __FILE__ << "@" << __LINE__ << "  " << x_IAU_OBJECT[0] << "  " << x_IAU_
 
 /*=============================== INTERACTION WITH THE SURFACE: BEGIN  ===========================================*/
 int Exosphere::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(int spec,long int ptr,double *x_SO_OBJECT,double *v_SO_OBJECT,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
+  // Preserve the public sphere callback and all existing callers by routing
+  // through the generalized kernel with its historical radial-normal mode.
+  return ParticleSurfaceInteraction_SurfaceAccomodation(spec,ptr,x_SO_OBJECT,
+      v_SO_OBJECT,dtTotal,NodeDataPonter,SphereDataPointer,NULL);
+}
+
+int Exosphere::SurfaceInteraction::ParticleSurfaceInteraction_SurfaceAccomodation(int spec,long int ptr,double *x_SO_OBJECT,double *v_SO_OBJECT,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer,const double *externalNormalBodyFixed)  {
   double radiusSphere,*x0Sphere,lNorm[3],rNorm,lVel[3],rVel,c;
   cInternalSphericalData *Sphere;
 //  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode;
@@ -2507,7 +2528,12 @@ int Exosphere::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation
   Sphere->GetSphereGeometricalParameters(x0Sphere,radiusSphere);
 
   for (rNorm=0.0,rVel=0.0,c=0.0,idim=0;idim<DIM;idim++) {
-    lNorm[idim]=x_LOCAL_IAU_OBJECT[idim]-x0Sphere[idim];
+    // All probability, thermal-speed, accommodation, inventory, and frame
+    // transformation logic below is shared.  The sole terrain-specific input
+    // is the outward normal used to draw the re-emission hemisphere.
+    lNorm[idim]=(externalNormalBodyFixed==NULL) ?
+        x_LOCAL_IAU_OBJECT[idim]-x0Sphere[idim] :
+        externalNormalBodyFixed[idim];
     rNorm+=pow(lNorm[idim],2);
 
     lVel[idim]=sqrt(-2.0*log(rnd()))*cos(PiTimes2*rnd());
