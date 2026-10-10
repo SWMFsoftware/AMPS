@@ -10,6 +10,7 @@
 #define _AMR_INTERNAL_SURFACE_SPHERE_
 
 #include "math.h"
+#include <string>
 
 
 #include "meshAMRdef.h"
@@ -375,12 +376,12 @@ public:
     MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR,&nTotalThreads);
 
     if (ThisThread==0) {
-      char fname2d[300];
-
-      sprintf(fname2d,"%s.2d.dat",fname);
+      // The caller controls the base path length, so construct the companion
+      // filename dynamically rather than appending into a 300-byte buffer.
+      const std::string fname2d=std::string(fname)+".2d.dat";
 
       fout=fopen(fname,"w");
-      fout2d=fopen(fname2d,"w");
+      fout2d=fopen(fname2d.c_str(),"w");
       pipe.openRecvAll();
 
       //print the output file title
