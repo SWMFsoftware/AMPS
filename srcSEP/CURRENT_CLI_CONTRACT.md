@@ -36,7 +36,10 @@ The authoritative parser remains `SEP::Util::CLI::ParseCommandLine` in
 ## Step 4 mover behavior
 
 - `--particle-mover`, `--mover`, and `--sep-mover` select only `parker`,
-  `fte-dmumu`, or `fte-mfp`.
+  `fte-dmumu`, or `fte-mfp`. They override `[run] particle_mover` in a
+  schema-4 `--input` file; the default `fte-dmumu` applies only when neither
+  is given. With `--input` and no `--particle-mover`, mover-dependent
+  validation is deferred until the file value is applied (CLI06).
 - `--list-movers` lists those three descriptors and exits before initialization.
 - Unambiguous legacy names map for one transition release with a warning.
 - Ambiguous, direct-wave, and 3-D historical mover names fail before

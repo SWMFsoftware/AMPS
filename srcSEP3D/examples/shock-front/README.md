@@ -110,10 +110,8 @@ From the AMPS root, the required clean native build is:
 pwd
 ps -C make -C gmake -C g++ -C gcc -C cc1plus -C mpiexec -C mpirun -C amps -o pid=,stat=,cmd=
 rm -rf -- build
-./Config.pl -application=sep3d
-./ampsConfig.pl -input sep3d.input -no-compile
-make -C srcSEP3D prepare-production
-make -j16 amps
+./Config.pl -application=sep3d   # deck selects runtime mover dispatch
+make -j
 ```
 
 The one-line four-rank production run is:

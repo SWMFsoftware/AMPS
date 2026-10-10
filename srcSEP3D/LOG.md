@@ -3,6 +3,10 @@ Full domain:
 PBS r1i7n7 176> mpiexec -n 10 ./amps --input srcSEP3D/examples/sep3d_analytic_parker.in --initialization-only --initialization-output-dir sep3d_mesh_preview 
 
 -------------------------------------------------------------------------------------
+Global test runners: 
+srcSEP3D/test/run_all_test.sh
+srcSEP/test/run_all_test.sh
+-------------------------------------------------------------------------------------
 Refined corridor:
 mpiexec -n 10 ./amps --input srcSEP3D/examples/sep3d_analytic_parker_active_tube.in --initialization-only --initialization-output-dir sep3d_mesh_preview
 
@@ -29,6 +33,9 @@ env MAKEFLAGS="-j16" test/run_tests.py --all --amps-source .. --make-config ../M
 
 another runner
 srcSEP3D/test/run_tests.py --all
+
+another runner
+./srcSEP3D/test/run_parallel_diffusion_mover_tests.py
 
 reduced shock front runner:
 srcSEP3D/test/run_reduced_shock_front.py --rebuild-native --output-dir test_output/reduced-front/runner/20261005T-native-restart-qualification-02
@@ -63,6 +70,7 @@ make -j test_SEP--Parker_spiral--ParkerEq_compile
 test/run_tests.py --amps ../amps --all --output-dir test_output/all
 
 
+./srcSEP/test/run_parallel_diffusion_mover_tests.py
 
 ------------------------------------------------------------------------------------
 Test of the background model 

@@ -139,13 +139,31 @@ Result RunR3D01() {
   std::ifstream picDefinitions("../src/pic/picGlobal.dfn");
   std::ifstream picHeader("../src/pic/pic.h");
   std::ifstream picMover("../src/pic/pic_mover.cpp");
+  std::ifstream deck("../input/sep3d.input");
   std::ostringstream hookText, makeText, mainText, adapterText,
-      definitionText, headerText, moverText;
+      definitionText, headerText, moverText, deckText;
   hookText << hook.rdbuf(); makeText << makefile.rdbuf();
+  deckText << deck.rdbuf();
   mainText << mainLib.rdbuf(); adapterText << adapter.rdbuf();
   definitionText << picDefinitions.rdbuf(); headerText << picHeader.rdbuf();
   moverText << picMover.rdbuf();
   const std::string h = hookText.str(), m = makeText.str();
+  // Pointer dispatch is selected by the AMPS deck: an active (not '!'-
+  // commented) #General line must define the legacy switch OFF, so that
+  // ampsConfig.pl appends it to the generated picGlobal.dfn.  The former
+  // prepare-production patch step must be gone, and the archive audit must
+  // still verify the effective generated definition.
+  bool deckSelectsPointerMode = false;
+  {
+    std::istringstream lines(deckText.str());
+    for (std::string line; std::getline(lines, line);) {
+      const std::size_t first = line.find_first_not_of(" \t");
+      if (first == std::string::npos || line[first] == '!') continue;
+      if (line.find("define _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ _PIC_MODE_OFF_",
+                    first) == first)
+        deckSelectsPointerMode = true;
+    }
+  }
   const std::string productionSource = mainText.str();
   const std::size_t stopBegin = productionSource.find("void StopWithStatus");
   const std::size_t stopEnd = productionSource.find(
@@ -163,10 +181,10 @@ Result RunR3D01() {
       productionSource.substr(stopBegin, stopEnd - stopBegin)
               .find("std::abort();") == std::string::npos;
   if (!hook || !makefile || !mainLib || !adapter || !picDefinitions ||
-      !picHeader || !picMover ||
-      h.find("_PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ _PIC_MODE_OFF_") ==
-          std::string::npos ||
-      m.find("strict-production: prepare-production") == std::string::npos ||
+      !picHeader || !picMover || !deck || !deckSelectsPointerMode ||
+      h.find("def check(") == std::string::npos ||
+      m.find("prepare-production") != std::string::npos ||
+      m.find("install_mover_hook.py\" \\\n\t  --check") == std::string::npos ||
       definitionText.str().find(
           "_PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ _PIC_MODE_ON_") ==
           std::string::npos ||
@@ -181,7 +199,7 @@ Result RunR3D01() {
       adapterText.str().find("MoveFocusedTransportParticle") ==
           std::string::npos)
     return Fail("generic PIC mover dispatch or srcSEP3D AMPS fatal-trap contract is absent");
-  return Pass("generic PIC defaults to legacy macro dispatch; production srcSEP3D installs Parker/focused callbacks and routes typed fatal statuses through the AMPS debugger trap");
+  return Pass("generic PIC defaults to legacy macro dispatch; the srcSEP3D deck selects pointer dispatch, production srcSEP3D installs Parker/focused callbacks, and typed fatal statuses route through the AMPS debugger trap");
 }
 
 Result RunR3D02() {

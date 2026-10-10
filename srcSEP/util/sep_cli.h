@@ -52,6 +52,9 @@ struct Options {
   // The production registry is deliberately limited to the three supported
   // field-line transport formulations.  The default preserves the former FTE
   // Dmumu implementation while assigning it an explicit canonical name.
+  // particleMoverProvided marks a command-line choice, which overrides
+  // run.particle_mover from a schema-4 --input file; main.cpp copies the file
+  // value here only when particleMoverProvided is false.
   Mover::ProductionMover particleMover =
       Mover::ProductionMover::FocusedTransportDiffusion;
   bool particleMoverProvided = false;
@@ -181,6 +184,19 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
 // --test-manager switch is intentionally excluded because its frozen behavior
 // runs diagnostics and then continues into production.
 bool IsComponentTestExecutionRequested(const Options& options);
+
+// Mover precedence: --particle-mover > run.particle_mover in a schema-4
+// --input file > the built-in default (fte-dmumu).  True when the effective
+// mover is not yet known at parse time because --input is given without
+// --particle-mover; ParseCommandLine() then defers the mover-dependent checks.
+bool IsMoverPendingInputFile(const Options& options);
+
+// Mover-dependent validation (coefficient-registry mover compatibility and the
+// production configuration matrix) for options.particleMover.  ParseCommandLine
+// calls it when the mover is already known; otherwise main.cpp calls it after
+// applying the input file's run.particle_mover.  Returns false and writes an
+// ERROR line on rejection; mutates nothing.
+bool ValidateMoverDependentOptions(const Options& options, std::ostream& err);
 
 // Apply the parsed options to the turbulence model flags used by the physics
 // kernels.  Keeping this in a separate function makes the point where CLI

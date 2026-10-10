@@ -273,17 +273,19 @@ protect statistics only where a represented population already exists.
 
 ## Production configuration requirement
 
-Run the hook after configuring AMPS and before compiling `pic_mover.cpp`:
+The AMPS deck selects runtime mover dispatch. The `#General` block of
+`input/sep3d.input` contains
 
-```bash
-make -C srcSEP3D prepare-production
+```text
+define _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ _PIC_MODE_OFF_
 ```
 
-`amps/install_mover_hook.py` leaves the generated legacy mover macro intact and
-appends `_PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ = _PIC_MODE_OFF_` as the effective
-selection after any late `ampsConfig.pl` definitions. It is idempotent and
-refuses a generated header that does not provide the generic PIC dispatch
-switch. `strict-production` depends on this target and audits the result.
+and `ampsConfig.pl` appends `#undef`/`#define` for it to the generated
+`build/pic/picGlobal.dfn`, after the template default; the legacy mover macro
+stays intact. The build is therefore just `./Config.pl -application=sep3d`
+followed by `make -j`. `amps/install_mover_hook.py` no longer edits anything:
+`audit-production-symbols` (and `strict-production`) run it to verify that the
+effective definition is `_PIC_MODE_OFF_`.
 During `amps_init()`, srcSEP3D installs the resolver, substep cap, ledger, and
 initial shock state as one immutable `AMPS::Movers::Context`, then registers
 the family callback through `PIC::Mover::SetUserDefinedParticleMover`; a

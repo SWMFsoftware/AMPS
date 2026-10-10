@@ -34,6 +34,16 @@ historical ambiguous field-line scattering functions were deleted in Step 14.
 ../amps --mover fte-mfp
 ```
 
+A schema-4 `--input` file may instead set `[run] particle_mover = parker`
+(canonical names only). Precedence is `--particle-mover` > `run.particle_mover`
+> default `fte-dmumu`; with `--input` and no `--particle-mover`, the
+mover-dependent CLI checks run after the file value is applied
+(`SEP::Util::CLI::ValidateMoverDependentOptions`). At `amps_init()` srcSEP
+registers `SEP::Mover::DispatchProductionMover` as generic PIC's
+user-defined mover (the deck sets
+`_PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ = _PIC_MODE_OFF_`); it dispatches to the
+selected mover.
+
 `--help` and `--list-movers` advertise the complete accepted set. Step 14 ended
 the transition interval, so former short/legacy aliases now fail before model
 initialization. Names such as `coupled-fte`, `focused-transport-wave-scattering`,

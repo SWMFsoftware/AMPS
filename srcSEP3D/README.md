@@ -483,7 +483,7 @@ deliberately sub-cell tube and checks every sampled centreline segment.
 | `[background.parker]` | `reference_radius_m`, `radial_field_at_reference_t`, `solar_rotation_rate_rad_per_s`, `solar_wind_speed_m_per_s`, `magnetic_polarity`, `number_density_at_one_au_m3`, `temperature_k`, `validity_cadence_s` | SI cross-check of the Parker/SWCME ambient state. Magnetic Br may use any valid reference radius; electron density is unambiguously at one AU. Wind, rotation, source radius, field, density, temperature, and polarity must agree with `[swcme]`; the typed provider then receives canonical SWCME values, including its thermodynamic closure/composition. |
 | `[turbulence]` | `authority`, `model`, `amplitude_model`, `delta_b_over_b`, `wave_energy_density_at_reference_j_per_m3`, `wave_energy_density_radial_exponent`, `normalized_cross_helicity`, `reference_radius_m`, `k_min_per_m`, `k_max_per_m`, `k_min_radial_exponent`, `k_max_radial_exponent`, `spectral_index`, `correlation_length_m`, `correlation_length_radial_exponent`, `validity_cadence_s`, `missing_data`, `resonance_range`, `self_consistent_3d` | Standalone authority is `prescribed`. Spectral `model` is `kolmogorov`, `kraichnan`, or `power-law`; named models require exactly their documented slope. `amplitude_model` independently selects `constant-delta-b-over-b` or `wave-energy-power-law`. Exactly one amplitude normalization is active and the other must be zero. Cross helicity explicitly partitions directional energy. Self-consistent 3-D is false. Missing-data policy is `fail` or `ballistic`; resonance policy is `reject` or `power-law-extension`. |
 | `[transport]` | `cell_crossing_fraction`, `diffusion_fraction`, `focusing_fraction`, `cooling_fraction`, `field_variation_fraction`, `shock_crossing_fraction`, `minimum_substep_s`, `maximum_substeps`, `pitch_angle_scheme`, `spatial_diffusion_model`, `pitch_angle_diffusion_model`, `mean_free_path_model`, `constant_dmumu_per_s`, `constant_mean_free_path_m`, `mean_free_path_reference_m`, `mean_free_path_reference_radius_m`, `mean_free_path_reference_rigidity_v`, `mean_free_path_radial_exponent`, `mean_free_path_rigidity_exponent`, `spatial_quadrature_absolute_tolerance_m2_per_s`, `spatial_quadrature_relative_tolerance`, `spatial_quadrature_maximum_recursion`, `focused_scattering_frame`, `maximum_scattering_events_per_substep`, `perpendicular_diffusion`, `constant_kappa_perpendicular_m2_per_s`, `kappa_perpendicular_to_parallel_ratio`, `drifts` | Parker consumes `mean-free-path`, `pitch-angle-integral`, or schema-5 `parallel-diffusion-library` spatial diffusion. The library selector is rejected for both focused movers. Focused diffusion consumes `jokipii-1966`, `florinskiy`, or `constant` Dμμ. Focused scattering consumes `correlation`, `constant`, or `radial-rigidity-power-law` mean free path. Constant/reference selectors require positive SI values when active; inactive model parameters are zero. Discrete scattering currently requires perpendicular diffusion `none`. |
-| `[parallel_diffusion]` | `model`, followed by the selected model's case-sensitive keys | Schema 5 requires this section exactly when `spatial_diffusion_model=parallel-diffusion-library`. Values are suffix-free SI text passed to the shared model-specific parser. Unknown, duplicate, missing, malformed, and inactive-model keys fail before Runtime/mesh initialization. |
+| `[parallel_diffusion]` | `model`, followed by the selected model's case-sensitive keys | Schema 5 requires this section exactly when `spatial_diffusion_model=parallel-diffusion-library`. The raw section lines are parsed by the shared library section parser (`#` and `!` comments; suffix-free SI values). Unknown, duplicate, missing, malformed, and inactive-model keys fail, with the deck line number, before Runtime/mesh initialization. |
 | `[shock]` | `authority` | Must be `swcme`. Schemas 3 and 4 reject the retired constant-radius/speed/compression surrogate fields. |
 | `[source]` | `enabled`, `physical_particle_rate_per_s`, `injection_efficiency`, `minimum_energy_j`, `maximum_energy_j`, `spectrum_model`, `phase_space_power_index`, `samples_per_step` | All values apply independently to every species compiled by AMPS `SpeciesList`. Rate is the per-species physical seed rate before efficiency and patch partition; energies are total kinetic-energy bounds; `samples_per_step` is the exact per-species computational count over the complete shock. `local-compression-dsa` derives the phase-space index from each canonical shock patch and requires a zero inactive index. `fixed-phase-space-power-law` uses the declared positive \(q>2\) in \(f(p)\propto p^{-q}\). |
 | `[species]` | `macroparticle_weight` | Post-compile input owns only the positive common base AMPS statistical weight. Count, order, symbols, masses, and charges come exclusively from the compiled AMPS table and cannot be redefined here. |
@@ -534,11 +534,18 @@ kappa_parallel_m2_per_s = 1.0e18
 ```
 
 The numeric value above is a syntax example, not a recommended calibration.
-The section's parameter keys retain case because suffixes such as `_V`, `_J`
-and `_T` are part of the shared schema. Numeric text is finite SI without unit
-suffixes. srcSEP3D calls the library reader during immutable construction and
-installs its validated diffusion-model function pointer during serial Runtime
-configuration. Separately, `amps_init()` registers the family-specific
+The srcSEP3D INI reader only locates `[parallel_diffusion]`; it passes the raw
+section lines, with their deck line numbers, to the library-owned section
+parser `SEP::ParallelDiffusion::ParseSection`. Inside this section `#` and `!`
+both start comments (elsewhere in the deck only `#` does), `model` selects
+exactly one library model, and every other key is a parameter of that model.
+Parameter keys retain case because suffixes such as `_V`, `_J` and `_T` are
+part of the shared schema. Numeric text is finite SI without unit suffixes.
+Library diagnostics carry the deck line of the offending record. srcSEP3D
+applies the shared host-capability gate (`CheckHostInputAvailability`) during
+immutable construction and installs the validated model during serial Runtime
+configuration; the Parker coefficient bridge then calls the library's
+model-specific pointer `ActiveParallelDiffusion`. Separately, `amps_init()` registers the family-specific
 srcSEP3D particle callback with generic PIC. Both pointers are installed before
 mover workers can evaluate them.
 
@@ -1218,8 +1225,9 @@ runtime improvements **R01–R07**.
 `amps_time_step()` now enters the typed Runtime particle phase, calls the AMPS
 step through the installed srcSEP3D mover, closes a global conservation ledger,
 and executes due snapshot, source, observer, and checkpoint transactions at the
-joined boundary. `make prepare-production` installs the configured mover hook;
-`amps_init()` installs the immutable local resolver automatically. No legacy
+joined boundary. The AMPS deck `input/sep3d.input` selects runtime mover
+dispatch (`define _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ _PIC_MODE_OFF_`);
+`amps_init()` installs the mover callback and the immutable local resolver. No legacy
 mover, source, sampler, or fallback physics is substituted.
 
 ### R0–R2 foundation
@@ -1918,13 +1926,18 @@ Common interpretations of unsuccessful runs are:
 Within a configured AMPS tree:
 
 ```bash
-make -C srcSEP3D prepare-production
-make -C srcSEP3D strict-production
+./Config.pl -application=sep3d
+make -j                               # or: make -C srcSEP3D strict-production
+make -C srcSEP3D audit-production-symbols
 ```
 
-`prepare-production` idempotently disables legacy mover dispatch in the
-already configured `build/pic/picGlobal.dfn`; the historical mover macro is
-left intact. At runtime `amps_init()` registers either the Parker or focused
+Runtime mover dispatch is selected by the AMPS deck: the `#General` block of
+`input/sep3d.input` contains
+`define _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ _PIC_MODE_OFF_`, which
+`ampsConfig.pl` appends to the generated `build/pic/picGlobal.dfn` (the
+historical mover macro is left intact). No post-configuration patch step
+exists; `audit-production-symbols` verifies the effective definition through
+`amps/install_mover_hook.py`, now a check-only script. At runtime `amps_init()` registers either the Parker or focused
 family callback selected by the immutable input. The strict target then delegates
 to the enclosing `make amps` workflow and
 audits `AMPS/build/main/mainlib.a` and `main.a`. This is required because AMPS

@@ -21,14 +21,27 @@ table evaluator are present. The supplied revision-1.4 data bundle is retained
 under `parallel_diffusion_model_data/`, and the compiled NLGCE-F arrays are
 generated without changing their decimal literals or index order.
 
-The approved srcSEP3D portion of PD11 is implemented. Schema 5 calls the same
-model-specific parser through `[parallel_diffusion]`, freezes its SHA-256
-configuration identity, installs the active function during serial Runtime
-configuration, and evaluates it through the existing Parker coefficient path.
-The Parker core remains coefficient-agnostic and retains its coherent
-field-aligned gradient stencil. The separate srcSEP binding and native one-/
-four-rank transport qualification remain pending; standalone or component-test
-success must not be reported as MPI qualification.
+PD11 application bindings are implemented for both hosts (component-tested
+only). Each application locates the `[parallel_diffusion]` section in its own
+input file and passes the raw section lines to the library-owned section
+parser `ParseSection` (see "Input-file section" below), which selects the model
+and reads that model's parameters. The selected model is then installed during
+serial startup and called by the Parker mover through the model-specific
+pointer `ActiveParallelDiffusion`:
+
+| Host | Input | Selection | Parker consumer |
+| --- | --- | --- | --- |
+| srcSEP3D | `--input` schema-5 INI | `[transport] spatial_diffusion_model = parallel-diffusion-library` | `CoefficientBridge::EvaluateActiveParallel` |
+| srcSEP | `--input` schema-4 INI | `--spatial-diffusion-provider parallel-diffusion-library` | `PICSpatialDiffusionProvider` via `adapters/parallel_diffusion_adapter` |
+
+In both hosts the section is required exactly when the library is selected,
+only the Parker mover may select it, and the SHA-256 configuration identity
+enters the host's startup/restart fingerprint. The Parker cores remain
+coefficient-agnostic: srcSEP3D keeps its coherent field-aligned gradient
+stencil and srcSEP its refined arc-length `d(kappa)/ds` stencil. srcSEP3D's
+`-input` shared-section mode does not read this section. Native one-/four-rank
+transport qualification remains pending for both hosts; standalone or
+component-test success must not be reported as MPI qualification.
 
 The srcSEP3D syntax is:
 
@@ -45,13 +58,26 @@ model = constant_kappa
 kappa_parallel_m2_per_s = 1.0e18
 ```
 
-The example value demonstrates syntax, not a calibrated production choice.
-All parameter names are case-sensitive and all numeric text is suffix-free SI.
-The section is required exactly when the library selector is active. Legacy
-schema-4 selectors retain their original meaning.
+The srcSEP syntax (schema 4 = schema 3 plus this optional section; run with
+`--particle-mover parker --spatial-diffusion-provider parallel-diffusion-library`)
+is:
 
-srcSEP3D currently admits the library models whose runtime inputs it can supply
-without reinterpretation: `constant_lambda`, `constant_kappa`, supported
+```ini
+[run]
+schema_version = 4
+
+[parallel_diffusion]
+model = constant_lambda
+lambda_parallel_m = 1.495978707e10   ! [m]
+```
+
+The example values demonstrate syntax, not a calibrated production choice.
+All parameter names are case-sensitive and all numeric text is suffix-free SI.
+Legacy selectors retain their original meaning in both hosts.
+
+Both hosts currently admit the library models whose runtime inputs they can
+supply without reinterpretation (each declares an all-false
+`HostInputAvailability` to `CheckHostInputAvailability`): `constant_lambda`, `constant_kappa`, supported
 variants of `power_law_lambda` and `broken_rigidity_kappa`, mean-field `bohm`,
 `prescribed_lambda_mu_shape`, and tables without an energy-per-nucleon axis.
 Selections requiring nucleon count, slab/2D variance, spectral bend-over
@@ -65,6 +91,81 @@ of scope: complete SOQLT, complete composite WNLT, arbitrary directional wave
 scattering, momentum diffusion, and a non-axisymmetric perpendicular tensor.
 The implemented `broadened_slab` model is exactly the stated slab model, not a
 claim to implement those broader theories.
+
+## Input-file section
+
+`ParseSection(lines, &parsed)` parses the body of a host's parallel-diffusion
+section. The host passes each raw physical line (`SectionLine`: 1-based file
+line number plus text, comments included); the library owns the grammar:
+
+- a comment starts at the first `#` or `!` and runs to end of line, so neither
+  character may appear inside a value;
+- blank and comment-only lines are ignored; every other line is exactly one
+  `key = value` record (blanks around key and value are trimmed, CRLF is
+  accepted);
+- `model` (exact spelling, exactly once) selects one stable model ID, parsed
+  case-insensitively;
+- every other key is a parameter of the selected model and is passed to
+  `BuildConfiguration`, which owns each model's strict key set and domains.
+  Keys are case-sensitive SI names; a key of another model is unknown.
+
+Failures are typed (`InvalidConfiguration`, `MissingInput`,
+`UnsupportedModel`) and their detail starts with `line N:` for the offending
+record: syntax and duplicate errors at their own line, schema/domain errors at
+the line of the parameter they name (quoted or as a whole identifier), and an
+unknown model or a missing key at the `model` line. `ParsedSection` returns the
+model ID and parameters with line numbers, the validated
+`ModelConfiguration`, and its SHA-256 fingerprint; it is written only after the
+whole section validates. `ConfigureActiveModelFromSection` additionally
+installs the result transactionally.
+
+```cpp
+using namespace SEP::ParallelDiffusion;
+std::vector<SectionLine> lines = {
+    {41, "model = power_law_lambda"},
+    {42, "lambda0_m = 1.495978707e10        ! [m]"},
+    {43, "independent_variable = rigidity"},
+    {44, "rigidity0_V = 1.0e9"},
+    {45, "independent_exponent = 0.3333333333333333"}};
+ParsedSection parsed;
+Status status = ConfigureActiveModelFromSection(lines, &parsed);
+```
+
+## Mover-facing dispatch pointer
+
+```cpp
+using ActiveModelEvaluator = ParallelResult (*)(const ParticleState&,
+                                                const LocalState&);
+extern ActiveModelEvaluator ActiveParallelDiffusion;
+```
+
+`ActiveParallelDiffusion` points to an evaluator bound to the selected model
+(`BoundFunctionForModel(id)`; one distinct static function per stable ID) that
+reads the parameters installed with it, so a Parker mover passes only SI
+particle and local state:
+
+```cpp
+ParallelResult r = ActiveParallelDiffusion(particle, local);
+if (!r.status.ok()) { /* typed failure; never substitute a value */ }
+double kappa = *r.kappaParallelM2PerS;   // [m^2 s^-1]
+```
+
+Before the first successful `SetActiveConfiguration`/`ConfigureActiveModel*`
+the pointer returns `InvalidConfiguration` and no value; `HasActiveConfiguration()`
+reports whether a model is installed. The pointer is assigned only by those
+setters, together with `ActiveModelFunction` and the active parameters, during
+serial startup; a rejected update leaves all three unchanged. It returns the
+parallel eigenvalue only: the Parker drift derivative remains the mover's
+responsibility unless `gradKappaParallelMPerS` is present.
+
+## Host-capability gate
+
+`CheckHostInputAvailability(configuration, host)` rejects at startup a model
+that needs an optional input the host does not declare in
+`HostInputAvailability`: `nucleonCount` (energy-per-nucleon power law or table
+axis), `turbulenceDecomposition` (all spectral, nonlinear, and adapter models),
+`timeFactor`/`regionFactor`/`radialFactor` (enabled external factors), and
+`effectiveFieldMagnitude` (effective-field Bohm). All flags default to false.
 
 ## Public API and manager
 
@@ -400,7 +501,9 @@ python3 parallel_diffusion_model_data/reference_verification.py --broadened
 ```
 
 `verify` builds `libparallel_diffusion.a`, runs the original analytical and
-parser tests, and runs fixture-driven advanced tests. Expected advanced values
+parser tests (including PD13: section grammar and line-attributed errors,
+pre-configuration pointer, bound-pointer registry/dispatch/transaction, and the
+host-capability gate), and runs fixture-driven advanced tests. Expected advanced values
 are read from `benchmark_points.json`; they are not copied into the test.
 Reports are written to `build/test-report.json` and
 `build/advanced-test-report.json`.
@@ -437,5 +540,5 @@ not fabricated. The srcSEP/srcSEP3D adapters must retain their coherent
 neighbour stencil wherever a required analytic derivative is absent.
 
 See `IMPLEMENTATION_STATUS.md` for exact evidence and open gates, and
-`INTEGRATION_PLAN.md` for the implemented srcSEP3D seam and remaining srcSEP/
-native qualification work.
+`INTEGRATION_PLAN.md` for the implemented srcSEP3D and srcSEP seams and the
+remaining native qualification work.

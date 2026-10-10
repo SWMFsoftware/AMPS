@@ -195,9 +195,24 @@ Transport::Status Apply(const std::string& section, const std::string& key,
   if (field == "run.schema_version") {
     std::uint64_t parsed = 0;
     if (!ParseUnsigned64(value, &parsed) ||
-        (parsed != 1 && parsed != 2 && parsed != 3))
+        (parsed != 1 && parsed != 2 && parsed != 3 && parsed != 4))
       return invalid();
     c->schemaVersion = static_cast<unsigned>(parsed);
+  } else if (field == "run.particle_mover") {
+    // Schema 4: the production mover may be chosen in the input file.  The
+    // shared registry parser is the single authority for mover names, so the
+    // file and --particle-mover cannot drift apart.  A new file key accepts
+    // only the canonical spellings (parker, fte-dmumu, fte-mfp): a deprecated
+    // CLI alias reported through `warning` is rejected here rather than
+    // carried into a new schema.  Schema legality (>=4) is checked after the
+    // whole file is read, because run.schema_version may follow this key.
+    Mover::ProductionMover mover = Mover::ProductionMover::Parker;
+    std::string warning;
+    if (!Mover::ParseProductionMover(value, mover, warning) || !warning.empty())
+      return Error("invalid value for '" + field + "': " + value +
+                   " (accepted: parker, fte-dmumu, fte-mfp)");
+    c->particleMoverSpecified = true;
+    c->particleMover = mover;
   } else if (field == "run.time_step_s") {
     if (!ParseDouble(value, &c->timeStepS)) return invalid();
   } else if (field == "injection.macroparticles_per_step") {
@@ -346,7 +361,8 @@ Transport::Status Validate(const Configuration& c) {
       c.tubeCenterCellSizeM, c.tubeExponent};
   for (double value : values)
     if (!std::isfinite(value)) return Error("configuration contains a non-finite value");
-  if ((c.schemaVersion != 1 && c.schemaVersion != 2 && c.schemaVersion != 3) ||
+  if ((c.schemaVersion != 1 && c.schemaVersion != 2 &&
+       c.schemaVersion != 3 && c.schemaVersion != 4) ||
       c.parkerPointCount < 2 ||
       c.parkerPointCount > 10000000ULL || c.parkerLengthM <= 0.0 ||
       c.solarWindSpeedMPerS <= 0.0 || c.solarRotationRateRadPerS < 0.0 ||
@@ -371,6 +387,13 @@ Transport::Status Validate(const Configuration& c) {
        c.observerHeliocentricRadiusM < c.innerRadiusM ||
        c.observerHeliocentricRadiusM > c.outerRadiusM))
     return Error("schema version 2 observer radius is outside the domain");
+  // Schema 4 is schema 3 plus the optional [parallel_diffusion] section.  Its
+  // body is interpreted only by the shared library parser; this layer checks
+  // just that the section is legal for the declared schema (1, 2, or 3: no).
+  if (c.hasParallelDiffusionSection && c.schemaVersion < 4)
+    return Error("[parallel_diffusion] requires run.schema_version=4");
+  if (c.particleMoverSpecified && c.schemaVersion < 4)
+    return Error("run.particle_mover requires run.schema_version=4");
   if (c.schemaVersion >= 3) {
     if (c.observers.empty() || c.dataTecplotFile.empty())
       return Error("schema version 3 requires observers and AMPS data output");
@@ -422,14 +445,27 @@ Transport::Status ParseText(const std::string& text, Configuration* result) {
   const std::set<std::string> known = {
       "run", "parker_spiral", "domain", "mesh", "mesh.solar",
       "mesh.tube", "background.parker", "injection", "species",
-      "observer", "output", "swcme"};
+      "observer", "output", "swcme", "parallel_diffusion"};
   while (std::getline(input, line)) {
     ++lineNumber;
+    // [parallel_diffusion] belongs to the shared parallel-diffusion library
+    // parser, whose grammar differs from this INI reader ('!' also opens a
+    // comment, keys are case-sensitive SI names).  Keep the unmodified line
+    // so the library sees exactly what the operator wrote.
+    const std::string rawLine = line;
     const std::size_t comment = line.find('#');
     if (comment != std::string::npos) line.erase(comment);
     line = Trim(line);
     if (line.empty()) continue;
-    if (line.front() == '[' && line.back() == ']') {
+    const bool sectionHeader = line.front() == '[' && line.back() == ']';
+    if (!sectionHeader && section == "parallel_diffusion") {
+      ParallelDiffusionLine record;
+      record.line = lineNumber;
+      record.text = rawLine;
+      candidate.parallelDiffusionLines.push_back(record);
+      continue;
+    }
+    if (sectionHeader) {
       section = Lower(Trim(line.substr(1, line.size() - 2)));
       const bool namedObserver = section.rfind("observer.", 0) == 0 &&
           section.size() > std::string("observer.").size();
@@ -437,6 +473,8 @@ Transport::Status ParseText(const std::string& text, Configuration* result) {
         return Error("unknown section at line " + std::to_string(lineNumber));
       if (!sections.insert(section).second)
         return Error("duplicate section '" + section + "'");
+      if (section == "parallel_diffusion")
+        candidate.hasParallelDiffusionSection = true;
       continue;
     }
     const std::size_t separator = line.find('=');
@@ -462,11 +500,27 @@ Transport::Status ParseText(const std::string& text, Configuration* result) {
     const Transport::Status status = Apply(section, key, value, &candidate);
     if (!status.ok())
       return Error("line " + std::to_string(lineNumber) + ": " + status.message);
+    if (qualified == "run.particle_mover")
+      candidate.particleMoverLine = lineNumber;
   }
+  // Reject the schema-4 section in older schemas before their own section and
+  // key-count requirements, so the diagnostic names the actual cause.
+  // Validate() repeats the rule for programmatically built configurations.
+  if (candidate.hasParallelDiffusionSection && candidate.schemaVersion < 4)
+    return Error("[parallel_diffusion] requires run.schema_version=4");
+  if (candidate.particleMoverSpecified && candidate.schemaVersion < 4)
+    return Error("line " + std::to_string(candidate.particleMoverLine) +
+                 ": run.particle_mover requires run.schema_version=4");
   const std::set<std::string> versionOneSections = {
       "run", "parker_spiral", "domain", "mesh", "mesh.solar",
       "mesh.tube", "background.parker"};
-  const std::set<std::string> versionTwoSections = known;
+  // Version 2 requires its own complete section list.  It is spelled out
+  // rather than aliased to `known`, which also contains sections introduced
+  // later (the optional schema-4 [parallel_diffusion]).
+  const std::set<std::string> versionTwoSections = {
+      "run", "parker_spiral", "domain", "mesh", "mesh.solar",
+      "mesh.tube", "background.parker", "injection", "species",
+      "observer", "output", "swcme"};
   const std::set<std::string> versionThreeSections = {
       "run", "parker_spiral", "domain", "mesh", "mesh.solar",
       "mesh.tube", "background.parker", "injection", "species",
@@ -485,8 +539,11 @@ Transport::Status ParseText(const std::string& text, Configuration* result) {
   if (candidate.schemaVersion >= 2) {
     // There are 34 application-owned scalar/string keys in version 2.  SWCME
     // keys are counted separately because their names belong to the provider.
+    // run.particle_mover is the only optional application key (schema 4) and
+    // is excluded so the mandatory-key counts below stay exact.
     const std::size_t applicationKeyCount =
-        assigned.size() - candidate.swcmeAssignments.size();
+        assigned.size() - candidate.swcmeAssignments.size() -
+        (candidate.particleMoverSpecified ? 1 : 0);
     if (candidate.schemaVersion == 2 && applicationKeyCount != 34)
       return Error("configuration must assign all 34 version-2 application "
                    "keys exactly once");
@@ -650,6 +707,25 @@ std::string Fingerprint(const Configuration& c) {
         });
     for (const SwcmeAssignment& assignment : assignments)
       canonical << ";swcme." << assignment.key << '=' << assignment.value;
+  }
+  if (c.particleMoverSpecified) {
+    // The file-selected mover is part of the startup contract.  It is
+    // appended only when present, so schema-3 identities are unchanged.  The
+    // effective mover (after any --particle-mover override) is recorded
+    // separately in the WP30 run-configuration fingerprint.
+    canonical << ";particle_mover=" << Mover::Describe(c.particleMover).canonicalName;
+  }
+  if (c.hasParallelDiffusionSection) {
+    // The physical identity of [parallel_diffusion] is the shared library's
+    // SHA-256 configuration fingerprint, copied here by the srcSEP adapter
+    // after the library parser accepted the section (main.cpp, before
+    // Install()).  It is independent of comments, spacing, and key order.
+    // Until then the fields are empty and the identity is marked unresolved.
+    canonical << ";parallel_diffusion_model="
+        << (c.parallelDiffusionModelId.empty() ? "unresolved"
+                                               : c.parallelDiffusionModelId)
+        << ";parallel_diffusion_fingerprint="
+        << c.parallelDiffusionConfigurationFingerprint;
   }
   // FNV-1a is used as a compact deterministic identity, not as a security
   // primitive. The canonical manifest above retains full scientific meaning.

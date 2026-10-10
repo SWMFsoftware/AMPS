@@ -916,7 +916,10 @@ CoefficientBridge::EvaluateActiveParallel(
   // provider factors, or suppliedKappaPerpendicular. srcSEP3D has no approved
   // source for those exact quantities. A future provider contract must add
   // them explicitly and qualify their units, conventions, and snapshot life.
-  return SEP::ParallelDiffusion::EvaluateActive(particle, local);
+  // Call the mover-facing pointer to the model selected by [parallel_diffusion]
+  // (installed by Runtime::Configure).  It is bound to that model and its
+  // validated parameters, so no model switch or configuration is passed here.
+  return SEP::ParallelDiffusion::ActiveParallelDiffusion(particle, local);
 }
 
 }  // namespace Turbulence

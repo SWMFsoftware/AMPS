@@ -316,13 +316,20 @@ void amps_init_mesh() {
     //set the innber bounday sphere
     SEP::InnerBoundary=Sphere;
 
-    char fname[_MAX_STRING_LENGTH_PIC_];
-
-    sprintf(fname,"%s/Sphere.dat",PIC::OutputDataFileDirectory);
-    Sphere->PrintSurfaceMesh(fname);
-
-    sprintf(fname,"%s/SpheraData.dat",PIC::OutputDataFileDirectory);
-    Sphere->PrintSurfaceData(fname,0);
+    // Inner-boundary sphere surface mesh and surface-data Tecplot files.
+    //
+    // PIC::OutputDataFileDirectory is itself a char[_MAX_STRING_LENGTH_PIC_]
+    // array, so "<directory>/SpheraData.dat" can need up to
+    // _MAX_STRING_LENGTH_PIC_+15 bytes: the former sprintf into a buffer of
+    // exactly _MAX_STRING_LENGTH_PIC_ bytes could overflow it (GCC
+    // -Wformat-overflow).  The paths are built with std::string, which sizes
+    // them exactly; truncation (snprintf) is avoided because it would write
+    // the products to a different file.  File names and locations are
+    // unchanged.  Both printers take const char* and use the name only during
+    // the call, so c_str() of the temporaries is valid for the call duration.
+    const std::string outputDirectory(PIC::OutputDataFileDirectory);
+    Sphere->PrintSurfaceMesh((outputDirectory + "/Sphere.dat").c_str());
+    Sphere->PrintSurfaceData((outputDirectory + "/SpheraData.dat").c_str(),0);
 
 
     Sphere->localResolution=SEP::Mesh::localSphericalSurfaceResolution;
@@ -691,6 +698,19 @@ void amps_init() {
 //init the PIC solver
   PIC::Init_AfterParser ();
 	PIC::Mover::Init();
+
+  // Runtime mover dispatch.  The srcSEP AMPS deck defines
+  // _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_=_PIC_MODE_OFF_, so generic PIC calls
+  // PIC::Mover::UserDefinedParticleMover instead of the compile-time macro.
+  // Install srcSEP's production dispatcher there; it runs whichever of
+  // parker / fte-dmumu / fte-mfp the application parser selected
+  // (--particle-mover -> SEP::Mover::SelectProductionMover, or the registry
+  // default).  The deck's _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_ macro
+  // still names ::SEP::ParticleMover, the same dispatcher, for the boundary
+  // injection paths that invoke the macro directly, so both routes advance a
+  // particle with the same selected mover.  With legacy settings ON the
+  // pointer is installed but unused, preserving the historical behavior.
+  PIC::Mover::SetUserDefinedParticleMover(&SEP::Mover::DispatchProductionMover);
 
 
   //set up the time step

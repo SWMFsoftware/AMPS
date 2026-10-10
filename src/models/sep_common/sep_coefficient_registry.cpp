@@ -28,7 +28,10 @@ const std::vector<Descriptor>& SpatialRegistry() {
       {"from-dmumu", "kappa_parallel and derivative", "m2/s; m/s",
        "pitch-angle provider; numerical mu quadrature"},
       {"from-mfp", "kappa_parallel and derivative", "m2/s; m/s",
-       "lambda_parallel closure kappa=v*lambda/3"}};
+       "lambda_parallel closure kappa=v*lambda/3"},
+      {"parallel-diffusion-library", "kappa_parallel and derivative",
+       "m2/s; m/s",
+       "[parallel_diffusion] section model; parker mover only"}};
   return values;
 }
 
@@ -68,7 +71,13 @@ const char* SourceName(SourceMode source) {
 }
 
 const char* SpatialName(SpatialKind kind) {
-  return kind == SpatialKind::FromPitchAngle ? "from-dmumu" : "from-mfp";
+  switch (kind) {
+    case SpatialKind::FromPitchAngle: return "from-dmumu";
+    case SpatialKind::FromMeanFreePath: return "from-mfp";
+    case SpatialKind::ParallelDiffusionLibrary:
+      return "parallel-diffusion-library";
+  }
+  return "unknown";
 }
 const char* PitchAngleName(PitchAngleKind kind) {
   switch (kind) {
@@ -116,6 +125,8 @@ bool ParseSpatial(const std::string& text, SpatialKind* kind) {
   const std::string value = Lower(text);
   if (value == "from-dmumu") *kind = SpatialKind::FromPitchAngle;
   else if (value == "from-mfp") *kind = SpatialKind::FromMeanFreePath;
+  else if (value == "parallel-diffusion-library")
+    *kind = SpatialKind::ParallelDiffusionLibrary;
   else return false;
   return true;
 }
@@ -231,6 +242,17 @@ Status ValidateMoverCompatibility(const Configuration& configuration,
   if (mover != "parker" && mover != "fte-dmumu" && mover != "fte-mfp") {
     return Status::Error(StatusCode::UnsupportedConfiguration,
                          "unknown mover in coefficient compatibility check");
+  }
+  // The shared parallel-diffusion library returns the spatial eigenvalue
+  // kappa_parallel for the Parker equation.  The focused-transport movers
+  // scatter through D_mumu or lambda_parallel instead; letting fte-mfp reach
+  // the library indirectly (mean-free-path=from-spatial) would silently
+  // convert a Parker coefficient into a scattering rate, so it is rejected.
+  if (mover != "parker" &&
+      configuration.spatial == SpatialKind::ParallelDiffusionLibrary) {
+    return Status::Error(StatusCode::UnsupportedConfiguration,
+        "spatial-diffusion-provider=parallel-diffusion-library is available "
+        "only to the parker mover");
   }
   if (mover == "parker" &&
       configuration.spatial == SpatialKind::FromMeanFreePath &&

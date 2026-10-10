@@ -53,13 +53,113 @@ Schemas 1 and 2 remain readable for old campaigns. Schema 3 is the complete
 startup contract: it adds repeatable observers with explicit spectrum grids
 and a native data-bearing AMPS initialization product. It never obtains a time
 step, particle weight, observer, output path, or CME parameter from an
-unreviewed C++ default.
+unreviewed C++ default. Schema 4 is schema 3 plus two optional items: the
+`[run] particle_mover` key described in
+[Particle mover in the input file (schema 4)](#particle-mover-in-the-input-file-schema-4)
+and the `[parallel_diffusion]` section described in
+[Shared parallel-diffusion library (schema 4)](#shared-parallel-diffusion-library-schema-4).
+Without them a schema-4 file behaves exactly like schema 3.
+
+### Particle mover in the input file (schema 4)
+
+```ini
+[run]
+schema_version = 4
+particle_mover = parker      # parker | fte-dmumu | fte-mfp
+```
+
+`run.particle_mover` selects one of the three production movers. It is
+optional and legal only in schema 4. Only the canonical names are accepted (a
+deprecated command-line alias or an unknown/retired name is a fatal error with
+its line number), and the value enters the startup fingerprint.
+
+Precedence is `--particle-mover` (and its aliases `--mover`, `--sep-mover`) >
+`run.particle_mover` > the built-in default `fte-dmumu`. This keeps the
+existing rule that command-line values override the input file. When `--input`
+is given without `--particle-mover`, the parser defers the mover-dependent
+checks (coefficient-provider compatibility and the production configuration
+matrix) until `main.cpp` has applied the file value, so for example
+`--spatial-diffusion-provider parallel-diffusion-library` is validated against
+the file's `parker`, not against the default. The run-configuration record
+reports the mover's source as `CommandLine`, `InputFile`, or `Default`.
+Unifying the srcSEP and srcSEP3D input formats is a planned later step.
+
+### Shared parallel-diffusion library (schema 4)
+
+The Parker mover can take `kappa_parallel` from the shared library
+`src/models/sep_common/parallel_diffusion` (specification revision 1.4). Two
+selections must agree; either one alone is fatal before AMPS initialization:
+
+```sh
+# The example file sets run.particle_mover = parker.
+./amps --input srcSEP/examples/sep_parker_mesh_parallel_diffusion.in \
+       --spatial-diffusion-provider parallel-diffusion-library
+```
+
+```ini
+[run]
+schema_version = 4
+particle_mover = parker               # the library requires the Parker mover
+# ... all schema-3 sections ...
+
+[parallel_diffusion]
+model = power_law_lambda              # one library model ID
+lambda0_m = 1.495978707e10            ! lambda at the reference state [m]
+independent_variable = rigidity
+rigidity0_V = 1.0e9                   # reference rigidity [V]
+independent_exponent = 0.3333333333333333
+radius0_m = 1.495978707e11            # optional radial factor [m]
+radial_exponent = 0.5
+```
+
+The numbers are syntax examples, not recommended physical values. The srcSEP
+INI reader only locates the section and stores its raw lines; the library
+parser (`SEP::ParallelDiffusion::ParseSection`) owns its grammar. Inside this
+section `#` **and** `!` start comments, keys are case-sensitive suffix-free SI
+names, `model` selects exactly one model, and the selected model's key set is
+strict (unknown, duplicate, missing, malformed, or out-of-domain values fail
+with the `--input` line number). Each model's keys are listed in
+[the library README](../src/models/sep_common/parallel_diffusion/README.md).
+
+- Only `parker` may select the provider; `fte-dmumu` and `fte-mfp` (including
+  `--mean-free-path-provider from-spatial`) are rejected.
+- srcSEP supplies the species mass and charge, `|p|=gamma m v`, the sample's
+  Cartesian position (srcSEP's heliocentric frame, Sun at (0,0,0); the field
+  line itself need not start at the origin), the snapshot magnetic-field
+  vector and generation, and the particle-step epoch. It has no authoritative
+  nucleon count, no slab/2-D turbulence decomposition (its turbulence state is
+  E+/E- wave energy), no external time/region/radial factors, and no
+  effective-field definition, so models needing them are rejected at startup:
+  all spectral, nonlinear, and adapter models; energy-per-nucleon laws and
+  table axes; enabled external factors; and effective-field Bohm.
+- Accepted: `constant_lambda`, `constant_kappa`, `power_law_lambda`
+  (rigidity, total-kinetic-energy, or speed; optional radial and field
+  factors), `broken_rigidity_kappa` (optional field factor), mean-field `bohm`,
+  `prescribed_lambda_mu_shape`, and `tabulated_parallel` without an
+  energy-per-nucleon axis.
+- At startup the model is installed once; the Parker provider then calls the
+  library's model-specific pointer `ActiveParallelDiffusion` at every
+  coefficient sample. `d(kappa)/ds` is formed by the existing refined
+  arc-length stencil from those samples. A library failure stops the step with
+  `UnresolvedCoefficient`; no value is substituted.
+- The model ID and the library SHA-256 configuration fingerprint are printed
+  and included in the initialization fingerprint.
+
+Evidence: `make test-parallel-diffusion-binding-unit` (PDB01–PDB05, no AMPS),
+`make test-cli-unit` (CLI06, mover precedence), and the library's own
+`make -f makefile verify`. In addition, the native srcSEP build (`./Config.pl -application=test/sep_parker_spiral__field_line`,
+`make -j`) compiles and links the PIC sampling wrapper and the `main.cpp`
+wiring; one-rank `--initialization-only` runs install the model and reject a
+missing section or a missing provider as specified. A transport step that
+evaluates the coefficient natively has not run: the shipped example aborts in
+the Parker mover's plasma-density check at step 1 with or without this
+provider, so no native transport or MPI evidence exists for it yet.
 
 ### Application-owned sections
 
 | Section | Required keys | Meaning and validation |
 |---|---|---|
-| `[run]` | `schema_version`, `time_step_s` | `schema_version = 3`; the positive SI step is installed globally and on every allocated block for every species in the compiled AMPS `SpeciesList`. |
+| `[run]` | `schema_version`, `time_step_s`; schema 4 also optional `particle_mover` | `schema_version = 3` or `4`; the positive SI step is installed globally and on every allocated block for every species in the compiled AMPS `SpeciesList`. `particle_mover` (schema 4) is `parker`, `fte-dmumu`, or `fte-mfp`; `--particle-mover` overrides it. |
 | `[injection]` | `macroparticles_per_step` | Positive integer no larger than `INT_MAX`; exactly this many computational particles are created per compiled species at every active field-line source event unless the explicit legacy CLI count override is supplied. |
 | `[species]` | `particle_weight` | Positive finite common base AMPS statistical weight installed for every compiled species. Species count, type, mass, charge, and index remain build-time AMPS data and are not redefined here. |
 | `[observer.ID]` | `heliocentric_radius_m`, `minimum_energy_j`, `maximum_energy_j`, `energy_channels`, `energy_spacing`, `pitch_angle_bins` | Repeatable named 1-D observer. Radius is inside the field-line domain; energy bounds are positive and ordered; counts are positive. Spacing is `logarithmic` or `linear`. IDs contain letters, digits, `_`, or `-` and are at most 48 characters. |
@@ -536,6 +636,21 @@ authority, and active `Dxx`, `Dmumu`, and mean-free-path providers. See
 [PRODUCTION_MOVER_API.md](PRODUCTION_MOVER_API.md) for the runtime contract and
 [MIGRATION_MANIFEST.md](MIGRATION_MANIFEST.md) for every retired replacement.
 
+AMPS reaches the selected mover through generic PIC's runtime dispatch. The
+deck `input/test/sep_parker_spiral__field_line.input` defines
+`_PIC_PARTICLE_MOVER_LEGACY_SETTINGS_` as `_PIC_MODE_OFF_`, and `amps_init()`
+registers `SEP::Mover::DispatchProductionMover` with
+`PIC::Mover::SetUserDefinedParticleMover`; that dispatcher runs the mover chosen
+by `--particle-mover`. The deck's `_PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_`
+macro still names `::SEP::ParticleMover`, the same dispatcher, for boundary
+injection paths that call the macro directly. Build with
+`./Config.pl -application=test/sep_parker_spiral__field_line` and `make -j`.
+The deck keywords `Mover`, `ParticleTrajectoryIntegrationAlongFieldLine3D`, and
+`PerpendicularDiffusionMode` only edited the removed, never-compiled
+`mover.cpp`; `input/sep.input.pl` now ignores them with a warning, and
+`AdiabaticCooling` sets `SEP::AccountAdiabaticCoolingFlag` in
+`mover_state.cpp`.
+
 ## Common and canonical transport numerics
 
 All public mover shells now share one validated particle representation, one
@@ -629,7 +744,8 @@ evidence boundary.
 
 All three movers obtain coefficients through one registry. Canonical CLI names
 select coefficient authority (`prescribed`, `self-consistent`, `swmf`), spatial
-closure (`from-dmumu`, `from-mfp`), pitch-angle provider (`configured`,
+closure (`from-dmumu`, `from-mfp`, or Parker-only `parallel-diffusion-library`
+with a schema-4 `[parallel_diffusion]` section), pitch-angle provider (`configured`,
 `constant`, `jokipii-1966`, `florinskiy`), MFP
 model (`qlt`, `qlt1`, `tenishev-2005`, `chen-2024`, `from-spatial`), and invalid
 value policy (`fail`, `ballistic`). Conversion cycles and source/ownership
@@ -1162,6 +1278,7 @@ Run the focused initialization gate with:
 
 ```sh
 make test-initialization-unit
+make test-parallel-diffusion-binding-unit   # schema-4 [parallel_diffusion]
 ```
 
 `INIT01` and `INIT02` are also native routine descriptors.  After rebuilding

@@ -2,6 +2,7 @@
 #define SEP_COMMON_PARALLEL_DIFFUSION_PARALLEL_DIFFUSION_H
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -555,6 +556,138 @@ Status BuildConfiguration(const std::string& modelId,
                           ModelConfiguration* configuration);
 Status ConfigureActiveModel(const std::string& modelId,
                             const std::vector<InputParameter>& parameters);
+
+// ---------------------------------------------------------------------------
+// Library-owned input-section parser.
+//
+// Every host input file that selects this library carries one
+// "parallel diffusion" section.  The host locates that section in its own
+// file grammar (srcSEP3D schema-5 INI, srcSEP schema-4 INI, ...) and passes
+// the section *body* here as raw lines with their original line numbers.  The
+// library then owns the complete section grammar, so the same text is
+// accepted or rejected identically by every application:
+//
+//   * a comment begins at the first '#' or '!' and runs to end of line;
+//     consequently neither character can appear inside a parameter value;
+//   * blank and comment-only lines are ignored;
+//   * every other line is exactly one "key = value" assignment; leading and
+//     trailing blanks around key and value are removed;
+//   * the key "model" (exact spelling) selects one ModelRegistry() stable ID;
+//     the ID itself is parsed case-insensitively by ParseModelId();
+//   * every other key is a parameter of the selected model.  Parameter keys
+//     are case-sensitive because their suffixes name SI units (V, J, T);
+//   * "model" must appear exactly once; a repeated key is an error.  The
+//     selected model's key set is strict: BuildConfiguration() rejects an
+//     unknown key, a key belonging to a different model, a missing required
+//     key, and a malformed or out-of-domain value.
+//
+// Values are SI text without unit suffixes; the library never converts AU,
+// GV, nT, or MeV.  Errors are typed (InvalidConfiguration, MissingInput,
+// UnsupportedModel) and their detail begins with "line N:" whenever the
+// offending record can be identified.
+struct SectionLine {
+  // 1-based line number in the host file, used only for diagnostics.  Zero
+  // means "unknown" and suppresses the "line N:" prefix.
+  std::size_t lineNumber = 0;
+  // Raw text of one physical line, comments included.
+  std::string text;
+};
+
+struct SectionParameter {
+  std::string name;
+  std::string value;
+  std::size_t lineNumber = 0;
+};
+
+struct ParsedSection {
+  // Model identifier exactly as written and its line; parameters keep the
+  // file order so a host can retain them for provenance or restart manifests.
+  std::string modelId;
+  std::size_t modelLineNumber = 0;
+  std::vector<SectionParameter> parameters;
+  // The validated configuration and its SHA-256 identity
+  // (ConfigurationFingerprint).  Valid only after ParseSection() succeeds.
+  ModelConfiguration configuration;
+  std::string configurationFingerprint;
+};
+
+// Parse and fully validate a section body.  *result is written only after
+// the complete section validates (transactional on failure).  Parsing does
+// not change the active model.
+Status ParseSection(const std::vector<SectionLine>& lines,
+                    ParsedSection* result);
+
+// ParseSection() followed by SetActiveConfiguration().  On any failure the
+// previously active configuration and both dispatch pointers are unchanged.
+// result may be null when the caller needs no copy of the parsed section.
+Status ConfigureActiveModelFromSection(const std::vector<SectionLine>& lines,
+                                       ParsedSection* result);
+
+// ---------------------------------------------------------------------------
+// Mover-facing dispatch pointer to the model selected for this simulation.
+//
+// ActiveParallelDiffusion points to a static-lifetime evaluator dedicated to
+// the selected ModelId; that evaluator reads the active parameters installed
+// together with it.  A Parker mover (srcSEP or srcSEP3D) therefore needs no
+// model switch and no ModelConfiguration:
+//
+//   ParallelResult r = ActiveParallelDiffusion(particle, local);
+//   if (!r.status.ok()) { /* typed failure; never substitute a value */ }
+//   double kappa = *r.kappaParallelM2PerS;     // [m^2 s^-1]
+//
+// Before any successful SetActiveConfiguration() / ConfigureActiveModel*()
+// call the pointer targets an evaluator that returns InvalidConfiguration,
+// never a coefficient.  It is assigned only by those setters, during serial
+// initialization and before mover threads start; reconfiguration while
+// particles move is outside the contract.  Callers must not assign it.
+// The result is the parallel eigenvalue only: spatial derivatives needed by
+// the Parker drift (b . grad kappa or d kappa/ds) remain the mover's
+// responsibility unless ParallelResult::gradKappaParallelMPerS is present.
+using ActiveModelEvaluator = ParallelResult (*)(const ParticleState&,
+                                                const LocalState&);
+extern ActiveModelEvaluator ActiveParallelDiffusion;
+
+// Bound evaluator for one model (the value ActiveParallelDiffusion takes when
+// that model is active); null only for an invalid enum value.
+ActiveModelEvaluator BoundFunctionForModel(ModelId model);
+
+// True after the first successful SetActiveConfiguration() in this process.
+bool HasActiveConfiguration();
+
+// ---------------------------------------------------------------------------
+// Host-capability gate.
+//
+// Some models consume LocalState/ParticleState members that a given host
+// application cannot construct from authoritative state.  A host declares
+// which of those optional inputs it really supplies; the gate rejects, at
+// startup, a configuration that would otherwise fail MissingInput on the
+// first particle step or tempt a host to fabricate the input.  All flags
+// default to "not available".  The model-to-input mapping below is the one
+// approved for srcSEP3D in the D13-D16 integration decisions (see
+// INTEGRATION_PLAN.md); it is shared so every host applies the same rule.
+struct HostInputAvailability {
+  // Exact nucleon (mass) number of the particle species.  Required by the
+  // energy-per-nucleon power law and table axis; never inferred from mass.
+  bool nucleonCount = false;
+  // Canonical slab/2-D magnetic variances, spectral bend-over lengths,
+  // inertial index, and wave/moment conventions (LocalState::turbulence) plus
+  // a supplied perpendicular coefficient.  Required by qlt_slab_spectrum,
+  // qlt_slab_inertial, broadened_slab, nlpa_given_perp, nlgc_e, nlgce_n,
+  // nlgce_f_2014, turbulence_adapter, and wave_spectrum_adapter.
+  bool turbulenceDecomposition = false;
+  // Externally evaluated dimensionless multipliers.
+  bool timeFactor = false;
+  bool regionFactor = false;
+  bool radialFactor = false;
+  // Effective-field magnitude for effective_field Bohm diffusion.
+  bool effectiveFieldMagnitude = false;
+};
+
+// InvalidConfiguration when the configuration needs an input the host does
+// not supply; Success otherwise.  The configuration itself is assumed to be
+// valid (ParseSection / BuildConfiguration output).
+Status CheckHostInputAvailability(const ModelConfiguration& configuration,
+                                  const HostInputAvailability& host);
 
 // Evaluate the pitch-angle coefficient [s^-1] for models that explicitly
 // define D_mu_mu.  Unsupported eigenvalue-only models fail with

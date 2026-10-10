@@ -9,14 +9,15 @@ checkpoint operations occur only after AMPS has joined at a step boundary.
 
 ## R01: one AMPS mover hook and one immutable context
 
-`amps/install_mover_hook.py` edits the configured
-`AMPS/build/pic/picGlobal.dfn` after AMPS configuration and before
-`pic_mover.cpp` is compiled.  It inserts the exact declaration of
-`SEP3D::AMPS::Movers::MoveParticle` and maps
-`_PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_` to that function.  The script
-is idempotent and refuses to replace an unrelated existing mover mapping.
-`make prepare-production` invokes it, while `strict-production` makes the
-preparation an explicit prerequisite and audits the generated mapping.
+The AMPS deck `input/sep3d.input` selects generic PIC's runtime mover dispatch
+with `define _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ _PIC_MODE_OFF_`;
+`ampsConfig.pl` appends that override to the generated
+`AMPS/build/pic/picGlobal.dfn`, so no post-configuration patch step is needed.
+`amps_init()` registers `MoveParkerParticle` or
+`MoveFocusedTransportParticle` (chosen by the srcSEP3D input parser) through
+`PIC::Mover::SetUserDefinedParticleMover`. `amps/install_mover_hook.py` is a
+check-only verifier of the effective generated definition, run by
+`audit-production-symbols` (and therefore by `strict-production`).
 
 `amps_init()` installs one copied `AMPS::Movers::Context`.  The context contains
 the local-state resolver, the hard substep limit, the current immutable shock

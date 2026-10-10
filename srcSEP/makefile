@@ -33,6 +33,16 @@ SEP_COMMON_OBJECTS := \
     $(SEP_COMMON_DIR)/build/sep_injection_spectrum.o \
     $(SEP_COMMON_DIR)/build/sep_species_source.o
 
+# The shared parallel-diffusion coefficient library (revision 1.4) is built by
+# its own makefile.  Its two objects are flattened into mainlib.a exactly like
+# the sep_common kernels, so srcSEP and srcSEP3D link the same canonical
+# objects.  srcSEP reaches it only through adapters/parallel_diffusion_adapter.
+PARALLEL_DIFFUSION_DIR ?= $(SEP_COMMON_DIR)/parallel_diffusion
+PARALLEL_DIFFUSION_ARCHIVE ?= $(PARALLEL_DIFFUSION_DIR)/libparallel_diffusion.a
+PARALLEL_DIFFUSION_OBJECTS := \
+    $(PARALLEL_DIFFUSION_DIR)/build/parallel_diffusion.o \
+    $(PARALLEL_DIFFUSION_DIR)/build/parallel_diffusion_advanced.o
+
 # SWCME has one source and binary owner under src/models. srcSEP consumes the
 # canonical header-only 1-D interface and inserts the canonical 3-D object into
 # mainlib.a, exactly as srcSEP3D does.
@@ -66,6 +76,7 @@ SEP_CORONA_SWCME_OBJECTS := $(patsubst \
 # enclosing AMPS configuration exactly as before.
 STANDALONE_GOALS := test-cli-unit test-state-unit test-geometry-source-unit \
                     test-initialization-unit \
+                    test-parallel-diffusion-binding-unit \
                     test-mover-api-unit test-field-line-scope-unit \
                     test-transport-common-unit test-parker-unit \
                     test-fte-dmumu-unit test-fte-mfp-unit \
@@ -120,7 +131,7 @@ INCLUDE += $(MODEL_INCLUDE_FLAGS)
 SWCME_CONSUMER_CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -O3 \
                            -Iadapters -Iutil $(MODEL_INCLUDE_FLAGS)
 
-MAINLIBOBJ = exosphere_module.o  main_lib.o inner_boundary_injection.o outer_boundary_injection.o mesh.o mover_state.o production_mover_runtime.o transport_common.o coefficient_providers.o parker_mover.o focused_transport_dmumu.o focused_transport_mfp.o turbulence_production_adapter.o parker.o scattering.o sep.o field_line.o flux_tube_geometry.o sampling.o diffusion.o shock_injection.o BoundaryInjection.o BoundaryInjection_GCR.o GCR_Badavi2011ASR.o parser.o diffusion_dxx.o tests.o component_tests.o validation/cases/CV01/cv01_model.o validation/cases/controlled_transport_models.o validation/cases/advanced_validation_models.o util/sep_acceptance_cases.o util/sep_scientific_validation.o util/sep_mover_validation.o util/sep_swcme_validation.o util/sep_turbulence_validation.o util/sep_background_runtime.o util/sep_flux_tube_geometry_core.o util/sep_sampling_products.o util/sep_shock_source_core.o util/sep_transactional_output.o util/sep_run_configuration.o util/sep_population_control.o util/sep_configuration_matrix.o util/sep_evidence.o util/sep_system_ledger.o util/sep_validation_tools.o util/sep_observation_forward_model.o util/sep_production_mover.o util/sep_parker_core.o util/sep_focused_transport_core.o util/sep_focused_transport_mfp_core.o util/sep_turbulence_core.o util/sep_reproducible_reduction.o util/sep_initialization.o util/sep_initialization_validation.o shock_analytical_model.o diffusion_dmumu.o DLT.o QLT.o cooling.o QLT1.o sampling_output.o output_fl_background.o shock_analytical_model2D.o solar_wind.o alfven_turbulence.o parker_streaming_calculator.o turbulence_advection_kolmogorov.o wave_energy_initialization.o test_wave_energy_initialization.o wave_particle_coupling_kolmogorov.o growth_rate_validation_test.o kolmogorov.o kolmogorov_scatter.o shock1d_vertex_distance.o adapters/swcme1d_adapter.o adapters/reduced_shock_background_adapter.o turbulence_cascade_kolmogorov.o turbulence_reflection_kolmogorov.o turbulence_wave_number_resolved/turbulence_wave_number_resolved.o
+MAINLIBOBJ = exosphere_module.o  main_lib.o inner_boundary_injection.o outer_boundary_injection.o mesh.o mover_state.o production_mover_runtime.o transport_common.o coefficient_providers.o parker_mover.o focused_transport_dmumu.o focused_transport_mfp.o turbulence_production_adapter.o parker.o scattering.o sep.o field_line.o flux_tube_geometry.o sampling.o diffusion.o shock_injection.o BoundaryInjection.o BoundaryInjection_GCR.o GCR_Badavi2011ASR.o parser.o diffusion_dxx.o tests.o component_tests.o validation/cases/CV01/cv01_model.o validation/cases/controlled_transport_models.o validation/cases/advanced_validation_models.o util/sep_acceptance_cases.o util/sep_scientific_validation.o util/sep_mover_validation.o util/sep_swcme_validation.o util/sep_turbulence_validation.o util/sep_background_runtime.o util/sep_flux_tube_geometry_core.o util/sep_sampling_products.o util/sep_shock_source_core.o util/sep_transactional_output.o util/sep_run_configuration.o util/sep_population_control.o util/sep_configuration_matrix.o util/sep_evidence.o util/sep_system_ledger.o util/sep_validation_tools.o util/sep_observation_forward_model.o util/sep_production_mover.o util/sep_parker_core.o util/sep_focused_transport_core.o util/sep_focused_transport_mfp_core.o util/sep_turbulence_core.o util/sep_reproducible_reduction.o util/sep_initialization.o util/sep_initialization_validation.o shock_analytical_model.o diffusion_dmumu.o DLT.o QLT.o cooling.o QLT1.o sampling_output.o output_fl_background.o shock_analytical_model2D.o solar_wind.o alfven_turbulence.o parker_streaming_calculator.o turbulence_advection_kolmogorov.o wave_energy_initialization.o test_wave_energy_initialization.o wave_particle_coupling_kolmogorov.o growth_rate_validation_test.o kolmogorov.o kolmogorov_scatter.o shock1d_vertex_distance.o adapters/swcme1d_adapter.o adapters/reduced_shock_background_adapter.o adapters/parallel_diffusion_adapter.o turbulence_cascade_kolmogorov.o turbulence_reflection_kolmogorov.o turbulence_wave_number_resolved/turbulence_wave_number_resolved.o
 # Integrated IV01-IV06 model stages are linked into the same application-level
 # registry as CV01-CV12; they are not standalone substitutes for AMPS.
 MAINLIBOBJ += validation/cases/integrated_validation_models.o
@@ -134,16 +145,18 @@ MAINLIBOBJ += validation/cases/cross_model_validation_models.o
 # independent of the CLI.
 MAINOBJ = main.o util/sep_cli.o debug/sep_debug_fieldline_datum.o
 
-lib: $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE) $(SEP_CORONAL_CME_ARCHIVE) \
-     $(SEP_CORONA_SWCME_ARCHIVE) $(MAINLIBOBJ)
+lib: $(SEP_COMMON_ARCHIVE) $(PARALLEL_DIFFUSION_ARCHIVE) $(SWCME_ARCHIVE) \
+     $(SEP_CORONAL_CME_ARCHIVE) $(SEP_CORONA_SWCME_ARCHIVE) $(MAINLIBOBJ)
 	# Recreate the application archive. Plain `ar -r` would retain a stale
 	# shared member after a manifest change and could silently introduce a
 	# second shared-kernel or SWCME definition.
 	rm -f mainlib.a
-	ar -rc mainlib.a $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS) \
+	ar -rc mainlib.a $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) \
+	  $(PARALLEL_DIFFUSION_OBJECTS) $(SWCME_OBJECTS) \
 	  $(SEP_CORONAL_CME_OBJECTS) $(SEP_CORONA_SWCME_OBJECTS)
 	@members=$$(ar t mainlib.a); \
-	for member in $(notdir $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS) \
+	for member in $(notdir $(SEP_COMMON_OBJECTS) $(PARALLEL_DIFFUSION_OBJECTS) \
+	    $(SWCME_OBJECTS) \
 	    $(SEP_CORONAL_CME_OBJECTS) $(SEP_CORONA_SWCME_OBJECTS)); do \
 	  count=$$(printf '%s\n' "$$members" | awk -v expected="$$member" \
 	    '$$0 == expected { found++ } END { print found + 0 }'); \
@@ -157,11 +170,16 @@ lib: $(SEP_COMMON_ARCHIVE) $(SWCME_ARCHIVE) $(SEP_CORONAL_CME_ARCHIVE) \
 # Phony prerequisites are intentional: the application archive consumes the
 # canonical objects rather than nesting .a files, so both build directories
 # must exist after an independent clean of either shared model.
-.PHONY: sep-common swcme sep-coronal-cme sep-corona-swcme
+.PHONY: sep-common parallel-diffusion swcme sep-coronal-cme sep-corona-swcme
 sep-common:
 	$(MAKE) -C $(SEP_COMMON_DIR)
 
 $(SEP_COMMON_ARCHIVE): sep-common
+
+parallel-diffusion:
+	$(MAKE) -C $(PARALLEL_DIFFUSION_DIR) -f makefile all
+
+$(PARALLEL_DIFFUSION_ARCHIVE): parallel-diffusion
 
 swcme:
 	$(MAKE) -C $(SWCME_DIR)
@@ -214,7 +232,8 @@ audit-production-shared-models:
 	  exit 1; \
 	}
 	@members=$$(ar t "$(PRODUCTION_MAINLIB)"); \
-	for member in $(notdir $(SEP_COMMON_OBJECTS) $(SWCME_OBJECTS) \
+	for member in $(notdir $(SEP_COMMON_OBJECTS) $(PARALLEL_DIFFUSION_OBJECTS) \
+	    $(SWCME_OBJECTS) \
 	    $(SEP_CORONAL_CME_OBJECTS) $(SEP_CORONA_SWCME_OBJECTS)); do \
 	  count=$$(printf '%s\n' "$$members" | awk -v expected="$$member" \
 	    '$$0 == expected { found++ } END { print found + 0 }'); \
@@ -300,6 +319,13 @@ test-cli-unit:
 
 test-initialization-unit:
 	./test/run_initialization_tests.sh
+
+# PDB01-PDB04: schema-4 [parallel_diffusion] location, CLI/section/mover
+# cross-check, host-capability gate, and kappa through the shared library's
+# ActiveParallelDiffusion pointer (no AMPS/MPI; the PIC sampling wrapper in
+# coefficient_providers.cpp is covered only by a native build).
+test-parallel-diffusion-binding-unit:
+	./test/run_parallel_diffusion_binding_tests.sh
 
 test-state-unit:
 	./test/run_step2_tests.sh

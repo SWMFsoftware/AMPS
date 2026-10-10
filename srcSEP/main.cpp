@@ -34,6 +34,7 @@
 #include "sep.h"
 #include "adapters/swcme1d_adapter.h"
 #include "adapters/reduced_shock_background_adapter.h"
+#include "adapters/parallel_diffusion_adapter.h"
 #include "transport_common.h"
 #include "turbulence_production_adapter.h"
 #include "util/sep_cli.h"
@@ -197,6 +198,9 @@ int main(int argc,char **argv) {
   // allocation.  Failure is therefore atomic: no partially initialized AMPS
   // state survives a malformed scientific input.  An absent --input leaves
   // HasActive()==false and the legacy mesh path remains unchanged.
+  // True when the effective mover came from run.particle_mover in --input;
+  // recorded as InputFile provenance in the WP30 run configuration below.
+  bool particleMoverFromInputFile = false;
   if (!cli_options.inputPath.empty()) {
     SEP::Initialization::Configuration initialization;
     const SEP::Transport::Status loaded =
@@ -217,6 +221,58 @@ int main(int argc,char **argv) {
         return 1;
       }
     }
+    // Schema-4 run.particle_mover: the input file may select the production
+    // mover.  --particle-mover keeps its historical higher precedence (CLI
+    // values are applied after the input file), so the file value is used
+    // only when the command line is silent; the built-in default (fte-dmumu)
+    // applies only when neither names a mover.  ParseCommandLine deferred the
+    // mover-dependent checks in exactly this --input-without---particle-mover
+    // case, so run them now against the effective mover, before the
+    // parallel-diffusion binding (which needs the mover) and before any model
+    // or AMPS initialization.
+    if (initialization.particleMoverSpecified &&
+        !cli_options.particleMoverProvided) {
+      cli_options.particleMover = initialization.particleMover;
+      particleMoverFromInputFile = true;
+    }
+    if (!SEP::Util::CLI::ValidateMoverDependentOptions(cli_options,
+                                                       std::cerr)) {
+      if (PIC::ThisThread == 0)
+        std::cerr << "ERROR: effective particle mover '"
+                  << SEP::Mover::Describe(cli_options.particleMover).canonicalName
+                  << "' (from "
+                  << (cli_options.particleMoverProvided ? "--particle-mover"
+                      : particleMoverFromInputFile ? "run.particle_mover"
+                      : "the built-in default")
+                  << ") is incompatible with the selected options\n";
+      return 1;
+    }
+
+    // Schema-4 [parallel_diffusion]: hand the section body to the shared
+    // library parser, cross-check it with --spatial-diffusion-provider and the
+    // mover, and install the selected model (and its mover-facing pointer)
+    // before the initialization record is frozen, so the startup fingerprint
+    // below carries the library configuration fingerprint.  This runs before
+    // AMPS/MPI/mesh initialization, so a rejected section leaves no state.
+    const SEP::Transport::Status parallelDiffusion =
+        SEP::ParallelDiffusionBinding::Configure(
+            cli_options.coefficients.spatial ==
+                SEP::Transport::Coefficient::SpatialKind::
+                    ParallelDiffusionLibrary,
+            SEP::Mover::Describe(cli_options.particleMover).canonicalName,
+            &initialization);
+    if (!parallelDiffusion.ok()) {
+      if (PIC::ThisThread == 0)
+        std::cerr << "ERROR: parallel diffusion: "
+                  << parallelDiffusion.message << '\n';
+      return 1;
+    }
+    if (PIC::ThisThread == 0 && initialization.hasParallelDiffusionSection)
+      std::cout << "Parallel diffusion model="
+                << initialization.parallelDiffusionModelId
+                << " configuration_fingerprint="
+                << initialization.parallelDiffusionConfigurationFingerprint
+                << '\n';
     const SEP::Transport::Status installed =
         SEP::Initialization::Install(initialization);
     if (!installed.ok()) {
@@ -247,6 +303,23 @@ int main(int argc,char **argv) {
       if (!cli_options.injectionParticlesProvided)
         cli_options.injectionParticlesPerIteration = static_cast<int>(
             initialization.macroparticlesPerStep);
+    }
+  } else {
+    // Without --input there is no [parallel_diffusion] section, so selecting
+    // the library on the command line is rejected here instead of failing at
+    // the first Parker step.  Any other provider makes this a no-op.
+    const SEP::Transport::Status parallelDiffusion =
+        SEP::ParallelDiffusionBinding::Configure(
+            cli_options.coefficients.spatial ==
+                SEP::Transport::Coefficient::SpatialKind::
+                    ParallelDiffusionLibrary,
+            SEP::Mover::Describe(cli_options.particleMover).canonicalName,
+            NULL);
+    if (!parallelDiffusion.ok()) {
+      if (PIC::ThisThread == 0)
+        std::cerr << "ERROR: parallel diffusion: "
+                  << parallelDiffusion.message << '\n';
+      return 1;
     }
   }
 
@@ -377,7 +450,9 @@ int main(int argc,char **argv) {
   SEP::Run::Configuration runConfiguration=SEP::Run::Defaults();
   runConfiguration.mover.value=cli_options.particleMover;
   runConfiguration.mover.source=cli_options.particleMoverProvided
-      ? SEP::Run::ValueSource::CommandLine : SEP::Run::ValueSource::Default;
+      ? SEP::Run::ValueSource::CommandLine
+      : (particleMoverFromInputFile ? SEP::Run::ValueSource::InputFile
+                                    : SEP::Run::ValueSource::Default);
   runConfiguration.shockModel.value=cli_options.analyticalShock
       ? SEP::Run::ShockModel::Analytical : SEP::Run::ShockModel::Swcme1d;
   if (!cli_options.shockModelProvided)
@@ -1469,10 +1544,24 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
   }
 
 
-  char fname[400];
-
-  sprintf(fname,"%s/test_SEP.dat",PIC::OutputDataFileDirectory);
-  PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
+  // Path of the end-of-run mean particle-parameter summary.
+  //
+  // PIC::OutputDataFileDirectory is a char[_MAX_STRING_LENGTH_PIC_] array
+  // (2000 bytes), so the directory alone may legitimately hold up to 1999
+  // characters.  The former sprintf into a fixed char[400] buffer could
+  // therefore write past the end of that stack buffer for an output path
+  // longer than about 386 characters (GCC -Wformat-overflow reported up to
+  // 2013 bytes into 400).  std::string sizes the path exactly, so no length
+  // can overflow.  snprintf is deliberately not used: it would only silence
+  // the warning by truncating a long path, and the summary would then be
+  // written to a different, unintended file.  The file name and location are
+  // unchanged.  GetMeanParticleMicroscopicParameters() takes const char* and
+  // does not retain the pointer, so c_str() of this local string is valid for
+  // the whole call.
+  const std::string meanParametersPath =
+      std::string(PIC::OutputDataFileDirectory) + "/test_SEP.dat";
+  PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(
+      meanParametersPath.c_str());
 
   {
     const SEP::SW1DAdapter::Diagnostics localDiagnostics=

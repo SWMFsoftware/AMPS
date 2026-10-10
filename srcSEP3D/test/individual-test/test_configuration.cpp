@@ -20,6 +20,7 @@
 #include "parallel_diffusion/parallel_diffusion.h"
 #include "sep_coronal_cme/constants.h"
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -1854,6 +1855,9 @@ kappa_parallel_m2_per_s = 1.25e18
   status = runtime.Configure(configuration);
   const auto active = SEP::ParallelDiffusion::GetActiveConfiguration();
   if (!status.ok() || SEP::ParallelDiffusion::ActiveModelFunction == nullptr ||
+      SEP::ParallelDiffusion::ActiveParallelDiffusion !=
+          SEP::ParallelDiffusion::BoundFunctionForModel(
+              SEP::ParallelDiffusion::ModelId::ConstantKappa) ||
       SEP::ParallelDiffusion::ConfigurationFingerprint(active) !=
           options.parallelDiffusionConfigurationFingerprint)
     return Fail("Runtime did not install the validated shared model transactionally");
@@ -1920,6 +1924,31 @@ kappa_parallel_m2_per_s = 1.25e18
           "independent_exponent = 0.3333333333333333") ||
       RM::ParseConfigurationText(nucleon, &options).ok())
     return Fail("srcSEP3D inferred an unavailable nucleon count");
+
+  // The section body belongs to the library parser: '!' opens a comment there
+  // (it does not in other srcSEP3D sections), and its diagnostics carry the
+  // deck's own line numbers.  The expected line is found by searching the
+  // fixture text, not taken from the parser.
+  std::string bangComment = schema5;
+  if (!replaceOnce(&bangComment, "kappa_parallel_m2_per_s = 1.25e18",
+                   "kappa_parallel_m2_per_s = 1.25e18 ! Fortran-style note") ||
+      !RM::ParseConfigurationText(bangComment, &options).ok() ||
+      options.parallelDiffusionParameters.size() != 1 ||
+      options.parallelDiffusionParameters.front().value != "1.25e18")
+    return Fail("library section grammar did not strip a '!' comment");
+  std::string badValue = schema5;
+  if (!replaceOnce(&badValue, "kappa_parallel_m2_per_s = 1.25e18",
+                   "kappa_parallel_m2_per_s = -1"))
+    return Fail("schema-5 fixture lost its coefficient parameter");
+  const std::size_t badAt = badValue.find("kappa_parallel_m2_per_s = -1");
+  const std::size_t badLine = 1 + static_cast<std::size_t>(
+      std::count(badValue.begin(), badValue.begin() + badAt, '\n'));
+  status = RM::ParseConfigurationText(badValue, &options);
+  if (status.ok() ||
+      status.message.find("line " + std::to_string(badLine) + ":") ==
+          std::string::npos)
+    return Fail("library diagnostic lost the deck line number: " +
+                status.message);
 
   return Pass("schema 5 selects and cross-validates the mover family, calls the strict shared parser, freezes restart identity, installs one Parker-only active model, and rejects unavailable host state");
 }

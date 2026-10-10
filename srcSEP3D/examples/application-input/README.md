@@ -29,10 +29,8 @@ native rebuild):
 pwd -P
 pgrep -af '(^|/)(make|g\+\+|mpiexec|amps|stage1|run_tests\.py)( |$)' || true
 rm -rf -- build
-./Config.pl -application=sep3d
-./ampsConfig.pl -input sep3d.input -no-compile
-make -C srcSEP3D prepare-production
-make -j16 amps
+./Config.pl -application=sep3d   # deck selects runtime mover dispatch
+make -j
 ```
 
 Run a complete native initialization on one rank:

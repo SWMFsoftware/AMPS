@@ -263,7 +263,7 @@ STAGE1_CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -Werror -O2 \
                    -I$(SEP_CORONA_SWCME_DIR)/shock_front \
                    $(SEP_COMMON_INCLUDES)
 
-.PHONY: lib amps prepare-production strict-production audit-production-symbols
+.PHONY: lib amps strict-production audit-production-symbols
 
 # Build the shared model through its own makefile so it remains independently
 # testable and never acquires an AMPS header dependency.  The resulting object
@@ -334,17 +334,14 @@ amps: $(MAINOBJ)
 # artificial command and fail to find generated build/pic/pic.h.  Delegate to
 # the enclosing build instead; this exercises the same build/main copy and
 # compiler command used to create the real AMPS executable.
-# R01 application configuration hook. AMPS has already generated build/pic at
-# this point; selecting the callback here keeps the canonical src/pic template
-# untouched so srcSEP and srcSEP3D remain independent applications.
+# R01 runtime mover dispatch is selected by the AMPS deck itself:
+# input/sep3d.input defines _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ as
+# _PIC_MODE_OFF_, and ampsConfig.pl appends that override to the generated
+# build/pic/picGlobal.dfn.  No post-configuration patch step is needed; the
+# audit below only verifies the effective (last) definition.
 PIC_GLOBAL_DFN ?= $(AMPS_ROOT)/build/pic/picGlobal.dfn
-prepare-production:
-	@test -f "$(PIC_GLOBAL_DFN)" || { \
-	  echo "ERROR: configure AMPS first; missing $(PIC_GLOBAL_DFN)" >&2; exit 2; }
-	@python3 "$(SEP3D_MAKEFILE_DIR)/amps/install_mover_hook.py" \
-	  "$(PIC_GLOBAL_DFN)"
 
-strict-production: prepare-production
+strict-production:
 	@$(MAKE) -C "$(AMPS_ROOT)" amps
 	@$(MAKE) --no-print-directory -f "$(SEP3D_MAKEFILE_DIR)/makefile" \
 	  audit-production-symbols AMPS_ROOT="$(AMPS_ROOT)"

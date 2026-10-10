@@ -54,6 +54,13 @@ Core::Status InstallParallelDiffusionConfiguration(
     return Core::Status(Core::StatusCode::ConfigurationConflict,
                         "installed parallel-diffusion fingerprint differs "
                         "from immutable srcSEP3D configuration");
+  // The Parker coefficient bridge calls ActiveParallelDiffusion; confirm it
+  // now targets the evaluator bound to the model that was just installed.
+  if (SEP::ParallelDiffusion::ActiveParallelDiffusion !=
+      SEP::ParallelDiffusion::BoundFunctionForModel(active.model))
+    return Core::Status(Core::StatusCode::ConfigurationConflict,
+                        "mover-facing parallel-diffusion pointer does not "
+                        "match the installed model");
   return Core::Status::OK();
 }
 

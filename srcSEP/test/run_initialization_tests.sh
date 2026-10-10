@@ -13,6 +13,7 @@ cxx=${CXX:-c++}
 "$cxx" -std=c++11 -Wall -Wextra -Werror \
   -I"$source_root/util" -I"$source_root/../src/models/sep_common" \
   "$source_root/util/sep_initialization.cpp" \
+  "$source_root/util/sep_production_mover.cpp" \
   "$source_root/util/sep_initialization_validation.cpp" \
   "$source_root/../src/models/sep_common/sep_transport_common.cpp" \
   "$source_root/../src/models/sep_common/sep_test_registry.cpp" \

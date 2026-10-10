@@ -1,5 +1,179 @@
 # srcSEP standalone component tests
 
+## Build and run everything: `run_all_test.sh`
+
+`test/run_all_test.sh` performs a clean native srcSEP build (AGENTS.md
+preflight, `rm -rf -- build`, `./Config.pl
+-application=test/sep_parker_spiral__field_line`, `make -j`) and then runs every
+srcSEP test procedure recorded in `srcSEP3D/LOG.md`: `test/run_tests.py --all`
+against the new executable (its per-test logs are cut from `test-run.log`),
+`test/run_parallel_diffusion_mover_tests.py` (per-suite logs), and the
+orchestrator self-test. It replaces whatever application `build/` held before.
+The script is a thin wrapper around the shared orchestrator
+`tools/sep_test_orchestrator.py --app srcsep`.
+
+Each step's complete terminal output goes to `OUTPUT_DIR/NN-step.log`
+(`--stream` also shows it live), and everything printed on the terminal is
+appended to the run log `OUTPUT_DIR/run_all_test.log` (or `--log FILE`).
+
+**Summary.** After each step, a *result reader* in
+`tools/sep_test_orchestrator.py` interprets the report that step's runner
+already writes (JSON where available, otherwise the runner's stable text
+format) and the script prints, per step and in total, how many tests ran,
+passed, failed, were skipped, and errored. "Test executions" is the plain sum;
+"unique tests" counts a test that several steps run (same namespace and ID)
+once, with its worst status. The build and initialization previews are
+counted separately as checks.
+
+**Failed tests.** Every failed or errored test is listed with its name,
+status, message, the runner (script and step) that ran it, and its test log:
+the runner's own per-test log where one exists, otherwise the test's section
+copied from the runner's shared log (or its captured output) into
+`OUTPUT_DIR/failed-tests/<step>/<test>.log`, otherwise the step log and line
+number (several native tests in one MPI process cannot be separated). The same
+list is written to `OUTPUT_DIR/failed_tests.txt`; all records and counts go to
+`OUTPUT_DIR/run_all_test.json`, and `--junit FILE` adds JUnit XML. A step
+whose report is missing counts as one ERROR (`<step>:results-unavailable`), and
+a step that exits nonzero without a failing test record adds an ERROR
+(`<step>:exit-status`), so a failure can never look green. The script exits 0
+only when every check passed and no test failed or errored.
+
+`tools/test_sep_test_orchestrator.py` (step `orchestrator-selftest`) tests every
+result reader, the log extraction, the step guards, and the summary.
+
+```sh
+srcSEP/test/run_all_test.sh --help        # options and a description of each step
+srcSEP/test/run_all_test.sh               # build + all tests
+srcSEP/test/run_all_test.sh --list        # steps and exact commands
+srcSEP/test/run_all_test.sh --stream --log my-run.log   # live test output, custom run log
+srcSEP/test/run_all_test.sh --skip-build --only pd-mover --junit pd.xml
+```
+
+> **Required for new tests:** when a new srcSEP test, test target, or runner
+> is developed, add it as a step to the srcSEP step table in
+> `tools/sep_test_orchestrator.py` in the same change, with a result reader
+> for its report and the location of its per-test logs (and a fixture in
+> `tools/test_sep_test_orchestrator.py` for a new report format); the runner's
+> output must follow the contract in the next subsection. A test not
+> reachable from `run_all_test.sh` is not part of the srcSEP regression series;
+> a step without a reader can only count as a single check.
+
+### What a new test runner must output for `run_all_test.sh`
+
+`run_all_test.sh` does not re-implement any test: it runs each step's command
+from the AMPS root, captures its stdout and stderr in the step log
+`OUTPUT_DIR/NN-<step>.log`, and then a *result reader* in
+`tools/sep_test_orchestrator.py` turns the runner's output into one record per
+test. A new runner (or native test target) is understood only if its output
+follows the contract below. Any output that does not fit is counted as ERROR,
+never as PASS.
+
+**1. One record per test, with a stable unique ID and a status.**
+
+- *Test ID*: a stable, unique name such as `CLI07` or `PDB06`. It must not
+  change between runs, because de-duplication and the failed-test list are
+  keyed on it. Use only `A-Z a-z 0-9 _ . - : /`.
+- *Status*: one of `PASS`, `FAIL`, `SKIP`, `ERROR`. The spellings `passed`,
+  `ok`, `failed`, `failure` and `skipped` are also accepted (case does not
+  matter). Any other word becomes ERROR.
+  - `FAIL`: the test ran and an assertion or physics criterion was violated.
+  - `ERROR`: the test could not be evaluated, for example because the program
+    crashed, timed out or wrote no output.
+  - `SKIP`: a declared precondition is missing, such as a data file, a tool,
+    MPI or an unbuilt target.
+  A missing input must never be reported as `PASS`.
+- *Message*: a one-line reason. It is required for `FAIL`, `ERROR` and `SKIP`;
+  for `SKIP` it should name the missing precondition. Longer messages are
+  collapsed to one line of at most 300 characters.
+
+**2. Preferred format: a JSON report at a path given on the command line.**
+
+The runner takes an output location (`--json FILE` or `--output-dir DIR`) and
+writes the report there on every run. It writes the report even when tests
+fail, and it writes it after the last test so that the report is complete.
+When the report path is fixed rather than given on the command line, the
+reader must reject a report older than the step; `reader_coronal_cme` shows
+how. The shape below is read unchanged by the existing
+`reader_reduced_front(DIR)` (it reads `DIR/summary.json`; despite its name it
+is format-generic), so a runner that writes it needs no new reader code:
+
+```json
+{
+  "results": [
+    {"scope": "", "test_id": "CLI07", "status": "PASS", "message": "",
+     "log": "/abs/path/OUTPUT/logs/CLI07.log", "report": ""},
+    {"scope": "", "test_id": "CLI08", "status": "FAIL",
+     "message": "expected mover parker, got fte-dmumu",
+     "log": "/abs/path/OUTPUT/logs/CLI08.log",
+     "report": "/abs/path/OUTPUT/CLI08.json"}
+  ]
+}
+```
+
+- `scope` (optional) prefixes the ID as `scope/test_id`. Use it when the same
+  ID is legitimately run in several configurations, such as 1 rank and
+  4 ranks.
+- `log` is the test's own log: its complete output and the verdict, written
+  for every test and not only for failures. It may be an absolute path or a
+  path relative to the AMPS root (steps run from the root); absolute paths are
+  safest. It is printed in the failed-test list. When it is empty, the failed
+  list falls back to the step log.
+- `report` (optional) is a per-test evidence file, listed as evidence.
+- A per-suite log shared by several tests is acceptable if each result also
+  gives the 1-based `line` of its result line, as
+  `run_parallel_diffusion_mover_tests.py` does (`reader_pd_mover`).
+
+**3. Accepted text formats (when a JSON report is impractical).** The reader
+then works on the step log, so each test's record points to its line in that
+log instead of a separate test log.
+
+- One line per test on stdout, at the start of the line:
+  `[ID] PASS|FAIL|SKIP|ERROR message`, or `ID PASS|FAIL|SKIP|ERROR: message`
+  (`read_bracket_text`). If the same ID is printed more than once, the worst
+  status is kept.
+- Several test binaries run by one make recipe: run them with `make -i` and
+  use `reader_make_recipe(r"^build/(test_\w+)$")`. Each binary is then counted,
+  and a binary that exits nonzero without a `FAIL`/`ERROR` line becomes an
+  ERROR.
+- Python `unittest` run with verbosity 2 (`read_unittest`). Each failure
+  block is copied to that test's own log.
+- A native AMPS registry test run as `./amps --test ID --test-json FILE`
+  (`reader_native_json`).
+
+**4. Exit status.** The runner exits nonzero when any test FAILed or ERRORed,
+and exits 0 otherwise; SKIPs alone do not make the exit nonzero. If the runner
+exits nonzero but its report contains no failing test, `run_all_test.sh` adds
+the ERROR `<step>:exit-status`. If the report is missing, unreadable or empty,
+it records the ERROR `<step>:results-unavailable`. A crashed runner can
+therefore never look green, but it also cannot say which test failed.
+
+**5. Registration.** Add a `Step(...)` to this application's step table in
+`tools/sep_test_orchestrator.py`, together with any directories the runner
+needs (`make_dirs`). For example:
+
+```python
+Step("my-runner",
+     "one-line description shown by --help and --list",
+     [["python3", "srcSEP/test/run_my_tests.py", "--output-dir", str(out / "my-runner")]],
+     reader=reader_reduced_front(out / "my-runner"),   # JSON report of section 2
+     runner="srcSEP/test/run_my_tests.py",
+     long=False),   # True if it takes many minutes; such steps are skipped by --quick
+```
+
+Give `namespace=` only if the step re-runs tests that another step also runs,
+so that they are counted once as unique tests. A new report format needs its
+own reader plus a fixture test in `tools/test_sep_test_orchestrator.py` that
+uses a hand-written report rather than one produced by the runner. Then check:
+
+```sh
+python3 tools/test_sep_test_orchestrator.py
+srcSEP/test/run_all_test.sh --list
+srcSEP/test/run_all_test.sh --skip-build --only my-runner
+```
+
+The new step's test count must equal the runner's own total. A deliberately
+failing test must appear in the failed-test list with its runner and log.
+
 ## Run the complete test series
 
 From the `srcSEP` directory, run every test advertised by the linked AMPS
@@ -1117,6 +1291,9 @@ and exercises:
 - `CLI03`: deterministic ordering, de-duplication, groups, routine/extended;
 - `CLI04`: malformed/conflicting/unknown selection rejection;
 - `CLI05`: result exit propagation and frozen legacy TestManager parsing;
+- `CLI06`: mover precedence (`--particle-mover` > schema-4 `run.particle_mover`
+  > default) and deferred mover-dependent validation when `--input` is given
+  without `--particle-mover`;
 - `HIDDEN`: positive `assertion_failures` cannot be masked by callback PASS;
 - `REPORT`: JSON/JUnit schema, outcome, metric, and artifact preservation;
 - registry completeness: required metadata, callbacks, and unique IDs.
@@ -1154,6 +1331,46 @@ entry point and does not replace the later dedicated turbulence verification and
 validation campaign.
 
 ## Initialization input and mesh gates
+
+### Parallel-diffusion / particle-mover runner
+
+`test/run_parallel_diffusion_mover_tests.py` runs, from any directory and
+without an AMPS build, the suites that cover the shared parallel-diffusion
+library binding and the schema-4 mover key: `library` (library `make verify`,
+including PD13-\*), `binding` (PDB01–PDB05), `cli` (CLI01–CLI06), and
+`coefficients` (COEF01–COEF06). It parses every per-test result line, prints
+per-suite and total PASS/FAIL/SKIP/ERROR/MISSING counts, and lists each failed
+test with its suite and message. An expected test that reports nothing is
+`MISSING`; a nonzero suite exit not explained by a test failure is recorded as
+an `ERROR`; the step-1 suite's intentional `[HIDDEN01] FAIL` negative control
+is ignored. Exit status is 0 only when nothing failed. With `--json FILE` (or `--log-dir DIR`) each suite's
+complete output is saved to `<json name>-logs/<suite>.log` (or `DIR/<suite>.log`),
+and every result in the JSON carries `log` and the 1-based `line` of its result
+line, so a failed test can be located directly.
+
+```sh
+python3 srcSEP/test/run_parallel_diffusion_mover_tests.py --help   # describes every test
+python3 srcSEP/test/run_parallel_diffusion_mover_tests.py          # all suites
+python3 srcSEP/test/run_parallel_diffusion_mover_tests.py --suite binding --suite cli
+python3 srcSEP/test/run_parallel_diffusion_mover_tests.py --verbose --json report.json
+```
+
+`make test-parallel-diffusion-binding-unit` compiles the production
+`util/sep_initialization.cpp`, `adapters/parallel_diffusion_adapter.cpp`, the
+canonical coefficient registry, and the shared parallel-diffusion library
+without AMPS or MPI. `PDB01` checks that schema 4 stores the
+`[parallel_diffusion]` body verbatim with line numbers and that schema 3 and
+duplicate sections are rejected. `PDB02` checks every rejected selection
+(section without provider, provider without `--input` or section, focused
+mover, models needing unavailable host inputs, malformed values with the deck
+line number) and that nothing is installed. `PDB03` checks the registry
+provider and its Parker-only compatibility. `PDB04` installs models through
+the adapter and compares `kappa`/`lambda` returned through
+`ActiveParallelDiffusion` with independent closed forms (`v*lambda/3`, the
+rigidity/radial power law). `PDB05` checks the schema-4 `[run]
+particle_mover` key: canonical names only, schema-4 only, no duplicates,
+optional, and part of the startup fingerprint. The PIC sampling wrapper is not
+exercised here; it requires a native build.
 
 `make test-initialization-unit` compiles the production
 `util/sep_initialization.cpp` and the exact native callbacks without AMPS or

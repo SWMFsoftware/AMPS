@@ -1076,6 +1076,92 @@ ModelFunction FunctionForModel(ModelId model) {
 
 ModelFunction ActiveModelFunction = &EvaluateUnconfigured;
 
+namespace {
+
+// True once SetActiveConfiguration() has installed a validated model.  Like
+// gActiveConfiguration it is mutated only during serial initialization.
+bool gHasActiveConfiguration = false;
+
+// Bound sentinel used until a model is installed.  It mirrors
+// EvaluateUnconfigured(): a typed failure, never a coefficient.
+ParallelResult EvaluateBoundUnconfigured(const ParticleState& particle,
+                                         const LocalState& local) {
+  return EvaluateUnconfigured(particle, local, gActiveConfiguration);
+}
+
+// One bound evaluator per stable model identity.  The template argument fixes
+// the backend at compile time, so ActiveParallelDiffusion identifies exactly
+// one model; the parameters are read from the configuration installed with
+// it.  FunctionForModel() remains the single model->implementation map, and
+// its switch folds away for a constant argument.  Validation is not repeated
+// per call: SetActiveConfiguration() admits only validated configurations,
+// and EvaluateActive() follows the same convention.
+template <ModelId Model>
+ParallelResult EvaluateBoundActive(const ParticleState& particle,
+                                   const LocalState& local) {
+  return FunctionForModel(Model)(particle, local, gActiveConfiguration);
+}
+
+// Remove leading/trailing blanks, tabs, and the CR left by CRLF files.
+std::string TrimSectionText(const std::string& text) {
+  const char* blanks = " \t\r\n\f\v";
+  const std::size_t first = text.find_first_not_of(blanks);
+  if (first == std::string::npos) return std::string();
+  const std::size_t last = text.find_last_not_of(blanks);
+  return text.substr(first, last - first + 1);
+}
+
+std::string LinePrefix(std::size_t lineNumber) {
+  return lineNumber == 0 ? std::string()
+                         : "line " + std::to_string(lineNumber) + ": ";
+}
+
+}  // namespace
+
+ActiveModelEvaluator ActiveParallelDiffusion = &EvaluateBoundUnconfigured;
+
+ActiveModelEvaluator BoundFunctionForModel(ModelId model) {
+  // Keep this list aligned with ModelId; an unlisted value returns null and is
+  // rejected by SetActiveConfiguration() rather than mapped to another model.
+  switch (model) {
+    case ModelId::ConstantLambda:
+      return &EvaluateBoundActive<ModelId::ConstantLambda>;
+    case ModelId::ConstantKappa:
+      return &EvaluateBoundActive<ModelId::ConstantKappa>;
+    case ModelId::PowerLawLambda:
+      return &EvaluateBoundActive<ModelId::PowerLawLambda>;
+    case ModelId::BrokenRigidityKappa:
+      return &EvaluateBoundActive<ModelId::BrokenRigidityKappa>;
+    case ModelId::QltSlabSpectrum:
+      return &EvaluateBoundActive<ModelId::QltSlabSpectrum>;
+    case ModelId::QltSlabInertial:
+      return &EvaluateBoundActive<ModelId::QltSlabInertial>;
+    case ModelId::PrescribedLambdaMuShape:
+      return &EvaluateBoundActive<ModelId::PrescribedLambdaMuShape>;
+    case ModelId::BroadenedSlab:
+      return &EvaluateBoundActive<ModelId::BroadenedSlab>;
+    case ModelId::NlpaGivenPerp:
+      return &EvaluateBoundActive<ModelId::NlpaGivenPerp>;
+    case ModelId::NlgcE:
+      return &EvaluateBoundActive<ModelId::NlgcE>;
+    case ModelId::NlgceN:
+      return &EvaluateBoundActive<ModelId::NlgceN>;
+    case ModelId::NlgceF2014:
+      return &EvaluateBoundActive<ModelId::NlgceF2014>;
+    case ModelId::TurbulenceAdapter:
+      return &EvaluateBoundActive<ModelId::TurbulenceAdapter>;
+    case ModelId::WaveSpectrumAdapter:
+      return &EvaluateBoundActive<ModelId::WaveSpectrumAdapter>;
+    case ModelId::Bohm:
+      return &EvaluateBoundActive<ModelId::Bohm>;
+    case ModelId::TabulatedParallel:
+      return &EvaluateBoundActive<ModelId::TabulatedParallel>;
+  }
+  return nullptr;
+}
+
+bool HasActiveConfiguration() { return gHasActiveConfiguration; }
+
 ParallelResult Evaluate(const ParticleState& particle,
                         const LocalState& local,
                         const ModelConfiguration& configuration) {
@@ -1104,16 +1190,19 @@ Status SetActiveConfiguration(const ModelConfiguration& configuration) {
   const Status valid = ValidateConfiguration(configuration);
   if (!valid.ok()) return valid;
   ModelFunction function = FunctionForModel(configuration.model);
-  if (!function)
+  ActiveModelEvaluator bound = BoundFunctionForModel(configuration.model);
+  if (!function || !bound)
     return Status::Error(StatusCode::UnsupportedModel,
                          "selected model has no implementation function");
   // Assignment order is intentional for the documented serial-initialization
   // contract: the complete validated parameter value is installed before the
-  // pointer makes the backend reachable by EvaluateActive.  This ordering is
-  // not a synchronization mechanism; concurrent reconfiguration remains
-  // outside the API contract.
+  // pointers make the backend reachable by EvaluateActive or
+  // ActiveParallelDiffusion.  This ordering is not a synchronization
+  // mechanism; concurrent reconfiguration remains outside the API contract.
   gActiveConfiguration = configuration;
   ActiveModelFunction = function;
+  ActiveParallelDiffusion = bound;
+  gHasActiveConfiguration = true;
   return Status::Success();
 }
 
@@ -1291,6 +1380,202 @@ Status ConfigureActiveModel(const std::string& modelId,
   ModelConfiguration candidate;
   const Status built = BuildConfiguration(modelId, parameters, &candidate);
   return built.ok() ? SetActiveConfiguration(candidate) : built;
+}
+
+Status ParseSection(const std::vector<SectionLine>& lines,
+                    ParsedSection* result) {
+  if (!result)
+    return Status::Error(StatusCode::InvalidConfiguration,
+                         "null parsed-section output");
+  // Pass 1: section grammar only.  Build a complete candidate before any
+  // model-specific interpretation so a syntax error is reported at its own
+  // line rather than as a consequence inside BuildConfiguration().
+  ParsedSection candidate;
+  bool modelSeen = false;
+  std::map<std::string, std::size_t> firstLine;
+  for (const SectionLine& line : lines) {
+    std::string text = line.text;
+    // '#' and '!' both open a comment; whichever appears first wins.
+    const std::size_t comment = text.find_first_of("#!");
+    if (comment != std::string::npos) text.erase(comment);
+    text = TrimSectionText(text);
+    if (text.empty()) continue;
+
+    const std::size_t separator = text.find('=');
+    if (separator == std::string::npos)
+      return Status::Error(StatusCode::InvalidConfiguration,
+          LinePrefix(line.lineNumber) +
+          "expected 'key = value' in the parallel-diffusion section");
+    const std::string key = TrimSectionText(text.substr(0, separator));
+    const std::string value = TrimSectionText(text.substr(separator + 1));
+    if (key.empty() || value.empty())
+      return Status::Error(StatusCode::InvalidConfiguration,
+          LinePrefix(line.lineNumber) +
+          "parallel-diffusion key and value must both be nonempty");
+    // Duplicate detection is done here, with both line numbers, rather than
+    // left to InputMap(), which cannot know where the records came from.
+    const auto inserted = firstLine.emplace(key, line.lineNumber);
+    if (!inserted.second)
+      return Status::Error(StatusCode::InvalidConfiguration,
+          LinePrefix(line.lineNumber) + "duplicate parallel-diffusion key '" +
+          key + "' (first assigned" +
+          (inserted.first->second == 0
+               ? std::string()
+               : " at line " + std::to_string(inserted.first->second)) +
+          ")");
+    if (key == "model") {
+      modelSeen = true;
+      candidate.modelId = value;
+      candidate.modelLineNumber = line.lineNumber;
+    } else {
+      candidate.parameters.push_back({key, value, line.lineNumber});
+    }
+  }
+  if (!modelSeen)
+    return Status::Error(StatusCode::MissingInput,
+        "the parallel-diffusion section must select a model with 'model = <id>'");
+
+  // Pass 2: the selected model's strict schema.  BuildConfiguration() is the
+  // only place that knows each model's key set, defaults policy, and numerical
+  // domains, so the section parser never duplicates that knowledge.
+  std::vector<InputParameter> parameters;
+  parameters.reserve(candidate.parameters.size());
+  for (const SectionParameter& parameter : candidate.parameters)
+    parameters.push_back({parameter.name, parameter.value});
+  const Status built = BuildConfiguration(candidate.modelId, parameters,
+                                          &candidate.configuration);
+  if (!built.ok()) {
+    // Attribute the diagnostic to the record it names.  Schema errors quote
+    // the offending key as 'key'; domain errors from ValidateConfiguration()
+    // name it as a bare identifier (e.g. "requires lambda0_m>0").  A quoted
+    // match is preferred; otherwise a whole-identifier match is used, so
+    // "radius0_m" is not found inside a longer key.  An unknown/unsupported
+    // model or a diagnostic naming no supplied key is attributed to the model
+    // line.
+    const auto namesWholeIdentifier = [&built](const std::string& name) {
+      const auto identifierChar = [](char c) {
+        return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+      };
+      for (std::size_t at = built.detail.find(name); at != std::string::npos;
+           at = built.detail.find(name, at + 1)) {
+        const std::size_t end = at + name.size();
+        if ((at == 0 || !identifierChar(built.detail[at - 1])) &&
+            (end == built.detail.size() || !identifierChar(built.detail[end])))
+          return true;
+      }
+      return false;
+    };
+    std::size_t lineNumber = candidate.modelLineNumber;
+    if (built.code != StatusCode::UnsupportedModel) {
+      bool attributed = false;
+      for (const SectionParameter& parameter : candidate.parameters) {
+        if (built.detail.find("'" + parameter.name + "'") !=
+            std::string::npos) {
+          lineNumber = parameter.lineNumber;
+          attributed = true;
+          break;
+        }
+      }
+      for (const SectionParameter& parameter : candidate.parameters) {
+        if (attributed) break;
+        if (namesWholeIdentifier(parameter.name)) {
+          lineNumber = parameter.lineNumber;
+          attributed = true;
+        }
+      }
+    }
+    return Status::Error(built.code, LinePrefix(lineNumber) + built.detail);
+  }
+  candidate.configurationFingerprint =
+      ConfigurationFingerprint(candidate.configuration);
+  *result = candidate;
+  return Status::Success();
+}
+
+Status ConfigureActiveModelFromSection(const std::vector<SectionLine>& lines,
+                                       ParsedSection* result) {
+  ParsedSection parsed;
+  const Status status = ParseSection(lines, &parsed);
+  if (!status.ok()) return status;
+  const Status installed = SetActiveConfiguration(parsed.configuration);
+  if (!installed.ok()) return installed;
+  if (result) *result = parsed;
+  return Status::Success();
+}
+
+Status CheckHostInputAvailability(const ModelConfiguration& configuration,
+                                  const HostInputAvailability& host) {
+  // Each rule names the exact optional input a model consumes.  Rejecting at
+  // startup is required because the alternative (MissingInput on the first
+  // particle step, or a host-side guess such as A=mass/m_p, total variance as
+  // slab variance, or a correlation length as a bend-over length) would
+  // either waste a run or silently change the physics.
+  const auto unavailable = [](const std::string& detail) {
+    return Status::Error(StatusCode::InvalidConfiguration, detail);
+  };
+  switch (configuration.model) {
+    case ModelId::QltSlabSpectrum:
+    case ModelId::QltSlabInertial:
+    case ModelId::BroadenedSlab:
+    case ModelId::NlpaGivenPerp:
+    case ModelId::NlgcE:
+    case ModelId::NlgceN:
+    case ModelId::NlgceF2014:
+    case ModelId::TurbulenceAdapter:
+    case ModelId::WaveSpectrumAdapter:
+      if (!host.turbulenceDecomposition)
+        return unavailable(std::string("parallel-diffusion model '") +
+            ModelName(configuration.model) +
+            "' requires slab/2D variance, spectral bend-over length, or "
+            "wave-convention state that this host does not provide");
+      break;
+    case ModelId::PowerLawLambda: {
+      const PowerLawLambdaParameters& p = configuration.powerLawLambda;
+      if (p.independentVariable == IndependentVariable::EnergyPerNucleon &&
+          !host.nucleonCount)
+        return unavailable("an energy-per-nucleon parallel law requires an "
+                           "authoritative nucleon count that this host does "
+                           "not provide");
+      if (p.useTimeFactor && !host.timeFactor)
+        return unavailable("this host has no provider for the parallel-"
+                           "diffusion time_factor");
+      if (p.useRegionFactor && !host.regionFactor)
+        return unavailable("this host has no provider for the parallel-"
+                           "diffusion region_factor");
+      break;
+    }
+    case ModelId::BrokenRigidityKappa: {
+      const BrokenRigidityKappaParameters& p =
+          configuration.brokenRigidityKappa;
+      if (p.useRadialFactor && !host.radialFactor)
+        return unavailable("this host has no provider for the externally "
+                           "evaluated radial_factor");
+      if (p.useRegionFactor && !host.regionFactor)
+        return unavailable("this host has no provider for the externally "
+                           "evaluated region_factor");
+      break;
+    }
+    case ModelId::Bohm:
+      if (configuration.bohm.fieldDefinition ==
+              BohmFieldDefinition::EffectiveField &&
+          !host.effectiveFieldMagnitude)
+        return unavailable("effective_field Bohm diffusion requires an "
+                           "effective-field magnitude that this host does "
+                           "not provide");
+      break;
+    case ModelId::TabulatedParallel:
+      for (const TableAxis axis : configuration.table.axes)
+        if (axis == TableAxis::EnergyPerNucleon && !host.nucleonCount)
+          return unavailable("an energy-per-nucleon table axis requires an "
+                             "authoritative nucleon count that this host "
+                             "does not provide");
+      break;
+    case ModelId::ConstantLambda:
+    case ModelId::ConstantKappa:
+    case ModelId::PrescribedLambdaMuShape:
+      break;
+  }
+  return Status::Success();
 }
 
 Status EvaluatePitchAngleDiffusion(double mu,

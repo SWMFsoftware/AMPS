@@ -3,6 +3,7 @@
 #include "../mesh/mesh_model.h"
 #include "swcme3d_input.hpp"
 #include "background_factory.h"
+#include "parallel_diffusion/parallel_diffusion.h"
 
 #include <algorithm>
 #include <cctype>
@@ -180,21 +181,10 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     o->swcmeAssignments.push_back(assignment);
     return Core::Status::OK();
   }
-  if (section == "parallel_diffusion") {
-    // D14: srcSEP3D owns INI syntax and source locations only. Preserve every
-    // model-specific value as text for the shared BuildConfiguration parser;
-    // accepting numeric fields here would duplicate its schema and could make
-    // the application accept parameters rejected by the library itself.
-    if (key == "model") {
-      o->parallelDiffusionModelId = value;
-    } else {
-      RunConfiguration3DOptions::ParallelDiffusionAssignment assignment;
-      assignment.name = key;
-      assignment.value = value;
-      o->parallelDiffusionParameters.push_back(std::move(assignment));
-    }
-    return Core::Status::OK();
-  }
+  // [parallel_diffusion] never reaches ApplyField(): ParseConfigurationText()
+  // forwards that section's raw lines to the library-owned section parser
+  // (SEP::ParallelDiffusion::ParseSection), which owns its grammar, model
+  // selection, and per-model key schema.
   if (field == "run.intent") {
     if (!ParseEnum(value, {{"transport-only", RunIntent::TransportOnly},
                            {"shock-injection", RunIntent::ShockInjection},
@@ -786,13 +776,24 @@ Core::Status ParseConfigurationText(
   bool observerDefaultsCleared = false;
   bool schemaSeen = false;
   std::size_t lineNumber = 0;
+  // Raw body of [parallel_diffusion], comments included, with file line
+  // numbers.  The library section parser owns that grammar ('#' and '!'
+  // comments, case-sensitive SI keys, model selection), so this INI reader
+  // only locates the section and does not interpret its records.
+  std::vector<SEP::ParallelDiffusion::SectionLine> parallelDiffusionLines;
   while (std::getline(input, line)) {
     ++lineNumber;
+    const std::string rawLine = line;
     const std::size_t comment = line.find('#');
     if (comment != std::string::npos) line.erase(comment);
     line = Trim(line);
     if (line.empty()) continue;
-    if (line.front() == '[' && line.back() == ']') {
+    const bool sectionHeader = line.front() == '[' && line.back() == ']';
+    if (!sectionHeader && section == "parallel_diffusion") {
+      parallelDiffusionLines.push_back({lineNumber, rawLine});
+      continue;
+    }
+    if (sectionHeader) {
       section = Lower(Trim(line.substr(1, line.size() - 2)));
       if (section.empty()) return Invalid("empty section at line " +
                                           std::to_string(lineNumber));
@@ -806,11 +807,9 @@ Core::Status ParseConfigurationText(
     if (separator == std::string::npos)
       return Invalid("expected key=value at line " + std::to_string(lineNumber));
     const std::string sourceKey = Trim(line.substr(0, separator));
-    // Shared-library keys are case-sensitive because their suffixes encode SI
-    // units (V, J, T). Every other srcSEP3D key retains the historical
-    // case-insensitive grammar.
-    const std::string key = section == "parallel_diffusion"
-        ? sourceKey : Lower(sourceKey);
+    // srcSEP3D keys are case-insensitive.  (The case-sensitive SI keys of
+    // [parallel_diffusion] were diverted to the library parser above.)
+    const std::string key = Lower(sourceKey);
     const std::string value = Trim(line.substr(separator + 1));
     if (key.empty() || value.empty())
       return Invalid("empty key or value at line " + std::to_string(lineNumber));
@@ -835,11 +834,6 @@ Core::Status ParseConfigurationText(
     if (qualified == "run.schema_version") schemaSeen = true;
     if (section == "swcme" && !candidate.swcmeAssignments.empty())
       candidate.swcmeAssignments.back().line = lineNumber;
-    if (section == "parallel_diffusion" && key != "model" &&
-        !candidate.parallelDiffusionParameters.empty())
-      candidate.parallelDiffusionParameters.back().line = lineNumber;
-    if (section == "parallel_diffusion" && key == "model")
-      candidate.parallelDiffusionModelLine = lineNumber;
   }
   if (!schemaSeen) return Invalid("missing required run.schema_version");
   // C01 distinguishes file input from typed coupled construction.  A coupled
@@ -924,6 +918,32 @@ Core::Status ParseConfigurationText(
     return Invalid("parallel-diffusion-library requires [parallel_diffusion]");
   if (!parallelSelected && parallelSection)
     return Invalid("[parallel_diffusion] is present but the library is not selected");
+  if (parallelSection) {
+    // The library parses the section body: comment grammar, the 'model'
+    // selector, duplicate/unknown/missing keys, and every model-specific
+    // value and domain.  Its diagnostics already carry "line N:" from the
+    // numbers recorded above.  The resulting text and line provenance are
+    // copied into the options so RunConfiguration3D::Create() (which typed,
+    // parser-free hosts also call) and Runtime installation reproduce the
+    // identical configuration and fingerprint.
+    SEP::ParallelDiffusion::ParsedSection parsed;
+    const SEP::ParallelDiffusion::Status sectionStatus =
+        SEP::ParallelDiffusion::ParseSection(parallelDiffusionLines, &parsed);
+    if (!sectionStatus.ok())
+      return Invalid("invalid [parallel_diffusion] section: " +
+                     sectionStatus.detail);
+    candidate.parallelDiffusionModelId = parsed.modelId;
+    candidate.parallelDiffusionModelLine = parsed.modelLineNumber;
+    candidate.parallelDiffusionParameters.clear();
+    for (const SEP::ParallelDiffusion::SectionParameter& parameter :
+         parsed.parameters) {
+      RunConfiguration3DOptions::ParallelDiffusionAssignment assignment;
+      assignment.name = parameter.name;
+      assignment.value = parameter.value;
+      assignment.line = parameter.lineNumber;
+      candidate.parallelDiffusionParameters.push_back(std::move(assignment));
+    }
+  }
   if (candidate.domainBoxGeometry == DomainBoxGeometry::FieldLineCornerCube ||
       candidate.domainBoxGeometry == DomainBoxGeometry::FieldLineXYCornerCube) {
     // Additive opt-in contract: legacy decks retain their original defaults.

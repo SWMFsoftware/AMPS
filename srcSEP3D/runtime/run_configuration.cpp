@@ -622,54 +622,23 @@ Core::Status RunConfiguration3D::Create(
           ": " + parsed.detail);
     }
 
-    // srcSEP3D does not currently carry an authoritative nucleon count or a
-    // slab/2D spectral decomposition. Reject models that necessarily consume
-    // those quantities at startup instead of fabricating A=mass/m_p, treating
-    // total variance as slab variance, or relabeling a correlation length as a
-    // spectral bend-over length. These are host-capability gates, not claims
-    // about the validity of the shared models in a complete host.
-    using SEP::ParallelDiffusion::ModelId;
-    const bool unavailableTurbulenceState =
-        candidate.model == ModelId::QltSlabSpectrum ||
-        candidate.model == ModelId::QltSlabInertial ||
-        candidate.model == ModelId::BroadenedSlab ||
-        candidate.model == ModelId::NlpaGivenPerp ||
-        candidate.model == ModelId::NlgcE ||
-        candidate.model == ModelId::NlgceN ||
-        candidate.model == ModelId::NlgceF2014 ||
-        candidate.model == ModelId::TurbulenceAdapter ||
-        candidate.model == ModelId::WaveSpectrumAdapter;
-    if (unavailableTurbulenceState)
-      return Invalid("selected parallel-diffusion model requires slab/2D "
-                     "variance, spectral bend-over length, or wave-convention "
-                     "state that srcSEP3D does not currently provide");
-    if (candidate.model == ModelId::PowerLawLambda) {
-      if (candidate.powerLawLambda.independentVariable ==
-          SEP::ParallelDiffusion::IndependentVariable::EnergyPerNucleon)
-        return Invalid("srcSEP3D cannot select an energy-per-nucleon parallel "
-                       "law because its species boundary has no authoritative "
-                       "nucleon count");
-      if (candidate.powerLawLambda.useTimeFactor ||
-          candidate.powerLawLambda.useRegionFactor)
-        return Invalid("srcSEP3D has no approved provider for parallel-"
-                       "diffusion time_factor or region_factor");
-    }
-    if (candidate.model == ModelId::BrokenRigidityKappa &&
-        (candidate.brokenRigidityKappa.useRadialFactor ||
-         candidate.brokenRigidityKappa.useRegionFactor))
-      return Invalid("srcSEP3D has no approved provider for externally "
-                     "evaluated radial_factor or region_factor");
-    if (candidate.model == ModelId::Bohm &&
-        candidate.bohm.fieldDefinition ==
-            SEP::ParallelDiffusion::BohmFieldDefinition::EffectiveField)
-      return Invalid("srcSEP3D supplies the resolved mean field but has no "
-                     "approved effective-field definition for Bohm diffusion");
-    if (candidate.model == ModelId::TabulatedParallel) {
-      for (const auto axis : candidate.table.axes)
-        if (axis == SEP::ParallelDiffusion::TableAxis::EnergyPerNucleon)
-          return Invalid("srcSEP3D cannot select an energy-per-nucleon table "
-                         "axis because nucleon count is unavailable");
-    }
+    // srcSEP3D does not currently carry an authoritative nucleon count, a
+    // slab/2D spectral decomposition, externally evaluated time/region/radial
+    // factors, or an effective-field magnitude.  Declare exactly that to the
+    // shared host-capability gate, which rejects at startup every model that
+    // necessarily consumes one of them, instead of fabricating A=mass/m_p,
+    // treating total variance as slab variance, or relabeling a correlation
+    // length as a spectral bend-over length.  These are host-capability
+    // gates, not claims about the validity of the shared models in a
+    // complete host.  (The same gate, with the same declaration, is used by
+    // srcSEP, so both applications admit the same model subset.)
+    const SEP::ParallelDiffusion::HostInputAvailability srcSep3dInputs;
+    const SEP::ParallelDiffusion::Status hostStatus =
+        SEP::ParallelDiffusion::CheckHostInputAvailability(candidate,
+                                                           srcSep3dInputs);
+    if (!hostStatus.ok())
+      return Invalid("srcSEP3D cannot evaluate the selected parallel-"
+                     "diffusion configuration: " + hostStatus.detail);
     normalized.parallelDiffusionModelId =
         SEP::ParallelDiffusion::ModelName(candidate.model);
     normalized.parallelDiffusionConfigurationFingerprint =

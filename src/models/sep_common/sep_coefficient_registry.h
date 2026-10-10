@@ -13,7 +13,14 @@ namespace Transport {
 namespace Coefficient {
 
 enum class SourceMode { Prescribed, SelfConsistent, Swmf };
-enum class SpatialKind { FromPitchAngle, FromMeanFreePath };
+// ParallelDiffusionLibrary obtains kappa_parallel from the model selected in
+// the input file's [parallel_diffusion] section and published by
+// SEP::ParallelDiffusion (parallel_diffusion/parallel_diffusion.h) through
+// its mover-facing ActiveParallelDiffusion pointer.  It is valid only for the
+// Parker mover; the enumerator is appended so existing ordinal values (used
+// in ConfigurationFingerprint) are unchanged.
+enum class SpatialKind { FromPitchAngle, FromMeanFreePath,
+                         ParallelDiffusionLibrary };
 enum class PitchAngleKind { Configured, Constant, Jokipii1966, Florinskiy };
 enum class MeanFreePathKind {
   Qlt,

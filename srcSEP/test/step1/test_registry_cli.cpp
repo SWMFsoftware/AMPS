@@ -346,6 +346,60 @@ void TestStructuredReportsAndHiddenFailures() {
   std::remove("step13-results.xml");
 }
 
+// CLI06: mover precedence --particle-mover > run.particle_mover (schema-4
+// --input) > default fte-dmumu.  The Parker-only parallel-diffusion provider
+// is the probe: it is valid for parker and invalid for the fte-dmumu default.
+// The file itself is not read by ParseCommandLine; main.cpp applies it and
+// then calls ValidateMoverDependentOptions(), which is exercised directly.
+void TestCli06MoverPrecedence() {
+  namespace CLI = SEP::Util::CLI;
+  using SEP::Mover::ProductionMover;
+  std::string error;
+
+  CLI::Options noInput;
+  Check(!Parse({"sep", "--spatial-diffusion-provider",
+                "parallel-diffusion-library"}, noInput, error) &&
+            error.find("unsupported mover/coefficient combination") !=
+                std::string::npos,
+        "CLI06", "without --input the default fte-dmumu must be validated "
+                 "immediately and reject a Parker-only provider");
+
+  CLI::Options explicitParker;
+  Check(Parse({"sep", "--particle-mover", "parker",
+               "--spatial-diffusion-provider", "parallel-diffusion-library"},
+              explicitParker, error) &&
+            !CLI::IsMoverPendingInputFile(explicitParker),
+        "CLI06", "an explicit parker mover must accept the Parker-only provider");
+
+  CLI::Options deferred;
+  const bool deferredParsed =
+      Parse({"sep", "--input", "examples/sep_parker_mesh_parallel_diffusion.in",
+             "--spatial-diffusion-provider", "parallel-diffusion-library"},
+            deferred, error);
+  Check(deferredParsed && CLI::IsMoverPendingInputFile(deferred) &&
+            !deferred.particleMoverProvided &&
+            deferred.particleMover == ProductionMover::FocusedTransportDiffusion,
+        "CLI06", "--input without --particle-mover must defer mover checks: " +
+                 error);
+  std::ostringstream rejected;
+  Check(!CLI::ValidateMoverDependentOptions(deferred, rejected),
+        "CLI06", "deferred validation must still reject the fte-dmumu default");
+  deferred.particleMover = ProductionMover::Parker;  // file value applied
+  std::ostringstream accepted;
+  Check(CLI::ValidateMoverDependentOptions(deferred, accepted),
+        "CLI06", "deferred validation must accept the file's parker mover: " +
+                 accepted.str());
+
+  CLI::Options cliOverridesFile;
+  Check(!Parse({"sep", "--input",
+                "examples/sep_parker_mesh_parallel_diffusion.in",
+                "--particle-mover", "fte-dmumu",
+                "--spatial-diffusion-provider", "parallel-diffusion-library"},
+               cliOverridesFile, error),
+        "CLI06", "an explicit --particle-mover must be validated at parse "
+                 "time even with --input");
+}
+
 }  // namespace
 
 int main() {
@@ -365,6 +419,7 @@ int main() {
   TestRegistryCompleteness();
   TestRefinementOrder();
   TestStructuredReportsAndHiddenFailures();
+  TestCli06MoverPrecedence();
 
   if (failures != 0) {
     std::cerr << "Step 1 focused summary: PASS=0 FAIL=" << failures
@@ -372,11 +427,12 @@ int main() {
     return EXIT_FAILURE;
   }
   std::cout << "CLI01 PASS\nCLI02 PASS\nCLI03 PASS\nCLI04 PASS\nCLI05 PASS\n"
+            << "CLI06 PASS\n"
             << "REGISTRY PASS\nREFINE PASS\nHIDDEN PASS\nREPORT PASS\n"
             << "Negative control HIDDEN01: EXPECTED INTERNAL FAIL observed; "
                "the framework correctly rejected a callback that falsely "
                "reported PASS.\n"
-            << "Step 1 focused summary: PASS=9 FAIL=0 SKIP=0 ERROR=0 "
+            << "Step 1 focused summary: PASS=10 FAIL=0 SKIP=0 ERROR=0 "
                "(HIDDEN01 is expected behavior, not an outer failure)\n";
   return EXIT_SUCCESS;
 }

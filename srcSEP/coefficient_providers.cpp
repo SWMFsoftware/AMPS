@@ -1,4 +1,5 @@
 #include "coefficient_providers.h"
+#include "adapters/parallel_diffusion_adapter.h"
 
 #include <algorithm>
 #include <atomic>
@@ -339,6 +340,58 @@ CP::SpatialDiffusionResult EvaluateAdaptiveKappa(
   return result;
 }
 
+CP::SpatialDiffusionResult EvaluateLibraryKappa(
+    const ParticleContext& context, double speedMPerS) {
+  // spatial=parallel-diffusion-library: kappa_parallel [m^2/s] comes from the
+  // model selected by the schema-4 [parallel_diffusion] section, called
+  // through the library's ActiveParallelDiffusion pointer by the PIC-free
+  // adapter.  This function only gathers the SI state of one field-line
+  // sample from the same immutable snapshot the other providers use:
+  //   * species rest mass and signed charge from the compiled PIC table;
+  //   * |p| = gamma m v from the Parker speed (exact relativistic relation);
+  //   * Cartesian position from the segment's local fraction.  All srcSEP
+  //     Cartesian positions are in the heliocentric frame with the Sun at
+  //     (0,0,0) (the field line itself may start elsewhere), so the vector is
+  //     passed unchanged as LocalState::positionM;
+  //   * the snapshot's magnetic-field vector and generation, and the
+  //     particle-step epoch as LocalState::timeS.
+  // The along-line derivative d(kappa)/ds is not taken from the library: the
+  // caller differentiates this function with its refined arc-length stencil,
+  // exactly as for the other spatial providers.
+  CP::SpatialDiffusionResult result;
+  if (!context.segment) {
+    result.status = Status::Error(StatusCode::InvalidArgument,
+                                  "library kappa sample requires a segment");
+    return result;
+  }
+  LocalBackgroundView background;
+  Status status = EvaluateLocalBackground(context, &background);
+  if (!status.ok()) { result.status = status; return result; }
+  const CP::SpeciesProperties species = SpeciesFor(context);
+  status = CP::ValidateSpecies(species);
+  if (!status.ok()) { result.status = status; return result; }
+  const ScalarResult momentum = MomentumFromSpeed(
+      speedMPerS, species.restMassKg, SpeedOfLight);
+  if (!momentum.status.ok()) { result.status = momentum.status; return result; }
+
+  double positionM[3] = {0.0, 0.0, 0.0};
+  const double localFraction = context.state.coordinate -
+      std::floor(context.state.coordinate);
+  context.segment->GetCartesian(positionM, localFraction);
+
+  const ParallelDiffusionBinding::KappaSample sample =
+      ParallelDiffusionBinding::EvaluateKappa(
+          species.restMassKg, species.signedChargeC, momentum.value,
+          positionM, background.magneticFieldT, context.particleStepEpochS,
+          background.generation);
+  result.evaluations = 1;
+  if (!sample.status.ok()) { result.status = sample.status; return result; }
+  result.status = Status::Ok();
+  result.valueState = CP::ValueState::Finite;
+  result.kappaParallelM2PerS = sample.kappaParallelM2PerS;
+  return result;
+}
+
 MeanFreePathSample EvaluateMeanFreePath(const ParticleContext& context,
                                         double momentumKgMPerS,
                                         const std::string& identity) {
@@ -492,6 +545,10 @@ bool FiniteKappaAt(const ParticleContext& origin, double displacementM,
   if (Coefficient::ActiveConfiguration().spatial ==
       Coefficient::SpatialKind::FromPitchAngle) {
     kappa = EvaluateAdaptiveKappa(shifted, speedMPerS);
+  }
+  else if (Coefficient::ActiveConfiguration().spatial ==
+           Coefficient::SpatialKind::ParallelDiffusionLibrary) {
+    kappa = EvaluateLibraryKappa(shifted, speedMPerS);
   }
   else {
     const ScalarResult momentum = MomentumFromSpeed(

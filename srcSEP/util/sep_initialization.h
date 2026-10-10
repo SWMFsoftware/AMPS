@@ -3,6 +3,7 @@
 
 #include "sep_common_header_path.h"
 #include SRCSEP_SEP_COMMON_HEADER(sep_transport_common.h)
+#include "sep_production_mover.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -32,6 +33,15 @@ struct SwcmeAssignment {
   std::string key;
   std::string value;
   std::size_t line = 0;
+};
+
+// One raw line of the schema-4 [parallel_diffusion] section body.  The text is
+// stored exactly as written (comments included) because the shared
+// parallel-diffusion library, not this INI reader, owns that section's
+// grammar.  The line number is the 1-based line in the --input file.
+struct ParallelDiffusionLine {
+  std::size_t line = 0;
+  std::string text;
 };
 
 enum class RefinementProfile { Linear, PowerLaw, Smoothstep };
@@ -110,11 +120,36 @@ struct Configuration {
   // A schema-v2 file supplies every active canonical SWCME setting.  The
   // application forwards this layer unchanged to SW1DAdapter::Configure().
   std::vector<SwcmeAssignment> swcmeAssignments;
+
+  // Schema 4: optional [run] particle_mover = parker | fte-dmumu | fte-mfp.
+  // When present it selects the production mover unless --particle-mover is
+  // given on the command line (the command line keeps its historical higher
+  // precedence; main.cpp applies the file value only when the CLI is silent).
+  // particleMoverLine is the 1-based --input line, for diagnostics.
+  bool particleMoverSpecified = false;
+  Mover::ProductionMover particleMover = Mover::ProductionMover::Parker;
+  std::size_t particleMoverLine = 0;
+
+  // Schema 4: optional [parallel_diffusion] section.  This layer only records
+  // that the section exists and its raw body; it does not interpret model
+  // keys or units.  The srcSEP parallel-diffusion adapter
+  // (adapters/parallel_diffusion_adapter.h) hands the body to the library
+  // parser, cross-checks it against --spatial-diffusion-provider, installs
+  // the selected model, and copies the resolved model ID and library
+  // configuration fingerprint into the two strings below for the startup
+  // fingerprint.
+  bool hasParallelDiffusionSection = false;
+  std::vector<ParallelDiffusionLine> parallelDiffusionLines;
+  std::string parallelDiffusionModelId;
+  std::string parallelDiffusionConfigurationFingerprint;
 };
 
-// Parse a complete version-1, version-2, or version-3 INI document. Version 2
-// added the explicit numerical/source/SWCME contract; version 3 adds named,
-// repeatable observer spectra and native AMPS data-output evidence.
+// Parse a complete version-1, -2, -3, or -4 INI document. Version 2 added the
+// explicit numerical/source/SWCME contract; version 3 adds named, repeatable
+// observer spectra and native AMPS data-output evidence; version 4 is version
+// 3 plus two optional items: [run] particle_mover (production mover choice)
+// and a [parallel_diffusion] section for the shared parallel-diffusion
+// coefficient library.
 // Unknown or duplicate sections and keys are errors; no schema-required value
 // is silently inherited from a production default.
 Transport::Status ParseText(const std::string& text, Configuration* result);

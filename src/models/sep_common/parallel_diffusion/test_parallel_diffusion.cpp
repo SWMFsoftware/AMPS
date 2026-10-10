@@ -549,6 +549,301 @@ bool TestParserAndDispatch(std::vector<TestRecord>* tests) {
       registryPass;
 }
 
+std::vector<PD::SectionLine> Section(
+    const std::vector<std::string>& text, std::size_t firstLine) {
+  // Number the fixture lines exactly as a host would number file lines, so
+  // diagnostics can be checked against the line that contains the defect.
+  std::vector<PD::SectionLine> lines;
+  for (std::size_t i = 0; i < text.size(); ++i)
+    lines.push_back(PD::SectionLine{firstLine + i, text[i]});
+  return lines;
+}
+
+bool Contains(const std::string& text, const std::string& fragment) {
+  return text.find(fragment) != std::string::npos;
+}
+
+double SpeedFromMomentumIndependent(const PD::ParticleState& particle) {
+  // v = p c^2 / E with E = sqrt((pc)^2 + (mc^2)^2).  Evaluated here in long
+  // double, separately from the production kinematics helper.
+  const long double c = PD::SpeedOfLightMPerS;
+  const long double pc = static_cast<long double>(particle.momentumKgMPerS) * c;
+  const long double rest = static_cast<long double>(particle.massKg) * c * c;
+  return static_cast<double>(pc * c / std::sqrt(pc * pc + rest * rest));
+}
+
+bool TestUnconfiguredBoundDispatch(std::vector<TestRecord>* tests) {
+  // Must run before any test installs a model: the mover-facing pointer has
+  // to fail closed, with no coefficient, until a section has been accepted.
+  const PD::ParallelResult result =
+      PD::ActiveParallelDiffusion(TenMeVProton(), PD::LocalState());
+  const bool pass = !PD::HasActiveConfiguration() &&
+      result.status.code == PD::StatusCode::InvalidConfiguration &&
+      !result.kappaParallelM2PerS.has_value() &&
+      !result.lambdaParallelM.has_value();
+  Add(tests, "PD13-UNCONFIGURED", "registry", pass,
+      "mover-facing pointer before any configuration",
+      pass ? "unconfigured pointer returns InvalidConfiguration and no value"
+           : "unconfigured pointer produced a coefficient or wrong status");
+  return pass;
+}
+
+bool TestSectionParser(std::vector<TestRecord>* tests) {
+  // Grammar: '#' and '!' comments, blank lines, CRLF endings, blanks around
+  // '=', case-insensitive model ID, case-sensitive parameter keys.  The
+  // expected configuration is built field by field, not by the parser.
+  const std::vector<PD::SectionLine> valid = Section({
+      "# srcSEP3D-style comment",
+      "",
+      "  model   =   CONSTANT_KAPPA   ! Fortran-style comment",
+      "kappa_parallel_m2_per_s = 1.25e18 # trailing comment\r",
+      "   ! comment-only line"}, 40);
+  PD::ParsedSection parsed;
+  const PD::Status status = PD::ParseSection(valid, &parsed);
+  PD::ModelConfiguration expected;
+  expected.model = PD::ModelId::ConstantKappa;
+  expected.constantKappa.kappaParallelM2PerS = 1.25e18;
+  const bool grammarPass = status.ok() &&
+      parsed.modelId == "CONSTANT_KAPPA" && parsed.modelLineNumber == 42 &&
+      parsed.parameters.size() == 1 &&
+      parsed.parameters[0].name == "kappa_parallel_m2_per_s" &&
+      parsed.parameters[0].value == "1.25e18" &&
+      parsed.parameters[0].lineNumber == 43 &&
+      parsed.configuration.model == PD::ModelId::ConstantKappa &&
+      parsed.configuration.constantKappa.kappaParallelM2PerS == 1.25e18 &&
+      parsed.configurationFingerprint ==
+          PD::ConfigurationFingerprint(expected) &&
+      !PD::HasActiveConfiguration();
+  Add(tests, "PD13-SECTION-GRAMMAR", "constant_kappa", grammarPass,
+      "comments, blanks, CRLF, case rules, and line provenance",
+      grammarPass ? "section parsed to the independently built configuration"
+                  : "section grammar or provenance failed: " + status.detail);
+
+  // Each defect must fail with its typed status, name the defective line,
+  // and leave the caller's output untouched (transactional parse).
+  struct ErrorCase {
+    const char* name;
+    std::vector<std::string> text;
+    PD::StatusCode code;
+    const char* fragment;
+  };
+  const std::vector<ErrorCase> cases = {
+      {"missing model", {"kappa_parallel_m2_per_s = 1e18"},
+       PD::StatusCode::MissingInput, "model = <id>"},
+      {"no separator", {"model = constant_kappa", "kappa_parallel_m2_per_s"},
+       PD::StatusCode::InvalidConfiguration, "line 11:"},
+      {"empty value", {"model = constant_kappa", "kappa_parallel_m2_per_s ="},
+       PD::StatusCode::InvalidConfiguration, "line 11:"},
+      {"duplicate model", {"model = constant_kappa", "model = constant_lambda"},
+       PD::StatusCode::InvalidConfiguration, "first assigned at line 10"},
+      {"duplicate parameter",
+       {"model = constant_kappa", "kappa_parallel_m2_per_s = 1e18",
+        "kappa_parallel_m2_per_s = 2e18"},
+       PD::StatusCode::InvalidConfiguration, "line 12:"},
+      {"other model's key",
+       {"model = constant_kappa", "kappa_parallel_m2_per_s = 1e18",
+        "lambda_parallel_m = 1e9"},
+       PD::StatusCode::InvalidConfiguration, "line 12: unknown parameter"},
+      {"key case", {"model = constant_kappa", "KAPPA_PARALLEL_M2_PER_S = 1e18"},
+       PD::StatusCode::MissingInput, "line 10:"},
+      {"unknown model", {"! header", "model = no_such_model"},
+       PD::StatusCode::UnsupportedModel, "line 11:"},
+      {"missing required key", {"model = constant_lambda"},
+       PD::StatusCode::MissingInput, "line 10: missing parameter"},
+      {"malformed value", {"model = constant_lambda", "lambda_parallel_m = 1e9m"},
+       PD::StatusCode::InvalidConfiguration, "line 11:"},
+      {"comment hides value", {"model = constant_lambda", "lambda_parallel_m = !1e9"},
+       PD::StatusCode::InvalidConfiguration, "line 11:"},
+      {"negative value", {"model = constant_kappa", "kappa_parallel_m2_per_s = -1"},
+       PD::StatusCode::InvalidConfiguration, "line 11:"}};
+  bool errorsPass = true;
+  std::string failedCase;
+  for (const ErrorCase& item : cases) {
+    PD::ParsedSection untouched = parsed;
+    const PD::Status rejected =
+        PD::ParseSection(Section(item.text, 10), &untouched);
+    const bool ok = rejected.code == item.code &&
+        Contains(rejected.detail, item.fragment) &&
+        untouched.configurationFingerprint == parsed.configurationFingerprint;
+    if (!ok && failedCase.empty())
+      failedCase = std::string(item.name) + " -> " + rejected.detail;
+    errorsPass = errorsPass && ok;
+  }
+  Add(tests, "PD13-SECTION-ERRORS", "registry", errorsPass,
+      "typed, line-attributed, transactional section rejection",
+      errorsPass ? "12 malformed sections rejected with their line numbers"
+                 : "section defect not rejected as specified: " + failedCase);
+  return grammarPass && errorsPass;
+}
+
+bool TestBoundDispatch(std::vector<TestRecord>* tests) {
+  // Registry: one distinct bound evaluator per stable model identity.
+  bool registryPass = true;
+  std::vector<PD::ActiveModelEvaluator> seen;
+  for (const PD::ModelDescriptor& descriptor : PD::ModelRegistry()) {
+    const PD::ActiveModelEvaluator bound =
+        PD::BoundFunctionForModel(descriptor.id);
+    for (const PD::ActiveModelEvaluator previous : seen)
+      registryPass = registryPass && previous != bound;
+    registryPass = registryPass && bound != nullptr;
+    seen.push_back(bound);
+  }
+  registryPass = registryPass && seen.size() == 16;
+  Add(tests, "PD13-BOUND-REGISTRY", "registry", registryPass,
+      "16 distinct model-specific mover-facing evaluators",
+      registryPass ? "every stable ID has its own bound evaluator"
+                   : "bound evaluator missing or shared between models");
+
+  // Selection through a section installs the model-specific pointer; the
+  // value is checked against kappa=v*lambda/3 with v computed independently.
+  const PD::ParticleState proton = TenMeVProton();
+  const double speed = SpeedFromMomentumIndependent(proton);
+  PD::ParsedSection installed;
+  const PD::Status lambdaStatus = PD::ConfigureActiveModelFromSection(
+      Section({"model = constant_lambda", "lambda_parallel_m = 4.5e9"}, 1),
+      &installed);
+  const PD::ActiveModelEvaluator lambdaPointer = PD::ActiveParallelDiffusion;
+  const PD::ParallelResult lambdaResult =
+      PD::ActiveParallelDiffusion(proton, PD::LocalState());
+  const PD::ParallelResult viaEvaluateActive =
+      PD::EvaluateActive(proton, PD::LocalState());
+  const bool lambdaPass = lambdaStatus.ok() && PD::HasActiveConfiguration() &&
+      lambdaPointer == PD::BoundFunctionForModel(PD::ModelId::ConstantLambda) &&
+      lambdaResult.status.ok() &&
+      Relative(*lambdaResult.lambdaParallelM, 4.5e9, 1.0e-15) &&
+      Relative(*lambdaResult.kappaParallelM2PerS, speed * 4.5e9 / 3.0,
+               1.0e-14) &&
+      lambdaResult.provenance.evaluatedModelId == "constant_lambda" &&
+      lambdaResult.provenance.configurationFingerprint ==
+          installed.configurationFingerprint &&
+      viaEvaluateActive.status.ok() &&
+      *viaEvaluateActive.kappaParallelM2PerS ==
+          *lambdaResult.kappaParallelM2PerS;
+
+  // Switching models changes the pointer.  Expected value, as in
+  // PD01-PARSER-BRIDGE: 9e9*(8e8/2e8)^0.5*(2e11/1e11)^1*0.25 = 9e9 m.
+  const PD::Status powerStatus = PD::ConfigureActiveModelFromSection(
+      Section({"model = power_law_lambda", "lambda0_m = 9e9",
+               "independent_variable = rigidity", "rigidity0_V = 2e8",
+               "independent_exponent = 0.5", "radius0_m = 1e11",
+               "radial_exponent = 1.0", "use_region_factor = true"}, 1),
+      nullptr);
+  PD::LocalState powerLocal;
+  powerLocal.positionM = {{2.0e11, 0.0, 0.0}};
+  powerLocal.regionFactor = 0.25;
+  const PD::ParallelResult powerResult = PD::ActiveParallelDiffusion(
+      ParticleAtRigidity(8.0e8, ProtonMassKg, ElementaryChargeC), powerLocal);
+  const bool switchPass = powerStatus.ok() &&
+      PD::ActiveParallelDiffusion ==
+          PD::BoundFunctionForModel(PD::ModelId::PowerLawLambda) &&
+      PD::ActiveParallelDiffusion != lambdaPointer &&
+      powerResult.status.ok() &&
+      Relative(*powerResult.lambdaParallelM, 9.0e9, 2.0e-14);
+
+  // A rejected section must leave pointer, parameters, and output unchanged.
+  const PD::ActiveModelEvaluator beforeFailure = PD::ActiveParallelDiffusion;
+  PD::ParsedSection unchanged = installed;
+  const PD::Status rejected = PD::ConfigureActiveModelFromSection(
+      Section({"model = constant_kappa", "kappa_parallel_m2_per_s = -1"}, 1),
+      &unchanged);
+  const PD::ParallelResult afterFailure = PD::ActiveParallelDiffusion(
+      ParticleAtRigidity(8.0e8, ProtonMassKg, ElementaryChargeC), powerLocal);
+  const bool transactionPass = !rejected.ok() &&
+      PD::ActiveParallelDiffusion == beforeFailure &&
+      unchanged.configurationFingerprint == installed.configurationFingerprint &&
+      afterFailure.status.ok() &&
+      afterFailure.provenance.evaluatedModelId == "power_law_lambda" &&
+      Relative(*afterFailure.lambdaParallelM, 9.0e9, 2.0e-14);
+  const bool dispatchPass = lambdaPass && switchPass && transactionPass;
+  Add(tests, "PD13-BOUND-DISPATCH", "registry", dispatchPass,
+      "section-selected model-specific pointer, model switch, failed update",
+      dispatchPass ? "pointer tracks the accepted section; rejected section preserves it"
+                   : std::string("bound dispatch failed (lambda=") +
+                         (lambdaPass ? "ok" : "bad") + ", switch=" +
+                         (switchPass ? "ok" : "bad") + ", transaction=" +
+                         (transactionPass ? "ok" : "bad") + ")");
+  return registryPass && dispatchPass;
+}
+
+bool TestHostInputAvailability(std::vector<TestRecord>* tests) {
+  // The gate inspects only the selected model's declared needs; configurations
+  // are constructed directly because the gate does not re-validate values.
+  const PD::HostInputAvailability none;
+  PD::HostInputAvailability all;
+  all.nucleonCount = true;
+  all.turbulenceDecomposition = true;
+  all.timeFactor = true;
+  all.regionFactor = true;
+  all.radialFactor = true;
+  all.effectiveFieldMagnitude = true;
+
+  bool pass = true;
+  std::string failed;
+  const auto expect = [&](const char* name, const PD::ModelConfiguration& c,
+                          bool acceptedWithoutInputs) {
+    const PD::Status withNone = PD::CheckHostInputAvailability(c, none);
+    const PD::Status withAll = PD::CheckHostInputAvailability(c, all);
+    const bool ok = withAll.ok() &&
+        (acceptedWithoutInputs
+             ? withNone.ok()
+             : withNone.code == PD::StatusCode::InvalidConfiguration);
+    if (!ok && failed.empty()) failed = name;
+    pass = pass && ok;
+  };
+
+  PD::ModelConfiguration c;
+  c.model = PD::ModelId::ConstantLambda;
+  expect("constant_lambda", c, true);
+  c.model = PD::ModelId::ConstantKappa;
+  expect("constant_kappa", c, true);
+  c.model = PD::ModelId::PrescribedLambdaMuShape;
+  expect("prescribed_lambda_mu_shape", c, true);
+  for (const PD::ModelId turbulent :
+       {PD::ModelId::QltSlabSpectrum, PD::ModelId::QltSlabInertial,
+        PD::ModelId::BroadenedSlab, PD::ModelId::NlpaGivenPerp,
+        PD::ModelId::NlgcE, PD::ModelId::NlgceN, PD::ModelId::NlgceF2014,
+        PD::ModelId::TurbulenceAdapter, PD::ModelId::WaveSpectrumAdapter}) {
+    c.model = turbulent;
+    expect(PD::ModelName(turbulent), c, false);
+  }
+  c = PD::ModelConfiguration();
+  c.model = PD::ModelId::PowerLawLambda;
+  expect("power_law_lambda rigidity", c, true);
+  c.powerLawLambda.independentVariable = PD::IndependentVariable::EnergyPerNucleon;
+  expect("power_law_lambda energy_per_nucleon", c, false);
+  c.powerLawLambda.independentVariable = PD::IndependentVariable::Rigidity;
+  c.powerLawLambda.useTimeFactor = true;
+  expect("power_law_lambda time_factor", c, false);
+  c.powerLawLambda.useTimeFactor = false;
+  c.powerLawLambda.useRegionFactor = true;
+  expect("power_law_lambda region_factor", c, false);
+  c = PD::ModelConfiguration();
+  c.model = PD::ModelId::BrokenRigidityKappa;
+  expect("broken_rigidity_kappa", c, true);
+  c.brokenRigidityKappa.useRadialFactor = true;
+  expect("broken_rigidity_kappa radial_factor", c, false);
+  c.brokenRigidityKappa.useRadialFactor = false;
+  c.brokenRigidityKappa.useRegionFactor = true;
+  expect("broken_rigidity_kappa region_factor", c, false);
+  c = PD::ModelConfiguration();
+  c.model = PD::ModelId::Bohm;
+  expect("bohm mean_field", c, true);
+  c.bohm.fieldDefinition = PD::BohmFieldDefinition::EffectiveField;
+  expect("bohm effective_field", c, false);
+  c = PD::ModelConfiguration();
+  c.model = PD::ModelId::TabulatedParallel;
+  c.table.axes = {PD::TableAxis::Rigidity, PD::TableAxis::HeliocentricRadius};
+  expect("tabulated_parallel rigidity/radius", c, true);
+  c.table.axes = {PD::TableAxis::EnergyPerNucleon};
+  expect("tabulated_parallel energy_per_nucleon", c, false);
+
+  Add(tests, "PD13-HOST-GATE", "registry", pass,
+      "host-declared optional-input availability",
+      pass ? "models needing undeclared inputs are rejected; others accepted"
+           : std::string("host gate misclassified ") + failed);
+  return pass;
+}
+
 bool TestKStarConverter(std::vector<TestRecord>* tests) {
   // Verify the convention through K_star*beta=kappa_reference rather than by
   // copying the converter's division.  The particle supplies beta because it
@@ -581,12 +876,17 @@ int main(int argc, char** argv) {
 
   std::vector<TestRecord> tests;
   bool passed = true;
+  // Must precede every test that installs an active model.
+  passed = TestUnconfiguredBoundDispatch(&tests) && passed;
+  passed = TestSectionParser(&tests) && passed;
   passed = TestKinematics(&tests) && passed;
   passed = TestConstants(&tests) && passed;
   passed = TestPowerLaw(&tests) && passed;
   passed = TestBrokenRigidity(&tests) && passed;
   passed = TestBohm(&tests) && passed;
   passed = TestParserAndDispatch(&tests) && passed;
+  passed = TestBoundDispatch(&tests) && passed;
+  passed = TestHostInputAvailability(&tests) && passed;
   passed = TestKStarConverter(&tests) && passed;
 
   for (const TestRecord& test : tests) {

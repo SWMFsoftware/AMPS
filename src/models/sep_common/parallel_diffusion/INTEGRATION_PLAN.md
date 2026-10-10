@@ -94,6 +94,41 @@ separation:
 - configuration/restart provenance identifies requested/evaluated backend,
   parameters, background revision, and any future explicit fallback.
 
-PD11 is partial: srcSEP3D binding is implemented, while srcSEP binding and the
-native acceptance bullets above remain pending. No maintained production deck
-selects schema 5 yet.
+## Implemented srcSEP seam
+
+1. Input: schema 4 of the srcSEP `--input` INI (`util/sep_initialization.cpp`)
+   adds an optional `[parallel_diffusion]` section whose raw body lines and line
+   numbers are stored uninterpreted. Schemas 1-3 reject the section.
+2. Selection: `--spatial-diffusion-provider parallel-diffusion-library`
+   (`SpatialKind::ParallelDiffusionLibrary` in the canonical coefficient
+   registry). The registry admits it only for the `parker` mover; fte-dmumu and
+   fte-mfp (including `mean-free-path=from-spatial`) are rejected.
+3. Installation: `adapters/parallel_diffusion_adapter.cpp` (`Configure`, called
+   from `main.cpp` before `Initialization::Install` and before AMPS/MPI
+   initialization) requires the section exactly when the provider is selected,
+   calls `ParseSection`, applies `CheckHostInputAvailability` with all inputs
+   unavailable, installs the model, and copies the model ID and SHA-256
+   fingerprint into the startup fingerprint.
+4. Evaluation: `PICSpatialDiffusionProvider` (`coefficient_providers.cpp`)
+   samples species mass/charge, `|p|` from the Parker speed, the segment's
+   Cartesian position (srcSEP's heliocentric frame, Sun at (0,0,0); a field
+   line need not start at the origin), the snapshot B vector and generation,
+   and the step
+   epoch, and calls `ActiveParallelDiffusion` through the adapter. The existing
+   refined arc-length stencil supplies `d(kappa)/ds`.
+5. Evidence: PIC-free component tests `make -C srcSEP
+   test-parallel-diffusion-binding-unit` (PDB01-PDB05) and COEF01. Natively,
+   the native srcSEP build (`./Config.pl -application=test/sep_parker_spiral__field_line`,
+   `make -j`) compiles and links the PIC sampling wrapper and the `main.cpp`
+   wiring; one-rank `--initialization-only` runs install the model and reject a
+   missing section or a missing provider as specified. A transport step that
+   evaluates the coefficient natively has not run: the shipped example aborts in
+   the Parker mover's plasma-density check at step 1 with or without this
+   provider, so no native transport or MPI evidence exists for it yet.
+
+PD11 is partial: both application bindings are implemented and
+component-tested, while the native acceptance bullets above (including
+cross-application scalar parity) remain pending. No maintained production deck
+selects srcSEP3D schema 5 or the srcSEP library provider yet; the srcSEP
+example `srcSEP/examples/sep_parker_mesh_parallel_diffusion.in` demonstrates
+syntax only.

@@ -65,6 +65,10 @@ CouplerMode=T96 !ices !!off, ices, swmf
   ControlParticleInsideNastranSurface=off !!!on,of
 
   define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) ::SEP::ParticleMover(ptr,LocalTimeStep,node)
+  ! Runtime mover dispatch: generic PIC calls PIC::Mover::UserDefinedParticleMover,
+  ! which srcSEP's amps_init() sets to its production dispatcher; the mover
+  ! itself (parker, fte-dmumu, fte-mfp) is selected at run time by --particle-mover.
+  define _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ _PIC_MODE_OFF_
   !define _SEP_MOVER_ _SEP_MOVER_DEFUALT_
 
   define _PIC_GLOBAL_TIME_COUNTER_MODE_  _PIC_MODE_ON_

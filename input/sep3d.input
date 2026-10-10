@@ -1,7 +1,7 @@
 
 #main
 
-SpeciesList=ELECTRON
+SpeciesList=H_PLUS 
 
 
 ErrorLog=error.log
@@ -88,6 +88,10 @@ MoverIntegratorMode=GuidingCenter
 
 
   define _PIC_GLOBAL_TIME_COUNTER_MODE_ _PIC_MODE_ON_
+  ! Runtime mover dispatch: generic PIC calls PIC::Mover::UserDefinedParticleMover,
+  ! which srcSEP3D's amps_init() sets to MoveParkerParticle or
+  ! MoveFocusedTransportParticle as selected by the srcSEP3D input parser.
+  define _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ _PIC_MODE_OFF_
   define _PIC_SYMMETRY_MODE_ _PIC_SYMMETRY_MODE__AXIAL_
 
 ! define _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(acclMiddle,spec,ptr,xMiddle,vMiddle,middleNode) SEP3D::Physics::TotalParticleAcceleration(acclMiddle,spec,ptr,xMiddle,vMiddle,middleNode)

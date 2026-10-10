@@ -67,6 +67,33 @@ class Result:
     message: str
     elapsed_seconds: float
     command: List[str]
+    # Per-test log (OUTPUT_DIR/logs/<ID>.log): every command this test ran with
+    # its complete captured output and exit status, followed by the final
+    # verdict.  Filled in by main(); empty only for results created before the
+    # log mechanism applies (e.g. a runner error).  Aggregators such as
+    # tools/sep_test_orchestrator.py report this path for failed tests.
+    log: str = ""
+
+
+# Per-test command capture.  main() points this at OUTPUT_DIR/logs/<ID>.log
+# before running one test and resets it afterwards; _run_command() appends
+# each command and its full output there.  Using one module-level target keeps
+# the ~20 test implementations unchanged: they already route every subprocess
+# through _run_command().  Tests run sequentially, so a single target is safe.
+_ACTIVE_TEST_LOG: Optional[Path] = None
+
+
+def _append_test_log(text: str) -> None:
+    """Append text to the active per-test log, if any (never raises)."""
+    if _ACTIVE_TEST_LOG is None:
+        return
+    try:
+        with _ACTIVE_TEST_LOG.open("a", encoding="utf-8", errors="replace") as stream:
+            stream.write(text)
+    except OSError:
+        # A log-write failure must not change a test verdict; the result's
+        # message and the runner summary remain authoritative.
+        pass
 
 
 # The C++ registry remains authoritative for callbacks and result semantics.
@@ -517,9 +544,16 @@ def _run_command(command: List[str], cwd: Path, timeout: float,
         elapsed = time.monotonic() - started
         if verbose and completed.stdout:
             print(completed.stdout, end="")
+        _append_test_log(f"$ {shlex.join(command)}\n(cwd {cwd})\n"
+                         f"{completed.stdout or ''}"
+                         f"[exit {completed.returncode}, {elapsed:.3f} s]\n\n")
         return completed.returncode, completed.stdout, elapsed
     except subprocess.TimeoutExpired as exc:
         output = (exc.stdout or "") + (exc.stderr or "")
+        if isinstance(output, bytes):
+            output = output.decode("utf-8", errors="replace")
+        _append_test_log(f"$ {shlex.join(command)}\n(cwd {cwd})\n{output}"
+                         f"[timed out after {timeout:g} s]\n\n")
         return 2, output + f"\nTimed out after {timeout:g} s", time.monotonic() - started
 
 
@@ -1620,7 +1654,11 @@ def _check_makefile_relocation(definition: TestDefinition,
         "// Mimic the late input-derived override appended by ampsConfig.pl.\n"
         "#undef _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_\n"
         "#define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) "
-        "PIC::Mover::GuidingCenter::Mover_SecondOrder(ptr,LocalTimeStep,node)\n",
+        "PIC::Mover::GuidingCenter::Mover_SecondOrder(ptr,LocalTimeStep,node)\n"
+        "// Mimic the deck's 'define _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ "
+        "_PIC_MODE_OFF_' (input/sep3d.input), also appended by ampsConfig.pl.\n"
+        "#undef _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_\n"
+        "#define _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ _PIC_MODE_OFF_\n",
         encoding="utf-8")
 
     expected = {
@@ -2372,23 +2410,46 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         _build_standalone(args)
 
     results: List[Result] = []
+    # One log per test, created fresh for this run (see Result.log).
+    log_dir = output_dir / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    global _ACTIVE_TEST_LOG
     for definition in selected:
-        if definition.kind == "cpp":
-            result = _run_cpp(definition, args, output_dir)
-        elif definition.kind == "shell":
-            result = _run_shell(definition, args)
-        elif definition.kind == "source":
-            result = _run_source(definition, args, output_dir)
-        elif definition.kind == "validation":
-            result = _run_validation(definition, args, output_dir)
-        else:
-            raise RunnerError(f"unknown test kind for {definition.test_id}: "
-                              f"{definition.kind}")
+        test_log = log_dir / f"{definition.test_id}.log"
+        test_log.write_text(
+            f"test {definition.test_id} ({definition.group}, {definition.kind}): "
+            f"{definition.name}\n\n", encoding="utf-8")
+        _ACTIVE_TEST_LOG = test_log
+        try:
+            result = _run_one(definition, args, output_dir)
+        finally:
+            _ACTIVE_TEST_LOG = None
+        # Tests that run no subprocess (source checks) still get a log with
+        # their verdict, so every result has a log location.
+        with test_log.open("a", encoding="utf-8", errors="replace") as stream:
+            stream.write(f"result: {result.status} ({result.elapsed_seconds:.3f} s)\n"
+                         f"message: {result.message}\n")
+        result.log = str(test_log)
         results.append(result)
         print(f"[{result.test_id}] {result.status}", flush=True)
 
     _write_reports(results, output_dir)
     return _print_summary(results)
+
+
+def _run_one(definition: TestDefinition, args: argparse.Namespace,
+             output_dir: Path) -> Result:
+    """Dispatch one test definition to its executor (unchanged semantics)."""
+    if definition.kind == "cpp":
+        return _run_cpp(definition, args, output_dir)
+    if definition.kind == "shell":
+        return _run_shell(definition, args)
+    if definition.kind == "source":
+        return _run_source(definition, args, output_dir)
+    if definition.kind == "validation":
+        return _run_validation(definition, args, output_dir)
+    raise RunnerError(f"unknown test kind for {definition.test_id}: "
+                      f"{definition.kind}")
 
 
 if __name__ == "__main__":

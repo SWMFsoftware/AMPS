@@ -162,7 +162,11 @@ while ($line=<InputFile>) {
     $line=~s/[=()]/ /g;
     ($f0,$f1,$f2)=split(' ',$line,3);
 
-    ampsConfigLib::ChangeValueOfVariable("SEP::fParticleMover SEP::ParticleMoverPtr",$f1,"main/mover.cpp");
+    # Retired: SEP::ParticleMoverPtr lived in the removed, never-compiled
+    # srcSEP/mover.cpp.  srcSEP selects one of its three production movers at
+    # run time with --particle-mover (parker, fte-dmumu, fte-mfp), so this
+    # keyword has had no effect and is now accepted only with a warning.
+    print "WARNING: MOVER=$f1 is retired and ignored (line $InputFileLineNumber, $InputFileName); select the srcSEP mover with --particle-mover\n";
   }
 
   ##the model for integrating particle trajectories 
@@ -196,13 +200,16 @@ while ($line=<InputFile>) {
      $InputLine=~s/ //g;
  
      if ($InputLine eq "RK1") {
-       ampsConfigLib::ChangeValueOfVariable("int SEP::ParticleFieldLineDisplacementMethod","_TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK1_","main/mover.cpp");
+       # Retired (variable lived only in the removed srcSEP/mover.cpp).
+       print "WARNING: ParticleTrajectoryIntegrationAlongFieldLine3D=RK1 is retired and ignored (line $InputFileLineNumber, $InputFileName)\n";
      }
      elsif ($InputLine eq "RK2") {
-       ampsConfigLib::ChangeValueOfVariable("int SEP::ParticleFieldLineDisplacementMethod","_TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK2_","main/mover.cpp");
+       # Retired (variable lived only in the removed srcSEP/mover.cpp).
+       print "WARNING: ParticleTrajectoryIntegrationAlongFieldLine3D=RK2 is retired and ignored (line $InputFileLineNumber, $InputFileName)\n";
      }
      elsif ($InputLine eq "RK4") {
-       ampsConfigLib::ChangeValueOfVariable("int SEP::ParticleFieldLineDisplacementMethod","_TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK4_","main/mover.cpp");
+       # Retired (variable lived only in the removed srcSEP/mover.cpp).
+       print "WARNING: ParticleTrajectoryIntegrationAlongFieldLine3D=RK4 is retired and ignored (line $InputFileLineNumber, $InputFileName)\n";
      }
      else {
        die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
@@ -215,10 +222,12 @@ while ($line=<InputFile>) {
      $InputLine=~s/ //g;
  
      if ($InputLine eq "ON") {
-       ampsConfigLib::ChangeValueOfVariable("bool SEP::PerpendicularDiffusionMode","true","main/mover.cpp");
+       # Retired (variable lived only in the removed srcSEP/mover.cpp).
+       print "WARNING: PerpendicularDiffusionMode=ON is retired and ignored (line $InputFileLineNumber, $InputFileName)\n";
      }
      elsif ($InputLine eq "OFF") {
-       ampsConfigLib::ChangeValueOfVariable("bool SEP::PerpendicularDiffusionMode","false","main/mover.cpp");
+       # Retired (variable lived only in the removed srcSEP/mover.cpp).
+       print "WARNING: PerpendicularDiffusionMode=OFF is retired and ignored (line $InputFileLineNumber, $InputFileName)\n";
      }
      else {
        die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
@@ -255,10 +264,14 @@ while ($line=<InputFile>) {
     $InputLine=~s/ //g;
 
     if ($InputLine eq "ON") {
-      ampsConfigLib::ChangeValueOfVariable("bool SEP::AccountAdiabaticCoolingFlag","true","main/mover.cpp");
+      # The live definition is in mover_state.cpp (it formerly targeted the
+      # never-compiled mover.cpp, so this keyword had no effect).
+      ampsConfigLib::ChangeValueOfVariable("bool SEP::AccountAdiabaticCoolingFlag","true","main/mover_state.cpp");
     }
     elsif ($InputLine eq "OFF") {
-      ampsConfigLib::ChangeValueOfVariable("bool SEP::AccountAdiabaticCoolingFlag","false","main/mover.cpp");
+      # The live definition is in mover_state.cpp (it formerly targeted the
+      # never-compiled mover.cpp, so this keyword had no effect).
+      ampsConfigLib::ChangeValueOfVariable("bool SEP::AccountAdiabaticCoolingFlag","false","main/mover_state.cpp");
     }    else {
       die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
     }

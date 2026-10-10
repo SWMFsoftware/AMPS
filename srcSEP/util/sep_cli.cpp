@@ -316,7 +316,9 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "Particle mover selection:\n"
       << "  --particle-mover <name>     Select one production field-line mover.\n"
       << "                               Choices: parker, fte-dmumu, fte-mfp.\n"
-      << "                               Default: fte-dmumu.\n"
+      << "                               Overrides run.particle_mover in a\n"
+      << "                               schema-4 --input file. Default: the\n"
+      << "                               file value, else fte-dmumu.\n"
       << "  --particle-mover=...        Same option using --option=value syntax.\n"
       << "  --mover <name>              Alias for --particle-mover.\n"
       << "  --sep-mover <name>          Alias for --particle-mover.\n"
@@ -327,7 +329,10 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  --coefficient-source <name> Source authority: prescribed, self-consistent,\n"
       << "                               or swmf. Default: prescribed.\n"
       << "  --spatial-diffusion-provider <name>\n"
-      << "                               kappa provider: from-dmumu or from-mfp.\n"
+      << "                               kappa provider: from-dmumu, from-mfp, or\n"
+      << "                               parallel-diffusion-library (parker only;\n"
+      << "                               model from the schema-4 --input file's\n"
+      << "                               [parallel_diffusion] section).\n"
       << "  --pitch-angle-diffusion-provider <name>\n"
       << "                               Dmumu provider: configured, constant,\n"
       << "                               jokipii-1966, or florinskiy.\n"
@@ -1215,15 +1220,6 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
         << coefficientStatus.message << ".\n";
     return false;
   }
-  const Transport::Status compatibilityStatus =
-      Transport::Coefficient::ValidateMoverCompatibility(
-          options.coefficients,
-          Mover::Describe(options.particleMover).canonicalName);
-  if (!compatibilityStatus.ok()) {
-    err << "ERROR: unsupported mover/coefficient combination: "
-        << compatibilityStatus.message << ".\n";
-    return false;
-  }
   const Transport::Status toleranceStatus =
       Transport::ValidateNumericalTolerances(options.numericalTolerances);
   if (!toleranceStatus.ok()) {
@@ -1259,6 +1255,39 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
         << turbulenceStatus.message << ".\n";
     return false;
   }
+  // Mover-dependent combinations are checked against the *effective* mover.
+  // That mover is known here unless it may still come from the schema-4
+  // --input file (run.particle_mover): with --input and no --particle-mover,
+  // checking the built-in default (fte-dmumu) now could reject a combination
+  // that is valid for the file's mover, e.g. a Parker-only spatial provider.
+  // main.cpp then applies the file value and calls
+  // ValidateMoverDependentOptions() before any model initialization.
+  if (!IsMoverPendingInputFile(options) &&
+      !ValidateMoverDependentOptions(options, err))
+    return false;
+
+  return true;
+}
+
+bool IsMoverPendingInputFile(const Options& options) {
+  return !options.particleMoverProvided && !options.inputPath.empty();
+}
+
+bool ValidateMoverDependentOptions(const Options& options, std::ostream& err) {
+  // (1) Coefficient registry: e.g. parallel-diffusion-library and
+  // spatial-from-mfp with ballistic lambda are Parker restrictions, and a
+  // Parker run may not use the infinite-kappa resonance-gap policy.
+  const Transport::Status compatibilityStatus =
+      Transport::Coefficient::ValidateMoverCompatibility(
+          options.coefficients,
+          Mover::Describe(options.particleMover).canonicalName);
+  if (!compatibilityStatus.ok()) {
+    err << "ERROR: unsupported mover/coefficient combination: "
+        << compatibilityStatus.message << ".\n";
+    return false;
+  }
+  // (2) Production configuration matrix: mover x coefficient source x
+  // turbulence source x particle-wave coupling.
   ConfigurationMatrix::Combination combination;
   combination.mover=options.particleMover;
   combination.coefficientSource=options.coefficients.source;
@@ -1271,7 +1300,6 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
         << matrixStatus.message << ".\n";
     return false;
   }
-
   return true;
 }
 

@@ -47,8 +47,15 @@ int main() {
   // COEF01: the registry itself is the unit/schema contract consumed by help,
   // documentation, and providers.  These assertions prevent a renamed model
   // or dimension from silently changing a published configuration.
-  Require(C::SpatialRegistry().size() == 2,
+  // Three spatial providers: from-dmumu, from-mfp, and the shared
+  // parallel-diffusion library (added with the schema-4 [parallel_diffusion]
+  // binding; Parker mover only).
+  Require(C::SpatialRegistry().size() == 3,
           "COEF01 spatial registry size changed");
+  Require(C::SpatialRegistry()[2].canonicalName ==
+              "parallel-diffusion-library" &&
+          C::SpatialRegistry()[2].units == "m2/s; m/s",
+          "COEF01 parallel-diffusion-library spatial provider missing");
   Require(C::PitchAngleRegistry().size() == 4,
           "COEF01 pitch-angle registry size changed");
   Require(C::MeanFreePathRegistry().size() == 5,

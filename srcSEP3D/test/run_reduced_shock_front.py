@@ -523,7 +523,6 @@ def rebuild_native(args: argparse.Namespace, output: Path,
         ["rm", "-rf", "--", "build"],
         ["./Config.pl", "-application=sep3d"],
         ["./ampsConfig.pl", "-input", "sep3d.input", "-no-compile"],
-        ["make", "-C", "srcSEP3D", "prepare-production"],
         ["make", "-j16", "amps"],
     )
     with log.open("w", encoding="utf-8") as manifest:
