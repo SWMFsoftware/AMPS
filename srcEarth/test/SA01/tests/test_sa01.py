@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import json
 import math
+import shlex
 import sys
 import tempfile
 import unittest
@@ -17,7 +19,12 @@ AMPS_ROOT = SA01_DIR.parents[2]
 sys.path.insert(0, str(SA01_DIR))
 
 from prepare_SA01 import prepare_trajectory, render_deck  # noqa: E402
-from run_SA01 import safe_rebuild  # noqa: E402
+from run_SA01 import (  # noqa: E402
+    parser as run_parser,
+    record_workflow_completion,
+    reserve_campaign_output,
+    safe_rebuild,
+)
 from sa01_common import (  # noqa: E402
     CHANNELS, LIGHT_SPEED_CM_S, PROTON_REST_MEV, bin_average,
     fractional_change, isotropic_density_center_cm3, ratio_metrics,
@@ -164,6 +171,101 @@ class SA01Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             with self.assertRaises(ValueError):
                 safe_rebuild(Path(temporary))
+
+    def test_list_driven_output_reservation_is_unique_and_non_destructive(self) -> None:
+        """Repeated list invocations must never reuse prior physical evidence."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary) / "campaigns"
+            first = reserve_campaign_output(parent, "QUICK")
+            second = reserve_campaign_output(parent, "QUICK")
+            self.assertNotEqual(first, second)
+            self.assertEqual(list(first.iterdir()), [])
+            self.assertEqual(list(second.iterdir()), [])
+            self.assertTrue(first.name.startswith("sa01_quick_"))
+
+    def test_workflow_exit_contract_preserves_scientific_failure(self) -> None:
+        """Code-validation PASS must not rewrite a failed observation result."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            physical = output / "physical_execution_summary.json"
+            comparison_path = output / "comparison_summary.json"
+            plot_manifest = output / "plot_manifest.json"
+            qualification_path = output / "qualification_summary.json"
+            report = output / "SA01_validation_report.md"
+            figure = output / "figures" / "comparison.png"
+            figure.parent.mkdir()
+            physical.write_text('{"status":"PASS"}\n', encoding="utf-8")
+            comparison_path.write_text('{"status":"FAIL"}\n', encoding="utf-8")
+            plot_manifest.write_text('{"figure_sha256":{}}\n', encoding="utf-8")
+            qualification_path.write_text('{"status":"FAIL"}\n', encoding="utf-8")
+            report.write_text("# failed scientific qualification\n", encoding="utf-8")
+            figure.write_bytes(b"not-an-image-but-a-stable-test-artifact")
+
+            result = record_workflow_completion(
+                output, {"status": "FAIL"}, [str(figure)], report,
+                qualification="FAIL", profile="QUICK",
+            )
+            saved = json.loads((output / "workflow_completion.json").read_text())
+            self.assertEqual(result["status"], "PASS")
+            self.assertEqual(saved["scientific_qualification"], "FAIL")
+            self.assertEqual(saved["observational_status"], "FAIL")
+            self.assertTrue(saved["qualification_is_unchanged"])
+
+    def test_quick_and_standard_are_independent_repository_commands(self) -> None:
+        """Freeze the requested profile ownership and complete-workflow options."""
+
+        test_list = (AMPS_ROOT / "srcEarth/test/list").read_text(encoding="utf-8")
+        studies_list = (AMPS_ROOT / "srcEarth/studies/list").read_text(encoding="utf-8")
+        quick = [line for line in test_list.splitlines()
+                 if line.startswith("P ") and "test/SA01/run_SA01.py" in line]
+        standard = [line for line in studies_list.splitlines()
+                    if "test/SA01/run_SA01.py" in line and not line.startswith("!")]
+        self.assertEqual(len(quick), 1)
+        self.assertEqual(len(standard), 1)
+        for command, profile, parent in (
+                (quick[0], "QUICK", "quick_test_runs"),
+                (standard[0], "STANDARD", "standard_study_runs")):
+            self.assertIn(f"--profile {profile}", command)
+            self.assertIn(f"--output-parent test_output/SA01/{parent}", command)
+            self.assertIn("--formats png eps", command)
+            self.assertIn("--exit-code-policy WORKFLOW", command)
+            self.assertIn("--solver GRIDDED", command)
+            self.assertIn("--mover HC4", command)
+        # Exclusivity is a test-runner scheduling property, not a private CLI
+        # prerequisite. Keeping the exact QUICK command standalone-executable lets
+        # operators reproduce the registered workflow without fabricating runner
+        # environment state.
+        self.assertNotIn("--require-runner-exclusive", quick[0])
+        self.assertNotIn("--require-runner-exclusive", standard[0])
+        quick_index = test_list.splitlines().index(quick[0])
+        self.assertEqual(test_list.splitlines()[quick_index - 1], "! runner: exclusive")
+
+        # The parser itself must accept a reusable output parent without weakening
+        # the default qualification-based exit behavior for manual invocations.
+        parsed = run_parser().parse_args([
+            "--data-root", "/data/package", "--output-parent", "/tmp/runs",
+            "--profile", "QUICK",
+        ])
+        self.assertEqual(parsed.profile, "QUICK")
+        self.assertEqual(parsed.exit_code_policy, "QUALIFICATION")
+
+    def test_registered_quick_command_is_directly_parseable(self) -> None:
+        """The exact master-list payload must also be a valid standalone CLI."""
+
+        test_list = (AMPS_ROOT / "srcEarth/test/list").read_text(encoding="utf-8")
+        command = next(line for line in test_list.splitlines()
+                       if line.startswith("P ") and "test/SA01/run_SA01.py" in line)
+        tokens = shlex.split(command)
+        # Remove only the repository expectation marker, interpreter, and script.
+        # Parsing the untouched remainder prevents a future list-only prerequisite
+        # from recreating the direct-execution failure reported by the operator.
+        self.assertEqual(tokens[:3], ["P", "python3", "srcEarth/test/SA01/run_SA01.py"])
+        parsed = run_parser().parse_args(tokens[3:])
+        self.assertEqual(parsed.profile, "QUICK")
+        self.assertEqual(parsed.exit_code_policy, "WORKFLOW")
+        self.assertEqual(parsed.output_parent, Path("test_output/SA01/quick_test_runs"))
 
     def test_mode3d_scheduler_preserves_epoch_ownership_boundary(self) -> None:
         """Guard the communicator split that makes concurrent T05 epochs safe.

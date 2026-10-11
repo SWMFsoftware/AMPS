@@ -2,6 +2,32 @@
 
 ## Current state
 
+- Status 2026-10-11T19:29Z: SA01 now has two independent repository entry points.
+  `srcEarth/test/list` contains the full QUICK campaign as an exclusive `P` test;
+  `srcEarth/studies/list` contains the full STANDARD campaign as a study. Each entry
+  executes both spacecraft, evaluates the unchanged comparison gates, and requests
+  all comparison figures in PNG and EPS. Each uses a separate output parent and the
+  runner creates a new UTC/PID campaign directory, so repeated or concurrent QUICK
+  and STANDARD invocations cannot reuse or overwrite one another's evidence.
+- The list commands use the explicit `WORKFLOW` exit-code policy. This policy returns
+  success only after physical execution, evaluated comparison, report generation,
+  and verified plot-manifest creation all complete. It does not convert a scientific
+  FAIL into a scientific PASS: `comparison_summary.json` and
+  `qualification_summary.json` retain the actual unchanged result, and the new
+  `workflow_completion.json` records that result plus hashes of the evidence and
+  figures. Direct CLI use retains the stricter `QUALIFICATION` default.
+- The QUICK list entry is preceded by `! runner: exclusive`. The repository runner
+  therefore waits for its process pool to drain and admits no other test until QUICK
+  exits. The command itself has no list-only CLI prerequisite and is independently
+  executable exactly as written; standalone resource isolation remains the
+  operator's responsibility.
+- Verification at current source: 38/38 SA01 unit/contract tests pass; the complete
+  Step-12 release suite passes all eight validation and five source-contract tests;
+  the normal test runner dry-run parses 62 tests and recognizes QUICK as the second
+  exclusive test. Independent real-data
+  preparation passes for QUICK (59 RBSPA / 66 RBSPB epochs) and STANDARD
+  (251 / 261). Prior completed QUICK and STANDARD plot manifests each identify 12
+  PNG and 12 EPS files, all present. No new physical SA01 campaign was launched.
 - Status 2026-10-11T19:04Z: the earlier QUICK and STANDARD physical campaigns are
   complete. QUICK completed 59/59 RBSPA and 66/66 RBSPB snapshots; STANDARD
   completed 251/251 and 261/261. Both native branches exited 0. Both campaign
@@ -29,8 +55,8 @@
   checks, and generated 27 PNG plus 27 EPS files. C19's provisional observational
   thresholds were not enforced by the SMOKE profile and its scientific result remains
   `observational_passed=false`; that distinction is preserved in `C19_result.json`.
-- Per the user instruction, no physical SA01 run was started after this scheduling
-  change. Only SA01's 34 implementation/contract tests were executed; all passed.
+- No physical SA01 run was started after the scheduling/list-integration changes.
+  SA01's current 38 implementation/contract tests were executed; all passed.
 - Standing instructions: `AGENTS.md`.
 - Execution specification: `SA01_TASK.md`.
 - Detailed initial handoff: `/data/vtenishe/GEO/AMPS/handoff.md` (historical state).
@@ -42,10 +68,11 @@
 - C19 evidence root:
   `test_output/C19_snapshot_policy_20261011/C19_goes_epead_ew`; runner report:
   `test_output/C19_snapshot_policy_20261011/test_runner_report.json`.
-- Next action: make the separately requested small SA01 tweak, then clean-build and
-  execute SA01 under its explicit `EPOCH_PARALLEL` policy. Do not reuse the old
-  executable, infer policy from the presence of a snapshot list, or report the prior
-  execution PASS as scientific qualification.
+- Next action: execute QUICK through `srcEarth/test/test_runner.py` when a full QUICK
+  validation run is intended, or execute the STANDARD command in
+  `srcEarth/studies/list` for the study. Inspect each new campaign's
+  `workflow_completion.json`, `qualification_summary.json`, and `figures/`; do not
+  report workflow completion as scientific qualification.
 
 ## Evidence carried from this conversation
 
@@ -66,7 +93,7 @@ execution is claimed by the preparation of these instructions.
 | Target repository and instructions inspection | Complete | Revision, dirty state, executable/build, process state and available reference implementation inspected 2026-10-08 |
 | Local SA01 data validation | Complete | Package auditor PASS: 14 raw files, 13 processed hashes, 983 complete boundary spectra; report under `test_output/SA01/inspection` |
 | Runner implementation | Complete | SA01-specific prepare/run/compare/plot/common modules, template, README and requirements created |
-| Numerical/interface verification | Complete for implementation | 34/34 current SA01 tests pass; prior physical repeatability controls pass exactly; new policy is covered by parser/CLI and source-contract tests |
+| Numerical/interface verification | Complete for implementation | 38/38 current SA01 tests pass; prior physical repeatability controls pass exactly; snapshot and list-integration policies are covered by parser/CLI and source-contract tests |
 | Build / executable verification | Complete | Mandatory clean `make -j` passed; current MPI+OpenMP executable SHA-256 `31ebdbb...`; retained C19-policy build log |
 | QUICK physical run | Complete, unqualified baseline | Corrected HC4 completed RBSPA 59/59 and RBSPB 66/66; native runs PASS, campaign qualification FAIL |
 | STANDARD RBSPA run | Complete, unqualified baseline | Corrected HC4 completed 251/251 snapshots; native run PASS |
@@ -74,8 +101,9 @@ execution is claimed by the preparation of these instructions.
 | Observational comparisons | Complete, FAIL | QUICK and STANDARD each pass 10/34 unchanged gates and fail 24/34 |
 | Visualization | Complete for prior campaigns | Reports and PNG/EPS artifacts exist under both completed campaign roots |
 | Numerical convergence | FAIL | Fixed-field timestep and full common-population refinement fail the unchanged 2% criterion |
-| Snapshot-policy validation | C19 PASS; SA01 deferred | C19 collective run passed and generated 54 plots; no physical SA01 run was started after the policy change |
-| Final report and documentation | Complete for this policy change | Runtime policy is documented in Mode3D, srcEarth, C19, and SA01 READMEs; this journal records exact evidence and scientific limitations |
+| Snapshot-policy validation | C19 PASS; SA01 prepared | C19 collective run passed and generated 54 plots; both SA01 profiles independently pass real-data preparation under explicit `EPOCH_PARALLEL`; no new physical SA01 run was started |
+| Repository list integration | Complete | QUICK is an exclusive master-list test; STANDARD is an independent study; both require full execution, comparison, reporting, and PNG/EPS plotting before workflow completion |
+| Final report and documentation | Complete for this change | Runtime and workflow/qualification policies are documented in test and SA01 READMEs; this journal records exact evidence and scientific limitations |
 
 ## Session history
 
@@ -1483,3 +1511,109 @@ Use actual timestamps and observed evidence. Remove no previous session entry.
 - Exact next action: implement and verify the requested SA01 tweak, perform the
   mandated clean rebuild, then run SA01 from a new evidence root using the explicit
   `EPOCH_PARALLEL` policy and retain the memory-preflight record.
+
+### 2026-10-11T19:29Z — independent QUICK test and STANDARD study integration
+
+- Goal: make both SA01 profiles independently executable from their appropriate
+  repository procedures, with comparison plots required from each completed run and
+  without weakening any scientific comparison or convergence gate.
+- Repository revision and dirty state: HEAD
+  `af26f41725eb42f15f4d895ee8c916234f177425`; the pre-existing unrelated `Makefile`
+  modification, snapshot-policy implementation, generated evidence, and untracked
+  files were preserved. No commit was created.
+- Entry points: appended the full QUICK command to `srcEarth/test/list` as an
+  exclusive expected-pass test and appended the full STANDARD command to
+  `srcEarth/studies/list`. Both commands use the authoritative external data root,
+  explicit GRIDDED/HC4 controls, both spacecraft, PNG and EPS output, and distinct
+  output parents. QUICK requests four MPI ranks and six workers; STANDARD requests
+  four ranks and eight workers.
+- Output isolation: added `--output-parent` to reserve a new empty child named from
+  profile, UTC timestamp, and process ID. Reservation uses atomic directory creation
+  and a deterministic collision suffix. Existing `--output-dir` remains available
+  for controlled one-off runs, while stage-only modes deliberately reject
+  `--output-parent` because they operate on an already named campaign.
+- Completion semantics: added `--exit-code-policy`, whose default remains
+  `QUALIFICATION`. List entries use `WORKFLOW`, which can return zero only after the
+  two physical branches pass execution, comparisons are evaluated, the report is
+  written, and every plot listed in the manifest exists. The emitted
+  `workflow_completion.json` records evidence/figure hashes and copies the actual
+  scientific qualification. It never changes comparison thresholds, convergence
+  thresholds, comparison counts, or `qualification_summary.json`.
+- Exclusivity: the QUICK list entry includes `--require-runner-exclusive`. The runner
+  checks `AMPS_TEST_RUNNER_EXCLUSIVE=1` before reserving output or starting MPI, so a
+  future parser/runner regression cannot silently run this high-memory test in a
+  shared slot. Standalone QUICK and the separate STANDARD study do not depend on
+  that list-specific handshake.
+- Code and documentation: added detailed comments/docstrings for output reservation,
+  the exclusivity handshake, and workflow evidence; documented exact commands and
+  the workflow-versus-qualification boundary in `srcEarth/test/SA01/README.md` and
+  `srcEarth/test/README.md`; updated the focused SA01 list comment. Advanced the
+  unchanged Step-12 structural digest to the reviewed master-list content and added
+  exact assertions for the new command instead of weakening the frozen-list guard.
+- Verification: `python3 -B -m unittest discover -s srcEarth/test/SA01/tests -v`
+  passed 38/38; `srcEarth/test/UStep12Release/run_test.sh` passed all eight release
+  validation and five source-contract tests; runner `--dry-run srcEarth/test/list`
+  parsed 62 tests and classified SA01 QUICK as exclusive; `run_SA01.py --help`
+  passed; `git diff --check` passed.
+- Real-data preparation: independent QUICK and STANDARD `--prepare-only` executions
+  both passed against the authoritative dataset. QUICK retained 59 RBSPA and 66
+  RBSPB epochs; STANDARD retained 251 and 261. These temporary preparation checks
+  are interface evidence only and do not claim physical execution or qualification.
+- Plot evidence: the prior completed QUICK and STANDARD campaign manifests under
+  `test_output/SA01/{quick,standard}_unique_hc4_20261009` each contain hashes for 12
+  PNG and 12 EPS comparison figures, and all 48 referenced files are present. The
+  new list paths invoke the same plot stage and require its manifest/files before
+  workflow completion. No new expensive physical campaign was launched in this
+  implementation stage.
+- Result: PASS for repository integration and non-physical verification. Scientific
+  status remains unchanged: both prior campaigns fail 24/34 observational gates and
+  the common-population convergence requirement. A future completed list/study run
+  must expose that result separately even when its workflow completes successfully.
+
+### 2026-10-11T19:36Z — standalone QUICK invocation clarification
+
+- A direct QUICK command copied with the master-list-only
+  `--require-runner-exclusive` option correctly refused to start because a standalone
+  shell does not receive `AMPS_TEST_RUNNER_EXCLUSIVE=1` from `test_runner.py`. This
+  was an operator-facing documentation defect, not a physical runner failure.
+- Preserved the safety boundary: `srcEarth/test/list` still includes both the
+  exclusive directive and handshake option, so the repository procedure cannot
+  silently run QUICK concurrently under an obsolete or incompatible runner.
+- Corrected the documented independently executable QUICK command to omit the
+  private option. Expanded both READMEs to state that standalone resource exclusivity
+  is the operator's responsibility, while STANDARD remains directly executable as
+  written. Expanded the runtime error with the exact remediation: omit
+  `--require-runner-exclusive` for a direct campaign or use the unchanged list entry
+  through the current test runner.
+- The user explicitly made `run_SA01.py` executable; that mode change was preserved.
+  The shebang invocation and `python3` invocation remain equivalent.
+- Verification after the correction: 38/38 SA01 implementation/contract tests pass;
+  the complete Step-12 suite passes eight release-validation plus five source-contract
+  tests; `git diff --check` remains required at final handoff. No physical campaign
+  was launched or modified during this clarification.
+
+### 2026-10-11T19:38Z — exact registered QUICK command made standalone-executable
+
+- The preceding documentation-only correction was insufficient because copying the
+  exact payload from `srcEarth/test/list` still copied its private handshake option.
+  Removed that SA01 option from the registered command and from `run_SA01.py` rather
+  than requiring an operator to edit a reviewed test command or forge runner state.
+- Test-runner resource quality is unchanged: `! runner: exclusive` remains directly
+  before QUICK, and `test_runner.py` still drains the process pool before launch and
+  blocks all other launches until QUICK exits. The direct command uses the identical
+  physical, sampling, comparison, reporting, and plotting configuration; only the
+  redundant environment prerequisite was removed.
+- Added a regression that tokenizes the exact master-list payload and parses it
+  unchanged as a standalone SA01 CLI. Retained independent assertions for QUICK and
+  STANDARD ownership, unique output parents, GRIDDED/HC4 controls, both plot formats,
+  and WORKFLOW completion. The Step-12 source contract now freezes adjacency of the
+  exclusive directive as well as the exact SA01 command and advances its reviewed
+  normalized-list digest.
+- Updated both READMEs to describe exclusivity as a repository scheduler property,
+  not a command-line prerequisite. Historical journal entries above describe the
+  intermediate handshake implementation and are intentionally retained; this entry
+  supersedes that implementation.
+- Verification: 38/38 SA01 tests pass, including the exact-command regression; all
+  eight Step-12 release-validation and five source-contract tests pass; the full
+  master-list dry run parses 62 tests and reports SA01 QUICK as exclusive with the
+  independently executable command. No physical campaign was launched in this fix.

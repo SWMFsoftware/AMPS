@@ -23,20 +23,26 @@ of threads per MPI rank.  Defaults are `-np 4` and `-nt 16`.
 
 `SA01/` implements the January 2014 T05/ERNE comparison against both RBSP REPT
 spacecraft, including all seven channels, total intensity and isotropic-equivalent
-density. Its routine code-validation list can be run through this directory's
-normal runner, without changing the hash-frozen Step-12 release list:
+density. Its focused, data-independent code-validation list can be run through this
+directory's normal runner:
 
 ```bash
 python3 srcEarth/test/test_runner.py -j 1 srcEarth/test/SA01/list
 ```
 
-That entry tests numerical operators, physical-zero accounting, strict completeness
+That focused entry tests numerical operators, physical-zero accounting, strict completeness
 and units, provenance/stale-evidence rejection, all plotting families, independent
 concurrency controls and the production unique-field-writer alias regression. It
-does not launch AMPS or claim observational qualification. Keep the separate full
-QUICK/STANDARD plus controlled-refinement campaign in `SA01/README.md`; its fixed
-scientific gates are not replaced by the routine suite. Actual physical status,
-preserved failures and resume instructions are in `SA01/SA01_PROGRESS.md`.
+does not launch AMPS or claim observational qualification.
+
+The master `srcEarth/test/list` now contains an exclusive full QUICK workflow. It
+executes both spacecraft, evaluates the fixed scientific gates, and requires PNG/EPS
+comparison plots. A unique `--output-parent` child prevents evidence reuse. Its
+`WORKFLOW` exit policy checks execution/comparison/report/plot completeness only;
+the independent qualification summary still records scientific FAIL or INCOMPLETE.
+STANDARD remains an independent study command in `srcEarth/studies/list`. Exact
+commands and semantics are documented in `SA01/README.md`; preserved physical status
+and resume instructions are in `SA01/SA01_PROGRESS.md`.
 The full runner supports recorded sequential continuation and common-population
 refinement. Its `qualification_summary.json` is distinct from execution success:
 missing convergence cannot qualify, and registered bounded numerical failures
@@ -149,10 +155,13 @@ validation gates.
 
 `test/list` schedules the Step 2 through Step 12 suites as independent `P`
 entries. Each has its own `last pass:` record, so the main runner reports and commits
-their provenance separately. No pre-existing C/F command, expected status, input,
-reference file, tolerance, mover, trajectory limit, or last-pass record was modified;
-the existing tests remain independent validation tools rather than being adjusted to
-accommodate the new abstraction.
+their provenance separately. The reviewed SA01 QUICK workflow is an additional
+independent entry; it does not modify any pre-existing C/F command, expected status,
+input, reference, tolerance, mover, trajectory limit, or last-pass record.
+Its preceding `! runner: exclusive` directive makes the repository runner serialize
+the high-memory campaign. The command itself has no private environment handshake and
+is therefore independently executable exactly as listed; the same command is
+documented in `SA01/README.md`.
 
 ## UStep12Release: strict Step 12 suite
 
@@ -172,9 +181,9 @@ capabilities, and mutated restart inputs must fail.
 
 The companion source audit checks manifest and Tecplot identity wiring, `-h` release
 commands and limitations, complete documentation/templates, and registration in
-`test/list`. It reconstructs the pre-Step-12 list and compares its SHA-256 with a fixed
-reference, so no existing expected P/F state, command, scientific threshold, or
-`last pass:` value can be edited as part of this implementation. The manufactured
+`test/list`. It compares the normalized list with a reviewed structural SHA-256, so
+adding SA01 QUICK required an explicit digest advance and dedicated command assertions;
+runner-owned `last pass:` hashes remain the only normalized values. The manufactured
 suite validates the evaluator only; a release PASS still requires actual linked and
 observation evidence listed in `UStep12Release/README.md`.
 

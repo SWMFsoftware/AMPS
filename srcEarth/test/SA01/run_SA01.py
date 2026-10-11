@@ -44,6 +44,39 @@ def repository_identity(root: Path) -> dict[str, Any]:
                               for path in sorted(source_paths)}}
 
 
+def reserve_campaign_output(parent: Path, profile: str) -> Path:
+    """Reserve a unique evidence directory for a list-driven full campaign.
+
+    A fixed ``--output-dir`` is appropriate for a manually named study, but it is
+    intentionally non-overwritable and therefore cannot be placed directly in a
+    repeatedly executable repository list.  ``--output-parent`` uses this helper to
+    create an empty, exclusive child for each invocation.  The UTC time makes runs
+    easy to browse; the PID and bounded collision suffix make allocation race-safe
+    when two independent launchers begin during the same second.
+
+    The returned directory is deliberately empty.  ``prepare_all`` accepts an empty
+    pre-reserved root but still refuses a nonempty one, preserving the rule that no
+    earlier physical evidence may be overwritten.
+    """
+
+    resolved_parent = parent.expanduser().resolve()
+    resolved_parent.mkdir(parents=True, exist_ok=True)
+    stamp = utc_now().replace("-", "").replace(":", "")
+    stem = f"sa01_{profile.lower()}_{stamp}_pid{os.getpid()}"
+    for collision in range(1000):
+        suffix = "" if collision == 0 else f"_{collision:03d}"
+        candidate = resolved_parent / f"{stem}{suffix}"
+        try:
+            candidate.mkdir()
+        except FileExistsError:
+            continue
+        print(f"[SA01] reserved campaign output: {candidate}", flush=True)
+        return candidate
+    raise RuntimeError(
+        f"could not reserve a unique SA01 output below {resolved_parent}"
+    )
+
+
 def safe_rebuild(amps_root: Path) -> dict[str, Any]:
     """Apply the mandated, narrowly checked remove-build then ``make -j`` procedure."""
 
@@ -463,6 +496,71 @@ def write_report(output: Path, comparison: dict[str, Any], figures: list[str]) -
     return path
 
 
+def record_workflow_completion(output: Path, comparison: dict[str, Any],
+                               figures: list[str], report: Path,
+                               qualification: str, profile: str) -> dict[str, Any]:
+    """Record a code-validation PASS without rewriting scientific qualification.
+
+    The repository QUICK entry needs to answer a narrower question than the SA01
+    scientific qualification: did the current executable finish both spacecraft,
+    produce complete comparison evidence, and render the requested figures?  A
+    physically completed workflow can answer that question even when the unchanged
+    observational or convergence gates report FAIL.  Keeping this in a separate
+    artifact prevents an execution PASS from being mistaken for scientific PASS.
+
+    Every artifact is rechecked here after plotting.  Comparison ``PASS`` and
+    ``FAIL`` are both evaluated scientific outcomes; missing/error evidence raises
+    instead of becoming workflow success.  The caller writes this record only after
+    ``write_report`` has produced the independent qualification summary.
+    """
+
+    output = output.expanduser().resolve()
+    if comparison.get("status") not in ("PASS", "FAIL"):
+        raise ValueError("workflow completion requires an evaluated comparison status")
+    physical = output / "physical_execution_summary.json"
+    comparison_path = output / "comparison_summary.json"
+    plot_manifest = output / "plot_manifest.json"
+    qualification_path = output / "qualification_summary.json"
+    required = (physical, comparison_path, plot_manifest, qualification_path, report)
+    missing = [str(path) for path in required if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(
+            "workflow completion is missing required evidence: " + ", ".join(missing)
+        )
+    physical_record = json.loads(physical.read_text(encoding="utf-8"))
+    if physical_record.get("status") != "PASS":
+        raise ValueError("workflow completion requires physical execution status PASS")
+    if not figures:
+        raise ValueError("workflow completion requires at least one comparison figure")
+    figure_paths = [Path(path).expanduser().resolve() for path in figures]
+    absent_figures = [str(path) for path in figure_paths if not path.is_file()]
+    if absent_figures:
+        raise FileNotFoundError(
+            "workflow completion is missing generated figures: "
+            + ", ".join(absent_figures)
+        )
+
+    record = {
+        "schema": "amps-sa01-workflow-completion-v1",
+        "created_utc": utc_now(),
+        "status": "PASS",
+        "profile": profile,
+        "scope": "physical execution, comparison evaluation, report, and plots",
+        "scientific_qualification": qualification,
+        "observational_status": comparison["status"],
+        "qualification_is_unchanged": True,
+        "figure_count": len(figure_paths),
+        "evidence_sha256": {
+            str(path): sha256_file(path) for path in required
+        },
+        "figure_sha256": {
+            str(path): sha256_file(path) for path in figure_paths
+        },
+    }
+    atomic_json(output / "workflow_completion.json", record)
+    return record
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     source = result.add_mutually_exclusive_group(required=True)
@@ -471,7 +569,16 @@ def parser() -> argparse.ArgumentParser:
                         help="Alias naming an extracted package directory, not a tar file.")
     result.add_argument("--amps-root", type=Path, default=Path("/data/vtenishe/GEO/AMPS"))
     result.add_argument("--amps", type=Path, default=Path("/data/vtenishe/GEO/AMPS/amps"))
-    result.add_argument("--output-dir", required=True, type=Path)
+    destination = result.add_mutually_exclusive_group(required=True)
+    destination.add_argument(
+        "--output-dir", type=Path,
+        help="Exact campaign directory; must be absent or empty for a full run.",
+    )
+    destination.add_argument(
+        "--output-parent", type=Path,
+        help=("Parent under which a unique UTC/PID campaign directory is reserved. "
+              "Use this for repeatable test/studies list entries; full mode only."),
+    )
     result.add_argument("--profile", choices=tuple(PROFILES), default="STANDARD")
     result.add_argument("--mpi-ranks", type=int, default=4)
     result.add_argument("--threads", type=int, default=16)
@@ -490,6 +597,13 @@ def parser() -> argparse.ArgumentParser:
     modes.add_argument("--compare-only", action="store_true")
     modes.add_argument("--plot-only", action="store_true")
     result.add_argument("--formats", nargs="+", choices=("png", "eps"), default=["png", "eps"])
+    result.add_argument(
+        "--exit-code-policy", choices=("QUALIFICATION", "WORKFLOW"),
+        default="QUALIFICATION",
+        help=("QUALIFICATION returns success only for full scientific qualification. "
+              "WORKFLOW returns success after complete execution/comparison/plots "
+              "while preserving the independent scientific PASS/FAIL result."),
+    )
     result.add_argument("--diagnostic-evidence", action="append", type=Path, default=[],
                         help="Register a relevant bounded comparison JSON; repeatable, retained for future reports, never substitutes for campaign convergence.")
     result.add_argument("--wait-for-campaign", type=Path,
@@ -511,11 +625,22 @@ def main(argv: list[str] | None = None) -> int:
     if ((args.wait_for_campaign or args.wait_for_diagnostic or args.convergence_base)
             and (args.prepare_only or args.compare_only or args.plot_only or args.run_only)):
         raise ValueError("waiting/refinement continuation requires the full prepare/run/compare/plot mode")
+    stage_only = args.prepare_only or args.compare_only or args.plot_only or args.run_only
+    if args.output_parent and stage_only:
+        raise ValueError(
+            "--output-parent is only valid for a full prepare/run/compare/plot "
+            "campaign; stage-only modes require the exact existing --output-dir"
+        )
+    if args.exit_code_policy == "WORKFLOW" and stage_only:
+        raise ValueError(
+            "--exit-code-policy WORKFLOW is only valid for the complete workflow"
+        )
     data_path = args.data_root or args.data_archive
     resolve_data_root(data_path)  # fail early before any output/build mutation
     spacecraft = validate_spacecraft(args.spacecraft)
     root = args.amps_root.expanduser().resolve(); amps = args.amps.expanduser().resolve()
-    output = args.output_dir.expanduser().resolve()
+    output = (args.output_dir.expanduser().resolve() if args.output_dir
+              else reserve_campaign_output(args.output_parent, args.profile))
     # Wait before preparation, build or executable capture. The currently running
     # processes therefore cannot be overwritten by this sequential continuation.
     if args.wait_for_campaign or args.wait_for_diagnostic:
@@ -622,7 +747,19 @@ def main(argv: list[str] | None = None) -> int:
     qualification = qualification_status(comparison, convergence, diagnostic_evidence(output))
     if (output / "refinement_error.json").is_file() and qualification == "PASS":
         qualification = "INCOMPLETE"
-    print(f"[{qualification}] qualification; observational={comparison['status']}; report={report}")
+    workflow = record_workflow_completion(
+        output, comparison, figures, report, qualification, args.profile
+    )
+    print(
+        f"[{qualification}] qualification; observational={comparison['status']}; "
+        f"workflow={workflow['status']}; report={report}",
+        flush=True,
+    )
+    # WORKFLOW is deliberately an exit-code policy, not a scientific policy. It is
+    # used by repository orchestration to make failures in execution/comparison/plot
+    # production actionable while the unchanged qualification remains machine-readable.
+    if args.exit_code_policy == "WORKFLOW":
+        return 0
     return 0 if qualification == "PASS" else 2
 
 

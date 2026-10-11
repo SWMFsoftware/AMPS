@@ -77,6 +77,51 @@ python3 srcEarth/test/SA01/run_SA01.py --data-root /path/to/package \
   --output-dir test_output/SA01/publication --profile PUBLICATION --mpi-ranks 4 --threads 16
 ```
 
+### Independent QUICK test and STANDARD study commands
+
+QUICK and STANDARD are registered as independent complete workflows. They do not
+wait for, read, overwrite, or supply convergence evidence for one another:
+
+```bash
+# Direct QUICK campaign; this is also the exact command in srcEarth/test/list.
+python3 srcEarth/test/SA01/run_SA01.py \
+  --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926 \
+  --amps-root /data/vtenishe/GEO/AMPS --amps ./amps \
+  --output-parent test_output/SA01/quick_test_runs \
+  --profile QUICK --solver GRIDDED --mpi-ranks 4 --threads 6 \
+  --mover HC4 --trace-dt 0.1 --formats png eps \
+  --exit-code-policy WORKFLOW
+
+# The independent command in srcEarth/studies/list.
+python3 srcEarth/test/SA01/run_SA01.py \
+  --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926 \
+  --amps-root /data/vtenishe/GEO/AMPS --amps ./amps \
+  --output-parent test_output/SA01/standard_study_runs \
+  --profile STANDARD --solver GRIDDED --mpi-ranks 4 --threads 8 \
+  --mover HC4 --trace-dt 0.1 --formats png eps \
+  --exit-code-policy WORKFLOW
+```
+
+`--output-parent` is available only for the complete prepare/run/compare/plot mode.
+It atomically reserves a new child named with profile, UTC start time, and PID, so a
+repeated list invocation cannot reuse or erase an earlier campaign. Manual stage-only
+commands continue to require the exact existing `--output-dir`.
+
+`--exit-code-policy WORKFLOW` means exit zero only after both physical branches,
+comparison evaluation, the Markdown report, and all requested plot files exist and
+are hashed in `workflow_completion.json`. It does **not** turn scientific disagreement
+or missing convergence into qualification PASS: `comparison_summary.json`,
+`qualification_summary.json`, and the report retain the unchanged gates and actual
+`PASS`, `FAIL`, or `INCOMPLETE` status. The default `QUALIFICATION` exit policy remains
+appropriate when a manual caller wants scientific nonqualification to return status 2.
+
+The QUICK master-list entry is marked `! runner: exclusive`, so `test_runner.py`
+waits until its process pool is empty and launches no other test until QUICK exits.
+Exclusivity is deliberately a scheduler property rather than a private command-line
+prerequisite: the exact command above remains independently executable, with
+standalone resource isolation under the operator's control. The STANDARD studies
+command is likewise a direct invocation and is not coupled to QUICK.
+
 `--rebuild` first validates the exact repository and non-symlink `build` target,
 checks for active AMPS/build processes, removes only `build`, and runs the mandated
 `make -j`, saving its log. It is incompatible with compare-only and plot-only.
@@ -95,17 +140,19 @@ Run implementation tests with:
 python3 -m unittest discover -s srcEarth/test/SA01/tests -v
 ```
 
-The same permanent regression suite is registered in `srcEarth/test/SA01/list`
-for the normal repository test runner:
+The permanent, data-independent regression suite remains registered in
+`srcEarth/test/SA01/list` for focused development:
 
 ```bash
 python3 srcEarth/test/test_runner.py -j 1 srcEarth/test/SA01/list
 ```
 
-This separate list preserves the existing Step-12 hash-frozen release list and
-all its validation gates. The routine suite is not a replacement for the physical
-campaign. It includes the production field-alias ownership regression discovered
-by SA01, so the correction remains checked without requiring the external dataset.
+The master `srcEarth/test/list` additionally registers the full QUICK physical
+workflow requested for normal code validation. Its reviewed structural digest in the
+Step-12 source contract was advanced to include that command; the digest check and all
+scientific gates remain active. The focused routine suite is not a replacement for
+the physical campaign. It includes the production field-alias ownership regression
+discovered by SA01, so the correction remains checked without the external dataset.
 
 ## Output layout
 
@@ -114,8 +161,10 @@ records and separate `RBSPA/` and `RBSPB/` branches. A branch contains its
 rendered input and selected trajectory, `amps.log`, `run_status.json`, the five
 native AMPS products, comparison CSV files, and independent reconstruction
 residuals. The root contains `comparison_summary.json`, `figures/`, environment
-provenance, and `SA01_validation_report.md`. Select a new output directory for a
-new physical run; the runner refuses to replace prior products.
+provenance, `SA01_validation_report.md`, `qualification_summary.json`, and, after a
+complete workflow, `workflow_completion.json`. Select a new `--output-dir` for a
+manual physical run or use `--output-parent` to reserve one automatically; the runner
+refuses to replace prior products.
 
 Standalone comparisons record their own analysis-source hashes. `plot_manifest.json`
 binds every PNG/EPS to its source implementation and the saved comparison/context

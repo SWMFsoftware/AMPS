@@ -7,3 +7,9 @@ srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --stage figure
 !calculate and plot global cutoff map 
 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_global_cutoff_maps.py --profile SMOKE --amps ./amps -np 4 -nt 16
 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_global_cutoff_maps.py --profile FULL --amps ./amps -np 4 -nt 16 --postprocess-workers AUTO
+
+! SA01 STANDARD is independent of the QUICK test-list campaign. It creates a unique
+! evidence directory, executes both RBSP spacecraft, evaluates the unchanged science
+! gates, and writes PNG/EPS comparison figures. WORKFLOW makes a completed study
+! return zero without changing the separately recorded scientific qualification.
+python3 srcEarth/test/SA01/run_SA01.py --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926 --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/SA01/standard_study_runs --profile STANDARD --solver GRIDDED --mpi-ranks 4 --threads 8 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW

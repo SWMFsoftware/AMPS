@@ -4,7 +4,9 @@
 This is intentionally a source contract, not a substring-only physics test.
 Numerical failure injection lives in test_release_validation.py; here we ensure
 all production surfaces publish the common identity and that every reviewed test
-command, expected state, ordering rule, and comment remains frozen.
+command, expected state, ordering rule, and comment remains frozen between deliberate
+list revisions. A reviewed new validation entry advances the digest in this file; the
+digest must never be bypassed or normalized away merely to make an edit pass.
 
 ``last pass:`` values are different: they are runner-owned mutable provenance.
 The production runner legitimately updates those hashes after a pass, so folding
@@ -27,7 +29,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SRC_EARTH = HERE.parents[1]
-APPROVED_NORMALIZED_LIST_SHA256 = "e68727bf79510f78feac73c22e562e72354595b6bdc9a46d7d4b8e5bc52dcc13"
+APPROVED_NORMALIZED_LIST_SHA256 = "b64f95d7dae7fa1759ce0992c62bacc5a2b205cf53f3899fffc5a28f65bfcd10"
 STEP12_COMMAND = "P srcEarth/test/UStep12Release/run_test.sh"
 COMMIT_RE = r"[0-9a-f]{40}"
 # Looped list entries are rewritten by test_runner.py as a brace-delimited
@@ -189,10 +191,29 @@ class Step12SourceContract(unittest.TestCase):
             self.assertNotIn("~/", command)
         c9_commands = [line for line in active_commands if "test/C9/run_C9.py" in line]
         c10_commands = [line for line in active_commands if "test/C10/run_C10.py" in line]
+        sa01_commands = [line for line in active_commands
+                         if "test/SA01/run_SA01.py" in line]
         self.assertTrue(c9_commands)
         self.assertTrue(c10_commands)
         self.assertTrue(all("--amps ./amps" in line for line in c9_commands + c10_commands))
         self.assertTrue(all("--output-root test_output/" in line for line in c10_commands))
+
+        # QUICK is now a reviewed, exclusive, end-to-end workflow gate. Its
+        # WORKFLOW exit policy cannot replace or retune scientific qualification:
+        # the SA01 runner writes that result independently. Freeze the profile,
+        # physical solver, evidence-parent, and plot formats. Exclusivity is frozen
+        # separately as the runner directive immediately before this command, so the
+        # exact registered command remains independently executable.
+        self.assertEqual(len(sa01_commands), 1)
+        sa01 = sa01_commands[0]
+        for token in (
+            "--profile QUICK", "--solver GRIDDED", "--amps ./amps",
+            "--output-parent test_output/SA01/quick_test_runs",
+            "--formats png eps", "--exit-code-policy WORKFLOW",
+        ):
+            self.assertIn(token, sa01)
+        sa01_index = current.splitlines().index(sa01)
+        self.assertEqual(current.splitlines()[sa01_index - 1], "! runner: exclusive")
 
         digest = hashlib.sha256(
             normalized_test_list(current).encode("utf-8")
