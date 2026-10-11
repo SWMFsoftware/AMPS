@@ -200,14 +200,16 @@ required-input validation.
 ## Example input mapping
 
 The shared manager is intentionally parser-neutral. A future application deck
-might map this section:
+in the generic AMPS runtime input format (`src/INPUT_FILE.md`) might map this
+model block (the block name is illustrative, not implemented):
 
 ```text
-[perpendicular_diffusion]
-model = flpd_complete
-relative_tolerance = 1e-10
-maximum_refinements = 20
-maximum_iterations = 120
+#begin physics: perpendicular_diffusion
+  model = flpd_complete
+  relative_tolerance = 1e-10
+  maximum_refinements = 20
+  maximum_iterations = 120
+#end physics
 ```
 
 to:

@@ -2,6 +2,8 @@
 
 #include "sha256.h"
 
+#include "amps_input.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -25,30 +27,53 @@ std::string Trim(std::string value) {
   return value.substr(first,last-first+1);
 }
 
+// Read the generic AMPS runtime-input text (src/INPUT_FILE.md) that defines
+// one reduced shock-front event and return its closed key/value set.
+//
+// The event is one block, ``#begin physics: shock_front ... #end physics``,
+// either as a stand-alone file (srcSEP --reduced-shock-event, viewers, the
+// shared tests) or included into an application input (srcSEP3D), in which
+// case the application passes the canonical text of that block.  The model
+// vocabulary is dotted (``ambient.reference_radius_m``); a nested block
+// ``#begin ambient`` is the same key space and is flattened to the dotted
+// spelling (AMPS::Input::Flatten), so both spellings name one parameter.
+//
+// The event file is part of the physical problem definition, not a
+// permissive user-preference file.  The generic grammar already rejects
+// duplicate keys inside one block; flattening can still meet the same dotted
+// key twice (``ambient.x`` and ``#begin ambient`` + ``x``), which is rejected
+// here: accepting "last value wins" would let the runtime state depend on
+// parser ordering while two ranks or restart readers appeared to share the
+// same event.  Every diagnostic carries ``file:line`` of the user's text.
 Core::Result<std::map<std::string,std::string>> Assignments(
-    const std::string& bytes) {
-  // The event file is part of the physical problem definition, not a permissive
-  // user-preference file.  Preserve one spelling of every value for the
-  // transitive fingerprint and reject duplicate assignments: accepting "last
-  // value wins" would let the runtime state depend on parser ordering while
-  // two ranks or restart readers appeared to share the same event.
-  std::map<std::string,std::string> values;
-  std::istringstream input(bytes);std::string line;std::size_t number=0;
-  while(std::getline(input,line)) {
-    ++number;const auto comment=line.find('#');
-    if(comment!=std::string::npos)line.erase(comment);
-    line=Trim(line);if(line.empty())continue;
-    const auto separator=line.find('=');
-    if(separator==std::string::npos)return Bad<std::map<std::string,std::string>>(
-        "shock-front event line "+std::to_string(number)+" is not key=value");
-    const std::string key=Trim(line.substr(0,separator));
-    const std::string value=Trim(line.substr(separator+1));
-    if(key.empty()||value.empty()||!values.emplace(key,value).second)
-      return Bad<std::map<std::string,std::string>>(
-          "empty or duplicate shock-front event key at line "+
-          std::to_string(number));
+    const std::string& bytes,const std::string& displayName) {
+  using Return=Core::Result<std::map<std::string,std::string>>;
+  AMPS::Input::Document document;
+  const AMPS::Input::Status parsed=
+      AMPS::Input::ParseText(bytes,displayName,".",&document);
+  if(!parsed.ok())return Bad<std::map<std::string,std::string>>(parsed.message);
+  const AMPS::Input::Status blocks=AMPS::Input::RequireOnlyBlocks(
+      document.root,{"physics"},"the reduced shock-front event reader");
+  if(!blocks.ok())return Bad<std::map<std::string,std::string>>(blocks.message);
+  const AMPS::Input::Block* event=nullptr;
+  for(const AMPS::Input::Block& block:document.root.blocks) {
+    if(block.name!="shock_front")return Bad<std::map<std::string,std::string>>(
+        AMPS::Input::ErrorAt(block.begin,"block '"+block.Label()+
+            "' is not a reduced shock-front event; expected "
+            "'#begin physics: shock_front'").message);
+    event=&block;
   }
-  return Core::Result<std::map<std::string,std::string>>::Success(std::move(values));
+  if(event==nullptr)return Bad<std::map<std::string,std::string>>(
+      displayName+": no '#begin physics: shock_front' block was found");
+  std::map<std::string,std::string> values;
+  for(const AMPS::Input::Assignment& item:AMPS::Input::Flatten(*event)) {
+    if(!values.emplace(item.key,item.value).second)
+      return Bad<std::map<std::string,std::string>>(AMPS::Input::ErrorAt(
+          item.where,"duplicate shock-front event key '"+item.key+
+          "' (a dotted key and a nested block name the same parameter)",
+          item.text).message);
+  }
+  return Return::Success(std::move(values));
 }
 
 Core::Result<double> Number(const std::map<std::string,std::string>& values,
@@ -185,11 +210,12 @@ const char* Name(HtDiagnosticStatus value) noexcept {
 }
 
 Core::Result<std::shared_ptr<const Configuration>> ResolveConfiguration(
-    const std::string& inputBytes,const AssetReader& reader) {
+    const std::string& inputBytes,const AssetReader& reader,
+    const std::string& displayName) {
   using Return=Core::Result<std::shared_ptr<const Configuration>>;
   if(!reader)return Return::Failure(Core::StatusCode::InvalidConfiguration,
       "shock-front event requires an asset reader");
-  const auto parsed=Assignments(inputBytes);
+  const auto parsed=Assignments(inputBytes,displayName);
   if(!parsed.ok())return Return::Failure(parsed.status.code,parsed.status.message);
   const auto& v=parsed.value;
   // Freeze the complete first-profile schema.  In particular, silently

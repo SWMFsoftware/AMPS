@@ -114,16 +114,21 @@ nearest-line fallback. The baseline `srcSEP` adapter links `sep_common` only.
 Repeated line meshes call `ResampleLine(begin,end,count)`. Requested endpoints
 and point count are exact; positive primitives remain positive, and any range
 outside the bundle or interval crossing an unresolved discontinuity fails.
-`ParseLineMeshRequests` consumes the normalized `srcSEP` assignments and
-requires this complete repeated record for every selected line:
+`ParseLineMeshRequests` consumes a normalized assignment map (qualified keys
+such as `line_mesh.earth.line_id`) and requires this complete repeated record
+for every selected line. It is shown below as a generic AMPS input block
+(`src/INPUT_FILE.md`); no current `srcSEP` runtime-input block is wired to this
+routine (only the Stage-10 tests call it), so the enclosing block in a future
+`srcSEP` deck is not yet assigned:
 
-```ini
-[line_mesh.earth]
-line_id = line-A
-start_s_m = 6.957e8
-end_s_m = 1.495978707e11
-point_count = 4097
-resampling = conservative-positive-one-sided
+```text
+#begin line_mesh: earth          ! qualified prefix line_mesh.earth
+  line_id = line-A
+  start_s_m = 6.957e8
+  end_s_m = 1.495978707e11
+  point_count = 4097
+  resampling = conservative-positive-one-sided
+#end line_mesh
 ```
 
 The parser rejects unknown or missing keys, unit-bearing/non-finite numbers,

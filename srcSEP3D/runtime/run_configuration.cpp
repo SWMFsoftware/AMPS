@@ -559,11 +559,11 @@ Core::Status RunConfiguration3D::Create(
   // configuration rather than a late mesh-builder side effect.
   RunConfiguration3DOptions normalized = options;
 
-  // Older typed callers and schema-1--4 decks predate the family selector.
-  // Their concrete ``transport`` value already contains enough information to
-  // recover only the broad family, so normalization is lossless.  New schema-5
-  // text decks must spell out particle_mover (enforced by the parser below),
-  // and an explicit family is never silently rewritten.
+  // Typed callers may leave the family unselected.  The concrete
+  // ``transport`` value already contains enough information to recover the
+  // broad family, so normalization is lossless.  The schema-6 text parser
+  // derives the family from application.sep.transport and marks it explicit;
+  // an explicit family is never silently rewritten.
   if (!normalized.particleMoverExplicitlySelected) {
     normalized.particleMover =
         normalized.transport == TransportModel::Parker3D
@@ -726,8 +726,11 @@ Core::Status RunConfiguration3D::Create(
       normalized.coordinateFrame.empty()) {
     return Invalid("the current Parker/SWMF contract requires a finite heliocentric origin and named frame");
   }
-  if (normalized.inputSchemaVersion < 1 || normalized.inputSchemaVersion > 5)
-    return Invalid("inputSchemaVersion must be 1, 2, 3, 4, or 5");
+  // Typed contract levels 1-5 remain for parser-free hosts and fixtures; 6
+  // is the level installed by every text input (the shared srcSEP/srcSEP3D
+  // schema 6, src/INPUT_FILE.md section 5) and satisfies every ">= N" rule.
+  if (normalized.inputSchemaVersion < 1 || normalized.inputSchemaVersion > 6)
+    return Invalid("inputSchemaVersion must be 1, 2, 3, 4, 5, or 6");
   if (normalized.background == BackgroundAuthority::PythonInterpolator) {
     // The provider value is intentionally recognized before any AMPS state is
     // touched, but execution remains fail-closed until the Python process,
@@ -1552,8 +1555,7 @@ Core::Status RunConfiguration3D::Create(
     normalized.storeMagneticGradient = true;
 
   const char* reserved = nullptr;
-  if (normalized.enableExternalScriptBackground) reserved = "external-script background";
-  else if (normalized.enableSelfConsistent3DTurbulence) reserved = "self-consistent 3-D turbulence";
+  if (normalized.enableSelfConsistent3DTurbulence) reserved = "self-consistent 3-D turbulence";
   if (reserved != nullptr) return Core::Status::Reserved(reserved);
 
   const StorageLayout layout = BuildLayout(normalized);

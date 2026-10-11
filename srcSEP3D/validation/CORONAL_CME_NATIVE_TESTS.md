@@ -81,8 +81,8 @@ mpiexec -n 4 ./amps \
 
 `--test` is repeatable. `--test`, `--test-suite`, `--all-tests` and
 `--list-tests` are mutually exclusive. `--test-suite` accepts `sep-corona`
-(case insensitive), exactly once; missing/unknown names are usage errors. `--test-input` is mandatory for execution; `--input` may be
-given as an alias only when both paths are textually identical. Test execution
+(case insensitive), exactly once; missing/unknown names are usage errors. `--test-input` is mandatory for execution; `-input` (or its exact synonym
+`--input`) may be given as well only when both paths are textually identical. Test execution
 cannot be combined with `--dry-run` or `--initialization-only`, because the
 native callback must observe a completed real AMPS initialization. A zero
 `--test-steps` value tests initialization only; a positive value calls the
@@ -129,13 +129,14 @@ For evolving-field publication evidence, rebuild and run from the AMPS root:
 python3 srcSEP3D/test/run_coupled_sep_corona.py --amps ./amps --ranks 4 --test-input srcSEP3D/examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in --test-steps 2
 ```
 
-All three SWBGAMPS cases require `background.provider=swcme`; otherwise they
+All three SWBGAMPS cases require `physics.background.provider=swcme`; otherwise they
 SKIP. SWBGAMPS02 also requires a horizon crossing a background cadence.
 SWBGAMPS03 requires at least two ranks and received remote physical blocks;
 launching multiple ranks alone does not prove ghost coverage. The JSON
 `runtime_mesh_background` object records update counts, representative count
 and collective readback flags. Checks cover allocated fields, not optional
-application tensors disabled by `[storage]`. Native current/electron pressure
+application tensors disabled by the `application: sep3d` / `storage` block
+(`application.sep3d.storage.*`). Native current/electron pressure
 are filled by the bridge but are not separately compared in this readback gate.
 Publication PASS is separate
 from spatial/time convergence and observational CME validation.

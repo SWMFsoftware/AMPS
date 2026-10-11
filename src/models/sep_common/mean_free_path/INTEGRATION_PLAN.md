@@ -13,18 +13,21 @@ tests so duplicate strong definitions and PIC/MPI dependencies fail.
 
 ## 2. Input grammar
 
-Add a focused-transport-only section, provisionally:
+Add a focused-transport-only model block, provisionally (generic AMPS runtime
+input format, `src/INPUT_FILE.md`; `!` comments, model parameters in a
+`physics: NAME` block):
 
-```ini
-[mean_free_path]
-model = PA-QFORM
-lambda_parallel_m = 4.487936121e10
-operator_convention = standard
-q = 5/3
-gap_parameter = 0.05
+```text
+#begin physics: mean_free_path      ! provisional block name, not implemented
+  model = PA-QFORM
+  lambda_parallel_m = 4.487936121e10
+  operator_convention = standard
+  q = 5/3
+  gap_parameter = 0.05
+#end physics
 ```
 
-The actual section name and schema version must be selected in the srcSEP3D
+The actual block name and schema version must be selected in the srcSEP3D
 configuration contract before implementation. The application parser should
 retain file/line information, pass exact key/value text to
 `BuildConfiguration`, and surface its typed status. It must not pre-parse

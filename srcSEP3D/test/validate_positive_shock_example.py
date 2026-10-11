@@ -311,8 +311,10 @@ def replace_once(text: str, old: str, new: str) -> str:
 def make_deck(run_root: pathlib.Path, cadence: int) -> pathlib.Path:
     products = run_root / "products"
     text = DECK.read_text()
-    text = replace_once(text, "model_asset = positive_1au.event",
-                        f"model_asset = {EVENT}")
+    # The relocated deck includes the event file by absolute path; the event's
+    # own relative assets still resolve beside the event file.
+    text = replace_once(text, '#include "positive_1au.event"',
+                        f'#include "{EVENT}"')
     text = replace_once(text, "cadence_steps = 60",
                         f"cadence_steps = {cadence}")
     text = replace_once(text,

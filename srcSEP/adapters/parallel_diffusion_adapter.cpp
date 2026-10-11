@@ -46,12 +46,12 @@ Status Configure(bool librarySelected, const std::string& moverName,
   if (!selected) return Status::Ok();
   if (initialization == NULL)
     return Unsupported("--spatial-diffusion-provider parallel-diffusion-library "
-                       "requires --input with a schema-4 [parallel_diffusion] "
-                       "section");
+                       "requires an input file with a physics: "
+                       "parallel_diffusion block");
   if (!sectionPresent)
     return Unsupported("--spatial-diffusion-provider parallel-diffusion-library "
-                       "requires a [parallel_diffusion] section in the --input "
-                       "file (run.schema_version=4)");
+                       "requires a physics: parallel_diffusion block in the "
+                       "input file");
   // The registry's ValidateMoverCompatibility already enforces this for CLI
   // input; repeat it at the installation boundary for non-CLI callers.
   if (moverName != "parker")

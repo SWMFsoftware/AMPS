@@ -15,7 +15,8 @@ is SKIP; corrupt evidence is ERROR; a valid scientific disagreement is FAIL.
 Synthetic fixtures are never an observational PASS.
 
 The native propagation control is implemented for schema 4. The parser accepts
-`run.intent=shock-propagation`, requires `source.enabled=false`, population
+`application.sep3d.intent=shock-propagation`, requires
+`source.shock.enabled=false`, population
 control off and a fresh run, and rejects incomplete launch-to-budget temporal
 coverage. The canonical provider evaluates its physical front without building
 injection patches. The normal AMPS step still executes; rank-zero telemetry

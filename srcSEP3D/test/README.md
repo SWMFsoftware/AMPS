@@ -13,7 +13,8 @@ test), `test/run_parallel_diffusion_mover_tests.py --all`, the reduced
 shock-front runner and positive 1-AU qualification, the shock-front viewer
 tests, the shared `sep_corona_swcme` tests (run with `make -i` so every test
 binary runs; BG3D-4 is still UNQUALIFIED and its FAIL is expected evidence) and
-`sep_coronal_cme` tests, and the orchestrator self-test. `--quick` skips the
+`sep_coronal_cme` tests, the generic input-reader test (`amps-input`:
+`make -C src/general/input test`), and the orchestrator self-test. `--quick` skips the
 long steps. MPI rank counts default to those in `LOG.md` (`--ranks`,
 `--ranks-large`, or `SEP3D_TEST_RANKS` / `SEP3D_TEST_RANKS_LARGE`). It replaces
 whatever application `build/` held before. The script is a thin wrapper around
@@ -226,16 +227,27 @@ or misspelled selection from exiting successfully.
 
 ### Reduced shock-front native gates
 
-The shared-input parser and derived-numerics unit gates are:
+The unified-input and derived-numerics unit gates are:
 
 ```bash
 make -C srcSEP3D -j16 test/stage1
-srcSEP3D/test/stage1 --test CFG3D13 --test CFG3D14 --test CFG3D15 --test CFG3D16 --test CFG3D17
+(cd srcSEP3D && ./test/stage1 --test CFG3D13 --test CFG3D14 --test CFG3D15 --test CFG3D16 --test CFG3D17 --test CFG3D18)
+(cd srcSEP3D && ./test/stage1 --test-group CFG3D)   # all CFG3D01-CFG3D18
 make -C src/models/sep_corona_swcme -j16 shock-front-test
 ```
 
-`CFG3D13` covers the global section/include/comment/continuation transaction
-and required/no-default inputs. `CFG3D14` covers the exact mesh-CFL equation,
+`CFG3D13` covers the generic AMPS runtime input of `src/INPUT_FILE.md` for
+reduced-front injection: `#begin`/`#end` blocks, `#include` resolved relative
+to the including file (including the maintained
+`examples/application-input/sep3d.in` and a parser-only `physics: shock_front`
+block), `!` comments and `\` continuation, the derived particle-numerics keys
+(`run.time_step_mode = derived-from-mesh`, `source.shock.normalization =
+accepted-shock-incident-flux`, ...), the three CLI spellings (`-input FILE`,
+its exact synonym `--input FILE`, and no argument selecting `./amps.in`), one
+immutable configuration replacement before mesh creation, and `file:line`
+diagnostics for malformed input, include cycles, a missing required
+`source.shock.normalization_radius_m`, and a forbidden `run.time_step_s` in
+derived mode. `CFG3D14` covers the exact mesh-CFL equation,
 upward observer-cadence alignment, species-specific weight equation and
 unknown-species failure. `CFG3D15` parses the maintained example, resolves the
 real checksummed magnetic asset, constructs the actual adapter/provider and
@@ -248,12 +260,23 @@ times, rate-weighted face choice, square-root barycentric positions,
 relativistic energy-to-momentum sampling, fixed and compression-derived
 phase-space slopes, statistical-count convergence, and the reserved
 importance-weight mode's explicit failure.
-`CFG3D17` covers the required schema-5 `run.particle_mover` family selector,
-its consistency with the concrete transport flavor, `[parallel_diffusion]`
-parsing, model-specific key
+`CFG3D17` covers the `parallel-diffusion-library` spatial selector of
+`application.sep.transport` (the PIC mover family is derived from
+`application.sep.transport`; the former schema-5 `particle_mover` key is
+retired), `physics: parallel_diffusion` block parsing, model-specific key
 validation, immutable model and parameter identity, Runtime publication of the
 active function, Parker-only ownership, and typed rejection of unavailable
 turbulence/nucleon inputs.
+`CFG3D18` ("Shared SEP vocabulary") checks the shared content-schema-6 table
+(`src/models/sep_common/sep_input_layout.h`): its `physics: swcme` 3-D
+geometry keys agree with `swcme::input3d::detail::geometry_keys()`, a srcSEP
+deck stops with a typed "... is a srcSEP setting that is not supported by
+srcSEP3D" error, every srcSEP3D `run`/`output`/`observer` table key is
+understood by the parser, and every maintained example deck parses.  Its fixtures are paths relative to
+`srcSEP3D/` (including `../srcSEP/examples/sep_parker_mesh.in`), so run the
+binary from that directory.  Status (2026-10-11): the complete portable
+stage-1 catalog passes 154/154; full native regressions of the schema-6 decks
+are pending.
 
 Run the entire selected reduced-profile campaign through one orchestrator:
 
@@ -307,8 +330,9 @@ omitted native ID as SKIP; it cannot produce the 93-PASS complete result.
 
 The restart gate is not the dependency-light shared-provider serialization
 test.  The runner generates one evidence-local `restart-smoke.in` whose
-`[output] checkpoint_cadence_steps = 5` and whose `[restart] output_path =
-restart.chk`.  Every leg uses those same input bytes.  It then performs:
+`output.checkpoint_cadence_steps = 5` and whose `run.restart.output_path =
+restart.chk` (the `output` block and the `run` / `restart` block of the
+generic input format).  Every leg uses those same input bytes.  It then performs:
 
 1. an uninterrupted four-rank run from tick 0 through tick 10;
 2. a four-rank run through tick 5, which writes an actual AMPS checkpoint;
@@ -447,12 +471,12 @@ The runner adds
 | `UTIL` | `UTIL02` | byte-exact shared-kernel reference record |
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
 | `R3D` | `R3D01`–`R3D09` | mover hook, requested-time loop, snapshot transaction, tick/events, source, observers, restart, canonical initialization source, finite empty-cell output |
-| `CFG3D` | `CFG3D01`–`CFG3D17` | schema/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, finite-line/schema-3 initialization, complete compiled AMPS species binding, turbulence selection, CME/Parker linkage, schema-4 mover/coefficient and fixed/local source choices, active-corridor connectivity, corner geometry, shared application-section parsing, global CFL/weight normalization, real-provider preflight, constant-weight shock-surface sampling, and the schema-5 parallel-diffusion binding |
+| `CFG3D` | `CFG3D01`–`CFG3D18` | schema-6 input/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, required finite field line and SWCME initialization with the D4 Parker derivation, complete compiled AMPS species binding, turbulence selection, CME/Parker linkage, mover/coefficient and fixed/local source choices, active-corridor connectivity, corner geometry, unified generic runtime-input parsing, global CFL/weight normalization, real-provider preflight, constant-weight shock-surface sampling, the shared parallel-diffusion binding, and the shared SEP vocabulary |
 | `MSH3D` | `MSH3D01`–`MSH3D15` | resolution, exact Parker geometry, balance, octree budget/ownership, presets, gradients, finite line, initialization Tecplot output, conservative active-corridor classification, hole-free AMR topology, and fixed solar-boundary geometry |
 | `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
 | `SNAP3D` | `SNAP3D01`–`SNAP3D08` | snapshot completeness, coupling conversion, atomicity, interpolation, batch/frame policy |
 | `TUR3D` | `TUR3D01`–`TUR3D06` | spectrum, AWSoM convention, resonance, missing-data policy, selectable spectral/amplitude closures, and mandatory Tecplot energy |
-| `COEF3D` | `COEF3D01`–`COEF3D08` | conversion/shared identity, tensor assembly, Itô drift, rejection, field-aligned gradient stencil, selected-model isolation, and the schema-5 shared-library bridge |
+| `COEF3D` | `COEF3D01`–`COEF3D08` | conversion/shared identity, tensor assembly, Itô drift, rejection, field-aligned gradient stencil, selected-model isolation, and the shared parallel-diffusion library bridge |
 | `PRK3D` | `PRK3D01`–`PRK3D08` | Parker moments, characteristics, PDE/first passage, and named limits |
 | `FTE3D` | `FTE3D01`–`FTE3D09` | focused streaming, focusing, pitch diffusion/boundaries, event-driven scattering, frame-energy invariants, momentum, and strong-scattering limit |
 | `POP3D` | `POP3D01` | relativistic three-to-two weight, momentum, total-energy, and centroid conservation |
@@ -819,7 +843,7 @@ python3 test/run_tests.py --suite r2 --rebuild \
 | `R3D05` | physical source number survives rounding/cap, policies are counted, and successive ticks use distinct identities |
 | `R3D06` | moving observer geometry, acceptance/uncertainty metadata, and commit-only accumulator reset are enforced |
 | `R3D07` | schema-2 restart round-trips identities/layout, clocks/events, providers, shock, RNG tuple, ledgers, and sampling state |
-| `R3D08` | canonical schema-3 provider preflights the first valid source surface and allocates the exact per-species, per-step particle count deterministically |
+| `R3D08` | canonical SWCME provider preflights the first valid source surface and allocates the exact per-species, per-step particle count deterministically |
 | `R3D09` | native Tecplot presentation distinguishes invalid background, no completed window, a valid empty particle cell, and an occupied cell without emitting `NaN` |
 
 ```bash
@@ -865,23 +889,24 @@ env MAKEFLAGS="-j16" srcSEP3D/test/run_tests.py --all \
 
 | ID | Acceptance contract |
 |---|---|
-| `CFG3D01` | complete versioned input parses; file and typed construction have one fingerprint; documented CLI, early-error, and dry-run contracts hold |
+| `CFG3D01` | complete schema-6 input parses; the configuration identity is independent of layout and comments; decisions D1–D4 are enforced (retired schema, unsupported srcSEP settings, SWCME-owned Parker and `source.*` keys rejected); documented CLI, early-error, and dry-run contracts hold |
 | `CFG3D02` | output-only changes preserve physics identity; physical changes alter it; invalid shock/source intent fails; SWMF uses the same factory |
 | `CFG3D03` | solar, one-AU, Mars, and explicit radii normalize exactly; invalid observers fail; the source shell may equal but not undercut the photosphere; transport-boundary status respects crossing direction |
 | `CFG3D04` | mesh centerline/tangent and analytic field use one Parker geometry; polarity reverses `B` without moving the tube |
 | `CFG3D05` | composite profiles are monotone, tube width scales from its reference, all memory categories/levels report, and an impossible level cap fails |
-| `CFG3D06` | schema version 2 requires the complete finite Parker line and rejects a source-inconsistent initial point |
+| `CFG3D06` | every file requires the complete finite `mesh` / `field_line` block; a source-inconsistent initial point is rejected |
 | `CFG3D07` | a complete mixed ion/electron table binds, while count mismatch, non-contiguous indices, duplicate symbols, invalid mass, neutral charge, out-of-range observers, and missing fingerprint state fail closed |
-| `CFG3D08` | complete schema-3 SWCME input resolves while a missing canonical field, inconsistent weight, or skipped-step injection fails closed |
+| `CFG3D08` | complete schema-6 SWCME input resolves; the D4 Parker derivation from the SWCME ambient reproduces the former hand-computed B_r (3.585667175612118e-9 T at 20 R_sun, 3.6305743892405979e-9 T at 25 R_sun); a missing canonical field, inconsistent weight, skipped-step injection, competing source normalization, or inconsistent rotation axis fails closed |
 | `CFG3D09` | spectral and amplitude turbulence models parse only with consistent slopes and exactly one active amplitude normalization; Python background remains reserved |
 | `CFG3D10` | `cme-launch-point` resolves the canonical SWCME launch apex and rejects radius/direction mismatches; explicit mode remains independent |
-| `CFG3D11` | schema-4 active corridor/observer connectivity, population hysteresis, fixed/local source spectra, mover/coefficient compatibility, and dry-run output |
+| `CFG3D11` | active corridor/observer connectivity, population hysteresis, fixed/local source spectra, mover/coefficient compatibility, and dry-run output |
 | `CFG3D12` | corner-domain modes, endpoint normalization, photospheric refinement identity, and conflicting controls fail closed |
-| `CFG3D13` | shared sep3d sections, recursive includes, comments, continuations, CLI defaulting, immutable pre-mesh commit, and provenance-rich negative cases |
+| `CFG3D13` | unified generic runtime input: blocks, relative includes and cycles, `!` comments, `\` continuations, derived particle-numerics keys, `-input`/`--input`/no-argument (`./amps.in`) CLI spellings, immutable pre-mesh commit, and `file:line` negative cases |
 | `CFG3D14` | distributed mesh-CFL step, exact upward cadence alignment, per-species normalization weights, and unsupported-species rejection |
-| `CFG3D15` | maintained shared-input example, checksummed magnetic asset, actual reduced provider, and side-effect-free positive accepted-shock normalization |
+| `CFG3D15` | maintained unified-input example (`examples/application-input/amps.in`), checksummed magnetic asset, actual reduced provider, and side-effect-free positive accepted-shock normalization |
 | `CFG3D16` | constant-weight Poisson source, independent accepted-face sum, transactional provider/epoch event-identity rejection, face/position/momentum distributions, containment, count convergence, and explicit rejection of the reserved importance-weight mode |
-| `CFG3D17` | schema-5 section/parser contract, Parker-only ownership, unavailable-state rejection, active-function installation, and model/parameter restart identity |
+| `CFG3D17` | `physics: parallel_diffusion` block/parser contract, Parker-only ownership, unavailable-state rejection, active-function installation, and model/parameter restart identity |
+| `CFG3D18` | shared SEP vocabulary (content schema 6): table versus `swcme::input3d::detail::geometry_keys()`, a srcSEP deck stops with a typed srcSEP3D not-supported error, every srcSEP3D run/output/observer table key is understood, every example deck parses |
 
 ```bash
 python3 test/run_tests.py --suite improvements-c --rebuild \
@@ -1064,7 +1089,7 @@ equations, algorithms, case roles, and evidence schemas.
 | `r0` | R0 source/ABI/production gates plus RUN3D01, LAY01, and BLD01 |
 | `r1` | canonical shared-archive audit, relocated SWCME suite, and frozen common kernels |
 | `r2` | LIFE3D01–LIFE3D04 immutable configuration and lifecycle gates |
-| `improvements-c` | CFG3D01–CFG3D17 production configuration, preflight, finite-line/schema-3 initialization, species/turbulence/source selection, CME linkage, mover/coefficient selection, active-corridor, corner-domain, shared-section parser, derived numerics, provider preflight, source-sampling, and schema-5 parallel-diffusion gates |
+| `improvements-c` | CFG3D01–CFG3D18 production configuration, preflight, finite-line/SWCME initialization, species/turbulence/source selection, CME linkage, mover/coefficient selection, active-corridor, corner-domain, unified-input parser, derived numerics, provider preflight, source-sampling, parallel-diffusion, and shared-vocabulary gates |
 | `improvements-r` | R3D01–R3D09 production runtime integration gates |
 | `improvements-v` | V1D01–05 controlled physics, V2D01 true parity, and V5D01 governance |
 | `phase-m` | MSH3D01–MSH3D15 mesh/storage, finite active-corridor, hole-free topology, fixed photosphere, and initialization-output gates |
@@ -1154,7 +1179,7 @@ invoke that exact linked callback, following the srcSEP pattern.
 
 `CFG3D06`–`CFG3D10`, `TUR3D05`–`TUR3D06`, `MSH3D10`–`MSH3D15`, and `R3D08`–`R3D09` are routine C++ entries
 in the runner manifest.
-`CFG3D06` uses live negative controls for an omitted version-2 key and an
+`CFG3D06` uses live negative controls for an omitted `mesh.field_line` key and an
 initial point inconsistent with the inner sphere. `MSH3D10` constructs the
 configured number of vertices, sums every segment to the requested arc length,
 and translates the origin/probe together to prove the AMR law is not tied to
@@ -1166,7 +1191,8 @@ charge, out-of-range observer selection, and changed weight fingerprint.
 different valid momentum intervals for proton and electron masses. These
 extend the gates; none of the earlier CFG3D/MSH3D thresholds or negative
 controls was relaxed.
-`CFG3D08` exercises complete canonical input and three live schema-3 negative
+`CFG3D08` exercises complete canonical schema-6 input, the D4 Parker
+derivation against the former hand-computed B_r values, and live negative
 controls. `MSH3D11` creates, verifies, and removes a real Tecplot product.
 `MSH3D13` catches any future split between Parker points and tangents;
 `MSH3D14` builds a mixed-level octree and rejects centerline gaps, approximate
@@ -1244,7 +1270,7 @@ scopes. The Stage-13 baseline remains 209 PASS.
 
 ### Source-free shock propagation prerequisites
 
-The standard runner automatically discovers `CME3D03` (schema-4 source-off
+The standard runner automatically discovers `CME3D03` (schema-6 source-off
 parser/factory, temporal-coverage conflicts, radius-stop boundaries and canonical
 DBM versus an independent drag oracle) and `CME3D04` (contiguous telemetry,
 clock/identity/MPI/source-off rejection and explicit close/overwrite behavior).
@@ -1288,7 +1314,7 @@ See [the update guide](../../SWCME_MESH_BACKGROUND_CHANGES.md) for full commands
 
 | Case | Oracle/evidence and prerequisite |
 |---|---|
-| `SWBG3D01` | Real schema-4 parser/factory; reject conflicting acceleration/source modes and a foreign canonical fingerprint |
+| `SWBG3D01` | Real schema-6 parser/factory; reject conflicting acceleration/source modes and a foreign canonical fingerprint |
 | `SWBG3D02` | Exact canonical RH vector/pressure endpoint, declared heating partition and continuous ambient handoff; coupling verification, not an independent MHD solve |
 | `SWBG3D03` | Fixed cell sampled before/after front passage; old snapshot stays immutable while U/B and generation advance |
 | `SWBG3D04` | Smaller independent Cartesian stencil of canonical vectors and exact ambient `divU=2U/r` limit |

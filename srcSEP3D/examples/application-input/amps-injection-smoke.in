@@ -1,4 +1,41 @@
-! Native source-allocation verification fixture.  The production-like launch
-! remains amps.in; this separate file deliberately begins with an already
-! fast front so a two-step test exercises particle creation immediately.
-#include "sep3d-injection-smoke.in"
+! ============================================================================
+! srcSEP3D reduced-front injection: native allocation fixture (two steps)
+! ============================================================================
+! Generic AMPS runtime input (src/INPUT_FILE.md).  This separate fixture starts
+! with an already-formed, constant-speed 1400 km/s front at 50 R_sun (its own
+! model file), so a two-step run exercises particle creation immediately.  It
+! is a verification initial condition, not a coronal launch model, and must
+! not replace amps.in in physical campaigns.
+
+#begin run
+  time_step_mode = derived-from-mesh
+  maximum_particle_speed_m_s = 200000000
+  time_step_margin_factor = 0.30
+  ! Two native steps test callback invocation, owner-only allocation, motion
+  ! through the remainder of each birth step and a changing provider epoch.
+  maximum_time_steps = 2
+  campaign_seed = 1
+
+  #begin restart
+    input_path = none
+    output_path = restart/sep3d.chk
+  #end restart
+#end run
+
+#begin source: shock
+  enabled = true
+  normalization = accepted-shock-incident-flux
+  ! 51 R_sun matches this fixture's deliberately later handoff; its complete
+  ! 45-degree SSE cap is then outside srcSEP3D's fixed 20-R_sun source shell.
+  normalization_radius_m = 35480700000
+  samples_per_step = 1000
+  minimum_energy_j = 1.602176634e-15
+  maximum_energy_j = 1.602176634e-11
+  spectrum_model = local-compression-dsa
+  phase_space_power_index = 0
+  weight_model = constant-statistical-weight
+  maximum_events_per_species_per_step = 1000000
+#end source
+
+#include "sep3d.in"
+#include "reduced-shock-surface-injection-smoke.in"

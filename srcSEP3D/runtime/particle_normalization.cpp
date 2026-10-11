@@ -22,63 +22,76 @@ bool Near(double value,double reference,double relative=1.0e-5) {
       std::abs(value-reference)<=relative*std::abs(reference);
 }
 
+enum class AmbientPopulation { Electron, Proton, Alpha };
+
+// Unified atomic mass unit (CODATA 2018), [kg].  AMPS species tables give ion
+// masses as A*u (H_PLUS = 1 u = 1.66054e-27 kg), whereas the ambient EOS
+// uses the CODATA particle masses (m_p = 1.007276 u, m_alpha = 4.001506 u).
+constexpr double kAtomicMassUnitKg = 1.66053906660e-27;
+
+// Map one compiled AMPS species onto a population of the reduced ambient
+// composition (electrons, protons, alpha particles).
+//
+// Identification uses mass and signed charge, never the site-dependent symbol.
+//  * Electron: m within 1e-5 (relative) of m_e and q = -e.
+//  * Ions: the charge number Z = q/e must be a positive integer (relative
+//    tolerance 1e-5 absorbs constant-table rounding) and the mass number
+//    A = round(m/u) must satisfy |m - A u| <= 0.01 A u.  The 1 % window accepts
+//    both the CODATA particle mass and the AMPS A*u convention (they differ by
+//    0.73 % for the proton and 0.04 % for the alpha particle) but cannot merge
+//    nuclides, whose masses differ by at least ~1 u (>= 25 % for A <= 4).
+//    (A, Z) = (1, 1) is the proton population and (4, 2) the alpha
+//    population.
+// Any other species (for example O+, a deuteron or 3He++) has no population in
+// the ambient model and is a typed ConfigurationConflict; no rate is borrowed.
+Core::Status IdentifyPopulation(const CompiledSpeciesRecord& species,
+                                AmbientPopulation* population) {
+  using SEP::CoronalCME::Constants::kElectronMassKg;
+  using SEP::CoronalCME::Constants::kElementaryChargeC;
+  if(population==nullptr)return Invalid("ambient-population output is null");
+  if(Near(species.massKg,kElectronMassKg)&&
+      Near(species.chargeC,-kElementaryChargeC)) {
+    *population=AmbientPopulation::Electron;
+    return Core::Status::OK();
+  }
+  const double z=species.chargeC/kElementaryChargeC;
+  const double zRounded=std::round(z);
+  const double a=species.massKg/kAtomicMassUnitKg;
+  const double aRounded=std::round(a);
+  const bool integerCharge=std::isfinite(z)&&zRounded>=1&&Near(z,zRounded);
+  const bool nuclideMass=std::isfinite(a)&&aRounded>=1&&
+      std::abs(a-aRounded)<=0.01*aRounded;
+  if(integerCharge&&nuclideMass&&aRounded==1&&zRounded==1) {
+    *population=AmbientPopulation::Proton;
+    return Core::Status::OK();
+  }
+  if(integerCharge&&nuclideMass&&aRounded==4&&zRounded==2) {
+    *population=AmbientPopulation::Alpha;
+    return Core::Status::OK();
+  }
+  std::ostringstream message;
+  message << "compiled species '" << species.symbol << "' (mass="
+          << species.massKg << " kg, charge=" << species.chargeC
+          << " C) has no population in the reduced ambient source model "
+             "(supported: electron, proton A=1 Z=1, alpha A=4 Z=2)";
+  return Core::Status(Core::StatusCode::ConfigurationConflict,message.str());
+}
+
+// Incident rate [s^-1] of the population that a compiled species represents.
 Core::Status SpeciesRate(
     const CompiledSpeciesRecord& species,
     const SEP::CoronaSwcme::ShockFront::IncidentParticleFlux& flux,
     double* rate) {
-  using SEP::CoronalCME::Constants::kAlphaMassKg;
-  using SEP::CoronalCME::Constants::kElectronMassKg;
-  using SEP::CoronalCME::Constants::kElementaryChargeC;
-  using SEP::CoronalCME::Constants::kProtonMassKg;
   if(rate==nullptr)return Invalid("species-rate output is null");
-
-  // Mass and signed charge, rather than a site-dependent chemical spelling,
-  // identify the three populations present in the selected ambient EOS.
-  // Tight relative tolerances accommodate harmless constant-table rounding
-  // but do not merge isotopes or charge states.
-  if(Near(species.massKg,kElectronMassKg)&&
-      Near(species.chargeC,-kElementaryChargeC))
-    *rate=flux.electronRatePerS;
-  else if(Near(species.massKg,kProtonMassKg)&&
-      Near(species.chargeC,kElementaryChargeC))
-    *rate=flux.protonRatePerS;
-  else if(Near(species.massKg,kAlphaMassKg)&&
-      Near(species.chargeC,2*kElementaryChargeC))
-    *rate=flux.alphaRatePerS;
-  else {
-    std::ostringstream message;
-    message << "compiled species '" << species.symbol << "' (mass="
-            << species.massKg << " kg, charge=" << species.chargeC
-            << " C) has no population in the reduced ambient source model";
-    return Core::Status(Core::StatusCode::ConfigurationConflict,message.str());
-  }
+  AmbientPopulation population=AmbientPopulation::Electron;
+  Core::Status status=IdentifyPopulation(species,&population);
+  if(!status.ok())return status;
+  *rate=population==AmbientPopulation::Electron?flux.electronRatePerS:
+      population==AmbientPopulation::Proton?flux.protonRatePerS:
+      flux.alphaRatePerS;
   if(!std::isfinite(*rate)||*rate<=0)
     return Invalid("compiled species '"+species.symbol+
         "' has a zero or invalid incident source rate");
-  return Core::Status::OK();
-}
-
-enum class AmbientPopulation { Electron, Proton, Alpha };
-
-Core::Status IdentifyPopulation(const CompiledSpeciesRecord& species,
-                                AmbientPopulation* population) {
-  using SEP::CoronalCME::Constants::kAlphaMassKg;
-  using SEP::CoronalCME::Constants::kElectronMassKg;
-  using SEP::CoronalCME::Constants::kElementaryChargeC;
-  using SEP::CoronalCME::Constants::kProtonMassKg;
-  if(population==nullptr)return Invalid("ambient-population output is null");
-  if(Near(species.massKg,kElectronMassKg)&&
-      Near(species.chargeC,-kElementaryChargeC))
-    *population=AmbientPopulation::Electron;
-  else if(Near(species.massKg,kProtonMassKg)&&
-      Near(species.chargeC,kElementaryChargeC))
-    *population=AmbientPopulation::Proton;
-  else if(Near(species.massKg,kAlphaMassKg)&&
-      Near(species.chargeC,2*kElementaryChargeC))
-    *population=AmbientPopulation::Alpha;
-  else return Core::Status(Core::StatusCode::ConfigurationConflict,
-      "compiled species '"+species.symbol+
-      "' has no population in the reduced ambient source model");
   return Core::Status::OK();
 }
 

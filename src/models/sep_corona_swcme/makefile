@@ -2,8 +2,11 @@ CXX ?= g++
 AR ?= ar
 PYTHON ?= python3
 CXXFLAGS ?= -O2 -std=c++17 -Wall -Wextra -Wpedantic -Werror
+# ../../general/input supplies the header-only generic AMPS runtime-input
+# reader (amps_input.h; grammar in src/INPUT_FILE.md).  It has no PIC, MPI or
+# application dependency, so the dependency-light layering is preserved.
 CPPFLAGS := -Iinclude -Ishock_front -I../sep_coronal_cme/include \
-	-I../sep_coronal_cme/src -I../sep_common
+	-I../sep_coronal_cme/src -I../sep_common -I../../general/input
 BUILD := build
 SOURCES := $(wildcard src/*.cpp)
 SHOCK_FRONT_SOURCES := $(wildcard shock_front/*.cpp)

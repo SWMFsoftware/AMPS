@@ -6,7 +6,9 @@ PYTHON ?= python3
 # The shared model must remain independently compilable.  An AMPS include
 # path here would defeat ARCHSCCM01 and obscure an accidental dependency.
 CXXFLAGS ?= -O2 -std=c++17 -Wall -Wextra -Wpedantic -Werror
-CPPFLAGS := -Iinclude -I../sep_common -Isrc
+# ../../general/input: header-only generic AMPS runtime-input reader
+# (amps_input.h, src/INPUT_FILE.md); no PIC/MPI/application dependency.
+CPPFLAGS := -Iinclude -I../sep_common -Isrc -I../../general/input
 BUILD := build
 LIB_SOURCES := $(wildcard src/*.cpp)
 LIB_OBJECTS := $(patsubst src/%.cpp,$(BUILD)/%.o,$(LIB_SOURCES))

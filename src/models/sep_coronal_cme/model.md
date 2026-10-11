@@ -321,7 +321,7 @@ observer calculation. Latitude-dependent rotation is an analytic-verification
 branch until a time-dependent 3-D background and closed-corona provider are
 qualified; it is not a production shortcut.
 
-`[solar_rotation]` is the sole configuration authority for `Omega_F`, its
+`solar_rotation` is the sole configuration authority for `Omega_F`, its
 convention, and any synodic-conversion asset. The closed-plasma potential,
 open-tube frame, Parker winding, observer transformations, and field-line
 export receive the same resolved sidereal value from the immutable prepared
@@ -726,7 +726,7 @@ be consumed as shock input.
 
 For the first release, a static closed provider is defined in the same rigidly
 corotating frame with the resolved angular velocity `Omega_F` owned by
-`[solar_rotation]`. The closed provider consumes that immutable value read-only;
+`solar_rotation`. The closed provider consumes that immutable value read-only;
 there is no `Omega_c` input or second physical authority. Its effective
 potential is
 
@@ -3380,11 +3380,11 @@ A production source is defined for every compiled AMPS species by a stable
 semantic ID plus a verified application-local compiled slot, never by assuming
 that index zero is a proton. After AMPS publishes `PIC::nTotalSpecies`, the
 adapter reads `GetChemSymbol`, mass, and signed charge for each slot and checks
-them against exactly one `[species.ID]` record. Distinct compiled populations
+them against exactly one `species.ID` record. Distinct compiled populations
 may share a chemical symbol, but their stable IDs and compiled slots remain
 different; slot numbers are never exchanged between independently built
 applications. A source-enabled production run then requires exactly one
-`[source_species.ID]` record with the same suffix for every `[species.ID]`.
+`source_species.ID` record with the same suffix for every `species.ID`.
 No compiled entry may be silently skipped. The schema-5 SEP movers transport
 charged particles, so a source-enabled run rejects every compiled neutral
 species before allocation; `[species.ID].transport_role=initialization-only`
@@ -5270,629 +5270,682 @@ must match the distribution definition used by the mover and sampler.
 
 ## 14. Proposed configuration contract
 
-Outside the separately owned raw `[swcme]` section, every dimensional value is
+Outside the separately owned raw `swcme` block, every dimensional value is
 a bare number in the fixed unit encoded by the key suffix. SI suffixes are the
 default (`_m`, `_m_per_s`, `_tesla`, `_rad`, `_j`); an explicitly named
 domain unit such as `_ev` is legal only where the schema defines it. For
 example, the production parser accepts `interface_radius_m`,
 `initial_rate_m_per_s`, and `lateral_axis_tilt_rad`; values such as `2.5 Rs`, `500 km/s`,
 `3 deg`, and `5/3` are invalid.
-The blocks below specify the schema shape, not a runnable deck: `REQUIRED`,
+The listing below specifies the schema shape, not a runnable deck: `REQUIRED`,
 `REQUIRED_OR_ZERO`, and alternatives separated by `|` are documentation
-metasyntax and must be replaced by one legal literal value.
+metasyntax and must be replaced by one legal literal value. The listing is
+written in the deck syntax described next; every block in it is one schema
+section, and an identified section is shown with the literal instance name
+`ID` (for example `#begin observer: ID`).
 
-The raw `[swcme]` block belongs only to the existing SWCME authority and is
+The raw `swcme` block belongs only to the existing SWCME authority and is
 absent when `background.authority=analytic-coronal-composite` and
 `shock.authority=standalone-mhd-ellipsoid`; mixing it into this stand-alone
 profile is a configuration error.
 
-Schemas 1--4 retain their exact parser behavior, enum meanings, and resolved
-fingerprints. Schema-5 fields are rejected in older schemas. Parsing is
-two-pass: first lex sections and assignments and obtain `run.schema_version`;
-then invoke the version-specific section, key, inactive-sentinel, and
-required-field tables. Human-authored schema-5 decks supply every physical
-choice explicitly. Inactive numeric branches use zero and inactive string/file
-branches use `none`, unless the selector forbids the section entirely.
+**Input syntax (implemented).** The schema-5 deck is written in the generic
+AMPS runtime input format (`src/INPUT_FILE.md`, Sections 3, 4 and 7): `!`
+comments (there is no `#` comment), `\` continuation, `#include`, and nested
+`#begin KIND[: NAME]` ... `#end KIND` blocks, read by the header-only
+`src/general/input/amps_input.h`. The complete model configuration is exactly
+one `#begin physics: sep_coronal_cme` ... `#end physics` block. Its child
+blocks are the schema sections, named exactly as in the section registry:
+`#begin pfss` is section `pfss`; a dotted section name is written as nested
+blocks (`#begin shock_geometry` containing `#begin center_distance` is section
+`shock_geometry.center_distance`); and an identified `X.ID` section is written
+`#begin X: ID` (for example `#begin observer: earth` is section
+`observer.earth`). Assignments directly inside the model block, any other
+top-level block, and dotted keys are rejected by `ParseConfiguration`
+(`src/configuration_parser.cpp`); diagnostics carry the physical line. In the
+text below a section is named by its dot-joined block path (`pfss`,
+`shock_geometry.center_distance`, `observer.ID`) and a key by
+`section.key`; the retired INI deck syntax (`[section]` headers, `#`
+comments) is rejected. A minimal runnable skeleton of the `run`,
+`shock_geometry.center_distance` and `observer.ID` sections is:
 
-```ini
-[run]
-schema_version = 5
-intent = production-shock-injection | analytic-verification
-transport = ballistic-verification | parker | focused-pitch-angle-diffusion | focused-discrete-scattering
-transport_frame = inertial | rigid-corotating
-start_time_s = REQUIRED
-end_time_s = REQUIRED
-maximum_steps = REQUIRED_OR_ZERO
-campaign_seed_u64 = REQUIRED
-random_stream_layout = keyed-v1
+```text
+#begin physics: sep_coronal_cme
+  #begin run
+    schema_version = 5
+    ! ... remaining run keys ...
+  #end run
+  #begin shock_geometry
+    model = triaxial-ellipsoid
+    ! ... remaining shock_geometry keys ...
+    #begin center_distance          ! section shock_geometry.center_distance
+      initial_value_m = 0
+      ! ...
+    #end center_distance
+  #end shock_geometry
+  #begin observer: earth            ! section observer.earth (observer.ID)
+    ! ... observer keys ...
+  #end observer
+#end physics
+```
 
-[domain]
-solar_radius_m = REQUIRED
-qualified_source_inner_radius_m = REQUIRED
-outer_radius_m = REQUIRED
-inner_boundary = solar-sphere-absorb
-outer_boundary = escape
-outer_boundary_geometry = sun-centered-sphere
-coordinate_frame = REQUIRED
-epoch_utc = REQUIRED
+The Stage-0 fixture `test/data/schema5_stage0.in` (regenerated by
+`tools/generate_stage0_fixture.py`) is a complete analytic-verification deck in
+this syntax for the sections the Stage-0 parser tests exercise.
 
-[mesh]
-model = amps-cartesian-amr
-domain_min_x_m = REQUIRED
-domain_min_y_m = REQUIRED
-domain_min_z_m = REQUIRED
-domain_max_x_m = REQUIRED
-domain_max_y_m = REQUIRED
-domain_max_z_m = REQUIRED
-global_target_cell_size_m = REQUIRED
-solar_surface_target_cell_size_m = REQUIRED
-solar_refinement_decay_length_m = REQUIRED
-tube_centerline_source = none | field-line-requests
-tube_target_cell_size_m = REQUIRED_OR_ZERO
-tube_transverse_refinement_decay_length_m = REQUIRED_OR_ZERO
-maximum_refinement_level = REQUIRED
+Only `run.schema_version = 5` is accepted. The former two-pass, version-
+dispatched "legacy pass-through" of schema-1--4 decks was removed: schemas
+1--4 were `srcSEP3D` application decks, and `srcSEP3D` now reads its own
+application input itself. Within schema 5, the parser applies the section,
+key, inactive-sentinel, and required-field tables. Human-authored schema-5
+decks supply every physical choice explicitly. Inactive numeric branches use
+zero and inactive string/file branches use `none`, unless the selector forbids
+the section entirely.
 
-[particle_numerics]
-time_step_model = fixed-upper-bound | adaptive-local
-maximum_time_step_s = REQUIRED
-spatial_accuracy_factor = REQUIRED
-pitch_angle_accuracy_factor = REQUIRED_OR_ZERO
-pitch_endpoint_regularization = REQUIRED_OR_ZERO
-shock_motion_accuracy_factor = REQUIRED
-species_binding = stable-id-plus-compiled-slot-verified
-species_numerics = explicit-all-compiled
+```text
+! Normative schema-5 grammar (read by tools/generate_schema_registry.py).
+#begin physics: sep_coronal_cme
+  #begin run
+    schema_version = 5
+    intent = production-shock-injection | analytic-verification
+    transport = ballistic-verification | parker | focused-pitch-angle-diffusion | focused-discrete-scattering
+    transport_frame = inertial | rigid-corotating
+    start_time_s = REQUIRED
+    end_time_s = REQUIRED
+    maximum_steps = REQUIRED_OR_ZERO
+    campaign_seed_u64 = REQUIRED
+    random_stream_layout = keyed-v1
+  #end run
+  #begin domain
+    solar_radius_m = REQUIRED
+    qualified_source_inner_radius_m = REQUIRED
+    outer_radius_m = REQUIRED
+    inner_boundary = solar-sphere-absorb
+    outer_boundary = escape
+    outer_boundary_geometry = sun-centered-sphere
+    coordinate_frame = REQUIRED
+    epoch_utc = REQUIRED
+  #end domain
+  #begin mesh
+    model = amps-cartesian-amr
+    domain_min_x_m = REQUIRED
+    domain_min_y_m = REQUIRED
+    domain_min_z_m = REQUIRED
+    domain_max_x_m = REQUIRED
+    domain_max_y_m = REQUIRED
+    domain_max_z_m = REQUIRED
+    global_target_cell_size_m = REQUIRED
+    solar_surface_target_cell_size_m = REQUIRED
+    solar_refinement_decay_length_m = REQUIRED
+    tube_centerline_source = none | field-line-requests
+    tube_target_cell_size_m = REQUIRED_OR_ZERO
+    tube_transverse_refinement_decay_length_m = REQUIRED_OR_ZERO
+    maximum_refinement_level = REQUIRED
+  #end mesh
+  #begin particle_numerics
+    time_step_model = fixed-upper-bound | adaptive-local
+    maximum_time_step_s = REQUIRED
+    spatial_accuracy_factor = REQUIRED
+    pitch_angle_accuracy_factor = REQUIRED_OR_ZERO
+    pitch_endpoint_regularization = REQUIRED_OR_ZERO
+    shock_motion_accuracy_factor = REQUIRED
+    species_binding = stable-id-plus-compiled-slot-verified
+    species_numerics = explicit-all-compiled
+  #end particle_numerics
+  #begin species: ID
+    compiled_slot = REQUIRED
+    chemical_symbol = REQUIRED
+    expected_mass_kg = REQUIRED
+    expected_charge_c = REQUIRED
+    mass_number = REQUIRED_OR_ZERO
+    transport_role = charged-sep | initialization-only
+    base_macroparticle_weight = REQUIRED
+    minimum_population = REQUIRED_OR_ZERO
+    target_population = REQUIRED_OR_ZERO
+    maximum_population = REQUIRED_OR_ZERO
+  #end species
+  #begin population_control
+    model = disabled | amps-conservative-split-merge
+    check_cadence_steps = REQUIRED_OR_ZERO
+    minimum_total_particles = REQUIRED_OR_ZERO
+    target_total_particles = REQUIRED_OR_ZERO
+    maximum_total_particles = REQUIRED_OR_ZERO
+    minimum_particles_per_active_block = REQUIRED_OR_ZERO
+    maximum_particles_per_active_block = REQUIRED_OR_ZERO
+    maximum_weight_ratio_per_merge_group = REQUIRED_OR_ZERO
+    conservation = species-weight-momentum-relativistic-energy
+  #end population_control
+  #begin active_corridor
+    model = full-domain | swept-field-line-tube
+    line_ids = none | REQUIRED
+    distance_metric = none | minimum-euclidean-to-polyline
+    width_profile = none | constant | tabulated-by-line-coordinate
+    constant_half_width_m = REQUIRED_OR_ZERO
+    width_profile_file = none | REQUIRED
+    geometric_buffer_m = REQUIRED_OR_ZERO
+    block_rule = full-domain | intersects-swept-tube-bounds
+    connectivity_closure = none | sun-to-source-to-observer-face-connected
+    amr_closure = none | ancestors-children-and-ghost-neighbors
+    lateral_particle_policy = not-applicable | escape
+  #end active_corridor
+  #begin background
+    authority = analytic-coronal-composite
+  #end background
+  #begin solar_rotation
+    model = rigid | latitude-dependent-verification
+    rigid_input_rotation_rate_rad_per_s = REQUIRED_OR_ZERO
+    input_rate_convention = sidereal | synodic
+    synodic_conversion_ephemeris_file = none | REQUIRED
+    differential_rotation_coefficients_file = none | REQUIRED
+  #end solar_rotation
+  #begin pfss
+    lower_boundary = analytic-harmonics | magnetogram-coefficients
+    outer_boundary_radius_m = REQUIRED
+    maximum_degree = REQUIRED
+    harmonic_normalization = orthonormal-complex
+    coefficients_file = REQUIRED
+    flux_balance = reject | remove-monopole
+    spectral_filter = none | heat-kernel
+    apodization_degree = REQUIRED_OR_ZERO
+    input_grid = coefficient-file | sine-latitude | uniform-latitude
+    quadrature = coefficient-file | cell-area | gauss-legendre
+    cache_radial_points = REQUIRED
+    cache_colatitude_points = REQUIRED
+    cache_longitude_points = REQUIRED
+    cache_interpolation_order = REQUIRED
+  #end pfss
+  #begin open_flux_calibration
+    model = compare-only | magnetogram-scale | not-applicable-verification
+    reference_definition = rotation-mean-unsigned-radial-field | none
+    construction_reference_asset_file = none | REQUIRED
+    construction_data_use_role = none | construction
+    construction_folding_correction_asset_file = none | REQUIRED
+    construction_reference_radius_handling = none | sample-position | pre-normalized-to-comparison-radius
+    construction_comparison_radius_m = REQUIRED_OR_ZERO
+    qualification_reference_asset_file = none | REQUIRED
+    qualification_data_use_role = none | qualification
+    qualification_folding_correction_asset_file = none | REQUIRED
+    qualification_reference_radius_handling = none | sample-position | pre-normalized-to-comparison-radius
+    qualification_comparison_radius_m = REQUIRED_OR_ZERO
+    nested_sphere_radii_m = REQUIRED | none
+    maximum_signed_to_unsigned_flux_fraction = REQUIRED_OR_ZERO
+    maximum_nested_unsigned_flux_spread_fraction = REQUIRED_OR_ZERO
+    maximum_angular_quadrature_relative_error = REQUIRED_OR_ZERO
+    maximum_qualification_relative_mismatch = REQUIRED_OR_ZERO
+    scale_factor_minimum = REQUIRED_OR_ZERO
+    scale_factor_maximum = REQUIRED_OR_ZERO
+    apply_stage = photospheric-coefficients-before-pfss | none
+    radius_ensemble_file = none | REQUIRED
+    radius_ensemble_member_id = none | REQUIRED
+    radius_ensemble_selection_role = none | preregistered-topology-and-open-flux
+    radius_ensemble_prior_weight = REQUIRED_OR_ZERO
+  #end open_flux_calibration
+  #begin formation_height_validation
+    model = none | preregistered-cartesian-candidate-product
+    candidate_product_asset_file = none | REQUIRED
+    product_axes = none | magnetogram-scale-radii-wind-front
+    event_formation_constraint_asset_file = none | REQUIRED
+    event_formation_constraint_representation = none | frequency-time-likelihood | preinferred-height-time-likelihood
+    event_formation_data_use_role = none | qualification | withheld-validation
+    density_conditioning = none | per-wind-density-member
+    joint_comparison = none | d6-topology-coronal-holes-d1-d2-typeii-euv
+    candidate_weighting = none | preregistered-joint-likelihood
+    sep_output_selection = forbidden
+  #end formation_height_validation
+  #begin current_sheet
+    model = finite-shell-schatten | none
+    interface_coupling = direct-pfss-scs | overlap-minimized | not-applicable
+    interface_radius_m = REQUIRED_OR_ZERO
+    outer_radial_radius_m = REQUIRED_OR_ZERO
+    sector_mapping = field-line-traced | none
+    maximum_degree = REQUIRED_OR_ZERO
+    unsigned_boundary_fit = nonnegative-constrained | none
+    fit_quadrature = cell-area | gauss-legendre | none
+    fit_angular_oversampling = REQUIRED_OR_ZERO
+    maximum_normal_field_error_tesla = REQUIRED_OR_ZERO
+    maximum_unsigned_flux_relative_error = REQUIRED_OR_ZERO
+    maximum_negative_area_fraction = 0
+    radialization_gate = outer-zonal-power-and-latitude-flatness | diagnostic-only | not-applicable
+    maximum_outer_zonal_nonmonopole_power_fraction = REQUIRED_OR_ZERO
+    latitude_diagnostic_radii_m = REQUIRED | none
+    latitude_minimum_unmasked_longitude_fraction = REQUIRED_OR_ZERO
+    maximum_unsigned_radial_flux_rms_fraction = REQUIRED_OR_ZERO
+    maximum_unsigned_radial_flux_p95_to_p05_ratio = REQUIRED_OR_ZERO
+    interface_particle_rule = not-applicable | reject-unverified | resolved-transition
+    resolved_transition_width_m = REQUIRED_OR_ZERO
+    resolved_transition_profile = none | quintic-vector-potential
+    transition_vector_potential = none | signed-mie
+    transition_vector_potential_gauge = none | zero-mean-mie-v1
+    transition_hcs_policy = not-applicable | exclude-clearance
+    transition_hcs_clearance_m = REQUIRED_OR_ZERO
+    maximum_transition_normal_trace_jump_fraction = REQUIRED_OR_ZERO
+    transition_minimum_field_tesla = REQUIRED_OR_ZERO
+    transition_jump_support_fraction = REQUIRED_OR_ZERO
+    transition_clearance_convergence_asset_file = none | REQUIRED
+    maximum_verified_kink_angle_rad = REQUIRED_OR_ZERO
+    weak_field_policy = not-applicable | diagnostic | exclude-source
+    weak_field_reference_tesla = REQUIRED_OR_ZERO
+    weak_field_relative_threshold = REQUIRED_OR_ZERO
+  #end current_sheet
+  #begin current_sheet_transport
+    model = not-applicable | sector-confined | ideal-coordinate-crossing
+    pure_hcs_minimum_clearance_m = REQUIRED_OR_ZERO
+  #end current_sheet_transport
+  #begin closed_field_plasma
+    model = isothermal-hydrostatic | polytropic-hydrostatic
+    reference_radius_m = REQUIRED
+    base_state = species-density-temperature
+    base_proton_number_density_m3 = REQUIRED
+    base_proton_temperature_k = REQUIRED
+    base_electron_temperature_k = REQUIRED
+    base_alpha_temperature_k = REQUIRED_OR_ZERO
+    closed_polytropic_index = REQUIRED_OR_ZERO
+    base_normalization = prescribed | global-separatrix-pressure-scale-verification | footpoint-separatrix-constrained
+    base_normalization_asset_file = none | REQUIRED
+    composition_source = solar-wind
+    velocity_frame = corotating
+    force_model = gravity-plus-centrifugal | gravity-only-approximation
+    maximum_centrifugal_to_gravity_ratio = REQUIRED
+  #end closed_field_plasma
+  #begin open_closed_interface
+    representation = sharp-one-sided | finite-width-volume
+    policy = diagnostic-kinematic | bounded-approximation | stationary-td-equilibrium
+    state_origin = analytic-composite | equilibrium-solver | imported-equilibrium
+    transition_width_m = REQUIRED_OR_ZERO
+    thickness_ensemble_m = none | REQUIRED
+    interface_velocity_model = corotating-topology-surface | versioned-asset
+    interface_velocity_asset_file = none | REQUIRED
+    uncertainty_asset_file = none | REQUIRED
+    maximum_absolute_traction_jump_pa = REQUIRED_OR_ZERO
+    maximum_relative_traction_jump = REQUIRED_OR_ZERO
+    traction_jump_quantile = REQUIRED_OR_ZERO
+    maximum_absolute_mass_flux_jump_kg_per_m2_per_s = REQUIRED_OR_ZERO
+    maximum_relative_mass_flux_jump = REQUIRED_OR_ZERO
+    mass_flux_jump_quantile = REQUIRED_OR_ZERO
+    maximum_absolute_volume_momentum_residual_n_per_m3 = REQUIRED_OR_ZERO
+    maximum_relative_volume_momentum_residual = REQUIRED_OR_ZERO
+    volume_residual_quantile = REQUIRED_OR_ZERO
+    minimum_convergence_levels = REQUIRED
+    maximum_residual_refinement_change = REQUIRED
+    null_neighborhood_field_threshold_tesla = REQUIRED
+    maximum_absolute_normal_field_tesla = REQUIRED
+    maximum_relative_normal_field = REQUIRED
+    maximum_absolute_relative_normal_velocity_m_per_s = REQUIRED
+    maximum_relative_normal_velocity_fast_mach = REQUIRED
+  #end open_closed_interface
+  #begin open_open_interface
+    model = none-continuous-single-family | versioned-interface-catalog
+    representation = not-applicable | sharp-one-sided | finite-width-volume
+    policy = not-applicable | diagnostic-kinematic | bounded-approximation
+    interface_catalog_file = none | REQUIRED
+    uncertainty_asset_file = none | REQUIRED
+    thickness_ensemble_m = none | REQUIRED
+    maximum_absolute_traction_jump_pa = REQUIRED_OR_ZERO
+    maximum_relative_traction_jump = REQUIRED_OR_ZERO
+    traction_jump_quantile = REQUIRED_OR_ZERO
+    maximum_absolute_mass_flux_jump_kg_per_m2_per_s = REQUIRED_OR_ZERO
+    maximum_relative_mass_flux_jump = REQUIRED_OR_ZERO
+    mass_flux_jump_quantile = REQUIRED_OR_ZERO
+    maximum_absolute_volume_momentum_residual_n_per_m3 = REQUIRED_OR_ZERO
+    maximum_relative_volume_momentum_residual = REQUIRED_OR_ZERO
+    volume_residual_quantile = REQUIRED_OR_ZERO
+    minimum_convergence_levels = REQUIRED_OR_ZERO
+    maximum_residual_refinement_change = REQUIRED_OR_ZERO
+  #end open_open_interface
+  #begin plasma_sheet
+    model = none | gaussian-tube-contrast
+    density_contrast = REQUIRED_OR_ZERO
+    angular_half_width_rad = REQUIRED_OR_ZERO
+    thermodynamic_rule = none | fixed-temperature
+    balance_policy = not-applicable | diagnostic-kinematic | bounded-approximation
+    uncertainty_asset_file = none | REQUIRED
+    angular_half_width_ensemble_rad = none | REQUIRED
+    maximum_absolute_volume_momentum_residual_n_per_m3 = REQUIRED_OR_ZERO
+    maximum_relative_volume_momentum_residual = REQUIRED_OR_ZERO
+    volume_residual_quantile = REQUIRED_OR_ZERO
+    minimum_convergence_levels = REQUIRED_OR_ZERO
+    maximum_residual_refinement_change = REQUIRED_OR_ZERO
+  #end plasma_sheet
+  #begin solar_wind
+    model = flux-tube-polytropic | empirical-kinematic
+    scientific_role = analytic-verification | sensitivity | event-nominal
+    base_reference_radius_m = REQUIRED
+    energy_closure = isothermal | polytropic | empirical-profile
+    polytropic_index = REQUIRED_OR_ZERO
+    temperature_model = uniform | tube-from-target-speed | versioned-profile
+    uniform_base_temperature_k = REQUIRED_OR_ZERO
+    target_speed_definition = none | asymptotic | finite-radius
+    target_speed_relation = none | wsa-versioned
+    target_speed_coefficients_file = none | REQUIRED
+    target_speed_radius_m = REQUIRED_OR_ZERO
+    kinematic_profile_manifest_file = none | REQUIRED
+    kinematic_profile_manifest_schema = none | sep-kinematic-wind-profile-v1
+    kinematic_interpolation = none | quintic-hermite-c2-certified
+    inner_outer_blend_inner_radius_m = REQUIRED_OR_ZERO
+    inner_outer_blend_outer_radius_m = REQUIRED_OR_ZERO
+    mass_flux_model = uniform-base-density | mass-per-magnetic-flux | radial-flux-density-with-mapped-field | colocated-density-velocity-field
+    mass_flux_coefficients_file = none | REQUIRED
+    mass_flux_data_use_role = none | construction
+    base_number_density_m3 = REQUIRED_OR_ZERO
+    mass_per_magnetic_flux_kg_per_s_per_wb = REQUIRED_OR_ZERO
+    outer_mass_flux_density_kg_per_m2_per_s = REQUIRED_OR_ZERO
+    mass_flux_reference_radius_m = REQUIRED_OR_ZERO
+    composition = proton-electron | proton-electron-alpha | versioned-mixture
+    alpha_to_proton_ratio = REQUIRED
+    composition_asset_file = none | REQUIRED
+    composition_uncertainty_model = none | covariance | named-ensemble
+    composition_covariance_or_ensemble_file = none | REQUIRED
+    electron_density_conversion = quasineutral-composition-and-charge-state
+    momentum_residual_policy = transonic-solve | report-and-gate
+    momentum_residual_acceleration_floor_m_per_s2 = REQUIRED_OR_ZERO
+    maximum_normalized_momentum_residual = REQUIRED
+    maximum_absolute_momentum_residual_m_per_s2 = REQUIRED
+    d7_qualification_asset_file = none | REQUIRED
+    d7_qualification_data_use_role = none | qualification
+    d7_withheld_validation_asset_file = none | REQUIRED
+    d7_withheld_validation_data_use_role = none | withheld-validation
+    d7_comparison_radii_m = none | REQUIRED
+    d7_maximum_relative_density_mismatch = REQUIRED_OR_ZERO
+    d7_maximum_relative_speed_mismatch = REQUIRED_OR_ZERO
+    d7_maximum_relative_mass_flux_mismatch = REQUIRED_OR_ZERO
+    d7_maximum_overlap_absolute_log_density_mismatch = REQUIRED_OR_ZERO
+    d7_maximum_overlap_covariance_normalized_mismatch = REQUIRED_OR_ZERO
+    required_consumer_coverage_policy = fail-required-event-support | diagnostic-mask-sensitivity
+    d7_minimum_open_magnetic_flux_coverage_fraction = REQUIRED_OR_ZERO
+    d7_minimum_open_area_coverage_fraction = REQUIRED_OR_ZERO
+    d7_minimum_source_flux_coverage_fraction = REQUIRED_OR_ZERO
+    d7_minimum_observer_exposure_coverage_fraction = REQUIRED_OR_ZERO
+    d7_minimum_export_support_coverage_fraction = REQUIRED_OR_ZERO
+  #end solar_wind
+  #begin plasma_eos
+    model = ideal-single-fluid
+    adiabatic_index = REQUIRED
+    electron_mass_in_density = include | neglect-recorded
+    near_parallel_threshold_rad = REQUIRED
+  #end plasma_eos
+  #begin source_surface_coupling
+    model = rotating-footpoint-conservative
+    winding_construction = radial-from-scs-boundary
+    longitude_mapping = full-jacobian | uniform-speed-special-case
+    minimum_forward_mapping_jacobian = REQUIRED_OR_ZERO
+    fold_action = fail | mark-invalid-diagnostic
+    azimuthal_flow = angular-momentum-conserving
+    coupled_wind_mapping_tolerance = REQUIRED
+  #end source_surface_coupling
+  #begin turbulence
+    open_field_model = prescribed | wkb-outward
+    closed_field_model = invalid | prescribed-bidirectional | direct-mean-free-path
+    direction_basis = geometric-outward-inward
+    reference_radius_m = REQUIRED
+    wave_energy_at_reference_j_m3 = REQUIRED_OR_ZERO
+    wave_energy_radial_exponent = REQUIRED_OR_ZERO
+    outward_cross_helicity = REQUIRED_OR_ZERO
+    correlation_length_at_reference_m = REQUIRED_OR_ZERO
+    correlation_length_radial_exponent = REQUIRED_OR_ZERO
+    spectral_model = kolmogorov | kraichnan | power-law
+    custom_spectral_index = REQUIRED_OR_ZERO
+    closed_turbulence_asset_file = none | REQUIRED
+    maximum_delta_b_over_b = REQUIRED
+    delta_b_over_b_action = fatal-small-amplitude-closure | diagnostic-empirical
+    maximum_wave_pressure_to_thermal_pressure_diagnostic = REQUIRED
+    maximum_wave_pressure_to_total_momentum_pressure_diagnostic = REQUIRED
+    wave_force_absolute_tolerance_asset_file = REQUIRED
+    maximum_absolute_wave_acceleration_m_per_s2 = REQUIRED
+    maximum_wave_force_fraction = REQUIRED
+    wave_force_quantile = REQUIRED
+    maximum_wave_force_quantile_fraction = REQUIRED
+  #end turbulence
+  #begin transport_coefficients
+    parallel_mfp_model = none | single-power-law | smooth-broken-power-law
+    parker_parallel_diffusion = none | from-mean-free-path
+    perpendicular_diffusion_model = none | fixed-ratio | versioned-asset
+    perpendicular_to_parallel_ratio = REQUIRED_OR_ZERO
+    perpendicular_diffusion_coefficients_file = none | REQUIRED
+    drift_model = none
+    drift_coefficients_file = none
+    focused_collision_model = none | pitch-angle-diffusion | discrete-scattering
+    pitch_angle_shape = none | isotropic | quasilinear-versioned
+    pitch_angle_coefficients_file = none | REQUIRED
+    discrete_scattering_kernel = none | isotropic-poisson
+    discrete_scattering_kernel_file = none
+    reference_radius_m = REQUIRED_OR_ZERO
+    reference_rigidity_v = REQUIRED_OR_ZERO
+    reference_mfp_m = REQUIRED_OR_ZERO
+    rigidity_exponent = REQUIRED_OR_ZERO
+    single_radial_exponent = REQUIRED_OR_ZERO
+    break_radius_m = REQUIRED_OR_ZERO
+    inner_radial_exponent = REQUIRED_OR_ZERO
+    outer_radial_exponent = REQUIRED_OR_ZERO
+    transition_sharpness = REQUIRED_OR_ZERO
+    out_of_domain_policy = not-applicable | fail | ballistic-verification-only
+  #end transport_coefficients
+  #begin shock
+    authority = standalone-mhd-ellipsoid
+    surface_mode = solar-anchored-dome
+    geometry_record = shock_geometry
+    jump_model = ideal-mhd-oblique
+    activation = fast-magnetosonic
+    critical_mach_model = edmiston-kennel-1984 | none
+    critical_mach_table_file = REQUIRED | none
+    critical_mach_convention = fast | total-alfven | normal-alfven | none
+    critical_mach_out_of_domain_policy = fail-preflight | diagnostic-inapplicable | exclude-source-budgeted | not-applicable
+    maximum_criticality_excluded_area_fraction = REQUIRED_OR_ZERO
+    maximum_criticality_excluded_incident_number_fraction = REQUIRED_OR_ZERO
+    maximum_criticality_excluded_incident_kinetic_energy_fraction = REQUIRED_OR_ZERO
+    initial_fast_shock_requirement = none | any-fast-patch | minimum-fast-area-fraction
+    initial_fast_area_region = whole-clipped-dome | apex-cone
+    initial_fast_cone_half_angle_rad = REQUIRED_OR_ZERO
+    minimum_initial_fast_area_fraction = REQUIRED_OR_ZERO
+    activation_event_time_tolerance_s = REQUIRED
+    provider_update_cadence_s = REQUIRED
+  #end shock
+  #begin shock_geometry
+    model = triaxial-ellipsoid
+    axis_convention = radial-principal-axis
+    initial_parameterization = center-and-principal-axes | apex-and-principal-axes
+    reference_time_s = REQUIRED
+    direction_frame = REQUIRED
+    direction_longitude_rad = REQUIRED
+    direction_latitude_rad = REQUIRED
+    lateral_axis_tilt_rad = REQUIRED
+    orientation_evolution = fixed
+    evolution = independent-component-laws | tabulated-snapshots
+    initial_apex_radius_m = REQUIRED_OR_ZERO
+    snapshots_file = none | REQUIRED
+    snapshot_interpolation = none | monotone-cubic-c1
+    snapshot_extrapolation = reject
 
-[species.ID]
-compiled_slot = REQUIRED
-chemical_symbol = REQUIRED
-expected_mass_kg = REQUIRED
-expected_charge_c = REQUIRED
-mass_number = REQUIRED_OR_ZERO
-transport_role = charged-sep | initialization-only
-base_macroparticle_weight = REQUIRED
-minimum_population = REQUIRED_OR_ZERO
-target_population = REQUIRED_OR_ZERO
-maximum_population = REQUIRED_OR_ZERO
-
-[population_control]
-model = disabled | amps-conservative-split-merge
-check_cadence_steps = REQUIRED_OR_ZERO
-minimum_total_particles = REQUIRED_OR_ZERO
-target_total_particles = REQUIRED_OR_ZERO
-maximum_total_particles = REQUIRED_OR_ZERO
-minimum_particles_per_active_block = REQUIRED_OR_ZERO
-maximum_particles_per_active_block = REQUIRED_OR_ZERO
-maximum_weight_ratio_per_merge_group = REQUIRED_OR_ZERO
-conservation = species-weight-momentum-relativistic-energy
-
-[active_corridor]
-model = full-domain | swept-field-line-tube
-line_ids = none | REQUIRED
-distance_metric = none | minimum-euclidean-to-polyline
-width_profile = none | constant | tabulated-by-line-coordinate
-constant_half_width_m = REQUIRED_OR_ZERO
-width_profile_file = none | REQUIRED
-geometric_buffer_m = REQUIRED_OR_ZERO
-block_rule = full-domain | intersects-swept-tube-bounds
-connectivity_closure = none | sun-to-source-to-observer-face-connected
-amr_closure = none | ancestors-children-and-ghost-neighbors
-lateral_particle_policy = not-applicable | escape
-
-[background]
-authority = analytic-coronal-composite
-
-[solar_rotation]
-model = rigid | latitude-dependent-verification
-rigid_input_rotation_rate_rad_per_s = REQUIRED_OR_ZERO
-input_rate_convention = sidereal | synodic
-synodic_conversion_ephemeris_file = none | REQUIRED
-differential_rotation_coefficients_file = none | REQUIRED
-
-[pfss]
-lower_boundary = analytic-harmonics | magnetogram-coefficients
-outer_boundary_radius_m = REQUIRED
-maximum_degree = REQUIRED
-harmonic_normalization = orthonormal-complex
-coefficients_file = REQUIRED
-flux_balance = reject | remove-monopole
-spectral_filter = none | heat-kernel
-apodization_degree = REQUIRED_OR_ZERO
-input_grid = coefficient-file | sine-latitude | uniform-latitude
-quadrature = coefficient-file | cell-area | gauss-legendre
-cache_radial_points = REQUIRED
-cache_colatitude_points = REQUIRED
-cache_longitude_points = REQUIRED
-cache_interpolation_order = REQUIRED
-
-[open_flux_calibration]
-model = compare-only | magnetogram-scale | not-applicable-verification
-reference_definition = rotation-mean-unsigned-radial-field | none
-construction_reference_asset_file = none | REQUIRED
-construction_data_use_role = none | construction
-construction_folding_correction_asset_file = none | REQUIRED
-construction_reference_radius_handling = none | sample-position | pre-normalized-to-comparison-radius
-construction_comparison_radius_m = REQUIRED_OR_ZERO
-qualification_reference_asset_file = none | REQUIRED
-qualification_data_use_role = none | qualification
-qualification_folding_correction_asset_file = none | REQUIRED
-qualification_reference_radius_handling = none | sample-position | pre-normalized-to-comparison-radius
-qualification_comparison_radius_m = REQUIRED_OR_ZERO
-nested_sphere_radii_m = REQUIRED | none
-maximum_signed_to_unsigned_flux_fraction = REQUIRED_OR_ZERO
-maximum_nested_unsigned_flux_spread_fraction = REQUIRED_OR_ZERO
-maximum_angular_quadrature_relative_error = REQUIRED_OR_ZERO
-maximum_qualification_relative_mismatch = REQUIRED_OR_ZERO
-scale_factor_minimum = REQUIRED_OR_ZERO
-scale_factor_maximum = REQUIRED_OR_ZERO
-apply_stage = photospheric-coefficients-before-pfss | none
-radius_ensemble_file = none | REQUIRED
-radius_ensemble_member_id = none | REQUIRED
-radius_ensemble_selection_role = none | preregistered-topology-and-open-flux
-radius_ensemble_prior_weight = REQUIRED_OR_ZERO
-
-[formation_height_validation]
-model = none | preregistered-cartesian-candidate-product
-candidate_product_asset_file = none | REQUIRED
-product_axes = none | magnetogram-scale-radii-wind-front
-event_formation_constraint_asset_file = none | REQUIRED
-event_formation_constraint_representation = none | frequency-time-likelihood | preinferred-height-time-likelihood
-event_formation_data_use_role = none | qualification | withheld-validation
-density_conditioning = none | per-wind-density-member
-joint_comparison = none | d6-topology-coronal-holes-d1-d2-typeii-euv
-candidate_weighting = none | preregistered-joint-likelihood
-sep_output_selection = forbidden
-
-[current_sheet]
-model = finite-shell-schatten | none
-interface_coupling = direct-pfss-scs | overlap-minimized | not-applicable
-interface_radius_m = REQUIRED_OR_ZERO
-outer_radial_radius_m = REQUIRED_OR_ZERO
-sector_mapping = field-line-traced | none
-maximum_degree = REQUIRED_OR_ZERO
-unsigned_boundary_fit = nonnegative-constrained | none
-fit_quadrature = cell-area | gauss-legendre | none
-fit_angular_oversampling = REQUIRED_OR_ZERO
-maximum_normal_field_error_tesla = REQUIRED_OR_ZERO
-maximum_unsigned_flux_relative_error = REQUIRED_OR_ZERO
-maximum_negative_area_fraction = 0
-radialization_gate = outer-zonal-power-and-latitude-flatness | diagnostic-only | not-applicable
-maximum_outer_zonal_nonmonopole_power_fraction = REQUIRED_OR_ZERO
-latitude_diagnostic_radii_m = REQUIRED | none
-latitude_minimum_unmasked_longitude_fraction = REQUIRED_OR_ZERO
-maximum_unsigned_radial_flux_rms_fraction = REQUIRED_OR_ZERO
-maximum_unsigned_radial_flux_p95_to_p05_ratio = REQUIRED_OR_ZERO
-interface_particle_rule = not-applicable | reject-unverified | resolved-transition
-resolved_transition_width_m = REQUIRED_OR_ZERO
-resolved_transition_profile = none | quintic-vector-potential
-transition_vector_potential = none | signed-mie
-transition_vector_potential_gauge = none | zero-mean-mie-v1
-transition_hcs_policy = not-applicable | exclude-clearance
-transition_hcs_clearance_m = REQUIRED_OR_ZERO
-maximum_transition_normal_trace_jump_fraction = REQUIRED_OR_ZERO
-transition_minimum_field_tesla = REQUIRED_OR_ZERO
-transition_jump_support_fraction = REQUIRED_OR_ZERO
-transition_clearance_convergence_asset_file = none | REQUIRED
-maximum_verified_kink_angle_rad = REQUIRED_OR_ZERO
-weak_field_policy = not-applicable | diagnostic | exclude-source
-weak_field_reference_tesla = REQUIRED_OR_ZERO
-weak_field_relative_threshold = REQUIRED_OR_ZERO
-
-[current_sheet_transport]
-model = not-applicable | sector-confined | ideal-coordinate-crossing
-pure_hcs_minimum_clearance_m = REQUIRED_OR_ZERO
-
-[closed_field_plasma]
-model = isothermal-hydrostatic | polytropic-hydrostatic
-reference_radius_m = REQUIRED
-base_state = species-density-temperature
-base_proton_number_density_m3 = REQUIRED
-base_proton_temperature_k = REQUIRED
-base_electron_temperature_k = REQUIRED
-base_alpha_temperature_k = REQUIRED_OR_ZERO
-closed_polytropic_index = REQUIRED_OR_ZERO
-base_normalization = prescribed | global-separatrix-pressure-scale-verification | footpoint-separatrix-constrained
-base_normalization_asset_file = none | REQUIRED
-composition_source = solar-wind
-velocity_frame = corotating
-force_model = gravity-plus-centrifugal | gravity-only-approximation
-maximum_centrifugal_to_gravity_ratio = REQUIRED
-
-[open_closed_interface]
-representation = sharp-one-sided | finite-width-volume
-policy = diagnostic-kinematic | bounded-approximation | stationary-td-equilibrium
-state_origin = analytic-composite | equilibrium-solver | imported-equilibrium
-transition_width_m = REQUIRED_OR_ZERO
-thickness_ensemble_m = none | REQUIRED
-interface_velocity_model = corotating-topology-surface | versioned-asset
-interface_velocity_asset_file = none | REQUIRED
-uncertainty_asset_file = none | REQUIRED
-maximum_absolute_traction_jump_pa = REQUIRED_OR_ZERO
-maximum_relative_traction_jump = REQUIRED_OR_ZERO
-traction_jump_quantile = REQUIRED_OR_ZERO
-maximum_absolute_mass_flux_jump_kg_per_m2_per_s = REQUIRED_OR_ZERO
-maximum_relative_mass_flux_jump = REQUIRED_OR_ZERO
-mass_flux_jump_quantile = REQUIRED_OR_ZERO
-maximum_absolute_volume_momentum_residual_n_per_m3 = REQUIRED_OR_ZERO
-maximum_relative_volume_momentum_residual = REQUIRED_OR_ZERO
-volume_residual_quantile = REQUIRED_OR_ZERO
-minimum_convergence_levels = REQUIRED
-maximum_residual_refinement_change = REQUIRED
-null_neighborhood_field_threshold_tesla = REQUIRED
-maximum_absolute_normal_field_tesla = REQUIRED
-maximum_relative_normal_field = REQUIRED
-maximum_absolute_relative_normal_velocity_m_per_s = REQUIRED
-maximum_relative_normal_velocity_fast_mach = REQUIRED
-
-[open_open_interface]
-model = none-continuous-single-family | versioned-interface-catalog
-representation = not-applicable | sharp-one-sided | finite-width-volume
-policy = not-applicable | diagnostic-kinematic | bounded-approximation
-interface_catalog_file = none | REQUIRED
-uncertainty_asset_file = none | REQUIRED
-thickness_ensemble_m = none | REQUIRED
-maximum_absolute_traction_jump_pa = REQUIRED_OR_ZERO
-maximum_relative_traction_jump = REQUIRED_OR_ZERO
-traction_jump_quantile = REQUIRED_OR_ZERO
-maximum_absolute_mass_flux_jump_kg_per_m2_per_s = REQUIRED_OR_ZERO
-maximum_relative_mass_flux_jump = REQUIRED_OR_ZERO
-mass_flux_jump_quantile = REQUIRED_OR_ZERO
-maximum_absolute_volume_momentum_residual_n_per_m3 = REQUIRED_OR_ZERO
-maximum_relative_volume_momentum_residual = REQUIRED_OR_ZERO
-volume_residual_quantile = REQUIRED_OR_ZERO
-minimum_convergence_levels = REQUIRED_OR_ZERO
-maximum_residual_refinement_change = REQUIRED_OR_ZERO
-
-[plasma_sheet]
-model = none | gaussian-tube-contrast
-density_contrast = REQUIRED_OR_ZERO
-angular_half_width_rad = REQUIRED_OR_ZERO
-thermodynamic_rule = none | fixed-temperature
-balance_policy = not-applicable | diagnostic-kinematic | bounded-approximation
-uncertainty_asset_file = none | REQUIRED
-angular_half_width_ensemble_rad = none | REQUIRED
-maximum_absolute_volume_momentum_residual_n_per_m3 = REQUIRED_OR_ZERO
-maximum_relative_volume_momentum_residual = REQUIRED_OR_ZERO
-volume_residual_quantile = REQUIRED_OR_ZERO
-minimum_convergence_levels = REQUIRED_OR_ZERO
-maximum_residual_refinement_change = REQUIRED_OR_ZERO
-
-[solar_wind]
-model = flux-tube-polytropic | empirical-kinematic
-scientific_role = analytic-verification | sensitivity | event-nominal
-base_reference_radius_m = REQUIRED
-energy_closure = isothermal | polytropic | empirical-profile
-polytropic_index = REQUIRED_OR_ZERO
-temperature_model = uniform | tube-from-target-speed | versioned-profile
-uniform_base_temperature_k = REQUIRED_OR_ZERO
-target_speed_definition = none | asymptotic | finite-radius
-target_speed_relation = none | wsa-versioned
-target_speed_coefficients_file = none | REQUIRED
-target_speed_radius_m = REQUIRED_OR_ZERO
-kinematic_profile_manifest_file = none | REQUIRED
-kinematic_profile_manifest_schema = none | sep-kinematic-wind-profile-v1
-kinematic_interpolation = none | quintic-hermite-c2-certified
-inner_outer_blend_inner_radius_m = REQUIRED_OR_ZERO
-inner_outer_blend_outer_radius_m = REQUIRED_OR_ZERO
-mass_flux_model = uniform-base-density | mass-per-magnetic-flux | radial-flux-density-with-mapped-field | colocated-density-velocity-field
-mass_flux_coefficients_file = none | REQUIRED
-mass_flux_data_use_role = none | construction
-base_number_density_m3 = REQUIRED_OR_ZERO
-mass_per_magnetic_flux_kg_per_s_per_wb = REQUIRED_OR_ZERO
-outer_mass_flux_density_kg_per_m2_per_s = REQUIRED_OR_ZERO
-mass_flux_reference_radius_m = REQUIRED_OR_ZERO
-composition = proton-electron | proton-electron-alpha | versioned-mixture
-alpha_to_proton_ratio = REQUIRED
-composition_asset_file = none | REQUIRED
-composition_uncertainty_model = none | covariance | named-ensemble
-composition_covariance_or_ensemble_file = none | REQUIRED
-electron_density_conversion = quasineutral-composition-and-charge-state
-momentum_residual_policy = transonic-solve | report-and-gate
-momentum_residual_acceleration_floor_m_per_s2 = REQUIRED_OR_ZERO
-maximum_normalized_momentum_residual = REQUIRED
-maximum_absolute_momentum_residual_m_per_s2 = REQUIRED
-d7_qualification_asset_file = none | REQUIRED
-d7_qualification_data_use_role = none | qualification
-d7_withheld_validation_asset_file = none | REQUIRED
-d7_withheld_validation_data_use_role = none | withheld-validation
-d7_comparison_radii_m = none | REQUIRED
-d7_maximum_relative_density_mismatch = REQUIRED_OR_ZERO
-d7_maximum_relative_speed_mismatch = REQUIRED_OR_ZERO
-d7_maximum_relative_mass_flux_mismatch = REQUIRED_OR_ZERO
-d7_maximum_overlap_absolute_log_density_mismatch = REQUIRED_OR_ZERO
-d7_maximum_overlap_covariance_normalized_mismatch = REQUIRED_OR_ZERO
-required_consumer_coverage_policy = fail-required-event-support | diagnostic-mask-sensitivity
-d7_minimum_open_magnetic_flux_coverage_fraction = REQUIRED_OR_ZERO
-d7_minimum_open_area_coverage_fraction = REQUIRED_OR_ZERO
-d7_minimum_source_flux_coverage_fraction = REQUIRED_OR_ZERO
-d7_minimum_observer_exposure_coverage_fraction = REQUIRED_OR_ZERO
-d7_minimum_export_support_coverage_fraction = REQUIRED_OR_ZERO
-
-[plasma_eos]
-model = ideal-single-fluid
-adiabatic_index = REQUIRED
-electron_mass_in_density = include | neglect-recorded
-near_parallel_threshold_rad = REQUIRED
-
-[source_surface_coupling]
-model = rotating-footpoint-conservative
-winding_construction = radial-from-scs-boundary
-longitude_mapping = full-jacobian | uniform-speed-special-case
-minimum_forward_mapping_jacobian = REQUIRED_OR_ZERO
-fold_action = fail | mark-invalid-diagnostic
-azimuthal_flow = angular-momentum-conserving
-coupled_wind_mapping_tolerance = REQUIRED
-
-[turbulence]
-open_field_model = prescribed | wkb-outward
-closed_field_model = invalid | prescribed-bidirectional | direct-mean-free-path
-direction_basis = geometric-outward-inward
-reference_radius_m = REQUIRED
-wave_energy_at_reference_j_m3 = REQUIRED_OR_ZERO
-wave_energy_radial_exponent = REQUIRED_OR_ZERO
-outward_cross_helicity = REQUIRED_OR_ZERO
-correlation_length_at_reference_m = REQUIRED_OR_ZERO
-correlation_length_radial_exponent = REQUIRED_OR_ZERO
-spectral_model = kolmogorov | kraichnan | power-law
-custom_spectral_index = REQUIRED_OR_ZERO
-closed_turbulence_asset_file = none | REQUIRED
-maximum_delta_b_over_b = REQUIRED
-delta_b_over_b_action = fatal-small-amplitude-closure | diagnostic-empirical
-maximum_wave_pressure_to_thermal_pressure_diagnostic = REQUIRED
-maximum_wave_pressure_to_total_momentum_pressure_diagnostic = REQUIRED
-wave_force_absolute_tolerance_asset_file = REQUIRED
-maximum_absolute_wave_acceleration_m_per_s2 = REQUIRED
-maximum_wave_force_fraction = REQUIRED
-wave_force_quantile = REQUIRED
-maximum_wave_force_quantile_fraction = REQUIRED
-
-[transport_coefficients]
-parallel_mfp_model = none | single-power-law | smooth-broken-power-law
-parker_parallel_diffusion = none | from-mean-free-path
-perpendicular_diffusion_model = none | fixed-ratio | versioned-asset
-perpendicular_to_parallel_ratio = REQUIRED_OR_ZERO
-perpendicular_diffusion_coefficients_file = none | REQUIRED
-drift_model = none
-drift_coefficients_file = none
-focused_collision_model = none | pitch-angle-diffusion | discrete-scattering
-pitch_angle_shape = none | isotropic | quasilinear-versioned
-pitch_angle_coefficients_file = none | REQUIRED
-discrete_scattering_kernel = none | isotropic-poisson
-discrete_scattering_kernel_file = none
-reference_radius_m = REQUIRED_OR_ZERO
-reference_rigidity_v = REQUIRED_OR_ZERO
-reference_mfp_m = REQUIRED_OR_ZERO
-rigidity_exponent = REQUIRED_OR_ZERO
-single_radial_exponent = REQUIRED_OR_ZERO
-break_radius_m = REQUIRED_OR_ZERO
-inner_radial_exponent = REQUIRED_OR_ZERO
-outer_radial_exponent = REQUIRED_OR_ZERO
-transition_sharpness = REQUIRED_OR_ZERO
-out_of_domain_policy = not-applicable | fail | ballistic-verification-only
-
-[shock]
-authority = standalone-mhd-ellipsoid
-surface_mode = solar-anchored-dome
-geometry_record = shock_geometry
-jump_model = ideal-mhd-oblique
-activation = fast-magnetosonic
-critical_mach_model = edmiston-kennel-1984 | none
-critical_mach_table_file = REQUIRED | none
-critical_mach_convention = fast | total-alfven | normal-alfven | none
-critical_mach_out_of_domain_policy = fail-preflight | diagnostic-inapplicable | exclude-source-budgeted | not-applicable
-maximum_criticality_excluded_area_fraction = REQUIRED_OR_ZERO
-maximum_criticality_excluded_incident_number_fraction = REQUIRED_OR_ZERO
-maximum_criticality_excluded_incident_kinetic_energy_fraction = REQUIRED_OR_ZERO
-initial_fast_shock_requirement = none | any-fast-patch | minimum-fast-area-fraction
-initial_fast_area_region = whole-clipped-dome | apex-cone
-initial_fast_cone_half_angle_rad = REQUIRED_OR_ZERO
-minimum_initial_fast_area_fraction = REQUIRED_OR_ZERO
-activation_event_time_tolerance_s = REQUIRED
-provider_update_cadence_s = REQUIRED
-
-[shock_geometry]
-model = triaxial-ellipsoid
-axis_convention = radial-principal-axis
-initial_parameterization = center-and-principal-axes | apex-and-principal-axes
-reference_time_s = REQUIRED
-direction_frame = REQUIRED
-direction_longitude_rad = REQUIRED
-direction_latitude_rad = REQUIRED
-lateral_axis_tilt_rad = REQUIRED
-orientation_evolution = fixed
-evolution = independent-component-laws | tabulated-snapshots
-initial_apex_radius_m = REQUIRED_OR_ZERO
-snapshots_file = none | REQUIRED
-snapshot_interpolation = none | monotone-cubic-c1
-snapshot_extrapolation = reject
-
-[shock_geometry.center_distance]
-initial_value_m = REQUIRED_OR_ZERO
-kinematics = smooth-rate-transition | inactive
-initial_rate_m_per_s = REQUIRED_OR_ZERO
-final_rate_m_per_s = REQUIRED_OR_ZERO
-transition_start_time_s = REQUIRED_OR_ZERO
-transition_duration_s = REQUIRED_OR_ZERO
-after_transition = constant-final-rate | none
-
-[shock_geometry.radial_semiaxis]
-# Same fields as shock_geometry.center_distance.
-
-[shock_geometry.lateral_semiaxis_1]
-# Same fields as shock_geometry.center_distance.
-
-[shock_geometry.lateral_semiaxis_2]
-# Same fields as shock_geometry.center_distance.
-
-[cme_piston]
-enabled = false | true
-geometry_source = none | independent-record
-geometry_record = none | piston_geometry
-
-[piston_geometry]
-model = none | triaxial-ellipsoid-versioned-file
-record_file = none | REQUIRED
-minimum_front_separation_m = REQUIRED_OR_ZERO
-
-[source]
-enabled = false | true
-surface_requirement = fast | supercritical
-scientific_role = event-nominal | sensitivity | verification
-population_semantics = net-first-passage-upstream-released
-release_model = empirical-net-first-passage-release
-release_boundary = upstream-reference-first-passage | front-conormal-flux-no-through-flow-sensitivity | shock-adjacent-absorbing-verification
-shock_reentry_policy = absorb-post-reference-return-loss-ledger | conormal-no-through-flow | absorb-shock-adjacent-verification
-reference_surface_distance_m = REQUIRED_OR_ZERO
-focused_release_phase_space = outward-first-passage-flux-weighted | unrestricted-isotropic-verification | not-applicable
-focused_release_mu_c_minimum_abs_bdotn = REQUIRED_OR_ZERO
-focused_release_pitch_root_absolute_tolerance = REQUIRED_OR_ZERO
-focused_release_support_root_relative_momentum_tolerance = REQUIRED_OR_ZERO
-focused_release_support_root_time_tolerance_s = REQUIRED_OR_ZERO
-focused_release_normal_flux_quadrature_absolute_tolerance_m_per_s = REQUIRED_OR_ZERO
-focused_release_normal_flux_quadrature_relative_tolerance = REQUIRED_OR_ZERO
-no_focused_escape_policy = fail-preflight | exclude-budgeted | not-applicable
-maximum_no_escape_number_fraction = REQUIRED_OR_ZERO
-maximum_no_escape_energy_fraction = REQUIRED_OR_ZERO
-closed_field_policy = diagnose-only
-pfss_scs_transition_policy = exclude | convergence-qualified
-spectrum_model = local-compression-dsa | fixed-phase-space-power-law
-normalization_model = physical-rate | flux-fraction
-physical_rate_patch_distribution = none | incoming-species-flux | area | versioned-asset
-physical_rate_patch_asset_file = none | REQUIRED
-energy_budget_model = shock-frame-kinetic-conversion | versioned-available-flux
-energy_budget_asset_file = none | REQUIRED
-test_particle_energy_fraction_limit = REQUIRED
-maximum_nonthermal_energy_fraction = REQUIRED
-placement_kernel = none | upstream-top-hat | upstream-quintic
-placement_kernel_support = none | upstream-one-sided
-placement_thickness_cell_fraction = REQUIRED_OR_ZERO
-maximum_placement_thickness_m = REQUIRED_OR_ZERO
-minimum_conormal_diffusivity_m2_per_s = REQUIRED_OR_ZERO
-radial_envelope = hard-cutoff | quintic-taper
-taper_start_apex_radius_m = REQUIRED_OR_ZERO
-zero_source_apex_radius_m = REQUIRED
-
-[consumer_acceptance_budgets]
-model = disabled-verification | preregistered-event-grade
-transition_consumer_budget_asset_file = none | REQUIRED
-front_return_budget_asset_file = none | REQUIRED
-birth_energy_edges_file = none | REQUIRED
-birth_time_edges_file = none | REQUIRED
-cohort_partition = none | stable-species-birth-energy-patch-lineage-time
-finite_footprint_measure = none | unsigned-magnetic-flux
-maximum_transition_source_area_fraction = REQUIRED_OR_ZERO
-maximum_transition_counterfactual_number_rate_fraction = REQUIRED_OR_ZERO
-maximum_transition_counterfactual_energy_rate_fraction = REQUIRED_OR_ZERO
-maximum_transition_finite_footprint_flux_fraction = REQUIRED_OR_ZERO
-maximum_transition_runtime_represented_number_loss_fraction = REQUIRED_OR_ZERO
-maximum_transition_runtime_represented_birth_energy_loss_fraction = REQUIRED_OR_ZERO
-maximum_front_return_represented_number_loss_fraction = REQUIRED_OR_ZERO
-maximum_front_return_represented_birth_energy_loss_fraction = REQUIRED_OR_ZERO
-exceedance_action = diagnostic-only-verification | mark-not-event-grade
-
-[source_species.ID]
-upstream_abundance_model = background-density | relative-to-species | versioned-asset
-relative_to_species_id = none | REQUIRED
-relative_abundance = REQUIRED_OR_ZERO
-abundance_asset_file = none | REQUIRED
-physical_rate_authority = inactive | scalar | versioned-asset
-physical_particle_rate_per_s = REQUIRED_OR_ZERO
-physical_rate_asset_file = none | REQUIRED
-upstream_release_fraction = REQUIRED_OR_ZERO
-energy_coordinate = kinetic-per-particle | kinetic-per-nucleon
-minimum_energy_ev = REQUIRED
-maximum_energy_ev = REQUIRED
-fixed_phase_space_power_index = REQUIRED_OR_ZERO
-samples_per_step = REQUIRED
-momentum_direction = isotropic | pitch-angle-law
-source_frame = upstream-plasma | outward-wave | inward-wave
-pitch_angle_asset_file = none | REQUIRED
-
-[observer.ID]
-position_mode = fixed-cartesian | ephemeris-file
-coordinate_frame = REQUIRED
-ephemeris_file = none | REQUIRED
-velocity_source = coordinate-frame-stationary | ephemeris-file
-position_x_m = REQUIRED_OR_ZERO
-position_y_m = REQUIRED_OR_ZERO
-position_z_m = REQUIRED_OR_ZERO
-collection_geometry = volume-sphere | surface-disk | surface-sphere
-estimator = volume-residence | surface-crossing
-geometry_radius_m = REQUIRED
-crossing_sense = not-applicable | inward | outward | both
-surface_normal_x = REQUIRED_OR_ZERO
-surface_normal_y = REQUIRED_OR_ZERO
-surface_normal_z = REQUIRED_OR_ZERO
-angular_acceptance = omnidirectional | fixed-look-cone | pitch-angle-bins
-look_axis_x = REQUIRED_OR_ZERO
-look_axis_y = REQUIRED_OR_ZERO
-look_axis_z = REQUIRED_OR_ZERO
-look_cone_half_angle_rad = REQUIRED_OR_ZERO
-sampling_cadence_s = REQUIRED
-accumulation_interval_s = REQUIRED
-species = REQUIRED
-energy_coordinate = kinetic-per-particle | kinetic-per-nucleon
-energy_grid = linear | logarithmic | explicit-edges
-minimum_energy_ev = REQUIRED_OR_ZERO
-maximum_energy_ev = REQUIRED_OR_ZERO
-energy_channel_count = REQUIRED_OR_ZERO
-energy_edges_file = none | REQUIRED
-pitch_angle_grid = none | linear | explicit-edges
-pitch_angle_channel_count = REQUIRED_OR_ZERO
-pitch_angle_edges_file = none | REQUIRED
-reported_intensity = directional-per-sr | accepted-solid-angle-integrated | omnidirectional
-empty_bin_policy = physical-zero-with-validity
-instrument_response = none | online-versioned
-instrument_response_file = none | REQUIRED
-
-[output]
-directory = REQUIRED
-initialization_mesh_file = sep3d-initialization-mesh.dat
-initialization_data_file = sep3d-initialization-data.dat
-time_dependent_cadence_s = REQUIRED
-write_tecplot = true
-invalid_value_sentinel = -1.7976931348623157e308
-require_validity_columns = true
-
-[field_line_export]
-enabled = false | true
-bundle_path = none | REQUIRED
-bundle_schema = 3
-sampling = adaptive
-geometry_time_model = stationary-in-transport-frame | rigid-rotation-from-trace-time
-maximum_segment_length_m = REQUIRED
-maximum_relative_field_change = REQUIRED
-maximum_relative_plasma_change = REQUIRED
-time_sampling = static-background
-shock_intersections = false | true
-shock_history_start_s = REQUIRED_OR_ZERO
-shock_history_end_s = REQUIRED_OR_ZERO
-shock_history_cadence_s = REQUIRED_OR_ZERO
-write_text_diagnostics = false | true
-
-[field_line.ID]
-seed_mode = observer-connected | photospheric-footpoint | cartesian
-observer_id = none | REQUIRED
-observer_mapping = none | static-volume-intersection | time-resolved-volume-intersection
-observer_mapping_cadence_s = REQUIRED_OR_ZERO
-observer_mapping_event_time_tolerance_s = REQUIRED_OR_ZERO
-observer_mapping_out_of_tolerance = not-applicable | fail
-seed_x_m = REQUIRED_OR_ZERO
-seed_y_m = REQUIRED_OR_ZERO
-seed_z_m = REQUIRED_OR_ZERO
-photospheric_longitude_rad = REQUIRED_OR_ZERO
-photospheric_latitude_rad = REQUIRED_OR_ZERO
-arc_length_orientation = geometric-outward
-trace_branches = both-from-seed | outward-from-photosphere
-trace_time_s = REQUIRED
-outer_radius_m = REQUIRED
-connection_tolerance_m = REQUIRED_OR_ZERO
-measure = characteristic | flux-tube | quadrature
-measure_group_id = none | REQUIRED
-represented_magnetic_flux_wb = REQUIRED_OR_ZERO
-cross_section_model = none | traced-reference-footprint
-cross_section_asset_file = none | REQUIRED
-cross_section_boundary_samples = REQUIRED_OR_ZERO
-maximum_cross_section_relative_error = REQUIRED_OR_ZERO
+    #begin center_distance
+      initial_value_m = REQUIRED_OR_ZERO
+      kinematics = smooth-rate-transition | inactive
+      initial_rate_m_per_s = REQUIRED_OR_ZERO
+      final_rate_m_per_s = REQUIRED_OR_ZERO
+      transition_start_time_s = REQUIRED_OR_ZERO
+      transition_duration_s = REQUIRED_OR_ZERO
+      after_transition = constant-final-rate | none
+    #end center_distance
+    #begin radial_semiaxis
+      ! Same fields as shock_geometry.center_distance.
+    #end radial_semiaxis
+    #begin lateral_semiaxis_1
+      ! Same fields as shock_geometry.center_distance.
+    #end lateral_semiaxis_1
+    #begin lateral_semiaxis_2
+      ! Same fields as shock_geometry.center_distance.
+    #end lateral_semiaxis_2
+  #end shock_geometry
+  #begin cme_piston
+    enabled = false | true
+    geometry_source = none | independent-record
+    geometry_record = none | piston_geometry
+  #end cme_piston
+  #begin piston_geometry
+    model = none | triaxial-ellipsoid-versioned-file
+    record_file = none | REQUIRED
+    minimum_front_separation_m = REQUIRED_OR_ZERO
+  #end piston_geometry
+  #begin source
+    enabled = false | true
+    surface_requirement = fast | supercritical
+    scientific_role = event-nominal | sensitivity | verification
+    population_semantics = net-first-passage-upstream-released
+    release_model = empirical-net-first-passage-release
+    release_boundary = upstream-reference-first-passage | front-conormal-flux-no-through-flow-sensitivity | shock-adjacent-absorbing-verification
+    shock_reentry_policy = absorb-post-reference-return-loss-ledger | conormal-no-through-flow | absorb-shock-adjacent-verification
+    reference_surface_distance_m = REQUIRED_OR_ZERO
+    focused_release_phase_space = outward-first-passage-flux-weighted | unrestricted-isotropic-verification | not-applicable
+    focused_release_mu_c_minimum_abs_bdotn = REQUIRED_OR_ZERO
+    focused_release_pitch_root_absolute_tolerance = REQUIRED_OR_ZERO
+    focused_release_support_root_relative_momentum_tolerance = REQUIRED_OR_ZERO
+    focused_release_support_root_time_tolerance_s = REQUIRED_OR_ZERO
+    focused_release_normal_flux_quadrature_absolute_tolerance_m_per_s = REQUIRED_OR_ZERO
+    focused_release_normal_flux_quadrature_relative_tolerance = REQUIRED_OR_ZERO
+    no_focused_escape_policy = fail-preflight | exclude-budgeted | not-applicable
+    maximum_no_escape_number_fraction = REQUIRED_OR_ZERO
+    maximum_no_escape_energy_fraction = REQUIRED_OR_ZERO
+    closed_field_policy = diagnose-only
+    pfss_scs_transition_policy = exclude | convergence-qualified
+    spectrum_model = local-compression-dsa | fixed-phase-space-power-law
+    normalization_model = physical-rate | flux-fraction
+    physical_rate_patch_distribution = none | incoming-species-flux | area | versioned-asset
+    physical_rate_patch_asset_file = none | REQUIRED
+    energy_budget_model = shock-frame-kinetic-conversion | versioned-available-flux
+    energy_budget_asset_file = none | REQUIRED
+    test_particle_energy_fraction_limit = REQUIRED
+    maximum_nonthermal_energy_fraction = REQUIRED
+    placement_kernel = none | upstream-top-hat | upstream-quintic
+    placement_kernel_support = none | upstream-one-sided
+    placement_thickness_cell_fraction = REQUIRED_OR_ZERO
+    maximum_placement_thickness_m = REQUIRED_OR_ZERO
+    minimum_conormal_diffusivity_m2_per_s = REQUIRED_OR_ZERO
+    radial_envelope = hard-cutoff | quintic-taper
+    taper_start_apex_radius_m = REQUIRED_OR_ZERO
+    zero_source_apex_radius_m = REQUIRED
+  #end source
+  #begin consumer_acceptance_budgets
+    model = disabled-verification | preregistered-event-grade
+    transition_consumer_budget_asset_file = none | REQUIRED
+    front_return_budget_asset_file = none | REQUIRED
+    birth_energy_edges_file = none | REQUIRED
+    birth_time_edges_file = none | REQUIRED
+    cohort_partition = none | stable-species-birth-energy-patch-lineage-time
+    finite_footprint_measure = none | unsigned-magnetic-flux
+    maximum_transition_source_area_fraction = REQUIRED_OR_ZERO
+    maximum_transition_counterfactual_number_rate_fraction = REQUIRED_OR_ZERO
+    maximum_transition_counterfactual_energy_rate_fraction = REQUIRED_OR_ZERO
+    maximum_transition_finite_footprint_flux_fraction = REQUIRED_OR_ZERO
+    maximum_transition_runtime_represented_number_loss_fraction = REQUIRED_OR_ZERO
+    maximum_transition_runtime_represented_birth_energy_loss_fraction = REQUIRED_OR_ZERO
+    maximum_front_return_represented_number_loss_fraction = REQUIRED_OR_ZERO
+    maximum_front_return_represented_birth_energy_loss_fraction = REQUIRED_OR_ZERO
+    exceedance_action = diagnostic-only-verification | mark-not-event-grade
+  #end consumer_acceptance_budgets
+  #begin source_species: ID
+    upstream_abundance_model = background-density | relative-to-species | versioned-asset
+    relative_to_species_id = none | REQUIRED
+    relative_abundance = REQUIRED_OR_ZERO
+    abundance_asset_file = none | REQUIRED
+    physical_rate_authority = inactive | scalar | versioned-asset
+    physical_particle_rate_per_s = REQUIRED_OR_ZERO
+    physical_rate_asset_file = none | REQUIRED
+    upstream_release_fraction = REQUIRED_OR_ZERO
+    energy_coordinate = kinetic-per-particle | kinetic-per-nucleon
+    minimum_energy_ev = REQUIRED
+    maximum_energy_ev = REQUIRED
+    fixed_phase_space_power_index = REQUIRED_OR_ZERO
+    samples_per_step = REQUIRED
+    momentum_direction = isotropic | pitch-angle-law
+    source_frame = upstream-plasma | outward-wave | inward-wave
+    pitch_angle_asset_file = none | REQUIRED
+  #end source_species
+  #begin observer: ID
+    position_mode = fixed-cartesian | ephemeris-file
+    coordinate_frame = REQUIRED
+    ephemeris_file = none | REQUIRED
+    velocity_source = coordinate-frame-stationary | ephemeris-file
+    position_x_m = REQUIRED_OR_ZERO
+    position_y_m = REQUIRED_OR_ZERO
+    position_z_m = REQUIRED_OR_ZERO
+    collection_geometry = volume-sphere | surface-disk | surface-sphere
+    estimator = volume-residence | surface-crossing
+    geometry_radius_m = REQUIRED
+    crossing_sense = not-applicable | inward | outward | both
+    surface_normal_x = REQUIRED_OR_ZERO
+    surface_normal_y = REQUIRED_OR_ZERO
+    surface_normal_z = REQUIRED_OR_ZERO
+    angular_acceptance = omnidirectional | fixed-look-cone | pitch-angle-bins
+    look_axis_x = REQUIRED_OR_ZERO
+    look_axis_y = REQUIRED_OR_ZERO
+    look_axis_z = REQUIRED_OR_ZERO
+    look_cone_half_angle_rad = REQUIRED_OR_ZERO
+    sampling_cadence_s = REQUIRED
+    accumulation_interval_s = REQUIRED
+    species = REQUIRED
+    energy_coordinate = kinetic-per-particle | kinetic-per-nucleon
+    energy_grid = linear | logarithmic | explicit-edges
+    minimum_energy_ev = REQUIRED_OR_ZERO
+    maximum_energy_ev = REQUIRED_OR_ZERO
+    energy_channel_count = REQUIRED_OR_ZERO
+    energy_edges_file = none | REQUIRED
+    pitch_angle_grid = none | linear | explicit-edges
+    pitch_angle_channel_count = REQUIRED_OR_ZERO
+    pitch_angle_edges_file = none | REQUIRED
+    reported_intensity = directional-per-sr | accepted-solid-angle-integrated | omnidirectional
+    empty_bin_policy = physical-zero-with-validity
+    instrument_response = none | online-versioned
+    instrument_response_file = none | REQUIRED
+  #end observer
+  #begin output
+    directory = REQUIRED
+    initialization_mesh_file = sep3d-initialization-mesh.dat
+    initialization_data_file = sep3d-initialization-data.dat
+    time_dependent_cadence_s = REQUIRED
+    write_tecplot = true
+    invalid_value_sentinel = -1.7976931348623157e308
+    require_validity_columns = true
+  #end output
+  #begin field_line_export
+    enabled = false | true
+    bundle_path = none | REQUIRED
+    bundle_schema = 3
+    sampling = adaptive
+    geometry_time_model = stationary-in-transport-frame | rigid-rotation-from-trace-time
+    maximum_segment_length_m = REQUIRED
+    maximum_relative_field_change = REQUIRED
+    maximum_relative_plasma_change = REQUIRED
+    time_sampling = static-background
+    shock_intersections = false | true
+    shock_history_start_s = REQUIRED_OR_ZERO
+    shock_history_end_s = REQUIRED_OR_ZERO
+    shock_history_cadence_s = REQUIRED_OR_ZERO
+    write_text_diagnostics = false | true
+  #end field_line_export
+  #begin field_line: ID
+    seed_mode = observer-connected | photospheric-footpoint | cartesian
+    observer_id = none | REQUIRED
+    observer_mapping = none | static-volume-intersection | time-resolved-volume-intersection
+    observer_mapping_cadence_s = REQUIRED_OR_ZERO
+    observer_mapping_event_time_tolerance_s = REQUIRED_OR_ZERO
+    observer_mapping_out_of_tolerance = not-applicable | fail
+    seed_x_m = REQUIRED_OR_ZERO
+    seed_y_m = REQUIRED_OR_ZERO
+    seed_z_m = REQUIRED_OR_ZERO
+    photospheric_longitude_rad = REQUIRED_OR_ZERO
+    photospheric_latitude_rad = REQUIRED_OR_ZERO
+    arc_length_orientation = geometric-outward
+    trace_branches = both-from-seed | outward-from-photosphere
+    trace_time_s = REQUIRED
+    outer_radius_m = REQUIRED
+    connection_tolerance_m = REQUIRED_OR_ZERO
+    measure = characteristic | flux-tube | quadrature
+    measure_group_id = none | REQUIRED
+    represented_magnetic_flux_wb = REQUIRED_OR_ZERO
+    cross_section_model = none | traced-reference-footprint
+    cross_section_asset_file = none | REQUIRED
+    cross_section_boundary_samples = REQUIRED_OR_ZERO
+    maximum_cross_section_relative_error = REQUIRED_OR_ZERO
+  #end field_line
+#end physics
 ```
 
 `sep-kinematic-wind-profile-v1` is a checksummed manifest, not a monolithic
@@ -5943,7 +5996,7 @@ The schema-5 configuration families and option ownership are:
 | Stand-alone event candidate | `run.intent=production-shock-injection`; `background.authority=analytic-coronal-composite` | Empirical manifest wind, independent D6/D7 qualification, bounded or qualified equilibrium interface, finite-reference source | Event-nominal only after all Stage-12/13 data and release gates pass. |
 | Declared sensitivity | Production-capable executable with component `scientific_role=sensitivity` | Target-speed, diagnostic interface, conormal source, or budgeted exclusions as explicitly selected | Never relabeled event-nominal; all changed authorities are fingerprinted. |
 | Field-aligned consumer | `srcSEP` selects `field_line_input.provider=sep-field-line-bundle` | Reads the immutable shared bundle; no local background, source, or observer redefinition | Inherits bundle qualification and adds independent 1-D numerical/parity gates. |
-| SWCME alternative backend | Application selects the sibling SWCME authority and its raw `[swcme]` block | No `sep_coronal_cme` background/shock sections may be mixed into that family | Qualified by the SWCME/application contract, not by silently falling back to this model. |
+| SWCME alternative backend | Application selects the sibling SWCME authority and its raw `swcme` block | No `sep_coronal_cme` background/shock sections may be mixed into that family | Qualified by the SWCME/application contract, not by silently falling back to this model. |
 
 Shared physical options and validation belong to `sep_coronal_cme`; neutral
 snapshot and bundle types belong to `sep_common`; mesh, MPI, particle
@@ -5976,11 +6029,11 @@ programmatic configuration; they never fall back to a nearby enum:
 The names in the following list are **reserved future-schema discriminants**,
 not accepted schema-5 input.  A schema-5 parser must reject every one before
 allocation with a typed `NotImplemented` result.  They extend the existing
-`[source]`, `[transport_coefficients]`, `[shock_geometry]`, and `[solar_wind]`
+`source`, `transport_coefficients`, `shock_geometry`, and `solar_wind`
 authorities; they do not create parallel authorities whose values could
 silently disagree with those sections.
 
-- A future `[source]` value
+- A future `source` value
   `release_boundary=upstream-integrated-peclet-first-passage` would extend the
   existing release-boundary discriminator and replace, rather than
   supplement, the schema-5 fixed-distance construction.  For stable species
@@ -6025,7 +6078,7 @@ silently disagree with those sections.
   momentum dependent in its spatial factor; a code path that retains a momentum-independent
   `phi_ref(x,t)` is invalid. The branch remains sensitivity-only until its
   target-depth inference, uncertainty, and cross-event transfer are qualified.
-- A future `[source]` value
+- A future `source` value
   `shock_reentry_policy=return-to-release-renewal-kernel` would extend the
   existing re-entry-policy discriminator and replace the schema-5 absorbing return
   policy. Its `return_renewal_kernel_file` is the sole checksummed conditional
@@ -6039,7 +6092,7 @@ silently disagree with those sections.
   forbidden because it double counts acceleration already folded into the
   empirical first-passage source.
 - Future foreshock scattering uses a discriminated tuple in the existing
-  `[turbulence]` and `[transport_coefficients]` authorities; it never modifies
+  `turbulence` and `transport_coefficients` authorities; it never modifies
   the schema-5 mean free path behind the parser. A future
   `parallel_mfp_model=foreshock-distance-proxy` consumes one checksummed
   `foreshock_mfp_proxy_coefficients_file` and is a sensitivity-only positive,
@@ -6080,7 +6133,7 @@ silently disagree with those sections.
   the existing plasma-frame momentum operator contains no overlapping work.
   Invalid regions require a typed alternate operator or termination policy,
   never coefficient clipping.
-- Future deflection/rotation extends `[shock_geometry]` with two independent
+- Future deflection/rotation extends `shock_geometry` with two independent
   but synchronized records. A future
   `evolution=vector-trajectory-and-shape-history` replaces the fixed direction
   plus scalar center-distance authority with a Sun-centered vector trajectory;
@@ -6099,13 +6152,13 @@ silently disagree with those sections.
   ellipsoid nesting/solar-anchoring contracts, and carry a checksummed
   event-specific covariance or ensemble; componentwise quaternion splines and
   a universal undocumented angular range are invalid.
-- A future `[source]` value
+- A future `source` value
   `release_model=empirical-net-first-passage-plus-impulsive-components` must
   extend the existing source as a
   separately identified component rather than overwrite the shock
   first-passage normalization. The selector composes the existing shock
   planner with a separately versioned impulsive-source provider; it does not
-  duplicate that provider's physical fields in `[source]`. The component
+  duplicate that provider's physical fields in `source`. The component
   requires a physical release region and
   magnetic-connectivity rule, event-time profile, species-resolved momentum
   and pitch law, frame/Jacobian, number/energy normalization and budget,
@@ -6124,7 +6177,7 @@ silently disagree with those sections.
   not overwrite the immutable impulsive source origin. Reacceleration must
   retain impulsive ancestry and shock-work ledgers and may not be counted again in
   the calibrated shock first-passage source.
-- A future `[solar_wind]` value
+- A future `solar_wind` value
   `plausibility_model=continuous-versioned-envelope` must consume one
   checksummed `plausibility_asset_file` with an explicit qualification or
   withheld-validation data-use role. The single asset contains separately
@@ -6146,11 +6199,11 @@ silently disagree with those sections.
   bounds, but the implementation must not invent a universal monotonic-wind
   rule or hidden maximum speed.
 
-`[species.ID]`, `[source_species.ID]`, `[observer.ID]`, and
-`[field_line.ID]` are repeatable;
+`species.ID`, `source_species.ID`, `observer.ID`, and
+`field_line.ID` are repeatable;
 their string IDs are unique and stable across output, restart, and bundle
-exchange. For `source.enabled=false`, the `[source]` section contains only that
-selector and all `[source_species.ID]` sections are absent. For an enabled
+exchange. For `source.enabled=false`, the `source` section contains only that
+selector and all `source_species.ID` sections are absent. For an enabled
 production source, there is exactly one source-species record for every
 compiled AMPS species and every species must have `transport_role=charged-sep`;
 branch-inactive rate, abundance, spectrum, and angular fields use zero/`none`.
@@ -6180,7 +6233,7 @@ energy branches are mutually exclusive. Energy per nucleon requires the
 validated integer `mass_number` of every selected species. `volume-sphere`
 requires the residence estimator; either surface geometry requires the crossing
 estimator and a complete geometric acceptance. `observer.species` is an
-ordered comma-separated list of stable `[species.ID]` suffixes, not chemical
+ordered comma-separated list of stable `species.ID` suffixes, not chemical
 symbols or mutable numerical indices. The global finite invalid sentinel is interpreted only when its
 companion validity flag is zero; physical zero and an empty-but-valid bin
 remain numeric zero.
@@ -6292,7 +6345,7 @@ Cross-option validation is transactional. In particular:
   the runtime cannot relabel an arbitrary radius choice. A member is selected
   before SEP comparison and its identity is restart/fingerprint state; radius
   scans remain topology/uncertainty ensembles, not amplitude calibration;
-- an enabled `[formation_height_validation]` names two immutable assets. The
+- an enabled `formation_height_validation` names two immutable assets. The
   candidate-product asset enumerates the complete Cartesian product of
   magnetogram realization, field-scale mode/value, `(R_b,R_i,R_scs)`,
   density/wind member, and front-geometry/kinematics member, including each
@@ -6580,7 +6633,7 @@ Cross-option validation is transactional. In particular:
   and pointwise compliance across the preregistered ensemble. No open--open
   branch may claim stationary equilibrium. These rules apply to fast/slow and
   all other open-plasma class boundaries. Plasma-sheet edges retain their
-  `[plasma_sheet]` controls, but their result enters the same D8 interface
+  `plasma_sheet` controls, but their result enters the same D8 interface
   product with a stable interface-class tag. A global or signed mean never
   establishes balance, a quantile cannot hide a failed maximum, and a sharp
   traction jump cannot replace a smooth-layer volume residual;
@@ -6595,7 +6648,7 @@ Cross-option validation is transactional. In particular:
   density, characteristic speeds, and fingerprint and is verification-only;
 - every time-step accuracy factor lies strictly in `(0,1)`, the fixed upper
   bound is positive, pitch-angle fields are active only for the diffusion
-  mover, and exactly one stable `[species.ID]` record with a unique in-range
+  mover, and exactly one stable `species.ID` record with a unique in-range
   compiled slot and positive base macroparticle weight is installed for every
   compiled species before allocation. Its expected symbol, mass, and charge
   must match the AMPS molecular table; duplicate symbols are legal when slots,
@@ -6615,7 +6668,7 @@ Cross-option validation is transactional. In particular:
   width plus buffer, uses conservative block/bounding-volume intersection,
   closes AMR ancestors/children/ghost neighbors, and passes the face-connected
   Sun--source--observer test. It requires enabled field-line export and its
-  `line_ids` are exactly a subset of the existing `[field_line.ID]` requests.
+  `line_ids` are exactly a subset of the existing `field_line.ID` requests.
   `full-domain` makes every geometric corridor field inactive;
 - both open-field turbulence branches require a positive reference radius,
   reference wave energy, reference correlation length, and the selected
@@ -6687,7 +6740,7 @@ Cross-option validation is transactional. In particular:
 - production uses `plasma_eos.adiabatic_index=1.6666666666666667` (the
   floating-point representation of the physical value `5/3`); another positive EOS index
   is verification-only. The sole critical-Mach selector and table asset live
-  in `[shock]`, and their declared EOS/Mach convention must match the plasma
+  in `shock`, and their declared EOS/Mach convention must match the plasma
   EOS. A `none` model requires table and convention `none`, policy
   `not-applicable`, and all three exclusion budgets zero; an enabled model
   requires exactly one matching fast/total-Alfvén/normal-Alfvén convention and
@@ -6713,7 +6766,7 @@ Cross-option validation is transactional. In particular:
   particle-support region nor a production line/footprint may touch the mask;
 - closed-field injection requires an explicit closed turbulence/mover model;
 - production requires exactly one rigid sidereal rotation authority in
-  `[solar_rotation]`; the static closed provider, open-tube frame, Parker map,
+  `solar_rotation`; the static closed provider, open-tube frame, Parker map,
   observers, and exporter consume its resolved value read-only. Provider-local
   input copies are unknown keys. `model=rigid` requires a positive
   `rigid_input_rotation_rate_rad_per_s`, requires the differential asset to be
@@ -6974,7 +7027,7 @@ Cross-option validation is transactional. In particular:
   validity companion. The one manifest-owned finite sentinel is never a
   physical default and is rejected if it is nonfinite;
 - if `field_line_export.enabled=false`, that section contains only the selector
-  and no `[field_line.ID]` sections exist. In this branch, mesh tube refinement
+  and no `field_line.ID` sections exist. In this branch, mesh tube refinement
   is `none` with zero tube size/decay, and a swept corridor is illegal. Enabled
   export requires at least one stable string line ID; tube refinement may use
   those same authoritative requests. Schema 5 exports geometry that is static
@@ -7045,86 +7098,92 @@ canonical role and content checksum, not path alone.
 
 The `srcSEP` consumer uses a separate runtime input and never parses the
 `srcSEP3D` input indirectly. It reuses the exact schema-5 definitions of
-`[particle_numerics]`, repeated `[species.ID]`, and
-`[population_control]`. Numerical weights/population bounds are local controls,
+`particle_numerics`, repeated `species.ID`, and
+`population_control`. Numerical weights/population bounds are local controls,
 while each species record binds one stable bundle identity to the consumer's
 own verified compiled slot. All background, source-intersection, physical
 coefficient, source-species, and observer definitions come from the immutable
 bundle. These bindings and controls participate in the `srcSEP` fingerprint.
-Its complete application-level delta is:
+Its complete application-level delta is listed below by schema section. This
+bundle-consumer delta is a planned design, not an implemented reader. It is
+written in the generic AMPS block notation with the schema's section names;
+the block layout of `srcSEP` runtime input is owned by `srcSEP`
+(`src/INPUT_FILE.md`, Section 6), so where these blocks are placed in that
+layout is decided when the consumer is implemented.
 
-```ini
-[run]
-schema_version = 5
-intent = imported-field-line-transport
-transport = ballistic-verification | parker | focused-pitch-angle-diffusion | focused-discrete-scattering
-transport_frame = bundle
-start_time_s = REQUIRED
-end_time_s = REQUIRED
-maximum_steps = REQUIRED_OR_ZERO
-campaign_seed_u64 = REQUIRED
-random_stream_layout = keyed-v1
-
-[particle_numerics]
-time_step_model = fixed-upper-bound | adaptive-local
-maximum_time_step_s = REQUIRED
-spatial_accuracy_factor = REQUIRED
-pitch_angle_accuracy_factor = REQUIRED_OR_ZERO
-pitch_endpoint_regularization = REQUIRED_OR_ZERO
-shock_motion_accuracy_factor = REQUIRED
-species_binding = stable-id-plus-compiled-slot-verified
-species_numerics = explicit-all-compiled
-
-[species.ID]
-compiled_slot = REQUIRED
-chemical_symbol = REQUIRED
-expected_mass_kg = REQUIRED
-expected_charge_c = REQUIRED
-mass_number = REQUIRED_OR_ZERO
-transport_role = charged-sep | initialization-only
-base_macroparticle_weight = REQUIRED
-minimum_population = REQUIRED_OR_ZERO
-target_population = REQUIRED_OR_ZERO
-maximum_population = REQUIRED_OR_ZERO
-
-[population_control]
-model = disabled | amps-conservative-split-merge
-check_cadence_steps = REQUIRED_OR_ZERO
-minimum_total_particles = REQUIRED_OR_ZERO
-target_total_particles = REQUIRED_OR_ZERO
-maximum_total_particles = REQUIRED_OR_ZERO
-minimum_particles_per_active_block = REQUIRED_OR_ZERO
-maximum_particles_per_active_block = REQUIRED_OR_ZERO
-maximum_weight_ratio_per_merge_group = REQUIRED_OR_ZERO
-conservation = species-weight-momentum-relativistic-energy
-
-[field_line_input]
-provider = sep-field-line-bundle
-bundle_path = REQUIRED
-line_ids = REQUIRED
-required_bundle_schema = 3
-spatial_extrapolation = reject
-temporal_extrapolation = reject
-shock_source = none | imported-intersections
-coefficient_authority = bundle-manifest
-observer_definitions = bundle
-verify_checksums = true
-require_background_fingerprint = REQUIRED
-unresolved_discontinuity = reject
-
-[line_mesh.ID]
-line_id = REQUIRED
-start_s_m = REQUIRED
-end_s_m = REQUIRED
-point_count = REQUIRED
-resampling = conservative-positive-one-sided
-
-[output]
-directory = REQUIRED
-cadence_s = REQUIRED
-write_line_diagnostics = false | true
-invalid_value_sentinel = -1.7976931348623157e308
-require_validity_columns = true
+```text
+#begin run
+  schema_version = 5
+  intent = imported-field-line-transport
+  transport = ballistic-verification | parker | focused-pitch-angle-diffusion | focused-discrete-scattering
+  transport_frame = bundle
+  start_time_s = REQUIRED
+  end_time_s = REQUIRED
+  maximum_steps = REQUIRED_OR_ZERO
+  campaign_seed_u64 = REQUIRED
+  random_stream_layout = keyed-v1
+#end run
+#begin particle_numerics
+  time_step_model = fixed-upper-bound | adaptive-local
+  maximum_time_step_s = REQUIRED
+  spatial_accuracy_factor = REQUIRED
+  pitch_angle_accuracy_factor = REQUIRED_OR_ZERO
+  pitch_endpoint_regularization = REQUIRED_OR_ZERO
+  shock_motion_accuracy_factor = REQUIRED
+  species_binding = stable-id-plus-compiled-slot-verified
+  species_numerics = explicit-all-compiled
+#end particle_numerics
+#begin species: ID
+  compiled_slot = REQUIRED
+  chemical_symbol = REQUIRED
+  expected_mass_kg = REQUIRED
+  expected_charge_c = REQUIRED
+  mass_number = REQUIRED_OR_ZERO
+  transport_role = charged-sep | initialization-only
+  base_macroparticle_weight = REQUIRED
+  minimum_population = REQUIRED_OR_ZERO
+  target_population = REQUIRED_OR_ZERO
+  maximum_population = REQUIRED_OR_ZERO
+#end species
+#begin population_control
+  model = disabled | amps-conservative-split-merge
+  check_cadence_steps = REQUIRED_OR_ZERO
+  minimum_total_particles = REQUIRED_OR_ZERO
+  target_total_particles = REQUIRED_OR_ZERO
+  maximum_total_particles = REQUIRED_OR_ZERO
+  minimum_particles_per_active_block = REQUIRED_OR_ZERO
+  maximum_particles_per_active_block = REQUIRED_OR_ZERO
+  maximum_weight_ratio_per_merge_group = REQUIRED_OR_ZERO
+  conservation = species-weight-momentum-relativistic-energy
+#end population_control
+#begin field_line_input
+  provider = sep-field-line-bundle
+  bundle_path = REQUIRED
+  line_ids = REQUIRED
+  required_bundle_schema = 3
+  spatial_extrapolation = reject
+  temporal_extrapolation = reject
+  shock_source = none | imported-intersections
+  coefficient_authority = bundle-manifest
+  observer_definitions = bundle
+  verify_checksums = true
+  require_background_fingerprint = REQUIRED
+  unresolved_discontinuity = reject
+#end field_line_input
+#begin line_mesh: ID
+  line_id = REQUIRED
+  start_s_m = REQUIRED
+  end_s_m = REQUIRED
+  point_count = REQUIRED
+  resampling = conservative-positive-one-sided
+#end line_mesh
+#begin output
+  directory = REQUIRED
+  cadence_s = REQUIRED
+  write_line_diagnostics = false | true
+  invalid_value_sentinel = -1.7976931348623157e308
+  require_validity_columns = true
+#end output
 ```
 
 `line_ids` preserves user order for reporting but does not change stable IDs,
@@ -7133,7 +7192,7 @@ allocating particles: schema, checksums, units, coordinate frame, epoch,
 species compatibility, line openness, monotone arc length, observer bounds,
 source normalization, and coefficient-model compatibility are all release
 gates. A mismatch is a configuration error, never a warning followed by a
-best-effort run. `srcSEP` rejects local `[observer.ID]`, `[source_species.ID]`,
+best-effort run. `srcSEP` rejects local `observer.ID`, `source_species.ID`,
 or background-physics sections because they would create a second authority.
 `field_line_input.shock_source=imported-intersections` requires the bundle
 manifest flag `shock_intersections=true` and complete source-active history;
@@ -7143,7 +7202,7 @@ remains usable for source-disabled transport/verification without inventing an
 empty intersection authority.
 It may select only a mover that the bundle's stored coefficients and
 discontinuity policy support. Each selected line has exactly one
-`[line_mesh.ID]` record. Its interval lies inside the bundle's validated arc-
+`line_mesh.ID` record. Its interval lies inside the bundle's validated arc-
 length domain, contains every mapped observer assigned to that line, and has
 at least two points. Conservative positive-state resampling is performed
 separately on every one-sided smooth segment; no mesh interval spans an HCS,
@@ -7564,7 +7623,7 @@ enum class InitialRadialParameterization {
 };
 enum class GeometryEvolution { IndependentComponentLaws, TabulatedSnapshots };
 
-// The complete field set is the [open_open_interface] schema in Section 14;
+// The complete field set is the open_open_interface section in Section 14;
 // this declaration establishes its shared SCCM configuration ownership.
 struct OpenOpenInterfaceOptions;
 ```
@@ -7588,7 +7647,7 @@ one input file accepted indiscriminately by both executables. Ownership is:
 
 `OpenOpenInterfaceOptions` solely owns the model/representation/policy
 discriminants, catalog and uncertainty assets, thickness ensemble, residual
-bounds/quantiles, and convergence controls in `[open_open_interface]`; an
+bounds/quantiles, and convergence controls in `open_open_interface`; an
 application adapter cannot keep a second copy of those fields.
 
 | Layer/profile | Options owned and parsed | Prohibited duplication |
@@ -9100,9 +9159,14 @@ restart/output provenance.
 - Create the four documentation modules, `model/requirements.yaml`, and the
   deterministic `tools/generate_model.py` assembly/check mode. Generate the
   review-disposition table from the registry rather than maintaining it here.
-- Implement the schema-5 parser as a two-pass, version-dispatched parser:
-  pass one obtains `run.schema_version`; pass two applies only that schema's
-  grammar and typed validators.
+- Implement the schema-5 parser on the generic AMPS runtime input reader
+  (`src/general/input/amps_input.h`, `src/INPUT_FILE.md`): the deck is one
+  `#begin physics: sep_coronal_cme` block whose child blocks are the schema
+  sections; only `run.schema_version = 5` is accepted, and the schema-5
+  grammar and typed validators are then applied. (The originally planned
+  two-pass, version-dispatched parser that passed schema-1--4 bytes through
+  was implemented and later removed; schemas 1--4 are `srcSEP3D` application
+  decks read by `srcSEP3D` itself.)
 - Treat numerical values as bare SI scalars and carry dimensions in key names;
   reject inline unit tokens unless a future schema explicitly defines them.
 - Add typed records and enums without activating unfinished providers. A
@@ -9111,15 +9175,17 @@ restart/output provenance.
 - Freeze elapsed-time/epoch semantics, complete history coverage, keyed random
   stream layout, campaign seed, stable-ID grammar, and the schema-5
   capability-availability matrix.
-- Preserve the schema-4 parser and canonical fingerprint byte for byte. Add
-  planned sources to build and release manifests only when those files exist.
+- Leave the `srcSEP3D` application's own schema-1--4 reader and canonical
+  fingerprint untouched by this library. Add planned sources to build and
+  release manifests only when those files exist.
 
 **Tests and exit gate**
 
 - Parser rejects unknown, duplicate, inactive, dimensionally wrong, or
   incomplete keys.
-- Schemas 1--4 retain their previous parse results and fingerprints; schema 5
-  cannot accidentally be read by the schema-4 validator.
+- Any `run.schema_version` other than 5, and retired INI syntax (`[section]`
+  headers), are rejected by this library; schema 5 cannot accidentally be read
+  by an older-schema validator.
 - Mutating a physical authority, asset checksum, interface policy, or EOS
   changes the schema-5 fingerprint; changing a comment or path spelling for
   the same checksum does not.
@@ -9661,7 +9727,7 @@ restart/output provenance.
 
 - Install the new background and shock factories.
 - Construct the heliocentric Cartesian AMR domain and both refinement fields
-  from `[mesh]`: one distance field from the solar sphere and one from the
+  from `mesh`: one distance field from the solar sphere and one from the
   authoritative requested-line centerlines. Combine requested cell sizes by
   taking the finer requirement; never create a separate approximate spiral.
 - Enclose and conservatively clip the exact spherical escape domain inside the
@@ -9918,8 +9984,8 @@ restart/output provenance.
 - Add `srcSEP3D/adapters/field_line_export_adapter.{h,cpp}` as a thin caller of
   that shared reduction API. It gathers requests and snapshots, publishes the
   returned bundle, and does no tracing or source-physics work of its own.
-- Extend the schema-5 parser with `[field_line_export]` and repeated
-  `[field_line.ID]` sections, including explicit inactive sentinels.
+- Extend the schema-5 parser with `field_line_export` and repeated
+  `field_line.ID` sections, including explicit inactive sentinels.
 - Use serialized string line IDs, orthogonal history-coverage and intersection
   states, bitwise rejection causes, and independent source-measure status;
   vector order and integer container position are never physical identity.
@@ -9933,7 +9999,7 @@ restart/output provenance.
   `sep-field-line-bundle` background provider. The adapter publishes through
   the existing shared `SEP::Background::SnapshotStore` and uses the shared
   coefficient registry.
-- Add repeated `[line_mesh.ID]` records to `srcSEP`; conservatively resample
+- Add repeated `line_mesh.ID` records to `srcSEP`; conservatively resample
   bundle geometry and positive primitives on one-sided smooth intervals while
   preserving each requested start, end, and point count.
 - Link `sep_common` and `sep_coronal_cme` into the `srcSEP3D` build. Link only
@@ -11074,8 +11140,10 @@ own independent rows pass.
 - `INIT3D03`: finite Tecplot output, including empty-particle cells, validity,
   background, turbulence, local time step, and all-species weight fields.
 - `INIT3D04`: internal-solar-sphere registration, clipping, and interaction.
-- `CFG3D12`: two-pass schema dispatch and strict SI-key grammar.
-- `CFG3D13`: schemas 1--4 parse/fingerprint compatibility.
+- `CFG3D12`: schema-5 block grammar (one `physics: sep_coronal_cme` block,
+  section child blocks, no model-level assignments, no duplicate sections or
+  keys) and strict SI-key grammar.
+- `CFG3D13`: rejection of every non-5 schema version and of retired INI syntax.
 - `CFG3D14`: cross-option radius, EOS/table, geometry, turbulence, and focused
   interface validation, including positive sub-unity relative root/quadrature
   controls for the weighted focused branch.
@@ -11094,7 +11162,7 @@ own independent rows pass.
   angular-reporting, ballistic/out-of-domain, geometry-time/relative-observer
   mapping, source/intent, radial-interface/domain, trace-branch/outer-radius,
   run-horizon, and RNG discriminants enforce their complete branch rules.
-- `CFG3D19`: `[solar_rotation]` is the single physical rate authority;
+- `CFG3D19`: `solar_rotation` is the single physical rate authority;
   provider-local duplicate keys and inactive rigid/differential fields are
   rejected, synodic conversion occurs in the configuration factory before
   provider validation, and every consumer/bundle record receives the identical

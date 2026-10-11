@@ -26,7 +26,7 @@ Two radii have intentionally different responsibilities:
 - `Core::Const::R_sun = 6.957e8 m` is the physical photosphere. srcSEP3D
   registers it as a solid AMPS internal sphere and never reads its radius from
   the input deck.
-- `domain.inner_radius_m` is the Parker-background source surface, canonical
+- `mesh.domain.inner_radius_m` is the Parker-background source surface, canonical
   SWCME/CME launch radius, injection surface, and custom-transport cutoff. It
   must be at or above the photosphere and is 20 solar radii in the supplied
   examples.
@@ -121,7 +121,7 @@ AMPS represents activity with
 broadcasts the common flag change, and suppresses block allocation and load for
 inactive leaves. Movers that enter an inactive leaf follow AMPS' ordinary
 left-domain path. There is no public per-finite-volume-cell allocation switch;
-therefore `[mesh.active_region]` intentionally describes a block mask even
+therefore the `mesh` / `active_region` block (`mesh.active_region.*`) intentionally describes a block mask even
 though every cell in the block is disabled together.
 
 `mode = full-domain` retains every AMR leaf outside the solid photosphere; the
@@ -140,7 +140,7 @@ requires the active tube to contain the refined tube at both endpoints and
 therefore everywhere along the finite active line for the supported constant
 and linearly radius-scaled width laws.
 
-The active-mask planner uses the *finite* `[parker_spiral]` line, clipped at the
+The active-mask planner uses the *finite* `mesh` / `field_line` line (`mesh.field_line.*`), clipped at the
 physical outer sphere.  It subdivides the exact analytic curve independently
 of diagnostic `point_count`, expands every chord by the physical tube radius
 plus a rigorous curve-to-chord bound, and evaluates the exact Euclidean

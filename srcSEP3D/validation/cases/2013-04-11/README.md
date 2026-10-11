@@ -33,8 +33,9 @@ python3 validation/cases/2013-04-11/prepare_case.py render-input \
 The renderer does not copy convenient event values into arbitrary fields. It
 derives the CME, Earth, and 20-solar-radius Parker vectors through the supplied
 proper rotation, requires that the current +Z Parker implementation preserve
-solar north, converts the total one-AU field to the consistent radial Parker
-component, installs the published radial-rigidity MFP and fixed q=5 source
+solar north, writes the solar wind once into `physics: swcme` (shared SEP
+schema 6, decision D4: srcSEP3D derives the radial Parker component from the
+total one-AU field, so the deck carries no Parker ambient keys), installs the published radial-rigidity MFP and fixed q=5 source
 shape, and calculates macroparticle weight from the declared rate contract.
 It removes the example-only inner observer. Every derived deck records hashes
 of both the reviewed fit and this directory's parameter manifest.
@@ -118,7 +119,7 @@ geometry.cme_direction_z = 0.25038000405444144
 
 Those direction components are valid only in an event-frozen Cartesian frame
 whose +X axis is Carrington longitude zero, +Y is longitude +90 degrees, and
-+Z is solar north.  If `domain.coordinate_frame` uses another convention,
++Z is solar north.  If `mesh.domain.coordinate_frame` uses another convention,
 transform the vector and record the transform in the evidence manifest.  Do
 not paste the numbers into an HCI-like frame merely because both are
 Sun-centred.
@@ -169,21 +170,28 @@ an independent guard against a sign or frame error.
 
 For the first comparison select the Parker mover and parallel transport only:
 
-```ini
-[run]
-transport = parker
+```text
+#begin application: sep
+  transport = parker
 
-[transport]
-spatial_diffusion_model = mean-free-path
-mean_free_path_model = radial-rigidity-power-law
-mean_free_path_reference_m = 4.487936121e10
-mean_free_path_reference_radius_m = 1.495978707e11
-mean_free_path_reference_rigidity_v = 1e9
-mean_free_path_radial_exponent = 1
-mean_free_path_rigidity_exponent = 0.3333333333333333
-perpendicular_diffusion = none
-drifts = none
+  #begin transport
+    spatial_diffusion_model = mean-free-path
+    mean_free_path_model = radial-rigidity-power-law
+    mean_free_path_reference_m = 4.487936121e10
+    mean_free_path_reference_radius_m = 1.495978707e11
+    mean_free_path_reference_rigidity_v = 1e9
+    mean_free_path_radial_exponent = 1
+    mean_free_path_rigidity_exponent = 0.3333333333333333
+    perpendicular_diffusion = none
+    drifts = none
+  #end transport
+#end application
 ```
+
+(Generic AMPS block format, shared SEP content schema 6, `src/INPUT_FILE.md`
+section 5; the qualified names are `application.sep.transport` and
+`application.sep.transport.*`, formerly `application.sep3d.*` and, in the
+retired INI decks, `[run] transport` and `[transport]`.)
 
 This is the species-general representation of Liu et al. Equation 15,
 
@@ -209,13 +217,14 @@ the mover/coefficient contract may change.
 The publication uses a suprathermal boundary `f(p) proportional to p^-5`, a
 10-keV injection energy, and injection coefficient `c_i=1`. It later applies
 a factor 1.2 to the reported flux. The source *shape* and injection energy now
-map explicitly to schema 4:
+map explicitly to the schema-6 `source: shock` block:
 
-```ini
-[source]
-minimum_energy_j = 1.602176634e-15
-spectrum_model = fixed-phase-space-power-law
-phase_space_power_index = 5
+```text
+#begin source: shock
+  minimum_energy_j = 1.602176634e-15
+  spectrum_model = fixed-phase-space-power-law
+  phase_space_power_index = 5
+#end source
 ```
 
 The positive input value is q in `f(p) proportional to p^(-q)`. The sampler
@@ -225,7 +234,7 @@ its sampled CDF.
 
 The normalization values must not be copied mechanically:
 
-- `[source].injection_efficiency` is a probability-like fraction constrained
+- `source.shock.injection_efficiency` is a probability-like fraction constrained
   to `[0,1]`, while the published 1.2 is an output flux scale and is never a
   legal injection efficiency; and
 - `physical_particle_rate_per_s`, `samples_per_step`, and

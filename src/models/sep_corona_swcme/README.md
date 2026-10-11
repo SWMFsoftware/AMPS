@@ -27,9 +27,18 @@ behavior is described here as implemented.
 ## Implemented and specified physics through active BG3D-4
 
 `cme_event.h` and `cme_event.cpp` resolve the background-only event envelope.
-The resolver accepts a closed `key=value` grammar, obtains bytes through an
-injected reader, verifies lower-case SHA-256 checksums, and returns an immutable
-configuration only after all validation succeeds.  Paths are provenance; byte
+The user-authored event record is written in the generic AMPS runtime input
+format (`src/INPUT_FILE.md`) as exactly one
+`#begin physics: cme_background` ... `#end physics` block with a closed,
+dotted key vocabulary (`run.start_s`, `handoff.transition_begin_s`, ...); a
+nested block such as `#begin handoff` is the same key space as the dotted
+prefix, and a key supplied both ways is a duplicate. The resolver
+(`ResolveEventConfiguration`) obtains bytes through an injected reader,
+verifies lower-case SHA-256 checksums of the data assets, and returns an
+immutable configuration only after all validation succeeds. The checksummed
+data assets (history CSV, `ambient.asset`, `ejecta.asset`, piston contact
+asset) keep their frozen `key=value`/CSV data formats; they are byte-identified
+data whose SHA-256 enters the identity, not runtime input files.  Paths are provenance; byte
 checksums and normalized physical assignments own identity.  Three assets are
 mandatory even though their detailed physics is implemented later:
 
@@ -399,9 +408,18 @@ flux to qualify the interface. These diagnostics do not qualify the map.
 
 ## Inputs and commented example
 
-`event.conf` is a closed grammar; unknown or duplicate keys fail. The selected
-profile's three legacy or five piston assets are acquired by the host and
-SHA-256 checked before parsing.
+`event.conf` is one `#begin physics: cme_background` ... `#end physics` block
+in the generic AMPS runtime input format (`!` comments, no `#` comments; the
+example files keep the historical `key=value` spelling of each assignment
+inside the block). The vocabulary is closed; unknown keys, duplicate keys, a
+key written both dotted and inside a nested block, other top-level blocks, and
+the retired bare `key=value` record without the block fail. The reader is the
+header-only `src/general/input/amps_input.h`; `test/check_architecture.py`
+allows `#include "amps_input.h"` as the only AMPS include of this library. The
+selected profile's three legacy or five piston assets are acquired by the host
+and SHA-256 checked before parsing; they keep their frozen data formats. An
+old record can be converted with
+`python3 tools/convert_amps_input.py cme-event old.conf -o new.conf`.
 The principal input groups are:
 
 | Group | Meaning and constraints |

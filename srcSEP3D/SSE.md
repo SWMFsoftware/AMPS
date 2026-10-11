@@ -7,15 +7,18 @@ unsupported and is rejected before AMPS allocation.
 
 ## Geometry and units
 
-Set the following canonical assignments in a complete schema-3/4 input:
+Set the following canonical assignments in the `physics: swcme` block of a
+complete schema-3/4 input (generic AMPS block format, `src/INPUT_FILE.md`):
 
-```ini
-[swcme]
-geometry.shape = sse
-geometry.half_width_rad = 0.6981317007977318
-geometry.cme_direction_x = 1
-geometry.cme_direction_y = 0
-geometry.cme_direction_z = 0
+```text
+#begin physics: swcme
+  ...
+  geometry.shape = sse
+  geometry.half_width_rad = 0.6981317007977318
+  geometry.cme_direction_x = 1
+  geometry.cme_direction_y = 0
+  geometry.cme_direction_z = 0
+#end physics
 ```
 
 The example is a 40-degree half width, or 80-degree total opening, propagating
@@ -46,8 +49,8 @@ speed and creates particle-source patches only where a fast shock exists.
 - Source injection uses `shock_only`/`source`, with the existing DSA population
   normalization and canonical finite source-surface weights. No extra DSA
   acceleration is applied when the mover merely records a geometric crossing.
-- Mesh propagation uses schema 4, `background.provider=swcme`,
-  `run.intent=shock-propagation`, source disabled, and
+- Mesh propagation uses schema 4, `physics.background.provider = swcme`,
+  `application.sep3d.intent = shock-propagation`, source disabled, and
   `full_icme`/`resolved_compression`. Combining that resolved compression with
   the DSA source remains rejected to avoid double counting acceleration.
 - Outside the cap, canonical SWCME returns ambient Parker/Leblanc primitives.

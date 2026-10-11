@@ -4,11 +4,10 @@
 // Standard standalone AMPS application driver through Phases M/B/T/P/A/O.
 //
 // This executable is itself the standalone host.  It owns the one permitted
-// text boundary.  The maintained --input mode parses a complete versioned
-// schema before MPI, while the shared -input mode records only a path here and
-// parses its srcSEP3D section after Init_BeforeParser.  In both cases the
-// result is one immutable RunConfiguration3D before mesh binding. Coupled SWMF
-// builds bypass both file parsers and construct the same typed options record.
+// text boundary: the runtime input (-input FILE, its synonym --input, or
+// ./amps.in) is the generic AMPS format of src/INPUT_FILE.md and is parsed
+// completely before MPI into one immutable RunConfiguration3D.  A coupled
+// SWMF run, which has no command line, reads ./amps.in in amps_init_mesh.
 // ============================================================================
 
 #include "SEP3D.h"
@@ -96,16 +95,6 @@ int main(int argc, char** argv) {
               << '\n';
   }
 
-  if (request.commandLine.sectionInput) {
-    status = SEP3D::InstallApplicationInputFile(
-        request.commandLine.inputPath);
-    if (!status.ok()) {
-      std::cerr << "srcSEP3D application-input installation failed: "
-                << status.message << '\n';
-      return EXIT_FAILURE;
-    }
-  }
-
   if (request.configuration->options().inputSchemaVersion >= 3 &&
       request.configuration->options().shock ==
           SEP3D::RuntimeModel::ShockAuthority::Swcme) {
@@ -150,10 +139,10 @@ int main(int argc, char** argv) {
   }
 
   amps_init_mesh();
-  // Shared-section mode replaces the provisional immutable configuration
-  // inside amps_init_mesh after parsing.  Keep this driver's receipt pointer
-  // synchronized so output, stopping conditions, and provenance all observe
-  // the same final authority used by the Runtime and particle source.
+  // Derived particle numerics replace the immutable configuration after block
+  // allocation (final dt and per-species weights).  Keep this driver's receipt
+  // pointer synchronized so output, stopping conditions, and provenance all
+  // observe the same final authority used by the Runtime and particle source.
   request.configuration = SEP3D::ApplicationRuntime().configuration();
   amps_init();
 
@@ -317,7 +306,7 @@ int main(int argc, char** argv) {
       std::cout << "srcSEP3D initialization complete; no time steps executed\n"
                 << "initialization_mesh="
                 << options.initializationMeshTecplotFile << '\n'
-                << "initialization_parker_line="
+                << "initialization_field_line="
                 << options.initializationParkerLineTecplotFile << '\n'
                 << "initialization_data_base="
                 << options.initializationDataTecplotFile << '\n';

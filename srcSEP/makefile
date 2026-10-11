@@ -114,10 +114,14 @@ endif
 # does, so canonical SEP-common and SWCME headers resolve identically in srcSEP
 # and in the copied build/main tree.  Application-local duplicate headers are
 # deliberately absent, making include-order ambiguity impossible.
+# $(AMPS_ROOT)/src/general/input holds the header-only generic runtime-input
+# reader (amps_input.h, src/INPUT_FILE.md) used by util/sep_initialization.cpp
+# and by the shared models' event readers.
 MODEL_INCLUDE_FLAGS := -I$(SEP_COMMON_DIR) -I$(SWCME_DIR) \
                        -I$(SEP_CORONAL_CME_DIR)/include \
                        -I$(SEP_CORONA_SWCME_DIR)/include \
-                       -I$(SEP_CORONA_SWCME_DIR)/shock_front
+                       -I$(SEP_CORONA_SWCME_DIR)/shock_front \
+                       -I$(AMPS_ROOT)/src/general/input
 CPPFLAGS += $(MODEL_INCLUDE_FLAGS)
 CXXFLAGS += $(MODEL_INCLUDE_FLAGS)
 INCLUDE += $(MODEL_INCLUDE_FLAGS)

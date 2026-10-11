@@ -420,18 +420,19 @@ struct MemoryModelOptions {
 // through const accessors.  Output formatting fields are deliberately present
 // so CFG3D03/LIFE3D03 can prove that they do not alter the physics fingerprint.
 struct RunConfiguration3DOptions {
-  // Human-authored files set this through run.schema_version.  Version 1 is
-  // retained for existing campaigns; version 2 additionally requires an
-  // explicit finite Parker centreline definition.  Version 3 is the complete
-  // standalone initialization contract: every application value, observer,
-  // output path, and canonical SWCME3D parameter must be explicit. Version 4
-  // adds the active Parker corridor, AMPS particle population control, and the
-  // complete mover/coefficient selection contract. Version 5 adds the strict
-  // [parallel_diffusion] binding. Its values remain strings here because the
-  // shared library is the sole authority that parses each model's schema;
-  // srcSEP3D must not duplicate or weaken those model-specific readers. Parser-
-  // free programmatic SWMF hosts may keep the default and install equivalent
-  // validated providers through the typed interface.
+  // Typed contract level.  Every text input installs level 6, the content
+  // schema shared with srcSEP (application.sep.schema_version = 6,
+  // src/INPUT_FILE.md section 5; the text schemas 1-5 are retired).  Levels
+  // 1-5 remain for parser-free typed hosts and fixtures and keep their
+  // historical completeness rules: 2 requires an explicit finite Parker
+  // centreline, 3 the complete standalone contract (every value, observer,
+  // output path and canonical SWCME3D parameter), 4 the active corridor,
+  // population control and mover/coefficient selection, 5 the strict
+  // physics: parallel_diffusion binding.  Level 6 satisfies every ">= N"
+  // rule.  Model values remain strings here because the shared libraries are
+  // the sole authorities that parse their schemas.  Parser-free programmatic
+  // SWMF hosts may keep the default and install equivalent validated
+  // providers through the typed interface.
   unsigned inputSchemaVersion = 1;
   BackgroundAuthority background = BackgroundAuthority::AnalyticParker;
   // Used only by runtime-model. Register its factory before parsing/initializing.
@@ -455,7 +456,8 @@ struct RunConfiguration3DOptions {
   ShockAuthority shock = ShockAuthority::None;
   TransportModel transport = TransportModel::Parker3D;
   ParticleMoverFamily particleMover = ParticleMoverFamily::Parker;
-  // File parsing sets this bit only for an explicit run.particle_mover key.
+  // The schema-6 parser sets this bit together with the family it derives
+  // from application.sep.transport.
   // It is intentionally excluded from the physics identity: after Create()
   // normalization the selected family itself is the complete physical fact.
   // Parser-free legacy callers may omit it and have the family derived from
@@ -721,7 +723,6 @@ struct RunConfiguration3DOptions {
   // text input uses the enum-valued fields above.
   bool enablePerpendicularDiffusion = false;
   bool enableDrifts = false;
-  bool enableExternalScriptBackground = false;
   bool enableSelfConsistent3DTurbulence = false;
 };
 

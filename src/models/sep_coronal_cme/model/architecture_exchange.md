@@ -451,7 +451,7 @@ enum class InitialRadialParameterization {
 };
 enum class GeometryEvolution { IndependentComponentLaws, TabulatedSnapshots };
 
-// The complete field set is the [open_open_interface] schema in Section 14;
+// The complete field set is the open_open_interface section in Section 14;
 // this declaration establishes its shared SCCM configuration ownership.
 struct OpenOpenInterfaceOptions;
 ```
@@ -475,7 +475,7 @@ one input file accepted indiscriminately by both executables. Ownership is:
 
 `OpenOpenInterfaceOptions` solely owns the model/representation/policy
 discriminants, catalog and uncertainty assets, thickness ensemble, residual
-bounds/quantiles, and convergence controls in `[open_open_interface]`; an
+bounds/quantiles, and convergence controls in `open_open_interface`; an
 application adapter cannot keep a second copy of those fields.
 
 | Layer/profile | Options owned and parsed | Prohibited duplication |

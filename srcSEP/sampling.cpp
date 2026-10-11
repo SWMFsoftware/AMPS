@@ -254,8 +254,7 @@ void SEP::Sampling::InitSingleFieldLineSampling(int iFieldLine) {
   const std::string sampleBaseName=
       std::string(PIC::OutputDataFileDirectory)+"/sample";
 
-  if (SEP::Initialization::HasActive() &&
-      SEP::Initialization::Active().schemaVersion>=3) {
+  if (SEP::Initialization::HasActive()) {
     const std::vector<SEP::Initialization::ObserverConfiguration>& observers=
         SEP::Initialization::Active().observers;
     SamplingBufferTable[iFieldLine]=new cSamplingBuffer[observers.size()];
@@ -466,8 +465,7 @@ void SEP::Sampling::Manager() {
     }
 
     //sample the field line data
-    int TableSize=(SEP::Initialization::HasActive() &&
-                   SEP::Initialization::Active().schemaVersion>=3)
+    int TableSize=SEP::Initialization::HasActive()
         ? static_cast<int>(SEP::Initialization::Active().observers.size())
         : static_cast<int>(SamplingHeliocentricDistanceList.size());
     if (TableSize==0) TableSize=SamplingHeliocentricDistanceTableLength;

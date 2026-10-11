@@ -7,7 +7,8 @@ preflight, `rm -rf -- build`, `./Config.pl
 -application=test/sep_parker_spiral__field_line`, `make -j`) and then runs every
 srcSEP test procedure recorded in `srcSEP3D/LOG.md`: `test/run_tests.py --all`
 against the new executable (its per-test logs are cut from `test-run.log`),
-`test/run_parallel_diffusion_mover_tests.py` (per-suite logs), and the
+`test/run_parallel_diffusion_mover_tests.py` (per-suite logs), the generic
+input-reader test (`amps-input`: `make -C src/general/input test`), and the
 orchestrator self-test. It replaces whatever application `build/` held before.
 The script is a thin wrapper around the shared orchestrator
 `tools/sep_test_orchestrator.py --app srcsep`.
@@ -1286,14 +1287,16 @@ always exits before the production loop.
 `SEP_CLI_PARSE_ONLY`, which excludes only the function that writes AMPS globals,
 and exercises:
 
-- `CLI01`: help/list mode selection;
+- `CLI01`: help/list mode selection, and acceptance of `-input FILE` as an
+  exact synonym of `--input FILE`/`--input=FILE`;
 - `CLI02`: both `--test` forms and exactly-once execution;
 - `CLI03`: deterministic ordering, de-duplication, groups, routine/extended;
 - `CLI04`: malformed/conflicting/unknown selection rejection;
 - `CLI05`: result exit propagation and frozen legacy TestManager parsing;
-- `CLI06`: mover precedence (`--particle-mover` > schema-4 `run.particle_mover`
-  > default) and deferred mover-dependent validation when `--input` is given
-  without `--particle-mover`;
+- `CLI06`: mover precedence (`--particle-mover` > schema-6
+  `application.sep.transport` > default) and deferred mover-dependent
+  validation when an input file (`-input`/`--input`) is given without
+  `--particle-mover`;
 - `HIDDEN`: positive `assertion_failures` cannot be masked by callback PASS;
 - `REPORT`: JSON/JUnit schema, outcome, metric, and artifact preservation;
 - registry completeness: required metadata, callbacks, and unique IDs.
@@ -1336,7 +1339,7 @@ validation campaign.
 
 `test/run_parallel_diffusion_mover_tests.py` runs, from any directory and
 without an AMPS build, the suites that cover the shared parallel-diffusion
-library binding and the schema-4 mover key: `library` (library `make verify`,
+library binding and the schema-6 mover key `application.sep.transport`: `library` (library `make verify`,
 including PD13-\*), `binding` (PDB01–PDB05), `cli` (CLI01–CLI06), and
 `coefficients` (COEF01–COEF06). It parses every per-test result line, prints
 per-suite and total PASS/FAIL/SKIP/ERROR/MISSING counts, and lists each failed
@@ -1358,24 +1361,49 @@ python3 srcSEP/test/run_parallel_diffusion_mover_tests.py --verbose --json repor
 `make test-parallel-diffusion-binding-unit` compiles the production
 `util/sep_initialization.cpp`, `adapters/parallel_diffusion_adapter.cpp`, the
 canonical coefficient registry, and the shared parallel-diffusion library
-without AMPS or MPI. `PDB01` checks that schema 4 stores the
-`[parallel_diffusion]` body verbatim with line numbers and that schema 3 and
-duplicate sections are rejected. `PDB02` checks every rejected selection
-(section without provider, provider without `--input` or section, focused
+without AMPS or MPI; its inputs are shared SEP schema-6 files
+(`../../src/INPUT_FILE.md` section 5). `PDB01` checks that the schema-6
+reader stores the `physics: parallel_diffusion` assignments as `key = value`
+records (comments removed by the generic AMPS input reader) with their line
+numbers without altering case-sensitive library keys, that the block is
+optional, and that a retired schema number (4) and duplicate blocks are
+rejected. `PDB02` checks every rejected
+selection (block without provider, provider without an input file or block, focused
 mover, models needing unavailable host inputs, malformed values with the deck
 line number) and that nothing is installed. `PDB03` checks the registry
 provider and its Parker-only compatibility. `PDB04` installs models through
 the adapter and compares `kappa`/`lambda` returned through
 `ActiveParallelDiffusion` with independent closed forms (`v*lambda/3`, the
-rigidity/radial power law). `PDB05` checks the schema-4 `[run]
-particle_mover` key: canonical names only, schema-4 only, no duplicates,
-optional, and part of the startup fingerprint. The PIC sampling wrapper is not
+rigidity/radial power law). `PDB05` checks the schema-6
+`application.sep.transport` key: `parker`, `focused-diffusion`, and
+`focused-scattering` map to the movers `parker`, `fte-dmumu`, and `fte-mfp`
+(expected values written in the test); srcSEP mover names, unknown and empty
+values, the retired `application.sep.particle_mover` key ("unknown
+configuration key"), a duplicate key, and a missing key are rejected; the
+value is part of the startup fingerprint. The PIC sampling wrapper is not
 exercised here; it requires a native build.
 
-`make test-initialization-unit` compiles the production
-`util/sep_initialization.cpp` and the exact native callbacks without AMPS or
-MPI.  `INIT01` checks the complete SI schema, fingerprint, and live negative
-controls for missing and unknown input.  `INIT02` checks requested Parker point
+`make test-initialization-unit` (`test/run_initialization_tests.sh`) compiles
+the production `util/sep_initialization.cpp` and the exact native callbacks
+without AMPS or MPI, with `-std=c++17` and `-I src/general/input` for the
+header-only generic AMPS input reader (`amps_input.h`).  `INIT01` parses a complete schema-6 srcSEP input and checks the installed
+values and fingerprint (16 hex digits, independent of SWCME assignment
+order); the D4 ownership (Parker winding wind `4.0e5` m/s from
+`ambient.wind_speed`, rotation `2.86533e-6` rad/s, SWCME
+`source.energy_min = 1.602176634e-14 J` synthesized from `source: shock`);
+`application.sep.transport` and the turbulence block (128 spectral bins,
+shock efficiency 0.02, diagnostic cadence 100). Eleven negative controls must
+each fail with their own diagnosis: a retired schema (`retired`); a
+srcSEP3D-only block (`mesh.memory`), key (`run.campaign_seed`), provider value
+(`analytic-parker`), and observer kind (`fixed-cartesian`), each `not
+supported by srcSEP`; an SWCME `source.*` key in `physics: swcme` (`written in
+source: shock`); a `physics: background` / `parker` record; a 3-D SWCME
+geometry key; a 3-D SWCME rotation rate different from SWCME1D; the retired
+`particle_mover` key (`unknown configuration key`); and an incomplete
+turbulence block (missing `spectral_bins`). The SWCME1D rotation rate
+written as the 3-D key must be accepted with an identical fingerprint, and
+missing fields, unknown blocks, the retired INI syntax, and an incomplete
+SWCME model setting are rejected.  `INIT02` checks requested Parker point
 count, configured arc length, the surface resolution identity, and the tube
 cross-section identity at its reference radius. `INIT03` writes the production
 finite-line Tecplot zone, verifies its unit-qualified schema and configured

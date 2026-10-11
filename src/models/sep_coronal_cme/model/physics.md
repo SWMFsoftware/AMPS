@@ -287,7 +287,7 @@ observer calculation. Latitude-dependent rotation is an analytic-verification
 branch until a time-dependent 3-D background and closed-corona provider are
 qualified; it is not a production shortcut.
 
-`[solar_rotation]` is the sole configuration authority for `Omega_F`, its
+`solar_rotation` is the sole configuration authority for `Omega_F`, its
 convention, and any synodic-conversion asset. The closed-plasma potential,
 open-tube frame, Parker winding, observer transformations, and field-line
 export receive the same resolved sidereal value from the immutable prepared
@@ -625,7 +625,7 @@ be consumed as shock input.
 
 For the first release, a static closed provider is defined in the same rigidly
 corotating frame with the resolved angular velocity `Omega_F` owned by
-`[solar_rotation]`. The closed provider consumes that immutable value read-only;
+`solar_rotation`. The closed provider consumes that immutable value read-only;
 there is no `Omega_c` input or second physical authority. Its effective
 potential is
 
@@ -3279,11 +3279,11 @@ A production source is defined for every compiled AMPS species by a stable
 semantic ID plus a verified application-local compiled slot, never by assuming
 that index zero is a proton. After AMPS publishes `PIC::nTotalSpecies`, the
 adapter reads `GetChemSymbol`, mass, and signed charge for each slot and checks
-them against exactly one `[species.ID]` record. Distinct compiled populations
+them against exactly one `species.ID` record. Distinct compiled populations
 may share a chemical symbol, but their stable IDs and compiled slots remain
 different; slot numbers are never exchanged between independently built
 applications. A source-enabled production run then requires exactly one
-`[source_species.ID]` record with the same suffix for every `[species.ID]`.
+`source_species.ID` record with the same suffix for every `species.ID`.
 No compiled entry may be silently skipped. The schema-5 SEP movers transport
 charged particles, so a source-enabled run rejects every compiled neutral
 species before allocation; `[species.ID].transport_role=initialization-only`

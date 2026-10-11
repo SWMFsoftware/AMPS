@@ -14,14 +14,17 @@ on 2026-10-08; those decisions do not silently apply to srcSEP.
    species/background records to `ParticleState` and one coherent
    `LocalState`. Unit conversion happens there exactly once. PIC, MPI, mesh,
    and application headers remain outside this library.
-3. srcSEP3D schema 5 now implements `[parallel_diffusion]`. The future
+3. srcSEP3D schema 5 now implements the parallel-diffusion section; since the
+   generic AMPS input-format migration (`src/INPUT_FILE.md`) it is written as
+   the `physics: parallel_diffusion` block. (Historical plan, superseded by the
+   implemented srcSEP seam below: the future
    `ParallelDiffusion on` block in the legacy `srcSEP` parser will collect
    source-located string assignments, convert supported external units if the
    application syntax permits them, then call `BuildConfiguration` and
    `SetActiveConfiguration`. Unknown, duplicate, missing, and inactive-model
    keys fail before particle initialization. Preserve all existing input
    choices as explicit compatibility mappings; do not silently reinterpret an
-   old coefficient name as a scientifically different new backend.
+   old coefficient name as a scientifically different new backend.)
 4. srcSEP3D freezes the active configuration during serial Runtime setup and
    includes the stable model ID, complete validated parameters, and library
    fingerprint in its physics/restart manifest.
@@ -96,16 +99,20 @@ separation:
 
 ## Implemented srcSEP seam
 
-1. Input: schema 4 of the srcSEP `--input` INI (`util/sep_initialization.cpp`)
-   adds an optional `[parallel_diffusion]` section whose raw body lines and line
-   numbers are stored uninterpreted. Schemas 1-3 reject the section.
+1. Input: schema 4 of the srcSEP `-input`/`--input` file
+   (`util/sep_initialization.cpp`, generic AMPS runtime input format,
+   `application.sep.schema_version = 4`) adds an optional
+   `physics: parallel_diffusion` block. It holds only assignments; each is
+   stored uninterpreted as a `key = value` record with its physical line number
+   (comments already stripped by the generic reader). Schemas 1-3 reject the
+   block.
 2. Selection: `--spatial-diffusion-provider parallel-diffusion-library`
    (`SpatialKind::ParallelDiffusionLibrary` in the canonical coefficient
    registry). The registry admits it only for the `parker` mover; fte-dmumu and
    fte-mfp (including `mean-free-path=from-spatial`) are rejected.
 3. Installation: `adapters/parallel_diffusion_adapter.cpp` (`Configure`, called
    from `main.cpp` before `Initialization::Install` and before AMPS/MPI
-   initialization) requires the section exactly when the provider is selected,
+   initialization) requires the block exactly when the provider is selected,
    calls `ParseSection`, applies `CheckHostInputAvailability` with all inputs
    unavailable, installs the model, and copies the model ID and SHA-256
    fingerprint into the startup fingerprint.

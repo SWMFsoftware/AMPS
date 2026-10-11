@@ -47,9 +47,14 @@
 - Create the four documentation modules, `model/requirements.yaml`, and the
   deterministic `tools/generate_model.py` assembly/check mode. Generate the
   review-disposition table from the registry rather than maintaining it here.
-- Implement the schema-5 parser as a two-pass, version-dispatched parser:
-  pass one obtains `run.schema_version`; pass two applies only that schema's
-  grammar and typed validators.
+- Implement the schema-5 parser on the generic AMPS runtime input reader
+  (`src/general/input/amps_input.h`, `src/INPUT_FILE.md`): the deck is one
+  `#begin physics: sep_coronal_cme` block whose child blocks are the schema
+  sections; only `run.schema_version = 5` is accepted, and the schema-5
+  grammar and typed validators are then applied. (The originally planned
+  two-pass, version-dispatched parser that passed schema-1--4 bytes through
+  was implemented and later removed; schemas 1--4 are `srcSEP3D` application
+  decks read by `srcSEP3D` itself.)
 - Treat numerical values as bare SI scalars and carry dimensions in key names;
   reject inline unit tokens unless a future schema explicitly defines them.
 - Add typed records and enums without activating unfinished providers. A
@@ -58,15 +63,17 @@
 - Freeze elapsed-time/epoch semantics, complete history coverage, keyed random
   stream layout, campaign seed, stable-ID grammar, and the schema-5
   capability-availability matrix.
-- Preserve the schema-4 parser and canonical fingerprint byte for byte. Add
-  planned sources to build and release manifests only when those files exist.
+- Leave the `srcSEP3D` application's own schema-1--4 reader and canonical
+  fingerprint untouched by this library. Add planned sources to build and
+  release manifests only when those files exist.
 
 **Tests and exit gate**
 
 - Parser rejects unknown, duplicate, inactive, dimensionally wrong, or
   incomplete keys.
-- Schemas 1--4 retain their previous parse results and fingerprints; schema 5
-  cannot accidentally be read by the schema-4 validator.
+- Any `run.schema_version` other than 5, and retired INI syntax (`[section]`
+  headers), are rejected by this library; schema 5 cannot accidentally be read
+  by an older-schema validator.
 - Mutating a physical authority, asset checksum, interface policy, or EOS
   changes the schema-5 fingerprint; changing a comment or path spelling for
   the same checksum does not.
@@ -608,7 +615,7 @@
 
 - Install the new background and shock factories.
 - Construct the heliocentric Cartesian AMR domain and both refinement fields
-  from `[mesh]`: one distance field from the solar sphere and one from the
+  from `mesh`: one distance field from the solar sphere and one from the
   authoritative requested-line centerlines. Combine requested cell sizes by
   taking the finer requirement; never create a separate approximate spiral.
 - Enclose and conservatively clip the exact spherical escape domain inside the
@@ -865,8 +872,8 @@
 - Add `srcSEP3D/adapters/field_line_export_adapter.{h,cpp}` as a thin caller of
   that shared reduction API. It gathers requests and snapshots, publishes the
   returned bundle, and does no tracing or source-physics work of its own.
-- Extend the schema-5 parser with `[field_line_export]` and repeated
-  `[field_line.ID]` sections, including explicit inactive sentinels.
+- Extend the schema-5 parser with `field_line_export` and repeated
+  `field_line.ID` sections, including explicit inactive sentinels.
 - Use serialized string line IDs, orthogonal history-coverage and intersection
   states, bitwise rejection causes, and independent source-measure status;
   vector order and integer container position are never physical identity.
@@ -880,7 +887,7 @@
   `sep-field-line-bundle` background provider. The adapter publishes through
   the existing shared `SEP::Background::SnapshotStore` and uses the shared
   coefficient registry.
-- Add repeated `[line_mesh.ID]` records to `srcSEP`; conservatively resample
+- Add repeated `line_mesh.ID` records to `srcSEP`; conservatively resample
   bundle geometry and positive primitives on one-sided smooth intervals while
   preserving each requested start, end, and point count.
 - Link `sep_common` and `sep_coronal_cme` into the `srcSEP3D` build. Link only
@@ -2021,8 +2028,10 @@ own independent rows pass.
 - `INIT3D03`: finite Tecplot output, including empty-particle cells, validity,
   background, turbulence, local time step, and all-species weight fields.
 - `INIT3D04`: internal-solar-sphere registration, clipping, and interaction.
-- `CFG3D12`: two-pass schema dispatch and strict SI-key grammar.
-- `CFG3D13`: schemas 1--4 parse/fingerprint compatibility.
+- `CFG3D12`: schema-5 block grammar (one `physics: sep_coronal_cme` block,
+  section child blocks, no model-level assignments, no duplicate sections or
+  keys) and strict SI-key grammar.
+- `CFG3D13`: rejection of every non-5 schema version and of retired INI syntax.
 - `CFG3D14`: cross-option radius, EOS/table, geometry, turbulence, and focused
   interface validation, including positive sub-unity relative root/quadrature
   controls for the weighted focused branch.
@@ -2041,7 +2050,7 @@ own independent rows pass.
   angular-reporting, ballistic/out-of-domain, geometry-time/relative-observer
   mapping, source/intent, radial-interface/domain, trace-branch/outer-radius,
   run-horizon, and RNG discriminants enforce their complete branch rules.
-- `CFG3D19`: `[solar_rotation]` is the single physical rate authority;
+- `CFG3D19`: `solar_rotation` is the single physical rate authority;
   provider-local duplicate keys and inactive rigid/differential fields are
   rejected, synodic conversion occurs in the configuration factory before
   provider validation, and every consumer/bundle record receives the identical

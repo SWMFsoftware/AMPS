@@ -1,48 +1,245 @@
-#section begin: sep3d
-! The three selectors make authority explicit. The source model is a gross
-! accepted-shock incident-flux normalization; it is not an acceleration law.
-shock_model = reduced-shock-surface
-background_plasma_model = corona-swcme-ambient
-source_model = accepted-shock-incident-flux
+! ============================================================================
+! srcSEP3D blocks shared by amps.in and amps-injection-smoke.in
+! ============================================================================
+! Generic AMPS runtime input (src/INPUT_FILE.md).  This file holds only whole
+! blocks (an included file is always block-balanced) and is #included by both
+! run files of this example.  It contains everything that is identical in the
+! two runs: the application controls, the mesh, the physics blocks other than
+! the reduced shock-front model itself, the observer and the output.
+!
+! Provenance.  Before the input unification this example used the retired
+! one-dash "#section begin: sep3d" mode, which set only the shock/source keys
+! and silently took everything below from compiled C++ defaults
+! (RunConfiguration3DOptions).  Those defaults are now written out explicitly,
+! with the same values, so the run uses exactly what it used before and every
+! value is visible for review.  The comments marked [former default] identify
+! them; they are plausibility settings for this smoke example, not tuned
+! production choices.  Units are SI and are part of every dimensional key.
 
-! Explicit standalone stopping horizon. This short checked-in example is an
-! initialization/injection smoke case; increase it for physical campaigns.
-maximum_time_steps = 4
+#begin application: sep
+  ! Shared SEP schema 6; transport also selects the mover family.
+  schema_version = 6
+  ! Particles are injected from accepted triangles of the reduced front.
+  intent = shock-injection
+  transport = parker
+  background_cadence_steps = 1
+  ! The configured count is drawn at every step (Poisson-distributed live).
+  injection_cadence_steps = 1
 
-! Expected computational particles per iteration and compiled species at the
-! required normalization radius. The live count is Poisson distributed and
-! changes with accepted incident flux while W_s stays constant.
-particles_per_iteration = \
-  1000
+  ! [former default] Parker transport sub-stepping limits and coefficients.
+  #begin transport
+    cell_crossing_fraction = 0.4
+    diffusion_fraction = 0.2
+    focusing_fraction = 0.2
+    cooling_fraction = 0.2
+    field_variation_fraction = 0.2
+    shock_crossing_fraction = 0.5
+    minimum_substep_s = 1e-12
+    maximum_substeps = 100000
+    pitch_angle_scheme = reflecting-milstein
+    spatial_diffusion_model = mean-free-path
+    pitch_angle_diffusion_model = jokipii-1966
+    mean_free_path_model = correlation
+    ! Inactive sentinels of the unselected coefficient models.
+    constant_dmumu_per_s = 0
+    constant_mean_free_path_m = 0
+    mean_free_path_reference_m = 0
+    mean_free_path_reference_radius_m = 0
+    mean_free_path_reference_rigidity_v = 0
+    mean_free_path_radial_exponent = 0
+    mean_free_path_rigidity_exponent = 0
+    spatial_quadrature_absolute_tolerance_m2_per_s = 0
+    spatial_quadrature_relative_tolerance = 1e-6
+    spatial_quadrature_maximum_recursion = 20
+    focused_scattering_frame = plasma-frame-isotropic
+    maximum_scattering_events_per_substep = 100000
+    perpendicular_diffusion = none
+    constant_kappa_perpendicular_m2_per_s = 0
+    kappa_perpendicular_to_parallel_ratio = 0
+    drifts = none
+  #end transport
 
-! One global AMPS step permits a particle at v_max to cross at most 30% of
-! the smallest actually allocated characteristic cell length.
-maximum_particle_speed_m_s = 200000000
-time_step_margin_factor = 0.30
+  ! [former default] No split/merge population control.
+  #begin population_control
+    mode = off
+    minimum_particles_per_cell_per_species = 0
+    target_particles_per_cell_per_species = 0
+    maximum_particles_per_cell_per_species = 0
+    cadence_steps = 1
+  #end population_control
 
-! Required physical normalization location. This example uses the exact
-! 20-R_sun corona/SWCME handoff; there is intentionally no parser default.
-source_normalization_radius_m = 13914000000
+  ! [former default] No optional per-cell gradient storage.
+  #begin storage
+    magnetic_gradient = false
+    velocity_gradient = false
+    sampling_bytes_per_cell = 0
+  #end storage
 
-#subsection begin: shock-particle-injection
-! The implemented sampler assigns every particle of one species the same W_s.
-! The second accepted spelling, log-uniform-momentum-importance, is reserved
-! and terminates startup until its individual-weight correction is qualified.
-statistical_weight_model = constant-statistical-weight
+  ! [former default] Prescribed Kolmogorov turbulence, deltaB/B = 0.3.
+  #begin turbulence
+    authority = prescribed
+    model = kolmogorov
+    amplitude_model = constant-delta-b-over-b
+    delta_b_over_b = 0.3
+    wave_energy_density_at_reference_j_per_m3 = 0
+    wave_energy_density_radial_exponent = 0
+    normalized_cross_helicity = 0
+    reference_radius_m = 1.495978707e11
+    k_min_per_m = 1e-10
+    k_max_per_m = 1e-7
+    k_min_radial_exponent = 2
+    k_max_radial_exponent = 2
+    spectral_index = 1.6666666666666667
+    correlation_length_m = 4.487936121e9
+    correlation_length_radial_exponent = 1
+    validity_cadence_s = 60
+    missing_data = fail
+    resonance_range = reject
+    self_consistent_3d = false
+  #end turbulence
+#end application
 
-! Total kinetic-energy interval per particle: 10 keV through 100 MeV in SI.
-minimum_energy_j = 1.602176634e-15
-maximum_energy_j = 1.602176634e-11
+! [former default] One-AU Sun-centred cube; the source/transport shell is at
+! 20 R_sun (1.3914e10 m).  The reduced front is HCI, so the frame is HCI.
+#begin mesh
+  ! 0.25 AU background cells, 0.01 AU finest cells.
+  global_cell_size_m = 3.7399467675e10
+  minimum_cell_size_m = 1.495978707e9
+  cells_per_block_edge = 4
+  maximum_level = 7
+  memory_budget_bytes = 4294967296
+  block_overhead_bytes = 1024
 
-! q=3X/(X-1) is derived independently from each accepted triangle and the
-! sampled number density is dN/dp proportional to p^(2-q).
-phase_space_power_model = compression-ratio
+  #begin domain
+    preset = one-au
+    inner_radius_m = 1.3914e10
+    inner_boundary = absorb
+    outer_radius_mode = preset
+    outer_radius_m = 1.495978707e11
+    outer_boundary = escape
+    coordinate_frame = HCI
+    origin_x_m = 0
+    origin_y_m = 0
+    origin_z_m = 0
+  #end domain
 
-! Fatal runaway guard, not a cap or source-rate renormalization.
-maximum_events_per_species_per_step = 1000000
-#subsection end
+  ! Diagnostic Parker line.  Zero initial point, zero length and zero point
+  ! count are the documented "derive" values: the line starts on the inner
+  ! shell in the tube direction (here +X), spans outer minus inner radius and
+  ! has 4001 points.  They reproduce the former programmatic default exactly.
+  #begin field_line
+    origin_x_m = 0
+    origin_y_m = 0
+    origin_z_m = 0
+    start_mode = explicit
+    initial_x_m = 0
+    initial_y_m = 0
+    initial_z_m = 0
+    length_m = 0
+    point_count = 0
+  #end field_line
 
-! The complete reduced model lives in a separate included input fragment so
-! the top-level application controls remain readable.
-#include "reduced-shock-surface.in"
-#section end
+  ! Cells degrade smoothly from 0.01 AU at the source shell to 0.25 AU.
+  #begin refinement: solar
+    enabled = true
+    surface_cell_size_m = 1.495978707e9
+    transition_outer_radius_m = 3.7399467675e10
+    profile = smoothstep
+    exponent = 1
+  #end refinement
+
+  ! Field-line tube refinement is off (its values are inactive).
+  #begin refinement: tube
+    enabled = false
+    source_longitude_rad = 0
+    source_colatitude_rad = 1.5707963267948966
+    reference_radius_m = 1.495978707e11
+    radius_at_reference_m = 4.487936121e9
+    radius_mode = constant-angular-width
+    center_cell_size_m = 1.495978707e9
+    transverse_profile = smoothstep
+    transverse_exponent = 1
+  #end refinement
+
+  #begin active_region
+    mode = full-domain
+    reference_radius_m = 1.495978707e11
+    radius_at_reference_m = 0
+    radius_mode = constant-angular-width
+    buffer_blocks = 0
+  #end active_region
+
+  #begin memory
+    base_cell_bytes = 256
+    base_node_bytes = 128
+    block_structure_bytes = 4096
+    communication_bytes_per_block = 2048
+    particle_bytes = 160
+    particles_per_cell = 2
+    halo_fraction = 0.20
+    safety_margin_fraction = 0.25
+  #end memory
+#end mesh
+
+! The reduced shock-front provider (physics: shock_front, included by each run
+! file) is the only plasma/IMF authority.
+#begin physics: background
+  provider = runtime-model
+  model_id = sep-corona-swcme-shock-front-v1
+
+  ! [former default] Parker record, required without physics: swcme (D4); it
+  ! is not a second ambient authority.
+  #begin parker
+    reference_radius_m = 1.495978707e11
+    radial_field_at_reference_t = 3.0e-9
+    solar_rotation_rate_rad_per_s = 2.865e-6
+    solar_wind_speed_m_per_s = 400000
+    magnetic_polarity = 1
+    number_density_at_one_au_m3 = 5e6
+    temperature_k = 1e5
+    validity_cadence_s = 3600
+  #end parker
+#end physics
+
+! The legacy particle-crossing authority stays off: the reduced front owns the
+! surface from which particles are injected.
+#begin physics: shock
+  authority = none
+#end physics
+
+! [former default] One fixed observer at 0.25 AU on +X sampling species 0.
+#begin observer: default
+  kind = fixed-cartesian
+  normalization = differential-intensity
+  position_x_m = 3.7399467675e10
+  position_y_m = 0
+  position_z_m = 0
+  follows_trajectory = false
+  velocity_x_m_per_s = 0
+  velocity_y_m_per_s = 0
+  velocity_z_m_per_s = 0
+  collection_radius_m = 1.495978707e9
+  shell_radius_m = 1.495978707e11
+  ! Cadences are moved up to the first exact multiple of the derived step.
+  cadence_s = 60
+  energy_bins = 32
+  energy_spacing = logarithmic
+  pitch_angle_bins = 24
+  minimum_energy_j = 1.602176634e-15
+  maximum_energy_j = 1.602176634e-11
+  minimum_mu = -1
+  maximum_mu = 1
+  species = 0
+  products = flux,spectrum
+#end observer
+
+! [former default] Output every step to ./output (override with --output-dir).
+#begin output
+  cadence_steps = 1
+  checkpoint_cadence_steps = 0
+  directory = output
+  prefix = sep3d
+  initialization_mesh_tecplot_file = sep3d-initialization-mesh.dat
+  initialization_field_line_tecplot_file = sep3d-initialization-parker-line.dat
+  initialization_data_tecplot_file = sep3d-initialization-data.dat
+#end output

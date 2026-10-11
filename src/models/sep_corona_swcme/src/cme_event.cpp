@@ -2,6 +2,8 @@
 
 #include "sep_coronal_cme/configuration_parser.h"
 
+#include "amps_input.h"
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -66,6 +68,41 @@ Core::Result<std::map<std::string,std::string>> ParseAssignments(
         "line "+std::to_string(lineNumber)+": duplicate key "+key);
   }
   return Core::Result<std::map<std::string,std::string>>::Success(std::move(values));
+}
+
+// Read the main CME background event record, written in the generic AMPS
+// runtime-input format (src/INPUT_FILE.md) as exactly one block
+// ``#begin physics: cme_background ... #end physics``.  Its vocabulary is
+// dotted (``handoff.transition_begin_s``); a nested block such as
+// ``#begin handoff`` is the same key space and is flattened to the dotted
+// spelling.  A dotted key that is supplied both ways is a duplicate.
+//
+// Only the user-authored record uses this grammar.  The checksummed data
+// assets it references (history CSV, ambient/ejecta/contact ``key=value``
+// assets) are byte-identified data whose SHA-256 enters the physics identity;
+// they keep their frozen data formats and are read by ParseAssignments above.
+Core::Result<std::map<std::string,std::string>> ParseEventRecord(
+    const std::string& bytes) {
+  using Return=Core::Result<std::map<std::string,std::string>>;
+  AMPS::Input::Document document;
+  const AMPS::Input::Status parsed=
+      AMPS::Input::ParseText(bytes,"cme background event",".",&document);
+  if(!parsed.ok())return Bad<std::map<std::string,std::string>>(parsed.message);
+  const AMPS::Input::Status kinds=AMPS::Input::RequireOnlyBlocks(
+      document.root,{"physics"},"the CME background event reader");
+  if(!kinds.ok())return Bad<std::map<std::string,std::string>>(kinds.message);
+  if(document.root.blocks.size()!=1||
+      document.root.blocks.front().name!="cme_background")
+    return Bad<std::map<std::string,std::string>>(
+        "a CME background event is exactly one "
+        "'#begin physics: cme_background' block");
+  std::map<std::string,std::string> values;
+  for(const AMPS::Input::Assignment& item:
+      AMPS::Input::Flatten(document.root.blocks.front()))
+    if(!values.emplace(item.key,item.value).second)
+      return Bad<std::map<std::string,std::string>>(AMPS::Input::ErrorAt(
+          item.where,"duplicate event key '"+item.key+"'",item.text).message);
+  return Return::Success(std::move(values));
 }
 
 bool LowerHexSha256(const std::string& value) {
@@ -766,7 +803,7 @@ Core::Result<std::shared_ptr<const EventConfiguration>> ResolveEventConfiguratio
     const std::string& inputBytes,const AssetReader& reader) {
   if(!reader)return EventResult::Failure(Core::StatusCode::InvalidConfiguration,
       "event configuration requires an asset reader");
-  const auto parsed=ParseAssignments(inputBytes);
+  const auto parsed=ParseEventRecord(inputBytes);
   if(!parsed.ok())return EventResult::Failure(parsed.status.code,parsed.status.message);
   auto values=parsed.value;
   const bool pistonSelection=values.count("run.profile")&&

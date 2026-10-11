@@ -1,8 +1,62 @@
-! Shared/global input example.  The srcSEP3D parser validates the section
-! structure but deliberately ignores assignments owned by other applications.
-#section begin: core
-example_note = ignored-by-srcSEP3D
-#section end
+! ============================================================================
+! srcSEP3D reduced-front injection example: production-like accelerating launch
+! ============================================================================
+! Generic AMPS runtime input (src/INPUT_FILE.md).  Run with
+!   mpiexec -n 1 ./amps -input srcSEP3D/examples/application-input/amps.in
+! or copy the directory and run ./amps there without arguments (a coupled SWMF
+! run, which has no command line, always reads ./amps.in).
+!
+! This file holds what differs between the two runs of this example (run
+! control, the particle source and the reduced shock-front model); the shared
+! srcSEP3D blocks are in sep3d.in.  Relative #include paths resolve from this
+! file's directory.  The case is a synthetic plausibility run, not
+! observational validation.
 
-! Relative include paths are resolved from this file's directory.
+#begin run
+  ! dt = time_step_margin_factor * h_min / maximum_particle_speed_m_s, where
+  ! h_min is the smallest allocated characteristic cell length (computed after
+  ! AMPS allocates the mesh).  run.time_step_s is therefore not written.
+  time_step_mode = derived-from-mesh
+  maximum_particle_speed_m_s = 200000000
+  time_step_margin_factor = 0.30
+  ! Explicit stopping horizon.  This short example is an initialization and
+  ! injection smoke case; the launch is sub-fast during these four steps, so
+  ! the valid zero-rate Poisson state injects no particles.
+  maximum_time_steps = 4
+  campaign_seed = 1
+
+  #begin restart
+    input_path = none
+    output_path = restart/sep3d.chk
+  #end restart
+#end run
+
+! Gross accepted-shock incident flux through the reduced front, used for the
+! statistical normalization W_s = Ndot_s dt / samples_per_step of every
+! compiled species.  It is not an SEP acceleration law.
+#begin source: shock
+  enabled = true
+  normalization = accepted-shock-incident-flux
+  ! Required evaluation radius of Ndot_s (the 20-R_sun handoff); no default.
+  normalization_radius_m = 13914000000
+  ! Expected model particles per step and species at that radius; the live
+  ! count is Poisson distributed and follows the accepted flux.
+  samples_per_step = 1000
+  ! Total kinetic energy per particle: 10 keV to 100 MeV.
+  minimum_energy_j = 1.602176634e-15
+  maximum_energy_j = 1.602176634e-11
+  ! q = 3X/(X-1) from each accepted face; dN/dp is proportional to p^(2-q).
+  spectrum_model = local-compression-dsa
+  phase_space_power_index = 0
+  ! Every particle of one species carries the same W_s.  The alternative
+  ! log-uniform-momentum-importance is a typed reserved mode that stops
+  ! startup until its individual-weight correction is qualified.
+  weight_model = constant-statistical-weight
+  ! Fatal runaway guard, never a cap or a renormalization.
+  maximum_events_per_species_per_step = 1000000
+#end source
+
 #include "sep3d.in"
+
+! The complete reduced shock-front plus ambient model (physics: shock_front).
+#include "reduced-shock-surface.in"

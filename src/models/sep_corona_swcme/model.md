@@ -675,7 +675,7 @@ In a uniform-ambient ownership test, hold geometry, eligibility, reference lengt
 
 ### 7.1 Proposed configuration
 
-The following is a **design sketch**, not a runnable current input. S0 assigns the schema and accepted keys; the current parser must not be expected to accept these new selectors. Keep `[run]` first in delivered strict-INI examples. Every production example must use the actually registered schema and include a validated stop/coverage contract.
+The following is a **design sketch**, not a runnable current input. S0 assigns the schema and accepted keys; the current parser must not be expected to accept these new selectors. The sketch is written in the original INI-style `[section]` / `#`-comment notation only to group the proposed keys; that syntax is retired and rejected by every current reader. Delivered examples must use the generic AMPS runtime input format (`src/INPUT_FILE.md`: `#begin KIND[: NAME]` ... `#end KIND` blocks, `!` comments, `#include`), in which application settings live in application-owned blocks and each model's parameters live in its own `physics: NAME` block (for example the implemented CME background event record is one `#begin physics: cme_background` block and the reduced shock-front event is one `#begin physics: shock_front` block). The block layout of these proposed groups is assigned when they are implemented. Every production example must use the actually registered schema and include a validated stop/coverage contract.
 
 ```ini
 # DESIGN ONLY: proposed keys; not accepted by the current parser.
@@ -1430,7 +1430,7 @@ Update:
 
 - Shared-module README with build/API examples and capability levels.
 - SEP3D background/runtime/test READMEs with selection, publication ordering, native evidence, and restart behavior.
-- Parser-compatible input examples with `[run]` first and comments distinguishing solar exclusion, ambient inner/outer support, $R_{\rm ss}$, $R_h$, thermal bands, source termination, region capabilities and finite run completion.
+- Parser-compatible input examples in the generic AMPS block format (`src/INPUT_FILE.md`) with comments distinguishing solar exclusion, ambient inner/outer support, $R_{\rm ss}$, $R_h$, thermal bands, source termination, region capabilities and finite run completion.
 - Existing corona/SWCME documentation with the difference between standalone internal upstream and composite external upstream.
 - Release notes and test registry with implemented versus reserved features and reproducible commands.
 

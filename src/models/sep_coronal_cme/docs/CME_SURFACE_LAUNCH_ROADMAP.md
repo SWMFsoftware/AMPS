@@ -180,7 +180,7 @@ This is the historical revision-1.2 audit, preserved for traceability. It is not
 | Existing component | Reusable implementation | Remaining connection or hardening |
 |---|---|---|
 | `src/models/sep_coronal_cme/src/ellipsoid_geometry.cpp` | Fixed radial-principal basis, center/apex factories, independent smooth histories, Hermite history, normals, normal speeds, curvature and tessellation | Construct the history from input; qualify solar clipping and surface support; preserve physical patch identity in the runtime. |
-| `.../configuration_parser.cpp` and `schema5_registry.inc` | Strict versioned lexer, key registry and raw assignment map | The registry lacks the documented radial and two lateral semiaxis fields. The typed configuration materializes only Stage 0–2 authorities. A complete front resolver is missing. |
+| `.../configuration_parser.cpp` and `schema5_registry.inc` | Strict schema-5 reader over the generic AMPS block input (`amps_input.h`; one `physics: sep_coronal_cme` block, sections as child blocks; non-5 schemas rejected), key registry and raw assignment map | The registry lacks the documented radial and two lateral semiaxis fields. The typed configuration materializes only Stage 0–2 authorities. A complete front resolver is missing. |
 | `srcSEP3D/runtime/configuration_io.cpp` | Native schemas 1–4, strict application configuration | Its version check rejects schema 5. No native schema-5 CME configuration path exists. |
 | `srcSEP3D/runtime/run_configuration.h/.cpp` | Immutable application configuration and runtime gates | `ShockAuthority` currently contains only `None` and `Swcme`. Corona explicitly requires schema 4, transport-only, no shock and no source. Add a distinct coronal-front authority and its profile gate. |
 | `.../background_provider.cpp`, `srcSEP3D/background/bg_corona.cpp` | PFSS/Parker diagnostic ambient provider and native background updates | Assemble the launch profile deliberately. The current diagnostic profile is not the complete schema-5 PFSS/SCS/wind event model. |
@@ -288,7 +288,7 @@ The modular r4 files under `sep_coronal_cme/model/` remain the authority for cor
 
 ### 4.1 Version dispatch and ownership
 
-Implement a true native schema-5 dispatch in both applications: existing schemas continue through their existing parser; schema 5 passes through the shared parser, a complete model resolver, and the appropriate host-configuration translator. Do not change an input version to 4 to bypass a check, and do not make a native parser accept 5 while silently retaining legacy field meanings.
+Implement a true native schema-5 dispatch in both applications: existing schemas continue through their existing parser; schema 5 passes through the shared parser, a complete model resolver, and the appropriate host-configuration translator. (Current library state: `CoronalCME::ParseConfiguration` accepts only `run.schema_version = 5` written as one `#begin physics: sep_coronal_cme` block in the generic AMPS input format; its former pass-through of schema-1--4 bytes was removed, and schemas 1--4 remain application decks read by `srcSEP3D` itself.) Do not change an input version to 4 to bypass a check, and do not make a native parser accept 5 while silently retaining legacy field meanings.
 
 Before freezing schema 5, reconcile its complete grammar with both native hosts: clock and maximum steps, line/Cartesian mesh, observers, storage, source species, output and restart. Use one documented source of truth for each quantity. Add any missing native profile selector explicitly to the normative modules and generated registry. A diagnostic launch profile must be named and cannot inherit an event-qualified label.
 
@@ -321,67 +321,70 @@ Both consumers report the same resolved physics identity for the same event. Dis
 
 Every component law needs `initial_value_m`, `kinematics`, `initial_rate_m_per_s`, `final_rate_m_per_s`, `transition_start_time_s`, `transition_duration_s` and `after_transition`. Keep inactive zero/none values explicit. Under the apex initial parameterization, compute the initial center from the apex and radial semiaxis. If an independently prescribed apex motion law is desired, specify a separate complete branch; an initial apex scalar alone does not define that history.
 
-An illustrative fragment of the **planned** configuration is below. It is not runnable in the current native executable and is not a complete schema-5 deck. All four component histories are shown to remove ambiguity. The completed fixture must declare attached support for `0 <= t <= 1200 s`, solar radius `6.957e8 m`, and separate background/source bounds. It is a geometry/acceleration verification case, not an observation-derived eruption or a guarantee of shock formation.
+An illustrative fragment of the **planned** configuration is below. It is not runnable in the current native executable and is not a complete schema-5 deck. All four component histories are shown to remove ambiguity. The completed fixture must declare attached support for `0 <= t <= 1200 s`, solar radius `6.957e8 m`, and separate background/source bounds. It is a geometry/acceleration verification case, not an observation-derived eruption or a guarantee of shock formation. It is written in the generic AMPS runtime input syntax (`src/INPUT_FILE.md`): schema sections are child blocks of the one `#begin physics: sep_coronal_cme` block, the dotted section `shock_geometry.center_distance` is the nested block `center_distance` inside `shock_geometry`, and `!` starts a comment. Other model sections are omitted from this fragment.
 
-```ini
-[shock_geometry]
-model = triaxial-ellipsoid
-axis_convention = radial-principal-axis
-initial_parameterization = center-and-principal-axes
-reference_time_s = 0
-direction_frame = HCI-like-inertial
-direction_longitude_rad = 0
-direction_latitude_rad = 0.7853981633974483
-lateral_axis_tilt_rad = 0.2617993877991494
-orientation_evolution = fixed
-# Direction and body basis remain fixed: no deflection or rotation history.
-evolution = independent-component-laws
-initial_apex_radius_m = 0
-snapshots_file = none
-snapshot_interpolation = none
-snapshot_extrapolation = reject
-
-[shock_geometry.center_distance]
-# d_c = 0.97 Rs. With a_r = 0.08 Rs, initial apex is 1.05 Rs.
-# Keep the center fixed during this attached, expansion-dominant fixture.
-initial_value_m = 6.74829e8
-kinematics = smooth-rate-transition
-initial_rate_m_per_s = 0
-final_rate_m_per_s = 0
-transition_start_time_s = 0
-transition_duration_s = 1200
-after_transition = constant-final-rate
-
-[shock_geometry.radial_semiaxis]
-# Radial expansion supplies the apex motion: 25 to 600 km/s over 20 min.
-# This declared 1200-s interval retains a solar intersection throughout.
-initial_value_m = 5.5656e7
-kinematics = smooth-rate-transition
-initial_rate_m_per_s = 25000
-final_rate_m_per_s = 600000
-transition_start_time_s = 0
-transition_duration_s = 1200
-after_transition = constant-final-rate
-
-[shock_geometry.lateral_semiaxis_1]
-# First transverse axis begins at 0.12 Rs and expands independently.
-initial_value_m = 8.3484e7
-kinematics = smooth-rate-transition
-initial_rate_m_per_s = 5000
-final_rate_m_per_s = 200000
-transition_start_time_s = 0
-transition_duration_s = 1200
-after_transition = constant-final-rate
-
-[shock_geometry.lateral_semiaxis_2]
-# Unequal second transverse axis begins at 0.10 Rs; units are SI.
-initial_value_m = 6.957e7
-kinematics = smooth-rate-transition
-initial_rate_m_per_s = 4000
-final_rate_m_per_s = 160000
-transition_start_time_s = 0
-transition_duration_s = 1200
-after_transition = constant-final-rate
+```text
+#begin physics: sep_coronal_cme
+  #begin shock_geometry
+    model = triaxial-ellipsoid
+    axis_convention = radial-principal-axis
+    initial_parameterization = center-and-principal-axes
+    reference_time_s = 0
+    direction_frame = HCI-like-inertial
+    direction_longitude_rad = 0
+    direction_latitude_rad = 0.7853981633974483
+    lateral_axis_tilt_rad = 0.2617993877991494
+    orientation_evolution = fixed
+    ! Direction and body basis remain fixed: no deflection or rotation history.
+    evolution = independent-component-laws
+    initial_apex_radius_m = 0
+    snapshots_file = none
+    snapshot_interpolation = none
+    snapshot_extrapolation = reject
+    #begin center_distance
+      ! d_c = 0.97 Rs. With a_r = 0.08 Rs, initial apex is 1.05 Rs.
+      ! Keep the center fixed during this attached, expansion-dominant fixture.
+      initial_value_m = 6.74829e8
+      kinematics = smooth-rate-transition
+      initial_rate_m_per_s = 0
+      final_rate_m_per_s = 0
+      transition_start_time_s = 0
+      transition_duration_s = 1200
+      after_transition = constant-final-rate
+    #end center_distance
+    #begin radial_semiaxis
+      ! Radial expansion supplies the apex motion: 25 to 600 km/s over 20 min.
+      ! This declared 1200-s interval retains a solar intersection throughout.
+      initial_value_m = 5.5656e7
+      kinematics = smooth-rate-transition
+      initial_rate_m_per_s = 25000
+      final_rate_m_per_s = 600000
+      transition_start_time_s = 0
+      transition_duration_s = 1200
+      after_transition = constant-final-rate
+    #end radial_semiaxis
+    #begin lateral_semiaxis_1
+      ! First transverse axis begins at 0.12 Rs and expands independently.
+      initial_value_m = 8.3484e7
+      kinematics = smooth-rate-transition
+      initial_rate_m_per_s = 5000
+      final_rate_m_per_s = 200000
+      transition_start_time_s = 0
+      transition_duration_s = 1200
+      after_transition = constant-final-rate
+    #end lateral_semiaxis_1
+    #begin lateral_semiaxis_2
+      ! Unequal second transverse axis begins at 0.10 Rs; units are SI.
+      initial_value_m = 6.957e7
+      kinematics = smooth-rate-transition
+      initial_rate_m_per_s = 4000
+      final_rate_m_per_s = 160000
+      transition_start_time_s = 0
+      transition_duration_s = 1200
+      after_transition = constant-final-rate
+    #end lateral_semiaxis_2
+  #end shock_geometry
+#end physics
 ```
 
 The fixed-center fixture keeps `d_c-a_r<R_sun` throughout its declared interval and has positive axes. At 1200 s its apex is approximately `1.58903 R_sun`. Its mean apex acceleration is `0.47917 km/s^2` and its peak is `0.89844 km/s^2`; these are analytic checks of the chosen interpolation, not universal CME limits. Continued constant-final-rate expansion beyond the declared interval requires a new attachment/domain-support certificate. A complete source-enabled deck must additionally qualify the corona, finite reference surface, local Mach state, open-field connectivity and release normalization.

@@ -8,11 +8,12 @@
 namespace SEP {
 namespace CoronalCME {
 
-// Parse a complete application input using the mandatory two-pass dispatch.
-// Pass one recognizes only section/assignment syntax and locates the unique
-// run.schema_version.  Pass two then applies exactly that version's grammar.
-// Schema 1--4 content is returned byte-for-byte to the frozen application
-// parser; this shared library never reinterprets a legacy deck.
+// Parse a complete model input written in the generic AMPS runtime-input
+// format (src/INPUT_FILE.md): one ``#begin physics: sep_coronal_cme`` block
+// whose child blocks are the schema-5 sections (``#begin pfss``,
+// ``#begin observer: earth`` for identified sections, nested blocks for
+// dotted section names).  The unique run.schema_version must be 5; the
+// schema-5 grammar then applies to every key.
 Core::Result<VersionedConfiguration> ParseConfiguration(
     const std::string& inputBytes);
 

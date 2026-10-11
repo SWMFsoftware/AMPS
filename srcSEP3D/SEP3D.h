@@ -47,12 +47,6 @@ RuntimeModel::Runtime& ApplicationRuntime();
 Core::Status ConfigureApplication(
     const std::shared_ptr<const RuntimeModel::RunConfiguration3D>& configuration);
 
-// Select the shared global input tree for the standalone ``-input`` mode.
-// Installation only records the path; parsing occurs collectively inside
-// amps_init_mesh, immediately after Init_BeforeParser and before any mesh
-// storage is frozen.  Coupled hosts and maintained ``--input`` decks omit it.
-Core::Status InstallApplicationInputFile(const std::string& path);
-
 // Optional host-owned runtime provider. Install after ConfigureApplication
 // (optionally after mesh binding), before acquisition in amps_init. Ownership
 // may be installed once, not changed between generations. Metadata must match
@@ -86,10 +80,9 @@ Core::Status CaptureNativeShockHistorySample(Output::ShockHistorySample* sample)
 // or declared acceleration/handoff/observer landmarks.
 Core::Status WriteReducedProductionOutputAtBoundary();
 
-// AMPS calls this before application input is interpreted. The hook registers
-// storage requests but does not read a file. In shared -input mode the native
-// boundary invokes the srcSEP3D section parser immediately after this returns;
-// coupled hosts and maintained --input runs already supply typed configuration.
+// AMPS calls this hook after the immutable configuration is installed (from
+// the runtime input file or a typed host). It registers storage requests but
+// does not read a file.
 void Init_BeforeParser();
 
 } // namespace SEP3D

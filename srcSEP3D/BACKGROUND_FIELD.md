@@ -79,7 +79,8 @@ The earlier `sep3d-initialization-mesh.dat` remains deliberately geometry-only.
 
 The standalone provider is analytic in space, but its ambient physics is not a
 second srcSEP3D solar-wind approximation. `configuration_io.cpp` first resolves
-the complete canonical SWCME3D layer. `[background.parker]` is a fail-closed
+the complete canonical SWCME3D layer. The `physics: background` / `parker` block
+(`physics.background.parker.*`) is a fail-closed
 human-review cross-check; after agreement, the provider receives the exact
 resolved wind, Parker, density, composition, temperature, and thermodynamic
 values from SWCME. `Prepare(epoch)` builds one immutable
@@ -149,7 +150,7 @@ Leblanc correction, and multi-species pressure/Alfvén speed.
 
 ## Reserved Python interpolation provider
 
-`background.provider = python-interpolator` is recognized by the schema and by
+`physics.background.provider = python-interpolator` is recognized by the schema and by
 the typed `BackgroundAuthority`/`ProviderKind` vocabulary, but returns
 `ReservedFeature` before mesh allocation. There is not yet a reviewed contract
 for process lifetime, source-data identity, interpolation order, units, missing
@@ -282,8 +283,8 @@ Run `test/run_tests.py --suite phase-b --rebuild`.
 
 ## SWCME runtime mesh provider
 
-Schema 4 also supports `background.provider=swcme`. The selected canonical
-[swcme] configuration is re-resolved against its frozen shock fingerprint.
+Schema 4 also supports `physics.background.provider = swcme`. The selected
+canonical `physics: swcme` configuration is re-resolved against its frozen shock fingerprint.
 Prepare freezes one epoch; a bounded scratch batch reconstructs full vector
 gradients from the actual regional U/B field. Numerical derivative availability
 is separate from the legacy analytic flags, and both are validated.

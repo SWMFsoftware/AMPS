@@ -9,8 +9,36 @@ This directory contains two scientifically distinct zero-particle examples:
   reference. Its prescribed geometry reaches 1 AU but its observer state is
   `non-forward-inflow`; do not change its parameters or reinterpret it as a
   shock arrival.
-- `handoff_smoke.in` is the short native integration case. It is not a 1-AU
-  propagation result.
+- `handoff_smoke.in` / `handoff_smoke.event` is the short native integration
+  case. It is not a 1-AU propagation result.
+
+All files use the generic AMPS runtime input format
+([`../../../src/INPUT_FILE.md`](../../../src/INPUT_FILE.md)): `#begin`/`#end`
+blocks, `!` comments, `#include` relative to the including file.  Each
+`.event` file holds one `#begin physics: shock_front` ... `#end physics`
+block whose dotted event keys (for example `ambient.reference_radius_m`) are
+the shared reduced-model vocabulary.  Each `.in` deck selects
+`physics.background.provider = runtime-model` with
+`model_id = sep-corona-swcme-shock-front-v1` and includes its event at the top
+level (for example `#include "positive_1au.event"`); this replaces the
+retired `[background] model_asset = ...` reference.  The relative
+`assets/...` harmonic path inside an event resolves from the event file's
+directory.  `tools/convert_amps_input.py event OLD.event -o NEW.event`
+converts a retired `key=value` event file.
+
+The `.in` decks use the shared SEP content schema 6 (`#begin application:
+sep`, `schema_version = 6`, `src/INPUT_FILE.md` section 5; full key reference
+[`../../CONFIGURATION.md`](../../CONFIGURATION.md)).  They keep
+`physics.shock.authority = none`, have no `physics: swcme` block, and
+therefore must write the seven Parker ambient keys in
+`physics: background` / `parker` (decision D4); the Parker record is not a
+second ambient authority, because the included event supplies the actual
+PFSS/Parker/EOS state.  The turbulence block is
+`application: sep` / `turbulence` (formerly `physics: turbulence`), and the
+initialization field-line product is
+`output.initialization_field_line_tecplot_file`.  A generic-format schema
+1-5 deck is converted with
+`python3 tools/convert_amps_input.py sep6-from-srcsep3d OLD.in -o NEW.in`.
 
 These are reduced-model examples. The 3-D AMPS volume contains the maintained
 undisturbed ambient plasma/IMF reference. The separately published surface
@@ -94,10 +122,10 @@ snapshots near:
 - one step before, at, and one step after the exact 10,200-s handoff;
 - one step before, at, and one step after the exact 124,200-s 1-AU passage.
 
-Change `[output].cadence_steps` to change regular output. Landmark snapshots
+Change `output.cadence_steps` (the `output` block of the deck) to change regular output. Landmark snapshots
 are retained because they diagnose phase continuity. Change launch/history,
-width, ambient, handoff, or endpoint physics in `positive_1au.event`; every
-event key and magnetic-asset checksum contributes to the event fingerprint.
+width, ambient, handoff, or endpoint physics in the `physics: shock_front`
+block of `positive_1au.event`; every event key and magnetic-asset checksum contributes to the event fingerprint.
 Change domain, AMR, cadence, and output paths in `positive_1au.in`; these enter
 the application configuration fingerprint. A changed event must be rechecked
 for fast-mode admissibility rather than made to pass with a floor.
@@ -119,6 +147,8 @@ The one-line four-rank production run is:
 ```bash
 mpiexec -n 4 ./amps --input srcSEP3D/examples/shock-front/positive_1au.in --output-dir test_output/reduced-front/positive-1au-run
 ```
+
+(`-input` is an exact synonym of `--input`.)
 
 Use a fresh `--output-dir`: propagation telemetry is deliberately
 non-overwriting. The initialization files keep the paths declared in the deck;

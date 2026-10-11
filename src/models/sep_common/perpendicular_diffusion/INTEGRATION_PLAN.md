@@ -6,7 +6,9 @@ currently uses the perpendicular library.
 1. Audit the actual srcSEP and srcSEP3D Parker/focused movers and establish for
    each whether the evolved quantity and stochastic process are forward or
    backward. Do not choose the SDE drift from the coefficient name alone.
-2. Add a thin application parser that maps a documented input-file section to
+2. Add a thin application parser that maps a documented model block of the
+   generic AMPS runtime input format (`src/INPUT_FILE.md`, a `physics: NAME`
+   block) to
    `BuildConfiguration`/`SetActiveConfiguration`. Preserve source locations in
    parser errors and broadcast one canonical validated configuration before
    worker evaluation.

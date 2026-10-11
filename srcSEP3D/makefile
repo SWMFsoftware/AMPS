@@ -108,10 +108,15 @@ CXX ?= g++
 # Makefile.conf owns most production flags, but shared model headers are not
 # part of every historic AMPS include list.  Use absolute paths resolved from
 # the active makefile so these work identically from srcSEP3D and build/main.
+# AMPS_INPUT_DIR holds the header-only generic runtime-input reader
+# (amps_input.h; grammar in src/INPUT_FILE.md) used by the srcSEP3D parser
+# and by the shared model libraries' own input readers.
+AMPS_INPUT_DIR ?= $(AMPS_ROOT)/src/general/input
 MODEL_INCLUDE_FLAGS := -I$(SEP_COMMON_DIR) -I$(SWCME_DIR) \
                        -I$(SEP_CORONAL_CME_DIR)/include \
                        -I$(SEP_CORONA_SWCME_DIR)/include \
-                       -I$(SEP_CORONA_SWCME_DIR)/shock_front
+                       -I$(SEP_CORONA_SWCME_DIR)/shock_front \
+                       -I$(AMPS_INPUT_DIR)
 CPPFLAGS += $(MODEL_INCLUDE_FLAGS)
 CXXFLAGS += $(MODEL_INCLUDE_FLAGS)
 # Historic AMPS Makefile.conf revisions name their include accumulator INCLUDE
@@ -132,7 +137,7 @@ INCLUDE += $(MODEL_INCLUDE_FLAGS)
 # generic PIC, mesh, and interface translation units retain their normal AMPS
 # include boundary.  Preserve a caller-provided suffix so site-local compiler
 # installations continue to work.
-SEP3D_MODEL_CPLUS_INCLUDE_PATH := $(SEP_COMMON_DIR):$(SWCME_DIR):$(SEP_CORONAL_CME_DIR)/include:$(SEP_CORONA_SWCME_DIR)/include:$(SEP_CORONA_SWCME_DIR)/shock_front
+SEP3D_MODEL_CPLUS_INCLUDE_PATH := $(SEP_COMMON_DIR):$(SWCME_DIR):$(SEP_CORONAL_CME_DIR)/include:$(SEP_CORONA_SWCME_DIR)/include:$(SEP_CORONA_SWCME_DIR)/shock_front:$(AMPS_INPUT_DIR)
 ifneq ($(strip $(CPLUS_INCLUDE_PATH)),)
 SEP3D_MODEL_CPLUS_INCLUDE_PATH := $(SEP3D_MODEL_CPLUS_INCLUDE_PATH):$(CPLUS_INCLUDE_PATH)
 endif
@@ -162,7 +167,6 @@ TRANSPORT_SRC := \
 # The factory selects a model; publication remains in the common AMPS adapter.
 RUNTIME_SRC := \
     runtime/run_configuration.cpp \
-    runtime/application_input.cpp \
     runtime/particle_normalization.cpp \
     runtime/configuration_io.cpp \
     runtime/standalone_command_line.cpp \
@@ -261,6 +265,7 @@ STAGE1_CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -Werror -O2 \
                    -I$(SEP_CORONAL_CME_DIR)/include \
                    -I$(SEP_CORONA_SWCME_DIR)/include \
                    -I$(SEP_CORONA_SWCME_DIR)/shock_front \
+                   -I$(AMPS_INPUT_DIR) \
                    $(SEP_COMMON_INCLUDES)
 
 .PHONY: lib amps strict-production audit-production-symbols

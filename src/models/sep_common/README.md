@@ -37,7 +37,7 @@ The [`parallel_diffusion`](parallel_diffusion/README.md) library is a
 dependency-free sibling within this ownership boundary. Its standalone
 revision-1.4 PD00–PD10 archive implements all 16 first-release identifiers,
 including spectral, pitch-angle, nonlinear, adapter, table and batch paths.
-It remains built in its own subdirectory. srcSEP3D schema 5 now consumes that
+It remains built in its own subdirectory. srcSEP3D now consumes that
 canonical archive through its approved Parker-only D13--D16 binding and
 flattens the two objects into the AMPS application archive; srcSEP remains
 unbound. This keeps the established seven-member `sep_common.a` and both
@@ -65,6 +65,36 @@ not call it yet, and its
 [`INTEGRATION_PLAN.md`](mean_free_path/INTEGRATION_PLAN.md) records the future
 focused-mover binding. Standalone coefficient tests are not particle-mover,
 native, MPI or event validation.
+
+## Shared runtime-input vocabulary (`sep_input_layout.h`)
+
+`sep_input_layout.h` is the single table of the shared SEP runtime-input
+vocabulary, content schema 6 (normative specification:
+[`../../INPUT_FILE.md`](../../INPUT_FILE.md) section 5).  It lists every block
+(`kBlocks`) and every application-owned key (`kKeys`) that srcSEP or srcSEP3D
+understands, each marked with the application(s) that implement it
+(`kSrcSep`, `kSrcSep3d`, `kBoth`), and supplies the helpers that encode the
+decisions D1-D5: `kSchemaVersion = 6` (D1), the typed
+`NotSupportedMessage()` "... is a srcSEP3D setting that is not supported by
+srcSEP (shared SEP input schema 6, src/INPUT_FILE.md section 5)" diagnostic
+(D3), `SwcmeOwnedParkerKey()` for the seven Parker ambient keys owned by
+`physics: swcme`, `SwcmeSourceKeys()` and `SynthesizeSwcmeSource()` (exact
+round-trip decimal `source.*` assignments in J/kg/si from `source: shock`,
+D4), and `SwcmeThreeDimensionalKeys()` (SWCME3D-only keys that srcSEP's
+SWCME1D rejects).
+
+The header is header-only and depends only on the C++ standard library, so a
+parser can validate a complete input before AMPS, MPI or a mesh exists; it is
+not part of `sep_common.a` and does not change the seven-member archive.
+Consumers: `srcSEP3D/runtime/configuration_io.cpp` and
+`srcSEP/util/sep_initialization.cpp` walk their documents against the table,
+and the srcSEP3D stage-1 test `CFG3D18` cross-checks
+`SwcmeThreeDimensionalKeys()` against
+`swcme::input3d::detail::geometry_keys()`.  Validation: srcSEP3D stage-1
+`CFG3D` group (including `CFG3D01` and `CFG3D18`) and srcSEP `INIT01`-`INIT03`
+pass; the full native regressions with the schema-6 decks are pending.
+
+## Model siblings and boundaries
 
 SWCME remains a separate sibling because it supplies one possible solar-wind,
 CME, and shock-background provider. `sep_common` must never include `pic.h`,

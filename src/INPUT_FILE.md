@@ -1,344 +1,370 @@
-# Shared AMPS Runtime Input File
+# AMPS Runtime Input File
 
-This document defines the common container syntax for post-compile AMPS input.
-One file may contain core settings and settings for several applications. Each
-application parser reads only its named section; it must not reinterpret keys
-owned by another application.
+This document is the normative specification of the **generic AMPS runtime
+input format**: the one file format used to set up a run of any AMPS
+application (planets, moons, comets, spacecraft re-entry, SEP and GCR
+transport).  The reader that implements the grammar is the header-only
+`src/general/input/amps_input.h`; its regression test is
+`src/general/input/test_amps_input.cpp` (`make -C src/general/input test`).
 
-The first implementation was the `srcSEP3D` section parser in
-`srcSEP3D/runtime/application_input.{h,cpp}`. It runs after
-`Init_BeforeParser` and before AMPS freezes cell storage or builds the mesh.
-The selected reduced provider is resolved immediately after parsing, while
-the time step and statistical weights are finalized only after AMPS has
-allocated the actual distributed mesh.
-The shared syntax is application-independent. `srcMoon` now consumes a strict
-top-level `moon` section before MPI/application initialization; it does not use
-the SEP3D subsections or defaults.
+## 1. Two input layers
 
-### `srcMoon` section
+| Layer | File | Decides | Changes require |
+|---|---|---|---|
+| Compile time | `input/<application>.input`, read by `ampsConfig.pl` | which species, modules and physics libraries are compiled in | a rebuild |
+| Run time | `amps.in` (or `-input FILE`) — this document | every value: mesh, model selections and parameters, sources, observers, output | an edit |
 
-The native lunar executable uses the same one-dash selection syntax:
+The runtime file can choose only among what was compiled in; it cannot add or
+relabel species.
 
-```bash
-./amps -input srcMoon/examples/lola_surface.in
-```
-
-Omitting `-input` deliberately retains the historical analytic-sphere
-regression. The `moon` section has no implicit values; all keys below are
-required even when `surface_geometry=sphere`, so a run receipt remains
-complete and switching geometry cannot expose stale undeclared paths:
-
-```text
-#section begin: moon
-spice_path = /home/vtenishe/SPICE
-surface_geometry = lola
-surface_mesh_resolution_m = 100000
-lola_product_id = LDEM_4
-lola_image_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.IMG
-lola_label_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.LBL
-surface_cea_file = test_output/srcMoon/surface/lola_surface.cea
-surface_tecplot_file = test_output/srcMoon/surface/lola_surface.dat
-#section end
-```
-
-Relative paths are resolved against the file containing the section. The
-SPICE root must have `cspice/include/SpiceUsr.h`, `cspice/lib/cspice.a`, and
-`Kernels/`. `surface_mesh_resolution_m` is the maximum requested great-circle
-edge on the pre-topography reference sphere, not a latitude/longitude step or
-an AMR cell size. The CEA and Tecplot output paths must differ. Runtime path
-selection does not change the build-time SPICE mode.
-
-## File selection
-
-The native srcSEP3D executable selects a shared file with one dash:
+## 2. File selection
 
 ```bash
-./amps -input path/to/run.in
+./amps -input path/to/run.in    # the AMPS-wide spelling
+./amps --input path/to/run.in   # exact synonym, kept for existing scripts
+./amps                          # reads ./amps.in
 ```
 
-If `-input` is absent, the shared input path is `amps.in` in the process's
-current working directory:
+Without `-input`/`--input` both applications read `./amps.in` from the working
+directory.  srcSEP3D requires it; srcSEP reads it when it exists and otherwise
+keeps its historical no-argument run (the legacy built-in mesh).  Help, list
+and native/component-test modes never pick up a working-directory file.
 
-```bash
-./amps                         # reads ./amps.in
-```
+A coupled SWMF run has no command line; AMPS then reads `./amps.in` in the run
+directory.  For srcSEP3D this happens in `amps_init_mesh` when no host has
+installed a configuration; a coupled srcSEP run does not read a file yet.
 
-The existing srcSEP3D `--input FILE` interface remains available for complete
-versioned INI/schema-4 decks. The two spellings are intentionally distinct
-during migration: `-input` selects this shared section syntax, whereas
-`--input` selects the maintained srcSEP3D-only schema documented in
-`srcSEP3D/CONFIGURATION.md`.
+## 3. Grammar
 
-## Sections
-
-A section begins and ends with these directives:
+The file is a tree of named blocks.
 
 ```text
-#section begin: application-name
-key = value
-#section end
+! a comment runs from '!' to the end of the line
+#begin mesh                      ! opens a block of kind "mesh"
+  maximum_level = 7
+  #begin refinement: solar       ! a named instance of kind "refinement"
+    model = radial-smoothstep
+    surface_cell_size_m = \      ! a trailing '\' continues the line
+      1.495978707e9
+  #end refinement                ! closes the innermost block; kind must match
+#end mesh
+#include "parts/physics.in"      ! textual inclusion
 ```
 
-The `#section begin`, `#section end`, and section-name comparisons are
-case-insensitive. The include directive is spelled `#include` as shown below.
-Sections cannot be nested, an end marker must have a preceding begin marker,
-and a named application section may occur only once in the expanded input.
-Application parsers ignore ordinary assignments in other well-formed
-sections.
+Rules (every violation is fatal and reported as `file:line: reason`, followed
+by the offending line):
 
-The current srcSEP3D section is:
+* **Comments.** `!` starts a comment that runs to the end of the physical
+  line.  `#` is reserved for directives; there is no `#` comment.
+* **Continuation.** A `\` that is the last non-blank character before a
+  comment joins the next physical line (one space is inserted).  A
+  continuation at the end of a file is an error; diagnostics name the first
+  physical line of the statement.
+* **Blocks.** `#begin KIND` or `#begin KIND: NAME` opens a block and
+  `#end KIND` closes the innermost open block, whose kind must match.
+  `KIND` is a lower-case letter followed by lower-case letters, digits and
+  `_` (directives and kinds are case-insensitive and stored in lower case).
+  `NAME` contains letters, digits, `_` and `-` (case-sensitive; no dots).
+  Blocks nest to any depth.  Two sibling blocks may not have the same kind and
+  name.
+* **Assignments.** `KEY = VALUE`, one per logical line, always inside a block.
+  `KEY` starts with a letter and contains letters, digits, `_`, `.` and `-`;
+  keys are case-sensitive.  `VALUE` is the trimmed rest of the line and must
+  not be empty; it may contain blanks (`400 km/s`, `0, 0, 1`).  A key may
+  appear only once in a block.
+* **Includes.** `#include PATH`, `#include "PATH"` or `#include <PATH>`
+  inserts a file at that point.  A relative path is resolved from the
+  directory of the file that contains the directive, not from the working
+  directory.  Includes may be nested (at most 64 deep); cycles are errors.
+  Every block opened in a file must be closed in the same file, so an included
+  file is always block-balanced; it may still be included inside an open block
+  to supply that block's assignments.
+* **Unknown directives** (`#section`, `#subsection`, ...) and the retired INI
+  syntax (`[section]`) are errors.
+
+## 4. Ownership: block kinds and owners
+
+Every block is handed to exactly **one owner**, and the owner validates its
+keys, values and units.  The owner is the code directory that parses the
+block, so adding a model never touches a central parser.  By AMPS policy a
+block whose owner is not part of the executable is a **fatal error**, never
+ignored (`AMPS::Input::RequireOnlyBlocks`).
+
+| Block | Owner | Contents |
+|---|---|---|
+| `run` | AMPS core / application | time stepping, stop condition, random seed; nested `restart` |
+| `mesh` | AMPS core mesh / application | AMR levels and cell sizes; nested `domain`, `field_line`, `refinement: NAME`, `active_region`, `memory` |
+| `species` | AMPS core | runtime settings of compiled species (e.g. statistical weight) |
+| `body: NAME` | core or the planet/moon model | internal bodies (radius, surface model, boundary condition) |
+| `physics: NAME` | the shared library in `src/models/...` | background plasma/field, collisions, chemistry, photolysis, turbulence, parallel diffusion, CME/shock models |
+| `source: NAME` | core injection plus the supplying model | surface, boundary, shock or plume injection |
+| `observer: NAME`, `output` | core sampling | observers/detectors, output cadence and files |
+| `application: NAME` | `srcSEP/`, `srcSEP3D/`, ... | only what one application knows (mover numerics, population control) |
+
+**Model blocks.** A `physics:` (or `source:`) block selects its model and holds
+only that model's parameters.  A model library keeps its own key vocabulary:
+SWCME keeps units in the value (`ambient.wind_speed = 400 km/s`), the shock
+front and the CME event models keep dotted keys (`ambient.reference_radius_m`).
+Inside a model block a nested block is the same key space as the dotted
+prefix: `#begin ambient` + `x = 1` equals `ambient.x = 1`
+(`AMPS::Input::Flatten`); writing the same key both ways is a duplicate.
+
+**Units.** Application keys carry their SI unit in the key name
+(`inner_radius_m`, `time_step_s`, `minimum_energy_j`); a bare number is never
+interpreted in AU, R_sun, km/s or MeV.  Model blocks follow their library's
+documented rule (SWCME: unit in the value).
+
+**Qualified names.** A key's qualified name is the dot-joined path of the
+blocks that contain it, where `#begin kind: name` contributes `kind.name`:
+`mesh.domain.inner_radius_m`, `mesh.refinement.solar.profile`,
+`physics.background.parker.temperature_k`, `observer.earth.cadence_s`.
+Diagnostics, documentation and tests use these names.
+
+## 5. Shared SEP layout (srcSEP and srcSEP3D, content schema 6)
+
+srcSEP (field-line transport) and srcSEP3D (three-dimensional transport) read
+**one** vocabulary.  Its complete table of blocks and keys, each marked with
+the application(s) that implement it, is
+`src/models/sep_common/sep_input_layout.h`; both parsers walk their documents
+against that table, so the two applications cannot spell the same setting
+differently.  Owners: `srcSEP3D/runtime/configuration_io.cpp` and
+`srcSEP/util/sep_initialization.cpp`.  The full srcSEP3D key reference is
+`srcSEP3D/CONFIGURATION.md`; the srcSEP keys are documented in
+`srcSEP/README.md`.
+
+### 5.1 Decisions
+
+| | Rule |
+|---|---|
+| D1 | One application block, `#begin application: sep`, and one content schema, `schema_version = 6`.  The earlier schemas (srcSEP 1-4, srcSEP3D 1-5) are retired: a file that names one stops with a "retired" diagnosis and the converter command. |
+| D2 | The turbulence description is `#begin turbulence` inside `application: sep`.  It is the **only** block whose content differs: srcSEP3D describes a prescribed spectrum, srcSEP its self-consistent Alfvén-wave model.  srcSEP's turbulence command-line options remain and override the file. |
+| D3 | The vocabulary is identical; an application rejects any setting it cannot honour with a typed `... is a srcSEP3D setting that is not supported by srcSEP` (or the reverse) error, never ignoring it.  This holds for whole blocks (`mesh.active_region` in srcSEP), single keys (`observer.ID.heliocentric_radius_m` in srcSEP3D) and values (`physics.background.provider = analytic-parker` in srcSEP). |
+| D4 | Every physical quantity is written once.  With `physics: swcme` the SWCME ambient owns the solar wind, so the Parker keys `reference_radius_m`, `radial_field_at_reference_t`, `solar_rotation_rate_rad_per_s`, `solar_wind_speed_m_per_s`, `magnetic_polarity`, `number_density_at_one_au_m3` and `temperature_k` are illegal in `physics: background` / `parker` (srcSEP3D derives them from the resolved SWCME model; without SWCME they are required).  `source: shock` owns the particle source, so the SWCME `source.*` keys are illegal in `physics: swcme`; both applications synthesize them from `source: shock`. |
+| D5 | One observer vocabulary built on `kind`: srcSEP implements `field-line-radius` (`heliocentric_radius_m` on the field line), srcSEP3D the spatial kinds (`fixed-cartesian`, `fixed-heliographic`, `moving-cartesian`, `spherical-shell`, `field-connected`). |
+
+### 5.2 Blocks
+
+| Block path | srcSEP | srcSEP3D | Contents |
+|---|---|---|---|
+| `run` | ✓ | ✓ | `time_step_s`, `maximum_time_steps` (both); `time_step_mode`, `maximum_particle_speed_m_s`, `time_step_margin_factor`, `stop_shock_radius_m`, `campaign_seed` (srcSEP3D) |
+| `run` / `restart` | – | ✓ | `input_path`, `output_path` |
+| `application: sep` | ✓ | ✓ | `schema_version = 6`, `transport` (both); `intent`, `background_cadence_steps`, `injection_cadence_steps` (srcSEP3D) |
+| `application: sep` / `turbulence` | ✓ | ✓ | the application-specific turbulence model (5.4) |
+| `application: sep` / `transport`, `population_control`, `storage` | – | ✓ | 3-D mover numerics and coefficients, split/merge limits, storage |
+| `mesh` | ✓ | ✓ | `global_cell_size_m`, `minimum_cell_size_m`, `maximum_level` (both); `cells_per_block_edge`, `memory_budget_bytes`, `block_overhead_bytes` (srcSEP3D) |
+| `mesh` / `domain` | ✓ | ✓ | `inner_radius_m`, `outer_radius_m` (both); preset, boundaries, frame, origin, corner box (srcSEP3D) |
+| `mesh` / `field_line` | ✓ | ✓ | `origin_*_m`, `initial_*_m`, `length_m`, `point_count` (both); `start_mode`, `end_radius_m` (srcSEP3D) |
+| `mesh` / `refinement: solar`, `refinement: tube` | ✓ | ✓ | refinement profiles (both); `anchor`, `source_longitude_rad`, `source_colatitude_rad` (srcSEP3D) |
+| `mesh` / `active_region`, `memory` | – | ✓ | active corridor and memory planning |
+| `physics: background` | ✓ | ✓ | `provider` (srcSEP: `swcme`; srcSEP3D: `analytic-parker`, `swcme`, `runtime-model`, ...); `model_id` (srcSEP3D) |
+| `physics: background` / `parker` | – | ✓ | `validity_cadence_s`; the seven ambient keys only without `physics: swcme` (D4) |
+| `physics: shock` | ✓ | ✓ | `authority` (srcSEP: `swcme`; srcSEP3D: `none`, `swcme`) |
+| `physics: swcme` | ✓ | ✓ | canonical SWCME model (library vocabulary, units in the value); srcSEP rejects the 3-D keys listed in `SwcmeThreeDimensionalKeys()` (CME shape, width, direction and rotation axis `geometry.*`, `surface.*`; the 1-AU thicknesses `geometry.sheath_thickness_1au`/`ejecta_thickness_1au` are shared) and accepts `parker.solar_rotation_rate_rad_per_s` only at its fixed SWCME1D rate |
+| `physics: parallel_diffusion` | ✓ | ✓ | shared parallel-diffusion library |
+| `physics: shock_front` | – | ✓ | reduced shock-front event, usually `#include`d from its event file |
+| `source: shock` | ✓ | ✓ | `enabled`, `samples_per_step`, `minimum_energy_j`, `maximum_energy_j`, `injection_efficiency`, the reference spectrum `spectrum_reference_energy_j`, `spectrum_particle_mass_kg`, `spectrum_charge_number`, `spectrum_normalization`, `spectrum_reference_intensity_per_m2_s_sr_j` (both; both applications currently implement only `spectrum_normalization = relative-only`); rate, spectrum-model and derived-normalization keys (srcSEP3D) |
+| `species` | ✓ | ✓ | `macroparticle_weight` |
+| `observer: ID` | ✓ | ✓ | `kind`, `minimum_energy_j`, `maximum_energy_j`, `energy_bins`, `energy_spacing`, `pitch_angle_bins` (both); `heliocentric_radius_m` (srcSEP); position, velocity, cadence, normalization, μ range, species, products (srcSEP3D) |
+| `output` | ✓ | ✓ | `initialization_mesh_tecplot_file`, `initialization_field_line_tecplot_file`, `initialization_data_tecplot_file` (both); `directory`, `prefix`, `cadence_steps`, `checkpoint_cadence_steps` (srcSEP3D) |
+
+Completeness: every block an application implements is required (srcSEP3D:
+all except the optional model blocks and `species` in derived-numerics mode;
+srcSEP: `run`, `application: sep` with `turbulence`, the four mesh blocks,
+`physics: background`, `physics: shock`, `physics: swcme`, `source: shock`,
+`species`, `output` and at least one observer), and every key of a required
+block is required except the mode-dependent keys listed in the parsers
+(srcSEP: only `run.maximum_time_steps` is optional).
+
+### 5.3 What differs between an srcSEP and an srcSEP3D file
+
+For the same physical event the two files share `run.time_step_s`,
+`application.sep.schema_version`/`transport`, the mesh blocks' shared keys,
+`physics: background`/`shock`/`swcme`/`parallel_diffusion`, `source: shock`'s
+shared keys, `species` and the observers' energy/pitch grids.  They differ in
+
+* the content of `application: sep` / `turbulence` (D2);
+* the settings only one application implements (D3): the srcSEP3D numerics
+  blocks and keys, and the observer position (`heliocentric_radius_m` versus
+  a spatial `kind`);
+* `physics: swcme` 3-D geometry keys, which srcSEP's spherically symmetric
+  SWCME1D cannot honour.
+
+### 5.4 The turbulence block
+
+srcSEP3D (prescribed spectrum; `srcSEP3D/CONFIGURATION.md`): `authority`,
+`model`, `amplitude_model`, `delta_b_over_b`,
+`wave_energy_density_at_reference_j_per_m3`,
+`wave_energy_density_radial_exponent`, `normalized_cross_helicity`,
+`reference_radius_m`, `k_min_per_m`, `k_max_per_m`, `k_min_radial_exponent`,
+`k_max_radial_exponent`, `spectral_index`, `correlation_length_m`,
+`correlation_length_radial_exponent`, `validity_cadence_s`, `missing_data`,
+`resonance_range`, `self_consistent_3d`.
+
+srcSEP (self-consistent Alfvén waves; `srcSEP/README.md`).  Each key has the
+command-line option in parentheses, which overrides it:
+
+| Key | Values / unit | Option |
+|---|---|---|
+| `source` | `prescribed`, `self-consistent-integrated`, `self-consistent-spectral`, `swmf-read-only`, `swmf-initial-then-local` | `--turbulence-source` |
+| `representation` | `integrated`, `spectral` (must agree with a self-consistent source) | `--turbulence-model` |
+| `coupling` | `disabled`, `streaming-energy-exchange` | `--turbulence-coupling-policy`, `--coupling` |
+| `advection`, `reflection`, `cascade`, `shock_injection` | `true`/`false` | `--turbulence-advection`, `--reflection`, `--cascade`, `--shock-injection` |
+| `inner_boundary`, `outer_boundary` | `specified-incoming-energy`, `specified-incoming-flux`, `transparent-outflow`, `fixed-reservoir` | `--turbulence-inner-boundary`, `--turbulence-outer-boundary` |
+| `inner_boundary_value_si`, `outer_boundary_value_si` | J (energy, reservoir) or W (flux) | `--turbulence-inner-value`, `--turbulence-outer-value` |
+| `reflection_coefficient`, `cascade_coefficient` | dimensionless | `--reflection-coefficient`, `--cascade-coefficient` |
+| `perpendicular_correlation_length_m` | m | `--turbulence-correlation-length` |
+| `electron_heating_fraction` | dimensionless | (file only) |
+| `spectral_k_min_per_m`, `spectral_k_max_per_m`, `spectral_bins` | m⁻¹, count | `--spectral-k-min`, `--spectral-k-max`, `--spectral-bins` |
+| `cfl_safety`, `operator_accuracy_safety`, `maximum_source_fraction`, `maximum_cascade_fraction` | dimensionless | `--turbulence-cfl`, `--turbulence-operator-safety`, `--turbulence-max-source-fraction`, `--turbulence-max-cascade-fraction` |
+| `minimum_substep_s`, `maximum_substeps` | s, count | `--turbulence-min-substep`, `--turbulence-max-substeps` |
+| `conservation_relative_tolerance` | dimensionless | `--turbulence-conservation-tolerance` |
+| `shock_source_efficiency`, `shock_source_plus_fraction` | [0, 1] | `--shock-turbulence-efficiency`, `--shock-turbulence-plus-fraction` |
+| `diagnostic_cadence_steps` | main-loop steps (0 = off) | `--spectral-output-interval` |
+
+Precedence in srcSEP: built-in defaults < input file < command line.  main.cpp
+installs the file block as the base layer of the option record and re-parses
+the command line on top of it, so every option keeps its usual semantics.
+
+### 5.5 Derived particle numerics (srcSEP3D reduced-front injection)
+
+The reduced-front particle source derives the global step and the statistical
+weights instead of taking them from the file:
 
 ```text
-#section begin: sep3d
-shock_model = reduced-shock-surface
-background_plasma_model = corona-swcme-ambient
-source_model = accepted-shock-incident-flux
-maximum_time_steps = 4
-particles_per_iteration = 1000
-maximum_particle_speed_m_s = 2.0e8
-time_step_margin_factor = 0.30
-source_normalization_radius_m = 1.3914e10
-
-#subsection begin: shock-particle-injection
-statistical_weight_model = constant-statistical-weight
-minimum_energy_j = 1.602176634e-15
-maximum_energy_j = 1.602176634e-11
-phase_space_power_model = compression-ratio
-maximum_events_per_species_per_step = 1000000
-#subsection end
-
-#subsection begin: reduced-shock-surface
-schema = shock-front-ambient-v1.1
-! ...complete strict model-v1.1 assignments...
-handoff.apex_radius_m = 1.3914e10
-assets.harmonics_file = magnetic/pfss.harmonics.csv
-assets.harmonics_sha256 = <64 lowercase hexadecimal digits>
-#subsection end
-#section end
+#begin run
+  time_step_mode = derived-from-mesh   ! dt = f * h_min / v_max after mesh allocation
+  maximum_particle_speed_m_s = 2.0e8   ! v_max, in (0, c]
+  time_step_margin_factor = 0.30       ! f, in (0, 1]
+  ...                                  ! run.time_step_s must be absent
+#end run
+#begin source: shock
+  enabled = true
+  normalization = accepted-shock-incident-flux
+  normalization_radius_m = 1.3914e10   ! apex radius where Ndot_s is evaluated; no default
+  samples_per_step = 1000              ! N, expected model particles per step and species
+  weight_model = constant-statistical-weight
+  maximum_events_per_species_per_step = 1000000   ! fatal Poisson runaway guard
+  ...                                  ! physical_particle_rate_per_s, injection_efficiency
+#end source                            ! and species.macroparticle_weight must be absent
 ```
 
-All top-level values are mandatory; none of the physical or numerical values
-below acquires a parser default:
-
-- `shock_model=reduced-shock-surface` selects the finite prescribed front.
-- `background_plasma_model=corona-swcme-ambient` selects the provider's
-  maintained coronal/PFSS-to-Parker ambient plasma and IMF.
-- `source_model=accepted-shock-incident-flux` selects the gross upstream
-  particle flux through accepted fast-shock faces for statistical
-  normalization. It is not an SEP acceleration or injection-efficiency law.
-- `maximum_time_steps` is the positive standalone AMPS iteration horizon. It
-  is explicit so a particle-producing run cannot silently inherit the
-  library's intentionally large coupled-host default.
-- `particles_per_iteration` is a positive unsigned model-particle count per
-  compiled AMPS species.
-- `maximum_particle_speed_m_s` is finite and in `(0,c]`.
-- `time_step_margin_factor` is dimensionless and in `(0,1]`.
-- `source_normalization_radius_m` is the required heliocentric apex radius at
-  which the front/source rate is evaluated. It has deliberately no default.
-
-The `shock-particle-injection` subsection is also mandatory:
-
-- `statistical_weight_model=constant-statistical-weight` selects the currently
-  implemented sampler. `log-uniform-momentum-importance` is parsed and
-  fingerprinted but fails startup as an explicitly reserved feature.
-- `minimum_energy_j` and `maximum_energy_j` are positive total kinetic-energy
-  bounds per particle in SI, with maximum strictly greater than minimum.
-- `phase_space_power_model=compression-ratio` derives the local isotropic DSA
-  exponent `q=3X/(X-1)` from each accepted face. `constant` instead requires
-  `phase_space_power_index=q>2`; that index must be omitted in compression
-  mode.
-- `maximum_events_per_species_per_step` is a positive fatal runaway guard. It
-  never truncates, caps or renormalizes a Poisson realization.
-
-The named reduced subsection is required and cannot be empty. Every assignment
-inside it is passed to the strict `shock-front-ambient-v1.1` resolver. This
-includes run support, ambient/PFSS normalization, plasma composition, geometry,
-launch/acceleration history, handoff radius, drag continuation, surface
-resolution, shock tolerances, observer endpoint, magnetic asset path and the
-asset checksum. Relative asset paths resolve from the file containing the
-subsection begin marker—not from the process directory. Unknown or missing
-model keys and changed asset bytes fail in the shared resolver.
-
-### Derived global time step
-
-After mesh allocation, all owner blocks participate in the global minimum of
-the actual AMPS characteristic cell length `h_min`. The one step shared by all
-species is
+After AMPS allocates the mesh, all owner blocks reduce the smallest
+characteristic cell length `h_min` and the one step shared by all species is
 
 ```text
 dt = time_step_margin_factor * h_min / maximum_particle_speed_m_s .
 ```
 
-Ghost blocks do not add an independent restriction. Existing observer
-cadences must be integer global ticks; shared-section mode moves each requested
-cadence upward to the first exact tick at or after it, so output is never made
-more frequent and the exact integer-cadence gate is not weakened. Startup
-prints both requested and resolved cadences.
-
-### Per-species particle weight
-
-At `source_normalization_radius_m`, a side-effect-free production epoch is
-constructed without advancing the committed background generation. For every
-accepted curved triangular face,
+At `normalization_radius_m` a side-effect-free epoch of the reduced front is
+evaluated and, for every compiled species `s`,
 
 ```text
-Ndot_s = sum_faces n_s [V_n - U_1 dot n]_+ A_face
-W_s    = Ndot_s * dt / particles_per_iteration .
+Ndot_s = sum over accepted curved faces of n_s [V_n - U_1 . n]_+ A_face
+W_s    = Ndot_s * dt / samples_per_step .
 ```
 
-`A_face` is the exact curved SSE measure, not its planar visualization area.
-Sub-fast, non-forward and below-support faces contribute zero and retain their
-reported excluded area; numerical-unknown area makes normalization fail.
-Electron, proton and alpha populations come from the upstream EOS. A compiled
-species absent from that composition, or a compiled zero-abundance population,
-fails rather than borrowing another species' rate. The final rank-zero receipt
-prints the radius/time, accepted/excluded areas, physical rate and weight for
-each compiled species.
+`A_face` is the exact curved SSE area.  Sub-fast, non-forward and
+below-support faces contribute zero; numerical-unknown area fails.  A
+compiled species absent from the upstream composition fails rather than
+borrowing another species' rate.  At a live epoch the constant-weight
+macro-event rate is `lambda_s(t) = Ndot_s(t) / W_s`; waiting times are
+`-log(U)/lambda_s`, faces are chosen with probability `Ndot_face/Ndot_total`,
+points are uniform on the planar triangle and momenta are anti-sunward.  Only
+the owning MPI rank allocates.  `log-uniform-momentum-importance` is a typed
+reserved mode that stops startup.  Observer cadences are moved up to the first
+exact multiple of `dt`.  The incident flux is a normalization convention, not
+an acceleration efficiency.  The two derivation keys must be selected
+together, and this mode requires `intent = shock-injection`,
+`physics.shock.authority = none` and the reduced shock-front background (so
+no `physics: swcme` and no reference-spectrum keys).
 
-At a live committed epoch, the same equation is evaluated on every accepted
-triangle and the constant-weight macro-event rate is
+### 5.6 srcSEP command-line layering
 
-```text
-lambda_s(t) = Ndot_s(t) / W_s .
-```
+srcSEP keeps its command line (srcSEP/AGENTS.md).  Each option overrides the
+file value it shadows: `--particle-mover` overrides `application.sep.transport`,
+`--total-iterations` overrides `run.maximum_time_steps`,
+`--injection-particles-per-iteration` overrides `source.shock.samples_per_step`,
+`--swcme-override KEY=VALUE` overrides one SWCME assignment (an override of
+the ambient wind is rejected because the field-line mesh was built from the
+file value), and the turbulence options override 5.4.  `--shock-model` and
+`--reduced-shock-event` override `physics.background.provider = swcme` /
+`physics.shock.authority = swcme`; a post-compile PARAM file that selects the
+analytical shock without a command-line option contradicts the input file and
+is rejected.
 
-Successive waiting intervals are `-log(U)/lambda_s`. Conditional face
-selection uses `Ndot_face/Ndot_total`, and the point on the chosen planar
-triangle uses square-root barycentric coordinates. Every rank generates the
-same keyed candidate list; only the owning rank allocates through
-`PIC::BC::UserDefinedParticleInjectionFunction`. A point outside the allocated
-finite domain, including the declared radial interval even if a Cartesian AMR
-leaf exists there, is counted as disconnected and is not renormalized onto
-another face. Momentum is anti-sunward. A birth at time `tau` is advanced for only
-`dt-tau` on its first mover call.
+## 6. Model files
 
-## Comments
+| Model | File | Block | Reader |
+|---|---|---|---|
+| Reduced shock front | `*.event` (e.g. `srcSEP3D/examples/shock-front/positive_1au.event`) | `physics: shock_front` | `ShockFront::ResolveConfiguration` (`src/models/sep_corona_swcme/shock_front`) |
+| CME background event (BG3D) | `event.conf` (`src/models/sep_corona_swcme/examples/*/`) | `physics: cme_background` | `CoronaSwcme::ResolveEventConfiguration` |
+| Coronal CME model (schema 5) | `src/models/sep_coronal_cme/test/data/schema5_stage0.in` | `physics: sep_coronal_cme` with one child block per schema section (`#begin observer: earth` for identified sections) | `CoronalCME::ParseConfiguration` |
 
-An exclamation mark starts a comment. Everything from `!` through the end of
-that physical line is removed before directives, assignments, or continuation
-markers are interpreted.
+Checksummed data assets referenced by these models (harmonic CSV, history
+CSV, ambient/ejecta/contact `key=value` assets) are byte-identified data whose
+SHA-256 enters the physics identity; they are not runtime input files and keep
+their frozen data formats.
 
-```text
-particles_per_iteration = 2500  ! exact count per compiled species
-```
+## 7. Diagnostics and provenance
 
-There is currently no quoted-string escape for `!`; therefore file names and
-future string values cannot contain an exclamation mark.
-
-## Continued logical lines
-
-A backslash that is the last non-whitespace character before a comment joins
-the next physical line to the current logical line. The parser inserts one
-space between nonempty fragments:
-
-```text
-particles_per_iteration = \ ! the value follows
-  2500
-```
-
-A continuation at end of file is an error. Diagnostics report the first
-physical line of the continued logical statement.
-
-## Included files
-
-`#include` performs textual inclusion at the directive location:
+Input is transactional: nothing is committed unless the complete expanded
+input and the immutable configuration are valid.  Errors terminate before
+mesh creation and report the actual (included) file, the physical line, the
+cause and the offending line, for example
 
 ```text
-#include common/core.in
-#include "applications/sep3d.in"
-#include <site/local.in>
-```
-
-Relative paths are resolved against the directory containing the including
-file, not against the process working directory. Includes may be recursive.
-The parser rejects cycles and nesting deeper than 64 files. A section may be
-contained wholly in an included file, or an include may provide assignments at
-a location inside an already-open section.
-
-Bare paths consume the complete remainder of the logical line. Double-quoted
-and angle-bracket paths support spaces. Text after the closing delimiter is an
-error unless it has already been removed as an `!` comment.
-
-## Error contract
-
-Input is transactional: no parsed value is committed unless the complete
-expanded input and the immutable application configuration are valid. Errors
-terminate native initialization before mesh creation and report:
-
-- the actual included file;
-- the physical line number;
-- what was missing or unrecognized; and
-- the offending logical line.
-
-For example:
-
-```text
-/case/parts/sep3d.in:4: srcSEP3D input error: unrecognized srcSEP3D setting 'particlez'
+/case/parts/sep3d.in:4: unknown configuration key 'source.shock.particlez'
   line: particlez = 10
 ```
 
-Missing files, include cycles, unmatched sections, missing required settings,
-invalid unsigned integers, duplicate settings, and dangling continuations are
-all fatal. The parser never substitutes a value after an error.
+Fingerprints are computed from normalized values (srcSEP3D/srcSEP option
+records, model manifests), not from file bytes, so comments, layout and
+include structure do not change a run's identity.  `AMPS::Input::ToCanonicalText`
+gives the deterministic expanded text of a block (used to pass an included
+model block to its library).
 
-## Complete minimal example
+## 8. Migration from the retired formats
 
-`amps.in`:
+All retired SEP inputs -- the srcSEP3D INI decks (schemas 1-5), the srcSEP
+INI decks (schemas 1-4), their generic-format successors with
+`#begin application: sep3d` / schema 1-5 and `#begin application: sep` /
+schema 1-4, the one-dash `#section begin: sep3d` container, the `key=value`
+event records and the sep_coronal_cme INI deck -- were migrated; the old
+readers were removed.  `tools/convert_amps_input.py` converts old files,
+keeping every comment except those attached to a removed key:
 
-```text
-! Other parsers may consume this section in the future.
-#section begin: core
-output_directory = output
-#section end
-
-#include "input/sep3d.in"
+```bash
+python3 tools/convert_amps_input.py sep6-from-srcsep3d old.in -o new.in   # generic-format srcSEP3D 1-5
+python3 tools/convert_amps_input.py sep6-from-srcsep   old.in -o new.in   # generic-format srcSEP 1-4
+python3 tools/convert_amps_input.py srcsep3d old.ini -o new.in            # INI srcSEP3D (chains into schema 6)
+python3 tools/convert_amps_input.py srcsep   old.ini -o new.in            # INI srcSEP (chains into schema 6)
+python3 tools/convert_amps_input.py event    old.event -o new.event
+python3 tools/convert_amps_input.py cme-event old.conf -o new.conf
 ```
 
-`input/sep3d.in` (the complete maintained version is under
-`srcSEP3D/examples/application-input/`):
+The schema-6 rewrite renames `application: sep3d` to `application: sep`,
+moves `physics: turbulence` into `application: sep` / `turbulence` (srcSEP
+receives the complete block with its former command-line defaults), drops the
+srcSEP3D `particle_mover` (the family follows from `transport`) and the
+deprecated `external_script`, maps srcSEP's `particle_mover` to `transport`,
+removes the SWCME-owned Parker keys and moves the SWCME `source.*` keys into
+`source: shock` in SI (MeV → J and `mp` → kg in exact decimal arithmetic),
+and renames `initialization_parker_line_tecplot_file`, srcSEP's
+`mesh_/field_line_/data_tecplot_file`, `source: field_line` /
+`macroparticles_per_step`, `particle_weight` and `energy_channels` to the
+shared names.  Values are unchanged except for the unit conversions, which
+are exact.
 
-```text
-#section begin: sep3d
-shock_model = reduced-shock-surface
-background_plasma_model = corona-swcme-ambient
-source_model = accepted-shock-incident-flux
-particles_per_iteration = 1000
-maximum_particle_speed_m_s = 2.0e8
-time_step_margin_factor = 0.30
-source_normalization_radius_m = 1.3914e10
-#subsection begin: shock-particle-injection
-statistical_weight_model = constant-statistical-weight
-minimum_energy_j = 1.602176634e-15
-maximum_energy_j = 1.602176634e-11
-phase_space_power_model = compression-ratio
-maximum_events_per_species_per_step = 1000000
-#subsection end
-#include "reduced-shock-surface.in"
-#section end
-```
+## 9. Current limitations
 
-At successful startup rank zero prints the resolved root file, every expanded
-file, selectors and numerical values, the particle-count source line, resolved
-asset directory, provider event identity, derived mesh/time/rate/weight
-receipt, and final immutable configuration fingerprint. Rank zero performs
-file I/O and broadcasts the canonical parsed values; every rank independently
-resolves the same checksummed provider and the derived numerical values must be
-bit-identical across ranks.
-
-## Current limitations
-
-- Only srcSEP3D consumes this syntax today.
-- The shared srcSEP3D mode currently supports normal or
-  `--initialization-only` execution. Allocation-free `--dry-run` and restart
-  remain on the maintained complete `--input` schema path because they execute
-  before the required native parser boundary.
-- Only the selected reduced shock/ambient/source-normalization combination is
-  implemented in shared-section mode. Other model selector values fail closed.
-- Particle species remain compile-time AMPS choices. The file cannot add or
-  relabel species.
-- The reduced model supplies ambient volume plus a prescribed surface and
-  one-sided shock limits. It supplies no sheath/ejecta/downstream volume and
-  does not qualify BG3D-4.
-- The accepted incident flux is only a normalization convention. Particle
-  acceleration efficiency and actual reduced-front injection remain separate
-  future physics choices.
+* Only srcSEP, srcSEP3D and the SEP model libraries use this format so far;
+  the planetary applications still configure runs at compile time.
+* A coupled SWMF srcSEP run does not read `./amps.in` (only the standalone
+  srcSEP executable falls back to it).
+* srcSEP and srcSEP3D files for the same event still differ where one
+  application has no implementation (5.3); those settings are typed errors,
+  not silent omissions.
+* The SWCME, parallel-diffusion and model vocabularies are owned and
+  documented by their libraries (`src/models/swcme/README.md`,
+  `src/models/sep_common/parallel_diffusion/README.md`,
+  `src/models/sep_corona_swcme/shock_front/README.md`).

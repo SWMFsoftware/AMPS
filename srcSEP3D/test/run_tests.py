@@ -127,12 +127,12 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("CFG3D05", "CFG3D", "Mesh and memory preflight", "cpp"),
     TestDefinition("CFG3D06", "CFG3D", "Finite Parker initialization schema", "cpp"),
     TestDefinition("CFG3D07", "CFG3D", "Complete compiled AMPS species binding", "cpp"),
-    TestDefinition("CFG3D08", "CFG3D", "Complete schema-3 initialization", "cpp"),
+    TestDefinition("CFG3D08", "CFG3D", "Complete schema-6 initialization", "cpp"),
     TestDefinition("CFG3D09", "CFG3D", "Background and turbulence selection", "cpp"),
     TestDefinition("CFG3D10", "CFG3D", "CME and Parker start linkage", "cpp"),
     TestDefinition("CFG3D11", "CFG3D", "Transport/control schema", "cpp"),
     TestDefinition("CFG3D12", "CFG3D", "Corner/sphere input and endpoint normalization", "cpp"),
-    TestDefinition("CFG3D13", "CFG3D", "Shared srcSEP3D application-input section", "cpp"),
+    TestDefinition("CFG3D13", "CFG3D", "Unified generic runtime input (includes, derived numerics, CLI)", "cpp"),
     # Keep the aggregate manifest synchronized with the authoritative C++
     # registry.  These post-allocation/source gates must participate in
     # ``--all``: otherwise a clean aggregate could omit the equations that set
@@ -142,6 +142,8 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("CFG3D15", "CFG3D", "Parsed reduced model", "cpp"),
     TestDefinition("CFG3D16", "CFG3D", "Reduced-front particle source", "cpp"),
     TestDefinition("CFG3D17", "CFG3D", "Parallel diffusion and mover selection", "cpp"),
+    # Shared srcSEP/srcSEP3D schema-6 vocabulary (sep_input_layout.h).
+    TestDefinition("CFG3D18", "CFG3D", "Shared SEP vocabulary (schema 6)", "cpp"),
     TestDefinition("DOM3D01", "DOM3D", "Whole-corridor corner bounds", "source"),
     TestDefinition("DOM3D02", "DOM3D", "Solar sphere and photospheric coarsening", "source"),
     TestDefinition("DOM3D03", "DOM3D", "Connected sphere/corridor AMR allocation", "source"),
@@ -1610,7 +1612,7 @@ def _check_makefile_relocation(definition: TestDefinition,
         "bg_provider.o bg_parker.o bg_swcme.o bg_swmf.o background_snapshot.o "
         "turbulence_models.o keyed_random.o time_step.o perpendicular_transport.o "
         "parker_transport.o focused_transport.o population_control.o "
-        "run_configuration.o application_input.o particle_normalization.o configuration_io.o standalone_command_line.o runtime.o background_factory.o runtime_adapters.o "
+        "run_configuration.o particle_normalization.o configuration_io.o standalone_command_line.o runtime.o background_factory.o runtime_adapters.o "
         "transport_adapter.o particle_ledger.o shock_front_background_adapter.o "
         "swcme_source_adapter.o source_runtime.o "
         "sampling.o observer_runtime.o publication.o restart.o output_coordinator.o reduced_front_output.o "

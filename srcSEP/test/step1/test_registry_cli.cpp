@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 
+#include <unistd.h>
+
 namespace {
 
 int failures = 0;
@@ -71,6 +73,11 @@ void TestCli01(const SEP::Testing::Registry& registry) {
   Check(Parse({"sep", "--input=examples/sep_parker_mesh.in"}, input, error) &&
             input.inputPath == "examples/sep_parker_mesh.in",
         "CLI01", "--input must preserve its production initialization path");
+  // -input is the AMPS-wide spelling of the same option (src/INPUT_FILE.md).
+  SEP::Util::CLI::Options oneDash;
+  Check(Parse({"sep", "-input", "examples/sep_parker_mesh.in"}, oneDash, error) &&
+            oneDash.inputPath == "examples/sep_parker_mesh.in",
+        "CLI01", "-input must be an exact synonym of --input");
   SEP::Util::CLI::Options reduced;
   Check(Parse({"sep", "--input", "examples/sep_parker_mesh.in",
                "--reduced-shock-event", "examples/reduced-shock/event.in"},
@@ -85,6 +92,49 @@ void TestCli01(const SEP::Testing::Registry& registry) {
             initializationOnly.initializationOnly &&
             initializationOnly.initializationOutputDirectory == "preview",
         "CLI01", "initialization-only options must normalize exactly");
+
+  // Default runtime input: without -input a production run reads ./amps.in
+  // when it exists; without the file the legacy no-argument path (empty
+  // inputPath) is kept, and help/list/test modes never pick the file up.
+  // The checks run in a private scratch directory so no repository file is
+  // touched; the original working directory is restored afterwards.
+  {
+    char originalDirectory[4096];
+    char scratchTemplate[] = "/tmp/srcsep-cli01-XXXXXX";
+    const bool haveOriginal =
+        getcwd(originalDirectory, sizeof(originalDirectory)) != nullptr;
+    const char* scratch = mkdtemp(scratchTemplate);
+    if (haveOriginal && scratch != nullptr && chdir(scratch) == 0) {
+      SEP::Util::CLI::Options absent;
+      Check(Parse({"sep"}, absent, error) && absent.inputPath.empty() &&
+                !absent.inputPathFromDefault,
+            "CLI01", "without ./amps.in the legacy no-argument path must be kept");
+      { std::ofstream create("amps.in"); create << "! fixture\n"; }
+      SEP::Util::CLI::Options present;
+      Check(Parse({"sep"}, present, error) && present.inputPath == "amps.in" &&
+                present.inputPathFromDefault,
+            "CLI01", "without -input an existing ./amps.in must become the input");
+      SEP::Util::CLI::Options explicitInput;
+      Check(Parse({"sep", "-input", "other.in"}, explicitInput, error) &&
+                explicitInput.inputPath == "other.in" &&
+                !explicitInput.inputPathFromDefault,
+            "CLI01", "an explicit -input must take precedence over ./amps.in");
+      SEP::Util::CLI::Options testMode;
+      Check(Parse({"sep", "--test", "A01"}, testMode, error) &&
+                testMode.inputPath.empty(),
+            "CLI01", "component-test modes must not inherit ./amps.in");
+      SEP::Util::CLI::Options listMode;
+      Check(Parse({"sep", "--list-tests"}, listMode, error) &&
+                listMode.inputPath.empty(),
+            "CLI01", "list modes must not inherit ./amps.in");
+      std::remove("amps.in");
+      Check(chdir(originalDirectory) == 0, "CLI01",
+            "could not restore the working directory");
+      rmdir(scratch);
+    } else {
+      Check(false, "CLI01", "could not create the ./amps.in scratch directory");
+    }
+  }
 
   std::ostringstream listing;
   registry.PrintList(listing);
@@ -346,8 +396,8 @@ void TestStructuredReportsAndHiddenFailures() {
   std::remove("step13-results.xml");
 }
 
-// CLI06: mover precedence --particle-mover > run.particle_mover (schema-4
-// --input) > default fte-dmumu.  The Parker-only parallel-diffusion provider
+// CLI06: mover precedence --particle-mover > application.sep.transport (input
+// file) > default fte-dmumu.  The Parker-only parallel-diffusion provider
 // is the probe: it is valid for parker and invalid for the fte-dmumu default.
 // The file itself is not read by ParseCommandLine; main.cpp applies it and
 // then calls ValidateMoverDependentOptions(), which is exercised directly.

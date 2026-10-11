@@ -8,7 +8,7 @@
 //   * the input-file section grammar, model selection, per-model key schema,
 //     numerical domains, coefficient formulas, and the mover-facing pointer
 //     SEP::ParallelDiffusion::ActiveParallelDiffusion belong to the library;
-//   * srcSEP owns only (a) locating the schema-4 [parallel_diffusion] section
+//   * srcSEP owns only (a) locating the physics: parallel_diffusion block
 //     in its --input file (util/sep_initialization.cpp), (b) the selection
 //     cross-check with --spatial-diffusion-provider and the mover, (c) the
 //     declaration of which optional library inputs srcSEP can supply, and
@@ -38,7 +38,7 @@ namespace ParallelDiffusionBinding {
 //   initialization  the parsed --input configuration, or NULL when srcSEP runs
 //                   without --input.
 //
-// The library is selected exactly when librarySelected is true, and then a schema-4 [parallel_diffusion] section is required.  A section
+// The library is selected exactly when librarySelected is true, and then a physics: parallel_diffusion block is required.  A section
 // without that selection, the selection without a section, or the selection
 // with a focused-transport mover is a typed error.  When selected, the
 // section body is parsed by SEP::ParallelDiffusion::ParseSection, checked

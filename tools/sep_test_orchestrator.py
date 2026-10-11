@@ -682,6 +682,19 @@ def build_step(application: str) -> Step:
 SELFTEST = "tools/test_sep_test_orchestrator.py"
 
 
+def amps_input_step() -> Step:
+    """Grammar test of the generic AMPS runtime-input reader (src/INPUT_FILE.md),
+    shared by srcSEP, srcSEP3D and the SEP model libraries.  The test binary
+    prints one "[INP-xx] PASS|FAIL message" line per case (read_bracket_text)
+    and exits nonzero on failure."""
+    return Step("amps-input",
+                "generic runtime-input grammar test (src/general/input): blocks, "
+                "comments, continuation, includes, diagnostics, ownership helpers",
+                [["make", "-C", "src/general/input", "test"]],
+                reader=read_bracket_text,
+                runner="src/general/input/test_amps_input.cpp")
+
+
 def srcsep_steps(out: Path, args: argparse.Namespace) -> List[Step]:
     """srcSEP: steps from the srcSEP section of srcSEP3D/LOG.md.  New srcSEP
     test procedures must be added here (with a reader) when developed."""
@@ -706,6 +719,7 @@ def srcsep_steps(out: Path, args: argparse.Namespace) -> List[Step]:
                                     "srcSEP/test/run_parallel_diffusion_mover_tests.py",
                                     {"library": "parallel-diffusion-library"}),
              runner="srcSEP/test/run_parallel_diffusion_mover_tests.py"),
+        amps_input_step(),
         Step("orchestrator-selftest",
              "self-test of this orchestrator's result readers and log extraction",
              [["python3", SELFTEST]], reader=read_unittest, runner=SELFTEST),
@@ -817,6 +831,7 @@ def srcsep3d_steps(out: Path, args: argparse.Namespace) -> List[Step]:
              [["make", "-C", "src/models/sep_coronal_cme", "-j16", "test"]],
              reader=reader_coronal_cme(coronal),
              runner="src/models/sep_coronal_cme make test"),
+        amps_input_step(),
         Step("orchestrator-selftest",
              "self-test of this orchestrator's result readers and log extraction",
              [["python3", SELFTEST]], reader=read_unittest, runner=SELFTEST),

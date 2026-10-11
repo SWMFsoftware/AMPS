@@ -189,14 +189,52 @@ configuration conflict, not a zero-rate source.
   normalized declared weights, retains known no-shock and numerical-unknown
   weight, and reports probability bounds instead of renormalizing survivors.
 
-## Event asset
+## Event file
 
-The resolver accepts a strict, duplicate-free `key=value` file.  Unknown keys,
-missing keys, unsupported enum values, non-SI values and a changed harmonic
-checksum fail before the provider is constructed.  `assets.harmonics_file` is
-resolved by the caller relative to the event file; its SHA-256 bytes enter the
-event fingerprint.  Runnable examples and the accepted application spelling
-are under `srcSEP3D/examples/shock-front/`.
+A reduced shock-front event (`*.event`) is written in the generic AMPS runtime
+input format (`src/INPUT_FILE.md`) as one
+`#begin physics: shock_front` ... `#end physics` block.  `!` starts a comment
+(there is no `#` comment) and `\` continues a line.  The keys are unchanged
+from the former `key=value` record: the dotted vocabulary
+(`run.start_s`, `ambient.reference_radius_m`, ...).  Inside the block a nested
+block is the same key space as the dotted prefix, so
+
+```text
+#begin physics: shock_front
+  #begin ambient
+    reference_radius_m = 1.495978707e11   ! same as ambient.reference_radius_m
+  #end ambient
+#end physics
+```
+
+is equivalent to writing `ambient.reference_radius_m = 1.495978707e11`
+directly in the block (`AMPS::Input::Flatten`); supplying the same key both
+ways is a duplicate and fails.  The value shown is only a syntax illustration.
+
+`ResolveConfiguration(bytes, reader, displayName)` parses that text with the
+header-only reader `src/general/input/amps_input.h` (C++17, standard library
+only, no PIC/MPI; `test/check_architecture.py` allows
+`#include "amps_input.h"` as the one AMPS include).  Any other top-level block,
+a `physics:` block other than `shock_front`, unknown keys, missing keys,
+duplicate keys, unsupported enum values, non-SI values and a changed harmonic
+checksum fail before the provider is constructed; diagnostics are prefixed
+with `displayName:line:` (the file path, or a label for application-assembled
+text).  `assets.harmonics_file` is a relative path whose bytes the caller
+supplies through `reader` (the caller owns the filesystem policy); its
+SHA-256 bytes enter the event fingerprint.  srcSEP and srcSEP3D resolve it
+from the directory of the file that contains `#begin physics: shock_front`
+(the event file itself when it is `#include`d into a srcSEP3D deck).  The physics identity is the
+normalized manifest of the resolved assignments, so the change of file format,
+comments and layout does not change it.
+
+A stand-alone event file is used by the shared tests, viewers and srcSEP
+`--reduced-shock-event`.  In `srcSEP3D` the event is `#include`d into the
+application deck (`#include "handoff_smoke.event"`) instead of being named by
+the retired `[background] model_asset` key, and the application passes the
+canonical text of that block to the resolver.  An old `key=value` event can be
+converted with `python3 tools/convert_amps_input.py event old.event -o
+new.event`.  Runnable examples and the accepted application spelling are under
+`srcSEP3D/examples/shock-front/`.
 
 The input groups are deliberately explicit:
 

@@ -2,8 +2,8 @@
 """Run and summarize the srcSEP parallel-diffusion / particle-mover tests.
 
 This runner executes the focused, AMPS-independent test suites added for the
-shared parallel-diffusion coefficient library binding and the schema-4
-``run.particle_mover`` key, parses each suite's per-test PASS/FAIL/SKIP/ERROR
+shared parallel-diffusion coefficient library binding and the schema-6
+``application.sep.transport`` key, parses each suite's per-test PASS/FAIL/SKIP/ERROR
 lines, prints one summary, and lists every failed test.  It never needs a
 configured or native AMPS build.
 
@@ -49,20 +49,21 @@ suites and tests (run from any directory; no AMPS build is needed):
 
   binding   make -C srcSEP test-parallel-diffusion-binding-unit
             srcSEP schema-4 input path (production sources, no AMPS/MPI):
-              PDB01  [parallel_diffusion] body stored verbatim with line numbers
+              PDB01  physics: parallel_diffusion block records kept with line numbers
                      and key case; schema 2/3 and duplicate sections rejected
               PDB02  section/CLI/mover cross-check and host gate reject every
                      inconsistent or unsupported selection; nothing installed
               PDB03  parallel-diffusion-library registry provider, Parker only
               PDB04  installed models through ActiveParallelDiffusion match
                      closed forms (constant lambda; rigidity/radius power law)
-              PDB05  [run] particle_mover: canonical names only, schema 4 only,
-                     no duplicates, optional, part of the startup fingerprint
+              PDB05  application.sep.transport: parker/focused-diffusion/
+                     focused-scattering, required, no duplicates, retired
+                     particle_mover rejected, part of the startup fingerprint
 
   cli       make -C srcSEP test-cli-unit
             Production CLI parser (step-1 suite CLI01-CLI06, REGISTRY, REFINE,
             HIDDEN, REPORT).  New test:
-              CLI06  mover precedence --particle-mover > run.particle_mover >
+              CLI06  mover precedence --particle-mover > application.sep.transport >
                      default fte-dmumu, and deferred mover-dependent validation
                      when --input is given without --particle-mover
             The suite deliberately prints "[HIDDEN01] FAIL" as a negative

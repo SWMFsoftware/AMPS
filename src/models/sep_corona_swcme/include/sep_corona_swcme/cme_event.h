@@ -263,8 +263,9 @@ struct EventConfiguration {
 // requested bytes or a typed failure.  No MPI or filesystem type crosses here.
 using AssetReader = std::function<Core::Result<std::string>(const std::string&)>;
 
-// Parse a strict `key=value` background record. Blank lines and lines whose
-// first non-space character is `#` are ignored. Keys are unique and closed;
+// Parse a background event record written in the generic AMPS runtime-input
+// format (src/INPUT_FILE.md): exactly one `#begin physics: cme_background`
+// block whose dotted keys are unique and closed (`!` starts a comment);
 // unknown, duplicate, missing, nonfinite, or unsupported values fail before an
 // event object is returned. Asset paths are provenance while SHA-256 content
 // checksums participate in the physics identity.

@@ -129,8 +129,15 @@ struct Configuration {
   std::string physicsFingerprint;
 };
 
+// Resolve one reduced shock-front event.  ``inputBytes`` is generic AMPS
+// runtime-input text (src/INPUT_FILE.md) holding exactly one
+// ``#begin physics: shock_front`` block; ``displayName`` (the file path, or a
+// label for text an application assembled) prefixes every diagnostic as
+// ``name:line:``.  ``reader`` returns the bytes of relative assets such as
+// ``assets.harmonics_file``; the caller owns filesystem policy.
 Core::Result<std::shared_ptr<const Configuration>> ResolveConfiguration(
-    const std::string& inputBytes,const AssetReader& reader);
+    const std::string& inputBytes,const AssetReader& reader,
+    const std::string& displayName="shock-front event");
 
 struct TrajectoryState {
   double timeS = 0.0;

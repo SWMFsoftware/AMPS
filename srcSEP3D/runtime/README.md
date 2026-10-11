@@ -10,28 +10,29 @@ adding its own center-node write loop or halo protocol.
 
 | Entry point | Contract |
 |---|---|
-| `ParseConfigurationText` / `LoadConfigurationFile` | Parse explicit mover/model selections, preserve schema-5 case-sensitive parallel-model assignments, and canonically resolve SWCME assignments |
+| `ParseConfigurationText` / `LoadConfigurationFile` | Read the generic AMPS block input (`src/INPUT_FILE.md`; `#include` resolved relative to the including file), check the srcSEP3D block layout, parse explicit mover/model selections, preserve schema-5 case-sensitive parallel-model assignments, and canonically resolve SWCME assignments |
 | `RunConfiguration3D::Create` | Cross-check particle-mover family against the concrete transport model, call the shared parallel-model reader when selected, and freeze normalized options, storage layout, model fingerprint and physics identity |
 | `CreateBackgroundProvider` | Construct a built-in or registered candidate; validate before replacing the caller's output |
 | `RegisterBackgroundModel` | Register a nonempty unique extension ID on each rank before acquisition |
 | `BackgroundAuthorityMatches` | Check metadata provenance against the configured authority |
 | `StandaloneAdapter` / `SwmfAdapter` | Publish a validated descriptor through the correct acquisition ownership path |
 
-Schema 4 accepts `background.provider=swcme` for the canonical runtime, or
-`background.provider=runtime-model` with a registered `background.model_id`.
+Schema 4 accepts `physics.background.provider=swcme` for the canonical
+runtime, or `physics.background.provider=runtime-model` with a registered
+`physics.background.model_id` (block `physics: background`).
 Schema 3 retains its original standalone Parker contract. Prescribed turbulence
 remains required for these standalone inputs. SWMF import still uses its typed
 host. The reserved Python provider remains unimplemented.
 
-Schema 5 requires `run.particle_mover=parker|focused-transport` in addition to
-the concrete `run.transport` key. Parker pairs only with `transport=parker`;
+Schema 5 requires `application.sep3d.particle_mover=parker|focused-transport`
+in addition to the concrete `application.sep3d.transport` key. Parker pairs only with `transport=parker`;
 the focused family pairs with either explicit focused flavor. Schema 5 also
 adds a Parker-only `parallel-diffusion-library` selector and requires
-`[parallel_diffusion]`. Runtime installation is transactional: the model's
+the `physics: parallel_diffusion` block. Runtime installation is transactional: the model's
 validated parameters are installed before the immutable configuration becomes
 active, and their fingerprint is checked against the value frozen by the
 factory. Replacement is legal only in the existing pristine pre-mesh state.
-Focused movers and inactive library sections are rejected. The complete model
+Focused movers and inactive library blocks are rejected. The complete model
 identity participates in restart compatibility, so a changed coefficient law
 cannot resume an old particle state.
 
@@ -100,13 +101,20 @@ provider unchanged.
 
 Select the factory with:
 
-```ini
-[background]
-provider = runtime-model
-model_id = my-model
+```text
+#begin physics: background
+  provider = runtime-model
+  model_id = my-model
+  ...                         ! external_script and the nested parker block
+#end physics
 ```
 
 The model ID alone does not add custom text keys or a subprocess protocol.
+The one exception that the srcSEP3D input layout knows is the reduced shock
+front: `model_id = sep-corona-swcme-shock-front-v1` takes its parameters from
+a top-level `physics: shock_front` block (normally `#include`d from its
+`.event` file; this replaced the retired `[background] model_asset = FILE`
+key), whose canonical text is passed to the shared resolver.
 Provide a typed parser/host configuration for extra model parameters. A typed
 host may alternatively call `SEP3D::InstallBackgroundProvider` after immutable
 configuration and before acquisition; the API retains shared ownership and
@@ -130,7 +138,7 @@ without preparation, writes or an extra exchange. Its committed-update counter
 is compared with due cadence events, rather than inferred from generation.
 Readback covers the mapped primitive/transport/E fields when allocated; native
 current and electron pressure are filled but not separately compared by these
-gates. Optional application tensor slots follow the frozen `[storage]` layout.
+gates. Optional application tensor slots follow the frozen `application.sep3d.storage` layout.
 
 See [`../test/README.md`](../test/README.md) for portable and native test
 selection, prerequisite SKIPs and aggregate log paths. A configured enclosing

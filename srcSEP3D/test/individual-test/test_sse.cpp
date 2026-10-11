@@ -358,9 +358,9 @@ Result Source() {
   Replace(&deck,"shock.acceleration_mode = resolved_compression","shock.acceleration_mode = source");
   Replace(&deck,"provider = swcme","provider = analytic-parker");
   Replace(&deck,"macroparticle_weight = 1e23","macroparticle_weight = 6e24");
-  // The disabled flag in this deck belongs to [source]; target its section to
-  // avoid accidentally enabling population control or another optional model.
-  const auto section=deck.find("[source]");const auto enabled=deck.find("enabled = false",section);
+  // The disabled flag in this deck belongs to the source: shock block; target
+  // it to avoid accidentally enabling population control or another model.
+  const auto section=deck.find("#begin source: shock");const auto enabled=deck.find("enabled = false",section);
   if(enabled==std::string::npos)return Finish(false,"source example section is missing");
   deck.replace(enabled,std::string("enabled = false").size(),"enabled = true");
   // A generic fixed Earth position from another example need not intersect
@@ -369,7 +369,7 @@ Result Source() {
   // production containment checks. Precision 17 preserves the calculated SI
   // point through text parsing. This has no bearing on an event's Earth position.
   std::ostringstream probe;probe.precision(17);
-  probe<<"\n[observer.sse-source-probe]\n"
+  probe<<"\n#begin observer: sse-source-probe\n"
        <<"kind = fixed-cartesian\nnormalization = differential-intensity\n"
        <<"position_x_m = "<<observerPoint.x<<'\n'
        <<"position_y_m = "<<observerPoint.y<<'\n'
@@ -383,7 +383,8 @@ Result Source() {
        <<"minimum_energy_j = "<<options.source.minimumEnergyJ<<'\n'
        <<"maximum_energy_j = "<<options.source.maximumEnergyJ<<'\n'
        <<"minimum_mu = -1\nmaximum_mu = 1\nspecies = all\n"
-       <<"products = flux,spectrum,anisotropy\n";
+       <<"products = flux,spectrum,anisotropy\n"
+       <<"#end observer\n";
   deck+=probe.str();
   Fixture f;auto s=f.Setup(deck);if(!s.ok())return Finish(false,s.message);
   if(f.options.activeRegion==R::ActiveRegionMode::ParkerTube &&

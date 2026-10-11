@@ -123,20 +123,26 @@ def render() -> str:
         match = pattern.match(line)
         if match and match.group(1) in by_section:
             by_section[match.group(1)].append((match.group(2), match.group(3)))
+    # Generic AMPS runtime input (src/INPUT_FILE.md): the whole model is one
+    # ``physics: sep_coronal_cme`` block and each schema-5 section is a child
+    # block with the section's name.  ``!`` starts a comment.
     lines = [
-        "# Generated analytic-verification fixture for Stage-0 parser tests.",
-        "# It is test evidence, not an event configuration or a source of defaults.",
+        "! Generated analytic-verification fixture for Stage-0 parser tests.",
+        "! It is test evidence, not an event configuration or a source of defaults.",
         "",
+        "#begin physics: sep_coronal_cme",
     ]
     for section in SECTIONS:
         if not by_section[section]:
             raise RuntimeError(f"schema section {section} has no keys")
-        lines.append(f"[{section}]")
+        lines.append(f"  #begin {section}")
         for key, expression in by_section[section]:
             dotted = f"{section}.{key}"
             value = OVERRIDES.get(dotted, default_value(key, expression))
-            lines.append(f"{key} = {value}")
-        lines.append("")
+            lines.append(f"    {key} = {value}")
+        lines.append(f"  #end {section}")
+    lines.append("#end physics")
+    lines.append("")
     return "\n".join(lines)
 
 

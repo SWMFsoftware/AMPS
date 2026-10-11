@@ -394,16 +394,11 @@ void amps_init_mesh() {
       if (SEP::Initialization::HasActive()) {
         const SEP::Initialization::Configuration& initialization =
             SEP::Initialization::Active();
-        // Schema 1 predates the canonical SWCME normalization bridge and
-        // retains its historical signed +5 nT radial normalization.  The
-        // complete schema-2 contract instead consumes the canonically derived
-        // signed Br(1 AU), including its configured polarity.
-        double radialFieldAtOneAuT = 5.0e-9;
-        if (initialization.schemaVersion >= 2) {
-          radialFieldAtOneAuT =
-              SEP::SW1DAdapter::GetConfigurationSummary()
-                  .parker_radial_field_at_one_au_t;
-        }
+        // The runtime input consumes the canonically derived signed
+        // Br(1 AU) of the SWCME ambient, including its configured polarity.
+        const double radialFieldAtOneAuT =
+            SEP::SW1DAdapter::GetConfigurationSummary()
+                .parker_radial_field_at_one_au_t;
         const double origin[3] = {initialization.parkerOriginM.x,
                                   initialization.parkerOriginM.y,
                                   initialization.parkerOriginM.z};
@@ -654,8 +649,7 @@ void amps_init_mesh() {
   PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
   PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
-  if (SEP::Initialization::HasActive() &&
-      SEP::Initialization::Active().schemaVersion >= 2) {
+  if (SEP::Initialization::HasActive()) {
     const SEP::Initialization::Configuration& initialization =
         SEP::Initialization::Active();
     // outputMeshTECPLOT owns the distributed AMR serialization.  The finite
@@ -715,8 +709,7 @@ void amps_init() {
 
   //set up the time step
   PIC::ParticleWeightTimeStep::LocalTimeStep=SEP::Mesh::localTimeStep;
-  const bool configuredNumerics = SEP::Initialization::HasActive() &&
-      SEP::Initialization::Active().schemaVersion >= 2;
+  const bool configuredNumerics = SEP::Initialization::HasActive();
   // Freeze the canonical signed Br(1 AU) once for domain-cell initialization.
   // Fetching a full configuration summary inside the cell loop would copy its
   // manifest repeatedly and obscure that every cell uses one resolved model.
@@ -851,8 +844,7 @@ void amps_init() {
   //init the particle buffer
   if (PIC::ParticleBuffer::ParticleDataBuffer==NULL) PIC::ParticleBuffer::Init(10000000);
 
-  if (configuredNumerics &&
-      SEP::Initialization::Active().schemaVersion >= 3) {
+  if (configuredNumerics) {
     // The native writer now sees the completed center-node Parker field, an
     // initialized particle buffer, and the already installed global/block
     // time step and statistical weight. Unlike outputMeshTECPLOT(), this

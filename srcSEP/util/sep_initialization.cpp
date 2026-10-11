@@ -1,5 +1,32 @@
 #include "sep_initialization.h"
 
+// Generic AMPS runtime-input reader (src/INPUT_FILE.md).  As for the
+// SEP-common headers (sep_common_header_path.h), prefer the AMPS-root include
+// path that every AMPS compilation context provides; dependency-light test
+// builds supply -I<AMPS_ROOT>/src/general/input instead.
+#if defined(__has_include)
+#  if __has_include(<src/general/input/amps_input.h>)
+#    include <src/general/input/amps_input.h>
+#  else
+#    include "amps_input.h"
+#  endif
+#else
+#  include "amps_input.h"
+#endif
+
+// Shared SEP input vocabulary (schema 6) and the canonical SWCME1D resolver,
+// both header-only; resolved like the generic reader above.
+#include SRCSEP_SEP_COMMON_HEADER(sep_input_layout.h)
+#if defined(__has_include)
+#  if __has_include(<src/models/swcme/swcme1d_input.hpp>)
+#    include <src/models/swcme/swcme1d_input.hpp>
+#  else
+#    include "swcme1d_input.hpp"
+#  endif
+#else
+#  include "swcme1d_input.hpp"
+#endif
+
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
@@ -188,126 +215,295 @@ ObserverConfiguration* ObserverForSection(const std::string& section,
   return &configuration->observers.back();
 }
 
+// Parse a value restricted to one accepted spelling.  D3: the shared
+// vocabulary may offer values that srcSEP does not implement (srcSEP3D's
+// providers, observer kinds, ...); those are typed "not supported" errors
+// rather than generic invalid values.
+Transport::Status RequireSrcSepValue(const std::string& field,
+                                     const std::string& value,
+                                     const std::string& accepted,
+                                     const std::set<std::string>& shared) {
+  const std::string normalized = Lower(value);
+  if (normalized == accepted) return Transport::Status::Ok();
+  if (shared.count(normalized) != 0)
+    return Error(SEP::InputLayout::NotSupportedMessage(
+        "'" + field + " = " + value + "'", SEP::InputLayout::kSrcSep) +
+        "; srcSEP accepts only '" + accepted + "'");
+  return Error("invalid value for '" + field + "': " + value);
+}
+
+// Per-walk state that is not part of Configuration itself.
+struct ApplyState {
+  // source: shock reference spectrum (decision D4): becomes the canonical
+  // SWCME source.* assignments once the document is complete.
+  SEP::InputLayout::SwcmeSourceSettings spectrum;
+};
+
+// Apply one srcSEP key under its qualified name (block path + key).  The
+// walker has already checked that the key belongs to the shared vocabulary
+// and is implemented by srcSEP.
 Transport::Status Apply(const std::string& section, const std::string& key,
-                        const std::string& value, Configuration* c) {
+                        const std::string& value, Configuration* c,
+                        ApplyState* state) {
   const std::string field = section + "." + key;
   auto invalid = [&]() { return Error("invalid value for '" + field + "': " + value); };
-  if (field == "run.schema_version") {
+  auto boolean = [&](bool* destination) {
+    return ParseBool(value, destination) ? Transport::Status::Ok() : invalid();
+  };
+  auto real = [&](double* destination) {
+    return ParseDouble(value, destination) ? Transport::Status::Ok() : invalid();
+  };
+  auto count = [&](std::uint64_t* destination) {
+    return ParseUnsigned64(value, destination) ? Transport::Status::Ok()
+                                               : invalid();
+  };
+  if (field == "application.sep.schema_version") {
+    // Decision D1: srcSEP and srcSEP3D share content schema 6.  The srcSEP
+    // schemas 1-4 are retired without a compatibility path.
     std::uint64_t parsed = 0;
-    if (!ParseUnsigned64(value, &parsed) ||
-        (parsed != 1 && parsed != 2 && parsed != 3 && parsed != 4))
-      return invalid();
-    c->schemaVersion = static_cast<unsigned>(parsed);
-  } else if (field == "run.particle_mover") {
-    // Schema 4: the production mover may be chosen in the input file.  The
-    // shared registry parser is the single authority for mover names, so the
-    // file and --particle-mover cannot drift apart.  A new file key accepts
-    // only the canonical spellings (parker, fte-dmumu, fte-mfp): a deprecated
-    // CLI alias reported through `warning` is rejected here rather than
-    // carried into a new schema.  Schema legality (>=4) is checked after the
-    // whole file is read, because run.schema_version may follow this key.
-    Mover::ProductionMover mover = Mover::ProductionMover::Parker;
-    std::string warning;
-    if (!Mover::ParseProductionMover(value, mover, warning) || !warning.empty())
+    if (!ParseUnsigned64(value, &parsed)) return invalid();
+    if (parsed != SEP::InputLayout::kSchemaVersion)
+      return Error("application.sep.schema_version = " + value + " is "
+                   "retired; srcSEP and srcSEP3D read only the shared schema "
+                   "6 (convert with tools/convert_amps_input.py "
+                   "sep6-from-srcsep)");
+  } else if (field == "application.sep.transport") {
+    // One shared key selects the transport formulation in both applications.
+    // srcSEP maps it onto its three production movers, which implement the
+    // same formulations: parker (pitch-angle-averaged Parker transport),
+    // focused-diffusion = fte-dmumu (continuous D_mumu pitch-angle diffusion)
+    // and focused-scattering = fte-mfp (discrete scattering events at the
+    // rate nu = v / lambda_parallel); srcSEP/PRODUCTION_MOVER_API.md.
+    const std::string normalized = Lower(value);
+    if (normalized == "parker")
+      c->particleMover = Mover::ProductionMover::Parker;
+    else if (normalized == "focused-diffusion")
+      c->particleMover = Mover::ProductionMover::FocusedTransportDiffusion;
+    else if (normalized == "focused-scattering")
+      c->particleMover = Mover::ProductionMover::FocusedTransportMeanFreePath;
+    else
       return Error("invalid value for '" + field + "': " + value +
-                   " (accepted: parker, fte-dmumu, fte-mfp)");
+                   " (accepted: parker, focused-diffusion, focused-scattering)");
     c->particleMoverSpecified = true;
-    c->particleMover = mover;
   } else if (field == "run.time_step_s") {
-    if (!ParseDouble(value, &c->timeStepS)) return invalid();
-  } else if (field == "injection.macroparticles_per_step") {
-    if (!ParseUnsigned64(value, &c->macroparticlesPerStep)) return invalid();
-  } else if (field == "species.particle_weight") {
-    if (!ParseDouble(value, &c->particleWeight)) return invalid();
-  } else if (field == "observer.heliocentric_radius_m") {
-    if (!ParseDouble(value, &c->observerHeliocentricRadiusM)) return invalid();
-  } else if (field == "output.mesh_tecplot_file") {
+    return real(&c->timeStepS);
+  } else if (field == "run.maximum_time_steps") {
+    c->maximumTimeStepsSpecified = true;
+    return count(&c->maximumTimeSteps);
+  } else if (field == "source.shock.enabled") {
+    // srcSEP's SWCME shock source is always active; a disabled source is a
+    // srcSEP3D propagation-only configuration.
+    bool enabled = false;
+    if (!ParseBool(value, &enabled)) return invalid();
+    if (!enabled)
+      return Error(SEP::InputLayout::NotSupportedMessage(
+          "'source.shock.enabled = false'", SEP::InputLayout::kSrcSep));
+  } else if (field == "source.shock.samples_per_step") {
+    return count(&c->macroparticlesPerStep);
+  } else if (field == "source.shock.minimum_energy_j") {
+    return real(&state->spectrum.minimumEnergyJ);
+  } else if (field == "source.shock.maximum_energy_j") {
+    return real(&state->spectrum.maximumEnergyJ);
+  } else if (field == "source.shock.injection_efficiency") {
+    return real(&state->spectrum.injectionEfficiency);
+  } else if (field == "source.shock.spectrum_reference_energy_j") {
+    return real(&state->spectrum.referenceEnergyJ);
+  } else if (field == "source.shock.spectrum_particle_mass_kg") {
+    return real(&state->spectrum.particleMassKg);
+  } else if (field == "source.shock.spectrum_charge_number") {
+    std::uint64_t charge = 0;
+    if (!ParseUnsigned64(value, &charge) || charge == 0 ||
+        charge > static_cast<std::uint64_t>(std::numeric_limits<long>::max()))
+      return invalid();
+    state->spectrum.chargeNumber = static_cast<long>(charge);
+  } else if (field == "source.shock.spectrum_normalization") {
+    // srcSEP's swept-volume source is defined only for the relative SWCME
+    // spectrum (SW1DAdapter rejects a calibrated reference intensity), so the
+    // shared value reference-differential-intensity is a typed D3 error here
+    // rather than a failure deferred to model configuration.
+    const std::string normalized = Lower(value);
+    if (normalized == "reference-differential-intensity")
+      return Error(SEP::InputLayout::NotSupportedMessage(
+          "'" + field + " = " + value + "'", SEP::InputLayout::kSrcSep) +
+          "; srcSEP accepts only 'relative-only'");
+    if (normalized != "relative-only") return invalid();
+    state->spectrum.normalization = normalized;
+  } else if (field ==
+             "source.shock.spectrum_reference_intensity_per_m2_s_sr_j") {
+    return real(&state->spectrum.referenceIntensitySi);
+  } else if (field == "species.macroparticle_weight") {
+    return real(&c->particleWeight);
+  } else if (field == "physics.background.provider") {
+    // srcSEP's ambient plasma is the standalone SWCME StepState sampled along
+    // the Parker field line (Background::Provider::Swcme).
+    return RequireSrcSepValue(field, value, "swcme",
+        {"analytic-parker", "python-interpolator", "swmf", "runtime-model"});
+  } else if (field == "physics.shock.authority") {
+    // The particle-facing shock is the canonical SWCME1D front.
+    return RequireSrcSepValue(field, value, "swcme", {"none"});
+  } else if (field == "output.initialization_mesh_tecplot_file") {
     c->meshTecplotFile = value;
-  } else if (field == "output.field_line_tecplot_file") {
+  } else if (field == "output.initialization_field_line_tecplot_file") {
     c->fieldLineTecplotFile = value;
-  } else if (field == "output.data_tecplot_file") {
+  } else if (field == "output.initialization_data_tecplot_file") {
     c->dataTecplotFile = value;
-  } else if (field == "parker_spiral.origin_x_m") {
-    if (!ParseDouble(value, &c->parkerOriginM.x)) return invalid();
-  } else if (field == "parker_spiral.origin_y_m") {
-    if (!ParseDouble(value, &c->parkerOriginM.y)) return invalid();
-  } else if (field == "parker_spiral.origin_z_m") {
-    if (!ParseDouble(value, &c->parkerOriginM.z)) return invalid();
-  } else if (field == "parker_spiral.initial_x_m") {
-    if (!ParseDouble(value, &c->parkerInitialPointM.x)) return invalid();
-  } else if (field == "parker_spiral.initial_y_m") {
-    if (!ParseDouble(value, &c->parkerInitialPointM.y)) return invalid();
-  } else if (field == "parker_spiral.initial_z_m") {
-    if (!ParseDouble(value, &c->parkerInitialPointM.z)) return invalid();
-  } else if (field == "parker_spiral.length_m") {
-    if (!ParseDouble(value, &c->parkerLengthM)) return invalid();
-  } else if (field == "parker_spiral.point_count") {
-    if (!ParseUnsigned64(value, &c->parkerPointCount)) return invalid();
-  } else if (field == "domain.inner_radius_m") {
-    if (!ParseDouble(value, &c->innerRadiusM)) return invalid();
-  } else if (field == "domain.outer_radius_m") {
-    if (!ParseDouble(value, &c->outerRadiusM)) return invalid();
+  } else if (field == "mesh.field_line.origin_x_m") {
+    return real(&c->parkerOriginM.x);
+  } else if (field == "mesh.field_line.origin_y_m") {
+    return real(&c->parkerOriginM.y);
+  } else if (field == "mesh.field_line.origin_z_m") {
+    return real(&c->parkerOriginM.z);
+  } else if (field == "mesh.field_line.initial_x_m") {
+    return real(&c->parkerInitialPointM.x);
+  } else if (field == "mesh.field_line.initial_y_m") {
+    return real(&c->parkerInitialPointM.y);
+  } else if (field == "mesh.field_line.initial_z_m") {
+    return real(&c->parkerInitialPointM.z);
+  } else if (field == "mesh.field_line.length_m") {
+    return real(&c->parkerLengthM);
+  } else if (field == "mesh.field_line.point_count") {
+    return count(&c->parkerPointCount);
+  } else if (field == "mesh.domain.inner_radius_m") {
+    return real(&c->innerRadiusM);
+  } else if (field == "mesh.domain.outer_radius_m") {
+    return real(&c->outerRadiusM);
   } else if (field == "mesh.global_cell_size_m") {
-    if (!ParseDouble(value, &c->globalCellSizeM)) return invalid();
+    return real(&c->globalCellSizeM);
   } else if (field == "mesh.minimum_cell_size_m") {
-    if (!ParseDouble(value, &c->minimumCellSizeM)) return invalid();
+    return real(&c->minimumCellSizeM);
   } else if (field == "mesh.maximum_level") {
     std::uint64_t parsed = 0;
     if (!ParseUnsigned64(value, &parsed) ||
         parsed > std::numeric_limits<unsigned>::max()) return invalid();
     c->maximumMeshLevel = static_cast<unsigned>(parsed);
-  } else if (field == "mesh.solar.enabled") {
-    if (!ParseBool(value, &c->solarRefinementEnabled)) return invalid();
-  } else if (field == "mesh.solar.surface_cell_size_m") {
-    if (!ParseDouble(value, &c->solarSurfaceCellSizeM)) return invalid();
-  } else if (field == "mesh.solar.transition_outer_radius_m") {
-    if (!ParseDouble(value, &c->solarTransitionOuterRadiusM)) return invalid();
-  } else if (field == "mesh.solar.profile") {
+  } else if (field == "mesh.refinement.solar.enabled") {
+    return boolean(&c->solarRefinementEnabled);
+  } else if (field == "mesh.refinement.solar.surface_cell_size_m") {
+    return real(&c->solarSurfaceCellSizeM);
+  } else if (field == "mesh.refinement.solar.transition_outer_radius_m") {
+    return real(&c->solarTransitionOuterRadiusM);
+  } else if (field == "mesh.refinement.solar.profile") {
     const std::string normalized = Lower(value);
     if (normalized == "linear") c->solarProfile = RefinementProfile::Linear;
     else if (normalized == "power-law") c->solarProfile = RefinementProfile::PowerLaw;
     else if (normalized == "smoothstep") c->solarProfile = RefinementProfile::Smoothstep;
     else return invalid();
-  } else if (field == "mesh.solar.exponent") {
-    if (!ParseDouble(value, &c->solarExponent)) return invalid();
-  } else if (field == "mesh.tube.enabled") {
-    if (!ParseBool(value, &c->tubeRefinementEnabled)) return invalid();
-  } else if (field == "mesh.tube.reference_radius_m") {
-    if (!ParseDouble(value, &c->tubeReferenceRadiusM)) return invalid();
-  } else if (field == "mesh.tube.radius_at_reference_m") {
-    if (!ParseDouble(value, &c->tubeRadiusAtReferenceM)) return invalid();
-  } else if (field == "mesh.tube.radius_mode") {
+  } else if (field == "mesh.refinement.solar.exponent") {
+    return real(&c->solarExponent);
+  } else if (field == "mesh.refinement.tube.enabled") {
+    return boolean(&c->tubeRefinementEnabled);
+  } else if (field == "mesh.refinement.tube.reference_radius_m") {
+    return real(&c->tubeReferenceRadiusM);
+  } else if (field == "mesh.refinement.tube.radius_at_reference_m") {
+    return real(&c->tubeRadiusAtReferenceM);
+  } else if (field == "mesh.refinement.tube.radius_mode") {
     const std::string normalized = Lower(value);
     if (normalized == "physical-constant")
       c->tubeRadiusMode = TubeRadiusMode::PhysicalConstant;
     else if (normalized == "constant-angular-width")
       c->tubeRadiusMode = TubeRadiusMode::ConstantAngularWidth;
     else return invalid();
-  } else if (field == "mesh.tube.center_cell_size_m") {
-    if (!ParseDouble(value, &c->tubeCenterCellSizeM)) return invalid();
-  } else if (field == "mesh.tube.transverse_profile") {
+  } else if (field == "mesh.refinement.tube.center_cell_size_m") {
+    return real(&c->tubeCenterCellSizeM);
+  } else if (field == "mesh.refinement.tube.transverse_profile") {
     const std::string normalized = Lower(value);
     if (normalized == "linear") c->tubeProfile = RefinementProfile::Linear;
     else if (normalized == "power-law") c->tubeProfile = RefinementProfile::PowerLaw;
     else if (normalized == "smoothstep") c->tubeProfile = RefinementProfile::Smoothstep;
     else return invalid();
-  } else if (field == "mesh.tube.transverse_exponent") {
-    if (!ParseDouble(value, &c->tubeExponent)) return invalid();
-  } else if (field == "background.parker.solar_wind_speed_m_per_s") {
-    if (!ParseDouble(value, &c->solarWindSpeedMPerS)) return invalid();
-  } else if (field == "background.parker.solar_rotation_rate_rad_per_s") {
-    if (!ParseDouble(value, &c->solarRotationRateRadPerS)) return invalid();
+  } else if (field == "mesh.refinement.tube.transverse_exponent") {
+    return real(&c->tubeExponent);
+  } else if (section == "application.sep.turbulence") {
+    // srcSEP's content of the only application-specific block (D2): the
+    // self-consistent Alfven-wave turbulence configuration.  Spellings are
+    // those of the matching command-line options (sep_turbulence_core.cpp).
+    Turbulence::Configuration& t = c->turbulence;
+    c->turbulenceSpecified = true;
+    const std::string normalized = Lower(value);
+    if (key == "source") {
+      if (!Turbulence::ParseSource(normalized, &t.source)) return invalid();
+    } else if (key == "representation") {
+      if (normalized == "integrated")
+        t.representation = Turbulence::Representation::Integrated;
+      else if (normalized == "spectral")
+        t.representation = Turbulence::Representation::Spectral;
+      else return invalid();
+    } else if (key == "coupling") {
+      if (!Turbulence::ParseCouplingPolicy(normalized, &t.coupling)) return invalid();
+    } else if (key == "advection") {
+      return boolean(&t.advectionEnabled);
+    } else if (key == "reflection") {
+      return boolean(&t.reflectionEnabled);
+    } else if (key == "cascade") {
+      return boolean(&t.cascadeEnabled);
+    } else if (key == "shock_injection") {
+      return boolean(&t.shockInjectionEnabled);
+    } else if (key == "inner_boundary") {
+      if (!Turbulence::ParseBoundaryPolicy(normalized, &t.innerBoundary.policy))
+        return invalid();
+    } else if (key == "inner_boundary_value_si") {
+      return real(&t.innerBoundary.value);
+    } else if (key == "outer_boundary") {
+      if (!Turbulence::ParseBoundaryPolicy(normalized, &t.outerBoundary.policy))
+        return invalid();
+    } else if (key == "outer_boundary_value_si") {
+      return real(&t.outerBoundary.value);
+    } else if (key == "reflection_coefficient") {
+      return real(&t.reflectionCoefficient);
+    } else if (key == "cascade_coefficient") {
+      return real(&t.cascadeCoefficient);
+    } else if (key == "perpendicular_correlation_length_m") {
+      return real(&t.perpendicularCorrelationLengthM);
+    } else if (key == "electron_heating_fraction") {
+      return real(&t.electronHeatingFraction);
+    } else if (key == "spectral_k_min_per_m") {
+      return real(&t.spectralKMinPerM);
+    } else if (key == "spectral_k_max_per_m") {
+      return real(&t.spectralKMaxPerM);
+    } else if (key == "spectral_bins") {
+      std::uint64_t bins = 0;
+      if (!ParseUnsigned64(value, &bins) || bins == 0) return invalid();
+      t.spectralBins = static_cast<std::size_t>(bins);
+    } else if (key == "cfl_safety") {
+      return real(&t.cflSafety);
+    } else if (key == "operator_accuracy_safety") {
+      return real(&t.operatorAccuracySafety);
+    } else if (key == "maximum_source_fraction") {
+      return real(&t.maximumSourceFraction);
+    } else if (key == "maximum_cascade_fraction") {
+      return real(&t.maximumCascadeFraction);
+    } else if (key == "minimum_substep_s") {
+      return real(&t.minimumSubstepS);
+    } else if (key == "maximum_substeps") {
+      if (!ParseUnsigned64(value, &t.maximumSubsteps) || t.maximumSubsteps == 0)
+        return invalid();
+    } else if (key == "conservation_relative_tolerance") {
+      return real(&t.conservationRelativeTolerance);
+    } else if (key == "shock_source_efficiency") {
+      return real(&c->shockSourceEfficiency);
+    } else if (key == "shock_source_plus_fraction") {
+      return real(&c->shockSourcePlusFraction);
+    } else if (key == "diagnostic_cadence_steps") {
+      return count(&c->diagnosticCadenceSteps);
+    } else {
+      return Error("unknown configuration key '" + field + "'");
+    }
   } else {
     ObserverConfiguration* observer = ObserverForSection(section, c);
     if (observer == NULL)
       return Error("unknown configuration key '" + field + "'");
-    if (key == "heliocentric_radius_m") {
-      if (!ParseDouble(value, &observer->heliocentricRadiusM)) return invalid();
+    if (key == "kind") {
+      // D5: srcSEP's observers are points on the field line.
+      return RequireSrcSepValue(field, value, "field-line-radius",
+          {"fixed-cartesian", "fixed-heliographic", "moving-cartesian",
+           "spherical-shell", "field-connected"});
+    } else if (key == "heliocentric_radius_m") {
+      return real(&observer->heliocentricRadiusM);
     } else if (key == "minimum_energy_j") {
-      if (!ParseDouble(value, &observer->minimumEnergyJ)) return invalid();
+      return real(&observer->minimumEnergyJ);
     } else if (key == "maximum_energy_j") {
-      if (!ParseDouble(value, &observer->maximumEnergyJ)) return invalid();
-    } else if (key == "energy_channels") {
+      return real(&observer->maximumEnergyJ);
+    } else if (key == "energy_bins") {
       std::uint64_t parsed = 0;
       if (!ParseUnsigned64(value, &parsed) ||
           parsed > std::numeric_limits<unsigned>::max()) return invalid();
@@ -361,9 +557,7 @@ Transport::Status Validate(const Configuration& c) {
       c.tubeCenterCellSizeM, c.tubeExponent};
   for (double value : values)
     if (!std::isfinite(value)) return Error("configuration contains a non-finite value");
-  if ((c.schemaVersion != 1 && c.schemaVersion != 2 &&
-       c.schemaVersion != 3 && c.schemaVersion != 4) ||
-      c.parkerPointCount < 2 ||
+  if (c.parkerPointCount < 2 ||
       c.parkerPointCount > 10000000ULL || c.parkerLengthM <= 0.0 ||
       c.solarWindSpeedMPerS <= 0.0 || c.solarRotationRateRadPerS < 0.0 ||
       c.innerRadiusM <= 0.0 || c.outerRadiusM <= c.innerRadiusM ||
@@ -372,50 +566,53 @@ Transport::Status Validate(const Configuration& c) {
       c.tubeExponent <= 0.0) {
     return Error("Parker, domain, or global mesh values are outside their supported range");
   }
-  if (c.schemaVersion >= 2 &&
-      (!std::isfinite(c.timeStepS) || c.timeStepS <= 0.0 ||
-       c.macroparticlesPerStep == 0 ||
-       c.macroparticlesPerStep >
-           static_cast<std::uint64_t>(std::numeric_limits<int>::max()) ||
-       !std::isfinite(c.particleWeight) || c.particleWeight <= 0.0 ||
-       c.meshTecplotFile.empty() || c.fieldLineTecplotFile.empty())) {
-    return Error("time step, particle sampling, observer, or Tecplot output "
+  if (!std::isfinite(c.timeStepS) || c.timeStepS <= 0.0 ||
+      c.macroparticlesPerStep == 0 ||
+      c.macroparticlesPerStep >
+          static_cast<std::uint64_t>(std::numeric_limits<int>::max()) ||
+      !std::isfinite(c.particleWeight) || c.particleWeight <= 0.0 ||
+      c.meshTecplotFile.empty() || c.fieldLineTecplotFile.empty() ||
+      c.dataTecplotFile.empty()) {
+    return Error("time step, particle sampling, or Tecplot output "
                  "configuration is invalid");
   }
-  if (c.schemaVersion == 2 &&
-      (!std::isfinite(c.observerHeliocentricRadiusM) ||
-       c.observerHeliocentricRadiusM < c.innerRadiusM ||
-       c.observerHeliocentricRadiusM > c.outerRadiusM))
-    return Error("schema version 2 observer radius is outside the domain");
-  // Schema 4 is schema 3 plus the optional [parallel_diffusion] section.  Its
-  // body is interpreted only by the shared library parser; this layer checks
-  // just that the section is legal for the declared schema (1, 2, or 3: no).
-  if (c.hasParallelDiffusionSection && c.schemaVersion < 4)
-    return Error("[parallel_diffusion] requires run.schema_version=4");
-  if (c.particleMoverSpecified && c.schemaVersion < 4)
-    return Error("run.particle_mover requires run.schema_version=4");
-  if (c.schemaVersion >= 3) {
-    if (c.observers.empty() || c.dataTecplotFile.empty())
-      return Error("schema version 3 requires observers and AMPS data output");
-    std::set<std::string> observerIds;
-    for (const ObserverConfiguration& observer : c.observers) {
-      if (observer.id.empty() || observer.id.size() > 48 ||
-          !observerIds.insert(observer.id).second ||
-          !std::isfinite(observer.heliocentricRadiusM) ||
-          observer.heliocentricRadiusM < c.innerRadiusM ||
-          observer.heliocentricRadiusM > c.outerRadiusM ||
-          !std::isfinite(observer.minimumEnergyJ) ||
-          !std::isfinite(observer.maximumEnergyJ) ||
-          observer.minimumEnergyJ <= 0.0 ||
-          observer.maximumEnergyJ <= observer.minimumEnergyJ ||
-          observer.energyChannels == 0 || observer.energyChannels > 1000000U ||
-          observer.pitchAngleBins == 0 || observer.pitchAngleBins > 1000000U)
-        return Error("one-dimensional observer identity, location, or spectrum is invalid");
-    }
+  if (c.maximumTimeStepsSpecified &&
+      (c.maximumTimeSteps == 0 ||
+       c.maximumTimeSteps >
+           static_cast<std::uint64_t>(std::numeric_limits<int>::max())))
+    return Error("run.maximum_time_steps must be in [1, 2147483647]");
+  if (c.turbulenceSpecified) {
+    const Transport::Status turbulence =
+        Turbulence::ValidateConfiguration(c.turbulence);
+    if (!turbulence.ok())
+      return Error("application.sep.turbulence: " + turbulence.message);
+    if (!(c.shockSourceEfficiency >= 0.0 && c.shockSourceEfficiency <= 1.0) ||
+        !(c.shockSourcePlusFraction >= 0.0 && c.shockSourcePlusFraction <= 1.0) ||
+        c.diagnosticCadenceSteps >
+            static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
+      return Error("application.sep.turbulence shock fractions must be in "
+                   "[0,1] and diagnostic_cadence_steps must fit an int");
+  }
+  if (c.observers.empty())
+    return Error("at least one '#begin observer: ID' block is required");
+  std::set<std::string> observerIds;
+  for (const ObserverConfiguration& observer : c.observers) {
+    if (observer.id.empty() || observer.id.size() > 48 ||
+        !observerIds.insert(observer.id).second ||
+        !std::isfinite(observer.heliocentricRadiusM) ||
+        observer.heliocentricRadiusM < c.innerRadiusM ||
+        observer.heliocentricRadiusM > c.outerRadiusM ||
+        !std::isfinite(observer.minimumEnergyJ) ||
+        !std::isfinite(observer.maximumEnergyJ) ||
+        observer.minimumEnergyJ <= 0.0 ||
+        observer.maximumEnergyJ <= observer.minimumEnergyJ ||
+        observer.energyChannels == 0 || observer.energyChannels > 1000000U ||
+        observer.pitchAngleBins == 0 || observer.pitchAngleBins > 1000000U)
+      return Error("one-dimensional observer identity, location, or spectrum is invalid");
   }
   const double sourceRadius = Norm(Subtract(c.parkerInitialPointM, c.parkerOriginM));
   if (std::fabs(sourceRadius - c.innerRadiusM) > 1.0e-10 * c.innerRadiusM)
-    return Error("Parker initial point must lie on domain.inner_radius_m");
+    return Error("Parker initial point must lie on mesh.domain.inner_radius_m");
   if (c.solarRefinementEnabled &&
       (c.solarSurfaceCellSizeM < c.minimumCellSizeM ||
        c.solarSurfaceCellSizeM > c.globalCellSizeM ||
@@ -433,181 +630,321 @@ Transport::Status Validate(const Configuration& c) {
   return Transport::Status::Ok();
 }
 
-Transport::Status ParseText(const std::string& text, Configuration* result) {
+// ---------------------------------------------------------------------------
+// Generic AMPS runtime input -> srcSEP configuration
+// ---------------------------------------------------------------------------
+//
+// The srcSEP input is written in the generic AMPS runtime-input format
+// (src/INPUT_FILE.md; reader src/general/input/amps_input.h) using the SEP
+// content schema 6 shared with srcSEP3D.  The complete block and key
+// vocabulary is the table in src/models/sep_common/sep_input_layout.h; the
+// walker consults it for every block and key:
+//
+//   * a block or key that is not in the table is unknown and fatal;
+//   * a srcSEP3D-only block or key (mesh.active_region, run.campaign_seed,
+//     an observer position, ...) is a typed "not supported by srcSEP" error
+//     (decision D3) -- it is never ignored;
+//   * everything else reaches Apply() under its qualified name.
+//
+// Qualified names.  A key's qualified name is the dot-joined path of its
+// enclosing blocks, where '#begin kind: name' contributes 'kind.name':
+// 'mesh.domain.inner_radius_m', 'mesh.refinement.solar.profile',
+// 'application.sep.turbulence.cascade', 'observer.earth.energy_bins'.
+//
+// Model blocks keep the vocabularies of the libraries that own them:
+//   physics: swcme              canonical SWCME1D assignments (dotted keys,
+//                               units in the value), forwarded by main.cpp to
+//                               the model-owned resolver; its source.* keys
+//                               are synthesized from source: shock (D4) and
+//                               its 3-D-only keys are typed D3 errors;
+//   physics: parallel_diffusion forwarded to SEP::ParallelDiffusion::
+//                               ParseSection by main.cpp.
+namespace {
+
+namespace Layout = SEP::InputLayout;
+
+struct WalkState {
+  Configuration* configuration = nullptr;
+  std::set<std::string> sections;  // qualified block paths
+  std::set<std::string> assigned;  // qualified application keys
+  std::map<std::string, std::size_t> keyLines;  // qualified key -> line
+  ApplyState apply;
+};
+
+// The 3-D SWCME rotation-rate key is honoured by srcSEP only when it states
+// the fixed SWCME1D Carrington rate that srcSEP uses anyway (D3: a setting is
+// rejected only when the application cannot honour it).  The value is the
+// plain SI number [rad/s] that the SWCME3D resolver reads.
+bool IsSwcme1dRotationRate(const std::string& value) {
+  double parsed = 0.0;
+  if (!ParseDouble(Trim(value), &parsed)) return false;
+  const double fixed = swcme::constants::SOLAR_ROTATION_RAD_S;
+  return std::fabs(parsed - fixed) <=
+      64.0 * std::numeric_limits<double>::epsilon() * std::fabs(fixed);
+}
+
+Transport::Status WalkBlocks(const AMPS::Input::Block& parent,
+                             const std::string& parentPath, WalkState* state) {
+  for (const AMPS::Input::Block& block : parent.blocks) {
+    const Layout::BlockRule* rule =
+        Layout::FindBlock(parentPath, block.kind, block.name);
+    if (rule == NULL)
+      return Error(AMPS::Input::ErrorAt(block.begin, "block '" + block.Label() +
+          "' is not part of the SEP input" +
+          (parentPath.empty() ? std::string(" at the top level")
+                              : " inside '" + parentPath + "'") +
+          " (allowed: " + Layout::AllowedChildren(parentPath) + ")").message);
+    const std::string path =
+        Layout::QualifiedPath(parentPath, block.kind, block.name);
+    if ((rule->support & Layout::kSrcSep) == 0)
+      return Error(AMPS::Input::ErrorAt(block.begin,
+          Layout::NotSupportedMessage("block '" + path + "'",
+                                      Layout::kSrcSep)).message);
+    if (!state->sections.insert(path).second)
+      return Error(AMPS::Input::ErrorAt(block.begin, "duplicate block '" +
+                                        path + "'").message);
+
+    if (path == "physics.swcme") {
+      // SWCME owns its dotted, unit-bearing keys; nested blocks are the same
+      // key space.  main.cpp resolves them with the model-owned resolver.
+      std::set<std::string> seen;
+      for (const AMPS::Input::Assignment& item : AMPS::Input::Flatten(block)) {
+        if (!seen.insert(item.key).second)
+          return Error(AMPS::Input::ErrorAt(item.where, "duplicate SWCME key '" +
+                                            item.key + "'", item.text).message);
+        if (const char* owner = Layout::SourceShockKeyForSwcmeKey(item.key))
+          return Error(AMPS::Input::ErrorAt(item.where, "SWCME key '" +
+              item.key + "' is written in source: shock as '" + owner +
+              "' (each quantity is set in one place, src/INPUT_FILE.md "
+              "section 5)", item.text).message);
+        if (Layout::IsSwcmeThreeDimensionalKey(item.key)) {
+          if (item.key == "parker.solar_rotation_rate_rad_per_s" &&
+              IsSwcme1dRotationRate(item.value))
+            continue;  // states the fixed SWCME1D rate; nothing to forward
+          return Error(AMPS::Input::ErrorAt(item.where,
+              Layout::NotSupportedMessage("SWCME key '" + item.key + "'",
+                                          Layout::kSrcSep) +
+              "; srcSEP's SWCME1D model is spherically symmetric about the "
+              "field line with the fixed rotation rate " +
+              Layout::ExactDecimal(swcme::constants::SOLAR_ROTATION_RAD_S) +
+              " rad/s", item.text).message);
+        }
+        SwcmeAssignment assignment;
+        assignment.key = item.key;
+        assignment.value = item.value;
+        assignment.line = item.where.line;
+        state->configuration->swcmeAssignments.push_back(assignment);
+      }
+      continue;
+    }
+    if (path == "physics.parallel_diffusion") {
+      // The shared library parser owns this block's model selection and key
+      // schema; it receives "key = value" records with their line numbers.
+      if (!block.blocks.empty())
+        return Error(AMPS::Input::ErrorAt(block.blocks.front().begin,
+            "physics: parallel_diffusion holds only key = value records").message);
+      state->configuration->hasParallelDiffusionSection = true;
+      for (const AMPS::Input::Assignment& item : block.assignments) {
+        ParallelDiffusionLine record;
+        record.line = item.where.line;
+        record.text = item.key + " = " + item.value;
+        state->configuration->parallelDiffusionLines.push_back(record);
+      }
+      continue;
+    }
+
+    for (const AMPS::Input::Assignment& item : block.assignments) {
+      if (item.key.find('.') != std::string::npos)
+        return Error(AMPS::Input::ErrorAt(item.where, "key '" + item.key +
+            "' contains '.'; SEP keys are plain names and a nested path "
+            "is written as nested blocks", item.text).message);
+      const std::string qualified = path + "." + item.key;
+      const Layout::KeyRule* key = Layout::FindKey(path, item.key);
+      if (key == NULL)
+        return Error(AMPS::Input::ErrorAt(item.where,
+            "unknown configuration key '" + qualified + "'", item.text).message);
+      if ((key->support & Layout::kSrcSep) == 0)
+        return Error(AMPS::Input::ErrorAt(item.where,
+            Layout::NotSupportedMessage("'" + qualified + "'",
+                                        Layout::kSrcSep), item.text).message);
+      state->assigned.insert(qualified);
+      state->keyLines[qualified] = item.where.line;
+      const Transport::Status status = Apply(path, item.key, item.value,
+          state->configuration, &state->apply);
+      if (!status.ok())
+        return Error(AMPS::Input::ErrorAt(item.where, status.message,
+                                          item.text).message);
+      if (qualified == "application.sep.transport")
+        state->configuration->particleMoverLine = item.where.line;
+    }
+    const Transport::Status nested = WalkBlocks(block, path, state);
+    if (!nested.ok()) return nested;
+  }
+  return Transport::Status::Ok();
+}
+
+}  // namespace
+
+static Transport::Status ParseDocument(const AMPS::Input::Document& document,
+                                       Configuration* result) {
   if (result == NULL) return Error("configuration output is null");
   Configuration candidate;
-  std::istringstream input(text);
-  std::set<std::string> sections;
-  std::set<std::string> assigned;
-  std::string section;
-  std::string line;
-  std::size_t lineNumber = 0;
-  const std::set<std::string> known = {
-      "run", "parker_spiral", "domain", "mesh", "mesh.solar",
-      "mesh.tube", "background.parker", "injection", "species",
-      "observer", "output", "swcme", "parallel_diffusion"};
-  while (std::getline(input, line)) {
-    ++lineNumber;
-    // [parallel_diffusion] belongs to the shared parallel-diffusion library
-    // parser, whose grammar differs from this INI reader ('!' also opens a
-    // comment, keys are case-sensitive SI names).  Keep the unmodified line
-    // so the library sees exactly what the operator wrote.
-    const std::string rawLine = line;
-    const std::size_t comment = line.find('#');
-    if (comment != std::string::npos) line.erase(comment);
-    line = Trim(line);
-    if (line.empty()) continue;
-    const bool sectionHeader = line.front() == '[' && line.back() == ']';
-    if (!sectionHeader && section == "parallel_diffusion") {
-      ParallelDiffusionLine record;
-      record.line = lineNumber;
-      record.text = rawLine;
-      candidate.parallelDiffusionLines.push_back(record);
-      continue;
-    }
-    if (sectionHeader) {
-      section = Lower(Trim(line.substr(1, line.size() - 2)));
-      const bool namedObserver = section.rfind("observer.", 0) == 0 &&
-          section.size() > std::string("observer.").size();
-      if (known.count(section) == 0 && !namedObserver)
-        return Error("unknown section at line " + std::to_string(lineNumber));
-      if (!sections.insert(section).second)
-        return Error("duplicate section '" + section + "'");
-      if (section == "parallel_diffusion")
-        candidate.hasParallelDiffusionSection = true;
-      continue;
-    }
-    const std::size_t separator = line.find('=');
-    if (section.empty() || separator == std::string::npos)
-      return Error("expected section key=value at line " + std::to_string(lineNumber));
-    const std::string key = Lower(Trim(line.substr(0, separator)));
-    const std::string value = Trim(line.substr(separator + 1));
-    const std::string qualified = section + "." + key;
-    if (key.empty() || value.empty() || !assigned.insert(qualified).second)
-      return Error("empty or duplicate key '" + qualified + "'");
-    // [swcme] is a transport envelope.  Model keys commonly contain dots and
-    // are intentionally not duplicated in this mesh parser; main.cpp forwards
-    // them to the canonical model-owned resolver, which rejects unknown keys,
-    // invalid units, duplicates, and inconsistent combinations.
-    if (section == "swcme") {
-      SwcmeAssignment assignment;
-      assignment.key = key;
-      assignment.value = value;
-      assignment.line = lineNumber;
-      candidate.swcmeAssignments.push_back(assignment);
-      continue;
-    }
-    const Transport::Status status = Apply(section, key, value, &candidate);
-    if (!status.ok())
-      return Error("line " + std::to_string(lineNumber) + ": " + status.message);
-    if (qualified == "run.particle_mover")
-      candidate.particleMoverLine = lineNumber;
+  WalkState walk;
+  walk.configuration = &candidate;
+  {
+    const Transport::Status status = WalkBlocks(document.root, "", &walk);
+    if (!status.ok()) return status;
   }
-  // Reject the schema-4 section in older schemas before their own section and
-  // key-count requirements, so the diagnostic names the actual cause.
-  // Validate() repeats the rule for programmatically built configurations.
-  if (candidate.hasParallelDiffusionSection && candidate.schemaVersion < 4)
-    return Error("[parallel_diffusion] requires run.schema_version=4");
-  if (candidate.particleMoverSpecified && candidate.schemaVersion < 4)
-    return Error("line " + std::to_string(candidate.particleMoverLine) +
-                 ": run.particle_mover requires run.schema_version=4");
-  const std::set<std::string> versionOneSections = {
-      "run", "parker_spiral", "domain", "mesh", "mesh.solar",
-      "mesh.tube", "background.parker"};
-  // Version 2 requires its own complete section list.  It is spelled out
-  // rather than aliased to `known`, which also contains sections introduced
-  // later (the optional schema-4 [parallel_diffusion]).
-  const std::set<std::string> versionTwoSections = {
-      "run", "parker_spiral", "domain", "mesh", "mesh.solar",
-      "mesh.tube", "background.parker", "injection", "species",
-      "observer", "output", "swcme"};
-  const std::set<std::string> versionThreeSections = {
-      "run", "parker_spiral", "domain", "mesh", "mesh.solar",
-      "mesh.tube", "background.parker", "injection", "species",
-      "output", "swcme"};
-  const std::set<std::string>& requiredSections =
-      candidate.schemaVersion >= 3 ? versionThreeSections :
-      (candidate.schemaVersion >= 2 ? versionTwoSections : versionOneSections);
-  for (const std::string& required : requiredSections)
+  const std::set<std::string>& sections = walk.sections;
+  const std::set<std::string>& assigned = walk.assigned;
+  if (assigned.count("application.sep.schema_version") == 0)
+    return Error("missing required key application.sep.schema_version "
+                 "(write schema_version = 6 in '#begin application: sep')");
+
+  // ---- Schema-6 completeness ----------------------------------------------
+  //
+  // Every block srcSEP implements is required, and every srcSEP key of those
+  // blocks is required (the vocabulary table is the list), so no value is
+  // silently inherited from a production default.  The single optional key
+  // is run.maximum_time_steps, whose absence keeps the historical driver
+  // step budget.
+  const char* requiredSections[] = {
+      "run", "application.sep", "application.sep.turbulence", "mesh",
+      "mesh.domain", "mesh.field_line", "mesh.refinement.solar",
+      "mesh.refinement.tube", "physics.background", "physics.shock",
+      "physics.swcme", "source.shock", "species", "output"};
+  for (const char* required : requiredSections)
     if (sections.count(required) == 0)
-      return Error("missing required section '[" + required + "]'");
-  // Every supported field is mandatory. This fail-closed count is paired with
-  // duplicate/unknown rejection above, so a future key cannot silently inherit
-  // a zero/default value without updating the schema and its tests.
-  if (candidate.schemaVersion == 1 && assigned.size() != 28)
-    return Error("configuration must assign all 28 version-1 keys exactly once");
-  if (candidate.schemaVersion >= 2) {
-    // There are 34 application-owned scalar/string keys in version 2.  SWCME
-    // keys are counted separately because their names belong to the provider.
-    // run.particle_mover is the only optional application key (schema 4) and
-    // is excluded so the mandatory-key counts below stay exact.
-    const std::size_t applicationKeyCount =
-        assigned.size() - candidate.swcmeAssignments.size() -
-        (candidate.particleMoverSpecified ? 1 : 0);
-    if (candidate.schemaVersion == 2 && applicationKeyCount != 34)
-      return Error("configuration must assign all 34 version-2 application "
-                   "keys exactly once");
-    if (candidate.schemaVersion >= 3) {
-      if (sections.count("observer") != 0)
-        return Error("schema version 3 uses repeatable [observer.ID] sections");
-      if (candidate.observers.empty())
-        return Error("schema version 3 requires at least one [observer.ID]");
-      const std::size_t expected = 34 + 6 * candidate.observers.size();
-      if (applicationKeyCount != expected)
-        return Error("schema version 3 requires every observer spectrum field "
-                     "and all 34 non-observer application keys");
-      const char* observerFields[] = {
-          "heliocentric_radius_m", "minimum_energy_j", "maximum_energy_j",
-          "energy_channels", "energy_spacing", "pitch_angle_bins"};
-      for (const ObserverConfiguration& observer : candidate.observers)
-        for (const char* key : observerFields)
-          if (assigned.count("observer." + observer.id + "." + key) == 0)
-            return Error("missing required observer key 'observer." +
-                         observer.id + "." + key + "'");
-    }
-    if (candidate.swcmeAssignments.empty())
-      return Error("schema version 2 requires complete [swcme] assignments");
-    std::set<std::string> swcmeKeys;
-    std::string kinematics;
-    for (const SwcmeAssignment& assignment : candidate.swcmeAssignments) {
-      swcmeKeys.insert(assignment.key);
-      if (assignment.key == "cme.kinematics")
-        kinematics = Lower(Trim(assignment.value));
-      if (RequiredSwcmeKeys().count(assignment.key) == 0 &&
-          assignment.key != "cme.data_times" &&
-          assignment.key != "cme.data_radii")
-        return Error("unknown SWCME configuration key '" + assignment.key +
-                     "'");
-    }
-    for (const std::string& required : RequiredSwcmeKeys())
-      if (swcmeKeys.count(required) == 0)
-        return Error("schema version 2 is missing required SWCME key '" +
-                     required + "'");
-    const bool hasDataTimes = swcmeKeys.count("cme.data_times") != 0;
-    const bool hasDataRadii = swcmeKeys.count("cme.data_radii") != 0;
-    if (kinematics == "data_driven") {
-      if (!hasDataTimes || !hasDataRadii)
-        return Error("data_driven CME kinematics requires cme.data_times and "
-                     "cme.data_radii");
-    }
-    else if (hasDataTimes || hasDataRadii) {
-      return Error("CME data knots are legal only for data_driven kinematics");
-    }
+      return Error(std::string("missing required block '") + required + "'");
+  for (const Layout::KeyRule& rule : Layout::kKeys) {
+    if ((rule.support & Layout::kSrcSep) == 0) continue;
+    const std::string block = rule.block;
+    const std::string qualified = block + "." + rule.key;
+    if (block == "observer.*" || qualified == "run.maximum_time_steps") continue;
+    if (assigned.count(qualified) == 0)
+      return Error("missing required key '" + qualified + "'");
   }
+  if (candidate.observers.empty())
+    return Error("at least one '#begin observer: ID' block is required");
+  for (const ObserverConfiguration& observer : candidate.observers)
+    for (const Layout::KeyRule& rule : Layout::kKeys) {
+      if (std::string(rule.block) != "observer.*" ||
+          (rule.support & Layout::kSrcSep) == 0) continue;
+      const std::string qualified = "observer." + observer.id + "." + rule.key;
+      if (assigned.count(qualified) == 0)
+        return Error("missing required key '" + qualified + "'");
+    }
+
+  // ---- Decision D4: synthesize the SWCME source from source: shock --------
+  //
+  // The SWCME source.* assignments are generated from the SI source: shock
+  // values and carry the line of the key that supplies each of them, so the
+  // canonical resolver's diagnostics point at an editable line.
+  struct SourceLine { const char* swcme; const char* sourceKey; };
+  const SourceLine sourceLines[] = {
+      {"source.particle_mass", "spectrum_particle_mass_kg"},
+      {"source.charge_number", "spectrum_charge_number"},
+      {"source.energy_min", "minimum_energy_j"},
+      {"source.energy_max", "maximum_energy_j"},
+      {"source.reference_energy", "spectrum_reference_energy_j"},
+      {"source.injection_efficiency", "injection_efficiency"},
+      {"source.normalization", "spectrum_normalization"},
+      {"source.reference_intensity_si",
+       "spectrum_reference_intensity_per_m2_s_sr_j"}};
+  for (const Layout::SynthesizedAssignment& synthesized :
+       Layout::SynthesizeSwcmeSource(walk.apply.spectrum)) {
+    SwcmeAssignment assignment;
+    assignment.key = synthesized.key;
+    assignment.value = synthesized.value;
+    for (const SourceLine& line : sourceLines)
+      if (synthesized.key == line.swcme)
+        assignment.line =
+            walk.keyLines[std::string("source.shock.") + line.sourceKey];
+    candidate.swcmeAssignments.push_back(assignment);
+  }
+
+  // The complete SWCME1D key set: every physically effective key is
+  // explicit, and the data knots exist exactly for data-driven kinematics.
+  std::set<std::string> swcmeKeys;
+  std::string kinematics;
+  for (const SwcmeAssignment& assignment : candidate.swcmeAssignments) {
+    swcmeKeys.insert(assignment.key);
+    if (assignment.key == "cme.kinematics")
+      kinematics = Lower(Trim(assignment.value));
+    if (RequiredSwcmeKeys().count(assignment.key) == 0 &&
+        assignment.key != "cme.data_times" &&
+        assignment.key != "cme.data_radii")
+      return Error("line " + std::to_string(assignment.line) +
+                   ": unknown SWCME configuration key '" + assignment.key + "'");
+  }
+  for (const std::string& required : RequiredSwcmeKeys())
+    if (swcmeKeys.count(required) == 0)
+      return Error("missing required SWCME key '" + required + "'");
+  const bool hasDataTimes = swcmeKeys.count("cme.data_times") != 0;
+  const bool hasDataRadii = swcmeKeys.count("cme.data_radii") != 0;
+  if (kinematics == "data_driven") {
+    if (!hasDataTimes || !hasDataRadii)
+      return Error("data_driven CME kinematics requires cme.data_times and "
+                   "cme.data_radii");
+  } else if (hasDataTimes || hasDataRadii) {
+    return Error("CME data knots are legal only for data_driven kinematics");
+  }
+
+  // ---- Decision D4: the Parker winding takes the SWCME ambient ------------
+  //
+  // Resolve the file's SWCME layer with the canonical SWCME1D resolver (the
+  // same resolver main.cpp calls through SW1DAdapter::Configure) before AMPS
+  // exists: it validates every model value and unit now, and it supplies the
+  // ambient wind speed V_sw [m/s] of the Parker winding angle
+  // phi = -Omega (r - r_s) / V_sw used by the mesh refinement tube and the
+  // field-line generator.  Omega is the fixed SWCME1D Carrington rate.  A
+  // later --swcme-override of the wind is rejected by main.cpp's agreement
+  // check against the final SWCME summary.
+  {
+    swcme::input1d::Layer layer;
+    layer.name = "input file";
+    for (const SwcmeAssignment& raw : candidate.swcmeAssignments) {
+      swcme::input1d::Assignment assignment;
+      assignment.key = raw.key;
+      assignment.value = raw.value;
+      assignment.origin = "srcSEP input";
+      assignment.line = raw.line;
+      layer.assignments.push_back(assignment);
+    }
+    const swcme::input1d::ResolveResult resolved =
+        swcme::input1d::Resolve(swcme::input1d::Preset::Fast, {layer});
+    if (!resolved.ok()) {
+      std::ostringstream message;
+      message << "invalid physics: swcme configuration key='"
+              << resolved.status.key << "'";
+      if (resolved.status.line != 0) message << " line=" << resolved.status.line;
+      if (!resolved.status.message.empty())
+        message << ": " << resolved.status.message;
+      return Error(message.str());
+    }
+    candidate.solarWindSpeedMPerS = resolved.configuration.model.V_sw_kms * 1.0e3;
+    candidate.solarRotationRateRadPerS = swcme::constants::SOLAR_ROTATION_RAD_S;
+  }
+
   const Transport::Status valid = Validate(candidate);
   if (!valid.ok()) return valid;
   *result = candidate;
   return Transport::Status::Ok();
 }
 
+Transport::Status ParseText(const std::string& text, Configuration* result) {
+  AMPS::Input::Document document;
+  const AMPS::Input::Status parsed =
+      AMPS::Input::ParseText(text, "<srcSEP input text>", ".", &document);
+  if (!parsed.ok()) return Error(parsed.message);
+  return ParseDocument(document, result);
+}
+
 Transport::Status LoadFile(const std::string& path, Configuration* result) {
-  std::ifstream input(path.c_str());
-  if (!input.good()) return Error("cannot open initialization input file '" + path + "'");
-  std::ostringstream text;
-  text << input.rdbuf();
-  if (!input.eof() && input.fail())
-    return Error("failed while reading initialization input file '" + path + "'");
-  return ParseText(text.str(), result);
+  AMPS::Input::Document document;
+  const AMPS::Input::Status parsed = AMPS::Input::ParseFile(path, &document);
+  if (!parsed.ok()) return Error(parsed.message);
+  return ParseDocument(document, result);
 }
 
 Transport::Status ApplyOutputDirectoryOverride(
@@ -625,8 +962,7 @@ Transport::Status ApplyOutputDirectoryOverride(
   const std::string meshLeaf = leafName(configuration->meshTecplotFile);
   const std::string lineLeaf = leafName(configuration->fieldLineTecplotFile);
   const std::string dataLeaf = leafName(configuration->dataTecplotFile);
-  if (meshLeaf.empty() || lineLeaf.empty() ||
-      (configuration->schemaVersion >= 3 && dataLeaf.empty()) ||
+  if (meshLeaf.empty() || lineLeaf.empty() || dataLeaf.empty() ||
       meshLeaf == "." || meshLeaf == ".." || lineLeaf == "." ||
       lineLeaf == ".." || dataLeaf == "." || dataLeaf == "..") {
     return Error("initialization Tecplot paths must end in file names before "
@@ -635,8 +971,7 @@ Transport::Status ApplyOutputDirectoryOverride(
   const std::string separator = directory.back() == '/' ? "" : "/";
   configuration->meshTecplotFile = directory + separator + meshLeaf;
   configuration->fieldLineTecplotFile = directory + separator + lineLeaf;
-  if (configuration->schemaVersion >= 3)
-    configuration->dataTecplotFile = directory + separator + dataLeaf;
+  configuration->dataTecplotFile = directory + separator + dataLeaf;
   return Validate(*configuration);
 }
 
@@ -652,32 +987,28 @@ bool HasActive() { return gActive.get() != NULL; }
 const Configuration& Active() { return *gActive; }
 
 std::string Fingerprint(const Configuration& c) {
+  // Canonical text of every startup value of the schema-6 record, hashed with
+  // FNV-1a below.  Comments, spacing, key order and include structure never
+  // enter: the text is built from parsed values, and the SWCME assignments
+  // are sorted.  The identity tag names the content schema so a schema-6
+  // identity can never collide with a retired schema-1..4 identity.
   std::ostringstream canonical;
   canonical << std::setprecision(17) << std::scientific
-      << "srcsep-initialization-v" << c.schemaVersion;
-
-  // Schema 1 fingerprints were already published before the complete
-  // initialization contract existed.  Append version-2-only state only for a
-  // version-2 document so restarting or comparing a legacy campaign retains
-  // its exact historical identity.
-  if (c.schemaVersion >= 2) {
-    canonical << ";dt=" << c.timeStepS
-        << ";macro_per_step=" << c.macroparticlesPerStep
-        << ";particle_weight=" << c.particleWeight
-        << ";mesh_output=" << c.meshTecplotFile
-        << ";line_output=" << c.fieldLineTecplotFile;
-    if (c.schemaVersion == 2)
-      canonical << ";observer_radius=" << c.observerHeliocentricRadiusM;
-    if (c.schemaVersion >= 3) {
-      canonical << ";data_output=" << c.dataTecplotFile;
-      for (const ObserverConfiguration& observer : c.observers)
-        canonical << ";observer=" << observer.id << ','
-            << observer.heliocentricRadiusM << ',' << observer.minimumEnergyJ
-            << ',' << observer.maximumEnergyJ << ',' << observer.energyChannels
-            << ',' << Name(observer.energySpacing) << ','
-            << observer.pitchAngleBins;
-    }
-  }
+      << "srcsep-initialization-v" << SEP::InputLayout::kSchemaVersion
+      << ";dt=" << c.timeStepS
+      << ";macro_per_step=" << c.macroparticlesPerStep
+      << ";particle_weight=" << c.particleWeight
+      << ";mesh_output=" << c.meshTecplotFile
+      << ";line_output=" << c.fieldLineTecplotFile
+      << ";data_output=" << c.dataTecplotFile;
+  if (c.maximumTimeStepsSpecified)
+    canonical << ";maximum_time_steps=" << c.maximumTimeSteps;
+  for (const ObserverConfiguration& observer : c.observers)
+    canonical << ";observer=" << observer.id << ','
+        << observer.heliocentricRadiusM << ',' << observer.minimumEnergyJ
+        << ',' << observer.maximumEnergyJ << ',' << observer.energyChannels
+        << ',' << Name(observer.energySpacing) << ','
+        << observer.pitchAngleBins;
 
   canonical << ";origin=" << c.parkerOriginM.x << ','
       << c.parkerOriginM.y << ',' << c.parkerOriginM.z << ";initial="
@@ -694,29 +1025,48 @@ std::string Fingerprint(const Configuration& c) {
       << Name(c.tubeRadiusMode) << ',' << c.tubeCenterCellSizeM << ','
       << Name(c.tubeProfile) << ',' << c.tubeExponent;
 
-  if (c.schemaVersion >= 2) {
-    // INI field order has no physical meaning.  Sort a private copy so two
-    // complete decks with the same SWCME assignments have the same startup
-    // fingerprint.  The canonical SWCME resolver separately normalizes units
-    // and produces the model-owned physical fingerprint.
-    std::vector<SwcmeAssignment> assignments = c.swcmeAssignments;
-    std::sort(assignments.begin(), assignments.end(),
-        [](const SwcmeAssignment& left, const SwcmeAssignment& right) {
-          if (left.key != right.key) return left.key < right.key;
-          return left.value < right.value;
-        });
-    for (const SwcmeAssignment& assignment : assignments)
-      canonical << ";swcme." << assignment.key << '=' << assignment.value;
-  }
+  // Field order has no physical meaning.  Sort a private copy so two
+  // complete decks with the same SWCME assignments have the same startup
+  // fingerprint.  The canonical SWCME resolver separately normalizes units
+  // and produces the model-owned physical fingerprint.
+  std::vector<SwcmeAssignment> assignments = c.swcmeAssignments;
+  std::sort(assignments.begin(), assignments.end(),
+      [](const SwcmeAssignment& left, const SwcmeAssignment& right) {
+        if (left.key != right.key) return left.key < right.key;
+        return left.value < right.value;
+      });
+  for (const SwcmeAssignment& assignment : assignments)
+    canonical << ";swcme." << assignment.key << '=' << assignment.value;
   if (c.particleMoverSpecified) {
-    // The file-selected mover is part of the startup contract.  It is
-    // appended only when present, so schema-3 identities are unchanged.  The
+    // The file-selected mover is part of the startup contract.  The
     // effective mover (after any --particle-mover override) is recorded
     // separately in the WP30 run-configuration fingerprint.
     canonical << ";particle_mover=" << Mover::Describe(c.particleMover).canonicalName;
   }
+  if (c.turbulenceSpecified) {
+    // File turbulence values (before command-line overrides; the effective
+    // turbulence configuration enters the WP30 run fingerprint).
+    const Turbulence::Configuration& t = c.turbulence;
+    canonical << ";turbulence=" << Turbulence::SourceName(t.source) << ','
+        << Turbulence::RepresentationName(t.representation) << ','
+        << Turbulence::CouplingPolicyName(t.coupling) << ','
+        << t.advectionEnabled << t.reflectionEnabled << t.cascadeEnabled
+        << t.shockInjectionEnabled << ','
+        << Turbulence::BoundaryPolicyName(t.innerBoundary.policy) << ','
+        << t.innerBoundary.value << ','
+        << Turbulence::BoundaryPolicyName(t.outerBoundary.policy) << ','
+        << t.outerBoundary.value << ',' << t.reflectionCoefficient << ','
+        << t.cascadeCoefficient << ',' << t.perpendicularCorrelationLengthM
+        << ',' << t.electronHeatingFraction << ',' << t.spectralKMinPerM
+        << ',' << t.spectralKMaxPerM << ',' << t.spectralBins << ','
+        << t.cflSafety << ',' << t.operatorAccuracySafety << ','
+        << t.maximumSourceFraction << ',' << t.maximumCascadeFraction << ','
+        << t.minimumSubstepS << ',' << t.maximumSubsteps << ','
+        << t.conservationRelativeTolerance << ',' << c.shockSourceEfficiency
+        << ',' << c.shockSourcePlusFraction << ',' << c.diagnosticCadenceSteps;
+  }
   if (c.hasParallelDiffusionSection) {
-    // The physical identity of [parallel_diffusion] is the shared library's
+    // The physical identity of physics: parallel_diffusion is the shared library's
     // SHA-256 configuration fingerprint, copied here by the srcSEP adapter
     // after the library parser accepted the section (main.cpp, before
     // Install()).  It is independent of comments, spacing, and key order.

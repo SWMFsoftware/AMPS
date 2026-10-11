@@ -22,10 +22,15 @@ namespace CLI {
 // reflection are all enabled unless the user explicitly disables them on the
 // command line.
 struct Options {
-  // Optional runtime-initialization file.  An empty path preserves the legacy
-  // hard-coded domain/field-line mesh.  A supplied path is parsed and frozen
-  // before AMPS initializes MPI or allocates the mesh.
+  // Optional runtime-initialization file.  A supplied path is parsed and
+  // frozen before AMPS initializes MPI or allocates the mesh.  Without
+  // -input/--input, ParseCommandLine sets it to "amps.in" when that file
+  // exists in the working directory (production modes only); an empty path
+  // preserves the legacy hard-coded domain/field-line mesh.
   std::string inputPath;
+  // True when inputPath came from the ./amps.in default rather than from
+  // -input/--input; used only for the startup report.
+  bool inputPathFromDefault = false;
   // Shared reduced-front event selected independently of the legacy particle
   // shock model.  A nonempty value means background-only operation: srcSEP
   // consumes ambient plasma/IMF and front epochs but injects no particles.
@@ -53,7 +58,7 @@ struct Options {
   // field-line transport formulations.  The default preserves the former FTE
   // Dmumu implementation while assigning it an explicit canonical name.
   // particleMoverProvided marks a command-line choice, which overrides
-  // run.particle_mover from a schema-4 --input file; main.cpp copies the file
+  // application.sep.transport of the input file; main.cpp copies the file
   // value here only when particleMoverProvided is false.
   Mover::ProductionMover particleMover =
       Mover::ProductionMover::FocusedTransportDiffusion;
@@ -141,6 +146,11 @@ struct Options {
   bool shockTurbulenceEfficiencyProvided = false;
   double shockTurbulencePlusFraction = 0.5;
   bool shockTurbulencePlusFractionProvided = false;
+  // True when ApplyInputFileTurbulence() installed the application.sep.
+  // turbulence block of the runtime input as the base layer of every
+  // turbulence field above (provenance InputFile unless a command-line
+  // option overrode the value).
+  bool turbulenceFromInputFile = false;
   int mergeMinimum = 600;
   int mergeMaximum = 1000;
   bool mergeMinimumProvided = false;
@@ -185,7 +195,7 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
 // runs diagnostics and then continues into production.
 bool IsComponentTestExecutionRequested(const Options& options);
 
-// Mover precedence: --particle-mover > run.particle_mover in a schema-4
+// Mover precedence: --particle-mover > application.sep.transport in the
 // --input file > the built-in default (fte-dmumu).  True when the effective
 // mover is not yet known at parse time because --input is given without
 // --particle-mover; ParseCommandLine() then defers the mover-dependent checks.
@@ -194,9 +204,24 @@ bool IsMoverPendingInputFile(const Options& options);
 // Mover-dependent validation (coefficient-registry mover compatibility and the
 // production configuration matrix) for options.particleMover.  ParseCommandLine
 // calls it when the mover is already known; otherwise main.cpp calls it after
-// applying the input file's run.particle_mover.  Returns false and writes an
+// applying the input file's application.sep.transport.  Returns false and writes an
 // ERROR line on rejection; mutates nothing.
 bool ValidateMoverDependentOptions(const Options& options, std::ostream& err);
+
+// Install the turbulence description of the runtime input
+// (application.sep.turbulence, shared SEP schema 6) as the base layer of
+// 'options'.  The caller then runs ParseCommandLine() on the same object, so
+// every turbulence option given on the command line overrides the file value
+// with exactly its usual semantics: defaults < input file < command line
+// (srcSEP/README.md).  The legacy Boolean aliases (particle coupling,
+// cascade, reflection) and the spectrum-diagnostic interval are set
+// consistently because ParseCommandLine() re-derives the authoritative
+// configuration from them after the option loop.
+void ApplyInputFileTurbulence(const Turbulence::Configuration& turbulence,
+                              double shockSourceEfficiency,
+                              double shockSourcePlusFraction,
+                              unsigned long long diagnosticCadenceSteps,
+                              Options& options);
 
 // Apply the parsed options to the turbulence model flags used by the physics
 // kernels.  Keeping this in a separate function makes the point where CLI

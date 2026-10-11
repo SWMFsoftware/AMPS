@@ -11,6 +11,11 @@ FORBIDDEN_INCLUDE = re.compile(
     r"^\s*#\s*include\s*[<\"](?:mpi(?:\.h)?|pic(?:\.h)?|SEP3D(?:\.h)?|amps)",
     re.IGNORECASE,
 )
+# The one permitted AMPS include: the header-only generic runtime-input reader
+# (src/general/input/amps_input.h, grammar in src/INPUT_FILE.md).  It uses
+# only the C++17 standard library (no PIC, MPI or application headers) and is
+# how the shock-front and CME event readers parse their input blocks.
+ALLOWED_INCLUDE = re.compile(r'^\s*#\s*include\s*"amps_input\.h"\s*$')
 
 
 def fail(message):
@@ -25,7 +30,7 @@ def main():
                 continue
             text = source.read_text(encoding="utf-8")
             for number, line in enumerate(text.splitlines(), 1):
-                if FORBIDDEN_INCLUDE.search(line):
+                if FORBIDDEN_INCLUDE.search(line) and not ALLOWED_INCLUDE.match(line):
                     return fail(f"forbidden application/MPI include {source}:{number}")
 
     with tempfile.TemporaryDirectory(prefix="corona-swcme-public-") as temporary:

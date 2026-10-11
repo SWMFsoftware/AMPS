@@ -12,12 +12,13 @@
 #include "bg_parker.h"
 #include "mesh_model.h"
 #include "configuration_io.h"
-#include "application_input.h"
 #include "particle_normalization.h"
 #include "background_factory.h"
 #include "shock_front_background_adapter.h"
 #include "runtime.h"
 #include "parallel_diffusion/parallel_diffusion.h"
+#include "sep_input_layout.h"
+#include "swcme3d_input.hpp"
 #include "sep_coronal_cme/constants.h"
 
 #include <algorithm>
@@ -25,6 +26,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -50,162 +52,50 @@ Result Fail(const std::string& message) {
   return result;
 }
 
-// A complete, annotated-file-shaped fixture.  Most values equal the typed C++
-// defaults on purpose: CFG3D01 can then prove file and programmatic creation
-// produce the same normalized fingerprint rather than merely similar values.
-std::string CompleteInput() {
-  return R"SEP3D(
-[run]
-schema_version = 1
-intent = transport-only
-transport = parker3d
-time_step_s = 1
-maximum_time_steps = 100000001
-campaign_seed = 1
-background_cadence_steps = 1
-
-[domain]
-preset = one-au
-inner_radius_m = 1.3914e10
-inner_boundary = absorb
-outer_radius_mode = preset
-outer_boundary = escape
-coordinate_frame = HCI-like-inertial
-origin_x_m = 0
-origin_y_m = 0
-origin_z_m = 0
-
-[mesh]
-global_cell_size_m = 3.7399467675e10
-minimum_cell_size_m = 1.495978707e9
-cells_per_block_edge = 4
-maximum_level = 7
-memory_budget_bytes = 1000000000000000
-block_overhead_bytes = 1024
-
-[mesh.solar]
-enabled = true
-surface_cell_size_m = 1.495978707e9
-transition_outer_radius_m = 3.7399467675e10
-profile = smoothstep
-exponent = 1
-
-[mesh.tube]
-enabled = false
-source_longitude_rad = 0
-source_colatitude_rad = 1.5707963267948966
-reference_radius_m = 1.495978707e11
-radius_at_reference_m = 4.487936121e9
-radius_mode = constant-angular-width
-center_cell_size_m = 1.495978707e9
-transverse_profile = smoothstep
-transverse_exponent = 1
-
-[memory]
-base_cell_bytes = 256
-base_node_bytes = 128
-block_structure_bytes = 4096
-communication_bytes_per_block = 2048
-particle_bytes = 160
-particles_per_cell = 2
-halo_fraction = 0.2
-safety_margin_fraction = 0.25
-
-[background]
-provider = analytic-parker
-external_script = false
-
-[background.parker]
-reference_radius_m = 1.495978707e11
-radial_field_at_reference_t = 3e-9
-solar_rotation_rate_rad_per_s = 2.865e-6
-solar_wind_speed_m_per_s = 400000
-magnetic_polarity = 1
-number_density_at_reference_m3 = 5e6
-temperature_k = 1e5
-validity_cadence_s = 3600
-
-[turbulence]
-authority = prescribed
-delta_b_over_b = 0.3
-k_min_per_m = 1e-10
-k_max_per_m = 1e-7
-spectral_index = 1.6666666666666667
-correlation_length_m = 4.487936121e9
-missing_data = fail
-resonance_range = reject
-self_consistent_3d = false
-
-[transport]
-cell_crossing_fraction = 0.4
-diffusion_fraction = 0.2
-focusing_fraction = 0.2
-cooling_fraction = 0.2
-field_variation_fraction = 0.2
-shock_crossing_fraction = 0.5
-minimum_substep_s = 1e-12
-pitch_angle_scheme = reflecting-milstein
-perpendicular_diffusion = false
-drifts = false
-
-[shock]
-authority = none
-
-[source]
-enabled = false
-
-[species]
-macroparticle_weight = 1
-
-[storage]
-magnetic_gradient = false
-velocity_gradient = false
-sampling_bytes_per_cell = 0
-
-[observer.default]
-position_x_m = 3.7399467675e10
-position_y_m = 0
-position_z_m = 0
-follows_trajectory = false
-cadence_s = 60
-energy_bins = 32
-pitch_angle_bins = 24
-products = flux,spectrum
-
-[output]
-cadence_steps = 1
-directory = output
-prefix = sep3d
-
-[restart]
-input_path = none
-output_path = restart/sep3d.chk
-)SEP3D";
+// Text of a shipped example deck (tests run from the srcSEP3D directory).
+std::string ReadText(const std::string& path) {
+  std::ifstream input(path);
+  std::ostringstream buffer;
+  buffer << input.rdbuf();
+  return input ? buffer.str() : std::string();
 }
 
-// Schema version 2 deliberately adds only the finite-line section to the
-// complete version-1 fixture.  This keeps the test sensitive to accidental
-// changes in every pre-existing required section while exercising all eight
-// newly required SI fields.
-std::string CompleteVersion2Input() {
-  std::string input = CompleteInput();
-  const std::string oldVersion = "schema_version = 1";
-  input.replace(input.find(oldVersion), oldVersion.size(),
-                "schema_version = 2");
-  const std::string marker = "\n[mesh]\n";
-  const std::string section = R"SEP3D(
-[parker_spiral]
-origin_x_m = 0
-origin_y_m = 0
-origin_z_m = 0
-initial_x_m = 1.3914e10
-initial_y_m = 0
-initial_z_m = 0
-length_m = 2.0e11
-point_count = 257
-)SEP3D";
-  input.insert(input.find(marker), section);
-  return input;
+// The complete schema-6 fixture is the maintained analytic-Parker example:
+// every srcSEP3D key is explicit there, so the parser's completeness rules
+// are exercised against the deck users actually start from.
+std::string CompleteInput() {
+  return ReadText("examples/sep3d_analytic_parker.in");
+}
+
+// Replace the first occurrence of 'from' (which must exist) by 'to'; an
+// absent anchor returns false so a drifting fixture fails loudly.
+bool ReplaceFirst(std::string* text, const std::string& from,
+                  const std::string& to) {
+  const std::size_t at = text == nullptr ? std::string::npos : text->find(from);
+  if (at == std::string::npos) return false;
+  text->replace(at, from.size(), to);
+  return true;
+}
+
+// Presentation-only rewrite used by CFG3D01: drop every '!' comment and move
+// the output block to the top of the file.  The configuration fingerprint is
+// computed from normalized values, so it must not change.
+std::string WithoutCommentsOutputFirst(const std::string& text) {
+  std::istringstream input(text);
+  std::string line, body;
+  while (std::getline(input, line)) {
+    const std::size_t bang = line.find('!');
+    if (bang != std::string::npos) line.erase(bang);
+    if (line.find_first_not_of(" \t") == std::string::npos) continue;
+    body += line + "\n";
+  }
+  const std::size_t begin = body.find("#begin output");
+  const std::size_t end = body.find("#end output", begin);
+  if (begin == std::string::npos || end == std::string::npos) return body;
+  const std::size_t stop = body.find('\n', end) + 1;
+  const std::string output = body.substr(begin, stop - begin);
+  body.erase(begin, stop - begin);
+  return output + body;
 }
 
 M::ResolutionConfiguration Resolution(
@@ -245,19 +135,29 @@ M::ResolutionConfiguration Resolution(
 
 Result RunCFG3D01() {
   RM::RunConfiguration3DOptions parsed;
-  if (!RM::ParseConfigurationText(CompleteInput(), &parsed).ok())
-    return Fail("the complete version-1 input fixture did not parse");
+  const std::string complete = CompleteInput();
+  const SEP3D::Core::Status completeStatus =
+      RM::ParseConfigurationText(complete, &parsed);
+  if (complete.empty() || !completeStatus.ok())
+    return Fail("the complete schema-6 fixture did not parse: " +
+                completeStatus.message);
   std::shared_ptr<const RM::RunConfiguration3D> fromFile;
   if (!RM::RunConfiguration3D::Create(parsed, &fromFile).ok())
     return Fail("parsed options did not pass immutable construction");
+  if (parsed.inputSchemaVersion != 6 || !parsed.particleMoverExplicitlySelected ||
+      parsed.particleMover != RM::ParticleMoverFamily::Parker)
+    return Fail("schema 6 did not install contract level 6 and the mover "
+                "family derived from application.sep.transport");
 
-  RM::RunConfiguration3DOptions programmatic;
-  programmatic.meshMemoryBudgetBytes = 1000000000000000ULL;
-  std::shared_ptr<const RM::RunConfiguration3D> fromTyped;
-  if (!RM::RunConfiguration3D::Create(programmatic, &fromTyped).ok() ||
-      fromFile->physics_fingerprint() != fromTyped->physics_fingerprint()) {
-    return Fail("file and typed construction did not normalize to one physics fingerprint");
-  }
+  // The identity is computed from normalized values: comments, layout and
+  // block order must not change it.
+  RM::RunConfiguration3DOptions reformatted;
+  std::shared_ptr<const RM::RunConfiguration3D> fromReformatted;
+  if (!RM::ParseConfigurationText(WithoutCommentsOutputFirst(complete),
+                                  &reformatted).ok() ||
+      !RM::RunConfiguration3D::Create(reformatted, &fromReformatted).ok() ||
+      fromFile->physics_fingerprint() != fromReformatted->physics_fingerprint())
+    return Fail("comments or block order changed the physics fingerprint");
 
   const char* argv[] = {"srcSEP3D", "--input", "run.in",
                         "--initialization-only",
@@ -308,31 +208,89 @@ Result RunCFG3D01() {
   }
 
   std::string bad = CompleteInput();
-  bad += "\n[output]\nunknown_key = x\n";
+  bad.insert(bad.find("#begin output\n") + std::string("#begin output\n").size(),
+             "  unknown_key = x\n");
   if (RM::ParseConfigurationText(bad, &parsed).ok())
-    return Fail("duplicate/unknown input was not rejected before initialization");
+    return Fail("unknown input key was not rejected before initialization");
+  std::string duplicateBlock = CompleteInput() + "#begin output\n#end output\n";
+  if (RM::ParseConfigurationText(duplicateBlock, &parsed).ok())
+    return Fail("a duplicate block was not rejected before initialization");
+  std::string strayBlock = CompleteInput() + "#begin photolysis\n#end photolysis\n";
+  const SEP3D::Core::Status strayStatus =
+      RM::ParseConfigurationText(strayBlock, &parsed);
+  if (strayStatus.ok() ||
+      strayStatus.message.find("'photolysis' is not part of the SEP input") ==
+          std::string::npos)
+    return Fail("a block of a model absent from srcSEP3D was not rejected: " +
+                strayStatus.message);
   // Molecular identity belongs exclusively to the AMPS build-time
   // SpeciesList.  A post-compile attempt to redefine mass must be an unknown
   // key rather than a silently ignored compatibility spelling.
   std::string retiredSpeciesField = CompleteInput();
-  const std::string weightLine = "macroparticle_weight = 1\n";
-  retiredSpeciesField.insert(
-      retiredSpeciesField.find(weightLine) + weightLine.size(),
-      "mass_kg = 1.67262192369e-27\n");
-  if (RM::ParseConfigurationText(retiredSpeciesField, &parsed).ok())
+  if (!ReplaceFirst(&retiredSpeciesField, "macroparticle_weight = 1e23\n",
+                    "macroparticle_weight = 1e23\n  mass_kg = 1.67262192369e-27\n") ||
+      RM::ParseConfigurationText(retiredSpeciesField, &parsed).ok())
     return Fail("runtime input was allowed to redefine compiled species mass");
-  const std::size_t observer = bad.find("[observer.default]");
   bad = CompleteInput();
-  bad.erase(bad.find("[observer.default]"),
-            bad.find("[output]") - bad.find("[observer.default]"));
-  if (observer == std::string::npos || RM::ParseConfigurationText(bad, &parsed).ok())
+  const std::size_t firstObserver = bad.find("#begin observer:");
+  const std::size_t outputBlock = bad.find("#begin output");
+  if (firstObserver == std::string::npos || outputBlock < firstObserver)
+    return Fail("fixture lost its observer blocks");
+  bad.erase(firstObserver, outputBlock - firstObserver);
+  if (RM::ParseConfigurationText(bad, &parsed).ok())
     return Fail("a missing required observer group was not rejected");
+
+  // Shared SEP schema 6 (src/INPUT_FILE.md section 5): each rejection names
+  // its decision.  Expected phrases are written here, not read from code.
+  struct Rejection { const char* label; std::string text; const char* expect; };
+  std::string retiredSchema = complete, srcSepKey = complete,
+      srcSepTurbulence = complete, parkerAmbient = complete,
+      swcmeSource = complete, retiredMover = complete, oldBlock = complete,
+      fieldLineObserver = complete;
+  const bool edited =
+      ReplaceFirst(&retiredSchema, "schema_version = 6", "schema_version = 4") &&
+      ReplaceFirst(&srcSepKey, "kind = fixed-cartesian",
+                   "kind = fixed-cartesian\n  heliocentric_radius_m = 1e11") &&
+      ReplaceFirst(&srcSepTurbulence, "authority = prescribed",
+                   "authority = prescribed\n    cascade = true") &&
+      ReplaceFirst(&parkerAmbient, "validity_cadence_s = 3600",
+                   "validity_cadence_s = 3600\n    solar_wind_speed_m_per_s = 400000") &&
+      ReplaceFirst(&swcmeSource, "surface.phi_points = 24",
+                   "surface.phi_points = 24\n  source.energy_min = 0.01 MeV") &&
+      ReplaceFirst(&retiredMover, "transport = parker",
+                   "transport = parker\n  particle_mover = parker") &&
+      ReplaceFirst(&oldBlock, "#begin application: sep", "#begin application: sep3d") &&
+      ReplaceFirst(&fieldLineObserver, "kind = fixed-cartesian",
+                   "kind = field-line-radius");
+  if (!edited) return Fail("schema-6 fixture lost an anchor for its negative controls");
+  const Rejection rejections[] = {
+      {"retired schema (D1)", retiredSchema, "retired"},
+      {"retired application name (D1)", oldBlock, "is not part of the SEP input"},
+      {"srcSEP-only observer key (D3)", srcSepKey, "not supported by srcSEP3D"},
+      {"srcSEP-only observer kind (D3)", fieldLineObserver, "not supported by srcSEP3D"},
+      {"srcSEP turbulence key (D2/D3)", srcSepTurbulence, "not supported by srcSEP3D"},
+      {"Parker ambient beside SWCME (D4)", parkerAmbient, "owned by physics: swcme"},
+      {"SWCME source key (D4)", swcmeSource, "written in source: shock"},
+      {"retired particle_mover key", retiredMover, "unknown configuration key"}};
+  for (const Rejection& rejection : rejections) {
+    const SEP3D::Core::Status status =
+        RM::ParseConfigurationText(rejection.text, &parsed);
+    if (status.ok() || status.message.find(rejection.expect) == std::string::npos)
+      return Fail(std::string("negative control '") + rejection.label +
+                  "' was not rejected with '" + rejection.expect + "': " +
+                  status.message);
+  }
   const SEP3D::Core::Status flatStatus =
       RM::ParseConfigurationText("scattering = prescribed\n", &parsed);
   if (flatStatus.ok() ||
-      flatStatus.message.find("before any [section]") == std::string::npos) {
-    return Fail("a legacy flat deck did not receive the section-aware diagnostic");
+      flatStatus.message.find("outside any block") == std::string::npos) {
+    return Fail("a flat deck did not receive the block-aware diagnostic");
   }
+  // The retired INI section syntax is not part of the generic grammar.
+  const SEP3D::Core::Status iniStatus =
+      RM::ParseConfigurationText("[run]\ntime_step_s = 1\n", &parsed);
+  if (iniStatus.ok() || iniStatus.message.find(":1:") == std::string::npos)
+    return Fail("a retired INI deck was not rejected with its line number");
 
   std::string summary;
   if (!RM::BuildDryRunSummary(*fromFile, &summary).ok() ||
@@ -373,7 +331,7 @@ Result RunCFG3D01() {
           "preview/sep3d-initialization-data.dat") {
     return Fail("initialization output-directory override changed product names");
   }
-  return Pass("versioned input, CLI normalization, early errors, typed parity, and allocation-free dry-run passed");
+  return Pass("schema-6 input, layout-independent identity, CLI normalization, D1-D4 rejections, early errors, and allocation-free dry-run passed");
 }
 
 Result RunCFG3D02() {
@@ -562,29 +520,28 @@ Result RunCFG3D05() {
 }
 
 Result RunCFG3D06() {
+  // The finite Parker-line definition is a required part of schema 6.
   RM::RunConfiguration3DOptions options;
+  const std::string complete = CompleteInput();
   const SEP3D::Core::Status status =
-      RM::ParseConfigurationText(CompleteVersion2Input(), &options);
-  if (!status.ok() || options.inputSchemaVersion != 2 ||
-      options.parkerSpiralPointCount != 257 ||
-      options.parkerSpiralLengthM != 2.0e11 ||
-      options.parkerSpiralInitialPointM.x != options.innerRadiusM) {
-    return Fail("complete schema-version-2 Parker definition did not parse exactly");
+      RM::ParseConfigurationText(complete, &options);
+  if (!status.ok() || options.parkerSpiralPointCount != 4001 ||
+      options.parkerSpiralLengthM != 2.0e11) {
+    return Fail("complete finite Parker-line definition did not parse exactly: " +
+                status.message);
   }
 
-  std::string missing = CompleteVersion2Input();
-  const std::string required = "point_count = 257\n";
-  missing.erase(missing.find(required), required.size());
-  if (RM::ParseConfigurationText(missing, &options).ok())
-    return Fail("schema version 2 accepted a missing finite-line point count");
+  std::string missing = complete;
+  if (!ReplaceFirst(&missing, "point_count = 4001\n", "") ||
+      RM::ParseConfigurationText(missing, &options).ok())
+    return Fail("schema 6 accepted a missing finite-line point count");
 
-  std::string inconsistent = CompleteVersion2Input();
-  const std::string initial = "initial_x_m = 1.3914e10";
-  inconsistent.replace(inconsistent.find(initial), initial.size(),
-                       "initial_x_m = 1.4e10");
-  if (RM::ParseConfigurationText(inconsistent, &options).ok())
-    return Fail("schema version 2 accepted a line source outside the inner boundary");
-  return Pass("schema version 2 requires and validates the complete finite Parker-line definition");
+  std::string inconsistent = complete;
+  if (!ReplaceFirst(&inconsistent, "initial_x_m = 1.3914e10",
+                    "initial_x_m = 1.4e10") ||
+      RM::ParseConfigurationText(inconsistent, &options).ok())
+    return Fail("schema 6 accepted a line source outside the inner boundary");
+  return Pass("schema 6 requires and validates the complete finite Parker-line definition");
 }
 
 Result RunCFG3D07() {
@@ -639,63 +596,63 @@ Result RunCFG3D08() {
   const SEP3D::Core::Status loaded = RM::LoadConfigurationFile(
       "examples/sep3d_analytic_parker.in", &options);
   if (!loaded.ok())
-    return Fail("complete schema-version-4 initialization input did not resolve: " +
+    return Fail("complete schema-6 initialization input did not resolve: " +
                 loaded.message);
   if (
-      options.inputSchemaVersion != 4 ||
+      options.inputSchemaVersion != 6 ||
       options.injectionCadenceSteps != 1 ||
       options.source.samplesPerStep != 1000 ||
       options.swcmeAssignments.empty() ||
       options.swcmeConfigurationFingerprint.empty() ||
       options.swcmeResolvedManifest.empty()) {
-    return Fail("schema-version-4 initialization metadata is incomplete");
+    return Fail("schema-6 initialization metadata is incomplete");
   }
 
   std::ifstream input("examples/sep3d_analytic_parker.in");
   std::ostringstream buffer;
   buffer << input.rdbuf();
   const std::string complete = buffer.str();
-  if (!input || complete.empty()) return Fail("could not read schema-v3 fixture");
+  if (!input || complete.empty()) return Fail("could not read the schema-6 fixture");
 
   std::string missing = complete;
   const std::string required = "surface.phi_points = 24\n";
   const std::size_t requiredAt = missing.find(required);
   if (requiredAt == std::string::npos)
-    return Fail("schema-v3 fixture lost its surface resolution field");
+    return Fail("schema-6 fixture lost its surface resolution field");
   missing.erase(requiredAt, required.size());
   if (RM::ParseConfigurationText(missing, &options).ok())
-    return Fail("schema version 3 accepted an incomplete canonical SWCME model");
+    return Fail("schema 6 accepted an incomplete canonical SWCME model");
 
   std::string wrongWeight = complete;
   const std::string weight = "macroparticle_weight = 1e23";
   const std::size_t weightAt = wrongWeight.find(weight);
   if (weightAt == std::string::npos)
-    return Fail("schema-v3 fixture lost its derived particle weight");
+    return Fail("schema-6 fixture lost its derived particle weight");
   wrongWeight.replace(weightAt, weight.size(),
                       "macroparticle_weight = 2e23");
   if (RM::ParseConfigurationText(wrongWeight, &options).ok())
-    return Fail("schema version 3 accepted a particle weight inconsistent with its physical source rate");
+    return Fail("schema 6 accepted a particle weight inconsistent with its physical source rate");
 
   std::string skippedStep = complete;
   const std::string cadence = "injection_cadence_steps = 1";
   const std::size_t cadenceAt = skippedStep.find(cadence);
   if (cadenceAt == std::string::npos)
-    return Fail("schema-v3 fixture lost its injection cadence");
+    return Fail("schema-6 fixture lost its injection cadence");
   skippedStep.replace(cadenceAt, cadence.size(),
                       "injection_cadence_steps = 2");
   if (RM::ParseConfigurationText(skippedStep, &options).ok())
-    return Fail("schema version 3 accepted a source that skips simulation steps");
+    return Fail("schema 6 accepted a source that skips simulation steps");
 
   std::string absoluteNormalization = complete;
-  const std::string relative = "source.normalization = relative_only";
+  const std::string relative = "spectrum_normalization = relative-only";
   const std::size_t relativeAt = absoluteNormalization.find(relative);
   if (relativeAt == std::string::npos)
-    return Fail("schema-v3 fixture lost its source normalization");
+    return Fail("schema-6 fixture lost its source normalization");
   absoluteNormalization.replace(
       relativeAt, relative.size(),
-      "source.normalization = reference_differential_intensity");
+      "spectrum_normalization = reference-differential-intensity");
   if (RM::ParseConfigurationText(absoluteNormalization, &options).ok())
-    return Fail("schema version 3 accepted two competing absolute source normalizations");
+    return Fail("schema 6 accepted two competing absolute source normalizations");
 
   std::string wrongAxis = complete;
   const std::string axisX = "geometry.solar_rotation_axis_x = 0";
@@ -703,66 +660,55 @@ Result RunCFG3D08() {
   const std::size_t axisXAt = wrongAxis.find(axisX);
   const std::size_t axisZAt = wrongAxis.find(axisZ);
   if (axisXAt == std::string::npos || axisZAt == std::string::npos)
-    return Fail("schema-v3 fixture lost its solar rotation axis");
+    return Fail("schema-6 fixture lost its solar rotation axis");
   wrongAxis.replace(axisXAt, axisX.size(),
                     "geometry.solar_rotation_axis_x = 1");
   wrongAxis.replace(wrongAxis.find(axisZ), axisZ.size(),
                     "geometry.solar_rotation_axis_z = 0");
   if (RM::ParseConfigurationText(wrongAxis, &options).ok())
-    return Fail("schema version 3 accepted inconsistent Parker rotation axes");
+    return Fail("schema 6 accepted inconsistent Parker rotation axes");
 
-  // SWCME defines total |B| at one AU, while AnalyticParkerProvider accepts
-  // radial Br at its independently declared reference radius.  A half-AU
-  // reference therefore has four times the one-AU radial component.  This
-  // positive case prevents the cross-model consistency gate from confusing
-  // those two distinct physical conventions.
-  std::string halfAuReference = complete;
-  const std::size_t backgroundAt =
-      halfAuReference.find("[background.parker]");
-  const std::string oneAuReference =
-      "reference_radius_m = 1.495978707e11";
-  const std::size_t referenceAt =
-      halfAuReference.find(oneAuReference, backgroundAt);
-  const std::string oneAuRadialField =
-      "radial_field_at_reference_t = 3.585667175612118e-9";
-  const std::size_t fieldAt = halfAuReference.find(oneAuRadialField);
-  if (backgroundAt == std::string::npos ||
-      referenceAt == std::string::npos || fieldAt == std::string::npos)
-    return Fail("schema-v3 fixture lost its Parker reference normalization");
-  halfAuReference.replace(referenceAt, oneAuReference.size(),
-                          "reference_radius_m = 7.479893535e10");
-  halfAuReference.replace(
-      fieldAt, oneAuRadialField.size(),
-      "radial_field_at_reference_t = 1.4342668702448471e-8");
-  if (!RM::ParseConfigurationText(halfAuReference, &options).ok())
-    return Fail("schema version 3 rejected the correctly r^-2-scaled half-AU Parker reference");
+  // Decision D4: the SWCME ambient is the only written solar wind.  SWCME
+  // defines total |B| at one AU, while AnalyticParkerProvider uses the radial
+  // component at its reference radius (1 AU when SWCME is present).  The
+  // expected B_r values below were the reviewed hand-computed Parker inputs
+  // of the schema-4 decks (|B| = 5 nT, V = 400 km/s, Omega = 2.865e-6 rad/s,
+  // source radius 20 and 25 R_sun); they are independent of the parser.
+  const auto relativeDifference = [](double a, double b) {
+    return std::fabs(a - b) / std::max(std::fabs(a), std::fabs(b));
+  };
+  if (!RM::ParseConfigurationText(complete, &options).ok() ||
+      options.parker.referenceRadiusM != SEP3D::Core::Const::AU ||
+      relativeDifference(options.parker.radialFieldAtReferenceT,
+                         3.585667175612118e-9) > 1.0e-12 ||
+      options.parker.solarWindSpeedMPerS != 4.0e5 ||
+      options.parker.numberDensityAtReferenceM3 != 5.0e6)
+    return Fail("the analytic Parker record was not derived from the SWCME ambient");
+  std::string ownedReference = complete;
+  if (!ReplaceFirst(&ownedReference, "validity_cadence_s = 3600",
+                    "validity_cadence_s = 3600\n    reference_radius_m = 7.479893535e10") ||
+      RM::ParseConfigurationText(ownedReference, &options).ok())
+    return Fail("a Parker reference radius was accepted beside physics: swcme");
 
   // The source surface is explicit physics, not a hidden 20-R_sun constant.
   // Move the domain, finite line, Parker source, and CME launch surface to
-  // 25 R_sun and supply the corresponding one-AU radial component.
+  // 25 R_sun; the derived one-AU radial component follows.
   std::string movedSource = complete;
-  auto replaceRequired = [&](const std::string& from,
-                             const std::string& to) -> bool {
-    const std::size_t at = movedSource.find(from);
-    if (at == std::string::npos) return false;
-    movedSource.replace(at, from.size(), to);
-    return true;
-  };
-  if (!replaceRequired("inner_radius_m = 1.3914e10",
-                       "inner_radius_m = 1.73925e10") ||
-      !replaceRequired("initial_x_m = 1.3914e10",
-                       "initial_x_m = 1.73925e10") ||
-      !replaceRequired(oneAuRadialField,
-                       "radial_field_at_reference_t = 3.6305743892405979e-9") ||
-      !replaceRequired("parker.source_radius = 20 Rs",
-                       "parker.source_radius = 25 Rs") ||
-      !replaceRequired("cme.launch_radius = 20 Rs",
-                       "cme.launch_radius = 25 Rs"))
-    return Fail("schema-v3 fixture lost an explicit source-surface field");
-  if (!RM::ParseConfigurationText(movedSource, &options).ok())
-    return Fail("schema version 3 retained a hidden 20-R_sun source assumption");
+  if (!ReplaceFirst(&movedSource, "inner_radius_m = 1.3914e10",
+                    "inner_radius_m = 1.73925e10") ||
+      !ReplaceFirst(&movedSource, "initial_x_m = 1.3914e10",
+                    "initial_x_m = 1.73925e10") ||
+      !ReplaceFirst(&movedSource, "parker.source_radius = 20 Rs",
+                    "parker.source_radius = 25 Rs") ||
+      !ReplaceFirst(&movedSource, "cme.launch_radius = 20 Rs",
+                    "cme.launch_radius = 25 Rs"))
+    return Fail("schema-6 fixture lost an explicit source-surface field");
+  if (!RM::ParseConfigurationText(movedSource, &options).ok() ||
+      relativeDifference(options.parker.radialFieldAtReferenceT,
+                         3.6305743892405979e-9) > 1.0e-12)
+    return Fail("schema 6 retained a hidden 20-R_sun source assumption");
 
-  return Pass("schema version 4 retains the complete schema-3 SWCME physics contract, honors explicit Parker references/source radii, and rejects missing or inconsistent physics");
+  return Pass("schema 6 keeps the complete SWCME physics contract, derives the Parker record from the SWCME ambient (D4), honors explicit source radii, and rejects missing or inconsistent physics");
 }
 
 Result RunCFG3D09() {
@@ -928,7 +874,7 @@ Result RunCFG3D11() {
 
   RM::RunConfiguration3DOptions options;
   if (!RM::ParseConfigurationText(complete, &options).ok() ||
-      options.inputSchemaVersion != 4 ||
+      options.inputSchemaVersion != 6 ||
       options.transport != RM::TransportModel::Parker3D ||
       options.activeRegion != RM::ActiveRegionMode::FullDomain ||
       options.populationControl != RM::PopulationControlMode::Off ||
@@ -1034,14 +980,14 @@ Result RunCFG3D11() {
   // uses a wider one-AU radius than the 0.03-AU refinement tube.
   std::string corridor = complete;
   if (!replaceOnce(&corridor, "mode = full-domain", "mode = parker-tube") ||
-      !replaceOnce(&corridor, "radius_at_reference_m = 0\nradius_mode = constant-angular-width\nbuffer_blocks = 0",
-                   "radius_at_reference_m = 7.479893535e9\nradius_mode = constant-angular-width\nbuffer_blocks = 1") ||
+      !replaceOnce(&corridor, "radius_at_reference_m = 0\n    radius_mode = constant-angular-width\n    buffer_blocks = 0",
+                   "radius_at_reference_m = 7.479893535e9\n    radius_mode = constant-angular-width\n    buffer_blocks = 1") ||
       !replaceOnce(&corridor,
-                   "position_x_m = 1.495978707e11\nposition_y_m = 0",
-                   "position_x_m = 1.10962252663803e11\nposition_y_m = -1.00333949397740e11") ||
+                   "position_x_m = 1.495978707e11\n  position_y_m = 0",
+                   "position_x_m = 1.10962252663803e11\n  position_y_m = -1.00333949397740e11") ||
       !replaceOnce(&corridor,
-                   "position_x_m = 4.487936121e10\nposition_y_m = 0",
-                   "position_x_m = 4.46318123441847e10\nposition_y_m = -4.70726985535542e9") ||
+                   "position_x_m = 4.487936121e10\n  position_y_m = 0",
+                   "position_x_m = 4.46318123441847e10\n  position_y_m = -4.70726985535542e9") ||
       !RM::ParseConfigurationText(corridor, &options).ok() ||
       options.activeRegion != RM::ActiveRegionMode::ParkerTube ||
       options.activeTubeBufferBlocks != 1) {
@@ -1062,8 +1008,8 @@ Result RunCFG3D11() {
   }
   std::string disconnectedObserver = corridor;
   if (!replaceOnce(&disconnectedObserver,
-                   "position_x_m = 1.10962252663803e11\nposition_y_m = -1.00333949397740e11",
-                   "position_x_m = 1.495978707e11\nposition_y_m = 0") ||
+                   "position_x_m = 1.10962252663803e11\n  position_y_m = -1.00333949397740e11",
+                   "position_x_m = 1.495978707e11\n  position_y_m = 0") ||
       RM::ParseConfigurationText(disconnectedObserver, &options).ok()) {
     return Fail("observer outside the stationary active corridor was accepted");
   }
@@ -1075,8 +1021,8 @@ Result RunCFG3D11() {
   }
 
   std::string controlled = complete;
-  if (!replaceOnce(&controlled, "mode = off\nminimum_particles_per_cell_per_species = 0\ntarget_particles_per_cell_per_species = 0\nmaximum_particles_per_cell_per_species = 0",
-                   "mode = split-merge\nminimum_particles_per_cell_per_species = 16\ntarget_particles_per_cell_per_species = 24\nmaximum_particles_per_cell_per_species = 32") ||
+  if (!replaceOnce(&controlled, "mode = off\n    minimum_particles_per_cell_per_species = 0\n    target_particles_per_cell_per_species = 0\n    maximum_particles_per_cell_per_species = 0",
+                   "mode = split-merge\n    minimum_particles_per_cell_per_species = 16\n    target_particles_per_cell_per_species = 24\n    maximum_particles_per_cell_per_species = 32") ||
       !RM::ParseConfigurationText(controlled, &options).ok() ||
       options.populationControl != RM::PopulationControlMode::SplitMerge ||
       options.minimumParticlesPerCellPerSpecies != 16 ||
@@ -1092,12 +1038,11 @@ Result RunCFG3D11() {
   }
 
   std::string events = complete;
-  if (!replaceOnce(&events, "particle_mover = parker",
-                   "particle_mover = focused-transport") ||
-      !replaceOnce(&events, "transport = parker",
+  if (!replaceOnce(&events, "transport = parker",
                    "transport = focused-scattering") ||
       !RM::ParseConfigurationText(events, &options).ok() ||
-      options.transport != RM::TransportModel::FocusedScattering3D) {
+      options.transport != RM::TransportModel::FocusedScattering3D ||
+      options.particleMover != RM::ParticleMoverFamily::FocusedTransport) {
     return Fail("focused-scattering mover with a correlation MFP did not parse");
   }
   std::string invalidTransverseEvents = events;
@@ -1165,24 +1110,15 @@ Result RunCFG3D11() {
 }
 
 Result RunCFG3D12() {
-  std::string input = CompleteInput();
-  const std::string old = "outer_radius_mode = preset";
-  const auto at = input.find(old);
-  if (at == std::string::npos) return Fail("missing domain fixture");
-  input.replace(at, old.size(),
-      "outer_radius_mode = field-line-endpoint\n"
-      "box_geometry = field-line-corner-cube\n"
-      "corner_direction_x = 0\ncorner_direction_y = 0\ncorner_direction_z = 0\n"
-      "corner_margin_m = 1.495978707e9");
-  input += "\n[parker_spiral]\nend_radius_m = 1.495978707e11\nlength_m = 0\n"
-      "[mesh.active_region]\nmode = parker-tube\nreference_radius_m = 1.495978707e11\n"
-      "radius_at_reference_m = 1.1967829656e11\nradius_mode = constant-angular-width\n"
-      "buffer_blocks = 1\nsolar_sphere_radius_m = 2.0871e10\n";
-  // Add the new anchor inside the existing solar section, without creating
-  // a duplicate section that the strict INI grammar must reject.
-  const auto solar = input.find("[mesh.solar]");
-  if (solar == std::string::npos) return Fail("missing solar fixture");
-  input.insert(solar + std::string("[mesh.solar]").size(), "\nanchor = photosphere");
+  // The maintained corner/sphere example selects the x-y corner box; the
+  // three-axis corner mode is the same deck with the original geometry name.
+  const std::string xyDeck =
+      ReadText("examples/sep3d_analytic_parker_corner_sphere.in");
+  std::string input = xyDeck;
+  if (xyDeck.empty() ||
+      !ReplaceFirst(&input, "box_geometry = field-line-xy-corner-cube",
+                    "box_geometry = field-line-corner-cube"))
+    return Fail("missing corner/sphere example");
   RM::RunConfiguration3DOptions parsed;
   const auto status = RM::ParseConfigurationText(input, &parsed);
   if (!status.ok()) return Fail("corner input rejected: " + status.message);
@@ -1221,9 +1157,7 @@ Result RunCFG3D12() {
     return Fail("dry run does not expose the resolved corner/sphere geometry");
   // The x-y variant centers z on the Sun and changes the immutable geometry
   // identity. Keep the original three-axis mode covered above for old decks.
-  std::string xyInput = input;
-  const std::string mode = "field-line-corner-cube";
-  xyInput.replace(xyInput.find(mode), mode.size(), "field-line-xy-corner-cube");
+  const std::string xyInput = xyDeck;
   RM::RunConfiguration3DOptions xy;
   const auto xyStatus = RM::ParseConfigurationText(xyInput, &xy);
   if (!xyStatus.ok()) return Fail("x-y corner input rejected: " + xyStatus.message);
@@ -1242,6 +1176,12 @@ Result RunCFG3D12() {
 }
 
 Result RunCFG3D13() {
+  // Unified generic runtime input (src/INPUT_FILE.md) for reduced-front
+  // injection: includes, '!' comments, '\' continuation, the derived particle
+  // numerics keys, the three CLI spellings, and provenance-rich failures.
+  // The fixture includes the maintained shared blocks of the application-input
+  // example by absolute path and a parser-only physics: shock_front block (the
+  // shared resolver is exercised by CFG3D15/16, not here).
   namespace fs = std::filesystem;
   const fs::path directory = "test_output/cfg3d13-application-input";
   std::error_code cleanupError;
@@ -1249,6 +1189,8 @@ Result RunCFG3D13() {
   cleanupError.clear();
   fs::create_directories(directory / "parts", cleanupError);
   if (cleanupError) return Fail("could not create application-input fixture directory");
+  const fs::path shared = fs::absolute("examples/application-input/sep3d.in");
+  if (!fs::exists(shared)) return Fail("cannot locate examples/application-input/sep3d.in");
 
   const auto write = [](const fs::path& path, const std::string& text) {
     std::ofstream stream(path);
@@ -1256,189 +1198,154 @@ Result RunCFG3D13() {
     stream.close();
     return static_cast<bool>(stream);
   };
+  const std::string runBlock =
+      "#begin run\n"
+      "  time_step_mode = derived-from-mesh\n"
+      "  maximum_particle_speed_m_s = 200000000\n"
+      "  time_step_margin_factor = 0.25\n"
+      "  maximum_time_steps = 9\n"
+      "  campaign_seed = 1\n"
+      "  #begin restart\n"
+      "    input_path = none\n"
+      "    output_path = restart/sep3d.chk\n"
+      "  #end restart\n"
+      "#end run\n";
+  const std::string sourceBlock =
+      "#begin source: shock\n"
+      "  enabled = true\n"
+      "  normalization = accepted-shock-incident-flux\n"
+      "  normalization_radius_m = 13914000000\n"
+      "  samples_per_step = \\\n"
+      "    37 ! joined to the prior physical line\n"
+      "  minimum_energy_j = 1.602176634e-15\n"
+      "  maximum_energy_j = 1.602176634e-11\n"
+      "  spectrum_model = local-compression-dsa\n"
+      "  phase_space_power_index = 0\n"
+      "  weight_model = constant-statistical-weight\n"
+      "  maximum_events_per_species_per_step = 1000000\n"
+      "#end source\n";
   if (!write(directory / "amps.in",
-             "! a different application is intentionally ignored\n"
-             "#section begin: core\n"
-             "unrelated = value\n"
-             "#section end\n"
-             "#include \"parts/sep3d.in\"\n") ||
-      !write(directory / "parts/sep3d.in",
-             "#section begin: sep3d\n"
-             "shock_model = reduced-shock-surface\n"
-             "background_plasma_model = corona-swcme-ambient\n"
-             "source_model = accepted-shock-incident-flux\n"
-             "maximum_time_steps = 9\n"
-             "particles_per_iteration = \\\n"
-             "  37 ! joined to the prior physical line\n"
-             "maximum_particle_speed_m_s = 200000000\n"
-             "time_step_margin_factor = 0.25\n"
-             "source_normalization_radius_m = 13914000000\n"
-             "#subsection begin: shock-particle-injection\n"
-             "statistical_weight_model=constant-statistical-weight\n"
-             "minimum_energy_j=1.602176634e-15\n"
-             "maximum_energy_j=1.602176634e-11\n"
-             "phase_space_power_model=compression-ratio\n"
-             "maximum_events_per_species_per_step=1000000\n"
-             "#subsection end\n"
-             "#subsection begin: reduced-shock-surface\n"
-             "schema = parser-fixture\n"
-             "#subsection end\n"
-             "#section end\n")) {
+             "! unified srcSEP3D input fixture\n" + runBlock + sourceBlock +
+             "#include \"" + shared.string() + "\"\n"
+             "#include \"parts/model.in\"\n") ||
+      !write(directory / "parts/model.in",
+             "#begin physics: shock_front\n"
+             "  schema = parser-fixture\n"
+             "#end physics\n")) {
     return Fail("could not write application-input fixtures");
   }
 
-  RM::Sep3dApplicationInput parsed;
-  SEP3D::Core::Status status = RM::ParseSep3dApplicationInput(
-      (directory / "amps.in").string(), &parsed);
+  RM::RunConfiguration3DOptions parsed;
+  SEP3D::Core::Status status =
+      RM::LoadConfigurationFile((directory / "amps.in").string(), &parsed);
+  const fs::path expectedAssets =
+      fs::weakly_canonical(fs::absolute(directory / "parts"));
   if (!status.ok() || parsed.maximumTimeSteps != 9 ||
-      parsed.particlesPerIteration != 37 ||
-      parsed.expandedFiles.size() != 2 || parsed.valueLine != 6 ||
-      parsed.shockModel != "reduced-shock-surface" ||
-      parsed.backgroundPlasmaModel != "corona-swcme-ambient" ||
-      parsed.sourceModel != "accepted-shock-incident-flux" ||
-      parsed.maximumParticleSpeedMPerS != 2.0e8 ||
-      parsed.timeStepMarginFactor != 0.25 ||
-      parsed.sourceNormalizationRadiusM != 13914000000.0 ||
-      parsed.particleWeightingModel != "constant-statistical-weight" ||
-      parsed.momentumPowerLawModel != "compression-ratio" ||
-      parsed.minimumInjectionEnergyJ != 1.602176634e-15 ||
-      parsed.maximumInjectionEnergyJ != 1.602176634e-11 ||
-      parsed.maximumInjectionEventsPerSpeciesPerStep != 1000000 ||
-      parsed.reducedShockConfiguration != "schema=parser-fixture\n" ||
-      RM::Sep3dApplicationInputSummary(parsed).find(
-          "particles_per_iteration=37") == std::string::npos) {
-    return Fail("recursive include/comment/continuation input did not resolve: " +
+      parsed.source.samplesPerStep != 37 ||
+      !parsed.particleNumerics.deriveFromMeshAndShock ||
+      parsed.particleNumerics.sourceRateModel !=
+          RM::SourceRateNormalizationModel::AcceptedShockIncidentFlux ||
+      parsed.particleNumerics.maximumParticleSpeedMPerS != 2.0e8 ||
+      parsed.particleNumerics.timeStepMarginFactor != 0.25 ||
+      parsed.particleNumerics.sourceNormalizationRadiusM != 13914000000.0 ||
+      parsed.source.weightingModel !=
+          RM::SourceWeightingModel::ConstantStatisticalWeight ||
+      parsed.source.spectrumModel != RM::SourceSpectrumModel::LocalCompressionDsa ||
+      parsed.source.minimumEnergyJ != 1.602176634e-15 ||
+      parsed.source.maximumEnergyJ != 1.602176634e-11 ||
+      parsed.source.maximumMacroparticlesPerSpeciesPerStep != 1000000 ||
+      parsed.source.injectionEfficiency != 1.0 ||
+      parsed.intent != RM::RunIntent::ShockInjection ||
+      parsed.shock != RM::ShockAuthority::None ||
+      parsed.background != RM::BackgroundAuthority::RuntimeModel ||
+      parsed.backgroundModelInlineConfiguration !=
+          "#begin physics: shock_front\n  schema = parser-fixture\n#end physics\n" ||
+      fs::path(parsed.backgroundModelAssetDirectory) != expectedAssets) {
+    return Fail("include/comment/continuation input did not resolve: " +
                 status.message);
   }
 
-  // The new CLI spelling and no-argument default select shared-section mode;
-  // the maintained double-dash spelling remains the complete schema deck.
+  // One input format, three spellings: -input FILE, its synonym --input FILE,
+  // and no argument (./amps.in, also used by a coupled SWMF run).
   RM::StandaloneCommandLine cli;
   const char* defaultArgv[] = {"amps"};
   if (!RM::ParseStandaloneCommandLine(
           1, const_cast<char**>(defaultArgv), &cli).ok() ||
-      cli.inputPath != "amps.in" || !cli.sectionInput) {
-    return Fail("no-argument CLI did not select ./amps.in section mode");
-  }
-  const char* sectionArgv[] = {"amps", "-input", "global.in"};
+      cli.inputPath != "amps.in")
+    return Fail("no-argument CLI did not select ./amps.in");
+  const char* oneDash[] = {"amps", "-input", "global.in"};
   if (!RM::ParseStandaloneCommandLine(
-          3, const_cast<char**>(sectionArgv), &cli).ok() ||
-      cli.inputPath != "global.in" || !cli.sectionInput) {
-    return Fail("-input did not select shared-section mode");
-  }
-  const char* legacyArgv[] = {"amps", "--input", "schema.in"};
+          3, const_cast<char**>(oneDash), &cli).ok() ||
+      cli.inputPath != "global.in")
+    return Fail("-input did not select the named input file");
+  const char* twoDash[] = {"amps", "--input", "global.in"};
   if (!RM::ParseStandaloneCommandLine(
-          3, const_cast<char**>(legacyArgv), &cli).ok() || cli.sectionInput) {
-    return Fail("maintained --input schema mode regressed");
-  }
+          3, const_cast<char**>(twoDash), &cli).ok() ||
+      cli.inputPath != "global.in")
+    return Fail("--input is not a synonym of -input");
 
-  // Commit the parsed value through the same immutable pre-mesh replacement
-  // used by production.  A changed fingerprint proves the setting is not an
-  // unfingerprinted mutable global, and layout equality proves parser timing
-  // cannot invalidate already registered AMPS byte requests.
-  RM::RunConfiguration3DOptions options;
-  options.meshMemoryBudgetBytes = 1000000000000000ULL;
-  std::shared_ptr<const RM::RunConfiguration3D> provisional, resolved;
-  if (!RM::RunConfiguration3D::Create(options, &provisional).ok())
-    return Fail("could not create provisional configuration");
-  options.inputSchemaVersion = 4;
-  options.maximumTimeSteps = parsed.maximumTimeSteps;
-  options.background = RM::BackgroundAuthority::RuntimeModel;
-  options.backgroundModelId = "sep-corona-swcme-shock-front-v1";
-  options.backgroundModelInlineConfiguration =
-      parsed.reducedShockConfiguration;
-  options.backgroundModelAssetDirectory = parsed.reducedShockAssetDirectory;
-  options.coordinateFrame = "HCI";
-  options.parker.coordinateFrame = options.coordinateFrame;
-  options.intent=RM::RunIntent::ShockInjection;
-  options.source.enabled=true;
-  options.source.samplesPerStep = parsed.particlesPerIteration;
-  options.source.minimumEnergyJ=parsed.minimumInjectionEnergyJ;
-  options.source.maximumEnergyJ=parsed.maximumInjectionEnergyJ;
-  options.source.spectrumModel=RM::SourceSpectrumModel::LocalCompressionDsa;
-  options.source.fixedPhaseSpacePowerIndex=0;
-  options.source.weightingModel=
-      RM::SourceWeightingModel::ConstantStatisticalWeight;
-  options.source.maximumMacroparticlesPerSpeciesPerStep=
-      parsed.maximumInjectionEventsPerSpeciesPerStep;
-  options.particleNumerics.deriveFromMeshAndShock = true;
-  options.particleNumerics.sourceRateModel =
-      RM::SourceRateNormalizationModel::AcceptedShockIncidentFlux;
-  options.particleNumerics.maximumParticleSpeedMPerS =
-      parsed.maximumParticleSpeedMPerS;
-  options.particleNumerics.timeStepMarginFactor =
-      parsed.timeStepMarginFactor;
-  options.particleNumerics.sourceNormalizationRadiusM =
-      parsed.sourceNormalizationRadiusM;
-  status=RM::RunConfiguration3D::Create(options, &resolved);
+  // The parsed derived-mode options are a valid immutable configuration.  A
+  // later commit of the mesh-derived step (FinalizeParticleNumerics) changes
+  // the physics identity but never the storage layout registered with AMPS.
+  std::shared_ptr<const RM::RunConfiguration3D> initial, derived;
+  status = RM::RunConfiguration3D::Create(parsed, &initial);
   if (!status.ok())
-    return Fail("could not create parsed immutable configuration: "+
-        status.message);
+    return Fail("parsed derived-mode configuration is invalid: " + status.message);
+  RM::RunConfiguration3DOptions afterMesh = initial->options();
+  afterMesh.requestedTimeStepS = 1.25;  // = 0.25 * 1e9 m / 2e8 m/s
+  afterMesh.particleNumerics.resolvedMinimumCellSizeM = 1.0e9;
   RM::Runtime runtime;
-  if (!runtime.Configure(provisional).ok() ||
-      !runtime.ReplaceConfigurationBeforeMesh(resolved).ok() ||
-      runtime.configuration()->options().source.samplesPerStep != 37 ||
+  status = RM::RunConfiguration3D::Create(afterMesh, &derived);
+  if (status.ok()) status = runtime.Configure(initial);
+  if (status.ok()) status = runtime.ReplaceConfigurationBeforeMesh(derived);
+  if (!status.ok() ||
       runtime.configuration()->physics_fingerprint() ==
-          provisional->physics_fingerprint() ||
-      runtime.configuration()->storage_layout() !=
-          provisional->storage_layout()) {
-    return Fail("pre-mesh parser transaction did not replace one immutable authority");
-  }
+          initial->physics_fingerprint() ||
+      runtime.configuration()->storage_layout() != initial->storage_layout())
+    return Fail("derived particle numerics did not replace one immutable "
+                "authority: " + status.message);
 
-  if (!write(directory / "bad.in",
-             "#section begin: sep3d\n"
-             "unknown_setting = 4\n"
-             "#section end\n"))
-    return Fail("could not write malformed fixture");
-  status = RM::ParseSep3dApplicationInput(
-      (directory / "bad.in").string(), &parsed);
-  if (status.ok() || status.message.find("bad.in:2") == std::string::npos ||
-      status.message.find("unknown_setting = 4") == std::string::npos ||
-      status.message.find("unrecognized") == std::string::npos) {
-    return Fail("malformed setting did not report source line, text, and cause");
+  // Failures name the file, line, cause and offending text.
+  const auto expectFailure = [&](const std::string& name, const std::string& text,
+                                 const std::string& phrase) -> std::string {
+    if (!write(directory / name, text)) return "could not write " + name;
+    RM::RunConfiguration3DOptions unused;
+    const SEP3D::Core::Status failed =
+        RM::LoadConfigurationFile((directory / name).string(), &unused);
+    if (failed.ok()) return name + " was accepted";
+    if (failed.message.find(phrase) == std::string::npos)
+      return name + " diagnostic lacks '" + phrase + "': " + failed.message;
+    return std::string();
+  };
+  std::string problem = expectFailure("bad.in",
+      runBlock + "#begin source: shock\n  unknown_setting = 4\n#end source\n",
+      "bad.in:13:");
+  if (problem.empty()) problem = expectFailure("bad-text.in",
+      runBlock + "#begin source: shock\n  unknown_setting = 4\n#end source\n",
+      "unknown_setting = 4");
+  if (problem.empty()) {
+    write(directory / "cycle-b.in", "#include cycle-a.in\n");
+    problem = expectFailure("cycle-a.in", "#include cycle-b.in\n", "cycle");
   }
-
-  if (!write(directory / "cycle-a.in", "#include cycle-b.in\n") ||
-      !write(directory / "cycle-b.in", "#include cycle-a.in\n"))
-    return Fail("could not write recursive-include fixture");
-  status = RM::ParseSep3dApplicationInput(
-      (directory / "cycle-a.in").string(), &parsed);
-  if (status.ok() || status.message.find("cycle") == std::string::npos ||
-      status.message.find(":1:") == std::string::npos) {
-    return Fail("recursive include did not fail with directive provenance");
-  }
-
-  if (!write(directory / "unterminated.in",
-             "#section begin: sep3d\nshock_model = reduced-shock-surface\n"))
-    return Fail("could not write unterminated-section fixture");
-  status = RM::ParseSep3dApplicationInput(
-      (directory / "unterminated.in").string(), &parsed);
-  if (status.ok() || status.message.find("without '#section end'") ==
-                         std::string::npos) {
-    return Fail("unterminated section was not rejected");
-  }
-
-  if (!write(directory / "missing-radius.in",
-             "#section begin: sep3d\n"
-             "shock_model=reduced-shock-surface\n"
-             "background_plasma_model=corona-swcme-ambient\n"
-             "source_model=accepted-shock-incident-flux\n"
-             "maximum_time_steps=3\n"
-             "particles_per_iteration=10\n"
-             "maximum_particle_speed_m_s=1000\n"
-             "time_step_margin_factor=0.2\n"
-             "#subsection begin: reduced-shock-surface\n"
-             "schema=x\n#subsection end\n#section end\n"))
-    return Fail("could not write missing-radius fixture");
-  status = RM::ParseSep3dApplicationInput(
-      (directory / "missing-radius.in").string(), &parsed);
-  if (status.ok() ||
-      status.message.find("source_normalization_radius_m") ==
-          std::string::npos)
-    return Fail("missing source-normalization radius acquired a default");
+  if (problem.empty()) problem = expectFailure("unterminated.in",
+      "#begin run\n  maximum_time_steps = 1\n", "is not closed");
+  std::string missingRadius = sourceBlock;
+  missingRadius.replace(missingRadius.find("  normalization_radius_m = 13914000000\n"),
+                        std::string("  normalization_radius_m = 13914000000\n").size(), "");
+  if (problem.empty()) problem = expectFailure("missing-radius.in",
+      runBlock + missingRadius + "#include \"" + shared.string() +
+      "\"\n#include \"parts/model.in\"\n", "source.shock.normalization_radius_m");
+  std::string fixedStep = runBlock;
+  fixedStep.replace(fixedStep.find("time_step_mode = derived-from-mesh"),
+                    std::string("time_step_mode = derived-from-mesh").size(),
+                    "time_step_mode = derived-from-mesh\n  time_step_s = 1");
+  if (problem.empty()) problem = expectFailure("written-step.in",
+      fixedStep + sourceBlock + "#include \"" + shared.string() +
+      "\"\n#include \"parts/model.in\"\n", "'run.time_step_s' is derived");
+  if (!problem.empty()) return Fail(problem);
 
   fs::remove_all(directory, cleanupError);
-  return Pass("shared sep3d section resolves includes, comments, continuations, CLI defaults, immutable commit, and provenance-rich failures");
+  return Pass("unified input resolves includes, comments, continuations, derived particle numerics, CLI spellings, immutable commit, and provenance-rich failures");
 }
 
 Result RunCFG3D14() {
@@ -1476,7 +1383,28 @@ Result RunCFG3D14() {
   if(RM::CalculateSpeciesParticleNormalizations(
       species,flux,2.0,100,&normalized).ok())
     return Fail("unknown ambient species silently borrowed another rate");
-  return Pass("global dt and per-species W=Ndot*dt/N use independent inputs and unsupported composition fails closed");
+
+  // AMPS species tables use the A*u mass convention: H_PLUS = 1 u and
+  // HE_2PLUS = 4 u (u = 1.66053906660e-27 kg, CODATA 2018), not the CODATA
+  // proton/alpha masses.  Both must map onto the proton and alpha
+  // populations; a deuteron (A=2, Z=1) and 3He++ (A=3, Z=2) must not.
+  const double u=1.66053906660e-27;
+  const std::vector<RM::CompiledSpeciesRecord> ampsConvention={
+      {0,"H_PLUS",1*u,SEP3D::Core::Const::e},
+      {1,"HE_2PLUS",4*u,2*SEP3D::Core::Const::e}};
+  if(!RM::CalculateSpeciesParticleNormalizations(
+      ampsConvention,flux,2.0,100,&normalized).ok()||normalized.size()!=2||
+      normalized[0].macroparticleWeight!=8.0e18||
+      normalized[1].macroparticleWeight!=2.0e17)
+    return Fail("AMPS 1-u H_PLUS / 4-u alpha are not mapped to the proton/alpha populations");
+  for(const RM::CompiledSpeciesRecord& nuclide:
+      {RM::CompiledSpeciesRecord{0,"D_PLUS",2*u,SEP3D::Core::Const::e},
+       RM::CompiledSpeciesRecord{0,"HE3_2PLUS",3*u,2*SEP3D::Core::Const::e},
+       RM::CompiledSpeciesRecord{0,"H_2PLUS_BOGUS",1*u,2*SEP3D::Core::Const::e}})
+    if(RM::CalculateSpeciesParticleNormalizations(
+        {nuclide},flux,2.0,100,&normalized).ok())
+      return Fail("nuclide "+nuclide.symbol+" borrowed a proton/alpha rate");
+  return Pass("global dt and per-species W=Ndot*dt/N use independent inputs, the AMPS A*u mass convention maps to protons/alphas, and unsupported composition fails closed");
 }
 
 Result RunCFG3D15() {
@@ -1489,49 +1417,16 @@ Result RunCFG3D15() {
     }
   if(root.empty())return Fail("cannot locate the maintained shared-input example");
 
-  RM::Sep3dApplicationInput parsed;
-  SEP3D::Core::Status status=RM::ParseSep3dApplicationInput(
-      (root/"srcSEP3D/examples/application-input/amps.in").string(),&parsed);
-  if(!status.ok())return Fail("maintained shared input does not parse: "+
-      status.message);
-
-  // Mirror the production post-parser transaction, then ask the registered
-  // factory to resolve the real magnetic asset and construct the shared
-  // provider. This exercises the actual parser/configuration/adapter path;
-  // it is not a second reference-only event parser.
+  // Parse the maintained unified example with the production reader; the
+  // registered factory then resolves the real magnetic asset and constructs
+  // the shared provider.  This exercises the actual parser/configuration/
+  // adapter path; it is not a second reference-only event parser.
   RM::RunConfiguration3DOptions options;
+  SEP3D::Core::Status status=RM::LoadConfigurationFile(
+      (root/"srcSEP3D/examples/application-input/amps.in").string(),&options);
+  if(!status.ok())return Fail("maintained unified input does not parse: "+
+      status.message);
   options.meshMemoryBudgetBytes=1000000000000000ULL;
-  options.inputSchemaVersion=4;
-  options.maximumTimeSteps=parsed.maximumTimeSteps;
-  options.background=RM::BackgroundAuthority::RuntimeModel;
-  options.backgroundModelId="sep-corona-swcme-shock-front-v1";
-  options.backgroundModelInlineConfiguration=parsed.reducedShockConfiguration;
-  options.backgroundModelAssetDirectory=parsed.reducedShockAssetDirectory;
-  options.coordinateFrame="HCI";
-  options.parker.coordinateFrame=options.coordinateFrame;
-  options.shock=RM::ShockAuthority::None;
-  options.intent=RM::RunIntent::ShockInjection;
-  options.source.enabled=true;
-  options.source.samplesPerStep=parsed.particlesPerIteration;
-  options.source.minimumEnergyJ=parsed.minimumInjectionEnergyJ;
-  options.source.maximumEnergyJ=parsed.maximumInjectionEnergyJ;
-  options.source.spectrumModel=parsed.momentumPowerLawModel=="compression-ratio"
-      ? RM::SourceSpectrumModel::LocalCompressionDsa
-      : RM::SourceSpectrumModel::FixedPhaseSpacePowerLaw;
-  options.source.fixedPhaseSpacePowerIndex=parsed.fixedPhaseSpacePowerIndex;
-  options.source.weightingModel=
-      RM::SourceWeightingModel::ConstantStatisticalWeight;
-  options.source.maximumMacroparticlesPerSpeciesPerStep=
-      parsed.maximumInjectionEventsPerSpeciesPerStep;
-  options.particleNumerics.deriveFromMeshAndShock=true;
-  options.particleNumerics.sourceRateModel=
-      RM::SourceRateNormalizationModel::AcceptedShockIncidentFlux;
-  options.particleNumerics.maximumParticleSpeedMPerS=
-      parsed.maximumParticleSpeedMPerS;
-  options.particleNumerics.timeStepMarginFactor=
-      parsed.timeStepMarginFactor;
-  options.particleNumerics.sourceNormalizationRadiusM=
-      parsed.sourceNormalizationRadiusM;
   std::shared_ptr<const RM::RunConfiguration3D> configuration;
   status=RM::RunConfiguration3D::Create(options,&configuration);
   if(!status.ok())return Fail("maintained parsed configuration is invalid: "+
@@ -1545,12 +1440,12 @@ Result RunCFG3D15() {
         status.message);
   const auto flux=SEP::CoronaSwcme::ShockFront::
       EvaluateIncidentParticleFluxAtApexRadius(*adapter->SharedProvider(),
-          parsed.sourceNormalizationRadiusM);
+          options.particleNumerics.sourceNormalizationRadiusM);
   if(!flux.ok()||flux.value.acceptedAreaM2<=0||
       flux.value.electronRatePerS<=0||
       adapter->SharedProvider()->Current()!=nullptr)
     return Fail("maintained model cannot derive its non-mutating accepted-shock source rate");
-  return Pass("maintained shared input resolves its magnetic asset, initializes one reduced provider, and derives a positive accepted-shock rate without advancing its epoch");
+  return Pass("maintained unified input resolves its magnetic asset, initializes one reduced provider, and derives a positive accepted-shock rate without advancing its epoch");
 }
 
 Result RunCFG3D16() {
@@ -1562,40 +1457,12 @@ Result RunCFG3D16() {
       root=fs::canonical(candidate);break;
     }
   if(root.empty())return Fail("cannot locate maintained source fixture");
-  RM::Sep3dApplicationInput parsed;
-  auto status=RM::ParseSep3dApplicationInput(
-      (root/"srcSEP3D/examples/application-input/amps.in").string(),&parsed);
+  RM::RunConfiguration3DOptions options;
+  auto status=RM::LoadConfigurationFile(
+      (root/"srcSEP3D/examples/application-input/amps.in").string(),&options);
   if(!status.ok())return Fail("maintained source fixture does not parse: "+
       status.message);
-
-  RM::RunConfiguration3DOptions options;
   options.meshMemoryBudgetBytes=1000000000000000ULL;
-  options.inputSchemaVersion=4;
-  options.maximumTimeSteps=parsed.maximumTimeSteps;
-  options.background=RM::BackgroundAuthority::RuntimeModel;
-  options.backgroundModelId="sep-corona-swcme-shock-front-v1";
-  options.backgroundModelInlineConfiguration=parsed.reducedShockConfiguration;
-  options.backgroundModelAssetDirectory=parsed.reducedShockAssetDirectory;
-  options.coordinateFrame="HCI";
-  options.parker.coordinateFrame="HCI";
-  options.shock=RM::ShockAuthority::None;
-  options.intent=RM::RunIntent::ShockInjection;
-  options.source.enabled=true;
-  options.source.minimumEnergyJ=parsed.minimumInjectionEnergyJ;
-  options.source.maximumEnergyJ=parsed.maximumInjectionEnergyJ;
-  options.source.spectrumModel=RM::SourceSpectrumModel::LocalCompressionDsa;
-  options.source.fixedPhaseSpacePowerIndex=0;
-  options.source.weightingModel=
-      RM::SourceWeightingModel::ConstantStatisticalWeight;
-  options.source.maximumMacroparticlesPerSpeciesPerStep=1000000;
-  options.particleNumerics.deriveFromMeshAndShock=true;
-  options.particleNumerics.sourceRateModel=
-      RM::SourceRateNormalizationModel::AcceptedShockIncidentFlux;
-  options.particleNumerics.maximumParticleSpeedMPerS=
-      parsed.maximumParticleSpeedMPerS;
-  options.particleNumerics.timeStepMarginFactor=parsed.timeStepMarginFactor;
-  options.particleNumerics.sourceNormalizationRadiusM=
-      parsed.sourceNormalizationRadiusM;
   std::shared_ptr<const RM::RunConfiguration3D> configuration;
   status=RM::RunConfiguration3D::Create(options,&configuration);
   if(!status.ok())return Fail("source configuration is invalid: "+status.message);
@@ -1608,7 +1475,7 @@ Result RunCFG3D16() {
   const auto provider=adapter->SharedProvider();
   const auto flux=SEP::CoronaSwcme::ShockFront::
       EvaluateIncidentParticleFluxAtApexRadius(
-          *provider,parsed.sourceNormalizationRadiusM);
+          *provider,options.particleNumerics.sourceNormalizationRadiusM);
   if(!flux.ok())return Fail("reference incident flux failed: "+
       flux.status.message);
   const auto epoch=provider->EvaluateEpoch(flux.value.epochS,41);
@@ -1721,19 +1588,13 @@ Result RunCFG3D16() {
   // separate already-formed-front fixture and exercise the same factory and
   // accepted-face sum at its initial epoch; this guards the exact positive
   // condition used by the native one-/four-rank allocation smoke.
-  RM::Sep3dApplicationInput smoke;
-  status=RM::ParseSep3dApplicationInput((root/
+  RM::RunConfiguration3DOptions smokeOptions;
+  status=RM::LoadConfigurationFile((root/
       "srcSEP3D/examples/application-input/amps-injection-smoke.in").string(),
-      &smoke);
+      &smokeOptions);
   if(!status.ok())return Fail("positive native source fixture does not parse: "+
       status.message);
-  RM::RunConfiguration3DOptions smokeOptions=options;
-  smokeOptions.maximumTimeSteps=smoke.maximumTimeSteps;
-  smokeOptions.backgroundModelInlineConfiguration=
-      smoke.reducedShockConfiguration;
-  smokeOptions.backgroundModelAssetDirectory=smoke.reducedShockAssetDirectory;
-  smokeOptions.source.weightingModel=
-      RM::SourceWeightingModel::ConstantStatisticalWeight;
+  smokeOptions.meshMemoryBudgetBytes=1000000000000000ULL;
   std::shared_ptr<const RM::RunConfiguration3D> smokeConfiguration;
   std::shared_ptr<BG::BackgroundProvider> smokeBackground;
   status=RM::RunConfiguration3D::Create(smokeOptions,&smokeConfiguration);
@@ -1768,7 +1629,7 @@ Result RunCFG3D17() {
   std::ostringstream buffer;
   buffer << input.rdbuf();
   if (!input || buffer.str().empty())
-    return Fail("could not read the schema-4 fixture for schema-5 extension");
+    return Fail("could not read the schema-6 fixture");
 
   auto replaceOnce = [](std::string* text, const std::string& from,
                         const std::string& to) {
@@ -1778,24 +1639,24 @@ Result RunCFG3D17() {
     return true;
   };
   std::string schema5 = buffer.str();
-  if (!replaceOnce(&schema5, "schema_version = 4", "schema_version = 5") ||
-      !replaceOnce(&schema5,
+  if (!replaceOnce(&schema5,
           "spatial_diffusion_model = mean-free-path",
           "spatial_diffusion_model = parallel-diffusion-library"))
-    return Fail("schema-4 fixture lost its version or spatial selector");
-  const std::string shockMarker = "\n[shock]\n";
+    return Fail("schema-6 fixture lost its spatial selector");
+  const std::string shockMarker = "\n#begin physics: shock\n";
   const std::size_t shockAt = schema5.find(shockMarker);
   if (shockAt == std::string::npos)
-    return Fail("schema-4 fixture lost its shock section");
+    return Fail("schema-6 fixture lost its shock block");
   schema5.insert(shockAt, R"SEP3D(
-[parallel_diffusion]
+#begin physics: parallel_diffusion
 model = constant_kappa
 kappa_parallel_m2_per_s = 1.25e18
+#end physics
 )SEP3D");
 
   RM::RunConfiguration3DOptions options;
   SEP3D::Core::Status status = RM::ParseConfigurationText(schema5, &options);
-  if (!status.ok() || options.inputSchemaVersion != 5 ||
+  if (!status.ok() || options.inputSchemaVersion != 6 ||
       options.particleMover != RM::ParticleMoverFamily::Parker ||
       !options.particleMoverExplicitlySelected ||
       options.spatialDiffusionModel !=
@@ -1805,19 +1666,8 @@ kappa_parallel_m2_per_s = 1.25e18
       options.parallelDiffusionParameters.front().name !=
           "kappa_parallel_m2_per_s" ||
       options.parallelDiffusionConfigurationFingerprint.empty())
-    return Fail("valid schema-5 parallel-diffusion section did not resolve: " +
+    return Fail("valid parallel-diffusion block did not resolve: " +
                 status.message);
-
-  std::string missingMover = schema5;
-  if (!replaceOnce(&missingMover, "particle_mover = parker\n", "") ||
-      RM::ParseConfigurationText(missingMover, &options).ok())
-    return Fail("schema 5 accepted an implicit particle-mover family");
-
-  std::string conflictingMover = schema5;
-  if (!replaceOnce(&conflictingMover, "particle_mover = parker",
-                   "particle_mover = focused-transport") ||
-      RM::ParseConfigurationText(conflictingMover, &options).ok())
-    return Fail("particle_mover accepted a conflicting concrete transport");
 
   std::shared_ptr<const RM::RunConfiguration3D> configuration;
   status = RM::RunConfiguration3D::Create(options, &configuration);
@@ -1833,7 +1683,7 @@ kappa_parallel_m2_per_s = 1.25e18
   if (!replaceOnce(&changedParameter,
           "kappa_parallel_m2_per_s = 1.25e18",
           "kappa_parallel_m2_per_s = 1.50e18"))
-    return Fail("schema-5 fixture lost its coefficient parameter");
+    return Fail("schema-6 fixture lost its coefficient parameter");
   RM::RunConfiguration3DOptions changedOptions;
   std::shared_ptr<const RM::RunConfiguration3D> changedConfiguration;
   if (!RM::ParseConfigurationText(changedParameter, &changedOptions).ok() ||
@@ -1863,32 +1713,30 @@ kappa_parallel_m2_per_s = 1.25e18
     return Fail("Runtime did not install the validated shared model transactionally");
 
   std::string missingSection = schema5;
-  const std::size_t sectionAt = missingSection.find("\n[parallel_diffusion]\n");
-  const std::size_t nextAt = missingSection.find("\n[shock]\n", sectionAt + 1);
+  const std::size_t sectionAt =
+      missingSection.find("\n#begin physics: parallel_diffusion\n");
+  const std::size_t nextAt =
+      missingSection.find("\n#begin physics: shock\n", sectionAt + 1);
   missingSection.erase(sectionAt, nextAt - sectionAt);
   if (RM::ParseConfigurationText(missingSection, &options).ok())
-    return Fail("library selector was accepted without [parallel_diffusion]");
+    return Fail("library selector was accepted without physics: parallel_diffusion");
 
   std::string inactive = schema5;
   if (!replaceOnce(&inactive,
           "spatial_diffusion_model = parallel-diffusion-library",
           "spatial_diffusion_model = mean-free-path") ||
       RM::ParseConfigurationText(inactive, &options).ok())
-    return Fail("inactive [parallel_diffusion] section was accepted");
+    return Fail("inactive physics: parallel_diffusion block was accepted");
 
   std::string focused = schema5;
-  const bool focusedTransport =
-      replaceOnce(&focused, "transport = parker", "transport = focused-diffusion") ||
-      replaceOnce(&focused, "transport = parker3d", "transport = focused-diffusion");
-  if (!focusedTransport ||
-      !replaceOnce(&focused, "particle_mover = parker",
-                   "particle_mover = focused-transport"))
-    return Fail("fixture lost its Parker mover spelling");
+  if (!replaceOnce(&focused, "transport = parker", "transport = focused-diffusion"))
+    return Fail("fixture lost its Parker transport spelling");
   if (RM::ParseConfigurationText(focused, &options).ok())
     return Fail("focused mover accepted the Parker spatial library");
 
   std::string unknown = schema5;
-  unknown.insert(unknown.find("\n[shock]\n"), "unknown_parameter = 7\n");
+  unknown.insert(unknown.find("#end physics\n\n#begin physics: shock"),
+                 "unknown_parameter = 7\n");
   if (RM::ParseConfigurationText(unknown, &options).ok())
     return Fail("shared model reader accepted an unknown parameter");
 
@@ -1925,10 +1773,10 @@ kappa_parallel_m2_per_s = 1.25e18
       RM::ParseConfigurationText(nucleon, &options).ok())
     return Fail("srcSEP3D inferred an unavailable nucleon count");
 
-  // The section body belongs to the library parser: '!' opens a comment there
-  // (it does not in other srcSEP3D sections), and its diagnostics carry the
-  // deck's own line numbers.  The expected line is found by searching the
-  // fixture text, not taken from the parser.
+  // The block body belongs to the library parser; '!' opens a comment (as
+  // everywhere in the generic format), and its diagnostics carry the deck's
+  // own line numbers.  The expected line is found by searching the fixture
+  // text, not taken from the parser.
   std::string bangComment = schema5;
   if (!replaceOnce(&bangComment, "kappa_parallel_m2_per_s = 1.25e18",
                    "kappa_parallel_m2_per_s = 1.25e18 ! Fortran-style note") ||
@@ -1939,7 +1787,7 @@ kappa_parallel_m2_per_s = 1.25e18
   std::string badValue = schema5;
   if (!replaceOnce(&badValue, "kappa_parallel_m2_per_s = 1.25e18",
                    "kappa_parallel_m2_per_s = -1"))
-    return Fail("schema-5 fixture lost its coefficient parameter");
+    return Fail("schema-6 fixture lost its coefficient parameter");
   const std::size_t badAt = badValue.find("kappa_parallel_m2_per_s = -1");
   const std::size_t badLine = 1 + static_cast<std::size_t>(
       std::count(badValue.begin(), badValue.begin() + badAt, '\n'));
@@ -1950,7 +1798,80 @@ kappa_parallel_m2_per_s = 1.25e18
     return Fail("library diagnostic lost the deck line number: " +
                 status.message);
 
-  return Pass("schema 5 selects and cross-validates the mover family, calls the strict shared parser, freezes restart identity, installs one Parker-only active model, and rejects unavailable host state");
+  return Pass("the parallel-diffusion block selects the Parker mover family, calls the strict shared parser, freezes restart identity, installs one Parker-only active model, and rejects unavailable host state");
+}
+
+// CFG3D18 -- the shared srcSEP/srcSEP3D vocabulary (content schema 6,
+// src/models/sep_common/sep_input_layout.h).
+Result RunCFG3D18() {
+  namespace Layout = SEP::InputLayout;
+  // (1) The 3-D-only SWCME keys that srcSEP rejects are exactly the keys the
+  // canonical SWCME3D resolver adds to SWCME1D.
+  const std::set<std::string> table(Layout::SwcmeThreeDimensionalKeys().begin(),
+                                    Layout::SwcmeThreeDimensionalKeys().end());
+  if (table != swcme::input3d::detail::geometry_keys())
+    return Fail("sep_input_layout.h 3-D SWCME key list differs from "
+                "swcme::input3d::detail::geometry_keys()");
+
+  // (2) D3: a srcSEP deck is read by srcSEP3D's parser, which stops at the
+  // first srcSEP-only setting with the typed "not supported" diagnosis
+  // instead of ignoring it or calling it unknown.
+  const std::string srcSepDeck = ReadText("../srcSEP/examples/sep_parker_mesh.in");
+  RM::RunConfiguration3DOptions options;
+  const SEP3D::Core::Status srcSepStatus =
+      RM::ParseConfigurationText(srcSepDeck, &options);
+  if (srcSepDeck.empty() || srcSepStatus.ok() ||
+      srcSepStatus.message.find("not supported by srcSEP3D") == std::string::npos)
+    return Fail("a srcSEP schema-6 deck did not stop with a typed srcSEP3D "
+                "not-supported diagnosis: " + srcSepStatus.message);
+
+  // (3) Every key the table assigns to srcSEP3D is understood by the parser:
+  // a key it does not know would be reported as "unknown configuration key".
+  // Insert each into the complete fixture with a deliberately invalid value;
+  // the diagnosis must then be a value or rule error, never "unknown".
+  const std::string complete = CompleteInput();
+  for (const Layout::KeyRule& rule : Layout::kKeys) {
+    if ((rule.support & Layout::kSrcSep3d) == 0) continue;
+    const std::string block = rule.block;
+    const std::string qualified = block + "." + rule.key;
+    std::string anchor;
+    if (block == "observer.*") anchor = "#begin observer: earth\n";
+    else if (block == "run") anchor = "#begin run\n";
+    else if (block == "output") anchor = "#begin output\n";
+    else continue;  // nested blocks are covered by the complete fixture
+    std::string text = complete;
+    if (!ReplaceFirst(&text, anchor, anchor + "  " + rule.key + " = @invalid@\n"))
+      return Fail("fixture lost anchor " + anchor);
+    const SEP3D::Core::Status status = RM::ParseConfigurationText(text, &options);
+    if (status.ok() || status.message.find("unknown configuration key") !=
+                           std::string::npos)
+      return Fail("table key '" + qualified + "' is not understood by the "
+                  "srcSEP3D parser: " + status.message);
+  }
+
+  // (4) Every maintained srcSEP3D example deck parses (the reduced-front
+  // decks resolve their #included events and assets).
+  const char* examples[] = {
+      "examples/sep3d_analytic_parker.in",
+      "examples/sep3d_analytic_parker_active_tube.in",
+      "examples/sep3d_analytic_parker_corner_sphere.in",
+      "examples/sep3d_swcme_20rs_1au.in",
+      "examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in",
+      "examples/sep3d_swcme_sse_mesh_background_20rs_1au.in",
+      "examples/application-input/amps.in",
+      "examples/application-input/amps-injection-smoke.in",
+      "examples/shock-front/positive_1au.in",
+      "examples/shock-front/handoff_smoke.in",
+      "examples/shock-front/corona_to_1au.in"};
+  for (const char* example : examples) {
+    const SEP3D::Core::Status status = RM::LoadConfigurationFile(example, &options);
+    if (!status.ok())
+      return Fail(std::string("example ") + example + " does not parse: " +
+                  status.message);
+  }
+  return Pass("schema-6 table matches the SWCME3D key set, srcSEP decks stop "
+              "with typed srcSEP3D errors, every srcSEP3D table key is "
+              "understood, and every example deck parses");
 }
 
 }  // namespace
@@ -1975,22 +1896,23 @@ std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
     return d;
   };
   return {
-      make("CFG3D01", "Input and CLI", "C01 schema, CLI, parity, errors, and dry-run.", RunCFG3D01),
+      make("CFG3D01", "Input and CLI", "C01 schema 6, CLI, layout-independent identity, D1-D4 errors, and dry-run.", RunCFG3D01),
       make("CFG3D02", "Typed contracts", "C02 complete groups and fingerprint classes.", RunCFG3D02),
       make("CFG3D03", "Domain contract", "C03 presets, containment, and boundary direction.", RunCFG3D03),
       make("CFG3D04", "Parker geometry", "C04 shared polarity-independent geometry.", RunCFG3D04),
       make("CFG3D05", "Mesh preflight", "C05 composite refinement and memory planning.", RunCFG3D05),
-      make("CFG3D06", "Initialization schema", "Finite Parker-line fields and fail-closed consistency checks.", RunCFG3D06),
+      make("CFG3D06", "Finite field line", "Required finite Parker-line fields and fail-closed consistency checks.", RunCFG3D06),
       make("CFG3D07", "Compiled-species binding", "Complete generated AMPS table and fingerprint contract.", RunCFG3D07),
-      make("CFG3D08", "Complete initialization", "Schema-v3 canonical SWCME and exact per-step source contract.", RunCFG3D08),
+      make("CFG3D08", "Complete initialization", "Canonical SWCME, D4 Parker derivation, and exact per-step source contract.", RunCFG3D08),
       make("CFG3D09", "Background/turbulence selection", "Named prescribed slopes and reserved Python source.", RunCFG3D09),
       make("CFG3D10", "CME/Parker start linkage", "Canonical launch-apex linkage and fail-closed geometry checks.", RunCFG3D10),
       make("CFG3D11", "Transport/control schema", "Active corridor, population limits, mover coefficients, and dry-run output.", RunCFG3D11),
       make("CFG3D12", "Corner/sphere geometry", "Endpoint extent, input controls, identity and corner validation.", RunCFG3D12),
-      make("CFG3D13", "Shared application input", "Global section/include grammar, early immutable commit, and diagnostics.", RunCFG3D13),
+      make("CFG3D13", "Unified runtime input", "Generic block/include grammar, derived particle numerics keys, CLI spellings, immutable commit, and file:line diagnostics.", RunCFG3D13),
       make("CFG3D14", "Derived particle numerics", "Mesh CFL step and incident-flux per-species weight equations.", RunCFG3D14),
-      make("CFG3D15", "Parsed reduced model", "Maintained shared input initializes the real reduced provider and source normalization.", RunCFG3D15),
+      make("CFG3D15", "Parsed reduced model", "Maintained unified input initializes the real reduced provider and source normalization.", RunCFG3D15),
       make("CFG3D16", "Reduced-front particle source", "Accepted-face rate sum, Poisson timing, triangular position, local spectrum, determinism, and reserved weighting.", RunCFG3D16),
-      make("CFG3D17", "Parallel-diffusion binding", "Schema-5 parser, provenance, Runtime installation, Parker-only ownership, and unavailable-state gates.", RunCFG3D17),
+      make("CFG3D17", "Parallel-diffusion binding", "Library block parser, provenance, Runtime installation, Parker-only ownership, and unavailable-state gates.", RunCFG3D17),
+      make("CFG3D18", "Shared SEP vocabulary", "Schema-6 table vs SWCME3D keys, srcSEP decks give typed srcSEP3D errors, every example parses.", RunCFG3D18),
   };
 }

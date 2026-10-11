@@ -2,6 +2,8 @@
 
 #include "sha256.h"
 
+#include "amps_input.h"
+
 #include <algorithm>
 #include <cerrno>
 #include <cmath>
@@ -174,47 +176,66 @@ Core::Status ValidateValue(const GrammarEntry& grammar,
   return Core::Status::Success();
 }
 
-Core::Result<std::vector<Assignment>> Lex(const std::string& input) {
-  std::vector<Assignment> assignments;
-  std::istringstream stream(input);
-  std::string section;
-  std::string line;
-  std::size_t lineNumber = 0;
-  while (std::getline(stream, line)) {
-    ++lineNumber;
-    const std::string trimmed = Trim(line);
-    if (trimmed.empty() || trimmed.front() == '#' || trimmed.front() == '!')
-      continue;
-    if (trimmed.front() == '[' && trimmed.back() == ']') {
-      section = Trim(trimmed.substr(1u, trimmed.size() - 2u));
-      if (section.empty()) {
-        return Core::Result<std::vector<Assignment>>::Failure(
-            Core::StatusCode::InvalidConfiguration,
-            "line " + std::to_string(lineNumber) + ": empty section");
-      }
-      continue;
-    }
-    const std::size_t equals = trimmed.find('=');
-    if (section.empty() || equals == std::string::npos ||
-        trimmed.find('=', equals + 1u) != std::string::npos) {
-      return Core::Result<std::vector<Assignment>>::Failure(
-          Core::StatusCode::InvalidConfiguration,
-          "line " + std::to_string(lineNumber) +
-              ": expected one key = value assignment inside a section");
-    }
+// Collect the model's assignments from generic AMPS runtime input
+// (src/INPUT_FILE.md).  The complete model configuration is one block,
+// ``#begin physics: sep_coronal_cme ... #end physics``, owned by this
+// library.  Its child blocks are the schema-5 sections, named exactly as in
+// the registry: ``#begin pfss`` is section ``pfss``; a nested block
+// ``#begin shock_geometry`` / ``#begin center_distance`` is section
+// ``shock_geometry.center_distance``; and an identified registry section
+// ``observer.ID`` is written ``#begin observer: earth`` (section
+// ``observer.earth``).  Assignments directly inside the model block, other
+// top-level blocks, and dotted keys (which would bypass the section rules)
+// are rejected.  ``line`` keeps the physical line for diagnostics.
+void CollectSection(const AMPS::Input::Block& block, const std::string& section,
+                    std::vector<Assignment>* assignments) {
+  for (const AMPS::Input::Assignment& item : block.assignments) {
     Assignment assignment;
     assignment.section = section;
-    assignment.key = Trim(trimmed.substr(0u, equals));
-    assignment.value = Trim(trimmed.substr(equals + 1u));
-    assignment.line = lineNumber;
-    if (assignment.key.empty() || assignment.value.empty()) {
-      return Core::Result<std::vector<Assignment>>::Failure(
-          Core::StatusCode::InvalidConfiguration,
-          "line " + std::to_string(lineNumber) + ": empty key or value");
-    }
-    assignments.push_back(std::move(assignment));
+    assignment.key = item.key;
+    assignment.value = item.value;
+    assignment.line = item.where.line;
+    assignments->push_back(std::move(assignment));
   }
-  return Core::Result<std::vector<Assignment>>::Success(std::move(assignments));
+  for (const AMPS::Input::Block& child : block.blocks) {
+    std::string childSection = section + "." + child.kind;
+    if (!child.name.empty()) childSection += "." + child.name;
+    CollectSection(child, childSection, assignments);
+  }
+}
+
+Core::Result<std::vector<Assignment>> Lex(const std::string& input) {
+  using Return = Core::Result<std::vector<Assignment>>;
+  AMPS::Input::Document document;
+  AMPS::Input::Status status =
+      AMPS::Input::ParseText(input, "sep_coronal_cme input", ".", &document);
+  if (status.ok())
+    status = AMPS::Input::RequireOnlyBlocks(document.root, {"physics"},
+                                            "the sep_coronal_cme reader");
+  if (!status.ok())
+    return Return::Failure(Core::StatusCode::InvalidConfiguration, status.message);
+  if (document.root.blocks.size() != 1u ||
+      document.root.blocks.front().name != "sep_coronal_cme")
+    return Return::Failure(Core::StatusCode::InvalidConfiguration,
+                           "a sep_coronal_cme configuration is exactly one "
+                           "'#begin physics: sep_coronal_cme' block");
+  const AMPS::Input::Block& model = document.root.blocks.front();
+  status = AMPS::Input::RequireNoAssignments(model);
+  if (!status.ok())
+    return Return::Failure(Core::StatusCode::InvalidConfiguration, status.message);
+  std::vector<Assignment> assignments;
+  for (const AMPS::Input::Block& section : model.blocks) {
+    std::string name = section.kind;
+    if (!section.name.empty()) name += "." + section.name;
+    CollectSection(section, name, &assignments);
+  }
+  for (const Assignment& assignment : assignments)
+    if (assignment.key.find('.') != std::string::npos)
+      return Return::Failure(Core::StatusCode::InvalidConfiguration,
+                             "line " + std::to_string(assignment.line) +
+                             ": key '" + assignment.key + "' contains '.'; "
+                             "write nested sections as nested blocks");
+  return Return::Success(std::move(assignments));
 }
 
 template <typename Enum>
@@ -352,23 +373,21 @@ Core::Result<VersionedConfiguration> ParseConfiguration(
         lexical.status.code, lexical.status.message);
   }
 
-  // Pass one is intentionally ignorant of schema-5 keys.  It finds exactly
-  // one version selector and cannot accidentally validate a new deck with an
-  // old grammar.
-  int schemaVersion = 0;
+  // Locate the unique version selector before applying the schema-5
+  // grammar.  Only schema 5 exists for this model: schemas 1-4 were srcSEP3D
+  // application decks, which srcSEP3D now reads itself in the same generic
+  // format, so there is no pass-through of opaque legacy bytes any more.
   std::size_t versionCount = 0;
   for (const Assignment& assignment : lexical.value) {
     if (assignment.section == "run" && assignment.key == "schema_version") {
       ++versionCount;
-      double parsed = 0.0;
-      if (!ParseFiniteDouble(assignment.value, &parsed) ||
-          std::floor(parsed) != parsed || parsed < 1.0 || parsed > 5.0) {
+      if (assignment.value != "5") {
         return Core::Result<VersionedConfiguration>::Failure(
             Core::StatusCode::InvalidConfiguration,
             "line " + std::to_string(assignment.line) +
-                ": run.schema_version must be an integer in [1,5]");
+                ": run.schema_version must be 5 (the only sep_coronal_cme "
+                "schema)");
       }
-      schemaVersion = static_cast<int>(parsed);
     }
   }
   if (versionCount != 1u) {
@@ -378,14 +397,6 @@ Core::Result<VersionedConfiguration> ParseConfiguration(
   }
 
   VersionedConfiguration resolved;
-  if (schemaVersion < 5) {
-    resolved.disposition = ParseDisposition::LegacyPassThrough;
-    resolved.legacySchemaVersion = schemaVersion;
-    resolved.legacyBytes = inputBytes;
-    resolved.fingerprint = Internal::Sha256Hex(inputBytes);
-    return Core::Result<VersionedConfiguration>::Success(std::move(resolved));
-  }
-
   std::map<std::string, std::string> normalized;
   std::set<std::string> presentSections;
   for (const Assignment& assignment : lexical.value) {
@@ -445,7 +456,6 @@ Core::Result<VersionedConfiguration> ParseConfiguration(
     return Core::Result<VersionedConfiguration>::Failure(
         typedStatus.code, typedStatus.message);
   }
-  resolved.disposition = ParseDisposition::ResolvedSchema5;
   resolved.fingerprint = resolved.schema5.physicsFingerprint;
   return Core::Result<VersionedConfiguration>::Success(std::move(resolved));
 }

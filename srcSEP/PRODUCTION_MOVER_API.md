@@ -34,9 +34,25 @@ historical ambiguous field-line scattering functions were deleted in Step 14.
 ../amps --mover fte-mfp
 ```
 
-A schema-4 `--input` file may instead set `[run] particle_mover = parker`
-(canonical names only). Precedence is `--particle-mover` > `run.particle_mover`
-> default `fte-dmumu`; with `--input` and no `--particle-mover`, the
+A runtime input file (`-input FILE`, or the synonym `--input FILE`) in the
+shared SEP content schema 6 (`../src/INPUT_FILE.md` section 5) sets the mover
+with the required key `application.sep.transport`, whose spelling is shared
+with srcSEP3D:
+
+```text
+#begin application: sep
+  schema_version = 6
+  transport = parker      ! parker | focused-diffusion (fte-dmumu) | focused-scattering (fte-mfp)
+  #begin turbulence
+    ...                   ! the 28 srcSEP turbulence keys (README.md)
+  #end turbulence
+#end application
+```
+
+The retired srcSEP key `application.sep.particle_mover` (schema 4) is an
+unknown key, and the `fte-*` names are not accepted in the file.
+Precedence is `--particle-mover` > `application.sep.transport` > default
+`fte-dmumu` (the default applies only when no input file is read); with an input file and no `--particle-mover`, the
 mover-dependent CLI checks run after the file value is applied
 (`SEP::Util::CLI::ValidateMoverDependentOptions`). At `amps_init()` srcSEP
 registers `SEP::Mover::DispatchProductionMover` as generic PIC's

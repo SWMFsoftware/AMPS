@@ -635,7 +635,7 @@ def native_campaign(args, output):
     original=output/"original-input.in"; shutil.copyfile(input_path, original)
     frozen=native/"input.in"
     text=original.read_text(encoding="utf-8")
-    for key in ("initialization_mesh_tecplot_file", "initialization_parker_line_tecplot_file", "initialization_data_tecplot_file"):
+    for key in ("initialization_mesh_tecplot_file", "initialization_field_line_tecplot_file", "initialization_data_tecplot_file"):
         def replace(match):
             leaf=Path(match[2].strip()).name
             require(leaf not in ("", ".", ".."), "invalid initialization output filename")

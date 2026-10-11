@@ -10,7 +10,9 @@ wave-number-resolved representations and particle-wave coupling.
 ## Reduced corona/SWCME background-only mode
 
 `--reduced-shock-event PATH` selects the shared reduced shock-front plus
-ambient provider for a schema-3 native run. The thin application adapter
+ambient provider for a native run with a schema-6 input file. `PATH` is a generic AMPS runtime
+input file ([`src/INPUT_FILE.md`](../src/INPUT_FILE.md), section 6) holding one
+`#begin physics: shock_front` ... `#end physics` block. The thin application adapter
 installs the provider's time-dependent HCI ambient magnetic field, velocity,
 electron density, total thermal pressure and proton temperature on every
 native field-line vertex, publishes coherent immutable generations, checks
@@ -25,100 +27,214 @@ mode does not qualify the deferred BG3D-4 sheath/ejecta model and does not
 change any baseline particle mover or generic PIC behavior when the option is
 absent.
 
-## Complete initialization input (schema 3)
+## Complete initialization input (shared SEP schema 6)
 
 Use the initialization contract on every new standalone run:
 
 ```sh
-./amps --input srcSEP/examples/sep_parker_mesh.in
+./amps -input srcSEP/examples/sep_parker_mesh.in
+# `--input FILE` and `--input=FILE` are exact synonyms of `-input FILE`.
+
+# Without -input, ./amps.in in the working directory is read when it exists
+# (otherwise the legacy built-in mesh runs, as before).
+cp srcSEP/examples/sep_parker_mesh.in run_dir/amps.in && (cd run_dir && ../amps)
 
 # Build and visualize the initialized mesh/field line without taking a step.
 mpiexec -n 4 ./amps \
-  --input srcSEP/examples/sep_parker_mesh.in \
+  -input srcSEP/examples/sep_parker_mesh.in \
   --initialization-only \
   --initialization-output-dir sep_mesh_preview
 ```
 
 The file is parsed and validated before the canonical SWCME model, MPI, the
 AMPS mesh, field lines, particle weights, or output writers are initialized.
-Parsing is strict INI syntax: section and key names are case-insensitive,
-comments start with `#`, and every non-comment assignment is `key = value`.
-Duplicate sections, duplicate keys, unknown fields, missing fields, empty
-values, non-finite numbers, and invalid cross-field combinations are fatal.
-All application-owned dimensional values are bare SI numbers whose unit is in
-the key. The `[swcme]` values retain explicit units and are interpreted only by
-the canonical `src/models/swcme/swcme1d_input.hpp` resolver.
+The file uses the generic AMPS runtime input format specified in
+[`src/INPUT_FILE.md`](../src/INPUT_FILE.md) and the **shared SEP vocabulary,
+content schema 6**, that srcSEP and srcSEP3D both read (section 5 of that
+document; the table of blocks and keys, each marked with the application(s)
+that implement it, is
+[`src/models/sep_common/sep_input_layout.h`](../src/models/sep_common/sep_input_layout.h)).
+Grammar: nestable `#begin KIND[: NAME]` ... `#end KIND` blocks, `!` comments
+(there is no `#` comment; `#` starts only directives), `\` line continuation,
+and `#include PATH` resolved relative to the including file. Block kinds are
+case-insensitive; keys are case-sensitive; every assignment is `key = value`
+inside a block. A key's qualified name is the dot-joined block path, where
+`#begin kind: name` contributes `kind.name` (for example
+`mesh.domain.inner_radius_m`, `application.sep.turbulence.cfl_safety`).
+Unknown blocks, duplicate blocks, duplicate keys, unknown fields, missing
+fields, empty values, non-finite numbers, and invalid cross-field
+combinations are fatal. All application-owned dimensional values are bare SI
+numbers whose unit is in the key. The `physics: swcme` values retain explicit
+units and are interpreted only by the canonical
+`src/models/swcme/swcme1d_input.hpp` resolver.
 
-Schemas 1 and 2 remain readable for old campaigns. Schema 3 is the complete
-startup contract: it adds repeatable observers with explicit spectrum grids
-and a native data-bearing AMPS initialization product. It never obtains a time
-step, particle weight, observer, output path, or CME parameter from an
-unreviewed C++ default. Schema 4 is schema 3 plus two optional items: the
-`[run] particle_mover` key described in
-[Particle mover in the input file (schema 4)](#particle-mover-in-the-input-file-schema-4)
-and the `[parallel_diffusion]` section described in
-[Shared parallel-diffusion library (schema 4)](#shared-parallel-diffusion-library-schema-4).
-Without them a schema-4 file behaves exactly like schema 3.
+Schema rules implemented by `util/sep_initialization.cpp` (decisions D1–D5 of
+`src/INPUT_FILE.md` section 5.1):
 
-### Particle mover in the input file (schema 4)
+- **D1, one schema.** The file has `#begin application: sep` with
+  `schema_version = 6`. srcSEP schemas 1–4 (and the srcSEP3D schemas 1–5) are
+  retired: a file that names one stops with a typed "retired" diagnosis that
+  points to the converter. The retired INI format (`[section]` headers, `#`
+  comments) is a grammar error. Convert old files from the repository root
+  with
 
-```ini
-[run]
-schema_version = 4
-particle_mover = parker      # parker | fte-dmumu | fte-mfp
+  ```sh
+  python3 tools/convert_amps_input.py sep6-from-srcsep old.in -o new.in   # generic-format srcSEP schema 1-4
+  python3 tools/convert_amps_input.py srcsep   old.ini -o new.in          # INI srcSEP (chains into schema 6)
+  ```
+
+- **D2, turbulence in the file.** `application: sep` / `turbulence` holds
+  srcSEP's self-consistent Alfvén-wave turbulence model (28 required keys,
+  [below](#the-turbulence-block)); every key is shadowed by a command-line
+  option that overrides it.
+- **D3, typed not-supported errors.** srcSEP understands the whole shared
+  vocabulary and rejects any srcSEP3D-only block, key, or value with
+  `... is a srcSEP3D setting that is not supported by srcSEP (shared SEP
+  input schema 6, src/INPUT_FILE.md section 5)`; nothing is silently ignored.
+  Examples: `run.campaign_seed`, `mesh.memory`, `mesh.active_region`,
+  `application.sep.transport` sub-block, `physics: background` / `parker`,
+  `physics: shock_front`, observer kinds other than `field-line-radius`.
+  srcSEP accepts only `physics.background.provider = swcme`,
+  `physics.shock.authority = swcme`, and `source.shock.enabled = true`.
+  In `physics: swcme` it rejects the keys only the 3-D SWCME resolver
+  defines (`geometry.shape`, `geometry.axis_ratio_y/z`,
+  `geometry.half_width_rad`, `geometry.cme_direction_*`,
+  `geometry.solar_rotation_axis_*`, `surface.theta_intervals`,
+  `surface.phi_points`; list `SwcmeThreeDimensionalKeys()` in
+  `sep_input_layout.h`); the SWCME1D region keys
+  `geometry.sheath_thickness_1au` and `geometry.ejecta_thickness_1au` remain
+  required. It accepts `parker.solar_rotation_rate_rad_per_s` only when it
+  equals the fixed SWCME1D rate `2.86533e-6` rad/s (that assignment is then
+  redundant and does not change the fingerprint).
+- **D4, each quantity once.** `physics: swcme` owns the ambient solar wind;
+  srcSEP takes its Parker winding speed from `ambient.wind_speed` (resolved by
+  the canonical SWCME1D resolver at parse time) and the fixed SWCME1D
+  rotation rate, so there is no Parker record. `source: shock` owns the
+  particle source; the SWCME `source.*` keys are illegal in `physics: swcme`
+  ("SWCME key 'source.energy_min' is written in source: shock as
+  'minimum_energy_j'") and are synthesized from `source: shock` in exact
+  decimal text with units `J`, `kg`, and `si`.
+- **D5, observers.** Every observer has `kind = field-line-radius` and a
+  `heliocentric_radius_m` on the field line.
+
+The input file never obtains a time step, particle weight, observer, output
+path, turbulence parameter, or CME parameter from an unreviewed C++ default;
+the only optional key is `run.maximum_time_steps`.
+
+### Precedence of the file and the command line
+
+srcSEP keeps its command line (see
+[CURRENT_CLI_CONTRACT.md](CURRENT_CLI_CONTRACT.md)). The precedence is
+**built-in defaults < input file < command line**:
+
+| File key | Overriding option(s) | Mechanism |
+|---|---|---|
+| `application.sep.transport` | `--particle-mover` (aliases `--mover`, `--sep-mover`) | file value used only when the option is absent |
+| `run.maximum_time_steps` | `--total-iterations` | file value used only when the option is absent |
+| `source.shock.samples_per_step` | `--injection-particles-per-iteration` (alias `--field-line-injection-particles`) | file value used only when the option is absent |
+| `application.sep.turbulence.*` | the turbulence options in the [table below](#the-turbulence-block) | `main.cpp` installs the block as the base layer (`SEP::Util::CLI::ApplyInputFileTurbulence`) and re-parses the command line on top of it |
+| one `physics: swcme` assignment | `--swcme-override 'KEY=VALUE unit'` | an override of the ambient wind is rejected because the field-line mesh was built from the file value |
+| `physics.background.provider = swcme`, `physics.shock.authority = swcme` | `--shock-model`, `--reduced-shock-event` | a post-compile PARAM file that selects the analytical shock without one of these options contradicts the input file and is rejected before model initialization |
+
+The run-configuration record reports the source of the mover and of the
+iteration count as `CommandLine`, `InputFile`, or `Default`.
+
+### Transport selection
+
+```text
+#begin application: sep
+  schema_version = 6
+  transport = focused-diffusion   ! parker | focused-diffusion | focused-scattering
+  #begin turbulence
+    ...                           ! all 28 keys, see below
+  #end turbulence
+#end application
 ```
 
-`run.particle_mover` selects one of the three production movers. It is
-optional and legal only in schema 4. Only the canonical names are accepted (a
-deprecated command-line alias or an unknown/retired name is a fatal error with
-its line number), and the value enters the startup fingerprint.
-
-Precedence is `--particle-mover` (and its aliases `--mover`, `--sep-mover`) >
-`run.particle_mover` > the built-in default `fte-dmumu`. This keeps the
-existing rule that command-line values override the input file. When `--input`
-is given without `--particle-mover`, the parser defers the mover-dependent
-checks (coefficient-provider compatibility and the production configuration
-matrix) until `main.cpp` has applied the file value, so for example
+`application.sep.transport` is required and selects one of the three
+production movers: `parker` (Parker diffusion), `focused-diffusion`
+(`fte-dmumu`), `focused-scattering` (`fte-mfp`). Any other spelling, including
+the retired srcSEP key `particle_mover` and its `fte-*` values, is a fatal
+error with its line number; the value enters the startup fingerprint.
+`--particle-mover` overrides it. When an input file is given without
+`--particle-mover`, the command-line parser defers the mover-dependent checks
+(coefficient-provider compatibility and the production configuration matrix)
+until `main.cpp` has applied the file value, so for example
 `--spatial-diffusion-provider parallel-diffusion-library` is validated against
-the file's `parker`, not against the default. The run-configuration record
-reports the mover's source as `CommandLine`, `InputFile`, or `Default`.
-Unifying the srcSEP and srcSEP3D input formats is a planned later step.
+the file's `parker`, not against the built-in default `fte-dmumu`.
 
-### Shared parallel-diffusion library (schema 4)
+### The turbulence block
+
+All 28 keys are required in an srcSEP file. Each value is validated by
+`SEP::Turbulence::ValidateConfiguration` before AMPS starts, and each option
+in the right-hand column overrides its key (re-parsed on top of the file, so
+option semantics and warnings are unchanged).
+
+| Key | Values / unit | Overriding option |
+|---|---|---|
+| `source` | `prescribed`, `self-consistent-integrated`, `self-consistent-spectral`, `swmf-read-only`, `swmf-initial-then-local` | `--turbulence-source` |
+| `representation` | `integrated`, `spectral` (must agree with a self-consistent source) | `--turbulence-model` |
+| `coupling` | `disabled`, `streaming-energy-exchange` | `--turbulence-coupling-policy`, `--coupling` |
+| `advection`, `reflection`, `cascade`, `shock_injection` | `true`/`false` | `--turbulence-advection`, `--reflection`, `--cascade`, `--shock-injection` |
+| `inner_boundary`, `outer_boundary` | `specified-incoming-energy`, `specified-incoming-flux`, `transparent-outflow`, `fixed-reservoir` | `--turbulence-inner-boundary`, `--turbulence-outer-boundary` |
+| `inner_boundary_value_si`, `outer_boundary_value_si` | J (energy, reservoir) or W (flux) | `--turbulence-inner-value`, `--turbulence-outer-value` |
+| `reflection_coefficient`, `cascade_coefficient` | dimensionless | `--reflection-coefficient`, `--cascade-coefficient` |
+| `perpendicular_correlation_length_m` | m | `--turbulence-correlation-length` |
+| `electron_heating_fraction` | dimensionless | (file only) |
+| `spectral_k_min_per_m`, `spectral_k_max_per_m`, `spectral_bins` | m⁻¹, count | `--spectral-k-min`, `--spectral-k-max`, `--spectral-bins` |
+| `cfl_safety`, `operator_accuracy_safety`, `maximum_source_fraction`, `maximum_cascade_fraction` | dimensionless | `--turbulence-cfl`, `--turbulence-operator-safety`, `--turbulence-max-source-fraction`, `--turbulence-max-cascade-fraction` |
+| `minimum_substep_s`, `maximum_substeps` | s, count | `--turbulence-min-substep`, `--turbulence-max-substeps` |
+| `conservation_relative_tolerance` | dimensionless | `--turbulence-conservation-tolerance` |
+| `shock_source_efficiency`, `shock_source_plus_fraction` | [0, 1] | `--shock-turbulence-efficiency`, `--shock-turbulence-plus-fraction` |
+| `diagnostic_cadence_steps` | main-loop steps (0 = off) | `--spectral-output-interval` |
+
+The shipped example writes the former command-line defaults, so a run of that
+file without turbulence options behaves as the historical default command
+line did. The srcSEP3D turbulence block has a different (prescribed-spectrum)
+content; an srcSEP3D turbulence key in an srcSEP file is an unknown key.
+
+### Shared parallel-diffusion library
 
 The Parker mover can take `kappa_parallel` from the shared library
 `src/models/sep_common/parallel_diffusion` (specification revision 1.4). Two
 selections must agree; either one alone is fatal before AMPS initialization:
 
 ```sh
-# The example file sets run.particle_mover = parker.
-./amps --input srcSEP/examples/sep_parker_mesh_parallel_diffusion.in \
+# The example file sets application.sep.transport = parker.
+./amps -input srcSEP/examples/sep_parker_mesh_parallel_diffusion.in \
        --spatial-diffusion-provider parallel-diffusion-library
 ```
 
-```ini
-[run]
-schema_version = 4
-particle_mover = parker               # the library requires the Parker mover
-# ... all schema-3 sections ...
+```text
+#begin application: sep
+  schema_version = 6
+  transport = parker                    ! the library requires the Parker mover
+  #begin turbulence
+    ...
+  #end turbulence
+#end application
+! ... all other required schema-6 blocks ...
 
-[parallel_diffusion]
-model = power_law_lambda              # one library model ID
-lambda0_m = 1.495978707e10            ! lambda at the reference state [m]
-independent_variable = rigidity
-rigidity0_V = 1.0e9                   # reference rigidity [V]
-independent_exponent = 0.3333333333333333
-radius0_m = 1.495978707e11            # optional radial factor [m]
-radial_exponent = 0.5
+#begin physics: parallel_diffusion
+  model = power_law_lambda              ! one library model ID
+  lambda0_m = 1.495978707e10            ! lambda at the reference state [m]
+  independent_variable = rigidity
+  rigidity0_V = 1.0e9                   ! reference rigidity [V]
+  independent_exponent = 0.3333333333333333
+  radius0_m = 1.495978707e11            ! optional radial factor [m]
+  radial_exponent = 0.5
+#end physics
 ```
 
-The numbers are syntax examples, not recommended physical values. The srcSEP
-INI reader only locates the section and stores its raw lines; the library
-parser (`SEP::ParallelDiffusion::ParseSection`) owns its grammar. Inside this
-section `#` **and** `!` start comments, keys are case-sensitive suffix-free SI
-names, `model` selects exactly one model, and the selected model's key set is
-strict (unknown, duplicate, missing, malformed, or out-of-domain values fail
-with the `--input` line number). Each model's keys are listed in
+The numbers are syntax examples, not recommended physical values. srcSEP only
+collects this block's assignments: the generic reader removes comments (`!`
+is the comment character everywhere) and each assignment reaches the library
+parser (`SEP::ParallelDiffusion::ParseSection`) as a `key = value` record with
+its input-file line number. The block may not contain nested blocks. The
+library owns the key schema: keys are case-sensitive suffix-free SI names,
+`model` selects exactly one model, and the selected model's key set is strict
+(unknown, duplicate, missing, malformed, or out-of-domain values fail with the
+input-file line number). Each model's keys are listed in
 [the library README](../src/models/sep_common/parallel_diffusion/README.md).
 
 - Only `parker` may select the provider; `fte-dmumu` and `fte-mfp` (including
@@ -150,31 +266,46 @@ Evidence: `make test-parallel-diffusion-binding-unit` (PDB01–PDB05, no AMPS),
 `make -f makefile verify`. In addition, the native srcSEP build (`./Config.pl -application=test/sep_parker_spiral__field_line`,
 `make -j`) compiles and links the PIC sampling wrapper and the `main.cpp`
 wiring; one-rank `--initialization-only` runs install the model and reject a
-missing section or a missing provider as specified. A transport step that
+missing `physics: parallel_diffusion` block or a missing provider as specified. A transport step that
 evaluates the coefficient natively has not run: the shipped example aborts in
 the Parker mover's plasma-density check at step 1 with or without this
 provider, so no native transport or MPI evidence exists for it yet.
+That native evidence was recorded with the schema-4 spelling
+(`application.sep.particle_mover = parker`); the schema-6 parser and binding
+pass PDB01–PDB05 source-only.  The native `srcSEP/test/run_all_test.sh` series
+with the schema-6 decks (2026-10-11, `test_output/run_all_test/srcsep-schema6`)
+matches the pre-rewrite baseline: pd-mover 84/84, `run-tests` 83 pass, 1 skip
+and the same nine pre-existing errors (CV01, FTE01, OV01–OV05, PARKER01–02);
+it does not run this parallel-diffusion example natively, so that run is
+still pending.
 
-### Application-owned sections
+### Application-owned blocks
 
-| Section | Required keys | Meaning and validation |
+| Block path | Required keys | Meaning and validation |
 |---|---|---|
-| `[run]` | `schema_version`, `time_step_s`; schema 4 also optional `particle_mover` | `schema_version = 3` or `4`; the positive SI step is installed globally and on every allocated block for every species in the compiled AMPS `SpeciesList`. `particle_mover` (schema 4) is `parker`, `fte-dmumu`, or `fte-mfp`; `--particle-mover` overrides it. |
-| `[injection]` | `macroparticles_per_step` | Positive integer no larger than `INT_MAX`; exactly this many computational particles are created per compiled species at every active field-line source event unless the explicit legacy CLI count override is supplied. |
-| `[species]` | `particle_weight` | Positive finite common base AMPS statistical weight installed for every compiled species. Species count, type, mass, charge, and index remain build-time AMPS data and are not redefined here. |
-| `[observer.ID]` | `heliocentric_radius_m`, `minimum_energy_j`, `maximum_energy_j`, `energy_channels`, `energy_spacing`, `pitch_angle_bins` | Repeatable named 1-D observer. Radius is inside the field-line domain; energy bounds are positive and ordered; counts are positive. Spacing is `logarithmic` or `linear`. IDs contain letters, digits, `_`, or `-` and are at most 48 characters. |
-| `[output]` | `mesh_tecplot_file`, `field_line_tecplot_file`, `data_tecplot_file` | Nonempty paths for the geometry tree, finite Parker line, and native initialized AMPS data. A write failure aborts initialization. |
-| `[parker_spiral]` | `origin_x_m`, `origin_y_m`, `origin_z_m`, `initial_x_m`, `initial_y_m`, `initial_z_m`, `length_m`, `point_count` | Three-dimensional embedding of the 1-D transport line. `point_count >= 2`, maximum 10,000,000, includes both endpoints; `length_m` is positive arc length. The initial point must lie on `domain.inner_radius_m`. |
-| `[domain]` | `inner_radius_m`, `outer_radius_m` | Positive heliocentric shell radii with `outer > inner`; the AMR root is the cube enclosing the outer sphere. |
-| `[mesh]` | `global_cell_size_m`, `minimum_cell_size_m`, `maximum_level` | Positive target sizes with `global >= minimum`; AMR level is limited to 19. |
-| `[mesh.solar]` | `enabled`, `surface_cell_size_m`, `transition_outer_radius_m`, `profile`, `exponent` | Near-Sun resolution. Profiles are `linear`, `power-law`, or `smoothstep`; exponent is positive. An enabled profile runs from the surface size at the inner radius to the global size at the transition radius. |
-| `[mesh.tube]` | `enabled`, `reference_radius_m`, `radius_at_reference_m`, `radius_mode`, `center_cell_size_m`, `transverse_profile`, `transverse_exponent` | Parker-tube resolution in the plane perpendicular to the line. Radius mode is `physical-constant` or `constant-angular-width`; profile names match the solar profile. |
-| `[background.parker]` | `solar_wind_speed_m_per_s`, `solar_rotation_rate_rad_per_s` | Positive wind speed and nonnegative rotation rate used by both line geometry and refinement. They must exactly match the canonically resolved SWCME wind and rotation. |
+| `run` | `time_step_s`; optional `maximum_time_steps` | The positive SI step is installed globally and on every allocated block for every species in the compiled AMPS `SpeciesList`. `maximum_time_steps` in `[1, 2147483647]` is the file layer of `--total-iterations`; absent, the historical driver default is kept. srcSEP3D-only `run` keys (`time_step_mode`, `campaign_seed`, ...) and `run` / `restart` are typed not-supported errors. |
+| `application: sep` | `schema_version`, `transport`, nested `turbulence` | `schema_version = 6`. `transport` is `parker`, `focused-diffusion`, or `focused-scattering`; `--particle-mover` overrides it. The `turbulence` block holds the 28 keys listed [above](#the-turbulence-block). |
+| `source: shock` | `enabled`, `samples_per_step`, `minimum_energy_j`, `maximum_energy_j`, `injection_efficiency`, `spectrum_reference_energy_j`, `spectrum_particle_mass_kg`, `spectrum_charge_number`, `spectrum_normalization`, `spectrum_reference_intensity_per_m2_s_sr_j` | `enabled` must be `true` (srcSEP's SWCME shock source is always active). `samples_per_step` is a positive integer no larger than `INT_MAX`; exactly this many computational particles are created per compiled species at every active source event unless `--injection-particles-per-iteration` is supplied. The other keys are the source energy range [J], injection efficiency, and reference spectrum (energy [J], particle mass [kg], charge number, normalization, reference intensity [m⁻² s⁻¹ sr⁻¹ J⁻¹]); they are synthesized into the SWCME `source.*` assignments. srcSEP implements only `spectrum_normalization = relative-only` (its swept-volume source); `reference-differential-intensity` is a typed "not supported by srcSEP" error at parse time. |
+| `species` | `macroparticle_weight` | Positive finite common base AMPS statistical weight installed for every compiled species. Species count, type, mass, charge, and index remain build-time AMPS data and are not redefined here. |
+| `observer: ID` | `kind`, `heliocentric_radius_m`, `minimum_energy_j`, `maximum_energy_j`, `energy_bins`, `energy_spacing`, `pitch_angle_bins` | Repeatable named 1-D observer; at least one is required. `kind = field-line-radius` (the srcSEP3D spatial kinds are not supported). Radius is inside the field-line domain; energy bounds are positive and ordered; counts are positive. Spacing is `logarithmic` or `linear`. IDs contain letters, digits, `_`, or `-` and are at most 48 characters. |
+| `output` | `initialization_mesh_tecplot_file`, `initialization_field_line_tecplot_file`, `initialization_data_tecplot_file` | Nonempty paths for the geometry tree, finite field line, and native initialized AMPS data. A write failure aborts initialization. |
+| `mesh` / `field_line` | `origin_x_m`, `origin_y_m`, `origin_z_m`, `initial_x_m`, `initial_y_m`, `initial_z_m`, `length_m`, `point_count` | Three-dimensional embedding of the 1-D transport line. `point_count >= 2`, maximum 10,000,000, includes both endpoints; `length_m` is positive arc length. The initial point must lie on `mesh.domain.inner_radius_m`. |
+| `mesh` / `domain` | `inner_radius_m`, `outer_radius_m` | Positive heliocentric shell radii with `outer > inner`; the AMR root is the cube enclosing the outer sphere. |
+| `mesh` | `global_cell_size_m`, `minimum_cell_size_m`, `maximum_level` | Positive target sizes with `global >= minimum`; AMR level is limited to 19. |
+| `mesh` / `refinement: solar` | `enabled`, `surface_cell_size_m`, `transition_outer_radius_m`, `profile`, `exponent` | Near-Sun resolution. Profiles are `linear`, `power-law`, or `smoothstep`; exponent is positive. An enabled profile runs from the surface size at the inner radius to the global size at the transition radius. |
+| `mesh` / `refinement: tube` | `enabled`, `reference_radius_m`, `radius_at_reference_m`, `radius_mode`, `center_cell_size_m`, `transverse_profile`, `transverse_exponent` | Parker-tube resolution in the plane perpendicular to the line. Radius mode is `physical-constant` or `constant-angular-width`; profile names match the solar profile. |
+| `physics: background` | `provider` | Must be `swcme`; `analytic-parker`, `python-interpolator`, `swmf`, and `runtime-model` are srcSEP3D values and typed not-supported errors. There is no `parker` sub-block (D4): the Parker winding speed is the resolved SWCME `ambient.wind_speed` and the rotation rate is the fixed SWCME1D Carrington rate. |
+| `physics: shock` | `authority` | Must be `swcme` (`none` is a srcSEP3D value). |
+| `physics: swcme` | the canonical SWCME1D set ([below](#canonical-physics-swcme-block)) | Model block; no `source.*` keys (D4) and none of the 3-D-only SWCME keys (D3). |
+| `physics: parallel_diffusion` | optional; the library's keys | See [above](#shared-parallel-diffusion-library). |
 
 Boolean values accept `true/false`, `yes/no`, or `on/off`. Output filenames and
-all physical values enter the initialization fingerprint. Command-line SWCME
-overrides retain their documented higher precedence. The particle-count CLI
-aliases override `macroparticles_per_step` only when explicitly present.
+all physical values enter the initialization fingerprint; the fingerprint is
+computed from normalized values, so comments, layout, and SWCME assignment
+order do not change it, and a schema-6 identity cannot collide with a retired
+schema-1..4 identity. Command-line SWCME overrides retain their documented
+higher precedence. The particle-count CLI options override
+`source.shock.samples_per_step` only when explicitly present.
 
 `--initialization-only` executes the real MPI/AMPS initialization path. It
 builds and partitions the AMR mesh, allocates blocks, constructs the finite
@@ -182,7 +313,7 @@ field line, installs every observer, time step, particle weight, background,
 and source configuration, writes all Tecplot products, synchronizes all ranks,
 and calls `MPI_Finalize()` before the first `amps_time_step()`. It is therefore
 not a parse-only or synthetic-mesh mode. `--initialization-output-dir DIR`
-retains the three filenames declared in `[output]`, replaces only their parent
+retains the three filenames declared in `output`, replaces only their parent
 directory, creates that directory on rank zero, and requires
 `--initialization-only`.
 
@@ -210,10 +341,13 @@ this request forces successive refinement along the whole centreline. It fixes
 the disconnected Tecplot band without changing the declared physical tube
 radius or its transverse profile.
 
-### Canonical `[swcme]` section
+### Canonical `physics: swcme` block
 
-Every physically effective SWCME1D field is mandatory. The application only
-retains the raw key, value, and line number; the canonical resolver owns unit
+Every physically effective SWCME1D field is mandatory: the keys below are
+written in the block, except the particle-spectrum group, which srcSEP
+synthesizes from `source: shock` (D4). The application only retains the raw
+key, value, and line number (a synthesized assignment carries the line of its
+`source: shock` key, so resolver diagnostics point at the line to edit); the canonical resolver owns unit
 conversion, preset expansion, validation, the normalized manifest, and the
 model fingerprint.
 
@@ -226,23 +360,27 @@ model fingerprint.
 | Region geometry | `geometry.sheath_thickness_1au`, `geometry.ejecta_thickness_1au`, `smoothing.shock_width_1au`, `smoothing.leading_edge_width_1au`, `smoothing.trailing_edge_width_1au` |
 | Sheath/ejecta closure | `sheath.ramp_power`, `sheath.leading_edge_speed_factor`, `ejecta.density_factor`, `ejecta.speed_factor` |
 | Event clock | `event.launch_epoch`, `event.valid_from`, `event.valid_until` |
-| Particle spectrum | `source.particle_mass`, `source.charge_number`, `source.energy_min`, `source.energy_max`, `source.reference_energy`, `source.injection_efficiency`, `source.normalization`, `source.reference_intensity_si` |
+| Particle spectrum (synthesized; illegal in the block) | `source.particle_mass` ← `spectrum_particle_mass_kg` (`kg`), `source.charge_number` ← `spectrum_charge_number`, `source.energy_min` ← `minimum_energy_j` (`J`), `source.energy_max` ← `maximum_energy_j` (`J`), `source.reference_energy` ← `spectrum_reference_energy_j` (`J`), `source.injection_efficiency` ← `injection_efficiency`, `source.normalization` ← `spectrum_normalization` (`relative-only` → `relative_only`, `reference-differential-intensity` → `reference_differential_intensity`), `source.reference_intensity_si` ← `spectrum_reference_intensity_per_m2_s_sr_j` (`si`) |
 
 `cme.kinematics` accepts the canonical ballistic, DBM, or data-driven modes.
 Data-driven mode additionally requires both `cme.data_times` and
 `cme.data_radii`; those keys are forbidden for the other modes. The 1-D AMPS
-source supports `source.normalization = relative_only`; calibrated reference
-intensity is rejected because no adapter yet maps it to the swept-volume
+source supports `source.shock.spectrum_normalization = relative-only`
+(synthesized `source.normalization = relative_only`); calibrated reference
+intensity is accepted by the parser but rejected at model configuration because no adapter yet maps it to the swept-volume
 source. Deprecated SWCME compatibility values that have no effect on the
 canonical physics are intentionally not accepted as configuration.
 
 The startup gate also requires
-`parker.source_radius == domain.inner_radius_m`. The example therefore uses
-`20 Rs = 1.3914e10 m`. The SWCME wind and rotation must match
-`[background.parker]`, so mesh winding, background evaluation, and CME
-transport cannot silently use different Parker spirals. The sine of the
-colatitude computed from `parker_spiral.initial_*_m -
-parker_spiral.origin_*_m` must also equal canonical `parker.sin_theta`.
+`parker.source_radius == mesh.domain.inner_radius_m`. The example therefore uses
+`20 Rs = 1.3914e10 m`. The Parker winding of the mesh and field line is taken
+from the resolved SWCME wind (`ambient.wind_speed`, resolved at parse time)
+and the fixed SWCME1D rotation rate, and `main.cpp` rechecks the agreement
+against the final SWCME summary, so mesh winding, background evaluation, and
+CME transport cannot silently use different Parker spirals (an
+`--swcme-override` of the wind is therefore rejected). The sine of the
+colatitude computed from `mesh.field_line.initial_*_m -
+mesh.field_line.origin_*_m` must also equal canonical `parker.sin_theta`.
 
 SWCME defines `ambient.magnetic_field_1au` as total field magnitude at that
 reference latitude. srcSEP therefore derives, rather than guesses, the signed
@@ -263,26 +401,27 @@ field direction but never changes the refinement centreline.
 For an active source event, the existing physical source calculation first
 computes each species' represented physical count \(N_\mathrm{physical}\) from the selected
 shock model, swept flux-tube volume, density, abundance, and canonical injection
-efficiency. Schema 3 then creates exactly
-`injection.macroparticles_per_step` particles for that compiled species and assigns the individual AMPS
+efficiency. srcSEP then creates exactly
+`source.shock.samples_per_step` particles for that compiled species and assigns the individual AMPS
 weight correction
 
 \[
 C_w=\frac{N_\mathrm{physical}/W_0}{N_\mathrm{macro}},
 \]
 
-where `W0 = species.particle_weight`. Thus the requested computational count
+where `W0 = species.macroparticle_weight`. Thus the requested computational count
 does not change the physical source. A zero physical source creates zero
 particles. The historical min/max source-count heuristic and the beginning-of-
-line unit-weight override are used only by legacy schema 1.
+line unit-weight override remain only on the no-input legacy path (retired
+schema 1 no longer parses).
 
 After final AMR refinement and decomposition, initialization writes:
 
-- `output.mesh_tecplot_file` through AMPS' distributed mesh writer;
-- `output.field_line_tecplot_file` as one ordered Tecplot POINT zone with
+- `output.initialization_mesh_tecplot_file` through AMPS' distributed mesh writer;
+- `output.initialization_field_line_tecplot_file` as one ordered Tecplot POINT zone with
   `arc_length_m`, Cartesian position, heliocentric radius, and requested cell
   size; and
-- `output.data_tecplot_file` through AMPS' native data writer after field,
+- `output.initialization_data_tecplot_file` through AMPS' native data writer after field,
   timestep, and particle-weight initialization. It includes initialized
   center-node macroscopic data plus `Local Time Step` and `Local Particle
   Weight`. A mixed-species executable inserts `.species-N` before the extension
@@ -495,7 +634,9 @@ Standalone input uses a `SWCME1D on` block; see
 covers ambient wind, Parker settings, ballistic/DBM/data-driven CME kinematics,
 shock acceleration representation, region geometry/smoothing, launch and
 validity epochs, source species, energy bounds, normalization, and injection
-efficiency. The resolved energy interval and efficiency drive the existing 1-D
+efficiency. With a schema-6 runtime input file (`-input`), the `physics: swcme`
+block supplies this layer and the source keys come from `source: shock`
+([above](#complete-initialization-input-shared-sep-schema-6)). The resolved energy interval and efficiency drive the existing 1-D
 injector; relative shock source weight multiplies its swept-volume source. AMPS
 species mass/charge are checked against the resolved source after AMPS setup.
 
@@ -745,7 +886,7 @@ evidence boundary.
 All three movers obtain coefficients through one registry. Canonical CLI names
 select coefficient authority (`prescribed`, `self-consistent`, `swmf`), spatial
 closure (`from-dmumu`, `from-mfp`, or Parker-only `parallel-diffusion-library`
-with a schema-4 `[parallel_diffusion]` section), pitch-angle provider (`configured`,
+with a `physics: parallel_diffusion` input block), pitch-angle provider (`configured`,
 `constant`, `jokipii-1966`, `florinskiy`), MFP
 model (`qlt`, `qlt1`, `tenishev-2005`, `chen-2024`, `from-spatial`), and invalid
 value policy (`fail`, `ballistic`). Conversion cycles and source/ownership
@@ -1239,14 +1380,16 @@ native observations, and a disposition update reviewed with the build manifest.
 
 ## File-driven Parker and mesh initialization
 
-The standalone driver now accepts `--input PATH`.  The file is parsed and
-validated before the post-compile parser, SWCME configuration, MPI startup, or
-AMPS mesh allocation.  If `--input` is omitted, the historical hard-coded
+The standalone driver accepts `-input PATH` (exact synonyms: `--input PATH`
+and `--input=PATH`).  The file uses the generic AMPS runtime input format
+([`src/INPUT_FILE.md`](../src/INPUT_FILE.md)) and is parsed and validated
+before the post-compile parser, SWCME configuration, MPI startup, or AMPS mesh
+allocation.  If no input file is given and `./amps.in` does not exist, the historical hard-coded
 domain, line length, point count, and mesh refinement remain unchanged.  This
 is an intentional compatibility boundary, not an implicit default file.
 
 [`examples/sep_parker_mesh.in`](examples/sep_parker_mesh.in) is the complete
-schema-version-3 example.  It defines, in SI units:
+schema-6 example.  It defines, in SI units:
 
 - the Parker origin, initial point, physical arc length, and total point count;
 - the inner radius and cubic root-domain half-size;
@@ -1255,8 +1398,12 @@ schema-version-3 example.  It defines, in SI units:
 - the solar-surface cell size, transition radius, named degradation profile,
   and exponent;
 - the magnetic-tube radius at a reference heliocentric distance, its radial
-  scaling mode, centerline cell size, transverse profile, and exponent; and
-- the wind speed and solar rotation rate that set the Parker winding.
+  scaling mode, centerline cell size, transverse profile, and exponent;
+- the canonical SWCME1D model, whose resolved `ambient.wind_speed` and fixed
+  SWCME1D rotation rate set the Parker winding (D4); and
+- the `application: sep` transport choice and turbulence block, the
+  `source: shock` sampling and spectrum, species weight, observers, and
+  output products.
 
 The generated line has `point_count` vertices, including both ends.  A
 midpoint-tangent step uses constant arc increment
@@ -1278,7 +1425,7 @@ Run the focused initialization gate with:
 
 ```sh
 make test-initialization-unit
-make test-parallel-diffusion-binding-unit   # schema-4 [parallel_diffusion]
+make test-parallel-diffusion-binding-unit   # physics: parallel_diffusion + application.sep.transport
 ```
 
 `INIT01` and `INIT02` are also native routine descriptors.  After rebuilding

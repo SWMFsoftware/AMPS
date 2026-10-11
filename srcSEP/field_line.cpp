@@ -402,9 +402,8 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   double GlobalWeightCorrectionFactor=1.0;
 
   if (anpart==0.0) return 0.0;
-  else if (SEP::Initialization::HasActive() &&
-           SEP::Initialization::Active().schemaVersion >= 2) {
-    // Version-2 input defines an exact computational population per active
+  else if (SEP::Initialization::HasActive()) {
+    // The runtime input defines an exact computational population per active
     // field-line source event.  Preserve the physical particle count by
     // moving the complete ratio into AMPS' individual statistical-weight
     // correction; never change the represented source merely to hit N.
@@ -422,8 +421,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   }
 
   //in case particle are injected at the beginning of the field line, the actual plasma density is not used -> set the particle weight == 1
-  if ((!SEP::Initialization::HasActive() ||
-       SEP::Initialization::Active().schemaVersion < 2) &&
+  if (!SEP::Initialization::HasActive() &&
       InjectionParameters::InjectLocation==InjectionParameters::_InjectBegginingFL) {
     GlobalWeightCorrectionFactor=1.0;
   }

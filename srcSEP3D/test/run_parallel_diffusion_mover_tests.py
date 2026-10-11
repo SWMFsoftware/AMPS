@@ -52,7 +52,7 @@ suites and tests (run from any directory; no AMPS build is needed):
                 Builds the AMPS-free stage-1 test executable (no tests run).
 
   stage1        srcSEP3D/test/stage1 --test CFG3D17 --test R3D01   (cwd srcSEP3D)
-                  CFG3D17  schema-5 [parallel_diffusion]: raw lines go to the
+                  CFG3D17  physics: parallel_diffusion: raw lines go to the
                            library parser ('!' comments, deck line numbers in
                            errors), mover-family cross-check, restart identity,
                            Runtime installs ActiveParallelDiffusion bound to the

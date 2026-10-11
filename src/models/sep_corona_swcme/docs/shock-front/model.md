@@ -1517,101 +1517,105 @@ The endpoint requirement is satisfied by actual valid epoch evaluation and requi
 
 ## 18. Commented configuration examples
 
-**Schema status:** the examples in this section are proposed logical configuration decks. They illustrate the required inputs and comments. They are not drop-in files for the current strict SEP3D parser. Implementation must translate these settings into the maintained schema, add parser tests, and document the accepted spelling before distributing runnable decks. Referenced ambient/harmonic assets must also be supplied and validated.
+**Schema status:** the examples in this section are proposed logical configuration decks. They illustrate the required inputs and comments. They are not drop-in files for the current strict reader. Implementation must translate these settings into the maintained schema, add parser tests, and document the accepted spelling before distributing runnable decks. Referenced ambient/harmonic assets must also be supplied and validated.
+
+**Syntax (implemented, 2026-10 format migration):** the examples are written in the generic AMPS runtime input format (`src/INPUT_FILE.md`): `!` comments (there is no `#` comment) and nested `#begin KIND` ... `#end KIND` blocks. The accepted reduced-front event is one `#begin physics: shock_front` ... `#end physics` block read by `ShockFront::ResolveConfiguration`; inside it a nested block is the same key space as the dotted prefix (`#begin ambient` + `x = 1` is `ambient.x = 1`), so each logical group below maps to a dotted key group. The proposed key names and groups here are not the implemented vocabulary; the accepted spelling is documented in `src/models/sep_corona_swcme/shock_front/README.md` and exercised by `srcSEP3D/examples/shock-front/*.event`, which `srcSEP3D` decks `#include` (the former `[background] model_asset` reference and `key=value` event record are retired).
 
 ### 18.1 Short handoff smoke case
 
 This synthetic case begins just below the front handoff radius. It checks phase matching and native generation/halo behavior without waiting for a full coronal transit. It does not claim to simulate CME formation.
 
-```ini
-# PROPOSED logical schema: translate to the maintained parser before use.
-# This is a synthetic zero-particle handoff fixture, not an observed event.
-
-[run]
-mode = shock_front_ambient
-reference_epoch = 2026-10-04T00:00:00Z
-time_scale = UTC_resolved_to_elapsed_SI_seconds
-coordinate_frame = HCI
-start_time_s = 0
-end_time_s = 600
-background_dt_s = 60
-particle_mode = disabled
-
-[ambient]
-# One canonical plasma authority; the asset includes profile equations,
-# normalization, open/closed routing, EOS, validity range, and provenance.
-provider = canonical_corona_wind
-plasma_asset = ../assets/synthetic_ambient.profile.json
-
-[magnetic]
-# SYNTHETIC field for verification. Replace with observed-map harmonics
-# plus provenance and uncertainty for event-specific qualification.
-model = pfss_with_validated_exterior
-harmonics_asset = ../assets/synthetic_dipole.harmonics.csv
-source_surface_radius_m = 1739250000
-monopole_policy = reject
-rotation_rate_rad_s = 2.86533e-6
-exterior_field_model = canonical_flux_matched_spiral
-
-[shock]
-model = maintained_isotropic_fast_RH
-gamma = 1.6666666666666667
-weak_shock_policy = typed_unresolved_failure
-upstream_sampling = direct_canonical_ambient
-
-[geometry]
-model = finite_sse_leading_surface
-# 45-degree half-width in radians; this is an axisymmetric shape fixture.
-width_model = fixed
-half_width_rad = 0.7853981633974483
-direction_hci = 1, 0, 0
-support = leading_ray_root_only
-physical_inner_radius_m = 695700000
-
-[coronal_history]
-model = constant_apex_speed
-# 19.9 R_sun: t_h = (20 - 19.9) R_sun / 1000 km/s = 69.57 s.
-initial_apex_radius_m = 13844430000
-initial_apex_speed_m_s = 1000000
-valid_start_s = 0
-valid_end_s = 600
-quantity = shock_front
-
-[handoff]
-apex_radius_m = 13914000000
-crossing = first_outward
-outer_model = quadratic_drag_reference_or_equivalent_SWCME_kernel
-drag_gamma_m_inv = 2e-11
-# This is an explicitly fitted effective trajectory wind in this fixture.
-# It does not replace the canonical wind used for local Mach numbers.
-drag_wind_policy = fitted_effective_constant
-effective_wind_speed_m_s = 400000
-continuity = position_and_normal_speed
-# A body-drag shock proxy can become sub-fast; export that outcome.
-# For a validated event, select require_declared_shock_coverage and provide
-# its checksummed time/surface/observer requirements instead.
-trajectory_validity_policy = report_only
-
-[diagnostics]
-magnetic_compression = true
-ht_frame = false
-# Enabling HT output also requires declared conditioning/velocity bounds.
-# No general first-critical Mach number is inferred from a constant.
-criticality_model = none
-
-[domain]
-# Full domain: native coverage over the declared mesh.
-# Corridor: change mode and supply observer/field-family footprint settings;
-# then label native coverage as corridor-only. Geometry remains analytical.
-mode = full_domain
-
-[output]
-directory = test_output/reduced_front/handoff_smoke
-retain_all_epochs = true
-surface_formats = csv, vtk
-receipt_format = json
-volume_field_role = ambient_reference
-emit_trajectory_validity = true
+```text
+#begin physics: shock_front
+  ! PROPOSED logical schema: translate to the maintained vocabulary before use.
+  ! This is a synthetic zero-particle handoff fixture, not an observed event.
+  #begin run
+    mode = shock_front_ambient
+    reference_epoch = 2026-10-04T00:00:00Z
+    time_scale = UTC_resolved_to_elapsed_SI_seconds
+    coordinate_frame = HCI
+    start_time_s = 0
+    end_time_s = 600
+    background_dt_s = 60
+    particle_mode = disabled
+  #end run
+  #begin ambient
+    ! One canonical plasma authority; the asset includes profile equations,
+    ! normalization, open/closed routing, EOS, validity range, and provenance.
+    provider = canonical_corona_wind
+    plasma_asset = ../assets/synthetic_ambient.profile.json
+  #end ambient
+  #begin magnetic
+    ! SYNTHETIC field for verification. Replace with observed-map harmonics
+    ! plus provenance and uncertainty for event-specific qualification.
+    model = pfss_with_validated_exterior
+    harmonics_asset = ../assets/synthetic_dipole.harmonics.csv
+    source_surface_radius_m = 1739250000
+    monopole_policy = reject
+    rotation_rate_rad_s = 2.86533e-6
+    exterior_field_model = canonical_flux_matched_spiral
+  #end magnetic
+  #begin shock
+    model = maintained_isotropic_fast_RH
+    gamma = 1.6666666666666667
+    weak_shock_policy = typed_unresolved_failure
+    upstream_sampling = direct_canonical_ambient
+  #end shock
+  #begin geometry
+    model = finite_sse_leading_surface
+    ! 45-degree half-width in radians; this is an axisymmetric shape fixture.
+    width_model = fixed
+    half_width_rad = 0.7853981633974483
+    direction_hci = 1, 0, 0
+    support = leading_ray_root_only
+    physical_inner_radius_m = 695700000
+  #end geometry
+  #begin coronal_history
+    model = constant_apex_speed
+    ! 19.9 R_sun: t_h = (20 - 19.9) R_sun / 1000 km/s = 69.57 s.
+    initial_apex_radius_m = 13844430000
+    initial_apex_speed_m_s = 1000000
+    valid_start_s = 0
+    valid_end_s = 600
+    quantity = shock_front
+  #end coronal_history
+  #begin handoff
+    apex_radius_m = 13914000000
+    crossing = first_outward
+    outer_model = quadratic_drag_reference_or_equivalent_SWCME_kernel
+    drag_gamma_m_inv = 2e-11
+    ! This is an explicitly fitted effective trajectory wind in this fixture.
+    ! It does not replace the canonical wind used for local Mach numbers.
+    drag_wind_policy = fitted_effective_constant
+    effective_wind_speed_m_s = 400000
+    continuity = position_and_normal_speed
+    ! A body-drag shock proxy can become sub-fast; export that outcome.
+    ! For a validated event, select require_declared_shock_coverage and provide
+    ! its checksummed time/surface/observer requirements instead.
+    trajectory_validity_policy = report_only
+  #end handoff
+  #begin diagnostics
+    magnetic_compression = true
+    ht_frame = false
+    ! Enabling HT output also requires declared conditioning/velocity bounds.
+    ! No general first-critical Mach number is inferred from a constant.
+    criticality_model = none
+  #end diagnostics
+  #begin domain
+    ! Full domain: native coverage over the declared mesh.
+    ! Corridor: change mode and supply observer/field-family footprint settings;
+    ! then label native coverage as corridor-only. Geometry remains analytical.
+    mode = full_domain
+  #end domain
+  #begin output
+    directory = test_output/reduced_front/handoff_smoke
+    retain_all_epochs = true
+    surface_formats = csv, vtk
+    receipt_format = json
+    volume_field_role = ambient_reference
+    emit_trajectory_validity = true
+  #end output
+#end physics
 ```
 
 The minimum useful receipt set includes initialization, at least one pre-handoff epoch, the resolved crossing, and a post-handoff epoch. With output at 0, 60, and 120 s, the 60-s record is before handoff and the 120-s record is after it; the crossing record should be evaluated explicitly at 69.57 s. Acceleration continuity is not promised for a sharp switch to the drag law.
@@ -1620,49 +1624,51 @@ The minimum useful receipt set includes initialization, at least one pre-handoff
 
 Use a separately named deck, for example `shock_front_corona_to_1au.in`, with the same explicit ambient/magnetic authorities and a history such as:
 
-```ini
-# PROPOSED replacements for the corresponding smoke-deck sections.
-# Do not append a second copy of an existing section/key.
-
-[run]
-mode = shock_front_ambient
-reference_epoch = 2026-10-04T00:00:00Z
-time_scale = UTC_resolved_to_elapsed_SI_seconds
-coordinate_frame = HCI
-start_time_s = 0
-end_time_s = 345600
-# Coarse illustrative maximum: use a smaller validated cadence during
-# the acceleration/low-coronal phase and demonstrate convergence.
-background_dt_s = 60
-particle_mode = disabled
-
-[coronal_history]
-model = quintic_velocity_pulse_then_constant_speed
-initial_apex_radius_m = 800055000
-initial_apex_speed_m_s = 100000
-final_pulse_speed_m_s = 1000000
-acceleration_duration_s = 600
-valid_start_s = 0
-valid_end_s = 345600
-quantity = shock_front
-
-[endpoint]
-apex_radius_m = 149597870700
-evaluate_exact_crossing = true
-# A synthetic +X target is not the actual Earth ephemeris.
-observer_id = synthetic_target_x
-observer_position_hci_m = 149597870700, 0, 0
-# This fixture tests geometry/epochs even if the proxy loses shock validity.
-# An event shock-arrival qualification must enable and pass this requirement.
-require_fast_shock_at_observer = false
-
-[output]
-directory = test_output/reduced_front/corona_to_1au
-retain_all_epochs = true
-surface_formats = csv, vtk
-receipt_format = json
-volume_field_role = ambient_reference
-emit_trajectory_validity = true
+```text
+#begin physics: shock_front
+  ! PROPOSED replacements for the corresponding smoke-deck sections.
+  ! Do not append a second copy of an existing section/key.
+  #begin run
+    mode = shock_front_ambient
+    reference_epoch = 2026-10-04T00:00:00Z
+    time_scale = UTC_resolved_to_elapsed_SI_seconds
+    coordinate_frame = HCI
+    start_time_s = 0
+    end_time_s = 345600
+    ! Coarse illustrative maximum: use a smaller validated cadence during
+    ! the acceleration/low-coronal phase and demonstrate convergence.
+    background_dt_s = 60
+    particle_mode = disabled
+  #end run
+  #begin coronal_history
+    model = quintic_velocity_pulse_then_constant_speed
+    initial_apex_radius_m = 800055000
+    initial_apex_speed_m_s = 100000
+    final_pulse_speed_m_s = 1000000
+    acceleration_duration_s = 600
+    valid_start_s = 0
+    valid_end_s = 345600
+    quantity = shock_front
+  #end coronal_history
+  #begin endpoint
+    apex_radius_m = 149597870700
+    evaluate_exact_crossing = true
+    ! A synthetic +X target is not the actual Earth ephemeris.
+    observer_id = synthetic_target_x
+    observer_position_hci_m = 149597870700, 0, 0
+    ! This fixture tests geometry/epochs even if the proxy loses shock validity.
+    ! An event shock-arrival qualification must enable and pass this requirement.
+    require_fast_shock_at_observer = false
+  #end endpoint
+  #begin output
+    directory = test_output/reduced_front/corona_to_1au
+    retain_all_epochs = true
+    surface_formats = csv, vtk
+    receipt_format = json
+    volume_field_role = ambient_reference
+    emit_trajectory_validity = true
+  #end output
+#end physics
 ```
 
 Here `R0=1.15 R_sun`. After the pulse, `R_a(600 s)=1.130055e9 m` and the speed is `1.0e6 m/s`. For a sharp handoff at 20 solar radii and the constant-drag reference above, the handoff occurs at about 13383.945 s. The reference apex reaches 1 AU at about 203884.494 s, or 56.635 hours after initialization. These are analytical fixture calculations, not an event forecast or a verified AMPS run. A four-day interval therefore covers the reference endpoint; an implementation must still locate and publish the actual endpoint and demonstrate its supported surface coverage.

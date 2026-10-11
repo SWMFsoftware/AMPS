@@ -321,20 +321,38 @@ def _section_reference_exists(reference: str, module_text: str) -> bool:
 
 
 def _configuration_key_exists(reference: str, configuration_text: str) -> bool:
-    """Resolve a ``section.key`` trace against the Section-14 input grammar."""
+    """Resolve a ``section.key`` trace against the Section-14 input listing.
+
+    Section 14 lists the schema in the generic AMPS runtime-input notation
+    (``src/INPUT_FILE.md``): one ``#begin physics: sep_coronal_cme`` block whose
+    child blocks are the schema sections.  A section name is the dot-joined
+    path of its blocks below that wrapper (``#begin KIND: NAME`` contributes
+    ``KIND.NAME``), exactly as ``src/configuration_parser.cpp`` builds it.  Only
+    blocks inside the model wrapper are searched, so the separate srcSEP
+    consumer listing cannot satisfy a model-key trace.
+    """
 
     if reference.count(".") != 1:
         return False
     section, key = reference.split(".")
-    header = re.search(rf"^\[{re.escape(section)}\]\s*$", configuration_text,
-                       re.MULTILINE)
-    if header is None:
-        return False
-    next_header = re.search(r"^\[[^]]+\]\s*$", configuration_text[header.end():],
-                            re.MULTILINE)
-    stop = header.end() + next_header.start() if next_header else len(configuration_text)
-    block = configuration_text[header.end():stop]
-    return re.search(rf"^{re.escape(key)}\s*=", block, re.MULTILINE) is not None
+    stack: List[str] = []
+    for raw in configuration_text.splitlines():
+        line = raw.split("!", 1)[0].strip()
+        begin = re.fullmatch(r"#begin\s+([A-Za-z_][A-Za-z_0-9]*)"
+                             r"(?:\s*:\s*([A-Za-z_0-9]+))?", line)
+        if begin:
+            kind, name = begin.group(1), begin.group(2)
+            stack.append(f"{kind}.{name}" if name else kind)
+            continue
+        if re.fullmatch(r"#end\s+[A-Za-z_][A-Za-z_0-9]*", line):
+            if stack:
+                stack.pop()
+            continue
+        if (len(stack) >= 2 and stack[0] == "physics.sep_coronal_cme" and
+                ".".join(stack[1:]) == section and
+                re.match(rf"{re.escape(key)}\s*=", line)):
+            return True
+    return False
 
 
 def _api_record_exists(name: str, architecture_text: str) -> bool:

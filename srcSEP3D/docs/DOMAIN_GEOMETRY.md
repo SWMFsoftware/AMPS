@@ -1,7 +1,7 @@
 # Domain geometry, solar neighbourhood and finite field-line corridor
 
 The complete example is `examples/sep3d_analytic_parker_corner_sphere.in`.
-These controls extend the existing input grammar additively. Older decks keep
+These controls extend the existing srcSEP3D key set additively. Older decks keep
 their Sun-centered cube, source-shell radial anchor and corridor-only mask.
 The Sun remains at the heliocentric coordinate origin; the Cartesian root
 box moves around it. No field, CME, observer or coordinate frame is translated.
@@ -11,41 +11,52 @@ z=0. The earlier three-axis corner layout remains an explicit alternative.
 
 ## Input controls
 
-```ini
-[domain]
-inner_radius_m = 6.957e8
-outer_radius_mode = field-line-endpoint
-box_geometry = field-line-xy-corner-cube
-corner_direction_x = 0
-corner_direction_y = 0
-corner_direction_z = 0
-corner_margin_m = 1.495978707e9
+```text
+#begin mesh
+  #begin domain
+    inner_radius_m = 6.957e8
+    outer_radius_mode = field-line-endpoint
+    box_geometry = field-line-xy-corner-cube
+    corner_direction_x = 0
+    corner_direction_y = 0
+    corner_direction_z = 0
+    corner_margin_m = 1.495978707e9
+  #end domain
 
-[parker_spiral]
-start_mode = explicit
-initial_x_m = 6.957e8
-initial_y_m = 0
-initial_z_m = 0
-end_radius_m = 1.6455765777e11
-length_m = 0
+  #begin field_line
+    start_mode = explicit
+    initial_x_m = 6.957e8
+    initial_y_m = 0
+    initial_z_m = 0
+    end_radius_m = 1.6455765777e11
+    length_m = 0
+  #end field_line
 
-[mesh.solar]
-anchor = photosphere
-enabled = true
-surface_cell_size_m = 3.4785e8
-transition_outer_radius_m = 1.3914e10
-profile = smoothstep
-exponent = 1
+  #begin refinement: solar
+    anchor = photosphere
+    enabled = true
+    surface_cell_size_m = 3.4785e8
+    transition_outer_radius_m = 1.3914e10
+    profile = smoothstep
+    exponent = 1
+  #end refinement
 
-[mesh.active_region]
-mode = parker-tube
-solar_sphere_radius_m = 2.0871e10
+  #begin active_region
+    mode = parker-tube
+    solar_sphere_radius_m = 2.0871e10
+  #end active_region
+#end mesh
 ```
+
+The qualified names are `mesh.domain.*`, `mesh.field_line.*`,
+`mesh.refinement.solar.*` and `mesh.active_region.*` (generic AMPS block input,
+[`../../src/INPUT_FILE.md`](../../src/INPUT_FILE.md); formerly the INI sections
+`[domain]`, `[parker_spiral]`, `[mesh.solar]` and `[mesh.active_region]`).
 
 This is a fragment, not a replacement for a complete deck. Existing corridor
 width, refinement, halo, provider, species, source and output controls remain
 explicit in the supplied example. All new corner fields must be present when
-that layout is selected. `outer_radius_m` and `preset` are inactive in endpoint
+that layout is selected. `mesh.domain.outer_radius_m` and `mesh.domain.preset` are inactive in endpoint
 mode; the resolved endpoint distance enters the immutable configuration.
 
 `end_radius_m` is a heliocentric distance in metres. It owns the physical outer

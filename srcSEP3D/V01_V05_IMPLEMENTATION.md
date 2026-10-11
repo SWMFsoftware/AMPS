@@ -19,7 +19,8 @@ histories. The timestep limiter uses the largest diffusion-tensor eigenvalue.
 Current-sheet drift remains unsupported because no background contract defines
 a sheet surface, thickness, or regularization.
 
-Input fields under `[transport]` are `perpendicular_diffusion =
+Input fields in the `application: sep3d` / `transport` block
+(`application.sep3d.transport.*`) are `perpendicular_diffusion =
 none|constant|constant-ratio`, `constant_kappa_perpendicular_m2_per_s`,
 `kappa_perpendicular_to_parallel_ratio`, and `drifts =
 none|gradient-b|curvature|gradient-curvature`. Inert legacy `false` remains

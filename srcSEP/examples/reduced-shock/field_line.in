@@ -1,119 +1,188 @@
-# Native srcSEP schema-3 line for the reduced background-only example.
-# The line starts at the maintained 20-Rsun Parker source surface and ends at
-# the declared +Z 1-AU observer.  The shared provider itself begins at the
-# low-coronal launch radius; srcSEP samples it only where this line exists.
-[run]
-schema_version = 3
-# This configured PIC step is 300 s.  The maintained standalone srcSEP build
-# advances its authoritative application clock in two AMPS update hooks per
-# outer driver iteration, so the provider sees exactly its declared 600-s
-# epoch cadence.  The runtime refuses off-cadence epochs rather than rounding
-# a mismatched application clock onto a different physical realization.
-time_step_s = 300
+! Native srcSEP schema-6 line for the reduced background-only example.
+! The line starts at the maintained 20-Rsun Parker source surface and ends at
+! the declared +Z 1-AU observer.  The shared provider itself begins at the
+! low-coronal launch radius; srcSEP samples it only where this line exists.
+#begin run
+  ! This configured PIC step is 300 s.  The maintained standalone srcSEP build
+  ! advances its authoritative application clock in two AMPS update hooks per
+  ! outer driver iteration, so the provider sees exactly its declared 600-s
+  ! epoch cadence.  The runtime refuses off-cadence epochs rather than rounding
+  ! a mismatched application clock onto a different physical realization.
+  time_step_s = 300
+#end run
 
-[injection]
-# Schema 3 retains the baseline positive source count.  The reduced event's
-# particle_mode=disabled removes every native injection callback, and runtime
-# checks require the actual AMPS population to remain zero.
-macroparticles_per_step = 1
+#begin application: sep
+  schema_version = 6
+  ! parker | focused-diffusion | focused-scattering (srcSEP movers parker,
+  ! fte-dmumu, fte-mfp); --particle-mover overrides it.
+  transport = focused-diffusion
 
-[species]
-particle_weight = 1e30
+  ! The only application-specific block: srcSEP's turbulence model.
+  ! Every key has a command-line option that overrides it.
+  #begin turbulence
+    ! Self-consistent Alfven-wave turbulence on the field line
+    source = self-consistent-integrated
+    representation = integrated
+    coupling = streaming-energy-exchange
+    advection = true
+    reflection = true
+    cascade = true
+    shock_injection = true
+    ! Boundary policies; the values are J (energy/reservoir) or W (flux)
+    inner_boundary = fixed-reservoir
+    inner_boundary_value_si = 0
+    outer_boundary = fixed-reservoir
+    outer_boundary_value_si = 0
+    ! Reflection/cascade closures and the spectral grid
+    reflection_coefficient = 0.6
+    cascade_coefficient = 0.8
+    perpendicular_correlation_length_m = 1e7
+    electron_heating_fraction = 0.3
+    spectral_k_min_per_m = 1e-10
+    spectral_k_max_per_m = 1e-2
+    spectral_bins = 128
+    ! Operator accuracy controls
+    cfl_safety = 0.8
+    operator_accuracy_safety = 0.25
+    maximum_source_fraction = 0.25
+    maximum_cascade_fraction = 0.2
+    minimum_substep_s = 1e-12
+    maximum_substeps = 1000000
+    conservation_relative_tolerance = 1e-12
+    ! Wave energy deposited by the shock and its E+ share
+    shock_source_efficiency = 0.02
+    shock_source_plus_fraction = 0.5
+    ! Spectrum diagnostic cadence in main-loop steps (0 = off)
+    diagnostic_cadence_steps = 100
+  #end turbulence
+#end application
 
-[observer.earth]
-heliocentric_radius_m = 1.495978707e11
-minimum_energy_j = 1.602176634e-15
-maximum_energy_j = 8.01088317e-11
-energy_channels = 70
-energy_spacing = logarithmic
-pitch_angle_bins = 24
+#begin mesh
+  global_cell_size_m = 3.7399467675e10
+  minimum_cell_size_m = 2.991957414e9
+  maximum_level = 6
 
-[output]
-mesh_tecplot_file = srcsep-reduced-mesh.dat
-field_line_tecplot_file = srcsep-reduced-field-line.dat
-data_tecplot_file = srcsep-reduced-native-data.dat
+  #begin field_line
+    origin_x_m = 0
+    origin_y_m = 0
+    origin_z_m = 0
+    initial_x_m = 0
+    initial_y_m = 0
+    initial_z_m = 1.3914e10
+    length_m = 1.356838707e11
+    point_count = 513
+  #end field_line
 
-[parker_spiral]
-origin_x_m = 0
-origin_y_m = 0
-origin_z_m = 0
-initial_x_m = 0
-initial_y_m = 0
-initial_z_m = 1.3914e10
-length_m = 1.356838707e11
-point_count = 513
+  #begin domain
+    inner_radius_m = 1.3914e10
+    outer_radius_m = 1.495978707e11
+  #end domain
 
-[domain]
-inner_radius_m = 1.3914e10
-outer_radius_m = 1.495978707e11
+  #begin refinement: solar
+    enabled = true
+    surface_cell_size_m = 2.991957414e9
+    transition_outer_radius_m = 3.7399467675e10
+    profile = smoothstep
+    exponent = 1
+  #end refinement
 
-[mesh]
-global_cell_size_m = 3.7399467675e10
-minimum_cell_size_m = 2.991957414e9
-maximum_level = 6
+  #begin refinement: tube
+    enabled = true
+    reference_radius_m = 1.495978707e11
+    radius_at_reference_m = 5.983914828e9
+    radius_mode = constant-angular-width
+    center_cell_size_m = 2.991957414e9
+    transverse_profile = smoothstep
+    transverse_exponent = 1
+  #end refinement
+#end mesh
 
-[mesh.solar]
-enabled = true
-surface_cell_size_m = 2.991957414e9
-transition_outer_radius_m = 3.7399467675e10
-profile = smoothstep
-exponent = 1
+#begin physics: background
+  ! srcSEP's ambient plasma is the standalone SWCME state along the
+  ! Parker field line; physics: swcme owns the solar-wind values.
+  provider = swcme
+#end physics
 
-[mesh.tube]
-enabled = true
-reference_radius_m = 1.495978707e11
-radius_at_reference_m = 5.983914828e9
-radius_mode = constant-angular-width
-center_cell_size_m = 2.991957414e9
-transverse_profile = smoothstep
-transverse_exponent = 1
+! The shock is the canonical SWCME front.
+#begin physics: shock
+  authority = swcme
+#end physics
 
-[background.parker]
-solar_wind_speed_m_per_s = 400000
-solar_rotation_rate_rad_per_s = 2.86533e-6
+! This block remains required by schema 6 and fixes the Parker-line
+! geometry.  It is not the selected volume provider when --reduced-shock-event
+! is present; the shared corona/SWCME ambient overwrites every native vertex.
+#begin physics: swcme
+  preset = fast
+  ambient.wind_speed = 400 km/s
+  ambient.density_1au = 6 cm^-3
+  ambient.magnetic_field_1au = 5 nT
+  ambient.proton_temperature = 1.2e5 K
+  ambient.adiabatic_index = 1.6666666666666667
+  ambient.alpha_to_proton_ratio = 0.04
+  ambient.electron_temperature = 1.2e5 K
+  ambient.alpha_temperature = 4.8e5 K
+  ambient.thermodynamic_closure = proton_only
+  parker.radial_polarity = 1
+  parker.sin_theta = 0
+  parker.source_radius = 20 Rs
+  cme.kinematics = dbm
+  cme.launch_radius = 20 Rs
+  cme.launch_speed = 1900 km/s
+  cme.drag_coefficient = 8e-8 1/km
+  cme.extrapolation = outside_time
+  shock.region_mode = shock_only
+  shock.acceleration_mode = source
+  shock.relative_source_weight_per_area = 1
+  geometry.sheath_thickness_1au = 0.12 AU
+  geometry.ejecta_thickness_1au = 0.22 AU
+  smoothing.shock_width_1au = 0.010 AU
+  smoothing.leading_edge_width_1au = 0.020 AU
+  smoothing.trailing_edge_width_1au = 0.030 AU
+  sheath.ramp_power = 2
+  sheath.leading_edge_speed_factor = 1.12
+  ejecta.density_factor = 0.50
+  ejecta.speed_factor = 0.80
+  event.launch_epoch = 0 s
+  event.valid_from = 0 s
+  event.valid_until = 604800 s
+#end physics
 
-# This legacy section remains required by schema 3 and fixes the Parker-line
-# geometry.  It is not the selected volume provider when --reduced-shock-event
-# is present; the shared corona/SWCME ambient overwrites every native vertex.
-[swcme]
-preset = fast
-ambient.wind_speed = 400 km/s
-ambient.density_1au = 6 cm^-3
-ambient.magnetic_field_1au = 5 nT
-ambient.proton_temperature = 1.2e5 K
-ambient.adiabatic_index = 1.6666666666666667
-ambient.alpha_to_proton_ratio = 0.04
-ambient.electron_temperature = 1.2e5 K
-ambient.alpha_temperature = 4.8e5 K
-ambient.thermodynamic_closure = proton_only
-parker.radial_polarity = 1
-parker.sin_theta = 0
-parker.source_radius = 20 Rs
-cme.kinematics = dbm
-cme.launch_radius = 20 Rs
-cme.launch_speed = 1900 km/s
-cme.drag_coefficient = 8e-8 1/km
-cme.extrapolation = outside_time
-shock.region_mode = shock_only
-shock.acceleration_mode = source
-shock.relative_source_weight_per_area = 1
-geometry.sheath_thickness_1au = 0.12 AU
-geometry.ejecta_thickness_1au = 0.22 AU
-smoothing.shock_width_1au = 0.010 AU
-smoothing.leading_edge_width_1au = 0.020 AU
-smoothing.trailing_edge_width_1au = 0.030 AU
-sheath.ramp_power = 2
-sheath.leading_edge_speed_factor = 1.12
-ejecta.density_factor = 0.50
-ejecta.speed_factor = 0.80
-event.launch_epoch = 0 s
-event.valid_from = 0 s
-event.valid_until = 604800 s
-source.particle_mass = 1 mp
-source.charge_number = 1
-source.energy_min = 0.1 MeV
-source.energy_max = 500 MeV
-source.reference_energy = 10 MeV
-source.injection_efficiency = 3.4e-4
-source.normalization = relative_only
-source.reference_intensity_si = 1 si
+#begin source: shock
+  enabled = true
+  ! Schema 3 retains the baseline positive source count.  The reduced event's
+  ! particle_mode=disabled removes every native injection callback, and runtime
+  ! checks require the actual AMPS population to remain zero.
+  samples_per_step = 1
+
+  ! Kinetic-energy range and injection efficiency of the source.
+  minimum_energy_j = 1.602176634e-14
+  maximum_energy_j = 8.01088317e-11
+  injection_efficiency = 3.4e-4
+  ! Reference spectrum of the canonical SWCME source (written once here;
+  ! srcSEP and srcSEP3D synthesize the SWCME source.* keys from it).
+  spectrum_reference_energy_j = 1.602176634e-12
+  spectrum_particle_mass_kg = 1.67262192595e-27
+  spectrum_charge_number = 1
+  spectrum_normalization = relative-only
+  spectrum_reference_intensity_per_m2_s_sr_j = 1
+#end source
+
+#begin species
+  macroparticle_weight = 1e30
+#end species
+
+#begin observer: earth
+  kind = field-line-radius
+  heliocentric_radius_m = 1.495978707e11
+  minimum_energy_j = 1.602176634e-15
+  maximum_energy_j = 8.01088317e-11
+  energy_bins = 70
+  energy_spacing = logarithmic
+  pitch_angle_bins = 24
+#end observer
+
+#begin output
+  initialization_mesh_tecplot_file = srcsep-reduced-mesh.dat
+  initialization_field_line_tecplot_file = srcsep-reduced-field-line.dat
+  initialization_data_tecplot_file = srcsep-reduced-native-data.dat
+#end output

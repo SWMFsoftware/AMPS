@@ -2995,7 +2995,7 @@ The last column repeats defaults that this specification already fixes. "None" m
 | D11 | For supplied tables: stored quantity, axes and units, particle-axis type, interpolation order, time rule, boundary policy on each axis, knot behavior, and generation provenance and checksum | tabulated_parallel | Out of domain at every boundary; no extrapolation |
 | D12 | Out-of-domain, fallback, bound and extrapolation policies | All backends | Explicit failure, no fallback, no bound, no extrapolation (Section 14.5) |
 | D13 | Required outputs for each consumer: scalar pair, D_mu_mu, perpendicular pair, derivatives | PD09–PD11 | None. Regardless of the request, NLGCE-F and the coupled nonlinear backends return their perpendicular pair (Sections 11.3 and 14.1) |
-| D14 | Input syntax: approval of the [parallel_diffusion] block for srcSEP3D and the ParallelDiffusion block for srcSEP, backward-compatible keys, and where units are converted | PD11 | None; no binding |
+| D14 | Input syntax: approval of the parallel-diffusion block for srcSEP3D and srcSEP (as implemented after the generic AMPS input-format migration, the `physics: parallel_diffusion` block in both hosts; originally proposed as the INI `[parallel_diffusion]` section for srcSEP3D and a `ParallelDiffusion` block for srcSEP), backward-compatible keys, and where units are converted | PD11 | None; no binding |
 | D15 | Restart and output metadata, and the policy when a restart requests a different model or configuration | PD11 | None |
 | D16 | Transport consumer for each run, and confirmation that the same scattering is not applied through both D_mu_mu and kappa_parallel | PD11 | Never both (Section 7.3) |
 

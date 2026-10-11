@@ -14,7 +14,14 @@ void CFG3D12() {
   const std::string good = Fixture();
   const auto parsed = ParseGood(good);
   Require(parsed.schema5.schemaVersion == 5, "schema-5 dispatch failed");
-  RequireRejected(good + "\n[run]\nunknown_key = 1\n", "unknown key");
+  RequireRejected(ReplaceOnce(good, "schema_version = 5",
+                              "schema_version = 5\n    unknown_key = 1"),
+                  "unknown key");
+  RequireRejected(ReplaceOnce(good, "  #end run", "  #end run\n  #begin run\n  #end run"),
+                  "duplicate section block");
+  RequireRejected(ReplaceOnce(good, "#begin physics: sep_coronal_cme",
+                              "#begin physics: sep_coronal_cme\n  schema_version = 5"),
+                  "assignment outside a section block");
   RequireRejected(ReplaceOnce(good, "schema_version = 5",
                               "schema_version = 5\nschema_version = 5"),
                   "duplicate version");
@@ -24,17 +31,16 @@ void CFG3D12() {
 }
 
 void CFG3D13() {
-  for (int version = 1; version <= 4; ++version) {
-    const std::string bytes = "# legacy bytes stay opaque\n[run]\n"
-        "schema_version = " + std::to_string(version) +
-        "\nlegacy application syntax = untouched\n";
-    const auto result = ParseGood(bytes);
-    Require(result.disposition ==
-                SEP::CoronalCME::ParseDisposition::LegacyPassThrough,
-            "legacy deck was reinterpreted");
-    Require(result.legacyBytes == bytes, "legacy bytes changed");
-    Require(!result.fingerprint.empty(), "legacy fingerprint missing");
-  }
+  // Only schema 5 exists for this model.  Schemas 1-4 were srcSEP3D
+  // application decks, which srcSEP3D now reads itself; this library must
+  // reject them instead of passing opaque legacy bytes through.
+  const std::string good = Fixture();
+  for (int version = 1; version <= 4; ++version)
+    RequireRejected(ReplaceOnce(good, "schema_version = 5",
+                                "schema_version = " + std::to_string(version)),
+                    "non-5 schema version");
+  // Retired INI syntax is not part of the generic grammar.
+  RequireRejected("[run]\nschema_version = 5\n", "retired INI section header");
 }
 
 void CFG3D14() {

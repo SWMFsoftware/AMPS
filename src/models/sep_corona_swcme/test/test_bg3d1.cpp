@@ -80,8 +80,11 @@ std::string Configuration(const std::map<std::string,std::string>& assets,
   const auto checksum=[&](const std::string& key) {
     return SEP::CoronalCME::ComputeContentChecksum(assets.at(key));
   };
+  // The record is generic AMPS runtime input (src/INPUT_FILE.md): one
+  // physics: cme_background block holding the model's dotted keys.
   std::ostringstream out;
-  out<<"run.profile=pfss-parker-shock-fed-map-v1\n"
+  out<<"#begin physics: cme_background\n"
+     <<"run.profile=pfss-parker-shock-fed-map-v1\n"
      <<"run.coordinate_frame=inertial-hci\n"
      <<"run.start_s=0\nrun.end_s=200000\n"
      <<"domain.solar_radius_m=695700000\n"
@@ -109,7 +112,8 @@ std::string Configuration(const std::map<std::string,std::string>& assets,
      <<"handoff.ambient_speed_m_s=400000\n"
      <<"handoff.drag_coefficient_per_m=1e-11\n"
      <<"numerics.root_tolerance_s=0.001\n"
-     <<"numerics.maximum_apex_acceleration_m_s2=100000\n";
+     <<"numerics.maximum_apex_acceleration_m_s2=100000\n"
+     <<"#end physics\n";
   return out.str();
 }
 
@@ -197,7 +201,11 @@ void TestStrictIdentityAndNegatives() {
   Require(!result.ok()&&result.status.code==SEP::Core::StatusCode::DataIntegrityFailure,
       "corrupt asset checksum was not a data-integrity failure");
 
-  result=SEP::CoronaSwcme::ResolveEventConfiguration(valid+"unknown.key=1\n",reader);
+  // Insert inside the block: text after '#end physics' would exercise the
+  // generic grammar ("outside any block") instead of the closed model schema.
+  std::string unknown=valid;
+  unknown.insert(unknown.rfind("#end physics"),"unknown.key=1\n");
+  result=SEP::CoronaSwcme::ResolveEventConfiguration(unknown,reader);
   Require(!result.ok(),"unknown event key accepted");
   result=SEP::CoronaSwcme::ResolveEventConfiguration(
       Configuration(assets,"legacy-phenomenology"),reader);

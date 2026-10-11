@@ -2,8 +2,8 @@
 """Generate the schema-5 key registry from the normative Section-14 block.
 
 The configuration prose is the human-maintained authority.  This utility
-extracts its single ``ini`` grammar block and produces a small C++ include used
-by the two-pass parser.  The generated file contains no host path or timestamp,
+extracts its normative grammar listing (generic AMPS block notation) and
+produces a small C++ include used by the parser.  The generated file contains no host path or timestamp,
 so a clean checkout produces byte-identical parser metadata.
 
 The generator deliberately does *not* infer physics defaults.  It records the
@@ -35,30 +35,59 @@ def write_text_lf(path: Path, content: str) -> None:
         stream.write(content)
 
 
-def extract() -> list[tuple[str, str, str]]:
-    text = SOURCE.read_text(encoding="utf-8")
-    blocks = re.findall(r"```ini\n(.*?)```", text, flags=re.DOTALL)
-    # Section 14 also contains a later, explicitly post-schema-5 research
-    # sketch.  Only the first block is the released schema-5 grammar; treating
-    # a future selector as current would falsely advertise unavailable physics.
-    if len(blocks) < 1:
-        raise RuntimeError(
-            f"expected the normative ini block in {SOURCE}, found none")
+NORMATIVE_MARKER = "! Normative schema-5 grammar"
 
-    section = ""
+
+def extract() -> list[tuple[str, str, str]]:
+    """Read the normative Section-14 listing written in AMPS block notation.
+
+    The listing is the fenced ``text`` block whose first line starts with
+    ``NORMATIVE_MARKER``; other listings in Section 14 (the short runnable
+    skeleton and the post-schema-5 srcSEP consumer sketch) are deliberately
+    ignored, because treating them as released grammar would advertise keys
+    the parser does not accept.  Inside the single
+    ``#begin physics: sep_coronal_cme`` wrapper every block is one schema
+    section whose name is the dot-joined block path, ``#begin KIND: NAME``
+    contributing ``KIND.NAME`` -- the same rule ``src/configuration_parser.cpp``
+    applies to a deck (``#begin species: ID`` -> ``species.ID``; ``#begin
+    center_distance`` nested in ``#begin shock_geometry`` ->
+    ``shock_geometry.center_distance``).  ``!`` starts a comment.
+    """
+
+    text = SOURCE.read_text(encoding="utf-8")
+    blocks = [block for block in
+              re.findall(r"```text\n(.*?)```", text, flags=re.DOTALL)
+              if block.startswith(NORMATIVE_MARKER)]
+    if len(blocks) != 1:
+        raise RuntimeError(
+            f"expected exactly one normative schema-5 listing in {SOURCE}, "
+            f"found {len(blocks)}")
+
+    stack: list[str] = []
     entries: list[tuple[str, str, str]] = []
     seen: set[tuple[str, str]] = set()
     for number, source_line in enumerate(blocks[0].splitlines(), start=1):
-        line = source_line.strip()
-        if not line or line.startswith("#"):
+        line = source_line.split("!", 1)[0].strip()
+        if not line:
             continue
-        if line.startswith("[") and line.endswith("]"):
-            section = line[1:-1]
-            if not re.fullmatch(
-                    r"[a-z][a-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*", section):
-                raise RuntimeError(f"invalid section {section!r} on grammar line {number}")
+        begin = re.fullmatch(
+            r"#begin\s+([a-z][a-z0-9_]*)(?:\s*:\s*([A-Za-z][A-Za-z0-9_]*))?",
+            line)
+        if begin:
+            stack.append(f"{begin.group(1)}.{begin.group(2)}"
+                         if begin.group(2) else begin.group(1))
             continue
-        if "=" not in line or not section:
+        end = re.fullmatch(r"#end\s+([a-z][a-z0-9_]*)", line)
+        if end:
+            if not stack or stack[-1].split(".", 1)[0] != end.group(1):
+                raise RuntimeError(f"unbalanced '#end {end.group(1)}' on grammar line {number}")
+            stack.pop()
+            continue
+        if not stack or stack[0] != "physics.sep_coronal_cme" or len(stack) < 2:
+            raise RuntimeError(
+                f"assignment outside a section of the model block on grammar line {number}: {line}")
+        section = ".".join(stack[1:])
+        if "=" not in line:
             raise RuntimeError(f"invalid assignment on grammar line {number}: {line}")
         key, expression = (part.strip() for part in line.split("=", 1))
         if not re.fullmatch(r"[a-z][a-z0-9_]*", key):
@@ -68,6 +97,8 @@ def extract() -> list[tuple[str, str, str]]:
             raise RuntimeError(f"duplicate grammar key {section}.{key}")
         seen.add(identity)
         entries.append((section, key, expression))
+    if stack:
+        raise RuntimeError(f"unclosed block(s) {stack} at the end of the grammar")
     return entries
 
 

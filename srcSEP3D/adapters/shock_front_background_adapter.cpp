@@ -55,7 +55,9 @@ Core::Status ShockFrontBackgroundAdapter::Create(
       "inline shock-front model configuration is empty":
       "cannot read shock-front event asset '"+eventPath.string()+"'");
   // The application owns filesystem policy only.  Resolve transitive assets
-  // beside the event deck (or the shared-input subsection), then hand their
+  // beside the event file (or beside the input file that holds the included
+  // physics: shock_front block, whose canonical text is the inline
+  // configuration), then hand their
   // bytes to the dependency-light shared resolver. Both paths invoke the same
   // strict schema/checksum/physics gate and therefore produce the same event
   // identity for identical physical assignments and magnetic bytes.
@@ -67,7 +69,8 @@ Core::Status ShockFrontBackgroundAdapter::Create(
             SEP::Core::StatusCode::OutOfDomain,
             "cannot read reduced asset '"+path.string()+"'");
         return SEP::Core::Result<std::string>::Success(bytes);
-      });
+      },inlineModel?std::string("srcSEP3D physics: shock_front block"):
+          eventPath.string());
   if(!resolved.ok())return Invalid("cannot resolve shock-front event: "+
       resolved.status.message);
   const auto shared=SEP::CoronaSwcme::ShockFront::Provider::Create(resolved.value);

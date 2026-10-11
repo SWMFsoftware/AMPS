@@ -4,6 +4,8 @@
 #include "swcme3d_input.hpp"
 #include "background_factory.h"
 #include "parallel_diffusion/parallel_diffusion.h"
+#include "amps_input.h"
+#include "sep_input_layout.h"
 
 #include <algorithm>
 #include <cctype>
@@ -117,19 +119,6 @@ bool NearlyEqual(double left, double right) {
                std::max(std::fabs(left), std::fabs(right)));
 }
 
-bool KnownSection(const std::string& section) {
-  static const std::set<std::string> fixed = {
-      "run", "domain", "parker_spiral", "mesh", "mesh.solar", "mesh.tube",
-      "mesh.active_region", "memory", "population_control",
-      "background", "background.parker", "turbulence", "transport",
-      "parallel_diffusion",
-      "shock", "source", "species", "storage", "output", "restart",
-      "swcme"};
-  return fixed.count(section) != 0 ||
-         (section.rfind("observer.", 0) == 0 &&
-          section.size() > std::string("observer.").size());
-}
-
 template <typename Enum>
 bool ParseEnum(const std::string& text,
                const std::map<std::string, Enum>& values, Enum* result) {
@@ -158,133 +147,157 @@ ObserverOptions* ObserverForSection(
   return &options->observers.back();
 }
 
+// Apply one srcSEP3D key.  'spectrum' collects the source: shock reference-
+// spectrum settings (decision D4) that are not srcSEP3D options themselves
+// but become the canonical SWCME 'source.*' assignments once the whole
+// document is known (SEP::InputLayout::SynthesizeSwcmeSource()).
 Core::Status ApplyField(const std::string& section, const std::string& key,
                         const std::string& value,
                         RunConfiguration3DOptions* o,
-                        bool* observerDefaultsCleared) {
+                        bool* observerDefaultsCleared,
+                        SEP::InputLayout::SwcmeSourceSettings* spectrum) {
   const std::string field = section.empty() ? key : section + "." + key;
   auto invalidValue = [&]() {
     return Invalid("invalid value for '" + field + "': " + value);
   };
 
-  if (field == "run.schema_version") {
+  if (field == "application.sep.schema_version") {
+    // Decision D1 (sep_input_layout.h): srcSEP and srcSEP3D share content
+    // schema 6.  The srcSEP3D INI-era schemas 1-5 are retired without a
+    // compatibility path; naming one is a typed error that points at the
+    // converter rather than a silent reinterpretation.  The typed
+    // RunConfiguration3DOptions::inputSchemaVersion keeps its contract levels
+    // for parser-free hosts; a file always installs level 6, which satisfies
+    // every "level >= N" completeness rule of the typed factory.
     std::uint64_t version = 0;
-    if (!ParseUnsigned64(value, &version) || version < 1 || version > 5)
-      return invalidValue();
+    if (!ParseUnsigned64(value, &version)) return invalidValue();
+    if (version != SEP::InputLayout::kSchemaVersion)
+      return Invalid("application.sep.schema_version = " + value +
+                     " is retired; srcSEP and srcSEP3D read only the shared "
+                     "schema 6 (convert with tools/convert_amps_input.py "
+                     "sep6-from-srcsep3d)");
     o->inputSchemaVersion = static_cast<unsigned>(version);
     return Core::Status::OK();
   }
-  if (section == "swcme") {
-    SwcmeAssignment assignment;
-    assignment.key = key;
-    assignment.value = value;
-    o->swcmeAssignments.push_back(assignment);
-    return Core::Status::OK();
-  }
-  // [parallel_diffusion] never reaches ApplyField(): ParseConfigurationText()
-  // forwards that section's raw lines to the library-owned section parser
-  // (SEP::ParallelDiffusion::ParseSection), which owns its grammar, model
-  // selection, and per-model key schema.
-  if (field == "run.intent") {
+  // The model blocks physics: swcme, physics: parallel_diffusion and
+  // physics: shock_front never reach ApplyField(): WalkBlocks() hands them to
+  // the shared libraries that own their vocabularies.
+  if (field == "application.sep.intent") {
     if (!ParseEnum(value, {{"transport-only", RunIntent::TransportOnly},
                            {"shock-injection", RunIntent::ShockInjection},
                            {"shock-propagation", RunIntent::ShockPropagation}},
                    &o->intent)) return invalidValue();
-  } else if (field == "run.transport") {
+  } else if (field == "application.sep.transport") {
+    // One shared key selects the transport formulation in both applications
+    // (parker | focused-diffusion | focused-scattering).  The broad mover
+    // family follows from it uniquely -- Parker for parker, the focused-
+    // transport family for both focused formulations -- so the former
+    // schema-5 key application.sep3d.particle_mover is retired and the
+    // family is recorded here as an explicit (not defaulted) selection.
     if (!ParseEnum(value, {{"parker", TransportModel::Parker3D},
-                           {"parker3d", TransportModel::Parker3D},
                            {"focused-diffusion",
-                            TransportModel::FocusedDiffusion3D},
-                           {"focused3d",
                             TransportModel::FocusedDiffusion3D},
                            {"focused-scattering",
                             TransportModel::FocusedScattering3D}},
                    &o->transport)) return invalidValue();
-  } else if (field == "run.particle_mover") {
-    if (!ParseEnum(value,
-                   {{"parker", ParticleMoverFamily::Parker},
-                    {"focused-transport",
-                     ParticleMoverFamily::FocusedTransport}},
-                   &o->particleMover)) return invalidValue();
+    o->particleMover = o->transport == TransportModel::Parker3D
+        ? ParticleMoverFamily::Parker : ParticleMoverFamily::FocusedTransport;
     o->particleMoverExplicitlySelected = true;
   } else if (field == "run.time_step_s") {
     if (!ParseDouble(value, &o->requestedTimeStepS)) return invalidValue();
+  } else if (field == "run.time_step_mode") {
+    // fixed: run.time_step_s is the global step.  derived-from-mesh: the step
+    // is dt = time_step_margin_factor * h_min / maximum_particle_speed_m_s,
+    // computed after AMPS allocates the mesh (h_min = smallest allocated
+    // characteristic cell length).  Requires the incident-flux normalization.
+    if (Lower(value) == "fixed") o->particleNumerics.deriveFromMeshAndShock = false;
+    else if (Lower(value) == "derived-from-mesh")
+      o->particleNumerics.deriveFromMeshAndShock = true;
+    else return invalidValue();
+  } else if (field == "run.maximum_particle_speed_m_s") {
+    // v_max of the derived step [m/s], in (0, c].
+    if (!ParseDouble(value, &o->particleNumerics.maximumParticleSpeedMPerS))
+      return invalidValue();
+  } else if (field == "run.time_step_margin_factor") {
+    // Dimensionless CFL margin f in (0, 1] of the derived step.
+    if (!ParseDouble(value, &o->particleNumerics.timeStepMarginFactor))
+      return invalidValue();
   } else if (field == "run.maximum_time_steps") {
     if (!ParseUnsigned64(value, &o->maximumTimeSteps)) return invalidValue();
   } else if (field == "run.stop_shock_radius_m") {
     if (!ParseDouble(value, &o->stopShockRadiusM)) return invalidValue();
   } else if (field == "run.campaign_seed") {
     if (!ParseUnsigned64(value, &o->campaignSeed)) return invalidValue();
-  } else if (field == "run.background_cadence_steps") {
+  } else if (field == "application.sep.background_cadence_steps") {
     if (!ParseUnsigned64(value, &o->backgroundCadenceSteps)) return invalidValue();
-  } else if (field == "run.injection_cadence_steps") {
+  } else if (field == "application.sep.injection_cadence_steps") {
     if (!ParseUnsigned64(value, &o->injectionCadenceSteps)) return invalidValue();
-  } else if (field == "domain.preset") {
+  } else if (field == "mesh.domain.preset") {
     if (!ParseEnum(value, {{"solar", DomainPreset::Solar},
                            {"one-au", DomainPreset::OneAu},
                            {"earth", DomainPreset::OneAu},
                            {"mars", DomainPreset::Mars}}, &o->domain))
       return invalidValue();
-  } else if (field == "domain.inner_radius_m") {
+  } else if (field == "mesh.domain.inner_radius_m") {
     if (!ParseDouble(value, &o->innerRadiusM)) return invalidValue();
-  } else if (field == "domain.inner_boundary") {
+  } else if (field == "mesh.domain.inner_boundary") {
     if (!ParseEnum(value, {{"absorb", InnerBoundaryMode::Absorb}},
                    &o->innerBoundary)) return invalidValue();
-  } else if (field == "domain.outer_radius_mode") {
+  } else if (field == "mesh.domain.outer_radius_mode") {
     if (!ParseEnum(value, {{"preset", OuterRadiusMode::Preset},
                            {"explicit", OuterRadiusMode::Explicit},
                            {"field-line-endpoint", OuterRadiusMode::FieldLineEndpoint}},
                    &o->outerRadiusMode)) return invalidValue();
-  } else if (field == "domain.outer_radius_m") {
+  } else if (field == "mesh.domain.outer_radius_m") {
     if (!ParseDouble(value, &o->outerRadiusM)) return invalidValue();
-  } else if (field == "domain.box_geometry") {
+  } else if (field == "mesh.domain.box_geometry") {
     if (!ParseEnum(value, {{"sun-centered-cube", DomainBoxGeometry::SunCenteredCube},
                            {"field-line-corner-cube", DomainBoxGeometry::FieldLineCornerCube},
                            {"field-line-xy-corner-cube", DomainBoxGeometry::FieldLineXYCornerCube}},
                    &o->domainBoxGeometry)) return invalidValue();
-  } else if (field == "domain.corner_direction_x") {
+  } else if (field == "mesh.domain.corner_direction_x") {
     if (!ParseDouble(value, &o->domainCornerDirection.x)) return invalidValue();
-  } else if (field == "domain.corner_direction_y") {
+  } else if (field == "mesh.domain.corner_direction_y") {
     if (!ParseDouble(value, &o->domainCornerDirection.y)) return invalidValue();
-  } else if (field == "domain.corner_direction_z") {
+  } else if (field == "mesh.domain.corner_direction_z") {
     if (!ParseDouble(value, &o->domainCornerDirection.z)) return invalidValue();
-  } else if (field == "domain.corner_margin_m") {
+  } else if (field == "mesh.domain.corner_margin_m") {
     if (!ParseDouble(value, &o->domainCornerMarginM)) return invalidValue();
-  } else if (field == "parker_spiral.end_radius_m") {
+  } else if (field == "mesh.field_line.end_radius_m") {
     if (!ParseDouble(value, &o->parkerSpiralEndRadiusM)) return invalidValue();
-  } else if (field == "domain.outer_boundary") {
+  } else if (field == "mesh.domain.outer_boundary") {
     if (!ParseEnum(value, {{"escape", OuterBoundaryMode::Escape},
                            {"imported-coverage", OuterBoundaryMode::ImportedCoverage}},
                    &o->outerBoundary)) return invalidValue();
-  } else if (field == "domain.coordinate_frame") {
+  } else if (field == "mesh.domain.coordinate_frame") {
     o->coordinateFrame = value;
     o->parker.coordinateFrame = value;
-  } else if (field == "domain.origin_x_m") {
+  } else if (field == "mesh.domain.origin_x_m") {
     if (!ParseDouble(value, &o->coordinateOriginM.x)) return invalidValue();
-  } else if (field == "domain.origin_y_m") {
+  } else if (field == "mesh.domain.origin_y_m") {
     if (!ParseDouble(value, &o->coordinateOriginM.y)) return invalidValue();
-  } else if (field == "domain.origin_z_m") {
+  } else if (field == "mesh.domain.origin_z_m") {
     if (!ParseDouble(value, &o->coordinateOriginM.z)) return invalidValue();
-  } else if (field == "parker_spiral.origin_x_m") {
+  } else if (field == "mesh.field_line.origin_x_m") {
     if (!ParseDouble(value, &o->parkerSpiralOriginM.x)) return invalidValue();
-  } else if (field == "parker_spiral.origin_y_m") {
+  } else if (field == "mesh.field_line.origin_y_m") {
     if (!ParseDouble(value, &o->parkerSpiralOriginM.y)) return invalidValue();
-  } else if (field == "parker_spiral.origin_z_m") {
+  } else if (field == "mesh.field_line.origin_z_m") {
     if (!ParseDouble(value, &o->parkerSpiralOriginM.z)) return invalidValue();
-  } else if (field == "parker_spiral.start_mode") {
+  } else if (field == "mesh.field_line.start_mode") {
     if (!ParseEnum(value,
         {{"explicit", ParkerSpiralStartMode::Explicit},
          {"cme-launch-point", ParkerSpiralStartMode::CmeLaunchPoint}},
         &o->parkerSpiralStartMode)) return invalidValue();
-  } else if (field == "parker_spiral.initial_x_m") {
+  } else if (field == "mesh.field_line.initial_x_m") {
     if (!ParseDouble(value, &o->parkerSpiralInitialPointM.x)) return invalidValue();
-  } else if (field == "parker_spiral.initial_y_m") {
+  } else if (field == "mesh.field_line.initial_y_m") {
     if (!ParseDouble(value, &o->parkerSpiralInitialPointM.y)) return invalidValue();
-  } else if (field == "parker_spiral.initial_z_m") {
+  } else if (field == "mesh.field_line.initial_z_m") {
     if (!ParseDouble(value, &o->parkerSpiralInitialPointM.z)) return invalidValue();
-  } else if (field == "parker_spiral.length_m") {
+  } else if (field == "mesh.field_line.length_m") {
     if (!ParseDouble(value, &o->parkerSpiralLengthM)) return invalidValue();
-  } else if (field == "parker_spiral.point_count") {
+  } else if (field == "mesh.field_line.point_count") {
     if (!ParseUnsigned64(value, &o->parkerSpiralPointCount)) return invalidValue();
   } else if (field == "mesh.global_cell_size_m") {
     if (!ParseDouble(value, &o->backgroundCellSizeM)) return invalidValue();
@@ -298,46 +311,46 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     if (!ParseSize(value, &o->meshMemoryBudgetBytes)) return invalidValue();
   } else if (field == "mesh.block_overhead_bytes") {
     if (!ParseSize(value, &o->meshBlockOverheadBytes)) return invalidValue();
-  } else if (field == "mesh.solar.enabled") {
+  } else if (field == "mesh.refinement.solar.enabled") {
     if (!ParseBool(value, &o->enableRadialRefinement)) return invalidValue();
-  } else if (field == "mesh.solar.surface_cell_size_m") {
+  } else if (field == "mesh.refinement.solar.surface_cell_size_m") {
     if (!ParseDouble(value, &o->solarSurfaceCellSizeM)) return invalidValue();
-  } else if (field == "mesh.solar.transition_outer_radius_m") {
+  } else if (field == "mesh.refinement.solar.transition_outer_radius_m") {
     if (!ParseDouble(value, &o->solarRefinementOuterRadiusM)) return invalidValue();
-  } else if (field == "mesh.solar.profile") {
+  } else if (field == "mesh.refinement.solar.profile") {
     if (!ParseEnum(value, {{"linear", RefinementProfile::Linear},
                            {"power-law", RefinementProfile::PowerLaw},
                            {"smoothstep", RefinementProfile::Smoothstep}},
                    &o->solarRefinementProfile)) return invalidValue();
-  } else if (field == "mesh.solar.anchor") {
+  } else if (field == "mesh.refinement.solar.anchor") {
     if (!ParseEnum(value, {{"source-shell", SolarRefinementAnchor::SourceShell},
                            {"photosphere", SolarRefinementAnchor::Photosphere}},
                    &o->solarRefinementAnchor)) return invalidValue();
-  } else if (field == "mesh.solar.exponent") {
+  } else if (field == "mesh.refinement.solar.exponent") {
     if (!ParseDouble(value, &o->solarRefinementExponent)) return invalidValue();
-  } else if (field == "mesh.tube.enabled") {
+  } else if (field == "mesh.refinement.tube.enabled") {
     if (!ParseBool(value, &o->enableTubeRefinement)) return invalidValue();
-  } else if (field == "mesh.tube.source_longitude_rad") {
+  } else if (field == "mesh.refinement.tube.source_longitude_rad") {
     if (!ParseDouble(value, &o->tubeLongitudeRad)) return invalidValue();
-  } else if (field == "mesh.tube.source_colatitude_rad") {
+  } else if (field == "mesh.refinement.tube.source_colatitude_rad") {
     if (!ParseDouble(value, &o->tubeColatitudeRad)) return invalidValue();
-  } else if (field == "mesh.tube.reference_radius_m") {
+  } else if (field == "mesh.refinement.tube.reference_radius_m") {
     if (!ParseDouble(value, &o->tubeReferenceRadiusM)) return invalidValue();
-  } else if (field == "mesh.tube.radius_at_reference_m") {
+  } else if (field == "mesh.refinement.tube.radius_at_reference_m") {
     if (!ParseDouble(value, &o->tubeRadiusAtReferenceM)) return invalidValue();
-  } else if (field == "mesh.tube.radius_mode") {
+  } else if (field == "mesh.refinement.tube.radius_mode") {
     if (!ParseEnum(value,
         {{"physical-constant", TubeRadiusMode::PhysicalConstant},
          {"constant-angular-width", TubeRadiusMode::ConstantAngularWidth}},
         &o->tubeRadiusMode)) return invalidValue();
-  } else if (field == "mesh.tube.center_cell_size_m") {
+  } else if (field == "mesh.refinement.tube.center_cell_size_m") {
     if (!ParseDouble(value, &o->tubeCellSizeM)) return invalidValue();
-  } else if (field == "mesh.tube.transverse_profile") {
+  } else if (field == "mesh.refinement.tube.transverse_profile") {
     if (!ParseEnum(value, {{"linear", RefinementProfile::Linear},
                            {"power-law", RefinementProfile::PowerLaw},
                            {"smoothstep", RefinementProfile::Smoothstep}},
                    &o->tubeTransverseProfile)) return invalidValue();
-  } else if (field == "mesh.tube.transverse_exponent") {
+  } else if (field == "mesh.refinement.tube.transverse_exponent") {
     if (!ParseDouble(value, &o->tubeTransverseExponent)) return invalidValue();
   } else if (field == "mesh.active_region.mode") {
     if (!ParseEnum(value,
@@ -360,23 +373,23 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
       return invalidValue();
   } else if (field == "mesh.active_region.solar_sphere_radius_m") {
     if (!ParseDouble(value, &o->activeSolarSphereRadiusM)) return invalidValue();
-  } else if (field == "memory.base_cell_bytes") {
+  } else if (field == "mesh.memory.base_cell_bytes") {
     if (!ParseSize(value, &o->memoryModel.baseCellBytes)) return invalidValue();
-  } else if (field == "memory.base_node_bytes") {
+  } else if (field == "mesh.memory.base_node_bytes") {
     if (!ParseSize(value, &o->memoryModel.baseNodeBytes)) return invalidValue();
-  } else if (field == "memory.block_structure_bytes") {
+  } else if (field == "mesh.memory.block_structure_bytes") {
     if (!ParseSize(value, &o->memoryModel.blockStructureBytes)) return invalidValue();
-  } else if (field == "memory.communication_bytes_per_block") {
+  } else if (field == "mesh.memory.communication_bytes_per_block") {
     if (!ParseSize(value, &o->memoryModel.communicationBytesPerBlock)) return invalidValue();
-  } else if (field == "memory.particle_bytes") {
+  } else if (field == "mesh.memory.particle_bytes") {
     if (!ParseSize(value, &o->memoryModel.particleBytes)) return invalidValue();
-  } else if (field == "memory.particles_per_cell") {
+  } else if (field == "mesh.memory.particles_per_cell") {
     if (!ParseDouble(value, &o->memoryModel.particlesPerCell)) return invalidValue();
-  } else if (field == "memory.halo_fraction") {
+  } else if (field == "mesh.memory.halo_fraction") {
     if (!ParseDouble(value, &o->memoryModel.haloFraction)) return invalidValue();
-  } else if (field == "memory.safety_margin_fraction") {
+  } else if (field == "mesh.memory.safety_margin_fraction") {
     if (!ParseDouble(value, &o->memoryModel.safetyMarginFraction)) return invalidValue();
-  } else if (field == "background.provider") {
+  } else if (field == "physics.background.provider") {
     if (!ParseEnum(value,
         {{"analytic-parker", BackgroundAuthority::AnalyticParker},
          {"python-interpolator", BackgroundAuthority::PythonInterpolator},
@@ -384,125 +397,118 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
          {"swcme", BackgroundAuthority::Swcme},
          {"runtime-model", BackgroundAuthority::RuntimeModel}}, &o->background))
       return invalidValue();
-  } else if (field == "background.model_id") {
+  } else if (field == "physics.background.model_id") {
     // Preserve the exact factory key; immutable configuration validation later
     // requires it for runtime-model and forbids it for every built-in authority.
     o->backgroundModelId = value;
-  } else if (field == "background.model_asset") {
-    o->backgroundModelAssetPath = value;
-  } else if (field == "background.external_script") {
-    if (!ParseBool(value, &o->enableExternalScriptBackground)) return invalidValue();
-  } else if (field == "background.parker.reference_radius_m") {
+  } else if (field == "physics.background.parker.reference_radius_m") {
     if (!ParseDouble(value, &o->parker.referenceRadiusM)) return invalidValue();
-  } else if (field == "background.parker.radial_field_at_reference_t") {
+  } else if (field == "physics.background.parker.radial_field_at_reference_t") {
     if (!ParseDouble(value, &o->parker.radialFieldAtReferenceT)) return invalidValue();
-  } else if (field == "background.parker.solar_rotation_rate_rad_per_s") {
+  } else if (field == "physics.background.parker.solar_rotation_rate_rad_per_s") {
     if (!ParseDouble(value, &o->parker.solarRotationRateRadPerS)) return invalidValue();
-  } else if (field == "background.parker.solar_wind_speed_m_per_s") {
+  } else if (field == "physics.background.parker.solar_wind_speed_m_per_s") {
     if (!ParseDouble(value, &o->parker.solarWindSpeedMPerS)) return invalidValue();
-  } else if (field == "background.parker.magnetic_polarity") {
+  } else if (field == "physics.background.parker.magnetic_polarity") {
     double parsed = 0.0;
     if (!ParseDouble(value, &parsed) || (parsed != -1.0 && parsed != 1.0))
       return invalidValue();
     o->parker.magneticPolarity = static_cast<int>(parsed);
-  } else if (field == "background.parker.number_density_at_reference_m3") {
-    if (!ParseDouble(value, &o->parker.numberDensityAtReferenceM3)) return invalidValue();
-  } else if (field == "background.parker.number_density_at_one_au_m3") {
-    // Complete schema-3 input uses the unambiguous SWCME spelling.  The older
-    // "at_reference" key remains parseable for version-1/2 files, where the
-    // magnetic and density references historically shared one label.
+  } else if (field == "physics.background.parker.number_density_at_one_au_m3") {
+    // Electron number density at 1 AU [m^-3]; the density reference is fixed
+    // at 1 AU independently of reference_radius_m (which expresses B_r).
     if (!ParseDouble(value, &o->parker.numberDensityAtReferenceM3))
       return invalidValue();
     o->parker.densityReferenceRadiusM = Core::Const::AU;
-  } else if (field == "background.parker.temperature_k") {
+  } else if (field == "physics.background.parker.temperature_k") {
     if (!ParseDouble(value, &o->parker.temperatureK)) return invalidValue();
-  } else if (field == "background.parker.validity_cadence_s") {
+  } else if (field == "physics.background.parker.validity_cadence_s") {
     if (!ParseDouble(value, &o->parker.validityCadenceS)) return invalidValue();
-  } else if (field == "turbulence.authority") {
+  } else if (field == "application.sep.turbulence.authority") {
     if (!ParseEnum(value, {{"prescribed", TurbulenceAuthority::Prescribed},
                            {"swmf", TurbulenceAuthority::Swmf}},
                    &o->turbulence)) return invalidValue();
-  } else if (field == "turbulence.model") {
+  } else if (field == "application.sep.turbulence.model") {
     if (!ParseEnum(value,
         {{"power-law", PrescribedTurbulenceModel::PowerLaw},
          {"kolmogorov", PrescribedTurbulenceModel::Kolmogorov},
          {"kraichnan", PrescribedTurbulenceModel::Kraichnan}},
         &o->prescribedTurbulenceModel)) return invalidValue();
-  } else if (field == "turbulence.amplitude_model") {
+  } else if (field == "application.sep.turbulence.amplitude_model") {
     if (!ParseEnum(value,
         {{"constant-delta-b-over-b",
               PrescribedTurbulenceAmplitudeModel::ConstantDeltaBOverB},
          {"wave-energy-power-law",
               PrescribedTurbulenceAmplitudeModel::WaveEnergyPowerLaw}},
         &o->prescribedTurbulenceAmplitudeModel)) return invalidValue();
-  } else if (field == "turbulence.delta_b_over_b") {
+  } else if (field == "application.sep.turbulence.delta_b_over_b") {
     if (!ParseDouble(value, &o->prescribedDeltaBOverB)) return invalidValue();
   } else if (field ==
-             "turbulence.wave_energy_density_at_reference_j_per_m3") {
+             "application.sep.turbulence.wave_energy_density_at_reference_j_per_m3") {
     if (!ParseDouble(value, &o->turbulenceWaveEnergyAtReferenceJPerM3))
       return invalidValue();
-  } else if (field == "turbulence.wave_energy_density_radial_exponent") {
+  } else if (field == "application.sep.turbulence.wave_energy_density_radial_exponent") {
     if (!ParseDouble(value, &o->turbulenceWaveEnergyRadialExponent))
       return invalidValue();
-  } else if (field == "turbulence.normalized_cross_helicity") {
+  } else if (field == "application.sep.turbulence.normalized_cross_helicity") {
     if (!ParseDouble(value, &o->turbulenceNormalizedCrossHelicity))
       return invalidValue();
-  } else if (field == "turbulence.reference_radius_m") {
+  } else if (field == "application.sep.turbulence.reference_radius_m") {
     if (!ParseDouble(value, &o->turbulenceReferenceRadiusM))
       return invalidValue();
-  } else if (field == "turbulence.k_min_per_m") {
+  } else if (field == "application.sep.turbulence.k_min_per_m") {
     if (!ParseDouble(value, &o->turbulenceKMinPerM)) return invalidValue();
-  } else if (field == "turbulence.k_max_per_m") {
+  } else if (field == "application.sep.turbulence.k_max_per_m") {
     if (!ParseDouble(value, &o->turbulenceKMaxPerM)) return invalidValue();
-  } else if (field == "turbulence.k_min_radial_exponent") {
+  } else if (field == "application.sep.turbulence.k_min_radial_exponent") {
     if (!ParseDouble(value, &o->turbulenceKMinRadialExponent))
       return invalidValue();
-  } else if (field == "turbulence.k_max_radial_exponent") {
+  } else if (field == "application.sep.turbulence.k_max_radial_exponent") {
     if (!ParseDouble(value, &o->turbulenceKMaxRadialExponent))
       return invalidValue();
-  } else if (field == "turbulence.spectral_index") {
+  } else if (field == "application.sep.turbulence.spectral_index") {
     if (!ParseDouble(value, &o->turbulenceSpectralIndex)) return invalidValue();
-  } else if (field == "turbulence.correlation_length_m") {
+  } else if (field == "application.sep.turbulence.correlation_length_m") {
     if (!ParseDouble(value, &o->turbulenceCorrelationLengthM)) return invalidValue();
-  } else if (field == "turbulence.correlation_length_radial_exponent") {
+  } else if (field == "application.sep.turbulence.correlation_length_radial_exponent") {
     if (!ParseDouble(value, &o->turbulenceCorrelationLengthRadialExponent))
       return invalidValue();
-  } else if (field == "turbulence.validity_cadence_s") {
+  } else if (field == "application.sep.turbulence.validity_cadence_s") {
     if (!ParseDouble(value, &o->turbulenceValidityCadenceS))
       return invalidValue();
-  } else if (field == "turbulence.missing_data") {
+  } else if (field == "application.sep.turbulence.missing_data") {
     if (!ParseEnum(value, {{"fail", MissingTurbulenceMode::Fail},
                            {"ballistic", MissingTurbulenceMode::Ballistic}},
                    &o->missingTurbulence)) return invalidValue();
-  } else if (field == "turbulence.resonance_range") {
+  } else if (field == "application.sep.turbulence.resonance_range") {
     if (!ParseEnum(value, {{"reject", ResonanceRangeMode::Reject},
                            {"power-law-extension", ResonanceRangeMode::PowerLawExtension}},
                    &o->resonanceRange)) return invalidValue();
-  } else if (field == "turbulence.self_consistent_3d") {
+  } else if (field == "application.sep.turbulence.self_consistent_3d") {
     if (!ParseBool(value, &o->enableSelfConsistent3DTurbulence)) return invalidValue();
-  } else if (field == "transport.cell_crossing_fraction") {
+  } else if (field == "application.sep.transport.cell_crossing_fraction") {
     if (!ParseDouble(value, &o->cellCrossingFraction)) return invalidValue();
-  } else if (field == "transport.diffusion_fraction") {
+  } else if (field == "application.sep.transport.diffusion_fraction") {
     if (!ParseDouble(value, &o->diffusionFraction)) return invalidValue();
-  } else if (field == "transport.focusing_fraction") {
+  } else if (field == "application.sep.transport.focusing_fraction") {
     if (!ParseDouble(value, &o->focusingFraction)) return invalidValue();
-  } else if (field == "transport.cooling_fraction") {
+  } else if (field == "application.sep.transport.cooling_fraction") {
     if (!ParseDouble(value, &o->coolingFraction)) return invalidValue();
-  } else if (field == "transport.field_variation_fraction") {
+  } else if (field == "application.sep.transport.field_variation_fraction") {
     if (!ParseDouble(value, &o->fieldVariationFraction)) return invalidValue();
-  } else if (field == "transport.shock_crossing_fraction") {
+  } else if (field == "application.sep.transport.shock_crossing_fraction") {
     if (!ParseDouble(value, &o->shockCrossingFraction)) return invalidValue();
-  } else if (field == "transport.minimum_substep_s") {
+  } else if (field == "application.sep.transport.minimum_substep_s") {
     if (!ParseDouble(value, &o->minimumTransportSubstepS)) return invalidValue();
-  } else if (field == "transport.maximum_substeps") {
+  } else if (field == "application.sep.transport.maximum_substeps") {
     if (!ParseUnsigned64(value, &o->maximumTransportSubsteps)) return invalidValue();
-  } else if (field == "transport.pitch_angle_scheme") {
+  } else if (field == "application.sep.transport.pitch_angle_scheme") {
     if (!ParseEnum(value,
         {{"reflecting-milstein", PitchAngleSchemeMode::ReflectingMilstein},
          {"reflecting-euler-maruyama",
           PitchAngleSchemeMode::ReflectingEulerMaruyama}},
         &o->pitchAngleScheme)) return invalidValue();
-  } else if (field == "transport.spatial_diffusion_model") {
+  } else if (field == "application.sep.transport.spatial_diffusion_model") {
     if (!ParseEnum(value,
         {{"mean-free-path",
               SpatialDiffusionModel::CorrelationMeanFreePath},
@@ -513,146 +519,176 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
          {"parallel-diffusion-library",
               SpatialDiffusionModel::ParallelDiffusionLibrary}},
         &o->spatialDiffusionModel)) return invalidValue();
-  } else if (field == "transport.pitch_angle_diffusion_model") {
+  } else if (field == "application.sep.transport.pitch_angle_diffusion_model") {
     if (!ParseEnum(value,
         {{"jokipii-1966", PitchAngleDiffusionModel::Jokipii1966},
          {"florinskiy", PitchAngleDiffusionModel::Florinskiy},
          {"constant", PitchAngleDiffusionModel::Constant}},
         &o->pitchAngleDiffusionModel)) return invalidValue();
-  } else if (field == "transport.mean_free_path_model") {
+  } else if (field == "application.sep.transport.mean_free_path_model") {
     if (!ParseEnum(value,
         {{"correlation", MeanFreePathModel::Correlation},
          {"constant", MeanFreePathModel::Constant},
          {"radial-rigidity-power-law",
               MeanFreePathModel::RadialRigidityPowerLaw}},
         &o->meanFreePathModel)) return invalidValue();
-  } else if (field == "transport.constant_dmumu_per_s") {
+  } else if (field == "application.sep.transport.constant_dmumu_per_s") {
     if (!ParseDouble(value, &o->constantDmumuPerS)) return invalidValue();
-  } else if (field == "transport.constant_mean_free_path_m") {
+  } else if (field == "application.sep.transport.constant_mean_free_path_m") {
     if (!ParseDouble(value, &o->constantMeanFreePathM)) return invalidValue();
-  } else if (field == "transport.mean_free_path_reference_m") {
+  } else if (field == "application.sep.transport.mean_free_path_reference_m") {
     if (!ParseDouble(value, &o->meanFreePathReferenceM)) return invalidValue();
-  } else if (field == "transport.mean_free_path_reference_radius_m") {
+  } else if (field == "application.sep.transport.mean_free_path_reference_radius_m") {
     if (!ParseDouble(value, &o->meanFreePathReferenceRadiusM))
       return invalidValue();
-  } else if (field == "transport.mean_free_path_reference_rigidity_v") {
+  } else if (field == "application.sep.transport.mean_free_path_reference_rigidity_v") {
     if (!ParseDouble(value, &o->meanFreePathReferenceRigidityV))
       return invalidValue();
-  } else if (field == "transport.mean_free_path_radial_exponent") {
+  } else if (field == "application.sep.transport.mean_free_path_radial_exponent") {
     if (!ParseDouble(value, &o->meanFreePathRadialExponent))
       return invalidValue();
-  } else if (field == "transport.mean_free_path_rigidity_exponent") {
+  } else if (field == "application.sep.transport.mean_free_path_rigidity_exponent") {
     if (!ParseDouble(value, &o->meanFreePathRigidityExponent))
       return invalidValue();
   } else if (field ==
-             "transport.spatial_quadrature_absolute_tolerance_m2_per_s") {
+             "application.sep.transport.spatial_quadrature_absolute_tolerance_m2_per_s") {
     if (!ParseDouble(value, &o->spatialQuadratureAbsoluteToleranceM2PerS))
       return invalidValue();
-  } else if (field == "transport.spatial_quadrature_relative_tolerance") {
+  } else if (field == "application.sep.transport.spatial_quadrature_relative_tolerance") {
     if (!ParseDouble(value, &o->spatialQuadratureRelativeTolerance))
       return invalidValue();
-  } else if (field == "transport.spatial_quadrature_maximum_recursion") {
+  } else if (field == "application.sep.transport.spatial_quadrature_maximum_recursion") {
     if (!ParseUnsigned(value, &o->spatialQuadratureMaximumRecursion))
       return invalidValue();
-  } else if (field == "transport.focused_scattering_frame") {
+  } else if (field == "application.sep.transport.focused_scattering_frame") {
     if (!ParseEnum(value,
         {{"plasma-frame-isotropic",
               FocusedScatteringFrame::PlasmaFrameIsotropic},
          {"alfven-wave-frame-isotropic",
               FocusedScatteringFrame::AlfvenWaveFrameIsotropic}},
         &o->focusedScatteringFrame)) return invalidValue();
-  } else if (field == "transport.maximum_scattering_events_per_substep") {
+  } else if (field == "application.sep.transport.maximum_scattering_events_per_substep") {
     if (!ParseUnsigned64(value, &o->maximumScatteringEventsPerSubstep))
       return invalidValue();
-  } else if (field == "transport.perpendicular_diffusion") {
+  } else if (field == "application.sep.transport.perpendicular_diffusion") {
     if (!ParseEnum(value,
         {{"none", PerpendicularDiffusionMode::None},
          {"constant", PerpendicularDiffusionMode::Constant},
          {"constant-ratio", PerpendicularDiffusionMode::ConstantRatio}},
-        &o->perpendicularDiffusion)) {
-      // Input files from the parallel-only release used "false". Preserve
-      // that inert spelling, but reject "true" because it never identified a
-      // coefficient closure and therefore cannot be migrated unambiguously.
-      bool legacy = false;
-      if (!ParseBool(value, &legacy) || legacy) return invalidValue();
-      o->perpendicularDiffusion = PerpendicularDiffusionMode::None;
-    }
-  } else if (field == "transport.constant_kappa_perpendicular_m2_per_s") {
+        &o->perpendicularDiffusion)) return invalidValue();
+  } else if (field == "application.sep.transport.constant_kappa_perpendicular_m2_per_s") {
     if (!ParseDouble(value, &o->constantKappaPerpendicularM2PerS))
       return invalidValue();
-  } else if (field == "transport.kappa_perpendicular_to_parallel_ratio") {
+  } else if (field == "application.sep.transport.kappa_perpendicular_to_parallel_ratio") {
     if (!ParseDouble(value, &o->kappaPerpendicularToParallelRatio))
       return invalidValue();
-  } else if (field == "transport.drifts") {
+  } else if (field == "application.sep.transport.drifts") {
     if (!ParseEnum(value,
         {{"none", DriftMode::None}, {"gradient-b", DriftMode::GradientB},
          {"curvature", DriftMode::Curvature},
          {"gradient-curvature", DriftMode::GradientAndCurvature}},
-        &o->drift)) {
-      bool legacy = false;
-      if (!ParseBool(value, &legacy) || legacy) return invalidValue();
-      o->drift = DriftMode::None;
-    }
-  } else if (field == "population_control.mode") {
+        &o->drift)) return invalidValue();
+  } else if (field == "application.sep.population_control.mode") {
     if (!ParseEnum(value,
         {{"off", PopulationControlMode::Off},
          {"split-merge", PopulationControlMode::SplitMerge}},
         &o->populationControl)) return invalidValue();
   } else if (field ==
-             "population_control.minimum_particles_per_cell_per_species") {
+             "application.sep.population_control.minimum_particles_per_cell_per_species") {
     if (!ParseUnsigned(value, &o->minimumParticlesPerCellPerSpecies))
       return invalidValue();
   } else if (field ==
-             "population_control.target_particles_per_cell_per_species") {
+             "application.sep.population_control.target_particles_per_cell_per_species") {
     if (!ParseUnsigned(value, &o->targetParticlesPerCellPerSpecies))
       return invalidValue();
   } else if (field ==
-             "population_control.maximum_particles_per_cell_per_species") {
+             "application.sep.population_control.maximum_particles_per_cell_per_species") {
     if (!ParseUnsigned(value, &o->maximumParticlesPerCellPerSpecies))
       return invalidValue();
-  } else if (field == "population_control.cadence_steps") {
+  } else if (field == "application.sep.population_control.cadence_steps") {
     if (!ParseUnsigned64(value, &o->populationControlCadenceSteps))
       return invalidValue();
-  } else if (field == "shock.authority") {
+  } else if (field == "physics.shock.authority") {
     if (!ParseEnum(value, {{"none", ShockAuthority::None},
                            {"swcme", ShockAuthority::Swcme}}, &o->shock))
       return invalidValue();
-  } else if (field == "shock.active_from_s") {
-    if (!ParseDouble(value, &o->shockModel.activeFromS)) return invalidValue();
-  } else if (field == "shock.active_until_s") {
-    if (!ParseDouble(value, &o->shockModel.activeUntilS)) return invalidValue();
-  } else if (field == "shock.initial_radius_m") {
-    if (!ParseDouble(value, &o->shockModel.initialRadiusM)) return invalidValue();
-  } else if (field == "shock.maximum_radius_m") {
-    if (!ParseDouble(value, &o->shockModel.maximumRadiusM)) return invalidValue();
-  } else if (field == "shock.speed_m_per_s") {
-    if (!ParseDouble(value, &o->shockModel.speedMPerS)) return invalidValue();
-  } else if (field == "shock.compression_ratio") {
-    if (!ParseDouble(value, &o->shockModel.compressionRatio)) return invalidValue();
-  } else if (field == "source.enabled") {
+  } else if (field == "source.shock.enabled") {
     if (!ParseBool(value, &o->source.enabled)) return invalidValue();
-  } else if (field == "source.physical_particle_rate_per_s") {
+  } else if (field == "source.shock.physical_particle_rate_per_s") {
     if (!ParseDouble(value, &o->source.physicalParticleRatePerS)) return invalidValue();
-  } else if (field == "source.injection_efficiency") {
+  } else if (field == "source.shock.injection_efficiency") {
+    // Dimensionless fraction; with physics: swcme it is also the SWCME
+    // source.injection_efficiency (D4).
     if (!ParseDouble(value, &o->source.injectionEfficiency)) return invalidValue();
-  } else if (field == "source.minimum_energy_j") {
+    spectrum->injectionEfficiency = o->source.injectionEfficiency;
+  } else if (field == "source.shock.minimum_energy_j") {
+    // Kinetic-energy limits [J] of the injected spectrum.  With physics:
+    // swcme they are also the SWCME source.energy_min/max (D4).
     if (!ParseDouble(value, &o->source.minimumEnergyJ)) return invalidValue();
-  } else if (field == "source.maximum_energy_j") {
+    spectrum->minimumEnergyJ = o->source.minimumEnergyJ;
+  } else if (field == "source.shock.maximum_energy_j") {
     if (!ParseDouble(value, &o->source.maximumEnergyJ)) return invalidValue();
-  } else if (field == "source.spectrum_model") {
+    spectrum->maximumEnergyJ = o->source.maximumEnergyJ;
+  } else if (field == "source.shock.spectrum_reference_energy_j") {
+    // Reference spectrum handed to the canonical SWCME source (D4).  srcSEP3D
+    // never takes species identity from it: injection converts the energy
+    // limits to momentum with each compiled AMPS species mass.
+    if (!ParseDouble(value, &spectrum->referenceEnergyJ)) return invalidValue();
+  } else if (field == "source.shock.spectrum_particle_mass_kg") {
+    if (!ParseDouble(value, &spectrum->particleMassKg)) return invalidValue();
+  } else if (field == "source.shock.spectrum_charge_number") {
+    std::uint64_t charge = 0;
+    if (!ParseUnsigned64(value, &charge) || charge == 0 ||
+        charge > static_cast<std::uint64_t>(std::numeric_limits<long>::max()))
+      return invalidValue();
+    spectrum->chargeNumber = static_cast<long>(charge);
+  } else if (field == "source.shock.spectrum_normalization") {
+    const std::string normalized = Lower(value);
+    if (normalized != "relative-only" &&
+        normalized != "reference-differential-intensity") return invalidValue();
+    spectrum->normalization = normalized;
+  } else if (field ==
+             "source.shock.spectrum_reference_intensity_per_m2_s_sr_j") {
+    if (!ParseDouble(value, &spectrum->referenceIntensitySi)) return invalidValue();
+  } else if (field == "source.shock.spectrum_model") {
     if (!ParseEnum(value,
         {{"local-compression-dsa",
           SourceSpectrumModel::LocalCompressionDsa},
          {"fixed-phase-space-power-law",
           SourceSpectrumModel::FixedPhaseSpacePowerLaw}},
         &o->source.spectrumModel)) return invalidValue();
-  } else if (field == "source.phase_space_power_index") {
+  } else if (field == "source.shock.phase_space_power_index") {
     if (!ParseDouble(value, &o->source.fixedPhaseSpacePowerIndex))
       return invalidValue();
-  } else if (field == "source.spectral_index") {
-    if (!ParseDouble(value, &o->source.spectralIndex)) return invalidValue();
-  } else if (field == "source.samples_per_step") {
+  } else if (field == "source.shock.samples_per_step") {
     if (!ParseUnsigned64(value, &o->source.samplesPerStep)) return invalidValue();
+  } else if (field == "source.shock.normalization") {
+    // configured-rate: physical_particle_rate_per_s * injection_efficiency
+    // and species.macroparticle_weight define the source (SWCME source).
+    // accepted-shock-incident-flux: Ndot_s = sum over accepted reduced-front
+    // faces of n_s [V_n - U_1.n]_+ A, W_s = Ndot_s dt / samples_per_step.
+    if (!ParseEnum(value,
+        {{"configured-rate", SourceRateNormalizationModel::ConfiguredConstant},
+         {"accepted-shock-incident-flux",
+          SourceRateNormalizationModel::AcceptedShockIncidentFlux}},
+        &o->particleNumerics.sourceRateModel)) return invalidValue();
+  } else if (field == "source.shock.normalization_radius_m") {
+    // Heliocentric apex radius [m] at which Ndot_s (and so W_s) is evaluated.
+    if (!ParseDouble(value, &o->particleNumerics.sourceNormalizationRadiusM))
+      return invalidValue();
+  } else if (field == "source.shock.weight_model") {
+    // constant-statistical-weight is implemented; the importance mode is a
+    // typed reserved feature that stops startup until it is qualified.
+    if (!ParseEnum(value,
+        {{"constant-statistical-weight",
+          SourceWeightingModel::ConstantStatisticalWeight},
+         {"log-uniform-momentum-importance",
+          SourceWeightingModel::LogUniformMomentumImportance}},
+        &o->source.weightingModel)) return invalidValue();
+  } else if (field == "source.shock.maximum_events_per_species_per_step") {
+    // Fatal Poisson runaway guard; never truncates or renormalizes a draw.
+    if (!ParseUnsigned64(value, &o->source.maximumMacroparticlesPerSpeciesPerStep))
+      return invalidValue();
   } else if (field == "species.macroparticle_weight") {
     // This is deliberately the only post-compile species field.  Count,
     // symbols, masses, charges, and indices are immutable products of the AMPS
@@ -668,22 +704,22 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     o->outputPrefix = value;
   } else if (field == "output.initialization_mesh_tecplot_file") {
     o->initializationMeshTecplotFile = value;
-  } else if (field == "output.initialization_parker_line_tecplot_file") {
+  } else if (field == "output.initialization_field_line_tecplot_file") {
     o->initializationParkerLineTecplotFile = value;
   } else if (field == "output.initialization_data_tecplot_file") {
     o->initializationDataTecplotFile = value;
-  } else if (field == "storage.magnetic_gradient") {
+  } else if (field == "application.sep.storage.magnetic_gradient") {
     if (!ParseBool(value, &o->storeMagneticGradient)) return invalidValue();
-  } else if (field == "storage.velocity_gradient") {
+  } else if (field == "application.sep.storage.velocity_gradient") {
     if (!ParseBool(value, &o->storeVelocityGradient)) return invalidValue();
-  } else if (field == "storage.sampling_bytes_per_cell") {
+  } else if (field == "application.sep.storage.sampling_bytes_per_cell") {
     if (!ParseSize(value, &o->samplingBytesPerCell)) return invalidValue();
-  } else if (field == "restart.input_path") {
+  } else if (field == "run.restart.input_path") {
     // Text files cannot encode an empty right-hand side because that usually
     // indicates a truncated edit.  The explicit token "none" denotes a fresh
     // run and normalizes to the same empty string used by typed construction.
     o->restartInputPath = Lower(value) == "none" ? std::string() : value;
-  } else if (field == "restart.output_path") {
+  } else if (field == "run.restart.output_path") {
     o->restartOutputPath = value;
   } else {
     ObserverOptions* observer = ObserverForSection(
@@ -711,6 +747,12 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     } else if (key == "products") {
       observer->products = value;
     } else if (key == "kind") {
+      // field-line-radius is the shared-vocabulary kind of srcSEP's one-
+      // dimensional observers (decision D5); srcSEP3D samples in space.
+      if (Lower(value) == "field-line-radius")
+        return Invalid(SEP::InputLayout::NotSupportedMessage(
+            "observer kind 'field-line-radius' ('" + field + "')",
+            SEP::InputLayout::kSrcSep3d));
       if (!ParseEnum(value,
           {{"fixed-cartesian", ObserverKind::FixedCartesian},
            {"fixed-heliographic", ObserverKind::FixedHeliographic},
@@ -762,175 +804,381 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
   return Core::Status::OK();
 }
 
+// ---------------------------------------------------------------------------
+// Generic AMPS runtime input -> srcSEP3D options
+// ---------------------------------------------------------------------------
+//
+// The srcSEP3D input is written in the generic AMPS runtime-input format
+// (src/INPUT_FILE.md; reader src/general/input/amps_input.h) using the SEP
+// content schema 6 that srcSEP3D shares with srcSEP.  The complete block and
+// key vocabulary of that schema is the table in
+// src/models/sep_common/sep_input_layout.h; this walker consults it for every
+// block and key, so the two applications accept exactly the same spellings:
+//
+//   * a block or key that is not in the table is unknown and fatal at its
+//     '#begin' or assignment line (unknown input is never ignored);
+//   * a block or key that the table marks srcSEP-only is a typed
+//     "not supported by srcSEP3D" error (decision D3), e.g. an observer's
+//     heliocentric_radius_m;
+//   * everything else reaches ApplyField() under its qualified name.
+//
+// Qualified names.  A key's qualified name is the dot-joined path of the
+// blocks that contain it, where a named block '#begin kind: name' contributes
+// 'kind.name': 'mesh.domain.inner_radius_m', 'mesh.refinement.solar.profile',
+// 'application.sep.turbulence.k_min_per_m', 'observer.earth.cadence_s'.
+// ApplyField() and every diagnostic use these names, so an error message
+// names exactly the block path a user has to edit.
+//
+// Model blocks.  Three physics blocks belong to shared model libraries and
+// keep those libraries' own vocabularies:
+//   physics: swcme              canonical SWCME assignments (dotted keys with
+//                               units in the value, e.g. "400 km/s"),
+//                               resolved by swcme::input3d::Resolve; its
+//                               'source.*' keys are owned by source: shock
+//                               (decision D4) and are synthesized below;
+//   physics: parallel_diffusion parsed by SEP::ParallelDiffusion::ParseSection;
+//   physics: shock_front        reduced shock-front event, resolved by
+//                               SEP::CoronaSwcme::ShockFront (usually written
+//                               in its own file and #included).
+// All other keys are plain identifiers; a dotted key in an application block
+// is rejected because nested blocks express that path.
+
+namespace Layout = SEP::InputLayout;
+
+// Accumulated state of one document walk.
+struct WalkState {
+  RunConfiguration3DOptions* options = nullptr;
+  std::set<std::string> assigned;  // qualified keys
+  std::set<std::string> sections;  // qualified block paths
+  std::map<std::string, std::size_t> keyLines;  // qualified key -> input line
+  bool observerDefaultsCleared = false;
+  std::vector<SEP::ParallelDiffusion::SectionLine> parallelDiffusionLines;
+  std::string parallelDiffusionFile;
+  const AMPS::Input::Block* shockFrontBlock = nullptr;
+  // source: shock reference spectrum (D4), turned into SWCME source.* keys
+  // after the walk when physics: swcme is present.
+  Layout::SwcmeSourceSettings spectrum;
+  std::size_t physicsSwcmeLine = 0;  // '#begin physics: swcme' line, 0 = absent
+};
+
+Core::Status WalkBlocks(const AMPS::Input::Block& parent,
+                        const std::string& parentPath, WalkState* state) {
+  for (const AMPS::Input::Block& block : parent.blocks) {
+    const Layout::BlockRule* rule =
+        Layout::FindBlock(parentPath, block.kind, block.name);
+    if (rule == nullptr) {
+      const std::string where = parentPath.empty()
+          ? std::string("at the top level") : "inside '" + parentPath + "'";
+      return Invalid(AMPS::Input::ErrorAt(block.begin, "block '" +
+          block.Label() + "' is not part of the SEP input " + where +
+          " (allowed: " + Layout::AllowedChildren(parentPath) + ")").message);
+    }
+    const std::string path =
+        Layout::QualifiedPath(parentPath, block.kind, block.name);
+    if ((rule->support & Layout::kSrcSep3d) == 0)
+      return Invalid(AMPS::Input::ErrorAt(block.begin,
+          Layout::NotSupportedMessage("block '" + path + "'",
+                                      Layout::kSrcSep3d)).message);
+    state->sections.insert(path);
+
+    if (path == "physics.swcme") {
+      // SWCME owns its dotted, unit-bearing vocabulary; nested blocks are the
+      // same key space (AMPS::Input::Flatten).  Locations are kept for the
+      // canonical resolver's key/line diagnostics.  Its source.* keys are
+      // written once, in source: shock (D4).
+      state->physicsSwcmeLine = block.begin.line;
+      for (const AMPS::Input::Assignment& item : AMPS::Input::Flatten(block)) {
+        if (const char* owner = Layout::SourceShockKeyForSwcmeKey(item.key))
+          return Invalid(AMPS::Input::ErrorAt(item.where, "SWCME key '" +
+              item.key + "' is written in source: shock as '" + owner +
+              "' (each quantity is set in one place, src/INPUT_FILE.md "
+              "section 5)", item.text).message);
+        SwcmeAssignment assignment;
+        assignment.key = item.key;
+        assignment.value = item.value;
+        assignment.line = item.where.line;
+        state->options->swcmeAssignments.push_back(assignment);
+        state->assigned.insert(path + "." + item.key);
+      }
+      continue;
+    }
+    if (path == "physics.parallel_diffusion") {
+      // The library parser owns this block's grammar and model schema; it
+      // receives "key = value" records with their physical line numbers.
+      if (!block.blocks.empty())
+        return Invalid(AMPS::Input::ErrorAt(block.blocks.front().begin,
+            "physics: parallel_diffusion holds only key = value records").message);
+      for (const AMPS::Input::Assignment& item : block.assignments)
+        state->parallelDiffusionLines.push_back(
+            {item.where.line, item.key + " = " + item.value});
+      state->parallelDiffusionFile = block.begin.file;
+      continue;
+    }
+    if (path == "physics.shock_front") {
+      // Resolved later by the shared reduced shock-front library from the
+      // canonical text of this block (see ParseConfigurationDocument).
+      state->shockFrontBlock = &block;
+      continue;
+    }
+
+    for (const AMPS::Input::Assignment& item : block.assignments) {
+      if (item.key.find('.') != std::string::npos)
+        return Invalid(AMPS::Input::ErrorAt(item.where, "key '" + item.key +
+            "' contains '.'; SEP keys are plain names and a nested "
+            "path is written as nested blocks", item.text).message);
+      const std::string qualified = path + "." + item.key;
+      const Layout::KeyRule* key = Layout::FindKey(path, item.key);
+      if (key == nullptr)
+        return Invalid(AMPS::Input::ErrorAt(item.where,
+            "unknown configuration key '" + qualified + "'", item.text).message);
+      if ((key->support & Layout::kSrcSep3d) == 0)
+        return Invalid(AMPS::Input::ErrorAt(item.where,
+            Layout::NotSupportedMessage("'" + qualified + "'",
+                                        Layout::kSrcSep3d), item.text).message);
+      state->assigned.insert(qualified);
+      state->keyLines[qualified] = item.where.line;
+      const Core::Status status = ApplyField(path, item.key, item.value,
+          state->options, &state->observerDefaultsCleared, &state->spectrum);
+      if (!status.ok())
+        return Invalid(AMPS::Input::ErrorAt(item.where, status.message,
+                                            item.text).message);
+    }
+    const Core::Status nested = WalkBlocks(block, path, state);
+    if (!nested.ok()) return nested;
+  }
+  return Core::Status::OK();
+}
+
+// Canonical generic-input text of the physics: shock_front block, passed to
+// the shared resolver.  Its file:line provenance is replaced by key names in
+// the resolver's diagnostics; the identity is the resolver's normalized
+// manifest, so comments, layout and include structure do not change it.
+std::string ShockFrontCanonicalText(const AMPS::Input::Block& block) {
+  AMPS::Input::Block root;
+  root.blocks.push_back(block);
+  return AMPS::Input::ToCanonicalText(root);
+}
+
 }  // namespace
 
-Core::Status ParseConfigurationText(
-    const std::string& text, RunConfiguration3DOptions* result) {
+static Core::Status ParseConfigurationDocument(
+    const AMPS::Input::Document& document, RunConfiguration3DOptions* result) {
   if (result == nullptr) return Invalid("configuration output is null");
   RunConfiguration3DOptions candidate;
-  std::istringstream input(text);
-  std::string section;
-  std::string line;
-  std::set<std::string> assigned;
-  std::set<std::string> sections;
-  bool observerDefaultsCleared = false;
-  bool schemaSeen = false;
-  std::size_t lineNumber = 0;
-  // Raw body of [parallel_diffusion], comments included, with file line
-  // numbers.  The library section parser owns that grammar ('#' and '!'
-  // comments, case-sensitive SI keys, model selection), so this INI reader
-  // only locates the section and does not interpret its records.
-  std::vector<SEP::ParallelDiffusion::SectionLine> parallelDiffusionLines;
-  while (std::getline(input, line)) {
-    ++lineNumber;
-    const std::string rawLine = line;
-    const std::size_t comment = line.find('#');
-    if (comment != std::string::npos) line.erase(comment);
-    line = Trim(line);
-    if (line.empty()) continue;
-    const bool sectionHeader = line.front() == '[' && line.back() == ']';
-    if (!sectionHeader && section == "parallel_diffusion") {
-      parallelDiffusionLines.push_back({lineNumber, rawLine});
-      continue;
-    }
-    if (sectionHeader) {
-      section = Lower(Trim(line.substr(1, line.size() - 2)));
-      if (section.empty()) return Invalid("empty section at line " +
-                                          std::to_string(lineNumber));
-      if (!KnownSection(section))
-        return Invalid("unknown configuration section '[" + section + "]'");
-      if (!sections.insert(section).second)
-        return Invalid("duplicate configuration section '[" + section + "]'");
-      continue;
-    }
-    const std::size_t separator = line.find('=');
-    if (separator == std::string::npos)
-      return Invalid("expected key=value at line " + std::to_string(lineNumber));
-    const std::string sourceKey = Trim(line.substr(0, separator));
-    // srcSEP3D keys are case-insensitive.  (The case-sensitive SI keys of
-    // [parallel_diffusion] were diverted to the library parser above.)
-    const std::string key = Lower(sourceKey);
-    const std::string value = Trim(line.substr(separator + 1));
-    if (key.empty() || value.empty())
-      return Invalid("empty key or value at line " + std::to_string(lineNumber));
-    // A bare assignment used to fall through to ApplyField(), which reported
-    // only "unknown configuration key".  That message made a legacy flat deck
-    // look like a misspelled schema-3 field.  The production grammar is strict
-    // INI, so identify the actual structural error and point to the canonical
-    // first section without guessing which physics group owned the old key.
-    if (section.empty()) {
-      return Invalid("line " + std::to_string(lineNumber) + ": key '" + key +
-                     "' appears before any [section]; srcSEP3D input uses the "
-                     "strict INI schema and must begin with [run] (see "
-                     "srcSEP3D/examples/sep3d_analytic_parker.in)");
-    }
-    const std::string qualified = section.empty() ? key : section + "." + key;
-    if (!assigned.insert(qualified).second)
-      return Invalid("duplicate configuration key '" + qualified + "'");
-    const Core::Status status = ApplyField(
-        section, key, value, &candidate, &observerDefaultsCleared);
-    if (!status.ok())
-      return Invalid("line " + std::to_string(lineNumber) + ": " + status.message);
-    if (qualified == "run.schema_version") schemaSeen = true;
-    if (section == "swcme" && !candidate.swcmeAssignments.empty())
-      candidate.swcmeAssignments.back().line = lineNumber;
+  WalkState walk;
+  walk.options = &candidate;
+  {
+    const Core::Status status = WalkBlocks(document.root, "", &walk);
+    if (!status.ok()) return status;
   }
-  if (!schemaSeen) return Invalid("missing required run.schema_version");
+  const std::set<std::string>& assigned = walk.assigned;
+  const std::set<std::string>& sections = walk.sections;
+  if (assigned.count("application.sep.schema_version") == 0)
+    return Invalid("missing required key application.sep.schema_version "
+                   "(write schema_version = 6 in '#begin application: sep')");
+
+  // ---- Particle numerics derived from the mesh and the reduced shock ----
+  //
+  // run.time_step_mode = derived-from-mesh selects dt = f h_min / v_max,
+  // evaluated after AMPS allocates the mesh, and source.shock.normalization
+  // = accepted-shock-incident-flux selects W_s = Ndot_s dt / N per compiled
+  // species from the accepted upstream incident flux of the reduced front
+  // (src/INPUT_FILE.md, "Derived particle numerics").  The keys that the
+  // derivation replaces must then be absent, so that no written value can be
+  // mistaken for the one the run uses; conversely the derivation inputs are
+  // rejected in the configured modes.
+  const bool derivedTimeStep = candidate.particleNumerics.deriveFromMeshAndShock;
+  const bool incidentFlux = candidate.particleNumerics.sourceRateModel ==
+      SourceRateNormalizationModel::AcceptedShockIncidentFlux;
+  const std::set<std::string> derivedOwned = {
+      "run.time_step_s", "source.shock.physical_particle_rate_per_s",
+      "source.shock.injection_efficiency", "species.macroparticle_weight"};
+  if (derivedTimeStep != incidentFlux)
+    return Invalid("run.time_step_mode=derived-from-mesh and "
+                   "source.shock.normalization=accepted-shock-incident-flux "
+                   "must be selected together");
+  if (incidentFlux) {
+    for (const std::string& field : derivedOwned)
+      if (assigned.count(field) != 0)
+        return Invalid("'" + field + "' is derived from the mesh and the "
+                       "accepted shock flux in this mode; remove it");
+    const char* inputs[] = {
+        "run.maximum_particle_speed_m_s", "run.time_step_margin_factor",
+        "source.shock.normalization_radius_m", "source.shock.weight_model",
+        "source.shock.maximum_events_per_species_per_step"};
+    for (const char* field : inputs)
+      if (assigned.count(field) == 0)
+        return Invalid(std::string("derived particle numerics require '") +
+                       field + "'");
+    // The incident flux is itself the declared physical seed rate; no
+    // hidden efficiency multiplies it (see particle_normalization.h).
+    candidate.source.injectionEfficiency = 1.0;
+  } else {
+    const char* derivedOnly[] = {
+        "run.maximum_particle_speed_m_s", "run.time_step_margin_factor",
+        "source.shock.normalization_radius_m", "source.shock.weight_model",
+        "source.shock.maximum_events_per_species_per_step"};
+    for (const char* field : derivedOnly)
+      if (assigned.count(field) != 0)
+        return Invalid(std::string("'") + field + "' is used only with "
+                       "run.time_step_mode=derived-from-mesh");
+  }
+
+  // ---- Schema-6 completeness ----------------------------------------------
+  //
   // C01 distinguishes file input from typed coupled construction.  A coupled
   // host may intentionally rely on C++ defaults while assigning its supplied
-  // fields.  A human-authored production file must instead contain every
-  // contract group, even when a group merely disables a feature.  This makes
-  // omissions visible during parsing rather than after AMPS initialization.
-  const char* requiredSections[] = {
-      "run", "domain", "mesh", "mesh.solar", "mesh.tube", "memory",
-      "background", "background.parker", "turbulence", "transport",
-      "shock", "source", "species", "storage", "output", "restart"};
-  for (const char* required : requiredSections) {
-    if (sections.count(required) == 0) {
-      return Invalid("missing required configuration section '[" +
-                     std::string(required) + "]'");
-    }
+  // fields.  A human-authored file must instead contain every contract block
+  // and every srcSEP3D-owned value, even when the selected mode makes a value
+  // inactive: a later mode edit must never revive a C++ default that did not
+  // appear in the reviewed input.  The required keys are derived from the
+  // shared vocabulary table (sep_input_layout.h) -- every srcSEP3D key of a
+  // required block -- minus the explicitly conditional keys below, each of
+  // which is checked by its own rule.
+  const bool swcmeBlock = walk.physicsSwcmeLine != 0;
+  std::vector<std::string> requiredSections = {
+      "run", "run.restart", "application.sep", "application.sep.transport",
+      "application.sep.population_control", "application.sep.storage",
+      "application.sep.turbulence", "mesh", "mesh.domain", "mesh.field_line",
+      "mesh.refinement.solar", "mesh.refinement.tube", "mesh.active_region",
+      "mesh.memory", "physics.background", "physics.background.parker",
+      "physics.shock", "source.shock", "output"};
+  if (!incidentFlux) requiredSections.push_back("species");
+  for (const std::string& required : requiredSections)
+    if (sections.count(required) == 0)
+      return Invalid("missing required block '" + required + "'");
+  const std::set<std::string> conditionalKeys = {
+      // Derived particle numerics (checked above): the step and the weights
+      // are either written or derived, never both.
+      "run.time_step_s", "run.time_step_mode", "run.maximum_particle_speed_m_s",
+      "run.time_step_margin_factor", "source.shock.physical_particle_rate_per_s",
+      "source.shock.injection_efficiency", "source.shock.normalization",
+      "source.shock.normalization_radius_m", "source.shock.weight_model",
+      "source.shock.maximum_events_per_species_per_step",
+      "species.macroparticle_weight",
+      // Optional stop condition (absent = step budget only).
+      "run.stop_shock_radius_m",
+      // Corner-cube geometry: required as a group by the corner rule below;
+      // the default box is the Sun-centred cube.
+      "mesh.domain.box_geometry", "mesh.domain.corner_direction_x",
+      "mesh.domain.corner_direction_y", "mesh.domain.corner_direction_z",
+      "mesh.domain.corner_margin_m", "mesh.field_line.end_radius_m",
+      "mesh.refinement.solar.anchor", "mesh.active_region.solar_sphere_radius_m",
+      // Required exactly for provider = runtime-model (typed factory rule).
+      "physics.background.model_id"};
+  for (const Layout::KeyRule& rule : Layout::kKeys) {
+    if ((rule.support & Layout::kSrcSep3d) == 0) continue;
+    const std::string block = rule.block;
+    if (block == "observer.*") continue;  // per-observer rule below
+    if (std::find(requiredSections.begin(), requiredSections.end(), block) ==
+        requiredSections.end()) continue;
+    const std::string qualified = block + "." + rule.key;
+    if (conditionalKeys.count(qualified) != 0) continue;
+    if (block == "physics.background.parker" &&
+        Layout::SwcmeOwnedParkerKey(rule.key) != nullptr) continue;  // D4 rule
+    if (block == "source.shock" &&
+        std::find(Layout::SwcmeSourceKeys().begin(),
+                  Layout::SwcmeSourceKeys().end(), std::string(rule.key)) !=
+            Layout::SwcmeSourceKeys().end()) continue;  // D4 rule
+    if (assigned.count(qualified) == 0)
+      return Invalid("missing required key '" + qualified + "'");
   }
-  if (candidate.inputSchemaVersion >= 2) {
-    if (sections.count("parker_spiral") == 0)
-      return Invalid("schema version 2 requires [parker_spiral]");
-    const char* requiredLineFields[] = {
-        "parker_spiral.origin_x_m", "parker_spiral.origin_y_m",
-        "parker_spiral.origin_z_m", "parker_spiral.initial_x_m",
-        "parker_spiral.initial_y_m", "parker_spiral.initial_z_m",
-        "parker_spiral.length_m", "parker_spiral.point_count"};
-    for (const char* required : requiredLineFields) {
-      if (assigned.count(required) == 0)
-        return Invalid("schema version 2 is missing required key '" +
-                       std::string(required) + "'");
-    }
+  if (!incidentFlux) {
+    const char* writtenNumerics[] = {
+        "run.time_step_s", "source.shock.physical_particle_rate_per_s",
+        "source.shock.injection_efficiency", "species.macroparticle_weight"};
+    for (const char* field : writtenNumerics)
+      if (assigned.count(field) == 0)
+        return Invalid(std::string("missing required key '") + field + "'");
   }
-  if (candidate.inputSchemaVersion >= 4) {
-    // Schema 4 adds three complete contracts.  Keeping them in dedicated
-    // sections makes review straightforward and prevents a parser default from
-    // silently enabling domain pruning or changing particle statistics.
-    const char* requiredVersion4Sections[] = {
-        "mesh.active_region", "population_control"};
-    for (const char* required : requiredVersion4Sections) {
-      if (sections.count(required) == 0)
-        return Invalid("schema version 4 or later requires configuration section '[" +
-                       std::string(required) + "]'");
-    }
-    const char* requiredVersion4Fields[] = {
-        "mesh.active_region.mode",
-        "mesh.active_region.reference_radius_m",
-        "mesh.active_region.radius_at_reference_m",
-        "mesh.active_region.radius_mode",
-        "mesh.active_region.buffer_blocks",
-        "transport.spatial_diffusion_model",
-        "transport.pitch_angle_diffusion_model",
-        "transport.mean_free_path_model",
-        "transport.constant_dmumu_per_s",
-        "transport.constant_mean_free_path_m",
-        "transport.mean_free_path_reference_m",
-        "transport.mean_free_path_reference_radius_m",
-        "transport.mean_free_path_reference_rigidity_v",
-        "transport.mean_free_path_radial_exponent",
-        "transport.mean_free_path_rigidity_exponent",
-        "transport.spatial_quadrature_absolute_tolerance_m2_per_s",
-        "transport.spatial_quadrature_relative_tolerance",
-        "transport.spatial_quadrature_maximum_recursion",
-        "transport.focused_scattering_frame",
-        "transport.maximum_scattering_events_per_substep",
-        "population_control.mode",
-        "population_control.minimum_particles_per_cell_per_species",
-        "population_control.target_particles_per_cell_per_species",
-        "population_control.maximum_particles_per_cell_per_species",
-        "population_control.cadence_steps", "source.spectrum_model",
-        "source.phase_space_power_index"};
-    for (const char* required : requiredVersion4Fields) {
-      if (assigned.count(required) == 0)
-        return Invalid("schema version 4 or later is missing required key '" +
-                       std::string(required) + "'");
-    }
+
+  // ---- Decision D4: one owner per physical quantity -------------------------
+  //
+  // With physics: swcme the canonical SWCME ambient owns the solar wind seen
+  // by the analytic Parker provider, so its seven Parker counterparts must be
+  // absent (they are copied from the resolved SWCME model below); without it
+  // the Parker record is the only description and must be complete.  The
+  // reference spectrum of source: shock feeds the SWCME source and exists only
+  // together with physics: swcme.
+  for (const Layout::KeyRule& rule : Layout::kKeys) {
+    if (std::string(rule.block) != "physics.background.parker") continue;
+    const char* owner = Layout::SwcmeOwnedParkerKey(rule.key);
+    if (owner == nullptr) continue;
+    const std::string qualified =
+        std::string("physics.background.parker.") + rule.key;
+    if (swcmeBlock && assigned.count(qualified) != 0)
+      return Invalid("line " + std::to_string(walk.keyLines[qualified]) +
+                     ": '" + qualified + "' is owned by physics: swcme (" +
+                     owner + "); remove it (each quantity is set in one "
+                     "place, src/INPUT_FILE.md section 5)");
+    if (!swcmeBlock && assigned.count(qualified) == 0)
+      return Invalid("missing required key '" + qualified + "' (without "
+                     "physics: swcme the Parker record describes the ambient "
+                     "solar wind)");
   }
-  const bool parallelSection = sections.count("parallel_diffusion") != 0;
+  for (const std::string& key : Layout::SwcmeSourceKeys()) {
+    const std::string qualified = "source.shock." + key;
+    if (swcmeBlock && assigned.count(qualified) == 0)
+      return Invalid("missing required key '" + qualified + "' (it defines "
+                     "the canonical SWCME source spectrum)");
+    if (!swcmeBlock && assigned.count(qualified) != 0)
+      return Invalid("line " + std::to_string(walk.keyLines[qualified]) +
+                     ": '" + qualified + "' is used only with physics: swcme");
+  }
+  if (swcmeBlock) {
+    if (incidentFlux)
+      return Invalid("source.shock.normalization=accepted-shock-incident-flux "
+                     "requires the reduced shock front, not physics: swcme");
+    // The SWCME source.* assignments are synthesized from source: shock and
+    // carry the line of the source: shock key that supplies each of them,
+    // so the canonical resolver's diagnostics still point at an editable line.
+    struct SourceLine { const char* swcme; const char* sourceKey; };
+    const SourceLine sourceLines[] = {
+        {"source.particle_mass", "spectrum_particle_mass_kg"},
+        {"source.charge_number", "spectrum_charge_number"},
+        {"source.energy_min", "minimum_energy_j"},
+        {"source.energy_max", "maximum_energy_j"},
+        {"source.reference_energy", "spectrum_reference_energy_j"},
+        {"source.injection_efficiency", "injection_efficiency"},
+        {"source.normalization", "spectrum_normalization"},
+        {"source.reference_intensity_si",
+         "spectrum_reference_intensity_per_m2_s_sr_j"}};
+    for (const Layout::SynthesizedAssignment& synthesized :
+         Layout::SynthesizeSwcmeSource(walk.spectrum)) {
+      SwcmeAssignment assignment;
+      assignment.key = synthesized.key;
+      assignment.value = synthesized.value;
+      for (const SourceLine& line : sourceLines)
+        if (synthesized.key == line.swcme)
+          assignment.line =
+              walk.keyLines[std::string("source.shock.") + line.sourceKey];
+      candidate.swcmeAssignments.push_back(assignment);
+    }
+    // With SWCME present the Parker record expresses B_r at 1 AU; the value
+    // itself is derived from the canonical total |B| below.
+    candidate.parker.referenceRadiusM = Core::Const::AU;
+  }
+  const bool parallelSection = sections.count("physics.parallel_diffusion") != 0;
   const bool parallelSelected = candidate.spatialDiffusionModel ==
       SpatialDiffusionModel::ParallelDiffusionLibrary;
-  if (candidate.inputSchemaVersion < 5 && parallelSection)
-    return Invalid("[parallel_diffusion] requires run.schema_version=5");
   if (parallelSelected && !parallelSection)
-    return Invalid("parallel-diffusion-library requires [parallel_diffusion]");
+    return Invalid("parallel-diffusion-library requires a physics: parallel_diffusion block");
   if (!parallelSelected && parallelSection)
-    return Invalid("[parallel_diffusion] is present but the library is not selected");
+    return Invalid("block physics: parallel_diffusion is present but the library is not selected");
   if (parallelSection) {
-    // The library parses the section body: comment grammar, the 'model'
-    // selector, duplicate/unknown/missing keys, and every model-specific
-    // value and domain.  Its diagnostics already carry "line N:" from the
-    // numbers recorded above.  The resulting text and line provenance are
+    // The library parses the block body: the 'model' selector,
+    // duplicate/unknown/missing keys, and every model-specific value and
+    // domain.  Its diagnostics carry "line N:" from the physical line numbers
+    // recorded by the walker; the file name is prefixed here.  The resulting text and line provenance are
     // copied into the options so RunConfiguration3D::Create() (which typed,
     // parser-free hosts also call) and Runtime installation reproduce the
     // identical configuration and fingerprint.
     SEP::ParallelDiffusion::ParsedSection parsed;
     const SEP::ParallelDiffusion::Status sectionStatus =
-        SEP::ParallelDiffusion::ParseSection(parallelDiffusionLines, &parsed);
+        SEP::ParallelDiffusion::ParseSection(walk.parallelDiffusionLines, &parsed);
     if (!sectionStatus.ok())
-      return Invalid("invalid [parallel_diffusion] section: " +
+      return Invalid(walk.parallelDiffusionFile +
+                     ": invalid physics: parallel_diffusion block: " +
                      sectionStatus.detail);
     candidate.parallelDiffusionModelId = parsed.modelId;
     candidate.parallelDiffusionModelLine = parsed.modelLineNumber;
@@ -948,97 +1196,23 @@ Core::Status ParseConfigurationText(
       candidate.domainBoxGeometry == DomainBoxGeometry::FieldLineXYCornerCube) {
     // Additive opt-in contract: legacy decks retain their original defaults.
     // A corner deck explicitly owns every new geometry/refinement control.
-    const char* cornerFields[] = {"domain.outer_radius_mode", "domain.box_geometry",
-        "domain.corner_direction_x", "domain.corner_direction_y",
-        "domain.corner_direction_z", "domain.corner_margin_m",
-        "parker_spiral.end_radius_m", "parker_spiral.length_m",
-        "mesh.solar.anchor", "mesh.active_region.solar_sphere_radius_m"};
+    const char* cornerFields[] = {"mesh.domain.outer_radius_mode", "mesh.domain.box_geometry",
+        "mesh.domain.corner_direction_x", "mesh.domain.corner_direction_y",
+        "mesh.domain.corner_direction_z", "mesh.domain.corner_margin_m",
+        "mesh.field_line.end_radius_m", "mesh.field_line.length_m",
+        "mesh.refinement.solar.anchor", "mesh.active_region.solar_sphere_radius_m"};
     for (const char* field : cornerFields)
       if (assigned.count(field) == 0)
         return Invalid("corner geometry is missing explicit key '" + std::string(field) + "'");
   }
-  if (candidate.inputSchemaVersion >= 3) {
+  {
     const bool reducedShockFront=candidate.background==BackgroundAuthority::RuntimeModel&&
         candidate.backgroundModelId=="sep-corona-swcme-shock-front-v1";
-    if (!reducedShockFront&&sections.count("swcme") == 0)
-      return Invalid("schema version 3 requires a complete [swcme] section");
-    // Schema 3 is the no-assumptions production surface.  Every application-
-    // owned value is present even if its selected mode makes it inactive; this
-    // prevents a later mode edit from reviving a C++ default that never
-    // appeared in the reviewed input deck.
-    const char* requiredFields[] = {
-        "run.schema_version", "run.intent", "run.transport",
-        "run.time_step_s", "run.maximum_time_steps", "run.campaign_seed",
-        "run.background_cadence_steps", "run.injection_cadence_steps",
-        "domain.preset", "domain.inner_radius_m", "domain.inner_boundary",
-        "domain.outer_radius_mode", "domain.outer_radius_m",
-        "domain.outer_boundary", "domain.coordinate_frame",
-        "domain.origin_x_m", "domain.origin_y_m", "domain.origin_z_m",
-        "parker_spiral.origin_x_m", "parker_spiral.origin_y_m",
-        "parker_spiral.origin_z_m", "parker_spiral.initial_x_m",
-        "parker_spiral.initial_y_m", "parker_spiral.initial_z_m",
-        "parker_spiral.start_mode", "parker_spiral.length_m",
-        "parker_spiral.point_count",
-        "mesh.global_cell_size_m", "mesh.minimum_cell_size_m",
-        "mesh.cells_per_block_edge", "mesh.maximum_level",
-        "mesh.memory_budget_bytes", "mesh.block_overhead_bytes",
-        "mesh.solar.enabled", "mesh.solar.surface_cell_size_m",
-        "mesh.solar.transition_outer_radius_m", "mesh.solar.profile",
-        "mesh.solar.exponent", "mesh.tube.enabled",
-        "mesh.tube.source_longitude_rad",
-        "mesh.tube.source_colatitude_rad",
-        "mesh.tube.reference_radius_m", "mesh.tube.radius_at_reference_m",
-        "mesh.tube.radius_mode", "mesh.tube.center_cell_size_m",
-        "mesh.tube.transverse_profile", "mesh.tube.transverse_exponent",
-        "memory.base_cell_bytes", "memory.base_node_bytes",
-        "memory.block_structure_bytes",
-        "memory.communication_bytes_per_block", "memory.particle_bytes",
-        "memory.particles_per_cell", "memory.halo_fraction",
-        "memory.safety_margin_fraction", "background.provider",
-        "background.external_script", "background.parker.reference_radius_m",
-        "background.parker.radial_field_at_reference_t",
-        "background.parker.solar_rotation_rate_rad_per_s",
-        "background.parker.solar_wind_speed_m_per_s",
-        "background.parker.magnetic_polarity",
-        "background.parker.number_density_at_one_au_m3",
-        "background.parker.temperature_k",
-        "background.parker.validity_cadence_s", "turbulence.authority",
-        "turbulence.model", "turbulence.amplitude_model",
-        "turbulence.delta_b_over_b",
-        "turbulence.wave_energy_density_at_reference_j_per_m3",
-        "turbulence.wave_energy_density_radial_exponent",
-        "turbulence.normalized_cross_helicity",
-        "turbulence.reference_radius_m", "turbulence.k_min_per_m",
-        "turbulence.k_max_per_m", "turbulence.k_min_radial_exponent",
-        "turbulence.k_max_radial_exponent", "turbulence.spectral_index",
-        "turbulence.correlation_length_m",
-        "turbulence.correlation_length_radial_exponent",
-        "turbulence.validity_cadence_s", "turbulence.missing_data",
-        "turbulence.resonance_range", "turbulence.self_consistent_3d",
-        "transport.cell_crossing_fraction", "transport.diffusion_fraction",
-        "transport.focusing_fraction", "transport.cooling_fraction",
-        "transport.field_variation_fraction",
-        "transport.shock_crossing_fraction", "transport.minimum_substep_s",
-        "transport.maximum_substeps", "transport.pitch_angle_scheme",
-        "transport.perpendicular_diffusion",
-        "transport.constant_kappa_perpendicular_m2_per_s",
-        "transport.kappa_perpendicular_to_parallel_ratio",
-        "transport.drifts", "shock.authority", "source.enabled",
-        "source.physical_particle_rate_per_s",
-        "source.injection_efficiency", "source.minimum_energy_j",
-        "source.maximum_energy_j", "source.samples_per_step",
-        "species.macroparticle_weight",
-        "storage.magnetic_gradient", "storage.velocity_gradient",
-        "storage.sampling_bytes_per_cell", "output.cadence_steps",
-        "output.checkpoint_cadence_steps", "output.directory",
-        "output.prefix", "output.initialization_mesh_tecplot_file",
-        "output.initialization_parker_line_tecplot_file",
-        "output.initialization_data_tecplot_file",
-        "restart.input_path", "restart.output_path"};
-    for (const char* required : requiredFields)
-      if (assigned.count(required) == 0)
-        return Invalid("schema version 3 is missing required key '" +
-                       std::string(required) + "'");
+    if (!reducedShockFront&&!swcmeBlock)
+      return Invalid("a complete physics: swcme block is required unless "
+                     "physics.background selects the reduced shock front");
+    // Every observer block is complete: all 21 srcSEP3D observer keys are
+    // present even when the selected kind makes some of them inactive.
     const char* observerFields[] = {
         "kind", "normalization", "position_x_m", "position_y_m",
         "position_z_m", "follows_trajectory", "velocity_x_m_per_s",
@@ -1052,28 +1226,27 @@ Core::Status ParseConfigurationText(
       for (const char* suffix : observerFields) {
         const std::string required = presentSection + "." + suffix;
         if (assigned.count(required) == 0)
-          return Invalid("schema version 3 is missing required key '" +
-                         required + "'");
+          return Invalid("missing required key '" + required + "'");
       }
     }
     if (candidate.injectionCadenceSteps != 1)
-      return Invalid("schema version 3 defines source.samples_per_step as "
-                     "an exact count at every simulation step; therefore "
-                     "run.injection_cadence_steps must equal 1");
+      return Invalid("source.shock.samples_per_step is an exact count at "
+                     "every simulation step; therefore "
+                     "application.sep.injection_cadence_steps must equal 1");
     if (candidate.background == BackgroundAuthority::PythonInterpolator)
       return Core::Status::Reserved(
           "Python heliospheric-model interpolation background");
-    // Schema 3 keeps its original Parker-only standalone contract. Schema 4
-    // adds native runtime sources through the same prescribed-turbulence path;
-    // SWMF still requires its typed host rather than a standalone input alias.
+    // A standalone file selects the analytic Parker, SWCME or runtime-model
+    // background with prescribed turbulence.  SWMF requires its typed host
+    // rather than a standalone input alias.
     if ((candidate.background != BackgroundAuthority::AnalyticParker &&
-         !(candidate.inputSchemaVersion >= 4 &&
-           (candidate.background == BackgroundAuthority::Swcme ||
-            candidate.background == BackgroundAuthority::RuntimeModel))) ||
+         candidate.background != BackgroundAuthority::Swcme &&
+         candidate.background != BackgroundAuthority::RuntimeModel) ||
         candidate.turbulence != TurbulenceAuthority::Prescribed)
-      return Invalid("standalone schema version 3 requires analytic-parker "
-                     "background and prescribed turbulence; coupled SWMF "
-                     "hosts must use the parser-free typed interface");
+      return Invalid("a standalone srcSEP3D input requires the analytic-parker, "
+                     "swcme or runtime-model background and prescribed "
+                     "turbulence; coupled SWMF hosts must use the parser-free "
+                     "typed interface");
 
     if(!reducedShockFront) {
     std::vector<swcme::input3d::Assignment> assignments;
@@ -1103,9 +1276,9 @@ Core::Status ParseConfigurationText(
         resolved.configuration.spectrum;
     const bool propagation = candidate.intent == RunIntent::ShockPropagation;
     if (candidate.shock != ShockAuthority::Swcme ||
-        (propagation ? (candidate.inputSchemaVersion < 4 || candidate.source.enabled)
+        (propagation ? candidate.source.enabled
                      : (candidate.intent != RunIntent::ShockInjection || !candidate.source.enabled)))
-      return Invalid("canonical SWCME requires injection with source enabled, or schema-4 shock-propagation with source disabled");
+      return Invalid("canonical SWCME requires injection with source enabled, or shock-propagation with source disabled");
     if (propagation) {
       // Launch-to-arrival telemetry must contain tick zero and have declared
       // temporal coverage through the step budget, even if a radius stop fires.
@@ -1134,26 +1307,6 @@ Core::Status ParseConfigurationText(
       return Invalid("srcSEP3D currently supports canonical SWCME only as a "
                      "Sphere/SSE SHOCK_ONLY/SOURCE, or source-free FULL_ICME/"
                      "RESOLVED_COMPRESSION mesh background; ellipsoid crossing is unsupported");
-    const char* retiredShockFields[] = {
-        "shock.active_from_s", "shock.active_until_s",
-        "shock.initial_radius_m", "shock.maximum_radius_m",
-        "shock.speed_m_per_s", "shock.compression_ratio"};
-    for (const char* field : retiredShockFields)
-      if (assigned.count(field) != 0)
-        return Invalid(std::string("schema version 3 rejects duplicate legacy '") +
-                       field + "'; [swcme] is authoritative");
-    if (assigned.count("source.spectral_index") != 0)
-      return Invalid("schema version 3 rejects source.spectral_index; "
-                     "canonical local SWCME compression owns the DSA index");
-    if (assigned.count(
-            "background.parker.number_density_at_reference_m3") != 0) {
-      return Invalid(
-          "schema version 3 rejects the ambiguous legacy key "
-          "background.parker.number_density_at_reference_m3; use "
-          "number_density_at_one_au_m3 because SWCME density is normalized "
-          "at one AU independently of the magnetic reference radius");
-    }
-
     // `cme-launch-point` is an explicit cross-model constraint, not a loose
     // suggestion.  The canonical SWCME resolver owns both the launch radius
     // and the apex direction; normalize the latter exactly as SWCME does and
@@ -1168,7 +1321,7 @@ Core::Status ParseConfigurationText(
           model.cme_dir[1] * model.cme_dir[1] +
           model.cme_dir[2] * model.cme_dir[2]);
       if (!std::isfinite(directionNorm) || directionNorm <= 0.0)
-        return Invalid("canonical [swcme] CME direction cannot define its "
+        return Invalid("canonical physics: swcme CME direction cannot define its "
                        "launch-apex point");
       const Core::Vec3 direction(
           model.cme_dir[0] / directionNorm,
@@ -1182,12 +1335,12 @@ Core::Status ParseConfigurationText(
           std::max(1.0, std::max(candidate.innerRadiusM, launchRadiusM));
       if (std::fabs(launchRadiusM - candidate.innerRadiusM) >
           linkageTolerance) {
-        return Invalid("parker_spiral.start_mode=cme-launch-point requires "
-                       "SWCME cme.launch_radius to equal domain.inner_radius_m");
+        return Invalid("mesh.field_line.start_mode=cme-launch-point requires "
+                       "SWCME cme.launch_radius to equal mesh.domain.inner_radius_m");
       }
       if ((candidate.parkerSpiralInitialPointM - launchPoint).Norm() >
           linkageTolerance) {
-        return Invalid("[parker_spiral] initial point differs from the "
+        return Invalid("mesh.field_line initial point differs from the "
                        "canonical SWCME launch-apex point");
       }
       const double sine = std::sin(candidate.tubeColatitudeRad);
@@ -1196,7 +1349,7 @@ Core::Status ParseConfigurationText(
           sine * std::sin(candidate.tubeLongitudeRad),
           std::cos(candidate.tubeColatitudeRad));
       if ((tubeDirection - direction).Norm() > 1.0e-12) {
-        return Invalid("[mesh.tube] source direction differs from the "
+        return Invalid("mesh.refinement.tube source direction differs from the "
                        "canonical SWCME CME launch-apex direction");
       }
       candidate.cmeLaunchPointResolved = true;
@@ -1229,22 +1382,16 @@ Core::Status ParseConfigurationText(
         Core::Const::AU / candidate.parker.referenceRadiusM;
     const double canonicalRadialFieldT =
         radialFieldAtOneAuT * radialScale * radialScale;
+    // Decision D4: the SWCME ambient is the only written description of the
+    // solar wind, so the former Parker-versus-SWCME agreement test reduces to
+    // the one remaining cross-model constraint: the SWCME Parker source
+    // (corotation) radius must be the mesh inner boundary, from which
+    // RunConfiguration3D::Create derives parker.sourceRadiusM.
     const bool sameBackground =
-        NearlyEqual(model.V_sw_kms * 1.0e3,
-                    candidate.parker.solarWindSpeedMPerS) &&
-        NearlyEqual(model.solar_rotation_rate_rad_s,
-                    candidate.parker.solarRotationRateRadPerS) &&
-        // RunConfiguration3D::Create derives parker.sourceRadiusM from the
-        // explicit domain inner radius.  Compare against that input here as
-        // well; comparing with the pre-factory C++ default would silently
-        // restrict complete schema-3 files to 20 solar radii.
-        NearlyEqual(parkerSourceM, candidate.innerRadiusM) &&
-        NearlyEqual(model.n1AU_cm3 * 1.0e6,
-                    candidate.parker.numberDensityAtReferenceM3) &&
-        NearlyEqual(canonicalRadialFieldT,
-                    candidate.parker.radialFieldAtReferenceT) &&
-        NearlyEqual(model.T_K, candidate.parker.temperatureK) &&
-        model.parker_radial_polarity == candidate.parker.magneticPolarity;
+        NearlyEqual(parkerSourceM, candidate.innerRadiusM);
+    // Internal consistency assertion: the SWCME source.* values were
+    // synthesized from source: shock above (J -> MeV inside the resolver), so
+    // they agree to round-off; a failure here is a programming error.
     const bool sameSource =
         NearlyEqual(spectrum.kinetic_energy_min_MeV * 1.0e6 * Core::Const::e,
                     candidate.source.minimumEnergyJ) &&
@@ -1260,21 +1407,21 @@ Core::Status ParseConfigurationText(
         NearlyEqual(model.solar_rotation_axis[1], 0.0) &&
         NearlyEqual(model.solar_rotation_axis[2], 1.0);
     if (!sameBackground)
-      return Invalid("[background.parker] differs from the canonical "
-                     "[swcme] wind, Parker field, density, or temperature");
+      return Invalid("physics: swcme parker.source_radius differs from "
+                     "mesh.domain.inner_radius_m");
     if (!sameSource)
-      return Invalid("[source] energy/efficiency differs from canonical "
-                     "[swcme], or SWCME normalization is not relative_only");
+      return Invalid("source.shock.spectrum_normalization must be relative-only "
+                     "for srcSEP3D (the source rate is set by "
+                     "physical_particle_rate_per_s and injection_efficiency)");
     if (!sameParkerGeometry)
-      return Invalid("[mesh.tube] colatitude or analytic +Z rotation axis "
-                     "differs from canonical [swcme] Parker geometry");
+      return Invalid("mesh.refinement.tube colatitude or analytic +Z rotation axis "
+                     "differs from canonical physics: swcme Parker geometry");
 
     // From this point onward the typed Parker provider receives values copied
     // from the canonical SWCME resolver, not a second independently parsed
-    // solar-wind model.  The [background.parker] values above are retained as
-    // fail-closed cross-checks for human review; after agreement they are
-    // normalized to the exact SWCME binary values so spelling/rounding cannot
-    // create two ambient states with one configuration fingerprint.
+    // solar-wind model (decision D4: the Parker block holds no ambient keys
+    // when physics: swcme is present).  B_r is expressed at the 1-AU
+    // reference installed after the walk.
     candidate.parker.radialFieldAtReferenceT = canonicalRadialFieldT;
     candidate.parker.solarWindSpeedMPerS = model.V_sw_kms * 1.0e3;
     candidate.parker.solarRotationRateRadPerS =
@@ -1311,7 +1458,7 @@ Core::Status ParseConfigurationText(
           !NearlyEqual(derivedWeight, candidate.species.macroparticleWeight))
         return Invalid("species.macroparticle_weight must equal "
                        "rate*efficiency*relative_source_weight*cadence_dt/"
-                       "source.samples_per_step");
+                       "source.shock.samples_per_step");
     }
     // Keep the legacy typed diagnostic consistent with the sole canonical
     // launch authority; radius-stop validation must use the actual launch.
@@ -1322,27 +1469,67 @@ Core::Status ParseConfigurationText(
     candidate.swcmeResolvedManifest =
         resolved.configuration.normalized_manifest;
     } else {
-      // The reduced provider owns a diagnostic front even though the legacy
-      // particle-facing shock authority stays `none`.  Permit the production
-      // propagation driver to record that front; transport-only remains the
-      // mode used by native qualification probes.  Both retain the identical
-      // zero-source/zero-particle physics boundary.
-      const bool reducedIntent=candidate.intent==RunIntent::TransportOnly||
-          candidate.intent==RunIntent::ShockPropagation;
-      if(candidate.inputSchemaVersion<4||!reducedIntent||
-          candidate.shock!=ShockAuthority::None||candidate.source.enabled||
-          candidate.backgroundModelAssetPath.empty())
-        return Invalid("reduced shock-front runtime requires schema 4, transport-only or shock-propagation, "
-                       "shock.authority=none, source.enabled=false and background.model_asset");
+      // The reduced provider owns its finite front; the legacy particle-facing
+      // shock authority stays `none` in every reduced mode.  Two modes exist:
+      //  * zero-particle (transport-only or shock-propagation): the source is
+      //    disabled and the front is a background/diagnostic authority;
+      //  * reduced-front injection (shock-injection): particles are injected
+      //    from accepted triangles of the same front with the derived particle
+      //    numerics above (AGENTS.md "Authorized srcSEP3D reduced-front source
+      //    extension").  This was formerly reachable only through the retired
+      //    one-dash section input; it is now an explicit, validated mode.
+      if(walk.shockFrontBlock==nullptr)
+        return Invalid("physics.background.model_id=sep-corona-swcme-shock-front-v1 "
+                       "requires a physics: shock_front block (usually "
+                       "#included from its event file)");
+      if(candidate.shock!=ShockAuthority::None)
+        return Invalid("reduced shock-front runtime requires "
+                       "physics.shock.authority=none");
+      if(incidentFlux) {
+        if(candidate.intent!=RunIntent::ShockInjection||
+            !candidate.source.enabled)
+          return Invalid("reduced-front injection requires "
+                         "application.sep.intent=shock-injection and "
+                         "source.shock.enabled=true");
+      } else {
+        const bool reducedIntent=candidate.intent==RunIntent::TransportOnly||
+            candidate.intent==RunIntent::ShockPropagation;
+        if(!reducedIntent||candidate.source.enabled)
+          return Invalid("zero-particle reduced shock-front runtime requires "
+                         "transport-only or shock-propagation and "
+                         "source.shock.enabled=false (select "
+                         "source.shock.normalization=accepted-shock-incident-flux "
+                         "for reduced-front injection)");
+      }
       if(!candidate.swcmeAssignments.empty())
-        return Invalid("reduced shock-front runtime rejects inactive [swcme] assignments");
+        return Invalid("reduced shock-front runtime rejects inactive physics: swcme assignments");
+      if(candidate.coordinateFrame!="HCI")
+        return Invalid("reduced shock-front runtime requires mesh.domain.coordinate_frame=HCI");
+      // The shared resolver receives the canonical block text; relative assets
+      // (assets.harmonics_file) resolve from the file that holds the block.
+      candidate.backgroundModelAssetPath.clear();
+      candidate.backgroundModelInlineConfiguration=
+          ShockFrontCanonicalText(*walk.shockFrontBlock);
+      std::filesystem::path assetDirectory=
+          std::filesystem::path(walk.shockFrontBlock->begin.file).parent_path();
+      if(assetDirectory.empty())assetDirectory=".";
+      std::error_code error;
+      const std::filesystem::path resolvedDirectory=
+          std::filesystem::weakly_canonical(assetDirectory,error);
+      candidate.backgroundModelAssetDirectory=
+          error?assetDirectory.string():resolvedDirectory.string();
     }
   }
-  if (candidate.inputSchemaVersion >= 5 &&
-      assigned.count("run.particle_mover") == 0) {
-    return Invalid("schema version 5 requires explicit key "
-                   "'run.particle_mover'");
-  }
+  if(walk.shockFrontBlock!=nullptr&&
+      !(candidate.background==BackgroundAuthority::RuntimeModel&&
+        candidate.backgroundModelId=="sep-corona-swcme-shock-front-v1"))
+    return Invalid(AMPS::Input::ErrorAt(walk.shockFrontBlock->begin,
+        "physics: shock_front is present but physics.background does not "
+        "select provider=runtime-model with model_id="
+        "sep-corona-swcme-shock-front-v1").message);
+  if(incidentFlux&&walk.shockFrontBlock==nullptr)
+    return Invalid("source.shock.normalization=accepted-shock-incident-flux "
+                   "requires the reduced shock front (physics: shock_front)");
   bool observerSectionSeen = false;
   for (const std::string& present : sections) {
     if (present.rfind("observer.", 0) == 0) observerSectionSeen = true;
@@ -1350,7 +1537,7 @@ Core::Status ParseConfigurationText(
   if (!observerSectionSeen && candidate.intent == RunIntent::ShockPropagation)
     candidate.observers.clear();  // No energetic-particle products in an empty run.
   else if (!observerSectionSeen)
-    return Invalid("at least one [observer.ID] section is required");
+    return Invalid("at least one '#begin observer: ID' block is required");
   // Parsing alone does not expose a half-valid options record.  Invoke the
   // immutable factory as the schema's single normalization/validation gate,
   // then copy its resolved options back for callers that want programmatic
@@ -1362,27 +1549,28 @@ Core::Status ParseConfigurationText(
   return Core::Status::OK();
 }
 
+Core::Status ParseConfigurationText(const std::string& text,
+                                   RunConfiguration3DOptions* result,
+                                   const std::string& baseDirectory) {
+  // In-memory input (tests, generated decks).  The display name places the
+  // text in baseDirectory so that relative #include paths and the assets of
+  // an included physics: shock_front block resolve from there.
+  const std::string displayName =
+      (std::filesystem::path(baseDirectory) / "<srcSEP3D input text>").string();
+  AMPS::Input::Document document;
+  const AMPS::Input::Status parsed =
+      AMPS::Input::ParseText(text, displayName, baseDirectory, &document);
+  if (!parsed.ok()) return Invalid(parsed.message);
+  return ParseConfigurationDocument(document, result);
+}
+
 Core::Status LoadConfigurationFile(
     const std::string& path, RunConfiguration3DOptions* result) {
   if (path.empty()) return Invalid("configuration path is empty");
-  std::ifstream input(path.c_str());
-  if (!input) return Invalid("cannot open configuration file '" + path + "'");
-  std::ostringstream text;
-  text << input.rdbuf();
-  if (!input.good() && !input.eof())
-    return Invalid("failed while reading configuration file '" + path + "'");
-  const Core::Status parsed=ParseConfigurationText(text.str(), result);
-  if(!parsed.ok())return parsed;
-  if(!result->backgroundModelAssetPath.empty()) {
-    std::filesystem::path asset(result->backgroundModelAssetPath);
-    if(asset.is_relative())asset=std::filesystem::path(path).parent_path()/asset;
-    std::error_code error;
-    asset=std::filesystem::weakly_canonical(asset,error);
-    if(error)return Invalid("cannot resolve background.model_asset relative to input: "+
-        error.message());
-    result->backgroundModelAssetPath=asset.string();
-  }
-  return Core::Status::OK();
+  AMPS::Input::Document document;
+  const AMPS::Input::Status parsed = AMPS::Input::ParseFile(path, &document);
+  if (!parsed.ok()) return Invalid(parsed.message);
+  return ParseConfigurationDocument(document, result);
 }
 
 Core::Status ApplyInitializationOutputDirectory(
@@ -1433,25 +1621,11 @@ Core::Status BuildStandaloneRunRequest(
       !candidate.commandLine.testSuite.empty() ||
       !candidate.commandLine.tests.empty();
   RunConfiguration3DOptions options;
-  if (candidate.commandLine.sectionInput) {
-    // The application parser is required to execute after Init_BeforeParser,
-    // so this host boundary creates only a valid provisional typed object.
-    // amps_init_mesh replaces it transactionally after the section value has
-    // been parsed.  No file is opened on this earlier path.
-    if (candidate.commandLine.dryRun)
-      return Invalid("-input shared-section mode cannot use --dry-run because "
-                     "the application parser runs after Init_BeforeParser; "
-                     "use --initialization-only or a normal run");
-    if (!candidate.commandLine.restartPath.empty())
-      return Invalid("-input shared-section mode does not yet support restart; "
-                     "the final input fingerprint is established during native initialization");
-  } else {
-    status = LoadConfigurationFile(
-        nativeTestRun ? candidate.commandLine.testInputPath
-                      : candidate.commandLine.inputPath,
-        &options);
-    if (!status.ok()) return status;
-  }
+  status = LoadConfigurationFile(
+      nativeTestRun ? candidate.commandLine.testInputPath
+                    : candidate.commandLine.inputPath,
+      &options);
+  if (!status.ok()) return status;
   if (!candidate.commandLine.initializationOutputDirectory.empty()) {
     status = ApplyInitializationOutputDirectory(
         candidate.commandLine.initializationOutputDirectory, &options);

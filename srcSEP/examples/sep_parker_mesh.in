@@ -1,155 +1,222 @@
-# srcSEP complete startup configuration, schema version 3.
-#
-# Every dimensional key includes its SI unit.  The parser rejects unknown,
-# duplicate, and omitted keys before MPI/AMPS initialization.  The finite line
-# remains a one-dimensional particle-transport domain embedded in the 3-D AMR
-# support mesh.
+! srcSEP complete startup configuration, shared SEP schema version 6.
+!
+! Every dimensional key includes its SI unit.  The parser rejects unknown,
+! duplicate, and omitted keys before MPI/AMPS initialization.  The finite line
+! remains a one-dimensional particle-transport domain embedded in the 3-D AMR
+! support mesh.
 
-[run]
-schema_version = 3
-# The PIC clock step is explicit.  It is installed for every compiled AMPS
-# species on every block and is never re-derived from the AMR cell size.
-time_step_s = 1
+#begin run
+  ! The PIC clock step is explicit.  It is installed for every compiled AMPS
+  ! species on every block and is never re-derived from the AMR cell size.
+  time_step_s = 1
+#end run
 
-[injection]
-# Exact macroparticle count per active field-line source event.  The individual
-# AMPS weight correction carries the physical-rate/count ratio.
-macroparticles_per_step = 1000
+#begin application: sep
+  schema_version = 6
+  ! parker | focused-diffusion | focused-scattering (srcSEP movers parker,
+  ! fte-dmumu, fte-mfp); --particle-mover overrides it.
+  transport = focused-diffusion
 
-[species]
-# Common base statistical weight installed for every entry in AMPS' generated
-# SpeciesList.  This runtime file does not redefine species identity, mass, or
-# charge.  The shock-source correction is species-aware and multiplies this
-# base value without changing conservation.
-particle_weight = 1e30
+  ! The only application-specific block: srcSEP's turbulence model.
+  ! Every key has a command-line option that overrides it.
+  #begin turbulence
+    ! Self-consistent Alfven-wave turbulence on the field line
+    source = self-consistent-integrated
+    representation = integrated
+    coupling = streaming-energy-exchange
+    advection = true
+    reflection = true
+    cascade = true
+    shock_injection = true
+    ! Boundary policies; the values are J (energy/reservoir) or W (flux)
+    inner_boundary = fixed-reservoir
+    inner_boundary_value_si = 0
+    outer_boundary = fixed-reservoir
+    outer_boundary_value_si = 0
+    ! Reflection/cascade closures and the spectral grid
+    reflection_coefficient = 0.6
+    cascade_coefficient = 0.8
+    perpendicular_correlation_length_m = 1e7
+    electron_heating_fraction = 0.3
+    spectral_k_min_per_m = 1e-10
+    spectral_k_max_per_m = 1e-2
+    spectral_bins = 128
+    ! Operator accuracy controls
+    cfl_safety = 0.8
+    operator_accuracy_safety = 0.25
+    maximum_source_fraction = 0.25
+    maximum_cascade_fraction = 0.2
+    minimum_substep_s = 1e-12
+    maximum_substeps = 1000000
+    conservation_relative_tolerance = 1e-12
+    ! Wave energy deposited by the shock and its E+ share
+    shock_source_efficiency = 0.02
+    shock_source_plus_fraction = 0.5
+    ! Spectrum diagnostic cadence in main-loop steps (0 = off)
+    diagnostic_cadence_steps = 100
+  #end turbulence
+#end application
 
-[observer.earth]
-# Each named observer is a radius on the one-dimensional field line and owns
-# an independent energy/pitch-angle sampling grid.
-heliocentric_radius_m = 1.495978707e11
-minimum_energy_j = 1.602176634e-15
-maximum_energy_j = 8.01088317e-11
-energy_channels = 70
-energy_spacing = logarithmic
-pitch_angle_bins = 24
+#begin mesh
+  ! global_cell_size_m is the asymptotic background request.  The minimum is a
+  ! hard floor shared by the solar and tube refinement profiles.
+  global_cell_size_m = 3.7399467675e10
+  minimum_cell_size_m = 1.495978707e9
+  maximum_level = 7
 
-[observer.inner]
-heliocentric_radius_m = 4.487936121e10
-minimum_energy_j = 1.602176634e-15
-maximum_energy_j = 8.01088317e-15
-energy_channels = 20
-energy_spacing = linear
-pitch_angle_bins = 16
+  #begin field_line
+    ! Origin of the Parker geometry and first point on the inner boundary sphere.
+    ! length_m is physical arc length; point_count includes both endpoints.
+    origin_x_m = 0
+    origin_y_m = 0
+    origin_z_m = 0
+    initial_x_m = 1.3914e10
+    initial_y_m = 0
+    initial_z_m = 0
+    length_m = 2.0e11
+    point_count = 4001
+  #end field_line
 
-[output]
-# Geometry products are emitted after final mesh pruning/decomposition. The
-# data product is emitted later, after AMPS initializes macroscopic fields,
-# local particle time steps, and local statistical weights.
-# With --initialization-output-dir DIR, these leaf names are retained and only
-# their parent is replaced. --initialization-only then exits before time step 1.
-mesh_tecplot_file = srcsep-initialization-mesh.dat
-field_line_tecplot_file = srcsep-initialization-field-line.dat
-# Mixed-species executables insert `.species-N` before this extension.
-data_tecplot_file = srcsep-initialization-data.dat
+  #begin domain
+    ! The AMR root is the cube origin +/- outer_radius_m.  inner_radius_m must
+    ! equal the distance from Parker origin to the initial point.
+    inner_radius_m = 1.3914e10
+    outer_radius_m = 1.495978707e11
+  #end domain
 
-[parker_spiral]
-# Origin of the Parker geometry and first point on the inner boundary sphere.
-# length_m is physical arc length; point_count includes both endpoints.
-origin_x_m = 0
-origin_y_m = 0
-origin_z_m = 0
-initial_x_m = 1.3914e10
-initial_y_m = 0
-initial_z_m = 0
-length_m = 2.0e11
-point_count = 4001
+  #begin refinement: solar
+    ! Cell size changes monotonically from surface_cell_size_m at the inner sphere
+    ! to the global size at transition_outer_radius_m.  profile is linear,
+    ! power-law, or smoothstep; exponent controls how quickly it degrades.
+    enabled = true
+    surface_cell_size_m = 1.495978707e9
+    transition_outer_radius_m = 3.7399467675e10
+    profile = smoothstep
+    exponent = 1
+  #end refinement
 
-[domain]
-# The AMR root is the cube origin +/- outer_radius_m.  inner_radius_m must
-# equal the distance from Parker origin to the initial point.
-inner_radius_m = 1.3914e10
-outer_radius_m = 1.495978707e11
+  #begin refinement: tube
+    ! At the analytic Parker centreline the requested cell size is
+    ! center_cell_size_m.  It becomes exactly global at the tube boundary.
+    ! constant-angular-width scales the physical radius linearly with heliocentric
+    ! radius; physical-constant retains radius_at_reference_m everywhere.
+    enabled = true
+    reference_radius_m = 1.495978707e11
+    radius_at_reference_m = 4.487936121e9
+    radius_mode = constant-angular-width
+    center_cell_size_m = 1.495978707e9
+    transverse_profile = smoothstep
+    transverse_exponent = 1
+  #end refinement
+#end mesh
 
-[mesh]
-# global_cell_size_m is the asymptotic background request.  The minimum is a
-# hard floor shared by the solar and tube refinement profiles.
-global_cell_size_m = 3.7399467675e10
-minimum_cell_size_m = 1.495978707e9
-maximum_level = 7
+#begin physics: background
+  ! srcSEP's ambient plasma is the standalone SWCME state along the
+  ! Parker field line; physics: swcme owns the solar-wind values.
+  provider = swcme
+#end physics
 
-[mesh.solar]
-# Cell size changes monotonically from surface_cell_size_m at the inner sphere
-# to the global size at transition_outer_radius_m.  profile is linear,
-# power-law, or smoothstep; exponent controls how quickly it degrades.
-enabled = true
-surface_cell_size_m = 1.495978707e9
-transition_outer_radius_m = 3.7399467675e10
-profile = smoothstep
-exponent = 1
+! The shock is the canonical SWCME front.
+#begin physics: shock
+  authority = swcme
+#end physics
 
-[mesh.tube]
-# At the analytic Parker centreline the requested cell size is
-# center_cell_size_m.  It becomes exactly global at the tube boundary.
-# constant-angular-width scales the physical radius linearly with heliocentric
-# radius; physical-constant retains radius_at_reference_m everywhere.
-enabled = true
-reference_radius_m = 1.495978707e11
-radius_at_reference_m = 4.487936121e9
-radius_mode = constant-angular-width
-center_cell_size_m = 1.495978707e9
-transverse_profile = smoothstep
-transverse_exponent = 1
+#begin physics: swcme
+  ! Complete canonical SWCME1D assignment layer.  Units are interpreted only by
+  ! src/models/swcme/swcme1d_input.hpp.  Every physically effective key is
+  ! explicit; there are no hidden CME/source defaults in a schema-6 run.
+  preset = fast
+  ambient.wind_speed = 400 km/s
+  ambient.density_1au = 6 cm^-3
+  ambient.magnetic_field_1au = 5 nT
+  ambient.proton_temperature = 1.2e5 K
+  ambient.adiabatic_index = 1.6666666666666667
+  ambient.alpha_to_proton_ratio = 0.04
+  ambient.electron_temperature = 1.2e5 K
+  ambient.alpha_temperature = 4.8e5 K
+  ambient.thermodynamic_closure = proton_only
+  parker.radial_polarity = 1
+  parker.sin_theta = 1
+  parker.source_radius = 20 Rs
+  cme.kinematics = dbm
+  cme.launch_radius = 20 Rs
+  cme.launch_speed = 1900 km/s
+  cme.drag_coefficient = 8e-8 1/km
+  cme.extrapolation = outside_time
+  shock.region_mode = shock_only
+  shock.acceleration_mode = source
+  shock.relative_source_weight_per_area = 1
+  geometry.sheath_thickness_1au = 0.12 AU
+  geometry.ejecta_thickness_1au = 0.22 AU
+  smoothing.shock_width_1au = 0.010 AU
+  smoothing.leading_edge_width_1au = 0.020 AU
+  smoothing.trailing_edge_width_1au = 0.030 AU
+  sheath.ramp_power = 2
+  sheath.leading_edge_speed_factor = 1.12
+  ejecta.density_factor = 0.50
+  ejecta.speed_factor = 0.80
+  event.launch_epoch = 0 s
+  event.valid_from = 0 s
+  event.valid_until = 604800 s
+#end physics
 
-[background.parker]
-# These values determine both the field-line winding and the magnetic tangent.
-solar_wind_speed_m_per_s = 400000
-# SWCME1D uses its documented Carrington sidereal rate as canonical physics;
-# this application-owned mesh value must match it exactly.
-solar_rotation_rate_rad_per_s = 2.86533e-6
+#begin source: shock
+  enabled = true
+  ! Exact macroparticle count per active field-line source event.  The individual
+  ! AMPS weight correction carries the physical-rate/count ratio.
+  samples_per_step = 1000
 
-[swcme]
-# Complete canonical SWCME1D assignment layer.  Units are interpreted only by
-# src/models/swcme/swcme1d_input.hpp.  Every physically effective key is
-# explicit; there are no hidden CME/source defaults in a version-2 run.
-preset = fast
-ambient.wind_speed = 400 km/s
-ambient.density_1au = 6 cm^-3
-ambient.magnetic_field_1au = 5 nT
-ambient.proton_temperature = 1.2e5 K
-ambient.adiabatic_index = 1.6666666666666667
-ambient.alpha_to_proton_ratio = 0.04
-ambient.electron_temperature = 1.2e5 K
-ambient.alpha_temperature = 4.8e5 K
-ambient.thermodynamic_closure = proton_only
-parker.radial_polarity = 1
-parker.sin_theta = 1
-parker.source_radius = 20 Rs
-cme.kinematics = dbm
-cme.launch_radius = 20 Rs
-cme.launch_speed = 1900 km/s
-cme.drag_coefficient = 8e-8 1/km
-cme.extrapolation = outside_time
-shock.region_mode = shock_only
-shock.acceleration_mode = source
-shock.relative_source_weight_per_area = 1
-geometry.sheath_thickness_1au = 0.12 AU
-geometry.ejecta_thickness_1au = 0.22 AU
-smoothing.shock_width_1au = 0.010 AU
-smoothing.leading_edge_width_1au = 0.020 AU
-smoothing.trailing_edge_width_1au = 0.030 AU
-sheath.ramp_power = 2
-sheath.leading_edge_speed_factor = 1.12
-ejecta.density_factor = 0.50
-ejecta.speed_factor = 0.80
-event.launch_epoch = 0 s
-event.valid_from = 0 s
-event.valid_until = 604800 s
-source.particle_mass = 1 mp
-source.charge_number = 1
-source.energy_min = 0.1 MeV
-source.energy_max = 500 MeV
-source.reference_energy = 10 MeV
-source.injection_efficiency = 3.4e-4
-source.normalization = relative_only
-# Required for a complete auditable input but inactive under relative_only.
-source.reference_intensity_si = 1 si
+  ! Kinetic-energy range and injection efficiency of the source.
+  minimum_energy_j = 1.602176634e-14
+  maximum_energy_j = 8.01088317e-11
+  injection_efficiency = 3.4e-4
+  ! Reference spectrum of the canonical SWCME source (written once here;
+  ! srcSEP and srcSEP3D synthesize the SWCME source.* keys from it).
+  spectrum_reference_energy_j = 1.602176634e-12
+  spectrum_particle_mass_kg = 1.67262192595e-27
+  spectrum_charge_number = 1
+  spectrum_normalization = relative-only
+  spectrum_reference_intensity_per_m2_s_sr_j = 1
+#end source
+
+#begin species
+  ! Common base statistical weight installed for every entry in AMPS' generated
+  ! SpeciesList.  This runtime file does not redefine species identity, mass, or
+  ! charge.  The shock-source correction is species-aware and multiplies this
+  ! base value without changing conservation.
+  macroparticle_weight = 1e30
+#end species
+
+#begin observer: earth
+  kind = field-line-radius
+  ! Each named observer is a radius on the one-dimensional field line and owns
+  ! an independent energy/pitch-angle sampling grid.
+  heliocentric_radius_m = 1.495978707e11
+  minimum_energy_j = 1.602176634e-15
+  maximum_energy_j = 8.01088317e-11
+  energy_bins = 70
+  energy_spacing = logarithmic
+  pitch_angle_bins = 24
+#end observer
+
+#begin observer: inner
+  kind = field-line-radius
+  heliocentric_radius_m = 4.487936121e10
+  minimum_energy_j = 1.602176634e-15
+  maximum_energy_j = 8.01088317e-15
+  energy_bins = 20
+  energy_spacing = linear
+  pitch_angle_bins = 16
+#end observer
+
+#begin output
+  ! Geometry products are emitted after final mesh pruning/decomposition. The
+  ! data product is emitted later, after AMPS initializes macroscopic fields,
+  ! local particle time steps, and local statistical weights.
+  ! With --initialization-output-dir DIR, these leaf names are retained and only
+  ! their parent is replaced. --initialization-only then exits before time step 1.
+  initialization_mesh_tecplot_file = srcsep-initialization-mesh.dat
+  initialization_field_line_tecplot_file = srcsep-initialization-field-line.dat
+  ! Mixed-species executables insert `.species-N` before this extension.
+  initialization_data_tecplot_file = srcsep-initialization-data.dat
+#end output

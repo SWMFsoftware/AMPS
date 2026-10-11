@@ -189,8 +189,9 @@ sets inactive constant values to zero so the manifest cannot carry a
 plausible-looking number that is ignored by the selected model.
 
 Schema 5 adds `spatial_diffusion_model=parallel-diffusion-library` plus the
-required `[parallel_diffusion]` section. The INI layer preserves case-sensitive
-model keys and calls the library's strict reader; `Runtime::Configure` then
+required `physics: parallel_diffusion` block. The srcSEP3D input layer
+(`runtime/configuration_io.cpp`, generic block format of `src/INPUT_FILE.md`)
+preserves case-sensitive model keys and calls the library's strict reader; `Runtime::Configure` then
 installs the validated active function before any mover evaluation. Only the
 Parker mover may use this selector. The bridge supplies SI mass, signed charge,
 momentum, time, heliocentric position, mean B, and provider generations, and

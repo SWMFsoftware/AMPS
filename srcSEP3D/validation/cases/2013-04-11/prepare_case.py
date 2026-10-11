@@ -359,45 +359,39 @@ def render_assignments(fit: Mapping[str, Any], parameters: Mapping[str, Any]) ->
         ("run", "time_step_s"): number(time_step),
         ("run", "maximum_time_steps"): str(maximum_steps),
         ("run", "campaign_seed"): str(int(nested(fit, "run.campaign_seed"))),
-        ("domain", "coordinate_frame"): str(nested(fit, "coordinate_transform.name")),
-        ("parker_spiral", "start_mode"): "explicit",
-        ("parker_spiral", "initial_x_m"): number(SOURCE_RADIUS_M * parker[0]),
-        ("parker_spiral", "initial_y_m"): number(SOURCE_RADIUS_M * parker[1]),
-        ("parker_spiral", "initial_z_m"): number(SOURCE_RADIUS_M * parker[2]),
+        ("mesh.domain", "coordinate_frame"): str(nested(fit, "coordinate_transform.name")),
+        ("mesh.field_line", "start_mode"): "explicit",
+        ("mesh.field_line", "initial_x_m"): number(SOURCE_RADIUS_M * parker[0]),
+        ("mesh.field_line", "initial_y_m"): number(SOURCE_RADIUS_M * parker[1]),
+        ("mesh.field_line", "initial_z_m"): number(SOURCE_RADIUS_M * parker[2]),
         ("mesh", "global_cell_size_m"): number(nested(fit, "mesh.global_cell_size_m")),
         ("mesh", "minimum_cell_size_m"): number(nested(fit, "mesh.minimum_cell_size_m")),
         ("mesh", "maximum_level"): str(int(nested(fit, "mesh.maximum_level"))),
         ("mesh", "memory_budget_bytes"): str(int(nested(fit, "mesh.memory_budget_bytes"))),
-        ("mesh.solar", "surface_cell_size_m"): number(nested(fit, "mesh.solar_surface_cell_size_m")),
-        ("mesh.solar", "transition_outer_radius_m"): number(nested(fit, "mesh.solar_transition_outer_radius_m")),
-        ("mesh.tube", "source_longitude_rad"): number(parker_longitude),
-        ("mesh.tube", "source_colatitude_rad"): number(parker_colatitude),
-        ("mesh.tube", "radius_at_reference_m"): number(nested(fit, "mesh.refinement_tube_radius_at_reference_m")),
-        ("mesh.tube", "center_cell_size_m"): number(nested(fit, "mesh.refinement_tube_center_cell_size_m")),
+        ("mesh.refinement.solar", "surface_cell_size_m"): number(nested(fit, "mesh.solar_surface_cell_size_m")),
+        ("mesh.refinement.solar", "transition_outer_radius_m"): number(nested(fit, "mesh.solar_transition_outer_radius_m")),
+        ("mesh.refinement.tube", "source_longitude_rad"): number(parker_longitude),
+        ("mesh.refinement.tube", "source_colatitude_rad"): number(parker_colatitude),
+        ("mesh.refinement.tube", "radius_at_reference_m"): number(nested(fit, "mesh.refinement_tube_radius_at_reference_m")),
+        ("mesh.refinement.tube", "center_cell_size_m"): number(nested(fit, "mesh.refinement_tube_center_cell_size_m")),
         ("mesh.active_region", "mode"): "parker-tube",
         ("mesh.active_region", "radius_at_reference_m"): number(nested(fit, "mesh.active_tube_radius_at_reference_m")),
         ("mesh.active_region", "buffer_blocks"): str(int(nested(fit, "mesh.active_tube_buffer_blocks"))),
-        ("background.parker", "radial_field_at_reference_t"): number(radial_field),
-        ("background.parker", "solar_rotation_rate_rad_per_s"): number(omega),
-        ("background.parker", "solar_wind_speed_m_per_s"): number(wind),
-        ("background.parker", "magnetic_polarity"): str(int(nested(fit, "ambient.magnetic_polarity"))),
-        ("background.parker", "number_density_at_one_au_m3"): number(nested(fit, "ambient.number_density_at_one_au_m3")),
-        ("background.parker", "temperature_k"): number(nested(fit, "ambient.proton_temperature_k")),
-        ("turbulence", "delta_b_over_b"): number(nested(fit, "turbulence.delta_b_over_b")),
-        ("turbulence", "correlation_length_m"): number(nested(fit, "turbulence.correlation_length_m")),
-        ("transport", "mean_free_path_model"): "radial-rigidity-power-law",
-        ("transport", "mean_free_path_reference_m"): number(published(parameters, "mean_free_path_reference_m")),
-        ("transport", "mean_free_path_reference_radius_m"): number(published(parameters, "mean_free_path_reference_radius_m")),
-        ("transport", "mean_free_path_reference_rigidity_v"): number(published(parameters, "mean_free_path_reference_rigidity_v")),
-        ("transport", "mean_free_path_radial_exponent"): number(published(parameters, "mean_free_path_radial_exponent")),
-        ("transport", "mean_free_path_rigidity_exponent"): number(published(parameters, "mean_free_path_rigidity_exponent")),
-        ("source", "physical_particle_rate_per_s"): number(physical_rate),
-        ("source", "injection_efficiency"): number(efficiency),
-        ("source", "minimum_energy_j"): number(published(parameters, "seed_injection_energy_j")),
-        ("source", "maximum_energy_j"): number(maximum_energy_j),
-        ("source", "spectrum_model"): "fixed-phase-space-power-law",
-        ("source", "phase_space_power_index"): "5",
-        ("source", "samples_per_step"): str(samples),
+        ("application.sep.turbulence", "delta_b_over_b"): number(nested(fit, "turbulence.delta_b_over_b")),
+        ("application.sep.turbulence", "correlation_length_m"): number(nested(fit, "turbulence.correlation_length_m")),
+        ("application.sep.transport", "mean_free_path_model"): "radial-rigidity-power-law",
+        ("application.sep.transport", "mean_free_path_reference_m"): number(published(parameters, "mean_free_path_reference_m")),
+        ("application.sep.transport", "mean_free_path_reference_radius_m"): number(published(parameters, "mean_free_path_reference_radius_m")),
+        ("application.sep.transport", "mean_free_path_reference_rigidity_v"): number(published(parameters, "mean_free_path_reference_rigidity_v")),
+        ("application.sep.transport", "mean_free_path_radial_exponent"): number(published(parameters, "mean_free_path_radial_exponent")),
+        ("application.sep.transport", "mean_free_path_rigidity_exponent"): number(published(parameters, "mean_free_path_rigidity_exponent")),
+        ("source.shock", "physical_particle_rate_per_s"): number(physical_rate),
+        ("source.shock", "injection_efficiency"): number(efficiency),
+        ("source.shock", "minimum_energy_j"): number(published(parameters, "seed_injection_energy_j")),
+        ("source.shock", "maximum_energy_j"): number(maximum_energy_j),
+        ("source.shock", "spectrum_model"): "fixed-phase-space-power-law",
+        ("source.shock", "phase_space_power_index"): "5",
+        ("source.shock", "samples_per_step"): str(samples),
         ("species", "macroparticle_weight"): number(macro_weight),
         ("observer.earth", "position_x_m"): number(AU_M * earth[0]),
         ("observer.earth", "position_y_m"): number(AU_M * earth[1]),
@@ -407,70 +401,89 @@ def render_assignments(fit: Mapping[str, Any], parameters: Mapping[str, Any]) ->
         ("observer.earth", "energy_bins"): str(int(nested(fit, "run.observer_energy_bins"))),
         ("observer.earth", "minimum_energy_j"): number(published(parameters, "seed_injection_energy_j")),
         ("observer.earth", "maximum_energy_j"): number(maximum_energy_j),
-        ("population_control", "mode"): str(nested(fit, "population_control.mode")),
-        ("population_control", "minimum_particles_per_cell_per_species"): str(int(nested(fit, "population_control.minimum_particles_per_cell_per_species"))),
-        ("population_control", "target_particles_per_cell_per_species"): str(int(nested(fit, "population_control.target_particles_per_cell_per_species"))),
-        ("population_control", "maximum_particles_per_cell_per_species"): str(int(nested(fit, "population_control.maximum_particles_per_cell_per_species"))),
-        ("population_control", "cadence_steps"): str(int(nested(fit, "population_control.cadence_steps"))),
-        ("swcme", "ambient.wind_speed"): number(wind / 1000.0) + " km/s",
-        ("swcme", "ambient.density_1au"): number(float(nested(fit, "ambient.number_density_at_one_au_m3")) / 1.0e6) + " cm^-3",
-        ("swcme", "ambient.magnetic_field_1au"): number(total_field / 1.0e-9) + " nT",
-        ("swcme", "ambient.proton_temperature"): number(nested(fit, "ambient.proton_temperature_k")) + " K",
-        ("swcme", "ambient.adiabatic_index"): number(nested(fit, "swcme.adiabatic_index")),
-        ("swcme", "ambient.alpha_to_proton_ratio"): number(nested(fit, "swcme.alpha_to_proton_ratio")),
-        ("swcme", "ambient.electron_temperature"): number(nested(fit, "swcme.electron_temperature_k")) + " K",
-        ("swcme", "ambient.alpha_temperature"): number(nested(fit, "swcme.alpha_temperature_k")) + " K",
-        ("swcme", "ambient.thermodynamic_closure"): str(nested(fit, "swcme.thermodynamic_closure")).replace("-", "_"),
-        ("swcme", "parker.radial_polarity"): str(int(nested(fit, "ambient.magnetic_polarity"))),
-        ("swcme", "parker.sin_theta"): number(math.sin(parker_colatitude)),
-        ("swcme", "parker.solar_rotation_rate_rad_per_s"): number(omega),
-        ("swcme", "cme.launch_speed"): number(published(parameters, "cme_speed_m_per_s") / 1000.0) + " km/s",
-        ("swcme", "cme.drag_coefficient"): number(nested(fit, "swcme.drag_coefficient_per_km")) + " 1/km",
-        ("swcme", "geometry.cme_direction_x"): number(cme[0]),
-        ("swcme", "geometry.cme_direction_y"): number(cme[1]),
-        ("swcme", "geometry.cme_direction_z"): number(cme[2]),
-        ("swcme", "geometry.sheath_thickness_1au"): number(float(nested(fit, "swcme.sheath_thickness_at_one_au_m")) / AU_M) + " AU",
-        ("swcme", "geometry.ejecta_thickness_1au"): number(float(nested(fit, "swcme.ejecta_thickness_at_one_au_m")) / AU_M) + " AU",
-        ("swcme", "smoothing.shock_width_1au"): number(float(nested(fit, "swcme.shock_smoothing_width_at_one_au_m")) / AU_M) + " AU",
-        ("swcme", "smoothing.leading_edge_width_1au"): number(float(nested(fit, "swcme.leading_edge_smoothing_width_at_one_au_m")) / AU_M) + " AU",
-        ("swcme", "smoothing.trailing_edge_width_1au"): number(float(nested(fit, "swcme.trailing_edge_smoothing_width_at_one_au_m")) / AU_M) + " AU",
-        ("swcme", "shock.relative_source_weight_per_area"): number(relative_weight),
-        ("swcme", "sheath.ramp_power"): number(nested(fit, "swcme.sheath_ramp_power")),
-        ("swcme", "sheath.leading_edge_speed_factor"): number(nested(fit, "swcme.leading_edge_speed_factor")),
-        ("swcme", "ejecta.density_factor"): number(nested(fit, "swcme.ejecta_density_factor")),
-        ("swcme", "ejecta.speed_factor"): number(nested(fit, "swcme.ejecta_speed_factor")),
-        ("swcme", "event.valid_from"): number(nested(fit, "swcme.valid_from_s")) + " s",
-        ("swcme", "event.valid_until"): number(nested(fit, "swcme.valid_until_s")) + " s",
-        ("swcme", "source.energy_min"): "0.01 MeV",
-        ("swcme", "source.energy_max"): number(maximum_energy_mev) + " MeV",
-        ("swcme", "source.reference_energy"): number(nested(fit, "source.reference_energy_mev")) + " MeV",
-        ("swcme", "source.injection_efficiency"): number(efficiency),
+        ("application.sep.population_control", "mode"): str(nested(fit, "population_control.mode")),
+        ("application.sep.population_control", "minimum_particles_per_cell_per_species"): str(int(nested(fit, "population_control.minimum_particles_per_cell_per_species"))),
+        ("application.sep.population_control", "target_particles_per_cell_per_species"): str(int(nested(fit, "population_control.target_particles_per_cell_per_species"))),
+        ("application.sep.population_control", "maximum_particles_per_cell_per_species"): str(int(nested(fit, "population_control.maximum_particles_per_cell_per_species"))),
+        ("application.sep.population_control", "cadence_steps"): str(int(nested(fit, "population_control.cadence_steps"))),
+        ("physics.swcme", "ambient.wind_speed"): number(wind / 1000.0) + " km/s",
+        ("physics.swcme", "ambient.density_1au"): number(float(nested(fit, "ambient.number_density_at_one_au_m3")) / 1.0e6) + " cm^-3",
+        ("physics.swcme", "ambient.magnetic_field_1au"): number(total_field / 1.0e-9) + " nT",
+        ("physics.swcme", "ambient.proton_temperature"): number(nested(fit, "ambient.proton_temperature_k")) + " K",
+        ("physics.swcme", "ambient.adiabatic_index"): number(nested(fit, "swcme.adiabatic_index")),
+        ("physics.swcme", "ambient.alpha_to_proton_ratio"): number(nested(fit, "swcme.alpha_to_proton_ratio")),
+        ("physics.swcme", "ambient.electron_temperature"): number(nested(fit, "swcme.electron_temperature_k")) + " K",
+        ("physics.swcme", "ambient.alpha_temperature"): number(nested(fit, "swcme.alpha_temperature_k")) + " K",
+        ("physics.swcme", "ambient.thermodynamic_closure"): str(nested(fit, "swcme.thermodynamic_closure")).replace("-", "_"),
+        ("physics.swcme", "parker.radial_polarity"): str(int(nested(fit, "ambient.magnetic_polarity"))),
+        ("physics.swcme", "parker.sin_theta"): number(math.sin(parker_colatitude)),
+        ("physics.swcme", "parker.solar_rotation_rate_rad_per_s"): number(omega),
+        ("physics.swcme", "cme.launch_speed"): number(published(parameters, "cme_speed_m_per_s") / 1000.0) + " km/s",
+        ("physics.swcme", "cme.drag_coefficient"): number(nested(fit, "swcme.drag_coefficient_per_km")) + " 1/km",
+        ("physics.swcme", "geometry.cme_direction_x"): number(cme[0]),
+        ("physics.swcme", "geometry.cme_direction_y"): number(cme[1]),
+        ("physics.swcme", "geometry.cme_direction_z"): number(cme[2]),
+        ("physics.swcme", "geometry.sheath_thickness_1au"): number(float(nested(fit, "swcme.sheath_thickness_at_one_au_m")) / AU_M) + " AU",
+        ("physics.swcme", "geometry.ejecta_thickness_1au"): number(float(nested(fit, "swcme.ejecta_thickness_at_one_au_m")) / AU_M) + " AU",
+        ("physics.swcme", "smoothing.shock_width_1au"): number(float(nested(fit, "swcme.shock_smoothing_width_at_one_au_m")) / AU_M) + " AU",
+        ("physics.swcme", "smoothing.leading_edge_width_1au"): number(float(nested(fit, "swcme.leading_edge_smoothing_width_at_one_au_m")) / AU_M) + " AU",
+        ("physics.swcme", "smoothing.trailing_edge_width_1au"): number(float(nested(fit, "swcme.trailing_edge_smoothing_width_at_one_au_m")) / AU_M) + " AU",
+        ("physics.swcme", "shock.relative_source_weight_per_area"): number(relative_weight),
+        ("physics.swcme", "sheath.ramp_power"): number(nested(fit, "swcme.sheath_ramp_power")),
+        ("physics.swcme", "sheath.leading_edge_speed_factor"): number(nested(fit, "swcme.leading_edge_speed_factor")),
+        ("physics.swcme", "ejecta.density_factor"): number(nested(fit, "swcme.ejecta_density_factor")),
+        ("physics.swcme", "ejecta.speed_factor"): number(nested(fit, "swcme.ejecta_speed_factor")),
+        ("physics.swcme", "event.valid_from"): number(nested(fit, "swcme.valid_from_s")) + " s",
+        ("physics.swcme", "event.valid_until"): number(nested(fit, "swcme.valid_until_s")) + " s",
+        # Shared SEP schema 6 (decision D4): source: shock owns the reference
+        # spectrum handed to SWCME; MeV -> J with the exact elementary charge.
+        ("source.shock", "spectrum_reference_energy_j"): number(float(nested(fit, "source.reference_energy_mev")) * 1.0e6 * 1.602176634e-19),
     }
     return assignments
 
 
 def rewrite_deck(base: str, assignments: Mapping[Tuple[str, str], str]) -> str:
+    """Replace exact assignments in a generic AMPS runtime-input deck.
+
+    The base deck uses ``#begin KIND[: NAME]`` / ``#end KIND`` blocks
+    (src/INPUT_FILE.md).  An assignment is addressed by (qualified block path,
+    key): the dot-joined path of the enclosing blocks, where a named block
+    contributes ``kind.name`` (e.g. ``("mesh.refinement.tube",
+    "center_cell_size_m")``, ``("observer.earth", "cadence_s")``).  Every
+    target must occur exactly once.  The ``observer: inner`` block of the base
+    deck is dropped because this case defines only the Earth observer.
+    """
     output: List[str] = []
-    section = ""
+    stack: List[str] = []
     seen: Dict[Tuple[str, str], int] = {key: 0 for key in assignments}
-    drop_section = False
+    dropping = 0           # depth of the block being dropped (0 = keep)
     for raw in base.splitlines():
-        stripped = raw.strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
-            section = stripped[1:-1].strip().lower()
-            drop_section = section == "observer.inner"
-            if drop_section:
+        code = raw.split("!", 1)[0].strip()
+        lowered = code.lower()
+        if lowered.startswith("#begin"):
+            label = code[len("#begin"):].strip()
+            kind, _, name = (part.strip() for part in label.partition(":"))
+            own = kind.lower() + ("." + name if name else "")
+            stack.append(own)
+            if dropping or ".".join(stack) == "observer.inner":
+                dropping += 1
                 continue
-        if drop_section:
+        elif lowered.startswith("#end"):
+            stack.pop()
+            if dropping:
+                dropping -= 1
+                continue
+        elif dropping:
             continue
-        if stripped and not stripped.startswith("#") and "=" in raw:
-            key = raw.split("=", 1)[0].strip().lower()
-            address = (section, key)
+        elif code and not code.startswith("#") and "=" in code:
+            key = code.split("=", 1)[0].strip()
+            address = (".".join(stack), key)
             if address in assignments:
                 seen[address] += 1
-                raw = f"{key} = {assignments[address]}"
+                indent = raw[:len(raw) - len(raw.lstrip())]
+                raw = f"{indent}{key} = {assignments[address]}"
         output.append(raw)
-    invalid = [f"[{section}].{key} count={seen[(section, key)]}"
+    invalid = [f"{section}.{key} count={seen[(section, key)]}"
                for section, key in sorted(seen) if seen[(section, key)] != 1]
     if invalid:
         raise PreparationError("base input does not contain exact replacement targets: " +

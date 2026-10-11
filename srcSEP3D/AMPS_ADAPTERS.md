@@ -9,9 +9,10 @@ bookkeeping, and conservation accounting only.
 ## Production mover path
 
 Generic PIC calls one of two family entry points selected by the immutable
-`run.particle_mover` value: `MoveParkerParticle` or
+`application.sep3d.particle_mover` value: `MoveParkerParticle` or
 `MoveFocusedTransportParticle`. Both enter the validating
-`AMPS::Movers::MoveParticle` dispatcher. The independent `run.transport`
+`AMPS::Movers::MoveParticle` dispatcher. The independent
+`application.sep3d.transport`
 selector chooses exactly one of three registered cores:
 
 | Mover family | Concrete transport | Configuration | Core |
@@ -118,7 +119,7 @@ Therefore the shared `sep_common` linear-momentum spectrum receives
 `powerIndex=q-2`. In `local-compression-dsa` mode, q is the patch-local value
 published by SWCME. In `fixed-phase-space-power-law` mode,
 `ConfigureSpeciesSpectrum` replaces only that shape with the reviewed positive
-q from `[source].phase_space_power_index`; shock position, normal, generation,
+q from `source.shock.phase_space_power_index`; shock position, normal, generation,
 patch weight, and compression diagnostics remain provider-owned. This is how a
 published \(f(p)\propto p^{-5}\) boundary is represented without pretending
 that its slope came from a compression ratio.
@@ -144,8 +145,8 @@ and weights. No `srcSEP` source file is inspected or linked.
 
 ### Schema-3 standalone provider and exact per-species count
 
-`CreateStandaloneSwcmeShockProvider` re-resolves the frozen raw `[swcme]`
-assignments and requires the resulting canonical manifest/fingerprint to match
+`CreateStandaloneSwcmeShockProvider` re-resolves the frozen raw `physics: swcme`
+block assignments and requires the resulting canonical manifest/fingerprint to match
 the immutable application configuration byte-for-byte. It then constructs the
 canonical `swcme::sep::Interface3D`, evaluates the complete surface at the
 declared first valid epoch, and rejects an invalid MHD solve, invalid mesh,
@@ -153,7 +154,7 @@ empty active source, or insufficient computational sample count before AMPS
 mesh allocation. Before `event.valid_from` it publishes a valid inactive state;
 it does not invent a shock.
 
-For schemas 3 and 4, `source.samples_per_step` is an exact integer for each compiled
+For schemas 3 and 4, `source.shock.samples_per_step` is an exact integer for each compiled
 AMPS species, not an independent expectation for every patch. For each species,
 `AllocateExactPatchMacroparticles` reserves one representative for each
 positive-weight active patch, apportions the remaining integer samples in

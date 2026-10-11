@@ -16,6 +16,42 @@ The authoritative parser remains `SEP::Util::CLI::ParseCommandLine` in
 - `-h`/`--help` exits before model initialization; malformed/unknown options
   fail and cannot fall through to production.
 - Parsed production options are applied after post-compile input.
+- `-input FILE` selects the runtime input file; `--input FILE` and
+  `--input=FILE` are exact synonyms kept for existing scripts.  The file uses
+  the generic AMPS runtime input format (`#begin KIND[: NAME]` ... `#end KIND`
+  blocks, `!` comments, `\` continuation, `#include`), specified in
+  `../src/INPUT_FILE.md` (shared srcSEP/srcSEP3D SEP layout, content
+  schema 6: section 5); the retired INI format and the retired srcSEP
+  schemas 1-4 are rejected.  Without an input option a production run reads `./amps.in`
+  from the working directory when that file exists (user-approved change of
+  the no-argument default, 2026-10-10; the startup line then reports
+  `(default ./amps.in)`); without the file the legacy built-in mesh is used
+  unchanged.  Help, list and component-test modes never read `./amps.in`.
+  CLI01 covers the `-input` spelling and every branch of this default.
+
+## Input-file / command-line layering (shared SEP schema 6)
+
+The command line is unchanged; the schema-6 runtime input file is the layer
+between the built-in defaults and the command line, so the precedence is
+**built-in defaults < input file < command line**
+(`../src/INPUT_FILE.md` section 5.6):
+
+| Option | File key it overrides | Behavior |
+|---|---|---|
+| `--particle-mover` (`--mover`, `--sep-mover`) | `application.sep.transport` (`parker`, `focused-diffusion` = `fte-dmumu`, `focused-scattering` = `fte-mfp`) | file value applied by `main.cpp` only when no mover option is given; provenance `CommandLine` / `InputFile` / `Default` |
+| `--total-iterations` | `run.maximum_time_steps` (optional) | file value applied only when the option is absent; provenance recorded in the run configuration |
+| `--injection-particles-per-iteration` (`--field-line-injection-particles`) | `source.shock.samples_per_step` | file value applied only when the option is absent |
+| every turbulence option of Step 11 / WP30 / WP31 (table in `README.md`, "The turbulence block") | `application.sep.turbulence.*` (28 keys, all required in the file) | `main.cpp` installs the file block as the base option record (`SEP::Util::CLI::ApplyInputFileTurbulence`) and re-parses the already validated command line on top of it, so each option keeps its usual semantics; `electron_heating_fraction` has no option |
+| `--swcme-override KEY=VALUE` | one `physics: swcme` assignment | an override of the ambient wind is rejected because the field-line mesh was built from the file value |
+| `--shock-model`, `--reduced-shock-event` | `physics.background.provider = swcme`, `physics.shock.authority = swcme` | documented higher-precedence overrides |
+
+srcSEP accepts only the SWCME background and shock in the file
+(`provider = swcme`, `authority = swcme`).  A post-compile PARAM file that
+selects the analytical shock while an input file is active, without
+`--shock-model` or `--reduced-shock-event`, contradicts the input file and is
+rejected before model initialization ("... declares the SWCME background and
+shock, but the post-compile input selects the analytical shock model (use
+--shock-model to override)").
 - Legacy TestManager controls retain their prior continue-to-production
   behavior and do not imply component-test mode.
 - SWMF library entry points do not parse arguments or execute the registry.
@@ -36,9 +72,13 @@ The authoritative parser remains `SEP::Util::CLI::ParseCommandLine` in
 ## Step 4 mover behavior
 
 - `--particle-mover`, `--mover`, and `--sep-mover` select only `parker`,
-  `fte-dmumu`, or `fte-mfp`. They override `[run] particle_mover` in a
-  schema-4 `--input` file; the default `fte-dmumu` applies only when neither
-  is given. With `--input` and no `--particle-mover`, mover-dependent
+  `fte-dmumu`, or `fte-mfp`. They override `application.sep.transport`
+  (`parker`, `focused-diffusion`, `focused-scattering`) in a schema-6 input
+  file (`-input`/`--input`); the default `fte-dmumu` applies only when no
+  input file is read and no option is given (`transport` is required in a
+  file). The retired file key `application.sep.particle_mover` is an unknown
+  key. With an input file and no
+  `--particle-mover`, mover-dependent
   validation is deferred until the file value is applied (CLI06).
 - `--list-movers` lists those three descriptors and exits before initialization.
 - Unambiguous legacy names map for one transition release with a warning.
@@ -120,15 +160,20 @@ The authoritative parser remains `SEP::Util::CLI::ParseCommandLine` in
   length [m], spectral k range [1/m], bin count, output cadence, and
   conservation tolerance are validated before initialization.
 - Startup metadata prints the complete turbulence configuration.
+- With a schema-6 input file every option above overrides its
+  `application.sep.turbulence` key (layering table above); without a file the
+  historical defaults remain the base layer.
 
 Step 12 adds no decomposition selector: reproducibility keys intentionally
 exclude thread count and MPI rank.
 
 ## WP30 authoritative run controls
 
-- `--total-iterations <N>` sets the positive standalone iteration count.
+- `--total-iterations <N>` sets the positive standalone iteration count; it
+  overrides the optional file key `run.maximum_time_steps`.
 - `--shock-model <analytical|swcme1d>` and `--cme-scenario <fast|slow>` select
-  shock/background behavior before initialization.
+  shock/background behavior before initialization; `--shock-model` overrides
+  the file's `physics.shock.authority = swcme`.
 - `--field-line-seed-area <m2>` supplies the positive area used once to form
   each line's conserved magnetic-flux record.
 - `--shock-turbulence-efficiency <0..1>` and
@@ -150,7 +195,9 @@ the checkpoint or current defaults.
   `--swcme-fallback-divergence <s^-1>` define the validated diagnostic sample.
   They have no physical effect unless `diagnostic-fallback` is selected.
 - `--swcme-override key=value` is repeatable and accepts both separated and
-  equals-sign CLI forms. Shell quoting is required when the value contains a
+  equals-sign CLI forms (with a schema-6 input file it overrides the
+  `physics: swcme` block; overriding `ambient.wind_speed` is rejected because
+  the Parker field-line mesh was built from the file value). Shell quoting is required when the value contains a
   space before its unit, for example
   `--swcme-override 'cme.launch_speed=1400 km/s'`.
 - The same canonical keys can be placed in a `SWCME1D on` block in the

@@ -9,6 +9,12 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN = re.compile(r"(?i)(\bmpi\b|mpi\.h|tecplot|\bpic(?:::|/|\.h)|amps|srcsep|swcme)")
+# The one permitted AMPS include: the header-only generic runtime-input reader
+# (src/general/input/amps_input.h, grammar in src/INPUT_FILE.md).  It is
+# standard-library C++17 with no PIC, MPI, mesh or application dependency;
+# the model parses its own configuration block with it.  The exception is an
+# exact include line, so any other AMPS/PIC header still fails this audit.
+ALLOWED_INCLUDE = re.compile(r'^\s*#\s*include\s*"amps_input\.h"\s*$')
 # AMPS builds may leave sep_*.o next to the neutral module's sources. Only
 # C/C++ source/header files belong to the text audit; archive dependencies
 # still receive the separate nm check below. Never decode object/archive bytes
@@ -47,7 +53,8 @@ def source_dependency_error(root: Path):
                     return f"neutral dependency points upward: {label}"
             else:
                 for number, line in enumerate(text.splitlines(), 1):
-                    if line.lstrip().startswith("#include") and FORBIDDEN.search(line):
+                    if (line.lstrip().startswith("#include") and FORBIDDEN.search(line)
+                            and not ALLOWED_INCLUDE.match(line)):
                         return f"forbidden include {label}:{number}: {line}"
     return None
 

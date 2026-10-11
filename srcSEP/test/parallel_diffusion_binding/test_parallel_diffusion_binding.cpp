@@ -1,8 +1,10 @@
-// PDB01-PDB05: srcSEP schema-4 input: binding of the shared parallel-diffusion
-// library (PDB01-PDB04) and the optional [run] particle_mover key (PDB05).
+// PDB01-PDB05: srcSEP input in the shared SEP schema 6: binding of the shared
+// parallel-diffusion library (PDB01-PDB04) and the application.sep.transport
+// key that selects the production mover (PDB05).  The inputs are generic AMPS
+// runtime input (src/INPUT_FILE.md section 5).
 //
 // Built without AMPS, PIC, or MPI by test/run_parallel_diffusion_binding_tests.sh
-// from the production sources: util/sep_initialization.cpp (schema-4 section
+// from the production sources: util/sep_initialization.cpp (section
 // location), adapters/parallel_diffusion_adapter.cpp (selection cross-check,
 // host-capability declaration, installation, SI state packing), the canonical
 // sep_common registry, and the library objects.  The PIC sampling wrapper in
@@ -70,15 +72,28 @@ bool ReplaceOnce(std::string* text, const std::string& from,
   return true;
 }
 
-// Replace the example's [parallel_diffusion] body (everything after the header,
-// which is the last section of the shipped example) with `body`.
+// Replace the body of the example's physics: parallel_diffusion block (the
+// records between '#begin physics: parallel_diffusion' and its '#end
+// physics') with `body`.  The surrounding generic-format text is unchanged.
 bool WithSection(const std::string& example, const std::string& body,
                  std::string* deck) {
-  const std::string header = "\n[parallel_diffusion]\n";
+  const std::string header = "#begin physics: parallel_diffusion\n";
   const std::size_t at = example.find(header);
   if (at == std::string::npos) return false;
-  *deck = example.substr(0, at + header.size()) + body;
+  const std::size_t end = example.find("#end physics\n", at);
+  if (end == std::string::npos) return false;
+  *deck = example.substr(0, at + header.size()) + body + example.substr(end);
   return true;
+}
+
+// The example without its physics: parallel_diffusion block (and without any
+// comment lines directly attached to it).
+std::string WithoutSection(const std::string& example) {
+  const std::size_t at = example.find("#begin physics: parallel_diffusion\n");
+  if (at == std::string::npos) return example;
+  const std::string closing = "#end physics\n";
+  const std::size_t end = example.find(closing, at);
+  return example.substr(0, at) + example.substr(end + closing.size());
 }
 
 bool Parse(const std::string& deck, SEP::Initialization::Configuration* c,
@@ -100,66 +115,60 @@ double SpeedFromMomentum(double momentum, double mass) {
   return static_cast<double>(pc * c / std::sqrt(pc * pc + rest * rest));
 }
 
-// PDB01 -- schema-4 section location and legality in the srcSEP INI reader.
+// PDB01 -- physics: parallel_diffusion location and legality in the srcSEP
+// schema-6 reader.
 SEP::Testing::Result RunPDB01() {
   std::string example;
   if (!ReadFile(gExamplePath, &example) || example.empty())
-    return Fail("cannot read shipped schema-4 example " + gExamplePath);
+    return Fail("cannot read shipped example " + gExamplePath);
   SEP::Initialization::Configuration c;
   std::string message;
   if (!Parse(example, &c, &message))
-    return Fail("shipped schema-4 example did not parse: " + message);
-  // The body is kept raw (comments included, original line numbers) and is
-  // not interpreted here: model ID and fingerprint stay unresolved.
+    return Fail("shipped example did not parse: " + message);
+  // The block records are kept as "key = value" with their physical line
+  // numbers (comments are removed by the generic reader) and are not
+  // interpreted here: model ID and fingerprint stay unresolved.
   bool modelLine = false, valueLine = false;
   for (const SEP::Initialization::ParallelDiffusionLine& line :
        c.parallelDiffusionLines) {
     if (line.text == "model = constant_lambda") modelLine = line.line > 150;
-    if (line.text.find("lambda_parallel_m = 1.495978707e10   ! [m]") == 0)
-      valueLine = true;
+    if (line.text == "lambda_parallel_m = 1.495978707e10") valueLine = true;
   }
-  if (c.schemaVersion != 4 || !c.hasParallelDiffusionSection || !modelLine ||
+  if (!c.hasParallelDiffusionSection || !modelLine ||
       !valueLine || !c.parallelDiffusionModelId.empty() ||
       SEP::Initialization::Fingerprint(c).empty())
-    return Fail("schema-4 section was not recorded verbatim with line numbers");
+    return Fail("physics: parallel_diffusion records were not kept with line numbers");
 
   // Library-owned grammar: this reader must not lower-case or reject a
   // record that the library would accept (here a mixed-case SI key).
   std::string mixedCase;
   if (!WithSection(example, "model = power_law_lambda\nrigidity0_V = 1e9\n",
                    &mixedCase) || !Parse(mixedCase, &c, &message))
-    return Fail("srcSEP reader interpreted library section records: " + message);
+    return Fail("srcSEP reader interpreted library block records: " + message);
   bool caseKept = false;
   for (const auto& line : c.parallelDiffusionLines)
     if (line.text == "rigidity0_V = 1e9") caseKept = true;
   if (!caseKept) return Fail("srcSEP reader altered a case-sensitive SI key");
 
-  std::string schema3 = example;
-  if (!ReplaceOnce(&schema3, "schema_version = 4", "schema_version = 3") ||
-      Parse(schema3, &c, &message))
-    return Fail("schema 3 accepted [parallel_diffusion]");
-  // Schemas 1 and 2 must reject the section as well (the check may not live
-  // only inside schema-3 validation).  The schema-2 variant of the example is
-  // otherwise invalid, so only the section diagnostic is asserted.
-  std::string schema2 = example;
-  ReplaceOnce(&schema2, "schema_version = 4", "schema_version = 2");
-  if (Parse(schema2, &c, &message) ||
-      message.find("[parallel_diffusion] requires run.schema_version=4") ==
-          std::string::npos)
-    return Fail("schema 2 did not reject [parallel_diffusion]: " + message);
-  std::string duplicate = example + "\n[parallel_diffusion]\nmodel = bohm\n";
+  // A retired schema number is rejected before any block is interpreted.
+  std::string retired = example;
+  if (!ReplaceOnce(&retired, "schema_version = 6", "schema_version = 4") ||
+      Parse(retired, &c, &message) ||
+      message.find("retired") == std::string::npos)
+    return Fail("retired schema 4 was not rejected: " + message);
+  std::string duplicate =
+      example + "\n#begin physics: parallel_diffusion\nmodel = bohm\n#end physics\n";
   if (Parse(duplicate, &c, &message))
-    return Fail("duplicate [parallel_diffusion] section was accepted");
+    return Fail("duplicate physics: parallel_diffusion block was accepted");
 
-  // Without the section, schema 4 is exactly schema 3; the startup
-  // fingerprint differs only through the schema number.
-  std::string withoutSection = example.substr(0, example.find("\n[parallel_diffusion]\n") + 1);
+  // The block is optional: without it the deck is still complete.
+  std::string withoutSection = WithoutSection(example);
   SEP::Initialization::Configuration plain;
   if (!Parse(withoutSection, &plain, &message) ||
       plain.hasParallelDiffusionSection)
-    return Fail("schema 4 without [parallel_diffusion] was rejected: " + message);
-  return Pass("schema-4 [parallel_diffusion] body is recorded verbatim with "
-              "line numbers; schema 3 and duplicate sections are rejected");
+    return Fail("input without physics: parallel_diffusion was rejected: " + message);
+  return Pass("physics: parallel_diffusion records are kept with line "
+              "numbers; retired schemas and duplicate blocks are rejected");
 }
 
 // PDB02 -- selection cross-check and host-capability gate (nothing installed).
@@ -205,7 +214,7 @@ SEP::Testing::Result RunPDB02() {
     if (item.withInput) {
       std::string deck = example;
       if (!item.withSection)
-        deck = example.substr(0, example.find("\n[parallel_diffusion]\n") + 1);
+        deck = WithoutSection(example);
       else if (!item.body.empty() && !WithSection(example, item.body, &deck))
         return Fail("could not build case deck");
       if (!Parse(deck, &candidate, &message))
@@ -233,8 +242,7 @@ SEP::Testing::Result RunPDB02() {
 
   // Other providers are unaffected when no section is present.
   SEP::Initialization::Configuration plain;
-  Parse(example.substr(0, example.find("\n[parallel_diffusion]\n") + 1),
-        &plain, &message);
+  Parse(WithoutSection(example), &plain, &message);
   if (!Binding::Configure(false, "parker", &plain).ok() ||
       !Binding::Configure(false, "fte-mfp", NULL).ok())
     return Fail("non-library provider was rejected by the binding");
@@ -324,7 +332,7 @@ SEP::Testing::Result RunPDB04() {
           "rigidity0_V = 1.0e9\n"
           "independent_exponent = 0.5    ! a\n"
           "radius0_m = 1.495978707e11\n"
-          "radial_exponent = 1.0         # b\n", &power) ||
+          "radial_exponent = 1.0         ! b\n", &power) ||
       !Parse(power, &c, &message))
     return Fail("power-law deck did not parse: " + message);
   if (!Binding::Configure(
@@ -356,9 +364,10 @@ SEP::Testing::Result RunPDB04() {
               "match independent closed forms; failures propagate");
 }
 
-// PDB05 -- schema-4 [run] particle_mover (production mover from the input file).
-// The expected mover for each spelling is written here, not obtained from the
-// registry parser under test.
+// PDB05 -- application.sep.transport selects the production mover (shared
+// schema 6: parker | focused-diffusion | focused-scattering map to srcSEP's
+// parker | fte-dmumu | fte-mfp).  The expected mover for each spelling is
+// written here, not obtained from the parser under test.
 SEP::Testing::Result RunPDB05() {
   std::string example;
   if (!ReadFile(gExamplePath, &example)) return Fail("cannot read example");
@@ -368,64 +377,68 @@ SEP::Testing::Result RunPDB05() {
       c.particleMover != SEP::Mover::ProductionMover::Parker ||
       c.particleMoverLine == 0)
     return Fail("shipped example did not select parker through "
-                "run.particle_mover: " + message);
+                "application.sep.transport: " + message);
   const std::string parkerFingerprint = SEP::Initialization::Fingerprint(c);
 
   struct Accepted {
     const char* spelling;
     SEP::Mover::ProductionMover mover;
   };
+  // The parallel-diffusion block is a Parker capability, so the focused
+  // formulations are checked on the deck without it.
+  const std::string plain = WithoutSection(example);
   const Accepted accepted[] = {
-      {"fte-dmumu", SEP::Mover::ProductionMover::FocusedTransportDiffusion},
-      {"FTE-MFP", SEP::Mover::ProductionMover::FocusedTransportMeanFreePath}};
+      {"focused-diffusion", SEP::Mover::ProductionMover::FocusedTransportDiffusion},
+      {"Focused-Scattering", SEP::Mover::ProductionMover::FocusedTransportMeanFreePath}};
   for (const Accepted& item : accepted) {
-    std::string deck = example;
-    if (!ReplaceOnce(&deck, "particle_mover = parker",
-                     std::string("particle_mover = ") + item.spelling) ||
+    std::string deck = plain;
+    if (!ReplaceOnce(&deck, "transport = parker",
+                     std::string("transport = ") + item.spelling) ||
         !Parse(deck, &c, &message) || c.particleMover != item.mover)
-      return Fail(std::string("canonical mover '") + item.spelling +
+      return Fail(std::string("transport '") + item.spelling +
                   "' was not accepted: " + message);
     if (SEP::Initialization::Fingerprint(c) == parkerFingerprint)
-      return Fail("startup fingerprint does not depend on run.particle_mover");
+      return Fail("startup fingerprint does not depend on application.sep.transport");
   }
 
-  // Rejections: deprecated CLI aliases and retired/unknown names, a schema-3
-  // file, and a duplicate key.  The bad-value diagnostic names the line.
-  const char* rejected[] = {"focused-diffusion", "ParticleMover_Parker_Dxx",
-                            "boris", ""};
+  // Rejections: srcSEP mover names (the shared key uses the formulation
+  // names), unknown names and an empty value; the retired particle_mover key;
+  // a duplicate key; and a missing key (transport is required).
+  const char* rejected[] = {"fte-dmumu", "fte-mfp", "boris", ""};
   for (const char* spelling : rejected) {
     std::string deck = example;
-    ReplaceOnce(&deck, "particle_mover = parker",
-                std::string("particle_mover = ") + spelling);
+    ReplaceOnce(&deck, "transport = parker",
+                std::string("transport = ") + spelling);
     if (Parse(deck, &c, &message))
-      return Fail(std::string("accepted non-canonical mover '") + spelling + "'");
+      return Fail(std::string("accepted transport '") + spelling + "'");
   }
-  std::string schema3 = example.substr(0, example.find("\n[parallel_diffusion]\n") + 1);
-  ReplaceOnce(&schema3, "schema_version = 4", "schema_version = 3");
-  if (Parse(schema3, &c, &message) ||
-      message.find("run.particle_mover requires run.schema_version=4") ==
+  std::string retiredKey = example;
+  ReplaceOnce(&retiredKey, "transport = parker",
+              "transport = parker\n  particle_mover = parker");
+  if (Parse(retiredKey, &c, &message) ||
+      message.find("unknown configuration key 'application.sep.particle_mover'") ==
           std::string::npos)
-    return Fail("schema 3 accepted run.particle_mover: " + message);
+    return Fail("retired application.sep.particle_mover was accepted: " + message);
   std::string duplicate = example;
-  ReplaceOnce(&duplicate, "particle_mover = parker",
-              "particle_mover = parker\nparticle_mover = fte-mfp");
+  ReplaceOnce(&duplicate, "transport = parker",
+              "transport = parker\ntransport = focused-scattering");
   if (Parse(duplicate, &c, &message))
-    return Fail("duplicate run.particle_mover was accepted");
-
-  // Absent key: schema 4 stays valid and leaves the choice to CLI/default.
+    return Fail("duplicate application.sep.transport was accepted");
   std::string absent = example;
-  ReplaceOnce(&absent, "particle_mover = parker\n", "");
-  if (!Parse(absent, &c, &message) || c.particleMoverSpecified)
-    return Fail("schema 4 without run.particle_mover was rejected: " + message);
-  return Pass("run.particle_mover accepts canonical movers only, is schema-4 "
-              "only, enters the startup fingerprint, and is optional");
+  ReplaceOnce(&absent, "transport = parker\n", "");
+  if (Parse(absent, &c, &message) ||
+      message.find("application.sep.transport") == std::string::npos)
+    return Fail("input without application.sep.transport was accepted: " + message);
+  return Pass("application.sep.transport selects parker/fte-dmumu/fte-mfp, is "
+              "required, enters the startup fingerprint, and rejects the "
+              "retired particle_mover key");
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
   if (argc != 2) {
-    std::cerr << "usage: test_parallel_diffusion_binding <schema-4 example>\n";
+    std::cerr << "usage: test_parallel_diffusion_binding <example input>\n";
     return 2;
   }
   gExamplePath = argv[1];
@@ -446,11 +459,11 @@ int main(int argc, char** argv) {
     return descriptor;
   };
   SEP::Testing::Registry registry({
-      make("PDB01", "Schema-4 section", "srcSEP INI locates [parallel_diffusion] verbatim.", RunPDB01),
+      make("PDB01", "Schema-4 section", "srcSEP reader collects the physics: parallel_diffusion block records with line numbers.", RunPDB01),
       make("PDB02", "Selection cross-check", "CLI/section/mover/host gate rejections.", RunPDB02),
       make("PDB03", "Registry provider", "parallel-diffusion-library spatial provider.", RunPDB03),
       make("PDB04", "Installed evaluation", "ActiveParallelDiffusion kappa vs closed forms.", RunPDB04),
-      make("PDB05", "Schema-4 mover key", "run.particle_mover parsing, schema gate, fingerprint.", RunPDB05)});
+      make("PDB05", "Transport key", "application.sep.transport mover selection, retired particle_mover key, fingerprint.", RunPDB05)});
   const SEP::Testing::Summary summary = registry.Run(
       registry.Select(std::vector<std::string>(), std::vector<std::string>(),
                       true), std::cout);

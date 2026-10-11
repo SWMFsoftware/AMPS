@@ -23,12 +23,9 @@ namespace RuntimeModel {
 enum class LogVerbosity { Quiet, Normal, Verbose };
 
 struct StandaloneCommandLine {
+  // Runtime input file (generic AMPS format, src/INPUT_FILE.md), given with
+  // -input or its synonym --input; ``amps.in`` when neither is given.
   std::string inputPath;
-  // ``-input`` selects the shared global file whose srcSEP3D section is read
-  // after Init_BeforeParser.  The maintained ``--input`` spelling continues
-  // to select the complete legacy schema-4 deck so existing campaigns remain
-  // reproducible while applications converge on the shared container syntax.
-  bool sectionInput = false;
   std::string outputDirectoryOverride;
   // Initialization-only execution builds the real distributed AMPS mesh,
   // completes model initialization, writes the two declared Tecplot products,
@@ -65,8 +62,14 @@ struct StandaloneRunRequest {
 
 Core::Status ParseStandaloneCommandLine(
     int argc, char* const argv[], StandaloneCommandLine* result);
+// Parse srcSEP3D runtime input written in the generic AMPS format
+// (src/INPUT_FILE.md).  The block layout and the qualified key names are
+// documented in configuration_io.cpp (kSrcSep3dLayout) and CONFIGURATION.md.
+// ParseConfigurationText resolves #include paths and the assets of an
+// included physics: shock_front block from ``baseDirectory``.
 Core::Status ParseConfigurationText(
-    const std::string& text, RunConfiguration3DOptions* result);
+    const std::string& text, RunConfiguration3DOptions* result,
+    const std::string& baseDirectory = ".");
 Core::Status LoadConfigurationFile(
     const std::string& path, RunConfiguration3DOptions* result);
 // Replace only the parent directories of the two initialization Tecplot

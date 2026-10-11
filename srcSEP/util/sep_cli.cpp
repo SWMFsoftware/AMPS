@@ -9,6 +9,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -247,8 +248,11 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  " << exe << " [options]\n"
       << "\n"
       << "Runtime initialization:\n"
-      << "  --input <path>              Parse the SI Parker/domain/mesh input before\n"
-      << "                               AMPS initialization. If omitted, the legacy\n"
+      << "  -input <path>, --input <path>\n"
+      << "                              Parse the runtime input file (generic AMPS\n"
+      << "                               format, src/INPUT_FILE.md) before AMPS\n"
+      << "                               initialization. If omitted, ./amps.in is\n"
+      << "                               read when it exists; otherwise the legacy\n"
       << "                               hard-coded srcSEP mesh is preserved.\n"
       << "  --input=<path>              Equivalent equals-sign form.\n"
       << "  --reduced-shock-event <path> Couple the shared HCI reduced front and\n"
@@ -263,6 +267,8 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "                               filenames. Requires --initialization-only.\n"
       << "\n"
       << "Turbulence physics switches:\n"
+      << "  With an input file, application.sep.turbulence supplies every turbulence\n"
+      << "  value; each turbulence option below overrides the file value.\n"
       << "  --coupling <on|off>          Enable/disable SEP particle coupling to the\n"
       << "                               Alfven turbulence wave energy.\n"
       << "  --coupling-mode <on|off>     Alias for --coupling.\n"
@@ -316,9 +322,9 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "Particle mover selection:\n"
       << "  --particle-mover <name>     Select one production field-line mover.\n"
       << "                               Choices: parker, fte-dmumu, fte-mfp.\n"
-      << "                               Overrides run.particle_mover in a\n"
-      << "                               schema-4 --input file. Default: the\n"
-      << "                               file value, else fte-dmumu.\n"
+      << "                               Overrides application.sep.transport\n"
+      << "                               of the input file. Default: the file\n"
+      << "                               value, else fte-dmumu.\n"
       << "  --particle-mover=...        Same option using --option=value syntax.\n"
       << "  --mover <name>              Alias for --particle-mover.\n"
       << "  --sep-mover <name>          Alias for --particle-mover.\n"
@@ -331,8 +337,8 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  --spatial-diffusion-provider <name>\n"
       << "                               kappa provider: from-dmumu, from-mfp, or\n"
       << "                               parallel-diffusion-library (parker only;\n"
-      << "                               model from the schema-4 --input file's\n"
-      << "                               [parallel_diffusion] section).\n"
+      << "                               model from the input file's\n"
+      << "                               physics: parallel_diffusion block).\n"
       << "  --pitch-angle-diffusion-provider <name>\n"
       << "                               Dmumu provider: configured, constant,\n"
       << "                               jokipii-1966, or florinskiy.\n"
@@ -488,11 +494,14 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
     std::string option_name, value_from_equals;
     SplitOption(arg, option_name, value_from_equals);
 
-    if (option_name == "--input") {
+    // -input is the AMPS-wide spelling of the runtime input file (generic
+    // AMPS format, src/INPUT_FILE.md); --input is the exact synonym kept for
+    // existing scripts.  Both take the path as the next argument or after '='.
+    if (option_name == "--input" || option_name == "-input") {
       if (!GetOptionValue(argc, argv, i, option_name, value_from_equals,
                           options.inputPath, err)) return false;
       if (options.inputPath.empty()) {
-        err << "ERROR: option '--input' requires a non-empty path.\n";
+        err << "ERROR: option '" << option_name << "' requires a non-empty path.\n";
         return false;
       }
       continue;
@@ -1140,6 +1149,21 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
   }
 
   const bool executionRequested = IsComponentTestExecutionRequested(options);
+  // Default runtime input (user-approved change of the no-argument default,
+  // 2026-10-10).  Without -input/--input a production run reads ./amps.in
+  // from the working directory when that file exists, exactly like srcSEP3D
+  // and like a batch job that stages amps.in per run directory.  When
+  // ./amps.in is absent the historical no-argument behaviour (the legacy
+  // compiled mesh) is unchanged.  Help, list and component-test modes never
+  // pick up a working-directory file: they must not inherit an unrelated deck.
+  if (options.inputPath.empty() && !options.printHelp &&
+      !options.listTests && !options.listMovers && !executionRequested) {
+    std::ifstream defaultInput("amps.in");
+    if (defaultInput.good()) {
+      options.inputPath = "amps.in";
+      options.inputPathFromDefault = true;
+    }
+  }
   if (options.listMovers &&
       (options.listTests || executionRequested || options.printHelp)) {
     err << "ERROR: --list-movers cannot be combined with help or component-test selectors.\n";
@@ -1256,8 +1280,8 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
     return false;
   }
   // Mover-dependent combinations are checked against the *effective* mover.
-  // That mover is known here unless it may still come from the schema-4
-  // --input file (run.particle_mover): with --input and no --particle-mover,
+  // That mover is known here unless it may still come from the
+  // input file (application.sep.transport): with --input and no --particle-mover,
   // checking the built-in default (fte-dmumu) now could reject a combination
   // that is valid for the file's mover, e.g. a Parker-only spatial provider.
   // main.cpp then applies the file value and calls
@@ -1267,6 +1291,29 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
     return false;
 
   return true;
+}
+
+void ApplyInputFileTurbulence(const Turbulence::Configuration& turbulence,
+                              double shockSourceEfficiency,
+                              double shockSourcePlusFraction,
+                              unsigned long long diagnosticCadenceSteps,
+                              Options& options) {
+  options.turbulence = turbulence;
+  // --turbulence-model mirror of the authoritative representation.
+  options.turbulenceModel =
+      turbulence.representation == Turbulence::Representation::Spectral
+          ? Options::TurbulenceModel::WaveNumberResolved
+          : Options::TurbulenceModel::Integrated;
+  // ParseCommandLine() rebuilds coupling/cascade/reflection and the
+  // diagnostic cadence from these aliases after its option loop.
+  options.particleCouplingMode =
+      turbulence.coupling != Turbulence::CouplingPolicy::Disabled;
+  options.cascadeActive = turbulence.cascadeEnabled;
+  options.reflectionActive = turbulence.reflectionEnabled;
+  options.spectralOutputInterval = static_cast<int>(diagnosticCadenceSteps);
+  options.shockTurbulenceEfficiency = shockSourceEfficiency;
+  options.shockTurbulencePlusFraction = shockSourcePlusFraction;
+  options.turbulenceFromInputFile = true;
 }
 
 bool IsMoverPendingInputFile(const Options& options) {

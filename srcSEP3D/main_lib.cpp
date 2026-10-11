@@ -31,7 +31,7 @@
 #include "output/shock_history.h"
 #include "runtime/runtime_adapters.h"
 #include "runtime/background_factory.h"
-#include "runtime/application_input.h"
+#include "runtime/configuration_io.h"
 #include "runtime/particle_normalization.h"
 #include "turbulence/turbulence_models.h"
 #include "validation/coronal_cme_application_test.h"
@@ -73,17 +73,20 @@ namespace fs = std::filesystem;
 constexpr double kMagneticPermeabilityVacuum =
     4.0e-7 * SEP3D::Core::Const::kPi;
 
-// Empty for coupled hosts and maintained schema-4 ``--input`` runs.  In the
-// new shared-file mode main.cpp installs exactly one path before native
-// initialization; the file is deliberately not opened until both AMPS and
-// srcSEP3D have completed their Init_BeforeParser hooks.
-std::string gApplicationInputPath;
-SEP3D::RuntimeModel::Sep3dApplicationInput gParsedApplicationInput;
-bool gHasParsedApplicationInput = false;
-
-// Defined below after the process-owned state declarations.  The early input
-// transaction uses the same fail-closed accessor as all later native paths.
+// Defined below after the process-owned state declarations.  Every native
+// path uses the same fail-closed accessor.
 const SEP3D::RuntimeModel::RunConfiguration3D& Configuration();
+
+// True when the input selected the derived particle numerics of reduced-front
+// injection (run.time_step_mode=derived-from-mesh together with
+// source.shock.normalization=accepted-shock-incident-flux; src/INPUT_FILE.md).
+// Then the reduced provider is constructed right after Init_BeforeParser, and
+// after block allocation dt = f h_min / v_max and W_s = Ndot_s dt / N are
+// committed by FinalizeParticleNumericsAfterMeshAllocation.  Every other
+// configuration keeps its configured step and weight.
+bool DerivedParticleNumericsSelected() {
+  return Configuration().options().particleNumerics.deriveFromMeshAndShock;
+}
 
 void StopWithStatus(const char* operation,
                     const SEP3D::Core::Status& status) {
@@ -179,174 +182,6 @@ bool FileHasOnlyFiniteNumericTokens(const std::string& path) {
   const bool readSucceeded = std::ferror(input) == 0;
   std::fclose(input);
   return finite && readSucceeded;
-}
-
-// Parse the shared-file srcSEP3D section on rank zero and distribute the one
-// resolved setting, rather than allowing ranks to see different filesystem
-// contents during startup.  The provisional configuration exists only so
-// Init_BeforeParser can register its storage callbacks.  The replacement is
-// accepted only when its byte layout is identical, and it commits before the
-// first AMPS buffer offset is frozen or provider snapshot is constructed.
-void ParseInstalledApplicationInput() {
-  if (gApplicationInputPath.empty()) return;
-
-  SEP3D::RuntimeModel::Sep3dApplicationInput parsed;
-  SEP3D::Core::Status parseStatus = SEP3D::Core::Status::OK();
-  if (PIC::ThisThread == 0) {
-    parseStatus = SEP3D::RuntimeModel::ParseSep3dApplicationInput(
-        gApplicationInputPath, &parsed);
-  }
-
-  int parseOk = parseStatus.ok() ? 1 : 0;
-  MPI_Bcast(&parseOk, 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
-  if (parseOk == 0) {
-    std::string message = PIC::ThisThread == 0
-        ? parseStatus.message : std::string();
-    unsigned long long length =
-        static_cast<unsigned long long>(message.size());
-    MPI_Bcast(&length, 1, MPI_UNSIGNED_LONG_LONG, 0,
-              MPI_GLOBAL_COMMUNICATOR);
-    if (PIC::ThisThread != 0) message.resize(static_cast<std::size_t>(length));
-    if (length != 0) {
-      MPI_Bcast(message.data(), static_cast<int>(length), MPI_CHAR, 0,
-                MPI_GLOBAL_COMMUNICATOR);
-    }
-    StopWithStatus("application input parser", SEP3D::Core::Status(
-        SEP3D::Core::StatusCode::InvalidInput, message));
-  }
-
-  auto broadcastString=[](std::string* value) {
-    unsigned long long length=PIC::ThisThread==0?
-        static_cast<unsigned long long>(value->size()):0ULL;
-    MPI_Bcast(&length,1,MPI_UNSIGNED_LONG_LONG,0,MPI_GLOBAL_COMMUNICATOR);
-    if(length>static_cast<unsigned long long>(
-          std::numeric_limits<int>::max()))
-      StopWithStatus("application input broadcast",SEP3D::Core::Status(
-          SEP3D::Core::StatusCode::InvalidInput,
-          "application input string exceeds the MPI count range"));
-    if(PIC::ThisThread!=0)value->resize(static_cast<std::size_t>(length));
-    if(length!=0)MPI_Bcast(value->data(),static_cast<int>(length),MPI_CHAR,0,
-        MPI_GLOBAL_COMMUNICATOR);
-  };
-
-  unsigned long long integerInputs[3] = {
-      PIC::ThisThread == 0
-          ? static_cast<unsigned long long>(parsed.particlesPerIteration)
-          : 0ULL,
-      PIC::ThisThread == 0
-          ? static_cast<unsigned long long>(
-                parsed.maximumInjectionEventsPerSpeciesPerStep)
-          : 0ULL,
-      PIC::ThisThread == 0
-          ? static_cast<unsigned long long>(parsed.maximumTimeSteps)
-          : 0ULL};
-  MPI_Bcast(integerInputs, 3, MPI_UNSIGNED_LONG_LONG, 0,
-            MPI_GLOBAL_COMMUNICATOR);
-  double numericalInputs[6]={parsed.maximumParticleSpeedMPerS,
-      parsed.timeStepMarginFactor,parsed.sourceNormalizationRadiusM,
-      parsed.minimumInjectionEnergyJ,parsed.maximumInjectionEnergyJ,
-      parsed.fixedPhaseSpacePowerIndex};
-  MPI_Bcast(numericalInputs,6,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
-  broadcastString(&parsed.shockModel);
-  broadcastString(&parsed.backgroundPlasmaModel);
-  broadcastString(&parsed.sourceModel);
-  broadcastString(&parsed.particleWeightingModel);
-  broadcastString(&parsed.momentumPowerLawModel);
-  broadcastString(&parsed.reducedShockConfiguration);
-  broadcastString(&parsed.reducedShockAssetDirectory);
-  if(PIC::ThisThread!=0) {
-    parsed.particlesPerIteration=
-        static_cast<std::uint64_t>(integerInputs[0]);
-    parsed.maximumInjectionEventsPerSpeciesPerStep=
-        static_cast<std::uint64_t>(integerInputs[1]);
-    parsed.maximumTimeSteps=static_cast<std::uint64_t>(integerInputs[2]);
-    parsed.maximumParticleSpeedMPerS=numericalInputs[0];
-    parsed.timeStepMarginFactor=numericalInputs[1];
-    parsed.sourceNormalizationRadiusM=numericalInputs[2];
-    parsed.minimumInjectionEnergyJ=numericalInputs[3];
-    parsed.maximumInjectionEnergyJ=numericalInputs[4];
-    parsed.fixedPhaseSpacePowerIndex=numericalInputs[5];
-  }
-
-  SEP3D::RuntimeModel::RunConfiguration3DOptions options =
-      Configuration().options();
-  // The shared section owns the selected provider pair. The reduced provider
-  // remains the sole front/ambient authority; `shock=none` deliberately keeps
-  // the legacy SWCME adapter inactive.  ShockInjection is nevertheless a
-  // truthful intent because the new callback samples the same reduced
-  // provider's accepted triangular faces rather than constructing a second
-  // geometry authority.
-  options.inputSchemaVersion=4;
-  options.maximumTimeSteps=parsed.maximumTimeSteps;
-  options.background=
-      SEP3D::RuntimeModel::BackgroundAuthority::RuntimeModel;
-  options.backgroundModelId="sep-corona-swcme-shock-front-v1";
-  options.backgroundModelAssetPath.clear();
-  options.backgroundModelInlineConfiguration=
-      parsed.reducedShockConfiguration;
-  options.backgroundModelAssetDirectory=parsed.reducedShockAssetDirectory;
-  options.coordinateFrame="HCI";
-  // The generic configuration keeps an analytic Parker record even when it
-  // is not authoritative, because mesh and legacy diagnostics share that
-  // typed structure. Keep its declared frame consistent; this does not make
-  // Parker the selected background or copy any of its plasma values.
-  options.parker.coordinateFrame=options.coordinateFrame;
-  options.shock=SEP3D::RuntimeModel::ShockAuthority::None;
-  options.intent=SEP3D::RuntimeModel::RunIntent::ShockInjection;
-  options.source.enabled=true;
-  options.source.samplesPerStep =
-      static_cast<std::uint64_t>(integerInputs[0]);
-  options.source.minimumEnergyJ=parsed.minimumInjectionEnergyJ;
-  options.source.maximumEnergyJ=parsed.maximumInjectionEnergyJ;
-  options.source.maximumMacroparticlesPerSpeciesPerStep=
-      parsed.maximumInjectionEventsPerSpeciesPerStep;
-  if(parsed.momentumPowerLawModel=="compression-ratio") {
-    options.source.spectrumModel=
-        SEP3D::RuntimeModel::SourceSpectrumModel::LocalCompressionDsa;
-    options.source.fixedPhaseSpacePowerIndex=0.0;
-  } else {
-    options.source.spectrumModel=
-        SEP3D::RuntimeModel::SourceSpectrumModel::FixedPhaseSpacePowerLaw;
-    options.source.fixedPhaseSpacePowerIndex=
-        parsed.fixedPhaseSpacePowerIndex;
-  }
-  options.source.weightingModel=
-      parsed.particleWeightingModel=="constant-statistical-weight"
-          ? SEP3D::RuntimeModel::SourceWeightingModel::
-                ConstantStatisticalWeight
-          : SEP3D::RuntimeModel::SourceWeightingModel::
-                LogUniformMomentumImportance;
-  // AcceptedShockIncidentFlux already is the declared physical seed rate.
-  // No hidden efficiency is applied to the live per-face sum.
-  options.source.injectionEfficiency=1.0;
-  options.particleNumerics.deriveFromMeshAndShock=true;
-  options.particleNumerics.sourceRateModel=
-      SEP3D::RuntimeModel::SourceRateNormalizationModel::
-          AcceptedShockIncidentFlux;
-  options.particleNumerics.maximumParticleSpeedMPerS=numericalInputs[0];
-  options.particleNumerics.timeStepMarginFactor=numericalInputs[1];
-  options.particleNumerics.sourceNormalizationRadiusM=numericalInputs[2];
-  std::shared_ptr<const SEP3D::RuntimeModel::RunConfiguration3D> resolved;
-  SEP3D::Core::Status status =
-      SEP3D::RuntimeModel::RunConfiguration3D::Create(options, &resolved);
-  if (status.ok())
-    status = SEP3D::ApplicationRuntime().ReplaceConfigurationBeforeMesh(
-        resolved);
-  if (!status.ok()) StopWithStatus("application input commit", status);
-  gParsedApplicationInput=parsed;
-  gHasParsedApplicationInput=true;
-
-  if (PIC::ThisThread == 0) {
-    std::cout << SEP3D::RuntimeModel::Sep3dApplicationInputSummary(parsed)
-              << "  pre_mesh_configuration_fingerprint="
-              << resolved->physics_fingerprint() << '\n';
-    if (!resolved->options().parallelDiffusionModelId.empty())
-      std::cout << "  parallel_diffusion_model="
-                << resolved->options().parallelDiffusionModelId << '\n'
-                << "  parallel_diffusion_configuration_fingerprint="
-                << resolved->options()
-                       .parallelDiffusionConfigurationFingerprint << '\n';
-  }
 }
 
 std::uint64_t Fnv1a64(const std::string& text) {
@@ -484,7 +319,7 @@ void BindCompiledSpeciesTable() {
 }
 
 void InitializeSelectedModelsAfterParser() {
-  if(!gHasParsedApplicationInput)return;
+  if(!DerivedParticleNumericsSelected())return;
   if(gRuntimeBackgroundProvider)
     StopWithStatus("parsed model initialization",SEP3D::Core::Status(
         SEP3D::Core::StatusCode::InvalidTransition,
@@ -543,7 +378,8 @@ double ConfiguredParticleWeight(int ampsIndex) {
 }
 
 void FinalizeParticleNumericsAfterMeshAllocation() {
-  if(!gHasParsedApplicationInput)return;
+  if(!DerivedParticleNumericsSelected())return;
+  const auto& numerics=Configuration().options().particleNumerics;
 
   // AMPS' characteristic cell size is the same length used by mature
   // application LocalTimeStep callbacks. Reduce only allocated owner blocks;
@@ -565,8 +401,8 @@ void FinalizeParticleNumericsAfterMeshAllocation() {
   double timeStep=0;
   SEP3D::Core::Status status=
       SEP3D::RuntimeModel::CalculateMeshGlobalTimeStep(globalMinimum,
-          gParsedApplicationInput.maximumParticleSpeedMPerS,
-          gParsedApplicationInput.timeStepMarginFactor,&timeStep);
+          numerics.maximumParticleSpeedMPerS,
+          numerics.timeStepMarginFactor,&timeStep);
   if(!status.ok())StopWithStatus("global particle time step",status);
 
   const auto reduced=std::dynamic_pointer_cast<
@@ -579,7 +415,7 @@ void FinalizeParticleNumericsAfterMeshAllocation() {
   const auto flux=
       SEP::CoronaSwcme::ShockFront::EvaluateIncidentParticleFluxAtApexRadius(
           *reduced->SharedProvider(),
-          gParsedApplicationInput.sourceNormalizationRadiusM);
+          numerics.sourceNormalizationRadiusM);
   if(!flux.ok())StopWithStatus("particle source normalization",
       SEP3D::Core::Status(SEP3D::Core::StatusCode::InvalidInput,
           flux.status.message));
@@ -588,7 +424,7 @@ void FinalizeParticleNumericsAfterMeshAllocation() {
       normalizations;
   status=SEP3D::RuntimeModel::CalculateSpeciesParticleNormalizations(
       gCompiledSpecies,flux.value,timeStep,
-      gParsedApplicationInput.particlesPerIteration,&normalizations);
+      Configuration().options().source.samplesPerStep,&normalizations);
   if(!status.ok())StopWithStatus("per-species particle weight",status);
 
   // Deterministic shared physics should produce bit-identical values, but
@@ -647,11 +483,11 @@ void FinalizeParticleNumericsAfterMeshAllocation() {
               << "[srcSEP3D] global particle numerics summary\n"
               << "  minimum_allocated_cell_size_m=" << globalMinimum << '\n'
               << "  maximum_particle_speed_m_s="
-              << gParsedApplicationInput.maximumParticleSpeedMPerS << '\n'
+              << numerics.maximumParticleSpeedMPerS << '\n'
               << "  time_step_margin_factor="
-              << gParsedApplicationInput.timeStepMarginFactor << '\n'
+              << numerics.timeStepMarginFactor << '\n'
               << "  global_time_step_s=" << timeStep << '\n'
-              << "  source_model=" << gParsedApplicationInput.sourceModel
+              << "  source_model=" << SEP3D::RuntimeModel::Name(numerics.sourceRateModel)
               << '\n' << "  source_normalization_radius_m="
               << flux.value.apexRadiusM << '\n'
               << "  source_normalization_epoch_s=" << flux.value.epochS
@@ -3312,23 +3148,6 @@ SEP3D::Core::Status SEP3D::ConfigureApplication(
   return ApplicationRuntime().Configure(configuration);
 }
 
-SEP3D::Core::Status SEP3D::InstallApplicationInputFile(
-    const std::string& path) {
-  if (path.empty())
-    return Core::Status(Core::StatusCode::InvalidInput,
-                        "application input path is empty");
-  if (ApplicationRuntime().state() !=
-      RuntimeModel::LifecycleState::Configured) {
-    return Core::Status(Core::StatusCode::InvalidTransition,
-                        "install application input after provisional configuration and before mesh setup");
-  }
-  if (!gApplicationInputPath.empty())
-    return Core::Status(Core::StatusCode::InvalidTransition,
-                        "application input path was already installed");
-  gApplicationInputPath = path;
-  return Core::Status::OK();
-}
-
 SEP3D::Core::Status SEP3D::InstallBackgroundProvider(
     const std::shared_ptr<Background::BackgroundProvider>& provider) {
   using namespace SEP3D;
@@ -3474,9 +3293,9 @@ void SEP3D::Init_BeforeParser() {
   // Register byte requests after PIC has created its request registries but
   // before initCellSamplingDataBuffer freezes the center-node layout.  The
   // callbacks return the exact sizes already fingerprinted by RunConfiguration.
-  // The hook itself does not inspect argc/argv or open a file.  A standalone
-  // shared-file run invokes ParseInstalledApplicationInput only after this
-  // hook has completed; coupled entry points install typed options directly.
+  // The hook itself does not inspect argc/argv or open a file: the complete
+  // immutable configuration (from the runtime input or a typed host) is
+  // already installed when AMPS reaches this point.
   (void)Configuration();
   const Core::Status particleStorage = AMPS::Movers::RequestParticleStorage();
   if (!particleStorage.ok())
@@ -3968,6 +3787,29 @@ bool TrajectoryTrackingCondition(double* position, double* velocity, int spec,
 }
 
 void amps_init_mesh() {
+  // A coupled SWMF run has no command line and calls AMPS without main.cpp.
+  // When no host installed a configuration, read the runtime input from
+  // ``amps.in`` in the working directory -- the same file and the same parser
+  // (generic AMPS input, src/INPUT_FILE.md) that a standalone run without
+  // -input uses.  This happens before PIC::Init_BeforeParser, so the storage
+  // layout requested below is the final one.  Every rank reads the file;
+  // parsing is deterministic and the configuration fingerprint printed at
+  // startup lets a log reviewer confirm that all ranks agreed.
+  if (SEP3D::ApplicationRuntime().state() ==
+      SEP3D::RuntimeModel::LifecycleState::Created) {
+    SEP3D::RuntimeModel::RunConfiguration3DOptions options;
+    SEP3D::Core::Status status =
+        SEP3D::RuntimeModel::LoadConfigurationFile("amps.in", &options);
+    std::shared_ptr<const SEP3D::RuntimeModel::RunConfiguration3D> loaded;
+    if (status.ok())
+      status = SEP3D::RuntimeModel::RunConfiguration3D::Create(options, &loaded);
+    if (status.ok()) status = SEP3D::ConfigureApplication(loaded);
+    if (!status.ok()) {
+      std::cerr << "[srcSEP3D] no host configuration was installed and "
+                << "./amps.in could not be used: " << status.message << '\n';
+      std::abort();
+    }
+  }
 #if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__DATAFILE_
   // Reject an unsupported native coupler before allocating AMR storage; the
   // runtime bridge has an explicit one-fluid DATAFILE mapping, not a generic
@@ -3977,13 +3819,6 @@ void amps_init_mesh() {
     StopWithStatus("runtime mesh background",SEP3D::Core::Status(
         SEP3D::Core::StatusCode::ConfigurationConflict,"runtime mesh providers require the one-fluid AMPS DATAFILE buffer layout"));
 #endif
-  if (SEP3D::ApplicationRuntime().state() ==
-      SEP3D::RuntimeModel::LifecycleState::Created) {
-    std::cerr
-        << "[srcSEP3D] amps_init_mesh requires the host to install an "
-        << "immutable RunConfiguration3D before AMPS allocates mesh storage.\n";
-    std::abort();
-  }
   const SEP3D::Mesh::ResolutionConfiguration resolution =
       ResolutionConfiguration();
   const SEP3D::Core::Status resolutionStatus =
@@ -4000,16 +3835,9 @@ void amps_init_mesh() {
   // ledger closes.
   PIC::ParticleSplitting::SetMode(PIC::ParticleSplitting::_disactivated);
   SEP3D::Init_BeforeParser();
-  // The shared-file application parser belongs precisely at this boundary:
-  // MPI, AMPS registries, and srcSEP3D's pre-parser hooks exist, while the
-  // application species binding, sampling offsets, AMR tree, providers, and
-  // particles do not. Parser errors therefore terminate before any partially
-  // initialized model state can be mistaken for a valid run.
-  ParseInstalledApplicationInput();
-  // Shared-section parsing can replace an initially analytic provisional
-  // configuration with the runtime reduced provider. Recheck the compile-time
-  // native buffer ABI after that transaction; the all-rank helper keeps this
-  // guard independent of the likewise all-rank solar-sphere registration.
+  // Recheck the compile-time native buffer ABI for the reduced runtime
+  // provider; the all-rank helper keeps this guard independent of the
+  // likewise all-rank solar-sphere registration.
   ValidateParsedRuntimeMeshBackgroundABI();
   // Resolve the selected reduced-front parameters and magnetic assets at the
   // first legal post-parser boundary. Construction is mesh-independent and
@@ -4223,7 +4051,7 @@ void amps_init() {
           SEP3D::Core::StatusCode::ConfigurationConflict,
           "validated configuration contains an unknown particle-mover family"));
   }
-  if(gHasParsedApplicationInput&&Configuration().options().source.enabled) {
+  if(DerivedParticleNumericsSelected()&&Configuration().options().source.enabled) {
     if(Configuration().options().source.weightingModel!=
         SEP3D::RuntimeModel::SourceWeightingModel::ConstantStatisticalWeight)
       StopWithStatus("reduced-front source selection",

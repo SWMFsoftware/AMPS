@@ -198,7 +198,7 @@ int main(int argc,char **argv) {
   // allocation.  Failure is therefore atomic: no partially initialized AMPS
   // state survives a malformed scientific input.  An absent --input leaves
   // HasActive()==false and the legacy mesh path remains unchanged.
-  // True when the effective mover came from run.particle_mover in --input;
+  // True when the effective mover came from application.sep.transport;
   // recorded as InputFile provenance in the WP30 run configuration below.
   bool particleMoverFromInputFile = false;
   if (!cli_options.inputPath.empty()) {
@@ -210,6 +210,33 @@ int main(int argc,char **argv) {
         std::cerr << "ERROR: initialization input: " << loaded.message << '\n';
       return 1;
     }
+    // Shared schema 6, decision D2: application.sep.turbulence is the base
+    // layer of every turbulence option.  Re-parse the (already validated)
+    // command line on top of the file values so that each command-line
+    // option overrides the file with exactly its usual semantics; warnings
+    // were already printed by the first parse.
+    if (initialization.turbulenceSpecified) {
+      SEP::Util::CLI::Options layered;
+      SEP::Util::CLI::ApplyInputFileTurbulence(
+          initialization.turbulence, initialization.shockSourceEfficiency,
+          initialization.shockSourcePlusFraction,
+          initialization.diagnosticCadenceSteps, layered);
+      std::ostringstream ignoredWarnings;
+      if (!SEP::Util::CLI::ParseCommandLine(argc, argv, layered,
+                                            ignoredWarnings, std::cerr)) {
+        if (PIC::ThisThread == 0)
+          std::cerr << "ERROR: the command line is incompatible with "
+                       "application.sep.turbulence in "
+                    << cli_options.inputPath << '\n';
+        return 1;
+      }
+      cli_options = layered;
+    }
+    // run.maximum_time_steps is the file layer of --total-iterations.
+    if (initialization.maximumTimeStepsSpecified &&
+        !cli_options.totalIterationsProvided)
+      cli_options.totalIterations =
+          static_cast<int>(initialization.maximumTimeSteps);
     if (!cli_options.initializationOutputDirectory.empty()) {
       const SEP::Transport::Status redirected =
           SEP::Initialization::ApplyOutputDirectoryOverride(
@@ -221,11 +248,11 @@ int main(int argc,char **argv) {
         return 1;
       }
     }
-    // Schema-4 run.particle_mover: the input file may select the production
-    // mover.  --particle-mover keeps its historical higher precedence (CLI
-    // values are applied after the input file), so the file value is used
-    // only when the command line is silent; the built-in default (fte-dmumu)
-    // applies only when neither names a mover.  ParseCommandLine deferred the
+    // application.sep.transport selects the production mover (parker,
+    // focused-diffusion = fte-dmumu, focused-scattering = fte-mfp).
+    // --particle-mover keeps its historical higher precedence (CLI values are
+    // applied after the input file), so the file value is used only when the
+    // command line is silent.  ParseCommandLine deferred the
     // mover-dependent checks in exactly this --input-without---particle-mover
     // case, so run them now against the effective mover, before the
     // parallel-diffusion binding (which needs the mover) and before any model
@@ -242,7 +269,7 @@ int main(int argc,char **argv) {
                   << SEP::Mover::Describe(cli_options.particleMover).canonicalName
                   << "' (from "
                   << (cli_options.particleMoverProvided ? "--particle-mover"
-                      : particleMoverFromInputFile ? "run.particle_mover"
+                      : particleMoverFromInputFile ? "application.sep.transport"
                       : "the built-in default")
                   << ") is incompatible with the selected options\n";
       return 1;
@@ -282,28 +309,22 @@ int main(int argc,char **argv) {
     }
     if (PIC::ThisThread == 0)
       std::cout << "Initialization input=" << cli_options.inputPath
+                << (cli_options.inputPathFromDefault ? " (default ./amps.in)" : "")
                 << " fingerprint="
                 << SEP::Initialization::Fingerprint(initialization) << '\n';
 
-    // Version 2 makes the one-dimensional observer and source sampling count
-    // part of the same immutable startup contract as the mesh.  The retained
+    // The one-dimensional observers and the source sampling count belong
+    // to the same immutable startup contract as the mesh.  The retained
     // sampler consumes heliocentric radius, while the command line remains a
     // higher-precedence compatibility layer for convergence studies.
-    if (initialization.schemaVersion >= 2) {
-      SEP::Sampling::SamplingHeliocentricDistanceList.clear();
-      if (initialization.schemaVersion >= 3) {
-        for (const SEP::Initialization::ObserverConfiguration& observer :
-             initialization.observers)
-          SEP::Sampling::SamplingHeliocentricDistanceList.push_back(
-              observer.heliocentricRadiusM);
-      } else {
-        SEP::Sampling::SamplingHeliocentricDistanceList.push_back(
-            initialization.observerHeliocentricRadiusM);
-      }
-      if (!cli_options.injectionParticlesProvided)
-        cli_options.injectionParticlesPerIteration = static_cast<int>(
-            initialization.macroparticlesPerStep);
-    }
+    SEP::Sampling::SamplingHeliocentricDistanceList.clear();
+    for (const SEP::Initialization::ObserverConfiguration& observer :
+         initialization.observers)
+      SEP::Sampling::SamplingHeliocentricDistanceList.push_back(
+          observer.heliocentricRadiusM);
+    if (!cli_options.injectionParticlesProvided)
+      cli_options.injectionParticlesPerIteration = static_cast<int>(
+          initialization.macroparticlesPerStep);
   } else {
     // Without --input there is no [parallel_diffusion] section, so selecting
     // the library on the command line is rejected here instead of failing at
@@ -356,8 +377,7 @@ int main(int argc,char **argv) {
   swcmeRequest.preset=cli_options.slowCmeScenario
       ? SEP::SW1DAdapter::Scenario::Slow
       : SEP::SW1DAdapter::Scenario::Fast;
-  if (SEP::Initialization::HasActive() &&
-      SEP::Initialization::Active().schemaVersion >= 2) {
+  if (SEP::Initialization::HasActive()) {
     const SEP::Initialization::Configuration& initialization =
         SEP::Initialization::Active();
     for (const SEP::Initialization::SwcmeAssignment& raw :
@@ -397,8 +417,7 @@ int main(int argc,char **argv) {
   }
   const SEP::SW1DAdapter::ConfigurationSummary swcmeSummary=
       SEP::SW1DAdapter::GetConfigurationSummary();
-  if (SEP::Initialization::HasActive() &&
-      SEP::Initialization::Active().schemaVersion >= 2) {
+  if (SEP::Initialization::HasActive()) {
     const SEP::Initialization::Configuration& initialization =
         SEP::Initialization::Active();
     const auto samePhysicalScalar = [](double left, double right) {
@@ -459,6 +478,21 @@ int main(int argc,char **argv) {
     runConfiguration.shockModel.value=SEP::ShockModelType==
         SEP::cShockModelType::Analytic1D ? SEP::Run::ShockModel::Analytical
                                         : SEP::Run::ShockModel::Swcme1d;
+  // Shared schema 6: the runtime input declares physics.background.provider
+  // = swcme and physics.shock.authority = swcme (the only values srcSEP
+  // implements).  A command-line --shock-model or --reduced-shock-event is a
+  // documented higher-precedence override; a post-compile PARAM file that
+  // silently selects the analytical shock instead would contradict the input
+  // and is rejected before any model initialization.
+  if (SEP::Initialization::HasActive() && !cli_options.shockModelProvided &&
+      cli_options.reducedShockEventPath.empty() &&
+      runConfiguration.shockModel.value != SEP::Run::ShockModel::Swcme1d) {
+    if (PIC::ThisThread==0)
+      std::cerr<<"ERROR: "<<cli_options.inputPath<<" declares the SWCME "
+               <<"background and shock, but the post-compile input selects "
+               <<"the analytical shock model (use --shock-model to override)\n";
+    return 1;
+  }
   runConfiguration.shockModel.source=cli_options.shockModelProvided
       ? SEP::Run::ValueSource::CommandLine
       : (PIC::PostCompileInputFileName!="" ? SEP::Run::ValueSource::InputFile
@@ -516,7 +550,11 @@ int main(int argc,char **argv) {
   runConfiguration.totalIterations.value=static_cast<std::uint64_t>(
       cli_options.totalIterations);
   runConfiguration.totalIterations.source=cli_options.totalIterationsProvided
-      ? SEP::Run::ValueSource::CommandLine : SEP::Run::ValueSource::Default;
+      ? SEP::Run::ValueSource::CommandLine
+      : (SEP::Initialization::HasActive() &&
+         SEP::Initialization::Active().maximumTimeStepsSpecified
+             ? SEP::Run::ValueSource::InputFile
+             : SEP::Run::ValueSource::Default);
   runConfiguration.fieldLineSeedAreaM2.value=cli_options.fieldLineSeedAreaM2;
   runConfiguration.fieldLineSeedAreaM2.source=cli_options.fieldLineSeedAreaProvided
       ? SEP::Run::ValueSource::CommandLine : SEP::Run::ValueSource::Default;
@@ -524,12 +562,16 @@ int main(int argc,char **argv) {
       cli_options.shockTurbulenceEfficiency;
   runConfiguration.shockTurbulenceEfficiency.source=
       cli_options.shockTurbulenceEfficiencyProvided
-      ? SEP::Run::ValueSource::CommandLine : SEP::Run::ValueSource::Default;
+      ? SEP::Run::ValueSource::CommandLine
+      : (cli_options.turbulenceFromInputFile ? SEP::Run::ValueSource::InputFile
+                                             : SEP::Run::ValueSource::Default);
   runConfiguration.shockTurbulencePlusFraction.value=
       cli_options.shockTurbulencePlusFraction;
   runConfiguration.shockTurbulencePlusFraction.source=
       cli_options.shockTurbulencePlusFractionProvided
-      ? SEP::Run::ValueSource::CommandLine : SEP::Run::ValueSource::Default;
+      ? SEP::Run::ValueSource::CommandLine
+      : (cli_options.turbulenceFromInputFile ? SEP::Run::ValueSource::InputFile
+                                             : SEP::Run::ValueSource::Default);
   runConfiguration.mergeMinimum.value=cli_options.mergeMinimum;
   runConfiguration.mergeMinimum.source=cli_options.mergeMinimumProvided
       ? SEP::Run::ValueSource::CommandLine : SEP::Run::ValueSource::Default;
@@ -740,8 +782,7 @@ int main(int argc,char **argv) {
                 << initialization.meshTecplotFile << '\n'
                 << "initialization_field_line="
                 << initialization.fieldLineTecplotFile << '\n';
-      if (initialization.schemaVersion >= 3)
-        std::cout << "initialization_data_base="
+      std::cout << "initialization_data_base="
                   << initialization.dataTecplotFile << '\n';
     }
     MPI_Finalize();

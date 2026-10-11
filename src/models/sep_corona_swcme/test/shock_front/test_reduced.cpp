@@ -77,6 +77,17 @@ std::filesystem::path Root() {
   throw std::runtime_error("cannot locate AMPS root");
 }
 
+// Insert one assignment just before the closing '#end physics' of an event
+// written in the generic AMPS input format (src/INPUT_FILE.md).  Appending
+// after the block would test the grammar's "outside any block" rule instead
+// of the model's own unknown/duplicate-key rules.
+std::string InsertIntoEvent(std::string event,const std::string& assignment) {
+  const auto end=event.rfind("#end physics");
+  if(end==std::string::npos)throw std::runtime_error("event has no '#end physics'");
+  event.insert(end,"  "+assignment+"\n");
+  return event;
+}
+
 std::shared_ptr<const SF::Configuration> Load(const std::filesystem::path& event) {
   const auto directory=event.parent_path();
   const auto resolved=SF::ResolveConfiguration(Bytes(event),[&](const std::string& name) {
@@ -103,26 +114,26 @@ int main() {
         smoke->initialApexSpeedMPerS==1000000.0&&
         smoke->coordinateFrame=="HCI"&&smoke->particleMode=="disabled","RSH01",
         "strict SI/HCI resolved events bind exact values, transitive asset and profile bytes");
-    std::string bad=Bytes(examples/"handoff_smoke.event")+"unknown.key=1\n";
+    std::string bad=InsertIntoEvent(Bytes(examples/"handoff_smoke.event"),"unknown.key = 1");
     auto rejected=SF::ResolveConfiguration(bad,[&](const std::string& name){
       return SEP::Core::Result<std::string>::Success(Bytes(examples/name));});
     Check(!rejected.ok(),"RSH01","unknown event key is rejected");
-    bad=Bytes(examples/"handoff_smoke.event")+
-        "history.initial_apex_speed_m_s=1000000\n";
+    bad=InsertIntoEvent(Bytes(examples/"handoff_smoke.event"),
+        "history.initial_apex_speed_m_s = 1000000");
     rejected=SF::ResolveConfiguration(bad,[&](const std::string& name){
       return SEP::Core::Result<std::string>::Success(Bytes(examples/name));});
     Check(!rejected.ok(),"RSH01","duplicate event key is rejected before construction");
     bad=Bytes(examples/"handoff_smoke.event");
-    const std::string validEpoch="run.reference_epoch=2026-10-04T00:00:00Z";
+    const std::string validEpoch="run.reference_epoch = 2026-10-04T00:00:00Z";
     auto epochAt=bad.find(validEpoch);
     bad.replace(epochAt,validEpoch.size(),
-        "run.reference_epoch=2026-02-30T00:00:00Z");
+        "run.reference_epoch = 2026-02-30T00:00:00Z");
     rejected=SF::ResolveConfiguration(bad,[&](const std::string& name){
       return SEP::Core::Result<std::string>::Success(Bytes(examples/name));});
     Check(!rejected.ok(),"RSH02","invalid UTC calendar label is rejected");
     bad=Bytes(examples/"handoff_smoke.event");
-    const auto checksum=bad.find("assets.harmonics_sha256=");
-    bad[checksum+sizeof("assets.harmonics_sha256=")-1]='0';
+    const auto checksum=bad.find("assets.harmonics_sha256 = ");
+    bad[checksum+sizeof("assets.harmonics_sha256 = ")-1]='0';
     rejected=SF::ResolveConfiguration(bad,[&](const std::string& name){
       return SEP::Core::Result<std::string>::Success(Bytes(examples/name));});
     Check(!rejected.ok()&&rejected.status.code==SEP::Core::StatusCode::DataIntegrityFailure,
@@ -981,8 +992,8 @@ int main() {
         SEP::Core::Result<std::shared_ptr<const SF::Epoch>>::Failure(
           SEP::Core::StatusCode::NumericalFailure,"strict RH provider unavailable");
     std::string brokenAsset=Bytes(examples/"handoff_smoke.event");
-    const auto brokenChecksum=brokenAsset.find("assets.harmonics_sha256=");
-    brokenAsset[brokenChecksum+sizeof("assets.harmonics_sha256=")-1]='0';
+    const auto brokenChecksum=brokenAsset.find("assets.harmonics_sha256 = ");
+    brokenAsset[brokenChecksum+sizeof("assets.harmonics_sha256 = ")-1]='0';
     const auto assetFailure=SF::ResolveConfiguration(brokenAsset,[&](const std::string& name){
       return SEP::Core::Result<std::string>::Success(Bytes(examples/name));});
     Check(strictRhProvider.ok()&&strictRhInitial.ok()&&!strictRhFailed.ok()&&

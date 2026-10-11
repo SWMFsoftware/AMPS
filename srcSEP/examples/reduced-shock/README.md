@@ -15,9 +15,14 @@ acceleration, or SEP transport.
 
 ## Files and identity
 
-- `field_line.in` is the complete schema-3 `srcSEP` input. The line follows
+- `field_line.in` is the complete `srcSEP` input in the shared SEP content
+  schema 6 (`application: sep`, `schema_version = 6`), written in the
+  generic AMPS runtime input format (`#begin`/`#end` blocks, `!` comments;
+  see `../../../src/INPUT_FILE.md`, section 5). The line follows
   the +Z HCI direction from 20 solar radii to 1 AU with 513 vertices.
-- `positive_1au.event` is the strict reduced-provider event. Unknown,
+- `positive_1au.event` is the strict reduced-provider event: a generic-format
+  file containing one `#begin physics: shock_front` ... `#end physics` block
+  whose keys are those of the shared reduced shock-front library. Unknown,
   duplicate, missing, non-SI, or unsupported values fail before AMPS mesh
   allocation.
 - `assets/synthetic_dipole.harmonics.csv` is the checksummed real-orthonormal
@@ -131,11 +136,13 @@ either Mars checkout.
 
 ## Run commands
 
+`-input FILE` and `--input FILE` are exact synonyms.
+
 Initialization-only check:
 
 ```bash
 mpiexec -n 1 ./amps \
-  --input srcSEP/examples/reduced-shock/field_line.in \
+  -input srcSEP/examples/reduced-shock/field_line.in \
   --reduced-shock-event srcSEP/examples/reduced-shock/positive_1au.event \
   --initialization-only \
   --initialization-output-dir test_output/srcsep-reduced/init-rank1
@@ -145,7 +152,7 @@ Two-epoch native smoke test:
 
 ```bash
 mpiexec -n 4 ./amps \
-  --input srcSEP/examples/reduced-shock/field_line.in \
+  -input srcSEP/examples/reduced-shock/field_line.in \
   --reduced-shock-event srcSEP/examples/reduced-shock/positive_1au.event \
   --total-iterations 2 \
   --coupling off --cascade off --reflection off --shock-injection off
@@ -155,7 +162,7 @@ Full low-corona-to-1-AU background campaign:
 
 ```bash
 mpiexec -n 4 ./amps \
-  --input srcSEP/examples/reduced-shock/field_line.in \
+  -input srcSEP/examples/reduced-shock/field_line.in \
   --reduced-shock-event srcSEP/examples/reduced-shock/positive_1au.event \
   --total-iterations 208 \
   --coupling off --cascade off --reflection off --shock-injection off
@@ -218,6 +225,13 @@ All four final stderr files are empty. At 1 AU the actual native endpoint
 readback is `B=(0,0,1.257375e-9) T`, `U=(0,0,6.012234e5) m/s`,
 `n_e=7e6 m^-3`, `T_p=1.4e6 K`, and `p=2.706072e-10 Pa`.
 
+These native logs were produced with the earlier (schema-3) spelling of
+`field_line.in`. The schema-6 conversion changes key names and layout only
+(values are unchanged; the file-derived Parker wind now comes from
+`ambient.wind_speed`, which equals the former explicit value), but the
+native one-/four-rank re-run with the converted deck is pending and the
+evidence above is not yet re-established for it.
+
 ## Inputs and changes
 
 - Change trajectory, front geometry, ambient normalization, numerical surface
@@ -226,12 +240,18 @@ readback is `B=(0,0,1.257375e-9) T`, `U=(0,0,6.012234e5) m/s`,
   identity and needs fresh shared-provider qualification.
 - Change line/domain/mesh resolution, observers or output names in
   `field_line.in`. Keep the line inside event radial coverage and keep the
-  application epoch increment equal to `run.background_dt_s`.
-- The `[swcme]` section is retained because schema 3 and the baseline Parker
-  geometry require it. With `--reduced-shock-event`, it is not the selected
-  vertex background authority and it does not supply a downstream CME volume.
-- `macroparticles_per_step` remains positive because that is the unchanged
-  baseline schema contract. Reduced mode disables the callbacks before native
+  application epoch increment equal to the event's `run.background_dt_s`
+  (qualified name `physics.shock_front.run.background_dt_s`).
+- The `physics: swcme` block (with `physics.background.provider = swcme` and
+  `physics.shock.authority = swcme`) is retained because schema 6 requires it
+  in an srcSEP file and its resolved `ambient.wind_speed` sets the baseline
+  Parker winding of the mesh and line. `--reduced-shock-event` is the
+  documented command-line override of that provider/authority: it is then
+  not the selected vertex background authority and it does not supply a
+  downstream CME volume.
+- `source.shock.samples_per_step` remains positive because that is the
+  unchanged baseline schema contract (and `source.shock.enabled` must be
+  `true` in srcSEP). Reduced mode disables the callbacks before native
   stepping and checks the real population; changing this input does not enable
   particles in this example.
 

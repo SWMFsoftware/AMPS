@@ -22,53 +22,70 @@ under `parallel_diffusion_model_data/`, and the compiled NLGCE-F arrays are
 generated without changing their decimal literals or index order.
 
 PD11 application bindings are implemented for both hosts (component-tested
-only). Each application locates the `[parallel_diffusion]` section in its own
-input file and passes the raw section lines to the library-owned section
-parser `ParseSection` (see "Input-file section" below), which selects the model
-and reads that model's parameters. The selected model is then installed during
+only). Each application's input file is in the generic AMPS runtime input
+format (`src/INPUT_FILE.md`); the application locates the
+`physics: parallel_diffusion` block, which holds only assignments (no nested
+blocks), and passes its records to the library-owned section parser
+`ParseSection` (see "Input-file section" below), which selects the model and
+reads that model's parameters. Each record is passed as the text
+`key = value` with its physical line number; comments were already stripped by
+the generic reader. The selected model is then installed during
 serial startup and called by the Parker mover through the model-specific
 pointer `ActiveParallelDiffusion`:
 
 | Host | Input | Selection | Parker consumer |
 | --- | --- | --- | --- |
-| srcSEP3D | `--input` schema-5 INI | `[transport] spatial_diffusion_model = parallel-diffusion-library` | `CoefficientBridge::EvaluateActiveParallel` |
-| srcSEP | `--input` schema-4 INI | `--spatial-diffusion-provider parallel-diffusion-library` | `PICSpatialDiffusionProvider` via `adapters/parallel_diffusion_adapter` |
+| srcSEP3D | `-input`/`--input` file, `application.sep.schema_version = 6` | `application.sep.transport = parker` and `application.sep.transport.spatial_diffusion_model = parallel-diffusion-library` | `CoefficientBridge::EvaluateActiveParallel` |
+| srcSEP | `-input`/`--input` file, `application.sep.schema_version = 6` | `application.sep.transport = parker` (or `--particle-mover parker`) and `--spatial-diffusion-provider parallel-diffusion-library` | `PICSpatialDiffusionProvider` via `adapters/parallel_diffusion_adapter` |
 
-In both hosts the section is required exactly when the library is selected,
+In both hosts the block is required exactly when the library is selected,
 only the Parker mover may select it, and the SHA-256 configuration identity
 enters the host's startup/restart fingerprint. The Parker cores remain
 coefficient-agnostic: srcSEP3D keeps its coherent field-aligned gradient
-stencil and srcSEP its refined arc-length `d(kappa)/ds` stencil. srcSEP3D's
-`-input` shared-section mode does not read this section. Native one-/four-rank
+stencil and srcSEP its refined arc-length `d(kappa)/ds` stencil. (The former
+srcSEP3D one-dash `#section begin: sep3d` shared container, which did not read
+this section, is retired; `-input` and `--input` are now synonyms.) Native one-/four-rank
 transport qualification remains pending for both hosts; standalone or
 component-test success must not be reported as MPI qualification.
 
-The srcSEP3D syntax is:
+Both hosts read the block in the shared SEP content schema 6
+(`src/INPUT_FILE.md` section 5; block table
+`src/models/sep_common/sep_input_layout.h`), so the block path and its
+vocabulary are identical in the two applications.  The srcSEP3D syntax
+(fragment; the other required blocks and keys are omitted) is:
 
-```ini
-[run]
-schema_version = 5
-transport = parker
+```text
+#begin application: sep
+  schema_version = 6
+  transport = parker
+  #begin transport
+    spatial_diffusion_model = parallel-diffusion-library
+  #end transport
+#end application
 
-[transport]
-spatial_diffusion_model = parallel-diffusion-library
-
-[parallel_diffusion]
-model = constant_kappa
-kappa_parallel_m2_per_s = 1.0e18
+#begin physics: parallel_diffusion
+  model = constant_kappa
+  kappa_parallel_m2_per_s = 1.0e18
+#end physics
 ```
 
-The srcSEP syntax (schema 4 = schema 3 plus this optional section; run with
-`--particle-mover parker --spatial-diffusion-provider parallel-diffusion-library`)
-is:
+The srcSEP syntax (the block is optional in srcSEP and present only when the
+library is selected; `application.sep.transport` is required in every
+schema-6 file and `--particle-mover`, if given, overrides it; run with
+`--spatial-diffusion-provider parallel-diffusion-library`; see
+`srcSEP/examples/sep_parker_mesh_parallel_diffusion.in`) is:
 
-```ini
-[run]
-schema_version = 4
+```text
+#begin application: sep
+  schema_version = 6
+  transport = parker
+  ! ... the required srcSEP turbulence block is omitted here
+#end application
 
-[parallel_diffusion]
-model = constant_lambda
-lambda_parallel_m = 1.495978707e10   ! [m]
+#begin physics: parallel_diffusion
+  model = constant_lambda
+  lambda_parallel_m = 1.495978707e10   ! [m]
+#end physics
 ```
 
 The example values demonstrate syntax, not a calibrated production choice.
@@ -95,8 +112,12 @@ claim to implement those broader theories.
 ## Input-file section
 
 `ParseSection(lines, &parsed)` parses the body of a host's parallel-diffusion
-section. The host passes each raw physical line (`SectionLine`: 1-based file
-line number plus text, comments included); the library owns the grammar:
+section. Each `SectionLine` is a 1-based file line number plus text. srcSEP
+and srcSEP3D now pass one `key = value` record per assignment of their
+`physics: parallel_diffusion` block, with its physical line number and with
+comments already stripped by the generic AMPS reader. `ParseSection` itself is
+unchanged and still accepts raw lines with comments; the library owns the
+grammar:
 
 - a comment starts at the first `#` or `!` and runs to end of line, so neither
   character may appear inside a value;
@@ -373,15 +394,18 @@ dissipation_wavenumber_rad_per_m = 1.0e-8
 relative_tolerance = 1.0e-8
 maximum_refinements = 18
 
-# Runtime provider, not model-block parameters:
-# mean_B_T, slab_variance_T2, slab_bendover_length_m, inertial_index
+! Runtime provider, not model-block parameters:
+! mean_B_T, slab_variance_T2, slab_bendover_length_m, inertial_index
 ```
 
 The numbers are labeled mathematical syntax inputs only. They are not a
 physical calibration, and no application installs them as defaults. The
-approved srcSEP3D schema-5 binding uses the surrounding section shown above
-and accepts suffix-free SI text only. The separate srcSEP parser syntax and
-any conversion at that future host boundary remain undecided.
+srcSEP3D and srcSEP bindings (shared SEP schema 6) place such records in the
+`physics: parallel_diffusion` block shown earlier (where `!` is the only
+comment character) and accept suffix-free SI text only. Neither host currently
+supplies the runtime quantities listed in the comment, so this model is not in
+either host's admitted set and its selection fails explicitly there; any unit
+conversion at a future host boundary remains undecided.
 
 ### `qlt_slab_inertial`
 

@@ -74,13 +74,10 @@ struct ModelConfiguration {
   std::string physicsFingerprint;
 };
 
-enum class ParseDisposition { ResolvedSchema5, LegacyPassThrough };
-
+// Result of ParseConfiguration: the resolved schema-5 model configuration
+// and the fingerprint of its normalized assignments.
 struct VersionedConfiguration {
-  ParseDisposition disposition = ParseDisposition::ResolvedSchema5;
   ModelConfiguration schema5;
-  int legacySchemaVersion = 0;
-  std::string legacyBytes;
   std::string fingerprint;
 };
 
