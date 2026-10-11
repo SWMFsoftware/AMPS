@@ -31,9 +31,12 @@ surface_geometry = sphere
 
 All keys remain required in sphere mode. The LOLA paths are checked but no
 terrain files are generated or loaded. Runtime `spice_path` validation records
-the intended SPICE tree; it does not override the current build-time
-`SPICE=off` selection.
+the intended SPICE tree; it does not override the build-time SPICE selection
+or kernel root supplied to `Config.pl`.
 
-The realistic surface is static and label-frame-native. The executable rejects
-LOLA mode in an orbit-enabled build until the moving-boundary/frame-transform
-problem has an explicit verified implementation.
+The realistic surface is static and label-frame-native. Because the normal
+production input now enables orbit evolution, this example must currently be
+run from an explicitly configured no-SPICE build. The executable rejects LOLA
+mode in an orbit-enabled build until the moving-boundary/frame-transform
+problem has an explicit verified implementation. The analytic-sphere
+production run is the current SPICE-enabled M0 baseline.

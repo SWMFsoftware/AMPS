@@ -11,9 +11,13 @@
 
 #include "pic.h"
 
-//the object name and the names of the frames
+#include <string>
+
+// Production target and frame names.  Exosphere retains the legacy variable
+// name IAU_FRAME, but the selected lunar body frame is the DE421 mean-Earth /
+// polar-axis frame used by LOLA LDEM_4, not the lower-accuracy IAU_MOON model.
 char Exosphere::ObjectName[_MAX_STRING_LENGTH_PIC_]="Moon";
-char Exosphere::IAU_FRAME[_MAX_STRING_LENGTH_PIC_]="IAU_MOON";
+char Exosphere::IAU_FRAME[_MAX_STRING_LENGTH_PIC_]="MOON_ME_DE421";
 char Exosphere::SO_FRAME[_MAX_STRING_LENGTH_PIC_]="LSO";
 
 
@@ -319,7 +323,6 @@ double Exosphere::OrbitalMotion::GetTAA(SpiceDouble EphemerisTime) {
 void Moon::AntiSolarDirectionColumnMap::Print(int DataOutputFileNumber) {
 #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
   FILE *fout=NULL;
-  char fname[300];
   SpiceDouble xform[6][6],EarthState[6],lt;
   double xEarthLSO[3];
   SpiceDouble lGSE[6]={0,0,0,0,0,0},lLSO[6]={0,0,0,0,0,0};  //only 3 first components of the vectors are used. all 6 components are needed in the definition in order SPICE routines work correctly
@@ -354,10 +357,14 @@ void Moon::AntiSolarDirectionColumnMap::Print(int DataOutputFileNumber) {
     SpiceChar utcstr[lenout+2];
     char vlist[_MAX_STRING_LENGTH_PIC_]="";
 
-    //open data file
-    sprintf(fname,"%s/pic.Moon.Anti-sunwardColumnIntegrals.out=%i.dat",PIC::OutputDataFileDirectory,DataOutputFileNumber);
+    // OutputDataFileDirectory is itself a large configurable buffer. Use a
+    // dynamic path so appending the diagnostic name cannot overflow a shorter
+    // local array before the file-system call is reached.
+    const std::string fileName=std::string(PIC::OutputDataFileDirectory)+
+        "/pic.Moon.Anti-sunwardColumnIntegrals.out="+
+        std::to_string(DataOutputFileNumber)+".dat";
 
-    fout=fopen(fname,"w");
+    fout=fopen(fileName.c_str(),"w");
 
     et2utc_c(Exosphere::OrbitalMotion::et,"ISOC",0,lenout,utcstr);
     fprintf(fout,"TITLE=\"UTC=%s\"\n",utcstr);
@@ -462,7 +469,5 @@ double Moon::ElectronImpactIonizationRate(PIC::ParticleBuffer::byte* ParticleDat
   
    return rate;
 }	
-
-
 
 

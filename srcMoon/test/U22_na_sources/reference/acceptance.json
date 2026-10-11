@@ -1,26 +1,40 @@
 {
   "id": "U22",
   "name": "Na source-process kernel verification",
-  "purpose": "Verify available compiled Na impact-vaporization normalization and PSD energy-density kernel.",
+  "purpose": "Verify the compiled Na impact-vaporization normalization and PSD energy-density kernel, and prove that the M0 input registers the built-in impact source once while the historical MySource alias is disabled.",
   "production_capability": "Exosphere ImpactVaporization and PhotonStimulatedDesorption source kernels.",
   "production_entry_points": ["Exosphere::SourceProcesses::ImpactVaporization::GetTotalProductionRate", "Exosphere::SourceProcesses::PhotonStimulatedDesorption::EnergyDistributionFunction"],
-  "configuration": "Current moon.input values: impact rate 1.69e22 s^-1, power index zero, PSD beta=0.7 and U=0.052 eV.",
+  "configuration": "Current moon.input values: built-in impact source on, historical MySource off, total impact rate 1.69e22 s^-1, power index zero, PSD beta=0.7 and U=0.052 eV.",
   "inputs": ["r=1 AU", "E=1 eV", "Na species"],
   "independent_reference": "Direct source-rate and PSD formula evaluation.",
   "units": "s^-1, J at API boundary, eV inside documented PSD formula",
   "frame_time_convention": "No frame; heliocentric distance only.",
   "deterministic_stochastic_controls": "Deterministic rate/density kernels; distribution sampling requires a later seeded test.",
-  "procedure": "Invoke compiled production functions and compare fixed normalization and PDF value.",
-  "metrics": ["rate relative error", "PDF relative error"],
-  "acceptance_criteria": "Both values within 1e-14 relative.",
+  "procedure": "Check the maintained input and generated definition for the confirmed source-selection modes, then invoke compiled production functions and compare the fixed normalization and PDF value.",
+  "metrics": ["source-selection token checks", "rate relative error", "PDF relative error"],
+  "acceptance_criteria": "The input selects built-in impact on and MySource off; the generated user-source mode is off; both numerical values are within 1e-14 relative.",
   "reference_values": {"impact_vaporization_rate_s-1": 1.69e22, "psd_energy_pdf_at_1eV": 0.131010711256216383},
-  "expected_pass_result": "Available Na source kernels reproduce the configured formulas.",
-  "expected_failure_modes": ["unit conversion error", "parser/config drift", "wrong heliocentric scaling", "wrong PSD exponent"],
+  "expected_pass_result": "The M0 source selection contains one active impact-vaporization registration and the available Na source kernels reproduce the configured formulas.",
+  "expected_failure_modes": ["duplicate MySource registration", "input/generated configuration disagreement", "unit conversion error", "parser/config drift", "wrong heliocentric scaling", "wrong PSD exponent"],
   "required_data": [],
   "data_hashes": "none; this is formula/config verification, not source validation",
   "predecessor_gates": ["U02"],
-  "artifacts": ["result.json", "linked probe stdout"],
-  "status_semantics": "PASS covers two kernels only; full partition, thermal, sputtering, injection statistics, and budgets require I29.",
+  "artifacts": ["result.json", "input/generated configuration guards", "linked probe stdout"],
+  "status_semantics": "PASS proves the M0 source-selection invariant and two kernels only; it does not prove the proposed night-to-day reservoir behavior. Full partition, thermal, sputtering, injection statistics, and budgets require I19/I29.",
   "implementation": "linked-production-probe",
-  "probe_modes": ["sodium-sources"]
+  "probe_modes": ["sodium-sources"],
+  "token_matching": "whitespace-normalized",
+  "configuration_required_tokens": {
+    "input/moon.input": [
+      "Source:UserDefined=off",
+      "Source:ImpactVaporization=on",
+      "SourceRate(NA)=1.69E22"
+    ]
+  },
+  "build_required_tokens": {
+    "models/exosphere/Exosphere.dfn": [
+      "#define _EXOSPHERE__USER_DEFINED_SOURCE_MODEL__MODE_ _EXOSPHERE_SOURCE__OFF_",
+      "#define _EXOSPHERE_SOURCE__IMPACT_VAPORIZATION_ _EXOSPHERE_SOURCE__ON_"
+    ]
+  }
 }

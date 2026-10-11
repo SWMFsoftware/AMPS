@@ -27,34 +27,39 @@ The active `moon.input` requests one species, neutral Na, and builds
 `srcMoon/main.cpp`, `srcMoon/main_lib.cpp`, `srcMoon/Moon.cpp`, and the generic
 AMPS exosphere model.  With no application `-input` argument, `amps_init()`
 retains the regression's analytic sphere.  A `moon` application-input section
-can instead select a generated LOLA triangulation.  SPICE/orbit evolution is
-still disabled in the generated build.
+can instead select a generated LOLA triangulation.  The production input now
+enables SPICE/orbit evolution with the frozen DE421 M0 kernel set.  The
+historical `make test_Moon` target deliberately creates a separate no-SPICE
+nightly-test configuration; its zero-diff regression therefore does not
+exercise the orbit-on branch.
 
 | Item | Effective setting | Evidence and consequence |
 |---|---|---|
 | target | `_MOON_` | `moon.input` generated definition |
-| object/body/solar-orbital names | `Moon`, `IAU_MOON`, `LSO` | `Moon.cpp` |
+| object/inertial/body/solar-orbital names | `Moon`, `J2000`, `MOON_ME_DE421`, `LSO` | `Moon.h`, `Moon.cpp` |
 | species | Na only (`_NA_SPEC_ == 0`) | `SpeciesList=Na`; ion/He/Ne/Ar branches are compiled out or unreachable |
 | timestep | species-dependent global | `moon.input`; surface inventory exchange requires this mode |
 | particle weight | species-dependent global; no individual correction | `moon.input` |
 | reproducible path | on | `ForceRepeatableSimulationPath=on`; this is not by itself a recorded seed contract |
 | surface | analytic sphere by default; input-selectable LDEM_4 triangulation | `amps_init()`, `MoonInput.cpp`, `LunarSurface.cpp` |
-| orbit/SPICE | off | `_EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_OFF_` |
+| production orbit/SPICE | on | `input/moon.input`; requires the exact kernel set and toolkit described below |
 | surface temperature | analytic cosine law | no Diviner or time-dependent thermal state |
 | Na sticking | generated Yakshinskiy-2005 digitized table | parser rewrites the source default |
 | accommodation | constant 0.2 for Na | applies only to a non-sticking collision |
 | surface content | prescribed `2.3e16 m^-2` for Na | user-defined mode overwrites accumulated inventory each exchange |
-| active sources | impact vaporization, thermal desorption, PSD, plus a user-defined source mapped to impact vaporization | sputtering off; duplicate impact registration is discussed below |
+| active sources | impact vaporization, thermal desorption, and PSD | sputtering off; historical user-defined `MySource` is retained but disabled |
 | chemistry | photolytic reactions on; legacy constant Na lifetime | no qualified multispecies network |
 | restart | particle restart output requested every 20 iterations | no audited restoration of surface/thermal/sampler/RNG state |
 
-The generated exosphere code includes the configured impact process twice:
-once as the built-in impact-vaporization source and once as user source
-`MySource`, which calls the same rate and generator.  Consequently
-`totalProductionRate()` adds the same configured impact rate twice and the
-source selector exposes both IDs.  This is a verified wiring fact, not an
-assertion that doubling was intended.  It must be resolved before source-budget
-or observational work.
+The M0 baseline registers impact vaporization only through the named built-in
+process, so `1.69e22 s^-1` is included once.  The historical user-defined
+`MySource` block is retained in `input/moon.input` but configured `off`.  The
+reported intent of that source is to represent Na that sticks on the nightside
+and is later released on the dayside.  Its current callbacks merely alias the
+impact-vaporization rate and generator: they do not implement or conserve such
+a reservoir.  `MySource` must therefore remain disabled until the inventory,
+transport/release law, restart state, and I19 conservation gate are defined and
+verified.
 
 ## Execution and data flow
 
@@ -72,8 +77,9 @@ or observational work.
    source ID and origin element, creates the production particle, and moves it
    through the remaining randomized fraction of the timestep.
 5. The mover calls `Moon::TotalParticleAcceleration()` through the configured
-   production macro.  In the present Na-only, orbit-off build the only active
-   force is lunar point-mass gravity.
+   production macro.  Lunar point gravity is always active; the SPICE-enabled
+   production configuration also activates Na radiation pressure, Sun/Earth
+   differential gravity, and LSO centrifugal/Coriolis terms.
 6. A sphere hit calls the legacy sphere callback; a terrain-facet hit calls the
    same accommodation kernel with the facet normal.
    A sticking particle is deleted and its statistical weight is added to the
@@ -92,15 +98,37 @@ or observational work.
   are metres per second squared, temperatures are kelvin, number densities are
   per cubic metre, surface densities are per square metre, and source rates are
   particles per second unless the called API states otherwise.
-- `SO_FRAME` is the Moon-centred `LSO` frame whose x direction is used as the
-  Sun direction by analytic surface and shadow logic.  `IAU_FRAME` is
-  `IAU_MOON` and is used for body-fixed surface state.
+- `J2000` is the inertial frame used for ephemeris states. `SO_FRAME` is the
+  Moon-centred `LSO` rotating frame whose +x direction points toward the Sun
+  and is used by analytic surface and shadow logic. The shared Exosphere
+  variable named `IAU_FRAME` contains `MOON_ME_DE421`, the DE421 mean-Earth /
+  polar-axis body-fixed frame used by the selected LOLA product.
 - Six-by-six SPICE transformations carry both position and velocity.  Surface
   impacts transform SO to IAU before body-fixed binning and re-emission, then
   transform back to SO.
 - The orbit-on branch advances ephemeris time by the smallest global species
-  timestep.  Its use of the name `MSGR_HCI` is a retained Mercury-era dependency
-  and has not been qualified for a lunar run.
+  timestep. External states and the LSO angular velocity are frozen at the
+  step midpoint; body-frame transformations are stored at the new endpoint.
+  Force states use geometric aberration correction `NONE`. The former
+  Mercury-specific `MSGR_HCI` dependency has been removed from this path.
+
+### Frozen M0 SPICE contract
+
+The M0 frame test uses `2009-01-24T00:00:00 UTC`. Configure the checkout with:
+
+```sh
+./Config.pl -application=moon \
+  -spice-path=/home/vtenishe/SPICE/cspice \
+  -spice-kernels=/home/vtenishe/SPICE/Kernels
+rm -rf build
+make -j
+```
+
+`input/moon.input.spicekernels` furnishes exactly `de421.bsp`,
+`moon_pa_de421_1900-2050.bpc`, `moon_080317.tf`, `moon_assoc_me.tf`,
+`naif0012.tls`, `pck00011.tpc`, and `Moon.LSO.tf`. U04 freezes and verifies the
+SHA-256 of every file before it calls CSPICE. A missing file is `SKIPPED`; a
+hash mismatch is `ERROR`; neither condition is a physics PASS.
 
 ## Mesh and surface geometry
 
@@ -131,8 +159,8 @@ surface_tecplot_file
 
 `spice_path` must contain `cspice/include/SpiceUsr.h`,
 `cspice/lib/cspice.a`, and `Kernels/`, matching `/home/vtenishe/SPICE`. It is
-recorded and checked at runtime; it does not override the build-time
-`SPICE=off` configuration.
+recorded and checked at runtime; it does not override the build-time SPICE
+selection or kernel root supplied to `Config.pl`.
 
 For `surface_geometry=sphere`, the registered analytic sphere is unchanged.
 For `surface_geometry=lola`, rank zero reads the native detached PDS IMG/LBL
@@ -247,11 +275,15 @@ shadow regions still do not affect the model.
 - Orbit-on builds add differential solar gravity, differential terrestrial
   gravity, centrifugal acceleration, and Coriolis acceleration.
 
-The orbit-on update obtains lunar, solar, and terrestrial SPICE states, derives
-the rotation between consecutive `LSO` frames, and fills SO↔IAU transforms.
-Because orbit mode is off and the retained inertial frame is unresolved, lunar
-rotation and the orbit-dependent forces are currently **DISABLED**, not
-verified by compilation of the dormant branch.
+The orbit-on update obtains lunar, solar, and terrestrial geometric SPICE
+states in the declared frames. It gets the instantaneous LSO angular velocity
+from the derivative in the `LSO`→`J2000` state transformation and fills
+LSO↔`MOON_ME_DE421` transforms. This removes the former small-angle
+`acos`/`sin(angle)` singularity. U04 independently reconstructs
+`W=(dR/dt)R^T`, checks rotation orthogonality, and checks each differential,
+centrifugal, and Coriolis component. This verifies the local production
+kernels and frame convention; the full linked trajectory gates I06/I10 remain
+required before M0 can be called complete.
 
 `EarthShadowCheck()` implements a cylinder of Earth radius extending
 anti-sunward from Earth; it is not a conical umbra/penumbra model.
@@ -266,6 +298,10 @@ The configured Na source values are:
 - photon-stimulated desorption: photon flux `2.0e18 m^-2 s^-1`, cross section
   `3.0e-25 m^2`, configured injection-speed interval 10–10000 m/s;
 - solar-wind sputtering: configured off.
+
+The historical `MySource` user-defined registration is also configured off.
+Its retained callback settings currently alias impact vaporization and must not
+be interpreted as verified night-to-day surface transport or delayed release.
 
 The injector uses production particle weights and global timesteps.  Source
 events follow exponentially distributed inter-arrival times.  Source process,
@@ -287,7 +323,8 @@ migration/chemistry was found.
 
 At impact, the production callback:
 
-1. transforms the state from LSO to IAU_MOON;
+1. transforms the state from LSO to `MOON_ME_DE421` (the shared arrays retain
+   their historical `IAU` names);
 2. computes analytic surface temperature;
 3. samples return flux and impact speed;
 4. draws a Bernoulli sticking decision;
@@ -345,9 +382,10 @@ The code registers:
 - velocity distributions at configured points;
 - Kaguya TVIS geometry tables and output routines.
 
-SPICE-dependent observer geometry is compiled out in the present orbit-off
-build.  The embedded Kaguya tables and code presence are not operator
-verification and are not D07 validation.  No qualified production operators
+SPICE-dependent observer geometry is compiled into the production orbit-on
+configuration, but it has not passed an independent observation-operator
+geometry test. The embedded Kaguya tables and code presence are not operator
+verification and are not D07 validation. No qualified production operators
 for LADEE NMS, LAMP, LACE, PACE, or D15 water events were found.  Before any
 observational score, each operator needs an independent geometry/units test and
 all predecessor gates required by the roadmap.
@@ -371,7 +409,7 @@ provenance, QA report, and hashes before use.
 | simple temperature | `Exosphere::GetSurfaceTemperature` | cosine, LSO position → K | deterministic | U12 linked probe PASS-capable |
 | Diviner/dynamic thermal state | no production implementation | required local time/history → K | D03 absent | U10/U11 SKIPPED |
 | lunar gravity | `Moon::TotalParticleAcceleration`; mover macro | m → m s^-2, LSO | deterministic | U03 linked analytic probe; trajectory I05 pending |
-| Sun/Earth differential and rotating forces | same kernel; `amps_time_step` populates state | SPICE state, m, m/s → m/s² | kernel/epoch not frozen | U04 SKIPPED; orbit mode off/frame unresolved |
+| Sun/Earth differential and rotating forces | `Moon::OrbitalDynamics` helpers; `amps_time_step` populates state | DE421 at fixed UTC; J2000/LSO, m, m/s, rad/s → m/s² | exact seven-file kernel set and hashes frozen in U04 | U04 linked-kernel probe PASS-capable; full executable I06/I10 pending |
 | Na radiation pressure | same kernel plus `Na.h` table | heliocentric radial speed/distance → m/s² | embedded table; deterministic after state | U05 scaling/shadow only; absolute source qualification pending |
 | Lorentz/ion mover | same kernel; typical or coupled E/B | q, kg, V/m, T, m/s → m/s² | no active ion; D06 ERROR | U06/U18 SKIPPED |
 | surface impact classification | generic surface-interaction callback | species/state/weight → delete or re-emit | Bernoulli RNG | U12 deterministic kernels only; linked statistics I18 pending |
@@ -385,7 +423,7 @@ provenance, QA report, and hashes before use.
 | He source/reservoir | `Exosphere_Helium.cpp`; no production registration | projected alpha flux → rate/Maxwellian particle | RNG; no reservoir contract | U19/I27/I34/I35 SKIPPED |
 | Ne source/accommodation | `Exosphere_Neon.cpp`; no production registration | projected flux → rate | incomplete generator path | U20/I27/I36 SKIPPED |
 | radiogenic Ar | sticking function only | no geography/transient source | D10 supports later comparison but is incomplete | U21/I28/I37-I39 SKIPPED |
-| Na impact/PSD/thermal/sputtering | generic exosphere called by sphere injection | configured rates/energies/population → particles/s | multiple RNG draws; duplicate impact registration | U22 kernels; I29 budget/statistics pending |
+| Na impact/PSD/thermal/sputtering | generic exosphere called by sphere injection | configured rates/energies/population → particles/s | multiple RNG draws; built-in impact path active once, historical `MySource` disabled | U22 kernels; I02/I03 linked dispatch/rate audit and I29 budget/statistics pending |
 | meteoroid forcing | no production path | undeclared | D11 required | U23/I30 SKIPPED |
 | H2O/OH migration/chemistry | no production path/species | undeclared | D04/D15 required | U24/I31/I39 SKIPPED |
 | LOS/brightness/column operators | `Moon.cpp`, subsolar/velocity samplers | density, velocity, ray, g factor → m^-2, mean m/s, rayleigh | mesh sampling; observer geometry | U01/U26 SKIPPED; operator gates required |
@@ -407,8 +445,8 @@ provenance, QA report, and hashes before use.
   interaction and fixed surface-density behavior, chemistry, and sampling.
   Production code exists, but required linked, convergence, conservation, and
   operator gates are incomplete.
-- **DISABLED or missing:** orbit/SPICE evolution, charged species/Lorentz
-  trajectories, terrain shadowing, Diviner/dynamic
+- **DISABLED or missing:** charged species/Lorentz trajectories, terrain
+  shadowing, Diviner/dynamic
   thermal state, cold trapping, qualified plasma/chemistry drivers, He/Ne/Ar
   campaigns, meteoroids, H2O/OH, and most mission operators.
 - **VALIDATED:** none established by this audit.  No observational comparison
@@ -445,6 +483,11 @@ recompilation is required, remove `build/` first:
 rm -rf build
 make -j
 ```
+
+SPICE kernel paths and Moon/exosphere diagnostic output paths are constructed
+with `std::string`, not fixed-size `sprintf` buffers. This preserves the full
+configured path and removes the compiler's format-overflow diagnostics from
+both SPICE-enabled and canonical no-SPICE builds.
 
 For the canonical regression, use a clean build and require a zero-byte diff:
 
@@ -495,18 +538,16 @@ file in its run manifest.
 The source does not answer the following questions, so this audit does not
 choose values or behavior:
 
-1. Should the user-defined `MySource` impact mapping be removed, or is doubling
-   the built-in impact-vaporization contribution intentional?
-2. What is the authoritative lunar inertial frame and SPICE kernel/epoch set
-   for the orbit-on branch, and should every `MSGR_HCI` occurrence be replaced?
-3. Should surface abundance remain prescribed at `2.3e16 m^-2`, or is the
+1. Should surface abundance remain prescribed at `2.3e16 m^-2`, or is the
    target model a conserved reservoir?  If conserved, what residence-time,
    diffusion/migration, trapping, and delayed-release equations and parameters
    are authoritative?
-4. What is the intended production species table (Na, Na+, He, He+, Ne, Ne+,
+2. What is the intended production species table beyond the confirmed M0
+   separation (Na-only normal baseline and Na/Na+ I08 fixture), including He,
+   He+, Ne, Ne+,
    Ar, Ar+, H2O, OH), including masses, charges, reactions, and particle-weight
    relationships?
-5. Which publications or archived tables are authoritative for the absolute Na
+3. Which publications or archived tables are authoritative for the absolute Na
    impact, PSD, thermal-desorption, radiation-pressure, and sticking parameters?
    Existing comments contain abbreviated or uncertain citations and cannot
    serve as provenance.

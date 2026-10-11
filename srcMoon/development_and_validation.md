@@ -1765,7 +1765,14 @@ Run U01–U26 and I01 preflight; repeat identical manifest generation twice; del
 
 **Acceptance / exit criteria**
 
-U01–U26 remain PASS; identical-control manifests are equivalent; a changed control is recorded; no unknown/unhashed external file is allowed in a release run.
+All literal U01–U26 IDs remain registered and execute with honest four-state
+status.  Local gates directly required by the M0 I01–I10 baseline PASS;
+stand-alone tests for production capabilities assigned to later milestones may
+remain explicitly SKIPPED and do not become PASS through preflight.  I01–I10
+must all PASS for M0.  Identical-control manifests are equivalent; a changed
+control is recorded; no unknown/unhashed external file is allowed in a release
+run.  This phase-appropriate rule prevents missing M2–M5 physics from being
+silently waived while preserving the stated sequential milestone order.
 
 **Expected result**
 
@@ -1810,7 +1817,7 @@ Existing test/reference files.
 
 **How to prepare/process the data**
 
-Use the actual generated executable. Run one I-test at a time first, then --phase baseline. Preserve stdout/stderr and manifests.
+Use the actual generated executable. Run one I-test at a time first, then --phase baseline. Preserve stdout/stderr and manifests. Keep the normal M0 baseline species list as neutral Na. I08 uses a separate committed Na/Na+ configuration with analytical uniform electric and magnetic fields to reach the production ion mover; that fixture does not enable Na+ in the normal science input. Register impact vaporization only through the named built-in process in the M0 input. Retain the disabled historical `MySource` definition for later conserved night-to-day surface-release development, but do not count its present impact-vaporization aliases as reservoir physics.
 
 **Tests to run at completion**
 

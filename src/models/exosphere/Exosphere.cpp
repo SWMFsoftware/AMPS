@@ -17,6 +17,8 @@
 #include "constants.h"
 #include "SingleVariableDiscreteDistribution.h"
 
+#include <string>
+
 //#include "Rosetta.h"
 
 
@@ -354,22 +356,23 @@ void Exosphere::Init_SPICE() {
 
   //furnish the SPICE kernels
 #if  _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
-  char str[_MAX_STRING_LENGTH_PIC_];
   int idim;
 
   for (int nKernel=0;nKernel<nFurnishedSPICEkernels;nKernel++) {
     struct stat buf;
 
-    sprintf(str,"%s/%s",SPICE_Kernels_PATH,SPICE_Kernels[nKernel]);
+    // Both configuration strings can independently approach the historical
+    // fixed-buffer limit. Construct the complete path dynamically so kernel
+    // validation cannot overflow before stat/furnsh report the real failure.
+    const std::string kernelPath=std::string(SPICE_Kernels_PATH)+"/"+
+        SPICE_Kernels[nKernel];
 
-    if (stat(str, &buf) != 0) {
-      char f[_MAX_STRING_LENGTH_PIC_];
-
-      sprintf(f,"SPICE kernel %s is not found",str);
-      exit(__LINE__,__FILE__,f);
+    if (stat(kernelPath.c_str(), &buf) != 0) {
+      const std::string message="SPICE kernel "+kernelPath+" is not found";
+      exit(__LINE__,__FILE__,message.c_str());
     }
 
-    furnsh_c(str);
+    furnsh_c(kernelPath.c_str());
   }
 
   //Get the initial parameters of Mercury orbit
@@ -673,15 +676,14 @@ void Exosphere::ColumnIntegral::Limb(char *fname) {
 
 
     //output emmision and column integrals at the limb at different phase angles
-    char LimbIntegralsFileName[_MAX_STRING_LENGTH_PIC_];
-
-    sprintf(LimbIntegralsFileName,"%s/pic.LimbIntegrals.dat",PIC::OutputDataFileDirectory);
+    const std::string limbIntegralsFileName=
+        std::string(PIC::OutputDataFileDirectory)+"/pic.LimbIntegrals.dat";
 
     if (PIC::DataOutputFileNumber==0) {
-      fLimb=fopen(LimbIntegralsFileName,"w");
+      fLimb=fopen(limbIntegralsFileName.c_str(),"w");
       fprintf(fLimb,"VARIABLES=\"Phase Angle[degrees]\", \"Julian Date\", \"Object Radial Velocity\"  %s \n",vlist);
     }
-    else fLimb=fopen(LimbIntegralsFileName,"a");
+    else fLimb=fopen(limbIntegralsFileName.c_str(),"a");
   }
 
 
@@ -1367,7 +1369,6 @@ void Exosphere::Sampling::OutputSampledModelData(int DataOutputFileNumber) {
   }
 
   #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
-  char fname[_MAX_STRING_LENGTH_PIC_];
   int ierr;
 
   FILE *fSource=NULL;
@@ -1385,10 +1386,11 @@ void Exosphere::Sampling::OutputSampledModelData(int DataOutputFileNumber) {
 
   //save the surface properties
   if ((PIC::ThisThread==0)&&(Exosphere::Planet!=NULL)) {
-    char fname[300];
-
-    sprintf(fname,"%s/pic.SurfaceProperties.%s.out=%i.dat",PIC::OutputDataFileDirectory,utcstr,DataOutputFileNumber);
-    Exosphere::Planet->SaveSurfaceDensity(fname,Planet->GetTotalSurfaceElementsNumber(),PIC::nTotalSpecies);
+    std::string fileName=std::string(PIC::OutputDataFileDirectory)+
+        "/pic.SurfaceProperties."+utcstr+".out="+
+        std::to_string(DataOutputFileNumber)+".dat";
+    Exosphere::Planet->SaveSurfaceDensity(fileName.data(),
+        Planet->GetTotalSurfaceElementsNumber(),PIC::nTotalSpecies);
   }
 
   if (PIC::ThisThread==0) {
@@ -1406,12 +1408,12 @@ void Exosphere::Sampling::OutputSampledModelData(int DataOutputFileNumber) {
     SourceRate=0.0,TotalSourceRate=0.0;
 
     if (PIC::ThisThread==0) {
-      char fname[_MAX_STRING_LENGTH_PIC_];
-
-      sprintf(fname,"%s/pic.SourceRate.%s.spec=%i.dat",PIC::OutputDataFileDirectory,PIC::MolecularData::GetChemSymbol(spec),spec);
+      const std::string fileName=std::string(PIC::OutputDataFileDirectory)+
+          "/pic.SourceRate."+PIC::MolecularData::GetChemSymbol(spec)+
+          ".spec="+std::to_string(spec)+".dat";
 
       if (DataOutputFileNumber==0) {
-        fSource=fopen(fname,"w");
+        fSource=fopen(fileName.c_str(),"w");
         fprintf(fSource,"VARIABLES=\"Time [JD] \", \"TAA [degrees]\", \"Phase Angle [degrees]\", \"PSD [m^{-2} s^{-1}]\", \"IV [m^{-2} s^{-1}]\", \"TD [m^{-2} s^{-1}]\", \"SWS [m^{-2} s^{-1}]\",\"Total Source Rate [m^{-2} s^{-1}]\","
           "\"Na Radiation Pressure Acceleration [m/s^2]\", \"vObject [m/s]\", \"rObject [AU]\", \"Output file number\" ");
 
@@ -1421,7 +1423,7 @@ void Exosphere::Sampling::OutputSampledModelData(int DataOutputFileNumber) {
 
         fprintf(fSource,"\n");
       } else {
-        fSource=fopen(fname,"a");
+        fSource=fopen(fileName.c_str(),"a");
       }
 
       et2utc_c(Exosphere::OrbitalMotion::et,"J",5,lenout,utcstr);
@@ -1686,10 +1688,9 @@ void Exosphere::Sampling::OutputSampledModelData(int DataOutputFileNumber) {
     int nTrajectoryPoint;
     FILE *fTrajectory;
     SpiceDouble State[6],lt,IAU2SO[6][6];
-    char OrbitalDataFileName[_MAX_STRING_LENGTH_PIC_];
-
-    sprintf(OrbitalDataFileName,"%s/pic.OrbitalData.dat",PIC::OutputDataFileDirectory);
-    fTrajectory=fopen(OrbitalDataFileName,"a");
+    const std::string orbitalDataFileName=
+        std::string(PIC::OutputDataFileDirectory)+"/pic.OrbitalData.dat";
+    fTrajectory=fopen(orbitalDataFileName.c_str(),"a");
 
     dEt=PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::LastSampleLength/Exosphere::OrbitalMotion::nOrbitalPositionOutputMultiplier;
     etStart=Exosphere::OrbitalMotion::et-dEt*(Exosphere::OrbitalMotion::nOrbitalPositionOutputMultiplier-1);
@@ -1727,8 +1728,10 @@ void Exosphere::Sampling::OutputSampledModelData(int DataOutputFileNumber) {
 
   //the sodium column density in the tail
   if (Exosphere::ColumnIntegral::OutputColumnIntegralFlag==true) {
-    sprintf(fname,"%s/pic.TailColumnDensity.%s.out=%i.dat",PIC::OutputDataFileDirectory,utcstr,DataOutputFileNumber);
-    ColumnIntegral::Tail(fname);
+    std::string fileName=std::string(PIC::OutputDataFileDirectory)+
+        "/pic.TailColumnDensity."+utcstr+".out="+
+        std::to_string(DataOutputFileNumber)+".dat";
+    ColumnIntegral::Tail(fileName.data());
 
     //column density distribution map
     /*
@@ -1739,15 +1742,19 @@ void Exosphere::Sampling::OutputSampledModelData(int DataOutputFileNumber) {
     ColumnDensityIntegration_Map(fname,40.0*_RADIUS_(_TARGET_),40.0*_RADIUS_(_TARGET_),100);
     */
 
-    sprintf(fname,"%s/pic.ColumnDensityMap.spherical.%s.out=%i.dat",PIC::OutputDataFileDirectory,utcstr,DataOutputFileNumber);
+    fileName=std::string(PIC::OutputDataFileDirectory)+
+        "/pic.ColumnDensityMap.spherical."+utcstr+".out="+
+        std::to_string(DataOutputFileNumber)+".dat";
     double domainCharacteristicSize=0.0;
     for (int idim=0;idim<DIM;idim++) domainCharacteristicSize=max(max(fabs(PIC::Mesh::mesh->xGlobalMax[idim]),fabs(PIC::Mesh::mesh->xGlobalMin[idim])),domainCharacteristicSize);
 
-    Exosphere::ColumnIntegral::CircularMap(fname,domainCharacteristicSize,0.05*_RADIUS_(_TARGET_),min(5*_RADIUS_(_TARGET_),0.1*domainCharacteristicSize),80,Exosphere::OrbitalMotion::et);
+    Exosphere::ColumnIntegral::CircularMap(fileName.data(),domainCharacteristicSize,0.05*_RADIUS_(_TARGET_),min(5*_RADIUS_(_TARGET_),0.1*domainCharacteristicSize),80,Exosphere::OrbitalMotion::et);
 
     //sodium column density along the limb direction
-    sprintf(fname,"%s/pic.LimbColumnDensity.%s.out=%i.dat",PIC::OutputDataFileDirectory,utcstr,DataOutputFileNumber);
-    ColumnIntegral::Limb(fname);
+    fileName=std::string(PIC::OutputDataFileDirectory)+
+        "/pic.LimbColumnDensity."+utcstr+".out="+
+        std::to_string(DataOutputFileNumber)+".dat";
+    ColumnIntegral::Limb(fileName.data());
   }
 
 

@@ -8,7 +8,7 @@
   "inputs": ["surface normals", "solar direction", "Ne flux", "temperature fixtures"],
   "independent_reference": "Projected-area integral pi R^2 and Maxwellian/accommodation moment identities.",
   "units": "m^-2 s^-1, s^-1, K, m s^-1",
-  "frame_time_convention": "IAU_MOON surface and LSO particle state.",
+  "frame_time_convention": "MOON_ME_DE421 surface and LSO particle state.",
   "deterministic_stochastic_controls": "Fixed seeds and sample sizes for distributions.",
   "procedure": "Check total/local source consistency, dayside mask, emission direction/moments, and zero-sticking policy if configured.",
   "metrics": ["integral error", "moment confidence intervals", "surface budget"],

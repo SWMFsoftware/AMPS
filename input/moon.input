@@ -120,7 +120,10 @@ ParticleWeightCorrectionMode=off !on,off
 
 #block ../exosphere.pl !process the data block with the setting of the exospehre model 
 
-  SPICE=off !off !on, off
+  ! M0 uses the authoritative DE421 lunar ephemeris/frame set declared in
+  ! moon.input.spicekernels.  Geometric (NONE) state queries are used by the
+  ! Newtonian force model at the fixed baseline epoch below.
+  SPICE=on !on, off
 
   #include moon.input.spicekernels
 
@@ -171,7 +174,13 @@ ReferenceGroundBasedObservationTime= \\
 !  GenerateParticleProperties=HeliumDesorption::GenerateParticleProperties !\\
 !!   InitSurfaceSourceDistribution=HeliumDesorption::SurfaceInjectionDistribution.Init
 
-  Source:UserDefined=on \\ !on,off
+  ! M0 baseline: keep this historical source definition available but do not
+  ! register it.  The present callbacks alias the impact-vaporization rate and
+  ! particle generator, so enabling this block together with the named impact
+  ! source doubles that rate.  The intended future use is night-side adsorbed
+  ! Na release on the day side; that requires a conserved reservoir, explicit
+  ! transport/release law, and I19 budget verification before re-enabling it.
+  Source:UserDefined=off \\ !on,off
     SourceProcessCode=MySource \\
     SourceRate=Exosphere::SourceProcesses::ImpactVaporization::GetTotalProductionRate \\ !!!!!Moon::GetTotalProductionRateBjorn !!!Exosphere::SourceProcesses::ImpactVaporization::GetTotalProductionRate \\
     GenerateParticleProperties=Exosphere::SourceProcesses::ImpactVaporization::GenerateParticleProperties \\ !!Moon::GenerateParticlePropertiesBjorn !!Moon::GenerateParticlePropertiesBjorn  !!!Exosphere::SourceProcesses::ImpactVaporization::GenerateParticleProperties \\

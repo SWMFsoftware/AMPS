@@ -8,7 +8,7 @@
   "inputs": ["D10 processed map", "absolute rate source", "transient fixture"],
   "independent_reference": "Map non-negativity/unit-integral invariant and analytical transient time profiles.",
   "units": "dimensionless spatial weight, s^-1, particles m^-2, s",
-  "frame_time_convention": "D10 lunar coordinates transformed explicitly to IAU_MOON; UTC for transients.",
+  "frame_time_convention": "D10 lunar coordinates transformed explicitly to MOON_ME_DE421; UTC for transients.",
   "deterministic_stochastic_controls": "Fixed seeds/counts for spatial draws.",
   "procedure": "Verify map/hash/coordinates, unit integral, sampled spatial distribution, total normalization, and transient response.",
   "metrics": ["map integral", "spatial goodness-of-fit", "rate error", "transient error"],

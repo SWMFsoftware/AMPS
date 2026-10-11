@@ -159,14 +159,14 @@ int temperature() {
 }
 
 int gravity() {
-  // At x=2 lunar radii with zero velocity and orbit terms compiled out, the
-  // production acceleration must reduce to the point-mass identity -GM/r^2.
+  // At x=2 lunar radii the isolated production lunar-gravity kernel must
+  // reduce to the point-mass identity -GM/r^2.  Testing the isolated kernel
+  // keeps U03 valid in both orbit-off and orbit-on production builds.
   double position_m[3] = {2.0 * _RADIUS_(_MOON_), 0.0, 0.0};
-  double velocity_m_s[3] = {0.0, 0.0, 0.0};
   double acceleration_m_s2[3] = {0.0, 0.0, 0.0};
 
-  Moon::TotalParticleAcceleration(acceleration_m_s2, _NA_SPEC_, -1,
-      position_m, velocity_m_s, nullptr);
+  Moon::OrbitalDynamics::AddLunarPointMassAcceleration(acceleration_m_s2,
+      position_m);
 
   const double radius_m = position_m[0];
   const double expected_x =
@@ -179,19 +179,162 @@ int gravity() {
   return failures == 0 ? 0 : 1;
 }
 
+#if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
+void independent_cross(const double *left, const double *right, double *out) {
+  // This test-only vector primitive is the independent oracle used below; it
+  // does not implement or replace a production force law.
+  out[0]=left[1]*right[2]-left[2]*right[1];
+  out[1]=left[2]*right[0]-left[0]*right[2];
+  out[2]=left[0]*right[1]-left[1]*right[0];
+}
+
+int rotating_frame() {
+  // Load the exact kernel list compiled into Exosphere.h and evaluate the
+  // frozen M0 epoch.  Missing kernels/frames are a CSPICE runtime error, not a
+  // condition that this scientific test is allowed to convert into PASS.
+  Exosphere::Init_SPICE();
+  SpiceDouble epoch;
+  utc2et_c("2009-01-24T00:00:00",&epoch);
+  int failures=0;
+  failures+=report("inertial_frame_is_J2000",
+      std::strcmp(Moon::Frames::Inertial,"J2000")==0 ? 1.0 : 0.0,1.0,0.0);
+  failures+=report("body_frame_is_MOON_ME_DE421",
+      std::strcmp(Exosphere::IAU_FRAME,"MOON_ME_DE421")==0 ? 1.0 : 0.0,
+      1.0,0.0);
+  failures+=report("solar_orbital_frame_is_LSO",
+      std::strcmp(Exosphere::SO_FRAME,"LSO")==0 ? 1.0 : 0.0,1.0,0.0);
+
+  // Differential gravity uses a non-axial fixture so every component and the
+  // subtraction of the lunar-origin acceleration are observable.
+  const double particle_m[3]={2.1e6,-3.2e5,4.7e5};
+  const double attractor_m[3]={1.23e11,-4.56e10,7.89e9};
+  const double attractor_mass_kg=_MASS_(_SUN_);
+  double actual_differential[3]={0.0,0.0,0.0};
+  double expected_differential[3]={0.0,0.0,0.0};
+  Moon::OrbitalDynamics::AddDifferentialPointMassAcceleration(
+      actual_differential,particle_m,attractor_m,attractor_mass_kg);
+  double origin_distance2=0.0,particle_distance2=0.0;
+  for (int i=0;i<3;i++) {
+    origin_distance2+=attractor_m[i]*attractor_m[i];
+    const double delta=attractor_m[i]-particle_m[i];
+    particle_distance2+=delta*delta;
+  }
+  const double origin_distance3=origin_distance2*std::sqrt(origin_distance2);
+  const double particle_distance3=
+      particle_distance2*std::sqrt(particle_distance2);
+  for (int i=0;i<3;i++) {
+    expected_differential[i]=GravityConstant*attractor_mass_kg*(
+        (attractor_m[i]-particle_m[i])/particle_distance3-
+        attractor_m[i]/origin_distance3);
+    const std::string name="differential_gravity_"+std::to_string(i);
+    failures+=report(name.c_str(),actual_differential[i],
+        expected_differential[i],1.0e-12,1.0e-18);
+  }
+
+  // Independently form -omega x (omega x r) - 2 omega x v.  The arbitrary
+  // non-coplanar fixture detects sign, component-order, and omitted-term bugs.
+  const double position_m[3]={1.9e6,-2.4e5,8.1e5};
+  const double velocity_m_s[3]={730.0,-410.0,95.0};
+  const double omega_rad_s[3]={-3.1e-9,7.2e-8,2.0e-7};
+  double actual_rotating[3]={0.0,0.0,0.0};
+  double omega_cross_r[3],omega_cross_omega_cross_r[3],omega_cross_v[3];
+  double expected_rotating[3];
+  Moon::OrbitalDynamics::AddRotatingFrameAcceleration(actual_rotating,
+      position_m,velocity_m_s,omega_rad_s);
+  independent_cross(omega_rad_s,position_m,omega_cross_r);
+  independent_cross(omega_rad_s,omega_cross_r,
+      omega_cross_omega_cross_r);
+  independent_cross(omega_rad_s,velocity_m_s,omega_cross_v);
+  for (int i=0;i<3;i++) {
+    expected_rotating[i]=-omega_cross_omega_cross_r[i]-2.0*omega_cross_v[i];
+    const std::string name="rotating_acceleration_"+std::to_string(i);
+    failures+=report(name.c_str(),actual_rotating[i],expected_rotating[i],
+        1.0e-12,1.0e-18);
+  }
+
+  // The production angular velocity comes from xf2rav.  The independent
+  // reference below extracts dR/dt directly from the lower-left block of the
+  // LSO->J2000 state transform and evaluates W=(dR/dt)R^T.  These are distinct
+  // algorithms operating on the same authoritative SPICE frame definition.
+  double actual_omega_lso[3];
+  Moon::OrbitalDynamics::GetSolarOrbitalAngularVelocityLSO(epoch,
+      actual_omega_lso);
+  SpiceDouble state_transform[6][6],rotation_j2000_to_lso[3][3];
+  sxform_c("LSO","J2000",epoch,state_transform);
+  pxform_c("J2000","LSO",epoch,rotation_j2000_to_lso);
+  double skew_j2000[3][3]={{0.0,0.0,0.0},{0.0,0.0,0.0},{0.0,0.0,0.0}};
+  for (int i=0;i<3;i++) for (int j=0;j<3;j++) for (int k=0;k<3;k++) {
+    skew_j2000[i][j]+=state_transform[i+3][k]*state_transform[j][k];
+  }
+  const double omega_j2000[3]={skew_j2000[2][1],skew_j2000[0][2],
+      skew_j2000[1][0]};
+  double expected_omega_lso[3];
+  mxv_c(rotation_j2000_to_lso,omega_j2000,expected_omega_lso);
+  for (int i=0;i<3;i++) {
+    const std::string name="spice_angular_velocity_"+std::to_string(i);
+    failures+=report(name.c_str(),actual_omega_lso[i],expected_omega_lso[i],
+        1.0e-12,1.0e-20);
+  }
+
+  // Orthogonality is evaluated independently on the position rotation block.
+  // This detects a malformed or incorrectly indexed state transform.
+  double maximum_orthogonality_error=0.0;
+  for (int i=0;i<3;i++) for (int j=0;j<3;j++) {
+    double dot=0.0;
+    for (int k=0;k<3;k++) {
+      dot+=rotation_j2000_to_lso[i][k]*rotation_j2000_to_lso[j][k];
+    }
+    maximum_orthogonality_error=std::max(maximum_orthogonality_error,
+        std::abs(dot-(i==j ? 1.0 : 0.0)));
+  }
+  failures+=report("rotation_orthogonality",maximum_orthogonality_error,0.0,
+      0.0,1.0e-13);
+  return failures==0 ? 0 : 1;
+}
+#endif
+
 int photochemistry() {
-  // Current orbit-off Na mode uses the legacy constant lifetime.  This local
-  // check is not evidence of daughter-ion production or a D04-driven network.
-  double position_m[3] = {2.0 * _RADIUS_(_MOON_), 0.0, 0.0};
-  bool allowed = false;
-  const double actual = Moon::ExospherePhotoionizationLifeTime(position_m,
-      _NA_SPEC_, -1, allowed, nullptr);
+  // This local check is not evidence of daughter-ion production or a
+  // D04-driven network. In an orbit-enabled build initialize the declared
+  // SPICE state so Earth-shadow gating uses physical Sun/Earth positions.
+#if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
+  Exosphere::Init_SPICE();
+  // Init_SPICE establishes the inertial ephemeris receipt; the normal
+  // amps_time_step hook subsequently fills the Moon-centred LSO force state.
+  // This thin fixture performs that same state query without advancing PIC,
+  // so U14 isolates illumination gating rather than running a particle step.
+  SpiceDouble sun_state_lso[6],earth_state_lso[6],light_time;
+  spkezr_c("SUN",Exosphere::OrbitalMotion::et,Moon::Frames::SolarOrbital,
+      Moon::Frames::ForceAberrationCorrection,Moon::ObjectName,
+      sun_state_lso,&light_time);
+  spkezr_c("EARTH",Exosphere::OrbitalMotion::et,Moon::Frames::SolarOrbital,
+      Moon::Frames::ForceAberrationCorrection,Moon::ObjectName,
+      earth_state_lso,&light_time);
+  for (int i=0;i<3;i++) {
+    Moon::xSun_SO[i]=1.0e3*sun_state_lso[i];
+    Moon::xEarth_SO[i]=1.0e3*earth_state_lso[i];
+  }
+#endif
+  double sunlit_position_m[3] = {2.0 * _RADIUS_(_MOON_), 0.0, 0.0};
+  double shadow_position_m[3] = {-2.0 * _RADIUS_(_MOON_), 0.0, 0.0};
+  bool sunlit_allowed = false;
+  const double actual = Moon::ExospherePhotoionizationLifeTime(
+      sunlit_position_m, _NA_SPEC_, -1, sunlit_allowed, nullptr);
   const double expected = 3600.0 * 5.8 / std::pow(0.4, 2.0);
 
   int failures = 0;
   failures += report("sodium_photo_lifetime_s", actual, expected, 1.0e-14);
-  failures += report("sodium_photo_allowed", allowed ? 1.0 : 0.0, 1.0,
-      0.0);
+  failures += report("sodium_photo_sunlit_allowed",
+      sunlit_allowed ? 1.0 : 0.0, 1.0, 0.0);
+#if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
+  bool shadow_allowed = true;
+  const double shadow_lifetime = Moon::ExospherePhotoionizationLifeTime(
+      shadow_position_m, _NA_SPEC_, -1, shadow_allowed, nullptr);
+  failures += report("sodium_photo_shadow_lifetime_s", shadow_lifetime,
+      -1.0, 0.0);
+  failures += report("sodium_photo_shadow_allowed",
+      shadow_allowed ? 1.0 : 0.0, 0.0, 0.0);
+#endif
   return failures == 0 ? 0 : 1;
 }
 
@@ -361,7 +504,7 @@ int main(int argc, char **argv) {
   if (argc != 2) {
     std::fprintf(stderr,
         "usage: production_kernel_probe <gravity|mesh-resolution|"
-        "photochemistry|radiation-shadow|sodium-sources|sticking|"
+        "photochemistry|radiation-shadow|rotating-frame|sodium-sources|sticking|"
         "temperature|lola-geometry>\n");
     return 2;
   }
@@ -372,6 +515,9 @@ int main(int argc, char **argv) {
   if (test == "lola-geometry") return lola_geometry();
   if (test == "photochemistry") return photochemistry();
   if (test == "radiation-shadow") return radiation_shadow();
+#if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
+  if (test == "rotating-frame") return rotating_frame();
+#endif
   if (test == "sodium-sources") return sodium_sources();
   if (test == "sticking") return sticking();
   if (test == "temperature") return temperature();

@@ -14,6 +14,8 @@
 
 #include "pic.h"
 
+#include <string>
+
 Moon::Sampling::VelocityDistribution::cVelocitySampleBuffer *Moon::Sampling::VelocityDistribution::SampleBuffer=NULL;
 int Moon::Sampling::VelocityDistribution::nTotalSampleDirections=0.0;
 int Moon::Sampling::VelocityDistribution::nZenithPoints=0;
@@ -194,7 +196,6 @@ void Moon::Sampling::VelocityDistribution::Sampling() {
 
 void Moon::Sampling::VelocityDistribution::OutputSampledData(int DataOutputFileNumber) {
 #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
-  char fname[_MAX_STRING_LENGTH_PIC_];
   int nZone,s,i,cnt;
   FILE *fout=NULL,*fMAP=NULL;
 
@@ -203,8 +204,14 @@ void Moon::Sampling::VelocityDistribution::OutputSampledData(int DataOutputFileN
 
 
   if (PIC::ThisThread==0) {
-    sprintf(fname,"%s/pic.Moon.VelocityDistribution.AntisolarDirection.out=%i.dat",PIC::OutputDataFileDirectory,DataOutputFileNumber);
-    fout=fopen(fname,"w");
+    // OutputDataFileDirectory may occupy the complete legacy fixed buffer.
+    // Construct paths dynamically so a valid configured directory cannot
+    // overflow a shorter stack array before fopen reports an I/O failure.
+    const std::string distributionFileName=
+        std::string(PIC::OutputDataFileDirectory)+
+        "/pic.Moon.VelocityDistribution.AntisolarDirection.out="+
+        std::to_string(DataOutputFileNumber)+".dat";
+    fout=fopen(distributionFileName.c_str(),"w");
     fprintf(fout,"VARIABLES=\"v\"");
 
     for (s=0;s<PIC::nTotalSpecies;s++) fprintf(fout,", \"f Velocity along the Line of Sight (%s) (in respect to the Earth)\", \"f Heliocentric Radial Component Velocity (%s) (in respect to the Sun)\", \"f Speed (%s) (in respect to the Sun)\" ",
@@ -213,8 +220,10 @@ void Moon::Sampling::VelocityDistribution::OutputSampledData(int DataOutputFileN
 
 
     //create a map of the zones
-    sprintf(fname,"%s/pic.Moon.VelocityDistribution.AntisolarDirection.Map.out=%i.dat",PIC::OutputDataFileDirectory,DataOutputFileNumber);
-    fMAP=fopen(fname,"w");
+    const std::string mapFileName=std::string(PIC::OutputDataFileDirectory)+
+        "/pic.Moon.VelocityDistribution.AntisolarDirection.Map.out="+
+        std::to_string(DataOutputFileNumber)+".dat";
+    fMAP=fopen(mapFileName.c_str(),"w");
 
     fprintf(fMAP,"VARIABLES=\"l0GSE\", \"l1GSE\", \"RA (hourse)\", \"DEC (deg)\", \"nZone\"");
     for (s=0;s<PIC::nTotalSpecies;s++) fprintf(fMAP,", \"Mean Velocity along the Line of Sight (%s) (in respect to the Earth)\", \"Mean Heliocentric Radial Component Velocity (%s) (in respect to the Sun)\", \"Mean Speed along the Line of Sight (%s) (in respect to the Sun)\", \"Column DensityIntegral (%s)\", \"Brightness along the line of sight (%s)\"",
@@ -340,5 +349,4 @@ void Moon::Sampling::VelocityDistribution::OutputSampledData(int DataOutputFileN
   }
 #endif
 }
-
 

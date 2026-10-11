@@ -17,6 +17,154 @@
 namespace Moon {
   using namespace Exosphere;
 
+  /**
+   * Coordinate-frame and force conventions used by the lunar application.
+   *
+   * Keeping these names in one production namespace prevents a copied frame
+   * literal from silently reintroducing the Mercury-era ``MSGR_HCI`` frame.
+   * The LSO frame is defined by ``Kernels/OTHER/Moon.LSO.tf``: +X points from
+   * the Moon to the Sun, -Y follows the Moon's heliocentric orbital velocity,
+   * and +Z completes a right-handed triad.  ``MOON_ME_DE421`` is the mean-
+   * Earth/polar-axis frame associated with the DE421 lunar ephemeris and is
+   * also the coordinate convention declared by the LDEM_4 LOLA label.
+   */
+  namespace Frames {
+    static const char Inertial[]="J2000";
+    static const char SolarOrbital[]="LSO";
+    static const char BodyFixed[]="MOON_ME_DE421";
+    static const char ForceAberrationCorrection[]="NONE";
+  }
+
+  namespace OrbitalDynamics {
+    /** Add lunar point-mass gravity, -GM r/|r|^3, in SI units. */
+    inline void AddLunarPointMassAcceleration(
+        double *accelerationMPerS2,const double *particlePositionM) {
+      double radius2=0.0;
+      for (int i=0;i<3;i++) {
+        radius2+=particlePositionM[i]*particlePositionM[i];
+      }
+      const double radius3=radius2*sqrt(radius2);
+      const double lunarGravitationalParameter=
+          GravityConstant*_MASS_(_MOON_);
+      for (int i=0;i<3;i++) {
+        accelerationMPerS2[i]-=lunarGravitationalParameter*
+            particlePositionM[i]/radius3;
+      }
+    }
+
+    /**
+     * Add the differential acceleration of a point-mass attractor.
+     *
+     * All vectors are expressed in the same Moon-centred frame and use metres;
+     * ``attractorPositionM`` points from the Moon to the attracting body.
+     * The returned contribution is
+     *
+     *   GM [ (R-r)/|R-r|^3 - R/|R|^3 ],
+     *
+     * which subtracts the acceleration of the lunar origin.  This is the
+     * production kernel used for both the Sun and Earth, and is intentionally
+     * exposed so U04 can compare it with an independent analytical evaluator.
+     * The caller must not supply a particle at the attractor or an attractor at
+     * the origin; those singular physical states retain the existing failure
+     * behavior (non-finite floating-point output).
+     */
+    inline void AddDifferentialPointMassAcceleration(
+        double *accelerationMPerS2,const double *particlePositionM,
+        const double *attractorPositionM,double attractorMassKg) {
+      double moonToAttractor2=0.0,particleToAttractor2=0.0;
+
+      for (int i=0;i<3;i++) {
+        moonToAttractor2+=attractorPositionM[i]*attractorPositionM[i];
+        const double separation=attractorPositionM[i]-particlePositionM[i];
+        particleToAttractor2+=separation*separation;
+      }
+
+      const double moonToAttractor3=
+          moonToAttractor2*sqrt(moonToAttractor2);
+      const double particleToAttractor3=
+          particleToAttractor2*sqrt(particleToAttractor2);
+      const double gravitationalParameter=GravityConstant*attractorMassKg;
+
+      for (int i=0;i<3;i++) {
+        accelerationMPerS2[i]+=gravitationalParameter*(
+            (attractorPositionM[i]-particlePositionM[i])/
+                particleToAttractor3-
+            attractorPositionM[i]/moonToAttractor3);
+      }
+    }
+
+    /**
+     * Add centrifugal and Coriolis acceleration in the rotating LSO frame.
+     *
+     * Inputs use metres, metres per second, and radians per second, all with
+     * LSO components.  Euler acceleration is absent because the legacy Moon
+     * mover treats the angular velocity as frozen during one particle step;
+     * I10 must quantify the resulting time-discretization error.
+     */
+    inline void AddRotatingFrameAcceleration(
+        double *accelerationMPerS2,const double *particlePositionM,
+        const double *particleVelocityMPerS,
+        const double *angularVelocityRadPerS) {
+      double omegaCrossPosition[3],omegaCrossOmegaCrossPosition[3];
+      double omegaCrossVelocity[3];
+
+      omegaCrossPosition[0]=angularVelocityRadPerS[1]*particlePositionM[2]-
+          angularVelocityRadPerS[2]*particlePositionM[1];
+      omegaCrossPosition[1]=angularVelocityRadPerS[2]*particlePositionM[0]-
+          angularVelocityRadPerS[0]*particlePositionM[2];
+      omegaCrossPosition[2]=angularVelocityRadPerS[0]*particlePositionM[1]-
+          angularVelocityRadPerS[1]*particlePositionM[0];
+
+      omegaCrossOmegaCrossPosition[0]=
+          angularVelocityRadPerS[1]*omegaCrossPosition[2]-
+          angularVelocityRadPerS[2]*omegaCrossPosition[1];
+      omegaCrossOmegaCrossPosition[1]=
+          angularVelocityRadPerS[2]*omegaCrossPosition[0]-
+          angularVelocityRadPerS[0]*omegaCrossPosition[2];
+      omegaCrossOmegaCrossPosition[2]=
+          angularVelocityRadPerS[0]*omegaCrossPosition[1]-
+          angularVelocityRadPerS[1]*omegaCrossPosition[0];
+
+      omegaCrossVelocity[0]=angularVelocityRadPerS[1]*particleVelocityMPerS[2]-
+          angularVelocityRadPerS[2]*particleVelocityMPerS[1];
+      omegaCrossVelocity[1]=angularVelocityRadPerS[2]*particleVelocityMPerS[0]-
+          angularVelocityRadPerS[0]*particleVelocityMPerS[2];
+      omegaCrossVelocity[2]=angularVelocityRadPerS[0]*particleVelocityMPerS[1]-
+          angularVelocityRadPerS[1]*particleVelocityMPerS[0];
+
+      for (int i=0;i<3;i++) {
+        accelerationMPerS2[i]-=omegaCrossOmegaCrossPosition[i]+2.0*
+            omegaCrossVelocity[i];
+      }
+    }
+
+#if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
+    /**
+     * Return the instantaneous angular velocity of LSO relative to J2000.
+     *
+     * CSPICE ``xf2rav`` applied to the LSO-to-J2000 state transform returns
+     * the angular velocity of J2000 relative to LSO, resolved in LSO.  The
+     * required rotating-frame vector has the opposite sign, hence the explicit
+     * negation below.  Using the state-transform derivative avoids the
+     * ``acos``/``sin(angle)`` singularity of the former finite-step extraction.
+     * Ephemeris time is TDB seconds past J2000; output is rad s^-1 in LSO.
+     * CSPICE's configured error action controls failure for missing frames or
+     * kernels, so an unavailable authoritative frame cannot silently fall back.
+     */
+    inline void GetSolarOrbitalAngularVelocityLSO(
+        SpiceDouble ephemerisTime,double *angularVelocityRadPerS) {
+      SpiceDouble stateTransform[6][6],rotation[3][3],inverseAngularVelocity[3];
+
+      sxform_c(Frames::SolarOrbital,Frames::Inertial,ephemerisTime,
+          stateTransform);
+      xf2rav_c(stateTransform,rotation,inverseAngularVelocity);
+      for (int i=0;i<3;i++) {
+        angularVelocityRadPerS[i]=-inverseAngularVelocity[i];
+      }
+    }
+#endif
+  }
+
   extern bool UseKaguya;
 
   //electron impact ionozation probability 
@@ -348,58 +496,25 @@ namespace Moon {
 
 
 
-    //the gravity force
-    double r2=x_LOCAL[0]*x_LOCAL[0]+x_LOCAL[1]*x_LOCAL[1]+x_LOCAL[2]*x_LOCAL[2];
-    double r=sqrt(r2);
-    int idim;
-
-    for (idim=0;idim<DIM;idim++) {
-      accl_LOCAL[idim]-=GravityConstant*_MASS_(_TARGET_)/r2*x_LOCAL[idim]/r;
-    }
+    // Lunar point gravity is evaluated by the same callable production kernel
+    // used by U03; _TARGET_ is fixed to _MOON_ by the srcMoon configuration.
+    OrbitalDynamics::AddLunarPointMassAcceleration(accl_LOCAL,x_LOCAL);
 
 
 #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
-    //correct the gravity acceleration: accout for solar gravity of the particle location
-    //correction of the solar gravity
+    // LSO +X points from Moon to Sun, so the solar position is exactly the
+    // positive radial distance.  Earth already has LSO components in metres.
+    const double sunPositionLSOM[3]={xObjectRadial,0.0,0.0};
+    OrbitalDynamics::AddDifferentialPointMassAcceleration(accl_LOCAL,x_LOCAL,
+        sunPositionLSOM,_MASS_(_SUN_));
+    OrbitalDynamics::AddDifferentialPointMassAcceleration(accl_LOCAL,x_LOCAL,
+        xEarth_SO,_MASS_(_EARTH_));
 
-    double rSun2Moon,rSun2Particle;
-
-    rSun2Moon=xObjectRadial;
-    rSun2Particle=sqrt(pow(x_LOCAL[0]-xObjectRadial,2)+pow(x_LOCAL[1],2)+pow(x_LOCAL[2],2));
-
-    accl_LOCAL[0]-=GravityConstant*_MASS_(_SUN_)*((x_LOCAL[0]-xObjectRadial)/pow(rSun2Particle,3)+xObjectRadial/pow(rSun2Moon,3));
-    accl_LOCAL[1]-=GravityConstant*_MASS_(_SUN_)*(x_LOCAL[1]/pow(rSun2Particle,3));
-    accl_LOCAL[2]-=GravityConstant*_MASS_(_SUN_)*(x_LOCAL[2]/pow(rSun2Particle,3));
-
-    //correction of the Earth gravity
-    double rEarth2Moon,rEarth2Particle;
-
-    rEarth2Moon=sqrt(pow(xEarth_SO[0],2)+pow(xEarth_SO[1],2)+pow(xEarth_SO[2],2));
-    rEarth2Particle=sqrt(pow(x_LOCAL[0]-xEarth_SO[0],2)+pow(x_LOCAL[1]-xEarth_SO[1],2)+pow(x_LOCAL[2]-xEarth_SO[2],2));
-
-    accl_LOCAL[0]-=GravityConstant*_MASS_(_EARTH_)*((x_LOCAL[0]-xEarth_SO[0])/pow(rEarth2Particle,3)+xEarth_SO[0]/pow(rEarth2Moon,3));
-    accl_LOCAL[1]-=GravityConstant*_MASS_(_EARTH_)*((x_LOCAL[1]-xEarth_SO[1])/pow(rEarth2Particle,3)+xEarth_SO[1]/pow(rEarth2Moon,3));
-    accl_LOCAL[2]-=GravityConstant*_MASS_(_EARTH_)*((x_LOCAL[2]-xEarth_SO[2])/pow(rEarth2Particle,3)+xEarth_SO[2]/pow(rEarth2Moon,3));
-
-    //account for the planetary rotation around the Sun
-    double aCen[3],aCorr[3],t3,t7,t12;
-
-    t3 = RotationVector_SO_FROZEN[0] * x_LOCAL[1] - RotationVector_SO_FROZEN[1] * x_LOCAL[0];
-    t7 = RotationVector_SO_FROZEN[2] * x_LOCAL[0] - RotationVector_SO_FROZEN[0] * x_LOCAL[2];
-    t12 = RotationVector_SO_FROZEN[1] * x_LOCAL[2] - RotationVector_SO_FROZEN[2] * x_LOCAL[1];
-
-    aCen[0] = -RotationVector_SO_FROZEN[1] * t3 + RotationVector_SO_FROZEN[2] * t7;
-    aCen[1] = -RotationVector_SO_FROZEN[2] * t12 + RotationVector_SO_FROZEN[0] * t3;
-    aCen[2] = -RotationVector_SO_FROZEN[0] * t7 + RotationVector_SO_FROZEN[1] * t12;
-
-
-    aCorr[0] = -2.0*(RotationVector_SO_FROZEN[1] * v_LOCAL[2] - RotationVector_SO_FROZEN[2] * v_LOCAL[1]);
-    aCorr[1] = -2.0*(RotationVector_SO_FROZEN[2] * v_LOCAL[0] - RotationVector_SO_FROZEN[0] * v_LOCAL[2]);
-    aCorr[2] = -2.0*(RotationVector_SO_FROZEN[0] * v_LOCAL[1] - RotationVector_SO_FROZEN[1] * v_LOCAL[0]);
-
-    accl_LOCAL[0]+=aCen[0]+aCorr[0];
-    accl_LOCAL[1]+=aCen[1]+aCorr[1];
-    accl_LOCAL[2]+=aCen[2]+aCorr[2];
+    // Apply the two fictitious terms for a frame whose angular velocity is
+    // frozen for this particle step.  The production time-step hook populates
+    // the vector directly from the derivative of the SPICE state transform.
+    OrbitalDynamics::AddRotatingFrameAcceleration(accl_LOCAL,x_LOCAL,v_LOCAL,
+        RotationVector_SO_FROZEN);
 #endif
 
     //copy the local value of the acceleration to the global one
@@ -421,8 +536,12 @@ namespace Moon {
 #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
     double res,r2=x[1]*x[1]+x[2]*x[2];
 
-    //check if the particle is outside of the Earth and lunar shadows
-    if ( ((r2>_RADIUS_(_TARGET_)*_RADIUS_(_TARGET_))||(x[0]<0.0)) && (Moon::EarthShadowCheck(x)==false) ) {
+    // LSO +X points from the Moon toward the Sun.  The cylindrical lunar
+    // shadow therefore occupies x<0 with transverse radius below R_Moon;
+    // points on the sunward side (x>0) or outside that cylinder are lit.  This
+    // sign must match the radiation-pressure gate above.  The previous x<0
+    // test incorrectly enabled photoionization in the near-lunar nightside.
+    if ( ((r2>_RADIUS_(_TARGET_)*_RADIUS_(_TARGET_))||(x[0]>0.0)) && (Moon::EarthShadowCheck(x)==false) ) {
       res=LifeTime,PhotolyticReactionAllowedFlag=true;
     }
     else {

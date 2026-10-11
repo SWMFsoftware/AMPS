@@ -8,7 +8,7 @@
   "inputs": ["moon.input", "Moon.cpp", "main_lib.cpp"],
   "independent_reference": "Frozen Moon object/frame and callback contract documented in srcMoon/README.md.",
   "units": "not applicable",
-  "frame_time_convention": "Object Moon; body frame IAU_MOON; solar-orbital frame LSO.",
+  "frame_time_convention": "Object Moon; J2000 inertial; body frame MOON_ME_DE421; solar-orbital frame LSO.",
   "deterministic_stochastic_controls": "Deterministic text guard.",
   "procedure": "Require the Moon target, source directory, force callback, spherical interaction callback, and production injection callback tokens.",
   "metrics": ["required wiring tokens present"],
@@ -24,7 +24,7 @@
   "token_matching": "whitespace-normalized",
   "required_tokens": {
     "moon.input": ["ProjectSourceDirectory=srcMoon", "define _TARGET_ _MOON_", "Moon::TotalParticleAcceleration"],
-    "srcMoon/Moon.cpp": ["char Exosphere::ObjectName[_MAX_STRING_LENGTH_PIC_]=\"Moon\"", "char Exosphere::IAU_FRAME[_MAX_STRING_LENGTH_PIC_]=\"IAU_MOON\"", "char Exosphere::SO_FRAME[_MAX_STRING_LENGTH_PIC_]=\"LSO\""],
+    "srcMoon/Moon.cpp": ["char Exosphere::ObjectName[_MAX_STRING_LENGTH_PIC_]=\"Moon\"", "char Exosphere::IAU_FRAME[_MAX_STRING_LENGTH_PIC_]=\"MOON_ME_DE421\"", "char Exosphere::SO_FRAME[_MAX_STRING_LENGTH_PIC_]=\"LSO\""],
     "srcMoon/main_lib.cpp": ["Sphere->ParticleSphereInteraction= Moon::SurfaceInteraction:: ParticleSphereInteraction_SurfaceAccomodation;", "Sphere->InjectionBoundaryCondition=static_cast<long int (*)(int,void*)>( Moon::SourceProcesses::InjectionBoundaryModel);"]
   }
 }

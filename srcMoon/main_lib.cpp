@@ -1949,30 +1949,40 @@ PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,fname.c_str());
 
 void amps_time_step() {
 #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
-    //determine the parameters of the orbital motion of Mercury
-    SpiceDouble StateBegin[6],StateEnd[6],lt,StateSun[6],StateMiddle[6];
-    double lBegin[3],rBegin,lEnd[3],rEnd,vTangentialBegin=0.0,vTangentialEnd=0.0,c0=0.0,c1=0.0;
+    // Freeze all external states at the midpoint of this particle step.  The
+    // input epoch is TDB seconds past J2000 and SPICE returns km and km/s;
+    // every value stored in the AMPS production state is converted to SI.
+    // Geometric states (aberration NONE) are required by the Newtonian force
+    // model; light-time-corrected apparent positions would be inconsistent.
+    const double SimulationTimeStep=
+        PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+    const SpiceDouble etBegin=Moon::OrbitalMotion::et;
+    const SpiceDouble etMiddle=etBegin+0.5*SimulationTimeStep;
+    const SpiceDouble etEnd=etBegin+SimulationTimeStep;
+    SpiceDouble StateBegin[6],StateMiddle[6],StateEnd[6];
+    SpiceDouble StateSunLSO[6],StateEarthLSO[6],StateEarthJ2000[6];
+    SpiceDouble J2000ToLSO[6][6],lt;
+    double lBegin[3],rBegin=0.0,lEnd[3],rEnd=0.0;
+    double vTangentialBegin=0.0,vTangentialEnd=0.0,c0=0.0,c1=0.0;
     int idim;
 
-    SpiceDouble HCI_to_MSO_TransformationMartix[6][6];
-
-    spkezr_c("Moon",Moon::OrbitalMotion::et,"MSGR_HCI","none","SUN",StateBegin,&lt);
-    spkezr_c("SUN",Moon::OrbitalMotion::et,"LSO","none","Moon",StateSun,&lt);
-
-    double SimulationTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
-
-    //calculate position of the Earth ar the middle of the interation
-    SpiceDouble StateEarth_SO[6],StateEarth_HCI[6];
-    spkezr_c("Earth",Moon::OrbitalMotion::et+0.5*SimulationTimeStep,Moon::SO_FRAME,"none","MOON",StateEarth_SO,&lt);
-    spkezr_c("Earth",Moon::OrbitalMotion::et+0.5*SimulationTimeStep,"MSGR_HCI","none","MOON",StateEarth_HCI,&lt);
-
-    //calculate lunar velocity in an itertial frame, which have dirtectional vectors that coinsides with that of LSO
-    sxform_c("MSGR_HCI","LSO",Moon::OrbitalMotion::et+0.5*SimulationTimeStep,HCI_to_MSO_TransformationMartix);
-    spkezr_c("Moon",Moon::OrbitalMotion::et+0.5*SimulationTimeStep,"MSGR_HCI","none","SUN",StateMiddle,&lt);
-
-
-    Moon::OrbitalMotion::et+=SimulationTimeStep;
-    spkezr_c("Moon",Moon::OrbitalMotion::et,"MSGR_HCI","none","SUN",StateEnd,&lt);
+    spkezr_c(Moon::ObjectName,etBegin,Moon::Frames::Inertial,
+        Moon::Frames::ForceAberrationCorrection,"SUN",StateBegin,&lt);
+    spkezr_c(Moon::ObjectName,etMiddle,Moon::Frames::Inertial,
+        Moon::Frames::ForceAberrationCorrection,"SUN",StateMiddle,&lt);
+    spkezr_c(Moon::ObjectName,etEnd,Moon::Frames::Inertial,
+        Moon::Frames::ForceAberrationCorrection,"SUN",StateEnd,&lt);
+    spkezr_c("SUN",etMiddle,Moon::Frames::SolarOrbital,
+        Moon::Frames::ForceAberrationCorrection,Moon::ObjectName,
+        StateSunLSO,&lt);
+    spkezr_c("EARTH",etMiddle,Moon::Frames::SolarOrbital,
+        Moon::Frames::ForceAberrationCorrection,Moon::ObjectName,
+        StateEarthLSO,&lt);
+    spkezr_c("EARTH",etMiddle,Moon::Frames::Inertial,
+        Moon::Frames::ForceAberrationCorrection,Moon::ObjectName,
+        StateEarthJ2000,&lt);
+    sxform_c(Moon::Frames::Inertial,Moon::Frames::SolarOrbital,etMiddle,
+        J2000ToLSO);
 
 
     for (rBegin=0.0,rEnd=0.0,idim=0;idim<3;idim++) {
@@ -1986,100 +1996,37 @@ void amps_time_step() {
       Moon::xObject_HCI[idim]=StateBegin[idim];
       Moon::vObject_HCI[idim]=StateBegin[3+idim];
 
-      Moon::xSun_SO[idim]=1.0E3*StateSun[idim];
-      Moon::vSun_SO[idim]=1.0E3*StateSun[3+idim];
+      Moon::xSun_SO[idim]=1.0E3*StateSunLSO[idim];
+      Moon::vSun_SO[idim]=1.0E3*StateSunLSO[3+idim];
 
-      Moon::xEarth_SO[idim]=1.0E3*StateEarth_SO[idim];
-      Moon::vEarth_SO[idim]=1.0E3*StateEarth_SO[3+idim];
+      Moon::xEarth_SO[idim]=1.0E3*StateEarthLSO[idim];
+      Moon::vEarth_SO[idim]=1.0E3*StateEarthLSO[3+idim];
 
-      Moon::xEarth_HCI[idim]=1.0E3*StateEarth_HCI[idim];
-      Moon::vEarth_HCI[idim]=1.0E3*StateEarth_HCI[3+idim];
+      Moon::xEarth_HCI[idim]=1.0E3*StateEarthJ2000[idim];
+      Moon::vEarth_HCI[idim]=1.0E3*StateEarthJ2000[3+idim];
     }
 
-    //calculate parameters of SO_FROZEN
-    //velocity of the coordinate frame
+    // Resolve the Moon's heliocentric inertial velocity on the midpoint LSO
+    // axes.  Only the 3x3 rotation block is appropriate here: the vector is a
+    // free velocity vector, not a state attached to the LSO frame origin.
     for (idim=0;idim<3;idim++) {
       Moon::vObject_SO_FROZEN[idim]=
-          HCI_to_MSO_TransformationMartix[idim][0]*StateMiddle[3+0]+
-          HCI_to_MSO_TransformationMartix[idim][1]*StateMiddle[3+1]+
-          HCI_to_MSO_TransformationMartix[idim][2]*StateMiddle[3+2];
+          J2000ToLSO[idim][0]*StateMiddle[3+0]+
+          J2000ToLSO[idim][1]*StateMiddle[3+1]+
+          J2000ToLSO[idim][2]*StateMiddle[3+2];
     }
 
-    //the axis of rotation of the MSO fraim in MSO_FROZEN during the next time step
-    //get pointing direction to the Sun at the end of the current iteration in MSO_FROZEN
-    SpiceDouble fmatrix[6][6];
-    double SunPointingDirectionEnd[3],SunPointingDirectionEnd_MSO_FROZEN[3];
-
-    //calculate Sun pointing at the end of the iteration in HCI frame (et is already incremented!!!!!!)
-    sxform_c("LSO","MSGR_HCI",Moon::OrbitalMotion::et,fmatrix);
-
-    SunPointingDirectionEnd[0]=fmatrix[0][0];
-    SunPointingDirectionEnd[1]=fmatrix[1][0];
-    SunPointingDirectionEnd[2]=fmatrix[2][0];
-
-    //convert the pointing direction vector into MSO_FROZEN frame
-    sxform_c("MSGR_HCI","LSO",Moon::OrbitalMotion::et-SimulationTimeStep,fmatrix);
-
+    // Obtain the exact instantaneous frame derivative from SPICE.  The former
+    // finite-angle algorithm divided by sin(angle), becoming ill-conditioned
+    // as the time step decreased and discarding the LSO x component.
+    Moon::OrbitalDynamics::GetSolarOrbitalAngularVelocityLSO(etMiddle,
+        Moon::RotationVector_SO_FROZEN);
+    Moon::RotationRate_SO_FROZEN=0.0;
     for (idim=0;idim<3;idim++) {
-      SunPointingDirectionEnd_MSO_FROZEN[idim]=
-          fmatrix[idim][0]*SunPointingDirectionEnd[0]+
-          fmatrix[idim][1]*SunPointingDirectionEnd[1]+
-          fmatrix[idim][2]*SunPointingDirectionEnd[2];
+      Moon::RotationRate_SO_FROZEN+=Moon::RotationVector_SO_FROZEN[idim]*
+          Moon::RotationVector_SO_FROZEN[idim];
     }
-
-    //calculate the rate of rotation in MSO_FROZEN
-    Moon::RotationRate_SO_FROZEN=acos(SunPointingDirectionEnd_MSO_FROZEN[0])/SimulationTimeStep;
-
-
-    //calculate the direction of rotation
-    double c=sqrt(pow(SunPointingDirectionEnd_MSO_FROZEN[1],2)+pow(SunPointingDirectionEnd_MSO_FROZEN[2],2));
-
-    if (c>0.0) {
-      Moon::RotationVector_SO_FROZEN[0]=0.0;
-      Moon::RotationVector_SO_FROZEN[1]=-SunPointingDirectionEnd_MSO_FROZEN[2]/c*Moon::RotationRate_SO_FROZEN;
-      Moon::RotationVector_SO_FROZEN[2]=SunPointingDirectionEnd_MSO_FROZEN[1]/c*Moon::RotationRate_SO_FROZEN;
-    }
-    else {
-      Moon::RotationVector_SO_FROZEN[0]=0.0;
-      Moon::RotationVector_SO_FROZEN[1]=0.0;
-      Moon::RotationVector_SO_FROZEN[2]=0.0;
-    }
-
-
-    //RECALCUALTE THE ROTATION VECTOR USING THE TRANSOFRMATON MARTICX FROM MSO_FROSEN at the time step (n) to the MSO_FROZEN at the time step (n+1)
-    //the rotation vector is the eigrnvector of the transformation matrix
-    //Zhuravlev, Osnovy teoreticheskoi mehaniki, Chapter 2, paragraph 6.2 (sposoby zadaniya orientacii tverdogo tela)
-
-    //get the transformation matrix T(LSO[n]->LSO[n+1])=T1(LSO[n]->MSGR_HCI)*T2(MSGR_HCI->LSO[n+1])
-    SpiceDouble T1[6][6],T2[6][6];
-    double T[3][3];
-    int i,j,k;
-
-
-    sxform_c("LSO","MSGR_HCI",Moon::OrbitalMotion::et-SimulationTimeStep,T1);
-    sxform_c("MSGR_HCI","LSO",Moon::OrbitalMotion::et,T2);
-
-
-    for (i=0;i<3;i++) for (j=0;j<3;j++) {
-      T[i][j]=0.0;
-
-      for (k=0;k<3;k++) T[i][j]+=T1[i][k]*T2[k][j];
-    }
-
-    //determine the rate and the vectrot of the rotation
-    double RotationAngle,t,RotationVector[3],RotationRate;
-
-    RotationAngle=acos((T[0][0]+T[1][1]+T[2][2]-1.0)/2.0);
-
-    t=2.0*sin(RotationAngle);
-    RotationVector[0]=(T[2][1]-T[1][2])/t;
-    RotationVector[1]=(T[0][2]-T[2][0])/t;
-    RotationVector[2]=(T[1][0]-T[0][1])/t;
-
-    RotationRate=RotationAngle/SimulationTimeStep;
-
-    t=RotationRate/sqrt(RotationVector[0]*RotationVector[0]+RotationVector[1]*RotationVector[1]+RotationVector[2]*RotationVector[2]);
-    RotationVector[0]*=t,RotationVector[1]*=t,RotationVector[2]*=t;
+    Moon::RotationRate_SO_FROZEN=sqrt(Moon::RotationRate_SO_FROZEN);
 
 
     rBegin=sqrt(rBegin);
@@ -2097,7 +2044,7 @@ void amps_time_step() {
     Moon::vObjectRadial=0.5*(c0+c1);
 
     //calculate TAA
-    Moon::OrbitalMotion::TAA=Moon::OrbitalMotion::GetTAA(Moon::OrbitalMotion::et);
+    Moon::OrbitalMotion::TAA=Moon::OrbitalMotion::GetTAA(etEnd);
 
     for (idim=0;idim<3;idim++) {
       vTangentialBegin+=pow(StateBegin[3+idim]-c0*lBegin[idim],2);
@@ -2113,7 +2060,8 @@ void amps_time_step() {
     //determine direction to the Sun and rotation angle in the coordiname frame related to the Moon
     SpiceDouble state[6],l=0.0;
 
-    spkezr_c("SUN",Moon::OrbitalMotion::et,"IAU_MOON","none","MOON",state,&lt);
+    spkezr_c("SUN",etEnd,Moon::Frames::BodyFixed,
+        Moon::Frames::ForceAberrationCorrection,Moon::ObjectName,state,&lt);
 
     for (idim=0;idim<3;idim++) l+=pow(state[idim],2);
 
@@ -2121,9 +2069,15 @@ void amps_time_step() {
       Moon::OrbitalMotion::SunDirection_IAU_OBJECT[idim]=state[idim]/l;
     }
 
-    //matrixes for tranformation LSO->IAU and IAU->LSO coordinate frames
-    sxform_c("LSO","IAU_MOON",Moon::OrbitalMotion::et,Moon::OrbitalMotion::SO_to_IAU_TransformationMartix);
-    sxform_c("IAU_MOON","LSO",Moon::OrbitalMotion::et,Moon::OrbitalMotion::IAU_to_SO_TransformationMartix);
+    // Store transforms at the new simulation epoch.  The arrays retain their
+    // historical IAU names in the shared Exosphere API, but their actual body
+    // frame is the explicitly selected MOON_ME_DE421 frame.
+    sxform_c(Moon::Frames::SolarOrbital,Moon::Frames::BodyFixed,etEnd,
+        Moon::OrbitalMotion::SO_to_IAU_TransformationMartix);
+    sxform_c(Moon::Frames::BodyFixed,Moon::Frames::SolarOrbital,etEnd,
+        Moon::OrbitalMotion::IAU_to_SO_TransformationMartix);
+
+    Moon::OrbitalMotion::et=etEnd;
 #endif
 
 

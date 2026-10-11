@@ -7,6 +7,18 @@ for that kernel only; it is not evidence that the callback is reached in a
 production run, that the numerical solution converges, or that observations
 agree with the model.
 
+For milestone M0, every literal U01-U26 ID remains registered and is executed
+with the four-state semantics below.  Local gates used directly by the linked
+I01-I10 baseline must pass; a U-test for production physics scheduled in a
+later milestone remains honestly `SKIPPED` until that capability exists.  M0
+does not convert such a skip into a pass and does not pull M2-M5 physics into
+Phase 0.  All linked I01-I10 tests themselves must pass before M0 is complete.
+
+The normal M0 science configuration remains neutral Na only.  I08 will use a
+separate committed `Na,NA_PLUS` configuration solely to exercise the real ion
+mover in analytic uniform fields; this does not advertise Na+ as enabled in
+the normal production input.
+
 ## Layout
 
 Each frozen test ID has its own directory:
@@ -167,7 +179,7 @@ To run only the currently executable local checks:
 
 ```sh
 python3 srcMoon/test/run_tests.py \
-  --test U02 --test U03 --test U05 --test U07 \
+  --test U02 --test U03 --test U04 --test U05 --test U07 \
   --test U08 --test U12 --test U14 --test U22 \
   --output-dir test_output/srcMoon/kernel-tests
 ```
@@ -176,6 +188,24 @@ U08 returns exit code 77 while D01 qualification files are absent even when
 its nested kernel result is PASS. Inspect `U08/result.json` rather than
 interpreting that exit as a numerical failure.
 
+U04 additionally requires the SPICE-enabled Moon configuration and exact
+frozen kernel bytes. Configure and clean-build before running it:
+
+```sh
+./Config.pl -application=moon \
+  -spice-path=/home/vtenishe/SPICE/cspice \
+  -spice-kernels=/home/vtenishe/SPICE/Kernels
+rm -rf build
+make -j
+python3 srcMoon/test/U04_rotating_frame/test.py \
+  --output-dir test_output/srcMoon/U04
+```
+
+The runner verifies every SHA-256 declared by the U04 contract before calling
+CSPICE. It writes `kernel_hashes.json`, component-wise `term_vectors.json`, and
+the complete `result.json`. Missing kernels mean `SKIPPED`; bytes that disagree
+with the contract mean `ERROR`.
+
 ## Current implementation status
 
 | ID | Scope | Runner state | Meaning |
@@ -183,7 +213,7 @@ interpreting that exit as a numerical failure.
 | U01 | LOS geometry | SKIPPED | No deterministic production ray fixture has been isolated. |
 | U02 | target isolation/wiring | implemented source guard | Configuration evidence only. |
 | U03 | lunar gravity | implemented linked probe | Point-mass kernel at a closed-form point. |
-| U04 | rotating frame | SKIPPED | SPICE/orbit branch is disabled and its inertial frame is unresolved. |
+| U04 | rotating frame | implemented linked probe | Exact J2000/LSO/MOON_ME_DE421 names, kernel hashes, differential gravity, fictitious terms, transform derivative, and orthogonality are checked at the frozen epoch. |
 | U05 | Na radiation pressure/shadow | implemented linked probe | Earth-umbra logic and inverse-square invariant only. |
 | U06 | Lorentz force | SKIPPED | Active species list has no ion. |
 | U07 | refinement selector | implemented linked probe | Current constant callbacks only. |
@@ -201,7 +231,7 @@ interpreting that exit as a numerical failure.
 | U19 | helium source | SKIPPED | Source file exists but He is disabled and reservoir physics is unresolved. |
 | U20 | neon source | SKIPPED | Source file exists but Ne is disabled. |
 | U21 | argon source | SKIPPED | No radiogenic geography/transient model is present. |
-| U22 | Na sources | implemented linked probe | Impact normalization and PSD density kernel only. |
+| U22 | Na sources | implemented linked probe and configuration guard | M0 built-in impact-on/`MySource`-off invariant, impact normalization, and PSD density kernel; no night-to-day reservoir claim. |
 | U23 | meteoroid driver | SKIPPED | No production forcing path. |
 | U24 | H2O/OH chemistry | SKIPPED | No production species/chemistry path. |
 | U25 | data provenance | SKIPPED | Requires a selected Dxx package and linked campaign context. |

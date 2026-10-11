@@ -8,7 +8,7 @@
   "inputs": ["authoritative spacecraft states/attitudes", "instrument boresight/FOV", "fixed epochs"],
   "independent_reference": "SPICE round trips, analytical tangent geometry, and archive geometry fields.",
   "units": "UTC/ET, m, radians/degrees as explicitly converted",
-  "frame_time_convention": "J2000, instrument, IAU_MOON, and LSO transforms named with aberration correction.",
+  "frame_time_convention": "J2000, instrument, MOON_ME_DE421, and LSO transforms named with aberration correction.",
   "deterministic_stochastic_controls": "No particles; deterministic geometry.",
   "procedure": "Check normalized boresights, transform round trips, tangent points/altitudes, occultations, bin/FOV footprints, and serialized geometry.",
   "metrics": ["norm error", "round-trip angular error", "position/tangent error", "bin mapping"],

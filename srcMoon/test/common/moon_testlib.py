@@ -11,8 +11,10 @@ linked-runtime or observational validation result.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -83,6 +85,14 @@ def _probe_compile_command(build_dir: Path, executable: Path) -> list[str]:
         REPO_ROOT / "share" / "Library" / "src",
         REPO_ROOT,
     ]
+    # Orbit-enabled Moon builds expose CSPICE types through generated headers.
+    # The toolkit location is a build dependency, not validation evidence; the
+    # authoritative kernel files are hashed separately by run_rotating_frame().
+    spice_toolkit = Path(
+        os.environ.get("MOON_SPICE_TOOLKIT_ROOT", "/home/vtenishe/SPICE/cspice")
+    )
+    if spice_toolkit.joinpath("include", "SpiceUsr.h").is_file():
+        include_dirs.append(spice_toolkit / "include")
     compiler = os.environ.get("MPICXX", "mpicxx")
     command = [compiler, "-std=c++17", "-O2"]
     for include_dir in include_dirs:
@@ -150,7 +160,14 @@ def compile_probe(build_dir: Path, output_root: Path) -> tuple[Path | None, dict
 def run_probe_case(
     acceptance: dict[str, Any], build_dir: Path, output_root: Path
 ) -> dict[str, Any]:
-    """Execute every probe mode declared by a test's frozen contract."""
+    """Execute every probe mode and any declared configuration invariants.
+
+    A linked kernel value alone cannot establish that the production input
+    selected that kernel exactly once.  Contracts may therefore require tokens
+    in the maintained input tree and in Config.pl's generated build tree.  The
+    latter check is deliberately based on ``build_dir`` so an explicitly
+    selected build is audited rather than the repository's default build.
+    """
     executable, compile_result = compile_probe(build_dir, output_root)
     if executable is None:
         return compile_result
@@ -181,8 +198,159 @@ def run_probe_case(
             }
         )
 
-    status = "PASS" if all(item["returncode"] == 0 for item in outputs) else "FAIL"
-    return {"status": status, "compile": compile_result, "probes": outputs}
+    guards: list[dict[str, Any]] = []
+    matching = acceptance.get("token_matching", "exact")
+    if "configuration_required_tokens" in acceptance:
+        guards.append(
+            run_source_guard(
+                {
+                    "required_tokens": acceptance["configuration_required_tokens"],
+                    "token_matching": matching,
+                },
+                REPO_ROOT,
+            )
+        )
+    if "build_required_tokens" in acceptance:
+        guards.append(
+            run_source_guard(
+                {
+                    "required_tokens": acceptance["build_required_tokens"],
+                    "token_matching": matching,
+                },
+                build_dir,
+            )
+        )
+
+    # Infrastructure/configuration errors outrank evaluated failures.  This is
+    # the same four-state ordering used by the aggregate runner and prevents a
+    # missing generated definition from being reported as a physics mismatch.
+    statuses = [guard["status"] for guard in guards]
+    if "ERROR" in statuses:
+        status = "ERROR"
+    elif "FAIL" in statuses or any(item["returncode"] != 0 for item in outputs):
+        status = "FAIL"
+    else:
+        status = "PASS"
+    return {
+        "status": status,
+        "compile": compile_result,
+        "probes": outputs,
+        "configuration_guards": guards,
+    }
+
+
+def _sha256(path: Path) -> str:
+    """Hash an external kernel without modifying the authoritative file."""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def run_rotating_frame(
+    acceptance: dict[str, Any], build_dir: Path, output_root: Path
+) -> dict[str, Any]:
+    """Run U04 and preserve its required frame, metric, and kernel artifacts.
+
+    Kernel presence alone is never a PASS.  Before CSPICE is called, this
+    routine distinguishes an unavailable declared file (SKIPPED) from a file
+    whose bytes disagree with the frozen contract (ERROR).  Only the exact
+    qualified kernel set is then allowed to reach the linked production probe.
+    This ordering also prevents a CSPICE abort from obscuring the scientifically
+    important distinction between missing input and corrupted/substituted input.
+    """
+    test_output = output_root / acceptance["id"]
+    test_output.mkdir(parents=True, exist_ok=True)
+
+    kernel_root = Path(
+        os.environ.get("MOON_SPICE_KERNEL_ROOT", "/home/vtenishe/SPICE/Kernels")
+    )
+    kernel_records: list[dict[str, Any]] = []
+    missing: list[str] = []
+    mismatches: list[dict[str, str]] = []
+    expected_hashes = acceptance["data_hashes"]
+    for relative_name in acceptance["kernel_files"]:
+        path = kernel_root / relative_name
+        if not path.is_file():
+            missing.append(str(path))
+            continue
+        actual_hash = _sha256(path)
+        expected_hash = expected_hashes.get(relative_name)
+        kernel_records.append(
+            {
+                "relative_path": relative_name,
+                "absolute_path": str(path),
+                "bytes": path.stat().st_size,
+                "sha256": actual_hash,
+                "expected_sha256": expected_hash,
+                "hash_matches_contract": actual_hash == expected_hash,
+            }
+        )
+        if expected_hash is None or actual_hash != expected_hash:
+            mismatches.append(
+                {
+                    "relative_path": relative_name,
+                    "expected_sha256": expected_hash or "undeclared",
+                    "actual_sha256": actual_hash,
+                }
+            )
+    kernel_artifact = {
+        "kernel_root": str(kernel_root),
+        "files": kernel_records,
+        "missing": missing,
+        "hash_mismatches": mismatches,
+    }
+    with (test_output / "kernel_hashes.json").open("w", encoding="utf-8") as stream:
+        json.dump(kernel_artifact, stream, indent=2, sort_keys=True)
+        stream.write("\n")
+
+    if missing:
+        return {
+            "status": "SKIPPED",
+            "reason": "one or more declared authoritative SPICE kernels are missing",
+            "missing_kernels": missing,
+        }
+    if mismatches:
+        return {
+            "status": "ERROR",
+            "reason": "one or more SPICE kernels disagree with the frozen SHA-256 contract",
+            "kernel_hash_mismatches": mismatches,
+        }
+
+    result = run_probe_case(acceptance, build_dir, output_root)
+
+    # Convert the probe's stable scalar records into a machine-readable metric
+    # artifact.  Each vector component remains explicit; no norm can hide a
+    # sign or component-order failure.
+    metric_pattern = re.compile(
+        r"^(PASS|FAIL) (\S+) actual=([+\-0-9.eE]+) expected=([+\-0-9.eE]+)$"
+    )
+    metrics: list[dict[str, Any]] = []
+    for probe in result.get("probes", []):
+        for line in probe.get("stdout", "").splitlines():
+            match = metric_pattern.match(line)
+            if match:
+                metrics.append(
+                    {
+                        "status": match.group(1),
+                        "name": match.group(2),
+                        "actual": float(match.group(3)),
+                        "expected": float(match.group(4)),
+                    }
+                )
+    with (test_output / "term_vectors.json").open("w", encoding="utf-8") as stream:
+        json.dump({"epoch_utc": acceptance["epoch_utc"], "metrics": metrics},
+                  stream, indent=2, sort_keys=True)
+        stream.write("\n")
+
+    if result["status"] == "PASS" and not metrics:
+        return {
+            **result,
+            "status": "ERROR",
+            "reason": "U04 probe produced no parseable scientific metrics",
+        }
+    return result
 
 
 def run_lola_geometry(
@@ -221,8 +389,16 @@ def run_lola_geometry(
     return kernel
 
 
-def run_source_guard(acceptance: dict[str, Any]) -> dict[str, Any]:
-    """Check declared source tokens without calling that a runtime test."""
+def run_source_guard(
+    acceptance: dict[str, Any], base_directory: Path = REPO_ROOT
+) -> dict[str, Any]:
+    """Check declared tokens relative to an explicit source or build root.
+
+    Source-only guards use ``REPO_ROOT``.  Linked probes may pass their exact
+    generated build directory, which makes the check compatible with the
+    runner's ``--build-dir`` option and avoids mistaking a stale default build
+    for the configuration under test.
+    """
     checks: list[dict[str, Any]] = []
     matching = acceptance.get("token_matching", "exact")
     if matching not in {"exact", "whitespace-normalized"}:
@@ -231,7 +407,7 @@ def run_source_guard(acceptance: dict[str, Any]) -> dict[str, Any]:
             "reason": f"unknown source-guard token_matching mode: {matching}",
         }
     for relative_name, required_tokens in acceptance["required_tokens"].items():
-        path = REPO_ROOT / relative_name
+        path = base_directory / relative_name
         if not path.is_file():
             checks.append(
                 {"file": relative_name, "status": "ERROR", "reason": "missing file"}
@@ -279,6 +455,8 @@ def run_one(
     # readiness from a filename, a downloaded directory, or another test.
     if kind == "linked-production-probe":
         result = run_probe_case(acceptance, build_dir, output_root)
+    elif kind == "rotating-frame-probe":
+        result = run_rotating_frame(acceptance, build_dir, output_root)
     elif kind == "lola-geometry-probe":
         result = run_lola_geometry(acceptance, build_dir, output_root)
     elif kind == "source-guard":

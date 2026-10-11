@@ -1,6 +1,6 @@
 ! Paths are resolved relative to this file.  The SPICE root is checked for the
 ! same cspice/ and Kernels/ layout as /home/vtenishe/SPICE.  This setting does
-! not by itself change the compile-time SPICE=off selection in input/moon.input.
+! not by itself change the compile-time SPICE selection made by Config.pl.
 #section begin: moon
 spice_path = /home/vtenishe/SPICE
 surface_geometry = lola

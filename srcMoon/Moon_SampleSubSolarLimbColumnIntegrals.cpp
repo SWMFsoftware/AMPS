@@ -12,6 +12,8 @@
 
 #include "pic.h"
 
+#include <string>
+
 SpiceDouble Moon::Sampling::SubsolarLimbColumnIntegrals::etSampleBegin;
 int Moon::Sampling::SubsolarLimbColumnIntegrals::SamplingPhase;
 int Moon::Sampling::SubsolarLimbColumnIntegrals::firstPhaseRadialVelocityDirection;
@@ -135,13 +137,14 @@ void Moon::Sampling::SubsolarLimbColumnIntegrals::init() {
 //output a datafile
 void Moon::Sampling::SubsolarLimbColumnIntegrals::PrintDataFile() {
 #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
-  char fname[200];
   FILE *fout;
 
   if (PIC::ThisThread==0) {
-    //open the output data file
-    sprintf(fname,"%s/pic.Moon.LimbIntegrals.out=%i.dat",PIC::OutputDataFileDirectory,nOutputFile);
-    fout=fopen(fname,"w");
+    // Build the path dynamically because AMPS permits output-directory names
+    // longer than the historical 200-byte stack buffer.
+    const std::string fileName=std::string(PIC::OutputDataFileDirectory)+
+        "/pic.Moon.LimbIntegrals.out="+std::to_string(nOutputFile)+".dat";
+    fout=fopen(fileName.c_str(),"w");
 
     //generate the title of the file
     const SpiceInt lenout=35;
@@ -488,10 +491,12 @@ void Moon::Sampling::SubsolarLimbColumnIntegrals::CollectSample(int DataOutputFi
     int nPass=0;
 
     if (PIC::ThisThread==0) {
-      char fname[100];
-
-      sprintf(fname,"%s/pic.Moon.Kaguya.TVIS.set=%i.out=%i.dat",PIC::OutputDataFileDirectory,nDataSet,DataOutputFileNumber);
-      fout=fopen(fname,"w");
+      // Preserve the full configured output path; no fixed-size buffer is
+      // large enough to prove this concatenation safe at compile time.
+      const std::string fileName=std::string(PIC::OutputDataFileDirectory)+
+          "/pic.Moon.Kaguya.TVIS.set="+std::to_string(nDataSet)+
+          ".out="+std::to_string(DataOutputFileNumber)+".dat";
+      fout=fopen(fileName.c_str(),"w");
 
       fprintf(fout,"VARIABLES= \"Equatorial Crossing Time\", \"Epoch\", \"NA ColumnDensity\", \"NA EmissionIntensity (5891_58A)\", \"NA EmissionIntensity (5897_56A)\"\n");
       fprintf(fout,"ZONE T=\"Pass=%i\"\n",nPass++);

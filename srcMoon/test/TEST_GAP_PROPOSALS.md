@@ -11,9 +11,12 @@ before implementation.
   miss, inside-origin, and reversed-direction analytical fixtures.
 - **U03 / I05:** add two-body trajectory energy/angular-momentum invariants and
   timestep convergence after the local acceleration gate.
-- **U04 / I06:** replace or explicitly approve the legacy `MSGR_HCI` frame in
-  the lunar SPICE branch, freeze a kernel/epoch set, then compare the complete
-  production non-inertial acceleration with an independent frame derivative.
+- **I06 (U04 local prerequisite implemented):** U04 now freezes the
+  J2000/LSO/MOON_ME_DE421 convention, epoch, exact DE421 kernel hashes, and
+  independently checks the production differential/fictitious kernels and
+  frame derivative. I06 must still propagate a particle through the actual
+  linked AMPS mover and compare the complete trajectory; U04 is not a
+  substitute for that wiring test.
 - **U05 / I07:** qualify the absolute Na radiation-pressure table against its
   authoritative source before testing full mover gating through lunar and
   terrestrial shadows.

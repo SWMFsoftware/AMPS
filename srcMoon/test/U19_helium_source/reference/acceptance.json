@@ -8,7 +8,7 @@
   "inputs": ["constant and step alpha flux", "surface normals", "surface inventory"],
   "independent_reference": "Projected-area integral pi R^2 and analytical first-order reservoir response once the reservoir equation is specified.",
   "units": "m^-2 s^-1, s^-1, particles, K",
-  "frame_time_convention": "IAU_MOON surface normals and declared driver time.",
+  "frame_time_convention": "MOON_ME_DE421 surface normals and declared driver time.",
   "deterministic_stochastic_controls": "Fixed seeds/counts for Maxwellian emission; deterministic rate fixtures.",
   "procedure": "Check projected-area integral, dayside masking, inverse-square scaling, reservoir step response, velocity moments, and budgets.",
   "metrics": ["integrated rate error", "response time/error", "distribution moments", "budget residual"],

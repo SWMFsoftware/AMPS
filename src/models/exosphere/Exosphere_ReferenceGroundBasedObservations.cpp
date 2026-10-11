@@ -12,6 +12,8 @@
 #include "pic.h"
 #include "Exosphere.h"
 
+#include <string>
+
 Exosphere::Sampling::ReferenceGroundBasedObservations::cObservationTag Exosphere::Sampling::ReferenceGroundBasedObservations::RemoteObservationList[1+nReferenceGroundBasedObservations];
 
 void Exosphere::Sampling::ReferenceGroundBasedObservations::init() {
@@ -55,13 +57,24 @@ void Exosphere::Sampling::ReferenceGroundBasedObservations::OutputSampledData(Sp
 
     if ((dTAAobservation<dTAA) || ((min(paStartInterval,paFinishInterval)<=RemoteObservationList[n].PhaseAngle)&&(RemoteObservationList[n].PhaseAngle<=max(paStartInterval,paFinishInterval))) ) {
       //the taa of the remote observation falls in the range taaStartInterval - taaFinishInterval
-      char fname[_MAX_STRING_LENGTH_PIC_];
+      // Observation timestamps and configured directories are both variable
+      // length. Dynamic construction preserves the full provenance-bearing
+      // filename without relying on an unverifiable fixed-buffer bound.
+      std::string fileName=std::string(PIC::OutputDataFileDirectory)+
+          "/pic.GroundBasedObservation.n="+std::to_string(n)+
+          ".ColumnDensityMap."+RemoteObservationList[n].TimeStamp+
+          ".nMercuryOutputFile="+std::to_string(nMercuryOutputFile)+
+          ".out="+std::to_string(RemoteObservationList[n].nOutputFile)+".dat";
+      Exosphere::ColumnIntegral::CircularMap(fileName.data(),
+          domainCharacteristicSize,0.05*_RADIUS_(_TARGET_),
+          5*_RADIUS_(_TARGET_),80,RemoteObservationList[n].et);
 
-      sprintf(fname,"%s/pic.GroundBasedObservation.n=%i.ColumnDensityMap.%s.nMercuryOutputFile=%i.out=%i.dat",PIC::OutputDataFileDirectory,n,RemoteObservationList[n].TimeStamp,nMercuryOutputFile,RemoteObservationList[n].nOutputFile);
-      Exosphere::ColumnIntegral::CircularMap(fname,domainCharacteristicSize,0.05*_RADIUS_(_TARGET_),5*_RADIUS_(_TARGET_),80,RemoteObservationList[n].et);
-
-      sprintf(fname,"%s/pic.GroundBasedObservation.n=%i.LimbColumnDensity.%s.nMercuryOutputFile=%i.out=%i.dat",PIC::OutputDataFileDirectory,n,RemoteObservationList[n].TimeStamp,nMercuryOutputFile,RemoteObservationList[n].nOutputFile);
-      Exosphere::ColumnIntegral::Limb(fname);
+      fileName=std::string(PIC::OutputDataFileDirectory)+
+          "/pic.GroundBasedObservation.n="+std::to_string(n)+
+          ".LimbColumnDensity."+RemoteObservationList[n].TimeStamp+
+          ".nMercuryOutputFile="+std::to_string(nMercuryOutputFile)+
+          ".out="+std::to_string(RemoteObservationList[n].nOutputFile)+".dat";
+      Exosphere::ColumnIntegral::Limb(fileName.data());
 
       RemoteObservationList[n].nOutputFile++;
     }
