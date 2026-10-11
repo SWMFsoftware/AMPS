@@ -80,24 +80,43 @@ presence from being treated as qualified validation evidence.
 ### Complete campaign
 
 `run_all_test.py` is the single entry point for the complete registered
-`srcMoon` U-series campaign. By default it first removes the generated
-`build/` tree, runs `make -j`, and then launches every registered test through
-that test's own `test.py` runner:
+`srcMoon` U-series campaign. By default it removes the generated `build/`
+tree, configures the Moon application with the frozen SPICE installation and
+kernel directories, runs `make -j`, and then launches every registered test
+through that test's own `test.py` runner. Configuration and compilation are
+both recorded in `<output-dir>/build.log` and as separate steps in
+`run_all_summary.json`:
 
 ```sh
 python3 srcMoon/test/run_all_test.py
 ```
+
+The default build sequence is equivalent to:
+
+```sh
+rm -rf build
+./Config.pl -application=moon \
+  -spice-path=/home/vtenishe/SPICE/cspice \
+  -spice-kernels=/home/vtenishe/SPICE/Kernels
+make -j
+```
+
+Relocated installations can be selected explicitly with `--spice-path` and
+`--spice-kernels`. These arguments are ignored only when `--skip-build` is
+used, because that option deliberately reuses the caller's existing generated
+tree.
 
 The default output directory has the form
 `test_output/srcMoon/run-all-YYYYMMDDTHHMMSSZ`. An explicit `--output-dir`
 must be new or empty; the runner refuses to overwrite an earlier campaign.
 
 Use `--skip-build` only when the existing generated tree is known to match the
-source and configuration. `--list` prints the explicit campaign registry,
-`--only UXX` may be repeated for a focused runner check, `--stream` mirrors
-individual logs to the terminal, and `--strict-skips` makes any SKIPPED test
-fail the aggregate command. Without `--strict-skips`, SKIPPED remains a
-recorded incomplete capability but does not change the campaign exit status.
+source and SPICE configuration. `--list` prints the explicit campaign
+registry, `--only UXX` may be repeated for a focused runner check, `--stream`
+mirrors individual logs to the terminal, and `--strict-skips` makes any
+SKIPPED test fail the aggregate command. Without `--strict-skips`, SKIPPED
+remains a recorded incomplete capability but does not change the campaign exit
+status.
 
 The final terminal summary reports the number of tests executed, passed,
 failed, skipped, and ended with an error. For every FAIL or ERROR it prints the
@@ -107,9 +126,11 @@ log. The same information is written to
 `<output-dir>/runner_logs/UXX.log`.
 
 The aggregate exit values are `0` when no test failed or errored, `1` for an
-evaluated FAIL (or a strict-skip rejection), and `2` for ERROR. A clean-build
-failure is a campaign infrastructure ERROR: no individual test is counted as
-executed, and diagnostics are preserved in `<output-dir>/build.log`.
+evaluated FAIL (or a strict-skip rejection), and `2` for ERROR. A Moon/SPICE
+configuration failure or clean-build failure is a campaign infrastructure
+ERROR: no individual test is counted as executed, the failed step is named in
+`run_all_summary.json`, and diagnostics are preserved in
+`<output-dir>/build.log`.
 
 ### Adding a test to the aggregate campaign
 

@@ -24,6 +24,8 @@ TEST_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = TEST_ROOT.parents[1]
 DEFAULT_BUILD = REPO_ROOT / "build"
 DEFAULT_OUTPUT_PARENT = REPO_ROOT / "test_output" / "srcMoon"
+DEFAULT_SPICE_PATH = Path("/home/vtenishe/SPICE/cspice")
+DEFAULT_SPICE_KERNELS = Path("/home/vtenishe/SPICE/Kernels")
 
 # This is the campaign registry, not a directory-discovery convenience.  A new
 # test must be added here deliberately so code review can see that the aggregate
@@ -112,10 +114,19 @@ def default_output_directory() -> Path:
     return DEFAULT_OUTPUT_PARENT / f"run-all-{timestamp}"
 
 
-def run_logged(command: list[str], log_path: Path, stream: bool) -> int:
-    """Run one command with a durable combined stdout/stderr transcript."""
+def run_logged(
+    command: list[str], log_path: Path, stream: bool, append: bool = False
+) -> int:
+    """Run one command with a durable combined stdout/stderr transcript.
+
+    ``append`` is used only for a multi-step operation such as configuration
+    followed by compilation.  Individual test-runner logs retain the safer
+    default of replacing an old transcript rather than mixing two executions.
+    """
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("w", encoding="utf-8") as log:
+    with log_path.open("a" if append else "w", encoding="utf-8") as log:
+        if append:
+            log.write("\n")
         log.write("command: " + " ".join(command) + "\n")
         log.flush()
         try:
@@ -156,20 +167,66 @@ def run_logged(command: list[str], log_path: Path, stream: bool) -> int:
             return 127
 
 
-def clean_build(output_root: Path, stream: bool) -> dict[str, Any]:
-    """Perform the repository-required clean ``make -j`` build."""
+def clean_build(
+    output_root: Path,
+    stream: bool,
+    spice_path: Path,
+    spice_kernels: Path,
+) -> dict[str, Any]:
+    """Clean, configure the Moon application with SPICE, and run ``make -j``.
+
+    Config.pl changes the generated AMPS build contract, so configuration is a
+    required part of this campaign rather than an undocumented prerequisite.
+    The build tree is removed before Config.pl runs, exactly matching the
+    repository build discipline.  Both commands share one durable log and are
+    also recorded separately in the machine-readable campaign summary.
+    """
     if DEFAULT_BUILD.exists():
         # AMPS generates configured source beneath build/.  A clean tree is
         # required so the test campaign cannot link against stale copies.
         shutil.rmtree(DEFAULT_BUILD)
     log_path = output_root / "build.log"
     started = time.monotonic()
-    returncode = run_logged(["make", "-j"], log_path, stream)
+
+    configure_command = [
+        str(REPO_ROOT / "Config.pl"),
+        "-application=moon",
+        f"-spice-path={spice_path}",
+        f"-spice-kernels={spice_kernels}",
+    ]
+    configure_started = time.monotonic()
+    configure_returncode = run_logged(configure_command, log_path, stream)
+    configure_result = {
+        "name": "configure",
+        "command": configure_command,
+        "returncode": configure_returncode,
+        "duration_seconds": time.monotonic() - configure_started,
+    }
+    if configure_returncode != 0:
+        return {
+            "status": "ERROR",
+            "failed_step": "configure",
+            "returncode": configure_returncode,
+            "log": str(log_path),
+            "steps": [configure_result],
+            "duration_seconds": time.monotonic() - started,
+        }
+
+    build_command = ["make", "-j"]
+    build_started = time.monotonic()
+    build_returncode = run_logged(build_command, log_path, stream, append=True)
+    build_result = {
+        "name": "build",
+        "command": build_command,
+        "returncode": build_returncode,
+        "duration_seconds": time.monotonic() - build_started,
+    }
     return {
-        "status": "PASS" if returncode == 0 else "ERROR",
-        "command": ["make", "-j"],
-        "returncode": returncode,
+        "status": "PASS" if build_returncode == 0 else "ERROR",
+        "failed_step": None if build_returncode == 0 else "build",
+        "returncode": build_returncode,
         "log": str(log_path),
+        "steps": [configure_result, build_result],
         "duration_seconds": time.monotonic() - started,
     }
 
@@ -298,7 +355,22 @@ def main() -> int:
     parser.add_argument(
         "--skip-build",
         action="store_true",
-        help="reuse an existing generated build instead of clean make -j",
+        help=(
+            "reuse an existing generated build instead of clean Moon/SPICE "
+            "configuration and make -j"
+        ),
+    )
+    parser.add_argument(
+        "--spice-path",
+        type=Path,
+        default=DEFAULT_SPICE_PATH,
+        help="CSPICE installation used by Config.pl (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--spice-kernels",
+        type=Path,
+        default=DEFAULT_SPICE_KERNELS,
+        help="SPICE kernel directory used by Config.pl (default: %(default)s)",
     )
     parser.add_argument("--stream", action="store_true", help="also stream runner logs")
     parser.add_argument(
@@ -345,7 +417,12 @@ def main() -> int:
     if not args.skip_build:
         if build_dir != DEFAULT_BUILD.resolve():
             parser.error("a clean build can target only the repository build directory")
-        build_result = clean_build(output_root, args.stream)
+        build_result = clean_build(
+            output_root,
+            args.stream,
+            args.spice_path.resolve(),
+            args.spice_kernels.resolve(),
+        )
         if build_result["status"] == "ERROR":
             summary = {
                 "source_revision": git_revision(),
@@ -358,7 +435,10 @@ def main() -> int:
                     "ERROR": 0,
                 },
                 "campaign_status": "ERROR",
-                "campaign_error": "clean build failed; no test runner was executed",
+                "campaign_error": (
+                    "Moon/SPICE configuration or clean build failed; "
+                    "no test runner was executed"
+                ),
                 "results": [],
             }
             with (output_root / "run_all_summary.json").open(
@@ -366,7 +446,11 @@ def main() -> int:
             ) as stream:
                 json.dump(summary, stream, indent=2, sort_keys=True)
                 stream.write("\n")
-            print(f"ERROR: clean build failed; see {build_result['log']}", file=sys.stderr)
+            print(
+                "ERROR: Moon/SPICE configuration or clean build failed; "
+                f"see {build_result['log']}",
+                file=sys.stderr,
+            )
             return 2
 
     results: list[dict[str, Any]] = []
