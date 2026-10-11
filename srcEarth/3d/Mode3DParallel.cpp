@@ -5,11 +5,13 @@
 // Shared parallel-backend selection for mesh-backed Mode3D backward products.
 //
 // Once the compact global field arrays have been assembled, Mode3D backward products
-// operate on independent work items.  Density/flux uses observation locations; cutoff
-// rigidity now flattens each location into independent trajectory tasks so directional
-// maps and explicit rigidity lists can use all MPI ranks and shared-memory workers even
-// when the run contains only one observation location.  The common backend-resolution
-// logic here guarantees consistent DENSITY_PARALLEL / DENSITY_THREADS handling.
+// operate on independent work items. Shared-epoch POINTS/SHELLS density flattens
+// (location,energy) pairs, while timestamped TRAJECTORY batches assign complete
+// epoch/location transactions to independent MPI domains and use threads inside each
+// transaction. Cutoff rigidity flattens each location into independent trajectory tasks
+// so directional maps and explicit rigidity lists can use all MPI ranks and workers.
+// The common backend-resolution logic here guarantees consistent
+// DENSITY_PARALLEL / DENSITY_THREADS handling.
 //======================================================================================
 
 #include "Mode3DParallel.h"
@@ -59,7 +61,7 @@ MpiScheduler ResolveMpiScheduler(const EarthUtil::AmpsParam& prm,
                                  const char* diagnosticContext) {
   // The user-facing keyword is deliberately generic: the same inter-rank scheduler
   // infrastructure applies to cutoff rigidity and density/flux, although the actual
-  // work unit differs (flattened trajectory task for cutoff, location for density).
+  // work unit is selected by the caller from its output-mode/epoch contract.
   // Keep environment fallback support for
   // quick tests on HPC systems where editing the input deck is inconvenient.
   std::string token = prm.mode3d.mpiScheduler;

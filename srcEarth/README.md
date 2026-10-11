@@ -1,5 +1,12 @@
 # SEP-in-geospace model: compact global fields in Mode3D
 
+Density angular quadrature accepts `DS_DIRECTION_NMU` and `DS_DIRECTION_NPHI`
+in `#DENSITY_SPECTRUM` (positive integers, defaults 24 and 48), for both Mode3D
+and gridless paths. The equal-solid-angle parent grid is independently capped by
+`DS_MAX_PARTICLES` across energy nodes. Non-default shapes enter coupled-product
+control fingerprints. See `test/SA01/README.md` for explicit mover/timestep
+selection, full-resolution profiles, and fixed-gate convergence reporting.
+
 ## Roadmap Step 12 implemented: cross-path validation and release packaging
 
 Step 12 adds a fail-closed release decision around the completed standalone and
@@ -496,10 +503,19 @@ The validation controls are:
 
 ```text
 DS_UNRESOLVED_TOL       0.01   # accepted unresolved fraction [0,1]
-DS_RETRY_UNRESOLVED     T      # one tighter/longer retry
+DS_RETRY_UNRESOLVED     T      # enable bounded unresolved-only extension
+DS_UNRESOLVED_EXTENSION_PASSES 3   # 300 -> 600 -> 1200 -> 2400 s, for example
+DS_UNRESOLVED_EXTENSION_FACTOR 2.0 # physical-time multiplier per pass
 DS_SAVE_TERMINATION_SUMMARY T  # retain per-location/energy counts
 DS_FAIL_ON_UNRESOLVED   T      # recommended for validation decks
 ```
+
+The primary trace limit remains part of the recorded baseline.  Only valid
+`TIME_LIMIT` or `STEP_LIMIT` outcomes are restarted from their original phase-space
+seed at the larger budgets; `DISTANCE_LIMIT` is never relaxed.  Invalid time steps,
+fields, or numerical states use a separate one-time smaller-step recovery.  Increasing
+the convergence budget therefore does not reclassify a timeout as shielding: the final
+trajectory must still escape, hit the loss boundary, or satisfy a validated trap test.
 
 `DS_FAIL_ON_UNRESOLVED=F` (default) preserves survey-style execution and writes a
 warning plus uncertainty bounds.  `T` makes an exceedance fatal and is intended for
@@ -674,8 +690,12 @@ are forced so the user always sees 0% and 100%.  Each printed line is explicitly
 flushed.  This matters for C19 production runs launched through `mpirun` or batch
 schedulers, where newline buffering can otherwise delay progress output.
 
-The progress count represents owner-cell slots completed over **all MPI ranks**, not
-work merely assigned.  In pthread mode each temporary worker increments a rank-local
+The progress count represents unique physical center-buffer writes completed over
+**all MPI ranks**, not work merely assigned. A deterministic prepass removes shared
+interior/ghost aliases and prefers the owning interior coordinates, so two workers
+never write the same buffer. Ghost-only buffers remain initialized. See
+`3d/README.md` for the ownership regression and opt-in read-only field audits.
+In pthread mode each temporary worker increments a rank-local
 `std::atomic<long long>` only.  The original MPI-rank thread periodically publishes
 the aggregate local delta through `DynamicMpiProgressCounter` and is the only thread
 that calls MPI.  This design gives live threaded progress without requiring
@@ -702,7 +722,8 @@ closure for every shell, and `ETA 00:00:00`.
 `STATIC` and `BLOCK_CYCLIC` retain their synchronized-batch reporting and exact final
 reduction. `POINTS` and `TRAJECTORY` retain the same dynamic completed-task counter,
 now with the inexpensive one-second poll guard applied before the remote counter
-read. Density/flux reporting is implemented separately and is unchanged.
+read. Density/flux reporting is implemented separately; its output-mode-aware work
+units are documented below.
 
 `Mode3DPrepareMagneticFieldSnapshot()` then calls
 
@@ -920,8 +941,9 @@ FUNNELED/single-thread MPI use pattern.
 
 `MODE3D_MPI_DYNAMIC_CHUNK` / `-mode3d-mpi-dynamic-chunk` is now interpreted by the
 Mode3D **cutoff** solver as the number of flattened cutoff tasks fetched per atomic MPI
-request.  Density/flux continues to interpret the same generic control in its own work
-units, which are observation locations.
+request. Density/flux interprets the same generic control in its own work units:
+flattened `(location,energy)` tasks for shared-epoch `POINTS`/`SHELLS`, and complete
+epoch/location transactions for timestamped `TRAJECTORY` batching.
 
 For the direct `THREADS` backend, use a cutoff chunk at least as large as the requested
 thread count.  Otherwise one fetched chunk cannot feed all local workers.  The solver
@@ -930,6 +952,50 @@ example, the current C19 runner commonly requests 32 tasks with `-nt 16`.
 
 With `0` (automatic), the generic resolver selects approximately four work items per
 configured worker, capped by the total job size.
+
+## Mode3D density output-mode scheduling
+
+The density scheduler distinguishes field ownership from trajectory subdivision.
+Mixing these levels would either leave MPI ranks idle or allow one process to mutate a
+field while another thread still uses it.
+
+### Timestamped TRAJECTORY
+
+`OUTPUT_MODE TRAJECTORY` plus `TEMPORAL_MODE SNAPSHOT_LIST` assigns one complete
+epoch/location transaction at a time through a dynamic `MPI_COMM_WORLD` RMA counter.
+Each MPI process runs AMPS with a singleton `MPI_GLOBAL_COMMUNICATOR`, owns a complete
+mesh, constructs its claimed epoch's gridded field, and uses its configured OpenMP or
+direct-thread workers for that location's energies and directions. When the product
+files have closed, the process atomically claims another epoch. Product suffixes retain
+the original global snapshot index and UTC, so completion order cannot change artifact
+identity.
+
+All field assembly and product collectives inside a transaction intentionally use the
+singleton communicator. Only epoch assignment, the final scheduler teardown, and the
+final status reduction use `MPI_COMM_WORLD`. This communicator separation is what
+allows different MPI processes to hold different T05/Geopack epochs concurrently.
+
+### Shared-epoch POINTS and SHELLS
+
+`POINTS` and the locations within one `SHELLS` snapshot share one immutable compact
+field. Their density work is flattened as
+
+```text
+task_id     = location_id * number_of_energies + energy_id
+location_id = task_id / number_of_energies
+energy_id   = task_id % number_of_energies
+```
+
+`DYNAMIC`, `BLOCK_CYCLIC`, and `STATIC` all distribute this same task space. Each task
+owns a disjoint transmissivity/bounds/termination slot. After every slot is reduced,
+the code reconstructs each complete energy curve and evaluates density, total and
+planar flux, configured channels, and detector responses. Integrated quantities are
+never calculated from a rank's incomplete subset. A multi-epoch `SHELLS` request
+repeats this shared-epoch procedure after each collective field rebuild.
+
+Worker threads never call MPI in either scheduling mode. The rank/main thread alone
+uses the RMA counter and reductions, preserving the existing `MPI_THREAD_FUNNELED`
+contract. Scheduling changes no physical sampling or acceptance gate.
 
 ### C19 example
 

@@ -4,6 +4,7 @@
 #include "DensityMode3D.h"
 #include "GlobalMagneticField.h"
 #include "Mode3DParallel.h"
+#include "FieldInitializationPlan.h"
 #include "../gridless/DipoleInterface.h"
 #include "../util/StandaloneProductContract.h"
 
@@ -26,6 +27,8 @@
 #include <thread>
 #include <memory>
 #include <limits>
+#include <array>
+#include <cstdlib>
 
 #ifndef _NO_SPICE_CALLS_
 #include "SpiceUsr.h"
@@ -258,13 +261,17 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
 // temporary POSIX-thread team.  The temporary pthread count is the same value
 // resolved from MODE3D_THREADS/-mode3d-threads for the calculation.  The calling
 // MPI-rank thread also participates, so N means N temporary workers plus one
-// caller.  The flat owner-cell range is divided statically by index because every
-// background-field evaluation has approximately the same cost.
+// caller. The unique physical-buffer range is divided statically by index because
+// every background-field evaluation has approximately the same cost. Shared ghost
+// aliases must be removed before this partition; logical slots are not ownership.
 using FieldInitNode = cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>;
 
 struct FieldInitSharedWork {
   const EarthUtil::AmpsParam* prm{nullptr};
   const std::vector<FieldInitNode*>* ownerBlocks{nullptr};
+  // One selected logical slot per physical center-node buffer. Ghost and owner
+  // slots alias storage, so the unfiltered Cartesian slot range is NOT safe work.
+  std::vector<std::size_t> writerSlots;
 
   int iMin{0},iCount{0};
   int jMin{0},jCount{0};
@@ -535,6 +542,28 @@ static void ConfigureFieldInitSharedWork(FieldInitSharedWork& shared,
   shared.jCount=_BLOCK_CELLS_Y_+2*_GHOST_CELLS_Y_;
   shared.kCount=_BLOCK_CELLS_Z_+2*_GHOST_CELLS_Z_;
   shared.cellsPerBlock=shared.iCount*shared.jCount*shared.kCount;
+  // Resolve aliases on the calling thread, before any field evaluation/write.
+  // Interior coordinates are authoritative because those same cells are packed
+  // into GlobalMagneticField. Still initialize ghost-only buffers for legacy
+  // consumers; simply skipping all ghosts would leave some buffers uninitialized.
+  UniqueFieldWriterPlan plan;
+  for (std::size_t block=0;block<ownerBlocks.size();++block) {
+    for (int i=shared.iMin;i<shared.iMin+shared.iCount;++i)
+      for (int j=shared.jMin;j<shared.jMin+shared.jCount;++j)
+        for (int k=shared.kMin;k<shared.kMin+shared.kCount;++k) {
+          const std::size_t flat=block*shared.cellsPerBlock+
+              ((i-shared.iMin)*shared.jCount+j-shared.jMin)*shared.kCount+k-shared.kMin;
+          auto* center=ownerBlocks[block]->block->GetCenterNode(
+              PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k));
+          const bool interior=i>=0 && i<_BLOCK_CELLS_X_ && j>=0 && j<_BLOCK_CELLS_Y_
+              && k>=0 && k<_BLOCK_CELLS_Z_;
+          plan.Add(center,flat,interior);
+        }
+  }
+  shared.writerSlots=plan.TakeSlots();
+  if (PIC::ThisThread==0) std::cout << "[Mode3D] Unique field writers: logicalSlots="
+      << ownerBlocks.size()*shared.cellsPerBlock << " uniqueBuffers="
+      << shared.writerSlots.size() << " (interior coordinates preferred)" << std::endl;
   shared.participantCount=std::max(1,participantCount);
   shared.completedLocal.store(0,std::memory_order_relaxed);
   shared.workersFinished.store(0,std::memory_order_relaxed);
@@ -543,8 +572,7 @@ static void ConfigureFieldInitSharedWork(FieldInitSharedWork& shared,
 void ProcessFieldInitParticipant(FieldInitSharedWork& shared,
                                  int participantId,
                                  FieldInitProgressReporter* reporter=nullptr) {
-  const std::size_t totalWork=
-      shared.ownerBlocks->size()*static_cast<std::size_t>(shared.cellsPerBlock);
+  const std::size_t totalWork=shared.writerSlots.size();
 
   // Static equal partition.  This formulation distributes a possible remainder
   // by at most one cell and gives the original MPI-rank thread exactly the same
@@ -556,7 +584,8 @@ void ProcessFieldInitParticipant(FieldInitSharedWork& shared,
       totalWork*static_cast<std::size_t>(participantId+1)
       /static_cast<std::size_t>(shared.participantCount);
 
-  for (std::size_t flat=begin;flat<end;++flat) {
+  for (std::size_t work=begin;work<end;++work) {
+    const std::size_t flat=shared.writerSlots[work];
     const std::size_t iBlock=flat/static_cast<std::size_t>(shared.cellsPerBlock);
     int local=static_cast<int>(flat%static_cast<std::size_t>(shared.cellsPerBlock));
 
@@ -579,7 +608,7 @@ void ProcessFieldInitParticipant(FieldInitSharedWork& shared,
     // avoids unnecessary clock/MPI overhead; Publish() applies an additional
     // quarter-second RMA throttle and a two-second print throttle.
     if (reporter!=nullptr && participantId==0 &&
-        (((flat-begin)&63U)==0U || flat+1==end)) {
+        (((work-begin)&63U)==0U || work+1==end)) {
       reporter->Publish(localDone,false);
     }
   }
@@ -604,17 +633,15 @@ void* FieldInitPthreadEntry(void* rawArg) {
 }
 
 void InitMeshFieldsSerial(const EarthUtil::AmpsParam& prm,FieldInitNode* startNode) {
-  // Use the same flat owner-block traversal as the threaded path.  This preserves
-  // the historical ghost-cell-inclusive work exactly while allowing serial and
-  // pthread initialization to share one global MPI progress implementation.
+  // Serial and threaded paths use the same unique-writer plan. Both populate
+  // interior and ghost-only storage, with identical canonical coordinates.
   std::vector<FieldInitNode*> ownerBlocks;
   CollectOwnerFieldInitBlocks(startNode,ownerBlocks);
 
   FieldInitSharedWork shared;
   ConfigureFieldInitSharedWork(shared,prm,ownerBlocks,1);
 
-  const long long localTotal=static_cast<long long>(ownerBlocks.size())
-      *static_cast<long long>(shared.cellsPerBlock);
+  const long long localTotal=static_cast<long long>(shared.writerSlots.size());
   FieldInitProgressReporter reporter(localTotal);
 
   ProcessFieldInitParticipant(shared,0,&reporter);
@@ -645,8 +672,7 @@ void InitMeshFieldsPthreads(const EarthUtil::AmpsParam& prm,FieldInitNode* start
   FieldInitSharedWork shared;
   ConfigureFieldInitSharedWork(shared,prm,ownerBlocks,participantCount);
 
-  const long long localTotal=static_cast<long long>(ownerBlocks.size())
-      *static_cast<long long>(shared.cellsPerBlock);
+  const long long localTotal=static_cast<long long>(shared.writerSlots.size());
   FieldInitProgressReporter reporter(localTotal);
 
   int rc=pthread_mutex_init(&shared.gateMutex,nullptr);
@@ -703,7 +729,7 @@ void InitMeshFieldsPthreads(const EarthUtil::AmpsParam& prm,FieldInitNode* start
     std::cout << "[Mode3D] Parallel background-field initialization: POSIX threads; "
               << temporaryWorkerCount << " temporary workers + caller ("
               << participantCount << " equal shares per MPI rank); "
-              << reporter.TotalGlobal() << " owner-cell slots globally.\n";
+              << reporter.TotalGlobal() << " unique cell buffers globally.\n";
     std::cout.flush();
   }
 
@@ -743,6 +769,81 @@ void InitMeshFieldsPthreads(const EarthUtil::AmpsParam& prm,FieldInitNode* start
   }
 
   reporter.Finish(shared.completedLocal.load(std::memory_order_relaxed));
+}
+
+// Read-only forensics separate field construction from trajectory integration.
+// Sample owner interiors against fresh serial field evaluations, then compare
+// serial and concurrent interpolation from the same frozen arrays. Never repair
+// or overwrite a mismatching value here: preserve the defect for diagnosis.
+bool FieldAuditEnabled_() {
+  // Strict opt-in: ordinary production runs incur no forensic sampling overhead.
+  const char* value=std::getenv("AMPS_MODE3D_FIELD_AUDIT");
+  return value && std::string(value)=="1";
+}
+
+void AuditOwnerFields_(const EarthUtil::AmpsParam& prm) {
+  // Run only after initialization workers join. Both evaluations use the owner's
+  // cell-center formula, isolating stored-buffer disagreement from interpolation.
+  if (!FieldAuditEnabled_()) return;
+  std::vector<FieldInitNode*> blocks;
+  CollectOwnerFieldInitBlocks(PIC::Mesh::mesh->rootTree,blocks);
+  long long sampled=0,different=0;
+  double maximumRelativeError=0.0;
+  for (auto* node:blocks) for (int a=0;a<2;++a) for (int b=0;b<2;++b) for (int c=0;c<2;++c) {
+    const int ijk[3]={a*(_BLOCK_CELLS_X_-1),b*(_BLOCK_CELLS_Y_-1),c*(_BLOCK_CELLS_Z_-1)};
+    auto* center=node->block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(ijk[0],ijk[1],ijk[2]));
+    if (!center) continue;
+    char* offset=center->GetAssociatedDataBufferPointer()
+        +PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin
+        +PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset
+        +PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+    double x[3],reference[3],stored[3];
+    const int counts[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+    for (int d=0;d<3;++d) x[d]=node->xmin[d]+(node->xmax[d]-node->xmin[d])/counts[d]*(0.5+ijk[d]);
+    EvaluateBackgroundMagneticFieldSI(reference,x,prm);
+    std::memcpy(stored,offset,sizeof(stored));
+    ++sampled;
+    if (std::memcmp(stored,reference,sizeof(stored))!=0) {
+      ++different;
+      double delta2=0,reference2=0;
+      for (int d=0;d<3;++d) { delta2+=(stored[d]-reference[d])*(stored[d]-reference[d]); reference2+=reference[d]*reference[d]; }
+      maximumRelativeError=std::max(maximumRelativeError,std::sqrt(delta2/std::max(reference2,1e-300)));
+      if (different<=3) std::cout << std::setprecision(17)
+          << "[field-audit] mismatch epoch=" << prm.field.epoch
+          << " x_m=" << x[0] << ',' << x[1] << ',' << x[2]
+          << " stored=" << stored[0] << ',' << stored[1] << ',' << stored[2]
+          << " expected=" << reference[0] << ',' << reference[1] << ',' << reference[2] << '\n';
+    }
+  }
+  std::cout << "[field-audit] owner epoch=" << prm.field.epoch << " sampled=" << sampled
+            << " differing=" << different << " maximum_relative_error=" << maximumRelativeError << std::endl;
+}
+
+void AuditInterpolation_(const EarthUtil::AmpsParam& prm) {
+  // The arrays have already been frozen. Deterministic non-grid-aligned positions
+  // exercise stencil construction concurrently without advancing any trajectory.
+  if (!FieldAuditEnabled_()) return;
+  const int count=4096,workers=3;
+  std::vector<std::array<double,3>> positions(count),reference(count);
+  for (int i=0;i<count;++i) {
+    const int multipliers[3]={73,151,311};
+    for (int d=0;d<3;++d) positions[i][d]=ParsedDomainMin[d]+(ParsedDomainMax[d]-ParsedDomainMin[d])*
+        (0.05+0.9*double((i*multipliers[d])%count+0.5)/count);
+    if (!GlobalMagneticField::InterpolateMagneticField(positions[i].data(),nullptr,reference[i].data()))
+      throw std::runtime_error("field audit: unavailable interior reference field");
+  }
+  std::atomic<int> different(0);
+  std::vector<std::thread> threads;
+  for (int worker=0;worker<workers;++worker) threads.emplace_back([&,worker]() {
+    for (int pass=0;pass<3;++pass) for (int i=worker;i<count;i+=workers) {
+      double value[3];
+      const bool valid=GlobalMagneticField::InterpolateMagneticField(positions[i].data(),nullptr,value);
+      if (!valid || std::memcmp(value,reference[i].data(),sizeof(value))!=0) ++different;
+    }
+  });
+  for (auto& thread:threads) thread.join();
+  std::cout << "[field-audit] interpolation epoch=" << prm.field.epoch
+            << " sampled=" << 3*count << " differing=" << different.load() << std::endl;
 }
 
 void InitMeshFields(const EarthUtil::AmpsParam& prm,FieldInitNode* startNode) {
@@ -1435,6 +1536,7 @@ void Mode3DPrepareMagneticFieldSnapshot(const EarthUtil::AmpsParam& snap,
   // AMPS mesh.  The compact global arrays assembled below copy authoritative interior
   // cells from those owners and never allocate nonlocal blocks.
   InitMeshFields(snap,PIC::Mesh::mesh->rootTree);
+  AuditOwnerFields_(snap);
 
   // Optional diagnostic output of the initialized cell-centered field.  Append the
   // same snapshot suffix used by cutoff outputs so multiple snapshots do not
@@ -1578,14 +1680,19 @@ int Run(const EarthUtil::AmpsParam& prm) {
   //    AMR tree, and RunCutoffRigidity() later uses the same values for the outer
   //    escape box.  This keeps mesh geometry and trajectory classification aligned.
   //
-  // 2. Use the normal AMPS MPI initialization, not independentDomainMode.
-  //    Earlier standalone cutoff code called
+  // 2. Select the MPI domain layout from the OUTPUT_MODE temporal contract.
   //
-  //       PIC::InitMPI(/*independentDomainMode=*/true)
+  //    POINTS and every individual SHELLS snapshot have one common epoch.  Those
+  //    modes retain the normal distributed AMPS domain: ranks cooperate to build one
+  //    field, then the cutoff/density solvers distribute the common-epoch trajectory
+  //    tasks more finely than a complete snapshot.
   //
-  //    so that every MPI process built a private complete copy of the AMR mesh.
-  //    That is no longer needed.  The current path initializes AMPS in the standard
-  //    distributed-domain mode used elsewhere in the model.
+  //    A SNAPSHOT_LIST TRAJECTORY is fundamentally different.  Every selected
+  //    location owns its timestamp and therefore its own immutable field.  In that
+  //    mode each world rank receives a singleton MPI_GLOBAL_COMMUNICATOR and owns a
+  //    complete mesh.  MPI_COMM_WORLD remains available only to the outer dynamic
+  //    epoch queue.  Consequently one rank can hold epoch A while another holds epoch
+  //    B, and all shared-memory workers in either rank see only their rank-local field.
   //
   // 3. Fill the selected standalone B/E field into the owner-rank DATAFILE cell
   //    buffers.  At this point only the normal distributed set of blocks is
@@ -1611,23 +1718,44 @@ int Run(const EarthUtil::AmpsParam& prm) {
   Earth::ModelMode = Earth::CutoffRigidityMode;
   ApplyParsedDomain(prm);
 
-  // ---- Standard distributed-domain initialization --------------------------
-  //
-  // Do not request independentDomainMode here.  Owner blocks remain distributed.
-  // The compact global-field assembly copies only B/E values from owner interior
-  // cells; it never changes the AMPS block allocation.
-  // -------------------------------------------------------------------------
-  PIC::InitMPI();
+  const std::string outputMode=
+      EarthUtil::ToUpper(EarthUtil::Trim(prm.output.mode));
+  const bool trajectoryEpochParallel =
+      outputMode=="TRAJECTORY" && Mode3DSnapshotListRequested(prm);
+
+  // In trajectory-epoch mode MPI_GLOBAL_COMMUNICATOR becomes a singleton on every
+  // process.  Do not replace uses of MPI_GLOBAL_COMMUNICATOR inside field/product
+  // code with MPI_COMM_WORLD: those collectives intentionally remain rank-local so
+  // different ranks can advance through different epochs without mixing arrays or
+  // entering collectives in a different order.
+  PIC::InitMPI(/*independentDomainMode=*/trajectoryEpochParallel);
   ConfigureMeshResolutionProfile(prm);
   Exosphere::Init_SPICE();
 
-  amps_init_mesh();   // build the replicated AMR tree topology and distributed blocks
-  amps_init();        // data-offset registration and cutoff-mode particle settings
+  int worldRank=0,worldSize=1;
+  MPI_Comm_rank(MPI_COMM_WORLD,&worldRank);
+  MPI_Comm_size(MPI_COMM_WORLD,&worldSize);
 
-  //----------------------------------------------------------------------------
-  // Sphere and static mesh geometry
-  //----------------------------------------------------------------------------
-  InitSphere();
+  if (trajectoryEpochParallel) {
+    // All singleton ranks consider themselves PIC rank zero.  Several legacy mesh
+    // initialization helpers consequently write the same cache/sphere filenames.
+    // Initialize complete domains one world rank at a time so the identical files are
+    // never created concurrently.  This startup serialization occurs once; expensive
+    // per-epoch field construction and tracing below remain concurrent across ranks.
+    for (int owner=0;owner<worldSize;++owner) {
+      if (worldRank==owner) {
+        amps_init_mesh();
+        amps_init();
+        InitSphere();
+      }
+      MPI_Barrier(MPI_COMM_WORLD);
+    }
+  }
+  else {
+    amps_init_mesh();   // replicated topology plus normally distributed owner blocks
+    amps_init();        // data-offset registration and cutoff-mode particle settings
+    InitSphere();
+  }
 
   // Build the list of magnetic-field snapshots for this run.
   //
@@ -1642,7 +1770,7 @@ int Run(const EarthUtil::AmpsParam& prm) {
   const std::vector<std::string> snapshotEpochs = Mode3DBuildSnapshotEpochs(prm);
   Mode3DValidateSnapshotListCoverage(prm,snapshotEpochs);
 
-  if (PIC::ThisThread == 0) {
+  if (PIC::ThisThread == 0 && (!trajectoryEpochParallel || worldRank==0)) {
     std::cout << "[Mode3D] Magnetic-field snapshot count: "
               << snapshotEpochs.size();
     if (Mode3DTimeSeriesRequested(prm)) {
@@ -1667,7 +1795,37 @@ int Run(const EarthUtil::AmpsParam& prm) {
 
   int finalStatus = 0;
 
-  for (std::size_t iSnapshot=0; iSnapshot<snapshotEpochs.size(); ++iSnapshot) {
+  // TRAJECTORY/SNAPSHOT_LIST uses a world-communicator work queue whose indivisible
+  // item is one epoch/location transaction.  The queue always hands out one item at a
+  // time: field costs vary strongly by epoch, so a larger chunk would strand work on a
+  // slow rank.  All physics inside the transaction uses the singleton
+  // MPI_GLOBAL_COMMUNICATOR installed above.  POINTS/SHELLS follow the historical
+  // collective snapshot loop and use their finer solver-level schedulers instead.
+  std::unique_ptr<Earth::Mode3D::DynamicMpiLocationScheduler> epochScheduler;
+  if (trajectoryEpochParallel) {
+    epochScheduler.reset(new Earth::Mode3D::DynamicMpiLocationScheduler(
+        MPI_COMM_WORLD,static_cast<long long>(snapshotEpochs.size()),1,
+        "Mode3D TRAJECTORY epoch scheduler"));
+    if (worldRank==0) {
+      std::cout << "[Mode3D] TRAJECTORY epoch scheduling: DYNAMIC over "
+                << worldSize << " MPI ranks; one epoch/location per atomic fetch; "
+                << "each rank owns a complete private gridded field.\n";
+      std::cout.flush();
+    }
+  }
+
+  std::size_t sequentialSnapshot=0;
+  for (;;) {
+    std::size_t iSnapshot=0;
+    if (trajectoryEpochParallel) {
+      const long long claimed=epochScheduler->FetchNextChunkStart();
+      if (claimed>=static_cast<long long>(snapshotEpochs.size())) break;
+      iSnapshot=static_cast<std::size_t>(claimed);
+    }
+    else {
+      if (sequentialSnapshot>=snapshotEpochs.size()) break;
+      iSnapshot=sequentialSnapshot++;
+    }
     // Convert the base run parameters into this snapshot's effective magnetic
     // configuration.  If a driver table is present, this is where Pdyn/Dst/IMF/W
     // are interpolated at snapshotEpochs[iSnapshot].
@@ -1693,6 +1851,8 @@ int Run(const EarthUtil::AmpsParam& prm) {
       std::cout << "[Mode3D] Preparing magnetic-field snapshot "
                 << (iSnapshot+1) << "/" << snapshotEpochs.size()
                 << ": epoch=" << snap.field.epoch;
+      if (trajectoryEpochParallel)
+        std::cout << ", world-rank=" << worldRank;
       if (!suffix.empty()) std::cout << ", suffix=" << suffix;
       std::cout << "\n";
       std::cout.flush();
@@ -1703,6 +1863,7 @@ int Run(const EarthUtil::AmpsParam& prm) {
     // the mesh DATAFILE buffers, and assembles compact global read-only B/E arrays on
     // every MPI process for the cutoff tracer.
     Mode3DPrepareMagneticFieldSnapshot(snap,suffix,/*verbose=*/true);
+    AuditInterpolation_(snap);
 
     // Retain the identity actually published with the compact arrays.  This gate is
     // deliberately orthogonal to numerical acceptance: it cannot relax a tolerance,
@@ -1833,6 +1994,29 @@ int Run(const EarthUtil::AmpsParam& prm) {
     }
     Earth::Mode3D::GlobalMagneticField::EndFrozenFieldBatch(
         batchFieldMetadata.snapshotId);
+
+    if (trajectoryEpochParallel) {
+      std::cout << "[Mode3D] TRAJECTORY epoch complete: world-rank=" << worldRank
+                << ", snapshot=" << (iSnapshot+1) << "/" << snapshotEpochs.size()
+                << ", epoch=" << snap.field.epoch
+                << ", status=" << finalStatus << ".\n";
+      std::cout.flush();
+    }
+  }
+
+  if (trajectoryEpochParallel) {
+    // A rank can exhaust the queue while another rank is still computing and will
+    // later perform another passive-target fetch.  Do not let the early rank enter
+    // MPI_Win_free until every worker has left the fetch loop; otherwise the window
+    // could be freed while a peer still intends to access it.
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    // MPI_Win_free is collective on MPI_COMM_WORLD. Destroy the queue before entering
+    // the status reduction so every rank observes the same collective order.
+    epochScheduler.reset();
+    int worldStatus=0;
+    MPI_Allreduce(&finalStatus,&worldStatus,1,MPI_INT,MPI_MAX,MPI_COMM_WORLD);
+    finalStatus=worldStatus;
   }
 
   // Reset the global suffix so a future in-process caller starts from the legacy

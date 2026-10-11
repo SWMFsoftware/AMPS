@@ -188,6 +188,8 @@ static Earth::SWMFCoupledProducts::ProductControl BuildProductControl_(
   control.energyIntervals=prm.densitySpectrum.nIntervals;
   control.transmissionScanPoints=prm.densitySpectrum.transmissionScanN;
   control.maximumParticlesPerPoint=prm.densitySpectrum.maxParticlesPerPoint;
+  control.directionNMu=prm.densitySpectrum.directionNMu;
+  control.directionNPhi=prm.densitySpectrum.directionNPhi;
   control.energySpacing=(prm.densitySpectrum.spacing==
       EarthUtil::DensitySpectrumParam::Spacing::LOG) ? "LOG" : "LINEAR";
   control.spectrumType=prm.particleSpectrum.typeName.empty()
@@ -441,6 +443,126 @@ static TransmissionDiagnostics_ ComputeTransmissionDiagnostics_(
 //--------------------------------------------------------------------------------------
 // Transmissivity at one energy/location using the Mode3D mesh tracer
 //--------------------------------------------------------------------------------------
+static Earth::GridlessMode::TrajectoryResult TraceDensityDirection_Mode3D_(
+    const EarthUtil::AmpsParam& prm,
+    const double x0_arr[3],
+    const double v0_arr[3],
+    double Rgv,
+    double maxTrajTime_s,
+    bool captureExit,
+    int directionIndex) {
+  using Earth::GridlessMode::TrajectoryResult;
+
+  // Opt-in forensics retain the exact deterministic seed and every attempted
+  // budget before the strict product gate can abort. No MPI or spectrum mutation
+  // is permitted here: this function also runs inside OpenMP workers. One locked
+  // write per record prevents rank-local worker output from interleaving.
+  static const bool diagnostics=[]() {
+    const char* value=std::getenv("AMPS_DENSITY_TRACE_DIAGNOSTICS");
+    return value && std::string(value)=="1";
+  }();
+  auto record=[&](const TrajectoryResult& out,const char* stage,int pass,
+                  double budget,int stepBudget) {
+    if (!diagnostics) return;
+    std::ostringstream line;
+    line << std::setprecision(17)
+         << "[density-trace] epoch=" << prm.field.epoch
+         << " direction=" << directionIndex << " rigidity_GV=" << Rgv
+         << " particle_energy_MeV=" << Earth::FluxNumerics::EnergyFromRigidityMeV(
+                Rgv,std::fabs(prm.species.charge_e)*QE,prm.species.mass_amu*AMU)
+         << " x_m=" << x0_arr[0] << ',' << x0_arr[1] << ',' << x0_arr[2]
+         << " backtrace_unit=" << v0_arr[0] << ',' << v0_arr[1] << ',' << v0_arr[2]
+         << " stage=" << stage << " pass=" << pass
+         << " budget_s=" << budget << " step_budget=" << stepBudget
+         << " termination=" << Earth::GridlessMode::TrajectoryTerminationName(out.termination)
+         << " trace_s=" << out.traceTime_s << " steps=" << out.steps
+         << " retries=" << out.retryCount << " mirrors=" << out.mirrorPoints
+         << " bounces=" << out.bounceCycles << " drift_turns=" << out.driftRevolutions
+         << " momentum_spread=" << out.momentumRelativeSpread
+         << " drift_radius_change_m=" << out.driftMeanRadiusChange_m << '\n';
+    static std::mutex diagnosticMutex;
+    std::lock_guard<std::mutex> lock(diagnosticMutex);
+    std::cerr << line.str();
+    std::cerr.flush();
+  };
+
+  Earth::Trajectory::RetryPolicy retryPolicy;
+  retryPolicy.maximumNumericalRetries=prm.densitySpectrum.retryUnresolved ? 1 : 0;
+  retryPolicy.unresolvedExtensionPasses=prm.densitySpectrum.retryUnresolved
+      ? prm.densitySpectrum.unresolvedExtensionPasses : 0;
+  retryPolicy.unresolvedExtensionFactor=
+      prm.densitySpectrum.unresolvedExtensionFactor;
+  const double primaryTime_s=(maxTrajTime_s>0.0)
+      ? maxTrajTime_s
+      : ((prm.densitySpectrum.maxTrajTime_s>0.0)
+          ? prm.densitySpectrum.maxTrajTime_s : prm.numerics.maxTraceTime_s);
+
+  // Keep numerical recovery and trace-time convergence as two auditable mechanisms.
+  // INVALID_TIME_STEP/INVALID_FIELD/NUMERICAL_FAILURE may receive the established
+  // smaller-step retry.  A valid TIME_LIMIT or STEP_LIMIT retains the original
+  // integrator settings and is eligible only for the explicit larger-budget passes
+  // below.  This prevents a timeout from being silently converted to a physical zero.
+  auto RunOneBudget=[&](const EarthUtil::AmpsParam& attemptPrm,
+                        double requestedTime_s,
+                        double& actualTimeBudget_s) -> TrajectoryResult {
+    actualTimeBudget_s=requestedTime_s;
+    auto out=Earth::Mode3D::TraceTrajectoryMesh(
+        attemptPrm,x0_arr,v0_arr,Rgv,captureExit,requestedTime_s);
+    if (!Earth::Trajectory::ShouldRetryNumerical(out,0,retryPolicy)) return out;
+
+    EarthUtil::AmpsParam retryPrm=attemptPrm;
+    retryPrm.numerics.dtTrace_s=std::max(
+        1.0e-12,retryPolicy.numericalDtScale*attemptPrm.numerics.dtTrace_s);
+    retryPrm.numerics.maxSteps=Earth::Trajectory::ScaledStepBudget(
+        attemptPrm.numerics.maxSteps,retryPolicy.numericalStepScale,
+        out,retryPolicy.numericalTimeScale*requestedTime_s);
+    actualTimeBudget_s=retryPolicy.numericalTimeScale*requestedTime_s;
+    out=Earth::Mode3D::TraceTrajectoryMesh(
+        retryPrm,x0_arr,v0_arr,Rgv,captureExit,actualTimeBudget_s);
+    out.retryCount=1;
+    return out;
+  };
+
+  double usedBudget_s=primaryTime_s;
+  TrajectoryResult result=RunOneBudget(prm,primaryTime_s,usedBudget_s);
+  record(result,"primary",0,usedBudget_s,prm.numerics.maxSteps);
+  const int primaryTerminationCode=static_cast<int>(result.termination);
+  const double primaryTraceTime_s=result.traceTime_s;
+  result.primaryTerminationCode=primaryTerminationCode;
+  result.primaryTraceTime_s=primaryTraceTime_s;
+  result.traceExtensionCount=0;
+  result.initialTraceLimit_s=primaryTime_s;
+  result.finalTraceLimit_s=usedBudget_s;
+
+  // Restart only unresolved limit outcomes from the same phase-space seed.  A true
+  // continuation would be faster but would have to serialize private mover, field-cache,
+  // and trap-detector state.  Restarting makes every extended result exactly reproducible
+  // by an independent run configured with the same final limit and frozen field snapshot.
+  for (int pass=1;pass<=retryPolicy.unresolvedExtensionPasses;++pass) {
+    if (!Earth::Trajectory::ShouldExtendUnresolved(result,pass-1,retryPolicy)) break;
+    const double factor=std::pow(retryPolicy.unresolvedExtensionFactor,
+                                 static_cast<double>(pass));
+    const double targetTime_s=Earth::Trajectory::ExtensionTimeBudget(
+        primaryTime_s,pass,retryPolicy);
+    if (!(targetTime_s>primaryTime_s) || !std::isfinite(targetTime_s)) break;
+
+    EarthUtil::AmpsParam extensionPrm=prm;
+    extensionPrm.numerics.maxSteps=Earth::Trajectory::ScaledStepBudget(
+        prm.numerics.maxSteps,factor,result,targetTime_s);
+    double extensionBudget_s=targetTime_s;
+    TrajectoryResult extended=RunOneBudget(
+        extensionPrm,targetTime_s,extensionBudget_s);
+    record(extended,"extension",pass,extensionBudget_s,extensionPrm.numerics.maxSteps);
+    extended.primaryTerminationCode=primaryTerminationCode;
+    extended.primaryTraceTime_s=primaryTraceTime_s;
+    extended.traceExtensionCount=pass;
+    extended.initialTraceLimit_s=primaryTime_s;
+    extended.finalTraceLimit_s=extensionBudget_s;
+    result=extended;
+  }
+  return result;
+}
+
 static Earth::FluxNumerics::AccessAccumulator ComputeT_atEnergy_Mode3D_(const EarthUtil::AmpsParam& prm,
                                         const V3& x0_m,
                                         double Rgv,
@@ -465,22 +587,10 @@ static Earth::FluxNumerics::AccessAccumulator ComputeT_atEnergy_Mode3D_(const Ea
     const V3 vTry=mul(-1.0,arrivalDir);
     const double v0_arr[3]={vTry.x,vTry.y,vTry.z};
 
-    auto result=Earth::Mode3D::TraceTrajectoryMesh(
-        prm,x0_arr,v0_arr,Rgv,doAnisotropic,maxTrajTime_s);
-    if (!result.resolved() && prm.densitySpectrum.retryUnresolved) {
-      EarthUtil::AmpsParam retryPrm=prm;
-      retryPrm.numerics.dtTrace_s=std::max(1.0e-12,0.5*prm.numerics.dtTrace_s);
-      retryPrm.numerics.maxSteps=(prm.numerics.maxSteps<=std::numeric_limits<int>::max()/2)
-        ? 2*prm.numerics.maxSteps : std::numeric_limits<int>::max();
-      const double retryBase=(maxTrajTime_s>0.0)
-          ? maxTrajTime_s
-          : ((prm.cutoff.maxTrajTime_s>0.0)
-             ? prm.cutoff.maxTrajTime_s : prm.numerics.maxTraceTime_s);
-      const double retryTime=2.0*retryBase;
-      result=Earth::Mode3D::TraceTrajectoryMesh(
-          retryPrm,x0_arr,v0_arr,Rgv,doAnisotropic,retryTime);
-      retried[(std::size_t)idir]=1;
-    }
+    auto result=TraceDensityDirection_Mode3D_(
+        prm,x0_arr,v0_arr,Rgv,maxTrajTime_s,doAnisotropic,idir);
+    retried[(std::size_t)idir]=
+        (result.retryCount>0 || result.traceExtensionCount>0) ? 1 : 0;
 
     terminations[(std::size_t)idir]=static_cast<int>(result.termination);
     if (!result.resolved() || !result.allowed()) continue;
@@ -621,16 +731,28 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
                                 (std::size_t)Earth::FluxNumerics::kTerminationCount,0);
 
   //====================================================================================
-  // MPI location scheduling
+  // MPI work scheduling
   //====================================================================================
   // As in the Mode3D cutoff solver, every MPI rank has access to the compact global
   // B/E arrays.  The inter-rank scheduler therefore operates on global
   // observation-location indices rather than on rank-owned mesh subdomains.
   //
-  // DYNAMIC uses an MPI one-sided atomic work queue: the rank/main thread fetches a
-  // chunk of global locations and then the intra-rank backend computes that chunk.  MPI
-  // is never called from std::thread workers, so MPI_THREAD_MULTIPLE is not required.
-  // BLOCK_CYCLIC and STATIC keep deterministic fallback schedules for debugging.
+  // The work-unit granularity is selected below from OUTPUT_MODE:
+  //
+  //   TRAJECTORY
+  //     Mode3D::Run has already assigned one epoch/location transaction to this rank
+  //     and installed a singleton MPI_GLOBAL_COMMUNICATOR.  Threads share that one
+  //     immutable rank-local field and divide its energy/direction traces.
+  //
+  //   POINTS / SHELLS
+  //     Every location in the call shares one epoch and compact read-only field.  The
+  //     MPI scheduler therefore flattens (location,energy) pairs into global work IDs.
+  //     This is finer than assigning a whole location to a rank and remains useful
+  //     when there are fewer locations than MPI processes.
+  //
+  // DYNAMIC uses an MPI one-sided atomic queue. MPI is called only by each rank's main
+  // thread, never by std::thread/OpenMP workers, so MPI_THREAD_MULTIPLE is unnecessary.
+  // BLOCK_CYCLIC and STATIC remain deterministic fallback schedulers for validation.
   //====================================================================================
   const Earth::Mode3D::MpiScheduler mpiScheduler =
       Earth::Mode3D::ResolveMpiScheduler(prm,"Mode3D density/flux");
@@ -690,6 +812,8 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
   const std::string outputMode = EarthUtil::ToUpper(prm.output.mode);
   const bool isPoints = (outputMode == "POINTS" || outputMode == "TRAJECTORY");
   const bool isShells = (outputMode == "SHELLS");
+  const bool sharedEpochFineTasks =
+      (outputMode == "POINTS" || outputMode == "SHELLS") && mpiSize > 1;
   const int nShells = isShells ? (int)prm.output.shellAlt_km.size() : 0;
 
   const long long tasksPerLocation =
@@ -849,8 +973,36 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
     std::cout.flush();
   };
 
+  // Resolve coordinates once before worker threads start.  SHELLS conversion can call
+  // SPICE, whose legacy coordinate-transform cache is protected but need not be paid
+  // once per energy.  The resulting Cartesian coordinates are immutable and safe for
+  // all MPI-scheduled energy tasks and rank-local workers.
+  std::vector<V3> locationCoordinates((std::size_t)nLoc);
+  for (int loc=0;loc<nLoc;++loc)
+    locationCoordinates[(std::size_t)loc]=
+        LocationByIndex_m_(prm,loc,nLon,nLat,res_deg,nPtsShell);
+
+  auto storeEnergyAccumulator = [&](int loc,int ie,
+                                    const Earth::FluxNumerics::AccessAccumulator& block) {
+    const Earth::FluxNumerics::AccessEstimate estimate=
+        Earth::FluxNumerics::ResolveAccess(block,maximumAllowedWeight);
+    const std::size_t flat=(std::size_t)loc*(std::size_t)nE+(std::size_t)ie;
+    local.T_flat[flat]=estimate.nominal;
+    local.T_lower_flat[flat]=estimate.lower;
+    local.T_upper_flat[flat]=estimate.upper;
+    local.unresolved_fraction_flat[flat]=estimate.unresolvedFraction;
+    local.sampled_flat[flat]=block.sampled;
+    local.resolved_flat[flat]=block.resolved;
+    local.allowed_flat[flat]=block.allowed;
+    local.retried_flat[flat]=block.retried;
+    for (int it=0;it<Earth::FluxNumerics::kTerminationCount;++it)
+      local.termination_flat[
+          flat*(std::size_t)Earth::FluxNumerics::kTerminationCount+(std::size_t)it]=
+          block.terminationCounts[(std::size_t)it];
+  };
+
   auto computeOneLocation = [&](int loc) {
-    const V3 x0_m = LocationByIndex_m_(prm,loc,nLon,nLat,res_deg,nPtsShell);
+    const V3 x0_m = locationCoordinates[(std::size_t)loc];
     std::vector<double> T((std::size_t)nE,0.0),TLower((std::size_t)nE,0.0),
                         TUpper((std::size_t)nE,0.0);
     std::vector<Earth::FluxNumerics::AccessAccumulator> blocks((std::size_t)nE);
@@ -868,20 +1020,24 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
     const bool doAnisotropic_local = doAnisotropic;
     const double qabs_C_local = qabs_C;
     const double m0_kg_local = m0_kg;
+    // Capture only immutable unit-conversion metadata before the parallel region.
+    // gSpectrum's temporal selection is advanced outside worker regions; sharing this
+    // value makes that separation explicit and satisfies OpenMP default(none).
+    const Earth::BoundaryProducts::SpectrumUnits spectrumUnits=::gSpectrum.Units();
     const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
                                 ? prm.densitySpectrum.maxTrajTime_s
                                 : -1.0;
 
 #ifdef _OPENMP
 #pragma omp parallel for default(none) \
-  shared(blocks,x0_m,E_MeV_ptr,prm_ptr,dirsUse_ptr,aniso_ptr) \
+  shared(blocks,x0_m,E_MeV_ptr,prm_ptr,dirsUse_ptr,aniso_ptr,spectrumUnits) \
   firstprivate(nE_local,doAnisotropic_local,qabs_C_local,m0_kg_local,maxTraceTime_s) \
   if(!InsideDirectDensityWorker_() && nE_local > 1) schedule(dynamic)
 #endif
     for (int ie=0; ie<nE_local; ++ie) {
       // E_MeV is a spectrum coordinate.  Per-nucleon inputs must be converted to
       // total particle kinetic energy before the trajectory rigidity is calculated.
-      const double Ej=::gSpectrum.Units().ParticleEnergyJ(
+      const double Ej=spectrumUnits.ParticleEnergyJ(
           (*E_MeV_ptr)[(std::size_t)ie]);
       const double Rgv = RigidityFromEnergy_GV_(Ej,qabs_C_local,m0_kg_local);
       blocks[(std::size_t)ie] = ComputeT_atEnergy_Mode3D_(*prm_ptr,x0_m,Rgv,*dirsUse_ptr,
@@ -895,18 +1051,7 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
       T[(std::size_t)ie]=estimate.nominal;
       TLower[(std::size_t)ie]=estimate.lower;
       TUpper[(std::size_t)ie]=estimate.upper;
-      const std::size_t flat=(std::size_t)loc*(std::size_t)nE+(std::size_t)ie;
-      local.T_flat[flat]=estimate.nominal;
-      local.T_lower_flat[flat]=estimate.lower;
-      local.T_upper_flat[flat]=estimate.upper;
-      local.unresolved_fraction_flat[flat]=estimate.unresolvedFraction;
-      local.sampled_flat[flat]=blocks[(std::size_t)ie].sampled;
-      local.resolved_flat[flat]=blocks[(std::size_t)ie].resolved;
-      local.allowed_flat[flat]=blocks[(std::size_t)ie].allowed;
-      local.retried_flat[flat]=blocks[(std::size_t)ie].retried;
-      for (int it=0;it<Earth::FluxNumerics::kTerminationCount;++it)
-        local.termination_flat[flat*(std::size_t)Earth::FluxNumerics::kTerminationCount+
-                               (std::size_t)it]=blocks[(std::size_t)ie].terminationCounts[(std::size_t)it];
+      storeEnergyAccumulator(loc,ie,blocks[(std::size_t)ie]);
     }
 
     // All derived quantities must come from this one product set.  Computing density,
@@ -935,6 +1080,30 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
       local.detector_rate_lower_flat[flat]=products.detectorRate_s[(std::size_t)id].lower;
       local.detector_rate_upper_flat[flat]=products.detectorRate_s[(std::size_t)id].upper;
     }
+  };
+
+  // Compute exactly one flattened shared-epoch work item.  A work item owns one
+  // (location,energy) result slot, including its termination histogram, so separate
+  // MPI ranks and threads never write the same slot.  Directions remain an internal
+  // unit of ComputeT_atEnergy_Mode3D_: when this function is invoked inside an OpenMP
+  // or direct-thread worker, the nested-parallel guard evaluates them serially; when
+  // called outside a worker, that kernel may use its own OpenMP direction team.
+  const Earth::BoundaryProducts::SpectrumUnits sharedEpochSpectrumUnits=
+      ::gSpectrum.Units();
+  auto computeOneSharedEpochEnergy = [&](long long taskId) {
+    const int loc=static_cast<int>(taskId/static_cast<long long>(nE));
+    const int ie=static_cast<int>(taskId%static_cast<long long>(nE));
+    if (loc<0 || loc>=nLoc || ie<0 || ie>=nE)
+      throw std::runtime_error("Mode3D density decoded an invalid shared-epoch task ID.");
+
+    const double Ej=sharedEpochSpectrumUnits.ParticleEnergyJ(E_MeV[(std::size_t)ie]);
+    const double Rgv=RigidityFromEnergy_GV_(Ej,qabs_C,m0_kg);
+    const double maxTraceTime_s=(prm.densitySpectrum.maxTrajTime_s>0.0)
+        ? prm.densitySpectrum.maxTrajTime_s : -1.0;
+    const Earth::FluxNumerics::AccessAccumulator block=
+        ComputeT_atEnergy_Mode3D_(prm,locationCoordinates[(std::size_t)loc],Rgv,
+                                  dirsUse,maxTraceTime_s,doAnisotropic,prm.anisotropy);
+    storeEnergyAccumulator(loc,ie,block);
   };
 
   auto computeGlobalRange = [&](int begin, int end) {
@@ -1048,9 +1217,143 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
     }
   };
 
+  // Execute a contiguous range of flattened (location,energy) tasks.  The OpenMP and
+  // direct-thread variants deliberately parallelize this outer shared-epoch task
+  // space.  ComputeT_atEnergy_Mode3D_ detects the enclosing worker region and avoids
+  // creating a nested team for directions, preventing oversubscription.
+  auto computeSharedEpochTaskRange = [&](long long begin,long long end) {
+    if (end<=begin) return;
+
+    if (densityBackend==DensityParallelBackend_::THREADS && densityThreadCount>1) {
+      std::atomic<long long> nextTask(begin);
+      const long long nWork=end-begin;
+      const int nWorkers=std::max(
+          1,std::min(densityThreadCount,static_cast<int>(
+              std::min<long long>(nWork,std::numeric_limits<int>::max()))));
+      std::vector<std::thread> workers;
+      workers.reserve((std::size_t)nWorkers);
+      for (int iw=0;iw<nWorkers;++iw) {
+        workers.emplace_back([&]() {
+          DirectDensityWorkerScope_ workerScope;
+          for (;;) {
+            const long long taskId=nextTask.fetch_add(1,std::memory_order_relaxed);
+            if (taskId>=end) break;
+            computeOneSharedEpochEnergy(taskId);
+          }
+        });
+      }
+      for (std::thread& worker:workers) worker.join();
+      return;
+    }
+
+    if (densityBackend==DensityParallelBackend_::OPENMP && densityThreadCount>1) {
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic,1)
+      for (long long taskId=begin;taskId<end;++taskId)
+        computeOneSharedEpochEnergy(taskId);
+      return;
+#endif
+    }
+
+    DirectDensityWorkerScope_ serialScope;
+    for (long long taskId=begin;taskId<end;++taskId)
+      computeOneSharedEpochEnergy(taskId);
+  };
+
+  auto computeSharedEpochTaskList = [&](const std::vector<long long>& work) {
+    if (work.empty()) return;
+
+    if (densityBackend==DensityParallelBackend_::THREADS && densityThreadCount>1) {
+      std::atomic<std::size_t> nextIndex(0);
+      const int nWorkers=std::max(
+          1,std::min(densityThreadCount,static_cast<int>(work.size())));
+      std::vector<std::thread> workers;
+      workers.reserve((std::size_t)nWorkers);
+      for (int iw=0;iw<nWorkers;++iw) {
+        workers.emplace_back([&]() {
+          DirectDensityWorkerScope_ workerScope;
+          for (;;) {
+            const std::size_t index=nextIndex.fetch_add(1,std::memory_order_relaxed);
+            if (index>=work.size()) break;
+            computeOneSharedEpochEnergy(work[index]);
+          }
+        });
+      }
+      for (std::thread& worker:workers) worker.join();
+      return;
+    }
+
+    if (densityBackend==DensityParallelBackend_::OPENMP && densityThreadCount>1) {
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic,1)
+      for (long long index=0;index<static_cast<long long>(work.size());++index)
+        computeOneSharedEpochEnergy(work[(std::size_t)index]);
+      return;
+#endif
+    }
+
+    DirectDensityWorkerScope_ serialScope;
+    for (const long long taskId:work) computeOneSharedEpochEnergy(taskId);
+  };
+
   maybePrintProgress(0,0,locDonePerShellGlobal,true);
 
-  if (mpiScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
+  if (sharedEpochFineTasks) {
+    // POINTS/SHELLS share one immutable field, so ranks may safely own different
+    // energies of the same location.  The global result reduction below reassembles
+    // complete access curves before density and flux integration.
+    const long long nEnergyTasks=static_cast<long long>(nLoc)*
+                                 static_cast<long long>(nE);
+    long long completedEnergyTasksLocal=0;
+
+    if (mpiScheduler==Earth::Mode3D::MpiScheduler::DYNAMIC) {
+      const long long fineChunk=Earth::Mode3D::ResolveMpiDynamicChunk(
+          prm,densityThreadCount,nEnergyTasks);
+      Earth::Mode3D::DynamicMpiLocationScheduler scheduler(
+          MPI_GLOBAL_COMMUNICATOR,nEnergyTasks,fineChunk,
+          "Mode3D density shared-epoch (location,energy) scheduler");
+      for (;;) {
+        const long long begin=scheduler.FetchNextChunkStart();
+        if (begin>=nEnergyTasks) break;
+        const long long end=std::min(begin+scheduler.ChunkSize(),nEnergyTasks);
+        computeSharedEpochTaskRange(begin,end);
+        completedEnergyTasksLocal+=end-begin;
+      }
+    }
+    else {
+      std::vector<long long> work;
+      if (mpiScheduler==Earth::Mode3D::MpiScheduler::BLOCK_CYCLIC) {
+        for (long long taskId=mpiRank;taskId<nEnergyTasks;taskId+=mpiSize)
+          work.push_back(taskId);
+      }
+      else {
+        const long long begin=(nEnergyTasks*mpiRank)/mpiSize;
+        const long long end=(nEnergyTasks*(mpiRank+1))/mpiSize;
+        work.reserve((std::size_t)std::max(0LL,end-begin));
+        for (long long taskId=begin;taskId<end;++taskId) work.push_back(taskId);
+      }
+      computeSharedEpochTaskList(work);
+      completedEnergyTasksLocal=static_cast<long long>(work.size());
+    }
+
+    long long completedEnergyTasksGlobal=0;
+    MPI_Allreduce(&completedEnergyTasksLocal,&completedEnergyTasksGlobal,1,
+                  MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+    if (completedEnergyTasksGlobal!=nEnergyTasks)
+      throw std::runtime_error(
+          "Mode3D density shared-epoch scheduler did not complete every (location,energy) task.");
+
+    // A location is reported complete only after the collective proves that all of its
+    // energy tasks are present. This keeps the existing progress schema honest rather
+    // than claiming completion when merely one energy was assigned.
+    doneLocationsGlobal=totalLocationsGlobal;
+    doneTasksGlobal=totalTasksGlobal;
+    if (isShells && nShells>0)
+      for (int s=0;s<nShells;++s)
+        locDonePerShellGlobal[(std::size_t)s]=nPtsShell;
+    maybePrintProgress(doneLocationsGlobal,doneTasksGlobal,locDonePerShellGlobal,true);
+  }
+  else if (mpiScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
     // Two-level dynamic scheduling: each rank dynamically fetches chunks from the MPI
     // RMA counter, and the selected intra-rank backend dynamically computes locations
     // within that chunk.  No progress collectives are placed inside the work loop, so
@@ -1142,15 +1445,22 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
   global.termination_flat.assign((std::size_t)nLoc*(std::size_t)nE*
                                  (std::size_t)Earth::FluxNumerics::kTerminationCount,0);
 
-  MPI_Allreduce(local.density_m3.data(), global.density_m3.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce(local.density_lower_m3.data(), global.density_lower_m3.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce(local.density_upper_m3.data(), global.density_upper_m3.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce(local.flux_total_m2s1.data(), global.flux_total_m2s1.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce(local.flux_total_lower_m2s1.data(), global.flux_total_lower_m2s1.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce(local.flux_total_upper_m2s1.data(), global.flux_total_upper_m2s1.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce(local.flux_planar_m2s1.data(), global.flux_planar_m2s1.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce(local.flux_planar_lower_m2s1.data(), global.flux_planar_lower_m2s1.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce(local.flux_planar_upper_m2s1.data(), global.flux_planar_upper_m2s1.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+  // Whole-location scheduling computes integrated products on the owning rank and
+  // therefore retains the historical reductions. Shared-epoch fine scheduling first
+  // reduces the disjoint energy rows below, then integrates each complete access curve
+  // identically on every rank. Integrating before the energy reduction would combine
+  // incomplete curves and is scientifically invalid.
+  if (!sharedEpochFineTasks) {
+    MPI_Allreduce(local.density_m3.data(), global.density_m3.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(local.density_lower_m3.data(), global.density_lower_m3.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(local.density_upper_m3.data(), global.density_upper_m3.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(local.flux_total_m2s1.data(), global.flux_total_m2s1.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(local.flux_total_lower_m2s1.data(), global.flux_total_lower_m2s1.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(local.flux_total_upper_m2s1.data(), global.flux_total_upper_m2s1.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(local.flux_planar_m2s1.data(), global.flux_planar_m2s1.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(local.flux_planar_lower_m2s1.data(), global.flux_planar_lower_m2s1.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(local.flux_planar_upper_m2s1.data(), global.flux_planar_upper_m2s1.data(), nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+  }
   MPI_Allreduce(local.T_flat.data(), global.T_flat.data(), nLoc*nE, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
   MPI_Allreduce(local.T_lower_flat.data(), global.T_lower_flat.data(), nLoc*nE, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
   MPI_Allreduce(local.T_upper_flat.data(), global.T_upper_flat.data(), nLoc*nE, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
@@ -1161,18 +1471,61 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
   MPI_Allreduce(local.retried_flat.data(),global.retried_flat.data(),nLoc*nE,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
   MPI_Allreduce(local.termination_flat.data(),global.termination_flat.data(),
                 nLoc*nE*Earth::FluxNumerics::kTerminationCount,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-  if (nCh*nLoc > 0) {
+  if (!sharedEpochFineTasks && nCh*nLoc > 0) {
     MPI_Allreduce(local.flux_ch_flat.data(), global.flux_ch_flat.data(), nCh*nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
     MPI_Allreduce(local.flux_ch_lower_flat.data(), global.flux_ch_lower_flat.data(), nCh*nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
     MPI_Allreduce(local.flux_ch_upper_flat.data(), global.flux_ch_upper_flat.data(), nCh*nLoc, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
   }
-  if (nDetector*nLoc > 0) {
+  if (!sharedEpochFineTasks && nDetector*nLoc > 0) {
     MPI_Allreduce(local.detector_rate_flat.data(),global.detector_rate_flat.data(),
                   nDetector*nLoc,MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
     MPI_Allreduce(local.detector_rate_lower_flat.data(),global.detector_rate_lower_flat.data(),
                   nDetector*nLoc,MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
     MPI_Allreduce(local.detector_rate_upper_flat.data(),global.detector_rate_upper_flat.data(),
                   nDetector*nLoc,MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  }
+
+  if (sharedEpochFineTasks) {
+    // Every global access row is now complete. Derive density, total/planar flux,
+    // channels, and detector responses from that one assembled product set, exactly as
+    // the whole-location path does. All ranks execute this deterministic inexpensive
+    // integration so later root-only output and collective validation see identical
+    // buffers without another large reduction.
+    for (int loc=0;loc<nLoc;++loc) {
+      std::vector<double> T((std::size_t)nE,0.0);
+      std::vector<double> TLower((std::size_t)nE,0.0);
+      std::vector<double> TUpper((std::size_t)nE,0.0);
+      for (int ie=0;ie<nE;++ie) {
+        const std::size_t flat=(std::size_t)loc*(std::size_t)nE+(std::size_t)ie;
+        T[(std::size_t)ie]=global.T_flat[flat];
+        TLower[(std::size_t)ie]=global.T_lower_flat[flat];
+        TUpper[(std::size_t)ie]=global.T_upper_flat[flat];
+      }
+
+      const Earth::BoundaryProducts::ProductSet products=
+          EvaluateProductSet_(prm,E_MeV,T,TLower,TUpper);
+      global.density_m3[(std::size_t)loc]=products.numberDensity_m3.nominal;
+      global.density_lower_m3[(std::size_t)loc]=products.numberDensity_m3.lower;
+      global.density_upper_m3[(std::size_t)loc]=products.numberDensity_m3.upper;
+      global.flux_total_m2s1[(std::size_t)loc]=products.omnidirectionalFlux_m2_s.nominal;
+      global.flux_total_lower_m2s1[(std::size_t)loc]=products.omnidirectionalFlux_m2_s.lower;
+      global.flux_total_upper_m2s1[(std::size_t)loc]=products.omnidirectionalFlux_m2_s.upper;
+      global.flux_planar_m2s1[(std::size_t)loc]=products.oneWayPlanarFlux_m2_s.nominal;
+      global.flux_planar_lower_m2s1[(std::size_t)loc]=products.oneWayPlanarFlux_m2_s.lower;
+      global.flux_planar_upper_m2s1[(std::size_t)loc]=products.oneWayPlanarFlux_m2_s.upper;
+      for (int ic=0;ic<nCh;++ic) {
+        const std::size_t flat=(std::size_t)ic*(std::size_t)nLoc+(std::size_t)loc;
+        global.flux_ch_flat[flat]=products.channelFlux_m2_s[(std::size_t)ic].nominal;
+        global.flux_ch_lower_flat[flat]=products.channelFlux_m2_s[(std::size_t)ic].lower;
+        global.flux_ch_upper_flat[flat]=products.channelFlux_m2_s[(std::size_t)ic].upper;
+      }
+      for (int id=0;id<nDetector;++id) {
+        const std::size_t flat=(std::size_t)id*(std::size_t)nLoc+(std::size_t)loc;
+        global.detector_rate_flat[flat]=products.detectorRate_s[(std::size_t)id].nominal;
+        global.detector_rate_lower_flat[flat]=products.detectorRate_s[(std::size_t)id].lower;
+        global.detector_rate_upper_flat[flat]=products.detectorRate_s[(std::size_t)id].upper;
+      }
+    }
   }
 
   return global;
@@ -1613,8 +1966,8 @@ int RunDensityAndFlux(const EarthUtil::AmpsParam& prm) {
   else
     ::gSpectrum.SetEvaluationEpochUTC(prm.field.epoch);
 
-  const int nZenith = 24;
-  const int nAz     = 48;
+  const int nZenith = prm.densitySpectrum.directionNMu;
+  const int nAz     = prm.densitySpectrum.directionNPhi;
   const std::vector<V3> dirsFull = BuildDirGrid_(nZenith,nAz);
   const std::vector<double> E_MeV = BuildEnergyGrid_MeV_(prm);
   const int nE = (int)E_MeV.size();
@@ -1648,8 +2001,13 @@ int RunDensityAndFlux(const EarthUtil::AmpsParam& prm) {
   const int densityThreadsForBanner = ResolveDensityThreadCount_(prm,densityBackendForBanner);
   const Earth::Mode3D::MpiScheduler mpiSchedulerForBanner =
       Earth::Mode3D::ResolveMpiScheduler(prm,"Mode3D density/flux");
+  const bool sharedEpochFineTasksForBanner=
+      (outputMode=="POINTS" || outputMode=="SHELLS") && mpiSize>1;
+  const long long mpiWorkItemsForBanner=sharedEpochFineTasksForBanner
+      ? static_cast<long long>(nLoc)*static_cast<long long>(nE)
+      : static_cast<long long>(nLoc);
   const long long mpiDynamicChunkForBanner = Earth::Mode3D::ResolveMpiDynamicChunk(
-      prm,densityThreadsForBanner,static_cast<long long>(nLoc));
+      prm,densityThreadsForBanner,mpiWorkItemsForBanner);
 
   if (mpiRank==0) {
     std::cout << "================ Mode3D mesh density & flux ================\n";
@@ -1679,10 +2037,19 @@ int RunDensityAndFlux(const EarthUtil::AmpsParam& prm) {
     std::cout << "MPI ranks       : " << mpiSize << " (compact global field arrays)\n";
     std::cout << "Density backend : " << DensityParallelBackendName_(densityBackendForBanner)
               << ", threads/MPI rank=" << densityThreadsForBanner << "\n";
+    std::cout << "MPI work unit   : "
+              << (sharedEpochFineTasksForBanner
+                    ? "flattened (location,energy) shared-epoch task"
+                    : (outputMode=="TRAJECTORY"
+                         ? "rank-owned epoch/location; threads divide energy/directions"
+                         : "location (single MPI rank)"))
+              << "\n";
     std::cout << "MPI scheduler   : " << Earth::Mode3D::MpiSchedulerName(mpiSchedulerForBanner) << "\n";
     if (mpiSchedulerForBanner == Earth::Mode3D::MpiScheduler::DYNAMIC) {
       std::cout << "MPI dyn chunk   : " << mpiDynamicChunkForBanner
-                << " global location(s) per atomic fetch\n";
+                << (sharedEpochFineTasksForBanner
+                      ? " global (location,energy) task(s) per atomic fetch\n"
+                      : " global location(s) per atomic fetch\n");
     }
     std::cout << "Progress bar    : ON\n";
     if (!gDensityOutputFileSuffix.empty()) std::cout << "Output suffix   : " << gDensityOutputFileSuffix << "\n";
@@ -1710,8 +2077,14 @@ int RunDensityAndFlux(const EarthUtil::AmpsParam& prm) {
     if (maximumUnresolved>prm.densitySpectrum.unresolvedTolerance) {
       std::cout << "[mode3d-density][termination][WARNING] unresolved fraction exceeds tolerance; "
                 << "nominal values are not replaced by physical zero and bounds remain in output.\n";
-      if (prm.densitySpectrum.failOnUnresolved)
+      if (prm.densitySpectrum.failOnUnresolved) {
+        // The generic AMPS exit helper forwards the packed function code to
+        // MPI_Abort.  Its process-global default is zero, which made a fatal scientific
+        // gate look successful to mpiexec.  Set a nonzero code immediately before this
+        // rank-0 fatal path; the SA01 artifact gate remains an independent safeguard.
+        SetExitErrorCode(__LINE__,1);
         exit(__LINE__,__FILE__,"Mode3D density unresolved fraction exceeds DS_UNRESOLVED_TOL");
+      }
     }
     if (outputMode=="POINTS" || outputMode=="TRAJECTORY") {
       WritePointOutputs_(prm,E_MeV,res);

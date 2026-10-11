@@ -19,6 +19,30 @@ python srcEarth/test/<TEST_ID>/run_<TEST_ID>.py -np 4 -nt 16
 where `-np` is the number of MPI ranks passed to `mpirun` and `-nt` is the number
 of threads per MPI rank.  Defaults are `-np 4` and `-nt 16`.
 
+## SA01: RBSP/REPT observational validation and permanent regressions
+
+`SA01/` implements the January 2014 T05/ERNE comparison against both RBSP REPT
+spacecraft, including all seven channels, total intensity and isotropic-equivalent
+density. Its routine code-validation list can be run through this directory's
+normal runner, without changing the hash-frozen Step-12 release list:
+
+```bash
+python3 srcEarth/test/test_runner.py -j 1 srcEarth/test/SA01/list
+```
+
+That entry tests numerical operators, physical-zero accounting, strict completeness
+and units, provenance/stale-evidence rejection, all plotting families, independent
+concurrency controls and the production unique-field-writer alias regression. It
+does not launch AMPS or claim observational qualification. Keep the separate full
+QUICK/STANDARD plus controlled-refinement campaign in `SA01/README.md`; its fixed
+scientific gates are not replaced by the routine suite. Actual physical status,
+preserved failures and resume instructions are in `SA01/SA01_PROGRESS.md`.
+The full runner supports recorded sequential continuation and common-population
+refinement. Its `qualification_summary.json` is distinct from execution success:
+missing convergence cannot qualify, and registered bounded numerical failures
+remain failures even when another refinement axis passes. See the SA01 README for
+the explicit evidence-registration and waiting options before queueing long jobs.
+
 ## UFluxNumerics: Step 2 unit suite
 
 The shared cutoff-to-flux numerical module has a dependency-free C++11 unit suite:

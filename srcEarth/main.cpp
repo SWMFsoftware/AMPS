@@ -2351,10 +2351,10 @@ int main(int argc,char **argv) {
         // the user selects a mover on the command line.
         if (!ApplyCutoffMoverCli(cli)) return 1;
 
-        Earth::Mode3D::Run(p);
+	const int mode3dStatus=Earth::Mode3D::Run(p);
 	MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 	MPI_Finalize();
-        return EXIT_SUCCESS;
+        return mode3dStatus;
       }
       if (m=="3D_FORWARD") {
         if (cli.inputFile.empty()) {

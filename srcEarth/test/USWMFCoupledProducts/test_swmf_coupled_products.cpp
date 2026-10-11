@@ -121,6 +121,13 @@ void TestControlIdentity() {
           "raw spectrum map order must not change identity");
 
   CP::ProductControl changed=control;
+  changed.directionNMu=32;
+  Require(CP::ProductControlFingerprint(changed)!=fingerprint,
+          "angular grid shape must participate in product identity");
+  changed.directionNMu=0;
+  RequireThrows([&]() { CP::ValidateProductControl(changed); },
+                "nonpositive angular grid must be rejected");
+  changed=control;
   changed.detectorResponses[0].geometricFactor_m2_sr=0.02;
   Require(CP::ProductControlFingerprint(changed)!=fingerprint,
           "detector response must participate in product identity");

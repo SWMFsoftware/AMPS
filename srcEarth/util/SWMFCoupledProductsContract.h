@@ -87,6 +87,8 @@ struct ProductControl {
   int energyIntervals{0};
   int transmissionScanPoints{0};
   int maximumParticlesPerPoint{0};
+  int directionNMu{24};
+  int directionNPhi{48};
   std::string energySpacing;
   std::string spectrumType;
   std::string energyBasis;
@@ -133,7 +135,8 @@ inline void ValidateProductControl(const ProductControl& control) {
   if (control.charge_e==0.0 || !(control.mass_amu>0.0) ||
       !(control.minimumEnergy_MeV>0.0) ||
       !(control.maximumEnergy_MeV>control.minimumEnergy_MeV) ||
-      control.energyIntervals<1 || !(control.spectrumMassNumber>0.0) ||
+      control.energyIntervals<1 || control.directionNMu<1 || control.directionNPhi<1 ||
+      !(control.spectrumMassNumber>0.0) ||
       control.spectrumRelativeUncertainty<0.0)
     throw std::invalid_argument("coupled product control contains invalid physics values");
   if (control.spectrumTableEnergy_MeV.size()!=
@@ -304,6 +307,13 @@ inline std::string ProductControlFingerprint(const ProductControl& control) {
   hash.AddString(ChannelSchemaFingerprint(control));
   hash.AddString(DetectorResponseFingerprint(control));
   hash.AddString(ObservationStateFingerprint(control));
+  // Preserve archived v1 identities for the historical 24x48 grid. An explicit
+  // extension distinguishes every non-default shape, including equal-size grids.
+  if (control.directionNMu!=24 || control.directionNPhi!=48) {
+    hash.AddString("direction-grid-v1");
+    hash.AddSigned(control.directionNMu);
+    hash.AddSigned(control.directionNPhi);
+  }
   return hash.Hex("products-v1-");
 }
 

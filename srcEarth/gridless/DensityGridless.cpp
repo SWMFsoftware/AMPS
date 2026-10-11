@@ -768,26 +768,85 @@ static Earth::GridlessMode::TrajectoryResult TraceDensityDirection(
     bool captureExit) {
   using Earth::GridlessMode::TrajectoryResult;
 
-  TrajectoryResult result = captureExit
-      ? Earth::GridlessMode::TraceTrajectorySharedEx(prm,x0_arr,v0_arr,Rgv,maxTrajTime_s)
-      : Earth::GridlessMode::TraceTrajectoryShared(prm,x0_arr,v0_arr,Rgv,maxTrajTime_s);
+  Earth::Trajectory::RetryPolicy retryPolicy;
+  retryPolicy.maximumNumericalRetries=prm.densitySpectrum.retryUnresolved ? 1 : 0;
+  retryPolicy.unresolvedExtensionPasses=prm.densitySpectrum.retryUnresolved
+      ? prm.densitySpectrum.unresolvedExtensionPasses : 0;
+  retryPolicy.unresolvedExtensionFactor=
+      prm.densitySpectrum.unresolvedExtensionFactor;
+  const double primaryTime_s=(maxTrajTime_s>0.0)
+      ? maxTrajTime_s
+      : ((prm.densitySpectrum.maxTrajTime_s>0.0)
+          ? prm.densitySpectrum.maxTrajTime_s : prm.numerics.maxTraceTime_s);
 
-  if (!result.resolved() && prm.densitySpectrum.retryUnresolved) {
-    EarthUtil::AmpsParam retryPrm=prm;
-    retryPrm.numerics.dtTrace_s=std::max(1.0e-12,0.5*prm.numerics.dtTrace_s);
-    retryPrm.numerics.maxSteps=(prm.numerics.maxSteps<=std::numeric_limits<int>::max()/2)
-        ? 2*prm.numerics.maxSteps : std::numeric_limits<int>::max();
-    double retryTime=maxTrajTime_s;
-    if (retryTime>0.0) retryTime*=2.0;
-    else {
-      const double base=(prm.cutoff.maxTrajTime_s>0.0)
-          ? prm.cutoff.maxTrajTime_s : prm.numerics.maxTraceTime_s;
-      retryTime=2.0*base;
-    }
-    result = captureExit
-        ? Earth::GridlessMode::TraceTrajectorySharedEx(retryPrm,x0_arr,v0_arr,Rgv,retryTime)
-        : Earth::GridlessMode::TraceTrajectoryShared(retryPrm,x0_arr,v0_arr,Rgv,retryTime);
-    result.retryCount=1;
+  // One budget may receive a smaller-step retry only when the first integration was
+  // numerically invalid.  A valid TIME_LIMIT/STEP_LIMIT is not a numerical error and
+  // therefore proceeds to the separate convergence-extension loop below with the
+  // original DT_TRACE.  The former implementation halved DT for every timeout, which
+  // increased cost while obscuring whether extra physical trace time or integration
+  // accuracy changed the classification.
+  auto RunOneBudget=[&](const EarthUtil::AmpsParam& attemptPrm,
+                        double requestedTime_s,
+                        double& actualTimeBudget_s) -> TrajectoryResult {
+    actualTimeBudget_s=requestedTime_s;
+    auto out=captureExit
+        ? Earth::GridlessMode::TraceTrajectorySharedEx(
+              attemptPrm,x0_arr,v0_arr,Rgv,requestedTime_s)
+        : Earth::GridlessMode::TraceTrajectoryShared(
+              attemptPrm,x0_arr,v0_arr,Rgv,requestedTime_s);
+    if (!Earth::Trajectory::ShouldRetryNumerical(out,0,retryPolicy)) return out;
+
+    EarthUtil::AmpsParam retryPrm=attemptPrm;
+    retryPrm.numerics.dtTrace_s=std::max(
+        1.0e-12,retryPolicy.numericalDtScale*attemptPrm.numerics.dtTrace_s);
+    retryPrm.numerics.maxSteps=
+        Earth::Trajectory::ScaledStepBudget(
+            attemptPrm.numerics.maxSteps,retryPolicy.numericalStepScale,
+            out,retryPolicy.numericalTimeScale*requestedTime_s);
+    actualTimeBudget_s=retryPolicy.numericalTimeScale*requestedTime_s;
+    out=captureExit
+        ? Earth::GridlessMode::TraceTrajectorySharedEx(
+              retryPrm,x0_arr,v0_arr,Rgv,actualTimeBudget_s)
+        : Earth::GridlessMode::TraceTrajectoryShared(
+              retryPrm,x0_arr,v0_arr,Rgv,actualTimeBudget_s);
+    out.retryCount=1;
+    return out;
+  };
+
+  double usedBudget_s=primaryTime_s;
+  TrajectoryResult result=RunOneBudget(prm,primaryTime_s,usedBudget_s);
+  const int primaryTerminationCode=static_cast<int>(result.termination);
+  const double primaryTraceTime_s=result.traceTime_s;
+  result.primaryTerminationCode=primaryTerminationCode;
+  result.primaryTraceTime_s=primaryTraceTime_s;
+  result.traceExtensionCount=0;
+  result.initialTraceLimit_s=primaryTime_s;
+  result.finalTraceLimit_s=usedBudget_s;
+
+  // Recompute only TIME_LIMIT/STEP_LIMIT samples.  Each pass deliberately restarts at
+  // the original seed, matching an independent run at the larger T_max and avoiding a
+  // fragile serialization of field, mover, and trap-detector state.  DISTANCE_LIMIT is
+  // never extended because it is a separately declared physical path budget.
+  for (int pass=1;pass<=retryPolicy.unresolvedExtensionPasses;++pass) {
+    if (!Earth::Trajectory::ShouldExtendUnresolved(result,pass-1,retryPolicy)) break;
+    const double factor=std::pow(retryPolicy.unresolvedExtensionFactor,
+                                 static_cast<double>(pass));
+    const double targetTime_s=Earth::Trajectory::ExtensionTimeBudget(
+        primaryTime_s,pass,retryPolicy);
+    if (!(targetTime_s>primaryTime_s) || !std::isfinite(targetTime_s)) break;
+
+    EarthUtil::AmpsParam extensionPrm=prm;
+    extensionPrm.numerics.maxSteps=Earth::Trajectory::ScaledStepBudget(
+        prm.numerics.maxSteps,factor,result,targetTime_s);
+    double extensionBudget_s=targetTime_s;
+    TrajectoryResult extended=RunOneBudget(
+        extensionPrm,targetTime_s,extensionBudget_s);
+    extended.primaryTerminationCode=primaryTerminationCode;
+    extended.primaryTraceTime_s=primaryTraceTime_s;
+    extended.traceExtensionCount=pass;
+    extended.initialTraceLimit_s=primaryTime_s;
+    extended.finalTraceLimit_s=extensionBudget_s;
+    result=extended;
   }
   return result;
 }
@@ -816,7 +875,10 @@ static TrajectoryBlockResult ComputeWeightBlockAtEnergy(
             ? EvalAnisotropyFactor(anisoPar,result.exitState.cosAlpha,result.exitState.x_exit_m)
             : 1.0)
         : 0.0;
-    block.Record(result.termination,weight,result.retryCount>0);
+    // N_retried is the number of directions that required any extra integration work,
+    // whether a numerical-failure retry or a physical-time convergence extension.
+    block.Record(result.termination,weight,
+                 result.retryCount>0 || result.traceExtensionCount>0);
   }
   return block;
 }
@@ -1115,8 +1177,8 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
   }
 
   // Build shared grids.
-  const int nZenith=24;
-  const int nAz=48;
+  const int nZenith=prm.densitySpectrum.directionNMu;
+  const int nAz=prm.densitySpectrum.directionNPhi;
   const std::vector<V3> dirs = BuildDirGrid(nZenith,nAz);
   const std::vector<double> E_MeV = BuildEnergyGrid_MeV(prm);
   const int nE = (int)E_MeV.size();
@@ -1253,6 +1315,12 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       std::vector<double> TLower(nE,0.0),TUpper(nE,0.0);
       std::vector<TrajectoryBlockResult> blockResults((size_t)nE);
 
+      // Snapshot the immutable unit conversion before entering OpenMP.  Besides
+      // avoiding repeated access to the global spectrum object, this explicit local
+      // object satisfies default(none) and documents that workers only need the unit
+      // metadata; they do not mutate or temporally advance gSpectrum.
+      const Earth::BoundaryProducts::SpectrumUnits spectrumUnits=::gSpectrum.Units();
+
       // Each energy point can be processed independently: rigidity depends only on the
       // current grid energy, while transmissivity T(E) is computed from a self-contained
       // set of backtraced directions for that energy. Therefore the energy loop is a
@@ -1263,12 +1331,12 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       // penumbra before being classified. Dynamic scheduling improves load balance among
       // threads for such irregular work.
 #ifdef _OPENMP
-#pragma omp parallel for default(none) shared(T, TLower, TUpper, blockResults, E_MeV, prmForPoint, x0_m, dirsUse, doAnisotropic, nE) firstprivate(maximumAllowedWeight) if(nE > 1) schedule(dynamic)
+#pragma omp parallel for default(none) shared(T, TLower, TUpper, blockResults, E_MeV, prmForPoint, x0_m, dirsUse, doAnisotropic, nE, spectrumUnits) firstprivate(maximumAllowedWeight) if(nE > 1) schedule(dynamic)
 #endif
       for (int ie=0; ie<nE; ++ie) {
         // The solver grid is the declared spectrum coordinate.  Rigidity depends on
         // total particle energy, so MeV/nucleon is converted by the declared A here.
-        const double Ej=::gSpectrum.Units().ParticleEnergyJ(E_MeV[ie]);
+        const double Ej=spectrumUnits.ParticleEnergyJ(E_MeV[ie]);
         const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prmForPoint.species.charge_e)*QE, prmForPoint.species.mass_amu*AMU);
         const double maxTraceTime_s = (prmForPoint.densitySpectrum.maxTrajTime_s > 0.0)
                                         ? prmForPoint.densitySpectrum.maxTrajTime_s
@@ -1808,8 +1876,13 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     if (maxUnresolvedFraction > prm.densitySpectrum.unresolvedTolerance) {
       std::cout << "[gridless-density][termination][WARNING] unresolved fraction exceeds tolerance; "
                 << "validation must fail rather than treating unresolved trajectories as forbidden.\n";
-      if (prm.densitySpectrum.failOnUnresolved)
+      if (prm.densitySpectrum.failOnUnresolved) {
+        // Never let a validation-gate abort inherit the generic zero exit code: MPI
+        // launchers otherwise report success even though the density transaction was
+        // intentionally rejected.  Product completeness is still checked separately.
+        SetExitErrorCode(__LINE__,1);
         exit(__LINE__,__FILE__,"Gridless density unresolved fraction exceeds DS_UNRESOLVED_TOL");
+      }
     }
 
     // File 1: densities
@@ -2054,8 +2127,8 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
   }
 
   // Shared direction and energy grids.
-  const int nZenith=24;
-  const int nAz=48;
+  const int nZenith=prm.densitySpectrum.directionNMu;
+  const int nAz=prm.densitySpectrum.directionNPhi;
   const std::vector<V3> dirs = BuildDirGrid(nZenith,nAz);
   const std::vector<double> E_MeV = BuildEnergyGrid_MeV(prm);
   const int nE = (int)E_MeV.size();
@@ -2219,14 +2292,19 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
         std::vector<double> T(nE,0.0),TLower(nE,0.0),TUpper(nE,0.0);
         std::vector<TrajectoryBlockResult> blocks((size_t)nE);
 
+        // Unit metadata is frozen for this location.  Keep it local and explicitly
+        // shared read-only so the default(none) OpenMP region cannot accidentally
+        // depend on mutable temporal state in the global spectrum object.
+        const Earth::BoundaryProducts::SpectrumUnits spectrumUnits=::gSpectrum.Units();
+
         // As in POINTS mode, the shell serial path can still exploit OpenMP across
         // energies because each transmissivity evaluation T(E) is independent for a
         // fixed spatial location.
 #ifdef _OPENMP
-#pragma omp parallel for default(none) shared(blocks, E_MeV, prm, x0_m, dirsUse, doAnisotropic, nE) if(nE > 1) schedule(dynamic)
+#pragma omp parallel for default(none) shared(blocks, E_MeV, prm, x0_m, dirsUse, doAnisotropic, nE, spectrumUnits) if(nE > 1) schedule(dynamic)
 #endif
         for (int ie=0; ie<nE; ++ie) {
-          const double Ej=::gSpectrum.Units().ParticleEnergyJ(E_MeV[ie]);
+          const double Ej=spectrumUnits.ParticleEnergyJ(E_MeV[ie]);
           const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE,
                                                    prm.species.mass_amu*AMU);
           const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
@@ -2612,8 +2690,10 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
         std::cout << "[gridless-density][termination][WARNING] shell max unresolved fraction "
                   << maximumUnresolved << " exceeds " << prm.densitySpectrum.unresolvedTolerance
                   << "; lower/upper products bound the uncertainty.\n";
-        if (prm.densitySpectrum.failOnUnresolved)
+        if (prm.densitySpectrum.failOnUnresolved) {
+          SetExitErrorCode(__LINE__,1);
           exit(__LINE__,__FILE__,"Gridless shell density unresolved fraction exceeds DS_UNRESOLVED_TOL");
+        }
       }
       std::ostringstream fn;
       fn << "gridless_shell_" << (int)std::round(alt_km) << "km_density_channels.dat";

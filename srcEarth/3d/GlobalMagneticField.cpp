@@ -936,6 +936,23 @@ MaterializationStats AssembleCellCenteredFieldsForCutoff(
   }
 
   stats.snapshotId=publishedMetadata.snapshotId;
+  // Optional forensic identity for empirical snapshots. The historical snapshot
+  // ID encodes drivers, not sampled arrays, so it cannot detect construction races.
+  // Keep that public ID stable while exposing the exact compact-field contents.
+  const char* audit=std::getenv("AMPS_MODE3D_FIELD_AUDIT");
+  if (!GlobalPlasmaVelocityAvailable_ && audit && std::string(audit)=="1") {
+    Earth::SWMFSnapshot::Detail::StableHash64 geometry,content;
+    geometry.AddString("standalone-field-geometry-v1");
+    for (const auto* node:nodes) for (int d=0;d<3;++d) {
+      geometry.AddDouble(node->xmin[d]); geometry.AddDouble(node->xmax[d]);
+    }
+    GlobalMeshRevision_=geometry.Hex("mesh-geometry-v1-");
+    content.AddString(GlobalMeshRevision_);
+    content.AddString(metadata.epochUTC);
+    for (double value:GlobalMagneticField_) content.AddDouble(value);
+    for (double value:GlobalElectricField_) content.AddDouble(value);
+    GlobalContentFingerprint_=content.Hex("standalone-field-v1-");
+  }
   stats.contentFingerprint=GlobalContentFingerprint_;
   stats.meshRevision=GlobalMeshRevision_;
 

@@ -90,7 +90,9 @@
 //     DS_TRANSMISSION_SCAN_N  <int>  number of scan nodes; 0 => DS_NINTERVALS+1
 //     DS_TRANSMISSION_REFINE_N / MAX_N / SAVE: parsed diagnostic/reserved controls
 //     DS_UNRESOLVED_TOL       <double>   ! maximum accepted unresolved fraction [0,1]
-//     DS_RETRY_UNRESOLVED     T|F        ! retry unresolved trajectories once
+//     DS_RETRY_UNRESOLVED     T|F        ! enable bounded unresolved-only extension
+//     DS_UNRESOLVED_EXTENSION_PASSES <int> ! number of larger time budgets (default 1)
+//     DS_UNRESOLVED_EXTENSION_FACTOR <double> ! multiplier per pass (default 2)
 //     DS_SAVE_TERMINATION_SUMMARY T|F    ! write per-point/energy termination counts
 //     DS_FAIL_ON_UNRESOLVED   T|F        ! validation: abort if tolerance is exceeded
 //
@@ -723,6 +725,11 @@ namespace EarthUtil {
     // If omitted or <= 0, no cap is applied.
     int maxParticlesPerPoint{0}; // DS_MAX_PARTICLES
 
+    // Equal-solid-angle parent grid. Defaults preserve the historical samples;
+    // explicit dimensions allow angular refinement beyond the former 1152 ceiling.
+    int directionNMu{24};  // DS_DIRECTION_NMU
+    int directionNPhi{48}; // DS_DIRECTION_NPHI
+
     // Optional cap on how long we integrate a *single* trajectory.
     //
     // DS_MAX_TRAJ_TIME [s] provides an additional (often tighter) time limit
@@ -804,7 +811,15 @@ namespace EarthUtil {
     // detections are physical classifications.  Time/step/distance/invalid/numerical
     // terminations are excluded from the resolved transmissivity denominator.
     double unresolvedTolerance{0.01}; // DS_UNRESOLVED_TOL, fraction in [0,1]
+    // DS_RETRY_UNRESOLVED is the compatibility switch for the density convergence
+    // mechanism.  When true, TIME_LIMIT/STEP_LIMIT results are recomputed from the
+    // original phase-space seed with successively larger physical-time budgets.  This
+    // is deliberately separate from the one smaller-step retry used for a genuinely
+    // invalid numerical trajectory.  Keeping the pass count and factor explicit makes
+    // a 300->600->1200 s convergence policy reproducible instead of hiding it in code.
     bool retryUnresolved{false};      // DS_RETRY_UNRESOLVED
+    int unresolvedExtensionPasses{1}; // DS_UNRESOLVED_EXTENSION_PASSES
+    double unresolvedExtensionFactor{2.0}; // DS_UNRESOLVED_EXTENSION_FACTOR
     bool saveTerminationSummary{true}; // DS_SAVE_TERMINATION_SUMMARY
     // Production surveys may prefer to retain conservative lower/upper products and a
     // warning.  Validation runs should set this true so excessive unresolved sampling

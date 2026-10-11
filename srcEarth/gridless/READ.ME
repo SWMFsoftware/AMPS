@@ -544,11 +544,18 @@ Recommended validation controls inside `#DENSITY_SPECTRUM` are:
 
   DS_UNRESOLVED_TOL          0.01
   DS_RETRY_UNRESOLVED        T
+  DS_UNRESOLVED_EXTENSION_PASSES 3
+  DS_UNRESOLVED_EXTENSION_FACTOR 2.0
   DS_SAVE_TERMINATION_SUMMARY T
   DS_FAIL_ON_UNRESOLVED      T
 
 The last flag defaults to F for backward compatibility.  With F, excessive unresolved
 sampling is warned and bracketed by lower/upper products; with T, it terminates the run.
+When retry is enabled, only `TIME_LIMIT`/`STEP_LIMIT` outcomes enter the configured
+larger-time convergence passes; `DISTANCE_LIMIT` remains immutable.  Genuine invalid
+field/time-step/numerical failures use the separate smaller-step retry.  Every extension
+restarts from the same initial state, so its final classification matches a standalone
+run at that larger limit rather than a partially serialized continuation.
 
 Optional sections:
 

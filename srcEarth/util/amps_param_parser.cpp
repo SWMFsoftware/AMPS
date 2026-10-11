@@ -3320,6 +3320,8 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="DS_EMAX") p.densitySpectrum.Emax_MeV=std::stod(val);
       else if (uKey=="DS_NINTERVALS") p.densitySpectrum.nIntervals=std::stoi(val);
       else if (uKey=="DS_MAX_PARTICLES") p.densitySpectrum.maxParticlesPerPoint=std::stoi(val);
+      else if (uKey=="DS_DIRECTION_NMU") p.densitySpectrum.directionNMu=std::stoi(val);
+      else if (uKey=="DS_DIRECTION_NPHI") p.densitySpectrum.directionNPhi=std::stoi(val);
       else if (uKey=="DS_MAX_TRAJ_TIME") p.densitySpectrum.maxTrajTime_s=std::stod(val);
       else if (uKey=="DS_ENERGY_SPACING") p.densitySpectrum.spacing=ParseEnergySpacingToken(val);
       else if (uKey=="DS_BOUNDARY_MODE") p.densitySpectrum.boundaryMode=ToUpper(val);
@@ -3350,6 +3352,14 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       }
       else if (uKey=="DS_RETRY_UNRESOLVED" || uKey=="DENSITY_RETRY_UNRESOLVED") {
         p.densitySpectrum.retryUnresolved=ToBool(val);
+      }
+      else if (uKey=="DS_UNRESOLVED_EXTENSION_PASSES" ||
+               uKey=="DENSITY_UNRESOLVED_EXTENSION_PASSES") {
+        p.densitySpectrum.unresolvedExtensionPasses=std::stoi(val);
+      }
+      else if (uKey=="DS_UNRESOLVED_EXTENSION_FACTOR" ||
+               uKey=="DENSITY_UNRESOLVED_EXTENSION_FACTOR") {
+        p.densitySpectrum.unresolvedExtensionFactor=std::stod(val);
       }
       else if (uKey=="DS_SAVE_TERMINATION_SUMMARY" ||
                uKey=="DENSITY_SAVE_TERMINATION_SUMMARY") {
@@ -4085,6 +4095,11 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     if (p.densitySpectrum.maxParticlesPerPoint < 0) {
       exit(__LINE__,__FILE__,"DS_MAX_PARTICLES must be >= 0 (0 means: no cap)");
     }
+    if (p.densitySpectrum.directionNMu<1 || p.densitySpectrum.directionNPhi<1 ||
+        static_cast<long long>(p.densitySpectrum.directionNMu)*
+            p.densitySpectrum.directionNPhi>std::numeric_limits<int>::max()) {
+      exit(__LINE__,__FILE__,"DS_DIRECTION_NMU/NPHI must be positive with an int-sized product");
+    }
     if (p.densitySpectrum.maxTrajTime_s < 0.0) {
       exit(__LINE__,__FILE__,"DS_MAX_TRAJ_TIME must be >= 0 (0 means: use MAX_TRACE_TIME)");
     }
@@ -4095,6 +4110,21 @@ if (ToUpper(p.field.model)=="DIPOLE") {
           p.densitySpectrum.unresolvedTolerance <= 1.0) ||
         !std::isfinite(p.densitySpectrum.unresolvedTolerance)) {
       exit(__LINE__,__FILE__,"DS_UNRESOLVED_TOL must be finite and in [0,1]");
+    }
+    // Bound the convergence work just as the cutoff extension policy is bounded.
+    // Zero is permitted so a deck can leave DS_RETRY_UNRESOLVED=T while explicitly
+    // disabling physical-time extensions during a controlled diagnostic.  The factor
+    // remains validated even when disabled, preventing a dormant malformed policy from
+    // becoming active after an unrelated input change.
+    if (p.densitySpectrum.unresolvedExtensionPasses < 0 ||
+        p.densitySpectrum.unresolvedExtensionPasses > 8) {
+      exit(__LINE__,__FILE__,
+           "DS_UNRESOLVED_EXTENSION_PASSES must be in [0,8]");
+    }
+    if (!(p.densitySpectrum.unresolvedExtensionFactor > 1.0) ||
+        !std::isfinite(p.densitySpectrum.unresolvedExtensionFactor)) {
+      exit(__LINE__,__FILE__,
+           "DS_UNRESOLVED_EXTENSION_FACTOR must be finite and > 1");
     }
     // Validate transmission-function controls.
     {

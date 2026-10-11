@@ -31,10 +31,12 @@ enum class ParallelBackend {
 // regression/debug option.  It is usually the least balanced scheduler for shell maps.
 //
 // DYNAMIC uses an MPI one-sided atomic counter.  Ranks repeatedly fetch the next
-// chunk of global work items and process that chunk locally.  The work item is
-// a location for density/flux and a flattened trajectory task for cutoff rigidity.
-// This is the recommended scheduler for cutoff/density runs where cost varies with
-// latitude, rigidity, or connectivity.
+// chunk of global work items and process that chunk locally. Cutoff uses flattened
+// trajectory-product tasks. Density uses flattened (location,energy) tasks when all
+// locations share one POINTS/SHELLS epoch; a timestamped TRAJECTORY is scheduled one
+// complete epoch/location at a time by Mode3D::Run and subdivided among rank-local
+// threads. This is the recommended scheduler when cost varies with epoch, latitude,
+// rigidity, or connectivity.
 enum class MpiScheduler {
   BLOCK_CYCLIC,
   STATIC,
@@ -51,9 +53,10 @@ MpiScheduler ResolveMpiScheduler(const EarthUtil::AmpsParam& prm,
                                  const char* diagnosticContext="Mode3D");
 
 // Resolve the MPI dynamic chunk size. A value <=0 means automatic. The caller
-// supplies the number of GLOBAL WORK ITEMS: cutoff passes flattened trajectory tasks,
-// density/flux passes locations. The automatic value is proportional to the per-rank
-// worker count so one fetch can feed the local workers without making chunks too coarse.
+// supplies the number of GLOBAL WORK ITEMS: cutoff passes flattened trajectory tasks;
+// shared-epoch density passes flattened (location,energy) tasks; legacy/single-rank
+// density passes locations. The automatic value is proportional to the per-rank worker
+// count so one fetch can feed local workers without making chunks too coarse.
 long long ResolveMpiDynamicChunk(const EarthUtil::AmpsParam& prm,
                                  int workerCount,
                                  long long nGlobalWorkItems);

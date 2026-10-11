@@ -26,6 +26,43 @@ Energy/rigidity conversion, energy coordinates, angular sampling, channel clippi
 quadrature, transmission diagnostics, and unresolved bounds come from
 `../util/FluxNumerics.h` in both backends.
 
+## Output-mode-aware MPI and thread scheduling
+
+Mode3D cannot use one MPI decomposition for every output geometry because the field
+epoch is part of the immutable trajectory state.
+
+For `OUTPUT_MODE=TRAJECTORY` with `TEMPORAL_MODE=SNAPSHOT_LIST`, each selected
+trajectory row owns a different epoch. `Mode3D::Run()` therefore initializes AMPS in
+independent-domain mode: every MPI process owns a complete mesh and a singleton
+`MPI_GLOBAL_COMMUNICATOR`. A dynamic RMA counter on `MPI_COMM_WORLD` assigns exactly
+one epoch/location transaction per fetch. The winning rank builds that epoch's private
+gridded field, executes cutoff and density products, writes the uniquely suffixed
+artifacts, and then claims another epoch. Its OpenMP or direct-thread workers share the
+rank-local read-only field and divide the location's energy/direction trajectories.
+Physics collectives inside the transaction must remain on the singleton communicator;
+using `MPI_COMM_WORLD` there would mix different epochs or deadlock ranks that advance
+at different rates.
+
+Independent ranks all appear as PIC rank zero, so legacy initialization helpers would
+otherwise create the same mesh-cache and sphere files concurrently. Complete-domain
+initialization is serialized once in world-rank order. This affects startup only;
+field construction and trajectory calculations for claimed epochs run concurrently.
+
+`POINTS` and all locations within one `SHELLS` snapshot share an epoch. These modes
+retain the normal distributed AMPS domain and exploit finer work sharing:
+
+- cutoff distributes its existing flattened scalar/directional/rigidity tasks;
+- density distributes flattened `(location, energy)` tasks among MPI ranks;
+- the selected shared-memory backend dynamically divides each rank's fetched task
+  range; and
+- MPI reductions first reconstruct complete access curves, after which density,
+  total/planar flux, channel fluxes, and detector rates are integrated.
+
+For a multi-epoch `SHELLS` snapshot list, the common field is rebuilt collectively
+between epochs and the fine scheduler is reused independently within every snapshot.
+No scheduler changes `DS_UNRESOLVED_TOL`, trajectory limits, direction grids, energy
+grids, termination classification, or any validation threshold.
+
 ## Step 11 SWMF density/flux/spectrum transaction
 
 `DensityMode3D.cpp` remains the single Mode3D product implementation for standalone
@@ -289,6 +326,17 @@ Outputs use these values as follows:
 abort when any location/energy exceeds `DS_UNRESOLVED_TOL`; leave it false for survey
 runs that intentionally continue with explicit uncertainty bounds.
 
+`DS_RETRY_UNRESOLVED=T` enables density-specific convergence extensions controlled by
+`DS_UNRESOLVED_EXTENSION_PASSES` (default one) and
+`DS_UNRESOLVED_EXTENSION_FACTOR` (default two).  Each extension restarts only a
+`TIME_LIMIT`/`STEP_LIMIT` direction from the identical initial state against the same
+immutable field snapshot.  The restart is intentional: it is reproducible as an
+independent larger-limit run and does not require serializing private mover and trap
+detector state.  The original time limit and final extension are retained in the
+structured trajectory result; `N_retried` counts directions that needed either an
+extension or a genuine numerical-failure retry.  The unresolved tolerance itself is
+never changed by this mechanism.
+
 ## Linear-grid correction
 
 The former Mode3D LINEAR branch evaluated `Emin + a*(Emax-Emin)*a`.  The shared builder
@@ -296,6 +344,39 @@ uses `Emin + a*(Emax-Emin)`, pins both endpoints exactly, and is covered by U-F0
 `../test/UFluxNumerics`.
 
 ## Verification
+
+### Deterministic standalone field initialization
+
+An AMR block's ghost center can be the same physical node/buffer as a neighboring
+block's interior center (`meshAMRgeneric.h` shares those pointers). Consequently,
+partitioning ghost-inclusive **logical slots** among pthreads does not partition
+the writable storage. It creates concurrent writes; slightly different rounded
+coordinate expressions can then produce schedule-dependent fields. The SA01
+two-epoch audit demonstrated different packed-field fingerprints for identical
+inputs before any trajectory integration.
+
+`FieldInitializationPlan.h` selects exactly one logical writer per physical
+center buffer before workers start. Owner-interior coordinates take priority;
+ghost-only storage retains its first deterministic tree/index occurrence. Both
+serial and pthread initialization consume that immutable sequence. The pointer
+map is used only for identity lookup, never traversal order, and is discarded
+before evaluation. Distinct interior cells aliasing one buffer are an error.
+Progress counts unique buffer writes, not duplicate ghost slots. This changes
+neither the field model nor the mesh, trajectory population, or acceptance gates.
+
+For read-only diagnosis set `AMPS_MODE3D_FIELD_AUDIT=1`. It compares eight interior
+samples per block against serial field evaluation, tests 4096 frozen interpolation
+positions over three concurrent passes, and records a full packed B/E content
+fingerprint plus geometry. The audit never overwrites mismatches. Identical driver
+snapshot IDs alone are insufficient evidence of identical sampled fields. Sampling
+agreement is not a proof of field accuracy; use the physical repeat/refinement
+workflow in `../test/SA01/README.md`. These standalone probes are diagnostic only.
+
+The SA01 unittest discovery command compiles and runs the production unique-writer
+helper against aliased-buffer, reversed-completion-order and duplicate-interior
+fixtures. It reproduces the old last-writer dependence as a negative control.
+Consult `../test/SA01/SA01_PROGRESS.md` for actual build and physical verification
+status; an implemented correction is not by itself a validated campaign.
 
 Run the dependency-free shared numerical suite from `srcEarth`:
 

@@ -1,0 +1,6 @@
+! SA01 implementation and production alias-ownership regressions.
+! This is a routine code-validation gate, NOT observational or convergence PASS.
+! The long physical campaign and its fixed gates are documented in README.md.
+! Keep separate from test/list: that existing release list is hash-frozen.
+P python3 -B -m unittest discover -s srcEarth/test/SA01/tests -v
+last pass:

@@ -7,6 +7,16 @@
 
 #include "pic.h"
 
+// OPENMP=on adds -fopenmp without necessarily selecting AMPS's separate
+// _COMPILATION_MODE__HYBRID_ configuration.  pic.h includes omp.h for HYBRID,
+// but CommitTempParticleMovingListsToFirstCellParticleTable() below also uses
+// the OpenMP runtime whenever the compiler defines _OPENMP.  Include the runtime
+// declarations for that supported build combination; the guard keeps serial
+// builds independent of the OpenMP headers and library.
+#if defined(_OPENMP)
+#include <omp.h>
+#endif
+
 PIC::Mover::fProcessOutsideDomainParticles PIC::Mover::ProcessOutsideDomainParticles=NULL;
 PIC::Mover::fProcessTriangleCutFaceIntersection PIC::Mover::ProcessTriangleCutFaceIntersection=NULL;
 
