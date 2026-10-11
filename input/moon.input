@@ -136,6 +136,16 @@ ReferenceGroundBasedObservationTime= \\
   define _TARGET_ _MOON_ 
   
   define _PIC_PHOTOLYTIC_REACTIONS_MODE_ _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
+  ! The Moon acceleration callback below is evaluated only by a force-aware
+  ! mover.  AMPS otherwise retains its global default
+  ! UniformWeight_UniformTimeStep_noForce_TraceTrajectory_SecondOrder mover,
+  ! which traces boundaries but deliberately never calls the acceleration
+  ! callback.  Select the production second-order force mover explicitly so
+  ! lunar/differential gravity, rotating-frame terms, Na radiation pressure,
+  ! and (when a charged species is configured) Lorentz acceleration are
+  ! actually applied to ordinary srcMoon particles.  I05-I10 exercise this
+  ! same configured mover; no test-only force integrator is substituted.
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder(ptr,LocalTimeStep,node)
   define _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(acclMiddle,spec,ptr,xMiddle,vMiddle,middleNode) Moon::TotalParticleAcceleration(acclMiddle,spec,ptr,xMiddle,vMiddle,middleNode)
   define _PIC_USER_DEFING_PARTICLE_SAMPLING_(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s) Moon::Sampling::SampleParticleData(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s)
   define _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE_ _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE__ON_

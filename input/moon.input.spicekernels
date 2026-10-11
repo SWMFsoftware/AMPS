@@ -3,5 +3,8 @@
 ! Config.pl -spice-kernels.  DE421 is selected deliberately because LOLA
 ! LDEM_4 declares the MEAN EARTH/POLAR AXIS OF DE421 coordinate system.
 ! moon_assoc_me.tf makes MOON_ME_DE421 the associated body-fixed lunar frame;
-! Moon.LSO.tf defines the Moon-centred solar-orbital simulation frame.
-SpiceKernels="NAIF/naif0012.tls","NAIF/de421.bsp","NAIF/pck00011.tpc","NAIF/moon_pa_de421_1900-2050.bpc","NAIF/moon_080317.tf","NAIF/moon_assoc_me.tf","OTHER/Moon.LSO.tf"
+! Moon.LSO.tf defines the Moon-centred solar-orbital simulation frame. GSE.tf
+! is also required by the active velocity-distribution/column samplers reached
+! from PIC::TimeStep; omitting it makes the first production step terminate
+! with SPICE(UNKNOWNFRAME), even though the isolated LSO force kernels work.
+SpiceKernels="NAIF/naif0012.tls","NAIF/de421.bsp","NAIF/pck00011.tpc","NAIF/moon_pa_de421_1900-2050.bpc","NAIF/moon_080317.tf","NAIF/moon_assoc_me.tf","OTHER/Moon.LSO.tf","OTHER/GSE.tf"

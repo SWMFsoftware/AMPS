@@ -7,6 +7,7 @@
 #include "pic.h"
 #include "constants.h"
 #include "MoonInput.h"
+#include "MoonIntegrationTests.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,22 +39,43 @@ int main(int argc,char **argv) {
   // accidentally interpret an AMPS configuration file intended for another
   // application.  Parse before PIC::InitMPI(): syntax/path failures then
   // produce one deterministic diagnostic without partially initialized ranks.
-  if (argc != 1) {
-    if (argc != 3 || std::string(argv[1]) != "-input") {
-      std::cerr << "Usage: " << argv[0] << " [-input application.in]\n";
+  std::string applicationInput,integrationTest,integrationOutput;
+  for (int argument=1;argument<argc;argument++) {
+    const std::string option(argv[argument]);
+    if ((option=="-input") && argument+1<argc) {
+      applicationInput=argv[++argument];
+    }
+    else if ((option=="--moon-integration-test") && argument+1<argc) {
+      integrationTest=argv[++argument];
+    }
+    else if ((option=="--integration-output") && argument+1<argc) {
+      integrationOutput=argv[++argument];
+    }
+    else {
+      std::cerr << "Usage: " << argv[0]
+                << " [-input application.in]"
+                << " [--moon-integration-test U01|U01_INSIDE|U06|I02|I03|I05|I06|I07|I08|I09|I10"
+                << " --integration-output receipt.txt]\n";
       return EXIT_FAILURE;
     }
+  }
 
+  if (integrationTest.empty()!=integrationOutput.empty()) {
+    std::cerr << "--moon-integration-test and --integration-output must be used together\n";
+    return EXIT_FAILURE;
+  }
+
+  if (!applicationInput.empty()) {
     Moon::Runtime::Configuration configuration;
     std::string error;
-    if (!Moon::Runtime::ParseApplicationInput(argv[2], &configuration,
-                                               &error)) {
+    if (!Moon::Runtime::ParseApplicationInput(applicationInput,
+                                               &configuration,&error)) {
       std::cerr << error << '\n';
       return EXIT_FAILURE;
     }
     // Installation transfers the validated receipt to amps_init().  It is a
     // one-shot operation so geometry cannot change after MPI/AMR startup.
-    if (!Moon::Runtime::InstallConfiguration(configuration, &error)) {
+    if (!Moon::Runtime::InstallConfiguration(configuration,&error)) {
       std::cerr << error << '\n';
       return EXIT_FAILURE;
     }
@@ -65,6 +87,16 @@ PIC::Debugger::cGenericTimer t;
   
 t.Start("main",__LINE__);
   amps_init();
+
+  // M0 diagnostics execute only after the complete production initializer.
+  // Consequently a PASS can establish linked wiring rather than source-level
+  // presence.  The normal no-argument science/regression path is unchanged.
+  if (!integrationTest.empty()) {
+    const int status=Moon::IntegrationTests::Run(integrationTest,
+                                                 integrationOutput);
+    MPI_Finalize();
+    return status;
+  }
 
 t.SwitchTimeSegment(__LINE__,"first switch"); 
 

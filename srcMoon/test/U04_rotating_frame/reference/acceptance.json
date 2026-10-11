@@ -23,7 +23,8 @@
     "NAIF/moon_pa_de421_1900-2050.bpc": "656f90616403d75a75f0cd6c8830fc5b44f8cb4facb5ccb8915e752b397520cf",
     "NAIF/moon_080317.tf": "78732477b96f9863e7b0d65bcee3c22b8707ca5ed0db56d1173319cb2e8c7993",
     "NAIF/moon_assoc_me.tf": "52c622043ce0447d575e59ee01642f1894921e68c10f934ceff065f362da6c1c",
-    "OTHER/Moon.LSO.tf": "dab5f26aafc7a253f8ffc3b33da3a63cf7297325f5ad25303226f08a766df130"
+    "OTHER/Moon.LSO.tf": "dab5f26aafc7a253f8ffc3b33da3a63cf7297325f5ad25303226f08a766df130",
+    "OTHER/GSE.tf": "2a6119663bb9a0b6076048cfbf0dd99d2c52bd5e94bcb8ead9d0e9789059ce1d"
   },
   "predecessor_gates": ["U02", "U03"],
   "artifacts": ["result.json", "term_vectors.json", "kernel_hashes.json"],
@@ -31,5 +32,5 @@
   "implementation": "rotating-frame-probe",
   "probe_modes": ["rotating-frame"],
   "epoch_utc": "2009-01-24T00:00:00",
-  "kernel_files": ["NAIF/naif0012.tls", "NAIF/de421.bsp", "NAIF/pck00011.tpc", "NAIF/moon_pa_de421_1900-2050.bpc", "NAIF/moon_080317.tf", "NAIF/moon_assoc_me.tf", "OTHER/Moon.LSO.tf"]
+  "kernel_files": ["NAIF/naif0012.tls", "NAIF/de421.bsp", "NAIF/pck00011.tpc", "NAIF/moon_pa_de421_1900-2050.bpc", "NAIF/moon_080317.tf", "NAIF/moon_assoc_me.tf", "OTHER/Moon.LSO.tf", "OTHER/GSE.tf"]
 }

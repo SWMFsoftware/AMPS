@@ -1382,7 +1382,15 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
           code=Sphere1D->ParticleSphereInteraction(spec,ptr,x,v,dtTotal,(void*)startNode,InternalBoundaryDescriptor->BoundaryElement);
 #endif
 
-          if (code==_PARTICLE_DELETED_ON_THE_FACE_) return _PARTICLE_LEFT_THE_DOMAIN_;
+          if (code==_PARTICLE_DELETED_ON_THE_FACE_) {
+            // Surface callbacks report the physical outcome but do not own
+            // particle-buffer storage.  Match the second-order/Boris movers:
+            // release an absorbed particle before returning the mover's loss
+            // status, otherwise it remains allocated but belongs to no cell
+            // list and CheckParticleList() fails after surface sticking.
+            PIC::ParticleBuffer::DeleteParticle(ptr);
+            return _PARTICLE_LEFT_THE_DOMAIN_;
+          }
 
           goto MovingLoop;
         }
@@ -1459,7 +1467,14 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
       code=((cInternalSphere1DData*)(InternalBoundaryDescriptor_dtMin->BoundaryElement))->ParticleSphereInteraction(spec,ptr,x,v,dtTotal,(void*)startNode,InternalBoundaryDescriptor_dtMin->BoundaryElement);
 #endif
 
-      if (code==_PARTICLE_DELETED_ON_THE_FACE_) return _PARTICLE_LEFT_THE_DOMAIN_;
+      if (code==_PARTICLE_DELETED_ON_THE_FACE_) {
+        // This is the normal intersection path corresponding to the
+        // inside-sphere recovery above.  The mover owns buffer deletion for a
+        // callback-reported absorbed particle; keep both paths identical so
+        // every allocated particle is either listed or returned to the pool.
+        PIC::ParticleBuffer::DeleteParticle(ptr);
+        return _PARTICLE_LEFT_THE_DOMAIN_;
+      }
 
       switch(_AMR_SYMMETRY_MODE_) {
       case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
@@ -1616,7 +1631,14 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
 
-  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  // `startNode` is the authoritative leaf after every trajectory segment.
+  // In particular, a sphere interaction can re-emit the particle and update
+  // startNode without assigning `newNode`; the latter is only a temporary
+  // block-face neighbor and can therefore be NULL or stale at loop exit.
+  // The insertion code immediately below already uses startNode->block, so
+  // derive the cell indices from that same node to keep position, cell, and
+  // destination list consistent on every MPI rank.
+  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=startNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
@@ -2044,18 +2066,25 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
     //in the case when a symmetry has to be considered, transfer the particle position and velcoty accordinly
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
     middleNode=PIC::Mesh::mesh->findTreeNode(xMiddle,startNode);
-    _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(accl,spec,ptr,xMiddle,vMiddle,newNode);
+
+    // The force callback must receive the leaf that contains the predicted
+    // midpoint.  `newNode` is still NULL here: it is assigned only after the
+    // corrected final position is computed below.  Passing `newNode` caused
+    // charged-particle callbacks that inspect block/coupler data to dereference
+    // NULL, even though `middleNode` had been found successfully.  Also reject
+    // a midpoint outside the finite mesh before asking any force model to use
+    // its node; this preserves the mover's existing domain-loss status.
+    if (middleNode==NULL) {
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_LEFT_THE_DOMAIN_;
+    }
+
+    _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(accl,spec,ptr,xMiddle,vMiddle,middleNode);
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
     exit(__LINE__,__FILE__,"not implemented");
 #else
     exit(__LINE__,__FILE__,"Error: the option is not recognized");
 #endif
-
-    if (middleNode==NULL) {
-      //the particle left the computational domain
-      PIC::ParticleBuffer::DeleteParticle(ptr);
-      return _PARTICLE_LEFT_THE_DOMAIN_;
-    }
 
     //Check if the newNode has cut cells
 #if _INTERNAL_BOUNDARY_MODE_ ==  _INTERNAL_BOUNDARY_MODE_ON_

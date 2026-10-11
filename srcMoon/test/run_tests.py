@@ -55,11 +55,21 @@ def main() -> int:
     selection.add_argument("--list", action="store_true")
     selection.add_argument("--all", action="store_true")
     selection.add_argument("--test", action="append", metavar="UXX")
+    selection.add_argument("--phase", choices=("baseline",),
+                           help="run the linked I01-I10 M0 campaign")
     parser.add_argument("--build-dir", type=Path, default=DEFAULT_BUILD)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--rebuild", action="store_true")
     parser.add_argument("--strict-skips", action="store_true")
     args = parser.parse_args()
+
+    if args.phase == "baseline":
+        # Keep the mature U-series driver unchanged while exposing the roadmap's
+        # documented single entry point for the linked baseline.  The dedicated
+        # runner owns its required configuration-separated clean builds.
+        command = [sys.executable, str(Path(__file__).with_name("run_integration_tests.py")),
+                   "--output-dir", str(args.output_dir)]
+        return subprocess.run(command, cwd=REPO_ROOT, check=False).returncode
 
     directories = test_directories()
     if args.list:

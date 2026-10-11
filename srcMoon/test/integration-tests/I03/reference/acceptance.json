@@ -1,0 +1,18 @@
+{
+  "id": "I03", "name": "Species particle-weight and time-step initialization",
+  "purpose": "Verify runtime species and Monte Carlo normalization state.",
+  "production_capability": "PIC molecular table and Moon local-time-step/weight initialization.",
+  "production_entry_points": ["PIC::ParticleWeightTimeStep::initTimeStep", "initParticleWeight_ConstantWeight", "Moon::localTimeStep"],
+  "configuration": "Normal neutral-Na M0 baseline.", "inputs": ["Na source rate", "initialized mesh"],
+  "independent_reference": "Committed species mass/charge and positivity/finite initialization invariants.",
+  "units": "kg, C, s, represented physical particles per model particle", "frame_time_convention": "not applicable",
+  "deterministic_stochastic_controls": "Initialization only; no draws.",
+  "procedure": "Read the runtime table and initialized global/surface timing and weight state.",
+  "metrics": ["mass error", "charge", "time step", "particle weight", "reference injection count"],
+  "acceptance_criteria": "Na mass agrees with 3.82e-26 kg to 1e-14 relative; charge is zero; dt and weight are positive; reference count is 20.",
+  "expected_pass_result": "A finite, positive, correctly typed neutral-Na normalization is installed.",
+  "expected_failure_modes": ["wrong species", "zero/negative dt", "zero/negative weight", "stale initialization"],
+  "required_data": [], "data_hashes": {}, "predecessor_gates": ["U02", "U22", "I01", "I02"],
+  "artifacts": ["receipt.txt", "result.json", "run_manifest.json"],
+  "status_semantics": "PASS establishes initialization only, not source statistics or conservation."
+}

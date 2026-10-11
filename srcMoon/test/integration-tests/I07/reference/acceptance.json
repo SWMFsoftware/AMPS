@@ -1,0 +1,18 @@
+{
+  "id": "I07", "name": "Sodium radiation pressure and shadow gating",
+  "purpose": "Verify production Na force dispatch adds radiation only when illuminated.",
+  "production_capability": "Moon::TotalParticleAcceleration radiation branch and linked mover.",
+  "production_entry_points": ["Moon::TotalParticleAcceleration", "Moon::EarthShadowCheck", "Na radiation kernel", "production mover"],
+  "configuration": "DE421 neutral Na; paired +/-3 lunar-radii fixtures; dt=0.25 s.",
+  "inputs": ["lit and lunar-shadow states"], "independent_reference": "U03/U04 non-radiative analytical force sum; U05 independently digitized Combi curve.",
+  "units": "m, m s^-1, m s^-2", "frame_time_convention": "Moon-centred rotating LSO at frozen SPICE epoch.",
+  "deterministic_stochastic_controls": "Paired deterministic particles.",
+  "procedure": "Subtract independent non-radiative acceleration from raw production totals and inspect mover steps.",
+  "metrics": ["shadow residual", "lit residual magnitude/direction"],
+  "acceptance_criteria": "Shadow residual <=1e-12 m s^-2; lit residual is nonzero, radial, and anti-+X for the production heliocentric vector convention.",
+  "expected_pass_result": "Radiation is present only in the lit state and points correctly.",
+  "expected_failure_modes": ["shadow leak", "reversed sign", "frame velocity error", "force not reached by mover"],
+  "required_data": ["DE421 kernels", "U05 digitization"], "data_hashes": "run manifest and U05 package",
+  "predecessor_gates": ["U04", "U05", "I06"], "artifacts": ["receipt.txt", "result.json", "run_manifest.json"],
+  "status_semantics": "PASS verifies linked gating; observational sodium agreement is not claimed."
+}

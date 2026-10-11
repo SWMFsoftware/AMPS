@@ -442,6 +442,53 @@ provenance, QA report, and hashes before use.
 | MPI/OpenMP/stochastic behavior | generic PIC/exosphere | layout and seed → statistical solution | random stream/layout not recorded by a Moon manifest | I42-I46 pending |
 | provenance/run manifests | no Moon-specific manifest writer found | revision/build/config/data hashes/layout/seed → manifest | canonical data root external | U25/I42-I46 SKIPPED |
 
+### M0 production mover and linked diagnostics
+
+`input/moon.input` explicitly selects the production second-order force mover.
+This is a physical wiring requirement, not a numerical preference: AMPS's
+otherwise active default is named
+`UniformWeight_UniformTimeStep_noForce_TraceTrajectory_SecondOrder` and does
+not call the Moon acceleration callback. The selected force mover evaluates
+the existing `Moon::TotalParticleAcceleration` at the midpoint and retains
+the existing sphere/domain callbacks. Consequently lunar and differential
+gravity, rotating-frame terms, illuminated Na radiation pressure, and Lorentz
+acceleration for configured ions are applied in ordinary production dispatch.
+
+The selected second-order mover now passes its located midpoint AMR leaf—not
+the not-yet-assigned final-position node—to the midpoint acceleration callback.
+It returns the existing domain-loss status before force evaluation if that
+midpoint is outside the finite mesh. This is required for charged-species
+callbacks, which legitimately inspect node/block data, and is covered by the
+dedicated Na/Na+ U06 and I08 configuration.
+
+When that force mover hands a sphere-crossing segment to AMPS's production
+surface tracer, the tracer now resolves its final cell from the current
+`startNode`. Surface re-emission can update `startNode` without assigning the
+temporary block-face neighbor `newNode`; using the latter caused null/stale
+cell lookups in the four-rank canonical Moon run. The final particle-list
+insertion already uses `startNode->block`, so the lookup and insertion now
+share one authoritative leaf.
+
+The same surface-tracer fallback now releases particle-buffer storage whenever
+the registered surface callback returns `_PARTICLE_DELETED_ON_THE_FACE_`, in
+both its inside-sphere recovery and ordinary intersection branches. The
+callback declares sticking/absorption; the mover owns buffer deletion, as in
+AMPS's second-order and Boris movers. Without that deletion, absorbed
+particles were allocated but absent from every cell list, eventually tripping
+the four-rank `CheckParticleList()` conservation invariant.
+
+The optional executable arguments
+`--moon-integration-test ID --integration-output FILE` are limited to bounded
+M0 diagnostics after the complete `amps_init()` path. They record raw SI
+states and callback results; independent acceptance calculations remain in
+`test/integration_common.py`. Normal no-argument application behavior is
+unchanged. Diagnostic particles follow the compiled production data layout:
+the unity individual-weight correction is initialized only when
+`_INDIVIDUAL_PARTICLE_WEIGHT_MODE_` is `ON`; in the normal Moon `OFF` build no
+such field exists and the block/species production weight applies directly.
+See [`test/README.md`](test/README.md) for the clean-build campaign,
+per-test configurations, preserved artifacts, and exact commands.
+
 ## Capability status
 
 - **VERIFIED locally:** only the narrow kernels that pass implemented U tests:
@@ -505,6 +552,20 @@ rm -rf build
 make -j test_Moon
 ls -l test_Moon.diff
 ```
+
+The four-rank `test_Moon.ref_np4` baseline was deliberately reviewed and
+updated on 2026-10-11 after the production input began selecting the
+force-aware second-order mover. The superseded reference
+(`9386ea2d353db638ce84bf1f202d55cb7276443f800938c6365807be8a8deef3`)
+was generated with the former implicit no-force mover and is not retained as
+an alternative runtime configuration: a no-force production mode would omit
+the configured lunar and non-inertial physics. Before approval, two complete
+four-rank runs reproduced the replacement output byte-for-byte. The reviewed
+replacement reference has SHA-256
+`abc1d9c91f61a1c44e06e98bde8739b2de1650b7a6caef783bb97081f2eb80b4`.
+This is a whole-application regression baseline, not an independent physics
+oracle; future changes still require an explicit review and must never update
+the reference automatically.
 
 ### Debug builds and GDB
 

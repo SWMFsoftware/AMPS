@@ -1,0 +1,19 @@
+{
+  "id": "I09", "name": "Surface interaction and terminal classification",
+  "purpose": "Verify surface outcome accounting and distinguish physical lunar escape from finite-domain loss.",
+  "production_capability": "Installed sphere callback and production mover terminal path.",
+  "production_entry_points": ["Moon::Planet->ParticleSphereInteraction", "PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder"],
+  "configuration": "Normal SPICE neutral-Na baseline; 4096 surface trials; two fixtures immediately inside the production +30 R_Moon sunward boundary.",
+  "inputs": ["seed 731993", "incident speed 1000 m/s", "exit speeds 100 and 1000 m/s"],
+  "independent_reference": "Status conservation, outward-normal invariant, and Moon-relative inertial specific energy |v_LSO+Omega cross r|^2/2-GM/r.",
+  "units": "m, m s^-1, J kg^-1", "frame_time_convention": "Positions/velocities recorded in LSO; energy velocity transformed to Moon-relative inertial components.",
+  "deterministic_stochastic_controls": "Frozen RNG seed 731993 and 4096 trials.",
+  "procedure": "Sample surface callback; drive two states through the same domain terminal status; label by pre-exit energy sign.",
+  "metrics": ["accounted outcomes", "inward emissions", "specific-energy signs", "terminal statuses", "compiled AMPS domain-loss and normal-completion status values"],
+  "acceptance_criteria": "All 4096 outcomes accounted; no unknown/inward re-emission; both exits equal the compiled _PARTICLE_LEFT_THE_DOMAIN_ status and not the compiled normal-completion status; physical fixture energy >0 and numerical-loss energy <=0.",
+  "expected_pass_result": "Surface outcomes conserve counts and terminal loss labels are physically distinct.",
+  "expected_failure_modes": ["unknown callback result", "inward emission", "frame-transform omission", "wrong energy sign", "fixture fails to exit"],
+  "required_data": ["DE421 kernels"], "data_hashes": "run manifest", "predecessor_gates": ["U12", "I01", "I02", "I05"],
+  "artifacts": ["receipt.txt", "result.json", "run_manifest.json"],
+  "status_semantics": "PASS verifies classification and callback behavior; it is not the later global surface-reservoir conservation gate."
+}

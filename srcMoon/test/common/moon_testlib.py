@@ -650,6 +650,139 @@ def run_source_guard(
     return {"status": status, "checks": checks}
 
 
+def _parse_linked_receipt(path: Path) -> dict[str, Any]:
+    """Parse the raw key/value receipt emitted by MoonIntegrationTests.cpp."""
+    values: dict[str, Any] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        key, text = line.split("=", 1)
+        if "," in text:
+            values[key] = [float(item) for item in text.split(",")]
+        else:
+            try:
+                values[key] = float(text)
+            except ValueError:
+                values[key] = text
+    return values
+
+
+def run_linked_los(acceptance: dict[str, Any], build_dir: Path,
+                   output_root: Path) -> dict[str, Any]:
+    """Exercise U01 through the initialized Moon executable and LOS service.
+
+    The ordinary fixture checks analytical sphere/domain clipping invariants.
+    A separate process starts inside the opaque sphere and must be rejected by
+    the production fatal guard.  It is separate because that guard terminates
+    MPI by design; treating its nonzero exit as expected is confined to this
+    explicitly declared negative fixture.
+    """
+    executable = build_dir.parent / "amps"
+    if not executable.is_file():
+        return {"status": "SKIPPED", "reason": f"linked Moon executable is missing: {executable}"}
+    work = output_root / "U01"
+    work.mkdir(parents=True, exist_ok=True)
+    receipt_path = work / "receipt.txt"
+    common = ["mpiexec", "-n", "1", str(executable),
+              "--integration-output", str(receipt_path)]
+    environment = os.environ.copy(); environment["OMP_NUM_THREADS"] = "1"
+    with (work / "stdout.log").open("w", encoding="utf-8") as stdout, (work / "stderr.log").open("w", encoding="utf-8") as stderr:
+        completed = subprocess.run(common[:4] + ["--moon-integration-test", "U01"] + common[4:],
+                                   cwd=work, env=environment, stdout=stdout,
+                                   stderr=stderr, check=False)
+    if completed.returncode != 0 or not receipt_path.is_file():
+        return {"status": "ERROR", "reason": f"linked U01 fixture exited {completed.returncode}",
+                "stdout": str(work / "stdout.log"), "stderr": str(work / "stderr.log")}
+    receipt = _parse_linked_receipt(receipt_path)
+    radius = 1737.10e3
+    relative = lambda actual, expected: abs(actual-expected)/expected
+    checks = {
+        "radial_surface_clip": receipt.get("radial_hit_found") == 1.0 and relative(receipt["radial_hit_path_length_m"], 2.0*radius) <= 1.0e-12,
+        "tangent_path": receipt.get("tangent_found") == 1.0 and relative(receipt["tangent_path_length_m"], 3.0*radius) <= 1.0e-12,
+        "miss_preserves_transverse_coordinate": receipt.get("miss_found") == 1.0 and receipt["miss_start_m"][1] == 2.0*radius and receipt["miss_finish_m"][1] == 2.0*radius,
+        "reversed_ray_advances": receipt.get("reversed_found") == 1.0 and receipt["reversed_finish_m"][0] > receipt["reversed_start_m"][0],
+        "record_layout": receipt.get("record_variable_count") == 4.0 and receipt.get("record_delimiter_count") == 4.0,
+    }
+    # Reuse the cached volume artifact in the same work directory.  The
+    # receipt path differs so a failed negative fixture cannot overwrite the
+    # positive evidence.
+    inside_receipt = work / "inside_receipt.txt"
+    inside_command = ["mpiexec", "-n", "1", str(executable),
+                      "--moon-integration-test", "U01_INSIDE",
+                      "--integration-output", str(inside_receipt)]
+    with (work / "inside_stdout.log").open("w", encoding="utf-8") as stdout, (work / "inside_stderr.log").open("w", encoding="utf-8") as stderr:
+        inside = subprocess.run(inside_command, cwd=work, env=environment,
+                                stdout=stdout, stderr=stderr, check=False)
+    # AMPS's legacy exit() helper passes error code zero to MPI_Abort.  OpenMPI
+    # therefore reports shell status zero even though it did terminate the
+    # process, so the return code is not a valid oracle for this negative
+    # fixture.  Require the exact production guard diagnostic and verify that
+    # execution never reached receipt completion.  This checks the intended
+    # failure mechanism without assuming a particular MPI launcher's mapping
+    # of MPI_Abort(0) to a process exit status.
+    fatal_diagnostic = (
+        "Error: the starting point of the column integration is within "
+        "a internals spherical body"
+    )
+    inside_text = "\n".join(
+        (work / name).read_text(encoding="utf-8", errors="replace")
+        for name in ("inside_stdout.log", "inside_stderr.log")
+    )
+    empty_receipt = inside_receipt.is_file() and inside_receipt.stat().st_size == 0
+    checks["inside_origin_guard"] = fatal_diagnostic in inside_text and empty_receipt
+    return {"status": "PASS" if all(checks.values()) else "FAIL",
+            "checks": checks, "inside_guard_returncode": inside.returncode,
+            "inside_guard_diagnostic_found": fatal_diagnostic in inside_text,
+            "inside_guard_receipt_empty": empty_receipt,
+            "receipt": receipt,
+            "artifacts": [str(work / name) for name in ("receipt.txt", "stdout.log", "stderr.log", "inside_stdout.log", "inside_stderr.log")]}
+
+
+def run_linked_lorentz(acceptance: dict[str, Any], build_dir: Path,
+                       output_root: Path) -> dict[str, Any]:
+    """Isolate the production Na+ Lorentz term in the dedicated ion build."""
+    executable = build_dir.parent / "amps"
+    if not executable.is_file():
+        return {"status": "SKIPPED", "reason": f"linked Moon executable is missing: {executable}"}
+    work = output_root / "U06"; work.mkdir(parents=True, exist_ok=True)
+    receipt_path = work / "receipt.txt"
+    command = ["mpiexec", "-n", "1", str(executable),
+               "--moon-integration-test", "U06",
+               "--integration-output", str(receipt_path)]
+    environment = os.environ.copy(); environment["OMP_NUM_THREADS"] = "1"
+    with (work / "stdout.log").open("w", encoding="utf-8") as stdout, (work / "stderr.log").open("w", encoding="utf-8") as stderr:
+        completed = subprocess.run(command, cwd=work, env=environment,
+                                   stdout=stdout, stderr=stderr, check=False)
+    if receipt_path.is_file():
+        receipt = _parse_linked_receipt(receipt_path)
+        if receipt.get("configuration_error_na_plus_missing") == 1.0:
+            return {"status": "SKIPPED", "reason": "the configured executable has no Na+ species"}
+        if receipt.get("configuration_error_orbit_mode") == 1.0:
+            return {"status": "SKIPPED", "reason": "U06 requires the dedicated no-SPICE Na/Na+ fixture"}
+    else:
+        receipt = {}
+    if completed.returncode != 0:
+        return {"status": "ERROR", "reason": f"linked U06 fixture exited {completed.returncode}",
+                "stdout": str(work / "stdout.log"), "stderr": str(work / "stderr.log")}
+    try:
+        velocity = receipt["velocity_m_s"]
+        electric = receipt["electric_field_v_m"]
+        magnetic = receipt["magnetic_field_t"]
+        vx_b = [velocity[1]*magnetic[2]-velocity[2]*magnetic[1],
+                velocity[2]*magnetic[0]-velocity[0]*magnetic[2],
+                velocity[0]*magnetic[1]-velocity[1]*magnetic[0]]
+        q_over_m = receipt["ion_charge_c"] / receipt["ion_mass_kg"]
+        expected = [q_over_m*(electric[i]+vx_b[i]) for i in range(3)]
+        measured = [receipt["ion_acceleration_m_s2"][i]-receipt["neutral_acceleration_m_s2"][i] for i in range(3)]
+        errors = [abs(measured[i]-expected[i]) /
+                  max(abs(expected[i]), 1.0e-30) for i in range(3)]
+        status = "PASS" if max(errors) <= 1.0e-13 else "FAIL"
+        return {"status": status, "expected_lorentz_m_s2": expected,
+                "measured_lorentz_m_s2": measured,
+                "component_relative_errors": errors,
+                "artifacts": [str(receipt_path), str(work / "stdout.log"), str(work / "stderr.log")]}
+    except (KeyError, TypeError, ZeroDivisionError) as exception:
+        return {"status": "ERROR", "reason": f"invalid U06 receipt: {exception}"}
+
+
 def run_one(
     test_id: str,
     build_dir: Path = DEFAULT_BUILD,
@@ -671,6 +804,10 @@ def run_one(
         result = run_lola_geometry(acceptance, build_dir, output_root)
     elif kind == "source-guard":
         result = run_source_guard(acceptance)
+    elif kind == "linked-executable-los":
+        result = run_linked_los(acceptance, build_dir, output_root)
+    elif kind == "linked-executable-lorentz":
+        result = run_linked_lorentz(acceptance, build_dir, output_root)
     elif kind == "not-implemented":
         result = {
             "status": "SKIPPED",

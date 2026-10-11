@@ -1,0 +1,18 @@
+{
+  "id": "I08", "name": "Ion Lorentz-force mover in analytic uniform fields",
+  "purpose": "Verify a charged Na+ reaches the production Lorentz callback and converges under refinement.",
+  "production_capability": "Na+ mass/charge, uniform E/B fields, Moon acceleration callback, second-order mover midpoint-node wiring.",
+  "production_entry_points": ["Moon::TotalParticleAcceleration", "PIC molecular charge table", "PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder"],
+  "configuration": "Dedicated no-SPICE Na,NA_PLUS fixture; initial radius 100 lunar radii; one gyroperiod; 64/128/256/512 steps. The unchanged <=1% gate rejected the preliminary 32/64/128/256 sequence at 1.705% finest error.",
+  "inputs": ["runtime E", "runtime B", "Na+ q/m", "initial state"],
+  "independent_reference": "Separate high-resolution RK4 integration of the analytic uniform-field q(E+v cross B)/m equation plus lunar point gravity; gravity remains active and is not removed for the test.",
+  "units": "V m^-1, T, C, kg, m, m s^-1, rad s^-1", "frame_time_convention": "Moon-centred nonrotating no-SPICE frame.",
+  "deterministic_stochastic_controls": "One deterministic ion.",
+  "procedure": "Run four production-mover levels over one qB/m period and compare every endpoint to the independent 32768-step reference.",
+  "metrics": ["scaled state errors", "successive ratios"], "acceptance_criteria": "Errors decrease, all three successive ratios are >=3, and the finest scaled state error is <=1%.",
+  "expected_pass_result": "Second-order charged-particle trajectory convergence.",
+  "expected_failure_modes": ["Na+ absent", "zero/wrong charge", "Lorentz branch skipped", "no-force mover", "null or incorrect midpoint AMR node", "nonconvergent state"],
+  "required_data": [], "data_hashes": {}, "predecessor_gates": ["U06", "I01", "I03", "I05"],
+  "artifacts": ["receipt.txt", "result.json", "run_manifest.json"],
+  "status_semantics": "PASS applies only to the dedicated fixture; it does not enable Na+ in the normal baseline."
+}

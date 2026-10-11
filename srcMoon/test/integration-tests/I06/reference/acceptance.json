@@ -1,0 +1,18 @@
+{
+  "id": "I06", "name": "Sun/Earth differential gravity and non-inertial trajectory",
+  "purpose": "Verify U04 terms are applied by the linked mover.",
+  "production_capability": "SPICE state update, Moon force callback, and second-order mover.",
+  "production_entry_points": ["amps_time_step", "Moon::TotalParticleAcceleration", "PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder"],
+  "configuration": "DE421 epoch baseline; shadowed -3 lunar-radii fixture; 300 s with dt=5 s.",
+  "inputs": ["raw SPICE force-state vectors emitted by executable"],
+  "independent_reference": "Separate RK4 integration of point gravity, differential gravity, centrifugal and Coriolis equations.",
+  "units": "m, m s^-1, m s^-2, rad s^-1, s", "frame_time_convention": "Moon-centred rotating LSO; SPICE ET/TDB state frozen by production hook.",
+  "deterministic_stochastic_controls": "Single shadowed particle; no stochastic source.",
+  "procedure": "Advance linked particle and compare with 32768-step independent RK4.",
+  "metrics": ["dimensionless scaled six-state error"], "acceptance_criteria": "Scaled error <=2e-4.",
+  "expected_pass_result": "Linked trajectory agrees with the independent frozen-state ODE.",
+  "expected_failure_modes": ["term omitted", "frame/sign error", "stale SPICE state", "no-force dispatch"],
+  "required_data": ["frozen DE421 kernel set"], "data_hashes": "run manifest",
+  "predecessor_gates": ["U03", "U04", "I05"], "artifacts": ["receipt.txt", "result.json", "run_manifest.json"],
+  "status_semantics": "PASS is linked numerical agreement at this fixture, not long-duration convergence."
+}

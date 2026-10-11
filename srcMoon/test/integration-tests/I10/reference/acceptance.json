@@ -1,0 +1,19 @@
+{
+  "id": "I10", "name": "Production particle-time-step convergence",
+  "purpose": "Establish numerical convergence of the linked M0 force mover.",
+  "production_capability": "Second-order Moon particle mover with SPICE force state.",
+  "production_entry_points": ["amps_time_step", "Moon::TotalParticleAcceleration", "PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder"],
+  "configuration": "Shadowed -3 lunar-radii fixture; 300 s; 15/30/60/120 steps; frozen force state.",
+  "inputs": ["raw production SPICE vectors", "initial six-state"],
+  "independent_reference": "32768-step separate RK4 evaluator of the documented frozen-state ODE.",
+  "units": "m, m s^-1, s", "frame_time_convention": "Moon-centred rotating LSO; ET/TDB state frozen for each diagnostic.",
+  "deterministic_stochastic_controls": "One deterministic shadowed particle at four time-step levels.",
+  "procedure": "Compare all four production endpoints to the independent reference and calculate ratios/orders.",
+  "metrics": ["scaled state error per level", "successive error ratio", "observed order"],
+  "acceptance_criteria": "Errors strictly decrease; each ratio >=3; finest scaled state error <=1%.",
+  "expected_pass_result": "The configured mover exhibits second-order convergence and meets the finest-state tolerance.",
+  "expected_failure_modes": ["no-force dispatch", "first-order convergence", "nonmonotonic error", "wrong force/frame", "domain termination"],
+  "required_data": ["frozen DE421 kernels"], "data_hashes": "run manifest", "predecessor_gates": ["I05", "I06", "I07", "I08", "I09"],
+  "artifacts": ["receipt.txt", "result.json", "run_manifest.json"],
+  "status_semantics": "PASS qualifies the M0 temporal fixture only; AMR convergence remains I11-I13."
+}

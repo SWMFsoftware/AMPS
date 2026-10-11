@@ -19,6 +19,13 @@ separate committed `Na,NA_PLUS` configuration solely to exercise the real ion
 mover in analytic uniform fields; this does not advertise Na+ as enabled in
 the normal production input.
 
+The production input now explicitly selects
+`PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder`. This is required
+because AMPS's global default is the no-force trajectory/boundary mover; merely
+installing `Moon::TotalParticleAcceleration` does not cause that default mover
+to call it. I05-I10 therefore test the same force-aware mover selected for
+ordinary Moon particles, rather than a test-only integration path.
+
 ## Layout
 
 Each frozen test ID has its own directory:
@@ -203,6 +210,17 @@ ls -l test_Moon.diff
 The required regression result is a zero-byte `test_Moon.diff`.  Preserve its
 build log under `test_output/srcMoon/`.
 
+The reviewed four-rank reference was updated on 2026-10-11 for the production
+force-aware mover after two complete runs produced identical bytes. Its
+SHA-256 is
+`abc1d9c91f61a1c44e06e98bde8739b2de1650b7a6caef783bb97081f2eb80b4`.
+The prior no-force reference hash was
+`9386ea2d353db638ce84bf1f202d55cb7276443f800938c6365807be8a8deef3`;
+that physical configuration is intentionally retired rather than preserved as
+a legacy option. The campaign runner only compares output and never rewrites
+the reference. Any later nonzero diff therefore remains a reviewed FAIL, not
+permission for an automatic baseline update.
+
 To run only the currently executable local checks:
 
 ```sh
@@ -234,16 +252,57 @@ CSPICE. It writes `kernel_hashes.json`, component-wise `term_vectors.json`, and
 the complete `result.json`. Missing kernels mean `SKIPPED`; bytes that disagree
 with the contract mean `ERROR`.
 
+### Linked M0 baseline
+
+The linked `I01`-`I10` contracts and individual runners are under
+`integration-tests/`. The campaign entry point performs separate clean builds
+for the normal SPICE baseline, the no-SPICE two-body fixture, and the dedicated
+no-SPICE `Na,NA_PLUS` fixture. It also runs the complete U-series registry,
+reruns U06 in the ion fixture, runs the canonical `test_Moon` regression, and
+restores the normal SPICE build at the end:
+
+```sh
+python3 srcMoon/test/run_tests.py --phase baseline \
+  --output-dir test_output/srcMoon/M0-baseline
+```
+
+Equivalently, call `run_integration_tests.py` directly and optionally provide
+relocated `--spice-path` and `--spice-kernels` roots. Every output directory
+must be new or empty; scientifically meaningful earlier runs are never
+overwritten. The final `baseline_summary.json` reports separate local-
+prerequisite, I01-I10, and combined M0 gate states.
+
+Individual linked runners require an executable built for their declared
+configuration. For example:
+
+```sh
+python3 srcMoon/test/integration-tests/I02/test.py \
+  --amps ./amps --output-dir test_output/srcMoon/I02
+```
+
+Each I-test writes `stdout.log`, `stderr.log`, `receipt.txt`, `result.json`, and
+`run_manifest.json`. I01 additionally writes an identical-control repeat and a
+single-control-change manifest. I09 freezes seed 731993 and classifies a finite
+domain exit as physical lunar escape only when the Moon-relative inertial
+specific energy is positive; LSO velocity is transformed as
+`v_inertial = v_LSO + Omega × r` before applying that criterion.
+
+U01 runs its inside-sphere guard in a separate process. Acceptance requires
+the exact production fatal diagnostic and a zero-byte, incomplete receipt.
+The shell return code is only recorded: the legacy AMPS exit helper invokes
+`MPI_Abort` with error code zero, which OpenMPI may expose as process status
+zero even though the guard terminated execution.
+
 ## Current implementation status
 
 | ID | Scope | Runner state | Meaning |
 |---|---|---|---|
-| U01 | LOS geometry | SKIPPED | No deterministic production ray fixture has been isolated. |
+| U01 | LOS geometry | implemented linked executable fixture | Production ray limits, record layout, and the inside-origin guard are evaluated after full initialization. |
 | U02 | target isolation/wiring | implemented source guard | Configuration evidence only. |
 | U03 | lunar gravity | implemented linked probe | Point-mass kernel at a closed-form point. |
 | U04 | rotating frame | implemented linked probe | Exact J2000/LSO/MOON_ME_DE421 names, kernel hashes, differential gravity, fictitious terms, transform derivative, and orthogonality are checked at the frozen epoch. |
 | U05 | Na radiation pressure/shadow | implemented linked probe | Earth-umbra logic, inverse-square invariant, and absolute Combi-curve agreement to frozen graphical uncertainty; full mover gating remains I07. |
-| U06 | Lorentz force | SKIPPED | Active species list has no ion. |
+| U06 | Lorentz force | implemented for dedicated ion fixture | Normal Na-only builds honestly SKIP; the M0 runner rebuilds with Na/Na+ and evaluates the production force callback. |
 | U07 | refinement selector | implemented linked probe | Current constant callbacks only. |
 | U08 | LOLA geometry | kernel subcheck implemented; campaign SKIPPED | Production parser/decoder/icosphere/writers are exercised, but D01 lacks package README/provenance/QA and I14 is pending. |
 | U09 | terrain shadow | SKIPPED | Prototype is not wired to production; D01/D02 are absent. |

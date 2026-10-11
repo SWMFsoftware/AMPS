@@ -1,0 +1,19 @@
+{
+  "id": "I01", "name": "Reproducible build, configuration, and provenance capture",
+  "purpose": "Make every linked M0 result attributable and reproducible.",
+  "production_capability": "Configured Moon executable and its complete build/run identity.",
+  "production_entry_points": ["Config.pl", "make", "srcMoon/main.cpp"],
+  "configuration": "One MPI rank, one OpenMP thread; neutral-Na SPICE baseline unless a test declares its frozen alternate fixture.",
+  "inputs": ["executable", "input/moon.input", "input/species.input", "both roadmaps", "SPICE kernel tree"],
+  "independent_reference": "SHA-256 and Git object identity.",
+  "units": "not applicable", "frame_time_convention": "Recorded by dependent test.",
+  "deterministic_stochastic_controls": "Rank/thread layout and random seed are mandatory manifest fields.",
+  "procedure": "Hash inputs/executable/data and record command, source state, configuration, species, seed, and layout.",
+  "metrics": ["required manifest fields", "SHA-256 coverage"],
+  "acceptance_criteria": "Every required field and referenced file hash exists; no unhashed external file is accepted.",
+  "expected_pass_result": "A complete run_manifest.json is written.",
+  "expected_failure_modes": ["missing executable", "missing input", "unreadable external data", "incomplete manifest"],
+  "required_data": ["configured SPICE kernels for SPICE runs"], "data_hashes": "captured per run",
+  "predecessor_gates": [], "artifacts": ["run_manifest.json", "result.json"],
+  "status_semantics": "PASS is provenance capture only; a missing required file is ERROR and does not validate physics."
+}

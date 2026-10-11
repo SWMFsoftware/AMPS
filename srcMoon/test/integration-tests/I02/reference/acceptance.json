@@ -1,0 +1,20 @@
+{
+  "id": "I02", "name": "Configured force, photochemistry, and surface dispatch audit",
+  "purpose": "Verify actual baseline callback/source wiring after full initialization.",
+  "production_capability": "Neutral-Na species, spherical boundary, named sources, and photoionization gate.",
+  "production_entry_points": ["amps_init", "Moon::SourceProcesses::totalProductionRate", "Moon::ExospherePhotoionizationLifeTime", "cInternalSphericalData callbacks"],
+  "configuration": "Normal SPICE neutral-Na M0 input; MySource disabled.",
+  "inputs": ["lit +3 lunar radii", "shadow -3 lunar radii"],
+  "independent_reference": "Configured callback/source invariants and the documented LSO lunar-shadow cylinder.",
+  "units": "m, s, particles s^-1", "frame_time_convention": "Moon-centred LSO at configured SPICE epoch.",
+  "deterministic_stochastic_controls": "No random draws.",
+  "procedure": "Initialize production application, inspect installed callbacks, call production source and photo gates.",
+  "metrics": ["species indices", "callback presence", "source rates", "lit/shadow flags"],
+  "acceptance_criteria": "Na is the sole species; surface callbacks exist; total and impact source rates are positive with total>=impact; lit is enabled and shadow disabled.",
+  "expected_pass_result": "All production dispatch invariants hold.",
+  "expected_failure_modes": ["duplicate/missing species", "uninstalled callback", "zero source", "reversed illumination sign"],
+  "required_data": ["DE421 SPICE baseline"], "data_hashes": "run manifest",
+  "predecessor_gates": ["U02", "U14", "U22", "I01"],
+  "artifacts": ["receipt.txt", "result.json", "run_manifest.json", "stdout.log", "stderr.log"],
+  "status_semantics": "PASS requires linked callback execution; source text presence is insufficient."
+}
