@@ -1,5 +1,0 @@
-# WND3D20
-
-the D7 coverage census closes under mesh/tube repartition when weighted independently by open magnetic flux, open area, source incident number/energy flux, observer-footprint exposure, and export support. An event-nominal run fails if any required source, observer, or export support is absent even when its aggregate coverage fractions pass; a sensitivity mask preserves the exact uncovered ledgers, including stable rejected tube/ line IDs and typed reasons. Construction/qualification data reuse, qualification/withheld role confusion, and absolute-log or covariance- normalized overlap mismatch beyond the registered limits also fail. Raw trace count is never accepted as a physical coverage measure. A radial projection rejection retains its stable ID and represented flux/area in the census; explicitly rerouting that ID to a qualified field-aligned channel removes only that rejection and leaves all other resolved routes unchanged.
-
-Run from any directory with `python3 test.py`. The launcher delegates to the global registry, so individual and cumulative gates execute the identical implementation.

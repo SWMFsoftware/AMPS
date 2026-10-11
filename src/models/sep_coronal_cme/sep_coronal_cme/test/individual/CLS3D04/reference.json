@@ -1,6 +1,0 @@
-{
-  "id": "CLS3D04",
-  "first_stage": 2,
-  "expected": "pass",
-  "tolerance_authority": "model/testing_validation.md"
-}

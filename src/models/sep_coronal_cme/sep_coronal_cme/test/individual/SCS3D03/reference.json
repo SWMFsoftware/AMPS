@@ -1,6 +1,0 @@
-{
-  "id": "SCS3D03",
-  "first_stage": 3,
-  "expected": "pass",
-  "tolerance_authority": "model/testing_validation.md"
-}
