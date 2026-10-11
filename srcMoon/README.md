@@ -288,6 +288,15 @@ required before M0 can be called complete.
 `EarthShadowCheck()` implements a cylinder of Earth radius extending
 anti-sunward from Earth; it is not a conical umbra/penumbra model.
 
+The original machine-readable digitization behind the embedded Combi (1997)
+Na radiation-pressure array is unavailable. U05 therefore compares the
+compiled production function with a separately generated two-resolution
+digitization of the published Figure 7 curve. Agreement is assessed at 14
+unobscured velocities using a frozen `0.5 cm s^-2` graphical uncertainty. This
+qualifies the local curve and unit conversion at publication resolution; it
+does not establish exact historical table provenance or the linked mover and
+shadow dispatch required by I07.
+
 ## Sources and particle injection
 
 The configured Na source values are:
@@ -410,7 +419,7 @@ provenance, QA report, and hashes before use.
 | Diviner/dynamic thermal state | no production implementation | required local time/history → K | D03 absent | U10/U11 SKIPPED |
 | lunar gravity | `Moon::TotalParticleAcceleration`; mover macro | m → m s^-2, LSO | deterministic | U03 linked analytic probe; trajectory I05 pending |
 | Sun/Earth differential and rotating forces | `Moon::OrbitalDynamics` helpers; `amps_time_step` populates state | DE421 at fixed UTC; J2000/LSO, m, m/s, rad/s → m/s² | exact seven-file kernel set and hashes frozen in U04 | U04 linked-kernel probe PASS-capable; full executable I06/I10 pending |
-| Na radiation pressure | same kernel plus `Na.h` table | heliocentric radial speed/distance → m/s² | embedded table; deterministic after state | U05 scaling/shadow only; absolute source qualification pending |
+| Na radiation pressure | same kernel plus `Na.h` table | heliocentric radial speed/distance → m/s² | embedded table; Combi Figure 7 digitization and hashes frozen in U05 | U05 local curve/scaling/shadow qualified to graphical uncertainty; linked mover gating I07 pending |
 | Lorentz/ion mover | same kernel; typical or coupled E/B | q, kg, V/m, T, m/s → m/s² | no active ion; D06 ERROR | U06/U18 SKIPPED |
 | surface impact classification | generic surface-interaction callback | species/state/weight → delete or re-emit | Bernoulli RNG | U12 deterministic kernels only; linked statistics I18 pending |
 | sticking/accommodation/re-emission | `Moon.cpp` plus generic callback | K/probability; incident velocity → outward m/s | RNG for decision/speed/direction | U12 control points; distribution/conservation pending |

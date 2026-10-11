@@ -17,9 +17,14 @@ before implementation.
   frame derivative. I06 must still propagate a particle through the actual
   linked AMPS mover and compare the complete trajectory; U04 is not a
   substitute for that wiring test.
-- **U05 / I07:** qualify the absolute Na radiation-pressure table against its
-  authoritative source before testing full mover gating through lunar and
-  terrestrial shadows.
+- **I07 (U05 local prerequisite implemented):** U05 now qualifies 14
+  unobscured points of the absolute one-AU Na radiation-pressure curve against
+  a reproducible 150/300 dpi digitization of Combi et al. (1997), Figure 7,
+  with a predeclared `0.5 cm s^-2` graphical uncertainty. The original
+  machine-readable digitization remains unavailable. I07 must still propagate
+  particles through the actual linked mover and verify force application and
+  suppression through lunar and terrestrial shadows; U05 is not a substitute
+  for that production-wiring test.
 - **U06 / I08:** enable a declared ion species, mass, charge, E/B fixture, and
   compare the production mover with the analytic gyro-orbit.
 - **U07 / I11-I13:** test actual AMR selection and convergence after the

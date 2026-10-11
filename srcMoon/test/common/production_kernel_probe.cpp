@@ -5,6 +5,7 @@
 // below are independent acceptance oracles for deliberately simple fixtures.
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -103,6 +104,44 @@ int radiation_shadow() {
   failures += report("radiation_pressure_inverse_square",
       acceleration_1au / acceleration_2au, 4.0, 1.0e-14);
   return failures == 0 ? 0 : 1;
+}
+
+int radiation_pressure_values(int count, char **velocity_tokens) {
+  // This mode is deliberately only a production-kernel adapter.  The
+  // authoritative Combi-curve values and their digitization uncertainty live
+  // in U05's reference package and are evaluated by the Python runner.  Keeping
+  // expected values out of this executable prevents the embedded production
+  // table from becoming its own oracle.
+  if (count <= 0) {
+    std::fprintf(stderr,
+        "radiation-pressure-values requires at least one velocity in m/s\n");
+    return 2;
+  }
+
+  for (int i = 0; i < count; ++i) {
+    errno = 0;
+    char *end = nullptr;
+    const double velocity_m_s = std::strtod(velocity_tokens[i], &end);
+    if (errno != 0 || end == velocity_tokens[i] || *end != '\0' ||
+        !std::isfinite(velocity_m_s)) {
+      std::fprintf(stderr, "invalid heliocentric velocity: %s\n",
+          velocity_tokens[i]);
+      return 2;
+    }
+
+    // The publication curve and the compiled table are both normalized to
+    // one astronomical unit.  The separate radiation_shadow() fixture tests
+    // the production kernel's inverse-square scaling away from 1 AU.
+    const double acceleration_m_s2 =
+        SodiumRadiationPressureAcceleration__Combi_1997_icarus(
+            velocity_m_s, _AU_);
+    std::printf(
+        "VALUE sodium_radiation_pressure velocity_m_s=%.17e "
+        "acceleration_m_s2=%.17e\n",
+        velocity_m_s, acceleration_m_s2);
+  }
+
+  return 0;
 }
 
 int sodium_sources() {
@@ -501,15 +540,24 @@ int lola_geometry() {
 }  // namespace
 
 int main(int argc, char **argv) {
-  if (argc != 2) {
+  if (argc < 2) {
     std::fprintf(stderr,
         "usage: production_kernel_probe <gravity|mesh-resolution|"
-        "photochemistry|radiation-shadow|rotating-frame|sodium-sources|sticking|"
-        "temperature|lola-geometry>\n");
+        "photochemistry|radiation-shadow|radiation-pressure-values|"
+        "rotating-frame|sodium-sources|sticking|temperature|lola-geometry> "
+        "[mode arguments]\n");
     return 2;
   }
 
   const std::string test(argv[1]);
+  if (test == "radiation-pressure-values") {
+    return radiation_pressure_values(argc - 2, argv + 2);
+  }
+  if (argc != 2) {
+    std::fprintf(stderr, "mode %s does not accept additional arguments\n",
+        argv[1]);
+    return 2;
+  }
   if (test == "gravity") return gravity();
   if (test == "mesh-resolution") return mesh_resolution();
   if (test == "lola-geometry") return lola_geometry();

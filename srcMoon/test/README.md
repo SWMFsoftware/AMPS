@@ -53,10 +53,17 @@ writes JSON artifacts. It does not contain lunar physics.
 `common/production_kernel_probe.cpp` links the generated `libAMPS.a`, so calls
 resolve to the same configured production functions used by `srcMoon`. The
 probe contains only independent expected values and invariant calculations:
-closed-form point gravity, inverse-square ratios, fixed table control points,
-and topology/orientation checks. A probe PASS means only that named kernel and
-fixture passed; it is not a full executable, convergence, conservation, or
-validation result.
+closed-form point gravity, inverse-square ratios, independently sourced table
+control points, and topology/orientation checks. A probe PASS means only that
+named kernel and fixture passed; it is not a full executable, convergence,
+conservation, or validation result.
+
+U05 additionally verifies the absolute one-AU Na radiation-pressure curve
+against a reproducible two-resolution digitization of Combi et al. (1997),
+Figure 7. The historical digitization that produced the embedded array is
+unavailable and is not claimed as provenance. The runner verifies every
+reference SHA-256 before comparing 14 unobscured curve points with the compiled
+production kernel using a predeclared `0.5 cm s^-2` graphical uncertainty.
 
 U08 has an additional two-part status:
 
@@ -214,7 +221,7 @@ with the contract mean `ERROR`.
 | U02 | target isolation/wiring | implemented source guard | Configuration evidence only. |
 | U03 | lunar gravity | implemented linked probe | Point-mass kernel at a closed-form point. |
 | U04 | rotating frame | implemented linked probe | Exact J2000/LSO/MOON_ME_DE421 names, kernel hashes, differential gravity, fictitious terms, transform derivative, and orthogonality are checked at the frozen epoch. |
-| U05 | Na radiation pressure/shadow | implemented linked probe | Earth-umbra logic and inverse-square invariant only. |
+| U05 | Na radiation pressure/shadow | implemented linked probe | Earth-umbra logic, inverse-square invariant, and absolute Combi-curve agreement to frozen graphical uncertainty; full mover gating remains I07. |
 | U06 | Lorentz force | SKIPPED | Active species list has no ion. |
 | U07 | refinement selector | implemented linked probe | Current constant callbacks only. |
 | U08 | LOLA geometry | kernel subcheck implemented; campaign SKIPPED | Production parser/decoder/icosphere/writers are exercised, but D01 lacks package README/provenance/QA and I14 is pending. |

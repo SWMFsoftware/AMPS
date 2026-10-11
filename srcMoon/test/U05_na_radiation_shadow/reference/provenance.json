@@ -1,0 +1,65 @@
+{
+  "dataset": "Combi 1997 sodium radiation-pressure acceleration curve",
+  "interpolation": "none",
+  "manual_digitization": true,
+  "manual_edits_after_generation": false,
+  "measurement_file": "combi_1997_figure7_pixels.json",
+  "measurement_file_sha256": "998765bd2e2182ceafbfd4ec8eb46d8cdb69ed72a09c4541a77f180c5a97398d",
+  "notes": [
+    "The unavailable historical digitization used by Na.cpp is not claimed as provenance.",
+    "This package qualifies the published curve only to its frozen graphical uncertainty."
+  ],
+  "output_files": {
+    "combi_1997_figure7_acceleration.csv": "39fcaf37cef71d212b9fb158ce56f28766420e3e6125a85b5719c965789b0461"
+  },
+  "processing_script": "prepare_reference.py",
+  "processing_script_sha256": "242d18ef84538b792747c0ac25d7efd4e9689fe849b0003f4a1466f0ea7f3f0e",
+  "selection_rule": {
+    "excluded_velocity_km_s": [
+      -10,
+      -5,
+      5,
+      10,
+      15
+    ],
+    "exclusion_reason": "The March/April arrows or circular markers obscure the plotted curve. These exclusions are based only on figure legibility, not agreement with AMPS. Axis endpoints are omitted because the plotted curve merges with the top/side frame.",
+    "included": "Every 5 km/s location from -45 through +45 whose curve trace is not crossed or covered by an annotation arrow or marker in both rasterizations; zero velocity is retained because the minimum is unobscured.",
+    "selected_velocity_km_s": [
+      -45,
+      -40,
+      -35,
+      -30,
+      -25,
+      -20,
+      -15,
+      0,
+      20,
+      25,
+      30,
+      35,
+      40,
+      45
+    ]
+  },
+  "smoothing": "none",
+  "source": {
+    "authors": "M. R. Combi, M. A. DiSanti, and U. Fink",
+    "doi": "10.1006/icar.1997.5832",
+    "figure": "Figure 7, upper panel",
+    "journal": "Icarus 130 (1997), 336-354",
+    "pdf_sha256": "af3becc93b3c3f1bd1a7d0b208a80b2fd7aa4d8399c31e91fc9ac9e121dc30d9",
+    "reproduction": "NASA NTRS report 19990024948, printed page 13, PDF page 25",
+    "title": "The Spatial Distribution of Gaseous Atomic Sodium in the Comae of Comets: Evidence for Direct Nucleus and Extended Plasma Sources",
+    "url": "https://ntrs.nasa.gov/api/citations/19990024948/downloads/19990024948.pdf"
+  },
+  "source_pdf_local_filename": "combi_nasa_report.pdf",
+  "source_pdf_verified_during_generation": true,
+  "synthetic_data_used": false,
+  "transformations": [
+    "PDF page rasterized independently at 150 and 300 dpi",
+    "linear x-axis pixel-to-km/s conversion",
+    "linear y-axis pixel-to-cm/s^2 conversion",
+    "midpoint of visible curve line thickness",
+    "arithmetic mean of the two raster-derived accelerations"
+  ]
+}

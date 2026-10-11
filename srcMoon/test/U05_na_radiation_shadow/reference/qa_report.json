@@ -1,0 +1,35 @@
+{
+  "acceptance_uncertainty_cm_s2": 0.5,
+  "duplicate_velocity_count": 0,
+  "excluded_velocity_km_s": [
+    -10,
+    -5,
+    5,
+    10,
+    15
+  ],
+  "maximum_allowed_cross_raster_difference_cm_s2": 0.5,
+  "maximum_cross_raster_difference_cm_s2": 0.21767095249260393,
+  "point_count": 14,
+  "rejected_or_filtered_point_count": 5,
+  "rejection_basis": "The March/April arrows or circular markers obscure the plotted curve. These exclusions are based only on figure legibility, not agreement with AMPS. Axis endpoints are omitted because the plotted curve merges with the top/side frame.",
+  "selected_velocity_km_s": [
+    -45,
+    -40,
+    -35,
+    -30,
+    -25,
+    -20,
+    -15,
+    0,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45
+  ],
+  "source_pdf_sha256_verified": true,
+  "status": "PASS",
+  "velocity_monotonic": true
+}

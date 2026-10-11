@@ -10,6 +10,7 @@ linked-runtime or observational validation result.
 
 from __future__ import annotations
 
+import csv
 import json
 import hashlib
 import os
@@ -389,6 +390,213 @@ def run_lola_geometry(
     return kernel
 
 
+def run_na_radiation_pressure(
+    acceptance: dict[str, Any], build_dir: Path, output_root: Path
+) -> dict[str, Any]:
+    """Qualify U05 against an independently digitized publication curve.
+
+    The C++ executable remains a thin adapter around the compiled production
+    function.  Expected accelerations are loaded from a reproducibly generated
+    CSV derived from Combi et al. (1997), Figure 7, rather than copied from
+    ``src/species/Na.cpp``.  The reference uncertainty was frozen from raster
+    calibration and line thickness before this comparison is evaluated.
+    """
+    invariant_result = run_probe_case(acceptance, build_dir, output_root)
+    if invariant_result["status"] != "PASS":
+        return invariant_result
+
+    test_output = output_root / acceptance["id"]
+    test_output.mkdir(parents=True, exist_ok=True)
+    reference_dir = test_directories()[acceptance["id"]] / "reference"
+
+    # A changed reference file without a corresponding reviewed contract is a
+    # provenance failure, not a physics mismatch.  Classify it as ERROR before
+    # invoking the production kernel so altered evidence cannot be scored.
+    reference_hashes: list[dict[str, Any]] = []
+    hash_errors: list[dict[str, str]] = []
+    for relative_name, expected_hash in acceptance["data_hashes"].items():
+        path = reference_dir / relative_name
+        if not path.is_file():
+            hash_errors.append(
+                {"file": relative_name, "reason": "missing reference file"}
+            )
+            continue
+        actual_hash = _sha256(path)
+        matches = actual_hash == expected_hash
+        reference_hashes.append(
+            {
+                "file": relative_name,
+                "sha256": actual_hash,
+                "expected_sha256": expected_hash,
+                "matches_contract": matches,
+            }
+        )
+        if not matches:
+            hash_errors.append(
+                {
+                    "file": relative_name,
+                    "expected_sha256": expected_hash,
+                    "actual_sha256": actual_hash,
+                }
+            )
+
+    if hash_errors:
+        return {
+            "status": "ERROR",
+            "reason": "U05 reference package is missing or fails SHA-256 verification",
+            "reference_hashes": reference_hashes,
+            "reference_errors": hash_errors,
+            "invariant_check": invariant_result,
+        }
+
+    qa_path = reference_dir / acceptance["reference_qa_file"]
+    try:
+        qa = json.loads(qa_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        return {
+            "status": "ERROR",
+            "reason": f"cannot read U05 digitization QA: {error}",
+            "reference_hashes": reference_hashes,
+            "invariant_check": invariant_result,
+        }
+    if qa.get("status") != "PASS":
+        return {
+            "status": "ERROR",
+            "reason": "U05 digitization package QA is not PASS",
+            "reference_qa": qa,
+            "reference_hashes": reference_hashes,
+            "invariant_check": invariant_result,
+        }
+
+    reference_path = reference_dir / acceptance["reference_values_file"]
+    try:
+        with reference_path.open(newline="", encoding="utf-8") as stream:
+            rows = list(csv.DictReader(stream))
+        references = [
+            {
+                "velocity_m_s": 1000.0 * float(row["velocity_km_s"]),
+                "expected_cm_s2": float(row["acceleration_mean_cm_s2"]),
+                "uncertainty_cm_s2": float(row["uncertainty_cm_s2"]),
+            }
+            for row in rows
+        ]
+    except (OSError, KeyError, TypeError, ValueError) as error:
+        return {
+            "status": "ERROR",
+            "reason": f"cannot parse U05 digitized reference: {error}",
+            "reference_hashes": reference_hashes,
+            "invariant_check": invariant_result,
+        }
+    if not references:
+        return {
+            "status": "ERROR",
+            "reason": "U05 digitized reference contains no comparison points",
+            "reference_hashes": reference_hashes,
+            "invariant_check": invariant_result,
+        }
+
+    executable, compile_result = compile_probe(build_dir, output_root)
+    if executable is None:
+        return {
+            **compile_result,
+            "reference_hashes": reference_hashes,
+            "invariant_check": invariant_result,
+        }
+    command = [str(executable), "radiation-pressure-values"] + [
+        f"{item['velocity_m_s']:.17g}" for item in references
+    ]
+    completed = subprocess.run(
+        command, cwd=REPO_ROOT, text=True, capture_output=True, check=False
+    )
+    if completed.returncode != 0:
+        return {
+            "status": "ERROR" if completed.returncode == 2 else "FAIL",
+            "reason": "production radiation-pressure value probe did not complete",
+            "command": command,
+            "returncode": completed.returncode,
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+            "reference_hashes": reference_hashes,
+            "invariant_check": invariant_result,
+        }
+
+    value_pattern = re.compile(
+        r"^VALUE sodium_radiation_pressure "
+        r"velocity_m_s=([+\-0-9.eE]+) acceleration_m_s2=([+\-0-9.eE]+)$"
+    )
+    actual_values: list[tuple[float, float]] = []
+    for line in completed.stdout.splitlines():
+        match = value_pattern.match(line)
+        if match:
+            actual_values.append((float(match.group(1)), float(match.group(2))))
+    if len(actual_values) != len(references):
+        return {
+            "status": "ERROR",
+            "reason": "production probe returned an unexpected number of U05 values",
+            "expected_count": len(references),
+            "actual_count": len(actual_values),
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+            "reference_hashes": reference_hashes,
+            "invariant_check": invariant_result,
+        }
+
+    metrics: list[dict[str, Any]] = []
+    for reference, (actual_velocity, actual_m_s2) in zip(
+        references, actual_values
+    ):
+        expected_velocity = reference["velocity_m_s"]
+        if abs(actual_velocity - expected_velocity) > 1.0e-9:
+            return {
+                "status": "ERROR",
+                "reason": "production probe changed the requested U05 velocity",
+                "requested_velocity_m_s": expected_velocity,
+                "reported_velocity_m_s": actual_velocity,
+                "reference_hashes": reference_hashes,
+                "invariant_check": invariant_result,
+            }
+        actual_cm_s2 = 100.0 * actual_m_s2
+        absolute_error = abs(actual_cm_s2 - reference["expected_cm_s2"])
+        passed = absolute_error <= reference["uncertainty_cm_s2"]
+        metrics.append(
+            {
+                "status": "PASS" if passed else "FAIL",
+                "velocity_m_s": expected_velocity,
+                "actual_cm_s2": actual_cm_s2,
+                "expected_cm_s2": reference["expected_cm_s2"],
+                "absolute_error_cm_s2": absolute_error,
+                "acceptance_uncertainty_cm_s2": reference[
+                    "uncertainty_cm_s2"
+                ],
+            }
+        )
+
+    comparison = {
+        "source": acceptance["independent_reference"],
+        "reference_values_file": str(reference_path),
+        "reference_hashes": reference_hashes,
+        "metrics": metrics,
+    }
+    with (test_output / "radiation_pressure_reference_comparison.json").open(
+        "w", encoding="utf-8"
+    ) as stream:
+        json.dump(comparison, stream, indent=2, sort_keys=True)
+        stream.write("\n")
+
+    return {
+        "status": "FAIL" if any(item["status"] == "FAIL" for item in metrics) else "PASS",
+        "invariant_check": invariant_result,
+        "absolute_curve_check": comparison,
+        "reference_qa": qa,
+        "probe": {
+            "command": command,
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+            "returncode": completed.returncode,
+        },
+    }
+
+
 def run_source_guard(
     acceptance: dict[str, Any], base_directory: Path = REPO_ROOT
 ) -> dict[str, Any]:
@@ -455,6 +663,8 @@ def run_one(
     # readiness from a filename, a downloaded directory, or another test.
     if kind == "linked-production-probe":
         result = run_probe_case(acceptance, build_dir, output_root)
+    elif kind == "na-radiation-pressure-probe":
+        result = run_na_radiation_pressure(acceptance, build_dir, output_root)
     elif kind == "rotating-frame-probe":
         result = run_rotating_frame(acceptance, build_dir, output_root)
     elif kind == "lola-geometry-probe":

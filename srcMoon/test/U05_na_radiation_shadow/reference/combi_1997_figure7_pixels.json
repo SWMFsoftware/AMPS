@@ -1,0 +1,85 @@
+{
+  "source": {
+    "title": "The Spatial Distribution of Gaseous Atomic Sodium in the Comae of Comets: Evidence for Direct Nucleus and Extended Plasma Sources",
+    "authors": "M. R. Combi, M. A. DiSanti, and U. Fink",
+    "journal": "Icarus 130 (1997), 336-354",
+    "doi": "10.1006/icar.1997.5832",
+    "figure": "Figure 7, upper panel",
+    "reproduction": "NASA NTRS report 19990024948, printed page 13, PDF page 25",
+    "url": "https://ntrs.nasa.gov/api/citations/19990024948/downloads/19990024948.pdf",
+    "pdf_sha256": "af3becc93b3c3f1bd1a7d0b208a80b2fd7aa4d8399c31e91fc9ac9e121dc30d9"
+  },
+  "selection_rule": {
+    "included": "Every 5 km/s location from -45 through +45 whose curve trace is not crossed or covered by an annotation arrow or marker in both rasterizations; zero velocity is retained because the minimum is unobscured.",
+    "excluded_velocity_km_s": [-10, -5, 5, 10, 15],
+    "exclusion_reason": "The March/April arrows or circular markers obscure the plotted curve. These exclusions are based only on figure legibility, not agreement with AMPS. Axis endpoints are omitted because the plotted curve merges with the top/side frame.",
+    "selected_velocity_km_s": [-45, -40, -35, -30, -25, -20, -15, 0, 20, 25, 30, 35, 40, 45]
+  },
+  "acceptance_uncertainty_cm_s2": 0.5,
+  "uncertainty_basis": "At 300 dpi the curve half-thickness is at most about 5 pixels, or 0.32 cm/s^2. Axis-location uncertainty contributes less than 0.13 cm/s^2. The frozen 0.5 cm/s^2 bound conservatively covers their sum and the independent 150/300 dpi digitization difference; it was declared before the production comparison was scored.",
+  "maximum_cross_raster_difference_cm_s2": 0.5,
+  "rasterizations": [
+    {
+      "dpi": 150,
+      "page_width_px": 1271,
+      "page_height_px": 1651,
+      "axis": {
+        "x_velocity_min_km_s": -50.0,
+        "x_velocity_max_km_s": 50.0,
+        "x_pixel_at_min": 443.0,
+        "x_pixel_at_max": 888.0,
+        "y_acceleration_min_cm_s2": 0.0,
+        "y_acceleration_max_cm_s2": 50.0,
+        "y_pixel_at_min": 700.0,
+        "y_pixel_at_max": 302.0
+      },
+      "points": [
+        {"target_velocity_km_s": -45, "pixel_x": 465, "curve_y_min_px": 328, "curve_y_max_px": 329},
+        {"target_velocity_km_s": -40, "pixel_x": 488, "curve_y_min_px": 329, "curve_y_max_px": 332},
+        {"target_velocity_km_s": -35, "pixel_x": 510, "curve_y_min_px": 341, "curve_y_max_px": 343},
+        {"target_velocity_km_s": -30, "pixel_x": 532, "curve_y_min_px": 359, "curve_y_max_px": 365},
+        {"target_velocity_km_s": -25, "pixel_x": 554, "curve_y_min_px": 388, "curve_y_max_px": 390},
+        {"target_velocity_km_s": -20, "pixel_x": 576, "curve_y_min_px": 404, "curve_y_max_px": 410},
+        {"target_velocity_km_s": -15, "pixel_x": 599, "curve_y_min_px": 445, "curve_y_max_px": 453},
+        {"target_velocity_km_s": 0, "pixel_x": 666, "curve_y_min_px": 678, "curve_y_max_px": 679},
+        {"target_velocity_km_s": 20, "pixel_x": 754, "curve_y_min_px": 411, "curve_y_max_px": 419},
+        {"target_velocity_km_s": 25, "pixel_x": 777, "curve_y_min_px": 378, "curve_y_max_px": 383},
+        {"target_velocity_km_s": 30, "pixel_x": 799, "curve_y_min_px": 357, "curve_y_max_px": 361},
+        {"target_velocity_km_s": 35, "pixel_x": 821, "curve_y_min_px": 342, "curve_y_max_px": 344},
+        {"target_velocity_km_s": 40, "pixel_x": 844, "curve_y_min_px": 333, "curve_y_max_px": 335},
+        {"target_velocity_km_s": 45, "pixel_x": 866, "curve_y_min_px": 333, "curve_y_max_px": 334}
+      ]
+    },
+    {
+      "dpi": 300,
+      "page_width_px": 2542,
+      "page_height_px": 3301,
+      "axis": {
+        "x_velocity_min_km_s": -50.0,
+        "x_velocity_max_km_s": 50.0,
+        "x_pixel_at_min": 888.0,
+        "x_pixel_at_max": 1776.0,
+        "y_acceleration_min_cm_s2": 0.0,
+        "y_acceleration_max_cm_s2": 50.0,
+        "y_pixel_at_min": 1398.0,
+        "y_pixel_at_max": 605.0
+      },
+      "points": [
+        {"target_velocity_km_s": -45, "pixel_x": 932, "curve_y_min_px": 655, "curve_y_max_px": 659},
+        {"target_velocity_km_s": -40, "pixel_x": 977, "curve_y_min_px": 658, "curve_y_max_px": 664},
+        {"target_velocity_km_s": -35, "pixel_x": 1021, "curve_y_min_px": 682, "curve_y_max_px": 687},
+        {"target_velocity_km_s": -30, "pixel_x": 1066, "curve_y_min_px": 723, "curve_y_max_px": 733},
+        {"target_velocity_km_s": -25, "pixel_x": 1110, "curve_y_min_px": 776, "curve_y_max_px": 780},
+        {"target_velocity_km_s": -20, "pixel_x": 1154, "curve_y_min_px": 811, "curve_y_max_px": 822},
+        {"target_velocity_km_s": -15, "pixel_x": 1199, "curve_y_min_px": 889, "curve_y_max_px": 905},
+        {"target_velocity_km_s": 0, "pixel_x": 1332, "curve_y_min_px": 1354, "curve_y_max_px": 1359},
+        {"target_velocity_km_s": 20, "pixel_x": 1510, "curve_y_min_px": 820, "curve_y_max_px": 835},
+        {"target_velocity_km_s": 25, "pixel_x": 1554, "curve_y_min_px": 757, "curve_y_max_px": 766},
+        {"target_velocity_km_s": 30, "pixel_x": 1598, "curve_y_min_px": 715, "curve_y_max_px": 721},
+        {"target_velocity_km_s": 35, "pixel_x": 1643, "curve_y_min_px": 683, "curve_y_max_px": 687},
+        {"target_velocity_km_s": 40, "pixel_x": 1687, "curve_y_min_px": 665, "curve_y_max_px": 670},
+        {"target_velocity_km_s": 45, "pixel_x": 1732, "curve_y_min_px": 664, "curve_y_max_px": 668}
+      ]
+    }
+  ]
+}

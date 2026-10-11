@@ -1,0 +1,21 @@
+{
+  "dataset": "Combi 1997 sodium radiation-pressure acceleration curve",
+  "files": [
+    {
+      "access_date": "2026-10-10",
+      "bytes": 5064653,
+      "calibration_level": "published literature figure",
+      "coordinates": "heliocentric radial velocity; positive away from the Sun",
+      "filename": "combi_nasa_report.pdf",
+      "figure": "Figure 7 upper panel, printed page 13, PDF page 25",
+      "native_file_type": "PDF 1.4",
+      "native_units": "velocity km/s; acceleration cm/s^2",
+      "product_id": "NASA NTRS 19990024948",
+      "sha256": "af3becc93b3c3f1bd1a7d0b208a80b2fd7aa4d8399c31e91fc9ac9e121dc30d9",
+      "source_doi": "10.1006/icar.1997.5832",
+      "source_url": "https://ntrs.nasa.gov/api/citations/19990024948/downloads/19990024948.pdf",
+      "time_system": "not applicable"
+    }
+  ],
+  "immutable_raw_directory": "/data/vtenishe/moon_validation_data/radiation_pressure/raw"
+}
