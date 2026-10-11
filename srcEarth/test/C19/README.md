@@ -487,6 +487,38 @@ for each unique snapshot epoch:
     run cutoff/direct-access work for the active locations
 ```
 
+The generated deck and executable command both set:
+
+```text
+MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER  COLLECTIVE
+--mode3d-trajectory-snapshot-scheduler COLLECTIVE
+```
+
+This is an execution-memory policy, not a change to C19 physics. `COLLECTIVE` keeps one
+normal distributed AMR mesh and advances the three SMOKE epochs sequentially; the
+existing `MODE3D_MPI_SCHEDULER DYNAMIC` still distributes the many direct-access
+trajectory tasks across ranks within each active epoch. GOES-13 and GOES-15 locations
+at a common timestamp therefore continue to share the identical frozen field.
+
+The explicit policy fixes a concrete regression introduced when every
+`TRAJECTORY + SNAPSHOT_LIST` run began using independent MPI domains. The production
+C19 mesh then occupied approximately 68 GiB per rank; four replicas required roughly
+272 GiB before later arrays on a host with about 251 GiB of physical memory. Linux
+killed one rank during mesh allocation, so AMPS returned 137 with zero model rows.
+The comparison code correctly skipped its model/reference figures because no model
+data existed; plot generation itself had not failed. Restoring distributed mesh
+ownership removes that allocation multiplier without changing mesh resolution,
+angular/energy sampling, trace limits, detector response folding, observations, or
+acceptance gates.
+
+`EPOCH_PARALLEL` remains available only as an explicit opt-in for campaigns whose
+complete mesh has been qualified for per-rank replication. It is not selected by an
+`AUTO` heuristic: memory requirements depend on compiled AMPS cell layouts and
+machine placement, so silently choosing different policies on different hosts would
+make execution provenance ambiguous. Linux `EPOCH_PARALLEL` runs additionally measure
+the first private mesh and refuse remaining replicas if their projected node-local
+footprint exceeds the configured fraction of `MemAvailable`.
+
 The per-epoch location selection is essential. Ordinary `TIME_SERIES` semantics run
 the complete output domain at every snapshot; using that mode directly would produce
 an incorrect `N_snapshots × N_locations` cross-product. `SNAPSHOT_LIST` instead means

@@ -3222,6 +3222,17 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
                uKey=="BACKWARD_MPI_DYNAMIC_CHUNK" || uKey=="BACKWARD_MPI_CHUNK") {
         p.mode3d.mpiDynamicChunk=std::stoi(val);
       }
+      else if (uKey=="MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER" ||
+               uKey=="MODE3D_SNAPSHOT_SCHEDULER") {
+        // This is the outer field-epoch ownership policy, not an alias for the
+        // MODE3D_MPI_SCHEDULER that distributes cutoff/density work inside one
+        // prepared field.  Keep the two controls distinct so choosing DYNAMIC for
+        // trajectory tasks cannot accidentally request a replicated AMR domain.
+        p.mode3d.trajectorySnapshotScheduler=ToUpper(Trim(val));
+      }
+      else if (uKey=="MODE3D_EPOCH_PARALLEL_MEMORY_FRACTION") {
+        p.mode3d.epochParallelMemoryFraction=std::stod(val);
+      }
       else if (uKey.rfind("MODE3D_MESH_",0)==0) {
         // Allow the same mesh-resolution controls in #NUMERICAL for compact test
         // inputs, but keep #MODE3D_MESH as the preferred/documented section.
@@ -3398,6 +3409,13 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
                uKey=="BACKTRACK_MPI_DYNAMIC_CHUNK" || uKey=="BACKTRACK_MPI_CHUNK" ||
                uKey=="BACKWARD_MPI_DYNAMIC_CHUNK" || uKey=="BACKWARD_MPI_CHUNK") {
         p.mode3d.mpiDynamicChunk=std::stoi(val);
+      }
+      else if (uKey=="MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER" ||
+               uKey=="MODE3D_SNAPSHOT_SCHEDULER") {
+        p.mode3d.trajectorySnapshotScheduler=ToUpper(Trim(val));
+      }
+      else if (uKey=="MODE3D_EPOCH_PARALLEL_MEMORY_FRACTION") {
+        p.mode3d.epochParallelMemoryFraction=std::stod(val);
       }
       else rejectUnknownKeyword();
     }
@@ -4023,6 +4041,35 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     if (p.mode3d.mpiDynamicChunk < 0) {
       exit(__LINE__,__FILE__,
            "MODE3D_MPI_DYNAMIC_CHUNK/GRIDLESS_MPI_DYNAMIC_CHUNK/BACKTRACK_MPI_DYNAMIC_CHUNK must be >= 0 (0 means: automatic)");
+    }
+
+    // Normalize the outer snapshot policy independently of the inner task
+    // scheduler.  COLLECTIVE is intentionally the default because it preserves a
+    // single distributed mesh; EPOCH_PARALLEL is accepted only as an explicit
+    // request for one complete private mesh per MPI rank.
+    const std::string snapshotScheduler=
+        ToUpper(Trim(p.mode3d.trajectorySnapshotScheduler));
+    if (snapshotScheduler=="COLLECTIVE" || snapshotScheduler=="SHARED") {
+      p.mode3d.trajectorySnapshotScheduler="COLLECTIVE";
+    }
+    else if (snapshotScheduler=="EPOCH_PARALLEL" ||
+             snapshotScheduler=="EPOCH-PARALLEL" ||
+             snapshotScheduler=="INDEPENDENT") {
+      p.mode3d.trajectorySnapshotScheduler="EPOCH_PARALLEL";
+    }
+    else {
+      std::ostringstream _exit_msg;
+      _exit_msg << "MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER must be COLLECTIVE or "
+                << "EPOCH_PARALLEL (got '"
+                << p.mode3d.trajectorySnapshotScheduler << "')";
+      exit(__LINE__,__FILE__,_exit_msg.str().c_str());
+    }
+
+    if (!(p.mode3d.epochParallelMemoryFraction>0.0) ||
+        !(p.mode3d.epochParallelMemoryFraction<=1.0) ||
+        !std::isfinite(p.mode3d.epochParallelMemoryFraction)) {
+      exit(__LINE__,__FILE__,
+           "MODE3D_EPOCH_PARALLEL_MEMORY_FRACTION must be finite and in (0,1]");
     }
   }
 

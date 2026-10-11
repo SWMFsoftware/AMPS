@@ -35,7 +35,9 @@ int main() {
       "--cutoff-direct-access-adaptive-guard-depth", "2",
       "--cutoff-direct-access-adaptive-tolerance-gv", "0.0025",
       "--cutoff-direct-access-adaptive-relative-tolerance", "0.0002",
-      "--cutoff-direct-access-adaptive-max-samples", "96"});
+      "--cutoff-direct-access-adaptive-max-samples", "96",
+      "--mode3d-trajectory-snapshot-scheduler", "EPOCH_PARALLEL",
+      "--mode3d-epoch-parallel-memory-fraction", "0.70"});
 
   Check(options.cutoffDirectAccessAdaptive==1,
         "adaptive boolean CLI value is preserved");
@@ -49,17 +51,24 @@ int main() {
         "adaptive relative tolerance CLI value is preserved");
   Check(options.cutoffDirectAccessAdaptiveMaxSamples==96,
         "adaptive sample cap CLI value is preserved");
+  Check(options.mode3dTrajectorySnapshotScheduler=="EPOCH_PARALLEL",
+        "Mode3D outer snapshot policy is preserved independently of the inner scheduler");
+  Check(std::fabs(options.mode3dEpochParallelMemoryFraction-0.70)<1.0e-15,
+        "Mode3D epoch-parallel memory ceiling is preserved");
 
   const EarthUtil::CliOptions defaults=Parse({"amps"});
   Check(defaults.cutoffDirectAccessAdaptiveTolerance_GV<0.0 &&
         defaults.cutoffDirectAccessAdaptiveRelativeTolerance<0.0 &&
-        defaults.cutoffDirectAccessAdaptiveMaxSamples<0,
+        defaults.cutoffDirectAccessAdaptiveMaxSamples<0 &&
+        defaults.mode3dTrajectorySnapshotScheduler.empty() &&
+        defaults.mode3dEpochParallelMemoryFraction<0.0,
         "absent Step-5 options retain no-override sentinels");
 
   const std::string help=EarthUtil::HelpMessage("amps");
   Check(help.find("--cutoff-direct-access-adaptive-tolerance-gv")!=std::string::npos &&
         help.find("--cutoff-direct-access-adaptive-relative-tolerance")!=std::string::npos &&
-        help.find("--cutoff-direct-access-adaptive-max-samples")!=std::string::npos,
+        help.find("--cutoff-direct-access-adaptive-max-samples")!=std::string::npos &&
+        help.find("--mode3d-trajectory-snapshot-scheduler")!=std::string::npos,
         "help text exposes all Step-5 convergence controls");
 
   bool negativeSamplesRejected=false;
@@ -79,6 +88,16 @@ int main() {
     nonfiniteToleranceRejected=true;
   }
   Check(nonfiniteToleranceRejected,"non-finite adaptive tolerance is rejected");
+
+  bool invalidMemoryFractionRejected=false;
+  try {
+    (void)Parse({"amps","--mode3d-epoch-parallel-memory-fraction","1.1"});
+  }
+  catch (const std::runtime_error&) {
+    invalidMemoryFractionRejected=true;
+  }
+  Check(invalidMemoryFractionRejected,
+        "epoch-parallel memory fractions above one are rejected");
 
   if (failures!=0) {
     std::cerr << "UDirectionalAccess CLI: " << failures << " failure(s)\n";

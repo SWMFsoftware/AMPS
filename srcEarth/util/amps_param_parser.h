@@ -194,6 +194,10 @@
 //     MODE3D_THREADS          <int>      ! workers per MPI rank; 0 => automatic
 //     MODE3D_MPI_SCHEDULER    DYNAMIC | BLOCK_CYCLIC | STATIC
 //     MODE3D_MPI_DYNAMIC_CHUNK <int>     ! work items per dynamic MPI chunk; cutoff=trajectory tasks, density=locations; 0 => auto
+//     MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER COLLECTIVE | EPOCH_PARALLEL
+//                                        ! ownership of TRAJECTORY+SNAPSHOT_LIST epochs
+//     MODE3D_EPOCH_PARALLEL_MEMORY_FRACTION <double>
+//                                        ! Linux preflight ceiling in (0,1], default 0.80
 //
 //   #MODE3D_MESH                  (optional; only affects -mode 3d AMR mesh build)
 //     MODE3D_MESH_RES_EARTH_RE     <double>   ! requested AMR resolution near 1 Re, in Re
@@ -1471,6 +1475,32 @@ namespace EarthUtil {
     // Chunk size, in global observation locations, for MODE3D_MPI_SCHEDULER=DYNAMIC.
     // 0 means automatic, usually several chunks per worker per rank.
     int mpiDynamicChunk{0};
+
+    // Outer scheduling policy for timestamped TRAJECTORY + SNAPSHOT_LIST runs.
+    //
+    // This setting is deliberately separate from mpiScheduler above.  mpiScheduler
+    // divides trajectory work *within one already prepared magnetic-field epoch*.
+    // This policy decides whether MPI ranks cooperate on that epoch or instead own
+    // different epochs and therefore require complete private AMR domains:
+    //
+    //   COLLECTIVE     all ranks share one distributed mesh and process epochs in
+    //                  sequence; this is the conservative, backward-compatible
+    //                  default and is required for meshes too large to replicate.
+    //   EPOCH_PARALLEL one complete mesh per MPI rank, with a world-communicator
+    //                  queue assigning independent epochs; intended for explicitly
+    //                  qualified small-mesh campaigns such as SA01.
+    //
+    // An explicit default is important: inferring replication from TEMPORAL_MODE
+    // alone caused high-resolution C19 to multiply its mesh footprint by the MPI
+    // rank count and be killed before it could write any model rows.
+    std::string trajectorySnapshotScheduler{"COLLECTIVE"};
+
+    // Maximum fraction of currently available physical memory that the remaining
+    // private-mesh replicas may consume after rank 0 has built the first measured
+    // mesh.  This guard applies only to EPOCH_PARALLEL on Linux, where /proc exposes
+    // both process RSS and MemAvailable.  Keeping the value explicit in provenance
+    // allows a site to reserve more headroom without changing scientific inputs.
+    double epochParallelMemoryFraction{0.80};
   };
 
   //====================================================================================

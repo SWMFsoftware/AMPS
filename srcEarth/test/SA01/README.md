@@ -152,12 +152,20 @@ python3 srcEarth/test/SA01/run_SA01.py \
 ```
 
 The GRIDDED launch enables parallel field initialization and uses the OpenMP
-backtracking backend. `TRAJECTORY + SNAPSHOT_LIST` uses two-level mode-aware
-scheduling: a world-communicator atomic counter assigns one epoch/location at a time
-to each MPI process, while every process owns a complete private mesh and gridded T05
-field for its claimed epoch. OpenMP then distributes that location's energy/direction
-work among the requested workers. A process claims another epoch only after both
-cutoff and density transactions close their uniquely suffixed products.
+backtracking backend. It also writes and passes
+`MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER EPOCH_PARALLEL` explicitly. The application-wide
+default is `COLLECTIVE`; SA01 opts into private meshes because its existing scheduling,
+repeatability evidence, and one-location-per-epoch work decomposition were built for
+this mode. The choice is recorded in both `prepared_run.json` and the executable
+command, so a future default change cannot silently alter campaign ownership.
+
+With `EPOCH_PARALLEL`, a world-communicator atomic counter assigns one complete
+epoch/location transaction at a time to each MPI process, while every process owns a
+private mesh and gridded T05 field for its claimed epoch. OpenMP then distributes that
+location's energy/direction work among the requested workers. A process claims another
+epoch only after both cutoff and density transactions close their uniquely suffixed
+products. This outer epoch policy is separate from `MODE3D_MPI_SCHEDULER DYNAMIC`,
+which divides trajectory work after a field has been prepared.
 
 This epoch ownership is specific to timestamped trajectories. `POINTS` and locations
 within one `SHELLS` snapshot share a field, so density uses finer flattened
@@ -171,6 +179,15 @@ final status. This prevents fields from different epochs from entering the same
 reduction. It increases memory to one complete mesh/compact field per MPI process and
 serializes legacy mesh-cache initialization once to avoid concurrent writes; expensive
 epoch field builds and trajectory calculations remain concurrent.
+
+Before ranks beyond rank 0 allocate their private domains, Linux runs measure the
+first domain's resident-memory increase and project the remaining replicas for each
+shared-memory node. SA01 records the default
+`MODE3D_EPOCH_PARALLEL_MEMORY_FRACTION 0.80`; if projected replicas exceed that share
+of `MemAvailable`, startup fails collectively and recommends `COLLECTIVE`, fewer
+ranks, or a separately justified mesh/resource change. This guard changes no SA01
+physics or acceptance gate. If `/proc` is unavailable, the log says the preflight was
+unavailable and makes no safety claim.
 
 The preserved primary trajectory limit is 300 s.  To close the TIME_LIMIT population
 without weakening `DS_UNRESOLVED_TOL=0.01`, SA01 enables three unresolved-only

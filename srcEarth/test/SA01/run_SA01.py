@@ -235,6 +235,11 @@ def launch_branch(output: Path, spacecraft: str, amps: Path,
         command = [
             "mpiexec", "-n", str(mpi_ranks), str(amps), "-mode", "3d",
             "-i", "input/AMPS_PARAM.in", "-mode3d-field-eval", "INTERPOLATION",
+            # Preserve SA01's explicit private-field-per-rank execution model.  The
+            # application default is COLLECTIVE so another SNAPSHOT_LIST test cannot
+            # accidentally inherit SA01's replicated-memory policy.
+            "-mode3d-trajectory-snapshot-scheduler", "EPOCH_PARALLEL",
+            "-mode3d-epoch-parallel-memory-fraction", "0.80",
             "-density-parallel", "OPENMP", "-density-threads", str(threads),
             "-mode3d-mpi-scheduler", "DYNAMIC", "-mode3d-mpi-dynamic-chunk", "1",
             "-mode3d-mesh-res-earth-re", str(mesh["res_earth_re"]),

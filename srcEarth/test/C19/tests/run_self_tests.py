@@ -357,6 +357,14 @@ def integration_dry_run() -> None:
                 if not re.search(r"^SNAPSHOT_LIST_FILE\s+C19_snapshot_epochs\.txt\s*$",
                                  text, re.MULTILINE):
                     raise SystemExit("GRIDDED batch input does not reference its snapshot list: %s" % path)
+                # The outer policy must remain explicit. C19's complete mesh is too
+                # large to replicate per rank; COLLECTIVE retains one distributed
+                # mesh without altering any directional/energy sample or gate.
+                if not re.search(
+                        r"^MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER\s+COLLECTIVE\s*$",
+                        text, re.MULTILINE):
+                    raise SystemExit(
+                        "GRIDDED C19 input did not require COLLECTIVE snapshot scheduling: %s" % path)
 
         # Single-workflow regression.  P0/P1/P2 are implementation history, not
         # mutually exclusive runner modes.  The ordinary dry run above must therefore
@@ -405,6 +413,12 @@ def integration_dry_run() -> None:
                     raise SystemExit("current GRIDDED workflow did not use 0.025 Re near-Earth mesh")
                 if "-mode3d-mesh-res-boundary-re 1.0" not in joined:
                     raise SystemExit("current GRIDDED workflow did not use 1.0 Re boundary mesh")
+                if "-mode3d-trajectory-snapshot-scheduler COLLECTIVE" not in joined:
+                    raise SystemExit(
+                        "current GRIDDED workflow did not explicitly retain its distributed mesh")
+                if record.get("trajectory_snapshot_scheduler") != "COLLECTIVE":
+                    raise SystemExit(
+                        "GRIDDED command provenance omitted the COLLECTIVE snapshot policy")
             elif record["solver"] == "GRIDLESS":
                 if "-gridless-parallel THREADS" not in joined:
                     raise SystemExit("current GRIDLESS workflow did not request THREADS")

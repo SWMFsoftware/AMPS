@@ -52,6 +52,8 @@
 //     -mode3d-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC> MPI-rank scheduler.
 //       Gridless aliases: -gridless-mpi-scheduler, -gridless-mpi-dynamic-chunk.
 //     -mode3d-mpi-dynamic-chunk <int>                    work items per MPI fetch.
+//     -mode3d-trajectory-snapshot-scheduler <COLLECTIVE|EPOCH_PARALLEL>
+//                                                            outer snapshot ownership.
 //     -mode3d-mesh-res-earth-re <double>                 optional AMR resolution at Earth.
 //     -mode3d-mesh-res-boundary-re <double>              optional AMR resolution at boundary.
 //     -mode3d-mesh-coarsening <LINEAR|LOG|POWER|...>     optional radial coarsening law.
@@ -221,6 +223,29 @@ CliOptions ParseCli(int argc,char** argv) {
       opt.mode3dMpiDynamicChunk=std::stoi(argv[++i]);
       if (opt.mode3dMpiDynamicChunk < 0)
         exit(__LINE__,__FILE__,"-mode3d-mpi-dynamic-chunk must be >= 0 (0 means automatic)");
+    }
+    else if (a=="-mode3d-trajectory-snapshot-scheduler" ||
+             a=="--mode3d-trajectory-snapshot-scheduler" ||
+             a=="-mode3d-snapshot-scheduler" ||
+             a=="--mode3d-snapshot-scheduler") {
+      // Record the outer epoch policy separately from -mode3d-mpi-scheduler.
+      // Conflating the two is unsafe: the inner scheduler can be dynamic while all
+      // ranks still cooperate on one distributed mesh, as C19 requires.
+      if (i+1>=argc)
+        exit(__LINE__,__FILE__,"Missing value after -mode3d-trajectory-snapshot-scheduler");
+      opt.mode3dTrajectorySnapshotScheduler=argv[++i];
+    }
+    else if (a=="-mode3d-epoch-parallel-memory-fraction" ||
+             a=="--mode3d-epoch-parallel-memory-fraction") {
+      if (i+1>=argc)
+        exit(__LINE__,__FILE__,"Missing value after -mode3d-epoch-parallel-memory-fraction");
+      opt.mode3dEpochParallelMemoryFraction=std::stod(argv[++i]);
+      if (!(opt.mode3dEpochParallelMemoryFraction>0.0) ||
+          !(opt.mode3dEpochParallelMemoryFraction<=1.0) ||
+          !std::isfinite(opt.mode3dEpochParallelMemoryFraction)) {
+        exit(__LINE__,__FILE__,
+             "-mode3d-epoch-parallel-memory-fraction must be finite and in (0,1]");
+      }
     }
     else if (a=="-mode3d-mesh-res-earth-re" || a=="--mode3d-mesh-res-earth-re" ||
              a=="-mode3d-mesh-resolution-earth-re" || a=="--mode3d-mesh-resolution-earth-re") {
@@ -939,6 +964,21 @@ std::string HelpMessage(const char* progName) {
   out << "        MODE3D_MPI_DYNAMIC_CHUNK    64        ! 0 = automatic\n";
   out << "        GRIDLESS_MPI_SCHEDULER      DYNAMIC   ! gridless alias\n";
   out << "        GRIDLESS_MPI_DYNAMIC_CHUNK  64\n\n";
+
+  out << "  -mode3d-trajectory-snapshot-scheduler | --mode3d-trajectory-snapshot-scheduler\n";
+  out << "      <COLLECTIVE|EPOCH_PARALLEL>   (optional; default: COLLECTIVE)\n";
+  out << "      Controls only TRAJECTORY + SNAPSHOT_LIST field-epoch ownership.\n";
+  out << "        COLLECTIVE      All MPI ranks share one distributed AMR mesh and process\n";
+  out << "                        epochs sequentially. This conservative default preserves\n";
+  out << "                        historical memory scaling and is required for large meshes.\n";
+  out << "        EPOCH_PARALLEL  Each MPI rank owns a complete private mesh and receives\n";
+  out << "                        independent epochs from a world-communicator work queue.\n";
+  out << "      This is separate from --mode3d-mpi-scheduler, which distributes trajectory\n";
+  out << "      work inside one prepared field epoch. Input-file analogue (#NUMERICAL):\n";
+  out << "        MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER  COLLECTIVE\n";
+  out << "        MODE3D_EPOCH_PARALLEL_MEMORY_FRACTION 0.80\n";
+  out << "      The memory fraction is a Linux preflight ceiling for the measured remaining\n";
+  out << "      private-mesh replicas; it must be finite and in (0,1].\n\n";
 
   out << "  -mode3d-mpi-dynamic-chunk | --mode3d-mpi-dynamic-chunk <N>   (optional; 0=automatic)\n";
   out << "      Set the number of work items fetched per MPI atomic request when the\n";

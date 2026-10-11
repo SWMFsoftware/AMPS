@@ -193,6 +193,10 @@ TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION 0.75
 ! the actual long-trace RK4 |p| spread.  Relaxing this value must be a documented
 ! convergence choice, not a hidden way to make the trap classifier fire.
 TRAP_ENERGY_REL_TOL             1.0e-4
+! C19's production mesh is intentionally shared across MPI ranks.  COLLECTIVE
+! preserves one distributed AMR domain and processes SNAPSHOT_LIST epochs in order;
+! EPOCH_PARALLEL would allocate one complete copy of this large mesh per rank.
+MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER COLLECTIVE
 MODE3D_MPI_SCHEDULER           DYNAMIC
 MODE3D_MPI_DYNAMIC_CHUNK       16
 MODE3D_PARALLEL                THREADS

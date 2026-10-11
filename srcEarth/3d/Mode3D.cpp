@@ -29,6 +29,7 @@
 #include <limits>
 #include <array>
 #include <cstdlib>
+#include <cstdint>
 
 #ifndef _NO_SPICE_CALLS_
 #include "SpiceUsr.h"
@@ -123,6 +124,127 @@ static double MaxAbsDomainFaceRadiusRe(const EarthUtil::AmpsParam& prm) {
   rmax_km = std::max(rmax_km, std::fabs(prm.domain.zMin));
   rmax_km = std::max(rmax_km, std::fabs(prm.domain.zMax));
   return (rEarth_km > 0.0) ? (rmax_km / rEarth_km) : 0.0;
+}
+
+// Read one Linux /proc memory counter and convert its documented KiB unit to bytes.
+// The helper returns false instead of inventing a value when /proc is unavailable or
+// its format differs.  EPOCH_PARALLEL then emits an explicit "preflight unavailable"
+// diagnostic; it never reports that an unmeasured allocation is safe.
+static bool ReadProcMemoryBytes_(const char* path,const char* key,
+                                 std::uint64_t& bytes) {
+  std::ifstream input(path);
+  if (!input) return false;
+
+  std::string line;
+  while (std::getline(input,line)) {
+    std::istringstream fields(line);
+    std::string parsedKey,unit;
+    unsigned long long value=0;
+    if (!(fields>>parsedKey>>value>>unit) || parsedKey!=key) continue;
+    if (unit!="kB") return false;
+    bytes=static_cast<std::uint64_t>(value)*1024ULL;
+    return true;
+  }
+  return false;
+}
+
+static std::string FormatGiB_(std::uint64_t bytes) {
+  std::ostringstream value;
+  value<<std::fixed<<std::setprecision(2)
+       <<static_cast<double>(bytes)/(1024.0*1024.0*1024.0)<<" GiB";
+  return value.str();
+}
+
+static void RequireEpochParallelMeshMemoryCapacity_(
+    const EarthUtil::AmpsParam& prm,int worldRank,
+    std::uint64_t rankZeroRssBefore,bool rankZeroRssBeforeValid) {
+  // Only world rank 0 has built a complete private domain when this function is
+  // called.  Its observed RSS increase is therefore the best available estimate of
+  // the incremental resident footprint of each *remaining* replica; unlike a formula
+  // based on AMR-node counts, it includes the actual compiled block/node layouts.
+  // The estimate is broadcast before another rank is allowed into amps_init_mesh().
+  std::uint64_t meshIncrement=0;
+  int measurementValid=0;
+  if (worldRank==0 && rankZeroRssBeforeValid) {
+    std::uint64_t rssAfter=0;
+    if (ReadProcMemoryBytes_("/proc/self/status","VmRSS:",rssAfter) &&
+        rssAfter>rankZeroRssBefore) {
+      meshIncrement=rssAfter-rankZeroRssBefore;
+      measurementValid=1;
+    }
+  }
+  MPI_Bcast(&measurementValid,1,MPI_INT,0,MPI_COMM_WORLD);
+  MPI_Bcast(&meshIncrement,1,MPI_UNSIGNED_LONG_LONG,0,MPI_COMM_WORLD);
+
+  if (!measurementValid) {
+    if (worldRank==0) {
+      std::cout << "[Mode3D] EPOCH_PARALLEL memory preflight: unavailable; "
+                << "could not measure the first private mesh from Linux /proc. "
+                << "No safety claim is made.\n";
+      std::cout.flush();
+    }
+    return;
+  }
+
+  // Memory is shared per physical host, not per MPI_COMM_WORLD.  Split by shared-
+  // memory domain so a multi-node run checks each host against its own MemAvailable.
+  // On the host containing world rank 0, that first mesh is already resident and is
+  // excluded from remainingReplicas; other hosts still need all local replicas.
+  MPI_Comm nodeComm=MPI_COMM_NULL;
+  MPI_Comm_split_type(MPI_COMM_WORLD,MPI_COMM_TYPE_SHARED,worldRank,
+                      MPI_INFO_NULL,&nodeComm);
+  int nodeRank=0,nodeSize=1;
+  MPI_Comm_rank(nodeComm,&nodeRank);
+  MPI_Comm_size(nodeComm,&nodeSize);
+
+  int rankZeroOnNode=(worldRank==0) ? 1 : 0;
+  int rankZeroOnNodeReduced=0;
+  MPI_Allreduce(&rankZeroOnNode,&rankZeroOnNodeReduced,1,MPI_INT,MPI_MAX,nodeComm);
+  const int remainingReplicas=nodeSize-rankZeroOnNodeReduced;
+
+  int nodeUnsafe=0;
+  if (nodeRank==0) {
+    std::uint64_t available=0;
+    if (ReadProcMemoryBytes_("/proc/meminfo","MemAvailable:",available)) {
+      const long double projected=
+          static_cast<long double>(meshIncrement)*remainingReplicas;
+      const long double ceiling=
+          static_cast<long double>(available)*prm.mode3d.epochParallelMemoryFraction;
+      nodeUnsafe=(projected>ceiling) ? 1 : 0;
+      std::cout << "[Mode3D] EPOCH_PARALLEL memory preflight: measured-private-mesh="
+                << FormatGiB_(meshIncrement)
+                << ", node-local-ranks=" << nodeSize
+                << ", remaining-replicas=" << remainingReplicas
+                << ", projected-additional="
+                << FormatGiB_(meshIncrement*static_cast<std::uint64_t>(remainingReplicas))
+                << ", MemAvailable=" << FormatGiB_(available)
+                << ", allowed-fraction=" << std::fixed << std::setprecision(2)
+                << prm.mode3d.epochParallelMemoryFraction
+                << ", decision=" << (nodeUnsafe ? "REFUSE" : "ALLOW") << ".\n"
+                << std::defaultfloat << std::setprecision(6);
+      std::cout.flush();
+    }
+    else {
+      std::cout << "[Mode3D] EPOCH_PARALLEL memory preflight: unavailable on this "
+                << "host because /proc/meminfo has no MemAvailable value; no safety "
+                << "claim is made.\n";
+      std::cout.flush();
+    }
+  }
+
+  int anyUnsafe=0;
+  MPI_Allreduce(&nodeUnsafe,&anyUnsafe,1,MPI_INT,MPI_MAX,MPI_COMM_WORLD);
+  MPI_Comm_free(&nodeComm);
+  if (anyUnsafe) {
+    std::ostringstream message;
+    message << "EPOCH_PARALLEL refused before allocating the remaining private "
+            << "Mode3D meshes: projected replicas exceed "
+            << prm.mode3d.epochParallelMemoryFraction
+            << " of MemAvailable on at least one host. Use COLLECTIVE for a shared "
+            << "distributed mesh, reduce ranks/mesh size, or set a separately "
+            << "justified memory fraction.";
+    throw std::runtime_error(message.str());
+  }
 }
 
 void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
@@ -1687,12 +1809,13 @@ int Run(const EarthUtil::AmpsParam& prm) {
   //    field, then the cutoff/density solvers distribute the common-epoch trajectory
   //    tasks more finely than a complete snapshot.
   //
-  //    A SNAPSHOT_LIST TRAJECTORY is fundamentally different.  Every selected
-  //    location owns its timestamp and therefore its own immutable field.  In that
-  //    mode each world rank receives a singleton MPI_GLOBAL_COMMUNICATOR and owns a
-  //    complete mesh.  MPI_COMM_WORLD remains available only to the outer dynamic
-  //    epoch queue.  Consequently one rank can hold epoch A while another holds epoch
-  //    B, and all shared-memory workers in either rank see only their rank-local field.
+  //    A SNAPSHOT_LIST TRAJECTORY can use either of two explicit policies.  The
+  //    default COLLECTIVE policy retains one distributed mesh and advances epochs
+  //    sequentially.  EPOCH_PARALLEL is an opt-in throughput policy: each world rank
+  //    receives a singleton MPI_GLOBAL_COMMUNICATOR and owns a complete mesh while
+  //    MPI_COMM_WORLD drives an outer epoch queue.  The distinction is explicit
+  //    because a complete C19 mesh is safe when distributed but cannot be replicated
+  //    once per rank on the validation host.
   //
   // 3. Fill the selected standalone B/E field into the owner-rank DATAFILE cell
   //    buffers.  At this point only the normal distributed set of blocks is
@@ -1720,8 +1843,20 @@ int Run(const EarthUtil::AmpsParam& prm) {
 
   const std::string outputMode=
       EarthUtil::ToUpper(EarthUtil::Trim(prm.output.mode));
-  const bool trajectoryEpochParallel =
+  const bool timestampedTrajectory=
       outputMode=="TRAJECTORY" && Mode3DSnapshotListRequested(prm);
+  const std::string snapshotScheduler=EarthUtil::ToUpper(
+      EarthUtil::Trim(prm.mode3d.trajectorySnapshotScheduler));
+  const bool trajectoryEpochParallel=snapshotScheduler=="EPOCH_PARALLEL";
+
+  // EPOCH_PARALLEL depends on one epoch-specific trajectory workset per private
+  // field.  Refuse it for POINTS, SHELLS, SNAPSHOT, or TIME_SERIES rather than
+  // silently ignoring a misspelled/misplaced performance request.
+  if (trajectoryEpochParallel && !timestampedTrajectory) {
+    throw std::runtime_error(
+        "MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER=EPOCH_PARALLEL requires "
+        "OUTPUT_MODE=TRAJECTORY and TEMPORAL_MODE=SNAPSHOT_LIST");
+  }
 
   // In trajectory-epoch mode MPI_GLOBAL_COMMUNICATOR becomes a singleton on every
   // process.  Do not replace uses of MPI_GLOBAL_COMMUNICATOR inside field/product
@@ -1736,12 +1871,28 @@ int Run(const EarthUtil::AmpsParam& prm) {
   MPI_Comm_rank(MPI_COMM_WORLD,&worldRank);
   MPI_Comm_size(MPI_COMM_WORLD,&worldSize);
 
+  if (worldRank==0) {
+    std::cout << "[Mode3D] TRAJECTORY snapshot scheduling policy: "
+              << snapshotScheduler;
+    if (!timestampedTrajectory)
+      std::cout << " (inactive: run is not TRAJECTORY + SNAPSHOT_LIST)";
+    else if (trajectoryEpochParallel)
+      std::cout << " (one complete private mesh per MPI rank)";
+    else
+      std::cout << " (one distributed mesh; epochs processed sequentially)";
+    std::cout << ".\n";
+    std::cout.flush();
+  }
+
   if (trajectoryEpochParallel) {
     // All singleton ranks consider themselves PIC rank zero.  Several legacy mesh
     // initialization helpers consequently write the same cache/sphere filenames.
     // Initialize complete domains one world rank at a time so the identical files are
     // never created concurrently.  This startup serialization occurs once; expensive
     // per-epoch field construction and tracing below remain concurrent across ranks.
+    std::uint64_t rankZeroRssBefore=0;
+    const bool rankZeroRssBeforeValid=(worldRank==0) &&
+        ReadProcMemoryBytes_("/proc/self/status","VmRSS:",rankZeroRssBefore);
     for (int owner=0;owner<worldSize;++owner) {
       if (worldRank==owner) {
         amps_init_mesh();
@@ -1749,6 +1900,13 @@ int Run(const EarthUtil::AmpsParam& prm) {
         InitSphere();
       }
       MPI_Barrier(MPI_COMM_WORLD);
+      if (owner==0 && worldSize>1) {
+        // Stop before owner 1 enters mesh allocation if observed host capacity is
+        // insufficient.  This ordering converts a late kernel OOM kill into an
+        // actionable, collective startup failure with no partially written products.
+        RequireEpochParallelMeshMemoryCapacity_(
+            prm,worldRank,rankZeroRssBefore,rankZeroRssBeforeValid);
+      }
     }
   }
   else {
@@ -1795,12 +1953,12 @@ int Run(const EarthUtil::AmpsParam& prm) {
 
   int finalStatus = 0;
 
-  // TRAJECTORY/SNAPSHOT_LIST uses a world-communicator work queue whose indivisible
-  // item is one epoch/location transaction.  The queue always hands out one item at a
-  // time: field costs vary strongly by epoch, so a larger chunk would strand work on a
-  // slow rank.  All physics inside the transaction uses the singleton
-  // MPI_GLOBAL_COMMUNICATOR installed above.  POINTS/SHELLS follow the historical
-  // collective snapshot loop and use their finer solver-level schedulers instead.
+  // EPOCH_PARALLEL TRAJECTORY/SNAPSHOT_LIST uses a world-communicator work queue
+  // whose indivisible item is one epoch/location transaction.  COLLECTIVE, including
+  // C19, follows the same sequential snapshot loop as POINTS/SHELLS and lets the
+  // solver-level scheduler divide each epoch's trajectory tasks over the distributed
+  // domain.  Keeping the policies separate avoids coupling mesh replication to the
+  // independently selectable DYNAMIC/BLOCK_CYCLIC/STATIC inner task scheduler.
   std::unique_ptr<Earth::Mode3D::DynamicMpiLocationScheduler> epochScheduler;
   if (trajectoryEpochParallel) {
     epochScheduler.reset(new Earth::Mode3D::DynamicMpiLocationScheduler(

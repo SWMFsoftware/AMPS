@@ -2,57 +2,50 @@
 
 ## Current state
 
-- Status 2026-10-09T20:06Z: corrected HC4 exact repeatability PASSES on both
-  difficult epochs, including repeat, MPI-rank, worker-count and serial/parallel
-  field-initialization controls. All 4800 final direction records, every integrated
-  product, field fingerprints and sampled audits agree exactly; zero unresolved.
-  Fixed-field dt=0.1 versus 0.001 FAILS the unchanged 2% gate (maximum 18.1598%);
-  dt=0.001 versus 0.0005 is running. Earlier pre-fix timestep comparisons remain
-  confounded, not convergence evidence. No gate changed.
-  User explicitly authorized the full campaign and requested an evidence-based fix,
-  permanent regression coverage, and detailed code/README comments.
+- Status 2026-10-11T19:04Z: the earlier QUICK and STANDARD physical campaigns are
+  complete. QUICK completed 59/59 RBSPA and 66/66 RBSPB snapshots; STANDARD
+  completed 251/251 and 261/261. Both native branches exited 0. Both campaign
+  qualification summaries remain `FAIL`: 10/34 observational gates pass, 24/34
+  fail, and the unchanged 2% common-population convergence gate fails. These are
+  retained scientific results, not infrastructure failures and not candidates for
+  gate relaxation.
+- The current change adds an explicit two-level snapshot scheduling policy without
+  altering SA01 physics, sampling, trajectory tolerances, or acceptance gates.
+  `COLLECTIVE` is the safe default and keeps one distributed AMR mesh while all MPI
+  ranks process epochs sequentially. `EPOCH_PARALLEL` is an explicit opt-in for
+  independent epoch teams; it retains the private-domain requirement and now refuses
+  startup when the measured first-domain resident-memory increment projects that the
+  remaining replicas would consume more than the configured fraction of the node's
+  available memory. SA01 preparation records `EPOCH_PARALLEL` and the default 0.80
+  fraction explicitly so its intended cross-epoch parallelism is never inferred.
+- A clean build at current HEAD `af26f41725eb42f15f4d895ee8c916234f177425`
+  passed. Executable SHA-256 is
+  `31ebdbb25327a81a95e324e183fcb0b6180ceeda1af94adb5dfde1d73fabb769`;
+  build log: `test_output/C19_snapshot_policy_20261011/build.log`.
+- C19 was run through the repository test runner after the build using explicit
+  `COLLECTIVE`. It passed the execution/regression contract in 4744.6 s with zero
+  mismatches and zero timeouts. The run produced 12/12 model rows, completed all
+  three field epochs with status 0, passed trajectory-resolution and plot-consistency
+  checks, and generated 27 PNG plus 27 EPS files. C19's provisional observational
+  thresholds were not enforced by the SMOKE profile and its scientific result remains
+  `observational_passed=false`; that distinction is preserved in `C19_result.json`.
+- Per the user instruction, no physical SA01 run was started after this scheduling
+  change. Only SA01's 34 implementation/contract tests were executed; all passed.
 - Standing instructions: `AGENTS.md`.
 - Execution specification: `SA01_TASK.md`.
 - Detailed initial handoff: `/data/vtenishe/GEO/AMPS/handoff.md` (historical state).
 - Target repository: `/data/vtenishe/GEO/AMPS`.
 - Target data package: `/data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926`.
-- Source revision / dirty state: `648f06f341d6e2f2cc9ff18d4ef11633a1142e69`;
-  scheduler changes are in `srcEarth/3d/Mode3D.cpp`, `DensityMode3D.cpp`,
-  `Mode3DParallel.{h,cpp}`, related READMEs, and SA01 contract tests. Pre-existing
-  unrelated dirty files remain preserved; `srcEarth/test/SA01/` and `amps` are untracked.
-- Executable/build state: latest mandatory clean build passed, SHA-256
-  `745fcb14ef5e54ac6e14cea6db9bf454aa0bde3411f49bd42a40458002183986`.
-  Log: `test_output/SA01/build_logs/build_2026-10-09T184947Z.log` (exit 0).
-  Includes unique physical-buffer field writers and read-only forensic audits.
-- Earlier physical SA01 run: the preserved GRIDDED QUICK run in
-  `test_output/SA01/quick_gridded_closure_20261009` stopped at RBSPA snapshot 3/59 with
-  `1/96 > 0.01`; snapshots 1 and 2 from that earlier executable completed. A then-current
-  two-epoch scheduler exercise also stopped strictly at the 10:00 density
-  gate (`1/96 > 0.01`) after both concurrent cutoff products matched prior hashes.
-- Scheduler integration evidence: bounded TRAJECTORY two-rank/eight-thread execution
-  passed with two distinct concurrent epochs and zero unresolved; shared-epoch POINTS
-  one-rank and two-rank density products are byte-identical. Evidence root is
-  `test_output/SA01/scheduler_smoke_20261009`.
-- Latest observational comparison: none recorded.
-- Latest convergence result: bounded fixed-field timestep FAIL; full-population
-  energy/angular refinement has not yet been evaluated.
-- Active full QUICK: `test_output/SA01/quick_unique_hc4_20261009`, runner session
-  31093, RBSPA launcher 1379888, four ranks x six workers; 25/59 RBSPA epochs have
-  completed with status 0. RBSPB (66 epochs) follows sequentially.
-  Active half-step diagnostic: `hc4_unique_dt00005`, launcher 1379955/session 32642,
-  two ranks x two workers. All other bounded diagnostics have exited.
-- Full STANDARD continuation is active and WAITING, not yet physically executing:
-  PID 1385739/session 21878, output `test_output/SA01/standard_unique_hc4_20261009`.
-  Its sibling `.continuation.json` records the exact command and PID start ticks.
-  It waits for both active jobs, then uses four ranks/eight workers, STANDARD
-  energy/angular resolution/cadence, same explicit HC4 dt=0.1 baseline, and generates
-  common-population refinement plus both campaigns' PNG/EPS/report artifacts.
-  The known timestep FAIL is registered for both campaigns; no numerical PASS is implied.
-- Half-step post-processing observer PID 1386624/session 93066 waits for the active
-  diagnostic, then writes `closure_diagnosis_20261009/post_fix_halfstep_comparison.json`.
-- Next action: monitor full QUICK and the fixed-field half-step check, then full
-  STANDARD, common-population refinement and all product comparisons/figures. Keep
-  numerical nonconvergence explicit; repeatability PASS is not qualification.
+- Source dirty state includes this policy implementation and documentation. The
+  pre-existing unrelated `Makefile` modification and generated/untracked files remain
+  preserved and were not incorporated into this work.
+- C19 evidence root:
+  `test_output/C19_snapshot_policy_20261011/C19_goes_epead_ew`; runner report:
+  `test_output/C19_snapshot_policy_20261011/test_runner_report.json`.
+- Next action: make the separately requested small SA01 tweak, then clean-build and
+  execute SA01 under its explicit `EPOCH_PARALLEL` policy. Do not reuse the old
+  executable, infer policy from the presence of a snapshot list, or report the prior
+  execution PASS as scientific qualification.
 
 ## Evidence carried from this conversation
 
@@ -73,15 +66,16 @@ execution is claimed by the preparation of these instructions.
 | Target repository and instructions inspection | Complete | Revision, dirty state, executable/build, process state and available reference implementation inspected 2026-10-08 |
 | Local SA01 data validation | Complete | Package auditor PASS: 14 raw files, 13 processed hashes, 983 complete boundary spectra; report under `test_output/SA01/inspection` |
 | Runner implementation | Complete | SA01-specific prepare/run/compare/plot/common modules, template, README and requirements created |
-| Numerical/interface verification | Complete | 34/34 current SA01 tests pass; existing production/release suites also pass; physical repeatability controls pass exactly |
-| Build / executable verification | Complete | Mandatory clean `make -j` passed; current MPI+OpenMP executable SHA-256 `745fcb14...`; retained build log |
-| QUICK physical run | Running, unqualified baseline | Corrected HC4 RBSPA 25/59 completed; 66 RBSPB epochs follow. Earlier failed outputs preserved; no gate relaxed |
-| STANDARD RBSPA run | Queued | Recorded continuation waits for QUICK and half-step diagnosis |
-| STANDARD RBSPB run | Queued | Follows STANDARD RBSPA sequentially |
-| Observational comparisons | Pending | No model results |
-| Visualization | Pending | No model/reference figures |
-| Numerical convergence | Bounded timestep FAIL; campaign pending | Corrected fixed-field dt=0.1/0.001 maximum 18.1598%; half-step running; full-population refinement pending |
-| Final report and documentation | Pending | Needs actual outcomes |
+| Numerical/interface verification | Complete for implementation | 34/34 current SA01 tests pass; prior physical repeatability controls pass exactly; new policy is covered by parser/CLI and source-contract tests |
+| Build / executable verification | Complete | Mandatory clean `make -j` passed; current MPI+OpenMP executable SHA-256 `31ebdbb...`; retained C19-policy build log |
+| QUICK physical run | Complete, unqualified baseline | Corrected HC4 completed RBSPA 59/59 and RBSPB 66/66; native runs PASS, campaign qualification FAIL |
+| STANDARD RBSPA run | Complete, unqualified baseline | Corrected HC4 completed 251/251 snapshots; native run PASS |
+| STANDARD RBSPB run | Complete, unqualified baseline | Corrected HC4 completed 261/261 snapshots; native run PASS |
+| Observational comparisons | Complete, FAIL | QUICK and STANDARD each pass 10/34 unchanged gates and fail 24/34 |
+| Visualization | Complete for prior campaigns | Reports and PNG/EPS artifacts exist under both completed campaign roots |
+| Numerical convergence | FAIL | Fixed-field timestep and full common-population refinement fail the unchanged 2% criterion |
+| Snapshot-policy validation | C19 PASS; SA01 deferred | C19 collective run passed and generated 54 plots; no physical SA01 run was started after the policy change |
+| Final report and documentation | Complete for this policy change | Runtime policy is documented in Mode3D, srcEarth, C19, and SA01 READMEs; this journal records exact evidence and scientific limitations |
 
 ## Session history
 
@@ -1433,3 +1427,59 @@ Use actual timestamps and observed evidence. Remove no previous session entry.
   active runner exists. Inspect the actual half-step JSON when generated and both
   campaigns' `qualification_summary.json`/reports/PNG/EPS after STANDARD finishes.
   Preserve numerical FAIL; further convergence studies require explicit new roots.
+
+### 2026-10-11T19:04Z — Explicit snapshot scheduling policy and C19 validation
+
+- Goal: remove the unsafe implicit rule that made every trajectory snapshot-list run
+  allocate a private full AMR domain per MPI rank, while preserving C19 and SA01 as
+  integral validation workloads with unchanged physics, sampling, and scientific
+  gates.
+- Repository revision and dirty state: HEAD
+  `af26f41725eb42f15f4d895ee8c916234f177425`; the pre-existing unrelated `Makefile`
+  modification and generated/untracked files were preserved. Policy changes affect
+  Mode3D configuration/dispatch, CLI and input parsing, C19/SA01 launch provenance,
+  contract tests, and the corresponding READMEs.
+- Policy implemented: `MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER=COLLECTIVE` is the safe
+  default. It creates one domain distributed across the MPI communicator and processes
+  snapshot epochs sequentially with all ranks. `EPOCH_PARALLEL` must be selected
+  explicitly, keeps the existing private-domain execution contract, and is rejected
+  for incompatible Mode3D workflows. The inner trajectory scheduler
+  (`MODE3D_MPI_SCHEDULER`) remains independent of this outer snapshot policy.
+- Memory safety implemented for `EPOCH_PARALLEL`: after the first private domain is
+  built, each shared-memory node measures the rank-zero resident-memory increment and
+  projects the remaining replicas. On Linux, startup is refused collectively if the
+  projected allocation exceeds `MODE3D_EPOCH_PARALLEL_MEMORY_FRACTION` times
+  `/proc/meminfo` `MemAvailable` (default 0.80). If `/proc` telemetry is unavailable,
+  the code reports that the preflight is unavailable and makes no false safety claim.
+- Quality boundary: C19 explicitly requests `COLLECTIVE`; SA01 preparation and launch
+  explicitly request `EPOCH_PARALLEL` with fraction 0.80. No grid resolution,
+  trajectory integrator, timestep, trace limit, energy/angular sampling, comparison
+  threshold, or PASS/FAIL interpretation was changed.
+- Verification commands and results: C19 self-tests PASS; SA01 unit/contract tests
+  34/34 PASS; `UDirectionalAccess/run_test.sh` PASS including U-F14--U-F18 and C8;
+  source whitespace checks PASS. The mandatory clean `make -j` completed with exit 0.
+  Executable SHA-256 is
+  `31ebdbb25327a81a95e324e183fcb0b6180ceeda1af94adb5dfde1d73fabb769`;
+  build log is `test_output/C19_snapshot_policy_20261011/build.log`.
+- Physical C19 result: repository test runner exit 0 after 4744.6 s, one expected PASS
+  and one actual PASS, zero mismatches/timeouts. The collective mesh contained 330856
+  blocks and completed the three T05 epochs with status 0. C19 produced 12 model rows,
+  12 reference rows, zero run failures, `trajectory_resolution_passed=true`, and
+  consistent plotted/direct row counts. It generated 27 PNG and 27 EPS files.
+- Scientific interpretation: C19's SMOKE profile leaves provisional observational
+  thresholds unenforced. `C19_result.json` therefore records execution complete and
+  numerically complete but `observational_passed=false` and `passed=false`; four of
+  the six reported aggregate metric groups pass their provisional thresholds. The
+  repository runner PASS verifies the C19 execution/regression contract and restored
+  plot production, not publication-grade observational agreement.
+- Evidence: `test_output/C19_snapshot_policy_20261011/test_runner_report.json`,
+  `test_output/C19_snapshot_policy_20261011/runner_logs/`, and
+  `test_output/C19_snapshot_policy_20261011/C19_goes_epead_ew/C19_result.json`.
+  Comparison plot:
+  `test_output/C19_snapshot_policy_20261011/C19_goes_epead_ew/C19_comparison_gridded_t05.png`.
+- SA01 execution state: no physical SA01 campaign was run in this stage, per the user
+  instruction that SA01 requires a small additional tweak first. The earlier completed
+  QUICK/STANDARD results remain preserved and scientifically unqualified.
+- Exact next action: implement and verify the requested SA01 tweak, perform the
+  mandated clean rebuild, then run SA01 from a new evidence root using the explicit
+  `EPOCH_PARALLEL` policy and retain the memory-preflight record.

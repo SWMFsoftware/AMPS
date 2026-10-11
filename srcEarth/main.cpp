@@ -334,6 +334,39 @@ bool ApplyMode3DMeshResolutionCli(const EarthUtil::CliOptions& cli,
 }
 
 
+bool ApplyMode3DSnapshotSchedulerCli(const EarthUtil::CliOptions& cli,
+                                     EarthUtil::AmpsParam& p) {
+  // Merge the command-line override for the *outer* snapshot scheduler after the
+  // AMPS_PARAM deck has been parsed.  This policy is intentionally Mode3D-only and
+  // intentionally separate from ApplyCommonBackwardCli(): GRIDLESS has no AMR domain
+  // to distribute or replicate, and MODE3D_MPI_SCHEDULER controls the finer work
+  // inside one prepared epoch rather than ownership of field epochs themselves.
+  if (!cli.mode3dTrajectorySnapshotScheduler.empty()) {
+    const std::string value=
+        EarthUtil::ToUpper(TrimCliWhitespace(cli.mode3dTrajectorySnapshotScheduler));
+    if (value=="COLLECTIVE" || value=="SHARED") {
+      p.mode3d.trajectorySnapshotScheduler="COLLECTIVE";
+    }
+    else if (value=="EPOCH_PARALLEL" || value=="EPOCH-PARALLEL" ||
+             value=="INDEPENDENT") {
+      p.mode3d.trajectorySnapshotScheduler="EPOCH_PARALLEL";
+    }
+    else {
+      std::cerr << "Error: unknown --mode3d-trajectory-snapshot-scheduler '"
+                << cli.mode3dTrajectorySnapshotScheduler
+                << "'. Valid values: COLLECTIVE or EPOCH_PARALLEL.\n";
+      return false;
+    }
+  }
+
+  if (cli.mode3dEpochParallelMemoryFraction>0.0) {
+    p.mode3d.epochParallelMemoryFraction=
+        cli.mode3dEpochParallelMemoryFraction;
+  }
+  return true;
+}
+
+
 bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
                             EarthUtil::AmpsParam& p,
                             const char* modeName) {
@@ -2281,6 +2314,7 @@ int main(int argc,char **argv) {
         // and the dynamic MPI scheduler controls.
         if (!ApplyCommonBackwardCli(cli,p,"mode 3d")) return 1;
         if (!ApplyMode3DMeshResolutionCli(cli,p)) return 1;
+        if (!ApplyMode3DSnapshotSchedulerCli(cli,p)) return 1;
 
         // Mode3D-specific CLI overrides. Defaults are deliberately conservative:
         // do not write the potentially large initialized-mesh Tecplot file, and

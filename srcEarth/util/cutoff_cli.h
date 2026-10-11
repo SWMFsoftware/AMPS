@@ -103,6 +103,15 @@
 //   -mode3d-mpi-dynamic-chunk <int>
 //       Number of dynamic MPI work items per fetch. Mode3D cutoff uses flattened trajectory tasks; Mode3D density/flux uses locations. 0 means automatic.
 //
+//   -mode3d-trajectory-snapshot-scheduler <COLLECTIVE|EPOCH_PARALLEL>
+//       Select field-epoch ownership for TRAJECTORY + SNAPSHOT_LIST. COLLECTIVE
+//       keeps one distributed mesh; EPOCH_PARALLEL explicitly replicates one full
+//       mesh per MPI rank and assigns independent epochs to those ranks.
+//
+//   -mode3d-epoch-parallel-memory-fraction <fraction>
+//       Limit the measured additional private-mesh allocation to this fraction of
+//       currently available host memory. Valid range (0,1], default from input: 0.80.
+//
 //   -cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|DIRECT_ACCESS|RIGIDITY_LIST|BINARY>
 //       Select the cutoff-rigidity product. UPPER_SCAN returns the upper penumbra
 //       edge; PENUMBRA_SCAN evaluates the full access sequence; DIRECT_ACCESS writes
@@ -312,6 +321,18 @@ namespace EarthUtil {
     // Number of locations/tasks fetched per MPI atomic request in DYNAMIC mode.
     // 0 means: no CLI override / automatic when used from input defaults.
     int mode3dMpiDynamicChunk{0};
+
+    // -mode3d-trajectory-snapshot-scheduler <COLLECTIVE|EPOCH_PARALLEL>
+    // Empty means: retain the input-file value, whose conservative default is
+    // COLLECTIVE.  This is intentionally independent of mode3dMpiScheduler:
+    // the latter divides tasks inside one field epoch, while this option decides
+    // whether complete magnetic-field domains are distributed or replicated.
+    std::string mode3dTrajectorySnapshotScheduler{""};
+
+    // -mode3d-epoch-parallel-memory-fraction <fraction>
+    // Negative means no CLI override.  A supplied value must be finite and in
+    // (0,1].  The runtime consumes it only for EPOCH_PARALLEL preflight checks.
+    double mode3dEpochParallelMemoryFraction{-1.0};
 
     // -cutoff-debug-scan <lon_deg> <lat_deg> <alt_km>
     // Optional Mode3D cutoff diagnostic.  When enabled, rank 0 writes a rigidity

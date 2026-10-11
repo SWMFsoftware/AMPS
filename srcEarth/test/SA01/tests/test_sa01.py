@@ -134,6 +134,8 @@ class SA01Tests(unittest.TestCase):
             ),
             "PARALLEL_BLOCK": (
                 "  DENSITY_PARALLEL OPENMP\n  DENSITY_THREADS 8\n"
+                "  MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER EPOCH_PARALLEL\n"
+                "  MODE3D_EPOCH_PARALLEL_MEMORY_FRACTION 0.80\n"
                 "  MODE3D_MPI_SCHEDULER DYNAMIC\n  MODE3D_MPI_DYNAMIC_CHUNK 1"
             ),
         }
@@ -142,6 +144,9 @@ class SA01Tests(unittest.TestCase):
         self.assertIn("TEMPORAL_MODE SNAPSHOT_LIST", deck)
         self.assertIn("MODE3D_MESH_RES_EARTH_RE 0.05", deck)
         self.assertIn("DENSITY_PARALLEL OPENMP", deck)
+        self.assertIn(
+            "MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER EPOCH_PARALLEL", deck
+        )
         self.assertIn("DS_FAIL_ON_UNRESOLVED T", deck)
         self.assertIn("DS_UNRESOLVED_EXTENSION_PASSES 3", deck)
         self.assertIn("TRAP_DRIFT_DETECTION T", deck)
@@ -169,7 +174,11 @@ class SA01Tests(unittest.TestCase):
         multi-epoch production run.
         """
         mode3d = (AMPS_ROOT / "srcEarth/3d/Mode3D.cpp").read_text(encoding="utf-8")
-        self.assertIn('outputMode=="TRAJECTORY" && Mode3DSnapshotListRequested(prm)', mode3d)
+        self.assertIn('snapshotScheduler=="EPOCH_PARALLEL"', mode3d)
+        self.assertIn(
+            'outputMode=="TRAJECTORY" && Mode3DSnapshotListRequested(prm)',
+            mode3d,
+        )
         self.assertIn("PIC::InitMPI(/*independentDomainMode=*/trajectoryEpochParallel)", mode3d)
         self.assertIn("MPI_COMM_WORLD,static_cast<long long>(snapshotEpochs.size()),1", mode3d)
         self.assertIn("MPI_Barrier(MPI_COMM_WORLD);", mode3d)

@@ -160,9 +160,14 @@ def prepare_branch(validation_root: Path, output_root: Path, spacecraft: str,
         # locations.  A SNAPSHOT_LIST trajectory contains one active location per
         # epoch, so OPENMP is selected deliberately: its inner energy/direction loops
         # use the requested workers while all of them read the same immutable grid.
+        # SA01 also opts into EPOCH_PARALLEL explicitly.  This keeps its previously
+        # qualified private-field execution model after the application default moved
+        # to memory-safe COLLECTIVE; it must not be inferred from SNAPSHOT_LIST alone.
         parallel_block = "\n".join((
             "  DENSITY_PARALLEL OPENMP",
             f"  DENSITY_THREADS {threads}",
+            "  MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER EPOCH_PARALLEL",
+            "  MODE3D_EPOCH_PARALLEL_MEMORY_FRACTION 0.80",
             "  MODE3D_MPI_SCHEDULER DYNAMIC",
             "  MODE3D_MPI_DYNAMIC_CHUNK 1",
         ))
@@ -223,6 +228,8 @@ def prepare_branch(validation_root: Path, output_root: Path, spacecraft: str,
             "coarsening": mesh_coarsening,
             "exponent": mesh_exponent,
             "parallel_field_initialization": True,
+            "trajectory_snapshot_scheduler": "EPOCH_PARALLEL",
+            "epoch_parallel_memory_fraction": 0.80,
         } if solver == "GRIDDED" else None),
         # Record the closure policy independently of the rendered input hash so reports
         # can distinguish the preserved 300-s primary classification from the bounded

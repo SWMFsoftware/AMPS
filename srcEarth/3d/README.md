@@ -31,9 +31,20 @@ quadrature, transmission diagnostics, and unresolved bounds come from
 Mode3D cannot use one MPI decomposition for every output geometry because the field
 epoch is part of the immutable trajectory state.
 
-For `OUTPUT_MODE=TRAJECTORY` with `TEMPORAL_MODE=SNAPSHOT_LIST`, each selected
-trajectory row owns a different epoch. `Mode3D::Run()` therefore initializes AMPS in
-independent-domain mode: every MPI process owns a complete mesh and a singleton
+`OUTPUT_MODE=TRAJECTORY` with `TEMPORAL_MODE=SNAPSHOT_LIST` has an explicit outer
+field-epoch policy, configured with:
+
+```text
+MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER  COLLECTIVE | EPOCH_PARALLEL
+```
+
+`COLLECTIVE` is the conservative default. All MPI ranks retain the normal distributed
+AMPS domain, process snapshot epochs in sequence, and cooperate on the trajectory work
+inside each epoch. This preserves historical memory scaling and supports large meshes
+such as C19: total mesh state is distributed rather than multiplied by the rank count.
+
+`EPOCH_PARALLEL` is an explicit throughput optimization for qualified small-mesh
+campaigns. Every MPI process owns a complete mesh and a singleton
 `MPI_GLOBAL_COMMUNICATOR`. A dynamic RMA counter on `MPI_COMM_WORLD` assigns exactly
 one epoch/location transaction per fetch. The winning rank builds that epoch's private
 gridded field, executes cutoff and density products, writes the uniquely suffixed
@@ -43,10 +54,21 @@ Physics collectives inside the transaction must remain on the singleton communic
 using `MPI_COMM_WORLD` there would mix different epochs or deadlock ranks that advance
 at different rates.
 
+The outer policy is independent of `MODE3D_MPI_SCHEDULER`. The latter selects
+`DYNAMIC`, `BLOCK_CYCLIC`, or `STATIC` work sharing *within one prepared epoch*; it
+never authorizes mesh replication. `EPOCH_PARALLEL` is rejected unless both
+`OUTPUT_MODE=TRAJECTORY` and `TEMPORAL_MODE=SNAPSHOT_LIST` are active, preventing a
+performance option from being silently ignored in an incompatible geometry.
+
 Independent ranks all appear as PIC rank zero, so legacy initialization helpers would
 otherwise create the same mesh-cache and sphere files concurrently. Complete-domain
-initialization is serialized once in world-rank order. This affects startup only;
-field construction and trajectory calculations for claimed epochs run concurrently.
+initialization is serialized once in world-rank order. After rank 0 builds the first
+private domain, Linux runs measure its actual RSS increase and compare the projected
+remaining node-local replicas with `MemAvailable`. The default ceiling is 80%, set by
+`MODE3D_EPOCH_PARALLEL_MEMORY_FRACTION`; exceeding it stops collectively before rank 1
+allocates a mesh. If `/proc` is unavailable, the log explicitly says that the preflight
+was unavailable and makes no safety claim. This startup guard does not change mesh
+resolution, trajectory sampling, physics, or acceptance thresholds.
 
 `POINTS` and all locations within one `SHELLS` snapshot share an epoch. These modes
 retain the normal distributed AMPS domain and exploit finer work sharing:

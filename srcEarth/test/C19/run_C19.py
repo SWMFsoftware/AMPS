@@ -1639,6 +1639,9 @@ def command_for(args: argparse.Namespace, amps: Path, solver: str) -> List[str]:
     else:
         command += [
             "-mode3d-field-eval", "MESH",
+            # Repeat the policy on the executable command line so the saved command
+            # proves that this validation never requested full-mesh replication.
+            "-mode3d-trajectory-snapshot-scheduler", "COLLECTIVE",
             "-mode3d-parallel", "THREADS",
             "-mode3d-threads", str(args.nt),
             "-mode3d-mpi-scheduler", args.scheduler,
@@ -7271,6 +7274,12 @@ def render_case_input(
             "MODE3D_MESH_RES_BOUNDARY_RE": "%.12g" % args.mode3d_mesh_res_boundary_re,
             "MODE3D_MESH_COARSENING": args.mode3d_mesh_coarsening,
             "MODE3D_MESH_EXPONENT": "%.12g" % args.mode3d_mesh_exponent,
+            # C19 has multiple spacecraft locations in one field epoch and a
+            # high-resolution mesh whose complete per-rank replication exceeds the
+            # validation host's memory. Outer epoch ownership is therefore an
+            # invariant: ranks share one distributed mesh, while MODE3D_MPI_SCHEDULER
+            # continues to distribute trajectories inside each prepared epoch.
+            "MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER": "COLLECTIVE",
             "MODE3D_MPI_SCHEDULER": args.scheduler,
             "MODE3D_MPI_DYNAMIC_CHUNK": str(resolved_dynamic_chunk(args, solver)),
             "MODE3D_THREADS": str(args.nt),
@@ -9183,6 +9192,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "cwd": str(batch_dir),
                     "command": batch_command,
                     "execution_mode": "MODE3D_SNAPSHOT_LIST_BATCH",
+                    "trajectory_snapshot_scheduler": (
+                        "COLLECTIVE" if solver == "GRIDDED" else "NOT_APPLICABLE"),
                     "mesh_initializations_expected": 1,
                     "snapshot_count": len({key[0] for key in grouped}),
                     "case_count": len(grouped),
@@ -9328,6 +9339,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "anisotropy_axis_lat_deg": production_anisotropy.axis_lat_deg,
                     "execution_mode": ("MODE3D_SNAPSHOT_LIST_BATCH_CASE"
                                        if batch_enabled else "INDEPENDENT_CASE"),
+                    "trajectory_snapshot_scheduler": (
+                        "COLLECTIVE" if solver == "GRIDDED" else "NOT_APPLICABLE"),
                     "output_location_id": output_location_id,
                     "output_suffix": output_suffix,
                 }

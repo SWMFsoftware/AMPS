@@ -942,8 +942,10 @@ FUNNELED/single-thread MPI use pattern.
 `MODE3D_MPI_DYNAMIC_CHUNK` / `-mode3d-mpi-dynamic-chunk` is now interpreted by the
 Mode3D **cutoff** solver as the number of flattened cutoff tasks fetched per atomic MPI
 request. Density/flux interprets the same generic control in its own work units:
-flattened `(location,energy)` tasks for shared-epoch `POINTS`/`SHELLS`, and complete
-epoch/location transactions for timestamped `TRAJECTORY` batching.
+flattened `(location,energy)` tasks whenever ranks share one prepared epoch. The outer
+`EPOCH_PARALLEL` queue always fetches one complete epoch/location transaction and is
+controlled separately by `MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER`; changing the inner
+MPI scheduler never changes AMR-domain ownership or memory scaling.
 
 For the direct `THREADS` backend, use a cutoff chunk at least as large as the requested
 thread count.  Otherwise one fetched chunk cannot feed all local workers.  The solver
@@ -961,19 +963,42 @@ field while another thread still uses it.
 
 ### Timestamped TRAJECTORY
 
-`OUTPUT_MODE TRAJECTORY` plus `TEMPORAL_MODE SNAPSHOT_LIST` assigns one complete
-epoch/location transaction at a time through a dynamic `MPI_COMM_WORLD` RMA counter.
-Each MPI process runs AMPS with a singleton `MPI_GLOBAL_COMMUNICATOR`, owns a complete
-mesh, constructs its claimed epoch's gridded field, and uses its configured OpenMP or
-direct-thread workers for that location's energies and directions. When the product
-files have closed, the process atomically claims another epoch. Product suffixes retain
-the original global snapshot index and UTC, so completion order cannot change artifact
-identity.
+`OUTPUT_MODE TRAJECTORY` plus `TEMPORAL_MODE SNAPSHOT_LIST` supports two explicit
+outer policies:
 
-All field assembly and product collectives inside a transaction intentionally use the
-singleton communicator. Only epoch assignment, the final scheduler teardown, and the
-final status reduction use `MPI_COMM_WORLD`. This communicator separation is what
-allows different MPI processes to hold different T05/Geopack epochs concurrently.
+```text
+MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER  COLLECTIVE
+MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER  EPOCH_PARALLEL
+```
+
+`COLLECTIVE` is the default and compatibility policy. It builds one ordinary
+distributed AMR domain, advances epochs sequentially, and lets all ranks divide the
+cutoff/density tasks inside the active field. It is the correct choice when the mesh is
+large or multiple locations share one epoch. Existing input decks that do not name a
+policy therefore retain bounded, distributed-memory behavior.
+
+`EPOCH_PARALLEL` is opt-in. It assigns one complete epoch/location transaction at a
+time through a dynamic `MPI_COMM_WORLD` RMA counter. Each MPI process runs AMPS with a
+singleton `MPI_GLOBAL_COMMUNICATOR`, owns a complete mesh, constructs its claimed
+epoch's gridded field, and uses its configured OpenMP or direct-thread workers for that
+location's energies and directions. When the product files have closed, the process
+atomically claims another epoch. Product suffixes retain the original global snapshot
+index and UTC, so completion order cannot change artifact identity.
+
+All field assembly and product collectives inside an `EPOCH_PARALLEL` transaction use
+the singleton communicator. Only epoch assignment, scheduler teardown, and final
+status reduction use `MPI_COMM_WORLD`. This separation allows different ranks to hold
+different T05/Geopack epochs concurrently, but its memory cost is one full mesh per
+rank. It is rejected for output/temporal combinations other than
+`TRAJECTORY + SNAPSHOT_LIST`.
+
+Before allocating replicas beyond rank 0, Linux builds measure the first private
+mesh's resident-memory increase and project the remaining replicas separately for each
+shared-memory node. If that projection exceeds
+`MODE3D_EPOCH_PARALLEL_MEMORY_FRACTION` (default `0.80`) of `MemAvailable`, startup
+fails collectively with an actionable message. This is a safety reserve, not a
+scientific tolerance. If `/proc` metrics are unavailable, the runtime reports that no
+memory-safety determination was possible rather than fabricating an estimate.
 
 ### Shared-epoch POINTS and SHELLS
 
@@ -1193,8 +1218,9 @@ rejects incomplete or internally inconsistent Step-5 schemas without changing it
 physical observation-comparison thresholds.
 
 GRIDDED batching uses the existing Mode3D multi-snapshot lifecycle but adds explicit
-irregular epochs and epoch-scoped locations. `amps_init_mesh()`, `amps_init()`, and
-static sphere setup remain outside the snapshot loop. For each sorted unique epoch,
+irregular epochs and epoch-scoped locations. C19 explicitly selects `COLLECTIVE`, so
+`amps_init_mesh()`, `amps_init()`, and static sphere setup remain outside the snapshot
+loop and the mesh stays distributed across MPI ranks. For each sorted unique epoch,
 Mode3D interpolates the driver, filters the multi-row trajectory to matching samples,
 remaps location-qualified apertures, refills owner-block B/E, assembles the compact
 global arrays, and runs the cutoff product. Compact B/E/presence vector storage is
@@ -1202,8 +1228,9 @@ resized only if the invariant mesh dimensions change and is otherwise cleared/re
 in place; shared scratch `Temp_ID` values are deliberately reassigned each snapshot.
 This filtering prevents the ordinary
 TIME_SERIES `N_snapshot x N_location` Cartesian product. `--gridded-batch OFF` retains
-the historical one-process-per-case layout for regression comparison, and other tests
-are unaffected unless they explicitly request `TEMPORAL_MODE SNAPSHOT_LIST`.
+the historical one-process-per-case layout for regression comparison. Merely requesting
+`TEMPORAL_MODE SNAPSHOT_LIST` no longer changes domain ownership: private per-rank
+meshes require the additional explicit `EPOCH_PARALLEL` policy.
 
 `SNAPSHOT_LIST` also supports `OUTPUT_MODE SHELLS`. A shell domain has no timestamped
 locations to filter: every configured shell is evaluated at every listed epoch, while
