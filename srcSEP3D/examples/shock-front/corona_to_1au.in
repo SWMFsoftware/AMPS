@@ -199,6 +199,9 @@
 #end physics
 
 #begin source: shock
+  ! Particle source model, selected explicitly: the reduced shock front of the
+  ! physics: shock_front block (the only available model; SWCME is not ready).
+  model = reduced-shock-front
   enabled = false
   physical_particle_rate_per_s = 1
   injection_efficiency = 1

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <limits>
 #include <sstream>
 
@@ -405,9 +406,30 @@ Core::Status Runtime::BeginStep(double simulationTimeS) {
     return Core::Status(Core::StatusCode::ConfigurationConflict,
                         "host simulation time differs from the authoritative Runtime tick");
   }
-  if (!hasSnapshot_ || !activeSnapshot_.Covers(simulationTimeS) ||
+  // Coverage is judged on the authoritative integer-tick clock
+  // (tick * dt), the same clock that stamps every snapshot epoch.  The host
+  // time has just been verified to agree with it (SameTime above), but a
+  // host clock that accumulates dt (the AMPS SimulationTime) drifts by rounding:
+  // after 20 steps of dt = 2.0243055684103082 s it is 40.48611136820616 s
+  // while tick * dt = 40.486111368206167 s, one unit in the last place below
+  // a snapshot that starts exactly at the tick time.  Testing the host value
+  // would reject that valid snapshot and stop the run.
+  const double stepStartS = CurrentTimeS();
+  if (!hasSnapshot_ || !activeSnapshot_.Covers(stepStartS) ||
       !activeSnapshot_.Covers(NextStepEndTimeS())) {
-    return InvalidSnapshot("active snapshot does not cover the complete requested step");
+    // Report both intervals so a validity gap can be attributed without a
+    // debugger: the requested step [t, t+dt] and the active snapshot window.
+    std::ostringstream message;
+    message << std::setprecision(17)
+            << "active snapshot does not cover the complete requested step: step ["
+            << stepStartS << ", " << NextStepEndTimeS() << "] s, snapshot";
+    if (hasSnapshot_)
+      message << " generation " << activeSnapshot_.generation << " valid ["
+              << activeSnapshot_.validFromS << ", " << activeSnapshot_.validUntilS
+              << "] s";
+    else
+      message << " absent";
+    return InvalidSnapshot(message.str());
   }
   pinnedSnapshotGeneration_ = activeSnapshot_.generation;
   state_ = LifecycleState::Running;

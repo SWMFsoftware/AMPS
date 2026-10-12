@@ -23,6 +23,9 @@
 #end run
 
 #begin source: shock
+  ! Particle source model, selected explicitly: the reduced shock front of the
+  ! physics: shock_front block (the only available model; SWCME is not ready).
+  model = reduced-shock-front
   enabled = true
   normalization = accepted-shock-incident-flux
   ! 51 R_sun matches this fixture's deliberately later handoff; its complete

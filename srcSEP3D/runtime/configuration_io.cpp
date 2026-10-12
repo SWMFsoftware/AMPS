@@ -6,6 +6,7 @@
 #include "parallel_diffusion/parallel_diffusion.h"
 #include "amps_input.h"
 #include "sep_input_layout.h"
+#include "../output/point_sampling.h"
 
 #include <algorithm>
 #include <cctype>
@@ -612,6 +613,16 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     if (!ParseEnum(value, {{"none", ShockAuthority::None},
                            {"swcme", ShockAuthority::Swcme}}, &o->shock))
       return invalidValue();
+  } else if (field == "source.shock.model") {
+    // Explicit source selection (user decision 2026-10-12).  The reduced
+    // shock front is the only source model; SWCME is named so that a user who
+    // selects it is told why it is unavailable instead of "invalid value".
+    if (Lower(value) == "swcme")
+      return Invalid("source.shock.model = swcme: the SWCME model is not "
+                     "ready yet to be used; select reduced-shock-front");
+    if (!ParseEnum(value, {{"reduced-shock-front",
+                            ParticleSourceModel::ReducedShockFront}},
+                   &o->source.model)) return invalidValue();
   } else if (field == "source.shock.enabled") {
     if (!ParseBool(value, &o->source.enabled)) return invalidValue();
   } else if (field == "source.shock.physical_particle_rate_per_s") {
@@ -721,6 +732,41 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     o->restartInputPath = Lower(value) == "none" ? std::string() : value;
   } else if (field == "run.restart.output_path") {
     o->restartOutputPath = value;
+  } else if (field == "sampling.points.products") {
+    // Validated (known names, no repeats, at least one) by the typed
+    // factory through Output::PointSampling::ParseProducts.
+    o->pointSampling.products = value;
+  } else if (field == "sampling.points.point_file") {
+    // Read after the block walk, relative to the file holding the block
+    // (WalkBlocks), so its rows follow the '#begin point' blocks.
+    o->pointSampling.pointFile = value;
+  } else if (section.rfind("sampling.points.species.", 0) == 0) {
+    // WalkBlocks() created the record when it entered the species block.
+    PointSamplingSpeciesOptions& species = o->pointSampling.species.back();
+    if (key == "minimum_energy_mev") {
+      if (!ParseDouble(value, &species.minimumEnergyMeV)) return invalidValue();
+    } else if (key == "maximum_energy_mev") {
+      if (!ParseDouble(value, &species.maximumEnergyMeV)) return invalidValue();
+    } else if (key == "energy_intervals") {
+      if (!ParseUnsigned(value, &species.energyIntervals)) return invalidValue();
+    } else if (key == "energy_scale") {
+      if (!ParseEnum(value, {{"log", EnergyChannelSpacing::Logarithmic},
+                             {"linear", EnergyChannelSpacing::Linear}},
+                     &species.energyScale)) return invalidValue();
+    } else {
+      return Invalid("unknown configuration key '" + field + "'");
+    }
+  } else if (section.rfind("sampling.points.point.", 0) == 0) {
+    PointSamplingPointOptions& point = o->pointSampling.points.back();
+    if (key == "position_x_m") {
+      if (!ParseDouble(value, &point.positionM.x)) return invalidValue();
+    } else if (key == "position_y_m") {
+      if (!ParseDouble(value, &point.positionM.y)) return invalidValue();
+    } else if (key == "position_z_m") {
+      if (!ParseDouble(value, &point.positionM.z)) return invalidValue();
+    } else {
+      return Invalid("unknown configuration key '" + field + "'");
+    }
   } else {
     ObserverOptions* observer = ObserverForSection(
         section, o, observerDefaultsCleared);
@@ -881,6 +927,43 @@ Core::Status WalkBlocks(const AMPS::Input::Block& parent,
                                       Layout::kSrcSep3d)).message);
     state->sections.insert(path);
 
+    // Point sampling (srcSEP3D): create the typed records in input order when
+    // their blocks open, so ApplyField() fills the record of the block being
+    // walked and diagnostics can name the defining line.  The generic reader
+    // does not merge two blocks of the same kind and name; a repeated species
+    // or point block is a user error.
+    PointSamplingOptions& sampling = state->options->pointSampling;
+    if (path == "sampling.points") {
+      sampling.enabled = true;
+    } else if (path.rfind("sampling.points.species.", 0) == 0) {
+      for (const PointSamplingSpeciesOptions& existing : sampling.species)
+        if (existing.symbol == block.name)
+          return Invalid(AMPS::Input::ErrorAt(block.begin, "sampling species '" +
+              block.name + "' is defined twice").message);
+      PointSamplingSpeciesOptions species;
+      species.symbol = block.name;
+      sampling.species.push_back(species);
+    } else if (path.rfind("sampling.points.point.", 0) == 0) {
+      PointSamplingPointOptions point;
+      point.name = block.name;
+      point.origin = block.begin.file + ":" + std::to_string(block.begin.line);
+      sampling.points.push_back(point);
+    }
+
+    if (path == "physics.swcme") {
+      // The canonical SWCME model is not ready to be used in srcSEP3D (user
+      // decision 2026-10-12): any '#begin physics: swcme' block stops the run
+      // with this diagnosis, whatever it would have been used for (SWCME
+      // background, SWCME shock, SWCME particle source).  The reduced shock
+      // front (physics: shock_front, source.shock.model =
+      // reduced-shock-front) is the supported model.  The SWCME handling
+      // below is retained unreachable until the model is released.
+      return Invalid(AMPS::Input::ErrorAt(block.begin,
+          "physics: swcme: the SWCME model is not ready yet to be used; "
+          "srcSEP3D stops.  Use the reduced shock-front model (a "
+          "'#begin physics: shock_front' block with "
+          "source.shock.model = reduced-shock-front)").message);
+    }
     if (path == "physics.swcme") {
       // SWCME owns its dotted, unit-bearing vocabulary; nested blocks are the
       // same key space (AMPS::Input::Flatten).  Locations are kept for the
@@ -945,6 +1028,32 @@ Core::Status WalkBlocks(const AMPS::Input::Block& parent,
     }
     const Core::Status nested = WalkBlocks(block, path, state);
     if (!nested.ok()) return nested;
+
+    if (path == "sampling.points" && !sampling.pointFile.empty()) {
+      // The point file is resolved relative to the directory of the file
+      // that holds the sampling block (like #include), so a deck and its
+      // point list move together.  Its rows follow the point blocks.
+      std::filesystem::path file(sampling.pointFile);
+      if (file.is_relative())
+        file = std::filesystem::path(block.begin.file).parent_path() / file;
+      std::ifstream input(file);
+      if (!input)
+        return Invalid(AMPS::Input::ErrorAt(block.begin, "cannot read "
+            "sampling.points.point_file '" + file.string() + "'").message);
+      std::ostringstream text;
+      text << input.rdbuf();
+      std::vector<Output::PointSampling::PointDefinition> rows;
+      const Core::Status parsed = Output::PointSampling::ParsePointFile(
+          text.str(), file.string(), &rows);
+      if (!parsed.ok()) return Invalid(parsed.message);
+      for (const Output::PointSampling::PointDefinition& row : rows) {
+        PointSamplingPointOptions point;
+        point.name = row.name;
+        point.positionM = row.positionM;
+        point.origin = row.origin;
+        sampling.points.push_back(point);
+      }
+    }
   }
   return Core::Status::OK();
 }
@@ -1090,6 +1199,30 @@ static Core::Status ParseConfigurationDocument(
     for (const char* field : writtenNumerics)
       if (assigned.count(field) == 0)
         return Invalid(std::string("missing required key '") + field + "'");
+  }
+
+  // ---- Point sampling completeness ------------------------------------------
+  // The sampling block is optional; when present every key of the block and
+  // of each species/point sub-block is required (no C++ default may stand in
+  // for a channel range or a coordinate).  point_file is the one optional key.
+  if (sections.count("sampling.points") != 0) {
+    if (assigned.count("sampling.points.products") == 0)
+      return Invalid("missing required key 'sampling.points.products'");
+    for (const std::string& present : sections) {
+      std::string table;
+      if (present.rfind("sampling.points.species.", 0) == 0)
+        table = "sampling.points.species.*";
+      else if (present.rfind("sampling.points.point.", 0) == 0)
+        table = "sampling.points.point.*";
+      else
+        continue;
+      for (const Layout::KeyRule& rule : Layout::kKeys) {
+        if (table != rule.block) continue;
+        const std::string qualified = present + "." + rule.key;
+        if (assigned.count(qualified) == 0)
+          return Invalid("missing required key '" + qualified + "'");
+      }
+    }
   }
 
   // ---- Decision D4: one owner per physical quantity -------------------------
@@ -1530,6 +1663,12 @@ static Core::Status ParseConfigurationDocument(
   if(incidentFlux&&walk.shockFrontBlock==nullptr)
     return Invalid("source.shock.normalization=accepted-shock-incident-flux "
                    "requires the reduced shock front (physics: shock_front)");
+  // source.shock.model = reduced-shock-front (the only model) injects from the
+  // reduced front, so an enabled source needs that front.
+  if(candidate.source.enabled&&walk.shockFrontBlock==nullptr)
+    return Invalid("source.shock.model=reduced-shock-front with "
+                   "source.shock.enabled=true requires the reduced shock front "
+                   "(a '#begin physics: shock_front' block)");
   bool observerSectionSeen = false;
   for (const std::string& present : sections) {
     if (present.rfind("observer.", 0) == 0) observerSectionSeen = true;

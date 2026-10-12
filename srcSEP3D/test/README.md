@@ -6,12 +6,14 @@
 preflight, `rm -rf -- build`, `./Config.pl -application=sep3d`, `make -j`; the
 deck selects runtime mover dispatch, so there is no prepare-production step)
 and then runs every srcSEP3D test procedure recorded in `srcSEP3D/LOG.md`:
-initialization previews (checks), the native SCCM3D/sep-corona tests, the
-coupled SEP/corona runner, the SWCME-coupled 20-step case,
+the SWCME not-ready check (`swcme-not-ready`, which while the SWCME model is
+not ready replaces the initialization previews of the SWCME decks, the native
+SCCM3D/sep-corona tests, the coupled SEP/corona runner and the SWCME-coupled
+20-step case; see "SWCME not ready" below),
 `test/run_tests.py --all` (now writing a per-test log `logs/<ID>.log` for each
 test), `test/run_parallel_diffusion_mover_tests.py --all`, the reduced
-shock-front runner and positive 1-AU qualification, the shock-front viewer
-tests, the shared `sep_corona_swcme` tests (run with `make -i` so every test
+shock-front runner and positive 1-AU qualification, the native point-sampling
+acceptance (`point-sampling`), the shock-front viewer tests, the shared `sep_corona_swcme` tests (run with `make -i` so every test
 binary runs; BG3D-4 is still UNQUALIFIED and its FAIL is expected evidence) and
 `sep_coronal_cme` tests, the generic input-reader test (`amps-input`:
 `make -C src/general/input test`), and the orchestrator self-test. `--quick` skips the
@@ -1024,11 +1026,93 @@ against the real particle-buffer/list ABI and the generated mover macro.
 | `RST3D01` | all state round-trips and future keyed normal draws are identical |
 | `RST3D02` | fingerprint/checksum errors leave destination state unchanged |
 | `RST3D03` | unavailable snapshot is rejected or awaited only through explicit bounded policy |
+| `PS3D01` | point-sampling channel grid: exact linear/log edges, closed range `[E_min, E_max]` (an interior edge belongs to the upper channel, `E_max` to the last), typed below/above tails, centres, rejected grids |
+| `PS3D02` | relativistic `E(p)`, `v(p)`, `E(v)` against `E = sqrt(p²c²+m²c⁴) - mc²`; velocity addition (rest, collinear 0.5c⊕0.5c = 0.8c, perpendicular `v'/γ_U`); plasma/inertial frames with and without a 400 km/s wind |
+| `PS3D03` | hand-summed two-call fixture: density, flux, field-aligned flux, intensity `F/(4πΔE)`, interval and cumulative fluence in cm units, out-of-range tails, and the Tecplot row |
+| `PS3D04` | point-file rows `x y z [name]`, zero-based default names, `file:line` errors, product lists |
+
+`CFG3D19` (configuration group) covers the `sampling: points` input block:
+records in input order with a point file resolved relative to the input,
+the fingerprint, and seven fail-closed rules.
 
 ```bash
 python3 test/run_tests.py --suite phase-o --rebuild \
   --output-dir test_output/phase-o
 ```
+
+#### Native point-sampling acceptance (`run_point_sampling_native.py`)
+
+Requires the native `sep3d` build.  It runs `./amps` on a copy of
+`examples/application-input/amps-injection-smoke.in` (`source.shock.model =
+reduced-shock-front`; an already-formed front at 50 R_sun along +z injects
+about 1000 H_PLUS macroparticles per step from step 1; observer publication
+every step) for 200 steps (two AMPS sampling intervals of 100), with a
+`sampling: points` block (two block points and a two-row point file; the four
+points lie in four different populated cells near the front apex, chosen
+from a 102-point survey), on one and four ranks, each in its own working
+directory (AMPS writes `PT/plots` relative to it and clears it at start-up):
+
+```bash
+python3 srcSEP3D/test/run_point_sampling_native.py --amps ./amps \
+  --output-dir test_output/point-sampling-native
+```
+
+Each leg keeps its exit status in `rank<R>/exit_status`.  When only one leg
+failed (for example the 4-rank leg on a full disk), `--reuse-ranks 1` re-checks
+the retained 1-rank run instead of relaunching it, and PSN06 compares it with
+the fresh 4-rank run.  The runner refuses a reuse when `./amps` is newer than
+the retained `run.log`, so a rebuild always forces both legs to run again:
+
+```bash
+python3 srcSEP3D/test/run_point_sampling_native.py --amps ./amps \
+  --output-dir test_output/point-sampling-native --reuse-ranks 1
+```
+
+A full run writes about 1.5 GB (1 rank) plus 1.6 GB (4 ranks), mostly the
+per-boundary observer publications.  A full disk makes the observer
+publication fail on the root rank (`observer publication failed`); that
+outcome is an environment ERROR, not a sampling failure.
+
+| ID | Acceptance contract |
+|---|---|
+| `PSN01.rankR` | the run completes and installs the sampler (4 points, 1 species) |
+| `PSN02.rankR` | the indices `N` of `sep3d.point-sampling.out=N.dat` equal those of the AMPS mesh files `pic.H_PLUS.s=0.out=N.dat` |
+| `PSN03.rankR` | every product has `sample_calls` = the AMPS sampling length L and spans `first = N L dt`, `last = first + (L-1) dt` |
+| `PSN04.rankR` | non-zero macroparticle samples; the cumulative fluence of every row equals the running sum of the interval fluences |
+| `PSN05.rankR` | independent density check on one and on four ranks (on four ranks it spans the AMPS block rebalancing after the first output): the interval-mean total density at each point (all channels + tails, plasma frame) equals the mean over the same L particle states of the `cells.csv` number density that the separate observer publication (`output/sampling.cpp`) writes for the same cell (position-hash cell id of the cell centre written in the product), within 1e-10 relative |
+| `PSN06` | one and four ranks: same files, identical sample counts, values within 1e-10 relative |
+
+The `run_all_test.sh` step `point-sampling` runs it (`[ID] STATUS` lines,
+read by `read_bracket_text`).  Runs longer than 20 steps of the reduced-front
+decks became possible with the Runtime clock fix of 2026-10-12: `BeginStep`
+now judges snapshot coverage on the authoritative tick time `tick * dt`
+instead of the accumulated host time, which had drifted one unit in the last
+place below the snapshot start at step 20 (regression check in `R3D04`).
+
+#### SWCME not ready (`check_swcme_not_ready.py`, `swcme_suspension.h`)
+
+The SWCME model is not ready (user decision 2026-10-12): every
+`#begin physics: swcme` stops srcSEP3D with "the SWCME model is not ready yet
+to be used".  The six SWCME example decks are kept as rejected fixtures:
+
+* `CFG3D08` checks each stops at the `file:line` of its `physics: swcme`;
+* the stage-1 tests that ran them (`SWBG3D01`-`07`, `SSE3D01/02/03/05/08/09`,
+  `CME3D03`, `R3D08`) are wrapped by `SuspendedWhileSwcmeNotReady`: SKIP with
+  the asserted rejection, FAIL for any other outcome, and the original body
+  runs again as soon as the deck parses;
+* the run-all steps that ran them natively (`init-full`, `init-tube`,
+  `sccm3d`, `sep-corona-suite`, `coupled-runner`, `swcme-coupled`; their
+  SCCM3D01/05 and RSH27 gates need the SWCME shock stage) are replaced by the
+  step `swcme-not-ready`:
+
+```bash
+python3 srcSEP3D/test/check_swcme_not_ready.py --amps ./amps \
+  --output-dir test_output/swcme-not-ready
+```
+
+which launches each deck initialization-only on one rank and requires a
+non-zero exit with the diagnosis at the deck's `physics: swcme` line
+(`SWCMENR.<deck>`).
 
 ### Phase V integration/scientific-validation gates
 

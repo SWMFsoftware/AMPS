@@ -159,13 +159,14 @@ differently.  Owners: `srcSEP3D/runtime/configuration_io.cpp` and
 | `physics: background` | ✓ | ✓ | `provider` (srcSEP: `swcme`; srcSEP3D: `analytic-parker`, `swcme`, `runtime-model`, ...); `model_id` (srcSEP3D) |
 | `physics: background` / `parker` | – | ✓ | `validity_cadence_s`; the seven ambient keys only without `physics: swcme` (D4) |
 | `physics: shock` | ✓ | ✓ | `authority` (srcSEP: `swcme`; srcSEP3D: `none`, `swcme`) |
-| `physics: swcme` | ✓ | ✓ | canonical SWCME model (library vocabulary, units in the value); srcSEP rejects the 3-D keys listed in `SwcmeThreeDimensionalKeys()` (CME shape, width, direction and rotation axis `geometry.*`, `surface.*`; the 1-AU thicknesses `geometry.sheath_thickness_1au`/`ejecta_thickness_1au` are shared) and accepts `parker.solar_rotation_rate_rad_per_s` only at its fixed SWCME1D rate |
+| `physics: swcme` | ✓ | rejected | srcSEP3D: **the SWCME model is not ready yet to be used** -- any `physics: swcme` block stops the parser at its `#begin` line with that diagnosis (user decision 2026-10-12; the six SWCME example decks are kept as rejected fixtures).  srcSEP: canonical SWCME model (library vocabulary, units in the value); srcSEP rejects the 3-D keys listed in `SwcmeThreeDimensionalKeys()` (CME shape, width, direction and rotation axis `geometry.*`, `surface.*`; the 1-AU thicknesses `geometry.sheath_thickness_1au`/`ejecta_thickness_1au` are shared) and accepts `parker.solar_rotation_rate_rad_per_s` only at its fixed SWCME1D rate |
 | `physics: parallel_diffusion` | ✓ | ✓ | shared parallel-diffusion library |
 | `physics: shock_front` | – | ✓ | reduced shock-front event, usually `#include`d from its event file |
-| `source: shock` | ✓ | ✓ | `enabled`, `samples_per_step`, `minimum_energy_j`, `maximum_energy_j`, `injection_efficiency`, the reference spectrum `spectrum_reference_energy_j`, `spectrum_particle_mass_kg`, `spectrum_charge_number`, `spectrum_normalization`, `spectrum_reference_intensity_per_m2_s_sr_j` (both; both applications currently implement only `spectrum_normalization = relative-only`); rate, spectrum-model and derived-normalization keys (srcSEP3D) |
+| `source: shock` | ✓ | ✓ | srcSEP3D: `model` (required, explicit particle-source model: `reduced-shock-front`, the reduced front of `physics: shock_front`, is the only accepted value; `model = swcme` stops with the not-ready diagnosis; an enabled source needs the `physics: shock_front` block).  Both: `enabled`, `samples_per_step`, `minimum_energy_j`, `maximum_energy_j`, `injection_efficiency`, the reference spectrum `spectrum_reference_energy_j`, `spectrum_particle_mass_kg`, `spectrum_charge_number`, `spectrum_normalization`, `spectrum_reference_intensity_per_m2_s_sr_j` (both; both applications currently implement only `spectrum_normalization = relative-only`); rate, spectrum-model and derived-normalization keys (srcSEP3D) |
 | `species` | ✓ | ✓ | `macroparticle_weight` |
 | `observer: ID` | ✓ | ✓ | `kind`, `minimum_energy_j`, `maximum_energy_j`, `energy_bins`, `energy_spacing`, `pitch_angle_bins` (both); `heliocentric_radius_m` (srcSEP); position, velocity, cadence, normalization, μ range, species, products (srcSEP3D) |
 | `output` | ✓ | ✓ | `initialization_mesh_tecplot_file`, `initialization_field_line_tecplot_file`, `initialization_data_tecplot_file` (both); `directory`, `prefix`, `cadence_steps`, `checkpoint_cadence_steps` (srcSEP3D) |
+| `sampling: points` (optional) | – | ✓ | `products`, `point_file`; sub-blocks `species: SYMBOL` (`minimum_energy_mev`, `maximum_energy_mev`, `energy_intervals`, `energy_scale`) and `point: NAME` (`position_x_m`, `position_y_m`, `position_z_m`); see 5.7 |
 
 Completeness: every block an application implements is required (srcSEP3D:
 all except the optional model blocks and `species` in derived-numerics mode;
@@ -291,6 +292,60 @@ file value), and the turbulence options override 5.4.  `--shock-model` and
 `physics.shock.authority = swcme`; a post-compile PARAM file that selects the
 analytical shock without a command-line option contradicts the input file and
 is rejected.
+
+### 5.7 Point sampling (srcSEP3D, `#begin sampling: points`)
+
+Fixed sampling points that record density, flux, differential intensity and
+fluence per energy channel **in the AMPS output cycle**: the sampler is
+registered with the AMPS user-defined sampling hook
+(`PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine`),
+samples at every AMPS sampling iteration and writes one Tecplot file per AMPS
+output with the same index and the same sampling length as the AMPS mesh
+files (`<OutputDirectory>/<output.prefix>.point-sampling.out=N.dat` next to
+`pic.<species>.s=<s>.out=N.dat`).  The block is optional; srcSEP rejects it
+with the D3 diagnostic (its field-line sampling is a separate, deferred
+procedure).
+
+```text
+#begin sampling: points
+  products   = density, flux, spectrum, fluence   ! any non-empty subset
+  point_file = points.txt     ! optional; relative to the file holding this block
+  #begin species: H_PLUS      ! one block per sampled AMPS species (symbol)
+    minimum_energy_mev = 0.01 ! kinetic energy per particle [MeV]
+    maximum_energy_mev = 100
+    energy_intervals   = 8
+    energy_scale       = log  ! log | linear
+  #end species
+  #begin point: earth         ! optional named points (block points come first)
+    position_x_m = 1.495978707e11   ! [m], AMPS heliocentric Cartesian frame
+    position_y_m = 0
+    position_z_m = 0
+  #end point
+#end sampling
+```
+
+The point file holds one point per line, `x y z [name]` in metres; `!` and
+`#` start comments; a point without a name is named by its zero-based index
+among the points of the file.  Every key of the block and of each sub-block
+is required (`point_file` is optional); at least one species and one point
+are required; species symbols and point names are unique.
+
+* **Units exception.** Channel energies are written in MeV (key suffix
+  `_mev`): the one deliberate exception to the SI suffix rule of section 4.
+* **Sampling volume.** Only the macroparticles of the AMPS cell containing
+  the point are sampled; the cell volume is the sampling volume.  The cell
+  centre and edge lengths are written into the product.
+* **Quantities** (both the local plasma frame -- the stored transport
+  momentum -- and the inertial heliocentric frame obtained by a relativistic
+  boost with the cell's bulk velocity): density [cm⁻³], omnidirectional flux
+  and field-aligned flux [cm⁻² s⁻¹], differential intensity
+  F/(4π ΔE) [cm⁻² s⁻¹ sr⁻¹ MeV⁻¹], interval and cumulative fluence [cm⁻²] and
+  the fluence intensity [cm⁻² sr⁻¹ MeV⁻¹]; the cumulative fluence starts at
+  the first sample of the run.  The equations are in
+  `srcSEP3D/output/point_sampling.h`.
+* **Fail-closed.** A species that is not compiled, or a point outside the
+  allocated AMPS mesh (or the radial domain, or an inactive region) stops the
+  run at start-up.
 
 ## 6. Model files
 

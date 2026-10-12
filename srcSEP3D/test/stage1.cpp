@@ -164,6 +164,7 @@ int main(int argc, char** argv) {
   append(RegisterSwcmeBackgroundTests());
   append(RegisterSseTests());  // SWBG3D - real canonical model, no MPI
   append(RegisterReducedShockFrontTests()); // RSHAPP - reduced provider boundary
+  append(RegisterPointSamplingTests());  // PS3D - point-sampling kernels
   append(RegisterValidationTests());  // INT3D/VFY3D — Phase V prerequisites
   append(RegisterRuntimeImprovementTests());  // R3D — improvements R01-R07
 

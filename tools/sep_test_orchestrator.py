@@ -754,32 +754,21 @@ def srcsep3d_steps(out: Path, args: argparse.Namespace) -> List[Step]:
 
     return [
         build_step("sep3d"),
-        init("init-full", "srcSEP3D/examples/sep3d_analytic_parker.in"),
-        init("init-tube", "srcSEP3D/examples/sep3d_analytic_parker_active_tube.in"),
-        native("sccm3d", f"native SCCM3D01-SCCM3D07, zero steps ({ranks} ranks)", ranks,
-               [*sum((["--test", f"SCCM3D0{i}"] for i in range(1, 8)), []),
-                "--test-input", "srcSEP3D/examples/sep3d_analytic_parker.in",
-                "--test-steps", "0"]),
-        native("sep-corona-suite",
-               f"native --test-suite sep-corona on the active-tube deck ({ranks} ranks)",
-               ranks, ["--test-suite", "sep-corona", "--test-input",
-                       "srcSEP3D/examples/sep3d_analytic_parker_active_tube.in",
-                       "--test-steps", "0"]),
-        Step("coupled-runner",
-             "run_coupled_sep_corona.py: shared SEP/corona gates plus every "
-             "live native sep-corona descriptor",
-             [["python3", "srcSEP3D/test/run_coupled_sep_corona.py", "--amps", "./amps",
-               "--ranks", ranks, "--test-input",
-               "srcSEP3D/examples/sep3d_analytic_parker_active_tube.in",
-               "--test-steps", "0", "--output-dir", str(out / "coupled-runner")]],
-             reader=reader_coupled(out / "coupled-runner"),
-             runner="srcSEP3D/test/run_coupled_sep_corona.py"),
-        native("swcme-coupled",
-               f"native sep-corona suite on the SWCME SSE 20 Rs-1 AU deck, "
-               f"20 steps ({large} ranks)", large,
-               ["--test-suite", "sep-corona", "--test-input",
-                "srcSEP3D/examples/sep3d_swcme_sse_mesh_background_20rs_1au.in",
-                "--test-steps", "20"], long=True),
+        # SWCME is not ready (user decision 2026-10-12): every
+        # '#begin physics: swcme' stops srcSEP3D with a typed diagnosis.  The
+        # steps that ran the SWCME decks -- init-full, init-tube, sccm3d,
+        # sep-corona-suite, coupled-runner, swcme-coupled (their native
+        # SCCM3D/RSH gates need the SWCME shock stage) -- are replaced by this
+        # rejection check until the model is released; the init()/native()
+        # helpers above remain for their reinstatement.
+        Step("swcme-not-ready",
+             "check_swcme_not_ready.py: every SWCME example deck stops at its "
+             "physics: swcme line with 'the SWCME model is not ready yet to "
+             "be used' (initialization-only, 1 rank)",
+             [["python3", "srcSEP3D/test/check_swcme_not_ready.py", "--amps",
+               "./amps", "--output-dir", str(out / "swcme-not-ready")]],
+             reader=read_bracket_text,
+             runner="srcSEP3D/test/check_swcme_not_ready.py"),
         Step("run-tests-all",
              "srcSEP3D/test/run_tests.py --all: standalone, R0-R2, C01-C05, "
              "M/B/T/P/A/O/V and production-build tests (rebuilds only test/stage1)",
@@ -813,6 +802,15 @@ def srcsep3d_steps(out: Path, args: argparse.Namespace) -> List[Step]:
                "--amps", "./amps", "--output-root", str(out / "positive-shock")]],
              reader=reader_positive_shock(out / "positive-shock"),
              runner="srcSEP3D/test/validate_positive_shock_example.py", long=True),
+        Step("point-sampling",
+             "run_point_sampling_native.py: AMPS-synchronized point sampling "
+             "(sampling: points) on 1 and 4 ranks -- file index/sampling "
+             "length sync, fluence, cells.csv density cross-check, rank "
+             "agreement (PSN01-PSN06)",
+             [["python3", "srcSEP3D/test/run_point_sampling_native.py",
+               "--amps", "./amps", "--output-dir", str(out / "point-sampling")]],
+             reader=read_bracket_text,
+             runner="srcSEP3D/test/run_point_sampling_native.py", long=True),
         Step("viewer-tests", "test_shock_front_viewer.py unit tests (no AMPS run)",
              [["python3", "srcSEP3D/test/test_shock_front_viewer.py"]],
              reader=read_unittest, runner="srcSEP3D/test/test_shock_front_viewer.py"),

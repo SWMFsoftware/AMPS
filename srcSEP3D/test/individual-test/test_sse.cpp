@@ -3,6 +3,7 @@
 // tests execute the actual parser, factories, mover and restart reader.
 // They do not stand in for a native MPI halo-exchange test.
 #include "sep3d_test_registry.h"
+#include "swcme_suspension.h"
 #include "configuration_io.h"
 #include "parker_geometry.h"
 #include "background_factory.h"
@@ -470,13 +471,13 @@ std::vector<SEP3D::Testing::Descriptor> RegisterSseTests() {
     d.runtime=SEP3D::Testing::RuntimeClass::Routine;d.seedPolicy="deterministic";
     d.stateIsolation="fresh configuration/provider/checkpoint";d.callback=std::move(callback);return d;
   };
-  return {make("SSE3D01","Finite input and inner handoff",Configuration),
-      make("SSE3D02","Canonical geometry handoff",Geometry),
-      make("SSE3D03","Finite mesh background and gradients",Fields),
+  return {make("SSE3D01","Finite input and inner handoff",SEP3D::Testing::SuspendedWhileSwcmeNotReady("examples/sep3d_swcme_sse_mesh_background_20rs_1au.in", Configuration)),
+      make("SSE3D02","Canonical geometry handoff",SEP3D::Testing::SuspendedWhileSwcmeNotReady("examples/sep3d_swcme_sse_mesh_background_20rs_1au.in", Geometry)),
+      make("SSE3D03","Finite mesh background and gradients",SEP3D::Testing::SuspendedWhileSwcmeNotReady("examples/sep3d_swcme_sse_mesh_background_20rs_1au.in", Fields)),
       make("SSE3D04","Moving finite-cap particle crossings",Intersections),
-      make("SSE3D05","Canonical finite source injection",Source),
+      make("SSE3D05","Canonical finite source injection",SEP3D::Testing::SuspendedWhileSwcmeNotReady("examples/sep3d_swcme_sse_mesh_background_20rs_1au.in", Source)),
       make("SSE3D06","Finite restart and schema-3 migration",Restart),
       make("SSE3D07","Finite requested-time mover subcycling",Subcycling),
-      make("SSE3D08","Reported weak-flank runtime regression",WeakFlankRuntime),
-      make("SSE3D09","Ambient support and unresolved-layer rejection",AmbientSupport)};
+      make("SSE3D08","Reported weak-flank runtime regression",SEP3D::Testing::SuspendedWhileSwcmeNotReady("examples/sep3d_swcme_sse_mesh_background_20rs_1au.in", WeakFlankRuntime)),
+      make("SSE3D09","Ambient support and unresolved-layer rejection",SEP3D::Testing::SuspendedWhileSwcmeNotReady("examples/sep3d_swcme_sse_mesh_background_20rs_1au.in", AmbientSupport))};
 }

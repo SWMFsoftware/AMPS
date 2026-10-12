@@ -1,6 +1,9 @@
 #include "run_configuration.h"
 
 #include "../core/parker_geometry.h"
+// Channel-grid and product validation of the point-sampling block reuse the
+// numerical kernels that the sampler itself uses (output/point_sampling.h).
+#include "../output/point_sampling.h"
 #include "parallel_diffusion/parallel_diffusion.h"
 #include "sep_background_snapshot.h"
 
@@ -9,6 +12,7 @@
 #include <cmath>
 #include <iomanip>
 #include <limits>
+#include <set>
 #include <sstream>
 
 namespace SEP3D {
@@ -1409,6 +1413,61 @@ Core::Status RunConfiguration3D::Create(
       return Invalid("per-species particle weight differs from rate*dt/particles_per_iteration");
     normalizedSpeciesIndices.push_back(item.ampsIndex);
   }
+  // ---- Point sampling ('#begin sampling: points') -------------------------
+  // Fail-closed checks of everything that does not need AMPS: products,
+  // channel grids, unique species and point names, finite positions inside
+  // the heliocentric radial domain.  The species symbols are bound to the
+  // compiled AMPS table, and each point to its mesh cell, at start-up
+  // (amps/amps_point_sampler.cpp); a point outside the allocated mesh is
+  // fatal there (user decision 2026-10-11).
+  if (normalized.pointSampling.enabled) {
+    const PointSamplingOptions& sampling = normalized.pointSampling;
+    Output::PointSampling::ProductSelection products;
+    const Core::Status productStatus =
+        Output::PointSampling::ParseProducts(sampling.products, &products);
+    if (!productStatus.ok())
+      return Invalid("sampling.points.products: " + productStatus.message);
+    if (sampling.species.empty())
+      return Invalid("sampling: points needs at least one "
+                     "'#begin species: SYMBOL' block");
+    if (sampling.points.empty())
+      return Invalid("sampling: points needs at least one point "
+                     "('#begin point: NAME' or point_file)");
+    std::set<std::string> symbols;
+    for (const PointSamplingSpeciesOptions& species : sampling.species) {
+      if (species.symbol.empty() || !symbols.insert(species.symbol).second)
+        return Invalid("sampling species '" + species.symbol +
+                       "' is empty or defined twice");
+      std::vector<double> edges;
+      const Core::Status grid = Output::PointSampling::BuildEnergyEdges(
+          species.minimumEnergyMeV, species.maximumEnergyMeV,
+          species.energyIntervals,
+          species.energyScale == EnergyChannelSpacing::Linear
+              ? Output::PointSampling::EnergyScale::Linear
+              : Output::PointSampling::EnergyScale::Logarithmic,
+          &edges);
+      if (!grid.ok())
+        return Invalid("sampling species '" + species.symbol + "': " +
+                       grid.message);
+    }
+    std::set<std::string> names;
+    for (const PointSamplingPointOptions& point : sampling.points) {
+      const std::string where =
+          point.origin.empty() ? std::string() : point.origin + ": ";
+      if (point.name.empty() || !names.insert(point.name).second)
+        return Invalid(where + "sampling point name '" + point.name +
+                       "' is empty or used twice");
+      if (!FiniteVector(point.positionM))
+        return Invalid(where + "sampling point '" + point.name +
+                       "' has a non-finite position");
+      const double radius = point.positionM.Norm();
+      if (radius < normalized.innerRadiusM || radius > normalized.outerRadiusM)
+        return Invalid(where + "sampling point '" + point.name +
+                       "' lies outside the heliocentric domain [inner, outer]"
+                       " radius");
+    }
+  }
+
   std::vector<std::string> observerIds;
   for (const ObserverOptions& observer : normalized.observers) {
     const double radius = observer.positionM.Norm();
@@ -1874,6 +1933,22 @@ Core::Status RunConfiguration3D::Create(
     } else {
       for (int species : observer.species) physics << ',' << species;
     }
+  }
+  // Point sampling is an output product, but its channel grid and point list
+  // fix the layout of the sampling buffers a restart carries, so a restart
+  // with a different sampling definition must be rejected (physics identity).
+  if (normalized.pointSampling.enabled) {
+    const PointSamplingOptions& sampling = normalized.pointSampling;
+    physics << ";point_sampling.products=" << sampling.products;
+    for (const PointSamplingSpeciesOptions& species : sampling.species)
+      physics << ";point_sampling.species=" << species.symbol << ','
+              << species.minimumEnergyMeV << ',' << species.maximumEnergyMeV
+              << ',' << species.energyIntervals << ','
+              << Name(species.energyScale);
+    for (const PointSamplingPointOptions& point : sampling.points)
+      physics << ";point_sampling.point=" << point.name << ','
+              << point.positionM.x << ',' << point.positionM.y << ','
+              << point.positionM.z;
   }
   const std::string fingerprint =
       SEP::Background::FingerprintConfiguration(physics.str());

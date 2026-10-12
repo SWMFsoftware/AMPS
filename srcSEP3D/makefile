@@ -185,7 +185,8 @@ OUTPUT_SRC := \
     output/publication.cpp \
     output/restart.cpp \
     output/output_coordinator.cpp \
-    output/reduced_front_output.cpp
+    output/reduced_front_output.cpp \
+    output/point_sampling.cpp
 VALIDATION_SRC := validation/validation_metrics.cpp
 # This evaluator consumes the public coronal-CME API and is linked only into
 # the full AMPS application.  Keeping it out of VALIDATION_SRC preserves the
@@ -194,7 +195,7 @@ CORONAL_CME_VALIDATION_SRC := validation/coronal_cme_application_test.cpp
 
 # L3 AMPS application sources.  Retired prototype sources must never be added
 # here.  BLDL3D02 also rejects them if they reappear elsewhere in production.
-AMPS_SRC := main_lib.cpp amps/amps_particle_adapter.cpp
+AMPS_SRC := main_lib.cpp amps/amps_particle_adapter.cpp amps/amps_point_sampler.cpp
 DRIVER_SRC := main.cpp
 
 CORE_OBJ := $(CORE_SRC:.cpp=.o)
@@ -255,7 +256,8 @@ STAGE1_TEST_SRC := \
     test/individual-test/test_shock_propagation.cpp \
     test/individual-test/test_swcme_background.cpp \
     test/individual-test/test_sse.cpp \
-    test/individual-test/test_reduced_shock_front.cpp
+    test/individual-test/test_reduced_shock_front.cpp \
+    test/individual-test/test_point_sampling.cpp
 STAGE1_TEST_OBJ := $(STAGE1_TEST_SRC:.cpp=.o)
 
 SEP_COMMON_INCLUDES := -I$(SEP_COMMON_DIR)

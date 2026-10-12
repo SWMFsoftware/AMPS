@@ -251,6 +251,11 @@ SEP::Testing::Result RunINIT01() {
       {"srcSEP3D-only block (D3)", Edited(base, "#end mesh",
            "  #begin memory\n    particle_bytes = 160\n  #end memory\n#end mesh"),
        "not supported by srcSEP"},
+      // srcSEP3D cell-based point sampling; srcSEP will sample along field
+      // lines with its own (deferred) procedure.
+      {"srcSEP3D point sampling (D3)", base +
+           "#begin sampling: points\n  products = flux\n#end sampling\n",
+       "not supported by srcSEP"},
       {"srcSEP3D-only key (D3)", Edited(base, "  time_step_s = 2",
            "  time_step_s = 2\n  campaign_seed = 1"),
        "not supported by srcSEP"},

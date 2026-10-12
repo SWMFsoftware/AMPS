@@ -1,6 +1,7 @@
 // Independent field/jump/gradient oracles and the real provider publication
 // contracts. These are portable prerequisites; they do not claim MPI evidence.
 #include "sep3d_test_registry.h"
+#include "swcme_suspension.h"
 #include "configuration_io.h"
 #include "background_factory.h"
 #include "background_snapshot.h"
@@ -337,8 +338,8 @@ std::vector<SEP3D::Testing::Descriptor> RegisterSwcmeBackgroundTests() {
     d.initialization=SEP3D::Testing::InitializationLevel::None;d.supportedBuildModes="standalone-no-AMPS";
     d.runtime=SEP3D::Testing::RuntimeClass::Routine;d.seedPolicy="deterministic";
     d.stateIsolation="fresh model/provider per callback";d.callback=std::move(callback);return d;};
-  return {make("SWBG3D01","SWCME background input/identity",Configuration),make("SWBG3D02","MHD vector and heated plasma closure",Fields),
-    make("SWBG3D03","Moving mesh background snapshots",Evolution),make("SWBG3D04","Full vector compression derivatives",Gradients),
-    make("SWBG3D05","Rejected and empty-rank snapshots",Rejections),make("SWBG3D06","Future model registration/publication",Extension),
-    make("SWBG3D07","Polar mesh snapshot regression",PolarSnapshots),make("SWBG3D08","Parallel switch-on RH limit",ParallelShockLimit)};
+  return {make("SWBG3D01","SWCME background input/identity",SEP3D::Testing::SuspendedWhileSwcmeNotReady("examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in", Configuration)),make("SWBG3D02","MHD vector and heated plasma closure",SEP3D::Testing::SuspendedWhileSwcmeNotReady("examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in", Fields)),
+    make("SWBG3D03","Moving mesh background snapshots",SEP3D::Testing::SuspendedWhileSwcmeNotReady("examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in", Evolution)),make("SWBG3D04","Full vector compression derivatives",SEP3D::Testing::SuspendedWhileSwcmeNotReady("examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in", Gradients)),
+    make("SWBG3D05","Rejected and empty-rank snapshots",SEP3D::Testing::SuspendedWhileSwcmeNotReady("examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in", Rejections)),make("SWBG3D06","Future model registration/publication",SEP3D::Testing::SuspendedWhileSwcmeNotReady("examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in", Extension)),
+    make("SWBG3D07","Polar mesh snapshot regression",SEP3D::Testing::SuspendedWhileSwcmeNotReady("examples/sep3d_swcme_sphere_mesh_background_20rs_1au.in", PolarSnapshots)),make("SWBG3D08","Parallel switch-on RH limit",ParallelShockLimit)};
 }

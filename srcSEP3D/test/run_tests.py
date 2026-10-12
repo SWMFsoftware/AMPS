@@ -127,9 +127,9 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("CFG3D05", "CFG3D", "Mesh and memory preflight", "cpp"),
     TestDefinition("CFG3D06", "CFG3D", "Finite Parker initialization schema", "cpp"),
     TestDefinition("CFG3D07", "CFG3D", "Complete compiled AMPS species binding", "cpp"),
-    TestDefinition("CFG3D08", "CFG3D", "Complete schema-6 initialization", "cpp"),
+    TestDefinition("CFG3D08", "CFG3D", "SWCME not ready: SWCME decks rejected, explicit reduced-front source", "cpp"),
     TestDefinition("CFG3D09", "CFG3D", "Background and turbulence selection", "cpp"),
-    TestDefinition("CFG3D10", "CFG3D", "CME and Parker start linkage", "cpp"),
+    TestDefinition("CFG3D10", "CFG3D", "Parker start linkage without SWCME", "cpp"),
     TestDefinition("CFG3D11", "CFG3D", "Transport/control schema", "cpp"),
     TestDefinition("CFG3D12", "CFG3D", "Corner/sphere input and endpoint normalization", "cpp"),
     TestDefinition("CFG3D13", "CFG3D", "Unified generic runtime input (includes, derived numerics, CLI)", "cpp"),
@@ -144,6 +144,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("CFG3D17", "CFG3D", "Parallel diffusion and mover selection", "cpp"),
     # Shared srcSEP/srcSEP3D schema-6 vocabulary (sep_input_layout.h).
     TestDefinition("CFG3D18", "CFG3D", "Shared SEP vocabulary (schema 6)", "cpp"),
+    TestDefinition("CFG3D19", "CFG3D", "Point-sampling input", "cpp"),
     TestDefinition("DOM3D01", "DOM3D", "Whole-corridor corner bounds", "source"),
     TestDefinition("DOM3D02", "DOM3D", "Solar sphere and photospheric coarsening", "source"),
     TestDefinition("DOM3D03", "DOM3D", "Connected sphere/corridor AMR allocation", "source"),
@@ -226,6 +227,11 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("NAT3D04", "NAT3D", "Boundary dispositions", "cpp"),
     TestDefinition("NAT3D05", "NAT3D", "Particle ledger closure", "cpp"),
     TestDefinition("NAT3D06", "NAT3D", "Sampling isolation", "cpp"),
+    # Point sampling (sampling: points): AMPS-independent kernels.
+    TestDefinition("PS3D01", "PS3D", "Point-sampling energy channels", "cpp"),
+    TestDefinition("PS3D02", "PS3D", "Point-sampling kinematics", "cpp"),
+    TestDefinition("PS3D03", "PS3D", "Point-sampling accumulation and product", "cpp"),
+    TestDefinition("PS3D04", "PS3D", "Point-sampling input grammar", "cpp"),
     TestDefinition("NAT3D07", "NAT3D", "Output schema and publication", "cpp"),
     TestDefinition("NAT3D08", "NAT3D", "Shock crossing dispatch", "cpp"),
     TestDefinition("SHK3D01", "SHK3D", "Dimensional source identity", "cpp"),
@@ -355,7 +361,7 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                      if item.group in ("ADP3D", "SHK3D", "SSE3D") or
                      item.test_id in ("NAT3D04", "NAT3D05", "NAT3D08")),
     "phase-o": tuple(item.test_id for item in TESTS
-                     if item.group in ("RST3D", "OUT3D") or
+                     if item.group in ("RST3D", "OUT3D", "PS3D") or
                      item.test_id in ("NAT3D06", "NAT3D07")),
     "phase-v": tuple(item.test_id for item in TESTS
                      if item.group in ("V1D", "V2D", "V5D", "INT3D", "VFY3D", "MPI3D", "SCCM3D", "XM3D", "OV3D", "CME3D", "SWMF3D") or
@@ -1616,8 +1622,9 @@ def _check_makefile_relocation(definition: TestDefinition,
         "transport_adapter.o particle_ledger.o shock_front_background_adapter.o "
         "swcme_source_adapter.o source_runtime.o "
         "sampling.o observer_runtime.o publication.o restart.o output_coordinator.o reduced_front_output.o "
+        "point_sampling.o "
         "validation_metrics.o coronal_cme_application_test.o main_lib.o "
-        "amps_particle_adapter.o")
+        "amps_particle_adapter.o amps_point_sampler.o")
     # Stage 14 adds the coherent-transport kernel to the coronal archive.
     # Include its flattened object explicitly here as in the production
     # makefile; the layout probe must exercise the current archive contract.

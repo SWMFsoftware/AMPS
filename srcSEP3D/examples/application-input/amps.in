@@ -35,6 +35,9 @@
 ! statistical normalization W_s = Ndot_s dt / samples_per_step of every
 ! compiled species.  It is not an SEP acceleration law.
 #begin source: shock
+  ! Particle source model, selected explicitly: the reduced shock front of the
+  ! physics: shock_front block (the only available model; SWCME is not ready).
+  model = reduced-shock-front
   enabled = true
   normalization = accepted-shock-incident-flux
   ! Required evaluation radius of Ndot_s (the 20-R_sun handoff); no default.

@@ -188,5 +188,7 @@ std::vector<SEP3D::Testing::Descriptor> RegisterSwcmeBackgroundTests();
 // Finite-SSE parser, geometry, mesh, particle, source and restart regression.
 std::vector<SEP3D::Testing::Descriptor> RegisterSseTests();
 std::vector<SEP3D::Testing::Descriptor> RegisterReducedShockFrontTests();
+// PS3D01-PS3D04: point-sampling kernels (output/point_sampling.h).
+std::vector<SEP3D::Testing::Descriptor> RegisterPointSamplingTests();
 
 #endif // SEP3D_CORE_SEP3D_TEST_REGISTRY_H

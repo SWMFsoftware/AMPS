@@ -235,3 +235,31 @@ heliocentric shell. Background physics is undefined there. Those columns use
 finite zero placeholders with `background_valid=0`; post-processing must mask
 them with that flag. This avoids `NaN` propagation in Tecplot without assigning
 physical meaning to the placeholder values.
+
+## Cell indexing across AMPS block rebalancing (fix of 2026-10-12)
+
+AMPS rebalances blocks between MPI ranks after each of its outputs (and on
+emergency rebalancing), so the set and the order of a rank's owned cells
+change during a run.  Before this fix, the pointer-to-index map
+`gCellSampleIndex` (main_lib.cpp) was built once, at the initial background
+installation, and then used by three consumers:
+
+* the observer publication and the checkpoint writer skipped every cell whose
+  center node was not in the map, i.e. every cell of a block that had moved to
+  another rank -- after the first AMPS output of a four-rank smoke run,
+  `cells.csv` held 23,228 of about 99,000 macroparticles, and a checkpoint
+  written then would have lost the same particles;
+* `ResolveStoredBackground` (the movers' background reader) paired a cell
+  with `gInstalledBackground->samples()[index]`, where the index referred to
+  the initial cell order but each refreshed snapshot follows the current
+  order, so a cell that stayed on its rank could read another cell's B and U.
+
+Now the publication and the checkpoint index the owned-cell list they collect
+themselves (`IndexOwnedCells`), every background refresh rebuilds the map for
+the snapshot it installs, and `ResolveStoredBackground` uses a snapshot entry
+only if that entry's sample position equals the cell centre (computed exactly
+as `CollectOwnedPhysicalCells` does); otherwise the cell reads its own stored
+bytes, which AMPS migrates with the block.  One-rank runs never rebalance and
+were unaffected.  Native regression: `PSN05.rank4` of
+`test/run_point_sampling_native.py` compares the point sampler with `cells.csv`
+across the rebalancing that follows the first AMPS output.

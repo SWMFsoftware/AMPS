@@ -257,6 +257,7 @@ equations are in [`../src/INPUT_FILE.md`](../src/INPUT_FILE.md), section 5.
 | `run.time_step_mode` | `fixed` (default) or `derived-from-mesh` | `derived-from-mesh`: after mesh allocation, `dt = time_step_margin_factor * h_min / maximum_particle_speed_m_s`, with `h_min` the global smallest allocated characteristic cell length |
 | `run.maximum_particle_speed_m_s` | `(0, c]` | `v_max` of the derived step |
 | `run.time_step_margin_factor` | `(0, 1]` | dimensionless margin `f` |
+| `source.shock.model` | `reduced-shock-front` (required; the only model) | explicit particle-source model: the reduced front of `physics: shock_front`; `swcme` stops with "the SWCME model is not ready yet to be used", as does any `physics: swcme` block (user decision 2026-10-12); an enabled source needs the `physics: shock_front` block |
 | `source.shock.normalization` | `configured-rate` (default) or `accepted-shock-incident-flux` | incident flux: `Ndot_s = sum over accepted curved faces of n_s [V_n - U_1 . n]_+ A_face`, `W_s = Ndot_s dt / samples_per_step` for every compiled species |
 | `source.shock.normalization_radius_m` | positive, no default | heliocentric apex radius at which `Ndot_s` (hence `W_s`) is evaluated |
 | `source.shock.weight_model` | `constant-statistical-weight` or `log-uniform-momentum-importance` | the importance mode is a typed **reserved** mode that stops startup until its individual-weight correction is implemented and qualified |

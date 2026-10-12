@@ -104,6 +104,7 @@ container) is now ordinary block input:
   campaign_seed = 1                    ! run.time_step_s must be absent
 #end run
 #begin source: shock
+  model = reduced-shock-front          ! required: explicit particle-source model
   enabled = true
   normalization = accepted-shock-incident-flux
   normalization_radius_m = 1.3914e10   ! required; no default
@@ -118,6 +119,20 @@ container) is now ordinary block input:
 #include "sep3d.in"                    ! application: sep, mesh, physics, observer, output
 #include "reduced-shock-surface.in"    ! the physics: shock_front block
 ```
+
+**SWCME is not ready (user decision 2026-10-12).**  The particle source is
+selected explicitly with `source.shock.model`; `reduced-shock-front` (the
+front of the `physics: shock_front` block, `src/models/sep_corona_swcme/shock_front`)
+is the only accepted value, and an enabled source requires that block.  Any
+`#begin physics: swcme` block -- SWCME background, SWCME shock or SWCME
+source -- and `source.shock.model = swcme` stop srcSEP3D with "the SWCME model
+is not ready yet to be used".  The SWCME example decks
+(`sep3d_analytic_parker*.in`, `sep3d_swcme_*_20rs_1au.in`) are kept unchanged
+as rejected fixtures (CFG3D08 checks each stops at its `physics: swcme`
+line); the stage-1 tests built on them (SWBG3D01-07, SSE3D01/02/03/05/08/09,
+CME3D03, R3D08) assert that stop and report SKIP until SWCME is released
+(`test/individual-test/swcme_suspension.h`).  The SWCME handling in
+`runtime/configuration_io.cpp` is retained but unreachable.
 
 New keys: `run.time_step_mode` (`fixed` | `derived-from-mesh`),
 `run.maximum_particle_speed_m_s`, `run.time_step_margin_factor`,
@@ -1122,6 +1137,73 @@ physical cell must have positive total variance; an MPI-reduced count and
 minimum/maximum `deltaB^2` are printed before Runtime publication and halo
 exchange. A zero coupled value remains possible only through the explicitly
 configured AWSoM ballistic/missing-data path; no fallback amplitude is guessed.
+
+### Point sampling in the AMPS output cycle (`sampling: points`)
+
+Fixed sampling points record, per sampled species and energy channel, the
+density, the omnidirectional and field-aligned flux, the differential
+intensity and the fluence of the macroparticles in the AMPS cell that contains
+each point.  Unlike the observer publication above (its own cadence,
+snapshot directories), the point sampler is registered with the AMPS
+user-defined sampling hook and therefore:
+
+* samples at every AMPS sampling iteration (start of `PIC::TimeStep()`, i.e.
+  the particle state after the previous step's move and srcSEP3D injection);
+* writes one file per AMPS output, `<OutputDirectory>/<output.prefix>.point-sampling.out=N.dat`,
+  with the same index `N` as the AMPS mesh files `pic.<species>.s=<s>.out=N.dat`
+  and normalized by the same AMPS sampling length (`InitialSampleLength` of
+  `input/sep3d.input`, 100 iterations); the AMPS `OutputDirectory` is
+  `PT/plots` relative to the working directory, not `output.directory`.
+
+Input (optional block; syntax, units and rules in `src/INPUT_FILE.md` 5.7):
+
+```text
+#begin sampling: points
+  products   = density, flux, spectrum, fluence
+  point_file = points.txt          ! optional: rows "x y z [name]" [m]
+  #begin species: H_PLUS
+    minimum_energy_mev = 0.01      ! kinetic energy per particle [MeV]
+    maximum_energy_mev = 100
+    energy_intervals   = 8
+    energy_scale       = log       ! log | linear
+  #end species
+  #begin point: earth
+    position_x_m = 1.495978707e11  ! [m], AMPS heliocentric Cartesian frame
+    position_y_m = 0
+    position_z_m = 0
+  #end point
+#end sampling
+```
+
+Product.  One Tecplot zone per (point, species), one row per channel:
+`E_min`, `E_max`, `E_center` [MeV], then for the plasma and the inertial
+frame the selected products -- `n` [cm⁻³]; `F` and `F_parallel` [cm⁻² s⁻¹];
+`j` = F/(4π ΔE) [cm⁻² s⁻¹ sr⁻¹ MeV⁻¹]; `fluence_interval`, `fluence` (cumulative
+since the first sample of the run) [cm⁻²] and `fluence_intensity`
+[cm⁻² sr⁻¹ MeV⁻¹] -- and the number of macroparticle samples.  Zone auxiliary
+data give the point, its position, the sampled cell (centre and edge lengths,
+17 digits) and the density/flux/samples below and above the channel range;
+dataset auxiliary data give the AMPS output number, the number of sampling
+calls `N` and the first/last sample times.  The plasma frame uses the stored
+transport momentum p and pitch cosine μ; the inertial frame boosts the
+plasma-frame velocity relativistically with the cell's bulk velocity
+(`output/point_sampling.h` has the equations).
+
+Implementation: `output/point_sampling.{h,cpp}` (AMPS-independent channel
+grid, kinematics, accumulation, Tecplot product, point-file reader) and
+`amps/amps_point_sampler.{h,cpp}` (registration, per-rank cell walk through
+`AMPS::Movers::ReadParticle`, `MPI_Reduce(MPI_SUM)` to rank 0, temporary-file
+plus rename).  A point outside the allocated mesh, outside the radial domain
+or in an inactive region, and an uncompiled species, stop the run at
+start-up.  Limitations: restart continuity of the output index and of a
+partially filled interval is not implemented yet (planned: index in the core
+and srcSEP3D restart files, partial buffers and cumulative fluence in the
+srcSEP3D checkpoint); moving observers are the next stage.
+
+Validation: `PS3D01`-`PS3D04` (stage 1; independent closed forms and
+hand-summed fixtures), `CFG3D19` (input block), and the native runner
+`test/run_point_sampling_native.py` (`PSN01`-`PSN06`, run-all step
+`point-sampling`); see `test/README.md`.
 
 ### Permanent ECSIM and PIC include guards
 

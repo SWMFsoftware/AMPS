@@ -8,6 +8,7 @@
 // ============================================================================
 
 #include "sep3d_test_registry.h"
+#include "swcme_suspension.h"
 
 #include "observer_runtime.h"
 #include "restart.h"
@@ -248,6 +249,22 @@ Result RunR3D04() {
   for (std::uint64_t tick = 0; tick < 4; ++tick) {
     if (!runtime.BeginStep(static_cast<double>(tick)).ok() ||
         !runtime.CompleteStep().ok()) return Fail("integer clock step failed");
+  }
+  // A host clock that accumulates dt lags tick*dt by rounding.  A host time
+  // one unit in the last place below the tick time agrees with the clock and
+  // must still be covered by a snapshot that starts exactly at tick*dt
+  // (regression: the reduced-front runs stopped at step 20 for this reason).
+  {
+    R::Runtime lagging;
+    if (!Ready(&lagging, cfg)) return Fail("could not prepare lagging-clock Runtime");
+    for (std::uint64_t tick = 0; tick < 4; ++tick) {
+      const double hostTimeS = std::nextafter(lagging.CurrentTimeS(),
+                                              -std::numeric_limits<double>::infinity());
+      const C::Status begun = lagging.BeginStep(hostTimeS);
+      if (!begun.ok() || !lagging.CompleteStep().ok())
+        return Fail("a host clock one ulp behind the tick was rejected: " +
+                    begun.message);
+    }
   }
   if (runtime.counters().currentTick != 4 ||
       !runtime.EventDue(R::ScheduledEvent::Background) ||
@@ -588,7 +605,7 @@ std::vector<SEP3D::Testing::Descriptor> RegisterRuntimeImprovementTests() {
       make("R3D05", "Shock source lifecycle", RunR3D05),
       make("R3D06", "Observer publication transaction", RunR3D06),
       make("R3D07", "Complete restart contract", RunR3D07),
-      make("R3D08", "Canonical initialization source", RunR3D08),
+      make("R3D08", "Canonical initialization source", SEP3D::Testing::SuspendedWhileSwcmeNotReady("examples/sep3d_analytic_parker.in", RunR3D08)),
       make("R3D09", "Finite empty-cell Tecplot output", RunR3D09),
   };
 }

@@ -705,6 +705,15 @@ def convert_sep6_from_srcsep3d(text: str) -> str:
         source_values = take_swcme_source(swcme)
         source = top_block(root, "source", "shock")
         source.append(spectrum_entries(source_values))
+    # The particle source model is explicit (user decision 2026-10-12): the
+    # reduced shock front is the only model.  A converted deck that still
+    # holds physics: swcme is rejected by srcSEP3D as "not ready".
+    source = root.child("source", "shock")
+    if source is not None and source.get("model") is None:
+        source.prepend_assign(
+            "model", "reduced-shock-front",
+            [" Particle source model: the reduced shock front of physics:",
+             " shock_front (the only model; SWCME is not ready)."])
     output = root.child("output")
     if output is not None:
         output.rename("initialization_parker_line_tecplot_file",

@@ -1,6 +1,7 @@
 // Propagation acceptance tests use the production parser/provider and publication
 // boundary. No PIC/MPI mock is accepted as proof of a native coupled campaign.
 #include "sep3d_test_registry.h"
+#include "swcme_suspension.h"
 #include "configuration_io.h"
 #include "source_runtime.h"
 #include "shock_history.h"
@@ -110,6 +111,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterShockPropagationTests() {
     d.runtime=SEP3D::Testing::RuntimeClass::Routine;d.seedPolicy="deterministic, no random draws";
     d.stateIsolation="fresh provider and temporary telemetry per callback";d.callback=std::move(callback);return d;
   };
-  return {make("CME3D03","Propagation configuration/canonical provider",RunCME3D03),
+  return {make("CME3D03","Propagation configuration/canonical provider",SEP3D::Testing::SuspendedWhileSwcmeNotReady("examples/sep3d_swcme_20rs_1au.in", RunCME3D03)),
           make("CME3D04","Native telemetry publication contract",RunCME3D04)};
 }

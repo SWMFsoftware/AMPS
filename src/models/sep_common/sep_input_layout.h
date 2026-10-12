@@ -117,6 +117,13 @@ constexpr BlockRule kBlocks[] = {
     {"", "species", "", kBoth, false},
     {"", "observer", "*", kBoth, false},
     {"", "output", "", kBoth, false},
+    // Fixed point sampling in the AMPS output cycle (srcSEP3D; user decisions
+    // 2026-10-11).  One 'species: SYMBOL' block per sampled AMPS species holds
+    // its energy channels; 'point: NAME' blocks and/or a point file hold the
+    // locations.  srcSEP samples along field lines and does not implement it.
+    {"", "sampling", "points", kSrcSep3d, false},
+    {"sampling.points", "species", "*", kSrcSep3d, false},
+    {"sampling.points", "point", "*", kSrcSep3d, false},
 };
 
 // One application-owned key.  'block' is the qualified path of the block that
@@ -343,6 +350,9 @@ constexpr KeyRule kKeys[] = {
     {"source.shock", "normalization_radius_m", kSrcSep3d},
     {"source.shock", "weight_model", kSrcSep3d},
     {"source.shock", "maximum_events_per_species_per_step", kSrcSep3d},
+    // Explicit particle-source model (srcSEP3D): reduced-shock-front is the
+    // only model; swcme is rejected as not ready (user decision 2026-10-12).
+    {"source.shock", "model", kSrcSep3d},
 
     // ---- species ----------------------------------------------------------------
     // The common statistical weight of every compiled AMPS species.
@@ -380,6 +390,22 @@ constexpr KeyRule kKeys[] = {
     {"output", "checkpoint_cadence_steps", kSrcSep3d},
     {"output", "directory", kSrcSep3d},
     {"output", "prefix", kSrcSep3d},
+
+    // ---- sampling: points (srcSEP3D) ---------------------------------------------
+    // products: comma list of density, flux, spectrum, fluence.  point_file:
+    // rows "x y z [name]" [m], relative to the file holding the block.
+    {"sampling.points", "products", kSrcSep3d},
+    {"sampling.points", "point_file", kSrcSep3d},
+    // Channel energies are kinetic energies per particle in MeV: the one
+    // deliberate exception to the SI key suffixes (user decision 2026-10-11).
+    {"sampling.points.species.*", "minimum_energy_mev", kSrcSep3d},
+    {"sampling.points.species.*", "maximum_energy_mev", kSrcSep3d},
+    {"sampling.points.species.*", "energy_intervals", kSrcSep3d},
+    {"sampling.points.species.*", "energy_scale", kSrcSep3d},
+    // Point position [m], AMPS heliocentric Cartesian frame.
+    {"sampling.points.point.*", "position_x_m", kSrcSep3d},
+    {"sampling.points.point.*", "position_y_m", kSrcSep3d},
+    {"sampling.points.point.*", "position_z_m", kSrcSep3d},
 };
 
 // ---------------------------------------------------------------------------
@@ -409,11 +435,21 @@ inline const BlockRule* FindBlock(const std::string& parent,
   return nullptr;
 }
 
-// The table's block path for a qualified block path: every observer instance
-// maps to "observer.*".
+// The table's block path for a qualified block path: every instance of a
+// table block named "*" maps to its wildcard row -- 'observer.earth' to
+// "observer.*", 'sampling.points.species.H_PLUS' to
+// "sampling.points.species.*", 'sampling.points.point.earth' to
+// "sampling.points.point.*".
 inline std::string TableBlockPath(const std::string& blockPath) {
-  return blockPath.rfind("observer.", 0) == 0 ? std::string("observer.*")
-                                               : blockPath;
+  static const char* const kInstanceParents[] = {
+      "observer.", "sampling.points.species.", "sampling.points.point."};
+  for (const char* parent : kInstanceParents) {
+    const std::string prefix = parent;
+    if (blockPath.size() > prefix.size() && blockPath.rfind(prefix, 0) == 0 &&
+        blockPath.find('.', prefix.size()) == std::string::npos)
+      return prefix + "*";
+  }
+  return blockPath;
 }
 
 // Table row of an application-owned key, or nullptr for an unknown key.

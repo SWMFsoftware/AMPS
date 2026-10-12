@@ -187,6 +187,9 @@ enum class ObserverNormalization { RepresentedParticles, DifferentialIntensity }
 // hard-coded sampling implementation detail. Logarithmic channels resolve
 // power-law SEP spectra; linear channels support narrow-band diagnostics.
 enum class EnergyChannelSpacing { Logarithmic, Linear };
+// Particle source models (source.shock.model).  Only the reduced shock front
+// exists; see SourceOptions::model.
+enum class ParticleSourceModel { ReducedShockFront };
 
 const char* Name(BackgroundAuthority value);
 const char* Name(TurbulenceAuthority value);
@@ -303,6 +306,12 @@ struct SourceOptions {
   // spectrumModel/fixedPhaseSpacePowerIndex contract above and normalize this
   // old field to zero before fingerprinting.
   double spectralIndex = 5.0;
+  // The particle source model, selected explicitly in the input
+  // (source.shock.model).  The reduced shock front
+  // (src/models/sep_corona_swcme/shock_front, '#begin physics: shock_front')
+  // is the only available source; the canonical SWCME model is not ready for
+  // use (user decision 2026-10-12) and is rejected by the parser.
+  ParticleSourceModel model = ParticleSourceModel::ReducedShockFront;
   // Exact number of computational particles injected per active time step,
   // per compiled species, over the complete active shock surface.
   std::uint64_t samplesPerStep = 1000;
@@ -399,6 +408,44 @@ struct ObserverOptions {
   // explicit numeric list during configuration validation.
   bool allCompiledSpecies = false;
   std::vector<int> species = {0};
+};
+
+// ---- Point sampling ('#begin sampling: points', schema 6) -----------------
+//
+// Fixed sampling points that sample the macroparticles of the AMPS cell
+// containing each point and write density, flux, differential intensity and
+// fluence per energy channel in the AMPS output cycle (same file index
+// `.out=N` and the same sampling length as the AMPS mesh output).  The
+// numerics are in output/point_sampling.h; the AMPS binding is in
+// amps/amps_point_sampler.h.
+
+// Energy channels of one sampled species ('#begin species: SYMBOL' inside
+// the sampling block).  Energies are kinetic energies per particle in MeV
+// (user decision 2026-10-11; an explicit exception to the SI key suffixes).
+struct PointSamplingSpeciesOptions {
+  std::string symbol;              // AMPS species symbol, e.g. "H_PLUS"
+  double minimumEnergyMeV = 0.0;
+  double maximumEnergyMeV = 0.0;
+  unsigned energyIntervals = 0;
+  EnergyChannelSpacing energyScale = EnergyChannelSpacing::Logarithmic;
+};
+
+// One fixed point, from a '#begin point: NAME' block or a point-file row.
+// Positions are metres in the AMPS heliocentric Cartesian frame.
+struct PointSamplingPointOptions {
+  std::string name;
+  Core::Vec3 positionM;
+  std::string origin;  // "file:line" of the definition, for diagnostics
+};
+
+struct PointSamplingOptions {
+  bool enabled = false;          // the block is present
+  std::string products;          // "density, flux, spectrum, fluence" subset
+  std::string pointFile;         // as written (relative to the input file)
+  // Species in input order; compiled species without a block are not sampled.
+  std::vector<PointSamplingSpeciesOptions> species;
+  // Point blocks in input order, followed by the point-file rows.
+  std::vector<PointSamplingPointOptions> points;
 };
 
 struct MemoryModelOptions {
@@ -587,6 +634,9 @@ struct RunConfiguration3DOptions {
     observer.products = "flux,spectrum";
     return std::vector<ObserverOptions>{observer};
   }();
+  // Fixed point sampling in the AMPS output cycle; disabled unless the input
+  // contains '#begin sampling: points'.
+  PointSamplingOptions pointSampling;
 
   // Phase-T scattering inputs.  Integrated wave amplitude, spectral shape,
   // finite-band behavior, and missing-data behavior are all fingerprinted.

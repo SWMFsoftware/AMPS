@@ -22,6 +22,7 @@
 #include "adapters/shock_front_background_adapter.h"
 #include "amps/amps_mover_status.h"
 #include "amps/amps_particle_adapter.h"
+#include "amps/amps_point_sampler.h"
 #include "mesh/mesh_model.h"
 #include "output/observer_runtime.h"
 #include "output/publication.h"
@@ -668,6 +669,20 @@ std::vector<AmpsCellReference> CollectOwnedPhysicalCells() {
   return result;
 }
 
+// Index of a freshly collected owned-cell list: center-node pointer -> its
+// position in 'cells'.  AMPS rebalances blocks between ranks after its
+// outputs (and on emergency rebalancing), so the set and the order of the
+// owned cells change during a run; every consumer that pairs a cell with an
+// entry of a per-cell array must therefore index the list it is about to use,
+// never a list collected earlier.
+std::unordered_map<PIC::Mesh::cDataCenterNode*, std::size_t> IndexOwnedCells(
+    const std::vector<AmpsCellReference>& cells) {
+  std::unordered_map<PIC::Mesh::cDataCenterNode*, std::size_t> index;
+  index.reserve(cells.size());
+  for (std::size_t i = 0; i < cells.size(); ++i) index[cells[i].cell] = i;
+  return index;
+}
+
 std::vector<std::uint64_t> CountLocalParticlesBySpecies() {
   std::vector<std::uint64_t> counts(
       static_cast<std::size_t>(PIC::nTotalSpecies), 0);
@@ -1162,8 +1177,27 @@ SEP3D::Core::Status ResolveStoredBackground(
   const RuntimeModel::StorageLayout& layout = Configuration().storage_layout();
   Background::BackgroundSample background;
   const auto mapped = gCellSampleIndex.find(cell);
+  // The snapshot entry is used only if it belongs to THIS cell: its sample
+  // position must equal the cell centre computed exactly as
+  // CollectOwnedPhysicalCells() does.  After an AMPS block rebalancing the
+  // index (or a reused center-node address) can be stale until the next
+  // background refresh rebuilds it; such a cell reads its own stored bytes
+  // below, which AMPS migrates with the block.
+  bool snapshotEntryIsThisCell = false;
   if (gInstalledBackground && mapped != gCellSampleIndex.end() &&
-      mapped->second < gInstalledBackground->samples().size()) {
+      mapped->second < gInstalledBackground->samples().size() &&
+      mapped->second < gInstalledBackground->positions().size()) {
+    const double dx[3] = {
+        (node->xmax[0] - node->xmin[0]) / _BLOCK_CELLS_X_,
+        (node->xmax[1] - node->xmin[1]) / _BLOCK_CELLS_Y_,
+        (node->xmax[2] - node->xmin[2]) / _BLOCK_CELLS_Z_};
+    const SEP3D::Core::Vec3 center(node->xmin[0] + (i + 0.5) * dx[0],
+                                   node->xmin[1] + (j + 0.5) * dx[1],
+                                   node->xmin[2] + (k + 0.5) * dx[2]);
+    snapshotEntryIsThisCell =
+        gInstalledBackground->positions()[mapped->second] == center;
+  }
+  if (snapshotEntryIsThisCell) {
     // R03 double-buffer read path: Runtime swaps the immutable snapshot
     // pointer only at a joined boundary. Movers never observe a cell array
     // while it is being filled for the next coupled generation.
@@ -1218,6 +1252,27 @@ SEP3D::Core::Status ResolveStoredBackground(
   *resolved = background;
   if (resolvedCell != nullptr) *resolvedCell = cell;
   return Core::Status::OK();
+}
+
+// Background of a point-sampling cell for the inertial-frame transform
+// (amps/amps_point_sampler.h): the bulk velocity U and the unit magnetic
+// direction of the same pinned/stored snapshot the movers read, so sampled
+// inertial-frame energies and fluxes use exactly the transport background.
+SEP3D::Core::Status ResolvePointSamplingBackground(
+    const SEP3D::Core::Vec3& positionM,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+    SEP3D::Core::Vec3* bulkVelocityMPerS,
+    SEP3D::Core::Vec3* magneticDirection) {
+  if (bulkVelocityMPerS == nullptr || magneticDirection == nullptr)
+    return SEP3D::Core::Status(SEP3D::Core::StatusCode::InvalidInput,
+                              "point-sampling background output is null");
+  SEP3D::Background::BackgroundSample background;
+  const SEP3D::Core::Status status = ResolveStoredBackground(
+      positionM, node, &background, nullptr);
+  if (!status.ok()) return status;
+  *bulkVelocityMPerS = background.U;
+  *magneticDirection = background.bHat;
+  return SEP3D::Core::Status::OK();
 }
 
 SEP3D::Core::Status ResolvePopulationMagneticDirection(
@@ -2608,6 +2663,11 @@ void RefreshBackgroundAtBoundary() {
   if (!status.ok())StopWithStatus("background commit",status);
   gInstalledBackground=candidate;gInstalledTurbulence=turbulence;
   gStagedBackground.reset();gStagedTurbulence.reset();
+  // The candidate's samples follow the order of 'cells' collected at this
+  // boundary, which changes when AMPS has rebalanced blocks since the
+  // previous refresh; re-index so ResolveStoredBackground pairs each cell
+  // with its own sample again.
+  gCellSampleIndex=IndexOwnedCells(cells);
   ++gBackgroundPublishedUpdates;
   if (PIC::ThisThread==0)
     std::cout<<"[srcSEP3D] background mesh update: provider="<<m.providerIdentity
@@ -2675,6 +2735,9 @@ void PublishObserversAtBoundary() {
   std::vector<PackedCell> localCells;
   std::vector<PackedObservation> localParticles;
   const std::vector<AmpsCellReference> cells = CollectOwnedPhysicalCells();
+  // Index the list collected here (not the background index): blocks may
+  // have moved between ranks since the background was installed.
+  const auto cellIndex = IndexOwnedCells(cells);
   localCells.reserve(cells.size());
   for (const AmpsCellReference& cell : cells) {
     localCells.push_back({cell.stableId, cell.positionM.x, cell.positionM.y,
@@ -2691,8 +2754,8 @@ void PublishObserversAtBoundary() {
         for (int i = 0; i < _BLOCK_CELLS_X_; ++i) {
           PIC::Mesh::cDataCenterNode* center = node->block->GetCenterNode(
               PIC::Mesh::mesh->getCenterNodeLocalNumber(i, j, k));
-          const auto found = gCellSampleIndex.find(center);
-          if (found == gCellSampleIndex.end() || found->second >= cells.size())
+          const auto found = cellIndex.find(center);
+          if (found == cellIndex.end())
             continue;
           long int ptr = node->block->FirstCellParticleTable[
               i + _BLOCK_CELLS_X_ * (j + _BLOCK_CELLS_Y_ * k)];
@@ -2783,6 +2846,9 @@ void WriteCheckpointAtBoundary() {
 
   std::vector<PackedObservation> localParticles;
   const std::vector<AmpsCellReference> cells = CollectOwnedPhysicalCells();
+  // Index the list collected here (not the background index): blocks may
+  // have moved between ranks since the background was installed.
+  const auto cellIndex = IndexOwnedCells(cells);
   for (unsigned int blockIndex = 0;
        blockIndex < PIC::DomainBlockDecomposition::nLocalBlocks;
        ++blockIndex) {
@@ -2794,8 +2860,8 @@ void WriteCheckpointAtBoundary() {
         for (int i = 0; i < _BLOCK_CELLS_X_; ++i) {
           PIC::Mesh::cDataCenterNode* center = node->block->GetCenterNode(
               PIC::Mesh::mesh->getCenterNodeLocalNumber(i, j, k));
-          const auto found = gCellSampleIndex.find(center);
-          if (found == gCellSampleIndex.end() || found->second >= cells.size())
+          const auto found = cellIndex.find(center);
+          if (found == cellIndex.end())
             continue;
           long int ptr = node->block->FirstCellParticleTable[
               i + _BLOCK_CELLS_X_ * (j + _BLOCK_CELLS_Y_ * k)];
@@ -4106,6 +4172,24 @@ void amps_init() {
               << " next_sampling_tick=" << events.nextSamplingTick
               << " next_checkpoint_tick=" << events.nextCheckpointTick
               << '\n';
+  }
+
+  // Point sampling ('#begin sampling: points') joins the AMPS sampling cycle
+  // here: the mesh, the cell volumes, the compiled species table, the time
+  // steps and the installed background all exist, and no PIC::TimeStep() has
+  // run yet.  A point outside the allocated mesh stops the run at start-up.
+  {
+    const SEP3D::Core::Status sampler = SEP3D::AMPS::PointSampler::Install(
+        Configuration().options().pointSampling, gCompiledSpecies,
+        Configuration().options().outputPrefix, ResolvePointSamplingBackground);
+    if (!sampler.ok()) StopWithStatus("point sampling installation", sampler);
+    if (PIC::ThisThread == 0 && SEP3D::AMPS::PointSampler::Installed())
+      std::cout << "[srcSEP3D] point sampling: "
+                << Configuration().options().pointSampling.points.size()
+                << " point(s), "
+                << Configuration().options().pointSampling.species.size()
+                << " species, AMPS sampling length "
+                << PIC::RequiredSampleLength << " iterations\n";
   }
 
   // Keep the data-bearing output as the final operation in amps_init().  At
