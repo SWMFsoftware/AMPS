@@ -27,12 +27,31 @@ before implementation.
   for that production-wiring test.
 - **U06 / I08:** enable a declared ion species, mass, charge, E/B fixture, and
   compare the production mover with the analytic gyro-orbit.
-- **U07 / I11-I13:** test actual AMR selection and convergence after the
-  intended angular/refinement policy is declared.  The current surface callback
-  erases its computed subsolar angle and returns a constant.
+- **I13 reference review (I11/I12 implementation complete):** I11 now runs the
+  full 40/20/10/5 km production campaign and I12 verifies the linked realized
+  mesh. I13 cannot PASS until a passing I11 run produces its candidate science
+  CSV and deterministic configuration JSON, and an investigator reviews and
+  freezes them as `I13_archived_baseline_metrics.csv` and
+  `I13_archived_configuration.json`. Do not automate that scientific approval
+  step or treat candidate generation as a baseline PASS.
+- **U07 / I12 QUICK timing qualification:** the first FULL I12 attempt spent
+  106.5 minutes building the AMR tree and then exhausted `/data` by writing a
+  739 GB optional `mesh.dat`; it is correctly classified `ERROR`, not a mesh
+  verification result. Full-volume Tecplot output is now input-gated and off
+  in committed receipts. A factor-two QUICK attempt reached 1,074,788 blocks
+  and was stopped after 28.7 minutes at 223.7 GiB RSS on eight ranks. The
+  revised QUICK receipt uses three times the FULL targets to cross the next
+  coarser dyadic level. Its cold eight-rank wiring run completed in 1,409.9
+  seconds (23.50 minutes), with 191.9 GiB peak RSS and a 6,128,421,120-byte
+  center-measure cache. It was correctly `SKIPPED / NOT QUALIFIED`; even a
+  successful QUICK wiring check cannot replace FULL I12.
 - **U08 / I14:** convert a declared D01 LOLA product into the production
   triangulated boundary using a committed converter; verify area, normals,
-  watertightness, intersections, and longitude/latitude convention.
+  watertightness, intersections, and longitude/latitude convention. The
+  2026-10-11 linked smoke run also exposed a production-wiring gap: the
+  first-order no-force mover's initial internal-boundary switch rejects the
+  registered Nastran descriptor at iteration 1. Repair and exercise that exact
+  mover path before I14; a local geometry-kernel PASS is not a substitute.
 - **U09 / I15:** wire terrain-horizon calculations to the production
   illumination service; independently ray-cast selected facets and preserve
   real D02 gaps.
@@ -72,7 +91,12 @@ before implementation.
 - **U26 / I32-I40:** implement independent geometry fixtures for Kaguya TVIS,
   LADEE NMS, LAMP, LACE, PACE, and ground-based Na operators before any
   observational score.  Instrument selection, calibration, and hold-out sets
-  must be frozen in advance.
+  must be frozen in advance.  For I33, preserve native per-pointing UTC and
+  J2000 RA/Dec (or the documented ECLIPJ2000 transform), implement physical
+  exposure averaging, and do not select a WHAM Gaussian/top-hat beam law until
+  an authoritative radial response is available.  D14 currently supplies only
+  four exact brightest-beam positions plus a circular diameter and exposure,
+  not the numerical raster, per-beam timestamps, spectra, or beam response.
 
 ## Cross-cutting gaps
 

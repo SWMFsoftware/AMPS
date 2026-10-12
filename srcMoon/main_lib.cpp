@@ -21,6 +21,7 @@
 #include <iostream>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <time.h>
 
 #include <sys/time.h>
@@ -374,42 +375,93 @@ bool sodiumDistributeParticleParameters(double *x,double *v, cTreeNodeAMR<PIC::M
 
 //the mesh resolution
 double localSphericalSurfaceResolution(double *x) {
-  double res,r,l[3];
-  int idim;
-  double SubsolarAngle;
+  double radius=0.0;
+  for (int dimension=0;dimension<3;dimension++) radius+=x[dimension]*x[dimension];
+  radius=sqrt(radius);
+  if (!(radius>0.0)) {
+    exit(__LINE__,__FILE__,
+        "srcMoon: cannot evaluate angular refinement at zero radius");
+  }
 
-  for (r=0.0,idim=0;idim<3;idim++) r+=pow(x[idim],2);
-  for (r=sqrt(r),idim=0;idim<3;idim++) l[idim]=x[idim]/r;
+  // Preserve the exact historical callback for the no-input canonical
+  // regression.  All CLI-configured M1/science runs take the explicit branch
+  // below and therefore cannot inherit DebugRunMultiplier or a hidden angular
+  // profile from this translation unit.
+  if (!Moon::Runtime::HasConfiguration()) return rSphere*dxMinSphere;
 
-  SubsolarAngle=acos(l[0]);
+  const Moon::Runtime::Configuration& configuration=
+      Moon::Runtime::GetConfiguration();
+  const double cosine=std::max(-1.0,std::min(1.0,x[0]/radius));
+  const double solarZenithAngleDeg=acos(cosine)*180.0/Pi;
 
-
-  SubsolarAngle=0.0;
-
-  res=dxMinSphere+(dxMaxSphere-dxMinSphere)/Pi*SubsolarAngle;
-
-
-
-  return rSphere*res;
+  // Polar membership must use the same DE421 mean-Earth/polar-axis frame as
+  // LDEM_4.  LSO Z is an orbital-frame axis and is not silently treated as the
+  // lunar pole.  The mesh is frozen at initialization, so cache the transform
+  // at that one configured ET; a time-varying terrain boundary remains
+  // explicitly unsupported elsewhere in the application.
+#if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
+  static bool bodyTransformInitialized=false;
+  static SpiceDouble lsoToBody[3][3];
+  if (!bodyTransformInitialized) {
+    pxform_c(Moon::Frames::SolarOrbital,Moon::Frames::BodyFixed,
+             Moon::OrbitalMotion::et,lsoToBody);
+    bodyTransformInitialized=true;
+  }
+  double bodyPosition[3]={0.0,0.0,0.0};
+  for (int row=0;row<3;row++) for (int column=0;column<3;column++)
+    bodyPosition[row]+=lsoToBody[row][column]*x[column];
+#else
+  // The approved polar cap is defined in MOON_ME_DE421. A no-SPICE build has
+  // no authoritative LSO-to-body transform, so treating LSO Z as the lunar
+  // pole would silently change the physical contract. The no-input regression
+  // has already returned through its exact legacy branch above; only a
+  // configured science run can reach this explicit failure.
+  exit(__LINE__,__FILE__,
+      "srcMoon: configured polar refinement requires a SPICE/orbit build");
+  double bodyPosition[3]={0.0,0.0,0.0};  // Unreachable; keeps later code typed.
+#endif
+  const double bodyLatitudeDeg=asin(std::max(-1.0,std::min(1.0,
+      bodyPosition[2]/radius)))*180.0/Pi;
+  const double requestedResolutionM=
+      Moon::Runtime::EvaluateAngularMeshResolutionM(
+          configuration,solarZenithAngleDeg,fabs(bodyLatitudeDeg));
+  if (!std::isfinite(requestedResolutionM)) {
+    exit(__LINE__,__FILE__,
+        "srcMoon: invalid installed angular mesh-refinement configuration");
+  }
+  return requestedResolutionM;
 }
 
 double localResolution(double *x) {
-  int idim;
-  double lnR,res,r=0.0;
+  double radius2=0.0;
+  for (int dimension=0;dimension<DIM;dimension++)
+    radius2+=x[dimension]*x[dimension];
+  const double radius=sqrt(radius2);
 
-  for (idim=0;idim<DIM;idim++) r+=pow(x[idim],2);
-
-  r=sqrt(r);
-
-  if (r>dxMinGlobal*rSphere) {
-    lnR=log(r);
-    res=dxMinGlobal+(dxMaxGlobal-dxMinGlobal)/log(xMaxDomain*rSphere)*lnR;
+  // Keep the canonical no-input regression bit-for-bit compatible.  The
+  // legacy formula is intentionally not advertised as a science mesh profile.
+  if (!Moon::Runtime::HasConfiguration()) {
+    if (radius>dxMinGlobal*rSphere) {
+      const double res=dxMinGlobal+(dxMaxGlobal-dxMinGlobal)/
+          log(xMaxDomain*rSphere)*log(radius);
+      return rSphere*res;
+    }
+    return rSphere*dxMinGlobal;
   }
-  else res=dxMinGlobal;
 
-//  if ((x[0]>0.0)&&(sqrt(x[1]*x[1]+x[2]*x[2])<3.0*rSphere)) res=(res<0.4) ? res : 0.4;  ///min(res,0.4);
-
-  return rSphere*res;
+  // The production kernel uses a dimensionless log(radius/r_transition)
+  // coordinate.  This removes the legacy dimensional logarithm while
+  // retaining slow monotonic coarsening.  It also clamps box-corner queries
+  // beyond the nominal xMaxDomain radial scale to the declared far target.
+  const double requestedResolutionM=
+      Moon::Runtime::EvaluateVolumeMeshResolutionM(
+          Moon::Runtime::GetConfiguration(),radius,rSphere,
+          xMaxDomain*rSphere);
+  if (!std::isfinite(requestedResolutionM)) {
+    exit(__LINE__,__FILE__,
+        "srcMoon: invalid installed volume mesh-refinement configuration");
+  }
+  return requestedResolutionM;
 }
 
 //set up the local time step
@@ -910,6 +962,99 @@ InjectionTangentionalSpeed+=sqrt(v1);
 
 namespace {
 
+// Read Linux's immediately available host memory without imposing a policy
+// limit.  A negative return means that the platform did not expose the field;
+// in that case the conservative preflight below reports that it could not
+// evaluate the guard and lets the normal AMPS allocator retain authority.
+long long ReadMemAvailableBytes() {
+  std::ifstream input("/proc/meminfo");
+  std::string line;
+  while (std::getline(input,line)) {
+    std::istringstream fields(line);
+    std::string label,unit;
+    long long valueKiB=-1;
+    if ((fields >> label >> valueKiB >> unit) &&
+        label=="MemAvailable:" && unit=="kB") {
+      return 1024LL*valueKiB;
+    }
+  }
+  return -1;
+}
+
+// Reject only a mathematically impossible block allocation before AMPS begins
+// consuming the host.  This is deliberately a lower bound rather than a
+// tunable memory ceiling: every owned leaf requires a block object and its
+// block-associated buffer even if no center/corner nodes or particles were
+// subsequently allocated.  Summing across ranks that share a physical host
+// accounts for MPI decomposition without multiplying the host's MemAvailable
+// value independently on every process.
+void CheckBlockAllocationMemoryLowerBound() {
+  unsigned long long localOwnedLeaves=0;
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=
+           PIC::Mesh::mesh->BranchBottomNodeList;
+       node!=NULL;node=node->nextBranchBottomNode) {
+    if (node->Thread==PIC::ThisThread && node->IsUsedInCalculationFlag)
+      localOwnedLeaves++;
+  }
+
+  const unsigned long long bytesPerLeafLowerBound=
+      sizeof(PIC::Mesh::cDataBlockAMR)+
+      static_cast<unsigned long long>(
+          PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength);
+  const unsigned long long localLowerBound=
+      localOwnedLeaves*bytesPerLeafLowerBound;
+
+  MPI_Comm sharedCommunicator=MPI_COMM_NULL;
+  MPI_Comm_split_type(MPI_GLOBAL_COMMUNICATOR,MPI_COMM_TYPE_SHARED,0,
+                      MPI_INFO_NULL,&sharedCommunicator);
+  unsigned long long hostOwnedLeaves=0,hostLowerBound=0;
+  MPI_Allreduce(&localOwnedLeaves,&hostOwnedLeaves,1,MPI_UNSIGNED_LONG_LONG,
+                MPI_SUM,sharedCommunicator);
+  MPI_Allreduce(&localLowerBound,&hostLowerBound,1,MPI_UNSIGNED_LONG_LONG,
+                MPI_SUM,sharedCommunicator);
+  int sharedRank=0;
+  MPI_Comm_rank(sharedCommunicator,&sharedRank);
+  const long long availableBytes=ReadMemAvailableBytes();
+
+  if (sharedRank==0) {
+    const double gib=1024.0*1024.0*1024.0;
+    fprintf(PIC::DiagnospticMessageStream,
+        "$PREFIX: Pre-allocation lower bound: %llu owned leaves, %.3f GiB; "
+        "host MemAvailable: %s\n",hostOwnedLeaves,hostLowerBound/gib,
+        availableBytes>=0 ?
+            (std::to_string(availableBytes/gib)+" GiB").c_str() :
+            "unavailable");
+    fflush(PIC::DiagnospticMessageStream);
+  }
+
+  // No guessed safety factor is used.  Equality is also rejected because the
+  // lower bound excludes center/corner nodes, AMR metadata, particles, MPI,
+  // and all process/runtime storage, each of which requires additional bytes.
+  const int impossible=(availableBytes>=0 &&
+      hostLowerBound>=static_cast<unsigned long long>(availableBytes)) ? 1 : 0;
+  int anyImpossible=0;
+  MPI_Allreduce(&impossible,&anyImpossible,1,MPI_INT,MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Comm_free(&sharedCommunicator);
+  if (anyImpossible) {
+    std::ostringstream message;
+    message << "srcMoon cannot allocate the requested AMR mesh: on at least "
+            << "one host, the unavoidable block-object lower bound already "
+            << "equals or exceeds Linux MemAvailable before center nodes, "
+            << "sampling buffers, particles, MPI, and runtime overhead are "
+            << "allocated. The run was terminated before resource exhaustion. "
+            << "Reduce mesh memory by increasing the input-file values for "
+            << "mesh_near_surface_cell_size_m, "
+            << "mesh_far_field_cell_size_m, mesh_outer_cell_size_m, "
+            << "mesh_polar_resolution_m, and the values in "
+            << "mesh_angular_resolution_m_by_sza; or distribute the MPI ranks "
+            << "across additional hosts with sufficient aggregate memory. "
+            << "Use srcMoon/examples/m1_regression.in for bounded developer "
+            << "wiring tests; it is not M1 qualification evidence.";
+    exit(__LINE__,__FILE__,message.str().c_str());
+  }
+}
+
 // Adapt a candidate produced by the existing spherical source kernels to the
 // resolved terrain without duplicating any source-rate or velocity law.
 //
@@ -1064,7 +1209,13 @@ void amps_init() {
   #endif
 
 
-    rnd_seed();
+    // Configured science runs use the explicit receipt seed so every source,
+    // surface callback, and mover draws from the same reproducible production
+    // stream.  The no-input regression retains AMPS's historical seed path.
+    if (Moon::Runtime::HasConfiguration())
+      rnd_seed(Moon::Runtime::GetConfiguration().randomSeed);
+    else
+      rnd_seed();
 
 
 
@@ -1074,6 +1225,16 @@ void amps_init() {
 
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
+
+    // A CLI moon receipt is installed in main() before MPI startup.  Apply its
+    // UTC before Moon::Init_BeforeParser() reaches Exosphere::Init_SPICE(), so
+    // orbit dynamics, illumination and all observation geometry share one ET.
+    // The no-input regression deliberately retains the generated compile-time
+    // SimulationStartTimeString.
+    if (Moon::Runtime::HasConfiguration()) {
+      Exosphere::SetSimulationStartTimeString(
+          Moon::Runtime::GetConfiguration().simulationStartUtc.c_str());
+    }
 
     //init the Mercury model
     Moon::Init_BeforeParser();
@@ -1148,6 +1309,34 @@ void amps_init() {
                   << ", surface="
                   << Moon::Runtime::SurfaceGeometryName(
                          configuration.surfaceGeometry)
+                  << ", simulation_start_utc="
+                  << configuration.simulationStartUtc
+                  << ", mesh_profile=" << configuration.meshProfile
+                  << ", mesh_near_surface_cell_size_m="
+                  << configuration.meshNearSurfaceCellSizeM
+                  << ", mesh_near_surface_extent_m="
+                  << configuration.meshNearSurfaceExtentM
+                  << ", mesh_far_field_cell_size_m="
+                  << configuration.meshFarFieldCellSizeM
+                  << ", mesh_far_field_extent_m="
+                  << configuration.meshFarFieldExtentM
+                  << ", mesh_outer_cell_size_m="
+                  << configuration.meshOuterCellSizeM
+                  << ", mesh_output_tecplot="
+                  << (configuration.meshOutputTecplot ? "true" : "false")
+                  << ", simulation_environment_mode="
+                  << configuration.simulationEnvironmentMode
+                  << ", profile_altitude_points="
+                  << configuration.profileAltitudeGridM.size()
+                  << ", shell_weighting="
+                  << configuration.profileShellAngularWeighting
+                  << ", limb_sides=" << configuration.limbSides
+                  << ", tail_coordinates="
+                  << configuration.tailMapCoordinateSystem
+                  << ", tail_exposure_s="
+                  << configuration.tailExposureDurationS
+                  << ", tail_beam_response="
+                  << configuration.tailBeamResponse
                   << std::endl;
       }
     }
@@ -1485,6 +1674,17 @@ void amps_init() {
    // may use all _MAX_STRING_LENGTH_PIC_ bytes before a filename is appended.
    std::string fname;
 
+   // Full-volume Tecplot output is a diagnostic, not a prerequisite for the
+   // particle mover, AMR ownership, or any M1 observable.  At the approved M1
+   // resolution the text mesh can exceed the size of the entire executable
+   // state by hundreds of gigabytes.  Configured runs therefore emit it only
+   // after an explicit input request.  The historical no-input path also
+   // leaves it disabled because there is no receipt that could authorize or
+   // provenance the output.  ``mesh.msh`` below remains unconditional: rank 0
+   // writes that AMR-tree exchange file and other MPI ranks read it.
+   const bool writeMeshTecplot = Moon::Runtime::HasConfiguration() &&
+       Moon::Runtime::GetConfiguration().meshOutputTecplot;
+
 
     fname=std::string(PIC::OutputDataFileDirectory)+"/mesh.msh";
     if (PIC::Mesh::mesh->ThisThread==0) {
@@ -1527,8 +1727,11 @@ test_cut_cell = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) -> void 
  }
 };
 
-test_cut_cell(PIC::Mesh::mesh->rootTree);
-if (PIC::ThisThread==0) PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,"tetra_mesh.dat"); 
+if (writeMeshTecplot) {
+  test_cut_cell(PIC::Mesh::mesh->rootTree);
+  if (PIC::ThisThread==0)
+    PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,"tetra_mesh.dat");
+}
 
 
 
@@ -1539,8 +1742,10 @@ if (PIC::ThisThread==0) PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,"tetra_
 
   //  cout << __LINE__ << " rnd=" << rnd() << " " << PIC::Mesh::mesh->ThisThread << endl;
 
-    fname=std::string(PIC::OutputDataFileDirectory)+"/mesh.dat";
-    PIC::Mesh::mesh->outputMeshTECPLOT(fname.c_str());
+    if (writeMeshTecplot) {
+      fname=std::string(PIC::OutputDataFileDirectory)+"/mesh.dat";
+      PIC::Mesh::mesh->outputMeshTECPLOT(fname.c_str());
+    }
 
     PIC::Mesh::mesh->memoryAllocationReport();
     PIC::Mesh::mesh->GetMeshTreeStatistics();
@@ -1552,15 +1757,23 @@ if (PIC::ThisThread==0) PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,"tetra_
     PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
     PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
+    // The tree and its final MPI ownership now exist, while no data blocks
+    // have yet been allocated.  This is the only point where a host-level
+    // impossibility can be diagnosed without first consuming the memory whose
+    // shortage we are trying to explain.
+    CheckBlockAllocationMemoryLowerBound();
+
     //initialize the blocks
     PIC::Mesh::mesh->AllowBlockAllocation=true;
     PIC::Mesh::mesh->AllocateTreeBlocks();
 
 
-test_cut_cell(PIC::Mesh::mesh->rootTree);
+if (writeMeshTecplot) {
+  test_cut_cell(PIC::Mesh::mesh->rootTree);
 
-fname="tetra_mesh.thread="+std::to_string(PIC::ThisThread)+".dat";
-PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,fname.c_str());
+  fname="tetra_mesh.thread="+std::to_string(PIC::ThisThread)+".dat";
+  PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,fname.c_str());
+}
 
     PIC::Mesh::mesh->memoryAllocationReport();
     PIC::Mesh::mesh->GetMeshTreeStatistics();
@@ -1957,8 +2170,20 @@ void amps_time_step() {
     const double SimulationTimeStep=
         PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
     const SpiceDouble etBegin=Moon::OrbitalMotion::et;
-    const SpiceDouble etMiddle=etBegin+0.5*SimulationTimeStep;
-    const SpiceDouble etEnd=etBegin+SimulationTimeStep;
+    const bool freezeEnvironment=Moon::Runtime::HasConfiguration() &&
+        Moon::Runtime::GetConfiguration().simulationEnvironmentMode=="frozen";
+
+    // Spatial convergence must compare stationary physical problems.  In the
+    // input-selected frozen mode, all SPICE queries therefore use the exact
+    // declared start epoch and OrbitalMotion::et is not advanced. PIC::TimeStep
+    // below still advances particles by their normal per-species SI time step;
+    // only the external ephemeris/illumination/frame coefficients are frozen.
+    // The legacy no-input path and explicit ``evolving`` mode retain midpoint
+    // force evaluation and advance the environment epoch once per PIC step.
+    const SpiceDouble etMiddle=freezeEnvironment ? etBegin :
+        etBegin+0.5*SimulationTimeStep;
+    const SpiceDouble etEnd=freezeEnvironment ? etBegin :
+        etBegin+SimulationTimeStep;
     SpiceDouble StateBegin[6],StateMiddle[6],StateEnd[6];
     SpiceDouble StateSunLSO[6],StateEarthLSO[6],StateEarthJ2000[6];
     SpiceDouble J2000ToLSO[6][6],lt;

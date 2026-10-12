@@ -1,0 +1,23 @@
+{
+  "id": "I13",
+  "name": "Spherical-surface baseline preservation",
+  "purpose": "Preserve a controlled analytic-sphere baseline before topography or later physical capabilities are enabled.",
+  "production_capability": "Registered spherical internal boundary, linked AMR tree, compiled species/source configuration, and I11-qualified sampled observables.",
+  "production_entry_points": ["cInternalSphericalData::GetSurfaceElementArea", "PIC::Mesh::mesh->BranchBottomNodeList", "Moon::SourceProcesses::totalProductionRate", "I11 sampled production operators"],
+  "configuration": "The exact 5 km receipt derived from the reviewed mesh_profile=full srcMoon/examples/m1_sphere.in by the same transformer used in I11; QUICK/CUSTOM inputs rejected before launch; hash-identical to the passing I11/5km/application.in; frozen SPICE environment; neutral Na; built-in impact vaporization enabled; MySource disabled.",
+  "inputs": ["complete sphere-mode srcMoon .in receipt", "reviewed reference/I13_archived_baseline_metrics.csv after I11 PASS", "reviewed reference/I13_archived_configuration.json after I11 PASS"],
+  "independent_reference": "Analytical 4*pi*R^2 for geometry and a reviewed regression baseline generated only after numerical/statistical qualification.",
+  "units": "metres, square metres, seconds, particles per second, number density per cubic metre, column density per square metre, Rayleigh",
+  "frame_time_convention": "Moon-centred LSO with body-fixed controls in MOON_ME_DE421 at the receipt UTC converted by CSPICE to TDB ET.",
+  "deterministic_stochastic_controls": "Geometry is deterministic; sampled baseline seeds, independent blocks, MPI/OpenMP layout, and confidence intervals come from I11 artifacts.",
+  "procedure": "Sum areas from every production sphere element; inventory and exactly compare the input hash, realized mesh counts, compiled species table, particle weights/time steps, and source totals; then compare reviewed I11 observables with the immutable archived CSV.",
+  "metrics": ["sphere area relative error", "AMR leaf/block count", "species inventory", "source totals", "profiles", "surface return flux", "column density", "synthetic brightness"],
+  "acceptance_criteria": "Sphere area relative error <=1e-10; the reviewed deterministic configuration object matches exactly; every approved sampled metric remains within its predeclared I11 numerical plus statistical tolerance.",
+  "expected_pass_result": "The corrected, numerically qualified sphere case is reproducible and can be paired with later LOLA runs.",
+  "expected_failure_modes": ["wrong geometry mode", "sphere area error", "mesh/species/source drift", "sampled observable drift", "altered baseline checksum", "missing I11 qualification"],
+  "required_data": ["configured DE421 SPICE kernels", "campaign-generated reviewed I13 baseline; no observational data"],
+  "data_hashes": "SPICE and input hashes are captured in run_manifest.json; frozen science-CSV and configuration-JSON hashes are added to that manifest when the reviewed files are installed.",
+  "predecessor_gates": ["U03", "U04", "U05", "U06", "I10", "I11", "I12"],
+  "artifacts": ["receipt.txt", "stdout.log", "stderr.log", "result.json", "run_manifest.json", "input snapshot", "reviewed baseline CSV", "reviewed configuration JSON"],
+  "status_semantics": "A geometry failure is FAIL. Missing I11-qualified metrics or either unreviewed/missing baseline artifact is SKIPPED. Infrastructure or corrupt reference evidence is ERROR. PASS requires exact configuration identity and the complete archived science comparison."
+}

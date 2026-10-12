@@ -233,10 +233,15 @@ double Exosphere::GetSurfaceTemperature(double CosSubSolarAngle,double *x_LOCAL_
 //calculate the sodium column density and plot
 int Exosphere::ColumnIntegral::GetVariableList(char *vlist) {
   int spec,nVariables=0;
+  std::string variables;
 
   //column density
   for (spec=0;spec<PIC::nTotalSpecies;spec++) {
-    if (vlist!=NULL) sprintf(vlist,"%s,  \"Column Integral(%s)\",  \"Mean Speed Along the Line of Sight(%s)\"",vlist,PIC::MolecularData::GetChemSymbol(spec),PIC::MolecularData::GetChemSymbol(spec));
+    if (vlist!=NULL) {
+      const std::string symbol=PIC::MolecularData::GetChemSymbol(spec);
+      variables+=",  \"Column Integral("+symbol+")\",  "
+          "\"Mean Speed Along the Line of Sight("+symbol+")\"";
+    }
     nVariables+=2;
   }
 
@@ -247,8 +252,23 @@ int Exosphere::ColumnIntegral::GetVariableList(char *vlist) {
     Moon::Sampling::SubsolarLimbColumnIntegrals::_NA_EMISSION_5891_58A_SAMPLE_OFFSET_=nVariables;
     Moon::Sampling::SubsolarLimbColumnIntegrals::_NA_EMISSION_5897_56A_SAMPLE_OFFSET_=nVariables+1;
 
-    if (vlist!=NULL) sprintf(vlist,"%s,  \"Sodium Emission(5891_58A)\",  \"Sodium Emission(5897_56A)\"",vlist);
+    if (vlist!=NULL)
+      variables+=",  \"Sodium Emission(5891_58A)\",  "
+          "\"Sodium Emission(5897_56A)\"";
     nVariables+=2;
+  }
+
+  if (vlist!=NULL) {
+    // Every production caller provides the AMPS-standard fixed buffer. Build
+    // the complete list separately, validate its terminated size, and copy it
+    // once. The former sprintf(vlist,"%s...",vlist) both overlapped its input
+    // and output (undefined behavior) and gave the compiler no way to prove
+    // that the destination could not overflow.
+    if (variables.size()+1>_MAX_STRING_LENGTH_PIC_)
+      exit(__LINE__,__FILE__,
+          "srcMoon column-integral variable list exceeds the AMPS buffer");
+    variables.copy(vlist,variables.size());
+    vlist[variables.size()]='\0';
   }
 
   return nVariables;
@@ -469,5 +489,4 @@ double Moon::ElectronImpactIonizationRate(PIC::ParticleBuffer::byte* ParticleDat
   
    return rate;
 }	
-
 

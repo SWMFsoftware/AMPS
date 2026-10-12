@@ -29,6 +29,7 @@ stay free of PIC/MPI/application headers can use it by adding
 
 | Code | Use |
 |---|---|
+| `srcMoon/MoonInput.cpp` | flat `application: moon` runtime block and Moon-owned value validation |
 | `srcSEP3D/runtime/configuration_io.cpp` | complete srcSEP3D input (`kSrcSep3dLayout`) |
 | `srcSEP/util/sep_initialization.cpp` | complete srcSEP input (`kSrcSepLayout`) |
 | `src/models/sep_corona_swcme/shock_front/configuration.cpp` | reduced shock-front event (`physics: shock_front`) |

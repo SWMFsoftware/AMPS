@@ -46,6 +46,14 @@ int report(const char *name, double actual, double expected,
   return passed ? 0 : 1;
 }
 
+int report_string(const char *name, const std::string& actual,
+                  const char *expected) {
+  const bool passed=actual==expected;
+  std::printf("%s %s actual=%s expected=%s\n",
+      passed ? "PASS" : "FAIL",name,actual.c_str(),expected);
+  return passed ? 0 : 1;
+}
+
 int sticking() {
   // Exercise compiled production lookup/piecewise functions at frozen table
   // or branch control points.  These checks do not sample the stochastic
@@ -378,8 +386,24 @@ int photochemistry() {
 }
 
 int mesh_resolution() {
-  // Freeze the effective callbacks in the current build.  Their constant
-  // values document baseline wiring but do not establish mesh convergence.
+  // U07 calls the same input-driven production kernels used by the AMR
+  // callbacks.  Frame transformation and realized-cell placement remain the
+  // linked I12 responsibility; this local layer independently fixes the
+  // piecewise interpolation, terminator override, polar minimum, and radial
+  // transition arithmetic before a costly mesh is built.
+  Moon::Runtime::Configuration configuration;
+  configuration.meshNearSurfaceCellSizeM=10000.0;
+  configuration.meshNearSurfaceExtentM=200000.0;
+  configuration.meshFarFieldCellSizeM=40000.0;
+  configuration.meshFarFieldExtentM=10000000.0;
+  configuration.meshOuterCellSizeM=17371000.0;
+  configuration.meshAngularSzaDeg={0.0,30.0,60.0,90.0,120.0,180.0};
+  configuration.meshAngularResolutionM={10000.0,10000.0,5000.0,5000.0,
+                                         10000.0,10000.0};
+  configuration.meshTerminatorHalfWidthDeg=15.0;
+  configuration.meshPolarCapStartLatitudeDeg=75.0;
+  configuration.meshPolarResolutionM=5000.0;
+
   double position_m[3] = {_RADIUS_(_MOON_), 0.0, 0.0};
   const double expected_surface =
       _RADIUS_(_MOON_) * 4.0 * 4.0 / 100.0;
@@ -390,6 +414,91 @@ int mesh_resolution() {
       localSphericalSurfaceResolution(position_m), expected_surface, 1.0e-14);
   failures += report("volume_resolution_m", localResolution(position_m),
       expected_volume, 1.0e-14);
+  const double szaDeg[6]={0.0,30.0,60.0,90.0,120.0,180.0};
+  const double expectedAngularM[6]={10000.0,10000.0,5000.0,5000.0,
+                                    10000.0,10000.0};
+  for (int i=0;i<6;i++) {
+    const std::string metric="configured_sza_"+std::to_string(i)+
+        "_resolution_m";
+    failures+=report(metric.c_str(),
+        Moon::Runtime::EvaluateAngularMeshResolutionM(
+            configuration,szaDeg[i],0.0),expectedAngularM[i],1.0e-14);
+  }
+  // SZA=45 linearly interpolates to 7.5 km.  SZA=80 lies inside the approved
+  // +/-15-degree terminator band and is therefore capped at the explicit
+  // 90-degree value of 5 km.  A polar point independently receives 5 km.
+  failures+=report("configured_sza_45_resolution_m",
+      Moon::Runtime::EvaluateAngularMeshResolutionM(
+          configuration,45.0,0.0),7500.0,1.0e-14);
+  failures+=report("configured_terminator_band_resolution_m",
+      Moon::Runtime::EvaluateAngularMeshResolutionM(
+          configuration,80.0,0.0),5000.0,1.0e-14);
+  failures+=report("configured_polar_resolution_m",
+      Moon::Runtime::EvaluateAngularMeshResolutionM(
+          configuration,0.0,80.0),5000.0,1.0e-14);
+
+  const double referenceRadiusM=_RADIUS_(_MOON_);
+  const double outerRadiusM=400.0*referenceRadiusM;
+  failures+=report("configured_volume_surface_resolution_m",
+      Moon::Runtime::EvaluateVolumeMeshResolutionM(
+          configuration,referenceRadiusM,referenceRadiusM,outerRadiusM),
+      10000.0,1.0e-14);
+  failures+=report("configured_volume_extent_resolution_m",
+      Moon::Runtime::EvaluateVolumeMeshResolutionM(configuration,
+          referenceRadiusM+200000.0,referenceRadiusM,outerRadiusM),
+      10000.0,1.0e-14);
+  failures+=report("configured_volume_far_extent_resolution_m",
+      Moon::Runtime::EvaluateVolumeMeshResolutionM(configuration,
+          referenceRadiusM+10000000.0,referenceRadiusM,outerRadiusM),
+      40000.0,1.0e-14);
+  const double nearTransitionRadiusM=referenceRadiusM+200000.0;
+  const double farTransitionRadiusM=referenceRadiusM+10000000.0;
+  failures+=report("configured_volume_science_log_midpoint_resolution_m",
+      Moon::Runtime::EvaluateVolumeMeshResolutionM(configuration,
+          std::sqrt(nearTransitionRadiusM*farTransitionRadiusM),
+          referenceRadiusM,outerRadiusM),25000.0,1.0e-14);
+  failures+=report("configured_volume_outer_log_midpoint_resolution_m",
+      Moon::Runtime::EvaluateVolumeMeshResolutionM(configuration,
+          std::sqrt(farTransitionRadiusM*outerRadiusM),
+          referenceRadiusM,outerRadiusM),8705500.0,1.0e-14);
+  failures+=report("configured_volume_outer_resolution_m",
+      Moon::Runtime::EvaluateVolumeMeshResolutionM(
+          configuration,outerRadiusM,referenceRadiusM,outerRadiusM),
+      17371000.0,1.0e-14);
+
+  // QUICK changes resolution only: physical extents and angular-region
+  // boundaries are identical to FULL, while every length target is tripled.
+  // Factor two was measured to retain one excessive dyadic AMR level, so the
+  // explicit factor-three receipt is now part of the production-kernel
+  // contract rather than an untested performance assumption.
+  // Exercise the production selectors with that independently constructed
+  // receipt so the fast profile cannot accidentally retain one FULL-scale
+  // branch and create an unexpectedly expensive mixed mesh.
+  Moon::Runtime::Configuration quick=configuration;
+  quick.meshNearSurfaceCellSizeM=30000.0;
+  quick.meshFarFieldCellSizeM=120000.0;
+  quick.meshOuterCellSizeM=52113000.0;
+  quick.meshAngularResolutionM={30000.0,30000.0,15000.0,15000.0,
+                                30000.0,30000.0};
+  quick.meshPolarResolutionM=15000.0;
+  failures+=report("quick_terminator_resolution_m",
+      Moon::Runtime::EvaluateAngularMeshResolutionM(quick,80.0,0.0),
+      15000.0,1.0e-14);
+  failures+=report("quick_polar_resolution_m",
+      Moon::Runtime::EvaluateAngularMeshResolutionM(quick,0.0,80.0),
+      15000.0,1.0e-14);
+  failures+=report("quick_volume_surface_resolution_m",
+      Moon::Runtime::EvaluateVolumeMeshResolutionM(
+          quick,referenceRadiusM,referenceRadiusM,outerRadiusM),
+      30000.0,1.0e-14);
+  failures+=report("quick_volume_far_extent_resolution_m",
+      Moon::Runtime::EvaluateVolumeMeshResolutionM(quick,
+          referenceRadiusM+10000000.0,referenceRadiusM,outerRadiusM),
+      120000.0,1.0e-14);
+  failures+=report("quick_volume_outer_resolution_m",
+      Moon::Runtime::EvaluateVolumeMeshResolutionM(
+          quick,outerRadiusM,referenceRadiusM,outerRadiusM),
+      52113000.0,1.0e-14);
   return failures == 0 ? 0 : 1;
 }
 
@@ -408,15 +517,29 @@ int lola_geometry() {
   const fs::path cea_file=output_directory/"lola_surface.cea";
   const fs::path tecplot_file=output_directory/"lola_surface.dat";
   {
-    // Include an unrelated section to prove the production parser respects
-    // application ownership.  Absolute raw-data paths identify the exact D01
+    // Exercise the same generic ``application: moon`` block consumed by the
+    // production executable. Absolute raw-data paths identify the exact D01
     // files; generated products remain under the selected test output root.
+    // The shared grammar itself is independently tested in
+    // src/general/input/test_amps_input.cpp; this probe verifies Moon's owner
+    // dispatch and its existing physical/domain validation.
     std::ofstream input(input_file);
-    input << "#section begin: unrelated\nignored = yes\n#section end\n"
-          << "#section begin: moon\n"
+    input << "#begin application: moon\n"
           << "spice_path = /home/vtenishe/SPICE\n"
           << "surface_geometry = lola\n"
           << "surface_mesh_resolution_m = 500000\n"
+          << "mesh_profile = custom\n"
+          << "mesh_near_surface_cell_size_m = 10000\n"
+          << "mesh_near_surface_extent_m = 200000\n"
+          << "mesh_far_field_cell_size_m = 40000\n"
+          << "mesh_far_field_extent_m = 10000000\n"
+          << "mesh_outer_cell_size_m = 17371000\n"
+          << "mesh_output_tecplot = false\n"
+          << "mesh_angular_resolution_m_by_sza = "
+          << "0:10000,30:10000,60:5000,90:5000,120:10000,180:10000\n"
+          << "mesh_terminator_half_width_deg = 15\n"
+          << "mesh_polar_cap_start_latitude_deg = 75\n"
+          << "mesh_polar_resolution_m = 5000\n"
           << "lola_product_id = LDEM_4\n"
           << "lola_image_file = "
           << "/data/vtenishe/moon_validation_data/lola/raw/LDEM_4.IMG\n"
@@ -424,7 +547,33 @@ int lola_geometry() {
           << "/data/vtenishe/moon_validation_data/lola/raw/LDEM_4.LBL\n"
           << "surface_cea_file = " << cea_file.string() << "\n"
           << "surface_tecplot_file = " << tecplot_file.string() << "\n"
-          << "#section end\n";
+          << "simulation_start_utc = 2009-01-24T00:00:00\n"
+          << "simulation_environment_mode = frozen\n"
+          << "random_seed = 731993\n"
+          << "profile_altitude_near_maximum_m = 200000\n"
+          << "profile_altitude_near_step_m = 5000\n"
+          << "profile_altitude_middle_maximum_m = 1000000\n"
+          << "profile_altitude_middle_step_m = 25000\n"
+          << "profile_altitude_far_maximum_m = 10000000\n"
+          << "profile_altitude_far_points_per_decade = 8\n"
+          << "profile_solar_zenith_angles_deg = 0,30,60,90,120,180\n"
+          << "profile_include_body_fixed_poles = true\n"
+          << "profile_include_shell_average = true\n"
+          << "profile_shell_angular_weighting = solid-angle\n"
+          << "limb_observer = earth\n"
+          << "limb_plane = sun-moon-earth\n"
+          << "limb_sides = both\n"
+          << "limb_branch_reference = projected-sun\n"
+          << "limb_tangent_maximum_altitude_m = 1000000\n"
+          << "tail_center_direction = anti-lunar\n"
+          << "tail_map_coordinate_system = j2000-ra-dec\n"
+          << "tail_map_display_orientation = west-right\n"
+          << "tail_map_half_width_deg = 7.5\n"
+          << "tail_beam_diameter_deg = 1.0\n"
+          << "tail_exposure_duration_s = 120\n"
+          << "tail_beam_response = unresolved\n"
+          << "tail_temporal_operator = exposure-average\n"
+          << "#end application\n";
   }
 
   Moon::Runtime::Configuration configuration;
@@ -435,6 +584,152 @@ int lola_geometry() {
     return 1;
   }
 
+  // The migration is intentionally strict: the retired #section spelling
+  // must fail instead of being accepted through an undocumented compatibility
+  // path. This prevents two Moon grammars from drifting independently.
+  const fs::path legacy_input_file=output_directory/"u08-legacy-section.in";
+  std::ifstream generic_input(input_file);
+  std::string legacy_text((std::istreambuf_iterator<char>(generic_input)),
+                           std::istreambuf_iterator<char>());
+  const std::size_t generic_begin=legacy_text.find("#begin application: moon");
+  const std::size_t generic_end=legacy_text.find("#end application");
+  if (generic_begin==std::string::npos || generic_end==std::string::npos) {
+    std::fprintf(stderr,"FAIL legacy_input_fixture missing generic boundary\n");
+    return 1;
+  }
+  legacy_text.replace(generic_end,std::string("#end application").size(),
+                      "#section end");
+  legacy_text.replace(generic_begin,
+                      std::string("#begin application: moon").size(),
+                      "#section begin: moon");
+  {
+    std::ofstream legacy_input(legacy_input_file);
+    legacy_input << legacy_text;
+  }
+  Moon::Runtime::Configuration rejected_configuration;
+  if (Moon::Runtime::ParseApplicationInput(legacy_input_file.string(),
+                                            &rejected_configuration,&error) ||
+      error.find("unknown directive '#section'")==std::string::npos) {
+    std::fprintf(stderr,
+        "FAIL legacy #section input was not rejected by generic grammar: %s\n",
+        error.c_str());
+    return 1;
+  }
+
+  // Parse a second, independently named receipt with the other D14-backed
+  // coordinate/display choices and one selected limb branch.  This proves the
+  // selectors are genuinely adjustable through .in rather than constants
+  // that happen to be serialized in the primary fixture.  It does not run an
+  // observation operator or turn these parser checks into U26/I33 evidence.
+  const fs::path alternate_input_file=output_directory/"u08-alternate.in";
+  std::ifstream primary_input(input_file);
+  std::string alternate_text((std::istreambuf_iterator<char>(primary_input)),
+                              std::istreambuf_iterator<char>());
+  const auto replace_once=[&alternate_text](const std::string& from,
+                                             const std::string& to) {
+    const std::size_t location=alternate_text.find(from);
+    if (location==std::string::npos) return false;
+    alternate_text.replace(location,from.size(),to);
+    return true;
+  };
+  if (!replace_once("limb_sides = both",
+                    "limb_sides = away-from-projected-sun") ||
+      !replace_once("tail_map_coordinate_system = j2000-ra-dec",
+                    "tail_map_coordinate_system = eclipj2000-lon-lat") ||
+      !replace_once("tail_map_display_orientation = west-right",
+                    "tail_map_display_orientation = east-right")) {
+    std::fprintf(stderr,"FAIL alternate_input_fixture replacement failed\n");
+    return 1;
+  }
+  {
+    std::ofstream alternate_input(alternate_input_file);
+    alternate_input << alternate_text;
+  }
+  Moon::Runtime::Configuration alternate_configuration;
+  if (!Moon::Runtime::ParseApplicationInput(alternate_input_file.string(),
+                                             &alternate_configuration,&error)) {
+    std::fprintf(stderr,"FAIL alternate_moon_input_parser %s\n",error.c_str());
+    return 1;
+  }
+
+  // The steady/transient choice is part of the physical run contract, not a
+  // free-form provenance label. Prove that an unknown value fails before AMR
+  // initialization instead of silently reverting to the legacy evolving
+  // behavior.
+  const fs::path invalid_environment_file=
+      output_directory/"u08-invalid-environment.in";
+  std::string invalid_environment_text=alternate_text;
+  const std::string valid_environment="simulation_environment_mode = frozen";
+  const std::size_t environment_location=
+      invalid_environment_text.find(valid_environment);
+  if (environment_location==std::string::npos) {
+    std::fprintf(stderr,"FAIL invalid_environment_fixture missing key\n");
+    return 1;
+  }
+  invalid_environment_text.replace(environment_location,
+      valid_environment.size(),"simulation_environment_mode = assumed");
+  {
+    std::ofstream invalid_environment(invalid_environment_file);
+    invalid_environment << invalid_environment_text;
+  }
+  Moon::Runtime::Configuration invalid_configuration;
+  if (Moon::Runtime::ParseApplicationInput(invalid_environment_file.string(),
+                                            &invalid_configuration,&error)) {
+    std::fprintf(stderr,
+        "FAIL invalid simulation_environment_mode was accepted\n");
+    return 1;
+  }
+
+  // The visualization switch must be a real Boolean.  Rejecting a misspelled
+  // value prevents an expensive run from silently enabling the historical
+  // full-volume text dump and exhausting the output filesystem.
+  const fs::path invalid_mesh_output_file=
+      output_directory/"u08-invalid-mesh-output.in";
+  std::string invalid_mesh_output_text=alternate_text;
+  const std::string valid_mesh_output="mesh_output_tecplot = false";
+  const std::size_t mesh_output_location=
+      invalid_mesh_output_text.find(valid_mesh_output);
+  if (mesh_output_location==std::string::npos) {
+    std::fprintf(stderr,"FAIL invalid_mesh_output_fixture missing key\n");
+    return 1;
+  }
+  invalid_mesh_output_text.replace(mesh_output_location,
+      valid_mesh_output.size(),"mesh_output_tecplot = automatic");
+  {
+    std::ofstream invalid_mesh_output(invalid_mesh_output_file);
+    invalid_mesh_output << invalid_mesh_output_text;
+  }
+  if (Moon::Runtime::ParseApplicationInput(invalid_mesh_output_file.string(),
+                                            &invalid_configuration,&error)) {
+    std::fprintf(stderr,"FAIL invalid mesh_output_tecplot was accepted\n");
+    return 1;
+  }
+
+  // QUICK, FULL, and CUSTOM are the only declared profile identities. The
+  // profile is provenance rather than a source of hidden resolution values,
+  // but accepting an old or misspelled label would make run manifests
+  // ambiguous about which committed receipt was intended.
+  const fs::path invalid_profile_file=
+      output_directory/"u08-invalid-profile.in";
+  std::string invalid_profile_text=alternate_text;
+  const std::string valid_profile="mesh_profile = custom";
+  const std::size_t profile_location=invalid_profile_text.find(valid_profile);
+  if (profile_location==std::string::npos) {
+    std::fprintf(stderr,"FAIL invalid_profile_fixture missing key\n");
+    return 1;
+  }
+  invalid_profile_text.replace(profile_location,valid_profile.size(),
+                               "mesh_profile = production");
+  {
+    std::ofstream invalid_profile(invalid_profile_file);
+    invalid_profile << invalid_profile_text;
+  }
+  if (Moon::Runtime::ParseApplicationInput(invalid_profile_file.string(),
+                                            &invalid_configuration,&error)) {
+    std::fprintf(stderr,"FAIL invalid mesh_profile was accepted\n");
+    return 1;
+  }
+
   Moon::Surface::LolaDem dem;
   if (!dem.Load(configuration,&error)) {
     std::fprintf(stderr,"FAIL lola_load %s\n",error.c_str());
@@ -442,6 +737,87 @@ int lola_geometry() {
   }
 
   int failures=0;
+  // The agreed M1 grid has 41 near-surface points (including zero), 32
+  // additional middle-altitude points and 8 logarithmic points from above
+  // 1000 km through 10000 km.  These checks exercise the production parser's
+  // endpoint rules without treating configuration plumbing as an observation-
+  // operator PASS.
+  failures+=report("profile_altitude_grid_points",
+      configuration.profileAltitudeGridM.size(),81.0,0.0);
+  failures+=report("profile_altitude_grid_first_m",
+      configuration.profileAltitudeGridM.front(),0.0,0.0);
+  failures+=report("profile_altitude_grid_near_boundary_m",
+      configuration.profileAltitudeGridM[40],200000.0,0.0);
+  failures+=report("profile_altitude_grid_middle_boundary_m",
+      configuration.profileAltitudeGridM[72],1000000.0,0.0);
+  failures+=report("profile_altitude_grid_last_m",
+      configuration.profileAltitudeGridM.back(),10000000.0,1.0e-14);
+  failures+=report("profile_sza_count",
+      configuration.profileSolarZenithAnglesDeg.size(),6.0,0.0);
+  const double expected_sza_deg[6]={0.0,30.0,60.0,90.0,120.0,180.0};
+  for (int i=0;i<6;i++) {
+    const std::string metric="profile_sza_"+std::to_string(i)+"_deg";
+    failures+=report(metric.c_str(),
+        configuration.profileSolarZenithAnglesDeg[i],expected_sza_deg[i],0.0);
+  }
+  failures+=report("profile_include_body_fixed_poles",
+      configuration.profileIncludeBodyFixedPoles ? 1.0 : 0.0,1.0,0.0);
+  failures+=report("profile_include_shell_average",
+      configuration.profileIncludeShellAverage ? 1.0 : 0.0,1.0,0.0);
+  failures+=report_string("profile_shell_angular_weighting",
+      configuration.profileShellAngularWeighting,"solid-angle");
+  failures+=report_string("simulation_start_utc",
+      configuration.simulationStartUtc,"2009-01-24T00:00:00");
+  failures+=report_string("simulation_environment_mode",
+      configuration.simulationEnvironmentMode,"frozen");
+  failures+=report("random_seed",configuration.randomSeed,731993.0,0.0);
+  failures+=report_string("mesh_profile",configuration.meshProfile,"custom");
+  failures+=report("mesh_far_field_extent_m",
+      configuration.meshFarFieldExtentM,10000000.0,0.0);
+  failures+=report("mesh_outer_cell_size_m",
+      configuration.meshOuterCellSizeM,17371000.0,0.0);
+  failures+=report("mesh_output_tecplot",
+      configuration.meshOutputTecplot ? 1.0 : 0.0,0.0,0.0);
+  failures+=report_string("limb_observer",
+      configuration.limbObserver,"earth");
+  failures+=report_string("limb_plane",
+      configuration.limbPlane,"sun-moon-earth");
+  failures+=report_string("limb_sides",configuration.limbSides,"both");
+  failures+=report_string("limb_branch_reference",
+      configuration.limbBranchReference,"projected-sun");
+  failures+=report("limb_tangent_maximum_altitude_m",
+      configuration.limbTangentMaximumAltitudeM,1000000.0,0.0);
+  failures+=report_string("tail_center_direction",
+      configuration.tailCenterDirection,"anti-lunar");
+  failures+=report_string("tail_map_coordinate_system",
+      configuration.tailMapCoordinateSystem,"j2000-ra-dec");
+  failures+=report_string("tail_map_display_orientation",
+      configuration.tailMapDisplayOrientation,"west-right");
+  failures+=report("tail_map_half_width_deg",
+      configuration.tailMapHalfWidthDeg,7.5,0.0);
+  failures+=report("tail_beam_diameter_deg",
+      configuration.tailBeamDiameterDeg,1.0,0.0);
+  failures+=report("tail_exposure_duration_s",
+      configuration.tailExposureDurationS,120.0,0.0);
+  failures+=report_string("tail_beam_response",
+      configuration.tailBeamResponse,"unresolved");
+  failures+=report_string("tail_temporal_operator",
+      configuration.tailTemporalOperator,"exposure-average");
+  failures+=report_string("alternate_limb_sides",
+      alternate_configuration.limbSides,"away-from-projected-sun");
+  failures+=report_string("alternate_tail_map_coordinate_system",
+      alternate_configuration.tailMapCoordinateSystem,
+      "eclipj2000-lon-lat");
+  failures+=report_string("alternate_tail_map_display_orientation",
+      alternate_configuration.tailMapDisplayOrientation,"east-right");
+  // Exercise the production epoch override API used by amps_init().  CSPICE
+  // UTC-to-ET interpretation remains a linked orbit-enabled responsibility;
+  // this local check verifies that the immutable parser value reaches the
+  // exosphere module without a dangling c_str() pointer or truncation.
+  Exosphere::SetSimulationStartTimeString(
+      configuration.simulationStartUtc.c_str());
+  failures+=report_string("simulation_start_override",
+      Exosphere::GetSimulationStartTimeString(),"2009-01-24T00:00:00");
   failures+=report("label_lines",dem.metadata().lines,720.0,0.0);
   failures+=report("label_samples",dem.metadata().lineSamples,1440.0,0.0);
   failures+=report("label_reference_radius_m",

@@ -285,6 +285,27 @@ void Exosphere::Init_BeforeParser() {
   }
 }
 
+namespace {
+// Storage owned by the production exosphere module keeps the caller's
+// temporary ``std::string::c_str()`` lifetime from leaking into Init_SPICE().
+// It is written once during serial application startup and read thereafter.
+std::string gSimulationStartTimeOverride;
+}
+
+void Exosphere::SetSimulationStartTimeString(const char *utc) {
+  if (utc==NULL || utc[0]=='\0') {
+    exit(__LINE__,__FILE__,
+        "Error: the runtime simulation start UTC cannot be empty");
+  }
+
+  gSimulationStartTimeOverride=utc;
+}
+
+const char *Exosphere::GetSimulationStartTimeString() {
+  return gSimulationStartTimeOverride.empty() ? SimulationStartTimeString :
+      gSimulationStartTimeOverride.c_str();
+}
+
 void Exosphere::Init_AfterParser() {
 
   //init the sampling buffer of the returned flux on the night side of the planet
@@ -378,7 +399,10 @@ void Exosphere::Init_SPICE() {
   //Get the initial parameters of Mercury orbit
   SpiceDouble state[6];
 
-  utc2et_c(SimulationStartTimeString,&OrbitalMotion::et);
+  // CSPICE, with the run's furnished leap-second kernel, is the authoritative
+  // parser of the UTC receipt.  All later dynamics and observation geometry
+  // derive from this single ET; no diagnostic-only clock is maintained.
+  utc2et_c(GetSimulationStartTimeString(),&OrbitalMotion::et);
 
   //get initial parameters of Mercury's orbit
   spkezr_c(ObjectName,OrbitalMotion::et,"J2000","none","SUN",state,&OrbitalMotion::lt);

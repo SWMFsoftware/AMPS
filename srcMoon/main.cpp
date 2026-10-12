@@ -22,6 +22,7 @@
 #include <iostream>
 #include <iostream>
 #include <fstream>
+#include <new>
 #include <time.h>
 
 #include <sys/time.h>
@@ -33,7 +34,32 @@
 void amps_init();
 void amps_time_step();
 
+namespace {
+// std::new_handler is the last in-process opportunity to emit a controlled
+// AMPS diagnostic before C++ allocation failure unwinds through legacy code.
+// There is deliberately no campaign memory or wall-time limit: M1 records
+// resource use and runs until its statistical contract is met.  This handler
+// is reached only when the allocator reports actual exhaustion.  Keep the
+// text static because constructing a std::string at that point could itself
+// require the unavailable memory.
+void MoonAllocationFailure() {
+  ::exit(__LINE__,__FILE__,
+      "srcMoon terminated because a C++ memory allocation failed: the host "
+      "or job memory available to this process was exhausted while building "
+      "or advancing the requested AMR model. No M1 acceptance result may be "
+      "reported from this incomplete run. Preserve stdout/stderr and the "
+      "resource_metrics.csv artifact. To reduce required resources, increase "
+      "the requested AMR cell sizes, narrow the near-surface/far-field or "
+      "angular/polar refinement regions, or increase the surface-mesh target "
+      "length. For the frozen I11 40/20/10/5 km contract, changing those "
+      "values creates a different campaign and must be documented as SKIPPED "
+      "until the roadmap contract is revised; alternatively request a job "
+      "with more memory and rerun the unchanged receipt.");
+}
+}
+
 int main(int argc,char **argv) {
+  std::set_new_handler(MoonAllocationFailure);
   // Keep the historical no-argument invocation for the regression test.  A
   // production input file is supplied explicitly so that srcMoon does not
   // accidentally interpret an AMPS configuration file intended for another
@@ -54,7 +80,7 @@ int main(int argc,char **argv) {
     else {
       std::cerr << "Usage: " << argv[0]
                 << " [-input application.in]"
-                << " [--moon-integration-test U01|U01_INSIDE|U06|I02|I03|I05|I06|I07|I08|I09|I10"
+                << " [--moon-integration-test U01|U01_INSIDE|U06|I02|I03|I05|I06|I07|I08|I09|I10|I11|I12|I13"
                 << " --integration-output receipt.txt]\n";
       return EXIT_FAILURE;
     }

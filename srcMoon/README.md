@@ -140,10 +140,14 @@ hash mismatch is `ERROR`; neither condition is a physics PASS.
 ./amps -input srcMoon/examples/lola_surface.in
 ```
 
-Only the unique section delimited by `#section begin: moon` and
-`#section end` is interpreted. Names are case-insensitive, assignments are
-`name = value`, `!` begins a comment, and duplicate, unknown, or missing
-settings are errors. Relative paths are resolved against the input file. The
+The file uses the repository-wide grammar implemented by
+`src/general/input/amps_input.h`. It must contain exactly one flat
+`#begin application: moon` / `#end application` block. Keys are
+case-sensitive, assignments are `name = value`, `!` begins a comment, and
+duplicate, unknown, or missing settings are errors. Unowned root blocks,
+nested Moon blocks, and the retired `#section` spelling are rejected rather
+than silently ignored. Relative paths are resolved against the file containing
+the assignment, including when the generic `#include` directive is used. The
 required settings are:
 
 ```text
@@ -155,12 +159,187 @@ lola_image_file
 lola_label_file
 surface_cea_file
 surface_tecplot_file
+mesh_profile = quick | full | custom
+mesh_near_surface_cell_size_m
+mesh_near_surface_extent_m
+mesh_far_field_cell_size_m
+mesh_far_field_extent_m
+mesh_outer_cell_size_m
+mesh_output_tecplot = true | false
+mesh_angular_resolution_m_by_sza
+mesh_terminator_half_width_deg
+mesh_polar_cap_start_latitude_deg
+mesh_polar_resolution_m
+simulation_start_utc
+simulation_environment_mode = frozen | evolving
+random_seed = 731993
+profile_altitude_near_maximum_m
+profile_altitude_near_step_m
+profile_altitude_middle_maximum_m
+profile_altitude_middle_step_m
+profile_altitude_far_maximum_m
+profile_altitude_far_points_per_decade
+profile_solar_zenith_angles_deg
+profile_include_body_fixed_poles
+profile_include_shell_average
+profile_shell_angular_weighting = solid-angle
+limb_observer = earth
+limb_plane = sun-moon-earth
+limb_sides = both | toward-projected-sun | away-from-projected-sun
+limb_branch_reference = projected-sun
+limb_tangent_maximum_altitude_m
+tail_center_direction = anti-lunar
+tail_map_coordinate_system = j2000-ra-dec | eclipj2000-lon-lat
+tail_map_display_orientation = west-right | east-right
+tail_map_half_width_deg
+tail_beam_diameter_deg
+tail_exposure_duration_s
+tail_beam_response = unresolved
+tail_temporal_operator = exposure-average
 ```
 
 `spice_path` must contain `cspice/include/SpiceUsr.h`,
 `cspice/lib/cspice.a`, and `Kernels/`, matching `/home/vtenishe/SPICE`. It is
 recorded and checked at runtime; it does not override the build-time SPICE
 selection or kernel root supplied to `Config.pl`.
+
+The FULL M1 production example (`srcMoon/examples/m1_sphere.in`) requests
+10 km near-surface volume cells through
+200 km altitude, transitions to 40 km at 10,000 km altitude, then coarsens to
+17,371 km at the existing 400-lunar-radius outer boundary. The outer scale is
+explicit because applying 40 km cells throughout that three-dimensional tail
+box is computationally infeasible. M1 claims are limited to the common
+0--10,000 km science grid; later tail work requires a separate convergence
+study. Its
+boundary table is
+`0:10000,30:10000,60:5000,90:5000,120:10000,180:10000`; a 15 degree band
+around the terminator and body-fixed latitudes at or above 75 degrees are
+limited to 5 km. These are explicit input values, not compiled defaults. SZA
+is an LSO angle. Polar membership is transformed to `MOON_ME_DE421` at the
+configured epoch. The selector returns requested metres; linked I12 separately
+records the power-of-two AMR size actually realized.
+
+The QUICK profile (`srcMoon/examples/m1_quick.in`) keeps those physical
+extents and every non-mesh control unchanged but uses three times each FULL
+spatial target: 30 km near-surface, 120 km at 10,000 km altitude, 52,113 km at
+the outer boundary, and 15 km minimum angular/polar resolution. The original
+factor-two QUICK candidate built 1,074,788 blocks; its eight-rank I12 run was
+stopped after 28.7 minutes at 223.7 GiB RSS with only 5.7 GiB host memory left.
+Factor three crosses the next coarser dyadic AMR level. Its cold eight-rank
+I12 run completed the wiring criteria in 1,409.9 seconds (23.50 minutes), with
+191.9 GiB peak RSS and 39.8 GiB minimum host-available memory, on `passion` on
+2026-10-12. The required `CenterNodeMeasure.bin` cache was 6,128,421,120 bytes;
+optional `mesh.dat`/`tetra_mesh` files were absent. Runtime is host/cache-
+dependent operational guidance, not an acceptance criterion. QUICK is for
+production-wiring checks only; M1 numerical qualification continues to require
+the FULL I11-I13 campaign.
+
+The still-coarser `srcMoon/examples/m1_regression.in` receipt uses twelve
+times the FULL spatial targets while preserving the physical domain, epoch,
+sources, profile grid, and observation geometry. It is intentionally marked
+`custom` and is the default bounded eight-rank linked run in
+`srcMoon/test/run_all_test.py`; successful wiring is therefore retained as
+`SKIPPED / NOT QUALIFIED`, never as I11--I13 evidence.
+
+All target sizes are ordinary `.in` values rather than compiled defaults.
+Copy a committed receipt, edit the radial, angular, polar, and (when relevant)
+surface target sizes, and label the result `mesh_profile = custom`. Changing a
+resolution target never inherits an undocumented change to a physical extent.
+
+`mesh_output_tecplot` controls only the optional full-volume `mesh.dat` and
+`tetra_mesh*.dat` visualization products. It is required in every configured
+receipt and is `false` in the committed science examples because the text dump
+can require hundreds of gigabytes without changing any modeled physics. The
+AMR tree, particle mover, and samplers are identical in either setting. The
+internal `mesh.msh` exchange used by the current MPI initialization and the
+separate triangulated `surface_tecplot_file` are not controlled by this flag.
+
+### M1 comparison and observation geometry controls
+
+The runtime receipt also defines one run-wide UTC and the common grid on which
+future I11–I13 convergence products must be compared. Altitude is measured
+from the AMPS `_RADIUS_(_TARGET_)` reference sphere (1737.10 km), not from the
+1737.4 km LOLA datum or local relief. The committed example
+uses 0–200 km in 5 km steps, 200–1000 km in 25 km steps, and 1000–10000 km at
+eight logarithmic points per decade. The parser constructs that exact grid in
+metres and rejects non-integral linear endpoints, unordered/duplicate SZA
+values, and a limb maximum that is not a grid node. Values above 10000 km are
+reserved for integrated LOS/tail outputs; this configuration does not invent
+pointwise observations there.
+
+`simulation_start_utc` replaces the generated `SimulationStartTimeString` for
+the whole CLI-configured run before `Exosphere::Init_SPICE()` converts UTC to
+ET. This preserves a single physical clock for forces, rotation, illumination,
+and diagnostic geometry. Omitting `-input` retains the compile-time epoch for
+the historical regression.
+
+`simulation_environment_mode=frozen` is the approved I11 steady-state
+contract. Particle transport and source/surface processes continue with their
+normal SI time steps, while SPICE states, illumination, body transforms, and
+rotating-frame coefficients remain at `simulation_start_utc`. This isolates
+spatial discretization from mesh-dependent epoch drift. `evolving` retains
+normal midpoint ephemeris evaluation and advances ET once per particle step;
+it is not used to score I11 unless matched physical time windows are defined.
+
+`random_seed` initializes the production AMPS random stream before sources,
+surface interactions, and transport begin. I11 requires `731993` in every
+derived 40/20/10/5 km receipt, records one positive MPI layout for the complete
+campaign, and fixes one OpenMP thread per rank.
+
+The linked I11 sampler reads completed production density and surface buffers.
+Its vector contains the six LSO SZA profiles, transformed north/south
+`MOON_ME_DE421` pole profiles, solid-angle shell averages, six fixed 30-degree
+SZA surface-return-flux bands, global return rate, finite-distance Earth limb column
+density and both Na D brightnesses on both projected-Sun branches, and global
+inventory. Batch duration doubles until all lag-one correlations are within
+`1.96/sqrt(N)`. Four independent means establish three consecutive <=2%
+equilibrium changes; five following disjoint means supply Student-t 95%
+intervals. Runs have no wall-time or memory cap. Resource histories are
+archived; actual allocation failure terminates through the AMPS fatal path
+with resource-reduction guidance and cannot produce a PASS.
+
+For I11 resolution derivation, the surface, near-surface, SZA/angular, and
+polar targets scale through 40/20/10/5 km, while far-field and outer-domain
+targets remain fixed. This isolates near-Moon convergence without multiplying
+remote tail cells. After load balancing and before block allocation, srcMoon
+also sums a conservative unavoidable block-object memory lower bound across
+MPI ranks sharing each host. It terminates only if that lower bound already
+equals or exceeds Linux `MemAvailable`; no empirical cap is imposed.
+
+The agreed profile directions are SZA 0, 30, 60, 90, 120 and 180 degrees in
+the LSO equatorial plane, the north/south `MOON_ME_DE421` pole directions, and
+a separate solid-angle-weighted shell average. Solid-angle weighting is
+physical; counting AMR cells or unweighted nonuniform facets is not an
+equivalent shell average. Near-Moon LOS geometry uses an Earth observer, the
+Sun-Moon-Earth plane, and the common grid through 1000 km. `limb_sides` may
+select both branches or either branch named relative to the projected
+Moon-to-Sun direction. A zero projected-Sun direction is a geometry
+degeneracy, not permission to choose a branch silently.
+
+Tail geometry uses a ±7.5 degree Earth-view map centred on anti-lunar with a
+1 degree circular field and 120 s exposure. Anti-lunar is explicitly not
+treated as anti-solar. The recommended storage system is native J2000 RA/Dec,
+with east-positive RA offsets and north-positive Dec offsets. ECLIPJ2000
+longitude/latitude is an adjustable alternative because D14 contains those
+independently transformed coordinates. `west-right` reproduces the usual sky
+display convention but does not negate or reorder stored coordinates.
+
+D14 identifies the aperture diameter, shape, and exposure duration, but it
+does not provide the WHAM radial beam-response function. The required input is
+therefore `tail_beam_response=unresolved`: no Gaussian or uniform-disk response
+is assumed. `tail_temporal_operator=exposure-average` records the physically
+required time integration. The full raster spans hours and must ultimately be
+evaluated at native pointing times rather than at the 2009 M0 baseline epoch.
+
+These fields are now strict, adjustable input/provenance controls. The existing
+subsolar-limb production sampler consumes the exact common altitude nodes only
+through `limb_tangent_maximum_altitude_m`; the no-input regression retains its
+historical geometric grid. The legacy samplers still do not produce both limb
+branches, consume the pole/shell selections, or perform finite-beam and
+exposure-time convolution, so parsing and one-limb grid wiring are not an
+observation-operator PASS. U26 and the applicable I-series test remain
+`SKIPPED / NOT VERIFIED` until the complete production operators and
+independent geometry oracles are implemented.
 
 For `surface_geometry=sphere`, the registered analytic sphere is unchanged.
 For `surface_geometry=lola`, rank zero reads the native detached PDS IMG/LBL
@@ -410,9 +589,9 @@ provenance, QA report, and hashes before use.
 |---|---|---|---|---|
 | initialization/configuration | `main.cpp`, `main_lib.cpp::amps_init`, `Moon::Init_AfterParser` | `moon.input` → callbacks, mesh, weights, samplers | parser-generated tree | U02 source guard; linked baseline I01-I10 pending |
 | species/mass/charge/weights/timestep | `species.input`, PIC molecular tables, `localTimeStep`, PIC weight initialization | species; cell size → seconds and statistical weights | Na only; RNG enters weight/injection use | no complete local contract; multi-species paths disabled |
-| volume AMR/refinement | `localResolution`, mesh init/build | metres in LSO → target cell size | deterministic | U07 callback only; I11-I13 convergence pending |
+| volume AMR/refinement | `localResolution`, mesh init/build; optional `outputMeshTECPLOT` | metres in LSO → target cell size; explicit `mesh_output_tecplot` gates only full-volume visualization | deterministic targets; I11 uses seed 731993 and MPI=1/OpenMP=1; text visualization may require hundreds of GB | U07 callback and linked I11 sampler/I12 realization gate implemented; I11 execution evidence and I13 reviewed freeze remain pending |
 | spherical surface | `amps_init`, `cInternalSphericalData` | 60×100, lunar radius → areas/normals/elements | deterministic geometry | U07 arithmetic; intersections/area invariants pending U01/I14 |
-| LOLA triangulated geometry | `MoonInput.cpp`, `LunarSurface.cpp`, `amps_init` | native IMG/LBL and requested max edge m → CEA/Tecplot mesh | raw D01 exists but package QA/provenance are absent; static orbit-off mode only | U08 kernel subcheck; campaign SKIPPED / NOT VALIDATED; I14 pending |
+| LOLA triangulated geometry | `MoonInput.cpp`, `LunarSurface.cpp`, `amps_init` | native IMG/LBL and requested max edge m → CEA/Tecplot mesh | raw D01 exists but package QA/provenance are absent; static orbit-off mode only | U08 kernel subcheck; campaign SKIPPED / NOT VALIDATED; first-order mover currently errors on the Nastran descriptor; I14 pending |
 | intersections/normals | generic sphere/ray services called by mover/LOS | metres/direction → hit, element, radial normal | stochastic position for injection | U01 SKIPPED; no isolated production fixture |
 | illumination/Earth eclipse/PSR | cosine and `EarthShadowCheck`; callers in temperature, force, brightness | LSO position → cosine/boolean | D02 absent | U05 cylinder invariant; terrain/PSR U09/U13 SKIPPED |
 | simple temperature | `Exosphere::GetSurfaceTemperature` | cosine, LSO position → K | deterministic | U12 linked probe PASS-capable |
@@ -439,8 +618,8 @@ provenance, QA report, and hashes before use.
 | mission operators | Kaguya tables/code; no qualified LADEE/LAMP/LACE/PACE adapters | epochs/attitude/FOV/mass-energy-angle cuts → observables | D07-D09/D12-D15 mixed readiness | U26 and I32-I40 pending |
 | diagnostics/budgets | generic source, loss, return, sticking, surface samplers | statistical weights/time → rates/densities | MPI reductions and sampling window | no closed conservation gate yet |
 | checkpoint/restart | PIC particle restart configured in `moon.input` | particle state → restart file | every 20 iterations | surface/RNG/sampler continuity unverified |
-| MPI/OpenMP/stochastic behavior | generic PIC/exosphere | layout and seed → statistical solution | random stream/layout not recorded by a Moon manifest | I42-I46 pending |
-| provenance/run manifests | no Moon-specific manifest writer found | revision/build/config/data hashes/layout/seed → manifest | canonical data root external | U25/I42-I46 SKIPPED |
+| MPI/OpenMP/stochastic behavior | generic PIC/exosphere plus input `random_seed` | layout and seed → statistical solution | I11 freezes seed 731993 and MPI=1/OpenMP=1; later layout sensitivity remains open | I11 controls implemented; I42-I46 pending |
+| provenance/run manifests | linked Python runner in `test/integration_common.py` | revision/build/config/data hashes/layout/seed → manifest | canonical data root external | I01 and I11-I13 manifests implemented; release gates I42-I46 pending |
 
 ### M0 production mover and linked diagnostics
 
@@ -589,6 +768,15 @@ gdb --batch -ex run -ex 'thread apply all bt full' \
 Debug-mode output is diagnostic evidence, not the canonical optimized
 regression. Recreate `build/` and rerun the normal `make -j test_Moon` before
 recording a release or regression result.
+
+Column-integral variable names are assembled in a bounded `std::string` and
+copied once into the AMPS `_MAX_STRING_LENGTH_PIC_` output buffer. Exceeding
+that contract is a fatal configuration error. This avoids the former
+self-referential `sprintf` operation, whose overlapping source/destination was
+undefined and produced `-Wformat-overflow` diagnostics in optimized builds.
+The shared exosphere ground-observation initializer likewise validates each
+generated UTC string against its destination before copying it; it fails
+instead of truncating an epoch that would alter observation geometry.
 
 ## External validation data status
 

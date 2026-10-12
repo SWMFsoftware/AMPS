@@ -65,6 +65,18 @@ namespace Exosphere {
 
   static const char SimulationStartTimeString[]="2000-01-01T00:00:00";
 
+  /**
+   * Override the compile-time start epoch before Init_SPICE() is called.
+   *
+   * The legacy input generator still writes SimulationStartTimeString, and
+   * applications which do not opt into a runtime receipt keep that value.
+   * A runtime-enabled application must set one process-wide UTC before model
+   * initialization so particle dynamics, illumination and observation
+   * geometry all use the same CSPICE ephemeris time.
+   */
+  void SetSimulationStartTimeString(const char *utc);
+  const char *GetSimulationStartTimeString();
+
   extern double xObject_HCI[3],vObject_HCI[3],xEarth_HCI[3],vEarth_HCI[3],xEarth_SO[3],vEarth_SO[3],xSun_SO[3],vSun_SO[3];
   extern double vObjectRadial,xObjectRadial;
 

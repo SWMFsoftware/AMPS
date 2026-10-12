@@ -1,6 +1,7 @@
 # `srcMoon` subsystem verification tests
 
-This directory implements the local/stand-alone `U01`-`U26` layer defined by
+This directory implements the local/stand-alone `U01`-`U26` layer and the
+currently implemented linked M1 `I11`-`I13` layer defined by
 [`../development_and_validation.md`](../development_and_validation.md).  It does
 not replace the linked `I01`-`I46` campaign.  A local-kernel pass is evidence
 for that kernel only; it is not evidence that the callback is reached in a
@@ -86,10 +87,14 @@ presence from being treated as qualified validation evidence.
 
 ### Complete campaign
 
-`run_all_test.py` is the single entry point for the complete registered
-`srcMoon` U-series campaign. By default it removes the generated `build/`
-tree, configures the Moon application with the frozen SPICE installation and
-kernel directories, runs `make -j`, and then launches every registered test
+`run_all_test.py` is the single entry point for all 29 currently registered
+`srcMoon` U-series and linked M1 tests: U01-U26 followed by I11-I13. By default
+it runs the bounded `regression` campaign with eight MPI ranks: I11 and I13
+produce explicit `SKIPPED` non-execution records, while I12 runs the actual
+production initialization and wiring with `srcMoon/examples/m1_regression.in`.
+It removes the generated `build/` tree, configures the Moon application with
+the frozen SPICE installation and kernel directories, runs `make -j`, and then
+launches every registered test
 through that test's own `test.py` runner. Configuration and compilation are
 both recorded in `<output-dir>/build.log` and as separate steps in
 `run_all_summary.json`:
@@ -105,8 +110,25 @@ rm -rf build
 ./Config.pl -application=moon \
   -spice-path=/home/vtenishe/SPICE/cspice \
   -spice-kernels=/home/vtenishe/SPICE/Kernels
-make -j
+make -j "OPT3=-O3 -g"
 ```
+
+The command-line optimization override retains debug symbols while restoring
+production optimization; it does not edit the generated Makefile or
+Makefile.conf. The resulting `./amps` executable and the bounded
+`srcMoon/examples/m1_regression.in` receipt are passed to I11--I13 in default
+regression mode. Request the formal, unbounded FULL campaign explicitly:
+
+```sh
+python3 srcMoon/test/run_all_test.py \
+  --campaign-mode qualification --mpi-ranks 8
+```
+
+Qualification selects the reviewed `srcMoon/examples/m1_sphere.in` receipt.
+Override `--amps` or `--m1-input` only when the
+alternate executable/input identity is intentional and will be captured in the
+linked manifests. These M1 meshes can be substantially more expensive than
+the U-series kernel checks.
 
 Relocated installations can be selected explicitly with `--spice-path` and
 `--spice-kernels`. These arguments are ignored only when `--skip-build` is
@@ -119,18 +141,30 @@ must be new or empty; the runner refuses to overwrite an earlier campaign.
 
 Use `--skip-build` only when the existing generated tree is known to match the
 source and SPICE configuration. `--list` prints the explicit campaign
-registry, `--only UXX` may be repeated for a focused runner check, `--stream`
-mirrors individual logs to the terminal, and `--strict-skips` makes any
+registry, `--only UXX` or `--only IXX` may be repeated for a focused runner
+check, `--stream` mirrors individual logs to the terminal, and `--strict-skips`
+makes any
 SKIPPED test fail the aggregate command. Without `--strict-skips`, SKIPPED
 remains a recorded incomplete capability but does not change the campaign exit
-status.
+status code. The machine-readable `campaign_status` remains `SKIPPED` whenever
+one or more prerequisites/capabilities are skipped and no FAIL/ERROR takes
+precedence; a zero developer-workflow exit never relabels incomplete evidence
+as PASS.
 
 The final terminal summary reports the number of tests executed, passed,
 failed, skipped, and ended with an error. For every FAIL or ERROR it prints the
 test ID, the exact individual runner, and that runner's combined stdout/stderr
 log. The same information is written to
 `<output-dir>/run_all_summary.json`; individual logs are under
-`<output-dir>/runner_logs/UXX.log`.
+`<output-dir>/runner_logs/UXX.log` or `IXX.log`. A normally completed linked
+runner keeps `receipt.txt`, `stdout.log`, `stderr.log`, `run_manifest.json`, an
+input snapshot, and `result.json` under `<output-dir>/IXX/`. An infrastructure
+ERROR may retain only the subset created before failure. The aggregate JSON
+records the artifact directory and manifest path without flattening or
+overwriting the individual evidence. Its `artifacts` map indexes only files
+that actually exist, including partial evidence from an ERROR run. A reported
+PASS, FAIL, or SKIPPED missing any mandatory linked artifact is reclassified
+as ERROR.
 
 The aggregate exit values are `0` when no test failed or errored, `1` for an
 evaluated FAIL (or a strict-skip rejection), and `2` for ERROR. A Moon/SPICE
@@ -141,14 +175,15 @@ ERROR: no individual test is counted as executed, the failed step is named in
 
 ### Adding a test to the aggregate campaign
 
-Adding a `UXX_*` directory is not sufficient. Every new permanent test must
-also be added explicitly to the `TESTS` registry in `run_all_test.py` as its
+Adding a `UXX_*` or linked M1 directory is not sufficient. Every new permanent
+test must also be added explicitly to the `TESTS` registry in
+`run_all_test.py` as its
 stable ID and relative `test.py` path. The runner performs a preflight
 comparison between that registry and all `U[0-9][0-9]_*` directories and exits
 with ERROR if either side is missing. Permanent IDs must first be added to the
 roadmap/test registry consistently, as required by `AGENTS.md`.
 
-Each individual `test.py` runner must accept these arguments:
+Each U-series `test.py` runner must accept these arguments:
 
 ```text
 --build-dir <generated-AMPS-build>
@@ -169,6 +204,16 @@ launching that test, so a crashed runner cannot be credited with a stale
 result. Tests must keep all other artifacts beneath their own
 `<output-dir>/<UXX>/` directory and must never write into validation-data
 `raw/` directories.
+
+The registered I11-I13 runners instead accept `--amps`, `--input`,
+`--output-dir`, `--campaign-mode`, and `--mpi-ranks`, and write
+`<output-dir>/<IXX>/result.json` using the same
+status/exit-code protocol. They also preserve the linked artifacts required by
+`AGENTS.md`. Successful process launch or a wiring invariant never substitutes
+for science evidence. I11 now runs and scores the complete four-resolution
+campaign. I13 remains `SKIPPED` until I11 passes and both its sampled-science
+CSV and deterministic mesh/species/source/configuration JSON candidates are
+reviewed and frozen; the runner never installs either reference automatically.
 
 ### Lower-level runners
 
@@ -293,6 +338,68 @@ The shell return code is only recorded: the legacy AMPS exit helper invokes
 `MPI_Abort` with error code zero, which OpenMPI may expose as process status
 zero even though the guard terminated execution.
 
+### M1 numerical gates
+
+The reviewed FULL spherical input for M1 is
+`srcMoon/examples/m1_sphere.in`. I11 and I13 fail preflight if given QUICK or
+CUSTOM because neither may substitute for the frozen convergence campaign.
+Focused linked mesh and sphere-inventory runs
+use:
+
+```sh
+python3 srcMoon/test/integration-tests/I11/test.py \
+  --amps ./amps --input srcMoon/examples/m1_sphere.in \
+  --output-dir test_output/srcMoon/I11
+python3 srcMoon/test/integration-tests/I12/test.py \
+  --amps ./amps --input srcMoon/examples/m1_sphere.in \
+  --output-dir test_output/srcMoon/I12
+python3 srcMoon/test/integration-tests/I13/test.py \
+  --amps ./amps --input srcMoon/examples/m1_sphere.in \
+  --output-dir test_output/srcMoon/I13
+```
+
+For an approximately 20-minute I12 production-wiring run, use the explicitly
+coarser QUICK receipt:
+
+```sh
+python3 srcMoon/test/integration-tests/I12/test.py \
+  --amps ./amps --input srcMoon/examples/m1_quick.in \
+  --output-dir test_output/srcMoon/I12-quick
+```
+
+The committed QUICK targets are three times the FULL values. The first
+factor-two candidate reached 1,074,788 blocks and was stopped after 28.7
+minutes at 223.7 GiB RSS in an eight-rank I12 run. Factor three crosses the
+next coarser dyadic AMR level. Its cold eight-rank run completed in 1,409.9
+seconds (23.50 minutes), with 191.9 GiB peak RSS; the result was correctly
+`SKIPPED / NOT QUALIFIED` after every wiring criterion passed. QUICK does not
+establish M1 convergence or a FULL I12 result.
+
+They are also included in the default aggregate campaign. Run only the linked
+M1 bounded-regression set while reusing a verified SPICE build with:
+
+```sh
+python3 srcMoon/test/run_all_test.py --skip-build \
+  --only I11 --only I12 --only I13 \
+  --campaign-mode regression --mpi-ranks 8 \
+  --amps ./amps --m1-input srcMoon/examples/m1_regression.in \
+  --output-dir test_output/srcMoon/M1-linked
+```
+
+This command must yield two `SKIPPED` non-executions plus the evaluated I12
+status; it is not M1 completion evidence. Use `--campaign-mode qualification`
+with `m1_sphere.in` for the formal gates.
+
+I11 and I12 are complete executable gates. I13 evaluates the analytical sphere area
+even before a baseline exists, but reports `SKIPPED` until a passing I11
+campaign supplies equilibrated profiles, return flux, column density, and
+brightness and both the science CSV and deterministic configuration JSON are
+reviewed. The runner never generates or updates either reference automatically.
+I11 preserves separate derived inputs,
+logs, manifests, production block metrics, and resource histories for all four
+levels. Unequal-epoch, unequal-seed, or unequal-layout runs are not numerical-
+convergence evidence.
+
 ## Current implementation status
 
 | ID | Scope | Runner state | Meaning |
@@ -303,8 +410,8 @@ zero even though the guard terminated execution.
 | U04 | rotating frame | implemented linked probe | Exact J2000/LSO/MOON_ME_DE421 names, kernel hashes, differential gravity, fictitious terms, transform derivative, and orthogonality are checked at the frozen epoch. |
 | U05 | Na radiation pressure/shadow | implemented linked probe | Earth-umbra logic, inverse-square invariant, and absolute Combi-curve agreement to frozen graphical uncertainty; full mover gating remains I07. |
 | U06 | Lorentz force | implemented for dedicated ion fixture | Normal Na-only builds honestly SKIP; the M0 runner rebuilds with Na/Na+ and evaluates the production force callback. |
-| U07 | refinement selector | implemented linked probe | Current constant callbacks only. |
-| U08 | LOLA geometry | kernel subcheck implemented; campaign SKIPPED | Production parser/decoder/icosphere/writers are exercised, but D01 lacks package README/provenance/QA and I14 is pending. |
+| U07 | refinement selector | implemented linked probe | Legacy no-input callbacks and the input-driven radial, SZA, terminator, and body-fixed polar production kernels are evaluated. |
+| U08 | LOLA geometry | kernel subcheck implemented; campaign SKIPPED | Production parser/decoder/icosphere/writers and the strict M1 grid/epoch/geometry input receipt (including coordinate, shell-weighting, exposure, and unresolved-beam fields) are exercised, but D01 lacks package README/provenance/QA and I14 is pending. |
 | U09 | terrain shadow | SKIPPED | Prototype is not wired to production; D01/D02 are absent. |
 | U10 | Diviner temperature | SKIPPED | No Diviner-backed production model; D03 is absent. |
 | U11 | thermal inertia | SKIPPED | No dynamic thermal-state production model. |
@@ -322,7 +429,7 @@ zero even though the guard terminated execution.
 | U23 | meteoroid driver | SKIPPED | No production forcing path. |
 | U24 | H2O/OH chemistry | SKIPPED | No production species/chemistry path. |
 | U25 | data provenance | SKIPPED | Requires a selected Dxx package and linked campaign context. |
-| U26 | observation geometry | SKIPPED | Instrument-specific operators are not qualified. |
+| U26 | observation geometry | SKIPPED | The M1 observation-grid settings are parsed strictly, but the complete two-limb, body-fixed pole/shell, finite-beam, and exposure-time operators are not yet implemented or qualified; D14 lacks the radial WHAM response and numerical full raster. |
 
 The status is capability-sensitive.  Downloaded files, directory presence, or
 a source/preflight check never changes a missing linked capability into PASS.
@@ -334,8 +441,8 @@ repository. Each test writes `result.json`; `run_tests.py` writes
 `summary.json`, while the individual-runner campaign writes
 `run_all_summary.json` and one log per registered runner. Probe compilation
 details are retained in the result. Linked I-series runs require the larger
-manifest/artifact set specified in the roadmap and are intentionally outside
-these local runners.
+manifest/artifact set specified in the roadmap; I11-I13 preserve that set when
+launched by either their individual runners or `run_all_test.py`.
 
 See [`TEST_GAP_PROPOSALS.md`](TEST_GAP_PROPOSALS.md) for missing coverage.  No
 new permanent IDs are assigned there.

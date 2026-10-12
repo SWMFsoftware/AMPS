@@ -319,10 +319,13 @@ namespace Moon {
       const int nPhaseAngleIntervals=50;
       const double dPhaseAngle=Pi/nPhaseAngleIntervals;
 
-      //sample the altitude variatin of the column integral in the solar direction from the limb
-      const double maxAltitude=50.0; //altititude in radii of the object
-      const double dAltmin=0.001,dAltmax=0.001*maxAltitude; //the minimum and maximum resolution along the 'altitude' line
-      extern double rr;
+      // The no-input regression retains the historical geometrically spaced
+      // altitude sequence in lunar radii.  A CLI-configured production run
+      // instead copies the exact metre-valued common grid through the declared
+      // limb maximum into AltitudeGridM.
+      const double maxAltitude=50.0;
+      const double dAltmin=0.001,dAltmax=0.001*maxAltitude;
+      extern std::vector<double> AltitudeGridM;
       extern long int nSampleAltitudeDistributionPoints;
 
       //offsets in the sample for individual parameters of separate species

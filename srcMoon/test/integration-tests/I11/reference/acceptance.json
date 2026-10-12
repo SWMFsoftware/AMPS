@@ -1,0 +1,66 @@
+{
+  "id": "I11",
+  "name": "AMR spatial-resolution convergence",
+  "purpose": "Establish that spatial discretization error is below the declared M1 science tolerances for a stationary physical problem.",
+  "production_capability": "Input-driven production AMR, frozen-epoch SPICE environment, normal particle mover, sources, surface interactions, and science samplers.",
+  "production_entry_points": [
+    "localResolution",
+    "localSphericalSurfaceResolution",
+    "amps_time_step",
+    "PIC::TimeStep",
+    "production sampling callbacks"
+  ],
+  "configuration": "Reviewed sphere-mode FULL M1 receipt; QUICK/CUSTOM inputs rejected before launch; simulation_environment_mode=frozen; 40, 20, 10, and 5 km campaign levels; fixed seeds and one declared MPI/OpenMP layout.",
+  "inputs": [
+    "srcMoon/examples/m1_sphere.in",
+    "four derived and archived resolution receipts",
+    "common 0--10,000 km grid"
+  ],
+  "independent_reference": "Successive-resolution convergence, stationary-block statistics, and the invariant that repeated production steps retain identical external SPICE/frame state.",
+  "units": "metres, seconds, number density per cubic metre, return flux per square metre per second, column density per square metre, Rayleigh",
+  "frame_time_convention": "Moon-centred LSO; MOON_ME_DE421 body controls; all external environment quantities frozen at the receipt UTC converted to TDB ET.",
+  "deterministic_stochastic_controls": "Production random seed 731993; one explicitly recorded positive MPI rank count and OpenMP=1 at every resolution; adaptive non-overlapping batch means with lag-one significance bound 1.96/sqrt(N); four independent means for three equilibrium changes followed by five disjoint science means.",
+  "procedure": "Derive and archive 40/20/10/5 km receipts by scaling the surface, near-surface, angular, and polar targets while keeping physical extents and far/outer targets fixed; verify the frozen production environment; run without a time/resource cap while monitoring process-tree and block resource use; MPI-reduce all production-owned samples; double batch duration until lag-one correlation is insignificant; require three <=2% equilibrium changes; compute Student-t 95% confidence intervals from five following independent batches; compare the complete common scoring vector, including six fixed 30-degree SZA return-flux bands, across successive resolutions.",
+  "metrics": [
+    "ephemeris and external-state drift",
+    "block equilibration changes",
+    "six fixed 30-degree SZA surface-return-flux bands",
+    "integrated successive-resolution changes",
+    "pointwise successive-resolution changes",
+    "95% confidence half-widths",
+    "wall time",
+    "peak memory"
+  ],
+  "acceptance_criteria": "External-state drift exactly zero; equilibration <=2% for three consecutive blocks; at least five independent science blocks; 95% CI half-width <=1.67% integrated and <=3.33% pointwise; successive-resolution change <5% integrated and <10% pointwise.",
+  "expected_pass_result": "The finest retained M1 mesh has quantified numerical and statistical error below every declared tolerance.",
+  "expected_failure_modes": [
+    "environment epoch drift",
+    "unequal physics or sampling grids",
+    "failure to equilibrate",
+    "insufficient independent blocks",
+    "confidence interval too wide",
+    "non-convergent observable",
+    "resource exhaustion"
+  ],
+  "required_data": [
+    "configured DE421 SPICE kernels",
+    "campaign-generated outputs only; no observational data"
+  ],
+  "data_hashes": "SPICE, input, executable, and every derived receipt/output hash are required in run manifests.",
+  "predecessor_gates": [
+    "U07",
+    "I10"
+  ],
+  "artifacts": [
+    "receipt.txt",
+    "stdout.log",
+    "stderr.log",
+    "result.json",
+    "run_manifest.json",
+    "input snapshots",
+    "block metrics",
+    "four-level convergence table",
+    "resource metrics"
+  ],
+  "status_semantics": "PASS requires the complete four-resolution campaign. FAIL means a fully evaluated wiring or convergence criterion failed. Statistical uncertainty alone does not terminate the unbounded run: unresolved required bins continue sampling. Build/runtime/parser/resource exhaustion, interruption, or corrupt/missing artifacts are ERROR. SKIPPED is reserved for a genuinely unavailable prerequisite or production capability."
+}

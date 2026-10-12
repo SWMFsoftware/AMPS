@@ -11,37 +11,53 @@
 
 #include "pic.h"
 #include "Moon.h"
+#include "MoonInput.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <string>
+#include <sys/resource.h>
 #include <vector>
 
 void amps_time_step();
+double localSphericalSurfaceResolution(double *x);
+double localResolution(double *x);
 
 namespace {
 
 class Receipt {
  public:
-  explicit Receipt(const std::string& path): output_(path.c_str()) {
-    output_ << std::setprecision(17);
+  Receipt(const std::string& path,bool enabled): enabled_(enabled) {
+    // Linked diagnostics execute on every rank when a test needs MPI ownership
+    // checks, but a receipt is a single ordered provenance record.  Only rank
+    // zero opens the path; all other Receipt instances are intentional no-op
+    // sinks so concurrent truncation or interleaved writes are impossible.
+    if (enabled_) {
+      output_.open(path.c_str());
+      output_ << std::setprecision(17);
+    }
   }
 
-  bool Good() const { return output_.good(); }
+  bool Good() const { return !enabled_ || output_.good(); }
 
   template<class T> void Scalar(const std::string& key,const T& value) {
-    output_ << key << '=' << value << '\n';
+    if (enabled_) output_ << key << '=' << value << '\n';
   }
 
   void Vector(const std::string& key,const double value[3]) {
-    output_ << key << '=' << value[0] << ',' << value[1] << ',' << value[2]
-            << '\n';
+    if (enabled_)
+      output_ << key << '=' << value[0] << ',' << value[1] << ',' << value[2]
+              << '\n';
   }
 
  private:
+  bool enabled_;
   std::ofstream output_;
 };
 
@@ -138,6 +154,456 @@ void WriteForceState(Receipt* receipt) {
   receipt->Vector("moon_velocity_frozen_lso_m_s",Moon::vObject_SO_FROZEN);
   receipt->Vector("lso_angular_velocity_rad_s",Moon::RotationVector_SO_FROZEN);
 }
+
+namespace I11Sampling {
+
+// One entry in the frozen M1 scoring vector.  ``pointwise`` selects the
+// predeclared 10% spatial-convergence and 3.33% CI gates; the two global
+// budgets use the stricter 5% and 1.67% integrated gates.
+struct MetricDefinition {
+  std::string name;
+  bool pointwise;
+};
+
+std::vector<MetricDefinition> definitions;
+std::vector<std::vector<double> > baseBlocks;
+std::filesystem::path artifactDirectory;
+std::ofstream blockFile,resourceFile;
+bool complete=false;
+int retainedBatchSize=0,retainedBatchCount=0;
+std::vector<double> retainedMean,retainedRelativeCi,retainedLagOne;
+std::chrono::steady_clock::time_point startTime;
+
+double DensityAt(const double direction[3],double altitudeM) {
+  // A zero-altitude request lies exactly on the analytic boundary.  Move it
+  // outward by the mesh's geometric tolerance so the queried cell is
+  // unambiguously exospheric while retaining the declared physical altitude
+  // in every artifact.
+  const double radius=_RADIUS_(_MOON_)+altitudeM+
+      std::max(1.0e-3,10.0*PIC::Mesh::mesh->EPS);
+  double position[3]={radius*direction[0],radius*direction[1],
+                      radius*direction[2]};
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=
+      PIC::Mesh::mesh->findTreeNode(position);
+  // The AMR tree is replicated but an allocated data block belongs to exactly
+  // one MPI rank. Only that owner reads the production density; the reduction
+  // both distributes the value and proves that ownership is neither missing
+  // nor duplicated. This is the same ownership rule used by linked I12.
+  double localDensity=0.0;
+  int localOwner=0;
+  if (node!=NULL && node->Thread==PIC::ThisThread && node->block!=NULL) {
+    int i,j,k;
+    const int cell=PIC::Mesh::mesh->FindCellIndex(position,i,j,k,node);
+    PIC::Mesh::cDataCenterNode* center=node->block->GetCenterNode(cell);
+    if (center==NULL)
+      exit(__LINE__,__FILE__,
+          "I11 density sampling point has no production center node");
+    localDensity=center->GetNumberDensity(_NA_SPEC_);
+    localOwner=1;
+  }
+  double density=0.0;
+  int owners=0;
+  MPI_Allreduce(&localDensity,&density,1,MPI_DOUBLE,MPI_SUM,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&localOwner,&owners,1,MPI_INT,MPI_SUM,
+                MPI_GLOBAL_COMMUNICATOR);
+  if (node==NULL || owners!=1)
+    exit(__LINE__,__FILE__,
+        "I11 density point must have exactly one allocated MPI owner");
+  return density;
+}
+
+void Append(std::vector<double>* values,const std::string& name,
+            double value,bool pointwise=true) {
+  if (baseBlocks.empty()) definitions.push_back({name,pointwise});
+  values->push_back(value);
+}
+
+void Unit(double vector[3]) {
+  const double length=Norm(vector);
+  if (!(length>0.0) || !std::isfinite(length))
+    exit(__LINE__,__FILE__,"I11 cannot normalize a degenerate geometry vector");
+  for (int component=0;component<3;component++) vector[component]/=length;
+}
+
+void SampleProfiles(std::vector<double>* values) {
+  const Moon::Runtime::Configuration& configuration=
+      Moon::Runtime::GetConfiguration();
+  for (double szaDeg : configuration.profileSolarZenithAnglesDeg) {
+    const double radians=szaDeg*Pi/180.0;
+    const double direction[3]={std::cos(radians),std::sin(radians),0.0};
+    for (double altitudeM : configuration.profileAltitudeGridM) {
+      std::ostringstream name;
+      name << "density_sza_" << szaDeg << "_alt_m_" << altitudeM;
+      Append(values,name.str(),DensityAt(direction,altitudeM));
+    }
+  }
+
+  if (configuration.profileIncludeBodyFixedPoles) {
+    // Transform the label-native MOON_ME_DE421 poles into the production LSO
+    // frame at the same frozen ET used by dynamics and mesh refinement.
+    for (int sign : {-1,1}) {
+      // The production orbital initializer has already populated this state
+      // transform from CSPICE.  Reading it here also keeps no-SPICE builds
+      // compilable; RunI11 rejects those builds before this sampler is armed.
+      double direction[3]={
+          sign*Moon::OrbitalMotion::IAU_to_SO_TransformationMartix[0][2],
+          sign*Moon::OrbitalMotion::IAU_to_SO_TransformationMartix[1][2],
+          sign*Moon::OrbitalMotion::IAU_to_SO_TransformationMartix[2][2]};
+      Unit(direction);
+      for (double altitudeM : configuration.profileAltitudeGridM) {
+        std::ostringstream name;
+        name << "density_body_" << (sign>0 ? "north" : "south")
+             << "_alt_m_" << altitudeM;
+        Append(values,name.str(),DensityAt(direction,altitudeM));
+      }
+    }
+  }
+
+  if (configuration.profileIncludeShellAverage) {
+    const long int elements=Moon::Planet->GetTotalSurfaceElementsNumber();
+    const double radiusSquared=_RADIUS_(_MOON_)*_RADIUS_(_MOON_);
+    for (double altitudeM : configuration.profileAltitudeGridM) {
+      double localWeightedDensity=0.0,localSolidAngle=0.0;
+      long localOwners=0;
+      for (long int element=0;element<elements;element++) {
+        double bodyDirection[3],lsoDirection[3]={0.0,0.0,0.0};
+        Moon::Planet->GetSurfaceElementNormal(bodyDirection,element);
+        for (int row=0;row<3;row++) for (int column=0;column<3;column++)
+          lsoDirection[row]+=
+              Moon::OrbitalMotion::IAU_to_SO_TransformationMartix[row][column]*
+              bodyDirection[column];
+        Unit(lsoDirection);
+        const double radius=_RADIUS_(_MOON_)+altitudeM+
+            std::max(1.0e-3,10.0*PIC::Mesh::mesh->EPS);
+        double position[3]={radius*lsoDirection[0],radius*lsoDirection[1],
+                            radius*lsoDirection[2]};
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=
+            PIC::Mesh::mesh->findTreeNode(position);
+        if (node!=NULL && node->Thread==PIC::ThisThread && node->block!=NULL) {
+          int i,j,k;
+          const int cell=PIC::Mesh::mesh->FindCellIndex(position,i,j,k,node);
+          PIC::Mesh::cDataCenterNode* center=node->block->GetCenterNode(cell);
+          if (center==NULL)
+            exit(__LINE__,__FILE__,
+                "I11 shell-average point has no production center node");
+          const double solidAngle=
+              Moon::Planet->GetSurfaceElementArea(element)/radiusSquared;
+          localWeightedDensity+=solidAngle*
+              center->GetNumberDensity(_NA_SPEC_);
+          localSolidAngle+=solidAngle;
+          localOwners++;
+        }
+      }
+      double local[2]={localWeightedDensity,localSolidAngle},global[2]={0.0,0.0};
+      long owners=0;
+      MPI_Allreduce(local,global,2,MPI_DOUBLE,MPI_SUM,
+                    MPI_GLOBAL_COMMUNICATOR);
+      MPI_Allreduce(&localOwners,&owners,1,MPI_LONG,MPI_SUM,
+                    MPI_GLOBAL_COMMUNICATOR);
+      if (owners!=elements || !(global[1]>0.0))
+        exit(__LINE__,__FILE__,
+            "I11 shell-average directions must each have one MPI owner");
+      std::ostringstream name;
+      name << "density_shell_solid_angle_alt_m_" << altitudeM;
+      Append(values,name.str(),global[0]/global[1]);
+    }
+  }
+}
+
+void SampleSurfaceFlux(std::vector<double>* values) {
+  const long int elements=Moon::Planet->GetTotalSurfaceElementsNumber();
+  const double duration=PIC::LastSampleLength*
+      PIC::ParticleWeightTimeStep::GlobalTimeStep[_NA_SPEC_];
+  if (!(duration>0.0))
+    exit(__LINE__,__FILE__,"I11 surface-flux block has zero sample duration");
+  // Element-level relative confidence intervals are ill-conditioned for
+  // physically dark/low-count facets and make runtime depend on arbitrary
+  // triangulation density. Six frozen 30-degree SZA bands retain the physical
+  // day/night/terminator distribution while pooling independent particle
+  // returns. The global integral remains a separate stricter budget metric.
+  constexpr int bins=6;
+  double localWeightedReturns[bins]={0.0,0.0,0.0,0.0,0.0,0.0};
+  double binArea[bins]={0.0,0.0,0.0,0.0,0.0,0.0};
+  for (long int element=0;element<elements;element++) {
+    double bodyNormal[3],lsoNormal[3]={0.0,0.0,0.0};
+    Moon::Planet->GetSurfaceElementNormal(bodyNormal,element);
+    for (int row=0;row<3;row++) for (int column=0;column<3;column++)
+      lsoNormal[row]+=
+          Moon::OrbitalMotion::IAU_to_SO_TransformationMartix[row][column]*
+          bodyNormal[column];
+    Unit(lsoNormal);
+    const double szaDeg=acos(std::max(-1.0,std::min(1.0,lsoNormal[0])))*
+        180.0/Pi;
+    const int bin=std::min(bins-1,static_cast<int>(szaDeg/30.0));
+    const double area=Moon::Planet->GetSurfaceElementArea(element);
+    binArea[bin]+=area;
+    localWeightedReturns[bin]+=
+        Moon::Planet->SampleSpeciesSurfaceReturnFlux[_NA_SPEC_][element];
+  }
+  double globalWeightedReturns[bins]={0.0,0.0,0.0,0.0,0.0,0.0};
+  MPI_Allreduce(localWeightedReturns,globalWeightedReturns,bins,MPI_DOUBLE,
+                MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  double globalRate=0.0;
+  for (int bin=0;bin<bins;bin++) {
+    if (!(binArea[bin]>0.0))
+      exit(__LINE__,__FILE__,"I11 SZA surface-flux bin has zero area");
+    std::ostringstream name;
+    name << "surface_return_flux_sza_" << 30*bin << "_to_" << 30*(bin+1)
+         << "_m2_s";
+    Append(values,name.str(),globalWeightedReturns[bin]/(duration*binArea[bin]));
+    globalRate+=globalWeightedReturns[bin]/duration;
+  }
+  Append(values,"global_surface_return_rate_s",globalRate,false);
+}
+
+void SampleInventory(std::vector<double>* values) {
+  // Integrating the completed production density field over cut-cell-aware
+  // cell measures yields the block-mean physical inventory.  This avoids a
+  // test-only particle-weight interpretation and uses the same sampled field
+  // that supplies every profile and line-of-sight observable.
+  double inventory=0.0;
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=
+           PIC::Mesh::mesh->BranchBottomNodeList;
+       node!=NULL;node=node->nextBranchBottomNode) {
+    if (node->block==NULL || node->Thread!=PIC::ThisThread) continue;
+    for (int k=0;k<_BLOCK_CELLS_Z_;k++)
+      for (int j=0;j<_BLOCK_CELLS_Y_;j++)
+        for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+          const int cell=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
+          PIC::Mesh::cDataCenterNode* center=node->block->GetCenterNode(cell);
+          if (center!=NULL && center->Measure>0.0)
+            inventory+=center->GetNumberDensity(_NA_SPEC_)*center->Measure;
+        }
+  }
+  double globalInventory=0.0;
+  MPI_Allreduce(&inventory,&globalInventory,1,MPI_DOUBLE,MPI_SUM,
+                MPI_GLOBAL_COMMUNICATOR);
+  Append(values,"global_particle_inventory",globalInventory,false);
+}
+
+void SampleLimb(std::vector<double>* values) {
+  const Moon::Runtime::Configuration& configuration=
+      Moon::Runtime::GetConfiguration();
+  double observer[3]={Moon::xEarth_SO[0],Moon::xEarth_SO[1],
+                      Moon::xEarth_SO[2]};
+  const double observerDistance=Norm(observer);
+  double observerUnit[3]={observer[0]/observerDistance,
+                          observer[1]/observerDistance,
+                          observer[2]/observerDistance};
+  double projectedSun[3]={Moon::xSun_SO[0],Moon::xSun_SO[1],Moon::xSun_SO[2]};
+  Unit(projectedSun);
+  const double projection=projectedSun[0]*observerUnit[0]+
+      projectedSun[1]*observerUnit[1]+projectedSun[2]*observerUnit[2];
+  for (int component=0;component<3;component++)
+    projectedSun[component]-=projection*observerUnit[component];
+  Unit(projectedSun);
+
+  const int vectorLength=Exosphere::ColumnIntegral::GetVariableList(NULL);
+  std::vector<double> integral(vectorLength,0.0);
+  for (double altitudeM : configuration.profileAltitudeGridM) {
+    if (altitudeM>configuration.limbTangentMaximumAltitudeM) break;
+    const double tangentRadius=_RADIUS_(_MOON_)+altitudeM;
+    if (!(observerDistance>tangentRadius))
+      exit(__LINE__,__FILE__,"I11 Earth observer lies inside a limb shell");
+    const double axial=tangentRadius*tangentRadius/observerDistance;
+    const double transverse=tangentRadius*std::sqrt(
+        1.0-tangentRadius*tangentRadius/(observerDistance*observerDistance));
+    for (int sign : {1,-1}) {
+      if ((sign>0 && configuration.limbSides=="away-from-projected-sun") ||
+          (sign<0 && configuration.limbSides=="toward-projected-sun")) continue;
+      double tangent[3],lineOfSight[3];
+      for (int component=0;component<3;component++) {
+        tangent[component]=axial*observerUnit[component]+sign*transverse*
+            projectedSun[component];
+        lineOfSight[component]=tangent[component]-observer[component];
+      }
+      Unit(lineOfSight);
+      std::fill(integral.begin(),integral.end(),0.0);
+      PIC::ColumnIntegration::GetCoulumnIntegral(integral.data(),vectorLength,
+          observer,lineOfSight,Exosphere::ColumnIntegral::CoulumnDensityIntegrant);
+      Exosphere::ColumnIntegral::ProcessColumnIntegrationVector(
+          integral.data(),vectorLength);
+      const char* branch=sign>0 ? "toward_projected_sun" :
+                                  "away_from_projected_sun";
+      std::ostringstream prefix;
+      prefix << "limb_" << branch << "_tangent_alt_m_" << altitudeM;
+      Append(values,prefix.str()+"_column_density_m2",
+          integral[2*_NA_SPEC_]);
+      Append(values,prefix.str()+"_brightness_d2_rayleigh",
+          integral[Moon::Sampling::SubsolarLimbColumnIntegrals::
+              _NA_EMISSION_5891_58A_SAMPLE_OFFSET_]);
+      Append(values,prefix.str()+"_brightness_d1_rayleigh",
+          integral[Moon::Sampling::SubsolarLimbColumnIntegrals::
+              _NA_EMISSION_5897_56A_SAMPLE_OFFSET_]);
+    }
+  }
+}
+
+long ReadProcValueKiB(const char* path,const char* key) {
+  std::ifstream input(path);
+  std::string line;
+  while (std::getline(input,line)) {
+    std::istringstream fields(line);
+    std::string label,unit;
+    long value=0;
+    if ((fields >> label >> value >> unit) && label==key) return value;
+  }
+  return -1;
+}
+
+void RecordResources(int outputNumber) {
+  if (PIC::ThisThread!=0) return;
+  struct rusage usage;
+  getrusage(RUSAGE_SELF,&usage);
+  const long resident=ReadProcValueKiB("/proc/self/status","VmRSS:");
+  const long available=ReadProcValueKiB("/proc/meminfo","MemAvailable:");
+  const double wall=std::chrono::duration<double>(
+      std::chrono::steady_clock::now()-startTime).count();
+  resourceFile << outputNumber << ',' << wall << ',' << resident << ','
+               << usage.ru_maxrss << ',' << available << '\n';
+  resourceFile.flush();
+}
+
+double RelativeChange(double left,double right) {
+  const double scale=std::max(std::fabs(left),std::fabs(right));
+  if (scale==0.0) return 0.0;
+  return std::fabs(left-right)/scale;
+}
+
+bool Analyze() {
+  const int count=static_cast<int>(baseBlocks.size());
+  const int metricCount=static_cast<int>(definitions.size());
+  for (int batchSize=1;batchSize<=count/9;batchSize*=2) {
+    const int batches=count/batchSize;
+    if (batches<9) continue;
+    std::vector<std::vector<double> > means(
+        batches,std::vector<double>(metricCount,0.0));
+    const int first=count-batches*batchSize;
+    for (int batch=0;batch<batches;batch++)
+      for (int offset=0;offset<batchSize;offset++)
+        for (int metric=0;metric<metricCount;metric++)
+          means[batch][metric]+=
+              baseBlocks[first+batch*batchSize+offset][metric]/batchSize;
+
+    std::vector<double> lag(metricCount,0.0);
+    bool independent=true;
+    const double significance=1.96/std::sqrt(static_cast<double>(batches));
+    for (int metric=0;metric<metricCount;metric++) {
+      double average=0.0;
+      for (int batch=0;batch<batches;batch++) average+=means[batch][metric];
+      average/=batches;
+      double numerator=0.0,denominator=0.0;
+      for (int batch=0;batch<batches;batch++) {
+        const double delta=means[batch][metric]-average;
+        denominator+=delta*delta;
+        if (batch+1<batches)
+          numerator+=delta*(means[batch+1][metric]-average);
+      }
+      lag[metric]=denominator==0.0 ? 0.0 : numerator/denominator;
+      if (std::fabs(lag[metric])>significance) independent=false;
+    }
+    if (!independent) continue;
+
+    // Four independent batch means establish three consecutive <=2%
+    // changes.  The following five batches are kept disjoint for the science
+    // mean and Student-t 95% confidence interval.
+    bool equilibrated=true;
+    const int equilibriumStart=batches-9;
+    for (int metric=0;metric<metricCount;metric++)
+      for (int change=0;change<3;change++)
+        if (RelativeChange(means[equilibriumStart+change][metric],
+                           means[equilibriumStart+change+1][metric])>0.02)
+          equilibrated=false;
+    if (!equilibrated) continue;
+
+    std::vector<double> scienceMean(metricCount,0.0),relativeCi(metricCount,0.0);
+    bool precise=true;
+    for (int metric=0;metric<metricCount;metric++) {
+      for (int batch=batches-5;batch<batches;batch++)
+        scienceMean[metric]+=means[batch][metric]/5.0;
+      double variance=0.0;
+      for (int batch=batches-5;batch<batches;batch++) {
+        const double delta=means[batch][metric]-scienceMean[metric];
+        variance+=delta*delta/4.0;
+      }
+      const double halfWidth=2.7764451051977987*std::sqrt(variance/5.0);
+      relativeCi[metric]=scienceMean[metric]==0.0 ?
+          (halfWidth==0.0 ? 0.0 : std::numeric_limits<double>::infinity()) :
+          halfWidth/std::fabs(scienceMean[metric]);
+      const double gate=definitions[metric].pointwise ? 0.0333 : 0.0167;
+      if (!(relativeCi[metric]<=gate)) precise=false;
+    }
+    if (!precise) continue;
+    retainedBatchSize=batchSize;
+    retainedBatchCount=batches;
+    retainedMean=std::move(scienceMean);
+    retainedRelativeCi=std::move(relativeCi);
+    retainedLagOne=std::move(lag);
+    return true;
+  }
+  return false;
+}
+
+void Capture(int outputNumber) {
+  std::vector<double> values;
+  SampleProfiles(&values);
+  SampleSurfaceFlux(&values);
+  SampleLimb(&values);
+  SampleInventory(&values);
+  if (values.size()!=definitions.size())
+    exit(__LINE__,__FILE__,"I11 scoring-vector shape changed between blocks");
+  baseBlocks.push_back(values);
+  // Every rank must participate in the collective sampling above and retain
+  // the same reduced vector for the common convergence decision.  The CSV is
+  // nevertheless a single campaign artifact: restricting its writes to rank
+  // zero prevents non-owning streams from entering a failed state and avoids
+  // duplicated/interleaved records in an MPI run.
+  if (PIC::ThisThread==0) {
+    for (std::size_t metric=0;metric<values.size();metric++)
+      blockFile << baseBlocks.size() << ',' << outputNumber << ','
+                << definitions[metric].name << ',' << values[metric] << '\n';
+    blockFile.flush();
+  }
+  RecordResources(outputNumber);
+  complete=Analyze();
+}
+
+void Configure(const std::filesystem::path& directory) {
+  artifactDirectory=directory;
+  std::filesystem::create_directories(artifactDirectory);
+  if (PIC::ThisThread==0) {
+    blockFile.open((artifactDirectory/"block_metrics.csv").string());
+    resourceFile.open((artifactDirectory/"resource_metrics.csv").string());
+    if (!blockFile || !resourceFile)
+      exit(__LINE__,__FILE__,"I11 cannot create block/resource metric artifacts");
+    blockFile << std::setprecision(17)
+              << "base_block,production_output_number,metric,value_si\n";
+    resourceFile << "production_output_number,wall_seconds,current_rss_kib,"
+                    "peak_rss_kib,host_mem_available_kib\n";
+  }
+  startTime=std::chrono::steady_clock::now();
+  PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(
+      Moon::Sampling::SubsolarLimbColumnIntegrals::EmptyFunction,Capture);
+}
+
+void WriteFinal() {
+  if (PIC::ThisThread!=0) return;
+  std::ofstream output((artifactDirectory/"qualified_metrics.csv").string());
+  if (!output)
+    exit(__LINE__,__FILE__,"I11 cannot create qualified_metrics.csv");
+  output << std::setprecision(17)
+         << "metric,classification,mean_si,relative_ci95_half_width,"
+            "lag1,batch_size_base_blocks,independent_batch_count\n";
+  for (std::size_t metric=0;metric<definitions.size();metric++)
+    output << definitions[metric].name << ','
+           << (definitions[metric].pointwise ? "pointwise" : "integrated")
+           << ',' << retainedMean[metric] << ',' << retainedRelativeCi[metric]
+           << ',' << retainedLagOne[metric] << ',' << retainedBatchSize << ','
+           << retainedBatchCount << '\n';
+}
+
+}  // namespace I11Sampling
 
 int RunU01(Receipt* receipt,bool insideOrigin) {
   // FindIntegrationLimits is the production service used by the Moon LOS
@@ -543,21 +1009,294 @@ int RunI10(Receipt* receipt) {
 #endif
 }
 
+int RunI11(Receipt* receipt,const std::string& receiptPath) {
+#if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ != _PIC_MODE_ON_
+  receipt->Scalar("configuration_error_spice_required",1);
+  return 4;
+#else
+  if (!Moon::Runtime::HasConfiguration()) {
+    receipt->Scalar("configuration_error_missing_input",1);
+    return 4;
+  }
+  const Moon::Runtime::Configuration& configuration=
+      Moon::Runtime::GetConfiguration();
+  receipt->Scalar("simulation_environment_mode",
+      configuration.simulationEnvironmentMode);
+  if (configuration.simulationEnvironmentMode!="frozen") {
+    receipt->Scalar("configuration_error_frozen_environment_required",1);
+    return 4;
+  }
+
+  receipt->Scalar("random_seed",configuration.randomSeed);
+  receipt->Scalar("mesh_profile",configuration.meshProfile);
+  receipt->Scalar("mesh_output_tecplot",
+      configuration.meshOutputTecplot ? 1 : 0);
+  receipt->Scalar("base_block_length_steps",PIC::RequiredSampleLength);
+  receipt->Scalar("equilibrium_relative_change_gate",0.02);
+  receipt->Scalar("equilibrium_consecutive_changes",3);
+  receipt->Scalar("minimum_independent_science_blocks",5);
+  receipt->Scalar("integrated_ci95_relative_half_width_gate",0.0167);
+  receipt->Scalar("pointwise_ci95_relative_half_width_gate",0.0333);
+
+  // Attach a read-only diagnostic to PIC's normal completed-sample callback.
+  // It consumes the same center-node and surface buffers as production output
+  // before PIC flushes them, while all transport, sources, chemistry, and
+  // surface interactions continue through amps_time_step().
+  I11Sampling::Configure(std::filesystem::path(receiptPath).parent_path());
+
+  Moon::nIterationCounter=0;
+  amps_time_step();
+  Moon::nIterationCounter++;
+  receipt->Scalar("step_1_ephemeris_time_tdb_s",Moon::OrbitalMotion::et);
+  receipt->Vector("step_1_sun_position_lso_m",Moon::xSun_SO);
+  receipt->Vector("step_1_earth_position_lso_m",Moon::xEarth_SO);
+  receipt->Vector("step_1_lso_angular_velocity_rad_s",
+      Moon::RotationVector_SO_FROZEN);
+  amps_time_step();
+  Moon::nIterationCounter++;
+  receipt->Scalar("step_2_ephemeris_time_tdb_s",Moon::OrbitalMotion::et);
+  receipt->Vector("step_2_sun_position_lso_m",Moon::xSun_SO);
+  receipt->Vector("step_2_earth_position_lso_m",Moon::xEarth_SO);
+  receipt->Vector("step_2_lso_angular_velocity_rad_s",
+      Moon::RotationVector_SO_FROZEN);
+  receipt->Scalar("particle_global_timestep_s",
+      PIC::ParticleWeightTimeStep::GlobalTimeStep[_NA_SPEC_]);
+  // No arbitrary block, wall-clock, or memory ceiling is applied.  The run
+  // ends only after adaptive batch means show insignificant lag-one
+  // correlation, three consecutive equilibrated changes, five disjoint
+  // science batches, and the frozen CI bounds for every required bin.  Actual
+  // allocator exhaustion is handled by main() through AMPS's fatal exit path.
+  while (!I11Sampling::complete) {
+    amps_time_step();
+    Moon::nIterationCounter++;
+  }
+  I11Sampling::WriteFinal();
+  receipt->Scalar("production_particle_steps_executed",
+      Moon::nIterationCounter);
+  receipt->Scalar("base_blocks_executed",I11Sampling::baseBlocks.size());
+  receipt->Scalar("retained_batch_size_base_blocks",
+      I11Sampling::retainedBatchSize);
+  receipt->Scalar("retained_independent_batch_count",
+      I11Sampling::retainedBatchCount);
+  receipt->Scalar("scoring_metric_count",I11Sampling::definitions.size());
+  receipt->Scalar("convergence_metrics_available",1);
+  return 0;
+#endif
+}
+
+int RunI12(Receipt* receipt) {
+#if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ != _PIC_MODE_ON_
+  // I12's polar fixture is defined in MOON_ME_DE421 and cannot be reconstructed
+  // honestly in a no-SPICE executable. Record a configuration error instead
+  // of substituting LSO +Z or a test-only rotation.
+  receipt->Scalar("configuration_error_spice_required",1);
+  return 4;
+#else
+  if (!Moon::Runtime::HasConfiguration()) {
+    receipt->Scalar("configuration_error_missing_input",1);
+    return 4;
+  }
+  const Moon::Runtime::Configuration& configuration=
+      Moon::Runtime::GetConfiguration();
+  receipt->Scalar("mesh_profile",configuration.meshProfile);
+  receipt->Scalar("mesh_output_tecplot",
+      configuration.meshOutputTecplot ? 1 : 0);
+
+  // I12 measures both halves of the linked contract: the target returned by
+  // the installed production selector and the cell size actually realized by
+  // AMPS after its discrete power-of-two refinement and balancing constraints.
+  // Points are just outside the analytic boundary to avoid an ambiguous
+  // internal-boundary ownership query while remaining negligible relative to
+  // even the finest approved 5 km target.
+  const double radius=_RADIUS_(_MOON_)+
+      std::max(1.0e-3,10.0*PIC::Mesh::mesh->EPS);
+  const double szaDeg[6]={0.0,30.0,60.0,90.0,120.0,180.0};
+  SpiceDouble lsoToBody[3][3];
+  pxform_c(Moon::Frames::SolarOrbital,Moon::Frames::BodyFixed,
+           Moon::OrbitalMotion::et,lsoToBody);
+  for (int sample=0;sample<6;sample++) {
+    const double angle=szaDeg[sample]*Pi/180.0;
+    double position[3]={radius*cos(angle),radius*sin(angle),0.0};
+    double bodyPosition[3]={0.0,0.0,0.0};
+    for (int row=0;row<3;row++) for (int column=0;column<3;column++)
+      bodyPosition[row]+=lsoToBody[row][column]*position[column];
+    const double latitudeDeg=asin(std::max(-1.0,std::min(1.0,
+        bodyPosition[2]/radius)))*180.0/Pi;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=
+        PIC::Mesh::mesh->findTreeNode(position);
+    // The AMR tree is replicated, whereas a leaf's allocated data block exists
+    // only on its owning MPI rank.  Requiring node->block on rank zero would
+    // incorrectly reject a valid distributed mesh.  Every rank therefore
+    // contributes one only when it is the declared owner and has the block;
+    // exactly one contribution proves both ownership and allocation without
+    // copying mesh data or replacing the production decomposition service.
+    int localAllocated=(node!=NULL && node->Thread==PIC::ThisThread &&
+                        node->block!=NULL) ? 1 : 0;
+    int allocatedOwners=0;
+    MPI_Allreduce(&localAllocated,&allocatedOwners,1,MPI_INT,MPI_SUM,
+                  MPI_GLOBAL_COMMUNICATOR);
+    if (node==NULL || allocatedOwners!=1) return 5;
+    const std::string prefix="sza_"+std::to_string(sample);
+    receipt->Scalar(prefix+"_angle_deg",szaDeg[sample]);
+    receipt->Scalar(prefix+"_absolute_body_latitude_deg",fabs(latitudeDeg));
+    receipt->Scalar(prefix+"_requested_resolution_m",
+        localSphericalSurfaceResolution(position));
+    receipt->Scalar(prefix+"_realized_cell_size_m",
+        node->GetCharacteristicCellSize());
+  }
+
+  // Construct the north-pole point through the inverse SPICE transform rather
+  // than assuming that LSO +Z is the DE421 lunar pole.  This directly checks
+  // that the polar selector can win over the SZA table in the linked mesh.
+  SpiceDouble bodyToLso[3][3];
+  pxform_c(Moon::Frames::BodyFixed,Moon::Frames::SolarOrbital,
+           Moon::OrbitalMotion::et,bodyToLso);
+  double polePosition[3]={bodyToLso[0][2]*radius,
+                          bodyToLso[1][2]*radius,
+                          bodyToLso[2][2]*radius};
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* poleNode=
+      PIC::Mesh::mesh->findTreeNode(polePosition);
+  int localPoleAllocated=(poleNode!=NULL &&
+                          poleNode->Thread==PIC::ThisThread &&
+                          poleNode->block!=NULL) ? 1 : 0;
+  int allocatedPoleOwners=0;
+  MPI_Allreduce(&localPoleAllocated,&allocatedPoleOwners,1,MPI_INT,MPI_SUM,
+                MPI_GLOBAL_COMMUNICATOR);
+  if (poleNode==NULL || allocatedPoleOwners!=1) return 5;
+  const double poleSzaDeg=acos(std::max(-1.0,std::min(1.0,
+      polePosition[0]/radius)))*180.0/Pi;
+  receipt->Scalar("north_pole_sza_deg",poleSzaDeg);
+  receipt->Scalar("north_pole_requested_resolution_m",
+      localSphericalSurfaceResolution(polePosition));
+  receipt->Scalar("north_pole_realized_cell_size_m",
+      poleNode->GetCharacteristicCellSize());
+
+  receipt->Scalar("mesh_terminator_half_width_deg",
+      configuration.meshTerminatorHalfWidthDeg);
+  receipt->Scalar("mesh_polar_cap_start_latitude_deg",
+      configuration.meshPolarCapStartLatitudeDeg);
+  receipt->Scalar("mesh_polar_resolution_m",
+      configuration.meshPolarResolutionM);
+  for (std::size_t i=0;i<configuration.meshAngularSzaDeg.size();i++) {
+    receipt->Scalar("mesh_knot_"+std::to_string(i)+"_sza_deg",
+        configuration.meshAngularSzaDeg[i]);
+    receipt->Scalar("mesh_knot_"+std::to_string(i)+"_resolution_m",
+        configuration.meshAngularResolutionM[i]);
+  }
+  receipt->Scalar("mesh_knot_count",configuration.meshAngularSzaDeg.size());
+  return 0;
+#endif
+}
+
+int RunI13(Receipt* receipt) {
+  if (!Moon::Runtime::HasConfiguration()) {
+    receipt->Scalar("configuration_error_missing_input",1);
+    return 4;
+  }
+  const Moon::Runtime::Configuration& configuration=
+      Moon::Runtime::GetConfiguration();
+  if (configuration.surfaceGeometry!=Moon::Runtime::SurfaceGeometry::Sphere ||
+      Moon::Planet==NULL) {
+    receipt->Scalar("configuration_error_not_sphere",1);
+    return 4;
+  }
+
+  // Sum the areas returned by the registered production boundary itself.
+  // The independent runner compares this value with 4*pi*R^2; duplicating the
+  // analytical expression here would only compare a formula with itself.
+  const long int surfaceElements=Moon::Planet->GetTotalSurfaceElementsNumber();
+  double sphereAreaM2=0.0;
+  for (long int element=0;element<surfaceElements;element++)
+    sphereAreaM2+=Moon::Planet->GetSurfaceElementArea(element);
+
+  // Count the actual linked AMR tree rather than an input prediction.  Only
+  // leaf nodes own physical mesh blocks, and the separate allocated count
+  // catches a partially initialized or ownership-mismatched tree.
+  long int leafNodes=0,localAllocatedLeafBlocks=0;
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=
+           PIC::Mesh::mesh->BranchBottomNodeList;
+       node!=NULL;node=node->nextBranchBottomNode) {
+    leafNodes++;
+    if (node->Thread==PIC::ThisThread && node->block!=NULL)
+      localAllocatedLeafBlocks++;
+  }
+  long int allocatedLeafBlocks=0;
+  MPI_Allreduce(&localAllocatedLeafBlocks,&allocatedLeafBlocks,1,MPI_LONG,
+                MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+
+  receipt->Scalar("sphere_radius_m",_RADIUS_(_MOON_));
+  receipt->Scalar("simulation_environment_mode",
+      configuration.simulationEnvironmentMode);
+  receipt->Scalar("mesh_profile",configuration.meshProfile);
+  receipt->Scalar("mesh_near_surface_cell_size_m",
+      configuration.meshNearSurfaceCellSizeM);
+  receipt->Scalar("mesh_near_surface_extent_m",
+      configuration.meshNearSurfaceExtentM);
+  receipt->Scalar("mesh_far_field_cell_size_m",
+      configuration.meshFarFieldCellSizeM);
+  receipt->Scalar("mesh_far_field_extent_m",
+      configuration.meshFarFieldExtentM);
+  receipt->Scalar("mesh_outer_cell_size_m",
+      configuration.meshOuterCellSizeM);
+  receipt->Scalar("mesh_output_tecplot",
+      configuration.meshOutputTecplot ? 1 : 0);
+  receipt->Scalar("sphere_surface_element_count",surfaceElements);
+  receipt->Scalar("sphere_area_m2",sphereAreaM2);
+  receipt->Scalar("amr_leaf_node_count",leafNodes);
+  receipt->Scalar("amr_allocated_leaf_block_count",allocatedLeafBlocks);
+  receipt->Scalar("species_count",PIC::nTotalSpecies);
+  for (int species=0;species<PIC::nTotalSpecies;species++) {
+    const std::string prefix="species_"+std::to_string(species);
+    receipt->Scalar(prefix+"_symbol",
+        PIC::MolecularData::GetChemSymbol(species));
+    receipt->Scalar(prefix+"_mass_kg",
+        PIC::MolecularData::GetMass(species));
+    receipt->Scalar(prefix+"_charge_c",
+        PIC::MolecularData::GetElectricCharge(species));
+    receipt->Scalar(prefix+"_global_timestep_s",
+        PIC::ParticleWeightTimeStep::GlobalTimeStep[species]);
+    receipt->Scalar(prefix+"_global_particle_weight",
+        PIC::ParticleWeightTimeStep::GlobalParticleWeight[species]);
+  }
+  receipt->Scalar("na_total_source_rate_s",
+      Moon::SourceProcesses::totalProductionRate(_NA_SPEC_,
+          _INTERNAL_BOUNDARY_TYPE_SPHERE_,Moon::Planet));
+  receipt->Scalar("na_impact_source_rate_s",
+      Exosphere::SourceProcesses::ImpactVaporization::GetTotalProductionRate(
+          _NA_SPEC_,_INTERNAL_BOUNDARY_TYPE_SPHERE_,Moon::Planet));
+
+  // A controlled I13 baseline also requires equilibrated profiles, column
+  // density, brightness, and return flux from a *separate passing I11 run*.
+  // This initialization-only process cannot manufacture those quantities.
+  // The independent runner therefore imports the preserved I11 5 km artifact,
+  // writes a review candidate, and returns SKIPPED until an investigator has
+  // approved and frozen that candidate.  This zero is process-local evidence;
+  // it does not claim that the external I11 artifact is unavailable.
+  receipt->Scalar("sampled_baseline_metrics_available",0);
+  return 0;
+}
+
 }  // namespace
 
 int Moon::IntegrationTests::Run(const std::string& testId,
                                 const std::string& outputFile) {
-  if (PIC::nTotalThreads!=1) {
+  // I11--I13 explicitly support distributed AMR ownership and reduce all
+  // process-local fields or counts before scoring.  Earlier M0 diagnostics
+  // retain their frozen one-rank contract because several create/move local
+  // particles and have not been reviewed for distributed execution.
+  const bool distributedM1=(testId=="I11" || testId=="I12" ||
+                            testId=="I13");
+  if (PIC::nTotalThreads!=1 && !distributedM1) {
     if (PIC::ThisThread==0)
       std::cerr << "M0 linked diagnostics require exactly one MPI rank\n";
     return 2;
   }
-  if (PIC::ThisThread!=0) return 2;
 
-  Receipt receipt(outputFile);
+  Receipt receipt(outputFile,PIC::ThisThread==0);
   if (!receipt.Good()) {
-    std::cerr << "Cannot create Moon integration receipt: " << outputFile
-              << '\n';
+    if (PIC::ThisThread==0)
+      std::cerr << "Cannot create Moon integration receipt: " << outputFile
+                << '\n';
     return 2;
   }
   receipt.Scalar("test_id",testId);
@@ -567,6 +1306,14 @@ int Moon::IntegrationTests::Run(const std::string& testId,
 #else
   receipt.Scalar("orbit_mode",0);
 #endif
+
+  // All ranks must enter each M1 diagnostic because their ownership checks or
+  // sampled fields use MPI collectives. Other linked tests are one-rank-only
+  // above, so these branches change no existing M0 execution semantics.
+  if (testId=="I11") return RunI11(&receipt,outputFile);
+  if (testId=="I12") return RunI12(&receipt);
+  if (testId=="I13") return RunI13(&receipt);
+  if (PIC::ThisThread!=0) return 2;
 
   if (testId=="U01") return RunU01(&receipt,false);
   if (testId=="U01_INSIDE") return RunU01(&receipt,true);
@@ -579,7 +1326,6 @@ int Moon::IntegrationTests::Run(const std::string& testId,
   if (testId=="I08") return RunI08(&receipt);
   if (testId=="I09") return RunI09(&receipt);
   if (testId=="I10") return RunI10(&receipt);
-
   std::cerr << "Unknown Moon integration diagnostic: " << testId << '\n';
   return 2;
 }

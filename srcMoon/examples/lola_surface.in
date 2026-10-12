@@ -1,13 +1,70 @@
 ! Paths are resolved relative to this file.  The SPICE root is checked for the
 ! same cspice/ and Kernels/ layout as /home/vtenishe/SPICE.  This setting does
 ! not by itself change the compile-time SPICE selection made by Config.pl.
-#section begin: moon
+#begin application: moon
 spice_path = /home/vtenishe/SPICE
 surface_geometry = lola
 surface_mesh_resolution_m = 100000
+
+! M1 volume and boundary-adjacent AMR controls.  The 40/20/10/5 km I11
+! campaign derives archived receipts and scales every cell-size target
+! consistently.  The angular table is piecewise linear in LSO solar zenith
+! angle; the terminator band uses the
+! table value at 90 degrees, and polar latitude is evaluated in
+! MOON_ME_DE421.  The finest applicable target controls overlapping regions.
+mesh_profile = full
+mesh_near_surface_cell_size_m = 10000
+mesh_near_surface_extent_m = 200000
+mesh_far_field_cell_size_m = 40000
+mesh_far_field_extent_m = 10000000
+mesh_outer_cell_size_m = 17371000
+! This controls full-volume mesh.dat/tetra_mesh*.dat diagnostics, not the
+! requested LOLA surface_tecplot_file or the internal MPI AMR-tree exchange.
+mesh_output_tecplot = false
+mesh_angular_resolution_m_by_sza = 0:10000,30:10000,60:5000,90:5000,120:10000,180:10000
+mesh_terminator_half_width_deg = 15
+mesh_polar_cap_start_latitude_deg = 75
+mesh_polar_resolution_m = 5000
 lola_product_id = LDEM_4
 lola_image_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.IMG
 lola_label_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.LBL
 surface_cea_file = ../../test_output/srcMoon/surface/lola_surface.cea
 surface_tecplot_file = ../../test_output/srcMoon/surface/lola_surface.dat
-#section end
+
+! Run-wide epoch and M1 common comparison grid.  All altitudes are metres
+! above the AMPS 1737.10 km reference sphere, not above the LOLA datum or local
+! terrain; no value is interpreted as kilometres or lunar radii.  The far
+! region uses eight logarithmic points per decade.
+simulation_start_utc = 2009-01-24T00:00:00
+simulation_environment_mode = frozen
+random_seed = 731993
+profile_altitude_near_maximum_m = 200000
+profile_altitude_near_step_m = 5000
+profile_altitude_middle_maximum_m = 1000000
+profile_altitude_middle_step_m = 25000
+profile_altitude_far_maximum_m = 10000000
+profile_altitude_far_points_per_decade = 8
+profile_solar_zenith_angles_deg = 0,30,60,90,120,180
+profile_include_body_fixed_poles = true
+profile_include_shell_average = true
+profile_shell_angular_weighting = solid-angle
+
+! Near-Moon and extended-tail observation geometry.  Limb branches are named
+! by the projected Moon-to-Sun direction, not by ambiguous east/west labels.
+! "anti-lunar" is opposite the Earth-to-Moon vector, not anti-solar.  WHAM
+! publishes a 1 degree circular field and 120 s exposures, but no authoritative
+! radial response curve; "unresolved" deliberately prevents an assumed beam.
+limb_observer = earth
+limb_plane = sun-moon-earth
+limb_sides = both
+limb_branch_reference = projected-sun
+limb_tangent_maximum_altitude_m = 1000000
+tail_center_direction = anti-lunar
+tail_map_coordinate_system = j2000-ra-dec
+tail_map_display_orientation = west-right
+tail_map_half_width_deg = 7.5
+tail_beam_diameter_deg = 1.0
+tail_exposure_duration_s = 120
+tail_beam_response = unresolved
+tail_temporal_operator = exposure-average
+#end application

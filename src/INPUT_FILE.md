@@ -19,6 +19,184 @@ relabel species.
 
 ## 2. File selection
 
+### 2.1 `srcMoon` application block
+
+The lunar executable selects the same generic runtime file with `-input`:
+
+```bash
+./amps -input srcMoon/examples/lola_surface.in
+```
+
+Omitting `-input` deliberately retains the historical analytic-sphere
+regression. The `application: moon` block has no implicit values; all keys below are
+required even when `surface_geometry=sphere`, so a run receipt remains
+complete and switching geometry cannot expose stale undeclared paths:
+
+```text
+#begin application: moon
+spice_path = /home/vtenishe/SPICE
+surface_geometry = lola
+surface_mesh_resolution_m = 100000
+lola_product_id = LDEM_4
+lola_image_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.IMG
+lola_label_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.LBL
+surface_cea_file = test_output/srcMoon/surface/lola_surface.cea
+surface_tecplot_file = test_output/srcMoon/surface/lola_surface.dat
+mesh_profile = full
+mesh_near_surface_cell_size_m = 10000
+mesh_near_surface_extent_m = 200000
+mesh_far_field_cell_size_m = 40000
+mesh_far_field_extent_m = 10000000
+mesh_outer_cell_size_m = 17371000
+mesh_output_tecplot = false
+mesh_angular_resolution_m_by_sza = 0:10000,30:10000,60:5000,90:5000,120:10000,180:10000
+mesh_terminator_half_width_deg = 15
+mesh_polar_cap_start_latitude_deg = 75
+mesh_polar_resolution_m = 5000
+simulation_start_utc = 2009-01-24T00:00:00
+simulation_environment_mode = frozen
+random_seed = 731993
+profile_altitude_near_maximum_m = 200000
+profile_altitude_near_step_m = 5000
+profile_altitude_middle_maximum_m = 1000000
+profile_altitude_middle_step_m = 25000
+profile_altitude_far_maximum_m = 10000000
+profile_altitude_far_points_per_decade = 8
+profile_solar_zenith_angles_deg = 0,30,60,90,120,180
+profile_include_body_fixed_poles = true
+profile_include_shell_average = true
+profile_shell_angular_weighting = solid-angle
+limb_observer = earth
+limb_plane = sun-moon-earth
+limb_sides = both
+limb_branch_reference = projected-sun
+limb_tangent_maximum_altitude_m = 1000000
+tail_center_direction = anti-lunar
+tail_map_coordinate_system = j2000-ra-dec
+tail_map_display_orientation = west-right
+tail_map_half_width_deg = 7.5
+tail_beam_diameter_deg = 1.0
+tail_exposure_duration_s = 120
+tail_beam_response = unresolved
+tail_temporal_operator = exposure-average
+#end application
+```
+
+Relative paths are resolved against the file containing each assignment. The
+SPICE root must have `cspice/include/SpiceUsr.h`, `cspice/lib/cspice.a`, and
+`Kernels/`. `surface_mesh_resolution_m` is the maximum requested great-circle
+edge on the pre-topography reference sphere, not a latitude/longitude step or
+an AMR cell size. The CEA and Tecplot output paths must differ. Runtime path
+selection does not change the build-time SPICE mode.
+
+`mesh_profile` is a required provenance label (`quick`, `full`, or `custom`);
+it does not hide a second table of compiled defaults. `full` identifies the
+frozen M1-resolution receipt, `quick` identifies the committed approximately
+20-minute wiring profile, and `custom` records any investigator-selected
+resolution set. All radial
+controls are metres. The near-surface target applies from the lunar reference
+radius through `mesh_near_surface_extent_m`; the selector then transitions in
+dimensionless log-radius to `mesh_far_field_cell_size_m` at
+`mesh_far_field_extent_m` altitude. Outside that declared science region it
+coarsens monotonically to `mesh_outer_cell_size_m` at the compiled outer
+boundary. The committed M1 values therefore request 40 km at 10,000 km but do
+not impose that resolution throughout the 400-lunar-radius tail box.
+
+The committed QUICK receipt uses three times every FULL spatial target while
+retaining the same physical extents and non-mesh controls. This factor is
+empirical, not hidden profile logic: the earlier factor-two receipt produced
+1,074,788 blocks and its eight-rank I12 run was stopped after 28.7 minutes at
+223.7 GiB RSS. Factor three crosses the next coarser dyadic AMR level. Its cold
+eight-rank I12 wiring run completed in 1,409.9 seconds (23.50 minutes), with
+191.9 GiB peak RSS, on `passion` on 2026-10-12. This timing is host/cache-
+dependent operational guidance, not a validation criterion. QUICK cannot
+substitute for FULL I11-I13 convergence. To choose
+another resolution, edit the explicit target fields and set
+`mesh_profile = custom`; no resolution is selected implicitly by the profile
+name.
+
+The aggregate srcMoon developer regression uses the separate committed
+`srcMoon/examples/m1_regression.in` receipt.  It preserves the FULL physical
+extents, epoch, sources, science grid, and observation geometry, but sets all
+spatial targets to twelve times their FULL values and declares
+`mesh_profile=custom`.  It exists to bound routine production-wiring runs;
+even when its evaluated wiring criteria succeed, its M1 result is
+`SKIPPED / NOT QUALIFIED`.  Formal I11--I13 qualification still requires the
+FULL receipt and unchanged thresholds.
+
+`mesh_output_tecplot` is a required Boolean. `false` suppresses the optional
+full-volume `mesh.dat` and `tetra_mesh*.dat` visualization exports without
+changing the AMR tree, particle calculation, samplers, or the internal
+`mesh.msh` file used by the existing MPI initialization path. Set it to
+`true` only when the output filesystem has been deliberately provisioned: a
+fine three-dimensional mesh is written as text and can require hundreds of
+gigabytes. This switch does not control `surface_tecplot_file`, which is the
+separate triangulated lunar surface product.
+
+`mesh_angular_resolution_m_by_sza` is a comma-separated `SZA:resolution`
+table in degrees and metres. It must start at 0 degrees, contain an exact
+90-degree terminator knot, end at 180 degrees, and have strictly increasing
+angles and positive resolutions. Piecewise-linear interpolation defines the
+requested boundary resolution. Within the declared terminator half-width the
+90-degree value is an upper bound; poleward of the absolute body-fixed
+latitude threshold, `mesh_polar_resolution_m` is an upper bound. Solar zenith
+angle is evaluated in the Moon-centred LSO frame, while latitude is evaluated
+in `MOON_ME_DE421` at `simulation_start_utc`. AMPS realizes only its discrete
+power-of-two AMR levels, so the requested and realized sizes are both retained
+by I12.
+
+`simulation_start_utc` is the single run-wide UTC passed to CSPICE after the
+configured kernels are furnished. It controls dynamics, illumination, and
+diagnostic geometry together; it is not a separate observation-only clock.
+`simulation_environment_mode=frozen` holds those ephemeris-driven quantities
+at that UTC while particle transport continues, providing the stationary
+problem required for I11 spatial convergence. `evolving` advances the SPICE
+epoch normally and is intended for transient and observational campaigns.
+`random_seed` is a positive integer installed before any production source,
+surface interaction, or mover draws from AMPS's random stream. The frozen M1
+campaign uses `731993`; the MPI/OpenMP layout is recorded separately in each
+linked-run manifest.
+The profile grid uses metres above the AMPS lunar reference sphere
+(`_RADIUS_(_TARGET_)`, currently 1737.10 km), not above the 1737.4 km LOLA
+datum and not above local terrain. Its near and middle endpoints must be
+integral numbers of their respective linear steps.
+Above the middle endpoint, points are logarithmically spaced at
+`profile_altitude_far_points_per_decade`; the far endpoint is always included.
+For the shown values the grid contains 81 points: 0–200 km by 5 km, 200–1000
+km by 25 km, and 1000–10000 km at eight points per decade.
+
+`profile_solar_zenith_angles_deg` is a strictly increasing comma-separated
+list in `[0,180]` for profiles in the LSO equatorial plane. The pole flag adds
+the `+Z` and `-Z` directions of `MOON_ME_DE421`; no longitude is assigned at a
+pole. The shell-average flag requests a distinct angular average rather than
+using any one radial profile as a surrogate. `solid-angle` is required so an
+implementation cannot substitute an AMR-cell-count or unweighted-facet mean.
+The approved limb geometry is an Earth observer and the Sun-Moon-Earth plane.
+`limb_sides` can request `both`, `toward-projected-sun`, or
+`away-from-projected-sun`; branch names refer to the projected Moon-to-Sun
+direction in the observer sky plane. Its tangent maximum must be one of the
+common altitude-grid points.
+
+The tail map is centred on the Earth-sky anti-lunar direction—opposite the
+instantaneous Earth-to-Moon vector—not the anti-solar direction. Tail-map
+storage may be selected as `j2000-ra-dec` (the recommended native WHAM table
+coordinates) or `eclipj2000-lon-lat`; both store the horizontal coordinate
+positive east and the vertical coordinate positive north. `west-right` and
+`east-right` affect display layout only and never change stored coordinates.
+The beam diameter is a circular field-of-view diameter, not map-pixel spacing.
+The exposure duration is seconds and `exposure-average` requires temporal
+integration over that interval. Because D14 does not supply an authoritative
+radial beam response, `tail_beam_response` must remain `unresolved`; the code
+does not silently substitute a Gaussian or uniform disk.
+
+The parser records and validates these controls. The existing subsolar-limb sampler uses
+the exact altitude nodes through the declared tangent maximum, but it does not
+yet implement the complete two-limb/pole/shell operators or circular-aperture
+and exposure-time convolution; therefore configuration acceptance and partial
+grid wiring are not U26/I33 verification.
+
+### 2.2 General selection rules
+
 ```bash
 ./amps -input path/to/run.in    # the AMPS-wide spelling
 ./amps --input path/to/run.in   # exact synonym, kept for existing scripts

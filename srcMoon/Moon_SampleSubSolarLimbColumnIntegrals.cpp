@@ -11,15 +11,23 @@
 //$Id$
 
 #include "pic.h"
+#include "MoonInput.h"
 
 #include <string>
+
+namespace {
+// Keep the exact multiplicative radius used by the LOS geometry beside the
+// serialized metre grid.  In no-input mode this preserves the historical
+// floating-point operation (1+R); configured mode derives it from h/R once.
+std::vector<double> gAltitudeRadialScale;
+}
 
 SpiceDouble Moon::Sampling::SubsolarLimbColumnIntegrals::etSampleBegin;
 int Moon::Sampling::SubsolarLimbColumnIntegrals::SamplingPhase;
 int Moon::Sampling::SubsolarLimbColumnIntegrals::firstPhaseRadialVelocityDirection;
 int Moon::Sampling::SubsolarLimbColumnIntegrals::nOutputFile;
 
-double Moon::Sampling::SubsolarLimbColumnIntegrals::rr=0.0;
+std::vector<double> Moon::Sampling::SubsolarLimbColumnIntegrals::AltitudeGridM;
 long int Moon::Sampling::SubsolarLimbColumnIntegrals::nSampleAltitudeDistributionPoints=0;
 //Moon::Sampling::SubsolarLimbColumnIntegrals::cSampleAltitudeDistrubutionBufferElement *Moon::Sampling::SubsolarLimbColumnIntegrals::SampleAltitudeDistrubutionBuffer=NULL;
 
@@ -39,21 +47,39 @@ void Moon::Sampling::SubsolarLimbColumnIntegrals::init() {
   firstPhaseRadialVelocityDirection=0;
   nOutputFile=0;
 
-  //init the altitude distribution sampling buffer
-  double R,dAlt;
-  long int t;
-
-  rr=(maxAltitude+dAltmax)/(maxAltitude+dAltmin);
-  t=(long int)(log(dAltmax/dAltmin)/log(rr)-2.0);
-  rr=pow(dAltmax/dAltmin,1.0/(t+2.0));
-
-  R=dAltmin,dAlt=dAltmin;
-  while (R<maxAltitude+1.0) {
-    ++nSampleAltitudeDistributionPoints;
-
-    R+=dAlt;
-    dAlt*=rr;
+  // A configured run uses the exact common grid selected in the .in receipt,
+  // truncated at the separately declared limb maximum.  This is the actual
+  // tangent-altitude sequence consumed by the production LOS integrator, not
+  // a test-only reconstruction.  The historical geometric grid is retained
+  // only for the no-input regression so its reference output is unchanged.
+  AltitudeGridM.clear();
+  gAltitudeRadialScale.clear();
+  if (Moon::Runtime::HasConfiguration()) {
+    const Moon::Runtime::Configuration& configuration=
+        Moon::Runtime::GetConfiguration();
+    for (double altitudeM : configuration.profileAltitudeGridM) {
+      if (altitudeM>configuration.limbTangentMaximumAltitudeM) break;
+      AltitudeGridM.push_back(altitudeM);
+      gAltitudeRadialScale.push_back(
+          1.0+altitudeM/_RADIUS_(_TARGET_));
+    }
   }
+  else {
+    double ratio=(maxAltitude+dAltmax)/(maxAltitude+dAltmin);
+    const long int intervalCount=
+        (long int)(log(dAltmax/dAltmin)/log(ratio)-2.0);
+    ratio=pow(dAltmax/dAltmin,1.0/(intervalCount+2.0));
+
+    double altitudeRadii=dAltmin,dAltitudeRadii=dAltmin;
+    while (altitudeRadii<maxAltitude+1.0) {
+      AltitudeGridM.push_back(altitudeRadii*_RADIUS_(_TARGET_));
+      gAltitudeRadialScale.push_back(1.0+altitudeRadii);
+      altitudeRadii+=dAltitudeRadii;
+      dAltitudeRadii*=ratio;
+    }
+  }
+  nSampleAltitudeDistributionPoints=
+      static_cast<long int>(AltitudeGridM.size());
 
 
   //allocate the memory buffers
@@ -220,9 +246,14 @@ void Moon::Sampling::SubsolarLimbColumnIntegrals::PrintDataFile() {
       fNA_Intensity_5891_58A=fopen("pic.Moon.AltitudeDistribution.NA.Intensity.5891_58A.dat","w");
       fNA_Intensity_5897_56A=fopen("pic.Moon.AltitudeDistribution.NA.Intensity.5897_56A.dat","w");
 
-      fprintf(fNA_ColumnDensity,"VARIABLES=\"Altitude\"");
-      fprintf(fNA_Intensity_5891_58A,"VARIABLES=\"Altitude\"");
-      fprintf(fNA_Intensity_5897_56A,"VARIABLES=\"Altitude\"");
+      // Preserve the byte-for-byte legacy header in no-input regression mode;
+      // configured scientific receipts make the already-metre-valued axis
+      // explicit for downstream convergence tools.
+      const char *altitudeVariable=Moon::Runtime::HasConfiguration() ?
+          "Altitude [m]" : "Altitude";
+      fprintf(fNA_ColumnDensity,"VARIABLES=\"%s\"",altitudeVariable);
+      fprintf(fNA_Intensity_5891_58A,"VARIABLES=\"%s\"",altitudeVariable);
+      fprintf(fNA_Intensity_5897_56A,"VARIABLES=\"%s\"",altitudeVariable);
 
       for (el=0;el<nPhaseAngleIntervals;el++) {
         fprintf(fNA_ColumnDensity,", \"Column Density (Pa=%e,sunward)\", \"Column Density (Pa=%e,anti-sunward)\"",(el+0.5)*dPhaseAngle/Pi*180.0,(el+0.5)*dPhaseAngle/Pi*180.0);
@@ -234,13 +265,13 @@ void Moon::Sampling::SubsolarLimbColumnIntegrals::PrintDataFile() {
       fprintf(fNA_Intensity_5891_58A,"\n");
       fprintf(fNA_Intensity_5897_56A,"\n");
 
-      double R=dAltmin,dAlt=dAltmin;
-      long int nAltitudeSamplePoint=0;
-
-      while (R<maxAltitude+1.0) {
-        fprintf(fNA_ColumnDensity,"%e ",R*_RADIUS_(_TARGET_));
-        fprintf(fNA_Intensity_5891_58A,"%e ",R*_RADIUS_(_TARGET_));
-        fprintf(fNA_Intensity_5897_56A,"%e ",R*_RADIUS_(_TARGET_));
+      for (long int nAltitudeSamplePoint=0;
+           nAltitudeSamplePoint<nSampleAltitudeDistributionPoints;
+           ++nAltitudeSamplePoint) {
+        const double altitudeM=AltitudeGridM[nAltitudeSamplePoint];
+        fprintf(fNA_ColumnDensity,"%e ",altitudeM);
+        fprintf(fNA_Intensity_5891_58A,"%e ",altitudeM);
+        fprintf(fNA_Intensity_5897_56A,"%e ",altitudeM);
 
         for (el=0;el<nPhaseAngleIntervals;el++) {
           fprintf(fNA_ColumnDensity,"%e %e ",
@@ -264,9 +295,6 @@ void Moon::Sampling::SubsolarLimbColumnIntegrals::PrintDataFile() {
         fprintf(fNA_Intensity_5891_58A,"\n");
         fprintf(fNA_Intensity_5897_56A,"\n");
 
-        R+=dAlt;
-        dAlt*=rr;
-        if (++nAltitudeSamplePoint>=nSampleAltitudeDistributionPoints) break;
       }
 
       fclose(fNA_ColumnDensity);
@@ -386,14 +414,21 @@ void Moon::Sampling::SubsolarLimbColumnIntegrals::CollectSample(int DataOutputFi
 
 
 
-  SpiceInt n,nxpts;
+  SpiceInt nxpts;
   SpiceDouble rad[3],xpt0[3],xpt1[3],xLimb_IAU[3],xLimb_SO[3];
   SpiceDouble EarthState_IAU[6],EarthState_SO[6],SunState_IAU[6];
   SpiceEllipse limb;
   SpicePlane plane;
 
-  //find the limb
-  bodvrd_c(ObjectName, "RADII", 3, &n, rad );
+  // Construct the apparent limb of the declared AMPS reference sphere.  The
+  // PDS/LOLA and standard SPICE lunar datum is 1737.4 km, whereas AMPS uses
+  // _RADIUS_(_TARGET_)=1737.10 km in this application.  Querying BODY301_RADII
+  // here would therefore make the serialized zero-altitude ray about 300 m
+  // inconsistent with the agreed grid datum.  CSPICE still supplies the
+  // observer/solar geometry; only the explicitly approved spherical radius
+  // comes from the production model.
+  for (int component=0;component<3;component++)
+    rad[component]=1.0E-3*_RADIUS_(_TARGET_);
   spkezr_c("Earth",Exosphere::OrbitalMotion::et,IAU_FRAME,"none",ObjectName,EarthState_IAU,&lt);
   edlimb_c(rad[0],rad[1],rad[2],EarthState_IAU,&limb);
 
@@ -422,18 +457,23 @@ void Moon::Sampling::SubsolarLimbColumnIntegrals::CollectSample(int DataOutputFi
   //recalcualte position of the Earth in the SO_FRAME
   spkezr_c("Earth",Exosphere::OrbitalMotion::et,SO_FRAME,"none",ObjectName,EarthState_SO,&lt);
 
-  //sample the altitude distribution of the column integrals
-  double R=dAltmin,dAlt=dAltmin;
-  long int nAltitudeSamplePoint=0;
+  // Sample the same metre-valued tangent grid that is serialized by
+  // PrintDataFile().  xLimb_IAU comes from edlimb_c() in kilometres on the
+  // AMPS reference sphere built above; multiplying by 1+h/R therefore moves
+  // the tangent point to the exact requested AMPS-sphere altitude without
+  // changing its body-fixed direction.
   double l[3],rEarth_SO[3],c=0.0;
 
-  while (R<maxAltitude+1.0) {
+  for (long int nAltitudeSamplePoint=0;
+       nAltitudeSamplePoint<nSampleAltitudeDistributionPoints;
+       ++nAltitudeSamplePoint) {
+    const double radialScale=gAltitudeRadialScale[nAltitudeSamplePoint];
     for (idim=0,c=0.0;idim<3;idim++) {
       //recalculate position of the limb in the 'SO_FRAME'
       xLimb_SO[idim]=
-          (OrbitalMotion::IAU_to_SO_TransformationMartix[idim][0]*xLimb_IAU[0]*(R+1.0))+
-          (OrbitalMotion::IAU_to_SO_TransformationMartix[idim][1]*xLimb_IAU[1]*(R+1.0))+
-          (OrbitalMotion::IAU_to_SO_TransformationMartix[idim][2]*xLimb_IAU[2]*(R+1.0));
+          (OrbitalMotion::IAU_to_SO_TransformationMartix[idim][0]*xLimb_IAU[0]*radialScale)+
+          (OrbitalMotion::IAU_to_SO_TransformationMartix[idim][1]*xLimb_IAU[1]*radialScale)+
+          (OrbitalMotion::IAU_to_SO_TransformationMartix[idim][2]*xLimb_IAU[2]*radialScale);
 
 
 
@@ -463,9 +503,6 @@ void Moon::Sampling::SubsolarLimbColumnIntegrals::CollectSample(int DataOutputFi
       for (i=0;i<IntegralsVectorLength;i++) SampleBuffer_SunwardMotion__TotalModelRun[iPhaseAngle].AltitudeDistributionColumnIntegrals[nAltitudeSamplePoint][i]+=IntegralsVector[i];
     }
 
-    R+=dAlt;
-    dAlt*=rr;
-    if (++nAltitudeSamplePoint>=nSampleAltitudeDistributionPoints) break;
   }
 
 #endif

@@ -25,7 +25,18 @@ void Exosphere::Sampling::ReferenceGroundBasedObservations::init() {
   for (n=0;n<nReferenceGroundBasedObservations;n++) {
     RemoteObservationList[n].nOutputFile=0;
 
-    sprintf(RemoteObservationList[n].TimeStamp,"%s",ReferenceGroundBasedObservationTime[n]);
+    // The generated observation table uses the AMPS maximum string width, as
+    // does the destination field, but sprintf cannot infer that each row is a
+    // terminated timestamp and consequently diagnoses a possible overflow.
+    // Validate the actual row length and perform one bounded copy; truncating
+    // a UTC timestamp would change the physical observation epoch and is
+    // therefore a fatal configuration error rather than an acceptable fallback.
+    const std::string timestamp=ReferenceGroundBasedObservationTime[n];
+    if (timestamp.size()+1>sizeof(RemoteObservationList[n].TimeStamp))
+      exit(__LINE__,__FILE__,
+          "reference ground-based observation timestamp exceeds its buffer");
+    timestamp.copy(RemoteObservationList[n].TimeStamp,timestamp.size());
+    RemoteObservationList[n].TimeStamp[timestamp.size()]='\0';
     utc2et_c(RemoteObservationList[n].TimeStamp,&RemoteObservationList[n].et);
     RemoteObservationList[n].TAA=Exosphere::OrbitalMotion::GetTAA(RemoteObservationList[n].et);
     RemoteObservationList[n].PhaseAngle=Exosphere::OrbitalMotion::GetPhaseAngle(RemoteObservationList[n].et);

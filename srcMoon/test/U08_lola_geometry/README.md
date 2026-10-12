@@ -22,19 +22,39 @@ directory currently lacks its package README, `provenance.json`, and
 `qa_report.json`, the final U08 status remains `SKIPPED / NOT VALIDATED` even
 when that subcheck succeeds.
 
-The 500 km fixture can also be used for a linked smoke run after U08 writes its
-`u08.in`; that run is not U08 and does not satisfy I14. On 2026-10-10 the
-production executable completed 100 steps with both one and two MPI ranks.
-Those runs verify wiring and failure handling only: D01 qualification,
-resolution convergence, and the complete I14 contract remain pending.
+The 500 km fixture can also be used to investigate linked runtime wiring after
+U08 writes its `u08.in`; that run is not U08 and does not satisfy I14. A clean
+no-SPICE one-rank run on 2026-10-11 parsed the receipt, loaded the generated
+terrain, and printed all 81 altitude points, but stopped at iteration 1 with
+`pic_mover.cpp: Error: undetermined internal boundary type`. The selected
+first-order no-force mover's initial boundary-dispatch switch lacks the
+Nastran-surface case that is present in the second-order path. This is a linked
+production `ERROR`, not a U08 geometry-kernel failure, and supersedes the
+earlier smoke-run claim until the mover path is repaired and rerun. D01
+qualification, mover repair, resolution convergence, and the complete I14
+contract remain pending.
 
 ## Detailed fixture
 
-The probe writes its own complete `moon` section beneath the selected output
-directory and requests a 500,000 m maximum reference-sphere edge. The
-unrelated section preceding it verifies that the production parser ignores
-settings owned by another application. No test writes into the canonical
-validation-data repository.
+The probe writes its own complete generic `application: moon` block beneath
+the selected output directory and requests a 500,000 m maximum
+reference-sphere edge. It also rewrites the block delimiters to the retired
+`#section` spelling and requires the production parser to reject that file;
+there is no undocumented dual-grammar compatibility path. No test writes into
+the canonical validation-data repository.
+
+Because U08 already exercises the production `moon` parser, the fixture also
+checks that the agreed adjustable M1 altitude receipt produces exactly 81
+points with boundaries at 0, 200, 1000 and 10000 km, and retains the declared
+SZA/limb/tail scalar values. Those are parser invariants only. They do not
+exercise an observation operator and cannot change U26 or any I-series status.
+The fixture also requires `mesh_output_tecplot = false`, verifies that the
+production parser retains it, and rejects a non-Boolean value. This covers the
+configuration contract for suppressing full-volume AMR visualization; the
+surface Tecplot writer exercised later in U08 is a separate LOLA product.
+The fixture labels its deliberately coarse mixed-resolution receipt `custom`
+and rejects the retired `production` label; committed science receipts use
+the explicit `quick` or `full` identities.
 
 Four frozen pixel-centre controls exercise the native signed little-endian
 decode and coordinate directions:
@@ -72,5 +92,6 @@ mpiexec -n 2 /data/vtenishe/Moon-test/AMPS/run_test_Moon/amps \
   2>&1 | tee run.log
 ```
 
-This linked command is a smoke check, not part of the local U08 score and not
-a substitute for I14 resolution/convergence qualification.
+This linked command currently reproduces the first-order mover error described
+above. It is not part of the local U08 score and is not a substitute for I14
+resolution/convergence qualification.

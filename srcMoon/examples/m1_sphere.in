@@ -1,0 +1,63 @@
+! Frozen spherical-Moon template for the M1 I11-I13 numerical campaign.
+! Paths are resolved against this file.  LOLA inputs remain declared because
+! the application receipt is complete in both geometry modes, but sphere mode
+! does not read or use the DEM as physical evidence.
+#begin application: moon
+spice_path = /home/vtenishe/SPICE
+surface_geometry = sphere
+surface_mesh_resolution_m = 100000
+
+! The FULL profile approved for M1 qualification. I11 creates
+! archived copies of this receipt and scales every spatial target consistently
+! for its 40/20/10/5 km sequence; it never edits this reviewed template.
+! Every resolution remains an explicit input value. A modified resolution set
+! should use mesh_profile=custom and requires its own convergence evidence.
+mesh_profile = full
+mesh_near_surface_cell_size_m = 10000
+mesh_near_surface_extent_m = 200000
+mesh_far_field_cell_size_m = 40000
+mesh_far_field_extent_m = 10000000
+mesh_outer_cell_size_m = 17371000
+! Full-volume Tecplot output is not needed by I11-I13 and can be hundreds of
+! gigabytes at this resolution. Set true only for a deliberately provisioned
+! visualization run; the internal MPI AMR-tree file remains enabled.
+mesh_output_tecplot = false
+mesh_angular_resolution_m_by_sza = 0:10000,30:10000,60:5000,90:5000,120:10000,180:10000
+mesh_terminator_half_width_deg = 15
+mesh_polar_cap_start_latitude_deg = 75
+mesh_polar_resolution_m = 5000
+
+lola_product_id = LDEM_4
+lola_image_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.IMG
+lola_label_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.LBL
+surface_cea_file = ../../test_output/srcMoon/M1/sphere-unused.cea
+surface_tecplot_file = ../../test_output/srcMoon/M1/sphere-unused.dat
+
+simulation_start_utc = 2009-01-24T00:00:00
+simulation_environment_mode = frozen
+random_seed = 731993
+profile_altitude_near_maximum_m = 200000
+profile_altitude_near_step_m = 5000
+profile_altitude_middle_maximum_m = 1000000
+profile_altitude_middle_step_m = 25000
+profile_altitude_far_maximum_m = 10000000
+profile_altitude_far_points_per_decade = 8
+profile_solar_zenith_angles_deg = 0,30,60,90,120,180
+profile_include_body_fixed_poles = true
+profile_include_shell_average = true
+profile_shell_angular_weighting = solid-angle
+
+limb_observer = earth
+limb_plane = sun-moon-earth
+limb_sides = both
+limb_branch_reference = projected-sun
+limb_tangent_maximum_altitude_m = 1000000
+tail_center_direction = anti-lunar
+tail_map_coordinate_system = j2000-ra-dec
+tail_map_display_orientation = west-right
+tail_map_half_width_deg = 7.5
+tail_beam_diameter_deg = 1.0
+tail_exposure_duration_s = 120
+tail_beam_response = unresolved
+tail_temporal_operator = exposure-average
+#end application

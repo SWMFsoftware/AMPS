@@ -1,0 +1,64 @@
+! QUICK spherical-Moon wiring profile. Paths are resolved against this file.
+! This receipt keeps the FULL physical domain, epoch, sources, diagnostic
+! locations, and observation geometry, while making every spatial mesh target
+! three times the FULL value. The earlier factor-two candidate was measured at
+! 1,074,788 blocks and had to be stopped after 28.7 minutes at 223.7 GiB RSS
+! on eight MPI ranks. Factor three crosses the next coarser dyadic AMR level.
+! A cold eight-rank I12 run completed its wiring checks in 23.50 minutes with
+! 191.9 GiB peak RSS on 2026-10-12. Runtime is operational guidance, not a
+! scientific acceptance gate, and will vary with host and cached geometry.
+! QUICK verifies wiring only and cannot substitute for FULL I11-I13 evidence.
+#begin application: moon
+spice_path = /home/vtenishe/SPICE
+surface_geometry = sphere
+surface_mesh_resolution_m = 300000
+
+! All resolution targets remain explicit and may be changed. If any QUICK or
+! FULL value is changed for a new study, set mesh_profile=custom to avoid
+! misidentifying the modified receipt as either committed profile.
+mesh_profile = quick
+mesh_near_surface_cell_size_m = 30000
+mesh_near_surface_extent_m = 200000
+mesh_far_field_cell_size_m = 120000
+mesh_far_field_extent_m = 10000000
+mesh_outer_cell_size_m = 52113000
+mesh_output_tecplot = false
+mesh_angular_resolution_m_by_sza = 0:30000,30:30000,60:15000,90:15000,120:30000,180:30000
+mesh_terminator_half_width_deg = 15
+mesh_polar_cap_start_latitude_deg = 75
+mesh_polar_resolution_m = 15000
+
+lola_product_id = LDEM_4
+lola_image_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.IMG
+lola_label_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.LBL
+surface_cea_file = ../../test_output/srcMoon/QUICK/sphere-unused.cea
+surface_tecplot_file = ../../test_output/srcMoon/QUICK/sphere-unused.dat
+
+simulation_start_utc = 2009-01-24T00:00:00
+simulation_environment_mode = frozen
+random_seed = 731993
+profile_altitude_near_maximum_m = 200000
+profile_altitude_near_step_m = 5000
+profile_altitude_middle_maximum_m = 1000000
+profile_altitude_middle_step_m = 25000
+profile_altitude_far_maximum_m = 10000000
+profile_altitude_far_points_per_decade = 8
+profile_solar_zenith_angles_deg = 0,30,60,90,120,180
+profile_include_body_fixed_poles = true
+profile_include_shell_average = true
+profile_shell_angular_weighting = solid-angle
+
+limb_observer = earth
+limb_plane = sun-moon-earth
+limb_sides = both
+limb_branch_reference = projected-sun
+limb_tangent_maximum_altitude_m = 1000000
+tail_center_direction = anti-lunar
+tail_map_coordinate_system = j2000-ra-dec
+tail_map_display_orientation = west-right
+tail_map_half_width_deg = 7.5
+tail_beam_diameter_deg = 1.0
+tail_exposure_duration_s = 120
+tail_beam_response = unresolved
+tail_temporal_operator = exposure-average
+#end application

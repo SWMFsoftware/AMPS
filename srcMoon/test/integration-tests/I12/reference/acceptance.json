@@ -1,0 +1,23 @@
+{
+  "id": "I12",
+  "name": "Surface angular-refinement logic",
+  "purpose": "Verify that input-defined subsolar, terminator, nightside, and polar refinement is used by the linked production AMR mesh.",
+  "production_capability": "Input-driven localSphericalSurfaceResolution callback and AMPS boundary-adjacent mesh realization.",
+  "production_entry_points": ["Moon::Runtime::EvaluateAngularMeshResolutionM", "localSphericalSurfaceResolution", "PIC::Mesh::mesh->buildMesh"],
+  "configuration": "Sphere-mode SPICE Moon build with the frozen M1 knot table, 15 degree terminator half-width, 75 degree body-fixed polar cap, and mesh_output_tecplot=false so optional full-volume text visualization cannot consume science-run storage.",
+  "inputs": ["complete srcMoon .in receipt with mesh_output_tecplot=false", "SZA 0,30,60,90,120,180 degree fixtures", "MOON_ME_DE421 north-pole fixture"],
+  "independent_reference": "Independent Python piecewise-linear evaluator using raw receipt knots and body latitude emitted by the linked executable.",
+  "units": "degrees and metres",
+  "frame_time_convention": "SZA in Moon-centred LSO; polar latitude in MOON_ME_DE421 at the configured ET/TDB epoch.",
+  "deterministic_stochastic_controls": "No particles or random variables; the positive MPI rank count is an explicit CLI/run-manifest control and one OpenMP thread per rank is fixed by the runner.",
+  "procedure": "Initialize the production AMR tree, evaluate requested resolution at six SZA points and the transformed north pole, verify by MPI reduction that each sampled leaf has exactly one allocated owner, and measure each containing leaf cell.",
+  "metrics": ["requested formula relative error", "realized cell relative error", "body-fixed latitude", "unique allocated MPI owner per sampled leaf"],
+  "acceptance_criteria": "Requested formula relative error <=1e-14. Realized boundary-adjacent cell size must be within 25 percent of its target. The roadmap's documented AMR exception permits the nearest adjacent power-of-two level (absolute log2(realized/requested) <=0.5), or exactly one additional finer level at a declared coarse/fine knot when the dyadic parent is within the unchanged 25 percent gate. Coarser, non-transition, or more deeply over-refined cells are not excepted.",
+  "expected_pass_result": "Angular and polar refinement are physically placed and realized by the linked AMR mesh using mesh_profile=full.",
+  "expected_failure_modes": ["forced constant SZA", "wrong frame for polar latitude", "misparsed knots", "terminator band misplaced", "AMR realization outside tolerance", "missing or multiply allocated distributed leaf", "missing input receipt"],
+  "required_data": ["configured DE421 SPICE kernels"],
+  "data_hashes": "captured in run_manifest.json",
+  "predecessor_gates": ["U07", "I01", "I10"],
+  "artifacts": ["receipt.txt", "stdout.log", "stderr.log", "result.json", "run_manifest.json", "input snapshot"],
+  "status_semantics": "PASS requires mesh_profile=full and verifies requested and realized angular refinement only; it does not establish AMR convergence of science observables, which is I11. QUICK/CUSTOM runs that meet every wiring criterion are SKIPPED / NOT QUALIFIED for the M1 gate while retaining their metrics."
+}
