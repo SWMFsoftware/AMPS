@@ -3174,6 +3174,14 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         p.numerics.trapDriftMinProfileCoverage=std::stod(val);
       else if (uKey=="TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION")
         p.numerics.trapDriftMinMatchedBinFraction=std::stod(val);
+      else if (uKey=="TRAP_DRIFT_WINDOW_REVOLUTIONS")
+        p.numerics.trapDriftWindowRevolutions=std::stoi(val);
+      else if (uKey=="TRAP_DRIFT_MIN_STABLE_WINDOWS" ||
+               uKey=="TRAP_DRIFT_MIN_STABLE_WINDOW_COMPARISONS")
+        p.numerics.trapDriftMinStableWindowComparisons=std::stoi(val);
+      else if (uKey=="TRAP_DRIFT_MAX_RECURRENCE_LAG" ||
+               uKey=="TRAP_DRIFT_MAX_RECURRENCE_LAG_REVOLUTIONS")
+        p.numerics.trapDriftMaxRecurrenceLagRevolutions=std::stoi(val);
       else if (uKey=="MAX_TRACE_DISTANCE") p.numerics.maxTraceDistance_Re=std::stod(val);
       else if (uKey=="N_PARTICLES") {
         // RoR-style generic particle count. For the forward-mode injector this
@@ -3754,6 +3762,15 @@ if (ToUpper(p.field.model)=="DIPOLE") {
         p.numerics.trapDriftMinMatchedBinFraction <= 1.0) ||
       !std::isfinite(p.numerics.trapDriftMinMatchedBinFraction))
     exit(__LINE__,__FILE__,"TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION must be finite and in (0,1]");
+  if (p.numerics.trapDriftWindowRevolutions < 1 ||
+      p.numerics.trapDriftWindowRevolutions > 64)
+    exit(__LINE__,__FILE__,"TRAP_DRIFT_WINDOW_REVOLUTIONS must be in [1,64]");
+  if (p.numerics.trapDriftMinStableWindowComparisons < 1 ||
+      p.numerics.trapDriftMinStableWindowComparisons > 64)
+    exit(__LINE__,__FILE__,"TRAP_DRIFT_MIN_STABLE_WINDOWS must be in [1,64]");
+  if (p.numerics.trapDriftMaxRecurrenceLagRevolutions < 1 ||
+      p.numerics.trapDriftMaxRecurrenceLagRevolutions > 64)
+    exit(__LINE__,__FILE__,"TRAP_DRIFT_MAX_RECURRENCE_LAG must be in [1,64]");
 
   // Resolve product-selection requests from CALC_TARGET.
   //

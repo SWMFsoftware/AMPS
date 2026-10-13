@@ -113,6 +113,9 @@
 //     TRAP_DRIFT_PROFILE_BINS     <int>      ! azimuth bins per full drift revolution
 //     TRAP_DRIFT_MIN_PROFILE_COVERAGE <double> ! populated-bin fraction in (0,1]
 //     TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION <double> ! recurring common-bin fraction in (0,1]
+//     TRAP_DRIFT_WINDOW_REVOLUTIONS <int>    ! complete turns per phase-mixed window
+//     TRAP_DRIFT_MIN_STABLE_WINDOWS <int>    ! consecutive successful window comparisons
+//     TRAP_DRIFT_MAX_RECURRENCE_LAG <int>    ! largest tested window separation [turns]
 //
 //   #PARTICLE_TRAJECTORY    (optional; used by -mode 3d_forward)
 //     INITIALIZE_TRAJECTORIES T|F        ! runtime gate for AMPS trajectory records
@@ -1237,6 +1240,17 @@ namespace EarthUtil {
     int trapDriftProfileBins{24};
     double trapDriftMinProfileCoverage{0.70};
     double trapDriftMinMatchedBinFraction{0.75};
+    // One-turn windows preserve the historical adjacent-revolution classifier.  Tests
+    // that explicitly select a larger window use phase mixing without changing any
+    // physical tolerance; two successful comparisons reject one accidental return.
+    int trapDriftWindowRevolutions{1};
+    int trapDriftMinStableWindowComparisons{2};
+    // The default of one tests only adjacent revolutions and therefore preserves the
+    // existing C19/SA01 behavior.  A validation deck may explicitly search a longer,
+    // bounded lag when a full orbit has an independently observed bounce--drift
+    // super-period.  Profile tolerances are unchanged and the same lag must recur on
+    // consecutive turns before it can contribute to a trapped classification.
+    int trapDriftMaxRecurrenceLagRevolutions{1};
 
     // Compatibility fields for CCMC/Runs-on-Request particle-control keywords.
     // They are parsed so strict validation accepts the input file.  At present

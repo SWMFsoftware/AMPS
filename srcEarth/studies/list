@@ -13,3 +13,9 @@ srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_global_cutoff_maps.py -
 ! gates, and writes PNG/EPS comparison figures. WORKFLOW makes a completed study
 ! return zero without changing the separately recorded scientific qualification.
 python3 srcEarth/test/SA01/run_SA01.py --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926 --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/SA01/standard_study_runs --profile STANDARD --solver GRIDDED --mpi-ranks 4 --threads 8 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW
+
+! SA02 STANDARD is independent of SA02 QUICK and every SA01 campaign. It executes
+! both eligible June 2015 RBSP branches, applies the same unchanged science gates,
+! and writes its complete comparison evidence and PNG/EPS figures below a unique
+! study directory. WORKFLOW does not alter the recorded scientific qualification.
+python3 srcEarth/test/SA02/run_SA02.py --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926 --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/SA02/standard_study_runs --profile STANDARD --solver GRIDDED --mpi-ranks 4 --threads 8 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW

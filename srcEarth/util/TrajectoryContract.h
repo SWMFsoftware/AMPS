@@ -49,6 +49,7 @@
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <vector>
 
 namespace Earth {
 namespace Trajectory {
@@ -403,8 +404,53 @@ struct Result {
   int driftRevolutions{0};
   double driftAngle_rad{0.0};
   double driftMeanRadiusChange_m{0.0};
+  double driftMeanRadiusSpan_m{0.0};
+  int driftStableComparisons{0};
+  // Separation, in complete drift turns, of the comparison retained for audit.  A
+  // non-unit value is positive evidence of a bounce--drift super-period, not an
+  // elapsed-time shortcut; all ordinary profile and secular gates still apply.
+  int driftRecurrenceLagRevolutions{0};
+  double minimumOuterMargin_m{0.0};
+  double lastBounceEnvelopeChange_m{0.0};
+
+  // Audit of the last completed drift-profile comparison.  These fields do not
+  // participate in classification outside TrajectoryTrapDetector; they preserve why
+  // a long-lived candidate did or did not satisfy the positive recurrence test.
+  bool driftComparisonAvailable{false};
+  bool driftPreviousCoveragePassed{false};
+  bool driftCurrentCoveragePassed{false};
+  bool driftSecularDriftPassed{false};
+  bool driftProfilesRecurred{false};
+  double driftPreviousCoverageFraction{0.0};
+  double driftCurrentCoverageFraction{0.0};
+  int driftCommonBins{0};
+  int driftMatchedBins{0};
+  int driftRadialMismatchBins{0};
+  int driftLatitudeMismatchBins{0};
+  int driftPitchMismatchBins{0};
+  double driftMatchedBinFraction{0.0};
+  double driftMaximumNormalizedRadialResidual{0.0};
+  double driftMaximumNormalizedLatitudeResidual{0.0};
+  double driftMaximumNormalizedPitchResidual{0.0};
   int trapMechanism{0};
   double momentumRelativeSpread{0.0};
+
+  // Optional forensic states copied only when AMPS_TRAP_TURN_DIAGNOSTICS=1.  They
+  // never participate in classification and remain empty in normal validation runs.
+  struct DriftTurnState {
+    int revolution{0};
+    double traceTime_s{0.0};
+    double accumulatedAngle_rad{0.0};
+    double x_m[3]{0.0,0.0,0.0};
+    double p_unit[3]{0.0,0.0,0.0};
+    double b_unit[3]{0.0,0.0,0.0};
+    double radius_m{0.0};
+    double latitude{0.0};
+    double pitchCos2{0.0};
+    double outerMargin_m{0.0};
+    double momentumRelativeSpread{0.0};
+  };
+  std::vector<DriftTurnState> driftTurnStates;
 
   Mover mover{Mover::BORIS};
   BackwardTimeMode backwardTimeMode{BackwardTimeMode::StaticMagneticAntiparticle};

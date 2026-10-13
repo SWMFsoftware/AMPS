@@ -359,6 +359,23 @@ structured trajectory result; `N_retried` counts directions that needed either a
 extension or a genuine numerical-failure retry.  The unresolved tolerance itself is
 never changed by this mechanism.
 
+The positive drift-shell detector also remains fail closed. Its compatibility default
+compares adjacent complete drift-turn profiles. The optional controls
+`TRAP_DRIFT_WINDOW_REVOLUTIONS`, `TRAP_DRIFT_MIN_STABLE_WINDOWS`, and
+`TRAP_DRIFT_MAX_RECURRENCE_LAG` permit a bounded phase-mixed/super-period search without
+changing any physical tolerance. Each lag owns an independent consecutive-success
+counter; profile matches at different lags are never accumulated. Multi-turn windows
+must reproduce within-bin envelopes as well as means, and the secular-radius veto spans
+every intervening individual turn. Thus elapsed time, revolution count, or a single
+return cannot turn a numerical limit into `DRIFT_TRAPPED_FORBIDDEN`.
+
+Final unresolved density attempts include the rejected detector sub-gates in the
+`[density-trace]` diagnostic record. With `AMPS_TRAP_TURN_DIAGNOSTICS=1`, the detector
+also retains and writes one compact `[trap-turn]` Poincare state per completed
+revolution. This opt-in series is intended for reproducible return-map analysis and is
+never read by the classifier; normal runs incur neither the vector storage nor the
+per-turn log volume.
+
 ## Linear-grid correction
 
 The former Mode3D LINEAR branch evaluated `Emin + a*(Emax-Emin)*a`.  The shared builder

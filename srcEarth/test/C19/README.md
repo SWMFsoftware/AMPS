@@ -2497,8 +2497,11 @@ The drift recurrence algorithm is:
    geocentric radius `r`, normalized vertical coordinate `z/r`, and
    `cos^2(pitch_angle)`.  The squared pitch cosine removes the sign reversal at mirror
    points while retaining pitch structure.
-4. Require each revolution to populate a configured fraction of its phase bins, then
-   compare consecutive complete revolutions bin by bin.
+4. Require each revolution to populate a configured fraction of its phase bins.  The
+   default compares adjacent single-turn profiles, preserving the original C19
+   classifier.  An explicit diagnostic/validation deck may instead combine a fixed
+   number of complete turns into each phase-mixed window and search a bounded set of
+   non-overlapping recurrence lags.  No partial turn contributes to a window.
 5. A radius bin matches when
 
    ```text
@@ -2506,13 +2509,20 @@ The drift recurrence algorithm is:
    ```
 
    and the same bin must also satisfy the `z/r` and `cos^2(pitch)` tolerances.
-6. Require a configured fraction of the common bins to match.  Failed recurrence resets
-   the count of consecutive stable revolution comparisons; isolated fortuitous returns
-   therefore cannot accumulate over a chaotic trace.
-7. Require at least the configured number of complete revolutions, all required
-   consecutive turn-to-turn recurrence comparisons, a safe margin from the outer
-   boundary, and acceptable momentum-magnitude spread.
-8. Only then return `DRIFT_TRAPPED_FORBIDDEN`.
+6. Require a configured fraction of the common bins to match.  In a multi-turn window,
+   the within-bin minimum/maximum envelopes must also recur; averaging is not permitted
+   to hide a large radial, latitude, or pitch excursion.
+7. Track consecutive successes independently for every tested lag.  A failure resets
+   that lag only, and successes at different lags can never be combined.  This rejects
+   isolated returns while allowing a demonstrated bounce--drift super-period longer
+   than one drift turn.
+8. Apply the secular-radius veto to both the two compared window means and the complete
+   sequence of individual turn means between them.  A long-lag return therefore cannot
+   hide an intermediate radial walk.
+9. Require the configured complete-turn count, the configured number of consecutive
+   same-lag comparisons, a safe margin from the outer boundary, and acceptable
+   momentum-magnitude spread.
+10. Only then return `DRIFT_TRAPPED_FORBIDDEN`.
 
 The committed C19 defaults are
 
@@ -2528,8 +2538,20 @@ TRAP_DRIFT_MAX_MEAN_RADIUS_CHANGE_RE    1.0
 TRAP_DRIFT_PROFILE_BINS                24
 TRAP_DRIFT_MIN_PROFILE_COVERAGE        0.70
 TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION    0.75
+TRAP_DRIFT_WINDOW_REVOLUTIONS           1
+TRAP_DRIFT_MIN_STABLE_WINDOWS           2
+TRAP_DRIFT_MAX_RECURRENCE_LAG           1
 TRAP_ENERGY_REL_TOL                     1.0e-4
 ```
+
+The one-turn window and lag-one maximum are compatibility defaults: they reproduce the
+historical adjacent-revolution decision. `TRAP_DRIFT_MIN_STABLE_WINDOWS` controls an
+explicit multi-turn window; the legacy one-turn path continues to require
+`TRAP_MIN_DRIFT_REVOLUTIONS - 1` adjacent successes. All three integer controls are
+bounded to `[1,64]`, so a long trace cannot create unbounded detector memory or search.
+Increasing the lag is not a looser tolerance: the same coverage, radial, latitude,
+pitch, outer-margin, momentum, and secular gates apply, and the same lag must pass on
+successive completed turns.
 
 `TRAP_DRIFT_RADIAL_GROWTH_TOL_RE` is retained for input compatibility but is now the
 **absolute** radial recurrence tolerance.  The relative tolerance is applied alongside
@@ -2556,14 +2578,26 @@ tolerance is relaxed.  A BORIS/full-orbit cross-check is preferred when availabl
 physical recurrence criterion fired earlier.  This rule is what keeps DIRECT_ACCESS
 scientifically distinct from the old equivalent-cutoff midpoint heuristic.
 
+For a rejected candidate, the structured result retains the strongest tested
+comparison: selected lag, window mean-radius change and span, profile coverage,
+common/matched bins, per-observable mismatch counts, normalized worst residuals, and
+the secular/profile verdicts. Density tracing always writes that final rejected state
+when an attempt remains unresolved. Setting `AMPS_TRAP_TURN_DIAGNOSTICS=1` additionally
+records one compact `[trap-turn]` state per completed revolution (time, position,
+normalized momentum and field, radius, latitude, pitch, outer margin, and momentum
+spread). The recorder is off by default and never participates in classification.
+`srcEarth/test/SA02/analyze_trap_turns.py` is a forensic return-map reader; its output is
+diagnostic evidence, not another trap criterion.
+
 #### Regression protection
 
 Two source-level regressions are included and are compiled/executed by the C19 package
 self-test when a C++17 compiler is available:
 
-* `test/C19/tests/test_trap_recurrence.cpp` feeds controlled recurring and secularly
-  expanding multi-turn profiles directly to the detector.  It protects the recurrence
-  logic from accidental false positives/false negatives.
+* `test/C19/tests/test_trap_recurrence.cpp` feeds controlled adjacent recurrence,
+  secularly expanding profiles, and a two-turn super-period directly to the detector.
+  It requires the longer-period orbit to pass only through consecutive lag-two
+  evidence and protects the secular veto from phase-mixing false positives.
 * `test/C19/tests/test_trap_dipole_full_orbit.cpp` integrates physical relativistic full
   Lorentz orbits in an analytic centered dipole with a self-contained Boris/Cayley step.
   A 15-MeV near-90-degree-pitch GEO proton must establish three-turn drift recurrence; a

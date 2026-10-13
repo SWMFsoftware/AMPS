@@ -249,6 +249,32 @@ terminations, budgets, and pass counts remain in the result. Gridless and Mode3D
 the same `ShouldRetryNumerical()`, `ShouldExtendUnresolved()`,
 `ExtensionTimeBudget()`, and `ScaledStepBudget()` functions.
 
+### Positive full-orbit trap evidence
+
+`TrajectoryTrapDetector.h` is shared by both trajectory backends. Its bounce branch
+requires repeated parallel-momentum reversals, stable radial envelopes, outer-boundary
+margin, and momentum conservation. Its drift branch unwraps signed geocentric azimuth
+and builds complete-turn profiles of radius, normalized latitude, and squared pitch
+cosine. A drift verdict requires profile coverage and binwise recurrence, the
+outer-boundary and momentum gates, and a secular mean-radius veto. Merely reaching a
+time, step, or revolution count is never trap evidence.
+
+The compatibility policy is a one-turn window at lag one. Explicit decks can configure
+`TRAP_DRIFT_WINDOW_REVOLUTIONS`, `TRAP_DRIFT_MIN_STABLE_WINDOWS`, and
+`TRAP_DRIFT_MAX_RECURRENCE_LAG` (each bounded to `[1,64]`) for a demonstrated
+bounce--drift super-period. Multi-turn comparisons combine only complete profiles,
+require their within-bin envelopes as well as their means to recur, and measure radial
+span across every intervening individual turn. Each lag has its own consecutive-match
+counter, so isolated matches or successes at different lags cannot be accumulated into
+a trapped classification.
+
+`Trajectory::Result` carries the selected lag and the rejected/accepted sub-gates:
+coverage, common and matched bins, mismatch counts, normalized worst residuals,
+mean-radius change/span, and secular/profile verdicts. When
+`AMPS_TRAP_TURN_DIAGNOSTICS=1`, it can additionally carry one compact Poincare state per
+completed drift turn. The recorder is disabled by default, has no decision path back
+into the detector, and exists only to make difficult unresolved trajectories auditable.
+
 Run the strict reference/invariant suite with:
 
 ```bash

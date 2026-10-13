@@ -1650,6 +1650,14 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
   trapConfig.driftProfileBins=prm.numerics.trapDriftProfileBins;
   trapConfig.driftMinProfileCoverage=prm.numerics.trapDriftMinProfileCoverage;
   trapConfig.driftMinMatchedBinFraction=prm.numerics.trapDriftMinMatchedBinFraction;
+  trapConfig.driftWindowRevolutions=prm.numerics.trapDriftWindowRevolutions;
+  trapConfig.driftMinStableWindowComparisons=
+      prm.numerics.trapDriftMinStableWindowComparisons;
+  trapConfig.driftMaxRecurrenceLagRevolutions=
+      prm.numerics.trapDriftMaxRecurrenceLagRevolutions;
+  const char* trapTurnDiagnostics=std::getenv("AMPS_TRAP_TURN_DIAGNOSTICS");
+  trapConfig.recordDriftTurnStates=
+      trapTurnDiagnostics && std::string(trapTurnDiagnostics)=="1";
   Earth::TrajectoryTrap::Detector trapDetector(trapConfig,boundaryBox);
 
   ResetHybridTrajectoryContext(x0_m, boundaryBox.innerRadius);
@@ -1678,8 +1686,54 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
     result.driftRevolutions=trapDetector.driftRevolutions();
     result.driftAngle_rad=trapDetector.driftAngleRadians();
     result.driftMeanRadiusChange_m=trapDetector.driftMeanRadiusChangeMeters();
+    result.driftMeanRadiusSpan_m=trapDetector.driftMeanRadiusSpanMeters();
+    result.driftStableComparisons=trapDetector.stableDriftComparisons();
+    result.driftRecurrenceLagRevolutions=
+        trapDetector.driftRecurrenceLagRevolutions();
+    result.minimumOuterMargin_m=trapDetector.minimumOuterMarginMeters();
+    result.lastBounceEnvelopeChange_m=trapDetector.lastBounceEnvelopeChangeMeters();
+    const Earth::TrajectoryTrap::DriftComparisonDiagnostics& drift=
+        trapDetector.driftComparisonDiagnostics();
+    result.driftComparisonAvailable=drift.available;
+    result.driftPreviousCoveragePassed=drift.previousCoveragePassed;
+    result.driftCurrentCoveragePassed=drift.currentCoveragePassed;
+    result.driftSecularDriftPassed=drift.secularDriftPassed;
+    result.driftProfilesRecurred=drift.profilesRecurred;
+    result.driftPreviousCoverageFraction=drift.previousCoverageFraction;
+    result.driftCurrentCoverageFraction=drift.currentCoverageFraction;
+    result.driftCommonBins=drift.commonBins;
+    result.driftMatchedBins=drift.matchedBins;
+    result.driftRadialMismatchBins=drift.radialMismatchBins;
+    result.driftLatitudeMismatchBins=drift.latitudeMismatchBins;
+    result.driftPitchMismatchBins=drift.pitchMismatchBins;
+    result.driftMatchedBinFraction=drift.matchedBinFraction;
+    result.driftMaximumNormalizedRadialResidual=
+        drift.maximumNormalizedRadialResidual;
+    result.driftMaximumNormalizedLatitudeResidual=
+        drift.maximumNormalizedLatitudeResidual;
+    result.driftMaximumNormalizedPitchResidual=
+        drift.maximumNormalizedPitchResidual;
     result.trapMechanism=static_cast<int>(trapDetector.mechanism());
     result.momentumRelativeSpread=trapDetector.momentumRelativeSpread();
+    result.driftTurnStates.clear();
+    result.driftTurnStates.reserve(trapDetector.driftTurnStates().size());
+    for (const auto& source:trapDetector.driftTurnStates()) {
+      Earth::Trajectory::Result::DriftTurnState destination;
+      destination.revolution=source.revolution;
+      destination.traceTime_s=source.traceTime_s;
+      destination.accumulatedAngle_rad=source.accumulatedAngle_rad;
+      destination.radius_m=source.radius_m;
+      destination.latitude=source.latitude;
+      destination.pitchCos2=source.pitchCos2;
+      destination.outerMargin_m=source.outerMargin_m;
+      destination.momentumRelativeSpread=source.momentumRelativeSpread;
+      for (int d=0;d<3;++d) {
+        destination.x_m[d]=source.x_m[d];
+        destination.p_unit[d]=source.p_unit[d];
+        destination.b_unit[d]=source.b_unit[d];
+      }
+      result.driftTurnStates.push_back(destination);
+    }
     return result;
   };
 
@@ -1720,7 +1774,7 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
     const double xTrap[3]={x.x,x.y,x.z};
     const double pTrap[3]={p.x,p.y,p.z};
     const double bTrap[3]={B0.x,B0.y,B0.z};
-    trapDetector.Update(xTrap,pTrap,bTrap);
+    trapDetector.Update(xTrap,pTrap,bTrap,0.0);
   }
 
   while (nSteps < prm.numerics.maxSteps &&
@@ -1795,7 +1849,7 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
       const double xTrap[3]={x.x,x.y,x.z};
       const double pTrap[3]={p.x,p.y,p.z};
       const double bTrap[3]={Btrap.x,Btrap.y,Btrap.z};
-      if (trapDetector.Update(xTrap,pTrap,bTrap)) {
+      if (trapDetector.Update(xTrap,pTrap,bTrap,tTrace_s)) {
           // Preserve the physical mechanism in the termination code.  This is
           // deliberately NOT a timeout remap: DRIFT_TRAPPED_FORBIDDEN is emitted
           // only after the positive full-orbit recurrence test has fired.

@@ -517,6 +517,15 @@ fields, or numerical states use a separate one-time smaller-step recovery.  Incr
 the convergence budget therefore does not reclassify a timeout as shielding: the final
 trajectory must still escape, hit the loss boundary, or satisfy a validated trap test.
 
+The drift trap test is positive recurrence evidence, not a timeout heuristic. By
+default it retains the historical adjacent-turn profile comparison. Explicit decks can
+request bounded multi-turn windows and recurrence lags for a demonstrated bounce--drift
+super-period. Such a search keeps the original coverage and phase-space tolerances,
+requires consecutive successes at the same lag, compares within-bin envelopes, and
+vetoes secular motion across every intervening turn. Optional
+`AMPS_TRAP_TURN_DIAGNOSTICS=1` Poincare records are forensic output only and cannot
+affect a trajectory verdict.
+
 `DS_FAIL_ON_UNRESOLVED=F` (default) preserves survey-style execution and writes a
 warning plus uncertainty bounds.  `T` makes an exceedance fatal and is intended for
 regression and publication validation.  Mode3D writes

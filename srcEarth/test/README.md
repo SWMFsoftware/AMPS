@@ -49,6 +49,33 @@ missing convergence cannot qualify, and registered bounded numerical failures
 remain failures even when another refinement axis passes. See the SA01 README for
 the explicit evidence-registration and waiting options before queueing long jobs.
 
+## SA02: June 2015 storm-time RBSP/REPT validation
+
+`SA02/` is a separate implementation for the half-open interval
+`2015-06-21T00:00:00Z <= t < 2015-06-24T00:00:00Z`. It validates the same four
+product families against both eligible RBSP spacecraft while using SA02's own frozen
+T05, ERNE, REPT, and OMNI package inputs. It imports no SA01 modules and writes only
+beneath `test_output/SA02`, so extending SA02 does not change SA01 behavior or
+evidence.
+
+The master list registers a complete, exclusive QUICK physical campaign; the studies
+list registers an independently executable STANDARD campaign. Both preserve the
+fixed observational and convergence gates, generate PNG and EPS comparisons, and
+separate workflow completion from scientific qualification. The immediately preceding
+`! runner: exclusive` directive serializes QUICK inside `test_runner.py`; the command
+itself has no private runner handshake and remains directly executable.
+
+The focused SA02 implementation suite can be run without launching the external
+observational campaign:
+
+```bash
+python3 srcEarth/test/test_runner.py -j 1 srcEarth/test/SA02/list
+```
+
+Exact campaign commands, authoritative package counts, profile sizes, output layout,
+plot inventory, Mode3D scheduling/memory policy, and interpretation limits are in
+`SA02/README.md`.
+
 ## UFluxNumerics: Step 2 unit suite
 
 The shared cutoff-to-flux numerical module has a dependency-free C++11 unit suite:
@@ -155,13 +182,13 @@ validation gates.
 
 `test/list` schedules the Step 2 through Step 12 suites as independent `P`
 entries. Each has its own `last pass:` record, so the main runner reports and commits
-their provenance separately. The reviewed SA01 QUICK workflow is an additional
-independent entry; it does not modify any pre-existing C/F command, expected status,
-input, reference, tolerance, mover, trajectory limit, or last-pass record.
-Its preceding `! runner: exclusive` directive makes the repository runner serialize
-the high-memory campaign. The command itself has no private environment handshake and
-is therefore independently executable exactly as listed; the same command is
-documented in `SA01/README.md`.
+their provenance separately. The reviewed SA01 QUICK and SA02 QUICK workflows are
+additional independent entries; neither modifies any pre-existing C/F command,
+expected status, input, reference, tolerance, mover, trajectory limit, or last-pass
+record. Each preceding `! runner: exclusive` directive makes the repository runner
+serialize its high-memory campaign. The commands themselves have no private
+environment handshake and are therefore independently executable exactly as listed;
+the same commands are documented in their case-specific READMEs.
 
 ## UStep12Release: strict Step 12 suite
 
@@ -182,8 +209,9 @@ capabilities, and mutated restart inputs must fail.
 The companion source audit checks manifest and Tecplot identity wiring, `-h` release
 commands and limitations, complete documentation/templates, and registration in
 `test/list`. It compares the normalized list with a reviewed structural SHA-256, so
-adding SA01 QUICK required an explicit digest advance and dedicated command assertions;
-runner-owned `last pass:` hashes remain the only normalized values. The manufactured
+adding either physical QUICK workflow requires an explicit digest advance and
+case-specific command assertions; runner-owned `last pass:` hashes remain the only
+normalized values. The manufactured
 suite validates the evaluator only; a release PASS still requires actual linked and
 observation evidence listed in `UStep12Release/README.md`.
 

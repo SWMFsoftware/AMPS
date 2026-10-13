@@ -462,8 +462,11 @@ static Earth::GridlessMode::TrajectoryResult TraceDensityDirection_Mode3D_(
     return value && std::string(value)=="1";
   }();
   auto record=[&](const TrajectoryResult& out,const char* stage,int pass,
-                  double budget,int stepBudget) {
-    if (!diagnostics) return;
+                  double budget,int stepBudget,bool force) {
+    // Full attempt histories are opt-in because a normal SA02 epoch contains thousands
+    // of trajectories.  The final unresolved state is always emitted, however, so a
+    // strict production failure retains the exact rejected trap sub-gates in amps.log.
+    if (!diagnostics && !force) return;
     std::ostringstream line;
     line << std::setprecision(17)
          << "[density-trace] epoch=" << prm.field.epoch
@@ -479,10 +482,59 @@ static Earth::GridlessMode::TrajectoryResult TraceDensityDirection_Mode3D_(
          << " retries=" << out.retryCount << " mirrors=" << out.mirrorPoints
          << " bounces=" << out.bounceCycles << " drift_turns=" << out.driftRevolutions
          << " momentum_spread=" << out.momentumRelativeSpread
-         << " drift_radius_change_m=" << out.driftMeanRadiusChange_m << '\n';
+         << " drift_radius_change_m=" << out.driftMeanRadiusChange_m
+         << " drift_radius_span_m=" << out.driftMeanRadiusSpan_m
+         << " drift_stable_comparisons=" << out.driftStableComparisons
+         << " drift_recurrence_lag_turns=" << out.driftRecurrenceLagRevolutions
+         << " minimum_outer_margin_m=" << out.minimumOuterMargin_m
+         << " bounce_envelope_change_m=" << out.lastBounceEnvelopeChange_m
+         << " drift_comparison_available=" << (out.driftComparisonAvailable ? 1 : 0)
+         << " drift_previous_coverage=" << out.driftPreviousCoverageFraction
+         << " drift_current_coverage=" << out.driftCurrentCoverageFraction
+         << " drift_common_bins=" << out.driftCommonBins
+         << " drift_matched_bins=" << out.driftMatchedBins
+         << " drift_matched_fraction=" << out.driftMatchedBinFraction
+         << " drift_radial_mismatches=" << out.driftRadialMismatchBins
+         << " drift_latitude_mismatches=" << out.driftLatitudeMismatchBins
+         << " drift_pitch_mismatches=" << out.driftPitchMismatchBins
+         << " drift_radial_residual_norm=" << out.driftMaximumNormalizedRadialResidual
+         << " drift_latitude_residual_norm=" << out.driftMaximumNormalizedLatitudeResidual
+         << " drift_pitch_residual_norm=" << out.driftMaximumNormalizedPitchResidual
+         << " drift_secular_ok=" << (out.driftSecularDriftPassed ? 1 : 0)
+         << " drift_profiles_recurred=" << (out.driftProfilesRecurred ? 1 : 0) << '\n';
     static std::mutex diagnosticMutex;
     std::lock_guard<std::mutex> lock(diagnosticMutex);
     std::cerr << line.str();
+    // Emit the compact Poincare series only for the final unresolved attempt.  The
+    // states are recorded only when AMPS_TRAP_TURN_DIAGNOSTICS=1, so ordinary SA02
+    // output and memory use are unchanged.  Keeping the selector here (where energy
+    // and direction are known) avoids concurrent per-step files and guarantees each
+    // line carries the exact deterministic trajectory seed needed for reproduction.
+    if (force) {
+      for (const auto& state:out.driftTurnStates) {
+        std::cerr << std::setprecision(17)
+             << "[trap-turn] epoch=" << prm.field.epoch
+             << " direction=" << directionIndex
+             << " rigidity_GV=" << Rgv
+             << " particle_energy_MeV=" << Earth::FluxNumerics::EnergyFromRigidityMeV(
+                    Rgv,std::fabs(prm.species.charge_e)*QE,
+                    prm.species.mass_amu*AMU)
+             << " pass=" << pass
+             << " revolution=" << state.revolution
+             << " trace_s=" << state.traceTime_s
+             << " accumulated_angle_rad=" << state.accumulatedAngle_rad
+             << " x_m=" << state.x_m[0] << ',' << state.x_m[1] << ',' << state.x_m[2]
+             << " p_unit=" << state.p_unit[0] << ',' << state.p_unit[1] << ','
+                            << state.p_unit[2]
+             << " b_unit=" << state.b_unit[0] << ',' << state.b_unit[1] << ','
+                            << state.b_unit[2]
+             << " radius_m=" << state.radius_m
+             << " latitude=" << state.latitude
+             << " pitch_cos2=" << state.pitchCos2
+             << " outer_margin_m=" << state.outerMargin_m
+             << " momentum_spread=" << state.momentumRelativeSpread << '\n';
+      }
+    }
     std::cerr.flush();
   };
 
@@ -524,8 +576,9 @@ static Earth::GridlessMode::TrajectoryResult TraceDensityDirection_Mode3D_(
   };
 
   double usedBudget_s=primaryTime_s;
+  int finalStepBudget=prm.numerics.maxSteps;
   TrajectoryResult result=RunOneBudget(prm,primaryTime_s,usedBudget_s);
-  record(result,"primary",0,usedBudget_s,prm.numerics.maxSteps);
+  record(result,"primary",0,usedBudget_s,prm.numerics.maxSteps,false);
   const int primaryTerminationCode=static_cast<int>(result.termination);
   const double primaryTraceTime_s=result.traceTime_s;
   result.primaryTerminationCode=primaryTerminationCode;
@@ -552,14 +605,18 @@ static Earth::GridlessMode::TrajectoryResult TraceDensityDirection_Mode3D_(
     double extensionBudget_s=targetTime_s;
     TrajectoryResult extended=RunOneBudget(
         extensionPrm,targetTime_s,extensionBudget_s);
-    record(extended,"extension",pass,extensionBudget_s,extensionPrm.numerics.maxSteps);
+    record(extended,"extension",pass,extensionBudget_s,extensionPrm.numerics.maxSteps,false);
     extended.primaryTerminationCode=primaryTerminationCode;
     extended.primaryTraceTime_s=primaryTraceTime_s;
     extended.traceExtensionCount=pass;
     extended.initialTraceLimit_s=primaryTime_s;
     extended.finalTraceLimit_s=extensionBudget_s;
     result=extended;
+    finalStepBudget=extensionPrm.numerics.maxSteps;
   }
+  if (!result.resolved())
+    record(result,"final",result.traceExtensionCount,result.finalTraceLimit_s,
+           finalStepBudget,true);
   return result;
 }
 
