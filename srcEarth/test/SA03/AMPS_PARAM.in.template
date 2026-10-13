@@ -1,0 +1,160 @@
+! SA03 standalone T05 trajectory validation. Paths are rendered as absolute.
+#RUN_INFO
+  RUN_ID {{RUN_ID}}
+
+#CALCULATION_MODE
+  CALC_TARGET CUTOFF_RIGIDITY+DENSITY_SPECTRUM
+  FIELD_EVAL_METHOD {{FIELD_EVAL_METHOD}}
+
+#PARTICLE_SPECIES
+  SPECIES PROTON
+  CHARGE 1
+  MASS_AMU 1.007276466621
+
+#BACKGROUND_FIELD
+  FIELD_MODEL T05
+  EPOCH {{FIRST_EPOCH}}
+  DRIVER_FILE {{DRIVER_FILE}}
+  DST -20.0
+  PDYN 2.0
+  IMF_BX 0.0
+  IMF_BY 0.0
+  IMF_BZ 0.0
+  SW_VX -400.0
+  SW_N 5.0
+  T05_W1 0.0
+  T05_W2 0.0
+  T05_W3 0.0
+  T05_W4 0.0
+  T05_W5 0.0
+  T05_W6 0.0
+
+#ELECTRIC_FIELD
+  EFIELD_MODEL NONE
+
+{{MODE3D_MESH_BLOCK}}
+
+#DOMAIN_BOUNDARY
+  DOMAIN_X_MIN -159280.0
+  DOMAIN_X_MAX  159280.0
+  DOMAIN_Y_MIN -159280.0
+  DOMAIN_Y_MAX  159280.0
+  DOMAIN_Z_MIN -159280.0
+  DOMAIN_Z_MAX  159280.0
+  R_INNER 6371.2
+
+#CUTOFF_RIGIDITY
+  CUTOFF_EMIN 18.5
+  CUTOFF_EMAX 116.0
+  CUTOFF_NENERGY {{CUTOFF_NODES}}
+  CUTOFF_SAMPLING VERTICAL
+  CUTOFF_SEARCH_ALGORITHM PENUMBRA_SCAN
+  CUTOFF_UPPER_SCAN_N {{CUTOFF_NODES}}
+  CUTOFF_SCAN_SPACING LOG
+  CUTOFF_BACKTRACE_CHARGE REVERSED
+  CUTOFF_TRACE_LIMIT_POLICY UNRESOLVED
+  CUTOFF_MAX_TRAJ_TIME 300.0
+
+#DENSITY_SPECTRUM
+  DS_EMIN 18.5
+  DS_EMAX 116.0
+  DS_NINTERVALS {{DS_INTERVALS}}
+  DS_ENERGY_SPACING LOG
+  DS_BOUNDARY_MODE ISOTROPIC
+  DS_TRANSMISSION_MODE SCAN
+  ! SCAN_N is an energy/rigidity-node count. DS_MAX_PARTICLES is the total
+  ! per-point trajectory budget, so it is nodes times directions per energy.
+  DS_TRANSMISSION_SCAN_N {{SPECTRUM_NODES}}
+  DS_MAX_PARTICLES {{TOTAL_PARTICLES}}
+  DS_MAX_TRAJ_TIME 300.0
+  DS_UNRESOLVED_TOL 0.01
+  ! Keep the packaged 300-s result as the primary classification.  Only directions
+  ! that still end at TIME_LIMIT/STEP_LIMIT are recomputed at 600, 1200, 2400, and
+  ! 4800 s.  The fourth pass retains shared production behavior established by a
+  ! controlled SA02 RBSP-B trajectory that escaped at 2584.0747 s; that evidence is
+  ! not claimed as an SA03 result. Extending only unresolved seeds preserves the
+  ! detector, timestep, quadrature, and sampled observation population.
+  ! The validation gate is unchanged: any final unresolved fraction above 0.01 aborts.
+  DS_RETRY_UNRESOLVED T
+  DS_UNRESOLVED_EXTENSION_PASSES 4
+  DS_UNRESOLVED_EXTENSION_FACTOR 2.0
+  DS_SAVE_TERMINATION_SUMMARY T
+  DS_FAIL_ON_UNRESOLVED T
+
+#SPECTRUM
+  SPECTRUM_TYPE TABLE
+  SPEC_TABLE_FILE {{SPECTRUM_FILE}}
+  SPEC_EMIN 13.0
+  SPEC_EMAX 130.0
+  SPEC_ENERGY_BASIS PER_PARTICLE
+  SPEC_INTENSITY_UNIT M^-2_S^-1_SR^-1_MEV^-1
+  SPEC_MASS_NUMBER 1
+  SPEC_RELATIVE_UNCERTAINTY 0.20
+  SPEC_TIME_INTERPOLATION LOG_INTENSITY
+  SPEC_TIME_MAX_GAP_S 900
+  SPEC_TIME_GAP_POLICY FAIL
+  SPEC_TIME_OUT_OF_RANGE FAIL
+
+#BOUNDARY_ANISOTROPY
+  BA_PAD_MODEL ISOTROPIC
+  BA_PAD_EXPONENT 0.0
+  BA_PAD_NORMALIZATION UNIT_MEAN
+  BA_SPATIAL_MODEL UNIFORM
+  BA_SPATIAL_NORMALIZATION UNIT_MEAN
+
+#ENERGY_CHANNELS
+  CH_BEGIN
+    REPT_P1 18.5 24.0
+    REPT_P2 24.0 31.2
+    REPT_P3 31.2 40.6
+    REPT_P4 40.6 52.8
+    REPT_P5 52.8 68.6
+    REPT_P6 68.6 89.2
+    REPT_P7 89.2 116.0
+  CH_END
+
+#OUTPUT_DOMAIN
+  OUTPUT_MODE TRAJECTORY
+  TRAJ_FRAME GEO
+  TRAJ_FILE {{TRAJECTORY_FILE}}
+
+{{TEMPORAL_BLOCK}}
+
+#NUMERICAL
+  DT_TRACE 0.1
+  ADAPTIVE_DT T
+  MAX_STEPS 500000
+  MAX_TRACE_TIME 300.0
+  MAX_TRACE_DISTANCE 0.0
+  BOUNDARY_EVENT_TOL_M 1.0
+  BOUNDARY_EVENT_MAX_ITER 40
+  TRAP_DETECTION T
+  ! Mirror/bounce detection alone misses some near-90-degree pitch-angle particles.
+  ! Enable the C19-qualified full-drift recurrence classifier.  It emits a physical
+  ! trapped state only after three complete turns reproduce a sufficiently covered
+  ! azimuth-resolved radius/latitude/pitch profile and pass the secular-drift veto;
+  ! a generic timeout is never relabelled as forbidden.
+  TRAP_DRIFT_DETECTION T
+  TRAP_MIN_DRIFT_REVOLUTIONS 3
+  TRAP_DRIFT_RADIAL_GROWTH_TOL_RE 1.0
+  TRAP_DRIFT_RADIAL_REL_TOL 0.20
+  TRAP_DRIFT_LATITUDE_TOL 0.20
+  TRAP_DRIFT_PITCH_COS2_TOL 0.25
+  TRAP_DRIFT_MAX_MEAN_RADIUS_CHANGE_RE 1.0
+  TRAP_DRIFT_PROFILE_BINS 24
+  TRAP_DRIFT_MIN_PROFILE_COVERAGE 0.70
+  TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION 0.75
+  ! Average three complete drift turns into each recurrence profile. This removes
+  ! arbitrary gyro/bounce phase from adjacent-turn comparisons without changing any
+  ! physical tolerance. Two consecutive non-overlapping-window matches are required;
+  ! elapsed time or revolution count alone can never produce a trapped verdict.
+  TRAP_DRIFT_WINDOW_REVOLUTIONS 3
+  TRAP_DRIFT_MIN_STABLE_WINDOWS 2
+  ! Search a bounded history for a genuine bounce--drift super-period. A candidate
+  ! lag still has to satisfy every unchanged radius/latitude/pitch tolerance on two
+  ! consecutive turns, and the 1 Re secular-radius veto covers the entire lag. This
+  ! is recurrence evidence; it never converts elapsed time into a trapped verdict.
+  TRAP_DRIFT_MAX_RECURRENCE_LAG 64
+{{PARALLEL_BLOCK}}
+
+!#END

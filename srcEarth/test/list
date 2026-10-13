@@ -241,3 +241,12 @@ last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
 ! runner: exclusive
 P python3 srcEarth/test/SA02/run_SA02.py --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926 --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/SA02/quick_test_runs --profile QUICK --solver GRIDDED --mpi-ranks 4 --threads 6 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW
 last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
+
+! SA03 QUICK is the independent September 2017 storm-time observational regression.
+! Frozen source-quality evidence permits RBSP-B only; RBSP-A remains archived audit
+! data and is never promoted into a physical or comparison branch. The workflow uses
+! GRIDDED/HC4, preserves every scientific gate, and writes PNG/EPS evidence below a
+! unique campaign root. WORKFLOW never changes the recorded qualification result.
+! runner: exclusive
+P python3 srcEarth/test/SA03/run_SA03.py --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926/model_inputs --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/SA03/quick_test_runs --profile QUICK --solver GRIDDED --mpi-ranks 4 --threads 6 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW
+last pass:

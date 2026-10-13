@@ -76,6 +76,30 @@ Exact campaign commands, authoritative package counts, profile sizes, output lay
 plot inventory, Mode3D scheduling/memory policy, and interpretation limits are in
 `SA02/README.md`.
 
+## SA03: September 2017 storm-time RBSP/REPT validation
+
+`SA03/` is a third independent implementation for the half-open interval
+`2017-09-06T00:00:00Z <= t < 2017-09-10T00:00:00Z`. Frozen provider-quality evidence
+permits RBSP-B as the sole physical/comparison branch: RBSP-A has no complete
+seven-channel density epoch and remains hash-validated audit evidence. This is a
+source-data eligibility decision, not a favorable post-model selection.
+
+The master list registers the complete, exclusive QUICK GRIDDED/HC4 campaign, and
+`srcEarth/studies/list` registers an independent STANDARD GRIDDED/HC4 campaign. Both
+run the same products and fixed scientific gates and write PNG/EPS comparisons below
+unique `test_output/SA03` campaign roots; only cadence and quadrature workload differ.
+Workflow completion remains separate from scientific qualification.
+
+The focused, data-independent implementation suite is:
+
+```bash
+python3 srcEarth/test/test_runner.py -j 1 srcEarth/test/SA03/list
+```
+
+Exact commands, immutable package counts, the 71-epoch QUICK and 277-epoch STANDARD
+eligibility ledgers, profile sizes, scheduling policy, figures, and evidence layout
+are documented in `SA03/README.md`.
+
 ## UFluxNumerics: Step 2 unit suite
 
 The shared cutoff-to-flux numerical module has a dependency-free C++11 unit suite:
@@ -182,8 +206,8 @@ validation gates.
 
 `test/list` schedules the Step 2 through Step 12 suites as independent `P`
 entries. Each has its own `last pass:` record, so the main runner reports and commits
-their provenance separately. The reviewed SA01 QUICK and SA02 QUICK workflows are
-additional independent entries; neither modifies any pre-existing C/F command,
+their provenance separately. The reviewed SA01, SA02, and SA03 QUICK workflows are
+additional independent entries; none modifies any pre-existing C/F command,
 expected status, input, reference, tolerance, mover, trajectory limit, or last-pass
 record. Each preceding `! runner: exclusive` directive makes the repository runner
 serialize its high-memory campaign. The commands themselves have no private
