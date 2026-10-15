@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "toolkit": {
+    "root": "/home/vtenishe/SPICE/cspice",
+    "version": "CSPICE_N0067",
+    "static_library_sha256": "53d74623fcfd22dcd5f9d01d1ebc4889f7b1034a5bd6738a681c1361b4d60ee1"
+  },
+  "target": "ENCELADUS",
+  "observer": "CASSINI",
+  "frame": "IAU_ENCELADUS",
+  "aberration_correction": "NONE",
+  "subpoint_method": "Intercept: ellipsoid",
+  "longitude_convention": "positive west, 0 to 360 degrees",
+  "latitude_outputs": [
+    "planetocentric",
+    "planetographic"
+  ],
+  "common_kernels": [
+    {
+      "path": "/home/vtenishe/SPICE/Kernels/NAIF/naif0012.tls",
+      "sha256": "678e32bdb5a744117a467cd9601cd6b373f0e9bc9bbde1371d5eee39600a039b"
+    }
+  ],
+  "flybys": [
+    {
+      "id": "E3",
+      "utc_reference": "2008-03-12T19:06:12",
+      "start_s": -1600.0,
+      "stop_s": 1600.0,
+      "step_s": 1.0,
+      "generated_output": {
+        "path": "../figure_data/e3_spice_ground_track.csv",
+        "sha256": "e5707e456fb03586a36958524007394c5238b5e48fbfa2db3bf41030ace5e663",
+        "rows_excluding_header": 3201
+      },
+      "resolved_closest_approach": {
+        "time_from_reference_s": -0.5,
+        "utc": "2008-03-12T19:06:11.500",
+        "ellipsoid_intercept_distance_m": 52431.2273,
+        "search_step_s": 0.1
+      },
+      "pck": {
+        "path": "/home/vtenishe/SPICE/Kernels/CASSINI/cpck10Mar2008.tpc",
+        "sha256": "e1a4e70401b0c25abd1f9d7efa038c162596083f51c5fba8d736521b2169094d"
+      },
+      "spk": {
+        "path": "/home/vtenishe/SPICE/Kernels/CASSINI/080228AP_SCPSE_08050_08076.bsp",
+        "sha256": "b3eee97309e6ae59e0e00292c9d60aeb5b90c2040ba982b01157378475b1859e"
+      },
+      "reference_time_provenance": "AnalyticFittingModel/CassiniTrajectory/Cassini-Trajectory.cpp ObservationList"
+    },
+    {
+      "id": "E5",
+      "utc_reference": "2008-10-09T19:06:43",
+      "start_s": -1600.0,
+      "stop_s": 1600.0,
+      "step_s": 1.0,
+      "generated_output": {
+        "path": "../figure_data/e5_spice_ground_track.csv",
+        "sha256": "f431efea82c6bca7134e3fcf0c58425a7d9b005a1f58d13a9f416a2246ae5da3",
+        "rows_excluding_header": 3201
+      },
+      "resolved_closest_approach": {
+        "time_from_reference_s": -3.3,
+        "utc": "2008-10-09T19:06:39.700",
+        "ellipsoid_intercept_distance_m": 24959.7105,
+        "search_step_s": 0.1
+      },
+      "pck": {
+        "path": "/home/vtenishe/SPICE/Kernels/CASSINI/cpck16Sep2008.tpc",
+        "sha256": "938a5908851c8401c1983f9d3580914599568f5011428ca308cae13f3cff398b"
+      },
+      "spk": {
+        "path": "/home/vtenishe/SPICE/Kernels/CASSINI/081010AP_SCPSE_08282_08315.bsp",
+        "sha256": "f4c074d5bf15df048ccd9d856ed3de2c95509313f71d1c5e896a7ed0d91bb0fd"
+      },
+      "reference_time_provenance": "AnalyticFittingModel/CassiniTrajectory/Cassini-Trajectory.cpp ObservationList"
+    }
+  ],
+  "coordinate_note": "Event PCKs reproduce the body-fixed convention used by the legacy 2014 application. The modern USGS mosaic is shifted 3.5 degrees west to the current IAU convention; that visualization-only transformation must not be applied to these archived SPICE results."
+}

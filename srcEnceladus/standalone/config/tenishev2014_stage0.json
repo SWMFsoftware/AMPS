@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "physics": "gravity_free_collisionless",
+  "frame": "IAU_ENCELADUS",
+  "reference_radius_m": 252100.0,
+  "molecular_species": "H2O",
+  "molecular_mass_kg": 2.991507624607566e-26,
+  "source_law": "tenishev2010_point",
+  "source_case": "tenishev2014_hybrid_8",
+  "jet_catalog_file": null,
+  "source_case_options": {
+    "porco2014_98": {
+      "catalog_selection": "porco2014_98",
+      "include_tiger_stripes": false,
+      "direction_mode": "published",
+      "temperature_K": 180.0,
+      "bulk_speed_m_s": 1500.0,
+      "kinematics_basis": "Explicit controlled-comparison setting: T follows Portyankina et al. (2022), while 1.5 km/s is their 2010 solar-occultation bulk speed; Porco et al. (2014) constrained particulate geometry, not unique gas kinematics."
+    },
+    "portyankina2022_solar_41": {
+      "catalog_selection": "portyankina2022_solar_41",
+      "include_tiger_stripes": false,
+      "direction_mode": "local_normal",
+      "temperature_K": 180.0,
+      "bulk_speed_m_s": 1500.0,
+      "kinematics_basis": "Portyankina et al. (2022) 2010 solar-occultation fit: T=180 K, vertical Vz=1.5 km/s; Porco inclinations were not used."
+    }
+  },
+  "stripe_geometry_file": "../data/published_stripes_2014.json",
+  "discrete_jets": [
+    {
+      "id": "I_baghdad",
+      "latitude_deg": -81.5,
+      "west_longitude_deg": 31.2,
+      "tilt_deg": 9.7,
+      "azimuth_deg": 228.7,
+      "bulk_speed_m_s": 800.0,
+      "temperature_K": 190.0
+    },
+    {
+      "id": "II_damascus",
+      "latitude_deg": -79.2,
+      "west_longitude_deg": 313.2,
+      "tilt_deg": 6.8,
+      "azimuth_deg": 93.8,
+      "bulk_speed_m_s": 1312.0,
+      "temperature_K": 170.0
+    },
+    {
+      "id": "III_damascus",
+      "latitude_deg": -81.2,
+      "west_longitude_deg": 294.2,
+      "tilt_deg": 30.2,
+      "azimuth_deg": 83.2,
+      "bulk_speed_m_s": 600.0,
+      "temperature_K": 210.0
+    },
+    {
+      "id": "IV_alexandria",
+      "latitude_deg": -73.2,
+      "west_longitude_deg": 148.4,
+      "tilt_deg": 3.7,
+      "azimuth_deg": 110.0,
+      "bulk_speed_m_s": 1100.0,
+      "temperature_K": 190.0
+    },
+    {
+      "id": "V_cairo",
+      "latitude_deg": -78.7,
+      "west_longitude_deg": 72.6,
+      "tilt_deg": 6.0,
+      "azimuth_deg": 229.8,
+      "bulk_speed_m_s": 1030.0,
+      "temperature_K": 190.0
+    },
+    {
+      "id": "VI_baghdad",
+      "latitude_deg": -87.1,
+      "west_longitude_deg": 237.0,
+      "tilt_deg": 10.2,
+      "azimuth_deg": 187.6,
+      "bulk_speed_m_s": 740.0,
+      "temperature_K": 194.0
+    },
+    {
+      "id": "VII_baghdad",
+      "latitude_deg": -74.7,
+      "west_longitude_deg": 28.9,
+      "tilt_deg": 20.8,
+      "azimuth_deg": 352.5,
+      "bulk_speed_m_s": 1338.0,
+      "temperature_K": 206.0
+    },
+    {
+      "id": "VIII_cairo",
+      "latitude_deg": -82.1,
+      "west_longitude_deg": 115.5,
+      "tilt_deg": 6.8,
+      "azimuth_deg": 127.7,
+      "bulk_speed_m_s": 580.0,
+      "temperature_K": 190.0
+    }
+  ],
+  "tiger_stripes": [
+    {
+      "id": "alexandria",
+      "geometry_id": "alexandria",
+      "family": "normal",
+      "bulk_speed_m_s": 350.0,
+      "temperature_K": 180.0
+    },
+    {
+      "id": "baghdad",
+      "geometry_id": "baghdad",
+      "family": "normal",
+      "bulk_speed_m_s": 350.0,
+      "temperature_K": 180.0
+    },
+    {
+      "id": "cairo",
+      "geometry_id": "cairo",
+      "family": "normal",
+      "bulk_speed_m_s": 350.0,
+      "temperature_K": 180.0
+    },
+    {
+      "id": "damascus",
+      "geometry_id": "damascus",
+      "family": "normal",
+      "bulk_speed_m_s": 350.0,
+      "temperature_K": 180.0
+    },
+    {
+      "id": "baghdad_extra",
+      "geometry_id": "baghdad_extra",
+      "family": "extra",
+      "bulk_speed_m_s": 950.0,
+      "temperature_K": 180.0
+    },
+    {
+      "id": "cairo_extra",
+      "geometry_id": "cairo_extra",
+      "family": "extra",
+      "bulk_speed_m_s": 950.0,
+      "temperature_K": 180.0
+    },
+    {
+      "id": "damascus_extra",
+      "geometry_id": "damascus_extra",
+      "family": "extra",
+      "bulk_speed_m_s": 950.0,
+      "temperature_K": 180.0
+    }
+  ],
+  "background": {
+    "model": "both",
+    "power_law_exponent": -2.0
+  },
+  "shape_parameters": [],
+  "provenance": {
+    "jet_geometry": "Tenishev et al. (2014), Table 2; positive south-latitude magnitudes converted to signed negative IAU latitude",
+    "jet_speed_temperature": "Tenishev et al. (2014), Table 3",
+    "stripe_speed_temperature": "Tenishev et al. (2014), section 4",
+    "background": "Tenishev et al. (2014), section 3.3",
+    "source_law": "Tenishev et al. (2010), sections 2.1 and 3.1; Tenishev et al. (2014), equations 1-2"
+  }
+}
