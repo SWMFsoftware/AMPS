@@ -16,11 +16,12 @@ Its default legacy/hybrid case contains all three original neutral components:
   by the 102 locations in the existing 2014 application table; and
 - an empirical background `c0 + a (r/R)^alpha`, with `alpha = -2` by default.
 
-The fit is useful for producing a Stage-1 source prescription and for exposing
-what E3/E5 can and cannot constrain.  It is **not** an independent validation:
-E3/E5 are development/fitting flybys.  Per the project split, E7/E13 are held
-for development validation and E14/E17/E18/E21 for final validation; this
-application does not fit those holdouts.
+The H2O fit is useful for producing a Stage-1 source prescription and for
+exposing what E3/E5 can and cannot constrain. It is **not** an independent
+validation because E3/E5 are development/fitting flybys. The optional CO2
+study also fits E14/E17/E18 in order to measure cross-epoch mass-44 variation;
+those flybys therefore cease to be untouched validation cases for any model
+or source geometry selected with that study.
 
 ## Quick start
 
@@ -74,11 +75,12 @@ PATH`. This makes alternate releases and machines selectable without embedding
 a filesystem location in the model. Use `python3 plume_fit.py --help` for the
 complete CLI.
 
-The present `plume_fit.py` interface consumes the H2O-density tables. It does
-not yet implement the UVIS line-of-sight likelihood or the INMS mass-44 forward
-instrument response. Until those pieces are implemented, the UVIS normalized
-shapes must not be interpreted as pointwise absolute columns, and mass-44
-counts must not be relabeled as CO2 or H2O density.
+The `plume_fit.py` interface consumes H2O-density tables. UVIS is handled by
+`joint_fitting_study.py`, and the calibrated mass-44 products are handled by
+`co2_fitting_study.py`. The original E3/E5 mass-44 count tables remain raw
+instrument observables and must not be relabeled as density; the external
+`co2_fit_v1` preparation step applies the published calibration and records
+the high-speed fragmentation limitation explicitly.
 
 ### E3/E5 and UVIS fitting study
 
@@ -128,6 +130,150 @@ The checked geometry and its provenance metadata are already stored with the
 external fit release. Generate into a new path and compare checksums before
 replacing that evidence product.
 
+### Five-flyby CO2 and H2O/CO2 study
+
+The fit-ready CO2 release is outside the code tree at
+`/data/vtenishe/cassini_validation_data/data/processed/co2_fit_v1/`. It
+contains E3, E5, E14, E17, and E18 mass-44 profiles, PDS trajectory geometry,
+counting uncertainties, metadata, and checksums. Rebuild it with:
+
+```bash
+cd /data/vtenishe/cassini_validation_data
+python3 scripts/prepare_co2_fit_data.py
+```
+
+For E3/E5, the preparation applies the published high-speed calibration of
+660 molecules cm^-3 per mass-44 count. The resulting quantity is called
+*apparent CO2*: Perry et al. report that fragmentation of molecules heavier
+than 100 u can enhance carbon-bearing channels by approximately a factor of
+2--5 at the 14--18 km/s E3/E5 speeds. The code does not select an undocumented
+correction within that interval. It reports the fitted apparent source rate,
+an actual-CO2 bracket obtained by division by 5 and 2, and the corresponding
+H2O/CO2 transfer bracket. The 15% calibration uncertainty is a common scale
+systematic and is not added independently to every sample.
+
+E14/E17/E18 use the processed mass-44 density vectors in the public SwRI
+`Flybys2.mat` package. Each published count sequence is matched exactly to a
+unique official PDS Level-1A trajectory row; the recorded maximum timing
+residual is 10 ms. Poisson count uncertainty supplies point weights.
+
+Run one geometry case with:
+
+```bash
+python3 co2_fitting_study.py \
+  --config config/tenishev2014_stage0.json \
+  --source-case tenishev2014_hybrid_8 \
+  --co2-data-root /data/vtenishe/cassini_validation_data/data/processed/co2_fit_v1 \
+  --h2o-study-result /data/vtenishe/cassini_validation_data/studies/source_shape_tidal_20261014/tenishev2014_hybrid_8/study_results.json \
+  --output-dir /data/vtenishe/cassini_validation_data/studies/my_co2/tenishev2014_hybrid_8
+```
+
+For `porco2014_98` or `portyankina2022_solar_41`, also pass:
+
+```bash
+--jet-catalog /data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json
+```
+
+The CO2 application performs three declared analyses:
+
+- independent shape and rate fits for each of E3/E5/E14/E17/E18;
+- one E3+E5 CO2 shape followed by an independent total-rate fit to every flyby;
+- one shape fitted jointly to all five CO2 flybys, with each flyby retaining
+  its own total rate and background amplitudes.
+
+The last mode is the primary temporal comparison. The independent 41- and
+98-jet inversions can be severely ill-conditioned, so their total rates are
+retained as sensitivity diagnostics rather than treated as physical
+measurements. CO2 uses the same source temperature and bulk velocity as H2O,
+while its 44.0095 u mass changes the Maxwellian thermal speed and therefore
+the plume collimation.
+
+H2O/CO2 ratios are derived only where both species are available (E3 and E5).
+The proportional relation is constrained through the physical origin. With
+only two paired epochs, a Pearson or Spearman coefficient cannot establish a
+correlation and is deliberately not reported. The later H2O proxy assumes a
+constant intrinsic source ratio and displays the full factor-2--5
+fragmentation-transfer interval; its logarithmic midpoint is only a plotting
+convention, not a best estimate.
+
+After all three geometry cases have run, make the mean-anomaly,
+second-focus-angle, and opening-proxy figure suites with:
+
+```bash
+cd /data/vtenishe/cassini_validation_data
+python3 scripts/plot_co2_h2o_tidal_study.py \
+  --co2-study-root studies/my_co2 \
+  --h2o-study-root studies/source_shape_tidal_20261014 \
+  --output-dir studies/my_co2/figures
+```
+
+The plotting script shows direct E3/E5 and UVIS H2O rates together with the
+E14/E17/E18 CO2-derived H2O proxy, and separately shows all five CO2 rates.
+The checked run is in `studies/co2_h2o_tidal_20261015/` under the external
+Cassini data root.
+
+#### Complete command sequence for all three source cases
+
+Prepare the fit-ready CO2 release:
+
+```bash
+cd /data/vtenishe/cassini_validation_data
+python3 scripts/prepare_co2_fit_data.py
+```
+
+Run the CO2 study for the legacy tiger-stripe plus eight-jet case:
+
+```bash
+cd /home/vtenishe/Mars2/AMPS/srcEnceladus/standalone
+python3 co2_fitting_study.py \
+  --config config/tenishev2014_stage0.json \
+  --source-case tenishev2014_hybrid_8 \
+  --co2-data-root /data/vtenishe/cassini_validation_data/data/processed/co2_fit_v1 \
+  --h2o-study-result /data/vtenishe/cassini_validation_data/studies/source_shape_tidal_20261014/tenishev2014_hybrid_8/study_results.json \
+  --output-dir /data/vtenishe/cassini_validation_data/studies/co2_h2o_tidal/tenishev2014_hybrid_8
+```
+
+Run the 98-jet case:
+
+```bash
+python3 co2_fitting_study.py \
+  --config config/tenishev2014_stage0.json \
+  --source-case porco2014_98 \
+  --jet-catalog /data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json \
+  --co2-data-root /data/vtenishe/cassini_validation_data/data/processed/co2_fit_v1 \
+  --h2o-study-result /data/vtenishe/cassini_validation_data/studies/source_shape_tidal_20261014/porco2014_98/study_results.json \
+  --output-dir /data/vtenishe/cassini_validation_data/studies/co2_h2o_tidal/porco2014_98
+```
+
+Run the 41-jet solar-visible case:
+
+```bash
+python3 co2_fitting_study.py \
+  --config config/tenishev2014_stage0.json \
+  --source-case portyankina2022_solar_41 \
+  --jet-catalog /data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json \
+  --co2-data-root /data/vtenishe/cassini_validation_data/data/processed/co2_fit_v1 \
+  --h2o-study-result /data/vtenishe/cassini_validation_data/studies/source_shape_tidal_20261014/portyankina2022_solar_41/study_results.json \
+  --output-dir /data/vtenishe/cassini_validation_data/studies/co2_h2o_tidal/portyankina2022_solar_41
+```
+
+Generate the combined H2O, CO2, and tidal-proxy figures:
+
+```bash
+cd /data/vtenishe/cassini_validation_data
+python3 scripts/plot_co2_h2o_tidal_study.py \
+  --co2-study-root studies/co2_h2o_tidal \
+  --h2o-study-root studies/source_shape_tidal_20261014 \
+  --output-dir studies/co2_h2o_tidal/figures
+```
+
+Run the standalone test suite:
+
+```bash
+cd /home/vtenishe/Mars2/AMPS/srcEnceladus/standalone
+python3 -m unittest discover -s tests -v
+```
+
 ## Architecture
 
 | Path | Responsibility |
@@ -136,10 +282,14 @@ replacing that evidence product.
 | `fitting.py` | configuration validation, source assembly, nonnegative weighted least squares, optional bounded shape optimization, and identifiability diagnostics |
 | `plume_fit.py` | strict data/metadata checks, command-line interface, hashes, and JSON result writing |
 | `joint_fitting_study.py` | E3/E5 and UVIS independent fits, instrument-separated and all-data combined shape fits, fixed-shape/per-observation rate fits, ablations, cross-predictions, plots, and machine-readable report |
+| `co2_fitting_study.py` | E3/E5/E14/E17/E18 mass-44 fits, E3+E5 and all-CO2 shared shapes, H2O/CO2 rate ratios, fragmentation brackets, and H2O proxy tables |
 | `config/tenishev2014_stage0.json` | reference H2O physics, three source-case definitions, empirical background, and fit controls |
 | `data/published_stripes_2014.json` | seven IAU_ENCELADUS polylines, 102 nodes in metres |
 | `/data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json` | external 98-jet geometry, uncertainty metadata, and published 41-jet selection |
 | `/data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1/` | external verified E3/E5/UVIS joint-fit tables and release manifest |
+| `/data/vtenishe/cassini_validation_data/data/processed/co2_fit_v1/` | external calibrated mass-44/CO2 tables, PDS geometry matches, metadata, and release manifest |
+| `/data/vtenishe/cassini_validation_data/scripts/prepare_co2_fit_data.py` | reproducible E3/E5 high-speed calibration and later-flyby SwRI/PDS matching |
+| `/data/vtenishe/cassini_validation_data/scripts/plot_co2_h2o_tidal_study.py` | CO2 and CO2-derived H2O comparisons with the orbital opening proxy |
 | `tools/extract_stripe_geometry.py` | checked extraction of the legacy 2014 C++ geometry table |
 | `tools/build_teolis_profiles.py` | reproducible figure digitization and attachment of PDS V2 trajectory geometry |
 | `tools/spice_ground_tracks.cpp` | reusable CSPICE computation of Cassini states and ellipsoidal ground tracks |

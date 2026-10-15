@@ -1,0 +1,27 @@
+{
+  "axis_calibration": {
+    "E3": {
+      "log10_density_intercept": 17.279953806738114,
+      "log10_density_slope": -0.03368147139133238
+    },
+    "E5": {
+      "log10_density_intercept": 17.779565806266188,
+      "log10_density_slope": -0.03165293187463068
+    }
+  },
+  "doi": "10.1002/2014JE004700",
+  "interpretation": {
+    "INMS": "black published observational trace",
+    "with_tiger_stripes": "red published 2014 model trace",
+    "without_tiger_stripes": "blue published 2014 model trace"
+  },
+  "limitations": [
+    "This reproduces the curves drawn in the paper; it is not a rerun of the 2014 simulation.",
+    "Finite PDF stroke width and vector control-point sampling limit numerical precision."
+  ],
+  "method": "centerlines recovered from filled vector stroke polygons on PDF page 5",
+  "paper_pdf": "/home/vtenishe/Downloads/tiger-stripes.pdf",
+  "paper_pdf_sha256": "80b1d4725193a0180260d0a6df5863bdd7355d8db776f5dcd57170fc281c4311",
+  "schema_version": 1,
+  "source": "Tenishev et al. (2014), Figure 3"
+}

@@ -493,6 +493,86 @@ outbound samples from +10 to +400 s at 5 s spacing. Their exact construction,
 absolute normalization, digitization uncertainty, common 23% scale systematic,
 and trajectory provenance are recorded in the adjacent metadata JSON files.
 
+### CO2 density operator and calibration scope
+
+`co2_fitting_study.py` reuses equations (1)--(22) with
+
+\[
+m=m_{\mathrm{CO_2}}=44.0095\,u
+=7.3079\times10^{-26}\ \mathrm{kg}. \tag{22a}
+\]
+
+The source temperature and bulk velocity are held equal to the corresponding
+H2O source values. This is the thermal-equilibrium assumption used by Perry et
+al. (2015) and Hurley et al. (2015): species share (T_i) and
+\(\mathbf u_i\), while their random speeds differ through
+\(v_{\mathrm{th},i}=\sqrt{2k_BT_i/m}\). Consequently CO2 is more collimated
+than H2O at the same source and cannot be obtained by simply multiplying an
+H2O density profile by a composition ratio.
+
+For E3 and E5, the prepared observable is
+
+\[
+n^{\mathrm{app}}_{44,j}=C_{44,j}
+\left(660\ \frac{\mathrm{molecule}}{\mathrm{cm^3\ count}}\right)
+10^6\ \frac{\mathrm{cm^3}}{\mathrm{m^3}}, \tag{22b}
+\]
+
+where (C_{44,j}) is the archived high-sensitivity-counter count per
+integration. Its point weight propagates counting noise,
+
+\[
+\sigma_{n,j}=6.60\times10^8
+\sqrt{\max(C_{44,j},1)}\ \mathrm{m^{-3}}. \tag{22c}
+\]
+
+The 15% absolute calibration error is common to a profile and is therefore not
+inserted into every diagonal point variance. At E3/E5 encounter speeds,
+fragmentation of molecules heavier than 100 u can enhance carbon-bearing
+channels. If the unknown enhancement is (f\in[2,5]), then
+
+\[
+n_{\mathrm{CO_2}}=n^{\mathrm{app}}_{44}/f,
+\qquad Q_{\mathrm{CO_2}}=Q^{\mathrm{app}}_{44}/f. \tag{22d}
+\]
+
+No value of (f) is selected by the fitting code. E14/E17/E18 instead use
+the processed mass-44 `Dens` vectors distributed in the SwRI `Flybys2.mat`
+release. Their Poisson weights use the local released density-per-count
+factor, while the common calibration scale remains separate.
+
+For each species, an independent fit solves equation (37). A shared-shape fit
+first solves a balanced block problem over its declared training flybys,
+normalizes only the jet/stripe coefficients according to equation (48), and
+then refits one total rate plus background amplitudes to each flyby with
+equation (49). The primary CO2 temporal series trains the shape on all five
+CO2 flybys; the E3+E5-only and independent-shape series are sensitivity tests.
+
+Let (H_k) be a fitted H2O source rate and (C_k^{\rm app}) the apparent CO2
+rate for the two common epochs (k\in\{E3,E5\}). A composition-transfer
+coefficient is fitted through the physical origin,
+
+\[
+R_{\rm app}=\underset{R}{\arg\min}\sum_k(H_k-RC_k^{\rm app})^2
+=\frac{\sum_k C_k^{\rm app}H_k}
+       {\sum_k(C_k^{\rm app})^2}. \tag{22e}
+\]
+
+The intrinsic ratio and a later-flyby H2O proxy are then bounded by
+
+\[
+R_{\rm true}\in[2R_{\rm app},5R_{\rm app}],
+\qquad
+Q_{\mathrm{H_2O},\ell}^{\rm proxy}
+\in[2R_{\rm app}Q_{\mathrm{CO_2},\ell},
+     5R_{\rm app}Q_{\mathrm{CO_2},\ell}]. \tag{22f}
+\]
+
+Equation (22f) additionally assumes an orbit-invariant intrinsic source
+composition. Its interval is a model sensitivity range, not a confidence
+interval. With only E3 and E5 in common, a two-point Pearson or Spearman
+coefficient cannot establish correlation strength and is not reported.
+
 ### UVIS line-of-sight columns
 
 For UVIS occultation sample \(j\), the fundamental model observable is the
@@ -972,7 +1052,9 @@ response error; it does not identify which explanation is correct.
   topography.
 - Source temperature, bulk speed, direction, and law are fixed unless an
   explicit bounded `shape_parameters` entry is supplied.
-- The solution is H2O only.
+- Each run transports one neutral species, H2O or CO2, with its declared
+  molecular mass; cross-species collisions, chemistry, and fractionation are
+  not solved.
 - Empirical backgrounds are nonnegative and time-independent within one fit.
 - INMS processed density samples are treated as instantaneous.
 - UVIS extinction shape is proportional to the modeled H2O column after a
@@ -1541,6 +1623,7 @@ Perform syntax checks:
 ```bash
 python3 -m py_compile \
   plume_model.py fitting.py plume_fit.py joint_fitting_study.py \
+  co2_fitting_study.py \
   compare_source_case_studies.py
 ```
 
@@ -1559,6 +1642,7 @@ The tests cover:
 - published INMS profile maxima;
 - combined-fit dataset balancing;
 - fixed-shape rate recovery with separately fitted backgrounds;
+- CO2 molecular-mass selection and E3/E5 fragmentation-ratio propagation;
 - source/stripe reconstruction and figure fixtures; and
 - SPICE geometry regression products when the required local resources exist.
 
@@ -1632,6 +1716,11 @@ the Stage-0 NNLS partition among nearly dependent jets as ground truth.
   `10.1016/j.icarus.2022.114918`.
 - Teolis et al. (2015), INMS sensitivity and calibration review, DOI
   `10.1007/s11214-014-0133-8`.
+- Perry et al. (2015), *Cassini INMS measurements of Enceladus plume
+  density*, DOI `10.1016/j.icarus.2015.04.037`.
+- Hurley et al. (2015), *Modeling insights into the locations of density
+  enhancements from the Enceladus water vapor jets*, DOI
+  `10.1002/2015JE004872`.
 - Hansen et al. (2011), 2010 E10 UVIS solar-occultation H2O column, DOI
   `10.1029/2011GL047415`.
 - Hansen et al. (2020), complete Cassini UVIS occultation assessment, DOI

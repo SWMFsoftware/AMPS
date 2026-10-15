@@ -1,0 +1,76 @@
+{
+  "black_curve": "Teolis et al. (2010) sticking-corrected density digitized from the published trace",
+  "blue_curve": "independent nonnegative refit with all stripe columns removed",
+  "config": "/home/vtenishe/Mars2/AMPS/srcEnceladus--multi-plume/standalone/config/tenishev2014_stage0.json",
+  "config_sha256": "95cbf30ac00e60212091c0abf03073d23e32b972ec67fb07e1ef07cb84f37d5e",
+  "figure": "paper-style comparison from the current Stage-0 fitting",
+  "flybys": {
+    "E3": {
+      "fit_result": "/home/vtenishe/Mars2/AMPS/srcEnceladus--multi-plume/standalone/results/e3_fit.json",
+      "fit_result_sha256": "66a45756cef19a5a0c5901f1111b093a21828ca490b488417ceb2cde38e9a076",
+      "observation_metadata": "/home/vtenishe/Mars2/AMPS/srcEnceladus--multi-plume/standalone/data/e3_teolis2010_digitized.metadata.json",
+      "observation_metadata_sha256": "17664d4157aa88d082b5c5317000aefabe32f66d1f0c19c692433f547f3c8f5e",
+      "observations": "/home/vtenishe/Mars2/AMPS/srcEnceladus--multi-plume/standalone/data/e3_teolis2010_digitized.csv",
+      "observations_sha256": "5233ac2f3bf6677839089fae2ac03edf5a9cf95bb34407192c848051f719fd05",
+      "statistics": {
+        "full_model": {
+          "chi2": 404.05580365676116,
+          "nominal_dof": 62,
+          "nominal_reduced_chi2": 6.517029091238083
+        },
+        "no_stripe_refit": {
+          "chi2": 536.7061033913141,
+          "nominal_dof": 69,
+          "nominal_reduced_chi2": 7.778349324511798,
+          "retained_components": [
+            "jet:I_baghdad",
+            "jet:II_damascus",
+            "jet:III_damascus",
+            "jet:IV_alexandria",
+            "jet:V_cairo",
+            "jet:VI_baghdad",
+            "jet:VII_baghdad",
+            "jet:VIII_cairo",
+            "background:c0_m-3",
+            "background:density_at_reference_radius_m-3"
+          ]
+        }
+      }
+    },
+    "E5": {
+      "fit_result": "/home/vtenishe/Mars2/AMPS/srcEnceladus--multi-plume/standalone/results/e5_fit.json",
+      "fit_result_sha256": "3311aa9a445acc253e4a37bfcbfb04e799b05bbd7ea9a625ec901f27b8ee39b7",
+      "observation_metadata": "/home/vtenishe/Mars2/AMPS/srcEnceladus--multi-plume/standalone/data/e5_teolis2010_digitized.metadata.json",
+      "observation_metadata_sha256": "89c6ab6178a87b0350e13f3ed6a1e57e83c49195876140172ef5cd0474f1ee40",
+      "observations": "/home/vtenishe/Mars2/AMPS/srcEnceladus--multi-plume/standalone/data/e5_teolis2010_digitized.csv",
+      "observations_sha256": "337c9001082e4960573a1f8542f105ed456809db43aa48ae4f5eebd2f54188fb",
+      "statistics": {
+        "full_model": {
+          "chi2": 83.04520822848319,
+          "nominal_dof": 62,
+          "nominal_reduced_chi2": 1.3394388423948902
+        },
+        "no_stripe_refit": {
+          "chi2": 117.707686986737,
+          "nominal_dof": 69,
+          "nominal_reduced_chi2": 1.7059085070541595,
+          "retained_components": [
+            "jet:I_baghdad",
+            "jet:II_damascus",
+            "jet:III_damascus",
+            "jet:IV_alexandria",
+            "jet:V_cairo",
+            "jet:VI_baghdad",
+            "jet:VII_baghdad",
+            "jet:VIII_cairo",
+            "background:c0_m-3",
+            "background:density_at_reference_radius_m-3"
+          ]
+        }
+      }
+    }
+  },
+  "important_boundary": "The PDS L1A V2 archive contains counts, not calibrated H2O density; no raw-count conversion is used in this figure.",
+  "red_curve": "current 8-jet + 7-stripe + empirical-background fit",
+  "schema_version": 1
+}
