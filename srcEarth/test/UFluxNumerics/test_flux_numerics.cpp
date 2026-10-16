@@ -81,6 +81,24 @@ int main() {
   const std::vector<int> selected=FN::SelectDeterministic(ids,4);
   Check(selected==std::vector<int>({0,3,6,9}),"deterministic sky subsampling");
 
+  // U-F07: local distribution-product conversion.  The HPCA-compatible values
+  // exercise the production identity without introducing energy-bin widths.  The
+  // angular check uses nonuniform weights so an accidental arithmetic mean fails.
+  const double hpcaMass=1.0453453e-12; // documented H+ value [eV s^2 cm^-2]
+  const double psd=2.5e-20;            // [cm^-6 s^3]
+  const double hpcaEnergy=1234.0;      // [eV]
+  const double expectedIntensity=2.0*hpcaEnergy*psd/(hpcaMass*hpcaMass);
+  Check(Near(FN::DifferentialIntensityFromPhaseSpaceDensity(
+      hpcaEnergy,hpcaMass,psd),expectedIntensity),"phase-space-density conversion");
+  Check(std::isnan(FN::DifferentialIntensityFromPhaseSpaceDensity(
+      hpcaEnergy,-hpcaMass,psd)),"invalid phase-space-density mass is rejected");
+  Check(Near(FN::WeightedAngularIntegral(
+      std::vector<double>({2.0,3.0,5.0}),std::vector<double>({0.1,0.2,0.4})),2.8),
+      "calibrated weighted angular integral");
+  Check(std::isnan(FN::WeightedAngularIntegral(
+      std::vector<double>({2.0}),std::vector<double>({-0.1}))),
+      "negative angular response is rejected");
+
   // U-F12: unresolved outcomes produce bounds, not false shielding.  Two allowed, one
   // forbidden, and one unresolved direction give nominal 2/3 and bounds [1/2,3/4].
   FN::AccessAccumulator access;
@@ -120,6 +138,6 @@ int main() {
     std::cerr << failures << " FluxNumerics test(s) failed\n";
     return EXIT_FAILURE;
   }
-  std::cout << "PASS: U-F03 U-F04 U-F05 U-F06 U-F12\n";
+  std::cout << "PASS: U-F03 U-F04 U-F05 U-F06 U-F07 U-F12\n";
   return EXIT_SUCCESS;
 }

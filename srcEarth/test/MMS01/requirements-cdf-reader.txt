@@ -1,0 +1,6 @@
+# MMS01 automatically installs only this pure-Python reader when it is absent.
+# The hash is the PyPI cdflib-1.3.2-py3-none-any.whl SHA-256, captured independently
+# before enabling bootstrap. --require-hashes prevents a same-version replacement
+# or source-distribution fallback from changing validation input interpretation.
+cdflib==1.3.2 \
+    --hash=sha256:49af97acc328c586ac5b7c27fd8e67bccf24af82c5bd8c37d8cfe048a0c1752a

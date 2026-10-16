@@ -28,8 +28,15 @@ The runner compiles with C++11 plus `-Wall -Wextra -Werror -pedantic`, then exer
   unit/finite-value check;
 - **U-F06** — unit direction vectors, angular weights summing to `4*pi`, and repeatable
   deterministic subsampling;
+- **U-F07** — the local phase-space-density to differential-intensity identity and
+  calibrated, nonuniform angular integration used by observational product adapters;
 - **U-F12** — structured termination accounting, conservative unresolved bounds,
   retry counts, tolerance decisions, and the all-unresolved `NaN` nominal result.
+
+U-F07 deliberately does not integrate over energy: an energy-centroid array is not
+an energy-bin-edge definition. Instrument adapters must supply documented masses and
+calibrated angular weights, and invalid values fail instead of being replaced by an
+isotropic approximation.
 
 These tests validate numerical infrastructure, not magnetic-field physics. Full
 gridless/Mode3D comparison tests and observational validation still require the normal

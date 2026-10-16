@@ -289,6 +289,55 @@ inline double InterpolateLinear(const std::vector<double>& x,
   return y[lo]+(y[hi]-y[lo])*(value-x[lo])/(x[hi]-x[lo]);
 }
 
+// Convert a velocity-distribution value f(v) to directional differential
+// intensity using the nonrelativistic identity J(E)=2*E*f/m^2.  The caller must
+// supply one internally consistent unit system.  For the MMS/HPCA Level-2 ion
+// product that contract is:
+//
+//   energy_eV                 : eV
+//   particleMass_eV_s2_cm2    : eV s^2 cm^-2
+//   phaseSpaceDensity_cm6_s3  : cm^-6 s^3
+//   return value              : cm^-2 s^-1 sr^-1 eV^-1
+//
+// HPCA publishes its mass conversion in precisely these units.  Keeping the
+// dimensional inputs explicit prevents an SI proton mass or a MeV coordinate from
+// being passed accidentally.  This kernel intentionally does not infer energy-bin
+// edges and therefore cannot be used to manufacture an energy-integrated flux or
+// number density from centroid-only data.
+inline double DifferentialIntensityFromPhaseSpaceDensity(
+    double energy_eV,double particleMass_eV_s2_cm2,
+    double phaseSpaceDensity_cm6_s3) {
+  if (!std::isfinite(energy_eV) || !std::isfinite(particleMass_eV_s2_cm2) ||
+      !std::isfinite(phaseSpaceDensity_cm6_s3) || energy_eV < 0.0 ||
+      particleMass_eV_s2_cm2 <= 0.0 || phaseSpaceDensity_cm6_s3 < 0.0)
+    return std::numeric_limits<double>::quiet_NaN();
+  return 2.0*energy_eV*phaseSpaceDensity_cm6_s3/
+      (particleMass_eV_s2_cm2*particleMass_eV_s2_cm2);
+}
+
+// Integrate a directional differential intensity over an explicitly supplied
+// angular response.  Instrument adapters own the calibrated solid-angle weights;
+// this shared kernel only enforces shape/non-negativity and performs compensated
+// summation.  In particular, it does not replace an instrument response with an
+// equal-solid-angle or isotropic approximation.
+inline double WeightedAngularIntegral(const std::vector<double>& intensity,
+                                      const std::vector<double>& weight_sr) {
+  if (intensity.size()!=weight_sr.size() || intensity.empty())
+    return std::numeric_limits<double>::quiet_NaN();
+  double sum=0.0,correction=0.0;
+  for (std::size_t i=0;i<intensity.size();++i) {
+    if (!std::isfinite(intensity[i]) || !std::isfinite(weight_sr[i]) ||
+        intensity[i]<0.0 || weight_sr[i]<0.0)
+      return std::numeric_limits<double>::quiet_NaN();
+    const double term=intensity[i]*weight_sr[i];
+    const double adjusted=term-correction;
+    const double updated=sum+adjusted;
+    correction=(updated-sum)-adjusted;
+    sum=updated;
+  }
+  return sum;
+}
+
 // Spectrum is any callable double(double energy_J).  Channel endpoints are clipped to
 // the solver grid, inserted explicitly, and T is linearly interpolated there.  The
 // spectrum itself is evaluated at the inserted energy rather than interpolated.

@@ -8,20 +8,39 @@ srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --stage figure
 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_global_cutoff_maps.py --profile SMOKE --amps ./amps -np 4 -nt 16
 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_global_cutoff_maps.py --profile FULL --amps ./amps -np 4 -nt 16 --postprocess-workers AUTO
 
-! SA01 STANDARD is independent of the QUICK test-list campaign. It creates a unique
-! evidence directory, executes both RBSP spacecraft, evaluates the unchanged science
-! gates, and writes PNG/EPS comparison figures. WORKFLOW makes a completed study
-! return zero without changing the separately recorded scientific qualification.
+# SA01 STANDARD is independent of the QUICK test-list campaign. It creates a unique
+# evidence directory, executes both RBSP spacecraft, evaluates the unchanged science
+# gates, and writes PNG/EPS comparison figures. WORKFLOW makes a completed study
+# return zero without changing the separately recorded scientific qualification.
 python3 srcEarth/test/SA01/run_SA01.py --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926 --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/SA01/standard_study_runs --profile STANDARD --solver GRIDDED --mpi-ranks 4 --threads 8 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW
 
-! SA02 STANDARD is independent of SA02 QUICK and every SA01 campaign. It executes
-! both eligible June 2015 RBSP branches, applies the same unchanged science gates,
-! and writes its complete comparison evidence and PNG/EPS figures below a unique
-! study directory. WORKFLOW does not alter the recorded scientific qualification.
+# SA02 STANDARD is independent of SA02 QUICK and every SA01 campaign. It executes
+# both eligible June 2015 RBSP branches, applies the same unchanged science gates,
+# and writes its complete comparison evidence and PNG/EPS figures below a unique
+# study directory. WORKFLOW does not alter the recorded scientific qualification.
 python3 srcEarth/test/SA02/run_SA02.py --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926 --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/SA02/standard_study_runs --profile STANDARD --solver GRIDDED --mpi-ranks 4 --threads 8 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW
 
-! SA03 STANDARD is independent of SA03 QUICK and all SA01/SA02 campaigns. Frozen
-! provider quality permits only RBSP-B. It uses the same GRIDDED/HC4 backend and
-! unchanged comparison gates as QUICK, but increases cadence and quadrature workload.
-! PNG/EPS evidence is written below a unique study root; WORKFLOW does not assert PASS.
+# SA03 STANDARD is independent of SA03 QUICK and all SA01/SA02 campaigns. Frozen
+# provider quality permits only RBSP-B. It uses the same GRIDDED/HC4 backend and
+# unchanged comparison gates as QUICK, but increases cadence and quadrature workload.
+# PNG/EPS evidence is written below a unique study root; WORKFLOW does not assert PASS.
 python3 srcEarth/test/SA03/run_SA03.py --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926/model_inputs --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/SA03/standard_study_runs --profile STANDARD --solver GRIDDED --mpi-ranks 4 --threads 8 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW
+
+# SA04 STANDARD is independent of SA04 QUICK and all SA01-SA03 campaigns. Frozen
+# provider quality permits RBSP-B only. It regenerates GRIDDED/HC4 input from the
+# authenticated data package, retains the same gates as QUICK, and increases only
+# cadence and quadrature workload. PNG/EPS evidence uses a unique study root.
+python3 srcEarth/test/SA04/run_SA04.py --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926/model_inputs/SA04 --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/SA04/standard_study_runs --profile STANDARD --solver GRIDDED --mpi-ranks 4 --threads 8 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW
+
+# MMS01 COMPLETE is independent of QUICK and evaluates all 39 qualified HPCA
+# full-sky distributions with the identical source, formula, completeness, and
+# numerical gates. It writes PNG/EPS overlays, time-energy maps, scatter evidence,
+# and MEC location context into a unique study root. This is local product-kernel
+# validation only; it makes no density, energy-integrated-flux, or transport claim.
+python3 -B srcEarth/test/MMS01/run_MMS01.py --data-root /data/vtenishe/GEO/observational_validation_datasets_20261013 --amps-root /data/vtenishe/GEO/AMPS --output-parent test_output/MMS01/complete_study_runs --profile COMPLETE --formats png eps
+
+# GOES01 COMPLETE is independent of QUICK and retains the identical event, source
+# hashes, observation-quality rules, P8A folding, and acceptance gates. It increases
+# only cadence and numerical quadrature, runs production GRIDDED/HC4 transport, and
+# writes a new non-overwriting evidence root with PNG/EPS comparison figures.
+python3 -B srcEarth/test/GOES01/run_GOES01.py --data-root /data/vtenishe/GEO/observational_validation_datasets_20261013 --model-data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926/model_inputs/SA04 --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/GOES01/complete_study_runs --profile COMPLETE --mpi-ranks 4 --threads 8 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW

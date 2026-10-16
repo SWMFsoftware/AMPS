@@ -1,0 +1,158 @@
+! GOES01: high-energy proton transport from an observed upstream spectrum to GOES-16.
+! Absolute data paths and all numerical sizes are rendered by prepare_GOES01.py.
+#RUN_INFO
+  RUN_ID {{RUN_ID}}
+
+#CALCULATION_MODE
+  ! Only density/spectrum tracing is needed. The saved local spectrum is the
+  ! differential-intensity observable; this case makes no particle-density claim.
+  CALC_TARGET DENSITY_SPECTRUM
+  FIELD_EVAL_METHOD GRID_3D
+
+#PARTICLE_SPECIES
+  SPECIES PROTON
+  CHARGE 1
+  MASS_AMU 1.007276466621
+
+#BACKGROUND_FIELD
+  FIELD_MODEL T05
+  EPOCH {{FIRST_EPOCH}}
+  DRIVER_FILE {{DRIVER_FILE}}
+  ! These values are parser-required fallbacks only. Every modeled midpoint is
+  ! bracketed by authenticated five-minute driver records and is interpolated.
+  DST -20.0
+  PDYN 2.0
+  IMF_BX 0.0
+  IMF_BY 0.0
+  IMF_BZ 0.0
+  SW_VX -400.0
+  SW_N 5.0
+  T05_W1 0.0
+  T05_W2 0.0
+  T05_W3 0.0
+  T05_W4 0.0
+  T05_W5 0.0
+  T05_W6 0.0
+
+#ELECTRIC_FIELD
+  ! The validation observable is 83--100 MeV proton intensity. The case tests
+  ! magnetic access/transport and normalization, not low-energy E x B transport.
+  EFIELD_MODEL NONE
+
+#MODE3D_MESH
+  MODE3D_MESH_RES_EARTH_RE {{MESH_EARTH_RE}}
+  MODE3D_MESH_RES_BOUNDARY_RE {{MESH_BOUNDARY_RE}}
+  MODE3D_MESH_COARSENING LINEAR
+  MODE3D_MESH_EXPONENT 1.0
+
+#DOMAIN_BOUNDARY
+  DOMAIN_X_MIN -159280.0
+  DOMAIN_X_MAX  159280.0
+  DOMAIN_Y_MIN -159280.0
+  DOMAIN_Y_MAX  159280.0
+  DOMAIN_Z_MIN -159280.0
+  DOMAIN_Z_MAX  159280.0
+  R_INNER 6371.2
+
+#DENSITY_SPECTRUM
+  ! Bounds are the union of the two documented P8A head passbands. Retaining the
+  ! head-specific bounds in ENERGY_CHANNELS avoids pretending their responses are
+  ! identical when comparison folds the native local spectrum.
+  DS_EMIN 82.9
+  DS_EMAX 99.8
+  DS_NINTERVALS {{DS_INTERVALS}}
+  DS_ENERGY_SPACING LOG
+  DS_BOUNDARY_MODE ISOTROPIC
+  DS_TRANSMISSION_MODE SCAN
+  DS_TRANSMISSION_SCAN_N {{SPECTRUM_NODES}}
+  DS_MAX_PARTICLES {{TOTAL_PARTICLES}}
+  DS_DIRECTION_NMU {{DIRECTION_NMU}}
+  DS_DIRECTION_NPHI 48
+  DS_MAX_TRAJ_TIME 300.0
+  DS_UNRESOLVED_TOL 0.01
+  ! Preserve the common SA02--SA04 closure policy: refine only unresolved seeds.
+  ! Physical exits and positively classified trapped trajectories are never rerun.
+  DS_RETRY_UNRESOLVED T
+  DS_UNRESOLVED_EXTENSION_PASSES 4
+  DS_UNRESOLVED_EXTENSION_FACTOR 2.0
+  DS_SAVE_TERMINATION_SUMMARY T
+  DS_FAIL_ON_UNRESOLVED T
+
+#SPECTRUM
+  ! SOHO/ERNE is an independent upstream observation, not GOES data fitted to the
+  ! answer. AMPS interpolates positive intensity logarithmically in time and energy.
+  SPECTRUM_TYPE TABLE
+  SPEC_TABLE_FILE {{SPECTRUM_FILE}}
+  SPEC_EMIN 13.0
+  SPEC_EMAX 130.0
+  SPEC_ENERGY_BASIS PER_PARTICLE
+  SPEC_INTENSITY_UNIT M^-2_S^-1_SR^-1_MEV^-1
+  SPEC_MASS_NUMBER 1
+  SPEC_RELATIVE_UNCERTAINTY 0.20
+  SPEC_TIME_INTERPOLATION LOG_INTENSITY
+  SPEC_TIME_MAX_GAP_S 900
+  SPEC_TIME_GAP_POLICY FAIL
+  SPEC_TIME_OUT_OF_RANGE FAIL
+
+#BOUNDARY_ANISOTROPY
+  ! This is an explicit model limitation and a tested hypothesis, not a statement
+  ! recovered from the two SGPS heads. Comparison uses only head-consistent epochs.
+  BA_PAD_MODEL ISOTROPIC
+  BA_PAD_EXPONENT 0.0
+  BA_PAD_NORMALIZATION UNIT_MEAN
+  BA_SPATIAL_MODEL UNIFORM
+  BA_SPATIAL_NORMALIZATION UNIT_MEAN
+
+#ENERGY_CHANNELS
+  CH_BEGIN
+    SGPS_WEST_P8A 83.7 98.5
+    SGPS_EAST_P8A 82.9 99.8
+  CH_END
+
+#OUTPUT_DOMAIN
+  OUTPUT_MODE TRAJECTORY
+  TRAJ_FRAME GEO
+  TRAJ_FILE {{TRAJECTORY_FILE}}
+
+#TEMPORAL
+  ! One field snapshot and one GOES location are paired at each five-minute-bin
+  ! midpoint. SNAPSHOT_LIST prevents an epoch-by-location Cartesian product.
+  TEMPORAL_MODE SNAPSHOT_LIST
+  SNAPSHOT_LIST_FILE {{SNAPSHOT_FILE}}
+
+#NUMERICAL
+  DT_TRACE {{TRACE_DT}}
+  ADAPTIVE_DT T
+  MAX_STEPS 500000
+  MAX_TRACE_TIME 300.0
+  MAX_TRACE_DISTANCE 0.0
+  BOUNDARY_EVENT_TOL_M 1.0
+  BOUNDARY_EVENT_MAX_ITER 40
+  TRAP_DETECTION T
+  ! Use the same C19-qualified recurrence detector and tolerances as SA04. A trace
+  ! limit remains unresolved unless these physical recurrence tests pass.
+  TRAP_DRIFT_DETECTION T
+  TRAP_MIN_DRIFT_REVOLUTIONS 3
+  TRAP_DRIFT_RADIAL_GROWTH_TOL_RE 1.0
+  TRAP_DRIFT_RADIAL_REL_TOL 0.20
+  TRAP_DRIFT_LATITUDE_TOL 0.20
+  TRAP_DRIFT_PITCH_COS2_TOL 0.25
+  TRAP_DRIFT_MAX_MEAN_RADIUS_CHANGE_RE 1.0
+  TRAP_DRIFT_PROFILE_BINS 24
+  TRAP_DRIFT_MIN_PROFILE_COVERAGE 0.70
+  TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION 0.75
+  TRAP_DRIFT_WINDOW_REVOLUTIONS 3
+  TRAP_DRIFT_MIN_STABLE_WINDOWS 2
+  TRAP_DRIFT_MAX_RECURRENCE_LAG 64
+
+  ! Parallel controls are NUMERICAL keywords, not a standalone input section.
+  ! The launcher repeats the critical settings on the command line so the saved
+  ! deck and execution provenance agree exactly.
+  DENSITY_PARALLEL OPENMP
+  DENSITY_THREADS {{THREADS}}
+  MODE3D_TRAJECTORY_SNAPSHOT_SCHEDULER EPOCH_PARALLEL
+  MODE3D_EPOCH_PARALLEL_MEMORY_FRACTION 0.80
+  MODE3D_MPI_SCHEDULER DYNAMIC
+  MODE3D_MPI_DYNAMIC_CHUNK 1
+
+!#END

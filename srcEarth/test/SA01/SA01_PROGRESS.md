@@ -2,6 +2,57 @@
 
 ## Current state
 
+- Context-input checkpoint 2026-10-14T19:05Z: the shared observational bundle is
+  now 815 MiB and includes authenticated MMS1 MEC ephemeris/attitude, Wind/SWE raw
+  positive-ion charge flux and fitted proton parameters, NASA OMNI/Wind bow-shock
+  phase-front records, and the published 2023--2025 Tsyganenko magnetosheath field,
+  flow, density, and thermal-energy source archives. The final-location verifier
+  passes. Metadata-supported acquisition/matching rules are frozen in
+  `mms1_hpca_magnetosheath_20151110/CONTEXT_INPUTS.md`.
+- This acquisition does not close the end-to-end spectrum test. No downloaded
+  source transports the measured non-Maxwellian proton distribution through the
+  collisionless bow shock and turbulent magnetosheath to MMS1. The Wind H1 records
+  also carry fit flag 2, and the raw Faraday-cup product is positive-ion charge
+  flux rather than a species-separated proton VDF. These facts remain explicit
+  blockers; no Maxwellian, Rankine-Hugoniot, delay, or mean-field substitution was
+  assumed.
+- Alternative-data checkpoint 2026-10-14T15:10Z: downloaded and authenticated a
+  552 MiB observational validation bundle under
+  `/data/vtenishe/GEO/observational_validation_datasets_20261013/`. The primary candidate
+  is a published stable MMS1 magnetosheath interval with composition-resolved HPCA
+  H+ directional flux/phase-space density and official H+ density moments. A
+  corrected September 2017 GOES-16 SGPS product is retained only for directional
+  1--500 MeV spectrum/flux checks, not density. No SA01--SA04 reference, gate, or
+  result changed; an AMPS adapter and independent HPCA moment reproduction remain
+  required before this becomes an executable validation.
+- Literature follow-up 2026-10-13T22:02Z: personal provider contacts are not a
+  prerequisite; authoritative public release-specific processing evidence could
+  resolve the same questions. Publications reviewed so far establish instrument
+  response issues but do not establish exact local v5 FPSA zero semantics.
+  Filwett et al. (2020), studying the four campaign intervals, explicitly cautions
+  against interpreting contaminated low-energy flux as an exact cutoff map.
+  No scientific correction or acceptance change is justified by that warning alone.
+- Implementation checkpoint 2026-10-13T21:49Z: prepared an unsent provider request
+  with five exact zero/positive sample pairs and a commented read-only verification
+  script. All five pairs validate against original raw files/manifests. The first
+  plan dependency still requires an authoritative provider answer; implementation
+  of the scientific correction and subsequent campaigns is stopped, not complete.
+- Evidence audit 2026-10-13T21:40Z: authenticated all 22 packaged SA01--SA03
+  REPT CDFs and inventoried 681 package files. Stopped before reference/model
+  corrections as requested: release-specific zero/count/exposure semantics remain
+  unverified, and calibration tags are placeholders. Public archive retrievals
+  failed even outside the sandbox. No physics run, rebuild, reference change,
+  gate change, or assumed instrument correction was made. See the final entry and
+  `test_output/sa_density_audit_20261013/instrument_inventory.json`.
+- Diagnostic update 2026-10-13T21:16Z: inspected the latest completed QUICK
+  campaigns for SA01/SA02/SA03 (301 spacecraft epochs), without launching physics
+  or changing references/gates. The density deficit decomposes into magnetic
+  access suppression and boundary/reference mismatch, not a demonstrated density
+  unit-conversion defect. Raw REPT positive-only aggregation materially raises
+  the low-density reference relative to a zero-inclusive sensitivity calculation;
+  FPSA VALIDMIN semantics prevent treating that sensitivity as an approved repair.
+  Evidence and reproducible diagnostic scripts are in
+  `test_output/sa_density_audit_20261013/`; see the appended entry for limitations.
 - Status 2026-10-11T19:29Z: SA01 now has two independent repository entry points.
   `srcEarth/test/list` contains the full QUICK campaign as an exclusive `P` test;
   `srcEarth/studies/list` contains the full STANDARD campaign as a study. Each entry
@@ -68,11 +119,13 @@
 - C19 evidence root:
   `test_output/C19_snapshot_policy_20261011/C19_goes_epead_ew`; runner report:
   `test_output/C19_snapshot_policy_20261011/test_runner_report.json`.
-- Next action: execute QUICK through `srcEarth/test/test_runner.py` when a full QUICK
-  validation run is intended, or execute the STANDARD command in
-  `srcEarth/studies/list` for the study. Inspect each new campaign's
-  `workflow_completion.json`, `qualification_summary.json`, and `figures/`; do not
-  report workflow completion as scientific qualification.
+- Next actions remain evidence-dependent: resolve the Release-3 FPSA zero semantics
+  before changing the legacy SA reference, and supply/review an event-applicable
+  kinetic shock-plus-sheath distribution mapping before treating the new MMS
+  population as an end-to-end AMPS transport validation. The local HPCA
+  distribution-to-density reproduction can proceed as a narrower product-kernel
+  test. Existing QUICK/STANDARD entries remain unchanged; rerunning them resolves
+  neither scientific blocker.
 
 ## Evidence carried from this conversation
 
@@ -1617,3 +1670,340 @@ Use actual timestamps and observed evidence. Remove no previous session entry.
   eight Step-12 release-validation and five source-contract tests pass; the full
   master-list dry run parses 62 tests and reports SA01 QUICK as exclusive with the
   independently executable command. No physical campaign was launched in this fix.
+
+### 2026-10-13T21:16Z — SA01–SA03 low-density deficit investigated
+
+- Scope: read-only diagnosis of saved campaigns and original observations. HEAD
+  `224ecb40539dd65e55a63ba7ce8d881969b8a541`; existing dirty Makefile, lists,
+  test README, SA04 and generated artifacts were preserved. Production code,
+  executable, inputs, frozen reference products and qualification gates are unchanged.
+- Completed campaigns inspected: SA01 `sa01_quick_20261013T160528Z_pid190062`
+  (59 A / 66 B epochs), SA02 `sa02_quick_20261013T172859Z_pid207211`
+  (52 A / 53 B), and SA03 `sa03_quick_20261013T191355Z_pid244110` (71 B), each
+  under its `quick_test_runs` parent. Verified completion evidence/figure hashes
+  and native output hashes. All five branches returned zero; all 301 epochs have
+  maximum unresolved fraction zero. This does NOT prove numerical convergence.
+- Added diagnostic scripts and CSV/JSON evidence under
+  `test_output/sa_density_audit_20261013/`. `audit_density.py` reconstructs the
+  all-access boundary density and transmitted density, checks J_local=T*J_boundary,
+  and independently compares native boundary values with the exact table epoch
+  using the production log-log interpolation/endpoint-hold convention. Maximum
+  boundary loading relative discrepancy is 1.033e-14. Native-versus-reconstructed
+  density residuals reach 4.97% for SA01, 4.38% for SA02 and 13.91% for SA03;
+  these are not convergence PASS but cannot explain orders-of-magnitude deficits.
+- Low-density descriptive grouping is the lowest reference-density quartile per
+  spacecraft, not a changed scoring population. Median model/reference and
+  unshielded-boundary/reference ratios respectively are: SA01 A 0.001382 / 1.545;
+  SA01 B 0 / 1.995; SA02 A 0.008412 / 0.06239; SA02 B 0.002894 / 0.1469;
+  SA03 B 0.01918 / 0.2042. Thus SA01's deepest low-density suppression is in
+  modeled access; SA02/03 also have a boundary/reference inconsistency before
+  shielding. This does not establish that the original ERNE measurement is wrong.
+- Concrete SA01 example: B at 2014-01-06T17:00:00Z, L=3.6963, reference
+  1.06039e-8 cm^-3, unshielded boundary 2.17547e-8 cm^-3, model zero; 91.92%
+  of the sampled trajectories classified trapped, 8.08% inner loss, none allowed
+  or unresolved. These are unweighted trajectory counts, not density weights.
+- `audit_raw_reference.py` reproduced all 301 density references from original
+  CDF FPSA using the package's positive-only averaging to better than 1e-9
+  relative. Package `preprocess_data.py:386` rejects samples <=0 before averaging.
+  Same-epoch, same-quality zero-inclusive sensitivity densities are lower by median
+  factors 1.23/1.25 (SA01 A/B), 4.45/4.50 (SA02 A/B), 3.34 (SA03 B) in the
+  low-reference quartiles. SA02 low bins have about 79% zero channel-spin samples;
+  SA03 about 72%. No negative fill samples occurred in these selected bins.
+- Caveat: raw FPSA metadata gives FILLVAL=-1e31 but VALIDMIN=0.001. Therefore
+  quality-zero samples equal to zero cannot simply be declared valid detections
+  or substituted into production averages without resolving the instrument's
+  censoring/count/exposure semantics. The alternate means are sensitivity evidence,
+  NOT a new reference, correction, or re-scored qualification. cdflib 1.3.2 was
+  installed with approval in isolated `/tmp/sa_density_audit_cdflib`; no project
+  dependency or environment was changed.
+- Literature cross-check: Qin et al. (2019), DOI 10.1029/2018JA026380,
+  documents REPT low-energy proton contamination near cutoff, potential L2
+  dead-time overcorrection, PHA filtering, and limited spin-view angular coverage.
+  These are relevant hypotheses, not proof of their amplitudes in these saved
+  release-3 campaigns. The current isotropic-equivalent spin-averaged reference
+  is not a measured full-sphere density, whereas AMPS integrates full-sphere access.
+- Recommendation: resolve zero/censoring/uncertainty and proton-background
+  treatment with product-specific documentation; preserve baseline and version
+  any justified reference correction. Then compare a matched instrument viewing
+  operator and independently test the most suppressed epochs for angular/energy,
+  timestep and field-mesh convergence. Do not add a fitted density floor, tune
+  ERNE to REPT, relax gates, or relabel trapped directions as allowed. Static
+  boundary access alone contains no independently initialized trapped population.
+- Checks: both diagnostic scripts completed with assertions passing. No physical
+  solver or build was started; read-only process inspection found no matching
+  SA01–SA03 runner, AMPS solver, or MPI launcher. No new scientific PASS claimed.
+
+### 2026-10-13T21:40Z — instrument inventory complete; stopped at evidence gap
+
+- User authorized public-data investigation and evidence-backed work, explicitly
+  requiring a stop/report instead of implementation based on unverified assumptions.
+  HEAD remains `224ecb40539dd65e55a63ba7ce8d881969b8a541`; unrelated dirty files
+  were preserved. Executable SHA-256 remains
+  `943cfd817004d502611eeabf50d66bbbf3c172dfe06be3a35744a2fb483c2736`.
+- Added the fully commented diagnostic `audit_instrument_inventory.py` under
+  `test_output/sa_density_audit_20261013/`. It authenticates raw CDFs against their
+  supplied manifests, records all variable/global metadata and literal calibration
+  arrays, inventories package files, and refuses to overwrite previous evidence.
+  It performs no reference processing or automatic scientific interpretation.
+- Execution returned 0: 22 SA01--SA03 REPT CDF hashes match their manifests; 681
+  package files inventoried. JSON structure/literal-metadata checks passed, and a
+  repeated invocation correctly returned 2 without changing the evidence hash.
+  Inventory SHA-256:
+  `ecb3a3c76545096dd59e9b17146fc60b8fdfc3c10b1155cd4827590b3ed084ea`.
+- All 22 CDFs share the same variable schema. They contain FPSA and FPDU, quality,
+  position, sector angles, energy bins and nominal efficiencies, but no raw counts,
+  PHA events, detector live-time series or spacecraft attitude rotations. Every
+  file has `Cal_Tag=00`, `Cal_UTC=0000-00-00T00:00:00.00000`, `Cal_Index=0`, and
+  `Cal_Change_Count=0`. This does not identify a real calibration release or prove
+  there were no historical instrument changes. No matching REPT auxiliary product
+  was found in the package inventory; synthetic GOES/example assets are not usable
+  substitutes. SA03 A files were inventoried for completeness, not added to its
+  frozen eligible-spacecraft comparison population.
+- Metadata conflict reconfirmed: local FPSA VALIDMIN is 0.001 throughout, while
+  the official Release-3 SPASE FPSA descriptions give zero for both spacecraft:
+  [RBSP-A](https://spase-metadata.org/NASA/NumericalData/RBSP/A/ECT/REPT/L2/Sectors/Release03/PT4.2S),
+  [RBSP-B](https://spase-metadata.org/NASA/NumericalData/RBSP/B/ECT/REPT/L2/Sectors/Release03/PT4.2S).
+  Neither resolves zero-count versus censoring/invalid-value semantics for the
+  exact local v5 products. Positive-only sensitivity is still not a corrected truth.
+- New primary-source evidence: [Selesnick et al. (2018)](https://doi.org/10.1002/2017JA024661),
+  sections 2--4, uses R1 trigger rates to normalize sampled PHA events. Its
+  January 8, 2014 solar-event example (daily, L>5) gives lower inferred intensity
+  with the full response than with the simplified response, due to out-of-FOV
+  contributions. Its 97 custom PHA channels are not our seven L2 channels. This
+  supports investigating response/background; it is not a quantitative correction
+  for our low-density epochs, nor permission to assume isotropy or exposure.
+- The [SOC processing paper](https://doi.org/10.1007/s11214-022-00919-x)
+  summarizes REPT counting/sectorization and refers to the instrument paper;
+  it did not resolve the exact v5 zero semantics in the sections inspected.
+  Electron/MagEIS correction prescriptions were not transplanted to REPT protons.
+- Retrieval attempts: NASA SPDF `/pub/data/rbsp/rbspb/` returned curl code 52
+  (empty reply), both sandboxed and escalated. Alternate CDAWeb `/pub/data/rbsp/`
+  also returned 52 outside the sandbox. The ECT science data-directory endpoint
+  `https://rbsp-ect.newmexicoconsortium.org/science/DataDirectories.php` timed out
+  outside the sandbox (curl 28, 10-second connect limit). Web opens also failed.
+  No auxiliary product was downloaded. These are observed retrieval failures,
+  not proof that the public data no longer exist.
+- Documentation: SA01 README now states the evidence required before changing
+  the reference and explains why nominal efficiencies, placeholder tags, geometry,
+  or another instrument's response cannot close the gap. No production code,
+  observations, acceptance gates, numerical backend, or test-list policy changed.
+- STOP/BLOCKER: obtain exact Release-3 v5 FPSA zero semantics, processing/calibration
+  mapping and count/exposure evidence. A calibrated viewing/background correction
+  additionally needs matched attitude/sector timing and numerical proton response;
+  PHA work needs its sampling/trigger normalization. Do not guess these quantities.
+  Provider clarification or an accessible authoritative archive is the next input.
+- No AMPS/MPI/SA runner was observed during process inspection, and none was started.
+  No full campaign or convergence study was launched at this evidence stop point.
+
+### 2026-10-13T21:49Z — provider clarification package prepared; correction blocked
+
+- Scope: user requested implementation of the recommended resolution, retaining the
+  instruction to stop rather than substitute assumptions for missing knowledge.
+  The first dependency is an authoritative interpretation of the exact REPT product;
+  a code patch or additional AMPS campaign cannot supply that interpretation.
+- Created `provider_request.txt` and `provider_request_evidence.json` under
+  `test_output/sa_density_audit_20261013/`. The request is explicitly DRAFT/NOT SENT;
+  no recipient address was invented and no external message was transmitted.
+  It requests zero semantics, count/exposure weighting, existing corrections,
+  calibration/logic provenance, and response/attitude/PHA normalization products.
+- Extracted five zero/positive sample pairs directly from CDFs: SA01 A/B on
+  January 6, 2014; SA02 A/B on June 21, 2015; SA03 B on September 6, 2017.
+  Both samples in every pair have Data_Quality=0. Each pair records exact UTC,
+  zero-based record/channel indices, energy, intensity, source SHA-256 and the
+  positive/zero sample counts in its five-minute bin. Example selection follows
+  the first qualifying low-reference-quartile bin in the prior sensitivity audit;
+  it is not a revised scoring population or proof that every zero is equivalent.
+- Added detailed-commented `verify_provider_request.py`, which rechecks the inventory
+  hash, source manifest/file hashes, literal sample values, times, quality, energy,
+  and bin sample counts. A real-data verification returned 0 for all five branches.
+  Repeated verification after the final check addition also passed. Three injected
+  failures (altered flux, stale inventory hash, forged correction PASS) were each
+  rejected. The official dataset catalog identifies Daniel N. Baker as PI and
+  Robert M. Candey / Lee Frost Bargatze as metadata contacts; the unsent draft points
+  to that catalog for routing rather than inventing an email address.
+  It does not change data or decide zero semantics. README documents its command,
+  diagnostic-only dependency and the distinction between verification and correction.
+- No production algorithm, reference, physics input, gate, test registration,
+  executable or model output was changed. No solver/build/campaign was launched.
+  Existing dirty state was preserved; HEAD remains
+  `224ecb40539dd65e55a63ba7ce8d881969b8a541`.
+- STOP: the request must reach an appropriate provider/custodian and receive an
+  authoritative response or equivalent release-specific processing evidence before
+  correction implementation. Numerical studies remain separate pending work, not
+  substitutes for the unanswered instrument question. No completed plan or scientific
+  qualification is claimed.
+
+### 2026-10-13T22:02Z — publication-only resolution investigated
+
+- User has no REPT/SPDF contacts and identifies PDS as the download source.
+  Inspected SA01--SA03 raw source manifests: the actual packaged REPT entries
+  record NASA CDAWeb `/pub/data/rbsp/.../l2/ect/rept/sectors/rel03/` URLs.
+  This establishes recorded package provenance, not the user's separate download
+  history. The official Release-3 SPASE catalog also identifies SPDF/CDAWeb.
+- Read the primary NOAA-hosted [Filwett et al. (2020) paper](https://repository.library.noaa.gov/view/noaa/31928/noaa_31928_DS1.pdf),
+  especially section 2. It studies exactly the four SA event intervals, uses
+  spin-resolved directional data, and warns of out-of-FOV high-energy particle
+  contamination in low-energy proton channels near the inner belt. The authors
+  use flux anisotropy as a dynamical cutoff proxy, not an exact cutoff map.
+  This supports investigating measurement/model comparability; it neither
+  quantifies our discrepancy nor authorizes subtracting an assumed background.
+- Rechecked [Baker et al. (2021)](https://doi.org/10.1007/s11214-021-00838-3)
+  instrument calibration/mode-change/background sections. The main article was
+  downloaded to `/tmp/rept_baker2021_article.html`; separate table endpoints
+  failed through the web reader and the download contains no embedded HTML
+  tables. General response/dead-time descriptions and electron correction
+  discussions do not establish the exact proton v5 zero/processing semantics.
+  Do not transfer electron-only corrections to this proton validation.
+- Resolution boundary: publications supply the physical measurement framework,
+  but the sources inspected do not close the local VALIDMIN/zero ambiguity or
+  supply the matched count/exposure, attitude and numerical response products
+  absent from the package. Public processing source/release notes and matched
+  archive auxiliaries are an alternative to direct provider correspondence;
+  their availability and applicability still need verification. Lack of personal
+  contacts is not itself a scientific blocker. No contact request was sent.
+- Updated this journal only. No production code, references, gates, executable,
+  physics campaign or convergence result changed; no solver/build was launched.
+  HEAD remains `224ecb40539dd65e55a63ba7ce8d881969b8a541`.
+
+### 2026-10-14T15:10Z — alternative observational validation data acquired
+
+- User requested datasets directly usable to validate density, flux, and spectrum
+  calculations while treating cutoff as already sufficiently validated. Created
+  `/data/vtenishe/GEO/observational_validation_datasets_20261013/` with a detailed README,
+  immutable source manifest, and fail-closed verifier. The bundle is 552 MiB.
+- Primary population: MMS1, 2015-11-10 13:57:54--14:04:24 UTC, explicitly selected
+  as a comparatively stable subsolar magnetosheath interval by Roberts et al.
+  (2018), DOI 10.1029/2018GL078498. Downloaded HPCA v4.1.0 ion and moments CDFs.
+  HPCA distinguishes H+ from He+, He++, and O+, avoiding the unsupported assumption
+  that FPI/DIS total-ion data are proton-only. The source provides 3-D directional
+  H+ flux/phase-space density, look geometry, and official H+ density moments.
+- Source verification passed: 624 selected HPCA ion sweeps and 39 density moments;
+  every H+ sweep has quality 2 (`Good, RF on, Bkgd on`) and science mode 2. H+
+  density is finite and positive throughout (mean 8.884961994496496 cm^-3, median
+  9.503126596748944 cm^-3). Two small FPI moment files provide 87 zero-error-flag
+  cross-instrument records but are diagnostic because FPI does not resolve species.
+- Secondary population: NOAA's corrected September 2017 GOES-16 SGPS v2.0.0
+  special-event product, with two directional sensors, 13 differential channels,
+  per-channel uncertainties and quality counts over 1.02--404 MeV. NOAA documents
+  corrections for P5 electron contamination, anomalous P7 values, and temperature
+  variation. It remains spectrum/flux-only: two look directions do not measure a
+  4-pi distribution, and documented background/channel caveats forbid treating it
+  as a direct density reference.
+- An earlier 2015-10-16 MMS magnetopause download is retained and hashed as
+  exploratory material, not silently added to the fixed primary population. FPI
+  distributions from it are explicitly not proton truth because the detector lacks
+  species separation.
+- `source_manifest.json` records exact archive URLs, byte counts, SHA-256 hashes,
+  roles, and the fixed primary population. `verify_datasets.py` authenticates all
+  files and checks versions, variables, selection counts, quality/mode values,
+  energy grids, density validity, FPI flags, and GOES structure. It passed using
+  isolated `/tmp` readers (`cdflib` and `netCDF4`); JSON, Python syntax, and
+  `git diff --check` also passed.
+- Scientific boundary: the bundle is source-qualified, not yet an AMPS validation.
+  The next stage must independently reproduce HPCA's archived H+ density from the
+  documented full-sky distribution before deriving a reference spectrum/flux, then
+  exercise the AMPS product kernel with prescribed all-access transmission. Do not
+  infer missing energy-bin edges or isotropy. GOES must retain its two directional
+  sensors and a predeclared background/quality rule. No build, solver, or physical
+  campaign was started; SA01--SA04 observations and acceptance gates are unchanged.
+
+### 2026-10-14 — observational bundle moved to the shared GEO data area
+
+- At the user's request, moved the complete authenticated bundle from the AMPS
+  `test_output` tree to
+  `/data/vtenishe/GEO/observational_validation_datasets_20261013/`, alongside the
+  other validation datasets. The directory name and internal relative layout were
+  preserved so that the self-contained README, manifest, and verifier remain valid.
+- The move completed successfully: the former source path no longer exists, and
+  the fail-closed verifier passed from the new location. Its byte-count and SHA-256
+  checks therefore confirm that the scientific files were preserved by the move.
+- No observation selection, reference product, acceptance gate, model setting,
+  production source, executable, build, or validation result changed.
+
+### 2026-10-14T15:30Z — observational bundle description expanded
+
+- Expanded the external bundle README into a self-contained scientific description
+  of the MMS1/HPCA primary population, GOES-16/SGPS secondary population, and the
+  exploratory MMS1/FPI material. It now records the spacecraft and instrument
+  designs, measured species, actual stored energy coverage and channel bounds,
+  cadence and angular sampling, file contents, event context, selection rationale,
+  corrected artifacts, remaining caveats, and permitted validation use.
+- Made explicit that Roberts et al. selected the stable magnetosheath interval using
+  FPI, whereas the validation candidate uses contemporaneous species-resolved HPCA
+  survey data. Also separated GOES special-event corrections already applied from
+  the background, response, directional-cutoff, and cross-calibration limitations
+  that remain. These distinctions prevent either source from being granted stronger
+  observational meaning than its instrument and processing support.
+- The documentation is based on local CDF/NetCDF metadata, the bundled HPCA CMAD and
+  GOES maturity/event notes, the MMS and NOAA archive descriptions, and the cited
+  peer-reviewed event/instrument publications. No undocumented bin edges, isotropy,
+  species identity, or independence claim was introduced.
+- Documentation only: source data, manifest, verifier, primary population,
+  acceptance gates, model settings, production code, executable, and validation
+  results are unchanged.
+
+### 2026-10-14 — formal event count documented
+
+- Added `EVENTS.md` to the external observational bundle. It records that exactly
+  one formal validation event currently exists: the frozen MMS1/HPCA interval on
+  2015-11-10. The full-month GOES-16/SGPS collection is candidate data, and the
+  2015-10-16 MMS collection is exploratory; neither is counted as a test case.
+- Documented the information that must be frozen before a physical disturbance in
+  the GOES file becomes a test case. No event was promoted, and no observation,
+  acceptance policy, source file, manifest, verifier, code, or result changed.
+
+### 2026-10-14T19:05Z — MMS event context acquired; distribution transport remains blocked
+
+- Scope: searched for and downloaded the inputs needed to locate every fixed-event
+  MMS1/HPCA acquisition, orient directional measurements, describe the local
+  magnetosheath field/plasma, identify an independent upstream proton source, and
+  time-map that source to the bow-shock nose. Scientific gaps were recorded instead
+  of being replaced by inferred physics.
+- Added the official MMS1 MEC survey Level-2 `epht89d` v2.0.2 daily CDF. It has
+  2,880 records at exact 30 s cadence, 13 direct records inside the event, finite
+  GSE/GSM positions and dipole tilt, and six finite normalized attitude quaternion
+  products (BCS, DBCS, DMPA, SMPA, DSL, SSL). The official SDC burst query for this
+  date returned no files and is archived; the documentation therefore says
+  explicitly that positions/attitudes at HPCA tags require bracketed linear/SLERP
+  interpolation rather than claiming native 625 ms MEC samples.
+- Added Wind/SWE daily raw Faraday-cup charge-flux and H1 nonlinear proton-fit CDFs,
+  official release notes, NASA's Wind definitive bow-shock-nose table, the one-minute
+  OMNI file, and OMNI propagation documentation. Exact candidate scan starts are
+  13:24:12.555 and 13:25:48.274 UTC. The first is a limited tracking scan, the second
+  is a full scan, and both H1 fits have contingency flag 2 (`alpha particle speed
+  unusually low`). The mapping verifier freezes target endpoint shifts of 1,967 s
+  and 2,302 s and their printed phase-front normals. OMNI event plasma gaps and
+  source IDs are retained rather than interpolated away.
+- Added author-distributed executable/source archives and repository metadata for
+  the Tsyganenko et al. 2023 magnetic field (Zenodo 8416108), 2024 proton number
+  flux (Figshare 27282336), and 2025 proton density/thermal energy (Zenodo 17330908)
+  models. Author MD5s, local SHA-256s, byte counts, licenses, and archive-member
+  contracts are in `source_manifest.json`. All ZIP members pass CRC checks. The
+  2024/2025 demonstration programs compile; the 2023 package is a subroutine rather
+  than a main program, so an initial link attempt correctly failed for missing
+  `main`, after which unchanged-source object compilation passed.
+- A 2025 demonstration evaluation returned non-sentinel density and thermal-energy
+  values at the event location. This is documented only as an interface smoke test:
+  the source prompt says GSM while the paper/interface use GSW, so it is not promoted
+  to an exact event-model evaluation. A production adapter must implement and test
+  the GSE/GSM/GSW transform. The Mshpy23 alternative was rejected because its
+  implementation masks the inner 10% of the model sheath while this event lies only
+  about 3.5--5.5% outward from the modeled magnetopause; relaxing that mask would be
+  unsupported extrapolation.
+- Added detailed `CONTEXT_INPUTS.md`, expanded the bundle README and event inventory,
+  extended the immutable manifest, and extended `verify_datasets.py` with commented,
+  fail-closed ephemeris/support/attitude/Wind/OMNI/archive checks. The verifier passes
+  from the final location
+  `/data/vtenishe/GEO/observational_validation_datasets_20261013/`; the bundle is
+  now 815 MiB. JSON parsing, an in-memory Python syntax compile, and repository
+  whitespace checks pass. A separate `py_compile` attempt could not create an
+  external `__pycache__` under the managed read-only mount; this is a sandbox write
+  restriction, while direct execution of the same verifier passed. HEAD remains
+  `224ecb40539dd65e55a63ba7ce8d881969b8a541`.
+- STOP boundary: the data support upstream-monitor-to-bow-shock-nose mapping and
+  local empirical field/plasma moments, but no source found supplies a reviewed
+  transformation of the measured non-Maxwellian proton distribution through the
+  shock and magnetosheath to MMS1. The source-positive-ion/species ambiguity and H1
+  fit contingency also require an explicit scientific decision. No distribution
+  hypothesis, acceptance threshold, AMPS adapter, solver build, or campaign was
+  implemented or run.

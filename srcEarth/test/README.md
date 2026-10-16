@@ -100,6 +100,84 @@ Exact commands, immutable package counts, the 71-epoch QUICK and 277-epoch STAND
 eligibility ledgers, profile sizes, scheduling policy, figures, and evidence layout
 are documented in `SA03/README.md`.
 
+## SA04: GLE72 frozen-holdout RBSP/REPT validation
+
+`SA04/` is an independent implementation for the half-open interval
+`2017-09-10T00:00:00Z <= t < 2017-09-14T00:00:00Z`. It is a frozen holdout: its
+observations do not authorize tuning field choices, transport parameters, event
+selection, workloads, or gates. Provider quality permits only RBSP-B; RBSP-A has zero
+valid spins in the fixed domain and remains hash-validated audit evidence.
+
+The master list registers the exclusive QUICK GRIDDED/HC4 campaign, while the studies
+list registers independently executable STANDARD GRIDDED/HC4. Both evaluate identical
+products and scientific gates, produce PNG/EPS comparisons, use unique
+`test_output/SA04` roots, and keep workflow completion separate from qualification.
+
+The focused, data-independent implementation suite is:
+
+```bash
+python3 srcEarth/test/test_runner.py -j 1 srcEarth/test/SA04/list
+```
+
+Exact commands, the unfilled ERNE outage, immutable package counts, the 51-epoch QUICK
+and 201-epoch STANDARD eligibility ledgers, scheduling policy, and evidence layout are
+documented in `SA04/README.md`.
+
+## MMS01: MMS1/HPCA local H+ product validation
+
+`MMS01/` validates two local AMPS calculation kernels against the frozen MMS1 HPCA
+survey Level-2 ion product for
+`2015-11-10T13:57:54Z <= t < 2015-11-10T14:04:24Z`. It converts measured H+
+phase-space density to directional differential intensity with the published HPCA
+equation, then integrates over the published, nonuniform HPCA angular response at
+all 63 stored energy centroids. The independent reference path uses the archived
+HPCA H+ differential-flux values.
+
+The master test list registers QUICK (predeclared first/middle/last distributions),
+and `srcEarth/studies/list` registers independently executable COMPLETE (all 39
+distributions). Both authenticate source bytes, use identical formulas and gates,
+create unique evidence roots, and write PNG/EPS comparison plots. The focused,
+data-independent implementation suite is:
+
+```bash
+python3 srcEarth/test/test_runner.py -j 1 srcEarth/test/MMS01/list
+```
+
+MMS01 deliberately does not invoke trajectory transport: the bundle has a local MMS
+distribution but no documented boundary-to-MMS distribution map. It also excludes
+density and energy-integrated flux because the archived CDF lacks the flight-model
+velocity-bin widths required by the HPCA algorithm. These limitations, fixed source
+and profile contracts, staged rerun commands, output layout, and plot inventory are
+documented in `MMS01/README.md`.
+
+## GOES01: GOES-16/SGPS high-energy transport and normalization
+
+`GOES01/` is an actual AMPS observational validation, distinct from MMS01's local
+product-kernel checks. It runs the production GRIDDED/HC4 trajectory solver from an
+authenticated SOHO/ERNE upstream spectrum through T05 fields to exact GOES-16
+positions, then folds the saved local spectrum into the two documented SGPS P8A
+intervals near 90 MeV. GOES observations do not set or renormalize the model boundary.
+
+The population is frozen before execution. It requires complete SGPS quality,
+flag-zero exact midpoint ephemeris, model-input time brackets, and overlap of the
+delivered west/east P8A uncertainty envelopes. This supports a scalar high-energy comparison
+without inventing unavailable angular-response vectors. QUICK is an exclusive entry
+in the master test list; the independent COMPLETE profile is in
+`srcEarth/studies/list`. Both produce time-series, ratio, scatter, and observation-only
+selection figures under unique `test_output/GOES01` campaign roots.
+
+Observational agreement is not sufficient for overall PASS. A COMPLETE campaign can
+name a completed QUICK root with `--convergence-base`; qualification then requires a
+maximum two-percent common-population change. Without that explicit refinement,
+qualification remains INCOMPLETE even if every observational gate passes.
+
+GOES01 validates high-energy near-Earth access/transport and absolute intensity
+normalization only. It explicitly excludes density, spectral curvature, directional
+response, SEP acceleration, heliospheric propagation, and onset timing. Exact source
+hashes, channel bounds, selection equations, the 54/217 prepared epoch counts, gates,
+commands, evidence layout, known instrument issues, and prohibited interpretations
+are documented in `GOES01/README.md`.
+
 ## UFluxNumerics: Step 2 unit suite
 
 The shared cutoff-to-flux numerical module has a dependency-free C++11 unit suite:
@@ -206,11 +284,12 @@ validation gates.
 
 `test/list` schedules the Step 2 through Step 12 suites as independent `P`
 entries. Each has its own `last pass:` record, so the main runner reports and commits
-their provenance separately. The reviewed SA01, SA02, and SA03 QUICK workflows are
-additional independent entries; none modifies any pre-existing C/F command,
+their provenance separately. The reviewed SA01 through SA04, MMS01, and GOES01 QUICK workflows
+are additional independent entries; none modifies any pre-existing C/F command,
 expected status, input, reference, tolerance, mover, trajectory limit, or last-pass
-record. Each preceding `! runner: exclusive` directive makes the repository runner
-serialize its high-memory campaign. The commands themselves have no private
+record. The `! runner: exclusive` directives preceding SA01 through SA04 and GOES01
+make the repository runner serialize those high-memory campaigns; MMS01 is a bounded
+local product calculation and does not require exclusive scheduling. All commands have no private
 environment handshake and are therefore independently executable exactly as listed;
 the same commands are documented in their case-specific READMEs.
 

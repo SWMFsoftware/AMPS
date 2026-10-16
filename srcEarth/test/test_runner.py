@@ -26,11 +26,14 @@ Timeouts and launch errors are treated as actual ``F`` results.
 1. Comments and blank lines
 -------------------------------------------------------------------------------
 
-Except for the exact runner directive documented in section 9, a comment begins
-when the first non-whitespace character is ``!``::
+An ordinary comment begins when the first non-whitespace character is ``#``::
 
-    ! Run the analytic dipole cutoff tests.
-        ! Leading whitespace before ! is allowed.
+    # Run the analytic dipole cutoff tests.
+        # Leading whitespace before # is allowed.
+
+``!`` is reserved for runner directives such as ``! runner: exclusive``.
+Any other line whose first non-whitespace character is ``!`` is invalid; use
+``#`` to comment out prose, commands, metadata, or runner directives.
 
 Blank lines and comment lines are never executed.  The exclusive directive is
 also never executed; it is parsed solely as dispatcher metadata.
@@ -395,7 +398,7 @@ outside a git work tree.
 The effective list grammar is::
 
     file          := { blank | comment | entry }
-    comment       := optional-space "!" text
+    comment       := optional-space "#" text
     entry         := [ exclusive-directive blank* ]
                      [ loop-declaration blank-or-comment* ]
                      [ exclusive-directive blank* ] test-line
@@ -1060,8 +1063,8 @@ def parse_test_file(path: Path) -> List[TestCase]:
                 pending_exclusive_line_no = line_no
                 continue
 
-            if line.startswith("!"):
-                # Preserve the historical rule that a comment ends the metadata
+            if line.startswith("#"):
+                # A comment ends the metadata
                 # association with the preceding command. A comment between a
                 # loop declaration and its command is allowed and does not discard
                 # the pending loop.  A direct exclusive directive must remain
@@ -1078,6 +1081,17 @@ def parse_test_file(path: Path) -> List[TestCase]:
                         "from its test or loop declaration"
                     )
                 continue
+
+            if line.startswith("!"):
+                # RUNNER_DIRECTIVE_RE handled the only accepted use of a leading
+                # exclamation mark above.  Reject legacy comment syntax instead
+                # of silently accepting a line that may be a misspelled runner
+                # directive.  Prefixing any line with '#' disables it, including
+                # an otherwise active '! runner: exclusive' directive.
+                raise ValueError(
+                    f"Invalid test-list line {line_no}: '!' is reserved for "
+                    "runner directives; ordinary comments must start with '#'"
+                )
 
             last_pass_match = LAST_PASS_RE.match(raw.rstrip("\n"))
             if last_pass_match:
@@ -2372,6 +2386,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
+            "Comment syntax in the list file:\n"
+            "  # ordinary comment\n"
+            "  #P disabled command\n"
+            "  #last pass: disabled metadata\n"
+            "  #! runner: exclusive   (disabled runner directive)\n\n"
+            "A '#' in the first non-whitespace position starts a comment. '!' is\n"
+            "reserved for runner directives such as '! runner: exclusive'; it is\n"
+            "not an ordinary comment marker.\n\n"
             "Loop syntax in the list file:\n"
             "  for $m={RK4,HC4}\n"
             "  {P,P} command --mover $m\n"

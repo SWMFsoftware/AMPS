@@ -1,0 +1,6 @@
+! SA04 implementation and production alias-ownership regressions.
+! This is a routine code-validation gate, NOT observational or convergence PASS.
+! The independent QUICK physical workflow is in the master test/list; the STANDARD
+! study command and fixed scientific gates are documented in README.md.
+P python3 -B -m unittest discover -s srcEarth/test/SA04/tests -v
+last pass:

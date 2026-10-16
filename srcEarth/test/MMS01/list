@@ -1,0 +1,7 @@
+! MMS01 focused local-product implementation regressions. This list exercises the
+! reusable production kernels and script contracts without downloading data.
+P ./srcEarth/test/UFluxNumerics/run_test.sh
+last pass:
+
+P python3 -B -m unittest discover -s srcEarth/test/MMS01/tests -v
+last pass:

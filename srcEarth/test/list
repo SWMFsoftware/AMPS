@@ -1,18 +1,18 @@
-!initial setup:
-!make test_Earth-cutoff-rigidity-3d-analytic_compile -j
-!./srcEarth/test/test_runner.py -j 6 ./srcEarth/test/list
+#initial setup:
+#make test_Earth-cutoff-rigidity-3d-analytic_compile -j
+#./srcEarth/test/test_runner.py -j 6 ./srcEarth/test/list
 
-!Install aacgmv2 in a virtual environment so the runner uses the same Python environment:
-!cd ~/T11/AMPS
-!python3 -m venv --system-site-packages .venv
-!source .venv/bin/activate
-!python -m pip install --upgrade pip
-!python -m pip install 'aacgmv2>=2.6,<3'
-!python -c 'import aacgmv2; print(aacgmv2.__version__)'
+#Install aacgmv2 in a virtual environment so the runner uses the same Python environment:
+#cd ~/T11/AMPS
+#python3 -m venv --system-site-packages .venv
+#source .venv/bin/activate
+#python -m pip install --upgrade pip
+#python -m pip install 'aacgmv2>=2.6,<3'
+#python -c 'import aacgmv2; print(aacgmv2.__version__)'
 
-! Dependency-free Step 2 through Step 12 numerical/contract/product tests, plus the F4
-! validator regression. Keep them as separate entries so each contract has independent
-! pass/fail and last-pass provenance in test_runner reports.
+# Dependency-free Step 2 through Step 12 numerical/contract/product tests, plus the F4
+# validator regression. Keep them as separate entries so each contract has independent
+# pass/fail and last-pass provenance in test_runner reports.
 P srcEarth/test/UFluxNumerics/run_test.sh
 last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
 P srcEarth/test/UFieldProvider/run_test.sh
@@ -84,10 +84,10 @@ last pass:
 F srcEarth/test/C5/run_C5.py --use-legacy-mesh-resolution
 last pass:
 
-! C6 compares with external published cutoff tables and is intentionally not
-! enabled in the routine regression list until site-specific runtime and the
-! GRIDDED mesh-convergence baseline are established.  Remove the leading '!'
-! to schedule either branch.
+# C6 compares with external published cutoff tables and is intentionally not
+# enabled in the routine regression list until site-specific runtime and the
+# GRIDDED mesh-convergence baseline are established.  Remove the leading '#'
+# to schedule either branch.
 P srcEarth/test/C6/run_C6.py --subtest INITIAL --cutoff-scan-n 400 --solver GRIDLESS -np 16
 last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
 P srcEarth/test/C6/run_C6.py --subtest COMPLETE --complete-epochs 2010 --complete-grid-step-deg 10 --cutoff-scan-n 400 -np 16
@@ -110,8 +110,8 @@ last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
 P srcEarth/test/F2/run_F2.py -np 4 -nt 16
 last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
 
-!P srcEarth/test/F3/run_F3.py -np 4 -nt 16
-!last pass:
+#P srcEarth/test/F3/run_F3.py -np 4 -nt 16
+#last pass:
 
 
 P srcEarth/test/F3/run_F3.py --mover HC4 --lons 0 --lats 45 --scan-n 24 --directions-per-energy 288 --max-trace-time 600 --max-steps 1000000 --boundary-refine-tol-m 10 --unresolved-tol 0.01 --retry-unresolved --dynamic-chunk 1 -np 18
@@ -140,36 +140,36 @@ P srcEarth/test/C14/run_C14.py --check-profile CROSS_SOLVER --mode3d-field-eval 
 last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
 
 
-! C7 requires populated external reference tables and is intentionally disabled
-! in the routine regression list. Generate the three acquisition batches with:
-!   python srcEarth/test/C7/run_C7.py --prepare-reference-requests
-! Primary GeoMagSphere checks:
-!P srcEarth/test/C7/run_C7.py --reference srcEarth/test/C7/reference_C7_geomagsphere_t96.csv --source GEOMAGSPHERE --models T96 --solver GRIDLESS -np 4 -nt 16
-!last pass:
-!P srcEarth/test/C7/run_C7.py --reference srcEarth/test/C7/reference_C7_geomagsphere_t05.csv --source GEOMAGSPHERE --models T05 --solver GRIDLESS -np 4 -nt 16
-!last pass:
-! Secondary IZMIRAN T96 check:
-!P srcEarth/test/C7/run_C7.py --reference srcEarth/test/C7/reference_C7_izmiran_t96.csv --source IZMIRAN --models T96 --solver GRIDLESS -np 4 -nt 16
-!last pass:
-! Gridded cross-check example; --dynamic-chunk 0 resolves to -nt:
-!P srcEarth/test/C7/run_C7.py --reference srcEarth/test/C7/reference_C7_geomagsphere_t96.csv --source GEOMAGSPHERE --models T96 --solver GRIDDED --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 2 --mode3d-mesh-coarsening LINEAR --dynamic-chunk 0 -np 4 -nt 16
-!last pass:
+# C7 requires populated external reference tables and is intentionally disabled
+# in the routine regression list. Generate the three acquisition batches with:
+#   python srcEarth/test/C7/run_C7.py --prepare-reference-requests
+# Primary GeoMagSphere checks:
+#P srcEarth/test/C7/run_C7.py --reference srcEarth/test/C7/reference_C7_geomagsphere_t96.csv --source GEOMAGSPHERE --models T96 --solver GRIDLESS -np 4 -nt 16
+#last pass:
+#P srcEarth/test/C7/run_C7.py --reference srcEarth/test/C7/reference_C7_geomagsphere_t05.csv --source GEOMAGSPHERE --models T05 --solver GRIDLESS -np 4 -nt 16
+#last pass:
+# Secondary IZMIRAN T96 check:
+#P srcEarth/test/C7/run_C7.py --reference srcEarth/test/C7/reference_C7_izmiran_t96.csv --source IZMIRAN --models T96 --solver GRIDLESS -np 4 -nt 16
+#last pass:
+# Gridded cross-check example; --dynamic-chunk 0 resolves to -nt:
+#P srcEarth/test/C7/run_C7.py --reference srcEarth/test/C7/reference_C7_geomagsphere_t96.csv --source GEOMAGSPHERE --models T96 --solver GRIDDED --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 2 --mode3d-mesh-coarsening LINEAR --dynamic-chunk 0 -np 4 -nt 16
+#last pass:
 
-!P srcEarth/test/C7/run_C7_izmiran.py -np 16
-!last pass:
+#P srcEarth/test/C7/run_C7_izmiran.py -np 16
+#last pass:
 
 P srcEarth/test/C7/run_C7_izmiran.py --solver GRIDDED -np 4 -nt 16 -mode3d-mesh-coarsening LINEAR --mode3d-parallel-field-init  
 last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
 
-! C9 PAMELA public-data global-shell validation. Reference/driver checks are
-! inexpensive. The two physical branches are intentionally separate so their
-! last-pass states and runtime failures remain independently visible.
-!P srcEarth/test/C9/run_C9.py --solver GRIDLESS --profile ROUTINE --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 -np 16
-!last pass:
-!P srcEarth/test/C9/run_C9.py --solver GRIDDED --profile ROUTINE --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 2.0 --mode3d-mesh-coarsening LINEAR -np 4 -nt 16 --dynamic-chunk 64 
-!last pass:
-!P srcEarth/test/C9/run_C9.py --solver GRIDDED --profile ROUTINE -np 4 -nt 16 --dynamic-chunk 64 
-!last pass:
+# C9 PAMELA public-data global-shell validation. Reference/driver checks are
+# inexpensive. The two physical branches are intentionally separate so their
+# last-pass states and runtime failures remain independently visible.
+#P srcEarth/test/C9/run_C9.py --solver GRIDLESS --profile ROUTINE --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 -np 16
+#last pass:
+#P srcEarth/test/C9/run_C9.py --solver GRIDDED --profile ROUTINE --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 2.0 --mode3d-mesh-coarsening LINEAR -np 4 -nt 16 --dynamic-chunk 64
+#last pass:
+#P srcEarth/test/C9/run_C9.py --solver GRIDDED --profile ROUTINE -np 4 -nt 16 --dynamic-chunk 64
+#last pass:
 
 P srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable PAMELA_T50 --profile ROUTINE --interval-samples 1 --output-root test_output/C9_full_85 --amps ./amps --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 --access-abs-lat-min-deg 35 --access-abs-lat-max-deg 85 --t50-grid-step-deg 0.25 --t50-min-resolved-longitude-fraction 0.8 --t50-min-edge-margin-deg 1.0 --min-access-state-agreement 0.999 --max-access-unresolved-fraction 0.01 --dynamic-chunk 32 -np 8 -nt 16 --mode3d-parallel-field-init
 last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
@@ -177,33 +177,33 @@ last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
 P srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable PAMELA_T50 --profile ROUTINE --interval-samples 1 --output-root test_output/C9_direct_85 --amps ./amps --shell-lon-res-deg 30 --shell-lat-res-deg 2 --access-abs-lat-min-deg 35 --access-abs-lat-max-deg 85 --t50-grid-step-deg 0.25 --t50-min-resolved-longitude-fraction 0.8 --t50-min-edge-margin-deg 1.0 --dynamic-chunk 32 -np 8 -nt 16 --mode3d-parallel-field-init
 last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
 
-!P ./srcEarth/test/C10/run_C10.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable ACCESS_T50 --profile ROUTINE --interval-samples 1 --output-root test_output/C10_full --amps "${cwd}/amps" --cutoff-scan-n 120 --shell-lon-res-deg 15 --shell-lat-res-deg 2 --access-abs-lat-min-deg 45 --access-abs-lat-max-deg 85 --t50-grid-step-deg 0.25 --t50-min-resolved-profile-fraction 0.66 --t50-min-edge-margin-deg 1.0 --min-access-state-agreement 0.999 --max-access-unresolved-fraction 0.01 --dynamic-chunk 32 -np 8 -nt 16
-!last pass:
+#P ./srcEarth/test/C10/run_C10.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable ACCESS_T50 --profile ROUTINE --interval-samples 1 --output-root test_output/C10_full --amps "${cwd}/amps" --cutoff-scan-n 120 --shell-lon-res-deg 15 --shell-lat-res-deg 2 --access-abs-lat-min-deg 45 --access-abs-lat-max-deg 85 --t50-grid-step-deg 0.25 --t50-min-resolved-profile-fraction 0.66 --t50-min-edge-margin-deg 1.0 --min-access-state-agreement 0.999 --max-access-unresolved-fraction 0.01 --dynamic-chunk 32 -np 8 -nt 16
+#last pass:
 
 P ./srcEarth/test/C10/run_C10.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable ACCESS_T50 --profile ROUTINE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --output-root test_output/C10_direct --amps ./amps --shell-lon-res-deg 15 --shell-lat-res-deg 2 --access-abs-lat-min-deg 45 --access-abs-lat-max-deg 85 --t50-grid-step-deg 0.25 --t50-min-resolved-profile-fraction 0.66 --t50-min-edge-margin-deg 1.0 --dynamic-chunk 32 -np 8 -nt 16 --mode3d-parallel-field-init --reference srcEarth/test/C10/reference_C10_poes_meped_boundary.csv.gz
 last pass:
 
-!P srcEarth/test/C19/run_C19.py --profile ROUTINE --solver GRIDDED --models T05 --driver ./srcEarth/test/C19/data/ts05_driver_may2012.txt --amps ./amps -np 4 -nt 16 --mode3d-parallel-field-init
-!last pass:
+#P srcEarth/test/C19/run_C19.py --profile ROUTINE --solver GRIDDED --models T05 --driver ./srcEarth/test/C19/data/ts05_driver_may2012.txt --amps ./amps -np 4 -nt 16 --mode3d-parallel-field-init
+#last pass:
 
 P srcEarth/test/C18/run_C18.py --profile ROUTINE --amps ./amps -np 4
 last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
 
-!P srcEarth/test/C19/run_C19.py --profile SMOKE --solver GRIDDED --models T05 --driver ./srcEarth/test/C19/data/ts05_driver_may2012.txt --mode3d-parallel-field-init --cutoff-search DIRECT_ACCESS --amps ./amps -np 4 -nt 16 --keep
-!last pass:
+#P srcEarth/test/C19/run_C19.py --profile SMOKE --solver GRIDDED --models T05 --driver ./srcEarth/test/C19/data/ts05_driver_may2012.txt --mode3d-parallel-field-init --cutoff-search DIRECT_ACCESS --amps ./amps -np 4 -nt 16 --keep
+#last pass:
 
-!P srcEarth/test/C19/run_C19.py --profile SMOKE --solver GRIDDED --models T05 --driver ./srcEarth/test/C19/data/ts05_driver_may2012.txt --mode3d-parallel-field-init --cutoff-search PENUMBRA_SCAN --amps ./amps -np 4 -nt 16 --keep
-!last pass:
+#P srcEarth/test/C19/run_C19.py --profile SMOKE --solver GRIDDED --models T05 --driver ./srcEarth/test/C19/data/ts05_driver_may2012.txt --mode3d-parallel-field-init --cutoff-search PENUMBRA_SCAN --amps ./amps -np 4 -nt 16 --keep
+#last pass:
 
-! The batched gridded C19 mesh has a delayed peak-memory footprint. Isolate its
-! execution, require runner provenance, and bound 4*(8+caller)=36 field-init
-! participants to the validation cpuset without changing any scientific gate.
+# The batched gridded C19 mesh has a delayed peak-memory footprint. Isolate its
+# execution, require runner provenance, and bound 4*(8+caller)=36 field-init
+# participants to the validation cpuset without changing any scientific gate.
 ! runner: exclusive
 P srcEarth/test/C19/run_C19.py --profile SMOKE --solver GRIDDED --models T05 --cutoff-search DIRECT_ACCESS --gridded-batch AUTO --mode3d-parallel-field-init --driver srcEarth/test/C19/data/ts05_driver_may2012.txt --amps ./amps -np 4 -nt 8 --access-energy-points 24 --access-angular-points 144 --dynamic-chunk 32 --max-trace-time 300 --unresolved-extension-passes 2 --unresolved-extension-factor 2.0 --max-trace-distance-re 0 --require-runner-exclusive
 last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
 
-!rerun the runner without running the code
-!srcEarth/test/C19/run_C19.py --profile SMOKE --solver GRIDDED --models T05 --cutoff-search DIRECT_ACCESS --gridded-batch AUTO --mode3d-parallel-field-init --driver srcEarth/test/C19/data/ts05_driver_may2012.txt --amps ./amps -np 8 -nt 33 --access-energy-points 24 --access-angular-points 144 --dynamic-chunk 32 --mode3d-parallel-field-init --max-trace-time 300 --unresolved-extension-passes 2 --unresolved-extension-factor 2.0 --max-trace-distance-re 0 --skip-run --publication GOES13
+#rerun the runner without running the code
+#srcEarth/test/C19/run_C19.py --profile SMOKE --solver GRIDDED --models T05 --cutoff-search DIRECT_ACCESS --gridded-batch AUTO --mode3d-parallel-field-init --driver srcEarth/test/C19/data/ts05_driver_may2012.txt --amps ./amps -np 8 -nt 33 --access-energy-points 24 --access-angular-points 144 --dynamic-chunk 32 --mode3d-parallel-field-init --max-trace-time 300 --unresolved-extension-passes 2 --unresolved-extension-factor 2.0 --max-trace-distance-re 0 --skip-run --publication GOES13
 
 P srcEarth/test/C17/run_C17.py --amps ./amps --movers BORIS -np 4 -nt 16
 last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
@@ -223,30 +223,57 @@ last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
 P srcEarth/test/C8/run_C8.py --profile ROUTINE --amps ./amps -np 4 -nt 16
 last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
 
-! SA01 QUICK is the repository's executable observational-workflow regression.
-! It performs both RBSP branches, evaluates every unchanged comparison gate, and
-! writes PNG/EPS plots into a unique evidence directory. WORKFLOW controls only the
-! process exit code: comparison_summary.json and qualification_summary.json retain
-! the actual scientific PASS/FAIL/INCOMPLETE result. The external package path is
-! the authoritative extracted SA01 dataset documented by srcEarth/test/SA01.
+# SA01 QUICK is the repository's executable observational-workflow regression.
+# It performs both RBSP branches, evaluates every unchanged comparison gate, and
+# writes PNG/EPS plots into a unique evidence directory. WORKFLOW controls only the
+# process exit code: comparison_summary.json and qualification_summary.json retain
+# the actual scientific PASS/FAIL/INCOMPLETE result. The external package path is
+# the authoritative extracted SA01 dataset documented by srcEarth/test/SA01.
 ! runner: exclusive
 P python3 srcEarth/test/SA01/run_SA01.py --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926 --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/SA01/quick_test_runs --profile QUICK --solver GRIDDED --mpi-ranks 4 --threads 6 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW
 last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
 
-! SA02 QUICK is the independent June 2015 storm-time observational regression.
-! It executes both eligible RBSP branches, preserves every fixed comparison gate,
-! and writes PNG/EPS plots into a unique SA02 evidence directory. WORKFLOW governs
-! process success only; the comparison and qualification summaries retain the actual
-! scientific PASS/FAIL/INCOMPLETE result documented by srcEarth/test/SA02.
+# SA02 QUICK is the independent June 2015 storm-time observational regression.
+# It executes both eligible RBSP branches, preserves every fixed comparison gate,
+# and writes PNG/EPS plots into a unique SA02 evidence directory. WORKFLOW governs
+# process success only; the comparison and qualification summaries retain the actual
+# scientific PASS/FAIL/INCOMPLETE result documented by srcEarth/test/SA02.
 ! runner: exclusive
 P python3 srcEarth/test/SA02/run_SA02.py --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926 --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/SA02/quick_test_runs --profile QUICK --solver GRIDDED --mpi-ranks 4 --threads 6 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW
 last pass: e566c09f5f89f3e5c70991600cbd003ba62385e9
 
-! SA03 QUICK is the independent September 2017 storm-time observational regression.
-! Frozen source-quality evidence permits RBSP-B only; RBSP-A remains archived audit
-! data and is never promoted into a physical or comparison branch. The workflow uses
-! GRIDDED/HC4, preserves every scientific gate, and writes PNG/EPS evidence below a
-! unique campaign root. WORKFLOW never changes the recorded qualification result.
+# SA03 QUICK is the independent September 2017 storm-time observational regression.
+# Frozen source-quality evidence permits RBSP-B only; RBSP-A remains archived audit
+# data and is never promoted into a physical or comparison branch. The workflow uses
+# GRIDDED/HC4, preserves every scientific gate, and writes PNG/EPS evidence below a
+# unique campaign root. WORKFLOW never changes the recorded qualification result.
 ! runner: exclusive
 P python3 srcEarth/test/SA03/run_SA03.py --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926/model_inputs --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/SA03/quick_test_runs --profile QUICK --solver GRIDDED --mpi-ranks 4 --threads 6 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW
 last pass:
+
+# SA04 QUICK is the independent GLE72 frozen-holdout observational regression.
+# Frozen provider quality permits RBSP-B only; RBSP-A remains hash-validated audit
+# data. The supplied model_inputs/SA04 directory locates the package, but its older
+# GRIDLESS deck is never executed. The workflow regenerates GRIDDED/HC4 inputs,
+# preserves every scientific gate, and writes PNG/EPS evidence to a unique root.
+#! runner: exclusive
+#P python3 srcEarth/test/SA04/run_SA04.py --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926/model_inputs/SA04 --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/SA04/quick_test_runs --profile QUICK --solver GRIDDED --mpi-ranks 4 --threads 6 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW
+#last pass:
+
+# MMS01 QUICK validates local MMS1/HPCA H+ product calculations without inventing a
+# boundary-to-MMS transport model. It authenticates the frozen CDF/documentation,
+# evaluates the predeclared first/middle/last full-sky distributions through native
+# AMPS numerical kernels, applies strict completeness/numerical gates, and writes
+# PNG/EPS comparison evidence. Density and energy-integrated flux remain excluded
+# because the required flight-model velocity-bin widths are not in the data bundle.
+#P python3 -B srcEarth/test/MMS01/run_MMS01.py --data-root /data/vtenishe/GEO/observational_validation_datasets_20261013 --amps-root /data/vtenishe/GEO/AMPS --output-parent test_output/MMS01/quick_test_runs --profile QUICK --formats png eps
+#last pass:
+
+# GOES01 QUICK is an end-to-end high-energy geospace transport validation. It uses
+# authenticated SOHO/ERNE boundary intensity, T05/Qin-Denton drivers, exact GOES-16
+# ephemeris, and quality-qualified two-head-consistent SGPS P8A observations. The
+# GRIDDED/HC4 run writes native evidence and PNG/EPS comparisons to a unique root.
+# WORKFLOW preserves a scientifically meaningful FAIL without relabeling it PASS.
+#! runner: exclusive
+#P python3 -B srcEarth/test/GOES01/run_GOES01.py --data-root /data/vtenishe/GEO/observational_validation_datasets_20261013 --model-data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926/model_inputs/SA04 --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/GOES01/quick_test_runs --profile QUICK --mpi-ranks 4 --threads 6 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW
+#last pass:

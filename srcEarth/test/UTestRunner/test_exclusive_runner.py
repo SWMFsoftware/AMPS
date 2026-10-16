@@ -64,7 +64,7 @@ class ExclusiveParserTests(unittest.TestCase):
         tests = parse_text(
             "! runner: exclusive\n"
             "for $m={RK4,HC4}\n"
-            "! comments remain legal between a loop and its command\n"
+            "# comments remain legal between a loop and its command\n"
             "{P,F} command --mover $m\n"
             "last pass: {rk4-pass,hc4-pass}\n"
         )
@@ -85,9 +85,21 @@ class ExclusiveParserTests(unittest.TestCase):
         self.assertTrue(all(test.exclusive for test in tests))
 
     def test_ordinary_entry_remains_nonexclusive(self):
-        tests = parse_text("! ordinary comment\nP command --value 1\n")
+        tests = parse_text("  # ordinary comment\nP command --value 1\n")
         self.assertEqual(len(tests), 1)
         self.assertFalse(tests[0].exclusive)
+
+    def test_hash_comments_can_disable_an_entire_exclusive_entry(self):
+        tests = parse_text(
+            "#! runner: exclusive\n"
+            "#P disabled-command\n"
+            "#last pass: disabled-commit\n"
+            "P active-command\n"
+        )
+        self.assertEqual(len(tests), 1)
+        self.assertEqual(tests[0].command, "active-command")
+        self.assertFalse(tests[0].exclusive)
+        self.assertIsNone(tests[0].last_pass)
 
     def test_invalid_directives_fail_loudly(self):
         with self.assertRaisesRegex(ValueError, "unsupported runner directive"):
@@ -97,9 +109,11 @@ class ExclusiveParserTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "comment separates"):
             parse_text(
                 "! runner: exclusive\n"
-                "! this must not silently retarget the directive\n"
+                "# this must not silently retarget the directive\n"
                 "P command\n"
             )
+        with self.assertRaisesRegex(ValueError, "'!' is reserved"):
+            parse_text("! legacy ordinary comment\nP command\n")
 
     def test_last_pass_update_retains_directive_and_command(self):
         source = (
@@ -133,6 +147,24 @@ class ExclusiveParserTests(unittest.TestCase):
                 path.read_text(encoding="utf-8"),
                 source.replace("old-commit", "new-commit"),
             )
+
+
+class HelpTextTests(unittest.TestCase):
+    """The command-line help documents the non-ambiguous comment syntax."""
+
+    def test_help_documents_hash_comments_and_reserved_bang(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            with self.assertRaises(SystemExit) as raised:
+                runner.main(["--help"])
+
+        self.assertEqual(raised.exception.code, 0)
+        help_text = output.getvalue()
+        self.assertIn("Comment syntax in the list file:", help_text)
+        self.assertIn("# ordinary comment", help_text)
+        self.assertIn("#! runner: exclusive", help_text)
+        self.assertIn("'!' is", help_text)
+        self.assertIn("reserved for runner directives", help_text)
 
 
 class ExclusiveSchedulerTests(unittest.TestCase):

@@ -1,0 +1,5 @@
+# NumPy is used for fixed-shape numerical arrays and comparison statistics.
+numpy>=1.24
+# Matplotlib is required only for PNG/EPS evidence generation.
+matplotlib>=3.1
+# NetCDF is read through the system libnetcdf runtime; no Python netCDF wheel is used.

@@ -1,0 +1,10 @@
+! GOES01 implementation checks are performed by the authenticated PREPARE stage.
+! It exercises the actual NOAA NetCDF schema, source hashes, unit checks, midpoint
+! ephemeris join, observation-only selection, and AMPS deck rendering without an
+! expensive trajectory launch. The end-to-end QUICK campaign is in srcEarth/test/list.
+P python3 -B srcEarth/test/GOES01/run_GOES01.py --data-root /data/vtenishe/GEO/observational_validation_datasets_20261013 --model-data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926/model_inputs/SA04 --amps-root /data/vtenishe/GEO/AMPS --output-parent test_output/GOES01/preparation_checks --profile QUICK --stage PREPARE
+last pass:
+
+! GOES01 zero-preserving spectral folding and metric-denominator regressions.
+P python3 -B -m unittest discover -s srcEarth/test/GOES01/tests -v
+last pass:

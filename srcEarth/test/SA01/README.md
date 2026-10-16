@@ -36,6 +36,65 @@ at least 12 matched epochs per product/spacecraft, unresolved fraction at most
 
 ## Commands
 
+### Evidence required before changing the low-density reference
+
+The October 2026 SA01--SA03 audit found that the packaged preprocessing averages
+only strictly positive REPT FPSA samples. Including zeros produces substantially
+different low-density means, but that sensitivity calculation is not an approved
+reference correction. All 22 inspected SA01--SA03 REPT CDFs specify
+`FPSA VALIDMIN=0.001`, whereas the public Release-3 SPASE descriptions specify
+zero for [RBSP-A](https://spase-metadata.org/NASA/NumericalData/RBSP/A/ECT/REPT/L2/Sectors/Release03/PT4.2S)
+and [RBSP-B](https://spase-metadata.org/NASA/NumericalData/RBSP/B/ECT/REPT/L2/Sectors/Release03/PT4.2S).
+Neither metadata source alone establishes whether each zero is a valid zero-count
+exposure, a censored result, or an invalid observation. Do not replace `>0` with
+`>=0` in production until release-specific processing evidence resolves this.
+
+The inspected files contain spin/sector fluxes but no raw event counts, detector
+live-time series, PHA events, or spacecraft attitude rotations. Their `Cal_Tag`
+is `00` and `Cal_UTC` is `0000-00-00T00:00:00.00000`; these fields cannot establish
+the actual calibration configuration. Nominal energy/efficiency arrays and sector
+angles are not a calibrated multidimensional response or an inertial look direction.
+The package's synthetic GOES response example is not a REPT calibration asset.
+
+For a PHA-based cross-check, [Selesnick et al. (2018), sections 2--4](https://doi.org/10.1002/2017JA024661)
+identify R1 trigger-rate normalization and energy/angular response modeling as
+necessary ingredients. Their January 8, 2014 example is relevant to SA01, but its
+custom PHA channels and day-averaged selection cannot replace this test's seven
+channels and five-minute population without a separately reviewed operator.
+
+Until the missing semantics/calibration are verified, preserve the frozen baseline,
+its scientific FAILs, every channel, and all existing numerical/observational gates.
+Do not add a fitted floor, assume equal live times, invent an angular response, or
+borrow electron-channel corrections for protons. Any demonstrated correction must
+be a separately versioned reference with retained original evidence. The diagnostic
+inventory and its commented reproduction script are in
+`test_output/sa_density_audit_20261013/{instrument_inventory.json,audit_instrument_inventory.py}`;
+the progress journal records checked sources, failed retrievals, and the stop point.
+
+The next external action is prepared as
+`test_output/sa_density_audit_20261013/provider_request.txt` (draft, not sent).
+Its companion `provider_request_evidence.json` identifies exact zero and positive
+CDF records in the same five-minute bins for all five eligible SA01--SA03
+spacecraft branches. It asks for zero semantics, averaging/exposure conventions,
+calibration provenance, and response/PHA auxiliary products without suggesting a
+desired answer. Verify the attachment directly against the immutable package with:
+
+```bash
+# cdflib is required only for this raw-file diagnostic, not normal SA01 execution.
+# This session's installation is isolated in /tmp and may need reinstalling later.
+PYTHONPATH=/tmp/sa_density_audit_cdflib python3 -B \
+  test_output/sa_density_audit_20261013/verify_provider_request.py \
+  --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926 \
+  --evidence test_output/sa_density_audit_20261013/provider_request_evidence.json
+```
+
+Verification authenticates examples only; it cannot clear the scientific blocker.
+No provider was contacted automatically. Preserve the provider's actual response
+and referenced processing/calibration version before implementing a correction.
+Until then, no zero-inclusive reference or presumed response is used by the runners.
+
+### Standard invocation
+
 From the repository root, a full STANDARD run is:
 
 ```bash
