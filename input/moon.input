@@ -156,7 +156,11 @@ ReferenceGroundBasedObservationTime= \\
 
 ! define _EXOSPHERE_SOURCE__SOLAR_WIND_SPUTTERING_            _EXOSPHERE_SOURCE__ON_
 ! define _EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_     _EXOSPHERE_SOURCE__ON_
-! define _EXOSPHERE_SOURCE__THERMAL_DESORPTION_               _EXOSPHERE_SOURCE__ON_
+! Compile the production thermal-desorption dispatch for srcMoon M2.  Its
+! legacy coefficients remain zero and its runtime callback remains NULL
+! unless an explicit M2-enabled .in receipt installs species kinetics, so
+! disabled M0/M1 runs retain a zero thermal source.
+  define _EXOSPHERE_SOURCE__THERMAL_DESORPTION_               _EXOSPHERE_SOURCE__ON_
 ! define _EXOSPHERE_SOURCE__IMPACT_VAPORIZATION_              _EXOSPHERE_SOURCE__ON_
 
 !  SimulationStartTime=2008-12-30T00:00:00 
@@ -196,6 +200,18 @@ ReferenceGroundBasedObservationTime= \\
     GenerateParticleProperties=Exosphere::SourceProcesses::ImpactVaporization::GenerateParticleProperties \\ !!Moon::GenerateParticlePropertiesBjorn !!Moon::GenerateParticlePropertiesBjorn  !!!Exosphere::SourceProcesses::ImpactVaporization::GenerateParticleProperties \\
     ModifySurfaceSpeciesAbundance=false !!!true,false 
 !   InitSurfaceSourceDistribution=SolarWindSputtering::SurfaceInjectionDistribution.Init
+
+  ! Optional 40Ar build hook.  It is off in the frozen Na-only baseline so it
+  ! cannot change source IDs, output columns, or test_Moon reference bytes.
+  ! To execute an Ar campaign, configure SpeciesList=Na,Ar, turn this block on,
+  ! and set argon_source_enabled=true in the runtime .in receipt.  The runtime
+  ! adapter rejects missing Ar and unsupported K-map geography explicitly.
+  Source:UserDefined=off \\ !on,off
+    SourceProcessCode=RadiogenicArgon \\
+    SourceRate=Moon::Species::Argon::GetTotalProductionRate \\
+    GenerateParticleProperties=Moon::Species::Argon::GenerateParticleProperties \\
+    ModifySurfaceSpeciesAbundance=false \\
+    InitSurfaceSourceDistribution=Moon::Species::Argon::InitializeSurfaceSourceDistribution
 
 
  

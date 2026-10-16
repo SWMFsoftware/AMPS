@@ -6,37 +6,160 @@ spice_path = /home/vtenishe/SPICE
 surface_geometry = lola
 surface_mesh_resolution_m = 100000
 
-! M1 volume and boundary-adjacent AMR controls.  The 40/20/10/5 km I11
-! campaign derives archived receipts and scales every cell-size target
-! consistently.  The angular table is piecewise linear in LSO solar zenith
+! Volume and boundary-adjacent AMR controls. The frozen FULL I11 campaign
+! uses m1_sphere.in, not this memory-reduced custom receipt.
+! The angular table is piecewise linear in LSO solar zenith
 ! angle; the terminator band uses the
 ! table value at 90 degrees, and polar latitude is evaluated in
 ! MOON_ME_DE421.  The finest applicable target controls overlapping regions.
-mesh_profile = full
-mesh_near_surface_cell_size_m = 10000
+! 200 GB memory-budget candidate: near/angular/polar/outer targets are six
+! times FULL; the fixed far target is 480 km for the approved coarse level.
+! Surface triangulation and thermal discretization are unchanged.
+! This custom mesh needs its own convergence evidence; it is not a FULL pass.
+mesh_profile = custom
+mesh_near_surface_cell_size_m = 60000
 mesh_near_surface_extent_m = 200000
-mesh_far_field_cell_size_m = 40000
+! Matches the fixed far-field target of the approved convergence sequence.
+mesh_far_field_cell_size_m = 480000
 mesh_far_field_extent_m = 10000000
-mesh_outer_cell_size_m = 17371000
+mesh_outer_cell_size_m = 104226000
 ! This controls full-volume mesh.dat/tetra_mesh*.dat diagnostics, not the
 ! requested LOLA surface_tecplot_file or the internal MPI AMR-tree exchange.
 mesh_output_tecplot = false
-mesh_angular_resolution_m_by_sza = 0:10000,30:10000,60:5000,90:5000,120:10000,180:10000
+mesh_angular_resolution_m_by_sza = 0:60000,30:60000,60:30000,90:30000,120:60000,180:60000
 mesh_terminator_half_width_deg = 15
 mesh_polar_cap_start_latitude_deg = 75
-mesh_polar_resolution_m = 5000
+mesh_polar_resolution_m = 30000
 lola_product_id = LDEM_4
 lola_image_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.IMG
 lola_label_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.LBL
 surface_cea_file = ../../test_output/srcMoon/surface/lola_surface.cea
 surface_tecplot_file = ../../test_output/srcMoon/surface/lola_surface.dat
+m2_environment = enabled
+
+! M2 terrain/thermal/surface-state receipt. These are production inputs, not
+! fitted validation values. The thermophysical constants reproduce Table A1
+! of Hayne et al. (2017, doi:10.1002/2017JE005387). The numerical layer/time
+! controls remain adjustable and require U11/I17 convergence evidence.
+surface_temperature_mode = thermal-model
+diviner_temperature_table_file = none
+! I17's linked runner replaces these two values with a reproducibly processed
+! PDS4 RDR history and its pre-holdout frozen selection contract.  They remain
+! none in a general production run so observations cannot silently become a
+! thermal boundary condition or an unrecorded calibration input.
+diviner_eclipse_history_file = none
+diviner_eclipse_selection_contract_file = none
+illumination_ray_origin_offset_m = 0.001
+surface_collision_maximum_segment_length_m = 1000.0
+surface_collision_time_tolerance_s = 1.0e-8
+surface_collision_distance_tolerance_m = 1.0e-4
+surface_collision_maximum_iterations = 80
+thermal_solar_constant_w_m2 = 1361
+thermal_infrared_emissivity = 0.95
+thermal_normal_bond_albedo = 0.12
+thermal_albedo_coefficient_a = 0.06
+thermal_albedo_coefficient_b = 0.25
+thermal_surface_density_kg_m3 = 1100
+thermal_deep_density_kg_m3 = 1800
+thermal_density_scale_height_m = 0.06
+thermal_surface_conductivity_w_m_k = 0.00074
+thermal_deep_conductivity_w_m_k = 0.0034
+thermal_radiative_conductivity_parameter = 2.7
+thermal_heat_capacity_coefficients_j_kg_k = -3.6125,2.7431,0.0023616,-0.000012340,0.0000000089093
+thermal_geothermal_flux_w_m2 = 0.018
+thermal_bottom_depth_m = 2.0
+thermal_layer_count = 80
+thermal_time_step_s = 300
+thermal_initial_temperature_k = 250
+thermal_nonlinear_tolerance_k = 0.001
+thermal_nonlinear_maximum_iterations = 50
+
+! Approved first-comparison eclipse forcing.  Apparent Sun and opaque-Earth
+! discs are circular and the solar disc has uniform radiance.  The radii are
+! explicit SI receipt values: the IAU 2015 nominal solar radius and the AMPS
+! mean solid-Earth radius.  No solar limb darkening and no refracted,
+! scattered, or transmitted terrestrial-atmosphere light are calculated.
+! Consequently an I17 plot made with this receipt is EXPERIMENTAL / NOT
+! VALIDATED even when its numerical gates pass.
+thermal_eclipse_direct_irradiance_model = apparent-disc-overlap
+thermal_solar_disc_radiance_model = uniform
+thermal_earth_atmosphere_transmission_model = disabled
+thermal_solar_disc_radius_m = 695700000
+thermal_opaque_earth_radius_m = 6371000
+
+! Observation-free I17 initialization.  The interval ends at the first frozen
+! June training bin and spans the explicit mean synodic-month duration
+! 2,551,442.976 s.  Replaying this interval is a declared periodic-forcing
+! approximation: real successive lunations are not identical.  Diviner values
+! are never used to initialize the state.  Convergence requires every surface
+! and subsurface node to change by at most 0.01 K and every whole-column
+! sensible enthalpy to change by at most 10,000 J m^-2 between cycle ends.
+! These are numerical initialization tolerances, not observational acceptance
+! limits, and I17 must retain them unchanged during June qualification and the
+! untouched December hold-out run.
+thermal_spinup_cycle_start_utc = 2011-05-17T04:05:57.024Z
+thermal_spinup_cycle_end_utc = 2011-06-15T16:50:00.000Z
+thermal_spinup_temperature_tolerance_k = 0.01
+thermal_spinup_energy_tolerance_j_m2 = 10000
+
+! Na residence parameters follow Sarantos and Tsavachidis (2020,
+! doi:10.1029/2020GL088930). The sticking nodes preserve the digitization of
+! Fig. 3 in Tenishev et al. (2013), which is adapted from Yakshinskiy and
+! Madey (2005). The immediate non-sticking speed uses Tenishev et al. Eq. 14:
+! vf=sqrt(omega*vt^2+(1-omega)*vi^2), with their evaluated omega=0.2.
+sodium_activation_energy_ev = 1.85
+sodium_attempt_frequency_hz = 10000000000000
+sodium_sticking_model = temperature-table
+sodium_sticking_probability_by_temperature_k = 100:0.99830,105:0.96768,110.00002:0.94512,114.99999:0.92417,119.99999:0.90322,125:0.88065,130:0.86293,135:0.84681,140:0.82586,145:0.80813,150:0.78718,154.99998:0.76623,160:0.75011,165:0.73077,170:0.71305,175:0.69371,179.99998:0.67759,184.99998:0.65986,189.99998:0.64375,195:0.62763,200:0.61151,205:0.59701,210.00002:0.57928,214.99998:0.56639,220:0.55188,225:0.53899,229.99998:0.52287,235:0.51159,240:0.49870,245:0.48903,249.99997:0.47936,255:0.47130,260:0.46325,265:0.45035,270:0.43907,275:0.42618,280:0.41651,285:0.40523,290:0.39717,295:0.38911,300:0.38266,305:0.36977,309.99997:0.35688,315:0.34882,319.99997:0.33915,325:0.33432,329.99997:0.32465,334.99997:0.31659,340:0.31014,345.00003:0.30370,350:0.29564,354.99997:0.28919,360:0.28274,365:0.27791,370.00003:0.27146,375:0.26502,379.99997:0.26018,384.99997:0.25535,390:0.25051,395.00003:0.24568,400:0.24084,405:0.23762,409.99997:0.23278,414.99997:0.22956,420:0.22473,425:0.22150,430:0.21828,435.00003:0.21506,440:0.21022,444.99997:0.20700,449.99994:0.20377,454.99997:0.20377,460:0.20055,465:0.19894,470:0.19572,475:0.19411,479.99997:0.19088,485:0.19088,490:0.18766,494.99997:0.18605
+sodium_accommodation_speed_model = kinetic-energy
+sodium_accommodation_coefficient = 0.2
+sodium_surface_interaction_reference = "Tenishev_et_al_2013_doi_10.1016/j.icarus.2013.08.021_Eq14_Fig3"
+
+! Ar uses the Kegerreis et al. (2017, doi:10.1002/2017JE005352)
+! modified-Arrhenius residence law and its explicitly model-dependent
+! 28 kJ/mol value. Unity sticking makes immediate scattering unreachable;
+! the full-thermal energy law is nevertheless declared for a complete receipt.
+argon_desorption_energy_j_mol = 28000
+argon_sticking_model = constant
+argon_sticking_probability_by_temperature_k = 1:1.0,1000:1.0
+argon_accommodation_speed_model = kinetic-energy
+argon_accommodation_coefficient = 1.0
+argon_surface_interaction_reference = "Kegerreis_et_al_2017_doi_10.1002/2017JE005352"
+
+! Continuous radiogenic 40Ar enters through a uniform-global lower-bound
+! Killen (2002) case. Killen's 990--1448 atoms cm^-2 s^-1 diffusion results
+! correspond to about 3.8--5.5e20 atoms s^-1 globally; 3.8e20 is selected and
+! labeled as the lower bound, not as a fitted or assumed midpoint. Kegerreis
+! et al. (2017) use a continuous source and a local-temperature Maxwell-flux
+! launch. A K-weighted model is intentionally unavailable: local D10 is a
+! regional SPA map with incomplete QA and cannot define a global source.
+! Injection remains explicitly disabled in the Na-only M0/M1 executable. An
+! Ar-enabled build may change this one switch only after enabling the dedicated
+! RadiogenicArgon Config.pl source block documented in the examples README.
+argon_source_enabled = false
+argon_source_spatial_model = uniform-global
+argon_source_rate_atoms_s = 3.8e20
+argon_source_time_model = continuous
+argon_source_map_file = none
+argon_source_reference = "Killen_2002_doi_10.1111/j.1945-5100.2002.tb00891.x_lower_bound"
+! Available sources do not supply an authoritative ion return/neutralization
+! branching table. M2 therefore refuses to apply neutral laws to ions.
+ion_surface_interaction_mode = unconfigured
+
+! One synodic rotation is an explicit reporting timescale, not an irreversible
+! sink threshold. The continuous residence law remains active on both sides of
+! this classification and releases stored atoms whenever the surface warms.
+cold_trap_retention_timescale_s = 2550240
+surface_inventory_initial_state = zero
+surface_inventory_checkpoint_file = ../../test_output/srcMoon/M2/surface_inventory.chk
+surface_inventory_checkpoint_interval_s = 86400
 
 ! Run-wide epoch and M1 common comparison grid.  All altitudes are metres
 ! above the AMPS 1737.10 km reference sphere, not above the LOLA datum or local
 ! terrain; no value is interpreted as kilometres or lunar radii.  The far
 ! region uses eight logarithmic points per decade.
 simulation_start_utc = 2009-01-24T00:00:00
-simulation_environment_mode = frozen
+simulation_environment_mode = evolving
 random_seed = 731993
 profile_altitude_near_maximum_m = 200000
 profile_altitude_near_step_m = 5000

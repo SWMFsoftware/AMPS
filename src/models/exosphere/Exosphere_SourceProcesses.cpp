@@ -12,6 +12,13 @@
 #include "pic.h"
 #include "Exosphere.h"
 
+// NULL is the ABI-stable legacy behavior.  A production application installs
+// this only after its runtime surface-physics receipt has been validated.
+Exosphere::SourceProcesses::ThermalDesorption::
+    fRuntimeSurfaceElementProductionRate
+    Exosphere::SourceProcesses::ThermalDesorption::
+        RuntimeSurfaceElementProductionRate=NULL;
+
 //init the model
 void Exosphere::SourceProcesses::Init() {
 #if _EXOSPHERE_SOURCE__SOLAR_WIND_SPUTTERING_ == _EXOSPHERE_SOURCE__ON_

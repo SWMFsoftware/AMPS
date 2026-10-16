@@ -7,6 +7,7 @@
 #include "../src/general/input/amps_input.h"
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <cctype>
 #include <cmath>
@@ -86,6 +87,20 @@ bool ParsePositiveFinite(const std::string& text, double* result) {
   return true;
 }
 
+// Source-rate receipts must never interpret a negative number as a physical
+// sink. Keep nonnegative parsing separate from the generic positive parser;
+// the model-specific block below applies the stricter positive-rate rule.
+bool ParseNonnegativeFinite(const std::string& text, double* result) {
+  const std::string scalar = Unquote(Trim(text));
+  errno = 0;
+  char* end = nullptr;
+  const double value = std::strtod(scalar.c_str(), &end);
+  if (errno == ERANGE || end == scalar.c_str() || *end != '\0' ||
+      !std::isfinite(value) || value < 0.0) return false;
+  *result = value;
+  return true;
+}
+
 // Counts such as logarithmic points per decade must be exact positive base-10
 // integers.  Rejecting a floating representation ("8.0") keeps receipts
 // canonical and prevents an unnoticed truncation from changing the grid.
@@ -136,6 +151,60 @@ bool ParseSolarZenithAngles(const std::string& text,
   }
   if (values.empty()) return false;
   *result = std::move(values);
+  return true;
+}
+
+// Generic comma-separated finite scalar list used for the five heat-capacity
+// polynomial coefficients.  Unlike a spatial grid, coefficients may be zero
+// or negative, so this parser deliberately imposes no sign/order policy.
+bool ParseFiniteList(const std::string& text, std::vector<double>* result) {
+  std::stringstream stream(Unquote(Trim(text)));
+  std::vector<double> values;
+  std::string field;
+  while (std::getline(stream,field,',')) {
+    const std::string scalar=Trim(field);
+    errno=0;
+    char* end=nullptr;
+    const double value=std::strtod(scalar.c_str(),&end);
+    if (errno==ERANGE || end==scalar.c_str() || *end!='\0' ||
+        !std::isfinite(value)) return false;
+    values.push_back(value);
+  }
+  if (values.empty()) return false;
+  *result=std::move(values);
+  return true;
+}
+
+// Parse a temperature:probability table.  Temperatures are strictly
+// increasing and positive; probabilities are bounded.  Keeping pairs in one
+// field prevents independently edited lists from assigning a probability to
+// the wrong laboratory temperature.
+bool ParseProbabilityTable(const std::string& text,
+                           std::vector<double>* temperatureK,
+                           std::vector<double>* probability) {
+  std::stringstream stream(Unquote(Trim(text)));
+  std::vector<double> temperatures,probabilities;
+  std::string field;
+  while (std::getline(stream,field,',')) {
+    const std::size_t colon=field.find(':');
+    if (colon==std::string::npos || field.find(':',colon+1)!=std::string::npos)
+      return false;
+    double temperature=0.0,value=0.0;
+    if (!ParsePositiveFinite(field.substr(0,colon),&temperature)) return false;
+    const std::string valueText=Trim(field.substr(colon+1));
+    errno=0;
+    char* end=nullptr;
+    value=std::strtod(valueText.c_str(),&end);
+    if (errno==ERANGE || end==valueText.c_str() || *end!='\0' ||
+        !std::isfinite(value) || value<0.0 || value>1.0 ||
+        (!temperatures.empty() && temperature<=temperatures.back()))
+      return false;
+    temperatures.push_back(temperature);
+    probabilities.push_back(value);
+  }
+  if (temperatures.size()<2) return false;
+  *temperatureK=std::move(temperatures);
+  *probability=std::move(probabilities);
   return true;
 }
 
@@ -417,6 +486,7 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
       "mesh_polar_cap_start_latitude_deg", "mesh_polar_resolution_m",
       "lola_product_id", "lola_image_file", "lola_label_file",
       "surface_cea_file", "surface_tecplot_file",
+      "m2_environment",
       "simulation_start_utc", "simulation_environment_mode",
       "random_seed",
       "profile_altitude_near_maximum_m", "profile_altitude_near_step_m",
@@ -433,6 +503,54 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
       "tail_map_display_orientation", "tail_map_half_width_deg",
       "tail_beam_diameter_deg", "tail_exposure_duration_s",
       "tail_beam_response", "tail_temporal_operator"};
+  const char* m2Required[] = {
+      "surface_temperature_mode", "diviner_temperature_table_file",
+      "diviner_eclipse_history_file",
+      "diviner_eclipse_selection_contract_file",
+      "illumination_ray_origin_offset_m",
+      "surface_collision_maximum_segment_length_m",
+      "surface_collision_time_tolerance_s",
+      "surface_collision_distance_tolerance_m",
+      "surface_collision_maximum_iterations",
+      "thermal_solar_constant_w_m2",
+      "thermal_infrared_emissivity", "thermal_normal_bond_albedo",
+      "thermal_albedo_coefficient_a", "thermal_albedo_coefficient_b",
+      "thermal_surface_density_kg_m3", "thermal_deep_density_kg_m3",
+      "thermal_density_scale_height_m",
+      "thermal_surface_conductivity_w_m_k",
+      "thermal_deep_conductivity_w_m_k",
+      "thermal_radiative_conductivity_parameter",
+      "thermal_heat_capacity_coefficients_j_kg_k",
+      "thermal_geothermal_flux_w_m2", "thermal_bottom_depth_m",
+      "thermal_layer_count", "thermal_time_step_s",
+      "thermal_initial_temperature_k", "thermal_nonlinear_tolerance_k",
+      "thermal_nonlinear_maximum_iterations",
+      "thermal_eclipse_direct_irradiance_model",
+      "thermal_solar_disc_radiance_model",
+      "thermal_earth_atmosphere_transmission_model",
+      "thermal_solar_disc_radius_m", "thermal_opaque_earth_radius_m",
+      "thermal_spinup_cycle_start_utc", "thermal_spinup_cycle_end_utc",
+      "thermal_spinup_temperature_tolerance_k",
+      "thermal_spinup_energy_tolerance_j_m2",
+      "sodium_activation_energy_ev", "sodium_attempt_frequency_hz",
+      "sodium_sticking_model",
+      "sodium_sticking_probability_by_temperature_k",
+      "sodium_accommodation_speed_model",
+      "sodium_accommodation_coefficient",
+      "sodium_surface_interaction_reference",
+      "argon_desorption_energy_j_mol", "argon_sticking_model",
+      "argon_sticking_probability_by_temperature_k",
+      "argon_accommodation_speed_model",
+      "argon_accommodation_coefficient",
+      "argon_surface_interaction_reference",
+      "argon_source_enabled",
+      "argon_source_spatial_model", "argon_source_rate_atoms_s",
+      "argon_source_time_model", "argon_source_map_file",
+      "argon_source_reference",
+      "ion_surface_interaction_mode", "cold_trap_retention_timescale_s",
+      "surface_inventory_initial_state",
+      "surface_inventory_checkpoint_file",
+      "surface_inventory_checkpoint_interval_s"};
   for (const char* key : required) {
     if (settings.find(key) == settings.end()) {
       *error = At(inputFile, 0,
@@ -442,7 +560,9 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
   }
   for (const auto& item : settings) {
     if (std::find(std::begin(required), std::end(required), item.first) ==
-        std::end(required)) {
+            std::end(required) &&
+        std::find(std::begin(m2Required), std::end(m2Required), item.first) ==
+            std::end(m2Required)) {
       *error = At(item.second,
                   "unrecognized application: moon setting '" +
                   item.first + "'");
@@ -454,6 +574,31 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
   // safely retain their previous object if any validation below fails.
   Configuration candidate;
   candidate.inputFile = inputFile.string();
+  const std::string m2Mode=Lower(Unquote(Trim(
+      settings["m2_environment"].value)));
+  if (m2Mode!="disabled" && m2Mode!="enabled") {
+    *error=At(settings["m2_environment"],
+        "m2_environment must be disabled or enabled");
+    return false;
+  }
+  candidate.m2EnvironmentEnabled=m2Mode=="enabled";
+  if (candidate.m2EnvironmentEnabled) {
+    for (const char* key:m2Required) if (settings.find(key)==settings.end()) {
+      *error=At(inputFile,0,
+          std::string("enabled M2 environment is missing required ")+key);
+      return false;
+    }
+  }
+  else {
+    // A disabled M2 receipt must not carry dormant physics values.  Rejecting
+    // partial groups prevents users from believing that an ignored parameter
+    // was active in an M0/M1 run.
+    for (const char* key:m2Required) if (settings.find(key)!=settings.end()) {
+      *error=At(settings[key],std::string(key)+
+          " is not allowed while m2_environment=disabled");
+      return false;
+    }
+  }
   const std::string geometry = Lower(Unquote(settings["surface_geometry"].value));
   if (geometry == "sphere") candidate.surfaceGeometry = SurfaceGeometry::Sphere;
   else if (geometry == "lola") candidate.surfaceGeometry = SurfaceGeometry::Lola;
@@ -751,6 +896,407 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
     *error = At(settings["lola_product_id"],
                 "lola_product_id cannot be empty");
     return false;
+  }
+
+  // Parse the M2 group only after all M1 scalar contracts have succeeded.  The
+  // group is nevertheless committed transactionally with the whole receipt.
+  fs::path divinerTable,divinerEclipseHistory,divinerEclipseContract,
+      inventoryCheckpoint;
+  if (candidate.m2EnvironmentEnabled) {
+    candidate.surfaceTemperatureMode=Lower(Unquote(Trim(
+        settings["surface_temperature_mode"].value)));
+    if (candidate.surfaceTemperatureMode!="simple-cosine" &&
+        candidate.surfaceTemperatureMode!="diviner-map" &&
+        candidate.surfaceTemperatureMode!="thermal-model") {
+      *error=At(settings["surface_temperature_mode"],
+          "surface_temperature_mode must be simple-cosine, diviner-map, or "
+          "thermal-model");
+      return false;
+    }
+    const char* positiveM2Keys[]={
+        "illumination_ray_origin_offset_m",
+        "surface_collision_maximum_segment_length_m",
+        "surface_collision_time_tolerance_s",
+        "surface_collision_distance_tolerance_m",
+        "thermal_solar_constant_w_m2",
+        "thermal_infrared_emissivity", "thermal_surface_density_kg_m3",
+        "thermal_deep_density_kg_m3", "thermal_density_scale_height_m",
+        "thermal_surface_conductivity_w_m_k",
+        "thermal_deep_conductivity_w_m_k",
+        "thermal_radiative_conductivity_parameter",
+        "thermal_geothermal_flux_w_m2", "thermal_bottom_depth_m",
+        "thermal_time_step_s", "thermal_initial_temperature_k",
+        "thermal_nonlinear_tolerance_k",
+        "thermal_solar_disc_radius_m", "thermal_opaque_earth_radius_m",
+        "thermal_spinup_temperature_tolerance_k",
+        "thermal_spinup_energy_tolerance_j_m2",
+        "sodium_activation_energy_ev",
+        "sodium_attempt_frequency_hz", "argon_desorption_energy_j_mol",
+        "cold_trap_retention_timescale_s",
+        "surface_inventory_checkpoint_interval_s"};
+    double* positiveM2Targets[]={
+        &candidate.illuminationRayOriginOffsetM,
+        &candidate.surfaceCollisionMaximumSegmentLengthM,
+        &candidate.surfaceCollisionTimeToleranceS,
+        &candidate.surfaceCollisionDistanceToleranceM,
+        &candidate.thermal.solarConstantWm2,
+        &candidate.thermal.infraredEmissivity,
+        &candidate.thermal.surfaceDensityKgM3,
+        &candidate.thermal.deepDensityKgM3,
+        &candidate.thermal.densityScaleHeightM,
+        &candidate.thermal.surfaceConductivityWmK,
+        &candidate.thermal.deepConductivityWmK,
+        &candidate.thermal.radiativeConductivityParameter,
+        &candidate.thermal.geothermalFluxWm2,
+        &candidate.thermal.bottomDepthM,&candidate.thermalTimeStepS,
+        &candidate.thermalInitialTemperatureK,
+        &candidate.thermal.nonlinearToleranceK,
+        &candidate.thermalSolarDiscRadiusM,
+        &candidate.thermalOpaqueEarthRadiusM,
+        &candidate.thermalSpinupTemperatureToleranceK,
+        &candidate.thermalSpinupEnergyToleranceJm2,
+        &candidate.sodiumActivationEnergyEv,
+        &candidate.sodiumAttemptFrequencyHz,
+        &candidate.argonDesorptionEnergyJmol,
+        &candidate.coldTrapRetentionTimescaleS,
+        &candidate.surfaceInventoryCheckpointIntervalS};
+    for (std::size_t index=0;index<std::size(positiveM2Keys);++index)
+      if (!ParsePositiveFinite(settings[positiveM2Keys[index]].value,
+                               positiveM2Targets[index])) {
+        *error=At(settings[positiveM2Keys[index]],
+            std::string(positiveM2Keys[index])+" must be finite and positive");
+        return false;
+      }
+    if (!ParsePositiveInteger(settings["thermal_layer_count"].value,
+                              &candidate.thermal.layerCount) ||
+        candidate.thermal.layerCount<2 ||
+        !ParsePositiveInteger(
+            settings["thermal_nonlinear_maximum_iterations"].value,
+            &candidate.thermal.nonlinearMaximumIterations)) {
+      *error=At(inputFile,0,
+          "thermal_layer_count must be at least 2 and the nonlinear "
+          "iteration limit must be a positive integer");
+      return false;
+    }
+    if (!ParsePositiveInteger(
+            settings["surface_collision_maximum_iterations"].value,
+            &candidate.surfaceCollisionMaximumIterations)) {
+      *error=At(settings["surface_collision_maximum_iterations"],
+          "surface_collision_maximum_iterations must be a positive integer");
+      return false;
+    }
+    const char* boundedKeys[]={"thermal_normal_bond_albedo",
+        "sodium_accommodation_coefficient",
+        "argon_accommodation_coefficient"};
+    double* boundedTargets[]={&candidate.thermal.normalBondAlbedo,
+        &candidate.sodiumAccommodationCoefficient,
+        &candidate.argonAccommodationCoefficient};
+    for (std::size_t index=0;index<std::size(boundedKeys);++index) {
+      const std::string scalar=Unquote(Trim(settings[boundedKeys[index]].value));
+      errno=0;
+      char* end=nullptr;
+      const double value=std::strtod(scalar.c_str(),&end);
+      if (errno==ERANGE || end==scalar.c_str() || *end!='\0' ||
+          !std::isfinite(value) || value<0.0 || value>1.0) {
+        *error=At(settings[boundedKeys[index]],
+            std::string(boundedKeys[index])+" must be in [0,1]");
+        return false;
+      }
+      *boundedTargets[index]=value;
+    }
+    const char* finiteKeys[]={"thermal_albedo_coefficient_a",
+        "thermal_albedo_coefficient_b"};
+    double* finiteTargets[]={&candidate.thermal.albedoCoefficientA,
+        &candidate.thermal.albedoCoefficientB};
+    for (std::size_t index=0;index<std::size(finiteKeys);++index) {
+      std::vector<double> one;
+      if (!ParseFiniteList(settings[finiteKeys[index]].value,&one) ||
+          one.size()!=1) {
+        *error=At(settings[finiteKeys[index]],
+            std::string(finiteKeys[index])+" must be one finite scalar");
+        return false;
+      }
+      *finiteTargets[index]=one.front();
+    }
+    if (!ParseFiniteList(
+            settings["thermal_heat_capacity_coefficients_j_kg_k"].value,
+            &candidate.thermal.heatCapacityPolynomial) ||
+        candidate.thermal.heatCapacityPolynomial.size()!=5) {
+      *error=At(settings["thermal_heat_capacity_coefficients_j_kg_k"],
+          "thermal heat capacity requires exactly c0,c1,c2,c3,c4");
+      return false;
+    }
+    if (!ParseProbabilityTable(
+            settings["sodium_sticking_probability_by_temperature_k"].value,
+            &candidate.sodiumStickingTemperatureK,
+            &candidate.sodiumStickingProbability)) {
+      *error=At(settings["sodium_sticking_probability_by_temperature_k"],
+          "sodium sticking table must be increasing TEMPERATURE_K:PROBABILITY "
+          "pairs with probabilities in [0,1]");
+      return false;
+    }
+    if (!ParseProbabilityTable(
+            settings["argon_sticking_probability_by_temperature_k"].value,
+            &candidate.argonStickingTemperatureK,
+            &candidate.argonStickingProbability)) {
+      *error=At(settings["argon_sticking_probability_by_temperature_k"],
+          "argon sticking table must be increasing TEMPERATURE_K:PROBABILITY "
+          "pairs with probabilities in [0,1]");
+      return false;
+    }
+
+    // Model names are required even though the numerical table/factor is also
+    // explicit.  This makes the mathematical interpretation reviewable in a
+    // run manifest: equal table values do not silently imply a constant law,
+    // and an accommodation factor does not silently choose speed versus
+    // kinetic-energy interpolation.
+    candidate.sodiumStickingModel=Lower(Unquote(Trim(
+        settings["sodium_sticking_model"].value)));
+    candidate.argonStickingModel=Lower(Unquote(Trim(
+        settings["argon_sticking_model"].value)));
+    for (const auto& selection : std::array<std::pair<const char*,
+             const std::string*>,2>{{
+          {"sodium_sticking_model",&candidate.sodiumStickingModel},
+          {"argon_sticking_model",&candidate.argonStickingModel}}}) {
+      if (*selection.second!="temperature-table" &&
+          *selection.second!="constant") {
+        *error=At(settings[selection.first],std::string(selection.first)+
+            " must be temperature-table or constant");
+        return false;
+      }
+    }
+    const auto constantTable=[](const std::vector<double>& probability) {
+      return std::all_of(probability.begin(),probability.end(),
+          [&probability](double value) { return value==probability.front(); });
+    };
+    if (candidate.sodiumStickingModel=="constant" &&
+        !constantTable(candidate.sodiumStickingProbability)) {
+      *error=At(settings["sodium_sticking_probability_by_temperature_k"],
+          "constant sodium sticking model requires identical probabilities "
+          "at every table node");
+      return false;
+    }
+    if (candidate.argonStickingModel=="constant" &&
+        !constantTable(candidate.argonStickingProbability)) {
+      *error=At(settings["argon_sticking_probability_by_temperature_k"],
+          "constant argon sticking model requires identical probabilities "
+          "at every table node");
+      return false;
+    }
+    candidate.sodiumAccommodationSpeedModel=Lower(Unquote(Trim(
+        settings["sodium_accommodation_speed_model"].value)));
+    candidate.argonAccommodationSpeedModel=Lower(Unquote(Trim(
+        settings["argon_accommodation_speed_model"].value)));
+    for (const auto& selection : std::array<std::pair<const char*,
+             const std::string*>,2>{{
+          {"sodium_accommodation_speed_model",
+              &candidate.sodiumAccommodationSpeedModel},
+          {"argon_accommodation_speed_model",
+              &candidate.argonAccommodationSpeedModel}}}) {
+      if (*selection.second!="linear-speed" &&
+          *selection.second!="kinetic-energy") {
+        *error=At(settings[selection.first],std::string(selection.first)+
+            " must be linear-speed or kinetic-energy");
+        return false;
+      }
+    }
+    candidate.sodiumSurfaceInteractionReference=Unquote(Trim(
+        settings["sodium_surface_interaction_reference"].value));
+    candidate.argonSurfaceInteractionReference=Unquote(Trim(
+        settings["argon_surface_interaction_reference"].value));
+    if (candidate.sodiumSurfaceInteractionReference.empty() ||
+        candidate.argonSurfaceInteractionReference.empty()) {
+      *error=At(inputFile,0,
+          "each configured neutral surface law requires a non-empty "
+          "surface_interaction_reference receipt");
+      return false;
+    }
+
+    // A source receipt is separate from the adsorption/residence receipt.
+    // Current literature supports a continuous global baseline rate, while
+    // the available D10 product is regional and its QA status is incomplete.
+    // Reject potassium-map selections rather than filling unmeasured regions
+    // or treating a regional normalized proxy as a global source.
+    candidate.argonSourceSpatialModel=Lower(Unquote(Trim(
+        settings["argon_source_spatial_model"].value)));
+    if (!ParseBoolean(settings["argon_source_enabled"].value,
+                      &candidate.argonSourceEnabled)) {
+      *error=At(settings["argon_source_enabled"],
+          "argon_source_enabled must be true or false");
+      return false;
+    }
+    candidate.argonSourceTimeModel=Lower(Unquote(Trim(
+        settings["argon_source_time_model"].value)));
+    candidate.argonSourceMapFile=Unquote(Trim(
+        settings["argon_source_map_file"].value));
+    candidate.argonSourceReference=Unquote(Trim(
+        settings["argon_source_reference"].value));
+    if (!ParseNonnegativeFinite(settings["argon_source_rate_atoms_s"].value,
+                                &candidate.argonSourceRateAtomsS)) {
+      *error=At(settings["argon_source_rate_atoms_s"],
+          "argon_source_rate_atoms_s must be finite and non-negative");
+      return false;
+    }
+    if (candidate.argonSourceSpatialModel!="uniform-global") {
+      *error=At(settings["argon_source_spatial_model"],
+          "argon_source_spatial_model currently supports only uniform-global; "
+          "potassium-weighted production is unavailable while D10 remains "
+          "regional and QA-incomplete");
+      return false;
+    }
+    if (candidate.argonSourceTimeModel!="continuous") {
+      *error=At(settings["argon_source_time_model"],
+          "argon_source_time_model currently supports only continuous");
+      return false;
+    }
+    if (Lower(candidate.argonSourceMapFile)!="none") {
+      *error=At(settings["argon_source_map_file"],
+          "argon_source_map_file must be none until a global QA-clean D10 "
+          "source map is available");
+      return false;
+    }
+    if (!(candidate.argonSourceRateAtomsS>0.0) ||
+        candidate.argonSourceReference.empty() ||
+        Lower(candidate.argonSourceReference)=="none") {
+      *error=At(inputFile,0,
+          "uniform-global argon source parameters require a positive rate "
+          "and a non-empty literature reference, even when injection is "
+          "disabled; this preserves an auditable candidate receipt");
+      return false;
+    }
+    if (candidate.thermal.infraredEmissivity>1.0 ||
+        candidate.thermal.normalBondAlbedo>=1.0 ||
+        candidate.thermal.deepDensityKgM3<=
+            candidate.thermal.surfaceDensityKgM3 ||
+        candidate.thermal.deepConductivityWmK<
+            candidate.thermal.surfaceConductivityWmK) {
+      *error=At(inputFile,0,
+          "M2 thermal emissivity/albedo/density/conductivity ordering is "
+          "not physical");
+      return false;
+    }
+
+    // The first I17 implementation has one deliberately narrow physical
+    // contract.  Reject aliases and future-looking names so a receipt can
+    // never imply atmospheric transmission or limb darkening that the
+    // production forcing does not actually calculate.
+    candidate.thermalEclipseDirectIrradianceModel=Lower(Unquote(Trim(
+        settings["thermal_eclipse_direct_irradiance_model"].value)));
+    candidate.thermalSolarDiscRadianceModel=Lower(Unquote(Trim(
+        settings["thermal_solar_disc_radiance_model"].value)));
+    candidate.thermalEarthAtmosphereTransmissionModel=Lower(Unquote(Trim(
+        settings["thermal_earth_atmosphere_transmission_model"].value)));
+    if (candidate.thermalEclipseDirectIrradianceModel!=
+            "apparent-disc-overlap" ||
+        candidate.thermalSolarDiscRadianceModel!="uniform" ||
+        candidate.thermalEarthAtmosphereTransmissionModel!="disabled") {
+      *error=At(inputFile,0,
+          "the approved experimental I17 forcing requires "
+          "thermal_eclipse_direct_irradiance_model=apparent-disc-overlap, "
+          "thermal_solar_disc_radiance_model=uniform, and "
+          "thermal_earth_atmosphere_transmission_model=disabled; no other "
+          "eclipse radiance model is implemented");
+      return false;
+    }
+    candidate.thermalSpinupCycleStartUtc=Unquote(Trim(
+        settings["thermal_spinup_cycle_start_utc"].value));
+    candidate.thermalSpinupCycleEndUtc=Unquote(Trim(
+        settings["thermal_spinup_cycle_end_utc"].value));
+    if (candidate.thermalSpinupCycleStartUtc.empty() ||
+        candidate.thermalSpinupCycleEndUtc.empty() ||
+        Lower(candidate.thermalSpinupCycleStartUtc)=="none" ||
+        Lower(candidate.thermalSpinupCycleEndUtc)=="none" ||
+        candidate.thermalSpinupCycleStartUtc==
+            candidate.thermalSpinupCycleEndUtc) {
+      *error=At(inputFile,0,
+          "thermal spin-up requires distinct, non-empty start/end UTC "
+          "values; CSPICE validates their time syntax and ordering before "
+          "the first spin-up cycle");
+      return false;
+    }
+    candidate.ionSurfaceInteractionMode=Lower(Unquote(Trim(
+        settings["ion_surface_interaction_mode"].value)));
+    if (candidate.ionSurfaceInteractionMode!="unconfigured") {
+      *error=At(settings["ion_surface_interaction_mode"],
+          "ion_surface_interaction_mode must remain unconfigured until "
+          "authoritative return/neutralization branching data are supplied");
+      return false;
+    }
+    candidate.surfaceInventoryInitialState=Lower(Unquote(Trim(
+        settings["surface_inventory_initial_state"].value)));
+    if (candidate.surfaceInventoryInitialState!="zero" &&
+        candidate.surfaceInventoryInitialState!="checkpoint") {
+      *error=At(settings["surface_inventory_initial_state"],
+          "surface_inventory_initial_state must be zero or checkpoint");
+      return false;
+    }
+    const std::string divinerValue=Lower(Unquote(Trim(
+        settings["diviner_temperature_table_file"].value)));
+    if (divinerValue!="none" &&
+        !AbsolutePath(settings["diviner_temperature_table_file"],
+                      "diviner_temperature_table_file",&divinerTable,error))
+      return false;
+    if (candidate.surfaceTemperatureMode=="diviner-map" &&
+        (divinerValue=="none" || !fs::is_regular_file(divinerTable))) {
+      *error=At(settings["diviner_temperature_table_file"],
+          "diviner-map mode requires an existing processed D03 table");
+      return false;
+    }
+    candidate.divinerTemperatureTableFile=
+        divinerValue=="none" ? std::string() : divinerTable.string();
+
+    // Observation files are optional for ordinary M2 transport runs but must
+    // be explicit.  I17 derives a run receipt that replaces both ``none``
+    // values; requiring an existing pair here prevents half-configured
+    // evidence from reaching the linked executable.
+    const std::string eclipseHistoryValue=Lower(Unquote(Trim(
+        settings["diviner_eclipse_history_file"].value)));
+    const std::string eclipseContractValue=Lower(Unquote(Trim(
+        settings["diviner_eclipse_selection_contract_file"].value)));
+    if ((eclipseHistoryValue=="none")!=(eclipseContractValue=="none")) {
+      *error=At(inputFile,0,
+          "Diviner eclipse history and selection contract must both be none "
+          "or both name existing files");
+      return false;
+    }
+    if (eclipseHistoryValue!="none") {
+      if (!AbsolutePath(settings["diviner_eclipse_history_file"],
+              "diviner_eclipse_history_file",&divinerEclipseHistory,error) ||
+          !AbsolutePath(settings["diviner_eclipse_selection_contract_file"],
+              "diviner_eclipse_selection_contract_file",
+              &divinerEclipseContract,error)) return false;
+      if (!fs::is_regular_file(divinerEclipseHistory) ||
+          !fs::is_regular_file(divinerEclipseContract)) {
+        *error=At(inputFile,0,
+            "configured Diviner eclipse history/contract files must exist");
+        return false;
+      }
+      candidate.divinerEclipseHistoryFile=divinerEclipseHistory.string();
+      candidate.divinerEclipseSelectionContractFile=
+          divinerEclipseContract.string();
+    }
+    const std::string checkpointValue=Lower(Unquote(Trim(
+        settings["surface_inventory_checkpoint_file"].value)));
+    if (checkpointValue!="none" &&
+        !AbsolutePath(settings["surface_inventory_checkpoint_file"],
+                      "surface_inventory_checkpoint_file",
+                      &inventoryCheckpoint,error)) return false;
+    if (candidate.surfaceInventoryInitialState=="checkpoint") {
+      // The setting names a checkpoint *base*.  M2 writes one independently
+      // versioned file per modeled neutral species so a partial restart can
+      // never be mistaken for a complete Na+Ar surface state.  Validate the
+      // concrete files rather than the base path, which is not itself a file.
+      if (checkpointValue=="none" ||
+          !fs::is_regular_file(inventoryCheckpoint.string()+".Na") ||
+          !fs::is_regular_file(inventoryCheckpoint.string()+".Ar")) {
+        *error=At(settings["surface_inventory_checkpoint_file"],
+            "checkpoint initial state requires existing <base>.Na and "
+            "<base>.Ar files");
+        return false;
+      }
+    }
+    candidate.surfaceInventoryCheckpointFile=checkpointValue=="none" ?
+        std::string() : inventoryCheckpoint.string();
   }
 
   fs::path spiceRoot, image, label, cea, tecplot;

@@ -6077,6 +6077,24 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
     typedef int (*fProcessTriangleCutFaceIntersection) (long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
     extern fProcessTriangleCutFaceIntersection ProcessTriangleCutFaceIntersection;
 
+    // Optional moving internal surface.  The finder evaluates one trajectory
+    // segment and returns the earliest hit in [0,maximumFlightTime].  Position,
+    // normal, and surface velocity use the simulation frame and SI units.  A
+    // separate interaction callback applies application physics at that hit.
+    // NULL pointers preserve every existing AMPS mover path.
+    typedef bool (*fFindMovingSurfaceIntersection)(long int ptr,
+        const double *segmentPosition,const double *segmentVelocity,
+        const double *segmentAcceleration,double elapsedFlightTime,
+        double maximumFlightTime,double& hitFlightTime,
+        double *hitPosition,double *outwardNormal,double *surfaceVelocity);
+    typedef int (*fProcessMovingSurfaceIntersection)(long int ptr,
+        double *position,double *velocity,const double *outwardNormal,
+        const double *surfaceVelocity,
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+    extern fFindMovingSurfaceIntersection FindMovingSurfaceIntersection;
+    extern fProcessMovingSurfaceIntersection
+        ProcessMovingSurfaceIntersection;
+
     void Init_BeforeParser();
     void Init();
     void MoveParticles();

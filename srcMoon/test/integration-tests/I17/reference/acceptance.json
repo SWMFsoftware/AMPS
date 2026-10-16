@@ -1,0 +1,32 @@
+{
+  "id": "I17",
+  "numerical_time_step_contract": {
+    "approved_date": "2026-10-14",
+    "steps": "input dt, dt/2, dt/4; independently spin up every run",
+    "per_bin_fine_difference_limit": "strictly less than 0.1 times documented observational 1-sigma uncertainty",
+    "trend": "fine difference smaller than coarse difference; exact zero at both levels is zero measured sensitivity",
+    "maximum_update_change_K_exclusive": 50,
+    "failure_action": "FAIL and preserve numerical artifacts without computing observational residuals or plots; do not relax the criterion",
+    "scope": "thermal time-step sensitivity only; not spatial convergence or observational agreement"
+  },
+  "name": "Time-dependent thermal inertia and eclipse response",
+  "purpose": "Drive the linked depth-resolved production thermal state through sunrise, sunset, and the frozen eclipse training/hold-out intervals and evaluate convergence plus hold-out residuals.",
+  "production_capability": "Depth-resolved thermal evolution under terrain and finite-apparent-disc Earth-eclipse illumination, observation-free periodic full-column spin-up, plus a matching grey-emissivity bolometric observation operator.",
+  "production_entry_points": ["normal srcMoon initializer", "Moon::SurfaceTemperature::UniformSolarDiscVisibleFraction", "Moon::SurfaceTemperature::SpinUpProductionState", "Moon::SurfaceTemperature::AdvanceProductionState", "Moon::Thermal::Column::Advance", "Moon::DivinerObservation::GreyBolometricBrightnessTemperatureK", "normal SPICE terrain/Earth-eclipse forcing"],
+  "configuration": "Explicit srcMoon/examples/lola_surface.in M2 receipt; eight MPI ranks; thermal-model mode; paired RDR history/selection-contract paths; apparent-disc-overlap direct irradiance with a uniform 695700000 m solar disc, opaque 6371000 m solid Earth, disabled terrestrial-atmosphere transmission, and no limb darkening; a 2551442.976 s pre-training periodic interval; 0.01 K node and 10000 J m^-2 column-enthalpy spin-up tolerances; no Diviner-initialized thermal state.",
+  "inputs": ["frozen application receipt", "same-campaign approved-campaign I13 PASS", "D03 READY metadata and hashes", "PDS4 RDR v3.1 June training history", "PDS4 RDR v3.1 December untouched hold-out history", "pre-holdout selection contract", "June-frozen threshold artifact"],
+  "independent_reference": "U11 analytical thermal invariants and independently processed native calibrated RDR radiances evaluated with the published Paige et al. C3-C9 bolometric algorithm; never frozen production output as physical truth.",
+  "units": "SI model units; W m^-2 sr^-1 RDR channel radiance; K brightness/kinetic temperature; degrees and UTC retained from native labels",
+  "frame_time_convention": "MOON_ME_DE421 model surface geometry; native RDR planetocentric positive-east FOV coordinates; SPICE TDB internally; RDR SCET UTC externally; each channel retains actual footprint/time/detector geometry",
+  "deterministic_stochastic_controls": "Deterministic observation processing and thermal evolution; random seed and MPI/OpenMP layout still recorded; thermal time step is varied explicitly for convergence.",
+  "procedure": "Verify I13/D03/hash prerequisites; process radiance before temperature with frozen flags/bins; stage June-only rows; perform observation-independent periodic full-column spin-up until both input tolerances pass; run the normal finite-disc/terrain thermal state; compare epsilon*sigma*T^4 as bolometric_brightness_temperature_K; emit an EXPERIMENTAL June plot and review-only threshold candidate; freeze thresholds only after review; later expose and score December once; preserve row-level and plotted artifacts.",
+  "metrics": ["maximum per-update temperature change K", "successive-time-step differences", "June and December bolometric weighted bias/RMSE/coverage", "normalized residuals", "C6-C9 radiance and brightness-temperature diagnostic residuals", "native-flag exclusions", "site/time/detector counts", "resource use"],
+  "acceptance_criteria": "No unphysical discontinuity; <50 K per production update; demonstrated dt convergence; phase/amplitude satisfy thresholds derived and frozen from June plus documented calibration/within-bin uncertainty before December is scored. C6-C9 grey-passband residuals are diagnostics, not primary gates. Thresholds are never relaxed after execution.",
+  "expected_pass_result": "The declared linked M2 capability is evaluated and every frozen criterion is met.",
+  "expected_failure_modes": ["predecessor unavailable", "D03 package/hash incomplete", "missing C3-C9 co-registered bin", "unqualified spin-up", "unfrozen June threshold", "production wiring failure", "numerical criterion failure", "untouched hold-out physics criterion failure"],
+  "required_data": ["D03 Diviner RDR; 2011-06-15 training and 2011-12-10 hold-out"],
+  "data_hashes": "Every consumed ZIP/XML product, processed history, D03 QA record, Paige selection contract, and calibration reference is recorded before launch.",
+  "predecessor_gates": ["I13", "applicable U09-U13 gates"],
+  "artifacts": ["stdout.log", "stderr.log", "process_resource_metrics.csv", "receipt.txt when executed", "receipt.txt.I17_training_model.csv", "result.json", "run_manifest.json", "application.in", "comparison.csv", "comparison.png", "comparison.eps", "channel_diagnostics.csv", "june_threshold_candidate.json"],
+  "status_semantics": "PASS means all linked numerical and untouched hold-out criteria ran and passed; FAIL means all prerequisites existed but a frozen criterion was missed; ERROR is build/runtime/parser/hash/ZIP/label corruption or resource exhaustion; SKIPPED means a predecessor, capability, configuration, authoritative input, spin-up qualification, or pre-holdout threshold freeze is unavailable. A June EXPERIMENTAL comparison plot and review-only threshold candidate still return SKIPPED / NOT VALIDATED. Preprocessing alone is never validation."
+}

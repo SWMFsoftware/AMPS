@@ -1,0 +1,79 @@
+{
+  "schema": "srcMoon-I17-Diviner-selection-v1",
+  "frozen_before_holdout_residuals": true,
+  "archive": {
+    "bundle_lid": "urn:nasa:pds:lro_diviner_calibrated",
+    "collection_lid": "urn:nasa:pds:lro_diviner_calibrated:data_calibrated1",
+    "rdr_processing_version": "3.1",
+    "product_type": "PDS4 calibrated RDR",
+    "native_missing_constants": [-9999, -9998]
+  },
+  "selections": {
+    "training": {
+      "date_utc": "2011-06-15",
+      "begin_utc": "2011-06-15T16:50:00Z",
+      "end_utc": "2011-06-15T23:40:00Z",
+      "role": "operator and acceptance-threshold qualification only; no thermophysical parameter fitting"
+    },
+    "holdout": {
+      "date_utc": "2011-12-10",
+      "begin_utc": "2011-12-10T11:00:00Z",
+      "end_utc": "2011-12-10T18:00:00Z",
+      "role": "untouched one-pass validation after the complete contract and production parameters are frozen"
+    }
+  },
+  "eclipse_contacts_source": "NASA GSFC Eclipses During 2011; https://eclipse.gsfc.nasa.gov/OH/OH2011.html",
+  "window_decision": "Each window starts at the preceding ten-minute boundary at least 30 minutes before P1 and ends at the following ten-minute boundary at least 30 minutes after P4. The buffer supplies a non-eclipse baseline and was selected from published contact times, not AMPS residuals.",
+  "binning": {
+    "time_bin_seconds": 600,
+    "time_origin": "00:00:00 UTC on each selected date",
+    "latitude_bin_degrees": 0.5,
+    "longitude_bin_degrees": 0.5,
+    "longitude_convention": "positive east in [0,360)",
+    "latitude_convention": "native RDR planetocentric FOV-centre latitude",
+    "minimum_records_per_channel": 3,
+    "required_channels": [3, 4, 5, 6, 7, 8, 9],
+    "aggregation_order": "quality-select native footprints; assign each channel footprint by its own clat/clon and UTC; average calibrated radiance within the predeclared site/time bin; convert the mean radiance to brightness temperature; then calculate T_bol"
+  },
+  "quality": {
+    "activity_flag_allowed": [110],
+    "maximum_emission_angle_degrees_exclusive": 15.0,
+    "qca_allowed_mask": 0,
+    "qge_allowed_mask": 12,
+    "qge_interpretation": "bits 2 and 3 (definitive but not reprocessed pointing/ephemeris) are retained; predictive or missing geometry bits 4-7 and reserved bits 0-1 are rejected",
+    "qmi_allowed_mask": 2,
+    "qmi_interpretation": "the eclipse bit is physical event metadata and is retained; transient, abnormal thermal state, drift, noise, saturation, moving, and reserved bits are rejected",
+    "native_temperature_handling": "Do not reject negative C3-C8 brightness temperatures before binning; calibrated low-signal channels may be negative and the published Paige sensitivity substitution handles them after radiance aggregation. C9 must yield a finite positive binned brightness temperature."
+  },
+  "bolometric_operator": {
+    "reference": "Paige et al. 2010 Science 330, 479 supplementary methods",
+    "channels": [3, 4, 5, 6, 7, 8, 9],
+    "partition_boundaries_micrometre": [0.0, 8.075, 8.4, 13.0, 25.0, 50.0, 100.0, 1000.0],
+    "minimum_detectable_temperature_k": {
+      "3": 190.0,
+      "4": 190.0,
+      "5": 180.0,
+      "6": 95.0,
+      "7": 60.0,
+      "8": 40.0,
+      "9": null
+    },
+    "low_sensitivity_rule": "Replace a below-threshold channel brightness temperature with the next longer-wavelength channel whose brightness temperature exceeds its own threshold.",
+    "reported_quantity": "bolometric_brightness_temperature_K"
+  },
+  "uncertainty": {
+    "calibration_reference": "Diviner Radiometric Test Report, equations 1-3 and Tables 4 and 10",
+    "offset_uncertainty_counts_1sigma": 3.6,
+    "ground_calibration_rule": "Use the report's in-flight fractional uncertainty as the stated upper limit for ground calibration and combine the two in quadrature, hence sqrt(2) times Table 10.",
+    "within_bin_rule": "standard error of the accepted calibrated radiances; real dispersion is preserved and no fixed kelvin error is assigned",
+    "combination": "calibration radiance uncertainty and within-bin radiance standard error combined in quadrature, then propagated through the native radiance-to-brightness conversion and Paige T_bol operator",
+    "tbol_propagation": "independent-channel first-order Jacobian propagation about each binned mean; finite-difference evaluations remain on the same published sensitivity/positivity branch; a channel below its C3-C8 sensitivity floor has zero local derivative because Paige substitution removes it; an exact-threshold value uses the valid-branch right derivative",
+    "covariance_limitation": "the archive does not provide cross-channel covariance; no covariance is assumed or fabricated"
+  },
+  "model_operator": {
+    "thermal_parameters": "fixed Hayne et al. values already declared in the application input; June observations are not used to fit them",
+    "bolometric_emission": "epsilon*sigma*T_kinetic^4",
+    "reported_quantity": "bolometric_brightness_temperature_K",
+    "channel_6_9_diagnostics": "grey-emissivity rectangular-half-maximum calibration approximation; diagnostic only and excluded from the primary pass/fail score"
+  }
+}

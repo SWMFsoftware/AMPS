@@ -6,10 +6,14 @@
 #include "constants.h"
 #include "LunarSurface.h"
 #include "MoonInput.h"
+#include "MoonSurfaceEnvironment.h"
+#include "MoonSurfaceTemperature.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <algorithm>
+#include <array>
+#include <limits>
 #include <vector>
 #include <string>
 #include <list>
@@ -1081,10 +1085,19 @@ bool ResolvedSurfaceInjectionAdapter(int spec,int sourceProcessId,
   }
   for (int i=0;i<3;i++) direction[i]/=radius;
 
-  double origin[3]={0.0,0.0,0.0},intersection[3];
-  const int faceIndex=PIC::RayTracing::FindFistIntersectedFace(
-      origin,direction,intersection,false,NULL);
-  if (faceIndex<0) {
+  const auto* terrain=Moon::SurfaceEnvironment::ProductionTerrain();
+  if (terrain==NULL)
+    exit(__LINE__,__FILE__,"srcMoon: production LOLA BVH is not initialized");
+  Moon::SurfaceEnvironment::RayHit radialHit;
+  std::string terrainError;
+  const std::array<double,3> origin={{0.0,0.0,0.0}};
+  const std::array<double,3> rayDirection=
+      {{direction[0],direction[1],direction[2]}};
+  if (!terrain->IntersectRay(origin,rayDirection,0.0,
+          std::numeric_limits<double>::infinity(),
+          std::numeric_limits<std::size_t>::max(),&radialHit,&terrainError))
+    exit(__LINE__,__FILE__,terrainError.c_str());
+  if (!radialHit.hit) {
     exit(__LINE__,__FILE__,
         "srcMoon: radial ray did not intersect the loaded LOLA surface");
   }
@@ -1092,8 +1105,7 @@ bool ResolvedSurfaceInjectionAdapter(int spec,int sourceProcessId,
   // The generator and loader guarantee outward winding.  Normalize again at
   // the API boundary so the rotation and positional offset do not depend on a
   // particular CutCell normal-magnitude convention.
-  const double *storedNormal=
-      PIC::Mesh::IrregularSurface::BoundaryTriangleFaces[faceIndex].ExternalNormal;
+  const double *storedNormal=radialHit.outwardNormal.data();
   double normal[3]={storedNormal[0],storedNormal[1],storedNormal[2]};
   const double normalLength=sqrt(normal[0]*normal[0]+normal[1]*normal[1]+
       normal[2]*normal[2]);
@@ -1136,12 +1148,24 @@ bool ResolvedSurfaceInjectionAdapter(int spec,int sourceProcessId,
   // a one-micrometre floor that remains negligible relative to LOLA relief.
   const double offset=std::max(1.0e-6,10.0*PIC::Mesh::mesh->EPS);
   for (int i=0;i<3;i++) {
-    xBodyFixed[i]=intersection[i]+offset*normal[i];
-    // Realistic mode is currently permitted only for the static body-fixed
-    // configuration, so the AMR/SO and body-fixed coordinates coincide.
-    xSo[i]=xBodyFixed[i];
-    vSo[i]=vBodyFixed[i];
+    xBodyFixed[i]=radialHit.positionM[i]+offset*normal[i];
   }
+  // Convert the complete body-fixed state, not only the two free vectors.
+  // The derivative block adds the local velocity of the rotating lunar
+  // surface.  This keeps injection velocity relative to the facet identical
+  // to that drawn by the source kernel at the current SPICE epoch.
+  const double bodyState[6]={xBodyFixed[0],xBodyFixed[1],xBodyFixed[2],
+      vBodyFixed[0],vBodyFixed[1],vBodyFixed[2]};
+  double lsoState[6]={0.0,0.0,0.0,0.0,0.0,0.0};
+  // Multiply the generic AMPS 6x6 state transform directly.  Calling the
+  // CSPICE convenience routine mxvg_c here would make even the legacy
+  // no-SPICE regression require SpiceUsr.h, although the matrix itself is an
+  // ordinary double array supplied by the orbital-motion layer.
+  for (int row=0;row<6;++row) for (int column=0;column<6;++column)
+    lsoState[row]+=
+        Moon::OrbitalMotion::IAU_to_SO_TransformationMartix[row][column]*
+        bodyState[column];
+  for (int i=0;i<3;i++) xSo[i]=lsoState[i],vSo[i]=lsoState[i+3];
   // The radial displacement can cross an AMR block or MPI partition.  Always
   // rediscover the owner from the final SO position before accepting it.
   startNode=PIC::Mesh::mesh->findTreeNode(xSo,startNode);
@@ -1186,6 +1210,35 @@ int ResolvedSurfaceInteraction(long int ptr,double *x,double *v,
       x[dimension]+=offset*face->ExternalNormal[dimension];
   }
   return result;
+}
+
+int MovingResolvedSurfaceInteraction(long int ptr,double *x,double *v,
+    const double *normalLso,const double *surfaceVelocityLso,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+  (void)normalLso;
+  (void)surfaceVelocityLso;
+  double normalBody[3],lsoToBody[36],bodyToLso[36];
+  if (!Moon::SurfaceEnvironment::LastProductionCollisionFrame(
+          normalBody,lsoToBody,bodyToLso))
+    exit(__LINE__,__FILE__,
+        "srcMoon moving surface interaction has no collision-frame receipt");
+  double unusedFlightTime=0.0;
+  const int spec=PIC::ParticleBuffer::GetI(ptr);
+  return Moon::SurfaceInteraction::
+      ParticleSurfaceInteraction_SurfaceAccomodation(spec,ptr,x,v,
+          unusedFlightTime,startNode,Moon::Planet,normalBody,
+          lsoToBody,bodyToLso);
+}
+
+int MovingSurfaceSafetySphereInteraction(int spec,long int ptr,double *x,
+    double *v,double& remainingTime,void *node,void *sphere) {
+  (void)spec;(void)ptr;(void)x;(void)v;(void)remainingTime;(void)node;
+  (void)sphere;
+  exit(__LINE__,__FILE__,
+      "particle reached the LOLA minimum-radius safety sphere without a "
+      "terrain collision; reduce the particle time step or "
+      "surface_collision_maximum_segment_length_m and rerun I14");
+  return _PARTICLE_DELETED_ON_THE_FACE_;
 }
 
 }  // namespace
@@ -1382,6 +1435,23 @@ void amps_init() {
         for (int spec=0;spec<PIC::nTotalSpecies;spec++)
           Sphere->maxIntersectedNodeTimeStep[spec]=-1.0;
 
+#if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
+        // Register only a minimum-radius safety core with AMPS.  The physical
+        // LOLA boundary rotates through LSO and is handled by the mover's
+        // time-dependent callback below; registering its body-fixed triangles
+        // as static cut cells would give wrong impact locations and normals.
+        cInternalBoundaryConditionsDescriptor safetyDescriptor=
+            PIC::BC::InternalBoundary::Sphere::RegisterInternalSphere();
+        auto* safetySphere=static_cast<cInternalSphericalData*>(
+            safetyDescriptor.BoundaryElement);
+        safetySphere->SetSphereGeometricalParameters(
+            sx0,Moon::Surface::MinimumLoadedSurfaceRadiusM());
+        safetySphere->InjectionRate=NULL;
+        safetySphere->InjectionBoundaryCondition=NULL;
+        safetySphere->ParticleSphereInteraction=
+            MovingSurfaceSafetySphereInteraction;
+        safetySphere->localResolution=localSphericalSurfaceResolution;
+#else
         cInternalBoundaryConditionsDescriptor triangulationDescriptor=
             PIC::BC::InternalBoundary::NastranSurface::
                 RegisterInternalNastranSurface();
@@ -1389,6 +1459,7 @@ void amps_init() {
             static_cast<cInternalNastranSurfaceData*>(
                 triangulationDescriptor.BoundaryElement);
         triangulation->localResolution=localSphericalSurfaceResolution;
+#endif
       }
       Sphere->SetSphereGeometricalParameters(sx0,rSphere);
 
@@ -1459,13 +1530,46 @@ void amps_init() {
             ResolvedSurfaceSourceRate;
         PIC::BC::UserDefinedParticleInjectionFunction=
             ResolvedSurfaceInjection;
+#if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
+        PIC::Mover::FindMovingSurfaceIntersection=
+            Moon::SurfaceEnvironment::FindProductionMovingSurfaceIntersection;
+        PIC::Mover::ProcessMovingSurfaceIntersection=
+            MovingResolvedSurfaceInteraction;
+#else
         PIC::Mover::ProcessTriangleCutFaceIntersection=
             ResolvedSurfaceInteraction;
+#endif
         Moon::SourceProcesses::PostProcessSurfaceInjection=
             ResolvedSurfaceInjectionAdapter;
       }
 
       Sphere->Allocate<cInternalSphericalData>(PIC::nTotalSpecies,PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber,_EXOSPHERE__SOURCE_MAX_ID_VALUE_,Sphere);
+      if (Moon::Runtime::HasConfiguration() &&
+          Moon::Runtime::GetConfiguration().m2EnvironmentEnabled) {
+        std::string stateError;
+        if (!Moon::SurfaceTemperature::InitializeProductionState(
+                Moon::Runtime::GetConfiguration(),Sphere,&stateError))
+          exit(__LINE__,__FILE__,stateError.c_str());
+        // Configure the radiogenic 40Ar source only after both the runtime
+        // receipt and logical surface are immutable.  An enabled source with
+        // Ar missing from the compile-time SpeciesList fails here instead of
+        // being silently ignored.  The normal M0/M1 Na-only receipt keeps the
+        // source disabled and therefore preserves its frozen baseline.
+        if (!Moon::Species::Argon::ConfigureProduction(
+                Moon::Runtime::GetConfiguration(),Sphere,&stateError))
+          exit(__LINE__,__FILE__,stateError.c_str());
+        // These are the ordinary Exosphere production dispatch points.  The
+        // runtime callbacks are installed only after the complete M2 receipt
+        // and logical inventory have been validated; disabled receipts retain
+        // the legacy fixed abundance and zero compiled thermal source.
+        Moon::SourceProcesses::ThermalDesorption::
+            RuntimeSurfaceElementProductionRate=
+                Moon::SurfaceTemperature::ProductionThermalDesorptionRate;
+        Moon::UseFluxBalancedSurfaceInventory=
+            Moon::SurfaceTemperature::UseProductionFluxBalancedInventory;
+        Exosphere::SurfaceInteraction::RuntimeAccommodationCoefficient=
+            Moon::SurfaceTemperature::ProductionAccommodationCoefficient;
+      }
       if (useResolvedLolaSurface)
         Sphere->PrintSurfaceData(surfaceDataFile.c_str(),0);
 /*
@@ -2184,6 +2288,7 @@ void amps_time_step() {
         etBegin+0.5*SimulationTimeStep;
     const SpiceDouble etEnd=freezeEnvironment ? etBegin :
         etBegin+SimulationTimeStep;
+    Moon::SurfaceEnvironment::BeginProductionParticleStep(etBegin);
     SpiceDouble StateBegin[6],StateMiddle[6],StateEnd[6];
     SpiceDouble StateSunLSO[6],StateEarthLSO[6],StateEarthJ2000[6];
     SpiceDouble J2000ToLSO[6][6],lt;
@@ -2302,6 +2407,15 @@ void amps_time_step() {
     sxform_c(Moon::Frames::BodyFixed,Moon::Frames::SolarOrbital,etEnd,
         Moon::OrbitalMotion::IAU_to_SO_TransformationMartix);
 
+    if (Moon::SurfaceTemperature::ProductionStateInitialized()) {
+      std::string thermalError;
+      if (!Moon::SurfaceTemperature::AdvanceProductionState(
+              etBegin,etEnd,&thermalError))
+        exit(__LINE__,__FILE__,thermalError.c_str());
+      if (!Moon::SurfaceTemperature::WriteProductionInventoryCheckpoint(
+              etEnd,&thermalError))
+        exit(__LINE__,__FILE__,thermalError.c_str());
+    }
     Moon::OrbitalMotion::et=etEnd;
 #endif
 

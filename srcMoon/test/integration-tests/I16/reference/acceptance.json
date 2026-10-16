@@ -1,0 +1,23 @@
+{
+  "id": "I16",
+  "name": "Diviner-driven surface-temperature boundary",
+  "purpose": "Score temperatures returned through the production surface callback against quality-filtered D03 GCP hold-out samples without gap filling.",
+  "production_capability": "Diviner-driven surface-temperature boundary",
+  "production_entry_points": ["Moon::SurfaceTemperature::DivinerTable::LoadCsv", "Moon::SurfaceTemperature::ProductionTemperatureK", "normal srcMoon initializer"],
+  "configuration": "Derived lola_surface.in receipt selecting diviner-map and the campaign-owned processed D03 table; eight MPI ranks; no inferred constants.",
+  "inputs": ["same-campaign I13 PASS", "18 D03 GCP TAB/XML pairs", "temperature_table.csv", "benchmark_points.csv", "d03_gcp_qa.json"],
+  "independent_reference": "Frozen checkerboard hold-out D03 tbol rows and independent adjacent-quarter-hour interpolation in Python; missing native bins remain gaps.",
+  "units": "temperature and residual K; planetocentric latitude/positive-east longitude degrees; local time hours",
+  "frame_time_convention": "MOON_ME_DE421 body-fixed geometry, LSO particle state, SPICE TDB internally, archive UTC where supplied",
+  "deterministic_stochastic_controls": "Random seed and MPI/OpenMP layout recorded; stochastic criteria use declared confidence intervals.",
+  "procedure": "Verify I13; reproducibly process and hash all GCP products; initialize DIVINER_MAP; query the production callback at the linked SPICE epoch and eligible hold-out coordinates; independently interpolate only complete neighboring native time bins; retain row-level comparison artifacts.",
+  "metrics": ["comparison count", "RMSE K", "mean bias K", "maximum absolute residual K", "processed-table hashes", "missing uncertainty declaration"],
+  "acceptance_criteria": "Processed QA READY and hashes exact; only GOOD hold-out rows; at least one comparison; every temperature finite and positive; RMSE <=15 K; no gap filling or assumed uncertainty.",
+  "expected_pass_result": "The declared linked M2 capability is evaluated and every frozen criterion is met.",
+  "expected_failure_modes": ["predecessor unavailable", "data package incomplete", "production wiring failure", "numerical criterion failure", "physics criterion failure"],
+  "required_data": ["D03 Diviner GCP"],
+  "data_hashes": "Recorded in run_manifest.json after package hash verification.",
+  "predecessor_gates": ["I13", "applicable U09-U13 gates"],
+  "artifacts": ["stdout.log", "stderr.log", "receipt.txt when executed", "result.json", "run_manifest.json", "application.in", "comparison.csv", "comparison.png", "comparison.eps"],
+  "status_semantics": "PASS means the full linked criterion ran and passed; FAIL means it ran and missed the criterion; ERROR is infrastructure/parser/corruption; SKIPPED means a prerequisite, capability, configuration, or authoritative input is unavailable."
+}

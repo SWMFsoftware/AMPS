@@ -17,6 +17,8 @@
 #include "constants.h"
 #include "SingleVariableDiscreteDistribution.h"
 
+#include <cmath>
+#include <limits>
 #include <string>
 
 //#include "Rosetta.h"
@@ -57,6 +59,26 @@ int Exosphere::nTotalSourceProcesses=0;
 
 //the sphere that representd the planet
 cInternalSphericalData *Exosphere::Planet=NULL;
+
+Exosphere::SurfaceInteraction::fRuntimeAccommodationCoefficient
+    Exosphere::SurfaceInteraction::RuntimeAccommodationCoefficient=NULL;
+
+double Exosphere::SurfaceInteraction::EvaluateAccommodationSpeed(
+    double incidentSpeed,double thermalSpeed,double coefficient,
+    AccommodationSpeedLaw speedLaw) {
+  if (!std::isfinite(incidentSpeed) || incidentSpeed<0.0 ||
+      !std::isfinite(thermalSpeed) || thermalSpeed<0.0 ||
+      !std::isfinite(coefficient) || coefficient<0.0 || coefficient>1.0)
+    return std::numeric_limits<double>::quiet_NaN();
+  switch (speedLaw) {
+    case AccommodationSpeedLaw::LinearSpeed:
+      return coefficient*thermalSpeed+(1.0-coefficient)*incidentSpeed;
+    case AccommodationSpeedLaw::KineticEnergy:
+      return sqrt(coefficient*thermalSpeed*thermalSpeed+
+          (1.0-coefficient)*incidentSpeed*incidentSpeed);
+  }
+  return std::numeric_limits<double>::quiet_NaN();
+}
 
 Exosphere::SourceProcesses::fPostProcessSurfaceInjection
     Exosphere::SourceProcesses::PostProcessSurfaceInjection=NULL;
@@ -2447,10 +2469,15 @@ int Exosphere::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation
   // Preserve the public sphere callback and all existing callers by routing
   // through the generalized kernel with its historical radial-normal mode.
   return ParticleSurfaceInteraction_SurfaceAccomodation(spec,ptr,x_SO_OBJECT,
-      v_SO_OBJECT,dtTotal,NodeDataPonter,SphereDataPointer,NULL);
+      v_SO_OBJECT,dtTotal,NodeDataPonter,SphereDataPointer,NULL,NULL,NULL);
 }
 
-int Exosphere::SurfaceInteraction::ParticleSurfaceInteraction_SurfaceAccomodation(int spec,long int ptr,double *x_SO_OBJECT,double *v_SO_OBJECT,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer,const double *externalNormalBodyFixed)  {
+int Exosphere::SurfaceInteraction::ParticleSurfaceInteraction_SurfaceAccomodation(
+    int spec,long int ptr,double *x_SO_OBJECT,double *v_SO_OBJECT,
+    double &dtTotal,void *NodeDataPonter,void *SphereDataPointer,
+    const double *externalNormalBodyFixed,
+    const double *lsoToBodyStateTransform36,
+    const double *bodyToLsoStateTransform36)  {
   double radiusSphere,*x0Sphere,lNorm[3],rNorm,lVel[3],rVel,c;
   cInternalSphericalData *Sphere;
 //  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode;
@@ -2465,7 +2492,13 @@ int Exosphere::SurfaceInteraction::ParticleSurfaceInteraction_SurfaceAccomodatio
   memcpy(x_LOCAL_SO_OBJECT,x_SO_OBJECT,3*sizeof(double));
 
   //convert the position vector from SO_OBJECT to IAU_OBJECT coordinate frames
-  memcpy(xform,OrbitalMotion::SO_to_IAU_TransformationMartix,36*sizeof(double));
+  // Moving LOLA impacts provide transforms evaluated at the actual segment
+  // intersection epoch.  Static/legacy callers pass NULL and retain the
+  // synchronized global transform.  Both arrays use CSPICE row-major 6x6
+  // state-transform layout and therefore include the local surface velocity.
+  memcpy(xform,lsoToBodyStateTransform36==NULL ?
+      &OrbitalMotion::SO_to_IAU_TransformationMartix[0][0] :
+      lsoToBodyStateTransform36,36*sizeof(double));
 
   x_LOCAL_IAU_OBJECT[0]=xform[0][0]*x_LOCAL_SO_OBJECT[0]+xform[0][1]*x_LOCAL_SO_OBJECT[1]+xform[0][2]*x_LOCAL_SO_OBJECT[2];
   x_LOCAL_IAU_OBJECT[1]=xform[1][0]*x_LOCAL_SO_OBJECT[0]+xform[1][1]*x_LOCAL_SO_OBJECT[1]+xform[1][2]*x_LOCAL_SO_OBJECT[2];
@@ -2553,7 +2586,34 @@ int Exosphere::SurfaceInteraction::ParticleSurfaceInteraction_SurfaceAccomodatio
   for (vt=0.0,idim=0;idim<3;idim++) vt+=pow(sqrt(-log(rnd()))/beta*cos(PiTimes2*rnd()),2);
 
   vt=sqrt(vt);
-  vf=AccomodationCoefficient[spec]*vt+(1.0-AccomodationCoefficient[spec])*vi;
+  double accommodation=AccomodationCoefficient[0];
+  // The generated/legacy path uses the original AMPS linear-speed blend.
+  // Applications that install the callback below can select energy mixing in
+  // their immutable input receipt without altering other target applications.
+  AccommodationSpeedLaw accommodationSpeedLaw=
+      AccommodationSpeedLaw::LinearSpeed;
+  if (RuntimeAccommodationCoefficient!=NULL) {
+    std::string accommodationError;
+    if (!RuntimeAccommodationCoefficient(
+            spec,SurfaceTemp,&accommodation,&accommodationSpeedLaw,
+            &accommodationError) ||
+        !std::isfinite(accommodation) || accommodation<0.0 ||
+        accommodation>1.0) {
+      const std::string message=accommodationError.empty() ?
+          "runtime surface accommodation coefficient is outside [0,1]" :
+          accommodationError;
+      exit(__LINE__,__FILE__,message.c_str());
+    }
+  }
+  // Tenishev et al. (2013), Eq. 14, defines its accommodation factor as an
+  // interpolation of kinetic energy. Both speeds are evaluated in the
+  // body-fixed frame relative to the moving surface, so translational surface
+  // energy is not inadvertently included in this scalar relation.
+  vf=EvaluateAccommodationSpeed(vi,vt,accommodation,
+                                accommodationSpeedLaw);
+  if (!std::isfinite(vf))
+    exit(__LINE__,__FILE__,
+        "runtime surface accommodation speed law or inputs are invalid");
 
   //determine the normal vector at the intersection point
   Sphere->GetSphereGeometricalParameters(x0Sphere,radiusSphere);
@@ -2596,7 +2656,9 @@ int Exosphere::SurfaceInteraction::ParticleSurfaceInteraction_SurfaceAccomodatio
   }
 
   //convert velocity vector from IAU_OBJECT -> SO_OBJECT coordinate fraim
-  memcpy(xform,OrbitalMotion::IAU_to_SO_TransformationMartix,36*sizeof(double));
+  memcpy(xform,bodyToLsoStateTransform36==NULL ?
+      &OrbitalMotion::IAU_to_SO_TransformationMartix[0][0] :
+      bodyToLsoStateTransform36,36*sizeof(double));
 
   v_LOCAL_SO_OBJECT[0]=xform[3][0]*x_LOCAL_IAU_OBJECT[0]+xform[3][1]*x_LOCAL_IAU_OBJECT[1]+xform[3][2]*x_LOCAL_IAU_OBJECT[2]+
       xform[3][3]*v_LOCAL_IAU_OBJECT[0]+xform[3][4]*v_LOCAL_IAU_OBJECT[1]+xform[3][5]*v_LOCAL_IAU_OBJECT[2];

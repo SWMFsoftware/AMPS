@@ -11,6 +11,9 @@
 
 #include "pic.h"
 
+#include "MoonInput.h"
+#include "MoonSurfaceTemperature.h"
+
 #include <string>
 
 // Production target and frame names.  Exosphere retains the legacy variable
@@ -197,6 +200,20 @@ double SodiumStickingProbability(double& ReemissionParticleFraction,double Temp)
 
 
 double Exosphere::SurfaceInteraction::StickingProbability(int spec, double& ReemissionParticleFraction,double Temp) {
+  // An enabled M2 receipt replaces the legacy compiled species switch with
+  // the reviewed, input-provenanced Na/Ar kernels.  Ion impacts fail closed in
+  // that adapter because no authoritative neutralization/trapping branching
+  // ratio was available; silently reusing a neutral law would invent physics.
+  if (Moon::Runtime::HasConfiguration() &&
+      Moon::Runtime::GetConfiguration().m2EnvironmentEnabled) {
+    double probability=0.0;
+    std::string error;
+    ReemissionParticleFraction=1.0;
+    if (!Moon::SurfaceTemperature::ProductionStickingProbability(
+            spec,Temp,&probability,&error))
+      exit(__LINE__,__FILE__,error.c_str());
+    return probability;
+  }
   double res=0.0;
 
    switch (spec) {
@@ -219,6 +236,18 @@ double Exosphere::SurfaceInteraction::StickingProbability(int spec, double& Reem
 
 //surface temeprature of the planet
 double Exosphere::GetSurfaceTemperature(double CosSubSolarAngle,double *x_LOCAL_SO_OBJECT) {
+
+  // The M2 adapter is the single temperature service used by impacts and all
+  // generic exosphere source callbacks.  Returning NaN is forbidden because
+  // it would silently poison residence probabilities and Maxwellian draws.
+  if (Moon::SurfaceTemperature::ProductionStateInitialized()) {
+    const double temperature=
+        Moon::SurfaceTemperature::ProductionTemperatureK(x_LOCAL_SO_OBJECT);
+    if (!(temperature>0.0) || !std::isfinite(temperature))
+      exit(__LINE__,__FILE__,
+          "M2 production surface-temperature query returned invalid state");
+    return temperature;
+  }
 
   //determine if the point on the night side of the Moon
   if (CosSubSolarAngle<0.0) return 100.0;
@@ -489,4 +518,3 @@ double Moon::ElectronImpactIonizationRate(PIC::ParticleBuffer::byte* ParticleDat
   
    return rate;
 }	
-

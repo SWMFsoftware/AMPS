@@ -195,6 +195,113 @@ yet implement the complete two-limb/pole/shell operators or circular-aperture
 and exposure-time convolution; therefore configuration acceptance and partial
 grid wiring are not U26/I33 verification.
 
+#### M2 lunar environment fields
+
+`m2_environment=disabled` is the exact M0/M1 path; every M2-only assignment is
+then rejected so a misspelled or ignored physics receipt cannot look active.
+`enabled` requires the complete group shown in
+`srcMoon/examples/lola_surface.in`:
+
+- the executable must be built with SPICE. Every M2 temperature mode needs an
+  epoch-dependent LSO/MOON_ME_DE421 transform, and the predictive mode also
+  needs Sun/Earth ephemerides. A no-SPICE build rejects M2 rather than using an
+  identity transform or frozen illumination;
+
+- `surface_temperature_mode` is `simple-cosine`, `diviner-map`, or
+  `thermal-model`. `diviner-map` additionally requires an existing processed
+  D03 CSV; `none` is valid only for the other modes.
+- `diviner_eclipse_history_file` and
+  `diviner_eclipse_selection_contract_file` are the paired I17 observation
+  receipt. Both may be literal `none` in a non-I17 run. Otherwise both paths
+  must exist. The history is a reproducibly processed PDS4 RDR table; the JSON
+  contract freezes the June-training/December-holdout membership, actual
+  footprint/time binning, native flags, Paige channel-sensitivity rule, and
+  uncertainty propagation before hold-out residuals are evaluated. These
+  files are observation inputs only: they never initialize, force, or tune the
+  production thermal state.
+- `illumination_ray_origin_offset_m` offsets a terrain ray from its source
+  facet. `surface_collision_maximum_segment_length_m`,
+  `surface_collision_time_tolerance_s`,
+  `surface_collision_distance_tolerance_m`, and
+  `surface_collision_maximum_iterations` control moving-boundary bracketing
+  and bisection. All are positive and must be converged by I14.
+- `thermal_*` fields explicitly provide solar flux, emissivity, albedo law,
+  density/conductivity depth laws, the five heat-capacity polynomial
+  coefficients, geothermal flux, depth/layers, update size, initial
+  temperature, and nonlinear tolerances. Dimensional suffixes are normative.
+- Eclipse forcing is also explicit. The currently implemented experimental
+  contract requires
+  `thermal_eclipse_direct_irradiance_model=apparent-disc-overlap`,
+  `thermal_solar_disc_radiance_model=uniform`, and
+  `thermal_earth_atmosphere_transmission_model=disabled`. At each surface
+  point and SPICE epoch, the code computes Sun/Earth centre separation and
+  angular radii, evaluates the analytical overlap of their circular apparent
+  discs, and multiplies direct solar flux by the unocculted solar-disc area.
+  `thermal_solar_disc_radius_m` and `thermal_opaque_earth_radius_m` state the
+  physical radii used in that geometry. Terrain horizon blocking remains an
+  independent all-or-none ray test to the solar centre. The unocculted area
+  fraction scales the direct flux evaluated with the solar-centre incidence
+  cosine; neither incidence nor terrain blocking is integrated across the
+  finite solar disc. This first model assumes uniform projected solar
+  radiance, a spherical opaque solid Earth, and zero refracted,
+  scattered, or transmitted terrestrial-atmosphere irradiance. It therefore
+  produces `EXPERIMENTAL / NOT VALIDATED` eclipse comparisons; the parser
+  rejects names implying unimplemented limb darkening or atmosphere physics.
+- `thermal_spinup_cycle_start_utc` and `thermal_spinup_cycle_end_utc` define
+  the observation-free forcing interval replayed before an I17 comparison.
+  No Diviner temperature initializes the model. Replay continues without an
+  arbitrary cycle-count limit until the largest change at any surface or
+  subsurface thermal node is no greater than
+  `thermal_spinup_temperature_tolerance_k` and the largest whole-column
+  sensible-enthalpy change is no greater than
+  `thermal_spinup_energy_tolerance_j_m2`. Both tolerances are positive input
+  values. CSPICE controls UTC/TDB conversion; a non-positive interval is a
+  runtime error. Allocation or job-resource exhaustion is an `ERROR`, not
+  evidence of convergence.
+- Na and Ar each declare a `*_sticking_model`, a strictly increasing
+  `temperature_k:probability` table, an `*_accommodation_speed_model`, a
+  bounded accommodation coefficient, and a non-empty literature-reference
+  receipt. `constant` sticking requires identical probability values at all
+  table nodes; `temperature-table` uses bounded linear interpolation and
+  clamps only outside the declared endpoint range. Accommodation may be
+  `linear-speed`,
+  `vf=a*vt+(1-a)*vi`, or `kinetic-energy`,
+  `vf=sqrt(a*vt^2+(1-a)*vi^2)`. Here `vi` and `vf` are impact/re-emission
+  speeds relative to the moving body-fixed surface and `vt` is the production
+  Maxwellian draw at the local surface temperature. The M2 Na example selects
+  the kinetic-energy definition and `a=0.2` from Tenishev et al. (2013),
+  Eq. 14. Ar additionally uses `argon_desorption_energy_j_mol`; Na uses
+  `sodium_activation_energy_ev` and `sodium_attempt_frequency_hz`.
+  `ion_surface_interaction_mode=unconfigured` is presently the only accepted
+  value and makes Na+/Ar+ impacts fail rather than inherit neutral physics.
+- The five `argon_source_*` fields form a separate radiogenic-source receipt.
+  `argon_source_enabled` is Boolean; the maintained Na-only example sets it
+  to `false` but still records the candidate parameters. The only accepted
+  geography and time law are `uniform-global` and `continuous`.
+  `argon_source_rate_atoms_s` is the total lunar rate in atoms per second,
+  not a surface flux; it must be positive and finite. The selected example
+  uses the `3.8e20 atoms s^-1` lower end of the Killen (2002) diffusion range.
+  `argon_source_map_file` must be literal `none`, because local D10 covers
+  only the South Pole-Aitken region and is QA-incomplete; the parser rejects
+  a potassium-weighted map rather than extrapolating it. The non-empty
+  `argon_source_reference` is a provenance receipt. Enabling injection also
+  requires an Ar-enabled build and the dedicated `RadiogenicArgon` Config.pl
+  source block; a missing compile-time Ar species is a fatal configuration
+  error, never an ignored source.
+- `cold_trap_retention_timescale_s` is a diagnostic comparison timescale; it
+  does not create a permanent sink. `surface_inventory_initial_state` is
+  `zero` or `checkpoint`. The checkpoint setting is a base name: restart
+  requires both `<base>.Na` and `<base>.Ar`. Literal `none` disables periodic
+  writes and is normalized to an empty internal path.
+
+The sodium surface receipt cites Tenishev et al. (2013),
+doi:10.1016/j.icarus.2013.08.021. Its Fig. 3 supplies the temperature-dependent
+sticking curve (adapted there from Yakshinskiy and Madey, 2005), while Eq. 14
+supplies the energy-mixing definition and the paper evaluates `a=0.2`.
+Selecting another model or coefficient is permitted only through the explicit
+per-species fields above; AMPS does not silently substitute the legacy
+linear-speed interpretation.
+
 ### 2.2 General selection rules
 
 ```bash

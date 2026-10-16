@@ -1,4 +1,5 @@
 #include "LunarSurface.h"
+#include "MoonSurfaceEnvironment.h"
 
 #include "pic.h"
 
@@ -598,34 +599,28 @@ bool PrepareProductionSurface(const Runtime::Configuration& configuration,
     return true;
   }
 
-#if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
-  // The cut-cell triangulation is static in the AMR frame.  Enabling lunar
-  // rotation without moving/rebuilding it would mix the label body-fixed frame
-  // with LSO and produce physically incorrect impacts, so fail explicitly.
-  *error = "LOLA surface mode currently requires orbit calculation off: the "
-      "static AMR triangulation is in the LDEM body-fixed frame";
-  return false;
-#endif
-
-  // Only rank zero reads the large raster and writes shared products.  The
-  // success flag and minimum radius are broadcast before any rank invokes the
-  // normal AMPS CEA reader, ensuring all ranks see one complete mesh.
+  // Every rank constructs the same in-memory body-fixed triangulation used by
+  // the moving-boundary BVH.  Rank zero alone writes the requested CEA and
+  // Tecplot artifacts.  Re-reading D01 on each rank costs startup I/O but
+  // avoids broadcasting a potentially multi-gigabyte fine mesh and, more
+  // importantly, gives every mover thread a local read-only query service.
   int generated = 1;
   std::string localError;
   double minimumRadius = 0.0;
-  if (PIC::ThisThread == 0) {
-    LolaDem dem;
-    Triangulation mesh;
-    generated = dem.Load(configuration, &localError) &&
-        BuildIcosphere(dem.metadata().referenceRadiusM,
-                       configuration.surfaceMeshResolutionM, &mesh,
-                       &localError) &&
-        ApplyLolaTopography(dem, &mesh, &localError) &&
-        WriteCeaSurface(mesh, configuration.surfaceCeaFile, &localError) &&
-        WriteTecplotSurface(mesh, configuration.surfaceTecplotFile,
-                            &localError);
+  LolaDem dem;
+  Triangulation mesh;
+  generated = dem.Load(configuration, &localError) &&
+      BuildIcosphere(dem.metadata().referenceRadiusM,
+                     configuration.surfaceMeshResolutionM, &mesh,
+                     &localError) &&
+      ApplyLolaTopography(dem, &mesh, &localError) &&
+      SurfaceEnvironment::InitializeProductionTerrain(
+          mesh,configuration,&localError);
+  if (generated) minimumRadius=mesh.minimumRadiusM;
+  if (generated && PIC::ThisThread == 0) {
+    generated=WriteCeaSurface(mesh,configuration.surfaceCeaFile,&localError) &&
+        WriteTecplotSurface(mesh,configuration.surfaceTecplotFile,&localError);
     if (generated) {
-      minimumRadius = mesh.minimumRadiusM;
       std::cout << "$PREFIX: srcMoon LOLA surface: product="
                 << dem.metadata().productId << ", frame=\""
                 << dem.metadata().coordinateSystemName << "\", vertices="
@@ -634,20 +629,27 @@ bool PrepareProductionSurface(const Runtime::Configuration& configuration,
                 << ", maximum_edge_m=" << mesh.maximumEdgeLengthM << '\n';
     }
   }
-  MPI_Bcast(&generated, 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
-  if (!generated) {
-    if (PIC::ThisThread == 0) *error = localError;
-    else *error = "rank zero failed to generate the LOLA surface";
+  int allGenerated=0;
+  MPI_Allreduce(&generated,&allGenerated,1,MPI_INT,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  if (!allGenerated) {
+    *error=localError.empty() ?
+        "another MPI rank failed to construct the production LOLA surface" :
+        localError;
     return false;
   }
-  MPI_Bcast(&minimumRadius, 1, MPI_DOUBLE, 0, MPI_GLOBAL_COMMUNICATOR);
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
-  // Use the same generic loader as a pre-generated AMPS surface.  This keeps
-  // production ray tracing and cut-cell construction on the standard path.
+  // A non-orbit build can still use AMPS's static cut-cell representation.
+  // Orbit-enabled production keeps the body-fixed mesh in the BVH above and
+  // intersects it at each particle-segment epoch through the optional moving
+  // surface hook; loading body-fixed vertices into LSO cut cells would be a
+  // frame error.
+#if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_OFF_
   PIC::Mesh::IrregularSurface::ReadCEASurfaceMeshLongFormat(
       configuration.surfaceCeaFile.c_str(), 1.0);
   if (!InitializeLoadedNormalsFromWinding(error)) return false;
+#endif
   gMinimumSurfaceRadiusM = minimumRadius;
   gRealisticSurfaceActive = true;
   error->clear();

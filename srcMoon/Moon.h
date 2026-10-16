@@ -17,6 +17,29 @@
 namespace Moon {
   using namespace Exosphere;
 
+  namespace Runtime { struct Configuration; }
+
+  namespace Species {
+    namespace Argon {
+      // Production adapter for the application-specific radiogenic 40Ar
+      // source.  Config.pl can register the two functions below through its
+      // normal user-defined source mechanism, so injected particles retain a
+      // dedicated Exosphere source ID and ordinary source-budget sampling.
+      bool ConfigureProduction(const Runtime::Configuration& configuration,
+          cInternalSphericalData* logicalSurface,std::string* error);
+      double GetTotalProductionRate(int species,int boundaryElementType,
+                                    void* boundaryElement);
+      void InitializeSurfaceSourceDistribution();
+      bool GenerateParticleProperties(
+          int species,PIC::ParticleBuffer::byte* temporaryParticleData,
+          double* positionSoM,double* positionBodyM,double* velocitySoMPerS,
+          double* velocityBodyMPerS,double* sphereCenterM,
+          double sphereRadiusM,
+          cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*& startNode,
+          int boundaryElementType,void* boundaryElement);
+    }
+  }
+
   /**
    * Coordinate-frame and force conventions used by the lunar application.
    *

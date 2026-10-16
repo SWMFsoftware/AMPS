@@ -13,6 +13,9 @@
 #include "pic.h"
 #include "Exosphere.h"
 
+Exosphere::fUseFluxBalancedSurfaceInventory
+    Exosphere::UseFluxBalancedSurfaceInventory=NULL;
+
 void Exosphere::ExchangeSurfaceAreaDensity() {
 
   for (int spec=0;spec<PIC::nTotalSpecies;spec++) {
@@ -61,7 +64,16 @@ void Exosphere::ExchangeSurfaceAreaDensity() {
 
       memcpy(SurfaceElementArea,Sphere->SurfaceElementArea,PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber*sizeof(double));
 
+      // A runtime M2 inventory must retain the integrated adsorption minus
+      // desorption flux.  Legacy generated applications continue through the
+      // compile-time redistribution below.  In particular, the srcMoon M0/M1
+      // disabled receipt still gets its historical fixed abundance.
+      const bool runtimeFluxBalance=
+          UseFluxBalancedSurfaceInventory!=NULL &&
+          UseFluxBalancedSurfaceInventory();
+
       //redistribute the surface content
+      if (!runtimeFluxBalance) {
   #if _EXOSPHERE__SURFACE_CONTENT_ == _EXOSPHERE__SURFACE_CONTENT__BALANCE_FLUXES_
       //do noting
   #elif _EXOSPHERE__SURFACE_CONTENT_ == _EXOSPHERE__SURFACE_CONTENT__UNIFORM_
@@ -105,6 +117,7 @@ void Exosphere::ExchangeSurfaceAreaDensity() {
   #else
       exit(__LINE__,__FILE__,"Error: the option is not relcognized");
   #endif
+      }
 
       for (el=0;el<PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber;el++) {
         double t;
@@ -114,7 +127,8 @@ void Exosphere::ExchangeSurfaceAreaDensity() {
 
   #if _EXOSPHERE__SURFACE_CONTENT_ == _EXOSPHERE__SURFACE_CONTENT__USER_DEFINED_
         //use the user defined function for the local surface content
-        Sphere->SurfaceElementPopulation[spec][el]=SurfaceElementArea[el]*(_EXOSPHERE__SURFACE_CONTENT_DENSITY__USER_DEFINED__FUNCTION_(spec,el));
+        if (!runtimeFluxBalance)
+          Sphere->SurfaceElementPopulation[spec][el]=SurfaceElementArea[el]*(_EXOSPHERE__SURFACE_CONTENT_DENSITY__USER_DEFINED__FUNCTION_(spec,el));
   #endif
 
 

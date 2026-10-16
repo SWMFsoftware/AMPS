@@ -19,6 +19,10 @@
 
 PIC::Mover::fProcessOutsideDomainParticles PIC::Mover::ProcessOutsideDomainParticles=NULL;
 PIC::Mover::fProcessTriangleCutFaceIntersection PIC::Mover::ProcessTriangleCutFaceIntersection=NULL;
+PIC::Mover::fFindMovingSurfaceIntersection
+    PIC::Mover::FindMovingSurfaceIntersection=NULL;
+PIC::Mover::fProcessMovingSurfaceIntersection
+    PIC::Mover::ProcessMovingSurfaceIntersection=NULL;
 
 // Pointer-mode begins with the same mover used by the canonical legacy macro.
 // This is initialization of the dispatch mechanism, not a physical-model
@@ -1784,6 +1788,15 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
 
 
 #if _INTERNAL_BOUNDARY_MODE_ ==  _INTERNAL_BOUNDARY_MODE_ON_
+  // A time-dependent surface is not represented in a node's static internal
+  // boundary descriptor list.  Route every segment through the trajectory
+  // tracer when an application installs that callback; otherwise a particle
+  // could cross high terrain while both endpoint nodes remain outside the
+  // minimum-radius safety core.
+  if (FindMovingSurfaceIntersection!=NULL) {
+    return UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_SecondOrder(
+        ptr,dt,startNode,false);
+  }
   if (startNode->InternalBoundaryDescriptorList!=NULL) {
     return UniformWeight_UniformTimeStep_noForce_TraceTrajectory(ptr,dt,startNode);
   }
@@ -2211,6 +2224,10 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 
   PIC::Mesh::cDataCenterNode *cell;
   bool MovingTimeFinished=false;
+  const double requestedFlightTime=dtTotal;
+  double movingSurfacePosition[3]={0.0,0.0,0.0};
+  double movingSurfaceNormal[3]={0.0,0.0,0.0};
+  double movingSurfaceVelocity[3]={0.0,0.0,0.0};
 
   CutCell::cTriangleFace *lastIntersectedTriangleFace_LastCycle=NULL;
 
@@ -2272,6 +2289,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 #define _BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_       1
 #define _INTERNAL_SPHERE_MIN_DT_INTERSECTION_CODE_UTSNFTT_  2
 #define _BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_    3
+#define _MOVING_SURFACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_   4
 
   int ParticleIntersectionCode=_UNDEFINED_MIN_DT_INTERSECTION_CODE_UTSNFTT_;
 
@@ -2822,6 +2840,28 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
       }
     }
 
+    // A moving surface cannot be represented by the static cut-cell lists.
+    // Ask the application for the earliest intersection only after all other
+    // candidates have limited dtMin; this preserves block/cut-face ordering
+    // and bounds the root search to the actual segment that the mover will
+    // integrate.  The callback is optional and has no effect on existing
+    // applications.
+    if (FindMovingSurfaceIntersection!=NULL) {
+      double movingHitTime=dtMin;
+      if (FindMovingSurfaceIntersection(ptr,xInit,vInit,acclInit,
+              requestedFlightTime-dtTotal,dtMin,movingHitTime,
+              movingSurfacePosition,movingSurfaceNormal,
+              movingSurfaceVelocity)) {
+        if (!(movingHitTime>0.0) || movingHitTime>dtMin)
+          exit(__LINE__,__FILE__,
+              "moving-surface callback returned an invalid hit time");
+        dtMin=movingHitTime;
+        ParticleIntersectionCode=
+            _MOVING_SURFACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_;
+        MovingTimeFinished=false;
+      }
+    }
+
     //adjust the particle moving time
     dtTotal-=dtMin;
 
@@ -2831,7 +2871,48 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
     //interaction with the faces of the block and internal surfaces
 
 
-    if (ParticleIntersectionCode==_BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_) {
+    if (ParticleIntersectionCode==
+        _MOVING_SURFACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_) {
+      if (ProcessMovingSurfaceIntersection==NULL)
+        exit(__LINE__,__FILE__,
+            "moving-surface finder installed without interaction callback");
+      for (int dimension=0;dimension<3;++dimension) {
+        xFinal[dimension]=movingSurfacePosition[dimension];
+        vFinal[dimension]=vInit[dimension]+dtMin*acclInit[dimension];
+      }
+      newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
+      if (newNode==NULL)
+        exit(__LINE__,__FILE__,
+            "moving-surface intersection lies outside the AMPS mesh");
+      const int code=ProcessMovingSurfaceIntersection(ptr,xFinal,vFinal,
+          movingSurfaceNormal,movingSurfaceVelocity,newNode);
+      if (code==_PARTICLE_DELETED_ON_THE_FACE_) {
+        PIC::ParticleBuffer::DeleteParticle(ptr);
+        return _PARTICLE_LEFT_THE_DOMAIN_;
+      }
+      if (code!=_PARTICLE_REJECTED_ON_THE_FACE_)
+        exit(__LINE__,__FILE__,
+            "moving-surface interaction returned an unsupported status");
+      double relativeOutwardSpeed=0.0;
+      for (int dimension=0;dimension<3;++dimension)
+        relativeOutwardSpeed+=(vFinal[dimension]-
+            movingSurfaceVelocity[dimension])*movingSurfaceNormal[dimension];
+      if (!(relativeOutwardSpeed>0.0))
+        exit(__LINE__,__FILE__,
+            "moving-surface re-emission velocity is not outward relative to "
+            "the local facet");
+      // Move the emitted particle outside by the mesh geometric tolerance so
+      // the next segment cannot rediscover the same root at t=0.
+      const double offset=std::max(1.0e-6,10.0*PIC::Mesh::mesh->EPS);
+      for (int dimension=0;dimension<3;++dimension)
+        xFinal[dimension]+=offset*movingSurfaceNormal[dimension];
+      newNode=PIC::Mesh::mesh->findTreeNode(xFinal,newNode);
+      if (newNode==NULL)
+        exit(__LINE__,__FILE__,
+            "moving-surface emission offset lies outside the AMPS mesh");
+      lastIntersectedTriangleFace=NULL;
+    }
+    else if (ParticleIntersectionCode==_BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_) {
 
       const double xLocalEPS=1.0E-5;
 

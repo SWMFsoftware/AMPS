@@ -470,6 +470,16 @@ namespace Exosphere {
       static const double ThermalDesorption_uThermal[]={0.0};
       static const double ThermalDesorption_VibrationalFrequency[]={0.0};
 
+      // Applications with input-driven surface kinetics may supply the
+      // production rate directly.  The callback returns physical particles
+      // s^-1 for one logical surface element.  NULL preserves the historical
+      // compile-time Arrhenius arrays exactly, so applications that do not
+      // opt in acquire no new source term.
+      typedef double (*fRuntimeSurfaceElementProductionRate)(
+          int spec,int surfaceElement,void *sphereDataPointer);
+      extern fRuntimeSurfaceElementProductionRate
+          RuntimeSurfaceElementProductionRate;
+
       extern double SourceRate[PIC::nTotalSpecies],maxLocalSourceRate[PIC::nTotalSpecies];
 //      extern double CalculatedTotalSodiumSourceRate;
 
@@ -480,6 +490,9 @@ namespace Exosphere {
       inline double GetTotalProductionRate(int spec,int BoundaryElementType,void *SphereDataPointer) {return SourceRate[spec];}
 
       inline double GetSurfaceElementProductionRate(int spec,int SurfaceElement,void *SphereDataPointer) {
+        if (RuntimeSurfaceElementProductionRate!=NULL)
+          return RuntimeSurfaceElementProductionRate(
+              spec,SurfaceElement,SphereDataPointer);
         double res=0.0,norm[3],sun[3],temp,SodiumSurfaceElementPopulation;
 
         SodiumSurfaceElementPopulation=((cInternalSphericalData*)SphereDataPointer)->SurfaceElementPopulation[spec][SurfaceElement];
@@ -1038,6 +1051,13 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*4.0E3;
 
 
   //combine together the surface area densities and recalcualte the
+  // An application can request the physically conservative BALANCE_FLUXES
+  // update at runtime even when its legacy generated input selected a fixed
+  // surface abundance.  This is intentionally a predicate rather than a
+  // mutable global mode: NULL is an exact legacy path, and an enabled model
+  // must make the choice explicit in its immutable input receipt.
+  typedef bool (*fUseFluxBalancedSurfaceInventory)();
+  extern fUseFluxBalancedSurfaceInventory UseFluxBalancedSurfaceInventory;
   void ExchangeSurfaceAreaDensity();
 
 
@@ -1056,6 +1076,37 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*4.0E3;
     //sodium/surface interaction model
     static const double AccomodationCoefficient[]={0.0};
 
+    // Runtime applications may select how the dimensionless accommodation
+    // factor combines the incident speed vi with a thermal draw vt.  The
+    // historical AMPS law interpolates speed, vf=a*vt+(1-a)*vi.  Published
+    // surface models can instead request kinetic-energy interpolation,
+    // vf=sqrt(a*vt^2+(1-a)*vi^2).  Keeping the choice in the runtime receipt
+    // prevents changing the physics of unrelated applications when one target
+    // adopts a literature-specific definition of accommodation.
+    enum class AccommodationSpeedLaw {
+      LinearSpeed,
+      KineticEnergy
+    };
+
+    // Deterministic scalar kernel shared by the production collision path and
+    // U12. Inputs and output are m/s; coefficient is dimensionless in [0,1].
+    // Invalid inputs return NaN so the caller cannot mistake a malformed
+    // receipt for a physical speed.
+    double EvaluateAccommodationSpeed(double incidentSpeed,
+        double thermalSpeed,double coefficient,
+        AccommodationSpeedLaw speedLaw);
+
+    // Optional application-owned accommodation law.  NULL keeps the exact
+    // historical generated configuration: coefficient zero and linear-speed
+    // mixing.  A runtime callback must return a finite coefficient in [0,1]
+    // and one of the enumerated laws.  An unresolved physical law is therefore
+    // a fatal configuration error rather than an undocumented fallback.
+    typedef bool (*fRuntimeAccommodationCoefficient)(
+        int species,double temperatureK,double* coefficient,
+        AccommodationSpeedLaw* speedLaw,
+        std::string* error);
+    extern fRuntimeAccommodationCoefficient RuntimeAccommodationCoefficient;
+
     //sticking probability of sodium atoms
     double StickingProbability(int spec,double& ReemissionParticleFraction,double Temp);
 
@@ -1066,7 +1117,9 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*4.0E3;
     // body-fixed outward facet normal supplied by a resolved surface mover.
     int ParticleSurfaceInteraction_SurfaceAccomodation(int spec,long int ptr,
         double *x,double *v,double &dtTotal,void *NodeDataPonter,
-        void *SphereDataPointer,const double *externalNormalBodyFixed);
+        void *SphereDataPointer,const double *externalNormalBodyFixed,
+        const double *lsoToBodyStateTransform36=NULL,
+        const double *bodyToLsoStateTransform36=NULL);
   }
 
 

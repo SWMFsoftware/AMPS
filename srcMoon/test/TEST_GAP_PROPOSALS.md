@@ -55,9 +55,13 @@ before implementation.
 - **U09 / I15:** wire terrain-horizon calculations to the production
   illumination service; independently ray-cast selected facets and preserve
   real D02 gaps.
-- **U10-U11 / I16-I17:** implement and verify simple, Diviner-backed, and
-  dynamic thermal states separately, including units, local time, interpolation
-  rules, energy balance, phase lag, and restart state.
+- **U10-U11 / I16-I17:** local processed-Diviner interpolation, the published
+  C3--C9 bolometric operator, grey-emission conversion, and the depth-resolved
+  dynamic thermal kernel are implemented and locally verified.  Remaining
+  coverage is the linked observation-free periodic spin-up, restart continuity,
+  production phase/amplitude and time-step convergence, D03 qualification,
+  June-only threshold freeze, and one-pass December hold-out score.  Until
+  those gates exist I17 remains `SKIPPED / NOT VALIDATED`.
 - **U12 / I18-I19:** add seeded Bernoulli and Maxwellian/accommodation tests;
   verify adsorption/desorption bookkeeping, non-negativity, conservation,
   residence-time laws, and checkpoint continuity.  The present surface-density

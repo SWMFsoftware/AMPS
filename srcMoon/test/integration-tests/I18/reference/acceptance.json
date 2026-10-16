@@ -1,0 +1,23 @@
+{
+  "id": "I18",
+  "name": "Species-specific sticking, residence time, and re-emission distributions",
+  "purpose": "Exercise Na and Ar through the linked production impact/desorption dispatch and compare stochastic re-emission distributions with their declared analytic laws.",
+  "production_capability": "Species-specific sticking, residence time, and re-emission distributions",
+  "production_entry_points": ["Exosphere::SurfaceInteraction::ParticleSurfaceInteraction_SurfaceAccomodation", "Moon::Species::Argon::GenerateParticleProperties", "Moon::SurfaceTemperature::ProductionThermalDesorptionRate", "Moon::SurfaceTemperature::ProductionTemperatureK"],
+  "configuration": "Dedicated Config.pl Na,Ar build with RadiogenicArgon registered; derived lola_surface.in with argon_source_enabled=true, unchanged 100 km LOLA surface/physics, and bounded custom volume-ownership targets; 4096 Na samples and 32768 Ar source attempts per MPI rank; eight MPI ranks by default.",
+  "inputs": ["frozen derived application.in", "predecessor I13 PASS from the same campaign", "Tenishev et al. 2013 Na parameters in the receipt", "Kegerreis et al. 2017 Ar parameters in the receipt", "Killen 2002 lower-bound source rate in the receipt"],
+  "independent_reference": "Input-parameter Arrhenius residence laws, binomial event-count interval, and closed-form Maxwell energy, Maxwell-flux energy, uniform-hemisphere, and cosine-law CDFs implemented only in the Python scorer.",
+  "units": "temperature K; speeds m s^-1; source rate atoms s^-1; normalized energies and direction cosines dimensionless",
+  "frame_time_convention": "MOON_ME_DE421 body-fixed geometry, LSO particle state, SPICE TDB internally, archive UTC where supplied",
+  "deterministic_stochastic_controls": "Base seed 731993 is input-defined; rank seed is base+104729*rank+18; MPI/OpenMP layout and executable hash are recorded.",
+  "procedure": "Require same-campaign I13 PASS; build and hash the dedicated Na+Ar executable; initialize the normal M2 application; call the production Na impact, Na/Ar thermal-desorption, and Ar source callbacks; preserve row-level samples; score independent analytical rates and CDFs.",
+  "metrics": ["Na adsorbed/re-emitted counts", "Na binomial 95% interval", "four one-sample KS distances and thresholds", "linked Na/Ar desorption rates and relative errors", "Ar production source rate", "sample counts"],
+  "acceptance_criteria": "Exactly 4096 Na rows per MPI rank; aggregate Ar rows equal the linked accepted count and total at least 4096; physical finite bounds; Na count within 1.96*sqrt(sum p_i(1-p_i)); every KS D <= 1.36/sqrt(N); linked Na/Ar desorption rates agree with independent input-law evaluations within 1e-12 relative error; Ar rate equals 3.8e20 atoms s^-1 within 1e-15 relative tolerance.",
+  "expected_pass_result": "The linked production Na and Ar samplers satisfy every frozen 95% stochastic gate and the declared Ar driver rate.",
+  "expected_failure_modes": ["I13 unavailable", "Na-only executable supplied", "RadiogenicArgon not registered or runtime-disabled", "LOLA/thermal initialization failure", "sample-count mismatch", "non-physical sample", "binomial or KS criterion failure"],
+  "required_data": ["No observational package; peer-reviewed parameters are frozen in application.in and cited in its comments"],
+  "data_hashes": "The build receipt hashes the derived Config.pl inputs and executable; run_manifest.json hashes application.in and source/data contracts.",
+  "predecessor_gates": ["I13", "applicable U09-U13 gates"],
+  "artifacts": ["stdout.log", "stderr.log", "receipt.txt when executed", "result.json", "run_manifest.json", "application.in", "comparison.csv", "comparison.png", "comparison.eps"],
+  "status_semantics": "PASS means the full linked criterion ran and passed; FAIL means it ran and missed the criterion; ERROR is infrastructure/parser/corruption; SKIPPED means a prerequisite, capability, configuration, or authoritative input is unavailable."
+}

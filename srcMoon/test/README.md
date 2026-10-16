@@ -1,7 +1,23 @@
 # `srcMoon` subsystem verification tests
 
+The 200 GB allocation check reuses the registered I12 runner with
+`--only I12 --m1-input srcMoon/examples/m1_memory200.in --mpi-ranks 8`.
+See [the profile contract and direct command](../examples/README.md#200-gb-memory-budget-mesh-2026-10-14).
+The approved memory profile can now pass I12 wiring, but M1 still requires
+I11 convergence and reviewed I13 baseline evidence. Qualification defaults
+to 480/240/120/60 km; explicitly select `--m1-input srcMoon/examples/m1_sphere.in`
+only to run the legacy memory-intensive FULL sequence.
+
+I17's runner now includes its launcher/plot-reader infrastructure checks
+automatically and enforces the approved 2026-10-14 three-step thermal numerical
+error budget before residual computation. See the
+[I17 contract](integration-tests/I17/README.md) for the 10%-of-observational-sigma
+criterion and the `dt_div_4/` location of the finest-step experimental figures.
+Infrastructure success is not I17 validation.
+
 This directory implements the local/stand-alone `U01`-`U26` layer and the
-currently implemented linked M1 `I11`-`I13` layer defined by
+currently implemented linked M1 `I11`-`I13` and registered M2 `I14`-`I20`
+layers defined by
 [`../development_and_validation.md`](../development_and_validation.md).  It does
 not replace the linked `I01`-`I46` campaign.  A local-kernel pass is evidence
 for that kernel only; it is not evidence that the callback is reached in a
@@ -87,17 +103,20 @@ presence from being treated as qualified validation evidence.
 
 ### Complete campaign
 
-`run_all_test.py` is the single entry point for all 29 currently registered
-`srcMoon` U-series and linked M1 tests: U01-U26 followed by I11-I13. By default
+`run_all_test.py` is the single entry point for all 36 currently registered
+`srcMoon` U-series and linked tests: U01-U26 followed by I11-I20. By default
 it runs the bounded `regression` campaign with eight MPI ranks: I11 and I13
 produce explicit `SKIPPED` non-execution records, while I12 runs the actual
 production initialization and wiring with `srcMoon/examples/m1_regression.in`.
-It removes the generated `build/` tree, configures the Moon application with
-the frozen SPICE installation and kernel directories, runs `make -j`, and then
-launches every registered test
+The default regression campaign builds only the canonical Na executable,
+because I13 and hence I18-I20 are deliberately not launchable. A qualification
+selection containing both I13 and any of I18-I20 first creates and preserves a
+dedicated Na+Ar M2 executable and its hashed build receipt. It then removes the
+generated `build/` tree again, restores the canonical Na-only Moon/SPICE
+configuration, runs `make -j`, and launches every registered test
 through that test's own `test.py` runner. Configuration and compilation are
 both recorded in `<output-dir>/build.log` and as separate steps in
-`run_all_summary.json`:
+`run_all_summary.json`; the M2 build has its own log and JSON receipt:
 
 ```sh
 python3 srcMoon/test/run_all_test.py
@@ -115,8 +134,9 @@ make -j "OPT3=-O3 -g"
 
 The command-line optimization override retains debug symbols while restoring
 production optimization; it does not edit the generated Makefile or
-Makefile.conf. The resulting `./amps` executable and the bounded
-`srcMoon/examples/m1_regression.in` receipt are passed to I11--I13 in default
+Makefile.conf. The resulting canonical `./amps` executable and the bounded
+`srcMoon/examples/m1_regression.in` is passed to I11--I13 and
+`srcMoon/examples/lola_surface.in` is passed to I14--I20. In default
 regression mode. Request the formal, unbounded FULL campaign explicitly:
 
 ```sh
@@ -140,7 +160,10 @@ The default output directory has the form
 must be new or empty; the runner refuses to overwrite an earlier campaign.
 
 Use `--skip-build` only when the existing generated tree is known to match the
-source and SPICE configuration. `--list` prints the explicit campaign
+source and SPICE configuration. If a qualification selection includes I13 and
+I18, I19, or I20 with `--skip-build`, `--m2-amps` must identify a separately
+built Na+Ar executable; the canonical `--amps` remains Na-only. `--list`
+prints the explicit campaign
 registry, `--only UXX` or `--only IXX` may be repeated for a focused runner
 check, `--stream` mirrors individual logs to the terminal, and `--strict-skips`
 makes any
@@ -175,7 +198,7 @@ ERROR: no individual test is counted as executed, the failed step is named in
 
 ### Adding a test to the aggregate campaign
 
-Adding a `UXX_*` or linked M1 directory is not sufficient. Every new permanent
+Adding a `UXX_*` or linked I-series directory is not sufficient. Every new permanent
 test must also be added explicitly to the `TESTS` registry in
 `run_all_test.py` as its
 stable ID and relative `test.py` path. The runner performs a preflight
@@ -205,7 +228,7 @@ result. Tests must keep all other artifacts beneath their own
 `<output-dir>/<UXX>/` directory and must never write into validation-data
 `raw/` directories.
 
-The registered I11-I13 runners instead accept `--amps`, `--input`,
+The registered I11-I20 runners instead accept `--amps`, `--input`,
 `--output-dir`, `--campaign-mode`, and `--mpi-ranks`, and write
 `<output-dir>/<IXX>/result.json` using the same
 status/exit-code protocol. They also preserve the linked artifacts required by
@@ -411,12 +434,12 @@ convergence evidence.
 | U05 | Na radiation pressure/shadow | implemented linked probe | Earth-umbra logic, inverse-square invariant, and absolute Combi-curve agreement to frozen graphical uncertainty; full mover gating remains I07. |
 | U06 | Lorentz force | implemented for dedicated ion fixture | Normal Na-only builds honestly SKIP; the M0 runner rebuilds with Na/Na+ and evaluates the production force callback. |
 | U07 | refinement selector | implemented linked probe | Legacy no-input callbacks and the input-driven radial, SZA, terminator, and body-fixed polar production kernels are evaluated. |
-| U08 | LOLA geometry | kernel subcheck implemented; campaign SKIPPED | Production parser/decoder/icosphere/writers and the strict M1 grid/epoch/geometry input receipt (including coordinate, shell-weighting, exposure, and unresolved-beam fields) are exercised, but D01 lacks package README/provenance/QA and I14 is pending. |
-| U09 | terrain shadow | SKIPPED | Prototype is not wired to production; D01/D02 are absent. |
-| U10 | Diviner temperature | SKIPPED | No Diviner-backed production model; D03 is absent. |
-| U11 | thermal inertia | SKIPPED | No dynamic thermal-state production model. |
-| U12 | surface interaction | implemented linked probe | Temperature/sticking control points only. |
-| U13 | cold trapping | SKIPPED | No PSR/cold-trap production state. |
+| U08 | LOLA geometry | implemented linked probe; PASS | Production parser/decoder/icosphere/writers and the strict receipt are exercised; the runner parses D01 readiness metadata and independently re-hashes the immutable IMG/LBL. Linked I14 remains separate. |
+| U09 | terrain shadow | implemented linked probe; PASS | Production BVH ray/facet horizon service passes flat, ridge, backface, self-hit, and blocking fixtures; I15 owns D02 comparison. |
+| U10 | Diviner temperature | implemented linked probe; PASS | Strict processed-D03 schema, node reproduction, periodic axes, independent trilinear fixture, native RDR UTC/flag-mask logic, radiance-coordinate calibration inverse, Paige C3--C9 substitution, and grey bolometric operator pass; I16/I17 own observations. |
+| U11 | thermal inertia | implemented linked probe; PASS | Depth-resolved nonlinear finite-volume solver passes forcing, convergence, continuity, and exact enthalpy-form energy audit; I17 owns Diviner histories. |
+| U12 | surface interaction | implemented linked probe; PASS | Na/Ar sticking and residence kernels plus the selectable linear-speed/kinetic-energy accommodation identity are checked; linked stochastic I18 remains separate. |
+| U13 | cold trapping | implemented linked probe; PASS | Continuous finite residence, warming release, inventory conservation, classification, and checkpoint round trip pass; I20 owns D02/D03 linkage. |
 | U14 | Na photoionization | implemented linked probe | Legacy constant lifetime only. |
 | U15 | multispecies photoionization | SKIPPED | Na is the sole active species. |
 | U16 | electron impact | SKIPPED | Existing constants are not a qualified D05 implementation. |
@@ -424,7 +447,7 @@ convergence evidence.
 | U18 | plasma driver | SKIPPED | D06 reports ERROR and no qualified driver is wired. |
 | U19 | helium source | SKIPPED | Source file exists but He is disabled and reservoir physics is unresolved. |
 | U20 | neon source | SKIPPED | Source file exists but Ne is disabled. |
-| U21 | argon source | SKIPPED | No radiogenic geography/transient model is present. |
+| U21 | argon source | local uniform kernel verified; full ID SKIPPED | The species-specific continuous source conserves its 3.8e20 atoms/s reference-sphere area partition and rejects unsupported maps. D10 is regional/QA-incomplete, Ar-linked stochastic injection and transient/K-weighted modes are absent, so this is not source validation. |
 | U22 | Na sources | implemented linked probe and configuration guard | M0 built-in impact-on/`MySource`-off invariant, impact normalization, and PSD density kernel; no night-to-day reservoir claim. |
 | U23 | meteoroid driver | SKIPPED | No production forcing path. |
 | U24 | H2O/OH chemistry | SKIPPED | No production species/chemistry path. |
@@ -441,8 +464,113 @@ repository. Each test writes `result.json`; `run_tests.py` writes
 `summary.json`, while the individual-runner campaign writes
 `run_all_summary.json` and one log per registered runner. Probe compilation
 details are retained in the result. Linked I-series runs require the larger
-manifest/artifact set specified in the roadmap; I11-I13 preserve that set when
+manifest/artifact set specified in the roadmap; I11-I20 preserve that set when
 launched by either their individual runners or `run_all_test.py`.
+
+### M2 linked gates
+
+I14-I20 are registered after I13. Each runner checks the I13 `result.json` in
+the same campaign directory before launching AMPS. If that predecessor is
+absent or not `PASS`, it writes `application.in`, empty `stderr.log`, an
+explanatory `stdout.log`, `run_manifest.json` with `execution=not-run`, and
+`result.json=SKIPPED`. This prevents the passing U09-U13 kernel layer or an old
+I13 artifact from being promoted to current linked evidence.
+
+The bounded M2 preflight with reused builds is:
+
+```bash
+python3 srcMoon/test/run_all_test.py --skip-build \
+  --m2-amps /path/to/amps-moon-m2-na-ar \
+  --only I14 --only I15 --only I16 --only I17 \
+  --only I18 --only I19 --only I20 --mpi-ranks 8
+```
+
+Formal execution uses `--campaign-mode qualification` and includes I11-I13 in
+the same command. I14 requires D01; I15 requires D01+D02; I16/I17 require the
+appropriate D03 products; I20 requires D02+D03. Directory presence is not
+readiness: package README, provenance, QA, hashes, native labels, and the exact
+processed product are checked. I18 uses the input-selected Tenishev et al.
+(2013) Na law and Kegerreis et al. (2017) Ar law through a dedicated Na+Ar
+build, but remains predecessor-gated until the same FULL campaign produces
+I13 PASS. Missing physics or evidence is `SKIPPED`, never `PASS`.
+
+When an I14-I20 science criterion is actually evaluated, its runner must
+preserve the row-level values as `comparison.csv` and render those exact rows
+as both `comparison.png` and `comparison.eps`. The strict renderer is
+`common/write_comparison_artifacts.py`; it rejects non-finite values, mixed
+units within one comparison ID, negative uncertainty, and undeclared selection
+labels. Multiple named comparisons are rendered as separate panels without
+changing their row order. It never interpolates or changes the CSV. A
+`SKIPPED`/not-run test must not
+create placeholder comparison files, because a graphic without evaluated
+evidence could be mistaken for validation.
 
 See [`TEST_GAP_PROPOSALS.md`](TEST_GAP_PROPOSALS.md) for missing coverage.  No
 new permanent IDs are assigned there.
+
+### M2 reference-data inventory (audited 2026-10-13)
+
+D02 currently contains immutable north/south PDS3 IMG/LBL pairs for
+`AVGVISIB_65N/65S_240M_201608` and `LPSR_65N/65S_240M_201608`. The native
+labels define 6420-by-6420 signed 16-bit little-endian grids, 240 m/pixel polar
+stereographic projection, planetocentric latitude, positive-east longitude,
+the DE421 mean-Earth/polar-axis body-fixed frame, and the exact DN scale and
+offset. AVGVISIB covers the 2009-07-13 through 2013-07-18 calculation interval
+and maps average solar-disc visibility continuously toward zero; LPSR is the
+binary permanent-shadow classification. D02's immutable raw package remains
+separately labelled `PARTIAL`; the committed `prepare_d02_reference.py` now
+reproducibly creates campaign-owned `illumination_reference.csv` and
+`d02_processed_qa.json` files on a predeclared approximately 100 km lattice
+without changing `raw/`. This makes the derived reference inspectable but
+does not supply the missing production extended-Sun temporal operator required
+for I15.
+
+D03 currently contains all 18 version-1.0 global cumulative-product latitude
+bands (`global_cumul_avg_cyl_*_002`), both version-1.0 polar resource products
+(`dlre_prp_north/south`), and all 144 ten-minute ZIP/XML RDR products for each
+frozen 2011-06-15 training and 2011-12-10 hold-out date. The Diviner team
+identifies these as RDR processing version 3.1; the individual PDS4 product
+labels retain product version 1.0. The GCP labels provide 0.5-degree latitude/longitude
+by 0.25-hour local-time bins, calibrated channel-3 through channel-9 and
+bolometric brightness temperatures in kelvin, positive-east/planetocentric
+coordinates, and `-9998/-9999` invalid/unknown constants. PRP supplies annual
+average 2-cm temperature, annual maximum surface temperature, and ice-depth
+fields on polar triangles. RDR labels provide UTC/JD, geometry, channel,
+detector, radiance/brightness-temperature fields, and native quality/status
+metadata. The committed GCP processor creates a hashed
+`temperature_table.csv`, hold-out `benchmark_points.csv`, and a processing-QA
+record; the PRP processor likewise creates a hashed polar reference. The I17
+processor selects native footprints/flags, aggregates radiance before
+temperature, applies the published Paige C3-C9 sensitivity/T_bol algorithm,
+and derives uncertainty from calibration plus within-bin dispersion. GCP/PRP
+campaign records and the canonical `diviner/processed/i17` RDR product qualify
+only their deterministic transformations. They do not make D03 READY: the
+canonical `diviner/` package currently has no
+`README.md`, `provenance.json`, or `qa_report.json`. The linked runner checks
+those three package records before reading a processed D03 table and therefore
+reports I16/I17/I20 as `SKIPPED / NOT VALIDATED`. I17 now has a local
+multi-channel/grey-bolometric production operator, reproducible RDR processor,
+input-controlled finite-disc eclipse forcing, observation-free periodic
+full-column spin-up, and a linked June-only training comparison path.
+Canonical processed RDR evidence is written only by an explicit
+data-maintenance command under `diviner/processed/i17`; the linked runner
+verifies and stages it but never rewrites the validation-data package. Before
+threshold freeze, staging exposes only the 2,039 June rows to the executable.
+A completed run writes `comparison.csv`, `comparison.png`, `comparison.eps`,
+`channel_diagnostics.csv`, and a review-required
+`june_threshold_candidate.json`, then reports `SKIPPED / NOT VALIDATED` rather
+than PASS. I17 still requires D03 package qualification, a same-campaign FULL
+I13 PASS, investigator review/freeze of the June threshold, and a later
+untouched December execution. Raw RDR presence or an experimental plot alone
+never establishes I17.
+
+The canonical 2026-10-13 I17 processing receipt is `READY` for the deterministic
+RDR transformation itself: 77,075,901 records from 87 archives were examined,
+25,848,333 passed the frozen native cuts, and 6,353 complete C3--C9 bins were
+published (2,039 June training and 4,314 December hold-out).  The history,
+contract, and processor SHA-256 values are respectively
+`870577c82b430b098d816d210b528c714ec6cfa3a20ae9be3f6482a3639ae182`,
+`88fc5196fee5863691937a505873d420990b98056db8a1e8167255cd736189b0`, and
+`5a5d29d0f6dba88cd49c899e541a980eb84ce24717481b0cad471f8012459a65`.
+This receipt does not override the missing D03 package qualification or linked
+I17 capability gates and therefore is not observational validation evidence.

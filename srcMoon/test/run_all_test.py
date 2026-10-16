@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run every registered srcMoon local and M1 linked test and summarize it.
+"""Run every registered srcMoon local and M1/M2 linked test and summarize it.
 
 Each test is launched through its own command-line runner. U01--U26 consume the
 generated build tree.  The default REGRESSION campaign uses a deliberately
@@ -31,10 +31,12 @@ DEFAULT_OUTPUT_PARENT = REPO_ROOT / "test_output" / "srcMoon"
 DEFAULT_SPICE_PATH = Path("/home/vtenishe/SPICE/cspice")
 DEFAULT_SPICE_KERNELS = Path("/home/vtenishe/SPICE/Kernels")
 DEFAULT_AMPS = REPO_ROOT / "amps"
-DEFAULT_M1_INPUT = REPO_ROOT / "srcMoon" / "examples" / "m1_sphere.in"
+DEFAULT_M2_BUILD_DIR_NAME = "_m2_na_ar_build"
+DEFAULT_M1_INPUT = REPO_ROOT / "srcMoon" / "examples" / "m1_memory200.in"
 DEFAULT_REGRESSION_INPUT = (
     REPO_ROOT / "srcMoon" / "examples" / "m1_regression.in"
 )
+DEFAULT_M2_INPUT = REPO_ROOT / "srcMoon" / "examples" / "lola_surface.in"
 
 # This is the campaign registry, not a directory-discovery convenience.  A new
 # test must be added here deliberately so code review can see that the aggregate
@@ -85,7 +87,16 @@ LINKED_M1_TESTS: tuple[tuple[str, str], ...] = (
     ("I13", "integration-tests/I13/test.py"),
 )
 
-TESTS = U_TESTS + LINKED_M1_TESTS
+# M2 IDs are always invoked after I13.  Their individual runners enforce the
+# predecessor result and retain a structured SKIPPED artifact when the FULL M1
+# baseline has not passed; local U09--U13 success never substitutes for that
+# linked gate.
+LINKED_M2_TESTS: tuple[tuple[str, str], ...] = tuple(
+    (f"I{number:02d}", f"integration-tests/I{number:02d}/test.py")
+    for number in range(14, 21)
+)
+
+TESTS = U_TESTS + LINKED_M1_TESTS + LINKED_M2_TESTS
 
 VALID_STATUSES = ("PASS", "FAIL", "SKIPPED", "ERROR")
 EXPECTED_EXIT = {"PASS": 0, "FAIL": 1, "ERROR": 2, "SKIPPED": 77}
@@ -133,7 +144,7 @@ def validate_registry() -> list[str]:
         errors.append(f"registered test directory is missing: {directory}")
 
     # I01--I10 belong to the separately configured M0 baseline campaign. Only
-    # the requested M1 range is checked here, avoiding any implication that a
+    # the requested M1/M2 range is checked here, avoiding any implication that a
     # single SPICE build can replace the dedicated M0 multi-build runner.
     expected_m1_directories = {f"I{number:02d}" for number in range(11, 14)}
     registered_m1_directories = {
@@ -143,6 +154,12 @@ def validate_registry() -> list[str]:
         errors.append(
             "linked M1 registry must contain exactly I11, I12, and I13"
         )
+    expected_m2_directories = {f"I{number:02d}" for number in range(14, 21)}
+    registered_m2_directories = {
+        Path(runner).parts[-2] for _, runner in LINKED_M2_TESTS
+    }
+    if registered_m2_directories != expected_m2_directories:
+        errors.append("linked M2 registry must contain exactly I14 through I20")
     return errors
 
 
@@ -285,6 +302,57 @@ def clean_build(
         "steps": [configure_result, build_result],
         "duration_seconds": time.monotonic() - started,
     }
+
+
+def build_m2_qualification(
+    output_root: Path,
+    stream: bool,
+    spice_path: Path,
+    spice_kernels: Path,
+) -> dict[str, Any]:
+    """Create the separate Na+Ar executable before restoring canonical build.
+
+    The helper performs its own clean Config.pl/build cycle and copies the
+    executable into the immutable campaign tree.  ``clean_build`` is called
+    immediately afterward, so U-series and M0/M1 tests still consume the
+    canonical Na-only generated tree and ``amps`` executable.
+    """
+    artifact_dir = output_root / DEFAULT_M2_BUILD_DIR_NAME
+    command = [
+        sys.executable,
+        str(TEST_ROOT / "build_m2_qualification.py"),
+        "--output-dir", str(artifact_dir),
+        "--spice-path", str(spice_path),
+        "--spice-kernels", str(spice_kernels),
+    ]
+    outer_log = output_root / "build-m2-na-ar-runner.log"
+    started = time.monotonic()
+    returncode = run_logged(command, outer_log, stream)
+    receipt = artifact_dir / "build-m2-na-ar.json"
+    result: dict[str, Any] = {
+        "status": "ERROR", "returncode": returncode,
+        "command": command, "runner_log": str(outer_log),
+        "receipt": str(receipt),
+        "duration_seconds": time.monotonic() - started,
+    }
+    if returncode != 0 or not receipt.is_file():
+        result["reason"] = (
+            "dedicated Na+Ar Config.pl/build failed or omitted its receipt")
+        return result
+    try:
+        payload = json.loads(receipt.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        result["reason"] = f"unreadable Na+Ar build receipt: {error}"
+        return result
+    executable = artifact_dir / "amps-moon-m2-na-ar"
+    if payload.get("status") != "PASS" or not executable.is_file():
+        result["reason"] = str(payload.get("error", "Na+Ar build did not pass"))
+        result["reported_receipt"] = payload
+        return result
+    result.update(status="PASS", executable=str(executable),
+                  executable_sha256=payload["executable"]["sha256"],
+                  reported_receipt=payload)
+    return result
 
 
 def linked_artifact_index(result_path: Path) -> dict[str, str]:
@@ -440,8 +508,10 @@ def run_test(
     stream: bool,
     amps: Path,
     m1_input: Path,
+    m2_input: Path,
     campaign_mode: str,
     mpi_ranks: int,
+    m2_amps: Path | None,
 ) -> dict[str, Any]:
     """Execute one registered CLI runner and consume its structured result."""
     runner = (TEST_ROOT / runner_name).resolve()
@@ -455,13 +525,17 @@ def run_test(
         # manifest, and exact application-input snapshot. This outer log keeps
         # only the runner-level transcript and status JSON, so no artifact is
         # overwritten or mistaken for model output.
+        linked_input = m2_input if int(test_id[1:]) >= 14 else m1_input
+        linked_executable = (
+            m2_amps if test_id in {"I18", "I19", "I20"} and
+            m2_amps is not None else amps)
         command = [
             sys.executable,
             str(runner),
             "--amps",
-            str(amps),
+            str(linked_executable),
             "--input",
-            str(m1_input),
+            str(linked_input),
             "--output-dir",
             str(output_root),
             "--campaign-mode",
@@ -522,11 +596,21 @@ def main() -> int:
         help="SPICE Moon executable used by linked I11-I13 (default: %(default)s)",
     )
     parser.add_argument(
+        "--m2-amps",
+        type=Path,
+        help=("prebuilt dedicated Na+Ar executable used by I18-I20 when "
+              "--skip-build is selected; normal builds create it automatically"),
+    )
+    parser.add_argument(
         "--m1-input",
         type=Path,
         help=("Moon .in receipt used by linked I11-I13; the default is "
-              "m1_regression.in for REGRESSION and m1_sphere.in for "
+              "m1_regression.in for REGRESSION and m1_memory200.in for "
               "QUALIFICATION"),
+    )
+    parser.add_argument(
+        "--m2-input", type=Path, default=DEFAULT_M2_INPUT,
+        help="Moon LOLA/M2 .in receipt used by linked I14-I20",
     )
     parser.add_argument(
         "--campaign-mode",
@@ -611,6 +695,8 @@ def main() -> int:
             else DEFAULT_M1_INPUT
         )
     m1_input = selected_m1_input.resolve()
+    m2_input = args.m2_input.resolve()
+    m2_amps = args.m2_amps.resolve() if args.m2_amps is not None else None
     if output_root.exists() and any(output_root.iterdir()):
         parser.error(
             f"output directory is not empty: {output_root}; choose a new directory "
@@ -619,10 +705,44 @@ def main() -> int:
     output_root.mkdir(parents=True, exist_ok=True)
     campaign_started = time.monotonic()
 
+    # I18-I20 cannot launch unless this fresh campaign also executes the FULL
+    # I13 predecessor.  In the default regression campaign, or when I13 is not
+    # selected, their runners deliberately write not-run SKIPPED evidence.
+    # Avoid spending two clean builds on an executable that the layered gate
+    # makes unreachable; a qualification selection containing I13 still
+    # builds Na+Ar before restoring the canonical Na-only tree.
+    m2_executable_reachable = (
+        args.campaign_mode == "qualification" and "I13" in selected and
+        any(test_id in {"I18", "I19", "I20"} for test_id in selected)
+    )
+
     build_result: dict[str, Any] | None = None
+    m2_build_result: dict[str, Any] | None = None
     if not args.skip_build:
         if build_dir != DEFAULT_BUILD.resolve():
             parser.error("a clean build can target only the repository build directory")
+        if m2_executable_reachable:
+            m2_build_result = build_m2_qualification(
+                output_root, args.stream, args.spice_path.resolve(),
+                args.spice_kernels.resolve())
+            if m2_build_result["status"] == "ERROR":
+                summary = {
+                    "source_revision": git_revision(),
+                    "m2_build": m2_build_result,
+                    "counts": {"executed": 0, "PASS": 0, "FAIL": 0,
+                               "SKIPPED": 0, "ERROR": 0},
+                    "campaign_status": "ERROR",
+                    "campaign_error": "dedicated Na+Ar M2 build failed",
+                    "results": [],
+                }
+                with (output_root / "run_all_summary.json").open(
+                    "w", encoding="utf-8") as stream:
+                    json.dump(summary, stream, indent=2, sort_keys=True)
+                    stream.write("\n")
+                print("ERROR: dedicated Na+Ar M2 build failed; see " +
+                      str(m2_build_result["runner_log"]), file=sys.stderr)
+                return 2
+            m2_amps = Path(str(m2_build_result["executable"]))
         build_result = clean_build(
             output_root,
             args.stream,
@@ -658,12 +778,18 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
+    elif (m2_executable_reachable and
+          (m2_amps is None or not m2_amps.is_file())):
+        parser.error(
+            "--skip-build with I18-I20 requires --m2-amps pointing to the "
+            "dedicated Na+Ar executable")
 
     results: list[dict[str, Any]] = []
     for test_id in selected:
         result = run_test(
             test_id, registry[test_id], build_dir, output_root, args.stream,
-            amps, m1_input, args.campaign_mode, args.mpi_ranks,
+            amps, m1_input, m2_input, args.campaign_mode, args.mpi_ranks,
+            m2_amps,
         )
         results.append(result)
         print(f"{result['status']:7s} {test_id}  log={result['log']}")
@@ -689,10 +815,13 @@ def main() -> int:
     summary = {
         "source_revision": git_revision(),
         "build": build_result,
+        "m2_build": m2_build_result,
         "build_reused": args.skip_build,
         "build_directory": str(build_dir),
         "linked_executable": str(amps),
+        "linked_m2_na_ar_executable": str(m2_amps) if m2_amps else None,
         "linked_m1_input": str(m1_input),
+        "linked_m2_input": str(m2_input),
         "campaign_mode": args.campaign_mode,
         "mpi_ranks": args.mpi_ranks,
         "output_directory": str(output_root),

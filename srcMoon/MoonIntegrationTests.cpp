@@ -12,14 +12,21 @@
 #include "pic.h"
 #include "Moon.h"
 #include "MoonInput.h"
+#include "MoonDivinerObservation.h"
+#include "MoonSurfaceEnvironment.h"
+#include "MoonSurfaceTemperature.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <limits>
+#include <map>
+#include <set>
 #include <sstream>
 #include <string>
 #include <sys/resource.h>
@@ -153,6 +160,787 @@ void WriteForceState(Receipt* receipt) {
   receipt->Vector("earth_position_lso_m",Moon::xEarth_SO);
   receipt->Vector("moon_velocity_frozen_lso_m_s",Moon::vObject_SO_FROZEN);
   receipt->Vector("lso_angular_velocity_rad_s",Moon::RotationVector_SO_FROZEN);
+}
+
+int RunI14(Receipt* receipt,const std::string& receiptPath) {
+#ifdef _NO_SPICE_CALLS_
+  receipt->Scalar("configuration_error_spice_required",1);
+  return 4;
+#else
+  if (!Moon::Runtime::HasConfiguration()) {
+    receipt->Scalar("configuration_error_missing_input",1);
+    return 4;
+  }
+  const Moon::Runtime::Configuration& configuration=
+      Moon::Runtime::GetConfiguration();
+  const Moon::SurfaceEnvironment::TerrainRayTracer* terrain=
+      Moon::SurfaceEnvironment::ProductionTerrain();
+  if (!configuration.m2EnvironmentEnabled ||
+      configuration.surfaceGeometry!=Moon::Runtime::SurfaceGeometry::Lola ||
+      terrain==NULL) {
+    receipt->Scalar("configuration_error_lola_production_boundary_required",1);
+    return 4;
+  }
+  const Moon::Surface::Triangulation& mesh=terrain->triangulation();
+  receipt->Scalar("surface_geometry","lola");
+  receipt->Scalar("surface_mesh_resolution_m",
+                  configuration.surfaceMeshResolutionM);
+  receipt->Scalar("surface_collision_distance_tolerance_m",
+                  configuration.surfaceCollisionDistanceToleranceM);
+  receipt->Scalar("vertex_count",mesh.verticesM.size());
+  receipt->Scalar("face_count",mesh.faces.size());
+  receipt->Scalar("subdivision_level",mesh.subdivisionLevel);
+  receipt->Scalar("minimum_radius_m",mesh.minimumRadiusM);
+  receipt->Scalar("maximum_radius_m",mesh.maximumRadiusM);
+
+  // Evaluate every face, rather than a display-file subset, for degenerate or
+  // inward connectivity.  This is a geometric invariant of the exact
+  // triangulation installed into the production BVH on every MPI rank.
+  std::size_t degenerateFaces=0,invertedFaces=0;
+  for (const auto& face:mesh.faces) {
+    const auto& a=mesh.verticesM[face[0]];
+    const auto& b=mesh.verticesM[face[1]];
+    const auto& c=mesh.verticesM[face[2]];
+    const double edge0[3]={b[0]-a[0],b[1]-a[1],b[2]-a[2]};
+    const double edge1[3]={c[0]-a[0],c[1]-a[1],c[2]-a[2]};
+    const double cross[3]={edge0[1]*edge1[2]-edge0[2]*edge1[1],
+        edge0[2]*edge1[0]-edge0[0]*edge1[2],
+        edge0[0]*edge1[1]-edge0[1]*edge1[0]};
+    const double area2=Norm(cross);
+    if (!(area2>0.0) || !std::isfinite(area2)) degenerateFaces++;
+    const double centroid[3]={(a[0]+b[0]+c[0])/3.0,
+        (a[1]+b[1]+c[1])/3.0,(a[2]+b[2]+c[2])/3.0};
+    if (cross[0]*centroid[0]+cross[1]*centroid[1]+cross[2]*centroid[2]<=0.0)
+      invertedFaces++;
+  }
+  receipt->Scalar("degenerate_face_count",degenerateFaces);
+  receipt->Scalar("inverted_face_count",invertedFaces);
+
+  // Preserve a bounded, deterministic vertex/radial-ray table.  Python reads
+  // LDEM_4 independently and compares these body-fixed directions with the
+  // native raster; this C++ adapter never reads the validation reference.
+  std::size_t radialQueries=0,radialHits=0;
+  double maximumVertexRayDifferenceM=0.0;
+  if (PIC::ThisThread==0) {
+    std::ofstream geometry(receiptPath+".I14_geometry.csv");
+    geometry << std::setprecision(17)
+             << "vertex_index,latitude_deg,longitude_east_deg,"
+                "vertex_radius_m,ray_radius_m,ray_face\n";
+    if (!geometry) return 6;
+    const std::size_t requestedSamples=512;
+    const std::size_t stride=std::max<std::size_t>(
+        1,mesh.verticesM.size()/requestedSamples);
+    const std::array<double,3> origin{{0.0,0.0,0.0}};
+    for (std::size_t vertex=0;vertex<mesh.verticesM.size();vertex+=stride) {
+      std::array<double,3> direction=mesh.verticesM[vertex];
+      const double radius=std::sqrt(direction[0]*direction[0]+
+          direction[1]*direction[1]+direction[2]*direction[2]);
+      for (double& component:direction) component/=radius;
+      Moon::SurfaceEnvironment::RayHit hit;
+      std::string error;
+      radialQueries++;
+      if (!terrain->IntersectRay(origin,direction,0.0,
+              std::numeric_limits<double>::infinity(),
+              std::numeric_limits<std::size_t>::max(),&hit,&error)) {
+        std::cerr << "I14 radial query failed: " << error << '\n';
+        return 6;
+      }
+      if (hit.hit) {
+        radialHits++;
+        maximumVertexRayDifferenceM=std::max(
+            maximumVertexRayDifferenceM,std::abs(hit.distanceM-radius));
+      }
+      const double latitude=std::asin(direction[2])*180.0/Pi;
+      double longitude=std::atan2(direction[1],direction[0])*180.0/Pi;
+      if (longitude<0.0) longitude+=360.0;
+      geometry << vertex << ',' << latitude << ',' << longitude << ','
+               << radius << ','
+               << (hit.hit ? hit.distanceM :
+                   std::numeric_limits<double>::quiet_NaN()) << ','
+               << (hit.hit ? static_cast<long long>(hit.face) : -1) << '\n';
+    }
+    if (!geometry) return 6;
+  }
+  receipt->Scalar("radial_query_count",radialQueries);
+  receipt->Scalar("radial_hit_count",radialHits);
+  receipt->Scalar("maximum_vertex_ray_difference_m",
+                  maximumVertexRayDifferenceM);
+
+  // Each rank selects the first terrain vertex whose outward-offset start
+  // point belongs to one of its allocated AMR blocks.  The ordinary
+  // second-order mover then crosses the moving LOLA surface.  The monotonic
+  // counter is incremented inside the production finder, independently of
+  // whether the surface kernel subsequently sticks or re-emits the atom.
+  int localFixtureExecuted=0,localFixtureCollision=0;
+  int localMoverStatus=std::numeric_limits<int>::min();
+  for (std::size_t vertex=static_cast<std::size_t>(PIC::ThisThread);
+       vertex<mesh.verticesM.size();
+       vertex+=static_cast<std::size_t>(PIC::nTotalThreads)) {
+    std::array<double,3> radial=mesh.verticesM[vertex];
+    const double radius=std::sqrt(radial[0]*radial[0]+radial[1]*radial[1]+
+                                  radial[2]*radial[2]);
+    for (double& component:radial) component/=radius;
+    SpiceDouble bodyToLso[6][6],bodyState[6],lsoState[6];
+    sxform_c(Moon::Frames::BodyFixed,Moon::Frames::SolarOrbital,
+             Moon::OrbitalMotion::et,bodyToLso);
+    for (int component=0;component<3;++component) {
+      bodyState[component]=mesh.verticesM[vertex][component]+2000.0*radial[component];
+      bodyState[component+3]=-200.0*radial[component];
+    }
+    mxvg_c(bodyToLso,bodyState,6,6,lsoState);
+    State initial;
+    for (int component=0;component<3;++component) {
+      initial.x[component]=lsoState[component];
+      initial.v[component]=lsoState[component+3];
+    }
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=
+        PIC::Mesh::mesh->findTreeNode(initial.x);
+    if (node==NULL || node->Thread!=PIC::ThisThread || node->block==NULL)
+      continue;
+    rnd_seed(configuration.randomSeed+PIC::ThisThread);
+    Moon::SurfaceEnvironment::BeginProductionParticleStep(
+        Moon::OrbitalMotion::et);
+    const std::uint64_t before=
+        Moon::SurfaceEnvironment::ProductionCollisionCount();
+    State final;
+    localMoverStatus=MoveOneStep(_NA_SPEC_,initial,20.0,&final);
+    const std::uint64_t after=
+        Moon::SurfaceEnvironment::ProductionCollisionCount();
+    localFixtureExecuted=1;
+    localFixtureCollision=after>before ? 1 : 0;
+    break;
+  }
+  int fixtureRanks=0,collisionRanks=0;
+  MPI_Allreduce(&localFixtureExecuted,&fixtureRanks,1,MPI_INT,MPI_SUM,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&localFixtureCollision,&collisionRanks,1,MPI_INT,MPI_SUM,
+                MPI_GLOBAL_COMMUNICATOR);
+  receipt->Scalar("mover_fixture_rank_count",fixtureRanks);
+  receipt->Scalar("mover_collision_rank_count",collisionRanks);
+  receipt->Scalar("rank_zero_mover_status",localMoverStatus);
+  return 0;
+#endif
+}
+
+std::vector<std::string> SplitRestrictedCsv(const std::string& line) {
+  std::vector<std::string> fields;
+  std::istringstream stream(line);
+  std::string field;
+  while (std::getline(stream,field,',')) fields.push_back(field);
+  if (!line.empty() && line.back()==',') fields.emplace_back();
+  return fields;
+}
+
+int RunI16(Receipt* receipt,const std::string& receiptPath) {
+#ifdef _NO_SPICE_CALLS_
+  receipt->Scalar("configuration_error_spice_required",1);
+  return 4;
+#else
+  if (!Moon::Runtime::HasConfiguration()) return 4;
+  const Moon::Runtime::Configuration& configuration=
+      Moon::Runtime::GetConfiguration();
+  if (!configuration.m2EnvironmentEnabled ||
+      configuration.surfaceTemperatureMode!="diviner-map" ||
+      !Moon::SurfaceTemperature::ProductionStateInitialized()) {
+    receipt->Scalar("configuration_error_diviner_production_mode_required",1);
+    return 4;
+  }
+  // Only rank zero writes the ordered comparison table.  All ranks have
+  // initialized the identical production Diviner table during amps_init(); no
+  // collective or distributed mesh data are needed for this callback query.
+  if (PIC::ThisThread!=0) return 0;
+  const std::filesystem::path benchmark=
+      std::filesystem::path(configuration.divinerTemperatureTableFile)
+          .parent_path()/"benchmark_points.csv";
+  std::ifstream input(benchmark);
+  std::ofstream output(receiptPath+".I16_model.csv");
+  if (!input || !output) {
+    receipt->Scalar("configuration_error_benchmark_table_unavailable",1);
+    return 6;
+  }
+  Moon::SurfaceTemperature::DivinerTable eligibilityTable;
+  std::string eligibilityError;
+  if (!eligibilityTable.LoadCsv(configuration.divinerTemperatureTableFile,
+                                &eligibilityError)) {
+    std::cerr << "I16 cannot reload the production D03 table for independent "
+                 "gap eligibility: " << eligibilityError << '\n';
+    return 6;
+  }
+  output << std::setprecision(17)
+         << "source_record,latitude_deg,longitude_east_deg,local_time_hour,"
+            "query_local_time_hour,production_temperature_k\n";
+  std::string line;
+  if (!std::getline(input,line) || line!=
+      "latitude_deg,longitude_east_deg,local_time_hour,temperature_k,"
+      "uncertainty_k,quality_flag,product_id,source_record,selection") {
+    receipt->Scalar("configuration_error_benchmark_schema",1);
+    return 6;
+  }
+  const double sunLongitudeDeg=std::atan2(
+      Moon::OrbitalMotion::SunDirection_IAU_OBJECT[1],
+      Moon::OrbitalMotion::SunDirection_IAU_OBJECT[0])*180.0/Pi;
+  SpiceDouble bodyToLso[6][6];
+  sxform_c(Moon::Frames::BodyFixed,Moon::Frames::SolarOrbital,
+           Moon::OrbitalMotion::et,bodyToLso);
+  std::size_t queryCount=0;
+  std::set<std::pair<std::string,std::string> > evaluatedLocations;
+  while (std::getline(input,line)) {
+    if (line.empty()) continue;
+    const std::vector<std::string> fields=SplitRestrictedCsv(line);
+    if (fields.size()!=9 || fields[5]!="GOOD" || fields[8]!="hold-out") {
+      receipt->Scalar("configuration_error_benchmark_record",queryCount+2);
+      return 6;
+    }
+    char* end=NULL;
+    const double latitudeDeg=std::strtod(fields[0].c_str(),&end);
+    if (end==fields[0].c_str() || *end!='\0') return 6;
+    const double archiveLongitudeDeg=std::strtod(fields[1].c_str(),&end);
+    if (end==fields[1].c_str() || *end!='\0') return 6;
+    const double localTimeHour=std::strtod(fields[2].c_str(),&end);
+    if (end==fields[2].c_str() || *end!='\0') return 6;
+    const std::pair<std::string,std::string> locationKey{fields[0],fields[1]};
+    if (evaluatedLocations.find(locationKey)!=evaluatedLocations.end())
+      continue;
+    // A normal surface callback has one physical local time at a given
+    // longitude and run epoch.  Retain only the archive quarter-hour bin
+    // nearest that predeclared geometry.  Selection depends on the SPICE Sun
+    // direction and archive coordinates, never on observed/model temperature.
+    double currentLocalTimeHour=std::fmod(
+        archiveLongitudeDeg-sunLongitudeDeg+180.0,360.0)/15.0;
+    if (currentLocalTimeHour<0.0) currentLocalTimeHour+=24.0;
+    double timeDifference=std::abs(localTimeHour-currentLocalTimeHour);
+    timeDifference=std::min(timeDifference,24.0-timeDifference);
+    if (timeDifference>0.126) continue;
+    // Missing archive cells remain real gaps.  Test eligibility through the
+    // same strict loader before invoking the fail-closed normal callback, and
+    // omit only rows whose eight-corner reference cell is unavailable.  This
+    // decision sees no AMPS temperature value.
+    double eligibilityTemperature=0.0,eligibilityUncertainty=0.0;
+    if (!eligibilityTable.Interpolate(latitudeDeg,archiveLongitudeDeg,
+            localTimeHour,&eligibilityTemperature,&eligibilityUncertainty,
+            &eligibilityError)) continue;
+    const double latitudeRad=latitudeDeg*Pi/180.0;
+    const double longitudeRad=archiveLongitudeDeg*Pi/180.0;
+    SpiceDouble bodyState[6]={
+        _RADIUS_(_MOON_)*std::cos(latitudeRad)*std::cos(longitudeRad),
+        _RADIUS_(_MOON_)*std::cos(latitudeRad)*std::sin(longitudeRad),
+        _RADIUS_(_MOON_)*std::sin(latitudeRad),0.0,0.0,0.0};
+    SpiceDouble lsoState[6];
+    mxvg_c(bodyToLso,bodyState,6,6,lsoState);
+    const double temperature=
+        Moon::SurfaceTemperature::ProductionTemperatureK(lsoState);
+    if (!(temperature>0.0) || !std::isfinite(temperature)) return 6;
+    output << fields[7] << ',' << latitudeDeg << ','
+           << archiveLongitudeDeg << ',' << localTimeHour << ','
+           << currentLocalTimeHour << ','
+           << temperature << '\n';
+    evaluatedLocations.insert(locationKey);
+    queryCount++;
+  }
+  if (!output || queryCount==0) return 6;
+  receipt->Scalar("benchmark_query_count",queryCount);
+  receipt->Scalar("surface_temperature_mode",
+                  configuration.surfaceTemperatureMode);
+  receipt->Scalar("diviner_temperature_table_file",
+                  configuration.divinerTemperatureTableFile);
+  return 0;
+#endif
+}
+
+int RunI17(Receipt* receipt,const std::string& receiptPath) {
+#ifdef _NO_SPICE_CALLS_
+  receipt->Scalar("configuration_error_spice_required",1);
+  return 4;
+#else
+  if (!Moon::Runtime::HasConfiguration()) return 4;
+  const Moon::Runtime::Configuration& configuration=
+      Moon::Runtime::GetConfiguration();
+  if (!configuration.m2EnvironmentEnabled ||
+      configuration.surfaceTemperatureMode!="thermal-model" ||
+      configuration.divinerEclipseHistoryFile.empty() ||
+      !Moon::SurfaceTemperature::ProductionStateInitialized()) {
+    receipt->Scalar("configuration_error_i17_thermal_mode_required",1);
+    return 4;
+  }
+
+  // The approved first plot is a June training diagnostic.  Other ranks have
+  // initialized the same production model but do not need to duplicate this
+  // deterministic global thermal history.  The manifest still records the
+  // requested eight-rank launch honestly; no MPI speedup is claimed here.
+  if (PIC::ThisThread!=0) return 0;
+
+  Moon::SurfaceTemperature::SpinUpMetrics spinup;
+  std::string error;
+  if (!Moon::SurfaceTemperature::SpinUpProductionState(&spinup,&error)) {
+    std::cerr << "I17 periodic thermal spin-up failed: " << error << '\n';
+    return 6;
+  }
+  receipt->Scalar("capability_status","EXPERIMENTAL / NOT VALIDATED");
+  receipt->Scalar("eclipse_direct_irradiance_model",
+                  configuration.thermalEclipseDirectIrradianceModel);
+  receipt->Scalar("solar_disc_radiance_model",
+                  configuration.thermalSolarDiscRadianceModel);
+  receipt->Scalar("earth_atmosphere_transmission_model",
+                  configuration.thermalEarthAtmosphereTransmissionModel);
+  receipt->Scalar("solar_disc_radius_m",configuration.thermalSolarDiscRadiusM);
+  receipt->Scalar("opaque_earth_radius_m",
+                  configuration.thermalOpaqueEarthRadiusM);
+  receipt->Scalar("spinup_completed_cycles",spinup.completedCycles);
+  receipt->Scalar("spinup_cycle_start_tdb_s",
+                  spinup.cycleStartEphemerisTimeS);
+  receipt->Scalar("spinup_cycle_end_tdb_s",spinup.cycleEndEphemerisTimeS);
+  receipt->Scalar("spinup_maximum_node_temperature_change_k",
+                  spinup.maximumNodeTemperatureChangeK);
+  receipt->Scalar("spinup_maximum_column_enthalpy_change_j_m2",
+                  spinup.maximumColumnEnthalpyChangeJm2);
+  receipt->Scalar("spinup_temperature_tolerance_k",
+                  configuration.thermalSpinupTemperatureToleranceK);
+  receipt->Scalar("spinup_energy_tolerance_j_m2",
+                  configuration.thermalSpinupEnergyToleranceJm2);
+
+  struct Observation {
+    std::string siteTimeBin;
+    std::string utc;
+    double epoch=0.0;
+    double latitudeDeg=0.0;
+    double longitudeDeg=0.0;
+    double observedBolometricK=0.0;
+    double uncertaintyK=0.0;
+    std::array<double,4> observedRadiance{{0.0,0.0,0.0,0.0}};
+    std::array<double,4> observedBrightnessK{{0.0,0.0,0.0,0.0}};
+  };
+  std::ifstream input(configuration.divinerEclipseHistoryFile);
+  if (!input) return 6;
+  std::string line;
+  if (!std::getline(input,line)) return 6;
+  const std::vector<std::string> names=SplitRestrictedCsv(line);
+  std::map<std::string,std::size_t> field;
+  for (std::size_t index=0;index<names.size();++index) field[names[index]]=index;
+  const char* required[]={"selection","site_time_bin_id","utc_mean",
+      "latitude_bin_center_deg","longitude_east_bin_center_deg",
+      "bolometric_brightness_temperature_K",
+      "bolometric_brightness_temperature_uncertainty_K",
+      "c6_radiance_W_m-2_sr-1","c6_brightness_temperature_K",
+      "c7_radiance_W_m-2_sr-1","c7_brightness_temperature_K",
+      "c8_radiance_W_m-2_sr-1","c8_brightness_temperature_K",
+      "c9_radiance_W_m-2_sr-1","c9_brightness_temperature_K"};
+  for (const char* name:required) if (field.find(name)==field.end()) {
+    std::cerr << "I17 training history is missing field " << name << '\n';
+    return 6;
+  }
+  std::vector<Observation> observations;
+  while (std::getline(input,line)) {
+    if (line.empty()) continue;
+    const std::vector<std::string> values=SplitRestrictedCsv(line);
+    if (values.size()!=names.size()) return 6;
+    if (values[field["selection"]]!="training") {
+      // The Python staging step must make hold-out values inaccessible to the
+      // first-comparison executable.  Fail rather than silently skipping a
+      // December row that should never have entered this receipt.
+      std::cerr << "I17 first-comparison input contains a non-training row\n";
+      return 6;
+    }
+    Observation value;
+    value.siteTimeBin=values[field["site_time_bin_id"]];
+    value.utc=values[field["utc_mean"]];
+    str2et_c(value.utc.c_str(),&value.epoch);
+    const auto parse=[&](const char* name,double* destination) {
+      const std::string& text=values[field[name]];
+      char* end=nullptr;
+      errno=0;
+      *destination=std::strtod(text.c_str(),&end);
+      return errno!=ERANGE && end!=text.c_str() && *end=='\0' &&
+          std::isfinite(*destination);
+    };
+    if (!parse("latitude_bin_center_deg",&value.latitudeDeg) ||
+        !parse("longitude_east_bin_center_deg",&value.longitudeDeg) ||
+        !parse("bolometric_brightness_temperature_K",
+               &value.observedBolometricK) ||
+        !parse("bolometric_brightness_temperature_uncertainty_K",
+               &value.uncertaintyK)) return 6;
+    for (int channel=6;channel<=9;++channel) {
+      const std::string prefix="c"+std::to_string(channel);
+      if (!parse((prefix+"_radiance_W_m-2_sr-1").c_str(),
+                 &value.observedRadiance[channel-6]) ||
+          !parse((prefix+"_brightness_temperature_K").c_str(),
+                 &value.observedBrightnessK[channel-6])) return 6;
+    }
+    if (!(value.observedBolometricK>0.0) || !(value.uncertaintyK>=0.0))
+      return 6;
+    observations.push_back(value);
+  }
+  std::sort(observations.begin(),observations.end(),
+      [](const Observation& first,const Observation& second) {
+        if (first.epoch!=second.epoch) return first.epoch<second.epoch;
+        return first.siteTimeBin<second.siteTimeBin;
+      });
+  if (observations.empty() ||
+      observations.front().epoch<spinup.cycleEndEphemerisTimeS) {
+    std::cerr << "I17 training rows precede the configured spin-up boundary\n";
+    return 6;
+  }
+
+  std::ofstream output(receiptPath+".I17_training_model.csv");
+  if (!output) return 6;
+  output << std::setprecision(17)
+      << "site_time_bin_id,utc,ephemeris_time_tdb_s,latitude_deg,"
+         "longitude_east_deg,observed_bolometric_brightness_temperature_K,"
+         "observed_uncertainty_K,model_physical_surface_temperature_K,"
+         "model_bolometric_brightness_temperature_K";
+  for (int channel=6;channel<=9;++channel)
+    output << ",observed_c" << channel << "_radiance_W_m-2_sr-1"
+           << ",model_c" << channel << "_radiance_W_m-2_sr-1"
+           << ",observed_c" << channel << "_brightness_temperature_K"
+           << ",model_c" << channel << "_brightness_temperature_K";
+  output << '\n';
+
+  double currentEpoch=spinup.cycleEndEphemerisTimeS;
+  double maximumThermalUpdate=0.0;
+  for (const Observation& observation:observations) {
+    if (observation.epoch>currentEpoch &&
+        !Moon::SurfaceTemperature::AdvanceProductionState(
+            currentEpoch,observation.epoch,&error)) {
+      std::cerr << "I17 training thermal advance failed: " << error << '\n';
+      return 6;
+    }
+    maximumThermalUpdate=std::max(maximumThermalUpdate,
+        Moon::SurfaceTemperature::
+            LastAdvanceMaximumSurfaceTemperatureChangeK());
+    currentEpoch=observation.epoch;
+    Moon::OrbitalMotion::et=currentEpoch;
+    const double latitude=observation.latitudeDeg*Pi/180.0;
+    const double longitude=observation.longitudeDeg*Pi/180.0;
+    SpiceDouble bodyState[6]={
+        _RADIUS_(_MOON_)*std::cos(latitude)*std::cos(longitude),
+        _RADIUS_(_MOON_)*std::cos(latitude)*std::sin(longitude),
+        _RADIUS_(_MOON_)*std::sin(latitude),0.0,0.0,0.0};
+    SpiceDouble transform[6][6],lsoState[6];
+    sxform_c(Moon::Frames::BodyFixed,Moon::Frames::SolarOrbital,
+             currentEpoch,transform);
+    mxvg_c(transform,bodyState,6,6,lsoState);
+    const double kineticK=
+        Moon::SurfaceTemperature::ProductionTemperatureK(lsoState);
+    const double bolometricK=
+        Moon::DivinerObservation::GreyBolometricBrightnessTemperatureK(
+            kineticK,configuration.thermal.infraredEmissivity);
+    if (!(kineticK>0.0) || !std::isfinite(bolometricK)) return 6;
+    output << observation.siteTimeBin << ',' << observation.utc << ','
+           << currentEpoch << ',' << observation.latitudeDeg << ','
+           << observation.longitudeDeg << ','
+           << observation.observedBolometricK << ','
+           << observation.uncertaintyK << ',' << kineticK << ','
+           << bolometricK;
+    for (int channel=6;channel<=9;++channel) {
+      const double modelRadiance=
+          Moon::DivinerObservation::RectangularBandRadianceWm2Sr(
+              channel,kineticK,configuration.thermal.infraredEmissivity);
+      double modelBrightness=0.0;
+      if (!Moon::DivinerObservation::RectangularBandBrightnessTemperatureK(
+              channel,modelRadiance,&modelBrightness,&error)) return 6;
+      output << ',' << observation.observedRadiance[channel-6] << ','
+             << modelRadiance << ','
+             << observation.observedBrightnessK[channel-6] << ','
+             << modelBrightness;
+    }
+    output << '\n';
+  }
+  if (!output) return 6;
+  receipt->Scalar("training_comparison_row_count",observations.size());
+  receipt->Scalar("maximum_production_update_temperature_change_k",
+                  maximumThermalUpdate);
+  receipt->Scalar("thermal_time_step_s",configuration.thermalTimeStepS);
+  receipt->Scalar("infrared_emissivity",
+                  configuration.thermal.infraredEmissivity);
+  receipt->Scalar("holdout_rows_accessed",0);
+  return 0;
+#endif
+}
+
+int RunI18(Receipt* receipt,const std::string& receiptPath) {
+#ifdef _NO_SPICE_CALLS_
+  receipt->Scalar("configuration_error_spice_required",1);
+  return 4;
+#elif _AR_SPEC_ < 0
+  // I18 is intentionally unavailable in the frozen Na-only M0/M1 binary.
+  // Treating a missing compiled species as an empty Ar sample would turn a
+  // build-configuration error into false surface-physics evidence.
+  receipt->Scalar("configuration_error_argon_species_required",1);
+  return 4;
+#else
+  if (!Moon::Runtime::HasConfiguration() || Moon::Planet==NULL ||
+      !Moon::SurfaceTemperature::ProductionStateInitialized()) {
+    receipt->Scalar("configuration_error_m2_surface_state_required",1);
+    return 4;
+  }
+  const Moon::Runtime::Configuration& configuration=
+      Moon::Runtime::GetConfiguration();
+  if (!configuration.m2EnvironmentEnabled ||
+      !configuration.argonSourceEnabled) {
+    receipt->Scalar("configuration_error_argon_source_required",1);
+    return 4;
+  }
+  const auto* terrain=Moon::SurfaceEnvironment::ProductionTerrain();
+  if (terrain==NULL) {
+    receipt->Scalar("configuration_error_lola_terrain_required",1);
+    return 4;
+  }
+
+  // Select one real production facet, preferring one owned by this MPI rank.
+  // The Na ensemble below calls the ordinary Exosphere impact kernel with this
+  // facet normal and the epoch-correct 6x6 SPICE transforms, exactly as the
+  // moving LOLA mover does after resolving a collision. No test-only
+  // re-emission formula is evaluated in C++.
+  const auto& mesh=terrain->triangulation();
+  SpiceDouble bodyToLso[6][6],lsoToBody[6][6];
+  sxform_c(Moon::Frames::BodyFixed,Moon::Frames::SolarOrbital,
+           Moon::OrbitalMotion::et,bodyToLso);
+  sxform_c(Moon::Frames::SolarOrbital,Moon::Frames::BodyFixed,
+           Moon::OrbitalMotion::et,lsoToBody);
+  double selectedPositionBody[3]={0.0,0.0,0.0};
+  double selectedNormalBody[3]={0.0,0.0,0.0};
+  double selectedPositionLso[3]={0.0,0.0,0.0};
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* selectedNode=NULL;
+  double fallbackPositionBody[3]={0.0,0.0,0.0};
+  double fallbackNormalBody[3]={0.0,0.0,0.0};
+  double fallbackPositionLso[3]={0.0,0.0,0.0};
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* fallbackNode=NULL;
+  bool selected=false,ownsSelectedFacet=false;
+  // Facet numbering is independent of AMR domain decomposition. Every rank
+  // therefore inspects the same deterministic face order. Partitioning face
+  // indices by rank would incorrectly assume a relationship between two
+  // unrelated orderings and can miss an owned facet.
+  for (std::size_t face=0;face<mesh.faces.size();++face) {
+    const auto& connectivity=mesh.faces[face];
+    const auto& a=mesh.verticesM[connectivity[0]];
+    const auto& b=mesh.verticesM[connectivity[1]];
+    const auto& c=mesh.verticesM[connectivity[2]];
+    double edge0[3],edge1[3];
+    for (int component=0;component<3;++component) {
+      selectedPositionBody[component]=(a[component]+b[component]+c[component])/3.0;
+      edge0[component]=b[component]-a[component];
+      edge1[component]=c[component]-a[component];
+    }
+    selectedNormalBody[0]=edge0[1]*edge1[2]-edge0[2]*edge1[1];
+    selectedNormalBody[1]=edge0[2]*edge1[0]-edge0[0]*edge1[2];
+    selectedNormalBody[2]=edge0[0]*edge1[1]-edge0[1]*edge1[0];
+    double normalLength=Norm(selectedNormalBody);
+    if (!(normalLength>0.0)) continue;
+    for (double& component:selectedNormalBody) component/=normalLength;
+    if (selectedNormalBody[0]*selectedPositionBody[0]+
+        selectedNormalBody[1]*selectedPositionBody[1]+
+        selectedNormalBody[2]*selectedPositionBody[2]<0.0)
+      for (double& component:selectedNormalBody) component=-component;
+    for (int row=0;row<3;++row) {
+      selectedPositionLso[row]=0.0;
+      for (int column=0;column<3;++column)
+        selectedPositionLso[row]+=bodyToLso[row][column]*
+            selectedPositionBody[column];
+    }
+    selectedNode=PIC::Mesh::mesh->findTreeNode(selectedPositionLso);
+    // Retain any geometrically valid facet as a callback fixture.  Prefer a
+    // locally allocated surface leaf when this MPI rank owns one.  Some valid
+    // AMPS decompositions assign a rank only far-field blocks, so demanding a
+    // lunar facet on every rank would test the load balancer rather than the
+    // surface law.  The impact callback itself does not read node/block data;
+    // I14 separately verifies the mover-to-owned-facet wiring.
+    if (selectedNode!=NULL && !selected) {
+      Copy(selectedPositionBody,fallbackPositionBody);
+      Copy(selectedNormalBody,fallbackNormalBody);
+      Copy(selectedPositionLso,fallbackPositionLso);
+      fallbackNode=selectedNode;
+      selected=true;
+    }
+    if (selectedNode!=NULL && selectedNode->block!=NULL &&
+        selectedNode->Thread==PIC::ThisThread) {
+      ownsSelectedFacet=true;
+      selected=true;
+      break;
+    }
+  }
+  if (selected && !ownsSelectedFacet) {
+    Copy(fallbackPositionBody,selectedPositionBody);
+    Copy(fallbackNormalBody,selectedNormalBody);
+    Copy(fallbackPositionLso,selectedPositionLso);
+    selectedNode=fallbackNode;
+  }
+  int localSelected=selected ? 1 : 0,totalSelected=0;
+  int localOwned=ownsSelectedFacet ? 1 : 0,totalOwned=0;
+  MPI_Allreduce(&localSelected,&totalSelected,1,MPI_INT,MPI_SUM,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&localOwned,&totalOwned,1,MPI_INT,MPI_SUM,
+                MPI_GLOBAL_COMMUNICATOR);
+  if (!selected || totalSelected!=PIC::nTotalThreads || totalOwned==0) {
+    if (PIC::ThisThread==0)
+      std::cerr << "I18 could not find production facet geometry on every "
+                   "rank or found no locally owned lunar facet\n";
+    return 6;
+  }
+
+  // Exercise the linked residence/desorption callback separately from the
+  // launch distributions.  A known physical atom population is installed in
+  // the ordinary logical-surface slot, the production rate callback is read,
+  // and the original state is restored immediately.  This bounded diagnostic
+  // does not advance or permanently seed the simulation inventory; Python
+  // independently evaluates the two cited Arrhenius laws from application.in.
+  long int selectedZenith=0,selectedAzimuth=0;
+  Moon::Planet->GetSurfaceElementProjectionIndex(
+      selectedPositionBody,selectedZenith,selectedAzimuth);
+  const int selectedElement=Moon::Planet->GetLocalSurfaceElementNumber(
+      selectedZenith,selectedAzimuth);
+  constexpr double kResidenceFixtureAtoms=1.0e12;
+  const double originalNaPopulation=
+      Moon::Planet->SurfaceElementPopulation[_NA_SPEC_][selectedElement];
+  const double originalArPopulation=
+      Moon::Planet->SurfaceElementPopulation[_AR_SPEC_][selectedElement];
+  Moon::Planet->SurfaceElementPopulation[_NA_SPEC_][selectedElement]=
+      kResidenceFixtureAtoms;
+  Moon::Planet->SurfaceElementPopulation[_AR_SPEC_][selectedElement]=
+      kResidenceFixtureAtoms;
+  const double linkedNaDesorptionRate=
+      Moon::SurfaceTemperature::ProductionThermalDesorptionRate(
+          _NA_SPEC_,selectedElement,Moon::Planet);
+  const double linkedArDesorptionRate=
+      Moon::SurfaceTemperature::ProductionThermalDesorptionRate(
+          _AR_SPEC_,selectedElement,Moon::Planet);
+  Moon::Planet->SurfaceElementPopulation[_NA_SPEC_][selectedElement]=
+      originalNaPopulation;
+  Moon::Planet->SurfaceElementPopulation[_AR_SPEC_][selectedElement]=
+      originalArPopulation;
+  if (!std::isfinite(linkedNaDesorptionRate) ||
+      !std::isfinite(linkedArDesorptionRate) ||
+      linkedNaDesorptionRate<0.0 || linkedArDesorptionRate<0.0) return 6;
+
+  std::ostringstream sampleName;
+  sampleName << receiptPath << ".I18.rank" << std::setw(4)
+             << std::setfill('0') << PIC::ThisThread << ".csv";
+  std::ofstream samples(sampleName.str());
+  if (!samples) return 6;
+  samples << std::setprecision(17)
+          << "law,species,rank,sample,temperature_k,incident_speed_m_s,"
+             "output_speed_m_s,outward_cosine,status\n";
+  constexpr int kSamplesPerSpeciesPerRank=4096;
+  constexpr double kSodiumIncidentSpeedMPerS=2000.0;
+  rnd_seed(configuration.randomSeed+104729*PIC::ThisThread+18);
+
+  int localNaAdsorbed=0,localNaReemitted=0;
+  for (int sample=0;sample<kSamplesPerSpeciesPerRank;++sample) {
+    double bodyState[6],lsoState[6];
+    for (int component=0;component<3;++component) {
+      bodyState[component]=selectedPositionBody[component];
+      bodyState[component+3]=-
+          kSodiumIncidentSpeedMPerS*selectedNormalBody[component];
+    }
+    mxvg_c(bodyToLso,bodyState,6,6,lsoState);
+    const long int particle=PIC::ParticleBuffer::GetNewParticle();
+    PIC::ParticleBuffer::SetI(_NA_SPEC_,particle);
+    PIC::ParticleBuffer::SetX(lsoState,particle);
+    PIC::ParticleBuffer::SetV(lsoState+3,particle);
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+    PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,particle);
+#endif
+    PIC::ParticleBuffer::SetParticleAllocated(particle);
+    Exosphere::Sampling::SetParticleSourceID(
+        _EXOSPHERE_SOURCE__ID__IMPACT_VAPORIZATION_,
+        PIC::ParticleBuffer::GetParticleDataPointer(particle));
+    double remainingTime=0.0;
+    const double temperatureK=
+        Moon::SurfaceTemperature::ProductionTemperatureK(lsoState);
+    const int status=Exosphere::SurfaceInteraction::
+        ParticleSurfaceInteraction_SurfaceAccomodation(
+            _NA_SPEC_,particle,lsoState,lsoState+3,remainingTime,selectedNode,
+            Moon::Planet,selectedNormalBody,&lsoToBody[0][0],
+            &bodyToLso[0][0]);
+    double outputSpeed=std::numeric_limits<double>::quiet_NaN();
+    double outwardCosine=std::numeric_limits<double>::quiet_NaN();
+    if (status==_PARTICLE_DELETED_ON_THE_FACE_) {
+      ++localNaAdsorbed;
+    }
+    else if (status==_PARTICLE_REJECTED_ON_THE_FACE_) {
+      ++localNaReemitted;
+      double returnedBodyState[6];
+      mxvg_c(lsoToBody,lsoState,6,6,returnedBodyState);
+      outputSpeed=Norm(returnedBodyState+3);
+      outwardCosine=(returnedBodyState[3]*selectedNormalBody[0]+
+          returnedBodyState[4]*selectedNormalBody[1]+
+          returnedBodyState[5]*selectedNormalBody[2])/outputSpeed;
+    }
+    else {
+      PIC::ParticleBuffer::DeleteParticle(particle);
+      return 6;
+    }
+    samples << "impact-accommodation,Na," << PIC::ThisThread << ','
+            << sample << ',' << temperatureK << ','
+            << kSodiumIncidentSpeedMPerS << ',' << outputSpeed << ','
+            << outwardCosine << ',' << status << '\n';
+    PIC::ParticleBuffer::DeleteParticle(particle);
+  }
+
+  // The Ar ensemble invokes the registered production radiogenic-source
+  // generator.  Its outward Maxwell-flux distribution is the physical
+  // re-release law selected by the approved Kegerreis configuration.  Failed
+  // attempts merely selected a surface element owned by another MPI rank;
+  // they are not samples. Use the same fixed number of attempts on every rank
+  // so accepted samples retain the production MPI ownership weighting. Some
+  // ranks may legitimately own only far-field blocks and accept zero sources.
+  int localArGenerated=0;
+  constexpr long long kArgonAttemptsPerRank=32768;
+  for (long long attempt=0;attempt<kArgonAttemptsPerRank;++attempt) {
+    double xLso[3],xBody[3],vLso[3],vBody[3],centre[3]={0.0,0.0,0.0};
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode=NULL;
+    if (!Moon::Species::Argon::GenerateParticleProperties(
+            _AR_SPEC_,NULL,xLso,xBody,vLso,vBody,centre,
+            _RADIUS_(_MOON_),startNode,_INTERNAL_BOUNDARY_TYPE_SPHERE_,
+            Moon::Planet)) continue;
+    const double positionLength=Norm(xBody);
+    const double speed=Norm(vBody);
+    if (!(positionLength>0.0) || !(speed>0.0)) return 6;
+    double normal[3];
+    for (int component=0;component<3;++component)
+      normal[component]=xBody[component]/positionLength;
+    const double cosine=(vBody[0]*normal[0]+vBody[1]*normal[1]+
+                         vBody[2]*normal[2])/speed;
+    const double temperatureK=
+        Moon::SurfaceTemperature::ProductionTemperatureK(xLso);
+    samples << "thermal-maxwell-flux,Ar," << PIC::ThisThread << ','
+            << localArGenerated << ',' << temperatureK << ','
+            << std::numeric_limits<double>::quiet_NaN() << ',' << speed
+            << ',' << cosine << ',' << _PARTICLE_REJECTED_ON_THE_FACE_
+            << '\n';
+    ++localArGenerated;
+  }
+  if (!samples) return 6;
+
+  int globalNaAdsorbed=0,globalNaReemitted=0,globalArGenerated=0;
+  MPI_Reduce(&localNaAdsorbed,&globalNaAdsorbed,1,MPI_INT,MPI_SUM,0,
+             MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(&localNaReemitted,&globalNaReemitted,1,MPI_INT,MPI_SUM,0,
+             MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(&localArGenerated,&globalArGenerated,1,MPI_INT,MPI_SUM,0,
+             MPI_GLOBAL_COMMUNICATOR);
+  receipt->Scalar("compiled_na_species_index",_NA_SPEC_);
+  receipt->Scalar("compiled_ar_species_index",_AR_SPEC_);
+  receipt->Scalar("na_mass_kg",PIC::MolecularData::GetMass(_NA_SPEC_));
+  receipt->Scalar("argon_mass_kg",PIC::MolecularData::GetMass(_AR_SPEC_));
+  receipt->Scalar("sample_count_per_species_per_rank",
+                  kSamplesPerSpeciesPerRank);
+  receipt->Scalar("rank_count_with_owned_surface_facet",totalOwned);
+  receipt->Scalar("argon_attempt_count_per_rank",kArgonAttemptsPerRank);
+  receipt->Scalar("na_adsorbed_count",globalNaAdsorbed);
+  receipt->Scalar("na_reemitted_count",globalNaReemitted);
+  receipt->Scalar("argon_generated_count",globalArGenerated);
+  receipt->Scalar("residence_fixture_atoms",kResidenceFixtureAtoms);
+  receipt->Scalar("residence_fixture_temperature_k",
+      Moon::SurfaceTemperature::ProductionTemperatureK(selectedPositionLso));
+  receipt->Scalar("linked_na_desorption_rate_atoms_s",
+                  linkedNaDesorptionRate);
+  receipt->Scalar("linked_argon_desorption_rate_atoms_s",
+                  linkedArDesorptionRate);
+  receipt->Scalar("argon_source_rate_atoms_s",
+      Moon::Species::Argon::GetTotalProductionRate(
+          _AR_SPEC_,_INTERNAL_BOUNDARY_TYPE_SPHERE_,Moon::Planet));
+  receipt->Scalar("random_seed_base",configuration.randomSeed);
+  return 0;
+#endif
 }
 
 namespace I11Sampling {
@@ -1284,9 +2072,10 @@ int Moon::IntegrationTests::Run(const std::string& testId,
   // process-local fields or counts before scoring.  Earlier M0 diagnostics
   // retain their frozen one-rank contract because several create/move local
   // particles and have not been reviewed for distributed execution.
-  const bool distributedM1=(testId=="I11" || testId=="I12" ||
-                            testId=="I13");
-  if (PIC::nTotalThreads!=1 && !distributedM1) {
+  const bool distributedLinked=(testId=="I11" || testId=="I12" ||
+      testId=="I13" || testId=="I14" || testId=="I16" ||
+      testId=="I17" || testId=="I18");
+  if (PIC::nTotalThreads!=1 && !distributedLinked) {
     if (PIC::ThisThread==0)
       std::cerr << "M0 linked diagnostics require exactly one MPI rank\n";
     return 2;
@@ -1313,6 +2102,10 @@ int Moon::IntegrationTests::Run(const std::string& testId,
   if (testId=="I11") return RunI11(&receipt,outputFile);
   if (testId=="I12") return RunI12(&receipt);
   if (testId=="I13") return RunI13(&receipt);
+  if (testId=="I14") return RunI14(&receipt,outputFile);
+  if (testId=="I16") return RunI16(&receipt,outputFile);
+  if (testId=="I17") return RunI17(&receipt,outputFile);
+  if (testId=="I18") return RunI18(&receipt,outputFile);
   if (PIC::ThisThread!=0) return 2;
 
   if (testId=="U01") return RunU01(&receipt,false);

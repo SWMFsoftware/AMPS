@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "MoonThermalModel.h"
+
 namespace Moon {
 namespace Runtime {
 
@@ -161,6 +163,107 @@ struct Configuration {
   // This field records that required operator even though the full D14
   // observation operator is not implemented yet.
   std::string tailTemporalOperator;
+
+  // M2 surface/environment selection.  ``disabled`` preserves the reviewed
+  // M0/M1 problem exactly.  ``enabled`` requires every field in the M2 group;
+  // there are no compiled fallback constants for a science run.
+  bool m2EnvironmentEnabled = false;
+  std::string surfaceTemperatureMode;
+  std::string divinerTemperatureTableFile;
+  // I17 time-resolved Diviner evidence is separate from the climatological
+  // I16 interpolation table.  The history contains binned PDS4 RDR radiances,
+  // native brightness temperatures, actual footprint centroids/times, flags,
+  // and propagated uncertainties.  The JSON contract freezes selection and
+  // binning before hold-out scoring.  ``none`` keeps non-I17 production runs
+  // independent of observational files; the linked I17 runner replaces both
+  // values in its preserved application receipt.
+  std::string divinerEclipseHistoryFile;
+  std::string divinerEclipseSelectionContractFile;
+  double illuminationRayOriginOffsetM = 0.0;
+  // Moving LOLA collision controls.  The segment length controls conservative
+  // bracketing (metres in LSO), while time/distance tolerances and the
+  // iteration limit control root refinement.  I14 varies these explicit
+  // values to establish numerical convergence.
+  double surfaceCollisionMaximumSegmentLengthM = 0.0;
+  double surfaceCollisionTimeToleranceS = 0.0;
+  double surfaceCollisionDistanceToleranceM = 0.0;
+  int surfaceCollisionMaximumIterations = 0;
+  Thermal::ColumnConfiguration thermal;
+  double thermalTimeStepS = 0.0;
+  double thermalInitialTemperatureK = 0.0;
+
+  // I17 illumination and initialization controls.  These fields are part of
+  // the science receipt because a binary point-Sun shadow and an arbitrarily
+  // initialized regolith column cannot reproduce an eclipse cooling curve.
+  // The approved first-comparison model integrates the unocculted area of a
+  // uniformly bright apparent solar disc behind an opaque solid Earth.  It
+  // deliberately contains neither solar limb darkening nor refracted or
+  // transmitted terrestrial-atmosphere light; both omissions are explicit
+  // model limitations and keep I17 EXPERIMENTAL / NOT VALIDATED.
+  std::string thermalEclipseDirectIrradianceModel;
+  std::string thermalSolarDiscRadianceModel;
+  std::string thermalEarthAtmosphereTransmissionModel;
+  double thermalSolarDiscRadiusM = 0.0;
+  double thermalOpaqueEarthRadiusM = 0.0;
+
+  // A converged periodic initial condition is obtained without consulting a
+  // Diviner temperature.  The declared UTC interval is replayed until both
+  // the largest node-temperature change [K] and largest whole-column
+  // enthalpy change [J m^-2] between successive cycle boundaries meet these
+  // tolerances.  There is intentionally no maximum cycle count: allocation
+  // failure and external job-resource termination remain ERROR conditions.
+  std::string thermalSpinupCycleStartUtc;
+  std::string thermalSpinupCycleEndUtc;
+  double thermalSpinupTemperatureToleranceK = 0.0;
+  double thermalSpinupEnergyToleranceJm2 = 0.0;
+
+  // Species surface physics.  Energy units are stated in field names because
+  // Na laboratory work reports per-particle eV whereas the approved Ar model
+  // reports molar kJ/mol.  Input parsing converts Na eV to joules only at the
+  // production adapter boundary.
+  double sodiumActivationEnergyEv = 0.0;
+  double sodiumAttemptFrequencyHz = 0.0;
+  // Sticking and immediate non-sticking accommodation are independent
+  // choices.  A temperature-table sticking model controls the Bernoulli
+  // adsorption event, while the accommodation model controls only the speed
+  // of an atom that was not adsorbed.  Keeping both selections in the run
+  // receipt prevents a literature-specific Na law from becoming a hidden
+  // compiled default for every simulated species.
+  std::string sodiumStickingModel;
+  std::vector<double> sodiumStickingTemperatureK;
+  std::vector<double> sodiumStickingProbability;
+  std::string sodiumAccommodationSpeedModel;
+  double sodiumAccommodationCoefficient = 0.0;
+  std::string sodiumSurfaceInteractionReference;
+  double argonDesorptionEnergyJmol = 0.0;
+  std::string argonStickingModel;
+  std::vector<double> argonStickingTemperatureK;
+  std::vector<double> argonStickingProbability;
+  std::string argonAccommodationSpeedModel;
+  double argonAccommodationCoefficient = 0.0;
+  std::string argonSurfaceInteractionReference;
+
+  // Radiogenic 40Ar source receipt.  The total rate is atoms s^-1 over the
+  // complete Moon, not a per-area flux.  ``uniform-global`` is the only
+  // presently qualified spatial kernel.  A potassium-weighted option is not
+  // accepted until D10 supplies a global, QA-clean map; the current regional
+  // SPA product must never be extrapolated or gap-filled silently.
+  bool argonSourceEnabled = false;
+  std::string argonSourceSpatialModel;
+  double argonSourceRateAtomsS = 0.0;
+  std::string argonSourceTimeModel;
+  std::string argonSourceMapFile;
+  std::string argonSourceReference;
+  std::string ionSurfaceInteractionMode;
+
+  // A trap remains a finite-residence inventory.  This declared comparison
+  // timescale controls only the thermal-retention diagnostic and never deletes
+  // particles irreversibly.  A zero initial inventory is used unless a
+  // versioned checkpoint is explicitly selected.
+  double coldTrapRetentionTimescaleS = 0.0;
+  std::string surfaceInventoryInitialState;
+  std::string surfaceInventoryCheckpointFile;
+  double surfaceInventoryCheckpointIntervalS = 0.0;
 };
 
 // Parse the unique, flat ``#begin application: moon`` block through AMPS's

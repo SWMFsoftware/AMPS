@@ -1,0 +1,23 @@
+{
+  "id": "I14",
+  "name": "LOLA topography integration into production surface boundary",
+  "purpose": "Prove that production particle segments intersect the time-dependent body-fixed LOLA triangulation and meet the frozen D01 control-point, topology, and ray-hit gates.",
+  "production_capability": "LOLA topography integration into production surface boundary",
+  "production_entry_points": ["Moon::SurfaceEnvironment::ProductionTerrain", "TerrainRayTracer::IntersectRay", "PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder"],
+  "configuration": "Explicit srcMoon/examples/lola_surface.in M2 receipt; eight MPI ranks; no inferred constants.",
+  "inputs": ["frozen lola_surface.in receipt", "same-campaign I13 PASS", "D01 LDEM_4.IMG/LBL", "D01 qa_report.json and provenance.json"],
+  "independent_reference": "Independent Python decoder of signed little-endian LDEM_4 DN with detached-label scale, plus topology and radial-intersection invariants.",
+  "units": "body-fixed radius and errors in m; latitude/longitude in planetocentric positive-east degrees",
+  "frame_time_convention": "MOON_ME_DE421 body-fixed geometry, LSO particle state, SPICE TDB internally, archive UTC where supplied",
+  "deterministic_stochastic_controls": "Random seed and MPI/OpenMP layout recorded; stochastic criteria use declared confidence intervals.",
+  "procedure": "Verify I13 and D01 hashes/readiness; initialize the normal LOLA boundary; audit every face; sample approximately 512 vertices and production BVH radial hits; execute one production-mover terrain crossing per eligible MPI rank; compare sampled radii with independently decoded D01.",
+  "metrics": ["maximum and RMS D01 radius error", "maximum BVH ray-radius error", "degenerate/inward face counts", "radial query/hit counts", "mover fixture/collision rank counts"],
+  "acceptance_criteria": "max D01 radius error <=50 m; max ray/vertex error <= configured collision distance tolerance; zero degenerate/inward faces; every radial query hits; every fixture rank records a production collision.",
+  "expected_pass_result": "The declared linked M2 capability is evaluated and every frozen criterion is met.",
+  "expected_failure_modes": ["predecessor unavailable", "data package incomplete", "production wiring failure", "numerical criterion failure", "physics criterion failure"],
+  "required_data": ["D01 LOLA LDEM_4"],
+  "data_hashes": "Recorded in run_manifest.json after package hash verification.",
+  "predecessor_gates": ["I13", "applicable U09-U13 gates"],
+  "artifacts": ["stdout.log", "stderr.log", "receipt.txt when executed", "result.json", "run_manifest.json", "application.in", "comparison.csv", "comparison.png", "comparison.eps"],
+  "status_semantics": "PASS means the full linked criterion ran and passed; FAIL means it ran and missed the criterion; ERROR is infrastructure/parser/corruption; SKIPPED means a prerequisite, capability, configuration, or authoritative input is unavailable."
+}

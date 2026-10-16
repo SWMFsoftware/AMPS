@@ -1,8 +1,17 @@
 # I11 — AMR spatial-resolution convergence
 
+The existing I11 wrapper automatically runs `test_infrastructure.py` before
+MPI launch. Three isolated tests cover both approved sequences, fixed
+far-field/physical controls, exact finest-input reproduction for I13, and
+rejection of unapproved custom settings. These tests generate only temporary
+input files, not observations or science baselines. Infrastructure success
+does not contribute a numerical-convergence PASS.
+
 I11 uses the normal SPICE-enabled Moon executable and the reviewed spherical
-FULL M1 receipt. The runner rejects QUICK/CUSTOM inputs before launching an
-expensive model and creates immutable 40, 20, 10, and 5 km child receipts,
+M1 receipt. The approved 2026-10-14 memory campaign uses
+`m1_memory200.in` and immutable 480, 240, 120, and 60 km child receipts.
+The legacy FULL template retains its 40/20/10/5 km sequence when explicitly
+selected. Other CUSTOM and QUICK meshes are rejected. The runner is
 changing only spatial-resolution targets. Each linked run proves that
 `simulation_environment_mode=frozen` holds ephemeris time, Sun/Earth states,
 and rotating-frame angular velocity fixed across normal production particle
@@ -25,12 +34,19 @@ successive-resolution violation is `FAIL`; interruption or resource exhaustion
 before qualification is `ERROR` and leaves incomplete evidence.
 
 The four child inputs scale the surface, near-surface, angular, and polar
-targets to 40, 20, 10, and 5 km.  The far-field and outer-domain targets and
+targets to the selected sequence (default: 480, 240, 120, and 60 km).  The far-field and outer-domain targets and
 all physical extents remain fixed, because refining a remote tail region does
 not estimate near-Moon discretization error and previously caused an
 uncontrolled block-count increase.  All point samples, shell integrals,
 surface bands, and inventories are reduced across their actual MPI owners;
 only rank zero writes the common artifacts.
+
+For the memory campaign the fixed far-field target is 480 km (not the initial
+240 km allocation-only candidate): the production parser requires far >= near,
+including the 480 km coarse member. Derivation checks this invariant before
+MPI launch and never silently clamps an individual member. This change is
+numerical, not a physical-domain or source change. Far-field discretization
+error remains outside the near-surface convergence claim.
 
 There is no wall-time or memory cap. `process_resource_metrics.csv` covers
 initialization and the mpiexec process tree, while `resource_metrics.csv`
@@ -46,7 +62,7 @@ Run from the repository root with a clean SPICE Moon executable:
 ```sh
 python3 srcMoon/test/integration-tests/I11/test.py \
   --amps ./amps \
-  --input srcMoon/examples/m1_sphere.in \
+  --input srcMoon/examples/m1_memory200.in \
   --output-dir test_output/srcMoon/I11
 ```
 

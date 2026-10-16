@@ -1,10 +1,12 @@
 # I13 — controlled spherical-Moon baseline
 
-I13 derives the exact 5 km receipt with the same audited transformation used by
-I11 and requires its hash to match the passing `I11/5km/application.in`; it
+I13 derives the exact finest receipt (60 km for the approved memory campaign,
+5 km for legacy FULL) with the same transformation as I11 and requires its
+hash to match the passing `I11/<finest>km/application.in`; it
 never freezes the coarser human-authored template with finest-grid science.
-The runner therefore requires `mesh_profile=full` and rejects QUICK/CUSTOM
-receipts before launching AMPS.
+The runner accepts the approved memory-profile settings or legacy FULL;
+arbitrary CUSTOM/QUICK meshes are rejected. Missing/failed I11 evidence
+stops I13 before any linked mesh allocation.
 It first evaluates the registered production sphere against the independent
 analytical area `4*pi*R^2`, with relative tolerance `1e-10`.  It also records
 the realized AMR leaf/block counts, compiled species properties, particle
@@ -31,7 +33,7 @@ Run from the repository root with a clean SPICE Moon executable:
 ```sh
 python3 srcMoon/test/integration-tests/I13/test.py \
   --amps ./amps \
-  --input srcMoon/examples/m1_sphere.in \
+  --input srcMoon/examples/m1_memory200.in \
   --output-dir test_output/srcMoon/I13
 ```
 

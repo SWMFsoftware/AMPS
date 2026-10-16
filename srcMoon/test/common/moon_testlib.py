@@ -182,6 +182,13 @@ def run_probe_case(
             u08_output = output_root / "U08" / "surface_probe"
             u08_output.mkdir(parents=True, exist_ok=True)
             environment["MOON_U08_OUTPUT"] = str(u08_output)
+        if mode == "diviner-temperature":
+            # U10's synthetic affine grid is an analytical interpolation
+            # fixture, never observational evidence.  It is written beneath
+            # the selected test-output root and preserved with the result.
+            u10_output = output_root / "U10" / "interpolation_fixture"
+            u10_output.mkdir(parents=True, exist_ok=True)
+            environment["MOON_U10_OUTPUT"] = str(u10_output)
         completed = subprocess.run(
             [str(executable), mode],
             cwd=REPO_ROOT,
@@ -198,6 +205,31 @@ def run_probe_case(
                 "stderr": completed.stderr,
             }
         )
+        if mode == "diviner-temperature":
+            # U10 also owns the local correctness of the Python RDR
+            # observation processor.  The small analytical fixture never
+            # reads D03 or AMPS results, so it verifies parsing/mask/
+            # radiance-first decisions without being misreported as
+            # observational validation.  Keep it in the same U10 result as
+            # the C++ production operator because assigning a new permanent
+            # test ID would violate the frozen U01--U26 registry.
+            processor_test = (TEST_ROOT / "U10_diviner_temperature" /
+                              "test_processor.py")
+            processor_completed = subprocess.run(
+                [sys.executable, "-B", str(processor_test)],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            outputs.append(
+                {
+                    "mode": "diviner-rdr-processor-contract",
+                    "returncode": processor_completed.returncode,
+                    "stdout": processor_completed.stdout,
+                    "stderr": processor_completed.stderr,
+                }
+            )
 
     guards: list[dict[str, Any]] = []
     matching = acceptance.get("token_matching", "exact")
@@ -387,7 +419,149 @@ def run_lola_geometry(
             "missing_qualification_files": missing,
             "validation_status": "NOT VALIDATED",
         }
-    return kernel
+
+    # Package-directory presence is not evidence of readiness.  Require the
+    # machine-readable D01 state and independently recompute the two immutable
+    # raw hashes frozen in the U08 contract.  Corrupt JSON or a hash mismatch
+    # is infrastructure/data corruption (ERROR), while a well-formed package
+    # explicitly marked non-ready is SKIPPED.
+    try:
+        with (package / "qa_report.json").open(encoding="utf-8") as stream:
+            qa = json.load(stream)
+        with (package / "provenance.json").open(encoding="utf-8") as stream:
+            provenance = json.load(stream)
+    except (OSError, json.JSONDecodeError) as exception:
+        return {
+            "status": "ERROR",
+            "reason": f"cannot read D01 qualification metadata: {exception}",
+            "kernel_check": kernel,
+            "validation_status": "NOT VALIDATED",
+        }
+
+    if qa.get("dataset_status", {}).get("D01") != "READY":
+        return {
+            "status": "SKIPPED",
+            "reason": "D01 qa_report.json does not declare D01 READY",
+            "kernel_check": kernel,
+            "d01_status": qa.get("dataset_status", {}).get("D01", "MISSING"),
+            "validation_status": "NOT VALIDATED",
+        }
+    if provenance.get("datasets", {}).get("D01", {}).get("status") != "READY":
+        return {
+            "status": "SKIPPED",
+            "reason": "D01 provenance.json does not declare D01 READY",
+            "kernel_check": kernel,
+            "validation_status": "NOT VALIDATED",
+        }
+
+    verified_hashes: list[dict[str, str]] = []
+    for filename, expected_hash in acceptance["data_hashes"].items():
+        path = package / "raw" / filename
+        if not path.is_file():
+            return {
+                "status": "ERROR",
+                "reason": f"qualified D01 raw file is missing: {path}",
+                "kernel_check": kernel,
+                "validation_status": "NOT VALIDATED",
+            }
+        actual_hash = _sha256(path)
+        verified_hashes.append({"path": str(path), "sha256": actual_hash})
+        if actual_hash != expected_hash:
+            return {
+                "status": "ERROR",
+                "reason": f"qualified D01 raw hash mismatch: {path}",
+                "kernel_check": kernel,
+                "expected_sha256": expected_hash,
+                "actual_sha256": actual_hash,
+                "validation_status": "NOT VALIDATED",
+            }
+
+    return {**kernel, "qualified_d01_hashes": verified_hashes}
+
+
+def run_argon_source(
+    acceptance: dict[str, Any], build_dir: Path, output_root: Path
+) -> dict[str, Any]:
+    """Verify the uniform 40Ar kernel, then apply the independent D10 gate.
+
+    The production kernel and input receipt can be verified without inventing
+    lunar geography.  U21 itself also promises a globally qualified
+    potassium-weighted distribution and transient behavior, so the final U21
+    status remains SKIPPED while D10 is regional/QA-incomplete and those
+    production modes are absent.  The nested local result makes this useful
+    progress visible without promoting a preflight check to source validation.
+    """
+    kernel = run_probe_case(acceptance, build_dir, output_root)
+    if kernel["status"] in {"ERROR", "FAIL", "SKIPPED"}:
+        return kernel
+
+    data_root = Path(
+        os.environ.get("MOON_VALIDATION_DATA_ROOT", "/data/vtenishe/moon_validation_data")
+    )
+    package = data_root / "grs"
+    required = {
+        "qa_report.json": acceptance["data_hashes"]["qa_report.json"],
+        "provenance.json": acceptance["data_hashes"]["provenance.json"],
+        "processed/k_source_proxy.csv.gz": acceptance["data_hashes"][
+            "processed/k_source_proxy.csv.gz"
+        ],
+    }
+    missing = [str(package / name) for name in required if not (package / name).is_file()]
+    if missing:
+        return {
+            "status": "SKIPPED",
+            "reason": "local 40Ar source kernel passed, but D10 evidence is unavailable",
+            "local_verification": kernel,
+            "missing_data": missing,
+            "validation_status": "NOT VALIDATED",
+        }
+
+    hashes: list[dict[str, Any]] = []
+    for name, expected in required.items():
+        path = package / name
+        actual = _sha256(path)
+        hashes.append(
+            {
+                "path": str(path),
+                "sha256": actual,
+                "expected_sha256": expected,
+                "matches_contract": actual == expected,
+            }
+        )
+        if actual != expected:
+            return {
+                "status": "ERROR",
+                "reason": f"D10 evidence hash mismatch: {path}",
+                "local_verification": kernel,
+                "data_hashes": hashes,
+                "validation_status": "NOT VALIDATED",
+            }
+    try:
+        with (package / "qa_report.json").open(encoding="utf-8") as stream:
+            qa = json.load(stream)
+    except (OSError, json.JSONDecodeError) as exception:
+        return {
+            "status": "ERROR",
+            "reason": f"cannot read D10 QA report: {exception}",
+            "local_verification": kernel,
+            "data_hashes": hashes,
+            "validation_status": "NOT VALIDATED",
+        }
+
+    return {
+        "status": "SKIPPED",
+        "reason": (
+            "uniform global 40Ar rate partition passed locally; full U21 is "
+            "not qualified because D10 is regional/QA-incomplete and the "
+            "roadmap-required potassium geography and transients are absent"
+        ),
+        "local_verification": kernel,
+        "d10_status": qa.get("status", "MISSING"),
+        "d10_geometry": qa.get("geometry", {}),
+        "data_hashes": hashes,
+        "missing_capability": acceptance["missing_capability"],
+        "validation_status": "NOT VALIDATED",
+    }
 
 
 def run_na_radiation_pressure(
@@ -802,6 +976,8 @@ def run_one(
         result = run_rotating_frame(acceptance, build_dir, output_root)
     elif kind == "lola-geometry-probe":
         result = run_lola_geometry(acceptance, build_dir, output_root)
+    elif kind == "argon-source-partial":
+        result = run_argon_source(acceptance, build_dir, output_root)
     elif kind == "source-guard":
         result = run_source_guard(acceptance)
     elif kind == "linked-executable-los":

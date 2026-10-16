@@ -33,6 +33,7 @@ lola_image_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.IMG
 lola_label_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.LBL
 surface_cea_file = ../../test_output/srcMoon/REGRESSION/sphere-unused.cea
 surface_tecplot_file = ../../test_output/srcMoon/REGRESSION/sphere-unused.dat
+m2_environment = disabled
 
 simulation_start_utc = 2009-01-24T00:00:00
 simulation_environment_mode = frozen

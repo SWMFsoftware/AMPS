@@ -19,9 +19,9 @@
   "data_hashes": {"LDEM_4.IMG": "972d66d7f330abca62abc21aae270661516c00dd1a881ec102b94df9563656b5", "LDEM_4.LBL": "b5a197b4d417e3b5e0e84f8fe15f9a1d2203b8eb5d7213236c0ffbc86e940cc6"},
   "predecessor_gates": ["U02"],
   "artifacts": ["result.json", "U08/surface_probe/u08.in", "U08/surface_probe/u08-legacy-section.in", "U08/surface_probe/u08-alternate.in", "U08/surface_probe/u08-invalid-environment.in", "U08/surface_probe/u08-invalid-mesh-output.in", "U08/surface_probe/u08-invalid-profile.in", "U08/surface_probe/lola_surface.cea", "U08/surface_probe/lola_surface.dat"],
-  "status_semantics": "The production-kernel subcheck may pass, but the U08 campaign remains SKIPPED / NOT VALIDATED until D01 has README, provenance.json, and qa_report.json and its readiness is qualified.",
+  "status_semantics": "PASS requires both the production-kernel criteria and a parseable canonical D01 package whose qa_report.json and provenance.json declare D01 READY and whose two immutable raw files match the frozen hashes. This local PASS does not satisfy linked I14.",
   "implementation": "lola-geometry-probe",
   "probe_modes": ["lola-geometry"],
-  "skip_reason": "The local D01 directory contains raw IMG/LBL files but no package README, provenance.json, or qa_report.json.",
-  "missing_capability": "Qualified D01 package and linked I14 production-wiring verification."
+  "skip_reason": "D01 is absent or its package metadata explicitly does not declare the dataset READY.",
+  "missing_capability": "Linked I14 production-wiring and convergence verification remains separate from U08."
 }

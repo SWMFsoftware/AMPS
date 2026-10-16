@@ -1849,6 +1849,18 @@ Milestone M0.
 
 ### [ ] R1.1 — Parameterize and converge the AMR mesh
 
+**Approved resource-constrained campaign amendment, 2026-10-14:** The user
+approved 480/240/120/60 km near-surface targets for the current 200 GB budget.
+Use `srcMoon/examples/m1_memory200.in`; keep far-field/outer targets and
+physical extents fixed across this sequence. The legacy FULL 40/20/10/5 km
+sequence remains explicitly selectable, not the default. All integrated,
+pointwise, equilibrium, and statistical criteria below are unchanged. This
+approval permits testing, not a convergence claim. I13 must use the exact
+passing finest I11 input (60 km for this campaign) and still requires a
+reviewed baseline. I17 still requires that predecessor and D03 readiness;
+resource feasibility cannot replace either. The canonical external roadmap
+has not been edited; ROADMAP_RECONCILIATION.md records this scoped amendment.
+
 **Why this step exists**
 
 Near-surface Na/Ne/Ar scale lengths can be far below the legacy coarse debug mesh. Scientific validation is meaningless until discretization error is smaller than observational/model uncertainty.
@@ -2006,6 +2018,36 @@ Milestone M1 when R1.1–R1.3 pass.
   - `U06` — Lorentz-acceleration kernel and species-scaling verification
 
 ## Phase 2 — Real Lunar Surface, Illumination, Thermal State, and Surface Physics
+
+**Implementation status, 2026-10-13.** Production kernels and adapters now
+exist for the time-dependent body-fixed LOLA boundary, BVH terrain horizon,
+strict Diviner-table interpolation, depth-resolved 1-D thermal columns,
+Na/Ar residence and flux-balanced inventory, finite cold-trap classification,
+and versioned inventory checkpoints. U09-U13 pass their local analytical
+contracts. Reproducible processors now derive hashed D02 polar-illumination,
+D03 GCP temperature/hold-out, D03 PRP polar-temperature, and frozen I17
+June-training/December-hold-out RDR products without
+changing immutable raw files. I14 and I16 have linked production adapters and
+independent scorers; I18 has a dedicated Na+Ar build plus linked production
+impact/source sampling and frozen 95% analytical-distribution gates. All
+I14-I20 runners preserve honest predecessor-blocked artifacts, and none is
+declared PASS until FULL I11/I13 passes in the same campaign. They also require
+package-level README/provenance/QA records before reading processed evidence;
+the current D03 directory lacks all three. Its raw tree now contains all 144
+ten-minute PDS4 ZIP/XML products for each I17 date, which is acquisition rather
+than validation. A production Paige C3-C9 operator, epsilon-sigma-T^4 grey
+observation operator, frozen selection contract, and reproducible processor
+are implemented. I15 still lacks the D02 extended-solar-disc temporal
+production operator. I17 now has input-controlled finite-disc direct
+irradiance, observation-independent periodic full-column spin-up, and a linked
+June-only experimental comparison/plot path that cannot read December rows.
+It still lacks a reviewed/frozen June acceptance-threshold artifact and linked
+untouched hold-out execution;
+I19 lacks
+complete production-wide weighted event counters, and I20 depends on those
+gates.
+Therefore M2 remains `EXPERIMENTAL / NOT QUALIFIED`; the unchecked boxes below
+remain intentional.
 
 ### [ ] R2.1 — Promote LOLA topography into the production particle-surface boundary
 
@@ -2743,6 +2785,25 @@ Requires R4.1 and surface physics.
   - `I36` — Neon local-time distribution — LADEE NMS
 
 ### [ ] R4.4 — Implement radiogenic 40Ar source geography and transients
+
+**Implementation status (2026-10-13; not an R4.4 completion claim)**
+
+The production tree now contains a species-local 40Ar source kernel in
+`srcMoon/species/Argon.{h,cpp}`.  It implements the literature-supported
+continuous, spatially uniform lower-bound source case, partitions the requested
+global rate by physical surface-element area, and injects a local-temperature
+Maxwellian flux through the normal AMPS source callbacks.  The source is
+disabled in the canonical Na input and is enabled only by an explicit input
+receipt plus an Ar-enabled species build.  `U21` verifies the local partition,
+rate conservation, input parsing, and fail-closed rejection of a requested K
+map that production cannot yet consume.
+
+This partial implementation does **not** satisfy R4.4: the available D10
+product is regional and QA-incomplete, the production K-proxy remap and
+transient/outgassing component do not exist, and linked `I28` has not passed.
+Consequently the complete `U21` gate remains `SKIPPED`, even though its nested
+uniform-source kernel checks pass.  No LADEE or LACE observation has been used
+to tune the source rate.
 
 **Why this step exists**
 

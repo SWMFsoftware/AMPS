@@ -1,0 +1,23 @@
+{
+  "id": "I15",
+  "name": "Topographic illumination and shadowing",
+  "purpose": "Compare the production terrain-horizon and Earth-eclipse service with independent D02 polar visibility/PSR evidence and published temporal sampling.",
+  "production_capability": "Topographic illumination and shadowing",
+  "production_entry_points": ["normal srcMoon initializer", "production surface/thermal/inventory callbacks", "normal AMPS mover/source dispatch"],
+  "configuration": "Explicit srcMoon/examples/lola_surface.in M2 receipt; eight MPI ranks; no inferred constants.",
+  "inputs": ["frozen application receipt", "predecessor I13 result", "required authoritative package metadata and processed products"],
+  "independent_reference": "Roadmap-defined analytical invariant and/or independently processed authoritative evidence; never frozen production output as physical truth.",
+  "units": "SI in model artifacts; native archive units retained with explicit conversions",
+  "frame_time_convention": "MOON_ME_DE421 body-fixed geometry, LSO particle state, SPICE TDB internally, archive UTC where supplied",
+  "deterministic_stochastic_controls": "Random seed and MPI/OpenMP layout recorded; stochastic criteria use declared confidence intervals.",
+  "procedure": "Verify I13 and data readiness, launch the normal linked application, retain all artifacts, then apply this ID's frozen roadmap criterion.",
+  "metrics": ["roadmap science metrics", "numerical convergence or confidence", "data-quality exclusions", "resource use"],
+  "acceptance_criteria": "Exactly the I15 criteria in srcMoon/development_and_validation.md; thresholds are not relaxed after execution.",
+  "expected_pass_result": "The declared linked M2 capability is evaluated and every frozen criterion is met.",
+  "expected_failure_modes": ["predecessor unavailable", "data package incomplete", "production wiring failure", "numerical criterion failure", "physics criterion failure"],
+  "required_data": ["D01 LOLA topography; D02 AVGVISIB/LPSR"],
+  "data_hashes": "Recorded in run_manifest.json after package hash verification.",
+  "predecessor_gates": ["I13", "applicable U09-U13 gates"],
+  "artifacts": ["stdout.log", "stderr.log", "receipt.txt when executed", "result.json", "run_manifest.json", "application.in", "comparison.csv", "comparison.png", "comparison.eps"],
+  "status_semantics": "PASS means the full linked criterion ran and passed; FAIL means it ran and missed the criterion; ERROR is infrastructure/parser/corruption; SKIPPED means a prerequisite, capability, configuration, or authoritative input is unavailable."
+}

@@ -1,5 +1,15 @@
 # I12 — linked angular surface refinement
 
+For the 200 GB resource check, pass
+`--input srcMoon/examples/m1_memory200.in --mpi-ranks 8` instead of the
+FULL template. The [profile contract](../../../examples/README.md#200-gb-memory-budget-mesh-2026-10-14)
+defines the budget, measured peak, exact command and limits of this evidence.
+This extends I12's existing configuration coverage, not its meaning: the
+same production path and unchanged analytical/realized-cell tests run.
+Following the 2026-10-14 approval, this exact custom memory profile can pass
+I12's unchanged wiring criteria. Other unapproved CUSTOM profiles remain
+SKIPPED. I12 PASS alone still does not qualify M1 or authorize I17 scoring.
+
 I12 loads a complete Moon `.in` receipt, initializes the normal production
 mesh, and queries the production boundary-refinement callback at solar zenith
 angles 0, 30, 60, 90, 120, and 180 degrees. It also constructs the lunar north

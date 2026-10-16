@@ -17,10 +17,12 @@ capability is intentionally not converted into a passing source-preflight result
 The runner still executes the production-kernel subcheck when the raw local
 `LDEM_4.IMG/.LBL` pair is present. It verifies native control pixels,
 label-driven decoding, icosphere counts and maximum-edge resolution, outward
-faces, edge uniformity, and CEA/Tecplot writers. Because the canonical D01
-directory currently lacks its package README, `provenance.json`, and
-`qa_report.json`, the final U08 status remains `SKIPPED / NOT VALIDATED` even
-when that subcheck succeeds.
+faces, edge uniformity, and CEA/Tecplot writers. The deterministic qualification
+script in `srcMoon/test/data_processing/qualify_lola_package.py` verifies the
+frozen D01 hashes and detached-label byte contract and writes the package
+README, `provenance.json`, and `qa_report.json`. The U08 runner parses those
+records, requires D01 `READY`, and independently rehashes both raw files before
+it can report `PASS`.
 
 The 500 km fixture can also be used to investigate linked runtime wiring after
 U08 writes its `u08.in`; that run is not U08 and does not satisfy I14. A clean
@@ -30,9 +32,10 @@ terrain, and printed all 81 altitude points, but stopped at iteration 1 with
 first-order no-force mover's initial boundary-dispatch switch lacks the
 Nastran-surface case that is present in the second-order path. This is a linked
 production `ERROR`, not a U08 geometry-kernel failure, and supersedes the
-earlier smoke-run claim until the mover path is repaired and rerun. D01
-qualification, mover repair, resolution convergence, and the complete I14
-contract remain pending.
+earlier smoke-run claim until the mover path is repaired and rerun. That mover
+path is now routed through the moving-surface intersection service, but I14
+still requires its own linked run after the I11--I13 predecessor campaign is
+qualified; U08 cannot substitute for that linked gate.
 
 ## Detailed fixture
 

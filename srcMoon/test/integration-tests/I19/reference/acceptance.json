@@ -1,0 +1,23 @@
+{
+  "id": "I19",
+  "name": "Surface inventory and global mass-conservation accounting",
+  "purpose": "Close synchronized Na and Ar particle and mass budgets across adsorption, desorption, inventory change, escape, physical sinks, and numerical loss.",
+  "production_capability": "Surface inventory and global mass-conservation accounting",
+  "production_entry_points": ["normal srcMoon initializer", "production surface/thermal/inventory callbacks", "normal AMPS mover/source dispatch"],
+  "configuration": "Dedicated Na,Ar build; photolytic chemistry generated OFF; uniform continuous 3.8e20 atoms s^-1 Ar M2 driver; eight MPI ranks; no inferred constants.",
+  "inputs": ["same-campaign I13 PASS", "frozen application receipt", "production weighted event counters"],
+  "independent_reference": "Exact signed atom/mass conservation identity evaluated over synchronized windows; adsorption/desorption cancel as internal transfers.",
+  "units": "atoms, atoms s^-1, kg, and kg s^-1; synchronized simulation seconds",
+  "frame_time_convention": "MOON_ME_DE421 body-fixed geometry, LSO particle state, SPICE TDB internally, archive UTC where supplied",
+  "deterministic_stochastic_controls": "Random seed and MPI/OpenMP layout recorded; stochastic criteria use declared confidence intervals.",
+  "procedure": "Verify I13 and generated chemistry-OFF contract; synchronize Na/Ar accounting windows; reduce weighted production counters over MPI; write every signed term; independently recompute particle and mass closure.",
+  "metrics": ["injected", "adsorbed", "desorbed", "converted in/out", "escaped", "numerical loss", "initial/final exosphere", "initial/final inventory", "absolute and relative closure"],
+  "acceptance_criteria": "Converted-in and converted-out exactly zero; deterministic accounting closes to machine precision; full Monte Carlo imbalance <0.5% of dominant source; no physical sink is combined with numerical loss.",
+  "expected_pass_result": "The declared linked M2 capability is evaluated and every frozen criterion is met.",
+  "expected_failure_modes": ["predecessor unavailable", "data package incomplete", "production wiring failure", "numerical criterion failure", "physics criterion failure"],
+  "required_data": ["No external observation data"],
+  "data_hashes": "Recorded in run_manifest.json after package hash verification.",
+  "predecessor_gates": ["I13", "applicable U09-U13 gates"],
+  "artifacts": ["stdout.log", "stderr.log", "receipt.txt when executed", "result.json", "run_manifest.json", "application.in", "comparison.csv", "comparison.png", "comparison.eps"],
+  "status_semantics": "PASS means the full linked criterion ran and passed; FAIL means it ran and missed the criterion; ERROR is infrastructure/parser/corruption; SKIPPED means a prerequisite, capability, configuration, or authoritative input is unavailable."
+}

@@ -1,5 +1,81 @@
 # `srcMoon` application-input examples
 
+## 200 GB memory-budget mesh (2026-10-14)
+
+**Subsequent approval on 2026-10-14:** The 480/240/120/60 km qualification
+sequence is now approved. It is the `run_all_test.py --campaign-mode
+qualification` default. I12 can return PASS for this exact memory profile;
+other unapproved CUSTOM inputs remain SKIPPED. I11 accuracy/statistical
+criteria and I13 independent baseline review are unchanged. The original
+allocation-only result below remains historical evidence, not retroactively
+relabelled. The following approval supersedes the earlier FULL-only policy
+described below: select `--m1-input srcMoon/examples/m1_sphere.in` explicitly
+for the legacy FULL campaign. Coarsening never implies convergence.
+
+`m1_memory200.in` and the volume mesh in `lola_surface.in` now request
+60 km near-surface cells, 30 km terminator/polar cells, 480 km far-field
+cells, and 104,226 km outer target cells. These are requested sizes; the
+Cartesian AMR tree realizes dyadic sizes and enforces neighbor balance.
+Near/angular/polar/outer targets are six times the original FULL values;
+the far-field target is twelve times FULL. The fixed 480 km far target is
+required because the production parser prohibits far-field cells smaller
+than the 480 km near-surface target of the coarsest campaign member. Domain extents,
+angular refinement regions, physical parameters, observation sampling, the
+100 km surface triangulation target, and thermal depth/time resolution are
+unchanged. Coarsening the surface triangulation alone would not solve the
+volume-block allocation problem.
+
+The budget means **200,000,000,000 bytes (186.265 GiB)**, not 200 GiB.
+The earlier 30 km QUICK run used 191.9 GiB; doubling its volume targets
+provides additional headroom, but cubic scaling is only an estimate, not
+a memory guarantee. Actual AMR allocation must be measured. This is an
+operational custom profile, not a change to physics or a qualified spatial
+resolution. Particle populations and different species/builds can add memory.
+
+The existing I12 runner exercises the production parser, resolution callbacks,
+tree construction, MPI distribution and block allocation on eight ranks:
+
+```sh
+python3 -B srcMoon/test/integration-tests/I12/test.py \
+  --amps ./amps --input srcMoon/examples/m1_memory200.in --mpi-ranks 8 \
+  --output-dir test_output/srcMoon/memory200-20261014-01
+```
+
+Choose a new output directory for every subsequent run. The resource contract
+is a completed linked allocation with peak `process_tree_rss_kib * 1024`
+below 200,000,000,000 bytes, plus successful I12 formula/realized-cell checks.
+The resource CSV samples once per second and sums RSS (including shared pages
+per process); it is not an enforced allocation cap or proof of future peak use.
+Logs, input snapshot, executable/source identity, SPICE hashes and science
+metrics are preserved by the runner. No observational data are used as an
+oracle: I12 independently evaluates the input-defined angular function and
+checks actual cell sizes against its unchanged acceptance rules.
+
+Successful wiring on the approved memory profile can return I12 PASS;
+an allocation/runtime failure is ERROR and a violated mesh criterion is FAIL.
+The frozen FULL `m1_sphere.in` and legacy I11 40/20/10/5 km sequence remain
+available. Neither I12 nor memory success bypasses I11 convergence or I13
+baseline review or authorizes I17 observational scoring. `run_all_test.py`
+can select this input with `--m1-input srcMoon/examples/m1_memory200.in --only I12`.
+Default qualification selects `m1_memory200.in`; explicitly selecting
+`m1_sphere.in` restores the memory-intensive legacy campaign.
+
+Measured on 2026-10-14 at source revision
+`92386a37737eab45cc8a855587a881d16bcefcd1` with the existing SPICE executable
+and eight MPI ranks on the initial 240 km far-field candidate: 51,136 leaves,
+43,341,576 KiB peak sampled aggregate RSS
+(44.382 GB / 41.334 GiB), and approximately 83 seconds. All six SZA formula
+and realized-cell checks and the polar check passed; the largest formula
+relative error was 2.43e-16. I12's formal result was SKIPPED because the
+profile is custom (0 formal PASS, 0 FAIL, 0 ERROR, 1 SKIPPED). Evidence is in
+`test_output/srcMoon/memory200-20261014-01/I12/`, including the complete
+`process_resource_metrics.csv`, `result.json`, and `run_manifest.json`.
+The subsequent 480 km far-field correction has not yet completed a resource
+measurement; do not attribute the earlier numbers to that changed receipt.
+The initial measurement covers spherical initialization and mesh diagnostics, not
+a long particle simulation or the LOLA/thermal allocation. No production
+source changed or recompilation was needed for these input-only changes.
+
 `lola_surface.in` demonstrates the complete generic
 `application: moon` block consumed by the lunar application. All maintained
 examples use `#begin application: moon` / `#end application`; the retired
@@ -18,6 +94,55 @@ Profile altitude is in
 metres above the AMPS 1737.10 km reference sphere, not above the LOLA datum or
 local terrain; all angles explicitly name degrees. The production parser
 materializes an 81-point common altitude grid for the committed values.
+
+The same LOLA example is the explicit M2 receipt used by I14-I20. It enables
+the moving MOON_ME_DE421 terrain boundary, terrain-horizon illumination, a
+depth-resolved Hayne-et-al. thermophysical column, Na/Ar residence laws, zero
+initial dynamic inventory, and versioned `<base>.Na`/`<base>.Ar` checkpoints.
+The four moving-collision controls set numerical bracketing and refinement;
+I14 must establish convergence. `surface_inventory_checkpoint_file=none`
+disables writes. Selecting `checkpoint` as the initial state requires both
+species files and fails before AMPS initialization if either is missing.
+
+`run_all_test.py` does not require a developer to edit `input/moon.input` for
+I18. When an M2 Na+Ar ID is selected without `--skip-build`, the runner creates
+a uniquely named temporary Config.pl input, verifies that its only physical
+compile-time changes are `SpeciesList=Na,Ar` and the `RadiogenicArgon` block,
+saves the executable and build hashes inside the campaign, deletes those
+temporary inputs, and restores the canonical Na-only build. With
+`--skip-build`, pass that executable explicitly as `--m2-amps`; it must not
+replace canonical `--amps`.
+
+The Na sticking table and immediate non-sticking accommodation are separate
+receipt choices. The example selects `temperature-table` sticking from
+Tenishev et al. (2013), Fig. 3, and `kinetic-energy` accommodation with
+`omega=0.2` from its Eq. 14. Changing either law or factor requires an explicit
+input edit and a replacement reference string; AMPS never interprets the
+coefficient silently as the historical linear-speed blend. Ar selects
+constant-unity sticking and a declared full-thermal limiting law. He/Ne remain
+outside M2 and are not assigned unsupported surface parameters here.
+
+The two `diviner_eclipse_*` settings are a paired I17 evidence receipt. They
+remain `none` in the general `lola_surface.in` example. The I17 runner derives
+a preserved copy that names the reproducibly processed PDS4 RDR history and
+the pre-holdout frozen JSON selection contract. The observation history never
+initializes or forces the thermal column: production predicts kinetic
+temperature, and `MoonDivinerObservation.cpp` converts its
+`epsilon*sigma*T^4` emission to comparable bolometric brightness temperature.
+Supplying only one of the two paths, or a missing file, is a parser error.
+
+The same file records a continuous uniform-global radiogenic `40Ar` source at
+`3.8e20 atoms s^-1`, the lower end of the Killen (2002) diffusion estimate,
+but sets `argon_source_enabled=false`. This separation is intentional: the
+standard executable is the frozen Na-only baseline. To run an experimental Ar
+campaign, first change `SpeciesList=Na,Ar` and only the dedicated
+`SourceProcessCode=RadiogenicArgon` block to `on` in `input/moon.input`, run
+the normal clean Config.pl build, then copy the `.in` receipt and set
+`argon_source_enabled=true`. Do not enable the historical `MySource` block.
+The source launches a local-temperature Maxwell flux uniformly per lunar
+reference-sphere area. `argon_source_map_file` remains `none`; the regional
+D10 South Pole-Aitken product cannot be extended to a global K-weighted source
+without new authoritative data and a reviewed roadmap decision.
 
 `m1_sphere.in` is the reviewed FULL analytic-sphere template for I11-I13. It also
 contains the approved M1 AMR controls explicitly: 10 km near-surface cells
@@ -129,17 +254,15 @@ The pole, shell, and two-branch near-limb products are implemented for I11.
 The D14 finite-beam/exposure tail operator remains a later observational
 capability and is not inferred from those numerical-convergence products.
 
-The realistic surface is static and label-frame-native. Because the normal
-production input now enables orbit evolution, this example must currently be
-run from an explicitly configured no-SPICE build. The executable rejects LOLA
-mode in an orbit-enabled build until the moving-boundary/frame-transform
-problem has an explicit verified implementation. The analytic-sphere
-production run is the current SPICE-enabled M0 baseline.
+The realistic mesh is stored in its native MOON_ME_DE421 body-fixed frame.
+For an orbit-evolving run the production mover evaluates the body/LSO state
+transform at each candidate collision epoch and returns both the transformed
+facet normal and local moving-surface velocity. The input therefore requires a
+SPICE-enabled build; the no-SPICE build fails closed instead of treating the
+terrain as stationary. The analytic-sphere mode remains the M0 baseline.
 
-The current no-SPICE production selection uses the first-order no-force mover.
-Its initial internal-boundary dispatch does not handle the registered Nastran
-terrain descriptor, so a normal LOLA run presently stops at iteration 1 with
-`undetermined internal boundary type`. Input parsing and terrain generation
-complete before that error, but the case is not a successful linked terrain
-run. Do not use it as I14 evidence until the production mover is repaired and
-the linked test is repeated.
+This implementation removes the former first-order Nastran dispatch failure by
+routing the orbit-enabled second-order mover through the production moving-
+surface callback. That is implementation evidence only: I14 remains
+`SKIPPED / NOT QUALIFIED` until the FULL I11--I13 predecessor chain passes and
+the linked D01 criteria are executed with preserved artifacts.
