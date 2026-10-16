@@ -1,21 +1,28 @@
 #include "RunAction.hh"
 
+#include "AccuracyController.hh"
+#include "BuildProvenance.hh"
 #include "DetectorConstruction.hh"
+#include "CaseDefinition.hh"
 #include "ComputedQuantities.hh"
 #include "MaterialCatalog.hh"
 #include "SpecBins.hh"
+#include "StrictJson.hh"
 
 #include <G4AnalysisManager.hh>
 #include <G4Box.hh>
+#include <G4Exception.hh>
 #include <G4LogicalVolume.hh>
 #include <G4Material.hh>
 #include <G4Run.hh>
 #include <G4SystemOfUnits.hh>
 #include <G4ios.hh>
+#include <G4Version.hh>
 
 #include <algorithm>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <vector>
 
@@ -26,7 +33,12 @@ RunAction::RunAction(const Options& opts,
   : fOpts(opts), fDetector(detector), fScoringNames(scoringNames), fScoringThick(scoringThick)
 {
   G4int N=SpecBins::N;
-  fEdep.assign(scoringNames.size(),0);
+  fEdepTotal.assign(scoringNames.size(),0);
+  fEdepIonizing.assign(scoringNames.size(),0);
+  fEdepNonIonizing.assign(scoringNames.size(),0);
+  fEventEdepIonizing.assign(scoringNames.size(),0);
+  fLastDoseTotal.assign(scoringNames.size(),0);
+  fLastDoseNonIonizing.assign(scoringNames.size(),0);
   fLastDose.assign(scoringNames.size(),0);
   fLastDoseRate.assign(scoringNames.size(),0);
   fLastDDD.assign(scoringNames.size(),0);
@@ -35,6 +47,22 @@ RunAction::RunAction(const Options& opts,
   fLastNEqRate.assign(scoringNames.size(),0);
   fInP.assign(N,0); fInA.assign(N,0);
   fOutP.assign(N,0); fOutA.assign(N,0); fOutN.assign(N,0);
+
+  fCumulativeMode=static_cast<bool>(fOpts.caseDefinition);
+  if(fOpts.caseDefinition){
+    fAccuracyController=std::make_unique<shield_sim::AccuracyController>(
+        fOpts.caseDefinition->accuracy);
+    for(const auto& quantity:fOpts.caseDefinition->quantities){
+      const auto& requirement=fOpts.caseDefinition->AccuracyFor(quantity);
+      if(requirement.systematicBudgetComplete)
+        fAccuracyController->SetSystematicRelativeUncertainty(
+            quantity,requirement.systematicRelativeUncertainty);
+      else
+        fAccuracyController->MarkSystematicBudgetIncomplete(quantity);
+      if(requirement.hasKnownSystematicFloor)
+        fAccuracyController->SetKnownSystematicFloor(quantity,requirement.knownSystematicFloor);
+    }
+  }
 
   // CSV histograms are diagnostic outputs.  The Tecplot spectra file contains
   // the more detailed logarithmic spectra and normalization metadata.
@@ -96,9 +124,77 @@ void RunAction::RecordExitParticle(const std::string& species,
   ++fExitDumpRows;
 }
 
-void RunAction::AddEdep(std::size_t i,G4double edep){
-  if(i<fEdep.size()) fEdep[i]+=edep;
+void RunAction::AddEdep(std::size_t i,G4double totalEdep,G4double nonIonizingEdep){
+  if(i>=fEdepTotal.size()) return;
+  // Protect only against sub-roundoff overshoot in the Geant4 ledgers.  A
+  // material negative discrepancy is retained as a fatal scoring error rather
+  // than silently changing the energy accounting.
+  if(nonIonizingEdep<0.0 || totalEdep<0.0 || nonIonizingEdep>totalEdep+1.0e-12*MeV)
+    G4Exception("RunAction::AddEdep","EnergyLedger",FatalException,
+                "Invalid total/non-ionizing energy-deposit ledger");
+  const G4double nonIon=std::min(totalEdep,nonIonizingEdep);
+  fEdepTotal[i]+=totalEdep;
+  fEdepNonIonizing[i]+=nonIon;
+  fEdepIonizing[i]+=totalEdep-nonIon;
+  fEventEdepIonizing[i]+=totalEdep-nonIon;
 }
+
+void RunAction::AddPrimaryProtonExit(G4double kineticEnergyMeV){
+  // Thresholds are evaluated at the exact crossing energy, not at an output
+  // histogram bin center. The approved definition uses strict E > threshold.
+  // Count a primary history at most once at each nested threshold: a rare
+  // backscatter/re-entry of the same primary must not masquerade as another
+  // independent incident particle in the ratio or its binomial covariance.
+  if(kineticEnergyMeV>10.0 && !fEventPrimaryProtonAbove10){
+    ++fPrimaryProtonAbove10;
+    fEventPrimaryProtonAbove10=true;
+  }
+  if(kineticEnergyMeV>100.0 && !fEventPrimaryProtonAbove100){
+    ++fPrimaryProtonAbove100;
+    fEventPrimaryProtonAbove100=true;
+  }
+}
+
+void RunAction::BeginEvent(){
+  std::fill(fEventEdepIonizing.begin(),fEventEdepIonizing.end(),0.0);
+  fEventPrimaryProtonAbove10=false;
+  fEventPrimaryProtonAbove100=false;
+}
+
+void RunAction::EndEvent(){
+  if(!fAccuracyController) return;
+  fAccuracyController->RecordHistory();
+  if(fOpts.calcTID){
+    G4double sum=0.0;
+    for(const G4double value:fEventEdepIonizing) sum+=value;
+    // Scaling all samples by target mass leaves relative uncertainty and the
+    // adaptive stopping decision unchanged; final dose is computed with the
+    // exact Geant4 mass at EndOfRunAction.
+    fAccuracyController->AddSample("TID",sum/MeV);
+  }
+  if(fOpts.calcHardness && fEventPrimaryProtonAbove10)
+    fAccuracyController->AddSample("H100/10",fEventPrimaryProtonAbove100?1.0:0.0);
+}
+
+bool RunAction::AccuracyStatisticallySatisfied() const{
+  if(!fOpts.caseDefinition || !fAccuracyController) return true;
+  if(fCumulativeEvents<fOpts.caseDefinition->accuracy.minHistories) return false;
+  for(const auto& quantity:fOpts.caseDefinition->quantities){
+    const auto& requirement=fOpts.caseDefinition->AccuracyFor(quantity);
+    // A documented systematic floor above a combined target is already
+    // unachievable. Stop after the required minimum histories and report
+    // not_met; spending more histories cannot change that conclusion.
+    if(requirement.scope=="combined" && requirement.hasKnownSystematicFloor &&
+       requirement.knownSystematicFloor>requirement.target) continue;
+    const auto* estimate=fAccuracyController->Estimate(quantity);
+    if(!estimate || estimate->count<2 || estimate->mean==0.0 ||
+       !std::isfinite(estimate->StandardError())) return false;
+    if(estimate->StandardError()/std::abs(estimate->mean)>requirement.target) return false;
+  }
+  return true;
+}
+
+G4long RunAction::GetCumulativeEvents() const { return fCumulativeEvents; }
 
 void RunAction::SetSourceNormalization(G4double normNoAngular,
                                        G4double angularFactor,
@@ -110,9 +206,9 @@ void RunAction::SetSourceNormalization(G4double normNoAngular,
 }
 
 G4double RunAction::GetSourcePlaneAreaCM2() const {
-  auto* wb = fDetector ? fDetector->GetWorldBox() : nullptr;
-  if(!wb) return 0.0;
-  return (2.0*wb->GetXHalfLength()/cm)*(2.0*wb->GetYHalfLength()/cm);
+  if(!fDetector) return 0.0;
+  return (2.0*fDetector->GetSourcePlaneHalfX()/cm)*
+         (2.0*fDetector->GetSourcePlaneHalfY()/cm);
 }
 
 G4double RunAction::GetIncidentParticleRate() const {
@@ -122,6 +218,49 @@ G4double RunAction::GetIncidentParticleRate() const {
 
 void RunAction::SetSweepMode(bool on,const std::string& mat,G4double tMM){
   fSweepMode=on; fCurrentMat=mat; fCurrentTmm=tMM;
+}
+
+void RunAction::ConfigureIndependentCase(std::size_t absorberIndex,
+                                         const std::string& outputPrefix,
+                                         const std::string& scoringName,
+                                         G4double scoringThickness){
+  if(!fOpts.caseDefinition)
+    G4Exception("RunAction::ConfigureIndependentCase","Mode",FatalException,
+                "Independent-case reconfiguration requires a versioned case");
+  fOpts.activeAbsorberIndex=absorberIndex;
+  fOpts.outputPrefix=outputPrefix;
+  fOpts.dumpRunSummaryFile=outputPrefix+"_run_summary.dat";
+  fScoringNames.assign(1,scoringName);
+  fScoringThick.assign(1,scoringThickness);
+  fEdepTotal.assign(1,0.0);
+  fEdepIonizing.assign(1,0.0);
+  fEdepNonIonizing.assign(1,0.0);
+  fEventEdepIonizing.assign(1,0.0);
+  fLastDose.assign(1,0.0);
+  fLastDoseTotal.assign(1,0.0);
+  fLastDoseNonIonizing.assign(1,0.0);
+  fLastDoseRate.assign(1,0.0);
+  fLastDDD.assign(1,0.0);
+  fLastDDDRate.assign(1,0.0);
+  fLastNEq.assign(1,0.0);
+  fLastNEqRate.assign(1,0.0);
+  fAccuracyController=std::make_unique<shield_sim::AccuracyController>(
+      fOpts.caseDefinition->accuracy);
+  for(const auto& quantity:fOpts.caseDefinition->quantities){
+    const auto& requirement=fOpts.caseDefinition->AccuracyFor(quantity);
+    if(requirement.systematicBudgetComplete)
+      fAccuracyController->SetSystematicRelativeUncertainty(
+          quantity,requirement.systematicRelativeUncertainty);
+    else
+      fAccuracyController->MarkSystematicBudgetIncomplete(quantity);
+    if(requirement.hasKnownSystematicFloor)
+      fAccuracyController->SetKnownSystematicFloor(quantity,requirement.knownSystematicFloor);
+  }
+  fCumulativeEvents=0;
+  fAccumulationStarted=false;
+  fPrimaryProtonAbove10=0.0;
+  fPrimaryProtonAbove100=0.0;
+  fLastHardness=0.0;
 }
 
 void RunAction::AppendSweepPoint(const SweepPoint& sp){ fSweepData.push_back(sp); }
@@ -136,8 +275,12 @@ G4double RunAction::GetLastHardness() const { return fLastHardness; }
 
 void RunAction::RefreshLVPointers(){
   fShieldLV = fDetector ? fDetector->GetShieldLV() : nullptr;
+  fShieldLVs.clear();
   fScoringLVs.clear();
-  if(fDetector) fScoringLVs = fDetector->GetScoringLVs();
+  if(fDetector){
+    fShieldLVs=fDetector->GetShieldLVs();
+    fScoringLVs = fDetector->GetScoringLVs();
+  }
 }
 
 G4LogicalVolume* RunAction::GetShieldLV() const{ return fShieldLV; }
@@ -155,13 +298,23 @@ void RunAction::BeginOfRunAction(const G4Run*) {
   csvName+=".csv";
   am->OpenFile(csvName);
 
-  std::fill(fEdep.begin(),fEdep.end(),0);
+  const bool reset=!fCumulativeMode || !fAccumulationStarted;
+  if(!reset) return;
+  fAccumulationStarted=true;
+  fCumulativeEvents=0;
+  std::fill(fEdepTotal.begin(),fEdepTotal.end(),0);
+  std::fill(fEdepIonizing.begin(),fEdepIonizing.end(),0);
+  std::fill(fEdepNonIonizing.begin(),fEdepNonIonizing.end(),0);
+  std::fill(fLastDoseTotal.begin(),fLastDoseTotal.end(),0);
+  std::fill(fLastDoseNonIonizing.begin(),fLastDoseNonIonizing.end(),0);
   std::fill(fLastDoseRate.begin(),fLastDoseRate.end(),0);
   std::fill(fLastDDD.begin(),fLastDDD.end(),0);
   std::fill(fLastDDDRate.begin(),fLastDDDRate.end(),0);
   std::fill(fLastNEq.begin(),fLastNEq.end(),0);
   std::fill(fLastNEqRate.begin(),fLastNEqRate.end(),0);
   fLastHardness=0.0;
+  fPrimaryProtonAbove10=0.0;
+  fPrimaryProtonAbove100=0.0;
   std::fill(fInP .begin(),fInP .end(),0);
   std::fill(fInA .begin(),fInA .end(),0);
   std::fill(fOutP.begin(),fOutP.end(),0);
@@ -170,17 +323,24 @@ void RunAction::BeginOfRunAction(const G4Run*) {
 }
 
 void RunAction::EndOfRunAction(const G4Run* run) {
-  G4int nEv=run->GetNumberOfEvent();
+  fCumulativeEvents+=run->GetNumberOfEvent();
+  G4int nEv=fCumulativeMode ? static_cast<G4int>(fCumulativeEvents)
+                            : run->GetNumberOfEvent();
   if(nEv==0){ CloseDiagnosticFiles(); return; }
 
-  // Dose per primary.  fEdep is in Geant4 energy units, mass is in Geant4 mass
-  // units, therefore fEdep/mass is already in Geant4 dose units.
+  // Dose per primary. TID is the ionizing ledger. Total absorbed dose and
+  // non-ionizing deposited-energy dose are reported independently so the
+  // identity total = ionizing + non-ionizing can be audited.
   for(std::size_t i=0;i<fScoringLVs.size();++i){
     auto* lv=fScoringLVs[i];
     G4double dose=0.0;
     if(lv){
       G4double mass = lv->GetMass(true,false);
-      if(mass>0.0) dose = fEdep[i]/mass/nEv;
+      if(mass>0.0){
+        dose = fEdepIonizing[i]/mass/nEv;
+        fLastDoseTotal[i]=fEdepTotal[i]/mass/nEv;
+        fLastDoseNonIonizing[i]=fEdepNonIonizing[i]/mass/nEv;
+      }
     }
     fLastDose[i]=dose;
   }
@@ -225,10 +385,11 @@ void RunAction::EndOfRunAction(const G4Run* run) {
   WriteComputedQuantitiesTecplot(nEv);
   if(fOpts.calcLET) WriteLETSpectrumTecplot(nEv);
 
-  // Optional Layer-3 machine-readable scalar summary.  The ordinary Tecplot
-  // files are the science-facing outputs, but automated tests need stable
-  // key/value rows that are independent of Tecplot variable ordering.
+  // Optional machine-readable scalar summary. Automated compatibility tests
+  // need stable key/value rows independent of Tecplot variable ordering. For a
+  // versioned case, shieldSim.result.v1 is the authoritative result contract.
   WriteRunSummary(nEv);
+  WriteResultJson(nEv);
 
   CloseDiagnosticFiles();
 }
@@ -366,25 +527,12 @@ void RunAction::WriteSpectraTecplot(G4int nEv){
 }
 
 G4double RunAction::ComputeHardnessIndex(G4int nEv) const{
-  // H100/10 is a simple integral spectral-shape index:
-  //
-  //   H100/10 = J(>100 MeV) / J(>10 MeV).
-  //
-  // Because both numerator and denominator are integrated over the same
-  // transmitted spectrum, Monte Carlo normalization, source normalization, and
-  // source-plane area cancel.  We therefore use raw transmitted counts per bin.
-  // Protons, alpha particles, and neutrons are included to make the scalar index
-  // a compact measure of the overall transmitted-particle spectral hardness.
-  if(nEv<=0) return 0.0;
-  G4double above100=0.0;
-  G4double above10 =0.0;
-  for(G4int i=0;i<SpecBins::N;++i){
-    const G4double E = SpecBins::Center(i);
-    const G4double c = fOutP[i] + fOutA[i] + fOutN[i];
-    if(E>=10.0)  above10  += c;
-    if(E>=100.0) above100 += c;
-  }
-  return (above10>0.0) ? above100/above10 : 0.0;
+  // Approved Stage-0 definition: primary protons only, at the shield rear
+  // face, using exact crossing kinetic energies and strict > thresholds.
+  // A zero denominator is undefined and remains NaN in machine output.
+  if(nEv<=0 || fPrimaryProtonAbove10<=0.0)
+    return std::numeric_limits<G4double>::quiet_NaN();
+  return fPrimaryProtonAbove100/fPrimaryProtonAbove10;
 }
 
 void RunAction::ComputeSpectrumFoldedQuantities(G4int nEv){
@@ -480,7 +628,9 @@ void RunAction::WriteComputedQuantitiesTecplot(G4int nEv){
 
   const G4double shieldThicknessMM = fSweepMode ? fCurrentTmm : fOpts.shieldThickness/mm;
   G4double areal = 0.0;
-  if(fShieldLV && fShieldLV->GetMaterial()){
+  if(fOpts.caseDefinition){
+    areal=fOpts.caseDefinition->ShieldTotalArealDensityGPerCm2();
+  } else if(fShieldLV && fShieldLV->GetMaterial()){
     const G4double rho_gcc = fShieldLV->GetMaterial()->GetDensity()/(g/cm3);
     areal = rho_gcc*shieldThicknessMM*0.1; // 1 mm = 0.1 cm
   }
@@ -495,10 +645,11 @@ void RunAction::WriteComputedQuantitiesTecplot(G4int nEv){
        <<(fOpts.calcNEq?"n_eq ":"")
        <<(fOpts.calcLET?"LET ":"")
        <<(fOpts.calcHardness?"H100/10 ":"")<<"\n";
-    out<<"# TID equation: D = E_dep/m.  Geant4 scores E_dep in each target; output is Gy and rad.\n";
+    out<<"# TID equation: D_ion = (E_dep,total - E_dep,nonionizing)/m in the finite target.\n";
+    out<<"# Total and non-ionizing dose ledgers are preserved in the run summary for closure.\n";
     out<<"# DDD equation: D_d = integral Phi(E) NIEL(E) dE.  Phi is area-averaged transmitted fluence.\n";
     out<<"# n_eq equation: n_eq = D_d / NIEL_1MeV_neutron(material).  Standard convention is most meaningful for silicon.\n";
-    out<<"# H100/10 equation: J(>100 MeV)/J(>10 MeV), using transmitted p+alpha+n counts.\n";
+    out<<"# H100/10 equation: primary-proton shield-exit fluence(E>100 MeV) / fluence(E>10 MeV); exact crossing energy.\n";
     out<<"# DDD NIEL and LET response functions are documented in src/ComputedQuantities.cc.\n";
     out<<"# Target index mapping for each zone follows the row order below; detailed material definitions are in MaterialCatalog.cc.\n";
     for(std::size_t i=0;i<fScoringNames.size();++i)
@@ -676,7 +827,9 @@ void RunAction::WriteRunSummary(G4int nEv){
 
   const G4double shieldThicknessMM = fSweepMode ? fCurrentTmm : fOpts.shieldThickness/mm;
   G4double areal = 0.0;
-  if(fShieldLV && fShieldLV->GetMaterial()){
+  if(fOpts.caseDefinition){
+    areal=fOpts.caseDefinition->ShieldTotalArealDensityGPerCm2();
+  } else if(fShieldLV && fShieldLV->GetMaterial()){
     const G4double rho_gcc = fShieldLV->GetMaterial()->GetDensity()/(g/cm3);
     areal = rho_gcc*shieldThicknessMM*0.1; // 1 mm = 0.1 cm
   }
@@ -692,6 +845,8 @@ void RunAction::WriteRunSummary(G4int nEv){
   out<<"meta source_mode "<<fSourceMode<<"\n";
   out<<"meta spectrum_file "<<(fOpts.spectrumFile.empty()?"builtin":fOpts.spectrumFile)<<"\n";
   out<<"meta shield_material "<<(fSweepMode?fCurrentMat:fOpts.shieldMaterial)<<"\n";
+  out<<"meta result_capability_status "
+     <<(fOpts.caseDefinition?"stage1_core_not_yet_quantity_validated":"legacy_prototype")<<"\n";
   out<<"scalar events "<<nEv<<"\n";
   out<<"scalar target_count "<<fScoringNames.size()<<"\n";
   out<<"scalar shield_thickness_mm "<<shieldThicknessMM<<"\n";
@@ -702,6 +857,21 @@ void RunAction::WriteRunSummary(G4int nEv){
   out<<"scalar source_plane_area_cm2 "<<GetSourcePlaneAreaCM2()<<"\n";
   out<<"scalar incident_particle_rate_s "<<GetIncidentParticleRate()<<"\n";
   out<<"scalar H100_10 "<<fLastHardness<<"\n";
+  out<<"count H100_10_primary_proton_numerator "<<fPrimaryProtonAbove100<<"\n";
+  out<<"count H100_10_primary_proton_denominator "<<fPrimaryProtonAbove10<<"\n";
+  if(fOpts.caseDefinition && fAccuracyController){
+    for(const auto& quantity:fOpts.caseDefinition->quantities){
+      const auto assessment=fAccuracyController->Assess(quantity);
+      const auto& requirement=fOpts.caseDefinition->AccuracyFor(quantity);
+      out<<"accuracy "<<SanitiseName(quantity)<<' '
+         <<requirement.target<<' '<<requirement.scope<<' '
+         <<shield_sim::AccuracyStatusName(assessment.status)<<' '
+         <<assessment.statisticalRelativeUncertainty<<' '
+         <<assessment.combinedRelativeUncertainty<<' '
+         <<assessment.interval95Low<<' '<<assessment.interval95High<<' '
+         <<'"'<<assessment.reason<<'"'<<"\n";
+    }
+  }
   out<<"count input_proton "<<sumCounts(fInP)<<"\n";
   out<<"count input_alpha "<<sumCounts(fInA)<<"\n";
   out<<"count output_proton "<<sumCounts(fOutP)<<"\n";
@@ -709,6 +879,13 @@ void RunAction::WriteRunSummary(G4int nEv){
   out<<"count output_neutron "<<sumCounts(fOutN)<<"\n";
   out<<"scalar production_cut_mm "<<(fOpts.productionCut>0.0 ? fOpts.productionCut/mm : -1.0)<<"\n";
   out<<"scalar max_step_mm "<<(fOpts.maxStepLength>0.0 ? fOpts.maxStepLength/mm : -1.0)<<"\n";
+
+  for(std::size_t i=0;i<fShieldLVs.size();++i){
+    const auto* lv=fShieldLVs[i];
+    out<<"shield_layer_material "<<i<<' '
+       <<(lv&&lv->GetMaterial()?SanitiseName(lv->GetMaterial()->GetName()):"null")<<' '
+       <<(lv&&lv->GetMaterial()?lv->GetMaterial()->GetDensity()/(g/cm3):0.0)<<"\n";
+  }
 
   for(std::size_t i=0;i<fScoringNames.size();++i){
     out<<"target "<<i<<' '<<SanitiseName(fScoringNames[i])<<' '
@@ -719,10 +896,143 @@ void RunAction::WriteRunSummary(G4int nEv){
        <<(i<fLastDDDRate.size()?fLastDDDRate[i]:0.0)<<' '
        <<(i<fLastNEq.size()?fLastNEq[i]:0.0)<<' '
        <<(i<fLastNEqRate.size()?fLastNEqRate[i]:0.0)<<"\n";
+    auto* targetLV=i<fScoringLVs.size()?fScoringLVs[i]:nullptr;
+    out<<"target_material "<<i<<' '
+       <<(targetLV&&targetLV->GetMaterial()?SanitiseName(targetLV->GetMaterial()->GetName()):"null")<<' '
+       <<(targetLV&&targetLV->GetMaterial()?targetLV->GetMaterial()->GetDensity()/(g/cm3):0.0)<<' '
+       <<(targetLV?targetLV->GetMass(true,false)/kg:0.0)<<"\n";
+    out<<"deposit_ledger "<<i<<' '
+       <<(i<fLastDoseTotal.size()?fLastDoseTotal[i]/gray:0.0)<<' '
+       <<(i<fLastDose.size()?fLastDose[i]/gray:0.0)<<' '
+       <<(i<fLastDoseNonIonizing.size()?fLastDoseNonIonizing[i]/gray:0.0)<<"\n";
   }
   out<<"end_run\n";
 
   if(fSweepMode) fFirstSummaryWrite=false;
   G4cout<<"Run summary written: "<<fOpts.dumpRunSummaryFile
         <<(append?" (appended block)":"")<<G4endl;
+}
+
+void RunAction::WriteResultJson(G4int nEv){
+  if(!fOpts.caseDefinition || !fAccuracyController) return;
+  const auto& c=*fOpts.caseDefinition;
+  const auto& absorber=c.absorbers.at(fOpts.activeAbsorberIndex);
+  auto finiteOrNull=[](double value)->shield_sim::Json{
+    return std::isfinite(value) ? shield_sim::Json(value) : shield_sim::Json(nullptr);
+  };
+  auto accuracyJson=[&](const std::string& quantity,
+                        shield_sim::AccuracyAssessment assessment){
+    const auto& requirement=c.AccuracyFor(quantity);
+    shield_sim::Json::Object object;
+    object["requested_target"]=requirement.target;
+    object["scope"]=requirement.scope;
+    object["standard_k"]=requirement.standardK;
+    object["standard_probability"]=requirement.standardProbability;
+    object["interval_probability"]=requirement.intervalProbability;
+    object["interval_method"]=requirement.intervalMethod;
+    object["status"]=shield_sim::AccuracyStatusName(assessment.status);
+    object["reason"]=assessment.reason;
+    object["statistical_relative_standard_uncertainty"]=finiteOrNull(
+        assessment.statisticalRelativeUncertainty);
+    object["combined_relative_standard_uncertainty"]=finiteOrNull(
+        assessment.combinedRelativeUncertainty);
+    object["systematic_budget_status"]=requirement.systematicBudgetComplete
+        ? "complete" : "incomplete";
+    if(requirement.systematicBudgetComplete)
+      object["systematic_relative_standard_uncertainty"]=
+          requirement.systematicRelativeUncertainty;
+    if(requirement.hasKnownSystematicFloor)
+      object["known_systematic_relative_floor"]=requirement.knownSystematicFloor;
+    return shield_sim::Json(std::move(object));
+  };
+
+  shield_sim::Json::Array outputs;
+  if(fOpts.calcTID){
+    for(std::size_t i=0;i<fScoringLVs.size();++i){
+      auto* lv=fScoringLVs[i];
+      const G4double mass=lv?lv->GetMass(true,false):0.0;
+      auto assessment=fAccuracyController->Assess("TID");
+      shield_sim::Json::Object interval;
+      if(mass>0.0 && std::isfinite(assessment.interval95Low) &&
+         std::isfinite(assessment.interval95High)){
+        interval["low"]=assessment.interval95Low*MeV/mass/gray;
+        interval["high"]=assessment.interval95High*MeV/mass/gray;
+        interval["unit"]="Gy/primary";
+      } else {
+        interval["low"]=shield_sim::Json(nullptr);
+        interval["high"]=shield_sim::Json(nullptr);
+        interval["unit"]="Gy/primary";
+      }
+      outputs.emplace_back(shield_sim::Json::Object{
+        {"accuracy",accuracyJson("TID",assessment)},
+        {"absorber_id",absorber.id},
+        {"absorber_mass",shield_sim::Json(shield_sim::Json::Object{{"unit","kg"},{"value",mass/kg}})},
+        {"definition","ionizing deposited energy divided by finite absorber mass"},
+        {"deposited_energy_ledger",shield_sim::Json(shield_sim::Json::Object{
+          {"identity","total = ionizing + nonionizing"},
+          {"ionizing_dose_Gy_per_primary",fLastDose[i]/gray},
+          {"nonionizing_dose_Gy_per_primary",fLastDoseNonIonizing[i]/gray},
+          {"total_dose_Gy_per_primary",fLastDoseTotal[i]/gray}})},
+        {"interval_95",shield_sim::Json(std::move(interval))},
+        {"name","TID"}, {"normalization","per incident primary"},
+        {"unit","Gy/primary"}, {"validation_status","implemented_not_physically_validated_stage1"},
+        {"value",fLastDose[i]/gray}
+      });
+    }
+  }
+  if(fOpts.calcHardness){
+    auto assessment=fAccuracyController->Assess("H100/10");
+    // H100/10 is a conditional binomial proportion because every >100 MeV
+    // crossing is also a >10 MeV crossing. Use a bounded Wilson 95% interval,
+    // not an unbounded normal interval.
+    shield_sim::Json low(nullptr),high(nullptr);
+    if(fPrimaryProtonAbove10>0.0){
+      const double n=fPrimaryProtonAbove10;
+      const double p=fPrimaryProtonAbove100/n;
+      const double z=1.959963984540054;
+      const double denominator=1.0+z*z/n;
+      const double center=(p+z*z/(2.0*n))/denominator;
+      const double half=z*std::sqrt(p*(1.0-p)/n+z*z/(4.0*n*n))/denominator;
+      low=std::max(0.0,center-half);
+      high=std::min(1.0,center+half);
+    }
+    shield_sim::Json accuracy=accuracyJson("H100/10",assessment);
+    accuracy.AsObject()["interval_95_method"]="Wilson score interval for bounded conditional proportion";
+    outputs.emplace_back(shield_sim::Json::Object{
+      {"accuracy",std::move(accuracy)}, {"absorber_id",absorber.id},
+      {"covariance_note","event indicators are nested: I(E>100) is a subset of I(E>10)"},
+      {"indicator_sample_covariance",nEv>1
+          ? (fPrimaryProtonAbove100-
+             fPrimaryProtonAbove100*fPrimaryProtonAbove10/nEv)/(nEv-1.0)
+          : 0.0},
+      {"estimated_fluence_covariance_per_primary_squared",nEv>1
+          ? (fPrimaryProtonAbove100-
+             fPrimaryProtonAbove100*fPrimaryProtonAbove10/nEv)/((nEv-1.0)*nEv)
+          : 0.0},
+      {"definition","primary-proton shield-exit fluence(E>100 MeV) / fluence(E>10 MeV)"},
+      {"denominator_count",fPrimaryProtonAbove10},
+      {"interval_95",shield_sim::Json(shield_sim::Json::Object{{"high",high},{"low",low}})},
+      {"name","H100/10"}, {"numerator_count",fPrimaryProtonAbove100},
+      {"unit","1"}, {"validation_status","implemented_not_physically_validated_stage1"},
+      {"value",finiteOrNull(fLastHardness)}
+    });
+  }
+
+  shield_sim::Json::Object result{
+    {"absorber_geometry_hash",absorber.geometryHash}, {"absorber_id",absorber.id},
+    {"case_hash",c.caseHash}, {"code_revision",shield_sim_build::GitRevision},
+    {"events",static_cast<double>(nEv)}, {"geant4_version",G4Version},
+    {"geometry_hash",c.geometryHash}, {"material_library_hash",c.materials->ContentHash()},
+    {"outputs",shield_sim::Json(std::move(outputs))}, {"physics_list",fOpts.physicsList},
+    {"random_seed",static_cast<double>(fOpts.randomSeed)},
+    {"schema_version","shieldSim.result.v1"}, {"source_hash",c.spectrum.contentHash},
+    {"source_id",c.spectrum.id}, {"source_science_status",c.spectrum.scienceStatus}
+  };
+  const std::string path=fOpts.outputPrefix+"_result.json";
+  std::ofstream out(path);
+  if(!out)
+    G4Exception("RunAction::WriteResultJson","Output",FatalException,
+                ("Cannot write result JSON '"+path+"'").c_str());
+  out<<shield_sim::Json(std::move(result)).DumpCanonical()<<'\n';
+  G4cout<<"Result JSON written: "<<path<<G4endl;
 }

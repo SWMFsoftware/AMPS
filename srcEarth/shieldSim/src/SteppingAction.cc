@@ -51,7 +51,10 @@ void SteppingAction::UserSteppingAction(const G4Step* step) {
             G4double ke=post->GetKineticEnergy()/MeV;
             const G4String& nm=step->GetTrack()->GetParticleDefinition()->GetParticleName();
             auto* am=G4AnalysisManager::Instance();
-            if(nm=="proton") { am->FillH1(0,ke); fRA->AddOutP(ke); }
+            if(nm=="proton") {
+              am->FillH1(0,ke); fRA->AddOutP(ke);
+              if(step->GetTrack()->GetParentID()==0) fRA->AddPrimaryProtonExit(ke);
+            }
             else if(nm=="alpha")  { am->FillH1(1,ke); fRA->AddOutA(ke); }
             else if(nm=="neutron"){ am->FillH1(2,ke); fRA->AddOutN(ke); }
 
@@ -77,8 +80,9 @@ void SteppingAction::UserSteppingAction(const G4Step* step) {
     const auto& scLVs=fRA->GetScoringLVs();
     for(std::size_t i=0;i<scLVs.size();++i){
       if(preVol==scLVs[i]){
-        G4double ed=step->GetTotalEnergyDeposit();
-        if(ed>0) fRA->AddEdep(i,ed);
+        const G4double total=step->GetTotalEnergyDeposit();
+        const G4double nonIon=step->GetNonIonizingEnergyDeposit();
+        if(total>0 || nonIon>0) fRA->AddEdep(i,total,nonIon);
         break;
       }
     }

@@ -21,10 +21,22 @@
 #include <G4SystemOfUnits.hh>
 
 #include <string>
+#include <memory>
 #include <utility>
 #include <vector>
 
+namespace shield_sim { class CaseDefinition; }
+
 struct Options {
+  // ---- versioned Stage-1 case input ---------------------------------------
+  // --case is the science-facing input path.  The shared parsed definition is
+  // immutable and is copied cheaply when main creates one independent
+  // shield/absorber transport world per absorber.
+  std::string caseFile = "";
+  std::shared_ptr<shield_sim::CaseDefinition> caseDefinition;
+  std::size_t activeAbsorberIndex = 0;
+  bool validateCaseOnly = false;
+
   // ---- physics configuration ----------------------------------------------
   // Geant4 reference physics list created through G4PhysListFactory.
   // Supported CLI values are currently:
@@ -34,6 +46,9 @@ struct Options {
   // ---- source and spectrum configuration ----------------------------------
   // Empty spectrumFile selects the built-in approximate GCR spectrum.
   std::string spectrumFile = "";
+  // Mandatory sidecar for the legacy three-column adapter.  A bare numeric
+  // file has no sufficient unit/coordinate/angular metadata and is rejected.
+  std::string legacySpectrumMetadataFile = "";
 
   // Supported source modes:
   //   beam      : normal-incidence pencil beam along +z
@@ -61,8 +76,9 @@ struct Options {
   // ---- post-processed computed quantities ---------------------------------
   // The Geant4 transport always scores energy deposition and transmitted
   // spectra.  These switches control which derived radiation-effect quantities
-  // are written at the end of each run.  Defaults compute all quantities shown
-  // in the UI: TID, DDD, n_eq, LET spectrum, and H100/10.
+  // are written at the end of each run. Legacy CLI defaults retain all historic
+  // quantities. A versioned case enables only its explicitly requested,
+  // stage-gated quantities (currently TID and H100/10).
   bool calcTID      = true;
   bool calcDDD      = true;
   bool calcNEq      = true;

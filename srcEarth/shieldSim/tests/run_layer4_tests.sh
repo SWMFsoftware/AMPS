@@ -347,6 +347,7 @@ run_case \
     --physics-list=FTFP_BERT \
     --source-mode=beam \
     --spectrum="${DATA_DIR}/mono_100MeV_proton.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
     --shield=Al:2 \
     --target=Si:1 \
     --events="${EVENTS_REGRESSION}" \
@@ -367,6 +368,7 @@ run_case \
     --physics-list=FTFP_BERT \
     --source-mode=beam \
     --spectrum="${DATA_DIR}/mono_100MeV_alpha.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
     --shield=Al:2 \
     --target=Si:1 \
     --events="${EVENTS_REGRESSION}" \
@@ -387,6 +389,7 @@ run_case \
     --physics-list=FTFP_BERT_HP \
     --source-mode=isotropic \
     --spectrum="${EXAMPLE_DIR}/sep_spectrum.dat" \
+  --legacy-spectrum-metadata="${EXAMPLE_DIR}/sep_spectrum.metadata.v1.json" \
     --shield=Al:2 \
     --target=BFO:50,Si:1 \
     --events="${EVENTS_REGRESSION}" \
@@ -426,6 +429,7 @@ run_case \
     --physics-list=Shielding \
     --source-mode=beam \
     --spectrum="${DATA_DIR}/mono_150MeV_proton.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
     --shield=W:5 \
     --target=Si:1 \
     --events="${EVENTS_SMOKE}" \
@@ -451,6 +455,7 @@ run_case \
     --physics-list=FTFP_BERT \
     --source-mode=beam \
     --spectrum="${DATA_DIR}/mono_100MeV_proton.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
     --target=Si:1 \
     --events="${EVENTS_SMOKE}" \
     --random-seed=41006 \

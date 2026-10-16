@@ -1,0 +1,32 @@
+{
+  "schema_version": "shieldSim.ams02_hapi_interpretation.v1",
+  "dataset_id": "AMS02_BR2460_2013-11-18",
+  "adapter_version": "AMS02HapiAdapter.v1",
+  "info_sha256": "sha256:b1f24d407d46f916bd41bfc02f9562fa3411bb96401c4bff59a0b33759dfb1db",
+  "data_sha256": "sha256:f313709bfb1298125a0d3bff7917df836e73254c03d941d58d8e7669eb70cb5b",
+  "supplement": {
+    "path": "raw/SM-p-He-vs-BR-REV.pdf",
+    "sha256": "sha256:2f49183c4c9ab5b012347110c673a1039907236a177a525a35aaa49dd8bf4b5a",
+    "url": "https://ams02.space/sites/default/files/2019-05/SM-p-He-vs-BR-REV.pdf",
+    "table": "TABLE SM XXXV, Bartels Rotation 2460"
+  },
+  "record_start_utc": "2013-11-18T00:00:00Z",
+  "record_stop_utc": "2013-12-15T00:00:00Z",
+  "bartels_rotation": 2460,
+  "nucleon_rest_mass_GeV": 0.9382720813,
+  "proton_rigidity_edges_GV": [
+    1.00, 1.16, 1.33, 1.51, 1.71, 1.92, 2.15, 2.40, 2.67, 2.97,
+    3.29, 3.64, 4.02, 4.43, 4.88, 5.37, 5.90, 6.47, 7.09, 7.76,
+    8.48, 9.26, 10.1, 11.0, 12.0, 13.0, 14.1, 15.3, 16.6, 18.0,
+    19.5, 21.1, 22.8, 24.7, 26.7, 28.8, 31.1, 33.5, 36.1, 38.9,
+    41.9, 45.1, 48.5, 52.2, 56.1, 60.3
+  ],
+  "helium_rigidity_edges_GV": [
+    1.92, 2.15, 2.40, 2.67, 2.97, 3.29, 3.64, 4.02, 4.43, 4.88,
+    5.37, 5.90, 6.47, 7.09, 7.76, 8.48, 9.26, 10.1, 11.0, 12.0,
+    13.0, 14.1, 15.3, 16.6, 18.0, 19.5, 21.1, 22.8, 24.7, 26.7,
+    28.8, 31.1, 33.5, 36.1, 38.9, 41.9, 45.1, 48.5, 52.2, 56.1,
+    60.3
+  ],
+  "science_status": "published_near_earth_ingestion_fixture_not_deep_space_scenario"
+}

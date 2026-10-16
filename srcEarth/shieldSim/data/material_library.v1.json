@@ -1,0 +1,216 @@
+{
+  "schema_version": "shieldSim.material_library.v1",
+  "library_id": "shieldSim.reference_materials",
+  "library_version": "1.0.0",
+  "materials": [
+    {
+      "material_id": "Al_natural_G4_11_4", "revision": "1", "aliases": ["Al", "G4_Al"],
+      "label": "Aluminium, natural isotopic composition", "status": "reference", "roles": ["shield", "absorber"],
+      "density": {"value": 2.699, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Geant4 11.4 NIST material definition"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "elemental_mass_fraction", "components": [{"element": "Al", "value": 1.0}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "geant4_name": "G4_Al", "applicability_and_limitations": "Reference elemental aluminium; not a flight-alloy or lot definition.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://geant4.web.cern.ch/documentation/dev/bfad_html/ForApplicationDevelopers/Appendix/materialNames.html", "version": "Geant4 11.4", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "Cu_natural_G4_11_4", "revision": "1", "aliases": ["Cu", "G4_Cu"],
+      "label": "Copper, natural isotopic composition", "status": "reference", "roles": ["shield", "absorber"],
+      "density": {"value": 8.96, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Geant4 11.4 NIST material definition"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "elemental_mass_fraction", "components": [{"element": "Cu", "value": 1.0}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "geant4_name": "G4_Cu", "applicability_and_limitations": "Reference elemental copper; not a flight-alloy or lot definition.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://geant4.web.cern.ch/documentation/dev/bfad_html/ForApplicationDevelopers/Appendix/materialNames.html", "version": "Geant4 11.4", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "W_natural_G4_11_4", "revision": "1", "aliases": ["W", "G4_W"],
+      "label": "Tungsten, natural isotopic composition", "status": "reference", "roles": ["shield", "absorber"],
+      "density": {"value": 19.3, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Geant4 11.4 NIST material definition"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "elemental_mass_fraction", "components": [{"element": "W", "value": 1.0}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "geant4_name": "G4_W", "applicability_and_limitations": "Reference elemental tungsten; not a flight-alloy or lot definition.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://geant4.web.cern.ch/documentation/dev/bfad_html/ForApplicationDevelopers/Appendix/materialNames.html", "version": "Geant4 11.4", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "Ta_natural_G4_11_4", "revision": "1", "aliases": ["Ta", "G4_Ta"],
+      "label": "Tantalum, natural isotopic composition", "status": "reference", "roles": ["shield", "absorber"],
+      "density": {"value": 16.654, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Geant4 11.4 NIST material definition"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "elemental_mass_fraction", "components": [{"element": "Ta", "value": 1.0}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "geant4_name": "G4_Ta", "applicability_and_limitations": "Reference elemental tantalum; not a flight-alloy or lot definition.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://geant4.web.cern.ch/documentation/dev/bfad_html/ForApplicationDevelopers/Appendix/materialNames.html", "version": "Geant4 11.4", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "B_natural_G4_11_4", "revision": "1", "aliases": [],
+      "label": "Boron, natural isotopic composition", "status": "reference", "roles": ["shield"],
+      "density": {"value": 2.34, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Geant4 11.4 NIST material definition"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "elemental_mass_fraction", "components": [{"element": "B", "value": 1.0}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "geant4_name": "G4_B", "applicability_and_limitations": "Internal natural-boron constituent; enrichment requires a new explicit isotope record.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://geant4.web.cern.ch/documentation/dev/bfad_html/ForApplicationDevelopers/Appendix/materialNames.html", "version": "Geant4 11.4", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "HDPE_CH2_0p950_trade", "revision": "1", "aliases": ["HDPE"],
+      "label": "HDPE CH2 repeat-unit trade-study recipe", "status": "trade_study", "roles": ["shield", "absorber"],
+      "density": {"value": 0.950, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Named 12450N product nominal density; recipe omits additives/comonomers"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "atom_count", "components": [{"element": "C", "value": 1.0}, {"element": "H", "value": 2.0}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "applicability_and_limitations": "Preliminary homogeneous trade study only; mission use requires supplier, grade, lot, additives, and uncertainty.",
+      "provenance": [{"properties": ["density"], "source": "https://www.dow.com/content/dc/br/pt/pdp.dow-12450n-high-density-polyethylene-resin.47054z.html", "version": "product page", "retrieval_date": "2026-10-16"}, {"properties": ["composition", "state"], "source": "polyethylene repeat-unit definition", "version": "CH2 idealization", "transformation": "represented as a homogeneous CH2 repeat unit"}]
+    },
+    {
+      "material_id": "BPE_5wtpct_naturalB_trade", "revision": "1", "aliases": ["BPE"],
+      "label": "Five-weight-percent natural-boron polyethylene trade recipe", "status": "trade_study", "roles": ["shield"],
+      "density": {"value": 1.04, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Named JCPE5 nominal product value"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "constituent_mass_fraction", "components": [{"material_id": "HDPE_CH2_0p950_trade", "value": 0.95}, {"material_id": "B_natural_G4_11_4", "value": 0.05}], "residual_policy": "exact"},
+      "applicability_and_limitations": "Preliminary homogeneous trade recipe, not a universal BPE or flight product; natural boron only.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://johncaunt.com/products/jcpe5/", "version": "JCPE5 product page", "retrieval_date": "2026-10-16", "transformation": "idealized as 95 mass percent named HDPE recipe plus 5 mass percent natural elemental boron"}]
+    },
+    {
+      "material_id": "Kevlar_dry_fiber_G4_11_4", "revision": "1", "aliases": ["Kevlar", "G4_KEVLAR"],
+      "label": "Kevlar dry para-aramid fiber reference", "status": "reference", "roles": ["shield"],
+      "density": {"value": 1.44, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "dry fiber reference"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "atom_count", "components": [{"element": "C", "value": 14.0}, {"element": "H", "value": 10.0}, {"element": "N", "value": 2.0}, {"element": "O", "value": 2.0}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "geant4_name": "G4_KEVLAR", "applicability_and_limitations": "Dry fiber only; cloth, resin, moisture, and void content are not represented.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://www.dupont.com/content/dam/aramids/amer/us/en/safety/public/documents/en/Kevlar_Technical_Guide_0319.pdf", "version": "technical guide 2019", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "Kapton_G4_11_4", "revision": "1", "aliases": ["Kapton", "G4_KAPTON"],
+      "label": "Kapton polyimide reference", "status": "reference", "roles": ["shield", "absorber"],
+      "density": {"value": 1.42, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Geant4 11.4 NIST material definition"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "atom_count", "components": [{"element": "C", "value": 22.0}, {"element": "H", "value": 10.0}, {"element": "N", "value": 2.0}, {"element": "O", "value": 5.0}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "geant4_name": "G4_KAPTON", "applicability_and_limitations": "Uncoated homogeneous film; adhesives and coatings require separate layers.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://geant4.web.cern.ch/documentation/dev/bfad_html/ForApplicationDevelopers/Appendix/materialNames.html", "version": "Geant4 11.4", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "Water_G4_11_4", "revision": "1", "aliases": ["Water", "H2O", "G4_WATER"],
+      "label": "Liquid water reference", "status": "reference", "roles": ["shield", "absorber"],
+      "density": {"value": 1.0, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Geant4 11.4 material reference condition"},
+      "state": {"phase": "liquid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "atom_count", "components": [{"element": "H", "value": 2.0}, {"element": "O", "value": 1.0}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "geant4_name": "G4_WATER", "applicability_and_limitations": "Pure liquid water reference; temperature, density, and dissolved constituents may be overridden.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://geant4.web.cern.ch/documentation/dev/bfad_html/ForApplicationDevelopers/Appendix/materialNames.html", "version": "Geant4 11.4", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "Si_natural_G4_11_4", "revision": "1", "aliases": ["Si", "G4_Si"],
+      "label": "Silicon, natural isotopic composition", "status": "reference", "roles": ["shield", "absorber"],
+      "density": {"value": 2.33, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Geant4 11.4 NIST material definition"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "elemental_mass_fraction", "components": [{"element": "Si", "value": 1.0}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "geant4_name": "G4_Si", "applicability_and_limitations": "Natural silicon reference; process, doping, and device structure are not represented.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://geant4.web.cern.ch/documentation/dev/bfad_html/ForApplicationDevelopers/Appendix/materialNames.html", "version": "Geant4 11.4", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "Skin_ICRP_G4_11_4", "revision": "1", "aliases": ["Skin", "G4_SKIN_ICRP"],
+      "label": "ICRP skin composition slab", "status": "reference", "roles": ["absorber"],
+      "density": {"value": 1.09, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Geant4 11.4 material definition"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "elemental_mass_fraction", "components": [{"element": "H", "value": 0.100}, {"element": "C", "value": 0.204}, {"element": "N", "value": 0.042}, {"element": "O", "value": 0.645}, {"element": "Na", "value": 0.002}, {"element": "P", "value": 0.001}, {"element": "S", "value": 0.002}, {"element": "Cl", "value": 0.003}, {"element": "K", "value": 0.001}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "geant4_name": "G4_SKIN_ICRP", "applicability_and_limitations": "Composition-only finite slab; no anatomy, overburden, biological weighting, or human phantom.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://geant4.web.cern.ch/documentation/dev/bfad_html/ForApplicationDevelopers/Appendix/materialNames.html", "version": "Geant4 11.4", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "EyeLens_ICRP_G4_11_4", "revision": "1", "aliases": ["EyeLens", "G4_EYE_LENS_ICRP"],
+      "label": "ICRP eye-lens composition slab", "status": "reference", "roles": ["absorber"],
+      "density": {"value": 1.07, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Geant4 11.4 material definition"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "elemental_mass_fraction", "components": [{"element": "H", "value": 0.096}, {"element": "C", "value": 0.195}, {"element": "N", "value": 0.057}, {"element": "O", "value": 0.646}, {"element": "Na", "value": 0.001}, {"element": "P", "value": 0.001}, {"element": "S", "value": 0.003}, {"element": "Cl", "value": 0.001}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "geant4_name": "G4_EYE_LENS_ICRP", "applicability_and_limitations": "Composition-only finite slab; no anatomy, overburden, biological weighting, or human phantom.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://geant4.web.cern.ch/documentation/dev/bfad_html/ForApplicationDevelopers/Appendix/materialNames.html", "version": "Geant4 11.4", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "SoftTissue_ICRU4_G4_11_4", "revision": "1", "aliases": ["SoftTissue", "G4_TISSUE_SOFT_ICRU-4"],
+      "label": "ICRU-4 soft-tissue composition slab", "status": "reference", "roles": ["absorber"],
+      "density": {"value": 1.0, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Geant4 11.4 material definition"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "elemental_mass_fraction", "components": [{"element": "H", "value": 0.101}, {"element": "C", "value": 0.111}, {"element": "N", "value": 0.026}, {"element": "O", "value": 0.762}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "geant4_name": "G4_TISSUE_SOFT_ICRU-4", "applicability_and_limitations": "Composition-only finite slab; no anatomy, overburden, biological weighting, or human phantom.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://geant4.web.cern.ch/documentation/dev/bfad_html/ForApplicationDevelopers/Appendix/materialNames.html", "version": "Geant4 11.4", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "BFO_soft_tissue_proxy", "revision": "1", "aliases": ["BFO"],
+      "label": "Blood-forming-organ soft-tissue composition proxy", "status": "trade_study", "roles": ["absorber"],
+      "density": {"value": 1.0, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "inherits ICRU-4 soft-tissue reference"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "constituent_mass_fraction", "components": [{"material_id": "SoftTissue_ICRU4_G4_11_4", "value": 1.0}], "residual_policy": "exact"},
+      "applicability_and_limitations": "Explicit composition proxy only; BFO is not a material and anatomy, shielding depth, and marrow distribution are absent.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "shieldSim approved Stage-0 decision record", "version": "development_and_validatoin.md 2026-10-16", "transformation": "uses ICRU-4 soft tissue solely as a labeled BFO trade proxy"}]
+    },
+    {
+      "material_id": "Brain_ICRP_G4_11_4", "revision": "1", "aliases": ["CNS", "G4_BRAIN_ICRP"],
+      "label": "ICRP brain composition slab (CNS label)", "status": "reference", "roles": ["absorber"],
+      "density": {"value": 1.04, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Geant4 11.4 material definition"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "elemental_mass_fraction", "components": [{"element": "H", "value": 0.107}, {"element": "C", "value": 0.145}, {"element": "N", "value": 0.022}, {"element": "O", "value": 0.712}, {"element": "Na", "value": 0.002}, {"element": "P", "value": 0.004}, {"element": "S", "value": 0.002}, {"element": "Cl", "value": 0.003}, {"element": "K", "value": 0.003}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "geant4_name": "G4_BRAIN_ICRP", "applicability_and_limitations": "Composition-only slab labeled CNS for UI continuity; not an anatomical central-nervous-system model.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://geant4.web.cern.ch/documentation/dev/bfad_html/ForApplicationDevelopers/Appendix/materialNames.html", "version": "Geant4 11.4", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "SiO2_G4_11_4", "revision": "1", "aliases": ["SiO2", "G4_SILICON_DIOXIDE"],
+      "label": "Silicon dioxide reference", "status": "reference", "roles": ["shield", "absorber"],
+      "density": {"value": 2.32, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Geant4 11.4 NIST material definition"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "atom_count", "components": [{"element": "Si", "value": 1.0}, {"element": "O", "value": 2.0}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "geant4_name": "G4_SILICON_DIOXIDE", "applicability_and_limitations": "Geant4 reference SiO2; process oxide, fused silica, porosity, and film density require an override/new record.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://geant4.web.cern.ch/documentation/dev/bfad_html/ForApplicationDevelopers/Appendix/materialNames.html", "version": "Geant4 11.4", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "SiC_6H_20C", "revision": "1", "aliases": ["SiC"],
+      "label": "Stoichiometric 6H silicon carbide", "status": "reference", "roles": ["shield", "absorber"],
+      "density": {"value": 3.214, "unit": "g/cm3", "uncertainty": {"type": "standard", "value": 0.001, "unit": "g/cm3"}, "reference_condition": "6H-SiC at 20 deg C"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "atom_count", "components": [{"element": "Si", "value": 1.0}, {"element": "C", "value": 1.0}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "applicability_and_limitations": "Dense stoichiometric 6H-SiC only; another polytype, porosity, composite matrix, or device film requires a new record.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://srd.nist.gov/JPCRD/jpcrd529.pdf", "version": "NIST silicon-carbide review", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "GaAs_G4_11_4", "revision": "1", "aliases": ["GaAs", "G4_GALLIUM_ARSENIDE"],
+      "label": "Stoichiometric gallium arsenide", "status": "reference", "roles": ["absorber"],
+      "density": {"value": 5.31, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Geant4 11.4 NIST material definition"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "atom_count", "components": [{"element": "Ga", "value": 1.0}, {"element": "As", "value": 1.0}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "geant4_name": "G4_GALLIUM_ARSENIDE", "applicability_and_limitations": "Homogeneous stoichiometric GaAs; device layers, doping, and packaging are absent.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://geant4.web.cern.ch/documentation/dev/bfad_html/ForApplicationDevelopers/Appendix/materialNames.html", "version": "Geant4 11.4", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "Ga0p47In0p53As_300K", "revision": "1", "aliases": ["InGaAs"],
+      "label": "Ga0.47In0.53As at 300 K", "status": "reference", "roles": ["absorber"],
+      "density": {"value": 5.50, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Ga0.47In0.53As near 300 K"},
+      "state": {"phase": "solid", "temperature": {"value": 300.0, "unit": "K"}},
+      "composition": {"basis": "atom_count", "components": [{"element": "Ga", "value": 0.47}, {"element": "In", "value": 0.53}, {"element": "As", "value": 1.0}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "applicability_and_limitations": "Only the explicitly named alloy composition; other alloy fractions, strain, substrate, and device layers require an override/new record.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://www.ioffe.ru/SVA/NSM/Semicond/GaInAs/basic.html", "version": "Ioffe NSM compilation", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "Ge_natural_G4_11_4", "revision": "1", "aliases": ["Ge", "G4_Ge"],
+      "label": "Germanium, natural isotopic composition", "status": "reference", "roles": ["absorber"],
+      "density": {"value": 5.323, "unit": "g/cm3", "uncertainty": {"status": "not_provided"}, "reference_condition": "Geant4 11.4 NIST material definition"},
+      "state": {"phase": "solid", "temperature": {"value": 293.15, "unit": "K"}},
+      "composition": {"basis": "elemental_mass_fraction", "components": [{"element": "Ge", "value": 1.0}], "residual_policy": "exact", "isotopes": "natural_geant4"},
+      "geant4_name": "G4_Ge", "applicability_and_limitations": "Natural germanium reference; device structure and doping are absent.",
+      "provenance": [{"properties": ["density", "composition", "state"], "source": "https://geant4.web.cern.ch/documentation/dev/bfad_html/ForApplicationDevelopers/Appendix/materialNames.html", "version": "Geant4 11.4", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "CFRP_template", "revision": "1", "aliases": ["CFRP"], "label": "Carbon-fiber-reinforced polymer unresolved template", "status": "template", "roles": ["shield"],
+      "applicability_and_limitations": "Disabled until fiber identity, resin elemental composition, fraction basis, cured density, void/moisture content, uncertainties, and provenance are supplied.",
+      "provenance": [{"properties": ["template_requirements"], "source": "shieldSim approved Stage-0 material disposition", "version": "development_and_validatoin.md 2026-10-16"}]
+    },
+    {
+      "material_id": "SiC_composite_template", "revision": "1", "aliases": ["SiCComposite"], "label": "SiC-filled composite unresolved template", "status": "template", "roles": ["shield"],
+      "applicability_and_limitations": "Disabled until SiC phase/polytype, matrix chemistry, loading basis, density, porosity, additives, uncertainties, and provenance are supplied.",
+      "provenance": [{"properties": ["template_requirements"], "source": "shieldSim approved Stage-0 material disposition", "version": "development_and_validatoin.md 2026-10-16"}]
+    },
+    {
+      "material_id": "LunarRegolith_template", "revision": "1", "aliases": ["LunarRegolith"], "label": "Lunar regolith unresolved site/simulant template", "status": "template", "roles": ["shield"],
+      "applicability_and_limitations": "Disabled until a named Apollo/site composition or simulant, packing state, density, uncertainties, and provenance are supplied.",
+      "provenance": [{"properties": ["template_requirements"], "source": "https://ntrs.nasa.gov/api/citations/20220018746/downloads/TP-20220018746.pdf", "version": "NASA/TP-20220018746", "retrieval_date": "2026-10-16"}]
+    },
+    {
+      "material_id": "MarsRegolith_template", "revision": "1", "aliases": ["MarsRegolith"], "label": "Mars regolith unresolved site/simulant template", "status": "template", "roles": ["shield"],
+      "applicability_and_limitations": "Disabled until a named site/APXS analysis or simulant, packing/moisture state, density, uncertainties, and provenance are supplied.",
+      "provenance": [{"properties": ["template_requirements"], "source": "https://pds.nasa.gov/ds-view/pds/viewDataset.jsp?dsid=MSL-M-APXS-4%2F5-RDR-V1.0", "version": "NASA PDS APXS archive", "retrieval_date": "2026-10-16"}]
+    }
+  ]
+}

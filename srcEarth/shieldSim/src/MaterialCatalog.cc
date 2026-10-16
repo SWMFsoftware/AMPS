@@ -255,9 +255,10 @@ G4Material* BuildSiC(){
 
   // Silicon carbide filler/ceramic phase.
   //   Composition convention: atom counts, SiC.
-  //   Density: 3.21 g/cm3 for dense SiC.  This helper is not exposed directly in
-  //            the CLI; it is used by BuildSiCCompositePlastic().
-  auto* m = new G4Material(name,3.21*g/cm3,2);
+  //   Density: 3.214 g/cm3 for the explicit dense 6H-SiC reference at 20 C.
+  //   The legacy SiC-composite builder also uses this phase, but generic
+  //   composites are disabled templates in the versioned material library.
+  auto* m = new G4Material(name,3.214*g/cm3,2);
   m->AddElement(El("Si"),1);
   m->AddElement(El("C"), 1);
   return m;
@@ -444,13 +445,12 @@ G4Material* BuildSiliconDioxide(){
   const char* name="ShieldSim_SiliconDioxide";
   if(auto* m=Existing(name)) return m;
 
-  // Silicon dioxide / oxide scoring material.
-  //   Intended use: gate oxide or insulating oxide TID proxy.
-  //   Composition convention: atom counts, SiO2.
-  //   Density: 2.20 g/cm3, representative amorphous/fused silica scale.
-  //   Device oxides can have different density, hydrogen content, or process
-  //   impurities; replace this with a project-specific definition if needed.
-  auto* m = new G4Material(name,2.20*g/cm3,2);
+  // Legacy fallback matching the explicit Geant4 G4_SILICON_DIOXIDE reference.
+  // The catalog normally resolves SiO2 directly to that NIST record; retaining
+  // this builder avoids changing old internal names used by archived macros.
+  // A process oxide/fused-silica film with another density requires a distinct
+  // versioned material record rather than an unlabeled 2.20 g/cm3 placeholder.
+  auto* m = new G4Material(name,2.32*g/cm3,2);
   m->AddElement(El("Si"),1);
   m->AddElement(El("O" ),2);
   return m;
@@ -464,8 +464,8 @@ G4Material* BuildGaAs(){
   //   Intended use: RF/microwave ICs and multi-junction solar-cell detector
   //                 material proxy.
   //   Composition convention: atom counts, GaAs.
-  //   Density: 5.3176 g/cm3.
-  auto* m = new G4Material(name,5.3176*g/cm3,2);
+  //   Density: 5.31 g/cm3, matching the approved Geant4 reference record.
+  auto* m = new G4Material(name,5.31*g/cm3,2);
   m->AddElement(El("Ga"),1);
   m->AddElement(El("As"),1);
   return m;
@@ -475,16 +475,19 @@ G4Material* BuildInGaAs(){
   const char* name="ShieldSim_InGaAs";
   if(auto* m=Existing(name)) return m;
 
-  // Indium gallium arsenide semiconductor proxy.
-  //   Intended use: SWIR/NIR focal-plane arrays and detector materials.
-  //   Composition convention: mass fractions corresponding approximately to
-  //                           In0.53Ga0.47As, a common lattice-matched alloy.
-  //   Density: 5.68 g/cm3 engineering reference value.
-  //   Device-specific In/Ga fraction should be changed here when known.
-  auto* m = new G4Material(name,5.68*g/cm3,3);
-  m->AddElement(El("In"),0.361);
-  m->AddElement(El("Ga"),0.194);
-  m->AddElement(El("As"),0.445);
+  // Explicit Ga0.47In0.53As 300-K reference used by the versioned catalog.
+  // Atom-count coefficients retain the alloy definition without rounded mass
+  // fractions. Other alloy fractions require a separately named record.
+  // Density: approximately 5.50 g/cm3 from the cited Ioffe compilation.
+  auto* m = new G4Material(name,5.50*g/cm3,3);
+  auto* ga=El("Ga"); auto* in=El("In"); auto* as=El("As");
+  const G4double gaMass=0.47*ga->GetA();
+  const G4double inMass=0.53*in->GetA();
+  const G4double asMass=1.00*as->GetA();
+  const G4double totalMass=gaMass+inMass+asMass;
+  m->AddElement(ga,gaMass/totalMass);
+  m->AddElement(in,inMass/totalMass);
+  m->AddElement(as,asMass/totalMass);
   return m;
 }
 
@@ -616,18 +619,18 @@ const std::vector<MaterialCatalogEntry>& DetectorMaterialCatalog(){
     {"Electronics - Silicon Family", "Si", "Si - Silicon", "G4_Si",
      "Geant4/NIST elemental silicon; common scoring medium for CMOS, CCDs, solar cells, TID/DDD proxies.",
      "Refs: [G4-MAT], [NIST-PSTAR], [SEMICONDUCTOR]", {"Silicon","G4_Si"}, false},
-    {"Electronics - Silicon Family", "SiO2", "SiO2 - Silicon Dioxide", "ShieldSim_SiliconDioxide",
-     "Custom SiO2 oxide proxy, density 2.20 g/cm3; useful for gate-oxide TID studies.",
-     "Refs: [SEMICONDUCTOR]; device-specific process oxide may differ", {"SiliconDioxide","Silica","Oxide","GateOxide"}, true},
+    {"Electronics - Silicon Family", "SiO2", "SiO2 - Silicon Dioxide", "G4_SILICON_DIOXIDE",
+     "Geant4 reference SiO2, density 2.32 g/cm3; a process oxide/fused silica requires a separately named record.",
+     "Refs: [G4-MAT]; device-specific process oxide may differ", {"SiliconDioxide","Silica","Oxide","GateOxide","G4_SILICON_DIOXIDE"}, false},
     {"Electronics - Silicon Family", "SiC", "SiC - Silicon Carbide", "ShieldSim_SiC",
-     "Custom dense stoichiometric SiC, density 3.21 g/cm3; wide-bandgap electronics proxy.",
+     "Custom dense stoichiometric 6H-SiC reference, density 3.214 g/cm3; wide-bandgap electronics proxy.",
      "Refs: [SIC], [SEMICONDUCTOR]; TID and DDD both may be relevant", {"SiliconCarbide","Silicon Carbide"}, true},
 
     {"Electronics - III-V and Compound Semiconductors", "GaAs", "GaAs - Gallium Arsenide", "ShieldSim_GaAs",
-     "Custom stoichiometric GaAs, density 5.3176 g/cm3; RF/microwave ICs and multi-junction solar cells.",
+     "Custom stoichiometric GaAs, density 5.31 g/cm3; RF/microwave ICs and multi-junction solar cells.",
      "Refs: [SEMICONDUCTOR]; use device-specific material if known", {"GalliumArsenide","Gallium Arsenide"}, true},
     {"Electronics - III-V and Compound Semiconductors", "InGaAs", "InGaAs - Indium Gallium Arsenide", "ShieldSim_InGaAs",
-     "Custom In0.53Ga0.47As proxy, density 5.68 g/cm3; SWIR/NIR focal-plane arrays.",
+     "Explicit Ga0.47In0.53As at 300 K, density 5.50 g/cm3; SWIR/NIR focal-plane arrays.",
      "Refs: [SEMICONDUCTOR]; DDD/dark-current metrics require post-processing", {"IndiumGalliumArsenide","Indium Gallium Arsenide","In0.53Ga0.47As"}, true},
     {"Electronics - III-V and Compound Semiconductors", "Ge", "Ge - Germanium", "G4_Ge",
      "Geant4/NIST elemental germanium; MWIR/thermal IR detector-array proxy.",

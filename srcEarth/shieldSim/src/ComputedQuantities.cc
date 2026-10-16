@@ -209,11 +209,13 @@ std::string QuantityCatalogText(){
   std::ostringstream out;
   out<<"\n  Computed quantities\n";
   out<<"  -------------------\n";
-  out<<"    TID       Total ionizing dose from Geant4 Edep/mass. Output: Gy/primary, rad/primary, Gy/s, rad/s.\n";
+  out<<"    TID       (Edep,total - Edep,nonionizing)/finite absorber mass. Output: Gy/primary, rad/primary, Gy/s, rad/s.\n";
   out<<"    DDD       Displacement damage dose proxy: D_d = integral Phi(E) NIEL(E) dE. Output: MeV/g and rad-equivalent.\n";
   out<<"    n_eq      1-MeV neutron-equivalent fluence proxy: n_eq = DDD / NIEL_1MeV_neutron. Output: cm^-2.\n";
   out<<"    LET       LET spectrum of transmitted protons/alphas binned in MeV cm^2/mg using a Bethe-Bloch estimate.\n";
-  out<<"    H100/10   Spectral hardness index J(>100 MeV)/J(>10 MeV) for transmitted p+alpha+n.\n";
+  out<<"    H100/10   Primary-proton shield-exit fluence(E>100 MeV) / fluence(E>10 MeV).\n";
+  out<<"               Uses exact crossing energy; excludes secondaries, alphas, and neutrons.\n";
+  out<<"    Stage gate Versioned shieldSim.case.v1 enables TID and H100/10 only; legacy DDD/n_eq/LET are unvalidated compatibility diagnostics.\n";
   out<<"\n  Selection syntax\n";
   out<<"  ----------------\n";
   out<<"    --quantities=all                         compute all quantities (default)\n";

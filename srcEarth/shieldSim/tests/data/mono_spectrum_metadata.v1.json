@@ -1,0 +1,19 @@
+{
+  "schema_version": "shieldSim.spectrum_metadata.v1",
+  "dataset_id": "shieldSim.synthetic_monoenergetic_test_fixture",
+  "format": "legacy_three_column",
+  "columns": ["energy", "proton", "alpha"],
+  "energy_variable": "total_kinetic_energy",
+  "energy_unit": "MeV",
+  "value_type": "arbitrary_test_weight",
+  "value_unit": "arbitrary/MeV",
+  "angular_model": "declared_by_case",
+  "bin_representation": "centers",
+  "edge_rule": "geometric_midpoint_edges",
+  "single_bin_width": {"value": 1.0, "unit": "MeV"},
+  "science_status": "synthetic_test_only",
+  "provenance": {
+    "source": "shieldSim deterministic test fixture",
+    "purpose": "software, geometry, and ledger verification only"
+  }
+}

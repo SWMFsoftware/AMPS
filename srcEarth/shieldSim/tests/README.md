@@ -7,6 +7,140 @@ The tests are organized in layers. Lower-numbered layers test basic software
 functionality, while higher-numbered layers test geometry, source sampling,
 scoring, physics-output behavior, numerical controls, and regression stability.
 
+## Stage-1 contract tests
+
+The CMake/CTest suite is the acceptance entry point for the versioned Stage-1
+core:
+
+```bash
+cmake -S . -B build -DGeant4_DIR=/path/to/geant4/lib/cmake/Geant4
+cmake --build build -j
+cd build
+ctest --output-on-failure
+```
+
+`stage1_core_tests.cc` runs without transport and checks:
+
+- the SHA-256 test vector and strict duplicate-key/NaN rejection;
+- the explicit SiO2 and Ga0.47In0.53As corrections;
+- material status gates, constituent-to-element conversion, immutable
+  override precedence, and content-hash invalidation;
+- mandatory legacy-spectrum metadata and declared one-bin width;
+- areal-density-to-geometric-thickness conversion;
+- the exact 0.10 default accuracy; and
+- statistical `1/sqrt(N)` behavior and `not_assessable` combined status when
+  the systematic budget is incomplete.
+
+`test_stage1_case_boundaries.py` invokes the production executable with
+`--validate-case` and checks:
+
+- one and five layers accepted, six rejected;
+- 100.000 mm accepted and 100.001 mm rejected per layer;
+- missing dimensions, unknown units/fields, reversed energy ranges, invalid
+  accuracy, and Stage-1-unsupported quantities rejected;
+- global/per-quantity accuracy precedence in serialized provenance;
+- absorber permutation preserves each absorber's independent geometry hash;
+  and
+- a density override changes derived thickness, material hash, and geometry
+  hash.
+
+`test_stage1_transport_smoke.py` performs short Geant4 runs in both absorber
+orders. It verifies independent-world order invariance, resolved Geant4
+material densities and analytic slab masses, and exact closure of
+`total = ionizing + non-ionizing` deposition ledgers.
+
+These tests validate schemas and exact analytic relationships. The short
+Geant4 scripts below remain useful regression/sanity tests, but neither kind of
+test substitutes for later comparison to analytic transport limits, published
+stopping/NIEL data, or observations.
+
+Published-data integrity tests are kept separate from the existing Geant4
+layers:
+
+```bash
+python3 tests/test_reference_spectra.py
+```
+
+They verify checksum-pinned AMS-02 GCR, GOES-16 SGPS SEP, and CRaTER LET
+fixtures under `tests/reference_spectra/`. These checks establish data
+provenance and retained semantics only; they are not transport or observational
+validation. See `development_and_validatoin.md` for the staged validation gates.
+
+## Stage-2 published-source adapter tests
+
+The CTest targets `stage2_reference_spectra`, `stage2_source_adapters`, and
+`stage2_source_tool` exercise the production Stage-2 boundary without Geant4
+transport. They cover:
+
+- AMS primary-table rigidity-edge to kinetic-energy-per-nucleon conversion,
+  the differential-flux Jacobian, area/energy unit conversion, independent
+  proton and helium grids, and the prohibition against relabeling inclusive
+  helium as pure alpha particles;
+- strict hashes, versions, field sets, canonical round trips, deterministic
+  output, and deliberate source-contract mutations that must fail;
+- NOAA interval-start to midpoint/end conversion for every five-minute SGPS
+  record and exact half-open overlap integration;
+- separate `>100 MeV` primary and `>10 MeV` sensitivity windows, with the NMDB
+  GLE72 onset retained only as an independent marker;
+- both SGPS sensor directions and all 13 differential channels, without
+  angular averaging;
+- independent rejection of each record-count, valid-sample, quality-flag,
+  missing-flux, and missing-uncertainty condition;
+- closed valid/rejected/missing time ledgers and explicit incomplete status;
+  and
+- analytic constant/linear/partial-boundary cases plus an independently
+  calculated published P7 event-fluence spot check.
+
+`stage2_source_adapters` deliberately prints one ledger assertion per output
+channel so a direction-, window-, or energy-specific failure is localized.
+The tests do not claim that the near-Earth AMS spectrum is a BON2020 deep-space
+scenario or that directional GOES measurements are an isotropic transport
+boundary. BON2020 v2.3 remains disabled until the official gated delivery is
+available.
+
+## Validation figures
+
+CTest target `validation_figures` depends on all current analytic and
+observational test targets. After their numerical assertions pass, it reads
+their compact JSON evidence and the pinned observational fixtures, reruns the
+production source tool, and writes review artifacts to:
+
+```text
+<build>/validation_evidence/*.json
+<build>/validation_figures/*.png
+<build>/validation_figures/*.svg
+<build>/validation_figures/manifest.json
+```
+
+The eight figure subjects are Stage-1 core formulas, Stage-1 case boundaries,
+Stage-1 analytic slab masses/ledger closure, AMS primary-table analytic checks,
+AMS observation/adapter agreement, GOES analytic/oracle integration, GOES
+event observations/coverage, and the CRaTER observational reference. The
+manifest records captions, byte sizes, and SHA-256 hashes.
+
+The standalone Geant4 layer runners extend that coverage. They invoke
+`generate_layer_validation_figures.py` only after their numerical assertions
+pass and write to `${FIGURE_DIR}` (default:
+`${RUN_DIR}/validation_figures`):
+
+- Layer 2: exact pencil-beam source contract, isotropic plane-crossing
+  `p(mu)=2*mu` distribution/moments, and near-vacuum rear-face limits.
+- Layer 3: tenfold source-normalization scaling and the H100/10 below/above
+  100 MeV threshold limits.
+- Layer 3 also renders the existing controlled proton/alpha LET sanity case,
+  but its caption and manifest do not represent it as an analytic or
+  observational validation.
+
+Every subject is saved in both PNG and SVG form. Each output directory has its
+own `manifest.json` with captions, byte sizes, SHA-256 hashes, and
+`physical_validation_claim: false`.
+
+Figure generation requires Python `matplotlib` and uses its noninteractive
+`Agg` backend. Figures are deliberately downstream of the numerical checks:
+no test compares pixels, a plotting change cannot make an incorrect numeric
+result pass, and observation-only figures contain explicit warnings against a
+physical-validation interpretation.
+
 ## Test Philosophy
 
 The purpose of the test suite is to separate several different questions:
@@ -32,12 +166,27 @@ validation against external reference data. Layer-4 tests implement a baseline-d
 ```text
 tests/
 ├── README.md
+├── stage1_core_tests.cc
+├── stage2_source_adapter_tests.cc
+├── generate_validation_figures.py
+├── generate_layer_validation_figures.py
+├── test_stage1_case_boundaries.py
+├── test_stage2_source_tool.py
+├── test_stage1_transport_smoke.py
+├── test_reference_spectra.py
+├── reference_spectra/
+│   ├── README.md
+│   ├── manifest.sha256
+│   ├── gcr/
+│   ├── sep/
+│   └── observations/
 ├── run_layer1_tests.sh
 ├── run_layer2_tests.sh
 ├── run_layer3_tests.sh
 ├── run_layer4_tests.sh
 ├── regression_tools.py
 ├── data/
+│   ├── mono_spectrum_metadata.v1.json
 │   ├── mono_50MeV_proton.dat
 │   ├── mono_100MeV_proton.dat
 │   ├── mono_100MeV_proton_rate10.dat
@@ -101,6 +250,13 @@ simple and should be version controlled. Rate-scaled spectra have the same shape
 as their unit-rate counterpart, but a larger absolute source normalization. They
 are used to test that per-primary Monte Carlo quantities are unchanged while
 physical rates scale with the input spectrum intensity.
+
+Every `mono_*.dat` use in the compatibility CLI passes
+`mono_spectrum_metadata.v1.json`. A three-column file is intentionally
+insufficient on its own: it does not define energy coordinate, units, angular
+semantics, bin edges, or whether values are physical rates or test weights.
+The shared sidecar labels these fixtures `synthetic_test_only` and declares the
+one-bin width used by the sampler.
 
 ### `expected/`
 
@@ -192,14 +348,16 @@ condition.
 
 ### `--dump-run-summary=<file>`
 
-Writes a machine-readable scalar summary for Layer-3 tests. The normal Tecplot
-files remain the science-facing outputs, but the run summary gives stable
-keyword rows that are easier to parse in automated tests:
+Writes a machine-readable scalar summary for compatibility Layer-3 tests. It
+gives stable keyword rows that are easier to parse in automated tests:
 
 ```text
 scalar H100_10 <value>
 count output_proton <value>
+count H100_10_primary_proton_numerator <value>
+count H100_10_primary_proton_denominator <value>
 target index name thickness_mm TID_Gy_perPrimary TIDRate_Gy_s DDD_MeV_g_perPrimary DDDRate_MeV_g_s n_eq_cm2_perPrimary n_eq_rate_cm2_s
+deposit_ledger index total_Gy_perPrimary ionizing_Gy_perPrimary nonionizing_Gy_perPrimary
 ```
 
 In sweep mode, the file contains one `begin_run` / `end_run` block per sweep
@@ -347,6 +505,9 @@ LOG_DIR     Directory where test logs are written.
 RUN_DIR     Directory where each Layer-2 test case writes its run outputs.
             Default: layer2_test_runs
 
+FIGURE_DIR  Directory for PNG/SVG figures and their manifest.
+            Default: RUN_DIR/validation_figures
+
 JOBS        Number of parallel build jobs.
             Default: nproc, or 2 if nproc is unavailable.
 
@@ -372,6 +533,13 @@ Layer-2 test outputs are written under:
 
 ```text
 layer2_test_runs/
+```
+
+The three analytic figure subjects, each in PNG and SVG form, and their
+manifest are written under:
+
+```text
+layer2_test_runs/validation_figures/
 ```
 
 Logs are written under:
@@ -446,6 +614,9 @@ LOG_DIR         Directory where test logs are written.
 RUN_DIR         Directory where each Layer-3 test case writes its run outputs.
                 Default: layer3_test_runs
 
+FIGURE_DIR      Directory for PNG/SVG figures and their manifest.
+                Default: RUN_DIR/validation_figures
+
 JOBS            Number of parallel build jobs.
                 Default: nproc, or 2 if nproc is unavailable.
 
@@ -477,6 +648,13 @@ Layer-3 test outputs are written under:
 
 ```text
 layer3_test_runs/
+```
+
+The two analytic figure subjects plus the explicitly non-validation controlled
+LET figure, each in PNG and SVG form, and their manifest are written under:
+
+```text
+layer3_test_runs/validation_figures/
 ```
 
 Logs are written under:

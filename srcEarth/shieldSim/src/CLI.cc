@@ -8,7 +8,14 @@
  * intentionally simple and dependency-free because shieldSim is meant to remain
  * easy to build as a small Geant4 application.
  *
- * Material help text
+ * Input modes
+ * -----------
+ * --case/--validate-case load the strict versioned CaseDefinition and cannot
+ * be mixed with physical legacy options. The remaining flags implement the
+ * compatibility CLI used by older tests and workflows. Unknown flags are fatal
+ * in both modes; a misspelling is never silently ignored.
+ *
+ * Legacy material help text
  * ------------------
  * Shielding and detector/target materials are not hard-coded in this file.
  * Instead, PrintHelp() calls ShieldMaterialCatalogText() and
@@ -32,6 +39,7 @@
 #include "CLI.hh"
 
 #include "ComputedQuantities.hh"
+#include "CaseDefinition.hh"
 #include "MaterialCatalog.hh"
 
 #include <G4Exception.hh>
@@ -40,6 +48,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <vector>
 
@@ -74,6 +83,16 @@ std::string AllowedPhysicsListText(){
 
 void PrintHelp(){
   std::cout<<"\nUsage: shieldSim [options]\n\n";
+
+  std::cout<<"VERSIONED STAGE-1 CASE INPUT (science-facing path)\n";
+  std::cout<<"  --case=<file.json>       Load a strict shieldSim.case.v1 definition.\n";
+  std::cout<<"                           Geometry, materials, source, accuracy, and\n";
+  std::cout<<"                           transport settings come only from this file.\n";
+  std::cout<<"  --validate-case=<file>   Parse, resolve, hash, and write provenance,\n";
+  std::cout<<"                           but do not start Geant4 transport.\n";
+  std::cout<<"  --validate-case          Use with --case for the same validation-only mode.\n";
+  std::cout<<"                           Case options cannot be mixed with legacy physical\n";
+  std::cout<<"                           CLI options. See examples/README.md.\n\n";
 
   std::cout<<"PHYSICS OPTIONS\n";
   std::cout<<"  --physics-list=<name>    Geant4 reference physics list. Default: FTFP_BERT.\n";
@@ -143,6 +162,10 @@ void PrintHelp(){
   std::cout<<"                           plane-crossing flux.\n";
   std::cout<<"                           Omit for built-in approximate GCR spectrum\n";
   std::cout<<"                           (Badhwar-O'Neill-like, phi=550 MV).\n";
+  std::cout<<"  --legacy-spectrum-metadata=<json>\n";
+  std::cout<<"                           Mandatory versioned sidecar whenever --spectrum\n";
+  std::cout<<"                           is used; declares units, energy coordinate, bin\n";
+  std::cout<<"                           rule, angular semantics, and science status.\n";
   std::cout<<"  --emin=<MeV>             Global total kinetic energy minimum for both\n";
   std::cout<<"                           species. Default: 10 MeV.\n";
   std::cout<<"  --emax=<MeV>             Global total kinetic energy maximum for both\n";
@@ -221,6 +244,7 @@ void PrintHelp(){
   std::cout<<"              --shield=Al:2 --events=50000\n\n";
   std::cout<<"  # Tabulated source spectrum, isotropic mode\n";
   std::cout<<"  ./shieldSim --source-mode=isotropic --spectrum=../examples/sep_spectrum.dat \\\n";
+  std::cout<<"              --legacy-spectrum-metadata=../examples/sep_spectrum.metadata.v1.json \\\n";
   std::cout<<"              --shield=Al:2 --events=100000\n\n";
   std::cout<<"  # Dose vs thickness sweep, HDPE 0.5-30 mm, 15 log-spaced points\n";
   std::cout<<"  ./shieldSim --sweep --source-mode=isotropic --sweep-material=HDPE \\\n";
@@ -243,6 +267,9 @@ Options ParseArguments(int argc, char** argv){
     else if(a=="--list-materials"){ o.listMaterials=true; }
     else if(a=="--list-target-materials" || a=="--list-detector-materials" || a=="--list-targets"){ o.listTargetMaterials=true; }
     else if(a=="--list-quantities"){ o.listQuantities=true; }
+    else if(a.find("--case=")==0){ o.caseFile=strVal(a,"--case="); }
+    else if(a.find("--validate-case=")==0){ o.caseFile=strVal(a,"--validate-case="); o.validateCaseOnly=true; }
+    else if(a=="--validate-case"){ o.validateCaseOnly=true; }
     else if(a.find("--quantities=")==0){
       // Quantity selection is deliberately separated from transport.  Geant4
       // still transports particles and scores the raw quantities needed by the
@@ -259,6 +286,7 @@ Options ParseArguments(int argc, char** argv){
     else if(a.find("--phys=")==0){ o.physicsList=strVal(a,"--phys="); }
     else if(a.find("--source-mode=")==0){ o.sourceMode=strVal(a,"--source-mode="); }
     else if(a.find("--spectrum=")==0){ o.spectrumFile=strVal(a,"--spectrum="); }
+    else if(a.find("--legacy-spectrum-metadata=")==0){ o.legacySpectrumMetadataFile=strVal(a,"--legacy-spectrum-metadata="); }
     else if(a.find("--random-seed=")==0){ o.randomSeed=std::stol(strVal(a,"--random-seed=")); o.useRandomSeed=true; }
     else if(a.find("--output-prefix=")==0){ o.outputPrefix=strVal(a,"--output-prefix="); }
     else if(a.find("--dump-source-samples=")==0){ o.dumpSourceSamplesFile=strVal(a,"--dump-source-samples="); }
@@ -315,7 +343,49 @@ Options ParseArguments(int argc, char** argv){
     else if(a.find("--sweep-tmax=")==0)    { o.sweepTmax=std::stod(strVal(a,"--sweep-tmax=")); }
     else if(a.find("--sweep-n=")==0)       { o.sweepN=std::stoi(strVal(a,"--sweep-n=")); }
     else if(a=="--sweep-log")              { o.sweepLog=true; }
-    else { G4cout<<"Unknown option ignored: "<<a<<G4endl; }
+    else {
+      const std::string msg="Unknown option: "+a;
+      G4Exception("ParseArguments","BadInput",FatalException,msg.c_str());
+    }
+  }
+
+  // A versioned case is the sole source of physical settings.  Reject mixing
+  // instead of implementing a precedence order that would be easy to overlook
+  // in provenance. Informational --help is handled before this point.
+  if(!o.caseFile.empty()){
+    for(int i=1;i<argc;++i){
+      const std::string a=argv[i];
+      if(a.find("--case=")==0 || a.find("--validate-case=")==0 || a=="--validate-case") continue;
+      G4Exception("ParseArguments","BadInput",FatalException,
+                  "--case/--validate-case cannot be mixed with legacy CLI options");
+    }
+    try {
+      o.caseDefinition=shield_sim::CaseDefinition::Load(o.caseFile);
+    } catch(const std::exception& error) {
+      G4Exception("ParseArguments","CaseFile",FatalException,error.what());
+    }
+    const auto& c=*o.caseDefinition;
+    o.physicsList=c.physicsList;
+    o.spectrumFile=c.spectrum.spectrumPath;
+    o.legacySpectrumMetadataFile=c.spectrum.metadataPath;
+    o.sourceMode=c.sourceMode;
+    o.eMinProton=c.protonMinMeV; o.eMaxProton=c.protonMaxMeV;
+    o.eMinAlpha=c.alphaMinMeV;   o.eMaxAlpha=c.alphaMaxMeV;
+    o.shieldMaterial="resolved_multilayer_stack";
+    o.shieldThickness=c.ShieldTotalThicknessMm()*mm;
+    o.nEvents=static_cast<G4int>(std::min<long>(c.accuracy.batchSize,std::numeric_limits<G4int>::max()));
+    o.productionCut=c.productionCutMm*mm;
+    o.maxStepLength=c.maxStepMm*mm;
+    o.randomSeed=c.randomSeed; o.useRandomSeed=true;
+    o.outputPrefix=c.outputPrefix;
+    o.calcTID=std::find(c.quantities.begin(),c.quantities.end(),"TID")!=c.quantities.end();
+    o.calcHardness=std::find(c.quantities.begin(),c.quantities.end(),"H100/10")!=c.quantities.end();
+    o.calcDDD=o.calcNEq=o.calcLET=false;
+    o.scoringMaterials.clear();
+    const auto& absorber=c.absorbers.front();
+    o.scoringMaterials.push_back({absorber.materialId,absorber.thicknessMm*mm});
+  } else if(o.validateCaseOnly) {
+    G4Exception("ParseArguments","BadInput",FatalException,"--validate-case requires --case=<file> or --validate-case=<file>");
   }
 
   if(o.sweepMaterial.empty()) o.sweepMaterial=o.shieldMaterial;
@@ -353,6 +423,11 @@ Options ParseArguments(int argc, char** argv){
     if(sm.second<=0)
       G4Exception("ParseArguments","BadInput",FatalException,"Scoring slab thickness must be > 0");
   }
+  if(o.shieldThickness>100.0*mm && !o.caseDefinition)
+    G4Exception("ParseArguments","BadInput",FatalException,"Legacy single shield thickness must be <= 100 mm");
+  if(!o.spectrumFile.empty() && o.legacySpectrumMetadataFile.empty())
+    G4Exception("ParseArguments","BadInput",FatalException,
+                "--spectrum requires --legacy-spectrum-metadata=<json>; numeric columns alone are ambiguous");
   if(o.doSweep){
     if(o.sweepN<=0)
       G4Exception("ParseArguments","BadInput",FatalException,"--sweep-n must be > 0");

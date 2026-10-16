@@ -7,8 +7,11 @@
  * One-primary-per-event particle source for shieldSim.
  *
  * The source samples species and energy from a distribution proportional to
- * J(E)dE, where J(E) is either the built-in GCR-like spectrum or a tabulated
- * user spectrum.  The integral of the source spectrum is preserved as a
+ * J(E)dE, where J(E) is either the legacy built-in GCR-like spectrum or a
+ * tabulated spectrum accepted through SpectrumDataset. Three numeric columns
+ * alone are rejected: a mandatory sidecar declares energy coordinates, units,
+ * angular semantics, bin edges, provenance, and science status. The integral
+ * of the source spectrum is preserved as a
  * normalization factor so that RunAction can convert raw Monte Carlo counts per
  * primary into source-normalized spectra and dose rates.
  *
@@ -58,8 +61,8 @@ private:
   {
     energy.clear(); weight.clear();
 
-    if(hi<lo) std::swap(lo,hi);
-    if(lo<=0.0) lo=1.0;
+    // Callers validate lo/hi.  Never swap or clamp here: doing so would make
+    // transport differ from the archived scientific request.
 
     const G4int Ns = (hi>lo) ? 500 : 1;
     energy.reserve(Ns);

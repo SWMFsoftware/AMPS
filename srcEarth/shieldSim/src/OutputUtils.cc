@@ -24,7 +24,7 @@ void WriteDoseSweepTecplot(const std::vector<SweepPoint>& data,
   out<<"# DoseRate columns are Gy/s if the input source spectrum units are physical.\n";
   out<<"# DDD columns, when enabled, are spectrum-folded displacement-damage-dose proxies in MeV/g.\n";
   out<<"# n_eq columns, when enabled, are 1-MeV-neutron-equivalent fluence proxies in cm^-2.\n";
-  out<<"# H100/10, when enabled, is J(>100 MeV)/J(>10 MeV) for transmitted p+alpha+n and is repeated for each target.\n";
+  out<<"# H100/10, when enabled, is primary-proton shield-exit fluence(E>100 MeV)/fluence(E>10 MeV), using exact crossing energy; it is repeated for each target.\n";
   out<<"# Beam mode assumes the source spectrum columns are differential beam rates [particles/s/MeV].\n";
   out<<"# Isotropic mode assumes the source spectrum columns are differential intensities [particles/(cm2 s sr MeV)].\n";
   out<<"# In isotropic mode the code applies the pi angular factor and multiplies by the finite source-plane area.\n";

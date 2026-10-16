@@ -1,4 +1,7 @@
 # BON2020_LIS spectra tabulated for shieldSim
+# UNVERIFIED LEGACY ARTIFACT: no official BON2020 v2.3 delivery manifest,
+# scenario inputs, or reproducible generator accompanies this file. It is
+# prohibited for physical/science-facing runs and retained only for history.
 # Source model: Badhwar-O'Neill 2020 LIS parameters (Z=1 and Z=2)
 # Energy column: total kinetic energy [MeV]
 # Flux columns: differential flux [particles / (m^2 sr s MeV)]

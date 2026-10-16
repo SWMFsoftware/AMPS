@@ -1,17 +1,70 @@
 # shieldSim
 
-`shieldSim` is a compact Geant4 application for modeling energetic-particle transport through a planar shielding slab and estimating transmitted spectra and dose behind the shield.
+`shieldSim` is a Geant4 environment-effects model for spacecraft-anomaly
+analysis and preliminary mission assessment. It transports energetic particles
+through an ordered planar shielding stack into a finite absorber slab. It is
+not an instrument-design model, a device-response model, or an anatomical
+phantom.
 
-The package version is split into normal Geant4-style source files while preserving the logic from the single-file prototype:
+## Implementation status
+
+Stage 1 of the development roadmap is implemented. Stage 2 is implemented for
+the pinned AMS-02 ingestion spectrum and GOES-16 GLE72 time series/event
+integration, but remains incomplete because the official NASA BON2020 v2.3
+delivery is not present. The science-facing case path is a strict
+`shieldSim.case.v1` JSON file and provides:
+
+- one through five ordered shield layers, each limited to an inclusive 100 mm
+  derived geometric thickness;
+- either `g/cm2` areal density or geometric length per layer, with the other
+  value derived from the resolved material density;
+- an external, versioned material library with immutable case overrides,
+  status gates, property provenance, canonical expansion, and SHA-256 hashes;
+- explicit world, source-plane, shield, placement, and absorber dimensions—no
+  hidden geometry defaults in a versioned case;
+- one independent Geant4 world per shield × absorber calculation, so an
+  absorber never shields another absorber;
+- a geometry-neutral absorber-provider contract and a current `slab.v1`
+  implementation;
+- strict spectrum metadata, input-range rejection, and unknown-field
+  rejection;
+- separate total, ionizing, and non-ionizing deposition ledgers;
+- the approved primary-proton H100/10 definition;
+- a default 0.10 combined standard relative-uncertainty request, quantity
+  overrides, adaptive batches, 95% intervals, and
+  `met`/`not_met`/`not_assessable` states; and
+- resolved case, geometry, material, source, Geant4, seed, and output
+  provenance.
+
+Stage 1 is a software/correctness gate, not physical validation of every
+radiation proxy. Versioned cases currently enable `TID` and `H100/10`; their
+validation and uncertainty status remain explicit. DDD, silicon 1-MeV-neutron-
+equivalent fluence, and step-scored LET remain disabled on the versioned path
+until their later roadmap stages supply approved data and validation. The older
+CLI can still produce its historical analytic DDD/LET/n_eq estimates for
+regression compatibility; those results are prototype diagnostics, not
+science-facing outputs.
+
+The implementation and evidence needed to turn the current prototype into a
+physically qualified radiation-proxy model are defined in
+[`development_and_validatoin.md`](development_and_validatoin.md). Published
+AMS-02 GCR and GOES-16 SEP fixtures, plus a CRaTER observational LET product,
+are documented under `tests/reference_spectra/`. The AMS and GOES products now
+have dedicated, Geant4-free Stage-2 adapters. They remain ingestion/event-
+integration products, not approved transport boundary conditions, and must not
+be passed through the legacy three-column spectrum interface.
+
+The package retains the old CLI for compatibility while adding versioned core
+components:
 
 - CLI-selectable Geant4 physics list (`FTFP_BERT`, `FTFP_BERT_HP`, `Shielding`, `QGSP_BIC_HP`),
-- CLI-selectable shield materials using either Geant4/NIST names or built-in aliases for metals, hydrogenous polymers, composites, water, and regolith,
-- CLI-selectable detector/absorber/target materials for downstream scoring slabs, including tissue proxies and electronics/semiconductor media,
+- a strict case/material/spectrum schema with explicit units and provenance,
+- a separate legacy catalog/CLI for older regression cases,
 - source normalization using `J(E) dE`,
 - `beam` and `isotropic` source modes controlled by CLI,
 - local-coordinate shield rear-face scoring,
-- dose accumulation in Geant4 internal units,
-- computed TID, DDD, 1-MeV neutron-equivalent fluence, LET spectra, and H100/10 hardness output,
+- separate total, ionizing, and non-ionizing deposit ledgers,
+- Stage-1 TID/H100/10 results plus explicitly labeled legacy DDD/n_eq/LET diagnostics,
 - detailed help text describing input/output units and radiation-effect approximations,
 - Layer-1/2/3/4 automated test scripts with deterministic diagnostic and regression output,
 - optional test/numerical controls: `--dump-run-summary`, `--production-cut`, and `--max-step`.
@@ -20,51 +73,50 @@ The package version is split into normal Geant4-style source files while preserv
 
 ```text
 shieldSim/
-├── CMakeLists.txt
-├── README.md
-├── shieldSim.cc
+  ├── CMakeLists.txt
+  ├── README.md
+  ├── shieldSim.cc
+  ├── sourceTool.cc                  # published-source validation/conversion CLI
 ├── include/
-│   ├── CLI.hh
-│   ├── ComputedQuantities.hh
-│   ├── DetectorConstruction.hh
-│   ├── EventAction.hh
-│   ├── GCRSpectrum.hh
-│   ├── MaterialCatalog.hh
-│   ├── OutputUtils.hh
-│   ├── PrimaryGeneratorAction.hh
-│   ├── RunAction.hh
-│   ├── ShieldSimConfig.hh
-│   ├── SpecBins.hh
-│   └── SteppingAction.hh
+│   ├── AbsorberGeometry.hh       # future-shape provider contract + slab
+│   ├── AccuracyController.hh     # running uncertainty/stopping state
+│   ├── CaseDefinition.hh         # strict resolved case data
+│   ├── MaterialLibrary.hh        # versioned records and overrides
+│   ├── SpectrumDataset.hh        # canonical spectrum contract
+│   ├── StrictJson.hh             # dependency-free strict JSON
+│   └── ...                       # Geant4 actions and legacy modules
 ├── src/
-│   ├── CLI.cc
-│   ├── ComputedQuantities.cc
-│   ├── DetectorConstruction.cc
-│   ├── EventAction.cc
-│   ├── GCRSpectrum.cc
-│   ├── MaterialCatalog.cc
-│   ├── OutputUtils.cc
-│   ├── PrimaryGeneratorAction.cc
-│   ├── RunAction.cc
-│   └── SteppingAction.cc
+│   ├── CaseDefinition.cc
+│   ├── MaterialLibrary.cc
+│   ├── MaterialFactory.cc
+│   ├── SpectrumDataset.cc
+│   ├── StrictJson.cc
+│   └── ...
+├── data/
+│   └── material_library.v1.json
 ├── examples/
-│   └── sep_spectrum.dat
+│   ├── README.md
+│   ├── stage1_case.json
+│   ├── sep_spectrum.dat
+│   └── sep_spectrum.metadata.v1.json
 ├── macros/
 │   └── example_commands.sh
 └── tests/
     ├── README.md
+    ├── stage1_core_tests.cc
+    ├── generate_validation_figures.py
+    ├── generate_layer_validation_figures.py
+    ├── test_stage1_case_boundaries.py
+    ├── test_reference_spectra.py
     ├── run_layer1_tests.sh
     ├── run_layer2_tests.sh
     ├── run_layer3_tests.sh
     ├── run_layer4_tests.sh
     ├── regression_tools.py
     ├── data/
-    │   ├── mono_50MeV_proton.dat
-    │   ├── mono_100MeV_proton.dat
-    │   ├── mono_100MeV_proton_rate10.dat
-    │   ├── mono_100MeV_alpha.dat
-    │   ├── mono_100MeV_alpha_rate10.dat
-    │   └── mono_150MeV_proton.dat
+    │   ├── mono_spectrum_metadata.v1.json
+    │   └── mono_*.dat
+    ├── reference_spectra/
     ├── expected/
     │   └── layer4/
     └── logs/
@@ -106,9 +158,157 @@ If CMake cannot find Geant4 automatically, provide `Geant4_DIR`, for example:
 cmake .. -DGeant4_DIR=/path/to/geant4/lib/Geant4-11.*/
 ```
 
-## Run examples
+Run all registered Stage-1 and available Stage-2 tests from the build directory:
 
-Single 2 mm Al shield with the built-in GCR-like spectrum and the default physics list:
+```bash
+ctest --output-on-failure
+```
+
+`stage1_core` verifies canonical JSON/hashing, material resolution and
+overrides, spectrum metadata, unit conversion, and accuracy mathematics.
+`stage1_case_boundaries` exercises the production CLI parser at the one/five/
+six-layer and 100 mm boundaries and checks required fields, units, ranges,
+accuracy precedence, material-dependent thickness, and absorber-order
+invariance. `stage2_reference_spectra`, `stage2_source_adapters`, and
+`stage2_source_tool` validate pinned AMS/GOES bytes, transformations, strict
+schemas, dual event windows, sample
+timing, quality rejection, coverage accounting, direction retention,
+determinism, and analytic integration cases.
+
+The dependent `validation_figures` test renders every current analytic or
+observational comparison after its numerical tests pass. It writes PNG, SVG,
+and a checksum/caption manifest under the build tree:
+
+```text
+build/validation_figures/
+├── stage1_core_analytic.{png,svg}
+├── stage1_case_boundaries_analytic.{png,svg}
+├── stage1_transport_smoke_analytic.{png,svg}
+├── stage2_ams02_analytic_comparisons.{png,svg}
+├── stage2_ams02_observation_adapter.{png,svg}
+├── stage2_goes16_analytic_comparisons.{png,svg}
+├── stage2_goes16_observation_event.{png,svg}
+├── crater_observation_reference.{png,svg}
+└── manifest.json
+```
+
+The figures require Python `matplotlib`. They are human-review artifacts, not
+pixel-based acceptance tests: the underlying numeric comparisons remain the
+pass/fail authority. CRaTER panels are explicitly observation-only because the
+instrument-response model required for a model-to-observation comparison has
+not been implemented.
+
+The standalone Layer-2 and Layer-3 runners also generate PNG/SVG review
+figures after all of their prerequisite numerical checks pass. Layer 2 covers
+the pencil beam, isotropic plane-crossing distribution, and near-vacuum
+transmission limits. Layer 3 covers source-normalization scaling and H100/10
+threshold limits; it also plots the existing controlled proton/alpha LET sanity
+case, explicitly labeled as neither analytic nor observational validation.
+These artifacts and their checksum/caption manifest are written to
+`layer2_test_runs/validation_figures/` and
+`layer3_test_runs/validation_figures/` by default. Set `FIGURE_DIR` to choose a
+different destination.
+
+## Stage-2 published-source tool
+
+`shieldSimSourceTool` validates and canonicalizes published data without
+starting Geant4. A successful conversion does not authorize transport.
+
+```bash
+./shieldSimSourceTool ams02 \
+  --info=tests/reference_spectra/gcr/ams02_20131118_hapi_info.json \
+  --data=tests/reference_spectra/gcr/ams02_20131118_hapi_data.csv \
+  --interpretation=tests/reference_spectra/gcr/ams02_20131118_interpretation.v1.json \
+  --output=ams02_canonical.json
+
+./shieldSimSourceTool goes16 \
+  --csv=tests/reference_spectra/sep/goes16_sgps_gle72_timeseries.csv \
+  --definition=tests/reference_spectra/sep/goes16_gle72_event_definition.v1.json \
+  --output=goes16_gle72_fluence.json
+```
+
+The AMS output keeps proton and inclusive mixed-isotope helium as separate
+components and retains the energy-per-nucleon coordinate and uncertainties.
+The GOES output contains one ledger for every event-window × sensor × channel,
+including valid, rejected, and missing seconds. It does not combine published
+uncertainties because their temporal covariance is unavailable.
+
+BON2020 v2.3 is a hard Stage-2 blocker, not an inferred implementation task.
+NASA distributes the package through a repository request/secure-email flow.
+The required intake evidence and prohibited assumptions are documented in
+`data/bon2020_v2_3/README.md`; the adapter and solar-minimum/solar-maximum
+scenarios remain disabled until those official bytes and documentation are
+provided and inspected.
+
+## Versioned Stage-1 cases
+
+Validate and serialize the example without starting transport:
+
+```bash
+./shieldSim --validate-case=examples/stage1_case.json
+```
+
+Run its two independent absorbers:
+
+```bash
+./shieldSim --case=examples/stage1_case.json
+```
+
+Outputs use stable absorber IDs, for example
+`stage1_example__water_proxy_*` and `stage1_example__silicon_proxy_*`. Every
+absorber receives the same shield-exit environment in its own rebuilt world;
+absorbers are never placed behind one another.
+
+The complete annotated case is in `examples/stage1_case.json`. Its key
+contracts are:
+
+- Every physical number carries a unit. Accepted Stage-1 length units are
+  `mm`, `cm`, and `m`; layer areal density is exactly `g/cm2`; spectrum energy
+  is `MeV` total kinetic energy per particle.
+- `material_library.library_id` and `library_version` must match the loaded
+  file. A case override uses a new `material_id` and pins its parent as
+  `<id>@<revision>`.
+- `geometry.shield_stack.layers` is ordered upstream to downstream.
+- Every absorber is currently `type: "slab"` and explicitly gives transverse
+  size, thickness, and front-z position.
+- Omitting only `accuracy.target` selects and archives `0.10`. A per-quantity
+  override must replace target, scope, and coverage together.
+- `min_histories`, `max_histories`, and `batch_size` are mandatory resource
+  controls. An incomplete combined systematic budget produces
+  `not_assessable`, never a false claim that the requested accuracy was met.
+- A numeric spectrum is accepted only with a
+  `shieldSim.spectrum_metadata.v1` sidecar. Rows must already be strictly
+  increasing and finite; the program never sorts, clamps, or discards them.
+
+### Adding a future arbitrary absorber shape
+
+`include/AbsorberGeometry.hh` is the extension boundary. A new provider must
+return stable sensitive-region IDs, logical volumes, masses, material hashes,
+and a canonical geometry hash. Scoring attaches to those stable regions, not
+to incidental copy numbers or volume names. A mesh/CAD/voxel provider must
+also preserve source units, placement transform, region-to-material mapping,
+sensitive-region mapping, provider version, and input-file hash.
+
+Before it can be enabled, such a provider must reject missing or ambiguous
+units, non-finite vertices, non-watertight or self-intersecting solids,
+inconsistent surface orientation, overlaps, unmapped regions, empty sensitive
+regions, and mass/volume disagreement. Required tests include primitive
+analytic volumes and chords, analytic/mesh/voxel convergence, rotation and
+translation behavior, reference-ray boundary navigation, region ledger
+closure, harmless tessellation invariance, and direct-vs-response agreement.
+Automatic mesh repair is prohibited unless it is an explicit versioned
+transformation with input/output hashes. See Section 3.3.4 and Stage 10 of
+`development_and_validatoin.md` for the full gate.
+
+## Legacy compatibility examples
+
+The following CLI is retained for regression and diagnostic work. It uses the
+historical single-shield/default-geometry model and is not the versioned
+science-facing interface.
+
+Single 2 mm Al shield with the built-in historical GCR-like approximation and
+the default physics list (regression compatibility only; not a physical GCR
+environment):
 
 ```bash
 ./shieldSim --source-mode=beam --shield=Al:2 --events=50000
@@ -125,6 +325,7 @@ Tabulated SEP-like source spectrum:
 
 ```bash
 ./shieldSim --source-mode=isotropic --spectrum=examples/sep_spectrum.dat \
+            --legacy-spectrum-metadata=examples/sep_spectrum.metadata.v1.json \
             --shield=Al:2 --events=100000
 ```
 
@@ -136,7 +337,36 @@ Dose-vs-thickness sweep over HDPE:
             --sweep-log --events=20000
 ```
 
-## Shield-material selection
+## Material library and overrides
+
+Versioned cases load `data/material_library.v1.json`. The runnable statuses are
+`reference`, `trade_study`, and fully populated `project_specific` records.
+`template` records are rejected before geometry construction. In particular,
+generic CFRP, SiC composite, lunar regolith, and Mars regolith names are
+disabled templates: their composition and density cannot be invented safely.
+
+The initial library includes explicit Al, Cu, W, Ta, natural B, HDPE, 5 wt%
+natural-boron polyethylene, dry Kevlar fiber, Kapton, water, silicon, skin,
+eye-lens, soft-tissue/BFO/CNS composition slabs, SiO2, 6H-SiC, GaAs,
+Ga0.47In0.53As, and Ge records. Each record identifies whether it is a
+reference or preliminary trade recipe and states its applicability limits.
+Unreported property uncertainties remain explicitly `not_provided`; the code
+does not manufacture them.
+
+A case-local override must use a new stable ID, pin its exact parent revision,
+state `trade_study` or `project_specific`, and cite the changed property. The
+parent stays unchanged. Density changes alter mass-thickness conversion and
+geometry hashes; composition changes alter the material hash and invalidate
+dependent response data. All transport-relevant properties in a complete
+override—including density, state, temperature, composition, and provenance—
+are input data rather than compiled constants.
+Natural abundances use the pinned Geant4 element data; an override can instead
+declare explicit isotope components such as `B-10`/`B-11`. Gas records require
+pressure, and an explicitly overridden mean excitation energy is applied to the
+Geant4 material. Unsupported thermal-scattering-law associations are rejected
+rather than recorded without transport effect.
+
+## Legacy shield-material selection
 
 Use `--shield=<material>:<thickness_mm>` for a single run, or `--sweep-material=<material>` in sweep mode.  The material name can be either a normal Geant4/NIST material such as `G4_Al`, `G4_WATER`, or `G4_Si`, or one of the built-in keys below.
 
@@ -186,10 +416,13 @@ Examples:
 ./shieldSim --shield=LunarRegolith:50 --source-mode=isotropic --events=100000
 ```
 
-The composite and regolith materials are approximate trade-study materials defined in `src/MaterialCatalog.cc`.  Replace their density/composition there if a project-specific measured material is required.
+These names describe the compatibility-only compiled catalog. Its historical
+generic composite/regolith recipes are not imported into the versioned
+material library. Do not edit compiled source to represent a flight material;
+create a cited `project_specific` case record instead.
 
 
-## Detector / absorber / target material selection
+## Legacy detector / absorber / target material selection
 
 Use `--scoring=<material>:<thickness_mm>,...` to define downstream scoring slabs.  The alias `--target=<material>:<thickness_mm>,...` is equivalent and is often clearer when the slabs represent tissue, detector, or electronics media.
 
@@ -234,10 +467,17 @@ Examples:
 ./shieldSim --shield=Al:2 --target=Si:1,SiO2:0.01,GaAs:1,InGaAs:1,Ge:1
 ```
 
-Organ/tissue names define material composition only.  `shieldSim` does not apply NASA limit checks, quality factors, LET/RBE weighting, organ weighting, or device response functions internally.  It now provides documented first-order TID, DDD, n_eq, LET-spectrum, and hardness outputs; DDD/n_eq remain engineering proxies until replaced with authoritative material-specific NIEL and device-response data.
+Organ/tissue names define material composition only. `shieldSim` does not apply
+NASA limit checks, quality factors, LET/RBE weighting, organ weighting, or
+device response functions internally.
 
 
-## Computed quantity selection
+## Legacy computed-quantity selection
+
+This section documents compatibility output only. The analytic DDD, non-silicon
+`n_eq`, and transmitted-spectrum LET implementations do not satisfy the
+production definitions in `development_and_validatoin.md` and are disabled in
+`shieldSim.case.v1`.
 
 The code now computes the quantities shown in the UI for every selected `shield x target` combination.  By default all computed quantities are enabled:
 
@@ -257,7 +497,8 @@ Implemented quantities:
 
 ```text
 TID       Total Ionizing Dose
-          D = E_dep / m.  E_dep is the Geant4 energy deposition in the selected target slab.
+          D_ion = (E_dep,total - E_dep,nonionizing) / m in the finite target slab.
+          The total and non-ionizing ledgers are retained for closure.
           Output units: Gy/primary, rad/primary, Gy/s, rad/s.
 
 DDD       Displacement Damage Dose proxy
@@ -268,7 +509,7 @@ DDD       Displacement Damage Dose proxy
 
 n_eq      1-MeV Neutron Equivalent fluence proxy
           n_eq = DDD / NIEL_1MeV_neutron(material).
-          This convention is most meaningful for silicon electronics; non-silicon values are proxies.
+          Historical surrogate only. Production n_eq will be silicon-only and use one ASTM E722 convention.
           Output units: cm^-2/primary and cm^-2/s.
 
 LET       LET spectrum
@@ -277,12 +518,18 @@ LET       LET spectrum
           Output units: area-averaged fluence per primary and fluence rate per LET bin.
 
 H100/10   Spectral hardness index
-          H100/10 = J(>100 MeV) / J(>10 MeV) for transmitted protons + alphas + neutrons.
+          H100/10 = primary-proton shield-exit fluence(E>100 MeV)
+                    / primary-proton shield-exit fluence(E>10 MeV).
+          Exact crossing energies are used; secondaries, alphas, and neutrons are excluded.
+          A zero denominator is undefined, not zero.
 ```
 
-The equations, assumptions, and references are documented in `include/ComputedQuantities.hh` and `src/ComputedQuantities.cc`.  TID is directly scored by Geant4 and is the most robust output.  DDD, `n_eq`, and LET are post-processed engineering estimates.  For quantitative electronics damage work, replace `ComputedQuantities::NIEL_MeV_cm2_g()` with tabulated NIEL/SR-NIEL data for the target material and particle species of interest.
+The historical equations are documented in `include/ComputedQuantities.hh` and
+`src/ComputedQuantities.cc`; their presence is not validation evidence. The
+roadmap requires approved, version-pinned response data and independent
+validation before DDD, `n_eq`, or LET can be enabled in versioned cases.
 
-## Material-property references and adding new materials
+## Legacy compiled catalog maintenance
 
 The material-property references used by the built-in catalogs are documented in `src/MaterialCatalog.cc` and summarized by `./shieldSim --list-materials` and `./shieldSim --list-target-materials`.  In brief:
 
@@ -344,15 +591,25 @@ stepping behavior.
 These options are primarily intended for Layer-3 tests and convergence studies,
 not as substitutes for physics validation.
 
-## Spectrum input units
+## Legacy spectrum adapter
 
-A tabulated spectrum file has three columns:
+A tabulated spectrum file has three columns and now requires an explicit
+`--legacy-spectrum-metadata=<file.json>` sidecar:
 
 ```text
 E[MeV]   protonSpectrum   alphaSpectrum
 ```
 
 `E` is total kinetic energy per particle. For alpha particles, `E` is total alpha kinetic energy, not MeV/nucleon.
+
+The sidecar declares that coordinate, the energy and value units, value type,
+angular model, bin representation/edge rule, science status, and provenance.
+Single-row spectra must declare a bin width. Unknown fields, malformed rows,
+negative/fill/NaN values, duplicate or descending energies, and an angular-mode
+conflict are fatal. This adapter is for synthetic tests and explicitly
+qualified user data. The published AMS-02, GOES-16, BON2020, and future AMPS
+products require their dedicated adapters; relabeling them as legacy columns
+is prohibited.
 
 In `beam` mode, spectrum columns are interpreted as differential pencil-beam source rates, for example:
 
@@ -370,6 +627,24 @@ The code applies the `pi` angular factor for isotropic plane-crossing flux.
 
 ## Output files
 
+### `<prefix>__<absorber>_resolved_case.json`
+
+Canonical input/provenance manifest written before transport (and by
+`--validate-case`). It contains the resolved 0.10 default when applicable,
+both geometric and areal layer thicknesses, full resolved material records,
+source metadata and hash, geometry and absorber hashes, compiler/build/source
+revision, Geant4 version/data paths, seed, and capability status.
+
+### `<prefix>__<absorber>_result.json`
+
+Canonical `shieldSim.result.v1` result written after each adaptive batch, with
+the final file representing all cumulative histories. It records quantity
+definition, value/unit/normalization, deposition ledgers or H100/10 numerator
+and denominator, statistical and systematic uncertainty state, 95% interval,
+accuracy status/reason, and `implemented_not_physically_validated_stage1`.
+H100/10 uses a bounded Wilson 95% interval. JSON `null`, rather than zero or
+infinity, represents an undefined value.
+
 ### `shieldSim_spectra.dat`
 
 Tecplot-format differential spectra. Energy is MeV total kinetic energy per particle.
@@ -383,7 +658,9 @@ For isotropic mode, normalized units are `particles/(cm2 s MeV)` if the input sp
 
 ### `shieldSim_quantities.dat`
 
-Tecplot-format scalar quantity table.  One row is written for each selected target material in each shielding configuration.  In sweep mode a new zone is appended for every shield thickness.
+Tecplot-format compatibility scalar table. A versioned case creates one file
+per independent absorber. In legacy sweep mode a new zone is appended for each
+shield thickness.
 
 - TID columns: `Gy/primary`, `rad/primary`, `Gy/s`, `rad/s`.
 - DDD columns: `MeV/g/primary`, `MeV/g/s`, and rad-equivalent conversions.
@@ -414,19 +691,24 @@ Written only when requested with:
 --dump-run-summary=<file>
 ```
 
-This is a machine-readable diagnostic used by the Layer-3 tests.  It repeats
+This is a machine-readable diagnostic used by the Layer-3 tests. It repeats
 integrated quantities such as source normalization, transmitted counts, TID,
-DDD, `n_eq`, and H100/10 in simple keyword rows.  The normal Tecplot files remain
-the science-facing outputs.
+DDD, `n_eq`, and H100/10 in simple keyword rows. It also includes H100/10
+numerator/denominator counts and total/ionizing/non-ionizing deposit ledgers.
+For a versioned run, the `_resolved_case.json` manifest is the authoritative
+input/provenance record; output validation status must be considered before use.
 
 ## Notes and limitations
 
 - The default physics list is `FTFP_BERT`, and the runtime option `--physics-list=` supports `FTFP_BERT`, `FTFP_BERT_HP`, `Shielding`, and `QGSP_BIC_HP`.
-- The built-in material catalog is intended for shielding trade studies.  Use `G4_` NIST names or replace the custom definitions if an exact alloy, polymer formulation, composite layup, or regolith composition is required.
+- The compiled built-in catalog exists for legacy regression only. Versioned
+  cases use `data/material_library.v1.json` and immutable overrides.
 - The isotropic source uses a finite upstream plane, not an infinite half-space source. Very oblique trajectories can interact with the finite side boundaries.
-- The default detector transverse size is 5 cm × 5 cm. Dose per primary depends on the scoring mass and therefore on this finite detector area.
-- DDD and n_eq are based on a transparent analytic NIEL surrogate, not authoritative material-specific NIEL tables.  Replace the NIEL function for final electronics-damage analyses.
-- LET spectra use a Bethe-Bloch estimate for binning.  Use NIST/Geant4 stopping-power tables if high-accuracy LET spectra are required.
+- The 5 cm × 5 cm detector is a legacy default only. Versioned cases require
+  every transverse dimension. Dose per primary depends on finite absorber mass.
+- Legacy DDD/n_eq use an analytic NIEL surrogate and legacy LET uses a
+  transmitted-spectrum Bethe-Bloch estimate. They are disabled in versioned
+  cases and must not be used for final electronics-damage analysis.
 
 ## Testing and Diagnostic Options
 

@@ -1,0 +1,67 @@
+{
+  "schema_version": "shieldSim.case.v1",
+  "case_id": "stage1_two_layer_two_absorber_example",
+  "purpose": "verification_test",
+  "material_library": {
+    "path": "../data/material_library.v1.json",
+    "library_id": "shieldSim.reference_materials",
+    "library_version": "1.0.0"
+  },
+  "material_overrides": [],
+  "geometry": {
+    "coordinate_frame": {"name": "world_cartesian_mm", "slab_normal": "+z", "origin": "world_center"},
+    "world": {
+      "size_x": {"value": 80.0, "unit": "mm"},
+      "size_y": {"value": 80.0, "unit": "mm"},
+      "size_z": {"value": 80.0, "unit": "mm"},
+      "center_x": {"value": 0.0, "unit": "mm"},
+      "center_y": {"value": 0.0, "unit": "mm"},
+      "center_z": {"value": 0.0, "unit": "mm"}
+    },
+    "source_plane": {
+      "size_x": {"value": 50.0, "unit": "mm"},
+      "size_y": {"value": 50.0, "unit": "mm"},
+      "center_x": {"value": 0.0, "unit": "mm"},
+      "center_y": {"value": 0.0, "unit": "mm"},
+      "z": {"value": -35.0, "unit": "mm"}
+    },
+    "shield_stack": {
+      "size_x": {"value": 50.0, "unit": "mm"},
+      "size_y": {"value": 50.0, "unit": "mm"},
+      "center_x": {"value": 0.0, "unit": "mm"},
+      "center_y": {"value": 0.0, "unit": "mm"},
+      "front_z": {"value": -20.0, "unit": "mm"},
+      "layers": [
+        {"layer_id": "outer_al", "material": "Al", "thickness": {"type": "areal_density", "value": 0.2699, "unit": "g/cm2"}},
+        {"layer_id": "inner_hdpe", "material": "HDPE", "thickness": {"type": "geometric", "value": 2.0, "unit": "mm"}}
+      ]
+    },
+    "absorbers": [
+      {"absorber_id": "water_proxy", "material": "Water", "geometry": {"type": "slab", "size_x": {"value": 50.0, "unit": "mm"}, "size_y": {"value": 50.0, "unit": "mm"}, "center_x": {"value": 0.0, "unit": "mm"}, "center_y": {"value": 0.0, "unit": "mm"}, "thickness": {"value": 1.0, "unit": "mm"}, "front_z": {"value": -16.0, "unit": "mm"}}},
+      {"absorber_id": "silicon_proxy", "material": "Si", "geometry": {"type": "slab", "size_x": {"value": 50.0, "unit": "mm"}, "size_y": {"value": 50.0, "unit": "mm"}, "center_x": {"value": 0.0, "unit": "mm"}, "center_y": {"value": 0.0, "unit": "mm"}, "thickness": {"value": 1.0, "unit": "mm"}, "front_z": {"value": -16.0, "unit": "mm"}}}
+    ]
+  },
+  "source": {
+    "mode": "beam",
+    "spectrum": {"format": "legacy_three_column", "path": "../tests/data/mono_100MeV_proton.dat", "metadata_path": "../tests/data/mono_spectrum_metadata.v1.json"},
+    "energy_limits": {
+      "proton": {"min": {"value": 100.0, "unit": "MeV"}, "max": {"value": 100.0, "unit": "MeV"}},
+      "alpha": {"min": {"value": 100.0, "unit": "MeV"}, "max": {"value": 100.0, "unit": "MeV"}}
+    }
+  },
+  "quantities": ["TID", "H100/10"],
+  "accuracy": {
+    "scope": "combined",
+    "coverage": {"standard_k": 1.0, "standard_probability": 0.68, "interval_probability": 0.95, "interval_method": "student_t_or_exact_bounded"},
+    "systematic_budget": {"status": "incomplete"},
+    "quantity_overrides": {},
+    "sampling": {"min_histories": 100, "max_histories": 1000, "batch_size": 100}
+  },
+  "transport": {
+    "physics_list": "FTFP_BERT",
+    "production_cut": {"value": 0.1, "unit": "mm"},
+    "max_step": {"value": 0.1, "unit": "mm"},
+    "random_seed": 123456
+  },
+  "output": {"prefix": "stage1_example"}
+}

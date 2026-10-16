@@ -17,7 +17,8 @@
  *   DDD       displacement damage dose proxy from NIEL x fluence;
  *   n_eq      1-MeV neutron-equivalent fluence proxy derived from DDD;
  *   LET       transmitted charged-particle fluence spectrum binned by LET;
- *   H100/10   spectral hardness index J(>100 MeV)/J(>10 MeV).
+ *   H100/10   primary-proton shield-exit fluence(E>100 MeV) divided by
+ *             fluence(E>10 MeV), evaluated from exact crossing energies.
  *
  * Important physics boundary between transport and post-processing
  * ----------------------------------------------------------------

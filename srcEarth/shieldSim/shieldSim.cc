@@ -1,140 +1,58 @@
 /* ============================================================================
- * shieldSim.cc
+ * shieldSim.cc -- application assembly and independent-case driver
  *
- * Geant4 energetic-particle shielding prototype
- * ------------------------------------------------
+ * Scope
+ * -----
+ * The versioned Stage-1 path supports spacecraft-anomaly environment-effect
+ * analysis and preliminary mission assessment. It is not an instrument-design,
+ * device-response, or anatomical-phantom tool. CaseDefinition resolves every
+ * unit, dimension, material, source, accuracy request, and transport control
+ * before Geant4 is created. A rejected case never reaches transport.
  *
- * Purpose
- * -------
- * shieldSim transports energetic protons and alpha particles through a planar
- * shielding slab and estimates quantities behind the shield:
+ * A case contains one ordered shield stack and one or more requested absorber
+ * slabs. Absorbers are alternatives, not a physical downstream stack. This
+ * driver rebuilds the geometry for each stable absorber ID, resets tallies and
+ * the random seed, and writes ID-qualified outputs. Consequently an absorber
+ * cannot attenuate another absorber and absorber-array permutation is exactly
+ * testable. DetectorConstruction builds every shield layer explicitly; the
+ * last layer supplies the shield-rear surface used for exit scoring.
  *
- *   1. Differential transmitted spectra of protons, alpha particles, and
- *      secondary neutrons immediately after the downstream shield face.
+ * Materials and geometry
+ * ----------------------
+ * Versioned cases use data/material_library.v1.json plus immutable case-local
+ * records. MaterialFactory instantiates the resolved density, elemental or
+ * explicit-isotope composition, state, temperature, and optional mean
+ * excitation energy. Templates cannot transport. SlabAbsorberGeometry is the
+ * current implementation of the AbsorberGeometry provider boundary; future
+ * mesh/CAD/voxel providers must preserve stable sensitive-region IDs, mass
+ * properties, material mappings, placement, and canonical geometry hashes.
  *
- *   2. Energy-deposition dose in one or more downstream scoring slabs, such as
- *      water and silicon detector layers.
+ * Scoring and accuracy
+ * --------------------
+ * SteppingAction keeps total and non-ionizing deposition separately and derives
+ * ionizing deposition by ledger closure. TID is ionizing energy divided by the
+ * finite absorber mass. H100/10 counts exact shield-exit crossing energies for
+ * primary protons only; alphas, neutrons, and secondary protons are excluded.
+ * EventAction supplies event-level samples to the accuracy controller. BeamOn
+ * is issued in bounded batches until all requested statistical conditions are
+ * met, a known systematic floor makes the request unachievable, or the maximum
+ * history budget is reached. An incomplete combined systematic budget is
+ * reported as not_assessable.
  *
- *   3. Post-processed computed quantities for every selected
- *      shielding x target combination: total ionizing dose (TID),
- *      displacement damage dose proxy (DDD), 1-MeV neutron-equivalent fluence
- *      proxy (n_eq), LET spectra, and the H100/10 spectral hardness index.
- *
- * Geometry
- * --------
- * The detector is a one-dimensional slab stack embedded in vacuum:
- *
- *   upstream source plane -> shield slab -> scoring slab(s) -> downstream gap
- *
- * The default shield is 2 mm Al.  The default scoring stack is 1 mm water plus
- * 1 mm silicon.  Shield materials are resolved using either Geant4/NIST
- * material names or the ShieldSim shielding-material catalog.  Scoring slabs
- * are resolved through the detector/absorber/target catalog, which includes
- * tissue proxies and electronics materials, and then falls back to the shielding
- * catalog and ordinary G4_* names.
- *
- * Material catalogs
+ * Output and status
  * -----------------
- * The allowed short material names shown by --help, --list-materials, and
- * --list-target-materials are defined in include/MaterialCatalog.hh and
- * src/MaterialCatalog.cc.
- *
- * Shielding materials include structural metals, hydrogenous polymers,
- * composites, water, and regolith-like materials.  Some are aliases to
- * Geant4/NIST materials, such as Al -> G4_Al and Water -> G4_WATER.  Other
- * names are custom trade-study materials built by shieldSim, such as BPE, CFRP,
- * LunarRegolith, and MarsRegolith.
- *
- * Detector/target materials include crewed-mission tissue proxies such as Skin,
- * EyeLens, BFO, CNS, and SoftTissue, and electronics materials such as Si,
- * SiO2, SiC, GaAs, InGaAs, Ge, and H2O.  These entries define material
- * composition only.  Biological dose-equivalent weighting, organ weighting,
- * NASA limit checks, and detailed device response functions are not applied.
- *
- * Computed quantities
- * -------------------
- * TID is computed directly from Geant4 energy deposition in the selected target
- * slabs using D = E_dep/m.  DDD and n_eq are computed by folding the transmitted
- * downstream-face spectrum with a documented analytic NIEL surrogate,
- * D_d = integral Phi(E) NIEL(E) dE, then using n_eq = D_d/NIEL_1MeV_neutron.
- * LET spectra are computed by mapping transmitted charged-particle energy bins
- * to target-material LET bins using a self-contained Bethe-Bloch electronic
- * mass-stopping-power approximation.  H100/10 is J(>100 MeV)/J(>10 MeV) for
- * the transmitted p+alpha+n spectrum.  The equations, assumptions, units, and
- * references are documented in include/ComputedQuantities.hh and
- * src/ComputedQuantities.cc.  For production electronics damage studies, replace
- * the analytic NIEL surrogate with tabulated NIEL/SR-NIEL response functions.
- *
- * To add a new material, add a MaterialCatalogEntry in ShieldMaterialCatalog()
- * or DetectorMaterialCatalog().  If the material is already provided by
- * Geant4/NIST, set canonicalName to the G4_* name and isCustom=false.  If it is
- * a new custom material, implement a Build...() function in
- * src/MaterialCatalog.cc, register it in BuildCustomMaterial(), document the
- * density/composition/reference immediately above the builder, and rebuild.
- * The CLI help tables will update automatically because they are generated from
- * the catalogs.
- *
- * Source and normalization
- * ------------------------
- * The generator samples one primary particle per event from either a built-in
- * approximate GCR-like spectrum or a user-provided three-column spectrum file:
- *
- *   E[MeV]   protonSpectrum   alphaSpectrum
- *
- * E is total kinetic energy per particle.  Alpha energy is total alpha kinetic
- * energy, not MeV/nucleon.  Sampling weights are proportional to J(E)dE rather
- * than J(E) alone, and the integral of J(E)dE is stored as a source-normalization
- * factor.  RunAction uses this factor to convert raw Monte Carlo spectra in
- * counts/(MeV primary) to source-normalized spectra.
- *
- * Source modes
- * ------------
- *   beam:
- *     Normal-incidence pencil beam, x=y=0, direction +z.
- *
- *   isotropic:
- *     Uniform finite upstream source plane with cosine-law inward-hemisphere
- *     directions, p(mu)=2mu.  If the input spectrum is particles/(cm2 s sr MeV),
- *     the code applies the pi angular factor to get plane-crossing flux.
- *
- * Algorithm
- * ---------
- *   1. Parse command-line options into Options.
- *   2. Create the Geant4 run manager, detector, selected physics list, primary
- *      generator, run action, event action, and stepping action.
- *      The physics list is selected with --physics-list and created using
- *      G4PhysListFactory.
- *   3. For each requested shield thickness:
- *        a. Build or reinitialize the geometry.
- *        b. Run BeamOn(nEvents).
- *        c. During tracking, SteppingAction scores energy deposition in the
- *           scoring slabs and transmitted particles crossing the shield rear
- *           face in shield-local coordinates.
- *        d. At end of run, RunAction computes dose per primary, source-normalized
- *           dose rate, spectrum-folded DDD/n_eq,
- *           LET spectra, hardness index, and writes spectra/quantity files.
- *   4. Optional diagnostic output for tests can be enabled with
- *      --dump-source-samples, --dump-exit-particles, and
- *      --dump-run-summary.  The source diagnostic records the particle species,
- *      kinetic energy, source position, and direction that PrimaryGeneratorAction
- *      gives to Geant4.  The exit diagnostic records particles accepted by
- *      SteppingAction as crossing the downstream shield face after transforming
- *      the crossing point into the shield-local coordinate system.  The run
- *      summary repeats integrated scalar quantities in a stable machine-readable
- *      format for Layer-3 physics/numerics tests.  These files are intended for
- *      automated verification and regression tests, not for science
- *      post-processing.
- *   5. Optional numerical controls for verification are available through
- *      --production-cut=<mm> and --max-step=<mm>.  The production cut sets the
- *      Geant4 default range cut for secondary production; the maximum step
- *      attaches G4UserLimits to the shield and scoring slabs and registers
- *      G4StepLimiterPhysics.  These controls allow tests of range-cut and
- *      step-size sensitivity of TID, secondary production, DDD, n_eq, and LET.
- *   6. In sweep mode, write the dose-vs-thickness Tecplot table and append one
- *      zone per shielding thickness to the scalar-quantity and LET files.
+ * Each absorber gets a resolved-case manifest, a shieldSim.result.v1 JSON, and
+ * compatibility spectra/tables. The JSON records hashes, code/build/Geant4
+ * provenance, uncertainty state, raw H100/10 counts, deposition ledgers, and
+ * the explicit Stage-1 "implemented, not yet physically validated" status.
+ * DDD, n_eq, and LET are disabled for versioned cases until later roadmap
+ * stages. Their historical analytic implementations remain reachable only
+ * through the legacy CLI for regression compatibility.
  * ========================================================================== */
 
 #include "CLI.hh"
+#include "CaseDefinition.hh"
+#include "BuildProvenance.hh"
 #include "DetectorConstruction.hh"
 #include "ComputedQuantities.hh"
 #include "EventAction.hh"
@@ -151,29 +69,65 @@
 #include <G4SystemOfUnits.hh>
 #include <G4VModularPhysicsList.hh>
 #include <G4ios.hh>
+#include <G4Version.hh>
 #include <Randomize.hh>
 
 #include <cmath>
+#include <cctype>
+#include <cstdlib>
 #include <iomanip>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
-int main(int argc,char** argv){
-  Options opts=ParseArguments(argc,argv);
-  if(opts.showHelp){ PrintHelp(); return 0; }
-  if(opts.listMaterials){
-    G4cout<<"Available shield-material keys and aliases:\n"
-          <<ShieldMaterialCatalogText()<<G4endl;
-    return 0;
+namespace {
+
+std::string SafeId(std::string value){
+  for(char& c:value)
+    if(!(std::isalnum(static_cast<unsigned char>(c)) || c=='_' || c=='-')) c='_';
+  return value;
+}
+
+void WriteResolvedCase(const Options& opts){
+  if(!opts.caseDefinition) return;
+  shield_sim::Json::Object manifest=opts.caseDefinition->resolvedJson.AsObject();
+  const auto& absorber=opts.caseDefinition->absorbers.at(opts.activeAbsorberIndex);
+  manifest["active_absorber_id"]=absorber.id;
+  manifest["active_absorber_geometry_hash"]=absorber.geometryHash;
+  manifest["geant4_version"]=G4Version;
+  manifest["code_revision"]=shield_sim_build::GitRevision;
+  manifest["source_tree_state"]=shield_sim_build::GitState;
+  manifest["compiler"]=shield_sim_build::Compiler;
+  manifest["build_type"]=shield_sim_build::BuildType;
+  manifest["compiler_flags"]=shield_sim_build::CompilerFlags;
+  manifest["platform"]=shield_sim_build::Platform;
+  shield_sim::Json::Object dataLibraries;
+  for(const char* name:{"G4LEDATA","G4NEUTRONHPDATA","G4PARTICLEXSDATA","G4SAIDXSDATA",
+                        "G4ABLADATA","G4ENSDFSTATEDATA","G4INCLDATA","G4PIIDATA",
+                        "G4REALSURFACEDATA"}){
+    const char* value=std::getenv(name);
+    dataLibraries[name]=value ? value : "not_set";
   }
-  if(opts.listTargetMaterials){
-    G4cout<<"Available detector/absorber/target-material keys and aliases:\n"
-          <<DetectorMaterialCatalogText()<<G4endl;
-    return 0;
-  }
-  if(opts.listQuantities){
-    G4cout<<ComputedQuantities::QuantityCatalogText()<<G4endl;
-    return 0;
+  manifest["geant4_data_libraries"]=shield_sim::Json(std::move(dataLibraries));
+  manifest["output_prefix"]=opts.outputPrefix;
+  manifest["run_status"]="stage1_core_not_yet_quantity_validated";
+  const std::string path=opts.outputPrefix+"_resolved_case.json";
+  std::ofstream output(path);
+  if(!output) G4Exception("WriteResolvedCase","Output",FatalException,
+                          ("Cannot write resolved case provenance '"+path+"'").c_str());
+  output<<shield_sim::Json(std::move(manifest)).DumpCanonical()<<'\n';
+}
+
+int RunSimulation(Options opts){
+
+  const std::string caseBasePrefix=opts.outputPrefix;
+  if(opts.caseDefinition){
+    const auto& absorber=opts.caseDefinition->absorbers.at(opts.activeAbsorberIndex);
+    opts.outputPrefix=caseBasePrefix+"__"+SafeId(absorber.id);
+    opts.dumpRunSummaryFile=opts.outputPrefix+"_run_summary.dat";
+    opts.scoringMaterials.clear();
+    opts.scoringMaterials.push_back({absorber.materialId,absorber.thicknessMm*mm});
   }
 
   // Optional deterministic random seed.  This is especially important for
@@ -304,10 +258,42 @@ int main(int argc,char** argv){
 
   runManager->SetUserAction(primaryAction);
   runManager->SetUserAction(runAction);
-  runManager->SetUserAction(new EventAction());
+  runManager->SetUserAction(new EventAction(runAction));
   runManager->SetUserAction(new SteppingAction(runAction));
 
   runManager->Initialize();
+
+  if(opts.caseDefinition){
+    const auto& absorbers=opts.caseDefinition->absorbers;
+    for(std::size_t absorberIndex=0;absorberIndex<absorbers.size();++absorberIndex){
+      const auto& absorber=absorbers[absorberIndex];
+      const std::string prefix=caseBasePrefix+"__"+SafeId(absorber.id);
+      if(absorberIndex>0){
+        detector->SetActiveAbsorber(absorberIndex);
+        runAction->ConfigureIndependentCase(absorberIndex,prefix,absorber.materialId,
+                                            absorber.thicknessMm*mm);
+        runManager->ReinitializeGeometry();
+      }
+      Options manifestOptions=opts;
+      manifestOptions.activeAbsorberIndex=absorberIndex;
+      manifestOptions.outputPrefix=prefix;
+      WriteResolvedCase(manifestOptions);
+      // Reset to the same seed for every absorber. With a common source this
+      // makes results exactly invariant to absorber array ordering, while each
+      // absorber still has an independent Geant4 geometry and tally state.
+      G4Random::setTheSeed(opts.randomSeed);
+      const long maximum=opts.caseDefinition->accuracy.maxHistories;
+      const long batch=opts.caseDefinition->accuracy.batchSize;
+      while(runAction->GetCumulativeEvents()<maximum){
+        const long remaining=maximum-runAction->GetCumulativeEvents();
+        runManager->BeamOn(static_cast<G4int>(std::min(batch,remaining)));
+        if(runAction->AccuracyStatisticallySatisfied()) break;
+      }
+    }
+    delete runManager;
+    G4cout<<"\nAll independent absorber cases completed."<<G4endl;
+    return 0;
+  }
 
   for(G4int step=0;step<(G4int)thicknesses.size();++step){
     G4double tMM=thicknesses[step];
@@ -351,4 +337,41 @@ int main(int argc,char** argv){
   delete runManager;
   G4cout<<"\nSimulation completed."<<G4endl;
   return 0;
+}
+
+} // namespace
+
+int main(int argc,char** argv){
+  Options opts=ParseArguments(argc,argv);
+  if(opts.showHelp){ PrintHelp(); return 0; }
+  if(opts.listMaterials){
+    G4cout<<"Available shield-material keys and aliases:\n"
+          <<ShieldMaterialCatalogText()<<G4endl;
+    return 0;
+  }
+  if(opts.listTargetMaterials){
+    G4cout<<"Available detector/absorber/target-material keys and aliases:\n"
+          <<DetectorMaterialCatalogText()<<G4endl;
+    return 0;
+  }
+  if(opts.listQuantities){
+    G4cout<<ComputedQuantities::QuantityCatalogText()<<G4endl;
+    return 0;
+  }
+
+  if(!opts.caseDefinition) return RunSimulation(opts);
+
+  if(opts.validateCaseOnly){
+    const auto& absorbers=opts.caseDefinition->absorbers;
+    for(std::size_t i=0;i<absorbers.size();++i){
+      Options independent=opts;
+      independent.activeAbsorberIndex=i;
+      independent.outputPrefix=opts.outputPrefix+"__"+SafeId(absorbers[i].id);
+      WriteResolvedCase(independent);
+    }
+    G4cout<<"Validated case '"<<opts.caseDefinition->caseId<<"' with "
+          <<absorbers.size()<<" independent absorber case(s)."<<G4endl;
+    return 0;
+  }
+  return RunSimulation(opts);
 }

@@ -56,6 +56,7 @@ Environment variables:
   EXE_NAME        Executable name. Default: shieldSim
   LOG_DIR         Log directory. Default: layer3_test_logs
   RUN_DIR         Per-case run directory. Default: layer3_test_runs
+  FIGURE_DIR      Validation-figure directory. Default: RUN_DIR/validation_figures
   JOBS            Parallel build jobs. Default: nproc or 2
   SKIP_BUILD      If set to 1, skip CMake configure/build and use EXE_PATH if
                   set; otherwise search BUILD_DIR for EXE_NAME.
@@ -99,6 +100,7 @@ BUILD_DIR="${BUILD_DIR:-build_layer3_tests}"
 EXE_NAME="${EXE_NAME:-shieldSim}"
 LOG_DIR="${LOG_DIR:-layer3_test_logs}"
 RUN_DIR="${RUN_DIR:-layer3_test_runs}"
+FIGURE_DIR="${FIGURE_DIR:-${RUN_DIR}/validation_figures}"
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 2)}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
 DATA_DIR="${SCRIPT_DIR}/data"
@@ -305,6 +307,7 @@ run_case \
   "${EXE_ABS}" \
     --source-mode=beam \
     --spectrum="${DATA_DIR}/mono_100MeV_proton.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
     --shield=Al:1 \
     --target=Si:1 \
     --events="${EVENTS_SHORT}" \
@@ -370,6 +373,7 @@ run_case \
   "${EXE_ABS}" \
     --source-mode=beam \
     --spectrum="${DATA_DIR}/mono_100MeV_proton.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
     --shield=Al:1 \
     --target=Si:1 \
     --events="${EVENTS_SHORT}" \
@@ -385,6 +389,7 @@ run_case \
   "${EXE_ABS}" \
     --source-mode=beam \
     --spectrum="${DATA_DIR}/mono_100MeV_proton_rate10.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
     --shield=Al:1 \
     --target=Si:1 \
     --events="${EVENTS_SHORT}" \
@@ -441,6 +446,7 @@ run_case \
   "${EXE_ABS}" \
     --source-mode=beam \
     --spectrum="${DATA_DIR}/mono_50MeV_proton.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
     --shield=G4_Galactic:0.001 \
     --target=Si:1 \
     --events="${EVENTS_SHORT}" \
@@ -456,6 +462,7 @@ run_case \
   "${EXE_ABS}" \
     --source-mode=beam \
     --spectrum="${DATA_DIR}/mono_150MeV_proton.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
     --shield=G4_Galactic:0.001 \
     --target=Si:1 \
     --events="${EVENTS_SHORT}" \
@@ -498,6 +505,7 @@ run_case \
   "${EXE_ABS}" \
     --source-mode=beam \
     --spectrum="${DATA_DIR}/mono_100MeV_proton.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
     --shield=G4_Galactic:0.001 \
     --target=Si:1 \
     --events="${EVENTS_SHORT}" \
@@ -513,6 +521,7 @@ run_case \
   "${EXE_ABS}" \
     --source-mode=beam \
     --spectrum="${DATA_DIR}/mono_100MeV_alpha.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
     --shield=G4_Galactic:0.001 \
     --target=Si:1 \
     --events="${EVENTS_SHORT}" \
@@ -565,6 +574,7 @@ for phys in FTFP_BERT FTFP_BERT_HP Shielding QGSP_BIC_HP; do
       --physics-list="${phys}" \
       --source-mode=beam \
       --spectrum="${DATA_DIR}/mono_100MeV_proton.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
       --shield=Al:1 \
       --target=Si:1 \
       --events="${EVENTS_SMOKE}" \
@@ -610,6 +620,7 @@ run_case \
     --sweep-n=3 \
     --source-mode=beam \
     --spectrum="${DATA_DIR}/mono_100MeV_proton.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
     --target=Si:1 \
     --events="${EVENTS_SMOKE}" \
     --random-seed=36001 \
@@ -646,6 +657,19 @@ if not all(areal[i] < areal[i+1] for i in range(len(areal)-1)):
 print('areal densities=', areal)
 PY
 
+print_header "Layer 3: analytic and controlled-comparison figures"
+
+if [[ "${N_FAIL}" -eq 0 ]]; then
+  run_check \
+    "Generate Layer-3 validation figures" \
+    "${LOG_DIR}/90_validation_figures.log" \
+    python3 "${SCRIPT_DIR}/generate_layer_validation_figures.py" layer3 \
+      --run-dir="${PROJECT_DIR}/${RUN_DIR}" \
+      --output-dir="${PROJECT_DIR}/${FIGURE_DIR}"
+else
+  echo "${YELLOW}[SKIP]${RESET} Figure generation skipped because a required Layer-3 test failed"
+fi
+
 print_header "Layer 3 test summary"
 
 echo "Total tests: ${N_TOTAL}"
@@ -653,6 +677,7 @@ echo "Passed:      ${N_PASS}"
 echo "Failed:      ${N_FAIL}"
 echo "Logs:        ${LOG_DIR}/"
 echo "Run data:    ${RUN_DIR}/"
+echo "Figures:     ${FIGURE_DIR}/"
 
 if [[ "${N_FAIL}" -eq 0 ]]; then
   echo "${GREEN}All Layer-3 tests passed.${RESET}"

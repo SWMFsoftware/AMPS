@@ -6,10 +6,10 @@
  *
  * Run-level scoring, normalization, and output for shieldSim.
  *
- * SteppingAction adds energy deposition and transmitted-particle counts during
- * tracking.  RunAction resets these accumulators at the beginning of each run,
- * computes dose and source-normalized rates at the end of the run, and writes
- * the diagnostic CSV and Tecplot spectra files.
+ * SteppingAction adds separate total/non-ionizing/ionizing deposition ledgers
+ * and transmitted-particle counts. Versioned runs retain accumulators across
+ * adaptive BeamOn batches, evaluate event-level precision, and emit a canonical
+ * result JSON as well as compatibility diagnostic/Tecplot files.
  * ========================================================================== */
 
 #include "ShieldSimConfig.hh"
@@ -20,10 +20,12 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <memory>
 
 class DetectorConstruction;
 class G4LogicalVolume;
 class G4Run;
+namespace shield_sim { class AccuracyController; }
 
 class RunAction : public G4UserRunAction {
 public:
@@ -55,9 +57,16 @@ public:
                           G4double xLocalMM,  G4double yLocalMM,  G4double zLocalMM,
                           G4double uxLocal,   G4double uyLocal,   G4double uzLocal);
 
-  // Energy deposition is accumulated in Geant4 internal energy units.  Dose is
-  // computed later as Edep/mass and converted to gray only at output time.
-  void AddEdep (std::size_t i,G4double edep);
+  // Separate ledgers are mandatory: TID is ionizing deposited energy/mass,
+  // while total and non-ionizing deposit remain available for closure audits.
+  // Geant4 reports total and non-ionizing deposit per step; ionizing deposit is
+  // their non-negative difference.
+  void AddEdep(std::size_t i,G4double totalEdep,G4double nonIonizingEdep);
+  void AddPrimaryProtonExit(G4double kineticEnergyMeV);
+  void BeginEvent();
+  void EndEvent();
+  bool AccuracyStatisticallySatisfied() const;
+  G4long GetCumulativeEvents() const;
 
   void SetSourceNormalization(G4double normNoAngular,
                               G4double angularFactor,
@@ -67,6 +76,10 @@ public:
   G4double GetIncidentParticleRate() const;
 
   void SetSweepMode(bool on,const std::string& mat,G4double tMM);
+  void ConfigureIndependentCase(std::size_t absorberIndex,
+                                const std::string& outputPrefix,
+                                const std::string& scoringName,
+                                G4double scoringThickness);
   void AppendSweepPoint(const SweepPoint& sp);
   const std::vector<SweepPoint>& GetSweepData() const;
   const std::vector<G4double>&   GetLastDose() const;
@@ -96,6 +109,7 @@ private:
   void WriteComputedQuantitiesTecplot(G4int nEv);
   void WriteLETSpectrumTecplot(G4int nEv);
   void WriteRunSummary(G4int nEv);
+  void WriteResultJson(G4int nEv);
   G4double ComputeHardnessIndex(G4int nEv) const;
 
   Options                     fOpts;
@@ -104,9 +118,14 @@ private:
   std::vector<G4double>       fScoringThick;
 
   std::vector<G4LogicalVolume*> fScoringLVs;
+  std::vector<G4LogicalVolume*> fShieldLVs;
   G4LogicalVolume*            fShieldLV=nullptr;
 
-  std::vector<G4double>       fEdep;
+  std::vector<G4double>       fEdepTotal;
+  std::vector<G4double>       fEdepIonizing;
+  std::vector<G4double>       fEdepNonIonizing;
+  std::vector<G4double>       fLastDoseTotal;
+  std::vector<G4double>       fLastDoseNonIonizing;
   std::vector<G4double>       fLastDose;
   std::vector<G4double>       fLastDoseRate;
   std::vector<G4double>       fLastDDD;
@@ -114,6 +133,15 @@ private:
   std::vector<G4double>       fLastNEq;
   std::vector<G4double>       fLastNEqRate;
   G4double                    fLastHardness=0.0;
+  G4double                    fPrimaryProtonAbove10=0.0;
+  G4double                    fPrimaryProtonAbove100=0.0;
+  std::vector<G4double>       fEventEdepIonizing;
+  bool                        fEventPrimaryProtonAbove10=false;
+  bool                        fEventPrimaryProtonAbove100=false;
+  std::unique_ptr<shield_sim::AccuracyController> fAccuracyController;
+  G4long                      fCumulativeEvents=0;
+  bool                        fCumulativeMode=false;
+  bool                        fAccumulationStarted=false;
   std::vector<G4double>       fInP,fInA,fOutP,fOutA,fOutN;
 
   G4double    fSourceNormNoAngular=0.0;

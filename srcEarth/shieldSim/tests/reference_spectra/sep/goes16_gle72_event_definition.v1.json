@@ -1,0 +1,55 @@
+{
+  "schema_version": "shieldSim.goes_sgps_event_definition.v1",
+  "dataset_id": "GOES16_SGPS_GLE72_2017-09-10",
+  "adapter_version": "GOESRSGPSAdapter.v1",
+  "source_file": {
+    "url": "https://www.ngdc.noaa.gov/stp/space-weather/satellite-data/satellite-systems/goesr/solar_proton_events/sgps_sep2017_event_data/se_sgps-l2-avg5m_g16_s20172440000000_e20172732355000_v2_0_0.nc",
+    "sha256": "sha256:f5da29fe3a7dc3092a311a191ee015d6cb97773c6425e64214db2d0dab5fafb2",
+    "extracted_csv_sha256": "sha256:f2b7901603e5375139c8ed43455a303c7796d91f4f20cec1421dfa1eb1dd257d",
+    "license": "NOAA file metadata: data may be redistributed and used without restriction",
+    "product_id": "se_sgps-l2-avg5m_g16_s20172440000000_e20172732355000_v2_0_0.nc"
+  },
+  "timestamp_semantics": {
+    "source_coordinate": "interval_start",
+    "canonical_coordinate": "midpoint",
+    "cadence_seconds": 300,
+    "sample_support": "[midpoint-150s,midpoint+150s)",
+    "boundary_policy": "duration_weighted_overlap"
+  },
+  "quality_policy": {
+    "required_l1b_records": 300,
+    "required_valid_samples": 300,
+    "require_zero_dead_time_flags": true,
+    "require_zero_out_of_band_flags": true,
+    "require_zero_dynamic_error_flags": true,
+    "missing_policy": "no_interpolation",
+    "uncertainty_policy": "retain_total_do_not_combine_without_covariance"
+  },
+  "windows": [
+    {
+      "id": "gle72_gt100MeV_primary",
+      "role": "primary",
+      "start_utc": "2017-09-10T16:25:00Z",
+      "end_utc": "2017-09-12T22:40:00Z",
+      "definition": ">100 MeV integral proton flux exceeds 1 pfu until the published 0.85 pfu termination threshold",
+      "source_url": "https://ccmc.gsfc.nasa.gov/challenges/sep/events/"
+    },
+    {
+      "id": "spe_gt10MeV_sensitivity",
+      "role": "sensitivity",
+      "start_utc": "2017-09-10T16:45:00Z",
+      "end_utc": "2017-09-14T18:50:00Z",
+      "definition": ">10 MeV integral proton flux exceeds 10 pfu until the published 8.5 pfu termination threshold",
+      "source_url": "https://ccmc.gsfc.nasa.gov/challenges/sep/events/"
+    }
+  ],
+  "markers": [
+    {
+      "id": "NMDB_GLE72_onset",
+      "time_utc": "2017-09-10T16:08:00Z",
+      "role": "independent_onset_marker_not_an_integration_boundary",
+      "source_url": "https://www.nmdb.eu/nest/gle_list.php"
+    }
+  ],
+  "science_status": "published_directional_geosynchronous_event_ingestion_not_transport_boundary"
+}

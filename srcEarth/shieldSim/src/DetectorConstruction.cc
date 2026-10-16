@@ -1,6 +1,9 @@
 #include "DetectorConstruction.hh"
 
+#include "AbsorberGeometry.hh"
+#include "CaseDefinition.hh"
 #include "MaterialCatalog.hh"
+#include "MaterialFactory.hh"
 
 #include <G4Box.hh>
 #include <G4Exception.hh>
@@ -16,10 +19,30 @@ DetectorConstruction::DetectorConstruction(const Options& opts) : fOpts(opts) {}
 DetectorConstruction::~DetectorConstruction() {}
 
 void DetectorConstruction::SetShieldThickness(G4double t){ fOpts.shieldThickness=t; }
+void DetectorConstruction::SetActiveAbsorber(std::size_t index){ fOpts.activeAbsorberIndex=index; }
 const Options& DetectorConstruction::GetOptions() const  { return fOpts; }
 G4LogicalVolume* DetectorConstruction::GetShieldLV() const { return fShieldLV; }
+const std::vector<G4LogicalVolume*>& DetectorConstruction::GetShieldLVs() const { return fShieldLVs; }
 const std::vector<G4LogicalVolume*>& DetectorConstruction::GetScoringLVs() const { return fScoringLVs; }
 G4Box* DetectorConstruction::GetWorldBox() const { return fWorldBox; }
+G4double DetectorConstruction::GetSourcePlaneHalfX() const {
+  if(fOpts.caseDefinition) return fOpts.caseDefinition->sourceSizeXmm*mm/2.0;
+  return fWorldBox ? fWorldBox->GetXHalfLength() : 0.0;
+}
+G4double DetectorConstruction::GetSourcePlaneHalfY() const {
+  if(fOpts.caseDefinition) return fOpts.caseDefinition->sourceSizeYmm*mm/2.0;
+  return fWorldBox ? fWorldBox->GetYHalfLength() : 0.0;
+}
+G4double DetectorConstruction::GetSourcePlaneCenterX() const {
+  return fOpts.caseDefinition ? fOpts.caseDefinition->sourceCenterXmm*mm : 0.0;
+}
+G4double DetectorConstruction::GetSourcePlaneCenterY() const {
+  return fOpts.caseDefinition ? fOpts.caseDefinition->sourceCenterYmm*mm : 0.0;
+}
+G4double DetectorConstruction::GetSourcePlaneZ() const {
+  if(fOpts.caseDefinition) return fOpts.caseDefinition->sourceZmm*mm;
+  return fWorldBox ? -fWorldBox->GetZHalfLength()+1.0*um : 0.0;
+}
 
 G4VPhysicalVolume* DetectorConstruction::Construct() {
   // Construct() may be called multiple times in sweep mode.  Clear all cached
@@ -27,7 +50,51 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
   // the current geometry.
   fWorldBox = nullptr;
   fShieldLV = nullptr;
+  fShieldLVs.clear();
   fScoringLVs.clear();
+
+  // The versioned case path is deliberately separate from the compatibility
+  // CLI path below.  Every dimension and material comes from the resolved case;
+  // no legacy 5-cm world or 1-mm spacing default can leak into this branch.
+  if(fOpts.caseDefinition){
+    const auto& c=*fOpts.caseDefinition;
+    if(fOpts.activeAbsorberIndex>=c.absorbers.size())
+      G4Exception("Detector","AbsorberIndex",FatalException,"Active absorber index is out of range");
+
+    auto* vac=G4NistManager::Instance()->FindOrBuildMaterial("G4_Galactic");
+    auto* wSol=new G4Box("World",c.worldSizeXmm*mm/2.0,c.worldSizeYmm*mm/2.0,c.worldSizeZmm*mm/2.0);
+    auto* wLog=new G4LogicalVolume(wSol,vac,"World");
+    fWorldBox=wSol;
+    auto* wPhys=new G4PVPlacement(nullptr,G4ThreeVector(),wLog,"World",nullptr,false,0);
+
+    if(!fMaterialFactory)
+      fMaterialFactory=std::make_unique<shield_sim::MaterialFactory>(*c.materials);
+    G4double currentFront=c.shieldFrontZmm*mm;
+    for(std::size_t i=0;i<c.shieldLayers.size();++i){
+      const auto& layer=c.shieldLayers[i];
+      auto* material=fMaterialFactory->Resolve(layer.materialId,"shield");
+      const G4double thickness=layer.thicknessMm*mm;
+      const std::string stableId="shield/"+layer.id;
+      auto* solid=new G4Box((stableId+"/solid").c_str(),c.shieldSizeXmm*mm/2.0,
+                            c.shieldSizeYmm*mm/2.0,thickness/2.0);
+      auto* logical=new G4LogicalVolume(solid,material,(stableId+"/logical").c_str());
+      if(c.maxStepMm>0.0) logical->SetUserLimits(new G4UserLimits(c.maxStepMm*mm));
+      new G4PVPlacement(nullptr,G4ThreeVector(c.shieldCenterXmm*mm,c.shieldCenterYmm*mm,
+                                               currentFront+thickness/2.0),logical,
+                        (stableId+"/physical").c_str(),wLog,false,static_cast<G4int>(i),true);
+      fShieldLVs.push_back(logical);
+      currentFront+=thickness;
+    }
+    // The last ordered layer owns the downstream stack face used for exit
+    // scoring.  Internal layer interfaces are never counted as shield exits.
+    fShieldLV=fShieldLVs.back();
+
+    fAbsorberGeometry=std::make_unique<shield_sim::SlabAbsorberGeometry>(
+        c.absorbers[fOpts.activeAbsorberIndex]);
+    const auto built=fAbsorberGeometry->Build(wLog,*fMaterialFactory,c.maxStepMm);
+    for(const auto& region:built.sensitiveRegions) fScoringLVs.push_back(region.logicalVolume);
+    return wPhys;
+  }
 
   auto* nist=G4NistManager::Instance();
 
@@ -70,6 +137,7 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
     shL->SetUserLimits(new G4UserLimits(fOpts.maxStepLength));
 
   fShieldLV = shL;
+  fShieldLVs.push_back(shL);
   G4double zSh=1.*mm+shHz;
   new G4PVPlacement(nullptr,G4ThreeVector(0,0,zSh-wZ/2),shL,"Shield",wLog,false,0,true);
 

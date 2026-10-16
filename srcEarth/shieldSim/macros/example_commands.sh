@@ -17,6 +17,7 @@ set -euo pipefail
 
 # Synthetic tabulated spectrum example.
 ./shieldSim --source-mode=isotropic --spectrum=examples/sep_spectrum.dat \
+            --legacy-spectrum-metadata=examples/sep_spectrum.metadata.v1.json \
             --shield=Al:2 --events=100000
 
 # Dose-vs-thickness sweep over HDPE.

@@ -55,6 +55,7 @@ Environment variables:
   EXE_NAME    Executable name. Default: shieldSim
   LOG_DIR     Log directory. Default: layer2_test_logs
   RUN_DIR     Per-case run directory. Default: layer2_test_runs
+  FIGURE_DIR  Validation-figure directory. Default: RUN_DIR/validation_figures
   JOBS        Parallel build jobs. Default: nproc or 2
   SKIP_BUILD  If set to 1, skip CMake configure/build and use EXE_PATH if set,
               otherwise search BUILD_DIR for EXE_NAME.
@@ -95,6 +96,7 @@ BUILD_DIR="${BUILD_DIR:-build_layer2_tests}"
 EXE_NAME="${EXE_NAME:-shieldSim}"
 LOG_DIR="${LOG_DIR:-layer2_test_logs}"
 RUN_DIR="${RUN_DIR:-layer2_test_runs}"
+FIGURE_DIR="${FIGURE_DIR:-${RUN_DIR}/validation_figures}"
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 2)}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
 DATA_DIR="${SCRIPT_DIR}/data"
@@ -309,6 +311,7 @@ print_header "Layer 2: beam source diagnostic"
 run_case "beam_source" \
   --source-mode=beam \
   --spectrum="${DATA_DIR}/mono_100MeV_proton.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
   --shield=Al:0.01 \
   --target=Si:1 \
   --events=1000 \
@@ -348,6 +351,7 @@ print_header "Layer 2: isotropic source diagnostic"
 run_case "isotropic_source" \
   --source-mode=isotropic \
   --spectrum="${DATA_DIR}/mono_100MeV_proton.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
   --shield=Al:0.01 \
   --target=Si:1 \
   --events=20000 \
@@ -398,6 +402,7 @@ print_header "Layer 2: near-vacuum transmission and shield-exit scoring"
 run_case "vacuum_transmission" \
   --source-mode=beam \
   --spectrum="${DATA_DIR}/mono_100MeV_proton.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
   --shield=G4_Galactic:0.001 \
   --target=Si:1 \
   --events=1000 \
@@ -441,6 +446,7 @@ print_header "Layer 2: detector/target ordering"
 run_case "target_order_water_si" \
   --source-mode=beam \
   --spectrum="${DATA_DIR}/mono_100MeV_proton.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
   --shield=Al:0.01 \
   --target=Water:1,Si:1 \
   --events=200 \
@@ -451,6 +457,7 @@ run_case "target_order_water_si" \
 run_case "target_order_si_water" \
   --source-mode=beam \
   --spectrum="${DATA_DIR}/mono_100MeV_proton.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
   --shield=Al:0.01 \
   --target=Si:1,Water:1 \
   --events=200 \
@@ -475,6 +482,7 @@ print_header "Layer 2: material alias smoke test"
 run_case "alias_al" \
   --source-mode=beam \
   --spectrum="${DATA_DIR}/mono_100MeV_proton.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
   --shield=Al:2 \
   --target=Si:1 \
   --events=100 \
@@ -485,6 +493,7 @@ run_case "alias_al" \
 run_case "alias_g4al" \
   --source-mode=beam \
   --spectrum="${DATA_DIR}/mono_100MeV_proton.dat" \
+  --legacy-spectrum-metadata="${DATA_DIR}/mono_spectrum_metadata.v1.json" \
   --shield=G4_Al:2 \
   --target=Si:1 \
   --events=100 \
@@ -499,6 +508,19 @@ run_check \
   "${RUN_DIR}/alias_al/alias_al_spectra.dat" \
   "${RUN_DIR}/alias_g4al/alias_g4al_spectra.dat"
 
+print_header "Layer 2: analytic comparison figures"
+
+if [[ "${N_FAIL}" -eq 0 ]]; then
+  run_check \
+    "Generate Layer-2 analytic validation figures" \
+    "${LOG_DIR}/90_validation_figures.log" \
+    python3 "${SCRIPT_DIR}/generate_layer_validation_figures.py" layer2 \
+      --run-dir="${PROJECT_DIR}/${RUN_DIR}" \
+      --output-dir="${PROJECT_DIR}/${FIGURE_DIR}"
+else
+  echo "${YELLOW}[SKIP]${RESET} Figure generation skipped because a required Layer-2 test failed"
+fi
+
 print_header "Layer 2 test summary"
 
 echo "Total tests: ${N_TOTAL}"
@@ -506,6 +528,7 @@ echo "Passed:      ${N_PASS}"
 echo "Failed:      ${N_FAIL}"
 echo "Logs:        ${LOG_DIR}/"
 echo "Run outputs: ${RUN_DIR}/"
+echo "Figures:     ${FIGURE_DIR}/"
 
 if [[ "${N_FAIL}" -eq 0 ]]; then
   echo "${GREEN}All Layer-2 tests passed.${RESET}"

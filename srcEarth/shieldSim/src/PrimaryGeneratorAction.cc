@@ -3,6 +3,7 @@
 #include "DetectorConstruction.hh"
 #include "GCRSpectrum.hh"
 #include "RunAction.hh"
+#include "SpectrumDataset.hh"
 
 #include <G4Box.hh>
 #include <G4Event.hh>
@@ -88,10 +89,17 @@ G4double PrimaryGeneratorAction::AngularFactorForMode() const {
 }
 
 void PrimaryGeneratorAction::BuildGCR(){
-  G4double epLo=std::max(1.0,fOpts.eMinProton);
-  G4double epHi=std::min(1.0e5,fOpts.eMaxProton);
-  G4double eaLo=std::max(1.0,fOpts.eMinAlpha);
-  G4double eaHi=std::min(1.0e5,fOpts.eMaxAlpha);
+  // The historical implementation clamped requests into the approximation's
+  // domain.  That changed a scientific input silently.  Stage 1 requires an
+  // explicit failure instead, so the archived request always matches the run.
+  if(fOpts.eMinProton<1.0 || fOpts.eMaxProton>1.0e5 ||
+     fOpts.eMinAlpha <1.0 || fOpts.eMaxAlpha >1.0e5)
+    G4Exception("PrimaryGeneratorAction","GCRDomain",FatalException,
+                "Built-in legacy GCR approximation supports only 1--100000 MeV total kinetic energy; request was not clamped");
+  G4double epLo=fOpts.eMinProton;
+  G4double epHi=fOpts.eMaxProton;
+  G4double eaLo=fOpts.eMinAlpha;
+  G4double eaHi=fOpts.eMaxAlpha;
 
   std::vector<G4double> pF,aF;
   fTotP = BuildLogWeightedTable(epLo,epHi,fEP,pF,GCR::ProtonWeight);
@@ -144,46 +152,30 @@ std::vector<G4double> PrimaryGeneratorAction::EstimateTableBinWidths(
 }
 
 void PrimaryGeneratorAction::ReadFile(const std::string& fn){
-  // Expected format:
-  //   E_MeV   proton_spectrum   alpha_spectrum
-  // Lines beginning with # are ignored.  Spectrum columns are differential
-  // source values: particles/s/MeV in beam mode, or particles/(cm2 s sr MeV)
-  // in isotropic mode if physical output units are desired.
-  std::ifstream f(fn);
-  if(!f) G4Exception("PrimaryGeneratorAction","SpectrumFile",FatalException,("Cannot open spectrum '"+fn+"'").c_str());
-
-  std::vector<std::tuple<G4double,G4double,G4double>> rows;
-  std::string line;
-  while(std::getline(f,line)){
-    if(line.empty()||line[0]=='#') continue;
-    std::istringstream ss(line); G4double E,p,a;
-    if(!(ss>>E>>p>>a)) continue;
-    if(E<=0.0) continue;
-    rows.emplace_back(E,p,a);
+  // Numeric legacy files are accepted only through the strict adapter and a
+  // mandatory metadata sidecar.  The adapter rejects malformed rows, negative
+  // or non-finite values, duplicate/out-of-order energies, and undeclared
+  // single-bin widths instead of skipping, sorting, or clamping them.
+  shield_sim::SpectrumDataset dataset;
+  try {
+    dataset=shield_sim::SpectrumDataset::LoadLegacyThreeColumn(
+        fn,fOpts.legacySpectrumMetadataFile);
+  } catch(const std::exception& error) {
+    G4Exception("PrimaryGeneratorAction","SpectrumFile",FatalException,error.what());
   }
-  if(rows.empty()) G4Exception("PrimaryGeneratorAction","SpectrumFile",FatalException,"Spectrum file is empty or invalid.");
-
-  std::sort(rows.begin(),rows.end(),
-            [](const auto& lhs, const auto& rhs){ return std::get<0>(lhs)<std::get<0>(rhs); });
-
-  std::vector<G4double> Evals;
-  Evals.reserve(rows.size());
-  for(const auto& r:rows) Evals.push_back(std::get<0>(r));
-  std::vector<G4double> width = EstimateTableBinWidths(Evals);
-
   std::vector<G4double> pF,aF;
-  fEP.reserve(rows.size()); fEA.reserve(rows.size());
-  pF.reserve(rows.size());  aF.reserve(rows.size());
+  fEP.reserve(dataset.energyMeV.size()); fEA.reserve(dataset.energyMeV.size());
+  pF.reserve(dataset.energyMeV.size());  aF.reserve(dataset.energyMeV.size());
 
-  for(std::size_t i=0;i<rows.size();++i){
-    G4double E=std::get<0>(rows[i]);
-    G4double p=std::max(0.0,std::get<1>(rows[i]));
-    G4double a=std::max(0.0,std::get<2>(rows[i]));
+  for(std::size_t i=0;i<dataset.energyMeV.size();++i){
+    G4double E=dataset.energyMeV[i];
+    G4double p=dataset.protonValue[i];
+    G4double a=dataset.alphaValue[i];
     if(E<fOpts.eMinProton||E>fOpts.eMaxProton) p=0;
     if(E<fOpts.eMinAlpha ||E>fOpts.eMaxAlpha)  a=0;
     fEP.push_back(E); fEA.push_back(E);
-    pF.push_back(p*width[i]);
-    aF.push_back(a*width[i]);
+    pF.push_back(p*dataset.binWidthMeV[i]);
+    aF.push_back(a*dataset.binWidthMeV[i]);
   }
 
   fTotP=0; for(auto v:pF) fTotP+=v;
@@ -202,6 +194,8 @@ void PrimaryGeneratorAction::ReadFile(const std::string& fn){
   fSourceAngularFactor = AngularFactorForMode();
 
   G4cout<<"[Spectrum file] "<<fn
+        <<"  dataset="<<dataset.id
+        <<"  hash="<<dataset.contentHash
         <<"  source-mode="<<fOpts.sourceMode
         <<"  integral(no angular factor)="<<fSourceNormNoAngular
         <<"  angular factor="<<fSourceAngularFactor<<G4endl;
@@ -223,11 +217,18 @@ void PrimaryGeneratorAction::ConfigureSourcePositionAndDirection(){
   }
 
   const G4double eps = 1.0*um;
-  const G4double z0  = -worldBox->GetZHalfLength()+eps;
+  const G4double z0  = fDetector ? fDetector->GetSourcePlaneZ()
+                                 : -worldBox->GetZHalfLength()+eps;
 
   if(fOpts.sourceMode=="isotropic"){
-    const G4double x = (2.0*G4UniformRand()-1.0)*(worldBox->GetXHalfLength()-eps);
-    const G4double y = (2.0*G4UniformRand()-1.0)*(worldBox->GetYHalfLength()-eps);
+    const G4double halfX = fDetector ? fDetector->GetSourcePlaneHalfX()
+                                     : worldBox->GetXHalfLength();
+    const G4double halfY = fDetector ? fDetector->GetSourcePlaneHalfY()
+                                     : worldBox->GetYHalfLength();
+    const G4double centerX=fDetector ? fDetector->GetSourcePlaneCenterX() : 0.0;
+    const G4double centerY=fDetector ? fDetector->GetSourcePlaneCenterY() : 0.0;
+    const G4double x = centerX+(2.0*G4UniformRand()-1.0)*std::max(0.0,halfX-eps);
+    const G4double y = centerY+(2.0*G4UniformRand()-1.0)*std::max(0.0,halfY-eps);
 
     // Isotropic intensity crossing a plane has p(mu)=2*mu for mu in [0,1].
     const G4double mu  = std::sqrt(G4UniformRand());
@@ -241,7 +242,8 @@ void PrimaryGeneratorAction::ConfigureSourcePositionAndDirection(){
     fGun->SetParticlePosition(fLastSourcePosition);
     fGun->SetParticleMomentumDirection(fLastSourceDirection);
   } else {
-    fLastSourcePosition = G4ThreeVector(0,0,z0);
+    fLastSourcePosition = G4ThreeVector(fDetector?fDetector->GetSourcePlaneCenterX():0.0,
+                                        fDetector?fDetector->GetSourcePlaneCenterY():0.0,z0);
     fLastSourceDirection = G4ThreeVector(0,0,1);
     fGun->SetParticlePosition(fLastSourcePosition);
     fGun->SetParticleMomentumDirection(fLastSourceDirection);
