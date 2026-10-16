@@ -811,6 +811,24 @@ def srcsep3d_steps(out: Path, args: argparse.Namespace) -> List[Step]:
                "--amps", "./amps", "--output-dir", str(out / "point-sampling")]],
              reader=read_bracket_text,
              runner="srcSEP3D/test/run_point_sampling_native.py", long=True),
+        Step("pitch-angle-native",
+             "run_pitch_angle_native.py: focused-diffusion mover with the "
+             "pitch-angle library on 1 and 4 ranks (model installed, zero mover "
+             "failures, rank-independent ledger, start-up refusals; PAN01-PAN06)",
+             [["python3", "srcSEP3D/test/run_pitch_angle_native.py",
+               "--amps", "./amps", "--output-dir", str(out / "pitch-angle-native")]],
+             reader=read_bracket_text,
+             runner="srcSEP3D/test/run_pitch_angle_native.py", long=True),
+        Step("pitch-angle-library",
+             "pitch_angle_diffusion/run_all_tests.py: pitch-angle library unit "
+             "tests (PAD01-PAD12), independent references (PAR01-PAR11) and the "
+             "statistical acceptance campaign (AP-*; reused when the acceptance "
+             "binary is unchanged, ~1.5 h otherwise)",
+             [["python3", "src/models/sep_common/pitch_angle_diffusion/run_all_tests.py",
+               "--json", str(out / "pitch-angle-library.json")]],
+             reader=read_bracket_text,
+             runner="src/models/sep_common/pitch_angle_diffusion/run_all_tests.py",
+             long=True),
         Step("viewer-tests", "test_shock_front_viewer.py unit tests (no AMPS run)",
              [["python3", "srcSEP3D/test/test_shock_front_viewer.py"]],
              reader=read_unittest, runner="srcSEP3D/test/test_shock_front_viewer.py"),

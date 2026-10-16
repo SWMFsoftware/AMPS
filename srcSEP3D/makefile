@@ -59,6 +59,15 @@ PARALLEL_DIFFUSION_ARCHIVE ?= $(PARALLEL_DIFFUSION_DIR)/libparallel_diffusion.a
 PARALLEL_DIFFUSION_OBJECTS := \
     $(PARALLEL_DIFFUSION_DIR)/build/parallel_diffusion.o \
     $(PARALLEL_DIFFUSION_DIR)/build/parallel_diffusion_advanced.o
+# Pitch-angle diffusion coefficient library (Release A; physics:
+# pitch_angle_diffusion, used by the focused-diffusion mover when
+# transport.pitch_angle_diffusion_model = pitch-angle-library).
+PITCH_ANGLE_DIFFUSION_DIR ?= $(SEP_COMMON_DIR)/pitch_angle_diffusion
+PITCH_ANGLE_DIFFUSION_ARCHIVE ?= $(PITCH_ANGLE_DIFFUSION_DIR)/libpitch_angle_diffusion.a
+PITCH_ANGLE_DIFFUSION_OBJECTS := \
+    $(PITCH_ANGLE_DIFFUSION_DIR)/build/pitch_angle_diffusion.o \
+    $(PITCH_ANGLE_DIFFUSION_DIR)/build/pitch_angle_kernels.o \
+    $(PITCH_ANGLE_DIFFUSION_DIR)/build/pitch_angle_certification.o
 SWCME_DIR ?= $(AMPS_ROOT)/src/models/swcme
 SWCME_ARCHIVE ?= $(SWCME_DIR)/swcme.a
 SWCME_OBJECTS := $(SWCME_DIR)/build/swcme3d.o
@@ -257,7 +266,8 @@ STAGE1_TEST_SRC := \
     test/individual-test/test_swcme_background.cpp \
     test/individual-test/test_sse.cpp \
     test/individual-test/test_reduced_shock_front.cpp \
-    test/individual-test/test_point_sampling.cpp
+    test/individual-test/test_point_sampling.cpp \
+    test/individual-test/test_pitch_angle_binding.cpp
 STAGE1_TEST_OBJ := $(STAGE1_TEST_SRC:.cpp=.o)
 
 SEP_COMMON_INCLUDES := -I$(SEP_COMMON_DIR)
@@ -289,7 +299,7 @@ sep-corona-swcme:
 
 $(SEP_CORONA_SWCME_ARCHIVE): sep-corona-swcme
 
-lib: $(SEP_COMMON_ARCHIVE) $(PARALLEL_DIFFUSION_ARCHIVE) \
+lib: $(SEP_COMMON_ARCHIVE) $(PARALLEL_DIFFUSION_ARCHIVE) $(PITCH_ANGLE_DIFFUSION_ARCHIVE) \
      $(SWCME_ARCHIVE) $(SEP_CORONAL_CME_ARCHIVE) \
      $(SEP_CORONA_SWCME_ARCHIVE) $(MAINLIBOBJ)
 	# Keep the enclosing AMPS link contract unchanged: common objects are built
@@ -298,11 +308,11 @@ lib: $(SEP_COMMON_ARCHIVE) $(PARALLEL_DIFFUSION_ARCHIVE) \
 	# member from a previous application version.
 	rm -f mainlib.a
 	ar -rcs mainlib.a $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) \
-		$(PARALLEL_DIFFUSION_OBJECTS) $(SWCME_OBJECTS) \
+		$(PARALLEL_DIFFUSION_OBJECTS) $(PITCH_ANGLE_DIFFUSION_OBJECTS) $(SWCME_OBJECTS) \
 		$(SEP_CORONAL_CME_OBJECTS) $(SEP_CORONA_SWCME_OBJECTS)
 	@members=$$(ar t mainlib.a); \
 	for member in $(notdir $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) \
-		$(PARALLEL_DIFFUSION_OBJECTS) $(SWCME_OBJECTS) \
+		$(PARALLEL_DIFFUSION_OBJECTS) $(PITCH_ANGLE_DIFFUSION_OBJECTS) $(SWCME_OBJECTS) \
 		$(SEP_CORONAL_CME_OBJECTS) $(SEP_CORONA_SWCME_OBJECTS)); do \
 	  count=$$(printf '%s\n' "$$members" | awk -v expected="$$member" \
 	    '$$0 == expected { found++ } END { print found + 0 }'); \
@@ -381,7 +391,7 @@ audit-production-symbols:
 	fi
 	@members=$$(ar t $(PRODUCTION_ARCHIVE_DIR)/mainlib.a); \
 	for member in $(notdir $(MAINLIBOBJ) $(SEP_COMMON_OBJECTS) \
-		$(PARALLEL_DIFFUSION_OBJECTS) $(SWCME_OBJECTS) \
+		$(PARALLEL_DIFFUSION_OBJECTS) $(PITCH_ANGLE_DIFFUSION_OBJECTS) $(SWCME_OBJECTS) \
 		$(SEP_CORONAL_CME_OBJECTS) $(SEP_CORONA_SWCME_OBJECTS)); do \
 	  count=$$(printf '%s\n' "$$members" | \
 	    awk -v expected="$$member" '$$0 == expected { found++ } \
@@ -425,6 +435,14 @@ parallel-diffusion:
 
 $(PARALLEL_DIFFUSION_ARCHIVE): parallel-diffusion
 
+# The pitch-angle library follows the same pattern: built and verified in its
+# shared-model directory, its two objects flattened into mainlib.a.
+.PHONY: pitch-angle-diffusion
+pitch-angle-diffusion:
+	$(MAKE) -C $(PITCH_ANGLE_DIFFUSION_DIR) -f makefile all
+
+$(PITCH_ANGLE_DIFFUSION_ARCHIVE): pitch-angle-diffusion
+
 .PHONY: swcme
 swcme:
 	$(MAKE) -C $(SWCME_DIR)
@@ -466,10 +484,10 @@ validation/%.o: validation/%.cpp
 
 test/stage1: check-layering $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(VALIDATION_OBJ) $(STAGE1_TEST_OBJ) \
              $(SEP_CORONA_SWCME_ARCHIVE) $(SEP_CORONAL_CME_ARCHIVE) \
-             $(SEP_COMMON_ARCHIVE) $(PARALLEL_DIFFUSION_ARCHIVE) $(SWCME_ARCHIVE)
+             $(SEP_COMMON_ARCHIVE) $(PARALLEL_DIFFUSION_ARCHIVE) $(PITCH_ANGLE_DIFFUSION_ARCHIVE) $(SWCME_ARCHIVE)
 	$(CXX) -o $@ $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(VALIDATION_OBJ) $(STAGE1_TEST_OBJ) \
 	  $(SEP_CORONA_SWCME_ARCHIVE) $(SEP_CORONAL_CME_ARCHIVE) \
-	  $(SEP_COMMON_ARCHIVE) $(PARALLEL_DIFFUSION_ARCHIVE) $(SWCME_ARCHIVE)
+	  $(SEP_COMMON_ARCHIVE) $(PARALLEL_DIFFUSION_ARCHIVE) $(PITCH_ANGLE_DIFFUSION_ARCHIVE) $(SWCME_ARCHIVE)
 	@echo "[srcSEP3D] standalone test binary built: test/stage1"
 
 # Generated dependency files make additions to public option/provider records

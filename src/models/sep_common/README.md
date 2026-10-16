@@ -66,6 +66,18 @@ not call it yet, and its
 focused-mover binding. Standalone coefficient tests are not particle-mover,
 native, MPI or event validation.
 
+The [`pitch_angle_diffusion`](pitch_angle_diffusion/README.md) library is the
+host-neutral Release A implementation of `PITCH_ANGLE_SCATTERING_MODEL.md`
+v1.2: prescribed D_μμ shapes (PA-ISO, PA-QFORM, PA-EPS, PA-EPREM) normalized
+per particle to a λ∥ law, three scattering step rules, the pure scattering
+kernels with an independent finite-volume reference operator, and a
+coefficient-kernel certification matrix derived from its statistical
+acceptance campaign.  srcSEP3D's focused-diffusion mover consumes it through
+`pitch_angle_diffusion_model = pitch-angle-library` and flattens its three
+objects into the application archive; srcSEP remains unbound.  Its stage
+ledger (`IMPLEMENTATION_STATUS.md`) separates library, component and native
+evidence; the canonical data archive (roadmap PS01) is not available.
+
 ## Shared runtime-input vocabulary (`sep_input_layout.h`)
 
 `sep_input_layout.h` is the single table of the shared SEP runtime-input

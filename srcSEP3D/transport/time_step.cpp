@@ -29,6 +29,7 @@ const char* Name(StepLimiter limiter) {
     case StepLimiter::FieldVariation: return "field-variation";
     case StepLimiter::ShockCrossing: return "shock-crossing";
     case StepLimiter::SnapshotBoundary: return "snapshot-boundary";
+    case StepLimiter::PitchAngleScattering: return "pitch-angle-scattering";
   }
   return "unknown";
 }
@@ -60,6 +61,12 @@ TimeStepSelection SelectTimeStep(const TimeStepControls& controls,
       return result;
     }
   }
+  // +inf means "no scattering rule"; zero, negative or NaN is invalid (a
+  // library step rule never returns a non-positive interval as success).
+  if (!(physics.pitchAngleScatteringLimitS > 0.0)) {
+    result.status = Invalid("pitch-angle scattering step limit must be positive");
+    return result;
+  }
   if (physics.requestedS == 0.0 || physics.cellSizeM == 0.0) {
     result.status = Invalid("requested step and cell size must be positive");
     return result;
@@ -84,7 +91,8 @@ TimeStepSelection SelectTimeStep(const TimeStepControls& controls,
           ? controls.shockCrossingFraction * physics.timeToShockCrossingS
           : infinity,
       physics.timeToSnapshotBoundaryS > 0.0
-          ? physics.timeToSnapshotBoundaryS : infinity}};
+          ? physics.timeToSnapshotBoundaryS : infinity,
+      physics.pitchAngleScatteringLimitS}};
 
   std::size_t selected = 0;
   for (std::size_t i = 1; i < result.candidatesS.size(); ++i) {

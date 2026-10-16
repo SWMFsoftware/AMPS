@@ -52,6 +52,11 @@ struct LocalTransportRecord {
   double dKappaParallelDsMPerS = 0.0;
   double dMuMuPerS = 0.0;
   double dDmuMuDmuPerS = 0.0;
+  // Scattering step limit [s] supplied by the pitch-angle library's step rule
+  // (focused-diffusion with pitch_angle_diffusion_model = pitch-angle-library);
+  // +inf otherwise, which leaves the substep selection of the other D_mumu
+  // models unchanged.
+  double pitchAngleScatteringLimitS = std::numeric_limits<double>::infinity();
   std::uint32_t parallelDiffusionDiagnosticMask = 0;
   std::string parallelDiffusionModelId;
   std::string parallelDiffusionConfigurationFingerprint;

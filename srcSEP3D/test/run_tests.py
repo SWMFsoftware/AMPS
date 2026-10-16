@@ -145,6 +145,7 @@ TESTS: Tuple[TestDefinition, ...] = (
     # Shared srcSEP/srcSEP3D schema-6 vocabulary (sep_input_layout.h).
     TestDefinition("CFG3D18", "CFG3D", "Shared SEP vocabulary (schema 6)", "cpp"),
     TestDefinition("CFG3D19", "CFG3D", "Point-sampling input", "cpp"),
+    TestDefinition("CFG3D20", "CFG3D", "Pitch-angle library input", "cpp"),
     TestDefinition("DOM3D01", "DOM3D", "Whole-corridor corner bounds", "source"),
     TestDefinition("DOM3D02", "DOM3D", "Solar sphere and photospheric coarsening", "source"),
     TestDefinition("DOM3D03", "DOM3D", "Connected sphere/corridor AMR allocation", "source"),
@@ -232,6 +233,9 @@ TESTS: Tuple[TestDefinition, ...] = (
     TestDefinition("PS3D02", "PS3D", "Point-sampling kinematics", "cpp"),
     TestDefinition("PS3D03", "PS3D", "Point-sampling accumulation and product", "cpp"),
     TestDefinition("PS3D04", "PS3D", "Point-sampling input grammar", "cpp"),
+    TestDefinition("PAD3D01", "PAD3D", "Pitch-angle library coefficient bridge", "cpp"),
+    TestDefinition("PAD3D02", "PAD3D", "Focused kick equals library kernel", "cpp"),
+    TestDefinition("PAD3D03", "PAD3D", "Focused composer with library coefficient", "cpp"),
     TestDefinition("NAT3D07", "NAT3D", "Output schema and publication", "cpp"),
     TestDefinition("NAT3D08", "NAT3D", "Shock crossing dispatch", "cpp"),
     TestDefinition("SHK3D01", "SHK3D", "Dimensional source identity", "cpp"),
@@ -354,7 +358,7 @@ SUITES: Dict[str, Tuple[str, ...]] = {
                      item.test_id in ("COEF3D01", "COEF3D02", "COEF3D06",
                                       "COEF3D07", "COEF3D08")),
     "phase-p": tuple(item.test_id for item in TESTS
-                     if item.group in ("PRK3D", "FTE3D", "RNG3D") or
+                     if item.group in ("PRK3D", "FTE3D", "RNG3D", "PAD3D") or
                      item.test_id in ("COEF3D03", "COEF3D04", "COEF3D05",
                                       "POP3D01")),
     "phase-a": tuple(item.test_id for item in TESTS
@@ -1633,6 +1637,7 @@ def _check_makefile_relocation(definition: TestDefinition,
         "sep_coefficient_registry.o sep_background_snapshot.o "
         "sep_test_registry.o sep_injection_spectrum.o sep_species_source.o "
         "parallel_diffusion.o parallel_diffusion_advanced.o "
+        "pitch_angle_diffusion.o pitch_angle_kernels.o pitch_angle_certification.o "
         "swcme3d.o common_sep_field_line_exchange.o "
         "common_sep_field_line_bundle_io.o common_sep_coherent_transport.o")
     (fixture / "Makefile").write_text(

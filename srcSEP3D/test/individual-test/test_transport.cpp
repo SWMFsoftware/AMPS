@@ -285,11 +285,12 @@ Result RunPRK3D07() {
 
 Result RunPRK3D08() {
   T::TimeStepControls controls;
-  const std::array<T::StepLimiter, 8> expected = {{
+  const std::array<T::StepLimiter, 9> expected = {{
       T::StepLimiter::Requested, T::StepLimiter::CellCrossing,
       T::StepLimiter::Diffusion, T::StepLimiter::Focusing,
       T::StepLimiter::Cooling, T::StepLimiter::FieldVariation,
-      T::StepLimiter::ShockCrossing, T::StepLimiter::SnapshotBoundary}};
+      T::StepLimiter::ShockCrossing, T::StepLimiter::SnapshotBoundary,
+      T::StepLimiter::PitchAngleScattering}};
   for (std::size_t target = 0; target < expected.size(); ++target) {
     T::TimeStepPhysics physics;
     physics.requestedS = 100.0; physics.cellSizeM = 100.0;
@@ -307,6 +308,7 @@ Result RunPRK3D08() {
     if (target == 5) physics.fractionalFieldVariationPerS = 1.6;
     if (target == 6) physics.timeToShockCrossingS = 0.25;
     if (target == 7) physics.timeToSnapshotBoundaryS = 0.125;
+    if (target == 8) physics.pitchAngleScatteringLimitS = 0.125;
     const auto selected = T::SelectTimeStep(controls, physics);
     if (!selected.status.ok() || selected.limiter != expected[target] ||
         selected.valueS != 0.125)
@@ -319,7 +321,15 @@ Result RunPRK3D08() {
   if (selected.status.code != SEP3D::Core::StatusCode::StepUnderflow ||
       selected.valueS != underflow.requestedS)
     return Fail("underflow was clamped or lost its typed status");
-  return Pass("all named substep limits bind exactly and underflow is never clamped");
+  // A non-positive pitch-angle limit is a typed failure, never a zero step.
+  T::TimeStepPhysics zeroLimit;
+  zeroLimit.requestedS = 1.0;
+  zeroLimit.cellSizeM = 1.0;
+  zeroLimit.pitchAngleScatteringLimitS = 0.0;
+  if (T::SelectTimeStep(controls, zeroLimit).status.ok())
+    return Fail("a zero pitch-angle scattering limit was accepted");
+  return Pass("all nine named substep limits bind exactly, underflow is never "
+              "clamped, a zero scattering limit is refused");
 }
 
 Result RunFTE3D01() {

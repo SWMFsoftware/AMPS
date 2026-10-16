@@ -190,5 +190,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterSseTests();
 std::vector<SEP3D::Testing::Descriptor> RegisterReducedShockFrontTests();
 // PS3D01-PS3D04: point-sampling kernels (output/point_sampling.h).
 std::vector<SEP3D::Testing::Descriptor> RegisterPointSamplingTests();
+std::vector<SEP3D::Testing::Descriptor> RegisterPitchAngleBindingTests();
 
 #endif // SEP3D_CORE_SEP3D_TEST_REGISTRY_H

@@ -446,6 +446,7 @@ differently.  Owners: `srcSEP3D/runtime/configuration_io.cpp` and
 | `physics: shock` | ✓ | ✓ | `authority` (srcSEP: `swcme`; srcSEP3D: `none`, `swcme`) |
 | `physics: swcme` | ✓ | rejected | srcSEP3D: **the SWCME model is not ready yet to be used** -- any `physics: swcme` block stops the parser at its `#begin` line with that diagnosis (user decision 2026-10-12; the six SWCME example decks are kept as rejected fixtures).  srcSEP: canonical SWCME model (library vocabulary, units in the value); srcSEP rejects the 3-D keys listed in `SwcmeThreeDimensionalKeys()` (CME shape, width, direction and rotation axis `geometry.*`, `surface.*`; the 1-AU thicknesses `geometry.sheath_thickness_1au`/`ejecta_thickness_1au` are shared) and accepts `parker.solar_rotation_rate_rad_per_s` only at its fixed SWCME1D rate |
 | `physics: parallel_diffusion` | ✓ | ✓ | shared parallel-diffusion library |
+| `physics: pitch_angle_diffusion` | – | ✓ | shared pitch-angle diffusion library (Release A), required exactly when `application: sep` / `transport` selects `pitch_angle_diffusion_model = pitch-angle-library` with `transport = focused-diffusion`; see 5.8 |
 | `physics: shock_front` | – | ✓ | reduced shock-front event, usually `#include`d from its event file |
 | `source: shock` | ✓ | ✓ | srcSEP3D: `model` (required, explicit particle-source model: `reduced-shock-front`, the reduced front of `physics: shock_front`, is the only accepted value; `model = swcme` stops with the not-ready diagnosis; an enabled source needs the `physics: shock_front` block).  Both: `enabled`, `samples_per_step`, `minimum_energy_j`, `maximum_energy_j`, `injection_efficiency`, the reference spectrum `spectrum_reference_energy_j`, `spectrum_particle_mass_kg`, `spectrum_charge_number`, `spectrum_normalization`, `spectrum_reference_intensity_per_m2_s_sr_j` (both; both applications currently implement only `spectrum_normalization = relative-only`); rate, spectrum-model and derived-normalization keys (srcSEP3D) |
 | `species` | ✓ | ✓ | `macroparticle_weight` |
@@ -632,6 +633,50 @@ are required; species symbols and point names are unique.
   allocated AMPS mesh (or the radial domain, or an inactive region) stops the
   run at start-up.
 
+### 5.8 Pitch-angle diffusion library (srcSEP3D, `#begin physics: pitch_angle_diffusion`)
+
+The focused-diffusion mover (`transport = focused-diffusion`) takes D_μμ,
+dD_μμ/dμ and a scattering step limit from the shared library
+`src/models/sep_common/pitch_angle_diffusion` when the transport block selects
+
+```text
+#begin application: sep
+  transport = focused-diffusion
+  #begin transport
+    pitch_angle_scheme = reflecting-milstein        ! the certified kernel
+    pitch_angle_diffusion_model = pitch-angle-library
+    ...
+  #end transport
+#end application
+
+#begin physics: pitch_angle_diffusion
+  model = PA-ISO                       ! PA-ISO | PA-QFORM | PA-EPS | PA-EPREM
+                                       ! (PA-EPS takes epsilon, PA-QFORM q and gap_h)
+  lambda_reference_m = 4.48793612e10   ! lambda_par = lambda_ref (R/R_ref)^a (r/r_ref)^b
+  lambda_reference_rigidity_v = 1e9    ! R = p c/|q| [V]
+  lambda_rigidity_exponent = 1/3       ! exact rationals allowed (dimensionless keys)
+  lambda_reference_radius_m = 1.495978707e11
+  lambda_radial_exponent = 2/3         ! r = heliocentric radius [m]
+  step_rule = rate-fraction            ! rate-fraction | van-den-berg-2026 | sandroos-2014
+  rate_fraction = 0.001                ! nu_max dt; 0.001 is the certified limit
+#end physics
+```
+
+The library owns the block grammar and the model schema (unknown, duplicate,
+missing and inactive keys fail with `line N:`); the full key list, the
+shapes, the λ∥ normalization, the three step rules and the certified
+coefficient-kernel pairs are in
+`src/models/sep_common/pitch_angle_diffusion/README.md`.  The configuration is
+refused at start-up when the (model, `pitch_angle_scheme`) pair is not in the
+library's certification matrix (for example PA-QFORM, whose drift is
+unbounded at μ = 0, or a step rule that can exceed the certified ν_max Δt).
+The certified pairs (campaign of 2026-10-13) are PA-ISO and PA-EPREM with
+`reflecting-milstein` at ν_max Δt ≤ 0.001; PA-EPS is evaluable but not
+released with Milstein (its occupation of |μ| < 0.01 fails the acceptance
+budget at every tested step), and `reflecting-euler-maruyama` is not
+certified for any model.
+srcSEP rejects the block with the D3 diagnostic (its binding is deferred).
+
 ## 6. Model files
 
 | Model | File | Block | Reader |
@@ -704,7 +749,9 @@ are exact.
 * srcSEP and srcSEP3D files for the same event still differ where one
   application has no implementation (5.3); those settings are typed errors,
   not silent omissions.
-* The SWCME, parallel-diffusion and model vocabularies are owned and
-  documented by their libraries (`src/models/swcme/README.md`,
+* The SWCME, parallel-diffusion, pitch-angle-diffusion and model
+  vocabularies are owned and documented by their libraries
+  (`src/models/swcme/README.md`,
   `src/models/sep_common/parallel_diffusion/README.md`,
+  `src/models/sep_common/pitch_angle_diffusion/README.md`,
   `src/models/sep_corona_swcme/shock_front/README.md`).

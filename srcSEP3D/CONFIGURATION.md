@@ -500,7 +500,7 @@ coefficient choices in `application.sep.transport.*`:
 | Mover | Required local coefficient | Selectors |
 |---|---|---|
 | `parker` | spatial `kappa_parallel` and its field-aligned gradient | `spatial_diffusion_model = mean-free-path` uses the selected mean-free-path model and `kappa=v lambda/3`; `pitch-angle-integral` evaluates the selected Dμμ model with the declared adaptive-quadrature tolerances. The old `correlation-mean-free-path` spelling is an input-only alias. |
-| `focused-diffusion` | `D_mumu` and `dD_mumu/dmu` | `pitch_angle_diffusion_model = jokipii-1966`, `florinskiy`, or `constant` |
+| `focused-diffusion` | `D_mumu`, `dD_mumu/dmu` (and, for the library, a scattering step limit) | `pitch_angle_diffusion_model = jokipii-1966`, `florinskiy`, `constant`, or `pitch-angle-library` (shared library; requires a `physics: pitch_angle_diffusion` block and a certified (model, `pitch_angle_scheme`) pair, see `README.md` "Shared pitch-angle diffusion") |
 | `focused-scattering` | `lambda_parallel` | `mean_free_path_model = correlation`, `constant`, or `radial-rigidity-power-law`; frame is `plasma-frame-isotropic` or `alfven-wave-frame-isotropic` |
 
 `constant` Dμμ requires positive `constant_dmumu_per_s`; constant mean free

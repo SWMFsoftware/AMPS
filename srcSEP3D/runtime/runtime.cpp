@@ -1,5 +1,6 @@
 #include "runtime.h"
 #include "parallel_diffusion/parallel_diffusion.h"
+#include "pitch_angle_diffusion/pitch_angle_diffusion.h"
 
 #include <algorithm>
 #include <cmath>
@@ -62,6 +63,42 @@ Core::Status InstallParallelDiffusionConfiguration(
     return Core::Status(Core::StatusCode::ConfigurationConflict,
                         "mover-facing parallel-diffusion pointer does not "
                         "match the installed model");
+  return Core::Status::OK();
+}
+
+// Pitch-angle library installation (same serial-initialization contract as
+// the parallel-diffusion library): rebuild the already validated text, check
+// the fingerprint against the immutable configuration, and confirm that the
+// mover-facing pointer targets the installed model before any mover thread
+// can call it.
+Core::Status InstallPitchAngleDiffusionConfiguration(
+    const RunConfiguration3D& configuration) {
+  const RunConfiguration3DOptions& options = configuration.options();
+  if (options.pitchAngleDiffusionModel !=
+      PitchAngleDiffusionModel::PitchAngleLibrary)
+    return Core::Status::OK();
+  std::vector<SEP::PitchAngleDiffusion::InputParameter> parameters;
+  for (const auto& assignment : options.pitchAngleDiffusionParameters)
+    parameters.push_back({assignment.name, assignment.value});
+  const SEP::PitchAngleDiffusion::Status installed =
+      SEP::PitchAngleDiffusion::ConfigureActiveModel(
+          options.pitchAngleDiffusionModelId, parameters);
+  if (!installed.ok())
+    return Core::Status(Core::StatusCode::ConfigurationConflict,
+                        "cannot install pitch-angle-diffusion model: " +
+                        installed.detail);
+  const SEP::PitchAngleDiffusion::ModelConfiguration active =
+      SEP::PitchAngleDiffusion::GetActiveConfiguration();
+  if (SEP::PitchAngleDiffusion::ConfigurationFingerprint(active) !=
+      options.pitchAngleDiffusionConfigurationFingerprint)
+    return Core::Status(Core::StatusCode::ConfigurationConflict,
+                        "installed pitch-angle-diffusion fingerprint differs "
+                        "from immutable srcSEP3D configuration");
+  if (SEP::PitchAngleDiffusion::ActivePitchAngleDiffusion !=
+      SEP::PitchAngleDiffusion::BoundFunctionForModel(active.model))
+    return Core::Status(Core::StatusCode::ConfigurationConflict,
+                        "mover-facing pitch-angle pointer does not match the "
+                        "installed model");
   return Core::Status::OK();
 }
 
@@ -151,6 +188,9 @@ Core::Status Runtime::Configure(
   const Core::Status parallel =
       InstallParallelDiffusionConfiguration(*configuration);
   if (!parallel.ok()) return parallel;
+  const Core::Status pitchAngle =
+      InstallPitchAngleDiffusionConfiguration(*configuration);
+  if (!pitchAngle.ok()) return pitchAngle;
 
   // Commit after all checks.  No layout buffer or provider object is allocated
   // here; the host may inspect the frozen layout before creating an AMPS mesh.
@@ -193,6 +233,9 @@ Core::Status Runtime::ReplaceConfigurationBeforeMesh(
   const Core::Status parallel =
       InstallParallelDiffusionConfiguration(*configuration);
   if (!parallel.ok()) return parallel;
+  const Core::Status pitchAngle =
+      InstallPitchAngleDiffusionConfiguration(*configuration);
+  if (!pitchAngle.ok()) return pitchAngle;
 
   // Commit all configuration-derived clocks together.  Although the first
   // srcSEP3D section key changes only the particle count, keeping this update

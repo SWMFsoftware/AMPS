@@ -13,7 +13,12 @@ SCCM3D/sep-corona tests, the coupled SEP/corona runner and the SWCME-coupled
 `test/run_tests.py --all` (now writing a per-test log `logs/<ID>.log` for each
 test), `test/run_parallel_diffusion_mover_tests.py --all`, the reduced
 shock-front runner and positive 1-AU qualification, the native point-sampling
-acceptance (`point-sampling`), the shock-front viewer tests, the shared `sep_corona_swcme` tests (run with `make -i` so every test
+acceptance (`point-sampling`), the pitch-angle library's global runner
+(`pitch-angle-library`: `src/models/sep_common/pitch_angle_diffusion/run_all_tests.py`,
+its unit, reference and statistical acceptance tests; the acceptance
+campaign, ~2.3 h on 16 idle cores, is reused when its binary is unchanged),
+the native pitch-angle binding smoke test (`pitch-angle-native`:
+`run_pitch_angle_native.py`, PAN01-PAN06), the shock-front viewer tests, the shared `sep_corona_swcme` tests (run with `make -i` so every test
 binary runs; BG3D-4 is still UNQUALIFIED and its FAIL is expected evidence) and
 `sep_coronal_cme` tests, the generic input-reader test (`amps-input`:
 `make -C src/general/input test`), and the orchestrator self-test. `--quick` skips the
@@ -473,13 +478,14 @@ The runner adds
 | `UTIL` | `UTIL02` | byte-exact shared-kernel reference record |
 | `LIFE3D` | `LIFE3D01`–`LIFE3D04` | immutable configuration, state machine, frozen layout, counters, adapter parity, and no-parser boundary |
 | `R3D` | `R3D01`–`R3D09` | mover hook, requested-time loop, snapshot transaction, tick/events, source, observers, restart, canonical initialization source, finite empty-cell output |
-| `CFG3D` | `CFG3D01`–`CFG3D18` | schema-6 input/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, required finite field line and SWCME initialization with the D4 Parker derivation, complete compiled AMPS species binding, turbulence selection, CME/Parker linkage, mover/coefficient and fixed/local source choices, active-corridor connectivity, corner geometry, unified generic runtime-input parsing, global CFL/weight normalization, real-provider preflight, constant-weight shock-surface sampling, the shared parallel-diffusion binding, and the shared SEP vocabulary |
+| `CFG3D` | `CFG3D01`–`CFG3D20` | schema-6 input/CLI, typed contracts, domains, Parker geometry, mesh/memory preflight, required finite field line and SWCME initialization with the D4 Parker derivation, complete compiled AMPS species binding, turbulence selection, CME/Parker linkage, mover/coefficient and fixed/local source choices, active-corridor connectivity, corner geometry, unified generic runtime-input parsing, global CFL/weight normalization, real-provider preflight, constant-weight shock-surface sampling, the shared parallel-diffusion binding, the shared SEP vocabulary, point sampling (`CFG3D19`) and the pitch-angle library input (`CFG3D20`) |
 | `MSH3D` | `MSH3D01`–`MSH3D15` | resolution, exact Parker geometry, balance, octree budget/ownership, presets, gradients, finite line, initialization Tecplot output, conservative active-corridor classification, hole-free AMR topology, and fixed solar-boundary geometry |
 | `BGP3D` | `BGP3D01`–`BGP3D06` | analytic Parker field/plasma identities and polar limits |
 | `SNAP3D` | `SNAP3D01`–`SNAP3D08` | snapshot completeness, coupling conversion, atomicity, interpolation, batch/frame policy |
 | `TUR3D` | `TUR3D01`–`TUR3D06` | spectrum, AWSoM convention, resonance, missing-data policy, selectable spectral/amplitude closures, and mandatory Tecplot energy |
 | `COEF3D` | `COEF3D01`–`COEF3D08` | conversion/shared identity, tensor assembly, Itô drift, rejection, field-aligned gradient stencil, selected-model isolation, and the shared parallel-diffusion library bridge |
-| `PRK3D` | `PRK3D01`–`PRK3D08` | Parker moments, characteristics, PDE/first passage, and named limits |
+| `PRK3D` | `PRK3D01`–`PRK3D08` | Parker moments, characteristics, PDE/first passage, and the nine named substep limits (incl. `pitch-angle-scattering`) |
+| `PAD3D` | `PAD3D01`–`PAD3D03` | pitch-angle library binding: coefficient bridge, focused kick = library kernel, focused composer (Extended) |
 | `FTE3D` | `FTE3D01`–`FTE3D09` | focused streaming, focusing, pitch diffusion/boundaries, event-driven scattering, frame-energy invariants, momentum, and strong-scattering limit |
 | `POP3D` | `POP3D01` | relativistic three-to-two weight, momentum, total-energy, and centroid conservation |
 | `RNG3D` | `RNG3D01`–`RNG3D03` | worker/order independence and random-purpose isolation |
@@ -1088,6 +1094,49 @@ decks became possible with the Runtime clock fix of 2026-10-12: `BeginStep`
 now judges snapshot coverage on the authoritative tick time `tick * dt`
 instead of the accumulated host time, which had drifted one unit in the last
 place below the snapshot start at step 20 (regression check in `R3D04`).
+
+#### Pitch-angle library binding (`PAD3D`, `CFG3D20`, `PRK3D08`)
+
+The focused-diffusion mover can use the shared pitch-angle library
+(`pitch_angle_diffusion_model = pitch-angle-library`, block
+`physics: pitch_angle_diffusion`; `README.md` "Shared pitch-angle diffusion").
+
+| ID | Acceptance contract |
+|---|---|
+| `PAD3D01` | `Turbulence::EvaluateLocalScattering` returns exactly the library's D, dD/dμ and scattering step limit (rate-fraction, van den Berg, Sandroos) at 5 μ, with the solar origin subtracted; a built-in D_μμ model gets no scattering limit |
+| `PAD3D02` | the `Transport::AdvanceFocused` pitch kick equals the library's Milstein/Euler-Maruyama kick for the same keyed normal (6 μ incl. ±1, two steps incl. a folding one), to 4e-16 |
+| `PAD3D03` | Extended (~3.5 min): the production composer with D = 0 reproduces mu(t) = tanh(atanh(mu0) + v t/(2L)) at second order; with library PA-ISO scattering its stationary ⟨μ⟩ = coth ξ − 1/ξ (ξ = 1.5) within 5e-3 including z·SE (z = 2.576, design check z·SE ≤ 1.25e-3) |
+| `CFG3D20` | a deck for the first Milstein row of the library's certification matrix (model and ν_max Δt read from `pitch_angle_certified_pairs.inc`) parses, freezes, enters the physics/restart identity and is installed by `Runtime::Configure`; a missing or inactive block, the Parker mover, the PA-QFORM pair, Euler-Maruyama, a step above the certified value, the uncertified PA-EPS/Milstein pair (while the matrix has no such row) and an unknown key are refused (fails while no Milstein pair is certified) |
+| `PRK3D08` | all nine named substep limiters (now including `pitch-angle-scattering`) bind exactly; a zero scattering limit is refused |
+
+```bash
+./test/stage1 --test PAD3D01 --test PAD3D02 --test PAD3D03 --test CFG3D20 --test PRK3D08
+python3 src/models/sep_common/pitch_angle_diffusion/run_all_tests.py   # from the AMPS root
+```
+
+Native smoke test of the binding (`run_pitch_angle_native.py`, `run_all_test.sh`
+step `pitch-angle-native`).  It copies the reduced-front injection deck
+(`examples/application-input/amps-injection-smoke.in`), switches `sep3d.in` to
+`transport = focused-diffusion` with the library selector, and appends a
+`physics: pitch_angle_diffusion` block for the first Milstein row of the
+library certification matrix (model and `rate_fraction` read from
+`pitch_angle_certified_pairs.inc`; λ∥ = 0.3 AU at 1 GV and 1 AU, exponents 1/3
+and 2/3).  It is an integration smoke test, not focused-transport physics
+validation (the library campaign and `PAD3D01`-`03` carry the physics).
+
+| ID | Acceptance contract |
+|---|---|
+| `PAN01.rank1/.rank4` | the run of `--steps` (default 20) steps exits 0, ends normally and its startup log names the certified model and a 64-hex configuration fingerprint |
+| `PAN02.rank1/.rank4` | the per-step particle ledger (`shocks.csv` of the last publication) shows injected particles and zero mover failures |
+| `PAN03` | the per-step ledger rows are identical on one and four ranks |
+| `PAN04` | a PA-QFORM deck stops at start-up (`--initialization-only`) with the "unbounded" incompatible-pair diagnosis |
+| `PAN05` | the certified deck with `reflecting-euler-maruyama` stops at start-up (Euler-Maruyama is not certified) |
+| `PAN06` | a PA-EPS (ε = 0.048) Milstein deck stops at start-up as an uncertified pair; SKIP when the matrix has a PA-EPS/Milstein row |
+
+```bash
+python3 srcSEP3D/test/run_pitch_angle_native.py --amps ./amps \
+    --output-dir test_output/pitch-angle-native        # after the native srcSEP3D build
+```
 
 #### SWCME not ready (`check_swcme_not_ready.py`, `swcme_suspension.h`)
 

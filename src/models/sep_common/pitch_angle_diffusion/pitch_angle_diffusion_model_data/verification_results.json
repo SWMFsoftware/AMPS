@@ -1,0 +1,1104 @@
+{
+  "scope": "Independent mathematical checks and interface-contract checks; no AMPS integration certification; no v1.1 companion-bundle certification.",
+  "python": "3.12.14",
+  "platform": "Linux-6.18.44-x86_64-with-glibc2.39",
+  "checks": 262,
+  "passed": 262,
+  "failed": 0,
+  "elapsed_seconds": 0.23488903045654297,
+  "bundle_evidence": {
+    "readme_says_version_1_0": true,
+    "registry_ids": 168,
+    "fixtures": 83,
+    "sha256sums_sha256": "aba757e4c214bca1987c5f1a4014359315b8bc8e576a2fd6d39fee9f72dcfd13"
+  },
+  "results": [
+    {
+      "name": "tensor_measure_identity_mu_-0.8_p_0.2",
+      "status": "PASS",
+      "absolute_residual": 2.7369110631344083e-48
+    },
+    {
+      "name": "tensor_noise_covariance_mu_-0.8",
+      "status": "PASS"
+    },
+    {
+      "name": "log_momentum_ito_mu_-0.8",
+      "status": "PASS"
+    },
+    {
+      "name": "tensor_measure_identity_mu_-0.1_p_0.7",
+      "status": "PASS",
+      "absolute_residual": 8.758115402030107e-47
+    },
+    {
+      "name": "tensor_noise_covariance_mu_-0.1",
+      "status": "PASS"
+    },
+    {
+      "name": "log_momentum_ito_mu_-0.1",
+      "status": "PASS"
+    },
+    {
+      "name": "tensor_measure_identity_mu_0.3_p_1.3",
+      "status": "PASS",
+      "absolute_residual": 1.401298464324817e-45
+    },
+    {
+      "name": "tensor_noise_covariance_mu_0.3",
+      "status": "PASS"
+    },
+    {
+      "name": "log_momentum_ito_mu_0.3",
+      "status": "PASS"
+    },
+    {
+      "name": "tensor_measure_identity_mu_0.9_p_3",
+      "status": "PASS",
+      "absolute_residual": 1.793662034335766e-43
+    },
+    {
+      "name": "tensor_noise_covariance_mu_0.9",
+      "status": "PASS"
+    },
+    {
+      "name": "log_momentum_ito_mu_0.9",
+      "status": "PASS"
+    },
+    {
+      "name": "rank_one_tensor_is_admissible",
+      "status": "PASS"
+    },
+    {
+      "name": "indefinite_tensor_is_rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.3_0.01_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.3_0.01_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.3_0.01_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.3_0.01_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.3_0.01_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.3_0.01_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.3_0.01_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.3_0.01_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.3_0.01_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.3_0.01_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.3_0.01_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.3_0.01_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.3_0.01_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.3_0.01_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.3_0.01_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.3_0.01_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.3_1.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.3_1.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.3_1.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.3_1.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.3_1.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.3_1.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.3_1.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.3_1.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.3_1.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.3_1.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.3_1.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.3_1.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.3_1.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.3_1.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.3_1.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.3_1.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.3_100.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.3_100.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.3_100.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.3_100.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.3_100.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.3_100.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.3_100.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.3_100.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.3_100.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.3_100.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.3_100.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.3_100.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.3_100.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.3_100.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.3_100.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.3_100.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.02_0.01_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.02_0.01_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.02_0.01_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.02_0.01_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.02_0.01_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.02_0.01_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.02_0.01_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.02_0.01_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.02_0.01_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.02_0.01_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.02_0.01_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.02_0.01_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.02_0.01_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.02_0.01_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.02_0.01_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.02_0.01_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.02_1.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.02_1.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.02_1.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.02_1.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.02_1.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.02_1.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.02_1.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.02_1.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.02_1.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.02_1.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.02_1.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.02_1.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.02_1.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.02_1.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.02_1.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.02_1.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.02_100.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.02_100.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.02_100.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.02_100.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.02_100.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.02_100.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.02_100.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.02_100.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.02_100.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.02_100.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.02_100.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.02_100.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_-0.02_100.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_-0.02_100.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_-0.02_100.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_-0.02_100.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.02_0.01_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.02_0.01_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.02_0.01_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.02_0.01_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.02_0.01_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.02_0.01_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.02_0.01_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.02_0.01_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.02_0.01_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.02_0.01_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.02_0.01_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.02_0.01_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.02_0.01_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.02_0.01_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.02_0.01_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.02_0.01_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.02_1.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.02_1.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.02_1.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.02_1.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.02_1.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.02_1.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.02_1.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.02_1.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.02_1.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.02_1.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.02_1.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.02_1.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.02_1.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.02_1.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.02_1.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.02_1.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.02_100.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.02_100.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.02_100.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.02_100.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.02_100.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.02_100.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.02_100.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.02_100.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.02_100.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.02_100.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.02_100.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.02_100.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.02_100.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.02_100.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.02_100.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.02_100.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.3_0.01_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.3_0.01_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.3_0.01_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.3_0.01_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.3_0.01_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.3_0.01_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.3_0.01_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.3_0.01_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.3_0.01_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.3_0.01_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.3_0.01_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.3_0.01_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.3_0.01_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.3_0.01_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.3_0.01_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.3_0.01_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.3_1.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.3_1.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.3_1.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.3_1.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.3_1.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.3_1.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.3_1.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.3_1.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.3_1.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.3_1.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.3_1.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.3_1.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.3_1.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.3_1.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.3_1.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.3_1.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.3_100.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.3_100.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.3_100.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.3_100.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.3_100.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.3_100.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.3_100.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.3_100.0_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.3_100.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.3_100.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.3_100.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.3_100.0_0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_mass_shell_0.3_100.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "lorentz_roundtrip_0.3_100.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "elastic_wave_exchange_0.3_100.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "positive_clock_0.3_100.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "helicity_joint_split_0.0_0.0_-1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "helicity_joint_split_0.0_0.0_0.0",
+      "status": "PASS"
+    },
+    {
+      "name": "helicity_joint_split_0.0_0.0_1.0",
+      "status": "PASS"
+    },
+    {
+      "name": "helicity_joint_split_0.6_-0.4_-0.8",
+      "status": "PASS"
+    },
+    {
+      "name": "helicity_joint_split_0.6_-0.4_-0.4",
+      "status": "PASS"
+    },
+    {
+      "name": "helicity_joint_split_0.6_-0.4_0.0",
+      "status": "PASS"
+    },
+    {
+      "name": "helicity_joint_split_-0.7_0.2_-0.5",
+      "status": "PASS"
+    },
+    {
+      "name": "helicity_joint_split_-0.7_0.2_-0.19999999999999996",
+      "status": "PASS"
+    },
+    {
+      "name": "helicity_joint_split_-0.7_0.2_0.10000000000000009",
+      "status": "PASS"
+    },
+    {
+      "name": "helicity_joint_split_1.0_-0.3_-0.30000000000000004",
+      "status": "PASS"
+    },
+    {
+      "name": "helicity_joint_split_1.0_-0.3_-0.30000000000000004",
+      "status": "PASS"
+    },
+    {
+      "name": "helicity_joint_split_1.0_-0.3_-0.30000000000000004",
+      "status": "PASS"
+    },
+    {
+      "name": "zero_helicity_does_not_fix_four_populations",
+      "status": "PASS"
+    },
+    {
+      "name": "fv_nonuniform_number_conservation",
+      "status": "PASS"
+    },
+    {
+      "name": "fv_nonuniform_stationary_mass",
+      "status": "PASS"
+    },
+    {
+      "name": "fv_nonuniform_detailed_balance",
+      "status": "PASS"
+    },
+    {
+      "name": "fv_semigroup_positive_and_stochastic",
+      "status": "PASS"
+    },
+    {
+      "name": "qform_transmits_across_zero",
+      "status": "PASS",
+      "transmissibility": 0.4522412035873117,
+      "hypergeometric_reference": 0.4522412035873117
+    },
+    {
+      "name": "epsilon_zero_internal_resistance_diverges",
+      "status": "PASS"
+    },
+    {
+      "name": "focused_variance_xi_0.0",
+      "status": "PASS",
+      "kappa_variance": 0.3333333333333333,
+      "mean_mu": 0.0
+    },
+    {
+      "name": "focused_variance_xi_0.1",
+      "status": "PASS",
+      "kappa_variance": 0.33229846186117495,
+      "mean_mu": 0.033311132253989614
+    },
+    {
+      "name": "focused_variance_xi_1.0",
+      "status": "PASS",
+      "kappa_variance": 0.24807674060946955,
+      "mean_mu": 0.3130352854993313
+    },
+    {
+      "name": "focused_variance_xi_1.5",
+      "status": "PASS",
+      "kappa_variance": 0.17827578033734465,
+      "mean_mu": 0.43812472631584526
+    },
+    {
+      "name": "focused_variance_xi_5.0",
+      "status": "PASS",
+      "kappa_variance": 0.010324829484838137,
+      "mean_mu": 0.8000908039820194
+    },
+    {
+      "name": "focused_variance_xi_-1.5",
+      "status": "PASS",
+      "kappa_variance": 0.17827578033734465,
+      "mean_mu": -0.43812472631584526
+    },
+    {
+      "name": "focused_fv_grid_400",
+      "status": "PASS",
+      "kappa_variance": 0.1782816656011021,
+      "absolute_error": 5.885263757499093e-06
+    },
+    {
+      "name": "focused_fv_grid_800",
+      "status": "PASS",
+      "kappa_variance": 0.17827749021784847,
+      "absolute_error": 1.7098805038806564e-06
+    },
+    {
+      "name": "focused_fv_grid_1600",
+      "status": "PASS",
+      "kappa_variance": 0.1782762674549432,
+      "absolute_error": 4.87117598618747e-07
+    },
+    {
+      "name": "manufactured_fte_xi_-1.5_mu_-0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "manufactured_fte_xi_-1.5_mu_0.0",
+      "status": "PASS"
+    },
+    {
+      "name": "manufactured_fte_xi_-1.5_mu_0.6",
+      "status": "PASS"
+    },
+    {
+      "name": "manufactured_fte_xi_0.2_mu_-0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "manufactured_fte_xi_0.2_mu_0.0",
+      "status": "PASS"
+    },
+    {
+      "name": "manufactured_fte_xi_0.2_mu_0.6",
+      "status": "PASS"
+    },
+    {
+      "name": "manufactured_fte_xi_1.5_mu_-0.7",
+      "status": "PASS"
+    },
+    {
+      "name": "manufactured_fte_xi_1.5_mu_0.0",
+      "status": "PASS"
+    },
+    {
+      "name": "manufactured_fte_xi_1.5_mu_0.6",
+      "status": "PASS"
+    },
+    {
+      "name": "angular_endpoint_is_not_displacement_integral",
+      "status": "PASS",
+      "integrated_second": 0.08514011549955205,
+      "endpoint_second": 0.11501999999999998
+    },
+    {
+      "name": "bridge_preserves_parent_path",
+      "status": "PASS"
+    },
+    {
+      "name": "bridge_left_variance",
+      "status": "PASS",
+      "measured": 0.24060839204561182,
+      "expected": 0.24
+    },
+    {
+      "name": "bridge_right_variance",
+      "status": "PASS",
+      "measured": 0.5640748137587859,
+      "expected": 0.5599999999999999
+    },
+    {
+      "name": "bridge_disjoint_increment_covariance",
+      "status": "PASS"
+    },
+    {
+      "name": "isotropic_streaming_reference_detects_endpoint_kick",
+      "status": "PASS",
+      "exact_second": 0.24525296078096157,
+      "endpoint_second": 0.3333333333333333
+    },
+    {
+      "name": "log_spectrum_recovers_nodes",
+      "status": "PASS"
+    },
+    {
+      "name": "log_spectrum_variance_integral",
+      "status": "PASS"
+    },
+    {
+      "name": "rate_change_legendre_l_1",
+      "status": "PASS"
+    },
+    {
+      "name": "rate_change_legendre_l_2",
+      "status": "PASS"
+    },
+    {
+      "name": "rate_change_legendre_l_3",
+      "status": "PASS"
+    },
+    {
+      "name": "rate_change_legendre_l_4",
+      "status": "PASS"
+    },
+    {
+      "name": "time_change_stationary_flux_mu_-0.8",
+      "status": "PASS"
+    },
+    {
+      "name": "time_change_detects_spurious_drift_mu_-0.8",
+      "status": "PASS",
+      "extra_drift": 0.05399999999999999
+    },
+    {
+      "name": "time_change_stationary_flux_mu_0.0",
+      "status": "PASS"
+    },
+    {
+      "name": "time_change_detects_spurious_drift_mu_0.0",
+      "status": "PASS",
+      "extra_drift": 0.15
+    },
+    {
+      "name": "time_change_stationary_flux_mu_0.6",
+      "status": "PASS"
+    },
+    {
+      "name": "time_change_detects_spurious_drift_mu_0.6",
+      "status": "PASS",
+      "extra_drift": 0.096
+    },
+    {
+      "name": "available_data_are_not_v1_1",
+      "status": "PASS",
+      "readme_says_version_1_0": true,
+      "registry_ids": 168,
+      "fixtures": 83,
+      "sha256sums_sha256": "aba757e4c214bca1987c5f1a4014359315b8bc8e576a2fd6d39fee9f72dcfd13"
+    }
+  ]
+}

@@ -4,6 +4,7 @@
 // dependencies.  Keeping them out of turbulence_models.h lets AMPS compile the
 // provider-facing main_lib.cpp without needing an application-specific -I flag.
 #include "coefficient_bridge.h"
+#include "pitch_angle_diffusion/pitch_angle_diffusion.h"
 
 #include <algorithm>
 #include <cmath>
@@ -659,6 +660,48 @@ LocalScatteringCoefficients EvaluateLocalScattering(
       case RuntimeModel::PitchAngleDiffusionModel::Constant:
         return CP::EvaluateConstantDmumu(
             selection.constantDmumuPerS, pitchMu);
+      case RuntimeModel::PitchAngleDiffusionModel::PitchAngleLibrary: {
+        // Shared pitch-angle library through its mover-facing pointer (the
+        // model, lambda law and step rule installed by Runtime::Configure).
+        // The particle state is the AMPS species mass and signed charge and
+        // the plasma-frame momentum; the lambda law needs the heliocentric
+        // position, so the configured solar origin is subtracted here.
+        SEP::PitchAngleDiffusion::ParticleState particle;
+        particle.massKg = speciesMassKg;
+        particle.chargeC = signedChargeC;
+        particle.momentumKgMPerS = momentumKgMPerS;
+        SEP::PitchAngleDiffusion::LocalState pitchLocal;
+        const Core::Vec3 heliocentric = positionM - selection.solarOriginM;
+        pitchLocal.heliocentricPositionM = {{heliocentric.x, heliocentric.y,
+                                             heliocentric.z}};
+        pitchLocal.timeS = selection.timeS;
+        pitchLocal.backgroundRevision = background.generation;
+        pitchLocal.turbulenceRevision = turbulence.generation;
+        const SEP::PitchAngleDiffusion::CoefficientResult library =
+            SEP::PitchAngleDiffusion::ActivePitchAngleDiffusion(
+                pitchMu, particle, pitchLocal);
+        if (!library.status.ok())
+          return CoefficientError(std::string("pitch-angle library (") +
+                                  SEP::PitchAngleDiffusion::Name(library.status.code) +
+                                  "): " + library.status.detail);
+        // An Ito kernel needs a finite dD/dmu; the configuration gate already
+        // refuses shapes without one (PA-QFORM), so absence here is an error,
+        // never a zero drift.
+        if (!library.dDmuMuDmuPerS)
+          return CoefficientError("pitch-angle library returned no finite "
+                                  "dD/dmu at this mu");
+        CP::PitchAngleResult result;
+        result.status = SEP::Transport::Status::Ok();
+        result.valueState = CP::ValueState::Finite;
+        result.derivativeState =
+            (pitchMu == 0.0 && library.zero ==
+                 SEP::PitchAngleDiffusion::ZeroClass::DriftJump)
+                ? CP::DerivativeState::OneSidedLimit
+                : CP::DerivativeState::Smooth;
+        result.dMuMuPerS = library.dMuMuPerS;
+        result.dDmuMuDmuPerS = *library.dDmuMuDmuPerS;
+        return result;
+      }
     }
     return CoefficientError("unknown pitch-angle diffusion model");
   };
@@ -675,6 +718,32 @@ LocalScatteringCoefficients EvaluateLocalScattering(
     }
     result.dMuMuPerS = pitch.dMuMuPerS;
     result.dDmuMuDmuPerS = pitch.dDmuMuDmuPerS;
+    if (selection.requirePitchAngleDiffusion &&
+        selection.pitchAngle ==
+            RuntimeModel::PitchAngleDiffusionModel::PitchAngleLibrary) {
+      // Scattering step limit of the configured rule at the same particle
+      // state and position (rate-fraction, van den Berg Eq. 165 with the
+      // rate-fraction floor, or Sandroos Eq. 166).
+      SEP::PitchAngleDiffusion::ParticleState particle;
+      particle.massKg = speciesMassKg;
+      particle.chargeC = signedChargeC;
+      particle.momentumKgMPerS = momentumKgMPerS;
+      SEP::PitchAngleDiffusion::LocalState pitchLocal;
+      const Core::Vec3 heliocentric = positionM - selection.solarOriginM;
+      pitchLocal.heliocentricPositionM = {{heliocentric.x, heliocentric.y,
+                                           heliocentric.z}};
+      pitchLocal.timeS = selection.timeS;
+      const SEP::PitchAngleDiffusion::StepLimitResult limit =
+          SEP::PitchAngleDiffusion::ActiveScatteringStepLimit(
+              mu, selection.deterministicPitchRatePerS, particle, pitchLocal);
+      if (!limit.status.ok()) {
+        result.status = Invalid(std::string("pitch-angle step rule (") +
+                                SEP::PitchAngleDiffusion::Name(limit.status.code) +
+                                "): " + limit.status.detail);
+        return result;
+      }
+      result.pitchAngleStepLimitS = limit.maximumStepS;
+    }
   }
 
   CP::MeanFreePathResult meanFreePath;

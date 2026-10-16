@@ -12,6 +12,7 @@
 #include "../core/sep3d_types.h"
 
 #include <array>
+#include <limits>
 #include <string>
 
 namespace SEP3D {
@@ -25,7 +26,11 @@ enum class StepLimiter {
   Cooling,
   FieldVariation,
   ShockCrossing,
-  SnapshotBoundary
+  SnapshotBoundary,
+  // Scattering accuracy of the pitch-angle library's step rule (rate
+  // fraction, van den Berg 2026 Eq. 165 or Sandroos 2014 Eq. 166).  Appended
+  // last so the existing candidate indices are unchanged.
+  PitchAngleScattering
 };
 
 const char* Name(StepLimiter limiter);
@@ -53,6 +58,9 @@ struct TimeStepPhysics {
   double fractionalFieldVariationPerS = 0.0;
   double timeToShockCrossingS = 0.0;
   double timeToSnapshotBoundaryS = 0.0;
+  // Maximum step [s] from the pitch-angle library's scattering step rule;
+  // +inf when no such rule applies.  It is already a time, not a rate.
+  double pitchAngleScatteringLimitS = std::numeric_limits<double>::infinity();
 };
 
 struct TimeStepSelection {
@@ -60,7 +68,7 @@ struct TimeStepSelection {
   double valueS = 0.0;
   StepLimiter limiter = StepLimiter::Requested;
   // Fixed order is part of the diagnostic schema and restart reproducibility.
-  std::array<double, 8> candidatesS{};
+  std::array<double, 9> candidatesS{};
 };
 
 TimeStepSelection SelectTimeStep(const TimeStepControls& controls,

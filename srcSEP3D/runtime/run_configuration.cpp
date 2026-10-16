@@ -5,6 +5,7 @@
 // numerical kernels that the sampler itself uses (output/point_sampling.h).
 #include "../output/point_sampling.h"
 #include "parallel_diffusion/parallel_diffusion.h"
+#include "pitch_angle_diffusion/pitch_angle_diffusion.h"
 #include "sep_background_snapshot.h"
 
 #include <algorithm>
@@ -331,6 +332,8 @@ const char* Name(PitchAngleDiffusionModel value) {
     case PitchAngleDiffusionModel::Jokipii1966: return "jokipii-1966";
     case PitchAngleDiffusionModel::Florinskiy: return "florinskiy";
     case PitchAngleDiffusionModel::Constant: return "constant";
+    case PitchAngleDiffusionModel::PitchAngleLibrary:
+      return "pitch-angle-library";
   }
   return "unknown";
 }
@@ -652,6 +655,64 @@ Core::Status RunConfiguration3D::Create(
              !normalized.parallelDiffusionConfigurationFingerprint.empty()) {
     return Invalid("[parallel_diffusion] is inactive unless transport."
                    "spatial_diffusion_model=parallel-diffusion-library");
+  }
+
+  // Pitch-angle library binding (user decision 2026-10-13).  The library
+  // builds and validates the model (shape, lambda law, step rule) and owns
+  // the coefficient-kernel readiness matrix (Section 16.11 of its
+  // specification): the configured focused-diffusion scheme is checked as a
+  // (model, kernel) pair, so a q-form with Euler-Maruyama/Milstein, or a
+  // step rule beyond the certified nu_max*dt, is refused here, before any
+  // mesh or particle exists.
+  const bool sharedPitchAngle = normalized.pitchAngleDiffusionModel ==
+      PitchAngleDiffusionModel::PitchAngleLibrary;
+  if (sharedPitchAngle) {
+    if (normalized.transport != TransportModel::FocusedDiffusion3D)
+      return Invalid("pitch-angle-library is available only to the "
+                     "focused-diffusion mover (transport = focused-diffusion)");
+    if (normalized.spatialDiffusionModel ==
+        SpatialDiffusionModel::PitchAngleIntegral)
+      return Invalid("pitch-angle-library cannot feed spatial_diffusion_model "
+                     "= pitch-angle-integral (Parker kappa is outside its "
+                     "scope)");
+    if (normalized.pitchAngleDiffusionModelId.empty())
+      return Invalid("[pitch_angle_diffusion] requires a nonempty model key");
+    std::vector<SEP::PitchAngleDiffusion::InputParameter> parameters;
+    for (const auto& assignment : normalized.pitchAngleDiffusionParameters)
+      parameters.push_back({assignment.name, assignment.value});
+    SEP::PitchAngleDiffusion::ModelConfiguration candidate;
+    const SEP::PitchAngleDiffusion::Status built =
+        SEP::PitchAngleDiffusion::BuildConfiguration(
+            normalized.pitchAngleDiffusionModelId, parameters, &candidate);
+    if (!built.ok()) {
+      std::size_t sourceLine = normalized.pitchAngleDiffusionModelLine;
+      for (const auto& assignment : normalized.pitchAngleDiffusionParameters)
+        if (built.detail.find("'" + assignment.name + "'") != std::string::npos) {
+          sourceLine = assignment.line;
+          break;
+        }
+      return Invalid("invalid [pitch_angle_diffusion] configuration" +
+          (sourceLine == 0 ? std::string() :
+           " at input line " + std::to_string(sourceLine)) + ": " + built.detail);
+    }
+    const SEP::PitchAngleDiffusion::Kernel kernel =
+        normalized.pitchAngleScheme == PitchAngleSchemeMode::ReflectingMilstein
+            ? SEP::PitchAngleDiffusion::Kernel::Milstein
+            : SEP::PitchAngleDiffusion::Kernel::EulerMaruyama;
+    const SEP::PitchAngleDiffusion::Status pair =
+        SEP::PitchAngleDiffusion::CheckKernelPair(candidate, kernel);
+    if (!pair.ok())
+      return Invalid("the focused-diffusion scheme cannot run the configured "
+                     "pitch-angle model: " + pair.detail);
+    normalized.pitchAngleDiffusionModelId =
+        SEP::PitchAngleDiffusion::ModelName(candidate.model);
+    normalized.pitchAngleDiffusionConfigurationFingerprint =
+        SEP::PitchAngleDiffusion::ConfigurationFingerprint(candidate);
+  } else if (!normalized.pitchAngleDiffusionModelId.empty() ||
+             !normalized.pitchAngleDiffusionParameters.empty() ||
+             !normalized.pitchAngleDiffusionConfigurationFingerprint.empty()) {
+    return Invalid("[pitch_angle_diffusion] is inactive unless transport."
+                   "pitch_angle_diffusion_model=pitch-angle-library");
   }
   if (normalized.outerRadiusMode != OuterRadiusMode::Preset &&
       normalized.outerRadiusMode != OuterRadiusMode::Explicit &&
@@ -1148,7 +1209,9 @@ Core::Status RunConfiguration3D::Create(
       normalized.pitchAngleDiffusionModel !=
           PitchAngleDiffusionModel::Florinskiy &&
       normalized.pitchAngleDiffusionModel !=
-          PitchAngleDiffusionModel::Constant)
+          PitchAngleDiffusionModel::Constant &&
+      normalized.pitchAngleDiffusionModel !=
+          PitchAngleDiffusionModel::PitchAngleLibrary)
     return Invalid("pitch-angle-diffusion model is unknown");
   if (normalized.meanFreePathModel != MeanFreePathModel::Correlation &&
       normalized.meanFreePathModel != MeanFreePathModel::Constant &&
@@ -1908,6 +1971,23 @@ Core::Status RunConfiguration3D::Create(
     // while keeping archived output reviewable without the original deck.
     for (const auto& assignment : canonicalParameters)
       physics << ";parallel_diffusion_parameter."
+              << assignment.name << '=' << assignment.value;
+  }
+  if (sharedPitchAngle) {
+    // Same identity rule as the parallel library: model, SHA-256 of the
+    // validated configuration, and the sorted SI parameter text.
+    physics << ";pitch_angle_diffusion_model="
+            << normalized.pitchAngleDiffusionModelId
+            << ";pitch_angle_diffusion_fingerprint="
+            << normalized.pitchAngleDiffusionConfigurationFingerprint;
+    auto canonicalParameters = normalized.pitchAngleDiffusionParameters;
+    std::sort(canonicalParameters.begin(), canonicalParameters.end(),
+        [](const RunConfiguration3DOptions::PitchAngleDiffusionAssignment& left,
+           const RunConfiguration3DOptions::PitchAngleDiffusionAssignment& right) {
+          return left.name < right.name;
+        });
+    for (const auto& assignment : canonicalParameters)
+      physics << ";pitch_angle_diffusion_parameter."
               << assignment.name << '=' << assignment.value;
   }
   // Preserve legacy injection/transport fingerprints when the new option is

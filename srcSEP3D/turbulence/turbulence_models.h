@@ -204,6 +204,12 @@ struct LocalScatteringCoefficients {
   std::uint32_t parallelDiagnosticMask = 0;
   std::string parallelModelId;
   std::string parallelConfigurationFingerprint;
+  // Pitch-angle library path (PitchAngleLibrary with the focused-diffusion
+  // mover): the scattering step limit of the configured rule [s] (Section
+  // 16.6 of the library specification) at the particle's mu, p and position.
+  // +inf when the library is not selected; the old D_mumu models impose no
+  // scattering step limit (unchanged behaviour).
+  double pitchAngleStepLimitS = std::numeric_limits<double>::infinity();
 };
 
 // Complete coefficient-selection record copied from the immutable run
@@ -236,6 +242,11 @@ struct CoefficientSelection {
   // table has an explicit time axis; no time multiplier is inferred from it.
   double timeS = 0.0;
   Core::Vec3 solarOriginM;
+  // Deterministic pitch-angle rate dmu/dt [s^-1] of the focused transport
+  // equation at the particle (focusing and flow terms, evaluated by the host
+  // from the same background sample).  Used only by the pitch-angle library's
+  // van den Berg step rule, Eq. (165), whose drift entry is |D' + dmu/dt|.
+  double deterministicPitchRatePerS = 0.0;
   // The resolver evaluates only quantities consumed by the selected mover.
   // This prevents an unused resonance gap (for example D_mumu under the
   // discrete mean-free-path mover) from invalidating otherwise complete

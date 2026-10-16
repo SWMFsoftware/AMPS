@@ -256,6 +256,13 @@ SEP::Testing::Result RunINIT01() {
       {"srcSEP3D point sampling (D3)", base +
            "#begin sampling: points\n  products = flux\n#end sampling\n",
        "not supported by srcSEP"},
+      // The pitch-angle diffusion library is bound only to srcSEP3D's
+      // focused-diffusion mover (user decision 2026-10-13); srcSEP's binding
+      // is deferred, so its block is a D3 rejection here.
+      {"srcSEP3D pitch-angle library block (D3)", base +
+           "#begin physics: pitch_angle_diffusion\n  model = PA-ISO\n"
+           "#end physics\n",
+       "not supported by srcSEP"},
       {"srcSEP3D-only key (D3)", Edited(base, "  time_step_s = 2",
            "  time_step_s = 2\n  campaign_seed = 1"),
        "not supported by srcSEP"},

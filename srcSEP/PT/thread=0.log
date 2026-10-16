@@ -1,0 +1,126 @@
+
+AMPS: (10/12 11:17:36), Initialization of the code
+AMPS: Simulation Target - _SUN_ 
+AMPS:Mesh blocks report:
+AMPS:refinment level=0, blocks=1
+AMPS:refinment level=1, blocks=0
+AMPS:refinment level=2, blocks=0
+AMPS:refinment level=3, blocks=0
+AMPS:refinment level=4, blocks=0
+AMPS:refinment level=5, blocks=0
+AMPS:refinment level=6, blocks=0
+AMPS:refinment level=7, blocks=0
+AMPS:refinment level=8, blocks=0
+AMPS:refinment level=9, blocks=0
+AMPS:refinment level=10, blocks=0
+AMPS:refinment level=11, blocks=0
+AMPS:refinment level=12, blocks=0
+AMPS:Memory usage:
+AMPS:Thread 	 Tree 	 Blocks 	 Nodes
+AMPS:0	4.880000e-03MB	0.000000e+00MB	0.000000e+00MB
+AMPS:Thread 	 "maximum resident set size"	 "integral shared memory size"	  "integral unshared data size"
+AMPS:0	3.272560e-01MB	0.000000e+00MB	0.000000e+00MB
+AMPS:Mesh blocks report:
+AMPS:refinment level=0, blocks=0
+AMPS:refinment level=1, blocks=0
+AMPS:refinment level=2, blocks=0
+AMPS:refinment level=3, blocks=0
+AMPS:refinment level=4, blocks=3976
+AMPS:refinment level=5, blocks=782
+AMPS:refinment level=6, blocks=1182
+AMPS:refinment level=7, blocks=1872
+AMPS:refinment level=8, blocks=304
+AMPS:refinment level=9, blocks=968
+AMPS:refinment level=10, blocks=5568
+AMPS:refinment level=11, blocks=0
+AMPS:refinment level=12, blocks=0
+AMPS:Memory usage:
+AMPS:Thread 	 Tree 	 Blocks 	 Nodes
+AMPS:0	5.521200e+00MB	0.000000e+00MB	0.000000e+00MB
+AMPS:Thread 	 "maximum resident set size"	 "integral shared memory size"	  "integral unshared data size"
+AMPS:0	3.327920e-01MB	0.000000e+00MB	0.000000e+00MB
+AMPS:Tree distribution statistical data:
+AMPS:Thread	|nTotal Allocated Blocks	|nAllocated Blocks Upper Tree Branches	|nAllocated Blocks Domain Boundary Layer	|nTotal Nodes Per Thread
+AMPS: 0	0					0					0					14652
+AMPS: Total Number of blocks used in calcualtions=14652, Total Number of blocks: 14652
+AMPS:Initial Cumulative Parallel Load Distribution
+AMPS:Thread	Load	Normalized Load	Number of Blocks
+AMPS:0	1.47e+04	1.00e+00	14652(14652)
+AMPS:Cumulative Parallel Load Distribution
+AMPS:Thread	Load	Normalized Load	Number of Blocks
+AMPS:0	1.47e+04	1.00e+00	14652(14652)
+AMPS:Min number of blocks per processor: 14652
+AMPS:Max number of blocks per processor: 14652
+AMPS:Min processor load: 1.000000e+00, thread=0
+AMPS:Max processor load: 1.000000e+00, thread=0
+AMPS:Individual block load: min=6.825007e-05, max=6.825007e-05
+AMPS:Parameters of the block with the maximum load
+AMPS:Block->Temp_ID=4680
+AMPS:(i,j,k)=(0,0,0): x=1.523255e+11 1.523255e+11 1.523255e+11 
+AMPS:(i,j,k)=(0,0,1): x=1.523255e+11 1.523255e+11 1.740862e+11 
+AMPS:(i,j,k)=(0,1,0): x=1.523255e+11 1.740862e+11 1.523255e+11 
+AMPS:(i,j,k)=(0,1,1): x=1.523255e+11 1.740862e+11 1.740862e+11 
+AMPS:(i,j,k)=(1,0,0): x=1.740862e+11 1.523255e+11 1.523255e+11 
+AMPS:(i,j,k)=(1,0,1): x=1.740862e+11 1.523255e+11 1.740862e+11 
+AMPS:(i,j,k)=(1,1,0): x=1.740862e+11 1.740862e+11 1.523255e+11 
+AMPS:(i,j,k)=(1,1,1): x=1.740862e+11 1.740862e+11 1.740862e+11 
+AMPS:Middle block's coordinates=1.632059e+11 1.632059e+11 1.632059e+11 
+
+AMPS:The length of the domain's boundary nodes list:
+AMPS:Thread	The number of the domain's boundary nodes
+AMPS:0	0
+AMPS: Total Number of blocks used in calcualtions=10436, Total Number of blocks: 14652
+AMPS:Initial Cumulative Parallel Load Distribution
+AMPS:Thread	Load	Normalized Load	Number of Blocks
+AMPS:0	1.04e+04	1.00e+00	10436(14652)
+AMPS:Cumulative Parallel Load Distribution
+AMPS:Thread	Load	Normalized Load	Number of Blocks
+AMPS:0	1.04e+04	1.00e+00	10436(14652)
+AMPS:Min number of blocks per processor: 14652
+AMPS:Max number of blocks per processor: 14652
+AMPS:Min processor load: 1.000000e+00, thread=0
+AMPS:Max processor load: 1.000000e+00, thread=0
+AMPS:Individual block load: min=0.000000e+00, max=9.582216e-05
+AMPS:Parameters of the block with the maximum load
+AMPS:Block->Temp_ID=6648
+AMPS:(i,j,k)=(0,0,0): x=9.248332e+10 1.142441e+11 5.440195e+09 
+AMPS:(i,j,k)=(0,0,1): x=9.248332e+10 1.142441e+11 1.088039e+10 
+AMPS:(i,j,k)=(0,1,0): x=9.248332e+10 1.196843e+11 5.440195e+09 
+AMPS:(i,j,k)=(0,1,1): x=9.248332e+10 1.196843e+11 1.088039e+10 
+AMPS:(i,j,k)=(1,0,0): x=9.792352e+10 1.142441e+11 5.440195e+09 
+AMPS:(i,j,k)=(1,0,1): x=9.792352e+10 1.142441e+11 1.088039e+10 
+AMPS:(i,j,k)=(1,1,0): x=9.792352e+10 1.196843e+11 5.440195e+09 
+AMPS:(i,j,k)=(1,1,1): x=9.792352e+10 1.196843e+11 1.088039e+10 
+AMPS:Middle block's coordinates=9.520342e+10 1.169642e+11 8.160293e+09 
+
+AMPS:The length of the domain's boundary nodes list:
+AMPS:Thread	The number of the domain's boundary nodes
+AMPS:0	0
+AMPS:Blocks Allocation Report:
+AMPS: Thread	AllocatedBlocks
+AMPS:0	10436(14652)
+AMPS:Blocks Allocation Report:
+AMPS: Thread	Allocated Domain's Boundary Blocks
+AMPS:0	0(0)
+AMPS:Mesh blocks report:
+AMPS:refinment level=0, blocks=0
+AMPS:refinment level=1, blocks=0
+AMPS:refinment level=2, blocks=0
+AMPS:refinment level=3, blocks=0
+AMPS:refinment level=4, blocks=3976
+AMPS:refinment level=5, blocks=782
+AMPS:refinment level=6, blocks=1182
+AMPS:refinment level=7, blocks=1872
+AMPS:refinment level=8, blocks=304
+AMPS:refinment level=9, blocks=968
+AMPS:refinment level=10, blocks=5568
+AMPS:refinment level=11, blocks=0
+AMPS:refinment level=12, blocks=0
+AMPS:Memory usage:
+AMPS:Thread 	 Tree 	 Blocks 	 Nodes
+AMPS:0	5.521200e+00MB	1.746800e+01MB	1.794240e+01MB
+AMPS:Thread 	 "maximum resident set size"	 "integral shared memory size"	  "integral unshared data size"
+AMPS:0	1.579152e+00MB	0.000000e+00MB	0.000000e+00MB
+AMPS:Tree distribution statistical data:
+AMPS:Thread	|nTotal Allocated Blocks	|nAllocated Blocks Upper Tree Branches	|nAllocated Blocks Domain Boundary Layer	|nTotal Nodes Per Thread
+AMPS: 0	10436					0					0					14652

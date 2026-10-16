@@ -761,6 +761,92 @@ Changing any active model parameter therefore causes the existing strict
 restart compatibility check to fail rather than silently continuing with a
 different diffusion law.
 
+### Shared pitch-angle diffusion (focused-diffusion mover)
+
+The focused-diffusion mover can take its pitch-angle coefficient from the
+shared library `src/models/sep_common/pitch_angle_diffusion` (Release A of
+`PITCH_ANGLE_SCATTERING_MODEL.md` v1.2; user decisions 2026-10-13) instead of
+the built-in `jokipii-1966`, `florinskiy` and `constant` models, which are
+unchanged:
+
+```text
+#begin application: sep
+  schema_version = 6
+  transport = focused-diffusion
+  #begin transport
+    pitch_angle_scheme = reflecting-milstein
+    pitch_angle_diffusion_model = pitch-angle-library
+    ! All other transport controls and inactive legacy values remain explicit.
+  #end transport
+#end application
+
+#begin physics: pitch_angle_diffusion
+  model = PA-ISO
+  lambda_reference_m = 4.48793612e10      ! 0.3 AU
+  lambda_reference_rigidity_v = 1e9
+  lambda_rigidity_exponent = 1/3
+  lambda_reference_radius_m = 1.495978707e11
+  lambda_radial_exponent = 2/3
+  step_rule = rate-fraction
+  rate_fraction = 0.001                   ! certified limit
+#end physics
+```
+
+The numbers are a syntax example, not a calibration.  The certified pairs are
+PA-ISO and PA-EPREM with `reflecting-milstein` at ν_max Δt ≤ 0.001; PA-EPS
+(drift jump at μ = 0) and PA-QFORM are refused with both schemes, and
+`reflecting-euler-maruyama` with every model.  As for the parallel
+library, srcSEP3D passes the block's records with their line numbers to the
+library parser (`SEP::PitchAngleDiffusion::ParseSection`), validates the
+configuration during immutable construction, and installs it during serial
+Runtime configuration.  What srcSEP3D adds:
+
+* **Selection rules.**  The block is required exactly when
+  `pitch_angle_diffusion_model = pitch-angle-library`; the library is
+  available only to `transport = focused-diffusion` and cannot feed
+  `spatial_diffusion_model = pitch-angle-integral`.
+* **Coefficient-kernel gate.**  `pitch_angle_scheme` names the kernel
+  (`reflecting-milstein` -> Milstein, `reflecting-euler-maruyama` ->
+  Euler-Maruyama).  Immutable construction calls the library's
+  `CheckKernelPair`: a pair outside the certification matrix
+  (`IMPLEMENTATION_STATUS.md` of the library) is refused before any mesh or
+  particle exists.  PA-QFORM (unbounded drift at μ = 0) is always refused
+  with these kernels; Euler-Maruyama with mirror folding is not certified (it
+  failed the endpoint-beam acceptance case at every tested step); a step rule
+  whose worst-case ν_max Δt exceeds the certified value is refused.
+* **Coefficient bridge.**  At every substep `Turbulence::EvaluateLocalScattering`
+  calls `ActivePitchAngleDiffusion(mu, particle, local)` with the AMPS species
+  mass and signed charge, the plasma-frame momentum and μ, and the position
+  minus the configured solar origin (heliocentric λ law).  D and dD/dμ go to
+  the existing `Transport::AdvanceFocused` core unchanged.  A missing finite
+  derivative is an error, never a zero drift.
+* **Scattering step limit.**  The library's step rule (rate fraction, van den
+  Berg 2026 Eq. 165 floored by the rate fraction, or Sandroos 2014 Eq. 166)
+  is evaluated at the same particle state, with the host's dμ/dt
+  (`Transport::FocusedPitchDriftPerS` of the same background sample) in the
+  van den Berg drift entry, and enters `SelectTimeStep` as the new named
+  limiter `pitch-angle-scattering` (the ninth candidate; the other movers and
+  the built-in D_μμ models get +inf, so their substeps are unchanged).
+* **Frame and clock.**  p and μ are the plasma-frame values the mover
+  already stores; the coefficient is applied per host time, retaining order
+  0 in U/c (the Eq. 173 clock factor, ~1e-3, is not applied).
+* **Identity.**  The model ID, the sorted parameter text and the library's
+  SHA-256 configuration fingerprint enter the physics and restart manifests,
+  and the startup log prints `pitch_angle_diffusion_model=` and
+  `pitch_angle_diffusion_configuration_fingerprint=`.
+
+Tests: `CFG3D20` (input, gate, identity, refusals), `PAD3D01` (bridge = library
+for the three step rules), `PAD3D02` (the `AdvanceFocused` kick equals the
+library's Milstein/Euler-Maruyama kick for the same normal), `PAD3D03`
+(Extended: exact constant-focusing solution at second order and the stationary
+⟨μ⟩ = coth ξ − 1/ξ of the production composer), `PRK3D08` (the ninth limiter),
+and the native smoke test `run_pitch_angle_native.py` (`PAN01`-`PAN06`: the
+certified deck on one and four ranks, its ledger and rank independence, and
+start-up refusals; `run_all_test.sh` step `pitch-angle-native`).
+The library's own tests run through
+`python3 src/models/sep_common/pitch_angle_diffusion/run_all_tests.py`
+(`run_all_test.sh` step `pitch-angle-library`).
+
 The publication-backed 2013 April 11 OV3D01 mapping, including the distinct
 CME-apex and Earth-connected Parker-start coordinates, observation products,
 and parameters that must still be fitted rather than guessed, is documented in

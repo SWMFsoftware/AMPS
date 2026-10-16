@@ -511,6 +511,12 @@ void FinalizeParticleNumericsAfterMeshAllocation() {
                 << options.observers[index].cadenceS << '\n';
     std::cout << "  final_configuration_fingerprint="
               << resolved->physics_fingerprint() << std::defaultfloat << '\n';
+    if (!resolved->options().pitchAngleDiffusionModelId.empty())
+      std::cout << "  pitch_angle_diffusion_model="
+                << resolved->options().pitchAngleDiffusionModelId << '\n'
+                << "  pitch_angle_diffusion_configuration_fingerprint="
+                << resolved->options()
+                       .pitchAngleDiffusionConfigurationFingerprint << '\n';
     if (!resolved->options().parallelDiffusionModelId.empty())
       std::cout << "  parallel_diffusion_model="
                 << resolved->options().parallelDiffusionModelId << '\n'
@@ -1584,6 +1590,24 @@ SEP3D::Core::Status ResolveLocalTransportImpl(
   coefficientSelection.requirePitchAngleDiffusion =
       focusedDiffusionMover;
   coefficientSelection.requireMeanFreePath = focusedScatteringMover;
+  if (focusedDiffusionMover &&
+      coefficientOptions.pitchAngleDiffusionModel ==
+          RuntimeModel::PitchAngleDiffusionModel::PitchAngleLibrary) {
+    // dmu/dt of the focused transport equation at this particle (focusing and
+    // flow terms of the same background sample, Transport::
+    // FocusedPitchDriftPerS) for the pitch-angle library's van den Berg step
+    // rule; the plasma-frame speed follows from the same momentum and mass.
+    Transport::FocusedLocalState focusing;
+    focusing.bHat = background.bHat;
+    focusing.bulkVelocityMPerS = background.U;
+    focusing.divBhatPerM = background.divBhat;
+    focusing.divUPerS = background.divU;
+    focusing.fieldAlignedStrainPerS = background.fieldAlignedStrain;
+    const double speedMPerS = Transport::RelativisticSpeed(
+        momentumKgMPerS, PIC::MolecularData::GetMass(species));
+    coefficientSelection.deterministicPitchRatePerS =
+        Transport::FocusedPitchDriftPerS(mu, speedMPerS, focusing);
+  }
   const Turbulence::LocalScatteringCoefficients coefficients =
       Turbulence::EvaluateLocalScattering(
           waves, background, positionM, species,
@@ -1595,6 +1619,7 @@ SEP3D::Core::Status ResolveLocalTransportImpl(
   local->meanFreePathM = coefficients.meanFreePathM;
   local->dMuMuPerS = coefficients.dMuMuPerS;
   local->dDmuMuDmuPerS = coefficients.dDmuMuDmuPerS;
+  local->pitchAngleScatteringLimitS = coefficients.pitchAngleStepLimitS;
   local->parallelDiffusionDiagnosticMask =
       coefficients.parallelDiagnosticMask;
   local->parallelDiffusionModelId = coefficients.parallelModelId;

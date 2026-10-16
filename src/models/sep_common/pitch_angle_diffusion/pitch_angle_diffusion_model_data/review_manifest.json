@@ -1,0 +1,102 @@
+{
+  "specification_version": "1.2",
+  "review_date": "2026-10-13",
+  "reviewed_input": {
+    "filename": "PITCH_ANGLE_SCATTERING_MODEL (1).md",
+    "sha256": "41d019fcb60b161680621ce70f3064611a0cbee5a35a981a38ef1b8b3297f360",
+    "stated_version": "1.1"
+  },
+  "revised_specification": {
+    "filename": "PITCH_ANGLE_SCATTERING_MODEL_AMPS_v1_2.md",
+    "sha256": "1a7ecf1a599ea54a24e5e0da061a0d71c00ed75f4b74e3b561262d724ea96b92"
+  },
+  "canonical_data_status": "Matching v1.1 archive unavailable; supplied archive is v1.0. No canonical registry/fixture migration or AMPS checkout certification.",
+  "available_archive_evidence": {
+    "readme_says_version_1_0": true,
+    "registry_ids": 168,
+    "fixtures": 83,
+    "sha256sums_sha256": "aba757e4c214bca1987c5f1a4014359315b8bc8e576a2fd6d39fee9f72dcfd13"
+  },
+  "supplementary_checks": {
+    "passed": 262,
+    "checks": 262,
+    "failed": 0,
+    "command": "python check_physics.py --output verification_results.local.json"
+  },
+  "compile_contract": {
+    "command": "g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror -fsyntax-only compile_contract.cpp",
+    "result": "PASS",
+    "scope": "Declarations only; not implementations or AMPS binding"
+  },
+  "change_sections": [
+    "front matter",
+    "4.1",
+    "12.3 density clarification",
+    "16.11 pairing clarification",
+    "16.12 new",
+    "17 replacement",
+    "18/24/25 evidence notes",
+    "25.1/25.7",
+    "26 detailed replacement"
+  ],
+  "unchanged_source_sections": [
+    "2",
+    "3",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "13",
+    "14",
+    "15",
+    "19",
+    "20",
+    "21",
+    "22",
+    "23"
+  ],
+  "legacy_numbered_equations": 178,
+  "new_derived_contract_equations": [
+    "N1",
+    "N2",
+    "N3",
+    "N4",
+    "N5",
+    "N6",
+    "N7"
+  ],
+  "implementation_stages": 20,
+  "acceptance_case_ids": [
+    "AP-ISO-01",
+    "AP-ISO-02",
+    "AP-ZERO-01",
+    "AP-ZERO-02",
+    "AP-FV-01",
+    "AP-TIME-01",
+    "AP-RNG-01",
+    "AP-FOC-01",
+    "AP-FOC-02",
+    "AP-TENSOR-01",
+    "AP-FRAME-01",
+    "AP-CLOCK-01",
+    "AP-SPEC-01",
+    "AP-WAVE-01",
+    "AP-GEOM-01",
+    "AP-GEOM-02",
+    "AP-GEOM-03",
+    "AP-GEOM-04",
+    "AP-ENERGY-01",
+    "AP-ENERGY-02",
+    "AP-REFUSE-01"
+  ],
+  "not_certified": [
+    "AMPS implementation/build/pusher",
+    "v1.1 canonical archive",
+    "all source transcriptions",
+    "unavailable MFP/PARALLEL companion texts",
+    "observational SEP/GCR validation"
+  ]
+}

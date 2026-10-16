@@ -229,6 +229,12 @@ MoverResult AdvanceParticle(const MoverInput& input) {
   physics.fractionalFieldVariationPerS =
       input.local.fractionalFieldVariationPerS;
   physics.timeToSnapshotBoundaryS = input.local.timeToSnapshotBoundaryS;
+  // Only the focused-diffusion mover realizes D_mumu continuously; the
+  // library's scattering limit is meaningless for the other movers.
+  physics.pitchAngleScatteringLimitS =
+      input.model == RuntimeModel::TransportModel::FocusedDiffusion3D
+          ? input.local.pitchAngleScatteringLimitS
+          : std::numeric_limits<double>::infinity();
   // Distance to the full generating sphere is a lower bound on distance to
   // its finite outward cap. Using it may subcycle early outside the SSE cone,
   // but never uses a fabricated Sun-centered flank. Center translation plus

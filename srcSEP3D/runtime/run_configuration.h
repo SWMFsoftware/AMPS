@@ -152,7 +152,14 @@ enum class SpatialDiffusionModel {
 enum class PitchAngleDiffusionModel {
   Jokipii1966,
   Florinskiy,
-  Constant
+  Constant,
+  // Shared pitch-angle library (src/models/sep_common/pitch_angle_diffusion,
+  // Release A; user decision 2026-10-13).  Selected only for the
+  // focused-diffusion mover; its model, lambda law and scattering step rule
+  // are read from the physics: pitch_angle_diffusion block by the library's
+  // own section parser.  Distinct value, never an alias of the three models
+  // above.
+  PitchAngleLibrary
 };
 // RadialRigidityPowerLaw is the species-general form
 //   lambda=lambda_ref*(r/r_ref)^a*(R/R_ref)^b,
@@ -703,6 +710,22 @@ struct RunConfiguration3DOptions {
   std::string parallelDiffusionConfigurationFingerprint;
   PitchAngleDiffusionModel pitchAngleDiffusionModel =
       PitchAngleDiffusionModel::Jokipii1966;
+
+  // physics: pitch_angle_diffusion binding (PitchAngleLibrary only).  As for
+  // the parallel-diffusion block, names and numeric text are kept exactly as
+  // written (library keys are case-sensitive and name SI units); the library
+  // is the sole authority that parses them.  The fingerprint is derived after
+  // the library validates the complete candidate and enters the physics and
+  // restart identity; it is never accepted from input.
+  struct PitchAngleDiffusionAssignment {
+    std::string name;
+    std::string value;
+    std::size_t line = 0;
+  };
+  std::string pitchAngleDiffusionModelId;
+  std::size_t pitchAngleDiffusionModelLine = 0;
+  std::vector<PitchAngleDiffusionAssignment> pitchAngleDiffusionParameters;
+  std::string pitchAngleDiffusionConfigurationFingerprint;
   MeanFreePathModel meanFreePathModel = MeanFreePathModel::Correlation;
   double constantDmumuPerS = 0.0;
   double constantMeanFreePathM = 0.0;

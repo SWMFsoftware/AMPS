@@ -43,7 +43,8 @@
 //
 // Units.  Application keys carry their SI unit in the key name (src/INPUT_FILE.md
 // section 4); model blocks (physics: swcme, physics: parallel_diffusion,
-// physics: shock_front) keep the vocabularies of their libraries.
+// physics: pitch_angle_diffusion, physics: shock_front) keep the
+// vocabularies of their libraries.
 //
 // This header depends only on the C++ standard library so that the parsers
 // can validate a complete input before AMPS, MPI or a mesh exists.
@@ -111,6 +112,10 @@ constexpr BlockRule kBlocks[] = {
     {"", "physics", "shock", kBoth, false},
     {"", "physics", "swcme", kBoth, true},
     {"", "physics", "parallel_diffusion", kBoth, true},
+    // Pitch-angle diffusion coefficient library (Release A); srcSEP3D's
+    // focused-diffusion mover only (user decision 2026-10-13).  The library
+    // owns the block grammar (SEP::PitchAngleDiffusion::ParseSection).
+    {"", "physics", "pitch_angle_diffusion", kSrcSep3d, true},
     {"", "physics", "shock_front", kSrcSep3d, true},
     // Particle source, species weights, observers, output products.
     {"", "source", "shock", kBoth, false},

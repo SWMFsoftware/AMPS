@@ -17,6 +17,7 @@
 #include "shock_front_background_adapter.h"
 #include "runtime.h"
 #include "parallel_diffusion/parallel_diffusion.h"
+#include "pitch_angle_diffusion/pitch_angle_diffusion.h"
 #include "sep_input_layout.h"
 #include "swcme3d_input.hpp"
 #include "sep_coronal_cme/constants.h"
@@ -89,7 +90,7 @@ std::string InlineIncludes(const std::string& path) {
 // reduced-shock-surface.in inlined): every srcSEP3D key is explicit there, so
 // the parser's completeness rules are exercised against the deck users
 // actually start from.  The SWCME decks are not fixtures any more: the SWCME
-// model is not ready and every physics: swcme block is rejected (CFG3D20).
+// model is not ready and every physics: swcme block is rejected (CFG3D08).
 // The inlined text is parsed from the srcSEP3D directory, so the reduced
 // model's relative asset path is re-rooted there.
 std::string CompleteInput() {
@@ -1878,6 +1879,173 @@ Result RunCFG3D18() {
 // sub-block keys, a point file that does not exist, repeated point names, a
 // point outside the radial domain, an unknown product, and a repeated
 // species block.
+// CFG3D20: physics: pitch_angle_diffusion (pitch-angle library, Release A).
+// The certified pair used for the valid deck is read from the library's
+// certification matrix (the first Milstein row, since reflecting-milstein is
+// the srcSEP3D focused-diffusion scheme that can be certified; Euler-Maruyama
+// failed the campaign), so the test follows the PS05 evidence rather than a
+// hard-coded model or step: until a Milstein pair is certified, a valid deck
+// cannot exist and the test fails with that statement.  The refusals cover
+// the selector/block coupling, the mover, the unbounded PA-QFORM pair,
+// Euler-Maruyama, a step above the certified nu_max*dt, an uncertified
+// PA-EPS/Milstein pair (when the matrix has none) and an unknown key.
+Result RunCFG3D20() {
+  namespace PA = SEP::PitchAngleDiffusion;
+  const std::string fixture = CompleteInput();
+  if (fixture.empty()) return Fail("could not read the schema-6 fixture");
+  const PA::PairCertification* certified = nullptr;
+  bool epsilonCertified = false;
+  for (const auto& entry : PA::CertifiedPairs()) {
+    if (entry.kernel != PA::Kernel::Milstein) continue;
+    if (certified == nullptr) certified = &entry;
+    if (entry.model == PA::ModelId::EpsilonForm) epsilonCertified = true;
+  }
+  if (certified == nullptr)
+    return Fail("no certified Milstein pair in the library matrix "
+                "(IMPLEMENTATION_STATUS.md); a valid library deck cannot be built");
+  std::ostringstream fraction;
+  fraction.precision(17);
+  fraction << certified->maximumScaledStep;
+  // Model lines of the certified row; PA-EPS takes the middle of its range.
+  std::string modelLines;
+  std::string modelName;
+  switch (certified->model) {
+    case PA::ModelId::Isotropic: modelName = "PA-ISO"; break;
+    case PA::ModelId::Eprem: modelName = "PA-EPREM"; break;
+    case PA::ModelId::EpsilonForm: {
+      modelName = "PA-EPS";
+      std::ostringstream eps;
+      eps.precision(17);
+      eps << 0.5 * (certified->epsilonMinimum + certified->epsilonMaximum);
+      modelLines = "epsilon = " + eps.str() + "\n";
+      break;
+    }
+    default: return Fail("a Milstein row names a model that has no Ito pair");
+  }
+  modelLines = "model = " + modelName + "\n" + modelLines;
+  const std::string amplitudeLines =
+      "lambda_reference_m = 4.48793612e10\n"
+      "lambda_reference_rigidity_v = 1e9\n"
+      "lambda_rigidity_exponent = 1/3\n"
+      "lambda_reference_radius_m = 1.495978707e11\n"
+      "lambda_radial_exponent = 2/3\n"
+      "step_rule = rate-fraction\n"
+      "rate_fraction = " + fraction.str() + "\n";
+  const std::string block = "\n#begin physics: pitch_angle_diffusion\n" + modelLines +
+                            amplitudeLines + "#end physics\n";
+  std::string deck = fixture;
+  if (!ReplaceFirst(&deck, "transport = parker", "transport = focused-diffusion") ||
+      !ReplaceFirst(&deck, "pitch_angle_diffusion_model = jokipii-1966",
+                    "pitch_angle_diffusion_model = pitch-angle-library"))
+    return Fail("fixture lost its transport/pitch-angle spellings");
+  const std::size_t shockAt = deck.find("\n#begin physics: shock\n");
+  if (shockAt == std::string::npos) return Fail("fixture lost its shock block");
+  deck.insert(shockAt, block);
+  // Parameters exclude the model key: optional epsilon + 7 amplitude/step keys.
+  const std::size_t expectedKeys =
+      (certified->model == PA::ModelId::EpsilonForm ? 1 : 0) + 7;
+
+  RM::RunConfiguration3DOptions options;
+  SEP3D::Core::Status status = RM::ParseConfigurationText(deck, &options);
+  if (!status.ok() ||
+      options.pitchAngleDiffusionModel !=
+          RM::PitchAngleDiffusionModel::PitchAngleLibrary ||
+      options.pitchAngleDiffusionModelId != modelName ||
+      options.pitchAngleDiffusionParameters.size() != expectedKeys)
+    return Fail("valid pitch-angle block did not resolve: status \"" + status.message +
+                "\", model " + options.pitchAngleDiffusionModelId + ", " +
+                std::to_string(options.pitchAngleDiffusionParameters.size()) +
+                " parameters (expected " + modelName + ", " +
+                std::to_string(expectedKeys) + ")");
+  std::shared_ptr<const RM::RunConfiguration3D> configuration;
+  status = RM::RunConfiguration3D::Create(options, &configuration);
+  if (!status.ok() || !configuration ||
+      options.pitchAngleDiffusionConfigurationFingerprint.size() != 64 ||
+      configuration->restart_compatibility_manifest().find(
+          options.pitchAngleDiffusionConfigurationFingerprint) == std::string::npos)
+    return Fail("pitch-angle identity absent from immutable/restart provenance: " +
+                status.message);
+  // Runtime::Configure installs the library transactionally.
+  RM::Runtime runtime;
+  status = runtime.Configure(configuration);
+  if (!status.ok() ||
+      PA::ActivePitchAngleDiffusion != PA::BoundFunctionForModel(certified->model) ||
+      PA::ConfigurationFingerprint(PA::GetActiveConfiguration()) !=
+          options.pitchAngleDiffusionConfigurationFingerprint)
+    return Fail("Runtime did not install the pitch-angle model: " + status.message);
+  // A changed parameter changes the physics/restart identity.
+  std::string changed = deck;
+  ReplaceFirst(&changed, "lambda_reference_m = 4.48793612e10",
+               "lambda_reference_m = 4.5e10");
+  RM::RunConfiguration3DOptions changedOptions;
+  std::shared_ptr<const RM::RunConfiguration3D> changedConfiguration;
+  if (!RM::ParseConfigurationText(changed, &changedOptions).ok() ||
+      !RM::RunConfiguration3D::Create(changedOptions, &changedConfiguration).ok() ||
+      changedConfiguration->physics_fingerprint() == configuration->physics_fingerprint())
+    return Fail("pitch-angle parameter change did not alter the physics identity");
+
+  // Refusals (each must fail at parse or create).
+  auto refused = [&](const std::string& text) {
+    RM::RunConfiguration3DOptions o;
+    if (!RM::ParseConfigurationText(text, &o).ok()) return true;
+    std::shared_ptr<const RM::RunConfiguration3D> c;
+    return !RM::RunConfiguration3D::Create(o, &c).ok();
+  };
+  // Refusal message of a deck from whichever stage refuses it (parsing
+  // validates the pair too); empty when parse and create both accept it.
+  auto refusalMessage = [&](const std::string& text) {
+    RM::RunConfiguration3DOptions o;
+    const SEP3D::Core::Status parsed = RM::ParseConfigurationText(text, &o);
+    if (!parsed.ok()) return parsed.message;
+    std::shared_ptr<const RM::RunConfiguration3D> c;
+    const SEP3D::Core::Status created = RM::RunConfiguration3D::Create(o, &c);
+    return created.ok() ? std::string() : created.message;
+  };
+  std::string missing = deck;
+  const std::size_t blockAt = missing.find(block.substr(1));
+  missing.erase(blockAt, block.size() - 1);
+  if (!refused(missing)) return Fail("library selector accepted without its block");
+  std::string inactive = deck;
+  ReplaceFirst(&inactive, "pitch_angle_diffusion_model = pitch-angle-library",
+               "pitch_angle_diffusion_model = jokipii-1966");
+  if (!refused(inactive)) return Fail("inactive pitch_angle_diffusion block accepted");
+  std::string parker = deck;
+  ReplaceFirst(&parker, "transport = focused-diffusion", "transport = parker");
+  if (!refused(parker)) return Fail("Parker mover accepted the pitch-angle library");
+  std::string qform = deck;
+  ReplaceFirst(&qform, modelLines, "model = PA-QFORM\nq = 5/3\ngap_h = 0.05\n");
+  std::string message = refusalMessage(qform);
+  if (message.find("unbounded") == std::string::npos)
+    return Fail("PA-QFORM with Milstein was not refused as an incompatible pair: " +
+                message);
+  std::string euler = deck;
+  ReplaceFirst(&euler, "pitch_angle_scheme = reflecting-milstein",
+               "pitch_angle_scheme = reflecting-euler-maruyama");
+  if (!refused(euler)) return Fail("an uncertified Euler-Maruyama pair was accepted");
+  std::string tooLarge = deck;
+  ReplaceFirst(&tooLarge, "rate_fraction = " + fraction.str(), "rate_fraction = 0.5");
+  if (!refused(tooLarge)) return Fail("a step above the certified nu_max*dt was accepted");
+  std::string uncertified = "none (a PA-EPS/Milstein row exists)";
+  if (!epsilonCertified) {
+    std::string eps = deck;
+    ReplaceFirst(&eps, modelLines, "model = PA-EPS\nepsilon = 0.048\n");
+    message = refusalMessage(eps);
+    if (message.find("no certification entry") == std::string::npos)
+      return Fail("the uncertified PA-EPS/Milstein pair was not refused: " + message);
+    uncertified = "PA-EPS/Milstein";
+  }
+  std::string unknown = deck;
+  ReplaceFirst(&unknown, modelLines, modelLines + "unknown_key = 1\n");
+  RM::RunConfiguration3DOptions u;
+  status = RM::ParseConfigurationText(unknown, &u);
+  if (status.ok() || status.message.find("line") == std::string::npos)
+    return Fail("unknown key not refused with a line number: " + status.message);
+  return Pass(modelName + "/Milstein deck at the certified nu_max*dt = " + fraction.str() +
+              ": parsed, frozen, fingerprinted and installed; missing/inactive block, "
+              "Parker mover, PA-QFORM pair, Euler-Maruyama, oversize step, uncertified "
+              "pair (" + uncertified + ") and unknown key refused");
+}
+
 Result RunCFG3D19() {
   namespace fs = std::filesystem;
   const fs::path directory = fs::temp_directory_path() /
@@ -2019,5 +2187,6 @@ std::vector<SEP3D::Testing::Descriptor> RegisterConfigurationTests() {
       make("CFG3D17", "Parallel-diffusion binding", "Library block parser, provenance, Runtime installation, Parker-only ownership, and unavailable-state gates.", RunCFG3D17),
       make("CFG3D18", "Shared SEP vocabulary", "Schema-6 table vs SWCME3D keys, srcSEP decks give typed srcSEP3D errors, every example parses.", RunCFG3D18),
       make("CFG3D19", "Point-sampling input", "sampling: points block, point file, MeV channels, fingerprint and fail-closed rules.", RunCFG3D19),
+      make("CFG3D20", "Pitch-angle library input", "physics: pitch_angle_diffusion, pitch-angle-library selector, pair certification gate, identity and refusals.", RunCFG3D20),
   };
 }

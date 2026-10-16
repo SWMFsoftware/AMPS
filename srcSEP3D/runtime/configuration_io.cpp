@@ -4,6 +4,7 @@
 #include "swcme3d_input.hpp"
 #include "background_factory.h"
 #include "parallel_diffusion/parallel_diffusion.h"
+#include "pitch_angle_diffusion/pitch_angle_diffusion.h"
 #include "amps_input.h"
 #include "sep_input_layout.h"
 #include "../output/point_sampling.h"
@@ -180,9 +181,10 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     o->inputSchemaVersion = static_cast<unsigned>(version);
     return Core::Status::OK();
   }
-  // The model blocks physics: swcme, physics: parallel_diffusion and
-  // physics: shock_front never reach ApplyField(): WalkBlocks() hands them to
-  // the shared libraries that own their vocabularies.
+  // The model blocks physics: swcme, physics: parallel_diffusion,
+  // physics: pitch_angle_diffusion and physics: shock_front never reach
+  // ApplyField(): WalkBlocks() hands them to the shared libraries that own
+  // their vocabularies.
   if (field == "application.sep.intent") {
     if (!ParseEnum(value, {{"transport-only", RunIntent::TransportOnly},
                            {"shock-injection", RunIntent::ShockInjection},
@@ -524,7 +526,8 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
     if (!ParseEnum(value,
         {{"jokipii-1966", PitchAngleDiffusionModel::Jokipii1966},
          {"florinskiy", PitchAngleDiffusionModel::Florinskiy},
-         {"constant", PitchAngleDiffusionModel::Constant}},
+         {"constant", PitchAngleDiffusionModel::Constant},
+         {"pitch-angle-library", PitchAngleDiffusionModel::PitchAngleLibrary}},
         &o->pitchAngleDiffusionModel)) return invalidValue();
   } else if (field == "application.sep.transport.mean_free_path_model") {
     if (!ParseEnum(value,
@@ -883,6 +886,8 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
 //                               'source.*' keys are owned by source: shock
 //                               (decision D4) and are synthesized below;
 //   physics: parallel_diffusion parsed by SEP::ParallelDiffusion::ParseSection;
+//   physics: pitch_angle_diffusion
+//                               parsed by SEP::PitchAngleDiffusion::ParseSection;
 //   physics: shock_front        reduced shock-front event, resolved by
 //                               SEP::CoronaSwcme::ShockFront (usually written
 //                               in its own file and #included).
@@ -900,6 +905,8 @@ struct WalkState {
   bool observerDefaultsCleared = false;
   std::vector<SEP::ParallelDiffusion::SectionLine> parallelDiffusionLines;
   std::string parallelDiffusionFile;
+  std::vector<SEP::PitchAngleDiffusion::SectionLine> pitchAngleDiffusionLines;
+  std::string pitchAngleDiffusionFile;
   const AMPS::Input::Block* shockFrontBlock = nullptr;
   // source: shock reference spectrum (D4), turned into SWCME source.* keys
   // after the walk when physics: swcme is present.
@@ -995,6 +1002,18 @@ Core::Status WalkBlocks(const AMPS::Input::Block& parent,
         state->parallelDiffusionLines.push_back(
             {item.where.line, item.key + " = " + item.value});
       state->parallelDiffusionFile = block.begin.file;
+      continue;
+    }
+    if (path == "physics.pitch_angle_diffusion") {
+      // Same contract as physics: parallel_diffusion: the pitch-angle library
+      // owns the grammar and the model schema of this block.
+      if (!block.blocks.empty())
+        return Invalid(AMPS::Input::ErrorAt(block.blocks.front().begin,
+            "physics: pitch_angle_diffusion holds only key = value records").message);
+      for (const AMPS::Input::Assignment& item : block.assignments)
+        state->pitchAngleDiffusionLines.push_back(
+            {item.where.line, item.key + " = " + item.value});
+      state->pitchAngleDiffusionFile = block.begin.file;
       continue;
     }
     if (path == "physics.shock_front") {
@@ -1323,6 +1342,42 @@ static Core::Status ParseConfigurationDocument(
       assignment.value = parameter.value;
       assignment.line = parameter.lineNumber;
       candidate.parallelDiffusionParameters.push_back(std::move(assignment));
+    }
+  }
+  const bool pitchSection = sections.count("physics.pitch_angle_diffusion") != 0;
+  const bool pitchSelected = candidate.pitchAngleDiffusionModel ==
+      PitchAngleDiffusionModel::PitchAngleLibrary;
+  if (pitchSelected && !pitchSection)
+    return Invalid("pitch-angle-library requires a physics: pitch_angle_diffusion block");
+  if (!pitchSelected && pitchSection)
+    return Invalid("block physics: pitch_angle_diffusion is present but "
+                   "transport.pitch_angle_diffusion_model is not "
+                   "pitch-angle-library");
+  if (pitchSection) {
+    // The library parses and validates the block body (model selector,
+    // duplicate/unknown/missing/inactive keys, every value and domain); its
+    // "line N:" diagnostics are prefixed with the file name here.  The text
+    // and line provenance are copied into the options so that
+    // RunConfiguration3D::Create() and the Runtime installation rebuild the
+    // identical configuration and fingerprint.
+    SEP::PitchAngleDiffusion::ParsedSection parsed;
+    const SEP::PitchAngleDiffusion::Status sectionStatus =
+        SEP::PitchAngleDiffusion::ParseSection(walk.pitchAngleDiffusionLines,
+                                               &parsed);
+    if (!sectionStatus.ok())
+      return Invalid(walk.pitchAngleDiffusionFile +
+                     ": invalid physics: pitch_angle_diffusion block: " +
+                     sectionStatus.detail);
+    candidate.pitchAngleDiffusionModelId = parsed.modelId;
+    candidate.pitchAngleDiffusionModelLine = parsed.modelLineNumber;
+    candidate.pitchAngleDiffusionParameters.clear();
+    for (const SEP::PitchAngleDiffusion::SectionParameter& parameter :
+         parsed.parameters) {
+      RunConfiguration3DOptions::PitchAngleDiffusionAssignment assignment;
+      assignment.name = parameter.name;
+      assignment.value = parameter.value;
+      assignment.line = parameter.lineNumber;
+      candidate.pitchAngleDiffusionParameters.push_back(std::move(assignment));
     }
   }
   if (candidate.domainBoxGeometry == DomainBoxGeometry::FieldLineCornerCube ||
@@ -1901,6 +1956,9 @@ Core::Status BuildDryRunSummary(const RunConfiguration3D& configuration,
          << Name(options.spatialDiffusionModel) << '\n'
          << "pitch_angle_diffusion_model="
          << Name(options.pitchAngleDiffusionModel) << '\n'
+         << "pitch_angle_library_model="
+         << (options.pitchAngleDiffusionModelId.empty()
+                 ? std::string("none") : options.pitchAngleDiffusionModelId) << '\n'
          << "mean_free_path_model=" << Name(options.meanFreePathModel) << '\n'
          << "mean_free_path_reference_m="
          << options.meanFreePathReferenceM << '\n'
