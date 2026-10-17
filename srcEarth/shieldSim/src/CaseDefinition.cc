@@ -450,7 +450,7 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
   const auto& root = input.AsObject("case");
   RejectUnknownFields(root,
     {"schema_version","case_id","purpose","material_library","material_overrides","geometry",
-     "source","quantities","accuracy","transport","output"}, "case");
+     "source","quantities","damage_response","accuracy","transport","output"}, "case");
   result->schemaVersion=RequiredString(root,"schema_version","case");
   if(result->schemaVersion!="shieldSim.case.v1" &&
      result->schemaVersion!="shieldSim.case.v2")
@@ -733,11 +733,13 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
       throw JsonError("case.source.spectrum.particle requires A >= Z");
     if((incident.particleName=="proton" && (incident.atomicNumber!=1 || incident.massNumber!=1)) ||
        (incident.particleName=="alpha" && (incident.atomicNumber!=2 || incident.massNumber!=4)) ||
+       (incident.particleName=="neutron" && (incident.atomicNumber!=0 || incident.massNumber!=1)) ||
        (incident.particleName=="gamma" && (incident.atomicNumber!=0 || incident.massNumber!=0)) ||
        (incident.particleName!="proton" && incident.particleName!="alpha" &&
-        incident.particleName!="gamma" && incident.particleName!="ion") ||
+        incident.particleName!="neutron" && incident.particleName!="gamma" &&
+        incident.particleName!="ion") ||
        (incident.particleName=="ion" && (incident.atomicNumber==0 || incident.massNumber==0)))
-      throw JsonError("response particle name/Z/A must be proton/1/1, alpha/2/4, gamma/0/0, or ion with explicit positive Z/A");
+      throw JsonError("response particle name/Z/A must be proton/1/1, alpha/2/4, neutron/0/1, gamma/0/0, or ion with explicit positive Z/A");
     const auto& energy=spectrum.at("energy").AsObject("case.source.spectrum.energy");
     RejectUnknownFields(energy,{"coordinate","value","unit"},"case.source.spectrum.energy");
     incident.energyCoordinate=RequiredString(energy,"coordinate","case.source.spectrum.energy");
@@ -749,8 +751,8 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
       else if(incident.energyCoordinateUnit=="GeV") multiplier=1000.0;
       else throw JsonError("total_kinetic_energy response coordinate requires MeV or GeV");
     } else if(incident.energyCoordinate=="kinetic_energy_per_nucleon"){
-      if(incident.particleName=="gamma")
-        throw JsonError("gamma response cells require total_kinetic_energy");
+      if(incident.particleName=="gamma" || incident.particleName=="neutron")
+        throw JsonError("gamma and neutron response cells require total_kinetic_energy");
       if(incident.energyCoordinateUnit=="MeV/n") multiplier=incident.massNumber;
       else if(incident.energyCoordinateUnit=="GeV/n") multiplier=1000.0*incident.massNumber;
       else throw JsonError("kinetic_energy_per_nucleon response coordinate requires MeV/n or GeV/n");
@@ -807,9 +809,11 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
       if(incident.massNumber<incident.atomicNumber ||
          (incident.particleName=="proton" && (incident.atomicNumber!=1 || incident.massNumber!=1)) ||
          (incident.particleName=="alpha" && (incident.atomicNumber!=2 || incident.massNumber!=4)) ||
+         (incident.particleName=="neutron" && (incident.atomicNumber!=0 || incident.massNumber!=1)) ||
          (incident.particleName=="gamma" && (incident.atomicNumber!=0 || incident.massNumber!=0)) ||
          (incident.particleName!="proton" && incident.particleName!="alpha" &&
-          incident.particleName!="gamma" && incident.particleName!="ion") ||
+          incident.particleName!="neutron" && incident.particleName!="gamma" &&
+          incident.particleName!="ion") ||
          (incident.particleName=="ion" && (incident.atomicNumber==0 || incident.massNumber==0)))
         throw JsonError(context+" has an inconsistent particle name/Z/A");
       const auto& energy=node.at("energy").AsObject(context+".energy");
@@ -822,8 +826,8 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
         else if(incident.energyCoordinateUnit=="GeV") incident.totalKineticEnergyMeV=1000.0*incident.energyCoordinateValue;
         else throw JsonError(context+" total energy requires MeV or GeV");
       } else if(incident.energyCoordinate=="kinetic_energy_per_nucleon"){
-        if(incident.particleName=="gamma")
-          throw JsonError(context+" gamma nodes require total_kinetic_energy");
+        if(incident.particleName=="gamma" || incident.particleName=="neutron")
+          throw JsonError(context+" gamma and neutron nodes require total_kinetic_energy");
         if(incident.energyCoordinateUnit=="MeV/n")
           incident.totalKineticEnergyMeV=incident.massNumber*incident.energyCoordinateValue;
         else if(incident.energyCoordinateUnit=="GeV/n")
@@ -903,10 +907,52 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
   if (result->quantities.empty()) throw JsonError("case.quantities must not be empty");
   for (const auto& quantity : result->quantities) {
     const bool allowed=stage3Schema
-        ? quantity=="transport_raw" || quantity=="TID"
+        ? quantity=="transport_raw" || quantity=="TID" || quantity=="DDD" ||
+          quantity=="n_eq"
         : quantity=="TID" || quantity=="H100/10";
     if (!allowed)
-      throw JsonError("quantity '" + quantity + "' is not enabled in this case schema; case-v2 permits transport_raw and Stage-4 finite-slab TID while DDD, n_eq, LET, H100/10, crew-health, and device/organ claims retain later gates");
+      throw JsonError("quantity '" + quantity + "' is not enabled in this case schema; case-v2 permits transport_raw, Stage-4 finite-slab TID, and Stage-5 silicon DDD/neutron-only n_eq while LET, H100/10, crew-health, and device/organ claims retain later gates");
+  }
+
+  const bool requestsDdd=std::find(result->quantities.begin(),result->quantities.end(),"DDD")!=
+      result->quantities.end();
+  const bool requestsNeq=std::find(result->quantities.begin(),result->quantities.end(),"n_eq")!=
+      result->quantities.end();
+  const bool requestsDamage=requestsDdd || requestsNeq;
+  if(requestsDamage){
+    if(!stage3Schema)
+      throw JsonError("DDD and n_eq require shieldSim.case.v2");
+    if(!root.count("damage_response"))
+      throw JsonError("Stage-5 DDD/n_eq requires case.damage_response");
+    const auto& damage=root.at("damage_response").AsObject("case.damage_response");
+    RejectUnknownFields(damage,{"path","library_id","library_version"},"case.damage_response");
+    const std::string damagePath=ResolvePath(caseDirectory,
+        RequiredString(damage,"path","case.damage_response"));
+    result->damageResponse=std::make_shared<DamageResponseLibrary>(
+        DamageResponseLibrary::Load(damagePath));
+    if(result->damageResponse->LibraryId()!=
+         RequiredString(damage,"library_id","case.damage_response") ||
+       result->damageResponse->LibraryVersion()!=
+         RequiredString(damage,"library_version","case.damage_response"))
+      throw JsonError("case.damage_response ID/version does not match the loaded manifest");
+    for(const auto& absorber:result->absorbers)
+      if(absorber.materialId!=result->damageResponse->TargetMaterialId())
+        throw JsonError("Stage-5 DDD/n_eq absorber '"+absorber.id+"' uses material_id '"+
+            absorber.materialId+"'; the approved response target is '"+
+            result->damageResponse->TargetMaterialId()+"'");
+    const auto validateDamageIncident=[&](const ResponseIncidentDefinition& incident,
+                                          const std::string& context){
+      if(!result->damageResponse->SupportsSpecies(incident.particleName))
+        throw JsonError(context+" particle '"+incident.particleName+
+            "' is outside the Stage-5 proton/alpha/neutron incident support matrix");
+    };
+    if(result->responseIncident.enabled)
+      validateDamageIncident(result->responseIncident,"case.source.spectrum");
+    for(std::size_t i=0;i<result->directIncidents.size();++i)
+      validateDamageIncident(result->directIncidents[i].incident,
+          "case.source.spectrum.nodes["+std::to_string(i)+"]");
+  } else if(root.count("damage_response")) {
+    throw JsonError("case.damage_response is permitted only when DDD or n_eq is requested");
   }
 
   // Stage 4 validates absorbed dose only for proton and He-4 irradiation.
@@ -975,6 +1021,41 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
     const auto override=result->accuracy.quantityOverrides.find("TID");
     if(override!=result->accuracy.quantityOverrides.end())
       checkTidBudget(override->second,"case.accuracy.quantity_overrides.TID");
+  }
+  if(stage3Schema && requestsDamage){
+    const auto checkDamageBudget=[&](const AccuracyRequirement& requirement,
+                                     const std::string& context){
+      // The reference tables publish no complete uncertainty model that this
+      // code can legitimately invent. An incomplete budget is accepted but
+      // will make combined accuracy not_assessable in the result. A claimed
+      // complete budget must instead carry a case-owned reference term and its
+      // provenance through the existing structured covariance contract.
+      if(!requirement.systematicBudgetComplete) return;
+      if(requirement.systematicComponents.empty())
+        throw JsonError(context+" Stage-5 DDD/n_eq rejects a legacy aggregate uncertainty; a case-supplied physics_reference component with provenance is required");
+      const bool hasPhysicsReference=std::any_of(requirement.systematicComponents.begin(),
+          requirement.systematicComponents.end(),[](const auto& component){
+            return component.category=="physics_reference" && !component.provenance.empty();
+          });
+      if(!hasPhysicsReference)
+        throw JsonError(context+" Stage-5 DDD/n_eq requires a physics_reference uncertainty component with provenance");
+      if(requirement.scope=="combined" &&
+         requirement.intervalMethod!="student_t_mc_plus_normal_systematics_quadrature")
+        throw JsonError(context+" combined Stage-5 DDD/n_eq requires coverage.interval_method='student_t_mc_plus_normal_systematics_quadrature'");
+      if(requirement.scope=="combined" &&
+         (std::abs(requirement.standardK-1.0)>1.0e-12 ||
+          std::abs(requirement.intervalProbability-0.95)>1.0e-12))
+        throw JsonError(context+" combined Stage-5 DDD/n_eq requires standard_k=1 and interval_probability=0.95");
+    };
+    for(const std::string quantity:{"DDD","n_eq"}){
+      if(std::find(result->quantities.begin(),result->quantities.end(),quantity)==
+         result->quantities.end()) continue;
+      const auto override=result->accuracy.quantityOverrides.find(quantity);
+      checkDamageBudget(override==result->accuracy.quantityOverrides.end()
+          ? result->accuracy.global : override->second,
+          override==result->accuracy.quantityOverrides.end()
+          ? "case.accuracy" : "case.accuracy.quantity_overrides."+quantity);
+    }
   }
   const auto& sampling = accuracy.at("sampling").AsObject("case.accuracy.sampling");
   RejectUnknownFields(sampling, {"min_histories","max_histories","batch_size"}, "case.accuracy.sampling");
@@ -1182,6 +1263,15 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
       {"em_physics",result->emPhysics},{"ion_physics",result->ionPhysics},{"physics_list", result->physicsList},
       {"production_cut", Measure(result->productionCutMm, "mm")},
       {"random_seed", static_cast<double>(result->randomSeed)}})}};
+  if(result->damageResponse){
+    resolved["damage_response"]=Json(Json::Object{
+      {"canonical_manifest",result->damageResponse->CanonicalManifest()},
+      {"library_id",result->damageResponse->LibraryId()},
+      {"library_version",result->damageResponse->LibraryVersion()},
+      {"manifest_hash",result->damageResponse->ManifestHash()},
+      {"manifest_path",result->damageResponse->ManifestPath()},
+      {"target_material_id",result->damageResponse->TargetMaterialId()}});
+  }
   result->resolvedJson = Json(std::move(resolved));
   result->caseHash = Sha256(result->resolvedJson.DumpCanonical());
   result->resolvedJson.AsObject()["case_hash"] = result->caseHash;

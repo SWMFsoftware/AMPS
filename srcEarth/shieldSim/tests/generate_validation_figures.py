@@ -666,6 +666,8 @@ def main() -> int:
     stage4_core = load_evidence("stage4_core.json")
     stage4_nist = load_evidence("stage4_nist_reference.json")
     stage4_transport = load_evidence("stage4_tid_transport.json")
+    stage5_core = load_evidence("stage5_core.json")
+    stage5_transport = load_evidence("stage5_transport.json")
     entries: list[dict] = []
 
     comparison_figure(
@@ -741,6 +743,27 @@ def main() -> int:
     )
     stage4_nist_figure(stage4_nist, entries)
     stage4_transport_figure(stage4_transport, entries)
+    comparison_figure(
+        stage5_core,
+        "Stage 5 silicon damage-response algebra",
+        "stage5_core_analytic",
+        "Authenticated SR-NIEL exact nodes, log-log interpolation and analytic integration, the "
+        "ASTM E722 neutron-group fold, and the 95 MeV-mb silicon neutron-equivalent convention "
+        "are compared with independent closed-form values. Strict unsupported-species and "
+        "out-of-domain assertions are numerical tests and are not encoded as plotted values.",
+        entries,
+    )
+    comparison_figure(
+        stage5_transport,
+        "Stage 5 full-transport absorber-entry damage folds",
+        "stage5_transport_comparisons",
+        "Full Geant4 runs for exact-node proton, helium-4, and neutron cases are compared with "
+        "independent table-fold values at the absorber entrance; neutron n_eq is checked against "
+        "the ASTM E722 95 MeV-mb reference. The numerical suite separately enforces strict "
+        "out-of-domain rejection and secondary-neutron sensitivity. Formal accelerator/device "
+        "validation and independent review remain pending.",
+        entries,
+    )
 
     with tempfile.TemporaryDirectory(prefix="shieldsim-validation-figures-") as temporary:
         temporary_path = pathlib.Path(temporary)
@@ -844,6 +867,8 @@ def main() -> int:
         "stage4_core_analytic",
         "stage4_nist_reference_comparisons",
         "stage4_tid_transport_comparisons",
+        "stage5_core_analytic",
+        "stage5_transport_comparisons",
     }
     require(
         {pathlib.Path(item["file"]).stem for item in entries} == expected_stems,

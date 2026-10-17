@@ -170,7 +170,8 @@ and evidence are written below the CMake build tree; no Stage-4 test uses
 
 `stage4_core_tests.cc` is deterministic and transport-free. It verifies exact
 MeV/kg-to-Gy and Gy-to-rad conversion, the case-v2 TID
-capability gate, continued DDD rejection, gamma `(0,0)` attenuation-node
+capability gate, DDD rejection when its separate Stage-5 response package is
+absent, gamma `(0,0)` attenuation-node
 admission, explicit rejection of gamma and heavy-ion TID, and the structured
 uncertainty contract. It also rejects TID absorbers outside the registered
 Al/Si/water material matrix without restricting shield-layer choices. A
@@ -229,8 +230,56 @@ diagnostics, not members of the ≤2% final acceptance population.
 
 Together these gates qualify only proton/helium-4 finite material-slab TID in
 Al, Si, and water. Formal Stage-4 completion still requires the independent-
-review record. DDD, `n_eq`, LET, `H100/10`, device response, organ dose, and
-crew-health claims remain disabled.
+review record. Passing Stage 4 does not enable the separately gated Stage-5
+DDD/`n_eq` capability, LET, `H100/10`, device response, organ dose, or crew-
+health claims.
+
+## Stage-5 silicon DDD and neutron-equivalent tests
+
+Stage 5 has two CTest gates and a downstream figure gate. Its response files
+and registered campaign are documented in `reference_ddd/README.md`; generated
+artifacts remain below the build tree and no Stage-5 test writes to `/tmp`.
+
+`stage5_core_tests.cc` is deterministic and transport-free. It loads the same
+strict `DamageResponseLibrary` used in production, authenticates each table,
+and verifies:
+
+- exact 100 MeV proton and helium-4 SR-NIEL nodes;
+- the geometric-mean identity for log-log interpolation and a closed-form
+  power-law interval fold over explicit source-bin edges;
+- the exact `[1.0, 1.1)` MeV ASTM neutron-group fold and the independently
+  converted 95 MeV-mb silicon reference;
+- inclusive 20 MeV neutron support followed by immediate out-of-domain
+  rejection, partial-bin rejection, and harmless zero fluence outside domain;
+- explicit unsupported-electron response; and
+- case-v2 rejection of a missing response package, a non-silicon absorber, or
+  an unsupported incident species.
+
+`test_stage5_transport.py` drives the full executable path. The preregistered
+exact-node cases use a 0.001 mm upstream aluminum layer and require the
+absorber-entry result to agree with the independently computed table value to
+0.5%; crossing count must be at least 0.995 per primary. It checks proton and
+helium-4 DDD, neutron DDD, and neutron-only `n_eq`, and closes the result to the
+event-level raw score and response-cell primitive. It also verifies that the
+response cache key contains the damage-manifest hash and that the Geant4
+nonionizing-deposition diagnostic is not added to the authoritative fold.
+
+A transported 25 MeV neutron must produce null DDD/`n_eq` values with
+`not_assessable` accuracy and nonzero out-of-domain counters; it may not be
+evaluated at 20 MeV. A separate 1 GeV proton/10 cm aluminum sensitivity case
+must produce absorber-entry secondary neutrons. Its expected high-energy
+neutrons exercise the same strict-domain policy while leaving supported partial
+scores auditable. These are implementation and reference checks, not an
+accelerator/device validation.
+
+An additional 100 MeV proton case at `mu = 0.5` checks the analytic
+`1/(A*mu)` scalar-fluence normalization while compact source placement prevents
+finite-face losses from contaminating that identity.
+
+Formal Stage-5 completion remains pending a project-selected accelerator or
+device-degradation data set and independent review. No test assigns a
+fabricated SR-NIEL uncertainty: a combined accuracy claim requires the case to
+supply a provenance-bearing `physics_reference` component.
 
 ## Validation figures
 
@@ -246,7 +295,7 @@ production source tool, and writes review artifacts to:
 <build>/validation_figures/manifest.json
 ```
 
-The eighteen figure subjects are Stage-1 core formulas, Stage-1 case boundaries,
+The twenty figure subjects are Stage-1 core formulas, Stage-1 case boundaries,
 Stage-1 analytic slab masses/ledger closure, original AMS primary-table
 analytic checks, the end-to-end AMS source-integral check, original AMS
 observation/adapter agreement, AMS-02 2025
@@ -255,8 +304,9 @@ observation/statistical-error spot checks, GOES analytic/oracle integration,
 GOES event observations/coverage, the CRaTER observational reference, Stage-3
 geometry/response algebra, Stage-3 response-grid interpolation algebra,
 Stage-3 transport/convergence comparisons, Stage-4 exact dose/covariance
-algebra, all Stage-4 NIST comparisons, and Stage-4 TID
-transport/convergence/ledger comparisons. The
+algebra, all Stage-4 NIST comparisons, Stage-4 TID
+transport/convergence/ledger comparisons, Stage-5 analytic/table folds, and
+Stage-5 full-transport absorber-entry comparisons. The
 manifest records captions, byte sizes, and SHA-256 hashes.
 
 The standalone Geant4 layer runners extend that coverage. They invoke

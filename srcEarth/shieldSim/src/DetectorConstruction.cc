@@ -26,6 +26,21 @@ const Options& DetectorConstruction::GetOptions() const  { return fOpts; }
 G4LogicalVolume* DetectorConstruction::GetShieldLV() const { return fShieldLV; }
 const std::vector<G4LogicalVolume*>& DetectorConstruction::GetShieldLVs() const { return fShieldLVs; }
 const std::vector<G4LogicalVolume*>& DetectorConstruction::GetScoringLVs() const { return fScoringLVs; }
+bool DetectorConstruction::IsAbsorberEntry(
+    std::size_t region,const G4StepPoint& postStepPoint) const {
+  return fAbsorberGeometry && region<fSensitiveRegionIds.size() &&
+      fAbsorberGeometry->IsEntryBoundary(fSensitiveRegionIds[region],postStepPoint);
+}
+double DetectorConstruction::GetAbsorberEntryAreaCM2(std::size_t region) const {
+  return fAbsorberGeometry && region<fSensitiveRegionIds.size()
+      ? fAbsorberGeometry->EntryNormalizationAreaCm2(fSensitiveRegionIds[region]) : 0.0;
+}
+double DetectorConstruction::GetAbsorberEntryFluenceWeightPerCM2(
+    std::size_t region,const G4StepPoint& postStepPoint) const {
+  return fAbsorberGeometry && region<fSensitiveRegionIds.size()
+      ? fAbsorberGeometry->EntryFluenceWeightPerCm2(
+          fSensitiveRegionIds[region],postStepPoint) : 0.0;
+}
 G4Box* DetectorConstruction::GetWorldBox() const { return fWorldBox; }
 G4double DetectorConstruction::GetSourcePlaneHalfX() const {
   if(fOpts.caseDefinition) return fOpts.caseDefinition->sourceSizeXmm*mm/2.0;
@@ -91,6 +106,7 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
   fShieldLV = nullptr;
   fShieldLVs.clear();
   fScoringLVs.clear();
+  fSensitiveRegionIds.clear();
 
   // The versioned case path is deliberately separate from the compatibility
   // CLI path below.  Every dimension and material comes from the resolved case;
@@ -134,7 +150,10 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
     fAbsorberGeometry=std::make_unique<shield_sim::SlabAbsorberGeometry>(
         c.absorbers[fOpts.activeAbsorberIndex]);
     const auto built=fAbsorberGeometry->Build(wLog,*fMaterialFactory,c.maxStepMm);
-    for(const auto& region:built.sensitiveRegions) fScoringLVs.push_back(region.logicalVolume);
+    for(const auto& region:built.sensitiveRegions){
+      fScoringLVs.push_back(region.logicalVolume);
+      fSensitiveRegionIds.push_back(region.stableId);
+    }
     return wPhys;
   }
 

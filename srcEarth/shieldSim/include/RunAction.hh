@@ -26,6 +26,7 @@
 class DetectorConstruction;
 class G4LogicalVolume;
 class G4Run;
+class G4StepPoint;
 namespace shield_sim { class AccuracyController; class Json; }
 
 class RunAction : public G4UserRunAction {
@@ -68,6 +69,14 @@ public:
                           int generation,const std::string& creatorProcess,
                           const std::string& stepDefiningProcess,
                           G4double totalEdep,G4double nonIonizingEdep);
+  // Stage-5 boundary response. Only an inward crossing of the absorber's
+  // declared upstream surface calls this method. NIEL is evaluated at the
+  // exact transported crossing energy and normalized by the finite absorber
+  // entry area and projected-direction cosine supplied by its geometry
+  // provider; Geant4's deposited nonionizing energy remains a separate ledger.
+  void RecordAbsorberEntry(std::size_t absorber,const std::string& particle,
+                           G4double kineticEnergyMeV,
+                           G4double fluenceWeightPerCm2);
   void AddPrimaryProtonExit(G4double kineticEnergyMeV);
   // Raw Stage-3 transport scores.  Each call updates the current primary
   // history; EndEvent commits one independent sample, including implicit zero
@@ -112,6 +121,9 @@ public:
   G4LogicalVolume*                     GetShieldLV() const;
   const std::vector<G4LogicalVolume*>& GetShieldLVs() const;
   const std::vector<G4LogicalVolume*>& GetScoringLVs() const;
+  bool AcceptsAbsorberEntry(std::size_t absorber,const G4StepPoint& postStepPoint) const;
+  G4double AbsorberEntryFluenceWeightPerCm2(
+      std::size_t absorber,const G4StepPoint& postStepPoint) const;
 
   void BeginOfRunAction(const G4Run*) override;
   void EndOfRunAction(const G4Run* run) override;
@@ -159,6 +171,8 @@ private:
   std::vector<G4double>       fEventEdepIonizing;
   std::vector<G4double>       fEventEdepTotal;
   std::vector<G4double>       fEventEdepNonIonizing;
+  G4double                    fEventDDDMeVPerG=0.0;
+  G4double                    fEventNeutronEquivalentPerCm2=0.0;
   bool                        fEventPrimaryProtonAbove10=false;
   bool                        fEventPrimaryProtonAbove100=false;
   std::unique_ptr<shield_sim::AccuracyController> fAccuracyController;
@@ -192,6 +206,9 @@ private:
   std::map<std::pair<std::string,std::string>,double> fRawCrossProducts;
   std::map<std::string,std::string> fRawScoreUnits;
   std::map<std::string,SecondaryLedger> fSecondaryLedgers;
+  G4long fDddOutOfDomainCrossings=0;
+  G4long fDddUnsupportedCrossings=0;
+  G4long fNeqOutOfDomainCrossings=0;
 
   G4double    fSourceNormNoAngular=0.0;
   G4double    fSourceAngularFactor=1.0;

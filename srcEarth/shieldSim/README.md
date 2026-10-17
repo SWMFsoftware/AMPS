@@ -10,7 +10,10 @@ phantom.
 
 Stages 1 and 2 are complete. Stages 3 and 4 are implemented and acceptance-
 tested but are **pending the required independent review**, so neither is
-formally complete. Stage 4 enables a bounded finite-material-slab TID
+formally complete. Stage 5 is implemented and reference-tested for natural-
+silicon DDD from protons, helium-4, and neutrons and for neutron-only ASTM E722
+`n_eq`; formal Stage-5 completion is pending a project-selected accelerator or
+device-degradation validation data set and independent review. Stage 4 enables a bounded finite-material-slab TID
 capability for proton and helium-4 incidence in aluminum, silicon, and water.
 It does not validate photon TID, electrons, heavier ions, devices, organs, or
 crew dose.
@@ -45,16 +48,16 @@ dependency. The science-facing case path is a strict
 - resolved case, geometry, material, source, Geant4, seed, and output
 provenance.
 
-The Stage-3/4 `shieldSim.case.v2` verification path adds explicit
+The Stage-3/4/5 `shieldSim.case.v2` path adds explicit
 local-to-world translation/unit-quaternion transforms for the source plane,
 shield reference surface, and absorber reference surface; monoenergetic
 proton, He-4, and explicit-ion response nodes; exact discrete-node direct
 sampling; ancestry-aware raw transport ledgers; and deterministic response
-matrix assembly/folding. It permits `transport_raw` and the Stage-4 `TID`
-quantity. TID is ionizing energy deposited in the complete finite slab divided
+matrix assembly/folding. It permits `transport_raw`, the Stage-4 `TID`
+quantity, and the separately gated Stage-5 `DDD` and `n_eq` quantities. TID is ionizing energy deposited in the complete finite slab divided
 by that slab's Geant4 mass. It is labeled material-slab dose, never organ or
-device dose. DDD, `n_eq`, LET, `H100/10`, crew, device, and instrument claims
-remain disabled. Gamma nodes are accepted only for controlled attenuation
+device dose. LET, `H100/10`, crew, device, and instrument claims remain
+disabled on case v2. Gamma nodes are accepted only for controlled attenuation
 verification. The case-v2 parser rejects a `TID` request containing a gamma or
 explicit heavy-ion response node, so those species cannot enter the validated
 TID domain accidentally. It likewise rejects a TID absorber outside the
@@ -71,11 +74,23 @@ pairwise correlation, pass a positive-semidefinite covariance check, and select
 the combined 95% coverage method. A missing budget remains runnable but yields
 `not_assessable` rather than an unsupported accuracy claim.
 
+Stage 5 adds a checksum-authenticated damage-response package. Its supported
+matrix is intentionally narrow: natural silicon (`Si_natural_G4_11_4`) with
+proton, helium-4, and neutron DDD, plus neutron-only ASTM E722-19 silicon
+`n_eq`. Charged particles use SR-NIEL-7 v11.1 positive nodes with log-log
+interpolation; neutrons use explicit ASTM groups through 20 MeV. Exact
+absorber-entry crossing energies are authoritative. A nonzero unsupported or
+out-of-domain contribution makes the affected quantity `not_assessable`; the
+code never clamps, extrapolates, or silently drops it. Geant4 nonionizing
+deposition per slab mass is retained as a separate diagnostic and is never
+added to the table fold.
+
 Stage 1 is a software/correctness gate, not physical validation of every
-radiation proxy. Versioned cases currently enable `TID` and `H100/10`; their
-validation and uncertainty status remain explicit. DDD, silicon 1-MeV-neutron-
-equivalent fluence, and step-scored LET remain disabled on the versioned path
-until their later roadmap stages supply approved data and validation. The older
+radiation proxy. Versioned case v1 enables its earlier `TID` and `H100/10`
+path; case v2 adds the bounded Stage-4 TID and Stage-5 silicon damage
+capabilities described above. Every result retains its validation and
+uncertainty status. Step-scored LET remains disabled until its later roadmap
+stage. The older
 CLI can still produce its historical analytic DDD/LET/n_eq estimates for
 regression compatibility; those results are prototype diagnostics, not
 science-facing outputs.
@@ -103,9 +118,9 @@ components:
 - `beam` and `isotropic` source modes controlled by CLI,
 - local-coordinate shield rear-face scoring,
 - separate total, ionizing, and non-ionizing deposit ledgers,
-- Stage-1 TID/H100/10 results plus explicitly labeled legacy DDD/n_eq/LET diagnostics,
+- versioned Stage-4 TID and Stage-5 silicon DDD/neutron-only `n_eq`, plus explicitly labeled legacy diagnostics,
 - detailed help text describing input/output units and radiation-effect approximations,
-- Layer-1/2/3/4 automated test scripts with deterministic diagnostic and regression output,
+- Layer-1/2/3/4 scripts plus Stage-5 CTest gates with deterministic diagnostic and regression output,
 - optional test/numerical controls: `--dump-run-summary`, `--production-cut`, and `--max-step`.
 
 ## Directory structure
@@ -122,6 +137,7 @@ shieldSim/
 │   ├── AbsorberGeometry.hh       # future-shape provider contract + slab
 │   ├── AccuracyController.hh     # running uncertainty/stopping state
 │   ├── CaseDefinition.hh         # strict resolved case data
+│   ├── DamageResponseLibrary.hh  # authenticated Stage-5 NIEL/E722 responses
 │   ├── GeometryTransform.hh       # canonical local-to-world transforms
 │   ├── MaterialLibrary.hh        # versioned records and overrides
 │   ├── ResponseMatrix.hh         # response cell/matrix/fold contracts
@@ -130,18 +146,21 @@ shieldSim/
 │   └── ...                       # Geant4 actions and legacy modules
 ├── src/
 │   ├── CaseDefinition.cc
+│   ├── DamageResponseLibrary.cc
 │   ├── MaterialLibrary.cc
 │   ├── MaterialFactory.cc
 │   ├── SpectrumDataset.cc
 │   ├── StrictJson.cc
 │   └── ...
 ├── data/
-│   └── material_library.v1.json
+│   ├── material_library.v1.json
+│   └── niel/                    # Stage-5 manifest, tables, and provenance
 ├── examples/
 │   ├── README.md
 │   ├── stage1_case.json
 │   ├── stage3_response_cell_case.json
 │   ├── stage4_tid_case.json
+│   ├── stage5_ddd_neq_case.json
 │   ├── sep_spectrum.dat
 │   └── sep_spectrum.metadata.v1.json
 ├── macros/
@@ -154,6 +173,9 @@ shieldSim/
     ├── stage4_core_tests.cc
     ├── test_stage4_nist_reference.py
     ├── test_stage4_tid_transport.py
+    ├── stage5_core_tests.cc
+    ├── test_stage5_transport.py
+    ├── reference_ddd/
     ├── generate_validation_figures.py
     ├── generate_layer_validation_figures.py
     ├── test_stage1_case_boundaries.py
@@ -706,6 +728,66 @@ Organ/tissue names define material composition only. `shieldSim` does not apply
 NASA limit checks, quality factors, LET/RBE weighting, organ weighting, or
 device response functions internally.
 
+## Stage-5 silicon DDD and neutron-equivalent fluence
+
+Use the versioned case-v2 path for the implemented damage calculation:
+
+```bash
+./shieldSim --validate-case=../examples/stage5_ddd_neq_case.json
+./shieldSim --case=../examples/stage5_ddd_neq_case.json
+```
+
+The case must request `DDD`, `n_eq`, or both and must provide a
+`damage_response` object naming `shieldSim.silicon_displacement_damage` version
+`1.0.0`. Every absorber in that case must resolve to the authenticated natural-
+silicon material identity. The manifest and each table are hash-checked before
+transport; the fully expanded manifest and its canonical hash are retained in
+the resolved case/result provenance.
+
+For slab entry area `A`, inward surface normal `n`, and crossing direction `u`,
+the authoritative event scores are
+
+```text
+DDD  = sum_crossings S_NIEL(species, E_entry) / (A |n dot u|)
+n_eq = sum_neutron_crossings k_E722(E_entry) / (A |n dot u|)
+```
+
+where re-entry through the declared upstream surface is another physical
+fluence crossing. The projected-cosine factor converts crossings of the fixed
+face into scalar fluence and is tested with an oblique analytic case. Side
+entry and downstream-face backscatter are excluded by
+the `slab.v1` surface definition. The surface classifier and normalization area
+belong to the `AbsorberGeometry` provider, not to the quantity calculation. A
+future arbitrary-shape provider must define and hash its entrance patch(es),
+orientation, area/weighting rule, sensitive-region mapping, and boundary
+tolerance, then pass the shape-validation ladder in the roadmap. It can reuse
+the same transport hook and damage fold; syntax acceptance alone will not
+enable a new shape.
+
+The current table domains are 0.0002–10000 MeV for protons, 0.0001–4000 MeV
+for helium-4, and 1e-10–20 MeV for neutrons. Energies are total kinetic energy
+per particle. Charged-particle values are interpolated log-log between positive
+nodes. Neutron values are group constants on explicit half-open ASTM intervals,
+with the final 20 MeV endpoint included. No extrapolation is allowed. Any
+nonzero missing contribution makes the corresponding output and its accuracy
+`not_assessable`, while the supported partial value and rejected-crossing count
+remain auditable.
+
+`n_eq` includes neutron damage only and uses the ASTM E722-19 95 MeV-mb
+natural-silicon reference. Proton and helium-4 DDD are not converted to
+neutron-equivalent fluence. The result’s `diagnostic_Geant4_nonionizing_deposition`
+is a separate finite-slab diagnostic and is never summed with DDD.
+
+The usual 10% default accuracy request still applies. Statistical precision can
+be assessed from event histories. A `combined` Stage-5 claim additionally
+requires a case-supplied `physics_reference` standard-uncertainty component
+with explicit provenance; the code does not invent an uncertainty for the
+SR-NIEL/ASTM response. Without it, combined accuracy is `not_assessable`.
+See [`data/niel/README.md`](data/niel/README.md) and
+[`tests/reference_ddd/README.md`](tests/reference_ddd/README.md) for data and
+test provenance. This is an environmental exposure proxy, not a device-
+degradation or instrument-design calculation.
+
 
 ## Legacy computed-quantity selection
 
@@ -744,7 +826,7 @@ DDD       Displacement Damage Dose proxy
 
 n_eq      1-MeV Neutron Equivalent fluence proxy
           n_eq = DDD / NIEL_1MeV_neutron(material).
-          Historical surrogate only. Production n_eq will be silicon-only and use one ASTM E722 convention.
+          Historical surrogate only; it is distinct from the case-v2 neutron-only ASTM E722 implementation.
           Output units: cm^-2/primary and cm^-2/s.
 
 LET       LET spectrum
@@ -760,9 +842,10 @@ H100/10   Spectral hardness index
 ```
 
 The historical equations are documented in `include/ComputedQuantities.hh` and
-`src/ComputedQuantities.cc`; their presence is not validation evidence. The
-roadmap requires approved, version-pinned response data and independent
-validation before DDD, `n_eq`, or LET can be enabled in versioned cases.
+`src/ComputedQuantities.cc`; their presence is not validation evidence. They
+are not used by the Stage-5 versioned silicon calculation above. LET remains
+behind its later validation gate; formal Stage-5 sign-off still requires the
+external evidence and review stated in the roadmap.
 
 ## Legacy compiled catalog maintenance
 

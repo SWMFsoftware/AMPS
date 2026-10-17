@@ -383,7 +383,9 @@ Options ParseArguments(int argc, char** argv){
     o.outputPrefix=c.outputPrefix;
     o.calcTID=std::find(c.quantities.begin(),c.quantities.end(),"TID")!=c.quantities.end();
     o.calcHardness=std::find(c.quantities.begin(),c.quantities.end(),"H100/10")!=c.quantities.end();
-    o.calcDDD=o.calcNEq=o.calcLET=false;
+    o.calcDDD=std::find(c.quantities.begin(),c.quantities.end(),"DDD")!=c.quantities.end();
+    o.calcNEq=std::find(c.quantities.begin(),c.quantities.end(),"n_eq")!=c.quantities.end();
+    o.calcLET=false;
     o.scoringMaterials.clear();
     const auto& absorber=c.absorbers.front();
     o.scoringMaterials.push_back({absorber.materialId,absorber.thicknessMm*mm});

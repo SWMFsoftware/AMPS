@@ -1,16 +1,20 @@
 # shieldSim development and validation roadmap
 
 Status: **Stage 0 complete; Stage 1 complete; Stage 2 complete; Stages 3 and 4
-implemented and acceptance-tested, pending independent review**
-Prepared: 2026-10-16; Stage-4 implementation/evidence updated 2026-10-17
+implemented and acceptance-tested, pending independent review; Stage 5
+implemented and reference-tested, pending accelerator/device validation and
+independent review**
+Prepared: 2026-10-16; Stage-5 implementation/evidence updated 2026-10-17
 Requirements decisions approved: 2026-10-16 and 2026-10-17
 Scope: environment-effect radiation proxies for spacecraft-anomaly analysis
 and preliminary mission assessment; ordered multilayer shielding; slab
 absorbers initially; published GCR/SEP inputs now; arbitrary absorber geometry
 and AMPS input through later adapters  
-Release status: **the Stage-4 TID implementation has passed its registered
-acceptance tests but lacks the required independent review. It must not be
-represented as a formally qualified radiation-effects model.**
+Release status: **the Stage-4 TID and Stage-5 silicon damage implementations
+have passed their registered automated gates. Stage 4 lacks independent review;
+Stage 5 lacks both the project-selected accelerator/device validation data set
+and independent review. Neither may be represented as a formally qualified
+radiation-effects model.**
 
 The filename retains the spelling requested in the task. This document uses
 the normative words **must**, **should**, and **may** deliberately. A stage is
@@ -159,6 +163,35 @@ open assumptions:
     (h) implementation and acceptance testing may finish without a reviewer,
     but formal Stage-4 completion requires the independent-review record in
     Section 10.
+19. The Stage-5 implementation decisions approved on 2026-10-17 are:
+    (a) the enabled target is natural silicon only. DDD includes proton,
+    helium-4, and neutron contributions; electron, heavier-ion, and non-silicon
+    damage responses remain unavailable;
+    (b) charged-particle responses are SR-NIEL-7 v11.1 natural-Si tables with
+    `Ed = 21 eV`, Coulomb plus hadronic contributions, and no hadronic-threshold
+    scaling. No alternative scaling is a hidden default;
+    (c) the neutron response is ASTM E722-19, reaffirmed 2026, with the
+    prescribed 95 MeV-mb 1-MeV-neutron reference. The enabled neutron domain
+    ends at 20 MeV;
+    (d) E722 `n_eq` contains the neutron contribution only. Proton and helium-4
+    DDD are never divided by the E722 reference or reported as neutron-
+    equivalent fluence;
+    (e) charged positive nodes use log-log interpolation; neutron values are
+    groupwise on explicit boundaries; source folds require explicit bin edges.
+    Any nonzero unsupported or out-of-domain contribution makes the affected
+    result `not_assessable`; no clamping, extrapolation, or silent omission is
+    permitted;
+    (f) absorber-entry fluence folding is authoritative. Geant4 nonionizing
+    deposition divided by slab mass is retained as a separate diagnostic and
+    is never added to the table-folded result;
+    (g) shieldSim does not invent an SR-NIEL/ASTM physics-reference
+    uncertainty. A combined accuracy request requires a case-supplied
+    `physics_reference` uncertainty component with provenance; otherwise it is
+    `not_assessable`; and
+    (h) implementation and reference testing may finish without external
+    device evidence or a reviewer, but formal Stage-5 completion requires a
+    project-selected accelerator/device-degradation data set and the independent-
+    review record in Section 10.
 
 For anomaly analysis, a calculated proxy is an environmental covariate, not by
 itself proof that radiation caused an anomaly. Results must preserve time
@@ -222,11 +255,16 @@ The following boundaries are mandatory:
 8. **No validation parameter may be tuned against its final validation data.**
    Calibration cases and blind validation cases must be declared in advance.
 
-## 2. Audit of the current model
+## 2. Baseline audit that motivated the staged work
+
+This section records the legacy behavior found before Stages 1-5. It is retained
+for traceability, not as a description of the current versioned case-v2 path.
+The stage-status sections below state which gaps have since been closed and
+which formal validation gates remain open.
 
 ### 2.1 Useful foundation already present
 
-The current repository provides a compact Geant4 planar-slab application with:
+The baseline repository provided a compact Geant4 planar-slab application with:
 
 - CLI-selected Geant4 reference physics lists;
 - a material catalog spanning the requested material families;
@@ -241,7 +279,7 @@ validation.
 
 ### 2.2 Gaps that block scientific use
 
-| Area | Current behavior | Why it blocks a physical claim |
+| Area | Baseline behavior | Why it blocked a physical claim |
 |---|---|---|
 | Spectrum schema | Three columns: total kinetic energy, proton value, alpha value | Cannot preserve bin edges, energy/nucleon or rigidity, direction, epoch, uncertainty, covariance, or additional ions |
 | Built-in GCR | Analytic GCR-like proton/alpha approximation | Not a traceable mission environment and lacks heavy GCR ions |
@@ -258,9 +296,9 @@ validation.
 | Uncertainty | Monte Carlo outputs and rates are written without a complete uncertainty budget | Statistical precision cannot stand in for source, material, cross-section, geometry, and response uncertainty |
 | Validation | Regression and qualitative sanity tests exist | A regression preserves behavior, including incorrect behavior; no accepted analytic, tabulated, or observational validation baseline exists |
 
-The first development release must disable or prominently watermark
+The first development release had to disable or prominently watermark
 science-facing DDD, `n_eq`, LET, and hardness outputs until the corresponding
-stage gates below are passed. The current approximate functions may remain
+stage gates below are passed. The approximate functions may remain
 available only under names containing `prototype` or `surrogate`.
 
 ## 3. Required architecture
@@ -830,10 +868,12 @@ edges and an explicit within-bin representation; multiplying a bin-center
 value by an inferred width is not acceptable when the source defines another
 quantity.
 
-Two methods should be retained and compared:
+Two methods are retained with deliberately different status:
 
-1. transport-scored non-ionizing deposition in the target;
-2. fluence folded with an approved NIEL table.
+1. transport-scored non-ionizing deposition in the target, as a separate
+   diagnostic;
+2. absorber-entry fluence folded with the approved NIEL table, as the
+   authoritative DDD proxy.
 
 Their definitions and expected differences must be documented. The existing
 analytic surrogate must not be used in a production result. DDD terminology
@@ -850,11 +890,12 @@ unless explicitly approved and uncertainty-bounded.
 For silicon, the conventional form is:
 
 ```text
-Phi_eq,1MeV,n,Si = DDD_Si / S_NIEL,1MeV,n,Si
+Phi_eq,1MeV,n,Si = DDD_neutron,Si / S_NIEL,1MeV,n,Si
 ```
 
-The NIEL numerator and reference denominator must come from the same ASTM
-E722-19(2026) silicon convention. The implementation must store the reference value, edition,
+The numerator is the neutron contribution only; charged-particle DDD is not
+converted to `n_eq`. The NIEL numerator and reference denominator must come
+from the same ASTM E722-19(2026) silicon convention. The implementation must store the reference value, edition,
 and citation with the result. For SiO2, SiC, GaAs, InGaAs, Ge, water, and tissue,
 the program returns “not defined for selected convention.” It must not
 manufacture a material-specific `n_eq` by analogy. A later non-silicon
@@ -1752,13 +1793,89 @@ health claim.
 
 ### Stage 5 - physically defined DDD and `n_eq`
 
+**Status: implemented and reference-tested on 2026-10-17; pending a project-
+selected accelerator/device-degradation validation data set and independent
+review, and therefore not formally complete.** The implemented domain is
+natural-silicon DDD for proton, helium-4, and neutron absorber-entry fluence and
+ASTM E722-19 neutron-only `n_eq`. It excludes electrons, ions heavier than
+helium-4, non-silicon targets, neutron energies above 20 MeV, arbitrary absorber
+shapes, and every claim of device degradation.
+
+Implementation evidence:
+
+- `DamageResponseLibrary` loads
+  `data/niel/damage_response_library.v1.json`, verifies every canonical table
+  SHA-256, and strictly validates identity, version, target, units, total-
+  kinetic-energy coordinates, source provenance, positive/monotonic nodes,
+  contiguous neutron groups, group hardness ratios, and the independent
+  conversion of 95 MeV-mb to `0.002037006185398159 MeV cm2/g` using the
+  manifest atomic weight and Avogadro constant;
+- the package pins SR-NIEL-7 v11.1 proton and helium-4 responses for natural Si,
+  `Ed = 21 eV`, Coulomb plus hadronic terms, and no hadronic scaling. Its
+  neutron file pins 640 ASTM E722-19 groups with explicit boundaries from the
+  SAND2019-15194 E192 appendix and a maximum energy of 20 MeV. Raw calculator-
+  response and edge-source hashes, URLs, versions, retrieval times, and
+  parameter choices travel in the runtime manifest;
+- charged values use log-log interpolation only between positive nodes. A
+  piecewise-constant differential source bin is integrated analytically across
+  every intersected power-law segment. Neutron bins are intersected exactly
+  with the explicit constant-response groups. A nonzero partially or wholly
+  out-of-domain bin is rejected rather than clipped; a zero out-of-domain bin
+  cannot invalidate an otherwise valid fold;
+- the full transport path scores exact kinetic energy whenever a track enters
+  the absorber's declared upstream response surface. For the current slab,
+  side entries and downstream-face backscatter are excluded and upstream-face
+  re-entry is counted. Each crossing contributes
+  `S_NIEL(E)/(A_entry*|n dot u|)` so oblique crossings have the correct scalar-
+  fluence normalization. The entry
+  classifier and normalization area are supplied by `AbsorberGeometry`, so a
+  future shape provider can define an entrance patch without changing the
+  damage algorithm; that provider remains disabled until Stage 10 validation;
+- DDD sums only supported proton, helium-4, and neutron crossings. `n_eq` sums
+  neutron E722 hardness only; proton/helium-4 damage is explicitly excluded.
+  Any nonzero unsupported DDD crossing or out-of-domain crossing makes the
+  affected value, interval, rate, and accuracy `not_assessable`, while the
+  partial supported sum and rejected-crossing counts remain in raw evidence;
+- Geant4 nonionizing energy deposited in the finite slab divided by slab mass
+  is emitted as `diagnostic_Geant4_nonionizing_deposition`. It is neither a
+  replacement for nor an additive correction to absorber-entry DDD;
+- case v2 requires an exact damage-library ID/version and the authenticated
+  natural-silicon absorber identity. The expanded manifest/hash enters the
+  resolved case, result provenance, and response-cache key, preventing reuse
+  across a damage-table change. Response cells label the Stage-5 scoring
+  contract separately from raw Stage-3 transport; and
+- event-level DDD/`n_eq` values enter the normal accuracy controller. Statistical
+  precision can be assessed, but a complete combined Stage-5 budget must
+  include a case-supplied `physics_reference` component with provenance and the
+  approved covariance/coverage method. No default SR-NIEL uncertainty exists.
+
+Automated acceptance evidence:
+
+- `stage5_core` checks authenticated loading, exact 100 MeV proton and helium-4
+  nodes, the log-log geometric-mean identity, a closed-form charged interval
+  fold, an exact `[1.0,1.1)` MeV ASTM fold, the 95 MeV-mb ratio, inclusive
+  20 MeV endpoint, immediate out-of-domain rejection, zero-fluence semantics,
+  unsupported species, and strict case capability boundaries;
+- `stage5_transport` runs the normal parser, primary generator, Geant4
+  multilayer geometry, provider-defined entry surface, event statistics, and
+  output writers. Exact-node proton, helium-4, neutron DDD, and neutron `n_eq`
+  agree with independent values within the preregistered 0.5% transport limit
+  and close exactly to the raw entry/response-cell ledgers. A separate oblique
+  proton case verifies the analytic `1/(A*mu)` projected-area factor;
+- the transport gate requires a 25 MeV neutron to yield null/not-assessable
+  outputs with explicit rejected crossings and demonstrates secondary-neutron
+  sensitivity behind the maximum 10 cm aluminum layer; and
+- `validation_figures` renders Stage-5 core and transport comparisons in PNG
+  and SVG only after the numeric gates pass. JSON evidence is authoritative;
+  figures are review aids.
+
 Entry: selected NIEL source/standard and supported material/species matrix.  
 Work:
 
 - import pinned NIEL tables without extrapolation;
 - implement edge-aware fluence integration and uncertainty propagation;
-- compare target-scored non-ionizing deposition and table folding where their
-  definitions overlap;
+- retain target-scored non-ionizing deposition as a separate diagnostic and
+  compare it with table folding only under a specifically registered benchmark;
 - implement 1-MeV-neutron-equivalent fluence only for approved materials and
   convention;
 - expose unsupported combinations as unavailable.
@@ -1766,7 +1883,10 @@ Work:
 Tests: V1 analytic folds and V2 NIEL point/integral comparisons; V3 secondary
 and neutron sensitivity.  
 Exit evidence: every enabled particle/material pair has provenance, domain,
-interpolation error, reference tests, and uncertainty.  
+interpolation contract/reference tests, a justified physics-reference
+uncertainty, applicable accelerator/device validation, and review. The
+implementation/reference portions are complete; external physical evidence and
+review remain open.
 Forbidden carry-over: no analytic-surrogate value in a production column.
 
 ### Stage 6 - physically defined LET and hardness
@@ -1992,10 +2112,20 @@ assumption. The named capability remains disabled until its input is available:
    requires source metadata
    sufficient to map the look directions/acceptance into the simulation frame;
    otherwise only data ingestion and event integration are enabled.
-3. **NIEL tables:** Stage 5 must pin the SR-NIEL/equivalent release and exact
-   target/species/table conventions consistent with ASTM E3084 and, for silicon
-   `n_eq`, ASTM E722. Unsupported materials/species remain disabled rather than
-   extrapolated.
+3. **Stage-5 external validation and review:** The SR-NIEL-7 v11.1 and ASTM
+   E722-19 tables, exact natural-Si conventions, hashes, algorithms, strict
+   domains, and automated reference/transport evidence are implemented. Formal
+   completion still requires the project to select an accelerator or device-
+   degradation data set with reconstructable particle/energy/fluence, silicon
+   target/device, irradiation conditions, measured response, uncertainty, and
+   calibration/validation partition. That evidence must support a
+   provenance-bearing physics-reference uncertainty; shieldSim does not infer
+   one. An independent reviewer must then examine data extraction, NIEL/E722
+   conventions, domain/error policy, absorber-entry surface normalization,
+   secondary sensitivity, uncertainty/coverage, generated figures, and the
+   prohibition against interpreting DDD as device degradation. The review
+   record must give name, role/affiliation, date, findings, deviations/waivers,
+   and disposition.
 4. **CRaTER preregistration:** Before Stage 8 implementation uses observational
    values, the independent reviewer must archive the instrument reconstruction,
    interval-quality rules, calibration interval(s), chronologically held-out
@@ -2073,8 +2203,11 @@ assumption. The named capability remains disabled until its input is available:
   [ASTM E3084](https://store.astm.org/e3084-17.html), and
   [ASTM E722](https://store.astm.org/standards/e722).
 - NIEL implementation candidate: [SR-NIEL calculator and data project,
-  version history](https://www.sr-niel.asi.it/index.php/history). The exact
-  pinned tables and target conventions remain a Stage 5 artifact.
+  version history](https://www.sr-niel.asi.it/index.php/history). Stage 5 pins
+  the exact SR-NIEL-7 v11.1 natural-silicon charged tables and the ASTM E722-19
+  neutron result package under `data/niel/`.
+- ASTM/E192 group-edge provenance used for the Stage-5 neutron package:
+  [SAND2019-15194](https://www.osti.gov/servlets/purl/1592863), Appendix B.
 - CRaTER instrument data archive: [NASA PDS LRO CRaTER bundle,
   DOI 10.17189/jr9s-6678](https://pds.nasa.gov/ds-view/pds/viewBundle.jsp?identifier=urn%3Anasa%3Apds%3Alro-crater&version=2.4).
 - CRaTER GCR LET method: [Looper et al., 2020](https://doi.org/10.1029/2020SW002543).

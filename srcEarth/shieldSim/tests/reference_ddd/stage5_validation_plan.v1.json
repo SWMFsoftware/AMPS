@@ -1,0 +1,34 @@
+{
+  "schema_version": "shieldSim.stage5_validation_plan.v1",
+  "registration_status": "fixed_before_automated_final_stage5_acceptance_campaign_after_one_manual_neutron_smoke_run_and_initial_normal_incidence_dry_run",
+  "validated_target": "Si_natural_G4_11_4",
+  "reference_library": "SR-NIEL-7 v11.1 charged particles plus ASTM E722-19 neutron groups",
+  "charged_particle_interpolation": "log_log_between_positive_nodes",
+  "neutron_integration": "groupwise_explicit_edges",
+  "out_of_domain_policy": "not_assessable_no_extrapolation",
+  "transport_cases": [
+    {"id":"proton_100MeV","particle":{"name":"proton","Z":1,"A":1},"energy_MeV":100.0,"niel_MeV_cm2_g":0.0029757},
+    {"id":"alpha_100MeV","particle":{"name":"alpha","Z":2,"A":4},"energy_MeV":100.0,"niel_MeV_cm2_g":0.015904},
+    {"id":"neutron_1p05MeV","particle":{"name":"neutron","Z":0,"A":1},"energy_MeV":1.05,"niel_MeV_cm2_g":0.0016573}
+  ],
+  "transport_histories": 200,
+  "negligible_shield_thickness_mm": 0.001,
+  "transport_reference_relative_tolerance": 0.005,
+  "entry_crossing_fraction_min": 0.995,
+  "oblique_fluence_case": {
+    "particle": {"name":"proton","Z":1,"A":1},
+    "energy_MeV": 100.0,
+    "niel_MeV_cm2_g": 0.0029757,
+    "mu": 0.5,
+    "phi_deg": 0.0,
+    "histories": 200,
+    "acceptance_relative": 0.005
+  },
+  "out_of_domain_case": {"particle":{"name":"neutron","Z":0,"A":1},"energy_MeV":25.0,"histories":20},
+  "secondary_sensitivity": {"particle":{"name":"proton","Z":1,"A":1},"energy_MeV":1000.0,"aluminum_thickness_mm":100.0,"histories":300},
+  "formal_completion_exclusions": [
+    "no project-selected accelerator or device-degradation validation dataset",
+    "no independent review",
+    "no electron, heavier-ion, or non-silicon damage response"
+  ]
+}

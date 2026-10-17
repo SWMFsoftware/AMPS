@@ -1,0 +1,85 @@
+{
+  "schema_version": "shieldSim.damage_response_library.v1",
+  "library_id": "shieldSim.silicon_displacement_damage",
+  "library_version": "1.0.0",
+  "target": {
+    "material_id": "Si_natural_G4_11_4",
+    "description": "natural silicon",
+    "atomic_weight_g_mol": 28.0855
+  },
+  "out_of_domain_policy": "not_assessable_no_extrapolation",
+  "charged_particle_interpolation": "log_log_between_positive_nodes",
+  "neutron_integration": "ASTM_groupwise_explicit_edges",
+  "n_eq": {
+    "convention": "ASTM_E722_19_silicon_neutron_contribution_only",
+    "reference_damage_function_MeV_mb": 95.0,
+    "reference_niel_MeV_cm2_g": 0.002037006185398159,
+    "avogadro_constant_mol_inverse": 6.02214076e23,
+    "supported_species": ["neutron"]
+  },
+  "tables": [
+    {
+      "species": "proton",
+      "representation": "positive_point_nodes",
+      "energy_coordinate": "total_kinetic_energy",
+      "energy_unit": "MeV",
+      "response_unit": "MeV cm2/g",
+      "path": "sr_niel_v11_1_si_proton.csv",
+      "sha256": "sha256:020081a0941bd4f54c9006829d75906682f3a2dd167b9c8f16bb10a35dcba637",
+      "domain_min_MeV": 0.0002,
+      "domain_max_MeV": 10000.0,
+      "source": {
+        "name": "SR-NIEL-7",
+        "version": "11.1",
+        "retrieved_utc": "2026-10-17T16:47:12Z",
+        "url": "https://www.sr-niel.asi.it/index.php/sr-niel-web-calculators/niel-calculator-for-electrons-protons-and-ions/protons-ions-niel-calculator",
+        "license_status": "not_identified_verify_before_redistribution",
+        "raw_response_sha256": "sha256:8d88f35829dd2118f196c5f75ac2987cd63596e96d4b15d98e00b6eabdb5f863",
+        "parameters": "1H in Si; Ed=21 eV; Coulomb+hadronic; no hadronic Ed scaling; fluence=1 cm^-2"
+      }
+    },
+    {
+      "species": "alpha",
+      "representation": "positive_point_nodes",
+      "energy_coordinate": "total_kinetic_energy",
+      "energy_unit": "MeV",
+      "response_unit": "MeV cm2/g",
+      "path": "sr_niel_v11_1_si_alpha.csv",
+      "sha256": "sha256:5ccf1cbf08e7c7cc4564e6cc37611afea22a8d50ee69609429b53a92498630b1",
+      "domain_min_MeV": 0.0001,
+      "domain_max_MeV": 4000.0,
+      "source": {
+        "name": "SR-NIEL-7",
+        "version": "11.1",
+        "retrieved_utc": "2026-10-17T16:48:35Z",
+        "url": "https://www.sr-niel.asi.it/index.php/sr-niel-web-calculators/niel-calculator-for-electrons-protons-and-ions/protons-ions-niel-calculator",
+        "license_status": "not_identified_verify_before_redistribution",
+        "raw_response_sha256": "sha256:1492533ea9c00a78911df33e7336a73748ee5bfc526ee71f8739b53213f1d6d5",
+        "parameters": "4He in Si; Ed=21 eV; Coulomb+hadronic; no hadronic Ed scaling; fluence=1 cm^-2"
+      }
+    },
+    {
+      "species": "neutron",
+      "representation": "group_constant",
+      "energy_coordinate": "total_kinetic_energy",
+      "energy_unit": "MeV",
+      "response_unit": "MeV cm2/g",
+      "path": "astm_e722_19_si_neutron_groups.csv",
+      "sha256": "sha256:f08ff7e7026cc2b5729c26c33e7cfcd4110efd2b876483fd58b17b6bbe475c52",
+      "domain_min_MeV": 1.0e-10,
+      "domain_max_MeV": 20.0,
+      "source": {
+        "name": "ASTM E722-19 silicon damage function through SR-NIEL-7 v11.1",
+        "version": "E722-19 (reaffirmed 2026)",
+        "retrieved_utc": "2026-10-17T16:49:26Z",
+        "url": "https://www.sr-niel.asi.it/index.php/sr-niel-web-calculators/niel-calculator-for-neutrons-using-astm-standards/neutrons-niel-calculator",
+        "license_status": "not_identified_verify_before_redistribution",
+        "raw_response_sha256": "sha256:17f0e7ee25e1d70204aa4c29f44f974305aa68aed25ddc3ec741bc572ce48db3",
+        "edge_source": "SAND2019-15194 Appendix B E192 640-group boundaries",
+        "edge_source_url": "https://www.osti.gov/servlets/purl/1592863",
+        "edge_source_sha256": "sha256:dce7bf0116cedb0dab24985a38e425ca0a10d73f64e5e0cae4af3188c2229179",
+        "parameters": "neutrons in Si; ASTM E722-19; fluence=1 cm^-2"
+      }
+    }
+  ]
+}

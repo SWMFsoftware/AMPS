@@ -14,23 +14,21 @@
  * in the shieldSim UI:
  *
  *   TID       total ionizing dose in each target material;
- *   DDD       displacement damage dose proxy from NIEL x fluence;
- *   n_eq      1-MeV neutron-equivalent fluence proxy derived from DDD;
+ *   DDD       legacy compatibility proxy from analytic NIEL x shield-exit fluence;
+ *   n_eq      legacy material proxy derived from aggregate surrogate DDD;
  *   LET       transmitted charged-particle fluence spectrum binned by LET;
  *   H100/10   primary-proton shield-exit fluence(E>100 MeV) divided by
  *             fluence(E>10 MeV), evaluated from exact crossing energies.
  *
  * Important physics boundary between transport and post-processing
  * ----------------------------------------------------------------
- * TID is scored directly from the Geant4 energy deposition in the selected
- * target volumes and is therefore the most direct quantity.  DDD, n_eq, and LET
- * are spectrum-folding quantities.  They use the transmitted-particle spectrum
- * crossing the downstream shield face, then fold that spectrum with analytic or
- * semi-analytic response functions.  The functions supplied here are intended as
- * transparent first-order engineering approximations and documented placeholders;
- * for final mission or device work they should be replaced by project-specific
- * NIEL tables, stopping-power tables, quality factors, device damage functions,
- * or agency-standard post-processing as appropriate.
+ * This module is the compatibility path. TID is scored directly from Geant4
+ * deposition; its DDD, n_eq, and LET helpers fold the shield-exit spectrum with
+ * analytic or semi-analytic surrogates. Versioned Stage-5 cases do NOT use the
+ * DDD/n_eq functions below: RunAction folds exact absorber-entry crossings with
+ * the authenticated DamageResponseLibrary and implements neutron-only ASTM E722
+ * n_eq. Keeping that boundary explicit prevents legacy output from being
+ * mistaken for the enabled Stage-5 observable.
  *
  * References / provenance for equations and conventions
  * -----------------------------------------------------
@@ -100,16 +98,15 @@ G4double ChargedLET_MeV_cm2_mg(const G4String& particleName,
                                G4double kineticEnergyMeV,
                                const G4Material* material);
 
-// Approximate NIEL mass stopping power in MeV cm^2/g.  This is the response
-// function used in the DDD integral.  The current implementation is a documented
-// surrogate normalized to a material-dependent 1-MeV neutron NIEL reference;
-// replace this function with tabulated SR-NIEL/NIEL data for production work.
+// Approximate legacy NIEL mass stopping power in MeV cm^2/g. This function is
+// used only by compatibility CLI calculations. Production case-v2 Stage-5 DDD
+// uses DamageResponseLibrary instead and must never call this surrogate.
 G4double NIEL_MeV_cm2_g(const G4String& particleName,
                         G4double kineticEnergyMeV,
                         const G4Material* material);
 
-// Reference NIEL value for a 1-MeV neutron in the material, in MeV cm^2/g.  This
-// is used to convert DDD to the 1-MeV neutron-equivalent fluence proxy:
+// Legacy material-dependent reference in MeV cm^2/g. This converts aggregate
+// compatibility DDD only; it is not the Stage-5 neutron-only E722 definition:
 //   n_eq = DDD / NIEL_1MeV_neutron.
 G4double ReferenceNIEL1MeVNeutron_MeV_cm2_g(const G4Material* material);
 

@@ -1,0 +1,232 @@
+{
+  "schema_version": "shieldSim.case.v2",
+  "case_id": "stage5_1p05MeV_neutron_silicon_DDD_neq",
+  "purpose": "verification_test",
+  "material_library": {
+    "path": "../data/material_library.v1.json",
+    "library_id": "shieldSim.reference_materials",
+    "library_version": "1.0.0"
+  },
+  "material_overrides": [],
+  "geometry": {
+    "coordinate_frame": {
+      "name": "world_cartesian_mm",
+      "handedness": "right",
+      "origin": "world_center",
+      "local_surface_normal": "+z"
+    },
+    "world": {
+      "size_x": {
+        "value": 200.0,
+        "unit": "mm"
+      },
+      "size_y": {
+        "value": 200.0,
+        "unit": "mm"
+      },
+      "size_z": {
+        "value": 200.0,
+        "unit": "mm"
+      },
+      "center_x": {
+        "value": 0.0,
+        "unit": "mm"
+      },
+      "center_y": {
+        "value": 0.0,
+        "unit": "mm"
+      },
+      "center_z": {
+        "value": 0.0,
+        "unit": "mm"
+      }
+    },
+    "source_plane": {
+      "size_x": {
+        "value": 50.0,
+        "unit": "mm"
+      },
+      "size_y": {
+        "value": 50.0,
+        "unit": "mm"
+      },
+      "transform": {
+        "translation": {
+          "x": {
+            "value": 0.0,
+            "unit": "mm"
+          },
+          "y": {
+            "value": 0.0,
+            "unit": "mm"
+          },
+          "z": {
+            "value": -80.0,
+            "unit": "mm"
+          }
+        },
+        "rotation_quaternion_local_to_world": {
+          "w": 1.0,
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    "shield_stack": {
+      "size_x": {
+        "value": 50.0,
+        "unit": "mm"
+      },
+      "size_y": {
+        "value": 50.0,
+        "unit": "mm"
+      },
+      "transform": {
+        "translation": {
+          "x": {
+            "value": 0.0,
+            "unit": "mm"
+          },
+          "y": {
+            "value": 0.0,
+            "unit": "mm"
+          },
+          "z": {
+            "value": -20.0,
+            "unit": "mm"
+          }
+        },
+        "rotation_quaternion_local_to_world": {
+          "w": 1.0,
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "layers": [
+        {
+          "layer_id": "negligible_upstream_al",
+          "material": "Al",
+          "thickness": {
+            "type": "geometric",
+            "value": 0.001,
+            "unit": "mm"
+          }
+        }
+      ]
+    },
+    "absorbers": [
+      {
+        "absorber_id": "silicon_proxy",
+        "material": "Si",
+        "geometry": {
+          "type": "slab",
+          "size_x": {
+            "value": 50.0,
+            "unit": "mm"
+          },
+          "size_y": {
+            "value": 50.0,
+            "unit": "mm"
+          },
+          "thickness": {
+            "value": 1.0,
+            "unit": "mm"
+          },
+          "transform": {
+            "translation": {
+              "x": {
+                "value": 0.0,
+                "unit": "mm"
+              },
+              "y": {
+                "value": 0.0,
+                "unit": "mm"
+              },
+              "z": {
+                "value": -16.0,
+                "unit": "mm"
+              }
+            },
+            "rotation_quaternion_local_to_world": {
+              "w": 1.0,
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          }
+        }
+      }
+    ]
+  },
+  "source": {
+    "mode": "directional_plane",
+    "spectrum": {
+      "format": "monoenergetic_response_cell",
+      "incident_id": "neutron_1p05MeV_mu1_phi0",
+      "particle": {
+        "name": "neutron",
+        "Z": 0,
+        "A": 1
+      },
+      "energy": {
+        "coordinate": "total_kinetic_energy",
+        "value": 1.05,
+        "unit": "MeV"
+      },
+      "direction": {
+        "mu": 1.0,
+        "phi": {
+          "value": 0.0,
+          "unit": "deg"
+        }
+      }
+    }
+  },
+  "quantities": [
+    "DDD",
+    "n_eq"
+  ],
+  "accuracy": {
+    "target": 0.1,
+    "scope": "statistical",
+    "coverage": {
+      "standard_k": 1.0,
+      "standard_probability": 0.68,
+      "interval_probability": 0.95,
+      "interval_method": "student_t_or_exact_bounded"
+    },
+    "systematic_budget": {
+      "status": "incomplete"
+    },
+    "quantity_overrides": {},
+    "sampling": {
+      "min_histories": 200,
+      "max_histories": 1000,
+      "batch_size": 200
+    }
+  },
+  "transport": {
+    "physics_list": "FTFP_BERT_HP",
+    "ion_physics": "reference_list_default",
+    "em_physics": "reference_list_default",
+    "production_cut": {
+      "value": 0.1,
+      "unit": "mm"
+    },
+    "max_step": {
+      "value": 0.1,
+      "unit": "mm"
+    },
+    "random_seed": 510001
+  },
+  "output": {
+    "prefix": "stage5_damage"
+  },
+  "damage_response": {
+    "path": "../data/niel/damage_response_library.v1.json",
+    "library_id": "shieldSim.silicon_displacement_damage",
+    "library_version": "1.0.0"
+  }
+}

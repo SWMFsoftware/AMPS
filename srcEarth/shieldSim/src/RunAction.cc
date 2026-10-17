@@ -204,6 +204,73 @@ void RunAction::RecordAbsorberStep(std::size_t absorber,
       ScoreToken(stepDefiningProcess));
 }
 
+void RunAction::RecordAbsorberEntry(std::size_t absorber,
+                                    const std::string& particle,
+                                    G4double kineticEnergyMeV,
+                                    G4double fluenceWeightPerCm2){
+  if(!fOpts.caseDefinition || !fOpts.caseDefinition->damageResponse ||
+     absorber!=0 || absorber>=fScoringLVs.size()) return;
+  const auto& c=*fOpts.caseDefinition;
+  const auto& definition=c.absorbers.at(fOpts.activeAbsorberIndex);
+  const std::string base="absorber/"+ScoreToken(definition.id)+
+      "/entry/by_particle/"+ScoreToken(particle);
+  fEventRawScores[base+"/crossing_count"]+=1.0;
+  fEventRawScores[base+"/kinetic_energy_sum_MeV"]+=kineticEnergyMeV;
+  fEventRawScores[base+"/scalar_fluence_cm2"]+=fluenceWeightPerCm2;
+  fRawScoreUnits[base+"/crossing_count"]="crossings/primary";
+  fRawScoreUnits[base+"/kinetic_energy_sum_MeV"]="MeV/primary";
+  fRawScoreUnits[base+"/scalar_fluence_cm2"]="cm^-2/primary";
+
+  const bool dddRequested=fOpts.calcDDD;
+  const bool neqRequested=fOpts.calcNEq;
+  const auto response=c.damageResponse->Evaluate(particle,kineticEnergyMeV);
+  if(response.status==shield_sim::DamageResponseStatus::UnsupportedSpecies){
+    // n_eq is explicitly a neutron-only quantity, so a proton, ion, electron,
+    // or photon crossing is not an omitted n_eq term. For total supported-
+    // particle DDD, however, an unrepresented species makes the requested sum
+    // incomplete and therefore not assessable.
+    if(dddRequested){
+      ++fDddUnsupportedCrossings;
+      fEventRawScores[base+"/unsupported_DDD_crossing_count"]+=1.0;
+      fRawScoreUnits[base+"/unsupported_DDD_crossing_count"]="crossings/primary";
+    }
+    return;
+  }
+  if(response.status==shield_sim::DamageResponseStatus::OutOfDomain){
+    if(dddRequested){
+      ++fDddOutOfDomainCrossings;
+      fEventRawScores[base+"/out_of_domain_DDD_crossing_count"]+=1.0;
+      fRawScoreUnits[base+"/out_of_domain_DDD_crossing_count"]="crossings/primary";
+    }
+    if(neqRequested && particle=="neutron"){
+      ++fNeqOutOfDomainCrossings;
+      fEventRawScores[base+"/out_of_domain_n_eq_crossing_count"]+=1.0;
+      fRawScoreUnits[base+"/out_of_domain_n_eq_crossing_count"]="crossings/primary";
+    }
+    return;
+  }
+
+  // The geometry provider supplies scalar-fluence weight. For slab.v1 it is
+  // 1/(entryArea*localDirection.z), including the required projected-cosine
+  // correction. A future curved/segmented provider owns its local surface
+  // normal and patch weighting; the quantity layer remains shape-neutral.
+  if(!(fluenceWeightPerCm2>0.0) || !std::isfinite(fluenceWeightPerCm2))
+    G4Exception("RunAction::RecordAbsorberEntry","Geometry",FatalException,
+                "Stage-5 absorber-entry fluence weight must be finite and positive");
+  const double ddd=response.nielMeVCm2PerG*fluenceWeightPerCm2;
+  if(dddRequested){
+    fEventDDDMeVPerG+=ddd;
+    fEventRawScores[base+"/DDD_MeV_g"]+=ddd;
+    fRawScoreUnits[base+"/DDD_MeV_g"]="MeV/g/primary";
+  }
+  if(neqRequested && particle=="neutron"){
+    const double equivalent=response.neutronHardnessFactor*fluenceWeightPerCm2;
+    fEventNeutronEquivalentPerCm2+=equivalent;
+    fEventRawScores[base+"/n_eq_cm2"]+=equivalent;
+    fRawScoreUnits[base+"/n_eq_cm2"]="cm^-2/primary";
+  }
+}
+
 void RunAction::RecordShieldExit(const std::string& particle,int,int,int,
                                  bool primary,const std::string& rootParticle,
                                  int generation,G4double kineticEnergyMeV){
@@ -288,6 +355,8 @@ void RunAction::BeginEvent(){
   std::fill(fEventEdepTotal.begin(),fEventEdepTotal.end(),0.0);
   std::fill(fEventEdepNonIonizing.begin(),fEventEdepNonIonizing.end(),0.0);
   fEventRawScores.clear();
+  fEventDDDMeVPerG=0.0;
+  fEventNeutronEquivalentPerCm2=0.0;
   fEventPrimaryProtonAbove10=false;
   fEventPrimaryProtonAbove100=false;
 }
@@ -335,6 +404,8 @@ void RunAction::EndEvent(){
     // exact Geant4 mass at EndOfRunAction.
     fAccuracyController->AddSample("TID",sum/MeV);
   }
+  if(fOpts.calcDDD) fAccuracyController->AddSample("DDD",fEventDDDMeVPerG);
+  if(fOpts.calcNEq) fAccuracyController->AddSample("n_eq",fEventNeutronEquivalentPerCm2);
   if(fOpts.calcHardness && fEventPrimaryProtonAbove10)
     fAccuracyController->AddSample("H100/10",fEventPrimaryProtonAbove100?1.0:0.0);
   if(fOpts.caseDefinition &&
@@ -438,6 +509,9 @@ void RunAction::ConfigureIndependentCase(std::size_t absorberIndex,
   fRawCrossProducts.clear();
   fRawScoreUnits.clear();
   fSecondaryLedgers.clear();
+  fDddOutOfDomainCrossings=0;
+  fDddUnsupportedCrossings=0;
+  fNeqOutOfDomainCrossings=0;
 }
 
 void RunAction::AppendSweepPoint(const SweepPoint& sp){ fSweepData.push_back(sp); }
@@ -463,6 +537,15 @@ void RunAction::RefreshLVPointers(){
 G4LogicalVolume* RunAction::GetShieldLV() const{ return fShieldLV; }
 const std::vector<G4LogicalVolume*>& RunAction::GetShieldLVs() const{ return fShieldLVs; }
 const std::vector<G4LogicalVolume*>& RunAction::GetScoringLVs() const{ return fScoringLVs; }
+bool RunAction::AcceptsAbsorberEntry(
+    std::size_t absorber,const G4StepPoint& postStepPoint) const {
+  return fDetector && fDetector->IsAbsorberEntry(absorber,postStepPoint);
+}
+G4double RunAction::AbsorberEntryFluenceWeightPerCm2(
+    std::size_t absorber,const G4StepPoint& postStepPoint) const {
+  return fDetector
+      ? fDetector->GetAbsorberEntryFluenceWeightPerCM2(absorber,postStepPoint) : 0.0;
+}
 
 void RunAction::BeginOfRunAction(const G4Run*) {
   RefreshLVPointers();
@@ -488,6 +571,9 @@ void RunAction::BeginOfRunAction(const G4Run*) {
   fRawCrossProducts.clear();
   fRawScoreUnits.clear();
   fSecondaryLedgers.clear();
+  fDddOutOfDomainCrossings=0;
+  fDddUnsupportedCrossings=0;
+  fNeqOutOfDomainCrossings=0;
   std::fill(fLastDoseTotal.begin(),fLastDoseTotal.end(),0);
   std::fill(fLastDoseNonIonizing.begin(),fLastDoseNonIonizing.end(),0);
   std::fill(fLastDoseRate.begin(),fLastDoseRate.end(),0);
@@ -660,7 +746,7 @@ void RunAction::WriteSpectraTecplot(G4int nEv){
     if(fOpts.caseDefinition && (fOpts.caseDefinition->responseIncident.enabled ||
                                 !fOpts.caseDefinition->directIncidents.empty()))
       out<<"# Spectrum: "<<fOpts.caseDefinition->sourceFormat
-         <<" Stage-3/4 verification source; one generated primary per history.\n";
+         <<" Stage-3/4/5 verification source; one generated primary per history.\n";
     else if(fOpts.spectrumFile.empty())
       out<<"# Spectrum: built-in approximate Badhwar-O'Neill, phi = 550 MV.\n";
     else
@@ -725,6 +811,40 @@ G4double RunAction::ComputeHardnessIndex(G4int nEv) const{
 }
 
 void RunAction::ComputeSpectrumFoldedQuantities(G4int nEv){
+  // Versioned Stage-5 cases never enter the legacy shield-exit histogram
+  // approximation below. Their authoritative response is accumulated at exact
+  // absorber-entry crossing energies and uses only the authenticated tables in
+  // DamageResponseLibrary. This branch is intentionally early so the analytic
+  // compatibility surrogate cannot overwrite a Stage-5 result.
+  if(fOpts.caseDefinition && fOpts.caseDefinition->damageResponse){
+    const G4double incidentRate=GetIncidentParticleRate();
+    fLastHardness=fOpts.calcHardness?ComputeHardnessIndex(nEv):0.0;
+    const auto* dddEstimate=fAccuracyController?fAccuracyController->Estimate("DDD"):nullptr;
+    const auto* neqEstimate=fAccuracyController?fAccuracyController->Estimate("n_eq"):nullptr;
+    const bool dddAssessable=fDddOutOfDomainCrossings==0 && fDddUnsupportedCrossings==0;
+    const bool neqAssessable=fNeqOutOfDomainCrossings==0;
+    for(std::size_t target=0;target<fScoringLVs.size();++target){
+      fLastDDD[target]=(fOpts.calcDDD && dddEstimate && dddAssessable)
+          ? dddEstimate->mean : (fOpts.calcDDD
+              ? std::numeric_limits<G4double>::quiet_NaN() : 0.0);
+      fLastDDDRate[target]=fOpts.calcDDD?fLastDDD[target]*incidentRate:0.0;
+      fLastNEq[target]=(fOpts.calcNEq && neqEstimate && neqAssessable)
+          ? neqEstimate->mean : (fOpts.calcNEq
+              ? std::numeric_limits<G4double>::quiet_NaN() : 0.0);
+      fLastNEqRate[target]=fOpts.calcNEq?fLastNEq[target]*incidentRate:0.0;
+    }
+    G4cout<<"Stage-5 absorber-entry quantities:"<<G4endl;
+    if(fOpts.calcDDD)
+      G4cout<<"  DDD="<<fLastDDD.front()<<" MeV/g/primary; out_of_domain_crossings="
+            <<fDddOutOfDomainCrossings<<"; unsupported_species_crossings="
+            <<fDddUnsupportedCrossings<<G4endl;
+    if(fOpts.calcNEq)
+      G4cout<<"  neutron-only ASTM n_eq="<<fLastNEq.front()
+            <<" cm^-2/primary; out_of_domain_neutrons="
+            <<fNeqOutOfDomainCrossings<<G4endl;
+    return;
+  }
+
   // Convert transmitted spectra into DDD and n_eq for each selected target.
   //
   // Step 1: convert raw bin counts to area-averaged fluence per primary.
@@ -836,8 +956,14 @@ void RunAction::WriteComputedQuantitiesTecplot(G4int nEv){
        <<(fOpts.calcHardness?"H100/10 ":"")<<"\n";
     out<<"# TID equation: D_ion = (E_dep,total - E_dep,nonionizing)/m in the finite target.\n";
     out<<"# Total and non-ionizing dose ledgers are preserved in the run summary for closure.\n";
-    out<<"# DDD equation: D_d = integral Phi(E) NIEL(E) dE.  Phi is area-averaged transmitted fluence.\n";
-    out<<"# n_eq equation: n_eq = D_d / NIEL_1MeV_neutron(material).  Standard convention is most meaningful for silicon.\n";
+    if(fOpts.caseDefinition && fOpts.caseDefinition->damageResponse){
+      out<<"# Stage-5 DDD equation: absorber-entry fluence at exact crossing energy times pinned natural-silicon NIEL.\n";
+      out<<"# Stage-5 n_eq: ASTM E722-19 neutron contribution only, divided by the 95 MeV-mb silicon reference; charged-particle DDD is excluded.\n";
+      out<<"# Any nonzero unsupported/out-of-domain entry makes the affected value not assessable; no extrapolation or clipping is used.\n";
+    } else {
+      out<<"# Legacy DDD equation: D_d = integral Phi(E) NIEL(E) dE using the compatibility-only shield-exit analytic surrogate.\n";
+      out<<"# Legacy n_eq divides aggregate surrogate DDD by a material proxy; it is not the Stage-5 ASTM E722 result.\n";
+    }
     out<<"# H100/10 equation: primary-proton shield-exit fluence(E>100 MeV) / fluence(E>10 MeV); exact crossing energy.\n";
     out<<"# DDD NIEL and LET response functions are documented in src/ComputedQuantities.cc.\n";
     out<<"# Target index mapping for each zone follows the row order below; detailed material definitions are in MaterialCatalog.cc.\n";
@@ -1157,8 +1283,17 @@ void RunAction::WriteResultJson(G4int nEv){
   const auto& c=*fOpts.caseDefinition;
   const bool stage4Tid=c.schemaVersion=="shieldSim.case.v2" &&
       std::find(c.quantities.begin(),c.quantities.end(),"TID")!=c.quantities.end();
-  const std::string validationStatus = stage4Tid
-      ? "stage4_finite_slab_tid_implemented_and_acceptance_tested_pending_independent_review"
+  const bool stage5Damage=c.schemaVersion=="shieldSim.case.v2" && c.damageResponse &&
+      (std::find(c.quantities.begin(),c.quantities.end(),"DDD")!=c.quantities.end() ||
+       std::find(c.quantities.begin(),c.quantities.end(),"n_eq")!=c.quantities.end());
+  const std::string stage4ValidationStatus=
+      "stage4_finite_slab_tid_implemented_and_acceptance_tested_pending_independent_review";
+  const std::string stage5ValidationStatus=
+      "stage5_silicon_DDD_and_neutron_only_n_eq_implemented_and_reference_tested_pending_accelerator_device_validation_and_independent_review";
+  const std::string validationStatus = stage5Damage
+      ? stage5ValidationStatus
+      : stage4Tid
+      ? stage4ValidationStatus
       : c.schemaVersion=="shieldSim.case.v2"
       ? "implemented_stage3_transport_raw_acceptance_tested_pending_independent_review"
       : c.sourceFormat=="ams02_hapi_component"
@@ -1259,10 +1394,96 @@ void RunAction::WriteResultJson(G4int nEv){
         {"rad_per_primary",100.0*fLastDose[i]/gray},
         {"source_normalized_unit","Gy/s"},
         {"source_normalized_value",fLastDoseRate[i]/gray},
-        {"unit","Gy/primary"}, {"validation_status",validationStatus},
+        {"unit","Gy/primary"}, {"validation_status",stage4Tid
+            ? stage4ValidationStatus : validationStatus},
         {"value",fLastDose[i]/gray}
       });
     }
+  }
+  if(fOpts.calcDDD){
+    const auto* estimate=fAccuracyController->Estimate("DDD");
+    auto assessment=fAccuracyController->Assess("DDD");
+    const bool domainComplete=fDddOutOfDomainCrossings==0 &&
+                              fDddUnsupportedCrossings==0;
+    shield_sim::Json accuracy=accuracyJson("DDD",assessment);
+    if(!domainComplete){
+      accuracy.AsObject()["status"]="not_assessable";
+      accuracy.AsObject()["reason"]="nonzero absorber-entry fluence was outside a pinned table domain or belonged to an unsupported species; no contribution was clamped, extrapolated, or silently omitted";
+    }
+    shield_sim::Json::Object interval{{"unit","MeV/g/primary"}};
+    const auto& requirement=c.AccuracyFor("DDD");
+    const double low=requirement.scope=="combined"
+        ? assessment.combinedInterval95Low : assessment.interval95Low;
+    const double high=requirement.scope=="combined"
+        ? assessment.combinedInterval95High : assessment.interval95High;
+    interval["low"]=(domainComplete && std::isfinite(low))
+        ? shield_sim::Json(low) : shield_sim::Json(nullptr);
+    interval["high"]=(domainComplete && std::isfinite(high))
+        ? shield_sim::Json(high) : shield_sim::Json(nullptr);
+    const double partial=estimate?estimate->mean:0.0;
+    auto* lv=fScoringLVs.empty()?nullptr:fScoringLVs.front();
+    const double massG=lv?lv->GetMass(true,false)/g:0.0;
+    const double diagnostic=(massG>0.0 && nEv>0)
+        ? fEdepNonIonizing.front()/MeV/massG/nEv : 0.0;
+    outputs.emplace_back(shield_sim::Json::Object{
+      {"accuracy",std::move(accuracy)},{"absorber_id",absorber.id},
+      {"authoritative_method","absorber-entry scalar fluence folded at exact crossing energy with pinned species/target NIEL"},
+      {"definition","sum over proton, He-4, and neutron crossings of natural-silicon NIEL divided by entry area and absolute direction/surface-normal cosine"},
+      {"diagnostic_Geant4_nonionizing_deposition",shield_sim::Json(shield_sim::Json::Object{
+        {"definition","Geant4 nonionizing energy deposited in the finite slab divided by slab mass; separate diagnostic, never added to table-folded DDD"},
+        {"unit","MeV/g/primary"},{"value",diagnostic}})},
+      {"interval_95",shield_sim::Json(std::move(interval))},
+      {"name","DDD"},{"normalization","per incident primary"},
+      {"out_of_domain_crossings",static_cast<double>(fDddOutOfDomainCrossings)},
+      {"partial_supported_species_value",partial},
+      {"partial_supported_species_value_unit","MeV/g/primary"},
+      {"source_normalized_unit","MeV/g/s"},
+      {"source_normalized_value",domainComplete
+          ? shield_sim::Json(partial*GetIncidentParticleRate()) : shield_sim::Json(nullptr)},
+      {"table_domain_status",domainComplete?"complete":"not_assessable"},
+      {"unit","MeV/g/primary"},{"unsupported_species_crossings",
+          static_cast<double>(fDddUnsupportedCrossings)},
+      {"validation_status",stage5ValidationStatus},
+      {"value",domainComplete?shield_sim::Json(partial):shield_sim::Json(nullptr)}
+    });
+  }
+  if(fOpts.calcNEq){
+    const auto* estimate=fAccuracyController->Estimate("n_eq");
+    auto assessment=fAccuracyController->Assess("n_eq");
+    const bool domainComplete=fNeqOutOfDomainCrossings==0;
+    shield_sim::Json accuracy=accuracyJson("n_eq",assessment);
+    if(!domainComplete){
+      accuracy.AsObject()["status"]="not_assessable";
+      accuracy.AsObject()["reason"]="nonzero neutron absorber-entry fluence was outside the ASTM E722-19 tabulated domain; no contribution was clamped or extrapolated";
+    }
+    const double partial=estimate?estimate->mean:0.0;
+    shield_sim::Json::Object interval{{"unit","cm^-2/primary"}};
+    const auto& requirement=c.AccuracyFor("n_eq");
+    const double low=requirement.scope=="combined"
+        ? assessment.combinedInterval95Low : assessment.interval95Low;
+    const double high=requirement.scope=="combined"
+        ? assessment.combinedInterval95High : assessment.interval95High;
+    interval["low"]=(domainComplete && std::isfinite(low))
+        ? shield_sim::Json(low) : shield_sim::Json(nullptr);
+    interval["high"]=(domainComplete && std::isfinite(high))
+        ? shield_sim::Json(high) : shield_sim::Json(nullptr);
+    outputs.emplace_back(shield_sim::Json::Object{
+      {"accuracy",std::move(accuracy)},{"absorber_id",absorber.id},
+      {"definition","ASTM E722-19 natural-silicon neutron contribution divided groupwise by the prescribed 95 MeV-mb 1-MeV reference"},
+      {"excluded_from_definition","proton and He-4 DDD are not converted to E722 neutron-equivalent fluence"},
+      {"fluence_normalization","each accepted neutron crossing is weighted by 1/(entry area times absolute direction/surface-normal cosine)"},
+      {"interval_95",shield_sim::Json(std::move(interval))},
+      {"name","n_eq"},{"normalization","per incident primary"},
+      {"out_of_domain_neutron_crossings",static_cast<double>(fNeqOutOfDomainCrossings)},
+      {"reference_damage_function_MeV_mb",95.0},
+      {"reference_niel_MeV_cm2_g",c.damageResponse->ReferenceNeutronNielMeVCm2PerG()},
+      {"source_normalized_unit","cm^-2/s"},
+      {"source_normalized_value",domainComplete
+          ? shield_sim::Json(partial*GetIncidentParticleRate()) : shield_sim::Json(nullptr)},
+      {"table_domain_status",domainComplete?"complete":"not_assessable"},
+      {"unit","cm^-2/primary"},{"validation_status",stage5ValidationStatus},
+      {"value",domainComplete?shield_sim::Json(partial):shield_sim::Json(nullptr)}
+    });
   }
   if(fOpts.calcHardness){
     auto assessment=fAccuracyController->Assess("H100/10");
@@ -1349,6 +1570,19 @@ void RunAction::WriteResultJson(G4int nEv){
       {"source_plane_area_cm2",GetSourcePlaneAreaCM2()}})},
     {"source_science_status",c.spectrum.scienceStatus}
   };
+  if(c.damageResponse){
+    result["damage_response"]=shield_sim::Json(shield_sim::Json::Object{
+      {"charged_particle_interpolation","log_log_between_positive_nodes"},
+      {"library_id",c.damageResponse->LibraryId()},
+      {"library_version",c.damageResponse->LibraryVersion()},
+      {"manifest_hash",c.damageResponse->ManifestHash()},
+      {"manifest_path",c.damageResponse->ManifestPath()},
+      {"n_eq_scope","ASTM E722-19 silicon neutron contribution only"},
+      {"neutron_integration","ASTM groupwise on explicit edges"},
+      {"out_of_domain_policy","not_assessable_no_extrapolation"},
+      {"surface_fluence_normalization","provider-defined entry surface; scalar crossing fluence includes the inverse projected-direction cosine"},
+      {"target_material_id",c.damageResponse->TargetMaterialId()}});
+  }
   const std::string path=fOpts.outputPrefix+"_result.json";
   std::ofstream out(path);
   if(!out)
@@ -1389,9 +1623,21 @@ void RunAction::WriteResponseCellJson(G4int nEv){
     {"material_library_hash",c.materials->ContentHash()},
     {"max_step_mm",c.maxStepMm},{"physics_list",c.physicsList},
     {"production_cut_mm",c.productionCutMm},
-    {"scoring_contract","shieldSim.transport_raw.v1"},
+    {"scoring_contract",c.damageResponse
+        ? "shieldSim.transport_raw_plus_silicon_damage.v1"
+        : "shieldSim.transport_raw.v1"},
     {"source_tree_state",shield_sim_build::GitState}
   };
+  // Stage-5 entry scores depend on the exact damage-function package even when
+  // geometry and Geant4 settings are unchanged. Include its canonical manifest
+  // hash in the cache key so a response cell can never be silently reused after
+  // a NIEL table, interpolation convention, or normalization change.
+  if(c.damageResponse)
+    keyDocument["damage_response"]=shield_sim::Json(shield_sim::Json::Object{
+      {"library_id",c.damageResponse->LibraryId()},
+      {"library_version",c.damageResponse->LibraryVersion()},
+      {"manifest_hash",c.damageResponse->ManifestHash()},
+      {"target_material_id",c.damageResponse->TargetMaterialId()}});
   const std::string responseKey=shield_sim::Sha256(
       shield_sim::Json(keyDocument).DumpCanonical());
 
@@ -1439,7 +1685,9 @@ void RunAction::WriteResponseCellJson(G4int nEv){
     {"score_covariance",BuildRawScoreCovarianceJson(nEv)},
     {"scores",shield_sim::Json(std::move(scores))},
     {"secondary_production_by_layer",shield_sim::Json(std::move(secondaryLedgers))},
-    {"validation_status","implemented_stage3_transport_raw_not_physically_validated"}
+    {"validation_status",c.damageResponse
+        ? "stage5_silicon_DDD_and_neutron_only_n_eq_implemented_and_reference_tested_pending_accelerator_device_validation_and_independent_review"
+        : "implemented_stage3_transport_raw_not_physically_validated"}
   });
   const std::string path=fOpts.outputPrefix+"_response_cell.json";
   std::ofstream out(path);

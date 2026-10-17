@@ -135,5 +135,39 @@ complete budget does not prevent a diagnostic run, but combined accuracy is
 then `not_assessable`.
 
 The example status is “implemented and acceptance-tested, pending independent
-review.” Passing it does not enable DDD, `n_eq`, LET, `H100/10`, or any health
-or device-response claim.
+review.” Passing it does not itself enable the separately gated Stage-5 damage
+calculation, LET, `H100/10`, or any health or device-response claim.
+
+## Stage-5 silicon DDD and neutron-only `n_eq` case
+
+`stage5_ddd_neq_case.json` exercises the authenticated absorber-entry damage
+path:
+
+```bash
+./shieldSim --validate-case=../examples/stage5_ddd_neq_case.json
+./shieldSim --case=../examples/stage5_ddd_neq_case.json
+```
+
+The source is a 1.05 MeV neutron directed normally through a negligible but
+nonzero aluminum layer into a 50 mm × 50 mm natural-silicon slab. This exact
+energy lies in the ASTM E722 `[1.0, 1.1)` MeV group, so it is useful as a
+transparent reference example. Each accepted entry contributes the group NIEL
+divided by 25 cm² to DDD and the group hardness factor divided by 25 cm² to
+`n_eq`. The output records the exact table package/hash and states that charged-
+particle DDD is excluded from `n_eq`.
+
+The `damage_response` block is mandatory for a DDD/`n_eq` case and identifies
+the strict manifest in `data/niel/`. Changing the absorber to a non-silicon
+material, changing the declared library identity/version, or using an
+unsupported incident species is rejected at case load. A transported secondary
+outside a response domain instead makes the affected runtime result
+`not_assessable`, with the rejected crossings and supported partial sum
+retained.
+
+This example requests statistical accuracy only. For a combined-accuracy
+request, the case must supply a `physics_reference` uncertainty component and
+its provenance; shieldSim does not assign an unsupported uncertainty to the
+published damage function. The Stage-5 capability is implemented and
+reference-tested, but formal completion remains pending project-selected
+accelerator/device evidence and independent review. The result is a silicon
+exposure proxy, not a device-degradation prediction.

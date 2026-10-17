@@ -811,10 +811,10 @@ std::string DetectorMaterialCatalogText(){
   out<<"    [SEMICONDUCTOR]  Standard semiconductor material-property references.\n";
   out<<"\n  Important: organ names here define material composition only.  ShieldSim does\n";
   out<<"  not apply quality factors, LET/RBE weighting, organ weighting, NASA limit\n";
-  out<<"  checks, or device-response functions internally.  The computed TID, DDD,\n";
-  out<<"  n_eq, and LET outputs are first-order slab/proxy quantities; replace the\n";
-  out<<"  analytic NIEL/LET response functions with mission- or device-specific data\n";
-  out<<"  when quantitative radiation-effects results are required.\n";
+  out<<"  checks, or device-response functions internally. Legacy CLI DDD/n_eq/LET\n";
+  out<<"  are analytic compatibility diagnostics. Versioned case-v2 Stage-5 has a\n";
+  out<<"  separately gated, authenticated natural-silicon DDD/neutron-only n_eq\n";
+  out<<"  exposure calculation; it still does not predict device degradation.\n";
   out<<"\n";
   return out.str();
 }

@@ -22,8 +22,8 @@ void WriteDoseSweepTecplot(const std::vector<SweepPoint>& data,
   out<<"# Physics list: "<<opts.physicsList<<"\n";
   out<<"# Dose_perPrimary columns are Gy/primary.\n";
   out<<"# DoseRate columns are Gy/s if the input source spectrum units are physical.\n";
-  out<<"# DDD columns, when enabled, are spectrum-folded displacement-damage-dose proxies in MeV/g.\n";
-  out<<"# n_eq columns, when enabled, are 1-MeV-neutron-equivalent fluence proxies in cm^-2.\n";
+  out<<"# Legacy CLI DDD columns are analytic shield-exit compatibility proxies in MeV/g; they are not case-v2 Stage-5 results.\n";
+  out<<"# Legacy CLI n_eq columns are aggregate material proxies in cm^-2; they are not neutron-only ASTM E722 values.\n";
   out<<"# H100/10, when enabled, is primary-proton shield-exit fluence(E>100 MeV)/fluence(E>10 MeV), using exact crossing energy; it is repeated for each target.\n";
   out<<"# Beam mode assumes the source spectrum columns are differential beam rates [particles/s/MeV].\n";
   out<<"# Isotropic mode assumes the source spectrum columns are differential intensities [particles/(cm2 s sr MeV)].\n";

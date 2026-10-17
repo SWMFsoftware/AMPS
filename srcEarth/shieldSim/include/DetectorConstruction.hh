@@ -29,6 +29,7 @@
 
 class G4Box;
 class G4LogicalVolume;
+class G4StepPoint;
 class G4VPhysicalVolume;
 namespace shield_sim { class MaterialFactory; class AbsorberGeometry; }
 
@@ -46,6 +47,10 @@ public:
   G4LogicalVolume* GetShieldLV() const;
   const std::vector<G4LogicalVolume*>& GetShieldLVs() const;
   const std::vector<G4LogicalVolume*>& GetScoringLVs() const;
+  bool IsAbsorberEntry(std::size_t region,const G4StepPoint& postStepPoint) const;
+  double GetAbsorberEntryAreaCM2(std::size_t region) const;
+  double GetAbsorberEntryFluenceWeightPerCM2(
+      std::size_t region,const G4StepPoint& postStepPoint) const;
   G4Box* GetWorldBox() const;
   G4double GetSourcePlaneHalfX() const;
   G4double GetSourcePlaneHalfY() const;
@@ -67,6 +72,7 @@ private:
   G4LogicalVolume* fShieldLV=nullptr;
   std::vector<G4LogicalVolume*> fShieldLVs;
   std::vector<G4LogicalVolume*> fScoringLVs;
+  std::vector<std::string> fSensitiveRegionIds;
   std::unique_ptr<shield_sim::MaterialFactory> fMaterialFactory;
   std::unique_ptr<shield_sim::AbsorberGeometry> fAbsorberGeometry;
 };

@@ -3,11 +3,14 @@
 #include "MaterialFactory.hh"
 
 #include <G4Box.hh>
+#include <G4AffineTransform.hh>
 #include <G4LogicalVolume.hh>
 #include <G4PVPlacement.hh>
 #include <G4RotationMatrix.hh>
 #include <G4SystemOfUnits.hh>
+#include <G4StepPoint.hh>
 #include <G4ThreeVector.hh>
+#include <G4TouchableHistory.hh>
 #include <G4Transform3D.hh>
 #include <G4UserLimits.hh>
 
@@ -68,6 +71,43 @@ RegionMassProperties SlabAbsorberGeometry::MassProperties(const std::string& reg
 GeometryBounds SlabAbsorberGeometry::BoundsAndReferenceFrame() const {
   return {{definition_.sizeXmm,definition_.sizeYmm,definition_.thicknessMm},
           definition_.transform};
+}
+
+bool SlabAbsorberGeometry::IsEntryBoundary(
+    const std::string& regionId,const G4StepPoint& postStepPoint) const {
+  return EntryFluenceWeightPerCm2(regionId,postStepPoint)>0.0;
+}
+
+double SlabAbsorberGeometry::EntryFluenceWeightPerCm2(
+    const std::string& regionId,const G4StepPoint& postStepPoint) const {
+  if(regionId!=StableRegionId(definition_))
+    throw std::invalid_argument("unknown slab sensitive-region ID '"+regionId+"'");
+  const auto touchable=postStepPoint.GetTouchableHandle();
+  const auto* history=touchable->GetHistory();
+  if(!history) return 0.0;
+  const G4AffineTransform& globalToLocal=history->GetTopTransform();
+  const G4ThreeVector localPosition=
+      globalToLocal.TransformPoint(postStepPoint.GetPosition());
+  const G4ThreeVector localDirection=
+      globalToLocal.TransformAxis(postStepPoint.GetMomentumDirection());
+  // The slab reference surface is its upstream local-z face. Side entries and
+  // downstream-face backscatter do not belong to this response surface. Re-entry
+  // through the upstream face is a new fluence crossing and is accepted.
+  if(localDirection.z()<=0.0 ||
+     std::abs(localPosition.z()+definition_.thicknessMm*mm/2.0)>1.0*um)
+    return 0.0;
+  // Particle fluence is defined per area normal to the particle direction.
+  // A track crossing a fixed planar patch therefore represents 1/(A*cosTheta)
+  // rather than 1/A. localDirection is a unit vector and +z is the inward
+  // surface normal for slab.v1.
+  return 1.0/(EntryNormalizationAreaCm2(regionId)*localDirection.z());
+}
+
+double SlabAbsorberGeometry::EntryNormalizationAreaCm2(
+    const std::string& regionId) const {
+  if(regionId!=StableRegionId(definition_))
+    throw std::invalid_argument("unknown slab sensitive-region ID '"+regionId+"'");
+  return (definition_.sizeXmm/10.0)*(definition_.sizeYmm/10.0);
 }
 
 Json SlabAbsorberGeometry::CanonicalGeometryDescription() const {

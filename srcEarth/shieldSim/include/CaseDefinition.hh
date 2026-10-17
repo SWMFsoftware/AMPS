@@ -2,7 +2,7 @@
 #define SHIELDSIM_CASE_DEFINITION_HH
 
 /*
- * Strict, versioned case-v1/core and case-v2/Stage-3/4 run definition.
+ * Strict, versioned case-v1/core and case-v2/Stage-3/4/5 run definition.
  *
  * All values below are stored in canonical engineering units (mm, MeV,
  * g/cm2).  Unit conversion happens once while parsing.  Geometry builders and
@@ -17,6 +17,7 @@
 #include "SpectrumDataset.hh"
 #include "StrictJson.hh"
 #include "GeometryTransform.hh"
+#include "DamageResponseLibrary.hh"
 
 #include <map>
 #include <memory>
@@ -154,6 +155,9 @@ public:
   double protonMinMeV = 0.0, protonMaxMeV = 0.0;
   double alphaMinMeV = 0.0, alphaMaxMeV = 0.0;
   std::vector<std::string> quantities;
+  // Non-null exactly when a Stage-5 DDD or n_eq quantity was requested. The
+  // manifest and all referenced tables are authenticated during case parsing.
+  std::shared_ptr<DamageResponseLibrary> damageResponse;
   ResponseIncidentDefinition responseIncident;
   std::vector<WeightedResponseIncident> directIncidents;
   AccuracyPlan accuracy;

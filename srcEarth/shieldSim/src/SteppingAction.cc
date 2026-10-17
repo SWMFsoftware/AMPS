@@ -82,6 +82,27 @@ void SteppingAction::UserSteppingAction(const G4Step* step) {
     }
   }
 
+  // Stage-5 response is defined on the absorber's upstream entry surface, not
+  // at the shield rear face and not from energy deposited later in the slab.
+  // Boundary classification is delegated to the absorber geometry provider.
+  // slab.v1 accepts local z=-halfLength with local direction z>0; a future
+  // arbitrary-shape provider can define an explicit entrance patch without
+  // changing this transport hook or the damage-response calculation.
+  if(postVol && preVol!=postVol){
+    const auto& absorberLVs=fRA->GetScoringLVs();
+    for(std::size_t absorber=0;absorber<absorberLVs.size();++absorber){
+      if(postVol!=absorberLVs[absorber]) continue;
+      const G4double fluenceWeight=
+          fRA->AbsorberEntryFluenceWeightPerCm2(absorber,*post);
+      if(fluenceWeight>0.0){
+        const auto* definition=step->GetTrack()->GetParticleDefinition();
+        fRA->RecordAbsorberEntry(absorber,definition->GetParticleName(),
+                                 post->GetKineticEnergy()/MeV,fluenceWeight);
+      }
+      break;
+    }
+  }
+
   // Dose scoring.  Use the pre-step volume because the energy deposition for a
   // step belongs to the material where the step occurred, even if the post-step
   // point is already in the next volume at a boundary.

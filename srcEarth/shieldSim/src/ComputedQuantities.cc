@@ -215,8 +215,8 @@ std::string QuantityCatalogText(){
   out<<"    LET       LET spectrum of transmitted protons/alphas binned in MeV cm^2/mg using a Bethe-Bloch estimate.\n";
   out<<"    H100/10   Primary-proton shield-exit fluence(E>100 MeV) / fluence(E>10 MeV).\n";
   out<<"               Uses exact crossing energy; excludes secondaries, alphas, and neutrons.\n";
-  out<<"    Stage gate case.v1 enables explicitly unvalidated TID and H100/10; case.v2 enables transport_raw verification tallies only.\n";
-  out<<"               Legacy DDD/n_eq/LET remain unvalidated compatibility diagnostics.\n";
+  out<<"    Stage gates: case.v2 enables bounded Stage-4 TID and authenticated Stage-5 natural-silicon DDD/neutron-only n_eq.\n";
+  out<<"               This legacy CLI's analytic DDD/n_eq/LET remain compatibility diagnostics and are not those case-v2 results.\n";
   out<<"\n  Selection syntax\n";
   out<<"  ----------------\n";
   out<<"    --quantities=all                         compute all quantities (default)\n";
@@ -225,8 +225,8 @@ std::string QuantityCatalogText(){
   out<<"    --quantities=none                        disable post-processed quantity output\n";
   out<<"\n  Physics assumptions\n";
   out<<"  -------------------\n";
-  out<<"    TID is scored directly by Geant4 in each target slab. DDD and n_eq use a documented analytic NIEL surrogate; replace\n";
-  out<<"    ComputedQuantities::NIEL_MeV_cm2_g() with tabulated SR-NIEL/NIEL data for quantitative device work. LET uses a\n";
+  out<<"    In the legacy CLI, DDD and n_eq use a documented analytic NIEL surrogate. Case-v2 Stage-5 instead uses checksum-\n";
+  out<<"    authenticated SR-NIEL/ASTM tables at the absorber entrance. Neither path predicts device degradation. LET uses a\n";
   out<<"    self-contained Bethe-Bloch mass-stopping-power approximation for binning; replace with NIST/Geant4 stopping tables\n";
   out<<"    if high-accuracy LET spectra are required.\n";
   return out.str();

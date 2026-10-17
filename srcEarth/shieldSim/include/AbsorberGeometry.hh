@@ -18,6 +18,7 @@
 #include <vector>
 
 class G4LogicalVolume;
+class G4StepPoint;
 
 namespace shield_sim {
 
@@ -62,6 +63,20 @@ public:
   virtual std::vector<std::string> SensitiveRegionIds() const = 0;
   virtual RegionMassProperties MassProperties(const std::string& regionId) const = 0;
   virtual GeometryBounds BoundsAndReferenceFrame() const = 0;
+  // Surface-folded responses need a provider-defined entry surface and its
+  // normalization area. The transport/quantity layers deliberately do not
+  // inspect a G4Box, tessellated solid, or voxel representation. A future shape
+  // provider must define which exterior crossings constitute entry into each
+  // sensitive region and the corresponding physical area in cm2.
+  virtual bool IsEntryBoundary(const std::string& regionId,
+                               const G4StepPoint& postStepPoint) const = 0;
+  virtual double EntryNormalizationAreaCm2(const std::string& regionId) const = 0;
+  // Return the scalar-fluence contribution of one accepted crossing in cm^-2.
+  // For a planar patch this is 1/(A*|n.u|), not merely 1/A; the projected-
+  // cosine correction is required for oblique tracks. Zero means the crossing
+  // is not on the provider's declared entry surface.
+  virtual double EntryFluenceWeightPerCm2(
+      const std::string& regionId,const G4StepPoint& postStepPoint) const = 0;
   virtual Json CanonicalGeometryDescription() const = 0;
   virtual AbsorberBuildResult Build(G4LogicalVolume* world,
                                     MaterialFactory& materials,
@@ -78,6 +93,11 @@ public:
   std::vector<std::string> SensitiveRegionIds() const override;
   RegionMassProperties MassProperties(const std::string& regionId) const override;
   GeometryBounds BoundsAndReferenceFrame() const override;
+  bool IsEntryBoundary(const std::string& regionId,
+                       const G4StepPoint& postStepPoint) const override;
+  double EntryNormalizationAreaCm2(const std::string& regionId) const override;
+  double EntryFluenceWeightPerCm2(
+      const std::string& regionId,const G4StepPoint& postStepPoint) const override;
   Json CanonicalGeometryDescription() const override;
   AbsorberBuildResult Build(G4LogicalVolume* world,
                             MaterialFactory& materials,
