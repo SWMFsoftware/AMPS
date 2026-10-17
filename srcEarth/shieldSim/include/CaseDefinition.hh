@@ -2,14 +2,15 @@
 #define SHIELDSIM_CASE_DEFINITION_HH
 
 /*
- * Strict, versioned case-v1/core and case-v2/Stage-3 run definition.
+ * Strict, versioned case-v1/core and case-v2/Stage-3/4 run definition.
  *
  * All values below are stored in canonical engineering units (mm, MeV,
  * g/cm2).  Unit conversion happens once while parsing.  Geometry builders and
  * transport actions therefore never need to guess the unit or apply an
  * undocumented default. Case v2 additionally carries explicit local-to-world
  * transforms and exact response/direct-validation incident nodes; it permits
- * only raw transport tallies until later quantity gates are completed.
+ * raw transport tallies and the Stage-4 finite-slab TID observable. Every
+ * other derived quantity remains behind a later validation gate.
  */
 
 #include "MaterialLibrary.hh"
@@ -71,6 +72,28 @@ struct WeightedResponseIncident {
   double weight = 0.0;
 };
 
+// One standard-uncertainty term in a combined Stage-4 budget. Keeping the
+// category and provenance with the number prevents an aggregate percentage
+// from concealing whether source, material/mass, numerical, or physics-
+// reference uncertainty was omitted.
+struct SystematicUncertaintyComponent {
+  std::string id;
+  std::string category;
+  double relativeStandardUncertainty = 0.0;
+  std::string provenance;
+};
+
+// Correlation is declared separately because the same component values can
+// combine differently when, for example, material density and absorber mass
+// share a calibration. A complete Stage-4 budget requires every unordered
+// component pair to be explicit, including pairs with zero correlation.
+struct SystematicCorrelation {
+  std::string firstComponent;
+  std::string secondComponent;
+  double coefficient = 0.0;
+  std::string rationale;
+};
+
 struct AccuracyRequirement {
   double target = 0.10;
   std::string scope = "combined";
@@ -78,11 +101,14 @@ struct AccuracyRequirement {
   double standardProbability = 0.68;
   double intervalProbability = 0.95;
   std::string intervalMethod = "student_t_or_exact_bounded";
-  // A complete budget supplies the combined standard relative uncertainty.
-  // An incomplete budget may still carry a known lower floor; if that floor
-  // already exceeds the target, additional Monte Carlo histories cannot help.
+  // Case-v1 retains the aggregate field for compatibility. A case-v2 TID
+  // budget is complete only when the component and all-pairs correlation
+  // records below have been checked and combined by the parser.
   bool systematicBudgetComplete = false;
   double systematicRelativeUncertainty = 0.0;
+  std::vector<SystematicUncertaintyComponent> systematicComponents;
+  std::vector<SystematicCorrelation> systematicCorrelations;
+  std::string systematicPairPolicy;
   bool hasKnownSystematicFloor = false;
   double knownSystematicFloor = 0.0;
 };
@@ -134,6 +160,10 @@ public:
 
   std::string physicsList;
   std::string ionPhysics = "reference_list_default";
+  // The reference-list default is the production baseline. Option 4 is an
+  // explicitly archived electromagnetic-model sensitivity, never an implicit
+  // replacement selected by the executable.
+  std::string emPhysics = "reference_list_default";
   double productionCutMm = -1.0;
   double maxStepMm = -1.0;
   long randomSeed = 0;

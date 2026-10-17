@@ -85,6 +85,16 @@ add_executable(shieldSimResponseTool
 )
 target_include_directories(shieldSimResponseTool PRIVATE ${PROJECT_SOURCE_DIR}/include)
 
+# Stage-4 reference probing is deliberately its own executable. It exposes the
+# Geant4 EM stopping/range/attenuation tables in NIST-compatible units without
+# coupling those comparisons to stochastic slab geometry or dose scoring.
+add_executable(shieldSimReferenceTool
+  referenceTool.cc
+  src/StrictJson.cc
+)
+target_include_directories(shieldSimReferenceTool PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(shieldSimReferenceTool ${Geant4_LIBRARIES})
+
 include(CTest)
 if(BUILD_TESTING)
   # Analytic/observational tests write compact numerical evidence here.  A
@@ -196,12 +206,43 @@ if(BUILD_TESTING)
   set_tests_properties(stage3_transport PROPERTIES
     ENVIRONMENT "${_geant4_test_environment}"
     TIMEOUT 600)
+
+  add_executable(stage4_core_tests
+    tests/stage4_core_tests.cc
+    src/AccuracyController.cc
+    src/CaseDefinition.cc
+    src/ContentHash.cc
+    src/GeometryTransform.cc
+    src/MaterialLibrary.cc
+    src/PublishedSourceAdapters.cc
+    src/SpectrumDataset.cc
+    src/StrictJson.cc
+  )
+  target_include_directories(stage4_core_tests PRIVATE ${PROJECT_SOURCE_DIR}/include)
+  add_test(NAME stage4_core
+    COMMAND stage4_core_tests ${PROJECT_SOURCE_DIR} ${SHIELDSIM_VALIDATION_EVIDENCE_DIR})
+  add_test(NAME stage4_nist_reference
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/test_stage4_nist_reference.py
+            $<TARGET_FILE:shieldSimReferenceTool> ${PROJECT_SOURCE_DIR}
+            ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
+            ${CMAKE_BINARY_DIR}/stage4_reference_runs)
+  set_tests_properties(stage4_nist_reference PROPERTIES
+    ENVIRONMENT "${_geant4_test_environment}"
+    TIMEOUT 180)
+  add_test(NAME stage4_tid_transport
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/test_stage4_tid_transport.py
+            $<TARGET_FILE:shieldSim> ${PROJECT_SOURCE_DIR}
+            ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
+            ${CMAKE_BINARY_DIR}/stage4_tid_transport_runs)
+  set_tests_properties(stage4_tid_transport PROPERTIES
+    ENVIRONMENT "${_geant4_test_environment}"
+    TIMEOUT 600)
   add_test(NAME validation_figures
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/generate_validation_figures.py
             ${PROJECT_SOURCE_DIR} ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
             ${SHIELDSIM_VALIDATION_FIGURE_DIR} $<TARGET_FILE:shieldSimSourceTool>)
   set_tests_properties(validation_figures PROPERTIES
-    DEPENDS "stage1_core;stage1_case_boundaries;stage1_transport_smoke;stage2_source_adapters;stage2_reference_spectra;stage2_source_tool;stage2_published_transport;stage3_core;stage3_response_weights;stage3_transport")
+    DEPENDS "stage1_core;stage1_case_boundaries;stage1_transport_smoke;stage2_source_adapters;stage2_reference_spectra;stage2_source_tool;stage2_published_transport;stage3_core;stage3_response_weights;stage3_transport;stage4_core;stage4_nist_reference;stage4_tid_transport")
 endif()
 
 # Copy example input files into the build tree for convenience.

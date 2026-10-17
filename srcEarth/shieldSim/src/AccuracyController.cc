@@ -120,6 +120,8 @@ AccuracyAssessment AccuracyController::Assess(const std::string& quantity) const
 
   if (requirement.scope == "statistical") {
     result.combinedRelativeUncertainty = result.statisticalRelativeUncertainty;
+    result.combinedInterval95Low=result.interval95Low;
+    result.combinedInterval95High=result.interval95High;
     result.status = result.statisticalRelativeUncertainty <= requirement.target
                   ? AccuracyStatus::Met : AccuracyStatus::NotMet;
     result.reason = result.status == AccuracyStatus::Met
@@ -137,6 +139,19 @@ AccuracyAssessment AccuracyController::Assess(const std::string& quantity) const
   result.systematicRelativeUncertainty = systematic->second;
   result.combinedRelativeUncertainty = std::hypot(result.statisticalRelativeUncertainty,
                                                   result.systematicRelativeUncertainty);
+  if(requirement.intervalMethod=="student_t_mc_plus_normal_systematics_quadrature"){
+    // The input method explicitly states the distributional treatment. The
+    // MC contribution keeps its finite-sample Student-t multiplier while each
+    // declared systematic component is a standard uncertainty expanded with
+    // the two-sided 95% normal multiplier, then the independent statistical
+    // and already-correlated systematic groups are combined in quadrature.
+    constexpr double z95=1.959963984540054;
+    const double systematicAbsolute=std::abs(estimate.mean)*systematic->second;
+    const double statisticalHalf=0.5*(result.interval95High-result.interval95Low);
+    const double combinedHalf=std::hypot(statisticalHalf,z95*systematicAbsolute);
+    result.combinedInterval95Low=estimate.mean-combinedHalf;
+    result.combinedInterval95High=estimate.mean+combinedHalf;
+  }
   result.status = result.combinedRelativeUncertainty <= requirement.target
                 ? AccuracyStatus::Met : AccuracyStatus::NotMet;
   result.reason = result.status == AccuracyStatus::Met

@@ -107,6 +107,7 @@
   "transport": {
     "physics_list": "FTFP_BERT",
     "ion_physics": "reference_list_default",
+    "em_physics": "reference_list_default",
     "production_cut": {"value": 0.1, "unit": "mm"},
     "max_step": {"value": 0.1, "unit": "mm"},
     "random_seed": 310001

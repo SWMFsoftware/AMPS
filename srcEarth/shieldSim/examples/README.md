@@ -75,9 +75,10 @@ The source creates one 100 MeV proton at `mu=1`, `phi=0` per history. The
 two-layer Al/HDPE stack and silicon slab produce a
 `*_response_cell.json` containing response moments per generated primary,
 primary/secondary ancestry, per-layer production diagnostics, and a complete
-response-cache key. The only permitted requested quantity is `transport_raw`.
-These are verification tallies and are not validated TID, DDD, `n_eq`, LET,
-hardness, device, organ, or instrument outputs.
+response-cache key. This example requests only `transport_raw`; case v2 also
+permits the separately gated Stage-4 finite-slab `TID` output. Raw tallies are
+not automatically validated TID, DDD, `n_eq`, LET, hardness, device, organ, or
+instrument outputs.
 
 To create additional grid cells, copy the case and change only the declared
 `incident_id`, species, energy, and/or direction. Do not change geometry,
@@ -88,8 +89,51 @@ Protons use `name: proton, Z: 1, A: 1`, He-4 uses
 `Z,A`. Both total kinetic energy and kinetic energy per nucleon are supported
 when their unit is declared.
 
+Case v2 also accepts `name: gamma, Z: 0, A: 0` with total kinetic energy for
+the Stage-4 photon attenuation checks. Gamma TID is not in the validated
+domain. Every case-v2 transport block explicitly declares `em_physics` as
+`reference_list_default` or `G4EmStandardPhysics_option4`; this choice changes
+the case and response hashes.
+
 A direct cross-check replaces the monoenergetic spectrum object with
 `format: discrete_response_nodes` and a normalized list of exact node
 definitions plus weights. The Stage-3 CTest driver generates examples of this
 form under `test_output/stage3_transport_runs/`; generated test cases do not
 belong in this source directory.
+
+## Stage-4 finite-slab TID case
+
+`stage4_tid_case.json` exercises the physically defined Stage-4 slab observable:
+
+```bash
+./shieldSim --validate-case=../examples/stage4_tid_case.json
+./shieldSim --case=../examples/stage4_tid_case.json
+```
+
+TID is the Geant4 ionizing-deposition ledger divided by the full finite silicon
+slab mass. Total and nonionizing ledgers remain audit fields. The result also
+contains the exact rule that the numeric rad value is 100 times the numeric Gy
+value, particle and propagated-
+ancestry deposition partitions, and separately labeled creator/step-process
+diagnostics. It is material-slab dose per incident primary, not device, organ,
+or crew dose.
+
+The Stage-4 gate accepts only proton or He-4 incidence and absorber material
+identities for aluminum, silicon, or water. Gamma and explicit heavier-ion
+nodes remain available for `transport_raw` verification, and other approved
+materials remain available in the shielding stack, but the parser rejects a
+TID claim outside the validated incident/absorber matrix.
+
+The example demonstrates the complete structured uncertainty input. Four
+named categories—material/mass, source, numerical, and physics reference—carry
+provenance. All six unordered correlations are explicit and the parser checks
+that their matrix is positive semidefinite before calculating the combined
+standard uncertainty. The zero mass/source values are valid only for this
+ideal verification fixture; mission cases must provide actual fabrication,
+environment, numerical, and physics-reference uncertainty evidence. Omitting a
+complete budget does not prevent a diagnostic run, but combined accuracy is
+then `not_assessable`.
+
+The example status is “implemented and acceptance-tested, pending independent
+review.” Passing it does not enable DDD, `n_eq`, LET, `H100/10`, or any health
+or device-response claim.

@@ -162,6 +162,76 @@ use absolute equality. Those thresholds qualify only Stage-3 raw transport
 infrastructure. Science quantities remain disabled and formal Stage-3
 completion remains pending independent review.
 
+## Stage-4 finite-slab TID tests
+
+Stage 4 has three independent CTest gates. All generated inputs, logs, JSON,
+and evidence are written below the CMake build tree; no Stage-4 test uses
+`/tmp`.
+
+`stage4_core_tests.cc` is deterministic and transport-free. It verifies exact
+MeV/kg-to-Gy and Gy-to-rad conversion, the case-v2 TID
+capability gate, continued DDD rejection, gamma `(0,0)` attenuation-node
+admission, explicit rejection of gamma and heavy-ion TID, and the structured
+uncertainty contract. It also rejects TID absorbers outside the registered
+Al/Si/water material matrix without restricting shield-layer choices. A
+complete budget must
+contain the material/mass, source, numerical, and physics-reference categories
+plus every unordered correlation pair. The test hand-calculates their
+covariance, rejects an indefinite matrix and a legacy aggregate-only v2 claim,
+and verifies the explicitly requested combined 95% interval.
+
+`test_stage4_nist_reference.py` authenticates every entry in
+`reference_tid/nist/manifest.sha256.json` before running. The raw official NIST
+responses and their canonical CSVs are both pinned. The test invokes
+`shieldSimReferenceTool` twice—`FTFP_BERT`'s reference EM constructor and
+`G4EmStandardPhysics_option4`—and performs 63 exact-table-node comparisons:
+
+- proton and helium-4 electronic and total stopping power in Al, Si, and water;
+- CSDA mass range obtained by explicit log-energy quadrature of the same
+  unrestricted Geant4 stopping model; and
+- XCOM total photon mass attenuation with coherent scattering in Al, Si, and
+  water.
+
+Each comparison has its own registered relative limit in
+`reference_tid/stage4_reference_plan.v1.json`; there is no universal tolerance
+and interpolation uncertainty is exactly zero at the selected nodes. Photon
+attenuation is a narrow-beam EM verification only. It is not converted into
+finite-slab dose, and gamma TID is not validated. ESTAR/electrons and ions
+heavier than helium remain outside Stage 4.
+
+`test_stage4_tid_transport.py` is the full stochastic proxy-path gate. Its
+registered plan is `reference_tid/stage4_transport_plan.v1.json`; artifacts go
+to `<build>/stage4_tid_transport_runs`. It runs proton and helium-4 incidence
+through the normal case parser, primary generator, multilayer stack, Geant4
+transport, finite absorber, adaptive accuracy controller, and canonical result
+writer for Al, Si, and water. For every accepted configuration it requires:
+
+- exact analytic slab mass and `ionizing deposited energy / mass` dose;
+- the exact rule that the numeric rad value is 100 times the numeric Gy value;
+- independent closure of total/ionizing/nonionizing ledgers when partitioned
+  by transported species, propagated ancestry, creator process, or step-
+  defining process;
+- process-name partitions explicitly labeled diagnostic rather than unique
+  causal attribution;
+- no more than 2% Monte Carlo relative standard uncertainty; and
+- a complete four-category uncertainty record with the Stage-4 pending-review
+  capability label.
+
+Three levels each of production cut, maximum step, and transverse size must
+change the final accepted observable by no more than 2%. Cut and step are
+tested on TID at fixed geometry. Changing transverse slab area changes mass
+and therefore Gy per one compact-plane primary, so lateral-escape convergence
+is correctly tested on ionizing deposited energy; exact dose conversion is
+still checked for every size. The test also limits option-4 TID sensitivity to
+the registered 4% allocation and verifies `1/sqrt(N)` behavior with five
+independent low/high-history seed pairs. Low-history points are convergence
+diagnostics, not members of the ≤2% final acceptance population.
+
+Together these gates qualify only proton/helium-4 finite material-slab TID in
+Al, Si, and water. Formal Stage-4 completion still requires the independent-
+review record. DDD, `n_eq`, LET, `H100/10`, device response, organ dose, and
+crew-health claims remain disabled.
+
 ## Validation figures
 
 CTest target `validation_figures` depends on all current analytic and
@@ -176,15 +246,17 @@ production source tool, and writes review artifacts to:
 <build>/validation_figures/manifest.json
 ```
 
-The fifteen figure subjects are Stage-1 core formulas, Stage-1 case boundaries,
+The eighteen figure subjects are Stage-1 core formulas, Stage-1 case boundaries,
 Stage-1 analytic slab masses/ledger closure, original AMS primary-table
 analytic checks, the end-to-end AMS source-integral check, original AMS
 observation/adapter agreement, AMS-02 2025
 solar-cycle observation/adapter agreement, ACE/CRIS spectra and their
 observation/statistical-error spot checks, GOES analytic/oracle integration,
 GOES event observations/coverage, the CRaTER observational reference, Stage-3
-geometry/response algebra, Stage-3 response-grid interpolation algebra, and
-Stage-3 transport/convergence comparisons. The
+geometry/response algebra, Stage-3 response-grid interpolation algebra,
+Stage-3 transport/convergence comparisons, Stage-4 exact dose/covariance
+algebra, all Stage-4 NIST comparisons, and Stage-4 TID
+transport/convergence/ledger comparisons. The
 manifest records captions, byte sizes, and SHA-256 hashes.
 
 The standalone Geant4 layer runners extend that coverage. They invoke

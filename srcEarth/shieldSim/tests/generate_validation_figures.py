@@ -175,6 +175,124 @@ def comparison_figure(evidence: dict, title: str, stem: str, caption: str,
     save_figure(fig, stem, caption, entries)
 
 
+def stage4_nist_figure(evidence: dict, entries: list[dict]) -> None:
+    """Compactly show every registered NIST comparison and its own limit."""
+
+    comparisons = evidence["comparisons"]
+    labels = [str(item["id"]).replace("_stopping_power", "_S")
+              .replace("_mass_attenuation_coefficient", "_mu")
+              .replace("_csda_range", "_R") for item in comparisons]
+    ratios = [float(item["relative_difference"]) / float(item["acceptance_relative"])
+              for item in comparisons]
+    colors = []
+    for item in comparisons:
+        identifier = str(item["id"])
+        colors.append(COLORS["blue"] if "stopping" in identifier
+                      else COLORS["green"] if "csda" in identifier
+                      else COLORS["purple"])
+    fig, (values, summary) = plt.subplots(
+        2, 1, figsize=(15.0, 9.0), gridspec_kw={"height_ratios": [2.4, 1.0]}
+    )
+    positions = list(range(len(comparisons)))
+    values.scatter(positions, ratios, c=colors, s=25, edgecolors="none")
+    values.axhline(1.0, color=COLORS["orange"], linestyle="--", label="registered limit")
+    values.set_ylabel("|Geant4 - NIST| / row-specific acceptance")
+    values.set_xticks(positions)
+    values.set_xticklabels(labels, rotation=75, ha="right", fontsize=6)
+    values.grid(axis="y", alpha=0.25)
+    values.legend(fontsize=8)
+    quantities = ["electronic_stopping_power", "total_stopping_power", "csda_range",
+                  "mass_attenuation_coefficient"]
+    maxima = [max(float(item["relative_difference"]) for item in comparisons
+                  if str(item["id"]).endswith(quantity)) for quantity in quantities]
+    limits = [max(float(item["acceptance_relative"]) for item in comparisons
+                  if str(item["id"]).endswith(quantity)) for quantity in quantities]
+    x = list(range(len(quantities)))
+    summary.bar([value - 0.18 for value in x], maxima, 0.36, color=COLORS["blue"],
+                label="maximum observed relative difference")
+    summary.bar([value + 0.18 for value in x], limits, 0.36, color="#bdbdbd",
+                label="largest registered row limit")
+    summary.set_xticks(x)
+    summary.set_xticklabels(["electronic S", "total S", "CSDA range", "photon mu/rho"])
+    summary.set_ylabel("relative difference")
+    summary.grid(axis="y", alpha=0.25)
+    summary.legend(fontsize=8, ncol=2)
+    fig.suptitle("Stage 4 Geant4 electromagnetic tables vs pinned NIST references",
+                 fontsize=14, fontweight="bold")
+    save_figure(
+        fig,
+        "stage4_nist_reference_comparisons",
+        "All 63 exact-node PSTAR, ASTAR, and XCOM photon mass-attenuation comparisons are shown "
+        "against their preregistered row-specific limits. Photon attenuation is not interpreted "
+        "as absorbed dose. Numerical assertions are authoritative; formal Stage-4 sign-off still "
+        "requires independent review.",
+        entries,
+    )
+
+
+def stage4_transport_figure(evidence: dict, entries: list[dict]) -> None:
+    """Show all analytic ledger/mass conversions plus numerical TID gates."""
+
+    comparisons = evidence["comparisons"]
+    residuals = []
+    for item in comparisons:
+        expected = float(item["expected"])
+        actual = float(item["actual"])
+        scale = max(abs(expected), abs(actual), 1.0e-300)
+        residuals.append((actual - expected) / scale)
+    fig, (exact, convergence) = plt.subplots(2, 1, figsize=(15.0, 9.2))
+    positions = list(range(len(comparisons)))
+    exact.scatter(positions, residuals, color=COLORS["blue"], s=24)
+    exact.axhline(0.0, color="#222222", linewidth=0.9)
+    exact.set_xticks(positions)
+    exact.set_xticklabels([wrap_label(str(item["id"]), 18) for item in comparisons],
+                          rotation=75, ha="right", fontsize=6)
+    exact.set_ylabel("(computed - analytic) / scale")
+    exact.set_title("Every analytic mass/dose conversion and ledger partition closure")
+    exact.grid(axis="y", alpha=0.25)
+
+    names: list[str] = []
+    values: list[float] = []
+    limits: list[float] = []
+    for family, points in evidence["convergence"].items():
+        names.append(f"{family}\nfinal refinement")
+        values.append(float(points[-1]["final_refinement_relative_change"]))
+        limits.append(0.02)
+    names.append("EM option 4\nsensitivity")
+    values.append(float(evidence["em_option4_transport_sensitivity_relative"]))
+    limits.append(float(evidence["em_option4_transport_sensitivity_relative_max"]))
+    names.append("max accepted\nMC standard u")
+    accepted_mc = [float(item["statistical_relative_standard_uncertainty"])
+                   for item in evidence["material_species_matrix"]]
+    for points in evidence["convergence"].values():
+        accepted_mc.extend(float(item["statistical_relative_standard_uncertainty"])
+                           for item in points)
+    values.append(max(accepted_mc))
+    limits.append(float(evidence["monte_carlo_relative_standard_uncertainty_max"]))
+    x = list(range(len(names)))
+    convergence.bar([value - 0.18 for value in x], values, 0.36, color=COLORS["green"],
+                    label="observed")
+    convergence.bar([value + 0.18 for value in x], limits, 0.36, color="#bdbdbd",
+                    label="registered limit")
+    convergence.set_xticks(x)
+    convergence.set_xticklabels(names, fontsize=8)
+    convergence.set_ylabel("relative change or uncertainty")
+    convergence.grid(axis="y", alpha=0.25)
+    convergence.legend(fontsize=8)
+    fig.suptitle("Stage 4 finite-slab TID scoring and convergence",
+                 fontsize=14, fontweight="bold")
+    save_figure(
+        fig,
+        "stage4_tid_transport_comparisons",
+        "The upper panel includes every exact analytic slab-mass, Gy conversion, and independent "
+        "particle/ancestry/process ledger-closure case. The lower panel shows quantity-specific "
+        "cut, step, lateral-escape, EM-model, and Monte Carlo gates. Lateral size is tested on "
+        "deposited energy because changing slab area changes mass and Gy per compact-plane primary "
+        "by definition.",
+        entries,
+    )
+
+
 def run_source_tool(command: str, options: list[str], output: pathlib.Path) -> dict:
     completed = subprocess.run(
         [str(SOURCE_TOOL), command, *options, f"--output={output}"],
@@ -545,6 +663,9 @@ def main() -> int:
     stage3_core = load_evidence("stage3_core.json")
     stage3_weights = load_evidence("stage3_response_weights.json")
     stage3_transport = load_evidence("stage3_transport.json")
+    stage4_core = load_evidence("stage4_core.json")
+    stage4_nist = load_evidence("stage4_nist_reference.json")
+    stage4_transport = load_evidence("stage4_tid_transport.json")
     entries: list[dict] = []
 
     comparison_figure(
@@ -609,6 +730,17 @@ def main() -> int:
         "extrapolation, and incomplete-grid rejection are asserted separately.",
         entries,
     )
+    comparison_figure(
+        stage4_core,
+        "Stage 4 exact TID units and covariance",
+        "stage4_core_analytic",
+        "Exact MeV/kg-to-Gy, Gy-to-rad, and hand-calculated structured-covariance results are "
+        "compared with the Stage-4 implementation. The image is a review aid; deterministic "
+        "numeric assertions define pass/fail.",
+        entries,
+    )
+    stage4_nist_figure(stage4_nist, entries)
+    stage4_transport_figure(stage4_transport, entries)
 
     with tempfile.TemporaryDirectory(prefix="shieldsim-validation-figures-") as temporary:
         temporary_path = pathlib.Path(temporary)
@@ -709,6 +841,9 @@ def main() -> int:
         "stage3_core_analytic",
         "stage3_transport_comparisons",
         "stage3_response_weights_analytic",
+        "stage4_core_analytic",
+        "stage4_nist_reference_comparisons",
+        "stage4_tid_transport_comparisons",
     }
     require(
         {pathlib.Path(item["file"]).stem for item in entries} == expected_stems,

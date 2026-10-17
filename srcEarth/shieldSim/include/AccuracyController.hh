@@ -31,6 +31,11 @@ struct AccuracyAssessment {
   double combinedRelativeUncertainty = std::numeric_limits<double>::quiet_NaN();
   double interval95Low = std::numeric_limits<double>::quiet_NaN();
   double interval95High = std::numeric_limits<double>::quiet_NaN();
+  // The first interval is the Student-t Monte Carlo interval. The combined
+  // interval is populated only by an explicitly selected coverage model; it
+  // must not be inferred from an incomplete systematic budget.
+  double combinedInterval95Low = std::numeric_limits<double>::quiet_NaN();
+  double combinedInterval95High = std::numeric_limits<double>::quiet_NaN();
   std::string reason;
 };
 

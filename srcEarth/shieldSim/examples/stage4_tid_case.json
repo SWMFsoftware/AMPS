@@ -1,0 +1,133 @@
+{
+  "schema_version": "shieldSim.case.v2",
+  "case_id": "stage4_100MeV_proton_silicon_slab_tid",
+  "purpose": "verification_test",
+  "material_library": {
+    "path": "../data/material_library.v1.json",
+    "library_id": "shieldSim.reference_materials",
+    "library_version": "1.0.0"
+  },
+  "material_overrides": [],
+  "geometry": {
+    "coordinate_frame": {
+      "name": "world_cartesian_mm",
+      "handedness": "right",
+      "origin": "world_center",
+      "local_surface_normal": "+z"
+    },
+    "world": {
+      "size_x": {"value": 200.0, "unit": "mm"},
+      "size_y": {"value": 200.0, "unit": "mm"},
+      "size_z": {"value": 200.0, "unit": "mm"},
+      "center_x": {"value": 0.0, "unit": "mm"},
+      "center_y": {"value": 0.0, "unit": "mm"},
+      "center_z": {"value": 0.0, "unit": "mm"}
+    },
+    "source_plane": {
+      "size_x": {"value": 50.0, "unit": "mm"},
+      "size_y": {"value": 50.0, "unit": "mm"},
+      "transform": {
+        "translation": {
+          "x": {"value": 0.0, "unit": "mm"},
+          "y": {"value": 0.0, "unit": "mm"},
+          "z": {"value": -80.0, "unit": "mm"}
+        },
+        "rotation_quaternion_local_to_world": {"w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0}
+      }
+    },
+    "shield_stack": {
+      "size_x": {"value": 50.0, "unit": "mm"},
+      "size_y": {"value": 50.0, "unit": "mm"},
+      "transform": {
+        "translation": {
+          "x": {"value": 0.0, "unit": "mm"},
+          "y": {"value": 0.0, "unit": "mm"},
+          "z": {"value": -20.0, "unit": "mm"}
+        },
+        "rotation_quaternion_local_to_world": {"w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0}
+      },
+      "layers": [
+        {
+          "layer_id": "outer_al",
+          "material": "Al",
+          "thickness": {"type": "geometric", "value": 1.0, "unit": "mm"}
+        },
+        {
+          "layer_id": "inner_hdpe",
+          "material": "HDPE",
+          "thickness": {"type": "geometric", "value": 2.0, "unit": "mm"}
+        }
+      ]
+    },
+    "absorbers": [
+      {
+        "absorber_id": "silicon_proxy",
+        "material": "Si",
+        "geometry": {
+          "type": "slab",
+          "size_x": {"value": 50.0, "unit": "mm"},
+          "size_y": {"value": 50.0, "unit": "mm"},
+          "thickness": {"value": 1.0, "unit": "mm"},
+          "transform": {
+            "translation": {
+              "x": {"value": 0.0, "unit": "mm"},
+              "y": {"value": 0.0, "unit": "mm"},
+              "z": {"value": -16.0, "unit": "mm"}
+            },
+            "rotation_quaternion_local_to_world": {"w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0}
+          }
+        }
+      }
+    ]
+  },
+  "source": {
+    "mode": "directional_plane",
+    "spectrum": {
+      "format": "monoenergetic_response_cell",
+      "incident_id": "proton_100MeV_mu1_phi0",
+      "particle": {"name": "proton", "Z": 1, "A": 1},
+      "energy": {"coordinate": "total_kinetic_energy", "value": 100.0, "unit": "MeV"},
+      "direction": {"mu": 1.0, "phi": {"value": 0.0, "unit": "deg"}}
+    }
+  },
+  "quantities": ["TID"],
+  "accuracy": {
+    "target": 0.10,
+    "scope": "combined",
+    "coverage": {
+      "standard_k": 1.0,
+      "standard_probability": 0.68,
+      "interval_probability": 0.95,
+      "interval_method": "student_t_mc_plus_normal_systematics_quadrature"
+    },
+    "systematic_budget": {
+      "status": "complete",
+      "pair_policy": "all_pairs_explicit",
+      "components": [
+        {"id":"ideal_slab_mass","category":"material_mass","relative_standard_uncertainty":0.0,"provenance":"analytic verification slab uses the exact resolved density and dimensions; not an as-built mass claim"},
+        {"id":"mono_primary_normalization","category":"source","relative_standard_uncertainty":0.0,"provenance":"verification normalization is exactly one declared primary per history; not an environmental flux claim"},
+        {"id":"registered_numerical_envelope","category":"numerical","relative_standard_uncertainty":0.02,"provenance":"Stage-4 cut, step, transverse-size, and history refinement allocation"},
+        {"id":"registered_physics_reference_envelope","category":"physics_reference","relative_standard_uncertainty":0.04,"provenance":"Stage-4 NIST reference and EM model-form allocation for the registered proton/helium slab domain"}
+      ],
+      "correlations": [
+        {"component_i":"ideal_slab_mass","component_j":"mono_primary_normalization","correlation_coefficient":0.0,"rationale":"independently defined verification inputs"},
+        {"component_i":"ideal_slab_mass","component_j":"registered_numerical_envelope","correlation_coefficient":0.0,"rationale":"exact analytic mass is independent of transport refinement"},
+        {"component_i":"ideal_slab_mass","component_j":"registered_physics_reference_envelope","correlation_coefficient":0.0,"rationale":"exact analytic mass is independent of physics model comparison"},
+        {"component_i":"mono_primary_normalization","component_j":"registered_numerical_envelope","correlation_coefficient":0.0,"rationale":"fixed per-primary normalization is independent of transport refinement"},
+        {"component_i":"mono_primary_normalization","component_j":"registered_physics_reference_envelope","correlation_coefficient":0.0,"rationale":"fixed per-primary normalization is independent of physics model comparison"},
+        {"component_i":"registered_numerical_envelope","component_j":"registered_physics_reference_envelope","correlation_coefficient":0.0,"rationale":"separate preregistered numerical and model-form studies"}
+      ]
+    },
+    "quantity_overrides": {},
+    "sampling": {"min_histories": 200, "max_histories": 2000, "batch_size": 200}
+  },
+  "transport": {
+    "physics_list": "FTFP_BERT",
+    "ion_physics": "reference_list_default",
+    "em_physics": "reference_list_default",
+    "production_cut": {"value": 0.1, "unit": "mm"},
+    "max_step": {"value": 0.1, "unit": "mm"},
+    "random_seed": 410001
+  },
+  "output": {"prefix": "stage4_tid"}
+}

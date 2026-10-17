@@ -119,13 +119,14 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* ev) {
 void PrimaryGeneratorAction::GenerateDeclaredIncident(
     const shield_sim::ResponseIncidentDefinition& incident,G4Event* event){
   G4ParticleDefinition* particle=nullptr;
-  if(incident.particleName=="proton" || incident.particleName=="alpha")
+  if(incident.particleName=="proton" || incident.particleName=="alpha" ||
+     incident.particleName=="gamma")
     particle=G4ParticleTable::GetParticleTable()->FindParticle(incident.particleName);
   else
     particle=G4IonTable::GetIonTable()->GetIon(incident.atomicNumber,incident.massNumber,0.0);
   if(!particle)
     G4Exception("PrimaryGeneratorAction","ResponseParticle",FatalException,
-                "Cannot construct the declared Stage-3 incident particle");
+                "Cannot construct the declared Stage-3/4 incident particle");
   const G4double energy=incident.totalKineticEnergyMeV;
   RecordSourceDiagnostic(particle->GetParticleName(),energy);
   if(incident.particleName=="proton") RecordInput(true,energy);

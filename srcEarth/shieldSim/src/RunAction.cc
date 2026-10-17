@@ -155,6 +155,55 @@ std::string ScoreToken(std::string value){
 }
 }
 
+void RunAction::RecordAbsorberStep(std::size_t absorber,
+                                   const std::string& particle,bool primary,
+                                   const std::string& rootParticle,int generation,
+                                   const std::string& creatorProcess,
+                                   const std::string& stepDefiningProcess,
+                                   G4double totalEdep,G4double nonIonizingEdep){
+  if(absorber>=fEdepTotal.size() || (totalEdep==0.0 && nonIonizingEdep==0.0)) return;
+  AddEdep(absorber,totalEdep,nonIonizingEdep);
+
+  const std::string absorberId=(fOpts.caseDefinition &&
+      fOpts.activeAbsorberIndex<fOpts.caseDefinition->absorbers.size())
+      ? fOpts.caseDefinition->absorbers[fOpts.activeAbsorberIndex].id
+      : std::to_string(absorber);
+  const double total=totalEdep/MeV;
+  const double nonIon=std::min(totalEdep,nonIonizingEdep)/MeV;
+  const double values[3]={total,total-nonIon,nonIon};
+  const char* names[3]={"total_deposited_energy_MeV",
+                        "ionizing_deposited_energy_MeV",
+                        "nonionizing_deposited_energy_MeV"};
+  auto addTriplet=[&](const std::string& base){
+    for(int i=0;i<3;++i){
+      fEventRawScores[base+"/"+names[i]]+=values[i];
+      fRawScoreUnits[base+"/"+names[i]]="MeV/primary";
+    }
+  };
+
+  // These two views are authoritative classifications of the transported
+  // particle depositing the energy. They are deliberately based on track
+  // identity and propagated ancestry, not on a process-name interpretation.
+  const std::string component=primary ? "primary" : "secondary";
+  const std::string authoritative="absorber/"+ScoreToken(absorberId)+
+      "/deposition_authoritative/by_particle/"+ScoreToken(particle)+
+      "/"+component;
+  addTriplet(authoritative);
+  addTriplet("absorber/"+ScoreToken(absorberId)+
+      "/deposition_authoritative/by_ancestry/root_"+ScoreToken(rootParticle)+
+      "/generation_"+std::to_string(generation)+"/particle_"+ScoreToken(particle));
+
+  // Process names answer diagnostic questions about which process created a
+  // track or limited a step. They do not provide a unique causal allocation of
+  // deposited energy, so these scores are explicitly segregated from the
+  // authoritative species/ancestry breakdown above.
+  addTriplet("absorber/"+ScoreToken(absorberId)+
+      "/deposition_diagnostic_by_creator_process/"+ScoreToken(creatorProcess));
+  addTriplet("absorber/"+ScoreToken(absorberId)+
+      "/deposition_diagnostic_by_step_defining_process/"+
+      ScoreToken(stepDefiningProcess));
+}
+
 void RunAction::RecordShieldExit(const std::string& particle,int,int,int,
                                  bool primary,const std::string& rootParticle,
                                  int generation,G4double kineticEnergyMeV){
@@ -611,7 +660,7 @@ void RunAction::WriteSpectraTecplot(G4int nEv){
     if(fOpts.caseDefinition && (fOpts.caseDefinition->responseIncident.enabled ||
                                 !fOpts.caseDefinition->directIncidents.empty()))
       out<<"# Spectrum: "<<fOpts.caseDefinition->sourceFormat
-         <<" Stage-3 verification source; one generated primary per history.\n";
+         <<" Stage-3/4 verification source; one generated primary per history.\n";
     else if(fOpts.spectrumFile.empty())
       out<<"# Spectrum: built-in approximate Badhwar-O'Neill, phi = 550 MV.\n";
     else
@@ -982,6 +1031,10 @@ void RunAction::WriteRunSummary(G4int nEv){
   out<<"meta summary_schema layer4_v1\n";
   out<<"meta output_prefix "<<fOpts.outputPrefix<<"\n";
   out<<"meta physics_list "<<fOpts.physicsList<<"\n";
+  if(fOpts.caseDefinition){
+    out<<"meta em_physics "<<fOpts.caseDefinition->emPhysics<<"\n";
+    out<<"meta ion_physics "<<fOpts.caseDefinition->ionPhysics<<"\n";
+  }
   out<<"meta source_mode "<<fSourceMode<<"\n";
   out<<"meta spectrum_file "
      <<(fOpts.caseDefinition && (fOpts.caseDefinition->responseIncident.enabled ||
@@ -991,8 +1044,13 @@ void RunAction::WriteRunSummary(G4int nEv){
   out<<"meta shield_material "<<(fSweepMode?fCurrentMat:fOpts.shieldMaterial)<<"\n";
   out<<"meta result_capability_status "
      <<(fOpts.caseDefinition
-          ? (fOpts.caseDefinition->schemaVersion=="shieldSim.case.v2"
-               ? "stage3_transport_engine_implemented_pending_independent_review_no_science_quantity_claim"
+          ? (fOpts.caseDefinition->schemaVersion=="shieldSim.case.v2" &&
+             std::find(fOpts.caseDefinition->quantities.begin(),
+                       fOpts.caseDefinition->quantities.end(),"TID")!=
+                 fOpts.caseDefinition->quantities.end()
+               ? "stage4_finite_slab_tid_implemented_and_acceptance_tested_pending_independent_review"
+             : fOpts.caseDefinition->schemaVersion=="shieldSim.case.v2"
+               ? "stage3_transport_engine_implemented_and_acceptance_tested_pending_independent_review_no_science_quantity_claim"
                : fOpts.caseDefinition->sourceFormat=="ams02_hapi_component"
                ? "stage2_published_spectrum_transport_test_not_physical_validation"
                : "stage1_core_not_yet_quantity_validated")
@@ -1019,6 +1077,7 @@ void RunAction::WriteRunSummary(G4int nEv){
          <<assessment.statisticalRelativeUncertainty<<' '
          <<assessment.combinedRelativeUncertainty<<' '
          <<assessment.interval95Low<<' '<<assessment.interval95High<<' '
+         <<assessment.combinedInterval95Low<<' '<<assessment.combinedInterval95High<<' '
          <<'"'<<assessment.reason<<'"'<<"\n";
     }
   }
@@ -1096,8 +1155,12 @@ shield_sim::Json RunAction::BuildRawScoreCovarianceJson(G4int nEv) const {
 void RunAction::WriteResultJson(G4int nEv){
   if(!fOpts.caseDefinition || !fAccuracyController) return;
   const auto& c=*fOpts.caseDefinition;
-  const std::string validationStatus = c.schemaVersion=="shieldSim.case.v2"
-      ? "implemented_stage3_transport_raw_not_physically_validated"
+  const bool stage4Tid=c.schemaVersion=="shieldSim.case.v2" &&
+      std::find(c.quantities.begin(),c.quantities.end(),"TID")!=c.quantities.end();
+  const std::string validationStatus = stage4Tid
+      ? "stage4_finite_slab_tid_implemented_and_acceptance_tested_pending_independent_review"
+      : c.schemaVersion=="shieldSim.case.v2"
+      ? "implemented_stage3_transport_raw_acceptance_tested_pending_independent_review"
       : c.sourceFormat=="ams02_hapi_component"
       ? "stage2_published_spectrum_transport_test_not_physical_validation"
       : "implemented_not_physically_validated_stage1";
@@ -1126,6 +1189,24 @@ void RunAction::WriteResultJson(G4int nEv){
     if(requirement.systematicBudgetComplete)
       object["systematic_relative_standard_uncertainty"]=
           requirement.systematicRelativeUncertainty;
+    if(!requirement.systematicComponents.empty()){
+      shield_sim::Json::Array components;
+      for(const auto& component:requirement.systematicComponents)
+        components.emplace_back(shield_sim::Json::Object{
+          {"category",component.category},{"id",component.id},
+          {"provenance",component.provenance},
+          {"relative_standard_uncertainty",component.relativeStandardUncertainty}});
+      shield_sim::Json::Array correlations;
+      for(const auto& correlation:requirement.systematicCorrelations)
+        correlations.emplace_back(shield_sim::Json::Object{
+          {"component_i",correlation.firstComponent},
+          {"component_j",correlation.secondComponent},
+          {"correlation_coefficient",correlation.coefficient},
+          {"rationale",correlation.rationale}});
+      object["systematic_components"]=shield_sim::Json(std::move(components));
+      object["systematic_correlations"]=shield_sim::Json(std::move(correlations));
+      object["systematic_pair_policy"]=requirement.systematicPairPolicy;
+    }
     if(requirement.hasKnownSystematicFloor)
       object["known_systematic_relative_floor"]=requirement.knownSystematicFloor;
     return shield_sim::Json(std::move(object));
@@ -1137,17 +1218,31 @@ void RunAction::WriteResultJson(G4int nEv){
       auto* lv=fScoringLVs[i];
       const G4double mass=lv?lv->GetMass(true,false):0.0;
       auto assessment=fAccuracyController->Assess("TID");
+      const auto& requirement=c.AccuracyFor("TID");
       shield_sim::Json::Object interval;
-      if(mass>0.0 && std::isfinite(assessment.interval95Low) &&
-         std::isfinite(assessment.interval95High)){
-        interval["low"]=assessment.interval95Low*MeV/mass/gray;
-        interval["high"]=assessment.interval95High*MeV/mass/gray;
+      const double intervalLow=requirement.scope=="combined"
+          ? assessment.combinedInterval95Low : assessment.interval95Low;
+      const double intervalHigh=requirement.scope=="combined"
+          ? assessment.combinedInterval95High : assessment.interval95High;
+      if(mass>0.0 && std::isfinite(intervalLow) && std::isfinite(intervalHigh)){
+        interval["low"]=intervalLow*MeV/mass/gray;
+        interval["high"]=intervalHigh*MeV/mass/gray;
         interval["unit"]="Gy/primary";
       } else {
         interval["low"]=shield_sim::Json(nullptr);
         interval["high"]=shield_sim::Json(nullptr);
         interval["unit"]="Gy/primary";
       }
+      shield_sim::Json::Object statisticalInterval;
+      if(mass>0.0 && std::isfinite(assessment.interval95Low) &&
+         std::isfinite(assessment.interval95High)){
+        statisticalInterval["low"]=assessment.interval95Low*MeV/mass/gray;
+        statisticalInterval["high"]=assessment.interval95High*MeV/mass/gray;
+      } else {
+        statisticalInterval["low"]=shield_sim::Json(nullptr);
+        statisticalInterval["high"]=shield_sim::Json(nullptr);
+      }
+      statisticalInterval["unit"]="Gy/primary";
       outputs.emplace_back(shield_sim::Json::Object{
         {"accuracy",accuracyJson("TID",assessment)},
         {"absorber_id",absorber.id},
@@ -1159,7 +1254,9 @@ void RunAction::WriteResultJson(G4int nEv){
           {"nonionizing_dose_Gy_per_primary",fLastDoseNonIonizing[i]/gray},
           {"total_dose_Gy_per_primary",fLastDoseTotal[i]/gray}})},
         {"interval_95",shield_sim::Json(std::move(interval))},
+        {"statistical_interval_95",shield_sim::Json(std::move(statisticalInterval))},
         {"name","TID"}, {"normalization","per incident primary"},
+        {"rad_per_primary",100.0*fLastDose[i]/gray},
         {"source_normalized_unit","Gy/s"},
         {"source_normalized_value",fLastDoseRate[i]/gray},
         {"unit","Gy/primary"}, {"validation_status",validationStatus},
@@ -1225,9 +1322,12 @@ void RunAction::WriteResultJson(G4int nEv){
     {"events",static_cast<double>(nEv)}, {"geant4_version",G4Version},
     {"geometry_hash",c.geometryHash}, {"material_library_hash",c.materials->ContentHash()},
     {"outputs",shield_sim::Json(std::move(outputs))}, {"physics_list",fOpts.physicsList},
+    {"em_physics",c.emPhysics},
     {"ion_physics",c.ionPhysics},
     {"energy_ledger_scope",shield_sim::Json(shield_sim::Json::Object{
       {"absorber_deposition","Geant4 total, ionizing, and nonionizing deposited energy per primary"},
+      {"authoritative_particle_breakdown","authoritative classification by transported particle species, primary/secondary identity, propagated root particle, and generation; these partitions each close independently to the absorber aggregate"},
+      {"diagnostic_process_breakdown","creator-process and step-defining-process views are diagnostics only and are not a unique physical-process attribution"},
       {"shield_crossings","kinetic energy only at the downstream stack boundary"},
       {"secondary_births","count and initial kinetic energy grouped by production layer, particle, ancestry generation, and creator process"},
       {"nuclear_rest_mass_and_q_values","not included in the kinetic/deposition closure; no global conservation claim is made"}})},
@@ -1285,7 +1385,8 @@ void RunAction::WriteResponseCellJson(G4int nEv){
     {"compiler_flags",shield_sim_build::CompilerFlags},
     {"geant4_data_libraries",shield_sim::Json(dataLibraries)},
     {"geant4_version",G4Version},{"geometry_hash",c.geometryHash},
-    {"ion_physics",c.ionPhysics},{"material_library_hash",c.materials->ContentHash()},
+    {"em_physics",c.emPhysics},{"ion_physics",c.ionPhysics},
+    {"material_library_hash",c.materials->ContentHash()},
     {"max_step_mm",c.maxStepMm},{"physics_list",c.physicsList},
     {"production_cut_mm",c.productionCutMm},
     {"scoring_contract","shieldSim.transport_raw.v1"},

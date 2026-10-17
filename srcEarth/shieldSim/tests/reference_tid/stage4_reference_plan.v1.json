@@ -1,0 +1,35 @@
+{
+  "schema_version": "shieldSim.stage4_reference_plan.v1",
+  "registration_status": "registered_before_first_model_reference_comparison",
+  "registered_utc": "2026-10-17T00:00:00Z",
+  "validated_domain": {
+    "particles": ["proton", "alpha"],
+    "materials": ["G4_Al", "G4_Si", "G4_WATER"],
+    "reported_quantity": "finite-slab TID",
+    "photon_scope": "narrow-beam mass-attenuation verification only; photon TID is not validated",
+    "excluded": ["electrons", "ions heavier than alpha", "organ dose", "device response", "crew health"]
+  },
+  "acceptance_basis": {
+    "charged_particles": "row-specific envelope covering cited NIST high-energy stopping/range uncertainty, tabulation precision, and implementation difference; exact table nodes eliminate interpolation uncertainty",
+    "photons": "row-specific envelope for the official XCOM total attenuation with coherent scattering and Geant4 process-model comparison; attenuation is not interpreted as absorbed dose",
+    "monte_carlo": "none: shieldSimReferenceTool queries deterministic Geant4 tables"
+  },
+  "charged_particle_cases": [
+    {"particle":"proton","table":"pstar","energy_MeV":10.0,"electronic_acceptance_relative":{"aluminum":0.05,"silicon":0.05,"water":0.07},"csda_acceptance_relative":{"aluminum":0.08,"silicon":0.08,"water":0.10}},
+    {"particle":"proton","table":"pstar","energy_MeV":100.0,"electronic_acceptance_relative":{"aluminum":0.03,"silicon":0.03,"water":0.04},"csda_acceptance_relative":{"aluminum":0.05,"silicon":0.05,"water":0.07}},
+    {"particle":"proton","table":"pstar","energy_MeV":1000.0,"electronic_acceptance_relative":{"aluminum":0.03,"silicon":0.03,"water":0.04},"csda_acceptance_relative":{"aluminum":0.05,"silicon":0.05,"water":0.07}},
+    {"particle":"alpha","table":"astar","energy_MeV":10.0,"electronic_acceptance_relative":{"aluminum":0.08,"silicon":0.08,"water":0.10},"csda_acceptance_relative":{"aluminum":0.10,"silicon":0.10,"water":0.12}},
+    {"particle":"alpha","table":"astar","energy_MeV":100.0,"electronic_acceptance_relative":{"aluminum":0.05,"silicon":0.05,"water":0.07},"csda_acceptance_relative":{"aluminum":0.08,"silicon":0.08,"water":0.10}},
+    {"particle":"alpha","table":"astar","energy_MeV":1000.0,"electronic_acceptance_relative":{"aluminum":0.04,"silicon":0.04,"water":0.06},"csda_acceptance_relative":{"aluminum":0.07,"silicon":0.07,"water":0.09}}
+  ],
+  "photon_cases": [
+    {"energy_MeV":0.1,"mass_attenuation_acceptance_relative":{"aluminum":0.05,"silicon":0.05,"water":0.05}},
+    {"energy_MeV":1.0,"mass_attenuation_acceptance_relative":{"aluminum":0.05,"silicon":0.05,"water":0.05}},
+    {"energy_MeV":10.0,"mass_attenuation_acceptance_relative":{"aluminum":0.08,"silicon":0.08,"water":0.08}}
+  ],
+  "em_sensitivity": {
+    "baseline": "reference_list_default",
+    "comparison": "G4EmStandardPhysics_option4",
+    "interpretation": "reported as model-form sensitivity; it does not replace the NIST acceptance checks"
+  }
+}

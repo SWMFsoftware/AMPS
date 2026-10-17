@@ -63,6 +63,11 @@ public:
   // Geant4 reports total and non-ionizing deposit per step; ionizing deposit is
   // their non-negative difference.
   void AddEdep(std::size_t i,G4double totalEdep,G4double nonIonizingEdep);
+  void RecordAbsorberStep(std::size_t absorber,const std::string& particle,
+                          bool primary,const std::string& rootParticle,
+                          int generation,const std::string& creatorProcess,
+                          const std::string& stepDefiningProcess,
+                          G4double totalEdep,G4double nonIonizingEdep);
   void AddPrimaryProtonExit(G4double kineticEnergyMeV);
   // Raw Stage-3 transport scores.  Each call updates the current primary
   // history; EndEvent commits one independent sample, including implicit zero

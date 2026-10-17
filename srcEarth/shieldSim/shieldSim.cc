@@ -65,6 +65,7 @@
 #include "SteppingAction.hh"
 
 #include <G4Exception.hh>
+#include <G4EmStandardPhysics_option4.hh>
 #include <G4IonQMDPhysics.hh>
 #include <G4PhysListFactory.hh>
 #include <G4RunManager.hh>
@@ -114,8 +115,13 @@ void WriteResolvedCase(const Options& opts){
   }
   manifest["geant4_data_libraries"]=shield_sim::Json(std::move(dataLibraries));
   manifest["output_prefix"]=opts.outputPrefix;
-  manifest["run_status"]=opts.caseDefinition->schemaVersion=="shieldSim.case.v2"
-      ? "stage3_transport_engine_implemented_pending_independent_review_no_science_quantity_claim"
+  const bool stage4Tid=opts.caseDefinition->schemaVersion=="shieldSim.case.v2" &&
+      std::find(opts.caseDefinition->quantities.begin(),opts.caseDefinition->quantities.end(),"TID")!=
+      opts.caseDefinition->quantities.end();
+  manifest["run_status"]=stage4Tid
+      ? "stage4_finite_slab_tid_implemented_and_acceptance_tested_pending_independent_review"
+      : opts.caseDefinition->schemaVersion=="shieldSim.case.v2"
+      ? "stage3_transport_engine_implemented_and_acceptance_tested_pending_independent_review_no_science_quantity_claim"
       : opts.caseDefinition->sourceFormat=="ams02_hapi_component"
       ? "stage2_published_spectrum_transport_test_not_physical_validation"
       : "stage1_core_not_yet_quantity_validated";
@@ -158,11 +164,15 @@ int RunSimulation(Options opts){
   }
 
   G4cout<<"============ shieldSim configuration ============"<<G4endl;
-  G4cout<<"Physics  : "<<opts.physicsList<<G4endl;
+  G4cout<<"Physics  : "<<opts.physicsList;
+  if(opts.caseDefinition)
+    G4cout<<"; EM="<<opts.caseDefinition->emPhysics
+          <<"; ion="<<opts.caseDefinition->ionPhysics;
+  G4cout<<G4endl;
   G4cout<<"Spectrum  : ";
   if(opts.caseDefinition && (opts.caseDefinition->responseIncident.enabled ||
                              !opts.caseDefinition->directIncidents.empty()))
-    G4cout<<opts.caseDefinition->sourceFormat<<" (Stage-3 verification source)";
+    G4cout<<opts.caseDefinition->sourceFormat<<" (Stage-3/4 verification source)";
   else
     G4cout<<(opts.spectrumFile.empty()?"GCR Badhwar-O'Neill phi=550MV"
                                        :opts.spectrumFile);
@@ -257,6 +267,12 @@ int RunSimulation(Options opts){
   }
   if(opts.caseDefinition && opts.caseDefinition->ionPhysics=="G4IonQMDPhysics")
     physList->ReplacePhysics(new G4IonQMDPhysics());
+  // Stage 4 treats the reference list's own EM constructor as the production
+  // baseline.  Option 4 is available only through an explicit case field so a
+  // sensitivity run necessarily changes the resolved-case and response hashes.
+  if(opts.caseDefinition &&
+     opts.caseDefinition->emPhysics=="G4EmStandardPhysics_option4")
+    physList->ReplacePhysics(new G4EmStandardPhysics_option4());
   // Optional production range cut and step limiter for numerical convergence
   // testing.  The range cut controls when Geant4 creates explicit secondaries
   // instead of depositing their energy locally.  The step limiter is registered

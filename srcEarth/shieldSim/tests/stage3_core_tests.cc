@@ -129,11 +129,11 @@ int main(int argc,char** argv){
         reversedCase->geometryHash!=caseV2->geometryHash,
         "A|B and B|A retain distinct order and geometry hashes");
   auto forbiddenQuantity=reversedDocument;
-  forbiddenQuantity.At("quantities").AsArray()={shield_sim::Json("TID")};
+  forbiddenQuantity.At("quantities").AsArray()={shield_sim::Json("DDD")};
   const fs::path forbiddenPath=scratch/"forbidden_stage3_quantity.json";
   { std::ofstream out(forbiddenPath); out<<forbiddenQuantity.DumpCanonical()<<'\n'; }
   CheckThrows([&]{ (void)shield_sim::CaseDefinition::Load(forbiddenPath.string()); },
-              "case-v2 science-facing quantity before its later validation stage");
+              "case-v2 DDD remains forbidden after the Stage-4 TID gate");
   const auto& absorber=caseV2->absorbers.front();
   const double volumeCm3=(absorber.sizeXmm/10.0)*(absorber.sizeYmm/10.0)*
                          (absorber.thicknessMm/10.0);

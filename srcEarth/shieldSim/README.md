@@ -8,8 +8,12 @@ phantom.
 
 ## Implementation status
 
-Stages 1 and 2 are complete. Stage 3 is implemented and acceptance-tested but
-is **pending the required independent review**, so it is not formally complete.
+Stages 1 and 2 are complete. Stages 3 and 4 are implemented and acceptance-
+tested but are **pending the required independent review**, so neither is
+formally complete. Stage 4 enables a bounded finite-material-slab TID
+capability for proton and helium-4 incidence in aluminum, silicon, and water.
+It does not validate photon TID, electrons, heavier ions, devices, organs, or
+crew dose.
 Stage 2 has strict
 adapters and pinned data for the original AMS-02 proton/helium fixture, the
 2025 AMS-02 He--O solar-cycle tables, ACE/CRIS B--Ni, and the GOES-16 GLE72
@@ -41,17 +45,31 @@ dependency. The science-facing case path is a strict
 - resolved case, geometry, material, source, Geant4, seed, and output
 provenance.
 
-The Stage-3-only `shieldSim.case.v2` verification path adds explicit
+The Stage-3/4 `shieldSim.case.v2` verification path adds explicit
 local-to-world translation/unit-quaternion transforms for the source plane,
 shield reference surface, and absorber reference surface; monoenergetic
 proton, He-4, and explicit-ion response nodes; exact discrete-node direct
 sampling; ancestry-aware raw transport ledgers; and deterministic response
-matrix assembly/folding. Its only permitted quantity is `transport_raw`.
-That label is deliberate: Stage 3 validates geometry isolation, transport
-configuration, response algebra, and numerical behavior. It does not turn the
-raw deposited-energy or crossing tallies into a validated TID, DDD, `n_eq`,
-LET, `H100/10`, crew, device, or instrument result. Those gates remain in
-Stages 4–8.
+matrix assembly/folding. It permits `transport_raw` and the Stage-4 `TID`
+quantity. TID is ionizing energy deposited in the complete finite slab divided
+by that slab's Geant4 mass. It is labeled material-slab dose, never organ or
+device dose. DDD, `n_eq`, LET, `H100/10`, crew, device, and instrument claims
+remain disabled. Gamma nodes are accepted only for controlled attenuation
+verification. The case-v2 parser rejects a `TID` request containing a gamma or
+explicit heavy-ion response node, so those species cannot enter the validated
+TID domain accidentally. It likewise rejects a TID absorber outside the
+validated aluminum, silicon, and water material identities; this does not
+restrict the independently declared shielding-stack materials.
+
+Stage 4 adds an explicit EM-physics choice (`reference_list_default` for the
+production baseline or `G4EmStandardPhysics_option4` for sensitivity),
+particle/ancestry deposition partitions, separately labeled process-name
+diagnostics, exact slab-mass and Gy/rad checks, and a structured uncertainty
+budget. A complete case-v2 TID budget must name material/mass, source,
+numerical, and physics-reference standard-uncertainty components, declare every
+pairwise correlation, pass a positive-semidefinite covariance check, and select
+the combined 95% coverage method. A missing budget remains runnable but yields
+`not_assessable` rather than an unsupported accuracy claim.
 
 Stage 1 is a software/correctness gate, not physical validation of every
 radiation proxy. Versioned cases currently enable `TID` and `H100/10`; their
@@ -99,6 +117,7 @@ shieldSim/
   ├── shieldSim.cc
   ├── sourceTool.cc                  # published-source validation/conversion CLI
   ├── responseTool.cc                # response-matrix assembly/folding CLI
+  ├── referenceTool.cc               # Stage-4 Geant4 EM table probe
 ├── include/
 │   ├── AbsorberGeometry.hh       # future-shape provider contract + slab
 │   ├── AccuracyController.hh     # running uncertainty/stopping state
@@ -122,6 +141,7 @@ shieldSim/
 │   ├── README.md
 │   ├── stage1_case.json
 │   ├── stage3_response_cell_case.json
+│   ├── stage4_tid_case.json
 │   ├── sep_spectrum.dat
 │   └── sep_spectrum.metadata.v1.json
 ├── macros/
@@ -131,6 +151,9 @@ shieldSim/
     ├── stage1_core_tests.cc
     ├── stage3_core_tests.cc
     ├── test_stage3_transport.py
+    ├── stage4_core_tests.cc
+    ├── test_stage4_nist_reference.py
+    ├── test_stage4_tid_transport.py
     ├── generate_validation_figures.py
     ├── generate_layer_validation_figures.py
     ├── test_stage1_case_boundaries.py
@@ -144,6 +167,7 @@ shieldSim/
     │   ├── mono_spectrum_metadata.v1.json
     │   └── mono_*.dat
     ├── reference_spectra/
+    ├── reference_tid/nist/          # raw + canonical pinned NIST tables
     ├── expected/
     │   └── layer4/
     └── logs/
@@ -185,7 +209,7 @@ If CMake cannot find Geant4 automatically, provide `Geant4_DIR`, for example:
 cmake .. -DGeant4_DIR=/path/to/geant4/lib/Geant4-11.*/
 ```
 
-Run all registered Stage-1 through Stage-3 tests from the build directory:
+Run all registered Stage-1 through Stage-4 tests from the build directory:
 
 ```bash
 ctest --output-on-failure
@@ -223,6 +247,28 @@ last numerical/grid refinement.
 weight builder, and folder with an analytic log-energy/`mu`/periodic-`phi`
 tensor, and checks exact-node, extrapolation, and incomplete-grid rejection.
 
+`stage4_core` checks exact MeV/kg-to-Gy and Gy-to-rad conversion, the case-v2
+TID gate, the four-category all-pairs covariance calculation, rejection of an
+indefinite correlation matrix and aggregate-only v2 claim, combined 95%
+interval construction, gamma attenuation-node parsing, and continued rejection
+of both gamma TID and DDD. `stage4_nist_reference` authenticates the pinned raw and canonical
+NIST files, then makes 63 exact-node comparisons of Geant4 electronic/total
+stopping power, numerically integrated CSDA range, and XCOM photon mass attenuation
+for Al, Si, and water. It also records the option-4 EM sensitivity. X-ray
+attenuation is never treated as finite-slab absorbed dose.
+
+`stage4_tid_transport` writes all generated cases below
+`build/stage4_tid_transport_runs/`. It runs the complete primary-generator,
+multilayer Geant4, absorber-scoring, accuracy, and result path for proton and
+He-4 incidence in Al, Si, and water. It proves analytic slab mass and dose
+conversion for every accepted case, exact closure of particle/ancestry
+partitions and diagnostic process views, ≤2% accepted-case Monte Carlo
+standard uncertainty, three-level cut/step/lateral-escape convergence, option-4
+TID sensitivity, and five-seed `1/sqrt(N)` behavior. Changing transverse slab
+area changes its mass and therefore Gy per compact-plane primary; lateral-size
+convergence is consequently tested on deposited energy while dose conversion
+is checked separately at every fixed geometry.
+
 The dependent `validation_figures` test renders every current analytic or
 observational comparison after its numerical tests pass. It writes PNG, SVG,
 and a checksum/caption manifest under the build tree:
@@ -244,6 +290,9 @@ build/validation_figures/
 ├── stage3_core_analytic.{png,svg}
 ├── stage3_response_weights_analytic.{png,svg}
 ├── stage3_transport_comparisons.{png,svg}
+├── stage4_core_analytic.{png,svg}
+├── stage4_nist_reference_comparisons.{png,svg}
+├── stage4_tid_transport_comparisons.{png,svg}
 └── manifest.json
 ```
 
@@ -389,12 +438,14 @@ Run one response cell:
 ```
 
 The response-cell source is exactly one declared species, energy, and angular
-node per history. `particle` must be proton `(1,1)`, alpha/He-4 `(2,4)`, or
-`ion` with explicit `Z,A`. Energy is explicitly total `MeV`/`GeV` or per
+node per history. `particle` must be proton `(1,1)`, alpha/He-4 `(2,4)`, gamma
+`(0,0)`, or `ion` with explicit positive `Z,A`. Gamma is verification-only and
+requires total kinetic energy; gamma and explicit-ion nodes may request only
+`transport_raw`, not the Stage-4 `TID` claim. Charged-particle energy is explicitly total `MeV`/`GeV` or per
 nucleon `MeV/n`/`GeV/n`; Geant4 always receives the resolved total kinetic
-energy. The case also declares the reference physics list, either its standard
-ion configuration or `G4IonQMDPhysics`, range cut, step limit, seed, and fixed
-or adaptive history plan.
+energy. The case also declares the reference physics list, EM configuration,
+either its standard ion configuration or `G4IonQMDPhysics`, range cut, step
+limit, seed, and fixed or adaptive history plan.
 
 For a grid, run one case per incident node and assemble only compatible cells:
 
@@ -426,6 +477,32 @@ node weights must sum to one and use the same exact species/energy/direction
 definitions. A nonlinear derived result must never be folded directly: fold
 its primitive numerator and denominator, including their covariance, and form
 the ratio only in the later quantity implementation.
+
+### Stage-4 finite-slab TID cases
+
+`examples/stage4_tid_case.json` is the complete case-v2 TID example. Its
+default 10% combined target is explicit. The example's zero material/source
+terms apply only to its ideal analytic slab and exactly one-primary
+verification normalization; they are not defaults for an as-built mission
+case. Numerical and physics-reference values are linked to the Stage-4
+acceptance evidence. Production inputs must replace every component with
+case-specific evidence.
+
+A complete structured budget supplies components in the `material_mass`,
+`source`, `numerical`, and `physics_reference` categories. Every component has
+a stable ID, relative standard uncertainty, and provenance. It also supplies
+all unordered component pairs under `correlations`, including explicit zeros,
+with a coefficient and rationale, and sets `pair_policy` to
+`all_pairs_explicit`. The parser rejects missing or duplicate pairs, unknown
+categories, coefficients outside `[-1,1]`, and a non-positive-semidefinite
+correlation matrix. The legacy single aggregate percentage is rejected for a
+complete case-v2 TID claim.
+
+Combined v2 TID selects
+`student_t_mc_plus_normal_systematics_quadrature`; both the MC-only and combined
+95% intervals are written. An `incomplete` budget may instead report a known
+floor and yields `not_assessable` for combined accuracy. See the example for a
+fully expanded four-component/six-correlation record.
 
 ### Adding a future arbitrary absorber shape
 
@@ -795,18 +872,24 @@ revision, Geant4 version/data paths, seed, and capability status.
 
 ### `<prefix>__<absorber>_result.json`
 
-Canonical `shieldSim.result.v1` result written after each adaptive batch, with
+Canonical result written after each adaptive batch, with
 the final file representing all cumulative histories. It records quantity
 definition, value/unit/normalization, deposition ledgers or H100/10 numerator
 and denominator, statistical and systematic uncertainty state, 95% interval,
 accuracy status/reason, and `implemented_not_physically_validated_stage1`.
 H100/10 uses a bounded Wilson 95% interval. JSON `null`, rather than zero or
-infinity, represents an undefined value. A case-v2 run instead writes
+infinity, represents an undefined value. A case-v2 run writes
 `shieldSim.result.v2` with `transport_raw` moments, ancestry-qualified primary/
 secondary rear-face crossings, per-layer deposit/track/step and secondary-
-birth ledgers, absorber deposition moments, physics/ion provenance, and an
+birth ledgers, absorber deposition moments, physics/EM/ion provenance, and an
 explicit statement that nuclear rest mass/Q values are outside the kinetic-
-energy ledger scope.
+energy ledger scope. For Stage-4 TID it additionally records slab mass,
+Gy/primary, rad/primary, source-normalized rate, statistical and combined 95%
+intervals, the complete systematic component/correlation records, and the
+`stage4_finite_slab_tid_implemented_and_acceptance_tested_pending_independent_review`
+status. Particle/ancestry deposition partitions are authoritative. Creator-
+process and step-defining-process partitions are labeled diagnostic only; a
+process name is not treated as a unique causal allocation of deposited energy.
 
 ### `<prefix>__<absorber>_response_cell.json`
 
@@ -816,8 +899,9 @@ and unit; zero-scoring histories are included in the denominator. The complete
 score-covariance upper triangle stores sample covariance, covariance of the
 mean, and sum of event products. It also stores the exact incident coordinate,
 layer-resolved secondary ledger, and
-hashed response-key document. Its status is
-`implemented_stage3_transport_raw_not_physically_validated`.
+hashed response-key document. Raw response-cell scores retain the Stage-3
+acceptance status; requesting Stage-4 TID adds the separately gated TID output
+to the result file and does not turn every raw score into a validated proxy.
 
 ### `shieldSim_spectra.dat`
 

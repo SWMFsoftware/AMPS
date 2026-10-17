@@ -111,7 +111,21 @@ void SteppingAction::UserSteppingAction(const G4Step* step) {
       if(preVol==scLVs[i]){
         const G4double total=step->GetTotalEnergyDeposit();
         const G4double nonIon=step->GetNonIonizingEnergyDeposit();
-        if(total>0 || nonIon>0) fRA->AddEdep(i,total,nonIon);
+        if(total>0 || nonIon>0){
+          const auto* track=step->GetTrack();
+          const auto* definition=track->GetParticleDefinition();
+          const auto* ancestry=dynamic_cast<const TrackAncestryInfo*>(
+              track->GetUserInformation());
+          const auto* creator=track->GetCreatorProcess();
+          const auto* defining=post->GetProcessDefinedStep();
+          fRA->RecordAbsorberStep(i,definition->GetParticleName(),
+              track->GetParentID()==0,
+              ancestry?ancestry->rootParticle:definition->GetParticleName(),
+              ancestry?ancestry->generation:(track->GetParentID()==0?0:1),
+              creator?creator->GetProcessName():"primary_no_creator_process",
+              defining?defining->GetProcessName():"no_step_defining_process",
+              total,nonIon);
+        }
         break;
       }
     }

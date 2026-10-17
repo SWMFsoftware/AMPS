@@ -1,0 +1,92 @@
+<html>
+<head>
+<title>XCOM: Photon Cross Sections Data for Silicon</title>
+<!-- Google Analtyics 4 -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-9SLN1VEEJ2"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-9SLN1VEEJ2');
+</script>
+<!-- End of Google Analytics 4 -->
+<SCRIPT async type="text/javascript" id="_fed_an_ua_tag" src="https://dap.digitalgov.gov/Universal-Federated-Analytics-Min.js?agency=DOC&subagency=NIST&pua=UA-37115410-46&yt=false&exts=ppsx,pps,f90,sch,rtf,wrl,txz,m1v,xlsm,msi,xsd,f,tif,eps,mpg,xml,pl,xlt,c"></script>
+<script src="/js/clickjack.js" type="text/javascript"></script>
+</head>
+<body BGColor="#FFFFFF" Text="#000000">
+<a href="/PhysRefData/Xcom/Text/XCOM.html"><img src="/PhysRefData/Xcom/Text/XCOMsm.jpg" border=0 width=130 height=50 alt="XCOM"></a>
+<table>
+<tr>
+<td><img src="/PhysRefData/Xcom/tmp/graph_3952078.png" alt="Graph of Coefficients"></td>
+</td></tr></table>
+<form method="POST" action="/cgi-bin/Xcom/xcom3_1">
+<input type="hidden" name="Graph1" value="">
+<input type="hidden" name="Graph2" value="">
+<input type="hidden" name="Graph3" value="">
+<input type="hidden" name="Graph4" value="">
+<input type="hidden" name="Graph5" value="">
+<input type="hidden" name="Graph6" value="on">
+<input type="hidden" name="Graph7" value="">
+<input type="hidden" name="Name" value="Silicon">
+<input type="hidden" name="Method" value="1">
+<input type="hidden" name="ZNum" value="14">
+<input type="hidden" name="OutOpt" value="PIC">
+<input type="hidden" name="NumAdd" value="1">
+<input type="Hidden" name="Energies" value="0.1;1.0;10.0">
+<input type="hidden" name="Output" value="">
+<input type="hidden" name="Resol" value="-r72.73x72.73">
+<b>Zoom in on energy range: (must be between 0.001 - 100000 MeV)</b>
+<p>Note: If all data are not displayed in the graph, modify the energy range to view graphed data in the region of interest.<br>
+Energy range must cover at least one factor of ten (e.g., 100 to 1000 MeV).<p>
+Minimum: <input type="text" name="WindowXmin" value="0.001" size="8" maxlength="8"> MeV
+&#160;&#160;&#160; Maximum: <input type="text" name="WindowXmax" value="100000" size="8" maxlength="8"> MeV
+<input type="hidden" name="ResizeFlag" value="on">
+<p><input type="submit" value="Change Energy Range">
+</form><hr>
+<b>Atomic Number : 14 </b><p>
+<form enctype="multipart/form-data" method="POST" action="/cgi-bin/Xcom/data.pl">To download data in spreadsheet (array) form, choose a delimiter and use the checkboxes in the table heading.  After downloading, save the output by using your browser's <tt>Save As</tt> feature.<p>
+<b>Delimiter:</b><br>
+<input type="radio" value="space" name="character" checked> space<br>
+<input type="radio" value="bar" name="character"> | (vertical bar)<br>
+<input type="radio" value="tab" name="character"> tab<br>
+<input type="radio" value="newline" name="character"> newline<br>
+<input type="submit" value="Download data"> <input type="reset" value="Reset"><input type="hidden" name="Name" value="Silicon">
+<input type="hidden" name="Method" value="1">
+<input type="hidden" name="ZNum" value="14">
+<input type="hidden" name="OutOpt" value="PIC">
+<input type="hidden" name="NumAdd" value="1">
+<input type="HIDDEN" name="Energies" value="0.1;1.0;10.0">
+<input type="hidden" name="Output" value="">
+<input type="hidden" name="WindowXmin" value="0.001">
+<input type="hidden" name="WindowXmax" value="100000">
+<table border=1>
+<tr align=center BGColor="#88BBFF">
+<td rowspan=3 align=center>Edge</td>
+<td rowspan=2 align=center><font size="-1">(required)</font><br>Photon<br>Energy</td>
+<td colspan=2 align=center>Scattering</td>
+<td rowspan=2 align=center><input type="checkbox" name="photoelectric"><br>Photoelectric<br>Absorption</td>
+<td colspan=2 align=center>Pair Production</td>
+<td colspan=2 align=center>Total Attenuation</td>
+</tr>
+<tr BGColor="#88BBFF">
+<td align=center><input type="checkbox" name="coherent"><br>Coherent</td>
+<td align=center><input type="checkbox" name="incoherent"><br>Incoherent</td>
+<td align=center><input type="checkbox" name="nuclear"><br>In Nuclear<br>Field</td>
+<td align=center><input type="checkbox" name="electron"><br>In Electron<br>Field</td>
+<td align=center><input type="checkbox" name="with"><br>With Coherent<br>Scattering</td>
+<td align=center><input type="checkbox" name="without"><br>Without Coherent<br>Scattering</td>
+</tr>
+<tr BGColor="#88BBFF">
+<td align=center>MeV</td><td align=center>cm<sup>2</sup>/g</td><td align=center>cm<sup>2</sup>/g</td><td align=center>cm<sup>2</sup>/g</td><td align=center>cm<sup>2</sup>/g</td><td align=center>cm<sup>2</sup>/g</td><td align=center>cm<sup>2</sup>/g</td><td align=center>cm<sup>2</sup>/g</td>
+</tr>
+<tr BGColor="#AADDFF">
+<td></td><td align=center>1.000E-01</td><td align=center>1.537E-02</td><td align=center>1.432E-01</td><td align=center>2.498E-02</td><td align=center>0.000E+00</td><td align=center>0.000E+00</td><td align=center>1.835E-01</td><td align=center>1.682E-01</td></tr>
+<tr BGColor="#AADDFF">
+<td></td><td align=center>1.000E+00</td><td align=center>1.680E-04</td><td align=center>6.340E-02</td><td align=center>3.639E-05</td><td align=center>0.000E+00</td><td align=center>0.000E+00</td><td align=center>6.361E-02</td><td align=center>6.344E-02</td></tr>
+<tr BGColor="#AADDFF">
+<td></td><td align=center>1.000E+01</td><td align=center>1.683E-06</td><td align=center>1.536E-02</td><td align=center>1.323E-06</td><td align=center>8.905E-03</td><td align=center>3.510E-04</td><td align=center>2.462E-02</td><td align=center>2.461E-02</td></tr>
+</table>
+</form><hr>
+Return to <a href="/PhysRefData/Xcom/html/xcom1.html">selection page</a>.
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" data-cf-beacon='{"version":"2024.11.0","token":"9ef5b487afff42a68917b2d63593a474","spa":2}' crossorigin="anonymous"></script>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a4bd16c50def3166',t:'MTc5MjIxNjg4OQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>

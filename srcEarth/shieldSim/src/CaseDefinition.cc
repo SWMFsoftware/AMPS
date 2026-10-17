@@ -44,6 +44,14 @@ long PositiveInteger(const Json& value, const std::string& context) {
   return static_cast<long>(number);
 }
 
+long NonNegativeInteger(const Json& value, const std::string& context) {
+  const double number = FiniteNumber(value, context);
+  if (number < 0.0 || std::floor(number) != number ||
+      number > static_cast<double>(std::numeric_limits<long>::max()))
+    throw JsonError(context + " must be a non-negative integer in range");
+  return static_cast<long>(number);
+}
+
 double LengthMm(const Json& value, const std::string& context, bool allowZero = false) {
   const auto& object = value.AsObject(context);
   RejectUnknownFields(object, {"value","unit"}, context);
@@ -237,20 +245,131 @@ AccuracyRequirement ParseAccuracyRequirement(const Json& value, const std::strin
   }
   if (object.count("systematic_budget")) {
     const auto& budget=object.at("systematic_budget").AsObject(context+".systematic_budget");
-    RejectUnknownFields(budget,{"status","relative_standard_uncertainty","known_relative_floor"},
+    RejectUnknownFields(budget,{"status","relative_standard_uncertainty","known_relative_floor",
+                                "components","correlations","pair_policy"},
                         context+".systematic_budget");
     const std::string status=RequiredString(budget,"status",context+".systematic_budget");
+    result.systematicComponents.clear();
+    result.systematicCorrelations.clear();
+    result.systematicPairPolicy.clear();
     if(status=="complete"){
-      if(!budget.count("relative_standard_uncertainty"))
-        throw JsonError(context+".systematic_budget complete status requires relative_standard_uncertainty");
-      result.systematicRelativeUncertainty=FiniteNumber(
-          budget.at("relative_standard_uncertainty"),context+".systematic_budget.relative_standard_uncertainty");
-      if(result.systematicRelativeUncertainty<0.0)
-        throw JsonError(context+".systematic_budget.relative_standard_uncertainty must be >= 0");
+      const bool aggregate=budget.count("relative_standard_uncertainty");
+      const bool structured=budget.count("components") || budget.count("correlations") ||
+                            budget.count("pair_policy");
+      if(aggregate==structured)
+        throw JsonError(context+".systematic_budget complete status requires exactly one of the legacy aggregate value or the structured components/correlations form");
+      if(aggregate){
+        result.systematicRelativeUncertainty=FiniteNumber(
+            budget.at("relative_standard_uncertainty"),context+".systematic_budget.relative_standard_uncertainty");
+        if(result.systematicRelativeUncertainty<0.0)
+          throw JsonError(context+".systematic_budget.relative_standard_uncertainty must be >= 0");
+      } else {
+        if(!budget.count("components") || !budget.count("correlations") ||
+           !budget.count("pair_policy"))
+          throw JsonError(context+".systematic_budget structured form requires components, correlations, and pair_policy");
+        result.systematicPairPolicy=RequiredString(budget,"pair_policy",context+".systematic_budget");
+        if(result.systematicPairPolicy!="all_pairs_explicit")
+          throw JsonError(context+".systematic_budget.pair_policy must be all_pairs_explicit");
+        const auto& components=budget.at("components").AsArray(context+".systematic_budget.components");
+        if(components.empty())
+          throw JsonError(context+".systematic_budget.components must not be empty");
+        const std::set<std::string> categories={"material_mass","source","numerical","physics_reference"};
+        std::map<std::string,std::size_t> indices;
+        std::set<std::string> representedCategories;
+        for(std::size_t i=0;i<components.size();++i){
+          const std::string itemContext=context+".systematic_budget.components["+
+              std::to_string(i)+"]";
+          const auto& item=components[i].AsObject(itemContext);
+          RejectUnknownFields(item,{"id","category","relative_standard_uncertainty","provenance"},itemContext);
+          SystematicUncertaintyComponent component;
+          component.id=RequiredString(item,"id",itemContext);
+          component.category=RequiredString(item,"category",itemContext);
+          component.provenance=RequiredString(item,"provenance",itemContext);
+          component.relativeStandardUncertainty=FiniteNumber(
+              item.at("relative_standard_uncertainty"),itemContext+".relative_standard_uncertainty");
+          if(component.relativeStandardUncertainty<0.0)
+            throw JsonError(itemContext+".relative_standard_uncertainty must be >= 0");
+          if(!categories.count(component.category))
+            throw JsonError(itemContext+".category is not a Stage-4 uncertainty category");
+          if(!indices.emplace(component.id,i).second)
+            throw JsonError(itemContext+" duplicates component id '"+component.id+"'");
+          representedCategories.insert(component.category);
+          result.systematicComponents.push_back(std::move(component));
+        }
+        if(representedCategories!=categories)
+          throw JsonError(context+".systematic_budget complete structured form must represent material_mass, source, numerical, and physics_reference categories");
+
+        const auto& correlations=budget.at("correlations").AsArray(context+".systematic_budget.correlations");
+        std::set<std::pair<std::size_t,std::size_t>> declaredPairs;
+        std::vector<std::vector<double>> correlationMatrix(
+            components.size(),std::vector<double>(components.size(),0.0));
+        for(std::size_t i=0;i<components.size();++i) correlationMatrix[i][i]=1.0;
+        for(std::size_t i=0;i<correlations.size();++i){
+          const std::string itemContext=context+".systematic_budget.correlations["+
+              std::to_string(i)+"]";
+          const auto& item=correlations[i].AsObject(itemContext);
+          RejectUnknownFields(item,{"component_i","component_j","correlation_coefficient","rationale"},itemContext);
+          SystematicCorrelation correlation;
+          correlation.firstComponent=RequiredString(item,"component_i",itemContext);
+          correlation.secondComponent=RequiredString(item,"component_j",itemContext);
+          correlation.rationale=RequiredString(item,"rationale",itemContext);
+          correlation.coefficient=FiniteNumber(item.at("correlation_coefficient"),
+                                                itemContext+".correlation_coefficient");
+          if(correlation.coefficient < -1.0 || correlation.coefficient > 1.0)
+            throw JsonError(itemContext+".correlation_coefficient must be in [-1,1]");
+          if(!indices.count(correlation.firstComponent) || !indices.count(correlation.secondComponent))
+            throw JsonError(itemContext+" refers to an unknown uncertainty component");
+          std::size_t a=indices.at(correlation.firstComponent);
+          std::size_t b=indices.at(correlation.secondComponent);
+          if(a==b) throw JsonError(itemContext+" must name two different components");
+          if(a>b) std::swap(a,b);
+          if(!declaredPairs.emplace(a,b).second)
+            throw JsonError(itemContext+" duplicates an unordered component pair");
+          correlationMatrix[a][b]=correlationMatrix[b][a]=correlation.coefficient;
+          result.systematicCorrelations.push_back(std::move(correlation));
+        }
+        const std::size_t expectedPairs=components.size()*(components.size()-1)/2;
+        if(declaredPairs.size()!=expectedPairs)
+          throw JsonError(context+".systematic_budget all_pairs_explicit requires exactly "+
+                          std::to_string(expectedPairs)+" unique correlations");
+
+        // Cholesky with a small numerical tolerance rejects a correlation
+        // matrix that cannot represent any real covariance model. A zero
+        // pivot is permitted only when the remaining row is also dependent.
+        std::vector<std::vector<double>> lower(
+            components.size(),std::vector<double>(components.size(),0.0));
+        for(std::size_t i=0;i<components.size();++i){
+          for(std::size_t j=0;j<=i;++j){
+            double value=correlationMatrix[i][j];
+            for(std::size_t k=0;k<j;++k) value-=lower[i][k]*lower[j][k];
+            if(i==j){
+              if(value < -1.0e-12)
+                throw JsonError(context+".systematic_budget correlation matrix is not positive semidefinite");
+              lower[i][j]=std::sqrt(std::max(0.0,value));
+            } else if(lower[j][j]>1.0e-12) {
+              lower[i][j]=value/lower[j][j];
+            } else if(std::abs(value)>1.0e-10) {
+              throw JsonError(context+".systematic_budget correlation matrix is not positive semidefinite");
+            }
+          }
+        }
+        double variance=0.0;
+        for(std::size_t i=0;i<components.size();++i){
+          const double ui=result.systematicComponents[i].relativeStandardUncertainty;
+          variance+=ui*ui;
+          for(std::size_t j=i+1;j<components.size();++j)
+            variance+=2.0*correlationMatrix[i][j]*ui*
+                result.systematicComponents[j].relativeStandardUncertainty;
+        }
+        if(variance < -1.0e-14)
+          throw JsonError(context+".systematic_budget produces a negative combined variance");
+        result.systematicRelativeUncertainty=std::sqrt(std::max(0.0,variance));
+      }
       result.systematicBudgetComplete=true;
     } else if(status=="incomplete"){
-      if(budget.count("relative_standard_uncertainty"))
-        throw JsonError(context+".systematic_budget cannot claim a combined uncertainty while incomplete");
+      if(budget.count("relative_standard_uncertainty") || budget.count("components") ||
+         budget.count("correlations") || budget.count("pair_policy"))
+        throw JsonError(context+".systematic_budget incomplete status cannot claim a complete covariance model");
       result.systematicBudgetComplete=false;
     } else {
       throw JsonError(context+".systematic_budget.status must be complete or incomplete");
@@ -274,8 +393,28 @@ Json AccuracyToJson(const AccuracyRequirement& requirement) {
   coverage["standard_probability"] = requirement.standardProbability;
   Json::Object budget;
   budget["status"]=requirement.systematicBudgetComplete ? "complete" : "incomplete";
-  if(requirement.systematicBudgetComplete)
-    budget["relative_standard_uncertainty"]=requirement.systematicRelativeUncertainty;
+  if(requirement.systematicBudgetComplete){
+    budget["combined_relative_standard_uncertainty"]=requirement.systematicRelativeUncertainty;
+    if(requirement.systematicComponents.empty()){
+      // Legacy case-v1 representation is retained verbatim for reproducible
+      // hashes. Stage-4 case-v2 inputs never take this branch.
+      budget["relative_standard_uncertainty"]=requirement.systematicRelativeUncertainty;
+    } else {
+      Json::Array components;
+      for(const auto& component:requirement.systematicComponents)
+        components.emplace_back(Json::Object{{"category",component.category},{"id",component.id},
+          {"provenance",component.provenance},
+          {"relative_standard_uncertainty",component.relativeStandardUncertainty}});
+      Json::Array correlations;
+      for(const auto& correlation:requirement.systematicCorrelations)
+        correlations.emplace_back(Json::Object{{"component_i",correlation.firstComponent},
+          {"component_j",correlation.secondComponent},
+          {"correlation_coefficient",correlation.coefficient},{"rationale",correlation.rationale}});
+      budget["components"]=Json(std::move(components));
+      budget["correlations"]=Json(std::move(correlations));
+      budget["pair_policy"]=requirement.systematicPairPolicy;
+    }
+  }
   if(requirement.hasKnownSystematicFloor)
     budget["known_relative_floor"]=requirement.knownSystematicFloor;
   return Json(Json::Object{{"coverage", Json(std::move(coverage))},
@@ -588,14 +727,17 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
     const auto& particle=spectrum.at("particle").AsObject("case.source.spectrum.particle");
     RejectUnknownFields(particle,{"name","Z","A"},"case.source.spectrum.particle");
     incident.particleName=RequiredString(particle,"name","case.source.spectrum.particle");
-    incident.atomicNumber=static_cast<int>(PositiveInteger(particle.at("Z"),"case.source.spectrum.particle.Z"));
-    incident.massNumber=static_cast<int>(PositiveInteger(particle.at("A"),"case.source.spectrum.particle.A"));
+    incident.atomicNumber=static_cast<int>(NonNegativeInteger(particle.at("Z"),"case.source.spectrum.particle.Z"));
+    incident.massNumber=static_cast<int>(NonNegativeInteger(particle.at("A"),"case.source.spectrum.particle.A"));
     if(incident.massNumber<incident.atomicNumber)
       throw JsonError("case.source.spectrum.particle requires A >= Z");
     if((incident.particleName=="proton" && (incident.atomicNumber!=1 || incident.massNumber!=1)) ||
        (incident.particleName=="alpha" && (incident.atomicNumber!=2 || incident.massNumber!=4)) ||
-       (incident.particleName!="proton" && incident.particleName!="alpha" && incident.particleName!="ion"))
-      throw JsonError("response particle name/Z/A must be proton/1/1, alpha/2/4, or ion with explicit Z/A");
+       (incident.particleName=="gamma" && (incident.atomicNumber!=0 || incident.massNumber!=0)) ||
+       (incident.particleName!="proton" && incident.particleName!="alpha" &&
+        incident.particleName!="gamma" && incident.particleName!="ion") ||
+       (incident.particleName=="ion" && (incident.atomicNumber==0 || incident.massNumber==0)))
+      throw JsonError("response particle name/Z/A must be proton/1/1, alpha/2/4, gamma/0/0, or ion with explicit positive Z/A");
     const auto& energy=spectrum.at("energy").AsObject("case.source.spectrum.energy");
     RejectUnknownFields(energy,{"coordinate","value","unit"},"case.source.spectrum.energy");
     incident.energyCoordinate=RequiredString(energy,"coordinate","case.source.spectrum.energy");
@@ -607,6 +749,8 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
       else if(incident.energyCoordinateUnit=="GeV") multiplier=1000.0;
       else throw JsonError("total_kinetic_energy response coordinate requires MeV or GeV");
     } else if(incident.energyCoordinate=="kinetic_energy_per_nucleon"){
+      if(incident.particleName=="gamma")
+        throw JsonError("gamma response cells require total_kinetic_energy");
       if(incident.energyCoordinateUnit=="MeV/n") multiplier=incident.massNumber;
       else if(incident.energyCoordinateUnit=="GeV/n") multiplier=1000.0*incident.massNumber;
       else throw JsonError("kinetic_energy_per_nucleon response coordinate requires MeV/n or GeV/n");
@@ -658,12 +802,15 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
       const auto& particle=node.at("particle").AsObject(context+".particle");
       RejectUnknownFields(particle,{"name","Z","A"},context+".particle");
       incident.particleName=RequiredString(particle,"name",context+".particle");
-      incident.atomicNumber=static_cast<int>(PositiveInteger(particle.at("Z"),context+".particle.Z"));
-      incident.massNumber=static_cast<int>(PositiveInteger(particle.at("A"),context+".particle.A"));
+      incident.atomicNumber=static_cast<int>(NonNegativeInteger(particle.at("Z"),context+".particle.Z"));
+      incident.massNumber=static_cast<int>(NonNegativeInteger(particle.at("A"),context+".particle.A"));
       if(incident.massNumber<incident.atomicNumber ||
          (incident.particleName=="proton" && (incident.atomicNumber!=1 || incident.massNumber!=1)) ||
          (incident.particleName=="alpha" && (incident.atomicNumber!=2 || incident.massNumber!=4)) ||
-         (incident.particleName!="proton" && incident.particleName!="alpha" && incident.particleName!="ion"))
+         (incident.particleName=="gamma" && (incident.atomicNumber!=0 || incident.massNumber!=0)) ||
+         (incident.particleName!="proton" && incident.particleName!="alpha" &&
+          incident.particleName!="gamma" && incident.particleName!="ion") ||
+         (incident.particleName=="ion" && (incident.atomicNumber==0 || incident.massNumber==0)))
         throw JsonError(context+" has an inconsistent particle name/Z/A");
       const auto& energy=node.at("energy").AsObject(context+".energy");
       RejectUnknownFields(energy,{"coordinate","value","unit"},context+".energy");
@@ -675,6 +822,8 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
         else if(incident.energyCoordinateUnit=="GeV") incident.totalKineticEnergyMeV=1000.0*incident.energyCoordinateValue;
         else throw JsonError(context+" total energy requires MeV or GeV");
       } else if(incident.energyCoordinate=="kinetic_energy_per_nucleon"){
+        if(incident.particleName=="gamma")
+          throw JsonError(context+" gamma nodes require total_kinetic_energy");
         if(incident.energyCoordinateUnit=="MeV/n")
           incident.totalKineticEnergyMeV=incident.massNumber*incident.energyCoordinateValue;
         else if(incident.energyCoordinateUnit=="GeV/n")
@@ -754,17 +903,43 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
   if (result->quantities.empty()) throw JsonError("case.quantities must not be empty");
   for (const auto& quantity : result->quantities) {
     const bool allowed=stage3Schema
-        ? quantity=="transport_raw"
+        ? quantity=="transport_raw" || quantity=="TID"
         : quantity=="TID" || quantity=="H100/10";
     if (!allowed)
-      throw JsonError("quantity '" + quantity + "' is not enabled in this case schema; case-v2 permits only transport_raw while TID, DDD, n_eq, LET, H100/10, and science-facing response claims retain later gates");
+      throw JsonError("quantity '" + quantity + "' is not enabled in this case schema; case-v2 permits transport_raw and Stage-4 finite-slab TID while DDD, n_eq, LET, H100/10, crew-health, and device/organ claims retain later gates");
   }
-  if(result->responseIncident.enabled &&
-     (result->quantities.size()!=1 || result->quantities.front()!="transport_raw"))
-    throw JsonError("monoenergetic_response_cell cases request only transport_raw");
-  if(!result->directIncidents.empty() &&
-     (result->quantities.size()!=1 || result->quantities.front()!="transport_raw"))
-    throw JsonError("discrete_response_nodes cases request only transport_raw");
+
+  // Stage 4 validates absorbed dose only for proton and He-4 irradiation.
+  // Gamma response nodes remain useful for the independent XCOM attenuation
+  // check, and explicit heavy-ion nodes remain part of the Stage-3 raw-score
+  // infrastructure, but neither may silently acquire a validated TID claim.
+  // Spectrum-sampled sources already contain only proton and alpha columns.
+  const bool requestsTid=std::find(result->quantities.begin(),result->quantities.end(),"TID")!=
+      result->quantities.end();
+  const auto tidSpeciesIsValidated=[](const ResponseIncidentDefinition& incident){
+    return incident.particleName=="proton" || incident.particleName=="alpha";
+  };
+  if(stage3Schema && requestsTid && result->responseIncident.enabled &&
+     !tidSpeciesIsValidated(result->responseIncident))
+    throw JsonError("case-v2 TID is validated only for proton and alpha response incidents; gamma and explicit-ion nodes are transport_raw verification inputs");
+  if(stage3Schema && requestsTid){
+    for(const auto& weighted:result->directIncidents)
+      if(!tidSpeciesIsValidated(weighted.incident))
+        throw JsonError("case-v2 TID discrete_response_nodes may contain only proton and alpha incidents; gamma and explicit-ion nodes are transport_raw verification inputs");
+
+    // The Stage-4 material reference matrix covers these three absorber
+    // identities. User overrides may change their declared physical
+    // properties (and are carried into the material hash and uncertainty
+    // record), but a different material identity needs a later validation
+    // gate. Shield layers are intentionally not restricted by this absorber-
+    // response boundary.
+    const std::set<std::string> validatedAbsorberMaterials={
+      "Al_natural_G4_11_4","Si_natural_G4_11_4","Water_G4_11_4"};
+    for(const auto& absorber:result->absorbers)
+      if(!validatedAbsorberMaterials.count(absorber.materialId))
+        throw JsonError("case-v2 TID absorber '"+absorber.id+"' uses material_id '"+
+            absorber.materialId+"'; Stage 4 validates only Al_natural_G4_11_4, Si_natural_G4_11_4, and Water_G4_11_4 absorbers");
+  }
 
   const auto& accuracy = input.At("accuracy", "case").AsObject("case.accuracy");
   RejectUnknownFields(accuracy, {"target","scope","coverage","systematic_budget",
@@ -782,6 +957,25 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
                                    result->accuracy.global, true));
     }
   }
+  if(stage3Schema && std::find(result->quantities.begin(),result->quantities.end(),"TID")!=
+       result->quantities.end()){
+    const auto checkTidBudget=[&](const AccuracyRequirement& requirement,
+                                  const std::string& context){
+      if(requirement.systematicBudgetComplete && requirement.systematicComponents.empty())
+        throw JsonError(context+" case-v2 TID rejects a legacy aggregate uncertainty; declare the four Stage-4 component categories and all pair correlations");
+      if(requirement.scope=="combined" && requirement.systematicBudgetComplete &&
+         requirement.intervalMethod!="student_t_mc_plus_normal_systematics_quadrature")
+        throw JsonError(context+" combined Stage-4 TID requires coverage.interval_method='student_t_mc_plus_normal_systematics_quadrature'");
+      if(requirement.scope=="combined" && requirement.systematicBudgetComplete &&
+         (std::abs(requirement.standardK-1.0)>1.0e-12 ||
+          std::abs(requirement.intervalProbability-0.95)>1.0e-12))
+        throw JsonError(context+" combined Stage-4 TID requires standard_k=1 and interval_probability=0.95");
+    };
+    checkTidBudget(result->accuracy.global,"case.accuracy");
+    const auto override=result->accuracy.quantityOverrides.find("TID");
+    if(override!=result->accuracy.quantityOverrides.end())
+      checkTidBudget(override->second,"case.accuracy.quantity_overrides.TID");
+  }
   const auto& sampling = accuracy.at("sampling").AsObject("case.accuracy.sampling");
   RejectUnknownFields(sampling, {"min_histories","max_histories","batch_size"}, "case.accuracy.sampling");
   result->accuracy.minHistories = PositiveInteger(sampling.at("min_histories"), "case.accuracy.sampling.min_histories");
@@ -793,7 +987,7 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
     throw JsonError("case.accuracy.sampling.batch_size must be <= max_histories");
 
   const auto& transport = input.At("transport", "case").AsObject("case.transport");
-  RejectUnknownFields(transport, {"physics_list","ion_physics","production_cut","max_step","random_seed"}, "case.transport");
+  RejectUnknownFields(transport, {"physics_list","ion_physics","em_physics","production_cut","max_step","random_seed"}, "case.transport");
   result->physicsList = RequiredString(transport, "physics_list", "case.transport");
   const std::set<std::string> lists = {"FTFP_BERT","FTFP_BERT_HP","Shielding","QGSP_BIC_HP"};
   if (!lists.count(result->physicsList)) throw JsonError("case.transport.physics_list is unsupported");
@@ -803,6 +997,13 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
     result->ionPhysics=RequiredString(transport,"ion_physics","case.transport");
   if(result->ionPhysics!="reference_list_default" && result->ionPhysics!="G4IonQMDPhysics")
     throw JsonError("case.transport.ion_physics must be reference_list_default or G4IonQMDPhysics");
+  if(stage3Schema && !transport.count("em_physics"))
+    throw JsonError("case-v2 transport requires explicit em_physics");
+  if(transport.count("em_physics"))
+    result->emPhysics=RequiredString(transport,"em_physics","case.transport");
+  if(result->emPhysics!="reference_list_default" &&
+     result->emPhysics!="G4EmStandardPhysics_option4")
+    throw JsonError("case.transport.em_physics must be reference_list_default or G4EmStandardPhysics_option4");
   result->productionCutMm = LengthMm(transport.at("production_cut"), "case.transport.production_cut");
   result->maxStepMm = LengthMm(transport.at("max_step"), "case.transport.max_step");
   result->randomSeed = PositiveInteger(transport.at("random_seed"), "case.transport.random_seed");
@@ -978,7 +1179,7 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
     {"schema_version",stage3Schema ? "shieldSim.resolved_case.v2" : "shieldSim.resolved_case.v1"},
     {"source", Json(std::move(sourceJson))},
     {"transport", Json(Json::Object{{"max_step", Measure(result->maxStepMm, "mm")},
-      {"ion_physics",result->ionPhysics},{"physics_list", result->physicsList},
+      {"em_physics",result->emPhysics},{"ion_physics",result->ionPhysics},{"physics_list", result->physicsList},
       {"production_cut", Measure(result->productionCutMm, "mm")},
       {"random_seed", static_cast<double>(result->randomSeed)}})}};
   result->resolvedJson = Json(std::move(resolved));
