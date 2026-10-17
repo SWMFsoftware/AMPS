@@ -171,6 +171,23 @@ Json DoubleArrayJson(const std::vector<double>& values) {
   return Json(std::move(result));
 }
 
+Json BoolArrayJson(const std::vector<bool>& values) {
+  Json::Array result;
+  for (bool value : values) result.emplace_back(value);
+  return Json(std::move(result));
+}
+
+fs::path ResolvePinnedPath(const fs::path& interpretationDirectory,
+                           const std::string& relative,
+                           const std::string& context) {
+  const fs::path supplied(relative);
+  if (supplied.empty() || supplied.is_absolute())
+    throw JsonError(context + " must be a nonempty relative path");
+  for (const auto& part : supplied)
+    if (part == "..") throw JsonError(context + " must not escape the interpretation directory");
+  return (interpretationDirectory / supplied).lexically_normal();
+}
+
 Json ComponentJson(const SpectrumComponent& component) {
   Json::Object object;
   object["angular_representation"] = component.angularRepresentation;
@@ -189,6 +206,16 @@ Json ComponentJson(const SpectrumComponent& component) {
   object["value"] = DoubleArrayJson(component.value);
   object["value_type"] = component.valueType;
   object["value_unit"] = component.valueUnit;
+  if (!component.statisticalUncertainty.empty())
+    object["statistical_uncertainty"] = DoubleArrayJson(component.statisticalUncertainty);
+  if (!component.timeDependentSystematicUncertainty.empty())
+    object["time_dependent_systematic_uncertainty"] =
+        DoubleArrayJson(component.timeDependentSystematicUncertainty);
+  if (!component.timeIndependentSystematicUncertainty.empty())
+    object["time_independent_systematic_uncertainty"] =
+        DoubleArrayJson(component.timeIndependentSystematicUncertainty);
+  if (!component.counts.empty()) object["counts"] = DoubleArrayJson(component.counts);
+  if (!component.valid.empty()) object["valid"] = BoolArrayJson(component.valid);
   return Json(std::move(object));
 }
 
@@ -199,11 +226,11 @@ const Json::Object& FindParameter(const Json::Array& parameters,
     const auto& parameter = parameterValue.AsObject("AMS HAPI parameter");
     const auto it = parameter.find("name");
     if (it != parameter.end() && it->second.AsString("AMS HAPI parameter.name") == name) {
-      if (found) throw JsonError("AMS HAPI metadata repeats parameter '" + name + "'");
+      if (found) throw JsonError("HAPI metadata repeats parameter '" + name + "'");
       found = &parameter;
     }
   }
-  if (!found) throw JsonError("AMS HAPI metadata lacks parameter '" + name + "'");
+  if (!found) throw JsonError("HAPI metadata lacks parameter '" + name + "'");
   return *found;
 }
 
@@ -428,6 +455,404 @@ SpectrumDataset AMS02HapiAdapter::Load(const std::string& infoPath,
   canonical["source_data_sha256"] = Sha256(dataBytes);
   canonical["source_interpretation"] = interpretation;
   canonical["schema_version"] = "shieldSim.spectrum_dataset.v2";
+  result.canonicalMetadata = Json(std::move(canonical));
+  result.contentHash = Sha256(result.canonicalMetadata.DumpCanonical());
+  return result;
+}
+
+SpectrumDataset AMS02SolarCycleAdapter::LoadRotation(
+    const std::string& interpretationPath, int bartelsRotation) {
+  if (bartelsRotation <= 0) throw JsonError("AMS Bartels rotation must be positive");
+  const Json interpretation = Json::ParseFile(interpretationPath);
+  const auto& contract = interpretation.AsObject("AMS solar-cycle interpretation");
+  RejectUnknownFields(contract,
+      {"schema_version","dataset_id","adapter_version","publication_url",
+       "retrieved_utc","measurement_interval","location","angular_representation",
+       "value_type","value_unit","science_status","files"},
+      "AMS solar-cycle interpretation");
+  if (RequiredString(contract, "schema_version", "AMS solar-cycle interpretation") !=
+      "shieldSim.ams02_solar_cycle_interpretation.v1")
+    throw JsonError("unsupported AMS solar-cycle interpretation schema");
+  if (RequiredString(contract, "adapter_version", "AMS solar-cycle interpretation") !=
+      "AMS02SolarCycleAdapter.v1")
+    throw JsonError("unsupported AMS solar-cycle adapter version");
+  if (RequiredString(contract, "value_type", "AMS solar-cycle interpretation") !=
+          "differential_intensity" ||
+      RequiredString(contract, "value_unit", "AMS solar-cycle interpretation") !=
+          "1/(m2 sr s GV)")
+    throw JsonError("AMS solar-cycle value semantics changed");
+  if (RequiredString(contract, "angular_representation", "AMS solar-cycle interpretation") !=
+      "isotropic_intensity_at_instrument")
+    throw JsonError("AMS solar-cycle angular representation changed");
+  RequiredString(contract, "publication_url", "AMS solar-cycle interpretation");
+  RequiredString(contract, "retrieved_utc", "AMS solar-cycle interpretation");
+  RequiredString(contract, "location", "AMS solar-cycle interpretation");
+
+  const auto& interval = contract.at("measurement_interval")
+                             .AsObject("AMS solar-cycle measurement_interval");
+  RejectUnknownFields(interval, {"start","stop","time_coordinate"},
+                      "AMS solar-cycle measurement_interval");
+  RequiredString(interval, "start", "AMS solar-cycle measurement_interval");
+  RequiredString(interval, "stop", "AMS solar-cycle measurement_interval");
+  if (RequiredString(interval, "time_coordinate", "AMS solar-cycle measurement_interval") !=
+      "bartels_rotation_number")
+    throw JsonError("AMS solar-cycle time coordinate changed");
+
+  struct Row {
+    double lower = 0.0;
+    double upper = 0.0;
+    double flux = 0.0;
+    double statistical = 0.0;
+    double timeDependent = 0.0;
+    double timeIndependent = 0.0;
+  };
+  const fs::path base = fs::absolute(interpretationPath).parent_path();
+  const auto& fileDefinitions = contract.at("files").AsArray("AMS solar-cycle files");
+  if (fileDefinitions.size() != 7)
+    throw JsonError("AMS solar-cycle interpretation must define exactly seven elemental files");
+
+  SpectrumDataset result;
+  result.id = RequiredString(contract, "dataset_id", "AMS solar-cycle interpretation");
+  result.energyVariable = "rigidity";
+  result.energyUnit = "GV";
+  result.valueType = "differential_intensity";
+  result.valueUnit = "1/(m2 sr s GV)";
+  result.angularModel = "isotropic_intensity_at_instrument";
+  result.scienceStatus = RequiredString(contract, "science_status",
+                                        "AMS solar-cycle interpretation");
+  result.metadataPath = interpretationPath;
+
+  std::set<int> referenceRotations;
+  std::vector<double> referenceLower;
+  std::vector<double> referenceUpper;
+  Json::Array sourceFiles;
+  std::set<int> atomicNumbers;
+  for (std::size_t fileIndex = 0; fileIndex < fileDefinitions.size(); ++fileIndex) {
+    const std::string fileContext = "AMS solar-cycle files[" + std::to_string(fileIndex) + "]";
+    const auto& definition = fileDefinitions[fileIndex].AsObject(fileContext);
+    RejectUnknownFields(definition,
+        {"species_id","published_name","symbol","atomic_number","mass_number",
+         "has_ratio_columns","path","sha256"}, fileContext);
+    const std::string speciesId = RequiredString(definition, "species_id", fileContext);
+    const std::string publishedName = RequiredString(definition, "published_name", fileContext);
+    const std::string symbol = RequiredString(definition, "symbol", fileContext);
+    const int z = ExactInt(definition.at("atomic_number"), fileContext + ".atomic_number");
+    const int a = ExactInt(definition.at("mass_number"), fileContext + ".mass_number");
+    const bool hasRatio = definition.at("has_ratio_columns").AsBool(
+        fileContext + ".has_ratio_columns");
+    if (z < 2 || z > 8 || a != 0 || !atomicNumbers.insert(z).second)
+      throw JsonError(fileContext + " must define a unique inclusive element Z=2..8 and A=0");
+    if ((z == 2) == hasRatio)
+      throw JsonError(fileContext + " has_ratio_columns disagrees with the published table layout");
+    const std::string relativePath = RequiredString(definition, "path", fileContext);
+    const fs::path path = ResolvePinnedPath(base, relativePath, fileContext + ".path");
+    const std::string bytes = ReadBytes(path.string());
+    const std::string digest = Sha256(bytes);
+    if (digest != RequiredString(definition, "sha256", fileContext))
+      throw JsonError(fileContext + " SHA-256 does not match the interpretation record");
+
+    std::vector<std::string> expectedHeader = {
+        "bartels_rotation_number", "rigidity_min_GV", "rigidity_max_GV",
+        publishedName + "_flux m^-2sr^-1s^-1GV^-1",
+        publishedName + "_flux_error_statistical m^-2sr^-1s^-1GV^-1",
+        publishedName + "_flux_error_time_dependent m^-2sr^-1s^-1GV^-1",
+        publishedName + "_flux_error_time_independent m^-2sr^-1s^-1GV^-1"};
+    if (hasRatio) {
+      expectedHeader.push_back(publishedName + "_to_helium_ratio");
+      expectedHeader.push_back(publishedName + "_to_helium_ratio_error_statistical");
+      expectedHeader.push_back(publishedName + "_to_helium_ratio_error_time_dependent");
+      expectedHeader.push_back(publishedName + "_to_helium_ratio_error_time_independent");
+    }
+
+    std::istringstream stream(bytes);
+    std::string line;
+    if (!std::getline(stream, line)) throw JsonError(fileContext + " is empty");
+    const auto header = ParseCsvLine(line, fileContext + " header");
+    if (header != expectedHeader) throw JsonError(fileContext + " header changed");
+    std::map<int,std::vector<Row>> rotations;
+    std::size_t rowNumber = 1;
+    while (std::getline(stream, line)) {
+      ++rowNumber;
+      if (line.empty()) throw JsonError(fileContext + " contains an empty data row");
+      const std::string rowContext = fileContext + " row " + std::to_string(rowNumber);
+      const auto fields = ParseCsvLine(line, rowContext);
+      if (fields.size() != expectedHeader.size())
+        throw JsonError(rowContext + " has an unexpected column count");
+      const int rotation = CsvInt(fields[0], rowContext + ".bartels_rotation_number");
+      Row row;
+      row.lower = CsvDouble(fields[1], rowContext + ".rigidity_min_GV");
+      row.upper = CsvDouble(fields[2], rowContext + ".rigidity_max_GV");
+      row.flux = CsvDouble(fields[3], rowContext + ".flux");
+      row.statistical = CsvDouble(fields[4], rowContext + ".statistical_uncertainty");
+      row.timeDependent = CsvDouble(fields[5], rowContext + ".time_dependent_uncertainty");
+      row.timeIndependent = CsvDouble(fields[6], rowContext + ".time_independent_uncertainty");
+      if (rotation <= 0 || row.lower <= 0.0 || row.upper <= row.lower || row.flux <= 0.0 ||
+          row.statistical < 0.0 || row.timeDependent < 0.0 || row.timeIndependent < 0.0)
+        throw JsonError(rowContext + " contains an invalid bin, flux, or uncertainty");
+      for (std::size_t column = 7; column < fields.size(); ++column)
+        if (CsvDouble(fields[column], rowContext + ".ratio_column") < 0.0)
+          throw JsonError(rowContext + " contains a negative ratio or ratio uncertainty");
+      rotations[rotation].push_back(row);
+    }
+    if (rotations.size() != 147)
+      throw JsonError(fileContext + " must contain exactly 147 published rotations");
+    std::set<int> rotationsHere;
+    std::vector<double> lowerHere, upperHere;
+    for (const auto& entry : rotations) {
+      rotationsHere.insert(entry.first);
+      if (entry.second.size() != 40)
+        throw JsonError(fileContext + " rotation " + std::to_string(entry.first) +
+                        " must contain exactly 40 rigidity bins");
+      for (std::size_t bin = 0; bin < entry.second.size(); ++bin) {
+        if (bin && entry.second[bin].lower < entry.second[bin - 1].upper)
+          throw JsonError(fileContext + " has overlapping or unordered rigidity bins");
+        if (entry.first == rotations.begin()->first) {
+          lowerHere.push_back(entry.second[bin].lower);
+          upperHere.push_back(entry.second[bin].upper);
+        } else if (entry.second[bin].lower != lowerHere[bin] ||
+                   entry.second[bin].upper != upperHere[bin]) {
+          throw JsonError(fileContext + " rigidity grid changes between rotations");
+        }
+      }
+    }
+    if (fileIndex == 0) {
+      referenceRotations = rotationsHere;
+      referenceLower = lowerHere;
+      referenceUpper = upperHere;
+    } else if (rotationsHere != referenceRotations || lowerHere != referenceLower ||
+               upperHere != referenceUpper) {
+      throw JsonError(fileContext + " rotation set or rigidity grid differs across species");
+    }
+    const auto selected = rotations.find(bartelsRotation);
+    if (selected == rotations.end())
+      throw JsonError("AMS Bartels rotation " + std::to_string(bartelsRotation) +
+                      " is absent; missing rotations are never interpolated");
+
+    SpectrumComponent component;
+    component.componentId = symbol;
+    component.speciesId = speciesId;
+    component.geant4Particle = "";
+    component.atomicNumber = z;
+    component.massNumber = 0;
+    component.energyVariable = "rigidity";
+    component.energyUnit = "GV";
+    component.valueType = "differential_intensity";
+    component.valueUnit = "1/(m2 sr s GV)";
+    component.angularRepresentation = "isotropic_intensity_at_instrument";
+    component.directionId = "AMS02_acceptance";
+    component.uncertaintySemantics =
+        "published_components_retained_separately; time-independent correlations across rotations not supplied";
+    for (const auto& row : selected->second) {
+      component.binLower.push_back(row.lower);
+      component.binUpper.push_back(row.upper);
+      component.value.push_back(row.flux);
+      component.statisticalUncertainty.push_back(row.statistical);
+      component.timeDependentSystematicUncertainty.push_back(row.timeDependent);
+      component.timeIndependentSystematicUncertainty.push_back(row.timeIndependent);
+      component.totalUncertainty.push_back(std::sqrt(row.statistical * row.statistical +
+                                                     row.timeDependent * row.timeDependent +
+                                                     row.timeIndependent * row.timeIndependent));
+      component.valid.push_back(true);
+    }
+    result.components.push_back(std::move(component));
+    sourceFiles.emplace_back(Json::Object{{"path", relativePath}, {"sha256", digest}});
+  }
+  if (atomicNumbers.size() != 7 || *atomicNumbers.begin() != 2 || *atomicNumbers.rbegin() != 8)
+    throw JsonError("AMS solar-cycle files do not cover each element Z=2..8 exactly once");
+
+  Json::Array componentJson;
+  for (const auto& component : result.components) componentJson.push_back(ComponentJson(component));
+  Json::Object canonical;
+  canonical["adapter"] = "AMS02SolarCycleAdapter.v1";
+  canonical["bartels_rotation"] = bartelsRotation;
+  canonical["components"] = Json(std::move(componentJson));
+  canonical["dataset_id"] = result.id;
+  canonical["science_status"] = result.scienceStatus;
+  canonical["schema_version"] = "shieldSim.spectrum_dataset.v2";
+  canonical["source_files"] = Json(std::move(sourceFiles));
+  canonical["source_interpretation"] = interpretation;
+  result.canonicalMetadata = Json(std::move(canonical));
+  result.contentHash = Sha256(result.canonicalMetadata.DumpCanonical());
+  return result;
+}
+
+SpectrumDataset ACECRISHapiAdapter::LoadRecord(
+    const std::string& infoPath, const std::string& dataPath,
+    const std::string& interpretationPath) {
+  const std::string infoBytes = ReadBytes(infoPath);
+  const std::string dataBytes = ReadBytes(dataPath);
+  const Json interpretation = Json::ParseFile(interpretationPath);
+  const auto& contract = interpretation.AsObject("ACE/CRIS interpretation");
+  RejectUnknownFields(contract,
+      {"schema_version","dataset_id","adapter_version","record_utc","retrieved_utc",
+       "source_location","hapi_dataset_id","hapi_info_sha256","hapi_data_sha256",
+       "cdf","documentation","energy_bounds_policy","statistical_uncertainty_policy",
+       "systematic_uncertainty_policy","science_status","species"},
+      "ACE/CRIS interpretation");
+  if (RequiredString(contract, "schema_version", "ACE/CRIS interpretation") !=
+      "shieldSim.ace_cris_hapi_interpretation.v1")
+    throw JsonError("unsupported ACE/CRIS interpretation schema");
+  if (RequiredString(contract, "adapter_version", "ACE/CRIS interpretation") !=
+      "ACECRISHapiAdapter.v1")
+    throw JsonError("unsupported ACE/CRIS adapter version");
+  if (RequiredString(contract, "hapi_dataset_id", "ACE/CRIS interpretation") != "AC_H3_CRIS")
+    throw JsonError("ACE/CRIS HAPI dataset identifier changed");
+  if (RequiredString(contract, "hapi_info_sha256", "ACE/CRIS interpretation") !=
+      Sha256(infoBytes))
+    throw JsonError("ACE/CRIS HAPI info SHA-256 does not match its interpretation record");
+  if (RequiredString(contract, "hapi_data_sha256", "ACE/CRIS interpretation") !=
+      Sha256(dataBytes))
+    throw JsonError("ACE/CRIS HAPI data SHA-256 does not match its interpretation record");
+  RequiredString(contract, "retrieved_utc", "ACE/CRIS interpretation");
+  RequiredString(contract, "source_location", "ACE/CRIS interpretation");
+  RequiredString(contract, "energy_bounds_policy", "ACE/CRIS interpretation");
+  RequiredString(contract, "statistical_uncertainty_policy", "ACE/CRIS interpretation");
+  RequiredString(contract, "systematic_uncertainty_policy", "ACE/CRIS interpretation");
+
+  const fs::path base = fs::absolute(interpretationPath).parent_path();
+  const auto& cdf = contract.at("cdf").AsObject("ACE/CRIS cdf");
+  RejectUnknownFields(cdf, {"path","sha256","logical_file_id","energy_bounds_authority"},
+                      "ACE/CRIS cdf");
+  const fs::path cdfPath = ResolvePinnedPath(
+      base, RequiredString(cdf, "path", "ACE/CRIS cdf"), "ACE/CRIS cdf.path");
+  if (Sha256(ReadBytes(cdfPath.string())) != RequiredString(cdf, "sha256", "ACE/CRIS cdf"))
+    throw JsonError("ACE/CRIS source CDF SHA-256 does not match its interpretation record");
+  if (RequiredString(cdf, "logical_file_id", "ACE/CRIS cdf") !=
+      "AC_H3_CRIS_20190101_V04")
+    throw JsonError("ACE/CRIS source CDF logical file identifier changed");
+  RequiredString(cdf, "energy_bounds_authority", "ACE/CRIS cdf");
+
+  const auto& documents = contract.at("documentation").AsArray("ACE/CRIS documentation");
+  if (documents.size() != 4) throw JsonError("ACE/CRIS must pin exactly four source documents");
+  for (std::size_t i = 0; i < documents.size(); ++i) {
+    const std::string context = "ACE/CRIS documentation[" + std::to_string(i) + "]";
+    const auto& document = documents[i].AsObject(context);
+    RejectUnknownFields(document, {"path","sha256","url"}, context);
+    const fs::path path = ResolvePinnedPath(base, RequiredString(document, "path", context),
+                                            context + ".path");
+    if (Sha256(ReadBytes(path.string())) != RequiredString(document, "sha256", context))
+      throw JsonError(context + " SHA-256 does not match its interpretation record");
+    RequiredString(document, "url", context);
+  }
+
+  const Json info = Json::Parse(infoBytes, infoPath);
+  const auto& infoObject = info.AsObject("ACE/CRIS HAPI info");
+  if (RequiredString(infoObject, "HAPI", "ACE/CRIS HAPI info") != "2.0")
+    throw JsonError("ACE/CRIS fixture must use HAPI 2.0 metadata");
+  if (ExactInt(infoObject.at("status").AsObject("ACE/CRIS HAPI status").at("code"),
+               "ACE/CRIS HAPI status.code") != 1200)
+    throw JsonError("ACE/CRIS HAPI metadata status is not OK");
+  const auto& parameters = infoObject.at("parameters").AsArray("ACE/CRIS HAPI parameters");
+  const std::vector<std::string> symbols = {
+      "B","C","N","O","F","Ne","Na","Mg","Al","Si","P","S",
+      "Cl","Ar","K","Ca","Sc","Ti","V","Cr","Mn","Fe","Co","Ni"};
+  for (const auto& symbol : symbols) {
+    const auto& flux = FindParameter(parameters, "flux_" + symbol);
+    const auto& count = FindParameter(parameters, "cnt_" + symbol);
+    for (const auto* parameter : {&flux, &count}) {
+      const auto& size = parameter->at("size").AsArray("ACE/CRIS HAPI parameter.size");
+      if (size.size() != 1 || ExactInt(size[0], "ACE/CRIS HAPI parameter.size[0]") != 7)
+        throw JsonError("ACE/CRIS HAPI parameter width changed for " + symbol);
+      if (RequiredString(*parameter, "fill", "ACE/CRIS HAPI parameter") != "-1.0E31")
+        throw JsonError("ACE/CRIS HAPI fill value changed for " + symbol);
+    }
+    if (RequiredString(flux, "units", "ACE/CRIS HAPI flux") !=
+        "1/(cm2 Sr sec MeV/nucleon)" ||
+        RequiredString(count, "units", "ACE/CRIS HAPI count") != "Counts/day")
+      throw JsonError("ACE/CRIS HAPI units changed for " + symbol);
+  }
+
+  std::vector<std::string> rows;
+  std::istringstream dataStream(dataBytes);
+  std::string line;
+  while (std::getline(dataStream, line)) if (!line.empty() && line[0] != '#') rows.push_back(line);
+  if (rows.size() != 1) throw JsonError("ACE/CRIS adapter fixture must contain exactly one record");
+  const auto fields = ParseCsvLine(rows[0], "ACE/CRIS HAPI CSV row");
+  if (fields.size() != 337)
+    throw JsonError("ACE/CRIS selected-field row must contain 337 columns");
+  const std::string recordUtc = RequiredString(contract, "record_utc", "ACE/CRIS interpretation");
+  if (fields[0] != recordUtc) throw JsonError("ACE/CRIS HAPI record timestamp changed");
+
+  const auto& species = contract.at("species").AsObject("ACE/CRIS species");
+  if (species.size() != symbols.size())
+    throw JsonError("ACE/CRIS interpretation must define exactly B through Ni");
+  SpectrumDataset result;
+  result.id = RequiredString(contract, "dataset_id", "ACE/CRIS interpretation");
+  result.energyVariable = "kinetic_energy_per_nucleon";
+  result.energyUnit = "MeV/n";
+  result.valueType = "differential_intensity";
+  result.valueUnit = "1/(cm2 sr s (MeV/n))";
+  result.angularModel = "instrument_acceptance_intensity";
+  result.scienceStatus = RequiredString(contract, "science_status", "ACE/CRIS interpretation");
+  result.spectrumPath = dataPath;
+  result.metadataPath = interpretationPath;
+  for (std::size_t speciesIndex = 0; speciesIndex < symbols.size(); ++speciesIndex) {
+    const std::string& symbol = symbols[speciesIndex];
+    const auto found = species.find(symbol);
+    if (found == species.end()) throw JsonError("ACE/CRIS interpretation lacks species " + symbol);
+    const std::string context = "ACE/CRIS species." + symbol;
+    const auto& definition = found->second.AsObject(context);
+    RejectUnknownFields(definition,
+        {"atomic_number","bin_lower_MeV_per_nucleon","bin_upper_MeV_per_nucleon"}, context);
+    const int z = ExactInt(definition.at("atomic_number"), context + ".atomic_number");
+    if (z != static_cast<int>(speciesIndex) + 5)
+      throw JsonError(context + ".atomic_number is inconsistent with B--Ni ordering");
+    const auto lower = NumberArray(definition.at("bin_lower_MeV_per_nucleon"),
+                                   context + ".bin_lower_MeV_per_nucleon", 7);
+    const auto upper = NumberArray(definition.at("bin_upper_MeV_per_nucleon"),
+                                   context + ".bin_upper_MeV_per_nucleon", 7);
+    if (lower.size() != 7 || upper.size() != 7)
+      throw JsonError(context + " must contain exactly seven energy bins");
+    for (std::size_t bin = 0; bin < 7; ++bin) {
+      if (upper[bin] <= lower[bin] || (bin && lower[bin] <= upper[bin - 1]))
+        throw JsonError(context + " contains invalid or overlapping CDF energy bounds");
+    }
+    const std::size_t fluxOffset = 1 + speciesIndex * 7;
+    const std::size_t countOffset = 1 + symbols.size() * 7 + speciesIndex * 7;
+    SpectrumComponent component;
+    component.componentId = symbol;
+    component.speciesId = symbol + "_inclusive";
+    component.geant4Particle = "";
+    component.atomicNumber = z;
+    component.massNumber = 0;
+    component.energyVariable = "kinetic_energy_per_nucleon";
+    component.energyUnit = "MeV/n";
+    component.valueType = "differential_intensity";
+    component.valueUnit = "1/(cm2 sr s (MeV/n))";
+    component.angularRepresentation = "instrument_acceptance_intensity";
+    component.directionId = "ACE_CRIS_acceptance";
+    component.uncertaintySemantics =
+        "statistical_only_flux_over_sqrt_counts_for_count-positive_bins; systematics not applied because CDF processing-version mapping is unresolved";
+    component.binLower = lower;
+    component.binUpper = upper;
+    for (std::size_t bin = 0; bin < 7; ++bin) {
+      const double flux = CsvDouble(fields[fluxOffset + bin], context + ".flux");
+      const double count = CsvDouble(fields[countOffset + bin], context + ".count");
+      if (flux < 0.0 || count < 0.0 || std::floor(count) != count)
+        throw JsonError(context + " contains a fill, negative, or noninteger count value");
+      if (count == 0.0 && flux != 0.0)
+        throw JsonError(context + " contains nonzero flux with zero counts");
+      const bool valid = count > 0.0;
+      component.value.push_back(flux);
+      component.counts.push_back(count);
+      component.valid.push_back(valid);
+      component.statisticalUncertainty.push_back(valid ? flux / std::sqrt(count) : 0.0);
+    }
+    result.components.push_back(std::move(component));
+  }
+
+  Json::Array componentJson;
+  for (const auto& component : result.components) componentJson.push_back(ComponentJson(component));
+  Json::Object canonical;
+  canonical["adapter"] = "ACECRISHapiAdapter.v1";
+  canonical["components"] = Json(std::move(componentJson));
+  canonical["dataset_id"] = result.id;
+  canonical["observation_start_utc"] = recordUtc;
+  canonical["science_status"] = result.scienceStatus;
+  canonical["schema_version"] = "shieldSim.spectrum_dataset.v2";
+  canonical["source_data_sha256"] = Sha256(dataBytes);
+  canonical["source_info_sha256"] = Sha256(infoBytes);
+  canonical["source_interpretation"] = interpretation;
   result.canonicalMetadata = Json(std::move(canonical));
   result.contentHash = Sha256(result.canonicalMetadata.DumpCanonical());
   return result;

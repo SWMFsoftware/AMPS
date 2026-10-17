@@ -2,9 +2,11 @@
 
 These files are immutable, offline test fixtures. They test provenance,
 schema, units, uncertainty retention, and the dedicated Stage-2 adapters. They
-are not accepted `shieldSim --spectrum` inputs: the legacy three-column parser
-cannot represent bin edges, energy-per-nucleon, uncertainties, direction,
-epoch, or general species.
+are never accepted through legacy `shieldSim --spectrum`: the three-column
+parser cannot represent bin edges, energy-per-nucleon, uncertainties,
+direction, epoch, or general species. The original AMS A=1 proton component
+has one explicit validation-only path through `shieldSim.case.v1`; all other
+components retain the restrictions documented below.
 
 Run the dependency-free integrity tests with:
 
@@ -48,11 +50,13 @@ rigidity-to-kinetic-energy-per-nucleon transform and converts
 `1/(m2 sr s GeV/n)` to `1/(cm2 sr s (MeV/n))`. Analytic tests independently
 reproduce the first proton and helium Jacobians.
 
-This single near-Earth spectrum remains ingestion-only, not a complete deep-
-space GCR environment: it includes only protons and inclusive mixed-isotope
-helium, one Bartels rotation, a limited energy range, and no mission boundary
-definition. Inclusive helium is intentionally not assigned a Geant4 alpha
-particle until an isotope treatment is approved.
+This single near-Earth spectrum is not a complete deep-space GCR environment:
+it includes only protons and inclusive mixed-isotope helium, one Bartels
+rotation, a limited energy range, and no mission boundary definition. Its A=1
+proton component is admitted only to isotropic `verification_test` cases so a
+downloaded spectrum can exercise the full Geant4/proxy path. Inclusive helium
+is intentionally not assigned a Geant4 alpha particle until an isotope
+treatment is approved.
 
 The exact requests were:
 
@@ -60,6 +64,104 @@ The exact requests were:
 https://cdaweb.gsfc.nasa.gov/hapi/info?id=ISS_27DAY-AVERAGES_AMS-02
 https://cdaweb.gsfc.nasa.gov/hapi/data?id=ISS_27DAY-AVERAGES_AMS-02&time.min=2013-11-18T00:00:00Z&time.max=2013-12-15T00:00:00Z&parameters=BR,ProFlux,ProFlux_TotErr,HeFlux,HeFlux_TotErr&format=csv
 ```
+
+## GCR: AMS-02 2025 solar-cycle elemental spectra
+
+Files:
+
+- `gcr/ams02_2025/raw/table-S1-S147.csv` (He);
+- `gcr/ams02_2025/raw/table-S148-S294.csv` (Li);
+- `gcr/ams02_2025/raw/table-S295-S441.csv` (Be);
+- `gcr/ams02_2025/raw/table-S442-S588.csv` (B);
+- `gcr/ams02_2025/raw/table-S589-S735.csv` (C);
+- `gcr/ams02_2025/raw/table-S736-S882.csv` (N);
+- `gcr/ams02_2025/raw/table-S883-S1029.csv` (O); and
+- `gcr/ams02_2025/interpretation.v1.json`.
+
+These are the unmodified CSV tables published with the AMS Collaboration's
+2025 solar-cycle nuclei result. Each table contains 147 available Bartels
+rotations and 40 rigidity bins from 1.92 to 60.3 GV. Flux, statistical
+uncertainty, time-dependent systematic uncertainty, and time-independent
+systematic uncertainty remain separate. The Li--O tables also contain ratios
+to helium and their three uncertainty components; the adapter validates those
+columns but does not substitute ratios for measured fluxes.
+
+- Publication and downloads: [AMS-02 solar modulation of cosmic
+  nuclei](https://ams02.space/publications/202403)
+- Publication DOI: [10.1103/PhysRevLett.134.051001](https://doi.org/10.1103/PhysRevLett.134.051001)
+- Observation interval stated by the publication: May 2011--November 2022.
+
+`AMS02SolarCycleAdapter` selects an explicitly requested published rotation
+and emits seven independent inclusive elemental components. It keeps rigidity
+in GV and flux per GV. It does **not** convert an inclusive element to kinetic
+energy per nucleon or assign a Geant4 ion, because doing so requires an isotope
+composition that the elemental tables do not supply. Missing rotations are
+rejected rather than interpolated.
+
+`gcr/validation_partitions.v1.json` freezes an optional chronological 80/20 split of the
+147 available rotations: 118 development rotations through BR2552 and 29
+held-out rotations beginning at BR2553. This split prevents later residual-
+driven tuning if a future source-environment comparison uses these data. It is
+not part of the current Stage-2 direct-transport test and has no BON2020
+dependency.
+
+The three AMS uncertainty terms may be combined in quadrature for a per-bin
+display error bar. That display operation does not make the time-independent
+term statistically independent between rotations. A time-series fit requires
+published covariance information or an explicit correlated-nuisance treatment.
+
+## GCR: ACE/CRIS B--Ni daily spectrum
+
+Files:
+
+- `gcr/ace_cris/ac_h3_cris_hapi_info.json`;
+- `gcr/ace_cris/ac_h3_cris_20191201_all.csv`;
+- `gcr/ace_cris/interpretation.v1.json`;
+- `gcr/ace_cris/raw/ac_h3_cris_20190101_v04.cdf`;
+- `gcr/ace_cris/raw/cris_data_Bartels.hdf`;
+- `gcr/ace_cris/raw/cris_factors.txt`;
+- `gcr/ace_cris/raw/cris_release_notes.txt`; and
+- `gcr/ace_cris/raw/cris_l2desc.html`.
+
+The HAPI fixture is the 2019-12-01 daily `AC_H3_CRIS` record for all 24
+elements B through Ni. Every element has seven differential-intensity values
+and seven counts. Flux units are `1/(cm2 sr s MeV/nucleon)` and count units are
+`Counts/day`.
+
+- ACE Science Center: [CRIS Level-2 data](https://izw1.caltech.edu/ACE/ASC/level2/lvl2DATA_CRIS.html)
+- Dataset record and exact element bins: [NASA SPASE ACE/CRIS daily
+  Level-2](https://spase-metadata.org/NASA/NumericalData/ACE/CRIS/L2/P1D)
+- CDAWeb/HAPI dataset ID: `AC_H3_CRIS`
+- Data DOI: [10.48322/wbmv-4z80](https://doi.org/10.48322/wbmv-4z80)
+
+The exact energy bounds are extracted from each `label_ebands_flux_*` variable
+inside the pinned CDAWeb CDF V04 file. The current ACE `cris_factors.txt` file
+is also pinned, but it contains revised, nonidentical bounds. It is therefore
+documentation only for this fixture. Mixing its bounds or spallation terms
+with the V04 HAPI/CDF values is prohibited until their processing-version
+relationship is established.
+
+For a positive-count bin, `ACECRISHapiAdapter` reports the count-derived
+statistical uncertainty `flux/sqrt(count)`. A zero-count bin is retained with
+`valid=false`; it is not represented as an exact zero with zero uncertainty.
+The release notes contain version-dependent systematic prescriptions, but the
+mapping to the CDAWeb V04 processing state has not been established. No ACE
+systematic uncertainty is therefore attached or used in an acceptance test.
+
+The 2019-12-01 ACE record is an adapter/bin-semantics fixture, not a frozen
+model holdout. Selecting defensible ACE development and holdout intervals
+requires a declared comparison objective and a documented exclusion policy
+for SEP-contaminated or instrument-flagged days.
+
+Reproduce or verify all newly downloaded GCR files with:
+
+```bash
+python3 scripts/download_gcr_validation_data.py
+```
+
+The downloader never updates expected hashes. If an upstream product changes,
+it stops and requires a reviewed fixture/schema revision. Normal tests remain
+offline and do not invoke the downloader.
 
 ## SEP: GOES-16 SGPS September 10-11, 2017 GLE
 
@@ -160,13 +262,25 @@ LET/lineal-energy estimator.
 - the approved event windows, marker, sample timing, and quality policy remain
   explicit; and
 - the implemented unit/Jacobian and event-integration transforms agree with
-  analytic and independently calculated spot checks.
+  analytic and independently calculated spot checks;
+- all AMS-02 2025 rotations/species/grids and their three uncertainty
+  components are retained without isotope assumptions;
+- the ACE/CRIS B--Ni values, CDF-label bounds, counts, statistical errors, and
+  zero-count masks survive canonicalization; and
+- the ACE CDF/current-factors energy-version discrepancy remains an explicit
+  hard boundary rather than an implicit choice.
 
-It does not establish transport correctness or observational agreement. Those
-gates are specified in `development_and_validatoin.md`.
+The fixture/adapter tests alone do not establish transport correctness or
+observational agreement. `stage2_published_transport` separately establishes
+that the admitted AMS proton spectrum drives the production Geant4/proxy path
+and that its source normalization matches an independent analytic integral.
+It still does not validate Geant4 transport physics or observational agreement;
+those gates are specified in `development_and_validatoin.md`.
 
-The CTest `validation_figures` target visualizes the AMS and GOES adapter
-comparisons and the CRaTER reference product in PNG/SVG form under the build
-directory. CRaTER remains explicitly observation-only: no model curve is
-drawn until the instrument-faithful response and preregistered comparison gate
-are implemented.
+The CTest `validation_figures` target visualizes both AMS products, ACE/CRIS,
+GOES adapter comparisons, and the CRaTER reference product in PNG/SVG form
+under the build directory. The AMS-02 2025 and ACE/CRIS panels include the
+available uncertainty information and explicit validity masks. They compare
+published values with adapter output; no source-model curve is implied. CRaTER
+remains observation-only until the
+instrument-faithful response and preregistered comparison gate are implemented.

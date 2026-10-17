@@ -44,7 +44,8 @@
  * Each absorber gets a resolved-case manifest, a shieldSim.result.v1 JSON, and
  * compatibility spectra/tables. The JSON records hashes, code/build/Geant4
  * provenance, uncertainty state, raw H100/10 counts, deposition ledgers, and
- * the explicit Stage-1 "implemented, not yet physically validated" status.
+ * an explicit capability status. Published-spectrum validation cases remain
+ * labeled as test evidence rather than as physically validated mission cases.
  * DDD, n_eq, and LET are disabled for versioned cases until later roadmap
  * stages. Their historical analytic implementations remain reachable only
  * through the legacy CLI for regression compatibility.
@@ -111,7 +112,9 @@ void WriteResolvedCase(const Options& opts){
   }
   manifest["geant4_data_libraries"]=shield_sim::Json(std::move(dataLibraries));
   manifest["output_prefix"]=opts.outputPrefix;
-  manifest["run_status"]="stage1_core_not_yet_quantity_validated";
+  manifest["run_status"]=opts.caseDefinition->sourceFormat=="ams02_hapi_component"
+      ? "stage2_published_spectrum_transport_test_not_physical_validation"
+      : "stage1_core_not_yet_quantity_validated";
   const std::string path=opts.outputPrefix+"_resolved_case.json";
   std::ofstream output(path);
   if(!output) G4Exception("WriteResolvedCase","Output",FatalException,

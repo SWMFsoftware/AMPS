@@ -1,0 +1,69 @@
+{
+  "schema_version": "shieldSim.ace_cris_hapi_interpretation.v1",
+  "dataset_id": "ac_h3_cris_20191201_b_to_ni",
+  "adapter_version": "ACECRISHapiAdapter.v1",
+  "record_utc": "2019-12-01T00:00:00.000Z",
+  "retrieved_utc": "2026-10-16T00:00:00Z",
+  "source_location": "ACE near the Sun-Earth L1 point",
+  "hapi_dataset_id": "AC_H3_CRIS",
+  "hapi_info_sha256": "sha256:319400e7c2d3298807340cf6d6a627103e14e547e7208c955159fcef60bf6ede",
+  "hapi_data_sha256": "sha256:33e018b7934971670dab40e883f03c0f4a3542cdd5a96103d2cf729957820cfd",
+  "cdf": {
+    "path": "raw/ac_h3_cris_20190101_v04.cdf",
+    "sha256": "sha256:3b43c0fab98d1e4947810fde32c1dbccb556d652affac330f67b9e97f04fd5a1",
+    "logical_file_id": "AC_H3_CRIS_20190101_V04",
+    "energy_bounds_authority": "label_ebands_flux_* variables embedded in this CDF"
+  },
+  "documentation": [
+    {
+      "path": "raw/cris_data_Bartels.hdf",
+      "sha256": "sha256:85c39309100957466f2d47251d65e22b0760ea81f88c03d18656f750b4ad33a5",
+      "url": "https://izw1.caltech.edu/ACE/ASC/DATA/level2/cris/cris_data_Bartels.hdf"
+    },
+    {
+      "path": "raw/cris_factors.txt",
+      "sha256": "sha256:fe48e9572fef3fbe6ae70e5fbb87041f336fbfb333403ad1e64ea2961d050d8c",
+      "url": "https://izw1.caltech.edu/ACE/ASC/DATA/level2/cris/cris_factors.txt"
+    },
+    {
+      "path": "raw/cris_release_notes.txt",
+      "sha256": "sha256:49bf5e06c64f9b7f55d77603f141c8e94a87f62e4bc8e622e4ba2782b7b8096d",
+      "url": "https://izw1.caltech.edu/ACE/ASC/DATA/level2/cris/cris_release_notes"
+    },
+    {
+      "path": "raw/cris_l2desc.html",
+      "sha256": "sha256:286713205255575bab0e0b3bb827c62eb94a4ce31f511df2d77dc4063be54304",
+      "url": "https://izw1.caltech.edu/ACE/ASC/level2/cris_l2desc.html"
+    }
+  ],
+  "energy_bounds_policy": "Use only the exact seven bounds embedded in the pinned CDAWeb CDF. The separately pinned current ACE factors file has revised, nonidentical bounds and is documentation only for this fixture; mixing it with the V04 HAPI/CDF values is prohibited.",
+  "statistical_uncertainty_policy": "For count-positive bins, sigma_stat = flux/sqrt(count). Zero-count bins are retained with valid=false and must not enter a quantitative comparison.",
+  "systematic_uncertainty_policy": "not_applied: the release notes document version-dependent prescriptions, but a processing-version mapping for the CDAWeb V04 product has not been established",
+  "science_status": "observation_for_source_model_validation_not_transport_boundary",
+  "species": {
+    "B":  {"atomic_number": 5,  "bin_lower_MeV_per_nucleon": [49.1,65.4,89.9,110.1,127.8,144.0,158.8], "bin_upper_MeV_per_nucleon": [63.9,88.8,109.2,127.0,143.2,158.2,172.3]},
+    "C":  {"atomic_number": 6,  "bin_lower_MeV_per_nucleon": [56.3,75.0,103.3,126.6,147.1,165.8,183.1], "bin_upper_MeV_per_nucleon": [73.4,102.0,125.6,146.2,164.9,182.3,198.7]},
+    "N":  {"atomic_number": 7,  "bin_lower_MeV_per_nucleon": [60.4,80.5,110.8,136.0,158.0,178.3,196.9], "bin_upper_MeV_per_nucleon": [78.7,109.5,134.9,157.1,177.3,196.1,213.8]},
+    "O":  {"atomic_number": 8,  "bin_lower_MeV_per_nucleon": [66.3,88.4,121.8,149.5,173.9,196.4,217.0], "bin_upper_MeV_per_nucleon": [86.4,120.3,148.3,172.9,195.2,216.1,235.8]},
+    "F":  {"atomic_number": 9,  "bin_lower_MeV_per_nucleon": [68.7,91.7,126.5,155.3,180.7,204.1,225.7], "bin_upper_MeV_per_nucleon": [89.6,124.9,154.1,179.7,203.0,224.7,245.3]},
+    "Ne": {"atomic_number": 10, "bin_lower_MeV_per_nucleon": [73.7,98.4,135.8,167.0,194.4,219.7,243.0], "bin_upper_MeV_per_nucleon": [96.2,134.1,165.6,193.2,218.4,242.0,264.3]},
+    "Na": {"atomic_number": 11, "bin_lower_MeV_per_nucleon": [77.3,103.3,142.7,175.5,204.4,231.1,255.8], "bin_upper_MeV_per_nucleon": [100.9,140.9,174.0,203.2,229.8,254.7,278.3]},
+    "Mg": {"atomic_number": 12, "bin_lower_MeV_per_nucleon": [82.4,110.1,152.3,187.5,218.6,247.3,273.8], "bin_upper_MeV_per_nucleon": [107.6,150.4,185.9,217.3,245.8,272.7,298.0]},
+    "Al": {"atomic_number": 13, "bin_lower_MeV_per_nucleon": [85.3,114.1,157.9,194.5,226.8,256.7,284.3], "bin_upper_MeV_per_nucleon": [111.5,155.9,192.8,225.4,255.2,283.1,309.6]},
+    "Si": {"atomic_number": 14, "bin_lower_MeV_per_nucleon": [90.5,121.0,167.6,206.6,241.1,273.1,302.7], "bin_upper_MeV_per_nucleon": [118.3,165.5,204.9,239.7,271.5,301.4,329.8]},
+    "P":  {"atomic_number": 15, "bin_lower_MeV_per_nucleon": [92.6,123.9,171.8,211.8,247.3,280.2,310.6], "bin_upper_MeV_per_nucleon": [121.1,169.6,210.0,245.8,278.5,309.3,338.5]},
+    "S":  {"atomic_number": 16, "bin_lower_MeV_per_nucleon": [97.1,130.0,180.3,222.6,260.0,294.8,327.0], "bin_upper_MeV_per_nucleon": [127.0,178.1,220.7,258.4,293.0,325.5,356.4]},
+    "Cl": {"atomic_number": 17, "bin_lower_MeV_per_nucleon": [98.6,132.1,183.3,226.3,264.4,299.8,332.7], "bin_upper_MeV_per_nucleon": [129.0,181.0,224.4,262.8,298.0,331.2,362.7]},
+    "Ar": {"atomic_number": 18, "bin_lower_MeV_per_nucleon": [102.9,138.0,191.7,236.8,276.9,314.2,348.7], "bin_upper_MeV_per_nucleon": [134.8,189.2,234.8,275.2,312.3,347.2,380.4]},
+    "K":  {"atomic_number": 19, "bin_lower_MeV_per_nucleon": [104.9,140.7,195.6,241.7,282.7,320.9,356.3], "bin_upper_MeV_per_nucleon": [137.5,193.1,239.7,281.0,319.0,354.8,388.8]},
+    "Ca": {"atomic_number": 20, "bin_lower_MeV_per_nucleon": [108.2,145.2,202.0,249.8,292.3,331.9,368.6], "bin_upper_MeV_per_nucleon": [141.8,199.4,247.6,290.5,329.9,367.0,402.4]},
+    "Sc": {"atomic_number": 21, "bin_lower_MeV_per_nucleon": [109.4,146.9,204.5,253.0,296.1,336.3,373.6], "bin_upper_MeV_per_nucleon": [143.5,201.9,250.8,294.3,334.2,372.0,407.9]},
+    "Ti": {"atomic_number": 22, "bin_lower_MeV_per_nucleon": [112.2,150.8,210.0,259.9,304.3,345.8,384.3], "bin_upper_MeV_per_nucleon": [147.3,207.3,257.6,302.5,343.7,382.6,419.7]},
+    "V":  {"atomic_number": 23, "bin_lower_MeV_per_nucleon": [114.5,154.0,214.6,265.7,311.3,353.8,393.3], "bin_upper_MeV_per_nucleon": [150.4,211.8,263.4,309.4,351.6,391.6,429.7]},
+    "Cr": {"atomic_number": 24, "bin_lower_MeV_per_nucleon": [117.7,158.3,220.8,273.6,320.7,364.6,405.5], "bin_upper_MeV_per_nucleon": [154.6,218.0,271.2,318.7,362.4,403.7,443.1]},
+    "Mn": {"atomic_number": 25, "bin_lower_MeV_per_nucleon": [120.1,161.7,225.6,279.7,328.0,373.0,415.0], "bin_upper_MeV_per_nucleon": [157.9,222.7,277.3,325.9,370.8,413.2,453.6]},
+    "Fe": {"atomic_number": 26, "bin_lower_MeV_per_nucleon": [122.9,165.6,231.2,286.8,336.5,382.9,426.1], "bin_upper_MeV_per_nucleon": [161.7,228.3,284.3,334.4,380.5,424.2,465.9]},
+    "Co": {"atomic_number": 27, "bin_lower_MeV_per_nucleon": [125.5,169.1,236.4,293.4,344.3,391.9,436.3], "bin_upper_MeV_per_nucleon": [165.2,233.3,290.8,342.1,389.5,434.4,477.2]},
+    "Ni": {"atomic_number": 28, "bin_lower_MeV_per_nucleon": [129.9,175.1,245.0,304.3,357.3,407.0,453.4], "bin_upper_MeV_per_nucleon": [171.0,241.8,301.6,355.1,404.5,451.3,496.1]}
+  }
+}

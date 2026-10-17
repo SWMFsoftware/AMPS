@@ -126,6 +126,79 @@ int main(int argc, char** argv) {
   Check(shield_sim::Json::Parse(ams.canonicalMetadata.DumpCanonical()).DumpCanonical() ==
         ams.canonicalMetadata.DumpCanonical(), "AMS canonical dataset round-trips exactly");
 
+  const std::string amsCycleInterpretation =
+      root + "/tests/reference_spectra/gcr/ams02_2025/interpretation.v1.json";
+  const auto amsCycle =
+      shield_sim::AMS02SolarCycleAdapter::LoadRotation(amsCycleInterpretation, 2581);
+  Check(amsCycle.components.size() == 7,
+        "AMS solar-cycle adapter retains all published elements He through O");
+  Check(std::all_of(amsCycle.components.begin(), amsCycle.components.end(),
+                    [](const auto& component) {
+                      return component.binLower.size() == 40 &&
+                             component.value.size() == 40 &&
+                             component.statisticalUncertainty.size() == 40 &&
+                             component.timeDependentSystematicUncertainty.size() == 40 &&
+                             component.timeIndependentSystematicUncertainty.size() == 40 &&
+                             component.massNumber == 0 && component.geant4Particle.empty();
+                    }),
+        "AMS solar-cycle grids and three uncertainty components remain lossless");
+  Check(amsCycle.energyVariable == "rigidity" && amsCycle.energyUnit == "GV" &&
+        amsCycle.components.front().binLower.front() == 1.92 &&
+        amsCycle.components.front().binUpper.back() == 60.3,
+        "AMS inclusive elements remain on their published rigidity grid");
+  Check(Near(amsCycle.components.front().value.front(), 77.56, 1.0e-14) &&
+        Near(amsCycle.components.back().value.front(), 1.631, 1.0e-14),
+        "AMS held-out rotation matches independent helium and oxygen row values");
+  Evidence("ams2025_br2581_helium_first_bin", 77.56,
+           amsCycle.components.front().value.front(), "1/(m2 sr s GV)",
+           "independent_observation_oracle");
+  Evidence("ams2025_br2581_oxygen_first_bin", 1.631,
+           amsCycle.components.back().value.front(), "1/(m2 sr s GV)",
+           "independent_observation_oracle");
+  CheckThrows([&] {
+    shield_sim::AMS02SolarCycleAdapter::LoadRotation(amsCycleInterpretation, 2472);
+  }, "AMS missing published rotation is rejected rather than interpolated");
+  Check(shield_sim::Json::Parse(amsCycle.canonicalMetadata.DumpCanonical()).DumpCanonical() ==
+        amsCycle.canonicalMetadata.DumpCanonical(),
+        "AMS solar-cycle canonical dataset round-trips exactly");
+
+  const auto cris = shield_sim::ACECRISHapiAdapter::LoadRecord(
+      root + "/tests/reference_spectra/gcr/ace_cris/ac_h3_cris_hapi_info.json",
+      root + "/tests/reference_spectra/gcr/ace_cris/ac_h3_cris_20191201_all.csv",
+      root + "/tests/reference_spectra/gcr/ace_cris/interpretation.v1.json");
+  Check(cris.components.size() == 24 && cris.components.front().atomicNumber == 5 &&
+        cris.components.back().atomicNumber == 28,
+        "ACE/CRIS adapter retains every published element B through Ni");
+  Check(std::all_of(cris.components.begin(), cris.components.end(),
+                    [](const auto& component) {
+                      return component.binLower.size() == 7 && component.binUpper.size() == 7 &&
+                             component.value.size() == 7 && component.counts.size() == 7 &&
+                             component.statisticalUncertainty.size() == 7 &&
+                             component.valid.size() == 7 && component.massNumber == 0 &&
+                             component.geant4Particle.empty();
+                    }),
+        "ACE/CRIS bin bounds, counts, masks, and statistical errors remain lossless");
+  const auto& oxygen = cris.components[3];
+  Check(oxygen.binLower.front() == 66.3 && oxygen.binUpper.back() == 235.8,
+        "ACE/CRIS oxygen bounds come from the pinned V04 CDF labels");
+  Check(std::abs(oxygen.value.front() - 7.375e-7) < 1.0e-18 &&
+        oxygen.counts.front() == 139.0 &&
+        std::abs(oxygen.statisticalUncertainty.front() - 6.255393356389787e-8) < 1.0e-18,
+        "ACE/CRIS oxygen value/count pair gives the documented Poisson error");
+  Evidence("ace_cris_oxygen_first_bin_flux", 7.375e-7,
+           oxygen.value.front(), "1/(cm2 sr s (MeV/n))", "independent_observation_oracle");
+  Evidence("ace_cris_oxygen_first_bin_statistical_uncertainty", 6.255393356389787e-8,
+           oxygen.statisticalUncertainty.front(), "1/(cm2 sr s (MeV/n))", "analytic_counts");
+  std::size_t invalidCrisBins = 0;
+  for (const auto& component : cris.components)
+    invalidCrisBins += static_cast<std::size_t>(
+        std::count(component.valid.begin(), component.valid.end(), false));
+  Check(invalidCrisBins == 19,
+        "ACE/CRIS zero-count bins are explicitly masked instead of assigned zero error");
+  Check(shield_sim::Json::Parse(cris.canonicalMetadata.DumpCanonical()).DumpCanonical() ==
+        cris.canonicalMetadata.DumpCanonical(),
+        "ACE/CRIS canonical dataset round-trips exactly");
+
   const auto goes = shield_sim::GOESRSGPSAdapter::Load(
       root + "/tests/reference_spectra/sep/goes16_sgps_gle72_timeseries.csv",
       root + "/tests/reference_spectra/sep/goes16_gle72_event_definition.v1.json");

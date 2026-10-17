@@ -50,6 +50,56 @@ def main() -> int:
         require([item["species_id"] for item in ams["components"]] ==
                 ["proton", "helium_mixed_isotopes"], "AMS species order/identity")
 
+        cycle_a = directory / "ams-cycle-a.json"
+        cycle_b = directory / "ams-cycle-b.json"
+        cycle_command = [
+            str(tool),
+            "ams02-cycle",
+            f"--interpretation={fixtures / 'gcr' / 'ams02_2025' / 'interpretation.v1.json'}",
+            "--bartels-rotation=2581",
+        ]
+        run([*cycle_command, f"--output={cycle_a}"])
+        run([*cycle_command, f"--output={cycle_b}"])
+        require(cycle_a.read_bytes() == cycle_b.read_bytes(),
+                "AMS solar-cycle canonical output is not deterministic")
+        cycle = json.loads(cycle_a.read_text(encoding="utf-8"))
+        require(cycle["bartels_rotation"] == 2581 and len(cycle["components"]) == 7,
+                "AMS solar-cycle selection/species coverage")
+        require(all(len(item["value"]) == 40
+                    and len(item["statistical_uncertainty"]) == 40
+                    and len(item["time_dependent_systematic_uncertainty"]) == 40
+                    and len(item["time_independent_systematic_uncertainty"]) == 40
+                    for item in cycle["components"]),
+                "AMS solar-cycle uncertainty components were lost")
+        require(all(item["mass_number"] == 0 and item["geant4_particle"] == ""
+                    for item in cycle["components"]),
+                "AMS inclusive elements acquired an assumed isotope")
+
+        cris_a = directory / "cris-a.json"
+        cris_b = directory / "cris-b.json"
+        cris_command = [
+            str(tool),
+            "ace-cris",
+            f"--info={fixtures / 'gcr' / 'ace_cris' / 'ac_h3_cris_hapi_info.json'}",
+            f"--data={fixtures / 'gcr' / 'ace_cris' / 'ac_h3_cris_20191201_all.csv'}",
+            f"--interpretation={fixtures / 'gcr' / 'ace_cris' / 'interpretation.v1.json'}",
+        ]
+        run([*cris_command, f"--output={cris_a}"])
+        run([*cris_command, f"--output={cris_b}"])
+        require(cris_a.read_bytes() == cris_b.read_bytes(),
+                "ACE/CRIS canonical output is not deterministic")
+        cris = json.loads(cris_a.read_text(encoding="utf-8"))
+        require(len(cris["components"]) == 24
+                and cris["components"][0]["atomic_number"] == 5
+                and cris["components"][-1]["atomic_number"] == 28,
+                "ACE/CRIS B--Ni coverage")
+        require(sum(not valid for component in cris["components"] for valid in component["valid"]) == 19,
+                "ACE/CRIS zero-count validity masks were lost")
+        require(all("statistical_uncertainty" in component
+                    and "time_dependent_systematic_uncertainty" not in component
+                    for component in cris["components"]),
+                "ACE/CRIS uncertainty boundary changed")
+
         goes_a = directory / "goes-a.json"
         goes_b = directory / "goes-b.json"
         goes_command = [
@@ -90,6 +140,25 @@ def main() -> int:
             expect_success=False,
         )
         require("SHA-256" in failed.stderr, "AMS source-hash mutation was not rejected")
+
+        bad_cris_contract = directory / "bad-cris-interpretation.json"
+        bad_cris = json.loads(
+            (fixtures / "gcr" / "ace_cris" / "interpretation.v1.json").read_text(encoding="utf-8")
+        )
+        bad_cris["hapi_data_sha256"] = "0" * 64
+        bad_cris_contract.write_text(json.dumps(bad_cris), encoding="utf-8")
+        failed = run(
+            [
+                str(tool),
+                "ace-cris",
+                f"--info={fixtures / 'gcr' / 'ace_cris' / 'ac_h3_cris_hapi_info.json'}",
+                f"--data={fixtures / 'gcr' / 'ace_cris' / 'ac_h3_cris_20191201_all.csv'}",
+                f"--interpretation={bad_cris_contract}",
+                "--output=-",
+            ],
+            expect_success=False,
+        )
+        require("SHA-256" in failed.stderr, "ACE/CRIS source-hash mutation was not rejected")
 
         bad_goes_definition = directory / "bad-goes-definition.json"
         bad_goes = json.loads(

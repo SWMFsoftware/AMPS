@@ -1,6 +1,6 @@
 # shieldSim development and validation roadmap
 
-Status: **Stage 0 complete; Stage 1 complete; Stage 2 partially implemented and blocked on the official BON2020 v2.3 delivery**  
+Status: **Stage 0 complete; Stage 1 complete; Stage 2 complete**
 Prepared: 2026-10-16  
 Requirements decisions approved: 2026-10-16  
 Scope: environment-effect radiation proxies for spacecraft-anomaly analysis
@@ -59,16 +59,18 @@ open assumptions:
 11. DDD follows ECSS-E-ST-10-12C and ASTM E3084-17(2022)e1 terminology. It is
     reported as a NIEL exposure proxy, not as device degradation. ASTM
     E722-19(2026) 1-MeV-neutron-equivalent fluence is enabled only for silicon.
-12. The reference GCR scenarios are NASA BON2020 **v2.3** at 1 AU for declared
-    solar-minimum and solar-maximum conditions, including nuclei `Z=1..28`.
-    The exact supported variant, epoch/averaging window, and modulation inputs
-    will be selected from the v2.3 package documentation after the delivered
-    package is inspected; they must not be guessed from generic labels. The
-    reference SEP event is the GOES-16 **September 10-11, 2017 GLE**, retained
-    both as a time-resolved directional series and as a provenance-preserving
-    integrated event fluence. A boundary angular transform still requires
-    explicit physics justification; the adapter must not silently make the
-    data isotropic.
+12. Stage 2 uses checksum-pinned, downloaded **published spectra as validation
+    inputs**. BON2020 is neither a Stage-2 dependency nor a planned production
+    runtime component. The downloaded AMS-02 proton component must drive the
+    normal case parser, primary generator, full Geant4 transport, and proxy
+    writers in an end-to-end test. This is an executable-boundary validation,
+    not permission to call one near-Earth Bartels rotation a complete mission
+    GCR environment. Inclusive elemental populations remain ingestion-only
+    until their isotope composition is supplied. The reference SEP event is
+    the GOES-16 **September 10-11, 2017 GLE**, retained both as a time-resolved
+    directional series and as a provenance-preserving integrated event
+    fluence. A boundary angular transform still requires explicit physics
+    justification; the adapter must not silently make the data isotropic.
 13. CRaTER is an **instrument-faithful validation harness only**. Its geometry,
     selections, and response do not become the generic absorber model or expand
     the product into an instrument-design tool.
@@ -182,7 +184,7 @@ validation.
 |---|---|---|
 | Spectrum schema | Three columns: total kinetic energy, proton value, alpha value | Cannot preserve bin edges, energy/nucleon or rigidity, direction, epoch, uncertainty, covariance, or additional ions |
 | Built-in GCR | Analytic GCR-like proton/alpha approximation | Not a traceable mission environment and lacks heavy GCR ions |
-| Existing BON2020-named files | Headers state `m^-2 sr^-1 s^-1 MeV^-1`; the isotropic parser documents `cm^-2 sr^-1 s^-1 MeV^-1` | A direct run would have a factor-of-10,000 area-unit error; provenance and the energy variable also require verification |
+| Retired BON2020-named files | Unverified legacy artifacts with incompatible documented area units | They remain prohibited inputs; Stage 2 uses pinned published observations and does not depend on BON2020 |
 | Example SEP | Explicitly synthetic | Suitable for software tests only, not radiation predictions |
 | Multiple absorbers | Constructed as an ordered physical stack | Results become selection-order dependent and do not represent independent screenshot cases |
 | TID | Uses Geant4 total energy deposition divided by slab mass | TID must separate ionizing from non-ionizing deposition; the current scorer does not record that separation |
@@ -245,9 +247,10 @@ Adapters must be thin, independently tested translators:
 - `GOESRSGPSAdapter`: imports channel bounds, two sensor directions,
   uncertainties, samples, quality flags, and yaw state without angular
   averaging, then integrates valid records with explicit coverage ledgers;
-- `BON2020Adapter` or equivalent: supplies a selected deep-space GCR scenario,
-  with the BON2020 variant, epoch/solar modulation, radial location, and all
-  required ion species recorded;
+- `PublishedTransportAdmission`: admits only a specifically selected component
+  whose particle identity, energy coordinate, value units, angular meaning,
+  bin edges, and validity are sufficient for transport. The initial admission
+  is the A=1 AMS-02 proton component in validation-only isotropic cases;
 - `AMPSSpectrumAdapter` (later): validates AMPS schema/version, grid,
   normalization, species, energy variable, frame, time interval, and angular
   representation before constructing `SpectrumDataset`.
@@ -660,10 +663,11 @@ sampling or biasing may be added only after unbiased equivalence tests pass.
 ### 3.5 Species and physics coverage
 
 Protons and helium are insufficient for a quantitatively accurate GCR LET or
-dose-equivalent environment. BON2020 covers nuclei through nickel (`Z=28`), and
-the production GCR scenario should retain the species required by the approved
-accuracy target. SEP species coverage must be decided from the selected event
-product; the current GOES fixture is proton-only.
+dose-equivalent environment. A production GCR scenario must retain the heavy
+ion species required by its stated domain and approved accuracy target; the
+Stage-2 proton-only transport case tests software integration, not that
+coverage. SEP species coverage must be decided from the selected event product;
+the current GOES fixture is proton-only.
 
 Transport must create and score all relevant secondary charged particles,
 neutrons, photons, electrons/positrons, ions, and nuclear fragments. Output may
@@ -937,7 +941,9 @@ AMS-02 Bartels-rotation average beginning 2013-11-18: 45 proton and 40 helium
 flux values plus total uncertainties. Units in the HAPI metadata are
 `1/(m2 sr s GeV/n)`.
 
-The Stage-2 adapter uses it for immutable-data and ingestion tests. The HAPI
+The Stage-2 adapter uses it for immutable-data and ingestion tests. In
+addition, its explicit A=1 proton component is admitted to validation-only
+cases and drives the full Geant4/proxy path. The HAPI
 coordinate objects are named `BinProLow`/`BinHeLow` but expose an array called
 `centers`; the pinned AMS supplemental Table SM XXXV establishes that they are
 transformed rigidity-bin lower edges. The adapter preserves independent grids,
@@ -945,15 +951,53 @@ converts rigidity edges to kinetic energy per nucleon, applies the differential
 unit conversion, and retains total uncertainties. It is not a complete GCR
 test environment because it lacks heavier ions, represents a specific near-
 Earth interval, has limited energy coverage, and publishes inclusive helium
-rather than a pure alpha population.
+rather than a pure alpha population. The direct transport test uses only the
+proton component: for A=1, kinetic energy per nucleon equals total proton
+kinetic energy. It samples the published differential intensity as a
+piecewise-constant density over the exact transformed bin edges, applies the
+isotropic plane-crossing factor, and records the finite source-plane incident
+rate. This narrow mapping is not generalized to inclusive helium.
 
-The production GCR end-to-end case should use an approved BON2020 variant or
-another explicitly selected deep-space model with epoch/solar condition and
-the required species. The exact BON2020 v2.3 output coordinate, units, species
-convention, valid domain, and transformation must be taken from the delivered
-package documentation, not inferred here. Existing repository files carrying
-a BON2020 name cannot be accepted until their generation, version, parameters,
-species interpretation, and checksums are recovered.
+The observational source-validation suite now also pins the AMS-02 2025
+solar-cycle He, Li, Be, B, C, N, and O tables. They contain 147 available
+Bartels rotations between May 2011 and November 2022 on 40 bins from 1.92 to
+60.3 GV. `AMS02SolarCycleAdapter` keeps the independent variable as rigidity
+and retains statistical, time-dependent systematic, and time-independent
+systematic errors separately. It does not assign an isotope/mass number or
+convert to energy per nucleon: the tables publish inclusive elements, and an
+isotope mixture has not been supplied.
+
+The optional AMS partition record freezes the first 118 published rotations through
+BR2552 for development and the final 29 rotations beginning BR2553 as a
+chronological holdout for a future source-environment comparison. It is not a
+Stage-2 transport requirement and is not activated by the current direct-use
+test, which consumes the separate BR2460 proton fixture. Missing rotations are
+never interpolated. Per-bin quadrature error bars may be drawn for review, but
+the time-independent term is not treated as independent between rotations.
+
+ACE/CRIS now supplies a second pinned near-1-AU observation: the 2019-12-01
+daily `AC_H3_CRIS` HAPI record contains seven intensity bins and seven counts
+for each element B through Ni. `ACECRISHapiAdapter` takes exact energy bounds
+from the label variables embedded in the pinned CDAWeb V04 CDF. For positive-
+count bins it calculates only the analytic counting-statistic term
+`flux/sqrt(count)`; zero-count bins are retained and explicitly invalid for
+quantitative comparison.
+
+The current ACE factors file and release notes are pinned as documentation,
+but their revised energy bounds differ from the V04 CDF labels. The adapter
+therefore prohibits combining those factors with this fixture. It also leaves
+systematic uncertainty unassigned because the applicable processing-version
+mapping has not been established. The single ACE day is adapter evidence, not
+a model holdout; a defensible time partition requires a declared comparison
+objective and an approved SEP/instrument-quality exclusion rule.
+
+Production GCR cases will use the future AMPS adapter or another explicitly
+selected, mission-applicable environment with the required species, epoch,
+location, and angular boundary. The downloaded observational fixtures are
+test assets, not production defaults. Existing repository files carrying a
+BON2020 name remain prohibited because their generation, version, parameters,
+species interpretation, and checksums have not been recovered; no BON2020
+package or adapter is required to complete Stage 2.
 
 ### 5.2 Measured SEP fixture
 
@@ -1004,8 +1048,8 @@ These tests require no Geant4 and run on every change:
 - unit conversions round-trip and are dimensionally correct;
 - ambiguous metadata causes an explicit failure, not a warning-and-guess.
 
-The newly added `tests/test_reference_spectra.py` implements the initial subset
-for AMS-02, GOES-16 SGPS, and CRaTER.
+`tests/test_reference_spectra.py` implements these checks for both AMS-02
+products, ACE/CRIS, GOES-16 SGPS, and CRaTER.
 
 ### V1: exact software and analytic tests
 
@@ -1334,14 +1378,13 @@ Forbidden carry-over: current `/m2` files cannot enter the `/cm2` legacy path.
 
 ### Stage 2 - published-source adapters
 
-**Status: partially implemented and acceptance-tested on 2026-10-16; not
-complete.** The AMS-02 and GOES-16 adapters, pinned source bytes, transformations,
-event windows, and tests are implemented. The official NASA BON2020 v2.3
-package is not locally available: the NASA catalog requires a repository
-request and secure-email delivery. Its file format and exact supported
-solar-minimum/solar-maximum scenario inputs therefore remain deliberately
-unimplemented until those official bytes and documents are supplied and
-inspected. No independent reviewer is required to complete this stage.
+**Status: complete and acceptance-tested on 2026-10-16.** The two AMS-02
+adapters, ACE/CRIS adapter, GOES-16 adapter, pinned source bytes,
+transformations, uncertainty boundaries, event windows, and tests are
+implemented. A downloaded AMS-02 proton spectrum also drives the full
+production case/Geant4/proxy path. BON2020 is not part of production operation
+and is not a Stage-2 completion dependency. No independent reviewer is
+required for this stage.
 
 Implemented evidence:
 
@@ -1350,6 +1393,14 @@ Implemented evidence:
   transforms rigidity-bin edges to kinetic energy per nucleon, converts
   differential units, retains uncertainties, and keeps inclusive helium from
   being silently labeled as alpha particles;
+- `AMS02SolarCycleAdapter` verifies all seven primary CSV hashes and layouts,
+  common rotation/grid coverage, separate uncertainty components, explicit
+  rotation selection, and missing-rotation rejection while preserving the
+  inclusive elements on their published rigidity coordinate;
+- `ACECRISHapiAdapter` verifies HAPI/CDF/documentation hashes, B--Ni coverage,
+  exact V04 CDF-label energy bounds, daily values/counts, count-derived
+  statistical errors, and zero-count masks. It rejects use of the nonidentical
+  current factor-table bounds and does not invent a systematic error;
 - `GOESRSGPSAdapter` verifies the event definition and extracted-data hash,
   retains every interval start/midpoint/end, both directions and all channels,
   enforces the approved quality predicate, and closes separate valid/rejected/
@@ -1360,12 +1411,23 @@ Implemented evidence:
   `2017-09-10T16:08:00Z` onset is retained as an independent marker only;
 - `shieldSimSourceTool` emits deterministic canonical JSON without invoking
   transport; and
+- `ams02_hapi_component` is a strict validation-only case source. It admits
+  only the AMS A=1 proton component, requires isotropic source mode, samples
+  exact transformed energy-bin edges, and rejects mission-purpose cases,
+  inclusive helium, unsupported units, invalid masks, and non-overlapping
+  energy limits;
+- `stage2_published_transport` independently reconstructs the published
+  proton source integral, verifies the `pi` plane-crossing factor and finite
+  source-plane rate, transports 256 proton histories through the normal
+  multilayer Geant4 geometry, and verifies TID and `H100/10` production
+  outputs and source/hash provenance; and
 - the official NOAA netCDF, complete extracted event series, AMS primary
   supplement, transformation records, and all compact fixtures are checksum-
   pinned in `tests/reference_spectra/manifest.sha256`.
 
 The registered CTest evidence is `stage2_reference_spectra`,
-`stage2_source_adapters`, `stage2_source_tool`, and the dependent
+`stage2_source_adapters`, `stage2_source_tool`,
+`stage2_published_transport`, and the dependent
 `validation_figures` review-artifact generator. The latter archives PNG/SVG
 views and a checksum/caption manifest for every current analytic or
 observational comparison; numerical assertions remain authoritative.
@@ -1374,25 +1436,24 @@ manifest review artifacts for their analytic source, geometry, normalization,
 and threshold-limit checks. Their controlled LET plot is explicitly marked as
 a legacy sanity comparison rather than physical validation.
 
-The remaining completion blocker and exact intake requirements are recorded in
-`data/bon2020_v2_3/README.md`.
+The retired BON2020 intake directory records why its unverified legacy files
+remain prohibited; it is not an active completion gate.
 
 Entry: validated canonical schema and unit system.  
 Work:
 
-- maintain the implemented lossless readers for the pinned AMS-02 and GOES-16
-  fixtures and their strict canonical boundaries;
+- maintain the implemented lossless readers for the pinned AMS-02, ACE/CRIS,
+  and GOES-16 fixtures and their strict canonical boundaries;
 - retain the resolved AMS-02 energy-coordinate semantics and primary-table
   Jacobian evidence;
 - preserve GOES sensor direction, time support, and quality metadata;
-- obtain the licensed NASA BON2020 v2.3 package and record its delivered bytes,
-  license, checksum, documentation, and supported variants; after inspection,
-  record and approve the exact epoch/averaging window and modulation inputs;
-- generate the approved v2.3 scenarios at 1 AU for both declared solar-minimum
-  and solar-maximum conditions with `Z=1..28`, preserving energy-per-nucleon
-  semantics and the valid model domain;
-- implement the GOES-16 September 10-11, 2017 GLE directional time series and
-  its provenance-preserving event-fluence integration. Keep both sensor
+- keep the downloaded AMS proton path wired through the same production case,
+  source sampling, Geant4 transport, and proxy writers used by later AMPS
+  inputs; do not introduce a test-only transport implementation;
+- sample documented bins using their exact edges and independently verify the
+  integrated intensity, angular factor, plane area, and incident rate;
+- maintain the implemented GOES-16 September 10-11, 2017 GLE directional time
+  series and its provenance-preserving event-fluence integration. Keep both sensor
   directions separate, do not interpolate missing/rejected samples, and report
   per-channel coverage and incomplete status. Record the published event onset
   as the inclusive UTC start and the published event end as the exclusive UTC
@@ -1406,14 +1467,22 @@ Tests: V0 plus round-trip serialization, analytic unit/Jacobian tests, rejected
 ambiguity and contract-mutation tests, published-row spot checks, exact
 start/midpoint/end conversion, constant/linear/partial-boundary integration,
 independent quality-predicate mutations, and missing/flagged-bin coverage
-tests. These implemented tests pass; BON2020-specific tests cannot be written
-accurately before the official package is inspected.  
+tests. The source tests also cover AMS uncertainty-component retention and
+chronological partition boundaries, ACE `flux/sqrt(count)` statistics,
+zero-count masking, the V04/current-factor-table mismatch, and direct
+downloaded-spectrum Geant4/proxy execution. The end-to-end test also rejects
+inclusive-helium transport, beam relabeling, and mission-purpose use of the
+near-Earth fixture. These implemented tests pass.
 Exit evidence: byte-pinned raw inputs, transformation manifests, independently
-calculated spot checks, explicit scenario labels, and project-owner acceptance.
-Stage 2 has no independent-reviewer sign-off requirement.  
-Forbidden carry-over: AMS-02 and GOES fixtures remain ingestion tests until
-their stated blockers are resolved; neither may be relabeled as the other
-environment class.
+calculated spot checks, an end-to-end Geant4/proxy result with source hashes,
+explicit test-only labels, and project-owner acceptance. Stage 2 has no
+independent-reviewer sign-off requirement.
+Forbidden carry-over: the AMS proton fixture is a transport test input, not a
+complete deep-space environment or production default. AMS inclusive helium,
+AMS He--O, and ACE B--Ni remain ingestion-only because isotope composition is
+not defined. GOES remains ingestion/integration-only until its directional
+boundary mapping is approved. None may be relabeled as another environment
+class.
 
 ### Stage 3 - independent geometry and response engine
 
@@ -1676,7 +1745,7 @@ Each gate archives:
 The project decisions needed for the Stage 0 technical freeze are resolved in
 Section 1.1. In particular, accuracy semantics, finite-absorber TID,
 electronic-LET outputs, primary-proton `H100/10`, ASTM/ECSS device-damage
-terminology, the two BON2020 conditions, the GOES-16 event representations,
+terminology, downloaded published spectra for Stage-2 tests, the GOES-16 event representations,
 the validation-only CRaTER harness, explicit user-overridable materials, and
 review authority are no longer open questions.
 
@@ -1692,31 +1761,23 @@ assumption. The named capability remains disabled until its input is available:
    SiC composite, or regolith must supply the specific property record described
    in Section 3.3.5. Until then, only the explicitly labeled reference/trade-
    study records may run, and generic templates fail input validation.
-2. **BON2020 artifacts:** NASA BON2020 v2.3 is approved. Its catalog delivery
-   is gated behind a repository request/secure email and is not present. Stage
-   2 must obtain and
-   pin the delivered package, then inspect its documentation before fixing the
-   exact supported variant, epoch/averaging window, and modulation inputs for
-   the approved solar-minimum and solar-maximum cases. It must record the valid
-   energy domain, license, generated files, and checksums. These are sourced
-   implementation artifacts, not values inferred from existing filenames.
-3. **GOES boundary mapping:** The selected source event is the September 10-11,
+2. **GOES boundary mapping:** The selected source event is the September 10-11,
    2017 GLE. The measurements retain both sensor directions, and the approved
    event-onset/event-end, source-start/derived-midpoint, and missing/quality-
    data rules are implemented and recorded in the event manifest. Transport
    requires source metadata
    sufficient to map the look directions/acceptance into the simulation frame;
    otherwise only data ingestion and event integration are enabled.
-4. **NIEL tables:** Stage 5 must pin the SR-NIEL/equivalent release and exact
+3. **NIEL tables:** Stage 5 must pin the SR-NIEL/equivalent release and exact
    target/species/table conventions consistent with ASTM E3084 and, for silicon
    `n_eq`, ASTM E722. Unsupported materials/species remain disabled rather than
    extrapolated.
-5. **CRaTER preregistration:** Before Stage 8 implementation uses observational
+4. **CRaTER preregistration:** Before Stage 8 implementation uses observational
    values, the independent reviewer must archive the instrument reconstruction,
    interval-quality rules, calibration interval(s), chronologically held-out
    blind interval(s), statistics, and acceptance criteria. The pinned product
    is selected; the split awaits recovery of its full method/quality metadata.
-6. **Named reviewers:** Stage 2 is exempt from an independent-reviewer sign-off
+5. **Named reviewers:** Stage 2 is exempt from an independent-reviewer sign-off
    and closes on project-owner acceptance of its pinned-source and adapter-test
    evidence. Later physical capability and observational-validation gates that
    require independent review record the reviewer by name, affiliation/role,
@@ -1733,6 +1794,12 @@ assumption. The named capability remains disabled until its input is available:
 - AMS-02 time-resolved proton/helium data: [AMS Collaboration,
   2018](https://doi.org/10.1103/PhysRevLett.121.051101); [NASA SPASE data
   record](https://spase-metadata.org/NASA/NumericalData/ISS/AMS-02/P27D).
+- AMS-02 solar-cycle He--O spectra: [AMS Collaboration,
+  2025](https://doi.org/10.1103/PhysRevLett.134.051001); [official tables and
+  publication record](https://ams02.space/publications/202403).
+- ACE/CRIS B--Ni daily Level-2 spectra: [NASA SPASE data
+  record](https://spase-metadata.org/NASA/NumericalData/ACE/CRIS/L2/P1D);
+  [ACE Science Center Level-2 data](https://izw1.caltech.edu/ACE/ASC/level2/lvl2DATA_CRIS.html).
 - GOES-R SGPS September 2017 data/calibration: [NOAA/NCEI event
   directory](https://www.ngdc.noaa.gov/stp/space-weather/satellite-data/satellite-systems/goesr/solar_proton_events/sgps_sep2017_event_data/);
   [Sandberg et al., 2022](https://doi.org/10.1029/2021SW002750).

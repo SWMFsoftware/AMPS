@@ -425,7 +425,7 @@ Options ParseArguments(int argc, char** argv){
   }
   if(o.shieldThickness>100.0*mm && !o.caseDefinition)
     G4Exception("ParseArguments","BadInput",FatalException,"Legacy single shield thickness must be <= 100 mm");
-  if(!o.spectrumFile.empty() && o.legacySpectrumMetadataFile.empty())
+  if(!o.spectrumFile.empty() && o.legacySpectrumMetadataFile.empty() && !o.caseDefinition)
     G4Exception("ParseArguments","BadInput",FatalException,
                 "--spectrum requires --legacy-spectrum-metadata=<json>; numeric columns alone are ambiguous");
   if(o.doSweep){

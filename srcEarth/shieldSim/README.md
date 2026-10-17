@@ -8,10 +8,13 @@ phantom.
 
 ## Implementation status
 
-Stage 1 of the development roadmap is implemented. Stage 2 is implemented for
-the pinned AMS-02 ingestion spectrum and GOES-16 GLE72 time series/event
-integration, but remains incomplete because the official NASA BON2020 v2.3
-delivery is not present. The science-facing case path is a strict
+Stages 1 and 2 of the development roadmap are implemented. Stage 2 has strict
+adapters and pinned data for the original AMS-02 proton/helium fixture, the
+2025 AMS-02 He--O solar-cycle tables, ACE/CRIS B--Ni, and the GOES-16 GLE72
+time series/event integration. Its downloaded AMS-02 proton fixture also
+drives an end-to-end validation case through the primary generator, Geant4,
+TID, and `H100/10`. BON2020 is not used in production and is not a Stage-2
+dependency. The science-facing case path is a strict
 `shieldSim.case.v1` JSON file and provides:
 
 - one through five ordered shield layers, each limited to an inclusive 100 mm
@@ -48,11 +51,15 @@ science-facing outputs.
 The implementation and evidence needed to turn the current prototype into a
 physically qualified radiation-proxy model are defined in
 [`development_and_validatoin.md`](development_and_validatoin.md). Published
-AMS-02 GCR and GOES-16 SEP fixtures, plus a CRaTER observational LET product,
-are documented under `tests/reference_spectra/`. The AMS and GOES products now
-have dedicated, Geant4-free Stage-2 adapters. They remain ingestion/event-
-integration products, not approved transport boundary conditions, and must not
-be passed through the legacy three-column spectrum interface.
+AMS-02 and ACE/CRIS GCR observations, GOES-16 SEP fixtures, and a CRaTER
+observational LET product are documented under `tests/reference_spectra/`.
+Dedicated Stage-2 adapters preserve their published binning,
+species, counts/uncertainties, timing, and quality semantics. They remain
+ingestion/event-integration products except for one narrow transport-test
+admission: the explicit A=1 proton component of the original AMS fixture may
+be used only by `verification_test` cases in isotropic mode. It is not a
+complete mission GCR environment or a production default. Published data must
+not be passed through the legacy three-column spectrum interface.
 
 The package retains the old CLI for compatibility while adding versioned core
 components:
@@ -158,7 +165,7 @@ If CMake cannot find Geant4 automatically, provide `Geant4_DIR`, for example:
 cmake .. -DGeant4_DIR=/path/to/geant4/lib/Geant4-11.*/
 ```
 
-Run all registered Stage-1 and available Stage-2 tests from the build directory:
+Run all registered Stage-1 and Stage-2 tests from the build directory:
 
 ```bash
 ctest --output-on-failure
@@ -170,10 +177,14 @@ overrides, spectrum metadata, unit conversion, and accuracy mathematics.
 six-layer and 100 mm boundaries and checks required fields, units, ranges,
 accuracy precedence, material-dependent thickness, and absorber-order
 invariance. `stage2_reference_spectra`, `stage2_source_adapters`, and
-`stage2_source_tool` validate pinned AMS/GOES bytes, transformations, strict
-schemas, dual event windows, sample
+`stage2_source_tool` validate pinned AMS/ACE/GOES bytes and transformations.
+`stage2_published_transport` independently integrates the downloaded AMS-02
+proton bins and verifies that they drive the normal case parser, exact-bin
+source sampler, Geant4 transport, and TID/H100/10 outputs. Together they cover
+strict schemas, dual event windows, sample
 timing, quality rejection, coverage accounting, direction retention,
-determinism, and analytic integration cases.
+determinism, uncertainty-component retention, zero-count masking, and analytic
+integration/statistical-error cases.
 
 The dependent `validation_figures` test renders every current analytic or
 observational comparison after its numerical tests pass. It writes PNG, SVG,
@@ -185,7 +196,11 @@ build/validation_figures/
 ├── stage1_case_boundaries_analytic.{png,svg}
 ├── stage1_transport_smoke_analytic.{png,svg}
 ├── stage2_ams02_analytic_comparisons.{png,svg}
+├── stage2_ams02_published_transport_analytic.{png,svg}
 ├── stage2_ams02_observation_adapter.{png,svg}
+├── stage2_ams02_solar_cycle_observation_adapter.{png,svg}
+├── stage2_ace_cris_observation_adapter.{png,svg}
+├── stage2_ace_cris_observation_comparisons.{png,svg}
 ├── stage2_goes16_analytic_comparisons.{png,svg}
 ├── stage2_goes16_observation_event.{png,svg}
 ├── crater_observation_reference.{png,svg}
@@ -221,26 +236,57 @@ starting Geant4. A successful conversion does not authorize transport.
   --interpretation=tests/reference_spectra/gcr/ams02_20131118_interpretation.v1.json \
   --output=ams02_canonical.json
 
+./shieldSimSourceTool ams02-cycle \
+  --interpretation=tests/reference_spectra/gcr/ams02_2025/interpretation.v1.json \
+  --bartels-rotation=2581 \
+  --output=ams02_br2581_canonical.json
+
+./shieldSimSourceTool ace-cris \
+  --info=tests/reference_spectra/gcr/ace_cris/ac_h3_cris_hapi_info.json \
+  --data=tests/reference_spectra/gcr/ace_cris/ac_h3_cris_20191201_all.csv \
+  --interpretation=tests/reference_spectra/gcr/ace_cris/interpretation.v1.json \
+  --output=ace_cris_20191201_canonical.json
+
 ./shieldSimSourceTool goes16 \
   --csv=tests/reference_spectra/sep/goes16_sgps_gle72_timeseries.csv \
   --definition=tests/reference_spectra/sep/goes16_gle72_event_definition.v1.json \
   --output=goes16_gle72_fluence.json
 ```
 
-The AMS output keeps proton and inclusive mixed-isotope helium as separate
-components and retains the energy-per-nucleon coordinate and uncertainties.
+The original AMS output keeps proton and inclusive mixed-isotope helium as
+separate components and retains the energy-per-nucleon coordinate and total
+uncertainties. The 2025 AMS output keeps He--O on the published rigidity grid,
+retains all three uncertainty components, and assigns no isotope or Geant4 ion
+to inclusive elemental measurements. The ACE/CRIS output retains B--Ni CDF
+energy bounds, daily counts, count-derived statistical errors, and explicit
+invalid masks for zero-count bins; systematic errors remain disabled pending
+resolution of the V04/current-factors version mapping.
 The GOES output contains one ledger for every event-window × sensor × channel,
 including valid, rejected, and missing seconds. It does not combine published
 uncertainties because their temporal covariance is unavailable.
 
-BON2020 v2.3 is a hard Stage-2 blocker, not an inferred implementation task.
-NASA distributes the package through a repository request/secure-email flow.
-The required intake evidence and prohibited assumptions are documented in
-`data/bon2020_v2_3/README.md`; the adapter and solar-minimum/solar-maximum
-scenarios remain disabled until those official bytes and documentation are
-provided and inspected.
+The `ams02_hapi_component` case format is intentionally narrower than the
+source tool. It accepts only `component_id: "proton"`, requires an isotropic
+`verification_test`, and samples piecewise-constant intensity over the exact
+published bin edges. Inclusive helium, AMS He--O, ACE B--Ni, and GOES are not
+transport-admitted because their isotope or directional boundary information
+is insufficient. See `examples/README.md` for the runnable validation case.
 
-## Versioned Stage-1 cases
+`data/bon2020_v2_3/README.md` records a retired intake proposal and explains
+why the unverified BON2020-named legacy files remain prohibited. No BON2020
+software or data are required for Stage 2 or planned as a production runtime
+dependency.
+
+The complete acquisition recipe for the new GCR observations is:
+
+```bash
+python3 scripts/download_gcr_validation_data.py
+```
+
+It verifies reviewed SHA-256 values and refuses changed upstream or local
+bytes. CTest is offline and uses the committed immutable copies.
+
+## Versioned cases
 
 Validate and serialize the example without starting transport:
 
@@ -279,6 +325,10 @@ contracts are:
 - A numeric spectrum is accepted only with a
   `shieldSim.spectrum_metadata.v1` sidecar. Rows must already be strictly
   increasing and finite; the program never sorts, clamps, or discards them.
+- A downloaded AMS spectrum uses `format: "ams02_hapi_component"` with pinned
+  info, data, and interpretation paths plus `component_id: "proton"`. This
+  path is validation-only; the exact contract and runnable example are in
+  `examples/stage2_ams02_proton_validation_case.json`.
 
 ### Adding a future arbitrary absorber shape
 
@@ -607,9 +657,9 @@ angular model, bin representation/edge rule, science status, and provenance.
 Single-row spectra must declare a bin width. Unknown fields, malformed rows,
 negative/fill/NaN values, duplicate or descending energies, and an angular-mode
 conflict are fatal. This adapter is for synthetic tests and explicitly
-qualified user data. The published AMS-02, GOES-16, BON2020, and future AMPS
-products require their dedicated adapters; relabeling them as legacy columns
-is prohibited.
+qualified user data. Published AMS-02 and GOES-16 products and future AMPS
+products require their dedicated adapters; relabeling them—or an unverified
+BON2020-named legacy file—as legacy columns is prohibited.
 
 In `beam` mode, spectrum columns are interpreted as differential pencil-beam source rates, for example:
 

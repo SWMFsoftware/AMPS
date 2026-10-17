@@ -61,21 +61,35 @@ layers:
 python3 tests/test_reference_spectra.py
 ```
 
-They verify checksum-pinned AMS-02 GCR, GOES-16 SGPS SEP, and CRaTER LET
-fixtures under `tests/reference_spectra/`. These checks establish data
-provenance and retained semantics only; they are not transport or observational
-validation. See `development_and_validatoin.md` for the staged validation gates.
+They verify checksum-pinned AMS-02 GCR, ACE/CRIS GCR, GOES-16 SGPS SEP, and
+CRaTER LET fixtures under `tests/reference_spectra/`. These checks establish
+data provenance and retained semantics. The separate
+`stage2_published_transport` test establishes that one admitted published
+proton component reaches the normal Geant4/proxy path. Neither result is a
+claim of observational agreement or complete mission-environment coverage.
+See `development_and_validatoin.md` for the staged validation gates.
 
 ## Stage-2 published-source adapter tests
 
 The CTest targets `stage2_reference_spectra`, `stage2_source_adapters`, and
-`stage2_source_tool` exercise the production Stage-2 boundary without Geant4
-transport. They cover:
+`stage2_source_tool` exercise the production Stage-2 ingestion boundary
+without Geant4 transport. `stage2_published_transport` then exercises the
+end-to-end executable boundary. Together they cover:
 
 - AMS primary-table rigidity-edge to kinetic-energy-per-nucleon conversion,
   the differential-flux Jacobian, area/energy unit conversion, independent
   proton and helium grids, and the prohibition against relabeling inclusive
   helium as pure alpha particles;
+- the 2025 AMS-02 He--O solar-cycle tables: all 147 available rotations, all
+  40 rigidity bins, separate statistical/time-dependent/time-independent
+  errors, missing-rotation rejection, and no assumed isotope assignment;
+- the optional preregistered AMS chronological development/holdout partition
+  for a future source-environment comparison;
+- ACE/CRIS B--Ni daily values, exact energy bounds from the pinned V04 CDF,
+  counts, analytic `flux/sqrt(count)` statistical errors, and explicit
+  zero-count masks;
+- an enforced prohibition against combining the V04 CDAWeb values with the
+  nonidentical bounds in the separately pinned current ACE factors table;
 - strict hashes, versions, field sets, canonical round trips, deterministic
   output, and deliberate source-contract mutations that must fail;
 - NOAA interval-start to midpoint/end conversion for every five-minute SGPS
@@ -89,14 +103,20 @@ transport. They cover:
 - closed valid/rejected/missing time ledgers and explicit incomplete status;
   and
 - analytic constant/linear/partial-boundary cases plus an independently
-  calculated published P7 event-fluence spot check.
+  calculated published P7 event-fluence spot check;
+- independent reconstruction of `sum(J_i Delta E_i)` from the downloaded AMS
+  rigidity edges and proton values, plus the isotropic `pi` factor, source
+  area, and incident-rate identity; and
+- a deterministic 256-history multilayer Geant4 run producing TID and
+  `H100/10`, with rejection tests for inclusive helium, beam relabeling, and
+  mission-purpose use of the validation fixture.
 
 `stage2_source_adapters` deliberately prints one ledger assertion per output
 channel so a direction-, window-, or energy-specific failure is localized.
-The tests do not claim that the near-Earth AMS spectrum is a BON2020 deep-space
-scenario or that directional GOES measurements are an isotropic transport
-boundary. BON2020 v2.3 remains disabled until the official gated delivery is
-available.
+The tests do not claim that the near-Earth AMS spectrum is a complete
+deep-space scenario or that directional GOES measurements are an isotropic
+transport boundary. BON2020 is not used in production and is not required for
+Stage 2.
 
 ## Validation figures
 
@@ -112,10 +132,13 @@ production source tool, and writes review artifacts to:
 <build>/validation_figures/manifest.json
 ```
 
-The eight figure subjects are Stage-1 core formulas, Stage-1 case boundaries,
-Stage-1 analytic slab masses/ledger closure, AMS primary-table analytic checks,
-AMS observation/adapter agreement, GOES analytic/oracle integration, GOES
-event observations/coverage, and the CRaTER observational reference. The
+The twelve figure subjects are Stage-1 core formulas, Stage-1 case boundaries,
+Stage-1 analytic slab masses/ledger closure, original AMS primary-table
+analytic checks, the end-to-end AMS source-integral check, original AMS
+observation/adapter agreement, AMS-02 2025
+solar-cycle observation/adapter agreement, ACE/CRIS spectra and their
+observation/statistical-error spot checks, GOES analytic/oracle integration,
+GOES event observations/coverage, and the CRaTER observational reference. The
 manifest records captions, byte sizes, and SHA-256 hashes.
 
 The standalone Geant4 layer runners extend that coverage. They invoke

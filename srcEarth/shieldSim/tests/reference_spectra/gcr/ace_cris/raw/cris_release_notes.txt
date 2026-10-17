@@ -1,0 +1,570 @@
+            CRIS Level 2 Data Release Notes
+=========================================================================
+
+January 23, 2013  Kelly Lave
+REANALYSIS OF THE FULL CRIS DATASET 
+
+The CRIS Level 2 data product has been re-evaluated following changes made to
+the data cuts and the calculation of the geometry factors and SOFT hodoscope
+efficiencies.  Bugs in the positioning and thicknesses of the silicon detector
+stacks and the calculation of the depth of incident particles have been
+corrected.  This resulted in a small change in the geometry factors (less than
+~1%).  Note that the geometry factors tabulated for the user are slightly
+different for each species in a given energy level.  This is expected since we
+first calculate the differential geometry factor per unit energy and then
+integrate over the energies of the particles stopping in the given energy
+level.  The isotopic composition used for this calculation comes from the
+values posted in the contributed CRIS level 3 data product
+(www.srl.caltech.edu/ACE/ASC/DATA/level3/cris/isotopic_composition.html). The
+tabulated elemental geometry factors are a weighted average of the isotopic
+geometry factors.
+
+The corrections described above also change the number of events accepted in
+each energy level.  For abundant species (i.e. carbon, oxygen, silicon, and
+iron) the number of events change by less than ~1%; rarer species (i.e.
+phosphorus, chlorine, and scandium) changed by less than ~3%; cobalt, which
+has limited statistics, changed by less than ~5%.
+
+The calculation of the SOFT efficiencies now implements the work of de Nolfo,
+et. al (2006).  These efficiencies are parameterized by the energy loss in
+silicon at the top of the instrument for particles stopping in each of the
+four stacks of silicon detectors; they have been reproduced in Lave (2012a,
+2012b).  The boron efficiencies change by up to 1.5%, while heavier species
+change by less than 0.7%; the heaviest species, such as iron, change by less
+than 0.2%.
+
+The available documentation
+(www.srl.caltech.edu/ACE/ASC/DATA/level2/cris/cris_factors.txt) now includes
+additional information previously unavailable.  In addition to the energy
+bands, recommended central energies, and geometry factors, we now include the
+SOFT efficiencies, spallation correction factors, and the uncertainties on the
+spallation factors.  THIS NEW FACTORS FILE SHOULD BE USED WITH THE NEW LEVEL 2
+DATA!  The uncertainties on the spallation correction factors are determined
+by assuming a 10% uncertainty on the total interaction cross sections.  Note
+that the spallation factors assume that all particles interacting in the CRIS
+instrument are identified and removed from the analysis; although there is
+reasonable certainty that the efficiency of rejection is high, this has not
+yet been confirmed.
+
+The appropriate systematic uncertainties on the CRIS intensities should be
+calculated for each charge and energy bin.  Combine in quadrature the
+contributions due to the geometry factors (2%), the SOFT efficiencies (2%),
+and the spallation (given by the absolute uncertainties in the data file
+discussed above).
+
+For supplemental information regarding the calculation of the CRIS
+intensities, please refer to George, et al. (2009) and Lave (2012a, 2012b).
+
+References:
+G. A. de Nolfo, et. al. Adv. Sp. Res., Vol. 38, pg 1558, 2006.
+J. S. George, et al. ApJ 698, pg 1666, 2009.
+
+K. A. Lave.  "The Interstellar Transport of Galactic Cosmic
+Rays", Ph. D. Thesis, Washington University in St. Louis,
+http://openscholarship.wustl.edu/etd/707, 2012a.
+
+K. A. Lave.  Thesis Erratum,
+www.srl.caltech.edu/ACE/ASC/DATA/level3/cris/Erratum_11-20-122.pdf, 2012b.
+
+
+
+
+- Apr 2, 2010 Rick Leske
+  NEW CRIS Level 2 Data
+
+The CRIS Team has re-evaluated the production of CRIS Level 2 data,
+implementing several changes that were incorporated in the analysis
+presented in George et al., ApJ 698, 1666 (2009).  These include
+revisions to the hodoscope grammage, interaction probabilities, and
+data cuts and geometry factors for events stopping deep in the
+instrument.  In addition, a bug in the maps of the SOFT hodoscope has
+been repaired, slightly changing the calculation of trajectories, and
+the parsing of the data telemetry stream has been made more robust,
+which results in the recovery of a small number (~0.1%) of additional
+events.  The overall effect of these changes is typically to reduce the
+absolute intensities by a small amount, by up to a few percent.  Together
+these changes have some effect on the width and centers of the CRIS
+energy bins; PLEASE USE THE NEW ENERGY VALUES (available at
+http://www.srl.caltech.edu/ACE/ASC/DATA/level2/cris/cris_energy_bands.txt)
+WITH THESE NEW DATA!
+
+
+***CAUTION*** CRIS DATA ARE OUT OF CALIBRATION BETWEEN 28 AUGUST 1997
+AND 4 DECEMBER 1997.  Early in the mission the camera discriminator
+in the SOFT hodoscope was adjusted several times.  Between 28 Aug and
+4 Dec 1997 the discriminator settings were not optimal, resulting in
+a bias against heavily-ionizing particles in the hodoscope.  For species
+below about Si (Z=14) we do not notice any problems, but the intensities
+reported in the CRIS level 2 data (both in this new release and in all 
+previous versions) are too low during this period for heavier species, 
+by ~10% for Fe (Z=26) to as much as ~30% for Ni (Z=28).  This fact was 
+overlooked in the George et al. paper cited above and will be addressed 
+in an upcoming erratum.  We are working to determine the appropriate 
+correction factors and will implement them in a future level 2 release 
+when they are available. 
+
+=========================================================================
+- Mar 3, 2010 Rick Leske
+  Unintended Data Change
+
+The CRIS Team has re-evaluated the production of CRIS Level 2 data, 
+implementing several changes that were incorporated in the analysis 
+presented in George et al., ApJ 698, 1666 (2009).  These include 
+revisions to the hodoscope grammage, interaction probabilities, and 
+data cuts and geometry factors for events stopping deep in the 
+instrument.  In addition, a bug in the maps of the SOFT hodoscope has
+been repaired, slightly changing the calculation of trajectories, and
+the parsing of the data telemetry stream has been made more robust, 
+which results in the recovery of a small number (~0.1%) of additional
+events.  The overall effect of these changes is typically to reduce the
+absolute intensities by a small amount, by up to a few percent.  At 
+present we are evaluating the effects of these changes on our energy
+bins (which are expected to be at the few percent level), and once 
+this is completed in a few weeks we will release the new data.
+
+Unfortunately, test files using this new analysis were inadvertently
+placed on the CRIS level 2 site on Feb 24, 2010, 2:40pm PST, replacing 
+the older files there; also data from Bartels Rotations 2407 and 2408
+were generated using the new analysis.  CRIS DATA FILES DOWNLOADED 
+BETWEEN FEB 24 and MAR 3 2010, OR ANYTHING FROM BR 2407 DOWNLOADED 
+PRIOR TO MAR 3, SHOULD NOT BE USED WITHOUT THE APPROPRIATE CHANGES TO 
+THE ENERGY BINS, WHICH WE ARE STILL WORKING ON.  For the time being, we 
+are restoring the old files to the site until we have finished 
+evaluating the new ones.  
+
+We thank the users who called this issue to our attention, and we 
+apologize for any inconvenience this may have caused.
+
+=========================================================================
+- Nov 7, 2003 Rick Leske
+  Energy Band Information Update
+
+Up until now the energy band info included only the minimum energy and
+maximum energy for each element for each detector range.  These values
+are for the characteristic energy band which is defined as the minimum 
+and maximum energy required to stop in each range at the median zenith 
+angle for that range.  The incorporation of this characteristic energy
+band into the flux and geometry factor calculations is described in more
+detail below in the entry for Level 2 Software, Version 1.0   July 26, 
+1999.  None of the geometry factors, energy intervals, or fluxes have
+changed.  However, we now add to the energy band documentation file a 
+recommended central energy point, which is defined as the arithmetic 
+average of the (isotope-weighted) absolute min and max calculated energies 
+for each range.  Note that this is NOT the average of the upper and lower 
+values of the characteristic energy band.
+
+=========================================================================
+- Aug 16, 2002, Jeff George
+  Quiet Time Criteria Update
+
+The CRIS quiet time criteria defined below for Level 2 data was found
+to allow periods of solar activity in which SOFT is partially
+saturated with triggers from low energy particles.  The criteria
+removed periods in which the SOFT trigger rate was essentially zero
+but did not remove the transitions from normal operation to the fully
+saturated state.  This became very apparent during the July 22, 2002
+SEP event in which the particle fluxes kept the SOFT trigger rate in
+this intermediate state for several days.  These periods need to be
+removed as the instrument is not operating in a nominal state.
+
+We have corrected the problem by adding one additional test to the
+quiet time criteria for basic instrument operation.  Now the average
+of the four E1 detector rates is required to be below 300 Hz.  This
+has no effect on normal operation when the rate is typically 10-20
+Hz.  The 300 Hz level corresponds well to the point at which the SOFT (0 AND
+1) trigger rate begins to saturate.  The new criterion rejects periods
+with normal SOFT rates but high E1 rates, exactly the transition
+conditions that were a problem.  The new condition removes a total of
+5.8 days (0.3%) from the full mission to date.  Nearly 2 days
+corresponds to the July 22, 2002 event alone.  All of the other
+rejected periods come from short transitions of a few hours each
+scattered throughout the mission.  There is no effect on the data for
+periods outside these transitions during SEP events.
+
+All CRIS Level 2 data available from the ACE Science Center was
+reprocessed using this additional quiet time criterion on Aug 16,
+2002.  Data is currently reported through Bartels Rotation 2306.
+
+
+
+=========================================================================
+- Level 2 Software, Version 2.0	
+  (updated Mar 20, 2002 by Jeff George)
+  (all CRIS Level 2 data available from the ACE Science Center was
+   reprocessed using this new code on Mar 21, 2002)
+
+This new version of the Level 2 processing software is a complete
+rewrite of Nathan Yanasak's original code to make the procedure much
+more modular, efficient, and readable.  It corrects several minor
+errors in matching event and rate data.  We also took advantage of the
+need for reprocessing the data to implement a new, objective criterion
+for selecting periods during which the instrument is operating at full
+performance and there is little possibility that the galactic cosmic
+ray spectra are contaminated by solar energetic particle events.
+
+The new software package processes a single Bartels rotation at a
+time, improving the speed and reducing the memory requirements. A Perl
+script automatically extracts event, rate, and housekeeping data.  All
+CRIS data are reported to the ground in 256 second instrument cycles
+stamped with a spacecraft clock time for each cycle.  In keeping with
+this format, the new code works with an efficient mask for selecting
+valid data periods on a cycle by cycle basis.  Any mask index which
+cannot be addressed by a valid clock time in the rate data is declared
+missing.  Because rate and event data are physically reported in
+different cycles in the spacecraft telemetry, the index immediately
+following a missing cycle is also rejected.  Instrument performance
+and solar activity criteria flags (described below) are also applied
+directly to the mask array.  A single loop through the mask array
+indices generates fluxes only for known valid periods and applies -999
+fill values for the remainder.  This procedure makes it extremely
+difficult to erroneously report fluxes for invalid periods.
+
+Data provided to the public will continue to be averaged on hourly,
+daily, and 27-day timescales.  In addition, the factors used to
+calculate the fluxes from the instrument counts remain identical to
+those used in the previous Yanasak code and described in previous
+releases. 
+
+    Instrument Performance and Quiet Time Criteria:
+
+Data from any given instrument cycle must pass a set of minimum
+criteria to be considered "valid":
+   1)  Spacecraft telemetry frames for both the event and rate data
+       	must exist and have been received without error on the ground.
+   2)  The SOFT multi-channel plate (MCP) high voltage must on and at
+	normal values.  During high rate periods (i.e., during solar
+	energetic particle events) the current limits on the SOFT MCP
+	trip off and the instrument must be manually commanded back on
+	when the event is over.
+   3)  The SOFT trigger rate (the logical AND of the two trigger
+	planes)	must not exceed 5kHz.  The SOFT trigger is
+	edge-detected and at high rates there is so much ambient light
+	in the fibers that the trigger level generally remains high
+	and few if any event triggers are generated.
+   4)  The fractional livetime for Z>2 particles must be above 60%.
+	CRIS livetime is typically over 80% and the instrument is
+	capable of performing even when the available livetime is
+	low.  Such periods introduce a large correction to the flux
+	calculation, however, so we prefer to simply reject them.
+
+These criteria define the minimum requirements for valid data and
+remove only ~7% of all time since launch. The purpose of the Level 2
+data, however, is to provide a clean sample of galactic cosmic-ray
+data.  As such, we impose an additional tighter restriction on the
+SOFT trigger rate to avoid even the possibility of contamination by
+solar energetic particles.
+
+   5)  The SOFT trigger rate (logical AND of the two trigger planes)
+	must not exceed 500Hz.
+
+Each of these criteria are applied individually to each instrument
+cycle and with 5), remove about 13% of the time in the full
+mission-to-date.   By contrast, the previous code used a very
+conservative and somewhat subjective criterion that rejected entire
+days.  That code rejected ~43% of the full mission data up to this point.
+
+
+	Event and Rate matching errors corrected in this release
+
+Rate data for a given instrument cycle is physically reported in the
+telemetry for the next instrument cycle.  Because of this, the
+previous Level 2 code version matched events from one spacecraft clock
+timestamp with the fractional livetime reported with the next
+timestamp.  We recently realized that this correction is already being
+made in the Level 1.1 processing where the timestamps for the rate
+data are corrected to match those of the cycle which contains the
+events for which the rates are being reported.  This also affects
+which cycles are rejected due to missing rates.  CRIS data are
+normally quite stable and the rates do not typically vary quickly so
+this is expected to have little impact on the previously reported
+fluxes.  Nevertheless, the error is corrected in this release.
+
+
+=========================================================================
+- Level 2 Software, Version 1.3	(updated February 1, 2001 by Nathan Yanasak)
+
+No major structural changes were made in the V1.2 programs listed above.
+However, two errors in the data processing were discovered.  The first error
+occured as a result of switching from ce1 to ce2 data (see V1.2 discussion).
+A general cut applied to data from CRIS eliminates particles which pass
+close to the outside edges of the active detector region.  The intent of this
+cut is to eliminate particles which exit the detector through the sides.
+During the switch from ce1 to ce2 data, the routine in the data extraction
+software which handles this cut was altered, decreasing the size of the cut.
+The calculated geometry factor assumed the older cut from the V1.0 and V1.1
+data set, which was inappropriate for the new cut in V1.2.  After correcting 
+the geometry factor so that it corresponded to a larger active volume in the
+detector, the flux for level 2 data from V1.3 software decreased by 
+approximately 4-5%.
+
+The second error is associated with the calculation of the event median angle.
+Comparison of the median angle calculated in the V1.2 factors.pro program with
+angles calculated by another independent program revealed an error in the V1.2
+code responsible for the angle calculation.  With the error corrected, the new
+values of the median theta are given below:
+
+instrument range | median theta      
+=================================
+       2	 |    20.1
+       3	 |    19.9
+       4 	 |    19.7
+       5         |    19.3
+       6	 |    18.9
+       7	 |    18.9
+       8	 |    18.6
+
+The increase in the values of median theta give slightly increased average 
+values for the corrected energy bands.  This increase depends on the depth of
+the reported energy band in the detector, ranging from ~0% for range 2 to 
+~1.5% for range 8.
+
+The systematic uncertainties reported above at the end of the section entitled
+"General Information"--15% for low-Z elements and 10% for higher-Z elements--
+need to be re-evaluated in light of the changes which took place in V1.1, V1.2,
+and V1.3 of the level 2 code.  The primary sources of uncertainty in the flux
+calculation for level 2 data are as follows:
+
+	1) statistical
+
+	2) uncertainty in average energy of a band -- flux data are reported 
+	for an energy band, and the spectra depend on which energy the data
+	are plotted.
+
+	3) geometry factor uncertainties 
+
+	4) SOFT efficiency
+
+	5) correction for fragmentation in the detector -- factors.pro uses the
+	expression of Westfall et al. (PRC, V19, p1309, 1979) instead of a 
+	more complex, energy-dependent cross-section code.
+
+The uncertainty for item #2 was estimated in the following manner.  An average
+spectral shape (f=log(flux)~A*log(E)^2+Blog(E)+C) can be found for all species
+by plotting flux data at energies in the center of the energy bands.  Using 
+this shape, one can examine how much the flux should change over the range of
+energies in a given band.  Assuming ad hoc that the reported flux value given
+for an energy band Elo < E < Ehi can lie anywhere between Elo+0.25*delE and
+Elo+0.75*dele (here, delE=Ehi-Elo), the largest variation in flux in any given
+energy band is 5%.
+
+The geometry factor has been verified by three independent codes to a level of
+5%.  The precision of the factor calculated in factors.pro is statistically
+significant to the level of 1.5%, but 5% should be used as an upper limit at
+the time of this version release.
+
+The improved SOFT efficiencies for V1.2 and later versions are precise to 3% 
+for Z=4 and 2% for other elements.
+
+Differences between the total fragmentation cross sections from Westfall et al.
+(1979) (used by factors.txt) and measured total cross sections have been
+estimated using the formulae of Tripathi et al. (NASA/TP-1999-209726, 1999).
+The formulae from Tripathi et al. are fine-tuned to match an extensive set of
+cross-section data, and they include an energy dependence as well.  The amount
+of fragmentation depends on the depth at which the cosmic rays stop in CRIS,
+and the depth is also a function of the particle energy.  So, the amount of
+variation between the formulae of Westfall et al. and Tripathi et al. is a 
+function of the particle species and energy.  The low-Z and Fe,Ni-group nuclei
+show the largest difference between these formulae (ranging from 0% for 
+stopping depths near the top of the CRIS SI detector stacks to 5% at the 
+bottom of the stack), and species around Z=11-15 show the least amount of
+difference (<2% over the full range).  To be conservative, we suggest an
+uncertainty of 5% in the fragmentation correction.
+
+Adding all of the systematic uncertainties listed above in quadrature, we find
+a global uncertainty for level 2 data of ~9% for all elements. 
+
+Data from CRIS during periods of high solar activity are "flagged" with a
+value of -999.9 because the instrument was not designed for optimal
+operation during these condition 
+(see http://www.srl.caltech.edu/ACE/ASC/level2/cris_l2desc.html on the ACE
+Science Center website for a full description of the CRIS level 2 data).  These
+periods are the most conservative estimates of days during which CRIS 
+performance may be affected.  Currently, the criteria for determining periods
+of high activity are being re-evaluated so that more days can be included in
+the level 2 data.  These criteria will be applied at a future data release and
+documented in the release notes.
+
+
+=========================================================================
+- Level 2 Software, Version 1.2	(updated May 22, 2000 by Nathan Yanasak)
+
+No major structural changes were made in the four V1.1 programs listed above.
+However, three minor changes were made.  
+
+Change #1: Discrepancies between the two different methods for calculating the
+average geometry factor (mentioned above) have been resolved, and the average 
+geometry factor calculated by factors.pro has changed to reflect this 
+agreement.  The maximum amount of discrepancy between the geometry factor in 
+older versions of factors.pro and version 1.2 is a 7.5% increase in the
+corrected geometry factor, and the average amount of discrepancy is 
+approximately 6.7%.  Calculation of the median theta for the zenith angle 
+described above is dependent on the geometry factor code, and the new values of
+median theta for version 1.2 are presented below:
+
+instrument range | median theta      
+=================================
+       2	 |    18.4
+       3	 |    18.4
+       4 	 |    17.5
+       5         |    16.7
+       6	 |    15.9
+       7	 |    15.4
+       8	 |    14.6
+
+Change #2: Version 1.2 uses ce2 data as input instead of the ce1 data used as 
+input for previous versions.  ce2 data is slightly different from ce1, using a
+different algorithm to determine SOFT trajectories.  The improved algorithm 
+results in a higher SOFT efficiency on average for any GCR species
+(~ +1.5% average increase from ce1 data), with much greater efficiency at 
+lower Z (~ +18% for Be).  SOFT efficiencies calculated by the version 1.2 
+factors.pro are appropriate level 2 data processed from ce2 data.
+
+Change #3: In our calculation of particle energies, we have switched from an
+older range-energy IDL procedure to a newer one based on Anderson and Ziegler.
+Particle energy values decrease by 1-2% for particles stopping near the top of 
+range 2 using the newer method, and the energy values experience a negligible
+decrease for particles stopping deeper within the stack.
+
+Finally, the IDL procedure eleplot.pro has been replaced by another procedure
+which has two versions with differing names: frsteleplot.pro and 
+itereleplot.pro.  The first version, frsteleplot.pro, is identical to
+eleplot.pro and should be used if one wants to reprocess level 2 data from
+the beginning of the mission.  The second version, itereleplot.pro, is similar
+to eleplot.pro, but it uses output from previous runs of frsteleplot.pro or 
+itereleplot.pro instead of reprocessing data from the beginning of the mission.
+
+
+=========================================================================
+- Level 2 Software, Version 1.1	(updated October 26, 1999 by Nathan Yanasak)
+
+No significant changes were made in the four V1.0 programs listed above; 
+however, a different version of code was used to extract the raw ce1 data which
+acts as an input to the statflux.pro code.  A slight discrepancy concerning the
+coordinates of the detector telescope elements was discovered.  The pre-level 
+2 processing of raw event files makes certain geometric cuts appropriate to
+the geometry factor used for level 2, which serve to eliminate data which
+traverse SOFT near its edge or pass very close to the guard rings in the
+detector telescopes.  Some of these geometric cuts were affected by this 
+discrepancy, and a set of positional offsets was applied to correct these in
+pre-level 2 processing.  Consequently, the number of raw events which are 
+being processed by statflux.pro has increased by approximately 1.3%, which 
+increases the particle fluxes found using V1.0 code by some fraction of this 
+1.3%.  The input section of statflux.pro was altered accordingly to reflect 
+this increase.
+
+
+=========================================================================
+Level 2 Software, Version 1.0	July 26, 1999
+N. Yanasak
+Programs:
+	1) statflux.pro
+	   Language: IDL
+	   General description: This program applies the data cuts to raw
+		ce1 data.
+
+	2) eleplot.pro
+	   Language: IDL
+	   General description: This program associates the data to the
+		appropriate values of the instrument livetime.
+
+	3) lvl2gen.pro
+	   Language: IDL
+	   General description: This program is responsible for formatting the
+		data into the level 2 format and placing it into the 
+		appropriate files.
+
+	4) factors.pro
+	   Language: IDL
+	   General description: This program calculates the necessary factors
+		for converting the event rates given in the output files of
+		lvl2gen.pro into particle differential fluxes (in units of
+		# of events/(MeV/nuc)/seconds/(cm^2 sr) ).
+	
+General Information:
+
+	Software used for the generation of level 2 CRIS data outputs
+data grouped into two categories: more abundance elemental species
+(C,N,O,Ne,Mg,Si,Fe), and species of lesser abundance (all other elements not
+listed, between Z=5-28).  Data for the more abundant species are
+reported for each 256-second window in time, and the less abundant species
+are reported for 1024-second windows.  There are two types of output data
+files, with each type corresponding to one of the two categories described 
+above.  Each file holds data reported during one Bartles rotation.
+
+	Data are reported as the rate of particles observed to stop in each of 
+the 7 instrumental ranges.  These ranges correspond to different vertical 
+stopping depths in the instrument.  Because the particle zenith angle for this
+reported data lies between 0 and 30 degrees, a unique vertical depth will give
+a spread in particle stopping energies.  This means that the energy bands which
+characterize particles of a given species stopping in each instrument range 
+will overlap in particle energy.  To define characteristic energy bands for 
+each instrument range, we have used the minimum and maximum energy required to
+stop in that range at the median zenith angle.  The different median angles for
+each range are as follows:
+
+instrument range | median theta      
+=================================
+       2	 |    18.6
+       3	 |    18.6
+       4 	 |    17.9
+       5         |    17.2
+       6	 |    16.4
+       7	 |    15.9
+       8	 |    15.2
+
+The differential flux of cosmic rays reported at the level 2 site is inversely
+proportional to the product of the energy band for a given instrumental range 
+with the geometry factor appropriate to that band.  A proper calculation of the
+flux requires using the true energy band (with overlapping boundaries) instead
+of the characteristic band for a given instrumental range.  To account for this
+difference, an adjustment was made to the geometry factor for each instrumental
+range to keep the product of the energy band and geometry factor the same.
+
+	Data are required to pass a very loose charge consistency cut to
+eliminate possible contamination of less abundant species by abundant species
+which fragment in the instrument and are misidentified.  Charge consistency
+is defined as the number of standard deviations off of the mean value of
+the charge ratios ZEST_LAST/ZEST and ZEST/ZEST_E1 for a particle stopping at a 
+particular vertical depth.  Here, ZEST, ZEST_LAST, and ZEST_E1 are event
+charges calculated using different detector combinations to compute dE, E' 
+(for a description of particle identification using the dE/dx vs. total E 
+method, see Stone, et al, 1998, Space Sci. Rev., 98, 285-356):
+
+	ZEST      -- E'=stopping detector, dE=all previous detectors
+	ZEST_E1   -- E'=second and all subsequent detectors, dE=first detector
+	ZEST_LAST -- E'=stopping detector, dE=next to last detector
+
+We applied a charge consistency cut on the data to include events with less
+than 10 standard deviations off of the mean charge ratio value.  Because of 
+the presence of dead layers in the instrument telescope elements, events 
+stopping fairly close to the top and bottom surfaces of individual detector 
+elements will record substantially lesser values of E' for ZEST and ZEST_LAST 
+than is actually deposited.  This will cause the mean charge consistency for 
+particles stopping near dead layers to change quite rapidly as a function of 
+vertical stopping depth.  To simplify the difficulty in identifying particles
+stopping near dead layers, a cut on particles stopping 160 microns from the 
+dead layer surfaces was implemented.
+
+	To convert the particle rates to fluxes, the level 2 site divides rates
+by the geometry factor and correction factors associated with the efficiency 
+of the SOFT hodoscope and the expected amount of loss from fragmentation in 
+the stack to yield particle fluxes.  Flux uncertainties reported in the level 
+2 site are based on the number of counts reported for a particular window of 
+time.  
+
+	Additional systematic uncertainties related to these factors must
+also be considered by the level 2 data user who uses version 1.0 data.  The 
+average geometry factor for CRIS has been calculated by two independent 
+methods, and there is a discrepancy of ~5% between the two for a maximum 
+zenith angle of 30 degrees.  In addition, the trigger efficiency of the SOFT 
+hodoscope was calculated using two different methods.  The difference in the
+results between the methods is ~5% for elements with higher Z (>10), and for 
+elements of lesser charge where the light output of the SOFT varies more 
+significantly with dE/dx, the discrepancy is somewhat larger (~10%).
+Considering these systematic discrepancies, we recommend adding an additional
+10% to the statistical uncertainties of higher Z elements and 15%
+for lower Z elements to reflect the geometry factor and SOFT
+efficiency indeterminancy more accurately.  These systematics will be
+improved in future versions.
+
+

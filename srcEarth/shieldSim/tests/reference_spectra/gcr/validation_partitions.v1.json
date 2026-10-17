@@ -1,0 +1,30 @@
+{
+  "schema_version": "shieldSim.gcr_observational_partitions.v1",
+  "status": "optional_preregistered_future_source_environment_comparison",
+  "rule_frozen_utc": "2026-10-16T00:00:00Z",
+  "purpose": "Prevent tuning to the final observational interval if a future source-environment model comparison uses these data; not required by the Stage-2 direct-transport test.",
+  "ams02_2025": {
+    "partition_coordinate": "bartels_rotation_number",
+    "available_rotations": 147,
+    "development": {
+      "role": "adapter development and any permitted model configuration work",
+      "first": 2426,
+      "last": 2552,
+      "present_rotations": 118
+    },
+    "holdout": {
+      "role": "chronologically held-out source-model evaluation only",
+      "first": 2553,
+      "last": 2581,
+      "present_rotations": 29
+    },
+    "selection_rule": "First 80 percent of the 147 published rotations for development; final 20 percent held out. Missing published rotations remain missing and are never interpolated.",
+    "activation_gate": "Before activation, the future environment model must declare compatible epochs, inputs, species definitions, location, exclusions, metrics, and acceptance thresholds. If incompatible, revise this record under a new schema revision before inspecting holdout residuals."
+  },
+  "ace_cris": {
+    "fixture_record_utc": "2019-12-01T00:00:00.000Z",
+    "role": "adapter and bin-semantics verification only",
+    "holdout_status": "not_defined",
+    "reason": "A defensible ACE calibration/holdout interval requires a declared comparison objective and a documented exclusion policy for SEP-contaminated or instrument-flagged days."
+  }
+}

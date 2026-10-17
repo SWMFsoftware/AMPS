@@ -23,9 +23,13 @@ void Usage(std::ostream& output) {
       "Usage:\n"
       "  shieldSimSourceTool ams02 --info=<HAPI-info.json> --data=<HAPI-data.csv> \\\n"
       "      --interpretation=<interpretation.json> --output=<canonical.json|->\n"
+      "  shieldSimSourceTool ams02-cycle --interpretation=<interpretation.json> \\\n"
+      "      --bartels-rotation=<integer> --output=<canonical.json|->\n"
+      "  shieldSimSourceTool ace-cris --info=<HAPI-info.json> --data=<HAPI-data.csv> \\\n"
+      "      --interpretation=<interpretation.json> --output=<canonical.json|->\n"
       "  shieldSimSourceTool goes16 --csv=<event-timeseries.csv> \\\n"
       "      --definition=<event-definition.json> --output=<fluence.json|->\n\n"
-      "The AMS command emits shieldSim.spectrum_dataset.v2. The GOES command\n"
+      "The AMS and ACE/CRIS commands emit shieldSim.spectrum_dataset.v2. The GOES command\n"
       "emits shieldSim.goes_event_fluence.v1 with both directions retained.\n"
       "Neither command starts Geant4 transport. Unknown or duplicate options\n"
       "are fatal so a misspelled scientific input cannot be ignored.\n";
@@ -65,6 +69,16 @@ void Write(const std::string& path, const std::string& canonicalJson) {
   if (!output) throw std::runtime_error("failed while writing output file '" + path + "'");
 }
 
+int PositiveInteger(const std::string& text, const std::string& option) {
+  std::size_t consumed = 0;
+  int value = 0;
+  try { value = std::stoi(text, &consumed); }
+  catch (const std::exception&) { throw std::runtime_error(option + " must be a positive integer"); }
+  if (consumed != text.size() || value <= 0)
+    throw std::runtime_error(option + " must be a positive integer");
+  return value;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -82,6 +96,23 @@ int main(int argc, char** argv) {
       const std::string output = Take(options, "output");
       if (!options.empty()) throw std::runtime_error("unknown option --" + options.begin()->first);
       const auto dataset = shield_sim::AMS02HapiAdapter::Load(info, data, interpretation);
+      Write(output, dataset.canonicalMetadata.DumpCanonical());
+    } else if (command == "ams02-cycle") {
+      const std::string interpretation = Take(options, "interpretation");
+      const int rotation = PositiveInteger(Take(options, "bartels-rotation"),
+                                           "--bartels-rotation");
+      const std::string output = Take(options, "output");
+      if (!options.empty()) throw std::runtime_error("unknown option --" + options.begin()->first);
+      const auto dataset =
+          shield_sim::AMS02SolarCycleAdapter::LoadRotation(interpretation, rotation);
+      Write(output, dataset.canonicalMetadata.DumpCanonical());
+    } else if (command == "ace-cris") {
+      const std::string info = Take(options, "info");
+      const std::string data = Take(options, "data");
+      const std::string interpretation = Take(options, "interpretation");
+      const std::string output = Take(options, "output");
+      if (!options.empty()) throw std::runtime_error("unknown option --" + options.begin()->first);
+      const auto dataset = shield_sim::ACECRISHapiAdapter::LoadRecord(info, data, interpretation);
       Write(output, dataset.canonicalMetadata.DumpCanonical());
     } else if (command == "goes16") {
       const std::string csv = Take(options, "csv");

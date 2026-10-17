@@ -79,6 +79,11 @@ public:
   std::vector<ShieldLayerDefinition> shieldLayers;
   std::vector<SlabAbsorberDefinition> absorbers;
   SpectrumDataset spectrum;
+  // The resolved source format and selected component are archived separately
+  // from the adapter's full canonical metadata.  This makes it unambiguous
+  // which one of a multi-component published dataset entered Geant4.
+  std::string sourceFormat;
+  std::string sourceComponentId;
 
   std::string coordinateFrame;
   double worldSizeXmm = 0.0, worldSizeYmm = 0.0, worldSizeZmm = 0.0;

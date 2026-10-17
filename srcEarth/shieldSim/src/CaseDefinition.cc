@@ -1,6 +1,7 @@
 #include "CaseDefinition.hh"
 
 #include "ContentHash.hh"
+#include "PublishedSourceAdapters.hh"
 
 #include <algorithm>
 #include <cmath>
@@ -341,14 +342,93 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
   if (result->sourceMode != "beam" && result->sourceMode != "isotropic")
     throw JsonError("case.source.mode must be beam or isotropic");
   const auto& spectrum = source.at("spectrum").AsObject("case.source.spectrum");
-  RejectUnknownFields(spectrum, {"format","path","metadata_path"}, "case.source.spectrum");
-  if (RequiredString(spectrum, "format", "case.source.spectrum") != "legacy_three_column")
-    throw JsonError("Stage-1 case source supports only explicit legacy_three_column input; published adapters arrive in Stage 2");
-  result->spectrum = SpectrumDataset::LoadLegacyThreeColumn(
-      ResolvePath(caseDirectory, RequiredString(spectrum, "path", "case.source.spectrum")),
-      ResolvePath(caseDirectory, RequiredString(spectrum, "metadata_path", "case.source.spectrum")));
-  if (result->spectrum.angularModel != "declared_by_case" && result->spectrum.angularModel != result->sourceMode)
-    throw JsonError("case.source.mode conflicts with spectrum metadata.angular_model");
+  result->sourceFormat = RequiredString(spectrum, "format", "case.source.spectrum");
+  if (result->sourceFormat == "legacy_three_column") {
+    RejectUnknownFields(spectrum, {"format","path","metadata_path"}, "case.source.spectrum");
+    result->spectrum = SpectrumDataset::LoadLegacyThreeColumn(
+        ResolvePath(caseDirectory, RequiredString(spectrum, "path", "case.source.spectrum")),
+        ResolvePath(caseDirectory, RequiredString(spectrum, "metadata_path", "case.source.spectrum")));
+    if (result->spectrum.angularModel != "declared_by_case" &&
+        result->spectrum.angularModel != result->sourceMode)
+      throw JsonError("case.source.mode conflicts with spectrum metadata.angular_model");
+    result->sourceComponentId = "proton_and_alpha_shared_grid";
+  } else if (result->sourceFormat == "ams02_hapi_component") {
+    // This is deliberately a narrow validation adapter, not a generic license
+    // to turn any ingested observation into a boundary condition.  The pinned
+    // AMS product has one unambiguous transport species: its proton component.
+    // Inclusive helium has no isotope mixture in the product and therefore
+    // must not be silently represented as Geant4 alpha particles.
+    RejectUnknownFields(spectrum,
+        {"format","info_path","data_path","interpretation_path","component_id"},
+        "case.source.spectrum");
+    if (result->purpose != "verification_test")
+      throw JsonError("ams02_hapi_component is admitted only for verification_test cases, not mission environments");
+    const std::string componentId = RequiredString(
+        spectrum, "component_id", "case.source.spectrum");
+    SpectrumDataset published = AMS02HapiAdapter::Load(
+        ResolvePath(caseDirectory, RequiredString(spectrum, "info_path", "case.source.spectrum")),
+        ResolvePath(caseDirectory, RequiredString(spectrum, "data_path", "case.source.spectrum")),
+        ResolvePath(caseDirectory, RequiredString(spectrum, "interpretation_path", "case.source.spectrum")));
+    const auto selected = std::find_if(published.components.begin(), published.components.end(),
+        [&](const SpectrumComponent& component) { return component.componentId == componentId; });
+    if (selected == published.components.end())
+      throw JsonError("case.source.spectrum.component_id is absent from the AMS dataset");
+    if (selected->componentId != "proton" || selected->speciesId != "proton" ||
+        selected->geant4Particle != "proton" || selected->atomicNumber != 1 ||
+        selected->massNumber != 1)
+      throw JsonError("Stage-2 AMS transport validation admits only the explicit A=1 proton component");
+    if (selected->energyVariable != "kinetic_energy_per_nucleon" ||
+        selected->energyUnit != "MeV/n")
+      throw JsonError("AMS proton transport requires kinetic_energy_per_nucleon in MeV/n");
+    if (selected->valueType != "differential_intensity" ||
+        selected->valueUnit != "1/(cm2 sr s (MeV/n))")
+      throw JsonError("AMS proton transport requires differential intensity in 1/(cm2 sr s (MeV/n))");
+    if (selected->angularRepresentation != "isotropic_intensity_at_instrument" ||
+        result->sourceMode != "isotropic")
+      throw JsonError("AMS isotropic intensity validation requires case.source.mode='isotropic'");
+    const std::size_t count = selected->value.size();
+    if (count == 0 || selected->binLower.size() != count ||
+        selected->binUpper.size() != count)
+      throw JsonError("AMS proton component has inconsistent or empty bin arrays");
+    if (!selected->valid.empty() && selected->valid.size() != count)
+      throw JsonError("AMS proton component validity-mask size differs from its bin count");
+    const SpectrumComponent transportedComponent = *selected;
+
+    // For A=1 only, kinetic energy per nucleon is numerically equal to total
+    // proton kinetic energy.  Preserve exact published edges and use a
+    // piecewise-constant differential intensity inside each bin.  No analogous
+    // conversion is made for mixed-isotope components.
+    published.energyMeV.clear();
+    published.binWidthMeV.clear();
+    published.protonValue.clear();
+    published.alphaValue.clear();
+    published.transportBinLowerMeV.clear();
+    published.transportBinUpperMeV.clear();
+    for (std::size_t i = 0; i < count; ++i) {
+      const double lower = selected->binLower[i];
+      const double upper = selected->binUpper[i];
+      const double value = selected->value[i];
+      if (!std::isfinite(lower) || !std::isfinite(upper) || lower <= 0.0 || upper <= lower ||
+          !std::isfinite(value) || value < 0.0)
+        throw JsonError("AMS proton component contains an invalid transport bin");
+      if (!selected->valid.empty() && !selected->valid[i])
+        throw JsonError("AMS proton component contains a bin not approved by its validity mask");
+      published.transportBinLowerMeV.push_back(lower);
+      published.transportBinUpperMeV.push_back(upper);
+      published.energyMeV.push_back(0.5 * (lower + upper));
+      published.binWidthMeV.push_back(upper - lower);
+      published.protonValue.push_back(value);
+      published.alphaValue.push_back(0.0);
+    }
+    published.transportComponentId = componentId;
+    // Keep only the transported component in the live representation.  The
+    // canonical metadata still retains and hashes the complete source record.
+    published.components = {transportedComponent};
+    result->spectrum = std::move(published);
+    result->sourceComponentId = componentId;
+  } else {
+    throw JsonError("case.source.spectrum.format must be legacy_three_column or ams02_hapi_component");
+  }
   const auto& limits = source.at("energy_limits").AsObject("case.source.energy_limits");
   RejectUnknownFields(limits, {"proton","alpha"}, "case.source.energy_limits");
   const auto& proton = limits.at("proton").AsObject("case.source.energy_limits.proton");
@@ -361,6 +441,16 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
   result->alphaMaxMeV = EnergyMeV(alpha.at("max"), "case.source.energy_limits.alpha.max");
   if (result->protonMinMeV > result->protonMaxMeV || result->alphaMinMeV > result->alphaMaxMeV)
     throw JsonError("case.source energy min must be <= max; ranges are never reordered");
+  if (!result->spectrum.transportBinLowerMeV.empty()) {
+    bool overlaps = false;
+    for (std::size_t i = 0; i < result->spectrum.transportBinLowerMeV.size(); ++i)
+      overlaps = overlaps || (std::max(result->protonMinMeV,
+                                       result->spectrum.transportBinLowerMeV[i]) <
+                              std::min(result->protonMaxMeV,
+                                       result->spectrum.transportBinUpperMeV[i]));
+    if (!overlaps)
+      throw JsonError("case.source proton energy limits do not overlap the selected published component");
+  }
 
   result->quantities = StringArray(input.At("quantities", "case"), "case.quantities");
   if (result->quantities.empty()) throw JsonError("case.quantities must not be empty");
@@ -500,6 +590,7 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
     {"quantities", Json(std::move(quantityJson))}, {"schema_version", "shieldSim.resolved_case.v1"},
     {"source", Json(Json::Object{{"alpha_max", Measure(result->alphaMaxMeV, "MeV")},
       {"alpha_min", Measure(result->alphaMinMeV, "MeV")}, {"mode", result->sourceMode},
+      {"format",result->sourceFormat}, {"transport_component_id",result->sourceComponentId},
       {"metadata",result->spectrum.canonicalMetadata}, {"metadata_path",result->spectrum.metadataPath},
       {"proton_max", Measure(result->protonMaxMeV, "MeV")}, {"proton_min", Measure(result->protonMinMeV, "MeV")},
       {"science_status",result->spectrum.scienceStatus}, {"spectrum_hash", result->spectrum.contentHash},

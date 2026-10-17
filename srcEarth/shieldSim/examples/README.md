@@ -30,3 +30,26 @@ reports Monte Carlo precision and stops at the resource limit if necessary.
 
 `sep_spectrum.dat` remains a synthetic format example, not a published SEP
 environment. Its mandatory metadata is `sep_spectrum.metadata.v1.json`.
+
+## Downloaded-spectrum Stage-2 validation case
+
+`stage2_ams02_proton_validation_case.json` exercises the same case parser,
+primary generator, Geant4 transport, and TID/H100/10 writers that a later AMPS
+adapter will use:
+
+```bash
+./shieldSim --case=../examples/stage2_ams02_proton_validation_case.json
+```
+
+The case selects only the checksum-pinned AMS-02 BR2460 A=1 proton component.
+It uses `purpose: verification_test` and an isotropic boundary because those
+are enforced admission requirements. Published differential intensities are
+sampled as piecewise-constant values over their exact transformed energy-bin
+edges. For a proton, MeV/n is numerically equal to total kinetic MeV.
+
+This file is a reproducible executable test, not a preliminary-mission source:
+one near-Earth Bartels rotation is not a complete deep-space GCR environment.
+Changing the purpose to a mission assessment, choosing inclusive helium, or
+changing the source to `beam` is rejected. The alpha energy-limit block remains
+required by the v1 case schema but is unused because the admitted component is
+proton-only.

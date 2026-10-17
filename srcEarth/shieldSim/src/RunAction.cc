@@ -846,7 +846,11 @@ void RunAction::WriteRunSummary(G4int nEv){
   out<<"meta spectrum_file "<<(fOpts.spectrumFile.empty()?"builtin":fOpts.spectrumFile)<<"\n";
   out<<"meta shield_material "<<(fSweepMode?fCurrentMat:fOpts.shieldMaterial)<<"\n";
   out<<"meta result_capability_status "
-     <<(fOpts.caseDefinition?"stage1_core_not_yet_quantity_validated":"legacy_prototype")<<"\n";
+     <<(fOpts.caseDefinition
+          ? (fOpts.caseDefinition->sourceFormat=="ams02_hapi_component"
+               ? "stage2_published_spectrum_transport_test_not_physical_validation"
+               : "stage1_core_not_yet_quantity_validated")
+          : "legacy_prototype")<<"\n";
   out<<"scalar events "<<nEv<<"\n";
   out<<"scalar target_count "<<fScoringNames.size()<<"\n";
   out<<"scalar shield_thickness_mm "<<shieldThicknessMM<<"\n";
@@ -916,6 +920,9 @@ void RunAction::WriteRunSummary(G4int nEv){
 void RunAction::WriteResultJson(G4int nEv){
   if(!fOpts.caseDefinition || !fAccuracyController) return;
   const auto& c=*fOpts.caseDefinition;
+  const std::string validationStatus = c.sourceFormat=="ams02_hapi_component"
+      ? "stage2_published_spectrum_transport_test_not_physical_validation"
+      : "implemented_not_physically_validated_stage1";
   const auto& absorber=c.absorbers.at(fOpts.activeAbsorberIndex);
   auto finiteOrNull=[](double value)->shield_sim::Json{
     return std::isfinite(value) ? shield_sim::Json(value) : shield_sim::Json(nullptr);
@@ -975,7 +982,9 @@ void RunAction::WriteResultJson(G4int nEv){
           {"total_dose_Gy_per_primary",fLastDoseTotal[i]/gray}})},
         {"interval_95",shield_sim::Json(std::move(interval))},
         {"name","TID"}, {"normalization","per incident primary"},
-        {"unit","Gy/primary"}, {"validation_status","implemented_not_physically_validated_stage1"},
+        {"source_normalized_unit","Gy/s"},
+        {"source_normalized_value",fLastDoseRate[i]/gray},
+        {"unit","Gy/primary"}, {"validation_status",validationStatus},
         {"value",fLastDose[i]/gray}
       });
     }
@@ -1013,7 +1022,7 @@ void RunAction::WriteResultJson(G4int nEv){
       {"denominator_count",fPrimaryProtonAbove10},
       {"interval_95",shield_sim::Json(shield_sim::Json::Object{{"high",high},{"low",low}})},
       {"name","H100/10"}, {"numerator_count",fPrimaryProtonAbove100},
-      {"unit","1"}, {"validation_status","implemented_not_physically_validated_stage1"},
+      {"unit","1"}, {"validation_status",validationStatus},
       {"value",finiteOrNull(fLastHardness)}
     });
   }
@@ -1025,8 +1034,19 @@ void RunAction::WriteResultJson(G4int nEv){
     {"geometry_hash",c.geometryHash}, {"material_library_hash",c.materials->ContentHash()},
     {"outputs",shield_sim::Json(std::move(outputs))}, {"physics_list",fOpts.physicsList},
     {"random_seed",static_cast<double>(fOpts.randomSeed)},
-    {"schema_version","shieldSim.result.v1"}, {"source_hash",c.spectrum.contentHash},
-    {"source_id",c.spectrum.id}, {"source_science_status",c.spectrum.scienceStatus}
+    {"schema_version","shieldSim.result.v1"},
+    {"source_component_id",c.sourceComponentId}, {"source_format",c.sourceFormat},
+    {"source_hash",c.spectrum.contentHash},
+    {"source_id",c.spectrum.id},
+    {"source_normalization",shield_sim::Json(shield_sim::Json::Object{
+      {"angular_factor",fSourceAngularFactor},
+      {"incident_particle_rate",GetIncidentParticleRate()},
+      {"incident_particle_rate_unit","1/s"},
+      {"integral_no_angular",fSourceNormNoAngular},
+      {"integral_no_angular_unit",c.spectrum.valueType=="differential_intensity"
+          ? "1/(cm2 sr s)" : "source_unit_integrated_over_energy"},
+      {"source_plane_area_cm2",GetSourcePlaneAreaCM2()}})},
+    {"source_science_status",c.spectrum.scienceStatus}
   };
   const std::string path=fOpts.outputPrefix+"_result.json";
   std::ofstream out(path);

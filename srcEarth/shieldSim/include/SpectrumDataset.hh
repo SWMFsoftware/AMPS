@@ -2,7 +2,8 @@
 #define SHIELDSIM_SPECTRUM_DATASET_HH
 
 /*
- * Canonical Stage-1 spectrum container.
+ * Canonical spectrum container shared by the Stage-1 legacy source and the
+ * Stage-2 published-data adapters.
  *
  * The only Stage-1 external adapter is the explicitly labeled legacy
  * three-column adapter.  A sidecar is mandatory because the old numeric file
@@ -51,6 +52,22 @@ struct SpectrumComponent {
   std::vector<double> representative;
   std::vector<double> value;
   std::vector<double> totalUncertainty;
+  // Published products often separate uncertainty components because they
+  // have different correlations.  In particular, the AMS-02 time-independent
+  // term must not be treated as an independent random error at every Bartels
+  // rotation.  Keeping these vectors separate prevents a later comparison
+  // routine from manufacturing an unsupported diagonal covariance matrix.
+  std::vector<double> statisticalUncertainty;
+  std::vector<double> timeDependentSystematicUncertainty;
+  std::vector<double> timeIndependentSystematicUncertainty;
+
+  // Some count-derived products contain legitimate zero-count bins.  A zero
+  // flux in such a bin does not have zero statistical uncertainty, so the
+  // count and validity mask are retained explicitly.  Invalid bins must be
+  // excluded from quantitative comparisons rather than interpreted as exact
+  // zero measurements.
+  std::vector<double> counts;
+  std::vector<bool> valid;
 };
 
 struct SpectrumDataset {
@@ -70,10 +87,21 @@ struct SpectrumDataset {
   std::vector<double> protonValue;
   std::vector<double> alphaValue;
 
-  // Versioned adapters populate components.  The older vectors above remain
-  // as a compatibility projection consumed by the Stage-1 direct generator.
-  // Stage-2 published datasets are deliberately not projected into those
-  // vectors and cannot enter transport before the Stage-3 response gate.
+  // A published differential spectrum is sampled as a piecewise-constant
+  // density over its documented bin edges.  These arrays are populated only
+  // after a component has passed the explicit transport-admission checks in
+  // CaseDefinition; ingestion alone never makes a component transportable.
+  // The legacy center-only adapter intentionally leaves them empty and keeps
+  // its historical representative-energy sampling behavior.
+  std::vector<double> transportBinLowerMeV;
+  std::vector<double> transportBinUpperMeV;
+  std::string transportComponentId;
+
+  // Versioned adapters populate components. The older vectors above remain a
+  // compatibility projection consumed by the direct generator. Published
+  // datasets are not projected during ingestion; CaseDefinition may create a
+  // transport projection only after a selected component passes its explicit
+  // particle/unit/angular-purpose admission contract.
   std::vector<SpectrumComponent> components;
 
   static SpectrumDataset LoadLegacyThreeColumn(const std::string& spectrumPath,

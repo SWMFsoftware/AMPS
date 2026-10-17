@@ -1,0 +1,89 @@
+{
+  "schema_version": "shieldSim.ams02_solar_cycle_interpretation.v1",
+  "dataset_id": "ams02_prl134_051001_solar_cycle_nuclei",
+  "adapter_version": "AMS02SolarCycleAdapter.v1",
+  "publication_url": "https://ams02.space/publications/202403",
+  "retrieved_utc": "2026-10-16T00:00:00Z",
+  "measurement_interval": {
+    "start": "2011-05",
+    "stop": "2022-11",
+    "time_coordinate": "bartels_rotation_number"
+  },
+  "location": "AMS-02 on the International Space Station; published flux after the collaboration's selection and corrections",
+  "angular_representation": "isotropic_intensity_at_instrument",
+  "value_type": "differential_intensity",
+  "value_unit": "1/(m2 sr s GV)",
+  "science_status": "observation_for_source_model_validation_not_transport_boundary",
+  "files": [
+    {
+      "species_id": "helium_inclusive",
+      "published_name": "helium",
+      "symbol": "He",
+      "atomic_number": 2,
+      "mass_number": 0,
+      "has_ratio_columns": false,
+      "path": "raw/table-S1-S147.csv",
+      "sha256": "sha256:6be27d8115c47b2102eec21bee7629751677641c8c808727dc3041ee0e2f030f"
+    },
+    {
+      "species_id": "lithium_inclusive",
+      "published_name": "lithium",
+      "symbol": "Li",
+      "atomic_number": 3,
+      "mass_number": 0,
+      "has_ratio_columns": true,
+      "path": "raw/table-S148-S294.csv",
+      "sha256": "sha256:c2e78af4346acfb13206c6f9cada18e2c9e2b8473795453488d3ba50379e84de"
+    },
+    {
+      "species_id": "beryllium_inclusive",
+      "published_name": "beryllium",
+      "symbol": "Be",
+      "atomic_number": 4,
+      "mass_number": 0,
+      "has_ratio_columns": true,
+      "path": "raw/table-S295-S441.csv",
+      "sha256": "sha256:28c62dad061f0d39182c2be4d4af371df0b94759a0734706c02305988ccf0e1d"
+    },
+    {
+      "species_id": "boron_inclusive",
+      "published_name": "boron",
+      "symbol": "B",
+      "atomic_number": 5,
+      "mass_number": 0,
+      "has_ratio_columns": true,
+      "path": "raw/table-S442-S588.csv",
+      "sha256": "sha256:fc49fe5605bcc27d923c4773dd54c30a0834b94c0a6bb31c1b233e2749446fd7"
+    },
+    {
+      "species_id": "carbon_inclusive",
+      "published_name": "carbon",
+      "symbol": "C",
+      "atomic_number": 6,
+      "mass_number": 0,
+      "has_ratio_columns": true,
+      "path": "raw/table-S589-S735.csv",
+      "sha256": "sha256:4e511736fe2f8688f042e528e7f97ecce22d721c87b154692cc3516f7ac67a37"
+    },
+    {
+      "species_id": "nitrogen_inclusive",
+      "published_name": "nitrogen",
+      "symbol": "N",
+      "atomic_number": 7,
+      "mass_number": 0,
+      "has_ratio_columns": true,
+      "path": "raw/table-S736-S882.csv",
+      "sha256": "sha256:89358efc6ad9dcc01343f7390bb6a37d7b850cc49b5ce51f2f1e02d68be4334c"
+    },
+    {
+      "species_id": "oxygen_inclusive",
+      "published_name": "oxygen",
+      "symbol": "O",
+      "atomic_number": 8,
+      "mass_number": 0,
+      "has_ratio_columns": true,
+      "path": "raw/table-S883-S1029.csv",
+      "sha256": "sha256:0ef5277ae6ede83e32882b1182ad58705c8012490d09931cbe306bd94ebdffaa"
+    }
+  ]
+}

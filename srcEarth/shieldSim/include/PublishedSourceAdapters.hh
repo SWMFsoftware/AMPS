@@ -4,10 +4,12 @@
 /*
  * Lossless Stage-2 adapters for pinned published source products.
  *
- * These adapters stop at the canonical SpectrumDataset boundary.  In
- * particular, neither an ISS AMS-02 measurement nor a directional GOES SGPS
- * record is silently converted into an isotropic deep-space boundary source.
- * Transport/folding is a separate Stage-3 gate.
+ * These adapters stop at the canonical SpectrumDataset boundary. Admission to
+ * transport is a separate CaseDefinition decision. In particular, an ISS
+ * measurement is never relabeled as a complete deep-space environment and a
+ * directional GOES SGPS record is never silently made isotropic. Stage 2 has
+ * one narrow validation-only admission for the explicit AMS A=1 proton
+ * component; later AMPS/mission sources use the same canonical boundary.
  */
 
 #include "SpectrumDataset.hh"
@@ -27,6 +29,27 @@ public:
   static SpectrumDataset Load(const std::string& infoPath,
                               const std::string& dataPath,
                               const std::string& interpretationPath);
+};
+
+class AMS02SolarCycleAdapter {
+public:
+  // Load one published Bartels rotation from the seven 2025 AMS-02 elemental
+  // tables.  The adapter deliberately retains rigidity and per-GV units:
+  // converting inclusive elemental measurements to energy/nucleon would
+  // require an isotope-composition decision that these tables do not supply.
+  static SpectrumDataset LoadRotation(const std::string& interpretationPath,
+                                      int bartelsRotation);
+};
+
+class ACECRISHapiAdapter {
+public:
+  // Load one daily B--Ni record from the pinned CDAWeb HAPI response.  Exact
+  // energy bounds come from the labels embedded in the checksum-pinned source
+  // CDF, not from the rounded HAPI descriptions or a different ACE factors
+  // release.  Count-zero bins remain present but are marked invalid.
+  static SpectrumDataset LoadRecord(const std::string& infoPath,
+                                    const std::string& dataPath,
+                                    const std::string& interpretationPath);
 };
 
 struct GoesSgpsRecord {

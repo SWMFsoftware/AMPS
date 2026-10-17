@@ -255,7 +255,130 @@ def ams_figure(canonical: dict, entries: list[dict]) -> None:
         "stage2_ams02_observation_adapter",
         "Published HAPI measurements are overlaid with the canonical adapter output. "
         "This validates ingestion, units, grids, and uncertainty retention only; the near-Earth "
-        "AMS spectrum is not a BON2020 deep-space environment or a transport validation.",
+        "AMS spectrum is not a complete mission environment or a transport-physics validation.",
+        entries,
+    )
+
+
+def ams_solar_cycle_figure(canonical: dict, entries: list[dict]) -> None:
+    """Compare BR2581 adapter values with all seven primary CSV tables."""
+
+    directory = FIXTURES / "gcr" / "ams02_2025"
+    interpretation = json.loads((directory / "interpretation.v1.json").read_text(encoding="utf-8"))
+    raw: dict[str, list[dict[str, str]]] = {}
+    for definition in interpretation["files"]:
+        with (directory / definition["path"]).open(encoding="utf-8", newline="") as stream:
+            raw[definition["symbol"]] = [
+                row for row in csv.DictReader(stream)
+                if int(row["bartels_rotation_number"]) == canonical["bartels_rotation"]
+            ]
+    components = {item["component_id"]: item for item in canonical["components"]}
+    fig, axes = plt.subplots(2, 4, figsize=(16, 9.5))
+    for axis, definition in zip(axes.flat, interpretation["files"]):
+        symbol = definition["symbol"]
+        name = definition["published_name"]
+        component = components[symbol]
+        rows = raw[symbol]
+        centers = [math.sqrt(float(row["rigidity_min_GV"]) * float(row["rigidity_max_GV"]))
+                   for row in rows]
+        flux_name = f"{name}_flux m^-2sr^-1s^-1GV^-1"
+        raw_flux = [float(row[flux_name]) for row in rows]
+        values = [float(value) for value in component["value"]]
+        display_uncertainty = [
+            math.sqrt(stat * stat + time_dep * time_dep + time_ind * time_ind)
+            for stat, time_dep, time_ind in zip(
+                component["statistical_uncertainty"],
+                component["time_dependent_systematic_uncertainty"],
+                component["time_independent_systematic_uncertainty"],
+            )
+        ]
+        axis.errorbar(centers, values, yerr=display_uncertainty, fmt="o", markersize=3,
+                      linewidth=0.7, color=COLORS["blue"], label="adapter ± display total")
+        axis.scatter(centers, raw_flux, marker="x", s=23, color=COLORS["orange"],
+                     label="primary CSV")
+        axis.set_xscale("log")
+        axis.set_yscale("log")
+        axis.set_title(symbol)
+        axis.set_xlabel("rigidity [GV]")
+        axis.set_ylabel("intensity [1/(m² sr s GV)]")
+        axis.grid(which="both", alpha=0.22)
+    axes.flat[0].legend(fontsize=7)
+    axes.flat[-1].axis("off")
+    axes.flat[-1].text(
+        0.04, 0.82,
+        "BR2581: chronological holdout\n\n"
+        "Error bars show per-bin quadrature\nfor display only. The adapter retains\n"
+        "statistical, time-dependent, and\ntime-independent terms separately.\n\n"
+        "No model curve is plotted.",
+        va="top", fontsize=10,
+    )
+    fig.suptitle("AMS-02 2025 solar-cycle tables: published values vs adapter",
+                 fontsize=14, fontweight="bold")
+    save_figure(
+        fig,
+        "stage2_ams02_solar_cycle_observation_adapter",
+        "All seven AMS-02 elemental spectra in held-out Bartels rotation 2581 are compared with "
+        "the canonical adapter output. Display error bars combine the three published per-bin "
+        "components only for visualization; time-independent correlations across rotations are "
+        "not assumed. This is ingestion evidence, not a mission environment or transport validation.",
+        entries,
+    )
+
+
+def ace_cris_figure(canonical: dict, entries: list[dict]) -> None:
+    """Compare selected ACE/CRIS components with the pinned HAPI record."""
+
+    with (FIXTURES / "gcr" / "ace_cris" / "ac_h3_cris_20191201_all.csv").open(
+        encoding="utf-8", newline=""
+    ) as stream:
+        row = next(csv.reader(stream))
+    symbols = ["B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S",
+               "Cl", "Ar", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni"]
+    components = {item["component_id"]: item for item in canonical["components"]}
+    fig, axes = plt.subplots(2, 2, figsize=(13, 9.5))
+    for axis, symbol in zip(axes.flat, ("O", "Si", "Fe", "Co")):
+        component = components[symbol]
+        species_index = symbols.index(symbol)
+        raw_flux = [float(value) for value in row[1 + species_index * 7:1 + (species_index + 1) * 7]]
+        raw_count = [float(value) for value in
+                     row[1 + 24 * 7 + species_index * 7:1 + 24 * 7 + (species_index + 1) * 7]]
+        lower = [float(value) for value in component["bin_lower"]]
+        upper = [float(value) for value in component["bin_upper"]]
+        centers = [(low + high) / 2.0 for low, high in zip(lower, upper)]
+        valid = [bool(value) for value in component["valid"]]
+        valid_indices = [index for index, keep in enumerate(valid) if keep]
+        x = [centers[index] for index in valid_indices]
+        xerr = [[centers[index] - lower[index] for index in valid_indices],
+                [upper[index] - centers[index] for index in valid_indices]]
+        values = [float(component["value"][index]) for index in valid_indices]
+        errors = [float(component["statistical_uncertainty"][index]) for index in valid_indices]
+        raw_values = [raw_flux[index] for index in valid_indices]
+        axis.errorbar(x, values, xerr=xerr, yerr=errors, fmt="o", markersize=4,
+                      linewidth=0.8, color=COLORS["blue"], label="adapter ± count statistic")
+        axis.scatter(x, raw_values, marker="x", s=30, color=COLORS["orange"], label="HAPI value")
+        invalid = [index for index, keep in enumerate(valid) if not keep]
+        if invalid:
+            floor = min(values) / 3.0
+            axis.scatter([centers[index] for index in invalid], [floor] * len(invalid),
+                         marker="v", facecolors="none", edgecolors=COLORS["purple"],
+                         label="zero-count bin (invalid)")
+        require(all(raw_count[index] > 0.0 for index in valid_indices),
+                f"ACE/CRIS {symbol} valid mask disagrees with counts")
+        axis.set_yscale("log")
+        axis.set_title(symbol)
+        axis.set_xlabel("kinetic energy/nucleon bin midpoint [MeV/n]")
+        axis.set_ylabel("intensity [1/(cm² sr s (MeV/n))]")
+        axis.grid(which="both", alpha=0.22)
+        axis.legend(fontsize=7)
+    fig.suptitle("ACE/CRIS daily B–Ni source: selected published values vs adapter",
+                 fontsize=14, fontweight="bold")
+    save_figure(
+        fig,
+        "stage2_ace_cris_observation_adapter",
+        "Selected ACE/CRIS elements compare the pinned HAPI values with canonical CDF-label "
+        "energy bounds and count-derived statistical error bars. Open triangles identify "
+        "zero-count bins excluded from comparisons. Systematic errors are not plotted because "
+        "the processing-version mapping is unresolved. No model or transport result is shown.",
         entries,
     )
 
@@ -418,6 +541,7 @@ def main() -> int:
     boundaries = load_evidence("stage1_case_boundaries.json")
     transport = load_evidence("stage1_transport_smoke.json")
     stage2 = load_evidence("stage2_source_adapters.json")
+    published_transport = load_evidence("stage2_published_transport.json")
     entries: list[dict] = []
 
     comparison_figure(
@@ -444,6 +568,16 @@ def main() -> int:
         "are shown for both independent absorbers. This does not validate transport physics.",
         entries,
     )
+    comparison_figure(
+        published_transport,
+        "Downloaded AMS-02 spectrum: analytic source integral vs Geant4 input",
+        "stage2_ams02_published_transport_analytic",
+        "The independently reconstructed sum(J_i Delta E_i) is compared with the source "
+        "normalization consumed by the full case/Geant4/proxy run. This closes the executable "
+        "source boundary; it does not validate transport physics or make BR2460 a complete "
+        "mission GCR environment.",
+        entries,
+    )
 
     with tempfile.TemporaryDirectory(prefix="shieldsim-validation-figures-") as temporary:
         temporary_path = pathlib.Path(temporary)
@@ -456,6 +590,23 @@ def main() -> int:
             ],
             temporary_path / "ams.json",
         )
+        ams_cycle = run_source_tool(
+            "ams02-cycle",
+            [
+                f"--interpretation={FIXTURES / 'gcr' / 'ams02_2025' / 'interpretation.v1.json'}",
+                "--bartels-rotation=2581",
+            ],
+            temporary_path / "ams-cycle.json",
+        )
+        cris = run_source_tool(
+            "ace-cris",
+            [
+                f"--info={FIXTURES / 'gcr' / 'ace_cris' / 'ac_h3_cris_hapi_info.json'}",
+                f"--data={FIXTURES / 'gcr' / 'ace_cris' / 'ac_h3_cris_20191201_all.csv'}",
+                f"--interpretation={FIXTURES / 'gcr' / 'ace_cris' / 'interpretation.v1.json'}",
+            ],
+            temporary_path / "cris.json",
+        )
         goes = run_source_tool(
             "goes16",
             [
@@ -465,20 +616,37 @@ def main() -> int:
             temporary_path / "goes.json",
         )
         ams_figure(ams, entries)
+        ams_solar_cycle_figure(ams_cycle, entries)
+        ace_cris_figure(cris, entries)
         goes_figure(goes, entries)
 
     ams_comparisons = [
-        item for item in stage2["comparisons"] if str(item["id"]).startswith("ams_")
+        item for item in stage2["comparisons"]
+        if str(item["id"]).startswith("ams_") or str(item["id"]).startswith("ams2025_")
     ]
     comparison_figure(
         stage2,
-        "AMS-02 energy-coordinate and primary-table analytic comparisons",
+        "AMS-02 analytic transformations and published-row comparisons",
         "stage2_ams02_analytic_comparisons",
         "The production adapter's first transformed proton/helium bin edges and differential "
         "intensities are compared with independent relativistic and primary-table Jacobian "
-        "calculations. Numerical tolerances remain in stage2_source_adapters.",
+        "calculations; held-out BR2581 helium/oxygen values are compared with independently "
+        "read primary CSV rows. Numerical tolerances remain in stage2_source_adapters.",
         entries,
         selected=ams_comparisons,
+    )
+    cris_comparisons = [
+        item for item in stage2["comparisons"] if str(item["id"]).startswith("ace_cris_")
+    ]
+    comparison_figure(
+        stage2,
+        "ACE/CRIS observation and count-statistic comparisons",
+        "stage2_ace_cris_observation_comparisons",
+        "The production adapter is compared with an independently read oxygen flux and the "
+        "analytic flux/sqrt(count) statistical uncertainty. Systematics remain explicitly "
+        "unassessed for this CDF processing version.",
+        entries,
+        selected=cris_comparisons,
     )
     goes_comparisons = [
         item for item in stage2["comparisons"] if str(item["id"]).startswith("goes_")
@@ -499,7 +667,11 @@ def main() -> int:
         "stage1_case_boundaries_analytic",
         "stage1_transport_smoke_analytic",
         "stage2_ams02_observation_adapter",
+        "stage2_ams02_published_transport_analytic",
+        "stage2_ams02_solar_cycle_observation_adapter",
         "stage2_ams02_analytic_comparisons",
+        "stage2_ace_cris_observation_adapter",
+        "stage2_ace_cris_observation_comparisons",
         "stage2_goes16_observation_event",
         "stage2_goes16_analytic_comparisons",
         "crater_observation_reference",

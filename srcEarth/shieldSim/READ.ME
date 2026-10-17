@@ -1,3 +1,11 @@
+NOTE:
+  This is a retained legacy command scratchpad. See README.md for the current
+  versioned interfaces, scientific limitations, completed Stage-2
+  AMS-02/ACE/CRIS/GOES adapters, downloaded-spectrum Geant4 test, reproducible
+  data download, and validation commands. BON2020 is not a production
+  dependency; the BON2020-named legacy files below are not approved physical
+  inputs.
+
 COMPILE:
   mkdir build
   cd build
@@ -20,5 +28,3 @@ dose bifinh the sielding:
   411  python3 plot_4curves.py shieldSim_species_proton.dat shieldSim_species_alpha.dat myplot.png --format=png --no-show
   412  mv ~/Downloads/plot_4curves_log.py .
   413  python3 plot_4curves_log.py shieldSim_species_proton.dat shieldSim_species_alpha.dat myplot.png --format=png --no-show
-
-

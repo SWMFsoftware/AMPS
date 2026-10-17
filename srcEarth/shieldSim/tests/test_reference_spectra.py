@@ -38,7 +38,13 @@ def test_manifest() -> None:
         actual = hashlib.sha256(path.read_bytes()).hexdigest()
         require(actual == expected, f"SHA-256 mismatch for {relative}")
         entries.append(relative)
-    require(len(entries) == 9, "manifest must pin exactly nine fixture and source files")
+    require(len(entries) == len(set(entries)), "manifest contains a duplicate path")
+    expected_files = {
+        path.relative_to(ROOT).as_posix()
+        for path in ROOT.rglob("*")
+        if path.is_file() and path.name not in {"README.md", "manifest.sha256"}
+    }
+    require(set(entries) == expected_files, "manifest must pin every fixture and source file exactly once")
 
 
 def parameter(metadata: dict, name: str) -> dict:
@@ -110,6 +116,133 @@ def test_ams02() -> None:
     he_width = kinetic_per_nucleon(2.15, 0.5) - kinetic_per_nucleon(1.92, 0.5)
     require(math.isclose(p_flux[0], 395.0 * 0.16 / p_width, rel_tol=1e-3), "AMS proton Jacobian")
     require(math.isclose(he_flux[0], 46.58 * 0.23 / he_width, rel_tol=2e-3), "AMS helium Jacobian")
+
+
+def test_ams02_solar_cycle() -> None:
+    directory = ROOT / "gcr" / "ams02_2025"
+    interpretation = json.loads((directory / "interpretation.v1.json").read_text(encoding="utf-8"))
+    require(
+        interpretation["schema_version"] == "shieldSim.ams02_solar_cycle_interpretation.v1",
+        "AMS solar-cycle interpretation schema changed",
+    )
+    require(len(interpretation["files"]) == 7, "AMS solar-cycle element count changed")
+    common_rotations: list[int] | None = None
+    common_grid: list[tuple[float, float]] | None = None
+    for definition in interpretation["files"]:
+        path = directory / definition["path"]
+        require("sha256:" + hashlib.sha256(path.read_bytes()).hexdigest() == definition["sha256"],
+                f"AMS solar-cycle hash mismatch for {definition['symbol']}")
+        with path.open(encoding="utf-8", newline="") as stream:
+            rows = list(csv.DictReader(stream))
+        require(len(rows) == 5880, f"AMS {definition['symbol']} row count changed")
+        rotations = sorted({int(row["bartels_rotation_number"]) for row in rows})
+        require(len(rotations) == 147, f"AMS {definition['symbol']} rotation count changed")
+        counts = {rotation: 0 for rotation in rotations}
+        grids: dict[int, list[tuple[float, float]]] = {rotation: [] for rotation in rotations}
+        prefix = definition["published_name"]
+        uncertainty_fields = (
+            f"{prefix}_flux_error_statistical m^-2sr^-1s^-1GV^-1",
+            f"{prefix}_flux_error_time_dependent m^-2sr^-1s^-1GV^-1",
+            f"{prefix}_flux_error_time_independent m^-2sr^-1s^-1GV^-1",
+        )
+        for row in rows:
+            rotation = int(row["bartels_rotation_number"])
+            counts[rotation] += 1
+            low, high = float(row["rigidity_min_GV"]), float(row["rigidity_max_GV"])
+            flux = float(row[f"{prefix}_flux m^-2sr^-1s^-1GV^-1"])
+            require(0.0 < low < high and math.isfinite(flux) and flux > 0.0,
+                    f"invalid AMS {definition['symbol']} bin")
+            require(all(math.isfinite(float(row[name])) and float(row[name]) >= 0.0
+                        for name in uncertainty_fields),
+                    f"invalid AMS {definition['symbol']} uncertainty")
+            grids[rotation].append((low, high))
+        require(set(counts.values()) == {40}, f"AMS {definition['symbol']} bin count changed")
+        require(all(grid == grids[rotations[0]] for grid in grids.values()),
+                f"AMS {definition['symbol']} grid varies with time")
+        if common_rotations is None:
+            common_rotations, common_grid = rotations, grids[rotations[0]]
+        else:
+            require(rotations == common_rotations and grids[rotations[0]] == common_grid,
+                    f"AMS {definition['symbol']} time/grid coverage differs")
+
+    require(common_rotations is not None and common_grid is not None, "AMS solar-cycle data absent")
+    require(common_grid[0] == (1.92, 2.15) and common_grid[-1] == (56.1, 60.3),
+            "AMS solar-cycle rigidity endpoints changed")
+    partitions = json.loads(
+        (ROOT / "gcr" / "validation_partitions.v1.json").read_text(encoding="utf-8")
+    )["ams02_2025"]
+    development = [r for r in common_rotations
+                   if partitions["development"]["first"] <= r <= partitions["development"]["last"]]
+    holdout = [r for r in common_rotations
+               if partitions["holdout"]["first"] <= r <= partitions["holdout"]["last"]]
+    require(len(development) == partitions["development"]["present_rotations"] == 118,
+            "AMS development partition changed")
+    require(len(holdout) == partitions["holdout"]["present_rotations"] == 29,
+            "AMS holdout partition changed")
+    require(development + holdout == common_rotations, "AMS partitions do not cover the data exactly")
+
+
+def test_ace_cris() -> None:
+    directory = ROOT / "gcr" / "ace_cris"
+    interpretation = json.loads((directory / "interpretation.v1.json").read_text(encoding="utf-8"))
+    require(
+        interpretation["schema_version"] == "shieldSim.ace_cris_hapi_interpretation.v1",
+        "ACE/CRIS interpretation schema changed",
+    )
+    info = json.loads((directory / "ac_h3_cris_hapi_info.json").read_text(encoding="utf-8"))
+    require(info["status"]["code"] == 1200, "ACE/CRIS HAPI status is not OK")
+    symbols = ["B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S",
+               "Cl", "Ar", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni"]
+    require(list(interpretation["species"]) == symbols,
+            "ACE/CRIS species order must remain B through Ni")
+    for symbol in symbols:
+        flux, count = parameter(info, f"flux_{symbol}"), parameter(info, f"cnt_{symbol}")
+        require(flux["size"] == count["size"] == [7], f"ACE/CRIS {symbol} width changed")
+        require(flux["units"] == "1/(cm2 Sr sec MeV/nucleon)",
+                f"ACE/CRIS {symbol} flux unit changed")
+        require(count["units"] == "Counts/day", f"ACE/CRIS {symbol} count unit changed")
+        bins = interpretation["species"][symbol]
+        require(len(bins["bin_lower_MeV_per_nucleon"]) == 7
+                and len(bins["bin_upper_MeV_per_nucleon"]) == 7,
+                f"ACE/CRIS {symbol} bounds changed")
+        require(all(low < high for low, high in zip(
+            bins["bin_lower_MeV_per_nucleon"], bins["bin_upper_MeV_per_nucleon"])),
+            f"ACE/CRIS {symbol} has invalid bounds")
+
+    with (directory / "ac_h3_cris_20191201_all.csv").open(encoding="utf-8", newline="") as stream:
+        rows = list(csv.reader(stream))
+    require(len(rows) == 1 and len(rows[0]) == 337, "ACE/CRIS HAPI fixture shape changed")
+    row = rows[0]
+    require(row[0] == interpretation["record_utc"], "ACE/CRIS record time changed")
+    fluxes = finite_nonnegative(row[1:169], "invalid ACE/CRIS flux")
+    counts = finite_nonnegative(row[169:337], "invalid ACE/CRIS count")
+    require(all(value.is_integer() for value in counts), "ACE/CRIS counts are not integral")
+    require(all(flux == 0.0 for flux, count in zip(fluxes, counts) if count == 0.0),
+            "ACE/CRIS zero-count bin has nonzero flux")
+    require(sum(count == 0.0 for count in counts) == 19, "ACE/CRIS zero-count mask changed")
+    oxygen_offset = 3 * 7
+    require(fluxes[oxygen_offset] == 7.375e-7 and counts[oxygen_offset] == 139.0,
+            "ACE/CRIS oxygen spot value changed")
+    require(math.isclose(fluxes[oxygen_offset] / math.sqrt(counts[oxygen_offset]),
+                         6.255393356389787e-8, rel_tol=1e-14),
+            "ACE/CRIS count-derived statistical uncertainty changed")
+
+    cdf = directory / interpretation["cdf"]["path"]
+    require(cdf.read_bytes()[:4] == b"\xcd\xf3\x00\x01", "ACE/CRIS source is not a CDF3 file")
+    hdf = directory / "raw" / "cris_data_Bartels.hdf"
+    require(hdf.read_bytes()[:4] == b"\x0e\x03\x13\x01", "ACE/CRIS source is not HDF4")
+    oxygen = interpretation["species"]["O"]
+    require(oxygen["bin_lower_MeV_per_nucleon"][0] == 66.3
+            and oxygen["bin_upper_MeV_per_nucleon"][-1] == 235.8,
+            "ACE/CRIS CDF oxygen labels changed")
+    factors = (directory / "raw" / "cris_factors.txt").read_text(encoding="utf-8")
+    require(" 8      2      69.4    89.0" in factors,
+            "ACE current factors documentation changed")
+    require("mixing it with the V04 HAPI/CDF values is prohibited"
+            in interpretation["energy_bounds_policy"],
+            "ACE/CRIS energy-version mismatch is no longer guarded")
+    require(interpretation["systematic_uncertainty_policy"].startswith("not_applied:"),
+            "ACE/CRIS undocumented systematic uncertainty was enabled")
 
 
 def test_goes16() -> None:
@@ -282,7 +415,15 @@ def test_crater() -> None:
 
 
 def main() -> int:
-    tests = (test_manifest, test_ams02, test_goes16, test_goes16_event, test_crater)
+    tests = (
+        test_manifest,
+        test_ams02,
+        test_ams02_solar_cycle,
+        test_ace_cris,
+        test_goes16,
+        test_goes16_event,
+        test_crater,
+    )
     for test in tests:
         test()
         print(f"PASS {test.__name__}")

@@ -1,5 +1,6 @@
 #include "PrimaryGeneratorAction.hh"
 
+#include "CaseDefinition.hh"
 #include "DetectorConstruction.hh"
 #include "GCRSpectrum.hh"
 #include "RunAction.hh"
@@ -30,8 +31,11 @@ PrimaryGeneratorAction::PrimaryGeneratorAction(const Options& opts,
   : fOpts(opts), fRunAction(ra), fDetector(det)
 {
   fGun = new G4ParticleGun(1);
-  if(fOpts.spectrumFile.empty()) BuildGCR();
-  else                           ReadFile(fOpts.spectrumFile);
+  if(fOpts.caseDefinition)
+    ReadDataset(fOpts.caseDefinition->spectrum,
+                fOpts.caseDefinition->spectrum.spectrumPath);
+  else if(fOpts.spectrumFile.empty()) BuildGCR();
+  else                                ReadFile(fOpts.spectrumFile);
 }
 
 PrimaryGeneratorAction::~PrimaryGeneratorAction() {
@@ -58,12 +62,12 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* ev) {
   G4double E; G4ParticleDefinition* pd;
   std::string species;
   if(useP){
-    E=Sample(fPRand,fEP);
+    E=Sample(fPRand,fEP,fPLower,fPUpper);
     pd=G4ParticleTable::GetParticleTable()->FindParticle("proton");
     species="proton";
     RecordInput(true,E);
   } else {
-    E=Sample(fARand,fEA);
+    E=Sample(fARand,fEA,fALower,fAUpper);
     pd=G4ParticleTable::GetParticleTable()->FindParticle("alpha");
     species="alpha";
     RecordInput(false,E);
@@ -163,27 +167,60 @@ void PrimaryGeneratorAction::ReadFile(const std::string& fn){
   } catch(const std::exception& error) {
     G4Exception("PrimaryGeneratorAction","SpectrumFile",FatalException,error.what());
   }
+  ReadDataset(dataset,fn);
+}
+
+void PrimaryGeneratorAction::ReadDataset(const shield_sim::SpectrumDataset& dataset,
+                                         const std::string& displayPath){
   std::vector<G4double> pF,aF;
   fEP.reserve(dataset.energyMeV.size()); fEA.reserve(dataset.energyMeV.size());
   pF.reserve(dataset.energyMeV.size());  aF.reserve(dataset.energyMeV.size());
 
   for(std::size_t i=0;i<dataset.energyMeV.size();++i){
-    G4double E=dataset.energyMeV[i];
-    G4double p=dataset.protonValue[i];
-    G4double a=dataset.alphaValue[i];
-    if(E<fOpts.eMinProton||E>fOpts.eMaxProton) p=0;
-    if(E<fOpts.eMinAlpha ||E>fOpts.eMaxAlpha)  a=0;
-    fEP.push_back(E); fEA.push_back(E);
-    pF.push_back(p*dataset.binWidthMeV[i]);
-    aF.push_back(a*dataset.binWidthMeV[i]);
+    if(dataset.transportBinLowerMeV.size()==dataset.energyMeV.size() &&
+       dataset.transportBinUpperMeV.size()==dataset.energyMeV.size()){
+      // Published bin values are differential intensities averaged over the
+      // stated interval. Clip a boundary bin to the requested energy range,
+      // weight it by its retained width, and sample uniformly inside it. This
+      // is the unique piecewise-constant interpretation and never invents an
+      // effective bin-center energy.
+      const G4double pLower=std::max(dataset.transportBinLowerMeV[i],fOpts.eMinProton);
+      const G4double pUpper=std::min(dataset.transportBinUpperMeV[i],fOpts.eMaxProton);
+      if(pUpper>pLower && dataset.protonValue[i]>0.0){
+        fEP.push_back(0.5*(pLower+pUpper));
+        fPLower.push_back(pLower); fPUpper.push_back(pUpper);
+        pF.push_back(dataset.protonValue[i]*(pUpper-pLower));
+      }
+      const G4double aLower=std::max(dataset.transportBinLowerMeV[i],fOpts.eMinAlpha);
+      const G4double aUpper=std::min(dataset.transportBinUpperMeV[i],fOpts.eMaxAlpha);
+      if(aUpper>aLower && dataset.alphaValue[i]>0.0){
+        fEA.push_back(0.5*(aLower+aUpper));
+        fALower.push_back(aLower); fAUpper.push_back(aUpper);
+        aF.push_back(dataset.alphaValue[i]*(aUpper-aLower));
+      }
+    } else {
+      const G4double E=dataset.energyMeV[i];
+      G4double p=dataset.protonValue[i];
+      G4double a=dataset.alphaValue[i];
+      if(E<fOpts.eMinProton||E>fOpts.eMaxProton) p=0;
+      if(E<fOpts.eMinAlpha ||E>fOpts.eMaxAlpha)  a=0;
+      fEP.push_back(E); fEA.push_back(E);
+      pF.push_back(p*dataset.binWidthMeV[i]);
+      aF.push_back(a*dataset.binWidthMeV[i]);
+    }
   }
 
   fTotP=0; for(auto v:pF) fTotP+=v;
   fTotA=0; for(auto v:aF) fTotA+=v;
 
+  // RandGeneral requires a nonempty, nonzero table even for a species whose
+  // physical integral is zero. A one-bin dummy is safe because species choice
+  // uses fTotP/fTotA and therefore never selects a zero-integral species.
   std::vector<G4double> pRandW=pF, aRandW=aF;
-  if(fTotP<=0.0 && !pRandW.empty()) pRandW[0]=1.0;
-  if(fTotA<=0.0 && !aRandW.empty()) aRandW[0]=1.0;
+  if(pRandW.empty()){ pRandW.push_back(1.0); fEP.push_back(fOpts.eMinProton); }
+  else if(fTotP<=0.0) pRandW[0]=1.0;
+  if(aRandW.empty()){ aRandW.push_back(1.0); fEA.push_back(fOpts.eMinAlpha); }
+  else if(fTotA<=0.0) aRandW[0]=1.0;
   fPRand=new CLHEP::RandGeneral(pRandW.data(),pRandW.size(),1);
   fARand=new CLHEP::RandGeneral(aRandW.data(),aRandW.size(),1);
 
@@ -193,18 +230,26 @@ void PrimaryGeneratorAction::ReadFile(const std::string& fn){
   fSourceNormNoAngular = fTotP+fTotA;
   fSourceAngularFactor = AngularFactorForMode();
 
-  G4cout<<"[Spectrum file] "<<fn
+  G4cout<<"[Spectrum file] "<<displayPath
         <<"  dataset="<<dataset.id
+        <<"  transport-component="
+        <<(dataset.transportComponentId.empty()?"legacy_shared_grid":dataset.transportComponentId)
         <<"  hash="<<dataset.contentHash
         <<"  source-mode="<<fOpts.sourceMode
         <<"  integral(no angular factor)="<<fSourceNormNoAngular
         <<"  angular factor="<<fSourceAngularFactor<<G4endl;
 }
 
-G4double PrimaryGeneratorAction::Sample(CLHEP::RandGeneral* rng,const std::vector<G4double>& E){
+G4double PrimaryGeneratorAction::Sample(CLHEP::RandGeneral* rng,
+                                        const std::vector<G4double>& E,
+                                        const std::vector<G4double>& lower,
+                                        const std::vector<G4double>& upper){
   if(!rng||E.empty()) return 0;
-  G4int i=static_cast<G4int>(rng->shoot()*E.size());
+  const G4double selected=rng->shoot()*E.size();
+  G4int i=static_cast<G4int>(selected);
   i=std::max(0,std::min(i,(G4int)E.size()-1));
+  if(lower.size()==E.size() && upper.size()==E.size())
+    return lower[i]+G4UniformRand()*(upper[i]-lower[i]);
   return E[i];
 }
 

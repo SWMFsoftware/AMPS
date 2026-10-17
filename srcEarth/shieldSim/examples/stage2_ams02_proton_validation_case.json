@@ -1,0 +1,84 @@
+{
+  "schema_version": "shieldSim.case.v1",
+  "case_id": "stage2_downloaded_ams02_proton_transport",
+  "purpose": "verification_test",
+  "material_library": {
+    "path": "../data/material_library.v1.json",
+    "library_id": "shieldSim.reference_materials",
+    "library_version": "1.0.0"
+  },
+  "material_overrides": [],
+  "geometry": {
+    "coordinate_frame": {"name": "world_cartesian_mm", "slab_normal": "+z", "origin": "world_center"},
+    "world": {
+      "size_x": {"value": 80.0, "unit": "mm"},
+      "size_y": {"value": 80.0, "unit": "mm"},
+      "size_z": {"value": 80.0, "unit": "mm"},
+      "center_x": {"value": 0.0, "unit": "mm"},
+      "center_y": {"value": 0.0, "unit": "mm"},
+      "center_z": {"value": 0.0, "unit": "mm"}
+    },
+    "source_plane": {
+      "size_x": {"value": 50.0, "unit": "mm"},
+      "size_y": {"value": 50.0, "unit": "mm"},
+      "center_x": {"value": 0.0, "unit": "mm"},
+      "center_y": {"value": 0.0, "unit": "mm"},
+      "z": {"value": -35.0, "unit": "mm"}
+    },
+    "shield_stack": {
+      "size_x": {"value": 50.0, "unit": "mm"},
+      "size_y": {"value": 50.0, "unit": "mm"},
+      "center_x": {"value": 0.0, "unit": "mm"},
+      "center_y": {"value": 0.0, "unit": "mm"},
+      "front_z": {"value": -20.0, "unit": "mm"},
+      "layers": [
+        {"layer_id": "aluminum", "material": "Al", "thickness": {"type": "geometric", "value": 1.0, "unit": "mm"}}
+      ]
+    },
+    "absorbers": [
+      {
+        "absorber_id": "silicon_proxy",
+        "material": "Si",
+        "geometry": {
+          "type": "slab",
+          "size_x": {"value": 50.0, "unit": "mm"},
+          "size_y": {"value": 50.0, "unit": "mm"},
+          "center_x": {"value": 0.0, "unit": "mm"},
+          "center_y": {"value": 0.0, "unit": "mm"},
+          "thickness": {"value": 1.0, "unit": "mm"},
+          "front_z": {"value": -18.5, "unit": "mm"}
+        }
+      }
+    ]
+  },
+  "source": {
+    "mode": "isotropic",
+    "spectrum": {
+      "format": "ams02_hapi_component",
+      "info_path": "../tests/reference_spectra/gcr/ams02_20131118_hapi_info.json",
+      "data_path": "../tests/reference_spectra/gcr/ams02_20131118_hapi_data.csv",
+      "interpretation_path": "../tests/reference_spectra/gcr/ams02_20131118_interpretation.v1.json",
+      "component_id": "proton"
+    },
+    "energy_limits": {
+      "proton": {"min": {"value": 400.0, "unit": "MeV"}, "max": {"value": 100.0, "unit": "GeV"}},
+      "alpha": {"min": {"value": 1.0, "unit": "MeV"}, "max": {"value": 100.0, "unit": "GeV"}}
+    }
+  },
+  "quantities": ["TID", "H100/10"],
+  "accuracy": {
+    "target": 0.10,
+    "scope": "combined",
+    "coverage": {"standard_k": 1.0, "standard_probability": 0.68, "interval_probability": 0.95, "interval_method": "student_t_or_exact_bounded"},
+    "systematic_budget": {"status": "incomplete", "known_relative_floor": 0.20},
+    "quantity_overrides": {},
+    "sampling": {"min_histories": 256, "max_histories": 256, "batch_size": 256}
+  },
+  "transport": {
+    "physics_list": "FTFP_BERT",
+    "production_cut": {"value": 0.1, "unit": "mm"},
+    "max_step": {"value": 0.1, "unit": "mm"},
+    "random_seed": 2460
+  },
+  "output": {"prefix": "stage2_ams02_validation"}
+}

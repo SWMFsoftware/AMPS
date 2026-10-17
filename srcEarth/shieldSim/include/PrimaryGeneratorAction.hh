@@ -37,6 +37,7 @@ class G4Box;
 class G4Event;
 class G4ParticleGun;
 class RunAction;
+namespace shield_sim { struct SpectrumDataset; }
 
 class PrimaryGeneratorAction : public G4VUserPrimaryGeneratorAction {
 public:
@@ -96,7 +97,11 @@ private:
   void BuildGCR();
   static std::vector<G4double> EstimateTableBinWidths(const std::vector<G4double>& E);
   void ReadFile(const std::string& fn);
-  G4double Sample(CLHEP::RandGeneral* rng,const std::vector<G4double>& E);
+  void ReadDataset(const shield_sim::SpectrumDataset& dataset,
+                   const std::string& displayPath);
+  G4double Sample(CLHEP::RandGeneral* rng,const std::vector<G4double>& E,
+                  const std::vector<G4double>& lower,
+                  const std::vector<G4double>& upper);
   void ConfigureSourcePositionAndDirection();
   void RecordInput(bool isProton,G4double E);
   void RecordSourceDiagnostic(const std::string& species,G4double E);
@@ -108,6 +113,7 @@ private:
   G4ParticleGun* fGun=nullptr;
 
   std::vector<G4double> fEP,fEA;
+  std::vector<G4double> fPLower,fPUpper,fALower,fAUpper;
   CLHEP::RandGeneral* fPRand=nullptr;
   CLHEP::RandGeneral* fARand=nullptr;
 

@@ -86,6 +86,7 @@ if(BUILD_TESTING)
     src/CaseDefinition.cc
     src/ContentHash.cc
     src/MaterialLibrary.cc
+    src/PublishedSourceAdapters.cc
     src/SpectrumDataset.cc
     src/StrictJson.cc
   )
@@ -128,12 +129,22 @@ if(BUILD_TESTING)
   add_test(NAME stage2_source_tool
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/test_stage2_source_tool.py
             $<TARGET_FILE:shieldSimSourceTool> ${PROJECT_SOURCE_DIR})
+  # This is the Stage-2 executable boundary: checksum-pinned published AMS-02
+  # proton bins enter the normal case parser, primary generator, Geant4
+  # transport, and TID/H100/10 proxy writers. It is intentionally separate
+  # from adapter-only tests so ingestion cannot be mistaken for end-to-end use.
+  add_test(NAME stage2_published_transport
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/test_stage2_published_transport.py
+            $<TARGET_FILE:shieldSim> ${PROJECT_SOURCE_DIR}
+            ${SHIELDSIM_VALIDATION_EVIDENCE_DIR})
+  set_tests_properties(stage2_published_transport PROPERTIES
+    ENVIRONMENT "LD_LIBRARY_PATH=${_geant4_runtime_lib}:$ENV{LD_LIBRARY_PATH}")
   add_test(NAME validation_figures
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/generate_validation_figures.py
             ${PROJECT_SOURCE_DIR} ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
             ${SHIELDSIM_VALIDATION_FIGURE_DIR} $<TARGET_FILE:shieldSimSourceTool>)
   set_tests_properties(validation_figures PROPERTIES
-    DEPENDS "stage1_core;stage1_case_boundaries;stage1_transport_smoke;stage2_source_adapters;stage2_reference_spectra;stage2_source_tool")
+    DEPENDS "stage1_core;stage1_case_boundaries;stage1_transport_smoke;stage2_source_adapters;stage2_reference_spectra;stage2_source_tool;stage2_published_transport")
 endif()
 
 # Copy example input files into the build tree for convenience.
