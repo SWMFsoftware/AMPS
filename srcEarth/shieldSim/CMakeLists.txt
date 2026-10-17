@@ -57,6 +57,7 @@ add_executable(shieldSim
   src/PublishedSourceAdapters.cc
   src/RunAction.cc
   src/SpectrumDataset.cc
+  src/Stage6Physics.cc
   src/SteppingAction.cc
   src/StrictJson.cc
 )
@@ -113,6 +114,7 @@ if(BUILD_TESTING)
     src/MaterialLibrary.cc
     src/PublishedSourceAdapters.cc
     src/SpectrumDataset.cc
+    src/Stage6Physics.cc
     src/StrictJson.cc
   )
   target_include_directories(stage1_core_tests PRIVATE ${PROJECT_SOURCE_DIR}/include)
@@ -133,6 +135,11 @@ if(BUILD_TESTING)
   # transport tests.  In particular FTFP_BERT_HP must fail rather than quietly
   # skipping its neutron data when G4NEUTRONHPDATA is unavailable.
   set(_geant4_test_environment "LD_LIBRARY_PATH=${_geant4_runtime_lib}:$ENV{LD_LIBRARY_PATH}")
+  # Python tempfile users must stay inside the selected build/test-output tree.
+  # This makes test location explicit and avoids hidden state under /tmp.
+  set(SHIELDSIM_TEST_TEMP_DIR "${CMAKE_BINARY_DIR}/test_tmp")
+  file(MAKE_DIRECTORY "${SHIELDSIM_TEST_TEMP_DIR}")
+  list(APPEND _geant4_test_environment "TMPDIR=${SHIELDSIM_TEST_TEMP_DIR}")
   foreach(_dataset_name IN LISTS Geant4_DATASETS)
     set(_dataset_environment_name "${Geant4_DATASET_${_dataset_name}_ENVVAR}")
     set(_dataset_path "${Geant4_DATASET_${_dataset_name}_PATH}")
@@ -164,6 +171,8 @@ if(BUILD_TESTING)
   add_test(NAME stage2_source_tool
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/test_stage2_source_tool.py
             $<TARGET_FILE:shieldSimSourceTool> ${PROJECT_SOURCE_DIR})
+  set_tests_properties(stage2_source_tool PROPERTIES
+    ENVIRONMENT "TMPDIR=${SHIELDSIM_TEST_TEMP_DIR}")
   # This is the Stage-2 executable boundary: checksum-pinned published AMS-02
   # proton bins enter the normal case parser, primary generator, Geant4
   # transport, and TID/H100/10 proxy writers. It is intentionally separate
@@ -186,6 +195,7 @@ if(BUILD_TESTING)
     src/PublishedSourceAdapters.cc
     src/ResponseMatrix.cc
     src/SpectrumDataset.cc
+    src/Stage6Physics.cc
     src/StrictJson.cc
   )
   target_include_directories(stage3_core_tests PRIVATE ${PROJECT_SOURCE_DIR}/include)
@@ -220,6 +230,7 @@ if(BUILD_TESTING)
     src/MaterialLibrary.cc
     src/PublishedSourceAdapters.cc
     src/SpectrumDataset.cc
+    src/Stage6Physics.cc
     src/StrictJson.cc
   )
   target_include_directories(stage4_core_tests PRIVATE ${PROJECT_SOURCE_DIR}/include)
@@ -252,6 +263,7 @@ if(BUILD_TESTING)
     src/MaterialLibrary.cc
     src/PublishedSourceAdapters.cc
     src/SpectrumDataset.cc
+    src/Stage6Physics.cc
     src/StrictJson.cc
   )
   target_include_directories(stage5_core_tests PRIVATE ${PROJECT_SOURCE_DIR}/include)
@@ -265,12 +277,43 @@ if(BUILD_TESTING)
   set_tests_properties(stage5_transport PROPERTIES
     ENVIRONMENT "${_geant4_test_environment}"
     TIMEOUT 600)
+
+  add_executable(stage6_core_tests
+    tests/stage6_core_tests.cc
+    src/Stage6Physics.cc
+    src/StrictJson.cc
+  )
+  target_include_directories(stage6_core_tests PRIVATE ${PROJECT_SOURCE_DIR}/include)
+  add_test(NAME stage6_core
+    COMMAND stage6_core_tests ${SHIELDSIM_VALIDATION_EVIDENCE_DIR})
+  add_test(NAME stage6_case_boundaries
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/test_stage6_case_boundaries.py
+            $<TARGET_FILE:shieldSim> ${PROJECT_SOURCE_DIR}
+            ${CMAKE_BINARY_DIR}/stage6_case_boundary_runs)
+  set_tests_properties(stage6_case_boundaries PROPERTIES
+    ENVIRONMENT "${_geant4_test_environment}")
+  add_test(NAME stage6_reference
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/test_stage6_reference.py
+            $<TARGET_FILE:shieldSimReferenceTool> ${PROJECT_SOURCE_DIR}
+            ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
+            ${CMAKE_BINARY_DIR}/stage6_reference_runs)
+  set_tests_properties(stage6_reference PROPERTIES
+    ENVIRONMENT "${_geant4_test_environment}"
+    TIMEOUT 240)
+  add_test(NAME stage6_transport
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/test_stage6_transport.py
+            $<TARGET_FILE:shieldSim> $<TARGET_FILE:shieldSimReferenceTool>
+            ${PROJECT_SOURCE_DIR} ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
+            ${CMAKE_BINARY_DIR}/stage6_transport_runs)
+  set_tests_properties(stage6_transport PROPERTIES
+    ENVIRONMENT "${_geant4_test_environment}"
+    TIMEOUT 900)
   add_test(NAME validation_figures
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/generate_validation_figures.py
             ${PROJECT_SOURCE_DIR} ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
             ${SHIELDSIM_VALIDATION_FIGURE_DIR} $<TARGET_FILE:shieldSimSourceTool>)
   set_tests_properties(validation_figures PROPERTIES
-    DEPENDS "stage1_core;stage1_case_boundaries;stage1_transport_smoke;stage2_source_adapters;stage2_reference_spectra;stage2_source_tool;stage2_published_transport;stage3_core;stage3_response_weights;stage3_transport;stage4_core;stage4_nist_reference;stage4_tid_transport;stage5_core;stage5_transport")
+    DEPENDS "stage1_core;stage1_case_boundaries;stage1_transport_smoke;stage2_source_adapters;stage2_reference_spectra;stage2_source_tool;stage2_published_transport;stage3_core;stage3_response_weights;stage3_transport;stage4_core;stage4_nist_reference;stage4_tid_transport;stage5_core;stage5_transport;stage6_core;stage6_case_boundaries;stage6_reference;stage6_transport")
 endif()
 
 # Copy example input files into the build tree for convenience.

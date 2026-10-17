@@ -668,6 +668,9 @@ def main() -> int:
     stage4_transport = load_evidence("stage4_tid_transport.json")
     stage5_core = load_evidence("stage5_core.json")
     stage5_transport = load_evidence("stage5_transport.json")
+    stage6_core = load_evidence("stage6_core.json")
+    stage6_reference = load_evidence("stage6_reference.json")
+    stage6_transport = load_evidence("stage6_transport.json")
     entries: list[dict] = []
 
     comparison_figure(
@@ -764,8 +767,43 @@ def main() -> int:
         "validation and independent review remain pending.",
         entries,
     )
+    comparison_figure(
+        stage6_core,
+        "Stage 6 exact LET-bin and hardness mathematics",
+        "stage6_core_analytic",
+        "Exact constant and power-law partial-bin integrals, the analytic H100/10 fold, and a "
+        "correlated ratio-of-means are compared with the deterministic Stage-6 implementation. "
+        "Fieller zero/unresolved-denominator and non-clamping edge assertions remain numerical.",
+        entries,
+    )
+    comparison_figure(
+        stage6_reference,
+        "Stage 6 electronic stopping references",
+        "stage6_electronic_stopping_reference",
+        "Geant4 unrestricted electronic mass stopping is compared at exact nodes with pinned "
+        "NIST PSTAR/ASTAR data for protons and He-4 in Al, Si, and water, and with pinned GSI "
+        "ATIMA v1.41 responses for C-12 in silicon. The C-12 rows are a 15% implementation "
+        "screen, not an uncertainty estimate or experimental validation.",
+        entries,
+    )
+    comparison_figure(
+        stage6_transport,
+        "Stage 6 full-transport LET and hardness checks",
+        "stage6_transport_comparisons",
+        "Thin-slab track-mean LET is compared with deterministic midpoint stopping references "
+        "for proton, He-4, and C-12 cases; separate step, cut, and geometry convergence changes "
+        "are shown. The weighted two-node H100/10 run is compared with its exact 2/3 solution. "
+        "Numerical tests also enforce histogram closure and undefined zero denominators.",
+        entries,
+    )
 
-    with tempfile.TemporaryDirectory(prefix="shieldsim-validation-figures-") as temporary:
+    # Keep transient adapter products beside the configured build artifacts.
+    # This honors the repository test-output boundary and avoids hidden /tmp
+    # dependencies; TemporaryDirectory still removes the intermediates after
+    # the review figures and manifest have been written.
+    with tempfile.TemporaryDirectory(
+        prefix="shieldsim-validation-figures-", dir=OUTPUT
+    ) as temporary:
         temporary_path = pathlib.Path(temporary)
         ams = run_source_tool(
             "ams02",
@@ -869,6 +907,9 @@ def main() -> int:
         "stage4_tid_transport_comparisons",
         "stage5_core_analytic",
         "stage5_transport_comparisons",
+        "stage6_core_analytic",
+        "stage6_electronic_stopping_reference",
+        "stage6_transport_comparisons",
     }
     require(
         {pathlib.Path(item["file"]).stem for item in entries} == expected_stems,

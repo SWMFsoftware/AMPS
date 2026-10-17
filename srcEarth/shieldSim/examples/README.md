@@ -171,3 +171,35 @@ published damage function. The Stage-5 capability is implemented and
 reference-tested, but formal completion remains pending project-selected
 accelerator/device evidence and independent review. The result is a silicon
 exposure proxy, not a device-degradation prediction.
+
+## Stage-6 LET and H100/10 case
+
+`stage6_let_hardness_case.json` demonstrates both Stage-6 outputs with an exact
+two-node proton source:
+
+```bash
+./shieldSim --validate-case=../examples/stage6_let_hardness_case.json
+./shieldSim --case=../examples/stage6_let_hardness_case.json
+```
+
+The 50 and 150 MeV nodes have equal probability and normal incidence. In the
+negligible-loss limit both exceed 10 MeV and only the second exceeds 100 MeV,
+so the source-level analytic hardness is 0.5. The actual result remains a
+transport score at the shield rear face and reports event covariance plus a
+95% Fieller interval.
+
+The required `let_response` selects `shieldSim.electronic_let.v1`, explicit
+0.001--10000 keV/um logarithmic edges at 20 bins/decade, and the mandatory
+`not_assessable_no_clamping` policy. The resolved response and every edge enter
+the case hash. The result reports aggregate and component track-fluence bins,
+track/dose means, both linear and mass stopping units, delta-electron components,
+and under/overflow and zero-length-step audits.
+
+This proton case uses the reference-list EM baseline. A C-12 LET case must use
+natural silicon and `G4EmStandardPhysics_option4`; the parser rejects the
+reference-list default because it fails the fixed 10 MeV/u ATIMA screen. The
+example requests statistical accuracy only. A combined claim requires a
+complete structured uncertainty budget with a provenance-bearing
+`physics_reference` component. Stage 6 is implemented and reference-tested but
+remains pending independent review; this example does not validate CRaTER,
+instrument response, device response, organ dose, or crew risk.

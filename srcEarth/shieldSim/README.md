@@ -13,7 +13,9 @@ tested but are **pending the required independent review**, so neither is
 formally complete. Stage 5 is implemented and reference-tested for natural-
 silicon DDD from protons, helium-4, and neutrons and for neutron-only ASTM E722
 `n_eq`; formal Stage-5 completion is pending a project-selected accelerator or
-device-degradation validation data set and independent review. Stage 4 enables a bounded finite-material-slab TID
+device-degradation validation data set and independent review. Stage 6 is
+implemented and reference-tested for generic electronic LET and primary-proton
+`H100/10`; formal Stage-6 completion is pending independent review. Stage 4 enables a bounded finite-material-slab TID
 capability for proton and helium-4 incidence in aluminum, silicon, and water.
 It does not validate photon TID, electrons, heavier ions, devices, organs, or
 crew dose.
@@ -48,16 +50,17 @@ dependency. The science-facing case path is a strict
 - resolved case, geometry, material, source, Geant4, seed, and output
 provenance.
 
-The Stage-3/4/5 `shieldSim.case.v2` path adds explicit
+The Stage-3/4/5/6 `shieldSim.case.v2` path adds explicit
 local-to-world translation/unit-quaternion transforms for the source plane,
 shield reference surface, and absorber reference surface; monoenergetic
 proton, He-4, and explicit-ion response nodes; exact discrete-node direct
 sampling; ancestry-aware raw transport ledgers; and deterministic response
-matrix assembly/folding. It permits `transport_raw`, the Stage-4 `TID`
-quantity, and the separately gated Stage-5 `DDD` and `n_eq` quantities. TID is ionizing energy deposited in the complete finite slab divided
+matrix assembly/folding. It permits `transport_raw`, the Stage-4 `TID`, the
+separately gated Stage-5 `DDD` and `n_eq`, and the Stage-6 `LET` and `H100/10`
+quantities. TID is ionizing energy deposited in the complete finite slab divided
 by that slab's Geant4 mass. It is labeled material-slab dose, never organ or
-device dose. LET, `H100/10`, crew, device, and instrument claims remain
-disabled on case v2. Gamma nodes are accepted only for controlled attenuation
+device dose. Crew, device, and instrument claims remain disabled on case v2.
+Gamma nodes are accepted only for controlled attenuation
 verification. The case-v2 parser rejects a `TID` request containing a gamma or
 explicit heavy-ion response node, so those species cannot enter the validated
 TID domain accidentally. It likewise rejects a TID absorber outside the
@@ -85,12 +88,24 @@ code never clamps, extrapolates, or silently drops it. Geant4 nonionizing
 deposition per slab mass is retained as a separate diagnostic and is never
 added to the table fold.
 
+Stage 6 adds step-fluence electronic LET and covariance-aware spectral
+hardness. LET uses unrestricted Geant4 electronic stopping at the midpoint of
+each positive-length charged absorber step, weighted by track length divided
+by absorber volume. It reports all charged species—including delta electrons—
+as distinct charge/ancestry/generation components, plus track- and dose-mean
+ratios in keV/um and MeV cm2/g. `H100/10` weights every forward primary-proton
+rear-face crossing by `1/(A|n dot u|)` and reports a ratio of event means with
+event covariance and a 95% Fieller interval. Zero or statistically unresolved
+denominators are undefined. The validated reference matrix is p/He-4 in
+natural Al, natural Si, and water; C-12 is limited to natural Si and requires
+`G4EmStandardPhysics_option4`. Values outside declared LET bins are audited and
+make the result not assessable; they are never clamped.
+
 Stage 1 is a software/correctness gate, not physical validation of every
 radiation proxy. Versioned case v1 enables its earlier `TID` and `H100/10`
-path; case v2 adds the bounded Stage-4 TID and Stage-5 silicon damage
-capabilities described above. Every result retains its validation and
-uncertainty status. Step-scored LET remains disabled until its later roadmap
-stage. The older
+path; case v2 adds the bounded Stage-4 TID, Stage-5 silicon damage, and Stage-6
+LET/hardness capabilities described above. Every result retains its validation
+and uncertainty status. The older
 CLI can still produce its historical analytic DDD/LET/n_eq estimates for
 regression compatibility; those results are prototype diagnostics, not
 science-facing outputs.
@@ -118,9 +133,9 @@ components:
 - `beam` and `isotropic` source modes controlled by CLI,
 - local-coordinate shield rear-face scoring,
 - separate total, ionizing, and non-ionizing deposit ledgers,
-- versioned Stage-4 TID and Stage-5 silicon DDD/neutron-only `n_eq`, plus explicitly labeled legacy diagnostics,
+- versioned Stage-4 TID, Stage-5 silicon DDD/neutron-only `n_eq`, and Stage-6 LET/H100/10, plus explicitly labeled legacy diagnostics,
 - detailed help text describing input/output units and radiation-effect approximations,
-- Layer-1/2/3/4 scripts plus Stage-5 CTest gates with deterministic diagnostic and regression output,
+- Layer-1/2/3/4 scripts plus Stage-5/6 CTest gates with deterministic diagnostic and regression output,
 - optional test/numerical controls: `--dump-run-summary`, `--production-cut`, and `--max-step`.
 
 ## Directory structure
@@ -138,6 +153,7 @@ shieldSim/
 │   ├── AccuracyController.hh     # running uncertainty/stopping state
 │   ├── CaseDefinition.hh         # strict resolved case data
 │   ├── DamageResponseLibrary.hh  # authenticated Stage-5 NIEL/E722 responses
+│   ├── Stage6Physics.hh           # LET bins, analytic hardness, Fieller ratios
 │   ├── GeometryTransform.hh       # canonical local-to-world transforms
 │   ├── MaterialLibrary.hh        # versioned records and overrides
 │   ├── ResponseMatrix.hh         # response cell/matrix/fold contracts
@@ -161,6 +177,7 @@ shieldSim/
 │   ├── stage3_response_cell_case.json
 │   ├── stage4_tid_case.json
 │   ├── stage5_ddd_neq_case.json
+│   ├── stage6_let_hardness_case.json
 │   ├── sep_spectrum.dat
 │   └── sep_spectrum.metadata.v1.json
 ├── macros/
@@ -175,7 +192,11 @@ shieldSim/
     ├── test_stage4_tid_transport.py
     ├── stage5_core_tests.cc
     ├── test_stage5_transport.py
+    ├── stage6_core_tests.cc
+    ├── test_stage6_reference.py
+    ├── test_stage6_transport.py
     ├── reference_ddd/
+    ├── reference_let/                # pinned GSI ATIMA heavy-ion responses
     ├── generate_validation_figures.py
     ├── generate_layer_validation_figures.py
     ├── test_stage1_case_boundaries.py
@@ -788,6 +809,66 @@ See [`data/niel/README.md`](data/niel/README.md) and
 test provenance. This is an environmental exposure proxy, not a device-
 degradation or instrument-design calculation.
 
+## Stage-6 electronic LET and spectral hardness
+
+The case-v2 example exercises both implemented Stage-6 quantities:
+
+```bash
+./shieldSim --validate-case=../examples/stage6_let_hardness_case.json
+./shieldSim --case=../examples/stage6_let_hardness_case.json
+```
+
+Every LET case must declare `let_response`. The response ID is
+`shieldSim.electronic_let.v1`; bins are logarithmic in the primary unit
+`keV/um`, and the only supported out-of-range policy is
+`not_assessable_no_clamping`. The recommended example spans 0.001--10000
+keV/um with 20 bins/decade. Resolved bin edges are included in the case hash.
+
+For an absorber of volume `V`, every positive-length charged step contributes
+`dx/V` to its LET bin. Geant4 unrestricted electronic stopping is evaluated at
+the arithmetic midpoint of the transported pre/post kinetic energies. Track
+and dose means are calculated from event-level sufficient statistics:
+
+```text
+L_track = sum(L dx)   / sum(dx)
+L_dose  = sum(L^2 dx) / sum(L dx)
+```
+
+The total spectrum includes every transported charged particle. Species, PDG,
+charge, Z/A, primary/secondary identity, root particle, and generation are
+preserved in component spectra; delta electrons remain electron components.
+Zero-length charged steps are counted but add no fluence. Ionizing deposited
+energy is still the separate TID ledger and is not used as a substitute for
+electronic stopping. Result JSON includes bin standard errors, component and
+aggregate means, event moment/covariance records, under/overflow fluence, and
+the density conversion `1 keV/um = 10/rho MeV cm2/g`.
+
+`H100/10` is evaluated at the shield rear face from primary protons only:
+
+```text
+H100/10 = mean_event(sum crossings[E>100] 1/(A |n dot u|))
+          / mean_event(sum crossings[E>10] 1/(A |n dot u|))
+```
+
+Thresholds are strict and use exact total kinetic energy. Every accepted
+forward crossing contributes; repeated crossings remain correlated within the
+same primary event. The result retains numerator/denominator sums, squares,
+products, covariance of means, the ratio point estimate, and a two-sided 95%
+Fieller interval. A zero denominator or a denominator whose Fieller confidence
+set includes zero is emitted as JSON `null`, not zero or infinity.
+
+The stopping-reference domain is proton/He-4 incidence in natural aluminum,
+natural silicon, or water using the pinned NIST tables. The selected heavier-
+ion screen is fully stripped C-12 in natural silicon at 10, 100, and 1000
+MeV/u against GSI ATIMA v1.41. C-12 requires
+`G4EmStandardPhysics_option4`: the reference-list default is rejected because
+it misses the fixed 10 MeV/u 15% screen. That screen is not an experimental
+uncertainty or device/instrument validation. A combined Stage-6 accuracy claim
+requires a complete structured budget containing a provenance-bearing
+`physics_reference` term; otherwise combined accuracy is `not_assessable`.
+See [`tests/reference_let/README.md`](tests/reference_let/README.md) and the
+Stage-6 roadmap section for the exact evidence boundary.
+
 
 ## Legacy computed-quantity selection
 
@@ -843,9 +924,8 @@ H100/10   Spectral hardness index
 
 The historical equations are documented in `include/ComputedQuantities.hh` and
 `src/ComputedQuantities.cc`; their presence is not validation evidence. They
-are not used by the Stage-5 versioned silicon calculation above. LET remains
-behind its later validation gate; formal Stage-5 sign-off still requires the
-external evidence and review stated in the roadmap.
+are not used by the versioned Stage-5/6 calculations above. Formal sign-off
+still requires the external evidence/review stated in the roadmap.
 
 ## Legacy compiled catalog maintenance
 
@@ -959,9 +1039,10 @@ Canonical result written after each adaptive batch, with
 the final file representing all cumulative histories. It records quantity
 definition, value/unit/normalization, deposition ledgers or H100/10 numerator
 and denominator, statistical and systematic uncertainty state, 95% interval,
-accuracy status/reason, and `implemented_not_physically_validated_stage1`.
-H100/10 uses a bounded Wilson 95% interval. JSON `null`, rather than zero or
-infinity, represents an undefined value. A case-v2 run writes
+accuracy status/reason, and a capability-specific validation status. Versioned
+Stage-6 H100/10 uses a covariance-aware Fieller 95% interval; the legacy case-v1
+path retains its earlier compatibility behavior. JSON `null`, rather than zero
+or infinity, represents an undefined value. A case-v2 run writes
 `shieldSim.result.v2` with `transport_raw` moments, ancestry-qualified primary/
 secondary rear-face crossings, per-layer deposit/track/step and secondary-
 birth ledgers, absorber deposition moments, physics/EM/ion provenance, and an
@@ -973,6 +1054,10 @@ intervals, the complete systematic component/correlation records, and the
 status. Particle/ancestry deposition partitions are authoritative. Creator-
 process and step-defining-process partitions are labeled diagnostic only; a
 process name is not treated as a unique causal allocation of deposited energy.
+For Stage 6 it additionally records LET response edges and out-of-range policy,
+per-bin event uncertainty, charged-particle component metadata, track/dose mean
+ratio moments and intervals, zero-length-step audit counts, and H100/10 weighted
+fluence moments/covariance.
 
 ### `<prefix>__<absorber>_response_cell.json`
 

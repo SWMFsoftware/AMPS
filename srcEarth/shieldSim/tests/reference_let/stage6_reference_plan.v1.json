@@ -1,0 +1,17 @@
+{
+  "schema_version": "shieldSim.stage6_reference_plan.v1",
+  "heavy_ion_screen": {
+    "particle": "C-12",
+    "target": "natural silicon",
+    "energies_MeV_per_u": [10, 100, 1000],
+    "quantity": "unrestricted electronic mass stopping power",
+    "reference": "GSI ATIMA v1.41 web package",
+    "relative_acceptance": 0.15,
+    "interpretation": "implementation/reference screen only; not uncertainty or experimental validation"
+  },
+  "proton_helium_matrix": {
+    "reference": "NIST PSTAR/ASTAR pinned Stage-4 tables",
+    "materials": ["natural aluminum", "natural silicon", "water"],
+    "quantity": "electronic mass stopping power"
+  }
+}

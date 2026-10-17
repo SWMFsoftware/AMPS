@@ -1,0 +1,4 @@
+energy_MeV_per_u,total_energy_MeV,electronic_stopping_MeV_cm2_per_g,atima_reported_MeV_per_mg_cm2,entrance_mean_charge
+10,120,1270.226,1.270226,5.998919
+100,1200,209.922,0.209922,6.000000
+1000,12000,65.306,0.065306,6.000001

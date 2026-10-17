@@ -9,6 +9,7 @@
 #include "MaterialCatalog.hh"
 #include "SpecBins.hh"
 #include "StrictJson.hh"
+#include "Stage6Physics.hh"
 
 #include <G4AnalysisManager.hh>
 #include <G4Box.hh>
@@ -52,6 +53,11 @@ RunAction::RunAction(const Options& opts,
   fLastNEqRate.assign(scoringNames.size(),0);
   fInP.assign(N,0); fInA.assign(N,0);
   fOutP.assign(N,0); fOutA.assign(N,0); fOutN.assign(N,0);
+  if(fOpts.caseDefinition && fOpts.caseDefinition->letResponse.enabled){
+    const std::size_t bins=fOpts.caseDefinition->letResponse.edgesKeVPerUm.size()-1;
+    fEventLETBins.assign(bins,0.0);
+    fLETBins.assign(bins,RawMoments{});
+  }
 
   fCumulativeMode=static_cast<bool>(fOpts.caseDefinition);
   if(fOpts.caseDefinition){
@@ -271,6 +277,75 @@ void RunAction::RecordAbsorberEntry(std::size_t absorber,
   }
 }
 
+void RunAction::RecordAbsorberLETStep(std::size_t absorber,
+                                      const std::string& particle,int pdg,
+                                      int atomicNumber,int massNumber,
+                                      G4double charge,bool primary,
+                                      const std::string& rootParticle,
+                                      int generation,
+                                      G4double linearLETKeVPerUm,
+                                      G4double stepLength){
+  if(!LETScoringEnabled() || absorber>=fScoringLVs.size()) return;
+  std::ostringstream keyStream;
+  keyStream<<ScoreToken(particle)<<'|'<<pdg<<'|'<<atomicNumber<<'|'<<massNumber
+           <<'|'<<std::setprecision(12)<<charge<<'|'<<(primary?1:0)<<'|'
+           <<ScoreToken(rootParticle)<<'|'<<generation;
+  const std::string key=keyStream.str();
+  auto found=fEventLETComponents.find(key);
+  if(found==fEventLETComponents.end()){
+    EventLETComponent component;
+    component.metadata.particle=particle;
+    component.metadata.pdg=pdg;
+    component.metadata.atomicNumber=atomicNumber;
+    component.metadata.massNumber=massNumber;
+    component.metadata.charge=charge;
+    component.metadata.primary=primary;
+    component.metadata.rootParticle=rootParticle;
+    component.metadata.generation=generation;
+    component.bins.assign(fEventLETBins.size(),0.0);
+    found=fEventLETComponents.emplace(key,std::move(component)).first;
+  }
+  if(!(stepLength>0.0)){
+    ++fLETZeroLengthSteps;
+    ++found->second.metadata.zeroLengthSteps;
+    return;
+  }
+  if(!std::isfinite(linearLETKeVPerUm) || linearLETKeVPerUm<0.0)
+    G4Exception("RunAction::RecordAbsorberLETStep","LET",FatalException,
+                "Electronic LET must be finite and non-negative");
+  auto* logical=fScoringLVs[absorber];
+  const double volumeCm3=(logical && logical->GetSolid())
+      ? logical->GetSolid()->GetCubicVolume()/cm3 : 0.0;
+  if(!(volumeCm3>0.0) || !std::isfinite(volumeCm3))
+    G4Exception("RunAction::RecordAbsorberLETStep","Geometry",FatalException,
+                "LET scoring requires a finite positive absorber volume");
+  const double trackFluence=(stepLength/cm)/volumeCm3;
+  ++fLETPositiveLengthSteps;
+  ++found->second.metadata.positiveLengthSteps;
+  fEventLETT0+=trackFluence;
+  fEventLETT1+=linearLETKeVPerUm*trackFluence;
+  fEventLETT2+=linearLETKeVPerUm*linearLETKeVPerUm*trackFluence;
+  found->second.t0+=trackFluence;
+  found->second.t1+=linearLETKeVPerUm*trackFluence;
+  found->second.t2+=linearLETKeVPerUm*linearLETKeVPerUm*trackFluence;
+
+  const shield_sim::LogarithmicLETBinning binning(
+      fOpts.caseDefinition->letResponse.minimumKeVPerUm,
+      fOpts.caseDefinition->letResponse.maximumKeVPerUm,
+      fOpts.caseDefinition->letResponse.binsPerDecade);
+  const long bin=binning.Locate(linearLETKeVPerUm);
+  if(bin<0){
+    fEventLETUnderflow+=trackFluence;
+    found->second.underflow+=trackFluence;
+  } else if(static_cast<std::size_t>(bin)>=fEventLETBins.size()){
+    fEventLETOverflow+=trackFluence;
+    found->second.overflow+=trackFluence;
+  } else {
+    fEventLETBins[static_cast<std::size_t>(bin)]+=trackFluence;
+    found->second.bins[static_cast<std::size_t>(bin)]+=trackFluence;
+  }
+}
+
 void RunAction::RecordShieldExit(const std::string& particle,int,int,int,
                                  bool primary,const std::string& rootParticle,
                                  int generation,G4double kineticEnergyMeV){
@@ -334,19 +409,25 @@ void RunAction::RecordSecondaryBirth(std::size_t layer,const std::string& partic
   fRawScoreUnits[score]="particles/primary";
 }
 
-void RunAction::AddPrimaryProtonExit(G4double kineticEnergyMeV){
+void RunAction::AddPrimaryProtonExit(G4double kineticEnergyMeV,
+                                     G4double fluenceWeightPerCm2){
   // Thresholds are evaluated at the exact crossing energy, not at an output
   // histogram bin center. The approved definition uses strict E > threshold.
-  // Count a primary history at most once at each nested threshold: a rare
-  // backscatter/re-entry of the same primary must not masquerade as another
-  // independent incident particle in the ratio or its binomial covariance.
-  if(kineticEnergyMeV>10.0 && !fEventPrimaryProtonAbove10){
+  // Every crossing is a surface-fluence contribution. Multiple crossings in
+  // one primary history remain correlated and are therefore accumulated into
+  // the event numerator/denominator before their covariance is committed.
+  if(!(fluenceWeightPerCm2>0.0) || !std::isfinite(fluenceWeightPerCm2))
+    G4Exception("RunAction::AddPrimaryProtonExit","Geometry",FatalException,
+                "Shield-exit fluence weight must be finite and positive");
+  const bool stage6=fOpts.caseDefinition &&
+      fOpts.caseDefinition->schemaVersion=="shieldSim.case.v2";
+  if(kineticEnergyMeV>10.0 && (stage6 || fEventPrimaryProtonAbove10==0.0)){
     ++fPrimaryProtonAbove10;
-    fEventPrimaryProtonAbove10=true;
+    fEventPrimaryProtonAbove10+=stage6?fluenceWeightPerCm2:1.0;
   }
-  if(kineticEnergyMeV>100.0 && !fEventPrimaryProtonAbove100){
+  if(kineticEnergyMeV>100.0 && (stage6 || fEventPrimaryProtonAbove100==0.0)){
     ++fPrimaryProtonAbove100;
-    fEventPrimaryProtonAbove100=true;
+    fEventPrimaryProtonAbove100+=stage6?fluenceWeightPerCm2:1.0;
   }
 }
 
@@ -357,8 +438,13 @@ void RunAction::BeginEvent(){
   fEventRawScores.clear();
   fEventDDDMeVPerG=0.0;
   fEventNeutronEquivalentPerCm2=0.0;
-  fEventPrimaryProtonAbove10=false;
-  fEventPrimaryProtonAbove100=false;
+  fEventPrimaryProtonAbove10=0.0;
+  fEventPrimaryProtonAbove100=0.0;
+  std::fill(fEventLETBins.begin(),fEventLETBins.end(),0.0);
+  fEventLETComponents.clear();
+  fEventLETUnderflow=0.0;
+  fEventLETOverflow=0.0;
+  fEventLETT0=fEventLETT1=fEventLETT2=0.0;
 }
 
 void RunAction::EndEvent(){
@@ -394,6 +480,59 @@ void RunAction::EndEvent(){
       fRawCrossProducts[{first->first,second->first}]+=first->second*second->second;
     }
   }
+  auto addMoment=[](RawMoments& moments,double value){
+    moments.sum+=value;
+    moments.sumSquares+=value*value;
+  };
+  for(std::size_t bin=0;bin<fEventLETBins.size();++bin)
+    addMoment(fLETBins[bin],fEventLETBins[bin]);
+  addMoment(fLETUnderflow,fEventLETUnderflow);
+  addMoment(fLETOverflow,fEventLETOverflow);
+  auto addRatioEvent=[](shield_sim::RatioMoments& moments,double numerator,
+                        double denominator){
+    ++moments.histories;
+    moments.numeratorSum+=numerator;
+    moments.denominatorSum+=denominator;
+    moments.numeratorSumSquares+=numerator*numerator;
+    moments.denominatorSumSquares+=denominator*denominator;
+    moments.numeratorDenominatorSumProducts+=numerator*denominator;
+  };
+  for(const auto& item:fEventLETComponents){
+    auto inserted=fLETComponents.emplace(item.first,item.second.metadata);
+    auto& ledger=inserted.first->second;
+    if(inserted.second){
+      ledger.bins.assign(fEventLETBins.size(),RawMoments{});
+      ledger.positiveLengthSteps=0;
+      ledger.zeroLengthSteps=0;
+      // Components first created after earlier primary histories receive the
+      // mathematically required implicit-zero histories.
+      ledger.trackMeanMoments.histories=fLETTrackMeanMoments.histories;
+      ledger.doseMeanMoments.histories=fLETDoseMeanMoments.histories;
+    }
+    for(std::size_t bin=0;bin<item.second.bins.size();++bin)
+      addMoment(ledger.bins[bin],item.second.bins[bin]);
+    addMoment(ledger.underflow,item.second.underflow);
+    addMoment(ledger.overflow,item.second.overflow);
+    // Counts are cumulative diagnostics, not stochastic scores.
+    ledger.positiveLengthSteps+=item.second.metadata.positiveLengthSteps;
+    ledger.zeroLengthSteps+=item.second.metadata.zeroLengthSteps;
+  }
+  for(auto& item:fLETComponents){
+    const auto event=fEventLETComponents.find(item.first);
+    const double t0=event==fEventLETComponents.end()?0.0:event->second.t0;
+    const double t1=event==fEventLETComponents.end()?0.0:event->second.t1;
+    const double t2=event==fEventLETComponents.end()?0.0:event->second.t2;
+    addRatioEvent(item.second.trackMeanMoments,t1,t0);
+    addRatioEvent(item.second.doseMeanMoments,t2,t1);
+  }
+  if(LETScoringEnabled()){
+    addRatioEvent(fLETTrackMeanMoments,fEventLETT1,fEventLETT0);
+    addRatioEvent(fLETDoseMeanMoments,fEventLETT2,fEventLETT1);
+  }
+  if(fOpts.calcHardness && fOpts.caseDefinition &&
+     fOpts.caseDefinition->schemaVersion=="shieldSim.case.v2")
+    addRatioEvent(fHardnessMoments,fEventPrimaryProtonAbove100,
+                  fEventPrimaryProtonAbove10);
   if(!fAccuracyController) return;
   fAccuracyController->RecordHistory();
   if(fOpts.calcTID){
@@ -406,8 +545,14 @@ void RunAction::EndEvent(){
   }
   if(fOpts.calcDDD) fAccuracyController->AddSample("DDD",fEventDDDMeVPerG);
   if(fOpts.calcNEq) fAccuracyController->AddSample("n_eq",fEventNeutronEquivalentPerCm2);
-  if(fOpts.calcHardness && fEventPrimaryProtonAbove10)
-    fAccuracyController->AddSample("H100/10",fEventPrimaryProtonAbove100?1.0:0.0);
+  // LET means and H100/10 are correlated ratios. Their precision is evaluated
+  // directly from event-level sufficient moments in AccuracyStatisticallySatisfied;
+  // feeding either into the scalar mean controller would discard covariance.
+  if(fOpts.calcHardness && fOpts.caseDefinition &&
+     fOpts.caseDefinition->schemaVersion!="shieldSim.case.v2" &&
+     fEventPrimaryProtonAbove10>0.0)
+    fAccuracyController->AddSample("H100/10",
+        fEventPrimaryProtonAbove100>0.0?1.0:0.0);
   if(fOpts.caseDefinition &&
      std::find(fOpts.caseDefinition->quantities.begin(),fOpts.caseDefinition->quantities.end(),
                "transport_raw")!=fOpts.caseDefinition->quantities.end()){
@@ -427,6 +572,21 @@ bool RunAction::AccuracyStatisticallySatisfied() const{
     // not_met; spending more histories cannot change that conclusion.
     if(requirement.scope=="combined" && requirement.hasKnownSystematicFloor &&
        requirement.knownSystematicFloor>requirement.target) continue;
+    if(quantity=="H100/10" && fOpts.caseDefinition->schemaVersion=="shieldSim.case.v2"){
+      const auto estimate=shield_sim::EstimateRatioOfMeans(fHardnessMoments);
+      if(estimate.status!=shield_sim::RatioStatus::Available || estimate.value==0.0 ||
+         estimate.standardError/std::abs(estimate.value)>requirement.target) return false;
+      continue;
+    }
+    if(quantity=="LET"){
+      const auto track=shield_sim::EstimateRatioOfMeans(fLETTrackMeanMoments);
+      const auto dose=shield_sim::EstimateRatioOfMeans(fLETDoseMeanMoments);
+      if(track.status!=shield_sim::RatioStatus::Available ||
+         dose.status!=shield_sim::RatioStatus::Available || track.value==0.0 ||
+         dose.value==0.0 || track.standardError/std::abs(track.value)>requirement.target ||
+         dose.standardError/std::abs(dose.value)>requirement.target) return false;
+      continue;
+    }
     const auto* estimate=fAccuracyController->Estimate(quantity);
     if(!estimate || estimate->count<2 || estimate->mean==0.0 ||
        !std::isfinite(estimate->StandardError())) return false;
@@ -512,6 +672,17 @@ void RunAction::ConfigureIndependentCase(std::size_t absorberIndex,
   fDddOutOfDomainCrossings=0;
   fDddUnsupportedCrossings=0;
   fNeqOutOfDomainCrossings=0;
+  std::fill(fEventLETBins.begin(),fEventLETBins.end(),0.0);
+  std::fill(fLETBins.begin(),fLETBins.end(),RawMoments{});
+  fEventLETComponents.clear();
+  fLETComponents.clear();
+  fLETUnderflow=RawMoments{};
+  fLETOverflow=RawMoments{};
+  fLETPositiveLengthSteps=0;
+  fLETZeroLengthSteps=0;
+  fLETTrackMeanMoments=shield_sim::RatioMoments{};
+  fLETDoseMeanMoments=shield_sim::RatioMoments{};
+  fHardnessMoments=shield_sim::RatioMoments{};
 }
 
 void RunAction::AppendSweepPoint(const SweepPoint& sp){ fSweepData.push_back(sp); }
@@ -547,6 +718,21 @@ G4double RunAction::AbsorberEntryFluenceWeightPerCm2(
       ? fDetector->GetAbsorberEntryFluenceWeightPerCM2(absorber,postStepPoint) : 0.0;
 }
 
+G4double RunAction::ShieldExitFluenceWeightPerCm2(
+    G4double localDirectionCosine) const {
+  if(!(localDirectionCosine>0.0) || !fShieldLV) return 0.0;
+  const auto* solid=dynamic_cast<const G4Box*>(fShieldLV->GetSolid());
+  if(!solid) return 0.0;
+  const double areaCm2=(2.0*solid->GetXHalfLength()/cm)*
+                       (2.0*solid->GetYHalfLength()/cm);
+  return areaCm2>0.0 ? 1.0/(areaCm2*std::abs(localDirectionCosine)) : 0.0;
+}
+
+bool RunAction::LETScoringEnabled() const {
+  return fOpts.calcLET && fOpts.caseDefinition &&
+         fOpts.caseDefinition->letResponse.enabled;
+}
+
 void RunAction::BeginOfRunAction(const G4Run*) {
   RefreshLVPointers();
   OpenDiagnosticFiles();
@@ -574,6 +760,17 @@ void RunAction::BeginOfRunAction(const G4Run*) {
   fDddOutOfDomainCrossings=0;
   fDddUnsupportedCrossings=0;
   fNeqOutOfDomainCrossings=0;
+  std::fill(fEventLETBins.begin(),fEventLETBins.end(),0.0);
+  std::fill(fLETBins.begin(),fLETBins.end(),RawMoments{});
+  fEventLETComponents.clear();
+  fLETComponents.clear();
+  fLETUnderflow=RawMoments{};
+  fLETOverflow=RawMoments{};
+  fLETPositiveLengthSteps=0;
+  fLETZeroLengthSteps=0;
+  fLETTrackMeanMoments=shield_sim::RatioMoments{};
+  fLETDoseMeanMoments=shield_sim::RatioMoments{};
+  fHardnessMoments=shield_sim::RatioMoments{};
   std::fill(fLastDoseTotal.begin(),fLastDoseTotal.end(),0);
   std::fill(fLastDoseNonIonizing.begin(),fLastDoseNonIonizing.end(),0);
   std::fill(fLastDoseRate.begin(),fLastDoseRate.end(),0);
@@ -746,7 +943,7 @@ void RunAction::WriteSpectraTecplot(G4int nEv){
     if(fOpts.caseDefinition && (fOpts.caseDefinition->responseIncident.enabled ||
                                 !fOpts.caseDefinition->directIncidents.empty()))
       out<<"# Spectrum: "<<fOpts.caseDefinition->sourceFormat
-         <<" Stage-3/4/5 verification source; one generated primary per history.\n";
+         <<" Stage-3/4/5/6 verification source; one generated primary per history.\n";
     else if(fOpts.spectrumFile.empty())
       out<<"# Spectrum: built-in approximate Badhwar-O'Neill, phi = 550 MV.\n";
     else
@@ -802,9 +999,15 @@ void RunAction::WriteSpectraTecplot(G4int nEv){
 }
 
 G4double RunAction::ComputeHardnessIndex(G4int nEv) const{
-  // Approved Stage-0 definition: primary protons only, at the shield rear
-  // face, using exact crossing kinetic energies and strict > thresholds.
-  // A zero denominator is undefined and remains NaN in machine output.
+  // Versioned Stage-6 cases use scalar-fluence crossing weights and a ratio of
+  // event means. The point estimate is emitted only when Fieller's denominator
+  // confidence set excludes zero; unresolved/zero denominators remain NaN.
+  if(fOpts.caseDefinition && fOpts.caseDefinition->schemaVersion=="shieldSim.case.v2"){
+    const auto estimate=shield_sim::EstimateRatioOfMeans(fHardnessMoments);
+    return estimate.status==shield_sim::RatioStatus::Available
+        ? estimate.value : std::numeric_limits<G4double>::quiet_NaN();
+  }
+  // Legacy CLI compatibility retains its historical unweighted count ratio.
   if(nEv<=0 || fPrimaryProtonAbove10<=0.0)
     return std::numeric_limits<G4double>::quiet_NaN();
   return fPrimaryProtonAbove100/fPrimaryProtonAbove10;
@@ -1025,6 +1228,55 @@ void RunAction::WriteComputedQuantitiesTecplot(G4int nEv){
 }
 
 void RunAction::WriteLETSpectrumTecplot(G4int nEv){
+  if(LETScoringEnabled()){
+    const std::string fname=OutputName("_let_spectrum.dat");
+    std::ofstream out(fname);
+    if(!out)
+      G4Exception("RunAction::WriteLETSpectrumTecplot","Output",FatalException,
+                  ("Cannot write LET spectrum '"+fname+"'").c_str());
+    const auto& response=fOpts.caseDefinition->letResponse;
+    const auto& absorber=fOpts.caseDefinition->absorbers.at(fOpts.activeAbsorberIndex);
+    const shield_sim::LogarithmicLETBinning bins(response.minimumKeVPerUm,
+        response.maximumKeVPerUm,response.binsPerDecade);
+    out<<"TITLE = \"ShieldSim Stage-6 Step-Fluence LET Spectrum\"\n";
+    out<<"# Definition: unrestricted Geant4 electronic stopping at transported-step midpoint.\n";
+    out<<"# Weight: step track length / absorber volume; delta electrons are separate components.\n";
+    out<<"# Out-of-range policy: not_assessable_no_clamping.\n";
+    out<<"# Underflow fluence sum [cm-2 primary-1]: "<<fLETUnderflow.sum/nEv<<"\n";
+    out<<"# Overflow fluence sum [cm-2 primary-1]: "<<fLETOverflow.sum/nEv<<"\n";
+    out<<"VARIABLES = \"LET_low [keV/um]\" \"LET_high [keV/um]\" "
+          "\"LET_center [keV/um]\" \"mass_LET_center [MeV cm2/g]\" "
+          "\"fluence [cm-2 primary-1]\" \"fluence_SE [cm-2 primary-1]\" "
+          "\"dPhi_dLET [cm-2 primary-1 (keV/um)-1]\" "
+          "\"fluence_rate [cm-2 s-1]\" \"dPhi_dLET_rate [cm-2 s-1 (keV/um)-1]\"\n";
+    auto writeZone=[&](const std::string& title,const std::vector<RawMoments>& moments){
+      out<<"ZONE T=\""<<title<<"\", I="<<bins.BinCount()<<", DATAPACKING=POINT\n";
+      for(std::size_t i=0;i<bins.BinCount();++i){
+        const double mean=moments[i].sum/nEv;
+        const double variance=nEv>1?std::max(0.0,(moments[i].sumSquares-
+            moments[i].sum*moments[i].sum/nEv)/(nEv-1.0)):0.0;
+        const double se=std::sqrt(variance/nEv);
+        const double center=bins.GeometricCenter(i);
+        out<<std::scientific<<std::setprecision(12)
+           <<bins.Lower(i)<<' '<<bins.Upper(i)<<' '<<center<<' '
+           <<10.0*center/absorber.densityGPerCm3<<' '
+           <<mean<<' '<<se<<' '<<mean/bins.Width(i)<<' '
+           <<mean*GetIncidentParticleRate()<<' '
+           <<mean*GetIncidentParticleRate()/bins.Width(i)<<'\n';
+      }
+    };
+    writeZone("total",fLETBins);
+    for(const auto& item:fLETComponents){
+      const auto& component=item.second;
+      std::ostringstream title;
+      title<<component.particle<<";q="<<component.charge
+           <<";"<<(component.primary?"primary":"secondary")
+           <<";root="<<component.rootParticle<<";generation="<<component.generation;
+      writeZone(title.str(),component.bins);
+    }
+    G4cout<<"Stage-6 LET spectrum written: "<<fname<<G4endl;
+    return;
+  }
   // LET spectra are computed from the transmitted charged-particle spectra.
   // For each target material, every transmitted proton/alpha energy bin is
   // mapped to an LET bin using ChargedLET_MeV_cm2_mg().  The LET spectrum is
@@ -1286,11 +1538,18 @@ void RunAction::WriteResultJson(G4int nEv){
   const bool stage5Damage=c.schemaVersion=="shieldSim.case.v2" && c.damageResponse &&
       (std::find(c.quantities.begin(),c.quantities.end(),"DDD")!=c.quantities.end() ||
        std::find(c.quantities.begin(),c.quantities.end(),"n_eq")!=c.quantities.end());
+  const bool stage6=c.schemaVersion=="shieldSim.case.v2" &&
+      (std::find(c.quantities.begin(),c.quantities.end(),"LET")!=c.quantities.end() ||
+       std::find(c.quantities.begin(),c.quantities.end(),"H100/10")!=c.quantities.end());
   const std::string stage4ValidationStatus=
       "stage4_finite_slab_tid_implemented_and_acceptance_tested_pending_independent_review";
   const std::string stage5ValidationStatus=
       "stage5_silicon_DDD_and_neutron_only_n_eq_implemented_and_reference_tested_pending_accelerator_device_validation_and_independent_review";
-  const std::string validationStatus = stage5Damage
+  const std::string stage6ValidationStatus=
+      "stage6_LET_and_H100_10_implemented_and_reference_tested_pending_independent_review";
+  const std::string validationStatus = stage6
+      ? stage6ValidationStatus
+      : stage5Damage
       ? stage5ValidationStatus
       : stage4Tid
       ? stage4ValidationStatus
@@ -1345,6 +1604,69 @@ void RunAction::WriteResultJson(G4int nEv){
     if(requirement.hasKnownSystematicFloor)
       object["known_systematic_relative_floor"]=requirement.knownSystematicFloor;
     return shield_sim::Json(std::move(object));
+  };
+  auto ratioAccuracyJson=[&](const std::string& quantity,
+      const std::vector<shield_sim::RatioEstimate>& estimates){
+    shield_sim::Json result=accuracyJson(quantity,fAccuracyController->Assess(quantity));
+    auto& object=result.AsObject();
+    const auto& requirement=c.AccuracyFor(quantity);
+    bool available=!estimates.empty();
+    double maximumRelative=0.0;
+    std::string reason;
+    for(const auto& estimate:estimates){
+      if(estimate.status!=shield_sim::RatioStatus::Available || estimate.value==0.0){
+        available=false;
+        if(!reason.empty()) reason+="; ";
+        reason+=estimate.reason;
+      } else {
+        maximumRelative=std::max(maximumRelative,
+            estimate.standardError/std::abs(estimate.value));
+      }
+    }
+    object["statistical_relative_standard_uncertainty"]=available
+        ? shield_sim::Json(maximumRelative) : shield_sim::Json(nullptr);
+    object["ratio_interval_method"]="two-sided 95% Fieller interval using event-level numerator/denominator covariance";
+    if(!available){
+      object["status"]="not_assessable";
+      object["reason"]=reason.empty()?"ratio estimate is unavailable":reason;
+      object["combined_relative_standard_uncertainty"]=shield_sim::Json(nullptr);
+      return result;
+    }
+    if(requirement.scope=="combined" && !requirement.systematicBudgetComplete){
+      object["status"]="not_assessable";
+      object["reason"]="combined accuracy requested but the systematic uncertainty budget is incomplete";
+      object["combined_relative_standard_uncertainty"]=shield_sim::Json(nullptr);
+      return result;
+    }
+    double assessed=maximumRelative;
+    if(requirement.scope=="combined"){
+      const double systematic=std::max(requirement.systematicRelativeUncertainty,
+          requirement.hasKnownSystematicFloor?requirement.knownSystematicFloor:0.0);
+      assessed=std::hypot(maximumRelative,systematic);
+      object["combined_relative_standard_uncertainty"]=assessed;
+    } else {
+      object["combined_relative_standard_uncertainty"]=shield_sim::Json(nullptr);
+    }
+    object["status"]=assessed<=requirement.target?"met":"not_met";
+    object["reason"]=assessed<=requirement.target
+        ? "all required ratio means meet the requested relative standard uncertainty"
+        : "at least one required ratio mean exceeds the requested relative standard uncertainty";
+    return result;
+  };
+  auto ratioMomentsJson=[&](const shield_sim::RatioMoments& moments,
+                            const shield_sim::RatioEstimate& estimate){
+    return shield_sim::Json(shield_sim::Json::Object{
+      {"covariance_of_means",estimate.covarianceOfMeans},
+      {"denominator_mean",estimate.denominatorMean},
+      {"denominator_sum",moments.denominatorSum},
+      {"denominator_sum_squares",moments.denominatorSumSquares},
+      {"denominator_variance_of_mean",estimate.denominatorVarianceOfMean},
+      {"histories",static_cast<double>(moments.histories)},
+      {"numerator_denominator_sum_products",moments.numeratorDenominatorSumProducts},
+      {"numerator_mean",estimate.numeratorMean},
+      {"numerator_sum",moments.numeratorSum},
+      {"numerator_sum_squares",moments.numeratorSumSquares},
+      {"numerator_variance_of_mean",estimate.numeratorVarianceOfMean}});
   };
 
   shield_sim::Json::Array outputs;
@@ -1485,11 +1807,109 @@ void RunAction::WriteResultJson(G4int nEv){
       {"value",domainComplete?shield_sim::Json(partial):shield_sim::Json(nullptr)}
     });
   }
-  if(fOpts.calcHardness){
+  if(fOpts.calcLET){
+    const auto track=shield_sim::EstimateRatioOfMeans(fLETTrackMeanMoments);
+    const auto dose=shield_sim::EstimateRatioOfMeans(fLETDoseMeanMoments);
+    const bool completeRange=fLETUnderflow.sum==0.0 && fLETOverflow.sum==0.0;
+    shield_sim::Json accuracy=ratioAccuracyJson("LET",{track,dose});
+    if(!completeRange){
+      accuracy.AsObject()["status"]="not_assessable";
+      accuracy.AsObject()["reason"]="nonzero track-length fluence lies outside the declared LET response; no contribution was clamped";
+    }
+    auto ratioResult=[&](const shield_sim::RatioEstimate& estimate,
+                         const shield_sim::RatioMoments& moments){
+      const bool available=estimate.status==shield_sim::RatioStatus::Available;
+      const double massScale=10.0/absorber.densityGPerCm3;
+      return shield_sim::Json(shield_sim::Json::Object{
+        {"event_moments",ratioMomentsJson(moments,estimate)},
+        {"interval_95_keV_per_um",shield_sim::Json(shield_sim::Json::Object{
+          {"high",available?finiteOrNull(estimate.interval95High):shield_sim::Json(nullptr)},
+          {"low",available?finiteOrNull(estimate.interval95Low):shield_sim::Json(nullptr)}})},
+        {"interval_95_MeV_cm2_per_g",shield_sim::Json(shield_sim::Json::Object{
+          {"high",available?finiteOrNull(estimate.interval95High*massScale):shield_sim::Json(nullptr)},
+          {"low",available?finiteOrNull(estimate.interval95Low*massScale):shield_sim::Json(nullptr)}})},
+        {"reason",estimate.reason},{"standard_error_keV_per_um",available
+            ? finiteOrNull(estimate.standardError):shield_sim::Json(nullptr)},
+        {"status",shield_sim::RatioStatusName(estimate.status)},
+        {"value_keV_per_um",available?finiteOrNull(estimate.value):shield_sim::Json(nullptr)},
+        {"value_MeV_cm2_per_g",available
+            ? finiteOrNull(estimate.value*massScale):shield_sim::Json(nullptr)}});
+    };
+    auto binArray=[&](const std::vector<RawMoments>& moments){
+      shield_sim::Json::Array result;
+      const shield_sim::LogarithmicLETBinning binning(c.letResponse.minimumKeVPerUm,
+          c.letResponse.maximumKeVPerUm,c.letResponse.binsPerDecade);
+      for(std::size_t i=0;i<moments.size();++i){
+        const double mean=moments[i].sum/nEv;
+        const double variance=nEv>1?std::max(0.0,(moments[i].sumSquares-
+            moments[i].sum*moments[i].sum/nEv)/(nEv-1.0)):0.0;
+        result.emplace_back(shield_sim::Json::Object{
+          {"fluence_cm2_per_primary",mean},
+          {"fluence_rate_cm2_per_s",mean*GetIncidentParticleRate()},
+          {"fluence_standard_error_cm2_per_primary",std::sqrt(variance/nEv)},
+          {"fluence_rate_standard_error_cm2_per_s",
+              std::sqrt(variance/nEv)*GetIncidentParticleRate()},
+          {"lower_keV_per_um",binning.Lower(i)},
+          {"upper_keV_per_um",binning.Upper(i)}});
+      }
+      return shield_sim::Json(std::move(result));
+    };
+    shield_sim::Json::Array components;
+    for(const auto& item:fLETComponents){
+      const auto& component=item.second;
+      const auto componentTrack=shield_sim::EstimateRatioOfMeans(component.trackMeanMoments);
+      const auto componentDose=shield_sim::EstimateRatioOfMeans(component.doseMeanMoments);
+      components.emplace_back(shield_sim::Json::Object{
+        {"A",component.massNumber},{"Z",component.atomicNumber},
+        {"bins",binArray(component.bins)},{"charge_e",component.charge},
+        {"dose_mean",ratioResult(componentDose,component.doseMeanMoments)},
+        {"generation",component.generation},{"particle",component.particle},
+        {"pdg",component.pdg},{"positive_length_steps",static_cast<double>(component.positiveLengthSteps)},
+        {"primary",component.primary},{"root_particle",component.rootParticle},
+        {"track_mean",ratioResult(componentTrack,component.trackMeanMoments)},
+        {"underflow_fluence_sum_cm2",component.underflow.sum},
+        {"overflow_fluence_sum_cm2",component.overflow.sum},
+        {"zero_length_steps",static_cast<double>(component.zeroLengthSteps)}});
+    }
+    outputs.emplace_back(shield_sim::Json::Object{
+      {"accuracy",std::move(accuracy)},{"absorber_id",absorber.id},
+      {"bins",binArray(fLETBins)},{"components",shield_sim::Json(std::move(components))},
+      {"definition","unrestricted electronic stopping at each positive-length charged-particle absorber-step midpoint, weighted by step track length divided by absorber volume"},
+      {"dose_mean",ratioResult(dose,fLETDoseMeanMoments)},
+      {"histogram_domain_status",completeRange?"complete":"not_assessable"},
+      {"name","LET"},{"out_of_range_policy",c.letResponse.outOfRangePolicy},
+      {"overflow_fluence_cm2_per_primary",fLETOverflow.sum/nEv},
+      {"overflow_fluence_rate_cm2_per_s",fLETOverflow.sum/nEv*GetIncidentParticleRate()},
+      {"positive_length_steps",static_cast<double>(fLETPositiveLengthSteps)},
+      {"track_mean",ratioResult(track,fLETTrackMeanMoments)},
+      {"underflow_fluence_cm2_per_primary",fLETUnderflow.sum/nEv},
+      {"underflow_fluence_rate_cm2_per_s",fLETUnderflow.sum/nEv*GetIncidentParticleRate()},
+      {"validation_status",stage6ValidationStatus},
+      {"zero_length_charged_steps",static_cast<double>(fLETZeroLengthSteps)}});
+  }
+  if(fOpts.calcHardness && stage6){
+    const auto estimate=shield_sim::EstimateRatioOfMeans(fHardnessMoments);
+    const bool available=estimate.status==shield_sim::RatioStatus::Available;
+    shield_sim::Json accuracy=ratioAccuracyJson("H100/10",{estimate});
+    outputs.emplace_back(shield_sim::Json::Object{
+      {"accuracy",std::move(accuracy)}, {"absorber_id",absorber.id},
+      {"event_moments",ratioMomentsJson(fHardnessMoments,estimate)},
+      {"definition","ratio of mean scalar fluence from every forward primary-proton shield-rear-face crossing with strict E>100 MeV and E>10 MeV thresholds"},
+      {"denominator_count",fPrimaryProtonAbove10},
+      {"fluence_weight","1/(shield rear-face area times absolute local direction/surface-normal cosine)"},
+      {"interval_95",shield_sim::Json(shield_sim::Json::Object{
+        {"high",available?finiteOrNull(estimate.interval95High):shield_sim::Json(nullptr)},
+        {"low",available?finiteOrNull(estimate.interval95Low):shield_sim::Json(nullptr)},
+        {"method","Fieller, two-sided 95%, event-level covariance"}})},
+      {"name","H100/10"}, {"numerator_count",fPrimaryProtonAbove100},
+      {"ratio_status",shield_sim::RatioStatusName(estimate.status)},
+      {"reason",estimate.reason},{"unit","1"},
+      {"validation_status",stage6ValidationStatus},
+      {"value",available?finiteOrNull(estimate.value):shield_sim::Json(nullptr)}
+    });
+  }
+  if(fOpts.calcHardness && !stage6){
     auto assessment=fAccuracyController->Assess("H100/10");
-    // H100/10 is a conditional binomial proportion because every >100 MeV
-    // crossing is also a >10 MeV crossing. Use a bounded Wilson 95% interval,
-    // not an unbounded normal interval.
     shield_sim::Json low(nullptr),high(nullptr);
     if(fPrimaryProtonAbove10>0.0){
       const double n=fPrimaryProtonAbove10;
@@ -1502,10 +1922,11 @@ void RunAction::WriteResultJson(G4int nEv){
       high=std::min(1.0,center+half);
     }
     shield_sim::Json accuracy=accuracyJson("H100/10",assessment);
-    accuracy.AsObject()["interval_95_method"]="Wilson score interval for bounded conditional proportion";
+    accuracy.AsObject()["interval_95_method"]=
+        "Wilson score interval for legacy bounded conditional proportion";
     outputs.emplace_back(shield_sim::Json::Object{
-      {"accuracy",std::move(accuracy)}, {"absorber_id",absorber.id},
-      {"covariance_note","event indicators are nested: I(E>100) is a subset of I(E>10)"},
+      {"accuracy",std::move(accuracy)},{"absorber_id",absorber.id},
+      {"covariance_note","legacy event indicators are nested: I(E>100) is a subset of I(E>10)"},
       {"indicator_sample_covariance",nEv>1
           ? (fPrimaryProtonAbove100-
              fPrimaryProtonAbove100*fPrimaryProtonAbove10/nEv)/(nEv-1.0)
@@ -1514,13 +1935,12 @@ void RunAction::WriteResultJson(G4int nEv){
           ? (fPrimaryProtonAbove100-
              fPrimaryProtonAbove100*fPrimaryProtonAbove10/nEv)/((nEv-1.0)*nEv)
           : 0.0},
-      {"definition","primary-proton shield-exit fluence(E>100 MeV) / fluence(E>10 MeV)"},
+      {"definition","legacy primary-proton shield-exit count(E>100 MeV) / count(E>10 MeV)"},
       {"denominator_count",fPrimaryProtonAbove10},
       {"interval_95",shield_sim::Json(shield_sim::Json::Object{{"high",high},{"low",low}})},
-      {"name","H100/10"}, {"numerator_count",fPrimaryProtonAbove100},
-      {"unit","1"}, {"validation_status",validationStatus},
-      {"value",finiteOrNull(fLastHardness)}
-    });
+      {"name","H100/10"},{"numerator_count",fPrimaryProtonAbove100},
+      {"unit","1"},{"validation_status",validationStatus},
+      {"value",finiteOrNull(fLastHardness)}});
   }
 
   shield_sim::Json::Array rawScores;
@@ -1583,6 +2003,9 @@ void RunAction::WriteResultJson(G4int nEv){
       {"surface_fluence_normalization","provider-defined entry surface; scalar crossing fluence includes the inverse projected-direction cosine"},
       {"target_material_id",c.damageResponse->TargetMaterialId()}});
   }
+  if(c.letResponse.enabled){
+    result["let_response"]=c.resolvedJson.At("let_response","resolved case");
+  }
   const std::string path=fOpts.outputPrefix+"_result.json";
   std::ofstream out(path);
   if(!out)
@@ -1623,7 +2046,9 @@ void RunAction::WriteResponseCellJson(G4int nEv){
     {"material_library_hash",c.materials->ContentHash()},
     {"max_step_mm",c.maxStepMm},{"physics_list",c.physicsList},
     {"production_cut_mm",c.productionCutMm},
-    {"scoring_contract",c.damageResponse
+    {"scoring_contract",c.letResponse.enabled
+        ? "shieldSim.transport_raw_plus_step_fluence_LET_and_weighted_hardness.v1"
+        : c.damageResponse
         ? "shieldSim.transport_raw_plus_silicon_damage.v1"
         : "shieldSim.transport_raw.v1"},
     {"source_tree_state",shield_sim_build::GitState}
@@ -1638,6 +2063,8 @@ void RunAction::WriteResponseCellJson(G4int nEv){
       {"library_version",c.damageResponse->LibraryVersion()},
       {"manifest_hash",c.damageResponse->ManifestHash()},
       {"target_material_id",c.damageResponse->TargetMaterialId()}});
+  if(c.letResponse.enabled)
+    keyDocument["let_response"]=c.resolvedJson.At("let_response","resolved case");
   const std::string responseKey=shield_sim::Sha256(
       shield_sim::Json(keyDocument).DumpCanonical());
 

@@ -2,6 +2,7 @@
 
 #include "ContentHash.hh"
 #include "PublishedSourceAdapters.hh"
+#include "Stage6Physics.hh"
 
 #include <algorithm>
 #include <cmath>
@@ -84,6 +85,15 @@ double EnergyMeV(const Json& value, const std::string& context) {
   if (unit == "MeV") return number;
   if (unit == "GeV") return number * 1000.0;
   throw JsonError(context + ".unit must be MeV or GeV");
+}
+
+double LinearLETKeVPerUm(const Json& value,const std::string& context){
+  const auto& object=value.AsObject(context);
+  RejectUnknownFields(object,{"value","unit"},context);
+  const double number=PositiveNumber(value.At("value",context),context+".value");
+  if(RequiredString(object,"unit",context)!="keV/um")
+    throw JsonError(context+".unit must be exactly 'keV/um'");
+  return number;
 }
 
 Json Measure(double value, const std::string& unit);
@@ -450,7 +460,7 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
   const auto& root = input.AsObject("case");
   RejectUnknownFields(root,
     {"schema_version","case_id","purpose","material_library","material_overrides","geometry",
-     "source","quantities","damage_response","accuracy","transport","output"}, "case");
+     "source","quantities","damage_response","let_response","accuracy","transport","output"}, "case");
   result->schemaVersion=RequiredString(root,"schema_version","case");
   if(result->schemaVersion!="shieldSim.case.v1" &&
      result->schemaVersion!="shieldSim.case.v2")
@@ -908,10 +918,52 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
   for (const auto& quantity : result->quantities) {
     const bool allowed=stage3Schema
         ? quantity=="transport_raw" || quantity=="TID" || quantity=="DDD" ||
-          quantity=="n_eq"
+          quantity=="n_eq" || quantity=="LET" || quantity=="H100/10"
         : quantity=="TID" || quantity=="H100/10";
     if (!allowed)
-      throw JsonError("quantity '" + quantity + "' is not enabled in this case schema; case-v2 permits transport_raw, Stage-4 finite-slab TID, and Stage-5 silicon DDD/neutron-only n_eq while LET, H100/10, crew-health, and device/organ claims retain later gates");
+      throw JsonError("quantity '" + quantity + "' is not enabled in this case schema; case-v2 permits transport_raw, Stage-4 finite-slab TID, Stage-5 silicon DDD/neutron-only n_eq, and Stage-6 LET/H100/10; crew-health and device/organ claims remain out of scope");
+  }
+
+  const bool requestsLet=std::find(result->quantities.begin(),result->quantities.end(),"LET")!=
+      result->quantities.end();
+  const bool requestsHardness=std::find(result->quantities.begin(),result->quantities.end(),"H100/10")!=
+      result->quantities.end();
+  if(requestsLet){
+    if(!stage3Schema) throw JsonError("Stage-6 LET requires shieldSim.case.v2");
+    if(!root.count("let_response"))
+      throw JsonError("Stage-6 LET requires explicit case.let_response");
+    const auto& response=root.at("let_response").AsObject("case.let_response");
+    RejectUnknownFields(response,{"definition_id","linear_let_bins","out_of_range_policy"},
+                        "case.let_response");
+    result->letResponse.definitionId=RequiredString(response,"definition_id","case.let_response");
+    result->letResponse.outOfRangePolicy=RequiredString(
+        response,"out_of_range_policy","case.let_response");
+    if(result->letResponse.definitionId!="shieldSim.electronic_let.v1")
+      throw JsonError("case.let_response.definition_id must be 'shieldSim.electronic_let.v1'");
+    if(result->letResponse.outOfRangePolicy!="not_assessable_no_clamping")
+      throw JsonError("case.let_response.out_of_range_policy must be 'not_assessable_no_clamping'");
+    const auto& bins=response.at("linear_let_bins").AsObject(
+        "case.let_response.linear_let_bins");
+    RejectUnknownFields(bins,{"scale","minimum","maximum","bins_per_decade"},
+                        "case.let_response.linear_let_bins");
+    if(RequiredString(bins,"scale","case.let_response.linear_let_bins")!="logarithmic")
+      throw JsonError("case.let_response.linear_let_bins.scale must be 'logarithmic'");
+    result->letResponse.minimumKeVPerUm=LinearLETKeVPerUm(
+        bins.at("minimum"),"case.let_response.linear_let_bins.minimum");
+    result->letResponse.maximumKeVPerUm=LinearLETKeVPerUm(
+        bins.at("maximum"),"case.let_response.linear_let_bins.maximum");
+    result->letResponse.binsPerDecade=static_cast<int>(PositiveInteger(
+        bins.at("bins_per_decade"),"case.let_response.linear_let_bins.bins_per_decade"));
+    try {
+      LogarithmicLETBinning parsed(result->letResponse.minimumKeVPerUm,
+          result->letResponse.maximumKeVPerUm,result->letResponse.binsPerDecade);
+      result->letResponse.edgesKeVPerUm=parsed.Edges();
+    } catch(const std::invalid_argument& error){
+      throw JsonError(std::string("case.let_response.linear_let_bins: ")+error.what());
+    }
+    result->letResponse.enabled=true;
+  } else if(root.count("let_response")) {
+    throw JsonError("case.let_response is permitted only when LET is requested");
   }
 
   const bool requestsDdd=std::find(result->quantities.begin(),result->quantities.end(),"DDD")!=
@@ -987,6 +1039,40 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
             absorber.materialId+"'; Stage 4 validates only Al_natural_G4_11_4, Si_natural_G4_11_4, and Water_G4_11_4 absorbers");
   }
 
+  bool stage6CarbonIncident=false;
+  if(stage3Schema && requestsLet){
+    const std::set<std::string> validatedAbsorberMaterials={
+      "Al_natural_G4_11_4","Si_natural_G4_11_4","Water_G4_11_4"};
+    for(const auto& absorber:result->absorbers)
+      if(!validatedAbsorberMaterials.count(absorber.materialId))
+        throw JsonError("Stage-6 LET absorber '"+absorber.id+"' uses material_id '"+
+            absorber.materialId+"'; the validated domain is natural Al, natural Si, and water");
+    const auto validateLetIncident=[&](const ResponseIncidentDefinition& incident,
+                                       const std::string& context){
+      if(incident.particleName=="proton" || incident.particleName=="alpha") return;
+      if(incident.particleName=="ion" && incident.atomicNumber==6 &&
+         incident.massNumber==12){
+        stage6CarbonIncident=true;
+        for(const auto& absorber:result->absorbers)
+          if(absorber.materialId!="Si_natural_G4_11_4")
+            throw JsonError(context+" C-12 LET reference support is limited to natural silicon absorbers");
+        return;
+      }
+      throw JsonError(context+" particle is outside Stage-6 LET incident support (p, He-4, or C-12)");
+    };
+    if(result->responseIncident.enabled)
+      validateLetIncident(result->responseIncident,"case.source.spectrum");
+    for(std::size_t i=0;i<result->directIncidents.size();++i)
+      validateLetIncident(result->directIncidents[i].incident,
+          "case.source.spectrum.nodes["+std::to_string(i)+"]");
+  }
+  if(stage3Schema && requestsHardness){
+    // H100/10 scores primary protons only. Mixed direct-node cases may contain
+    // other species, but a case with no possible proton contribution is still
+    // legal and produces the explicit zero_denominator status required by the
+    // Stage-6 boundary contract.
+  }
+
   const auto& accuracy = input.At("accuracy", "case").AsObject("case.accuracy");
   RejectUnknownFields(accuracy, {"target","scope","coverage","systematic_budget",
                                  "quantity_overrides","sampling"}, "case.accuracy");
@@ -1057,6 +1143,41 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
           ? "case.accuracy" : "case.accuracy.quantity_overrides."+quantity);
     }
   }
+  if(stage3Schema && (requestsLet || requestsHardness)){
+    const auto checkStage6Budget=[&](const std::string& quantity){
+      if(std::find(result->quantities.begin(),result->quantities.end(),quantity)==
+         result->quantities.end()) return;
+      const auto override=result->accuracy.quantityOverrides.find(quantity);
+      const auto& requirement=override==result->accuracy.quantityOverrides.end()
+          ? result->accuracy.global : override->second;
+      const std::string context=override==result->accuracy.quantityOverrides.end()
+          ? "case.accuracy" : "case.accuracy.quantity_overrides."+quantity;
+      // Published stopping/reference comparisons do not provide a complete
+      // uncertainty model. An incomplete budget is accepted and reported as
+      // combined not_assessable. A complete claim must identify its physical
+      // reference uncertainty and preserve the same covariance discipline as
+      // Stages 4 and 5.
+      if(!requirement.systematicBudgetComplete) return;
+      const bool hasPhysicsReference=std::any_of(requirement.systematicComponents.begin(),
+          requirement.systematicComponents.end(),[](const auto& component){
+            return component.category=="physics_reference" && !component.provenance.empty();
+          });
+      if(!hasPhysicsReference)
+        throw JsonError(context+" Stage-6 "+quantity+
+            " requires a physics_reference uncertainty component with provenance");
+      if(requirement.scope=="combined" &&
+         requirement.intervalMethod!="fieller_mc_plus_normal_systematics_quadrature")
+        throw JsonError(context+" combined Stage-6 "+quantity+
+            " requires coverage.interval_method='fieller_mc_plus_normal_systematics_quadrature'");
+      if(requirement.scope=="combined" &&
+         (std::abs(requirement.standardK-1.0)>1.0e-12 ||
+          std::abs(requirement.intervalProbability-0.95)>1.0e-12))
+        throw JsonError(context+" combined Stage-6 "+quantity+
+            " requires standard_k=1 and interval_probability=0.95");
+    };
+    checkStage6Budget("LET");
+    checkStage6Budget("H100/10");
+  }
   const auto& sampling = accuracy.at("sampling").AsObject("case.accuracy.sampling");
   RejectUnknownFields(sampling, {"min_histories","max_histories","batch_size"}, "case.accuracy.sampling");
   result->accuracy.minHistories = PositiveInteger(sampling.at("min_histories"), "case.accuracy.sampling.min_histories");
@@ -1085,6 +1206,8 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
   if(result->emPhysics!="reference_list_default" &&
      result->emPhysics!="G4EmStandardPhysics_option4")
     throw JsonError("case.transport.em_physics must be reference_list_default or G4EmStandardPhysics_option4");
+  if(stage6CarbonIncident && result->emPhysics!="G4EmStandardPhysics_option4")
+    throw JsonError("Stage-6 C-12 LET requires case.transport.em_physics='G4EmStandardPhysics_option4'; the reference-list default fails the fixed 10 MeV/u ATIMA 15% screen");
   result->productionCutMm = LengthMm(transport.at("production_cut"), "case.transport.production_cut");
   result->maxStepMm = LengthMm(transport.at("max_step"), "case.transport.max_step");
   result->randomSeed = PositiveInteger(transport.at("random_seed"), "case.transport.random_seed");
@@ -1271,6 +1394,19 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
       {"manifest_hash",result->damageResponse->ManifestHash()},
       {"manifest_path",result->damageResponse->ManifestPath()},
       {"target_material_id",result->damageResponse->TargetMaterialId()}});
+  }
+  if(result->letResponse.enabled){
+    Json::Array edges;
+    for(double edge:result->letResponse.edgesKeVPerUm) edges.emplace_back(edge);
+    resolved["let_response"]=Json(Json::Object{
+      {"definition_id",result->letResponse.definitionId},
+      {"linear_let_bins",Json(Json::Object{
+        {"bins_per_decade",result->letResponse.binsPerDecade},
+        {"edges_keV_per_um",Json(std::move(edges))},
+        {"maximum",Measure(result->letResponse.maximumKeVPerUm,"keV/um")},
+        {"minimum",Measure(result->letResponse.minimumKeVPerUm,"keV/um")},
+        {"scale","logarithmic"}})},
+      {"out_of_range_policy",result->letResponse.outOfRangePolicy}});
   }
   result->resolvedJson = Json(std::move(resolved));
   result->caseHash = Sha256(result->resolvedJson.DumpCanonical());

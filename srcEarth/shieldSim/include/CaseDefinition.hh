@@ -2,15 +2,16 @@
 #define SHIELDSIM_CASE_DEFINITION_HH
 
 /*
- * Strict, versioned case-v1/core and case-v2/Stage-3/4/5 run definition.
+ * Strict, versioned case-v1/core and case-v2/Stage-3/4/5/6 run definition.
  *
  * All values below are stored in canonical engineering units (mm, MeV,
  * g/cm2).  Unit conversion happens once while parsing.  Geometry builders and
  * transport actions therefore never need to guess the unit or apply an
  * undocumented default. Case v2 additionally carries explicit local-to-world
  * transforms and exact response/direct-validation incident nodes; it permits
- * raw transport tallies and the Stage-4 finite-slab TID observable. Every
- * other derived quantity remains behind a later validation gate.
+ * raw transport tallies plus the bounded Stage-4 TID, Stage-5 silicon damage,
+ * and Stage-6 LET/hardness observables. Each remains inside its own explicit
+ * species/material/model validation gate.
  */
 
 #include "MaterialLibrary.hh"
@@ -71,6 +72,21 @@ struct ResponseIncidentDefinition {
 struct WeightedResponseIncident {
   ResponseIncidentDefinition incident;
   double weight = 0.0;
+};
+
+// Stage-6 LET scoring is deliberately configured in the case instead of
+// hidden in plotting code.  The resolved edges are retained so every result
+// can be interpreted without knowing a parser default. Values use linear LET
+// in keV/um; the output also reports the density-dependent mass stopping-power
+// representation in MeV cm2/g.
+struct LETResponseDefinition {
+  bool enabled = false;
+  std::string definitionId;
+  double minimumKeVPerUm = 0.0;
+  double maximumKeVPerUm = 0.0;
+  int binsPerDecade = 0;
+  std::vector<double> edgesKeVPerUm;
+  std::string outOfRangePolicy;
 };
 
 // One standard-uncertainty term in a combined Stage-4 budget. Keeping the
@@ -155,6 +171,7 @@ public:
   double protonMinMeV = 0.0, protonMaxMeV = 0.0;
   double alphaMinMeV = 0.0, alphaMaxMeV = 0.0;
   std::vector<std::string> quantities;
+  LETResponseDefinition letResponse;
   // Non-null exactly when a Stage-5 DDD or n_eq quantity was requested. The
   // manifest and all referenced tables are authenticated during case parsing.
   std::shared_ptr<DamageResponseLibrary> damageResponse;

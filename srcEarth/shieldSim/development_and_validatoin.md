@@ -3,18 +3,19 @@
 Status: **Stage 0 complete; Stage 1 complete; Stage 2 complete; Stages 3 and 4
 implemented and acceptance-tested, pending independent review; Stage 5
 implemented and reference-tested, pending accelerator/device validation and
+independent review; Stage 6 implemented and reference-tested, pending
 independent review**
-Prepared: 2026-10-16; Stage-5 implementation/evidence updated 2026-10-17
+Prepared: 2026-10-16; Stage-6 implementation/evidence updated 2026-10-17
 Requirements decisions approved: 2026-10-16 and 2026-10-17
 Scope: environment-effect radiation proxies for spacecraft-anomaly analysis
 and preliminary mission assessment; ordered multilayer shielding; slab
 absorbers initially; published GCR/SEP inputs now; arbitrary absorber geometry
 and AMPS input through later adapters  
-Release status: **the Stage-4 TID and Stage-5 silicon damage implementations
-have passed their registered automated gates. Stage 4 lacks independent review;
-Stage 5 lacks both the project-selected accelerator/device validation data set
-and independent review. Neither may be represented as a formally qualified
-radiation-effects model.**
+Release status: **the Stage-4 TID, Stage-5 silicon damage, and Stage-6 generic
+LET/hardness implementations have passed their registered automated gates.
+Stages 4 and 6 lack independent review; Stage 5 also lacks the project-selected
+accelerator/device validation data set. None may be represented as a formally
+qualified radiation-effects model.**
 
 The filename retains the spelling requested in the task. This document uses
 the normative words **must**, **should**, and **may** deliberately. A stage is
@@ -192,6 +193,44 @@ open assumptions:
     device evidence or a reviewer, but formal Stage-5 completion requires a
     project-selected accelerator/device-degradation data set and the independent-
     review record in Section 10.
+20. The Stage-6 implementation decisions approved on 2026-10-17 are:
+    (a) linear LET is Geant4 unrestricted electronic stopping evaluated at the
+    arithmetic midpoint energy of every positive-length charged-particle step
+    in the absorber. Its histogram weight is step track length divided by
+    absorber volume. Local ionizing deposition remains a distinct TID ledger;
+    it is not substituted for stopping power;
+    (b) track mean is `sum(L dx)/sum(dx)` and dose mean is
+    `sum(L^2 dx)/sum(L dx)`. The primary unit is `keV/um`; the equivalent
+    `MeV cm2/g` value uses the resolved absorber density. Both ratio means must
+    meet the requested statistical accuracy;
+    (c) every charged primary and secondary is scored and identified by
+    species, charge, mass, primary/secondary state, root ancestry, and
+    generation. Delta electrons are their own component. Positive-length
+    boundary/stopping steps are included; zero-length charged steps are counted
+    but contribute no track fluence;
+    (d) every LET case declares `let_response`. The recommended range is
+    0.001--10000 keV/um at 20 logarithmic bins per decade. Underflow and
+    overflow are audited and make the histogram result `not_assessable`; values
+    are never clamped;
+    (e) the p/He-4 stopping-reference domain is natural Al, natural Si, and
+    water using the pinned NIST package. The selected heavier ion is fully
+    stripped C-12 in natural Si at 10, 100, and 1000 MeV/u against pinned GSI
+    ATIMA v1.41 responses with a fixed 15% implementation screen. The initial
+    reference-list default missed the 10 MeV/u row by 21.6%; option 4 differed
+    by 2.9%, so C-12 LET cases explicitly require
+    `G4EmStandardPhysics_option4`. This screen is neither an uncertainty value
+    nor experimental validation;
+    (f) `H100/10` uses scalar-fluence weight `1/(A |n dot u|)` for every
+    accepted forward primary-proton rear-face crossing. Its estimator is the
+    ratio of event numerator and denominator means; event variance and
+    covariance are retained and the two-sided 95% interval uses Fieller's
+    construction. A zero or statistically unresolved denominator is undefined.
+    Constant and power-law partial source bins are integrated analytically at
+    the strict 10 and 100 MeV thresholds; and
+    (g) a complete combined LET or hardness accuracy claim requires a
+    provenance-bearing `physics_reference` uncertainty component. Otherwise it
+    is `not_assessable`. Stage 6 may be implemented and reference-tested without
+    a reviewer, but formal completion requires the independent-review record.
 
 For anomaly analysis, a calculated proxy is an environmental covariate, not by
 itself proof that radiation caused an anomaly. Results must preserve time
@@ -1892,18 +1931,81 @@ Forbidden carry-over: no analytic-surrogate value in a production column.
 ### Stage 6 - physically defined LET and hardness
 
 Entry: approved LET and `H100/10` definitions.  
-Work:
+Implementation status: **implemented and all registered Stage-6 gates pass;
+formal completion remains pending independent review.**
 
-- implement step/track LET estimators and component spectra;
-- implement NIST-backed verification in the covered p/He domain and a selected
-  heavy-ion reference;
-- implement exact threshold-bin integration for hardness;
-- retain detector-specific lineal-energy estimators as distinct response types.
+Implemented calculation boundary:
 
-Tests: V1 conservation/analytic ratio tests, V2 stopping-power comparisons,
-and V3 step/cut/geometry convergence.  
-Exit evidence: each output name maps one-to-one to a versioned equation and
-validated domain.  
+- case-v2 admits `LET` and `H100/10`. `LET` requires the explicit versioned
+  `let_response` object. Unknown fields, wrong units, a non-integral logarithmic
+  bin span, an unused response, and unsupported incident/material/model
+  combinations are rejected before Geant4 initialization;
+- `shieldSim.electronic_let.v1` evaluates `G4EmCalculator` unrestricted
+  electronic stopping at each actual charged step's midpoint energy. The
+  fluence contribution is `dx/V` in `cm^-2`; bins store event sums and squares,
+  while track/dose means retain numerator/denominator squares and products;
+- the total spectrum and every species/charge/ancestry/generation component are
+  emitted. Component track/dose means allow a primary stopping comparison
+  without silently mixing transported delta-electron fluence into that
+  reference check. The all-charged spectrum deliberately retains those
+  electrons as separate components;
+- histogram underflow and overflow, positive- and zero-length step counts, all
+  bin uncertainties, ratio sufficient statistics, Fieller intervals, and both
+  LET unit systems are present in result JSON. Any nonzero out-of-range fluence
+  prevents an assessable histogram result;
+- the Tecplot LET file uses the same step-fluence scores and response edges as
+  JSON for case-v2. The old transmitted-spectrum/Bethe file path remains only
+  for the legacy CLI and is explicitly non-production;
+- every forward primary-proton rear crossing contributes independently to the
+  strict `>10 MeV` and `>100 MeV` event fluence sums with `1/(A |n dot u|)`.
+  Multiple crossings are not de-duplicated; their within-history correlation
+  is represented by the event product sum. Result JSON carries the point
+  estimate, raw moments, covariance of means, Fieller status/interval, and
+  crossing-count diagnostics;
+- response-cell cache identity includes the complete LET-response definition
+  and changes its scoring-contract identifier, preventing reuse across bin,
+  policy, or scoring-definition changes; and
+- the Stage-6 validation label is
+  `stage6_LET_and_H100_10_implemented_and_reference_tested_pending_independent_review`.
+
+Registered gates and their precise boundaries:
+
+1. `stage6_core` checks the recommended 0.001--10000 keV/um grid at 20 bins per
+   decade, exact endpoint/underflow/overflow behavior, constant and power-law
+   partial-bin integrals, an exact `H100/10` fold, correlated ratio-of-means,
+   Fieller coverage, and zero/unresolved denominators.
+2. `stage6_case_boundaries` accepts the valid p/He-4 and hardness contracts and
+   rejects missing/unused/malformed LET responses, gamma LET, C-12 outside
+   natural Si, and C-12 with the EM reference-list default. It accepts the same
+   C-12/Si case with option 4.
+3. `stage6_reference` authenticates the pinned NIST and ATIMA bytes. It checks
+   18 exact p/He-4 NIST electronic-stopping nodes across Al/Si/water using the
+   reference-list baseline and C-12/Si at 10, 100, and 1000 MeV/u using option
+   4 against ATIMA. The fixed C-12 limit is 15%; no value from this test is
+   promoted into a systematic-uncertainty claim.
+4. `stage6_transport` drives the case parser, primary generator, Geant4 step
+   scorer, event moments, result writer, and Tecplot writer. Thin-silicon p,
+   He-4, and C-12 primary-component track means must agree with the same
+   deterministic midpoint stopping query within 3%. Bin plus under/overflow
+   fluence must close exactly to `sum(dx/V)`. Separate maximum-step,
+   production-cut, and absorber-thickness perturbations must remain within the
+   approved 10% model accuracy. A weighted 50/150 MeV proton mixture must agree
+   with analytic `H100/10 = 2/3` within 0.04 and its Fieller interval must cover
+   `2/3`; an alpha-only case must emit null with `zero_denominator`.
+5. `validation_figures` reads `stage6_core.json`, `stage6_reference.json`, and
+   `stage6_transport.json` only after the numeric tests pass and renders PNG and
+   SVG comparison figures plus hashes/captions in the figure manifest. Figures
+   are review aids and cannot affect acceptance.
+
+Reference provenance is under `tests/reference_let/`; all generated requests,
+logs, results, evidence, and figures remain under the configured build/test
+output tree rather than `/tmp`.
+
+Exit evidence currently satisfied: each production output name maps one-to-one
+to the versioned equation, scoring surface/volume, units, response range,
+species/material/model domain, stochastic sufficient statistics, and pinned
+reference source. Independent review is the only remaining Stage-6 sign-off
+item.
 Forbidden carry-over: a CRaTER estimator cannot be substituted for generic LET
 or vice versa.
 

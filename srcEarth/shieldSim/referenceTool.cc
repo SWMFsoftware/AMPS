@@ -2,9 +2,9 @@
  * shieldSimReferenceTool
  * ----------------------
  * A narrow, machine-readable probe of the Geant4 electromagnetic tables used
- * by Stage 4.  It is intentionally separate from slab transport: NIST
- * PSTAR/ASTAR/XCOM comparisons need to distinguish a physics-table discrepancy
- * from a geometry, scoring, or Monte Carlo discrepancy.
+ * by Stages 4 and 6. It is intentionally separate from slab transport: NIST
+ * PSTAR/ASTAR/XCOM and the selected ATIMA heavy-ion comparisons must distinguish
+ * a physics-table discrepancy from geometry, scoring, or Monte Carlo effects.
  *
  * The input names every particle/material/energy/quantity query.  No energy is
  * clamped and no material alias is guessed.  Output is in the mass-normalized
@@ -22,6 +22,7 @@
 #include <G4Event.hh>
 #include <G4Geantino.hh>
 #include <G4IonQMDPhysics.hh>
+#include <G4IonTable.hh>
 #include <G4LogicalVolume.hh>
 #include <G4Material.hh>
 #include <G4NistManager.hh>
@@ -145,8 +146,9 @@ int main(int argc,char** argv){
     const auto& root=input.AsObject("reference request");
     shield_sim::RejectUnknownFields(root,{"schema_version","physics_list","em_physics",
                                           "ion_physics","queries"},"reference request");
-    if(RequiredString(root,"schema_version","reference request")!=
-       "shieldSim.stage4_reference_request.v1")
+    const std::string requestSchema=RequiredString(root,"schema_version","reference request");
+    const bool stage6=requestSchema=="shieldSim.stage6_reference_request.v1";
+    if(requestSchema!="shieldSim.stage4_reference_request.v1" && !stage6)
       throw std::runtime_error("unsupported reference request schema");
     const std::string physicsName=RequiredString(root,"physics_list","reference request");
     const std::string emName=RequiredString(root,"em_physics","reference request");
@@ -190,15 +192,39 @@ int main(int argc,char** argv){
     for(std::size_t index=0;index<queries.size();++index){
       const std::string context="reference request.queries["+std::to_string(index)+"]";
       const auto& query=queries[index].AsObject(context);
-      shield_sim::RejectUnknownFields(query,{"id","particle","material","energy_MeV","quantities"},context);
+      shield_sim::RejectUnknownFields(query,stage6
+          ? std::vector<std::string>{"id","particle","Z","A","material","energy_MeV","quantities"}
+          : std::vector<std::string>{"id","particle","material","energy_MeV","quantities"},context);
       const std::string id=RequiredString(query,"id",context);
       const std::string particleName=RequiredString(query,"particle",context);
       const std::string materialName=RequiredString(query,"material",context);
       const double energyMeV=RequiredPositive(query,"energy_MeV",context);
       if(!allowedMaterials.count(materialName)) throw std::runtime_error(context+" material is outside the Stage-4 validated domain");
-      if(!allowedParticles.count(particleName)) throw std::runtime_error(context+" particle is outside the Stage-4 reference domain");
+      if(!allowedParticles.count(particleName) && !(stage6 && particleName=="ion"))
+        throw std::runtime_error(context+" particle is outside the reference domain");
       auto* material=G4NistManager::Instance()->FindOrBuildMaterial(materialName);
-      auto* particle=G4ParticleTable::GetParticleTable()->FindParticle(particleName);
+      G4ParticleDefinition* particle=nullptr;
+      int atomicNumber=0,massNumber=0;
+      if(particleName=="ion"){
+        const auto zFound=query.find("Z"),aFound=query.find("A");
+        if(zFound==query.end() || aFound==query.end())
+          throw std::runtime_error(context+" explicit ion requires Z and A");
+        const double zValue=RequiredPositive(query,"Z",context);
+        const double aValue=RequiredPositive(query,"A",context);
+        if(std::floor(zValue)!=zValue || std::floor(aValue)!=aValue)
+          throw std::runtime_error(context+" ion Z and A must be positive integers");
+        atomicNumber=static_cast<int>(zValue);
+        massNumber=static_cast<int>(aValue);
+        if(atomicNumber!=6 || massNumber!=12 || materialName!="G4_Si")
+          throw std::runtime_error(context+" Stage-6 explicit-ion reference is restricted to C-12 in G4_Si");
+        particle=G4IonTable::GetIonTable()->GetIon(atomicNumber,massNumber,0.0);
+      } else {
+        if(query.count("Z") || query.count("A"))
+          throw std::runtime_error(context+" Z/A are permitted only for particle='ion'");
+        particle=G4ParticleTable::GetParticleTable()->FindParticle(particleName);
+        atomicNumber=particle?particle->GetAtomicNumber():0;
+        massNumber=particle?static_cast<int>(particle->GetAtomicMass()):0;
+      }
       if(!material || !particle) throw std::runtime_error(context+" could not resolve Geant4 particle/material");
       const double density=material->GetDensity()/(g/cm3);
       shield_sim::Json::Object values;
@@ -211,6 +237,8 @@ int main(int argc,char** argv){
           throw std::runtime_error(context+" gamma supports only mass_attenuation_coefficient");
         if(particleName!="gamma" && quantity=="mass_attenuation_coefficient")
           throw std::runtime_error(context+" mass attenuation requires gamma");
+        if(stage6 && quantity!="electronic_stopping_power")
+          throw std::runtime_error(context+" Stage-6 reference queries support electronic_stopping_power only");
         double value=0.0;
         std::string unit;
         if(quantity=="electronic_stopping_power"){
@@ -235,14 +263,15 @@ int main(int argc,char** argv){
         values[quantity]=shield_sim::Json(shield_sim::Json::Object{{"unit",unit},{"value",value}});
       }
       results.emplace_back(shield_sim::Json::Object{{"density_g_cm3",density},
-        {"energy_MeV",energyMeV},{"id",id},{"material",materialName},
+        {"A",massNumber},{"Z",atomicNumber},{"energy_MeV",energyMeV},{"id",id},{"material",materialName},
         {"particle",particleName},{"values",shield_sim::Json(std::move(values))}});
     }
     shield_sim::Json output(shield_sim::Json::Object{
       {"csda_range_method","composite_Simpson_quadrature_in_log_energy_of_G4EmCalculator_ComputeTotalDEDX_from_0.001_MeV"},
       {"em_physics",emName},{"geant4_version",G4Version},{"ion_physics",ionName},
       {"physics_list",physicsName},{"results",shield_sim::Json(std::move(results))},
-      {"schema_version","shieldSim.stage4_reference_result.v1"}});
+      {"schema_version",stage6 ? "shieldSim.stage6_reference_result.v1"
+                                : "shieldSim.stage4_reference_result.v1"}});
     std::ofstream stream(argv[2]);
     if(!stream) throw std::runtime_error(std::string("cannot write output '")+argv[2]+"'");
     stream<<output.DumpCanonical()<<'\n';

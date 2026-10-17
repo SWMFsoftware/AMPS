@@ -215,8 +215,9 @@ std::string QuantityCatalogText(){
   out<<"    LET       LET spectrum of transmitted protons/alphas binned in MeV cm^2/mg using a Bethe-Bloch estimate.\n";
   out<<"    H100/10   Primary-proton shield-exit fluence(E>100 MeV) / fluence(E>10 MeV).\n";
   out<<"               Uses exact crossing energy; excludes secondaries, alphas, and neutrons.\n";
-  out<<"    Stage gates: case.v2 enables bounded Stage-4 TID and authenticated Stage-5 natural-silicon DDD/neutron-only n_eq.\n";
-  out<<"               This legacy CLI's analytic DDD/n_eq/LET remain compatibility diagnostics and are not those case-v2 results.\n";
+  out<<"    Stage gates: case.v2 enables Stage-4 TID, Stage-5 natural-silicon DDD/neutron-only n_eq,\n";
+  out<<"                 and Stage-6 step-fluence LET plus covariance-aware primary-proton H100/10.\n";
+  out<<"               Legacy analytic DDD/n_eq/LET and count hardness remain compatibility diagnostics, not case-v2 results.\n";
   out<<"\n  Selection syntax\n";
   out<<"  ----------------\n";
   out<<"    --quantities=all                         compute all quantities (default)\n";

@@ -126,7 +126,7 @@ void PrimaryGeneratorAction::GenerateDeclaredIncident(
     particle=G4IonTable::GetIonTable()->GetIon(incident.atomicNumber,incident.massNumber,0.0);
   if(!particle)
     G4Exception("PrimaryGeneratorAction","ResponseParticle",FatalException,
-                "Cannot construct the declared Stage-3/4/5 incident particle");
+                "Cannot construct the declared Stage-3/4/5/6 incident particle");
   const G4double energy=incident.totalKineticEnergyMeV;
   RecordSourceDiagnostic(particle->GetParticleName(),energy);
   if(incident.particleName=="proton") RecordInput(true,energy);

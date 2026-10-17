@@ -1,0 +1,120 @@
+{
+  "schema_version": "shieldSim.case.v2",
+  "case_id": "stage6_proton_LET_and_H100_10",
+  "purpose": "verification_test",
+  "material_library": {
+    "path": "../data/material_library.v1.json",
+    "library_id": "shieldSim.reference_materials",
+    "library_version": "1.0.0"
+  },
+  "material_overrides": [],
+  "geometry": {
+    "coordinate_frame": {
+      "name": "world_cartesian_mm", "handedness": "right",
+      "origin": "world_center", "local_surface_normal": "+z"
+    },
+    "world": {
+      "size_x": {"value": 200.0, "unit": "mm"},
+      "size_y": {"value": 200.0, "unit": "mm"},
+      "size_z": {"value": 200.0, "unit": "mm"},
+      "center_x": {"value": 0.0, "unit": "mm"},
+      "center_y": {"value": 0.0, "unit": "mm"},
+      "center_z": {"value": 0.0, "unit": "mm"}
+    },
+    "source_plane": {
+      "size_x": {"value": 50.0, "unit": "mm"},
+      "size_y": {"value": 50.0, "unit": "mm"},
+      "transform": {
+        "translation": {
+          "x": {"value": 0.0, "unit": "mm"},
+          "y": {"value": 0.0, "unit": "mm"},
+          "z": {"value": -80.0, "unit": "mm"}
+        },
+        "rotation_quaternion_local_to_world": {"w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0}
+      }
+    },
+    "shield_stack": {
+      "size_x": {"value": 50.0, "unit": "mm"},
+      "size_y": {"value": 50.0, "unit": "mm"},
+      "transform": {
+        "translation": {
+          "x": {"value": 0.0, "unit": "mm"},
+          "y": {"value": 0.0, "unit": "mm"},
+          "z": {"value": -20.0, "unit": "mm"}
+        },
+        "rotation_quaternion_local_to_world": {"w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0}
+      },
+      "layers": [
+        {"layer_id": "outer_al", "material": "Al",
+         "thickness": {"type": "geometric", "value": 1.0, "unit": "mm"}},
+        {"layer_id": "inner_hdpe", "material": "HDPE",
+         "thickness": {"type": "geometric", "value": 2.0, "unit": "mm"}}
+      ]
+    },
+    "absorbers": [
+      {
+        "absorber_id": "silicon_proxy", "material": "Si",
+        "geometry": {
+          "type": "slab",
+          "size_x": {"value": 50.0, "unit": "mm"},
+          "size_y": {"value": 50.0, "unit": "mm"},
+          "thickness": {"value": 0.1, "unit": "mm"},
+          "transform": {
+            "translation": {
+              "x": {"value": 0.0, "unit": "mm"},
+              "y": {"value": 0.0, "unit": "mm"},
+              "z": {"value": -16.0, "unit": "mm"}
+            },
+            "rotation_quaternion_local_to_world": {"w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0}
+          }
+        }
+      }
+    ]
+  },
+  "source": {
+    "mode": "directional_plane",
+    "spectrum": {
+      "format": "discrete_response_nodes",
+      "nodes": [
+        {
+          "incident_id": "proton_50MeV_mu1", "particle": {"name": "proton", "Z": 1, "A": 1},
+          "energy": {"coordinate": "total_kinetic_energy", "value": 50.0, "unit": "MeV"},
+          "direction": {"mu": 1.0, "phi": {"value": 0.0, "unit": "rad"}}, "weight": 0.5
+        },
+        {
+          "incident_id": "proton_150MeV_mu1", "particle": {"name": "proton", "Z": 1, "A": 1},
+          "energy": {"coordinate": "total_kinetic_energy", "value": 150.0, "unit": "MeV"},
+          "direction": {"mu": 1.0, "phi": {"value": 0.0, "unit": "rad"}}, "weight": 0.5
+        }
+      ]
+    }
+  },
+  "quantities": ["LET", "H100/10"],
+  "let_response": {
+    "definition_id": "shieldSim.electronic_let.v1",
+    "linear_let_bins": {
+      "scale": "logarithmic",
+      "minimum": {"value": 0.001, "unit": "keV/um"},
+      "maximum": {"value": 10000.0, "unit": "keV/um"},
+      "bins_per_decade": 20
+    },
+    "out_of_range_policy": "not_assessable_no_clamping"
+  },
+  "accuracy": {
+    "target": 0.10, "scope": "statistical",
+    "coverage": {
+      "standard_k": 1.0, "standard_probability": 0.68,
+      "interval_probability": 0.95, "interval_method": "fieller_event_covariance"
+    },
+    "systematic_budget": {"status": "incomplete"},
+    "quantity_overrides": {},
+    "sampling": {"min_histories": 500, "max_histories": 5000, "batch_size": 500}
+  },
+  "transport": {
+    "physics_list": "FTFP_BERT", "ion_physics": "reference_list_default",
+    "em_physics": "reference_list_default",
+    "production_cut": {"value": 0.01, "unit": "mm"},
+    "max_step": {"value": 0.01, "unit": "mm"}, "random_seed": 610001
+  },
+  "output": {"prefix": "stage6_let_hardness"}
+}

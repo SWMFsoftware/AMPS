@@ -13,6 +13,7 @@
  * ========================================================================== */
 
 #include "ShieldSimConfig.hh"
+#include "Stage6Physics.hh"
 
 #include <G4UserRunAction.hh>
 #include <G4Types.hh>
@@ -77,7 +78,19 @@ public:
   void RecordAbsorberEntry(std::size_t absorber,const std::string& particle,
                            G4double kineticEnergyMeV,
                            G4double fluenceWeightPerCm2);
-  void AddPrimaryProtonExit(G4double kineticEnergyMeV);
+  // Stage-6 unrestricted electronic LET is evaluated by SteppingAction at the
+  // step midpoint. Positive-length steps contribute track-length fluence;
+  // zero-length charged steps are counted for audit but contribute no fluence.
+  void RecordAbsorberLETStep(std::size_t absorber,const std::string& particle,
+                             int pdg,int atomicNumber,int massNumber,
+                             G4double charge,bool primary,
+                             const std::string& rootParticle,int generation,
+                             G4double linearLETKeVPerUm,G4double stepLength);
+  // Every accepted forward primary-proton rear-face crossing contributes the
+  // geometry-derived scalar-fluence weight 1/(A*|n.u|). No history de-duplication
+  // is applied; event-level covariance handles multiple crossings correctly.
+  void AddPrimaryProtonExit(G4double kineticEnergyMeV,
+                            G4double fluenceWeightPerCm2);
   // Raw Stage-3 transport scores.  Each call updates the current primary
   // history; EndEvent commits one independent sample, including implicit zero
   // values for histories in which a score is absent.
@@ -124,6 +137,8 @@ public:
   bool AcceptsAbsorberEntry(std::size_t absorber,const G4StepPoint& postStepPoint) const;
   G4double AbsorberEntryFluenceWeightPerCm2(
       std::size_t absorber,const G4StepPoint& postStepPoint) const;
+  G4double ShieldExitFluenceWeightPerCm2(G4double localDirectionCosine) const;
+  bool LETScoringEnabled() const;
 
   void BeginOfRunAction(const G4Run*) override;
   void EndOfRunAction(const G4Run* run) override;
@@ -173,8 +188,9 @@ private:
   std::vector<G4double>       fEventEdepNonIonizing;
   G4double                    fEventDDDMeVPerG=0.0;
   G4double                    fEventNeutronEquivalentPerCm2=0.0;
-  bool                        fEventPrimaryProtonAbove10=false;
-  bool                        fEventPrimaryProtonAbove100=false;
+  G4double                    fEventPrimaryProtonAbove10=0.0;
+  G4double                    fEventPrimaryProtonAbove100=0.0;
+  shield_sim::RatioMoments    fHardnessMoments;
   std::unique_ptr<shield_sim::AccuracyController> fAccuracyController;
   G4long                      fCumulativeEvents=0;
   bool                        fCumulativeMode=false;
@@ -185,6 +201,47 @@ private:
     double sum = 0.0;
     double sumSquares = 0.0;
   };
+  struct LETComponentLedger {
+    std::string particle;
+    int pdg = 0;
+    int atomicNumber = 0;
+    int massNumber = 0;
+    double charge = 0.0;
+    bool primary = false;
+    std::string rootParticle;
+    int generation = 0;
+    std::vector<RawMoments> bins;
+    RawMoments underflow;
+    RawMoments overflow;
+    shield_sim::RatioMoments trackMeanMoments;
+    shield_sim::RatioMoments doseMeanMoments;
+    long positiveLengthSteps = 0;
+    long zeroLengthSteps = 0;
+  };
+  struct EventLETComponent {
+    LETComponentLedger metadata;
+    std::vector<double> bins;
+    double underflow = 0.0;
+    double overflow = 0.0;
+    double t0 = 0.0;
+    double t1 = 0.0;
+    double t2 = 0.0;
+  };
+  std::vector<double> fEventLETBins;
+  std::vector<RawMoments> fLETBins;
+  std::map<std::string,EventLETComponent> fEventLETComponents;
+  std::map<std::string,LETComponentLedger> fLETComponents;
+  double fEventLETUnderflow=0.0;
+  double fEventLETOverflow=0.0;
+  RawMoments fLETUnderflow;
+  RawMoments fLETOverflow;
+  long fLETPositiveLengthSteps=0;
+  long fLETZeroLengthSteps=0;
+  double fEventLETT0=0.0;
+  double fEventLETT1=0.0;
+  double fEventLETT2=0.0;
+  shield_sim::RatioMoments fLETTrackMeanMoments;
+  shield_sim::RatioMoments fLETDoseMeanMoments;
   struct SecondaryLedger {
     long count = 0;
     double initialKineticEnergyMeV = 0.0;

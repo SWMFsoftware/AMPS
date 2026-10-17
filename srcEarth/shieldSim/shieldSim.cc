@@ -46,9 +46,10 @@
  * provenance, uncertainty state, raw H100/10 counts, deposition ledgers, and
  * an explicit capability status. Published-spectrum validation cases remain
  * labeled as test evidence rather than as physically validated mission cases.
- * DDD, n_eq, and LET are disabled for versioned cases until later roadmap
- * stages. Their historical analytic implementations remain reachable only
- * through the legacy CLI for regression compatibility.
+ * Case-v2 gates TID, DDD/n_eq, and LET/H100/10 behind their Stage-4/5/6
+ * response definitions and validation domains. Historical analytic
+ * implementations remain reachable only through the legacy CLI for regression
+ * compatibility.
  * ========================================================================== */
 
 #include "CLI.hh"

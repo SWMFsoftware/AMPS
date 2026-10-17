@@ -6,6 +6,7 @@
 #include <G4AffineTransform.hh>
 #include <G4AnalysisManager.hh>
 #include <G4Box.hh>
+#include <G4EmCalculator.hh>
 #include <G4LogicalVolume.hh>
 #include <G4ParticleDefinition.hh>
 #include <G4Step.hh>
@@ -62,7 +63,9 @@ void SteppingAction::UserSteppingAction(const G4Step* step) {
             auto* am=G4AnalysisManager::Instance();
             if(nm=="proton") {
               am->FillH1(0,ke); fRA->AddOutP(ke);
-              if(step->GetTrack()->GetParentID()==0) fRA->AddPrimaryProtonExit(ke);
+              if(step->GetTrack()->GetParentID()==0)
+                fRA->AddPrimaryProtonExit(
+                    ke,fRA->ShieldExitFluenceWeightPerCm2(localDir.z()));
             }
             else if(nm=="alpha")  { am->FillH1(1,ke); fRA->AddOutA(ke); }
             else if(nm=="neutron"){ am->FillH1(2,ke); fRA->AddOutN(ke); }
@@ -132,11 +135,34 @@ void SteppingAction::UserSteppingAction(const G4Step* step) {
       if(preVol==scLVs[i]){
         const G4double total=step->GetTotalEnergyDeposit();
         const G4double nonIon=step->GetNonIonizingEnergyDeposit();
+        const auto* track=step->GetTrack();
+        const auto* definition=track->GetParticleDefinition();
+        const auto* ancestry=dynamic_cast<const TrackAncestryInfo*>(
+            track->GetUserInformation());
+        if(fRA->LETScoringEnabled() && definition->GetPDGCharge()!=0.0){
+          const G4double length=step->GetStepLength();
+          G4double linearLET=0.0;
+          if(length>0.0){
+            // The approved Stage-6 estimator uses Geant4's unrestricted
+            // electronic stopping at the arithmetic midpoint of the actual
+            // transported step. It is intentionally independent of the local
+            // ionizing energy deposit: delta electrons are transported and
+            // scored under their own particle/ancestry component.
+            const G4double midpointEnergy=0.5*(pre->GetKineticEnergy()+
+                                                post->GetKineticEnergy());
+            G4EmCalculator calculator;
+            linearLET=calculator.ComputeElectronicDEDX(
+                midpointEnergy,definition,pre->GetMaterial())/(keV/um);
+          }
+          fRA->RecordAbsorberLETStep(i,definition->GetParticleName(),
+              definition->GetPDGEncoding(),definition->GetAtomicNumber(),
+              static_cast<int>(definition->GetAtomicMass()),
+              definition->GetPDGCharge()/eplus,track->GetParentID()==0,
+              ancestry?ancestry->rootParticle:definition->GetParticleName(),
+              ancestry?ancestry->generation:(track->GetParentID()==0?0:1),
+              linearLET,length);
+        }
         if(total>0 || nonIon>0){
-          const auto* track=step->GetTrack();
-          const auto* definition=track->GetParticleDefinition();
-          const auto* ancestry=dynamic_cast<const TrackAncestryInfo*>(
-              track->GetUserInformation());
           const auto* creator=track->GetCreatorProcess();
           const auto* defining=post->GetProcessDefinedStep();
           fRA->RecordAbsorberStep(i,definition->GetParticleName(),

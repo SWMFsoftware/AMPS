@@ -281,6 +281,48 @@ device-degradation data set and independent review. No test assigns a
 fabricated SR-NIEL uncertainty: a combined accuracy claim requires the case to
 supply a provenance-bearing `physics_reference` component.
 
+## Stage-6 LET and H100/10 tests
+
+Stage 6 adds four CTest gates plus the downstream figure gate. Generated cases,
+logs, result JSON, Tecplot spectra, reference-tool output, and evidence stay
+under the configured build tree (`stage6_*_runs/` and
+`validation_evidence/`); these tests do not use `/tmp`.
+
+`stage6_core_tests.cc` is Geant4-free. It checks the exact 140-bin recommended
+LET grid (0.001--10000 keV/um at 20 bins/decade), inclusive final edge,
+unclamped under/overflow, exact constant and power-law partial-bin threshold
+integration, a closed-form hardness fold, correlated ratio-of-means, and both
+zero and Fieller-unresolved denominators.
+
+`test_stage6_case_boundaries.py` drives the production parser. It rejects a
+missing or unused `let_response`, wrong LET units, nonintegral log-bin spans,
+gamma incidence, C-12 outside natural silicon, and C-12 with the reference-list
+EM default. C-12 in silicon is accepted only with option 4 because that is the
+configuration that passes the fixed ATIMA screen.
+
+`test_stage6_reference.py` authenticates all reused NIST files and the pinned
+GSI ATIMA responses under `reference_let/`. It compares unrestricted electronic
+stopping at all 18 registered p/He-4 NIST nodes in Al/Si/water. Fully stripped
+C-12 in silicon is checked at 10, 100, and 1000 MeV/u with a fixed 15% option-4
+implementation screen. The screen is not an uncertainty assignment or an
+experimental-validation claim; the rejected default-model 10 MeV/u result is
+documented in the roadmap as the reason for the parser boundary.
+
+`test_stage6_transport.py` exercises the full Geant4 path. Thin-silicon proton,
+He-4, and C-12 primary component track means are compared with deterministic
+midpoint stopping queries to 3%. The aggregate spectrum still contains delta
+electrons as separately identified components. Every run closes binned plus
+under/overflow track fluence to `sum(dx/V)`. Separate max-step, production-cut,
+and absorber-thickness perturbations use the approved 10% Stage-6 convergence
+limit. A direct 50/150 MeV proton mixture checks analytic `H100/10=2/3`,
+including Fieller coverage, while an alpha-only run requires null,
+`zero_denominator`, and `not_assessable`.
+
+Stage-6 numerical evidence files are `stage6_core.json`,
+`stage6_reference.json`, and `stage6_transport.json`. Formal Stage-6 completion
+still requires the independent-review record; CRaTER remains a separate future
+instrument-response validation and is not used as generic LET truth.
+
 ## Validation figures
 
 CTest target `validation_figures` depends on all current analytic and
@@ -295,7 +337,7 @@ production source tool, and writes review artifacts to:
 <build>/validation_figures/manifest.json
 ```
 
-The twenty figure subjects are Stage-1 core formulas, Stage-1 case boundaries,
+The twenty-three figure subjects are Stage-1 core formulas, Stage-1 case boundaries,
 Stage-1 analytic slab masses/ledger closure, original AMS primary-table
 analytic checks, the end-to-end AMS source-integral check, original AMS
 observation/adapter agreement, AMS-02 2025
@@ -306,7 +348,9 @@ geometry/response algebra, Stage-3 response-grid interpolation algebra,
 Stage-3 transport/convergence comparisons, Stage-4 exact dose/covariance
 algebra, all Stage-4 NIST comparisons, Stage-4 TID
 transport/convergence/ledger comparisons, Stage-5 analytic/table folds, and
-Stage-5 full-transport absorber-entry comparisons. The
+Stage-5 full-transport absorber-entry comparisons, Stage-6 exact LET/hardness
+mathematics, Stage-6 NIST/ATIMA stopping references, and Stage-6 full-transport
+LET/hardness comparisons. The
 manifest records captions, byte sizes, and SHA-256 hashes.
 
 The standalone Geant4 layer runners extend that coverage. They invoke
