@@ -63,10 +63,12 @@ ParticleWeightCorrectionMode=off !on,off
   NastranSurfaceUserData=on !!!on, off
   ControlParticleInsideNastranSurface=on !!!on,off; required by srcMoon surface_geometry=lola
 
-  SaveParticleRestartFile=on \\  !on,off
-    file=ParticleData.restart=223 \\
-    SaveMode=newfile  \\ !overwrite, newfile
-    IterationInterval=20
+  ! The bounded I11 convergence campaign deliberately writes no particle
+  ! restart files.  Its statistical state is not restartable, so particle-only
+  ! checkpoints consumed large disk space without providing a valid campaign
+  ! continuation.  A future complete checkpoint must restore particles, RNG,
+  ! MPI ownership, sampling buffers, and I11 batch history together.
+  SaveParticleRestartFile=off  !on,off
 
 #endGeneral
 

@@ -3,7 +3,7 @@
 The required roadmaps are not byte-identical after this work package:
 
 - source-tree roadmap SHA-256:
-  `04e2f1e06c5f09dffa7c6e9a811bf8c01c088e94296fdf1ee1ee274239c513b0`
+  `9f86272737bac602d943c92d164f4497e3d10d38722fcd58053232d0281ce703`
 - canonical validation-data roadmap SHA-256:
   `d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`
 
@@ -32,6 +32,17 @@ This source amendment controls campaign selection and input derivation; the
 shared numerical/statistical thresholds, test meanings, predecessor gates,
 baseline review and observational qualification requirements remain binding.
 The external roadmap remains unchanged (read-only for this work package).
+
+On 2026-10-16 the source R1.1 gained a second explicitly user-approved
+execution amendment: I11 completes one sample every 500 particle steps, stops
+each requested mesh after at most 5000 particle steps, and writes no particle
+restart files. This amendment controls execution length and checkpoint output
+only. The independence, equilibrium, confidence-interval, and cross-grid
+acceptance criteria remain those of the common roadmap. Ten possible samples
+permit one nine-batch evaluation only when raw samples are independent;
+reaching the cap without every gate is an evaluated `FAIL`, not qualification,
+and cannot open I13 or observational gates. The external roadmap remains
+unchanged and its hash above is current.
 
 The common roadmap text controls physics requirements, D01--D15 processing,
 U/I meanings, acceptance criteria, and milestone completion. The added

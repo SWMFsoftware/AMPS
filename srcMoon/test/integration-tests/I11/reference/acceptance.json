@@ -10,7 +10,7 @@
     "PIC::TimeStep",
     "production sampling callbacks"
   ],
-  "configuration": "Approved 2026-10-14 memory-budget sphere template m1_memory200.in: 480, 240, 120, 60 km; legacy FULL m1_sphere.in retains 40, 20, 10, 5 km when explicitly selected. Other CUSTOM/QUICK inputs rejected. Frozen environment, unchanged seeds, MPI/OpenMP layout and accuracy criteria.",
+  "configuration": "Approved memory-budget sphere template m1_memory200.in: 480, 240, 120, 60 km; legacy FULL m1_sphere.in retains 40, 20, 10, 5 km when explicitly selected. Other CUSTOM/QUICK inputs rejected. Frozen environment, sample length 500 particle steps, maximum 5000 particle steps per resolution, particle restart writes disabled, unchanged seeds/MPI/OpenMP layout and accuracy criteria.",
   "inputs": [
     "srcMoon/examples/m1_memory200.in (default) or explicit legacy m1_sphere.in",
     "four derived and archived resolution receipts",
@@ -19,8 +19,8 @@
   "independent_reference": "Successive-resolution convergence, stationary-block statistics, and the invariant that repeated production steps retain identical external SPICE/frame state.",
   "units": "metres, seconds, number density per cubic metre, return flux per square metre per second, column density per square metre, Rayleigh",
   "frame_time_convention": "Moon-centred LSO; MOON_ME_DE421 body controls; all external environment quantities frozen at the receipt UTC converted to TDB ET.",
-  "deterministic_stochastic_controls": "Production random seed 731993; one explicitly recorded positive MPI rank count and OpenMP=1 at every resolution; adaptive non-overlapping batch means with lag-one significance bound 1.96/sqrt(N); four independent means for three equilibrium changes followed by five disjoint science means.",
-  "procedure": "Derive and archive 480/240/120/60 km (or explicitly selected legacy 40/20/10/5 km) receipts by scaling the surface, near-surface, angular, and polar targets while keeping physical extents and far/outer targets fixed; verify the frozen production environment; run without a time/resource cap while monitoring process-tree and block resource use; MPI-reduce all production-owned samples; double batch duration until lag-one correlation is insignificant; require three <=2% equilibrium changes; compute Student-t 95% confidence intervals from five following independent batches; compare the complete common scoring vector, including six fixed 30-degree SZA return-flux bands, across successive resolutions.",
+  "deterministic_stochastic_controls": "Production random seed 731993; one explicitly recorded positive MPI rank count and OpenMP=1 at every resolution; 500 particle steps per completed sample; hard limit of 5000 particle steps per resolution; particle restart writes disabled; adaptive non-overlapping batch means with lag-one significance bound 1.96/sqrt(N); four independent means for three equilibrium changes followed by five disjoint science means.",
+  "procedure": "Derive and archive 480/240/120/60 km (or explicitly selected legacy 40/20/10/5 km) receipts by scaling the surface, near-surface, angular, and polar targets while keeping physical extents and far/outer targets fixed; verify the frozen production environment; run every resolution for no more than 5000 particle steps while monitoring process-tree and block resource use; MPI-reduce production-owned samples every 500 steps; after every completed stage render explicitly unqualified raw CSV/PNG/EPS/JSON diagnostics; apply the unchanged independence, equilibrium, CI, and successive-grid criteria. When the cap is reached first, preserve raw diagnostics, mark the level and campaign FAIL, run the remaining requested levels, and do not create accepted cross-grid metrics from unqualified means.",
   "metrics": [
     "ephemeris and external-state drift",
     "block equilibration changes",
@@ -39,6 +39,7 @@
     "failure to equilibrate",
     "insufficient independent blocks",
     "confidence interval too wide",
+    "5000-step limit reached before all independence, equilibrium, and precision gates",
     "non-convergent observable",
     "resource exhaustion"
   ],
@@ -59,8 +60,9 @@
     "run_manifest.json",
     "input snapshots",
     "block metrics",
-    "four-level convergence table",
-    "resource metrics"
+    "four-level convergence table only after all four levels qualify",
+    "resource metrics",
+    "per-stage unqualified diagnostic CSV/PNG/EPS/JSON"
   ],
-  "status_semantics": "PASS requires the complete four-resolution campaign. FAIL means a fully evaluated wiring or convergence criterion failed. Statistical uncertainty alone does not terminate the unbounded run: unresolved required bins continue sampling. Build/runtime/parser/resource exhaustion, interruption, or corrupt/missing artifacts are ERROR. SKIPPED is reserved for a genuinely unavailable prerequisite or production capability."
+  "status_semantics": "PASS requires the complete four-resolution campaign and every unchanged statistical/spatial gate before the cap. FAIL includes reaching 5000 particle steps before qualification; all four bounded levels and explicitly unqualified stage plots are retained, but no accepted cross-grid comparison is made from raw means. Build/runtime/parser/resource exhaustion, interruption, enabled restart writes, missing diagnostic artifacts, or corrupt artifacts are ERROR. SKIPPED is reserved for a genuinely unavailable prerequisite or production capability."
 }

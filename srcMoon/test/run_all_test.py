@@ -5,8 +5,9 @@ Each test is launched through its own command-line runner. U01--U26 consume the
 generated build tree.  The default REGRESSION campaign uses a deliberately
 coarse production receipt for one bounded I12 linked wiring run; I11 and I13
 report SKIPPED because an ordinary regression must not silently launch the
-unbounded M1 convergence/freeze campaign.  QUALIFICATION explicitly runs the
-reviewed FULL I11--I13 sequence.  The aggregate runner preserves its outer
+costly M1 convergence/freeze campaign. QUALIFICATION explicitly runs the
+reviewed, 5000-step-bounded I11 sequence before its dependent I12--I13 gates.
+The aggregate runner preserves its outer
 runner log and reads the individual structured result.json to determine
 scientific status. It never infers PASS from a zero process exit alone.
 """
@@ -451,7 +452,7 @@ def load_runner_result(
         }
 
     if test_id.startswith("I") and status != "ERROR":
-        # REGRESSION deliberately does not launch the unbounded I11 or the
+        # REGRESSION deliberately does not launch the costly bounded I11 or the
         # prerequisite-blocked I13 model. Their manifests say execution=not-run
         # and no receipt can honestly exist. All actually linked runs retain
         # the complete evidence set, including the production receipt.
@@ -616,8 +617,8 @@ def main() -> int:
         "--campaign-mode",
         choices=("regression", "qualification"),
         default="regression",
-        help=("bounded linked regression (default) or the unbounded FULL M1 "
-              "qualification campaign"),
+        help=("bounded linked regression (default) or the 5000-step-bounded "
+              "M1 qualification campaign"),
     )
     parser.add_argument(
         "--mpi-ranks",

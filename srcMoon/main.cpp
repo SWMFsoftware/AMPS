@@ -36,9 +36,10 @@ void amps_time_step();
 namespace {
 // std::new_handler is the last in-process opportunity to emit a controlled
 // AMPS diagnostic before C++ allocation failure unwinds through legacy code.
-// There is deliberately no campaign memory or wall-time limit: M1 stochastic
-// qualification and the I17 periodic thermal spin-up both run until their
-// declared convergence contracts are met.  This handler is reached only when
+// There is deliberately no generic campaign memory or wall-time limit. I11
+// applies its reviewed 5000-particle-step bound inside the linked diagnostic;
+// I17 periodic thermal spin-up still runs until its convergence contract is
+// met. This handler is reached only when
 // the allocator reports actual exhaustion.  Keep the text static because
 // constructing a std::string at that point could itself require the
 // unavailable memory.
@@ -51,10 +52,10 @@ void MoonAllocationFailure() {
       "resource_metrics.csv artifact. To reduce required resources, increase "
       "the requested AMR cell sizes, narrow the near-surface/far-field or "
       "angular/polar refinement regions, or increase the surface-mesh target "
-      "length. For the frozen I11 40/20/10/5 km contract, changing those "
-      "values creates a different campaign and must be documented as SKIPPED "
-      "until the roadmap contract is revised; alternatively request a job "
-      "with more memory and rerun the unchanged receipt. For I17, do not "
+      "length. For I11, changing the approved mesh sequence creates a different "
+      "campaign and must be documented as SKIPPED until the roadmap contract "
+      "is revised; alternatively request a job with more memory and rerun the "
+      "unchanged receipt. For I17, do not "
       "loosen the spin-up temperature or enthalpy tolerances after seeing "
       "this error; request more memory or define and qualify a lower-cost "
       "thermal grid in a separately reviewed input/convergence campaign.");

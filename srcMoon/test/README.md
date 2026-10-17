@@ -8,6 +8,14 @@ I11 convergence and reviewed I13 baseline evidence. Qualification defaults
 to 480/240/120/60 km; explicitly select `--m1-input srcMoon/examples/m1_sphere.in`
 only to run the legacy memory-intensive FULL sequence.
 
+For a presentation-oriented but scientifically labelled LOLA product, use
+[`lola_surface_demo/run.py`](lola_surface_demo/README.md). It runs the verified
+production surface kernels, compares every mesh vertex with an independent
+native D01 decode, and writes CSV/PNG/EPS plus CEA/Tecplot surfaces. It is
+deliberately outside `run_all_test.py`: its `execution_status=PASS` is kept
+separate from formal I14 `execution=NOT_RUN`, `status=SKIPPED`, and
+`validation_status=NOT_VALIDATED`; it cannot open any roadmap gate.
+
 I17's runner now includes its launcher/plot-reader infrastructure checks
 automatically and enforces the approved 2026-10-14 three-step thermal numerical
 error budget before residual computation. See the
@@ -137,14 +145,23 @@ production optimization; it does not edit the generated Makefile or
 Makefile.conf. The resulting canonical `./amps` executable and the bounded
 `srcMoon/examples/m1_regression.in` is passed to I11--I13 and
 `srcMoon/examples/lola_surface.in` is passed to I14--I20. In default
-regression mode. Request the formal, unbounded FULL campaign explicitly:
+regression mode. Request the bounded qualification campaign explicitly:
 
 ```sh
 python3 srcMoon/test/run_all_test.py \
   --campaign-mode qualification --mpi-ranks 8
 ```
 
-Qualification selects the reviewed `srcMoon/examples/m1_sphere.in` receipt.
+Qualification selects the reviewed `srcMoon/examples/m1_memory200.in` receipt.
+I11 uses 500 particle steps per sample and at most 5000 particle steps per
+resolution, with particle restart output disabled at build time. Ten complete
+samples allow the unchanged nine-batch minimum to be evaluated once when raw
+blocks are already independent, but do not guarantee equilibrium or acceptable
+confidence widths. A case that reaches the cap without every criterion reports
+`FAIL`; it does not authorize I13 or observational scoring. After every
+completed resolution, cumulative raw diagnostic CSV/PNG/EPS/JSON artifacts are
+written with an explicit unqualified/non-observational label and are excluded
+from formal scoring.
 Override `--amps` or `--m1-input` only when the
 alternate executable/input identity is intentional and will be captured in the
 linked manifests. These M1 meshes can be substantially more expensive than

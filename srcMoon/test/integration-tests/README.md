@@ -8,10 +8,12 @@ that value in the `mpiexec -n N` command and records the same value in
 `run_manifest.json`. The executable records raw
 SI quantities after full `amps_init()`; `integration_common.py` evaluates
 independent analytical, invariant, or high-resolution numerical references.
-I11 applies the same pattern to a complete 40/20/10/5 km campaign. Each level
-uses production transport and sampling, adaptive batch means, frozen seed and
-layout controls, and archived resource histories. The independent Python
-scorer evaluates the declared integrated and pointwise convergence gates. I12
+I11 applies the same pattern to the approved 480/240/120/60 km campaign by
+default; the legacy 40/20/10/5 km sequence remains explicitly selectable.
+Each level uses production transport and sampling, adaptive batch means,
+frozen seed and layout controls, and archived resource histories. The
+independent Python scorer evaluates the declared integrated and pointwise
+convergence gates. I12
 applies the pattern to the
 input-driven linked AMR mesh. I13 evaluates
 the analytical sphere invariant and records the baseline inventory, but remains
@@ -22,8 +24,13 @@ never substitutes for I11 convergence.
 The aggregate runner has two explicit modes.  Its default `regression` mode
 uses `srcMoon/examples/m1_regression.in`, requests eight MPI ranks, records
 I11 and I13 as honest `SKIPPED` non-executions, and launches one coarse linked
-I12 production initialization/wiring run.  `qualification` mode is opt-in and
-runs the unbounded FULL I11--I13 campaign with the unchanged science gates:
+I12 production initialization/wiring run. `qualification` mode is opt-in and
+runs I11 with 500 particle steps per sample, at most 5000 steps per resolution,
+and disabled particle-restart output before evaluating dependent I12--I13.
+The science gates remain unchanged. Ten available samples permit the
+nine-batch minimum to be evaluated once when the raw samples are independent,
+but a case that misses independence, equilibrium, or precision by the cap
+still reports `FAIL`:
 
 ```sh
 python3 srcMoon/test/run_all_test.py --campaign-mode regression --mpi-ranks 8

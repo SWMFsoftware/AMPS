@@ -1369,6 +1369,107 @@ int lola_geometry() {
   return failures==0 ? 0 : 1;
 }
 
+int lola_surface_demo(int argument_count,char** arguments) {
+  // This is a thin presentation adapter around the same parser, D01 decoder,
+  // icosphere builder, topographic displacement, and production writers used
+  // by U08 and normal srcMoon initialization.  It deliberately supplies no
+  // independent oracle and therefore cannot return an I14 validation result;
+  // the Python demonstration runner performs the independent D01 comparison
+  // and records the formal V&V status separately.
+  if (argument_count!=2) {
+    std::fprintf(stderr,
+        "usage: production_kernel_probe lola-surface-demo "
+        "<application.in> <vertex-output.csv>\n");
+    return 2;
+  }
+  const std::string input_path(arguments[0]);
+  const std::string vertex_path(arguments[1]);
+  Moon::Runtime::Configuration configuration;
+  std::string error;
+  if (!Moon::Runtime::ParseApplicationInput(input_path,&configuration,&error)) {
+    std::fprintf(stderr,"ERROR lola_demo_input %s\n",error.c_str());
+    return 2;
+  }
+  if (configuration.surfaceGeometry!=Moon::Runtime::SurfaceGeometry::Lola) {
+    std::fprintf(stderr,"ERROR lola_demo_requires_surface_geometry_lola\n");
+    return 2;
+  }
+
+  Moon::Surface::LolaDem dem;
+  Moon::Surface::Triangulation mesh;
+  if (!dem.Load(configuration,&error) ||
+      !Moon::Surface::BuildIcosphere(dem.metadata().referenceRadiusM,
+          configuration.surfaceMeshResolutionM,&mesh,&error) ||
+      !Moon::Surface::ApplyLolaTopography(dem,&mesh,&error) ||
+      !Moon::Surface::WriteCeaSurface(
+          mesh,configuration.surfaceCeaFile,&error) ||
+      !Moon::Surface::WriteTecplotSurface(
+          mesh,configuration.surfaceTecplotFile,&error)) {
+    std::fprintf(stderr,"ERROR lola_demo_production_kernel %s\n",error.c_str());
+    return 2;
+  }
+
+  // Preserve the complete vertex population rather than selecting attractive
+  // locations for a meeting figure.  Coordinates remain label-native
+  // planetocentric latitude and east-positive longitude, while radii and
+  // elevations are SI metres relative to the LDEM_4 reference sphere.
+  std::ofstream vertices(vertex_path);
+  if (!vertices) {
+    std::fprintf(stderr,"ERROR cannot_write_demo_vertices %s\n",
+                 vertex_path.c_str());
+    return 2;
+  }
+  vertices << std::setprecision(17)
+           << "vertex_index,x_m,y_m,z_m,latitude_deg,longitude_east_deg,"
+              "radius_m,model_elevation_m\n";
+  std::size_t inward_faces=0,degenerate_faces=0;
+  const double pi=std::acos(-1.0);
+  for (std::size_t index=0;index<mesh.verticesM.size();++index) {
+    const auto& vertex=mesh.verticesM[index];
+    const double radius=std::sqrt(vertex[0]*vertex[0]+vertex[1]*vertex[1]+
+                                  vertex[2]*vertex[2]);
+    const double latitude=std::asin(vertex[2]/radius)*180.0/pi;
+    double longitude=std::atan2(vertex[1],vertex[0])*180.0/pi;
+    if (longitude<0.0) longitude+=360.0;
+    vertices << index << ',' << vertex[0] << ',' << vertex[1] << ','
+             << vertex[2] << ',' << latitude << ',' << longitude << ','
+             << radius << ','
+             << radius-dem.metadata().referenceRadiusM << '\n';
+  }
+  for (const auto& face:mesh.faces) {
+    const auto& a=mesh.verticesM[face[0]];
+    const auto& b=mesh.verticesM[face[1]];
+    const auto& c=mesh.verticesM[face[2]];
+    const double ab[3]={b[0]-a[0],b[1]-a[1],b[2]-a[2]};
+    const double ac[3]={c[0]-a[0],c[1]-a[1],c[2]-a[2]};
+    const double normal[3]={ab[1]*ac[2]-ab[2]*ac[1],
+        ab[2]*ac[0]-ab[0]*ac[2],ab[0]*ac[1]-ab[1]*ac[0]};
+    const double area2=std::sqrt(normal[0]*normal[0]+normal[1]*normal[1]+
+                                 normal[2]*normal[2]);
+    const double center[3]={a[0]+b[0]+c[0],a[1]+b[1]+c[1],
+                            a[2]+b[2]+c[2]};
+    if (!(area2>0.0) || !std::isfinite(area2)) ++degenerate_faces;
+    if (normal[0]*center[0]+normal[1]*center[1]+normal[2]*center[2]<=0.0)
+      ++inward_faces;
+  }
+  if (!vertices) {
+    std::fprintf(stderr,"ERROR incomplete_demo_vertex_output\n");
+    return 2;
+  }
+  std::printf("surface_resolution_m=%.17g\n",
+              configuration.surfaceMeshResolutionM);
+  std::printf("reference_radius_m=%.17g\n",dem.metadata().referenceRadiusM);
+  std::printf("subdivision_level=%u\n",mesh.subdivisionLevel);
+  std::printf("vertex_count=%zu\n",mesh.verticesM.size());
+  std::printf("face_count=%zu\n",mesh.faces.size());
+  std::printf("maximum_edge_length_m=%.17g\n",mesh.maximumEdgeLengthM);
+  std::printf("minimum_radius_m=%.17g\n",mesh.minimumRadiusM);
+  std::printf("maximum_radius_m=%.17g\n",mesh.maximumRadiusM);
+  std::printf("degenerate_face_count=%zu\n",degenerate_faces);
+  std::printf("inward_face_count=%zu\n",inward_faces);
+  return (degenerate_faces==0 && inward_faces==0) ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -1377,6 +1478,7 @@ int main(int argc, char **argv) {
         "usage: production_kernel_probe <gravity|mesh-resolution|"
         "photochemistry|radiation-shadow|radiation-pressure-values|"
         "rotating-frame|sodium-sources|sticking|temperature|lola-geometry|"
+        "lola-surface-demo|"
         "terrain-shadow|diviner-temperature|thermal-inertia|surface-physics|"
         "cold-trapping|argon-source> "
         "[mode arguments]\n");
@@ -1386,6 +1488,9 @@ int main(int argc, char **argv) {
   const std::string test(argv[1]);
   if (test == "radiation-pressure-values") {
     return radiation_pressure_values(argc - 2, argv + 2);
+  }
+  if (test == "lola-surface-demo") {
+    return lola_surface_demo(argc - 2,argv + 2);
   }
   if (argc != 2) {
     std::fprintf(stderr, "mode %s does not accept additional arguments\n",

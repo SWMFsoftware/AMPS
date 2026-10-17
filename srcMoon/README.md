@@ -303,8 +303,20 @@ I12 run completed the wiring criteria in 1,409.9 seconds (23.50 minutes), with
 2026-10-12. The required `CenterNodeMeasure.bin` cache was 6,128,421,120 bytes;
 optional `mesh.dat`/`tetra_mesh` files were absent. Runtime is host/cache-
 dependent operational guidance, not an acceptance criterion. QUICK is for
-production-wiring checks only; M1 numerical qualification continues to require
-the FULL I11-I13 campaign.
+production-wiring checks only. M1 numerical qualification continues to require
+a passing I11-I13 campaign. The current user-approved I11 execution contract
+uses 500 particle steps per sample and caps each mesh at 5000 steps. Ten
+complete samples allow the unchanged nine-batch gate to be evaluated once
+when raw samples are independent; a missed independence, equilibrium, or
+precision criterion at the cap remains `FAIL`. Particle restart output is
+disabled because it does not preserve I11's in-memory statistical state.
+
+The separate `srcMoon/test/lola_surface_demo/run.py` utility generates a
+meeting-ready D01 surface package at a requested 10--1000 km edge target. It
+uses the production parser, decoder, icosphere builder, and writers and then
+independently compares every vertex with native LDEM_4 values. Its result and
+figure titles explicitly record `FORMAL I14 NOT RUN`; demonstration success is
+not linked particle-surface validation and cannot open a roadmap gate.
 
 The still-coarser `srcMoon/examples/m1_regression.in` receipt uses twelve
 times the FULL spatial targets while preserving the physical domain, epoch,
@@ -431,6 +443,20 @@ locations are projected radially onto a terrain facet and emission velocities
 are rotated from the radial normal to the facet normal. Impact
 sticking/re-emission uses the facet normal but retains the established
 body-fixed spherical inventory bins.
+
+`srcMoon/tools/visualize_surface.py` reads either production surface file and
+creates two three-dimensional views, a body-fixed longitude/latitude map, and
+a radial or explicitly referenced elevation distribution. It validates record
+counts, connectivity, stored radii, degenerate faces, and orientation before
+rendering and prints a hashed JSON receipt. Its `--interactive-3d` mode opens a
+dedicated mouse-rotatable globe; a visible button or the `S` key saves the
+selected camera as a clean static figure. An explicit
+`--vertical-exaggeration` can multiply radial relief relative to an explicit
+reference radius for presentation; it never changes the mesh or physical
+metrics and is prominently labeled on every affected figure. See
+`srcMoon/tools/README.md` for commands, X-display requirements, and scalability
+controls. Its output is labeled visualization only and does not establish U08
+or I14 status.
 
 ### Surface implementation invariants
 

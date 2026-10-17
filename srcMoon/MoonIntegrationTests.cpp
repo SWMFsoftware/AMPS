@@ -945,6 +945,17 @@ int RunI18(Receipt* receipt,const std::string& receiptPath) {
 
 namespace I11Sampling {
 
+// The bounded campaign controls are part of the reviewed I11 contract, not
+// tunable shortcuts selected after seeing a result.  One completed production
+// sample contains exactly 500 particle steps, and every spatial-resolution
+// case stops after at most 5000 particle steps.  Ten complete samples allow
+// the unchanged nine-batch independence/equilibrium/precision algorithm to be
+// evaluated once when the raw blocks are already independent.  The cap is
+// still an execution bound, not a relaxed science criterion: a case that has
+// not met every gate at 5000 steps reports FAIL and retains raw diagnostics.
+constexpr long int SampleLengthSteps=500;
+constexpr long int MaximumParticleSteps=5000;
+
 // One entry in the frozen M1 scoring vector.  ``pointwise`` selects the
 // predeclared 10% spatial-convergence and 3.33% CI gates; the two global
 // budgets use the stricter 5% and 1.67% integrated gates.
@@ -1806,6 +1817,24 @@ int RunI11(Receipt* receipt,const std::string& receiptPath) {
     receipt->Scalar("configuration_error_missing_input",1);
     return 4;
   }
+
+  // Particle-only restart files cannot restore I11's in-memory baseBlocks,
+  // batch selection, or acceptance state.  Require the normal Moon build to
+  // disable their compile-time autosave before the first production step so a
+  // bounded test never emits misleading or disk-intensive checkpoints.
+#if _PIC_AUTOSAVE_PARTICLE_DATA_RESTART_FILE__MODE_ == _PIC_AUTOSAVE_PARTICLE_DATA_RESTART_FILE__MODE_ON_
+  receipt->Scalar("particle_restart_writes_enabled",1);
+  receipt->Scalar("configuration_error_particle_restart_must_be_disabled",1);
+  return 4;
+#else
+  receipt->Scalar("particle_restart_writes_enabled",0);
+#endif
+
+  // Override the general Moon output cadence only for linked I11.  Setting it
+  // here leaves normal production and all other U/I tests unchanged while the
+  // receipt below records the exact value exercised by the production sampler.
+  PIC::RequiredSampleLength=I11Sampling::SampleLengthSteps;
+  PIC::CollectingSampleCounter=0;
   const Moon::Runtime::Configuration& configuration=
       Moon::Runtime::GetConfiguration();
   receipt->Scalar("simulation_environment_mode",
@@ -1820,6 +1849,8 @@ int RunI11(Receipt* receipt,const std::string& receiptPath) {
   receipt->Scalar("mesh_output_tecplot",
       configuration.meshOutputTecplot ? 1 : 0);
   receipt->Scalar("base_block_length_steps",PIC::RequiredSampleLength);
+  receipt->Scalar("maximum_particle_steps",
+      I11Sampling::MaximumParticleSteps);
   receipt->Scalar("equilibrium_relative_change_gate",0.02);
   receipt->Scalar("equilibrium_consecutive_changes",3);
   receipt->Scalar("minimum_independent_science_blocks",5);
@@ -1849,16 +1880,19 @@ int RunI11(Receipt* receipt,const std::string& receiptPath) {
       Moon::RotationVector_SO_FROZEN);
   receipt->Scalar("particle_global_timestep_s",
       PIC::ParticleWeightTimeStep::GlobalTimeStep[_NA_SPEC_]);
-  // No arbitrary block, wall-clock, or memory ceiling is applied.  The run
-  // ends only after adaptive batch means show insignificant lag-one
-  // correlation, three consecutive equilibrated changes, five disjoint
-  // science batches, and the frozen CI bounds for every required bin.  Actual
-  // allocator exhaustion is handled by main() through AMPS's fatal exit path.
-  while (!I11Sampling::complete) {
+  // Stop at the approved hard iteration cap even when the unchanged
+  // statistical gates are unresolved.  Reaching the cap is an evaluated FAIL,
+  // not ERROR or PASS; the Python runner executes the remaining mesh levels so
+  // all four bounded diagnostic cases have complete provenance.
+  while (!I11Sampling::complete &&
+         Moon::nIterationCounter<I11Sampling::MaximumParticleSteps) {
     amps_time_step();
     Moon::nIterationCounter++;
   }
-  I11Sampling::WriteFinal();
+  if (I11Sampling::complete) I11Sampling::WriteFinal();
+  const bool iterationLimitReached=
+      !I11Sampling::complete &&
+      Moon::nIterationCounter>=I11Sampling::MaximumParticleSteps;
   receipt->Scalar("production_particle_steps_executed",
       Moon::nIterationCounter);
   receipt->Scalar("base_blocks_executed",I11Sampling::baseBlocks.size());
@@ -1867,7 +1901,11 @@ int RunI11(Receipt* receipt,const std::string& receiptPath) {
   receipt->Scalar("retained_independent_batch_count",
       I11Sampling::retainedBatchCount);
   receipt->Scalar("scoring_metric_count",I11Sampling::definitions.size());
-  receipt->Scalar("convergence_metrics_available",1);
+  receipt->Scalar("convergence_criteria_met",
+      I11Sampling::complete ? 1 : 0);
+  receipt->Scalar("iteration_limit_reached",iterationLimitReached ? 1 : 0);
+  receipt->Scalar("convergence_metrics_available",
+      I11Sampling::complete ? 1 : 0);
   return 0;
 #endif
 }
@@ -1895,7 +1933,7 @@ int RunI12(Receipt* receipt) {
   // AMPS after its discrete power-of-two refinement and balancing constraints.
   // Points are just outside the analytic boundary to avoid an ambiguous
   // internal-boundary ownership query while remaining negligible relative to
-  // even the finest approved 5 km target.
+  // even the finest target selected by the approved I11 campaign.
   const double radius=_RADIUS_(_MOON_)+
       std::max(1.0e-3,10.0*PIC::Mesh::mesh->EPS);
   const double szaDeg[6]={0.0,30.0,60.0,90.0,120.0,180.0};
@@ -2056,7 +2094,7 @@ int RunI13(Receipt* receipt) {
   // A controlled I13 baseline also requires equilibrated profiles, column
   // density, brightness, and return flux from a *separate passing I11 run*.
   // This initialization-only process cannot manufacture those quantities.
-  // The independent runner therefore imports the preserved I11 5 km artifact,
+  // The independent runner therefore imports the preserved finest I11 artifact,
   // writes a review candidate, and returns SKIPPED until an investigator has
   // approved and frozen that candidate.  This zero is process-local evidence;
   // it does not claim that the external I11 artifact is unavailable.

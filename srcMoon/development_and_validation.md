@@ -1861,6 +1861,24 @@ reviewed baseline. I17 still requires that predecessor and D03 readiness;
 resource feasibility cannot replace either. The canonical external roadmap
 has not been edited; ROADMAP_RECONCILIATION.md records this scoped amendment.
 
+**Bounded-execution amendment, 2026-10-16:** The user subsequently fixed I11
+at 500 particle iterations per sample and no more than 5000 particle iterations
+for each resolution, with particle restart writes disabled. The existing
+independence, equilibrium, confidence-interval, and cross-grid thresholds are
+unchanged. Ten possible samples permit one nine-batch evaluation when the raw
+blocks are independent, but do not guarantee equilibrium or precision; a case
+reaching the cap without all gates is an evaluated `FAIL` with retained
+diagnostics. It is not M1 qualification and cannot open I13/I17 gates. All four
+requested mesh levels are still executed unless an infrastructure/runtime
+`ERROR` intervenes.
+
+Each completed resolution now also produces an explicitly unqualified raw
+diagnostic CSV plus PNG/EPS figure and metadata receipt. Stage 1 reports
+within-stage sample stability; later stages add cumulative raw-mean grid
+comparisons. These meeting/debug artifacts are excluded from the formal
+scorer, are not observations, and cannot replace qualified metrics or a failed
+earlier layer.
+
 **Why this step exists**
 
 Near-surface Na/Ne/Ar scale lengths can be far below the legacy coarse debug mesh. Scientific validation is meaningless until discretization error is smaller than observational/model uncertainty.

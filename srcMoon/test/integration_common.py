@@ -43,6 +43,11 @@ M_EARTH = 5.9736e24
 M_SUN = 1.9891e30
 R_MOON = 1737.10e3
 PASS, FAIL, ERROR, SKIPPED = "PASS", "FAIL", "ERROR", "SKIPPED"
+I11_SAMPLE_LENGTH_STEPS = 500
+I11_MAXIMUM_PARTICLE_STEPS = 5000
+I11_MAXIMUM_COMPLETE_SAMPLES = (
+    I11_MAXIMUM_PARTICLE_STEPS // I11_SAMPLE_LENGTH_STEPS
+)
 
 
 class MissingPrerequisite(RuntimeError):
@@ -205,6 +210,41 @@ def render_comparison(work: Path, title: str) -> dict[str, str]:
             "comparison plot renderer failed: " + completed.stderr.strip())
     return {"comparison_csv": str(comparison), "comparison_png": str(png),
             "comparison_eps": str(eps)}
+
+
+def render_i11_stage_diagnostic(
+    campaign: Path, completed_resolutions_km: list[int], formal_status: str,
+) -> dict[str, object]:
+    """Render raw diagnostics after a completed I11 resolution stage.
+
+    The dedicated renderer reads production ``block_metrics.csv`` files and
+    explicitly marks every artifact as unqualified.  It is deliberately
+    separate from ``qualified_metrics.csv`` and ``convergence_metrics.csv``:
+    producing a meeting/demo figure cannot affect the formal I11 decision.
+    """
+    command = [
+        sys.executable, "-B",
+        str(TEST_ROOT / "integration-tests/I11/write_stage_diagnostics.py"),
+        "--campaign-dir", str(campaign),
+        "--completed-resolutions-km",
+        *[str(value) for value in completed_resolutions_km],
+        "--formal-level-status", formal_status,
+    ]
+    completed = subprocess.run(
+        command, cwd=REPO, text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, check=False)
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "I11 stage diagnostic renderer failed: " +
+            (completed.stderr.strip() or completed.stdout.strip()))
+    try:
+        metadata = json.loads(completed.stdout)
+    except json.JSONDecodeError as exception:
+        raise RuntimeError(
+            "I11 stage diagnostic renderer returned malformed metadata") from exception
+    if metadata.get("accepted_convergence_input") is not False:
+        raise RuntimeError("I11 diagnostic artifact was not marked unqualified")
+    return metadata
 
 
 def norm(vector: list[float]) -> float:
@@ -1896,10 +1936,10 @@ def run_i11_campaign(executable: Path, output_root: Path,
             raise ValueError("I11 requires --input with the reviewed M1 receipt")
         if campaign_mode == "regression":
             # I12 owns the single bounded linked production run in the default
-            # regression campaign.  I11's adaptive statistical loop has no
-            # defensible fixed runtime, so starting it here would make a normal
-            # developer regression unexpectedly unbounded. Preserve a complete
-            # non-execution record and never label it PASS.
+            # regression campaign. I11 now has a reviewed 5000-step ceiling,
+            # but four production meshes remain too costly for an ordinary
+            # developer regression. Preserve a complete non-execution record
+            # and never label it PASS.
             shutil.copy2(application_input.resolve(), output / "application.in")
             (output / "stdout.log").write_text(
                 "I11 FULL convergence was not launched in REGRESSION mode.\n",
@@ -1920,7 +1960,7 @@ def run_i11_campaign(executable: Path, output_root: Path,
                 encoding="utf-8")
             result.update(
                 status=SKIPPED,
-                reason=("REGRESSION mode does not launch the unbounded "
+                reason=("REGRESSION mode does not launch the bounded "
                         "I11 convergence campaign; use --campaign-mode "
                         "qualification for M1 evidence"),
                 metrics={"linked_model_executed": False,
@@ -1945,12 +1985,18 @@ def run_i11_campaign(executable: Path, output_root: Path,
             "I11 aggregate runner: per-resolution model stderr is retained "
             "beside each derived receipt.\n", encoding="utf-8")
         initial_manifest = {
-            "schema": "srcMoon-I11-campaign-manifest-v1",
+            "schema": "srcMoon-I11-campaign-manifest-v2",
             "source_revision": git_value("rev-parse", "HEAD"),
             "template": {"path": str(application_input.resolve()),
                          "sha256": sha256(application_input.resolve())},
             "random_seed": 731993, "mpi_ranks": mpi_ranks,
             "openmp_threads": 1,
+            "sample_length_particle_steps": I11_SAMPLE_LENGTH_STEPS,
+            "maximum_particle_steps_per_resolution":
+                I11_MAXIMUM_PARTICLE_STEPS,
+            "maximum_complete_samples_per_resolution":
+                I11_MAXIMUM_COMPLETE_SAMPLES,
+            "particle_restart_writes": False,
             "resolution_sequence_km": list(levels),
             "levels": {}}
         (output / "run_manifest.json").write_text(
@@ -1959,6 +2005,8 @@ def run_i11_campaign(executable: Path, output_root: Path,
         level_metrics: dict[int, dict[str, dict[str, float | str]]] = {}
         level_receipts: dict[int, dict[str, object]] = {}
         level_summaries: dict[str, object] = {}
+        bounded_failures: list[str] = []
+        completed_diagnostic_levels: list[int] = []
         environment = dict(os.environ); environment["OMP_NUM_THREADS"] = "1"
 
         for resolution in levels:
@@ -1992,14 +2040,12 @@ def run_i11_campaign(executable: Path, output_root: Path,
             shutil.copy2(receipt, output / "receipt.txt")
             if parsed.get("test_id") != "I11":
                 raise ValueError(f"I11 {resolution} km receipt has wrong ID")
-            qualified = level / "qualified_metrics.csv"
-            level_metrics[resolution] = read_qualified_metrics(qualified)
             level_receipts[resolution] = parsed
-            initial_manifest["levels"][f"{resolution}km"] = {  # type: ignore[index]
+            level_manifest_entry = {  # type: ignore[var-annotated]
                 "input_sha256": sha256(derived_input),
                 "manifest_sha256": sha256(level / "run_manifest.json"),
-                "qualified_metrics_sha256": sha256(qualified),
             }
+            initial_manifest["levels"][f"{resolution}km"] = level_manifest_entry  # type: ignore[index]
             (output / "run_manifest.json").write_text(
                 json.dumps(initial_manifest, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8")
@@ -2011,12 +2057,113 @@ def run_i11_campaign(executable: Path, output_root: Path,
                             for name in vector_names}
             et_drift = abs(float(parsed["step_2_ephemeris_time_tdb_s"]) -
                            float(parsed["step_1_ephemeris_time_tdb_s"]))
-            wiring_ok = (parsed.get("simulation_environment_mode") == "frozen" and
+            bounded_controls_ok = (
+                int(parsed["base_block_length_steps"]) ==
+                    I11_SAMPLE_LENGTH_STEPS and
+                int(parsed["maximum_particle_steps"]) ==
+                    I11_MAXIMUM_PARTICLE_STEPS and
+                int(parsed["production_particle_steps_executed"]) <=
+                    I11_MAXIMUM_PARTICLE_STEPS and
+                int(parsed["particle_restart_writes_enabled"]) == 0)
+            wiring_ok = (bounded_controls_ok and
+                         parsed.get("simulation_environment_mode") == "frozen" and
                          et_drift == 0.0 and
                          all(value == 0.0 for value in vector_drift.values()) and
                          float(parsed["particle_global_timestep_s"]) > 0.0 and
-                         int(parsed["random_seed"]) == 731993 and
-                         int(parsed["retained_independent_batch_count"]) >= 9)
+                         int(parsed["random_seed"]) == 731993)
+            if not wiring_ok:
+                raise ValueError(
+                    f"I11 {resolution} km bounded-control, frozen-environment, "
+                    "or deterministic wiring invariant failed")
+
+            criteria_met = int(parsed["convergence_criteria_met"]) == 1
+            if not criteria_met:
+                steps = int(parsed["production_particle_steps_executed"])
+                blocks = int(parsed["base_blocks_executed"])
+                cap_reached = int(parsed["iteration_limit_reached"]) == 1
+                if (not cap_reached or steps != I11_MAXIMUM_PARTICLE_STEPS or
+                        blocks != I11_MAXIMUM_COMPLETE_SAMPLES or
+                        int(parsed["convergence_metrics_available"]) != 0):
+                    raise ValueError(
+                        f"I11 {resolution} km stopped without either qualified "
+                        "metrics or the declared ten-sample iteration-cap "
+                        "receipt")
+                completed_diagnostic_levels.append(resolution)
+                diagnostic = render_i11_stage_diagnostic(
+                    output, completed_diagnostic_levels, FAIL)
+                level_result = {
+                    "id": "I11", "resolution_km": resolution,
+                    "status": FAIL,
+                    "reason": (
+                        "5000-particle-step limit reached before the unchanged "
+                        "independence, equilibrium, and CI criteria were met"),
+                    "metrics": {
+                        "sample_length_particle_steps":
+                            I11_SAMPLE_LENGTH_STEPS,
+                        "maximum_particle_steps":
+                            I11_MAXIMUM_PARTICLE_STEPS,
+                        "maximum_complete_samples":
+                            I11_MAXIMUM_COMPLETE_SAMPLES,
+                        "particle_steps_executed": steps,
+                        "base_blocks": blocks,
+                        "minimum_batches_required": 9,
+                        "particle_restart_writes_enabled": False,
+                        "ephemeris_time_drift_s": et_drift,
+                        "external_vector_absolute_drifts": vector_drift,
+                    },
+                    "artifacts": {
+                        "block_metrics": str(level / "block_metrics.csv"),
+                        "resource_metrics": str(level / "resource_metrics.csv"),
+                        "process_resource_metrics": str(
+                            level / "process_resource_metrics.csv"),
+                        "stage_diagnostic": diagnostic["artifacts"],
+                    },
+                }
+                (level / "result.json").write_text(
+                    json.dumps(level_result, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8")
+                # Bind every diagnostic needed to audit a capped scientific
+                # FAIL. Missing raw metrics are infrastructure corruption and
+                # therefore make sha256() raise into the ERROR path instead of
+                # leaving a superficially complete campaign manifest.
+                level_manifest_entry.update({
+                    "receipt_sha256": sha256(receipt),
+                    "result_sha256": sha256(level / "result.json"),
+                    "block_metrics_sha256": sha256(
+                        level / "block_metrics.csv"),
+                    "resource_metrics_sha256": sha256(
+                        level / "resource_metrics.csv"),
+                    "process_resource_metrics_sha256": sha256(
+                        level / "process_resource_metrics.csv"),
+                    "stage_diagnostic_csv_sha256": sha256(
+                        level / "stage_diagnostic.csv"),
+                    "stage_diagnostic_png_sha256": sha256(
+                        level / "stage_diagnostic.png"),
+                    "stage_diagnostic_eps_sha256": sha256(
+                        level / "stage_diagnostic.eps"),
+                    "stage_diagnostic_metadata_sha256": sha256(
+                        level / "stage_diagnostic.json"),
+                })
+                (output / "run_manifest.json").write_text(
+                    json.dumps(initial_manifest, indent=2, sort_keys=True) +
+                    "\n", encoding="utf-8")
+                level_summaries[f"{resolution}km"] = level_result
+                bounded_failures.append(f"{resolution}km")
+                # Run every requested resolution even though the overall
+                # campaign is already FAIL. This honors the per-test 5000-step
+                # cap and preserves a comparable bounded diagnostic set.
+                continue
+
+            qualified = level / "qualified_metrics.csv"
+            level_metrics[resolution] = read_qualified_metrics(qualified)
+            level_manifest_entry["qualified_metrics_sha256"] = sha256(qualified)
+            (output / "run_manifest.json").write_text(
+                json.dumps(initial_manifest, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8")
+            if int(parsed["retained_independent_batch_count"]) < 9:
+                raise ValueError(
+                    f"I11 {resolution} km claims convergence with fewer than "
+                    "nine retained independent batches")
 
             unresolved = []
             for name, metric in level_metrics[resolution].items():
@@ -2025,6 +2172,9 @@ def run_i11_campaign(executable: Path, output_root: Path,
                     unresolved.append(name)
             level_status = PASS if wiring_ok and not unresolved else (
                 SKIPPED if wiring_ok else FAIL)
+            completed_diagnostic_levels.append(resolution)
+            diagnostic = render_i11_stage_diagnostic(
+                output, completed_diagnostic_levels, level_status)
             level_result = {
                 "id": "I11", "resolution_km": resolution,
                 "status": level_status,
@@ -2041,10 +2191,32 @@ def run_i11_campaign(executable: Path, output_root: Path,
                             "batch_size_base_blocks": int(
                                 parsed["retained_batch_size_base_blocks"]),
                             "independent_batch_count": int(
-                                parsed["retained_independent_batch_count"])},
+                                parsed["retained_independent_batch_count"]),
+                            "stage_diagnostic_notice": diagnostic["notice"]},
+                "artifacts": {"stage_diagnostic": diagnostic["artifacts"]},
             }
             (level / "result.json").write_text(
                 json.dumps(level_result, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8")
+            level_manifest_entry.update({
+                "receipt_sha256": sha256(receipt),
+                "result_sha256": sha256(level / "result.json"),
+                "block_metrics_sha256": sha256(level / "block_metrics.csv"),
+                "resource_metrics_sha256": sha256(
+                    level / "resource_metrics.csv"),
+                "process_resource_metrics_sha256": sha256(
+                    level / "process_resource_metrics.csv"),
+                "stage_diagnostic_csv_sha256": sha256(
+                    level / "stage_diagnostic.csv"),
+                "stage_diagnostic_png_sha256": sha256(
+                    level / "stage_diagnostic.png"),
+                "stage_diagnostic_eps_sha256": sha256(
+                    level / "stage_diagnostic.eps"),
+                "stage_diagnostic_metadata_sha256": sha256(
+                    level / "stage_diagnostic.json"),
+            })
+            (output / "run_manifest.json").write_text(
+                json.dumps(initial_manifest, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8")
             level_summaries[f"{resolution}km"] = level_result
             if level_status != PASS:
@@ -2052,6 +2224,21 @@ def run_i11_campaign(executable: Path, output_root: Path,
                               reason=level_result["reason"],
                               metrics={"levels": level_summaries})
                 raise StopIteration
+
+        if bounded_failures:
+            result.update(
+                status=FAIL,
+                reason=("iteration cap reached before statistical qualification "
+                        "at: " + ", ".join(bounded_failures)),
+                metrics={"levels": level_summaries,
+                         "sample_length_particle_steps":
+                             I11_SAMPLE_LENGTH_STEPS,
+                         "maximum_particle_steps_per_resolution":
+                             I11_MAXIMUM_PARTICLE_STEPS,
+                         "particle_restart_writes": False},
+                artifacts={"campaign_manifest": str(
+                    output / "run_manifest.json")})
+            raise StopIteration
 
         names = set(level_metrics[levels[0]])
         if any(set(level_metrics[level]) != names for level in levels[1:]):
@@ -2097,13 +2284,12 @@ def run_i11_campaign(executable: Path, output_root: Path,
         shutil.copy2(output / f"{levels[-1]}km" / "receipt.txt", output / "receipt.txt")
         # The campaign manifest binds the four child manifests and derived
         # receipts without hiding their individual commands or resource logs.
-        campaign_manifest = {**initial_manifest,
-            "levels": {f"{level}km": {
-                "input_sha256": sha256(output / f"{level}km/application.in"),
-                "manifest_sha256": sha256(output / f"{level}km/run_manifest.json"),
-                "qualified_metrics_sha256": sha256(
-                    output / f"{level}km/qualified_metrics.csv")}
-                for level in levels}}
+        # ``initial_manifest`` has been extended after every completed stage
+        # with both accepted-science and explicitly unqualified diagnostic
+        # hashes.  Preserve those entries here; rebuilding a smaller levels
+        # dictionary would silently detach the requested meeting artifacts
+        # from the campaign provenance record.
+        campaign_manifest = initial_manifest
         (output / "run_manifest.json").write_text(
             json.dumps(campaign_manifest, indent=2, sort_keys=True) + "\n",
             encoding="utf-8")
