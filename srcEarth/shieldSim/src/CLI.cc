@@ -84,10 +84,12 @@ std::string AllowedPhysicsListText(){
 void PrintHelp(){
   std::cout<<"\nUsage: shieldSim [options]\n\n";
 
-  std::cout<<"VERSIONED STAGE-1 CASE INPUT (science-facing path)\n";
-  std::cout<<"  --case=<file.json>       Load a strict shieldSim.case.v1 definition.\n";
+  std::cout<<"VERSIONED CASE INPUT\n";
+  std::cout<<"  --case=<file.json>       Load strict shieldSim.case.v1 or case.v2.\n";
   std::cout<<"                           Geometry, materials, source, accuracy, and\n";
   std::cout<<"                           transport settings come only from this file.\n";
+  std::cout<<"                           case.v2 is Stage-3 verification-only raw\n";
+  std::cout<<"                           response infrastructure, not a validated proxy.\n";
   std::cout<<"  --validate-case=<file>   Parse, resolve, hash, and write provenance,\n";
   std::cout<<"                           but do not start Geant4 transport.\n";
   std::cout<<"  --validate-case          Use with --case for the same validation-only mode.\n";
@@ -395,8 +397,10 @@ Options ParseArguments(int argc, char** argv){
     G4Exception("ParseArguments","BadInput",FatalException,msg.c_str());
   }
 
-  if(o.sourceMode!="beam" && o.sourceMode!="isotropic")
-    G4Exception("ParseArguments","BadInput",FatalException,"--source-mode must be either beam or isotropic");
+  if(o.sourceMode!="beam" && o.sourceMode!="isotropic" &&
+     !(o.caseDefinition && o.sourceMode=="directional_plane"))
+    G4Exception("ParseArguments","BadInput",FatalException,
+                "--source-mode must be beam or isotropic; directional_plane is case-v2 response-only");
   if(o.outputPrefix.empty())
     G4Exception("ParseArguments","BadInput",FatalException,"--output-prefix must not be empty");
   if(o.nEvents<=0)

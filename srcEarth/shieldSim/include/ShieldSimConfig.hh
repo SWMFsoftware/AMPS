@@ -28,10 +28,11 @@
 namespace shield_sim { class CaseDefinition; }
 
 struct Options {
-  // ---- versioned Stage-1 case input ---------------------------------------
-  // --case is the science-facing input path.  The shared parsed definition is
-  // immutable and is copied cheaply when main creates one independent
-  // shield/absorber transport world per absorber.
+  // ---- versioned case-v1 / case-v2 input ----------------------------------
+  // The shared parsed definition is immutable and is copied cheaply when main
+  // creates one independent shield/absorber transport world per absorber.
+  // case-v2 is verification-only response infrastructure; its presence does
+  // not imply that any downstream radiation proxy is physically validated.
   std::string caseFile = "";
   std::shared_ptr<shield_sim::CaseDefinition> caseDefinition;
   std::size_t activeAbsorberIndex = 0;
@@ -53,6 +54,7 @@ struct Options {
   // Supported source modes:
   //   beam      : normal-incidence pencil beam along +z
   //   isotropic : finite upstream plane source with cosine-law directions
+  //   directional_plane : case-v2 exact (mu,phi) response nodes only
   std::string sourceMode   = "beam";
 
   // ---- energy limits for sampling [MeV total kinetic energy] ---------------

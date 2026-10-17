@@ -1,5 +1,6 @@
 #include "SteppingAction.hh"
 
+#include "AncestryTrackingAction.hh"
 #include "RunAction.hh"
 
 #include <G4AffineTransform.hh>
@@ -14,6 +15,7 @@
 #include <G4Track.hh>
 #include <G4ThreeVector.hh>
 #include <G4VPhysicalVolume.hh>
+#include <G4VProcess.hh>
 
 #include <cmath>
 
@@ -50,6 +52,13 @@ void SteppingAction::UserSteppingAction(const G4Step* step) {
           if(std::abs(localPos.z() - rearZ) <= tol){
             G4double ke=post->GetKineticEnergy()/MeV;
             const G4String& nm=step->GetTrack()->GetParticleDefinition()->GetParticleName();
+            const auto* definition=step->GetTrack()->GetParticleDefinition();
+            const auto* ancestry=dynamic_cast<const TrackAncestryInfo*>(
+                step->GetTrack()->GetUserInformation());
+            fRA->RecordShieldExit(nm,definition->GetPDGEncoding(),definition->GetAtomicNumber(),
+                static_cast<int>(definition->GetAtomicMass()),step->GetTrack()->GetParentID()==0,
+                ancestry?ancestry->rootParticle:nm,
+                ancestry?ancestry->generation:(step->GetTrack()->GetParentID()==0?0:1),ke);
             auto* am=G4AnalysisManager::Instance();
             if(nm=="proton") {
               am->FillH1(0,ke); fRA->AddOutP(ke);
@@ -77,6 +86,26 @@ void SteppingAction::UserSteppingAction(const G4Step* step) {
   // step belongs to the material where the step occurred, even if the post-step
   // point is already in the next volume at a boundary.
   if(preVol){
+    const auto& shieldLayers=fRA->GetShieldLVs();
+    for(std::size_t layer=0;layer<shieldLayers.size();++layer){
+      if(preVol!=shieldLayers[layer]) continue;
+      fRA->RecordLayerStep(layer,step->GetTotalEnergyDeposit(),
+                          step->GetNonIonizingEnergyDeposit(),step->GetStepLength());
+      const auto* track=step->GetTrack();
+      if(track->GetParentID()!=0 && track->GetCurrentStepNumber()==1){
+        const auto* definition=track->GetParticleDefinition();
+        const auto* ancestry=dynamic_cast<const TrackAncestryInfo*>(track->GetUserInformation());
+        const auto* creator=track->GetCreatorProcess();
+        fRA->RecordSecondaryBirth(layer,definition->GetParticleName(),
+            definition->GetPDGEncoding(),definition->GetAtomicNumber(),
+            static_cast<int>(definition->GetAtomicMass()),
+            ancestry?ancestry->rootParticle:"unavailable",
+            ancestry?ancestry->generation:1,
+            creator?creator->GetProcessName():"unavailable",
+            track->GetVertexKineticEnergy()/MeV);
+      }
+      break;
+    }
     const auto& scLVs=fRA->GetScoringLVs();
     for(std::size_t i=0;i<scLVs.size();++i){
       if(preVol==scLVs[i]){

@@ -8,7 +8,9 @@ phantom.
 
 ## Implementation status
 
-Stages 1 and 2 of the development roadmap are implemented. Stage 2 has strict
+Stages 1 and 2 are complete. Stage 3 is implemented and acceptance-tested but
+is **pending the required independent review**, so it is not formally complete.
+Stage 2 has strict
 adapters and pinned data for the original AMS-02 proton/helium fixture, the
 2025 AMS-02 He--O solar-cycle tables, ACE/CRIS B--Ni, and the GOES-16 GLE72
 time series/event integration. Its downloaded AMS-02 proton fixture also
@@ -37,7 +39,19 @@ dependency. The science-facing case path is a strict
   overrides, adaptive batches, 95% intervals, and
   `met`/`not_met`/`not_assessable` states; and
 - resolved case, geometry, material, source, Geant4, seed, and output
-  provenance.
+provenance.
+
+The Stage-3-only `shieldSim.case.v2` verification path adds explicit
+local-to-world translation/unit-quaternion transforms for the source plane,
+shield reference surface, and absorber reference surface; monoenergetic
+proton, He-4, and explicit-ion response nodes; exact discrete-node direct
+sampling; ancestry-aware raw transport ledgers; and deterministic response
+matrix assembly/folding. Its only permitted quantity is `transport_raw`.
+That label is deliberate: Stage 3 validates geometry isolation, transport
+configuration, response algebra, and numerical behavior. It does not turn the
+raw deposited-energy or crossing tallies into a validated TID, DDD, `n_eq`,
+LET, `H100/10`, crew, device, or instrument result. Those gates remain in
+Stages 4–8.
 
 Stage 1 is a software/correctness gate, not physical validation of every
 radiation proxy. Versioned cases currently enable `TID` and `H100/10`; their
@@ -84,11 +98,14 @@ shieldSim/
   ├── README.md
   ├── shieldSim.cc
   ├── sourceTool.cc                  # published-source validation/conversion CLI
+  ├── responseTool.cc                # response-matrix assembly/folding CLI
 ├── include/
 │   ├── AbsorberGeometry.hh       # future-shape provider contract + slab
 │   ├── AccuracyController.hh     # running uncertainty/stopping state
 │   ├── CaseDefinition.hh         # strict resolved case data
+│   ├── GeometryTransform.hh       # canonical local-to-world transforms
 │   ├── MaterialLibrary.hh        # versioned records and overrides
+│   ├── ResponseMatrix.hh         # response cell/matrix/fold contracts
 │   ├── SpectrumDataset.hh        # canonical spectrum contract
 │   ├── StrictJson.hh             # dependency-free strict JSON
 │   └── ...                       # Geant4 actions and legacy modules
@@ -104,6 +121,7 @@ shieldSim/
 ├── examples/
 │   ├── README.md
 │   ├── stage1_case.json
+│   ├── stage3_response_cell_case.json
 │   ├── sep_spectrum.dat
 │   └── sep_spectrum.metadata.v1.json
 ├── macros/
@@ -111,6 +129,8 @@ shieldSim/
 └── tests/
     ├── README.md
     ├── stage1_core_tests.cc
+    ├── stage3_core_tests.cc
+    ├── test_stage3_transport.py
     ├── generate_validation_figures.py
     ├── generate_layer_validation_figures.py
     ├── test_stage1_case_boundaries.py
@@ -165,7 +185,7 @@ If CMake cannot find Geant4 automatically, provide `Geant4_DIR`, for example:
 cmake .. -DGeant4_DIR=/path/to/geant4/lib/Geant4-11.*/
 ```
 
-Run all registered Stage-1 and Stage-2 tests from the build directory:
+Run all registered Stage-1 through Stage-3 tests from the build directory:
 
 ```bash
 ctest --output-on-failure
@@ -186,6 +206,23 @@ timing, quality rejection, coverage accounting, direction retention,
 determinism, uncertainty-component retention, zero-count masking, and analytic
 integration/statistical-error cases.
 
+`stage3_core` checks canonical rigid transforms, exact multilayer interfaces
+and mass/path formulas, order-sensitive hashes, response identity/zero/
+linearity, covariance propagation, positive-semidefinite covariance rejection,
+and the no-extrapolation boundary. `stage3_transport` then creates all of its
+cases below `build/stage3_transport_runs/` and checks rotated/translated local
+boundary scoring, independent absorber permutations, five-seed single/split
+equivalence, W/HDPE and HDPE/W direct-vs-folded response, actual response-grid
+refinement, cut/step/source-plane/transverse-size/event convergence, explicit
+energy-ledger scope, proton/He-4/Fe-56 construction, FTFP_BERT_HP, the
+G4IonQMDPhysics alternative, W/water transport, and an exact stopped-primary
+zero. The registered test uses ≤2% Monte Carlo standard uncertainty, a 95%
+confidence interval wholly inside ±5% for equivalence claims, and ≤2% for the
+last numerical/grid refinement.
+`stage3_response_weights` independently drives the production assembler,
+weight builder, and folder with an analytic log-energy/`mu`/periodic-`phi`
+tensor, and checks exact-node, extrapolation, and incomplete-grid rejection.
+
 The dependent `validation_figures` test renders every current analytic or
 observational comparison after its numerical tests pass. It writes PNG, SVG,
 and a checksum/caption manifest under the build tree:
@@ -204,6 +241,9 @@ build/validation_figures/
 ├── stage2_goes16_analytic_comparisons.{png,svg}
 ├── stage2_goes16_observation_event.{png,svg}
 ├── crater_observation_reference.{png,svg}
+├── stage3_core_analytic.{png,svg}
+├── stage3_response_weights_analytic.{png,svg}
+├── stage3_transport_comparisons.{png,svg}
 └── manifest.json
 ```
 
@@ -330,14 +370,82 @@ contracts are:
   path is validation-only; the exact contract and runnable example are in
   `examples/stage2_ams02_proton_validation_case.json`.
 
+### Stage-3 transformed response cases
+
+`examples/stage3_response_cell_case.json` is the complete `shieldSim.case.v2`
+example. Every transform is active local-to-world and contains a translation
+with length units plus a scalar-first unit quaternion `(w,x,y,z)`. Local `+z`
+is the surface normal and direction nodes use `mu=cos(theta)` in `(0,1]` plus
+periodic `phi`. Quaternions must be normalized; `q` and `-q` serialize to one
+canonical representation. The source, stack, and absorber transforms are
+independent input fields, but validation requires the source upstream, the
+absorber downstream, all oriented boxes inside the world, and no shield/
+absorber positive-volume overlap.
+
+Run one response cell:
+
+```bash
+./shieldSim --case=examples/stage3_response_cell_case.json
+```
+
+The response-cell source is exactly one declared species, energy, and angular
+node per history. `particle` must be proton `(1,1)`, alpha/He-4 `(2,4)`, or
+`ion` with explicit `Z,A`. Energy is explicitly total `MeV`/`GeV` or per
+nucleon `MeV/n`/`GeV/n`; Geant4 always receives the resolved total kinetic
+energy. The case also declares the reference physics list, either its standard
+ion configuration or `G4IonQMDPhysics`, range cut, step limit, seed, and fixed
+or adaptive history plan.
+
+For a grid, run one case per incident node and assemble only compatible cells:
+
+```bash
+./shieldSimResponseTool assemble response_matrix.json cell_*.json
+python3 scripts/build_response_weights.py response_matrix.json source_nodes.json weights.json
+./shieldSimResponseTool fold response_matrix.json weights.json folded.json
+```
+
+The JSON matrix manifest is authoritative and its long-form CSV derivative is
+checksum-recorded. A response key includes the complete geometry/material
+hashes, `slab.v1` provider, scoring contract, Geant4/code/build identity,
+physics/ion settings, cuts/step, and Geant4 data-library paths. Seed, history
+count, output path, and incident node are cell metadata and do not change that
+key. Assembly rejects mismatched keys and forged key hashes. Folding requires
+normalized explicit weights, propagates matrix and optional source covariance,
+rejects a non-positive-semidefinite covariance, and never extrapolates.
+Each cell carries the complete upper triangle of event-sample covariance for
+its primitive score means. Folding propagates that matrix covariance and the
+optional source-weight covariance into a complete folded primitive-score
+covariance, so a later nonlinear quantity can retain numerator/denominator
+correlation. `build_response_weights.py` supports exact nodes or a declared
+tensor-grid
+policy that is linear in response versus log-energy and bilinear in `mu` and
+periodic `phi`; it rejects incomplete grids and out-of-range requests.
+
+`discrete_response_nodes` is the independent direct-sampling cross-check. Its
+node weights must sum to one and use the same exact species/energy/direction
+definitions. A nonlinear derived result must never be folded directly: fold
+its primitive numerator and denominator, including their covariance, and form
+the ratio only in the later quantity implementation.
+
 ### Adding a future arbitrary absorber shape
 
-`include/AbsorberGeometry.hh` is the extension boundary. A new provider must
-return stable sensitive-region IDs, logical volumes, masses, material hashes,
-and a canonical geometry hash. Scoring attaches to those stable regions, not
-to incidental copy numbers or volume names. A mesh/CAD/voxel provider must
-also preserve source units, placement transform, region-to-material mapping,
-sensitive-region mapping, provider version, and input-file hash.
+`include/AbsorberGeometry.hh` is the extension boundary. Transport currently
+constructs only `SlabAbsorberGeometry`, but scorers consume the provider's
+stable region IDs and logical regions rather than a `G4Box` name or copy
+number. A provider must implement `Validate`, `Build`, `SensitiveRegionIds`,
+`MassProperties`, `BoundsAndReferenceFrame`, and
+`CanonicalGeometryDescription`; its geometry hash is part of every response
+key. This keeps source generation, ancestry/scoring, response matrices, and
+quantity algorithms independent of whether a future implementation uses CSG,
+CAD/mesh, voxels, GDML, or an application-specific spacecraft model.
+
+A future provider must return stable sensitive-region IDs, logical volumes,
+analytic or independently verified volumes/masses/centroids, material hashes,
+bounds/reference frame, provider version, source-file hashes, and a canonical
+geometry description. It must preserve explicit source units, scale and
+placement transform, region-to-material mapping, sensitive-region mapping,
+and any overburden. A geometry/material/region/placement change must invalidate
+the response cache even when nominal mass is unchanged.
 
 Before it can be enabled, such a provider must reject missing or ambiguous
 units, non-finite vertices, non-watertight or self-intersecting solids,
@@ -693,7 +801,23 @@ definition, value/unit/normalization, deposition ledgers or H100/10 numerator
 and denominator, statistical and systematic uncertainty state, 95% interval,
 accuracy status/reason, and `implemented_not_physically_validated_stage1`.
 H100/10 uses a bounded Wilson 95% interval. JSON `null`, rather than zero or
-infinity, represents an undefined value.
+infinity, represents an undefined value. A case-v2 run instead writes
+`shieldSim.result.v2` with `transport_raw` moments, ancestry-qualified primary/
+secondary rear-face crossings, per-layer deposit/track/step and secondary-
+birth ledgers, absorber deposition moments, physics/ion provenance, and an
+explicit statement that nuclear rest mass/Q values are outside the kinetic-
+energy ledger scope.
+
+### `<prefix>__<absorber>_response_cell.json`
+
+Written only for `monoenergetic_response_cell`. It stores every raw score as
+the history count, sum, sum of squares, mean, sample variance, standard error,
+and unit; zero-scoring histories are included in the denominator. The complete
+score-covariance upper triangle stores sample covariance, covariance of the
+mean, and sum of event products. It also stores the exact incident coordinate,
+layer-resolved secondary ledger, and
+hashed response-key document. Its status is
+`implemented_stage3_transport_raw_not_physically_validated`.
 
 ### `shieldSim_spectra.dat`
 

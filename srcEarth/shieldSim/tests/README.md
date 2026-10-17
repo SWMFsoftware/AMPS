@@ -118,6 +118,50 @@ deep-space scenario or that directional GOES measurements are an isotropic
 transport boundary. BON2020 is not used in production and is not required for
 Stage 2.
 
+## Stage-3 geometry, response, and convergence tests
+
+`stage3_core_tests.cc` is the deterministic V1 boundary. It checks canonical
+rigid transforms and inverse transforms, unit-quaternion rejection and `q/-q`
+canonicalization, exact two-layer interface/areal-density accounting, physical
+layer-order retention and hash invalidation, slab volume/mass/path formulas,
+and response-matrix identity, exact zero, linearity, statistical/source-
+covariance propagation, positive-semidefinite covariance enforcement, and
+fatal no-extrapolation behavior.
+
+`test_stage3_response_weights.py` builds an eight-corner synthetic tensor whose
+response is affine in log-energy, `mu`, and periodic `phi`. It drives the
+production assembler, weight builder, and folder, verifies the analytic
+one-eighth corner weights and folded value, and requires exact-node,
+extrapolation, and incomplete-grid requests to fail.
+
+`test_stage3_transport.py` is the registered V3 boundary. CMake passes it a
+dedicated `<build>/stage3_transport_runs` directory; the driver recreates only
+that owned directory and writes no test case to `/tmp`. It archives every input
+case, full Geant4 log, result, response cell, pooled five-seed cell, JSON/CSV
+matrix, source-weight file, fold, and acceptance summary. It covers:
+
+- direct-object translation/rotation and local rear-face scoring;
+- independent absorber selection-order invariance;
+- five independent seeds for single-vs-split Al and for direct-vs-folded
+  W/HDPE and HDPE/W responses;
+- per-layer step/deposit and ancestry-aware secondary-production ledgers;
+- actual coarse/medium/fine response-grid folding through the production
+  weight builder, with no extrapolation;
+- three-level production-cut, maximum-step, common-transverse-size, and
+  source-plane-size convergence, plus fourfold event-count scaling;
+- proton, He-4, and Fe-56 construction; the `FTFP_BERT`, `FTFP_BERT_HP`,
+  reference-ion, and `G4IonQMDPhysics` configurations; and representative Al,
+  W, HDPE, Si, and water transport; and
+- exact zero handling in a stopped-primary thick-W case.
+
+The preregistered stochastic acceptance rules are a maximum 2% relative Monte
+Carlo standard uncertainty for accepted nonzero comparisons, a two-sided 95%
+difference interval wholly contained in ±5% for equivalence claims, and a
+maximum 2% change at the final cut/step/size/grid refinement. Exact zero cases
+use absolute equality. Those thresholds qualify only Stage-3 raw transport
+infrastructure. Science quantities remain disabled and formal Stage-3
+completion remains pending independent review.
+
 ## Validation figures
 
 CTest target `validation_figures` depends on all current analytic and
@@ -132,13 +176,15 @@ production source tool, and writes review artifacts to:
 <build>/validation_figures/manifest.json
 ```
 
-The twelve figure subjects are Stage-1 core formulas, Stage-1 case boundaries,
+The fifteen figure subjects are Stage-1 core formulas, Stage-1 case boundaries,
 Stage-1 analytic slab masses/ledger closure, original AMS primary-table
 analytic checks, the end-to-end AMS source-integral check, original AMS
 observation/adapter agreement, AMS-02 2025
 solar-cycle observation/adapter agreement, ACE/CRIS spectra and their
 observation/statistical-error spot checks, GOES analytic/oracle integration,
-GOES event observations/coverage, and the CRaTER observational reference. The
+GOES event observations/coverage, the CRaTER observational reference, Stage-3
+geometry/response algebra, Stage-3 response-grid interpolation algebra, and
+Stage-3 transport/convergence comparisons. The
 manifest records captions, byte sizes, and SHA-256 hashes.
 
 The standalone Geant4 layer runners extend that coverage. They invoke
@@ -191,6 +237,9 @@ tests/
 ├── README.md
 ├── stage1_core_tests.cc
 ├── stage2_source_adapter_tests.cc
+├── stage3_core_tests.cc
+├── test_stage3_response_weights.py
+├── test_stage3_transport.py
 ├── generate_validation_figures.py
 ├── generate_layer_validation_figures.py
 ├── test_stage1_case_boundaries.py

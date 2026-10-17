@@ -3,7 +3,7 @@
  *
  * Scope
  * -----
- * The versioned Stage-1 path supports spacecraft-anomaly environment-effect
+ * The versioned case path supports spacecraft-anomaly environment-effect
  * analysis and preliminary mission assessment. It is not an instrument-design,
  * device-response, or anatomical-phantom tool. CaseDefinition resolves every
  * unit, dimension, material, source, accuracy request, and transport control
@@ -41,7 +41,7 @@
  *
  * Output and status
  * -----------------
- * Each absorber gets a resolved-case manifest, a shieldSim.result.v1 JSON, and
+ * Each absorber gets a resolved-case manifest, a versioned result JSON, and
  * compatibility spectra/tables. The JSON records hashes, code/build/Geant4
  * provenance, uncertainty state, raw H100/10 counts, deposition ledgers, and
  * an explicit capability status. Published-spectrum validation cases remain
@@ -52,6 +52,7 @@
  * ========================================================================== */
 
 #include "CLI.hh"
+#include "AncestryTrackingAction.hh"
 #include "CaseDefinition.hh"
 #include "BuildProvenance.hh"
 #include "DetectorConstruction.hh"
@@ -64,6 +65,7 @@
 #include "SteppingAction.hh"
 
 #include <G4Exception.hh>
+#include <G4IonQMDPhysics.hh>
 #include <G4PhysListFactory.hh>
 #include <G4RunManager.hh>
 #include <G4StepLimiterPhysics.hh>
@@ -112,7 +114,9 @@ void WriteResolvedCase(const Options& opts){
   }
   manifest["geant4_data_libraries"]=shield_sim::Json(std::move(dataLibraries));
   manifest["output_prefix"]=opts.outputPrefix;
-  manifest["run_status"]=opts.caseDefinition->sourceFormat=="ams02_hapi_component"
+  manifest["run_status"]=opts.caseDefinition->schemaVersion=="shieldSim.case.v2"
+      ? "stage3_transport_engine_implemented_pending_independent_review_no_science_quantity_claim"
+      : opts.caseDefinition->sourceFormat=="ams02_hapi_component"
       ? "stage2_published_spectrum_transport_test_not_physical_validation"
       : "stage1_core_not_yet_quantity_validated";
   const std::string path=opts.outputPrefix+"_resolved_case.json";
@@ -155,9 +159,14 @@ int RunSimulation(Options opts){
 
   G4cout<<"============ shieldSim configuration ============"<<G4endl;
   G4cout<<"Physics  : "<<opts.physicsList<<G4endl;
-  G4cout<<"Spectrum  : "
-        <<(opts.spectrumFile.empty()?"GCR Badhwar-O'Neill phi=550MV"
-                                    :opts.spectrumFile)<<G4endl;
+  G4cout<<"Spectrum  : ";
+  if(opts.caseDefinition && (opts.caseDefinition->responseIncident.enabled ||
+                             !opts.caseDefinition->directIncidents.empty()))
+    G4cout<<opts.caseDefinition->sourceFormat<<" (Stage-3 verification source)";
+  else
+    G4cout<<(opts.spectrumFile.empty()?"GCR Badhwar-O'Neill phi=550MV"
+                                       :opts.spectrumFile);
+  G4cout<<G4endl;
   G4cout<<"Source    : "<<opts.sourceMode<<G4endl;
   G4cout<<"E proton  : ["<<opts.eMinProton<<", "<<opts.eMaxProton<<"] MeV"<<G4endl;
   G4cout<<"E alpha   : ["<<opts.eMinAlpha <<", "<<opts.eMaxAlpha <<"] MeV"<<G4endl;
@@ -180,7 +189,13 @@ int RunSimulation(Options opts){
   qsel.neq      = opts.calcNEq;
   qsel.let      = opts.calcLET;
   qsel.hardness = opts.calcHardness;
-  G4cout<<"Quantities: "<<ComputedQuantities::SelectionSummary(qsel)<<G4endl;
+  G4cout<<"Quantities: "
+        <<(opts.caseDefinition &&
+           std::find(opts.caseDefinition->quantities.begin(),
+                     opts.caseDefinition->quantities.end(),"transport_raw") !=
+                     opts.caseDefinition->quantities.end()
+             ? "transport_raw (verification tallies only)"
+             : ComputedQuantities::SelectionSummary(qsel))<<G4endl;
   G4cout<<"Scoring   :";
   for(const auto& s:opts.scoringMaterials)
     G4cout<<"  "<<DescribeDetectorMaterial(s.first)<<":"<<s.second/mm<<"mm";
@@ -240,6 +255,8 @@ int RunSimulation(Options opts){
     const G4String msg = G4String("Cannot create requested physics list: ") + opts.physicsList;
     G4Exception("main","PhysList",FatalException,msg.c_str());
   }
+  if(opts.caseDefinition && opts.caseDefinition->ionPhysics=="G4IonQMDPhysics")
+    physList->ReplacePhysics(new G4IonQMDPhysics());
   // Optional production range cut and step limiter for numerical convergence
   // testing.  The range cut controls when Geant4 creates explicit secondaries
   // instead of depositing their energy locally.  The step limiter is registered
@@ -263,6 +280,7 @@ int RunSimulation(Options opts){
   runManager->SetUserAction(runAction);
   runManager->SetUserAction(new EventAction(runAction));
   runManager->SetUserAction(new SteppingAction(runAction));
+  runManager->SetUserAction(new AncestryTrackingAction());
 
   runManager->Initialize();
 

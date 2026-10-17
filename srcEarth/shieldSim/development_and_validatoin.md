@@ -1,6 +1,7 @@
 # shieldSim development and validation roadmap
 
-Status: **Stage 0 complete; Stage 1 complete; Stage 2 complete**
+Status: **Stage 0 complete; Stage 1 complete; Stage 2 complete; Stage 3
+implemented and acceptance-tested, pending independent review**
 Prepared: 2026-10-16  
 Requirements decisions approved: 2026-10-16  
 Scope: environment-effect radiation proxies for spacecraft-anomaly analysis
@@ -98,6 +99,33 @@ open assumptions:
     equivalently, `[midpoint - 150 s, midpoint + 150 s)`. A boundary sample
     contributes only for its exact overlap with the event window. The event-name
     shorthand is not itself a timestamp rule.
+17. The Stage-3 implementation decisions approved on 2026-10-16 are:
+    (a) Stage 3 validates geometry/transport isolation, raw response matrices,
+    particle ancestry, and raw ledgers only; science claims for TID, DDD,
+    `n_eq`, LET, and `H100/10` remain disabled until their later gates;
+    (b) `shieldSim.case.v2` uses explicit translation and scalar-first unit-
+    quaternion local-to-world transforms for the source, shield, and absorber,
+    while case v1 remains supported;
+    (c) the response library is an authoritative deterministic JSON manifest
+    plus a checksum-recorded long CSV, with response and covariance per primary
+    and no extrapolation;
+    (d) the validation species are proton, He-4, and Fe-56, all transported
+    secondaries are retained, and Al/W/HDPE/Si/water are representative test
+    materials rather than a claim of complete GCR/material coverage;
+    (e) response grids are configurable, interpolation and quadrature are
+    declared, grid refinement is tested, and nonlinear ratios fold primitive
+    numerator/denominator responses rather than a precomputed ratio;
+    (f) `FTFP_BERT` is the reference base, `FTFP_BERT_HP` exercises the neutron-
+    HP configuration, and reference-list ion physics is compared as a
+    configuration sensitivity with `G4IonQMDPhysics`;
+    (g) statistical comparisons pool five independent seeds, require at most
+    2% Monte Carlo relative standard uncertainty, require two-sided 95%
+    equivalence intervals within +/-5%, require no more than 2% change at the
+    last cut/step/size/grid refinement, and treat exact rare/zero outcomes with
+    an absolute rule; and
+    (h) implementation and tests may be finished without a reviewer, but Stage
+    3 is not formally complete until its required independent review is
+    recorded.
 
 For anomaly analysis, a calculated proxy is an environmental covariate, not by
 itself proof that radiation caused an anomaly. Results must preserve time
@@ -1486,6 +1514,73 @@ class.
 
 ### Stage 3 - independent geometry and response engine
 
+**Status: implemented and acceptance-tested on 2026-10-16; pending independent
+review and therefore not formally complete.** This status applies only to
+geometry/transport isolation, raw response infrastructure, ancestry, and raw
+ledgers. It does not enable a science-facing radiation proxy.
+
+Implementation evidence:
+
+- `shieldSim.case.v2` adds explicit source/shield/absorber local-to-world
+  transforms. Unit quaternions are validated and canonicalized; oriented-box
+  containment and overlap checks execute before Geant4. Geant4 placements use
+  its direct-object transform API so the source and solids share the same
+  rotation convention;
+- `SlabAbsorberGeometry` implements validation, stable sensitive-region IDs,
+  analytic mass properties, bounds/reference frame, canonical serialization,
+  content hashing, and construction. Scorers depend on the returned logical
+  regions rather than slab copy numbers;
+- all ordered shield layers are separate Geant4 solids. Raw tallies retain
+  layer ID, total/ionizing/nonionizing deposition, track length, step count,
+  secondary particle identity, creator process, root primary, and ancestry
+  generation. The energy-ledger output explicitly excludes a global nuclear
+  rest-mass/Q-value conservation claim;
+- monoenergetic response nodes accept proton, He-4, or an explicit `(Z,A)` ion,
+  total or per-nucleon kinetic energy, and exact `(mu,phi)`. The independent
+  `discrete_response_nodes` source samples an exact normalized node mixture;
+- each response cell stores event sums, squared sums, means, sample variances,
+  standard errors, and the complete primitive-score covariance upper triangle,
+  plus normalization, incident coordinates, and a response key. Folding
+  propagates both response-matrix and source-weight cross-covariance so later
+  numerator/denominator algorithms need not discard correlation.
+  That key covers geometry/provider/material/scoring, Geant4/code/build/data,
+  physics/ion, cut, and step state and deliberately excludes seed, event count,
+  output path, and incident grid coordinate;
+- `shieldSimResponseTool` strictly assembles compatible cells into canonical
+  `shieldSim.response_matrix.v1` JSON plus checksum-recorded CSV and folds
+  explicit weights into primitive scores. It rejects key mismatch, key-hash
+  mismatch, duplicate/unknown nodes, invalid normalization, unsupported
+  interpolation, extrapolation, non-finite/asymmetric/non-positive-semidefinite
+  source covariance, and score-unit mismatch;
+- `scripts/build_response_weights.py` writes reviewable explicit weights for
+  exact nodes or response interpolation linear in log energy and bilinear in
+  `mu`/periodic `phi`, rejecting out-of-domain and incomplete tensor grids; and
+- `stage3_core`, `stage3_response_weights`, `stage3_transport`, and
+  `validation_figures` are registered in CTest. All generated Stage-3 transport artifacts are kept under
+  `test_output/stage3_transport_runs` (the corresponding CMake build tree), not
+  `/tmp`.
+
+Acceptance evidence:
+
+- deterministic tests cover transform inversion and `q/-q` identity, exact
+  layer interfaces/mass thickness, A|B versus B|A hashes, slab volume/mass/path,
+  response zero/identity/linearity/superposition, analytic covariance, strict
+  response boundaries, and exact zero handling;
+- the rotated/translated geometry, alternative-absorber permutations, and
+  local rear-face scorer pass; single versus split Al satisfies the five-seed
+  95% equivalence gate;
+- independent direct sampling and matrix folding satisfy the same gate for
+  both W-to-HDPE and HDPE-to-W stacks without asserting an unreferenced expected
+  physical ordering; both layers retain secondary-production diagnostics;
+- production-cut, maximum-step, common transverse-size, source-plane-size,
+  response-grid, and event-count drivers pass their registered criteria;
+- proton, He-4, Fe-56, `FTFP_BERT`, `FTFP_BERT_HP`, reference-list ions,
+  `G4IonQMDPhysics`, and representative Al/W/HDPE/Si/water configurations run
+  with explicit provenance; and
+- a thick-W stopped-primary case supplies an exact zero-transmission boundary.
+  PNG/SVG review figures and a hash/caption manifest are downstream of the
+  numerical assertions.
+
 Entry: independent case model and approved shield/absorber definitions.  
 Work:
 
@@ -1506,6 +1601,9 @@ mass/path tests, and V3 monoenergetic/convergence/direct-fold tests.
 Exit evidence: statistical equivalence of absorber-case permutations,
 single-vs-split-layer equivalence, exact layer/interface metadata,
 direct-vs-folded results, and convergence envelopes for each quantity class.  
+Formal sign-off additionally requires the independent-review record named in
+Section 10; until it exists, the correct stage label is “implemented and
+acceptance-tested, pending independent review,” not “complete.”
 Forbidden carry-over: no response matrix is reused when any hashed geometry,
 material, physics, scoring, or Geant4 field changes.
 
@@ -1782,6 +1880,13 @@ assumption. The named capability remains disabled until its input is available:
    evidence. Later physical capability and observational-validation gates that
    require independent review record the reviewer by name, affiliation/role,
    date, and finding; the roadmap does not invent personnel identities.
+6. **Stage-3 independent review:** The implementation and automated acceptance
+   package exist, but no reviewer has been designated. Stage 3 therefore
+   remains pending. The reviewer must examine the transform convention,
+   response-key invalidation boundary, scoring/ancestry and energy-ledger scope,
+   five-seed equivalence/convergence evidence, physics/data provenance, and
+   generated figures, then record name, role/affiliation, date, findings, and
+   disposition. No code invents or substitutes this sign-off.
 7. **AMPS contract:** When available, the AMPS owner must provide the
    authoritative schema, units, coordinate frame, uncertainty semantics,
    version, and frozen example. No adapter implementation begins before then.

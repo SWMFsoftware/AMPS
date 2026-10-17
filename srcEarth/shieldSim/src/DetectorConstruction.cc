@@ -10,8 +10,10 @@
 #include <G4LogicalVolume.hh>
 #include <G4NistManager.hh>
 #include <G4PVPlacement.hh>
+#include <G4RotationMatrix.hh>
 #include <G4SystemOfUnits.hh>
 #include <G4ThreeVector.hh>
+#include <G4Transform3D.hh>
 #include <G4UserLimits.hh>
 #include <G4VPhysicalVolume.hh>
 
@@ -44,6 +46,43 @@ G4double DetectorConstruction::GetSourcePlaneZ() const {
   return fWorldBox ? -fWorldBox->GetZHalfLength()+1.0*um : 0.0;
 }
 
+namespace {
+G4ThreeVector ToG4Vector(const shield_sim::Vector3d& value){
+  return G4ThreeVector(value.x*mm,value.y*mm,value.z*mm);
+}
+
+G4RotationMatrix GeantObjectRotation(const shield_sim::Quaterniond& input){
+  // G4PVPlacement's pointer-to-rotation overload expects a *frame* rotation,
+  // which is the inverse of the object rotation represented by our input
+  // quaternion.  Return the direct local-solid-to-world rotation and use the
+  // unambiguous G4Transform3D placement overload below.
+  const auto q=input.Canonical();
+  G4RotationMatrix rotation;
+  rotation.set(
+      G4ThreeVector(1.0-2.0*(q.y*q.y+q.z*q.z),2.0*(q.x*q.y+q.w*q.z),2.0*(q.x*q.z-q.w*q.y)),
+      G4ThreeVector(2.0*(q.x*q.y-q.w*q.z),1.0-2.0*(q.x*q.x+q.z*q.z),2.0*(q.y*q.z+q.w*q.x)),
+      G4ThreeVector(2.0*(q.x*q.z+q.w*q.y),2.0*(q.y*q.z-q.w*q.x),1.0-2.0*(q.x*q.x+q.y*q.y)));
+  return rotation;
+}
+}
+
+G4ThreeVector DetectorConstruction::GetSourcePlaneOrigin() const {
+  if(fOpts.caseDefinition) return ToG4Vector(fOpts.caseDefinition->sourceTransform.translationMm);
+  return G4ThreeVector(0,0,GetSourcePlaneZ());
+}
+G4ThreeVector DetectorConstruction::GetSourcePlaneAxisX() const {
+  if(fOpts.caseDefinition) return ToG4Vector(fOpts.caseDefinition->sourceTransform.Axes()[0])/mm;
+  return G4ThreeVector(1,0,0);
+}
+G4ThreeVector DetectorConstruction::GetSourcePlaneAxisY() const {
+  if(fOpts.caseDefinition) return ToG4Vector(fOpts.caseDefinition->sourceTransform.Axes()[1])/mm;
+  return G4ThreeVector(0,1,0);
+}
+G4ThreeVector DetectorConstruction::GetSourcePlaneNormal() const {
+  if(fOpts.caseDefinition) return ToG4Vector(fOpts.caseDefinition->sourceTransform.Axes()[2])/mm;
+  return G4ThreeVector(0,0,1);
+}
+
 G4VPhysicalVolume* DetectorConstruction::Construct() {
   // Construct() may be called multiple times in sweep mode.  Clear all cached
   // geometry pointers before rebuilding so that RunAction can refresh them for
@@ -69,7 +108,7 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
 
     if(!fMaterialFactory)
       fMaterialFactory=std::make_unique<shield_sim::MaterialFactory>(*c.materials);
-    G4double currentFront=c.shieldFrontZmm*mm;
+    double currentLocalFrontMm=0.0;
     for(std::size_t i=0;i<c.shieldLayers.size();++i){
       const auto& layer=c.shieldLayers[i];
       auto* material=fMaterialFactory->Resolve(layer.materialId,"shield");
@@ -79,11 +118,14 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
                             c.shieldSizeYmm*mm/2.0,thickness/2.0);
       auto* logical=new G4LogicalVolume(solid,material,(stableId+"/logical").c_str());
       if(c.maxStepMm>0.0) logical->SetUserLimits(new G4UserLimits(c.maxStepMm*mm));
-      new G4PVPlacement(nullptr,G4ThreeVector(c.shieldCenterXmm*mm,c.shieldCenterYmm*mm,
-                                               currentFront+thickness/2.0),logical,
-                        (stableId+"/physical").c_str(),wLog,false,static_cast<G4int>(i),true);
+      const auto center=c.shieldTransform.TransformPoint(
+          {0.0,0.0,currentLocalFrontMm+layer.thicknessMm/2.0});
+      new G4PVPlacement(G4Transform3D(GeantObjectRotation(c.shieldTransform.rotation),
+                                     ToG4Vector(center)),
+                        logical,(stableId+"/physical").c_str(),wLog,false,
+                        static_cast<G4int>(i),true);
       fShieldLVs.push_back(logical);
-      currentFront+=thickness;
+      currentLocalFrontMm+=layer.thicknessMm;
     }
     // The last ordered layer owns the downstream stack face used for exit
     // scoring.  Internal layer interfaces are never counted as shield exits.

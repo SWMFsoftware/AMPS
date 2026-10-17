@@ -39,6 +39,7 @@ add_executable(shieldSim
   shieldSim.cc
   src/AbsorberGeometry.cc
   src/AccuracyController.cc
+  src/AncestryTrackingAction.cc
   src/CaseDefinition.cc
   src/CLI.cc
   src/ComputedQuantities.cc
@@ -46,6 +47,7 @@ add_executable(shieldSim
   src/DetectorConstruction.cc
   src/EventAction.cc
   src/GCRSpectrum.cc
+  src/GeometryTransform.cc
   src/MaterialCatalog.cc
   src/MaterialLibrary.cc
   src/MaterialFactory.cc
@@ -73,6 +75,16 @@ add_executable(shieldSimSourceTool
 )
 target_include_directories(shieldSimSourceTool PRIVATE ${PROJECT_SOURCE_DIR}/include)
 
+# Response matrices are assembled and folded outside the Geant4 executable so
+# deterministic schema/linearity tests do not need to initialize transport.
+add_executable(shieldSimResponseTool
+  responseTool.cc
+  src/ContentHash.cc
+  src/ResponseMatrix.cc
+  src/StrictJson.cc
+)
+target_include_directories(shieldSimResponseTool PRIVATE ${PROJECT_SOURCE_DIR}/include)
+
 include(CTest)
 if(BUILD_TESTING)
   # Analytic/observational tests write compact numerical evidence here.  A
@@ -85,6 +97,7 @@ if(BUILD_TESTING)
     src/AccuracyController.cc
     src/CaseDefinition.cc
     src/ContentHash.cc
+    src/GeometryTransform.cc
     src/MaterialLibrary.cc
     src/PublishedSourceAdapters.cc
     src/SpectrumDataset.cc
@@ -104,14 +117,24 @@ if(BUILD_TESTING)
   # validation executable can be loaded by CTest in either packaging style.
   get_filename_component(_geant4_cmake_parent "${Geant4_DIR}" DIRECTORY)
   get_filename_component(_geant4_runtime_lib "${_geant4_cmake_parent}" DIRECTORY)
+  # Carry the exact dataset paths exported by this Geant4 installation into
+  # transport tests.  In particular FTFP_BERT_HP must fail rather than quietly
+  # skipping its neutron data when G4NEUTRONHPDATA is unavailable.
+  set(_geant4_test_environment "LD_LIBRARY_PATH=${_geant4_runtime_lib}:$ENV{LD_LIBRARY_PATH}")
+  foreach(_dataset_name IN LISTS Geant4_DATASETS)
+    set(_dataset_environment_name "${Geant4_DATASET_${_dataset_name}_ENVVAR}")
+    set(_dataset_path "${Geant4_DATASET_${_dataset_name}_PATH}")
+    list(APPEND _geant4_test_environment
+      "${_dataset_environment_name}=${_dataset_path}")
+  endforeach()
   set_tests_properties(stage1_case_boundaries PROPERTIES
-    ENVIRONMENT "LD_LIBRARY_PATH=${_geant4_runtime_lib}:$ENV{LD_LIBRARY_PATH}")
+    ENVIRONMENT "${_geant4_test_environment}")
   add_test(NAME stage1_transport_smoke
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/test_stage1_transport_smoke.py
             $<TARGET_FILE:shieldSim> ${PROJECT_SOURCE_DIR}
             ${SHIELDSIM_VALIDATION_EVIDENCE_DIR})
   set_tests_properties(stage1_transport_smoke PROPERTIES
-    ENVIRONMENT "LD_LIBRARY_PATH=${_geant4_runtime_lib}:$ENV{LD_LIBRARY_PATH}")
+    ENVIRONMENT "${_geant4_test_environment}")
 
   add_executable(stage2_source_adapter_tests
     tests/stage2_source_adapter_tests.cc
@@ -138,13 +161,47 @@ if(BUILD_TESTING)
             $<TARGET_FILE:shieldSim> ${PROJECT_SOURCE_DIR}
             ${SHIELDSIM_VALIDATION_EVIDENCE_DIR})
   set_tests_properties(stage2_published_transport PROPERTIES
-    ENVIRONMENT "LD_LIBRARY_PATH=${_geant4_runtime_lib}:$ENV{LD_LIBRARY_PATH}")
+    ENVIRONMENT "${_geant4_test_environment}")
+
+  add_executable(stage3_core_tests
+    tests/stage3_core_tests.cc
+    src/AccuracyController.cc
+    src/CaseDefinition.cc
+    src/ContentHash.cc
+    src/GeometryTransform.cc
+    src/MaterialLibrary.cc
+    src/PublishedSourceAdapters.cc
+    src/ResponseMatrix.cc
+    src/SpectrumDataset.cc
+    src/StrictJson.cc
+  )
+  target_include_directories(stage3_core_tests PRIVATE ${PROJECT_SOURCE_DIR}/include)
+  add_test(NAME stage3_core
+    COMMAND stage3_core_tests ${PROJECT_SOURCE_DIR} ${SHIELDSIM_VALIDATION_EVIDENCE_DIR})
+  add_test(NAME stage3_response_weights
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/test_stage3_response_weights.py
+            $<TARGET_FILE:shieldSimResponseTool>
+            ${PROJECT_SOURCE_DIR}/scripts/build_response_weights.py
+            ${CMAKE_BINARY_DIR}/stage3_response_weight_tests
+            ${SHIELDSIM_VALIDATION_EVIDENCE_DIR} ${Python3_EXECUTABLE})
+  # This is the stochastic Stage-3 acceptance gate.  Its driver owns a named
+  # build-tree directory so cases, Geant4 logs, matrices, folds, and evidence
+  # never spill into /tmp or the source tree.
+  add_test(NAME stage3_transport
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/test_stage3_transport.py
+            $<TARGET_FILE:shieldSim> $<TARGET_FILE:shieldSimResponseTool>
+            ${PROJECT_SOURCE_DIR}/scripts/build_response_weights.py
+            ${PROJECT_SOURCE_DIR} ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
+            ${CMAKE_BINARY_DIR}/stage3_transport_runs full)
+  set_tests_properties(stage3_transport PROPERTIES
+    ENVIRONMENT "${_geant4_test_environment}"
+    TIMEOUT 600)
   add_test(NAME validation_figures
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/generate_validation_figures.py
             ${PROJECT_SOURCE_DIR} ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
             ${SHIELDSIM_VALIDATION_FIGURE_DIR} $<TARGET_FILE:shieldSimSourceTool>)
   set_tests_properties(validation_figures PROPERTIES
-    DEPENDS "stage1_core;stage1_case_boundaries;stage1_transport_smoke;stage2_source_adapters;stage2_reference_spectra;stage2_source_tool;stage2_published_transport")
+    DEPENDS "stage1_core;stage1_case_boundaries;stage1_transport_smoke;stage2_source_adapters;stage2_reference_spectra;stage2_source_tool;stage2_published_transport;stage3_core;stage3_response_weights;stage3_transport")
 endif()
 
 # Copy example input files into the build tree for convenience.

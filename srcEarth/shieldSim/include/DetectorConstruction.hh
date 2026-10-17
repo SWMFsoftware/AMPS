@@ -10,16 +10,19 @@
  *
  *   explicit source plane -> ordered 1--5 layer shield -> one absorber slab
  *
- * All Stage-1 volumes are axis-aligned G4Box objects with explicit dimensions
- * and placements. Shield materials come from the immutable MaterialLibrary;
- * absorber construction is delegated through AbsorberGeometry. Main rebuilds
- * this world separately for every requested absorber. The legacy CLI branch is
- * retained below it with its historical single-shield/default-world behavior.
+ * Case-v1 volumes are axis-aligned; case-v2 source, stack, and absorber frames
+ * carry explicit local-to-world rigid transforms. Current solids remain
+ * G4Box-based planar layers/slabs with explicit dimensions. Shield materials
+ * come from the immutable MaterialLibrary; absorber construction is delegated
+ * through AbsorberGeometry. Main rebuilds this world separately for every
+ * requested absorber. The legacy CLI branch is retained below it with its
+ * historical single-shield/default-world behavior.
  * ========================================================================== */
 
 #include "ShieldSimConfig.hh"
 
 #include <G4VUserDetectorConstruction.hh>
+#include <G4ThreeVector.hh>
 
 #include <vector>
 #include <memory>
@@ -49,6 +52,12 @@ public:
   G4double GetSourcePlaneCenterX() const;
   G4double GetSourcePlaneCenterY() const;
   G4double GetSourcePlaneZ() const;
+  // Case-v2 source planes may be rotated.  These accessors expose the exact
+  // local-to-world frame used by geometry construction and source sampling.
+  G4ThreeVector GetSourcePlaneOrigin() const;
+  G4ThreeVector GetSourcePlaneAxisX() const;
+  G4ThreeVector GetSourcePlaneAxisY() const;
+  G4ThreeVector GetSourcePlaneNormal() const;
 
   G4VPhysicalVolume* Construct() override;
 

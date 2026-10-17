@@ -9,6 +9,7 @@
 #include <limits>
 #include <set>
 #include <sstream>
+#include <tuple>
 
 namespace shield_sim {
 namespace {
@@ -75,6 +76,104 @@ double EnergyMeV(const Json& value, const std::string& context) {
   if (unit == "MeV") return number;
   if (unit == "GeV") return number * 1000.0;
   throw JsonError(context + ".unit must be MeV or GeV");
+}
+
+Json Measure(double value, const std::string& unit);
+
+double AngleRad(const Json& value, const std::string& context) {
+  const auto& object=value.AsObject(context);
+  RejectUnknownFields(object,{"value","unit"},context);
+  const double number=FiniteNumber(value.At("value",context),context+".value");
+  const std::string unit=RequiredString(object,"unit",context);
+  if(unit=="rad") return number;
+  if(unit=="deg") return number*3.14159265358979323846/180.0;
+  throw JsonError(context+".unit must be rad or deg");
+}
+
+RigidTransform ParseTransform(const Json& value,const std::string& context){
+  const auto& object=value.AsObject(context);
+  RejectUnknownFields(object,{"translation","rotation_quaternion_local_to_world"},context);
+  const auto& translation=object.at("translation").AsObject(context+".translation");
+  RejectUnknownFields(translation,{"x","y","z"},context+".translation");
+  const auto& rotation=object.at("rotation_quaternion_local_to_world")
+      .AsObject(context+".rotation_quaternion_local_to_world");
+  RejectUnknownFields(rotation,{"w","x","y","z"},context+".rotation_quaternion_local_to_world");
+  RigidTransform result;
+  result.translationMm={PositionMm(translation.at("x"),context+".translation.x"),
+                        PositionMm(translation.at("y"),context+".translation.y"),
+                        PositionMm(translation.at("z"),context+".translation.z")};
+  try {
+    result.rotation=Quaterniond{
+      FiniteNumber(rotation.at("w"),context+".rotation.w"),
+      FiniteNumber(rotation.at("x"),context+".rotation.x"),
+      FiniteNumber(rotation.at("y"),context+".rotation.y"),
+      FiniteNumber(rotation.at("z"),context+".rotation.z")}.Canonical();
+  } catch(const std::invalid_argument& error){
+    throw JsonError(context+": "+error.what());
+  }
+  return result;
+}
+
+Json TransformToJson(const RigidTransform& transform){
+  const Quaterniond q=transform.rotation.Canonical();
+  return Json(Json::Object{
+    {"rotation_quaternion_local_to_world",Json(Json::Object{
+      {"w",q.w},{"x",q.x},{"y",q.y},{"z",q.z}})},
+    {"translation",Json(Json::Object{
+      {"x",Measure(transform.translationMm.x,"mm")},
+      {"y",Measure(transform.translationMm.y,"mm")},
+      {"z",Measure(transform.translationMm.z,"mm")}})}
+  });
+}
+
+// Exact corner containment is sufficient for an oriented box inside the
+// axis-aligned world: a convex box is inside a convex world whenever all eight
+// vertices are inside.  Stage-3 tests use this independently of Geant4's own
+// overlap/navigation diagnostics so malformed inputs fail before transport.
+bool BoxInsideWorld(const RigidTransform& transform,double sx,double sy,double sz,
+                    double wx,double wy,double wz){
+  constexpr double tolerance=1.0e-9;
+  for(double x:{-sx/2.0,sx/2.0}) for(double y:{-sy/2.0,sy/2.0})
+    for(double z:{-sz/2.0,sz/2.0}){
+      const Vector3d p=transform.TransformPoint({x,y,z});
+      if(std::abs(p.x)>wx/2.0+tolerance || std::abs(p.y)>wy/2.0+tolerance ||
+         std::abs(p.z)>wz/2.0+tolerance) return false;
+    }
+  return true;
+}
+
+// Separating-axis theorem for two oriented boxes.  Touching faces are allowed
+// (the shield and an absorber may be contiguous), while positive-volume
+// overlap is rejected.  The small epsilon handles nearly parallel axes without
+// converting a legitimate shared face into a false overlap.
+bool BoxesOverlap(const RigidTransform& a,const Vector3d& aHalf,
+                  const RigidTransform& b,const Vector3d& bHalf){
+  const auto A=a.Axes(),B=b.Axes();
+  const double ah[3]={aHalf.x,aHalf.y,aHalf.z};
+  const double bh[3]={bHalf.x,bHalf.y,bHalf.z};
+  double R[3][3],AbsR[3][3];
+  for(int i=0;i<3;++i) for(int j=0;j<3;++j){
+    R[i][j]=Dot(A[i],B[j]);
+    AbsR[i][j]=std::abs(R[i][j])+1.0e-12;
+  }
+  const Vector3d delta=b.translationMm-a.translationMm;
+  const double t[3]={Dot(delta,A[0]),Dot(delta,A[1]),Dot(delta,A[2])};
+  for(int i=0;i<3;++i){
+    const double rb=bh[0]*AbsR[i][0]+bh[1]*AbsR[i][1]+bh[2]*AbsR[i][2];
+    if(std::abs(t[i])>=ah[i]+rb-1.0e-9) return false;
+  }
+  for(int j=0;j<3;++j){
+    const double ta=std::abs(t[0]*R[0][j]+t[1]*R[1][j]+t[2]*R[2][j]);
+    const double ra=ah[0]*AbsR[0][j]+ah[1]*AbsR[1][j]+ah[2]*AbsR[2][j];
+    if(ta>=ra+bh[j]-1.0e-9) return false;
+  }
+  for(int i=0;i<3;++i) for(int j=0;j<3;++j){
+    const double ra=ah[(i+1)%3]*AbsR[(i+2)%3][j]+ah[(i+2)%3]*AbsR[(i+1)%3][j];
+    const double rb=bh[(j+1)%3]*AbsR[i][(j+2)%3]+bh[(j+2)%3]*AbsR[i][(j+1)%3];
+    const double value=std::abs(t[(i+2)%3]*R[(i+1)%3][j]-t[(i+1)%3]*R[(i+2)%3][j]);
+    if(value>=ra+rb-1.0e-9) return false;
+  }
+  return true;
 }
 
 double ArealDensity(const Json& value, const std::string& context) {
@@ -213,8 +312,11 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
   RejectUnknownFields(root,
     {"schema_version","case_id","purpose","material_library","material_overrides","geometry",
      "source","quantities","accuracy","transport","output"}, "case");
-  if (RequiredString(root, "schema_version", "case") != "shieldSim.case.v1")
-    throw JsonError("case.schema_version must be 'shieldSim.case.v1'");
+  result->schemaVersion=RequiredString(root,"schema_version","case");
+  if(result->schemaVersion!="shieldSim.case.v1" &&
+     result->schemaVersion!="shieldSim.case.v2")
+    throw JsonError("case.schema_version must be 'shieldSim.case.v1' or 'shieldSim.case.v2'");
+  const bool stage3Schema=result->schemaVersion=="shieldSim.case.v2";
   result->caseId = RequiredString(root, "case_id", "case");
   result->purpose = RequiredString(root, "purpose", "case");
   if (result->purpose != "spacecraft_anomaly_environment_effect_assessment" &&
@@ -237,12 +339,21 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
   RejectUnknownFields(geometry, {"coordinate_frame","world","source_plane","shield_stack","absorbers"}, "case.geometry");
   const auto& frame = input.At("geometry", "case").At("coordinate_frame", "case.geometry")
                             .AsObject("case.geometry.coordinate_frame");
-  RejectUnknownFields(frame, {"name","slab_normal","origin"}, "case.geometry.coordinate_frame");
+  RejectUnknownFields(frame, stage3Schema
+      ? std::vector<std::string>{"name","handedness","origin","local_surface_normal"}
+      : std::vector<std::string>{"name","slab_normal","origin"},
+      "case.geometry.coordinate_frame");
   result->coordinateFrame = RequiredString(frame, "name", "case.geometry.coordinate_frame");
-  if (RequiredString(frame, "slab_normal", "case.geometry.coordinate_frame") != "+z")
+  if(stage3Schema){
+    if(RequiredString(frame,"handedness","case.geometry.coordinate_frame")!="right")
+      throw JsonError("case-v2 geometry requires coordinate_frame.handedness='right'");
+    if(RequiredString(frame,"local_surface_normal","case.geometry.coordinate_frame")!="+z")
+      throw JsonError("case-v2 slab providers require local_surface_normal='+z'");
+  } else if (RequiredString(frame, "slab_normal", "case.geometry.coordinate_frame") != "+z") {
     throw JsonError("Stage-1 slab geometry requires coordinate_frame.slab_normal='+z'");
+  }
   if (RequiredString(frame, "origin", "case.geometry.coordinate_frame") != "world_center")
-    throw JsonError("Stage-1 slab geometry requires coordinate_frame.origin='world_center'");
+    throw JsonError("case geometry requires coordinate_frame.origin='world_center'");
 
   const auto& world = input.At("geometry", "case").At("world", "case.geometry").AsObject("case.geometry.world");
   RejectUnknownFields(world, {"size_x","size_y","size_z","center_x","center_y","center_z"}, "case.geometry.world");
@@ -253,25 +364,47 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
   result->worldCenterYmm = PositionMm(world.at("center_y"), "case.geometry.world.center_y");
   result->worldCenterZmm = PositionMm(world.at("center_z"), "case.geometry.world.center_z");
   if (result->worldCenterXmm != 0.0 || result->worldCenterYmm != 0.0 || result->worldCenterZmm != 0.0)
-    throw JsonError("Stage-1 Geant4 world center must be explicitly [0,0,0] mm");
+    throw JsonError("versioned-case Geant4 world center must be explicitly [0,0,0] mm");
 
   const auto& sourcePlane = input.At("geometry", "case").At("source_plane", "case.geometry")
                                   .AsObject("case.geometry.source_plane");
-  RejectUnknownFields(sourcePlane, {"size_x","size_y","center_x","center_y","z"}, "case.geometry.source_plane");
+  RejectUnknownFields(sourcePlane, stage3Schema
+      ? std::vector<std::string>{"size_x","size_y","transform"}
+      : std::vector<std::string>{"size_x","size_y","center_x","center_y","z"},
+      "case.geometry.source_plane");
   result->sourceSizeXmm = LengthMm(sourcePlane.at("size_x"), "case.geometry.source_plane.size_x");
   result->sourceSizeYmm = LengthMm(sourcePlane.at("size_y"), "case.geometry.source_plane.size_y");
-  result->sourceCenterXmm = PositionMm(sourcePlane.at("center_x"), "case.geometry.source_plane.center_x");
-  result->sourceCenterYmm = PositionMm(sourcePlane.at("center_y"), "case.geometry.source_plane.center_y");
-  result->sourceZmm = PositionMm(sourcePlane.at("z"), "case.geometry.source_plane.z");
+  if(stage3Schema){
+    result->sourceTransform=ParseTransform(sourcePlane.at("transform"),"case.geometry.source_plane.transform");
+    result->sourceCenterXmm=result->sourceTransform.translationMm.x;
+    result->sourceCenterYmm=result->sourceTransform.translationMm.y;
+    result->sourceZmm=result->sourceTransform.translationMm.z;
+  } else {
+    result->sourceCenterXmm = PositionMm(sourcePlane.at("center_x"), "case.geometry.source_plane.center_x");
+    result->sourceCenterYmm = PositionMm(sourcePlane.at("center_y"), "case.geometry.source_plane.center_y");
+    result->sourceZmm = PositionMm(sourcePlane.at("z"), "case.geometry.source_plane.z");
+    result->sourceTransform.translationMm={result->sourceCenterXmm,result->sourceCenterYmm,result->sourceZmm};
+  }
 
   const auto& stack = input.At("geometry", "case").At("shield_stack", "case.geometry")
                             .AsObject("case.geometry.shield_stack");
-  RejectUnknownFields(stack, {"size_x","size_y","center_x","center_y","front_z","layers"}, "case.geometry.shield_stack");
+  RejectUnknownFields(stack, stage3Schema
+      ? std::vector<std::string>{"size_x","size_y","transform","layers"}
+      : std::vector<std::string>{"size_x","size_y","center_x","center_y","front_z","layers"},
+      "case.geometry.shield_stack");
   result->shieldSizeXmm = LengthMm(stack.at("size_x"), "case.geometry.shield_stack.size_x");
   result->shieldSizeYmm = LengthMm(stack.at("size_y"), "case.geometry.shield_stack.size_y");
-  result->shieldCenterXmm = PositionMm(stack.at("center_x"), "case.geometry.shield_stack.center_x");
-  result->shieldCenterYmm = PositionMm(stack.at("center_y"), "case.geometry.shield_stack.center_y");
-  result->shieldFrontZmm = PositionMm(stack.at("front_z"), "case.geometry.shield_stack.front_z");
+  if(stage3Schema){
+    result->shieldTransform=ParseTransform(stack.at("transform"),"case.geometry.shield_stack.transform");
+    result->shieldCenterXmm=result->shieldTransform.translationMm.x;
+    result->shieldCenterYmm=result->shieldTransform.translationMm.y;
+    result->shieldFrontZmm=result->shieldTransform.translationMm.z;
+  } else {
+    result->shieldCenterXmm = PositionMm(stack.at("center_x"), "case.geometry.shield_stack.center_x");
+    result->shieldCenterYmm = PositionMm(stack.at("center_y"), "case.geometry.shield_stack.center_y");
+    result->shieldFrontZmm = PositionMm(stack.at("front_z"), "case.geometry.shield_stack.front_z");
+    result->shieldTransform.translationMm={result->shieldCenterXmm,result->shieldCenterYmm,result->shieldFrontZmm};
+  }
   const auto& layers = stack.at("layers").AsArray("case.geometry.shield_stack.layers");
   if (layers.empty() || layers.size() > 5)
     throw JsonError("case.geometry.shield_stack.layers must contain one through five layers");
@@ -286,6 +419,7 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
     const auto& material = result->materials->Resolve(RequiredString(layer, "material", context), "shield");
     parsed.materialId = material.id;
     parsed.materialHash = material.contentHash;
+    parsed.densityGPerCm3 = material.densityGPerCm3;
     const auto& thickness = layer.at("thickness").AsObject(context + ".thickness");
     RejectUnknownFields(thickness, {"type","value","unit"}, context + ".thickness");
     parsed.inputThicknessType = RequiredString(thickness, "type", context + ".thickness");
@@ -318,18 +452,30 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
     const auto& material = result->materials->Resolve(RequiredString(object, "material", context), "absorber");
     parsed.materialId = material.id;
     parsed.materialHash = material.contentHash;
+    parsed.densityGPerCm3 = material.densityGPerCm3;
     const auto& shape = object.at("geometry").AsObject(context + ".geometry");
-    RejectUnknownFields(shape, {"type","size_x","size_y","center_x","center_y","thickness","front_z"}, context + ".geometry");
+    RejectUnknownFields(shape, stage3Schema
+        ? std::vector<std::string>{"type","size_x","size_y","thickness","transform"}
+        : std::vector<std::string>{"type","size_x","size_y","center_x","center_y","thickness","front_z"},
+        context + ".geometry");
     if (RequiredString(shape, "type", context + ".geometry") != "slab")
-      throw JsonError(context + ".geometry.type must be 'slab' in Stage 1");
+      throw JsonError(context + ".geometry.type must be 'slab'; future providers retain a later validation gate");
     parsed.sizeXmm = LengthMm(shape.at("size_x"), context + ".geometry.size_x");
     parsed.sizeYmm = LengthMm(shape.at("size_y"), context + ".geometry.size_y");
-    parsed.centerXmm = PositionMm(shape.at("center_x"), context + ".geometry.center_x");
-    parsed.centerYmm = PositionMm(shape.at("center_y"), context + ".geometry.center_y");
     parsed.thicknessMm = LengthMm(shape.at("thickness"), context + ".geometry.thickness");
-    parsed.frontZmm = PositionMm(shape.at("front_z"), context + ".geometry.front_z");
-    Json::Object hashInput{{"absorber_id", parsed.id}, {"center_x_mm",parsed.centerXmm},
-      {"center_y_mm",parsed.centerYmm}, {"front_z_mm", parsed.frontZmm},
+    if(stage3Schema){
+      parsed.transform=ParseTransform(shape.at("transform"),context+".geometry.transform");
+      parsed.centerXmm=parsed.transform.translationMm.x;
+      parsed.centerYmm=parsed.transform.translationMm.y;
+      parsed.frontZmm=parsed.transform.translationMm.z;
+    } else {
+      parsed.centerXmm = PositionMm(shape.at("center_x"), context + ".geometry.center_x");
+      parsed.centerYmm = PositionMm(shape.at("center_y"), context + ".geometry.center_y");
+      parsed.frontZmm = PositionMm(shape.at("front_z"), context + ".geometry.front_z");
+      parsed.transform.translationMm={parsed.centerXmm,parsed.centerYmm,parsed.frontZmm};
+    }
+    Json::Object hashInput{{"absorber_id", parsed.id},
+      {"transform",TransformToJson(parsed.transform)},
       {"material_hash", parsed.materialHash}, {"size_x_mm", parsed.sizeXmm},
       {"size_y_mm", parsed.sizeYmm}, {"thickness_mm", parsed.thicknessMm}, {"type", "slab"}};
     parsed.geometryHash = Sha256(Json(std::move(hashInput)).DumpCanonical());
@@ -339,8 +485,9 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
   const auto& source = input.At("source", "case").AsObject("case.source");
   RejectUnknownFields(source, {"mode","spectrum","energy_limits"}, "case.source");
   result->sourceMode = RequiredString(source, "mode", "case.source");
-  if (result->sourceMode != "beam" && result->sourceMode != "isotropic")
-    throw JsonError("case.source.mode must be beam or isotropic");
+  if (result->sourceMode != "beam" && result->sourceMode != "isotropic" &&
+      !(stage3Schema && result->sourceMode=="directional_plane"))
+    throw JsonError("case.source.mode must be beam, isotropic, or case-v2 directional_plane");
   const auto& spectrum = source.at("spectrum").AsObject("case.source.spectrum");
   result->sourceFormat = RequiredString(spectrum, "format", "case.source.spectrum");
   if (result->sourceFormat == "legacy_three_column") {
@@ -426,21 +573,172 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
     published.components = {transportedComponent};
     result->spectrum = std::move(published);
     result->sourceComponentId = componentId;
+  } else if(result->sourceFormat=="monoenergetic_response_cell") {
+    if(!stage3Schema)
+      throw JsonError("monoenergetic_response_cell requires shieldSim.case.v2");
+    if(result->purpose!="verification_test")
+      throw JsonError("monoenergetic response cells are verification infrastructure, not mission environments");
+    if(result->sourceMode!="directional_plane")
+      throw JsonError("monoenergetic_response_cell requires source.mode='directional_plane'");
+    RejectUnknownFields(spectrum,{"format","incident_id","particle","energy","direction"},
+                        "case.source.spectrum");
+    auto& incident=result->responseIncident;
+    incident.enabled=true;
+    incident.incidentId=RequiredString(spectrum,"incident_id","case.source.spectrum");
+    const auto& particle=spectrum.at("particle").AsObject("case.source.spectrum.particle");
+    RejectUnknownFields(particle,{"name","Z","A"},"case.source.spectrum.particle");
+    incident.particleName=RequiredString(particle,"name","case.source.spectrum.particle");
+    incident.atomicNumber=static_cast<int>(PositiveInteger(particle.at("Z"),"case.source.spectrum.particle.Z"));
+    incident.massNumber=static_cast<int>(PositiveInteger(particle.at("A"),"case.source.spectrum.particle.A"));
+    if(incident.massNumber<incident.atomicNumber)
+      throw JsonError("case.source.spectrum.particle requires A >= Z");
+    if((incident.particleName=="proton" && (incident.atomicNumber!=1 || incident.massNumber!=1)) ||
+       (incident.particleName=="alpha" && (incident.atomicNumber!=2 || incident.massNumber!=4)) ||
+       (incident.particleName!="proton" && incident.particleName!="alpha" && incident.particleName!="ion"))
+      throw JsonError("response particle name/Z/A must be proton/1/1, alpha/2/4, or ion with explicit Z/A");
+    const auto& energy=spectrum.at("energy").AsObject("case.source.spectrum.energy");
+    RejectUnknownFields(energy,{"coordinate","value","unit"},"case.source.spectrum.energy");
+    incident.energyCoordinate=RequiredString(energy,"coordinate","case.source.spectrum.energy");
+    incident.energyCoordinateValue=PositiveNumber(energy.at("value"),"case.source.spectrum.energy.value");
+    incident.energyCoordinateUnit=RequiredString(energy,"unit","case.source.spectrum.energy");
+    double multiplier=1.0;
+    if(incident.energyCoordinate=="total_kinetic_energy"){
+      if(incident.energyCoordinateUnit=="MeV") multiplier=1.0;
+      else if(incident.energyCoordinateUnit=="GeV") multiplier=1000.0;
+      else throw JsonError("total_kinetic_energy response coordinate requires MeV or GeV");
+    } else if(incident.energyCoordinate=="kinetic_energy_per_nucleon"){
+      if(incident.energyCoordinateUnit=="MeV/n") multiplier=incident.massNumber;
+      else if(incident.energyCoordinateUnit=="GeV/n") multiplier=1000.0*incident.massNumber;
+      else throw JsonError("kinetic_energy_per_nucleon response coordinate requires MeV/n or GeV/n");
+    } else {
+      throw JsonError("response energy coordinate must be total_kinetic_energy or kinetic_energy_per_nucleon");
+    }
+    incident.totalKineticEnergyMeV=incident.energyCoordinateValue*multiplier;
+    const auto& direction=spectrum.at("direction").AsObject("case.source.spectrum.direction");
+    RejectUnknownFields(direction,{"mu","phi"},"case.source.spectrum.direction");
+    incident.mu=FiniteNumber(direction.at("mu"),"case.source.spectrum.direction.mu");
+    if(incident.mu<=0.0 || incident.mu>1.0)
+      throw JsonError("case.source.spectrum.direction.mu must be in (0,1]");
+    incident.phiRad=AngleRad(direction.at("phi"),"case.source.spectrum.direction.phi");
+    incident.phiRad=std::fmod(incident.phiRad,2.0*3.14159265358979323846);
+    if(incident.phiRad<0.0) incident.phiRad+=2.0*3.14159265358979323846;
+    result->sourceComponentId=incident.incidentId;
+    result->spectrum.id="stage3_monoenergetic_response_cell";
+    result->spectrum.scienceStatus="verification_only_not_a_physical_environment";
+    result->spectrum.valueType="one_primary_per_history";
+    result->spectrum.valueUnit="1";
+    result->spectrum.contentHash=Sha256(spectrum.at("particle").DumpCanonical()+
+        spectrum.at("energy").DumpCanonical()+spectrum.at("direction").DumpCanonical());
+    result->protonMinMeV=result->protonMaxMeV=incident.particleName=="proton"
+        ? incident.totalKineticEnergyMeV : 1.0;
+    result->alphaMinMeV=result->alphaMaxMeV=incident.particleName=="alpha"
+        ? incident.totalKineticEnergyMeV : 1.0;
+  } else if(result->sourceFormat=="discrete_response_nodes") {
+    if(!stage3Schema || result->purpose!="verification_test" ||
+       result->sourceMode!="directional_plane")
+      throw JsonError("discrete_response_nodes requires a case-v2 verification_test directional_plane source");
+    RejectUnknownFields(spectrum,{"format","nodes"},"case.source.spectrum");
+    const auto& nodes=spectrum.at("nodes").AsArray("case.source.spectrum.nodes");
+    if(nodes.empty()) throw JsonError("case.source.spectrum.nodes must not be empty");
+    std::set<std::string> ids;
+    std::set<std::tuple<std::string,int,int,double,double,double>> coordinates;
+    double weightSum=0.0;
+    for(std::size_t i=0;i<nodes.size();++i){
+      const std::string context="case.source.spectrum.nodes["+std::to_string(i)+"]";
+      const auto& node=nodes[i].AsObject(context);
+      RejectUnknownFields(node,{"incident_id","particle","energy","direction","weight"},context);
+      WeightedResponseIncident weighted;
+      auto& incident=weighted.incident;
+      incident.enabled=true;
+      incident.incidentId=RequiredString(node,"incident_id",context);
+      if(!ids.insert(incident.incidentId).second)
+        throw JsonError(context+" has a duplicate incident_id");
+      weighted.weight=PositiveNumber(node.at("weight"),context+".weight");
+      weightSum+=weighted.weight;
+      const auto& particle=node.at("particle").AsObject(context+".particle");
+      RejectUnknownFields(particle,{"name","Z","A"},context+".particle");
+      incident.particleName=RequiredString(particle,"name",context+".particle");
+      incident.atomicNumber=static_cast<int>(PositiveInteger(particle.at("Z"),context+".particle.Z"));
+      incident.massNumber=static_cast<int>(PositiveInteger(particle.at("A"),context+".particle.A"));
+      if(incident.massNumber<incident.atomicNumber ||
+         (incident.particleName=="proton" && (incident.atomicNumber!=1 || incident.massNumber!=1)) ||
+         (incident.particleName=="alpha" && (incident.atomicNumber!=2 || incident.massNumber!=4)) ||
+         (incident.particleName!="proton" && incident.particleName!="alpha" && incident.particleName!="ion"))
+        throw JsonError(context+" has an inconsistent particle name/Z/A");
+      const auto& energy=node.at("energy").AsObject(context+".energy");
+      RejectUnknownFields(energy,{"coordinate","value","unit"},context+".energy");
+      incident.energyCoordinate=RequiredString(energy,"coordinate",context+".energy");
+      incident.energyCoordinateValue=PositiveNumber(energy.at("value"),context+".energy.value");
+      incident.energyCoordinateUnit=RequiredString(energy,"unit",context+".energy");
+      if(incident.energyCoordinate=="total_kinetic_energy"){
+        if(incident.energyCoordinateUnit=="MeV") incident.totalKineticEnergyMeV=incident.energyCoordinateValue;
+        else if(incident.energyCoordinateUnit=="GeV") incident.totalKineticEnergyMeV=1000.0*incident.energyCoordinateValue;
+        else throw JsonError(context+" total energy requires MeV or GeV");
+      } else if(incident.energyCoordinate=="kinetic_energy_per_nucleon"){
+        if(incident.energyCoordinateUnit=="MeV/n")
+          incident.totalKineticEnergyMeV=incident.massNumber*incident.energyCoordinateValue;
+        else if(incident.energyCoordinateUnit=="GeV/n")
+          incident.totalKineticEnergyMeV=1000.0*incident.massNumber*incident.energyCoordinateValue;
+        else throw JsonError(context+" per-nucleon energy requires MeV/n or GeV/n");
+      } else throw JsonError(context+" has unsupported energy coordinate");
+      const auto& direction=node.at("direction").AsObject(context+".direction");
+      RejectUnknownFields(direction,{"mu","phi"},context+".direction");
+      incident.mu=FiniteNumber(direction.at("mu"),context+".direction.mu");
+      if(incident.mu<=0.0 || incident.mu>1.0)
+        throw JsonError(context+".direction.mu must be in (0,1]");
+      incident.phiRad=AngleRad(direction.at("phi"),context+".direction.phi");
+      incident.phiRad=std::fmod(incident.phiRad,2.0*3.14159265358979323846);
+      if(incident.phiRad<0.0) incident.phiRad+=2.0*3.14159265358979323846;
+      if(!coordinates.emplace(incident.particleName,incident.atomicNumber,incident.massNumber,
+                              incident.totalKineticEnergyMeV,incident.mu,incident.phiRad).second)
+        throw JsonError(context+" duplicates a species/energy/direction coordinate");
+      result->directIncidents.push_back(std::move(weighted));
+    }
+    if(std::abs(weightSum-1.0)>1.0e-12)
+      throw JsonError("case.source.spectrum.nodes weights must sum to one within 1e-12");
+    result->sourceComponentId="declared_discrete_node_mixture";
+    result->spectrum.id="stage3_discrete_response_nodes";
+    result->spectrum.scienceStatus="verification_only_not_a_physical_environment";
+    result->spectrum.valueType="probability_mass_per_node";
+    result->spectrum.valueUnit="1";
+    result->spectrum.contentHash=Sha256(spectrum.at("nodes").DumpCanonical());
+    result->protonMinMeV=result->alphaMinMeV=std::numeric_limits<double>::infinity();
+    result->protonMaxMeV=result->alphaMaxMeV=0.0;
+    for(const auto& weighted:result->directIncidents){
+      const auto& incident=weighted.incident;
+      if(incident.particleName=="proton"){
+        result->protonMinMeV=std::min(result->protonMinMeV,incident.totalKineticEnergyMeV);
+        result->protonMaxMeV=std::max(result->protonMaxMeV,incident.totalKineticEnergyMeV);
+      } else if(incident.particleName=="alpha"){
+        result->alphaMinMeV=std::min(result->alphaMinMeV,incident.totalKineticEnergyMeV);
+        result->alphaMaxMeV=std::max(result->alphaMaxMeV,incident.totalKineticEnergyMeV);
+      }
+    }
+    if(!std::isfinite(result->protonMinMeV))
+      result->protonMinMeV=result->protonMaxMeV=1.0;
+    if(!std::isfinite(result->alphaMinMeV))
+      result->alphaMinMeV=result->alphaMaxMeV=1.0;
   } else {
-    throw JsonError("case.source.spectrum.format must be legacy_three_column or ams02_hapi_component");
+    throw JsonError("case.source.spectrum.format must be legacy_three_column, ams02_hapi_component, monoenergetic_response_cell, or discrete_response_nodes");
   }
-  const auto& limits = source.at("energy_limits").AsObject("case.source.energy_limits");
-  RejectUnknownFields(limits, {"proton","alpha"}, "case.source.energy_limits");
-  const auto& proton = limits.at("proton").AsObject("case.source.energy_limits.proton");
-  const auto& alpha = limits.at("alpha").AsObject("case.source.energy_limits.alpha");
-  RejectUnknownFields(proton, {"min","max"}, "case.source.energy_limits.proton");
-  RejectUnknownFields(alpha, {"min","max"}, "case.source.energy_limits.alpha");
-  result->protonMinMeV = EnergyMeV(proton.at("min"), "case.source.energy_limits.proton.min");
-  result->protonMaxMeV = EnergyMeV(proton.at("max"), "case.source.energy_limits.proton.max");
-  result->alphaMinMeV = EnergyMeV(alpha.at("min"), "case.source.energy_limits.alpha.min");
-  result->alphaMaxMeV = EnergyMeV(alpha.at("max"), "case.source.energy_limits.alpha.max");
-  if (result->protonMinMeV > result->protonMaxMeV || result->alphaMinMeV > result->alphaMaxMeV)
-    throw JsonError("case.source energy min must be <= max; ranges are never reordered");
+  if(!result->responseIncident.enabled && result->directIncidents.empty()){
+    if(!source.count("energy_limits"))
+      throw JsonError("case.source.energy_limits is required for spectrum-sampled sources");
+    const auto& limits = source.at("energy_limits").AsObject("case.source.energy_limits");
+    RejectUnknownFields(limits, {"proton","alpha"}, "case.source.energy_limits");
+    const auto& proton = limits.at("proton").AsObject("case.source.energy_limits.proton");
+    const auto& alpha = limits.at("alpha").AsObject("case.source.energy_limits.alpha");
+    RejectUnknownFields(proton, {"min","max"}, "case.source.energy_limits.proton");
+    RejectUnknownFields(alpha, {"min","max"}, "case.source.energy_limits.alpha");
+    result->protonMinMeV = EnergyMeV(proton.at("min"), "case.source.energy_limits.proton.min");
+    result->protonMaxMeV = EnergyMeV(proton.at("max"), "case.source.energy_limits.proton.max");
+    result->alphaMinMeV = EnergyMeV(alpha.at("min"), "case.source.energy_limits.alpha.min");
+    result->alphaMaxMeV = EnergyMeV(alpha.at("max"), "case.source.energy_limits.alpha.max");
+    if (result->protonMinMeV > result->protonMaxMeV || result->alphaMinMeV > result->alphaMaxMeV)
+      throw JsonError("case.source energy min must be <= max; ranges are never reordered");
+  } else if(source.count("energy_limits")) {
+    throw JsonError("Stage-3 declared response sources must not also provide energy_limits");
+  }
   if (!result->spectrum.transportBinLowerMeV.empty()) {
     bool overlaps = false;
     for (std::size_t i = 0; i < result->spectrum.transportBinLowerMeV.size(); ++i)
@@ -455,9 +753,18 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
   result->quantities = StringArray(input.At("quantities", "case"), "case.quantities");
   if (result->quantities.empty()) throw JsonError("case.quantities must not be empty");
   for (const auto& quantity : result->quantities) {
-    if (quantity != "TID" && quantity != "H100/10")
-      throw JsonError("quantity '" + quantity + "' is not enabled in Stage 1; DDD, n_eq, and LET require their later validation stages");
+    const bool allowed=stage3Schema
+        ? quantity=="transport_raw"
+        : quantity=="TID" || quantity=="H100/10";
+    if (!allowed)
+      throw JsonError("quantity '" + quantity + "' is not enabled in this case schema; case-v2 permits only transport_raw while TID, DDD, n_eq, LET, H100/10, and science-facing response claims retain later gates");
   }
+  if(result->responseIncident.enabled &&
+     (result->quantities.size()!=1 || result->quantities.front()!="transport_raw"))
+    throw JsonError("monoenergetic_response_cell cases request only transport_raw");
+  if(!result->directIncidents.empty() &&
+     (result->quantities.size()!=1 || result->quantities.front()!="transport_raw"))
+    throw JsonError("discrete_response_nodes cases request only transport_raw");
 
   const auto& accuracy = input.At("accuracy", "case").AsObject("case.accuracy");
   RejectUnknownFields(accuracy, {"target","scope","coverage","systematic_budget",
@@ -486,10 +793,16 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
     throw JsonError("case.accuracy.sampling.batch_size must be <= max_histories");
 
   const auto& transport = input.At("transport", "case").AsObject("case.transport");
-  RejectUnknownFields(transport, {"physics_list","production_cut","max_step","random_seed"}, "case.transport");
+  RejectUnknownFields(transport, {"physics_list","ion_physics","production_cut","max_step","random_seed"}, "case.transport");
   result->physicsList = RequiredString(transport, "physics_list", "case.transport");
   const std::set<std::string> lists = {"FTFP_BERT","FTFP_BERT_HP","Shielding","QGSP_BIC_HP"};
   if (!lists.count(result->physicsList)) throw JsonError("case.transport.physics_list is unsupported");
+  if(stage3Schema && !transport.count("ion_physics"))
+    throw JsonError("case-v2 transport requires explicit ion_physics");
+  if(transport.count("ion_physics"))
+    result->ionPhysics=RequiredString(transport,"ion_physics","case.transport");
+  if(result->ionPhysics!="reference_list_default" && result->ionPhysics!="G4IonQMDPhysics")
+    throw JsonError("case.transport.ion_physics must be reference_list_default or G4IonQMDPhysics");
   result->productionCutMm = LengthMm(transport.at("production_cut"), "case.transport.production_cut");
   result->maxStepMm = LengthMm(transport.at("max_step"), "case.transport.max_step");
   result->randomSeed = PositiveInteger(transport.at("random_seed"), "case.transport.random_seed");
@@ -500,33 +813,66 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
   // Validate every explicitly placed object against the world and against the
   // ordered upstream-to-downstream layout.  Absorbers are checked separately
   // because each is transported in an independent world, not as a stack.
-  const double wx0 = result->worldCenterXmm - result->worldSizeXmm / 2.0;
-  const double wx1 = result->worldCenterXmm + result->worldSizeXmm / 2.0;
-  const double wy0 = result->worldCenterYmm - result->worldSizeYmm / 2.0;
-  const double wy1 = result->worldCenterYmm + result->worldSizeYmm / 2.0;
-  const double wz0 = result->worldCenterZmm - result->worldSizeZmm / 2.0;
-  const double wz1 = result->worldCenterZmm + result->worldSizeZmm / 2.0;
-  auto transverseInside = [&](double cx,double cy,double sx, double sy) {
-    return cx - sx / 2.0 >= wx0 && cx + sx / 2.0 <= wx1 &&
-           cy - sy / 2.0 >= wy0 && cy + sy / 2.0 <= wy1;
-  };
-  if (!transverseInside(result->sourceCenterXmm,result->sourceCenterYmm,
-                        result->sourceSizeXmm, result->sourceSizeYmm) ||
-      result->sourceZmm <= wz0 || result->sourceZmm >= wz1)
-    throw JsonError("case.geometry.source_plane must lie strictly inside the world");
-  if (!transverseInside(result->shieldCenterXmm,result->shieldCenterYmm,
-                        result->shieldSizeXmm, result->shieldSizeYmm))
-    throw JsonError("case.geometry.shield_stack transverse bounds exceed the world");
-  const double shieldRear = result->shieldFrontZmm + result->ShieldTotalThicknessMm();
-  if (result->shieldFrontZmm <= wz0 || shieldRear >= wz1)
-    throw JsonError("case.geometry.shield_stack must lie strictly inside the world");
-  if (result->sourceZmm >= result->shieldFrontZmm)
-    throw JsonError("case.geometry.source_plane.z must be upstream of shield_stack.front_z");
-  for (const auto& absorber : result->absorbers) {
-    if (!transverseInside(absorber.centerXmm,absorber.centerYmm,
-                          absorber.sizeXmm, absorber.sizeYmm) || absorber.frontZmm < shieldRear ||
-        absorber.frontZmm + absorber.thicknessMm >= wz1)
-      throw JsonError("absorber '" + absorber.id + "' is outside the world or overlaps the shield");
+  if(!stage3Schema){
+    const double wx0 = result->worldCenterXmm - result->worldSizeXmm / 2.0;
+    const double wx1 = result->worldCenterXmm + result->worldSizeXmm / 2.0;
+    const double wy0 = result->worldCenterYmm - result->worldSizeYmm / 2.0;
+    const double wy1 = result->worldCenterYmm + result->worldSizeYmm / 2.0;
+    const double wz0 = result->worldCenterZmm - result->worldSizeZmm / 2.0;
+    const double wz1 = result->worldCenterZmm + result->worldSizeZmm / 2.0;
+    auto transverseInside = [&](double cx,double cy,double sx, double sy) {
+      return cx - sx / 2.0 >= wx0 && cx + sx / 2.0 <= wx1 &&
+             cy - sy / 2.0 >= wy0 && cy + sy / 2.0 <= wy1;
+    };
+    if (!transverseInside(result->sourceCenterXmm,result->sourceCenterYmm,
+                          result->sourceSizeXmm, result->sourceSizeYmm) ||
+        result->sourceZmm <= wz0 || result->sourceZmm >= wz1)
+      throw JsonError("case.geometry.source_plane must lie strictly inside the world");
+    if (!transverseInside(result->shieldCenterXmm,result->shieldCenterYmm,
+                          result->shieldSizeXmm, result->shieldSizeYmm))
+      throw JsonError("case.geometry.shield_stack transverse bounds exceed the world");
+    const double shieldRear = result->shieldFrontZmm + result->ShieldTotalThicknessMm();
+    if (result->shieldFrontZmm <= wz0 || shieldRear >= wz1)
+      throw JsonError("case.geometry.shield_stack must lie strictly inside the world");
+    if (result->sourceZmm >= result->shieldFrontZmm)
+      throw JsonError("case.geometry.source_plane.z must be upstream of shield_stack.front_z");
+    for (const auto& absorber : result->absorbers) {
+      if (!transverseInside(absorber.centerXmm,absorber.centerYmm,
+                            absorber.sizeXmm, absorber.sizeYmm) || absorber.frontZmm < shieldRear ||
+          absorber.frontZmm + absorber.thicknessMm >= wz1)
+        throw JsonError("absorber '" + absorber.id + "' is outside the world or overlaps the shield");
+    }
+  } else {
+    if(!BoxInsideWorld(result->sourceTransform,result->sourceSizeXmm,result->sourceSizeYmm,0.0,
+                       result->worldSizeXmm,result->worldSizeYmm,result->worldSizeZmm))
+      throw JsonError("case.geometry.source_plane transformed corners exceed the world");
+    RigidTransform shieldBox=result->shieldTransform;
+    shieldBox.translationMm=result->shieldTransform.TransformPoint(
+        {0.0,0.0,result->ShieldTotalThicknessMm()/2.0});
+    if(!BoxInsideWorld(shieldBox,result->shieldSizeXmm,result->shieldSizeYmm,
+                       result->ShieldTotalThicknessMm(),result->worldSizeXmm,
+                       result->worldSizeYmm,result->worldSizeZmm))
+      throw JsonError("case.geometry.shield_stack transformed bounds exceed the world");
+    const Vector3d shieldNormal=result->shieldTransform.Axes()[2];
+    if(Dot(result->sourceTransform.translationMm-result->shieldTransform.translationMm,
+           shieldNormal)>=-1.0e-9)
+      throw JsonError("case.geometry.source_plane origin must be upstream of the shield reference surface");
+    for(const auto& absorber:result->absorbers){
+      RigidTransform absorberBox=absorber.transform;
+      absorberBox.translationMm=absorber.transform.TransformPoint(
+          {0.0,0.0,absorber.thicknessMm/2.0});
+      if(!BoxInsideWorld(absorberBox,absorber.sizeXmm,absorber.sizeYmm,absorber.thicknessMm,
+                         result->worldSizeXmm,result->worldSizeYmm,result->worldSizeZmm))
+        throw JsonError("absorber '"+absorber.id+"' transformed bounds exceed the world");
+      if(Dot(absorber.transform.translationMm-result->shieldTransform.translationMm,
+             shieldNormal)<result->ShieldTotalThicknessMm()-1.0e-9)
+        throw JsonError("absorber '"+absorber.id+"' reference surface is not downstream of the shield");
+      if(BoxesOverlap(shieldBox,{result->shieldSizeXmm/2.0,result->shieldSizeYmm/2.0,
+                                 result->ShieldTotalThicknessMm()/2.0},
+                      absorberBox,{absorber.sizeXmm/2.0,absorber.sizeYmm/2.0,
+                                   absorber.thicknessMm/2.0}))
+        throw JsonError("absorber '"+absorber.id+"' overlaps the shield");
+    }
   }
 
   // Serialize all resolved values, including defaults and both forms of layer
@@ -551,18 +897,22 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
       {"center_x",Measure(absorber.centerXmm,"mm")}, {"center_y",Measure(absorber.centerYmm,"mm")},
       {"front_z", Measure(absorber.frontZmm, "mm")},
       {"geometry_hash", absorber.geometryHash}, {"geometry_type", "slab"}, {"material_hash", absorber.materialHash},
-      {"material_id", absorber.materialId}, {"size_x", Measure(absorber.sizeXmm, "mm")},
-      {"size_y", Measure(absorber.sizeYmm, "mm")}, {"thickness", Measure(absorber.thicknessMm, "mm")}});
+      {"material_id", absorber.materialId}, {"density_g_cm3",absorber.densityGPerCm3},
+      {"size_x", Measure(absorber.sizeXmm, "mm")},
+      {"size_y", Measure(absorber.sizeYmm, "mm")}, {"thickness", Measure(absorber.thicknessMm, "mm")},
+      {"transform",TransformToJson(absorber.transform)}});
   }
   Json::Object geometryJson{
     {"absorbers", Json(std::move(absorberJson))}, {"coordinate_frame", result->coordinateFrame},
     {"shield_front_z", Measure(result->shieldFrontZmm, "mm")}, {"shield_layers", Json(std::move(layerJson))},
     {"shield_center_x",Measure(result->shieldCenterXmm,"mm")},
     {"shield_center_y",Measure(result->shieldCenterYmm,"mm")},
+    {"shield_transform",TransformToJson(result->shieldTransform)},
     {"shield_size_x", Measure(result->shieldSizeXmm, "mm")}, {"shield_size_y", Measure(result->shieldSizeYmm, "mm")},
     {"source_size_x", Measure(result->sourceSizeXmm, "mm")}, {"source_size_y", Measure(result->sourceSizeYmm, "mm")},
     {"source_center_x",Measure(result->sourceCenterXmm,"mm")},
     {"source_center_y",Measure(result->sourceCenterYmm,"mm")},
+    {"source_transform",TransformToJson(result->sourceTransform)},
     {"source_z", Measure(result->sourceZmm, "mm")}, {"world_center_x", Measure(result->worldCenterXmm, "mm")},
     {"world_center_y", Measure(result->worldCenterYmm, "mm")}, {"world_center_z", Measure(result->worldCenterZmm, "mm")},
     {"world_size_x", Measure(result->worldSizeXmm, "mm")}, {"world_size_y", Measure(result->worldSizeYmm, "mm")},
@@ -580,24 +930,56 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
   accuracyJson["target_source"] = result->accuracy.targetWasDefaulted ? "default_0.10" : "case_input";
   Json::Array quantityJson;
   for (const auto& quantity : result->quantities) quantityJson.emplace_back(quantity);
-  Json::Object resolved{
-    {"accuracy", Json(std::move(accuracyJson))}, {"case_id", result->caseId},
-    {"geometry", Json(std::move(geometryJson))}, {"geometry_hash", result->geometryHash},
-    {"material_library", Json(Json::Object{{"canonical_records",result->materials->CanonicalDocument()},
-      {"content_hash",result->materials->ContentHash()}, {"library_id",result->materials->Id()},
-      {"library_version",result->materials->Version()}, {"source_path",result->materials->SourcePath()}})},
-    {"purpose", result->purpose},
-    {"quantities", Json(std::move(quantityJson))}, {"schema_version", "shieldSim.resolved_case.v1"},
-    {"source", Json(Json::Object{{"alpha_max", Measure(result->alphaMaxMeV, "MeV")},
+  Json::Object sourceJson{{"alpha_max", Measure(result->alphaMaxMeV, "MeV")},
       {"alpha_min", Measure(result->alphaMinMeV, "MeV")}, {"mode", result->sourceMode},
       {"format",result->sourceFormat}, {"transport_component_id",result->sourceComponentId},
       {"metadata",result->spectrum.canonicalMetadata}, {"metadata_path",result->spectrum.metadataPath},
       {"proton_max", Measure(result->protonMaxMeV, "MeV")}, {"proton_min", Measure(result->protonMinMeV, "MeV")},
       {"science_status",result->spectrum.scienceStatus}, {"spectrum_hash", result->spectrum.contentHash},
       {"spectrum_id", result->spectrum.id}, {"spectrum_path",result->spectrum.spectrumPath},
-      {"value_type",result->spectrum.valueType}, {"value_unit",result->spectrum.valueUnit}})},
+      {"value_type",result->spectrum.valueType}, {"value_unit",result->spectrum.valueUnit}};
+  if(result->responseIncident.enabled){
+    sourceJson["response_incident"]=Json(Json::Object{
+      {"A",result->responseIncident.massNumber},
+      {"Z",result->responseIncident.atomicNumber},
+      {"energy_coordinate",result->responseIncident.energyCoordinate},
+      {"energy_coordinate_unit",result->responseIncident.energyCoordinateUnit},
+      {"energy_coordinate_value",result->responseIncident.energyCoordinateValue},
+      {"incident_id",result->responseIncident.incidentId},
+      {"mu",result->responseIncident.mu},
+      {"particle",result->responseIncident.particleName},
+      {"phi_rad",result->responseIncident.phiRad},
+      {"total_kinetic_energy_MeV",result->responseIncident.totalKineticEnergyMeV}});
+  }
+  if(!result->directIncidents.empty()){
+    Json::Array nodes;
+    for(const auto& weighted:result->directIncidents){
+      const auto& incident=weighted.incident;
+      nodes.emplace_back(Json::Object{{"A",incident.massNumber},{"Z",incident.atomicNumber},
+        {"energy_coordinate",incident.energyCoordinate},
+        {"energy_coordinate_unit",incident.energyCoordinateUnit},
+        {"energy_coordinate_value",incident.energyCoordinateValue},
+        {"incident_id",incident.incidentId},{"mu",incident.mu},
+        {"particle",incident.particleName},{"phi_rad",incident.phiRad},
+        {"total_kinetic_energy_MeV",incident.totalKineticEnergyMeV},
+        {"weight",weighted.weight}});
+    }
+    sourceJson["direct_incident_nodes"]=Json(std::move(nodes));
+  }
+  Json::Object resolved{
+    {"input_schema_version",result->schemaVersion},
+    {"accuracy", Json(std::move(accuracyJson))}, {"case_id", result->caseId},
+    {"geometry", Json(std::move(geometryJson))}, {"geometry_hash", result->geometryHash},
+    {"material_library", Json(Json::Object{{"canonical_records",result->materials->CanonicalDocument()},
+      {"content_hash",result->materials->ContentHash()}, {"library_id",result->materials->Id()},
+      {"library_version",result->materials->Version()}, {"source_path",result->materials->SourcePath()}})},
+    {"purpose", result->purpose},
+    {"quantities", Json(std::move(quantityJson))},
+    {"schema_version",stage3Schema ? "shieldSim.resolved_case.v2" : "shieldSim.resolved_case.v1"},
+    {"source", Json(std::move(sourceJson))},
     {"transport", Json(Json::Object{{"max_step", Measure(result->maxStepMm, "mm")},
-      {"physics_list", result->physicsList}, {"production_cut", Measure(result->productionCutMm, "mm")},
+      {"ion_physics",result->ionPhysics},{"physics_list", result->physicsList},
+      {"production_cut", Measure(result->productionCutMm, "mm")},
       {"random_seed", static_cast<double>(result->randomSeed)}})}};
   result->resolvedJson = Json(std::move(resolved));
   result->caseHash = Sha256(result->resolvedJson.DumpCanonical());

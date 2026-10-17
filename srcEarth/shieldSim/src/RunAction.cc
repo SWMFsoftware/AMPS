@@ -5,6 +5,7 @@
 #include "DetectorConstruction.hh"
 #include "CaseDefinition.hh"
 #include "ComputedQuantities.hh"
+#include "ContentHash.hh"
 #include "MaterialCatalog.hh"
 #include "SpecBins.hh"
 #include "StrictJson.hh"
@@ -20,6 +21,8 @@
 #include <G4Version.hh>
 
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <limits>
@@ -37,6 +40,8 @@ RunAction::RunAction(const Options& opts,
   fEdepIonizing.assign(scoringNames.size(),0);
   fEdepNonIonizing.assign(scoringNames.size(),0);
   fEventEdepIonizing.assign(scoringNames.size(),0);
+  fEventEdepTotal.assign(scoringNames.size(),0);
+  fEventEdepNonIonizing.assign(scoringNames.size(),0);
   fLastDoseTotal.assign(scoringNames.size(),0);
   fLastDoseNonIonizing.assign(scoringNames.size(),0);
   fLastDose.assign(scoringNames.size(),0);
@@ -137,6 +142,80 @@ void RunAction::AddEdep(std::size_t i,G4double totalEdep,G4double nonIonizingEde
   fEdepNonIonizing[i]+=nonIon;
   fEdepIonizing[i]+=totalEdep-nonIon;
   fEventEdepIonizing[i]+=totalEdep-nonIon;
+  fEventEdepTotal[i]+=totalEdep;
+  fEventEdepNonIonizing[i]+=nonIon;
+}
+
+namespace {
+std::string ScoreToken(std::string value){
+  for(char& character:value)
+    if(!(std::isalnum(static_cast<unsigned char>(character)) || character=='_' || character=='-'))
+      character='_';
+  return value;
+}
+}
+
+void RunAction::RecordShieldExit(const std::string& particle,int,int,int,
+                                 bool primary,const std::string& rootParticle,
+                                 int generation,G4double kineticEnergyMeV){
+  const std::string component=primary ? "primary" : "secondary";
+  const std::string base="shield_exit/"+component+"/"+ScoreToken(particle);
+  fEventRawScores[base+"/crossing_count"]+=1.0;
+  fEventRawScores[base+"/kinetic_energy_sum_MeV"]+=kineticEnergyMeV;
+  fRawScoreUnits[base+"/crossing_count"]="crossings/primary";
+  fRawScoreUnits[base+"/kinetic_energy_sum_MeV"]="MeV/primary";
+  // The ancestry-qualified score is deliberately additional to the ordinary
+  // species/component score: consumers can aggregate by transported species
+  // without losing the root-primary provenance needed for mixed environments.
+  const std::string ancestry=base+"/root_"+ScoreToken(rootParticle)+
+      "/generation_"+std::to_string(generation)+"/crossing_count";
+  fEventRawScores[ancestry]+=1.0;
+  fRawScoreUnits[ancestry]="crossings/primary";
+}
+
+void RunAction::RecordLayerStep(std::size_t layer,G4double totalEdep,
+                                G4double nonIonizingEdep,G4double trackLength){
+  if(!fOpts.caseDefinition || layer>=fOpts.caseDefinition->shieldLayers.size()) return;
+  const std::string base="shield_layer/"+
+      ScoreToken(fOpts.caseDefinition->shieldLayers[layer].id);
+  const double total=totalEdep/MeV;
+  const double nonIon=std::min(totalEdep,nonIonizingEdep)/MeV;
+  fEventRawScores[base+"/total_deposited_energy_MeV"]+=total;
+  fEventRawScores[base+"/nonionizing_deposited_energy_MeV"]+=nonIon;
+  fEventRawScores[base+"/ionizing_deposited_energy_MeV"]+=total-nonIon;
+  fEventRawScores[base+"/track_length_mm"]+=trackLength/mm;
+  fEventRawScores[base+"/step_count"]+=1.0;
+  fRawScoreUnits[base+"/total_deposited_energy_MeV"]="MeV/primary";
+  fRawScoreUnits[base+"/nonionizing_deposited_energy_MeV"]="MeV/primary";
+  fRawScoreUnits[base+"/ionizing_deposited_energy_MeV"]="MeV/primary";
+  fRawScoreUnits[base+"/track_length_mm"]="mm/primary";
+  fRawScoreUnits[base+"/step_count"]="steps/primary";
+}
+
+void RunAction::RecordSecondaryBirth(std::size_t layer,const std::string& particle,
+                                     int pdg,int atomicNumber,int massNumber,
+                                     const std::string& rootParticle,int generation,
+                                     const std::string& creatorProcess,
+                                     G4double kineticEnergyMeV){
+  if(!fOpts.caseDefinition || layer>=fOpts.caseDefinition->shieldLayers.size()) return;
+  const std::string key=std::to_string(layer)+"|"+particle+"|"+rootParticle+"|"+
+                        std::to_string(generation)+"|"+creatorProcess;
+  auto& ledger=fSecondaryLedgers[key];
+  ledger.layer=layer;
+  ledger.particle=particle;
+  ledger.pdg=pdg;
+  ledger.atomicNumber=atomicNumber;
+  ledger.massNumber=massNumber;
+  ledger.rootParticle=rootParticle;
+  ledger.generation=generation;
+  ledger.creatorProcess=creatorProcess;
+  ++ledger.count;
+  ledger.initialKineticEnergyMeV+=kineticEnergyMeV;
+  const std::string score="shield_layer/"+
+      ScoreToken(fOpts.caseDefinition->shieldLayers[layer].id)+
+      "/secondary_birth/"+ScoreToken(particle)+"/count";
+  fEventRawScores[score]+=1.0;
+  fRawScoreUnits[score]="particles/primary";
 }
 
 void RunAction::AddPrimaryProtonExit(G4double kineticEnergyMeV){
@@ -157,11 +236,46 @@ void RunAction::AddPrimaryProtonExit(G4double kineticEnergyMeV){
 
 void RunAction::BeginEvent(){
   std::fill(fEventEdepIonizing.begin(),fEventEdepIonizing.end(),0.0);
+  std::fill(fEventEdepTotal.begin(),fEventEdepTotal.end(),0.0);
+  std::fill(fEventEdepNonIonizing.begin(),fEventEdepNonIonizing.end(),0.0);
+  fEventRawScores.clear();
   fEventPrimaryProtonAbove10=false;
   fEventPrimaryProtonAbove100=false;
 }
 
 void RunAction::EndEvent(){
+  // Absorber deposition belongs in the same event vector as boundary/layer
+  // scores. This preserves cross-score covariance needed by future nonlinear
+  // quantities (which must fold primitive numerator/denominator scores).
+  for(std::size_t i=0;i<fEventEdepTotal.size();++i){
+    const std::string absorberId=(fOpts.caseDefinition &&
+        fOpts.activeAbsorberIndex<fOpts.caseDefinition->absorbers.size())
+        ? fOpts.caseDefinition->absorbers[fOpts.activeAbsorberIndex].id
+        : std::to_string(i);
+    const std::string base="absorber/"+ScoreToken(absorberId);
+    const double values[3]={fEventEdepTotal[i]/MeV,fEventEdepIonizing[i]/MeV,
+                            fEventEdepNonIonizing[i]/MeV};
+    const char* names[3]={"total_deposited_energy_MeV","ionizing_deposited_energy_MeV",
+                          "nonionizing_deposited_energy_MeV"};
+    for(int j=0;j<3;++j){
+      fEventRawScores[base+"/"+names[j]]+=values[j];
+      fRawScoreUnits[base+"/"+names[j]]="MeV/primary";
+    }
+  }
+  // Every response accumulator uses the primary history as its independent
+  // sample. Scores absent from this map for a history contribute zero; storing
+  // only nonzero values is exact because both their sum and sum of squares are
+  // unchanged by explicit zeros.
+  for(const auto& score:fEventRawScores){
+    auto& moments=fRawScores[score.first];
+    moments.sum+=score.second;
+    moments.sumSquares+=score.second*score.second;
+  }
+  for(auto first=fEventRawScores.begin();first!=fEventRawScores.end();++first){
+    for(auto second=first;second!=fEventRawScores.end();++second){
+      fRawCrossProducts[{first->first,second->first}]+=first->second*second->second;
+    }
+  }
   if(!fAccuracyController) return;
   fAccuracyController->RecordHistory();
   if(fOpts.calcTID){
@@ -174,6 +288,13 @@ void RunAction::EndEvent(){
   }
   if(fOpts.calcHardness && fEventPrimaryProtonAbove10)
     fAccuracyController->AddSample("H100/10",fEventPrimaryProtonAbove100?1.0:0.0);
+  if(fOpts.caseDefinition &&
+     std::find(fOpts.caseDefinition->quantities.begin(),fOpts.caseDefinition->quantities.end(),
+               "transport_raw")!=fOpts.caseDefinition->quantities.end()){
+    double total=0.0;
+    for(double value:fEventEdepTotal) total+=value/MeV;
+    fAccuracyController->AddSample("transport_raw",total);
+  }
 }
 
 bool RunAction::AccuracyStatisticallySatisfied() const{
@@ -236,6 +357,8 @@ void RunAction::ConfigureIndependentCase(std::size_t absorberIndex,
   fEdepIonizing.assign(1,0.0);
   fEdepNonIonizing.assign(1,0.0);
   fEventEdepIonizing.assign(1,0.0);
+  fEventEdepTotal.assign(1,0.0);
+  fEventEdepNonIonizing.assign(1,0.0);
   fLastDose.assign(1,0.0);
   fLastDoseTotal.assign(1,0.0);
   fLastDoseNonIonizing.assign(1,0.0);
@@ -261,6 +384,11 @@ void RunAction::ConfigureIndependentCase(std::size_t absorberIndex,
   fPrimaryProtonAbove10=0.0;
   fPrimaryProtonAbove100=0.0;
   fLastHardness=0.0;
+  fEventRawScores.clear();
+  fRawScores.clear();
+  fRawCrossProducts.clear();
+  fRawScoreUnits.clear();
+  fSecondaryLedgers.clear();
 }
 
 void RunAction::AppendSweepPoint(const SweepPoint& sp){ fSweepData.push_back(sp); }
@@ -284,6 +412,7 @@ void RunAction::RefreshLVPointers(){
 }
 
 G4LogicalVolume* RunAction::GetShieldLV() const{ return fShieldLV; }
+const std::vector<G4LogicalVolume*>& RunAction::GetShieldLVs() const{ return fShieldLVs; }
 const std::vector<G4LogicalVolume*>& RunAction::GetScoringLVs() const{ return fScoringLVs; }
 
 void RunAction::BeginOfRunAction(const G4Run*) {
@@ -305,6 +434,11 @@ void RunAction::BeginOfRunAction(const G4Run*) {
   std::fill(fEdepTotal.begin(),fEdepTotal.end(),0);
   std::fill(fEdepIonizing.begin(),fEdepIonizing.end(),0);
   std::fill(fEdepNonIonizing.begin(),fEdepNonIonizing.end(),0);
+  fEventRawScores.clear();
+  fRawScores.clear();
+  fRawCrossProducts.clear();
+  fRawScoreUnits.clear();
+  fSecondaryLedgers.clear();
   std::fill(fLastDoseTotal.begin(),fLastDoseTotal.end(),0);
   std::fill(fLastDoseNonIonizing.begin(),fLastDoseNonIonizing.end(),0);
   std::fill(fLastDoseRate.begin(),fLastDoseRate.end(),0);
@@ -390,6 +524,8 @@ void RunAction::EndOfRunAction(const G4Run* run) {
   // versioned case, shieldSim.result.v1 is the authoritative result contract.
   WriteRunSummary(nEv);
   WriteResultJson(nEv);
+  if(fOpts.caseDefinition && fOpts.caseDefinition->responseIncident.enabled)
+    WriteResponseCellJson(nEv);
 
   CloseDiagnosticFiles();
 }
@@ -472,7 +608,11 @@ void RunAction::WriteSpectraTecplot(G4int nEv){
     out<<"# Source angular factor: "<<fSourceAngularFactor<<"\n";
     out<<"# Source normalization used for spectra: "<<fSourceNorm<<"\n";
     out<<"# Shield: "<<DescribeShieldMaterial(fSweepMode?fCurrentMat:fOpts.shieldMaterial)<<"\n";
-    if(fOpts.spectrumFile.empty())
+    if(fOpts.caseDefinition && (fOpts.caseDefinition->responseIncident.enabled ||
+                                !fOpts.caseDefinition->directIncidents.empty()))
+      out<<"# Spectrum: "<<fOpts.caseDefinition->sourceFormat
+         <<" Stage-3 verification source; one generated primary per history.\n";
+    else if(fOpts.spectrumFile.empty())
       out<<"# Spectrum: built-in approximate Badhwar-O'Neill, phi = 550 MV.\n";
     else
       out<<"# Spectrum file: "<<fOpts.spectrumFile<<"\n";
@@ -843,11 +983,17 @@ void RunAction::WriteRunSummary(G4int nEv){
   out<<"meta output_prefix "<<fOpts.outputPrefix<<"\n";
   out<<"meta physics_list "<<fOpts.physicsList<<"\n";
   out<<"meta source_mode "<<fSourceMode<<"\n";
-  out<<"meta spectrum_file "<<(fOpts.spectrumFile.empty()?"builtin":fOpts.spectrumFile)<<"\n";
+  out<<"meta spectrum_file "
+     <<(fOpts.caseDefinition && (fOpts.caseDefinition->responseIncident.enabled ||
+                                 !fOpts.caseDefinition->directIncidents.empty())
+          ? fOpts.caseDefinition->sourceFormat
+          : fOpts.spectrumFile.empty()?"builtin":fOpts.spectrumFile)<<"\n";
   out<<"meta shield_material "<<(fSweepMode?fCurrentMat:fOpts.shieldMaterial)<<"\n";
   out<<"meta result_capability_status "
      <<(fOpts.caseDefinition
-          ? (fOpts.caseDefinition->sourceFormat=="ams02_hapi_component"
+          ? (fOpts.caseDefinition->schemaVersion=="shieldSim.case.v2"
+               ? "stage3_transport_engine_implemented_pending_independent_review_no_science_quantity_claim"
+               : fOpts.caseDefinition->sourceFormat=="ams02_hapi_component"
                ? "stage2_published_spectrum_transport_test_not_physical_validation"
                : "stage1_core_not_yet_quantity_validated")
           : "legacy_prototype")<<"\n";
@@ -917,10 +1063,42 @@ void RunAction::WriteRunSummary(G4int nEv){
         <<(append?" (appended block)":"")<<G4endl;
 }
 
+shield_sim::Json RunAction::BuildRawScoreCovarianceJson(G4int nEv) const {
+  // Covariance is emitted for every upper-triangular score pair, including
+  // exact zeros. A sparse event-product accumulator keeps runtime proportional
+  // to scores present in an event; missing cross-products are mathematically
+  // zero because absent scores contribute zero for that primary history.
+  shield_sim::Json::Array covariance;
+  if(nEv<=0) return shield_sim::Json(std::move(covariance));
+  for(auto first=fRawScores.begin();first!=fRawScores.end();++first){
+    for(auto second=first;second!=fRawScores.end();++second){
+      const auto product=fRawCrossProducts.find({first->first,second->first});
+      const double sumProducts=product==fRawCrossProducts.end()?0.0:product->second;
+      double sampleCovariance=nEv>1
+          ? (sumProducts-first->second.sum*second->second.sum/nEv)/(nEv-1.0) : 0.0;
+      if(first==second) sampleCovariance=std::max(0.0,sampleCovariance);
+      const auto firstUnit=fRawScoreUnits.find(first->first);
+      const auto secondUnit=fRawScoreUnits.find(second->first);
+      covariance.emplace_back(shield_sim::Json::Object{
+        {"covariance_of_mean",sampleCovariance/nEv},
+        {"histories",static_cast<double>(nEv)},
+        {"sample_covariance",sampleCovariance},
+        {"score_id_i",first->first},{"score_id_j",second->first},
+        {"sum_products",sumProducts},
+        {"unit",(firstUnit==fRawScoreUnits.end()?"unknown":firstUnit->second)+
+                    std::string(" * ")+
+                    (secondUnit==fRawScoreUnits.end()?"unknown":secondUnit->second)}});
+    }
+  }
+  return shield_sim::Json(std::move(covariance));
+}
+
 void RunAction::WriteResultJson(G4int nEv){
   if(!fOpts.caseDefinition || !fAccuracyController) return;
   const auto& c=*fOpts.caseDefinition;
-  const std::string validationStatus = c.sourceFormat=="ams02_hapi_component"
+  const std::string validationStatus = c.schemaVersion=="shieldSim.case.v2"
+      ? "implemented_stage3_transport_raw_not_physically_validated"
+      : c.sourceFormat=="ams02_hapi_component"
       ? "stage2_published_spectrum_transport_test_not_physical_validation"
       : "implemented_not_physically_validated_stage1";
   const auto& absorber=c.absorbers.at(fOpts.activeAbsorberIndex);
@@ -1027,14 +1205,37 @@ void RunAction::WriteResultJson(G4int nEv){
     });
   }
 
+  shield_sim::Json::Array rawScores;
+  for(const auto& item:fRawScores){
+    const double n=nEv;
+    const double mean=n>0.0?item.second.sum/n:0.0;
+    const double variance=n>1.0?std::max(0.0,(item.second.sumSquares-
+        item.second.sum*item.second.sum/n)/(n-1.0)):0.0;
+    const auto unit=fRawScoreUnits.find(item.first);
+    rawScores.emplace_back(shield_sim::Json::Object{
+      {"histories",n},{"mean_per_primary",mean},{"sample_variance",variance},
+      {"score_id",item.first},{"standard_error",n>0.0?std::sqrt(variance/n):0.0},
+      {"sum",item.second.sum},{"sum_squares",item.second.sumSquares},
+      {"unit",unit==fRawScoreUnits.end()?"declared_by_score":unit->second}});
+  }
+
   shield_sim::Json::Object result{
     {"absorber_geometry_hash",absorber.geometryHash}, {"absorber_id",absorber.id},
     {"case_hash",c.caseHash}, {"code_revision",shield_sim_build::GitRevision},
     {"events",static_cast<double>(nEv)}, {"geant4_version",G4Version},
     {"geometry_hash",c.geometryHash}, {"material_library_hash",c.materials->ContentHash()},
     {"outputs",shield_sim::Json(std::move(outputs))}, {"physics_list",fOpts.physicsList},
+    {"ion_physics",c.ionPhysics},
+    {"energy_ledger_scope",shield_sim::Json(shield_sim::Json::Object{
+      {"absorber_deposition","Geant4 total, ionizing, and nonionizing deposited energy per primary"},
+      {"shield_crossings","kinetic energy only at the downstream stack boundary"},
+      {"secondary_births","count and initial kinetic energy grouped by production layer, particle, ancestry generation, and creator process"},
+      {"nuclear_rest_mass_and_q_values","not included in the kinetic/deposition closure; no global conservation claim is made"}})},
+    {"raw_transport_scores",shield_sim::Json(std::move(rawScores))},
+    {"raw_transport_score_covariance",BuildRawScoreCovarianceJson(nEv)},
     {"random_seed",static_cast<double>(fOpts.randomSeed)},
-    {"schema_version","shieldSim.result.v1"},
+    {"schema_version",c.schemaVersion=="shieldSim.case.v2"
+        ? "shieldSim.result.v2" : "shieldSim.result.v1"},
     {"source_component_id",c.sourceComponentId}, {"source_format",c.sourceFormat},
     {"source_hash",c.spectrum.contentHash},
     {"source_id",c.spectrum.id},
@@ -1055,4 +1256,95 @@ void RunAction::WriteResultJson(G4int nEv){
                 ("Cannot write result JSON '"+path+"'").c_str());
   out<<shield_sim::Json(std::move(result)).DumpCanonical()<<'\n';
   G4cout<<"Result JSON written: "<<path<<G4endl;
+}
+
+void RunAction::WriteResponseCellJson(G4int nEv){
+  if(!fOpts.caseDefinition || !fOpts.caseDefinition->responseIncident.enabled) return;
+  const auto& c=*fOpts.caseDefinition;
+  const auto& incident=c.responseIncident;
+  const auto& absorber=c.absorbers.at(fOpts.activeAbsorberIndex);
+
+  // The response key intentionally excludes incident energy/direction, random
+  // seed, history count, and output path: those identify a cell or realization,
+  // not the reusable transport configuration.  Conversely it includes every
+  // geometry/material/scoring/physics/build field whose change can alter a
+  // response.  This errs on the safe side: a different executable revision or
+  // data-library path invalidates reuse even if a later review finds it benign.
+  shield_sim::Json::Object dataLibraries;
+  for(const char* name:{"G4LEDATA","G4NEUTRONHPDATA","G4PARTICLEXSDATA","G4SAIDXSDATA",
+                        "G4ABLADATA","G4ENSDFSTATEDATA","G4INCLDATA","G4PIIDATA"}){
+    const char* value=std::getenv(name);
+    dataLibraries[name]=value?value:"not_set";
+  }
+  shield_sim::Json::Object keyDocument{
+    {"absorber_geometry_hash",absorber.geometryHash},
+    {"absorber_geometry_provider","slab.v1"},
+    {"build_type",shield_sim_build::BuildType},
+    {"code_revision",shield_sim_build::GitRevision},
+    {"compiler",shield_sim_build::Compiler},
+    {"compiler_flags",shield_sim_build::CompilerFlags},
+    {"geant4_data_libraries",shield_sim::Json(dataLibraries)},
+    {"geant4_version",G4Version},{"geometry_hash",c.geometryHash},
+    {"ion_physics",c.ionPhysics},{"material_library_hash",c.materials->ContentHash()},
+    {"max_step_mm",c.maxStepMm},{"physics_list",c.physicsList},
+    {"production_cut_mm",c.productionCutMm},
+    {"scoring_contract","shieldSim.transport_raw.v1"},
+    {"source_tree_state",shield_sim_build::GitState}
+  };
+  const std::string responseKey=shield_sim::Sha256(
+      shield_sim::Json(keyDocument).DumpCanonical());
+
+  shield_sim::Json::Array scores;
+  for(const auto& item:fRawScores){
+    const double n=nEv;
+    const double mean=n>0.0?item.second.sum/n:0.0;
+    const double variance=n>1.0?std::max(0.0,(item.second.sumSquares-
+        item.second.sum*item.second.sum/n)/(n-1.0)):0.0;
+    const auto unit=fRawScoreUnits.find(item.first);
+    scores.emplace_back(shield_sim::Json::Object{
+      {"histories",n},{"mean_per_primary",mean},{"sample_variance",variance},
+      {"score_id",item.first},{"standard_error",n>0.0?std::sqrt(variance/n):0.0},
+      {"sum",item.second.sum},{"sum_squares",item.second.sumSquares},
+      {"unit",unit==fRawScoreUnits.end()?"declared_by_score":unit->second}});
+  }
+
+  shield_sim::Json::Array secondaryLedgers;
+  for(const auto& item:fSecondaryLedgers){
+    const auto& ledger=item.second;
+    secondaryLedgers.emplace_back(shield_sim::Json::Object{
+      {"A",ledger.massNumber},{"Z",ledger.atomicNumber},
+      {"count",static_cast<double>(ledger.count)},
+      {"creator_process",ledger.creatorProcess},{"generation",ledger.generation},
+      {"initial_kinetic_energy_sum_MeV",ledger.initialKineticEnergyMeV},
+      {"layer_id",c.shieldLayers.at(ledger.layer).id},{"particle",ledger.particle},
+      {"pdg",ledger.pdg},{"root_particle",ledger.rootParticle}});
+  }
+
+  shield_sim::Json cell(shield_sim::Json::Object{
+    {"absorber_id",absorber.id},{"case_hash",c.caseHash},
+    {"histories",static_cast<double>(nEv)},
+    {"incident",shield_sim::Json(shield_sim::Json::Object{
+      {"A",incident.massNumber},{"Z",incident.atomicNumber},
+      {"energy_coordinate",incident.energyCoordinate},
+      {"energy_coordinate_unit",incident.energyCoordinateUnit},
+      {"energy_coordinate_value",incident.energyCoordinateValue},
+      {"incident_id",incident.incidentId},{"mu",incident.mu},
+      {"particle",incident.particleName},{"phi_rad",incident.phiRad},
+      {"total_kinetic_energy_MeV",incident.totalKineticEnergyMeV}})},
+    {"normalization","mean response per generated primary crossing the declared finite source plane"},
+    {"random_seed",static_cast<double>(c.randomSeed)},
+    {"response_key",responseKey},{"response_key_document",shield_sim::Json(std::move(keyDocument))},
+    {"schema_version","shieldSim.response_cell.v1"},
+    {"score_covariance",BuildRawScoreCovarianceJson(nEv)},
+    {"scores",shield_sim::Json(std::move(scores))},
+    {"secondary_production_by_layer",shield_sim::Json(std::move(secondaryLedgers))},
+    {"validation_status","implemented_stage3_transport_raw_not_physically_validated"}
+  });
+  const std::string path=fOpts.outputPrefix+"_response_cell.json";
+  std::ofstream out(path);
+  if(!out)
+    G4Exception("RunAction::WriteResponseCellJson","Output",FatalException,
+                ("Cannot write response cell JSON '"+path+"'").c_str());
+  out<<cell.DumpCanonical()<<'\n';
+  G4cout<<"Response cell written: "<<path<<G4endl;
 }

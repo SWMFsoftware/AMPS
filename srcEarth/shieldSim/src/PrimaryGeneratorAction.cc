@@ -12,6 +12,7 @@
 #include <G4ParticleDefinition.hh>
 #include <G4ParticleGun.hh>
 #include <G4ParticleTable.hh>
+#include <G4IonTable.hh>
 #include <G4PhysicalConstants.hh>
 #include <G4SystemOfUnits.hh>
 #include <G4ThreeVector.hh>
@@ -31,7 +32,14 @@ PrimaryGeneratorAction::PrimaryGeneratorAction(const Options& opts,
   : fOpts(opts), fRunAction(ra), fDetector(det)
 {
   fGun = new G4ParticleGun(1);
-  if(fOpts.caseDefinition)
+  if(fOpts.caseDefinition && (fOpts.caseDefinition->responseIncident.enabled ||
+                              !fOpts.caseDefinition->directIncidents.empty())){
+    // A response cell is exactly one declared species, total kinetic energy,
+    // and direction per history.  Its normalization is therefore one primary,
+    // not a physical environmental rate.
+    fSourceNormNoAngular=1.0;
+    fSourceAngularFactor=1.0;
+  } else if(fOpts.caseDefinition)
     ReadDataset(fOpts.caseDefinition->spectrum,
                 fOpts.caseDefinition->spectrum.spectrumPath);
   else if(fOpts.spectrumFile.empty()) BuildGCR();
@@ -50,8 +58,30 @@ G4double PrimaryGeneratorAction::GetSourceNorm() const { return fSourceNormNoAng
 const std::string& PrimaryGeneratorAction::GetSourceMode() const { return fOpts.sourceMode; }
 
 void PrimaryGeneratorAction::GeneratePrimaries(G4Event* ev) {
+  if(fOpts.caseDefinition && fOpts.caseDefinition->responseIncident.enabled){
+    const auto& incident=fOpts.caseDefinition->responseIncident;
+    fActiveIncident=&incident;
+    ConfigureSourcePositionAndDirection();
+    GenerateDeclaredIncident(incident,ev);
+    return;
+  }
+  if(fOpts.caseDefinition && !fOpts.caseDefinition->directIncidents.empty()){
+    const double draw=G4UniformRand();
+    double cumulative=0.0;
+    const shield_sim::WeightedResponseIncident* selected=&fOpts.caseDefinition->directIncidents.back();
+    for(const auto& candidate:fOpts.caseDefinition->directIncidents){
+      cumulative+=candidate.weight;
+      if(draw<cumulative){ selected=&candidate; break; }
+    }
+    fActiveIncident=&selected->incident;
+    ConfigureSourcePositionAndDirection();
+    GenerateDeclaredIncident(selected->incident,ev);
+    return;
+  }
+
   // Query the current world dimensions every event because sweep mode can
   // rebuild the geometry between runs.
+  fActiveIncident=nullptr;
   ConfigureSourcePositionAndDirection();
 
   // Species selection is proportional to the species-integrated source weights.
@@ -84,6 +114,25 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* ev) {
   fGun->SetParticleDefinition(pd);
   fGun->SetParticleEnergy(E*MeV);
   fGun->GeneratePrimaryVertex(ev);
+}
+
+void PrimaryGeneratorAction::GenerateDeclaredIncident(
+    const shield_sim::ResponseIncidentDefinition& incident,G4Event* event){
+  G4ParticleDefinition* particle=nullptr;
+  if(incident.particleName=="proton" || incident.particleName=="alpha")
+    particle=G4ParticleTable::GetParticleTable()->FindParticle(incident.particleName);
+  else
+    particle=G4IonTable::GetIonTable()->GetIon(incident.atomicNumber,incident.massNumber,0.0);
+  if(!particle)
+    G4Exception("PrimaryGeneratorAction","ResponseParticle",FatalException,
+                "Cannot construct the declared Stage-3 incident particle");
+  const G4double energy=incident.totalKineticEnergyMeV;
+  RecordSourceDiagnostic(particle->GetParticleName(),energy);
+  if(incident.particleName=="proton") RecordInput(true,energy);
+  else if(incident.particleName=="alpha") RecordInput(false,energy);
+  fGun->SetParticleDefinition(particle);
+  fGun->SetParticleEnergy(energy*MeV);
+  fGun->GeneratePrimaryVertex(event);
 }
 
 G4double PrimaryGeneratorAction::AngularFactorForMode() const {
@@ -262,34 +311,55 @@ void PrimaryGeneratorAction::ConfigureSourcePositionAndDirection(){
   }
 
   const G4double eps = 1.0*um;
-  const G4double z0  = fDetector ? fDetector->GetSourcePlaneZ()
-                                 : -worldBox->GetZHalfLength()+eps;
+  const G4ThreeVector origin=fDetector ? fDetector->GetSourcePlaneOrigin()
+      : G4ThreeVector(0,0,-worldBox->GetZHalfLength()+eps);
+  const G4ThreeVector axisX=fDetector ? fDetector->GetSourcePlaneAxisX()
+                                      : G4ThreeVector(1,0,0);
+  const G4ThreeVector axisY=fDetector ? fDetector->GetSourcePlaneAxisY()
+                                      : G4ThreeVector(0,1,0);
+  const G4ThreeVector normal=fDetector ? fDetector->GetSourcePlaneNormal()
+                                       : G4ThreeVector(0,0,1);
+
+  if(fOpts.sourceMode=="directional_plane"){
+    const G4double halfX=fDetector?fDetector->GetSourcePlaneHalfX():worldBox->GetXHalfLength();
+    const G4double halfY=fDetector?fDetector->GetSourcePlaneHalfY():worldBox->GetYHalfLength();
+    const G4double x=(2.0*G4UniformRand()-1.0)*std::max(0.0,halfX-eps);
+    const G4double y=(2.0*G4UniformRand()-1.0)*std::max(0.0,halfY-eps);
+    if(!fActiveIncident)
+      G4Exception("PrimaryGeneratorAction","DirectionalIncident",FatalException,
+                  "directional_plane source has no selected incident node");
+    const auto& incident=*fActiveIncident;
+    const G4double transverse=std::sqrt(std::max(0.0,1.0-incident.mu*incident.mu));
+    fLastSourcePosition=origin+x*axisX+y*axisY;
+    fLastSourceDirection=(transverse*std::cos(incident.phiRad))*axisX+
+                         (transverse*std::sin(incident.phiRad))*axisY+
+                         incident.mu*normal;
+    fLastSourceDirection=fLastSourceDirection.unit();
+    fGun->SetParticlePosition(fLastSourcePosition);
+    fGun->SetParticleMomentumDirection(fLastSourceDirection);
+    return;
+  }
 
   if(fOpts.sourceMode=="isotropic"){
     const G4double halfX = fDetector ? fDetector->GetSourcePlaneHalfX()
                                      : worldBox->GetXHalfLength();
     const G4double halfY = fDetector ? fDetector->GetSourcePlaneHalfY()
                                      : worldBox->GetYHalfLength();
-    const G4double centerX=fDetector ? fDetector->GetSourcePlaneCenterX() : 0.0;
-    const G4double centerY=fDetector ? fDetector->GetSourcePlaneCenterY() : 0.0;
-    const G4double x = centerX+(2.0*G4UniformRand()-1.0)*std::max(0.0,halfX-eps);
-    const G4double y = centerY+(2.0*G4UniformRand()-1.0)*std::max(0.0,halfY-eps);
+    const G4double x = (2.0*G4UniformRand()-1.0)*std::max(0.0,halfX-eps);
+    const G4double y = (2.0*G4UniformRand()-1.0)*std::max(0.0,halfY-eps);
 
     // Isotropic intensity crossing a plane has p(mu)=2*mu for mu in [0,1].
     const G4double mu  = std::sqrt(G4UniformRand());
     const G4double phi = twopi*G4UniformRand();
     const G4double sinTheta = std::sqrt(std::max(0.0,1.0-mu*mu));
-    const G4ThreeVector dir(sinTheta*std::cos(phi),
-                            sinTheta*std::sin(phi),
-                            mu);
-    fLastSourcePosition = G4ThreeVector(x,y,z0);
-    fLastSourceDirection = dir;
+    fLastSourcePosition = origin+x*axisX+y*axisY;
+    fLastSourceDirection = ((sinTheta*std::cos(phi))*axisX+
+                            (sinTheta*std::sin(phi))*axisY+mu*normal).unit();
     fGun->SetParticlePosition(fLastSourcePosition);
     fGun->SetParticleMomentumDirection(fLastSourceDirection);
   } else {
-    fLastSourcePosition = G4ThreeVector(fDetector?fDetector->GetSourcePlaneCenterX():0.0,
-                                        fDetector?fDetector->GetSourcePlaneCenterY():0.0,z0);
-    fLastSourceDirection = G4ThreeVector(0,0,1);
+    fLastSourcePosition = origin;
+    fLastSourceDirection = normal.unit();
     fGun->SetParticlePosition(fLastSourcePosition);
     fGun->SetParticleMomentumDirection(fLastSourceDirection);
   }

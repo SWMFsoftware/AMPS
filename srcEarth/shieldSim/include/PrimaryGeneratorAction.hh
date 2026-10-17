@@ -37,7 +37,7 @@ class G4Box;
 class G4Event;
 class G4ParticleGun;
 class RunAction;
-namespace shield_sim { struct SpectrumDataset; }
+namespace shield_sim { struct SpectrumDataset; struct ResponseIncidentDefinition; }
 
 class PrimaryGeneratorAction : public G4VUserPrimaryGeneratorAction {
 public:
@@ -106,6 +106,8 @@ private:
   void RecordInput(bool isProton,G4double E);
   void RecordSourceDiagnostic(const std::string& species,G4double E);
   G4Box* GetCurrentWorldBox() const;
+  void GenerateDeclaredIncident(const shield_sim::ResponseIncidentDefinition& incident,
+                                G4Event* event);
 
   Options fOpts;
   RunAction* fRunAction=nullptr;
@@ -126,6 +128,7 @@ private:
   // verify beam and isotropic sampling without instrumenting Geant4 internals.
   G4ThreeVector fLastSourcePosition = G4ThreeVector(0.0,0.0,0.0);
   G4ThreeVector fLastSourceDirection = G4ThreeVector(0.0,0.0,1.0);
+  const shield_sim::ResponseIncidentDefinition* fActiveIncident=nullptr;
 };
 
 #endif // SHIELDSIM_PRIMARY_GENERATOR_ACTION_HH

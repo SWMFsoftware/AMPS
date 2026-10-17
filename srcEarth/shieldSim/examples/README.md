@@ -53,3 +53,43 @@ Changing the purpose to a mission assessment, choosing inclusive helium, or
 changing the source to `beam` is rejected. The alpha energy-limit block remains
 required by the v1 case schema but is unused because the admitted component is
 proton-only.
+
+## Stage-3 monoenergetic response-cell case
+
+`stage3_response_cell_case.json` demonstrates the verification-only
+`shieldSim.case.v2` contract:
+
+```bash
+./shieldSim --validate-case=../examples/stage3_response_cell_case.json
+./shieldSim --case=../examples/stage3_response_cell_case.json
+```
+
+The file uses explicit source-plane, shield-reference-surface, and
+absorber-reference-surface transforms. Translations carry units. The
+`rotation_quaternion_local_to_world` object uses scalar-first `(w,x,y,z)`, is
+unit-normalized, and actively rotates local axes into the world frame. For a
+slab, local `+z` points downstream; the absorber transform origin is the center
+of its upstream face rather than its volume center.
+
+The source creates one 100 MeV proton at `mu=1`, `phi=0` per history. The
+two-layer Al/HDPE stack and silicon slab produce a
+`*_response_cell.json` containing response moments per generated primary,
+primary/secondary ancestry, per-layer production diagnostics, and a complete
+response-cache key. The only permitted requested quantity is `transport_raw`.
+These are verification tallies and are not validated TID, DDD, `n_eq`, LET,
+hardness, device, organ, or instrument outputs.
+
+To create additional grid cells, copy the case and change only the declared
+`incident_id`, species, energy, and/or direction. Do not change geometry,
+materials, physics, cuts, step limits, build, or Geant4 data when assembling
+the cells into one matrix; the response tool will reject any such key change.
+Protons use `name: proton, Z: 1, A: 1`, He-4 uses
+`name: alpha, Z: 2, A: 4`, and another isotope uses `name: ion` plus explicit
+`Z,A`. Both total kinetic energy and kinetic energy per nucleon are supported
+when their unit is declared.
+
+A direct cross-check replaces the monoenergetic spectrum object with
+`format: discrete_response_nodes` and a normalized list of exact node
+definitions plus weights. The Stage-3 CTest driver generates examples of this
+form under `test_output/stage3_transport_runs/`; generated test cases do not
+belong in this source directory.

@@ -215,7 +215,8 @@ std::string QuantityCatalogText(){
   out<<"    LET       LET spectrum of transmitted protons/alphas binned in MeV cm^2/mg using a Bethe-Bloch estimate.\n";
   out<<"    H100/10   Primary-proton shield-exit fluence(E>100 MeV) / fluence(E>10 MeV).\n";
   out<<"               Uses exact crossing energy; excludes secondaries, alphas, and neutrons.\n";
-  out<<"    Stage gate Versioned shieldSim.case.v1 enables TID and H100/10 only; legacy DDD/n_eq/LET are unvalidated compatibility diagnostics.\n";
+  out<<"    Stage gate case.v1 enables explicitly unvalidated TID and H100/10; case.v2 enables transport_raw verification tallies only.\n";
+  out<<"               Legacy DDD/n_eq/LET remain unvalidated compatibility diagnostics.\n";
   out<<"\n  Selection syntax\n";
   out<<"  ----------------\n";
   out<<"    --quantities=all                         compute all quantities (default)\n";

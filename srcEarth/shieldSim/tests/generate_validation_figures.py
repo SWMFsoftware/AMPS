@@ -542,6 +542,9 @@ def main() -> int:
     transport = load_evidence("stage1_transport_smoke.json")
     stage2 = load_evidence("stage2_source_adapters.json")
     published_transport = load_evidence("stage2_published_transport.json")
+    stage3_core = load_evidence("stage3_core.json")
+    stage3_weights = load_evidence("stage3_response_weights.json")
+    stage3_transport = load_evidence("stage3_transport.json")
     entries: list[dict] = []
 
     comparison_figure(
@@ -576,6 +579,34 @@ def main() -> int:
         "normalization consumed by the full case/Geant4/proxy run. This closes the executable "
         "source boundary; it does not validate transport physics or make BR2460 a complete "
         "mission GCR environment.",
+        entries,
+    )
+    comparison_figure(
+        stage3_core,
+        "Stage 3 exact geometry and response algebra",
+        "stage3_core_analytic",
+        "Analytic slab volume/mass and hand-calculated response folding/covariance values are "
+        "compared with the deterministic Stage-3 implementation. Numerical assertions, not the "
+        "image, define pass/fail; no transport-physics validation is claimed.",
+        entries,
+    )
+    comparison_figure(
+        stage3_transport,
+        "Stage 3 transport equivalence and convergence",
+        "stage3_transport_comparisons",
+        "Five-seed single/split and direct/matrix-fold comparisons are shown with the final "
+        "response-grid, cut, step, and transverse-size refinements. The numerical test enforces "
+        "the preregistered uncertainty/equivalence limits. These are raw transport-engine "
+        "acceptance checks pending independent review, not validation of a science quantity.",
+        entries,
+    )
+    comparison_figure(
+        stage3_weights,
+        "Stage 3 response-grid interpolation algebra",
+        "stage3_response_weights_analytic",
+        "The production matrix assembler, explicit-weight builder, and folder are compared with "
+        "an analytic tensor response affine in log-energy, mu, and periodic phi. Exact-node, "
+        "extrapolation, and incomplete-grid rejection are asserted separately.",
         entries,
     )
 
@@ -675,6 +706,9 @@ def main() -> int:
         "stage2_goes16_observation_event",
         "stage2_goes16_analytic_comparisons",
         "crater_observation_reference",
+        "stage3_core_analytic",
+        "stage3_transport_comparisons",
+        "stage3_response_weights_analytic",
     }
     require(
         {pathlib.Path(item["file"]).stem for item in entries} == expected_stems,

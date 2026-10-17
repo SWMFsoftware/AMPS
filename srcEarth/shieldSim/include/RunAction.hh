@@ -18,6 +18,7 @@
 #include <G4Types.hh>
 
 #include <fstream>
+#include <map>
 #include <string>
 #include <vector>
 #include <memory>
@@ -25,7 +26,7 @@
 class DetectorConstruction;
 class G4LogicalVolume;
 class G4Run;
-namespace shield_sim { class AccuracyController; }
+namespace shield_sim { class AccuracyController; class Json; }
 
 class RunAction : public G4UserRunAction {
 public:
@@ -63,6 +64,18 @@ public:
   // their non-negative difference.
   void AddEdep(std::size_t i,G4double totalEdep,G4double nonIonizingEdep);
   void AddPrimaryProtonExit(G4double kineticEnergyMeV);
+  // Raw Stage-3 transport scores.  Each call updates the current primary
+  // history; EndEvent commits one independent sample, including implicit zero
+  // values for histories in which a score is absent.
+  void RecordShieldExit(const std::string& particle,int pdg,int atomicNumber,
+                        int massNumber,bool primary,const std::string& rootParticle,
+                        int generation,G4double kineticEnergyMeV);
+  void RecordLayerStep(std::size_t layer,G4double totalEdep,
+                       G4double nonIonizingEdep,G4double trackLength);
+  void RecordSecondaryBirth(std::size_t layer,const std::string& particle,
+                            int pdg,int atomicNumber,int massNumber,
+                            const std::string& rootParticle,int generation,
+                            const std::string& creatorProcess,G4double kineticEnergyMeV);
   void BeginEvent();
   void EndEvent();
   bool AccuracyStatisticallySatisfied() const;
@@ -92,6 +105,7 @@ public:
 
   void RefreshLVPointers();
   G4LogicalVolume*                     GetShieldLV() const;
+  const std::vector<G4LogicalVolume*>& GetShieldLVs() const;
   const std::vector<G4LogicalVolume*>& GetScoringLVs() const;
 
   void BeginOfRunAction(const G4Run*) override;
@@ -110,6 +124,8 @@ private:
   void WriteLETSpectrumTecplot(G4int nEv);
   void WriteRunSummary(G4int nEv);
   void WriteResultJson(G4int nEv);
+  void WriteResponseCellJson(G4int nEv);
+  shield_sim::Json BuildRawScoreCovarianceJson(G4int nEv) const;
   G4double ComputeHardnessIndex(G4int nEv) const;
 
   Options                     fOpts;
@@ -136,6 +152,8 @@ private:
   G4double                    fPrimaryProtonAbove10=0.0;
   G4double                    fPrimaryProtonAbove100=0.0;
   std::vector<G4double>       fEventEdepIonizing;
+  std::vector<G4double>       fEventEdepTotal;
+  std::vector<G4double>       fEventEdepNonIonizing;
   bool                        fEventPrimaryProtonAbove10=false;
   bool                        fEventPrimaryProtonAbove100=false;
   std::unique_ptr<shield_sim::AccuracyController> fAccuracyController;
@@ -143,6 +161,32 @@ private:
   bool                        fCumulativeMode=false;
   bool                        fAccumulationStarted=false;
   std::vector<G4double>       fInP,fInA,fOutP,fOutA,fOutN;
+
+  struct RawMoments {
+    double sum = 0.0;
+    double sumSquares = 0.0;
+  };
+  struct SecondaryLedger {
+    long count = 0;
+    double initialKineticEnergyMeV = 0.0;
+    std::size_t layer = 0;
+    std::string particle;
+    int pdg = 0;
+    int atomicNumber = 0;
+    int massNumber = 0;
+    std::string rootParticle;
+    int generation = 0;
+    std::string creatorProcess;
+  };
+  std::map<std::string,double> fEventRawScores;
+  std::map<std::string,RawMoments> fRawScores;
+  // Sum of event-level products for every score pair that was jointly
+  // nonzero. Missing products are exactly zero; together with each score sum
+  // this is sufficient to reconstruct sample covariance including histories
+  // where either score was zero.
+  std::map<std::pair<std::string,std::string>,double> fRawCrossProducts;
+  std::map<std::string,std::string> fRawScoreUnits;
+  std::map<std::string,SecondaryLedger> fSecondaryLedgers;
 
   G4double    fSourceNormNoAngular=0.0;
   G4double    fSourceAngularFactor=1.0;
