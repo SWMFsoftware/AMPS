@@ -17,7 +17,7 @@ No UVIS CH₄ fit is made. The UVIS products in this archive constrain H₂O abs
 - Three-geometry fits: [`ch4_20261016`](/data/vtenishe/cassini_validation_data/studies/ch4_20261016).
 - Profiles including the one cross-channel-rejected E14 event, retained only for sensitivity testing: [`ch4_20261016_including_flagged`](/data/vtenishe/cassini_validation_data/studies/ch4_20261016_including_flagged).
 - Processing: [`prepare_ch4_fit_data.py`](/data/vtenishe/cassini_validation_data/scripts/prepare_ch4_fit_data.py).
-- Fitting: [`run_ch4_fitting_study.py`](/data/vtenishe/cassini_validation_data/scripts/run_ch4_fitting_study.py).
+- Fitting: [`run_ch4_fitting_study.py`](/home/vtenishe/Mars2/AMPS/srcEnceladus/standalone/run_ch4_fitting_study.py).
 - Cross-geometry summary: [`summarize_ch4_study.py`](/data/vtenishe/cassini_validation_data/scripts/summarize_ch4_study.py).
 - Verification checks: [`test_ch4_release.py`](/data/vtenishe/cassini_validation_data/tests/test_ch4_release.py).
 
@@ -271,15 +271,26 @@ No formal Gaussian confidence interval is quoted for the global rate because it 
 
 ## 9. Commands
 
-From `/data/vtenishe/cassini_validation_data`:
+Prepare the calibrated profiles from `/data/vtenishe/cassini_validation_data`:
 
 ```bash
 python3 scripts/prepare_ch4_fit_data.py --validation-data-root /data/vtenishe/cassini_validation_data
-python3 scripts/run_ch4_fitting_study.py --validation-data-root /data/vtenishe/cassini_validation_data --source-case tenishev2014_hybrid_8 --output-dir studies/ch4_20261016/tenishev2014_hybrid_8
-python3 scripts/run_ch4_fitting_study.py --validation-data-root /data/vtenishe/cassini_validation_data --source-case porco2014_98 --output-dir studies/ch4_20261016/porco2014_98
-python3 scripts/run_ch4_fitting_study.py --validation-data-root /data/vtenishe/cassini_validation_data --source-case portyankina2022_solar_41 --output-dir studies/ch4_20261016/portyankina2022_solar_41
-python3 scripts/summarize_ch4_study.py
 python3 -m pytest -q tests/test_ch4_release.py
+```
+
+Then run the plume fits from
+`/home/vtenishe/Mars2/AMPS/srcEnceladus/standalone`:
+
+```bash
+.venv/bin/python run_ch4_fitting_study.py --validation-data-root /data/vtenishe/cassini_validation_data --source-case tenishev2014_hybrid_8 --output-dir /data/vtenishe/cassini_validation_data/studies/ch4_20261016/tenishev2014_hybrid_8
+.venv/bin/python run_ch4_fitting_study.py --validation-data-root /data/vtenishe/cassini_validation_data --source-case porco2014_98 --output-dir /data/vtenishe/cassini_validation_data/studies/ch4_20261016/porco2014_98
+.venv/bin/python run_ch4_fitting_study.py --validation-data-root /data/vtenishe/cassini_validation_data --source-case portyankina2022_solar_41 --output-dir /data/vtenishe/cassini_validation_data/studies/ch4_20261016/portyankina2022_solar_41
+```
+
+Finally, generate the cross-geometry summary from the validation-data root:
+
+```bash
+python3 scripts/summarize_ch4_study.py
 ```
 
 If `pytest` is unavailable, the checks contain plain assertions and can be run without installing anything:

@@ -2,7 +2,7 @@
 
 ## 1. Case description
 
-This standalone application fits a steady, collisionless, gravity-free neutral plume to Cassini observations without building AMPS. It supports the `tenishev2014_hybrid_8` case (eight discrete jets, seven tiger-stripe line components, and two empirical backgrounds), the `porco2014_98` case, and the `portyankina2022_solar_41` case. The default source law is the production-normalized Tenishev (2010) point-source law. H2O is fitted to E3/E5 INMS density and the 2007/2010 UVIS occultations; CO2 is fitted to E3, E5, E14, E17, and E18. The local `e17_extra_jet_candidate.json` is an optional 99th-source sensitivity case and is never enabled unless `--extra-jet` is explicitly present.
+This standalone application fits a steady, collisionless, gravity-free neutral plume to Cassini observations without building AMPS. It supports the `tenishev2014_hybrid_8` case (eight discrete jets, seven tiger-stripe line components, and two empirical backgrounds), the `porco2014_98` case, and the `portyankina2022_solar_41` case. The default source law is the production-normalized Tenishev (2010) point-source law. H2O is fitted to E3/E5 INMS density and the 2007/2010 UVIS occultations; CO2 is fitted to E3, E5, E14, E17, and E18; and CH4-equivalent mass-15 profiles are fitted for E3, E5, E7, E14, E17, E18, and E21, with E14/E17/E18 forming the primary low-impact set. The local `e17_extra_jet_candidate.json` is an optional 99th-source sensitivity case and is never enabled unless `--extra-jet` is explicitly present.
 
 All observation products and generated results remain outside the code tree. `ENCELADUS_VALIDATION_DATA_ROOT` must point to the machine-local Cassini validation-data directory containing `data/processed/plume_fit_v1`, `data/processed/co2_fit_v1`, `data/derived/porco2014_jet_catalog.json`, and `studies`. Every fitting output is opened exclusively; select a new `RUN_TAG` or remove/move an unwanted prior run deliberately before repeating these commands.
 
@@ -49,6 +49,16 @@ mkdir -p "$ENCELADUS_VALIDATION_DATA_ROOT/studies/$RUN_TAG/single_fit"
 .venv/bin/python "$ENCELADUS_VALIDATION_DATA_ROOT/scripts/plot_co2_h2o_tidal_study.py" --co2-study-root "$ENCELADUS_VALIDATION_DATA_ROOT/studies/$RUN_TAG/co2" --h2o-study-root "$ENCELADUS_VALIDATION_DATA_ROOT/studies/$RUN_TAG/h2o_uvis" --output-dir "$ENCELADUS_VALIDATION_DATA_ROOT/studies/$RUN_TAG/co2/figures"
 ```
 
+### Run the CH4 mass-15 study for all three source cases
+
+The calibrated `ch4_fit_v1` profiles must already have been produced by the external-data calibration script. The fitting runner is part of this standalone model and resolves its configuration and model modules relative to its own location.
+
+```bash
+.venv/bin/python run_ch4_fitting_study.py --validation-data-root "$ENCELADUS_VALIDATION_DATA_ROOT" --source-case tenishev2014_hybrid_8 --output-dir "$ENCELADUS_VALIDATION_DATA_ROOT/studies/$RUN_TAG/ch4/tenishev2014_hybrid_8"
+.venv/bin/python run_ch4_fitting_study.py --validation-data-root "$ENCELADUS_VALIDATION_DATA_ROOT" --source-case porco2014_98 --output-dir "$ENCELADUS_VALIDATION_DATA_ROOT/studies/$RUN_TAG/ch4/porco2014_98"
+.venv/bin/python run_ch4_fitting_study.py --validation-data-root "$ENCELADUS_VALIDATION_DATA_ROOT" --source-case portyankina2022_solar_41 --output-dir "$ENCELADUS_VALIDATION_DATA_ROOT/studies/$RUN_TAG/ch4/portyankina2022_solar_41"
+```
+
 ### Optional: reproduce the E17 location search
 
 ```bash
@@ -70,6 +80,7 @@ The complete run is written below `$ENCELADUS_VALIDATION_DATA_ROOT/studies/$RUN_
 - `single_fit/` contains the two independent default-hybrid JSON results. Each records the resolved configuration, component rates, modeled density, residuals, rank and conditioning diagnostics, metadata, and input hashes.
 - `h2o_uvis/<source-case>/` contains `study_results.json`, `fitting_study.md`, component and source-rate CSV tables, cross-prediction and ablation tables, and `fit_profiles.png`/`.pdf`. `h2o_uvis/` also receives the cross-case comparison products from `compare_source_case_studies.py`.
 - `co2/<source-case>/` contains five observed/model CO2 profiles, all fitted-rate strategies, H2O/CO2 ratio and H2O-proxy tables, diagnostics, and `co2_fit_profiles.png`/`.pdf`. `co2/figures/` contains CO2 and direct-plus-proxy H2O plots versus mean anomaly, second-focus angle, and crack-opening proxy.
+- `ch4/<source-case>/` contains independent, shared-primary, and shared-low-speed CH4 source-rate fits, mass-13 cross-channel diagnostics, uncertainty sensitivities, `study_results.json`, `ch4_source_rates.csv`, and observed/model profile figures in PNG and PDF formats.
 - `e17_extra_jet_search/` contains the surface and tiger-stripe searches, time-window and direction sensitivity tables, cross-flyby tests, JSON provenance, and PNG/PDF figures. The selected location is a diagnostic candidate and not an independent vent detection.
 - `porco99/h2o_uvis/` and `porco99/co2/` contain complete 99-source refits. `porco99/comparison_98_vs_99/` contains the 31 direct 98-versus-99 comparisons, strategy summaries, heatmaps, and `comparison_report.md`.
 

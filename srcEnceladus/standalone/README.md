@@ -457,6 +457,7 @@ can legitimately become worse.
 | `plume_fit.py` | strict data/metadata checks, command-line interface, hashes, and JSON result writing |
 | `joint_fitting_study.py` | E3/E5 and UVIS independent fits, instrument-separated and all-data combined shape fits, fixed-shape/per-observation rate fits, ablations, cross-predictions, plots, and machine-readable report |
 | `co2_fitting_study.py` | E3/E5/E14/E17/E18 mass-44 fits, E3+E5 and all-CO2 shared shapes, H2O/CO2 rate ratios, fragmentation brackets, and H2O proxy tables |
+| `run_ch4_fitting_study.py` | Fits externally calibrated INMS mass-15 CH4-equivalent profiles with independent, shared-primary, and shared-low-speed source shapes |
 | `extra_jet_e17_study.py` | constrained E17 extra-jet location search, direction/window sensitivity, and five-flyby CO2 transfer tests |
 | `compare_extra_jet_studies.py` | verified 98-versus-99 comparison over every H2O INMS, UVIS, and CO2 observation and every source-shape strategy |
 | `validation_paths.py` | portable CLI/environment resolution of the external validation-data tree |
