@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "candidate_id": "e17_candidate_baghdad",
+  "frame": "IAU_ENCELADUS",
+  "base_source_case": "porco2014_98",
+  "variant_name": "porco2014_98_plus_e17_candidate",
+  "source": {
+    "id": "e17_candidate_baghdad",
+    "latitude_deg": -88.6656758069028,
+    "west_longitude_deg": 296.3659691955733,
+    "tilt_deg": 0.0,
+    "azimuth_deg": 0.0,
+    "temperature_K": 180.0,
+    "bulk_speed_m_s": 1500.0,
+    "source_law": "tenishev2010_point",
+    "sulcus": "baghdad",
+    "geometry_role": "E17_CO2_selected_candidate"
+  },
+  "selection": {
+    "target": "E17 mass-44/CO2 closest-approach feature",
+    "time_window_s": [-2.5, 2.5],
+    "constraint": "radial source sampled on modeled tiger-stripe polylines",
+    "nearest_porco_source": "porco_042",
+    "nearest_porco_angular_distance_deg": 0.5458560825946729
+  },
+  "provenance": {
+    "study_result_relative_to_validation_data_root": "studies/e17_extra_jet_20261015/study_results.json",
+    "study_result_sha256": "134980f5ffd74d6fc9ebbd9aad4cc39f8702a980a8ef368fd695d032c4c198e0",
+    "interpretation": "Development candidate selected on E17, not an independent geological jet detection."
+  }
+}

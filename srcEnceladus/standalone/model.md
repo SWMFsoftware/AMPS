@@ -63,10 +63,13 @@ The primary modules are:
 | `tools/spice_ground_tracks.cpp` | CSPICE calculation of flyby states and ellipsoidal ground tracks. |
 | `tools/spice_observer_ranges.cpp` | CSPICE reconstruction of finite Cassini-to-Sun UVIS ray geometry. |
 
-Observation data and derived catalogs remain outside the code tree under
-`/data/vtenishe/cassini_validation_data`. No observation directory is inferred
-by the code; paths are supplied explicitly by CLI options or the documented
-environment variables.
+Observation data and derived catalogs remain outside the code tree. Their
+machine-dependent root is supplied with `--validation-data-root` or
+`ENCELADUS_VALIDATION_DATA_ROOT`. The code resolves only the documented
+`data/processed/plume_fit_v1`, `data/processed/co2_fit_v1`, and
+`data/derived/porco2014_jet_catalog.json` locations beneath that root.
+File-specific CLI inputs override these defaults; no user-specific absolute
+path is embedded in the model.
 
 ## Units, frame, and geometry conventions
 
@@ -424,14 +427,16 @@ refits all 41 rates. Directions are local outward normals following that
 calculation. The other 57 Porco jets are not proven inactive; the 41-source
 list is one selected nonnegative basis.
 
-The 98- and 41-jet cases require:
+The 98- and 41-jet cases conventionally use:
 
 ```text
-/data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json
+${ENCELADUS_VALIDATION_DATA_ROOT}/data/derived/porco2014_jet_catalog.json
 ```
 
-The path can be supplied with `--jet-catalog`, by `jet_catalog_file` in a
-copied configuration, or by `ENCELADUS_JET_CATALOG`.
+Supply the parent tree with `--validation-data-root` or
+`ENCELADUS_VALIDATION_DATA_ROOT`. The catalog can instead be overridden with
+`--jet-catalog`, by `jet_catalog_file` in a copied configuration, or by
+`ENCELADUS_JET_CATALOG`.
 
 ## Observation operators
 
@@ -572,6 +577,184 @@ Equation (22f) additionally assumes an orbit-invariant intrinsic source
 composition. Its interval is a model sensitivity range, not a confidence
 interval. With only E3 and E5 in common, a two-point Pearson or Spearman
 coefficient cannot establish correlation strength and is not reported.
+
+### E17 extra-jet inverse problem
+
+The selected candidate definition is stored locally in
+`e17_extra_jet_candidate.json` and is never loaded implicitly. It becomes a
+99th source only when `--extra-jet e17_extra_jet_candidate.json` is supplied.
+See `EXTRA_JET_SEARCH.md` for the complete search rationale, commands, and
+results.
+
+The E17 sensitivity study does not append a 99th freely fitted coefficient to
+the original ill-conditioned 98-column inversion. Instead it begins with the
+all-CO2 shared source shape. If \(s_i\) are its nonnegative source
+coefficients, the normalized shape and its density signature are
+
+\[
+\bar s_i=\frac{s_i}{\sum_{k=1}^{98}s_k},
+\qquad
+B_j=\sum_{i=1}^{98}\bar s_i K_{ji}, \tag{22g}
+\]
+
+where \(K_{ji}\) is the density at E17 sample \(j\) per fitted unit of
+production from catalog jet \(i\). Thus one coefficient multiplying \(B_j\)
+is the total rate of the established 98-jet pattern.
+
+For a trial extra jet with geometry
+
+\[
+\boldsymbol\theta=(\phi,\lambda,\delta,\alpha), \tag{22h}
+\]
+
+where \(\phi\) is planetocentric latitude, \(\lambda\) is west longitude,
+\(\delta\) is tilt from the local normal, and \(\alpha\) is clockwise azimuth
+from north, equations (1)--(22a) give its unit-rate density signature
+\(J_j(\boldsymbol\theta)\). The candidate has the same source temperature,
+bulk speed, molecular mass, and source law as the controlled Porco case.
+
+For a declared closest-approach half-window \(\Delta t\), the location
+objective is the profiled nonnegative weighted least-squares problem
+
+\[
+\chi^2_W(\boldsymbol\theta)=
+\min_{q_b,q_e,c_0,a\ge0}
+\sum_{j:\,|t_j|\le\Delta t}
+\left[
+\frac{q_bB_j+q_eJ_j(\boldsymbol\theta)+c_0+a(r_j/R)^p-y_j}
+     {\sigma_j}
+\right]^2 . \tag{22i}
+\]
+
+Here \(q_b\) is the total coefficient of the established shape and \(q_e\)
+is the extra-jet coefficient. All four linear coefficients are re-solved for
+every trial geometry. Because there are at most four columns, the
+implementation enumerates every active set and solves its weighted linear
+least-squares problem. This produces the exact nonnegative solution without
+introducing optimizer-tolerance noise into the surface scan.
+
+The primary search imposes \(\delta=0\); azimuth is then irrelevant, and the
+source position is sampled along the seven modeled polyline pieces that make
+up the four tiger stripes. The maximum angular spacing is 0.025 degree in the
+checked run. An unconstrained radial sensitivity scan allows latitude over
+the southern envelope occupied by the 98-source catalog and longitude over
+\([0,360^\circ)\). Fits with \(\Delta t=1.5\), 2.5, and 4.0 s measure
+sensitivity to the analyst-selected feature window. A secondary
+four-parameter search permits tilts from zero through the maximum published
+Porco tilt and uses multiple deterministic random seeds. These unconstrained
+searches are identifiability diagnostics, not the primary vent estimate.
+
+After selecting the primary radial geometry, every complete CO2 profile is
+tested in two ways. The flexible cross-flyby test solves
+
+\[
+\min_{q_{b,k},q_{e,k},c_{0,k},a_k\ge0}\chi^2_k, \tag{22j}
+\]
+
+so that another encounter can support the same position with a different
+rate. The stricter transfer test first obtains
+
+\[
+\rho_{17}=q_{e,17}/q_{b,17} \tag{22k}
+\]
+
+from the full E17 profile, then replaces the two source columns for flyby
+\(k\) by the single mixture \(B_{j,k}+\rho_{17}J_{j,k}\). Only its overall
+rate and the backgrounds are refitted. This asks whether the complete
+E17-derived spatial mixture transfers, rather than merely whether an extra
+nonnegative column can reduce another profile's residual.
+
+The E17 geometry and rate are selected using E17 itself. Its improvement is
+therefore a development diagnostic subject to a surface-search
+look-elsewhere effect. Counting-error weights also omit common calibration
+and model-discrepancy terms. Consequently \(\Delta\chi^2\) is reported as a
+fit diagnostic, not converted to a formal detection significance. Strong
+window dependence or separated geometries with nearly equal objective values
+precludes identification of a unique physical vent.
+
+### Complete 99-source refit and cross-observation test
+
+The location search in equations (22g)--(22k) intentionally freezes the
+relative 98-source pattern so candidate geometry can be screened without
+allowing 98 nuisance amplitudes to rearrange at every surface point. After the
+primary Baghdad location is selected, the definitive follow-up is a separate
+nested inverse problem. The candidate is appended to the catalog as source
+99, its geometry and thermodynamic parameters are fixed, and the complete
+baseline fitting workflow is repeated.
+
+For observation \(d\), define the augmented source matrix
+
+\[
+\mathbf K_d^{(99)}=
+\begin{bmatrix}\mathbf K_d^{(98)}&\mathbf j_d\end{bmatrix},
+\qquad
+\mathbf q_d^{(99)}=
+\begin{bmatrix}\mathbf q_d^{(98)}\\q_{e,d}\end{bmatrix}, \tag{22l}
+\]
+
+where \(\mathbf j_d\) is the candidate's unit-production signature evaluated
+with the appropriate operator: local H2O or CO2 density for INMS and an H2O
+line-of-sight column for UVIS. The independent fit is
+
+\[
+(\widehat{\mathbf q}_d,\widehat{\mathbf b}_d)=
+\arg\min_{\mathbf q_d\ge0,\,\mathbf b_d\ge0}
+\left\|\mathbf W_d
+\left(\mathbf K_d^{(99)}\mathbf q_d+
+      \mathbf H_d\mathbf b_d-\mathbf y_d\right)\right\|_2^2, \tag{22m}
+\]
+
+where \(\mathbf H_d\) contains the observation-specific empirical background
+columns and \(\mathbf W_d=\operatorname{diag}(1/\sigma_{d,j})\). Unlike the
+screening fit, every established source amplitude is free in (22m).
+
+The same augmented matrices are used for each shared-shape strategy. A
+training set \(D_s\) first supplies one nonnegative vector \(\mathbf q_s\) by
+the balanced objective
+
+\[
+\widehat{\mathbf q}_s=
+\arg\min_{\mathbf q\ge0,\{\mathbf b_d\ge0\}}
+\sum_{d\in D_s}\frac{1}{N_d}
+\left\|\mathbf W_d
+\left(\mathbf K_d^{(99)}\mathbf q+
+      \mathbf H_d\mathbf b_d-\mathbf y_d\right)\right\|_2^2. \tag{22n}
+\]
+
+The physical-source part is normalized to
+\(\mathbf f_s=\widehat{\mathbf q}_s/
+\sum_{i=1}^{99}\widehat q_{s,i}\). Each target then refits one total source
+rate \(Q_{d,s}\), along with its backgrounds,
+
+\[
+(\widehat Q_{d,s},\widehat{\mathbf b}_{d,s})=
+\arg\min_{Q\ge0,\,\mathbf b\ge0}
+\left\|\mathbf W_d
+\left(Q\mathbf K_d^{(99)}\mathbf f_s+
+      \mathbf H_d\mathbf b-\mathbf y_d\right)\right\|_2^2. \tag{22o}
+\]
+
+The candidate diagnostics are its normalized fraction \(f_{e,s}\) and its
+absolute inferred rate \(Q_{d,s}f_{e,s}\). The comparison uses
+
+\[
+\Delta\chi^2_{d,s}=\chi^2_{98,d,s}-\chi^2_{99,d,s}, \tag{22p}
+\]
+
+so a positive value denotes improvement. For any *training* objective the
+99-source feasible set contains the complete 98-source feasible set at
+\(q_e=0\); its exact optimum therefore cannot be worse. A negative training
+\(\Delta\chi^2\) is consequently evidence of numerical sensitivity in the
+severely ill-conditioned nonnegative inversion. This nesting statement does
+not apply to a target cross-predicted from a shape trained on other data,
+which may legitimately improve or worsen when that trained shape changes.
+
+The checked independent results find a resolved improvement primarily for E17
+CO2 (\(\Delta\chi^2=3.40154\)); the other four CO2 profiles and E3/E5 H2O are
+unchanged to numerical precision. UVIS 2010 improves modestly, UVIS 2007
+changes slightly in the opposite direction, and the shared-shape solutions
+give the candidate essentially zero weight. Therefore the complete refit does
+not support treating the candidate as a globally required persistent vent.
 
 ### UVIS line-of-sight columns
 
@@ -1158,7 +1341,9 @@ The application requires Python 3, NumPy, SciPy, Matplotlib, and Pillow. It was
 tested with Python 3.8.10, NumPy 1.24.4, SciPy 1.10.1, and Pillow 10.4.0.
 
 ```bash
-cd /home/vtenishe/Mars2/AMPS/srcEnceladus/standalone
+cd /path/to/AMPS/srcEnceladus/standalone
+export ENCELADUS_VALIDATION_DATA_ROOT=/absolute/path/to/cassini_validation_data
+
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
@@ -1171,16 +1356,16 @@ default `CSPICE_ROOT` is `/home/vtenishe/SPICE/cspice`.
 The simplest command fits the default hybrid model to E3:
 
 ```bash
-cd /home/vtenishe/Mars2/AMPS/srcEnceladus/standalone
+cd /path/to/AMPS/srcEnceladus/standalone
 
 python3 plume_fit.py \
   --config config/tenishev2014_stage0.json \
-  --observations /data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1/e3_h2o_sticking_corrected.csv \
-  --metadata /data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1/e3_h2o_sticking_corrected.metadata.json \
+  --validation-data-root "$ENCELADUS_VALIDATION_DATA_ROOT" \
+  --flyby e3 \
   --output /tmp/e3_hybrid_fit.json
 ```
 
-The E5 command substitutes `e5` in the two input names and output name.
+The E5 command uses `--flyby e5` and a new output name.
 `plume_fit.py` refuses to overwrite an existing output file.
 
 Select another source case explicitly:
@@ -1189,9 +1374,8 @@ Select another source case explicitly:
 python3 plume_fit.py \
   --config config/tenishev2014_stage0.json \
   --source-case porco2014_98 \
-  --jet-catalog /data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json \
-  --observations /data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1/e3_h2o_sticking_corrected.csv \
-  --metadata /data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1/e3_h2o_sticking_corrected.metadata.json \
+  --validation-data-root "$ENCELADUS_VALIDATION_DATA_ROOT" \
+  --flyby e3 \
   --output /tmp/e3_porco98_fit.json
 ```
 
@@ -1218,14 +1402,13 @@ The result includes:
 Run one source case into a new directory:
 
 ```bash
-cd /home/vtenishe/Mars2/AMPS/srcEnceladus/standalone
+cd /path/to/AMPS/srcEnceladus/standalone
 
 python3 joint_fitting_study.py \
   --config config/tenishev2014_stage0.json \
   --source-case tenishev2014_hybrid_8 \
-  --jet-catalog /data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json \
-  --data-root /data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1 \
-  --output-dir /data/vtenishe/cassini_validation_data/studies/my_new_study/tenishev2014_hybrid_8 \
+  --validation-data-root "$ENCELADUS_VALIDATION_DATA_ROOT" \
+  --output-dir "$ENCELADUS_VALIDATION_DATA_ROOT/studies/my_new_study/tenishev2014_hybrid_8" \
   --quadrature-order 192
 ```
 
@@ -1235,12 +1418,12 @@ for the hybrid case but can be left in a common scripted command.
 Run all three cases:
 
 ```bash
-cd /home/vtenishe/Mars2/AMPS/srcEnceladus/standalone
+cd /path/to/AMPS/srcEnceladus/standalone
 
 MODEL_CONFIG=config/tenishev2014_stage0.json
-FIT_DATA=/data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1
-JET_CATALOG=/data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json
-STUDY_ROOT=/data/vtenishe/cassini_validation_data/studies/my_new_study
+FIT_DATA=${ENCELADUS_VALIDATION_DATA_ROOT}/data/processed/plume_fit_v1
+JET_CATALOG=${ENCELADUS_VALIDATION_DATA_ROOT}/data/derived/porco2014_jet_catalog.json
+STUDY_ROOT=${ENCELADUS_VALIDATION_DATA_ROOT}/studies/my_new_study
 mkdir -p "$STUDY_ROOT"
 
 for SOURCE_CASE in \
@@ -1557,11 +1740,11 @@ The tidal analysis is stored with the external Cassini data because it
 combines fit products, orbital phases, and literature metadata:
 
 ```bash
-cd /data/vtenishe/cassini_validation_data
+cd ${ENCELADUS_VALIDATION_DATA_ROOT}
 
 python3 scripts/plot_tidal_proxy_correlation.py \
-  --fit-study-root /data/vtenishe/cassini_validation_data/studies/source_shape_tidal_20261014 \
-  --output-dir /data/vtenishe/cassini_validation_data/studies/my_tidal_analysis \
+  --fit-study-root ${ENCELADUS_VALIDATION_DATA_ROOT}/studies/source_shape_tidal_20261014 \
+  --output-dir ${ENCELADUS_VALIDATION_DATA_ROOT}/studies/my_tidal_analysis \
   --proxy opening \
   --phase-lag-deg 0
 ```
@@ -1595,11 +1778,11 @@ build/spice_ground_tracks LSK PCK SPK TAG UTC_REFERENCE T0 T1 DT OUTPUT.csv
 Rebuild the 2010 UVIS observer geometry using its metakernel:
 
 ```bash
-cd /data/vtenishe/cassini_validation_data/data/raw/spice/metakernels
+cd ${ENCELADUS_VALIDATION_DATA_ROOT}/data/raw/spice/metakernels
 
 /home/vtenishe/Mars2/AMPS/srcEnceladus/standalone/build/spice_observer_ranges \
   cas_uvis_2010_e10_solar.tm \
-  /data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1/uvis_2010_e10_solar_optical_depth.csv \
+  ${ENCELADUS_VALIDATION_DATA_ROOT}/data/processed/plume_fit_v1/uvis_2010_e10_solar_optical_depth.csv \
   /tmp/uvis_2010_e10_solar_observer_range.csv
 ```
 
@@ -1613,18 +1796,17 @@ Run the complete Python test suite with external-data checks enabled:
 ```bash
 cd /home/vtenishe/Mars2/AMPS/srcEnceladus/standalone
 
-ENCELADUS_PLUME_FIT_DATA=/data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1 \
-ENCELADUS_JET_CATALOG=/data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json \
-  python3 -m unittest discover -s tests -v
+export ENCELADUS_VALIDATION_DATA_ROOT=/absolute/path/to/cassini_validation_data
+python3 -m unittest discover -s tests -v
 ```
 
 Perform syntax checks:
 
 ```bash
 python3 -m py_compile \
-  plume_model.py fitting.py plume_fit.py joint_fitting_study.py \
-  co2_fitting_study.py \
-  compare_source_case_studies.py
+  plume_model.py fitting.py validation_paths.py plume_fit.py \
+  joint_fitting_study.py co2_fitting_study.py extra_jet_e17_study.py \
+  compare_extra_jet_studies.py compare_source_case_studies.py
 ```
 
 The tests cover:

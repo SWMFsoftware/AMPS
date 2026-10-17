@@ -57,8 +57,12 @@ class FittingTests(unittest.TestCase):
 
     def test_digitized_profiles_have_published_peaks(self):
         location = os.environ.get("ENCELADUS_PLUME_FIT_DATA")
+        if not location and os.environ.get("ENCELADUS_VALIDATION_DATA_ROOT"):
+            location = str(Path(os.environ["ENCELADUS_VALIDATION_DATA_ROOT"])
+                           / "data" / "processed" / "plume_fit_v1")
         if not location:
-            self.skipTest("set ENCELADUS_PLUME_FIT_DATA to the external plume_fit_v1 directory")
+            self.skipTest(
+                "set ENCELADUS_VALIDATION_DATA_ROOT or ENCELADUS_PLUME_FIT_DATA")
         data_root = Path(location)
         for flyby, peak in (("e3", 7.6e13), ("e5", 3.4e14)):
             observations = data_root/(flyby+"_h2o_sticking_corrected.csv")

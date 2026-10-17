@@ -1,12 +1,31 @@
 # Enceladus Stage 0: standalone neutral-plume inference
 
-This directory implements Stage 0 of the Enceladus development plan: fit a
-steady, collisionless multi-source H2O plume to the Cassini INMS E3 and E5
-density profiles.  It is a separate Python application and neither builds nor
-links the AMPS numerical machinery.
+This directory is a self-contained Python application for constructing and
+fitting a steady multi-source Enceladus neutral plume. It implements Stage 0
+of the Enceladus roadmap and neither builds nor links the AMPS particle
+machinery. It evaluates production-normalized ballistic H2O or CO2 density,
+integrates UVIS lines of sight, fits nonnegative source amplitudes, compares
+source geometries and epochs, and records numerical and data provenance.
 
-See [`model.md`](model.md) for the complete physics, observation operators,
-inference method, assumptions, configuration reference, and run procedures.
+The implementation is operational and tested, but it is a development and
+inference model rather than a validated prediction of the complete plume. It
+is explicitly collisionless, gravity-free, steady, and source-geometry
+dependent. E3/E5 and the other observations used to infer source parameters
+are fitting data, not untouched validation cases.
+
+Documentation is divided by purpose:
+
+- this README provides the complete operational overview, model architecture,
+  physical equations, input contract, commands, outputs, tests, and limits;
+- [`model.md`](model.md) gives the publication-level mathematical derivation
+  of the density and column operators, fitting objective, tidal proxies, and
+  assumptions; and
+- [`EXTRA_JET_SEARCH.md`](EXTRA_JET_SEARCH.md) records why the E17 candidate
+  was investigated, the search objective and constraints, sensitivity tests,
+  complete 98-versus-99 refit, and interpretation limits.
+- [`RUN.d`](RUN.d) is the concise execution runbook: case definition, the
+  complete command sequence with one command per line, and the expected
+  output tree and products.
 
 The delivered reference configuration contains three selectable source cases.
 Its default legacy/hybrid case contains all three original neutral components:
@@ -16,6 +35,13 @@ Its default legacy/hybrid case contains all three original neutral components:
   by the 102 locations in the existing 2014 application table; and
 - an empirical background `c0 + a (r/R)^alpha`, with `alpha = -2` by default.
 
+The candidate in `e17_extra_jet_candidate.json` is **not included by
+default**. It is appended only when `--extra-jet
+e17_extra_jet_candidate.json` is supplied to a compatible fitting command.
+The default configuration remains `tenishev2014_hybrid_8`, while selecting
+`porco2014_98` without that option produces exactly the original 98-source
+basis.
+
 The H2O fit is useful for producing a Stage-1 source prescription and for
 exposing what E3/E5 can and cannot constrain. It is **not** an independent
 validation because E3/E5 are development/fitting flybys. The optional CO2
@@ -23,36 +49,69 @@ study also fits E14/E17/E18 in order to measure cross-epoch mass-44 variation;
 those flybys therefore cease to be untouched validation cases for any model
 or source geometry selected with that study.
 
+## Portable data-root input
+
+Observation products and generated studies remain outside this code directory.
+Their location is a runtime input rather than a machine-specific constant.
+Set it once on each machine:
+
+```bash
+export ENCELADUS_VALIDATION_DATA_ROOT=/absolute/path/to/cassini_validation_data
+```
+
+The fitting applications also accept the equivalent explicit input:
+
+```text
+--validation-data-root /absolute/path/to/cassini_validation_data
+```
+
+From that root the applications resolve these conventional inputs:
+
+| Purpose | Relative path |
+|---|---|
+| E3/E5 H2O and UVIS release | `data/processed/plume_fit_v1` |
+| Five-flyby CO2 release | `data/processed/co2_fit_v1` |
+| Porco/Portyankina catalog | `data/derived/porco2014_jet_catalog.json` |
+| Generated analyses | `studies/` |
+
+File-specific CLI options such as `--data-root`, `--co2-data-root`, and
+`--jet-catalog` override the conventional paths. This permits alternative
+releases without changing the code or reference model JSON. The legacy
+`ENCELADUS_PLUME_FIT_DATA` and `ENCELADUS_JET_CATALOG` variables remain
+supported for direct library/test compatibility, but the common validation
+root is preferred.
+
 ## Quick start
 
 The application requires Python 3, NumPy, SciPy, and Pillow.  The tested local
 environment is Python 3.8.10, NumPy 1.24.4, SciPy 1.10.1, and Pillow 10.4.0.
 
 ```bash
-cd /home/vtenishe/Mars2/AMPS/srcEnceladus/standalone
+cd /path/to/AMPS/srcEnceladus/standalone
+export ENCELADUS_VALIDATION_DATA_ROOT=/absolute/path/to/cassini_validation_data
+
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-ENCELADUS_PLUME_FIT_DATA=/data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1 \
-ENCELADUS_JET_CATALOG=/data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json \
-  python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s tests -v
 
 python3 plume_fit.py \
   --config config/tenishev2014_stage0.json \
-  --observations /data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1/e3_h2o_sticking_corrected.csv \
-  --metadata /data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1/e3_h2o_sticking_corrected.metadata.json \
+  --validation-data-root "$ENCELADUS_VALIDATION_DATA_ROOT" \
+  --flyby e3 \
   --output /tmp/e3_stage0_fit.json
 ```
 
-`--output` must name a new file.  Refusing to overwrite evidence is deliberate.
-The equivalent E5 command substitutes `e5` in the observation, metadata, and
-output names.  Reference outputs are retained in `results/e3_fit.json` and
+`--output` must name a new file. Refusing to overwrite evidence is deliberate.
+The equivalent E5 command uses `--flyby e5`. Explicit `--observations` and
+`--metadata` inputs remain available and take precedence over the flyby
+shortcut. Reference outputs are retained in `results/e3_fit.json` and
 `results/e5_fit.json`.
 
 ## External observation data
 
 Observation data are deliberately not stored in the AMPS source tree. The
 compact, verified release is stored at
-`/data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1/`. It
+`${ENCELADUS_VALIDATION_DATA_ROOT}/data/processed/plume_fit_v1/`. It
 contains:
 
 - the 79-point E3 and 79-point E5 Teolis sticking-corrected H2O profiles used
@@ -66,14 +125,14 @@ contains:
 
 The raw products, calibrated UVIS spectra, SPICE kernels, archive checksum
 manifests, and reproducibility scripts are also under
-`/data/vtenishe/cassini_validation_data`. The release's
+`${ENCELADUS_VALIDATION_DATA_ROOT}`. The release's
 `release_manifest.json` records checksums and the exact fit role of each table.
 
-The code never infers an observation directory. Supply the selected CSV and
-its metadata explicitly with `plume_fit.py --observations PATH --metadata
-PATH`. This makes alternate releases and machines selectable without embedding
-a filesystem location in the model. Use `python3 plume_fit.py --help` for the
-complete CLI.
+The code resolves only the documented relative layout beneath the supplied
+validation root; it never embeds or guesses a user-specific absolute path.
+Alternatively, supply a selected CSV and metadata explicitly with
+`plume_fit.py --observations PATH --metadata PATH`. Use `python3 plume_fit.py
+--help` for the complete CLI.
 
 The `plume_fit.py` interface consumes H2O-density tables. UVIS is handled by
 `joint_fitting_study.py`, and the calibrated mass-44 products are handled by
@@ -90,13 +149,13 @@ all-data-combined, source-family ablation, and cross-prediction study with:
 ```bash
 python3 joint_fitting_study.py \
   --config config/tenishev2014_stage0.json \
-  --data-root /data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1 \
-  --output-dir /data/vtenishe/cassini_validation_data/studies/my_fit \
+  --validation-data-root "$ENCELADUS_VALIDATION_DATA_ROOT" \
+  --output-dir "$ENCELADUS_VALIDATION_DATA_ROOT/studies/my_fit" \
   --quadrature-order 192
 ```
 
 The output directory must not already exist. The checked study is stored at
-`/data/vtenishe/cassini_validation_data/studies/e3_e5_uvis_fit/`; its
+`${ENCELADUS_VALIDATION_DATA_ROOT}/studies/e3_e5_uvis_fit/`; its
 `fitting_study.md` gives the scientific interpretation and its JSON/CSV files
 retain every fitted coefficient, per-dataset combined-objective contribution,
 diagnostic, input hash, and cross-prediction metric. `fit_profiles.png` and
@@ -119,10 +178,10 @@ Rebuild the 2010 finite-observer geometry with:
 
 ```bash
 make spice-observer-ranges CSPICE_ROOT=/home/vtenishe/SPICE/cspice
-cd /data/vtenishe/cassini_validation_data/data/raw/spice/metakernels
+cd ${ENCELADUS_VALIDATION_DATA_ROOT}/data/raw/spice/metakernels
 /home/vtenishe/Mars2/AMPS/srcEnceladus/standalone/build/spice_observer_ranges \
   cas_uvis_2010_e10_solar.tm \
-  /data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1/uvis_2010_e10_solar_optical_depth.csv \
+  ${ENCELADUS_VALIDATION_DATA_ROOT}/data/processed/plume_fit_v1/uvis_2010_e10_solar_optical_depth.csv \
   /tmp/uvis_2010_e10_solar_observer_range.csv
 ```
 
@@ -133,12 +192,12 @@ replacing that evidence product.
 ### Five-flyby CO2 and H2O/CO2 study
 
 The fit-ready CO2 release is outside the code tree at
-`/data/vtenishe/cassini_validation_data/data/processed/co2_fit_v1/`. It
+`${ENCELADUS_VALIDATION_DATA_ROOT}/data/processed/co2_fit_v1/`. It
 contains E3, E5, E14, E17, and E18 mass-44 profiles, PDS trajectory geometry,
 counting uncertainties, metadata, and checksums. Rebuild it with:
 
 ```bash
-cd /data/vtenishe/cassini_validation_data
+cd ${ENCELADUS_VALIDATION_DATA_ROOT}
 python3 scripts/prepare_co2_fit_data.py
 ```
 
@@ -163,15 +222,16 @@ Run one geometry case with:
 python3 co2_fitting_study.py \
   --config config/tenishev2014_stage0.json \
   --source-case tenishev2014_hybrid_8 \
-  --co2-data-root /data/vtenishe/cassini_validation_data/data/processed/co2_fit_v1 \
-  --h2o-study-result /data/vtenishe/cassini_validation_data/studies/source_shape_tidal_20261014/tenishev2014_hybrid_8/study_results.json \
-  --output-dir /data/vtenishe/cassini_validation_data/studies/my_co2/tenishev2014_hybrid_8
+  --validation-data-root "$ENCELADUS_VALIDATION_DATA_ROOT" \
+  --h2o-study-result "$ENCELADUS_VALIDATION_DATA_ROOT/studies/source_shape_tidal_20261014/tenishev2014_hybrid_8/study_results.json" \
+  --output-dir "$ENCELADUS_VALIDATION_DATA_ROOT/studies/my_co2/tenishev2014_hybrid_8"
 ```
 
-For `porco2014_98` or `portyankina2022_solar_41`, also pass:
+For `porco2014_98` or `portyankina2022_solar_41`, the catalog is resolved from
+the validation root. To use a different catalog, override it explicitly:
 
 ```bash
---jet-catalog /data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json
+--jet-catalog /path/to/alternate_jet_catalog.json
 ```
 
 The CO2 application performs three declared analyses:
@@ -200,7 +260,7 @@ After all three geometry cases have run, make the mean-anomaly,
 second-focus-angle, and opening-proxy figure suites with:
 
 ```bash
-cd /data/vtenishe/cassini_validation_data
+cd ${ENCELADUS_VALIDATION_DATA_ROOT}
 python3 scripts/plot_co2_h2o_tidal_study.py \
   --co2-study-root studies/my_co2 \
   --h2o-study-root studies/source_shape_tidal_20261014 \
@@ -217,7 +277,7 @@ Cassini data root.
 Prepare the fit-ready CO2 release:
 
 ```bash
-cd /data/vtenishe/cassini_validation_data
+cd ${ENCELADUS_VALIDATION_DATA_ROOT}
 python3 scripts/prepare_co2_fit_data.py
 ```
 
@@ -228,9 +288,9 @@ cd /home/vtenishe/Mars2/AMPS/srcEnceladus/standalone
 python3 co2_fitting_study.py \
   --config config/tenishev2014_stage0.json \
   --source-case tenishev2014_hybrid_8 \
-  --co2-data-root /data/vtenishe/cassini_validation_data/data/processed/co2_fit_v1 \
-  --h2o-study-result /data/vtenishe/cassini_validation_data/studies/source_shape_tidal_20261014/tenishev2014_hybrid_8/study_results.json \
-  --output-dir /data/vtenishe/cassini_validation_data/studies/co2_h2o_tidal/tenishev2014_hybrid_8
+  --validation-data-root "$ENCELADUS_VALIDATION_DATA_ROOT" \
+  --h2o-study-result "$ENCELADUS_VALIDATION_DATA_ROOT/studies/source_shape_tidal_20261014/tenishev2014_hybrid_8/study_results.json" \
+  --output-dir "$ENCELADUS_VALIDATION_DATA_ROOT/studies/co2_h2o_tidal/tenishev2014_hybrid_8"
 ```
 
 Run the 98-jet case:
@@ -239,10 +299,9 @@ Run the 98-jet case:
 python3 co2_fitting_study.py \
   --config config/tenishev2014_stage0.json \
   --source-case porco2014_98 \
-  --jet-catalog /data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json \
-  --co2-data-root /data/vtenishe/cassini_validation_data/data/processed/co2_fit_v1 \
-  --h2o-study-result /data/vtenishe/cassini_validation_data/studies/source_shape_tidal_20261014/porco2014_98/study_results.json \
-  --output-dir /data/vtenishe/cassini_validation_data/studies/co2_h2o_tidal/porco2014_98
+  --validation-data-root "$ENCELADUS_VALIDATION_DATA_ROOT" \
+  --h2o-study-result "$ENCELADUS_VALIDATION_DATA_ROOT/studies/source_shape_tidal_20261014/porco2014_98/study_results.json" \
+  --output-dir "$ENCELADUS_VALIDATION_DATA_ROOT/studies/co2_h2o_tidal/porco2014_98"
 ```
 
 Run the 41-jet solar-visible case:
@@ -251,16 +310,15 @@ Run the 41-jet solar-visible case:
 python3 co2_fitting_study.py \
   --config config/tenishev2014_stage0.json \
   --source-case portyankina2022_solar_41 \
-  --jet-catalog /data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json \
-  --co2-data-root /data/vtenishe/cassini_validation_data/data/processed/co2_fit_v1 \
-  --h2o-study-result /data/vtenishe/cassini_validation_data/studies/source_shape_tidal_20261014/portyankina2022_solar_41/study_results.json \
-  --output-dir /data/vtenishe/cassini_validation_data/studies/co2_h2o_tidal/portyankina2022_solar_41
+  --validation-data-root "$ENCELADUS_VALIDATION_DATA_ROOT" \
+  --h2o-study-result "$ENCELADUS_VALIDATION_DATA_ROOT/studies/source_shape_tidal_20261014/portyankina2022_solar_41/study_results.json" \
+  --output-dir "$ENCELADUS_VALIDATION_DATA_ROOT/studies/co2_h2o_tidal/portyankina2022_solar_41"
 ```
 
 Generate the combined H2O, CO2, and tidal-proxy figures:
 
 ```bash
-cd /data/vtenishe/cassini_validation_data
+cd ${ENCELADUS_VALIDATION_DATA_ROOT}
 python3 scripts/plot_co2_h2o_tidal_study.py \
   --co2-study-root studies/co2_h2o_tidal \
   --h2o-study-root studies/source_shape_tidal_20261014 \
@@ -274,6 +332,122 @@ cd /home/vtenishe/Mars2/AMPS/srcEnceladus/standalone
 python3 -m unittest discover -s tests -v
 ```
 
+### E17 closest-approach extra-jet study
+
+`extra_jet_e17_study.py` tests whether one additional Porco-like point source
+can reproduce the mass-44 feature at E17 closest approach. The established
+relative shape fitted jointly to all five CO2 flybys is held fixed. For every
+trial jet, the code refits only the total 98-jet rate, the extra-jet rate, and
+the two empirical backgrounds. This avoids allowing the original 98 source
+amplitudes to rearrange for every trial location.
+
+The complete rationale, objective function, search hierarchy, sensitivity
+tests, 98-versus-99 refit, and interpretation limits are in
+[`EXTRA_JET_SEARCH.md`](EXTRA_JET_SEARCH.md).
+
+The primary search is deliberately constrained to a locally radial jet. It
+uses the samples within 2.5 s of closest approach and searches the southern
+latitude range occupied by the Porco catalog. The program also:
+
+- repeats the radial search with 1.5, 2.5, and 4.0 s half-windows;
+- maps the radial-jet objective over the south polar terrain;
+- performs multiple free-direction searches, with the maximum tilt set by the
+  Porco catalog, to expose location/direction non-uniqueness;
+- refits an independent extra-jet rate to E3/E5/E14/E17/E18; and
+- tests transfer of the complete E17 baseline-to-extra source mixture to the
+  other four flybys.
+
+Run the checked study with:
+
+```bash
+cd /path/to/AMPS/srcEnceladus/standalone
+python3 extra_jet_e17_study.py \
+  --config config/tenishev2014_stage0.json \
+  --validation-data-root "$ENCELADUS_VALIDATION_DATA_ROOT" \
+  --co2-baseline-result "$ENCELADUS_VALIDATION_DATA_ROOT/studies/co2_h2o_tidal_20261015/porco2014_98/study_results.json" \
+  --output-dir "$ENCELADUS_VALIDATION_DATA_ROOT/studies/my_e17_extra_jet"
+```
+
+The output directory must not already exist. The checked reference run is at
+`${ENCELADUS_VALIDATION_DATA_ROOT}/studies/e17_extra_jet_20261015/`.
+
+The checked 2.5 s search constrained to the modeled tiger-stripe polylines
+gives a candidate on Baghdad Sulcus at planetocentric latitude `-88.6657 deg`
+and west longitude `296.3660 deg`, only 0.546 deg from Porco jet 42. It reduces
+the full-profile E17 chi-square from 10767.1 to 6067.2. An independently fitted
+amplitude at the same location also improves E5 by 562.4 in chi-square, is
+zero for E3 and E14, and gives only a 7.1 reduction for E18. Transferring the
+E17 extra-to-baseline rate ratio makes every other flyby substantially worse.
+The preferred location moves strongly when the fitting window is changed,
+and the free-direction search has separated nearly equivalent solutions.
+Therefore the result may indicate time-variable activity near the existing
+Baghdad source cluster, but it is not a unique new vent identification.
+
+The output directory contains:
+
+- `study_results.json`, including predictions, checksums, search bounds, and
+  interpretation limits;
+- `stripe_window_sensitivity.csv`, `radial_window_sensitivity.csv`,
+  `radial_location_scan.csv`, and `free_direction_solutions.csv`;
+- `cross_flyby_comparison.csv`;
+- `e17_extra_jet_fit.{png,pdf}`;
+- `radial_location_scan.{png,pdf}`; and
+- `cross_flyby_improvement.{png,pdf}` plus `report.md`.
+
+#### Complete 99-source refit after selecting the candidate
+
+The location search above is a controlled screening calculation that keeps the
+established 98-jet shape fixed. To measure the effect on every observation
+under the same procedure used for the published Porco case, append the checked
+candidate as source 99 and rerun both complete workflows:
+
+```bash
+cd /path/to/AMPS/srcEnceladus/standalone
+
+python3 joint_fitting_study.py \
+  --config config/tenishev2014_stage0.json \
+  --source-case porco2014_98 \
+  --validation-data-root "$ENCELADUS_VALIDATION_DATA_ROOT" \
+  --extra-jet e17_extra_jet_candidate.json \
+  --output-dir "$ENCELADUS_VALIDATION_DATA_ROOT/studies/my_99_source_h2o_uvis"
+
+python3 co2_fitting_study.py \
+  --config config/tenishev2014_stage0.json \
+  --source-case porco2014_98 \
+  --validation-data-root "$ENCELADUS_VALIDATION_DATA_ROOT" \
+  --extra-jet e17_extra_jet_candidate.json \
+  --h2o-study-result "$ENCELADUS_VALIDATION_DATA_ROOT/studies/my_99_source_h2o_uvis/study_results.json" \
+  --output-dir "$ENCELADUS_VALIDATION_DATA_ROOT/studies/my_99_source_co2"
+```
+
+Compare the augmented results against the corresponding 98-source studies:
+
+```bash
+python3 srcEnceladus/standalone/compare_extra_jet_studies.py \
+  --base-h2o-uvis ${ENCELADUS_VALIDATION_DATA_ROOT}/studies/source_shape_tidal_20261014/porco2014_98/study_results.json \
+  --augmented-h2o-uvis ${ENCELADUS_VALIDATION_DATA_ROOT}/studies/my_99_source_h2o_uvis/study_results.json \
+  --base-co2 ${ENCELADUS_VALIDATION_DATA_ROOT}/studies/co2_h2o_tidal_20261015/porco2014_98/study_results.json \
+  --augmented-co2 ${ENCELADUS_VALIDATION_DATA_ROOT}/studies/my_99_source_co2/study_results.json \
+  --output-dir ${ENCELADUS_VALIDATION_DATA_ROOT}/studies/my_98_vs_99_comparison
+```
+
+The checked complete run is in
+`${ENCELADUS_VALIDATION_DATA_ROOT}/studies/e17_extra_jet_all_observations_20261015/`.
+It contains 31 comparisons: four H2O/UVIS observations under four strategies
+and five CO2 flybys under three strategies. In the independent fits, E17 CO2
+improves by `Delta chi-square = 3.40154`; E3, E5, E14, and E18 CO2 and E3/E5
+H2O are unchanged to numerical precision. UVIS 2010 improves by 3.89155 in
+chi-square, while UVIS 2007 increases by 0.09343. The shared-shape fits assign
+essentially zero fraction to the candidate. Thus the full refit does not show
+that a persistent 99th source is required by all observations.
+
+The comparison report also exposes negative training-objective changes in a
+few highly ill-conditioned H2O/UVIS shared-shape solutions. Because the
+99-source model nests the 98-source model, such a negative improvement is an
+optimizer-sensitivity diagnostic, not a physical degradation caused by the
+candidate. Cross-prediction targets, whose shape was trained on other data,
+can legitimately become worse.
+
 ## Architecture
 
 | Path | Responsibility |
@@ -283,13 +457,17 @@ python3 -m unittest discover -s tests -v
 | `plume_fit.py` | strict data/metadata checks, command-line interface, hashes, and JSON result writing |
 | `joint_fitting_study.py` | E3/E5 and UVIS independent fits, instrument-separated and all-data combined shape fits, fixed-shape/per-observation rate fits, ablations, cross-predictions, plots, and machine-readable report |
 | `co2_fitting_study.py` | E3/E5/E14/E17/E18 mass-44 fits, E3+E5 and all-CO2 shared shapes, H2O/CO2 rate ratios, fragmentation brackets, and H2O proxy tables |
+| `extra_jet_e17_study.py` | constrained E17 extra-jet location search, direction/window sensitivity, and five-flyby CO2 transfer tests |
+| `compare_extra_jet_studies.py` | verified 98-versus-99 comparison over every H2O INMS, UVIS, and CO2 observation and every source-shape strategy |
+| `validation_paths.py` | portable CLI/environment resolution of the external validation-data tree |
 | `config/tenishev2014_stage0.json` | reference H2O physics, three source-case definitions, empirical background, and fit controls |
 | `data/published_stripes_2014.json` | seven IAU_ENCELADUS polylines, 102 nodes in metres |
-| `/data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json` | external 98-jet geometry, uncertainty metadata, and published 41-jet selection |
-| `/data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1/` | external verified E3/E5/UVIS joint-fit tables and release manifest |
-| `/data/vtenishe/cassini_validation_data/data/processed/co2_fit_v1/` | external calibrated mass-44/CO2 tables, PDS geometry matches, metadata, and release manifest |
-| `/data/vtenishe/cassini_validation_data/scripts/prepare_co2_fit_data.py` | reproducible E3/E5 high-speed calibration and later-flyby SwRI/PDS matching |
-| `/data/vtenishe/cassini_validation_data/scripts/plot_co2_h2o_tidal_study.py` | CO2 and CO2-derived H2O comparisons with the orbital opening proxy |
+| `${ENCELADUS_VALIDATION_DATA_ROOT}/data/derived/porco2014_jet_catalog.json` | external 98-jet geometry, uncertainty metadata, and published 41-jet selection |
+| `e17_extra_jet_candidate.json` | local, provenance-tracked Baghdad candidate appended only when `--extra-jet` is supplied |
+| `${ENCELADUS_VALIDATION_DATA_ROOT}/data/processed/plume_fit_v1/` | external verified E3/E5/UVIS joint-fit tables and release manifest |
+| `${ENCELADUS_VALIDATION_DATA_ROOT}/data/processed/co2_fit_v1/` | external calibrated mass-44/CO2 tables, PDS geometry matches, metadata, and release manifest |
+| `${ENCELADUS_VALIDATION_DATA_ROOT}/scripts/prepare_co2_fit_data.py` | reproducible E3/E5 high-speed calibration and later-flyby SwRI/PDS matching |
+| `${ENCELADUS_VALIDATION_DATA_ROOT}/scripts/plot_co2_h2o_tidal_study.py` | CO2 and CO2-derived H2O comparisons with the orbital opening proxy |
 | `tools/extract_stripe_geometry.py` | checked extraction of the legacy 2014 C++ geometry table |
 | `tools/build_teolis_profiles.py` | reproducible figure digitization and attachment of PDS V2 trajectory geometry |
 | `tools/spice_ground_tracks.cpp` | reusable CSPICE computation of Cassini states and ellipsoidal ground tracks |
@@ -422,7 +600,7 @@ into a new `--output-stem` while explicitly selecting the external release:
 
 ```bash
 python3 tools/plot_current_fits.py \
-  --data-root /data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1 \
+  --data-root ${ENCELADUS_VALIDATION_DATA_ROOT}/data/processed/plume_fit_v1 \
   --output-stem /tmp/figure3_current_stage0_fit
 ```
 
@@ -604,7 +782,7 @@ physically inactive.
 The Porco/Portyankina catalog deliberately remains outside the source tree at:
 
 ```text
-/data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json
+${ENCELADUS_VALIDATION_DATA_ROOT}/data/derived/porco2014_jet_catalog.json
 ```
 
 The recommended selection mechanism is the command line, which leaves the
@@ -614,23 +792,26 @@ reference configuration unchanged:
 python3 plume_fit.py \
   --config config/tenishev2014_stage0.json \
   --source-case porco2014_98 \
-  --jet-catalog /data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json \
-  --observations /data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1/e3_h2o_sticking_corrected.csv \
-  --metadata /data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1/e3_h2o_sticking_corrected.metadata.json \
+  --validation-data-root "$ENCELADUS_VALIDATION_DATA_ROOT" \
+  --flyby e3 \
   --output /tmp/e3_porco98_fit.json
 ```
 
-`jet_catalog_file` in a copied input JSON and the environment variable
-`ENCELADUS_JET_CATALOG` are equivalent alternatives to `--jet-catalog`.  The
-result records the resolved case, materialized source list, catalog path, and
-catalog SHA-256.  The empirical background setting is unchanged across the
-three cases; only the surface source architecture changes.
+`--validation-data-root` or `ENCELADUS_VALIDATION_DATA_ROOT` resolves the
+standard catalog automatically. `jet_catalog_file` in a copied input JSON and
+the environment variable `ENCELADUS_JET_CATALOG` remain equivalent
+file-specific alternatives to `--jet-catalog`. The result records the resolved
+case, materialized source list, catalog path, and catalog SHA-256. The
+empirical background setting is unchanged across the three cases; only the
+surface source architecture changes.
 
 Selection precedence is:
 
 1. `--source-case` overrides the top-level `source_case` in the JSON input;
 2. for Cases 2 and 3, `--jet-catalog` overrides `jet_catalog_file`, which in
-   turn overrides `ENCELADUS_JET_CATALOG`; and
+   turn overrides `ENCELADUS_JET_CATALOG`; if none is set, the catalog is
+   resolved below `--validation-data-root` or
+   `ENCELADUS_VALIDATION_DATA_ROOT`; and
 3. Case 1 ignores the catalog because all of its geometry is local.
 
 An input-only setup is also supported. Copy the reference JSON, set one of the
@@ -640,9 +821,14 @@ path:
 ```json
 {
   "source_case": "portyankina2022_solar_41",
-  "jet_catalog_file": "/data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json"
+  "jet_catalog_file": "/absolute/path/to/cassini_validation_data/data/derived/porco2014_jet_catalog.json"
 }
 ```
+
+JSON configuration values do not expand shell variables. Prefer the common
+validation-root input for portable run scripts; use `jet_catalog_file` only
+when an intentionally fixed absolute or configuration-relative catalog path
+is desired.
 
 Do not combine the 98- or 41-jet selections with the legacy line stripes in
 the same named case. A combined catalog-plus-continuous-stripe hypothesis
@@ -690,10 +876,10 @@ overwritten.
 cd /home/vtenishe/Mars2/AMPS/srcEnceladus/standalone
 
 MODEL_CONFIG=config/tenishev2014_stage0.json
-FIT_DATA=/data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1
-JET_CATALOG=/data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json
+FIT_DATA=${ENCELADUS_VALIDATION_DATA_ROOT}/data/processed/plume_fit_v1
+JET_CATALOG=${ENCELADUS_VALIDATION_DATA_ROOT}/data/derived/porco2014_jet_catalog.json
 RUN_TAG=source_cases_001
-FIT_OUTPUT=/data/vtenishe/cassini_validation_data/studies/${RUN_TAG}/inms
+FIT_OUTPUT=${ENCELADUS_VALIDATION_DATA_ROOT}/studies/${RUN_TAG}/inms
 mkdir -p "$FIT_OUTPUT"
 
 for SOURCE_CASE in \
@@ -735,10 +921,10 @@ study.
 cd /home/vtenishe/Mars2/AMPS/srcEnceladus/standalone
 
 MODEL_CONFIG=config/tenishev2014_stage0.json
-FIT_DATA=/data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1
-JET_CATALOG=/data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json
+FIT_DATA=${ENCELADUS_VALIDATION_DATA_ROOT}/data/processed/plume_fit_v1
+JET_CATALOG=${ENCELADUS_VALIDATION_DATA_ROOT}/data/derived/porco2014_jet_catalog.json
 RUN_TAG=source_cases_001
-STUDY_OUTPUT=/data/vtenishe/cassini_validation_data/studies/${RUN_TAG}/joint
+STUDY_OUTPUT=${ENCELADUS_VALIDATION_DATA_ROOT}/studies/${RUN_TAG}/joint
 mkdir -p "$STUDY_OUTPUT"
 
 for SOURCE_CASE in \
@@ -799,7 +985,7 @@ Markdown report, and PNG/PDF comparison figure with:
 
 ```bash
 python3 compare_source_case_studies.py \
-  --study-root /data/vtenishe/cassini_validation_data/studies/${RUN_TAG}/joint
+  --study-root ${ENCELADUS_VALIDATION_DATA_ROOT}/studies/${RUN_TAG}/joint
 ```
 
 The comparison tool verifies the three case identities, hashes each input
@@ -913,10 +1099,11 @@ unrepresented error, not a reason to inflate errors or declare validation.
 Run:
 
 ```bash
-ENCELADUS_PLUME_FIT_DATA=/data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1 \
-ENCELADUS_JET_CATALOG=/data/vtenishe/cassini_validation_data/data/derived/porco2014_jet_catalog.json \
-  python3 -m unittest discover -s tests -v
+export ENCELADUS_VALIDATION_DATA_ROOT=/absolute/path/to/cassini_validation_data
+python3 -m unittest discover -s tests -v
 python3 -m py_compile plume_model.py fitting.py plume_fit.py \
+  validation_paths.py joint_fitting_study.py co2_fitting_study.py \
+  extra_jet_e17_study.py compare_extra_jet_studies.py \
   tools/extract_stripe_geometry.py tools/build_teolis_profiles.py
 ```
 
@@ -935,6 +1122,10 @@ The tests require all of the following:
 - the reference configuration resolves 8 jets plus 7 stripes/102 nodes;
 - all three source cases resolve to exactly 8+7, 98, and 41 spatial components,
   and the 41-source case matches the published 2010 ID selection;
+- the packaged E17 candidate is opt-in and changes the Porco basis from 98 to
+  99 sources only after `append_extra_jet` is called;
+- command-line and environment validation roots resolve the documented
+  external-data layout, while explicit input paths take precedence;
 - both source-law selections propagate through all configured sources;
 - nonnegative inference recovers an independent synthetic linear fixture and
   reports unobservable columns; and
@@ -958,14 +1149,14 @@ python3 tools/extract_stripe_geometry.py \
 
 The extractor fails unless it finds exactly seven named fissures and 102 nodes.
 The qualified generated profiles live in
-`/data/vtenishe/cassini_validation_data/data/derived/inms_sticking_corrected/`.
+`${ENCELADUS_VALIDATION_DATA_ROOT}/data/derived/inms_sticking_corrected/`.
 To rebuild them into a new staging directory for comparison:
 
 ```bash
 mkdir -p /tmp/enceladus-stage0-profiles
 python3 tools/build_teolis_profiles.py \
   --pdf /home/vtenishe/Downloads/Tenishev-2010-JGR.pdf \
-  --inms-root /data/vtenishe/cassini_validation_data/data/raw/inms \
+  --inms-root ${ENCELADUS_VALIDATION_DATA_ROOT}/data/raw/inms \
   --output-dir /tmp/enceladus-stage0-profiles
 ```
 

@@ -16,11 +16,14 @@ from scipy.optimize import lsq_linear, nnls
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
-from fitting import (SOURCE_CASES, load_config, matrix_from_config,
+from fitting import (SOURCE_CASES, append_extra_jet, load_config, matrix_from_config,
                      solve_amplitudes, sources_from_config)  # noqa: E402
 from plume_fit import load_density  # noqa: E402
 from plume_model import (line_of_sight_design_matrix,
                          outward_ray_design_matrix)  # noqa: E402
+from validation_paths import (PLUME_FIT_RELATIVE,  # noqa: E402
+                              add_validation_root_argument,
+                              resolve_input_path, resolve_validation_root)
 
 
 def sha256(path):
@@ -474,15 +477,30 @@ def main():
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--source-case", choices=SOURCE_CASES)
     parser.add_argument("--jet-catalog", type=Path)
-    parser.add_argument("--data-root", type=Path, required=True)
+    parser.add_argument(
+        "--extra-jet", type=Path,
+        help="append one provenance-tracked development jet after resolving the base case")
+    add_validation_root_argument(parser)
+    parser.add_argument(
+        "--data-root", type=Path,
+        help="plume_fit_v1 directory; overrides the conventional validation-root location")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--quadrature-order", type=int, default=96)
     args = parser.parse_args()
+    try:
+        validation_root = resolve_validation_root(args.validation_data_root)
+        args.data_root = resolve_input_path(
+            args.data_root, validation_root, PLUME_FIT_RELATIVE, "--data-root")
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.output_dir.exists():
         parser.error("output directory already exists")
     args.output_dir.mkdir(parents=True)
 
-    config = load_config(args.config, args.source_case, args.jet_catalog)
+    config = load_config(args.config, args.source_case, args.jet_catalog,
+                         validation_root)
+    if args.extra_jet:
+        append_extra_jet(config, args.extra_jet)
     sources, full_labels = sources_from_config(config)
     source_labels = [label for label in full_labels
                      if label.startswith(("jet:", "stripe:"))]
@@ -844,6 +862,11 @@ def main():
                 ROOT/"plume_model.py")
         },
         "source_case": config["source_case"],
+        "source_variant": config.get("source_variant", config["source_case"]),
+        "extra_jet": config.get("_extra_jet_path"),
+        "extra_jet_sha256": (
+            sha256(config["_extra_jet_path"])
+            if config.get("_extra_jet_path") else None),
         "jet_catalog": config.get("_jet_catalog_path"),
         "jet_catalog_sha256": (
             sha256(config["_jet_catalog_path"])
@@ -885,7 +908,8 @@ def main():
         "UVIS is fitted in optical-depth-shape space and receives one external "
         "published column normalization per event.", "",
         "## Source case", "",
-        f"`{config['source_case']}` resolves to {jet_count} discrete jets, "
+        f"`{config.get('source_variant', config['source_case'])}` resolves to "
+        f"{jet_count} discrete jets, "
         f"{stripe_count} stripe components, and "
         f"{len(full_labels)-len(source_labels)} density-background components. "
         "All source amplitudes are refitted for each independent dataset; catalog "

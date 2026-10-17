@@ -6,7 +6,10 @@ import hashlib
 import json
 from pathlib import Path
 import numpy as np
-from fitting import SOURCE_CASES, fit_density, load_config
+from fitting import SOURCE_CASES, append_extra_jet, fit_density, load_config
+from validation_paths import (PLUME_FIT_RELATIVE,
+                              add_validation_root_argument,
+                              resolve_validation_root)
 
 
 def json_value(x):
@@ -58,13 +61,37 @@ def main():
     parser.add_argument(
         '--jet-catalog',
         help=('External Porco/Portyankina catalog JSON; alternatively set '
-              'jet_catalog_file or ENCELADUS_JET_CATALOG'))
-    parser.add_argument('--observations', required=True, help='Qualified density CSV; never L1A counts')
-    parser.add_argument('--metadata', required=True, help='Observation provenance/units/response JSON')
+              'jet_catalog_file, ENCELADUS_JET_CATALOG, or the common '
+              'validation-data root'))
+    parser.add_argument(
+        '--extra-jet',
+        help='append one provenance-tracked development jet after resolving the base case')
+    add_validation_root_argument(parser)
+    parser.add_argument(
+        '--flyby', choices=('e3', 'e5'),
+        help='derive the standard H2O observation and metadata paths from the validation root')
+    parser.add_argument('--observations', help='Qualified density CSV; never L1A counts')
+    parser.add_argument('--metadata', help='Observation provenance/units/response JSON')
     parser.add_argument('--output', required=True, help='New result JSON; existing files are refused')
     args = parser.parse_args()
     try:
-        config = load_config(args.config, args.source_case, args.jet_catalog)
+        validation_root = resolve_validation_root(args.validation_data_root)
+        if (args.observations is None) != (args.metadata is None):
+            raise ValueError('--observations and --metadata must be supplied together')
+        if args.observations is None:
+            if validation_root is None or args.flyby is None:
+                raise ValueError(
+                    'supply --observations and --metadata, or supply '
+                    '--validation-data-root with --flyby')
+            fit_root = validation_root/PLUME_FIT_RELATIVE
+            args.observations = fit_root/f'{args.flyby}_h2o_sticking_corrected.csv'
+            args.metadata = fit_root/f'{args.flyby}_h2o_sticking_corrected.metadata.json'
+        args.observations = Path(args.observations).expanduser().resolve()
+        args.metadata = Path(args.metadata).expanduser().resolve()
+        config = load_config(args.config, args.source_case, args.jet_catalog,
+                             validation_root)
+        if args.extra_jet:
+            append_extra_jet(config, args.extra_jet)
         x, y, sigma, metadata = load_density(args.observations, args.metadata)
         result = fit_density(config, x, y, sigma)
         result['observation_metadata'] = metadata
@@ -76,6 +103,8 @@ def main():
             provenance_files.append(config['_stripe_geometry_path'])
         if config.get('_jet_catalog_path'):
             provenance_files.append(config['_jet_catalog_path'])
+        if config.get('_extra_jet_path'):
+            provenance_files.append(config['_extra_jet_path'])
         result['provenance'] = {
             str(path): digest(path) for path in provenance_files}
         result['qualification'] = (

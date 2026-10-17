@@ -3,6 +3,7 @@ import math
 import os
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 import numpy as np
@@ -10,7 +11,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from fitting import SOURCE_CASES, load_config, sources_from_config  # noqa: E402
+from fitting import (SOURCE_CASES, append_extra_jet, load_config,  # noqa: E402
+                     sources_from_config)
 
 
 EXPECTED_41 = [
@@ -24,9 +26,12 @@ class SourceCaseTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         name = os.environ.get("ENCELADUS_JET_CATALOG")
+        if not name and os.environ.get("ENCELADUS_VALIDATION_DATA_ROOT"):
+            name = str(Path(os.environ["ENCELADUS_VALIDATION_DATA_ROOT"])
+                       / "data" / "derived" / "porco2014_jet_catalog.json")
         if not name:
             raise unittest.SkipTest(
-                "set ENCELADUS_JET_CATALOG to the external Porco catalog JSON")
+                "set ENCELADUS_VALIDATION_DATA_ROOT or ENCELADUS_JET_CATALOG")
         cls.catalog_path = Path(name)
         cls.catalog = json.loads(cls.catalog_path.read_text())
         cls.config_path = ROOT/"config"/"tenishev2014_stage0.json"
@@ -60,6 +65,43 @@ class SourceCaseTests(unittest.TestCase):
         self.assertAlmostEqual(
             float(np.dot(first.normal, first.axis)), math.cos(math.radians(28)),
             places=12)
+
+    def test_provenance_tracked_extra_jet_makes_99_source_variant(self):
+        config = load_config(
+            self.config_path, "porco2014_98", self.catalog_path)
+        document = {
+            "schema_version": 1,
+            "frame": "IAU_ENCELADUS",
+            "base_source_case": "porco2014_98",
+            "variant_name": "porco2014_98_plus_test_candidate",
+            "source": {
+                "id": "test_candidate", "latitude_deg": -88.0,
+                "west_longitude_deg": 296.0, "tilt_deg": 0.0,
+                "azimuth_deg": 0.0, "temperature_K": 180.0,
+                "bulk_speed_m_s": 1500.0,
+                "source_law": "tenishev2010_point",
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/"candidate.json"
+            path.write_text(json.dumps(document), encoding="utf-8")
+            append_extra_jet(config, path)
+        sources, labels = sources_from_config(config)
+        self.assertEqual(config["source_variant"], document["variant_name"])
+        self.assertEqual(config["resolved_source_case"]["jet_count"], 99)
+        self.assertEqual(len(sources), 99)
+        self.assertIn("jet:test_candidate", labels)
+
+    def test_packaged_e17_candidate_is_opt_in_and_makes_99_sources(self):
+        config = load_config(
+            self.config_path, "porco2014_98", self.catalog_path)
+        self.assertEqual(len(config["discrete_jets"]), 98)
+        append_extra_jet(config, ROOT/"e17_extra_jet_candidate.json")
+        sources, labels = sources_from_config(config)
+        self.assertEqual(len(sources), 99)
+        self.assertIn("jet:e17_candidate_baghdad", labels)
+        self.assertEqual(config["source_variant"],
+                         "porco2014_98_plus_e17_candidate")
 
     def test_portyankina_case_uses_exact_2010_selection_and_vertical_axes(self):
         config = load_config(

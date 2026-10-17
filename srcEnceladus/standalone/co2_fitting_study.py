@@ -19,11 +19,15 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
-from fitting import (SOURCE_CASES, load_config, matrix_from_config,  # noqa: E402
+from fitting import (SOURCE_CASES, append_extra_jet, load_config,  # noqa: E402
+                     matrix_from_config,
                      solve_amplitudes, sources_from_config)
 from joint_fitting_study import (fit_rate_for_fixed_source_shape,  # noqa: E402
                                  json_default, normalized_source_shape,
                                  solve_combined_blocks)
+from validation_paths import (CO2_FIT_RELATIVE,  # noqa: E402
+                              add_validation_root_argument,
+                              resolve_input_path, resolve_validation_root)
 
 
 CO2_MASS_KG = 44.0095 * 1.66053906660e-27
@@ -33,9 +37,9 @@ H2O_SCALE_FRACTION = 0.23
 FRAGMENTATION_RANGE = (2.0, 5.0)
 
 
-def sha256(path: Path) -> str:
+def sha256(path: Path | str) -> str:
     digest = hashlib.sha256()
-    with path.open("rb") as stream:
+    with Path(path).open("rb") as stream:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
@@ -149,16 +153,32 @@ def main() -> int:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--source-case", choices=SOURCE_CASES, required=True)
     parser.add_argument("--jet-catalog", type=Path)
-    parser.add_argument("--co2-data-root", type=Path, required=True)
+    parser.add_argument(
+        "--extra-jet", type=Path,
+        help="append one provenance-tracked development jet after resolving the base case")
+    add_validation_root_argument(parser)
+    parser.add_argument(
+        "--co2-data-root", type=Path,
+        help="co2_fit_v1 directory; overrides the conventional validation-root location")
     parser.add_argument("--h2o-study-result", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
+    try:
+        validation_root = resolve_validation_root(args.validation_data_root)
+        args.co2_data_root = resolve_input_path(
+            args.co2_data_root, validation_root, CO2_FIT_RELATIVE,
+            "--co2-data-root")
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.output_dir.exists():
         parser.error("output directory already exists")
     args.output_dir.mkdir(parents=True)
 
-    config = load_config(args.config, args.source_case, args.jet_catalog)
+    config = load_config(args.config, args.source_case, args.jet_catalog,
+                         validation_root)
     config = copy.deepcopy(config)
+    if args.extra_jet:
+        append_extra_jet(config, args.extra_jet)
     config["molecular_species"] = "CO2"
     config["molecular_mass_kg"] = CO2_MASS_KG
     sources, labels = sources_from_config(config)
@@ -207,8 +227,11 @@ def main() -> int:
         }
 
     h2o_result = json.loads(args.h2o_study_result.read_text(encoding="utf-8"))
+    source_variant = config.get("source_variant", args.source_case)
     if h2o_result.get("source_case") != args.source_case:
         raise ValueError("H2O study source case does not match CO2 source case")
+    if h2o_result.get("source_variant", h2o_result.get("source_case")) != source_variant:
+        raise ValueError("H2O study source variant does not match CO2 source variant")
     ratios = pair_h2o_co2(h2o_result, rate_strategies)
 
     rate_rows = []
@@ -218,7 +241,7 @@ def main() -> int:
             rate = float(fit["total_source_rate_s"])
             apparent = flyby in ("E3", "E5")
             rate_rows.append({
-                "source_case": args.source_case,
+                "source_case": source_variant,
                 "strategy": strategy,
                 "shape_training_datasets": result["shape_training_datasets"],
                 "flyby": flyby,
@@ -234,7 +257,7 @@ def main() -> int:
     ratio_rows = []
     for pairing, item in ratios.items():
         ratio_rows.append({
-            "source_case": args.source_case,
+            "source_case": source_variant,
             "pairing": pairing,
             "h2o_strategy": item["h2o_strategy"],
             "co2_strategy": item["co2_strategy"],
@@ -250,7 +273,7 @@ def main() -> int:
             co2_rate = float(rate_strategies[co2_strategy]["target_fits"][flyby]["total_source_rate_s"])
             low_ratio, high_ratio = item["actual_h2o_to_co2_ratio_fragmentation_bracket"]
             proxy_rows.append({
-                "source_case": args.source_case,
+                "source_case": source_variant,
                 "pairing": pairing,
                 "co2_strategy": co2_strategy,
                 "flyby": flyby,
@@ -285,7 +308,7 @@ def main() -> int:
         axis.grid(True, which="both", alpha=.2)
         axis.legend(fontsize=7)
     axes[-1].axis("off")
-    fig.suptitle(args.source_case + ": CO2 profile fits")
+    fig.suptitle(source_variant + ": CO2 profile fits")
     fig.savefig(args.output_dir / "co2_fit_profiles.png", dpi=190)
     fig.savefig(args.output_dir / "co2_fit_profiles.pdf")
     plt.close(fig)
@@ -293,6 +316,11 @@ def main() -> int:
     summary = {
         "study": "E3/E5/E14/E17/E18 CO2 source fitting and H2O composition transfer",
         "source_case": args.source_case,
+        "source_variant": source_variant,
+        "extra_jet": config.get("_extra_jet_path"),
+        "extra_jet_sha256": (
+            sha256(config["_extra_jet_path"])
+            if config.get("_extra_jet_path") else None),
         "config": str(args.config.resolve()),
         "config_sha256": sha256(args.config),
         "co2_molecular_mass_kg": CO2_MASS_KG,
@@ -321,7 +349,7 @@ def main() -> int:
 
     report = [
         "# CO2 fitting and H2O/CO2 transfer study", "",
-        f"Source geometry: `{args.source_case}`. CO2 is propagated with mass "
+        f"Source geometry: `{source_variant}`. CO2 is propagated with mass "
         f"{CO2_MASS_KG:.8e} kg at the same source temperature and bulk speed as H2O.", "",
         "## Fitted CO2 source rates", "",
         "Rates are molecules s^-1. E3/E5 values are apparent CO2; their actual "
@@ -351,7 +379,7 @@ def main() -> int:
                "`h2o_co2_source_rate_ratios.csv`, `h2o_proxy_source_rates.csv`, "
                "and `study_results.json`.", ""]
     (args.output_dir / "fitting_study.md").write_text("\n".join(report), encoding="utf-8")
-    print(json.dumps({"output": str(args.output_dir), "source_case": args.source_case,
+    print(json.dumps({"output": str(args.output_dir), "source_case": source_variant,
                       "ratios": ratios}, indent=2))
     return 0
 

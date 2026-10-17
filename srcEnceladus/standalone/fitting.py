@@ -18,13 +18,23 @@ SOURCE_CASES = (
 )
 
 
-def _external_path(config_path, configured, override, environment):
+def _external_path(config_path, configured, override, environment,
+                   validation_data_root=None):
     """Resolve an external data product without embedding it in the code tree."""
     name = override or configured or os.environ.get(environment)
     if not name:
+        root = (validation_data_root
+                if validation_data_root is not None
+                else os.environ.get("ENCELADUS_VALIDATION_DATA_ROOT"))
+        if root:
+            name = (Path(root).expanduser()/"data"/"derived"
+                    /"porco2014_jet_catalog.json")
+    if not name:
         raise ValueError(
             "Source case requires an external jet catalog; set jet_catalog_file, "
-            "pass --jet-catalog, or set "+environment)
+            "pass --jet-catalog, set "+environment+", or supply the common "
+            "validation root with --validation-data-root or "
+            "ENCELADUS_VALIDATION_DATA_ROOT")
     path = Path(name).expanduser()
     if not path.is_absolute():
         path = config_path.parent/path
@@ -112,7 +122,8 @@ def _materialize_catalog_case(config, catalog, source_case):
     }
 
 
-def load_config(path, source_case=None, jet_catalog_path=None):
+def load_config(path, source_case=None, jet_catalog_path=None,
+                validation_data_root=None):
     """Load JSON and resolve one of the three published source configurations."""
     config_path = Path(path).resolve()
     config = json.loads(config_path.read_text())
@@ -124,7 +135,7 @@ def load_config(path, source_case=None, jet_catalog_path=None):
     if selected_case != "tenishev2014_hybrid_8":
         catalog_path = _external_path(
             config_path, config.get("jet_catalog_file"), jet_catalog_path,
-            "ENCELADUS_JET_CATALOG")
+            "ENCELADUS_JET_CATALOG", validation_data_root)
         catalog = json.loads(catalog_path.read_text())
         _materialize_catalog_case(config, catalog, selected_case)
         config["_jet_catalog_path"] = str(catalog_path)
@@ -148,6 +159,47 @@ def load_config(path, source_case=None, jet_catalog_path=None):
                 raise ValueError("Missing stripe geometry: "+str(key))
             stripe["points_m"] = table[key]
         config["_stripe_geometry_path"] = str(geometry_path)
+    return config
+
+
+def append_extra_jet(config, definition_path):
+    """Append one provenance-tracked development jet to a resolved source case."""
+    path = Path(definition_path).expanduser().resolve()
+    document = json.loads(path.read_text(encoding="utf-8"))
+    if (document.get("schema_version") != 1
+            or document.get("frame") != "IAU_ENCELADUS"
+            or document.get("base_source_case") != config.get("source_case")):
+        raise ValueError(
+            "Extra-jet definition must be schema 1 in IAU_ENCELADUS and match "
+            "the resolved base source case")
+    variant = document.get("variant_name")
+    source = document.get("source")
+    if not isinstance(variant, str) or not variant or not isinstance(source, dict):
+        raise ValueError("Extra-jet definition requires variant_name and source")
+    required = ("id", "latitude_deg", "west_longitude_deg", "tilt_deg",
+                "azimuth_deg", "temperature_K", "bulk_speed_m_s")
+    if any(source.get(key) is None for key in required):
+        raise ValueError("Extra-jet source geometry or kinematics is incomplete")
+    if any(item.get("id") == source["id"]
+           for item in config.get("discrete_jets", [])):
+        raise ValueError("Duplicate extra-jet source ID: "+str(source["id"]))
+    numeric = [source[key] for key in required[1:]]
+    if (not np.isfinite(numeric).all()
+            or not -90 <= source["latitude_deg"] <= 90
+            or not 0 <= source["west_longitude_deg"] < 360
+            or not 0 <= source["tilt_deg"] <= 90
+            or source["temperature_K"] <= 0
+            or source["bulk_speed_m_s"] < 0):
+        raise ValueError("Invalid extra-jet geometry or kinematics")
+    candidate = copy.deepcopy(source)
+    config.setdefault("discrete_jets", []).append(candidate)
+    config["_extra_jet_path"] = str(path)
+    config["source_variant"] = variant
+    resolved = config.setdefault("resolved_source_case", {})
+    resolved["base_name"] = config["source_case"]
+    resolved["variant_name"] = variant
+    resolved["extra_jet_id"] = candidate["id"]
+    resolved["jet_count"] = len(config["discrete_jets"])
     return config
 
 
