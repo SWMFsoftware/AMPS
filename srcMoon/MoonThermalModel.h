@@ -54,6 +54,7 @@ class Column {
                std::string* error);
 
   double SurfaceTemperatureK() const { return surfaceTemperatureK_; }
+  const std::vector<double>& LayerDepthM() const { return layerDepthM_; }
   const std::vector<double>& LayerTemperatureK() const {
     return layerTemperatureK_;
   }
@@ -75,6 +76,15 @@ class Column {
   double HeatCapacityJkgK(double temperatureK) const;
   double ConductivityWmK(double depthM, double temperatureK) const;
   double DirectionalBondAlbedo(double incidenceAngleRad) const;
+
+  // Evaluate the instantaneous absorbed direct-solar flux [W m^-2] with the
+  // same albedo, inverse-square, incidence-angle, and visible-disc law used by
+  // Advance().  This read-only production diagnostic lets surface-map writers
+  // report the actual thermal boundary forcing without copying the physics
+  // into a test or visualization program.  Invalid inputs return NaN.
+  double AbsorbedSolarFluxWm2(double solarIncidenceCosine,
+                              double visibleSolarDiscFraction,
+                              double heliocentricDistanceAu) const;
 
  private:
   ColumnConfiguration configuration_;

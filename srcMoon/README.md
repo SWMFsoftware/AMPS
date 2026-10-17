@@ -204,6 +204,26 @@ source kernel check.
 
 ## Mesh and surface geometry
 
+### Environment demonstration products
+
+See [`RUN.md`](RUN.md) for a copy-ready clean-build command sequence, a
+one-hour demonstration case, expected artifacts, and interactive viewing.
+
+The non-qualifying runner documented in
+[`test/environment_demo/README.md`](test/environment_demo/README.md) exports
+the production LOLA terrain position/normal, geometric horizon state, terrain
+ray occlusion, finite-disc Earth occultation, direct-beam fraction, absorbed
+solar flux, surface temperature, and every subsurface finite-volume layer at
+one declared UTC. `tools/visualize_environment.py` converts those complete
+tables into static PNG/EPS maps and an optional rotatable 3-D globe.
+
+This path is a model-output demonstration only. It does not read D02 or D03,
+does not establish same-campaign I13 or numerical convergence, and therefore
+cannot change I15, I17, or I20 from `SKIPPED / NOT VALIDATED`. The runner's
+initial-condition and periodic-spinup modes are explicit because a short
+transient from the configured initial temperature must not be presented as an
+equilibrated lunar thermal state.
+
 ### Production surface selection
 
 `srcMoon` accepts an optional application file:

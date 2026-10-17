@@ -1,6 +1,8 @@
 #ifndef SRCMOON_MOON_SURFACE_TEMPERATURE_H
 #define SRCMOON_MOON_SURFACE_TEMPERATURE_H
 
+#include <array>
+#include <cstddef>
 #include <map>
 #include <string>
 #include <vector>
@@ -30,6 +32,33 @@ struct SpinUpMetrics {
   double maximumColumnEnthalpyChangeJm2 = 0.0;
   double cycleStartEphemerisTimeS = 0.0;
   double cycleEndEphemerisTimeS = 0.0;
+};
+
+// Complete read-only state of one production logical surface element at one
+// SPICE epoch.  Cartesian vectors are in MOON_ME_DE421; distances are metres.
+// Terrain visibility and finite-disc Earth occultation remain separate so a
+// downstream plot cannot mistake an eclipse, the geometric nightside, and a
+// topographic horizon for the same physical mechanism.
+struct SurfaceEnvironmentSample {
+  std::size_t surfaceElement = 0;
+  int zenithIndex = 0;
+  int azimuthIndex = 0;
+  double latitudeDeg = 0.0;
+  double longitudeEastDeg = 0.0;
+  double localSolarTimeHour = 0.0;
+  std::array<double,3> surfacePositionBodyFixedM{{0.0,0.0,0.0}};
+  std::array<double,3> terrainNormalBodyFixed{{0.0,0.0,0.0}};
+  double solarIncidenceCosine = 0.0;
+  bool sunAboveLocalHorizon = false;
+  bool terrainSunVisible = false;
+  bool terrainOccluded = false;
+  double solarDiscVisibleFraction = 0.0;
+  double directBeamFraction = 0.0;
+  double heliocentricDistanceAu = 0.0;
+  double absorbedSolarFluxWm2 = 0.0;
+  double surfaceTemperatureK = 0.0;
+  double lastEnergyResidualJm2 = 0.0;
+  int lastNonlinearIterations = 0;
 };
 
 struct Sample {
@@ -88,6 +117,24 @@ bool AdvanceProductionState(double ephemerisTimeBeginS,
 // thermal substep of the most recent AdvanceProductionState call.  This is an
 // update-continuity diagnostic, not an observational residual.
 double LastAdvanceMaximumSurfaceTemperatureChangeK();
+
+// Sample every logical production surface element without changing its
+// thermal state.  The returned illumination is evaluated at ephemerisTimeS;
+// temperatures are the state reached by the caller's preceding initialization
+// and AdvanceProductionState()/SpinUpProductionState() sequence.  This is a
+// model-output service, not an observational comparison or I15/I17 result.
+bool SampleProductionSurfaceEnvironment(
+    double ephemerisTimeS, std::vector<SurfaceEnvironmentSample>* samples,
+    std::string* error);
+
+// Return all finite-volume layer-centre depths [m] and temperatures [K] for
+// one production logical surface element.  The surface boundary temperature
+// itself is carried in SurfaceEnvironmentSample and is not duplicated as a
+// zero-depth finite-volume cell.
+bool ProductionThermalProfile(std::size_t surfaceElement,
+                              std::vector<double>* layerDepthM,
+                              std::vector<double>* layerTemperatureK,
+                              std::string* error);
 
 // Exact planar-circle overlap for the approved apparent-disc definition.  The
 // three inputs are apparent angular radii/separation [rad].  The Sun is

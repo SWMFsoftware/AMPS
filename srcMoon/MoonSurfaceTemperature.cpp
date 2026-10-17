@@ -88,6 +88,138 @@ double LocalSolarTimeHour(const std::array<double,3>& positionBody,
   return NormalizeDegrees(longitude-subsolarLongitude+180.0)/15.0;
 }
 
+#ifndef _NO_SPICE_CALLS_
+// Geometry shared by every surface element at one TDB epoch.  SPICE states
+// are retained in their native kilometres until translated to an actual
+// terrain point below; the unit Sun direction is body-fixed and dimensionless.
+struct EpochIlluminationGeometry {
+  std::array<double,3> sunStateKm{{0.0,0.0,0.0}};
+  std::array<double,3> earthStateKm{{0.0,0.0,0.0}};
+  std::array<double,3> unitSunBodyFixed{{0.0,0.0,0.0}};
+  double heliocentricDistanceAu=0.0;
+};
+
+// Element-local quantities used both by the thermal time integrator and by
+// the read-only surface-environment exporter.  Keeping one implementation is
+// essential: a visually plausible demonstration must not use a shadow law
+// that differs from the production thermal boundary condition.
+struct ElementIlluminationGeometry {
+  std::array<double,3> surfacePositionM{{0.0,0.0,0.0}};
+  std::array<double,3> terrainNormal{{0.0,0.0,0.0}};
+  double solarIncidenceCosine=0.0;
+  bool sunAboveLocalHorizon=false;
+  bool terrainSunVisible=false;
+  bool terrainOccluded=false;
+  double solarDiscVisibleFraction=0.0;
+  double directBeamFraction=0.0;
+};
+
+bool EvaluateEpochIlluminationGeometry(double ephemerisTimeS,
+    EpochIlluminationGeometry* geometry,std::string* error) {
+  if (geometry==nullptr || error==nullptr || !std::isfinite(ephemerisTimeS))
+    return false;
+  SpiceDouble sunState[6],earthState[6],lightTime;
+  spkezr_c("SUN",ephemerisTimeS,Frames::BodyFixed,
+      Frames::ForceAberrationCorrection,ObjectName,sunState,&lightTime);
+  spkezr_c("EARTH",ephemerisTimeS,Frames::BodyFixed,
+      Frames::ForceAberrationCorrection,ObjectName,earthState,&lightTime);
+  const double sunLength=std::sqrt(sunState[0]*sunState[0]+
+      sunState[1]*sunState[1]+sunState[2]*sunState[2]);
+  if (!(sunLength>0.0) || !std::isfinite(sunLength)) {
+    *error="SPICE returned a zero or non-finite Moon-to-Sun vector for "
+        "thermal forcing";
+    return false;
+  }
+  for (int dimension=0;dimension<3;++dimension) {
+    geometry->sunStateKm[dimension]=sunState[dimension];
+    geometry->earthStateKm[dimension]=earthState[dimension];
+    geometry->unitSunBodyFixed[dimension]=sunState[dimension]/sunLength;
+  }
+  geometry->heliocentricDistanceAu=sunLength/1.495978707e8;
+  return true;
+}
+
+bool EvaluateElementIlluminationGeometry(std::size_t element,
+    const EpochIlluminationGeometry& epoch,
+    ElementIlluminationGeometry* geometry,std::string* error) {
+  if (geometry==nullptr || error==nullptr || gProduction.logicalSurface==nullptr ||
+      element>=gProduction.temperaturesK.size()) return false;
+  const Runtime::Configuration& configuration=*gProduction.configuration;
+  double radialNormal[3];
+  gProduction.logicalSurface->GetSurfaceElementNormal(
+      radialNormal,static_cast<int>(element));
+  geometry->surfacePositionM={{_RADIUS_(_MOON_)*radialNormal[0],
+      _RADIUS_(_MOON_)*radialNormal[1],
+      _RADIUS_(_MOON_)*radialNormal[2]}};
+  geometry->terrainNormal={{radialNormal[0],radialNormal[1],radialNormal[2]}};
+  std::size_t terrainFace=std::numeric_limits<std::size_t>::max();
+  const auto* terrain=SurfaceEnvironment::ProductionTerrain();
+  if (terrain!=nullptr) {
+    SurfaceEnvironment::RayHit radialHit;
+    const std::array<double,3> centre{{0.0,0.0,0.0}};
+    if (!terrain->IntersectRay(centre,geometry->terrainNormal,0.0,
+            std::numeric_limits<double>::infinity(),terrainFace,
+            &radialHit,error)) return false;
+    if (!radialHit.hit) {
+      *error="thermal column radial direction misses production terrain";
+      return false;
+    }
+    geometry->surfacePositionM=radialHit.positionM;
+    geometry->terrainNormal=radialHit.outwardNormal;
+    terrainFace=radialHit.face;
+  }
+
+  geometry->solarIncidenceCosine=Dot(
+      geometry->terrainNormal,epoch.unitSunBodyFixed);
+  geometry->sunAboveLocalHorizon=geometry->solarIncidenceCosine>0.0;
+  geometry->terrainSunVisible=geometry->sunAboveLocalHorizon;
+  if (terrain!=nullptr && geometry->terrainSunVisible &&
+      !terrain->IsSunVisible(geometry->surfacePositionM,
+          geometry->terrainNormal,epoch.unitSunBodyFixed,
+          configuration.illuminationRayOriginOffsetM,terrainFace,
+          &geometry->terrainSunVisible,error)) return false;
+  geometry->terrainOccluded=geometry->sunAboveLocalHorizon &&
+      !geometry->terrainSunVisible;
+
+  // Earth eclipse is independent of terrain blocking.  Translate Moon-centred
+  // SPICE states [km] to the actual terrain point [m] before calculating
+  // apparent angular radii, preserving the production parallax correction.
+  std::array<double,3> pointToSun,pointToEarth;
+  for (int dimension=0;dimension<3;++dimension) {
+    pointToSun[dimension]=epoch.sunStateKm[dimension]-
+        geometry->surfacePositionM[dimension]/1000.0;
+    pointToEarth[dimension]=epoch.earthStateKm[dimension]-
+        geometry->surfacePositionM[dimension]/1000.0;
+  }
+  const double sunDistanceKm=Norm(pointToSun);
+  const double earthDistanceKm=Norm(pointToEarth);
+  if (!(sunDistanceKm>configuration.thermalSolarDiscRadiusM/1000.0) ||
+      !(earthDistanceKm>configuration.thermalOpaqueEarthRadiusM/1000.0)) {
+    *error="surface point lies inside a configured eclipse body radius";
+    return false;
+  }
+  geometry->solarDiscVisibleFraction=1.0;
+  if (earthDistanceKm<sunDistanceKm) {
+    const double directionCosine=std::max(-1.0,std::min(1.0,
+        Dot(pointToSun,pointToEarth)/(sunDistanceKm*earthDistanceKm)));
+    const double separation=std::acos(directionCosine);
+    const double solarRadius=std::asin(
+        configuration.thermalSolarDiscRadiusM/(1000.0*sunDistanceKm));
+    const double earthRadius=std::asin(
+        configuration.thermalOpaqueEarthRadiusM/(1000.0*earthDistanceKm));
+    geometry->solarDiscVisibleFraction=UniformSolarDiscVisibleFraction(
+        solarRadius,earthRadius,separation);
+    if (!std::isfinite(geometry->solarDiscVisibleFraction)) {
+      *error="finite-disc Earth-eclipse geometry is invalid";
+      return false;
+    }
+  }
+  geometry->directBeamFraction=geometry->terrainSunVisible ?
+      geometry->solarDiscVisibleFraction:0.0;
+  return true;
+}
+#endif
+
 const SurfacePhysics::SpeciesParameters* ParametersForSpecies(int species) {
 #if _NA_SPEC_ >= 0
   if (species==_NA_SPEC_) return &gProduction.sodium;
@@ -595,110 +727,123 @@ bool AdvanceProductionState(double ephemerisTimeBeginS,
   const double timeStep=duration/substeps;
   for (int step=0;step<substeps;++step) {
     const double epoch=ephemerisTimeBeginS+(step+0.5)*timeStep;
-    SpiceDouble sunState[6],lightTime;
-    SpiceDouble earthState[6];
-    spkezr_c("SUN",epoch,Frames::BodyFixed,
-        Frames::ForceAberrationCorrection,ObjectName,sunState,&lightTime);
-    spkezr_c("EARTH",epoch,Frames::BodyFixed,
-        Frames::ForceAberrationCorrection,ObjectName,earthState,&lightTime);
-    const double sunLength=std::sqrt(sunState[0]*sunState[0]+
-        sunState[1]*sunState[1]+sunState[2]*sunState[2]);
-    if (!(sunLength>0.0)) {
-      *error="SPICE returned a zero Moon-to-Sun vector for thermal forcing";
+    EpochIlluminationGeometry epochGeometry;
+    if (!EvaluateEpochIlluminationGeometry(epoch,&epochGeometry,error))
       return false;
-    }
-    const double heliocentricDistanceAu=sunLength/(1.495978707e8);
-    std::array<double,3> sun{{sunState[0]/sunLength,sunState[1]/sunLength,
-                             sunState[2]/sunLength}};
     for (std::size_t element=0;element<gProduction.columns.size();++element) {
-      double normal[3];
-      gProduction.logicalSurface->GetSurfaceElementNormal(
-          normal,static_cast<int>(element));
-      std::array<double,3> surfacePosition{{
-          _RADIUS_(_MOON_)*normal[0],_RADIUS_(_MOON_)*normal[1],
-          _RADIUS_(_MOON_)*normal[2]}};
-      std::array<double,3> terrainNormal{{normal[0],normal[1],normal[2]}};
-      std::size_t terrainFace=std::numeric_limits<std::size_t>::max();
-      const auto* terrain=SurfaceEnvironment::ProductionTerrain();
-      if (terrain!=nullptr) {
-        SurfaceEnvironment::RayHit radialHit;
-        const std::array<double,3> centre{{0.0,0.0,0.0}};
-        const std::array<double,3> radialDirection=terrainNormal;
-        if (!terrain->IntersectRay(centre,radialDirection,0.0,
-                std::numeric_limits<double>::infinity(),terrainFace,
-                &radialHit,error)) return false;
-        if (!radialHit.hit) {
-          *error="thermal column radial direction misses production terrain";
-          return false;
-        }
-        surfacePosition=radialHit.positionM;
-        terrainNormal=radialHit.outwardNormal;
-        terrainFace=radialHit.face;
-      }
-      double cosine=Dot(terrainNormal,sun);
-      bool terrainVisible=cosine>0.0;
-      if (terrain!=nullptr && terrainVisible &&
-          !terrain->IsSunVisible(surfacePosition,terrainNormal,sun,
-              configuration.illuminationRayOriginOffsetM,terrainFace,
-              &terrainVisible,error)) return false;
-
-      // Earth eclipse is evaluated independently from terrain blocking at the
-      // same SPICE epoch.  SPICE states are Moon-centred body-fixed km and the
-      // terrain point is metres.  Translate both apparent-body vectors to the
-      // actual surface point before calculating angular radii/separation; a
-      // Moon-centre test would introduce avoidable parallax during totality.
-      std::array<double,3> pointToSun,pointToEarth;
-      for (int dimension=0;dimension<3;++dimension) {
-        pointToSun[dimension]=sunState[dimension]-
-            surfacePosition[dimension]/1000.0;
-        pointToEarth[dimension]=earthState[dimension]-
-            surfacePosition[dimension]/1000.0;
-      }
-      const double sunDistanceKm=Norm(pointToSun);
-      const double earthDistanceKm=Norm(pointToEarth);
-      if (!(sunDistanceKm>configuration.thermalSolarDiscRadiusM/1000.0) ||
-          !(earthDistanceKm>
-              configuration.thermalOpaqueEarthRadiusM/1000.0)) {
-        *error="surface point lies inside a configured eclipse body radius";
-        return false;
-      }
-      double solarDiscFraction=1.0;
-      // A body can occult the Sun only when its centre is closer to the
-      // surface point than the solar centre.  This guard also keeps unrelated
-      // Earth/Sun conjunctions from being treated as eclipses.
-      if (earthDistanceKm<sunDistanceKm) {
-        const double directionCosine=std::max(-1.0,std::min(1.0,
-            Dot(pointToSun,pointToEarth)/(sunDistanceKm*earthDistanceKm)));
-        const double separation=std::acos(directionCosine);
-        const double solarRadius=std::asin(
-            configuration.thermalSolarDiscRadiusM/(1000.0*sunDistanceKm));
-        const double earthRadius=std::asin(
-            configuration.thermalOpaqueEarthRadiusM/
-            (1000.0*earthDistanceKm));
-        solarDiscFraction=UniformSolarDiscVisibleFraction(
-            solarRadius,earthRadius,separation);
-        if (!std::isfinite(solarDiscFraction)) {
-          *error="finite-disc Earth-eclipse geometry is invalid";
-          return false;
-        }
-      }
-      const double directBeamFraction=terrainVisible ? solarDiscFraction:0.0;
+      ElementIlluminationGeometry elementGeometry;
+      if (!EvaluateElementIlluminationGeometry(element,epochGeometry,
+              &elementGeometry,error)) return false;
       const double previousSurfaceTemperatureK=
           gProduction.columns[element].SurfaceTemperatureK();
-      if (!gProduction.columns[element].Advance(timeStep,cosine,
-              directBeamFraction,
-              heliocentricDistanceAu,error)) return false;
+      if (!gProduction.columns[element].Advance(timeStep,
+              elementGeometry.solarIncidenceCosine,
+              elementGeometry.directBeamFraction,
+              epochGeometry.heliocentricDistanceAu,error)) return false;
       gProduction.temperaturesK[element]=
           gProduction.columns[element].SurfaceTemperatureK();
       gProduction.lastAdvanceMaximumSurfaceTemperatureChangeK=std::max(
           gProduction.lastAdvanceMaximumSurfaceTemperatureChangeK,
           std::abs(gProduction.temperaturesK[element]-
                    previousSurfaceTemperatureK));
-      gProduction.geometricShadow[element]=terrainVisible ? 0 : 1;
+      gProduction.geometricShadow[element]=
+          elementGeometry.terrainSunVisible ? 0 : 1;
     }
   }
   return true;
 #endif
+}
+
+bool SampleProductionSurfaceEnvironment(double ephemerisTimeS,
+    std::vector<SurfaceEnvironmentSample>* samples,std::string* error) {
+  if (samples==nullptr || error==nullptr) return false;
+  samples->clear();
+  error->clear();
+  if (!gProduction.initialized || gProduction.mode!=Mode::ThermalModel ||
+      gProduction.logicalSurface==nullptr) {
+    *error="surface-environment sampling requires an initialized production "
+        "thermal model";
+    return false;
+  }
+#ifdef _NO_SPICE_CALLS_
+  (void)ephemerisTimeS;
+  *error="surface-environment sampling requires a SPICE-enabled build";
+  return false;
+#else
+  EpochIlluminationGeometry epochGeometry;
+  if (!EvaluateEpochIlluminationGeometry(ephemerisTimeS,&epochGeometry,error))
+    return false;
+  samples->reserve(gProduction.columns.size());
+  for (std::size_t element=0;element<gProduction.columns.size();++element) {
+    ElementIlluminationGeometry forcing;
+    if (!EvaluateElementIlluminationGeometry(element,epochGeometry,
+            &forcing,error)) return false;
+    SurfaceEnvironmentSample sample;
+    sample.surfaceElement=element;
+    gProduction.logicalSurface->GetSurfaceElementIndex(
+        sample.zenithIndex,sample.azimuthIndex,static_cast<int>(element));
+    sample.surfacePositionBodyFixedM=forcing.surfacePositionM;
+    sample.terrainNormalBodyFixed=forcing.terrainNormal;
+    const double radius=Norm(forcing.surfacePositionM);
+    if (!(radius>0.0)) {
+      *error="sampled production terrain point has invalid radius";
+      return false;
+    }
+    sample.latitudeDeg=std::asin(forcing.surfacePositionM[2]/radius)*180.0/kPi;
+    sample.longitudeEastDeg=NormalizeDegrees(std::atan2(
+        forcing.surfacePositionM[1],forcing.surfacePositionM[0])*180.0/kPi);
+    sample.localSolarTimeHour=LocalSolarTimeHour(
+        forcing.surfacePositionM,epochGeometry.unitSunBodyFixed);
+    sample.solarIncidenceCosine=forcing.solarIncidenceCosine;
+    sample.sunAboveLocalHorizon=forcing.sunAboveLocalHorizon;
+    sample.terrainSunVisible=forcing.terrainSunVisible;
+    sample.terrainOccluded=forcing.terrainOccluded;
+    sample.solarDiscVisibleFraction=forcing.solarDiscVisibleFraction;
+    sample.directBeamFraction=forcing.directBeamFraction;
+    sample.heliocentricDistanceAu=epochGeometry.heliocentricDistanceAu;
+    sample.absorbedSolarFluxWm2=
+        gProduction.columns[element].AbsorbedSolarFluxWm2(
+            forcing.solarIncidenceCosine,forcing.directBeamFraction,
+            epochGeometry.heliocentricDistanceAu);
+    sample.surfaceTemperatureK=
+        gProduction.columns[element].SurfaceTemperatureK();
+    sample.lastEnergyResidualJm2=
+        gProduction.columns[element].LastEnergyResidualJm2();
+    sample.lastNonlinearIterations=
+        gProduction.columns[element].LastNonlinearIterations();
+    if (!std::isfinite(sample.absorbedSolarFluxWm2) ||
+        !PositiveFinite(sample.surfaceTemperatureK)) {
+      *error="sampled production thermal state is non-finite";
+      return false;
+    }
+    samples->push_back(sample);
+  }
+  return true;
+#endif
+}
+
+bool ProductionThermalProfile(std::size_t surfaceElement,
+    std::vector<double>* layerDepthM,std::vector<double>* layerTemperatureK,
+    std::string* error) {
+  if (layerDepthM==nullptr || layerTemperatureK==nullptr || error==nullptr)
+    return false;
+  layerDepthM->clear();
+  layerTemperatureK->clear();
+  error->clear();
+  if (!gProduction.initialized || gProduction.mode!=Mode::ThermalModel ||
+      surfaceElement>=gProduction.columns.size()) {
+    *error="thermal-profile request is outside the initialized production "
+        "surface";
+    return false;
+  }
+  *layerDepthM=gProduction.columns[surfaceElement].LayerDepthM();
+  *layerTemperatureK=
+      gProduction.columns[surfaceElement].LayerTemperatureK();
+  if (layerDepthM->empty() || layerDepthM->size()!=layerTemperatureK->size()) {
+    *error="production thermal column has inconsistent layer arrays";
+    return false;
+  }
+  return true;
 }
 
 bool SpinUpProductionState(SpinUpMetrics* metrics,std::string* error) {

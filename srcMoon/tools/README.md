@@ -108,3 +108,52 @@ python3 -B srcMoon/tools/test_visualize_surface.py
 
 These are tool-infrastructure tests, not a new U/I test ID and not lunar-model
 verification or validation.
+
+## Illumination, terrain-shadow, and thermal-state visualization
+
+`visualize_environment.py` reads the two complete model tables produced by
+`srcMoon/test/environment_demo/run.py`. It verifies their exact schemas,
+finite values, classification/fraction ranges, contiguous surface-element
+identity, and complete monotonically deepening thermal columns before drawing
+anything. It does not calculate illumination, shadowing, eclipse geometry,
+heating, or temperature; those values come from the production C++ kernels.
+
+Create the four static figures (illumination/shadow and thermal-state PNG/EPS):
+
+```sh
+python3 -B srcMoon/tools/visualize_environment.py \
+  test_output/srcMoon/environment-demo/one-day-transient/surface_environment.csv \
+  test_output/srcMoon/environment-demo/one-day-transient/thermal_profiles.csv \
+  --output-dir test_output/srcMoon/environment-demo/one-day-transient \
+  --epoch-label 2009-01-25T00:00:00.000Z
+```
+
+Open an additional mouse-rotatable 3-D globe and save the selected camera by
+pressing `S` (`Q` closes the window):
+
+```sh
+python3 -B srcMoon/tools/visualize_environment.py \
+  test_output/srcMoon/environment-demo/one-day-transient/surface_environment.csv \
+  test_output/srcMoon/environment-demo/one-day-transient/thermal_profiles.csv \
+  --interactive-3d \
+  --color-by surface_temperature_k \
+  --selected-view-output test_output/srcMoon/environment-demo/one-day-transient/selected_temperature.png \
+  --force
+```
+
+Interactive color choices include absorbed solar flux, post-terrain direct
+beam fraction, terrain occlusion, Earth-occulted solar-disc fraction, and
+surface temperature. The static thermal depth panel reports the complete
+global minimum-to-maximum envelope and mean at each configured layer depth;
+it does not select favorable locations. Every image states `EXPERIMENTAL MODEL
+OUTPUT - NOT V&V EVIDENCE`, and the JSON receipt hashes both input tables and
+every saved figure.
+
+Run the visualization infrastructure check with:
+
+```sh
+python3 -B srcMoon/tools/test_visualize_environment.py
+```
+
+The check uses a small analytical file-format fixture only to exercise the
+renderer. It is not observational evidence or a new lunar U/I test.

@@ -160,6 +160,28 @@ double Column::DirectionalBondAlbedo(double incidenceAngleRad) const {
       std::numeric_limits<double>::quiet_NaN();
 }
 
+double Column::AbsorbedSolarFluxWm2(
+    double solarIncidenceCosine, double visibleSolarDiscFraction,
+    double heliocentricDistanceAu) const {
+  if (!initialized_ || !std::isfinite(solarIncidenceCosine) ||
+      solarIncidenceCosine < -1.0 || solarIncidenceCosine > 1.0 ||
+      !std::isfinite(visibleSolarDiscFraction) ||
+      visibleSolarDiscFraction < 0.0 || visibleSolarDiscFraction > 1.0 ||
+      !PositiveFinite(heliocentricDistanceAu)) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  if (visibleSolarDiscFraction == 0.0 || solarIncidenceCosine <= 0.0)
+    return 0.0;
+
+  const double albedo = DirectionalBondAlbedo(
+      std::acos(solarIncidenceCosine));
+  if (!std::isfinite(albedo))
+    return std::numeric_limits<double>::quiet_NaN();
+  return configuration_.solarConstantWm2 /
+      (heliocentricDistanceAu * heliocentricDistanceAu) *
+      (1.0 - albedo) * solarIncidenceCosine * visibleSolarDiscFraction;
+}
+
 bool Column::Advance(double timeStepS, double solarIncidenceCosine,
                      double visibleSolarDiscFraction,
                      double heliocentricDistanceAu,
@@ -176,17 +198,11 @@ bool Column::Advance(double timeStepS, double solarIncidenceCosine,
     return false;
   }
 
-  double absorbed = 0.0;
-  if (visibleSolarDiscFraction > 0.0 && solarIncidenceCosine > 0.0) {
-    const double incidence = std::acos(solarIncidenceCosine);
-    const double albedo = DirectionalBondAlbedo(incidence);
-    if (!std::isfinite(albedo)) {
-      *error = "directional Bond albedo is outside its physical domain";
-      return false;
-    }
-    absorbed = configuration_.solarConstantWm2 /
-        (heliocentricDistanceAu * heliocentricDistanceAu) *
-        (1.0 - albedo) * solarIncidenceCosine * visibleSolarDiscFraction;
+  const double absorbed = AbsorbedSolarFluxWm2(solarIncidenceCosine,
+      visibleSolarDiscFraction, heliocentricDistanceAu);
+  if (!std::isfinite(absorbed)) {
+    *error = "directional Bond albedo is outside its physical domain";
+    return false;
   }
   lastAbsorbedSolarFluxWm2_ = absorbed;
 

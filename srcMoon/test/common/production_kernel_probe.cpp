@@ -12,8 +12,11 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <limits>
 #include <numeric>
 #include <string>
+#include <vector>
 
 #include "pic.h"
 #include "Moon.h"
@@ -1470,6 +1473,243 @@ int lola_surface_demo(int argument_count,char** arguments) {
   return (degenerate_faces==0 && inward_faces==0) ? 0 : 1;
 }
 
+int surface_environment_demo(int argument_count,char** arguments) {
+  // Export production illumination and thermal state without duplicating
+  // either physical kernel in Python.  The adapter constructs the same D01
+  // terrain/BVH and logical 60x100 surface used by normal srcMoon, initializes
+  // the normal thermal columns, and asks the read-only production diagnostic
+  // service for every cell.  It deliberately performs no observational score.
+  if (argument_count!=5) {
+    std::fprintf(stderr,
+        "usage: production_kernel_probe surface-environment-demo "
+        "<application.in> <surface-output.csv> <profile-output.csv> "
+        "<snapshot-utc> <input-initial|periodic-spinup>\n");
+    return 2;
+  }
+#ifdef _NO_SPICE_CALLS_
+  std::fprintf(stderr,
+      "ERROR surface_environment_demo_requires_spice_enabled_build\n");
+  return 2;
+#else
+  const std::string input_path(arguments[0]);
+  const std::string surface_path(arguments[1]);
+  const std::string profile_path(arguments[2]);
+  const std::string snapshot_utc(arguments[3]);
+  const std::string initialization(arguments[4]);
+  if (initialization!="input-initial" && initialization!="periodic-spinup") {
+    std::fprintf(stderr,"ERROR unsupported_thermal_initialization %s\n",
+                 initialization.c_str());
+    return 2;
+  }
+
+  Moon::Runtime::Configuration configuration;
+  std::string error;
+  if (!Moon::Runtime::ParseApplicationInput(input_path,&configuration,&error)) {
+    std::fprintf(stderr,"ERROR environment_demo_input %s\n",error.c_str());
+    return 2;
+  }
+  if (configuration.surfaceGeometry!=Moon::Runtime::SurfaceGeometry::Lola ||
+      !configuration.m2EnvironmentEnabled ||
+      configuration.surfaceTemperatureMode!="thermal-model") {
+    std::fprintf(stderr,
+        "ERROR environment_demo_requires_lola_m2_thermal_model\n");
+    return 2;
+  }
+
+  Moon::Surface::LolaDem dem;
+  Moon::Surface::Triangulation mesh;
+  if (!dem.Load(configuration,&error) ||
+      !Moon::Surface::BuildIcosphere(dem.metadata().referenceRadiusM,
+          configuration.surfaceMeshResolutionM,&mesh,&error) ||
+      !Moon::Surface::ApplyLolaTopography(dem,&mesh,&error) ||
+      !Moon::SurfaceEnvironment::InitializeProductionTerrain(
+          mesh,configuration,&error) ||
+      !Moon::Surface::WriteCeaSurface(
+          mesh,configuration.surfaceCeaFile,&error) ||
+      !Moon::Surface::WriteTecplotSurface(
+          mesh,configuration.surfaceTecplotFile,&error)) {
+    std::fprintf(stderr,"ERROR environment_demo_surface %s\n",error.c_str());
+    return 2;
+  }
+
+  // This logical equal-area grid is the production inventory/thermal grid,
+  // not the D01 triangle population.  Each radial logical cell is intersected
+  // with the terrain BVH before its actual position, normal and horizon are
+  // evaluated.  The fixed 60x100 dimensions therefore reproduce normal
+  // srcMoon behavior rather than inventing a presentation-only raster.
+  cInternalSphericalData::SetGeneralSurfaceMeshParameters(60,100);
+  auto* logical_surface=new cInternalSphericalData;
+  double origin_m[3]={0.0,0.0,0.0};
+  logical_surface->SetSphereGeometricalParameters(origin_m,_RADIUS_(_MOON_));
+  const int element_count=logical_surface->GetTotalSurfaceElementsNumber();
+  logical_surface->Allocate<cInternalSphericalData>(PIC::nTotalSpecies,
+      element_count,_EXOSPHERE__SOURCE_MAX_ID_VALUE_,logical_surface);
+
+  // Init_SPICE furnishes the exact kernels compiled by Config.pl.  Applying
+  // the input UTC before initialization mirrors amps_init(); no identity frame
+  // or approximate lunar rotation is permitted as a fallback.
+  Exosphere::SetSimulationStartTimeString(
+      configuration.simulationStartUtc.c_str());
+  Exosphere::Init_SPICE();
+  SpiceDouble initial_et=0.0,snapshot_et=0.0;
+  str2et_c(configuration.simulationStartUtc.c_str(),&initial_et);
+  str2et_c(snapshot_utc.c_str(),&snapshot_et);
+  if (!std::isfinite(initial_et) || !std::isfinite(snapshot_et)) {
+    std::fprintf(stderr,"ERROR non_finite_demo_epoch\n");
+    return 2;
+  }
+  if (!Moon::SurfaceTemperature::InitializeProductionState(
+          configuration,logical_surface,&error)) {
+    std::fprintf(stderr,"ERROR environment_demo_thermal_init %s\n",
+                 error.c_str());
+    return 2;
+  }
+
+  Moon::SurfaceTemperature::SpinUpMetrics spinup;
+  double state_epoch=initial_et;
+  if (initialization=="periodic-spinup") {
+    if (!Moon::SurfaceTemperature::SpinUpProductionState(&spinup,&error)) {
+      std::fprintf(stderr,"ERROR environment_demo_spinup %s\n",error.c_str());
+      return 2;
+    }
+    state_epoch=spinup.cycleEndEphemerisTimeS;
+  }
+  if (snapshot_et<state_epoch) {
+    std::fprintf(stderr,
+        "ERROR snapshot_precedes_thermal_state snapshot_et=%.17g "
+        "state_et=%.17g; choose a later UTC or input-initial mode\n",
+        snapshot_et,state_epoch);
+    return 2;
+  }
+  if (!Moon::SurfaceTemperature::AdvanceProductionState(
+          state_epoch,snapshot_et,&error)) {
+    std::fprintf(stderr,"ERROR environment_demo_thermal_advance %s\n",
+                 error.c_str());
+    return 2;
+  }
+  std::vector<Moon::SurfaceTemperature::SurfaceEnvironmentSample> samples;
+  if (!Moon::SurfaceTemperature::SampleProductionSurfaceEnvironment(
+          snapshot_et,&samples,&error)) {
+    std::fprintf(stderr,"ERROR environment_demo_snapshot %s\n",error.c_str());
+    return 2;
+  }
+
+  std::ofstream surface_output(surface_path);
+  if (!surface_output) {
+    std::fprintf(stderr,"ERROR cannot_write_environment_csv %s\n",
+                 surface_path.c_str());
+    return 2;
+  }
+  surface_output << std::setprecision(17)
+      << "surface_element,zenith_index,azimuth_index,latitude_deg,"
+         "longitude_east_deg,local_solar_time_hour,x_body_fixed_m,"
+         "y_body_fixed_m,z_body_fixed_m,radius_m,elevation_m,"
+         "normal_x_body_fixed,normal_y_body_fixed,normal_z_body_fixed,"
+         "solar_incidence_cosine,sun_above_local_horizon,"
+         "terrain_sun_visible,terrain_occluded,"
+         "solar_disc_visible_fraction,earth_eclipse_fraction,"
+         "direct_beam_fraction,absorbed_solar_flux_w_m2,"
+         "surface_temperature_k,last_energy_residual_j_m2,"
+         "last_nonlinear_iterations\n";
+  for (const auto& sample:samples) {
+    const double radius=std::sqrt(
+        sample.surfacePositionBodyFixedM[0]*
+            sample.surfacePositionBodyFixedM[0]+
+        sample.surfacePositionBodyFixedM[1]*
+            sample.surfacePositionBodyFixedM[1]+
+        sample.surfacePositionBodyFixedM[2]*
+            sample.surfacePositionBodyFixedM[2]);
+    surface_output << sample.surfaceElement << ',' << sample.zenithIndex << ','
+        << sample.azimuthIndex << ',' << sample.latitudeDeg << ','
+        << sample.longitudeEastDeg << ',' << sample.localSolarTimeHour << ','
+        << sample.surfacePositionBodyFixedM[0] << ','
+        << sample.surfacePositionBodyFixedM[1] << ','
+        << sample.surfacePositionBodyFixedM[2] << ',' << radius << ','
+        << radius-dem.metadata().referenceRadiusM << ','
+        << sample.terrainNormalBodyFixed[0] << ','
+        << sample.terrainNormalBodyFixed[1] << ','
+        << sample.terrainNormalBodyFixed[2] << ','
+        << sample.solarIncidenceCosine << ','
+        << (sample.sunAboveLocalHorizon?1:0) << ','
+        << (sample.terrainSunVisible?1:0) << ','
+        << (sample.terrainOccluded?1:0) << ','
+        << sample.solarDiscVisibleFraction << ','
+        << 1.0-sample.solarDiscVisibleFraction << ','
+        << sample.directBeamFraction << ','
+        << sample.absorbedSolarFluxWm2 << ','
+        << sample.surfaceTemperatureK << ','
+        << sample.lastEnergyResidualJm2 << ','
+        << sample.lastNonlinearIterations << '\n';
+  }
+  surface_output.close();
+  if (!surface_output) {
+    std::fprintf(stderr,"ERROR incomplete_environment_csv\n");
+    return 2;
+  }
+
+  // Preserve every layer of every logical column.  Selecting only visually
+  // interesting sites here would make the output irreproducible and could
+  // hide a deep-column initialization problem.
+  std::ofstream profile_output(profile_path);
+  if (!profile_output) {
+    std::fprintf(stderr,"ERROR cannot_write_thermal_profile_csv %s\n",
+                 profile_path.c_str());
+    return 2;
+  }
+  profile_output << std::setprecision(17)
+      << "surface_element,latitude_deg,longitude_east_deg,layer_index,"
+         "layer_center_depth_m,layer_temperature_k\n";
+  std::size_t profile_rows=0;
+  for (const auto& sample:samples) {
+    std::vector<double> depth_m,temperature_k;
+    if (!Moon::SurfaceTemperature::ProductionThermalProfile(
+            sample.surfaceElement,&depth_m,&temperature_k,&error)) {
+      std::fprintf(stderr,"ERROR environment_demo_profile %s\n",error.c_str());
+      return 2;
+    }
+    for (std::size_t layer=0;layer<depth_m.size();++layer) {
+      profile_output << sample.surfaceElement << ',' << sample.latitudeDeg
+          << ',' << sample.longitudeEastDeg << ',' << layer << ','
+          << depth_m[layer] << ',' << temperature_k[layer] << '\n';
+      ++profile_rows;
+    }
+  }
+  profile_output.close();
+  if (!profile_output) {
+    std::fprintf(stderr,"ERROR incomplete_thermal_profile_csv\n");
+    return 2;
+  }
+
+  const auto count_true=[&samples](auto member) {
+    return std::count_if(samples.begin(),samples.end(),
+        [member](const auto& sample) { return sample.*member; });
+  };
+  const auto temperature_range=std::minmax_element(samples.begin(),samples.end(),
+      [](const auto& first,const auto& second) {
+        return first.surfaceTemperatureK<second.surfaceTemperatureK;
+      });
+  std::printf("surface_element_count=%zu\n",samples.size());
+  std::printf("thermal_profile_row_count=%zu\n",profile_rows);
+  std::printf("terrain_occluded_count=%zu\n",count_true(
+      &Moon::SurfaceTemperature::SurfaceEnvironmentSample::terrainOccluded));
+  std::printf("terrain_visible_count=%zu\n",count_true(
+      &Moon::SurfaceTemperature::SurfaceEnvironmentSample::terrainSunVisible));
+  std::printf("minimum_surface_temperature_k=%.17g\n",
+      temperature_range.first->surfaceTemperatureK);
+  std::printf("maximum_surface_temperature_k=%.17g\n",
+      temperature_range.second->surfaceTemperatureK);
+  std::printf("thermal_initialization=%s\n",initialization.c_str());
+  std::printf("snapshot_et_s=%.17g\n",snapshot_et);
+  std::printf("advanced_duration_s=%.17g\n",snapshot_et-state_epoch);
+  std::printf("spinup_completed_cycles=%lld\n",spinup.completedCycles);
+  std::printf("spinup_maximum_node_change_k=%.17g\n",
+      spinup.maximumNodeTemperatureChangeK);
+  std::printf("spinup_maximum_enthalpy_change_j_m2=%.17g\n",
+      spinup.maximumColumnEnthalpyChangeJm2);
+  return 0;
+#endif
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -1478,7 +1718,7 @@ int main(int argc, char **argv) {
         "usage: production_kernel_probe <gravity|mesh-resolution|"
         "photochemistry|radiation-shadow|radiation-pressure-values|"
         "rotating-frame|sodium-sources|sticking|temperature|lola-geometry|"
-        "lola-surface-demo|"
+        "lola-surface-demo|surface-environment-demo|"
         "terrain-shadow|diviner-temperature|thermal-inertia|surface-physics|"
         "cold-trapping|argon-source> "
         "[mode arguments]\n");
@@ -1491,6 +1731,9 @@ int main(int argc, char **argv) {
   }
   if (test == "lola-surface-demo") {
     return lola_surface_demo(argc - 2,argv + 2);
+  }
+  if (test == "surface-environment-demo") {
+    return surface_environment_demo(argc - 2,argv + 2);
   }
   if (argc != 2) {
     std::fprintf(stderr, "mode %s does not accept additional arguments\n",

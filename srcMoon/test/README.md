@@ -16,6 +16,17 @@ deliberately outside `run_all_test.py`: its `execution_status=PASS` is kept
 separate from formal I14 `execution=NOT_RUN`, `status=SKIPPED`, and
 `validation_status=NOT_VALIDATED`; it cannot open any roadmap gate.
 
+For production illumination, topographic-shadow, Earth-occultation, and
+depth-resolved thermal model tables plus PNG/EPS figures, use
+[`environment_demo/run.py`](environment_demo/README.md). It requires local
+U08/U09/U11 PASS and exports every logical surface cell and every subsurface
+layer through a thin adapter linked to the production kernels. It remains
+outside `run_all_test.py`; its demonstration PASS is recorded separately from
+formal I15/I17/I20 `SKIPPED / NOT VALIDATED` status. The default zero-duration
+result is the explicit input initial condition, while any transient or
+periodic-spinup run is selected visibly on the command line and preserved in
+the receipt.
+
 I17's runner now includes its launcher/plot-reader infrastructure checks
 automatically and enforces the approved 2026-10-14 three-step thermal numerical
 error budget before residual computation. See the
